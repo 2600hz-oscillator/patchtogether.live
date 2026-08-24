@@ -192,6 +192,27 @@ test.describe('MIDICLOCK faceplate', () => {
       midi,
       'and NOT-YET-ASKED is distinguishable from REFUSED — the whole point of the midi-access seam',
     ).toHaveAttribute('aria-label', /press Connect MIDI/i);
+
+    // ⚠ WHAT THIS TEST STRUCTURALLY CANNOT SEE, stated rather than implied.
+    // Both lamps read the body's `cardState`, whose INITIAL `$state` value is
+    // byte-identical to what a freshly-booted engine's `snapshotState()`
+    // returns — `{connected:false, permissionDenied:false, devices:[],
+    // selectedDeviceId:null, running:false}`. So "the body subscribed and the
+    // engine said not-connected" and "the body never subscribed at all" produce
+    // the SAME DOM here, and no assertion on this surface can separate them
+    // while the module is unbound. There is no pre-connect state that only a
+    // live subscription can produce, so this is a real gap rather than a
+    // missing assertion.
+    //
+    // What DOES close most of it, one test up: the CONNECT press proves
+    // `getActiveEngine()?.read(node, 'card-api')` resolves for this node in
+    // this environment, through the SAME `midiclockApi(nodeId)` helper the body
+    // subscribes with. What remains unproven is only that the body's `$effect`
+    // ran — a Svelte lifecycle question, not a wiring one — and the POST-connect
+    // half (a live device roster reaching the picker) is unreachable on a
+    // runner with no MIDI hardware by construction. `midiclock-status-model
+    // .test.ts` owns every string this surface can produce; nothing here can
+    // photograph or read them once they are `aria-label` only.
   });
 
   test('the DIVISION is a real param: the segmented cell commits into the graph', async ({ page }) => {
