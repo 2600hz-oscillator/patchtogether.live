@@ -383,7 +383,7 @@ test.describe('SHAPEGEN — CLOCK gate sample-and-hold', () => {
       };
       w.__ydoc.transact(() => {
         const seq = w.__patch.nodes['clkSeq'];
-        if (seq) seq.params.isPlaying = 0;
+        if (seq) seq.params.running = 0;
       });
     });
     // Let any pending edge land + the next "would-be" pulse window pass.

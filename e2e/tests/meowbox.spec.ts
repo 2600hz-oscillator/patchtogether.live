@@ -24,7 +24,7 @@
 //
 //  2. The sequencer's emitted V/oct values for octave-spaced steps
 //     (C3=-1V, C4=0V, C5=+1V) form the canonical 1V/oct sequence. This is
-//     read directly off the sequencer via `engine.read(node, 'pitchVOct')`
+//     read directly off the source via `engine.read(node, 'pitchVOct:0')` (kria's track-1 mirror)
 //     — the upstream contract that the meowbox now consumes correctly.
 //
 //  Pitch-fidelity FFT measurements at the meowbox output are pinned in the
@@ -59,7 +59,7 @@ async function readScopeRms(page: Page, scopeId: string): Promise<number> {
 }
 
 /** Read the V/oct value the sequencer is currently emitting on lane 0 of
- *  its polyPitchGate output. Source of truth: sequencer.ts's `read('pitchVOct')`. */
+ *  its pitch1 output. Source of truth: kria.ts's `read('pitchVOct:0')`. */
 async function readSeqVOct(page: Page, seqId: string): Promise<number | null> {
   return await page.evaluate((id) => {
     const w = globalThis as unknown as {
@@ -72,7 +72,7 @@ async function readSeqVOct(page: Page, seqId: string): Promise<number | null> {
     if (!eng) return null;
     const node = w.__patch.nodes[id];
     if (!node) return null;
-    const v = eng.read(node, 'pitchVOct');
+    const v = eng.read(node, 'pitchVOct:0');
     return typeof v === 'number' ? v : null;
   }, seqId);
 }

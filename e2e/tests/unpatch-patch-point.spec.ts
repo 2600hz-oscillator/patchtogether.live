@@ -462,7 +462,7 @@ test('rear card: a fanned-out OUTPUT lists every cable + "Unpatch all (N)", stay
 // (4) the LEGACY PATCH PANEL — back-panel jacks + front drill-down rows
 // ═══════════════════════════════════════════════════════════════════════════
 
-/** Spawn SEQUENCER → ADSR with one pre-wired gate edge (the patch-panel
+/** Spawn KRIA → ADSR with one pre-wired gate edge (the patch-panel
  *  jack-indicator fixture: two light, non-WebGL PatchPanel cards). */
 async function spawnSeqAdsrWired(page: Page): Promise<void> {
   await page.goto('/rack?shell=legacy&seed=none');
@@ -471,7 +471,7 @@ async function spawnSeqAdsrWired(page: Page): Promise<void> {
     page,
     [
       { id: 'seq', type: 'kria', position: { x: 80, y: 120 } },
-      { id: 'adsr', type: 'adsr', position: { x: 760, y: 120 } },
+      { id: 'adsr', type: 'adsr', position: { x: 1560, y: 120 } }, // clear of the (wide) KRIA card
     ],
     [
       {
@@ -502,7 +502,7 @@ test('legacy patch panel: right-click UNPATCH works on a REAR-VIEW back-panel ja
 
   await jack.click({ button: 'right' });
   await expect(unpatchMenu(page)).toBeVisible();
-  await expect(unpatchMenu(page).getByTestId('unpatch-item')).toHaveText(/Unpatch — sequencer GATE/i);
+  await expect(unpatchMenu(page).getByTestId('unpatch-item')).toHaveText(/Unpatch — kria GATE1/i);
   // The module's own node context menu did NOT also open (the jack claims the
   // event when there is something to unpatch).
   await expect(page.getByTestId('node-context-menu')).toHaveCount(0);
@@ -538,7 +538,7 @@ test('legacy patch panel: right-click UNPATCH works on a FRONT drill-down port r
   await gateRow.click({ button: 'right' });
   await expect(unpatchMenu(page)).toBeVisible();
   await expect(page.getByTestId('control-context-menu')).toHaveCount(0);
-  await expect(unpatchMenu(page).getByTestId('unpatch-item')).toHaveText(/Unpatch — sequencer GATE/i);
+  await expect(unpatchMenu(page).getByTestId('unpatch-item')).toHaveText(/Unpatch — kria GATE1/i);
 
   await unpatchMenu(page).getByTestId('unpatch-item').click();
   await expect.poll(async () => (await edgeSummaries(page)).length, { timeout: 5000 }).toBe(0);

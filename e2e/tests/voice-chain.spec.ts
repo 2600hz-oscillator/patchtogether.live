@@ -141,7 +141,7 @@ test('voice-chain: stopping the sequencer silences the output (gate goes low)', 
       __ydoc: { transact: (fn: () => void) => void };
     };
     w.__ydoc.transact(() => {
-      w.__patch.nodes['seq'].params.isPlaying = 0;
+      w.__patch.nodes['seq'].params.running = 0;
     });
   });
 

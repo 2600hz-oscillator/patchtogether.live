@@ -259,7 +259,7 @@ test('vstInstrument: kria-clocked cartesian → card → audible RMS; c3/c4/a4 a
 
   // GATES ≡ MIDI GATES: stop the transport; every sounding note must be
   // released — NoteOn and NoteOff counts pair up per note number.
-  await setNodeParams(page, 'seq', { isPlaying: 0 });
+  await setNodeParams(page, 'seq-clk', { running: 0 });
   await expect
     .poll(
       () => {

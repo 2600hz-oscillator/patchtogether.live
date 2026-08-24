@@ -135,8 +135,11 @@ test.describe('baked-in gate-sampled S&H: SEQUENCER pitch → SCOPE', () => {
         },
       ],
     );
-    // Sparse pattern: pad 0 = C5 note (gate on), every other pad a rest —
-    // the clocked diagonal walk alternates note → rests each loop.
+    // Sparse pattern: pad 5 = C5 note (gate on), every other pad a rest.
+    // The clocked walk starts at (0,0) and its FIRST edge lands on (1,1) =
+    // pad 5, so the note fires inside the settle window and the S&H hold is
+    // established before polling begins; the walk then crosses three rests
+    // (10, 15, 0) every loop.
     await page.evaluate(() => {
       const w = globalThis as unknown as {
         __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
@@ -145,8 +148,8 @@ test.describe('baked-in gate-sampled S&H: SEQUENCER pitch → SCOPE', () => {
       w.__ydoc.transact(() => {
         w.__patch.nodes['seq'].data = {
           cells: Array.from({ length: 16 }, (_, i) => (
-            i === 0
-              ? { on: true, midi: 72, chord: 'mono' } // gated note
+            i === 5
+              ? { on: true, midi: 72, chord: 'mono' } // gated note (first pad visited)
               : { on: false, midi: 72, chord: 'mono' } // rest
           )),
         };

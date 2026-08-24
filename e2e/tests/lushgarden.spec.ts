@@ -194,7 +194,7 @@ test.describe('LUSH GARDEN — generative garden source', () => {
       };
       w.__ydoc.transact(() => {
         const s = w.__patch.nodes['growSeq'];
-        if (s) s.params.isPlaying = 1;
+        if (s) s.params.running = 1;
       });
     });
     const grew = await waitForProbe(page, 'lg', 'spawnCount', (n) => n >= before + 2, 15000);
@@ -208,7 +208,7 @@ test.describe('LUSH GARDEN — generative garden source', () => {
       };
       w.__ydoc.transact(() => {
         const s = w.__patch.nodes['growSeq'];
-        if (s) s.params.isPlaying = 0;
+        if (s) s.params.running = 0;
       });
     });
     // Absorb any in-flight edge, then anchor.
@@ -228,7 +228,7 @@ test.describe('LUSH GARDEN — generative garden source', () => {
       };
       w.__ydoc.transact(() => {
         const s = w.__patch.nodes['rstSeq'];
-        if (s) s.params.isPlaying = 1;
+        if (s) s.params.running = 1;
       });
     });
     const cleared = await waitForProbe(page, 'lg', 'plantCount', (n) => n === 0, 15000);

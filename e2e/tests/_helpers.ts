@@ -1010,12 +1010,20 @@ export function buildKriaMidiData(
   midis: Array<number | null>,
   opts?: { timeDivision?: number; duration?: number },
 ): Record<string, unknown> {
+  // Kria's lanes are CLAMPED (note 0..35, octave 0..5), so a fixed root
+  // cannot express notes below it — derive the root from the LOWEST note
+  // instead (octave-aligned), then express every note as a non-negative
+  // chromatic degree + octave above it.
+  const present = midis.filter((m): m is number => m !== null);
+  const root = present.length ? 12 * Math.floor(Math.min(...present) / 12) : 48;
   const steps = midis.map((m) => (
     m === null
       ? { note: 0, octave: 0, trig: false }
-      : { note: ((m - 48) % 12 + 12) % 12, octave: Math.floor((m - 48) / 12), trig: true }
+      : { note: (m - root) % 12, octave: Math.floor((m - root) / 12), trig: true }
   ));
-  return buildKriaData(steps, { ...opts, scale: 'chromatic' });
+  const data = buildKriaData(steps, { ...opts, scale: 'chromatic' });
+  (data.patterns as Record<string, Record<string, unknown>>)['0']!.root = root;
+  return data;
 }
 
 

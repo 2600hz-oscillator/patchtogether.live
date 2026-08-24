@@ -98,7 +98,7 @@ async function injectNote(page: Page, channel: number, note: number, velocity: n
   );
 }
 
-async function bootDrumseqz(page: Page): Promise<void> {
+async function bootScore(page: Page): Promise<void> {
   await page.goto('/rack?shell=legacy&seed=none');
   await page.waitForLoadState('networkidle');
   await page.evaluate(() => window.localStorage.removeItem('pt.midi-bindings.v1'));
@@ -107,7 +107,7 @@ async function bootDrumseqz(page: Page): Promise<void> {
     [{ id: 'ds-1', type: 'score', position: { x: 120, y: 120 }, domain: 'audio', params: { isPlaying: 0 } }],
     [],
   );
-  await expect(page.locator('.svelte-flow__node-drumseqz')).toHaveCount(1);
+  await expect(page.locator('.svelte-flow__node-score')).toHaveCount(1);
 }
 
 test('MIDI assign: a gate INPUT row binds a NOTE (binding materializes + bound state)', async ({ page }) => {
@@ -178,17 +178,17 @@ test('MIDI assign: a gate INPUT row binds a NOTE (binding materializes + bound s
   expect(errors, `page errors: ${errors.join('; ')}`).toEqual([]);
 });
 
-test('MIDI assign: a card BUTTON (DRUMSEQZ PLAY) binds a NOTE that TOGGLES the param', async ({ page }) => {
+test('MIDI assign: a card BUTTON (SCORE PLAY) binds a NOTE that TOGGLES the param', async ({ page }) => {
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
 
-  await bootDrumseqz(page);
-  const card = page.locator('.svelte-flow__node-drumseqz');
+  await bootScore(page);
+  const card = page.locator('.svelte-flow__node-score');
   await installSimMidi(page);
 
   // The PLAY button is wrapped by MidiAssignButton; the inner button carries
-  // data-testid="drumseqz-play-<nodeId>". Right-click the wrapper (the button surface).
-  const playBtn = card.locator('[data-testid="drumseqz-play-ds-1"]');
+  // data-testid="score-play-<nodeId>". Right-click the wrapper (the button surface).
+  const playBtn = card.locator('[data-testid="score-play-ds-1"]');
   await expect(playBtn).toHaveCount(1);
   expect(await readParam(page, 'ds-1', 'isPlaying')).toBe(0);
 
@@ -202,7 +202,7 @@ test('MIDI assign: a card BUTTON (DRUMSEQZ PLAY) binds a NOTE that TOGGLES the p
   await injectNote(page, 0, 60, 110);
   await expect.poll(() => readParam(page, 'ds-1', 'isPlaying')).toBe(1);
   // The button shows its bound badge.
-  await expect(card.locator('[data-testid="drumseqz-play-ds-1"]').locator('xpath=ancestor::*[contains(@class,"midi-assign-button")]').locator('.midi-badge')).toContainText('NOTE 60');
+  await expect(card.locator('[data-testid="score-play-ds-1"]').locator('xpath=ancestor::*[contains(@class,"midi-assign-button")]').locator('.midi-badge')).toContainText('NOTE 60');
 
   // A NOTE-off does NOT re-toggle (toggle fires on the press edge only).
   // Same sustained-negative shape as above: the window IS the assertion, so it

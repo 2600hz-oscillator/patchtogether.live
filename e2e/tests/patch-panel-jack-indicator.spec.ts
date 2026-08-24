@@ -41,7 +41,7 @@ async function spawnSeqAdsrWired(page: Page) {
     page,
     [
       { id: 'seq', type: 'kria', position: { x: 80, y: 120 } },
-      { id: 'adsr', type: 'adsr', position: { x: 760, y: 120 } },
+      { id: 'adsr', type: 'adsr', position: { x: 1560, y: 120 } }, // clear of the (wide) KRIA card
     ],
     [
       {
@@ -73,7 +73,7 @@ test('patched OUTPUT shows a filled jack with a "→ TO" remote title; unpatched
     .click();
 
   // The patched gate output: filled + title names the remote endpoint.
-  const gateJack = jack(page, 'seq', 'gate');
+  const gateJack = jack(page, 'seq', 'gate1');
   await expect(gateJack).toHaveAttribute('data-patched', 'true');
   const title = await gateJack.getAttribute('title');
   expect(title).toBeTruthy();
@@ -84,7 +84,7 @@ test('patched OUTPUT shows a filled jack with a "→ TO" remote title; unpatched
   await expect(gateJack).toHaveAttribute('aria-label', title!);
 
   // An UNPATCHED sibling output (seq.pitch) is hollow with no title.
-  const pitchJack = jack(page, 'seq', 'pitch');
+  const pitchJack = jack(page, 'seq', 'pitch1');
   await expect(pitchJack).toHaveAttribute('data-patched', 'false');
   expect(await pitchJack.getAttribute('title')).toBeNull();
 });
@@ -105,7 +105,7 @@ test('patched INPUT shows a filled jack with a "← FROM" remote title; unpatche
   const title = await gateJack.getAttribute('title');
   expect(title).toBeTruthy();
   expect(title!).toContain('← FROM');
-  expect(title!.toUpperCase()).toContain('SEQUENCER');
+  expect(title!.toUpperCase()).toContain('KRIA');
   expect(title!.toUpperCase()).toContain('GATE');
 
   // ADSR.attack has no incoming cable → hollow, no title.

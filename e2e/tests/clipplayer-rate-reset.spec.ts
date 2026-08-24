@@ -16,7 +16,7 @@
 
 import type { Page } from '@playwright/test';
 import { test, expect } from './_fixtures';
-import { spawnPatch, seedKriaGate } from './_helpers';
+import { spawnPatch, seedKriaGate, seedKriaWith, buildKriaMidiData } from './_helpers';
 // The reset instrument is SHARED with launchpad-perf-controls.spec.ts — see
 // the header of _clip-reset-trace.ts for why that matters.
 import {
@@ -277,17 +277,21 @@ test('reset gate input: clock edges hold the playhead at the top; removing them 
         params: { quantize: 0, stepDiv: 2, gateLength: 0.9, octave: 0 } },
       { id: 'tl', type: 'timelorde', position: { x: 520, y: 80 }, domain: 'audio',
         params: { running: 0, bpm: 240 } },
-      // STOPPED at spawn — we decide exactly when reset edges start/stop.
-      // 240 bpm → a clock pulse every 250 ms while playing.
+      // ⚠ KRIA follows TIMELORDE's run state when one exists — its own
+      // `running` param is overridden the moment setTransport(1) starts the
+      // rack. So edge start/stop is controlled via the PATTERN instead:
+      // spawn with NO trigs (silent even while running), then seed/clear
+      // trigs to start/stop the 16th-note reset train.
       { id: 'rstSeq', type: 'kria', position: { x: 80, y: 460 }, domain: 'audio',
-        params: { bpm: 240, running: 0 } },
+        params: { bpm: 240 } },
     ],
     [
       { id: 'e_rst', from: { nodeId: 'rstSeq', portId: 'gate1' }, to: { nodeId: 'cp', portId: 'reset' },
         sourceType: 'gate', targetType: 'gate' },
     ],
   );
-  await seedKriaGate(page, 'rstSeq');
+  // All-rest pattern: the kria runs with the transport but emits nothing.
+  await seedKriaWith(page, 'rstSeq', buildKriaMidiData([null, null, null, null], { duration: 0.5 }));
   await expect(page.locator('.svelte-flow__node-clipplayer')).toHaveCount(1);
 
   await seedDenseClips(page, 'cp', [0]);
@@ -296,15 +300,9 @@ test('reset gate input: clock edges hold the playhead at the top; removing them 
   const before = await waitForEngine(page, 'cp', 'currentStep:0', (v) => v >= 8, 6000);
   expect(before.ok, `lane 0 mid-clip before edges arrive (saw ${before.last})`).toBe(true);
 
-  // Start the reset clock → a rising edge every 250 ms snaps the lane back.
-  await page.evaluate(() => {
-    const w = globalThis as unknown as EngineW;
-    w.__ydoc.transact(() => {
-      const n = w.__patch.nodes['rstSeq'];
-      if (!n.params) n.params = {};
-      n.params.isPlaying = 1;
-    });
-  });
+  // Start the reset train: seed trigs — a rising edge per 16th snaps the
+  // lane back.
+  await seedKriaWith(page, 'rstSeq', buildKriaMidiData([60, 60, 60, 60], { duration: 0.5 }));
   const snapped = await waitForEngine(page, 'cp', 'currentStep:0', (v) => v >= 0 && v <= 2, 3000);
   expect(snapped.ok, `reset edge snapped lane 0 to step 1 (saw ${snapped.last})`).toBe(true);
   // While edges keep arriving (every ~4 base steps), the playhead stays pinned
@@ -318,15 +316,9 @@ test('reset gate input: clock edges hold the playhead at the top; removing them 
   }
   expect(maxSeen, `playhead held near the top under repeated resets (max ${maxSeen})`).toBeLessThanOrEqual(6);
 
-  // Stop the reset clock → the lane climbs freely again (the wire was the cause).
-  await page.evaluate(() => {
-    const w = globalThis as unknown as EngineW;
-    w.__ydoc.transact(() => {
-      const n = w.__patch.nodes['rstSeq'];
-      if (!n.params) n.params = {};
-      n.params.isPlaying = 0;
-    });
-  });
+  // Stop the reset train: clear the trigs — the lane climbs freely again
+  // (the wire's edges were the cause).
+  await seedKriaWith(page, 'rstSeq', buildKriaMidiData([null, null, null, null], { duration: 0.5 }));
   const freed = await waitForEngine(page, 'cp', 'currentStep:0', (v) => v >= 8, 6000);
   expect(freed.ok, `playhead climbed again once edges stopped (saw ${freed.last})`).toBe(true);
 });
