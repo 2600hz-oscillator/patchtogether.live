@@ -55,18 +55,31 @@ async function openEditorWithNote(page: import('@playwright/test').Page) {
   return cell;
 }
 
+/** The note menu's option lists live in SUBMENUS (owner, 2026-08-24) — the top
+ *  level is `gate probability` / `pitch probability` / `play every`, and the
+ *  levels are in a flyout off the parent row. So a right-click is no longer
+ *  enough to reach a level: open the flyout first. Clicking the parent row is
+ *  the gesture asserted here because hover-only would make the test depend on
+ *  pointer emulation; the product opens on hover too. */
+async function openPitchSub(page: import('@playwright/test').Page) {
+  await page.getByTestId('clipplayer-sub-pitch-pp-cp').click();
+  await expect(page.getByTestId('clipplayer-submenu-pitch-pp-cp')).toBeVisible();
+}
+
 test('@clipplayer card Pitch Probability menu writes pitchProb; "off" clears it', async ({ page }) => {
   const cell = await openEditorWithNote(page);
   await expect.poll(() => step0PitchProb(page), { timeout: 5000 }).toBe(0); // default: off
 
   // Right-click the note → the per-note menu → Pitch Probability, level 20 (50%).
   await cell.click({ button: 'right' });
+  await openPitchSub(page);
   await page.getByTestId('clipplayer-pitch-prob-item-20').click();
   await expect.poll(() => step0PitchProb(page), { timeout: 5000 }).toBe(0.5);
 
   // Re-open and pick OFF → the key is REMOVED, not written as 0 (so a note reset
   // to off round-trips byte-identical to a pre-feature note).
   await cell.click({ button: 'right' });
+  await openPitchSub(page);
   await page.getByTestId('clipplayer-pitch-prob-item-0').click();
   await expect.poll(() => step0PitchProb(page), { timeout: 5000 }).toBe(0);
 });
@@ -80,6 +93,7 @@ test('@clipplayer the pitch-instability marker is a DASHED border, and only on a
   expect(await borderStyle()).toBe('solid');
 
   await cell.click({ button: 'right' });
+  await openPitchSub(page);
   await page.getByTestId('clipplayer-pitch-prob-item-20').click();
   await expect.poll(borderStyle, { timeout: 5000 }).toBe('dashed');
 
@@ -87,6 +101,7 @@ test('@clipplayer the pitch-instability marker is a DASHED border, and only on a
   // existing colour axes (probability + play-every) keep their whole range.
   const fill = await cell.evaluate((el) => getComputedStyle(el).backgroundColor);
   await cell.click({ button: 'right' });
+  await openPitchSub(page);
   await page.getByTestId('clipplayer-pitch-prob-item-0').click();
   await expect.poll(borderStyle, { timeout: 5000 }).toBe('solid');
   expect(await cell.evaluate((el) => getComputedStyle(el).backgroundColor)).toBe(fill);

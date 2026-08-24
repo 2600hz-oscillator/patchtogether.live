@@ -28,6 +28,7 @@
 //     overflow) so every item stays reachable by internal scroll.
 
 import { clampMenuToViewport } from './menu-viewport';
+import { computeAdjacentRect } from './patch-menu-position';
 
 export interface ClampMenuParams {
   /** Anchor point in CLIENT viewport coords (e.g. MouseEvent.clientX/Y). */
@@ -95,6 +96,104 @@ export function clampMenu(node: HTMLElement, params: ClampMenuParams) {
 
   return {
     update(next: ClampMenuParams) {
+      current = next;
+      apply();
+    },
+    destroy() {
+      if (raf) cancelAnimationFrame(raf);
+      ro.disconnect();
+      window.removeEventListener('resize', schedule);
+    },
+  };
+}
+
+export interface CascadeMenuParams {
+  /** The PARENT ROW's bounding rect in client-viewport coords. `width`/`height`
+   *  complete `patch-menu-position`'s `Rect` — a `DOMRect` supplies them, and a
+   *  hand-built rect must too. */
+  rect: { left: number; top: number; right: number; bottom: number; width: number; height: number };
+  /** Gap between the parent row and the flyout (default 2 — a cascade reads as
+   *  attached to its parent, unlike the rail's detached tile menu). */
+  gap?: number;
+  /** Margin kept off every viewport edge (default 6). */
+  margin?: number;
+}
+
+/**
+ * Position a CASCADING SUBMENU flyout beside its parent ROW.
+ *
+ * ⚠ NOT `clampMenu` with the row's right edge as the anchor. That was the first
+ * attempt and it is wrong in a way only the edge case shows: `clampMenu` flips
+ * or slides across a POINT, so at the window's right edge it slides the flyout
+ * back LEFT — straight over the parent menu it flew out of (measured: 26 x 147
+ * CSS px of overlap on the clipplayer note menu with the card panned right).
+ * The menu was fully in the viewport and completely unusable, so an
+ * in-viewport-only assertion certified it.
+ *
+ * A cascade has to flip across the parent's BOX, not a point: right of the row
+ * by default, LEFT of the row when the right side has no room. That is exactly
+ * `computeAdjacentRect`'s policy (written for the RACKLINE lane rail), so this
+ * action is the DOM half — measure, cap an oversized box to the viewport with
+ * internal scroll (a 40-level option list is routinely taller than the window),
+ * and apply. The placement math itself stays pure and shared.
+ */
+export function cascadeMenu(node: HTMLElement, params: CascadeMenuParams) {
+  let current = params;
+  let raf = 0;
+
+  const apply = () => {
+    const margin = current.margin ?? 6;
+    const gap = current.gap ?? 2;
+    // Measure NATURAL size from the origin first — same reason as clampMenu: a
+    // fixed box seeded near an edge shrink-to-fits and under-reports itself.
+    node.style.left = '0px';
+    node.style.top = '0px';
+    node.style.maxWidth = '';
+    node.style.maxHeight = '';
+    const natural = node.getBoundingClientRect();
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    // Cap BEFORE positioning, so the position is computed from the size the box
+    // will actually have (capping afterwards would place a stale height).
+    let width = natural.width;
+    let height = natural.height;
+    if (width > vw - 2 * margin) {
+      width = Math.max(0, vw - 2 * margin);
+      node.style.maxWidth = `${width}px`;
+      node.style.overflowX = 'auto';
+    }
+    if (height > vh - 2 * margin) {
+      height = Math.max(0, vh - 2 * margin);
+      node.style.maxHeight = `${height}px`;
+      node.style.overflowY = 'auto';
+    }
+    const { left, top } = computeAdjacentRect({
+      anchorRect: current.rect,
+      menuWidth: width,
+      menuHeight: height,
+      viewport: { width: vw, height: vh },
+      gap,
+      margin,
+    });
+    node.style.left = `${left}px`;
+    node.style.top = `${top}px`;
+  };
+
+  const schedule = () => {
+    if (raf) return;
+    raf = requestAnimationFrame(() => {
+      raf = 0;
+      apply();
+    });
+  };
+
+  apply(); // synchronous first position — mounts already placed
+  const ro = new ResizeObserver(schedule);
+  ro.observe(node);
+  window.addEventListener('resize', schedule);
+
+  return {
+    update(next: CascadeMenuParams) {
       current = next;
       apply();
     },
