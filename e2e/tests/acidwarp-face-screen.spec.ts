@@ -183,7 +183,31 @@ test.describe('ACIDWARP face — the screen', () => {
   });
 
   // ── THE EVIDENCE FOR `FACES_WITHOUT_SCENES` ────────────────────────────────
-  test('⚠ freeze does NOT stop the picture — the reason this face has no VRT scene', async ({ page }) => {
+  //
+  // ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; the body and every assertion
+  // in it are UNCHANGED, so un-parking is deleting one `.fixme` plus one
+  // SKIP_BUDGET entry.
+  //
+  // ⚠ THE THIRD MODULE IN AN ALREADY-TRIAGED CLASS, which is the whole reason
+  // this park is a park and not a new investigation. Both legs of
+  // `quadralogical-face-screen.spec.ts` are already parked under #1847 with the
+  // cause written down: a `*-face-screen` spec spends a BOOT *and* a multi-
+  // hundred-frame rAF sample against a flat, boot-sized per-test bound, so it
+  // loses the shard lottery whenever re-packing lands it on a hot one. The
+  // in-page loops are already correct by construction (they count FRAMES via
+  // rAF, not wall-clock — exactly what the standard asks); what does not scale
+  // is the per-test BOUND. ROOT CAUSE IS THE FLEET TIMEOUT DEFAULT, and the fix
+  // is the owner's pending option-B call — NOT a one-spec bound raise, which
+  // would only move the lottery onto the next-hottest spec.
+  //
+  // Lost meanwhile: the bespoke evidence that acidwarp's `freeze` param does
+  // NOT still its picture — i.e. the standing justification for its
+  // `FACES_WITHOUT_SCENES` entry. That claim is still ARGUED at the entry
+  // itself (`_shell-faces.ts`, which cites the read site: the freeze test
+  // guards only the scene advance while the palette accumulator sits outside
+  // it), and the entry's own four-way anchor still reddens if the face becomes
+  // capturable. So what is lost is the RUNTIME re-proof, not the record.
+  test.fixme('⚠ freeze does NOT stop the picture — the reason this face has no VRT scene', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — under-budgeted on hot shards, the THIRD module in the *-face-screen class (both quadralogical legs already parked): a boot plus a multi-hundred-frame rAF sample against a flat boot-sized bound; root cause is the fleet timeout default, pending the owner option-B call' } }, async ({ page }) => {
     await page.goto('/rack?shell=1&seed=none');
     await page.waitForLoadState('networkidle');
     await spawnPatch(page, NODES, []);

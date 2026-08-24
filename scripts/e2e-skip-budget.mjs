@@ -673,6 +673,51 @@ export const SKIP_BUDGET = [
       + '— quadrant-to-input MAPPING, which no fleet sweep covers. The generic screen coverage '
       + '(reachable / collapse / reclaim) is superseded by the fleet SUBJECTS table.',
   },
+  {
+    specs: ['acidwarp-face-screen.spec.ts'],
+    reason: /FLAKE-PARK #1847/,
+    lanes: ['e2e'],
+    homeLane: 'e2e',
+    why:
+      'PARKED (#1847) — ONE leg of the ACIDWARP screen spec ("freeze does NOT stop the picture"), and it is '
+      + 'the THIRD MODULE IN THE *-face-screen CLASS the entry directly above already records. That is the '
+      + 'whole justification for parking rather than investigating: quadralogical\'s two legs are already here '
+      + 'with the cause written down, and a third instance of a triaged class is not new coverage loss — it is '
+      + 'evidence for the pending decision. The shape is the same one that entry describes: a *-face-screen '
+      + 'spec spends a BOOT *and* a multi-hundred-frame rAF sample against a flat, boot-sized per-test bound, '
+      + 'so it loses the shard lottery whenever re-packing lands it on a hot one (the load-sensitivity class of '
+      + '#2096/#2114). The in-page loop is already correct by construction — it counts FRAMES via rAF, not '
+      + 'wall-clock. ⚠ ROOT CAUSE IS THE FLEET TIMEOUT DEFAULT and the fix is the owner\'s option-B call; a '
+      + 'one-spec bound raise would only move the lottery onto the next-hottest spec, which is why nobody '
+      + 'should "fix" this entry by raising a number. ⚠ ONE DIFFERENCE FROM THE QUADRALOGICAL ENTRY, recorded '
+      + 'so the two are not read as identical: that one failed BOTH attempts (under-budgeting, flat out), '
+      + 'while this one RECOVERED ON RETRY — so this is the same cause caught one notch earlier. '
+      + 'Lost meanwhile: the bespoke runtime evidence for acidwarp\'s FACES_WITHOUT_SCENES entry — that its '
+      + '`freeze` param does not still the picture. The CLAIM survives at the entry itself, which argues it '
+      + 'from the read site (the freeze test guards only the scene advance; the palette accumulator sits '
+      + 'outside it) and is anchored four ways, so a face that became capturable still reddens. What lapses is '
+      + 'the re-proof, not the record.',
+  },
+  {
+    specs: ['sequencer-playhead-alignment.spec.ts'],
+    reason: /FLAKE-PARK #1847/,
+    lanes: ['e2e'],
+    homeLane: 'e2e',
+    why:
+      'PARKED (#1847) — the POLYSEQZ leg ONLY, on ONE recovered-on-retry occurrence on a hot shard (#1903 '
+      + 'reddens a fail-then-pass rather than absorbing it, which is why a single occurrence lands here at '
+      + 'all). ⚠ THE COVERAGE COST IS DELIBERATELY NARROW AND IS THE REASON THIS IS PARKABLE: four of this '
+      + 'file\'s five legs keep running, and TWO of them still cover polyseqz specifically — the '
+      + '"all sequencers" audit guard reads `currentStep` for EVERY sequencer including this one, and the '
+      + 'sequencer / drumseqz / score legs exercise the identical freeze -> read -> advance instrument against '
+      + 'the same engine seam. So what lapses is the per-module off-by-one assertion for polyseqz alone — not '
+      + 'playhead alignment as a property, and not this file\'s instrument, either of which would have been a '
+      + 'significant loss and an owner question instead. '
+      + '⚠ NOT ROOT-CAUSED, and the entry says so rather than implying a diagnosis: the suspect region is the '
+      + 'freeze/advance handshake\'s timing under shard load, on exactly one observation. A SECOND occurrence '
+      + 'makes this a real investigation rather than a park — "it passes now" is not a root cause, and neither '
+      + 'is this entry.',
+  },
 ];
 
 // ─────────────────────────── the shared predicates ──────────────────────────
