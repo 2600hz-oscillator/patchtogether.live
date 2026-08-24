@@ -1451,6 +1451,12 @@ export function buildModuleManifest(
       // KRIA step/pattern data model + step-advance / scale / cue math — not a
       // ModuleDef (the def lives in kria.ts).
       if (file === 'kria-types.ts') return false;
+      // KRIA's WRITE seam — the one origin-tagged, granular path into
+      // node.data that the card, the faceplate panel and the monome grid
+      // bridge all call. Not a ModuleDef; it is separate from kria-types.ts
+      // because that file is deliberately pure (no store, no Y.Doc) so the
+      // step math stays unit-testable without a graph.
+      if (file === 'kria-writes.ts') return false;
       // MACROOSCILLATOR's fourteen-engine roster (names + per-engine axis
       // shapes + measured levels) — not a ModuleDef. It sits here rather than
       // beside the def because the def, the card, MACSEQ and the faceplate all

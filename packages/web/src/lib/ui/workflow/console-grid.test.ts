@@ -132,6 +132,20 @@ describe('console grid — which SHIPPED bands it claims (derived membership)', 
   it('claims EXACTLY these bands — a new one is a baseline dispatch, not a diff to accept', () => {
     expect(claimed()).toEqual([
       'kickdrum/dynamics=3',
+      // ⚠ THE NARROWEST CONSOLE BAND THAT CAN EXIST — two columns — and it
+      // arrived with kria's face. Its `track` band holds two equal clusters,
+      // LOOP (start + length) and TIME (division + direction), and column j
+      // means the same thing in both: "the first of this pair, then the
+      // second". Aligning them is what makes the band read as one statement
+      // about how the selected track walks the grid rather than four unrelated
+      // dropdowns. (MUTE sits in the same band outside either cluster, which
+      // the rule ignores — it looks only at the clusters.)
+      //
+      // ⚠ NO EXISTING BASELINE MOVES. The usual cost of joining this list is a
+      // dispatch, because the claimed band's layout changes; here the face is
+      // NEW in the same PR, so its first captured baseline simply has the
+      // aligned columns from the start.
+      'kria/track=2',
       'mixmstrs/channels=8',
       'mixmstrs/dynamics=8',
       // ⚠ `mixmstrs/returns` IS DELIBERATELY ABSENT and used to be here. It
@@ -221,6 +235,11 @@ describe('console grid — which SHIPPED bands it claims (derived membership)', 
     }
     expect(singles.sort(), 'the roster must still contain single-console-band faces').toEqual([
       'kickdrum',
+      // kria's `track` is its only console band — `transport` and `scale` carry
+      // no clusters at all — so the FACE-WIDE ruler must not engage. Same
+      // statement moog984 and quadralogical make below: a lone console band has
+      // nothing to align to.
+      'kria',
       // moog984 is the STRONGEST member of this control: it is the only face
       // whose console band is the module's entire surface, so if the face-wide
       // ruler ever engaged below its declared minimum it would engage here
