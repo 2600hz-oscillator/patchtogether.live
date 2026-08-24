@@ -113,8 +113,6 @@ e2e/tests/doom-mp-lockstep-sharedstate.spec.ts :: sampleSharedTics :: waitForTim
 e2e/tests/doom-mp-lockstep-sharedstate.spec.ts :: sampleSharedTics :: waitForTimeout(8) #2
 e2e/tests/doom-per-type-death-gates.spec.ts :: ${} (${}): pulse propagates through the audio bridge :: waitForTimeout(400) #1
 e2e/tests/doom-session-survives-card-collapse.spec.ts :: a RUNNING DOOM session SURVIVES its card being collapsed — and the graph still releases it :: waitForTimeout(250) #1
-e2e/tests/drumseqz.spec.ts :: drumseqz → drummergirl → audioOut: gate1 fires audio when trk1 has any pulse :: waitForTimeout(400) #1
-e2e/tests/drumseqz.spec.ts :: drumseqz → drummergirl → audioOut: gate1 fires audio when trk1 has any pulse :: waitForTimeout(50) #1
 e2e/tests/dx7-syx-load.spec.ts :: dx7: uploading a 32-voice SYX populates the dropdown + selecting different patches changes the audible waveform :: waitForTimeout(100) #1
 e2e/tests/dx7-syx-load.spec.ts :: dx7: uploading a 32-voice SYX populates the dropdown + selecting different patches changes the audible waveform :: waitForTimeout(100) #2
 e2e/tests/dx7-syx-load.spec.ts :: dx7: uploading a 32-voice SYX populates the dropdown + selecting different patches changes the audible waveform :: waitForTimeout(1500) #1
@@ -162,8 +160,6 @@ e2e/tests/lushgarden.spec.ts :: grow gate: [GATED] badge, rate-spawning stops, o
 e2e/tests/lushgarden.spec.ts :: grow gate: [GATED] badge, rate-spawning stops, one plant per rising edge, reset clears :: waitForTimeout(1500) #1
 e2e/tests/lushgarden.spec.ts :: grow gate: [GATED] badge, rate-spawning stops, one plant per rising edge, reset clears :: waitForTimeout(700) #1
 e2e/tests/lushgarden.spec.ts :: waitForProbe :: waitForTimeout(80) #1
-e2e/tests/macseq.spec.ts :: macseq → macrooscillator: every MODEL_NAMES entry is reachable via MODELCV :: waitForTimeout(100) #1
-e2e/tests/macseq.spec.ts :: macseq: HOLD-LAST policy — null model on a step holds the previous MODELCV value :: waitForTimeout(30) #1
 e2e/tests/menu-viewport-clamp.spec.ts :: clip editor menus inside the dock full-view pane stay fully in view (owner case, ?shell=1) :: waitForTimeout(350) #1
 e2e/tests/menu-viewport-clamp.spec.ts :: panNodeTo :: waitForTimeout(120) #1
 e2e/tests/meowbox.spec.ts :: Sequencer → MEOWBOX → Scope → AudioOut produces audible RMS via the new pitch cable :: waitForTimeout(100) #1
@@ -189,9 +185,6 @@ e2e/tests/nibbles-cv-scope.spec.ts :: SCOPE ch1 sample tracks lengthToCv(length)
 e2e/tests/nibbles-cv-scope.spec.ts :: ch1 sample is monotonic across the 5-step CV sweep used by composite VRT :: waitForTimeout(400) #1
 e2e/tests/nibbles-cv-scope.spec.ts :: setForcedLength :: waitForTimeout(150) #1
 e2e/tests/noise.spec.ts :: noise: LEVEL=0 silences output :: waitForTimeout(500) #1
-e2e/tests/note-entry.spec.ts :: hold-cv: pitch port retains last gated V/oct across an off step :: waitForTimeout(800) #1
-e2e/tests/note-entry.spec.ts :: note-entry: a4 step drives the pitch port to V/oct 0.75 (MIDI 69 - 60 = 9 semis up) :: waitForTimeout(800) #1
-e2e/tests/note-entry.spec.ts :: note-entry: invalid step (midi=null) suppresses gate output even when on=true :: waitForTimeout(400) #1
 e2e/tests/outlines.spec.ts :: COLLIDE gate HIGH keeps the dense field rendering (live inter-circle bounce wires through) :: waitForTimeout(70) #1
 e2e/tests/outlines.spec.ts :: COLLIDE gate HIGH keeps the dense field rendering (live inter-circle bounce wires through) :: waitForTimeout(70) #2
 e2e/tests/outlines.spec.ts :: gate spawns circles; OVERLAP / CONTOUR / COMBINE all ring; MAPPED shows the video input where overlapped :: waitForTimeout(80) #1
@@ -206,14 +199,6 @@ e2e/tests/pentemelodica.spec.ts :: pentemelodica: a POLYSEQZ chord drives the st
 e2e/tests/picturebox-asset-select.spec.ts :: waitForLuma :: waitForTimeout(120) #1
 e2e/tests/picturebox-gif.spec.ts :: a static image renders and does NOT animate (regression) :: waitForTimeout(700) #1
 e2e/tests/picturebox-gif.spec.ts :: sampleLumaOverTime :: waitForTimeout(everyMs) #1
-e2e/tests/poly-chord.spec.ts :: poly-chord: backward-compat - polyPitchGate source -> mono pitch sink routes lane 0 (root) :: waitForTimeout(600) #1
-e2e/tests/poly-chord.spec.ts :: poly-chord: maj triad on a4 emits 4 gated lanes with M3 + P5 + octave intervals :: waitForTimeout(600) #1
-e2e/tests/poly-chord.spec.ts :: poly-chord: min step on a4 emits c5 (m3) instead of c#5 (M3) :: waitForTimeout(600) #1
-e2e/tests/polyseqz.spec.ts :: polyseqz: Cmaj step emits 5 gated lanes with C/E/G/C/E V/oct :: waitForTimeout(600) #1
-e2e/tests/polyseqz.spec.ts :: polyseqz: backward-compat — poly → mono pitch auto-routes lane 0 (root) :: waitForTimeout(600) #1
-e2e/tests/polyseqz.spec.ts :: polyseqz: humanize=0 keeps gates synchronous; humanize=1 spreads them :: waitForTimeout(120) #1
-e2e/tests/polyseqz.spec.ts :: polyseqz: humanize=0 keeps gates synchronous; humanize=1 spreads them :: waitForTimeout(800) #1
-e2e/tests/polyseqz.spec.ts :: polyseqz: humanize=0 keeps gates synchronous; humanize=1 spreads them :: waitForTimeout(800) #2
 e2e/tests/present-second-display.spec.ts :: setup :: waitForTimeout(500) #1
 e2e/tests/rear-view-patching.spec.ts :: enterRearView :: waitForTimeout(420) #1
 e2e/tests/recorderbox.spec.ts :: RECORDERBOX records a real VCO + ACIDWARP into a crash-recoverable MP4 :: waitForTimeout(2500) #1
@@ -254,11 +239,6 @@ e2e/tests/score.spec.ts :: score: currently-playing note highlight tracks engine
 e2e/tests/score.spec.ts :: score: stop-bar + loop=off stops playback at end of sequence :: waitForTimeout(800) #1
 e2e/tests/score.spec.ts :: score: stop-bar + loop=on wraps tickIndex back to 0 at end of sequence :: waitForTimeout(1500) #1
 e2e/tests/scoreboard.spec.ts :: waitForCounter :: waitForTimeout(80) #1
-e2e/tests/sequencer-clock-without-play.spec.ts :: ${}: play_cv patched + clock patched + play_cv LOW → does NOT advance (play_cv overrides) :: waitForTimeout(800) #1
-e2e/tests/sequencer-clock.spec.ts :: sequencer-clock: external clock advances slower sequencer at the faster rate :: waitForTimeout(600) #1
-e2e/tests/sequencer-clock.spec.ts :: sequencer-clock: without chain, sequencer uses internal BPM :: waitForTimeout(600) #1
-e2e/tests/sequencer-pages.spec.ts :: drumseqz: HOLD freezes visible page while playhead advances :: waitForTimeout(200) #1
-e2e/tests/sequencer-playhead-alignment.spec.ts :: all sequencers: playhead is exposed via engine.read("currentStep") (smoke + audit guard) :: waitForTimeout(250) #1
 e2e/tests/shapegen-clock.spec.ts :: rising edges regenerate; within-hold window holds; stopped clock freezes regen count :: waitForTimeout(1500) #1
 e2e/tests/shapegen-clock.spec.ts :: rising edges regenerate; within-hold window holds; stopped clock freezes regen count :: waitForTimeout(1500) #2
 e2e/tests/shapegen-clock.spec.ts :: rising edges regenerate; within-hold window holds; stopped clock freezes regen count :: waitForTimeout(2000) #1

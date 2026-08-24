@@ -26,6 +26,7 @@
 
 import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
+import { waitFrames } from '../_helpers/frames';
 
 const TRIANGLE_PARAMS = { shape: 2, tile: 0, rotate: 0, zoom: 2.2 };
 
@@ -110,6 +111,16 @@ test.describe('present on a second display — VIDEO OUT', () => {
   });
 
   test('two screens -> "Present on <secondary>" opens a REAL /present popup that gets a NON-BLACK frame', async ({ page, context }) => {
+    // ⚠ THE WALL CLOCK BOUNDS THE FAILURE; THE FRAME BUDGET IS THE GATE — and
+    // the DEFAULT 30 s bound is too small to contain its own gate. FRAME_BUDGET
+    // below is 180 rendered frames, which is ~23 s at the 7.9 fps this repo
+    // measured under E2E_SWIFTSHADER=1, and slower still with ten shards on one
+    // runner. Add this file's ~35 s recorded CI cost (e2e-timings.generated.json)
+    // across its three tests and the budget cannot be spent inside 30 s: the
+    // test died mid-`click` on shard 8 with the blit assertion already PASSED
+    // (#1903 follow-up). Raise the bound so the frame budget is spendable —
+    // never shrink the gate to fit the clock.
+    test.setTimeout(90_000);
     await injectScreens(page, [
       { label: 'Built-in Retina', isPrimary: true },
       { label: 'DELL U2720Q', isPrimary: false },
@@ -141,9 +152,41 @@ test.describe('present on a second display — VIDEO OUT', () => {
     // canvas every frame, so it must show NON-BLACK pixels (the captureStream→
     // <video> pipeline produced an all-black popup here). Poll: the first blit
     // lands a frame or two after the popup's `present:ready` handshake.
-    await expect
-      .poll(() => canvasHasNonBlackPixel(popup), { timeout: 8000 })
-      .toBe(true);
+    // ⚠ FRAMES, NOT MILLISECONDS. The blit lands ON A FRAME, so a wall-clock
+    // budget is a DIFFERENT assertion on every renderer: 8 s was ~480 frames on
+    // a real GPU but only ~63 under SwiftShader, and fewer still on a CI runner
+    // hosting ten shards. The frame count is renderer-independent; the test
+    // timeout remains the wall-clock bound on the failure, never the gate.
+    // BATCH is the CHECK GRANULARITY, not the gate: the loop overshoots by up
+    // to one batch past the frame the blit actually lands on. Measured locally
+    // under E2E_SWIFTSHADER=1, the popup is already non-black at the FIRST
+    // check, so a 15-frame batch spent ~12 frames the behaviour did not need —
+    // free locally, seconds on a contended runner. 5 keeps the same ceiling and
+    // pays a cheap pixel read for it. (`expect.poll` got this for free; a frame
+    // loop has to choose it.)
+    const FRAME_BUDGET = 180;
+    const FRAME_BATCH = 5;
+    const startedAt = Date.now();
+    let framesWaited = 0;
+    let nonBlack = false;
+    while (!nonBlack && framesWaited < FRAME_BUDGET) {
+      // ⚠ FRAMES ARE COUNTED IN THE OPENER, NOT THE POPUP. The OPENER runs the
+      // blit loop (it copies its output canvas into the popup every frame); the
+      // popup is passive. An unfocused popup also has its rAF THROTTLED by the
+      // browser, so counting frames there measured the wrong clock and could
+      // stall while the behaviour under test was working — that is why the
+      // first frames-based fix still flaked (#1903 red, 2026-08-24).
+      await waitFrames(page, FRAME_BATCH);
+      framesWaited += FRAME_BATCH;
+      nonBlack = await canvasHasNonBlackPixel(popup);
+    }
+    expect(
+      nonBlack,
+      `the popup canvas must receive a NON-BLACK blit from the opener within `
+        + `${FRAME_BUDGET} rendered frames (observed ${framesWaited} frames, units: FRAMES; `
+        + `${Date.now() - startedAt} ms elapsed, units: MS — the ms is DIAGNOSTIC ONLY, `
+        + `it says how fast this renderer drew those frames and gates nothing)`,
+    ).toBe(true);
 
     // Re-open the menu on the opener -> "Stop presenting" now shows + closes it.
     await canvas.click({ button: 'right' });

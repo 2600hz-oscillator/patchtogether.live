@@ -54,8 +54,8 @@ test('rackspace-persistence: PICTUREBOX bytes + DX7 SYX + sequencer steps surviv
       { id: 'dx', type: 'dx7' },
       {
         id: 'seq',
-        type: 'sequencer',
-        params: { bpm: 180, length: 8, isPlaying: 0, gateLength: 0.4 },
+        type: 'kria',
+        params: { bpm: 180, running: 0 },
       },
     ],
     [],

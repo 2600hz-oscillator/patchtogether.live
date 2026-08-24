@@ -1,7 +1,7 @@
 // e2e/tests/docs-virtual-module.spec.ts
 //
 // The interactive virtual-module doc page (the redesign that replaces the
-// numbered face as the PRIMARY view). Proves, data-driven over adsr + sequencer:
+// numbered face as the PRIMARY view). Proves, data-driven over adsr:
 //   (a) the LIVE card mounts + renders on /docs/modules/<id>,
 //   (b) hovering a faceplate control shows its AUTHORED text in the right pane,
 //   (c) opening the patch panel + hovering a CV port shows the CV desc AND the
@@ -39,16 +39,6 @@ const PROBES: Probe[] = [
     controlDescIncludes: /ramp|peak/i,
     cvPort: 'attack',
     modulates: /modulates/i,
-  },
-  {
-    id: 'sequencer',
-    heading: /sequencer/i,
-    controlParam: 'bpm',
-    controlDescIncludes: /tempo|bpm/i,
-    // sequencer has no CV→param inputs (its CVs are transport gates), so the
-    // dual-context assertion is skipped for it (see the conditional below).
-    cvPort: '',
-    modulates: /./,
   },
   // --- Batch 1 — foundational modules (2026-06-25). Each is on the
   // INTERACTIVE_DOC_MODULES allowlist; this proves the live card mounts cleanly
@@ -418,40 +408,6 @@ const PROBES: Probe[] = [
     modulates: /./,
   },
   {
-    id: 'drumseqz',
-    heading: /drumseqz/i,
-    controlParam: 'bpm',
-    controlDescIncludes: /tempo|bpm/i,
-    cvPort: '', // transport CVs are gates, no paramTarget
-    modulates: /./,
-  },
-  {
-    id: 'macseq',
-    heading: /macseq/i,
-    controlParam: 'bpm',
-    controlDescIncludes: /tempo|bpm/i,
-    cvPort: '', // transport CVs are gates, no paramTarget
-    modulates: /./,
-  },
-  {
-    id: 'polyseqz',
-    heading: /polyseqz/i,
-    controlParam: 'humanize',
-    controlDescIncludes: /humani[sz]e|jitter|loosen|tight/i,
-    cvPort: 'humanize_cv', // CV (paramTarget=humanize) → humanize
-    modulates: /modulates/i,
-  },
-  {
-    id: 'writeseq',
-    heading: /writeseq/i,
-    // recArm/overdub/play are card buttons, not control-<id> faders — probe a
-    // real Fader param (bpm/length/octave/gateLength) for the live-card hover.
-    controlParam: 'gateLength',
-    controlDescIncludes: /gate|step|stab/i,
-    cvPort: '', // cv/gate/clock/rec/transport are not param mods
-    modulates: /./,
-  },
-  {
     id: 'marbles',
     heading: /marbles/i,
     controlParam: 'rate',
@@ -515,22 +471,6 @@ async function openInputs(page: Page) {
 
 for (const probe of PROBES) {
   test(`virtual module: live card + hover pane (${probe.id})`, async ({ page }) => {
-    // ⏸ FLAKE-PARK #1847 — SCOPED TO ONE PROBE, not to the loop. Only the
-    // `sequencer` probe was ever observed recovering on retry (PR run, e2e shard
-    // 4/10, one observation). Every other probe in PROBES runs this identical
-    // body unchanged, so the CODE PATH keeps its coverage and what is parked is
-    // one module's instance of it — parking the loop would have taken the whole
-    // interactive-doc contract with it for a single probe's timing.
-    //
-    // ⚠ THE REASON CARRIES ITS UNCERTAINTY rather than asserting "flaky", which
-    // nobody has evidence for. This file's git history is module deletions and
-    // probe-list edits with no flake fixes, and CLAUDE.md's triage rule reads
-    // that as UNDER-BUDGETED being the likelier class. Un-parking is therefore a
-    // reproduce-and-measure budget diagnosis, not a re-run until green.
-    test.fixme(
-      probe.id === 'sequencer',
-      'FLAKE-PARK #1847 — recovered-on-retry, first observation, NOT yet triaged as flake vs under-budget; git history shows no flake fixes so under-budget is the likelier class; siblings retain coverage (every other PROBES entry runs this same body); un-park = a reproduce-and-measure budget diagnosis',
-    );
     // A module only earns the INTERACTIVE_DOC_MODULES allowlist if its live card
     // mounts with NO uncaught page error (a card that throws on the doc sandbox
     // stays on the static face). Collect uncaught errors for the whole flow.

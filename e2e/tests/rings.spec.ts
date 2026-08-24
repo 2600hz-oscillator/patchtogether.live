@@ -8,7 +8,7 @@
 // jitter under headless CI.
 
 import { test, expect } from './_fixtures';
-import { spawnPatch } from './_helpers';
+import { spawnPatch, seedKriaWith, buildKriaMidiData } from './_helpers';
 import { pollScopePeak, scopePollMsg } from '../_helpers/scope-poll';
 
 test.describe.configure({ mode: 'parallel' });
@@ -72,8 +72,8 @@ test('rings: STRUM with no external exciter + MODAL produces audio (self-excite)
   await spawnPatch(
     page,
     [
-      { id: 'seq', type: 'sequencer', position: { x:  50, y: 100 },
-        params: { bpm: 240, length: 4, isPlaying: 1, gateLength: 0.5 } },
+      { id: 'seq', type: 'kria', position: { x:  50, y: 100 },
+        params: { bpm: 240, running: 1 } },
       { id: 'r',   type: 'rings',  position: { x: 350, y: 100 },
         params: {
           model: 0,           // MODAL
@@ -90,25 +90,16 @@ test('rings: STRUM with no external exciter + MODAL produces audio (self-excite)
         params: { master: 0 } },
     ],
     [
-      { id: 'e1', from: { nodeId: 'seq', portId: 'gate' }, to: { nodeId: 'r',   portId: 'strum' },
+      { id: 'e1', from: { nodeId: 'seq', portId: 'gate1' }, to: { nodeId: 'r',   portId: 'strum' },
         sourceType: 'gate', targetType: 'gate' },
       { id: 'e2', from: { nodeId: 'r',   portId: 'odd'   }, to: { nodeId: 'scp', portId: 'ch1' } },
       { id: 'e3', from: { nodeId: 'scp', portId: 'ch1_out' }, to: { nodeId: 'out', portId: 'L' } },
     ],
   );
 
-  // Enable every sequencer step so the gate actually fires (default steps
-  // are all `on: false`).
-  await page.evaluate(() => {
-    const w = globalThis as unknown as {
-      __patch: { nodes: Record<string, { data?: { steps?: unknown[] } }> };
-    };
-    const seq = w.__patch.nodes['seq'];
-    if (seq) {
-      if (!seq.data) seq.data = {};
-      seq.data.steps = Array.from({ length: 32 }, () => ({ on: true, midi: 60, chord: 'mono' }));
-    }
-  });
+  // Seed an all-on C4 pattern so the gate actually fires (an unseeded kria
+  // has no active pattern and emits nothing).
+  await seedKriaWith(page, 'seq', buildKriaMidiData([60, 60, 60, 60], { duration: 0.5 }));
 
   const stats = await pollScopePeak(page, 'scp', 0.001, 6000);
   expect(stats.peak, scopePollMsg(`MODAL self-excite peak ${stats.peak}`, stats)).toBeGreaterThan(0.001);

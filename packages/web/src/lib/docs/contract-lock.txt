@@ -947,43 +947,6 @@ drummergirl param pitch -36..36 linear default=0 unit=semi
 drummergirl param shape 0..1 linear default=0.3
 drummergirl param tone 0..1 linear default=0.3
 drummergirl param volume 0..2 linear default=1
-drumseqz meta domain=audio exposesSequence
-drumseqz in clock gate edge=trigger
-drumseqz in play_cv gate edge=trigger
-drumseqz in queue1_cv gate edge=trigger
-drumseqz in queue2_cv gate edge=trigger
-drumseqz in queue3_cv gate edge=trigger
-drumseqz in queue4_cv gate edge=trigger
-drumseqz in reset_cv gate edge=trigger
-drumseqz out clock gate edge=trigger
-drumseqz out gate1 gate edge=gate
-drumseqz out gate2 gate edge=gate
-drumseqz out gate3 gate edge=gate
-drumseqz out gate4 gate edge=gate
-drumseqz out pitch1 pitch
-drumseqz out pitch2 pitch
-drumseqz out pitch3 pitch
-drumseqz out pitch4 pitch
-drumseqz param bpm 30..300 linear default=120
-drumseqz param gateLength 0.1..0.95 linear default=0.5
-drumseqz param isPlaying 0..1 discrete default=0
-drumseqz param length 1..128 discrete default=16
-drumseqz param octave -2..2 discrete default=0
-drumseqz param swing 0..0.75 linear default=0
-drumseqz param trk1_euclid 0..16 discrete default=0
-drumseqz param trk1_octave -2..2 discrete default=0
-drumseqz param trk1_root 33..114 discrete default=48
-drumseqz param trk2_euclid 0..16 discrete default=0
-drumseqz param trk2_octave -2..2 discrete default=0
-drumseqz param trk2_root 33..114 discrete default=48
-drumseqz param trk3_euclid 0..16 discrete default=0
-drumseqz param trk3_octave -2..2 discrete default=0
-drumseqz param trk3_root 33..114 discrete default=48
-drumseqz param trk4_euclid 0..16 discrete default=0
-drumseqz param trk4_octave -2..2 discrete default=0
-drumseqz param trk4_root 33..114 discrete default=48
-drumseqz expose playStop param=isPlaying kind=button
-drumseqz family drumseqz-pitch kind=cell prefix=drumseqz-pitch count=length
 dx7 meta domain=audio
 dx7 in gate gate edge=gate
 dx7 in pitch_cv cv
@@ -1593,33 +1556,6 @@ macrooscillator param note -60..60 linear default=0 unit=st
 macrooscillator param timbre 0..1 linear default=0.3
 macrooscillator family macro-hero kind=cell prefix=macro-hero
 macrooscillator family macro-strike kind=other prefix=macro-strike
-macseq meta domain=audio exposesSequence
-macseq in clock gate edge=trigger
-macseq in next_cv gate edge=trigger
-macseq in play_cv gate edge=trigger
-macseq in prev_cv gate edge=trigger
-macseq in queue1_cv gate edge=trigger
-macseq in queue2_cv gate edge=trigger
-macseq in queue3_cv gate edge=trigger
-macseq in queue4_cv gate edge=trigger
-macseq in queue5_cv gate edge=trigger
-macseq in queue6_cv gate edge=trigger
-macseq in queue7_cv gate edge=trigger
-macseq in queue8_cv gate edge=trigger
-macseq in random_cv gate edge=trigger
-macseq in reset_cv gate edge=trigger
-macseq out clock gate edge=trigger
-macseq out gate gate edge=gate
-macseq out modelcv cv
-macseq out pitch pitch
-macseq param bpm 30..300 linear default=120
-macseq param gateLength 0.1..0.95 linear default=0.5
-macseq param isPlaying 0..1 discrete default=0
-macseq param length 1..128 discrete default=16
-macseq param octave -2..2 discrete default=0
-macseq expose playStop param=isPlaying kind=button
-macseq family macseq-model kind=cell prefix=macseq-model count=length
-macseq family macseq-pitch kind=cell prefix=macseq-pitch count=length
 mandelbulb meta domain=video
 mandelbulb in detail_cv cv param=detail cvScale=linear
 mandelbulb in hue_cv cv param=hue cvScale=linear
@@ -2539,27 +2475,6 @@ polarizer meta domain=audio
 polarizer in in cv
 polarizer out out cv
 polarizer param depth 0..1 linear default=1
-polyseqz meta domain=audio exposesSequence
-polyseqz in clock gate edge=trigger
-polyseqz in humanize_cv cv param=humanize cvScale=linear
-polyseqz in play_cv gate edge=trigger
-polyseqz in queue1_cv gate edge=trigger
-polyseqz in queue2_cv gate edge=trigger
-polyseqz in queue3_cv gate edge=trigger
-polyseqz in queue4_cv gate edge=trigger
-polyseqz in reset_cv gate edge=trigger
-polyseqz out clock gate edge=trigger
-polyseqz out gate gate edge=gate
-polyseqz out poly polyPitchGate
-polyseqz param bpm 30..300 linear default=90
-polyseqz param gateLength 0.1..0.95 linear default=0.6
-polyseqz param humanize 0..1 linear default=0
-polyseqz param isPlaying 0..1 discrete default=0
-polyseqz param length 1..128 discrete default=8
-polyseqz param octave -2..2 discrete default=0
-polyseqz param snh 0..1 discrete default=1
-polyseqz expose playStop param=isPlaying kind=button
-polyseqz family polyseqz-root kind=cell prefix=polyseqz-root count=length
 pong meta domain=audio vizPassthrough
 pong in paddle_left cv
 pong in paddle_right cv
@@ -2829,36 +2744,6 @@ scoreboard out out video
 scoreboard param color 0..1 linear default=0.3333333333333333
 scoreboard param resetTrig 0..1 linear default=0
 scoreboard param scoreTrig 0..1 linear default=0
-sequencer meta domain=audio exposesSequence
-sequencer in clock gate edge=trigger
-sequencer in next_cv gate edge=trigger
-sequencer in play_cv gate edge=trigger
-sequencer in prev_cv gate edge=trigger
-sequencer in queue1_cv gate edge=trigger
-sequencer in queue2_cv gate edge=trigger
-sequencer in queue3_cv gate edge=trigger
-sequencer in queue4_cv gate edge=trigger
-sequencer in queue5_cv gate edge=trigger
-sequencer in queue6_cv gate edge=trigger
-sequencer in queue7_cv gate edge=trigger
-sequencer in queue8_cv gate edge=trigger
-sequencer in random_cv gate edge=trigger
-sequencer in reset_cv gate edge=trigger
-sequencer out clock gate edge=trigger
-sequencer out gate gate edge=gate
-sequencer out pitch polyPitchGate
-sequencer param bpm 30..300 linear default=120
-sequencer param gateLength 0.1..0.95 linear default=0.5
-sequencer param isPlaying 0..1 discrete default=0
-sequencer param length 1..128 discrete default=16
-sequencer param octave -2..2 discrete default=0
-sequencer param snh 0..1 discrete default=1
-sequencer param swing 0..0.75 linear default=0
-sequencer expose playStop param=isPlaying kind=button
-sequencer family quicksave-slot kind=quicksave prefix=quicksave-slot
-sequencer family seq-chord kind=cell prefix=seq-chord count=length
-sequencer family seq-gate kind=step-grid prefix=seq-gate count=length
-sequencer family seq-pitch kind=cell prefix=seq-pitch count=length
 shapedramps meta domain=video
 shapedramps in h_freq cv param=h_freq cvScale=linear
 shapedramps in h_phase cv param=h_phase cvScale=linear
@@ -3906,26 +3791,3 @@ wavetableVco param fmAmount -1..1 linear default=0
 wavetableVco param pmAmount -1..1 linear default=0
 wavetableVco param tune -36..36 linear default=0 unit=st
 wavetableVco param wavePos 0..1 linear default=0
-writeseq meta domain=audio exposesSequence
-writeseq in clock gate edge=trigger
-writeseq in cv pitch
-writeseq in gate gate edge=gate
-writeseq in play_cv gate edge=trigger
-writeseq in queue1_cv gate edge=trigger
-writeseq in queue2_cv gate edge=trigger
-writeseq in queue3_cv gate edge=trigger
-writeseq in queue4_cv gate edge=trigger
-writeseq in rec gate edge=trigger
-writeseq in reset_cv gate edge=trigger
-writeseq out clock gate edge=trigger
-writeseq out gate gate edge=gate
-writeseq out pitch pitch
-writeseq param bpm 30..300 linear default=120
-writeseq param gateLength 0.1..0.95 linear default=0.5
-writeseq param isPlaying 0..1 discrete default=0
-writeseq param length 1..128 discrete default=16
-writeseq param octave -2..2 discrete default=0
-writeseq param overdub 0..1 discrete default=0
-writeseq param recArm 0..1 discrete default=0
-writeseq expose playStop param=isPlaying kind=button
-writeseq family writeseq-pitch kind=cell prefix=writeseq-pitch count=length

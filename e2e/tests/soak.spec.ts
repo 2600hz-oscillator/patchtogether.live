@@ -38,7 +38,7 @@ test('soak: voice patch produces finite, in-range audio over 30s', async ({ page
   await spawnPatch(
     page,
     [
-      { id: 'seq',  type: 'sequencer', params: { bpm: 240, length: 8, isPlaying: 1, gateLength: 0.4 } },
+      { id: 'seq',  type: 'kria', params: { bpm: 240, running: 1} },
       { id: 'vco',  type: 'analogVco' },
       { id: 'adsr', type: 'adsr', params: { attack: 0.005, decay: 0.08, sustain: 0.3, release: 0.15 } },
       { id: 'vca',  type: 'vca',  params: { base: 0, cvAmount: 1 } },

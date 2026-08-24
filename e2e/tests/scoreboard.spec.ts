@@ -14,7 +14,7 @@
 // card↔engine wire.
 
 import { test, expect, type Page } from '@playwright/test';
-import { spawnPatch } from './_helpers';
+import { spawnPatch, seedKriaGate } from './_helpers';
 
 async function setup(page: Page): Promise<string[]> {
   const errors: string[] = [];
@@ -75,22 +75,22 @@ test.describe('SCOREBOARD — 4-digit neon 7-segment counter widget', () => {
       [
         {
           id: 'scoreSeq',
-          type: 'sequencer',
+          type: 'kria',
           position: { x: 40, y: 40 },
           domain: 'audio',
           // 240 BPM → 4 pulses/sec. After 1 s of sequencer time we'd
           // expect ~4 increments — leaves headroom for jsdom/CI clock
           // jitter without becoming meaningless. length=8 so the SCORE
           // gate keeps firing well past our observation window.
-          params: { bpm: 240, length: 8, isPlaying: 1 },
+          params: { bpm: 240, running: 1 },
         },
         {
           id: 'resetSeq',
-          type: 'sequencer',
+          type: 'kria',
           position: { x: 40, y: 260 },
           domain: 'audio',
           // Stays stopped until we want to fire the reset pulse.
-          params: { bpm: 240, length: 4, isPlaying: 0 },
+          params: { bpm: 240, running: 0 },
         },
         {
           id: 'sb',
@@ -107,20 +107,22 @@ test.describe('SCOREBOARD — 4-digit neon 7-segment counter widget', () => {
         // detector reads as a steady rising-edge stream.
         {
           id: 'e_score',
-          from: { nodeId: 'scoreSeq', portId: 'clock' },
+          from: { nodeId: 'scoreSeq', portId: 'gate1' },
           to:   { nodeId: 'sb',       portId: 'score' },
           sourceType: 'gate',
           targetType: 'cv',
         },
         {
           id: 'e_reset',
-          from: { nodeId: 'resetSeq', portId: 'clock' },
+          from: { nodeId: 'resetSeq', portId: 'gate1' },
           to:   { nodeId: 'sb',       portId: 'reset' },
           sourceType: 'gate',
           targetType: 'cv',
         },
       ],
     );
+    await seedKriaGate(page, 'scoreSeq');
+    await seedKriaGate(page, 'resetSeq');
 
     // ---- 1. SCORE gate increments the counter. ----
     // At 240 BPM the scoreSeq fires a gate every 250 ms. After ~1 s we
@@ -146,10 +148,10 @@ test.describe('SCOREBOARD — 4-digit neon 7-segment counter widget', () => {
         // Halt the score-driving sequencer so no more increments race
         // the reset path.
         const s = w.__patch.nodes['scoreSeq'];
-        if (s) s.params.isPlaying = 0;
+        if (s) s.params.running = 0;
         // Start the reset sequencer — its first gate will fire ~immediately.
         const r = w.__patch.nodes['resetSeq'];
-        if (r) r.params.isPlaying = 1;
+        if (r) r.params.running = 1;
       });
     });
 

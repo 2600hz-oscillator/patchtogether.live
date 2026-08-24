@@ -39,7 +39,7 @@
 // the gated-from-a-cable path (`per-module-per-port`).
 
 import { test, expect, type Locator, type Page } from '@playwright/test';
-import { spawnPatch, type SpawnEdge, type SpawnNode } from './_helpers';
+import { spawnPatch, type SpawnEdge, type SpawnNode, seedKriaWith, buildKriaMidiData } from './_helpers';
 
 const SLOW = process.env.E2E_SWIFTSHADER === '1' || !!process.env.CI;
 const NID = 'tv-strike-1';
@@ -364,26 +364,15 @@ test.describe('treeohvox — THE AUDITION (the voice could not be sounded before
     // patched cable keeps working alongside it.
     await goto(page, '?seed=none');
     const nodes: SpawnNode[] = [
-      { id: 'seq', type: 'sequencer', position: { x: 60, y: 280 }, params: { bpm: 240, length: 4, isPlaying: 1, gateLength: 0.5 } },
+      { id: 'seq', type: 'kria', position: { x: 60, y: 280 }, params: { bpm: 240, running: 1} },
       { id: NID, type: 'treeohvox', position: { x: 400, y: 120 }, params: AUDIBLE },
     ];
     const edges: SpawnEdge[] = [
-      { id: 'e_g', from: { nodeId: 'seq', portId: 'gate' }, to: { nodeId: NID, portId: 'gate_in' }, sourceType: 'gate', targetType: 'gate' },
-      { id: 'e_p', from: { nodeId: 'seq', portId: 'pitch' }, to: { nodeId: NID, portId: 'pitch_in' }, sourceType: 'pitch', targetType: 'cv' },
+      { id: 'e_g', from: { nodeId: 'seq', portId: 'gate1' }, to: { nodeId: NID, portId: 'gate_in' }, sourceType: 'gate', targetType: 'gate' },
+      { id: 'e_p', from: { nodeId: 'seq', portId: 'pitch1' }, to: { nodeId: NID, portId: 'pitch_in' }, sourceType: 'pitch', targetType: 'cv' },
     ];
     await spawnPatch(page, nodes, edges);
-    await page.evaluate(() => {
-      const w = globalThis as unknown as {
-        __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
-        __ydoc: { transact: (fn: () => void) => void };
-      };
-      w.__ydoc.transact(() => {
-        const seq = w.__patch.nodes['seq'];
-        if (!seq) return;
-        if (!seq.data) seq.data = {};
-        seq.data.steps = [{ on: true, midi: 48 }, { on: true, midi: 50 }, { on: true, midi: 52 }, { on: true, midi: 55 }];
-      });
-    });
+    await seedKriaWith(page, 'seq', buildKriaMidiData([48, 50, 52, 55], { duration: 0.5 }));
     await installProbe(page);
 
     const m = await measure(page, 1500);

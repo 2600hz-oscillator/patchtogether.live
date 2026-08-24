@@ -388,7 +388,7 @@ describe('snapshot bus: identity-stable entries', () => {
     const { patch, ydoc } = freshPatch();
     patch.nodes['seq'] = {
       id: 'seq',
-      type: 'sequencer',
+      type: 'kria',
       domain: 'audio',
       position: { x: 0, y: 0 },
       params: {},

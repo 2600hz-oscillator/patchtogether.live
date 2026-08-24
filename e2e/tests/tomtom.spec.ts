@@ -30,7 +30,7 @@
 // trigger→tom→audible-tuned-membrane chain.
 
 import { test, expect } from './_fixtures';
-import { spawnPatch } from './_helpers';
+import { spawnPatch, seedKriaWith, buildKriaMidiData } from './_helpers';
 import { readScopePeakOverWindow, readScopeSnapshot } from './_module-coverage-helpers';
 
 test.describe.configure({ mode: 'parallel' });
@@ -63,8 +63,8 @@ test('TOM DRUM real chain: SEQUENCER → trigger_in → AUDIOOUT — audible RMS
     [
       // The REAL default-mode trigger source: the sequencer's own internal
       // clock (isPlaying=1), not a synthetic gate injection.
-      { id: 'a-seq', type: 'sequencer', position: { x: 60,  y: 60 }, domain: 'audio',
-        params: { bpm: 120, length: 4, isPlaying: 1, gateLength: 0.25 } },
+      { id: 'a-seq', type: 'kria', position: { x: 60,  y: 60 }, domain: 'audio',
+        params: { bpm: 120, running: 1 } },
       { id: 'a-tom', type: 'tomtom',    position: { x: 360, y: 60 }, domain: 'audio',
         params: { level: 0 } }, // shipping defaults otherwise (mid tom, 7 st bend)
       { id: 'a-out', type: 'audioOut',  position: { x: 820, y: 60 }, domain: 'audio',
@@ -73,7 +73,7 @@ test('TOM DRUM real chain: SEQUENCER → trigger_in → AUDIOOUT — audible RMS
         params: { timeMs: 200 } },
     ],
     [
-      { id: 'e1', from: { nodeId: 'a-seq', portId: 'gate' },      to: { nodeId: 'a-tom', portId: 'trigger_in' },
+      { id: 'e1', from: { nodeId: 'a-seq', portId: 'gate1' },      to: { nodeId: 'a-tom', portId: 'trigger_in' },
         sourceType: 'gate', targetType: 'gate' },
       { id: 'e2', from: { nodeId: 'a-tom', portId: 'audio_out' }, to: { nodeId: 'a-out', portId: 'L' },
         sourceType: 'audio', targetType: 'audio' },
@@ -91,23 +91,7 @@ test('TOM DRUM real chain: SEQUENCER → trigger_in → AUDIOOUT — audible RMS
 
   // Seed a few ON steps so the internal clock fires the tom (steps 0 + 2 →
   // one strike every second at BPM 120 / length 4).
-  await page.evaluate(() => {
-    const w = globalThis as unknown as {
-      __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
-      __ydoc: { transact: (fn: () => void) => void };
-    };
-    w.__ydoc.transact(() => {
-      const seq = w.__patch.nodes['a-seq'];
-      if (!seq.data) seq.data = {};
-      seq.data.steps = [
-        { on: true, midi: 60 },
-        { on: false, midi: null },
-        { on: true, midi: 60 },
-        { on: false, midi: null },
-        ...Array.from({ length: 28 }, () => ({ on: false, midi: null })),
-      ];
-    });
-  });
+  await seedKriaWith(page, 'a-seq', buildKriaMidiData([60, null, 60, null], { duration: 0.25 }));
 
   // ── 1. AUDIBLE RMS at the output (windowed MAX-HOLD — a strike lands
   // every ~1 s, so a 2.5 s capture always straddles ≥2 attacks; max-hold
@@ -203,8 +187,8 @@ test('a rack SAVED with STRIKE stuck at 1 still responds to trigger_in', async (
   await spawnPatch(
     page,
     [
-      { id: 'b-seq', type: 'sequencer', position: { x: 60,  y: 60 }, domain: 'audio',
-        params: { bpm: 120, length: 4, isPlaying: 1, gateLength: 0.25 } },
+      { id: 'b-seq', type: 'kria', position: { x: 60,  y: 60 }, domain: 'audio',
+        params: { bpm: 120, running: 1 } },
       // THE BRICKED MODULE, as persisted.
       { id: 'b-tom', type: 'tomtom',    position: { x: 360, y: 60 }, domain: 'audio',
         params: { level: 0, strike: 1 } },
@@ -212,7 +196,7 @@ test('a rack SAVED with STRIKE stuck at 1 still responds to trigger_in', async (
         params: { timeMs: 200 } },
     ],
     [
-      { id: 'f1', from: { nodeId: 'b-seq', portId: 'gate' },      to: { nodeId: 'b-tom', portId: 'trigger_in' },
+      { id: 'f1', from: { nodeId: 'b-seq', portId: 'gate1' },      to: { nodeId: 'b-tom', portId: 'trigger_in' },
         sourceType: 'gate', targetType: 'gate' },
       { id: 'f2', from: { nodeId: 'b-tom', portId: 'audio_out' }, to: { nodeId: 'b-scp', portId: 'ch1' } },
     ],
@@ -220,23 +204,7 @@ test('a rack SAVED with STRIKE stuck at 1 still responds to trigger_in', async (
 
   await expect(page.locator('.svelte-flow__node-tomtom')).toHaveCount(1);
 
-  await page.evaluate(() => {
-    const w = globalThis as unknown as {
-      __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
-      __ydoc: { transact: (fn: () => void) => void };
-    };
-    w.__ydoc.transact(() => {
-      const seq = w.__patch.nodes['b-seq'];
-      if (!seq.data) seq.data = {};
-      seq.data.steps = [
-        { on: true, midi: 60 },
-        { on: false, midi: null },
-        { on: true, midi: 60 },
-        { on: false, midi: null },
-        ...Array.from({ length: 28 }, () => ({ on: false, midi: null })),
-      ];
-    });
-  });
+  await seedKriaWith(page, 'b-seq', buildKriaMidiData([60, null, 60, null], { duration: 0.25 }));
 
   // ⚠⚠ SETTLE FIRST — AND THIS LINE IS THE WHOLE TEST.
   //

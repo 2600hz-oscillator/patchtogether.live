@@ -23,7 +23,7 @@ import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { spawnPatch } from './_helpers';
+import { spawnPatch, seedKriaWith, buildKriaMidiData } from './_helpers';
 
 const __dirname_ = dirname(fileURLToPath(import.meta.url));
 const BASELINE_PATH = join(__dirname_, '..', 'baselines', 'voice-chain-fingerprint.json');
@@ -94,7 +94,7 @@ test('voice-chain-art: deterministic patch matches fingerprint baseline', async 
   await spawnPatch(
     page,
     [
-      { id: 'seq',  type: 'sequencer', params: { bpm: 240, length: 4, isPlaying: 1, gateLength: 0.5 } },
+      { id: 'seq',  type: 'kria', params: { bpm: 240, running: 1} },
       { id: 'vco',  type: 'analogVco' },
       { id: 'adsr', type: 'adsr', params: { attack: 0.005, decay: 0.08, sustain: 0.3, release: 0.15 } },
       { id: 'vca',  type: 'vca',  params: { base: 0, cvAmount: 1 } },
@@ -102,8 +102,8 @@ test('voice-chain-art: deterministic patch matches fingerprint baseline', async 
       { id: 'out',  type: 'audioOut', params: { master: 0.4 } },
     ],
     [
-      { id: 'e1', from: { nodeId: 'seq',  portId: 'pitch' }, to: { nodeId: 'vco',  portId: 'pitch' }, sourceType: 'pitch', targetType: 'pitch' },
-      { id: 'e2', from: { nodeId: 'seq',  portId: 'gate'  }, to: { nodeId: 'adsr', portId: 'gate'  }, sourceType: 'gate',  targetType: 'gate'  },
+      { id: 'e1', from: { nodeId: 'seq', portId: 'pitch1' }, to: { nodeId: 'vco',  portId: 'pitch' }, sourceType: 'pitch', targetType: 'pitch' },
+      { id: 'e2', from: { nodeId: 'seq', portId: 'gate1' }, to: { nodeId: 'adsr', portId: 'gate'  }, sourceType: 'gate',  targetType: 'gate'  },
       { id: 'e3', from: { nodeId: 'vco',  portId: 'sine'  }, to: { nodeId: 'vca',  portId: 'audio' } },
       { id: 'e4', from: { nodeId: 'adsr', portId: 'env'   }, to: { nodeId: 'vca',  portId: 'cv'    }, sourceType: 'cv', targetType: 'cv' },
       { id: 'e5', from: { nodeId: 'vca',  portId: 'audio' }, to: { nodeId: 'scp',  portId: 'ch1'   } },
@@ -112,23 +112,8 @@ test('voice-chain-art: deterministic patch matches fingerprint baseline', async 
     ],
   );
 
-  // Fixed step pattern.
-  await page.evaluate(() => {
-    const w = globalThis as unknown as {
-      __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
-      __ydoc: { transact: (fn: () => void) => void };
-    };
-    w.__ydoc.transact(() => {
-      w.__patch.nodes['seq'].data = {
-        steps: [
-          { on: true, midi: 60 },
-          { on: true, midi: 67 },
-          { on: true, midi: 72 },
-          { on: true, midi: 65 },
-        ],
-      };
-    });
-  });
+  // Fixed step pattern (same notes as the deleted SEQUENCER version).
+  await seedKriaWith(page, 'seq', buildKriaMidiData([60, 67, 72, 65], { duration: 0.5 }));
 
   // Sample 8 buffers spaced 250ms apart over 2s. Averaging across snapshots
   // washes out the per-snapshot phase jitter (a 42ms scope buffer captures

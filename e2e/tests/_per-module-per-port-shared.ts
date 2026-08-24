@@ -81,7 +81,7 @@ export const SKIP_SPAWN: Record<string, string> = {
 //   * Self-running clock modules (TIMELORDE, MARBLES) → just removed
 //     (the old "needs upstream clock" comment was wrong; defaults
 //     already self-run).
-//   * Step sequencers (SEQUENCER, SCORE, DRUMSEQZ, POLYSEQZ, MACSEQ)
+//   * Step sequencers (SCORE, KRIA)
 //     → driver seeds isPlaying=1 + node.data.steps so the
 //     internal scheduler fires.
 //   * CV/gate utilities (ILLOGIC, SLEWSWITCH) → driver wires BUGGLES +
@@ -168,7 +168,6 @@ export const EXEMPT_OUTPUT_EMIT_MODULES: Record<string, string> = {
   // ── Clock / divider / sequencer-like modules that need an upstream clock ──
   timelorde: 'clock divider; needs upstream clock; covered by timelorde-related specs',
   marbles:   'requires UI-enabled internal clock; covered by marbles-related specs',
-  macseq:    'requires toggled steps; covered by macseq-related specs',
   // ── CV/gate utility modules with no self-running source ──
   illogic:    'boolean logic on inputs; no upstream → no output; covered by illogic.spec.ts',
   // Moog batch-2 passive routers: like 994/995/984 (auto-skipped as audio
@@ -187,10 +186,7 @@ export const EXEMPT_OUTPUT_EMIT_MODULES: Record<string, string> = {
   moog911a:   'trigger-delay; outputs are delayed pulses on an input trigger (input-conditional); covered by trigger-delay-dsp.test.ts',
   moog962:    'sequential switch; output carries only the selected input (input-conditional); covered by moog962-dsp.test.ts',
   // ── User-toggled sequencer-like sources ──
-  sequencer: 'requires user-toggled step.on=true; covered by dedicated sequencer specs',
   score:     'requires play_cv high + steps; covered by score.spec.ts',
-  drumseqz:  'requires toggled steps; covered by drumseqz specs',
-  polyseqz:  'requires toggled steps; covered by polyseqz specs',
   // ── Button-press-driven instruments (silent until a key is pressed) ──
   bluebox:   'silent until a button is pressed; covered by bluebox.spec.ts which clicks the keys',
   // ── File-input modules ──
@@ -536,11 +532,11 @@ export const EXEMPT_OUTPUT_EMIT: Record<string, string> = {
 // duplication: this array is the review surface and the merge-conflict surface.
 export const PINNED_MODULE_EXEMPT_KEYS: readonly string[] = Object.freeze([
   'archivist', 'audioIn', 'blood', 'bluebox', 'cvBuddy', 'cvBuddyMini',
-  'drumseqz', 'es9',
-  'fader', 'featurecv', 'flipper', 'gamepad', 'illogic', 'joystick', 'macseq',
+  'es9',
+  'fader', 'featurecv', 'flipper', 'gamepad', 'illogic', 'joystick',
   'marbles', 'midiCvBuddy', 'midiOutBuddy', 'midiclock', 'milkdrop', 'modtris',
   'moog911a', 'moog956', 'moog962', 'moog992', 'moog993', 'numpadPlus',
-  'peertube', 'polyseqz', 'pong', 'samsloop', 'score', 'sequencer',
+  'peertube', 'pong', 'samsloop', 'score',
   'slewSwitch', 'synesthesia', 'timelorde', 'tvLibrarian', 'twotracks',
   'videobox', 'videocube', 'videovarispeed', 'vstFx', 'vstInstrument',
 ]);
@@ -831,7 +827,7 @@ export function pickInputSource(inputType: string, idPrefix: string): InputSourc
       // array) intact while letting this function return a "logical
       // source" with its own dependencies.
       return {
-        node: { id: `${idPrefix}-seq`, type: 'sequencer', position: { x: 60, y: 60 }, domain: 'audio', params: { bpm: 240, length: 4, isPlaying: 1, gateLength: 0.5 } },
+        node: { id: `${idPrefix}-seq`, type: 'kria', position: { x: 60, y: 60 }, domain: 'audio', params: { bpm: 240, running: 1} },
         outPort: 'gate',
         sourceType: 'gate',
       };
@@ -858,7 +854,7 @@ export function pickInputSource(inputType: string, idPrefix: string): InputSourc
     // edge the first time one appeared. `null` is the loud path.
     case 'polyPitchGate':
       return {
-        node: { id: `${idPrefix}-seq`, type: 'sequencer', position: { x: 60, y: 60 }, domain: 'audio', params: { bpm: 240, length: 4, isPlaying: 1, gateLength: 0.5 } },
+        node: { id: `${idPrefix}-seq`, type: 'kria', position: { x: 60, y: 60 }, domain: 'audio', params: { bpm: 240, running: 1} },
         outPort: 'pitch',
         sourceType: 'polyPitchGate',
       };
@@ -1154,7 +1150,7 @@ export const NOT_EFFECT_DESPITE_AUDIO_INPUT = new Set([
  *  per-port EXEMPT_OUTPUT_EMIT entries catch the slivers, this catches shape. */
 export const PURE_CV_GATE_UTILITY = new Set([
   'analogLogicMaths', 'fourplexer', 'unityscalemathematik',
-  'cartesian', 'polyseqz', 'frogger',
+  'cartesian', 'frogger',
 ]);
 
 export function emitSkipReason(mod: RegistryModule): string | null {

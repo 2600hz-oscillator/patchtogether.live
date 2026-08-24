@@ -320,7 +320,7 @@ test.fixme('Sequenced VCO: matrix unpatch + re-patch, then Cmd-Z all the way bac
         params: {},
         data: {},
       };
-      if (w.__patch.nodes['vd-seq']) w.__patch.nodes['vd-seq'].params.isPlaying = 0;
+      if (w.__patch.nodes['vd-seq']) w.__patch.nodes['vd-seq'].params.running = 0;
     });
   });
   const card = page.locator('[data-testid="matrixmix-card"][data-node-id="mm-x"]');

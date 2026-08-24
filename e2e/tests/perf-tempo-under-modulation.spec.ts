@@ -60,7 +60,8 @@
 
 import { test, expect } from './_fixtures';
 import { type Page } from '@playwright/test';
-import { spawnPatch } from './_helpers';
+import { spawnPatch, seedKriaGate } from './_helpers';
+import { KRIA_TRACKS } from '../../packages/web/src/lib/audio/modules/kria-types';
 
 test.describe.configure({ mode: 'parallel' });
 
@@ -278,11 +279,14 @@ test('perf-tempo-under-modulation: hand-drag coalesces patch-store commits to â‰
   await spawnPatch(
     page,
     [
-      { id: 'seq', type: 'sequencer', params: { bpm: SEQ_BPM, length: 16, isPlaying: 1 } },
+      { id: 'seq', type: 'kria', params: { bpm: SEQ_BPM, running: 1} },
       { id: 'vca', type: 'vca', params: { base: 0.5, cvAmount: 1 } },
     ],
     [],
   );
+  // KRIA is data-driven: an unseeded node has no active pattern, so its
+  // transport is a no-op and `totalAdvances` never moves.
+  await seedKriaGate(page, 'seq');
 
   await waitForSequencerWarm(page, 'seq');
   const baseBefore = await page.evaluate(() => {
@@ -321,9 +325,16 @@ test('perf-tempo-under-modulation: hand-drag coalesces patch-store commits to â‰
   // happen, but a 0 windowMs would otherwise pin the expectation to
   // ~1.6 advances which is nonsense).
   const windowS = stressResult.windowMs / 1000;
-  const expectedAdvances = (windowS + LOOKAHEAD_S) / STEP_DUR_S;
-  const tempoMin = Math.max(1, Math.floor(expectedAdvances) - TEMPO_SLOP_STEPS);
-  const tempoMax = Math.ceil(expectedAdvances) + TEMPO_SLOP_STEPS;
+  // KRIA increments `totalAdvances` once per TRACK per base-grid tick (all
+  // four tracks advance each 16th at timeDivision 1), so the BASE-TICK
+  // expectation and its slop both scale by KRIA_TRACKS â€” imported from the
+  // def, never re-typed. (The deleted SEQUENCER counted once per step, which
+  // is why this derivation needed no factor before.)
+  const expectedBaseTicks = (windowS + LOOKAHEAD_S) / STEP_DUR_S;
+  const expectedAdvances = expectedBaseTicks * KRIA_TRACKS;
+  const slop = TEMPO_SLOP_STEPS * KRIA_TRACKS;
+  const tempoMin = Math.max(1, Math.floor(expectedAdvances) - slop);
+  const tempoMax = Math.ceil(expectedAdvances) + slop;
 
   // Diagnostic log so CI runs surface the actual measurement.
   // eslint-disable-next-line no-console
@@ -404,10 +415,11 @@ test('perf-tempo-under-modulation: baseline (no drag) advance rate matches BPM',
   await spawnPatch(
     page,
     [
-      { id: 'seqB', type: 'sequencer', params: { bpm: SEQ_BPM, length: 16, isPlaying: 1 } },
+      { id: 'seqB', type: 'kria', params: { bpm: SEQ_BPM, running: 1} },
     ],
     [],
   );
+  await seedKriaGate(page, 'seqB');
   await waitForSequencerWarm(page, 'seqB');
 
   const baseline = await page.evaluate(async ({ seqNodeId, durationMs }) => {
@@ -435,9 +447,12 @@ test('perf-tempo-under-modulation: baseline (no drag) advance rate matches BPM',
 
   const delta = baseline.after - baseline.before;
   const windowS = baseline.windowMs / 1000;
-  const expectedAdvances = (windowS + LOOKAHEAD_S) / STEP_DUR_S;
-  const tempoMin = Math.max(1, Math.floor(expectedAdvances) - TEMPO_SLOP_STEPS);
-  const tempoMax = Math.ceil(expectedAdvances) + TEMPO_SLOP_STEPS;
+  // Same KRIA_TRACKS scaling as the drag test above â€” one increment per
+  // track per base tick.
+  const expectedAdvances = ((windowS + LOOKAHEAD_S) / STEP_DUR_S) * KRIA_TRACKS;
+  const slop = TEMPO_SLOP_STEPS * KRIA_TRACKS;
+  const tempoMin = Math.max(1, Math.floor(expectedAdvances) - slop);
+  const tempoMax = Math.ceil(expectedAdvances) + slop;
   // eslint-disable-next-line no-console
   console.log(
     `[perf-tempo-under-modulation baseline] delta=${delta} ` +

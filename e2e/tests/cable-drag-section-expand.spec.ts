@@ -56,13 +56,13 @@ async function pickerPortIds(page: Page): Promise<string[]> {
 }
 
 test.describe('patch-to picker — cv-family interchange', () => {
-  test('SEQUENCER.gate → ADSR lists gate + every cv input (attack/decay/sustain/release)', async ({ page, rack }) => {
+  test('KRIA.gate1 → ADSR lists gate + every cv input (attack/decay/sustain/release)', async ({ page, rack }) => {
     await spawnPatch(page, [
-      { id: 'seq', type: 'sequencer', position: { x: 80, y: 120 } },
-      { id: 'adsr', type: 'adsr', position: { x: 700, y: 120 } },
+      { id: 'seq', type: 'kria', position: { x: 80, y: 120 } },
+      { id: 'adsr', type: 'adsr', position: { x: 900, y: 120 } },
     ]);
 
-    await carryToPicker(page, { nodeId: 'seq', portId: 'gate', direction: 'output' }, 'adsr');
+    await carryToPicker(page, { nodeId: 'seq', portId: 'gate1', direction: 'output' }, 'adsr');
     expect((await pickerPortIds(page)).sort()).toEqual([
       'attack',
       'decay',
@@ -73,13 +73,13 @@ test.describe('patch-to picker — cv-family interchange', () => {
     await page.keyboard.press('Escape');
   });
 
-  test('SEQUENCER.pitch → ANALOG VCO lists pitch + cv params (tune/fmAmount), excludes audio', async ({ page, rack }) => {
+  test('KRIA.pitch1 → ANALOG VCO lists pitch + cv params (tune/fmAmount), excludes audio', async ({ page, rack }) => {
     await spawnPatch(page, [
-      { id: 'seq', type: 'sequencer', position: { x: 80, y: 120 } },
-      { id: 'vco', type: 'analogVco', position: { x: 700, y: 120 } },
+      { id: 'seq', type: 'kria', position: { x: 80, y: 120 } },
+      { id: 'vco', type: 'analogVco', position: { x: 900, y: 120 } },
     ]);
 
-    await carryToPicker(page, { nodeId: 'seq', portId: 'pitch', direction: 'output' }, 'vco');
+    await carryToPicker(page, { nodeId: 'seq', portId: 'pitch1', direction: 'output' }, 'vco');
     const portIds = await pickerPortIds(page);
     expect(portIds).toContain('pitch');
     expect(portIds).toContain('tune');
@@ -109,13 +109,13 @@ test.describe('patch-to picker — cv-family interchange', () => {
     await page.keyboard.press('Escape');
   });
 
-  test('commits a cross-family edge: SEQUENCER.gate → ADSR.attack via the picker', async ({ page, rack }) => {
+  test('commits a cross-family edge: KRIA.gate1 → ADSR.attack via the picker', async ({ page, rack }) => {
     await spawnPatch(page, [
-      { id: 'seq', type: 'sequencer', position: { x: 80, y: 120 } },
-      { id: 'adsr', type: 'adsr', position: { x: 700, y: 120 } },
+      { id: 'seq', type: 'kria', position: { x: 80, y: 120 } },
+      { id: 'adsr', type: 'adsr', position: { x: 900, y: 120 } },
     ]);
 
-    await carryToPicker(page, { nodeId: 'seq', portId: 'gate', direction: 'output' }, 'adsr');
+    await carryToPicker(page, { nodeId: 'seq', portId: 'gate1', direction: 'output' }, 'adsr');
     await page.locator('[data-testid="patch-to-port"][data-port-id="attack"]').click();
     await expect(page.locator('[data-testid="port-context-menu"]')).toHaveCount(0);
 

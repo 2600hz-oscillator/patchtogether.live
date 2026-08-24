@@ -151,7 +151,7 @@ describe('buildDuplicate — data deep-clone (no Yjs alias)', () => {
       { steps: [false, true, false, true], bpm: 140 },
     ];
     const src = srcNode({
-      type: 'drumseqz',
+      type: 'kria',
       data: { slots, activeSlot: 0 },
     });
     const dup = buildDuplicate(src, [src.id]);

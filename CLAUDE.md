@@ -540,7 +540,7 @@ not having a filter is how it stays gone.
 ## Poly/MIDI modules: e2e the REAL source chain
 
 Any poly or MIDI module ships an e2e that **wires the real default-mode source**
-(MIDI LANE / POLYSEQZ) **→ the module → and asserts audible RMS at the output**. A
+(MIDI LANE) **→ the module → and asserts audible RMS at the output**. A
 per-port "edge materializes" assertion does **not** count, and neither does an
 ART/behavioral test driving the engine class directly with a synthetic note source —
 that is how POLYHELM shipped green-but-silent, and the same bug class hit the poly

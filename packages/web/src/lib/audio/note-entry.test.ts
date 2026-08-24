@@ -15,7 +15,6 @@ import {
   MAX_MIDI,
   C3_MIDI,
 } from './note-entry';
-import { defaultSteps } from './modules/sequencer';
 import { defaultCells } from './modules/cartesian';
 
 describe('parseNoteName: round-trip across the full c0..c8 range', () => {
@@ -213,16 +212,9 @@ describe('default seed pitch is C3 for new modules', () => {
     expect(noteNameForMidi(C3_MIDI)).toBe('c3');
   });
 
-  it('Sequencer defaultSteps seeds every step with midi=C3_MIDI', () => {
-    // Pre-pages PR this was 32; the sequencer now allocates 128 cells across
-    // 8 visible pages. Defaults still seed every cell with C3 + off.
-    const steps = defaultSteps();
-    expect(steps).toHaveLength(128);
-    for (const s of steps) {
-      expect(s.midi).toBe(C3_MIDI);
-      expect(s.on).toBe(false);
-    }
-  });
+  // (The SEQUENCER defaultSteps leg was deleted with the module, 2026-08-24 —
+  // deprecated by CLIP PLAYER. cartesian's defaultCells below carries the
+  // same seeds-C3-off contract for the surviving NoteEntry consumer.)
 
   it('Cartesian defaultCells seeds every cell with midi=C3_MIDI', () => {
     const cells = defaultCells();

@@ -33,22 +33,22 @@
   );
 
   // Worked example: the sidechain ducker the user requested. VCO →
-  // VCA; ADSR's INVERTED envelope drives the VCA cv; the drum
-  // sequencer (DRUMSEQZ gate1) fires the ADSR. Every beat → quick
+  // VCA; ADSR's INVERTED envelope drives the VCA cv; TIMELORDE's
+  // quarter-note clock (1x) fires the ADSR. Every beat → quick
   // volume dip on the VCO — classic sidechain shape.
-  const SIDECHAIN_JS = `// Sidechain ducker — VCO plays through VCA; a drum-sequencer gate
-// fires an ADSR whose INVERTED envelope (env_inv) modulates the
-// VCA's cv, ducking the VCO in time with the beat.
+  const SIDECHAIN_JS = `// Sidechain ducker — VCO plays through VCA; the master clock's
+// quarter-note pulse fires an ADSR whose INVERTED envelope (env_inv)
+// modulates the VCA's cv, ducking the VCO in time with the beat.
 
 spawn('analogVco', 'lead');
 spawn('vca', 'duck');
 spawn('adsr', 'ducker');
-spawn('drumseqz', 'drums');
+spawn('timelorde', 'tl');
 spawn('audioOut', 'mainout');
 
 patch('lead.sine',       'duck.audio');
 patch('ducker.env_inv',  'duck.cv');
-patch('drums.gate1',     'ducker.gate');
+patch('tl.1x',           'ducker.gate');
 patch('duck.audio',      'mainout.L');
 patch('duck.audio',      'mainout.R');
 
@@ -63,10 +63,10 @@ set('ducker', 'release', 0.05);
 set('duck', 'base',     0);
 set('duck', 'cvAmount', 1);
 
-// 120 BPM; toggle a hit on track 1 then run the sequencer so gate1
-// fires on the beat.
-set('drums', 'bpm',       120);
-set('drums', 'isPlaying', 1);`;
+// 120 BPM; run the transport so the quarter-note pulse fires on
+// the beat.
+set('tl', 'bpm',     120);
+set('tl', 'running', 1);`;
 
   const CLOCKED_JS = `// clocked() — fire a callback every clock division. The clocked()
 // call spawns a CLOCKED runner module on the canvas; delete the
@@ -101,7 +101,7 @@ set('v', 'tune', 0);`;
   // callback slowly modulates the duck depth using state.* to track
   // a per-tick beat counter.
   const COMPLEX_CHAIN_JS = `// ── 9 modules ───────────────────────────────────────────────────
-spawn('sequencer',   'seq');
+spawn('cartesian',   'seq');
 spawn('analogVco',   'vco');
 spawn('adsr',        'env');     // pluck envelope for the melody
 spawn('vca',         'amp');     // melody VCA (env-driven)
@@ -112,6 +112,7 @@ spawn('mixer',       'mix');
 spawn('audioOut',    'out');
 
 // ── Main melody chain ───────────────────────────────────────────
+patch('TIMELORDE1.1x', 'seq.clock');  // clock the grid from the rack's TIMELORDE
 patch('seq.pitch', 'vco.pitch');
 patch('seq.gate',  'env.gate');
 patch('vco.sine',  'amp.audio');
@@ -153,27 +154,13 @@ set('kick', 'volume', 1.5);
 set('mix', 'ch1', 0.85); set('mix', 'ch2', 0.95); set('mix', 'master', 0.8);
 set('out', 'master', 0.5);
 
-set('seq', 'bpm',       120);
-set('seq', 'length',    16);
-set('seq', 'isPlaying', 1);
-
-// ── 8-note melody on the sequencer (rest in remaining 8 slots) ─
-setData('seq', 'steps', [
-  { on: true,  pitch: 60 }, // C4
-  { on: false },
-  { on: true,  pitch: 64 }, // E4
-  { on: false },
-  { on: true,  pitch: 67 }, // G4
-  { on: false },
-  { on: true,  pitch: 72 }, // C5
-  { on: false },
-  { on: true,  pitch: 67 }, // G4
-  { on: false },
-  { on: true,  pitch: 64 }, // E4
-  { on: false },
-  { on: true,  pitch: 60 }, // C4
-  { on: false }, { on: false }, { on: false },
-]);
+// ── 4-note melody on the grid's clocked diagonal walk ──────────
+// With no X/Y CV patched the cursor visits pads 0, 5, 10, 15.
+setData('seq', 'cells', Array.from({ length: 16 }, function (_, i) {
+  const d = [0, 5, 10, 15].indexOf(i);
+  return d < 0 ? { on: false, midi: 60, chord: 'mono' }
+               : { on: true, midi: [60, 64, 67, 72][d], chord: 'mono' };
+}));
 
 // ── Modulate sidechain depth via clocked() + state ─────────────
 // Every 1/16 beat: bump a beat counter, sweep depth 0.2..1.0
