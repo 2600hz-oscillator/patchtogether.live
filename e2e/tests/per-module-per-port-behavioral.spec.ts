@@ -273,9 +273,6 @@ const BEHAVIORAL_MODULE_EXEMPT: Record<string, string> = {
   //    cases, but not all — and the input we'd drive is typically `clock`
   //    or `reset`, whose effect IS step-advancement which the unpatched
   //    control already exhibits. Per-module specs cover their inputs.
-  drumseqz:  'pattern grid needs cells toggled; covered by drumseqz specs',
-  polyseqz:  'pattern grid needs cells toggled; covered by polyseqz specs',
-  macseq:    'requires toggled steps; covered by macseq specs',
   score:     'requires play_cv high + steps; covered by score.spec.ts',
 
   // ── Strike-gated voice: SIX STRUM is a plucked-string instrument whose
@@ -696,7 +693,7 @@ const BEHAVIORAL_MODULE_EXEMPT: Record<string, string> = {
   // make row1 sweep, but then the FREE-RUNNING control already sweeps too, so a
   // 4-Hz clock/start/stop gate only RE-PHASES that same sweep — a subtle
   // variance/timing shift that straddles the universal RMS-over-windows
-  // threshold (the SAME subtle-sequencer-state class as sequencer.reset).
+  // threshold (a subtle sequencer-state shift, not a clean silent-vs-sounding delta).
   // Deterministic per-step CV, range scaling, and
   // mode (SKIP/STOP) logic is pinned by moog960.test.ts (Seq960Stepper) +
   // seq960-dsp.test.ts. (Re-enterable once the harness supports a held-CV /
@@ -950,38 +947,6 @@ const BEHAVIORAL_PARAMS: Record<string, Record<string, number>> = {
   // get clipped to [-1,1]. Pull them down to 0.5 so the cv inputs
   // have headroom to perturb upward.
   analogLogicMaths: { attA: 0.5, attB: 0.5 },
-  // sequencer: the two non-exempt drivable inputs after exemptions are
-  // `play_cv` and `clock` (queue*/next/prev/random/reset are all exempt —
-  // see BEHAVIORAL_SWEEP_EXEMPT). BOTH want isPlaying=0 so the CONTROL
-  // (test-input unpatched) is SILENT and the PATCHED run is the only one
-  // that produces gate/pitch output — a clean silent-vs-sounding delta:
-  //   * play_cv  : a rising edge XOR-toggles isPlaying (sequencer.ts
-  //                pollTransportCv). With isPlaying=1 the control already
-  //                runs AND the edges toggle it OFF intermittently, so the
-  //                patched run can read LESS energy than control → no
-  //                reliable delta. With isPlaying=0 the control is silent
-  //                and the patched run runs whenever the toggle leaves it
-  //                playing → delta.
-  //   * clock    : shouldSequencerRun(playing=0, clockConnected, playCv=0)
-  //                returns clockConnected (transport-helpers.ts) — so with
-  //                isPlaying=0 the control (clock unpatched) is silent and
-  //                the patched run advances on the external clock → delta.
-  // bpm=240 keeps the internal fallback fast for the play_cv toggle case.
-  sequencer: { isPlaying: 0, bpm: 240, length: 4, gateLength: 0.5 },
-  // writeseq: same shape as sequencer. isPlaying=0 so the CONTROL (test input
-  // unpatched) is SILENT, and the only drivable inputs that perturb the output
-  // are the ones that START the run:
-  //   * clock    : shouldSequencerRun(playing=0, clockConnected, playCv=0) =
-  //                clockConnected → the patched run advances on the external
-  //                clock + plays the seeded steps; control is silent → delta.
-  //   * play_cv  : a rising edge toggles isPlaying → the patched run plays the
-  //                seeded grid; control is silent → delta.
-  //   * cv       : pass-through to PITCH engages while the context-gate (fired
-  //                on `gate` for the cv test) is high → pitch follows cv → delta.
-  // gate/rec/reset_cv/queue1..4_cv can't perturb the observed output in this
-  // isolated, isPlaying=0 harness — see BEHAVIORAL_SWEEP_EXEMPT. recArm stays 0
-  // so a context-gate on `gate` (fired for the cv test) doesn't start recording
-  // and muddy the control. populateAllSequencerSteps seeds the SUT's grid.
   // TOM DRUM — a percussive decaying voice: the scope's 43 ms windows land at
   // random phases of the 250 ms strike cycle, so at SHIPPING defaults the
   // control's own jitter is huge (the 7 st bend chirps every attack → zc/cent
@@ -994,7 +959,6 @@ const BEHAVIORAL_PARAMS: Record<string, Record<string, number>> = {
   // decay=1200 (the voice rings between the 4 Hz driver strikes). All values
   // inside the params' native ranges.
   tomtom: { bend_amt: 0, bend_time: 300, tone: 0.2, noise: 0.2, drive: 0, decay: 1200 },
-  writeseq: { isPlaying: 0, recArm: 0, overdub: 0, bpm: 240, length: 4, gateLength: 0.5 },
   // CLAP — a percussive noise voice: the scope's 43 ms windows land at random
   // phases of the 250 ms strike cycle, so at SHIPPING defaults the control's
   // own window jitter is huge (band-passed noise bursts + a 150 ms tail that
@@ -1077,16 +1041,16 @@ const BEHAVIORAL_SWEEP_EXEMPT: Record<string, string> = {
   //    modulators that only affect a voice that is SOUNDING — i.e. whose ADSR
   //    has been gated open by its poly lane. The behavioral sweep drives ONE
   //    input at a time against an idle control (it imports driverFor from
-  //    _drivers.ts, NOT the polyseqz upstream from _per-port-drivers.ts), so
+  //    _drivers.ts, NOT the kria/cartesian poly upstream from _per-port-drivers.ts), so
   //    when it drives fmN there is no concurrent gated poly → the voice's
   //    envelope is at 0 → the FM modulates silence → no delta on out_l. This
   //    is correct: FM is a no-op on a gated-off voice. The `poly` input IS
   //    exercised here (it gates + pitches the voices → perturbs out_l).
   //    FM/PM audibility-when-gated is covered by pentemelodica-dsp.test.ts
   //    (renderPentemelodica with an FM input) + the bespoke e2e (poly chord
-  //    drives the OUT) + the per-port emit sweep (the polyseqz driver gates
+  //    drives the OUT) + the per-port emit sweep (the cartesian poly driver gates
   //    all 5 voices so out_l/out_r + voice1..5 all emit).
-  'pentemelodica.fm1': 'audio-rate FM/PM jack — only modulates a SOUNDING (gated) voice; behavioral sweep drives it without a concurrent gated poly → modulates a silent voice → no delta (correct). Covered by pentemelodica-dsp.test.ts + pentemelodica.spec.ts + the per-port emit sweep (polyseqz-gated).',
+  'pentemelodica.fm1': 'audio-rate FM/PM jack — only modulates a SOUNDING (gated) voice; behavioral sweep drives it without a concurrent gated poly → modulates a silent voice → no delta (correct). Covered by pentemelodica-dsp.test.ts + pentemelodica.spec.ts + the per-port emit sweep (cartesian-gated).',
   'pentemelodica.fm2': 'audio-rate FM/PM jack — only modulates a SOUNDING (gated) voice; no concurrent gate in the behavioral harness → no delta (correct). Covered by pentemelodica-dsp.test.ts + the per-port emit sweep.',
   'pentemelodica.fm3': 'audio-rate FM/PM jack — only modulates a SOUNDING (gated) voice; no concurrent gate in the behavioral harness → no delta (correct). Covered by pentemelodica-dsp.test.ts + the per-port emit sweep.',
   'pentemelodica.fm4': 'audio-rate FM/PM jack — only modulates a SOUNDING (gated) voice; no concurrent gate in the behavioral harness → no delta (correct). Covered by pentemelodica-dsp.test.ts + the per-port emit sweep.',
@@ -1144,55 +1108,6 @@ const BEHAVIORAL_SWEEP_EXEMPT: Record<string, string> = {
   //    feed reaches the output).
   'toybox.inA': 'video input only reaches output when a layer selects it as its source; default patch selects neither (correct no-op); covered by toybox-video-inputs.spec.ts',
   'toybox.inB': 'video input only reaches output when a layer selects it as its source; default patch selects neither (correct no-op); covered by toybox-video-inputs.spec.ts',
-
-  // ⚠ `'sequencer.reset'` DELETED 2026-08-10 — a DEAD exemption the new
-  //    REGISTRY anchor caught on its first run. SEQUENCER's reset input is
-  //    called `reset_cv`; there has been no port named `reset` for some time,
-  //    so `BEHAVIORAL_SWEEP_EXEMPT['sequencer.reset']` could never be looked up
-  //    and the entry bought nothing. The rename was in fact ALREADY handled —
-  //    `'sequencer.reset_cv'` sits a few lines below, and its reason literally
-  //    reads "same as reset" — so this key was a stale DUPLICATE left behind by
-  //    that migration. Deleting it changes no test's behaviour. This is exactly
-  //    the class the deleted population COUNT was structurally unable to see:
-  //    the dead key occupied a slot in the cap and looked like live debt, so
-  //    the cap was pricing the same port twice.
-  // ── SEQUENCER reset_cv: same class as `reset` — a rising edge snaps the
-  //    playhead to step 0 (sequencer.ts pollTransportCv → stepIndex=0), but
-  //    with no NEW pattern that snap is inaudible against the gate train the
-  //    sequencer already emits. Covered by sequencer-reset-dedup.test.ts
-  //    (the #224 reset-double-hit dedup) + sequencer specs.
-  'sequencer.reset_cv': 'reset_cv snaps playhead silently (same as reset); covered by sequencer-reset-dedup.test.ts + sequencer specs',
-  // ── SEQUENCER queue / nav gates (queue1..8_cv, next_cv, prev_cv,
-  //    random_cv): each sets node.data.queuedSlot / queuedNav, which
-  //    maybeApplyQueuedSlot() applies ONLY at sequence-end AND ONLY when
-  //    the slot is populated (sequencer.ts maybeApplyQueuedSlot). The
-  //    spawn harness has NO saved slots (data.slots is empty), so the
-  //    queue/nav is a no-op by design — exactly the same class as the
-  //    `sequencer.reset` exempt above. Covered by the sequencer slot/queue
-  //    specs (which seed data.slots then assert the pattern swap).
-  'sequencer.queue1_cv': 'sets queuedSlot, applied at sequence-end with a POPULATED slot (none in spawn harness) → no-op; covered by sequencer slot specs',
-  'sequencer.queue2_cv': 'sets queuedSlot, applied at sequence-end with a POPULATED slot (none in spawn harness) → no-op; covered by sequencer slot specs',
-  'sequencer.queue3_cv': 'sets queuedSlot, applied at sequence-end with a POPULATED slot (none in spawn harness) → no-op; covered by sequencer slot specs',
-  'sequencer.queue4_cv': 'sets queuedSlot, applied at sequence-end with a POPULATED slot (none in spawn harness) → no-op; covered by sequencer slot specs',
-  'sequencer.queue5_cv': 'sets queuedSlot, applied at sequence-end with a POPULATED slot (none in spawn harness) → no-op; covered by sequencer slot specs',
-  'sequencer.queue6_cv': 'sets queuedSlot, applied at sequence-end with a POPULATED slot (none in spawn harness) → no-op; covered by sequencer slot specs',
-  'sequencer.queue7_cv': 'sets queuedSlot, applied at sequence-end with a POPULATED slot (none in spawn harness) → no-op; covered by sequencer slot specs',
-  'sequencer.queue8_cv': 'sets queuedSlot, applied at sequence-end with a POPULATED slot (none in spawn harness) → no-op; covered by sequencer slot specs',
-  'sequencer.next_cv':   'latches queuedNav=next, resolved at sequence-end to an OCCUPIED slot (none in spawn harness) → no-op; covered by sequencer slot/nav specs',
-  'sequencer.prev_cv':   'latches queuedNav=prev, resolved at sequence-end to an OCCUPIED slot (none in spawn harness) → no-op; covered by sequencer slot/nav specs',
-  'sequencer.random_cv': 'latches queuedNav=random, resolved at sequence-end to an OCCUPIED slot (none in spawn harness) → no-op; covered by sequencer slot/nav specs',
-
-  // ── WRITESEQ — recording step-sequencer. Behaviorally, cv (pass-through),
-  //    clock + play_cv (start the run + play the seeded grid) all perturb the
-  //    output (verified locally). The remaining gate-type inputs can't perturb
-  //    the observed output in the isolated, isPlaying=0 behavioral harness:
-  'writeseq.gate':      'with isPlaying=0 + recArm=0 (the behavioral context), a held gate only pass-throughs the CV input to PITCH — but the cv input is unpatched (0V) during the gate test, so PITCH stays 0 → no delta. The gate→record + pass-through paths are covered by writeseq.spec.ts (pass-through + record) + the alignment/transport unit tests.',
-  'writeseq.rec':       'rec toggles recArm, but with isPlaying=0 + no clock there is nothing to record/play → no observable delta. Covered by writeseq-transport.test.ts (T1: rec-gate toggles recArm) + writeseq.spec.ts.',
-  'writeseq.reset_cv':  'reset_cv snaps the playhead to step 0 silently (same class as sequencer.reset_cv); with isPlaying=0 the control is already at step 0 → no delta. Covered by writeseq-transport.test.ts + the shared transport-cv reset path.',
-  'writeseq.queue1_cv': 'sets queuedSlot, applied at sequence-end with a POPULATED slot (none in spawn harness) → no-op (same class as sequencer.queue1_cv); covered by the shared quicksave path.',
-  'writeseq.queue2_cv': 'sets queuedSlot, applied at sequence-end with a POPULATED slot (none in spawn harness) → no-op; covered by the shared quicksave path.',
-  'writeseq.queue3_cv': 'sets queuedSlot, applied at sequence-end with a POPULATED slot (none in spawn harness) → no-op; covered by the shared quicksave path.',
-  'writeseq.queue4_cv': 'sets queuedSlot, applied at sequence-end with a POPULATED slot (none in spawn harness) → no-op; covered by the shared quicksave path.',
 
   // ── SCORE.play_cv toggles transport. With it un-driven the SUT is
   //    in stop state (no output), with it driven the SUT plays.
@@ -2328,18 +2243,7 @@ function contextCvSourceFor(modType: string, portId: string): ContextCvOverride 
 // Needed when one port wants a different SUT knob state than the rest of
 // the module's ports. Keyed `<moduleType>.<testPortId>`.
 //
-//   sequencer.play_cv — the module-wide BEHAVIORAL_PARAMS seeds isPlaying=0
-//     (so the `clock` test's CONTROL is silent). For play_cv we instead want
-//     isPlaying=1: the CONTROL (play_cv unpatched) then runs a STEADY
-//     240-BPM gate train, and the PATCHED (play_cv driven by the generic
-//     4-Hz gate train) XOR-toggles isPlaying on every edge — repeatedly
-//     START/STOPping the SUT so its gate output is CHOPPED/intermittent. The
-//     observable delta is the intermittency (RMS mean drop + per-snapshot
-//     RMS-range widening) of the chopped patched run vs the steady control —
-//     which doesn't hinge on a single edge landing at an exact time (the
-//     fragile single-pulse-toggle approach), so it's robust across spawns.
 const BEHAVIORAL_PORT_PARAMS: Record<string, Record<string, number>> = {
-  'sequencer.play_cv': { isPlaying: 1 },
   // adsr.release — the module-wide BEHAVIORAL_PARAMS keeps sustain LOW (0.2) to
   // give the DECAY scaler a big 1→0.2 excursion, but that leaves the RELEASE tail
   // (which starts FROM the sustain level) only 0.2 tall. RAISE sustain to 0.6 for

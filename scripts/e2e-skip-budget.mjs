@@ -557,7 +557,6 @@ export const SKIP_BUDGET = [
       'clap.spec.ts',
       'coverage-groups-3-4-5.spec.ts',
       'cv-range-uniformity.spec.ts',
-      'drumseqz.spec.ts',
       'illogic-face.spec.ts',
       'nibbles.spec.ts',
       'scope-tuner.spec.ts',
@@ -571,7 +570,7 @@ export const SKIP_BUDGET = [
     homeLane: 'e2e',
     why:
       'PARKED (#1847) — REAL-SOURCE-CHAIN audio proofs and the CV conventions they rest on: default-tuning '
-      + 'pitch accuracy, CLAP and DRUMSEQZ through their real trigger chains, triplet playback, the mono-normal '
+      + 'pitch accuracy, CLAP through its real trigger chain, triplet playback, the mono-normal '
       + 'contract, ADR-004 CV range travel, and SHAPEGEN gate edge semantics. This is precisely the class the '
       + 'poly/MIDI discipline exists for — an engine-direct substitute is what shipped POLYHELM green-but-'
       + 'silent — so while these are parked a silent or mistuned chain has no CI gate at all.',
