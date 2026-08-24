@@ -59,6 +59,9 @@ import { fileURLToPath } from 'node:url';
 import { idsCoveredBy, paramsCoveredByCell } from './cell-coverage';
 import { spawnPatch } from '../_helpers';
 import { showAllBands, type BandFocusDecl } from '../_band-focus';
+// The registry projection, for the COLLECTION-TIME cell-count upper bound the
+// chunk split derives from. Same manifest the other registry-driven sweeps read.
+import { REGISTRY } from '../_registry';
 import { FACE_QUIESCE } from '../_face-quiesce';
 import { STRICT_FACES } from '../../../packages/web/src/lib/ui/workflow/strict-faces';
 // The COLOUR probe's "pick a different one" + its formatter, imported from the
@@ -136,8 +139,116 @@ const SLOW_RENDER = process.env.E2E_SWIFTSHADER === '1' || !!process.env.CI;
 // Units are WALL-CLOCK MS of Playwright test timeout, and this bounds FAILURE
 // only — it is spent exclusively by a test that was going to fail anyway, so the
 // green path costs nothing and no assertion or wait below moves.
-const FACE_FIXED_MS = SLOW_RENDER ? 45_000 : 30_000;
-const FACE_PER_CELL_MS = SLOW_RENDER ? 5_000 : 600;
+// ⚠ THE SLOW_RENDER ARMS WERE RAISED 45_000/5_000 → 70_000/7_000 (2026-08-24),
+// and ONLY because chunking (below) made it safe. Both numbers are derived from
+// measurement, not bumped; the derivation is in the FACE_CELL_CHUNK_CAP block.
+// The short version: `5_000 ms/cell` was BELOW the CI per-drive rate implied by
+// the row that died (>4_900 ms), i.e. ~1.02× margin, so no cap could have fixed
+// it — a chunk drives the same cells at the same rate. Units are WALL-CLOCK MS
+// and both terms BOUND FAILURE only.
+const FACE_FIXED_MS = SLOW_RENDER ? 70_000 : 30_000;
+const FACE_PER_CELL_MS = SLOW_RENDER ? 7_000 : 600;
+
+// ── THE CHUNK CAP — why the operability walk is split at all ────────────────
+//
+// ⚠ RAISING `FACE_PER_CELL_MS` COULD NOT FIX THE BIGGEST FACES, AND THE REASON
+// IS A CONSTRAINT OUTSIDE THIS FILE. `ci.yml` runs each e2e shard with
+// `--global-timeout 1020000` (17 min), and that number is already pinned as the
+// MAXIMUM its 20-min job ceiling permits (`scripts/ci-playwright-timeout.test
+// .ts` enforces `ceiling - MIN_MARGIN_MIN`). A parity row is ONE test on ONE
+// worker and CI retries once, so a failing row costs 2 × its ceiling and that
+// has to fit inside the shard's whole budget. Units are WALL-CLOCK MS
+// throughout; the derived ceiling BOUNDS FAILURE only — it is spent exclusively
+// by a row that was going to fail anyway, so the green path costs nothing and
+// no assertion or wait in this file moves.
+//
+//     per-cell   ceiling for a 90-cell row   two attempts   fits in 1020 s?
+//      5_000 ms            495 s                 990 s       yes, at 97 %
+//      6_000 ms            585 s                1170 s       NO
+//      8_250 ms            788 s                1575 s       NO
+//
+// The largest per-cell value that keeps a 90-cell row's two attempts inside the
+// shard timeout is ~5_170 ms against today's 5_000 — 3 % of room. So the
+// ceiling was not the miscalibrated instrument: ONE ROW WAS SIMPLY HALF A SHARD.
+// MEASURED (2026-08-24, run 32743352800 shard 6/10): a 90-cell row timed out at
+// 495 s and recovered on retry, and the shard spent 972 s of its 1020 s doing
+// it. Raising the constant would have converted that legible one-row flake into
+// a MUTE DEAD SHARD — killed by the runner before the `if: always()` artifact
+// upload, taking ~205 tests' evidence with it, which is the exact outcome
+// `--global-timeout` exists to prevent.
+//
+// ── HOW THE CAP WAS SIZED: EFFECTIVE PER-CELL HEADROOM ─────────────────────
+//
+// A row's ceiling is `FACE_FIXED_MS + FACE_PER_CELL_MS × N`, so its EFFECTIVE
+// per-cell budget is `FACE_FIXED_MS/N + FACE_PER_CELL_MS`. That is a falling
+// curve: the BIGGER the row, the LESS headroom each cell gets, which is why the
+// largest faces starved first while a 4-cell row had budget to spare.
+//
+//     N = 90 cells → 45_000/90 + 5_000 =  5_500 ms/cell  ← the row that died
+//     N = 20 cells → 45_000/20 + 5_000 =  7_250 ms/cell
+//
+// The floor is a POLICY THRESHOLD ON A DERIVED MEASUREMENT: ≥ ~1.3 × the worst
+// CI rate the evidence can lower-bound. It is deliberately NOT set just above
+// the worst sample — this file's own history is that `1_800` and `3_000` were
+// each chosen that way and each blew within days.
+//
+// ⚠ AND THE CAP ALONE WAS NOT ENOUGH — MEASURED, AND THIS IS THE PART THAT
+// MATTERS. Splitting a row does not change the RATE at which cells are driven,
+// so it cannot rescue a per-cell constant that is already under that rate.
+// Measured warm under `E2E_SWIFTSHADER=1`, 1 worker, decomposing the row:
+//
+//     set-parity row (boot + spawn + dock + set assertions, NO drives) 11.8 s
+//     old single 90-cell row, warm n=3 mean                             108 s
+//     → per-drive = (108 − 11.8) / 90                                  1.07 s
+//
+// The row that died exceeded 495 s, so the CI/local factor is > 495/108 = 4.58,
+// which puts the CI boot above 54 s and the CI per-drive above 4.90 s. Against
+// those: `FACE_PER_CELL_MS` at 5_000 ms was ~1.02× the CI drive rate — no margin
+// at all — and `FACE_FIXED_MS` at 45_000 ms did not even cover the 54 s boot.
+// A 1.3× margin therefore needs FIXED ≥ 70 s and PER ≥ 6.4 s, which is where
+// 70_000 / 7_000 above come from.
+//
+// ⚠ CHUNKING IS WHAT MAKES THAT RAISE LEGAL. At 7_000 ms/cell an unchunked
+// 90-cell row would want 675 s, and 2 × 675 = 1350 s blows the 1020 s shard
+// timeout — the dead-shard outcome above. Chunked at 20, the worst row wants
+// 70 + 7 × 20 = 210 s and two attempts cost 420 s, comfortably inside the shard.
+// So the cap and the constants are ONE fix in two halves: the cap buys the shard
+// headroom, and the constants spend it on the margin the rate actually needs.
+// Resulting margin on the largest chunk: ceiling 196 s against a predicted CI
+// cost of 54 + 18 × 4.9 = 142 s, i.e. 1.38×.
+//
+// ⚠ AND THE CAP IS A CAP, NOT A CHUNK SIZE. Chunks are equal slices of the real
+// cell list, so a 90-cell face becomes 5 × 18 rather than 4 × 20 + 1 × 10 — the
+// worst chunk is what the headroom argument has to hold for, and evening them
+// out makes that chunk smaller than the cap rather than equal to it.
+const FACE_CELL_CHUNK_CAP = 20;
+
+/**
+ * How many operability rows a face needs — DERIVED, at collection time, from
+ * the same registry projection every other registry-driven sweep iterates.
+ *
+ * ⚠ IT HAS TO BE A COLLECTION-TIME ANSWER, which is why it reads the manifest
+ * rather than the page: Playwright registers tests synchronously, long before a
+ * browser exists, so the live cell list cannot be consulted. The manifest's
+ * `params + controlFamilies` is an UPPER BOUND on the rendered cell count — a
+ * 2-D pad covers two params in one cell, and a `noUserControl` param renders
+ * none — and an upper bound is the safe direction twice over: it can only ever
+ * ask for MORE chunks than strictly needed (never an under-budgeted row), and
+ * it guarantees `count <= cells.length`, so no chunk can come out empty.
+ *
+ * The rendered list is still the authority on MEMBERSHIP: chunks slice the live
+ * `renderedCells` result, so their union is the real cell list by construction.
+ * If the manifest and the DOM ever disagreed about the SET, §1–§3 already fail
+ * on that directly.
+ *
+ * No module is named here and no population is typed: a face that grows past
+ * the cap gains a row with no edit to this file.
+ */
+function faceCellChunkCount(type: string): number {
+  const mod = REGISTRY.find((m) => m.type === type);
+  const upperBound = (mod?.params.length ?? 0) + (mod?.controlFamilies?.length ?? 0);
+  return Math.max(1, Math.ceil(upperBound / FACE_CELL_CHUNK_CAP));
+}
 
 interface SpecParam {
   id: string;
@@ -1487,11 +1598,25 @@ export function facesParityTypesFor(partition: number, partitions: number = FACE
   return [...STRICT_FACES].sort().filter((t) => facesParityPartitionOf(t, partitions) === partition);
 }
 
-/** Register ONE partition's per-module parity rows. */
-export function registerFacesParityTests(partition: number, partitions: number = FACES_PARITY_PARTITIONS): void {
-  test.describe(`faces render-parity (partition ${partition + 1}/${partitions}): every STRICT_FACES dock full-view carries the def's FULL control surface`, () => {
-  for (const type of facesParityTypesFor(partition, partitions)) {
-    test(`${type}: dock control set === def param set (+families, no extras) and EVERY cell operates`, async ({ page }) => {
+/** What ONE parity row is responsible for. A face at or under the chunk cap
+ *  gets `{ setParity: true, chunk: 0 of 1 }` — one row doing both halves, which
+ *  is exactly the shape this sweep had before chunking existed. */
+interface FaceRowScope {
+  /** Assert the whole-face SET properties (§1, §2, the §3 coverage identity,
+   *  §4 band focus). Never divided across chunks — see FACE_CELL_CHUNK_CAP. */
+  readonly setParity: boolean;
+  /** Which slice of the cell list this row drives, and how many slices there
+   *  are. `null` = drive nothing (a set-parity-only row). */
+  readonly chunk: { readonly index: number; readonly count: number } | null;
+}
+
+/**
+ * ONE parity row's body, for whichever half (or both) the caller scoped it to.
+ *
+ * ⚠ THE SPLIT IS SIZED, NOT ARBITRARY. See FACE_CELL_CHUNK_CAP for why the
+ * operability walk is chunked at all and how the cap was derived.
+ */
+async function runFaceParityRow(page: Page, type: string, scope: FaceRowScope): Promise<void> {
       // Stage 1 of the derived budget (see FACE_FIXED_MS): covers boot + spawn
       // + dock open + the parity reads, i.e. everything before the cell count
       // is even knowable.
@@ -1514,6 +1639,21 @@ export function registerFacesParityTests(partition: number, partitions: number =
 
       const dockShell = await openDock(page, 'm');
 
+      // ⚠ EVERY SET ASSERTION BELOW IS GUARDED BY `scope.setParity` AND RUNS ON
+      // EXACTLY ONE ROW PER FACE. Repeating them on each chunk would triple the
+      // protocol cost of a big face for no coverage, and DIVIDING them would be
+      // strictly worse than that: "the dock renders exactly one control per def
+      // param" is a claim about the WHOLE face, and a chunk can only ever see a
+      // slice of it. So set parity is never chunked — only the per-cell walk is.
+      //
+      // `defIds` is hoisted above the guard because it is PURE (a projection of
+      // the spec, no protocol call) and §3's coverage identity needs it.
+      // #1726 — a param the def DECLARES has no user control is not a lost
+      // control; it is a control that must not exist.
+      const noControl = new Set(spec.noUserControl ?? []);
+      const defIds = spec.params.map((p) => p.id).filter((id) => !noControl.has(id));
+
+      if (scope.setParity) {
       // ── 1. PARAM PARITY: exact id-multiset equality, DOM vs live def. ──
       // ⚠ A CONTROL MAY COVER MORE THAN ONE PARAM. The `control-<paramId>`
       // convention assumes one element per param, which is true of every 1-D
@@ -1542,8 +1682,6 @@ export function registerFacesParityTests(partition: number, partitions: number =
       // ABSENT immediately below rather than dropped from the subject — an
       // exclusion with no matching assertion is how a suppression mechanism
       // turns into a hiding place.
-      const noControl = new Set(spec.noUserControl ?? []);
-      const defIds = spec.params.map((p) => p.id).filter((id) => !noControl.has(id));
       expect(
         [...domIds].sort(),
         `${type}: dock full-view renders EXACTLY one interactive control per def param ` +
@@ -1578,7 +1716,13 @@ export function registerFacesParityTests(partition: number, partitions: number =
           `shell-cell spec (packages/web/src/lib/ui/workflow/shell-cells.ts).`,
       ).toEqual([]);
 
+      } // end set-parity §1–§2
+
       // ── 3. PER-CELL OPERABILITY: drive every cell, not one sampled knob. ──
+      // The cell list is read on EVERY row: a set-parity row asserts the
+      // coverage identity over it, and a chunk row slices it. Reading it here
+      // rather than inside either guard is what makes the union of the chunks
+      // equal to the whole list BY CONSTRUCTION rather than by arithmetic.
       const cells = await renderedCells(dockShell);
       // ⚠ THE INVARIANT IS PARAMS COVERED, NOT CELLS RENDERED. It used to read
       // `cells.length === params + families`, which silently assumes every cell
@@ -1587,6 +1731,7 @@ export function registerFacesParityTests(partition: number, partitions: number =
       // with one pad was one cell SHORT and went red for a control that was
       // working perfectly. Counting coverage instead is the general form: the
       // next N-to-1 control needs no edit here.
+      if (scope.setParity) {
       const paramCells = cells.filter((c) => c.kind === 'param');
       const covered = cells.reduce((n, c) => n + paramsCoveredByCell(c.kind, c.covered), 0);
       expect(
@@ -1600,19 +1745,41 @@ export function registerFacesParityTests(partition: number, partitions: number =
       ).toBe(paramCells.length + (spec.controlFamilies?.length ?? 0));
       const keys = cells.map((c) => c.key);
       expect(new Set(keys).size, `${type}: every rendered cell carries a UNIQUE data-cell-key`).toBe(keys.length);
+      } // end set-parity §3 coverage identity
 
-      // Stage 2: now that the face's REAL size is known, extend the ceiling by
+      if (scope.chunk) {
+      // ⚠ CONTIGUOUS SLICE, NOT A MODULO STRIPE, and the reason is `openTabFor`.
+      // `renderedCells` returns cells GROUPED BY BAND, which is the property the
+      // tab cursor exploits to turn a per-cell pair of protocol round-trips into
+      // a per-TRANSITION one (MEASURED: `locator.count` 382 → 33). Striping by
+      // `index % count` would interleave bands and make almost every cell a tab
+      // transition — it would hand back the exact optimisation this file already
+      // paid for. A slice keeps the grouping intact inside each chunk.
+      const size = Math.ceil(cells.length / scope.chunk.count);
+      const mine = cells.slice(scope.chunk.index * size, (scope.chunk.index + 1) * size);
+      const where = `${type} chunk ${scope.chunk.index + 1}/${scope.chunk.count}`;
+      // A chunk that drives nothing is a row that asserts nothing. It cannot
+      // happen (the chunk count is derived from a cell-count UPPER bound, so
+      // `count <= cells.length` always), which is exactly why it is worth
+      // asserting: if that reasoning ever stops holding, this fails loudly
+      // instead of going quietly vacuous.
+      expect(
+        mine.length,
+        `${where}: drives at least one cell — an empty chunk is a row that asserts nothing`,
+      ).toBeGreaterThan(0);
+
+      // Stage 2: now that THIS ROW'S real size is known, extend the ceiling by
       // its own cell count (Playwright counts a re-`setTimeout` from the test's
       // start, so this SUPERSEDES stage 1 rather than stacking on it). The
       // per-cell loop below is the whole cost — a 46-cell reverb gets ~7× the
       // driving budget of a 2-cell VCA because it does ~7× the driving.
-      test.setTimeout(FACE_FIXED_MS + FACE_PER_CELL_MS * cells.length);
+      test.setTimeout(FACE_FIXED_MS + FACE_PER_CELL_MS * mine.length);
 
-      // ONE cursor per face — see openTabFor. It turns a per-cell pair of
+      // ONE cursor per chunk — see openTabFor. It turns a per-cell pair of
       // protocol round-trips into a per-TRANSITION one, which is the shape the
       // work actually has.
       const tabs = newTabCursor();
-      for (const cell of cells) {
+      for (const cell of mine) {
         // ⚠ RE-ASSERTED PER CELL, and the reason is a real interaction rather
         // than caution: on a band-focused face the FOCUS PARAM IS ITSELF A CELL.
         // Driving it (the sweep sets every control) re-focuses the plate
@@ -1625,7 +1792,9 @@ export function registerFacesParityTests(partition: number, partitions: number =
         await openTabFor(page, cell, tabs);
         await driveCell(page, dockShell, 'm', spec, cell);
       }
+      } // end chunk walk
 
+      if (scope.setParity) {
       // ── 4. BAND FOCUS: the feature must actually HIDE something. ──
       //
       // ⚠ THE COMPANION TO `showAllBands`, AND NEITHER LEG MEANS ANYTHING
@@ -1691,7 +1860,34 @@ export function registerFacesParityTests(partition: number, partitions: number =
           `${type}: only one band declared, so "the others are hidden" asserts nothing`,
         ).toBeGreaterThan(0);
       }
+      } // end set-parity §4
+}
+
+/** Register ONE partition's per-module parity rows. */
+export function registerFacesParityTests(partition: number, partitions: number = FACES_PARITY_PARTITIONS): void {
+  test.describe(`faces render-parity (partition ${partition + 1}/${partitions}): every STRICT_FACES dock full-view carries the def's FULL control surface`, () => {
+  for (const type of facesParityTypesFor(partition, partitions)) {
+    const chunks = faceCellChunkCount(type);
+    if (chunks === 1) {
+      // AT OR UNDER THE CAP: one row, both halves — byte-identical to the shape
+      // this sweep had before chunking, including its title. Most of the fleet
+      // takes this path, so chunking costs those faces nothing at all.
+      test(`${type}: dock control set === def param set (+families, no extras) and EVERY cell operates`, async ({ page }) => {
+        await runFaceParityRow(page, type, { setParity: true, chunk: { index: 0, count: 1 } });
+      });
+      continue;
+    }
+    // OVER THE CAP: the set properties stay whole on their own row, and the
+    // per-cell walk splits. The chunk indices are computed here at COLLECTION
+    // time from the registry — no module is named and no count is typed.
+    test(`${type}: dock control set === def param set (+families, no extras)`, async ({ page }) => {
+      await runFaceParityRow(page, type, { setParity: true, chunk: null });
     });
+    for (let index = 0; index < chunks; index++) {
+      test(`${type}: EVERY cell operates (chunk ${index + 1}/${chunks})`, async ({ page }) => {
+        await runFaceParityRow(page, type, { setParity: false, chunk: { index, count: chunks } });
+      });
+    }
   }
   });
 }

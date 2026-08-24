@@ -61,6 +61,11 @@ export interface RegistryModule {
   outputs: RegistryPort[];
   // schemaVersion-2 enrichment — full ParamDef surface + stereo pairs.
   params: RegistryParam[];
+  /** DOM-only curated controls a def declares alongside its params — each
+   *  renders exactly one faceplate cell. Emitted by the manifest whenever the
+   *  def declares any; read as `?? []`. `faces-parity-suite` needs it for the
+   *  collection-time cell-count upper bound its chunk split derives from. */
+  controlFamilies?: { id: string }[];
   stereoPairs?: [string, string][];
   /** The def declares a curated `face` and is therefore MIGRATED — its lane
    *  renders `<ModuleShell>` rather than the uniform `<ModuleShellPlaceholder>`.
