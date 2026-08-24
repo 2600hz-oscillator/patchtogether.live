@@ -1,43 +1,63 @@
 // packages/web/src/lib/video/modules/picturebox.ts
 //
-// PICTUREBOX — image-file source. User picks a file in the card UI;
-// the file is downscaled to 640x480 + JPEG-encoded + base64-stored in
-// `node.data.imageBytes`, which rides the Y.Doc out to all rack-mates.
-// On every peer (including the loader), the card decodes those bytes
-// back into an ImageBitmap and uploads it into our source texture.
+// PICTUREBOX — image-file source. The player picks a file; a still is
+// zoom-fit-cropped to the ENGINE RESOLUTION (TARGET_W×TARGET_H = VIDEO_RES =
+// 1024×768, 4:3 — see video-res.ts), JPEG-encoded q=0.85, base64-stored in
+// `node.data.imageBytes` and ridden out to all rack-mates on the Y.Doc. On every
+// peer (including the loader) the NODE-lifetime extras producer decodes those
+// bytes back into an ImageBitmap and uploads them into our source texture.
 //
-// schemaVersion bumped to 2 in PR #-; v1 had no imageBytes field
-// (file-picker was local-only). `migrate` here ensures legacy patches
-// load without warnings.
+// ⚠ THE HEADER USED TO SAY "downscaled to 640x480" AND WAS WRONG BY 2.56× IN
+// AREA. The real target has been VIDEO_RES for a long time, and the card printed
+// the live constant (`synced (${TARGET_W}×${TARGET_H})`) three lines below the
+// stale sentence, while `docs.explanation` and the docs-site DESCRIPTIONS both
+// said 1024×768 correctly. Fixed rather than left, because a comment that
+// contradicts the code three lines away is the one a reader believes.
 //
-// schemaVersion bumped to 3 (asset-selector PR): adds `data.assets` — a
-// length-7 array of base64 JPEGs (each encoded the SAME way as imageBytes),
-// one per asset SLOT. A note/gate output from a clip player switches which
-// slot is displayed (see asset-select.ts for the 7-note → slot mapping).
-// `imageBytes` is preserved as the CURRENTLY-DISPLAYED image (back-compat +
-// render unchanged for single-image use). The migration fills
-// `assets = [imageBytes ?? null, null, …]` so a v2 single-image node becomes
-// a slot-1-only 7-slot node.
+// ── THE PERSISTED SHAPE, AND WHERE FORWARD-COMPAT ACTUALLY LIVES ───────────
 //
-// schemaVersion bumped to 4 (animated-gif PR): adds `data.assetMimes` — a
-// length-7 array of per-slot MIMEs ('image/jpeg' | 'image/gif' | null) parallel
-// to `assets`, plus the single-image `imageMime` may now be 'image/gif'. An
-// animated gif is stored BYTE-FOR-BYTE (not JPEG-flattened) so every frame
-// survives the sync; the card decodes it (WebCodecs ImageDecoder) into per-frame
-// bitmaps and the module steps them on the engine clock (gif-frames.ts). Absent
-// `assetMimes` (v3 nodes) reads as all-JPEG — correct, since v3 only stored
-// JPEGs. See gif-frames.ts (pure scheduler) + picturebox-encode.ts (decode).
+// ⚠ THIS BLOCK USED TO DESCRIBE A `schemaVersion` FIELD AND A `migrate`
+// FUNCTION. NEITHER HAS EVER EXISTED HERE — `VideoModuleDef` declares no such
+// members and the def object below has none. The forward-compat behaviour is
+// real, but it lives in the READERS, which default every absent array rather
+// than rewriting old nodes. That is the shape to preserve; do NOT "fix" this by
+// adding a `migrate`, because nothing would call it (check the consumer before
+// satisfying a description — CLAUDE.md).
+//
+// The shape grew in three steps, and each step's OLD nodes stay readable
+// because of a reader default, not a migration:
+//
+//   * `imageBytes` / `imageMime` / `imageName` — the single, currently-displayed
+//     image. The oldest nodes have only this.
+//   * `assets` — a length-7 array of base64 images, one per asset SLOT. A clip
+//     player's note/gate output switches which slot is displayed (see
+//     asset-select.ts for the 7-note → slot mapping). ABSENT ⇒ read as seven
+//     nulls (`padSlotArray`, `$lib/graph/picturebox-data.ts`; the producer does
+//     the same at extras-producers.ts).
+//   * `assetMimes` — a length-7 array of per-slot MIMEs ('image/jpeg' |
+//     'image/gif' | null) parallel to `assets`, plus the single-image
+//     `imageMime` may itself be 'image/gif'. ABSENT ⇒ every loaded slot reads as
+//     a JPEG still, which is CORRECT rather than merely tolerable: nodes written
+//     before this key existed could only ever hold JPEGs.
+//
+// An animated gif is stored BYTE-FOR-BYTE (not JPEG-flattened) so every frame
+// survives the sync; it is decoded (WebCodecs ImageDecoder) into per-frame
+// bitmaps and the module steps them on the engine clock. See gif-frames.ts (the
+// pure scheduler) + picturebox-encode.ts (decode + the size caps).
 //
 // Limits (see lib/multiplayer/picturebox-limits.ts): 2 PICTUREBOX per
 // user, 8 per workspace. The 8/workspace cap is mirrored as
 // `maxInstances` so the palette greys out the picker at the cap; the
 // per-user cap is enforced in Canvas's spawnFromPalette.
 //
-// File-picker UX lives in PictureboxCard.svelte; this factory exposes
-// `setImage(bitmap)` via the handle's `read` channel so the card can
-// drive uploads. `setImage(null)` clears. The 7-slot extras
-// (`setAssetAtSlot` / `selectSlot` / `slotHasAsset`) let the card
-// pre-upload up to 7 textures + switch the active one instantly on a gate.
+// The file-picker UI lives in TWO surfaces now — `PictureboxCard.svelte` (the
+// legacy card) and `picturebox/PictureboxAssetsBody.svelte` (the dock
+// faceplate's `fullViewBody`) — and both write `node.data` through the one seam
+// at `$lib/graph/picturebox-data.ts`. This factory exposes `setImage(bitmap)`
+// via the handle's `read` channel so the extras producer can drive uploads;
+// `setImage(null)` clears. The 7-slot extras (`setAssetAtSlot` / `selectSlot` /
+// `slotHasAsset`) keep up to 7 textures resident so a gate-driven switch is an
+// instant active-index flip.
 //
 // Inputs:
 //   gain (cv, paramTarget=gain): displaces the gain knob.
@@ -135,7 +155,9 @@ export interface PictureboxHandleExtras {
   setAnimatedAtSlot: (i: number, frames: DecodedGifFrame[] | null) => void;
 }
 
-/** Persisted shape on `node.data` for PICTUREBOX nodes (schemaVersion 4). */
+/** Persisted shape on `node.data` for PICTUREBOX nodes. Every optional member
+ *  below is optional because OLDER NODES DO NOT CARRY IT — the readers default
+ *  it (see the header). There is no `schemaVersion` and no `migrate`. */
 export interface PictureboxData {
   /** base64-encoded image bytes for the CURRENTLY-DISPLAYED image. Usually a
    *  JPEG q=85 downscaled to the engine res (zoom-fit-crop); for an ANIMATED
@@ -208,6 +230,111 @@ export const pictureboxDef: VideoModuleDef = {
     { id: 'asset_gate',  label: 'Asset gate',  defaultValue: 0, min: 0,   max: 1,  curve: 'linear' },
   ],
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // #1726 — THE TWO SYNTHETIC PARAMS ARE NOT CONTROLS, AND SAYING SO IS
+  // MANDATORY RATHER THAN TIDY.
+  //
+  // `asset_pitch` and `asset_gate` exist so the cross-domain CV bridge has
+  // somewhere to write; the docs above already call them *"synthetic, hidden
+  // param… Not a card knob"*, and the legacy card honoured that by simply not
+  // drawing them. A FACE cannot honour it the same way: `module-face-lint`'s
+  // completeness loop is unconditional for a promoted def and demands an
+  // interactive cell per `ParamDef`. Without this declaration the faceplate
+  // would paint a continuous rotary over a raw V/oct cache and a second one over
+  // a raw gate level — both of which the player would be able to turn, to no
+  // effect, until the next bridge write stomped it.
+  //
+  // `writer: 'cv-port'` is the only legal value for each, and it is CHECKED
+  // rather than stylistic: `noUserControlProblems` reddens `'cv-port'` when no
+  // input declares `paramTarget` for the param, and reddens `'internal'` when
+  // one does. Both of these have a matching input above.
+  //
+  // ⚠ THIS IS A BEHAVIOUR CHANGE BEYOND THE FACEPLATE, and both directions are
+  // improvements: `group-controls.listExposableControls` stops auto-exposing
+  // these two on a collapsed GROUP's instrument bar, and `push-card-schema`
+  // stops ranking them for a Push 2 encoder. Neither surface should ever have
+  // offered a raw gate cache as a knob.
+  //
+  // ⚠ IT MUST SIT AT THE DEF'S TOP LEVEL, not as a per-param flag. That is the
+  // real API (`NoUserControlParam { param, writer, why }`), and it is also what
+  // keeps this free: `attest-code-basis.ts` strips `noUserControl` only as a
+  // DIRECT member of a module-scope object literal, because a nested one could
+  // be real WebGL code.
+  noUserControl: [
+    {
+      param: 'asset_pitch',
+      writer: 'cv-port',
+      why:
+        'written by the asset_pitch bridge as a RAW V/oct value (the port declares no cvScale, so '
+        + 'the bridge passes it straight through). It is a cache, not a setting: the extras pump '
+        + 'reads it on each asset_gate rising edge and maps it by pitch class to one of the seven '
+        + 'slots. A player turning a dial here would be overwritten by the next bridge write.',
+    },
+    {
+      param: 'asset_gate',
+      writer: 'cv-port',
+      why:
+        'written by the asset_gate bridge as a raw 0..1 gate level; the extras pump edge-detects '
+        + 'its RISING edge to fire one slot switch. Nothing reads the held level, so a control '
+        + 'over it would express nothing a player could use — the observable is the edge, and an '
+        + 'edge is not a value you can set.',
+    },
+  ],
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // THE FACEPLATE
+  //
+  // WHAT IT IS FOR. A picture, in the video graph, that you chose. picturebox is
+  // the simplest possible video SOURCE — no camera, no stream, no network — and
+  // that is why it is everywhere. But the idea in it is the BANK: seven slots,
+  // each labelled with a scale degree (C D E F G A B), selected by PITCH CLASS
+  // from a clip player's pitch + gate, so a C in any octave shows slot 1. That
+  // turns an image bank into a note-triggered image sampler — you sequence
+  // pictures the way you sequence notes. The verb is not "set a level", it is
+  // LOAD A BANK AND PLAY IT.
+  //
+  // THE TIER LADDER, read back as a sentence: at every tier you get the PICTURE,
+  // and at every tier past mini you also get GAIN. That is the whole ladder,
+  // because that is the whole module — one control and one image.
+  //
+  // ⚠ ONE RANKED KEY IS NOT A THIN FACE, IT IS AN HONEST ONE. The module has
+  // exactly one thing a player turns. Compact is the default and width must be
+  // EARNED, so a face with one control should look like a face with one control.
+  //
+  // ⚠ NO `pages`, AND NO TAB RAIL. One ranked control is one band, and the rail
+  // engages at DOCK_TAB_MIN_BANDS. The owner's control-heavy ruling is about
+  // *many controls of DIFFERENT types*; padding a one-knob module to seven bands
+  // to earn a rail is the anti-pattern that ruling names by name.
+  //
+  // ⚠ `glyph: 'none'` IS MANDATORY FOR A VIDEO DEF, not a taste call.
+  // `glyphBinding` short-circuits on a `primaryAudioOutPortId`, and this def's
+  // only output is `{ id: 'out', type: 'image' }` — so EVERY other glyph literal
+  // resolves to a dead `{kind:'static'}` and reddens module-face-lint. The
+  // picture arrives from a different seam entirely: `laneGlyphFor` returns
+  // 'picture' for `domain === 'video'` unconditionally, and ModuleShell renders
+  // `<VideoTileThumb nodeId={id} />` — a LIVE, PER-NODE blit of this node's own
+  // output FBO, for free. That is why this is the rare face whose lane picture
+  // is accepted rather than refused: video-domain modules were never on the
+  // glyph path, where a component is a pure function of one param value and
+  // every instance would draw the same thing.
+  //
+  // ⚠ `paramCells: { gain: 'fader' }` IS A REAL DECISION. `gain` is a linear
+  // 0..2 brightness multiply whose meaningful landmark is unity at the MIDDLE of
+  // the throw. The legacy card already chose a NeonFader over a knob, and
+  // nothing in a ParamDef distinguishes "a level" from any other continuous
+  // scalar — so an undeclared face would silently swap a dial in for a throw,
+  // invisibly to every def-reading gate.
+  //
+  // ⚠ THE EXTENSION IS NOT OPTIONAL HERE, AND NOT ONLY FOR THE SCREEN SWITCH.
+  // Promotion stops both surfaces rendering `PictureboxCard.svelte`, which owns
+  // this module's ENTIRE INPUT PATH — eight `<input type="file">` elements that
+  // no `ParamCellKind` can mount. See $lib/ui/modules/picturebox/shell-extension.ts.
+  face: {
+    glyph: 'none',
+    order: ['gain'],
+    paramCells: { gain: 'fader' },
+    extension: 'picturebox',
+  },
 
   docs: {
     explanation: "An image source for the video graph. You pick an image file in the card (\"Choose image...\"); a still is zoom-fit-cropped to the engine resolution (1024x768, 4:3), JPEG-encoded (q=0.85), and synced across rack-mates so every peer sees the same picture. An ANIMATED gif is kept byte-for-byte (not flattened) and PLAYS — its frames are decoded (WebCodecs ImageDecoder) and stepped on the engine clock, looping with the gif's own per-frame delays; the card preview animates too. Where ImageDecoder is unavailable it falls back to the first frame, and a gif over the sync size cap is stored as a first-frame still (the card hints why). The fragment shader samples the current frame's texture and multiplies its RGB by Gain (idle = a dark teal fill so an empty card reads as alive, not broken). Beyond the single image, picturebox holds a 7-slot asset bank: right-click the card to open the \"Load multiple…\" panel and load one image (or gif) per slot, labelled by the C-major scale degrees C D E F G A B (slots 1-7). Patch a clip player's note/pitch + gate into asset_pitch / asset_gate and each gate edge switches the displayed slot by pitch class (octave-independent; a black key is ignored). Use it as a still backdrop, an animated-gif loop, an album-art frame, or a note-triggered image sampler feeding downstream video benders.",

@@ -102,6 +102,7 @@ import { filterDef } from '$lib/audio/modules/filter';
 import { gatemaidenDef } from '$lib/audio/modules/gatemaiden';
 import { colourofmagicDef } from '$lib/video/modules/colourofmagic';
 import { lushgardenDef } from '$lib/video/modules/lushgarden';
+import { pictureboxDef } from '$lib/video/modules/picturebox';
 import { pongDef } from '$lib/audio/modules/pong';
 import { karplusDef } from '$lib/audio/modules/karplus';
 import { meowboxDef } from '$lib/audio/modules/meowbox';
@@ -269,6 +270,23 @@ const RANGE_BOUND_CARDS: Readonly<Record<string, { params: readonly ParamDef[] }
   // is the interesting one: 0.5..10 on a log curve, the only non-0..1 range on
   // the module, and the one where a divergence would have been least obvious.
   'LushGardenCard.svelte': lushgardenDef,
+  // Converted with its FACEPLATE (2026-08-24). ⚠ THE ONE CONTROL WAS HALF-BOUND,
+  // WHICH IS THE WORST OF THE THREE STATES: it read `defaultValue` off the def
+  // and then re-typed `min={0} max={2}` as literals, so the card LOOKED
+  // def-bound to a reader while carrying a second copy of the travel. It agreed
+  // with the def, and no gate could have told you if it had not — picturebox sat
+  // outside this set, which is the blind spot CLAUDE.md names as where this
+  // class lives now. Promotion is what makes the second copy expensive: the dock
+  // renders GAIN straight off the `ParamDef`, so a later edit to one side would
+  // give one fader two travels depending on the surface.
+  //   ⚠ Bound with `paramSpec`, deliberately NOT with a new exported const off
+  // the def. `picturebox.ts` is in the WebGL attest basis, where `face`, `docs`,
+  // `controlFamilies` and `noUserControl` are hash-transparent and ordinary code
+  // is not — an exported `PICTUREBOX_GAIN_RANGE` would have moved the hash and
+  // cost a real-GPU re-attest that CI (SwiftShader) cannot run. `paramSpec` adds
+  // nothing to the def, so the single source of truth is bought for zero attest.
+  // Same trick is available to every other basis-resident video card.
+  'PictureboxCard.svelte': pictureboxDef,
   // Converted with its FACEPLATE (2026-08-23). ⚠ THE INTERESTING ONE: besides
   // re-typing three ranges, this card read its DEFAULTS OUT OF THE DEF BY
   // POSITION — pongDef.params[0..2] — while the same PR adds a fourth param.
@@ -645,6 +663,12 @@ const MAPPING_BOUND_CARDS: readonly string[] = [
   // was not enrolled until the comment stripper landed.
   'KarplusCard.svelte',
   'WarrensvisionsCard.svelte',
+  // Range AND mapping, in one step, because the card has exactly ONE control:
+  // its NeonFader now reads `min`/`max`/`defaultValue`/`label`/`curve` off
+  // `paramSpec(pictureboxDef, 'gain')`, so the def is the only copy of any of
+  // them. (`gain` declares no `format`, so the readout clause below is vacuous
+  // here — the Fader's own ladder is the whole law, and both surfaces use it.)
+  'PictureboxCard.svelte',
   'ChromaconsoleCard.svelte',
   'CubeCard.svelte',
   'CloudsCard.svelte',
