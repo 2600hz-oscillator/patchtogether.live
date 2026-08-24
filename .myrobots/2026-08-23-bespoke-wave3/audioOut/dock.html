@@ -1,0 +1,256 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>AUDIO OUT face — the dock faceplate</title>
+<style>
+/* ─────────────────────────────────────────────────────────────────────────
+   AUDIO OUT FACEPLATE — MOCKUP, state 1 of 2.
+   SPEC AND MOCKUP ONLY. Nothing here is implemented. See spec.md.
+
+   House tokens, the same set the wave-1 and wave-2 mocks use. The METER is a
+   CSS stand-in; the real one is a 2D canvas in the face's `fullViewBody`,
+   fed by read('outputSnapshotL') / read('outputSnapshotR') — the per-channel
+   taps that already exist at audio-out.ts:235-246 and are read by nothing.
+   ───────────────────────────────────────────────────────────────────────── */
+:root{
+  --bg:#0e1013; --dock:#12161c; --plate:#262a31; --pbody:#1c1f24; --well:#0a0c0f;
+  --line:#2c3037; --tile:#33383f; --ink:#eef1f5; --dim:#9aa2ad; --faint:#646c77;
+  --cv:#7dd3fc; --accent:#6cf; --ch1:#fbbf24; --ch2:#60a5fa; --warn:#f2c14e; --good:#8fe6b0;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+  font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1200px;margin:0 auto;padding:26px 20px 90px}
+h1{font-size:21px;font-weight:800;margin:0 0 6px;letter-spacing:.01em}
+.sub{color:var(--dim);font-size:12.5px;margin:0 0 14px;max-width:106ch}
+.sub b{color:var(--ink)} code{font-family:var(--mono);font-size:11.5px;color:var(--ch1)}
+.nav{display:flex;gap:8px;margin:0 0 20px;font-size:11px;flex-wrap:wrap}
+.nav a{color:var(--ink);text-decoration:none;border:1px solid var(--line);border-radius:6px;
+  padding:6px 12px;background:#12161c;font-family:var(--mono);letter-spacing:.06em;text-transform:uppercase}
+.nav a.on{border-color:var(--ch1);color:var(--ch1)}
+.warn{border:1px solid #6a5330;background:#1c1811;border-radius:8px;padding:11px 14px;
+  margin:12px 0;font-size:12.5px;color:#e8cf9a;max-width:118ch}
+.warn b{color:var(--warn)}
+.ok{border:1px solid #3b5a48;background:#111a15;border-radius:8px;padding:11px 14px;
+  margin:12px 0;font-size:12.5px;color:#a9d8bd;max-width:118ch}
+.ok b{color:var(--good)}
+.cols{display:grid;grid-template-columns:minmax(0,1fr) 390px;gap:18px;align-items:start}
+@media (max-width:1080px){.cols{grid-template-columns:minmax(0,1fr)}}
+
+.dock{background:var(--dock);border:1px solid var(--line);border-radius:11px;overflow:hidden;padding:11px}
+.chromebar{display:flex;align-items:baseline;gap:9px;padding:0 2px 8px}
+.chromebar .nm{font-size:13px;font-weight:800;letter-spacing:.03em}
+.chromebar .rl{font-size:9.4px;letter-spacing:.09em;text-transform:uppercase;color:var(--faint);font-family:var(--mono)}
+.chromebar .x{margin-left:auto;color:var(--faint);font-family:var(--mono);font-size:12px}
+.plate{background:var(--pbody);border:1px solid var(--tile);border-left:4px solid var(--cv);
+  border-radius:10px;padding:0 0 12px;width:max-content;max-width:100%}
+
+/* ── the fullViewBody: the terminal meter ─────────────────────────────── */
+.extbody{padding:12px 14px 4px}
+.meter{width:300px;max-width:100%;background:#0a0c10;border:1px solid #1a1f2a;border-radius:4px;
+  padding:10px 11px 9px;display:flex;flex-direction:column;gap:9px}
+.mrow{display:flex;align-items:center;gap:8px}
+.mrow .ch{font-family:var(--mono);font-size:8.2px;letter-spacing:.12em;color:var(--faint);width:9px}
+.bar{position:relative;flex:1;height:11px;border-radius:2px;background:#141920;overflow:hidden}
+.bar i{position:absolute;left:0;top:0;bottom:0;width:var(--v);
+  background:linear-gradient(90deg,#3f8f66 0%,#6fce9a 62%,#d8c765 84%,#e08a6a 100%)}
+/* the −1 dBFS ceiling mark — MASTER_CEILING_DB, imported, never re-typed */
+.bar u{position:absolute;top:-1px;bottom:-1px;left:89%;width:1px;background:#8a6a3a;text-decoration:none}
+/* peak-hold tick */
+.bar s{position:absolute;top:0;bottom:0;left:var(--p);width:2px;background:#e9edf3;opacity:.85;text-decoration:none}
+.mscale{display:flex;justify-content:space-between;padding-left:17px}
+.mscale b{font-family:var(--mono);font-size:7.2px;font-weight:400;letter-spacing:.08em;color:#4d5560}
+.mnote{font-family:var(--mono);font-size:8px;letter-spacing:.05em;color:#4d5560;padding-left:17px}
+
+/* ── bands ────────────────────────────────────────────────────────────── */
+.bands{padding:6px 14px 0}
+.band{border-top:1px solid var(--line);padding-top:8px;margin-top:10px}
+.band:first-child{border-top:0;margin-top:4px}
+.blab{margin:0 0 7px;font-size:9.4px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--dim)}
+.row{display:flex;flex-wrap:wrap;align-items:flex-start;gap:10px 18px}
+/* NeonFader stand-in — a throw, not a dial (face.paramCells: { master: 'fader' }) */
+.f{width:52px;display:flex;flex-direction:column;align-items:center;gap:5px}
+.f i{--v:.7;--fc:#7dd3fc;display:block;width:16px;height:74px;border-radius:8px;position:relative;
+  background:linear-gradient(#171b21,#12161c);border:1px solid #333a43}
+.f i::before{content:"";position:absolute;left:50%;transform:translateX(-50%);width:2px;top:6px;bottom:6px;
+  background:#262c34;border-radius:1px}
+.f i::after{content:"";position:absolute;left:50%;width:22px;height:9px;border-radius:2px;
+  background:var(--fc);box-shadow:0 0 7px color-mix(in srgb,var(--fc) 60%,transparent);
+  transform:translate(-50%,-50%);top:calc(6px + (1 - var(--v)) * (100% - 12px))}
+.f b{font-size:7.8px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--dim);
+  font-family:var(--mono);text-align:center}
+/* selector cell stand-in */
+.sel{display:flex;flex-direction:column;gap:4px;min-width:210px}
+.sel .cap{font-size:7.8px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--dim);font-family:var(--mono)}
+.selbox{display:flex;align-items:center;gap:7px;border:1px solid #3a4048;border-radius:6px;
+  background:#151a21;padding:5px 9px}
+.selbox .tag{font-family:var(--mono);font-size:7.6px;letter-spacing:.12em;color:var(--faint)}
+.selbox .val{font-family:var(--mono);font-size:10px;color:var(--ink);flex:1 1 auto;min-width:0;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.selbox .caret{color:var(--faint);font-size:9px}
+.selbox.dis{opacity:.45}
+
+/* ── side notes ───────────────────────────────────────────────────────── */
+.notes{display:flex;flex-direction:column;gap:12px}
+.card{border:1px solid var(--line);background:#101419;border-radius:9px;padding:12px 14px}
+.card h3{margin:0 0 7px;font-size:10px;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--accent);font-family:var(--mono);font-weight:700}
+.card p{margin:0 0 8px;font-size:12px;color:var(--dim)}
+.card p:last-child{margin-bottom:0}
+.card b{color:var(--ink)}
+table{border-collapse:collapse;width:100%;font-size:11px;margin:2px 0 0}
+th,td{text-align:left;padding:4px 7px 4px 0;border-bottom:1px solid #1e242c;vertical-align:top;color:var(--dim)}
+th{color:var(--faint);font-family:var(--mono);font-size:8.6px;letter-spacing:.09em;text-transform:uppercase;font-weight:400}
+td b{color:var(--ink)}
+.aria{font-family:var(--mono);font-size:10.5px;color:#8fe6b0}
+</style>
+<div class="wrap">
+
+<h1>AUDIO OUT — the dock faceplate</h1>
+<p class="sub">
+  <b>SPEC AND MOCKUP ONLY. Nothing here is implemented.</b> The rack's terminal, promoted.
+  One param cell, one selector cell, and a <b>fullViewBody</b> carrying the thing this module
+  has never had: a picture of what is reaching the speakers.
+</p>
+
+<div class="nav">
+  <a class="on" href="dock.html">1 · the dock face</a>
+  <a href="io-panel.html">2 · the 🎧 panel — the blocker</a>
+  <a href="spec.md">spec.md</a>
+</div>
+
+<div class="ok">
+  <b>The meter costs nothing new.</b> <code>outputSnapshotL</code> and <code>outputSnapshotR</code>
+  already exist (<code>audio-out.ts:235-246</code>), are tapped off the same node that feeds
+  <code>ctx.destination</code>, and are negative-controlled in both directions on every run by
+  <code>art/scenarios/audio-out/per-channel-taps.test.ts</code>. <b>Nothing in the UI reads them today.</b>
+</div>
+
+<div class="cols">
+<div>
+
+  <div class="dock">
+    <div class="chromebar">
+      <span class="nm">audio out</span>
+      <span class="rl">dock · full view</span>
+      <span class="x">✕</span>
+    </div>
+
+    <div class="plate">
+
+      <!-- fullViewBody: paints ABOVE the bands, takes the place of the hero glyph -->
+      <div class="extbody">
+        <div class="meter">
+          <div class="mrow">
+            <span class="ch">L</span>
+            <span class="bar" style="--v:62%;--p:71%"><i></i><u></u><s></s></span>
+          </div>
+          <div class="mrow">
+            <span class="ch">R</span>
+            <span class="bar" style="--v:58%;--p:66%"><i></i><u></u><s></s></span>
+          </div>
+          <div class="mscale">
+            <b>−∞</b><b>−24</b><b>−12</b><b>−6</b><b>−1</b>
+          </div>
+          <div class="mnote">ceiling mark = MASTER_CEILING_DB, imported</div>
+        </div>
+      </div>
+
+      <div class="bands">
+        <div class="band">
+          <p class="blab">Output</p>
+          <div class="row">
+            <span class="f"><i style="--v:.7"></i><b>Master</b></span>
+          </div>
+        </div>
+
+        <div class="band">
+          <p class="blab">Device</p>
+          <div class="row">
+            <span class="sel">
+              <span class="cap">Output</span>
+              <span class="selbox">
+                <span class="tag">OUT</span>
+                <span class="val">MacBook Pro Speakers</span>
+                <span class="caret">▾</span>
+              </span>
+            </span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <div class="warn" style="margin-top:16px">
+    <b>NO NUMBERS ARE PAINTED.</b> No dB readout, no peak value, no "−1.0 dBFS" label. A labelled row of
+    derived values under a picture is the <b>hero readout strip</b>, deleted fleet-wide on 2026-08-19.
+    The measurement lives in <code>aria-valuetext</code>, which is speakable and assertable and unpainted —
+    and which is what every spec proving this face tracks the engine will read.
+  </div>
+
+  <div class="card" style="margin-top:14px">
+    <h3>the accessible names, at this state</h3>
+    <table>
+      <tr><th>element</th><th>aria-valuetext</th></tr>
+      <tr><td><b>meter</b></td><td class="aria">left −7.4 dBFS, right −8.6 dBFS, not limiting</td></tr>
+      <tr><td><b>Master</b></td><td class="aria">0.70</td></tr>
+      <tr><td><b>Output</b></td><td class="aria">MacBook Pro Speakers</td></tr>
+    </table>
+  </div>
+
+</div>
+
+<div class="notes">
+
+  <div class="card">
+    <h3>why a fader, not a dial</h3>
+    <p>The card mounts a <code>NeonFader</code> (<code>AudioOutCard.svelte:226</code>).
+      <b>Undeclared, it silently becomes a dial</b> — <code>'fader'</code> and <code>'hue'</code> are the
+      two primitives that cannot be inferred.</p>
+    <p>A master level is a throw, not a dial. <code>mixmstrs</code> and <code>noise</code> are the
+      precedent, and <code>noise</code>'s face carries the declaration for exactly this reason.</p>
+  </div>
+
+  <div class="card">
+    <h3>the selector is not a new mechanism</h3>
+    <p><code>ShellSelectorCell</code>'s first line is <i>"A dropdown over a NAMED roster that lives in
+      node.data (not a param)"</i> — and its <code>options</code> is a <b>function of the node</b>,
+      evaluated at render.</p>
+    <p><code>milkdrop</code> is the precedent for a genuinely live list:
+      <i>"live list rather than a static roster, because the list grows with in-session
+      <code>.milk</code> imports"</i>. A device list that changes on <code>devicechange</code> is the same
+      shape.</p>
+  </div>
+
+  <div class="card">
+    <h3>two disabled states, and the card cannot tell them apart</h3>
+    <p>The <code>&lt;select&gt;</code> disables on
+      <code>devices.length === 0 || !setSinkIdSupported</code> (<code>:195</code>) but explains only the
+      second (<code>:214</code>).</p>
+    <p>So a supporting browser with zero enumerated devices shows a greyed <b>(no outputs)</b> and
+      <b>no reason at all</b>. The face's disabled <code>aria-valuetext</code> names which cause, and
+      the model test asserts both.</p>
+  </div>
+
+  <div class="card">
+    <h3>no SCREEN ON/OFF here</h3>
+    <p><code>dockscope</code>, <code>spectrograph</code> and <code>samsloop</code> each refuse one on
+      <code>videoOut</code>'s argument: when the picture IS the module, collapsing it deletes the product.</p>
+    <p>A face with this meter collapsed is a face with one fader on it, and the reason to open
+      AUDIO OUT is to see the level. <b>Do not add a switch whose off state is an empty plate.</b></p>
+  </div>
+
+  <div class="card">
+    <h3>no lane picture, and the refusal is mechanical</h3>
+    <p><code>audioOut</code> declares <code>outputs: []</code>. <code>primaryAudioOutPortId</code> is
+      <code>null</code>, so <b>every glyph literal falls to dead static</b> and the unconditional
+      dead-glyph clause catches it.</p>
+    <p>⚠ And this is the module where a picture is most <b>wanted</b> and least <b>reachable</b>: the
+      pinned instance is canvas-hidden, so it has no lane tile to paint one on.</p>
+  </div>
+
+</div>
+</div>
+</div>
