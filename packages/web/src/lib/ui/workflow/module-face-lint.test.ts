@@ -1181,6 +1181,28 @@ describe('module-face lint — MOMENTARY pads (face.momentary)', () => {
     'wavesculpt:unison',
     'wavesculpt:chord_mode',
     'wavesculpt:chord_quality',
+    // TWOTRACKS, 2026-08-24. Three params share the press-pad SHAPE
+    // (`0..1 discrete resting at 0`) and all three are tape-machine states a
+    // player sets and leaves. Classified AT THE READ SITE, not from the shape.
+    //
+    // OVERDUB (per reel) is the persisted on/off of sound-on-sound. Its read
+    // site is the module's param poll, which turns a CHANGE in the flag into ONE
+    // pulsed `overdub_toggle` for the worklet — so the level is the state and
+    // the pulse is derived from it. A momentary render would fire that pulse
+    // TWICE per press (on the way down and again on release) and land the reel
+    // exactly where it started, i.e. the control could never be used at all.
+    // Layering a take is also the slowest gesture on the module: you engage it
+    // and then play for a minute.
+    'twotracks:overdub_flag_a',
+    'twotracks:overdub_flag_b',
+    // MONITOR passes the live input through so you can hear what you are about
+    // to record. The worklet reads it as a plain LEVEL once per block
+    // (`Math.round(kv('monitor', 0)) === 1`, twotracks.ts in packages/dsp) and
+    // there is no edge detector on it anywhere in the processor. A momentary
+    // render would cut the input the instant the player let go — which is the
+    // one thing input monitoring exists to prevent, since the whole point is to
+    // audition the source with both hands free.
+    'twotracks:monitor',
   ]);
 
   it('no ACKNOWLEDGED_LATCHING param is DOCUMENTED as momentary (the cross-check)', () => {

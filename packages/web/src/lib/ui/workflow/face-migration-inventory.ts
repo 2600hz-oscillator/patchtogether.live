@@ -1059,10 +1059,21 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
   },
   {
     type: 'twotracks',
-    disposition: 'bespoke-surface',
-    why:
-      'a TAPE DECK: two reels of transport state, and the waveform canvases are INTERACTIVE — ' +
-      'scrubbing and setting loop points directly on the picture is a gesture no cell kind has.',
+    disposition: 'generic-face',
+    note:
+      'DONE (2026-08-24). The refusal above was half right and the half that was wrong is the ' +
+      'interesting part. "Transport state on two reels" was never the obstacle — REC/PLAY/STOP and ' +
+      'SAVE TAPE are ordinary `action` cells over control families, exactly as samsloop\'s are. The ' +
+      'real claim was that the INTERACTIVE canvas is "a gesture no cell kind has", and that is still ' +
+      'true: no cell kind scrubs a playhead. It stopped being a BLOCKER because the gesture does not ' +
+      'need a cell — `fullViewBody` mounts the module\'s own picture, pointer handlers and all, while ' +
+      'the params it writes (start/end per reel) keep ordinary param cells in the TAPE bands. So the ' +
+      'picture is an ADDITIONAL way to operate controls the faceplate already reaches, rather than the ' +
+      'only way, which is what a body can honestly be and a panel could not (a panel would have to ' +
+      'claim those cells do not exist). ' +
+      '⚠ Promotion also required a CONTRACT CHANGE first: `playhead_a`/`playhead_b` were declared ' +
+      'params nothing wrote and nothing read, invisible while the card mounted no control for them ' +
+      'and unavoidable the moment a face had to rank every param. They were deleted, not hidden.',
   },
   {
     type: 'videoOut',

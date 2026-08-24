@@ -111,6 +111,10 @@ import {
   toggleSamsloopRecord,
 } from '$lib/ui/modules/samsloop-face-actions';
 import {
+  twotracksTransport,
+  twotracksSaveTape,
+} from '$lib/ui/modules/twotracks-face-actions';
+import {
   exposeAuditionLedgerForTests,
   type AuditionSeam,
 } from '$lib/ui/modules/audition-ledger';
@@ -1873,6 +1877,100 @@ const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
       options: () => kriaRootOptions(),
       value: (node) => kriaRootValue(node),
       onchange: (nodeId, v) => kriaSetRoot(nodeId, v),
+    },
+  },
+
+  // ── TWOTRACKS — two tape decks, eight non-param affordances ───────────────
+  //
+  // Four per reel, all of them messages rather than writes: the transport
+  // one-shots and the tape export. The implementations live in
+  // `twotracks-face-actions.ts` and the LEGACY CARD calls the same ones, so the
+  // face and the card cannot drift about what a press does.
+  //
+  // ⚠ EVERY TRANSPORT CELL IS `mode: 'trigger'`, NOT `'gate'`. REC / PLAY /
+  // STOP fire ONCE on the rising edge — they are commands, not held states — and
+  // a `gate` consumer driven by a click would open and never close.
+  //
+  // ⚠ WHY THESE ARE AUDITIONS AND NOT `data` PROBES, since `transportState_a` is
+  // right there on `node.data` and the registry says to prefer `data`. Measured:
+  // that key is written when the WORKLET POSTS BACK, and the worklet posts from
+  // `process()`. faces-parity boots `/rack` without passing the audio gate, so
+  // the context never runs, `process()` is never called and no transport state
+  // is ever mirrored — a `data` probe would be RED on a perfectly live button.
+  // The audition asks what the runner can answer: did the press reach the seam.
+  // The stronger claim is `twotracks.spec.ts`'s, and it drives real audio.
+  twotracks: {
+    // ── Reel A ──
+    'twotracks-rec-a-{n}': {
+      kind: 'action',
+      label: 'rec',
+      title: 'Record onto reel A from the head of the tape (layers instead of erasing when OVERDUB is on)',
+      mode: 'trigger',
+      probe: { effect: { kind: 'audition', seam: 'engine-message' } },
+      onFire: (nodeId) => { twotracksTransport(nodeId, 'a', 'rec'); },
+    },
+    'twotracks-play-a-{n}': {
+      kind: 'action',
+      label: 'play',
+      title: "Roll reel A from the loop window's START",
+      mode: 'trigger',
+      probe: { effect: { kind: 'audition', seam: 'engine-message' } },
+      onFire: (nodeId) => { twotracksTransport(nodeId, 'a', 'play'); },
+    },
+    'twotracks-stop-a-{n}': {
+      kind: 'action',
+      label: 'stop',
+      title: 'Halt reel A — the tape is kept',
+      mode: 'trigger',
+      probe: { effect: { kind: 'audition', seam: 'engine-message' } },
+      onFire: (nodeId) => { twotracksTransport(nodeId, 'a', 'stop'); },
+    },
+    // ⚠ `file-export`, NOT `engine-message`, AND THE ADJACENCY IS WHY. SAVE TAPE
+    // sits in the SAME REEL BLOCK as REC on the SAME NODE, so a probe watching
+    // `engine-message` here would be satisfied by somebody pressing REC — the
+    // export could be completely dead and the gate would stay green. This is the
+    // exact case samsloop's export comment warns about, and this module is the
+    // layout it warns about.
+    'twotracks-save-a-{n}': {
+      kind: 'action',
+      label: 'save tape',
+      title: "Export reel A's take as a stereo 48 kHz 16-bit WAV",
+      mode: 'trigger',
+      probe: { effect: { kind: 'audition', seam: 'file-export' } },
+      onFire: (nodeId) => { twotracksSaveTape(nodeId, 'a'); },
+    },
+    // ── Reel B ──
+    'twotracks-rec-b-{n}': {
+      kind: 'action',
+      label: 'rec',
+      title: 'Record onto reel B from the head of the tape (layers instead of erasing when OVERDUB is on)',
+      mode: 'trigger',
+      probe: { effect: { kind: 'audition', seam: 'engine-message' } },
+      onFire: (nodeId) => { twotracksTransport(nodeId, 'b', 'rec'); },
+    },
+    'twotracks-play-b-{n}': {
+      kind: 'action',
+      label: 'play',
+      title: "Roll reel B from the loop window's START",
+      mode: 'trigger',
+      probe: { effect: { kind: 'audition', seam: 'engine-message' } },
+      onFire: (nodeId) => { twotracksTransport(nodeId, 'b', 'play'); },
+    },
+    'twotracks-stop-b-{n}': {
+      kind: 'action',
+      label: 'stop',
+      title: 'Halt reel B — the tape is kept',
+      mode: 'trigger',
+      probe: { effect: { kind: 'audition', seam: 'engine-message' } },
+      onFire: (nodeId) => { twotracksTransport(nodeId, 'b', 'stop'); },
+    },
+    'twotracks-save-b-{n}': {
+      kind: 'action',
+      label: 'save tape',
+      title: "Export reel B's take as a stereo 48 kHz 16-bit WAV",
+      mode: 'trigger',
+      probe: { effect: { kind: 'audition', seam: 'file-export' } },
+      onFire: (nodeId) => { twotracksSaveTape(nodeId, 'b'); },
     },
   },
 };

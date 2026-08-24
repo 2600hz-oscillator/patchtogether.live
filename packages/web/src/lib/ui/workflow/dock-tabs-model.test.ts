@@ -179,8 +179,9 @@ describe('the LIVE registry — which faces are tabbed today', () => {
       // ⚠ AND `videocube=7` IS THE SAME COMPLETENESS PROOF foxy's entry
       // describes, on a wider surface: 30 params + 6 families = 36 ranked
       // controls, and a single one left off a page would report 8 here.
-      // ⚠ wavesculpt (2026-08-24) is the SIXTH rail and the widest face in the
-      // fleet: TEN bands off 79 params + 12 control families. It declares no
+      // ⚠ wavesculpt (2026-08-24) is the SEVENTH rail — it and `twotracks`
+      // landed the same day, and twotracks reached main first — and it is the
+      // widest face in the fleet: TEN bands off 79 params + 12 control families. It declares no
       // `face.tabbed` either — the count gets there on its own, and the thing
       // that gets it there is the FOUR OSCILLATOR BANDS. That split is argued on
       // arithmetic rather than taste: four voices are "the same idea four
@@ -195,7 +196,29 @@ describe('the LIVE registry — which faces are tabbed today', () => {
       // family key is ONE cell for ALL instances. The twelve family cells share
       // a WAVETABLES band instead, which is the band that takes this face from
       // nine to ten.
-    ).toEqual(['backdraft', 'cloudseed', 'foxy', 'pentemelodica', 'spirographs', 'videocube', 'wavesculpt']);
+      // ⚠ twotracks (2026-08-24) is the SIXTH rail and the THIRD by the
+      // THRESHOLD route. It declares NO `face.tabbed`. Its seven are the
+      // machine's own shape rather than a chosen number: a tape deck's
+      // TRANSPORT, its TAPE MOTION and its TONE section are three different
+      // things, there are TWO DECKS, and the mix that blends them is a seventh
+      // that belongs to neither. Nothing was padded to reach seven and nothing
+      // crammed to avoid it.
+      // ⚠ AND THE HONEST COUNTER-READING IS RECORDED RATHER THAN HIDDEN: a
+      // reviewer could reasonably fold TAPE and TONE together per reel, which
+      // gives THREE bands and turns the rail off. If that is the ruling, the
+      // face ships untabbed (ruttetra's precedent) — it does NOT get re-split
+      // to win the rail back, which is the padding the 2026-08-18 ruling
+      // forbids.
+      // ⚠ `twotracks=7` is the same completeness proof again — every ranked
+      // param and family is claimed by a page, and a single one left off would
+      // report 8 here rather than 7. (Deliberately not restating HOW MANY there
+      // are: a count in a comment is the construct CLAUDE.md bans, because a
+      // sibling PR adding a param auto-merges cleanly and leaves it wrong. The
+      // assertion message above prints the live number.)
+    ).toEqual([
+      'backdraft', 'cloudseed', 'foxy', 'pentemelodica', 'spirographs',
+      'twotracks', 'videocube', 'wavesculpt',
+    ]);
   });
 
   it('every tabbed face is EITHER over the threshold OR a named opt-in — never neither', () => {
