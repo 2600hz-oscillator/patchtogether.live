@@ -1,0 +1,256 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>RASTERIZE — the lane-glyph decision, three options side by side</title>
+<style>
+/* ─────────────────────────────────────────────────────────────────────────
+   RASTERIZE LANE TILE — the #2160 re-decision, drawn.
+   SPEC AND MOCKUP ONLY. Nothing here is implemented. See spec.md §2.
+
+   Three tiles, at the measured compact size (the committed baseline
+   `face-rasterize-compact.png` is 88×82 CSS px scaled; these are drawn at
+   192px lane width so the argument is legible). Only the LEFT one ships.
+   ───────────────────────────────────────────────────────────────────────── */
+:root{
+  --bg:#0e1013; --dock:#12161c; --pbody:#1c1f24; --line:#2c3037; --tile:#33383f;
+  --ink:#eef1f5; --dim:#9aa2ad; --faint:#646c77; --vid:#b57bff; --aud:#fbbf24;
+  --accent:#6cf; --warn:#f2c14e; --good:#8fe6b0; --bad:#f08c8c;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+  font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1180px;margin:0 auto;padding:26px 20px 90px}
+h1{font-size:21px;font-weight:800;margin:0 0 6px;letter-spacing:.01em}
+h2{font-size:13px;font-weight:800;margin:26px 0 10px;letter-spacing:.05em;text-transform:uppercase;color:var(--dim)}
+.sub{color:var(--dim);font-size:12.5px;margin:0 0 14px;max-width:108ch}
+.sub b{color:var(--ink)} code{font-family:var(--mono);font-size:11.5px;color:var(--aud)}
+.nav{display:flex;gap:8px;margin:0 0 20px;font-size:11px;flex-wrap:wrap}
+.nav a{color:var(--ink);text-decoration:none;border:1px solid var(--line);border-radius:6px;
+  padding:6px 12px;background:#12161c;font-family:var(--mono);letter-spacing:.06em;text-transform:uppercase}
+.nav a.on{border-color:var(--aud);color:var(--aud)}
+.warn{border:1px solid #6a5330;background:#1c1811;border-radius:8px;padding:11px 14px;
+  margin:12px 0;font-size:12.5px;color:#e8cf9a;max-width:120ch}
+.warn b{color:var(--warn)}
+.ok{border:1px solid #3b5a48;background:#111a15;border-radius:8px;padding:11px 14px;
+  margin:12px 0;font-size:12.5px;color:#a9d8bd;max-width:120ch}
+.ok b{color:var(--good)}
+
+.three{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;align-items:start;margin-top:6px}
+@media (max-width:940px){.three{grid-template-columns:1fr}}
+.opt{background:#12161c;border:1px solid var(--line);border-radius:10px;padding:13px}
+.opt.ship{border-color:#3b5a48}
+.opt.no{border-color:#5a3b3b}
+.opthd{display:flex;align-items:baseline;gap:8px;margin-bottom:4px}
+.opthd .n{font-family:var(--mono);font-size:9px;letter-spacing:.12em;color:var(--faint)}
+.opthd .v{margin-left:auto;font-family:var(--mono);font-size:9px;letter-spacing:.1em;
+  border:1px solid;border-radius:3px;padding:2px 7px}
+.v.yes{color:var(--good);border-color:#3b5a48}
+.v.nope{color:var(--bad);border-color:#5a3b3b}
+.opt h3{margin:0 0 8px;font-size:12.5px;font-weight:700}
+.opt .decl{font-family:var(--mono);font-size:10px;color:var(--accent);background:#101820;
+  border:1px solid #23323f;border-radius:4px;padding:5px 7px;margin-bottom:10px;word-break:break-all}
+.opt p{margin:0 0 8px;font-size:11.5px;color:var(--dim);line-height:1.5}
+.opt p b{color:var(--ink)}
+.opt .kill{font-size:11.5px;color:#e8cf9a;border-top:1px solid #2a2520;padding-top:8px;margin-top:2px}
+
+/* the tile */
+.tilewrap{display:flex;justify-content:center;margin:2px 0 12px}
+.tile{background:var(--pbody);border:1px solid var(--tile);border-left:3px solid var(--vid);
+  border-radius:8px;padding:8px 9px;width:192px}
+.tile .tn{font-size:10px;font-weight:800;letter-spacing:.03em;margin-bottom:6px}
+.tile .trow{display:flex;gap:7px}
+.glyphslot{height:40px;border:1px solid #262c34;border-radius:4px;background:#0a0c10;
+  margin-bottom:7px;display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative}
+.glyphslot svg{display:block;height:100%;width:100%}
+.glyphslot .cap{position:absolute;right:4px;bottom:2px;font-family:var(--mono);font-size:7px;color:#4a525c}
+.f{width:48px;display:flex;flex-direction:column;align-items:center;gap:4px}
+.f i{--v:.5;--fc:#b57bff;display:block;width:14px;height:52px;border-radius:7px;position:relative;
+  background:linear-gradient(#171b21,#12161c);border:1px solid #333a43}
+.f i::before{content:"";position:absolute;left:50%;transform:translateX(-50%);width:2px;top:5px;bottom:5px;
+  background:#262c34;border-radius:1px}
+.f i::after{content:"";position:absolute;left:50%;width:20px;height:8px;border-radius:2px;background:var(--fc);
+  box-shadow:0 0 6px color-mix(in srgb,var(--fc) 60%,transparent);
+  transform:translate(-50%,-50%);top:calc(5px + (1 - var(--v)) * (100% - 10px))}
+.f b{font-size:7.4px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--dim);
+  font-family:var(--mono)}
+.seg{display:flex;flex-direction:column;gap:3px;align-items:center}
+.seg .cap{font-size:7.4px;letter-spacing:.06em;text-transform:uppercase;color:var(--dim);font-family:var(--mono)}
+.segbtns{display:flex;border:1px solid #3a4048;border-radius:5px;overflow:hidden}
+.segbtns b{font-family:var(--mono);font-size:8px;font-weight:400;padding:5px 6px;background:#1b2027;color:var(--faint)}
+.segbtns b.on{background:#2b2338;color:var(--vid)}
+.ghost{opacity:.34}
+
+.tbl{width:100%;border-collapse:collapse;font-size:11.5px;margin-top:6px}
+.tbl th{text-align:left;font-family:var(--mono);font-size:8px;letter-spacing:.11em;text-transform:uppercase;
+  color:var(--faint);font-weight:400;padding:0 10px 6px 0;border-bottom:1px solid var(--line)}
+.tbl td{padding:7px 10px 7px 0;border-bottom:1px solid #1c2027;vertical-align:top;color:var(--dim);line-height:1.45}
+.tbl td:first-child{color:var(--ink);font-family:var(--mono);font-size:10px;white-space:nowrap}
+.tbl code{color:var(--accent)}
+</style>
+
+<div class="wrap">
+<h1>RASTERIZE — the lane-glyph decision, drawn</h1>
+<p class="sub">
+  <b>Mockup only. Nothing here is implemented.</b> <code>rasterize</code> has been faced since
+  #2001. The one question #2160 re-opened is whether its <b>lane tile</b> should now carry a
+  picture. Three options were legal to declare; all three are drawn below.
+  <b>Only the left one ships, and it is what ships today.</b>
+</p>
+
+<div class="nav">
+  <a class="on" href="lane-decision.html">THE LANE DECISION</a>
+  <a href="dock-audit.html">THE DOCK AUDIT</a>
+</div>
+
+<div class="three">
+
+  <!-- ── OPTION A: none (ships) ───────────────────────────────────────── -->
+  <div class="opt ship">
+    <div class="opthd"><span class="n">OPTION A</span><span class="v yes">SHIPS</span></div>
+    <h3>No glyph — controls only</h3>
+    <div class="decl">glyph: 'none'</div>
+    <div class="tilewrap"><div class="tile">
+      <div class="tn">rasterize</div>
+      <div class="trow">
+        <div class="f"><i style="--v:.55"></i><b>Samp/F</b></div>
+        <div class="f"><i style="--v:.3"></i><b>Gain</b></div>
+        <div class="seg"><span class="cap">Wrap</span>
+          <div class="segbtns"><b class="on">WRAP</b><b>CLAMP</b></div></div>
+      </div>
+    </div></div>
+    <p>Three ranked cells &mdash; the three controls that change the picture.
+      <b>Strictly more than the placeholder an un-promoted module shows</b>, and every pixel of
+      the tile is doing work.</p>
+    <p>The raster itself reaches the player through <code>fullViewBody</code> at the dock,
+      where it has 480&times;360 to be legible in.</p>
+  </div>
+
+  <!-- ── OPTION B: a live-audio glyph ─────────────────────────────────── -->
+  <div class="opt no">
+    <div class="opthd"><span class="n">OPTION B</span><span class="v nope">REFUSED</span></div>
+    <h3>A trace glyph on <code>thru</code></h3>
+    <div class="decl">glyph: 'scope' &rarr; {kind:'live-audio', portId:'thru'}</div>
+    <div class="tilewrap"><div class="tile">
+      <div class="tn">rasterize</div>
+      <div class="glyphslot">
+        <svg viewBox="0 0 174 40" preserveAspectRatio="none" aria-hidden="true">
+          <path d="M0 20H174" stroke="#1c232b" stroke-width="1"/>
+          <path fill="none" stroke="#b57bff" stroke-width="1.4"
+            d="M0 20 C 7 5, 14 5, 21 20 S 36 35, 43 20 S 58 5, 65 20 S 80 35, 87 20
+               S 102 5, 109 20 S 124 35, 131 20 S 146 5, 153 20 S 167 35, 174 20"/>
+        </svg>
+      </div>
+      <div class="trow ghost">
+        <div class="f"><i style="--v:.55"></i><b>Samp/F</b></div>
+        <div class="f"><i style="--v:.3"></i><b>Gain</b></div>
+      </div>
+    </div></div>
+    <p><b>It is LIVE and it is green on every gate.</b> <code>rasterize</code> declares a
+      <code>type:'audio'</code> output, so <code>primaryAudioOutPortId</code> resolves and the
+      dead-glyph clause never fires.</p>
+    <p class="kill"><b>&#9888; And it says nothing.</b> <code>thru</code> IS <code>inGain</code>
+      &mdash; bit-exactly this module&rsquo;s INPUT &mdash; so the trace is
+      <b>invariant to all four controls</b>. It moves with the music, looks healthy, and is
+      blind. <code>rasterize.ts:173-191</code> already calls this
+      <i>&ldquo;the first that resolves LIVE AND IS STILL BLIND, which no gate looks for&rdquo;</i>.
+      It would also be a live moving surface in the compact VRT baseline.</p>
+  </div>
+
+  <!-- ── OPTION C: the #2160 layout-source glyph ──────────────────────── -->
+  <div class="opt no">
+    <div class="opthd"><span class="n">OPTION C &middot; NEW SINCE #2160</span><span class="v nope">REFUSED</span></div>
+    <h3>A layout-source glyph</h3>
+    <div class="decl">glyph: 'algorithm' &rarr; {kind:'algorithm', layoutSource:'rasterize', paramId:null}</div>
+    <div class="tilewrap"><div class="tile">
+      <div class="tn">rasterize</div>
+      <div class="glyphslot">
+        <svg viewBox="0 0 174 40" aria-hidden="true">
+          <g stroke="#5a6270" stroke-width="1.2" fill="none">
+            <rect x="8" y="12" width="30" height="16" rx="2"/>
+            <path d="M38 20H62"/><path d="M56 17l6 3-6 3" fill="#5a6270" stroke="none"/>
+            <rect x="62" y="8" width="46" height="24" rx="2"/>
+            <path d="M108 20H136"/><path d="M130 17l6 3-6 3" fill="#5a6270" stroke="none"/>
+            <rect x="136" y="12" width="30" height="16" rx="2"/>
+          </g>
+          <g fill="#4a525c" font-family="ui-monospace,monospace" font-size="6" letter-spacing=".6">
+            <text x="14" y="23">IN</text><text x="72" y="23">RASTER</text><text x="143" y="23">OUT</text>
+          </g>
+        </svg>
+        <span class="cap">(no caption)</span>
+      </div>
+      <div class="trow ghost">
+        <div class="f"><i style="--v:.55"></i><b>Samp/F</b></div>
+        <div class="f"><i style="--v:.3"></i><b>Gain</b></div>
+      </div>
+    </div></div>
+    <p><b>Also live-kind, also green.</b> The extension arm at
+      <code>shell-glyph-live.ts:156-159</code> resolves it because the def already declares
+      <code>extension:'rasterize'</code>.</p>
+    <p class="kill"><b>&#9888; And it is a CONSTANT.</b>
+      <code>ModuleShell.svelte:462</code> hardcodes <code>topologyValue</code> to
+      <code>0</code> when <code>paramId</code> is null, <code>:473</code> returns
+      <code>''</code> for the caption, and <code>ShellExtensionGlyphProps</code> carries
+      <b>no <code>nodeId</code></b>. Every node in every rack renders the same SVG, forever.
+      Its precedence is also tier-dependent: at <code>'full'</code> it is dropped whenever the
+      plate is busy (<i>&ldquo;Ranked controls outrank the glyph&rdquo;</i>), and at
+      <code>'compact'</code> &mdash; the tile drawn here &mdash; it paints unconditionally and
+      <b>takes the space from the cells beside it</b>. Absent where detail is wanted; present
+      where the tile can least afford it.</p>
+  </div>
+
+</div>
+
+<div class="warn">
+  <b>&#9888; NOTE WHAT THE TWO REFUSED TILES HAVE IN COMMON.</b> In both, the glyph pushed the
+  WRAP cell out of the tile &mdash; the one control whose two states are this module&rsquo;s two
+  <i>looks</i>, and the one whose names (<code>WRAP</code>/<code>CLAMP</code>) exist nowhere
+  else. A tile is a fixed budget; a picture that cannot vary is spending it on nothing.
+</div>
+
+<h2>The decision, as a table</h2>
+<table class="tbl">
+  <tr><th>option</th><th>binding</th><th>dead-glyph clause</th><th>what it paints</th><th>verdict</th></tr>
+  <tr>
+    <td>A &middot; <code>'none'</code></td>
+    <td><code>{kind:'none'}</code></td>
+    <td>skipped (<code>glyph==='none'</code> returns early)</td>
+    <td>nothing &mdash; three ranked cells instead</td>
+    <td style="color:#8fe6b0">SHIPS</td>
+  </tr>
+  <tr>
+    <td>B &middot; <code>'scope'</code></td>
+    <td><code>{kind:'live-audio', portId:'thru'}</code></td>
+    <td><b>GREEN</b> &mdash; live, not static</td>
+    <td>the module&rsquo;s own INPUT, invariant to every control</td>
+    <td style="color:#f08c8c">REFUSED</td>
+  </tr>
+  <tr>
+    <td>C &middot; <code>'algorithm'</code></td>
+    <td><code>{kind:'algorithm', layoutSource:'rasterize', paramId:null}</code></td>
+    <td><b>GREEN</b> &mdash; live, not static.<br>⚠ but <code>shell-extensions.test.ts:102</code> reddens until a <code>glyph</code> slot exists</td>
+    <td>a per-instance-identical SVG; no caption. Dropped at <code>'full'</code>, painted at <code>'compact'</code></td>
+    <td style="color:#f08c8c">REFUSED</td>
+  </tr>
+</table>
+
+<div class="ok">
+  <b>THE GENERAL FORM, FOR THE WHOLE FIVE-MODULE COHORT.</b> #2160 removed a refusal; it did
+  not add a data path &mdash; <code>shell-glyph-live.ts:101-103</code> says so in its own
+  words. Until <code>ShellExtensionGlyphProps</code> gains a <code>nodeId</code> the way
+  <code>ShellExtensionFullViewBodyProps</code> already has one, <b>no module in the cohort
+  gains an informative lane picture from it</b>. <code>rasterize</code> is where that is
+  cheapest to check, because it is the only cohort member already faced &mdash; the
+  experiment is one word. The escalation belongs to <code>scope</code>, which would be the
+  best adopter of the fixed prop. See <code>../scope/spec.md</code> &sect;12.3.
+</div>
+
+<div class="warn">
+  <b>&#9888; AND THE DEF&rsquo;S OWN COMMENT IS NOW WRONG.</b>
+  <code>rasterize.ts:188-191</code> still says the picture <i>&ldquo;matches no glyph
+  kind&rdquo;</i>. It matches one. The refusal changed from <i>no kind fits</i> to
+  <i>the kind that fits carries no data</i>, and the comment has to change with it or the
+  next reader re-derives the widening from scratch and may reach the opposite conclusion.
+  spec.md &sect;2.3 carries the replacement text.
+</div>
+</div>
