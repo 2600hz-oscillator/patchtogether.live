@@ -51,8 +51,8 @@ export function isMikeSpawnable(module: CatalogModule): boolean {
  */
 export const PREFERRED_TYPES = {
   /** Step/note sequencers. Drums first since drums get spawned first. */
-  drumSequencers: ['drumseqz'],
-  toneSequencers: ['polyseqz', 'sequencer', 'macseq', 'sequencerPages'],
+  drumSequencers: ['clipplayer', 'kria'],
+  toneSequencers: ['clipplayer', 'score', 'kria', 'cartesian'],
   /** Tonal voices for melody + bass lines. */
   tonalVoices: ['analogVco', 'macrooscillator', 'wavetableVco', 'swolevco'],
   /** Drum voices — modules whose output is a drum hit. Mike's drum-

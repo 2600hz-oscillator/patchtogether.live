@@ -1169,7 +1169,7 @@ export const ALLOWED_PERMANENT_EXEMPT: ReadonlySet<string> = new Set([
   'frametable', 'videocube', 'sourcery', 'scoreboard',
   'cameraInput', 'loopback', 'audioIn', 'group',
   'cadillac', 'controlSurface', 'matrixMix', 'launchpadControlLeft',
-  'push2Control', 'clouds', 'macseq', 'writeseq',
+  'push2Control', 'clouds',
   'rings', 'marbles', 'attenumix', 'sidecar',
   'cloudseed', 'livecode', 'clockedRunner', 'midiCvBuddy',
   'midiOutBuddy', 'midiclock', 'midiLane',
@@ -1290,7 +1290,6 @@ export const STRICT_VRT_MODULES = new Set<string>([
   'charlottesEchos',      // delay/echo knob card
   'destroy',              // destruction/distortion knob card
   'drummergirl',          // drum-sample card (chrome only — sample preview is static post-load)
-  'drumseqz',             // 16-step drum sequencer (static at step 0 with no playhead)
   'dx7',                  // DX7 FM synth card (operator grid)
   'filter',               // filter knob card
   'illogic',              // logic-gate knob card
@@ -1300,11 +1299,9 @@ export const STRICT_VRT_MODULES = new Set<string>([
   'noise',                // noise-source FADER card (like mixer/mixmstrs above,
                           //   not a knob card — the distinction is the whole
                           //   point of its `face.paramCells: { level: 'fader' }`)
-  'polyseqz',             // poly chord sequencer card (S&H header toggle; linux baseline regenerated)
   'qbrt',                 // q-bit/quantizer knob card
   'reverb',               // reverb knob card
   'score',                // score/note display card
-  'sequencer',            // 32-step sequencer card (S&H header toggle; linux baseline regenerated)
   'shimmershine',         // shimmer-reverb knob card
   'stereovca',            // stereo VCA fader card
   'sticky',               // sticky-note widget (static)

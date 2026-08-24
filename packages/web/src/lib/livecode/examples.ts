@@ -44,14 +44,16 @@ const FLAGSHIP_CODE = `// Sequenced VCO whose melody is RE-QUANTIZED live by a c
 // whole-tone every 4 beats: the notes change in real time but always
 // stay in the current scale.
 
-const seq = spawn('sequencer', 'seq');
+const tl  = spawn('timelorde', 'tl');   // master clock
+const seq = spawn('cartesian', 'seq');  // 4x4 grid sequencer
 const vco = spawn('analogVco', 'vco');
 const env = spawn('adsr',      'env');
 const amp = spawn('vca',       'amp');
 const out = spawn('audioOut',  'out');
 
-patch('seq.pitch', 'vco.pitch');   // step note  -> oscillator pitch
-patch('seq.gate',  'env.gate');    // step gate  -> envelope
+patch('tl.1x',     'seq.clock');   // clock -> grid advance (diagonal walk)
+patch('seq.pitch', 'vco.pitch');   // pad note   -> oscillator pitch
+patch('seq.gate',  'env.gate');    // pad gate   -> envelope
 patch('vco.sine',  'amp.audio');   // oscillator -> VCA
 patch('env.env',   'amp.cv');      // envelope shapes the VCA
 patch('amp.audio', 'out.L');
@@ -65,14 +67,17 @@ set('amp', 'base', 0);
 set('amp', 'cvAmount', 1);
 set('out', 'master', 0.4);
 
-set('seq', 'bpm',       120);
-set('seq', 'length',    8);
-set('seq', 'isPlaying', 1);
+set('tl', 'bpm',     120);
+set('tl', 'running', 1);
 
 // Immediate C-major melody so there's sound the moment you hit Run.
-// (midi: 48 = C3.) The clocked loop below re-quantizes from here.
-setData('seq', 'steps', [48, 52, 55, 52, 57, 55, 52, 48].map(function (m) {
-  return { on: true, midi: m };
+// With both X/Y CVs unpatched the clocked cursor walks the DIAGONAL —
+// pads 0, 5, 10, 15 — so those four cells carry the contour. (midi: 48 = C3.)
+const DIAG = [0, 5, 10, 15];
+setData('seq', 'cells', Array.from({ length: 16 }, function (_, i) {
+  const d = DIAG.indexOf(i);
+  return d < 0 ? { on: false, midi: 48, chord: 'mono' }
+               : { on: true, midi: [48, 52, 55, 57][d], chord: 'mono' };
 }));
 
 // Re-quantize to the next scale every 4 beats. SELF-CONTAINED body:
@@ -85,7 +90,7 @@ clocked('1', () => {
     wholetone:  [0, 2, 4, 6, 8, 10],
   };
   const ORDER = ['major', 'minor', 'pentatonic', 'wholetone'];
-  const SHAPE = [0, 2, 4, 2, 5, 4, 2, 0]; // scale-degree contour
+  const SHAPE = [0, 2, 4, 2];              // scale-degree contour (diagonal pads)
   const ROOT  = 48;                        // C3 (MIDI)
 
   // Beat counter survives across ticks via the per-runner state store.
@@ -99,12 +104,16 @@ clocked('1', () => {
 
   // Map each contour degree through the current scale -> MIDI note.
   const scale = SCALES[scaleName];
-  const steps = SHAPE.map((deg) => {
+  const DIAG = [0, 5, 10, 15];
+  const cells = Array.from({ length: 16 }, (_, i) => {
+    const d = DIAG.indexOf(i);
+    if (d < 0) return { on: false, midi: ROOT, chord: 'mono' };
+    const deg = SHAPE[d];
     const oct = Math.floor(deg / scale.length);
     const idx = ((deg % scale.length) + scale.length) % scale.length;
-    return { on: true, midi: ROOT + oct * 12 + scale[idx] };
+    return { on: true, midi: ROOT + oct * 12 + scale[idx], chord: 'mono' };
   });
-  setData('seq', 'steps', steps);
+  setData('seq', 'cells', cells);
   log('re-quantized -> ' + scaleName + ' (beat ' + beat + ')');
 });`;
 
@@ -126,15 +135,17 @@ set('out', 'master', 0.4);`,
   {
     id: 'melodic-voice',
     label: 'Melodic voice',
-    description: 'Sequencer → ADSR → VCA → VCO → Audio Out: a complete plucked melodic voice.',
-    code: `// A complete melodic voice: an 8-step sequence plucks a VCO through
+    description: 'Score → ADSR → VCA → VCO → Audio Out: a complete plucked melodic voice.',
+    code: `// A complete melodic voice: a scored sequence plucks a VCO through
 // an ADSR-shaped VCA.
-const seq = spawn('sequencer', 'seq');
+const tl  = spawn('timelorde', 'tl');
+const seq = spawn('cartesian', 'seq');
 const vco = spawn('analogVco', 'vco');
 const env = spawn('adsr',      'env');
 const amp = spawn('vca',       'amp');
 const out = spawn('audioOut',  'out');
 
+patch('tl.1x',     'seq.clock');
 patch('seq.pitch', 'vco.pitch');
 patch('seq.gate',  'env.gate');
 patch('vco.sine',  'amp.audio');
@@ -147,11 +158,15 @@ set('env', 'sustain', 0.3);  set('env', 'release', 0.15);
 set('amp', 'base', 0);       set('amp', 'cvAmount', 1);
 set('out', 'master', 0.4);
 
-set('seq', 'bpm', 140); set('seq', 'length', 8); set('seq', 'isPlaying', 1);
+set('tl', 'bpm', 140); set('tl', 'running', 1);
 
-// A simple C-major arpeggio (midi: 60 = C4).
-setData('seq', 'steps', [60, 64, 67, 72, 67, 64, 60, 55].map(function (m) {
-  return { on: true, midi: m };
+// A simple C-major arpeggio on the clocked cursor's diagonal walk
+// (pads 0, 5, 10, 15; midi: 60 = C4).
+const DIAG = [0, 5, 10, 15];
+setData('seq', 'cells', Array.from({ length: 16 }, function (_, i) {
+  const d = DIAG.indexOf(i);
+  return d < 0 ? { on: false, midi: 60, chord: 'mono' }
+               : { on: true, midi: [60, 64, 67, 72][d], chord: 'mono' };
 }));`,
   },
   {
@@ -175,27 +190,26 @@ log('bpm is now ' + clock.bpm());`,
   {
     id: 'sidechain-duck',
     label: 'Sidechain ducker',
-    description: "VCO through a VCA, ducked by an inverted ADSR (env_inv) fired by a DRUMSEQZ kick track.",
-    code: `// Classic sidechain: a drum sequencer's kick track fires an ADSR whose
-// INVERTED envelope (env_inv, on every ADSR) ducks the VCA in time with
-// the beat.
+    description: "VCO through a VCA, ducked by an inverted ADSR (env_inv) fired by TIMELORDE's quarter-note clock.",
+    code: `// Classic sidechain: the master clock's quarter-note output fires an
+// ADSR whose INVERTED envelope (env_inv, on every ADSR) ducks the VCA
+// four-on-the-floor.
 spawn('analogVco', 'lead');
 spawn('vca',       'duck');
 spawn('adsr',      'ducker');
-spawn('drumseqz',  'drums');
+spawn('timelorde', 'tl');
 spawn('audioOut',  'mainout');
 
 patch('lead.sine',      'duck.audio');
-patch('ducker.env_inv', 'duck.cv');     // inverted env idles at 1 = open
-patch('drums.gate1',    'ducker.gate'); // kick track (1) fires the ducker
+patch('ducker.env_inv', 'duck.cv');   // inverted env idles at 1 = open
+patch('tl.1x',          'ducker.gate'); // quarter-note pulse fires the ducker
 patch('duck.audio',     'mainout.L');
 patch('duck.audio',     'mainout.R');
 
 set('ducker', 'attack', 0.005); set('ducker', 'decay', 0.18);
 set('ducker', 'sustain', 0);    set('ducker', 'release', 0.05);
 set('duck', 'base', 0);         set('duck', 'cvAmount', 1);
-set('drums', 'bpm', 120);       set('drums', 'isPlaying', 1);
-set('drums', 'trk1_euclid', 4); // four-on-the-floor kick on track 1`,
+set('tl', 'bpm', 120);          set('tl', 'running', 1);`,
   },
 ];
 

@@ -208,7 +208,6 @@ type CoreModuleType =
   | 'filter'
   | 'vca'
   | 'mixer'
-  | 'sequencer'
   | 'lfo'
   | 'scope'
   | 'timelorde'
