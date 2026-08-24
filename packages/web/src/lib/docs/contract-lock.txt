@@ -1726,6 +1726,8 @@ midiclock out clock gate edge=trigger
 midiclock out midistart gate edge=trigger
 midiclock out midistop gate edge=trigger
 midiclock out run cv
+midiclock param divisor 1..24 discrete default=24
+midiclock family midiclock-connect kind=other prefix=midiclock-connect
 midiCvBuddy meta domain=audio
 midiCvBuddy out gate gate edge=gate
 midiCvBuddy out pitch_cv cv

@@ -69,8 +69,21 @@ export type LaneRenderKind = 'legacy' | 'shell' | 'placeholder' | 'stub';
  *           shell actively DETACHES the live camera on the card's onDestroy";
  *       (b) the DEVICE PICKER — a `<select>` populated from
  *           `enumerateDevices()`, persisted to `node.data.deviceId`. It is NOT
- *           a ParamDef, so no shell face can render it (a `static` face cell is
- *           a dead dashed label by design — ModuleShell's controlCell).
+ *           a ParamDef, so no shell face CELL can render it (a `static` face
+ *           cell is a dead dashed label by design — ModuleShell's controlCell).
+ *           ⚠ THIS CLAUSE USED TO READ "no shell FACE can render it", AND THAT
+ *           IS FALSE AS A GENERAL STATEMENT — the one word does real damage.
+ *           A face is not only its cells: the `fullViewBody` extension slot is
+ *           a plain Svelte component that can call `getActiveEngine()` and
+ *           `enumerateDevices()` and render whatever it likes, which is exactly
+ *           where cameraInput's picker went and where `midiclock`'s MIDI-input
+ *           picker went after it. The true constraint is narrower and worth
+ *           stating precisely: a runtime roster cannot be a `ParamDef`'s
+ *           `options` (a roster is a fixed set known when the def is authored,
+ *           and this one differs per machine), so it needs a SURFACE rather
+ *           than a cell. Two agents in a row read the old sentence and
+ *           concluded a platform change was required before a binder could be
+ *           promoted; neither was.
  *     ⚠ (a) IS NO LONGER TRUE AT ALL, and it was already not true when this
  *     entry was last read. The claim describes the world BEFORE
  *     `<HeadlessSourceHost>` existed: cameraInput is in

@@ -9,13 +9,15 @@
   import type { NodeProps } from '@xyflow/svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
-  import { patch } from '$lib/graph/store';
+  import { mutateNode, setNodeParam } from '$lib/graph/mutate';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
   import {
     CLOCK_DIVISORS,
+    DEFAULT_DIVISOR,
     divisorLabel,
     isValidDivisor,
+    snapDivisor,
     type ClockDivisor,
     type MidiclockApi,
     type MidiclockCardState,
@@ -38,8 +40,19 @@
   });
 
   let savedData = $derived((node?.data ?? {}) as Partial<MidiclockData>);
+  // ⚠ params FIRST, THEN THE LEGACY `data` KEY — the same order the factory
+  // reads in, and for the same reason: `divisor` is a `ParamDef` now, and a
+  // rack saved before that declaration still carries `data.divisor`. Reading
+  // params first means a new value always wins; falling through means an old
+  // rack keeps the division its author chose. The legacy key is never written
+  // back from here (see the def's `snapDivisor` comment for why an engine- or
+  // card-side repair of stored data is refused).
   let divisor = $derived<ClockDivisor>(
-    isValidDivisor(savedData.divisor) ? savedData.divisor : 24,
+    typeof node?.params?.divisor === 'number'
+      ? snapDivisor(node.params.divisor)
+      : isValidDivisor(savedData.divisor)
+        ? savedData.divisor
+        : DEFAULT_DIVISOR,
   );
 
   function getApi(): MidiclockApi | null {
@@ -68,27 +81,31 @@
     await api.connect();
   }
 
-  function writeData(patch_: Partial<MidiclockData>): void {
-    const target = patch.nodes[id];
-    if (!target) return;
-    if (!target.data) target.data = {};
-    for (const [k, v] of Object.entries(patch_)) {
-      if (v === undefined) delete target.data[k];
-      else (target.data as Record<string, unknown>)[k] = v as unknown;
-    }
-  }
-
   function onChangeDevice(ev: Event): void {
     const sel = (ev.currentTarget as HTMLSelectElement).value || null;
     getApi()?.selectDevice(sel);
-    writeData({ lastDeviceId: sel });
+    // ⚠ ORIGIN-TAGGED. This used to go through a local `writeData` helper that
+    // assigned straight onto `patch.nodes[id].data` — a bare SyncedStore proxy
+    // write with no `ydoc.transact` and no `LOCAL_ORIGIN`. The store's
+    // UndoManager tracks `LOCAL_ORIGIN` only, so picking a MIDI device SYNCED
+    // to collaborators but was silently outside Cmd-Z. Nothing could see it:
+    // `mutate.guard.test.ts`'s patterns all anchor on the literal token
+    // `.params`, and this touched `.data`. `mutateNode` is the sanctioned seam.
+    mutateNode(id, (live) => {
+      if (!live.data) live.data = {};
+      live.data.lastDeviceId = sel;
+    });
   }
 
   function onChangeDivisor(ev: Event): void {
     const raw = Number.parseInt((ev.currentTarget as HTMLSelectElement).value, 10);
     if (!isValidDivisor(raw)) return;
-    getApi()?.setDivisor(raw);
-    writeData({ divisor: raw });
+    // ⚠ A PARAM NOW, NOT A `node.data` KEY. `setNodeParam` is the ordinary
+    // origin-tagged seam every knob writes through, so the division is undoable
+    // and reaches automation / MIDI learn / a group like any other value. The
+    // ENGINE write is left to the param path rather than being driven here
+    // twice — one truth, one writer.
+    setNodeParam(id, 'divisor', raw);
   }
 
   const inputs: PortDescriptor[] = [];
@@ -107,7 +124,19 @@
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <div class="body">
       {#if !cardState.connected}
-        <button class="connect-btn" type="button" onclick={onClickConnect}>
+        <!-- ⚠ CARRIES THE CONTROL FAMILY'S `testidPrefix`. `midiclock-connect`
+             is a declared `controlFamilies` entry now (it is what the face's
+             ranked action cell resolves against), and `module-docs-lint`
+             requires every declared prefix to appear in the CARD source — the
+             gate that keeps a family declaration and the card it describes from
+             drifting apart. The card really does have this gesture, so naming
+             it here is agreement rather than paperwork. -->
+        <button
+          class="connect-btn"
+          type="button"
+          data-testid="midiclock-connect-{id}"
+          onclick={onClickConnect}
+        >
           Connect MIDI…
         </button>
         {#if cardState.accessMessage}
@@ -123,7 +152,17 @@
       {:else}
         <label class="row">
           <span class="lbl">DEVICE</span>
-          <select onchange={onChangeDevice} value={cardState.selectedDeviceId ?? ''}>
+          <!-- ⚠ NAMED, because a fixture spec used to reach this element as
+               `.locator('select').first()`. That worked only while the card
+               happened to have exactly two selects in a known order, and it
+               would have silently resolved to a DIFFERENT control the moment a
+               third was added or the order changed — a wrong-element bug that
+               reports as a confusing assertion failure somewhere else. -->
+          <select
+            data-testid="midiclock-card-device-{id}"
+            onchange={onChangeDevice}
+            value={cardState.selectedDeviceId ?? ''}
+          >
             <option value="" disabled>(pick one)</option>
             {#each cardState.devices as d (d.id)}
               <option value={d.id}>{d.name}</option>
@@ -140,16 +179,26 @@
           </select>
         </label>
 
+        <!-- ⚠ THE `TICKS` ROW IS GONE, AND IT WAS BROKEN RATHER THAN MERELY
+             REDUNDANT. `midiclock.ts`'s CLOCK branch returns before `notify()`
+             — correctly, since 24 PPQN at 120 BPM is 48 Hz of subscriber
+             pressure — on the stated grounds that "Card has its own rAF for the
+             activity LED". This card has never contained a
+             `requestAnimationFrame`. So the number shown here was the count as
+             of the last START, frozen for the entire performance, jumping at
+             STOP: a live activity indicator in exactly the one state it must
+             never be in. Deleted rather than repaired, because the honest fix
+             (a poll or an rAF) would add a repaint loop for a raw count that
+             the faceplate is not allowed to paint anyway.
+             STATE survives HERE — this is the legacy card, not a faceplate, and
+             it is driven by `notify()`, which fires on precisely the transport
+             messages that change it. -->
         <div class="readout">
           <div class="readout-row">
             <span class="lbl">STATE</span>
             <span class="val state" class:running={cardState.running}>
               {cardState.running ? 'RUN' : 'STOP'}
             </span>
-          </div>
-          <div class="readout-row">
-            <span class="lbl">TICKS</span>
-            <span class="val">{cardState.ticksReceived}</span>
           </div>
         </div>
       {/if}

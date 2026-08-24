@@ -4317,6 +4317,40 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // enumerates audio-domain ids only and the contract golden records
   // `matrixMix meta domain=meta`, so it never sees this module.
   'matrixMix',
+
+  // ── MIDICLOCK — the transport bridge, and the first BINDER promoted ───────
+  //
+  // Its job is letting something outside the browser be the boss: MIDI's fixed
+  // 24-PPQN tick stream plus Start / Stop / Continue, divided down to a `clock`
+  // gate, a `run` level and two one-shots. Patch `clock` into TIMELORDE and the
+  // whole rack follows a hardware sequencer.
+  //
+  // ⚠ THE PROMOTION FIXES THE MODULE'S WORST PRACTICAL DEFECT, which is not a
+  // look problem. `connect()` was reachable ONLY from a mounted legacy card, and
+  // under the default shell an un-migrated module renders a lane PLACEHOLDER —
+  // so on a module that is completely inert until MIDI access is granted, the
+  // grant required first discovering that the dock full view exists. CONNECT is
+  // an `action` cell here, and an action cell is not dock-restricted (only
+  // `panel` is), so the gesture is on the lane tile.
+  //
+  // ⚠ AND IT ARRIVES CARRYING THE MODULE'S FIRST PARAM. The clock DIVISION was
+  // a `node.data` key on the def's own stated reasoning that it "is a discrete
+  // choice … not a continuous AudioParam" — right about AudioParams, wrong
+  // about `ParamDef`s, and written before faces existed. As a param it becomes
+  // automatable, MIDI-learnable, group-exposable, Push-2-reachable and — the
+  // half that is a bug fix — UNDOABLE, since the card's `writeData` was a bare
+  // proxy write that never reached the UndoManager.
+  //
+  // ⚠ THE PINNED INSTANCE IS A NAMED NON-GOAL. `workflow-pins.ts` spawns a
+  // canvas-hidden `pinned-midiclock` in every workflow rackspace whose surface
+  // is a TOPBAR MENU (`MidiDinSurface.svelte`), not a faceplate — that file has
+  // no `DockCardHost`, no `dockRailRendersFace` and no `face` prop to thread.
+  // So this face reaches user-added instances only, which is already the
+  // shipped state of the product next door: `ClockSurface.svelte` calls itself
+  // "TIMELORDE's face for workflow racks" and timelorde IS promoted. Unifying
+  // the three topbar surfaces with the faceplate system is real work and does
+  // not belong on a module PR; #2173 repaired one of the three.
+  'midiclock',
 ]);
 
 /**
