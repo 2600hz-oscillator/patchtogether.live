@@ -748,11 +748,24 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // pre-Connect state is just the "Connect MIDI…" button. Unit + E2E
   // (fake-output capture) provide coverage. See e2e/tests/midi-out-buddy.spec.ts.
   midiOutBuddy: 'card content depends on connected MIDI device; unit + E2E provide coverage',
-  // MIDICLOCK: same rationale as midiCvBuddy — pre-Connect state shows a
-  // "Connect MIDI…" button (deterministic) but post-connect the device list
-  // depends on hardware that isn't present in CI. Unit + E2E (mock-MIDI smoke)
-  // provide coverage.
-  midiclock: 'card content depends on connected MIDI device; unit + E2E provide coverage',
+  // ⚠ `midiclock` REMOVED 2026-08-24 — the exemption's own second clause was
+  // its exit condition, and this file states it two lines up: *"pre-Connect
+  // state shows a 'Connect MIDI…' button (DETERMINISTIC) but post-connect the
+  // device list depends on hardware that isn't present in CI."* Both halves are
+  // true; only the first is ever in frame. A freshly spawned midiclock has
+  // never called `requestMIDIAccess`, so `access` is null and the roster does
+  // not merely happen to be empty — it does not exist — and reaching the
+  // hardware-dependent state requires a CONNECT press this suite never makes.
+  //
+  // ⚠ THE OTHER THREE ENTRIES IN THIS BLOCK ARE UNCHANGED, DELIBERATELY.
+  // `midiCvBuddy`, `midiOutBuddy` and `midiLane` say "same rationale as
+  // midiCvBuddy", so ONE argument is written once and referenced four times.
+  // Discharging it here does NOT discharge it there: each of those cards paints
+  // its post-Connect surface differently and none of them is promoted, so the
+  // decision has to be made at each on its own evidence. Falsifying the
+  // rationale for one module is not falsifying it for the module it was
+  // written about.
+  //
   // MIDI LANE: same rationale as midiCvBuddy — the rich card UI (device
   // picker, channel/mode/CC/note controls, live readout) only appears AFTER
   // Connect, which depends on hardware absent in CI; the pre-Connect state is
@@ -1201,7 +1214,13 @@ export const ALLOWED_PERMANENT_EXEMPT: ReadonlySet<string> = new Set([
   'push2Control', 'clouds', 'macseq', 'writeseq',
   'rings', 'marbles', 'attenumix', 'sidecar',
   'cloudseed', 'livecode', 'clockedRunner', 'midiCvBuddy',
-  'midiOutBuddy', 'midiclock', 'midiLane',
+  // ⚠ `midiclock` REMOVED 2026-08-24 — the second drain, after `cvBuddy` above,
+  // and the first in the MIDI-binder block. See the entry it used to sit beside
+  // in EXEMPT_FROM_VRT for the argument. This list is ANCHORED in both
+  // directions, so leaving the name here while the module is baselined would be
+  // RED — which is exactly the property that makes a drain a two-line edit
+  // rather than a policy discussion.
+  'midiOutBuddy', 'midiLane',
   'modtris', 'gibribbon', 'frogger', 'skifree',
   'analogLogicMaths', 'bentbox', 'b3ntb0x', 'acidwarp',
   'tempest', 'vfpgaRunner', 'joystick', 'gamepad',

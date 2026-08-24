@@ -205,8 +205,40 @@
       <!-- ⚠ ALWAYS MOUNTED — see the header. SCREEN off hides it, never
            unmounts it, because unmounting disposes the GL context and
            uninstalls the video_out frame drawer. -->
+      <!-- ⚠ `ownsVideoOut={false}` IS LOAD-BEARING — THIS IS THE SECOND MOUNT.
+           wavesculpt is a faced producer that is NOT in FACE_MOUNTS_PRODUCER,
+           so its real card stays alive in <HeadlessSourceHost> while this dock
+           full view is open (`keepsHeadlessWhileDocked`). That card is the
+           mount that OWNS `video_out`; this one is the viewer the surface's
+           own prose calls "a second, viewer-only mount"
+           (WavesculptVizSurface.svelte:88-99: "Exactly ONE mounted surface per
+           node should" own the seam).
+
+           Without it BOTH mounts default to `ownsVideoOut = true` and the node
+           goes permanently black on COLLAPSE. ⚠ THE DEFECT IS ON THE INSTALL
+           SIDE, NOT THE RELEASE SIDE, and the distinction is the whole reason
+           this prop is the fix rather than a stronger guard:
+
+             * install (`wavesculpt.ts:101-103`) is a BARE
+               `FRAME_DRAWERS.set(nodeId, fn)` — no owner check, last writer
+               silently wins. So this mount does not race the card at teardown;
+               it STEALS ownership at MOUNT, orphaning a drawer whose card is
+               still live and still visible.
+             * release (`:121-124`) IS owner-checked (#1587), and the check is
+               genuinely active — the surface passes `myFrameDrawer`. When this
+               mount later unmounts, the entry really is its own, the check
+               correctly passes, and the map is emptied. Nothing restores the
+               card's drawer.
+
+           #1587 hardened exactly half of this seam and the hardened half is not
+           the half that failed: an owner-checked RELEASE cannot defend against
+           a silent ownership STEAL at INSTALL. Measured before this prop: 9
+           live frames, then 81 consecutive black (788 ms) with no recovery.
+
+           The picture here is unaffected — the flag gates the cross-domain
+           registry and the DRS step seam, never this mount's own render. -->
       <div class="viz" class:hidden={previewCollapsed}>
-        <WavesculptVizSurface {nodeId} />
+        <WavesculptVizSurface {nodeId} ownsVideoOut={false} />
       </div>
 
       <!-- The gesture, ON TOP of its own feedback: crosshair + dot. -->

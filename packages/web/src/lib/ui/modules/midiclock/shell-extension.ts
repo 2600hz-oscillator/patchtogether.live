@@ -1,0 +1,41 @@
+// packages/web/src/lib/ui/modules/midiclock/shell-extension.ts
+//
+// The MIDICLOCK shell extension — the module-owned end of the extension seam
+// (#1512), on the `fullViewBody` slot.
+//
+// `midiclockDef.face.extension: 'midiclock'` declares this file; the id IS this
+// directory's name, resolved by the non-eager glob in
+// `$lib/ui/workflow/shell-extensions.ts`. ModuleShell imports nothing from
+// here, which is what keeps `module-shell-import-guard` green.
+//
+// ⚠ WHY A BODY AT ALL, WHEN THE CONNECT GESTURE IS A CELL. Exactly one thing
+// on this module cannot be a cell: the DEVICE ROSTER. It lives on the engine
+// handle behind `requestMIDIAccess()`, it is different on every machine, and it
+// changes when hardware is plugged in — so it is not a `ParamDef` and not an
+// `options` roster either, since a roster is a fixed set known when the def is
+// authored. That is the same constraint `CameraInputOutputBody` was built for,
+// and this slot is the shipped answer to it.
+//
+// ⚠ AND IT IS *ONLY* THAT. The DIVISION is a real param and renders as an
+// ordinary segmented band cell; CONNECT is a real action cell and reaches the
+// lane. Neither is duplicated here. A body that also carried them would be a
+// second implementation of controls the face already owns — the drift the
+// shared-body headers elsewhere in this tree keep arguing against.
+//
+// ⚠ UNLIKE cameraInput, MIDICLOCK NEEDS NO STATUS REGISTRY. Camera had to build
+// one because promotion parks its real card in `<HeadlessSourceHost>` — mounted
+// so the stream survives, `pointer-events: none` so nothing on it is clickable
+// — and the body needs the card's own published state. midiclock's card is not
+// kept alive at all: the MIDI handler is installed engine-side through an
+// identity-scoped claim in the factory, so this body talks to the engine
+// directly and there is no second owner to coordinate with.
+//
+// Dock-only by `dockFullViewHeadPlan`: a 192 px lane tile cannot carry a module
+// surface. The lane keeps the two cells, which is the half that matters there.
+
+import type { ShellExtension } from '$lib/ui/workflow/shell-extensions';
+import MidiclockDeviceBody from './MidiclockDeviceBody.svelte';
+
+export default {
+  fullViewBody: MidiclockDeviceBody,
+} satisfies ShellExtension;
