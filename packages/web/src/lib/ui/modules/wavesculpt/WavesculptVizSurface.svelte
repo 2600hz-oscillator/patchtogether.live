@@ -1743,10 +1743,16 @@ void main() {
     //
     // ONE READ. engine.read(node, 'camera') returns the SAME instant
     // the spatial audio mix is computing right now (both read the
-    // same shadow-gain analyser samples in the factory). Joystick UI
-    // does the same thing — see pollCamLive. That gives us a single
-    // source of truth: knob, CV, audio mix, ribbon viewport, and
-    // joystick dot all move together.
+    // same shadow-gain analyser samples in the factory). The joystick
+    // UI does the same thing from the CARD, in the `onFrame` hook this
+    // renderer calls at the top of every tick — so the two reads land in
+    // the same frame and cannot disagree. That gives us a single source
+    // of truth: knob, CV, audio mix, ribbon viewport, and joystick dot
+    // all move together.
+    //
+    // ⚠ The picture's camera is THIS read, not the card's pad position:
+    // the pad shows the KNOB, CV moves the PICTURE, and those are two
+    // different numbers that are both correct.
     const eng = engineCtx.get();
     const cam = (eng && node ? (eng.read(node, 'camera') as
       | { pos_x: number; pos_y: number; pos_z: number; zoom: number; rot: number }
