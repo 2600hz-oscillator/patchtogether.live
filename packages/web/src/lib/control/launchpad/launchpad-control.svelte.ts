@@ -195,7 +195,7 @@ import {
   type NoteRecState,
 } from '$lib/audio/modules/clip-types';
 // The clipboard is SHARED with the card's note menu (and so with Push 2, which
-// runs through this singleton) — see clip-clipboard.svelte.ts for why it is one
+// runs through this singleton) — see clip-clipboard.ts for why it is one
 // buffer and not one per surface. This file still owns the READ and the WRITE.
 import {
   clipboardBuffer,
@@ -206,7 +206,7 @@ import {
   clipboardClipAuto,
   clipboardLoaded,
   clipboardKind,
-} from '$lib/audio/modules/clip-clipboard.svelte';
+} from '$lib/audio/modules/clip-clipboard';
 import {
   setSceneRepeat,
   sceneRepeatCount,
@@ -465,7 +465,7 @@ let keysOctaveShift = 0; // KEYS octave ± (semitones, multiples of 12) added to
 // SCENE (all 8 lanes' clips at a slot). Held as PLAIN deep-clones (never a live Y
 // child).
 //
-// ⚠ The buffer itself now lives in $lib/audio/modules/clip-clipboard.svelte.ts,
+// ⚠ The buffer itself now lives in $lib/audio/modules/clip-clipboard.ts,
 // because the CARD's note right-click menu copies and pastes into the SAME
 // clipboard (owner, 2026-08-24: card copy/paste must "work the same as when we
 // copy/paste on the push or launchpad"). It is still per-machine and still

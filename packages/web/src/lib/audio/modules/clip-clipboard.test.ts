@@ -23,7 +23,7 @@ import {
   clipboardLoaded,
   clipboardSourceIndex,
   __test_resetClipboard,
-} from './clip-clipboard.svelte';
+} from './clip-clipboard';
 import { __test_copyBuffer } from '$lib/control/launchpad/launchpad-control.svelte';
 import { defaultNoteClip, type NoteClipRecord, type AutoClipRecord } from './clip-types';
 

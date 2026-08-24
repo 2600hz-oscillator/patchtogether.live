@@ -1,4 +1,4 @@
-// packages/web/src/lib/audio/modules/clip-clipboard.svelte.ts
+// packages/web/src/lib/audio/modules/clip-clipboard.ts
 //
 // THE ONE clip clipboard. The typed COPY BUFFER that every surface which copies
 // or pastes a clip reads and writes — the Launchpad (and therefore Push 2, which
@@ -28,9 +28,24 @@
 // the other. It also survives a surface re-bind on purpose (unplugging a
 // Launchpad must not empty your clipboard).
 //
-// The state is a rune so a surface can DERIVE from it — the card's PASTE item
-// disables itself the moment the buffer empties. The Launchpad renders LEDs
-// imperatively and simply reads it.
+// ⚠ PLAIN MODULE STATE — NO RUNES, AND THE FILE IS NOT `.svelte.ts`. This is a
+// hard constraint of WHERE it lives, not a style choice. `audio/modules/` is
+// glob-imported by consumers that run in a bare Node environment — the ART
+// harness reaches it through the clip-math chain — and Node does not compile
+// runes. The first cut of this file used `$state` and took three ART suites down
+// with `ReferenceError: $state is not defined` (cv-terminal x2,
+// cv-display-param-reach), while every browser-side test stayed green, because
+// vitest-web compiles runes and the ART node environment does not. `clip-types.ts`
+// next door is the precedent: plain module, imported happily by both worlds.
+//
+// Nothing is lost by being plain. The only consumer that needs to react is the
+// card's PASTE item, and `canPasteClip()` is evaluated when the note menu MOUNTS
+// (the `{#if probMenu}` block re-runs on every open, and `probMenu` IS a rune).
+// A copy through this menu closes it, so the one uncovered case is the buffer
+// changing from the Launchpad while the menu happens to be open — the item then
+// shows its previous enabled-ness until the next open. That is the honest cost,
+// and it is cheaper than a reactive wrapper that would re-introduce the import
+// hazard for a frame of staleness nobody can perceive.
 
 import type {
   AutoClipRecord,
@@ -40,12 +55,12 @@ import type {
 } from './clip-types';
 
 /** The typed buffer: one clip, or a whole scene. `null` = empty clipboard. */
-let buffer = $state<CopyBuffer | null>(null);
+let buffer: CopyBuffer | null = null;
 
 /** The clip-kind buffer's SOURCE clip index — the Launchpad paints a turquoise
  *  glow on the pad a clip was copied FROM. `null` for a scene buffer (a scene
  *  has no single source pad) and for an empty clipboard. */
-let sourceIndex = $state<number | null>(null);
+let sourceIndex: number | null = null;
 
 /** The whole buffer, or null when the clipboard is empty. */
 export function clipboardBuffer(): CopyBuffer | null {

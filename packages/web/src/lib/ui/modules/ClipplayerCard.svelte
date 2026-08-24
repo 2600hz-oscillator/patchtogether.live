@@ -83,13 +83,13 @@
   } from '$lib/audio/modules/clip-types';
   // The note menu's COPY/PASTE use the SAME typed clipboard as the Launchpad and
   // Push 2 — one buffer, so a clip copied here pastes there and vice versa
-  // (owner, 2026-08-24). See clip-clipboard.svelte.ts.
+  // (owner, 2026-08-24). See clip-clipboard.ts.
   import {
     setClipboardBuffer,
     clipboardClip,
     clipboardClipAuto,
     clipboardKind,
-  } from '$lib/audio/modules/clip-clipboard.svelte';
+  } from '$lib/audio/modules/clip-clipboard';
   import { reconcileClipRemoval } from '$lib/audio/modules/clip-reconcile';
   import { pruneAutoAssignDangling, clearClipAutomation } from '$lib/graph/automation-assign';
   import {
@@ -1298,7 +1298,7 @@
   // means the clip you are editing, not the one note you happened to right-click.
   //
   // The SEMANTICS ARE NOT RE-INVENTED: this is the same typed buffer
-  // (clip-clipboard.svelte.ts), filled by the same `copyClip` + `readAutoClip`
+  // (clip-clipboard.ts), filled by the same `copyClip` + `readAutoClip`
   // and gated by the same `pasteApplies` type gate the Launchpad's
   // `consumeGridArm` uses (launchpad-control.svelte.ts `case 'copy'` / `case
   // 'paste'`). So a clip copied on the card pastes on the Launchpad, a SCENE
