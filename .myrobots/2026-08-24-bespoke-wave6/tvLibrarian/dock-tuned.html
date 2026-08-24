@@ -1,0 +1,303 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>TV LIBRARIAN face — tuned, the channel list, and the lane tile</title>
+<style>
+/* ─────────────────────────────────────────────────────────────────────────
+   TV LIBRARIAN FACEPLATE — MOCKUP, state 2 of 2.
+   SPEC AND MOCKUP ONLY. Nothing here is implemented. See spec.md.
+
+   Same house tokens as dock.html. THE POINT OF THIS PAGE: the station-name
+   judgement. The list rows KEEP their names (option names inside the control
+   that selects them); the NOW PLAYING label GOES (a readout outside every
+   control).
+   ───────────────────────────────────────────────────────────────────────── */
+:root{
+  --bg:#0e1013; --dock:#12161c; --plate:#262a31; --pbody:#1c1f24; --well:#0a0c0f;
+  --line:#2c3037; --tile:#33383f; --ink:#eef1f5; --dim:#9aa2ad; --faint:#646c77;
+  --cv:#7dd3fc; --accent:#6cf; --img:#c084fc; --ch1:#fbbf24; --warn:#f2c14e; --good:#8fe6b0;
+  --vid:#4ad6c4;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+  font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1200px;margin:0 auto;padding:26px 20px 90px}
+h1{font-size:21px;font-weight:800;margin:0 0 6px;letter-spacing:.01em}
+.sub{color:var(--dim);font-size:12.5px;margin:0 0 14px;max-width:106ch}
+.sub b{color:var(--ink)} code{font-family:var(--mono);font-size:11.5px;color:var(--ch1)}
+.nav{display:flex;gap:8px;margin:0 0 20px;font-size:11px;flex-wrap:wrap}
+.nav a{color:var(--ink);text-decoration:none;border:1px solid var(--line);border-radius:6px;
+  padding:6px 12px;background:#12161c;font-family:var(--mono);letter-spacing:.06em;text-transform:uppercase}
+.nav a.on{border-color:var(--vid);color:var(--vid)}
+.warn{border:1px solid #6a5330;background:#1c1811;border-radius:8px;padding:11px 14px;
+  margin:12px 0;font-size:12.5px;color:#e8cf9a;max-width:118ch}
+.warn b{color:var(--warn)}
+.ok{border:1px solid #3b5a48;background:#111a15;border-radius:8px;padding:11px 14px;
+  margin:12px 0;font-size:12.5px;color:#a9d8bd;max-width:118ch}
+.ok b{color:var(--good)}
+.cols{display:grid;grid-template-columns:minmax(0,1fr) 400px;gap:18px;align-items:start}
+@media (max-width:1080px){.cols{grid-template-columns:minmax(0,1fr)}}
+
+.dock{background:var(--dock);border:1px solid var(--line);border-radius:11px;overflow:hidden;padding:11px}
+.chromebar{display:flex;align-items:baseline;gap:9px;padding:0 2px 8px}
+.chromebar .nm{font-size:13px;font-weight:800;letter-spacing:.03em}
+.chromebar .rl{font-size:9.4px;letter-spacing:.09em;text-transform:uppercase;color:var(--faint);font-family:var(--mono)}
+.chromebar .x{margin-left:auto;color:var(--faint);font-family:var(--mono);font-size:12px}
+.plate{background:var(--pbody);border:1px solid var(--tile);border-left:4px solid var(--vid);
+  border-radius:10px;padding:0 0 12px;width:max-content;max-width:100%}
+.extbody{padding:12px 14px 4px;width:360px;max-width:100%}
+
+.screenhead{display:flex;align-items:center;gap:8px;margin:0 0 7px}
+.screenhead .sw{margin-left:auto;font-size:8.2px;font-family:var(--mono);letter-spacing:.07em;
+  text-transform:uppercase;color:#0b0d11;background:var(--vid);border-radius:2px;padding:2px 7px;font-weight:700}
+.prev{width:100%;aspect-ratio:16/9;border-radius:3px;border:1px solid var(--vid);overflow:hidden;
+  position:relative;
+  background:
+    radial-gradient(circle at 72% 26%, rgba(255,230,170,.9) 0 7%, transparent 8%),
+    linear-gradient(165deg,#0b2a3a 0%,#1d6b78 34%,#c9a24a 66%,#8a2f45 100%)}
+.prev .lower{position:absolute;left:0;right:0;bottom:0;height:30%;
+  background:linear-gradient(180deg,transparent,rgba(4,10,14,.8))}
+
+.pickhead{display:flex;align-items:center;gap:7px;margin:10px 0 7px}
+.seg{display:flex;border:1px solid #333a43;border-radius:3px;overflow:hidden}
+.seg span{font-size:8.6px;font-family:var(--mono);letter-spacing:.06em;text-transform:uppercase;
+  padding:3px 9px;color:var(--dim);background:#171b21}
+.seg span.on{background:var(--vid);color:#04110f;font-weight:700}
+.pickhead .rnd{margin-left:auto;font-size:8.6px;font-family:var(--mono);letter-spacing:.06em;
+  text-transform:uppercase;padding:3px 10px;border:1px solid #333a43;border-radius:3px;color:var(--dim)}
+
+.csel{width:100%;background:var(--well);border:1px solid #333a43;border-radius:3px;
+  padding:4px 8px;font-family:var(--mono);font-size:10.5px;color:var(--ink);
+  display:flex;justify-content:space-between;align-items:center}
+.csel .cv{color:var(--vid)}
+
+.chanhead{display:flex;align-items:center;gap:7px;margin:11px 0 6px;
+  border-top:1px solid var(--line);padding-top:9px}
+.chanhead .cc{font-size:9.4px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--dim)}
+.chanhead .nx{margin-left:auto;font-size:8.6px;font-family:var(--mono);letter-spacing:.06em;
+  text-transform:uppercase;padding:3px 10px;border:1px solid #333a43;border-radius:3px;color:var(--dim)}
+
+.chans{max-height:168px;overflow:hidden;border:1px solid #232830;border-radius:3px}
+.ch{display:flex;align-items:center;gap:6px;padding:4px 8px;border-bottom:1px solid #191d24}
+.ch:last-child{border-bottom:0}
+.ch .cn{flex:1;min-width:0;font-family:var(--mono);font-size:9.4px;color:var(--dim);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ch .lg{font-family:var(--mono);font-size:8px;color:#59626d;letter-spacing:.04em}
+.ch .geo{font-family:var(--mono);font-size:7.6px;letter-spacing:.05em;text-transform:uppercase;
+  color:#0b0d11;background:var(--warn);border-radius:2px;padding:0 5px;font-weight:700}
+.ch.sel{background:#0d2a28}
+.ch.sel .cn{color:var(--vid);font-weight:700}
+
+.disc{margin-top:11px;border-top:1px solid var(--line);padding-top:8px;
+  font-size:8.6px;color:var(--faint);line-height:1.6}
+.disc a{color:#7d94a8}
+
+.bands{padding:6px 14px 0}
+.band{border-top:1px solid var(--line);padding-top:8px;margin-top:10px}
+.band:first-child{border-top:0;margin-top:4px}
+.blab{margin:0 0 7px;font-size:9.4px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--dim)}
+.brow{display:flex;flex-wrap:wrap;align-items:flex-start;gap:10px 18px}
+.f{width:52px;display:flex;flex-direction:column;align-items:center;gap:5px}
+.f i{--v:.5;--fc:var(--vid);display:block;width:16px;height:74px;border-radius:8px;position:relative;
+  background:linear-gradient(#171b21,#12161c);border:1px solid #333a43}
+.f i::before{content:"";position:absolute;left:50%;transform:translateX(-50%);width:2px;top:6px;bottom:6px;
+  background:#262c34;border-radius:1px}
+.f i::after{content:"";position:absolute;left:50%;width:22px;height:9px;border-radius:2px;
+  background:var(--fc);box-shadow:0 0 7px color-mix(in srgb,var(--fc) 60%,transparent);
+  transform:translate(-50%,-50%);top:calc(6px + (1 - var(--v)) * (100% - 12px))}
+.f b{font-size:7.8px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--dim);
+  font-family:var(--mono);text-align:center}
+
+.notes{display:flex;flex-direction:column;gap:12px}
+.card{border:1px solid var(--line);background:#101419;border-radius:9px;padding:12px 14px}
+.card h3{margin:0 0 7px;font-size:10px;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--accent);font-family:var(--mono);font-weight:700}
+.card p{margin:0 0 8px;font-size:12px;color:var(--dim)}
+.card p:last-child{margin-bottom:0}
+.card b{color:var(--ink)}
+table{border-collapse:collapse;width:100%;font-size:11px;margin:2px 0 0}
+th,td{text-align:left;padding:4px 7px 4px 0;border-bottom:1px solid #1e242c;vertical-align:top;color:var(--dim)}
+th{color:var(--faint);font-family:var(--mono);font-size:8.6px;letter-spacing:.09em;text-transform:uppercase;font-weight:400}
+td b{color:var(--ink)}
+.aria{font-family:var(--mono);font-size:10px;color:#8fe6b0}
+.gone{text-decoration:line-through;color:#5a616c}
+
+.lanewrap{display:flex;gap:14px;align-items:flex-start;margin-top:18px;flex-wrap:wrap}
+.tile{width:172px;border:1px solid var(--tile);border-radius:8px;background:#15181d;padding:8px;flex:0 0 auto}
+.tile .tnm{font-size:8.4px;font-family:var(--mono);letter-spacing:.08em;text-transform:uppercase;
+  color:var(--faint);margin-bottom:6px}
+.thumb{width:100%;aspect-ratio:4/3;border-radius:3px;border:1px solid #1a1f2a;
+  background:linear-gradient(165deg,#0b2a3a 0%,#1d6b78 34%,#c9a24a 66%,#8a2f45 100%)}
+.tilecap{margin-top:7px;font-size:8.2px;font-family:var(--mono);color:var(--faint);line-height:1.5}
+</style>
+<div class="wrap">
+
+<h1>TV LIBRARIAN — TUNED, with the channel list open</h1>
+<p class="sub">
+  <b>SPEC AND MOCKUP ONLY. Nothing here is implemented.</b> The page that exists to settle the
+  <b>station-name question</b>: the list rows keep their names, and the NOW PLAYING label does
+  not survive. The discriminator is <b>attachment, not provenance</b>.
+</p>
+
+<div class="nav">
+  <a href="dock.html">1 · empty · map</a>
+  <a class="on" href="dock-tuned.html">2 · tuned · the channel list</a>
+  <a href="spec.md">spec.md</a>
+</div>
+
+<div class="ok">
+  <b>The rule this face proposes, in one line:</b> <em>text inside a control that selects it is
+  an OPTION NAME; the same text painted outside every control, restating what is selected, is a
+  READOUT.</em> That reproduces every settled case in the fleet — picturebox's per-slot filenames
+  (kept), scope's tuner numbers (deleted), the hero readout strip (deleted),
+  <code>HIGH</code>/<code>BALANCED</code>/<code>SMALL</code> (kept) — without special pleading.
+</div>
+
+<div class="cols">
+<div>
+
+  <div class="dock">
+    <div class="chromebar">
+      <span class="nm">TV LIBRARIAN</span>
+      <span class="rl">dock · full view</span>
+      <span class="x">✕</span>
+    </div>
+
+    <div class="plate">
+      <div class="extbody">
+
+        <div class="screenhead">
+          <span class="sw">Screen on</span>
+        </div>
+        <div class="prev"
+          title="NHK World-Japan — Japan — playing"><div class="lower"></div></div>
+        <!-- ⚠ NO now-playing label here. It lives on the picture's aria-label. -->
+
+        <div class="pickhead">
+          <div class="seg"><span>map</span><span class="on">list</span></div>
+          <span class="rnd">random</span>
+        </div>
+
+        <div class="csel">Japan (218) <span class="cv">▾</span></div>
+
+        <div class="chanhead">
+          <span class="cc">Japan</span>
+          <span class="nx">next ▸</span>
+        </div>
+
+        <div class="chans">
+          <div class="ch sel"><span class="cn">NHK World-Japan</span><span class="lg">eng</span></div>
+          <div class="ch"><span class="cn">TV Asahi News</span><span class="geo">geo</span><span class="lg">jpn</span></div>
+          <div class="ch"><span class="cn">Weathernews LiVE</span><span class="lg">jpn</span></div>
+          <div class="ch"><span class="cn">Sakura TV Kyoto</span><span class="lg">jpn</span></div>
+          <div class="ch"><span class="cn">Ryukyu Asahi</span><span class="geo">geo</span><span class="lg">jpn</span></div>
+          <div class="ch"><span class="cn">Chiba TV 5</span><span class="lg">jpn</span></div>
+        </div>
+
+        <div class="disc">
+          Third-party public streams — not hosted by patchtogether.
+          Data via <a href="#">Famelack</a> · <a href="#">iptv-org</a>.
+        </div>
+      </div>
+
+      <div class="bands">
+        <div class="band">
+          <p class="blab">Output</p>
+          <div class="brow">
+            <div class="f"><i style="--v:.5"></i><b>Gain</b></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="lanewrap">
+    <div class="tile">
+      <div class="tnm">lane tile · compact</div>
+      <div class="thumb"></div>
+      <div class="tilecap">
+        <b style="color:var(--ink)">VideoTileThumb</b>, 160×120, 15 fps, per-node, free.<br>
+        A wall of TVs, each on its own station — the def calls it a supported use.
+      </div>
+    </div>
+    <div class="warn" style="margin:0;flex:1;min-width:280px">
+      <b>Removing NOW PLAYING costs something, and D3 is the repair.</b> The label was the only
+      place the station name sat <em>next to the picture</em>. With the list scrolled — or the
+      view toggled to <code>map</code> — nothing painted says which station is playing.
+      <b>The face must scroll the selected row into view on tune</b>, which the card does not do
+      today (<code>:563</code> sets <code>class:sel</code> and nothing else).
+    </div>
+  </div>
+
+</div>
+
+<div class="notes">
+
+  <div class="card">
+    <h3>the readouts, after</h3>
+    <table>
+      <tr><th>was</th><th>now</th></tr>
+      <tr><td class="gone">NHK World-Japan · eng (now-playing label)</td><td class="aria">picture aria-label</td></tr>
+      <tr><td>NHK World-Japan <i>(list row)</i></td><td><b>kept</b> — an option name inside the control that selects it</td></tr>
+      <tr><td>geo badge</td><td><b>kept</b> — a static literal marking a property of that option</td></tr>
+      <tr><td>eng / jpn</td><td><b>kept</b> — part of the option's name; two "TV 5"s are told apart by it</td></tr>
+      <tr><td>Japan <i>(chan-head)</i></td><td><b>kept</b> — a SECTION LABEL over the list it heads</td></tr>
+      <tr><td>tuning… / stream unavailable</td><td><b>kept</b> — transient outcomes</td></tr>
+    </table>
+  </div>
+
+  <div class="card">
+    <h3>⚠ the census gains a FOURTH state, inside ONE file</h3>
+    <p>Wave 5's <code>.data</code> table assigns one state per module. tvLibrarian is in the top
+      row <b>and</b> the bottom row simultaneously:</p>
+    <table>
+      <tr><th>site</th><th>shape</th><th>Cmd-Z</th></tr>
+      <tr><td><code>writeCountry :161</code></td><td>transact + LOCAL_ORIGIN</td><td>✓</td></tr>
+      <tr><td><code>writeChannel :171</code></td><td>transact + LOCAL_ORIGIN</td><td>✓</td></tr>
+      <tr><td><b><code>resize apply :447</code></b></td><td><b>bare proxy write</b></td><td><b>✗</b></td></tr>
+    </table>
+    <p style="margin-top:8px"><b>The discipline is per-call-site, not per-module</b> — which the
+      census's binary column cannot express, and which most undermines reading it as a list of
+      careful and careless modules.</p>
+    <p>⚠ This one has a <b>defensible</b> reason (it fires per <code>pointermove</code>; tagging
+      it unmodified would push a drag into the undo stack). The correct shape is
+      <code>DetachedDisplay.svelte:121</code>'s — commit ONCE on <code>onEnd</code>.
+      <b>And it is fleet-wide: all 15 <code>startCornerResize</code> callers have it.</b>
+      Fixed here for tvLibrarian only; the sweep is a separate PR.</p>
+  </div>
+
+  <div class="card">
+    <h3>⚠ the two VRT pins</h3>
+    <p>tvLibrarian has <b>no baseline at all</b> and sits in
+      <code>ALLOWED_PERMANENT_EXEMPT</code> — <em>"live external HLS &lt;video&gt; +
+      runtime-fetched, ever-changing channel list defeat deterministic capture"</em>. Both halves
+      are real and independent.</p>
+    <p><code>loopback</code> is the precedent for getting real face baselines anyway
+      (<code>_shell-faces.ts:3093-3140</code>) — but it needs <b>ONE</b> pin and this needs
+      <b>TWO</b>:</p>
+    <table>
+      <tr><td><code>__tvlibrarianTestFrame</code></td><td>pins the PICTURE</td></tr>
+      <tr><td><b><code>__tvlibrarianTestRoster</code></b></td><td><b>pins the ROSTER</b> — half this body's pixels</td></tr>
+    </table>
+    <p style="margin-top:8px">The second is what a loopback-shaped copy would miss, and it would
+      produce a baseline that <b>passes on capture day and reddens later for no attributable
+      reason</b>. <b>Capture twice, on different days, and diff.</b></p>
+  </div>
+
+  <div class="card">
+    <h3>next / random stay in the BODY</h3>
+    <p>They are tempting as <code>action</code> cells and the probe is not the problem —
+      <code>{ kind: 'data', key: 'channel', expect: 'changed' }</code> is a real observable.</p>
+    <p><b>It is a LOCATION problem.</b> A cell can be ranked into the lane, and a "next channel"
+      button in a 46 px knob column — beside nothing that says <em>which</em> channel — is an
+      affordance with no context. The gesture only means something next to the roster it steps
+      through.</p>
+    <p>The def already classifies them: <em>"'random' / 'next ▸' buttons (DOM-only, not module
+      params)"</em> (<code>tv-librarian.ts:147</code>). The CV route to the same behaviour is the
+      two gate inputs, which are real ports and keep working.</p>
+  </div>
+
+</div>
+</div>
+</div>

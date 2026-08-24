@@ -1,0 +1,269 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>ARCHIVIST face — the dock faceplate, COLD</title>
+<style>
+/* ─────────────────────────────────────────────────────────────────────────
+   ARCHIVIST FACEPLATE — MOCKUP, state 1 of 2 (COLD / nothing loaded).
+   SPEC AND MOCKUP ONLY. Nothing here is implemented. See spec.md.
+
+   House tokens, the same set the wave-1..5 mocks use.
+   This state matters more than it looks: it is the ONLY state the VRT dock
+   baseline will ever capture (spec.md §9.1), because a fresh archivist has
+   `item: null` and nothing in the module fetches on mount.
+   ───────────────────────────────────────────────────────────────────────── */
+:root{
+  --bg:#0e1013; --dock:#12161c; --plate:#262a31; --pbody:#1c1f24; --well:#0a0c0f;
+  --line:#2c3037; --tile:#33383f; --ink:#eef1f5; --dim:#9aa2ad; --faint:#646c77;
+  --cv:#7dd3fc; --accent:#6cf; --vid:#4ade80; --ch1:#fbbf24; --warn:#f2c14e; --good:#8fe6b0;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+  font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1240px;margin:0 auto;padding:26px 20px 90px}
+h1{font-size:21px;font-weight:800;margin:0 0 6px;letter-spacing:.01em}
+.sub{color:var(--dim);font-size:12.5px;margin:0 0 14px;max-width:106ch}
+.sub b{color:var(--ink)} code{font-family:var(--mono);font-size:11.5px;color:var(--ch1)}
+.nav{display:flex;gap:8px;margin:0 0 20px;font-size:11px;flex-wrap:wrap}
+.nav a{color:var(--ink);text-decoration:none;border:1px solid var(--line);border-radius:6px;
+  padding:6px 12px;background:#12161c;font-family:var(--mono);letter-spacing:.06em;text-transform:uppercase}
+.nav a.on{border-color:var(--vid);color:var(--vid)}
+.warn{border:1px solid #6a5330;background:#1c1811;border-radius:8px;padding:11px 14px;
+  margin:12px 0;font-size:12.5px;color:#e8cf9a;max-width:118ch}
+.warn b{color:var(--warn)}
+.ok{border:1px solid #3b5a48;background:#111a15;border-radius:8px;padding:11px 14px;
+  margin:12px 0;font-size:12.5px;color:#a9d8bd;max-width:118ch}
+.ok b{color:var(--good)}
+.cols{display:grid;grid-template-columns:minmax(0,1fr) 400px;gap:18px;align-items:start}
+@media (max-width:1120px){.cols{grid-template-columns:minmax(0,1fr)}}
+
+.dock{background:var(--dock);border:1px solid var(--line);border-radius:11px;overflow:hidden;padding:11px}
+.chromebar{display:flex;align-items:baseline;gap:9px;padding:0 2px 8px}
+.chromebar .nm{font-size:13px;font-weight:800;letter-spacing:.03em}
+.chromebar .rl{font-size:9.4px;letter-spacing:.09em;text-transform:uppercase;color:var(--faint);font-family:var(--mono)}
+.chromebar .x{margin-left:auto;color:var(--faint);font-family:var(--mono);font-size:12px}
+.plate{background:var(--pbody);border:1px solid var(--tile);border-left:4px solid var(--vid);
+  border-radius:10px;padding:0 0 12px;width:max-content;max-width:100%}
+
+/* ── the fullViewBody ─────────────────────────────────────────────────── */
+.extbody{padding:12px 14px 4px;width:508px;max-width:100%}
+.prevwrap{position:relative;display:flex;justify-content:center;min-height:18px}
+.prev{width:480px;max-width:100%;aspect-ratio:4/3;border-radius:4px;border:1px solid #1a1f2a;
+  /* the module's OWN idle gradient: vec4(0.04, 0.05, 0.09 + vUv.y*0.06, 1.0) */
+  background:linear-gradient(180deg,#0a0d17 0%,#0f1424 100%);
+  display:flex;align-items:center;justify-content:center;position:relative}
+.prev .ph{font-family:var(--mono);font-size:10px;letter-spacing:.14em;color:#3b4454}
+.screenbtn{position:absolute;right:6px;bottom:6px;font-size:9px;letter-spacing:.06em;
+  padding:2px 8px;border:1px solid var(--vid);border-radius:2px;background:rgba(5,6,8,.72);
+  color:var(--ink);font-family:var(--mono)}
+
+.q{margin-top:10px;display:flex;flex-direction:column;gap:5px}
+.qrow{display:flex;gap:5px;align-items:center}
+.sel{background:#1a1f2a;border:1px solid #404652;border-radius:2px;color:var(--ink);
+  font-size:10px;font-family:var(--mono);padding:4px 6px;min-width:66px}
+.sel::after{content:"▾"}
+.inp{flex:1;min-width:0;background:#11151c;border:1px solid #404652;border-radius:2px;
+  color:#5c6470;font-size:10.5px;padding:5px 7px;font-family:var(--sans)}
+.yr{width:56px;background:#11151c;border:1px solid #404652;border-radius:2px;color:#5c6470;
+  font-size:10px;padding:4px 5px;text-align:left;font-family:var(--sans)}
+.dash{color:var(--faint);font-size:11px}
+.btn{padding:4px 11px;background:var(--vid);color:#08120c;border-radius:2px;font-size:9.4px;
+  font-family:var(--mono);letter-spacing:.06em;text-transform:uppercase;font-weight:700;white-space:nowrap}
+.btn.sec{background:#2a3340;color:var(--dim)}
+.btn.off{background:#232830;color:#4d5560}
+
+.lamprow{display:flex;align-items:center;gap:7px;margin-top:10px;
+  border-top:1px solid var(--line);padding-top:9px}
+.lamp{width:8px;height:8px;border-radius:50%;background:var(--dim);opacity:.35;flex:0 0 auto}
+.lamp.good{background:var(--good);opacity:1;box-shadow:0 0 5px var(--good)}
+.lamp.amber{background:var(--warn);opacity:1}
+.lampcap{font-family:var(--mono);font-size:8.6px;letter-spacing:.1em;color:var(--faint)}
+.lampnote{margin-left:auto;font-family:var(--mono);font-size:8.6px;color:#3f4753}
+
+/* ── bands ────────────────────────────────────────────────────────────── */
+.bands{padding:6px 14px 0}
+.band{border-top:1px solid var(--line);padding-top:8px;margin-top:10px}
+.blab{margin:0 0 7px;font-size:9.4px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--dim)}
+.row{display:flex;flex-wrap:wrap;align-items:flex-start;gap:10px 18px}
+.f{width:52px;display:flex;flex-direction:column;align-items:center;gap:5px}
+.f i{--v:.5;--fc:var(--vid);display:block;width:16px;height:74px;border-radius:8px;position:relative;
+  background:linear-gradient(#171b21,#12161c);border:1px solid #333a43}
+.f i::before{content:"";position:absolute;left:50%;transform:translateX(-50%);width:2px;top:6px;bottom:6px;
+  background:#262c34;border-radius:1px}
+.f i::after{content:"";position:absolute;left:50%;width:22px;height:9px;border-radius:2px;
+  background:var(--fc);box-shadow:0 0 7px color-mix(in srgb,var(--fc) 60%,transparent);
+  transform:translate(-50%,-50%);top:calc(6px + (1 - var(--v)) * (100% - 12px))}
+.f b{font-size:7.8px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--dim);
+  font-family:var(--mono);text-align:center}
+
+/* ── the lane tile ────────────────────────────────────────────────────── */
+.lanes{display:flex;gap:14px;flex-wrap:wrap;margin-top:6px}
+.tile{background:var(--pbody);border:1px solid var(--tile);border-left:3px solid var(--vid);
+  border-radius:7px;padding:7px 8px;width:196px}
+.tile .tn{font-family:var(--mono);font-size:8.4px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--dim);margin-bottom:5px}
+.thumb{width:160px;height:120px;border-radius:3px;border:1px solid #1a1f2a;
+  background:linear-gradient(180deg,#0a0d17 0%,#0f1424 100%);margin-bottom:6px}
+.thumb.img{background:
+  radial-gradient(circle at 34% 36%, #f0a5c8 0 14%, transparent 15%),
+  linear-gradient(155deg,#3a2a6b 0%,#7b3f8f 48%,#d97a5a 80%,#f6c78a 100%)}
+.tilerow{display:flex;gap:9px;align-items:flex-start}
+
+/* ── side notes ───────────────────────────────────────────────────────── */
+.notes{display:flex;flex-direction:column;gap:12px}
+.card{border:1px solid var(--line);background:#101419;border-radius:9px;padding:12px 14px}
+.card h3{margin:0 0 7px;font-size:10px;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--accent);font-family:var(--mono);font-weight:700}
+.card p{margin:0 0 8px;font-size:12px;color:var(--dim)}
+.card p:last-child{margin-bottom:0}
+.card b{color:var(--ink)}
+table{border-collapse:collapse;width:100%;font-size:11px;margin:2px 0 0}
+th,td{text-align:left;padding:4px 7px 4px 0;border-bottom:1px solid #1e242c;vertical-align:top;color:var(--dim)}
+th{color:var(--faint);font-family:var(--mono);font-size:8.6px;letter-spacing:.09em;text-transform:uppercase;font-weight:400}
+td b{color:var(--ink)}
+.aria{font-family:var(--mono);font-size:10.5px;color:#8fe6b0}
+.gone{text-decoration:line-through;color:#5a616c}
+.meas{font-family:var(--mono);font-size:10.5px;color:var(--ch1)}
+</style>
+<div class="wrap">
+
+<h1>ARCHIVIST — the dock faceplate, COLD</h1>
+<p class="sub">
+  <b>SPEC AND MOCKUP ONLY. Nothing here is implemented.</b> One ranked control, and a
+  <b>fullViewBody</b> that has to carry the entire module — because promotion parks the real
+  card off-screen at <code>left:-9999px</code> with <code>pointer-events: none</code>.
+</p>
+
+<div class="nav">
+  <a class="on" href="dock.html">1 · cold (what VRT captures)</a>
+  <a href="dock-loaded.html">2 · a loaded VIDEO item + the lane tile</a>
+  <a href="spec.md">spec.md</a>
+  <a href="../peertube/spec.md">↔ peertube</a>
+</div>
+
+<div class="ok">
+  <b>This is the ONLY state the dock baseline will ever see.</b> A fresh archivist has
+  <code>item: null</code> (<code>ARCHIVIST_DATA_DEFAULTS</code>), the transport block is
+  <code>{#if isTimeMedia}</code> so it does not render, and <b>nothing fetches on mount</b> —
+  every <code>runSearch</code> caller is a user gesture. So the face scenes capture normally,
+  with no <code>simPin</code> and no <code>FACES_WITHOUT_SCENES</code> entry. See spec.md §9.
+</div>
+
+<div class="cols">
+<div>
+
+<div class="dock">
+  <div class="chromebar">
+    <span class="nm">archivist</span>
+    <span class="rl">dock full view</span>
+    <span class="x">✕</span>
+  </div>
+
+  <div class="plate">
+    <div class="extbody">
+
+      <!-- THE PICTURE. Cold = the module's own idle gradient, blitted from the engine. -->
+      <div class="prevwrap">
+        <div class="prev">
+          <span class="ph">SEARCH THE INTERNET ARCHIVE</span>
+          <span class="screenbtn">SCREEN ON</span>
+        </div>
+      </div>
+
+      <!-- THE QUERY. Two rows; the widest asks for less than the picture does. -->
+      <div class="q">
+        <div class="qrow">
+          <span class="sel">video&nbsp;▾</span>
+          <span class="inp">search archive.org…</span>
+        </div>
+        <div class="qrow">
+          <span class="yr">from yr</span>
+          <span class="dash">–</span>
+          <span class="yr">to yr</span>
+          <span class="btn">Search</span>
+          <span class="btn sec">↻ next</span>
+        </div>
+      </div>
+
+      <!-- THE OUTPUT LAMP. Static caption, boolean lamp, everything else in aria-label. -->
+      <div class="lamprow">
+        <span class="lamp"></span>
+        <span class="lampcap">OUT</span>
+        <span class="lampnote">dim = nothing loaded</span>
+      </div>
+
+    </div>
+
+    <div class="bands">
+      <div class="band">
+        <p class="blab">level</p>
+        <div class="row">
+          <span class="f"><i style="--v:.5"></i><b>gain</b></span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="warn">
+  <b>The one control on this plate does not work on <code>main</code>.</b>
+  <code>archivist.ts:199</code> documents <code>gain</code> as <i>"Reserved in v1 — declared on
+  the module but not yet consumed in the signal path"</i>, and the shader really has no
+  <code>uGain</code> uniform. Ranking a dead param is <i>a green gate certifying a live bug</i>,
+  so the face is <b>PROMOTE-WITH-PRECURSOR</b>: four lines, already written verbatim in
+  <code>picturebox.ts</code> / <code>camera-input.ts</code> / <code>loopback.ts</code>, and
+  <b>byte-identical at defaults</b> because <code>1.0</code> is the only value any node holds.
+  It is a WebGL-attest basis edit, so it shares ONE window with peertube, videobox and
+  tvLibrarian. spec.md §0.1.
+</div>
+
+</div>
+<div class="notes">
+
+  <div class="card">
+    <h3>why a body and not a cell</h3>
+    <p>Four rungs of the ladder, four <b>different</b> refusals — which is the test that these
+    are arguments rather than a foregone conclusion.</p>
+    <table>
+      <tr><th>rung</th><th>refusal</th></tr>
+      <tr><td><b>selector</b><br>(media type)</td><td>the one that almost works — a real 4-value roster on <code>node.data</code>. Refused on LAYOUT (one gesture split across two surfaces) and on COST (<code>controlFamilies</code> is in the contract).</td></tr>
+      <tr><td><b>action</b><br>(Search / ↻)</td><td>probe REQUIRED, and the press must reach <code>lastDocs</code> — a Svelte component's <code>$state</code>. Not the <code>env</code> question: no capability reaches there.</td></tr>
+      <tr><td><b>file</b></td><td>archivist loads nothing from disk.</td></tr>
+      <tr><td><b>panel</b></td><td>needs a probe target, and would be a RANKED key competing with <code>gain</code> for band space.</td></tr>
+      <tr><td><b>fullViewBody</b></td><td>wired, takes <code>nodeId</code>, no probe, and the bands below are untouched.</td></tr>
+    </table>
+  </div>
+
+  <div class="card">
+    <h3>width — earned by the picture</h3>
+    <p>The gate measures <b>SLACK</b>, not size: <code>slack = bodyW − contentW</code>.
+    <code>FACE_WIDTH_EXEMPTIONS</code> has exactly <b>one</b> key today (<code>moog912</code>) and
+    <b>cameraInput and loopback are not in it</b> — their bodies are 480 px wide.</p>
+    <table>
+      <tr><th>row</th><th>asks for</th></tr>
+      <tr><td>the preview canvas</td><td><b class="meas">480</b> ← the driver</td></tr>
+      <tr><td>query row</td><td>~200, stretches</td></tr>
+      <tr><td>bounds row</td><td>~250, stretches</td></tr>
+      <tr><td>transport</td><td>~190, stretches</td></tr>
+    </table>
+    <p style="margin-top:8px">A body whose widest element is a picture has near-zero slack by
+    construction. <b>No exemption entry is needed — and if a build lands one, that is the signal
+    something else got wide.</b></p>
+  </div>
+
+  <div class="card">
+    <h3>what is NOT on this plate</h3>
+    <table>
+      <tr><th>card text</th><th>→</th></tr>
+      <tr><td class="gone">3:41 / 12:08</td><td class="aria">aria-valuetext on the seek control</td></tr>
+      <tr><td class="gone">Internet Archive · video</td><td>the type is the selector's own option name, three rows up</td></tr>
+      <tr><td class="gone">⚠ play-only (no clean output)</td><td>the <b>OUT</b> lamp's <span class="aria">aria-label</span></td></tr>
+      <tr><td>Search the Internet Archive</td><td><b>kept</b>, painted INTO the canvas — the samsloop <code>NO SAMPLE LOADED</code> shape</td></tr>
+      <tr><td>the item TITLE</td><td><b>kept</b> — a NAME, on the cameraInput device-name precedent. ⚠ escalated as an owner call, spec.md §7.1</td></tr>
+    </table>
+  </div>
+
+</div>
+</div>
+</div>

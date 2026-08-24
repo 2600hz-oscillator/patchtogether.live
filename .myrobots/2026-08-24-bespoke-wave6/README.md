@@ -185,15 +185,36 @@ all six specs in this wave list three:
    `module-face-lint.test.ts`. The set is asserted EQUAL to the set of defs
    declaring a `face`, in both directions, so **authoring the `face` IS the
    promotion** and there is no count to maintain (`strict-faces.ts:10-21`).
-2. **the VRT baselines** — a compact scene and a dock scene per face. ⚠ Linux CI
-   authors them; nobody commits a PNG.
+2. **the VRT baselines** — a compact scene and a dock scene per face, registered
+   in `e2e/vrt/_shell-faces.ts`. ⚠ Linux CI authors them; nobody commits a PNG —
+   dispatch with `task vrt:commit`, which SCOPES the capture to the branch's diff
+   and prints what it selected before dispatching. ⚠ A face that genuinely cannot
+   be baselined takes a NAMED `FACES_WITHOUT_SCENES` entry (`:3391`) rather than
+   a silent absence — which matters in this cohort, because a NETWORK-BACKED
+   surface is a determinism hazard the fleet has not had to price before.
 3. **`EXTENSION_BODY_ROLES`** — `face-rack-status-source.test.ts:150`.
    Deny-by-default over every `fullViewBody` in the tree, membership derived off
    the DIRECTORY, a **mechanical predicate per role**, and a `why` required by the
-   type. Existing roles: `picture` (really mounts a `<canvas>`),
-   `status-primitive` (really imports `StatusLed`, really has no canvas), and
-   `control-grid` (a DOM control grid that sets `aria-label`, no canvas — added by
-   #2184).
+   type. There are exactly **two** roles (`:142`): `picture` (the body really
+   mounts a `<canvas>`) and `status-primitive` (it really imports `StatusLed`
+   **and** really has no canvas). They are not exclusive by intent — they are
+   ordered by the canvas test, so a body that keeps a preview canvas *and* uses
+   `StatusLed` is legally `picture`.
+
+   ⚠ **The role set is ANCHORED EXACTLY** (`:690-696`):
+   `expect([...roles].sort()).toEqual(['picture', 'status-primitive'])`, with the
+   stated reason that *"a roster where every entry said `picture` would be a
+   rename of the blind spot rather than a narrowing of it."* So a third role
+   cannot be added quietly — it moves that assertion, deliberately and visibly.
+
+   ⚠ **CORRECTION, and it is the kind this wave keeps finding.** This wave was
+   briefed that a third role `control-grid` already existed, "added by #2184".
+   **It does not exist on `ea2e06340`** — `grep -c control-grid` over that file
+   returns **0**, and `:142` is a two-member union. #2184 is an OPEN PR. The
+   error was propagated into all three spec briefs before a spec agent measured
+   it and sent it back. Recorded because the correction pattern is the point: an
+   *unmerged PR's* contents read exactly like *merged tree state* in a briefing,
+   and nothing but going and looking distinguishes them.
 
 That third gate is the one this cohort most needed listing, because a media body
 is the exact case it was built for. Its own header is candid that it **cannot see
@@ -215,18 +236,43 @@ painted chrome.** They live in `aria-valuetext`.
 Every module in this wave wants to paint transport state, and one of them wants a
 running timecode. The positive form already exists and no spec here invents an
 exemption: **`StatusLed`** (`$lib/ui/controls/StatusLed.svelte`, gated by
-`status-led-source.test.ts`) — a static literal caption, a boolean lamp that IS
-the picture, and `detail` reaching `aria-label`/`title` and never a text node.
+`status-led-source.test.ts`). Its own header calls it *"the ONLY status surface a
+face may use, shaped so the refused form cannot be expressed"*, and three
+properties are why it holds where the previous mechanisms did not:
+
+* **there is NO `value` prop.** `Readout.svelte` — *"the refused shape preserved
+  next door: `{ value, units, precision }` and a text node"* — is the contrast.
+  Adding one is an edit to a gated file, not a call-site choice.
+* ⚠ **the caption is STATIC BY CONTRACT, not by convention**: it is painted and
+  announced identically whether `lit` is true or false, so a caller cannot smuggle
+  a measurement through `lit ? 'LATE 3' : 'OK'` — that reads as a caption that
+  changes, and the source gate denies it AT THE CALL SITE.
+* the derived quantity goes to `detail`, which reaches `aria-label` and `title`
+  and never a text node; `tone: 'accent' | 'warn'` distinguishes a FAULT from a
+  readiness in **colour, not text**.
+
 `persistentReadout=false` is refused BY NAME; the prop is deleted, so it cannot
 come back.
 
 ⚠ **In-canvas text is a different question and the ruling is already made.** Wave
-5's `GAMES.md` settled it: pixels a module renders into its OWN surface are
-artwork (DOOM's HUD is the precedent); a labelled value in a chrome row beside the
-surface is refused. Applied here verbatim, not re-derived. The fleet precedent for
-the honest edge of it is `samsloop` and `twotracks`, both of which paint a literal
-placeholder (`NO SAMPLE LOADED`, `NO TAPE`) into an empty canvas — *a placeholder
-naming the surface's own condition is not a measurement of any control.*
+5's `GAMES.md:59-65` settled it: *"Pixels the MODULE renders into its OWN surface
+are a different object. They are the module's artwork, not the face's chrome …
+The face is not painting the number; the game is."* Applied here verbatim, not
+re-derived. Its precedent is the game module whose HUD is drawn inside its own
+surface — **cited, never opened, per the standing ruling on that module.**
+
+The honest edge of it in this fleet is `samsloop` and `twotracks`, both of which
+paint a literal placeholder (`NO SAMPLE LOADED`, `NO TAPE`) into an empty canvas.
+Permitted, because *a placeholder naming the surface's own condition is not a
+measurement of any control* — and drawn rather than left blank precisely so that
+"nothing loaded yet" and "the body failed to mount" are different pictures, which
+matters because the fresh-spawn empty state is what the dock baseline captures.
+
+⚠ And the gap is stated rather than implied, because this cohort lives in it:
+`face-resting-text-source.test.ts` **cannot see either shape**. Canvas text is
+invisible to it. The only things that see those pixels are the dock VRT baseline
+and the human reviewing it — which is why `EXTENSION_BODY_ROLES` (§3) requires
+every body in this wave to write down what its canvas draws.
 
 ### 4.2 COMPACT IS THE DEFAULT — a live picture is a legitimate earner, and it is still argued per module
 
