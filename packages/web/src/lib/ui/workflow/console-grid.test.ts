@@ -193,6 +193,24 @@ describe('console grid — which SHIPPED bands it claims (derived membership)', 
       // not engage and it is absent from the face-wide list below.
       'quadralogical/edges=3',
       'tidyVco/envelopes=4',
+      // ⚠ TWO BANDS FROM ONE FACE, WHICH IS WHY WAVESCULPT ALSO REACHES THE
+      // FACE-WIDE RULER BELOW — the first new face to do so since mixmstrs.
+      //
+      // `walls=2` — six clusters, one per face of the room, each [alpha,
+      // distort]. Column j means the same thing in all six by construction: how
+      // transparent this wall is, then how far it bulges. That is the property
+      // this rule tests for, on the most literally symmetric band in the fleet.
+      //
+      // `wavetables=3` — four clusters, one per oscillator, each [preset,
+      // factory table, load]. Column j is the same ACQUISITION ROUTE for every
+      // voice, so the aligned columns are what let you read "all four are on
+      // factory tables except GREEN" down a column instead of hunting per
+      // strip. It is also the band the platform forced into existence (a family
+      // key is one cell for all instances, so the strips could not live in the
+      // oscillator bands), and the alignment is the compensation: they read as
+      // four comparable strips rather than twelve loose pickers.
+      'wavesculpt/walls=2',
+      'wavesculpt/wavetables=3',
     ]);
   });
 
@@ -219,7 +237,16 @@ describe('console grid — which SHIPPED bands it claims (derived membership)', 
       const cols = faceConsoleGridCols(plan);
       if (cols != null) out.push(`${def.type}=${cols}`);
     }
-    expect(out.sort()).toEqual(['mixmstrs=9']);
+    // ⚠ WAVESCULPT IS THE SECOND FACE EVER TO REACH THIS RULER, and at 3 rather
+    // than mixmstrs' 9. It qualifies because it has TWO console bands (`walls`
+    // and `wavetables`) — the threshold — and the width is the WIDEST of them,
+    // `wavetables` at 3, not the six-cluster `walls` at 2. That is the rule
+    // working as the mixmstrs note above describes it: the ruler takes the
+    // widest claimed band, so the band with MORE clusters does not win, the
+    // band with more COLUMNS does. The face is new in this PR, so its first
+    // captured baselines carry the aligned columns from the start and no
+    // existing baseline moves.
+    expect(out.sort()).toEqual(['mixmstrs=9', 'wavesculpt=3']);
   });
 
   it('NEGATIVE CONTROL: faces WITH a console band but only one keep their own ruler', () => {

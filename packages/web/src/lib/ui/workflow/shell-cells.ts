@@ -152,6 +152,16 @@ import {
   kriaTimeDivisionValue,
 } from '$lib/ui/modules/kria-cell-actions';
 import { timelordeFaceTap } from '$lib/ui/modules/timelorde/face-tap';
+import {
+  WAVESCULPT_WAV_ACCEPT,
+  loadWavesculptPreset,
+  loadWavesculptWavFile,
+  selectWavesculptFactoryTable,
+  wavesculptOscSource,
+  wavesculptPresetOptions,
+  wavesculptPresetValue,
+  wavesculptTableOptions,
+} from '$lib/ui/modules/wavesculpt/wavetable-actions';
 
 /** A dropdown over a NAMED roster that lives in node.data (not a param). */
 export interface ShellSelectorCell {
@@ -528,6 +538,138 @@ const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
         action: 'click',
         effect: { kind: 'text', testid: 'cofefve-echo-axis', expect: 'changed' },
       },
+    },
+  },
+  // WAVESCULPT — the wavetable strip, TWELVE cells: three control kinds for
+  // each of four oscillators. Twelve rather than three because a control family
+  // renders as ONE cell with no member index (see the def's controlFamilies
+  // note), so each voice needs its own family per kind and each cell closes
+  // over its own oscillator index.
+  //
+  // ⚠ EVERY WRITE GOES THROUGH `wavesculpt/wavetable-actions`, which
+  // `WavesculptCard.svelte` also calls. The DX7 is the precedent for why: a
+  // card that owned its own action shipped a faceplate that could not change
+  // the voice at all. Sharing the writes is what stops the two surfaces
+  // disagreeing about what "this oscillator holds table X" means.
+  wavesculpt: {
+    // ── OSC RED ─────────────────────────────────────────────────────────
+    'wavesculpt-osc1-preset-{n}': {
+      kind: 'selector',
+      tag: 'red pre',
+      options: () => wavesculptPresetOptions(),
+      // ⚠ THIS USED TO BE `value: () => ''` — a constant, so the chip could
+      // never move off the sentinel however many presets you picked. See
+      // `wavesculptPresetValue`: the sweep caught it, and the legacy card's
+      // native <select> had the affordance the faceplate lacked.
+      value: (node) => wavesculptPresetValue(node, 0),
+      onchange: (nodeId, value) => { if (value) void loadWavesculptPreset(nodeId, 0, value); },
+    },
+    'wavesculpt-osc1-table-{n}': {
+      kind: 'selector',
+      tag: 'red tbl',
+      options: (node) => wavesculptTableOptions(node, 0),
+      value: (node) => wavesculptOscSource(node, 0),
+      onchange: (nodeId, value) => {
+        // 'user' is the synthetic entry standing for an already-loaded table:
+        // selecting it is a no-op, because there is nothing to re-point to.
+        if (value.startsWith('factory:')) {
+          selectWavesculptFactoryTable(nodeId, 0, value.slice('factory:'.length));
+        }
+      },
+    },
+    'wavesculpt-osc1-load-{n}': {
+      kind: 'file',
+      label: 'RED .wav…',
+      title: 'Load your own .wav as the RED oscillator\'s wavetable (E352 single-cycle layout)',
+      accept: WAVESCULPT_WAV_ACCEPT,
+      onFile: (nodeId, file) => loadWavesculptWavFile(nodeId, 0, file),
+    },
+    // ── OSC GREEN ─────────────────────────────────────────────────────────
+    'wavesculpt-osc2-preset-{n}': {
+      kind: 'selector',
+      tag: 'green pre',
+      options: () => wavesculptPresetOptions(),
+      // Same shape as OSC RED's — see `wavesculptPresetValue`.
+      value: (node) => wavesculptPresetValue(node, 1),
+      onchange: (nodeId, value) => { if (value) void loadWavesculptPreset(nodeId, 1, value); },
+    },
+    'wavesculpt-osc2-table-{n}': {
+      kind: 'selector',
+      tag: 'green tbl',
+      options: (node) => wavesculptTableOptions(node, 1),
+      value: (node) => wavesculptOscSource(node, 1),
+      onchange: (nodeId, value) => {
+        // 'user' is the synthetic entry standing for an already-loaded table:
+        // selecting it is a no-op, because there is nothing to re-point to.
+        if (value.startsWith('factory:')) {
+          selectWavesculptFactoryTable(nodeId, 1, value.slice('factory:'.length));
+        }
+      },
+    },
+    'wavesculpt-osc2-load-{n}': {
+      kind: 'file',
+      label: 'GREEN .wav…',
+      title: 'Load your own .wav as the GREEN oscillator\'s wavetable (E352 single-cycle layout)',
+      accept: WAVESCULPT_WAV_ACCEPT,
+      onFile: (nodeId, file) => loadWavesculptWavFile(nodeId, 1, file),
+    },
+    // ── OSC BLUE ─────────────────────────────────────────────────────────
+    'wavesculpt-osc3-preset-{n}': {
+      kind: 'selector',
+      tag: 'blue pre',
+      options: () => wavesculptPresetOptions(),
+      // Same shape as OSC RED's — see `wavesculptPresetValue`.
+      value: (node) => wavesculptPresetValue(node, 2),
+      onchange: (nodeId, value) => { if (value) void loadWavesculptPreset(nodeId, 2, value); },
+    },
+    'wavesculpt-osc3-table-{n}': {
+      kind: 'selector',
+      tag: 'blue tbl',
+      options: (node) => wavesculptTableOptions(node, 2),
+      value: (node) => wavesculptOscSource(node, 2),
+      onchange: (nodeId, value) => {
+        // 'user' is the synthetic entry standing for an already-loaded table:
+        // selecting it is a no-op, because there is nothing to re-point to.
+        if (value.startsWith('factory:')) {
+          selectWavesculptFactoryTable(nodeId, 2, value.slice('factory:'.length));
+        }
+      },
+    },
+    'wavesculpt-osc3-load-{n}': {
+      kind: 'file',
+      label: 'BLUE .wav…',
+      title: 'Load your own .wav as the BLUE oscillator\'s wavetable (E352 single-cycle layout)',
+      accept: WAVESCULPT_WAV_ACCEPT,
+      onFile: (nodeId, file) => loadWavesculptWavFile(nodeId, 2, file),
+    },
+    // ── OSC ALPHA ─────────────────────────────────────────────────────────
+    'wavesculpt-osc4-preset-{n}': {
+      kind: 'selector',
+      tag: 'alpha pre',
+      options: () => wavesculptPresetOptions(),
+      // Same shape as OSC RED's — see `wavesculptPresetValue`.
+      value: (node) => wavesculptPresetValue(node, 3),
+      onchange: (nodeId, value) => { if (value) void loadWavesculptPreset(nodeId, 3, value); },
+    },
+    'wavesculpt-osc4-table-{n}': {
+      kind: 'selector',
+      tag: 'alpha tbl',
+      options: (node) => wavesculptTableOptions(node, 3),
+      value: (node) => wavesculptOscSource(node, 3),
+      onchange: (nodeId, value) => {
+        // 'user' is the synthetic entry standing for an already-loaded table:
+        // selecting it is a no-op, because there is nothing to re-point to.
+        if (value.startsWith('factory:')) {
+          selectWavesculptFactoryTable(nodeId, 3, value.slice('factory:'.length));
+        }
+      },
+    },
+    'wavesculpt-osc4-load-{n}': {
+      kind: 'file',
+      label: 'ALPHA .wav…',
+      title: 'Load your own .wav as the ALPHA oscillator\'s wavetable (E352 single-cycle layout)',
+      accept: WAVESCULPT_WAV_ACCEPT,
+      onFile: (nodeId, file) => loadWavesculptWavFile(nodeId, 3, file),
     },
   },
   milkdrop: {

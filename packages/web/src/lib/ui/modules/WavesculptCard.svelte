@@ -61,6 +61,14 @@
   } from '$lib/audio/modules/wavesculpt';
   import { clampJoy } from '$lib/audio/modules/joystick';
   import {
+    loadWavesculptPreset,
+    loadWavesculptWavFile,
+    selectWavesculptFactoryTable,
+    wavesculptOscData,
+    wavesculptOscLabel,
+    wavesculptOscSource,
+  } from './wavesculpt/wavetable-actions';
+  import {
     getFactoryTables,
     DEFAULT_FACTORY_TABLE_ID,
     framesToPlain,
@@ -270,70 +278,53 @@
   }
   const FX_CYCLE_TITLE = `FX slot — click to cycle ${FX_TYPE_OPTIONS.map((o) => o.label).join(' / ')}`;
 
-  // Per-osc wavetable source (rides node.data).
-  function oscData(i: number): WavesculptOscData {
-    const d = (node?.data ?? {}) as WavesculptData;
-    return (d[`osc${i + 1}` as keyof WavesculptData] as WavesculptOscData | undefined) ?? {};
-  }
-  function oscSource(i: number): string {
-    return oscData(i).wavetableSource ?? `factory:${DEFAULT_FACTORY_TABLE_ID}`;
-  }
-  function oscLabel(i: number): string {
-    const od = oscData(i);
-    if (od.wavetableSource === 'user' && od.wavetableLabel) return od.wavetableLabel;
-    const id = (od.wavetableSource ?? `factory:${DEFAULT_FACTORY_TABLE_ID}`).slice('factory:'.length);
-    return getFactoryTables().find((t) => t.id === id)?.label ?? getFactoryTables()[0]!.label;
-  }
-  function selectFactory(oscIdx: number, factoryId: string): void {
-    const t = patch.nodes[id]; if (!t) return;
-    if (!t.data) t.data = {};
-    const d = t.data as WavesculptData;
-    const key = `osc${oscIdx + 1}` as keyof WavesculptData;
-    if (!d[key]) (d as Record<string, unknown>)[key as string] = {};
-    const od = d[key] as WavesculptOscData;
-    od.wavetableSource = `factory:${factoryId}`;
-    delete od.wavetableFrames;
-    delete od.wavetableLabel;
-  }
+  /**
+   * The per-oscillator strip testids, SPELLED OUT as literals rather than built
+   * from a `${i + 1}` template.
+   *
+   * ⚠ THIS IS NOT STYLE. `module-docs-lint` proves that every declared
+   * `controlFamily.testidPrefix` exists by GREPPING card source
+   * (`cards.includes(f.testidPrefix)`), and a template literal leaves nothing
+   * to find — the string `wavesculpt-osc1-preset` never appears in a file that
+   * only ever writes `` `wavesculpt-osc${i + 1}-preset` ``. Twelve families
+   * therefore need twelve findable literals, and this is where they live.
+   */
+  const OSC_TESTIDS = [
+    { preset: 'wavesculpt-osc1-preset', table: 'wavesculpt-osc1-table', load: 'wavesculpt-osc1-load' },
+    { preset: 'wavesculpt-osc2-preset', table: 'wavesculpt-osc2-table', load: 'wavesculpt-osc2-load' },
+    { preset: 'wavesculpt-osc3-preset', table: 'wavesculpt-osc3-table', load: 'wavesculpt-osc3-load' },
+    { preset: 'wavesculpt-osc4-preset', table: 'wavesculpt-osc4-table', load: 'wavesculpt-osc4-load' },
+  ] as const;
+
+  // ── Per-osc wavetable source ──────────────────────────────────────────────
+  //
+  // ⚠ THE WRITES LIVE IN `wavesculpt/wavetable-actions`, SHARED with the
+  // twelve faceplate shell cells. The DX7 is the precedent for why: a card that
+  // owned its own action shipped a faceplate that could not change the voice at
+  // all. This file keeps only the per-osc UI STATE (status/error lines and the
+  // preset picker's reset), because that is a property of this surface rather
+  // than of the patch.
   let uploadStatus = $state<Record<number, string | null>>({});
   let uploadError = $state<Record<number, string | null>>({});
-
-  // Per-osc baked-in preset loader. Decision: ONE dropdown PER OSC (×4)
-  // rather than a single shared dropdown plus an osc-select. The card's
-  // per-osc strip already groups every per-osc control (wav-select, knob row,
-  // ADSR, thickness), so the preset picker reads cleanly when it lives
-  // alongside its sibling controls — the same hand reaching for an osc-3
-  // upload button now reaches for the osc-3 preset picker right next to it.
-  // Same plumbing as the file-upload path: writes node.data.osc{i}.* so the
-  // wavesculpt factory's poll loop posts loadWavetable (no worklet edits).
   let presetSelection = $state<Record<number, string>>({});
+
+  const oscData = (i: number) => wavesculptOscData(node, i);
+  const oscSource = (i: number) => wavesculptOscSource(node, i);
+  const oscLabel = (i: number) => wavesculptOscLabel(node, i);
+
+  function selectFactory(oscIdx: number, factoryId: string): void {
+    selectWavesculptFactoryTable(id, oscIdx, factoryId);
+  }
+
   async function onPresetChange(oscIdx: number, ev: Event): Promise<void> {
-    const sel = ev.target as HTMLSelectElement;
-    const presetId = sel.value;
+    const presetId = (ev.target as HTMLSelectElement).value;
     if (!presetId) return;
-    const preset = WAVETABLE_PRESETS.find((p) => p.id === presetId);
-    if (!preset) return;
     uploadError[oscIdx] = null;
-    uploadStatus[oscIdx] = `loading ${preset.label}...`;
-    try {
-      const parsed = await loadWavetablePreset(preset.url);
-      const target = patch.nodes[id];
-      if (!target) return;
-      if (!target.data) target.data = {};
-      const d = target.data as WavesculptData;
-      const key = `osc${oscIdx + 1}` as keyof WavesculptData;
-      if (!d[key]) (d as Record<string, unknown>)[key as string] = {};
-      const od = d[key] as WavesculptOscData;
-      od.wavetableSource = 'user';
-      od.wavetableFrames = parsed.frames;
-      od.wavetableLabel = preset.label;
-      uploadStatus[oscIdx] = `loaded ${parsed.frames.length} frames`;
-    } catch (err) {
-      uploadError[oscIdx] = err instanceof Error ? err.message : String(err);
-      uploadStatus[oscIdx] = null;
-    } finally {
-      presetSelection[oscIdx] = '';
-    }
+    uploadStatus[oscIdx] = 'loading...';
+    const r = await loadWavesculptPreset(id, oscIdx, presetId);
+    uploadStatus[oscIdx] = r.status;
+    uploadError[oscIdx] = r.error;
+    presetSelection[oscIdx] = '';
   }
 
   async function onWavFileChange(oscIdx: number, ev: Event): Promise<void> {
@@ -342,29 +333,12 @@
     if (!file) return;
     uploadError[oscIdx] = null;
     uploadStatus[oscIdx] = 'parsing...';
-    try {
-      const buf = await file.arrayBuffer();
-      const parsed = parseE352Wav(buf);
-      const target = patch.nodes[id];
-      if (!target) return;
-      if (!target.data) target.data = {};
-      const d = target.data as WavesculptData;
-      const key = `osc${oscIdx + 1}` as keyof WavesculptData;
-      if (!d[key]) (d as Record<string, unknown>)[key as string] = {};
-      const od = d[key] as WavesculptOscData;
-      od.wavetableSource = 'user';
-      od.wavetableFrames = framesToPlain(parsed.frames);
-      od.wavetableLabel = file.name.replace(/\.wav$/i, '').toUpperCase().slice(0, 24);
-      uploadStatus[oscIdx] = `loaded ${parsed.frames.length} frames`;
-    } catch (err) {
-      uploadError[oscIdx] = err instanceof Error ? err.message : String(err);
-      uploadStatus[oscIdx] = null;
-    } finally {
-      try { input.value = ''; } catch { /* */ }
-    }
+    const r = await loadWavesculptWavFile(id, oscIdx, file);
+    uploadStatus[oscIdx] = r.status;
+    uploadError[oscIdx] = r.error;
+    try { input.value = ''; } catch { /* */ }
   }
 
-  // ---- XY pads (TWO joysticks: camera position + zoom/rot) ----
   const PAD_PX = 110;
 
   // Pad 1 — camera position (X = pos_x, Y = pos_y).
@@ -672,7 +646,7 @@
                 class="wt-select preset-select"
                 value={presetSelection[i] ?? ''}
                 onchange={(ev) => onPresetChange(i, ev)}
-                data-testid={`wavesculpt-osc-${i + 1}-preset-select`}
+                data-testid={OSC_TESTIDS[i]!.preset}
               >
                 <option value="">— pick a preset —</option>
                 {#each WAVETABLE_PRESETS as p (p.id)}
@@ -690,7 +664,7 @@
                   const factoryId = v.startsWith('factory:') ? v.slice('factory:'.length) : v;
                   selectFactory(i, factoryId);
                 }}
-                data-testid={`wavesculpt-osc-${i + 1}-wav-select`}
+                data-testid={OSC_TESTIDS[i]!.table}
               >
                 {#each getFactoryTables() as t (t.id)}
                   <option value={`factory:${t.id}`}>{t.label}</option>
@@ -699,7 +673,7 @@
                   <option value="user">USER · {oscLabel(i)}</option>
                 {/if}
               </select>
-              <label class="upload-btn" data-testid={`wavesculpt-osc-${i + 1}-load`}>
+              <label class="upload-btn" data-testid={OSC_TESTIDS[i]!.load}>
                 <input
                   type="file"
                   accept=".wav,audio/wav"
