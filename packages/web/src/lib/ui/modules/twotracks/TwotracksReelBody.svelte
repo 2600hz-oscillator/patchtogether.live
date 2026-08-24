@@ -48,7 +48,22 @@
   const engineCtx = useEngine();
 
   let node = $derived(patch.nodes[nodeId] as ModuleNode | undefined);
-  let data = $derived(node?.data as TwoTracksData | undefined);
+
+  /**
+   * EVERY `node.data` READ ON THIS SURFACE GOES THROUGH HERE, and it reaches
+   * into the store fresh each time rather than through a cached `data` derived.
+   *
+   * ⚠ THAT IS A BUG FIX GENERALISED, NOT A STYLE PREFERENCE. `previewCollapsed`
+   * read through an intermediate `data = $derived(node?.data)` was DEAD on a
+   * fresh spawn — a bare twotracks has no `node.data` at all until the worklet
+   * first posts, so the intermediate memoised `undefined` and never re-ran when
+   * the toggle created the object. `bufLen` and the transport state are read the
+   * same way and would have been the same latent defect on the same surface, so
+   * they use the same accessor instead of waiting to be discovered separately.
+   */
+  function nodeData(): TwoTracksData | undefined {
+    return patch.nodes[nodeId]?.data as TwoTracksData | undefined;
+  }
 
   const defaultFor = (k: string): number =>
     twotracksDef.params.find((p) => p.id === k)?.defaultValue ?? 0;
@@ -58,18 +73,15 @@
   // `$state`: a dock LRU eviction or a pane close unmounts this component, and
   // component state would silently re-open the picture the player shut.
   //
-  // ⚠ READ IN ONE EXPRESSION STRAIGHT OFF THE STORE, exactly as scope's body
-  // does, and NOT through the `data` derived above. Routing it through an
-  // intermediate `$derived` made the switch DEAD ON A FRESH SPAWN: a bare
-  // twotracks has no `node.data` at all (the engine creates it only when the
-  // worklet first posts a transport message, which needs a running context), so
-  // the intermediate memoised `undefined` and never re-ran when the toggle
-  // created the object. The click wrote through and the button never moved.
-  // Caught by `face-screen-render.spec.ts`, which is the only thing that could
-  // have: every source-level assertion about this switch passed the whole time.
-  let previewCollapsed = $derived<boolean>(
-    (patch.nodes[nodeId]?.data?.previewCollapsed as boolean | undefined) ?? false,
-  );
+  // ⚠ READ THROUGH `nodeData()`, WHICH REACHES THE STORE FRESH — see its own
+  // note above for the defect that produced this rule. In short: an earlier
+  // version read the flag through an intermediate `data = $derived(node?.data)`
+  // and the switch was DEAD ON EVERY FRESH SPAWN, because a bare twotracks has
+  // no `node.data` for that derived to memoise anything but `undefined` from.
+  // The click wrote through correctly and the button never moved. Caught by
+  // `face-screen-render.spec.ts` — the only thing that could have, since every
+  // source-level assertion about this switch passed the whole time.
+  let previewCollapsed = $derived<boolean>(nodeData()?.previewCollapsed ?? false);
 
   function togglePreview(): void {
     const next = !previewCollapsed;
@@ -125,15 +137,15 @@
   let startB = $derived(node?.params.start_b ?? defaultFor('start_b'));
   let endB = $derived(node?.params.end_b ?? defaultFor('end_b'));
 
-  let bufLenA = $derived(data?.bufLenA ?? 0);
-  let bufLenB = $derived(data?.bufLenB ?? 0);
+  let bufLenA = $derived(nodeData()?.bufLenA ?? 0);
+  let bufLenB = $derived(nodeData()?.bufLenB ?? 0);
 
   // While a reel is rolling AND has tape, a loop handle cannot be dragged past
   // the playhead — it must stay inside [start,end]. Idle, the playhead resets to
   // the window start on the next PLAY, so dragging is free (clamp arg = null).
   // Same rule the card applies, through the same two pure clamps.
-  let rollingA = $derived((data?.transportState_a ?? 'idle') !== 'idle' && bufLenA > 0);
-  let rollingB = $derived((data?.transportState_b ?? 'idle') !== 'idle' && bufLenB > 0);
+  let rollingA = $derived((nodeData()?.transportState_a ?? 'idle') !== 'idle' && bufLenA > 0);
+  let rollingB = $derived((nodeData()?.transportState_b ?? 'idle') !== 'idle' && bufLenB > 0);
 
   // ── Drag state ────────────────────────────────────────────────────────────
   let dragA = $state<'start' | 'end' | 'playhead' | null>(null);

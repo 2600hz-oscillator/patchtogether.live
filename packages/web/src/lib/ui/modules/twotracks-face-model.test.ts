@@ -290,7 +290,19 @@ describe('twotracks face — SCREEN ON/OFF (unguarded, so asserted at source)', 
     // it reads the key, it writes the key, the bail guards the paint, the order
     // is right. Only `face-screen-render.spec.ts`'s runtime leg could see it,
     // which is the argument for that SUBJECTS row in one sentence.
-    expect(BODY).toMatch(/patch\.nodes\[nodeId\]\?\.data\?\.previewCollapsed/);
+    // The accessor reaches the store fresh…
+    expect(BODY).toMatch(/function nodeData\(\)[\s\S]{0,200}patch\.nodes\[nodeId\]\?\.data/);
+    // …and EVERY `node.data` read on this surface goes through it, so the same
+    // defect cannot reappear on `bufLen` or the transport state — which are read
+    // exactly the same way and would have been the same latent bug.
+    const reads = [...BODY.matchAll(/\.(previewCollapsed|bufLenA|bufLenB|transportState_a|transportState_b)\b/g)];
+    expect(reads.length, 'the node.data reads are actually present').toBeGreaterThan(4);
+    for (const m of reads) {
+      const line = BODY.slice(BODY.lastIndexOf('\n', m.index!) + 1, BODY.indexOf('\n', m.index!));
+      // A write site (inside togglePreview) is the one legitimate exception.
+      if (/live\.data|=\s*next/.test(line)) continue;
+      expect(line, `every node.data READ goes through nodeData(): ${line.trim()}`).toContain('nodeData()');
+    }
   });
 
   it('⚠ THE ORDER: the collapse skips the PAINT and never the engine READ', () => {
