@@ -3151,6 +3151,53 @@ export const FACES = [
     // the lit-cell sets for the trig / note / octave states plus the
     // track-switch negative control.
   },
+  {
+    type: 'audioOut',
+    // ONE param, no `face.pages` — so no labelled section bands, exactly like
+    // `noise`. The dock scene is the meter body over a single fader.
+    pages: 0,
+    // ⚠ NO `videoFaceWhy`. This is `domain: 'audio'`, so the boot must be the
+    // ordinary mixer-column spawn; setting it would move the subject into the
+    // purple VIDEO ZONE, which is the wrong rack for it and would have been an
+    // easy copy-paste from the neighbouring picture-bearing faces.
+    //
+    // ⚠ AND NO `singletonAdoptWhy`, MEASURED RATHER THAN COPIED FROM
+    // `timelorde`. Both are terminal-ish rack fixtures with a pinned instance,
+    // so the resemblance is real — but `audioOutDef` declares NO `maxInstances`
+    // and is not in `cap.ts`'s `PINNED_COUNTS_TOWARD_CAP` (which is timelorde
+    // alone), so `__spawnFromPalette` is NOT refused for it and the sweep gets a
+    // fresh instance of its own. Checked before capturing, because adopting the
+    // PINNED instance here would have photographed a node that is wired to the
+    // seeded `mixmstrs master L/R` and therefore has a LIVE, moving meter.
+    //
+    // ── WHY THE PICTURE IS DETERMINISTIC, which a live meter has to earn ────
+    //
+    // The subject is a FRESHLY SPAWNED audioOut with nothing patched into `L`
+    // or `R`. Its terminal taps read digital silence, so both bars sit at the
+    // floor and the peak-hold ticks decay to it — the same frame every run,
+    // with no freeze seam and nothing to pin. That is state 1 of the module's
+    // own state matrix, it is what a fresh spawn genuinely is, and it is the
+    // one state a scene can hold without a product-side test global.
+    //
+    // ⚠ THE IDLE STATE IS DRAWN, NOT BLANK, and that is load-bearing for this
+    // baseline specifically: "found nothing" and "the body failed to mount"
+    // must not be the same picture. The well, the three unlabelled ticks and
+    // the ceiling mark paint whether or not the engine has booted, so a body
+    // that never mounted takes a visibly different shot.
+    //
+    // ⚠ THE METER CANVAS IS NOT MASKED. Masking it would make the baseline
+    // blind to the only thing this body adds. If the idle state ever stops
+    // being deterministic, the BODY is wrong, not the baseline.
+    //
+    // ⚠ THE DEVICE PICKER'S OPTIONS ARE THE RUNNER'S OWN HARDWARE, which is the
+    // one machine-dependent thing in frame — and it is why baselines are
+    // authored by linux CI and a local macOS run is a smoke test rather than a
+    // capture. Pre-permission the labels are empty and render as the positional
+    // fallback (`Output #1`, since the direction fix), and a container with no
+    // audio hardware enumerates nothing and shows the picker's named
+    // `no-devices` disabled state. Both are stable run-to-run on the machine
+    // that authors the file.
+  },
   // ── TWOTRACKS — two tape decks, and the wave's tab-rail face ───────────────
   {
     type: 'twotracks',

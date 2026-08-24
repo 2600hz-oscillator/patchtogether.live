@@ -12,8 +12,8 @@ Every registered module carries exactly one **disposition**: what kind of work i
 |  | count |
 |---|---|
 | registered modules | 198 |
-| done (faced + promoted) | 143 |
-| remaining (excludes organizational-native) | 52 |
+| done (faced + promoted) | 144 |
+| remaining (excludes organizational-native) | 51 |
 | registered with NO disposition (must be zero) | 0 |
 | inventory entries naming a dead def (must be zero) | 0 |
 
@@ -21,9 +21,9 @@ Every registered module carries exactly one **disposition**: what kind of work i
 
 | disposition | what it means | modules | done |
 |---|---|---|---|
-| `generic-face` | author a `face` and rank the controls — no new platform capability | 148 | 143 |
+| `generic-face` | author a `face` and rank the controls — no new platform capability | 149 | 144 |
 | `blocked` | would be a face today but for the named capability, and nothing else | 0 | — |
-| `bespoke-surface` | the primary interaction is not param-shaped — needs a purpose-built surface | 47 | — |
+| `bespoke-surface` | the primary interaction is not param-shaped — needs a purpose-built surface | 46 | — |
 | `organizational-native` | rack furniture; not a migration at all | 3 | — |
 
 ## What each blocker buys
@@ -45,6 +45,7 @@ author a `face` and rank the controls — no new platform capability.
 | `analogLogicMaths` | audio | done | — |
 | `analogVco` | audio | done | — |
 | `attenumix` | audio | done | — |
+| `audioOut` | audio | done | — |
 | `b3ntb0x` | video | done | — |
 | `backdraft` | video | done | — |
 | `bentbox` | video | done | — |
@@ -202,7 +203,6 @@ the primary interaction is not param-shaped — needs a purpose-built surface.
 |---|---|---|---|
 | `archivist` | video | — | `needs-media-controller` `needs-note-entry-cell` |
 | `audioIn` | audio | — | `needs-media-controller` |
-| `audioOut` | audio | — | — |
 | `blood` | video | — | — |
 | `cartesian` | audio | — | `needs-note-entry-cell` |
 | `chromaconsole` | audio | — | — |

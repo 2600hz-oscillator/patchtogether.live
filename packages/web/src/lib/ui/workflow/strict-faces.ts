@@ -4125,6 +4125,57 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // basis rule (2) is derived from CONTENT, so a WebGL grid would enrol the
   // module and make every later edit cost a real-GPU re-attest window.
   'kria',
+
+  // ── audioOut ──────────────────────────────────────────────────────────────
+  //
+  // THE RACK'S TERMINAL. One param (`master`), one bespoke body, no lane
+  // picture — the narrowest face in its wave and the one with the shortest
+  // argument about ranking.
+  //
+  // ⚠ ITS PROMOTION HAD A PRECONDITION THAT WAS NOT ABOUT IT. One instance of
+  // this module is PINNED into every rackspace (`workflow-pins.ts`), and that
+  // instance is canvas-hidden: no lane tile, no EXPAND pill, no route to
+  // `DockFullView`. Its ONLY surface is the 🎧 topbar panel — and
+  // `AudioIoSurface.svelte` never called `dockRailRendersFace`, so promoting
+  // this module alone would have given the face to user-ADDED instances and
+  // left the instance every user has in every session on the legacy card. That
+  // was fixed first, in its own PR, precisely because it moves a second module
+  // (`audioIn`) on a surface everyone sees.
+  //
+  // ⚠ THE DISPOSITION SAID `bespoke-surface`, AND THE BODY IS WHAT THAT ENTRY
+  // WAS ASKING FOR. It read: "a live enumerateDevices roster plus the setSinkId
+  // support/error states, which are neither params nor node data and have no
+  // cell kind that reads them." True — so the picker went where `cameraInput`'s
+  // went, into the faceplate's EXTENSION BODY, which `legacy-fallback.ts`
+  // records as "the one slot that can hold a control no `ParamDef` can
+  // express". The body carries a TERMINAL STEREO METER beside it: three
+  // analyser taps already hang off the node feeding `ctx.destination` and were
+  // read by nothing in the UI, so until now the module every patch terminates
+  // at could not tell you whether it was clipping.
+  //
+  // ⚠ AND PROMOTION MOVED A REAL OWNERSHIP BUG, not just a renderer. The card
+  // was the sole caller of `setSinkId` and re-applied the saved device from a
+  // 100 ms retry loop in its own `onMount`. audioOut is in neither
+  // `DOM_SOURCE_LANE_TYPES` nor `CARD_PRODUCER_LANE_TYPES`, so
+  // `needsHeadlessSourceMount` is false for it and no headless host would have
+  // kept a copy alive: facing the module would have silently stopped the saved
+  // output device being restored on load. The apply moved into the audio-out
+  // handle, where the engine's own boot is the event the loop was polling for.
+  //
+  // ⚠ ZERO ATTEST, MEASURED. `webgl-attest-hash.sh --list` (218 files) contains
+  // no `audio-out`, `AudioOutCard` or `AudioIoSurface` file, and the meter body
+  // is deliberately a 2D canvas so it stays that way — basis rule (2) is
+  // derived from CONTENT, so a WebGL body would enrol the module and make every
+  // later edit cost a real-GPU re-attest window. There is no reason to use
+  // WebGL for two bars.
+  //
+  // ⚠ NO ART PIN TO MOVE, ALSO MEASURED. `audioOut` sits in `ART_EXCLUDED`
+  // ("terminal sink — no audio-family OUTPUT port to capture") and there is no
+  // `art/baselines/audio-out/`, so the three property tests under
+  // `art/scenarios/audio-out/` are the whole ART surface and they are untouched.
+  // Note that the exclusion's reason is the SAME structural fact as the glyph
+  // refusal: `outputs: []`.
+  'audioOut',
   // ── twotracks ─────────────────────────────────────────────────────────────
   //
   // THE WAVE'S CONTROL-HEAVY MODULE, and the only one whose promotion had to
