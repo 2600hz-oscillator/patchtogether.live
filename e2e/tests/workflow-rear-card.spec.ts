@@ -38,6 +38,7 @@
 // same recipe as workflow-shell-faces.spec.ts.
 
 import { test, expect, type Page } from '@playwright/test';
+import { REGISTRY } from './_registry';
 import { spawnPatch } from './_helpers';
 import { pressFlipKey } from './_flip-key';
 // The sequencer/polyseqz page width, imported from the APP SOURCE for the same
@@ -669,8 +670,27 @@ test('canvas rear view left ON: a docked LEGACY pane still shows its FRONT, and 
   page,
 }) => {
   await gotoWorkflow(page);
-  // scope: NOT in STRICT_FACES ⇒ the un-migrated/legacy dock path under test.
-  await spawnPatch(page, [{ id: 'sc', type: 'scope', position: { x: 460, y: 240 } }]);
+  // ⚠ THE SUBJECT IS DERIVED, AND IT USED TO BE THE HARD-CODED `scope`.
+  //
+  // This test's subject is A DOCKED LEGACY PANE — `DockFullView.svelte` renders
+  // `.fp-card-mount` only in its `{:else}` (un-migrated) branch — so the whole
+  // assertion is CONDITIONAL ON THE OCCUPANT NOT BEING FACED. `scope` was named
+  // here with the comment "NOT in STRICT_FACES", and promoting it (2026-08-23)
+  // made that comment false and `.fp-card-mount` count 0: the test went red on a
+  // change that broke nothing it was written to protect.
+  //
+  // Fixed at the SUBJECT rather than the threshold, and DERIVED rather than
+  // re-typed, because re-typing another module's name only moves the same trap
+  // to whoever promotes THAT one next. `LEGACY_DOCK_CANDIDATES` is a small
+  // ordered set of plain panel cards; the first one still un-faced wins, so this
+  // self-heals through the next several promotions and fails LOUDLY (naming the
+  // condition) rather than mysteriously if the fleet ever finishes them all.
+  //
+  // ⚠ The candidates are NAMED rather than "first un-faced module in the
+  // registry" on purpose: a bare registry scan would happily wander onto a
+  // device module needing hardware, or onto DOOM.
+  const legacyType = pickLegacyDockType();
+  await spawnPatch(page, [{ id: 'sc', type: legacyType, position: { x: 460, y: 240 } }]);
 
   // Arm the trap: flip the CANVAS to rear view BEFORE docking.
   await resetFocus(page);
@@ -704,6 +724,34 @@ test('canvas rear view left ON: a docked LEGACY pane still shows its FRONT, and 
   // Single-owner intact: none of that touched the canvas flip state.
   await expect(canvasFlow(page)).toHaveClass(/rear-view/);
 });
+
+/**
+ * Plain audio panel cards that make good stand-ins for "an un-faced module with
+ * an ordinary legacy card", in preference order. Each must render one of the
+ * front-card classes the test selects on (`.mod-card` / `.card` /
+ * `.moog-panel`) and must need no hardware, no ROM and no file load.
+ *
+ * ⚠ NOT a registry scan. "The first module with `strictFace !== true`" would
+ * also match device modules that want hardware and, worse, DOOM — which is
+ * untouchable by owner ruling. A named set cannot wander.
+ */
+const LEGACY_DOCK_CANDIDATES = ['moog956', 'moog960', 'cartesian'] as const;
+
+/** The first candidate this checkout has NOT yet promoted. */
+function pickLegacyDockType(): string {
+  const faced = new Set(REGISTRY.filter((m) => m.strictFace === true).map((m) => m.type));
+  const known = new Set(REGISTRY.map((m) => m.type));
+  for (const t of LEGACY_DOCK_CANDIDATES) {
+    if (known.has(t) && !faced.has(t)) return t;
+  }
+  throw new Error(
+    `workflow-rear-card: every LEGACY_DOCK_CANDIDATES entry ` +
+      `(${LEGACY_DOCK_CANDIDATES.join(', ')}) is now in STRICT_FACES or no longer registered, ` +
+      `so there is no un-faced occupant left to prove the LEGACY dock pane with. This test's ` +
+      `subject is the un-migrated branch of DockFullView (\`.fp-card-mount\`); add another ` +
+      `un-faced plain-panel module above, or retire the test with the branch it covers.`,
+  );
+}
 
 // ── (6) A CARD THAT CONSUMED THE FLIP KEY MUST NOT ALSO FLIP (#1790) ───────
 //

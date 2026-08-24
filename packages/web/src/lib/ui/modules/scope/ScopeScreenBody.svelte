@@ -31,7 +31,7 @@
   // runs whether or not anyone is looking. There is no pull set to fall out of
   // and no producer to mute. Stated rather than omitted, so "this body has no
   // markWatched" reads as a derived answer and not as a copy that lost a line.
-  import { onDestroy } from 'svelte';
+  import { onDestroy, onMount } from 'svelte';
   import { patch } from '$lib/graph/store';
   import { mutateNode } from '$lib/graph/mutate';
   import { onMeterFrame } from '$lib/ui/meter-frame';
@@ -159,9 +159,14 @@
 
   // Trace colours: the cable tints, resolved post-mount so they track the
   // theme — the convention `ScopeCard` and `DockscopeOutputBody` both use.
+  // ⚠ `onMount`, NOT `$effect`, and deliberately — this is the convention both
+  // `ScopeCard` and `DockscopeOutputBody` use. An effect here would READ each
+  // colour in its own `||` fallback and WRITE it, so it would depend on the
+  // state it assigns: it converges (Svelte stops on an equal write) but it is a
+  // self-referencing effect for a one-shot read of a CSS custom property.
   let ch1Color = $state('#fbbf24');
   let ch2Color = $state('#60a5fa');
-  $effect(() => {
+  onMount(() => {
     const cs = getComputedStyle(document.documentElement);
     ch1Color = cs.getPropertyValue('--cable-audio').trim() || ch1Color;
     ch2Color = cs.getPropertyValue('--cable-pitch').trim() || ch2Color;
@@ -196,10 +201,21 @@
 
   let canvasEl: HTMLCanvasElement | null = $state(null);
 
+  /** Every param's shipped default, keyed BY ID.
+   *
+   *  ⚠ BY ID RATHER THAN BY INDEX, and that is not style. `ScopeCard.svelte`
+   *  reads its fallbacks as `scopeDef.params[4]!.defaultValue` — nine positional
+   *  literals that are silently wrong the day anyone reorders the array, and
+   *  wrong in the worst way (a plausible number from the neighbouring control,
+   *  not a crash). Keying by id cannot drift. */
+  const DEFAULTS: Record<string, number> = Object.fromEntries(
+    scopeDef.params.map((p) => [p.id, p.defaultValue]),
+  );
+
   /** Knob fallbacks — what the trace draws with before an engine exists. With
    *  nothing patched these equal the combined values anyway. */
-  function knob(id: string, index: number): number {
-    return (node?.params?.[id] as number | undefined) ?? scopeDef.params[index]!.defaultValue;
+  function knob(id: string): number {
+    return (node?.params?.[id] as number | undefined) ?? DEFAULTS[id]!;
   }
 
   function paint(c: HTMLCanvasElement, snap: ScopeSnapshot, live?: Record<string, number>): void {
@@ -209,15 +225,15 @@
       ctx2d,
       snap,
       {
-        timeMs: live?.timeMs ?? knob('timeMs', 0),
-        ch1Scale: live?.ch1Scale ?? knob('ch1Scale', 1),
-        ch1Offset: live?.ch1Offset ?? knob('ch1Offset', 2),
-        ch1Range: live?.ch1Range ?? knob('ch1Range', 3),
-        ch2Scale: live?.ch2Scale ?? knob('ch2Scale', 4),
-        ch2Offset: live?.ch2Offset ?? knob('ch2Offset', 5),
-        ch2Range: live?.ch2Range ?? knob('ch2Range', 6),
-        mode: live?.mode ?? knob('mode', 7),
-        intensity: live?.intensity ?? knob('intensity', 8),
+        timeMs: live?.timeMs ?? knob('timeMs'),
+        ch1Scale: live?.ch1Scale ?? knob('ch1Scale'),
+        ch1Offset: live?.ch1Offset ?? knob('ch1Offset'),
+        ch1Range: live?.ch1Range ?? knob('ch1Range'),
+        ch2Scale: live?.ch2Scale ?? knob('ch2Scale'),
+        ch2Offset: live?.ch2Offset ?? knob('ch2Offset'),
+        ch2Range: live?.ch2Range ?? knob('ch2Range'),
+        mode: live?.mode ?? knob('mode'),
+        intensity: live?.intensity ?? knob('intensity'),
         ch1Color,
         ch2Color,
         tuning,
