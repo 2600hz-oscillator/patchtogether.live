@@ -36,6 +36,7 @@
   import { useEngine } from '$lib/audio/engine-context';
   import {
     ensureOutputDeviceWatch,
+    ensureSinkReportWatch,
     outputDeviceOptions,
     outputDeviceRoster,
     outputDeviceValue,
@@ -69,6 +70,7 @@
   // one `enumerateDevices()` per `devicechange`.
   $effect(() => {
     ensureOutputDeviceWatch();
+    ensureSinkReportWatch();
   });
 
   let devices = $derived(outputDeviceRoster());

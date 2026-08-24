@@ -44,7 +44,17 @@ import {
   pickerBlockFrom,
   pickerValueTextFrom,
 } from '$lib/audio/output-device-model';
-import { AUDIO_OUT_SINK_ORIGIN, setOutputDevice } from '$lib/audio/output-device.svelte';
+import {
+  AUDIO_OUT_SINK_ORIGIN,
+  outputSinkError,
+  setOutputDevice,
+} from '$lib/audio/output-device.svelte';
+import {
+  __resetSinkReports,
+  clearSinkReport,
+  onSinkReport,
+  reportSink,
+} from '$lib/audio/output-sink-report';
 import { patch, ydoc, undoManager, LOCAL_ORIGIN } from '$lib/graph/store';
 import { setNodeParam } from '$lib/graph/mutate';
 import type { ModuleNode } from '$lib/graph/types';
@@ -295,6 +305,54 @@ describe('audioOut picker — the TWO DEAD CAUSES the card could not tell apart'
         [{ deviceId: 'x', label: '', kind: 'audiooutput' }],
       ),
     ).toBe('Output #1');
+  });
+});
+
+describe('audioOut sink report — a REJECTION has to REACH a surface', () => {
+  const node = { id: 'sink-report-node', type: 'audioOut' } as unknown as ModuleNode;
+
+  beforeEach(() => __resetSinkReports());
+  afterEach(() => __resetSinkReports());
+
+  it('carries the applier error to the reader, and clears it on the next success', () => {
+    expect(outputSinkError(node)).toBeNull();
+
+    reportSink(node.id, { supported: true, deviceId: null, error: 'Device not found' });
+    expect(outputSinkError(node)).toBe('Device not found');
+
+    // A SUCCESSFUL apply must CLEAR it. The card's version could not: the branch
+    // that discovered `setSinkId` was missing returned WITHOUT clearing, so a
+    // stale rejection could sit under a notice saying the feature is
+    // unavailable. Both halves are asserted so neither can regress alone.
+    reportSink(node.id, { supported: true, deviceId: 'usb-es9', error: null });
+    expect(outputSinkError(node)).toBeNull();
+  });
+
+  it('NOTIFIES rather than waiting to be asked — the half a pull cannot do', () => {
+    // ⚠ THIS IS THE LEG THE PUSH EXISTS FOR. `engine.read(node, 'outputSink')`
+    // is a plain function call, so a UI `$derived` over it recomputes only when
+    // its OTHER dependencies change — a rejection would sit unreported until
+    // something unrelated re-rendered, which is a parity regression against the
+    // card's own `$state`. The push is what makes the failure appear at all.
+    let told = 0;
+    const off = onSinkReport(() => {
+      told += 1;
+    });
+    reportSink(node.id, { supported: true, deviceId: null, error: 'boom' });
+    expect(told, 'a report must notify its subscribers').toBe(1);
+    clearSinkReport(node.id);
+    expect(told, 'disposing a handle must notify too — its state is now unknown').toBe(2);
+    off();
+    reportSink(node.id, { supported: true, deviceId: 'x', error: null });
+    expect(told, 'an unsubscribed reader must stop being told').toBe(2);
+  });
+
+  it('a disposed handle stops answering — a dead node must not keep an error alive', () => {
+    reportSink(node.id, { supported: true, deviceId: null, error: 'Device not found' });
+    clearSinkReport(node.id);
+    // No report and (in this unit context) no engine, so the pull fallback is
+    // null too — "unknown", never a stale sentence.
+    expect(outputSinkError(node)).toBeNull();
   });
 });
 

@@ -58,6 +58,7 @@
 // a saved rack restores, so it is an owner decision, not a face PR's.
 
 import { getActiveEngine } from '$lib/audio/engine-ref';
+import { onSinkReport, readSinkReport } from '$lib/audio/output-sink-report';
 import { mutateNode } from '$lib/graph/mutate';
 import { patch } from '$lib/graph/store';
 import type { ModuleNode } from '$lib/graph/types';
@@ -216,12 +217,42 @@ export function setOutputDevice(nodeId: string, deviceId: string): void {
   if (live) getActiveEngine()?.write(live, OUTPUT_DEVICE_KEY, deviceId);
 }
 
-/** The last `setSinkId` rejection for `nodeId`, or null. Read off the handle,
- *  which is the only thing that calls `setSinkId` — so this cannot drift from
- *  what actually happened. A rejection is a TRANSIENT response to a gesture,
- *  not resting state: nothing paints it, the picker announces it. */
+// ── THE SINK REPORT, MADE REACTIVE ─────────────────────────────────────────
+//
+// ⚠ `engine.read(node, 'outputSink')` IS A PLAIN FUNCTION CALL. A `$derived`
+// over it recomputes only when its OTHER dependencies change, so a rejected
+// pick would sit there unreported until something unrelated re-rendered — which
+// is a PARITY REGRESSION against the card, whose own `$state` used to make the
+// message appear immediately. The applier therefore PUSHES (see
+// `./output-sink-report`), and this counter is the one reactive dependency both
+// surfaces take.
+let sinkVersion = $state(0);
+let sinkSubscribed = false;
+
+/** Subscribe to the applier's reports. IDEMPOTENT, and never torn down: it is
+ *  one callback for the lifetime of the tab, and the reports outlive any
+ *  particular surface by design. */
+export function ensureSinkReportWatch(): void {
+  if (sinkSubscribed) return;
+  sinkSubscribed = true;
+  onSinkReport(() => {
+    sinkVersion += 1;
+  });
+}
+
+/** The last `setSinkId` rejection for `node`, or null.
+ *
+ *  Sourced from the applier itself — the audio-out handle is the only thing in
+ *  the app that calls `setSinkId` — so it cannot drift from what actually
+ *  happened. A rejection is a TRANSIENT response to a gesture, not resting
+ *  state: nothing paints it at rest, because at rest there is no error. */
 export function outputSinkError(node: ModuleNode | undefined): string | null {
+  void sinkVersion; // the reactive dependency; the value itself is meaningless
   if (!node) return null;
+  const pushed = readSinkReport(node.id);
+  if (pushed) return pushed.error;
+  // Fall back to the PULL. The report only exists once a handle has spoken, and
+  // a node whose engine never booted has no handle at all.
   const state = getActiveEngine()?.read(node, 'outputSink') as
     | { error?: string | null }
     | undefined;

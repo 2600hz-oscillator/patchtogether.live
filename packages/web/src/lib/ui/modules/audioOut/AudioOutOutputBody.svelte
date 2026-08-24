@@ -61,6 +61,7 @@
   } from '$lib/ui/modules/audioOut/audio-out-meter';
   import {
     ensureOutputDeviceWatch,
+    ensureSinkReportWatch,
     outputDeviceOptions,
     outputDeviceRoster,
     outputDeviceValue,
@@ -87,6 +88,7 @@
   // listener. Started from an effect, never from a render.
   $effect(() => {
     ensureOutputDeviceWatch();
+    ensureSinkReportWatch();
   });
 
   let devices = $derived(outputDeviceRoster());

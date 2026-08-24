@@ -70,6 +70,7 @@ import type { AudioModuleDef } from '$lib/audio/module-registry';
 // bare `src/**` specifiers; the `?url` dist import below goes through the
 // package name as usual.)
 import { MASTER_CEILING_DB } from '../../../../../dsp/src/lib/master-limiter-dsp';
+import { clearSinkReport, reportSink } from '$lib/audio/output-sink-report';
 // The degraded tail + the runtime latch recovery live in a DIST-FREE module so
 // they are covered by a pure unit test (audio-out-failover.test.ts) — this file
 // cannot be imported outside Vite because of the `?url` worklet import below.
@@ -423,11 +424,21 @@ export const audioOutDef: AudioModuleDef = {
      *  working picker was a real defect on the card. */
     let sinkError: string | null = null;
 
+    /** Publish the current sink state. `read('outputSink')` is a plain function
+     *  call and therefore not reactive, so a UI `$derived` over it would never
+     *  recompute on a rejection — the report is what makes the failure REACH a
+     *  surface. Both are kept: the read for a test that wants a pull, the
+     *  report for the UI that needs a push. */
+    function publishSink(): void {
+      reportSink(node.id, { supported: sinkSupported, deviceId: sinkDeviceId, error: sinkError });
+    }
+
     async function applySink(deviceId: string): Promise<void> {
       if (!sinkSupported) {
         // Not an error the user caused — the browser cannot do this at all, and
         // the picker reports that as its DISABLED state, not as a failure.
         sinkError = null;
+        publishSink();
         return;
       }
       try {
@@ -436,9 +447,11 @@ export const audioOutDef: AudioModuleDef = {
         sinkError = null;
       } catch (err) {
         // The device can disappear between enumerate and apply. Surfaced
-        // through `read('outputSink')` so the picker can announce it.
+        // through the report (push) AND `read('outputSink')` (pull) so the
+        // picker can announce it without polling.
         sinkError = (err as Error).message || 'setSinkId failed';
       }
+      publishSink();
     }
 
     // Restore the saved pick at BOOT. Floated deliberately: the factory must not
@@ -447,6 +460,7 @@ export const audioOutDef: AudioModuleDef = {
     // silence the entire patch — see the limiter catch above for the same
     // priority).
     {
+      publishSink(); // support/idle state is known now, before any pick
       const saved = (node.data ?? {})['outputDeviceId'];
       if (typeof saved === 'string' && saved.length > 0) void applySink(saved);
     }
@@ -502,6 +516,7 @@ export const audioOutDef: AudioModuleDef = {
         return undefined;
       },
       dispose() {
+        clearSinkReport(node.id);
         try { silenceL.stop(); } catch { /* */ }
         try { silenceR.stop(); } catch { /* */ }
         silenceL.disconnect();
