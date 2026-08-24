@@ -145,16 +145,20 @@ test.describe('present on a second display — VIDEO OUT', () => {
     // ⚠ FRAMES, NOT MILLISECONDS. The blit lands ON A FRAME, so a wall-clock
     // budget is a DIFFERENT assertion on every renderer: 8 s was ~480 frames on
     // a real GPU but only ~63 under SwiftShader, and fewer still on a CI runner
-    // hosting ten shards — which is why this recovered-on-retry (#1903 red,
-    // 2026-08-24) as an UNDER-BUDGETED test rather than a nondeterministic one.
-    // The frame count is renderer-independent; the test timeout remains the
-    // wall-clock bound on the failure, never the gate.
+    // hosting ten shards. The frame count is renderer-independent; the test
+    // timeout remains the wall-clock bound on the failure, never the gate.
     const FRAME_BUDGET = 180;
     const FRAME_BATCH = 15;
     let framesWaited = 0;
     let nonBlack = false;
     while (!nonBlack && framesWaited < FRAME_BUDGET) {
-      await waitFrames(popup, FRAME_BATCH);
+      // ⚠ FRAMES ARE COUNTED IN THE OPENER, NOT THE POPUP. The OPENER runs the
+      // blit loop (it copies its output canvas into the popup every frame); the
+      // popup is passive. An unfocused popup also has its rAF THROTTLED by the
+      // browser, so counting frames there measured the wrong clock and could
+      // stall while the behaviour under test was working — that is why the
+      // first frames-based fix still flaked (#1903 red, 2026-08-24).
+      await waitFrames(page, FRAME_BATCH);
       framesWaited += FRAME_BATCH;
       nonBlack = await canvasHasNonBlackPixel(popup);
     }
