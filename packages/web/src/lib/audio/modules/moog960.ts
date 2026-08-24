@@ -80,6 +80,24 @@ const STEP_POT_PARAMS = (() => {
   return out;
 })();
 
+// ⚠ RANGE and MODE are `0..2 discrete` — THREE states across a whole dial, which
+// is the moog962 SELECTABILITY TRAP: a knob quantises a drag back to where it
+// started, so the control is inert in practice. An `options` roster makes
+// `paramCellKind` derive a SEGMENTED cell instead, where every state is one
+// click. The labels are the hardware's own names, taken from this def's
+// `docs.explanation` and per-control text — nothing invented.
+const RANGE_OPTIONS = [
+  { value: 0, label: '×1', title: 'Row CV passes at unity — the pot value is the output' },
+  { value: 1, label: '×2', title: 'Row CV doubled — the same pattern over twice the span' },
+  { value: 2, label: '×4', title: 'Row CV quadrupled — the widest sweep this row can make' },
+] as const;
+
+const MODE_OPTIONS = [
+  { value: 0, label: 'NORM', title: 'Normal — the pointer plays this column and moves on' },
+  { value: 1, label: 'SKIP', title: 'Skip — the pointer jumps past this column without playing it' },
+  { value: 2, label: 'STOP', title: 'Stop — the pointer halts here, holding this column on all three rows' },
+] as const;
+
 const RANGE_PARAMS = [1, 2, 3].map((row) => ({
   id: `range${row}`,
   label: `Range ${row}`,
@@ -87,6 +105,7 @@ const RANGE_PARAMS = [1, 2, 3].map((row) => ({
   min: 0,
   max: 2,
   curve: 'discrete' as const,
+  options: RANGE_OPTIONS.map((o) => ({ ...o })),
 }));
 
 const MODE_PARAMS = Array.from({ length: SEQ960_COLUMNS }, (_, i) => ({
@@ -96,6 +115,7 @@ const MODE_PARAMS = Array.from({ length: SEQ960_COLUMNS }, (_, i) => ({
   min: 0,
   max: 2,
   curve: 'discrete' as const,
+  options: MODE_OPTIONS.map((o) => ({ ...o })),
 }));
 
 export const moog960Def: AudioModuleDef = {
@@ -186,6 +206,123 @@ export const moog960Def: AudioModuleDef = {
       mode7: "Column 7 MODE: NORMAL / SKIP / STOP.",
       mode8: "Column 8 MODE: NORMAL / SKIP / STOP — set this to make column 8 the loop's last step (STOP) or to shorten the run (earlier STOP/SKIP columns).",
       rate: "Internal clock speed in Hz (steps per second), used only when nothing is patched into CLOCK IN; an external clock overrides it.",
+    },
+  },
+
+  // ── PF-20 — THE FACEPLATE ────────────────────────────────────────────────
+  // DECLARATION ONLY: `face` is not projected by contract-signature.ts, so none
+  // of this moves the contract golden.
+  //
+  // Every key below is DERIVED from the same builders that produce the params,
+  // so the face cannot drift out of sync with SEQ960_ROWS / SEQ960_COLUMNS and
+  // there is no hand-typed population anywhere in it. Changing the DSP's grid
+  // size re-shapes the faceplate for free.
+  face: {
+    // RANK ORDER. Ranks 1-6 are the entire LANE budget (mini 1 · compact 3
+    // without a glyph · plate 6); rank 7+ is dock-only. RATE then the three
+    // RANGE switches is the honest six: RATE is the only param that is not part
+    // of the grid, and RANGE is what decides how far each row's pattern
+    // actually travels. A lane tile showing two arbitrary step pots out of 24
+    // would say nothing about the sequence.
+    order: [
+      'rate',
+      ...RANGE_PARAMS.map((p) => p.id),
+      ...STEP_POT_PARAMS.map((p) => p.id),
+      ...MODE_PARAMS.map((p) => p.id),
+    ],
+
+    // SIX BANDS — one per IDEA, and deliberately UNDER `DOCK_TAB_MIN_BANDS = 7`,
+    // so this face renders as one column and NOT as a tab rail. That is the
+    // correct outcome, not a near miss: the three row banks are the same idea
+    // three times over and a player reads them together, so splitting them
+    // across tabs would hide two thirds of the sequence at all times. Do not
+    // add a seventh page to force the rail.
+    pages: [
+      {
+        id: 'clock',
+        label: 'clock',
+        hint:
+          'RATE is the internal clock in steps per second, and it is used ONLY while nothing is '
+          + 'patched into CLOCK IN — an external clock overrides it completely. The module '
+          + 'auto-runs on placement.',
+        controls: ['rate'],
+      },
+      {
+        id: 'ranges',
+        label: 'row range',
+        hint:
+          'Per-row output scaling: each row CV is its current step pot × this multiplier. It sets '
+          + 'how far that row travels, not its shape — the pattern is unchanged, the span is not.',
+        controls: RANGE_PARAMS.map((p) => p.id),
+      },
+      ...Array.from({ length: SEQ960_ROWS }, (_, r) => ({
+        id: `bank${r + 1}`,
+        label: `row ${r + 1}`,
+        hint:
+          `Row ${r + 1}'s eight step levels. On each advance this row outputs its current column's `
+          + `value on ROW ${r + 1} OUT and HOLDS it until the next step — an analog sample-and-hold, `
+          + 'not a ramp. All three rows share one column pointer, so they step in lockstep.',
+        controls: STEP_POT_PARAMS.slice(r * SEQ960_COLUMNS, (r + 1) * SEQ960_COLUMNS).map((p) => p.id),
+      })),
+      {
+        id: 'stepmode',
+        label: 'step mode',
+        hint:
+          'Per-COLUMN behaviour, applied to all three rows at once because they share the pointer. '
+          + 'SKIP jumps past a column; STOP halts on it. An early STOP is how you shorten the run '
+          + 'to fewer than eight steps.',
+        controls: MODE_PARAMS.map((p) => p.id),
+      },
+    ],
+
+    // NO GLYPH, and it is a MEASURED refusal rather than an omission.
+    // `glyphBinding` resolves 'scope'/'meter'/'waveform' through
+    // `primaryAudioOutPortId`, and this module's outputs are `cv` + `gate` only;
+    // 'envelope' needs attack/decay/sustain/release; 'algorithm' needs an
+    // `algorithm` param or an extension. This def matches none of them, so ANY
+    // glyph here would fall through to `{ kind: 'static' }` — a deterministic
+    // trace that is the same picture on every sequencer and tracks nothing this
+    // module does. Declaring 'none' says that on purpose AND buys the compact
+    // tier a third control (2 with a glyph, 3 without).
+    glyph: 'none',
+
+    title: 'Sequencer',
+    hint:
+      'Three knob banks reading out ONE column at a time — the System 55 step sequencer. A single '
+      + 'shared pointer sweeps eight columns and every row emits its current column as a held CV, '
+      + 'so one pass produces three parallel stepped modulations from one playhead.',
+
+    // NO HERO, AND THE LINT IS WHY — this is a corrected design, not an
+    // omission. `hero: { control: 'rate' }` was the obvious choice (RATE is the
+    // one knob a hand rides on a running sequencer) and it is WRONG here:
+    // `heroFacePlan` MOVES the promoted key out of its band, RATE was the only
+    // control in the `clock` band, so the band emptied, `heroFacePlan` dropped
+    // it, and the band hint authored above it rendered NOWHERE. The lint caught
+    // exactly that ("authored, reviewed and rendered nowhere").
+    //
+    // Promoting it would need RATE to share a band with something it is not
+    // related to, purely to survive its own promotion. A grid sequencer's
+    // identity is the GRID, not one dial, so the honest face has no hero and
+    // RATE keeps its own band and its own explanation.
+
+    // REAR CARD. Three groups, and the ids are load-bearing: a curated rear
+    // group must claim the LEADING slot ('voice'/'signal') or name a DECLARED
+    // PAGE ID, or it appends as a stray band that the totality gate cannot see.
+    // The two non-leading groups therefore name real pages, and the pairing is
+    // meaningful rather than a formality — RANGE is precisely what scales the
+    // three row outputs, and RATE is what CLOCK OUT pulses at when nothing is
+    // driving CLOCK IN.
+    //
+    // ⚠ `direction` defaults to 'input'; every output group must say so
+    // explicitly or it resolves to no port and the section never renders.
+    // ⚠ No page here is named 'signal' or 'voice', so the leading slot cannot
+    // collide with a page and render that band twice (the dx7 scar).
+    rear: {
+      groups: [
+        { id: 'signal', label: 'transport', ports: ['clock', 'start', 'stop'] },
+        { id: 'ranges', label: 'row outs', ports: ['row1', 'row2', 'row3'], direction: 'output' },
+        { id: 'clock', label: 'clock out', ports: ['clock_out'], direction: 'output' },
+      ],
     },
   },
 
