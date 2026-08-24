@@ -1,18 +1,34 @@
 <script lang="ts">
   // PictureboxCard — file-picker source. User clicks "Choose image..."
-  // → file is downscaled to 640x480 (zoom-fit-crop) → encoded as JPEG
-  // q=85 → base64 → written into node.data.imageBytes. The Y.Doc carries
-  // those bytes to every rack-mate; every peer runs the reverse path
-  // (base64 → ImageBitmap → engine.setImage) automatically — from the
-  // NODE-lifetime producer, not from this card (#1720; see the note below).
+  // → file is zoom-fit-cropped to the ENGINE RESOLUTION (TARGET_W×TARGET_H =
+  // 1024×768) → encoded as JPEG q=85 → base64 → written into
+  // node.data.imageBytes. The Y.Doc carries those bytes to every rack-mate;
+  // every peer runs the reverse path (base64 → ImageBitmap → engine.setImage)
+  // automatically — from the NODE-lifetime producer, not from this card (#1720;
+  // see the note below).
+  //
+  // ⚠ THIS HEADER USED TO SAY "downscaled to 640x480" — wrong by 2.56× in area,
+  // and contradicted by this card's own `synced (${TARGET_W}×${TARGET_H})` line
+  // a few hundred lines below. Fixed with the faceplate promotion.
+  //
+  // ⚠ THIS CARD IS NO LONGER THE ONLY SURFACE. picturebox is promoted, so the
+  // dock full view renders `<ModuleShell>` and the module's own
+  // `picturebox/PictureboxAssetsBody.svelte` instead of this file; the card
+  // still renders in the LANE under `?shell=legacy`. Both write node.data
+  // through the one seam at `$lib/graph/picturebox-data.ts` — do not add a third
+  // spelling of those writes to either surface.
   //
   // Multiplayer: image content NOW syncs across rack-mates — sizing,
   // codec, and limit decisions are documented in picturebox-encode.ts.
   import { type NodeProps } from '@xyflow/svelte';
   import NeonFader from '$lib/ui/controls/NeonFader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
-  import { patch, ydoc, LOCAL_ORIGIN } from '$lib/graph/store';
   import { setNodeParam } from '$lib/graph/mutate';
+  import {
+    setSlotAsset,
+    clearSlotAsset,
+    setSingleImage,
+  } from '$lib/graph/picturebox-data';
   import { pictureboxDef } from '$lib/video/modules/picturebox';
   import {
     encodePickedFile,
@@ -23,7 +39,27 @@
   import { ASSET_SLOTS, ASSET_SLOT_LABELS } from '$lib/video/asset-select';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
-  import { portsFromDef } from './card-kit';
+  import { paramSpec, portsFromDef } from './card-kit';
+
+  // ⚠ THE RANGE COMES FROM THE DEF, AND IT DID NOT USED TO (D3, the backdraft
+  // class). This card passed `min={0} max={2}` as NUMERIC LITERALS while reading
+  // `defaultValue` correctly off the def — a second copy of a number no gate
+  // could see, because `contract-lock`, `module-docs-lint` and every range
+  // assertion read the DEF. picturebox sat outside `RANGE_BOUND_CARDS`, which is
+  // where CLAUDE.md says this class actually lives now.
+  //
+  // Promotion is what turns it from a hazard into a cost: from picturebox
+  // entering STRICT_FACES the DOCK renders this fader straight off the
+  // `ParamDef`, so a later edit to either copy would give one control two
+  // travels depending on which surface you were looking at.
+  //
+  // ⚠ BOUND VIA `paramSpec`, NOT VIA A NEW EXPORTED CONSTANT — and the choice is
+  // measured, not stylistic. `picturebox.ts` is in the WebGL attest basis, so an
+  // exported `const PICTUREBOX_GAIN_RANGE` would be ordinary CODE and would move
+  // the attest hash, costing a real-GPU re-attest that CI (SwiftShader) cannot
+  // run. `paramSpec` adds nothing to the def at all: it reads the `ParamDef` the
+  // def already declares. Same single source of truth, zero attest.
+  const GAIN = paramSpec(pictureboxDef, 'gain');
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -107,6 +143,15 @@
   // this card used, so gate timing is unchanged by the move.
 
   // ---- "Load multiple…" panel: per-slot file load --------------------
+  //
+  // ⚠ THE PAD-AND-SLICE MOVED OUT, AND IT WAS DUPLICATED HERE BEFORE IT DID.
+  // `onSlotFileChange` and `clearSlot` were the SAME eighteen lines — keep the
+  // three parallel arrays exactly ASSET_SLOTS long, write one index, reassign —
+  // differing only in what they wrote. The dock faceplate's `fullViewBody` would
+  // have been the third copy, so they were folded into ONE writer pair at
+  // `$lib/graph/picturebox-data.ts` before the third was added. Same
+  // LOCAL_ORIGIN transaction, same reassign semantics; the behaviour is
+  // unchanged and `picturebox-data.test.ts` now pins it.
   async function onSlotFileChange(ev: Event, slot: number): Promise<void> {
     const input = ev.target as HTMLInputElement;
     const file = input.files?.[0];
@@ -118,32 +163,9 @@
       if (enc.fellBack === 'gif-too-large') {
         error = `gif too large — showing first frame only`;
       }
-      ydoc.transact(() => {
-        const target = patch.nodes[id];
-        if (!target) return;
-        if (!target.data) target.data = {};
-        const d = target.data as Record<string, unknown>;
-        const arr = Array.isArray(d.assets)
-          ? (d.assets as (string | null)[]).slice(0, ASSET_SLOTS)
-          : new Array(ASSET_SLOTS).fill(null);
-        while (arr.length < ASSET_SLOTS) arr.push(null);
-        arr[slot] = enc.base64;
-        d.assets = arr;
-        const names = Array.isArray(d.assetNames)
-          ? (d.assetNames as (string | null)[]).slice(0, ASSET_SLOTS)
-          : new Array(ASSET_SLOTS).fill(null);
-        while (names.length < ASSET_SLOTS) names.push(null);
-        names[slot] = file.name;
-        d.assetNames = names;
-        const mimes = Array.isArray(d.assetMimes)
-          ? (d.assetMimes as (string | null)[]).slice(0, ASSET_SLOTS)
-          : new Array(ASSET_SLOTS).fill(null);
-        while (mimes.length < ASSET_SLOTS) mimes.push(null);
-        mimes[slot] = enc.mime;
-        d.assetMimes = mimes;
-      }, LOCAL_ORIGIN);
-      // The $effect pre-uploads the new slot bytes to the engine on the next
-      // microtask (same path as a remote peer's update).
+      setSlotAsset(id, slot, enc, file.name);
+      // The node-lifetime extras producer pre-uploads the new slot bytes to the
+      // engine on the next microtask (same path as a remote peer's update).
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
     } finally {
@@ -153,30 +175,7 @@
   }
 
   function clearSlot(slot: number): void {
-    ydoc.transact(() => {
-      const target = patch.nodes[id];
-      if (!target) return;
-      if (!target.data) target.data = {};
-      const d = target.data as Record<string, unknown>;
-      const arr = Array.isArray(d.assets)
-        ? (d.assets as (string | null)[]).slice(0, ASSET_SLOTS)
-        : new Array(ASSET_SLOTS).fill(null);
-      while (arr.length < ASSET_SLOTS) arr.push(null);
-      arr[slot] = null;
-      d.assets = arr;
-      const names = Array.isArray(d.assetNames)
-        ? (d.assetNames as (string | null)[]).slice(0, ASSET_SLOTS)
-        : new Array(ASSET_SLOTS).fill(null);
-      while (names.length < ASSET_SLOTS) names.push(null);
-      names[slot] = null;
-      d.assetNames = names;
-      const mimes = Array.isArray(d.assetMimes)
-        ? (d.assetMimes as (string | null)[]).slice(0, ASSET_SLOTS)
-        : new Array(ASSET_SLOTS).fill(null);
-      while (mimes.length < ASSET_SLOTS) mimes.push(null);
-      mimes[slot] = null;
-      d.assetMimes = mimes;
-    }, LOCAL_ORIGIN);
+    clearSlotAsset(id, slot);
   }
 
   function onCardContextMenu(ev: MouseEvent): void {
@@ -200,17 +199,9 @@
         error = `gif too large — showing first frame only`;
       }
       // Single transact so peers see one update with bytes + mime + name.
-      ydoc.transact(() => {
-        const target = patch.nodes[id];
-        if (!target) return;
-        if (!target.data) target.data = {};
-        const d = target.data as Record<string, unknown>;
-        d.imageBytes = enc.base64;
-        d.imageMime = enc.mime;
-        d.imageName = file.name;
-      }, LOCAL_ORIGIN);
-      // The $effect above will pick up the new bytes and apply them to
-      // our local engine on the next microtask — same code path as a
+      setSingleImage(id, enc, file.name);
+      // The node-lifetime extras producer picks up the new bytes and applies
+      // them to our local engine on the next microtask — same code path as a
       // remote peer's update, no special-casing.
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
@@ -275,7 +266,7 @@
   </div>
 
   <div class="fader-grid">
-    <NeonFader value={p('gain')} min={0} max={2} defaultValue={pictureboxDef.params.find((x) => x.id === 'gain')!.defaultValue} label="Gain" curve="linear" onchange={setParam('gain')} moduleId={id} paramId="gain" />
+    <NeonFader value={p('gain')} min={GAIN.min} max={GAIN.max} defaultValue={GAIN.defaultValue} label={GAIN.label} curve={GAIN.curve} onchange={setParam('gain')} moduleId={id} paramId="gain" />
   </div>
 
   {#if multiOpen}

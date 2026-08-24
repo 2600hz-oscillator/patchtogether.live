@@ -950,12 +950,32 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
       'a fediverse SEARCH BROWSER: typed query plus an optional instance host, a result list, and ' +
       'a player whose <video> source is card-owned.',
   },
+  // ⚠ RECLASSIFIED 2026-08-24, bespoke-surface -> generic-face, and — like pong's
+  // reclassification below — THE OLD WHY WAS RIGHT ABOUT THE MODULE AND WRONG ABOUT
+  // THE LADDER. It read: "an IMAGE SLOT BANK: per-slot loading, a gate-driven slot
+  // select, and a preview of the loaded asset. One file cell covers a single image;
+  // the slot roster is the interaction." Every clause of that is still true. What
+  // stopped being true is the implied conclusion that a slot roster cannot live on
+  // a generic face: the `fullViewBody` extension slot carries exactly this kind of
+  // surface, and the module needs no bespoke DISPOSITION, only a bespoke BODY.
+  //
+  // ⚠ The reclassification is REQUIRED rather than cosmetic — two gates couple to it
+  // in both directions (every def declaring a `face` must be dispositioned
+  // generic-face, and the done-set must BE STRICT_FACES), so promoting without it is
+  // red. That is how pong's was caught and how this one was.
   {
     type: 'picturebox',
-    disposition: 'bespoke-surface',
-    why:
-      'an IMAGE SLOT BANK: per-slot loading, a gate-driven slot select, and a preview of the ' +
-      'loaded asset. One file cell covers a single image; the slot roster is the interaction.',
+    disposition: 'generic-face',
+    note: 'ONE ranked control (GAIN) over a module that is otherwise a PICTURE and a BANK. '
+      + 'The picture is free and per-node: `laneGlyphFor` returns \'picture\' for any '
+      + 'video-domain def, so the lane tile is a live VideoTileThumb of this node\'s own '
+      + 'output — which is why this face accepts a lane picture where the glyph-seam '
+      + 'modules cannot (a glyph is a pure function of one param value, so every instance '
+      + 'would draw the same thing). The bank and all eight file pickers live in the '
+      + 'fullViewBody, because no ParamCellKind mounts an <input type="file"> and without '
+      + 'them a promoted picturebox could never be given a picture. ⚠ The promotion also '
+      + 'FIXES a live defect: on the card, slots 2-7 sit behind an oncontextmenu toggle '
+      + 'nothing advertises, and the body puts all seven on screen permanently.',
   },
   {
     type: 'polyseqz',
