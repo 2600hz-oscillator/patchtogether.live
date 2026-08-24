@@ -210,7 +210,7 @@ function setupSnhSeqScope(snh: number): (page: Page) => Promise<void> {
           id: 'seq',
           type: 'kria',
           position: { x: 60, y: 70 },
-          params: { bpm: 60, length: 2, isPlaying: 1, gateLength: 0.4, octave: 0, snh },
+          params: { bpm: 60, running: 1, octave: 0, snh },
         },
         { id: 'vco', type: 'analogVco', position: { x: 470, y: 70 } },
         {
@@ -604,7 +604,7 @@ function setupDepolarizerScope(): (page: Page) => Promise<void> {
           id: 'seq',
           type: 'kria',
           position: { x: 60, y: 70 },
-          params: { bpm: 60, length: 2, isPlaying: 1, gateLength: 0.4, octave: 0, snh: 1 },
+          params: { bpm: 60, running: 1, octave: 0, snh: 1 },
         },
         { id: 'depol', type: 'depolarizer', position: { x: 470, y: 70 }, domain: 'audio' },
         {
@@ -716,7 +716,7 @@ function setupScalerScope(): (page: Page) => Promise<void> {
           id: 'seq',
           type: 'kria',
           position: { x: 60, y: 70 },
-          params: { bpm: 60, length: 2, isPlaying: 1, gateLength: 0.4, octave: 0, snh: 1 },
+          params: { bpm: 60, running: 1, octave: 0, snh: 1 },
         },
         // AMOUNT 0.5 → halves the pitch CV so the scaled trace is clearly
         // distinct (half-height) from the raw one.
@@ -827,7 +827,7 @@ function setupPolarizerScope(): (page: Page) => Promise<void> {
           id: 'seq',
           type: 'kria',
           position: { x: 60, y: 70 },
-          params: { bpm: 60, length: 2, isPlaying: 1, gateLength: 0.4, octave: 0, snh: 1 },
+          params: { bpm: 60, running: 1, octave: 0, snh: 1 },
         },
         { id: 'pol', type: 'polarizer', position: { x: 470, y: 70 }, domain: 'audio' },
         {
@@ -939,7 +939,7 @@ function setupMixerSumScope(): (page: Page) => Promise<void> {
           id: 'seq',
           type: 'kria',
           position: { x: 60, y: 70 },
-          params: { bpm: 60, length: 2, isPlaying: 1, gateLength: 0.4, octave: 0, snh: 1 },
+          params: { bpm: 60, running: 1, octave: 0, snh: 1 },
         },
         // Ch2 at 0.5 so the two summed copies of pitch land at distinct weights.
         {

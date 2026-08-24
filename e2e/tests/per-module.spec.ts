@@ -278,7 +278,7 @@ test.describe('per-module: output-alive smoke', () => {
           id: 'seq',
           type: 'kria',
           position: { x: 60, y: 280 },
-          params: { bpm: 240, length: 4, isPlaying: 1, gateLength: 0.5 },
+          params: { bpm: 240, running: 1 },
         });
         if (driver.gatePort) {
           edges.unshift({

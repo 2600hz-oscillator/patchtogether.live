@@ -212,6 +212,25 @@ test('TIDY VCO no stray drone: patched but never gated stays silent', async ({ p
       { id: 'ne2', from: { nodeId: 'n-tv', portId: 'out_l' }, to: { nodeId: 'n-scp', portId: 'ch1' } },
     ],
   );
+  // ⚠ ARM THE SOURCE, then leave the transport stopped. A kria with no
+  // pattern is silent BY ITSELF (advanceBaseTick early-returns with no active
+  // pattern), so an unseeded source would make this silence assertion pass for
+  // a reason that is not its subject — it would stay green even if the
+  // no-stray-drone rule broke. Seeded + stopped, the transport is the ONLY
+  // thing keeping the voice quiet, which is exactly what the test claims.
+  await seedKriaGate(page, 'n-seq-clk');
+  await page.evaluate(() => {
+    const w = globalThis as unknown as {
+      __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
+      __ydoc: { transact: (fn: () => void) => void };
+    };
+    w.__ydoc.transact(() => {
+      const n = w.__patch.nodes['n-seq'];
+      if (!n) return;
+      if (!n.data) n.data = {};
+      (n.data as Record<string, unknown>).cells = Array.from({ length: 16 }, () => ({ on: true, midi: 60, chord: 'maj' }));
+    });
+  });
 
   const hold = await readScopePeakOverWindow(page, 'n-scp', 1200);
   expect(hold.polls).toBeGreaterThan(0);
