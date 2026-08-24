@@ -34,11 +34,15 @@
   import {
     MATRIXMIX_TYPE,
     readMatrixData,
-    setXAxisModule,
-    setYAxisModule,
     createMatrixEdge,
     removeMatrixEdge,
   } from '$lib/graph/matrixmix';
+  import {
+    matrixmixAxisChoices,
+    matrixmixSetXAxis,
+    matrixmixSetYAxis,
+    type MatrixAxisChoice,
+  } from '$lib/ui/modules/matrixmix-cell-actions';
 
   let { id, data }: NodeProps = $props();
 
@@ -65,25 +69,19 @@
     return resolveDisplayName(n, patch.nodes as Record<string, ModuleNode | undefined>);
   }
 
-  interface ModuleChoice {
-    nodeId: string;
-    name: string;
-  }
-
   // Every patch module that HAS at least one jack (so a chosen axis yields a
   // meaningful grid), EXCLUDING this matrix node itself. Sorted by display name.
-  let moduleChoices = $derived.by<ModuleChoice[]>(() => {
+  //
+  // ⚠ EXTRACTED, NOT INLINE ANY MORE. This roster used to be built here and
+  // nowhere else; the faceplate's two axis cells need the SAME list, and a
+  // second copy would be two surfaces disagreeing about which modules are
+  // selectable with no def for a gate to read. `matrixmixAxisChoices` is the one
+  // derivation both call — and it memoises on a NODE-SET signature rather than
+  // on `cardVersion`, because a cable moving bumps the doc version and cannot
+  // change this list.
+  let moduleChoices = $derived.by<readonly MatrixAxisChoice[]>(() => {
     void cardVersion;
-    const out: ModuleChoice[] = [];
-    for (const [nodeId, n] of Object.entries(patch.nodes)) {
-      if (!n || nodeId === id) continue;
-      const def = defLookup(n.type);
-      if (!def) continue;
-      if (def.inputs.length === 0 && def.outputs.length === 0) continue; // no jacks
-      out.push({ nodeId, name: nameOf(nodeId) });
-    }
-    out.sort((a, b) => a.name.localeCompare(b.name));
-    return out;
+    return matrixmixAxisChoices(id);
   });
 
   let matrixData = $derived.by(() => {
@@ -209,13 +207,13 @@
     return `${j.portId.toUpperCase()} ${j.direction === 'input' ? 'in' : 'out'}`;
   }
 
+  // The SAME writers the faceplate's two selector cells call — one seam, so the
+  // card and the face cannot disagree about what picking an axis does.
   function onSelectX(e: Event) {
-    const v = (e.target as HTMLSelectElement).value;
-    setXAxisModule(id, v || undefined);
+    matrixmixSetXAxis(id, (e.target as HTMLSelectElement).value);
   }
   function onSelectY(e: Event) {
-    const v = (e.target as HTMLSelectElement).value;
-    setYAxisModule(id, v || undefined);
+    matrixmixSetYAxis(id, (e.target as HTMLSelectElement).value);
   }
 
   void MATRIXMIX_TYPE; // keep the constant referenced for re-export hygiene

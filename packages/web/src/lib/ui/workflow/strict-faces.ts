@@ -4248,6 +4248,42 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // uninformative — a stopped reel holding a full take reads FLAT — and the
   // SCREEN switch sits outside the video-screen ruling's population by domain.
   'twotracks',
+
+  // ── matrixMix — THE FIRST META-DOMAIN FACE (bespoke wave 4) ────────────────
+  //
+  // ⚠ IT IS THE FIRST MEMBER OF THIS SET FROM A DOMAIN THAT COULD NOT HAVE ONE,
+  // and that is the interesting part of the entry. Until this PR
+  // `MetaModuleDef` declared no `face` field at all, so `svelte-check` refused
+  // the property outright and no meta module could be promoted however good its
+  // design — while the promotion anchor read `def.face && !STRICT_FACES.has(…)`,
+  // permanently `undefined &&` for a meta def, and stayed green about the whole
+  // domain. The field beside the hole (`noUserControl`) had been added "so the
+  // face lints can read it uniformly across all three registries": the registry
+  // was already extended for the face system's benefit and stopped one line
+  // short. `module-face-lint.test.ts` now carries the two-direction negative
+  // control that keeps the fields from being decorative.
+  //
+  // ⚠ AND IT NEEDED TWO FIELDS, NOT ONE. A meta def declares `params: []` BY
+  // CONSTRUCTION, so every key its `face.order` can hold is a non-param key —
+  // and `keyResolves` legitimizes one only via a DECLARED family prefix or a
+  // committed `.legend.json`. Without `controlFamilies?` the face could rank
+  // NOTHING. The gap was never "matrixMix has no face field"; it was "no meta
+  // module can rank any control at all".
+  //
+  // THE FACE: two ranked `selector` cells (X axis / Y axis) over a roster
+  // derived from the live patch, plus a dock-only `fullViewBody` carrying the
+  // cross-point grid. No tab rail (two cells is one band against
+  // DOCK_TAB_MIN_BANDS=7), no width hatch, `glyph:'none'` (no outputs at all, so
+  // any other literal is a dead glyph the lint reddens unconditionally).
+  //
+  // ⚠ ZERO ATTEST, MEASURED: `webgl-attest-hash.sh --list` names no matrixmix
+  // file, nothing under `lib/meta/`, and `meta/module-registry.ts` is NOT in the
+  // basis (only `video/module-registry.ts` is). The grid body is a `<table>` and
+  // must stay one — basis membership is derived from CONTENT, so a WebGL body
+  // would enrol the module automatically. Zero ART: the audio-profile gate
+  // enumerates audio-domain ids only and the contract golden records
+  // `matrixMix meta domain=meta`, so it never sees this module.
+  'matrixMix',
 ]);
 
 /**
