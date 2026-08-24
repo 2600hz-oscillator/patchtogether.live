@@ -190,7 +190,7 @@
   // through the shared viewport clamp so the WHOLE menu stays in view even
   // when the right-click lands at the window's right/bottom edge (owner
   // screenshot: clip-editor grid menu clipped at the right edge of the dock).
-  import { clampMenu, portal } from '$lib/ui/menu-viewport-action';
+  import { clampMenu, cascadeMenu, portal } from '$lib/ui/menu-viewport-action';
   // Launchpad-STYLE origin-scoped undo/redo for the card's persistent clip edits
   // (control-strip ↶/↷ = keys 6/7). Owner Q1 decision: scoped (not global Cmd-Z),
   // its own stack; see clip-undo.ts.
@@ -1255,21 +1255,30 @@
   // and internal scrolling just to be usable. Now the top level is seven rows and
   // each option set is a FLYOUT anchored to its parent row.
   //
-  // The flyout is its own `position: fixed` box in the same portal, clamped by
-  // the SHARED `clampMenu` action (whose header already anticipates this: "a
-  // submenu cascade growing a flyout column"). `flip: false` because the anchor
-  // is pre-aligned to the parent row's right edge — sliding along the edge beats
-  // jumping across the anchor, which would put the flyout on top of its parent.
+  // The flyout is its own `position: fixed` box in the same portal, placed by
+  // `cascadeMenu` — which flips across the parent ROW'S BOX (right of it, else
+  // left of it), not across a point. ⚠ `clampMenu` with the row's right edge as
+  // the anchor was the first attempt and it is WRONG at the window's right edge:
+  // it slides the flyout back left, over the parent menu. See cascadeMenu's
+  // header for the measurement.
   type ProbSubKind = 'gate' | 'pitch' | 'every';
-  let probSub = $state<{ which: ProbSubKind; x: number; y: number } | null>(null);
-  /** Open (or switch to) a parent row's flyout, anchored at that row's right
-   *  edge. Hover switches between the three the way a native menu does; click
-   *  opens the same thing, so touch and a keyboard-free e2e both work. */
+  type RowRect = { left: number; top: number; right: number; bottom: number };
+  let probSub = $state<{ which: ProbSubKind; rect: RowRect } | null>(null);
+  /** Open (or switch to) a parent row's flyout, placed beside that row. Hover
+   *  switches between the three the way a native menu does; click opens the same
+   *  thing, so touch and a keyboard-free e2e both work. */
   function openProbSub(e: Event, which: ProbSubKind) {
     const row = e.currentTarget as HTMLElement | null;
     if (!row) return;
     const r = row.getBoundingClientRect();
-    probSub = { which, x: r.right, y: r.top };
+    // HORIZONTALLY the flyout clears the whole PARENT MENU, not just the row:
+    // the row is inset by the menu's padding + border, so anchoring to the row
+    // leaves the flyout overlapping the menu's chrome by those few px when it
+    // flips to the left (measured: 2 px). VERTICALLY it aligns to the ROW, which
+    // is what makes a cascade read as belonging to the item you are on.
+    const menuEl = row.closest('.prob-menu');
+    const m = menuEl ? menuEl.getBoundingClientRect() : r;
+    probSub = { which, rect: { left: m.left, top: r.top, right: m.right, bottom: r.bottom } };
   }
 
   // ── CLIP-level actions on the NOTE menu: COPY / PASTE / CLEAR. These act on
@@ -2459,10 +2468,10 @@
                 >clear</button>
               </div>
               {#if probSub}
-                <!-- The FLYOUT: one option list, anchored to its parent row's
-                     right edge and clamped by the same shared action as the
-                     parent menu (so a note at the window's right edge slides the
-                     flyout back into view instead of clipping it). -->
+                <!-- The FLYOUT: one option list, placed BESIDE its parent row —
+                     to its right, or to its LEFT when the right side has no room
+                     (a note menu opened at the window's right edge), so it never
+                     covers the menu it came from. -->
                 <div
                   class="prob-menu prob-submenu"
                   role="menu"
@@ -2471,7 +2480,7 @@
                     : probSub.which === 'pitch'
                       ? 'pitch probability'
                       : 'play every'}
-                  use:clampMenu={{ x: probSub.x, y: probSub.y, flip: false }}
+                  use:cascadeMenu={{ rect: probSub.rect }}
                   data-testid={`clipplayer-submenu-${probSub.which}-${id}`}
                 >
                   {#if probSub.which === 'gate'}

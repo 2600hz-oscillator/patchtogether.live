@@ -1924,6 +1924,34 @@ describe('copyClip', () => {
     delete c0.scale;
     expect('scale' in copyClip(c0)).toBe(false);
   });
+
+  // REGRESSION (2026-08-23). `copyClip` listed every optional clip field EXCEPT
+  // `defaultProb`, so copying a clip whose CLIP-DEFAULT probability had been set
+  // and pasting it produced a clip at 100% — every note in the pasted copy fired
+  // MORE OFTEN than the one it came from, on the Launchpad, the pair deck and
+  // (once the card's note menu got copy/paste) the card. It is content, exactly
+  // like `div`/`gain`, so it travels with the clip.
+  it('copyClip carries defaultProb — a copied clip fires at the SAME rate', () => {
+    const c0: NoteClipRecord = { ...defaultNoteClip(), steps: [], defaultProb: 0.5 };
+    expect(copyClip(c0).defaultProb).toBe(0.5);
+  });
+  it('the loss was AUDIBLE, not cosmetic: an unset note inherits the default', () => {
+    // The negative control on the fix: assert the consequence through the
+    // function playback actually consults, not just the key's presence. A note
+    // with no `prob` of its own inherits the clip default, so dropping the key
+    // silently promotes every such note from 50% to certain.
+    const ev = { step: 0, midi: 60 };
+    const c0: NoteClipRecord = { ...defaultNoteClip(), steps: [ev], defaultProb: 0.5 };
+    expect(noteEffProb(c0, ev)).toBe(0.5);
+    expect(noteEffProb(copyClip(c0), ev)).toBe(0.5); // pre-fix this read 1
+  });
+  it('a clip with NO default clones without the key (no ghost 100% written)', () => {
+    // The other direction: the fix must not START writing a key that was absent,
+    // which would make every copied clip differ byte-wise from its source.
+    const c0: NoteClipRecord = { ...defaultNoteClip(), steps: [] };
+    expect('defaultProb' in c0).toBe(false);
+    expect('defaultProb' in copyClip(c0)).toBe(false);
+  });
 });
 
 describe('LENGTH-EDIT page math', () => {
