@@ -868,10 +868,19 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
   },
   {
     type: 'matrixMix',
-    disposition: 'bespoke-surface',
-    why:
-      'a PATCH MATRIX: a scrollable source×destination cross-point grid over the whole rack. It ' +
-      'has no params of its own and the grid is the interaction.',
+    disposition: 'generic-face',
+    note:
+      'PROMOTED, and it is the FIRST META-DOMAIN FACE. This entry read bespoke-surface on two ' +
+      'grounds, and only one of them survived. "The grid is the interaction" is TRUE and is why ' +
+      'the cross-point field is a `fullViewBody` shell extension rather than a PF-14 panel (a ' +
+      "panel's minWidth is a required number, and this grid is 4 columns or 40 depending on two " +
+      'OTHER modules — any number there would be a fiction in a required field). "It has no ' +
+      'params of its own" is TRUE and turned out not to imply anything: the two AXIS PICKERS are ' +
+      'real ranked cells, because a ShellSelectorCell roster is a FUNCTION over the live graph, ' +
+      'not a fixed list. That is what a zero-param face looks like — order: [] would have been ' +
+      'legal and would have painted a blank tile, which is worse than the placeholder it ' +
+      'replaces. The real blocker was neither: MetaModuleDef had no `face` field and no ' +
+      '`controlFamilies` field, so no meta module could rank any control at all.',
   },
   {
     type: 'midiCvBuddy',

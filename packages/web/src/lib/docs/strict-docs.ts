@@ -298,8 +298,29 @@ export const STRICT_DOCS: ReadonlySet<string> = new Set<string>([
   // attest-neutral by construction, like cube)
   // plus a per-osc .wav file picker. WAVESCULPT declares the wavetable strip as
   // THREE families — wavesculpt-preset / -table / -load — one per control kind
-  // rather than one opaque cell per oscillator. (matrixMix stays
-  // undocumented on purpose — it is the e2e "undocumented module" fixture.)
+  // rather than one opaque cell per oscillator.
+  //
+  // ⚠ matrixMix. THIS NOTE USED TO READ "matrixMix stays undocumented on
+  // purpose — it is the e2e 'undocumented module' fixture", AND THAT STATED A
+  // POLICY REASON FOR A MECHANICAL FACT. matrixMix is not undocumented by
+  // restraint, it is UNDOCUMENTABLE: `MetaModuleDef` has no `docs` field, and
+  // `module-manifest.ts` globs `../audio/modules/*.ts` + `../video/modules/*.ts`
+  // with NO meta glob, so there is nowhere for co-located docs to be written and
+  // nowhere for them to be read. The boy-scout ratchet therefore does not apply
+  // to it, and `e2e/tests/module-annotate.spec.ts` (which asserts NO Annotate
+  // entry for it, gated on `hasDocs`) is safe.
+  //
+  // ⚠ WHY THAT DISTINCTION IS LOAD-BEARING RATHER THAN PEDANTIC. Read as a
+  // policy choice, the old sentence invites a future reader to simply change
+  // their mind. Read as the mechanical fact it is, it names the exact event that
+  // ends the protection: the day `MetaModuleDef` gains a `docs?` field — a
+  // plausible follow-on now that it has `face?` — the only thing standing
+  // between a routine boy-scout edit and a red `module-annotate` run is a
+  // sentence in a comment, and comments do not gate. WHOEVER ADDS `docs?` TO
+  // `MetaModuleDef` MUST RE-POINT `module-annotate.spec.ts` AT ANOTHER
+  // UNDOCUMENTED LIGHTWEIGHT MODULE IN THE SAME DIFF. (Promotion to a FACE does
+  // NOT trigger this: a `face` is not `docs`, the Annotate entry is gated on
+  // `hasDocs` specifically, and matrixMix is now faced with that spec untouched.)
   'frogger',
   'modtris',
   'pong',
