@@ -1,26 +1,26 @@
 {
   "schemaVersion": 1,
-  "webglContentHash": "136a02a3c460bcec8a9f009789d0a6126d0691b7a26d5753e04201468d15072f",
-  "attestedAt": "2026-08-24T12:51:50.060Z",
+  "webglContentHash": "806c49e62428f0b49056e63fde17993d950671c4ee6d6fda83e6b1faf7f06f7c",
+  "attestedAt": "2026-08-24T22:02:00.144Z",
   "attestedBy": "patchtogether-maintainer",
-  "gitHeadAtAttest": "698d8a4668896cf4fa183f3d5aca85f934880462",
+  "gitHeadAtAttest": "80df4b131be18818e315431c7fb08fdaa273f93c",
   "playwrightVersion": "1.50.0",
   "os": "darwin 25.4.0 (arm64)",
   "machineClass": "local-trusted-gpu-workstation",
   "preflight": {
     "samples": 7,
     "windowMs": 10204,
-    "maxForeignCpu": 1.5,
+    "maxForeignCpu": 0,
     "thresholdCpu": 25,
-    "load1": 4.451171875,
+    "load1": 3.41357421875,
     "cores": 10
   },
   "gpu": "ANGLE (Apple, ANGLE Metal Renderer: Apple M5, Unspecified Version)",
   "appServer": {
-    "url": "http://127.0.0.1:62625",
+    "url": "http://127.0.0.1:57179",
     "mode": "dev",
-    "root": "/private/tmp/attest-wavesculpt",
-    "commit": "698d8a4668896cf4fa183f3d5aca85f934880462"
+    "root": "/Users/2600hz/Documents/workspace/inet.modular/.claude/worktrees/agent-aace42aad492f23eb",
+    "commit": "80df4b131be18818e315431c7fb08fdaa273f93c"
   },
   "repeatEach": 1,
   "suites": {
@@ -57,5 +57,5 @@
       "flakyDetails": []
     }
   },
-  "durationSec": 278
+  "durationSec": 295
 }
