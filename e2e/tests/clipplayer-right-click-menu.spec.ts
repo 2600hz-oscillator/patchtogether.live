@@ -23,6 +23,7 @@
 
 import { test, expect } from './_fixtures';
 import { spawnPatch } from './_helpers';
+import { clipIndex } from '../../packages/web/src/lib/audio/modules/clip-types';
 
 test.describe.configure({ mode: 'parallel' });
 
@@ -34,6 +35,12 @@ type W = { __patch: { nodes: Record<string, { data?: { clips?: Record<string, Cl
 /** THE OWNER'S LIST, in their order and their words. One definition, asserted
  *  against both surfaces — never re-typed per test. */
 const TOP_LEVEL = ['note probability', 'pitch probability', 'skip every', 'copy', 'paste', 'clear'];
+
+/** An empty pad in ANOTHER lane. ⚠ Clip keys are `lane * SCENE_STRIDE + slot`
+ *  with a stride of 64, NOT `lane * 8 + slot` — `[data-clip="9"]` is not a pad
+ *  that exists, and a locator for it waits forever rather than failing loudly.
+ *  This is lane 1, slot 0. */
+const OTHER_LANE = clipIndex(0, 1);
 
 async function readClip(page: Page, idx: number): Promise<Clip | null> {
   return page.evaluate((i) => {
@@ -50,19 +57,20 @@ async function spawn(page: Page) {
   await expect(page.locator('[data-clip="0"]')).toBeVisible();
 }
 
-/** Create clip `idx` and draw `count` notes in it, THE WAY A USER DOES:
- *  double-click the pad (which creates the clip and opens the editor), click
- *  cells to place notes, then return to the launch grid. */
+async function backToGrid(page: Page) {
+  await page.getByTestId('clipplayer-strip-2-cp').click();
+  await expect(page.locator('[data-clip="0"]')).toBeVisible();
+}
+
+/** Create clip `idx` and draw its notes THE WAY A USER DOES: double-click the pad
+ *  (which creates the clip and opens the editor), click cells to place notes,
+ *  then return to the launch grid so every test starts from the same view. */
 async function drawClip(page: Page, idx: number, cells: Array<[row: number, step: number]>) {
   await page.locator(`[data-clip="${idx}"]`).dblclick();
   await expect(page.getByTestId('clipplayer-pianoroll')).toBeVisible();
   for (const [row, step] of cells) await page.getByTestId(`clipplayer-cell-${row}-${step}`).click();
   await expect.poll(async () => (await readClip(page, idx))?.steps?.length ?? 0).toBe(cells.length);
-}
-
-async function backToGrid(page: Page) {
-  await page.getByTestId('clipplayer-strip-2-cp').click();
-  await expect(page.locator('[data-clip="0"]')).toBeVisible();
+  await backToGrid(page);
 }
 
 /** Right-click a launcher PAD — the surface in the owner's screenshot. */
@@ -101,7 +109,6 @@ test('the LAUNCHER PAD menu — the surface the owner right-clicks — is the or
 }) => {
   await spawn(page);
   await drawClip(page, 0, [[6, 4]]);
-  await backToGrid(page);
   const menu = await openPadMenu(page, 0);
 
   // THE OWNER'S LIST, in order, and NOTHING else at the top level.
@@ -162,7 +169,6 @@ test('PAD menu: each sub list applies to the CLIP, read back off the synced data
   // TWO notes, so a clip-level write is visibly a write to EVERY note and not
   // just to the one the menu happened to be over.
   await drawClip(page, 0, [[6, 4], [5, 8]]);
-  await backToGrid(page);
 
   // note probability → the clip DEFAULT (level 20 of 40 = 50%).
   let menu = await openPadMenu(page, 0);
@@ -219,7 +225,6 @@ test('copy on one pad → paste on ANOTHER pad moves the clip content (the share
 }) => {
   await spawn(page);
   await drawClip(page, 0, [[6, 4]]);
-  await backToGrid(page);
   // Give the source a clip DEFAULT so the paste is observable in two independent
   // channels, not just "some notes arrived".
   let menu = await openPadMenu(page, 0);
@@ -236,18 +241,18 @@ test('copy on one pad → paste on ANOTHER pad moves the clip content (the share
 
   // …onto an EMPTY pad in another lane: this is the Launchpad's duplicate
   // gesture, and it is why the menu opens on empty pads at all.
-  expect(await readClip(page, 9), 'the target starts empty').toBeNull();
-  const target = await openPadMenu(page, 9);
+  expect(await readClip(page, OTHER_LANE), 'the target starts empty').toBeNull();
+  const target = await openPadMenu(page, OTHER_LANE);
   const paste = target.getByTestId('clipplayer-menu-paste-cp');
   await expect(paste, 'a loaded CLIP buffer enables paste, even on an empty slot').toBeEnabled();
   await paste.click();
 
-  await expect.poll(async () => (await readClip(page, 9))?.steps?.length, { timeout: 5000 }).toBe(1);
-  const pasted = await readClip(page, 9);
+  await expect.poll(async () => (await readClip(page, OTHER_LANE))?.steps?.length, { timeout: 5000 }).toBe(1);
+  const pasted = await readClip(page, OTHER_LANE);
   const source = await readClip(page, 0);
   expect(pasted?.steps?.[0]?.midi, 'the source note arrived').toBe(source?.steps?.[0]?.midi);
   expect(pasted?.defaultProb, 'the clip DEFAULT travels with the clip').toBeCloseTo(0.5, 5);
-  await expect(page.locator('[data-clip="9"]')).toHaveAttribute('data-state', 'loaded');
+  await expect(page.locator(`[data-clip="${OTHER_LANE}"]`)).toHaveAttribute('data-state', 'loaded');
 
   // A paste is a COPY, not a move.
   expect(source?.steps).toHaveLength(1);
@@ -256,8 +261,17 @@ test('copy on one pad → paste on ANOTHER pad moves the clip content (the share
 test('clear DELETES the clip from the pad menu, and ↶ brings it back with its notes', async ({ page, rack }) => {
   await spawn(page);
   await drawClip(page, 0, [[6, 4]]);
-  await backToGrid(page);
   const before = await readClip(page, 0);
+
+  // pacing: clip-undo.ts builds its Y.UndoManager with `captureTimeout: 300`, so
+  // edits less than 300 ms apart are DELIBERATELY grouped into ONE undo step —
+  // that is the product's design (a flurry of pad taps undoes as one gesture),
+  // not a race. Playwright drives the draw and the clear inside that window, so
+  // without this the two merge and a single ↶ correctly reverts both, returning
+  // an EMPTY clip. A human is never that fast; the wait puts the clear in its own
+  // undo step the way a real gesture is. It bounds from BELOW — a slower machine
+  // only widens the gap — so there is nothing to tune per renderer.
+  await page.waitForTimeout(350);
 
   const menu = await openPadMenu(page, 0);
   const clear = menu.getByTestId('clipplayer-menu-clear-cp');

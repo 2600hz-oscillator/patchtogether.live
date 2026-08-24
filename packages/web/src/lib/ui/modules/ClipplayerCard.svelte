@@ -1332,6 +1332,11 @@
    *  switches between the three the way a native menu does; click opens the same
    *  thing, so touch and a keyboard-free e2e both work. */
   function openProbSub(e: Event, which: ProbSubKind) {
+    // ⚠ A DISABLED row must not open its flyout on HOVER either. `disabled`
+    // suppresses `click` but NOT `pointerenter`, so without this an empty pad's
+    // greyed-out "note probability" row still cascaded a live 40-level list that
+    // wrote nothing — a menu offering options it cannot honour.
+    if (!menuHasClip()) return;
     const row = e.currentTarget as HTMLElement | null;
     if (!row) return;
     const r = row.getBoundingClientRect();
