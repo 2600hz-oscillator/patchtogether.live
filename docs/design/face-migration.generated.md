@@ -12,8 +12,8 @@ Every registered module carries exactly one **disposition**: what kind of work i
 |  | count |
 |---|---|
 | registered modules | 193 |
-| done (faced + promoted) | 145 |
-| remaining (excludes organizational-native) | 45 |
+| done (faced + promoted) | 146 |
+| remaining (excludes organizational-native) | 44 |
 | registered with NO disposition (must be zero) | 0 |
 | inventory entries naming a dead def (must be zero) | 0 |
 
@@ -21,9 +21,9 @@ Every registered module carries exactly one **disposition**: what kind of work i
 
 | disposition | what it means | modules | done |
 |---|---|---|---|
-| `generic-face` | author a `face` and rank the controls — no new platform capability | 149 | 145 |
+| `generic-face` | author a `face` and rank the controls — no new platform capability | 150 | 146 |
 | `blocked` | would be a face today but for the named capability, and nothing else | 0 | — |
-| `bespoke-surface` | the primary interaction is not param-shaped — needs a purpose-built surface | 41 | — |
+| `bespoke-surface` | the primary interaction is not param-shaped — needs a purpose-built surface | 40 | — |
 | `organizational-native` | rack furniture; not a migration at all | 3 | — |
 
 ## What each blocker buys
@@ -138,6 +138,7 @@ author a `face` and rank the controls — no new platform capability.
 | `outlines` | video | done | — |
 | `peakstate` | video | done | — |
 | `pentemelodica` | audio | done | — |
+| `picturebox` | video | done | — |
 | `polarizer` | audio | done | — |
 | `pong` | audio | done | — |
 | `posterbox` | video | done | — |
@@ -230,7 +231,6 @@ the primary interaction is not param-shaped — needs a purpose-built surface.
 | `outToLaunch` | video | — | — |
 | `painter` | video | — | `needs-note-entry-cell` |
 | `peertube` | video | — | `needs-media-controller` `needs-note-entry-cell` |
-| `picturebox` | video | — | — |
 | `push2Control` | meta | — | — |
 | `recorderbox` | video | — | `needs-media-controller` `needs-note-entry-cell` |
 | `score` | audio | — | — |

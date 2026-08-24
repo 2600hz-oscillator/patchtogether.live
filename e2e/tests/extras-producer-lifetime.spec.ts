@@ -107,6 +107,12 @@ import { waitFrames } from '../_helpers/frames';
 import { midiToVOct } from '../../packages/web/src/lib/audio/note-entry';
 import { ASSET_SLOT_NOTES } from '../../packages/web/src/lib/video/asset-select';
 import { PUMP_INTERVAL_MS } from '../../packages/web/src/lib/ui/media/node-extras-registry';
+// The promotion set, so the lane-tile precondition below DERIVES which surrogate
+// the lane paints instead of a card rather than assuming every subject is
+// un-migrated. Importable here for the same reason `_face-fixtures.ts` can: it
+// is a plain `Set` with type-only imports, so it loads under the Playwright
+// runtime (the MODULE REGISTRIES are what `import.meta.glob` makes unreachable).
+import { STRICT_FACES } from '../../packages/web/src/lib/ui/workflow/strict-faces';
 
 /** SwiftShader (CI, or a local `E2E_SWIFTSHADER=1` flake-check) rasterizes WebGL
  *  in software at roughly an eighth of a real GPU's frame rate. Every budget
@@ -514,11 +520,43 @@ test.describe('EXTRAS-channel producers are NODE-lifetime (#1720)', () => {
         { mountTimeout: 30_000 },
       );
 
-      // The lane really is showing the uniform tile — i.e. no card is in it.
+      // ── THE PRECONDITION: THE LANE EMITS NO CARD FOR THIS NODE ───────────
+      //
+      // ⚠ THIS USED TO ASSERT `module-shell-placeholder` UNCONDITIONALLY, i.e.
+      // "this module is UN-MIGRATED", and it broke — correctly and loudly — the
+      // first time one of its subjects was promoted (picturebox, 2026-08-24).
+      // That is the guard doing its job: the alternative was going green and
+      // blind, because a promoted module's lane emits `module-shell` instead and
+      // a `toHaveCount(1)` on the placeholder would simply have started failing
+      // rather than silently passing. Recorded here because the REPAIR is the
+      // interesting part.
+      //
+      // The premise this test needs has never been "un-migrated". It is "NO CARD
+      // IS MOUNTED", which is strictly WEAKER than un-migrated and is what the
+      // test's own name claims. Promotion does not weaken it — it strengthens
+      // it, because a migrated module's card is unreachable from BOTH surfaces
+      // rather than just from the lane. So the assertion is re-pointed at the
+      // claim itself, and the surrogate the lane paints instead is derived from
+      // the promotion set rather than assumed.
+      const isMigrated = STRICT_FACES.has(type);
       await expect(
-        page.locator(`.svelte-flow__node[data-id="${seeded}"] [data-testid="module-shell-placeholder"]`),
-        `${type} must be un-migrated and swapped to a tile, or this test proves nothing`,
+        page.locator(
+          `.svelte-flow__node[data-id="${seeded}"] ` +
+            `[data-testid="${isMigrated ? 'module-shell' : 'module-shell-placeholder'}"]`,
+        ),
+        `${type} must be swapped to a lane TILE (${isMigrated ? 'a promoted face' : 'the un-migrated placeholder'}), ` +
+          'or this test proves nothing',
       ).toHaveCount(1, { timeout: 20_000 });
+      // …and the load-bearing half, which is now asserted DIRECTLY rather than
+      // implied by the tile: the module's own card is nowhere in the document.
+      // This is the sentence in the test's title, it holds for both
+      // dispositions, and it cannot be satisfied by a tile that merely looks
+      // right.
+      await expect(
+        page.locator(`[data-testid="${type}-card"]`),
+        `${type}: a CARD is mounted somewhere in the document, so "with the card never mounted" ` +
+          'is false and this test is measuring the card, not the node-lifetime producer',
+      ).toHaveCount(0);
       // ...and no headless host is holding it either. That distinction is the
       // whole point: this fix is NOT a hidden card mount.
       expect(
@@ -711,10 +749,25 @@ test.describe('EXTRAS-channel producers are NODE-lifetime (#1720)', () => {
     // gate switch is an index flip and the reading cannot be a decode race.
     await seedData(page, id, { assets: [await solid(240), await solid(8), null, null, null, null, null] });
 
-    // The lane is a tile and nothing is expanded — no card exists anywhere.
+    // The lane is a TILE and nothing is expanded — no card exists anywhere.
+    //
+    // ⚠ Same repair as the sweep above, for the same reason: this asserted the
+    // UN-MIGRATED placeholder, and picturebox is now promoted. The claim the
+    // test needs is "no card is mounted", which promotion strengthens rather
+    // than removes — so the tile the lane paints is DERIVED from the promotion
+    // set, and the card's absence is asserted directly.
     await expect(
-      page.locator(`.svelte-flow__node[data-id="${id}"] [data-testid="module-shell-placeholder"]`),
+      page.locator(
+        `.svelte-flow__node[data-id="${id}"] ` +
+          `[data-testid="${STRICT_FACES.has('picturebox') ? 'module-shell' : 'module-shell-placeholder'}"]`,
+      ),
     ).toHaveCount(1, { timeout: 20_000 });
+    await expect(
+      page.locator('[data-testid="picturebox-card"]'),
+      'a PICTUREBOX card is mounted, so the gate this test drives could be reaching the card\'s '
+        + 'own interval rather than the node-lifetime pump — which is the exact confusion the '
+        + 'whole #1720 move exists to remove',
+    ).toHaveCount(0);
     await expect(page.locator('[data-testid="dock-full-view"]')).toHaveCount(0);
 
     const luma = async (): Promise<number> => {
