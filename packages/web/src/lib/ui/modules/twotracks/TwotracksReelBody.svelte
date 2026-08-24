@@ -57,7 +57,19 @@
   // existed opens exactly as it did. On `node.data` and never component
   // `$state`: a dock LRU eviction or a pane close unmounts this component, and
   // component state would silently re-open the picture the player shut.
-  let previewCollapsed = $derived<boolean>(data?.previewCollapsed ?? false);
+  //
+  // ⚠ READ IN ONE EXPRESSION STRAIGHT OFF THE STORE, exactly as scope's body
+  // does, and NOT through the `data` derived above. Routing it through an
+  // intermediate `$derived` made the switch DEAD ON A FRESH SPAWN: a bare
+  // twotracks has no `node.data` at all (the engine creates it only when the
+  // worklet first posts a transport message, which needs a running context), so
+  // the intermediate memoised `undefined` and never re-ran when the toggle
+  // created the object. The click wrote through and the button never moved.
+  // Caught by `face-screen-render.spec.ts`, which is the only thing that could
+  // have: every source-level assertion about this switch passed the whole time.
+  let previewCollapsed = $derived<boolean>(
+    (patch.nodes[nodeId]?.data?.previewCollapsed as boolean | undefined) ?? false,
+  );
 
   function togglePreview(): void {
     const next = !previewCollapsed;
@@ -217,7 +229,7 @@
     type="button"
     class="tt-screen nodrag"
     class:on={!previewCollapsed}
-    data-testid="twotracks-preview-toggle"
+    data-testid="twotracks-face-screen-toggle"
     aria-pressed={!previewCollapsed}
     title={previewCollapsed
       ? 'SCREEN is OFF — the reel pictures are collapsed and their space reclaimed. Both reels go on recording and playing: switching it back on shows the LIVE tape, not a stale frame.'
@@ -226,7 +238,14 @@
   >{previewCollapsed ? 'SCREEN OFF' : 'SCREEN ON'}</button>
 
   {#if !previewCollapsed}
-    <div class="tt-reels" data-testid="twotracks-reels">
+    <!-- ⚠ `twotracks-face-reels` IS THE ELEMENT THE SCREEN SWITCH REMOVES, and
+         it is named for `face-screen-render.spec.ts`'s `canvas` override. There
+         is deliberately no `twotracks-face-canvas` for that spec's default to
+         find: this body paints TWO reels, so a single conventionally-named
+         canvas would have to be one of them and the assertion would go blind to
+         the other. This container is what the `{#if}` actually adds and
+         removes. -->
+    <div class="tt-reels" data-testid="twotracks-face-reels">
       <div class="tt-reel">
         <span class="tt-reel-label">A</span>
         <canvas

@@ -271,11 +271,26 @@ describe('twotracks face — the EXPORT seam is not the transport seam', () => {
 
 describe('twotracks face — SCREEN ON/OFF (unguarded, so asserted at source)', () => {
   it('the body READS and WRITES the fleet-standard previewCollapsed key', () => {
-    expect(BODY).toMatch(/data\?\.previewCollapsed \?\? false/);
     expect(BODY).toMatch(/previewCollapsed = next/);
     // On node.data, never component $state: a dock LRU eviction unmounts this
     // component, and component state would re-open the picture the player shut.
     expect(BODY).not.toMatch(/let previewCollapsed = \$state/);
+  });
+
+  it('⚠ the read goes STRAIGHT to the store, not through an intermediate derived', () => {
+    // ⚠ A REAL DEFECT SHIPPED AND WAS CAUGHT HERE, so this is a regression pin
+    // rather than style. Reading the flag through an intermediate
+    // `data = $derived(node?.data)` made the switch DEAD ON A FRESH SPAWN: a
+    // bare twotracks has NO `node.data` (the engine creates it only when the
+    // worklet first posts, which needs a running context), so the intermediate
+    // memoised `undefined` and never re-ran when the toggle created the object.
+    // The click wrote through correctly and the button never moved.
+    //
+    // ⚠ AND EVERY SOURCE-LEVEL ASSERTION ABOUT THE SWITCH PASSED THROUGHOUT —
+    // it reads the key, it writes the key, the bail guards the paint, the order
+    // is right. Only `face-screen-render.spec.ts`'s runtime leg could see it,
+    // which is the argument for that SUBJECTS row in one sentence.
+    expect(BODY).toMatch(/patch\.nodes\[nodeId\]\?\.data\?\.previewCollapsed/);
   });
 
   it('⚠ THE ORDER: the collapse skips the PAINT and never the engine READ', () => {
@@ -302,6 +317,25 @@ describe('twotracks face — SCREEN ON/OFF (unguarded, so asserted at source)', 
     // would stop for the wrong reason.
     expect(BODY).toMatch(/const gateEl = wrapEl;/);
     expect(BODY).toMatch(/bind:this=\{wrapEl\}/);
+  });
+
+  it('the two testids `face-screen-render` locates are the ones the body emits', () => {
+    // ⚠ THE RUNTIME LEG IS IN ANOTHER FILE AND CANNOT SEE THIS ONE. That spec
+    // builds its locators from a declared `prefix` — `<prefix>-face-screen-toggle`
+    // by convention, plus a `canvas` override — so a rename here would make it
+    // fail with "element(s) not found" and blame the FACE rather than the
+    // testid. Pinning both names on this side turns that into a unit failure
+    // naming the actual change.
+    expect(BODY).toContain('data-testid="twotracks-face-screen-toggle"');
+    expect(BODY).toContain('data-testid="twotracks-face-reels"');
+    // …and the element the override names really is the one the collapse
+    // removes, rather than something outside the `{#if}` that would never move.
+    const gate = BODY.indexOf('{#if !previewCollapsed}');
+    const reels = BODY.indexOf('data-testid="twotracks-face-reels"');
+    const toggle = BODY.indexOf('data-testid="twotracks-face-screen-toggle"');
+    expect(gate, 'the collapse gate exists').toBeGreaterThan(-1);
+    expect(reels, 'the reels container is INSIDE the collapse gate').toBeGreaterThan(gate);
+    expect(toggle, 'the toggle itself is OUTSIDE it — it must survive its own press').toBeLessThan(gate);
   });
 
   it('the extension records WHY the switch is here, since nothing else can', () => {

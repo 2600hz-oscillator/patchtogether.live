@@ -313,6 +313,23 @@ const SUBJECTS: readonly Subject[] = [
   // Stated here so a future reader does not delete it as a duplicate of a source
   // check that does not exist.
   { type: 'scope', prefix: 'scope', domain: 'audio', why: '⚠ THE ONLY RUNTIME LEG THIS SWITCH HAS: scope is an AUDIO def, so `video-face-screen-source.test.ts` (which filters `listVideoModuleDefs()`) cannot reach it and there is no source half to pair with — unlike every other row here. Spawns with domain: audio. What the switch protects is the rack PROBE\'s dual-trace / Lissajous screen plus its tuning graticule; and scope is the module where turning it OFF is legitimate rather than self-defeating, because unlike dockscope or videoOut the picture is NOT the product — `ch1_out`/`ch2_out` pass the signal through untouched and the `out` mono-video texture keeps rendering from the module\'s own drawFrame, so collapsing the preview reclaims space beside nine controls and costs the player only the view.' },
+  // ── twotracks (2026-08-24) — the THIRD audio-def row, and the second whose
+  // switch has NO source half ────────────────────────────────────────────────
+  //
+  // Same structural gap as `scope` directly above: `video-face-screen-source`
+  // filters `listVideoModuleDefs()` and twotracks is `domain: 'audio'`, so that
+  // gate cannot reach this switch in either direction. This row plus the
+  // source-level assertions in `twotracks-face-model.test.ts` are the whole of
+  // its coverage — do not delete it as a duplicate of a check that does not
+  // exist.
+  //
+  // ⚠ IT IS THE FIRST ROW WHOSE `canvas` OVERRIDE EXISTS BECAUSE THERE ARE TWO
+  // PICTURES, not because one is oddly named (quadralogical's reason). This body
+  // paints a reel per tape deck, so a single `twotracks-face-canvas` would have
+  // to be one of them and the assertion would go blind to the other; the
+  // override names the container the `{#if}` adds and removes, which is both of
+  // them.
+  { type: 'twotracks', prefix: 'twotracks', canvas: 'twotracks-face-reels', domain: 'audio', why: 'the two tape reels — each reel\'s peak envelope, the wash over the tape outside its loop window, the two draggable loop markers and the live playhead. ⚠ THE SWITCH IS LEGITIMATE HERE FOR THE `scope` REASON RATHER THAN THE `videoOut` ONE: the picture is a preview beside twenty-nine params across seven bands, four of which are not about the tape at all, so with it collapsed you still have a complete, usable tape machine — and on the fleet\'s second seven-band face, reclaiming that vertical space on the bands where the tape is not the subject is worth real screen. ⚠ AND THE SURFACE IS ALSO HOW FOUR PARAMS ARE OPERATED (start/end per reel are positions IN these pictures), which is why collapsing it is a VIEW choice and not a control loss: those four keep ordinary param cells in the TAPE bands, so the plate can still set a loop window with the screen off. ⚠ SCREEN OFF SKIPS THE PAINT AND NEVER THE PER-FRAME ENGINE READ, so switching it back on shows the LIVE tape rather than the frame it was wearing when it shut — the ORDER is asserted at source because no gate can see it.' },
 ] as const;
 
 /** The representative module for the PERSISTENCE leg — see that test's comment. */
