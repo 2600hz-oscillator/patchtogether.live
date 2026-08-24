@@ -474,7 +474,17 @@ Wave 4 listed two. Wave 6 listed five. **This wave lists five and finds a sixth*
    directions, so **authoring the `face` IS the promotion** and there is no count
    to maintain.
 2. **the VRT baselines (compact + dock)** — registered in `e2e/vrt/_shell-faces.ts`;
-   Linux CI authors them, nobody commits a PNG, dispatch with `task vrt:commit`.
+   Linux CI authors them and nobody commits a PNG.
+   ⚠ **DISPATCH WITH `GREP=<module> task vrt:commit`, NOT A BARE `task vrt:commit`.**
+   CLAUDE.md (VRT section, current text): the derivation *"reads PATHS ONLY"* — the
+   diff-content tokenizer was **deleted 2026-08-23** because it inferred module names
+   from prose and from ordinary identifiers and forced full sweeps on single-module
+   PRs three times in one week. **Every face PR touches a shared roster file whose
+   path names no module, so a bare dispatch on a face PR DERIVES FULL** — measured
+   41-56 min unscoped against ~3 min scoped (#1795). Passing `GREP=` is the single
+   biggest lever on this wave's loop, and it is safe because scoping cannot silently
+   under-capture where it gates: `vrt-strict` reddens on the next CI run and names
+   the file.
    ⚠ **Draining an exemption also enrols the LEGACY CARD** — predict 3 files, not 2
    (§1.2), and delete BOTH anchored entries (§1.3).
 3. **`EXTENSION_BODY_ROLES`** — `face-rack-status-source.test.ts:150`.
@@ -640,6 +650,73 @@ weakened or exempted — its subject went stale when `#1512` shipped the
 `fullViewBody` slot, and the same file already reads the SHELL as the subject for
 the very blocker this leg's message cites (`:346`). Whether correcting a stale
 subject counts as "fundamental CI change" is the owner's call.
+
+### 9.1.1 ⚠ IF ROUTE (b), *WHICH* SUBJECT? — two concrete forms, and the conditional-body case decides between them
+
+Route (b) is not one option, and the difference is the whole cost. Written out so
+the owner chooses between **concrete options rather than a direction.**
+
+⚠ **First, a correction to how (b) is naturally phrased.** "Read what the face
+renders instead of the card" makes the gate *still* red — a face body containing an
+`<input>` mounts typed entry under any subject. **The gate's actual premise is
+`face == cells`, and `cells have no text`, therefore `a module needing text cannot
+be a face`.** The `fullViewBody` slot falsified the FIRST clause, not the second.
+So the honest repair is not "look somewhere else" — it is **"the module may be a
+face if its face CARRIED the affordance"**, which is functional parity expressed as
+a gate. That makes (b1) below **strictly stronger than today's leg**, not weaker: it
+adds a requirement where today there is a flat prohibition.
+
+**(b1) THE PARITY FORM** — the recommended one.
+
+> A `generic-face` module whose CARD mounts typed entry is an offender **unless**
+> its def declares `face.extension: '<id>'` **and** that extension's `fullViewBody`
+> source also mounts typed entry — same `mountsTypedEntry` predicate, applied to
+> the body.
+
+* **Deny-by-default with no list.** There is no exemption roster to maintain and no
+  named carve-out; the escape is *carrying the affordance*, which is the outcome
+  wanted anyway.
+* **Anchored to the artifact in both directions.** If the body later drops its
+  `<input>`, the gate reddens again — which is exactly the regression a face PR
+  could otherwise introduce silently.
+* **Same tier, same file, same predicate, ~10 lines.** `mountsTypedEntry` and
+  `cardTemplate` are **already `export function`s** in that file (`:127`, `:144`),
+  `RegisteredDef` already carries `face?: ModuleFace` (`:99-104`), and `CARD_DIR`
+  (`:95`) is already the directory the extensions live under. The body resolver is the ten-line
+  `fullViewBodySource(extId)` that **already exists** in
+  `face-rack-status-source.test.ts:118-131` — a `shell-extension.ts` read plus two
+  regexes. Nothing new is invented.
+* ⚠ **It does NOT weaken the blocker.** `needs-note-entry-cell` stays live and its
+  probe is untouched: `ModuleShell` still has no text CELL, so a LANE still cannot
+  type, which is the capability the blocker actually names.
+
+**(b2) THE RENDER FORM** — *"whatever the face actually renders"*, i.e. a DOM oracle
+over the promoted face. **Refused, on three grounds:**
+
+* ⚠ **Wrong tier, and this is where the no-CI-changes ruling genuinely bites.** The
+  leg is a vitest source scan in the unit lane. A DOM oracle is an e2e — new CI
+  wall-time and a new mechanism, which is squarely the thing the ruling names, in a
+  way (b1) is not.
+* ⚠⚠ **It is BLIND on exactly the case this cohort is made of.** A device-picker
+  body renders its `<input>` only after a grant, and **CI has no device** — so the
+  scan reads "no typed entry" and the gate passes *for the wrong reason*. That is
+  CLAUDE.md's *"a gate whose PRECONDITION is the defect cannot fail on the defect"*,
+  arriving in its purest form: the condition the check measures would be made true
+  by the absence of hardware rather than by the code being right.
+* It cannot distinguish *"the body has no input"* from *"the body failed to mount"*.
+
+**So the conditional-body case the question turns on decides FOR (b1):** a SOURCE
+scan sees a conditional `<input>` regardless of its branch, and a RUNTIME scan does
+not — and for a cohort whose bodies are conditional on hardware that CI does not
+have, the runtime scan is blind precisely where the modules live.
+
+⚠ **One honest limitation of (b1), stated rather than discovered later.** A source
+scan cannot tell that the body's `<input>` is *the same affordance* the card had —
+only that the body has one of the same kind. A module could satisfy it by carrying
+an unrelated text field. That is a real gap, it is the same gap
+`module-docs-lint`'s family↔card leg names about itself (*"PRESENCE-ONLY … proves
+the family exists, not that its member COUNT is right"*), and it is the correct
+trade at this tier: presence is checkable in the unit lane, identity is not.
 
 **Nothing is blocked on the answer.** The five specs are written so the face
 design is identical either way; only the PR's file list changes.

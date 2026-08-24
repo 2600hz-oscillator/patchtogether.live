@@ -589,8 +589,13 @@ there is no count to maintain. Nothing to add by hand.
 
 ### 7.2 the VRT baselines — **PREDICT 3 FILES, NOT 2**
 
-Linux CI authors them; nobody commits a PNG; dispatch with `task vrt:commit`,
-which scopes the capture to the branch's diff and prints what it selected.
+Linux CI authors them; nobody commits a PNG.
+
+⚠ **Dispatch with `GREP=push2Control flox activate -- task vrt:commit`, NOT a bare
+`task vrt:commit`.** The scope derivation *"reads PATHS ONLY"* (CLAUDE.md, VRT
+section) since the diff-content tokenizer was deleted 2026-08-23, and **a face PR
+always touches a shared roster file whose path names no module — so a bare dispatch
+DERIVES FULL**: 41-56 min unscoped against ~3 min scoped (#1795).
 
 **The drain is a two-line edit and both lines are anchored:**
 
