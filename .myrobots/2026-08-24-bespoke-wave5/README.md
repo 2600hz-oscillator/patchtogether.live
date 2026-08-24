@@ -368,18 +368,38 @@ tab rail: ship untabbed on both; the keycap engraving: keep; chromaconsole's ope
 sentence: delete, as a relocation). What remains open:
 
 1. **`modtris.levelStep`: wire it or delete it?** `modtris-state.ts:129` says it is *"unused in
-   v1 stepper"*; `ModtrisState` has **no `level` field**, so there is nothing to threshold. The
-   def declares it, the card faders it, `contract-lock` pins it, and `docs.controls` promises
-   *"gravity speeds up each level"* — a behaviour that does not exist twice over. **This is
-   half of modtris' control surface.** Wiring it **changes how the module sounds** (the gate
-   rate would ramp where it is flat today) and needs a preview; deleting it makes modtris a
-   one-param module. Either way it is a contract change, and **the face cannot rank it honestly
-   until this is answered.**
+   v1 stepper"*, and `grep -n "params\." modtris-state.ts` returns exactly one consumer —
+   `gravitySecondsPerDrop(params.gravityBpm)`. The def declares it, the card faders it,
+   `contract-lock` pins it, and the Push card will rank it. **This is half of modtris' control
+   surface.** Wiring it **changes how the module sounds** (the gate rate would ramp where it is
+   flat today) and needs a preview; deleting it makes modtris a one-param module. Either way it
+   is a contract change, and **the face cannot rank it honestly until this is answered.**
+
+   ⚠ **AND THERE IS A LIVE DOCS DEFECT UNDERNEATH IT THAT IS TRUE WHICHEVER WAY THIS IS
+   RULED.** `docs.controls.levelStep` promises *"gravity speeds up each level"* — on a module
+   whose `ModtrisState` **has no `level` field at all.** So the documentation does not merely
+   describe an unwired control; it describes a **concept the module does not have**. That is
+   not contingent on the decision, it is wrong today, and it is on a module in `STRICT_DOCS`.
+   ⚠ `module-docs-lint` reads the DEF, so it is structurally blind to a `docs` string that
+   promises behaviour the implementation never had — the same blind spot `score` hit
+   independently (`score/spec.md §2.1`), which makes it a class rather than a typo.
 2. **Does "every video module gets a SCREEN ON/OFF toggle" extend to AUDIO-domain modules with
-   a card-drawn canvas?** `video-face-screen-source.test.ts` sweeps video defs only, so
-   frogger, modtris and pong are invisible to it. The specs propose the toggle for both (a rack
-   can hold several, each repainting every rAF) but flag it as the owner's call — **a fleet
-   rule is not an agent's to invent.**
+   a card-drawn canvas?** The specs propose the toggle for `frogger` and `modtris` but flag it
+   as the owner's call — **a fleet rule is not an agent's to invent.**
+
+   **The fact the decision turns on is a COST, and it is measured:** each of these boards
+   repaints on **every rAF**, unconditionally, for as long as the surface is mounted — and a
+   rack can hold several at once, plus `pong`. The video ruling's own justification is that OFF
+   *reclaims the vertical space while the module KEEPS RENDERING*; for an audio game the
+   equivalent question is whether a player who is not watching a board should still be paying
+   for its repaint. **These three are the only audio-domain modules in the fleet where that
+   question arises**, because they are the only ones whose primary surface is a continuously
+   redrawn canvas.
+
+   ⚠ **And the current gate is structurally blind to exactly these three.**
+   `video-face-screen-source.test.ts` sweeps **video defs only**, so `frogger`, `modtris` and
+   `pong` are outside its subject by construction — whichever way this is ruled, a rule that
+   covers them needs a gate that can see them, and today none exists.
 3. **Should `nibbles` paint the snake's length into its own framebuffer?** §2. Unlike frogger
    and modtris it has no in-canvas fallback, and adding one is a GPU-re-attest edit. Priced
    separately.
