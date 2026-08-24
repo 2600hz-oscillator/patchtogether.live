@@ -543,6 +543,18 @@ export const twotracksDef: AudioModuleDef = {
         // filter. The sub-headings are the only thing that says which knob
         // belongs to which stage — CUTOFF and RESONANCE mean nothing without
         // FILTER MODE beside them.
+        //
+        // ⚠ `clusterFlow: 'row'` IS LOAD-BEARING AND IT IS NOT ABOUT WIDTH.
+        // Stacked, these two equal-sized clusters would satisfy the CONSOLE GRID
+        // shape rule and this band would be handed a column ruler — which claims
+        // that COLUMN j MEANS THE SAME THING IN BOTH CLUSTERS. Here it does not:
+        // column 1 is EQ LOW above FILTER MODE, column 2 is EQ MID above CUTOFF.
+        // That is mixmstrs' channel strips and moog984's matrix rows read
+        // backwards — a table implying a correspondence the module does not
+        // have. Side by side there is nothing to align and the rule correctly
+        // stands down. The band is also one row instead of two, which is the
+        // compact default rather than the reason.
+        clusterFlow: 'row',
         clusters: [
           { label: 'eq', controls: ['eqLow_a', 'eqMid_a', 'eqHigh_a'] },
           { label: 'filter', controls: ['filterMode_a', 'cutoff_a', 'reso_a'] },
@@ -562,6 +574,9 @@ export const twotracksDef: AudioModuleDef = {
         id: 'b-tone',
         label: 'B · tone',
         controls: ['eqLow_b', 'eqMid_b', 'eqHigh_b', 'filterMode_b', 'cutoff_b', 'reso_b'],
+        // Same band, same argument — see reel A's above for why the clusters
+        // flow as a ROW rather than stacking into a console grid.
+        clusterFlow: 'row',
         clusters: [
           { label: 'eq', controls: ['eqLow_b', 'eqMid_b', 'eqHigh_b'] },
           { label: 'filter', controls: ['filterMode_b', 'cutoff_b', 'reso_b'] },

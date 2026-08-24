@@ -23,7 +23,7 @@
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
   import Knob from '$lib/ui/controls/Knob.svelte';
-  import { portsFromDef } from './card-kit';
+  import { paramSpec, portsFromDef } from './card-kit';
   import { onMeterFrame } from '$lib/ui/meter-frame';
   import {
     drawTwotracksReel, twotracksHandleHit, twotracksPosToFrac,
@@ -33,6 +33,44 @@
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
   const engineCtx = useEngine();
+
+  // ⚠ THE RANGES COME FROM THE DEF, ONCE. Every one of these was re-typed here
+  // as a literal and every one AGREED — so this is a maintainability conversion
+  // rather than a bug fix, and it is pixel-neutral (twotracks has no committed
+  // card baseline; it is in EXEMPT_FROM_VRT). What makes it worth doing WITH the
+  // promotion is that from here the DOCK renders these controls straight off the
+  // ParamDef while this card renders its own numbers, so a later edit to one
+  // copy would ship two surfaces disagreeing about one control.
+  //
+  // ⚠ RANGE ONLY — deliberately NOT in MAPPING_BOUND_CARDS, for two reasons the
+  // measurement found rather than assumed. RATE passes `units="×"` where the def
+  // declares none, so binding `units` would silently drop a suffix the card has
+  // always printed. And ECHOES passes `curve="linear"` against the def's
+  // `discrete` — which CLAUDE.md names as a live platform gap rather than a
+  // declaration bug (`Knob.svelte` has no discrete branch, so writing
+  // `discrete` here would green a gate and change nothing). The card does its
+  // own `Math.round` on that write; the FACE needs none, because the conic-knob
+  // model quantises discrete params itself.
+  const P = {
+    rate_a: paramSpec(twotracksDef, 'rate_a'),
+    echoes_a: paramSpec(twotracksDef, 'echoes_a'),
+    eqLow_a: paramSpec(twotracksDef, 'eqLow_a'),
+    eqMid_a: paramSpec(twotracksDef, 'eqMid_a'),
+    eqHigh_a: paramSpec(twotracksDef, 'eqHigh_a'),
+    cutoff_a: paramSpec(twotracksDef, 'cutoff_a'),
+    reso_a: paramSpec(twotracksDef, 'reso_a'),
+    rate_b: paramSpec(twotracksDef, 'rate_b'),
+    echoes_b: paramSpec(twotracksDef, 'echoes_b'),
+    eqLow_b: paramSpec(twotracksDef, 'eqLow_b'),
+    eqMid_b: paramSpec(twotracksDef, 'eqMid_b'),
+    eqHigh_b: paramSpec(twotracksDef, 'eqHigh_b'),
+    cutoff_b: paramSpec(twotracksDef, 'cutoff_b'),
+    reso_b: paramSpec(twotracksDef, 'reso_b'),
+    ab: paramSpec(twotracksDef, 'ab'),
+    a2b: paramSpec(twotracksDef, 'a2b'),
+    b2a: paramSpec(twotracksDef, 'b2a'),
+  } as const;
+
 
   const defaultFor = (k: string): number =>
     twotracksDef.params.find((p) => p.id === k)?.defaultValue ?? 0;
@@ -426,11 +464,11 @@
 
         <!-- 3-band EQ (assignable knobs) -->
         <div class="knob-row" data-testid="twotracks-eq-a">
-          <Knob value={eqLowA}  min={-12} max={12} defaultValue={0} label="LOW"  units="dB" curve="linear"
+          <Knob value={eqLowA}  min={P.eqLow_a.min} max={P.eqLow_a.max} defaultValue={P.eqLow_a.defaultValue} label="LOW"  units="dB" curve="linear"
             onchange={(v) => setNodeParam(id, 'eqLow_a', v)}  moduleId={id} paramId="eqLow_a" />
-          <Knob value={eqMidA}  min={-12} max={12} defaultValue={0} label="MID"  units="dB" curve="linear"
+          <Knob value={eqMidA}  min={P.eqMid_a.min} max={P.eqMid_a.max} defaultValue={P.eqMid_a.defaultValue} label="MID"  units="dB" curve="linear"
             onchange={(v) => setNodeParam(id, 'eqMid_a', v)}  moduleId={id} paramId="eqMid_a" />
-          <Knob value={eqHighA} min={-12} max={12} defaultValue={0} label="HIGH" units="dB" curve="linear"
+          <Knob value={eqHighA} min={P.eqHigh_a.min} max={P.eqHigh_a.max} defaultValue={P.eqHigh_a.defaultValue} label="HIGH" units="dB" curve="linear"
             onchange={(v) => setNodeParam(id, 'eqHigh_a', v)} moduleId={id} paramId="eqHigh_a" />
         </div>
 
@@ -440,20 +478,20 @@
             aria-label="Cycle filter mode A">
             {filterLabel(filterModeA)}
           </button>
-          <Knob value={cutoffA} min={20} max={20000} defaultValue={20000} label="CUT" units="Hz" curve="log"
+          <Knob value={cutoffA} min={P.cutoff_a.min} max={P.cutoff_a.max} defaultValue={P.cutoff_a.defaultValue} label="CUT" units="Hz" curve="log"
             onchange={(v) => setNodeParam(id, 'cutoff_a', v)} moduleId={id} paramId="cutoff_a" />
-          <Knob value={resoA}   min={0}  max={1}     defaultValue={0}     label="RES" curve="linear"
+          <Knob value={resoA}   min={P.reso_a.min}  max={P.reso_a.max}     defaultValue={P.reso_a.defaultValue}     label="RES" curve="linear"
             onchange={(v) => setNodeParam(id, 'reso_a', v)}   moduleId={id} paramId="reso_a" />
         </div>
 
         <!-- Echoes + Rate (assignable knobs); RATE has a 1× reset button -->
         <div class="knob-row">
           <div data-testid="twotracks-echoes">
-            <Knob value={echoesA} min={1} max={5} defaultValue={3} label="ECHOES" curve="linear"
+            <Knob value={echoesA} min={P.echoes_a.min} max={P.echoes_a.max} defaultValue={P.echoes_a.defaultValue} label="ECHOES" curve="linear"
               onchange={(v) => setNodeParam(id, 'echoes_a', Math.round(v))} moduleId={id} paramId="echoes_a" />
           </div>
           <div class="rate-knob">
-            <Knob value={rateA} min={-3} max={3} defaultValue={1} label="RATE" units="×" curve="linear"
+            <Knob value={rateA} min={P.rate_a.min} max={P.rate_a.max} defaultValue={P.rate_a.defaultValue} label="RATE" units="×" curve="linear"
               onchange={(v) => setNodeParam(id, 'rate_a', v)} moduleId={id} paramId="rate_a" />
             <button type="button" class="rate-reset nodrag" onclick={() => setNodeParam(id, 'rate_a', 1)}
               data-testid="twotracks-rate-reset" aria-label="Reset reel A speed to 1×">1×</button>
@@ -482,9 +520,9 @@
           <div class="ab-knob-wrap">
             <Knob
               value={abParam}
-              min={0}
-              max={1}
-              defaultValue={0}
+              min={P.ab.min}
+              max={P.ab.max}
+              defaultValue={P.ab.defaultValue}
               label="A/B"
               curve="linear"
               onchange={(v) => setNodeParam(id, 'ab', v)}
@@ -500,9 +538,9 @@
 
         <!-- Cross-feed: A→B / B→A (assignable knobs, default off) -->
         <div class="cross-strip" data-testid="twotracks-crossfeed">
-          <Knob value={a2bParam} min={0} max={1} defaultValue={0} label="A→B" curve="linear"
+          <Knob value={a2bParam} min={P.a2b.min} max={P.a2b.max} defaultValue={P.a2b.defaultValue} label="A→B" curve="linear"
             onchange={(v) => setNodeParam(id, 'a2b', v)} moduleId={id} paramId="a2b" />
-          <Knob value={b2aParam} min={0} max={1} defaultValue={0} label="B→A" curve="linear"
+          <Knob value={b2aParam} min={P.b2a.min} max={P.b2a.max} defaultValue={P.b2a.defaultValue} label="B→A" curve="linear"
             onchange={(v) => setNodeParam(id, 'b2a', v)} moduleId={id} paramId="b2a" />
         </div>
 
@@ -584,11 +622,11 @@
 
         <!-- 3-band EQ reel B (assignable knobs) -->
         <div class="knob-row" data-testid="twotracks-eq-b">
-          <Knob value={eqLowB}  min={-12} max={12} defaultValue={0} label="LOW"  units="dB" curve="linear"
+          <Knob value={eqLowB}  min={P.eqLow_b.min} max={P.eqLow_b.max} defaultValue={P.eqLow_b.defaultValue} label="LOW"  units="dB" curve="linear"
             onchange={(v) => setNodeParam(id, 'eqLow_b', v)}  moduleId={id} paramId="eqLow_b" />
-          <Knob value={eqMidB}  min={-12} max={12} defaultValue={0} label="MID"  units="dB" curve="linear"
+          <Knob value={eqMidB}  min={P.eqMid_b.min} max={P.eqMid_b.max} defaultValue={P.eqMid_b.defaultValue} label="MID"  units="dB" curve="linear"
             onchange={(v) => setNodeParam(id, 'eqMid_b', v)}  moduleId={id} paramId="eqMid_b" />
-          <Knob value={eqHighB} min={-12} max={12} defaultValue={0} label="HIGH" units="dB" curve="linear"
+          <Knob value={eqHighB} min={P.eqHigh_b.min} max={P.eqHigh_b.max} defaultValue={P.eqHigh_b.defaultValue} label="HIGH" units="dB" curve="linear"
             onchange={(v) => setNodeParam(id, 'eqHigh_b', v)} moduleId={id} paramId="eqHigh_b" />
         </div>
 
@@ -598,20 +636,20 @@
             aria-label="Cycle filter mode B">
             {filterLabel(filterModeB)}
           </button>
-          <Knob value={cutoffB} min={20} max={20000} defaultValue={20000} label="CUT" units="Hz" curve="log"
+          <Knob value={cutoffB} min={P.cutoff_b.min} max={P.cutoff_b.max} defaultValue={P.cutoff_b.defaultValue} label="CUT" units="Hz" curve="log"
             onchange={(v) => setNodeParam(id, 'cutoff_b', v)} moduleId={id} paramId="cutoff_b" />
-          <Knob value={resoB}   min={0}  max={1}     defaultValue={0}     label="RES" curve="linear"
+          <Knob value={resoB}   min={P.reso_b.min}  max={P.reso_b.max}     defaultValue={P.reso_b.defaultValue}     label="RES" curve="linear"
             onchange={(v) => setNodeParam(id, 'reso_b', v)}   moduleId={id} paramId="reso_b" />
         </div>
 
         <!-- Echoes + Rate reel B (assignable knobs); RATE has a 1× reset button -->
         <div class="knob-row">
           <div data-testid="twotracks-echoes-b">
-            <Knob value={echoesB} min={1} max={5} defaultValue={3} label="ECHOES" curve="linear"
+            <Knob value={echoesB} min={P.echoes_b.min} max={P.echoes_b.max} defaultValue={P.echoes_b.defaultValue} label="ECHOES" curve="linear"
               onchange={(v) => setNodeParam(id, 'echoes_b', Math.round(v))} moduleId={id} paramId="echoes_b" />
           </div>
           <div class="rate-knob">
-            <Knob value={rateB} min={-3} max={3} defaultValue={1} label="RATE" units="×" curve="linear"
+            <Knob value={rateB} min={P.rate_b.min} max={P.rate_b.max} defaultValue={P.rate_b.defaultValue} label="RATE" units="×" curve="linear"
               onchange={(v) => setNodeParam(id, 'rate_b', v)} moduleId={id} paramId="rate_b" />
             <button type="button" class="rate-reset nodrag" onclick={() => setNodeParam(id, 'rate_b', 1)}
               data-testid="twotracks-rate-reset-b" aria-label="Reset reel B speed to 1×">1×</button>

@@ -3480,6 +3480,14 @@ twotracks param start_b 0..1 linear default=0
 twotracks stereo audio_l_in_a+audio_r_in_a
 twotracks stereo audio_l_in_b+audio_r_in_b
 twotracks stereo out_l+out_r
+twotracks family twotracks-play-a kind=transport prefix=twotracks-play
+twotracks family twotracks-play-b kind=transport prefix=twotracks-play-b
+twotracks family twotracks-rec-a kind=transport prefix=twotracks-rec
+twotracks family twotracks-rec-b kind=transport prefix=twotracks-rec-b
+twotracks family twotracks-save-a kind=other prefix=twotracks-save
+twotracks family twotracks-save-b kind=other prefix=twotracks-save-b
+twotracks family twotracks-stop-a kind=transport prefix=twotracks-stop
+twotracks family twotracks-stop-b kind=transport prefix=twotracks-stop-b
 unityscalemathematik meta domain=audio
 unityscalemathematik in a_atten_cv cv param=aAtten cvScale=linear
 unityscalemathematik in a_curve_cv cv param=aCurve cvScale=linear
