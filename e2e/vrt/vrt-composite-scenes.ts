@@ -207,10 +207,21 @@ function setupSnhSeqScope(snh: number): (page: Page) => Promise<void> {
         // Slow BPM (60) so each 16th step ≈ 0.25 s — long enough that a fixed
         // run window reliably lands the suspend inside the rest step.
         {
-          id: 'seq',
+          // The gate-sampled S&H under test is CARTESIAN's param (the deleted
+          // SEQUENCER's went with it, 2026-08-24). KRIA supplies the clock and
+          // is deliberately NOT in the captured card list — only the cartesian,
+          // the module under test and the scope are composited.
+          id: 'clk',
           type: 'kria',
+          position: { x: 60, y: 900 },
+          domain: 'audio',
+          params: { bpm: 60, running: 1 },
+        },
+        {
+          id: 'seq',
+          type: 'cartesian',
           position: { x: 60, y: 70 },
-          params: { bpm: 60, running: 1, octave: 0, snh },
+          params: { octave: 0, snh },
         },
         { id: 'vco', type: 'analogVco', position: { x: 470, y: 70 } },
         {
@@ -222,6 +233,9 @@ function setupSnhSeqScope(snh: number): (page: Page) => Promise<void> {
         },
       ],
       [
+        // KRIA clocks the cartesian; the pad advance IS the gate edge.
+        { id: 'e_clk_seq', from: { nodeId: 'clk', portId: 'gate1' }, to: { nodeId: 'seq', portId: 'clock' },
+          sourceType: 'gate', targetType: 'gate' },
         // pitch (polyPitchGate) → SCOPE ch1: the held pitch CV trace.
         {
           id: 'e_pitch_sc',
@@ -270,10 +284,15 @@ function setupSnhSeqScope(snh: number): (page: Page) => Promise<void> {
       };
       w.__ydoc.transact(() => {
         w.__patch.nodes['seq'].data = {
-          steps: [
-            { on: true, midi: 72, chord: 'mono' }, // gated note
-            { on: false, midi: 72, chord: 'mono' }, // rest
-          ],
+          // CARTESIAN's clocked cursor walks the diagonal (pads 0, 5, 10, 15),
+          // so pad 0 carries the gated note and the pads it visits after it are
+          // RESTS — the same gated-then-rest cycle the old two-step sequencer
+          // pattern produced, which is what the S&H hold is observed across.
+          cells: Array.from({ length: 16 }, (_, i) => (
+            i === 0
+              ? { on: true, midi: 72, chord: 'mono' }
+              : { on: false, midi: 72, chord: 'mono' }
+          )),
         };
       });
     });
@@ -295,7 +314,9 @@ function setupSnhSeqScope(snh: number): (page: Page) => Promise<void> {
 }
 
 const SNH_SEQ_SCOPE_CARDS = [
-  '.svelte-flow__node-kria',
+  // KRIA is the off-screen CLOCK for this scene and is deliberately NOT
+  // composited — the cartesian is the module whose S&H the scene observes.
+  '.svelte-flow__node-cartesian',
   '.svelte-flow__node-analogVco',
   '.svelte-flow__node-scope',
 ];
@@ -469,10 +490,11 @@ function setupAdsrSustainScope(sustain: number): (page: Page) => Promise<void> {
           type: 'kria',
           position: { x: 60, y: 70 },
           domain: 'audio',
-          // BPM at the 30 floor → 0.5 s/step (the longest single-step gate
-          // window available); gateLength near-max so the gate holds high
-          // through the whole step bar the closing gap.
-          params: { bpm: 30, length: 1, isPlaying: 1, gateLength: 0.95, octave: 0 },
+          // BPM at the 30 floor → the longest available gate window. KRIA's
+          // per-step DURATION lane (0.95, seeded below) is what the deleted
+          // sequencer's `gateLength: 0.95` did: hold the gate high through
+          // almost the whole step.
+          params: { bpm: 30, running: 1 },
         },
         {
           id: 'adsr',
@@ -491,10 +513,12 @@ function setupAdsrSustainScope(sustain: number): (page: Page) => Promise<void> {
         { id: 'sc', type: 'scope', position: { x: 760, y: 70 }, domain: 'audio' },
       ],
       [
-        // seq GATE → ADSR gate — the real envelope-trigger chain.
+        // KRIA gate1 → ADSR gate — the real envelope-trigger chain. (This
+        // scene needs a GATE, not the S&H hold the sibling scenes observe, so
+        // KRIA drives the ADSR directly and there is no cartesian here.)
         {
           id: 'e_gate',
-          from: { nodeId: 'seq', portId: 'gate' },
+          from: { nodeId: 'seq', portId: 'gate1' },
           to: { nodeId: 'adsr', portId: 'gate' },
           sourceType: 'gate',
           targetType: 'gate',
@@ -519,7 +543,31 @@ function setupAdsrSustainScope(sustain: number): (page: Page) => Promise<void> {
       };
       w.__ydoc.transact(() => {
         w.__patch.nodes['seq'].data = {
-          steps: [{ on: true, midi: 60, chord: 'mono' }],
+          // KRIA pattern: track 1 armed on every step at scale-degree 0 /
+          // octave 1 off root 48 = MIDI 60, duration 0.95 (the old gateLength).
+          patterns: {
+            '0': {
+              tracks: [0, 1, 2, 3].map((t) => ({
+                trig: Array.from({ length: 16 }, () => t === 0),
+                ratchet: Array.from({ length: 16 }, () => 1),
+                note: Array.from({ length: 16 }, () => 0),
+                octave: Array.from({ length: 16 }, () => 1),
+                duration: Array.from({ length: 16 }, () => 0.95),
+                probability: Array.from({ length: 16 }, () => 1),
+                glide: Array.from({ length: 16 }, () => 0),
+                loopStart: 0,
+                loopLength: 16,
+                timeDivision: 1,
+                direction: 'forward',
+                muted: false,
+              })),
+              scale: 'major',
+              root: 48,
+            },
+          },
+          active: 0,
+          cued: null,
+          cueSteps: 0,
         };
       });
     });
@@ -601,10 +649,21 @@ function setupDepolarizerScope(): (page: Page) => Promise<void> {
       page,
       [
         {
-          id: 'seq',
+          // The gate-sampled S&H under test is CARTESIAN's param (the deleted
+          // SEQUENCER's went with it, 2026-08-24). KRIA supplies the clock and
+          // is deliberately NOT in the captured card list — only the cartesian,
+          // the module under test and the scope are composited.
+          id: 'clk',
           type: 'kria',
+          position: { x: 60, y: 900 },
+          domain: 'audio',
+          params: { bpm: 60, running: 1 },
+        },
+        {
+          id: 'seq',
+          type: 'cartesian',
           position: { x: 60, y: 70 },
-          params: { bpm: 60, running: 1, octave: 0, snh: 1 },
+          params: { octave: 0, snh: 1 },
         },
         { id: 'depol', type: 'depolarizer', position: { x: 470, y: 70 }, domain: 'audio' },
         {
@@ -616,6 +675,9 @@ function setupDepolarizerScope(): (page: Page) => Promise<void> {
         },
       ],
       [
+        // KRIA clocks the cartesian; the pad advance IS the gate edge.
+        { id: 'e_clk_seq', from: { nodeId: 'clk', portId: 'gate1' }, to: { nodeId: 'seq', portId: 'clock' },
+          sourceType: 'gate', targetType: 'gate' },
         // pitch (polyPitchGate) → DEPOLARIZER in (the CV under test).
         {
           id: 'e_pitch_depol',
@@ -653,10 +715,15 @@ function setupDepolarizerScope(): (page: Page) => Promise<void> {
       };
       w.__ydoc.transact(() => {
         w.__patch.nodes['seq'].data = {
-          steps: [
-            { on: true, midi: 48, chord: 'mono' }, // C3 = −1 V/oct
-            { on: false, midi: 48, chord: 'mono' }, // rest (S&H holds the pitch)
-          ],
+          // CARTESIAN's clocked cursor walks the diagonal (pads 0, 5, 10, 15),
+          // so pad 0 carries the gated note and the pads it visits after it are
+          // RESTS — the same gated-then-rest cycle the old two-step sequencer
+          // pattern produced, which is what the S&H hold is observed across.
+          cells: Array.from({ length: 16 }, (_, i) => (
+            i === 0
+              ? { on: true, midi: 48, chord: 'mono' }
+              : { on: false, midi: 48, chord: 'mono' }
+          )),
         };
       });
     });
@@ -675,7 +742,9 @@ function setupDepolarizerScope(): (page: Page) => Promise<void> {
 }
 
 const DEPOLARIZER_SCOPE_CARDS = [
-  '.svelte-flow__node-kria',
+  // KRIA is the off-screen CLOCK for this scene and is deliberately NOT
+  // composited — the cartesian is the module whose S&H the scene observes.
+  '.svelte-flow__node-cartesian',
   '.svelte-flow__node-depolarizer',
   '.svelte-flow__node-scope',
 ];
@@ -713,10 +782,21 @@ function setupScalerScope(): (page: Page) => Promise<void> {
       page,
       [
         {
-          id: 'seq',
+          // The gate-sampled S&H under test is CARTESIAN's param (the deleted
+          // SEQUENCER's went with it, 2026-08-24). KRIA supplies the clock and
+          // is deliberately NOT in the captured card list — only the cartesian,
+          // the module under test and the scope are composited.
+          id: 'clk',
           type: 'kria',
+          position: { x: 60, y: 900 },
+          domain: 'audio',
+          params: { bpm: 60, running: 1 },
+        },
+        {
+          id: 'seq',
+          type: 'cartesian',
           position: { x: 60, y: 70 },
-          params: { bpm: 60, running: 1, octave: 0, snh: 1 },
+          params: { octave: 0, snh: 1 },
         },
         // AMOUNT 0.5 → halves the pitch CV so the scaled trace is clearly
         // distinct (half-height) from the raw one.
@@ -730,6 +810,9 @@ function setupScalerScope(): (page: Page) => Promise<void> {
         },
       ],
       [
+        // KRIA clocks the cartesian; the pad advance IS the gate edge.
+        { id: 'e_clk_seq', from: { nodeId: 'clk', portId: 'gate1' }, to: { nodeId: 'seq', portId: 'clock' },
+          sourceType: 'gate', targetType: 'gate' },
         // pitch → SCALER in (type 'audio', accepts pitch) — the signal under test.
         {
           id: 'e_pitch_scl',
@@ -765,10 +848,15 @@ function setupScalerScope(): (page: Page) => Promise<void> {
       };
       w.__ydoc.transact(() => {
         w.__patch.nodes['seq'].data = {
-          steps: [
-            { on: true, midi: 72, chord: 'mono' }, // C5 = +1 V/oct
-            { on: false, midi: 72, chord: 'mono' }, // rest (S&H holds the pitch)
-          ],
+          // CARTESIAN's clocked cursor walks the diagonal (pads 0, 5, 10, 15),
+          // so pad 0 carries the gated note and the pads it visits after it are
+          // RESTS — the same gated-then-rest cycle the old two-step sequencer
+          // pattern produced, which is what the S&H hold is observed across.
+          cells: Array.from({ length: 16 }, (_, i) => (
+            i === 0
+              ? { on: true, midi: 72, chord: 'mono' }
+              : { on: false, midi: 72, chord: 'mono' }
+          )),
         };
       });
     });
@@ -787,7 +875,9 @@ function setupScalerScope(): (page: Page) => Promise<void> {
 }
 
 const SCALER_SCOPE_CARDS = [
-  '.svelte-flow__node-kria',
+  // KRIA is the off-screen CLOCK for this scene and is deliberately NOT
+  // composited — the cartesian is the module whose S&H the scene observes.
+  '.svelte-flow__node-cartesian',
   '.svelte-flow__node-scaler',
   '.svelte-flow__node-scope',
 ];
@@ -824,10 +914,21 @@ function setupPolarizerScope(): (page: Page) => Promise<void> {
       page,
       [
         {
-          id: 'seq',
+          // The gate-sampled S&H under test is CARTESIAN's param (the deleted
+          // SEQUENCER's went with it, 2026-08-24). KRIA supplies the clock and
+          // is deliberately NOT in the captured card list — only the cartesian,
+          // the module under test and the scope are composited.
+          id: 'clk',
           type: 'kria',
+          position: { x: 60, y: 900 },
+          domain: 'audio',
+          params: { bpm: 60, running: 1 },
+        },
+        {
+          id: 'seq',
+          type: 'cartesian',
           position: { x: 60, y: 70 },
-          params: { bpm: 60, running: 1, octave: 0, snh: 1 },
+          params: { octave: 0, snh: 1 },
         },
         { id: 'pol', type: 'polarizer', position: { x: 470, y: 70 }, domain: 'audio' },
         {
@@ -839,6 +940,9 @@ function setupPolarizerScope(): (page: Page) => Promise<void> {
         },
       ],
       [
+        // KRIA clocks the cartesian; the pad advance IS the gate edge.
+        { id: 'e_clk_seq', from: { nodeId: 'clk', portId: 'gate1' }, to: { nodeId: 'seq', portId: 'clock' },
+          sourceType: 'gate', targetType: 'gate' },
         // pitch (= 0.25 level) → POLARIZER in (cv) — the unipolar value under test.
         {
           id: 'e_pitch_pol',
@@ -875,10 +979,15 @@ function setupPolarizerScope(): (page: Page) => Promise<void> {
       };
       w.__ydoc.transact(() => {
         w.__patch.nodes['seq'].data = {
-          steps: [
-            { on: true, midi: 63, chord: 'mono' }, // D#4 = +0.25 V/oct = 0.25 level
-            { on: false, midi: 63, chord: 'mono' }, // rest (S&H holds the level)
-          ],
+          // CARTESIAN's clocked cursor walks the diagonal (pads 0, 5, 10, 15),
+          // so pad 0 carries the gated note and the pads it visits after it are
+          // RESTS — the same gated-then-rest cycle the old two-step sequencer
+          // pattern produced, which is what the S&H hold is observed across.
+          cells: Array.from({ length: 16 }, (_, i) => (
+            i === 0
+              ? { on: true, midi: 63, chord: 'mono' }
+              : { on: false, midi: 63, chord: 'mono' }
+          )),
         };
       });
     });
@@ -897,7 +1006,9 @@ function setupPolarizerScope(): (page: Page) => Promise<void> {
 }
 
 const POLARIZER_SCOPE_CARDS = [
-  '.svelte-flow__node-kria',
+  // KRIA is the off-screen CLOCK for this scene and is deliberately NOT
+  // composited — the cartesian is the module whose S&H the scene observes.
+  '.svelte-flow__node-cartesian',
   '.svelte-flow__node-polarizer',
   '.svelte-flow__node-scope',
 ];
@@ -936,10 +1047,21 @@ function setupMixerSumScope(): (page: Page) => Promise<void> {
       page,
       [
         {
-          id: 'seq',
+          // The gate-sampled S&H under test is CARTESIAN's param (the deleted
+          // SEQUENCER's went with it, 2026-08-24). KRIA supplies the clock and
+          // is deliberately NOT in the captured card list — only the cartesian,
+          // the module under test and the scope are composited.
+          id: 'clk',
           type: 'kria',
+          position: { x: 60, y: 900 },
+          domain: 'audio',
+          params: { bpm: 60, running: 1 },
+        },
+        {
+          id: 'seq',
+          type: 'cartesian',
           position: { x: 60, y: 70 },
-          params: { bpm: 60, running: 1, octave: 0, snh: 1 },
+          params: { octave: 0, snh: 1 },
         },
         // Ch2 at 0.5 so the two summed copies of pitch land at distinct weights.
         {
@@ -958,6 +1080,9 @@ function setupMixerSumScope(): (page: Page) => Promise<void> {
         },
       ],
       [
+        // KRIA clocks the cartesian; the pad advance IS the gate edge.
+        { id: 'e_clk_seq', from: { nodeId: 'clk', portId: 'gate1' }, to: { nodeId: 'seq', portId: 'clock' },
+          sourceType: 'gate', targetType: 'gate' },
         // pitch (= +1 level) fans into mixer in1 (Ch1=1.0) …
         {
           id: 'e_pitch_in1',
@@ -1001,10 +1126,15 @@ function setupMixerSumScope(): (page: Page) => Promise<void> {
       };
       w.__ydoc.transact(() => {
         w.__patch.nodes['seq'].data = {
-          steps: [
-            { on: true, midi: 72, chord: 'mono' }, // C5 = +1 V/oct = +1 level
-            { on: false, midi: 72, chord: 'mono' }, // rest (S&H holds the level)
-          ],
+          // CARTESIAN's clocked cursor walks the diagonal (pads 0, 5, 10, 15),
+          // so pad 0 carries the gated note and the pads it visits after it are
+          // RESTS — the same gated-then-rest cycle the old two-step sequencer
+          // pattern produced, which is what the S&H hold is observed across.
+          cells: Array.from({ length: 16 }, (_, i) => (
+            i === 0
+              ? { on: true, midi: 72, chord: 'mono' }
+              : { on: false, midi: 72, chord: 'mono' }
+          )),
         };
       });
     });
@@ -1023,7 +1153,9 @@ function setupMixerSumScope(): (page: Page) => Promise<void> {
 }
 
 const MIXER_SUM_SCOPE_CARDS = [
-  '.svelte-flow__node-kria',
+  // KRIA is the off-screen CLOCK for this scene and is deliberately NOT
+  // composited — the cartesian is the module whose S&H the scene observes.
+  '.svelte-flow__node-cartesian',
   '.svelte-flow__node-mixer',
   '.svelte-flow__node-scope',
 ];
