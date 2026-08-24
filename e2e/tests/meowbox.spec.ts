@@ -33,7 +33,7 @@
 //  not a reliable assertion in the browser.
 
 import { test, expect, type Page } from '@playwright/test';
-import { spawnPatch } from './_helpers';
+import { spawnPatch, seedKriaWith, buildKriaMidiData } from './_helpers';
 import { sampleScopeRms, scopePollMsg } from '../_helpers/scope-poll';
 
 interface ScopeSnapshot { ch1?: Float32Array }
@@ -78,21 +78,7 @@ async function readSeqVOct(page: Page, seqId: string): Promise<number | null> {
 }
 
 async function setSeqPattern(page: Page, seqId: string, midi: number): Promise<void> {
-  await page.evaluate(
-    ({ id, m }) => {
-      const w = globalThis as unknown as {
-        __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
-        __ydoc: { transact: (fn: () => void) => void };
-      };
-      w.__ydoc.transact(() => {
-        const seq = w.__patch.nodes[id];
-        if (!seq) return;
-        if (!seq.data) seq.data = {};
-        seq.data.steps = Array.from({ length: 32 }, () => ({ on: true, midi: m, chord: 'mono' }));
-      });
-    },
-    { id: seqId, m: midi },
-  );
+  await seedKriaWith(page, seqId, buildKriaMidiData(Array.from({ length: 4 }, () => midi), { duration: 0.5 }));
 }
 
 test.describe('MEOWBOX V/oct integration', () => {
@@ -113,11 +99,11 @@ test.describe('MEOWBOX V/oct integration', () => {
         { id: 'out',   type: 'audioOut',  params: { master: 0.1 } },
       ],
       [
-        { id: 'e-gate',  from: { nodeId: 'seq', portId: 'gate' },  to: { nodeId: 'meow', portId: 'gate' },  sourceType: 'gate', targetType: 'gate' },
+        { id: 'e-gate',  from: { nodeId: 'seq', portId: 'gate1' },  to: { nodeId: 'meow', portId: 'gate' },  sourceType: 'gate', targetType: 'gate' },
         // The load-bearing edge: sequencer's polyPitchGate output → meowbox's
         // 1V/oct pitch input. The engine routes lane 0 (root pitch) via a
         // splitter (see resolveConnection in poly.ts).
-        { id: 'e-pitch', from: { nodeId: 'seq', portId: 'pitch' }, to: { nodeId: 'meow', portId: 'pitch' }, sourceType: 'polyPitchGate', targetType: 'pitch' },
+        { id: 'e-pitch', from: { nodeId: 'seq', portId: 'pitch1' }, to: { nodeId: 'meow', portId: 'pitch' }, sourceType: 'polyPitchGate', targetType: 'pitch' },
         { id: 'e-tap',   from: { nodeId: 'meow', portId: 'L' },    to: { nodeId: 'scope', portId: 'ch1' }, sourceType: 'audio', targetType: 'audio' },
         { id: 'e-out',   from: { nodeId: 'scope', portId: 'ch1_out' }, to: { nodeId: 'out', portId: 'L' },  sourceType: 'audio', targetType: 'audio' },
       ],
@@ -161,8 +147,8 @@ test.describe('MEOWBOX V/oct integration', () => {
         { id: 'meow',  type: 'meowbox',   params: { pitch: 0, morph: 0.25, decay: 0.4, level: 1 } },
       ],
       [
-        { id: 'e-gate',  from: { nodeId: 'seq', portId: 'gate' },  to: { nodeId: 'meow', portId: 'gate' },  sourceType: 'gate', targetType: 'gate' },
-        { id: 'e-pitch', from: { nodeId: 'seq', portId: 'pitch' }, to: { nodeId: 'meow', portId: 'pitch' }, sourceType: 'polyPitchGate', targetType: 'pitch' },
+        { id: 'e-gate',  from: { nodeId: 'seq', portId: 'gate1' },  to: { nodeId: 'meow', portId: 'gate' },  sourceType: 'gate', targetType: 'gate' },
+        { id: 'e-pitch', from: { nodeId: 'seq', portId: 'pitch1' }, to: { nodeId: 'meow', portId: 'pitch' }, sourceType: 'polyPitchGate', targetType: 'pitch' },
       ],
     );
 
@@ -268,7 +254,7 @@ test.describe('MEOWBOX V/oct integration', () => {
         { id: 'out',   type: 'audioOut',  params: { master: 0.05 } },
       ],
       [
-        { id: 'e-gate',  from: { nodeId: 'seq',  portId: 'gate' },     to: { nodeId: 'meow', portId: 'gate' }, sourceType: 'gate',  targetType: 'gate'  },
+        { id: 'e-gate',  from: { nodeId: 'seq', portId: 'gate1' },     to: { nodeId: 'meow', portId: 'gate' }, sourceType: 'gate',  targetType: 'gate'  },
         { id: 'e-tap',   from: { nodeId: 'meow', portId: 'L' },        to: { nodeId: 'scope', portId: 'ch1'  }, sourceType: 'audio', targetType: 'audio' },
         { id: 'e-out',   from: { nodeId: 'scope', portId: 'ch1_out' }, to: { nodeId: 'out',  portId: 'L'    }, sourceType: 'audio', targetType: 'audio' },
       ],
@@ -291,9 +277,9 @@ test.describe('MEOWBOX V/oct integration', () => {
         { id: 'out',   type: 'audioOut',  params: { master: 0.05 } },
       ],
       [
-        { id: 'e-gate',  from: { nodeId: 'seq',  portId: 'gate' },     to: { nodeId: 'meow', portId: 'gate'  }, sourceType: 'gate',          targetType: 'gate'  },
+        { id: 'e-gate',  from: { nodeId: 'seq', portId: 'gate1' },     to: { nodeId: 'meow', portId: 'gate'  }, sourceType: 'gate',          targetType: 'gate'  },
         // The load-bearing edge: poly→pitch routes lane 0 V/oct.
-        { id: 'e-pitch', from: { nodeId: 'seq',  portId: 'pitch' },    to: { nodeId: 'meow', portId: 'pitch' }, sourceType: 'polyPitchGate', targetType: 'pitch' },
+        { id: 'e-pitch', from: { nodeId: 'seq', portId: 'pitch1' },    to: { nodeId: 'meow', portId: 'pitch' }, sourceType: 'polyPitchGate', targetType: 'pitch' },
         { id: 'e-tap',   from: { nodeId: 'meow', portId: 'L' },        to: { nodeId: 'scope', portId: 'ch1'   }, sourceType: 'audio',         targetType: 'audio' },
         { id: 'e-out',   from: { nodeId: 'scope', portId: 'ch1_out' }, to: { nodeId: 'out',  portId: 'L'     }, sourceType: 'audio',         targetType: 'audio' },
       ],

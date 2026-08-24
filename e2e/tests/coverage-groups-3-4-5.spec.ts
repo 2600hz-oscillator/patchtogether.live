@@ -97,7 +97,7 @@ test.fixme('lfo: phase outputs emit cv that crosses zero', { annotation: { type:
 });
 
 test('adsr: gate ping triggers an attack-then-decay envelope on env output', async ({ page, rack, errorWatch }) => {
-  // 240 BPM sequencer at gateLength=0.5 → gate cycles every ~125 ms.
+  // 240 BPM kria with all-on track-1 trigs → gate1 pulses every ~250 ms.
   // env (cv 0..1) -> scope.ch1 captured as audio.
   await spawnPatch(
     page,
@@ -107,24 +107,11 @@ test('adsr: gate ping triggers an attack-then-decay envelope on env output', asy
       { id: 'scp', type: 'scope',     params: { timeMs: 200, ch1Range: 1 } },
     ],
     [
-      { id: 'e1', from: { nodeId: 'seq', portId: 'gate' }, to: { nodeId: 'env', portId: 'gate' }, sourceType: 'gate', targetType: 'gate' },
+      { id: 'e1', from: { nodeId: 'seq', portId: 'gate1' }, to: { nodeId: 'env', portId: 'gate' }, sourceType: 'gate', targetType: 'gate' },
       { id: 'e2', from: { nodeId: 'env', portId: 'env'  }, to: { nodeId: 'scp', portId: 'ch1'  }, sourceType: 'cv',   targetType: 'audio' },
     ],
   );
-  await page.evaluate(() => {
-    const w = globalThis as unknown as {
-      __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
-      __ydoc: { transact: (fn: () => void) => void };
-    };
-    w.__ydoc.transact(() => {
-      const seq = w.__patch.nodes['seq'];
-      if (!seq.data) seq.data = {};
-      seq.data.steps = [
-        { on: true, midi: 60 }, { on: true, midi: 60 },
-        { on: true, midi: 60 }, { on: true, midi: 60 },
-      ];
-    });
-  });
+  await seedKriaGate(page, 'seq');
 
   await runFor(page, 600);
 
@@ -288,7 +275,8 @@ test('unityscalemathematik: u_in passthrough scaled by unityAtten', async ({ pag
 });
 
 test('timelorde: external clock drives gate-divider outputs', async ({ page, rack }) => {
-  // Drive timelorde.clock from a sequencer's clock_out. Verify that
+  // Drive timelorde.clock from kria's gate1 train (all-on trigs = one rising
+  // edge per step — a clock, to timelorde's edge:'trigger' input). Verify that
   // any one of timelorde's divider outputs fires.
 
   await spawnPatch(
@@ -299,22 +287,11 @@ test('timelorde: external clock drives gate-divider outputs', async ({ page, rac
       { id: 'scp', type: 'scope',     params: { timeMs: 50, ch1Range: 1 } },
     ],
     [
-      { id: 'e1', from: { nodeId: 'seq', portId: 'clock' }, to: { nodeId: 'tl',  portId: 'clock' }, sourceType: 'gate', targetType: 'gate' },
+      { id: 'e1', from: { nodeId: 'seq', portId: 'gate1' }, to: { nodeId: 'tl',  portId: 'clock' }, sourceType: 'gate', targetType: 'gate' },
       { id: 'e2', from: { nodeId: 'tl',  portId: '1x'    }, to: { nodeId: 'scp', portId: 'ch1'   }, sourceType: 'gate', targetType: 'audio' },
     ],
   );
-  // Lay down steps so the seq clock_out fires.
-  await page.evaluate(() => {
-    const w = globalThis as unknown as {
-      __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
-      __ydoc: { transact: (fn: () => void) => void };
-    };
-    w.__ydoc.transact(() => {
-      const seq = w.__patch.nodes['seq'];
-      if (!seq.data) seq.data = {};
-      seq.data.steps = Array.from({ length: 8 }, () => ({ on: true, midi: 60 }));
-    });
-  });
+  await seedKriaGate(page, 'seq');
 
   await runFor(page, 1200);
 
@@ -457,7 +434,7 @@ test('score: tickIndex advances + currentNoteId resolves to laid-down note', asy
 });
 
 test('cartesian: external clock drives pitch output (poly cable, lane 0 = pitch)', async ({ page, rack }) => {
-  // Drive cartesian.clock from sequencer.clock_out. Its pitch output is
+  // Drive cartesian.clock from kria's gate1 train. Its pitch output is
   // a polyPitchGate; route lane 0 into a scope as cv to verify motion.
   await spawnPatch(
     page,
@@ -467,24 +444,13 @@ test('cartesian: external clock drives pitch output (poly cable, lane 0 = pitch)
       { id: 'scp',  type: 'scope',      params: { timeMs: 200, ch1Range: 1 } },
     ],
     [
-      { id: 'e1', from: { nodeId: 'seq',  portId: 'clock' }, to: { nodeId: 'cart', portId: 'clock' }, sourceType: 'gate', targetType: 'gate' },
+      { id: 'e1', from: { nodeId: 'seq',  portId: 'gate1' }, to: { nodeId: 'cart', portId: 'clock' }, sourceType: 'gate', targetType: 'gate' },
       // pitch is polyPitchGate; route the lane-0 pitch into ch1 (the resolver
       // pulls lane 0 pitch for a mono audio sink).
       { id: 'e2', from: { nodeId: 'cart', portId: 'pitch' }, to: { nodeId: 'scp', portId: 'ch1' }, sourceType: 'polyPitchGate', targetType: 'audio' },
     ],
   );
-  // Lay down steps so the seq clock_out fires.
-  await page.evaluate(() => {
-    const w = globalThis as unknown as {
-      __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
-      __ydoc: { transact: (fn: () => void) => void };
-    };
-    w.__ydoc.transact(() => {
-      const seq = w.__patch.nodes['seq'];
-      if (!seq.data) seq.data = {};
-      seq.data.steps = Array.from({ length: 8 }, () => ({ on: true, midi: 60 }));
-    });
-  });
+  await seedKriaGate(page, 'seq');
 
   await runFor(page, 800);
 
@@ -495,7 +461,7 @@ test('cartesian: external clock drives pitch output (poly cable, lane 0 = pitch)
 });
 
 test('integration (Group 4): sequencer drives 3 drum voices in parallel via mixer', async ({ page, rack, errorWatch }) => {
-  // sequencer.gate -> drummergirl + meowbox + qbrt (gate/ping inputs).
+  // kria.gate1 -> drummergirl + meowbox + qbrt (gate/ping inputs).
   // All three sum into a mixer; the mixer reads in scope.
   await spawnPatch(
     page,
@@ -509,9 +475,9 @@ test('integration (Group 4): sequencer drives 3 drum voices in parallel via mixe
     ],
     [
       // Drive each voice with the same gate.
-      { id: 'g1', from: { nodeId: 'seq', portId: 'gate'  }, to: { nodeId: 'dg', portId: 'gate'  }, sourceType: 'gate', targetType: 'gate' },
-      { id: 'g2', from: { nodeId: 'seq', portId: 'gate'  }, to: { nodeId: 'mb', portId: 'gate'  }, sourceType: 'gate', targetType: 'gate' },
-      { id: 'g3', from: { nodeId: 'seq', portId: 'gate'  }, to: { nodeId: 'qb', portId: 'ping'  }, sourceType: 'gate', targetType: 'gate' },
+      { id: 'g1', from: { nodeId: 'seq', portId: 'gate1' }, to: { nodeId: 'dg', portId: 'gate'  }, sourceType: 'gate', targetType: 'gate' },
+      { id: 'g2', from: { nodeId: 'seq', portId: 'gate1' }, to: { nodeId: 'mb', portId: 'gate'  }, sourceType: 'gate', targetType: 'gate' },
+      { id: 'g3', from: { nodeId: 'seq', portId: 'gate1' }, to: { nodeId: 'qb', portId: 'ping'  }, sourceType: 'gate', targetType: 'gate' },
       // Sum: drummergirl + meowbox(L) + qbrt(L) into mixer.in1..in3.
       { id: 'a1', from: { nodeId: 'dg', portId: 'audio' }, to: { nodeId: 'mix', portId: 'in1' } },
       { id: 'a2', from: { nodeId: 'mb', portId: 'L'     }, to: { nodeId: 'mix', portId: 'in2' } },
@@ -520,17 +486,7 @@ test('integration (Group 4): sequencer drives 3 drum voices in parallel via mixe
       { id: 'm1', from: { nodeId: 'mix', portId: 'audio' }, to: { nodeId: 'scp', portId: 'ch1' } },
     ],
   );
-  await page.evaluate(() => {
-    const w = globalThis as unknown as {
-      __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
-      __ydoc: { transact: (fn: () => void) => void };
-    };
-    w.__ydoc.transact(() => {
-      const seq = w.__patch.nodes['seq'];
-      if (!seq.data) seq.data = {};
-      seq.data.steps = Array.from({ length: 4 }, () => ({ on: true, midi: 60 }));
-    });
-  });
+  await seedKriaGate(page, 'seq');
 
   await runFor(page, 1000);
 

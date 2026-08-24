@@ -110,7 +110,7 @@ test.fixme('right-click → Duplicate deep-clones data (mutating dup does not af
         id: 'seq-source',
         type: 'kria',
         position: { x: 100, y: 100 },
-        params: { bpm: 120, length: 4 },
+        params: { bpm: 120 },
       },
     ],
     [],

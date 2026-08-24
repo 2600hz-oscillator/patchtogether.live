@@ -1240,47 +1240,52 @@ const DRIVERS: Record<string, PerPortDriver> = {
   pentemelodica: {
     upstream: () => ({
       nodes: [
-        kriaGate('drv-clk').node,
-        { id: 'drv-pseq', type: 'cartesian', position: { x: 60, y: 220 }, domain: 'audio' },
+        // TIMELORDE is the rack transport CLIP PLAYER locks to (presence-
+        // based, no cable); the clip's 5 stacked notes ride lane 1's poly
+        // chord cable — the only surviving source that can gate ALL FIVE
+        // voices (cartesian chords gate at most 4 lanes: root/3rd/5th/oct).
+        { id: 'drv-tl', type: 'timelorde', position: { x: 60, y: 60 }, domain: 'audio', params: { bpm: 240, running: 1 } },
+        { id: 'drv-cp', type: 'clipplayer', position: { x: 60, y: 220 }, domain: 'audio' },
       ],
       edges: [
         {
-          id: 'e-drv-clk',
-          from: { nodeId: 'drv-clk',  portId: 'gate1' },
-          to:   { nodeId: 'drv-pseq', portId: 'clock' },
-          sourceType: 'gate', targetType: 'gate',
-        },
-        {
           id: 'e-drv-poly',
-          from: { nodeId: 'drv-pseq', portId: 'pitch' },
-          to:   { nodeId: 'sut',      portId: 'poly' },
+          from: { nodeId: 'drv-cp', portId: 'pitch1' },
+          to:   { nodeId: 'sut',    portId: 'poly' },
           sourceType: 'polyPitchGate', targetType: 'polyPitchGate',
         },
       ],
     }),
     postSpawn: async (page) => {
-      // Seed KRIA (the clock) + CARTESIAN pads with maj chords so the poly
-      // cable carries multi-note chords — the CLOCKED cursor walks the
-      // diagonal and every pad it lands on gates a triad.
-      const clk = kriaGate('drv-clk');
-      await page.evaluate((d) => {
+      // Launch a looped clip whose step 0 stacks FIVE notes (C3 E3 G3 C4 E4)
+      // — every pentemelodica voice gets a gated lane, and the 2-step loop
+      // re-triggers the gates each cycle.
+      await page.evaluate(() => {
         const w = globalThis as unknown as {
           __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
           __ydoc: { transact: (fn: () => void) => void };
         };
         w.__ydoc.transact(() => {
-          const c = w.__patch.nodes['drv-clk'];
-          if (c) { if (!c.data) c.data = {}; Object.assign(c.data, d); }
-          const n = w.__patch.nodes['drv-pseq'];
+          const n = w.__patch.nodes['drv-cp'];
           if (!n) return;
           if (!n.data) n.data = {};
-          n.data.cells = Array.from({ length: 16 }, (_, i) => (
-            { on: true, midi: [60, 65, 67, 72][i % 4], chord: 'maj' }
-          ));
+          n.data.clips = {
+            '0': {
+              kind: 'note', lengthSteps: 2, root: 48, loop: true,
+              steps: [
+                { step: 0, midi: 48, velocity: 127, lengthSteps: 1 },
+                { step: 0, midi: 52, velocity: 127, lengthSteps: 1 },
+                { step: 0, midi: 55, velocity: 127, lengthSteps: 1 },
+                { step: 0, midi: 60, velocity: 127, lengthSteps: 1 },
+                { step: 0, midi: 64, velocity: 127, lengthSteps: 1 },
+              ],
+            },
+          };
+          n.data.queued = [0, null, null, null, null, null, null, null];
         });
-      }, clk.data);
+      });
     },
-    note: 'PENTEMELODICA: drive `poly` from a self-running POLYSEQZ (4 maj-chord steps) so all 5 voices + out_l/out_r emit (voices are ADSR-gated → silent without a gated poly lane)',
+    note: 'PENTEMELODICA: drive `poly` from CLIP PLAYER (5-note stacked clip, TIMELORDE transport) so all 5 voices + out_l/out_r emit — the only surviving source that gates 5 lanes',
   },
 };
 

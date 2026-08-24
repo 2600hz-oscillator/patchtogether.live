@@ -34,7 +34,7 @@ test('save-load: round-trip preserves nodes, edges, params, and sequencer step d
       {
         id: 'seq',
         type: 'kria',
-        params: { bpm: 180, length: 8, isPlaying: 1, gateLength: 0.4 },
+        params: { bpm: 180, running: 1 },
       },
       { id: 'vco',  type: 'analogVco' },
       { id: 'adsr', type: 'adsr', params: { attack: 0.005, decay: 0.08, sustain: 0.3, release: 0.15 } },
@@ -42,8 +42,8 @@ test('save-load: round-trip preserves nodes, edges, params, and sequencer step d
       { id: 'out',  type: 'audioOut', params: { master: 0.4 } },
     ],
     [
-      { id: 'e1', from: { nodeId: 'seq',  portId: 'pitch' }, to: { nodeId: 'vco',  portId: 'pitch' }, sourceType: 'pitch', targetType: 'pitch' },
-      { id: 'e2', from: { nodeId: 'seq',  portId: 'gate'  }, to: { nodeId: 'adsr', portId: 'gate'  }, sourceType: 'gate',  targetType: 'gate'  },
+      { id: 'e1', from: { nodeId: 'seq', portId: 'pitch1' }, to: { nodeId: 'vco',  portId: 'pitch' }, sourceType: 'pitch', targetType: 'pitch' },
+      { id: 'e2', from: { nodeId: 'seq', portId: 'gate1' }, to: { nodeId: 'adsr', portId: 'gate'  }, sourceType: 'gate',  targetType: 'gate'  },
       { id: 'e3', from: { nodeId: 'vco',  portId: 'sine'  }, to: { nodeId: 'vca',  portId: 'audio' } },
       { id: 'e4', from: { nodeId: 'adsr', portId: 'env'   }, to: { nodeId: 'vca',  portId: 'cv'    }, sourceType: 'cv', targetType: 'cv' },
       { id: 'e5', from: { nodeId: 'vca',  portId: 'audio' }, to: { nodeId: 'out',  portId: 'L'     } },

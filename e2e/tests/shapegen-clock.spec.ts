@@ -84,7 +84,7 @@
 
 import { test, expect } from './_fixtures';
 import { type Page } from '@playwright/test';
-import { spawnPatch } from './_helpers';
+import { spawnPatch, seedKriaGate } from './_helpers';
 
 /** Read the SHAPEGEN factory's regenCount via the engine read API. The
  *  counter increments exactly once per shape-list regeneration; held
@@ -177,17 +177,18 @@ test.describe('SHAPEGEN — CLOCK gate sample-and-hold', () => {
           params: { speed: 1 } },
         { id: 'sg',   type: 'shapegen', position: { x: 500, y: 100 }, domain: 'video' },
         { id: 'clkSeq', type: 'kria', position: { x: 100, y: 320 }, domain: 'audio',
-          params: { bpm: 30, length: 8, isPlaying: 1 } },
+          params: { bpm: 30, running: 1 } },
       ],
       [
         // Time-varying video source → SHAPEGEN.raster_a.
         { id: 'e_a',    from: { nodeId: 'src',   portId: 'out' },   to: { nodeId: 'sg', portId: 'raster_a' },
           sourceType: 'video',     targetType: 'video' },
         // SEQUENCER clock-out → SHAPEGEN.clock_in (gate→cv via CV bridge).
-        { id: 'e_clk',  from: { nodeId: 'clkSeq', portId: 'clock' }, to: { nodeId: 'sg', portId: 'clock_in' },
+        { id: 'e_clk',  from: { nodeId: 'clkSeq', portId: 'gate1' }, to: { nodeId: 'sg', portId: 'clock_in' },
           sourceType: 'gate',      targetType: 'cv' },
       ],
     );
+    await seedKriaGate(page, 'clkSeq');
 
     await expect(page.locator('[data-testid="shapegen-card"]')).toHaveCount(1);
 

@@ -29,7 +29,7 @@
 // sequencer→pluck→audible-tuned-string chain.
 
 import { test, expect } from './_fixtures';
-import { spawnPatch } from './_helpers';
+import { spawnPatch, seedKriaWith, buildKriaMidiData } from './_helpers';
 import { readScopePeakOverWindow, readScopeSnapshot } from './_module-coverage-helpers';
 
 test.describe.configure({ mode: 'parallel' });
@@ -63,7 +63,7 @@ test('KARPLUS real chain: SEQUENCER gate+pitch → pluck → AUDIOOUT — audibl
       // The REAL default-mode strike source: the sequencer's own internal
       // clock (isPlaying=1), not a synthetic gate injection.
       { id: 'a-seq', type: 'kria', position: { x: 60,  y: 60 }, domain: 'audio',
-        params: { bpm: 120, length: 4, isPlaying: 1, gateLength: 0.25 } },
+        params: { bpm: 120, running: 1 } },
       { id: 'a-ks',  type: 'karplus',   position: { x: 360, y: 60 }, domain: 'audio',
         params: { tune: 220, level: 0 } }, // shipping defaults otherwise
       { id: 'a-out', type: 'audioOut',  position: { x: 820, y: 60 }, domain: 'audio',
@@ -72,10 +72,10 @@ test('KARPLUS real chain: SEQUENCER gate+pitch → pluck → AUDIOOUT — audibl
         params: { timeMs: 200 } },
     ],
     [
-      { id: 'e1', from: { nodeId: 'a-seq', portId: 'gate' },  to: { nodeId: 'a-ks',  portId: 'trigger_in' },
+      { id: 'e1', from: { nodeId: 'a-seq', portId: 'gate1' },  to: { nodeId: 'a-ks',  portId: 'trigger_in' },
         sourceType: 'gate', targetType: 'gate' },
       // The melodic 1 V/oct path (polyPitchGate → pitch, engine-split).
-      { id: 'e2', from: { nodeId: 'a-seq', portId: 'pitch' }, to: { nodeId: 'a-ks',  portId: 'pitch' },
+      { id: 'e2', from: { nodeId: 'a-seq', portId: 'pitch1' }, to: { nodeId: 'a-ks',  portId: 'pitch' },
         sourceType: 'polyPitchGate', targetType: 'pitch' },
       { id: 'e3', from: { nodeId: 'a-ks',  portId: 'out' },   to: { nodeId: 'a-out', portId: 'L' },
         sourceType: 'audio', targetType: 'audio' },
@@ -92,23 +92,7 @@ test('KARPLUS real chain: SEQUENCER gate+pitch → pluck → AUDIOOUT — audibl
   // Seed ON steps @ MIDI 60 (= 0 V = keep tune's 220 Hz) so the internal
   // clock plucks the string (steps 0 + 2 → one pluck per second at BPM 120,
   // length 4 — the 2 s default decay keeps the string ringing between them).
-  await page.evaluate(() => {
-    const w = globalThis as unknown as {
-      __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
-      __ydoc: { transact: (fn: () => void) => void };
-    };
-    w.__ydoc.transact(() => {
-      const seq = w.__patch.nodes['a-seq'];
-      if (!seq.data) seq.data = {};
-      seq.data.steps = [
-        { on: true, midi: 60 },
-        { on: false, midi: null },
-        { on: true, midi: 60 },
-        { on: false, midi: null },
-        ...Array.from({ length: 28 }, () => ({ on: false, midi: null })),
-      ];
-    });
-  });
+  await seedKriaWith(page, 'a-seq', buildKriaMidiData([60, null, 60, null], { duration: 0.25 }));
 
   // ── 1. AUDIBLE RMS at the output (windowed MAX-HOLD — a pluck lands
   // every ~1 s and rings ~2 s, so a 2.5 s capture always observes ringing

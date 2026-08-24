@@ -14,7 +14,7 @@
 // card↔engine wire.
 
 import { test, expect, type Page } from '@playwright/test';
-import { spawnPatch } from './_helpers';
+import { spawnPatch, seedKriaGate } from './_helpers';
 
 async function setup(page: Page): Promise<string[]> {
   const errors: string[] = [];
@@ -107,20 +107,22 @@ test.describe('SCOREBOARD — 4-digit neon 7-segment counter widget', () => {
         // detector reads as a steady rising-edge stream.
         {
           id: 'e_score',
-          from: { nodeId: 'scoreSeq', portId: 'clock' },
+          from: { nodeId: 'scoreSeq', portId: 'gate1' },
           to:   { nodeId: 'sb',       portId: 'score' },
           sourceType: 'gate',
           targetType: 'cv',
         },
         {
           id: 'e_reset',
-          from: { nodeId: 'resetSeq', portId: 'clock' },
+          from: { nodeId: 'resetSeq', portId: 'gate1' },
           to:   { nodeId: 'sb',       portId: 'reset' },
           sourceType: 'gate',
           targetType: 'cv',
         },
       ],
     );
+    await seedKriaGate(page, 'scoreSeq');
+    await seedKriaGate(page, 'resetSeq');
 
     // ---- 1. SCORE gate increments the counter. ----
     // At 240 BPM the scoreSeq fires a gate every 250 ms. After ~1 s we

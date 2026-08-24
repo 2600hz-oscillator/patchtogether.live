@@ -10,7 +10,7 @@
 
 import { test, expect } from './_fixtures';
 import { type Page } from '@playwright/test';
-import { spawnPatch } from './_helpers';
+import { spawnPatch, seedKriaWith, buildKriaMidiData } from './_helpers';
 import { captureScopeTimbre, pollScopeRms, scopePollMsg, timbreDistance } from '../_helpers/scope-poll';
 
 /** Window the timbre fingerprint averages over — several note cycles at the
@@ -61,7 +61,7 @@ test('dx7: sequencer (poly) → DX7 → audioOut produces audible RMS', async ({
       {
         id: 'seq',
         type: 'kria',
-        params: { bpm: 240, isPlaying: 1, length: 4 },
+        params: { bpm: 240, running: 1 },
       },
       { id: 'dx',  type: 'dx7',     params: { algorithm: 5, voiceCount: 5, level: 1.0 } },
       // Tap audio for assertion.
@@ -72,7 +72,7 @@ test('dx7: sequencer (poly) → DX7 → audioOut produces audible RMS', async ({
       // Sequencer poly out → DX7 poly in.
       {
         id: 'poly-edge',
-        from: { nodeId: 'seq', portId: 'pitch' },
+        from: { nodeId: 'seq', portId: 'pitch1' },
         to: { nodeId: 'dx', portId: 'poly' },
         sourceType: 'polyPitchGate',
         targetType: 'polyPitchGate',
@@ -97,19 +97,7 @@ test('dx7: sequencer (poly) → DX7 → audioOut produces audible RMS', async ({
   );
 
   // Drive at least one step "on" with a C4 note.
-  await page.evaluate(() => {
-    const w = globalThis as unknown as {
-      __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
-      __ydoc: { transact: (fn: () => void) => void };
-    };
-    w.__ydoc.transact(() => {
-      const t = w.__patch.nodes['seq'];
-      if (!t) return;
-      if (!t.data) t.data = {};
-      const steps = Array.from({ length: 32 }, () => ({ on: true, midi: 60, chord: 'mono' }));
-      (t.data as Record<string, unknown>).steps = steps;
-    });
-  });
+  await seedKriaWith(page, 'seq', buildKriaMidiData([60, 60, 60, 60], { duration: 0.5 }));
 
   // Wait for audio to settle and probe the scope RMS. The sampling loop runs
   // IN THE PAGE (one export site) rather than one CDP round trip per sample
@@ -151,7 +139,7 @@ test.fixme('dx7: switching algorithm changes the audible scope content', { annot
       { id: 'out', type: 'audioOut' },
     ],
     [
-      { id: 'poly-edge',  from: { nodeId: 'seq', portId: 'pitch' }, to: { nodeId: 'dx',  portId: 'poly' }, sourceType: 'polyPitchGate', targetType: 'polyPitchGate' },
+      { id: 'poly-edge',  from: { nodeId: 'seq', portId: 'pitch1' }, to: { nodeId: 'dx',  portId: 'poly' }, sourceType: 'polyPitchGate', targetType: 'polyPitchGate' },
       { id: 'audio-tap',  from: { nodeId: 'dx',  portId: 'out' },   to: { nodeId: 'scp', portId: 'ch1'  }, sourceType: 'audio',         targetType: 'audio'         },
       { id: 'audio-out',  from: { nodeId: 'scp', portId: 'ch1_out' },to: { nodeId: 'out', portId: 'L'    }, sourceType: 'audio',         targetType: 'audio'         },
     ],
@@ -169,13 +157,9 @@ test.fixme('dx7: switching algorithm changes the audible scope content', { annot
       if (!t) return;
       if (!t.data) t.data = {};
       (t.data as Record<string, unknown>).preset = 'CALLIOPE';
-      const seq = w.__patch.nodes['seq'];
-      if (!seq) return;
-      if (!seq.data) seq.data = {};
-      const steps = Array.from({ length: 32 }, () => ({ on: true, midi: 60, chord: 'mono' }));
-      (seq.data as Record<string, unknown>).steps = steps;
     });
   });
+  await seedKriaWith(page, 'seq', buildKriaMidiData([60, 60, 60, 60], { duration: 0.5 }));
 
   // A TIMBRE FINGERPRINT under algo 1: the band vector averaged over a window
   // spanning several note cycles, accumulated IN THE PAGE. A single capture

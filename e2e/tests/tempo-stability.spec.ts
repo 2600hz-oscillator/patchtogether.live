@@ -30,7 +30,8 @@
 // would lag iff the lookahead window starved.
 
 import { test, expect } from './_fixtures';
-import { spawnPatch } from './_helpers';
+import { spawnPatch, seedKriaGate } from './_helpers';
+import { KRIA_TRACKS } from '../../packages/web/src/lib/audio/modules/kria-types';
 
 test.describe.configure({ mode: 'parallel' });
 
@@ -42,8 +43,11 @@ test.describe.configure({ mode: 'parallel' });
  *  range). */
 const SEQ_BPM = 120;
 const RUN_MS = 2500;
-const EXPECTED_ADVANCES_MIN = 16; // floor — well below the 20 we expect
-const EXPECTED_ADVANCES_MAX = 24; // ceiling — guards against a stuck-firing bug
+// KRIA counts totalAdvances once per TRACK per base tick (all four tracks
+// advance each 16th at timeDivision 1), so the per-track base-grid bounds
+// scale by KRIA_TRACKS — imported from the def, never re-typed.
+const EXPECTED_ADVANCES_MIN = 16 * KRIA_TRACKS; // floor — well below the ~20 base ticks we expect
+const EXPECTED_ADVANCES_MAX = 24 * KRIA_TRACKS; // ceiling — guards against a stuck-firing bug
 
 test('tempo-stability: sequencer keeps tempo under repeated main-thread jank', async ({ page, rack }) => {
   await spawnPatch(
@@ -52,11 +56,12 @@ test('tempo-stability: sequencer keeps tempo under repeated main-thread jank', a
       {
         id: 'seq',
         type: 'kria',
-        params: { bpm: SEQ_BPM, length: 16, isPlaying: 1 },
+        params: { bpm: SEQ_BPM, running: 1 },
       },
     ],
     [],
   );
+  await seedKriaGate(page, 'seq');
 
   // Begin the synthetic main-thread jank in the background. Each block
   // is ~80 ms of busy-loop CPU; we issue them every ~250 ms over the
@@ -125,11 +130,12 @@ test('tempo-stability: baseline (no jank) sequencer advance rate matches BPM', a
       {
         id: 'seq2',
         type: 'kria',
-        params: { bpm: SEQ_BPM, length: 16, isPlaying: 1 },
+        params: { bpm: SEQ_BPM, running: 1 },
       },
     ],
     [],
   );
+  await seedKriaGate(page, 'seq2');
 
   await page.waitForTimeout(RUN_MS);
 
@@ -170,8 +176,9 @@ test('tempo-stability: baseline (no jank) sequencer advance rate matches BPM', a
 //
 // Parametrized across the step sequencers that advance with default (empty)
 // patterns. (Was SEQUENCER/POLYSEQZ/DRUMSEQZ until their deletion 2026-08-24
-// — deprecated by CLIP PLAYER. KRIA's cursor advances while running even with
-// no trigs set, so it inherits the guard.) `score` shares the identical drop
+// — deprecated by CLIP PLAYER. KRIA inherits the guard. Its advance counter
+// does not care about trigs, but an EMPTY data record has no active pattern
+// and advanceBaseTick is a no-op — so each test seeds a pattern first.) `score` shares the identical drop
 // guard but needs loaded notes to advance, so its regression coverage is a
 // follow-up (the code path is the same one proven here).
 for (const mod of ['kria'] as const) {
@@ -182,6 +189,7 @@ for (const mod of ['kria'] as const) {
       [{ id, type: mod, params: { bpm: SEQ_BPM, running: 1 } }],
       [],
     );
+    await seedKriaGate(page, id);
 
     // Let the lookahead window fill normally for ~half a second first.
     await page.waitForTimeout(600);
@@ -190,8 +198,8 @@ for (const mod of ['kria'] as const) {
     // the catch-up case (vs. the intermittent sub-lookahead jank above). The
     // scheduler-clock Worker keeps posting ticks during the block; they drain
     // the moment the block ends and the first one hits the past-due backlog.
-    // 600 ms gives every grid (down to polyseqz's 8th notes) a ≥1-step
-    // backlog past the 200 ms cushion.
+    // 600 ms gives the 16th-note grid a ≥1-step backlog past the 200 ms
+    // cushion.
     await page.evaluate(() => {
       const end = performance.now() + 600;
       let acc = 0;

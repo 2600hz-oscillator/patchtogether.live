@@ -15,7 +15,7 @@
 
 import { test, expect } from './_fixtures';
 import { type Page } from '@playwright/test';
-import { spawnPatch, type SpawnNode, type SpawnEdge } from './_helpers';
+import { spawnPatch, type SpawnNode, type SpawnEdge, seedKriaWith, buildKriaMidiData } from './_helpers';
 import {
   readScopeSnapshot,
   summarize,
@@ -99,22 +99,12 @@ test('qbrt: ping → resonant L output emits audio', async ({ page, rack }) => {
       { id: 'scp', type: 'scope',     params: { timeMs: 50 } },
     ],
     [
-      { id: 'e1', from: { nodeId: 'seq', portId: 'gate' }, to: { nodeId: 'qb',  portId: 'ping' }, sourceType: 'gate', targetType: 'gate' },
+      { id: 'e1', from: { nodeId: 'seq', portId: 'gate1' }, to: { nodeId: 'qb',  portId: 'ping' }, sourceType: 'gate', targetType: 'gate' },
       { id: 'e2', from: { nodeId: 'qb',  portId: 'L'    }, to: { nodeId: 'scp', portId: 'ch1'  } },
     ],
   );
 
-  await page.evaluate(() => {
-    const w = globalThis as unknown as {
-      __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
-      __ydoc: { transact: (fn: () => void) => void };
-    };
-    w.__ydoc.transact(() => {
-      const seq = w.__patch.nodes['seq'];
-      if (!seq.data) seq.data = {};
-      seq.data.steps = Array.from({ length: 4 }, () => ({ on: true, midi: 60 }));
-    });
-  });
+  await seedKriaWith(page, 'seq', buildKriaMidiData([60, 60, 60, 60], { duration: 0.5 }));
 
   await runFor(page, 1000);
   const snap = await readScopeSnapshot(page, 'scp');
@@ -134,22 +124,12 @@ test('integration (Group 6): voice → reverb → audioOut produces wider/longer
       { id: 'scp', type: 'scope',       params: { timeMs: 50 } },
     ],
     [
-      { id: 'e1', from: { nodeId: 'seq', portId: 'gate'  }, to: { nodeId: 'dg',  portId: 'gate'  }, sourceType: 'gate', targetType: 'gate' },
+      { id: 'e1', from: { nodeId: 'seq', portId: 'gate1' }, to: { nodeId: 'dg',  portId: 'gate'  }, sourceType: 'gate', targetType: 'gate' },
       { id: 'e2', from: { nodeId: 'dg',  portId: 'audio' }, to: { nodeId: 'rev', portId: 'audio' } },
       { id: 'e3', from: { nodeId: 'rev', portId: 'audio' }, to: { nodeId: 'scp', portId: 'ch1'   } },
     ],
   );
-  await page.evaluate(() => {
-    const w = globalThis as unknown as {
-      __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
-      __ydoc: { transact: (fn: () => void) => void };
-    };
-    w.__ydoc.transact(() => {
-      const seq = w.__patch.nodes['seq'];
-      if (!seq.data) seq.data = {};
-      seq.data.steps = Array.from({ length: 4 }, () => ({ on: true, midi: 60 }));
-    });
-  });
+  await seedKriaWith(page, 'seq', buildKriaMidiData([60, 60, 60, 60], { duration: 0.5 }));
   await runFor(page, 1000);
   const snap = await readScopeSnapshot(page, 'scp');
   const sum = summarize(snap!.ch1);
@@ -169,21 +149,11 @@ test('drummergirl: gate ping → audio burst', async ({ page, rack }) => {
       { id: 'scp', type: 'scope',       params: { timeMs: 50 } },
     ],
     [
-      { id: 'e1', from: { nodeId: 'seq', portId: 'gate' }, to: { nodeId: 'dg',  portId: 'gate'  }, sourceType: 'gate', targetType: 'gate' },
+      { id: 'e1', from: { nodeId: 'seq', portId: 'gate1' }, to: { nodeId: 'dg',  portId: 'gate'  }, sourceType: 'gate', targetType: 'gate' },
       { id: 'e2', from: { nodeId: 'dg',  portId: 'audio'}, to: { nodeId: 'scp', portId: 'ch1'   } },
     ],
   );
-  await page.evaluate(() => {
-    const w = globalThis as unknown as {
-      __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
-      __ydoc: { transact: (fn: () => void) => void };
-    };
-    w.__ydoc.transact(() => {
-      const seq = w.__patch.nodes['seq'];
-      if (!seq.data) seq.data = {};
-      seq.data.steps = Array.from({ length: 4 }, () => ({ on: true, midi: 60 }));
-    });
-  });
+  await seedKriaWith(page, 'seq', buildKriaMidiData([60, 60, 60, 60], { duration: 0.5 }));
   await runFor(page, 800);
   const snap = await readScopeSnapshot(page, 'scp');
   const sum = summarize(snap!.ch1);
@@ -199,21 +169,11 @@ test('meowbox: gate → stereo L emits audio', async ({ page, rack }) => {
       { id: 'scp', type: 'scope',    params: { timeMs: 50 } },
     ],
     [
-      { id: 'e1', from: { nodeId: 'seq', portId: 'gate' }, to: { nodeId: 'mb',  portId: 'gate' }, sourceType: 'gate', targetType: 'gate' },
+      { id: 'e1', from: { nodeId: 'seq', portId: 'gate1' }, to: { nodeId: 'mb',  portId: 'gate' }, sourceType: 'gate', targetType: 'gate' },
       { id: 'e2', from: { nodeId: 'mb',  portId: 'L'    }, to: { nodeId: 'scp', portId: 'ch1'  } },
     ],
   );
-  await page.evaluate(() => {
-    const w = globalThis as unknown as {
-      __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
-      __ydoc: { transact: (fn: () => void) => void };
-    };
-    w.__ydoc.transact(() => {
-      const seq = w.__patch.nodes['seq'];
-      if (!seq.data) seq.data = {};
-      seq.data.steps = Array.from({ length: 4 }, () => ({ on: true, midi: 60 }));
-    });
-  });
+  await seedKriaWith(page, 'seq', buildKriaMidiData([60, 60, 60, 60], { duration: 0.5 }));
   await runFor(page, 800);
   const snap = await readScopeSnapshot(page, 'scp');
   const sum = summarize(snap!.ch1);

@@ -948,9 +948,82 @@ export async function claimKeyboard(page: Page, id: string, timeout = 5000): Pro
  *  degree contour, running transport assumed set via params. The ONE idiom
  *  every spec uses since the deprecated sequencers were deleted (2026-08-24)
  *  — was per-file `data.steps` seeds against the old SEQUENCER shape. */
-export async function seedKriaGate(page: Page, nodeId: string, opts?: { steps?: number }): Promise<void> {
+/** Build a plain KriaData object (track 1 armed, tracks 2-4 empty) for
+ *  seeding via page.evaluate — JSON-serializable, so it can cross the
+ *  boundary as an argument. `steps` are (scale-degree, octave) pairs against
+ *  the major scale on root 48: degree 0 / octave 1 = MIDI 60 (C4); degree 2 /
+ *  octave 1 = 64 (E4); degree 4 / octave 1 = 67 (G4); degree 0 / octave 2 =
+ *  72 (C5). Loop length = steps.length, so the pattern cycles exactly the
+ *  steps given. */
+export function buildKriaData(
+  steps: Array<{ note: number; octave: number; trig?: boolean }>,
+  opts?: { timeDivision?: number; duration?: number; scale?: string },
+): Record<string, unknown> {
+  const len = Math.max(1, steps.length);
+  const track = (arm: boolean) => ({
+    trig: Array.from({ length: 16 }, (_, i) => arm && i < len && (steps[i]?.trig ?? true)),
+    ratchet: Array.from({ length: 16 }, () => 1),
+    note: Array.from({ length: 16 }, (_, i) => steps[i % len]?.note ?? 0),
+    octave: Array.from({ length: 16 }, (_, i) => steps[i % len]?.octave ?? 0),
+    duration: Array.from({ length: 16 }, () => opts?.duration ?? 0.5),
+    probability: Array.from({ length: 16 }, () => 1),
+    glide: Array.from({ length: 16 }, () => 0),
+    loopStart: 0,
+    loopLength: len,
+    timeDivision: opts?.timeDivision ?? 1,
+    direction: 'forward',
+    muted: false,
+  });
+  return {
+    patterns: { '0': { tracks: [track(true), track(false), track(false), track(false)], scale: opts?.scale ?? 'major', root: 48 } },
+    active: 0,
+    cued: null,
+    cueSteps: 0,
+  };
+}
+
+/** Write a built KriaData object onto a node inside one Y.Doc transaction. */
+export async function seedKriaWith(page: Page, nodeId: string, data: Record<string, unknown>): Promise<void> {
+  await page.evaluate(({ id, d }) => {
+    const w = globalThis as unknown as {
+      __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
+      __ydoc: { transact: (fn: () => void) => void };
+    };
+    w.__ydoc.transact(() => {
+      const n = w.__patch.nodes[id];
+      if (!n) return;
+      if (!n.data) n.data = {};
+      for (const [k, v] of Object.entries(d)) n.data[k] = v;
+    });
+  }, { id: nodeId, d: data });
+}
+
+/** buildKriaData from RAW MIDI notes (null = rest), on the CHROMATIC scale
+ *  (root 48) so ANY midi is representable exactly: note = (m-48) % 12,
+ *  octave = floor((m-48) / 12).
+ *
+ *  Timing note for specs converted off the deleted SEQUENCER: that module
+ *  stepped QUARTER notes at its bpm, while kria's base grid is 16ths — so
+ *  keeping the node's ORIGINAL bpm and passing `timeDivision: 4` reproduces
+ *  the old step rate exactly (rate = bpm·4/(60·div)). */
+export function buildKriaMidiData(
+  midis: Array<number | null>,
+  opts?: { timeDivision?: number; duration?: number },
+): Record<string, unknown> {
+  const steps = midis.map((m) => (
+    m === null
+      ? { note: 0, octave: 0, trig: false }
+      : { note: ((m - 48) % 12 + 12) % 12, octave: Math.floor((m - 48) / 12), trig: true }
+  ));
+  return buildKriaData(steps, { ...opts, scale: 'chromatic' });
+}
+
+
+export async function seedKriaGate(page: Page, nodeId: string, opts?: { steps?: number; note?: number; octave?: number }): Promise<void> {
   const steps = opts?.steps ?? 16;
-  await page.evaluate(({ id, steps }) => {
+  const note = opts?.note ?? null;
+  const octave = opts?.octave ?? null;
+  await page.evaluate(({ id, steps, note, octave }) => {
     const w = globalThis as unknown as {
       __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
       __ydoc: { transact: (fn: () => void) => void };
@@ -962,8 +1035,8 @@ export async function seedKriaGate(page: Page, nodeId: string, opts?: { steps?: 
       const track = (trig: boolean) => ({
         trig: Array.from({ length: 16 }, (_, i) => trig && i < steps),
         ratchet: Array.from({ length: 16 }, () => 1),
-        note: [0, 2, 4, 7, 0, 2, 4, 7, 0, 2, 4, 7, 0, 2, 4, 7],
-        octave: Array.from({ length: 16 }, () => 0),
+        note: note === null ? [0, 2, 4, 7, 0, 2, 4, 7, 0, 2, 4, 7, 0, 2, 4, 7] : Array.from({ length: 16 }, () => note),
+        octave: Array.from({ length: 16 }, () => octave ?? 0),
         duration: Array.from({ length: 16 }, () => 0.5),
         probability: Array.from({ length: 16 }, () => 1),
         glide: Array.from({ length: 16 }, () => 0),
@@ -980,7 +1053,7 @@ export async function seedKriaGate(page: Page, nodeId: string, opts?: { steps?: 
         cueSteps: 0,
       });
     });
-  }, { id: nodeId, steps });
+  }, { id: nodeId, steps, note, octave });
 }
 
 /** A self-running POLY chord source: KRIA (clock, track-1 trigs via

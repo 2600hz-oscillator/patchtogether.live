@@ -28,7 +28,7 @@ import {
   setNodeParams,
 } from './_module-coverage-helpers';
 import { startMockVstBridge, type MockVstBridge } from '../_helpers/mock-vst-bridge';
-import { chordToVoices } from '../../packages/web/src/lib/audio/chord-tables';
+import { chordVoicing } from '../../packages/web/src/lib/audio/poly';
 
 const AUDIBLE_FLOOR = 0.01;
 /** Bounds the failure, never the gate (untilPeak returns at first audible). */
@@ -135,7 +135,7 @@ test('vstFx: helper echo carries lane audio; a mounted mute plugin is IN the pat
   expect(session!.lastSampleTime).toBeGreaterThan(0);
 });
 
-test('vstInstrument: POLYSEQZ → card → audible RMS; c3/c4/a4 arrive as MIDI 48/60/69, vel 100, gates paired', async ({ page }) => {
+test('vstInstrument: kria-clocked cartesian → card → audible RMS; c3/c4/a4 arrive as MIDI 48/60/69, vel 100, gates paired', async ({ page }) => {
   await spawnPatch(
     page,
     [
@@ -219,14 +219,16 @@ test('vstInstrument: POLYSEQZ → card → audible RMS; c3/c4/a4 arrive as MIDI 
 
   // NOTE MAPPING (owner-verbatim): c3 = −1.0 CV → 48, c4 = 0.0 → 60,
   // a4 = +0.75 → 69 — asserted at the WIRE, after the worklet's CV→MIDI.
-  // The expected set is DERIVED from the same chord table POLYSEQZ voices
-  // with (chordToVoices fills every poly lane — octave doublings included),
-  // so this pins "what the source emitted is exactly what the plugin heard",
-  // note for note, with the three roots present by construction.
+  // The expected set is DERIVED from chordVoicing — the SAME function
+  // CARTESIAN calls per pad (root/3rd/5th/octave, poly.ts) — so this pins
+  // "what the source emitted is exactly what the plugin heard", note for
+  // note, with the three roots present by construction. (The old derivation
+  // used chord-tables' chordToVoices, POLYSEQZ's 5-lane voicing — one note
+  // wide of what CARTESIAN actually sends.)
   const EXPECTED_NOTES = [
     ...new Set(
       [48, 60, 69].flatMap((root) =>
-        chordToVoices(root, 'maj', 0, 'closed')
+        chordVoicing(root, 'maj')
           .filter((l) => l.gate === 1 && l.midi !== null)
           .map((l) => l.midi!),
       ),

@@ -14,7 +14,7 @@
 // with the number of capture windows and the capture count stays modest.
 
 import { test, expect } from './_fixtures';
-import { spawnPatch } from './_helpers';
+import { spawnPatch, seedKriaGate } from './_helpers';
 import { readScopePeakOverWindow } from './_module-coverage-helpers';
 
 test.describe.configure({ mode: 'parallel' });
@@ -24,8 +24,9 @@ function timeoutFor(captureWindows: number): number {
   return 30_000 + captureWindows * 8_000;
 }
 
-/** Seed a SEQUENCER with always-on C4 steps so a gate fires every step. */
-async function seedSeqSteps(page: import('@playwright/test').Page, seqId: string): Promise<void> {
+/** Seed CARTESIAN pads with an always-on C4 maj chord so the clocked walk
+ *  plucks every step. */
+async function seedChordCells(page: import('@playwright/test').Page, seqId: string): Promise<void> {
   await page.evaluate((id) => {
     const w = globalThis as unknown as {
       __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
@@ -35,12 +36,12 @@ async function seedSeqSteps(page: import('@playwright/test').Page, seqId: string
       const t = w.__patch.nodes[id];
       if (!t) return;
       if (!t.data) t.data = {};
-      (t.data as Record<string, unknown>).steps = Array.from({ length: 32 }, () => ({ on: true, midi: 60, chord: 'mono' }));
+      (t.data as Record<string, unknown>).cells = Array.from({ length: 16 }, () => ({ on: true, midi: 60, chord: 'maj' }));
     });
   }, seqId);
 }
 
-test('sixstrum POLY: a SEQUENCER chord into `poly` plucks the strings → OUT carries audio', async ({ page, rack, errorWatch }) => {
+test('sixstrum POLY: a kria-clocked cartesian chord into `poly` plucks the strings → OUT carries audio', async ({ page, rack, errorWatch }) => {
   test.setTimeout(timeoutFor(1));
 
   // SEQUENCER.pitch (a real default-mode polyPitchGate source) → SIX STRUM.poly.
@@ -48,16 +49,19 @@ test('sixstrum POLY: a SEQUENCER chord into `poly` plucks the strings → OUT ca
   await spawnPatch(
     page,
     [
-      { id: 'seq', type: 'kria', position: { x: 40, y: 60 }, domain: 'audio', params: { bpm: 240, running: 1} },
+      { id: 'clk', type: 'kria', position: { x: 40, y: 440 }, domain: 'audio', params: { bpm: 240, running: 1 } },
+      { id: 'seq', type: 'cartesian', position: { x: 40, y: 60 }, domain: 'audio' },
       { id: 'ss', type: 'sixstrum', position: { x: 360, y: 60 }, domain: 'audio', params: { ring: 3, level: 6 } },
       { id: 'sc', type: 'scope', position: { x: 900, y: 60 }, domain: 'audio', params: { timeMs: 50 } },
     ],
     [
+      { id: 'e_clk_seq', from: { nodeId: 'clk', portId: 'gate1' }, to: { nodeId: 'seq', portId: 'clock' }, sourceType: 'gate', targetType: 'gate' },
       { id: 'e_seq_ss', from: { nodeId: 'seq', portId: 'pitch' }, to: { nodeId: 'ss', portId: 'poly' }, sourceType: 'polyPitchGate', targetType: 'polyPitchGate' },
       { id: 'e_ss_sc',  from: { nodeId: 'ss', portId: 'out' },    to: { nodeId: 'sc', portId: 'ch1' },  sourceType: 'audio', targetType: 'audio' },
     ],
   );
-  await seedSeqSteps(page, 'seq');
+  await seedChordCells(page, 'seq');
+  await seedKriaGate(page, 'clk');
 
   const { peak } = await readScopePeakOverWindow(page, 'sc', CAPTURE_MS);
   expect(peak, 'SIX STRUM OUT should carry audio when a poly chord plucks the strings').toBeGreaterThan(0.01);
@@ -76,11 +80,11 @@ test('sixstrum STRUM: a gate into `strum1` barres all six strings → OUT carrie
       { id: 'sc', type: 'scope', position: { x: 900, y: 60 }, domain: 'audio', params: { timeMs: 50 } },
     ],
     [
-      { id: 'e_seq_ss', from: { nodeId: 'seq', portId: 'gate' }, to: { nodeId: 'ss', portId: 'strum1' }, sourceType: 'gate', targetType: 'gate' },
+      { id: 'e_seq_ss', from: { nodeId: 'seq', portId: 'gate1' }, to: { nodeId: 'ss', portId: 'strum1' }, sourceType: 'gate', targetType: 'gate' },
       { id: 'e_ss_sc',  from: { nodeId: 'ss', portId: 'out' },   to: { nodeId: 'sc', portId: 'ch1' },    sourceType: 'audio', targetType: 'audio' },
     ],
   );
-  await seedSeqSteps(page, 'seq');
+  await seedKriaGate(page, 'seq');
 
   const { peak } = await readScopePeakOverWindow(page, 'sc', CAPTURE_MS);
   expect(peak, 'SIX STRUM OUT should carry audio when strum1 barres the strings').toBeGreaterThan(0.01);

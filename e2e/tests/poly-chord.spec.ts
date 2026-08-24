@@ -1,7 +1,8 @@
 // e2e/tests/poly-chord.spec.ts
 //
-// Stage-1 polyphony E2E spec. Validates that:
-//   - a sequencer step with chord='maj' broadcasts a triad on the polyPitchGate
+// Stage-1 polyphony E2E spec, on CARTESIAN — the surviving chord-cell
+// surface after the legacy sequencers were deleted (2026-08-24). Validates:
+//   - a pad with chord='maj' broadcasts a triad on the polyPitchGate
 //     output (lanes 0..3 gated, lane 4 silent),
 //   - per-lane V/oct values match the spec (root / +M3 / +P5 / +octave),
 //   - backward-compat is preserved: a polyPitchGate source patched into a
@@ -10,16 +11,24 @@
 //   - the chord-picker UI cycles mono → maj → min → mono on click.
 
 import { test, expect } from './_fixtures';
-import { spawnPatch } from './_helpers';
+import { spawnPatch, seedKriaGate } from './_helpers';
 
 test.describe.configure({ mode: 'parallel' });
 
 test('poly-chord: maj triad on a4 emits 4 gated lanes with M3 + P5 + octave intervals', async ({ page, rack }) => {
-  await spawnPatch(page, [
-    { id: 'seq', type: 'kria', params: { bpm: 240, running: 1} },
-  ]);
+  await spawnPatch(
+    page,
+    [
+      { id: 'clk', type: 'kria', params: { bpm: 240, running: 1 } },
+      { id: 'seq', type: 'cartesian' },
+    ],
+    [
+      { id: 'e_clk', from: { nodeId: 'clk', portId: 'gate1' }, to: { nodeId: 'seq', portId: 'clock' }, sourceType: 'gate', targetType: 'gate' },
+    ],
+  );
 
-  // Single step at a4 (MIDI 69), chord=maj.
+  // Every pad a4 (MIDI 69), chord=maj — the clocked walk emits the same
+  // triad on every step, so the lane reads are step-phase-independent.
   await page.evaluate(() => {
     const w = globalThis as unknown as {
       __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
@@ -27,14 +36,23 @@ test('poly-chord: maj triad on a4 emits 4 gated lanes with M3 + P5 + octave inte
     };
     w.__ydoc.transact(() => {
       w.__patch.nodes['seq'].data = {
-        steps: [{ on: true, midi: 69, chord: 'maj' }],
+        cells: Array.from({ length: 16 }, () => ({ on: true, midi: 69, chord: 'maj' })),
       };
     });
   });
+  await seedKriaGate(page, 'clk');
 
-  // Wait for the sequencer to fire step 0 (240 BPM 16ths = 16 steps/sec, so
-  // within ~100ms — we wait 600ms for safety).
-  await page.waitForTimeout(600);
+  // State readiness: wait until the walk has fired at least once.
+  await expect
+    .poll(() => page.evaluate(() => {
+      const w = globalThis as unknown as {
+        __engine?: () => { read: (n: { id: string; type: string; domain: string }, k: string) => unknown } | null;
+        __patch: { nodes: Record<string, { id: string; type: string; domain: string }> };
+      };
+      const v = w.__engine?.()?.read(w.__patch.nodes['seq'], 'gateLane:0');
+      return typeof v === 'number' ? v : -1;
+    }), { timeout: 10_000, message: 'lane 0 gate should fire (units: gate 0/1)' })
+    .toBe(1);
 
   // Read each lane's V/oct + gate via the engine's per-lane read keys.
   const lanes = await page.evaluate(() => {
@@ -73,10 +91,17 @@ test('poly-chord: maj triad on a4 emits 4 gated lanes with M3 + P5 + octave inte
   expect(Math.abs((lanes![3]!.pitch ?? -1) - 21 / 12)).toBeLessThan(TOL);
 });
 
-test('poly-chord: min step on a4 emits c5 (m3) instead of c#5 (M3)', async ({ page, rack }) => {
-  await spawnPatch(page, [
-    { id: 'seq', type: 'kria', params: { bpm: 240, running: 1} },
-  ]);
+test('poly-chord: min pad on a4 emits c5 (m3) instead of c#5 (M3)', async ({ page, rack }) => {
+  await spawnPatch(
+    page,
+    [
+      { id: 'clk', type: 'kria', params: { bpm: 240, running: 1 } },
+      { id: 'seq', type: 'cartesian' },
+    ],
+    [
+      { id: 'e_clk', from: { nodeId: 'clk', portId: 'gate1' }, to: { nodeId: 'seq', portId: 'clock' }, sourceType: 'gate', targetType: 'gate' },
+    ],
+  );
   await page.evaluate(() => {
     const w = globalThis as unknown as {
       __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
@@ -84,11 +109,21 @@ test('poly-chord: min step on a4 emits c5 (m3) instead of c#5 (M3)', async ({ pa
     };
     w.__ydoc.transact(() => {
       w.__patch.nodes['seq'].data = {
-        steps: [{ on: true, midi: 69, chord: 'min' }],
+        cells: Array.from({ length: 16 }, () => ({ on: true, midi: 69, chord: 'min' })),
       };
     });
   });
-  await page.waitForTimeout(600);
+  await seedKriaGate(page, 'clk');
+  await expect
+    .poll(() => page.evaluate(() => {
+      const w = globalThis as unknown as {
+        __engine?: () => { read: (n: { id: string; type: string; domain: string }, k: string) => unknown } | null;
+        __patch: { nodes: Record<string, { id: string; type: string; domain: string }> };
+      };
+      const v = w.__engine?.()?.read(w.__patch.nodes['seq'], 'gateLane:0');
+      return typeof v === 'number' ? v : -1;
+    }), { timeout: 10_000, message: 'lane 0 gate should fire (units: gate 0/1)' })
+    .toBe(1);
 
   const laneOnePitch = await page.evaluate(() => {
     const w = globalThis as unknown as {
@@ -108,15 +143,17 @@ test('poly-chord: min step on a4 emits c5 (m3) instead of c#5 (M3)', async ({ pa
 });
 
 test('poly-chord: backward-compat - polyPitchGate source -> mono pitch sink routes lane 0 (root)', async ({ page, rack }) => {
-  // Sequencer (poly pitch out) → VCO (mono pitch in). The engine's
+  // Cartesian (poly pitch out) → VCO (mono pitch in). The engine's
   // resolveConnection() should auto-route lane 0 to the VCO's pitch.
   await spawnPatch(
     page,
     [
-      { id: 'seq', type: 'kria', params: { bpm: 240, running: 1} },
+      { id: 'clk', type: 'kria', params: { bpm: 240, running: 1 } },
+      { id: 'seq', type: 'cartesian' },
       { id: 'vco', type: 'analogVco', params: {} },
     ],
     [
+      { id: 'e_clk', from: { nodeId: 'clk', portId: 'gate1' }, to: { nodeId: 'seq', portId: 'clock' }, sourceType: 'gate', targetType: 'gate' },
       {
         id: 'e1',
         from: { nodeId: 'seq', portId: 'pitch' },
@@ -134,27 +171,24 @@ test('poly-chord: backward-compat - polyPitchGate source -> mono pitch sink rout
     };
     w.__ydoc.transact(() => {
       w.__patch.nodes['seq'].data = {
-        steps: [{ on: true, midi: 69, chord: 'maj' }],
+        cells: Array.from({ length: 16 }, () => ({ on: true, midi: 69, chord: 'maj' })),
       };
     });
   });
-  await page.waitForTimeout(600);
+  await seedKriaGate(page, 'clk');
 
-  // Sequencer's lane 0 V/oct should be a4 = 0.75 V; mono `pitchVOct` (which
-  // mirrors lane 0) reads the same.
-  const rootVOct = await page.evaluate(() => {
-    const w = globalThis as unknown as {
-      __engine?: () => { read: (n: { id: string; type: string; domain: string }, k: string) => unknown } | null;
-      __patch: { nodes: Record<string, { id: string; type: string; domain: string }> };
-    };
-    const eng = w.__engine?.();
-    if (!eng) return null;
-    const node = w.__patch.nodes['seq'];
-    const v = eng.read(node, 'pitchVOct');
-    return typeof v === 'number' ? v : null;
-  });
-  expect(rootVOct, 'lane 0 V/oct should be a4 = 0.75').not.toBeNull();
-  expect(Math.abs((rootVOct as number) - 0.75)).toBeLessThan(1e-6);
+  // Lane 0 V/oct should be a4 = 0.75 V; mono `pitchVOct` (which mirrors
+  // lane 0) reads the same. Auto-retrying — state readiness, not wall clock.
+  await expect
+    .poll(() => page.evaluate(() => {
+      const w = globalThis as unknown as {
+        __engine?: () => { read: (n: { id: string; type: string; domain: string }, k: string) => unknown } | null;
+        __patch: { nodes: Record<string, { id: string; type: string; domain: string }> };
+      };
+      const v = w.__engine?.()?.read(w.__patch.nodes['seq'], 'pitchVOct');
+      return typeof v === 'number' ? v : null;
+    }), { timeout: 10_000, message: 'lane 0 V/oct should be a4 = 0.75 (units: V/oct)' })
+    .toBeCloseTo(0.75, 6);
 
   // No console errors during the connect — the engine should resolve
   // poly→mono cleanly without throwing.
@@ -164,11 +198,11 @@ test('poly-chord: backward-compat - polyPitchGate source -> mono pitch sink rout
 
 test('poly-chord: chord-picker UI cycles mono -> maj -> min -> mono on click', async ({ page, rack }) => {
   await spawnPatch(page, [
-    { id: 'seq', type: 'kria', params: { bpm: 60, running: 0} },
+    { id: 'seq', type: 'cartesian' },
   ]);
 
-  // The chord badge for step 0 has data-testid `seq-chord-seq-0`.
-  const badge = page.getByTestId('seq-chord-seq-0');
+  // The chord badge for pad 0 has data-testid `cart-chord-seq-0`.
+  const badge = page.getByTestId('cart-chord-seq-0');
   await expect(badge).toBeVisible();
   // Default is mono.
   await expect(badge).toHaveAttribute('data-chord', 'mono');

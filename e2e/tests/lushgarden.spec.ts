@@ -23,7 +23,7 @@
 // → 500 ms period.
 
 import { test, expect, type Page } from '@playwright/test';
-import { spawnPatch } from './_helpers';
+import { spawnPatch, seedKriaGate } from './_helpers';
 
 /** Read a numeric lushgarden engine probe via the video-domain read API. */
 async function readProbe(page: Page, nodeId: string, key: string): Promise<number> {
@@ -151,17 +151,19 @@ test.describe('LUSH GARDEN — generative garden source', () => {
       [
         { id: 'lg', type: 'lushgarden', position: { x: 500, y: 100 }, domain: 'video' },
         { id: 'growSeq', type: 'kria', position: { x: 100, y: 100 }, domain: 'audio',
-          params: { bpm: 30, length: 8, isPlaying: 0 } },
+          params: { bpm: 30, running: 0 } },
         { id: 'rstSeq', type: 'kria', position: { x: 100, y: 380 }, domain: 'audio',
-          params: { bpm: 30, length: 8, isPlaying: 0 } },
+          params: { bpm: 30, running: 0 } },
       ],
       [
-        { id: 'e_grow', from: { nodeId: 'growSeq', portId: 'clock' }, to: { nodeId: 'lg', portId: 'grow' },
+        { id: 'e_grow', from: { nodeId: 'growSeq', portId: 'gate1' }, to: { nodeId: 'lg', portId: 'grow' },
           sourceType: 'gate', targetType: 'cv' },
-        { id: 'e_rst', from: { nodeId: 'rstSeq', portId: 'clock' }, to: { nodeId: 'lg', portId: 'reset' },
+        { id: 'e_rst', from: { nodeId: 'rstSeq', portId: 'gate1' }, to: { nodeId: 'lg', portId: 'reset' },
           sourceType: 'gate', targetType: 'cv' },
       ],
     );
+    await seedKriaGate(page, 'growSeq');
+    await seedKriaGate(page, 'rstSeq');
     await expect(page.locator('[data-testid="lushgarden-card"]')).toHaveCount(1);
 
     // Badge: the grow edge is wired (regardless of pulses).
@@ -257,18 +259,19 @@ test.describe('LUSH GARDEN — generative garden source', () => {
         { id: 'lg', type: 'lushgarden', position: { x: 500, y: 100 }, domain: 'video' },
         { id: 'sink', type: 'videoOut', position: { x: 900, y: 100 }, domain: 'video' },
         { id: 'idleSeq', type: 'kria', position: { x: 100, y: 380 }, domain: 'audio',
-          params: { bpm: 30, length: 8, isPlaying: 0 } },
+          params: { bpm: 30, running: 0 } },
       ],
       [
         { id: 'e_bg', from: { nodeId: 'bg', portId: 'out' }, to: { nodeId: 'lg', portId: 'background' },
           sourceType: 'video', targetType: 'video' },
         { id: 'e_out', from: { nodeId: 'lg', portId: 'clean' }, to: { nodeId: 'sink', portId: 'in' },
           sourceType: 'video', targetType: 'video' },
-        { id: 'e_gate', from: { nodeId: 'idleSeq', portId: 'clock' }, to: { nodeId: 'lg', portId: 'grow' },
+        { id: 'e_gate', from: { nodeId: 'idleSeq', portId: 'gate1' }, to: { nodeId: 'lg', portId: 'grow' },
           sourceType: 'gate', targetType: 'cv' },
       ],
       { mountTimeout: 30000 },
     );
+    await seedKriaGate(page, 'idleSeq');
 
     // Gated (empty) garden: nothing ever spawns.
     const latched = await waitForProbe(page, 'lg', 'growPatched', (n) => n === 1, 15000);

@@ -25,7 +25,7 @@
 // trigger/gate → snare → audible-stereo chain.
 
 import { test, expect } from './_fixtures';
-import { spawnPatch } from './_helpers';
+import { spawnPatch, seedKriaWith, buildKriaMidiData } from './_helpers';
 import { readScopeSnapshot } from './_module-coverage-helpers';
 
 test.describe.configure({ mode: 'parallel' });
@@ -84,24 +84,11 @@ async function seedSteps(
   page: import('@playwright/test').Page,
   seqId: string,
   ons: boolean[],
+  gateLength: number,
 ): Promise<void> {
-  await page.evaluate(
-    ({ id, ons }) => {
-      const w = globalThis as unknown as {
-        __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
-        __ydoc: { transact: (fn: () => void) => void };
-      };
-      w.__ydoc.transact(() => {
-        const seq = w.__patch.nodes[id];
-        if (!seq.data) seq.data = {};
-        seq.data.steps = [
-          ...ons.map((on) => ({ on, midi: on ? 60 : null })),
-          ...Array.from({ length: Math.max(0, 32 - ons.length) }, () => ({ on: false, midi: null })),
-        ];
-      });
-    },
-    { id: seqId, ons },
-  );
+  // Same 16th-note grid as the deleted SEQUENCER (60/bpm/4) — same bpm =
+  // same rate. Duration mirrors the old gateLength.
+  await seedKriaWith(page, seqId, buildKriaMidiData(ons.map((on) => (on ? 60 : null)), { duration: gateLength }));
 }
 
 test('SNARE DRUM real chain: SEQUENCER → trigger_in → audible stereo hits (L + R)', async ({ page, rack, errorWatch }) => {
@@ -109,7 +96,7 @@ test('SNARE DRUM real chain: SEQUENCER → trigger_in → audible stereo hits (L
     page,
     [
       { id: 's-seq', type: 'kria', position: { x: 60, y: 60 }, domain: 'audio',
-        params: { bpm: 120, length: 4, isPlaying: 1, gateLength: 0.25 } },
+        params: { bpm: 120, running: 1 } },
       { id: 's-sd', type: 'snaredrum', position: { x: 360, y: 60 }, domain: 'audio',
         params: { level: 0 } },
       { id: 's-out', type: 'audioOut', position: { x: 820, y: 60 }, domain: 'audio',
@@ -118,7 +105,7 @@ test('SNARE DRUM real chain: SEQUENCER → trigger_in → audible stereo hits (L
         params: { timeMs: 200 } },
     ],
     [
-      { id: 'e1', from: { nodeId: 's-seq', portId: 'gate' },    to: { nodeId: 's-sd', portId: 'trigger_in' },
+      { id: 'e1', from: { nodeId: 's-seq', portId: 'gate1' },    to: { nodeId: 's-sd', portId: 'trigger_in' },
         sourceType: 'gate', targetType: 'gate' },
       { id: 'e2', from: { nodeId: 's-sd', portId: 'audio_l' }, to: { nodeId: 's-out', portId: 'L' },
         sourceType: 'audio', targetType: 'audio' },
@@ -134,7 +121,7 @@ test('SNARE DRUM real chain: SEQUENCER → trigger_in → audible stereo hits (L
   await expect(card).toContainText(/SNARE ?DRUM/);
 
   // Two ON strikes (steps 0 + 2 → one hit every second at BPM 120 / length 4).
-  await seedSteps(page, 's-seq', [true, false, true, false]);
+  await seedSteps(page, 's-seq', [true, false, true, false], 0.25);
 
   // Windowed MAX-HOLD on BOTH channels: a strike lands every ~1 s, so a 2.5 s
   // capture always straddles ≥2 attacks. A silent / never-triggered snare never
@@ -154,7 +141,7 @@ test('SNARE DRUM real chain: SEQUENCER held gate → gate_in → CONTINUOUS two-
       // gate stays high across the bar (the roll re-fires per step; the shared
       // wire bed carries the brief inter-step gaps). The REAL default-mode source.
       { id: 'r-seq', type: 'kria', position: { x: 60, y: 60 }, domain: 'audio',
-        params: { bpm: 120, length: 4, isPlaying: 1, gateLength: 0.92 } },
+        params: { bpm: 120, running: 1 } },
       { id: 'r-sd', type: 'snaredrum', position: { x: 360, y: 60 }, domain: 'audio',
         params: { level: 3, wire: 0.85 } },
       { id: 'r-out', type: 'audioOut', position: { x: 820, y: 60 }, domain: 'audio',
@@ -163,7 +150,7 @@ test('SNARE DRUM real chain: SEQUENCER held gate → gate_in → CONTINUOUS two-
         params: { timeMs: 200 } },
     ],
     [
-      { id: 'e1', from: { nodeId: 'r-seq', portId: 'gate' },   to: { nodeId: 'r-sd', portId: 'gate_in' },
+      { id: 'e1', from: { nodeId: 'r-seq', portId: 'gate1' },   to: { nodeId: 'r-sd', portId: 'gate_in' },
         sourceType: 'gate', targetType: 'gate' },
       { id: 'e2', from: { nodeId: 'r-sd', portId: 'audio_l' }, to: { nodeId: 'r-out', portId: 'L' },
         sourceType: 'audio', targetType: 'audio' },
@@ -177,7 +164,7 @@ test('SNARE DRUM real chain: SEQUENCER held gate → gate_in → CONTINUOUS two-
   await expect(page.locator('.svelte-flow__node-snaredrum')).toHaveCount(1);
 
   // All steps ON → the gate is high across the bar → the two-hand roll runs.
-  await seedSteps(page, 'r-seq', [true, true, true, true]);
+  await seedSteps(page, 'r-seq', [true, true, true, true], 0.92);
   // Settle: let the sequencer start + the roll + wire bed establish before the
   // continuity poll (so pre-roll startup silence isn't mistaken for a gap).
   await page.waitForTimeout(700);

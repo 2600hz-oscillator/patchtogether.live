@@ -20,7 +20,7 @@
 // The default is ON (the owner spec), so a freshly-spawned sequencer holds.
 
 import { test, expect, type Page } from '@playwright/test';
-import { spawnPatch } from './_helpers';
+import { spawnPatch, seedKriaGate } from './_helpers';
 
 test.describe.configure({ mode: 'parallel' });
 
@@ -104,13 +104,15 @@ test.describe('baked-in gate-sampled S&H: SEQUENCER pitch → SCOPE', () => {
     await spawnPatch(
       page,
       [
-        // Slow BPM so each step lasts long enough for the SCOPE's ~42 ms
-        // analyser ring to settle on the held DC pitch during a rest.
+        // CARTESIAN carries the surviving snh toggle (kria's S&H is baked
+        // in). Slow clock so each pad lasts long enough for the SCOPE's
+        // ~42 ms analyser ring to settle on the held DC pitch during a rest.
+        { id: 'clk', type: 'kria', position: { x: 80, y: 320 }, params: { bpm: 80, running: 1 } },
         {
           id: 'seq',
-          type: 'kria',
+          type: 'cartesian',
           position: { x: 80, y: 80 },
-          params: { bpm: 80, length: 2, isPlaying: 1, gateLength: 0.4, octave: 0, snh },
+          params: { snh },
         },
         {
           id: 'scp',
@@ -121,8 +123,9 @@ test.describe('baked-in gate-sampled S&H: SEQUENCER pitch → SCOPE', () => {
         },
       ],
       [
+        { id: 'e_clk', from: { nodeId: 'clk', portId: 'gate1' }, to: { nodeId: 'seq', portId: 'clock' }, sourceType: 'gate', targetType: 'gate' },
         // pitch (polyPitchGate) → ch1 (audio): the engine resolves poly→audio as
-        // lane-0 pitch, so ch1 sees the sequencer's root-note V/oct.
+        // lane-0 pitch, so ch1 sees the pad's root-note V/oct.
         {
           id: 'e_pitch',
           from: { nodeId: 'seq', portId: 'pitch' },
@@ -132,7 +135,8 @@ test.describe('baked-in gate-sampled S&H: SEQUENCER pitch → SCOPE', () => {
         },
       ],
     );
-    // Sparse pattern: step 0 = C5 note (gate on), step 1 = rest.
+    // Sparse pattern: pad 0 = C5 note (gate on), every other pad a rest —
+    // the clocked diagonal walk alternates note → rests each loop.
     await page.evaluate(() => {
       const w = globalThis as unknown as {
         __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
@@ -140,13 +144,15 @@ test.describe('baked-in gate-sampled S&H: SEQUENCER pitch → SCOPE', () => {
       };
       w.__ydoc.transact(() => {
         w.__patch.nodes['seq'].data = {
-          steps: [
-            { on: true, midi: 72, chord: 'mono' }, // gated note
-            { on: false, midi: 72, chord: 'mono' }, // rest
-          ],
+          cells: Array.from({ length: 16 }, (_, i) => (
+            i === 0
+              ? { on: true, midi: 72, chord: 'mono' } // gated note
+              : { on: false, midi: 72, chord: 'mono' } // rest
+          )),
         };
       });
     });
+    await seedKriaGate(page, 'clk');
     await page.waitForTimeout(500); // bind the bridge + start sounding
   }
 
@@ -155,7 +161,7 @@ test.describe('baked-in gate-sampled S&H: SEQUENCER pitch → SCOPE', () => {
     page.on('pageerror', (e) => errors.push(e.message));
     await setup(page, 1);
 
-    // Poll across several loops (80 BPM, 2 steps, 16th → 0.375 s/loop).
+    // Poll across several loops (80 BPM 16ths, 4-pad walk → 0.75 s/loop).
     const { min, max, polls } = await ch1MinMaxOverWindow(page, 'scp', 2500);
     expect(polls, 'SCOPE was polled across the window').toBeGreaterThan(0);
     // The note voltage is observed (the gate fired).

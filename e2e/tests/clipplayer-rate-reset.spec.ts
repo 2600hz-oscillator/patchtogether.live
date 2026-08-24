@@ -16,7 +16,7 @@
 
 import type { Page } from '@playwright/test';
 import { test, expect } from './_fixtures';
-import { spawnPatch } from './_helpers';
+import { spawnPatch, seedKriaGate } from './_helpers';
 // The reset instrument is SHARED with launchpad-perf-controls.spec.ts — see
 // the header of _clip-reset-trace.ts for why that matters.
 import {
@@ -280,13 +280,14 @@ test('reset gate input: clock edges hold the playhead at the top; removing them 
       // STOPPED at spawn — we decide exactly when reset edges start/stop.
       // 240 bpm → a clock pulse every 250 ms while playing.
       { id: 'rstSeq', type: 'kria', position: { x: 80, y: 460 }, domain: 'audio',
-        params: { bpm: 240, length: 4, isPlaying: 0 } },
+        params: { bpm: 240, running: 0 } },
     ],
     [
-      { id: 'e_rst', from: { nodeId: 'rstSeq', portId: 'clock' }, to: { nodeId: 'cp', portId: 'reset' },
+      { id: 'e_rst', from: { nodeId: 'rstSeq', portId: 'gate1' }, to: { nodeId: 'cp', portId: 'reset' },
         sourceType: 'gate', targetType: 'gate' },
     ],
   );
+  await seedKriaGate(page, 'rstSeq');
   await expect(page.locator('.svelte-flow__node-clipplayer')).toHaveCount(1);
 
   await seedDenseClips(page, 'cp', [0]);

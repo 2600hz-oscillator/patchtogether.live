@@ -79,7 +79,7 @@
 // .spec.ts --workers=4` reproduces the same sweep.
 
 import { test, expect, type Page } from '@playwright/test';
-import { spawnPatch, type SpawnNode, type SpawnEdge } from './_helpers';
+import { spawnPatch, buildKriaData, type SpawnNode, type SpawnEdge } from './_helpers';
 import {
   readScopeSnapshot,
   runFor,
@@ -1687,11 +1687,12 @@ function pickInputSource(inputType: string, idPrefix: string): InputSource | nul
         sourceType: 'cv',
       };
     case 'gate':
-      // SEQUENCER at 240 BPM = 4 Hz gate train. We pre-populate steps
-      // in the harness so the gate is "on".
+      // KRIA on the same 16th grid + bpm as the deleted SEQUENCER source.
+      // populateAllSequencerSteps seeds its pattern in the harness so the
+      // gate actually fires (an unseeded kria emits nothing).
       return {
-        node: { id: `${idPrefix}-seq`, type: 'kria', position: { x: 60, y: 60 }, domain: 'audio', params: { bpm: 240, running: 1} },
-        outPort: 'gate',
+        node: { id: `${idPrefix}-seq`, type: 'kria', position: { x: 60, y: 60 }, domain: 'audio', params: { bpm: 240, running: 1 } },
+        outPort: 'gate1',
         sourceType: 'gate',
       };
     case 'video':
@@ -3687,11 +3688,13 @@ function buildContextEdges(
       type: 'kria',
       position: { x: 60, y: 560 },
       domain: 'audio',
-      params: { bpm: 240, length: 4, isPlaying: 1, gateLength: 0.5 },
+      // Same 16th-note base grid as the deleted SEQUENCER (both step at
+      // 60/bpm/4 s), so the same bpm keeps the calibrated gate rate.
+      params: { bpm: 240, running: 1 },
     });
     edges.push({
       id: 'e-ctx-gate',
-      from: { nodeId: 'ctx-gate-seq', portId: 'gate' },
+      from: { nodeId: 'ctx-gate-seq', portId: 'gate1' },
       to:   { nodeId: 'sut',          portId: gateCtxInput.id },
       sourceType: 'gate',
       targetType: 'gate',
@@ -3718,12 +3721,13 @@ function buildDriverEdges(
     id: 'driver-seq',
     type: 'kria',
     position: { x: 60, y: 60 },
-    params: { bpm: 240, length: 4, isPlaying: 1, gateLength: 0.5 },
+    // Same grid + same bpm as the deleted SEQUENCER driver (see ctx-gate-seq).
+    params: { bpm: 240, running: 1 },
   });
   if (needGate) {
     edges.push({
       id: 'e-driver-g',
-      from: { nodeId: 'driver-seq', portId: 'gate' },
+      from: { nodeId: 'driver-seq', portId: 'gate1' },
       to:   { nodeId: 'sut',        portId: driver.gatePort! },
       sourceType: 'gate',
       targetType: 'gate',
@@ -3732,7 +3736,7 @@ function buildDriverEdges(
   if (needPitch) {
     edges.push({
       id: 'e-driver-p',
-      from: { nodeId: 'driver-seq', portId: 'pitch' },
+      from: { nodeId: 'driver-seq', portId: 'pitch1' },
       to:   { nodeId: 'sut',        portId: driver.pitchPort! },
       sourceType: 'pitch',
       targetType: 'cv',
@@ -3774,7 +3778,7 @@ function sinkKindOf(sink: SinkSpec): SinkKind {
 // This walks every sequencer node in the patch and seeds steps.
 //
 // `heldNoteDriver` (set per-module via BEHAVIORAL_HELD_NOTE_DRIVER) makes the
-// DRIVER sequencer (`driver-seq`) play ONE constant MIDI note across all 4 steps
+// DRIVER kria (`driver-seq`) play ONE constant MIDI note across all 4 steps
 // instead of the default 60/64/67/72 arpeggio. A module whose observed output's
 // spectrum SWINGS with the driven pitch (e.g. treeohvox / a TB-303 voice, whose
 // audio_out spectral-centroid moves ±600-2800 Hz as the 4-note sequence plays)
@@ -3785,36 +3789,35 @@ function sinkKindOf(sink: SinkSpec): SinkKind {
 // centroid baseline. Only the `driver-seq` node is held; the ctx-gate-seq + any
 // test-input source sequencer keep the default steps.
 async function populateAllSequencerSteps(page: Page, heldNoteDriver = false): Promise<void> {
-  await page.evaluate((held) => {
+  // KRIA is data-driven: an unseeded node has no active pattern and its
+  // transport is a no-op, so the ctx/driver nodes MUST be seeded. The default
+  // pattern is the 60/64/67/72 arpeggio the sweep's spectral baselines were
+  // calibrated on; `heldNoteDriver` pins driver-seq to a held C3 instead.
+  const ARP = [
+    { note: 0, octave: 1 }, // C4 (60)
+    { note: 2, octave: 1 }, // E4 (64)
+    { note: 4, octave: 1 }, // G4 (67)
+    { note: 0, octave: 2 }, // C5 (72)
+  ];
+  const HELD = Array.from({ length: 4 }, () => ({ note: 0, octave: 0 })); // C3 (48)
+  await page.evaluate(({ arpData, heldData, held }) => {
     const w = globalThis as unknown as {
       __patch: { nodes: Record<string, { type: string; data?: Record<string, unknown> }> };
       __ydoc: { transact: (fn: () => void) => void };
     };
-    const HELD_MIDI = 48; // C3 — a low held note: a long, filter-rich 303 tone.
     w.__ydoc.transact(() => {
+      // EVERY harness kria (ctx gate, driver, and the per-test-input gate
+      // source `<prefix>-seq`) needs a pattern — never the SUT itself.
       for (const id of Object.keys(w.__patch.nodes)) {
+        if (id === 'sut') continue;
         const node = w.__patch.nodes[id];
-        // (SEQUENCER/WRITESEQ deleted 2026-08-24; no registered module still
-        // needs a step seed here — the branch below keeps the seed mechanism
-        // for the day one does, matching on nothing today.)
-        if (!node || node.type !== '__no-step-seeded-module__') continue;
+        if (!node || node.type !== 'kria') continue;
         if (!node.data) node.data = {};
-        node.data.steps = held && id === 'driver-seq'
-          ? [
-              { on: true, midi: HELD_MIDI },
-              { on: true, midi: HELD_MIDI },
-              { on: true, midi: HELD_MIDI },
-              { on: true, midi: HELD_MIDI },
-            ]
-          : [
-              { on: true, midi: 60 },
-              { on: true, midi: 64 },
-              { on: true, midi: 67 },
-              { on: true, midi: 72 },
-            ];
+        const data = held && id === 'driver-seq' ? heldData : arpData;
+        for (const [k, v] of Object.entries(data)) node.data[k] = v;
       }
     });
-  }, heldNoteDriver);
+  }, { arpData: buildKriaData(ARP), heldData: buildKriaData(HELD), held: heldNoteDriver });
 }
 
 // ────────── Console error filter ──────────

@@ -121,9 +121,9 @@ test('TIDY VCO mono chain: SEQUENCER gate+pitch → voice → audible RMS + in-t
   await spawnPatch(
     page,
     [
-      // The REAL default-mode mono source: the sequencer's internal clock.
+      // The REAL default-mode mono source: kria's internal clock.
       { id: 'm-seq', type: 'kria', position: { x: 60, y: 60 }, domain: 'audio',
-        params: { bpm: 120, length: 4, isPlaying: 1, gateLength: 0.5 } },
+        params: { bpm: 120, running: 1 } },
       { id: 'm-tv', type: 'tidyVco', position: { x: 420, y: 60 }, domain: 'audio',
         // detune/sub OFF so the spectral probe set is exact; long-ish
         // sustain so the gate window always carries tone.
@@ -134,11 +134,11 @@ test('TIDY VCO mono chain: SEQUENCER gate+pitch → voice → audible RMS + in-t
         params: { timeMs: 200 } },
     ],
     [
-      { id: 'me1', from: { nodeId: 'm-seq', portId: 'gate' }, to: { nodeId: 'm-tv', portId: 'gate' },
+      { id: 'me1', from: { nodeId: 'm-seq', portId: 'gate1' }, to: { nodeId: 'm-tv', portId: 'gate' },
         sourceType: 'gate', targetType: 'gate' },
       // The melodic 1 V/oct path (polyPitchGate → cv, engine lane-0 split).
-      { id: 'me2', from: { nodeId: 'm-seq', portId: 'pitch' }, to: { nodeId: 'm-tv', portId: 'pitch' },
-        sourceType: 'polyPitchGate', targetType: 'cv' },
+      { id: 'me2', from: { nodeId: 'm-seq', portId: 'pitch1' }, to: { nodeId: 'm-tv', portId: 'pitch' },
+        sourceType: 'pitch', targetType: 'cv' },
       { id: 'me3', from: { nodeId: 'm-tv', portId: 'out_l' }, to: { nodeId: 'm-out', portId: 'L' },
         sourceType: 'audio', targetType: 'audio' },
       { id: 'me4', from: { nodeId: 'm-tv', portId: 'out_r' }, to: { nodeId: 'm-out', portId: 'R' },
@@ -147,26 +147,9 @@ test('TIDY VCO mono chain: SEQUENCER gate+pitch → voice → audible RMS + in-t
     ],
   );
 
-  // Seed ON steps @ MIDI 60 (= 0 V = C4) so the internal clock gates the
-  // voice twice per cycle.
-  await page.evaluate(() => {
-    const w = globalThis as unknown as {
-      __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
-      __ydoc: { transact: (fn: () => void) => void };
-    };
-    w.__ydoc.transact(() => {
-      const seq = w.__patch.nodes['m-seq'];
-      if (!seq) return;
-      if (!seq.data) seq.data = {};
-      seq.data.steps = [
-        { on: true, midi: 60 },
-        { on: false, midi: null },
-        { on: true, midi: 60 },
-        { on: false, midi: null },
-        ...Array.from({ length: 28 }, () => ({ on: false, midi: null })),
-      ];
-    });
-  });
+  // Seed a constant C4 pattern: root 48 (major) + note degree 0 + octave 1
+  // = MIDI 60 = 0 V, so the spectral probe's fundamental is exact.
+  await seedKriaGate(page, 'm-seq', { note: 0, octave: 1 });
 
   // ── 1. AUDIBLE RMS (windowed max-hold: a gate opens every second and
   // holds ~250 ms, so a 2.5 s capture always observes the voice). ──

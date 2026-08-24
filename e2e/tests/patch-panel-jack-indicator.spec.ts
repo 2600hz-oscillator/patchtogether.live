@@ -46,7 +46,7 @@ async function spawnSeqAdsrWired(page: Page) {
     [
       {
         id: 'e-gate',
-        from: { nodeId: 'seq', portId: 'gate' },
+        from: { nodeId: 'seq', portId: 'gate1' },
         to: { nodeId: 'adsr', portId: 'gate' },
         sourceType: 'gate',
         targetType: 'gate',

@@ -14,7 +14,7 @@
 
 import { test, expect } from './_fixtures';
 import { type Page } from '@playwright/test';
-import { spawnPatch } from './_helpers';
+import { spawnPatch, seedKriaWith, buildKriaMidiData } from './_helpers';
 
 test.describe.configure({ mode: 'parallel' });
 
@@ -68,8 +68,8 @@ test('ADSR: env_inv produces non-zero CV signal that is the unipolar inverse of 
       { id: 'out', type: 'audioOut', params: { master: 0.3 } },
     ],
     [
-      { id: 'e1', from: { nodeId: 'seq', portId: 'pitch' }, to: { nodeId: 'vco',  portId: 'pitch' }, sourceType: 'pitch', targetType: 'pitch' },
-      { id: 'e2', from: { nodeId: 'seq', portId: 'gate'  }, to: { nodeId: 'adsr', portId: 'gate'  }, sourceType: 'gate',  targetType: 'gate' },
+      { id: 'e1', from: { nodeId: 'seq', portId: 'pitch1' }, to: { nodeId: 'vco',  portId: 'pitch' }, sourceType: 'pitch', targetType: 'pitch' },
+      { id: 'e2', from: { nodeId: 'seq', portId: 'gate1' }, to: { nodeId: 'adsr', portId: 'gate'  }, sourceType: 'gate',  targetType: 'gate' },
       { id: 'e3', from: { nodeId: 'vco', portId: 'sine'  }, to: { nodeId: 'vca',  portId: 'audio' } },
       // Drive the VCA's CV with the inverted envelope so the audio
       // amplitude tracks `1 - env`. The scope therefore sees sine ×
@@ -79,23 +79,7 @@ test('ADSR: env_inv produces non-zero CV signal that is the unipolar inverse of 
       { id: 'e6', from: { nodeId: 'scp', portId: 'ch1_out' }, to: { nodeId: 'out', portId: 'L' } },
     ],
   );
-  await page.evaluate(() => {
-    const w = globalThis as unknown as {
-      __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
-      __ydoc: { transact: (fn: () => void) => void };
-    };
-    w.__ydoc.transact(() => {
-      const seq = w.__patch.nodes['seq'];
-      if (!seq.data) seq.data = {};
-      seq.data.steps = [
-        { on: true, midi: 60 },
-        { on: true, midi: 64 },
-        { on: true, midi: 67 },
-        { on: true, midi: 72 },
-        ...Array.from({ length: 28 }, () => ({ on: false, midi: null })),
-      ];
-    });
-  });
+  await seedKriaWith(page, 'seq', buildKriaMidiData([60, 64, 67, 72], { duration: 0.5 }));
   await page.waitForTimeout(1500);
   const stats = await readScopeBothChannels(page, 'scp');
   expect(stats.ch1.peak, `env_inv-driven VCA should be audible (peak=${stats.ch1.peak})`)
@@ -115,8 +99,8 @@ test('VCA: audio_inv carries the same envelope-shaped signal as audio, with inve
       { id: 'out', type: 'audioOut', params: { master: 0.3 } },
     ],
     [
-      { id: 'e1', from: { nodeId: 'seq', portId: 'pitch' },     to: { nodeId: 'vco',  portId: 'pitch' }, sourceType: 'pitch', targetType: 'pitch' },
-      { id: 'e2', from: { nodeId: 'seq', portId: 'gate'  },     to: { nodeId: 'adsr', portId: 'gate'  }, sourceType: 'gate',  targetType: 'gate' },
+      { id: 'e1', from: { nodeId: 'seq', portId: 'pitch1' },     to: { nodeId: 'vco',  portId: 'pitch' }, sourceType: 'pitch', targetType: 'pitch' },
+      { id: 'e2', from: { nodeId: 'seq', portId: 'gate1' },     to: { nodeId: 'adsr', portId: 'gate'  }, sourceType: 'gate',  targetType: 'gate' },
       { id: 'e3', from: { nodeId: 'vco', portId: 'sine'  },     to: { nodeId: 'vca',  portId: 'audio' } },
       { id: 'e4', from: { nodeId: 'adsr', portId: 'env'   },    to: { nodeId: 'vca',  portId: 'cv' }, sourceType: 'cv', targetType: 'cv' },
       // Send `audio` to ch1, `audio_inv` to ch2. Both should be audible;
@@ -126,23 +110,7 @@ test('VCA: audio_inv carries the same envelope-shaped signal as audio, with inve
       { id: 'e7', from: { nodeId: 'scp', portId: 'ch1_out' },   to: { nodeId: 'out', portId: 'L' } },
     ],
   );
-  await page.evaluate(() => {
-    const w = globalThis as unknown as {
-      __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
-      __ydoc: { transact: (fn: () => void) => void };
-    };
-    w.__ydoc.transact(() => {
-      const seq = w.__patch.nodes['seq'];
-      if (!seq.data) seq.data = {};
-      seq.data.steps = [
-        { on: true, midi: 60 },
-        { on: true, midi: 64 },
-        { on: true, midi: 67 },
-        { on: true, midi: 72 },
-        ...Array.from({ length: 28 }, () => ({ on: false, midi: null })),
-      ];
-    });
-  });
+  await seedKriaWith(page, 'seq', buildKriaMidiData([60, 64, 67, 72], { duration: 0.5 }));
   await page.waitForTimeout(1500);
   const stats = await readScopeBothChannels(page, 'scp');
   // Both channels should carry signal of comparable amplitude (the only
