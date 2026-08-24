@@ -1208,6 +1208,43 @@ describe('module-face lint — MOMENTARY pads (face.momentary)', () => {
     // one thing input monitoring exists to prevent, since the whole point is to
     // audition the source with both hands free.
     'twotracks:monitor',
+    // SYNESTHESIA, 2026-08-24. FOUR params share the press-pad SHAPE
+    // (`0..1 discrete resting at 0`) — a MODE and a POLARITY on each of the two
+    // independent copies — and all four latch. Classified AT THE READ SITE, and
+    // the read site here is as plain as it gets: the worklet opens every
+    // `process()` call with four bare level compares,
+    //
+    //   const aVideo   = this.kval(parameters, 'a_mode',    0) >= 0.5;
+    //   const bVideo   = this.kval(parameters, 'b_mode',    0) >= 0.5;
+    //   const aBipolar = this.kval(parameters, 'a_bipolar', 0) >= 0.5;
+    //   const bBipolar = this.kval(parameters, 'b_bipolar', 0) >= 0.5;
+    //
+    // (packages/dsp/src/synesthesia.ts:269-273) and hands the four booleans to
+    // the per-copy step. There is NO edge detector anywhere in the processor,
+    // its `lib/synesthesia-dsp.ts` core or either surface, and the def declares
+    // no gate input that could deliver one — every one of these is a level
+    // compared afresh on each block, for as long as the value stands.
+    //
+    // MODE picks whether the four lanes are SPECTRAL BANDS or the R/G/B/Luma of
+    // a patched frame. A momentary render would snap the copy back to AUDIO the
+    // instant the player released, so the VIDEO half of this module could never
+    // be reached at all — and the card-side frame pump that feeds it only runs
+    // while the flag STANDS (`if (isVideo('a'))` inside the rAF, so a value
+    // that falls back to 0 on release stops the pump between frames).
+    //
+    // POLARITY picks the env CV convention, UNI (0..1) or BI (−1..+1). It is set
+    // once for the KIND of destination you are driving and then left alone — the
+    // `ch1Range` shape on scope, and the same argument: a momentary render would
+    // return every patched destination to unipolar the moment the hand came off.
+    //
+    // ⚠ ALL FOUR DECLARE AN `options` ROSTER, AND THAT IS NOT WHY THEY ARE HERE.
+    // The ratchet keys on the 0..1 discrete SHAPE, not on whether a roster names
+    // the states; a roster changes the AFFORDANCE and says nothing about edge
+    // versus level. They hold a level.
+    'synesthesia:a_mode',
+    'synesthesia:b_mode',
+    'synesthesia:a_bipolar',
+    'synesthesia:b_bipolar',
   ]);
 
   it('no ACKNOWLEDGED_LATCHING param is DOCUMENTED as momentary (the cross-check)', () => {

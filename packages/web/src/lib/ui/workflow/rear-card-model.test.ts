@@ -811,8 +811,17 @@ describe('rear-card high port counts — columns, split, dense (nothing hidden)'
     ).toBe(true);
   });
 
-  it('es9 + synesthesia — a long MIXED output rail sections itself by cable domain', () => {
-    for (const def of [es9Def, synesthesiaDef] as unknown as RearDefLike[]) {
+  // ⚠ SYNESTHESIA LEFT THIS LEG ON 2026-08-24, and the reason is the point of
+  // the leg BELOW rather than a coverage loss. It was the longest mixed rail in
+  // the registry (48 outputs over four domains) and therefore the obvious
+  // fixture — but its FACEPLATE authors `face.rear.groups` by COPY, and an
+  // authored curation is resolved BEFORE the derived remainder, so this module
+  // no longer produces the condition this leg measures. Re-pointed at `gamepad`
+  // (18 outputs, cv + gate), which produces it on its own merits; `es9` (30
+  // outputs, audio + cv) is unchanged. The authored case is now asserted
+  // directly instead of being an absence.
+  it('es9 + gamepad — a long MIXED output rail sections itself by cable domain', () => {
+    for (const def of [es9Def, gamepadDef] as unknown as RearDefLike[]) {
       expectTotal(def);
       const plan = rearFieldPlan(def);
       const ids = plan.outputs.map((s) => s.id);
@@ -831,6 +840,57 @@ describe('rear-card high port counts — columns, split, dense (nothing hidden)'
         ).toEqual([]);
       }
     }
+  });
+
+  it('synesthesia — an AUTHORED output curation REPLACES the domain split, and is SHORTER', () => {
+    // The registry's longest output rail (48 jacks over four cable domains),
+    // and the one case where authoring beats the derived default on the axis
+    // #1800 exists for. Both halves are measured here, because the argument in
+    // `synesthesiaDef.face` is only worth keeping while it stays true.
+    const def = synesthesiaDef as unknown as RearDefLike;
+    expectTotal(def);
+    const plan = rearFieldPlan(def);
+
+    // 1. The authored groups CLAIM the rail — no derived `out-<domain>`
+    //    remainder is left behind them.
+    expect(plan.outputs.map((s) => s.id)).toEqual(['copy-a', 'copy-b']);
+    expect(plan.outputs.filter((s) => s.id.startsWith('out-'))).toEqual([]);
+
+    // 2. Each section still obeys the column rule — an authored group does not
+    //    get to be a tower.
+    for (const sec of plan.outputs) {
+      const rows = sec.holes.length + sec.clusters.reduce((n, c) => n + c.holes.length, 0);
+      expect(sec.columns, `${sec.id}: ${rows} rows`).toBe(rearSectionColumns(rows));
+      expect(
+        Math.ceil(rows / sec.columns),
+        `${sec.id}: ${rows} rows over ${sec.columns} column(s)`,
+      ).toBeLessThanOrEqual(REAR_ROWS_PER_COLUMN);
+    }
+
+    // 3. ⚠ THE MEASUREMENT THAT JUSTIFIES AUTHORING AT ALL. The out zone is
+    //    capped at REAR_MAX_OUT_ZONE_COLUMNS sections wide, so a rail's HEIGHT
+    //    is the sum of the tallest section in each zone row. Compare the two
+    //    plans for the same 48 jacks — the copy split is the shorter rail, and
+    //    by a wide margin. Derived from the SHIPPED functions, not typed.
+    const zoneHeight = (sections: { holes: unknown[]; columns: number }[]): number => {
+      const perRow = rearZoneColumns(sections.length, 'output', plan.dense);
+      let total = 0;
+      for (let i = 0; i < sections.length; i += perRow) {
+        total += Math.max(
+          ...sections.slice(i, i + perRow).map((s) => Math.ceil(s.holes.length / s.columns)),
+        );
+      }
+      return total;
+    };
+    const authored = zoneHeight(plan.outputs);
+    // What the DERIVED default would have produced for the identical roster:
+    // one section per cable domain, each sized by the same column rule.
+    const byDomain = new Map<string, number>();
+    for (const o of synesthesiaDef.outputs) byDomain.set(o.type, (byDomain.get(o.type) ?? 0) + 1);
+    const derived = zoneHeight(
+      [...byDomain.values()].map((n) => ({ holes: new Array(n), columns: rearSectionColumns(n) })),
+    );
+    expect(authored, `authored ${authored} rows vs derived ${derived} rows`).toBeLessThan(derived);
   });
 
   it('rearZoneColumns: never wider than it has sections, capped, dense earns more', () => {

@@ -7,8 +7,9 @@
   import { patch } from '$lib/graph/store';
   import { setNodeParam } from '$lib/graph/mutate';
   import { useEngine } from '$lib/audio/engine-context';
-  import type { ModuleNode } from '$lib/graph/types';
-  import type { SynesthesiaSnapshot } from '$lib/audio/modules/synesthesia';
+  import type { ModuleNode, ParamDef } from '$lib/graph/types';
+  import { synesthesiaDef, type SynesthesiaSnapshot } from '$lib/audio/modules/synesthesia';
+  import { paramSpec } from './card-kit';
   import { drawVuMeters } from '$lib/audio/modules/synesthesia-draw';
   import { videoChannelLevels } from '../../../../../dsp/src/lib/synesthesia-dsp';
   import type { VideoEngine } from '$lib/video/engine';
@@ -30,6 +31,35 @@
   };
 
   const BANDS = [1, 2, 3, 4] as const;
+
+  // ⚠ RANGES COME FROM THE DEF, NEVER RE-TYPED HERE (the backdraft class).
+  // Until 2026-08-24 the eight ENV-DEPTH knobs below passed literal
+  // `min={0} max={4}` while `synesthesiaDef` — and the worklet's own
+  // `AudioParam` descriptor, via `ENVDEPTH_MIN`/`ENVDEPTH_MAX` in
+  // packages/dsp/src/lib/synesthesia-dsp.ts — declared `0..2`. So the TOP HALF
+  // of every one of those dials wrote a value the contract forbids and
+  // `setValueAtTime` clamped it silently: the knob moved, the readout moved,
+  // the sound did not.
+  //
+  // ⚠ AND NO GATE COULD SEE IT. `card-def-agreement` extracts the param id with
+  // `/paramId="([^"]+)"/` — a DOUBLE-QUOTED literal — and skips any tag it
+  // cannot name. These knobs bind `paramId={`a_envdepth${b}`}`, a template
+  // literal, so all eight were classified "expression-bound" and excluded from
+  // the comparison entirely. `paramSpec` throws on an id this def does not
+  // declare, so the binding cannot rot the way the literals did.
+  //
+  // Each knob binds ITS OWN param rather than a shared "one of these is
+  // representative" constant — copy A's and copy B's controls are separate
+  // ParamDefs, and a shared spec would go on agreeing after one of them moved.
+  //
+  // ⚠ `curve` COMES FROM THE DEF TOO, and that is the same blind spot wearing a
+  // different prop. `card-range-source` refuses a hand-typed `curve` it cannot
+  // attribute — and it cannot attribute ANY of the sixteen controls inside the
+  // two `{#each}` blocks, for the same reason `card-def-agreement` could not
+  // check their ranges: the id is a template literal. So a `curve="linear"`
+  // there is exactly as unverifiable as a `max={4}` was. Reading it off the
+  // ParamDef removes the second copy rather than asserting it agrees.
+  const spec = (id: string): ParamDef => paramSpec(synesthesiaDef, id);
   // Musical band edges: bass 20–200, low-mid 200–1k, high-mid 1k–4k, treble 4k+.
   const BAND_LABELS = ['20–200', '200–1k', '1k–4k', '4k+'] as const;
   // In VIDEO mode the 4 lanes are the R/G/B/Luma channels of the patched frame.
@@ -240,16 +270,16 @@
           onclick={() => togglePolarity('a')}
           title="Env CV polarity: UNI [0,1] or BI [-1,+1] (BI sweeps the full destination range)"
         >{isBipolar('a') ? 'BI' : 'UNI'}</button>
-        <Knob value={param('a_master', 1)} min={0.5} max={1.5} defaultValue={1} label="A MAS"
-          curve="linear" onchange={set('a_master')} moduleId={id} paramId="a_master" readLive={live('a_master')} />
+        <Knob value={param('a_master', spec('a_master').defaultValue)} min={spec('a_master').min} max={spec('a_master').max} defaultValue={spec('a_master').defaultValue} label="A MAS"
+          curve={spec('a_master').curve} onchange={set('a_master')} moduleId={id} paramId="a_master" readLive={live('a_master')} />
       </div>
       <div class="bands">
         <canvas bind:this={canvasA} width="208" height="96" data-testid="synesthesia-vu-a"></canvas>
         <div class="gain-row">
           {#each BANDS as b, i (b)}
             <div class="gcol">
-              <Knob value={param(`a_gain${b}`, 1)} min={1} max={2} defaultValue={1} label={`B${b}`}
-                curve="linear" onchange={set(`a_gain${b}`)} moduleId={id} paramId={`a_gain${b}`} readLive={live(`a_gain${b}`)} />
+              <Knob value={param(`a_gain${b}`, spec(`a_gain${b}`).defaultValue)} min={spec(`a_gain${b}`).min} max={spec(`a_gain${b}`).max} defaultValue={spec(`a_gain${b}`).defaultValue} label={`B${b}`}
+                curve={spec(`a_gain${b}`).curve} onchange={set(`a_gain${b}`)} moduleId={id} paramId={`a_gain${b}`} readLive={live(`a_gain${b}`)} />
               <div class="band-label" class:video={isVideo('a')}>{isVideo('a') ? VIDEO_LABELS[i] : BAND_LABELS[i]}</div>
             </div>
           {/each}
@@ -259,8 +289,8 @@
         <div class="depth-row" data-testid="synesthesia-depth-a">
           {#each BANDS as b (b)}
             <div class="gcol">
-              <Knob value={param(`a_envdepth${b}`, 1)} min={0} max={4} defaultValue={1} label={`B${b}`}
-                curve="linear" onchange={set(`a_envdepth${b}`)} moduleId={id} paramId={`a_envdepth${b}`} readLive={live(`a_envdepth${b}`)} />
+              <Knob value={param(`a_envdepth${b}`, spec(`a_envdepth${b}`).defaultValue)} min={spec(`a_envdepth${b}`).min} max={spec(`a_envdepth${b}`).max} defaultValue={spec(`a_envdepth${b}`).defaultValue} label={`B${b}`}
+                curve={spec(`a_envdepth${b}`).curve} onchange={set(`a_envdepth${b}`)} moduleId={id} paramId={`a_envdepth${b}`} readLive={live(`a_envdepth${b}`)} />
               <div class="depth-label">DPT</div>
             </div>
           {/each}
@@ -289,16 +319,16 @@
           onclick={() => togglePolarity('b')}
           title="Env CV polarity: UNI [0,1] or BI [-1,+1] (BI sweeps the full destination range)"
         >{isBipolar('b') ? 'BI' : 'UNI'}</button>
-        <Knob value={param('b_master', 1)} min={0.5} max={1.5} defaultValue={1} label="B MAS"
-          curve="linear" onchange={set('b_master')} moduleId={id} paramId="b_master" readLive={live('b_master')} />
+        <Knob value={param('b_master', spec('b_master').defaultValue)} min={spec('b_master').min} max={spec('b_master').max} defaultValue={spec('b_master').defaultValue} label="B MAS"
+          curve={spec('b_master').curve} onchange={set('b_master')} moduleId={id} paramId="b_master" readLive={live('b_master')} />
       </div>
       <div class="bands">
         <canvas bind:this={canvasB} width="208" height="96" data-testid="synesthesia-vu-b"></canvas>
         <div class="gain-row">
           {#each BANDS as b, i (b)}
             <div class="gcol">
-              <Knob value={param(`b_gain${b}`, 1)} min={1} max={2} defaultValue={1} label={`B${b}`}
-                curve="linear" onchange={set(`b_gain${b}`)} moduleId={id} paramId={`b_gain${b}`} readLive={live(`b_gain${b}`)} />
+              <Knob value={param(`b_gain${b}`, spec(`b_gain${b}`).defaultValue)} min={spec(`b_gain${b}`).min} max={spec(`b_gain${b}`).max} defaultValue={spec(`b_gain${b}`).defaultValue} label={`B${b}`}
+                curve={spec(`b_gain${b}`).curve} onchange={set(`b_gain${b}`)} moduleId={id} paramId={`b_gain${b}`} readLive={live(`b_gain${b}`)} />
               <div class="band-label" class:video={isVideo('b')}>{isVideo('b') ? VIDEO_LABELS[i] : BAND_LABELS[i]}</div>
             </div>
           {/each}
@@ -307,8 +337,8 @@
         <div class="depth-row" data-testid="synesthesia-depth-b">
           {#each BANDS as b (b)}
             <div class="gcol">
-              <Knob value={param(`b_envdepth${b}`, 1)} min={0} max={4} defaultValue={1} label={`B${b}`}
-                curve="linear" onchange={set(`b_envdepth${b}`)} moduleId={id} paramId={`b_envdepth${b}`} readLive={live(`b_envdepth${b}`)} />
+              <Knob value={param(`b_envdepth${b}`, spec(`b_envdepth${b}`).defaultValue)} min={spec(`b_envdepth${b}`).min} max={spec(`b_envdepth${b}`).max} defaultValue={spec(`b_envdepth${b}`).defaultValue} label={`B${b}`}
+                curve={spec(`b_envdepth${b}`).curve} onchange={set(`b_envdepth${b}`)} moduleId={id} paramId={`b_envdepth${b}`} readLive={live(`b_envdepth${b}`)} />
               <div class="depth-label">DPT</div>
             </div>
           {/each}

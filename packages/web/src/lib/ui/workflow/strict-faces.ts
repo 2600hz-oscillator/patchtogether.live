@@ -4351,6 +4351,46 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // the three topbar surfaces with the faceplate system is real work and does
   // not belong on a module PR; #2173 repaired one of the three.
   'midiclock',
+  // ── synesthesia ───────────────────────────────────────────────────────────
+  //
+  // THE RACK'S LISTENER — two independent copies of a 4-band analyser, 22
+  // params, 4 inputs and FORTY-EIGHT output jacks, the largest output roster on
+  // any faced module. Three bands (`input` / `band gain` / `env out`), each
+  // holding the same stage of BOTH copies with the copies as CLUSTERS, because
+  // two copies of one circuit are the "same idea, twice" that a ~14 px
+  // sub-header exists for and a ~81 px band each does not.
+  //
+  // ⚠ IT IS THE FIFTH PROMOTED `CARD_PRODUCER_LANE_TYPES` MEMBER, AND THE
+  // FIRST WHOSE PRODUCER AND WHOSE PICTURE ARE DIFFERENT THINGS. cube's hero
+  // cell IS its renderer; rasterize's body ADVANCES its painter; timelorde's
+  // and scope's bodies show what their own card produces. Here the card's rAF
+  // produces something the face never shows — the VIDEO-mode
+  // `write(node,'video_levels_a'/'_b')` pump that turns a patched frame into
+  // four channel levels — while the face shows something the card merely also
+  // draws, the VU wall. So the two halves of the rule are satisfied by two
+  // different mechanisms: the headless source host keeps the real card mounted
+  // for the PUMP (synesthesia is deliberately NOT in `FACE_MOUNTS_PRODUCER`),
+  // and `$lib/ui/modules/synesthesia/shell-extension.ts` mounts a
+  // `fullViewBody` for the PICTURE. Taking the `FACE_MOUNTS_PRODUCER`
+  // exemption would have killed VIDEO mode the moment the dock opened.
+  //
+  // ⚠ THE GLYPH IS REFUSED FOR SCOPE'S REASON, NOT DOCKSCOPE'S, and it is the
+  // sharpest instance of that class in the fleet. `a_band1_audio` is a declared
+  // audio output, so every glyph literal resolves LIVE and reddens nothing —
+  // while painting copy A's BASS BAND as though it were the analysis, invariant
+  // to the other seven band/copy pairs. `glyph: 'none'` plus the body; the
+  // assertion lives in `synesthesia-face-model.test.ts` because no gate makes it.
+  //
+  // ⚠ PROMOTION ALSO FIXED A LIVE DEFECT IT WAS BLIND TO. The card's eight
+  // ENV-DEPTH knobs passed literal `min={0} max={4}` against a def (and a
+  // worklet `AudioParam`) declaring `0..2`, so the top half of every one of
+  // those dials wrote values the contract forbids and the engine clamped them
+  // silently. `card-def-agreement` could not see it: that card names its param
+  // through a template literal (`paramId={\`a_envdepth${b}\`}`), and the scanner
+  // only reads a double-quoted `paramId="…"`, so all eight controls were
+  // skipped. Both ranges now come from `paramSpec(synesthesiaDef, …)` and the
+  // card is in `RANGE_BOUND_CARDS`.
+  'synesthesia',
 ]);
 
 /**
