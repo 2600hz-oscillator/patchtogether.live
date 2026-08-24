@@ -17,6 +17,26 @@
 // 2D context and reading the polylines they actually stroke. A test that
 // re-implemented their scale maths would agree with itself forever while the
 // product drifted underneath it.
+//
+// ── WHAT THIS GATE CANNOT SEE ────────────────────────────────────────────
+//
+// 1. IT IS SCOPED TO `yShape` NEAR THE DEFAULT, and that scope is load-bearing
+//    rather than incidental. The metric below is a line's WIGGLE against the
+//    gap to its neighbour, and at high `yShape` the RULER itself bows across a
+//    row, so the xyz panel's wiggle stops being all data. Measured on the live
+//    default patch: at yShape 0 / 0.2 / 0.5 the ruler contributes 0.00000 of
+//    the within-row std (`shapedRamp` is flat across columns there, so the
+//    wiggle is pure relief and the comparison is honest); at yShape 1 it
+//    contributes 0.14118 of 0.16080 — 88%. At that setting the wavetable SHOULD
+//    read flatter than the field, because a geometric bow is not data and must
+//    not reach the audio. So a failure here at high yShape would be the gate
+//    misreading, not the product. The module ships yShape 0.2.
+// 2. IT IS BLIND TO COLOUR AND STROKE WEIGHT — it reads path geometry only, so
+//    a renderer that kept its coordinates and painted everything black would
+//    still pass. The dock VRT baselines are what cover that.
+// 3. IT IS GEN=XYZ ONLY. `gen_mode = 1` (3D Shape Gen) builds its table from
+//    `foxy-shapes.ts` and never touches the field, so parity is not defined
+//    for it and this gate does not claim anything about it.
 
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
@@ -228,6 +248,27 @@ describe('FOXY XYZ parity: the wavetable shows what the xyz field shows', () => 
       `(${oldRatio.toFixed(2)}x) — if this is now INSIDE the band, the gate above has ` +
       'stopped being able to fail and something re-flattened or re-scaled the panels',
     ).toBeLessThan(1 / 1.5);
+  });
+
+  it('Y-SHAPE is a DISPLAY control: it cancels out of the table exactly', () => {
+    // The corollary of subtracting the row's own ruler, and the reason the def's
+    // long-standing "legacy XYZ-window control affecting the on-card scope draw"
+    // wording for `xyz_yshape` is TRUE for the first time. `yShape` enters
+    // `boxToField3d` only through `v`, which is added to `y` AND stored as
+    // `base` — so `y - base` is algebraically free of it. Before the fix it was
+    // the dominant term in the audio while the docs said it was cosmetic.
+    const flat = fieldToWavetable(buildField({ yShape: 0 }), FOXY_WT_FRAMES, FOXY_WT_SAMPLES);
+    const bowed = fieldToWavetable(buildField({ yShape: 1 }), FOXY_WT_FRAMES, FOXY_WT_SAMPLES);
+    for (let f = 0; f < flat.length; f++) {
+      for (let s = 0; s < flat[f]!.length; s++) {
+        expect(bowed[f]![s]!, `frame ${f} sample ${s}: yShape must not reach the audio`)
+          .toBeCloseTo(flat[f]![s]!, 6);
+      }
+    }
+    // POSITIVE control on the same pair: yShape DOES move the picture, so the
+    // equality above is a real cancellation and not two identical builds.
+    expect(xyzPanelRatio(buildField({ yShape: 1 })))
+      .not.toBeCloseTo(xyzPanelRatio(buildField({ yShape: 0 })), 2);
   });
 
   it('the two panels FLATTEN TOGETHER as the depth control comes down', () => {
