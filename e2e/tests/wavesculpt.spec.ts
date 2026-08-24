@@ -141,8 +141,14 @@ test.describe('WAVESCULPT v2 — wavetable-engine 3D-camera video synth', () => 
     // All 4 per-osc strips present with WAV selector + LOAD button.
     for (let i = 1; i <= 4; i++) {
       await expect(page.locator(`[data-testid="wavesculpt-osc-${i}"]`)).toHaveCount(1);
-      await expect(page.locator(`[data-testid="wavesculpt-osc-${i}-wav-select"]`)).toHaveCount(1);
-      await expect(page.locator(`[data-testid="wavesculpt-osc-${i}-load"]`)).toHaveCount(1);
+      // The three pickers carry their CONTROL-FAMILY prefixes now
+      // (`wavesculpt-preset` / `-table` / `-load`), because the strip is three
+      // declared families rather than one opaque cell — see the def. The strip
+      // WRAPPER keeps `wavesculpt-osc-{n}`: it is a layout container, not a
+      // control, and nothing declares it.
+      await expect(page.locator(`[data-testid="wavesculpt-osc${i}-preset"]`)).toHaveCount(1);
+      await expect(page.locator(`[data-testid="wavesculpt-osc${i}-table"]`)).toHaveCount(1);
+      await expect(page.locator(`[data-testid="wavesculpt-osc${i}-load"]`)).toHaveCount(1);
     }
 
     // Drive exactly 8 deterministic frames so any shader/init failure surfaces

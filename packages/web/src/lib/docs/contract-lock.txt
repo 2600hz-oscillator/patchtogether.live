@@ -3760,7 +3760,18 @@ wavesculpt param wall6_alpha 0..100 linear default=100 unit=%
 wavesculpt param wall6_distort 0..1 linear default=0
 wavesculpt param wiggle 0..1 linear default=0
 wavesculpt param zoom 0.3..3 log default=1
-wavesculpt family wavesculpt-osc kind=cell prefix=wavesculpt-osc
+wavesculpt family wavesculpt-osc1-load kind=cell prefix=wavesculpt-osc1-load
+wavesculpt family wavesculpt-osc1-preset kind=cell prefix=wavesculpt-osc1-preset
+wavesculpt family wavesculpt-osc1-table kind=cell prefix=wavesculpt-osc1-table
+wavesculpt family wavesculpt-osc2-load kind=cell prefix=wavesculpt-osc2-load
+wavesculpt family wavesculpt-osc2-preset kind=cell prefix=wavesculpt-osc2-preset
+wavesculpt family wavesculpt-osc2-table kind=cell prefix=wavesculpt-osc2-table
+wavesculpt family wavesculpt-osc3-load kind=cell prefix=wavesculpt-osc3-load
+wavesculpt family wavesculpt-osc3-preset kind=cell prefix=wavesculpt-osc3-preset
+wavesculpt family wavesculpt-osc3-table kind=cell prefix=wavesculpt-osc3-table
+wavesculpt family wavesculpt-osc4-load kind=cell prefix=wavesculpt-osc4-load
+wavesculpt family wavesculpt-osc4-preset kind=cell prefix=wavesculpt-osc4-preset
+wavesculpt family wavesculpt-osc4-table kind=cell prefix=wavesculpt-osc4-table
 wavetableVco meta domain=audio
 wavetableVco in fine cv param=fine cvScale=linear
 wavetableVco in fm audio

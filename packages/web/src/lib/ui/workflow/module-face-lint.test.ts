@@ -1153,6 +1153,34 @@ describe('module-face lint — MOMENTARY pads (face.momentary)', () => {
     // timelorde's it rests at 0, so a fresh kria spawns STOPPED — which is
     // also what makes its VRT scenes deterministic for free.
     'kria:running',
+    // WAVESCULPT `unison` and `chord_mode`, 2026-08-24. The two 0/1 switches in
+    // the VOICING band: stack the four voices onto one pitch, and read every
+    // voice's pitch from voice 1 to build a chord.
+    //
+    // LATCHING, classified AT THE READ SITE — and the read site is unusually
+    // unambiguous here. Both are sampled as plain LEVELS once per audio frame
+    // in the factory's scheduler tick (`(live.unison ?? 0) >= 0.5`,
+    // `(live.chord_mode ?? 0) >= 0.5`) and again per rendered frame by the
+    // renderer, and there is no edge detector anywhere in either chain. They
+    // are MODES a player sets and leaves: a momentary render would unstack the
+    // voices — or collapse the chord back to four independent pitches — the
+    // instant the pointer came up, which is the one behaviour neither control
+    // could be used for.
+    //
+    // ⚠ `chord_quality` IS HERE TOO, and the first draft of this comment said
+    // it would not need to be — wrongly, which is worth leaving written down.
+    // The reasoning was that its new MAJ/MIN `options` roster makes it a
+    // two-MODE picker rather than a press-pad. That is a true statement about
+    // how it RENDERS and an irrelevant one to this clause: the check keys on
+    // the 0..1 discrete SHAPE, not on whether a roster names the states. A
+    // roster changes the affordance; it does not answer "does this fire on an
+    // edge or hold a level", which is the only question being asked here. It
+    // holds a level — the factory reads it per frame through
+    // `chordQualityFromKnob(live.chord_quality ?? 0)` with no edge detector —
+    // so it latches, exactly like its two neighbours.
+    'wavesculpt:unison',
+    'wavesculpt:chord_mode',
+    'wavesculpt:chord_quality',
     // TWOTRACKS, 2026-08-24. Three params share the press-pad SHAPE
     // (`0..1 discrete resting at 0`) and all three are tape-machine states a
     // player sets and leaves. Classified AT THE READ SITE, not from the shape.

@@ -1,0 +1,203 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>PICTUREBOX face — the lane tile and the live picture</title>
+<style>
+/* ─────────────────────────────────────────────────────────────────────────
+   PICTUREBOX FACEPLATE — MOCKUP, state 2 of 2: THE LANE TILE.
+   SPEC AND MOCKUP ONLY. Nothing here is implemented. See spec.md §4.
+
+   This is the wave's ONE accepted lane picture. It is NOT the glyph seam:
+   `hasVideoSurface(def)` is `domain === 'video'` (module-shell-model.ts:177-179),
+   `laneGlyphFor` returns 'picture' (:237-240), and ModuleShell mounts
+   <VideoTileThumb nodeId={id} /> (:1345-1348) — which takes the nodeId, so the
+   picture is per-node by construction. 160×120, 15 fps (:250-252).
+   ───────────────────────────────────────────────────────────────────────── */
+:root{
+  --bg:#0e1013; --dock:#12161c; --pbody:#1c1f24; --line:#2c3037; --tile:#33383f;
+  --ink:#eef1f5; --dim:#9aa2ad; --faint:#646c77;
+  --accent:#6cf; --img:#c084fc; --ch1:#fbbf24; --warn:#f2c14e; --good:#8fe6b0;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+  font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1200px;margin:0 auto;padding:26px 20px 90px}
+h1{font-size:21px;font-weight:800;margin:0 0 6px;letter-spacing:.01em}
+.sub{color:var(--dim);font-size:12.5px;margin:0 0 14px;max-width:106ch}
+.sub b{color:var(--ink)} code{font-family:var(--mono);font-size:11.5px;color:var(--ch1)}
+.nav{display:flex;gap:8px;margin:0 0 20px;font-size:11px;flex-wrap:wrap}
+.nav a{color:var(--ink);text-decoration:none;border:1px solid var(--line);border-radius:6px;
+  padding:6px 12px;background:#12161c;font-family:var(--mono);letter-spacing:.06em;text-transform:uppercase}
+.nav a.on{border-color:var(--img);color:var(--img)}
+.ok{border:1px solid #3b5a48;background:#111a15;border-radius:8px;padding:11px 14px;
+  margin:12px 0;font-size:12.5px;color:#a9d8bd;max-width:118ch}
+.ok b{color:var(--good)}
+.warn{border:1px solid #6a5330;background:#1c1811;border-radius:8px;padding:11px 14px;
+  margin:12px 0;font-size:12.5px;color:#e8cf9a;max-width:118ch}
+.warn b{color:var(--warn)}
+.cols{display:grid;grid-template-columns:minmax(0,1fr) 390px;gap:18px;align-items:start}
+@media (max-width:1080px){.cols{grid-template-columns:minmax(0,1fr)}}
+
+/* ── the lane ─────────────────────────────────────────────────────────── */
+.lane{background:#0b0e12;border:1px solid var(--line);border-radius:11px;padding:16px;
+  display:flex;gap:14px;flex-wrap:wrap;align-items:flex-start}
+.tile{width:186px;background:var(--pbody);border:1px solid var(--tile);
+  border-left:4px solid var(--img);border-radius:8px;overflow:hidden}
+.tile.audio{border-left-color:#7dd3fc}
+.tile .tt{display:flex;align-items:baseline;gap:6px;padding:6px 8px 5px}
+.tile .tt b{font-size:9.6px;font-weight:800;letter-spacing:.05em}
+.tile .tt i{margin-left:auto;font-style:normal;font-family:var(--mono);font-size:7.6px;
+  letter-spacing:.1em;color:var(--faint);text-transform:uppercase}
+.thumb{width:100%;aspect-ratio:4/3;border-top:1px solid #171b21;border-bottom:1px solid #171b21;position:relative}
+.thumb.a{background:
+  radial-gradient(circle at 30% 32%, #f0a5c8 0 16%, transparent 17%),
+  radial-gradient(circle at 68% 26%, #ffd98a 0 11%, transparent 12%),
+  linear-gradient(160deg,#3a2a6b 0%,#7b3f8f 46%,#d97a5a 78%,#f6c78a 100%)}
+.thumb.b{background:
+  repeating-linear-gradient(115deg,#0f3b4a 0 9px,#124f5e 9px 18px),
+  linear-gradient(#0d2b36,#0d2b36)}
+.thumb.b::after{content:"";position:absolute;inset:22% 26%;border-radius:50%;
+  background:radial-gradient(circle,#8ff0d8 0 38%,#2e7f8f 39% 68%,transparent 69%)}
+.thumb.idle{background:#050f13}
+.thumb.idle::after{content:"no image";position:absolute;inset:0;display:grid;place-items:center;
+  font-family:var(--mono);font-size:8px;letter-spacing:.12em;text-transform:uppercase;color:#1d3a44}
+.tile .krow{display:flex;justify-content:center;padding:7px 8px 9px}
+.kn{width:46px;display:flex;flex-direction:column;align-items:center;gap:4px}
+.kn i{--v:.5;display:block;width:15px;height:44px;border-radius:7px;position:relative;
+  background:linear-gradient(#171b21,#12161c);border:1px solid #333a43}
+.kn i::after{content:"";position:absolute;left:50%;width:20px;height:7px;border-radius:2px;
+  background:var(--img);box-shadow:0 0 6px color-mix(in srgb,var(--img) 60%,transparent);
+  transform:translate(-50%,-50%);top:calc(5px + (1 - var(--v)) * (100% - 10px))}
+.kn b{font-size:7px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--dim);font-family:var(--mono)}
+.ph{width:186px;height:150px;border:1px dashed #363c45;border-radius:8px;display:grid;
+  place-items:center;color:#4d5560;font-family:var(--mono);font-size:8.4px;letter-spacing:.1em;
+  text-transform:uppercase;background:#0f1216;text-align:center;padding:10px}
+
+.capt{font-family:var(--mono);font-size:8.6px;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--faint);margin:12px 0 6px}
+
+.notes{display:flex;flex-direction:column;gap:12px}
+.card{border:1px solid var(--line);background:#101419;border-radius:9px;padding:12px 14px}
+.card h3{margin:0 0 7px;font-size:10px;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--accent);font-family:var(--mono);font-weight:700}
+.card p{margin:0 0 8px;font-size:12px;color:var(--dim)}
+.card p:last-child{margin-bottom:0}
+.card b{color:var(--ink)}
+table{border-collapse:collapse;width:100%;font-size:11px;margin:2px 0 0}
+th,td{text-align:left;padding:4px 7px 4px 0;border-bottom:1px solid #1e242c;vertical-align:top;color:var(--dim)}
+th{color:var(--faint);font-family:var(--mono);font-size:8.6px;letter-spacing:.09em;text-transform:uppercase;font-weight:400}
+td b{color:var(--ink)}
+</style>
+<div class="wrap">
+
+<h1>PICTUREBOX — the lane tile, and the wave's one accepted picture</h1>
+<p class="sub">
+  <b>SPEC AND MOCKUP ONLY. Nothing here is implemented.</b> Waves 2 and 3 refused a lane picture
+  six times, always for the same reason: <code>ShellExtensionGlyphProps</code> carries no
+  <code>nodeId</code>, so every instance would draw the same thing.
+  <b>picturebox is not on that seam at all.</b>
+</p>
+
+<div class="nav">
+  <a href="dock.html">1 · the dock face</a>
+  <a class="on" href="dock-slots.html">2 · the lane tile + a loaded bank</a>
+  <a href="spec.md">spec.md</a>
+</div>
+
+<div class="ok">
+  <b>Free, per-node, and already shipped.</b> <code>hasVideoSurface(def)</code> is
+  <code>def.domain === 'video'</code> — the whole condition
+  (<code>module-shell-model.ts:177-179</code>). <code>laneGlyphFor</code> returns
+  <code>'picture'</code> (<code>:237-240</code>) and <code>ModuleShell.svelte:1345-1348</code>
+  mounts <code>&lt;VideoTileThumb nodeId={id} /&gt;</code>. <b>No platform change. No prop to add.</b>
+</div>
+
+<div class="cols">
+<div>
+
+  <p class="capt">after — three picturebox nodes in one rack</p>
+  <div class="lane">
+    <div class="tile">
+      <div class="tt"><b>PICTUREBOX</b><i>slot C</i></div>
+      <div class="thumb a"></div>
+      <div class="krow"><div class="kn"><i style="--v:.5"></i><b>Gain</b></div></div>
+    </div>
+    <div class="tile">
+      <div class="tt"><b>PICTUREBOX</b><i>slot E</i></div>
+      <div class="thumb b"></div>
+      <div class="krow"><div class="kn"><i style="--v:.78"></i><b>Gain</b></div></div>
+    </div>
+    <div class="tile">
+      <div class="tt"><b>PICTUREBOX</b><i>empty</i></div>
+      <div class="thumb idle"></div>
+      <div class="krow"><div class="kn"><i style="--v:.5"></i><b>Gain</b></div></div>
+    </div>
+  </div>
+
+  <p class="capt">before — what the default shell renders today</p>
+  <div class="lane">
+    <div class="ph">picturebox<br>placeholder tile</div>
+    <div class="ph">picturebox<br>placeholder tile</div>
+    <div class="ph">picturebox<br>placeholder tile</div>
+  </div>
+
+  <div class="warn" style="margin-top:16px">
+    <b>The empty state is a real state, and it must be negative-controlled.</b> The module's
+    shader fills a dark teal when no image is loaded —
+    <code>vec4(0.02, 0.06, 0.08, 1.0)</code> at <code>picturebox.ts:78</code>, chosen so an empty
+    card reads <em>"alive but empty"</em> rather than <em>"broken"</em>.
+    <b>MUST-VERIFY M2 asserts both directions</b>: non-black for a loaded node, and that exact
+    idle colour for an empty one — because "black" and "never looked" are indistinguishable from
+    one reading.
+  </div>
+
+</div>
+
+<div class="notes">
+
+  <div class="card">
+    <h3>why the picture outranks the knob</h3>
+    <p>Owner ruling #1785, recorded at <code>module-shell-model.ts:202-214</code>: <em>"for a
+      video module the picture IS the module's identity in a rack, so it OUTRANKS ranked
+      controls."</em></p>
+    <p>So at the tightest lane tiers <b>the Gain fader may be evicted and the picture kept</b>.
+      That is correct here and needs no override — a picturebox you cannot see is not a
+      picturebox.</p>
+  </div>
+
+  <div class="card">
+    <h3><code>glyph: 'none'</code> is mandatory, not tasteful</h3>
+    <p>picturebox has exactly one output and it is
+      <code>{ id: 'out', type: 'image' }</code>. <code>primaryAudioOutPortId</code> matches
+      <code>type === 'audio'</code> exactly (<code>shell-glyph-live.ts:111-113</code>), so it
+      returns <code>null</code> and <b>every glyph literal except <code>'none'</code></b>
+      resolves to <code>{kind:'static'}</code>.</p>
+    <p><code>module-face-lint.test.ts:271-290</code> reddens a dead glyph
+      <b>unconditionally — no exemption list, no count.</b></p>
+  </div>
+
+  <div class="card">
+    <h3>the picture is not the point of failure</h3>
+    <table>
+      <tr><th>worry</th><th>measured</th></tr>
+      <tr><td>does it die when the card unmounts?</td><td><b>no</b> — #1720 moved the texture and the gate pump to <code>extras-producers.ts:255</code>, node-lifetime</td></tr>
+      <tr><td>headless host tax?</td><td><b>none</b> — absent from <code>HEADLESS_MOUNT_LANE_TYPES</code>, and that set is grep-derived</td></tr>
+      <tr><td>does the thumb pull WebGL into the shell?</td><td><b>no</b> — it blits into a 2D canvas; <code>module-shell-model.ts:156-166</code> says the shell stays out of the attest basis</td></tr>
+      <tr><td>cost per tile</td><td>160×120 at 15 fps (<code>:250-252</code>)</td></tr>
+    </table>
+  </div>
+
+  <div class="card">
+    <h3>the bank, in the dock only</h3>
+    <p>The seven slots and the file pickers stay in the <code>fullViewBody</code>. A lane tile is
+      not where you manage a library, and the dock hero glyph is capped at
+      <code>DOCK_HERO_GLYPH_W</code> = <b>214 px</b>
+      (<code>module-shell-model.ts:635-636</code>) — <em>"a picture, not a surface"</em>.</p>
+    <p>See <a href="dock.html" style="color:var(--img)">state 1</a>.</p>
+  </div>
+
+</div>
+</div>
+</div>

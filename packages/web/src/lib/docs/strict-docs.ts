@@ -291,8 +291,9 @@ export const STRICT_DOCS: ReadonlySet<string> = new Set<string>([
   // samsloop adds a waveform canvas + file-upload + mic record, and wavesculpt
   // renders WebGL2 (rendersWebGL — authoring its docs + controlFamilies is
   // attest-neutral by construction, like cube)
-  // plus a per-osc .wav file picker. WAVESCULPT declares the per-osc
-  // wavetable-source strip family (wavesculpt-osc). (matrixMix stays
+  // plus a per-osc .wav file picker. WAVESCULPT declares the wavetable strip as
+  // THREE families — wavesculpt-preset / -table / -load — one per control kind
+  // rather than one opaque cell per oscillator. (matrixMix stays
   // undocumented on purpose — it is the e2e "undocumented module" fixture.)
   'frogger',
   'modtris',

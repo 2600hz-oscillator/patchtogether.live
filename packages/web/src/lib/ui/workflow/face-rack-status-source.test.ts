@@ -407,6 +407,8 @@ const EXTENSION_BODY_ROLES: Readonly<Record<string, BodyRule>> = {
 
   timelorde: { role: 'picture', why: 'the 220x220 DISPLAY — the owner\'s owl painting, its eyes and border brightening on the beat, or the live VIDEO IN feed when one is patched — plus the SCREEN switch. ⚠ THE ONLY BODY IN THIS ROSTER THAT RENDERS NOTHING: it blits `video_out`\'s own drawFrame, i.e. the frame `TimelordeCard` composites and pushes from an off-screen HeadlessSourceHost, so the faceplate and every downstream video module see the same pixels by construction and the owl render has exactly one implementation. ⚠ THAT ALSO INVERTS THE COLLAPSE RULE relative to rasterize: the producer here is the CARD, alive for the whole session, so SCREEN OFF costs a blit and never the picture — `video_out` is untouched. It is the module this floor most needed, because the card\'s rAF is the SOLE writer of `displayFrame`: a SCREEN switch that stopped it would turn a preview toggle into a producer kill switch for the whole rack. No derived value is painted here; the transport strip and the BPM footer the legacy card carried are gone by the resting-text ruling, and what they said now lives in the two transport rosters and in this canvas\'s aria-label.' },
 
+  wavesculpt: { role: 'picture', why: 'the 4-voice 3-D scene — four wave ribbons inside a room whose six walls can be live video, seen through a camera the player flies — plus the SCREEN switch and the MONITOR resize. ⚠ IT MOUNTS `WavesculptVizSurface`, THE SAME COMPONENT THE LEGACY CARD MOUNTS, so the faceplate and the card are two mounts of ONE renderer rather than two renderers drifting against one DSP; that extraction was its own PR and is the reason this module could be promoted at all. ⚠ THE PICTURE IS ALSO THE PAD: the camera pad is declared `surface: \'body\'` and is painted here as an overlay ON the render, because you fly a camera by watching where it goes — the gesture and its feedback are one surface, which no band cell can express. The pad shows the KNOB while CV moves the PICTURE; those are two different numbers and both are correct, and this body deliberately does NOT read the camera shadow to reconcile them (that shadow is an owner-listed defect). ⚠ SCREEN OFF HIDES WITH CSS AND NEVER UNMOUNTS THE SURFACE: unmounting would run its onDestroy, disposing the GL context and uninstalling the cross-domain frame drawer, so collapsing a preview would black out `video_out` for every module downstream — the module\'s own drawFrame fills solid black with no drawer installed. The renderer keeps running; only the view stops. ⚠ NO DERIVED VALUE IS PAINTED. The pad\'s X/Y live on its `aria-label`, and the only text nodes on the surface are the two switch captions (SCREEN ON/OFF, MONITOR ON/OFF), which are control captions on their own buttons. What the canvas draws is the render itself, and the dock VRT baselines are what see it.' },
+
   // ── STATUS — the one body whose subject is not a picture.
   cvBuddy: {
     role: 'status-primitive',
@@ -421,17 +423,56 @@ const EXTENSION_BODY_ROLES: Readonly<Record<string, BodyRule>> = {
   },
 };
 
+/**
+ * Does this body put a CANVAS on screen — directly, or through a component it
+ * mounts?
+ *
+ * ⚠ THE SECOND CASE IS NOT A LOOPHOLE, IT IS THE ARCHITECTURE THE REPO WANTS.
+ * `wavesculpt` is the first body whose picture comes from a SHARED surface
+ * component (`WavesculptVizSurface`), mounted here and by the legacy card, so
+ * that the faceplate and the card are two mounts of ONE renderer instead of two
+ * renderers drifting against one DSP — the shape `cube` established. A
+ * `/<canvas/` grep of the body alone reads that correct arrangement as "paints
+ * nothing", which would push authors toward re-drawing the picture locally: the
+ * exact drift this file's neighbours exist to prevent.
+ *
+ * So the check follows the mount ONE level, and only for components the body
+ * actually RENDERS (`<Name`), imported by relative path from the module's own
+ * directory. It is deliberately not transitive and deliberately not a
+ * whole-tree search — a body that mounts something that mounts something is
+ * far enough from its own picture that the claim should be written down again.
+ */
+function paintsCanvas(src: string, extId: string): boolean {
+  if (/<canvas/.test(src)) return true;
+  for (const m of src.matchAll(/import\s+([A-Z][A-Za-z0-9_]*)\s+from\s+'\.\/([^']+\.svelte)'/g)) {
+    const [, name, rel] = m;
+    // MOUNTED, not merely imported — an unused import paints nothing.
+    if (!new RegExp(`<${name}[\\s/>]`).test(src)) continue;
+    const file = resolve(MODULES_DIR, extId, rel!);
+    if (existsSync(file) && /<canvas/.test(read(file))) return true;
+  }
+  return false;
+}
+
 /** The mechanical predicate each role claims about its own source. */
-const ROLE_PREDICATE: Readonly<Record<BodyRole, { holds: (src: string) => boolean; what: string }>> = {
+const ROLE_PREDICATE: Readonly<
+  Record<BodyRole, { holds: (src: string, extId: string) => boolean; what: string }>
+> = {
   picture: {
-    holds: (src) => /<canvas/.test(src),
-    what: 'mounts a <canvas> — a body claiming to be a PICTURE must have one',
+    holds: (src, extId) => paintsCanvas(src, extId),
+    what:
+      'mounts a <canvas>, directly or through a surface component it renders — a body claiming '
+      + 'to be a PICTURE must have one',
   },
   'status-primitive': {
-    holds: (src) => /StatusLed/.test(src) && !/<canvas/.test(src),
+    // ⚠ The negative half follows the mount TOO. Before it did not, so a status
+    // body could have grown a canvas by mounting one and stayed green — the
+    // blind spot this role exists to leave open would have reopened silently.
+    holds: (src, extId) => /StatusLed/.test(src) && !paintsCanvas(src, extId),
     what:
-      'imports StatusLed and mounts NO <canvas> — a status body paints its measurements through '
-      + 'the primitive, and a canvas would put it back in the blind spot this role exists to leave',
+      'imports StatusLed and mounts NO <canvas>, directly or through a component it renders — a '
+      + 'status body paints its measurements through the primitive, and a canvas would put it '
+      + 'back in the blind spot this role exists to leave',
   },
 };
 
@@ -620,7 +661,7 @@ describe('#2024 — every extension body declares what its canvas PAINTS', () =>
       const src = fullViewBodySource(id);
       if (src === null) continue; // the ANCHOR leg above owns this failure
       const pred = ROLE_PREDICATE[rule.role];
-      if (!pred.holds(src)) offenders.push(`${id}: declared '${rule.role}' but does not ${pred.what}`);
+      if (!pred.holds(src, id)) offenders.push(`${id}: declared '${rule.role}' but does not ${pred.what}`);
     }
     expect(offenders, 'a declared body role is not true of the body').toEqual([]);
   });
@@ -659,15 +700,30 @@ describe('#2024 — every extension body declares what its canvas PAINTS', () =>
     // from the one that cannot.
     const pic = fullViewBodySource('videoOut');
     expect(pic, 'videoOut fullViewBody source').not.toBeNull();
-    expect(ROLE_PREDICATE.picture.holds(pic!)).toBe(true);
+    expect(ROLE_PREDICATE.picture.holds(pic!, 'videoOut')).toBe(true);
     expect(
-      ROLE_PREDICATE['status-primitive'].holds(pic!),
+      ROLE_PREDICATE['status-primitive'].holds(pic!, 'videoOut'),
       'a canvas preview must NOT satisfy the status-primitive predicate',
     ).toBe(false);
-    expect(ROLE_PREDICATE['status-primitive'].holds(real!)).toBe(true);
+    expect(ROLE_PREDICATE['status-primitive'].holds(real!, 'cvBuddy')).toBe(true);
     expect(
-      ROLE_PREDICATE.picture.holds(real!),
+      ROLE_PREDICATE.picture.holds(real!, 'cvBuddy'),
       'the status body must NOT satisfy the picture predicate',
+    ).toBe(false);
+
+    // ⚠ AND THE MOUNT-FOLLOWING BRANCH DISCRIMINATES TOO, which the two bodies
+    // above cannot show: videoOut owns its canvas directly and cvBuddy owns
+    // none, so neither exercises the indirection wavesculpt introduced. A body
+    // that mounts a canvas-bearing component IS a picture; one that merely
+    // IMPORTS it is not, because an unused import paints nothing.
+    const viaMount = fullViewBodySource('wavesculpt');
+    expect(viaMount, 'wavesculpt fullViewBody source').not.toBeNull();
+    expect(/<canvas/.test(viaMount!), 'the body owns no canvas of its own').toBe(false);
+    expect(ROLE_PREDICATE.picture.holds(viaMount!, 'wavesculpt')).toBe(true);
+    const importedNotMounted = viaMount!.replace(/<WavesculptVizSurface[^>]*\/>/, '');
+    expect(
+      ROLE_PREDICATE.picture.holds(importedNotMounted, 'wavesculpt'),
+      'importing a canvas-bearing component without RENDERING it must not satisfy picture',
     ).toBe(false);
   });
 });
