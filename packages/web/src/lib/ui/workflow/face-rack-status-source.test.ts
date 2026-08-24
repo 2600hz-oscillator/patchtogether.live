@@ -699,15 +699,30 @@ describe('#2024 — every extension body declares what its canvas PAINTS', () =>
     // from the one that cannot.
     const pic = fullViewBodySource('videoOut');
     expect(pic, 'videoOut fullViewBody source').not.toBeNull();
-    expect(ROLE_PREDICATE.picture.holds(pic!)).toBe(true);
+    expect(ROLE_PREDICATE.picture.holds(pic!, 'videoOut')).toBe(true);
     expect(
-      ROLE_PREDICATE['status-primitive'].holds(pic!),
+      ROLE_PREDICATE['status-primitive'].holds(pic!, 'videoOut'),
       'a canvas preview must NOT satisfy the status-primitive predicate',
     ).toBe(false);
-    expect(ROLE_PREDICATE['status-primitive'].holds(real!)).toBe(true);
+    expect(ROLE_PREDICATE['status-primitive'].holds(real!, 'cvBuddy')).toBe(true);
     expect(
-      ROLE_PREDICATE.picture.holds(real!),
+      ROLE_PREDICATE.picture.holds(real!, 'cvBuddy'),
       'the status body must NOT satisfy the picture predicate',
+    ).toBe(false);
+
+    // ⚠ AND THE MOUNT-FOLLOWING BRANCH DISCRIMINATES TOO, which the two bodies
+    // above cannot show: videoOut owns its canvas directly and cvBuddy owns
+    // none, so neither exercises the indirection wavesculpt introduced. A body
+    // that mounts a canvas-bearing component IS a picture; one that merely
+    // IMPORTS it is not, because an unused import paints nothing.
+    const viaMount = fullViewBodySource('wavesculpt');
+    expect(viaMount, 'wavesculpt fullViewBody source').not.toBeNull();
+    expect(/<canvas/.test(viaMount!), 'the body owns no canvas of its own').toBe(false);
+    expect(ROLE_PREDICATE.picture.holds(viaMount!, 'wavesculpt')).toBe(true);
+    const importedNotMounted = viaMount!.replace(/<WavesculptVizSurface[^>]*\/>/, '');
+    expect(
+      ROLE_PREDICATE.picture.holds(importedNotMounted, 'wavesculpt'),
+      'importing a canvas-bearing component without RENDERING it must not satisfy picture',
     ).toBe(false);
   });
 });
