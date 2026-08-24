@@ -150,7 +150,8 @@ A picture, in the video graph, that you chose.
 
 It is the simplest possible video SOURCE — no camera, no file stream, no network —
 and that simplicity is why it is everywhere: `picturebox` is the fleet's default
-"cheap image on a wire". Thirteen e2e files reach for it (§8), most of them because
+"cheap image on a wire". More e2e specs reach for it than for any other module in this
+wave (§8), most of them because
 they needed *a video source that would definitely be there* and picturebox is the
 one that costs nothing to mount.
 
@@ -441,8 +442,8 @@ of rows. It has no business being the module that wires a platform slot.
 ### 6.3 THE COMPONENT
 
 `packages/web/src/lib/ui/modules/picturebox/PictureboxAssetsBody.svelte`, registered
-through `packages/web/src/lib/ui/modules/picturebox/shell-extension.ts` (62 such
-extension modules exist today, so the pattern is well-trodden).
+through `packages/web/src/lib/ui/modules/picturebox/shell-extension.ts` — a well-trodden pattern
+(`ui/modules/*/shell-extension.ts` is a populated glob).
 
 Contents, top to bottom:
 
@@ -535,7 +536,7 @@ already has.
 `['moog956', 'moog960', 'cartesian']`), so it does not inherit the `scope` trap that
 list was built to fix.
 
-But it is the subject or the prop of **thirteen** e2e files, and the split matters:
+But the list of e2e files that reach for it is long, and the split matters:
 
 **SUBJECT — rewritten, not broken:**
 `picturebox-limits.spec.ts` (drives the palette + `.svelte-flow__node-picturebox`
@@ -586,7 +587,8 @@ letting a green run stand in for an argument.
 
 ### The DOM-selector cost, counted honestly
 
-Six specs drive `data-testid="picturebox-*"` selectors that live on the legacy card:
+The FIXTURE and SUBJECT specs listed above drive `data-testid="picturebox-*"` selectors
+that live on the legacy card:
 `picturebox-file-input`, `picturebox-card`, `picturebox-preview`,
 `picturebox-synced`, `picturebox-slot-input-{i}`, `picturebox-slot-name-{i}`,
 `picturebox-slot-clear-{i}`, `picturebox-multi-panel`.
@@ -608,7 +610,7 @@ an always-visible body would keep a name that has stopped being true. Rename to
 ## 9. VRT — the only one of the wave's three that already has a baseline
 
 * `e2e/vrt/__screenshots__/vrt.spec.ts/picturebox.png` — **exists, 9984 bytes**,
-  platform-agnostic name, one of 117 `<type>.png` files in that directory.
+  platform-agnostic name, one of the per-type `<type>.png` files in that directory.
 * **Not** in `EXEMPT_FROM_VRT` and **not** in `ALLOWED_PERMANENT_EXEMPT`
   (`vrt-exemptions.ts`) — picturebox is under full VRT coverage today.
 * It is diffed **unmasked**: its only mention in that file is `:66`, in the
@@ -652,7 +654,7 @@ flox activate -- bash scripts/webgl-attest-hash.sh --list | grep -i picturebox
   packages/web/src/lib/video/modules/picturebox.ts
 ```
 
-The basis is 218 files and is essentially *every* `packages/web/src/lib/video/**`
+The basis is essentially *every* `packages/web/src/lib/video/**`
 file plus `cube` / `wavesculpt` plus four configs.
 `packages/web/src/lib/ui/modules/PictureboxCard.svelte` is **not** in it (the only
 cards in the basis are `WavesculptCard.svelte` and `cube/CubeVizSurface.svelte`),
@@ -720,7 +722,7 @@ The rule is "this PR edits the def, therefore the ART pin moves" — ART pins to
 RAW FILE SHA and is not comment-stripped. **The rule does not apply, because this
 module has no pin.**
 
-* `ls art/baselines/` — **no `picturebox/` directory** (61 groups present).
+* `ls art/baselines/` — **no `picturebox/` directory**.
 * `picturebox` is in **neither** `ART_EXCLUDED` nor `ART_BACKLOG`
   (`art/setup/profile-coverage.ts:25`, `:78`) and needs to be in neither: the audio
   profile gate enumerates **audio-domain ids only**
@@ -865,7 +867,7 @@ costs nothing because video-domain modules were never on the glyph path (§4).
 1. **the attest basis** — a single stray line of code in `picturebox.ts` converts a
    free PR into one needing a real-GPU window. §10.1's PR split is the mitigation
    and it is not optional.
-2. **the e2e surface** — six specs drive card testids and one
+2. **the e2e surface** — a long tail of specs drive card testids, and one
    (`varispeed-panel-layout`) has a precondition the face dissolves. None is hard;
    there are simply a lot of them, and the last one needs a judgement rather than a
    selector swap.

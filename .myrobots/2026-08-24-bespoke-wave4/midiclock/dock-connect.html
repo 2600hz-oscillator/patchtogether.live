@@ -1,0 +1,278 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>MIDICLOCK face — before connect, and the pinned instance</title>
+<style>
+/* ─────────────────────────────────────────────────────────────────────────
+   MIDICLOCK FACEPLATE — MOCKUP, state 2 of 2: PRE-CONNECT.
+   SPEC AND MOCKUP ONLY. Nothing here is implemented. See spec.md §0.2, §0.3, §9.
+
+   This state is the one that matters most, for two reasons:
+     1. TODAY the connect gesture is dock-only — an un-migrated module is a
+        placeholder tile in the lane (legacy-fallback.ts:143-146), so granting
+        MIDI access requires opening the dock full view, on a module that does
+        nothing at all until you do.
+     2. It is the VRT-capturable state: the exemption's own text concedes the
+        pre-Connect view is deterministic (vrt-exemptions.ts:726-729).
+   ───────────────────────────────────────────────────────────────────────── */
+:root{
+  --bg:#0e1013; --dock:#12161c; --pbody:#1c1f24; --line:#2c3037; --tile:#33383f;
+  --ink:#eef1f5; --dim:#9aa2ad; --faint:#646c77;
+  --accent:#6cf; --gate:#e8c66a; --cv:#7dd3fc; --ch1:#fbbf24;
+  --warn:#f2c14e; --good:#8fe6b0; --bad:#e08a8a;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+  font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1200px;margin:0 auto;padding:26px 20px 90px}
+h1{font-size:21px;font-weight:800;margin:0 0 6px;letter-spacing:.01em}
+.sub{color:var(--dim);font-size:12.5px;margin:0 0 14px;max-width:106ch}
+.sub b{color:var(--ink)} code{font-family:var(--mono);font-size:11.5px;color:var(--ch1)}
+.nav{display:flex;gap:8px;margin:0 0 20px;font-size:11px;flex-wrap:wrap}
+.nav a{color:var(--ink);text-decoration:none;border:1px solid var(--line);border-radius:6px;
+  padding:6px 12px;background:#12161c;font-family:var(--mono);letter-spacing:.06em;text-transform:uppercase}
+.nav a.on{border-color:var(--gate);color:var(--gate)}
+.warn{border:1px solid #6a5330;background:#1c1811;border-radius:8px;padding:11px 14px;
+  margin:12px 0;font-size:12.5px;color:#e8cf9a;max-width:118ch}
+.warn b{color:var(--warn)}
+.ok{border:1px solid #3b5a48;background:#111a15;border-radius:8px;padding:11px 14px;
+  margin:12px 0;font-size:12.5px;color:#a9d8bd;max-width:118ch}
+.ok b{color:var(--good)}
+.cols{display:grid;grid-template-columns:minmax(0,1fr) 390px;gap:18px;align-items:start}
+@media (max-width:1080px){.cols{grid-template-columns:minmax(0,1fr)}}
+
+.dock{background:var(--dock);border:1px solid var(--line);border-radius:11px;overflow:hidden;padding:11px}
+.chromebar{display:flex;align-items:baseline;gap:9px;padding:0 2px 8px}
+.chromebar .nm{font-size:13px;font-weight:800;letter-spacing:.03em}
+.chromebar .rl{font-size:9.4px;letter-spacing:.09em;text-transform:uppercase;color:var(--faint);font-family:var(--mono)}
+.chromebar .x{margin-left:auto;color:var(--faint);font-family:var(--mono);font-size:12px}
+.plate{background:var(--pbody);border:1px solid var(--tile);border-left:4px solid var(--gate);
+  border-radius:10px;padding:0 0 12px;width:max-content;max-width:100%}
+.extbody{padding:12px 14px 4px;width:300px;max-width:100%}
+.hint{font-size:10.5px;color:var(--dim);line-height:1.45}
+.errbox{margin-top:9px;padding:7px 9px;border:1px solid #6b3a3a;background:#1c1214;border-radius:5px;
+  font-size:10.5px;color:#f0a0a0;line-height:1.45}
+.jacks{margin-top:11px;border-top:1px solid var(--line);padding-top:9px;display:flex;gap:9px;flex-wrap:wrap}
+.jk{display:flex;flex-direction:column;align-items:center;gap:4px;width:52px}
+.jk u{display:block;width:19px;height:19px;border-radius:50%;text-decoration:none;
+  background:#0a0d11;border:2px solid var(--gate)}
+.jk.cv u{border-color:var(--cv)}
+.jk b{font-family:var(--mono);font-size:7.2px;letter-spacing:.07em;color:var(--dim)}
+
+.bands{padding:6px 14px 0}
+.band{border-top:1px solid var(--line);padding-top:8px;margin-top:10px}
+.band:first-child{border-top:0;margin-top:4px}
+.blab{margin:0 0 7px;font-size:9.4px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--dim)}
+.row{display:flex;flex-wrap:wrap;align-items:flex-end;gap:12px 18px}
+.seg{display:flex;flex-direction:column;gap:5px}
+.seg .cap{font-size:7.8px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--dim);font-family:var(--mono)}
+.segbar{display:flex;border:1px solid #3a4048;border-radius:6px;overflow:hidden;background:#151a21}
+.segbar span{font-family:var(--mono);font-size:9.4px;padding:5px 10px;color:var(--dim);
+  border-right:1px solid #262c34}
+.segbar span:last-child{border-right:0}
+.segbar span.on{background:var(--gate);color:#0b0d11;font-weight:700}
+.act{display:flex;flex-direction:column;gap:5px}
+.act .cap{font-size:7.8px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--dim);font-family:var(--mono)}
+.actbtn{display:flex;align-items:center;gap:8px;border:1px solid #5c5230;border-radius:6px;
+  background:#1e1a10;padding:6px 12px;font-family:var(--mono);font-size:9.4px;color:var(--gate)}
+.actbtn .led{width:8px;height:8px;border-radius:50%;background:#3c4048}
+
+/* the lane comparison */
+.lane{background:#0b0e12;border:1px solid var(--line);border-radius:11px;padding:16px;
+  display:flex;gap:14px;flex-wrap:wrap;align-items:flex-start}
+.tile{width:212px;background:var(--pbody);border:1px solid var(--tile);
+  border-left:4px solid var(--gate);border-radius:8px;overflow:hidden}
+.tile .tt{display:flex;align-items:baseline;gap:6px;padding:6px 9px 5px}
+.tile .tt b{font-size:9.6px;font-weight:800;letter-spacing:.05em}
+.tile .tt i{margin-left:auto;font-style:normal;font-family:var(--mono);font-size:7.6px;
+  letter-spacing:.1em;color:var(--faint);text-transform:uppercase}
+.tile .body{padding:6px 9px 10px;display:flex;flex-direction:column;gap:7px;border-top:1px solid #171b21}
+.tile .segbar span{font-size:8.4px;padding:3px 7px}
+.tile .actbtn{padding:4px 9px;font-size:8.4px}
+.ph{width:212px;height:104px;border:1px dashed #363c45;border-radius:8px;display:grid;
+  place-items:center;color:#4d5560;font-family:var(--mono);font-size:8.4px;letter-spacing:.1em;
+  text-transform:uppercase;background:#0f1216;text-align:center;padding:10px}
+.capt{font-family:var(--mono);font-size:8.6px;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--faint);margin:14px 0 6px}
+
+.notes{display:flex;flex-direction:column;gap:12px}
+.card{border:1px solid var(--line);background:#101419;border-radius:9px;padding:12px 14px}
+.card h3{margin:0 0 7px;font-size:10px;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--accent);font-family:var(--mono);font-weight:700}
+.card p{margin:0 0 8px;font-size:12px;color:var(--dim)}
+.card p:last-child{margin-bottom:0}
+.card b{color:var(--ink)}
+.card pre{margin:6px 0 0;font-family:var(--mono);font-size:9.4px;color:#bcd3e8;
+  background:#0b0e12;border:1px solid #1c222a;border-radius:5px;padding:8px 9px;overflow:auto}
+table.k{border-collapse:collapse;width:100%;font-size:11px;margin:2px 0 0}
+table.k th,table.k td{text-align:left;padding:4px 7px 4px 0;border-bottom:1px solid #1e242c;vertical-align:top;color:var(--dim)}
+table.k th{color:var(--faint);font-family:var(--mono);font-size:8.6px;letter-spacing:.09em;text-transform:uppercase;font-weight:400}
+table.k td b{color:var(--ink)}
+</style>
+<div class="wrap">
+
+<h1>MIDICLOCK — before connect, and the pinned instance</h1>
+<p class="sub">
+  <b>SPEC AND MOCKUP ONLY. Nothing here is implemented.</b> The pre-connect state is where this
+  promotion pays: today the CONNECT gesture is <b>dock-only</b>, on a module that does nothing at
+  all until you find it.
+</p>
+
+<div class="nav">
+  <a href="dock.html">1 · connected</a>
+  <a class="on" href="dock-connect.html">2 · before connect</a>
+  <a href="spec.md">spec.md</a>
+</div>
+
+<div class="cols">
+<div>
+
+  <div class="dock">
+    <div class="chromebar">
+      <span class="nm">MIDICLOCK</span>
+      <span class="rl">dock · full view</span>
+      <span class="x">✕</span>
+    </div>
+
+    <div class="plate">
+      <div class="extbody">
+        <p class="hint">Grant MIDI access to pick a device. One-time per origin.</p>
+        <div class="errbox">
+          Your browser did not show a MIDI permission prompt. Check the site permissions for this
+          origin, then try again.
+        </div>
+        <div class="jacks">
+          <div class="jk"><u></u><b>CLK</b></div>
+          <div class="jk cv"><u></u><b>RUN</b></div>
+          <div class="jk"><u></u><b>START</b></div>
+          <div class="jk"><u></u><b>STOP</b></div>
+        </div>
+      </div>
+
+      <div class="bands">
+        <div class="band">
+          <p class="blab">Transport</p>
+          <div class="row">
+            <div class="seg">
+              <span class="cap">Div</span>
+              <div class="segbar">
+                <span class="on">1/4</span><span>1/8</span><span>1/16</span><span>1/32</span><span>raw</span>
+              </div>
+            </div>
+            <div class="act">
+              <span class="cap">MIDI</span>
+              <div class="actbtn"><span class="led"></span> Connect MIDI…</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <p class="capt">the lane tile — after</p>
+  <div class="lane">
+    <div class="tile">
+      <div class="tt"><b>MIDICLOCK</b><i>audio</i></div>
+      <div class="body">
+        <div class="segbar"><span class="on">1/4</span><span>1/8</span><span>1/16</span><span>1/32</span><span>raw</span></div>
+        <div class="actbtn"><span class="led"></span> Connect MIDI…</div>
+      </div>
+    </div>
+  </div>
+
+  <p class="capt">the lane tile — today</p>
+  <div class="lane">
+    <div class="ph">midiclock<br>placeholder tile</div>
+  </div>
+
+  <div class="ok" style="margin-top:16px">
+    <b>The connect gesture stops being dock-only.</b> It is a <code>ShellActionCell</code> with
+    <code>mode: 'trigger'</code>, calling the <code>read(node, 'card-api').connect()</code> the
+    card already uses (<code>MidiclockCard.svelte:65-69</code>). ⚠ And unlike cameraInput,
+    <b>midiclock needs no status registry</b> — cameraInput had to build one because its card is
+    kept alive off-screen and an off-screen host is <code>pointer-events: none</code>. midiclock's
+    card is not kept alive at all; the face talks to the engine directly.
+  </div>
+
+  <div class="warn">
+    <b>Keep the failure message LOUD.</b> The card's own comment
+    (<code>MidiclockCard.svelte:114-116</code>) is the reason: <em>"The old copy was a one-line
+    hint swap that a user reading a dead button did not register — and the suppressed-prompt case
+    produced NO message at all."</em> It comes from the shared <code>midiOutcomeMessage</code>
+    seam, which <em>"ALWAYS yields a nameable outcome"</em>. <b>An error is not resting derived
+    state</b>, and it stays.
+  </div>
+
+</div>
+
+<div class="notes">
+
+  <div class="card">
+    <h3>⚠ the pinned instance is a NAMED non-goal</h3>
+    <p><code>workflow-pins.ts:125</code> spawns a canvas-hidden
+      <code>pinned-midiclock</code> in every workflow rackspace — the hidden MIDI-DIN→TIMELORDE
+      bridge. Its surface is <b>a topbar menu, not a faceplate</b>
+      (<code>:106-122</code>), and <code>MidiDinSurface.svelte</code> contains no
+      <code>DockCardHost</code> and no <code>face</code> prop to thread.</p>
+    <p><b>So a midiclock face reaches user-added instances only</b> — and that is the shipped
+      state of the product next door: <code>ClockSurface.svelte:2-3</code> calls itself
+      <em>"TIMELORDE's face for workflow racks"</em>, and timelorde <b>is</b> promoted.</p>
+  </div>
+
+  <div class="card">
+    <h3>wave 3's audioOut blocker LANDED</h3>
+    <p><code>AudioIoSurface.svelte:23, :73-76</code> now passes
+      <code>dockRailRendersFace({ shellFaces, pinned: true, migrated })</code> — shipped as
+      <code>5f6c289a3</code> (#2173). <b>Wave 3's audioOut PR-1 is done</b>; its PR-2 is now an
+      ordinary one-param face.</p>
+    <p>⚠ That fix repaired <b>one of three</b> topbar surfaces. <code>MidiDinSurface</code> and
+      <code>ClockSurface</code> are unexamined, and unifying them is the wave's largest open
+      platform question — <b>owner-facing, not a module PR</b>.</p>
+  </div>
+
+  <div class="card">
+    <h3>⚠ the VRT exemption's exit condition already shipped</h3>
+    <p><code>art/DETERMINISM.md:75</code> — cards depending on device state are exempt
+      <em>"until a deterministic stub lands."</em></p>
+    <p><b>It landed, for a different sweep.</b>
+      <code>e2e/tests/_per-port-drivers.ts:726</code> declares a midiclock driver:
+      <em>"mock requestMIDIAccess + pump 0xFA + 360×0xF8 spread over 700ms"</em>
+      (<code>:811</code>). Nobody carried it back to the exemption.</p>
+    <p>This PR takes the <b>cheap</b> discharge: the exemption's own text concedes the pre-connect
+      view is deterministic, and <b>this page is that view</b> — no device list in frame, no mock
+      needed.</p>
+  </div>
+
+  <div class="card">
+    <h3>the device picker waits on one parameter</h3>
+    <pre>ShellSelectorCell
+  options: (node) =&gt; …
+
+ShellActionCell
+  onFire: (nodeId, env) =&gt; …
+  // env = { engine, node }</pre>
+    <p style="margin-top:8px">midiclock's roster lives on the engine handle
+      (<code>read('card-api')</code>), so a selector cell cannot reach it. <b>Giving
+      <code>options</code> the same <code>env</code> the action cell already gets</b> would unblock
+      midiclock, midiCvBuddy, midiOutBuddy, chromaconsole, outToLaunch, audioIn and cameraInput at
+      once.</p>
+    <p><b>This spec does not ask for it and does not depend on it</b> — the picker goes in the
+      body, which is the shipped cameraInput answer.</p>
+  </div>
+
+  <div class="card">
+    <h3>the three defects fixed in this PR</h3>
+    <table class="k">
+      <tr><td><b>D1</b></td><td>device + division outside Cmd-Z — <code>writeData</code> is a bare proxy write (<code>:71-79</code>)</td></tr>
+      <tr><td><b>D2</b></td><td>the "live activity indicator" freezes during activity — fixed by removal, and the PR body must say <b>why</b></td></tr>
+      <tr><td><b>D3</b></td><td>the inventory promises <em>"a running tempo readout"</em> that does not exist</td></tr>
+      <tr><td><b>D4</b></td><td>CONNECT was dock-only — fixed by the face</td></tr>
+    </table>
+  </div>
+
+</div>
+</div>
+</div>

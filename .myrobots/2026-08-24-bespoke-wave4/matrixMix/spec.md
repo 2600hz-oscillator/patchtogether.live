@@ -130,8 +130,8 @@ two independent reasons:
 **PR 1 is the field, its type import, and the negative control that the field can
 actually be read** — a meta def declaring a `face` must appear in `allDefs()` with
 `def.face` set, asserted, so the precursor cannot land as a decorative type change.
-It is its own PR because it opens the face system to five modules at once and should
-be looked at on its own.
+It is its own PR because it opens the face system to a whole DOMAIN rather than to a
+module, and should be looked at on its own.
 
 ### 0.3 THE `.data` WRITES ARE CORRECT — the second control case in this wave
 
@@ -636,7 +636,7 @@ flox activate -- bash scripts/webgl-attest-hash.sh --list | grep -i matrixmix
   (no output)
 ```
 
-The basis is 218 files: essentially all of `packages/web/src/lib/video/**`, plus
+The basis is essentially all of `packages/web/src/lib/video/**`, plus
 `audio/modules/cube.ts`, `audio/modules/wavesculpt.ts`, `WavesculptCard.svelte`,
 `cube/CubeVizSurface.svelte`, and four config files. **Nothing under
 `packages/web/src/lib/meta/`, nothing under `ui/workflow/`, and no `MatrixMixCard`.**
