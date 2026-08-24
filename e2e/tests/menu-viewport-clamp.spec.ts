@@ -269,8 +269,8 @@ test('clip editor note-probability + clip-probability menus stay in view with th
   // from hard to nearly free, and the long column it used to cover moved into a
   // box no assertion here saw. The flyout also opens to the RIGHT of a menu
   // already at the window's right edge, which is the worst case for it.
-  await page.getByTestId('clipplayer-sub-gate-cp1').click();
-  const flyout = page.getByTestId('clipplayer-submenu-gate-cp1');
+  await page.getByTestId('clipplayer-sub-note-cp1').click();
+  const flyout = page.getByTestId('clipplayer-submenu-note-cp1');
   await expect(flyout).toBeVisible();
   await expectFullyInViewport(page, flyout);
   // …and it must not paint ON TOP of the parent it flew out of (the failure a
@@ -287,7 +287,7 @@ test('clip editor note-probability + clip-probability menus stay in view with th
 
   // The prob menus dismiss via their backdrop (they have no Esc handler —
   // and Esc would close a dock full-view out from under the dock variant).
-  await page.getByRole('button', { name: 'close probability menu' }).click();
+  await page.getByRole('button', { name: 'close clip menu' }).click();
   await expect(probMenu).toBeHidden();
   await expect(flyout).toBeHidden();
 
@@ -361,7 +361,7 @@ test('clip editor menus inside the dock full-view pane stay fully in view (owner
     y: cellBox.y + cellBox.height / 2,
   });
   // Dismiss via the backdrop — Esc would close the dock full-view itself.
-  await page.getByRole('button', { name: 'close probability menu' }).click();
+  await page.getByRole('button', { name: 'close clip menu' }).click();
   await expect(probMenu).toBeHidden();
 
   // Clip-probability menu from the clip-carrying pad, back on the session
