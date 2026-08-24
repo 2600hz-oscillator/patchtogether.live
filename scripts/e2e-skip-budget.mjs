@@ -543,7 +543,14 @@ export const SKIP_BUDGET = [
       + 'automation (record/arm/suspend), clip-default probability, song mode, per-lane rate + RST, the note '
       + 'editor, and the #1165 guard that the card transport works with NO controller attached. Several of '
       + 'these are the ONLY real-source-chain proof for their feature; #1646 was a declared fix for the '
-      + 'clip-automation flakiness and the census shows it did NOT hold.',
+      + 'clip-automation flakiness and the census shows it did NOT hold. '
+      + 'ADDED 2026-08-24 — launchpad-perf-controls\' RESET NEGATIVE CONTROL (:286), which was left running '
+      + 'when its POSITIVE at :190 was parked. The two are co-nondeterministic by construction: both ride the '
+      + 'same free-running 128-step clip whose 8 s wrap is precisely what the control distinguishes from a '
+      + 'real reset. A control with no positive is half-coverage — it can only show the probe staying silent '
+      + '— so this closes a half-open pair rather than widening the debt. Recovered-on-retry, FIRST '
+      + 'observation of that leg (run 32725328269 shard 2/10, 2026-08-24 12:31Z, absent from main\'s previous '
+      + '8 runs), NOT triaged as flake vs under-budget; un-park is the PAIR\'s budget diagnosis.',
   },
   {
     specs: [
@@ -651,7 +658,14 @@ export const SKIP_BUDGET = [
       + 'not tear down its producer, drop its layers or freeze a live projector. This is the #1720/#1574/#1589 '
       + 'family, a class that has shipped repeatedly, and extras-producer-lifetime is its unique regression net '
       + '— #1757 was a declared fix for that spec and the census shows most of its flakiness landed AFTER it. '
-      + 'The alternation admits the loop-parked sites, whose description is the per-subject map value.',
+      + 'The alternation admits the loop-parked sites, whose description is the per-subject map value. '
+      + 'ADDED 2026-08-24 — backdraft-preview-toggle\'s THIRD leg (:303, the collapse/reclaim geometry). Its '
+      + 'two same-file siblings were already parked (:362 with 21 recovered-on-retry observations, :425 with '
+      + '11) and they document the shared preview-collapse mechanism this leg runs on, so it flakes by the '
+      + 'family\'s cause rather than one of its own. Recovered-on-retry, FIRST observation of THIS leg (run '
+      + '32725328269 shard 2/10, 2026-08-24 12:31Z, absent from main\'s previous 8 runs), NOT triaged as '
+      + 'flake vs under-budget; un-park is the FAMILY\'s budget diagnosis — repairing one of three siblings '
+      + 'that share a mechanism would leave the other two parked and prove nothing.',
   },
   {
     specs: [

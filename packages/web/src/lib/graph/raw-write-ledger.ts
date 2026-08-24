@@ -276,11 +276,6 @@ export const RAW_WRITE_LEDGER: Readonly<Record<string, RawWriteEntry>> = {
     kind: 'debt',
     why: 'XY pad drag — per-frame-ish, but it persists; needs the transient-first treatment (createDragCommit, as JoystickCard now does). Held: quadralogical is face-queue Q27 and gated.',
   },
-  'ui/modules/RasterizeCard.svelte': {
-    keys: ['wrap'],
-    kind: 'debt',
-    why: 'card button write — user gesture, should be undoable + synced',
-  },
   'ui/modules/SamsloopCard.svelte': {
     keys: ['start', 'end', 'mode'],
     kind: 'debt',

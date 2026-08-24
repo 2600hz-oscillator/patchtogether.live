@@ -81,6 +81,35 @@ describe('rasterize — CLAIM 1: the missing glyph is a CHOICE, not a refusal', 
     expect(FACE.glyph).toBe('none');
     expect(laneGlyphFor(rasterizeDef)).toBe('none');
   });
+
+  // ⚠ THE SECOND COUNTERFACTUAL, AND IT DID NOT EXIST WHEN THE FACE SHIPPED.
+  // #2160 widened the resolver so `algorithm` + `layoutSource` binds for this
+  // cohort, which turned the def's recorded reason from "no kind fits" into
+  // "the kind that fits carries no data". The leg above proves `'scope'` was
+  // available to reject; this one proves the NEWER option was too — otherwise
+  // the rewritten comment on the def is an unchecked claim, and the next
+  // reader re-derives the widening from scratch and may reach the opposite
+  // answer.
+  it('NEGATIVE CONTROL: a LAYOUT-SOURCE glyph also binds — and is a CONSTANT picture', () => {
+    const asAlgorithm = glyphBinding({
+      ...rasterizeDef,
+      face: { ...FACE, glyph: 'algorithm' },
+    });
+    // It RESOLVES — the refusal is not mechanical, unlike a terminal sink's.
+    expect(asAlgorithm.kind).toBe('algorithm');
+    expect(asAlgorithm).toMatchObject({ kind: 'algorithm', layoutSource: 'rasterize' });
+
+    // …AND IT CARRIES NO DATUM. `paramId: null` is the whole finding: the
+    // shell feeds `topologyValue: 0` whenever it is null, and
+    // `ShellExtensionGlyphProps` has no `nodeId`, so the picture cannot vary
+    // per node or over time. A live-KIND glyph that is identical on every
+    // instance forever is not a picture of this module — which is why `'none'`
+    // survives the re-decision rather than merely surviving inertia.
+    expect(
+      (asAlgorithm as { paramId?: string | null }).paramId ?? null,
+      'a layout-source glyph binds no param, so the shell has nothing to vary it with',
+    ).toBeNull();
+  });
 });
 
 describe('rasterize — CLAIM 2: the shell has no generic route to this picture', () => {
