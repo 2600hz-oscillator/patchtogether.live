@@ -272,8 +272,43 @@ export const moog960Def: AudioModuleDef = {
           + 'SKIP jumps past a column; STOP halts on it. An early STOP is how you shorten the run '
           + 'to fewer than eight steps.',
         controls: MODE_PARAMS.map((p) => p.id),
+        // CLUSTERED INTO HALVES — this band, not the knob rows, is what
+        // overflowed the plate. These are SEGMENTED cells: each one paints
+        // three option labels (NORM/SKIP/STOP), so a mode cell is far wider
+        // than a knob cell, and eight of them in one row is the widest thing on
+        // the face. Splitting them into two rows of four is the moog984
+        // `clusters` mechanism doing exactly what it exists for, and the labels
+        // name real columns rather than inventing a grouping.
+        clusters: [
+          { label: 'cols 1-4', controls: MODE_PARAMS.slice(0, 4).map((p) => p.id) },
+          { label: 'cols 5-8', controls: MODE_PARAMS.slice(4).map((p) => p.id) },
+        ],
       },
     ],
+
+    // BARE STEP POTS — the caption is redundant TWICE OVER, and dropping it is
+    // what makes this plate fit. Measured: with `R1·1`..`R3·8` captioned, the
+    // dock faceplate is 1336 CSS px of content against a 1220 px capture box —
+    // 116 px hanging off the right, which the per-face width measurement in
+    // `workflow-shell-faces.spec.ts` correctly refused.
+    //
+    // The right response is to remove the redundancy, NOT to claim an exemption:
+    // a knob grid is not one of the things that EARNS width (a live picture, a
+    // scope trace, a video preview, an XY pad, a mode-exclusive control), and a
+    // default that needs a new exemption per wide face is the wrong default.
+    //
+    // This is the mixmstrs case exactly — `1LO…8LO` under a `LOW` heading said
+    // nothing the grid had not already said twice. Here the band heading says
+    // `row 1`, so the `R1` half is already on screen, and the cell's POSITION in
+    // a left-to-right row of eight says which step it is, which is precisely how
+    // the hardware is read. ⚠ Only the TEXT goes: `label` stays on every param,
+    // so the accessible name and `aria-valuetext` are untouched and no spec had
+    // to be weakened.
+    //
+    // RANGE, MODE and RATE keep their captions — `Range 2` vs `Range 3` and
+    // `Mode 5` vs `Mode 6` are the ONLY thing distinguishing otherwise identical
+    // segmented cells, which is the side of the ruling that KEEPS a label.
+    bareCells: STEP_POT_PARAMS.map((p) => p.id),
 
     // NO GLYPH, and it is a MEASURED refusal rather than an omission.
     // `glyphBinding` resolves 'scope'/'meter'/'waveform' through
