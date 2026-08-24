@@ -2240,7 +2240,17 @@ export function reverseClipSteps(clip: NoteClipRecord): NoteClipRecord {
 
 /** Structural clone of a note clip (steps[] + lengthSteps + root + scale + loop).
  *  Used by the session COPY/PASTE buffer so the buffer never shares event refs
- *  with the live clip (and a later paste rebuild can't alias a Y type). */
+ *  with the live clip (and a later paste rebuild can't alias a Y type).
+ *
+ *  ⚠ EVERY optional field a clip can carry must be listed here. `defaultProb`
+ *  was missing until 2026-08-23: a clip whose CLIP-DEFAULT probability had been
+ *  set (the grid pad's right-click menu / the Launchpad SHIFT+clip PROB page)
+ *  copied as an ordinary clip and PASTED BACK AT 100% — every note in the pasted
+ *  copy silently fired more often than the one it was copied from, on both the
+ *  Launchpad and the pair deck. Found while giving the card's note menu the same
+ *  copy/paste; the field is per-clip content exactly like `div`/`gain`, so it
+ *  travels with the clip (see `noteEffProb` — an unset note INHERITS it, which
+ *  is what made the loss audible rather than cosmetic). */
 export function copyClip(clip: NoteClipRecord): NoteClipRecord {
   const out: NoteClipRecord = {
     kind: 'note',
@@ -2254,6 +2264,7 @@ export function copyClip(clip: NoteClipRecord): NoteClipRecord {
   if (typeof clip.color === 'number') out.color = clip.color;
   if (typeof clip.name === 'string') out.name = clip.name;
   if (typeof clip.gain === 'number') out.gain = clip.gain;
+  if (typeof clip.defaultProb === 'number') out.defaultProb = clip.defaultProb;
   return out;
 }
 
