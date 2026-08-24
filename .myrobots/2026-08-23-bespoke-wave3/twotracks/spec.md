@@ -134,11 +134,21 @@ button that increments modulo 4 (`:257`). **To reach mode 1 from mode 3 you pres
 twice and watch what happens.** There is no roster on screen; the four modes have no
 names anywhere the user can see.
 
+**The names exist — in prose only.** `twotracks.ts:317` builds the doc string
+*"FILTER MODE — off / low-pass / high-pass / band-pass selector"*, so the roster is
+`off · low-pass · high-pass · band-pass` in that order, with `defaultValue: 0` meaning
+**the filter ships OFF**.
+
+⚠ **Take the names from `:317` and nowhere else.** The file header at `:18-19` calls it
+an *"HP/LP/BP filter"* — three modes, wrong order, and no `off`. Two records of the
+same roster already disagree, which is the reason the next step is not optional.
+
 On the face it is a **segmented control over a declared roster** — one press, direct
-addressing, and the mode NAMES visible. ⚠ The roster must be **exported from the def
-and imported by the cell**, never re-typed (the card-disagrees-with-its-def rule), and
-if the def does not yet declare `options` for `filterMode_a`, adding them is part of
-this PR.
+addressing, and the mode NAMES visible. ⚠ **The def declares no `options` anywhere
+today** (measured: zero occurrences of `options:` in `twotracks.ts`), so adding them is
+part of this PR — and the cell **imports the exported symbol** rather than re-typing the
+four strings, which is the card-disagrees-with-its-def rule and the reason the header
+and the doc string were free to drift apart in the first place.
 
 ⚠ **And note what that changes:** an `options` roster on a param makes the shell render
 it as `segmented`/`selector` automatically — no `paramCells` declaration needed — and
@@ -540,26 +550,32 @@ returns **nothing**. `audio/modules/twotracks.ts`, `audio/modules/twotracks-tran
 and `ui/modules/TwotracksCard.svelte` are absent from the basis. ⚠ Keep the body 2D
 (§6.1).
 
-### 8.2 ART — this PR WILL move the source pin
+### 8.2 ART — no pin to move, and the reasoning that said otherwise was wrong
 
 ⚠ **ART pins baselines to the RAW FILE SHA and is NOT comment-stripped** — the opposite
-of the attest, and it cost wave 2 a red run on a comment-only edit.
+of the attest, and that asymmetry cost wave 2 a red run on a comment-only edit. This PR
+edits `twotracks.ts` **three times over** (deleting the two inert params, adding the
+`face` block, adding the `filterMode` roster), so the rule says the pin moves.
 
-This PR edits `twotracks.ts` **three times over**: deleting the two inert params
-(§0.1), adding the `face` block, and adding the `filterMode` roster (§2.1). **The pin
-will move.** Run `task art:update` (which chains `art:fingerprints:accept` so the
-manifest cannot be forgotten) and then **verify rather than assume**:
+**Measured, and there is no pin.** ART's source pins are `.sha` files beside their
+`.f32` baselines in `art/baselines/<module>/`. There is **no `art/baselines/twotracks/`**,
+and `twotracks` sits in **`ART_BACKLOG`** (`art/setup/profile-coverage.ts:118`) — the
+reasoned list of audio-domain modules that do not yet ship a profile. The four tests
+under `art/scenarios/twotracks/` are lofi property tests, not SHA-pinned captures.
 
-* every `art/baselines/**/*.f32` md5-identical before and after;
-* `fingerprints.generated.json` unchanged — no `peakDb`/`rmsDb` label move, no spectrum
-  or features move;
-* **only the `.sha` moves.**
+**So: zero ART cost, and `art/` should be absent from the diff.**
 
-⚠ **Deleting a param is NOT a comment-only edit.** If any `.f32` or any fingerprint
-entry moves, that means the deletion changed the audio — which would mean something
-DID read `playhead_a` after all, and §0.1's central measurement is wrong. **Stop and
-re-measure; do not re-pin.** This is the wave's one place where a re-pin could paper
-over a genuine finding being false.
+⚠ **Do NOT take that as licence to skip the check.** The point of §0.1 is that two
+params are believed to be inert, and **the strongest available evidence that a param is
+inert is that removing it does not move a captured waveform.** This module cannot offer
+that evidence, because it has no capture. So the deletion's verification falls entirely
+on §12.1's tree-wide search and on the existing suites — `twotracks-worklet-params`,
+`twotracks-transport` and `twotracks-perfzip` — passing unchanged. **Weigh that when
+deciding how hard to look.**
+
+⚠ And do not remove `twotracks` from `ART_BACKLOG`: `audio-profile-gate.test.ts`
+enforces *"a module that gains a baseline MUST be removed from this list"*, which is the
+converse of what this PR does. A face adds no baseline.
 
 ### 8.3 CI wall-time
 
@@ -623,7 +639,7 @@ fallback tiers by itself.
 | **D1** | **`playhead_a` / `playhead_b` are declared params nothing writes and nothing reads** | §0.1; occurrences are `twotracks.ts:255,272,732-733` and `contract-lock.txt:3467` only | **Fold in — FIRST.** Delete both; contract change, `docs:accept`, review the diff, verify saved racks (§14) |
 | **D2** | **`DESCRIPTIONS.twotracks` is three phases stale.** It says *"Phase 1 ships reel A … Phase 2 adds reel B, EQ, and filter; Phase 3 adds Lofi saturation; Phase 4 adds CV ins"* while the def ships reel B, all three EQ bands, the filter, `lofi`, and the `rate_cv_a`/`rate_cv_b` CV inputs. **The card's own header says *"Phase 4"*** | `module-manifest.ts:429`; `twotracks.ts:216-221, 266-288`; `TwotracksCard.svelte:2` | **Fold in.** This is the text a user reads on the docs page. The docs gate checks presence and quality, not truth — the same class as wave 2's `scope` header |
 | **D3** | **The same description documents a control that does not exist**: *"a DECAY knob that fades previous passes by 0.50–0.90× per loop"*. There is no `decay` param; the real control is `echoes_a`, `1..5` discrete | `module-manifest.ts:429` vs `twotracks.ts:251` | **Fold in**, with D2 |
-| **D4** | **The file header names a param that does not exist.** `twotracks.ts:8` lists `decay_a` among the params; `decay_a` occurs **nowhere else in the tree** | `twotracks.ts:8` | **Fold in.** ⚠ It is a comment, so it is free for the attest and **NOT free for ART** (§8.2) |
+| **D4** | **The file header names a param that does not exist**, and mis-states a roster. `twotracks.ts:8` lists `decay_a` among the params — it occurs **nowhere else in the tree**; and `:18-19` calls the filter *"HP/LP/BP"*, three modes in the wrong order with no `off`, against `:317`'s authoritative *"off / low-pass / high-pass / band-pass"* | `twotracks.ts:8`, `:18-19` vs `:317` | **Fold in** — §2.1. ⚠ Comments are free for the attest and **NOT free for ART** (§8.2). ⚠ And the real repair is the exported roster: two prose records of one roster were free to drift because neither was the source |
 | **D5** | **The peak-poll rAF and the reactive redraw are not visibility-gated**, so a mounted-but-offscreen card polls and redraws forever | `TwotracksCard.svelte:103-105`, `:422-431` | **Fold in.** The body must be gated (§6.1); the card should be too |
 | **D6** | **The FILTER MODE control is a modulo-4 cycle button** with no roster and no visible mode names | `TwotracksCard.svelte:257`, `:302` | **Fold in** — §2.1. Declare `options` on the def and import them |
 | **D7** | **Reel A's testids are unsuffixed while reel B's carry `-b`** (`twotracks-rec` vs `twotracks-rec-b`, `led-arm` vs `led-arm-b`), so nothing in a locator says the unsuffixed one is reel A | `TwotracksCard.svelte:448-486` vs `:605-643` | **REPORT, do not fix here.** Renaming testids touches every twotracks spec and the perfzip spec; it is a mechanical rename that would bury the face diff. Worth doing, worth doing alone |
@@ -651,8 +667,10 @@ D5 and D6 are fixed on `TwotracksCard.svelte` directly, in this diff.
 ## 12. MUST-VERIFY
 
 1. **Nothing reads `playhead_a` / `playhead_b`** — re-run the tree-wide search on the
-   branch, and confirm ART's `.f32` set is byte-identical after the deletion (§8.2).
-   **If any baseline moves, the premise is wrong.**
+   branch. ⚠ **There is no ART capture to corroborate it with** (§8.2), so this rests on
+   the search plus `twotracks-worklet-params`, `twotracks-transport` and
+   `twotracks-perfzip` passing unchanged. Look harder than you would if a waveform were
+   watching.
 2. **A saved rack carrying `params.playhead_a` still loads** after the deletion.
 3. **Does `dockTabPlan` unmount or hide inactive bands?** (§5.3.1) Read the render site.
 4. **Mount cost, `main` vs branch, same machine, both numbers reported** (§5.3).
@@ -717,8 +735,9 @@ flox activate -- task e2e:stop
 # 7. typecheck LAST
 flox activate -- task typecheck
 
-# 8. ART — the pin WILL move (§8.2). Verify ONLY the .sha did.
-flox activate -- task art:update
+# 8. ART — no baseline, no pin (§8.2). Run the property tests; expect `art/` to be
+#    absent from the diff. Do NOT run art:update.
+flox activate -- task art:one -- scenarios/twotracks
 
 # 9. VRT: dispatch only. NEVER commit a PNG.
 GREP=twotracks flox activate -- task vrt:commit

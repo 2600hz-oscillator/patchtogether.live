@@ -556,19 +556,36 @@ CONTENT, so an `AudioOutMeterBody` written against a WebGL context would enrol i
 and make every subsequent edit cost a GPU re-attest. There is no reason to use WebGL
 for two bars.
 
-### 10.2 ART
+### 10.2 ART: ZERO — and the first draft of this section was WRONG
 
-⚠ **ART pins baselines to the RAW FILE SHA and is NOT comment-stripped** — the
-opposite of the attest, and it cost wave 2 a red run. `art/scenarios/audio-out/` exists
-(`master-limiter-sub-pump.test.ts`, `per-channel-taps.test.ts` are both named in the
-def). **If either PR edits `audio-out.ts` at all — including a comment or a `docs`
-string — the ART source pin moves and `task art:update` is required.**
+⚠ **ART pins baselines to the RAW FILE SHA and is NOT comment-stripped** — the opposite
+of the attest, and that asymmetry cost wave 2 a red run on a comment-only edit. So the
+first draft of this section reasoned from the rule: `art/scenarios/audio-out/` exists
+(three test files, two of them named in the def), PR 2 edits `audio-out.ts` to add the
+`face` block, **therefore the pin moves.**
 
-The face declaration itself lives on the def, so **PR 2 touches `audio-out.ts` and will
-move that pin.** Expected and fine; what must be verified is that ONLY the `.sha` moves:
-every `.f32` md5-identical, `fingerprints.generated.json` unchanged, no `peakDb`/`rmsDb`
-label move and no spectrum move. **Any entry that cannot be attributed is a real audio
-regression — stop, do not re-pin.**
+**Measured, and it does not.** ART's source pins are `.sha` files living beside their
+`.f32` baselines in `art/baselines/<module>/`. There is **no `art/baselines/audio-out/`**,
+and `audioOut` sits in **`ART_EXCLUDED`** (`art/setup/profile-coverage.ts:44`) with a
+reason:
+
+> `audioOut: 'terminal sink — no audio-family OUTPUT port to capture'`
+
+**There is no baseline, so there is no pin, so there is nothing to re-pin.** The
+scenarios under `art/scenarios/audio-out/` are property tests (the limiter's
+no-overshoot proof, the per-channel taps' two-way negative control), not SHA-pinned
+captures.
+
+⚠ Note the exclusion reason is the **same structural fact** as the glyph refusal in
+§4.2 — `outputs: []`. One property of this module is why it cannot have an ART baseline
+*and* why it cannot have a live glyph.
+
+⚠ **Do not remove it from `ART_EXCLUDED`**, and do not add a scenario. This PR must
+leave `art/` entirely out of its diff; anything appearing there is a signal, not a
+chore.
+
+**Recorded rather than silently corrected**, because "the rule says the pin moves" and
+"this module has a pin" are different claims, and only the second one is checkable.
 
 ### 10.3 CI wall-time
 
@@ -669,7 +686,9 @@ fix. This is the mistake #2025 made by name.
    content-vs-plate measurement passes without one.
 7. **Band packing measured, not predicted** (§7) — whether the selector classes wide.
 8. **`master` renders as a FADER, not a dial**, on both the lane cell and the dock.
-9. **ART: only the `.sha` moves** (§10.2).
+9. **ART stays out of the diff entirely** (§10.2) — no baseline exists, `audioOut` stays
+   in `ART_EXCLUDED`, and the three `art/scenarios/audio-out/` property tests pass
+   unchanged.
 10. **`audioIn` is unaffected in behaviour** by PR 1 while it remains un-migrated —
     its arm evaluates false and its `getUserMedia` lifecycle is untouched.
 
@@ -715,9 +734,9 @@ flox activate -- task typecheck
 # 7. VRT: dispatch only. NEVER commit a PNG.
 GREP=audioOut flox activate -- task vrt:commit
 
-# 8. ART — PR 2 moves audio-out.ts, so the source pin moves (§10.2)
+# 8. ART — there is NO baseline and NO pin (§10.2). Run the property tests; expect
+#    `art/` to be absent from the diff. Do NOT run art:update.
 flox activate -- task art:one -- scenarios/audio-out
-flox activate -- task art:update      # then verify ONLY the .sha moved
 
 # 9. attest: NIL. Nothing to run and nothing to report (§10.1).
 ```

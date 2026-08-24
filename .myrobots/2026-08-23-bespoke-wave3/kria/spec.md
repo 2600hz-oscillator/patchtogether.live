@@ -611,13 +611,21 @@ returns **nothing**. `audio/modules/kria.ts`, `audio/modules/kria-types.ts` and
 ⚠ **Keep the body DOM** (§6.2). Basis rule (2) is derived from CONTENT, so a WebGL
 grid would enrol this module automatically.
 
-### 10.2 ART
+### 10.2 ART: ZERO, and measured rather than assumed
 
-`kria` emits `pitch` and `gate`, not audio, so it has no ART scenario of its own — but
-⚠ **ART pins to the RAW FILE SHA and is NOT comment-stripped.** Before assuming zero,
-check whether any `art/scenarios/**` fixture imports `kria.ts` transitively. If one
-does, this PR moves its pin and `task art:update` is required, with the usual
-verification that ONLY the `.sha` moved. §14.
+⚠ ART pins to the **RAW FILE SHA** and is **NOT** comment-stripped — the opposite of the
+attest, and that asymmetry cost wave 2 a red run on a comment-only edit. So "no audio
+output" is not sufficient reason to skip the check.
+
+**Measured:** `kria` appears in `art/` exactly once, in
+`art/setup/profile-coverage.ts:88`, as a member of **`ART_BACKLOG`** — the reasoned list
+of audio-domain registry modules that do not yet ship a profile. There is no
+`art/scenarios/kria/`, no baseline, and therefore **no source pin for this PR to move.**
+
+⚠ **And do not remove it from that list.** `audio-profile-gate.test.ts` enforces
+*"a module that gains a baseline MUST be removed from this list"* — the converse of what
+this PR does. A face adds no baseline, so `kria` stays exactly where it is, and touching
+`profile-coverage.ts` here would be a change with no cause.
 
 ### 10.3 CI wall-time
 
@@ -687,8 +695,8 @@ made by name.
 6. **The monome grid path and the face write the same keys through the same pure
    mutators** in `kria-types.ts` (§3).
 7. **The VRT scene is seeded**, not blank (§9).
-8. **ART** — check for a transitive `kria.ts` import in `art/scenarios/**` before
-   claiming zero (§10.2).
+8. **ART stays at zero** — `kria` remains in `ART_BACKLOG` and no `art/scenarios/kria/`
+   appears (§10.2). A face adds no baseline, so nothing in `art/` should be in the diff.
 9. **`FACE_WIDTH_EXEMPTIONS` is untouched.** The card is 420 px; the face must not be
    the wave's width exception.
 10. **The GRID action cell records `delivered: false`** when WebSerial is unavailable

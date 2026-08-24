@@ -59,11 +59,30 @@ cost problem. A wave of three variations on one shape would have proved one thin
 
 **Attest position, measured not assumed** — `bash scripts/webgl-attest-hash.sh --list`
 returns no path under `audio/modules/audio-out.ts`, `audio/modules/kria.ts`,
-`audio/modules/twotracks.ts`, `AudioOutCard.svelte`, `KriaCard.svelte` or
-`TwotracksCard.svelte`. **All three are outside the WebGL attest basis: zero GPU cost
-for the whole wave.** Each spec restates the command and the result, and each warns
-that a body written against a WebGL context would enter the basis automatically,
-because rule (2) is derived from CONTENT.
+`audio/modules/twotracks.ts`, `AudioOutCard.svelte`, `KriaCard.svelte`,
+`TwotracksCard.svelte`, or the three files `audioOut`'s precursor touches
+(`AudioIoSurface.svelte`, `DockCardHost.svelte`, `legacy-fallback.ts`). **Every PR in
+this wave is outside the WebGL attest basis: zero GPU cost.** Each spec restates the
+command and the result, and each warns that a body written against a WebGL context
+would enter the basis automatically, because rule (2) is derived from CONTENT.
+
+⚠ **ART position: also zero — and the first draft of all three specs got this
+wrong.** ART pins to the RAW FILE SHA and is NOT comment-stripped, which is the
+asymmetry that cost wave 2 a red run, so each spec reasoned *"this PR edits the def,
+therefore the pin moves"* and budgeted an `art:update`. **That is the rule, and it does
+not apply, because none of these modules has a pin.** ART's source pins are `.sha`
+files beside their `.f32` baselines in `art/baselines/<module>/`, and there is no
+`art/baselines/audio-out/`, `.../kria/` or `.../twotracks/`. `audioOut` is in
+**`ART_EXCLUDED`** (*"terminal sink — no audio-family OUTPUT port to capture"*);
+`kria` and `twotracks` are in **`ART_BACKLOG`**. The scenario directories that do exist
+hold property tests, not captures. **`art/` should be absent from all three diffs.**
+
+The correction is recorded in each spec rather than quietly applied, because *"the rule
+says the pin moves"* and *"this module has a pin"* are different claims and only the
+second is checkable — and because it has a consequence: **`twotracks` cannot corroborate
+its inert-param deletion (§0.1 of its spec) against a captured waveform**, which is the
+strongest evidence that a param is inert, so that deletion rests entirely on a
+tree-wide search and three existing suites.
 
 ---
 
