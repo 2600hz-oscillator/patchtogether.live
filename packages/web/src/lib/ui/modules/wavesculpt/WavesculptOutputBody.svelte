@@ -236,7 +236,13 @@
     >MONITOR {monitor ? 'ON' : 'OFF'}</button>
 
     {#if monitor}
-      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <!-- svelte-ignore a11y_no_static_element_interactions — a RESIZE GRIP is a
+           pointer-only affordance with no keyboard equivalent to offer: there is
+           no "size" to type and no discrete step to arrow through, and the thing
+           it adjusts (`resizedWidth`/`resizedHeight`) is already reachable by
+           reopening the monitor at its stored size. It carries role="separator"
+           and an aria-label so it is announced rather than silent. Same shape as
+           RuttetraOutputBody's grip, for the same reason. -->
       <div
         class="grip nodrag"
         class:resizing
