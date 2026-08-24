@@ -576,9 +576,22 @@ describe('FOXY bridge: FREEZE TABLE freezes the wavetable ONLY (XYZ scope keeps 
       const { ctx, posted } = makeFoxyMockEnv();
       const node = makeFoxyNode();
       const handle = await foxyDef.factory(ctx as unknown as AudioContext, node);
-      // Live tick — at least one initial loadWavetable lands.
-      nowStep();
-      handle.read!('tick');
+      // ⚠ WARM THE RASTERS BEFORE MEASURING ANYTHING. Each painter writes one
+      // analyser window (2048 px) per tick into a 256×256 (65536 px) buffer, so
+      // a freshly-mounted FOXY spends its first ~32 ticks mostly UNPAINTED —
+      // and unpainted is BLACK, i.e. luma 0, which is a full-scale displacement
+      // rather than a neutral one. The table in that window is a saturated
+      // constant, its signature is constant with it, and a test that measures
+      // "did the bridge post a new table" during it is asking whether a
+      // constant changed. Ticking past the fill makes the fixture measure a
+      // field that actually has relief in it, and the precondition below
+      // refuses to proceed if it does not.
+      for (let i = 0; i < 40; i++) { nowStep(); handle.read!('tick'); }
+      const warm = handle.read!('wavetableFrames') as Float32Array[];
+      const flat = warm.flatMap((f) => Array.from(f));
+      const spread = Math.max(...flat) - Math.min(...flat);
+      expect(spread, 'PRECONDITION: the warmed table must carry real relief, not a saturated constant')
+        .toBeGreaterThan(0.5);
       const postsAfterLive1 = posted.filter((m) => m.type === 'loadWavetable').length;
       expect(postsAfterLive1).toBeGreaterThan(0);
       // Freeze + spin a few ticks — bridge must skip all posts.
