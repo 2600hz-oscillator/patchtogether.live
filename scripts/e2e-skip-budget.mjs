@@ -597,6 +597,43 @@ export const SKIP_BUDGET = [
   },
   {
     specs: [
+      'cv-buddy-face.spec.ts',
+    ],
+    reason: /FLAKE-PARK #1847/,
+    lanes: ['e2e'],
+    homeLane: 'e2e',
+    why:
+      'PARKED (#1847) — the LATE lamp\'s static caption + its count riding the accessible name. '
+      + 'Recovered-on-retry, FIRST observation (PR e2e shard 6/10), NOT yet triaged as flake vs '
+      + 'under-budget. TRIAGE POINTS THE OTHER WAY and the entry says so rather than claiming "flaky": '
+      + 'the rule is that a test with no flake-fix history is more likely UNDER-BUDGETED than flaky, and '
+      + '`git log` on this spec has exactly ONE commit — the feature that created it (#2082) — so there '
+      + 'is no failed-fix history to argue the other side. The two classes need OPPOSITE responses, so '
+      + 'UN-PARK is a reproduce-and-measure budget diagnosis, never a re-run until green. '
+      + 'SIBLINGS RETAIN COVERAGE, named: the ES-9-sentences leg and the ROUTED-lamp positive control in '
+      + 'this same file both exercise the lamp — what is parked is narrower than the lamp itself. '
+      + 'Parked on the first observation to unblock the board (it reddens every PR on this commit range, '
+      + 'not just the one that found it) rather than hold a PR for a diagnosis lane the cap does not allow.',
+  },
+  {
+    specs: [
+      'docs-virtual-module.spec.ts',
+    ],
+    reason: /FLAKE-PARK #1847/,
+    lanes: ['e2e'],
+    homeLane: 'e2e',
+    why:
+      'PARKED (#1847) — SCOPED TO ONE PROBE (`sequencer`), not to the spec. The test is a single body run '
+      + 'over every PROBES entry, and only the sequencer instance was observed recovering on retry (PR e2e '
+      + 'shard 4/10, one observation), so every other probe still runs the identical assertions and the '
+      + 'interactive-doc CODE PATH keeps its coverage; parking the loop would have traded the whole '
+      + 'contract for one module\'s timing. NOT yet triaged as flake vs under-budget, and the entry carries '
+      + 'that instead of hiding it: this file\'s history is module deletions and probe-list edits with no '
+      + 'flake fixes, which the triage rule reads as UNDER-BUDGETED being the likelier class. UN-PARK is a '
+      + 'reproduce-and-measure budget diagnosis on that probe, not a re-run.',
+  },
+  {
+    specs: [
       'backdraft-preview-toggle.spec.ts',
       'backdraft-pure-tv.spec.ts',
       'extras-producer-lifetime.spec.ts',
