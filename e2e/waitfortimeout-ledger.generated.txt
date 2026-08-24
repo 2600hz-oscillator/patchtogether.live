@@ -185,9 +185,6 @@ e2e/tests/nibbles-cv-scope.spec.ts :: SCOPE ch1 sample tracks lengthToCv(length)
 e2e/tests/nibbles-cv-scope.spec.ts :: ch1 sample is monotonic across the 5-step CV sweep used by composite VRT :: waitForTimeout(400) #1
 e2e/tests/nibbles-cv-scope.spec.ts :: setForcedLength :: waitForTimeout(150) #1
 e2e/tests/noise.spec.ts :: noise: LEVEL=0 silences output :: waitForTimeout(500) #1
-e2e/tests/note-entry.spec.ts :: hold-cv: pitch port retains last gated V/oct across an off step :: waitForTimeout(800) #1
-e2e/tests/note-entry.spec.ts :: note-entry: a4 step drives the pitch port to V/oct 0.75 (MIDI 69 - 60 = 9 semis up) :: waitForTimeout(800) #1
-e2e/tests/note-entry.spec.ts :: note-entry: invalid step (midi=null) suppresses gate output even when on=true :: waitForTimeout(400) #1
 e2e/tests/outlines.spec.ts :: COLLIDE gate HIGH keeps the dense field rendering (live inter-circle bounce wires through) :: waitForTimeout(70) #1
 e2e/tests/outlines.spec.ts :: COLLIDE gate HIGH keeps the dense field rendering (live inter-circle bounce wires through) :: waitForTimeout(70) #2
 e2e/tests/outlines.spec.ts :: gate spawns circles; OVERLAP / CONTOUR / COMBINE all ring; MAPPED shows the video input where overlapped :: waitForTimeout(80) #1
@@ -203,9 +200,6 @@ e2e/tests/picturebox-asset-select.spec.ts :: fireAssetGate :: waitForTimeout(80)
 e2e/tests/picturebox-asset-select.spec.ts :: waitForLuma :: waitForTimeout(120) #1
 e2e/tests/picturebox-gif.spec.ts :: a static image renders and does NOT animate (regression) :: waitForTimeout(700) #1
 e2e/tests/picturebox-gif.spec.ts :: sampleLumaOverTime :: waitForTimeout(everyMs) #1
-e2e/tests/poly-chord.spec.ts :: poly-chord: backward-compat - polyPitchGate source -> mono pitch sink routes lane 0 (root) :: waitForTimeout(600) #1
-e2e/tests/poly-chord.spec.ts :: poly-chord: maj triad on a4 emits 4 gated lanes with M3 + P5 + octave intervals :: waitForTimeout(600) #1
-e2e/tests/poly-chord.spec.ts :: poly-chord: min step on a4 emits c5 (m3) instead of c#5 (M3) :: waitForTimeout(600) #1
 e2e/tests/present-second-display.spec.ts :: setup :: waitForTimeout(500) #1
 e2e/tests/rear-view-patching.spec.ts :: enterRearView :: waitForTimeout(420) #1
 e2e/tests/recorderbox.spec.ts :: RECORDERBOX records a real VCO + ACIDWARP into a crash-recoverable MP4 :: waitForTimeout(2500) #1
