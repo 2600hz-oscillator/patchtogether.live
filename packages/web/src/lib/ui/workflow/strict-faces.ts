@@ -4095,6 +4095,36 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // through `simPin`, which uploads a fixed synthetic frame and derives the crop
   // from the PARAM, so they have no getDisplayMedia in them at all.
   'loopback',
+
+  // ── kria ──────────────────────────────────────────────────────────────────
+  //
+  // THE FIRST FACED SEQUENCER, and the one member of that class the
+  // `needs-note-entry-cell` blocker never gated: its steps are CLICKED, not
+  // typed. The blocker is about a typed pitch field ("c#3") having no face
+  // representation, which is real and still blocks `sequencer`, `drumseqz`,
+  // `polyseqz`, `macseq`, `writeseq`, `midiLane` and `cartesian`. kria's step
+  // roster is a pointer handler on a <button>, so it is buildable today — and
+  // it turned out to need NO platform seam at all: no shell extension, no new
+  // wired slot, one PF-14 panel plus seven generic cells.
+  //
+  // ⚠ IT IS ALSO PF-22's FIRST REAL ADOPTER. `curated-face.ts` names kria as
+  // one of two modules that "cannot have a faceplate AT ALL" — two params plus
+  // one control family is three rankable keys, and a PANEL's first legal rank
+  // was seven. PF-22 stopped a dock-only hero picture from consuming a LANE
+  // rank, which is what makes the honest ranking (the grid FIRST) expressible.
+  //
+  // ⚠ THE PROMOTION IS WHAT MAKES THE MANIFEST TRUE. `module-manifest.ts` said
+  // this module was "fully usable from the card with a mouse" while ratchet,
+  // probability, glide, loop start/length, time division, direction, mute and
+  // root were reachable from exactly one place — an attached monome grid over
+  // WebSerial — and `scale` was PRINTED as a read-only tag. The face reaches
+  // all of them; so, now, does the card.
+  //
+  // ⚠ ZERO ATTEST. `webgl-attest-hash.sh --list` contains no kria file, and the
+  // grid body is deliberately DOM rather than canvas so it stays that way —
+  // basis rule (2) is derived from CONTENT, so a WebGL grid would enrol the
+  // module and make every later edit cost a real-GPU re-attest window.
+  'kria',
 ]);
 
 /**

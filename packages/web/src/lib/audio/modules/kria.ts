@@ -111,13 +111,154 @@ export const kriaDef: AudioModuleDef = {
       running:
         "Local play/stop transport (1 = running, 0 = stopped), exposed as the card's RUN button. When a TIMELORDE node exists its run state drives playback instead, and an external clock's pulses can run the tracks regardless.",
       "kria-cell-{n}":
-        "A cell of the per-step editor grid for the selected track — this is where you enter each step's value, INCLUDING its note. The same grid is reused by the page selector (TRIG / NTE / OCT / DUR): on the NOTE (NTE) page it IS the per-step note entry — the lit row picks that step's scale DEGREE (bottom row = degree 0, up to degree 6), which the shared SCALE + ROOT then quantize into the track's pitch CV; on the other pages the same cell instead sets the step's trigger, octave or gate duration. Click a cell to set/clear it for the active page; the column tracking the playhead is highlighted as it runs. (An attached monome grid drives these same edits.)",
+        "A cell of the per-step editor grid for the selected track — this is where you enter each step's value, INCLUDING its note. The same grid is reused by the lane selector (TRG / NTE / OCT / DUR / PRB / GLD / RAT): on the NOTE (NTE) lane it IS the per-step note entry — the lit row picks that step's scale DEGREE (bottom row = degree 0, up to degree 6), which the shared SCALE + ROOT then quantize into the track's pitch CV; on the other lanes the same cell instead sets the step's trigger, octave, gate duration, probability, glide time or ratchet count. Click a cell to set/clear it for the active lane; the column tracking the playhead is highlighted as it runs. A lane with fewer values than the grid has rows (OCTAVE has six, PROBABILITY and RATCHET have four) leaves the surplus rows visibly INERT rather than accepting clicks it cannot display. The same surface flips to the sixteen pattern slots, where a tap CUES a pattern and the engine swaps on the next loop boundary. (An attached monome grid drives these same edits through the same write path.)",
+      'kria-loop-start-{n}':
+        "The first step of the SELECTED track's loop window (1–16). Together with LEN this is what lets each track run a different length from its neighbours, so the four tracks drift in and out of phase instead of repeating in lockstep.",
+      'kria-loop-length-{n}':
+        "How many steps the SELECTED track plays before wrapping (1–16). The window wraps past step 16 if it starts late, so FROM 15 / LEN 4 plays steps 15, 16, 1, 2. Set to 16 the track never wraps early.",
+      'kria-time-division-{n}':
+        "The SELECTED track's clock division: how many base 16th-note ticks pass per step advance. 1 advances every tick, 4 advances once a beat, 16 once a bar. The divisions are a fixed roster (1, 2, 3, 4, 6, 8, 12, 16) rather than a free range, because a value between two of them is not a musical division.",
+      'kria-direction-{n}':
+        "Which way the SELECTED track walks its loop window: forward, reverse, ping-pong (bouncing off both ends without repeating them), drunk (a ±1 random walk) or random. Drunk and random re-roll every advance, so they never repeat exactly.",
+      'kria-mute-{n}':
+        "Silences the SELECTED track's gate output while leaving its pattern and its playhead intact — the track keeps walking, it just stops firing. Mute is not a per-step lane; it is a property of the whole track.",
+      'kria-scale-{n}':
+        "The scale the ACTIVE pattern quantizes every track's note lane into (major, minor, pentatonic or chromatic). The note lane stores a DEGREE, so changing the scale re-voices every step of all four tracks at once without editing a single note.",
+      'kria-root-{n}':
+        "The MIDI root note the ACTIVE pattern's scale is built on (C3 by default). Degree 0 of every track sounds this note; the per-step OCTAVE lane then adds whole octaves on top of it.",
     },
   },
 
   controlFamilies: [
     { id: 'kria-cell', label: 'Per-step editor cell (note on the NTE page)', kind: 'cell', testidPrefix: 'kria-cell' },
+    // ⚠ ONE-MEMBER FAMILIES, the dx7/videocube convention: a card control with
+    // no backing param has no other way to be RANKED on a face or keyed by the
+    // docs gate (`face.order` resolves a key as a param, a family template, or
+    // a numbered-legend entry — and a legend is an annotated-VRT artifact only
+    // three modules have). Each `testidPrefix` is a LITERAL the card emits, so
+    // `module-docs-lint`'s card grep can see it.
+    //
+    // Every one of these is a control the engine already implemented and the
+    // docs already described while the ONLY editor for it was an attached
+    // monome grid over WebSerial.
+    //
+    // ⚠ THE LABELS ARE TERSE ON PURPOSE, and they were not at first. Each of
+    // the per-track ones read '… (selected track)', which printed that phrase
+    // FOUR times inside a band already headed TRACK — the mixmstrs case the
+    // owner ruled on ('a per-control label earns its place when it
+    // disambiguates otherwise-identical controls; it is clutter when a section
+    // heading already conveys it'). The band heading carries the scoping, the
+    // selector chip carries the value, and the full explanation lives in
+    // `docs.controls` where right-click annotate reads it.
+    { id: 'kria-loop-start',     label: 'Loop start',    kind: 'other', testidPrefix: 'kria-loop-start' },
+    { id: 'kria-loop-length',    label: 'Loop length',   kind: 'other', testidPrefix: 'kria-loop-length' },
+    { id: 'kria-time-division',  label: 'Clock division',kind: 'other', testidPrefix: 'kria-time-division' },
+    { id: 'kria-direction',      label: 'Play direction',kind: 'other', testidPrefix: 'kria-direction' },
+    { id: 'kria-mute',           label: 'Track mute',    kind: 'other', testidPrefix: 'kria-mute' },
+    { id: 'kria-scale',          label: 'Pattern scale',                      kind: 'other', testidPrefix: 'kria-scale' },
+    { id: 'kria-root',           label: 'Pattern root',  kind: 'other', testidPrefix: 'kria-root' },
   ],
+
+  face: {
+    // ⚠ THE GRID RANKS FIRST, AND UNTIL PF-22 IT COULD NOT.
+    //
+    // `kria-cell-{n}` resolves to a PF-14 PANEL, and `module-face-lint` refuses
+    // a panel SELECTED at a lane tier — a panel declares its own `minWidth` and
+    // a lane knob column is 46 px. The 'full' lane cap is six, so a panel's
+    // first legal rank used to be SEVEN, a floor this module can never reach:
+    // two params plus one control family is three rankable keys, total. That
+    // arithmetic is why `curated-face.ts` listed kria as one of two modules that
+    // "cannot have a faceplate AT ALL".
+    //
+    // PF-22 removed the cause rather than the symptom: `laneOrder` drops
+    // `face.hero.cell` from the LANE roster only, so a hero picture costs no
+    // lane rank and may rank first. The 46 px protection is untouched — the
+    // panel still cannot be selected into a knob column — and the ranking now
+    // says what it means. kria is that fix's first real adopter.
+    //
+    // ⚠ AND THE RANK IS HONEST RATHER THAN CONVENIENT. Both params are
+    // FALLBACKS: `bpm` applies only with no TIMELORDE and no external clock, and
+    // `running` yields to TIMELORDE's transport when one exists — and the rack
+    // AUTO-SPAWNS a TIMELORDE. So in the default product configuration neither
+    // of this module's two params does anything, and the two controls the param
+    // system knows about are the two least important controls on the
+    // instrument. Everything a player plays is the grid.
+    order: [
+      'kria-cell-{n}',
+      'running',
+      'bpm',
+      'kria-loop-start-{n}',
+      'kria-loop-length-{n}',
+      'kria-time-division-{n}',
+      'kria-direction-{n}',
+      'kria-mute-{n}',
+      'kria-scale-{n}',
+      'kria-root-{n}',
+    ],
+
+    // No audio output at all — four `pitch` and four `gate` ports — so
+    // `primaryAudioOutPortId` is null and every live-glyph literal would fall to
+    // a dead static picture. A layout-source glyph would be worse than useless
+    // here rather than merely uninformative: `ShellExtensionGlyphProps` carries
+    // no nodeId, so every kria in the rack would draw the SAME sixteen steps,
+    // and on this module the sequence IS the instrument. (Worth recording for
+    // whoever picks that platform PR up: a `nodeId` prop alone would still not
+    // be enough here — the picture a player wants is the playhead over the
+    // SELECTED track's SELECTED lane, which is two more pieces of node.data.)
+    glyph: 'none',
+
+    // The grid, promoted to the dock's hero slot. It suppresses the hero glyph,
+    // which costs exactly nothing on a module that has no glyph to suppress.
+    hero: { cell: 'kria-cell-{n}' },
+
+    // ⚠ THREE BANDS, NO TAB RAIL, and the temptation is worth naming. Kria's
+    // HARDWARE is organised as pages, so mirroring TRIG / NOTE / OCTAVE /
+    // DURATION / PROBABILITY / GLIDE / RATCHET / LOOP / TIME / DIRECTION /
+    // SCALE / PATTERN would clear the seven-band rail threshold easily. That
+    // would be padding. The per-step lanes are not bands at all — they are
+    // WHICH LANE THE GRID IS EDITING, one selection, and giving each a header
+    // would spend twelve section titles expressing one choice. LOOP and TIME
+    // are the same idea twice (how this track walks the grid), so they are
+    // CLUSTERS, not pages. The honest grouping lands at three.
+    pages: [
+      {
+        id: 'transport',
+        label: 'transport',
+        hint:
+          'both of these are FALLBACKS: the rack auto-spawns a TIMELORDE, and while one exists ' +
+          'its tempo and its run state drive this module — so in a default rack neither control ' +
+          'here does anything. Patch CLOCK IN and the external pulses win over both.',
+        controls: ['kria-cell-{n}', 'running', 'bpm'],
+      },
+      {
+        id: 'track',
+        label: 'track',
+        hint:
+          'per-track, and they are what make the four tracks drift apart: each walks the shared ' +
+          '16th-note clock at its OWN division over its OWN loop window, so a 12-step track and a ' +
+          '16-step track only agree every 48 steps. That drift is the instrument.',
+        controls: [
+          'kria-loop-start-{n}',
+          'kria-loop-length-{n}',
+          'kria-time-division-{n}',
+          'kria-direction-{n}',
+          'kria-mute-{n}',
+        ],
+        clusters: [
+          { label: 'loop', controls: ['kria-loop-start-{n}', 'kria-loop-length-{n}'] },
+          { label: 'time', controls: ['kria-time-division-{n}', 'kria-direction-{n}'] },
+        ],
+      },
+      {
+        id: 'scale',
+        label: 'scale',
+        hint:
+          'shared by all four tracks of the ACTIVE pattern. The note lane picks a DEGREE, not a ' +
+          'chromatic pitch, so these two decide what every degree on every track sounds like.',
+        controls: ['kria-scale-{n}', 'kria-root-{n}'],
+      },
+    ],
+  },
 
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     const nodeId = node.id;

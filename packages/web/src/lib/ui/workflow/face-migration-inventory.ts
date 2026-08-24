@@ -779,10 +779,14 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
   },
   {
     type: 'kria',
-    disposition: 'bespoke-surface',
-    why:
-      'a monome KRIA step grid: track and page selectors over a per-step cell roster, optionally ' +
-      'bound to real grid hardware over WebSerial. The grid is the module.',
+    disposition: 'generic-face',
+    note:
+      'PROMOTED. The step grid IS the module, and it was the reason this entry read ' +
+      "'bespoke-surface' — but it fits a PF-14 PANEL (one picture-you-edit) rather than needing a " +
+      'shell extension, and PF-22 lets that panel rank FIRST as the dock hero instead of being ' +
+      'pushed to a rank this module has too few keys to reach. Everything else — loop, time, ' +
+      'direction, mute, scale, root — is a generic selector or toggle over a roster the def ' +
+      'already declared. Nothing here is bespoke except the grid picture itself.',
   },
   {
     type: 'launchpadControlLeft',

@@ -15,7 +15,7 @@
 // (localStorage). The LED frame + the view (track/page) are local render state,
 // never synced.
 
-import { patch as livePatch, ydoc } from '$lib/graph/store';
+import { patch as livePatch } from '$lib/graph/store';
 import { getSchedulerClock } from '$lib/audio/scheduler-clock';
 import { onKey, setFrame, isConnected, type GridKeyEvent } from './monome-device.svelte';
 import {
@@ -27,17 +27,21 @@ import {
 } from './kria-grid-map';
 import {
   activePattern,
-  defaultPattern,
   slotOccupied,
   setNote as setNoteHelper,
   setOctave as setOctaveHelper,
   setDuration as setDurationHelper,
   toggleTrig as toggleTrigHelper,
-  coerceTrack,
   type KriaData,
-  type KriaPattern,
-  type KriaPatternBank,
 } from '$lib/audio/modules/kria-types';
+// ⚠ THE SHARED WRITE SEAM — the same one the card and the faceplate call.
+// This file used to carry its OWN `mutateTrack` + `cloneTrack`, a near-copy of
+// the card's, and both copies carried both defects: an untagged
+// `ydoc.transact` (so a grid edit was outside Cmd-Z) and a whole-pattern
+// reassignment (so a grid edit clobbered a collaborator's other track). Sharing
+// the seam is what makes "the grid path and the face write the same keys" a
+// property of the code instead of a thing to re-verify.
+import { editKriaTrack, selectKriaPattern } from '$lib/audio/modules/kria-writes';
 
 const STORAGE_KEY = 'pt.grid.boundKriaNode';
 const BLINK_TICKS = 10; // ~2 Hz at the 25ms scheduler tick
@@ -110,79 +114,6 @@ export function restoreKriaGridBinding(): void {
   }
 }
 
-/** Read + coerce the KRIA node's active pattern, ensuring the slot exists. */
-function ensureActivePattern(nodeId: string): { data: KriaData; pattern: KriaPattern; active: number } | null {
-  const node = livePatch.nodes[nodeId];
-  if (!node) return null;
-  const data = (node.data ?? {}) as KriaData;
-  const active = typeof data.active === 'number' ? data.active : 0;
-  const pat = activePattern(data) ?? defaultPattern();
-  return { data, pattern: pat, active };
-}
-
-/** Mutate the active pattern's track t under the Y.Doc transaction discipline.
- *  The mutator returns a NEW track; we deep-clone into node.data (never reassign
- *  a live Y type at two paths). */
-function mutateTrack(nodeId: string, trackIdx: number, fn: (t: ReturnType<typeof coerceTrack>) => ReturnType<typeof coerceTrack>): void {
-  const ctx = ensureActivePattern(nodeId);
-  if (!ctx) return;
-  const next = fn(coerceTrack(ctx.pattern.tracks[trackIdx]));
-  ydoc.transact(() => {
-    const node = livePatch.nodes[nodeId];
-    if (!node) return;
-    if (!node.data) node.data = {};
-    const d = node.data as KriaData;
-    if (!d.patterns || typeof d.patterns !== 'object') d.patterns = {} as KriaPatternBank;
-    // Clone the whole active pattern, replacing track trackIdx.
-    const patClone: KriaPattern = {
-      scale: ctx.pattern.scale,
-      root: ctx.pattern.root,
-      tracks: ctx.pattern.tracks.map((tr, i) =>
-        i === trackIdx
-          ? cloneTrack(next)
-          : cloneTrack(coerceTrack(tr)),
-      ),
-    };
-    // String-keyed record assignment — SyncedStore-safe (no array index set).
-    d.patterns[String(ctx.active)] = patClone;
-  });
-}
-
-function cloneTrack(t: ReturnType<typeof coerceTrack>): ReturnType<typeof coerceTrack> {
-  return {
-    trig: t.trig.slice(),
-    ratchet: t.ratchet.slice(),
-    note: t.note.slice(),
-    octave: t.octave.slice(),
-    duration: t.duration.slice(),
-    probability: t.probability.slice(),
-    glide: t.glide.slice(),
-    loopStart: t.loopStart,
-    loopLength: t.loopLength,
-    timeDivision: t.timeDivision,
-    direction: t.direction,
-    muted: t.muted,
-  };
-}
-
-function cuePattern(nodeId: string, slot: number): void {
-  const node = livePatch.nodes[nodeId];
-  if (!node) return;
-  ydoc.transact(() => {
-    if (!node.data) node.data = {};
-    const d = node.data as KriaData;
-    // If nothing is playing yet (no active set) just activate; else cue it.
-    if (d.active === undefined || d.active === null) {
-      d.active = slot;
-      d.cued = null;
-    } else if (d.active === slot) {
-      d.cued = null; // re-tap active clears a pending cue
-    } else {
-      d.cued = slot;
-    }
-  });
-}
-
 function handleKey(e: GridKeyEvent): void {
   if (e.s !== 1) return; // act on press only
   const nodeId = boundNodeId;
@@ -204,19 +135,19 @@ function handleKey(e: GridKeyEvent): void {
       bindingVersion++;
       break;
     case 'cuePattern':
-      cuePattern(nodeId, action.slot);
+      selectKriaPattern(nodeId, action.slot);
       break;
     case 'toggleTrig':
-      mutateTrack(nodeId, view.track, (t) => toggleTrigHelper(t, action.step));
+      editKriaTrack(nodeId, view.track, (t) => toggleTrigHelper(t, action.step));
       break;
     case 'setNote':
-      mutateTrack(nodeId, view.track, (t) => setNoteHelper(t, action.step, action.degree));
+      editKriaTrack(nodeId, view.track, (t) => setNoteHelper(t, action.step, action.degree));
       break;
     case 'setOctave':
-      mutateTrack(nodeId, view.track, (t) => setOctaveHelper(t, action.step, action.octave));
+      editKriaTrack(nodeId, view.track, (t) => setOctaveHelper(t, action.step, action.octave));
       break;
     case 'setDuration':
-      mutateTrack(nodeId, view.track, (t) => setDurationHelper(t, action.step, action.duration));
+      editKriaTrack(nodeId, view.track, (t) => setDurationHelper(t, action.step, action.duration));
       break;
     case 'none':
       break;

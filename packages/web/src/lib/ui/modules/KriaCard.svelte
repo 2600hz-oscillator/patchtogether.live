@@ -1,17 +1,26 @@
 <script lang="ts">
   // KRIA card — the standalone (no-grid) face of the KRIA grid sequencer.
-  // A clean-room reimagining of monome Kria's UX: 4 tracks, a TRIG/NOTE/OCTAVE/
-  // DURATION page selector, a 16-step editor for the selected track+page, a
-  // 16-slot pattern strip with quantized cueing, and BPM/RUN transport. A
-  // monome grid drives the SAME edits via lib/control/monome/kria-grid (capability-gated).
+  // A clean-room reimagining of monome Kria's UX: 4 tracks, a per-lane page
+  // selector, a 16-step editor for the selected track+page, a 16-slot pattern
+  // strip with quantized cueing, and BPM/RUN transport. A monome grid drives
+  // the SAME edits via lib/control/monome/kria-grid (capability-gated).
   //
   // All ports live in the shared yellow drill-down <PatchPanel> (post-#767 hard
   // standard — NO raw side <Handle> jacks). Port ids are byte-identical to
   // kriaDef so the CV bridge + persisted edges route unchanged.
+  //
+  // ⚠ THIS CARD OWNS NO WRITE PATH AND NO ROW ARITHMETIC. Both moved out, and
+  // the move is the point rather than tidiness:
+  //   • every edit goes through `kria-writes.ts`, so it is origin-tagged
+  //     (undoable) and GRANULAR (one step, not the whole pattern) — and the
+  //     monome bridge, which had its own copy of both defects, now shares the
+  //     same seam instead of a second implementation of it;
+  //   • every row↔value decision comes from `kria-types.ts`'s lane model, which
+  //     exists because this file used to state that mapping TWICE (a click
+  //     handler and a lit test) and the two disagreed on the OCTAVE page.
   import type { NodeProps } from '@xyflow/svelte';
   import Knob from '$lib/ui/controls/Knob.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
-  import { patch, ydoc } from '$lib/graph/store';
   import { nodeVersion } from '$lib/graph/node-versions.svelte';
   import { setNodeParam } from '$lib/graph/mutate';
   import { onMeterFrame } from '$lib/ui/meter-frame';
@@ -20,22 +29,57 @@
   import { kriaDef } from '$lib/audio/modules/kria';
   import {
     activePattern,
-    defaultKriaData,
     defaultPattern,
     slotOccupied,
     coerceTrack,
-    toggleTrig,
-    setNote,
-    setOctave,
-    setDuration,
+    coerceLane,
+    applyLaneEdit,
+    laneCellAriaLabel,
+    laneRowActive,
+    laneRowLit,
+    KRIA_EDIT_ROWS,
+    KRIA_LANES,
     KRIA_TRACKS,
     KRIA_STEPS,
     KRIA_PATTERNS,
     type KriaData,
     type KriaPattern,
-    type KriaPatternBank,
     type KriaTrack,
   } from '$lib/audio/modules/kria-types';
+  import {
+    editKriaTrack,
+    selectKriaPattern,
+    selectKriaTrack,
+    selectKriaLane,
+    showKriaPatterns,
+    readSelTrack,
+  } from '$lib/audio/modules/kria-writes';
+  // ⚠ THE SAME HELPERS THE FACEPLATE'S BAND CELLS CALL. Sharing them is what
+  // keeps the card and the face from disagreeing about a roster, a clamp or a
+  // write path — the two-surfaces-one-contract rule, applied before it can be
+  // broken rather than after.
+  import {
+    kriaDirectionOptions,
+    kriaDirectionValue,
+    kriaLoopLengthOptions,
+    kriaLoopLengthValue,
+    kriaLoopStartOptions,
+    kriaLoopStartValue,
+    kriaMuteValue,
+    kriaRootOptions,
+    kriaRootValue,
+    kriaScaleOptions,
+    kriaScaleValue,
+    kriaSetDirection,
+    kriaSetLoopLength,
+    kriaSetLoopStart,
+    kriaSetMute,
+    kriaSetRoot,
+    kriaSetScale,
+    kriaSetTimeDivision,
+    kriaTimeDivisionOptions,
+    kriaTimeDivisionValue,
+  } from './kria-cell-actions';
   import ModuleTitle from './ModuleTitle.svelte';
   import {
     serialAvailable as gridSerialAvailable,
@@ -54,17 +98,6 @@
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
   const engineCtx = useEngine();
-
-  type Page = 'trig' | 'note' | 'octave' | 'duration';
-  const PAGES: { id: Page; label: string }[] = [
-    { id: 'trig', label: 'TRG' },
-    { id: 'note', label: 'NTE' },
-    { id: 'octave', label: 'OCT' },
-    { id: 'duration', label: 'DUR' },
-  ];
-  let selTrack = $state(0);
-  let selPage = $state<Page>('trig');
-  let showPatterns = $state(false);
 
   // Monome grid — WebSerial connect + bind THIS KRIA to the grid.
   const gridSupported = gridSerialAvailable();
@@ -93,11 +126,22 @@
   function dataObj(): KriaData {
     return (node?.data ?? {}) as KriaData;
   }
+  // ⚠ THE SELECTION LIVES IN node.data, not in component $state. A dock
+  // collapse or an LRU eviction destroys this component (#1531 / #1574 / #1583)
+  // and the faceplate's band cells read the selection from the node alone — a
+  // cell's `value(node)` receives nothing else. It is written with a NON-tracked
+  // origin, so navigating does not land on the Cmd-Z stack.
+  let selTrack = $derived((void cardVersion, readSelTrack(dataObj())));
+  let selLane = $derived((void cardVersion, coerceLane((dataObj() as { selLane?: string }).selLane)));
+  let showPatterns = $derived(
+    (void cardVersion, !!(dataObj() as { showPatterns?: boolean }).showPatterns),
+  );
+
   let pattern = $derived.by<KriaPattern>(() => {
     void cardVersion;
     return activePattern(dataObj()) ?? defaultPattern();
   });
-  let track = $derived.by<KriaTrack>(() => pattern.tracks[selTrack] ?? pattern.tracks[0]!);
+  let track = $derived.by<KriaTrack>(() => coerceTrack(pattern.tracks[selTrack]));
   let activeSlot = $derived((void cardVersion, dataObj().active ?? 0));
   let cuedSlot = $derived((void cardVersion, dataObj().cued ?? null));
   let occupied = $derived.by<boolean[]>(() => {
@@ -112,117 +156,34 @@
     return e.readParam(node, pid);
   };
 
-  function writeData(mut: (d: KriaData) => void) {
-    const target = patch.nodes[id];
-    if (!target) return;
-    ydoc.transact(() => {
-      if (!target.data) target.data = { ...defaultKriaData() } as Record<string, unknown>;
-      mut(target.data as KriaData);
-    });
-  }
-
-  /** Replace the active pattern's selected track with a NEW track (deep-cloned
-   *  so we never reassign a live Y type at two paths). */
-  function commitTrack(next: KriaTrack) {
-    writeData((d) => {
-      if (!d.patterns || typeof d.patterns !== 'object') d.patterns = {} as KriaPatternBank;
-      const slot = d.active ?? 0;
-      const base = activePattern(d) ?? defaultPattern();
-      const tracks = base.tracks.map((tr, i) =>
-        i === selTrack ? cloneTrack(next) : cloneTrack(coerceTrack(tr)),
-      );
-      d.patterns[String(slot)] = { scale: base.scale, root: base.root, tracks };
-    });
-  }
-  function cloneTrack(t: KriaTrack): KriaTrack {
-    return {
-      trig: t.trig.slice(), ratchet: t.ratchet.slice(), note: t.note.slice(),
-      octave: t.octave.slice(), duration: t.duration.slice(),
-      probability: t.probability.slice(), glide: t.glide.slice(),
-      loopStart: t.loopStart, loopLength: t.loopLength,
-      timeDivision: t.timeDivision, direction: t.direction, muted: t.muted,
-    };
-  }
-
-  // --- Step-grid editing per page ---
-  // Editor uses 7 rows. Each page interprets a click differently.
-  const EDIT_ROWS = 7;
+  /** One grid cell click. `applyLaneEdit` returns null for an INERT row, and
+   *  the seam then writes nothing at all — no undo entry for a dead click. */
   function onCell(step: number, row: number) {
-    // row 0 = top, row 6 = bottom.
-    switch (selPage) {
-      case 'trig':
-        commitTrack(toggleTrig(track, step));
-        break;
-      case 'note': {
-        const degree = EDIT_ROWS - 1 - row; // bottom row = degree 0
-        commitTrack(setNote(track, step, degree));
-        break;
-      }
-      case 'octave': {
-        const oct = Math.min(5, EDIT_ROWS - 1 - row); // bottom = +0
-        commitTrack(setOctave(track, step, oct));
-        break;
-      }
-      case 'duration': {
-        const filled = row + 1; // top row = shortest, lower = longer
-        commitTrack(setDuration(track, step, filled / EDIT_ROWS));
-        break;
-      }
-    }
-  }
-  /** Is cell (step,row) lit for the current page? */
-  function cellOn(step: number, row: number): boolean {
-    switch (selPage) {
-      case 'trig':
-        return row === EDIT_ROWS - 1 && track.trig[step]!;
-      case 'note': {
-        // Bottom row (row 6) = degree 0; the 7-row editor caps at degree 6.
-        const deg = Math.max(0, Math.min(EDIT_ROWS - 1, track.note[step] ?? 0));
-        return EDIT_ROWS - 1 - row === deg;
-      }
-      case 'octave': {
-        const oct = Math.min(5, track.octave[step] ?? 0);
-        return EDIT_ROWS - 1 - row <= oct;
-      }
-      case 'duration': {
-        const filled = Math.max(1, Math.round((track.duration[step] ?? 0.5) * EDIT_ROWS));
-        return row < filled;
-      }
-    }
-  }
-
-  function selectPattern(slot: number) {
-    writeData((d) => {
-      if (!d.patterns || typeof d.patterns !== 'object') d.patterns = {} as KriaPatternBank;
-      if (!slotOccupied(d, slot)) {
-        // Empty slot → seed a fresh pattern and activate it immediately.
-        d.patterns[String(slot)] = defaultPattern();
-        d.active = slot;
-        d.cued = null;
-        return;
-      }
-      if ((d.active ?? 0) === slot) {
-        d.cued = null; // re-tap active clears a cue
-      } else {
-        d.cued = slot; // cue → quantized switch in the engine
-      }
-    });
+    editKriaTrack(id, selTrack, (t) => applyLaneEdit(selLane, t, step, row));
   }
 
   // Playhead column (selected track) from the engine.
+  //
+  // ⚠ THE SHARED FRAME PUMP, and this card already imported it. It ran a
+  // hand-rolled uncapped rAF beside an unused `onMeterFrame` import — the one
+  // mechanism that exists to replace exactly that loop (~60 cards each running
+  // their own rAF starves the audio render thread). It also ran while the
+  // PATTERN view was showing, where there is no playhead to draw.
   let playStep = $state(-1);
+  let gridEl = $state<HTMLElement | null>(null);
   $effect(() => {
-    let raf = 0;
-    const frame = () => {
+    if (showPatterns) {
+      playStep = -1;
+      return;
+    }
+    const t = selTrack;
+    const h = onMeterFrame(gridEl, () => {
       const e = engineCtx.get();
-      if (e && node) {
-        const cs = e.read(node, `currentStep:${selTrack}`);
-        if (typeof cs === 'number') playStep = cs;
-      }
-      raf = requestAnimationFrame(frame);
-    };
-    raf = requestAnimationFrame(frame);
-    return () => cancelAnimationFrame(raf);
+      if (!e || !node) return;
+      const cs = e.read(node, `currentStep:${t}`);
+      if (typeof cs === 'number') playStep = cs;
+    });
+    return () => h.stop();
   });
 
   const inputs = portsFromDef(kriaDef.inputs, { clock: 'CLOCK IN', reset: 'RESET IN' });
@@ -268,26 +229,29 @@
             <button
               class="sel-btn track"
               class:active={selTrack === t}
-              onclick={() => (selTrack = t)}
+              onclick={() => selectKriaTrack(id, t)}
               data-testid={`kria-track-${t}`}
               aria-label={`track ${t + 1}`}
+              aria-pressed={selTrack === t}
             >{t + 1}</button>
           {/each}
         </div>
         <div class="page-sel" role="group" aria-label="page select">
-          {#each PAGES as p (p.id)}
+          {#each KRIA_LANES as p (p.id)}
             <button
               class="sel-btn page"
-              class:active={selPage === p.id && !showPatterns}
-              onclick={() => { selPage = p.id; showPatterns = false; }}
+              class:active={selLane === p.id && !showPatterns}
+              onclick={() => selectKriaLane(id, p.id)}
               data-testid={`kria-page-${p.id}`}
+              aria-pressed={selLane === p.id && !showPatterns}
             >{p.label}</button>
           {/each}
           <button
             class="sel-btn pat"
             class:active={showPatterns}
-            onclick={() => (showPatterns = !showPatterns)}
+            onclick={() => showKriaPatterns(id, !showPatterns)}
             data-testid="kria-pattern-toggle"
+            aria-pressed={showPatterns}
           >PAT</button>
         </div>
       </div>
@@ -303,26 +267,40 @@
               class:cued={cuedSlot === s}
               role="gridcell"
               data-slot={s}
-              aria-label={`pattern ${s + 1}`}
-              onclick={() => selectPattern(s)}
+              aria-label={`pattern ${s + 1} — ${cuedSlot === s
+                 ? 'cued'
+                 : activeSlot === s
+                   ? 'playing'
+                   : occupied[s]
+                     ? 'stored'
+                     : 'empty'}`}
+              onclick={() => selectKriaPattern(id, s)}
             >{s + 1}</button>
           {/each}
         </div>
       {:else}
         <!-- Step editor for the selected track + page -->
-        <div class="step-grid" data-testid="kria-step-grid" role="grid" aria-label={`${selPage} editor track ${selTrack + 1}`}>
-          {#each Array(EDIT_ROWS) as _r, row (row)}
+        <div
+          class="step-grid"
+          bind:this={gridEl}
+          data-testid="kria-step-grid"
+          role="grid"
+          aria-label={`${selLane} editor track ${selTrack + 1}`}
+        >
+          {#each Array(KRIA_EDIT_ROWS) as _r, row (row)}
             <div class="grid-row" role="row">
               {#each Array(KRIA_STEPS) as _c, step (step)}
                 <button
                   class="cell"
-                  class:on={cellOn(step, row)}
+                  class:on={laneRowLit(selLane, track, step, row)}
+                  class:inert={!laneRowActive(selLane, row)}
                   class:playhead={step === playStep}
                   role="gridcell"
                   data-step={step}
                   data-row={row}
                   data-testid={`kria-cell-${step}-${row}`}
-                  aria-label={`step ${step} row ${row}`}
+                  aria-label={laneCellAriaLabel(selLane, track, step, row)}
+                  aria-disabled={!laneRowActive(selLane, row)}
                   onclick={() => onCell(step, row)}
                 ></button>
               {/each}
@@ -331,11 +309,102 @@
         </div>
       {/if}
 
-      <!-- Transport -->
+      <!-- PER-TRACK CONTROLS.
+           ⚠ These are the controls the manifest's "fully usable from the card
+           with a mouse" was describing and the card did not have: LOOP (start +
+           length), TIME (division + direction) and MUTE were implemented in the
+           engine, documented in `docs.controls`, and reachable from exactly ONE
+           place — an attached monome grid over WebSerial.
+
+           They read and write through the SAME helpers the faceplate's band
+           cells call (`kria-cell-actions`), so the two surfaces cannot drift:
+           one roster, one clamp, one write path. Their literal testids are also
+           what `module-docs-lint` greps to prove each declared controlFamily
+           exists. -->
+      <div class="track-ctl" role="group" aria-label={`track ${selTrack + 1} controls`}>
+        <label class="pick">
+          <span class="cap">FROM</span>
+          <select
+            data-testid="kria-loop-start"
+            aria-label="loop start step"
+            value={kriaLoopStartValue(node)}
+            onchange={(e) => kriaSetLoopStart(id, (e.currentTarget as HTMLSelectElement).value)}
+          >
+            {#each kriaLoopStartOptions() as o (o.value)}<option value={o.value}>{o.label}</option>{/each}
+          </select>
+        </label>
+        <label class="pick">
+          <span class="cap">LEN</span>
+          <select
+            data-testid="kria-loop-length"
+            aria-label="loop length"
+            value={kriaLoopLengthValue(node)}
+            onchange={(e) => kriaSetLoopLength(id, (e.currentTarget as HTMLSelectElement).value)}
+          >
+            {#each kriaLoopLengthOptions() as o (o.value)}<option value={o.value}>{o.label}</option>{/each}
+          </select>
+        </label>
+        <label class="pick">
+          <span class="cap">DIV</span>
+          <select
+            data-testid="kria-time-division"
+            aria-label="clock division"
+            value={kriaTimeDivisionValue(node)}
+            onchange={(e) => kriaSetTimeDivision(id, (e.currentTarget as HTMLSelectElement).value)}
+          >
+            {#each kriaTimeDivisionOptions() as o (o.value)}<option value={o.value}>{o.label}</option>{/each}
+          </select>
+        </label>
+        <label class="pick">
+          <span class="cap">DIR</span>
+          <select
+            data-testid="kria-direction"
+            aria-label="play direction"
+            value={kriaDirectionValue(node)}
+            onchange={(e) => kriaSetDirection(id, (e.currentTarget as HTMLSelectElement).value)}
+          >
+            {#each kriaDirectionOptions() as o (o.value)}<option value={o.value}>{o.label}</option>{/each}
+          </select>
+        </label>
+        <button
+          class="sel-btn mute"
+          class:active={kriaMuteValue(node)}
+          data-testid="kria-mute"
+          aria-label="mute track"
+          aria-pressed={kriaMuteValue(node)}
+          onclick={() => kriaSetMute(id, !kriaMuteValue(node))}
+        >MUTE</button>
+      </div>
+
+      <!-- Transport + the pattern-level scale/root -->
       <div class="knob-row">
         <Knob value={bpm} min={pdef('bpm').min} max={pdef('bpm').max} defaultValue={pdef('bpm').defaultValue}
           label="BPM" curve="linear" onchange={setParam('bpm')} moduleId={id} paramId="bpm" readLive={readLive('bpm')} />
-        <span class="scale-tag" data-testid="kria-scale">scale: {pattern.scale}</span>
+        <!-- SCALE was a read-only TEXT TAG: the card PRINTED the active scale
+             and offered no way to change it, so the only editor for it was a
+             monome grid. ROOT was not on the card at all. -->
+        <label class="pick">
+          <span class="cap">scale</span>
+          <select
+            data-testid="kria-scale"
+            aria-label="scale"
+            value={kriaScaleValue(node)}
+            onchange={(e) => kriaSetScale(id, (e.currentTarget as HTMLSelectElement).value)}
+          >
+            {#each kriaScaleOptions() as o (o.value)}<option value={o.value}>{o.label}</option>{/each}
+          </select>
+        </label>
+        <label class="pick">
+          <span class="cap">root</span>
+          <select
+            data-testid="kria-root"
+            aria-label="root note"
+            value={kriaRootValue(node)}
+            onchange={(e) => kriaSetRoot(id, (e.currentTarget as HTMLSelectElement).value)}
+          >
+            {#each kriaRootOptions() as o (o.value)}<option value={o.value}>{o.label}</option>{/each}
+          </select>
+        </label>
       </div>
     </div>
   </PatchPanel>
@@ -391,17 +460,17 @@
     flex-direction: column;
     gap: 8px;
   }
-  .selectors { display: flex; justify-content: space-between; gap: 8px; }
-  .track-sel, .page-sel { display: flex; gap: 3px; }
+  .selectors { display: flex; justify-content: space-between; gap: 6px; }
+  .track-sel, .page-sel { display: flex; gap: 2px; }
   .sel-btn {
     background: var(--control-bg, #222);
     color: var(--text-dim, #999);
     border: 1px solid var(--border);
     border-radius: 2px;
     font-size: 9px;
-    padding: 3px 5px;
+    padding: 3px 4px;
     cursor: pointer;
-    min-width: 20px;
+    min-width: 18px;
   }
   .sel-btn.active { color: var(--accent, #6cf); border-color: var(--accent, #6cf); background: #1c2630; }
   .step-grid { display: flex; flex-direction: column; gap: 2px; }
@@ -414,6 +483,14 @@
     background: #161616;
     cursor: pointer;
     padding: 0;
+  }
+  /* An INERT row is a row this lane has no value for (the octave page has six
+     octaves and seven rows). It used to accept clicks and could never show the
+     state it wrote. */
+  .cell.inert {
+    background: #0d0d0d;
+    border-color: #1e1e1e;
+    cursor: default;
   }
   .cell.on { background: var(--accent, #6cf); }
   .cell.playhead { border-color: var(--accent, #6cf); }
@@ -444,5 +521,22 @@
     gap: 6px;
     padding-top: 4px;
   }
-  .scale-tag { font-size: 10px; color: var(--text-dim, #999); }
+  .track-ctl {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 4px;
+    flex-wrap: wrap;
+  }
+  .sel-btn.mute { padding: 3px 5px; }
+  .pick { display: flex; align-items: center; gap: 3px; }
+  .cap { font-size: 9px; color: var(--text-dim, #999); }
+  .pick select {
+    background: var(--control-bg, #222);
+    color: var(--text, #ddd);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    font-size: 10px;
+    padding: 2px 4px;
+  }
 </style>

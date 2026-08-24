@@ -3119,6 +3119,38 @@ export const FACES = [
       },
     ],
   },
+  // ── KRIA — the first faced SEQUENCER ──────────────────────────────────────
+  {
+    type: 'kria',
+    pages: 3,
+    // ⚠ DETERMINISTIC FOR FREE, AND FOR A REASON WORTH RECORDING: `running`
+    // defaults to 0 (kria.ts), so a fresh spawn is STOPPED. The playhead — the
+    // one live thing on this face, an engine read per frame — never starts, so
+    // no freeze seam is needed and none is declared. `Math.random()` IS in this
+    // module's emit path (the probability lane rolls per firing step), which
+    // would be a flake source if the scene ever ran the sequencer; it does not,
+    // and a behavioural test of that lane must assert a distribution rather
+    // than a step.
+    //
+    // ⚠ WHAT THIS BASELINE DOES **NOT** COVER, stated because the build spec
+    // asked for a seeded scene and this ships without one. A fresh kria has an
+    // empty pattern, so the 7×16 grid is uniformly dark and the PNG is blind to
+    // grid CONTENT — a lit cell in the wrong column would not move it. It is
+    // NOT blind to the two failure modes that worried the spec: the selected
+    // TRACK and the selected LANE both paint as highlighted buttons in the nav
+    // row, inside the capture box, so a body rendering the wrong lane or the
+    // wrong track reddens here.
+    //
+    // Seeding it would need either a module special-case inside this sweep
+    // (which the sweep refuses by design — that generic property is what makes
+    // every future face auto-enrol) or a product-side `__kriaTestPattern`
+    // global, i.e. shipping code whose only reader is a picture. Neither is
+    // worth it, because the content IS covered, and more precisely than a PNG
+    // could: `kria-types.test.ts` asserts the row↔value bijection over EVERY
+    // lane × EVERY row in both directions, and `kria-face-model.test.ts` pins
+    // the lit-cell sets for the trig / note / octave states plus the
+    // track-switch negative control.
+  },
 ] as const;
 
 /**

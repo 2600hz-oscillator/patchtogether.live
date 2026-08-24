@@ -1146,6 +1146,13 @@ describe('module-face lint — MOMENTARY pads (face.momentary)', () => {
     'timelorde:muteOutputs',
     'timelorde:running',
     'timelorde:wizardOn',
+    // kria's `running` is a TRANSPORT, exactly like timelorde's above: the
+    // card's RUN button prints ▶ / ■ and the engine gates playback on
+    // `running >= 0.5` for as long as it stays there. A momentary pad would
+    // run the sequencer only while the mouse was held down. ⚠ Unlike
+    // timelorde's it rests at 0, so a fresh kria spawns STOPPED — which is
+    // also what makes its VRT scenes deterministic for free.
+    'kria:running',
   ]);
 
   it('no ACKNOWLEDGED_LATCHING param is DOCUMENTED as momentary (the cross-check)', () => {
