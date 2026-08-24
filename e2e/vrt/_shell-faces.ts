@@ -3198,6 +3198,47 @@ export const FACES = [
     // `no-devices` disabled state. Both are stable run-to-run on the machine
     // that authors the file.
   },
+  // ── TWOTRACKS — two tape decks, and the wave's tab-rail face ───────────────
+  {
+    type: 'twotracks',
+    // A · TRANSPORT / TAPE / TONE, the same three for B, and MIX. Seven bands
+    // reaches `DOCK_TAB_MIN_BANDS`, so this captures as a TABBED face from the
+    // start and no existing baseline moves.
+    pages: 7,
+    // ⚠ DETERMINISTIC FOR FREE, AND THE ARGUMENT IS ABOUT THE CAPTURE STATE
+    // RATHER THAN THE DRAW — samsloop's distinction, and it applies here twice
+    // over because this body paints TWO live canvases.
+    //
+    // A freshly spawned twotracks has a BLANK TAPE on both reels: `bufLen` is 0
+    // until something is recorded, the transport is `idle`, and the worklet only
+    // emits playhead messages while a reel is rolling. So both canvases settle
+    // immediately on their EMPTY state and stop changing — no sweep, no
+    // flicker, nothing to freeze and no freeze seam declared. Recording is
+    // reachable only through a REC press or a gate input, and this scene
+    // performs neither.
+    //
+    // ⚠ SO THE EMPTY STATE IS THE THING BEING PHOTOGRAPHED, which is why the
+    // body DRAWS it (the literal NO TAPE, plus both loop markers, which stay
+    // grabbable on a blank reel) rather than leaving the canvas blank. A blank
+    // canvas would make "no tape yet" and "the body failed to mount"
+    // indistinguishable in the one artifact that could tell them apart.
+    //
+    // ⚠ AND THE EXISTING CARD MASK IS DELIBERATELY *NOT* CARRIED ONTO THIS
+    // FACE. `vrt-exemptions.ts` masks both canvases in the CARD scene, and the
+    // reason given there is that they are empty on a fresh spawn. That is an
+    // argument for masking a canvas whose content is unknown, and it is exactly
+    // backwards here: the empty tape is deterministic, it is drawn, and it is
+    // the one thing this body adds to the plate. Masking it would leave the
+    // baseline blind to the whole surface.
+    //
+    // ⚠ WHAT THIS BASELINE DOES **NOT** COVER, stated rather than implied: any
+    // reel with audio ON it. The envelope, the out-of-loop wash and a moving
+    // playhead are all unreachable from a fresh spawn, so the PNG says nothing
+    // about them. They are covered where they can be asserted rather than
+    // photographed — `twotracks-waveform-draw.test.ts` pins the geometry, the
+    // marker/hit-test agreement and the tape-vs-no-tape branches against a
+    // recording context double, and `twotracks.spec.ts` drives a real take.
+  },
 ] as const;
 
 /**

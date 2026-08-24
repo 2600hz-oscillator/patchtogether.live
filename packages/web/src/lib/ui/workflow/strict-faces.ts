@@ -4176,6 +4176,48 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // Note that the exclusion's reason is the SAME structural fact as the glyph
   // refusal: `outputs: []`.
   'audioOut',
+  // ── twotracks ─────────────────────────────────────────────────────────────
+  //
+  // THE WAVE'S CONTROL-HEAVY MODULE, and the only one whose promotion had to
+  // fix the module before it could describe it. Two tape decks in one box:
+  // twenty-nine params plus eight non-param affordances, which is why it is
+  // also the fleet's second SEVEN-BAND face and reaches the tab rail through
+  // the ORDINARY threshold rather than an opt-in.
+  //
+  // ⚠ PROMOTION REQUIRED A CONTRACT CHANGE, AND THAT IS THE INTERESTING PART.
+  // `playhead_a` / `playhead_b` were DECLARED PARAMS THAT NOTHING WROTE AND
+  // NOTHING READ — present in the def and in `contract-lock.txt` and nowhere
+  // else in the tree. The card never mounted a control for them, so their
+  // inertness was invisible; a face is the first surface OBLIGED to rank every
+  // param, so completeness would have put two dead cells on the plate. They
+  // were DELETED rather than hidden behind `noUserControl`: that hatch means
+  // "the engine drives this, a user does not", and nothing drove these at all,
+  // so declaring it would have been a green gate certifying a live defect —
+  // chosen on purpose, and strictly more work to reverse later than a deletion
+  // was now.
+  //
+  // ⚠ THE SAME NAME WAS DEAD TWICE, which is how it hid. `TwoTracksData` also
+  // carried `playhead_a` / `playhead_b` fields, so a reader grepping the name
+  // found a plausible-looking data key and moved on — but the message handler
+  // routes the playhead to a module-scope volatile that the UI polls through
+  // `engine.read`, and says in its own comment that ONLY transport state and
+  // bufLen reach the Y.Doc. Both were deleted. The playhead stays transient on
+  // purpose: it moves at frame rate, so a param would put it on the undo stack
+  // and in the Y.Doc every frame.
+  //
+  // ⚠ ZERO ATTEST, MEASURED: `webgl-attest-hash.sh --list` names no twotracks
+  // file, so the reel picture had to stay a 2D canvas — the basis is derived
+  // from CONTENT, and a WebGL waveform would have enrolled the module and made
+  // every later edit cost a GPU re-attest. Zero ART too: there is no
+  // `art/baselines/twotracks/`, and the module sits in `ART_BACKLOG`.
+  //
+  // ⚠ AND THE FACE'S SPARE SURFACE IS UNPROTECTED IN TWO PLACES, both asserted
+  // in `twotracks-face-model.test.ts` because no gate can see either: a
+  // live-audio glyph literal would be LEGAL here (`out_l` is `type: 'audio'`,
+  // so the binding resolves and the dead-glyph clause stays green) and merely
+  // uninformative — a stopped reel holding a full take reads FLAT — and the
+  // SCREEN switch sits outside the video-screen ruling's population by domain.
+  'twotracks',
 ]);
 
 /**

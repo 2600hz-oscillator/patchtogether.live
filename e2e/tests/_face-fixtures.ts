@@ -82,10 +82,23 @@ export const DENIED: Readonly<Record<string, string>> = {
   // prevent and cannot: "an entry naming a module the golden does not know is
   // RED instead of quietly decorative" is true for a RENAMED module and false
   // for a PROMOTED one.
-  twotracks:
-    'a two-reel tape emulator: it mounts, but the bridge test timed out at 30 s in ' +
-    "`boundingBox` waiting for it, and this fixture's whole contract is " +
-    '"simple, stable, cheap-to-mount"',
+  // ⚠ `twotracks` WAS HERE AND IS DELETED, NOT AMENDED — the second instance of
+  // the class the audioOut note directly above describes, one merge later. Its
+  // entry read: "a two-reel tape emulator: it mounts, but the bridge test timed
+  // out at 30 s in `boundingBox` waiting for it, and this fixture's whole
+  // contract is 'simple, stable, cheap-to-mount'."
+  //
+  // Same mechanism, same reason for deleting by hand: promotion moves it out of
+  // `unpromoted`, so the loop below stops consulting it and the record goes
+  // INVISIBLE rather than RED. ⚠ And this one would have been factually wrong as
+  // well as unread — the 30 s figure was about the LEGACY CARD in the lane
+  // (`io-spec-consistency`'s `HEAVY_MOUNT_TIMEOUT`), which now measures at
+  // ~1 s, and the faceplate is a different surface from the one the sentence
+  // describes. Two entries deleted this way in two merges is the strongest
+  // evidence yet for the one-line repair already routed to the owner (a
+  // `DENIED ∩ STRICT_FACES === ∅` clause in workflow-shell.spec.ts's existing
+  // anchor block) — still correctly NOT self-served under the no-new-gates
+  // ruling.
   cameraInput:
     'the video twin of audioIn: it needs getUserMedia, which is capability-dependent on CI ' +
     'where there is no camera to grant — the mount would depend on the machine, not the code',

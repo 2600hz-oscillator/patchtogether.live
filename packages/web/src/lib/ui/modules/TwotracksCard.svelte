@@ -9,16 +9,68 @@
   import type { NodeProps } from '@xyflow/svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import { setNodeParam } from '$lib/graph/mutate';
-  import { twotracksDef, type TwoTracksData, TWOTRACKS_MAX_SAMPLES, abGains, clampLoopStart, clampLoopEnd } from '$lib/audio/modules/twotracks';
+  // ⚠ THE TWO ROSTERS ARE IMPORTED, NEVER RE-TYPED. Both used to be private
+  // arrays in this file, which is how the def's own `docs` string was free to
+  // describe the filter as "off / low-pass / high-pass" — modes 1 and 2 the
+  // wrong way round — for as long as it did: nothing joined the words the card
+  // painted to the words the contract published, so neither could contradict
+  // the other. The def now declares both as `options` from these symbols.
+  import {
+    twotracksDef, type TwoTracksData, TWOTRACKS_MAX_SAMPLES, abGains,
+    clampLoopStart, clampLoopEnd, TWOTRACKS_FILTER_MODES, TWOTRACKS_LOFI_MODES,
+  } from '$lib/audio/modules/twotracks';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
   import Knob from '$lib/ui/controls/Knob.svelte';
-  import { portsFromDef } from './card-kit';
+  import { paramSpec, portsFromDef } from './card-kit';
+  import { onMeterFrame } from '$lib/ui/meter-frame';
+  import {
+    drawTwotracksReel, twotracksHandleHit, twotracksPosToFrac,
+    type TwotracksReelView,
+  } from './twotracks-waveform-draw';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
   const engineCtx = useEngine();
+
+  // ⚠ THE RANGES COME FROM THE DEF, ONCE. Every one of these was re-typed here
+  // as a literal and every one AGREED — so this is a maintainability conversion
+  // rather than a bug fix, and it is pixel-neutral (twotracks has no committed
+  // card baseline; it is in EXEMPT_FROM_VRT). What makes it worth doing WITH the
+  // promotion is that from here the DOCK renders these controls straight off the
+  // ParamDef while this card renders its own numbers, so a later edit to one
+  // copy would ship two surfaces disagreeing about one control.
+  //
+  // ⚠ RANGE ONLY — deliberately NOT in MAPPING_BOUND_CARDS, for two reasons the
+  // measurement found rather than assumed. RATE passes `units="×"` where the def
+  // declares none, so binding `units` would silently drop a suffix the card has
+  // always printed. And ECHOES passes `curve="linear"` against the def's
+  // `discrete` — which CLAUDE.md names as a live platform gap rather than a
+  // declaration bug (`Knob.svelte` has no discrete branch, so writing
+  // `discrete` here would green a gate and change nothing). The card does its
+  // own `Math.round` on that write; the FACE needs none, because the conic-knob
+  // model quantises discrete params itself.
+  const P = {
+    rate_a: paramSpec(twotracksDef, 'rate_a'),
+    echoes_a: paramSpec(twotracksDef, 'echoes_a'),
+    eqLow_a: paramSpec(twotracksDef, 'eqLow_a'),
+    eqMid_a: paramSpec(twotracksDef, 'eqMid_a'),
+    eqHigh_a: paramSpec(twotracksDef, 'eqHigh_a'),
+    cutoff_a: paramSpec(twotracksDef, 'cutoff_a'),
+    reso_a: paramSpec(twotracksDef, 'reso_a'),
+    rate_b: paramSpec(twotracksDef, 'rate_b'),
+    echoes_b: paramSpec(twotracksDef, 'echoes_b'),
+    eqLow_b: paramSpec(twotracksDef, 'eqLow_b'),
+    eqMid_b: paramSpec(twotracksDef, 'eqMid_b'),
+    eqHigh_b: paramSpec(twotracksDef, 'eqHigh_b'),
+    cutoff_b: paramSpec(twotracksDef, 'cutoff_b'),
+    reso_b: paramSpec(twotracksDef, 'reso_b'),
+    ab: paramSpec(twotracksDef, 'ab'),
+    a2b: paramSpec(twotracksDef, 'a2b'),
+    b2a: paramSpec(twotracksDef, 'b2a'),
+  } as const;
+
 
   const defaultFor = (k: string): number =>
     twotracksDef.params.find((p) => p.id === k)?.defaultValue ?? 0;
@@ -62,7 +114,6 @@
 
   // ─── Global Lofi param ───
   let lofiParam = $derived(node?.params.lofi ?? 0);
-  const LOFI_LABELS = ['OFF', 'LOW', 'HIGH', 'ERROR'] as const;
 
   // ─── Global Monitor (input passthrough) ───
   let monitorOn = $derived(Math.round(node?.params.monitor ?? 0) === 1);
@@ -86,24 +137,28 @@
   let peaksB = $state<Float32Array | null>(null);
   let syncedPlayheadA = $state(0);
   let syncedPlayheadB = $state(0);
-  let rafPeaks: number | null = null;
+  // ⚠ THIS RUNS ON THE SHARED, VISIBILITY-GATED TICKER — it used to be a private
+  // `requestAnimationFrame` loop with no gate at all, so a mounted-but-offscreen
+  // twotracks read the engine and invalidated its canvases forever, on the same
+  // main thread the audio render thread contends with. That is the exact loop
+  // `onMeterFrame` exists to collapse (one rAF for every meter card, skipped
+  // while the element is off screen). Gated on reel A's canvas: both canvases
+  // live in this one card, so they enter and leave the viewport together.
   $effect(() => {
-    function poll() {
+    const gateEl = canvasElA;
+    const handle = onMeterFrame(gateEl, () => {
       const eng = engineCtx.get();
-      if (eng && node) {
-        const pA = eng.read(node, 'peaksA') as Float32Array | null;
-        const pB = eng.read(node, 'peaksB') as Float32Array | null;
-        if (pA !== peaksA) peaksA = pA;
-        if (pB !== peaksB) peaksB = pB;
-        const hA = eng.read(node, 'playheadA') as number | undefined;
-        const hB = eng.read(node, 'playheadB') as number | undefined;
-        if (typeof hA === 'number' && hA !== syncedPlayheadA) syncedPlayheadA = hA;
-        if (typeof hB === 'number' && hB !== syncedPlayheadB) syncedPlayheadB = hB;
-      }
-      rafPeaks = requestAnimationFrame(poll);
-    }
-    rafPeaks = requestAnimationFrame(poll);
-    return () => { if (rafPeaks !== null) cancelAnimationFrame(rafPeaks); rafPeaks = null; };
+      if (!eng || !node) return;
+      const pA = eng.read(node, 'peaksA') as Float32Array | null;
+      const pB = eng.read(node, 'peaksB') as Float32Array | null;
+      if (pA !== peaksA) peaksA = pA;
+      if (pB !== peaksB) peaksB = pB;
+      const hA = eng.read(node, 'playheadA') as number | undefined;
+      const hB = eng.read(node, 'playheadB') as number | undefined;
+      if (typeof hA === 'number' && hA !== syncedPlayheadA) syncedPlayheadA = hA;
+      if (typeof hB === 'number' && hB !== syncedPlayheadB) syncedPlayheadB = hB;
+    });
+    return () => handle.stop();
   });
 
   let bufLenA = $derived.by(() => {
@@ -164,11 +219,12 @@
   // hit-tests which marker is grabbed; null = scrubbing the playhead.
   let dragHandleA = $state<'start' | 'end' | null>(null);
   let dragHandleB = $state<'start' | 'end' | null>(null);
-  /** px hit radius around a loop handle (converted to a tape fraction per reel). */
-  const HANDLE_HIT_PX = 8;
 
-  // ─── Filter mode labels ───
-  const FILTER_MODES = ['OFF', 'HP', 'LP', 'BP'] as const;
+  /** The current filter mode's NAME, off the def's roster. */
+  function filterLabel(v: number): string {
+    const i = Math.round(v);
+    return TWOTRACKS_FILTER_MODES.find((m) => m.value === i)?.label ?? TWOTRACKS_FILTER_MODES[0].label;
+  }
 
   const inputs = portsFromDef(twotracksDef.inputs, {
     audio_l_in_a: 'L IN A', audio_r_in_a: 'R IN A', rec_start_a: 'REC START A',
@@ -181,28 +237,16 @@
 
   // ─── Helpers ───
 
+  // The tape geometry, the hit-test and the draw all live in
+  // `twotracks-waveform-draw.ts` and are SHARED with the faceplate body. See
+  // that file's header for why a copy here would be a defect rather than
+  // duplication: the hit-test and the draw are the same arithmetic, and a drift
+  // between them is a dead zone the player feels as an unresponsive handle.
   function posPxToNorm(x: number, canvas: HTMLCanvasElement | null): number {
     if (!canvas) return 0;
-    // offsetX is in CSS pixels; the canvas DISPLAYS at clientWidth (CSS width
-    // 100% ≈ 215px) while its drawing buffer is 220px wide. Divide by the
-    // displayed width so a click maps to the same tape fraction the handle is
-    // drawn at — otherwise the rightmost reachable norm is <1 and the END handle
-    // (at norm=1) can never be grabbed.
-    const wpx = canvas.clientWidth || canvas.width;
-    return Math.max(0, Math.min(1, x / wpx));
+    return twotracksPosToFrac(x, canvas.clientWidth || canvas.width);
   }
-
-  /** Which loop element a pointer at `norm` (0..1) is grabbing on a reel of
-   *  `widthPx`: the closer of the start/end handles if within HANDLE_HIT_PX,
-   *  else 'playhead' (scrub). */
-  function handleHit(norm: number, startNorm: number, endNorm: number, widthPx: number): 'start' | 'end' | 'playhead' {
-    const t = HANDLE_HIT_PX / Math.max(1, widthPx);
-    const dStart = Math.abs(norm - startNorm);
-    const dEnd = Math.abs(norm - endNorm);
-    if (dStart <= t && dStart <= dEnd) return 'start';
-    if (dEnd <= t) return 'end';
-    return 'playhead';
-  }
+  const handleHit = twotracksHandleHit;
 
   function setStartA(norm: number) { setNodeParam(id, 'start_a', clampLoopStart(norm, endA, playheadClampA)); }
   function setEndA(norm: number)   { setNodeParam(id, 'end_a',   clampLoopEnd(norm, startA, playheadClampA)); }
@@ -338,95 +382,25 @@
     sendScrubVelocity('b', 0);
   }
 
-  // ─── Waveform draw helper ───
+  // ─── Waveform draw ───
+  // Delegates to the shared pure module. The card passes the SAME view object
+  // the faceplate body passes, so both surfaces cannot drift apart.
 
-  function drawWaveform(
-    canvasEl: HTMLCanvasElement | null,
-    peaks: Float32Array | null,
-    bufLen: number,
-    displayPlayhead: number,
-    startNorm: number,
-    endNorm: number,
-  ): void {
-    if (!canvasEl) return;
-    const ctx2d = canvasEl.getContext('2d');
-    if (!ctx2d) return;
-    const w = canvasEl.width;
-    const h = canvasEl.height;
-    ctx2d.clearRect(0, 0, w, h);
-    ctx2d.fillStyle = '#0a0c11';
-    ctx2d.fillRect(0, 0, w, h);
-
-    if (!peaks || bufLen === 0) {
-      ctx2d.fillStyle = '#5a6275';
-      ctx2d.font = '9px ui-monospace, monospace';
-      ctx2d.textAlign = 'center';
-      ctx2d.fillText('NO TAPE', w / 2, h / 2);
-    } else {
-      const pts = peaks.length;
-      ctx2d.strokeStyle = 'rgb(255, 140, 40)';
-      ctx2d.lineWidth = 1;
-      ctx2d.beginPath();
-      for (let x = 0; x < w; x++) {
-        const pi = Math.floor((x / w) * pts);
-        const peak = peaks[pi] ?? 0;
-        const y0 = (0.5 - peak * 0.5) * h;
-        const y1 = (0.5 + peak * 0.5) * h;
-        ctx2d.moveTo(x + 0.5, y0);
-        ctx2d.lineTo(x + 0.5, y1);
-      }
-      ctx2d.stroke();
-    }
-
-    const sX = Math.round(startNorm * w);
-    const eX = Math.round(endNorm * w);
-
-    // Dim the out-of-loop regions ([0,start] and [end,1]) so it's clear which
-    // span of tape actually plays. Only when there's tape — a blank reel stays
-    // clean "NO TAPE".
-    if (peaks && bufLen > 0) {
-      ctx2d.fillStyle = 'rgba(6, 8, 12, 0.62)';
-      if (sX > 0) ctx2d.fillRect(0, 0, sX, h);
-      if (eX < w) ctx2d.fillRect(eX, 0, w - eX, h);
-    }
-
-    // Playhead cursor — only when there's tape (empty reel shows no stray line).
-    if (peaks && bufLen > 0) {
-      const px = Math.round(displayPlayhead * w);
-      ctx2d.strokeStyle = 'rgba(80, 160, 255, 0.85)';
-      ctx2d.lineWidth = 1.5;
-      ctx2d.beginPath();
-      ctx2d.moveTo(px + 0.5, 0);
-      ctx2d.lineTo(px + 0.5, h);
-      ctx2d.stroke();
-    }
-
-    // Loop handles (always grabbable) — start (green) / end (orange) with a top
-    // grip. Clamped 1px in from the edge so a handle at 0 or 1 stays visible.
-    const drawHandle = (x: number, color: string) => {
-      const cx = Math.max(1, Math.min(w - 1, x));
-      ctx2d.strokeStyle = color;
-      ctx2d.lineWidth = 1.5;
-      ctx2d.beginPath();
-      ctx2d.moveTo(cx + 0.5, 0);
-      ctx2d.lineTo(cx + 0.5, h);
-      ctx2d.stroke();
-      ctx2d.fillStyle = color;
-      ctx2d.fillRect(cx - 2, 0, 4, 4);
-      ctx2d.fillRect(cx - 2, h - 4, 4, 4);
-    };
-    drawHandle(sX, 'rgba(120, 230, 140, 0.95)');
-    drawHandle(eX, 'rgba(255, 150, 80, 0.95)');
+  function reelView(
+    peaks: Float32Array | null, bufLen: number,
+    playheadFrac: number, startFrac: number, endFrac: number,
+  ): TwotracksReelView {
+    return { peaks, bufLen, playheadFrac, startFrac, endFrac };
   }
 
   // Reactive waveform draws
   $effect(() => {
     void peaksA; void bufLenA; void displayPlayheadA; void startA; void endA;
-    drawWaveform(canvasElA, peaksA, bufLenA, displayPlayheadA, startA, endA);
+    drawTwotracksReel(canvasElA, reelView(peaksA, bufLenA, displayPlayheadA, startA, endA));
   });
   $effect(() => {
     void peaksB; void bufLenB; void displayPlayheadB; void startB; void endB;
-    drawWaveform(canvasElB, peaksB, bufLenB, displayPlayheadB, startB, endB);
+    drawTwotracksReel(canvasElB, reelView(peaksB, bufLenB, displayPlayheadB, startB, endB));
   });
 </script>
 
@@ -490,11 +464,11 @@
 
         <!-- 3-band EQ (assignable knobs) -->
         <div class="knob-row" data-testid="twotracks-eq-a">
-          <Knob value={eqLowA}  min={-12} max={12} defaultValue={0} label="LOW"  units="dB" curve="linear"
+          <Knob value={eqLowA}  min={P.eqLow_a.min} max={P.eqLow_a.max} defaultValue={P.eqLow_a.defaultValue} label="LOW"  units="dB" curve="linear"
             onchange={(v) => setNodeParam(id, 'eqLow_a', v)}  moduleId={id} paramId="eqLow_a" />
-          <Knob value={eqMidA}  min={-12} max={12} defaultValue={0} label="MID"  units="dB" curve="linear"
+          <Knob value={eqMidA}  min={P.eqMid_a.min} max={P.eqMid_a.max} defaultValue={P.eqMid_a.defaultValue} label="MID"  units="dB" curve="linear"
             onchange={(v) => setNodeParam(id, 'eqMid_a', v)}  moduleId={id} paramId="eqMid_a" />
-          <Knob value={eqHighA} min={-12} max={12} defaultValue={0} label="HIGH" units="dB" curve="linear"
+          <Knob value={eqHighA} min={P.eqHigh_a.min} max={P.eqHigh_a.max} defaultValue={P.eqHigh_a.defaultValue} label="HIGH" units="dB" curve="linear"
             onchange={(v) => setNodeParam(id, 'eqHigh_a', v)} moduleId={id} paramId="eqHigh_a" />
         </div>
 
@@ -502,22 +476,22 @@
         <div class="knob-row filter-row" data-testid="twotracks-filter-a">
           <button type="button" class="filter-mode-btn nodrag" onclick={cycleFilterA}
             aria-label="Cycle filter mode A">
-            {FILTER_MODES[Math.round(filterModeA) % 4]}
+            {filterLabel(filterModeA)}
           </button>
-          <Knob value={cutoffA} min={20} max={20000} defaultValue={20000} label="CUT" units="Hz" curve="log"
+          <Knob value={cutoffA} min={P.cutoff_a.min} max={P.cutoff_a.max} defaultValue={P.cutoff_a.defaultValue} label="CUT" units="Hz" curve="log"
             onchange={(v) => setNodeParam(id, 'cutoff_a', v)} moduleId={id} paramId="cutoff_a" />
-          <Knob value={resoA}   min={0}  max={1}     defaultValue={0}     label="RES" curve="linear"
+          <Knob value={resoA}   min={P.reso_a.min}  max={P.reso_a.max}     defaultValue={P.reso_a.defaultValue}     label="RES" curve="linear"
             onchange={(v) => setNodeParam(id, 'reso_a', v)}   moduleId={id} paramId="reso_a" />
         </div>
 
         <!-- Echoes + Rate (assignable knobs); RATE has a 1× reset button -->
         <div class="knob-row">
           <div data-testid="twotracks-echoes">
-            <Knob value={echoesA} min={1} max={5} defaultValue={3} label="ECHOES" curve="linear"
+            <Knob value={echoesA} min={P.echoes_a.min} max={P.echoes_a.max} defaultValue={P.echoes_a.defaultValue} label="ECHOES" curve="linear"
               onchange={(v) => setNodeParam(id, 'echoes_a', Math.round(v))} moduleId={id} paramId="echoes_a" />
           </div>
           <div class="rate-knob">
-            <Knob value={rateA} min={-3} max={3} defaultValue={1} label="RATE" units="×" curve="linear"
+            <Knob value={rateA} min={P.rate_a.min} max={P.rate_a.max} defaultValue={P.rate_a.defaultValue} label="RATE" units="×" curve="linear"
               onchange={(v) => setNodeParam(id, 'rate_a', v)} moduleId={id} paramId="rate_a" />
             <button type="button" class="rate-reset nodrag" onclick={() => setNodeParam(id, 'rate_a', 1)}
               data-testid="twotracks-rate-reset" aria-label="Reset reel A speed to 1×">1×</button>
@@ -546,9 +520,9 @@
           <div class="ab-knob-wrap">
             <Knob
               value={abParam}
-              min={0}
-              max={1}
-              defaultValue={0}
+              min={P.ab.min}
+              max={P.ab.max}
+              defaultValue={P.ab.defaultValue}
               label="A/B"
               curve="linear"
               onchange={(v) => setNodeParam(id, 'ab', v)}
@@ -564,9 +538,9 @@
 
         <!-- Cross-feed: A→B / B→A (assignable knobs, default off) -->
         <div class="cross-strip" data-testid="twotracks-crossfeed">
-          <Knob value={a2bParam} min={0} max={1} defaultValue={0} label="A→B" curve="linear"
+          <Knob value={a2bParam} min={P.a2b.min} max={P.a2b.max} defaultValue={P.a2b.defaultValue} label="A→B" curve="linear"
             onchange={(v) => setNodeParam(id, 'a2b', v)} moduleId={id} paramId="a2b" />
-          <Knob value={b2aParam} min={0} max={1} defaultValue={0} label="B→A" curve="linear"
+          <Knob value={b2aParam} min={P.b2a.min} max={P.b2a.max} defaultValue={P.b2a.defaultValue} label="B→A" curve="linear"
             onchange={(v) => setNodeParam(id, 'b2a', v)} moduleId={id} paramId="b2a" />
         </div>
 
@@ -580,15 +554,16 @@
         <div class="lofi-strip" data-testid="twotracks-lofi">
           <span class="strip-label">LOFI</span>
           <div class="lofi-btns">
-            {#each LOFI_LABELS as label, i}
+            {#each TWOTRACKS_LOFI_MODES as mode}
               <button
                 type="button"
                 class="lofi-btn nodrag"
-                class:active={Math.round(lofiParam) === i}
-                class:error={i === 3 && Math.round(lofiParam) === 3}
-                onclick={() => setNodeParam(id, 'lofi', i)}
-                aria-label="Lofi mode {label}"
-              >{label}</button>
+                class:active={Math.round(lofiParam) === mode.value}
+                class:error={mode.value === 3 && Math.round(lofiParam) === 3}
+                onclick={() => setNodeParam(id, 'lofi', mode.value)}
+                aria-label="Lofi mode {mode.label}"
+                title={mode.title}
+              >{mode.label}</button>
             {/each}
           </div>
         </div>
@@ -647,11 +622,11 @@
 
         <!-- 3-band EQ reel B (assignable knobs) -->
         <div class="knob-row" data-testid="twotracks-eq-b">
-          <Knob value={eqLowB}  min={-12} max={12} defaultValue={0} label="LOW"  units="dB" curve="linear"
+          <Knob value={eqLowB}  min={P.eqLow_b.min} max={P.eqLow_b.max} defaultValue={P.eqLow_b.defaultValue} label="LOW"  units="dB" curve="linear"
             onchange={(v) => setNodeParam(id, 'eqLow_b', v)}  moduleId={id} paramId="eqLow_b" />
-          <Knob value={eqMidB}  min={-12} max={12} defaultValue={0} label="MID"  units="dB" curve="linear"
+          <Knob value={eqMidB}  min={P.eqMid_b.min} max={P.eqMid_b.max} defaultValue={P.eqMid_b.defaultValue} label="MID"  units="dB" curve="linear"
             onchange={(v) => setNodeParam(id, 'eqMid_b', v)}  moduleId={id} paramId="eqMid_b" />
-          <Knob value={eqHighB} min={-12} max={12} defaultValue={0} label="HIGH" units="dB" curve="linear"
+          <Knob value={eqHighB} min={P.eqHigh_b.min} max={P.eqHigh_b.max} defaultValue={P.eqHigh_b.defaultValue} label="HIGH" units="dB" curve="linear"
             onchange={(v) => setNodeParam(id, 'eqHigh_b', v)} moduleId={id} paramId="eqHigh_b" />
         </div>
 
@@ -659,22 +634,22 @@
         <div class="knob-row filter-row" data-testid="twotracks-filter-b">
           <button type="button" class="filter-mode-btn nodrag" onclick={cycleFilterB}
             aria-label="Cycle filter mode B">
-            {FILTER_MODES[Math.round(filterModeB) % 4]}
+            {filterLabel(filterModeB)}
           </button>
-          <Knob value={cutoffB} min={20} max={20000} defaultValue={20000} label="CUT" units="Hz" curve="log"
+          <Knob value={cutoffB} min={P.cutoff_b.min} max={P.cutoff_b.max} defaultValue={P.cutoff_b.defaultValue} label="CUT" units="Hz" curve="log"
             onchange={(v) => setNodeParam(id, 'cutoff_b', v)} moduleId={id} paramId="cutoff_b" />
-          <Knob value={resoB}   min={0}  max={1}     defaultValue={0}     label="RES" curve="linear"
+          <Knob value={resoB}   min={P.reso_b.min}  max={P.reso_b.max}     defaultValue={P.reso_b.defaultValue}     label="RES" curve="linear"
             onchange={(v) => setNodeParam(id, 'reso_b', v)}   moduleId={id} paramId="reso_b" />
         </div>
 
         <!-- Echoes + Rate reel B (assignable knobs); RATE has a 1× reset button -->
         <div class="knob-row">
           <div data-testid="twotracks-echoes-b">
-            <Knob value={echoesB} min={1} max={5} defaultValue={3} label="ECHOES" curve="linear"
+            <Knob value={echoesB} min={P.echoes_b.min} max={P.echoes_b.max} defaultValue={P.echoes_b.defaultValue} label="ECHOES" curve="linear"
               onchange={(v) => setNodeParam(id, 'echoes_b', Math.round(v))} moduleId={id} paramId="echoes_b" />
           </div>
           <div class="rate-knob">
-            <Knob value={rateB} min={-3} max={3} defaultValue={1} label="RATE" units="×" curve="linear"
+            <Knob value={rateB} min={P.rate_b.min} max={P.rate_b.max} defaultValue={P.rate_b.defaultValue} label="RATE" units="×" curve="linear"
               onchange={(v) => setNodeParam(id, 'rate_b', v)} moduleId={id} paramId="rate_b" />
             <button type="button" class="rate-reset nodrag" onclick={() => setNodeParam(id, 'rate_b', 1)}
               data-testid="twotracks-rate-reset-b" aria-label="Reset reel B speed to 1×">1×</button>
