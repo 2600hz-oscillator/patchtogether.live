@@ -672,7 +672,7 @@
                 class="wt-select preset-select"
                 value={presetSelection[i] ?? ''}
                 onchange={(ev) => onPresetChange(i, ev)}
-                data-testid={`wavesculpt-osc-${i + 1}-preset-select`}
+                data-testid={`wavesculpt-preset-${i + 1}`}
               >
                 <option value="">— pick a preset —</option>
                 {#each WAVETABLE_PRESETS as p (p.id)}
@@ -690,7 +690,7 @@
                   const factoryId = v.startsWith('factory:') ? v.slice('factory:'.length) : v;
                   selectFactory(i, factoryId);
                 }}
-                data-testid={`wavesculpt-osc-${i + 1}-wav-select`}
+                data-testid={`wavesculpt-table-${i + 1}`}
               >
                 {#each getFactoryTables() as t (t.id)}
                   <option value={`factory:${t.id}`}>{t.label}</option>
@@ -699,7 +699,7 @@
                   <option value="user">USER · {oscLabel(i)}</option>
                 {/if}
               </select>
-              <label class="upload-btn" data-testid={`wavesculpt-osc-${i + 1}-load`}>
+              <label class="upload-btn" data-testid={`wavesculpt-load-${i + 1}`}>
                 <input
                   type="file"
                   accept=".wav,audio/wav"

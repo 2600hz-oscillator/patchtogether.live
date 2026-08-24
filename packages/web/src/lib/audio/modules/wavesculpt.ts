@@ -1047,9 +1047,15 @@ export const wavesculptDef: AudioModuleDef = {
     controls.grn_color = 'GREEN oscillator base COLOUR (colour picker) — tints the GREEN osc in every blink mode. Packed 0xRRGGBB.';
     controls.blu_color = 'BLUE oscillator base COLOUR (colour picker) — tints the BLUE osc in every blink mode. Packed 0xRRGGBB.';
     controls.master_gain = 'MASTER GAIN (0..2, default 1) — overall output level of the summed audio mix (L/R), AND the composite drive of the CRT post-process on the render. One knob, both domains: 1 = unity (audio unchanged, picture undistorted), above 1 the mix gets louder while the picture overdrives into soft-clip white smear, 0 mutes L/R and blacks the composite. The per-oscillator taps (out_red/grn/blu/alp) are PRE master gain and are not affected.';
-    // Per-oscillator wavetable selector (DOM-only family).
-    controls['wavesculpt-osc-{n}'] =
-      "Oscillator {n}'s wavetable-source strip: a colour-wheel swatch (its base tint), a PRESET dropdown, a FACTORY-table dropdown, and a LOAD button to upload your own .wav as that oscillator's wavetable. The chosen table is the wave each oscillator plays + draws as its ribbon; selection persists on the patch.";
+    // The wavetable strip, as three DOM-only families (see `controlFamilies`).
+    // One key per family, because a family key addresses the family as a whole
+    // rather than one oscillator's instance of it.
+    controls['wavesculpt-preset-{n}'] =
+      "PRESET picker, one per oscillator - a dropdown of the curated wavetable presets. Choosing one FETCHES and parses that table and hands it to that oscillator, replacing whatever it held; the load is asynchronous and reports its own status/failure beside the picker. The chosen table is the wave that oscillator both plays and draws as its ribbon, and the selection rides the patch, so a reloaded rack comes back with the same voice.";
+    controls['wavesculpt-table-{n}'] =
+      "FACTORY table picker, one per oscillator - a dropdown of the built-in wavetables, which unlike the PRESET list are already in memory and switch instantly. It also carries the synthetic `USER - <name>` entry whenever that oscillator is holding a table you loaded yourself, so the dropdown can always show what is actually loaded rather than going blank on a value it has no option for.";
+    controls['wavesculpt-load-{n}'] =
+      "LOAD button, one per oscillator - imports your own .wav as that oscillator's wavetable (the E352 single-cycle layout: 256-sample frames laid end to end). The parse happens in the browser and reports frames-loaded or the reason it failed. A loaded table is stored on the patch and reappears as the `USER - <name>` entry in the FACTORY picker above.";
     return {
       explanation:
         "A hybrid 4-oscillator 3D video synth — it makes sound AND a live 3D image from the same engine. A unit box holds four 'wall oscillators' (RED / GREEN / BLUE / ALPHA), each emitting a wave ribbon along a vector into the box. One user camera renders the scene; you fly it with an XY pad (X/Y), a HEIGHT slider (Z), ZOOM, and ROTATION. Closer = bigger ribbons AND louder — the same distance number drives both visual size and audio gain, so 'lean in' is consistently louder. Each oscillator is a full wavetable voice: pick its table (preset / factory / your own .wav), set TUNE/FINE/MORPH/SPREAD/FOLD, and shape it with a per-osc ADSR gated by its GATE input and pitched by its PITCH input, plus a pre-mix per-osc FX slot (reverb/delay). The audio output is the summed stereo mix (L/R), with four per-oscillator AUDIO taps (out_red/grn/blu/alp) for routing one voice out independently. The render goes out video_out (a mono-video carrying a light, always-on CRT pass — scanlines, phosphor mask, a little bloom and grain — with no knobs of its own; patch it through BENTBOX for the adjustable, CV-able CRT controls, bearing in mind that stacks two CRT passes) and can be viewed as 3D ribbons, a birds-eye floorplan, or a spectrograph (VIEW). Six VIDEO WALL inputs texture the faces of the room — self-patch video_out → a wall for recursive video feedback, and LUMINOSITY→BANDPASS lets a wall's brightness shape the audio. UNISON/DETUNE and CHORD MODE turn the four voices into a stacked or harmonized instrument; everything is CV-modulatable.",
@@ -1067,13 +1073,28 @@ export const wavesculptDef: AudioModuleDef = {
     };
   })(),
 
+  // THE WAVETABLE STRIP, as THREE families rather than one.
+  //
+  // Each oscillator's strip is a PRESET dropdown, a FACTORY-table dropdown and
+  // a LOAD-your-own-.wav button. All three are DOM-driven (the selection rides
+  // node.data, not a ParamDef) and are declared so the docs layer and the
+  // faceplate can both see them.
+  //
+  // ⚠ WHY THREE FAMILIES AND NOT ONE `panel`. A panel cell REQUIRES a probe,
+  // and a picker's only observable is the selection it makes — so the probe
+  // would either watch the control it is certifying (circular) or watch a
+  // different one (blind). The generic cell kinds cover exactly what this strip
+  // is: a roster, a roster, and a file. milkdrop's runtime-sourced preset
+  // picker is the precedent for the first two.
+  //
+  // ⚠ AND THE SPLIT IS FREE AT THE ATTEST. `controlFamilies` is stripped by
+  // `attest-code-basis.ts` (see the note on `docs` below), so this costs no GPU
+  // re-attest — which is why it is worth doing properly rather than living with
+  // one opaque cell.
   controlFamilies: [
-    // Per-oscillator wavetable-source strip (data-testid
-    // `wavesculpt-osc-<nodeId>-<n>` for n=1..4). Each holds the colour swatch +
-    // preset/factory selectors + a LOAD-your-own-.wav button; the chosen table
-    // is the wave that oscillator plays + draws. DOM-driven (selection rides
-    // node.data), not a ParamDef — declared so the docs layer sees it.
-    { id: 'wavesculpt-osc', label: 'Per-oscillator wavetable source', kind: 'cell', testidPrefix: 'wavesculpt-osc' },
+    { id: 'wavesculpt-preset', label: 'Wavetable PRESET picker', kind: 'cell', testidPrefix: 'wavesculpt-preset' },
+    { id: 'wavesculpt-table', label: 'FACTORY wavetable picker', kind: 'cell', testidPrefix: 'wavesculpt-table' },
+    { id: 'wavesculpt-load', label: 'Load your own .wav', kind: 'cell', testidPrefix: 'wavesculpt-load' },
   ],
 
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
