@@ -94,7 +94,7 @@ test('qbrt: ping → resonant L output emits audio', async ({ page, rack }) => {
   await spawnPatch(
     page,
     [
-      { id: 'seq', type: 'sequencer', params: { bpm: 240, length: 4, isPlaying: 1, gateLength: 0.3 } },
+      { id: 'seq', type: 'kria', params: { bpm: 240, running: 1} },
       { id: 'qb',  type: 'qbrt',      params: { cutoff: 400, resonance: 0.8, mode: 0, pingDecay: 0.1 } },
       { id: 'scp', type: 'scope',     params: { timeMs: 50 } },
     ],
@@ -128,7 +128,7 @@ test('integration (Group 6): voice → reverb → audioOut produces wider/longer
   await spawnPatch(
     page,
     [
-      { id: 'seq', type: 'sequencer',   params: { bpm: 240, length: 4, isPlaying: 1, gateLength: 0.5 } },
+      { id: 'seq', type: 'kria',   params: { bpm: 240, running: 1} },
       { id: 'dg',  type: 'drummergirl', params: { decay: 0.05 } },
       { id: 'rev', type: 'reverb',      params: { size: 0.9, damp: 0.2, mix: 0.6 } },
       { id: 'scp', type: 'scope',       params: { timeMs: 50 } },
@@ -164,7 +164,7 @@ test('drummergirl: gate ping → audio burst', async ({ page, rack }) => {
   await spawnPatch(
     page,
     [
-      { id: 'seq', type: 'sequencer',   params: { bpm: 240, length: 4, isPlaying: 1, gateLength: 0.5 } },
+      { id: 'seq', type: 'kria',   params: { bpm: 240, running: 1} },
       { id: 'dg',  type: 'drummergirl' },
       { id: 'scp', type: 'scope',       params: { timeMs: 50 } },
     ],
@@ -194,7 +194,7 @@ test('meowbox: gate → stereo L emits audio', async ({ page, rack }) => {
   await spawnPatch(
     page,
     [
-      { id: 'seq', type: 'sequencer', params: { bpm: 240, length: 4, isPlaying: 1, gateLength: 0.5 } },
+      { id: 'seq', type: 'kria', params: { bpm: 240, running: 1} },
       { id: 'mb',  type: 'meowbox' },
       { id: 'scp', type: 'scope',    params: { timeMs: 50 } },
     ],

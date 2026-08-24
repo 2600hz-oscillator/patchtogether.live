@@ -48,7 +48,7 @@ test('sixstrum POLY: a SEQUENCER chord into `poly` plucks the strings → OUT ca
   await spawnPatch(
     page,
     [
-      { id: 'seq', type: 'sequencer', position: { x: 40, y: 60 }, domain: 'audio', params: { bpm: 240, length: 4, isPlaying: 1 } },
+      { id: 'seq', type: 'kria', position: { x: 40, y: 60 }, domain: 'audio', params: { bpm: 240, running: 1} },
       { id: 'ss', type: 'sixstrum', position: { x: 360, y: 60 }, domain: 'audio', params: { ring: 3, level: 6 } },
       { id: 'sc', type: 'scope', position: { x: 900, y: 60 }, domain: 'audio', params: { timeMs: 50 } },
     ],
@@ -71,7 +71,7 @@ test('sixstrum STRUM: a gate into `strum1` barres all six strings → OUT carrie
   await spawnPatch(
     page,
     [
-      { id: 'seq', type: 'sequencer', position: { x: 40, y: 60 }, domain: 'audio', params: { bpm: 240, length: 4, isPlaying: 1 } },
+      { id: 'seq', type: 'kria', position: { x: 40, y: 60 }, domain: 'audio', params: { bpm: 240, running: 1} },
       { id: 'ss', type: 'sixstrum', position: { x: 360, y: 60 }, domain: 'audio', params: { ring: 3, level: 6 } },
       { id: 'sc', type: 'scope', position: { x: 900, y: 60 }, domain: 'audio', params: { timeMs: 50 } },
     ],

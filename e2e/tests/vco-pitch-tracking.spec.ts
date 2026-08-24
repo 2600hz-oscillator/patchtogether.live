@@ -87,7 +87,7 @@ async function measureVcoAt(
   await spawnPatch(
     page,
     [
-      { id: 'seq', type: 'sequencer', params: { bpm: 120, length: 1, isPlaying: 1 } },
+      { id: 'seq', type: 'kria', params: { bpm: 120, running: 1} },
       { id: 'v',   type: vcoType,     position: { x: 400, y: 100 } },
       { id: 'sc',  type: 'scope',     position: { x: 800, y: 100 } },
     ],

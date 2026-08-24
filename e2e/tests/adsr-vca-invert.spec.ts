@@ -60,7 +60,7 @@ test('ADSR: env_inv produces non-zero CV signal that is the unipolar inverse of 
   await spawnPatch(
     page,
     [
-      { id: 'seq', type: 'sequencer', params: { bpm: 120, length: 4, isPlaying: 1, gateLength: 0.4 } },
+      { id: 'seq', type: 'kria', params: { bpm: 120, running: 1} },
       { id: 'adsr', type: 'adsr', params: { attack: 0.01, decay: 0.05, sustain: 0.5, release: 0.05 } },
       { id: 'vco', type: 'analogVco' },
       { id: 'vca', type: 'vca', params: { base: 0, cvAmount: 1 } },
@@ -107,7 +107,7 @@ test('VCA: audio_inv carries the same envelope-shaped signal as audio, with inve
   await spawnPatch(
     page,
     [
-      { id: 'seq', type: 'sequencer', params: { bpm: 240, length: 4, isPlaying: 1, gateLength: 0.4 } },
+      { id: 'seq', type: 'kria', params: { bpm: 240, running: 1} },
       { id: 'vco', type: 'analogVco' },
       { id: 'adsr', type: 'adsr', params: { attack: 0.005, decay: 0.05, sustain: 0.6, release: 0.05 } },
       { id: 'vca', type: 'vca', params: { base: 0, cvAmount: 1 } },

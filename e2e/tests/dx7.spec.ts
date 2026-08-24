@@ -60,7 +60,7 @@ test('dx7: sequencer (poly) → DX7 → audioOut produces audible RMS', async ({
       // Sequencer with one always-on step at C4 in mono mode.
       {
         id: 'seq',
-        type: 'sequencer',
+        type: 'kria',
         params: { bpm: 240, isPlaying: 1, length: 4 },
       },
       { id: 'dx',  type: 'dx7',     params: { algorithm: 5, voiceCount: 5, level: 1.0 } },
@@ -137,7 +137,7 @@ test.fixme('dx7: switching algorithm changes the audible scope content', { annot
   await spawnPatch(
     page,
     [
-      { id: 'seq', type: 'sequencer', params: { bpm: 240, isPlaying: 1, length: 4 } },
+      { id: 'seq', type: 'kria', params: { bpm: 240, running: 1} },
       // Use CALLIOPE: every operator has a non-trivial output level + integer
       // ratios 1..6, so algorithm 1 (ops 1+3 carriers, 2/4/5/6 modulators)
       // and algorithm 32 (all six ops carriers — additive organ) produce

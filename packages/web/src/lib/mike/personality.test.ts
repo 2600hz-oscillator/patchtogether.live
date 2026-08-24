@@ -2,10 +2,10 @@
 //
 // Mike's structured progression — verified by reading the first
 // several intents emitted from an empty patch and asserting the order:
-//   drumseqz → drumVoice → mixer → (wires) → bass → melody → ...
+//   clipplayer → drumVoice → mixer → (wires) → bass → melody → ...
 //
 // Existing-rack mode test: spawn into a rack that already has a
-// TIMELORDE + sequencer; Mike's first intent adds a tone sequencer
+// TIMELORDE + kria; Mike's first intent adds a tone sequencer
 // and the second clocks it from the existing TIMELORDE.
 
 import { describe, expect, it } from 'vitest';
@@ -17,7 +17,7 @@ import type { Catalog } from './catalog';
 // Mirrors the real registry's port/cable shape — no factories required.
 const FAKE_CATALOG: Catalog = [
   {
-    type: 'drumseqz',
+    type: 'clipplayer',
     category: 'sequencers',
     inputs: [{ id: 'clock', cableType: 'gate' }],
     outputs: [
@@ -59,7 +59,7 @@ const FAKE_CATALOG: Catalog = [
     params: [],
   },
   {
-    type: 'polyseqz',
+    type: 'cartesian',
     category: 'sequencers',
     inputs: [{ id: 'clock', cableType: 'gate' }],
     outputs: [
@@ -69,7 +69,7 @@ const FAKE_CATALOG: Catalog = [
     params: [{ id: 'step1', min: -36, max: 36, defaultValue: 0 }],
   },
   {
-    type: 'sequencer',
+    type: 'kria',
     category: 'sequencers',
     inputs: [{ id: 'clock', cableType: 'gate' }],
     outputs: [
@@ -115,12 +115,12 @@ describe('MeticulousMike: empty-rack progression', () => {
     const out = mike.next(rng, emptyPatch());
     expect(out.intent.kind).toBe('addNode');
     if (out.intent.kind === 'addNode') {
-      expect(out.intent.type).toBe('drumseqz');
+      expect(out.intent.type).toBe('clipplayer');
       expect(out.intent.id.startsWith('mike-')).toBe(true);
     }
   });
 
-  it('progression through the first 4 spawns: drumseqz → drumVoice → mixer → (output already present)', () => {
+  it('progression through the first 4 spawns: clipplayer → drumVoice → mixer → (output already present)', () => {
     const mike = new MeticulousMike(FAKE_CATALOG);
     const rng = new SeededRng(2);
     const view: PersonalityPatchView = emptyPatch();
@@ -135,7 +135,7 @@ describe('MeticulousMike: empty-rack progression', () => {
         });
       }
     }
-    expect(spawnedTypes).toEqual(['drumseqz', 'drummergirl', 'mixer']);
+    expect(spawnedTypes).toEqual(['clipplayer', 'drummergirl', 'mixer']);
   });
 
   it('pacing: action min/max sleep stays in 5–15 s for non-sleep intents', () => {
@@ -156,7 +156,7 @@ describe('MeticulousMike: existing-rack mode', () => {
     const view: PersonalityPatchView = {
       nodes: [
         { id: 'user-lord', type: 'timelorde' },
-        { id: 'user-seq', type: 'sequencer' },
+        { id: 'user-seq', type: 'kria' },
         { id: 'user-vco', type: 'analogVco' },
       ],
       edges: [
@@ -173,7 +173,7 @@ describe('MeticulousMike: existing-rack mode', () => {
       // Tone sequencer (polyseqz comes first in the priority list,
       // and the rack already has a "sequencer" but it's foreign so
       // Mike still wants his own).
-      expect(['polyseqz', 'sequencer']).toContain(first.intent.type);
+      expect(['clipplayer', 'kria', 'cartesian']).toContain(first.intent.type);
       (view.nodes as Array<{ id: string; type: string }>).push({
         id: first.intent.id,
         type: first.intent.type,

@@ -180,7 +180,7 @@ test.describe('per-module per-port: outputs emit signal', () => {
         if (driver.gatePort || driver.pitchPort) {
           nodes.unshift({
             id: 'driver-seq',
-            type: 'sequencer',
+            type: 'kria',
             position: { x: 60, y: 280 },
             params: { bpm: 240, length: 4, isPlaying: 1, gateLength: 0.5 },
           });

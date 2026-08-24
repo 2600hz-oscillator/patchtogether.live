@@ -18,7 +18,7 @@ test.describe.configure({ mode: 'parallel' });
 
 test('note-entry: typing valid notes into Sequencer steps normalizes display + drives V/oct', async ({ page, rack }) => {
   await spawnPatch(page, [
-    { id: 'seq', type: 'sequencer', params: { bpm: 120, length: 4, isPlaying: 0 } },
+    { id: 'seq', type: 'kria', params: { bpm: 120, running: 0} },
   ]);
 
   // Type 'A4' (uppercase) into step 0's pitch input. Expect normalized 'a4' on blur.
@@ -61,7 +61,7 @@ test('note-entry: typing valid notes into Sequencer steps normalizes display + d
 
 test('note-entry: invalid input keeps midi null + the input ring goes red on focus', async ({ page, rack }) => {
   await spawnPatch(page, [
-    { id: 'seq', type: 'sequencer', params: { bpm: 120, length: 4, isPlaying: 0 } },
+    { id: 'seq', type: 'kria', params: { bpm: 120, running: 0} },
   ]);
 
   const step = page.locator('[data-testid="seq-pitch-seq-0"]');
@@ -82,7 +82,7 @@ test('note-entry: invalid input keeps midi null + the input ring goes red on foc
 });
 
 test('note-entry: out-of-range note (c#8 above c8) becomes null', async ({ page, rack }) => {
-  await spawnPatch(page, [{ id: 'seq', type: 'sequencer', params: { bpm: 120, length: 4 } }]);
+  await spawnPatch(page, [{ id: 'seq', type: 'kria', params: { bpm: 120} }]);
 
   const step = page.locator('[data-testid="seq-pitch-seq-0"]');
   await step.focus();
@@ -124,7 +124,7 @@ test('note-entry: Cartesian cell accepts text-entry note names', async ({ page, 
 });
 
 test('note-entry: gate button toggles step.on without touching the pitch input', async ({ page, rack }) => {
-  await spawnPatch(page, [{ id: 'seq', type: 'sequencer', params: { bpm: 120, length: 4 } }]);
+  await spawnPatch(page, [{ id: 'seq', type: 'kria', params: { bpm: 120} }]);
 
   const pitchEl = page.locator('[data-testid="seq-pitch-seq-0"]');
   await pitchEl.focus();
@@ -144,7 +144,7 @@ test('note-entry: gate button toggles step.on without touching the pitch input',
 
 test('note-entry: a4 step drives the pitch port to V/oct 0.75 (MIDI 69 - 60 = 9 semis up)', async ({ page, rack }) => {
   await spawnPatch(page, [
-    { id: 'seq', type: 'sequencer', params: { bpm: 240, length: 4, isPlaying: 1, gateLength: 0.9 } },
+    { id: 'seq', type: 'kria', params: { bpm: 240, running: 1} },
   ]);
 
   // Set step 0 to a4 (MIDI 69), gate on. Other steps off so pitch dwells at 0.75 V.
@@ -197,7 +197,7 @@ test('hold-cv: pitch port retains last gated V/oct across an off step', async ({
   // off step is reached, the pitch port should still emit the V/oct of a4 —
   // not zero, and not the e4 V/oct.
   await spawnPatch(page, [
-    { id: 'seq', type: 'sequencer', params: { bpm: 240, length: 3, isPlaying: 1, gateLength: 0.9 } },
+    { id: 'seq', type: 'kria', params: { bpm: 240, running: 1} },
   ]);
 
   await page.evaluate(() => {
@@ -252,7 +252,7 @@ test('hold-cv: pitch port retains last gated V/oct across an off step', async ({
 
 test('note-entry: invalid step (midi=null) suppresses gate output even when on=true', async ({ page, rack }) => {
   await spawnPatch(page, [
-    { id: 'seq', type: 'sequencer', params: { bpm: 240, length: 1, isPlaying: 1, gateLength: 0.9 } },
+    { id: 'seq', type: 'kria', params: { bpm: 240, running: 1} },
   ]);
 
   // Single step with on=true but midi=null. Sequencer should skip the gate.

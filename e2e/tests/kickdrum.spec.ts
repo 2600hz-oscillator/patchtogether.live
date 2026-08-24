@@ -63,7 +63,7 @@ test('KICK DRUM real chain: SEQUENCER → trigger_in → stereo AUDIOOUT — aud
     [
       // The REAL default-mode trigger source: the sequencer's own internal
       // clock (isPlaying=1), not a synthetic gate injection.
-      { id: 'a-seq', type: 'sequencer', position: { x: 60,  y: 60 }, domain: 'audio',
+      { id: 'a-seq', type: 'kria', position: { x: 60,  y: 60 }, domain: 'audio',
         params: { bpm: 120, length: 4, isPlaying: 1, gateLength: 0.25 } },
       { id: 'a-kd',  type: 'kickdrum',  position: { x: 360, y: 60 }, domain: 'audio',
         params: { level: 0 } }, // shipping defaults otherwise (clean-deep kick)

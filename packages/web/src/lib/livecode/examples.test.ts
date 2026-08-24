@@ -105,9 +105,9 @@ describe('flagship: re-quantizing sequence produces changing, quantized notes', 
   }
 
   function findSeqSteps(nodes: NodeMap): { on: boolean; midi: number }[] {
-    const seq = Object.values(nodes).find((n) => n.type === 'sequencer');
-    expect(seq, 'sequencer should be spawned').toBeDefined();
-    return ((seq!.data as { steps?: { on: boolean; midi: number }[] }).steps) ?? [];
+    const seq = Object.values(nodes).find((n) => n.type === 'cartesian');
+    expect(seq, 'cartesian should be spawned').toBeDefined();
+    return ((seq!.data as { cells?: { on: boolean; midi: number }[] }).cells) ?? [];
   }
 
   function findRunnerBody(nodes: NodeMap): { body: string; division: string } {
@@ -120,7 +120,8 @@ describe('flagship: re-quantizing sequence produces changing, quantized notes', 
   it('spawns the full voice + an immediate C-major melody on Run', () => {
     const { nodes } = setup();
     const types = Object.values(nodes).map((n) => n.type).sort();
-    expect(types).toContain('sequencer');
+    expect(types).toContain('cartesian');
+    expect(types).toContain('timelorde');
     expect(types).toContain('analogVco');
     expect(types).toContain('adsr');
     expect(types).toContain('vca');

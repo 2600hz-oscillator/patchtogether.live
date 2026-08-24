@@ -51,7 +51,7 @@ test('tempo-stability: sequencer keeps tempo under repeated main-thread jank', a
     [
       {
         id: 'seq',
-        type: 'sequencer',
+        type: 'kria',
         params: { bpm: SEQ_BPM, length: 16, isPlaying: 1 },
       },
     ],
@@ -124,7 +124,7 @@ test('tempo-stability: baseline (no jank) sequencer advance rate matches BPM', a
     [
       {
         id: 'seq2',
-        type: 'sequencer',
+        type: 'kria',
         params: { bpm: SEQ_BPM, length: 16, isPlaying: 1 },
       },
     ],

@@ -157,7 +157,7 @@ test('midi-out-buddy: SEQUENCER gate/pitch → captured MIDI NoteOn on the fake 
   await spawnPatch(
     page,
     [
-      { id: 'seq', type: 'sequencer', position: { x: 60, y: 60 }, params: { bpm: 240, length: 4, isPlaying: 1, gateLength: 0.5 } },
+      { id: 'seq', type: 'kria', position: { x: 60, y: 60 }, params: { bpm: 240, running: 1} },
       { id: 'm', type: TYPE, position: { x: 400, y: 60 } },
     ],
     [

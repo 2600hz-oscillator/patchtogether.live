@@ -278,7 +278,7 @@ test('perf-tempo-under-modulation: hand-drag coalesces patch-store commits to â‰
   await spawnPatch(
     page,
     [
-      { id: 'seq', type: 'sequencer', params: { bpm: SEQ_BPM, length: 16, isPlaying: 1 } },
+      { id: 'seq', type: 'kria', params: { bpm: SEQ_BPM, running: 1} },
       { id: 'vca', type: 'vca', params: { base: 0.5, cvAmount: 1 } },
     ],
     [],
@@ -404,7 +404,7 @@ test('perf-tempo-under-modulation: baseline (no drag) advance rate matches BPM',
   await spawnPatch(
     page,
     [
-      { id: 'seqB', type: 'sequencer', params: { bpm: SEQ_BPM, length: 16, isPlaying: 1 } },
+      { id: 'seqB', type: 'kria', params: { bpm: SEQ_BPM, running: 1} },
     ],
     [],
   );

@@ -943,3 +943,42 @@ export async function claimKeyboard(page: Page, id: string, timeout = 5000): Pro
     )
     .catch(() => {});
 }
+
+/** Seed a KRIA node (post-spawn) so track 1 fires: all-16 trigs, a C-major
+ *  degree contour, running transport assumed set via params. The ONE idiom
+ *  every spec uses since the deprecated sequencers were deleted (2026-08-24)
+ *  — was per-file `data.steps` seeds against the old SEQUENCER shape. */
+export async function seedKriaGate(page: Page, nodeId: string, opts?: { steps?: number }): Promise<void> {
+  const steps = opts?.steps ?? 16;
+  await page.evaluate(({ id, steps }) => {
+    const w = globalThis as unknown as {
+      __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
+      __ydoc: { transact: (fn: () => void) => void };
+    };
+    w.__ydoc.transact(() => {
+      const n = w.__patch.nodes[id];
+      if (!n) return;
+      if (!n.data) n.data = {};
+      const track = (trig: boolean) => ({
+        trig: Array.from({ length: 16 }, (_, i) => trig && i < steps),
+        ratchet: Array.from({ length: 16 }, () => 1),
+        note: [0, 2, 4, 7, 0, 2, 4, 7, 0, 2, 4, 7, 0, 2, 4, 7],
+        octave: Array.from({ length: 16 }, () => 0),
+        duration: Array.from({ length: 16 }, () => 0.5),
+        probability: Array.from({ length: 16 }, () => 1),
+        glide: Array.from({ length: 16 }, () => 0),
+        loopStart: 0,
+        loopLength: steps,
+        timeDivision: 1,
+        direction: 'forward',
+        muted: false,
+      });
+      Object.assign(n.data, {
+        patterns: { '0': { tracks: [track(true), track(false), track(false), track(false)], scale: 'major', root: 48 } },
+        active: 0,
+        cued: null,
+        cueSteps: 0,
+      });
+    });
+  }, { id: nodeId, steps });
+}

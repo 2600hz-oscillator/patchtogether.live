@@ -114,7 +114,7 @@ test('dx7 master-ADSR: a gated poly note carries audio through the master VCA', 
   await spawnPatch(
     page,
     [
-      { id: 'seq', type: 'sequencer', position: { x: 40, y: 60 }, domain: 'audio', params: { bpm: 240, length: 4, isPlaying: 1 } },
+      { id: 'seq', type: 'kria', position: { x: 40, y: 60 }, domain: 'audio', params: { bpm: 240, running: 1} },
       { id: 'dx', type: 'dx7', position: { x: 360, y: 60 }, domain: 'audio', params: { algorithm: 5, voiceCount: 5, attack: 0.05, decay: 0.2, sustain: 0.9, release: 0.3, level: 1 } },
       { id: 'sc', type: 'scope', position: { x: 900, y: 60 }, domain: 'audio', params: { timeMs: 50 } },
     ],
@@ -154,7 +154,7 @@ test('cube mono TRIGGER gates the per-voice envelope (audio opens on trigger)', 
   await spawnPatch(
     page,
     [
-      { id: 'seq', type: 'sequencer', position: { x: 40, y: 60 }, domain: 'audio', params: { bpm: 240, length: 4, isPlaying: 1, gateLength: 0.6 } },
+      { id: 'seq', type: 'kria', position: { x: 40, y: 60 }, domain: 'audio', params: { bpm: 240, running: 1} },
       { id: 'cb', type: 'cube', position: { x: 360, y: 60 }, domain: 'audio', params: { attack: 0.02, decay: 0.1, sustain: 0.9, release: 0.2, level: 1 } },
       { id: 'sc', type: 'scope', position: { x: 900, y: 60 }, domain: 'audio', params: { timeMs: 50 } },
     ],
@@ -215,7 +215,7 @@ test('cube no-stray-drone: a TRIGGER patched but NEVER gated is SILENT (gated, n
   await spawnPatch(
     page,
     [
-      { id: 'seq', type: 'sequencer', position: { x: 40, y: 60 }, domain: 'audio', params: { bpm: 240, length: 4, isPlaying: 0, gateLength: 0.6 } },
+      { id: 'seq', type: 'kria', position: { x: 40, y: 60 }, domain: 'audio', params: { bpm: 240, running: 0} },
       { id: 'cb', type: 'cube', position: { x: 360, y: 60 }, domain: 'audio', params: { level: 1 } },
       { id: 'sc', type: 'scope', position: { x: 900, y: 60 }, domain: 'audio', params: { timeMs: 50 } },
     ],
@@ -243,7 +243,7 @@ test('wavecel mono TRIGGER gates the per-voice envelope (audio opens on trigger)
   await spawnPatch(
     page,
     [
-      { id: 'seq', type: 'sequencer', position: { x: 40, y: 60 }, domain: 'audio', params: { bpm: 240, length: 4, isPlaying: 1, gateLength: 0.6 } },
+      { id: 'seq', type: 'kria', position: { x: 40, y: 60 }, domain: 'audio', params: { bpm: 240, running: 1} },
       { id: 'wc', type: 'wavecel', position: { x: 360, y: 60 }, domain: 'audio', params: { attack: 0.02, decay: 0.1, sustain: 0.9, release: 0.2 } },
       { id: 'sc', type: 'scope', position: { x: 900, y: 60 }, domain: 'audio', params: { timeMs: 50 } },
     ],

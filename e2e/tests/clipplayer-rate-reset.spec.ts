@@ -279,7 +279,7 @@ test('reset gate input: clock edges hold the playhead at the top; removing them 
         params: { running: 0, bpm: 240 } },
       // STOPPED at spawn — we decide exactly when reset edges start/stop.
       // 240 bpm → a clock pulse every 250 ms while playing.
-      { id: 'rstSeq', type: 'sequencer', position: { x: 80, y: 460 }, domain: 'audio',
+      { id: 'rstSeq', type: 'kria', position: { x: 80, y: 460 }, domain: 'audio',
         params: { bpm: 240, length: 4, isPlaying: 0 } },
     ],
     [

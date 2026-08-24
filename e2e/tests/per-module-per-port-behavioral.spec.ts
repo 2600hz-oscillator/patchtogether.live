@@ -1775,7 +1775,7 @@ function pickInputSource(inputType: string, idPrefix: string): InputSource | nul
       // SEQUENCER at 240 BPM = 4 Hz gate train. We pre-populate steps
       // in the harness so the gate is "on".
       return {
-        node: { id: `${idPrefix}-seq`, type: 'sequencer', position: { x: 60, y: 60 }, domain: 'audio', params: { bpm: 240, length: 4, isPlaying: 1, gateLength: 0.5 } },
+        node: { id: `${idPrefix}-seq`, type: 'kria', position: { x: 60, y: 60 }, domain: 'audio', params: { bpm: 240, running: 1} },
         outPort: 'gate',
         sourceType: 'gate',
       };
@@ -1805,7 +1805,7 @@ function pickInputSource(inputType: string, idPrefix: string): InputSource | nul
     // EXEMPT_INPUT_DRIVE entry with a reason.
     case 'polyPitchGate':
       return {
-        node: { id: `${idPrefix}-seq`, type: 'sequencer', position: { x: 60, y: 60 }, domain: 'audio', params: { bpm: 240, length: 4, isPlaying: 1, gateLength: 0.5 } },
+        node: { id: `${idPrefix}-seq`, type: 'kria', position: { x: 60, y: 60 }, domain: 'audio', params: { bpm: 240, running: 1} },
         outPort: 'pitch',
         sourceType: 'polyPitchGate',
       };
@@ -3780,7 +3780,7 @@ function buildContextEdges(
     // itself as the gate.
     nodes.push({
       id: 'ctx-gate-seq',
-      type: 'sequencer',
+      type: 'kria',
       position: { x: 60, y: 560 },
       domain: 'audio',
       params: { bpm: 240, length: 4, isPlaying: 1, gateLength: 0.5 },
@@ -3812,7 +3812,7 @@ function buildDriverEdges(
 
   nodes.push({
     id: 'driver-seq',
-    type: 'sequencer',
+    type: 'kria',
     position: { x: 60, y: 60 },
     params: { bpm: 240, length: 4, isPlaying: 1, gateLength: 0.5 },
   });

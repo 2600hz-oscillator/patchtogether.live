@@ -33,7 +33,7 @@ test('save-load: round-trip preserves nodes, edges, params, and sequencer step d
     [
       {
         id: 'seq',
-        type: 'sequencer',
+        type: 'kria',
         params: { bpm: 180, length: 8, isPlaying: 1, gateLength: 0.4 },
       },
       { id: 'vco',  type: 'analogVco' },

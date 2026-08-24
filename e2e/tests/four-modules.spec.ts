@@ -42,7 +42,7 @@ test('MEOWBOX: gate triggers audible voice on L output', async ({ page, rackDefa
   await spawnPatch(
     page,
     [
-      { id: 'seq', type: 'sequencer', params: { bpm: 240, length: 4, isPlaying: 1, gateLength: 0.5 } },
+      { id: 'seq', type: 'kria', params: { bpm: 240, running: 1} },
       { id: 'meow', type: 'meowbox', params: { pitch: 0, morph: 0.25, decay: 0.4, level: 1 } },
       { id: 'scope', type: 'scope', params: {} },
       { id: 'out', type: 'audioOut', params: { master: 0.1 } },
@@ -207,7 +207,7 @@ test("CHARLOTTE'S ECHOS: passes signal through and produces echo tail", async ({
   await spawnPatch(
     page,
     [
-      { id: 'seq', type: 'sequencer', params: { bpm: 240, length: 4, isPlaying: 1, gateLength: 0.5 } },
+      { id: 'seq', type: 'kria', params: { bpm: 240, running: 1} },
       { id: 'vco', type: 'analogVco', params: { tune: 0, fine: 0, fmAmount: 0 } },
       { id: 'adsr', type: 'adsr', params: { attack: 0.005, decay: 0.05, sustain: 0.6, release: 0.05 } },
       { id: 'vca', type: 'vca', params: { base: 0, cvAmount: 1 } },
@@ -265,7 +265,7 @@ test('MIXMSTRS: passes channel 1 through to master out', async ({ page, rackDefa
   await spawnPatch(
     page,
     [
-      { id: 'seq', type: 'sequencer', params: { bpm: 240, length: 4, isPlaying: 1, gateLength: 0.5 } },
+      { id: 'seq', type: 'kria', params: { bpm: 240, running: 1} },
       { id: 'vco', type: 'analogVco', params: { tune: 0, fine: 0, fmAmount: 0 } },
       { id: 'mix', type: 'mixmstrs', params: { ch1_volume: 1, master_volume: 1, ch1_compEnable: 0 } },
       { id: 'scope', type: 'scope', params: {} },

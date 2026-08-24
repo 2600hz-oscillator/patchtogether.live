@@ -107,7 +107,7 @@ test.describe('MEOWBOX V/oct integration', () => {
     await spawnPatch(
       page,
       [
-        { id: 'seq',   type: 'sequencer', params: { bpm: 240, length: 4, isPlaying: 1, gateLength: 0.5 } },
+        { id: 'seq',   type: 'kria', params: { bpm: 240, running: 1} },
         { id: 'meow',  type: 'meowbox',   params: { pitch: 0, morph: 0.25, decay: 0.4, level: 1 } },
         { id: 'scope', type: 'scope',     params: {} },
         { id: 'out',   type: 'audioOut',  params: { master: 0.1 } },
@@ -157,7 +157,7 @@ test.describe('MEOWBOX V/oct integration', () => {
     await spawnPatch(
       page,
       [
-        { id: 'seq',   type: 'sequencer', params: { bpm: 240, length: 4, isPlaying: 1, gateLength: 0.85 } },
+        { id: 'seq',   type: 'kria', params: { bpm: 240, running: 1} },
         { id: 'meow',  type: 'meowbox',   params: { pitch: 0, morph: 0.25, decay: 0.4, level: 1 } },
       ],
       [
@@ -261,7 +261,7 @@ test.describe('MEOWBOX V/oct integration', () => {
     await spawnPatch(
       page,
       [
-        { id: 'seq',   type: 'sequencer', params: { bpm: 240, length: 4, isPlaying: 1, gateLength: 0.5 } },
+        { id: 'seq',   type: 'kria', params: { bpm: 240, running: 1} },
         // knob pitch = +12 semitones (= +1 octave above C4 = C5).
         { id: 'meow',  type: 'meowbox',   params: { pitch: 12, morph: 0.25, decay: 0.4, level: 1 } },
         { id: 'scope', type: 'scope',     params: {} },
@@ -285,7 +285,7 @@ test.describe('MEOWBOX V/oct integration', () => {
     await spawnPatch(
       page,
       [
-        { id: 'seq',   type: 'sequencer', params: { bpm: 240, length: 4, isPlaying: 1, gateLength: 0.5 } },
+        { id: 'seq',   type: 'kria', params: { bpm: 240, running: 1} },
         { id: 'meow',  type: 'meowbox',   params: { pitch: 0, morph: 0.25, decay: 0.4, level: 1 } },
         { id: 'scope', type: 'scope',     params: {} },
         { id: 'out',   type: 'audioOut',  params: { master: 0.05 } },

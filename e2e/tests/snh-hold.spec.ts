@@ -108,7 +108,7 @@ test.describe('baked-in gate-sampled S&H: SEQUENCER pitch → SCOPE', () => {
         // analyser ring to settle on the held DC pitch during a rest.
         {
           id: 'seq',
-          type: 'sequencer',
+          type: 'kria',
           position: { x: 80, y: 80 },
           params: { bpm: 80, length: 2, isPlaying: 1, gateLength: 0.4, octave: 0, snh },
         },

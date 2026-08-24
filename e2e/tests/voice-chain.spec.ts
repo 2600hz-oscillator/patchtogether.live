@@ -34,7 +34,7 @@ test('voice-chain: Seq → VCO + ADSR → VCA → Scope → Out produces audible
     [
       {
         id: 'seq',
-        type: 'sequencer',
+        type: 'kria',
         params: { bpm: 240, length: 4, isPlaying: 1, gateLength: 0.4 },
       },
       { id: 'vco', type: 'analogVco', params: { tune: 0, fine: 0, fmAmount: 0 } },
@@ -128,7 +128,7 @@ test('voice-chain: stopping the sequencer silences the output (gate goes low)', 
   await spawnPatch(
     page,
     [
-      { id: 'seq', type: 'sequencer', params: { bpm: 240, length: 4, isPlaying: 1, gateLength: 0.4 } },
+      { id: 'seq', type: 'kria', params: { bpm: 240, running: 1} },
       { id: 'vco', type: 'analogVco' },
       { id: 'adsr', type: 'adsr', params: { attack: 0.001, decay: 0.05, sustain: 0.5, release: 0.05 } },
       { id: 'vca', type: 'vca', params: { base: 0, cvAmount: 1 } },

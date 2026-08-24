@@ -364,7 +364,7 @@ test.describe('treeohvox — THE AUDITION (the voice could not be sounded before
     // patched cable keeps working alongside it.
     await goto(page, '?seed=none');
     const nodes: SpawnNode[] = [
-      { id: 'seq', type: 'sequencer', position: { x: 60, y: 280 }, params: { bpm: 240, length: 4, isPlaying: 1, gateLength: 0.5 } },
+      { id: 'seq', type: 'kria', position: { x: 60, y: 280 }, params: { bpm: 240, running: 1} },
       { id: NID, type: 'treeohvox', position: { x: 400, y: 120 }, params: AUDIBLE },
     ];
     const edges: SpawnEdge[] = [

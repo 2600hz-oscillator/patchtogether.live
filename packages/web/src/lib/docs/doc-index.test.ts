@@ -71,8 +71,8 @@ describe('buildDocIndex — adsr (the CV/control overlap demo)', () => {
   });
 });
 
-describe('buildDocIndex — sequencer (control families + transport CV)', () => {
-  const index = buildDocIndex(modByType('sequencer'));
+describe('buildDocIndex — score (control families + transport CV)', () => {
+  const index = buildDocIndex(modByType('score'));
 
   it('has the bpm param control with authored prose', () => {
     expect(index.controls.bpm).toBeDefined();

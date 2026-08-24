@@ -324,7 +324,7 @@ test.describe('#1811 main-thread cost instrument', () => {
     await spawnPatch(
       page,
       [
-        { id: 'seq-1', type: 'sequencer', position: { x: 40, y: 40 }, domain: 'audio' },
+        { id: 'seq-1', type: 'kria', position: { x: 40, y: 40 }, domain: 'audio' },
         { id: 'src-1', type: 'spirographs', position: { x: 40, y: 320 }, domain: 'video' },
         { id: 'out-1', type: 'videoOut', position: { x: 460, y: 320 }, domain: 'video' },
       ],

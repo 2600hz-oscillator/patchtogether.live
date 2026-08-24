@@ -72,7 +72,7 @@ test('rings: STRUM with no external exciter + MODAL produces audio (self-excite)
   await spawnPatch(
     page,
     [
-      { id: 'seq', type: 'sequencer', position: { x:  50, y: 100 },
+      { id: 'seq', type: 'kria', position: { x:  50, y: 100 },
         params: { bpm: 240, length: 4, isPlaying: 1, gateLength: 0.5 } },
       { id: 'r',   type: 'rings',  position: { x: 350, y: 100 },
         params: {

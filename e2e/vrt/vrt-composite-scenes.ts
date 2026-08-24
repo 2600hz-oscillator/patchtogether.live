@@ -208,7 +208,7 @@ function setupSnhSeqScope(snh: number): (page: Page) => Promise<void> {
         // run window reliably lands the suspend inside the rest step.
         {
           id: 'seq',
-          type: 'sequencer',
+          type: 'kria',
           position: { x: 60, y: 70 },
           params: { bpm: 60, length: 2, isPlaying: 1, gateLength: 0.4, octave: 0, snh },
         },
@@ -466,7 +466,7 @@ function setupAdsrSustainScope(sustain: number): (page: Page) => Promise<void> {
       [
         {
           id: 'seq',
-          type: 'sequencer',
+          type: 'kria',
           position: { x: 60, y: 70 },
           domain: 'audio',
           // BPM at the 30 floor → 0.5 s/step (the longest single-step gate
@@ -602,7 +602,7 @@ function setupDepolarizerScope(): (page: Page) => Promise<void> {
       [
         {
           id: 'seq',
-          type: 'sequencer',
+          type: 'kria',
           position: { x: 60, y: 70 },
           params: { bpm: 60, length: 2, isPlaying: 1, gateLength: 0.4, octave: 0, snh: 1 },
         },
@@ -714,7 +714,7 @@ function setupScalerScope(): (page: Page) => Promise<void> {
       [
         {
           id: 'seq',
-          type: 'sequencer',
+          type: 'kria',
           position: { x: 60, y: 70 },
           params: { bpm: 60, length: 2, isPlaying: 1, gateLength: 0.4, octave: 0, snh: 1 },
         },
@@ -825,7 +825,7 @@ function setupPolarizerScope(): (page: Page) => Promise<void> {
       [
         {
           id: 'seq',
-          type: 'sequencer',
+          type: 'kria',
           position: { x: 60, y: 70 },
           params: { bpm: 60, length: 2, isPlaying: 1, gateLength: 0.4, octave: 0, snh: 1 },
         },
@@ -937,7 +937,7 @@ function setupMixerSumScope(): (page: Page) => Promise<void> {
       [
         {
           id: 'seq',
-          type: 'sequencer',
+          type: 'kria',
           position: { x: 60, y: 70 },
           params: { bpm: 60, length: 2, isPlaying: 1, gateLength: 0.4, octave: 0, snh: 1 },
         },

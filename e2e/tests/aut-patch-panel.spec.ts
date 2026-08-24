@@ -35,7 +35,7 @@ async function openFrom(page: Page, nodeId: string, side: 'left' | 'right' = 'le
 test.describe('@aut PatchPanel acceptance flow', () => {
   test('ADSR click-open, verbose labels, patch via carry, outside-click closes', async ({ page, rack }) => {
     await spawnPatch(page, [
-      { id: 'seq', type: 'sequencer', position: { x: 80, y: 120 } },
+      { id: 'seq', type: 'kria', position: { x: 80, y: 120 } },
       { id: 'adsr', type: 'adsr', position: { x: 760, y: 120 } },
     ]);
 

@@ -124,7 +124,7 @@ describe('button routing (WORKSTREAM B)', () => {
     const host: AutoconfigHost = {
       buildGenInput: () => ({
         surfaceBindings: [
-          { moduleId: 'drumseqz', paramId: 'play', controlType: 'button', momentary: true },
+          { moduleId: 'kria', paramId: 'play', controlType: 'button', momentary: true },
           { moduleId: 'score', paramId: 'play', controlType: 'button', momentary: false },
         ],
         moduleLabel: (id) => id,
@@ -154,8 +154,8 @@ describe('button routing (WORKSTREAM B)', () => {
     fake.emit([0x80, a.number, 0]);   // NOTE-off
     auto.stop();
     expect(triggers).toEqual([
-      ['drumseqz', 'play', true],
-      ['drumseqz', 'play', false],
+      ['kria', 'play', true],
+      ['kria', 'play', false],
     ]);
   });
 

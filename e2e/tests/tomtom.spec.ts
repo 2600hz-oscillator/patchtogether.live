@@ -63,7 +63,7 @@ test('TOM DRUM real chain: SEQUENCER → trigger_in → AUDIOOUT — audible RMS
     [
       // The REAL default-mode trigger source: the sequencer's own internal
       // clock (isPlaying=1), not a synthetic gate injection.
-      { id: 'a-seq', type: 'sequencer', position: { x: 60,  y: 60 }, domain: 'audio',
+      { id: 'a-seq', type: 'kria', position: { x: 60,  y: 60 }, domain: 'audio',
         params: { bpm: 120, length: 4, isPlaying: 1, gateLength: 0.25 } },
       { id: 'a-tom', type: 'tomtom',    position: { x: 360, y: 60 }, domain: 'audio',
         params: { level: 0 } }, // shipping defaults otherwise (mid tom, 7 st bend)
@@ -203,7 +203,7 @@ test('a rack SAVED with STRIKE stuck at 1 still responds to trigger_in', async (
   await spawnPatch(
     page,
     [
-      { id: 'b-seq', type: 'sequencer', position: { x: 60,  y: 60 }, domain: 'audio',
+      { id: 'b-seq', type: 'kria', position: { x: 60,  y: 60 }, domain: 'audio',
         params: { bpm: 120, length: 4, isPlaying: 1, gateLength: 0.25 } },
       // THE BRICKED MODULE, as persisted.
       { id: 'b-tom', type: 'tomtom',    position: { x: 360, y: 60 }, domain: 'audio',

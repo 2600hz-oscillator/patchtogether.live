@@ -10,7 +10,7 @@ import type { Catalog } from './catalog';
 
 const FAKE_CATALOG: Catalog = [
   {
-    type: 'drumseqz',
+    type: 'clipplayer',
     category: 'sequencers',
     inputs: [{ id: 'clock', cableType: 'gate' }],
     outputs: [

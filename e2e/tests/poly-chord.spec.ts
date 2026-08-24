@@ -16,7 +16,7 @@ test.describe.configure({ mode: 'parallel' });
 
 test('poly-chord: maj triad on a4 emits 4 gated lanes with M3 + P5 + octave intervals', async ({ page, rack }) => {
   await spawnPatch(page, [
-    { id: 'seq', type: 'sequencer', params: { bpm: 240, length: 1, isPlaying: 1, gateLength: 0.9 } },
+    { id: 'seq', type: 'kria', params: { bpm: 240, running: 1} },
   ]);
 
   // Single step at a4 (MIDI 69), chord=maj.
@@ -75,7 +75,7 @@ test('poly-chord: maj triad on a4 emits 4 gated lanes with M3 + P5 + octave inte
 
 test('poly-chord: min step on a4 emits c5 (m3) instead of c#5 (M3)', async ({ page, rack }) => {
   await spawnPatch(page, [
-    { id: 'seq', type: 'sequencer', params: { bpm: 240, length: 1, isPlaying: 1, gateLength: 0.9 } },
+    { id: 'seq', type: 'kria', params: { bpm: 240, running: 1} },
   ]);
   await page.evaluate(() => {
     const w = globalThis as unknown as {
@@ -113,7 +113,7 @@ test('poly-chord: backward-compat - polyPitchGate source -> mono pitch sink rout
   await spawnPatch(
     page,
     [
-      { id: 'seq', type: 'sequencer', params: { bpm: 240, length: 1, isPlaying: 1, gateLength: 0.9 } },
+      { id: 'seq', type: 'kria', params: { bpm: 240, running: 1} },
       { id: 'vco', type: 'analogVco', params: {} },
     ],
     [
@@ -164,7 +164,7 @@ test('poly-chord: backward-compat - polyPitchGate source -> mono pitch sink rout
 
 test('poly-chord: chord-picker UI cycles mono -> maj -> min -> mono on click', async ({ page, rack }) => {
   await spawnPatch(page, [
-    { id: 'seq', type: 'sequencer', params: { bpm: 60, length: 4, isPlaying: 0 } },
+    { id: 'seq', type: 'kria', params: { bpm: 60, running: 0} },
   ]);
 
   // The chord badge for step 0 has data-testid `seq-chord-seq-0`.

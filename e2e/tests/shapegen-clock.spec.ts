@@ -176,7 +176,7 @@ test.describe('SHAPEGEN — CLOCK gate sample-and-hold', () => {
         { id: 'src',  type: 'acidwarp', position: { x: 100, y: 100 }, domain: 'video',
           params: { speed: 1 } },
         { id: 'sg',   type: 'shapegen', position: { x: 500, y: 100 }, domain: 'video' },
-        { id: 'clkSeq', type: 'sequencer', position: { x: 100, y: 320 }, domain: 'audio',
+        { id: 'clkSeq', type: 'kria', position: { x: 100, y: 320 }, domain: 'audio',
           params: { bpm: 30, length: 8, isPlaying: 1 } },
       ],
       [

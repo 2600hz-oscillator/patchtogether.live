@@ -75,7 +75,7 @@ test.describe('SCOREBOARD — 4-digit neon 7-segment counter widget', () => {
       [
         {
           id: 'scoreSeq',
-          type: 'sequencer',
+          type: 'kria',
           position: { x: 40, y: 40 },
           domain: 'audio',
           // 240 BPM → 4 pulses/sec. After 1 s of sequencer time we'd
@@ -86,7 +86,7 @@ test.describe('SCOREBOARD — 4-digit neon 7-segment counter widget', () => {
         },
         {
           id: 'resetSeq',
-          type: 'sequencer',
+          type: 'kria',
           position: { x: 40, y: 260 },
           domain: 'audio',
           // Stays stopped until we want to fire the reset pulse.

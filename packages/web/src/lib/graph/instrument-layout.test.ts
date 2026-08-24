@@ -103,7 +103,7 @@ describe('GroupData.exposedSequences', () => {
     };
     const input = snap([
       n('g1', 'group', data as unknown as Record<string, unknown>),
-      n('seq-1', 'drumseqz'),
+      n('seq-1', 'kria'),
       n('tl-1', 'timelorde'),
     ]);
     const out = projectAndReadGroup(input, 'g1');
@@ -120,7 +120,7 @@ describe('GroupData.exposedSequences', () => {
     };
     const input = snap([
       n('g1', 'group', data as unknown as Record<string, unknown>),
-      n('seq-1', 'drumseqz'),
+      n('seq-1', 'kria'),
     ]);
     const out = projectAndReadGroup(input, 'g1');
     expect(out?.exposedControls).toHaveLength(1);

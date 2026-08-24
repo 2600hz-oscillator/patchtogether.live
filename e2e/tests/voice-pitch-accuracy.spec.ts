@@ -247,7 +247,7 @@ for (const voice of PITCHED_VOICES) {
           // gate re-opens every step (gateLength 0.95 keeps the voice
           // sounding through nearly the whole cycle). BPM 240 = a step every
           // 250 ms; a voice that needs longer between note-ons overrides it.
-          { id: 'p-seq', type: 'sequencer', position: { x: 60, y: 60 }, domain: 'audio',
+          { id: 'p-seq', type: 'kria', position: { x: 60, y: 60 }, domain: 'audio',
             params: { bpm: voice.seqBpm ?? 240, length: 1, isPlaying: 1, gateLength: 0.95 } },
           // THE VOICE — NO param overrides: factory-default tuning is the
           // system under test.

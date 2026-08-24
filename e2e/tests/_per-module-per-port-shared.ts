@@ -827,7 +827,7 @@ export function pickInputSource(inputType: string, idPrefix: string): InputSourc
       // array) intact while letting this function return a "logical
       // source" with its own dependencies.
       return {
-        node: { id: `${idPrefix}-seq`, type: 'sequencer', position: { x: 60, y: 60 }, domain: 'audio', params: { bpm: 240, length: 4, isPlaying: 1, gateLength: 0.5 } },
+        node: { id: `${idPrefix}-seq`, type: 'kria', position: { x: 60, y: 60 }, domain: 'audio', params: { bpm: 240, running: 1} },
         outPort: 'gate',
         sourceType: 'gate',
       };
@@ -854,7 +854,7 @@ export function pickInputSource(inputType: string, idPrefix: string): InputSourc
     // edge the first time one appeared. `null` is the loud path.
     case 'polyPitchGate':
       return {
-        node: { id: `${idPrefix}-seq`, type: 'sequencer', position: { x: 60, y: 60 }, domain: 'audio', params: { bpm: 240, length: 4, isPlaying: 1, gateLength: 0.5 } },
+        node: { id: `${idPrefix}-seq`, type: 'kria', position: { x: 60, y: 60 }, domain: 'audio', params: { bpm: 240, running: 1} },
         outPort: 'pitch',
         sourceType: 'polyPitchGate',
       };

@@ -276,7 +276,7 @@ test.describe('per-module: output-alive smoke', () => {
         // 800ms test window so transient envelopes don't fool us.
         nodes.unshift({
           id: 'seq',
-          type: 'sequencer',
+          type: 'kria',
           position: { x: 60, y: 280 },
           params: { bpm: 240, length: 4, isPlaying: 1, gateLength: 0.5 },
         });

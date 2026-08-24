@@ -150,9 +150,9 @@ test.describe('LUSH GARDEN — generative garden source', () => {
       page,
       [
         { id: 'lg', type: 'lushgarden', position: { x: 500, y: 100 }, domain: 'video' },
-        { id: 'growSeq', type: 'sequencer', position: { x: 100, y: 100 }, domain: 'audio',
+        { id: 'growSeq', type: 'kria', position: { x: 100, y: 100 }, domain: 'audio',
           params: { bpm: 30, length: 8, isPlaying: 0 } },
-        { id: 'rstSeq', type: 'sequencer', position: { x: 100, y: 380 }, domain: 'audio',
+        { id: 'rstSeq', type: 'kria', position: { x: 100, y: 380 }, domain: 'audio',
           params: { bpm: 30, length: 8, isPlaying: 0 } },
       ],
       [
@@ -256,7 +256,7 @@ test.describe('LUSH GARDEN — generative garden source', () => {
           params: { speed: 1 } },
         { id: 'lg', type: 'lushgarden', position: { x: 500, y: 100 }, domain: 'video' },
         { id: 'sink', type: 'videoOut', position: { x: 900, y: 100 }, domain: 'video' },
-        { id: 'idleSeq', type: 'sequencer', position: { x: 100, y: 380 }, domain: 'audio',
+        { id: 'idleSeq', type: 'kria', position: { x: 100, y: 380 }, domain: 'audio',
           params: { bpm: 30, length: 8, isPlaying: 0 } },
       ],
       [

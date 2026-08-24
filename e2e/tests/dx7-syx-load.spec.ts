@@ -64,7 +64,7 @@ test('dx7: uploading a 32-voice SYX populates the dropdown + selecting different
   await spawnPatch(
     page,
     [
-      { id: 'seq', type: 'sequencer', params: { bpm: 240, isPlaying: 1, length: 4 } },
+      { id: 'seq', type: 'kria', params: { bpm: 240, running: 1} },
       { id: 'dx',  type: 'dx7',       params: { voiceCount: 5, level: 1.0 } },
       { id: 'scp', type: 'scope' },
       { id: 'out', type: 'audioOut' },

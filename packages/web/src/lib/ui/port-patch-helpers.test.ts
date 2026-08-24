@@ -314,7 +314,7 @@ describe('compatibleTargetPorts (input → ?)', () => {
 // ----------------------------------------------------------------------------
 
 const sequencerDef: AudioModuleDef = {
-  type: 'sequencer',
+  type: 'kria',
   domain: 'audio',
   label: 'Sequencer',
   category: 'sources',
@@ -426,7 +426,7 @@ describe('compatibleTargetPorts — cv-family interchange (input → output)', (
     // Right-clicking ADSR.attack and choosing SEQUENCER: every output
     // whose type lands in cv (gate / pitch / cv) should be listed —
     // SEQUENCER ships clock + gate (gate) + pitch (pitch).
-    const nodes = { seq1: makeNode('seq1', 'sequencer') };
+    const nodes = { seq1: makeNode('seq1', 'kria') };
     const out = compatibleTargetPorts(
       'cv', // source = ADSR.attack
       'input',

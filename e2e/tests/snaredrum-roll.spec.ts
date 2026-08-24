@@ -108,7 +108,7 @@ test('SNARE DRUM real chain: SEQUENCER → trigger_in → audible stereo hits (L
   await spawnPatch(
     page,
     [
-      { id: 's-seq', type: 'sequencer', position: { x: 60, y: 60 }, domain: 'audio',
+      { id: 's-seq', type: 'kria', position: { x: 60, y: 60 }, domain: 'audio',
         params: { bpm: 120, length: 4, isPlaying: 1, gateLength: 0.25 } },
       { id: 's-sd', type: 'snaredrum', position: { x: 360, y: 60 }, domain: 'audio',
         params: { level: 0 } },
@@ -153,7 +153,7 @@ test('SNARE DRUM real chain: SEQUENCER held gate → gate_in → CONTINUOUS two-
       // A near-continuous HELD gate: every step ON at a long gateLength → the
       // gate stays high across the bar (the roll re-fires per step; the shared
       // wire bed carries the brief inter-step gaps). The REAL default-mode source.
-      { id: 'r-seq', type: 'sequencer', position: { x: 60, y: 60 }, domain: 'audio',
+      { id: 'r-seq', type: 'kria', position: { x: 60, y: 60 }, domain: 'audio',
         params: { bpm: 120, length: 4, isPlaying: 1, gateLength: 0.92 } },
       { id: 'r-sd', type: 'snaredrum', position: { x: 360, y: 60 }, domain: 'audio',
         params: { level: 3, wire: 0.85 } },

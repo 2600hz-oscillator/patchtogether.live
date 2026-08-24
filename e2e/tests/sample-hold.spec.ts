@@ -29,7 +29,7 @@ test('SAMPLE & HOLD chain: BUGGLES → S&H (clocked) → VCO → SCOPE produces 
     page,
     [
       { id: 's-buggles', type: 'buggles',    position: { x: 40,  y: 60 }, domain: 'audio' },
-      { id: 's-seq',     type: 'sequencer',  position: { x: 40,  y: 300 }, domain: 'audio',
+      { id: 's-seq',     type: 'kria',  position: { x: 40,  y: 300 }, domain: 'audio',
         params: { bpm: 240, length: 4, isPlaying: 1, gateLength: 0.5 } },
       { id: 's-sh',      type: 'sampleHold', position: { x: 340, y: 60 }, domain: 'audio',
         params: { scale: 1 } },

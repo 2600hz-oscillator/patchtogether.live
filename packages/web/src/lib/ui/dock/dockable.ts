@@ -28,11 +28,6 @@ export const DOCKABLE_TYPES: ReadonlySet<string> = new Set([
   'attenumix',
   'fader',
   // Sequencers (control-dense, the classic "park it in a rail" cards).
-  'sequencer',
-  'drumseqz',
-  'polyseqz',
-  'writeseq',
-  'macseq',
   // Control surfaces / patch-control meta modules.
   'controlSurface',
   'electraControl',

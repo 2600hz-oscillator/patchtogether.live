@@ -120,7 +120,7 @@ test('TIDY VCO mono chain: SEQUENCER gate+pitch → voice → audible RMS + in-t
     page,
     [
       // The REAL default-mode mono source: the sequencer's internal clock.
-      { id: 'm-seq', type: 'sequencer', position: { x: 60, y: 60 }, domain: 'audio',
+      { id: 'm-seq', type: 'kria', position: { x: 60, y: 60 }, domain: 'audio',
         params: { bpm: 120, length: 4, isPlaying: 1, gateLength: 0.5 } },
       { id: 'm-tv', type: 'tidyVco', position: { x: 420, y: 60 }, domain: 'audio',
         // detune/sub OFF so the spectral probe set is exact; long-ish

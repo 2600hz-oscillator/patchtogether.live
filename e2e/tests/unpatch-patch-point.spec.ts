@@ -470,7 +470,7 @@ async function spawnSeqAdsrWired(page: Page): Promise<void> {
   await spawnPatch(
     page,
     [
-      { id: 'seq', type: 'sequencer', position: { x: 80, y: 120 } },
+      { id: 'seq', type: 'kria', position: { x: 80, y: 120 } },
       { id: 'adsr', type: 'adsr', position: { x: 760, y: 120 } },
     ],
     [

@@ -17,7 +17,7 @@ test.describe.configure({ mode: 'parallel' });
 
 test('keyboard-nav Sequencer: arrow keys never move caret + jump gate<->pitch', async ({ page, rack }) => {
   await spawnPatch(page, [
-    { id: 'seq', type: 'sequencer', params: { bpm: 120, length: 8, isPlaying: 0 } },
+    { id: 'seq', type: 'kria', params: { bpm: 120, running: 0} },
   ]);
 
   // Type a note into step 0's pitch input.
@@ -73,7 +73,7 @@ test('keyboard-nav Sequencer: arrow keys never move caret + jump gate<->pitch', 
 
 test('keyboard-nav Sequencer: rapid-add scenario (type, right, type, right, ...)', async ({ page, rack }) => {
   await spawnPatch(page, [
-    { id: 'seq', type: 'sequencer', params: { bpm: 120, length: 4, isPlaying: 0 } },
+    { id: 'seq', type: 'kria', params: { bpm: 120, running: 0} },
   ]);
 
   const seq = ['c3', 'd3', 'e3', 'f3'];
@@ -126,7 +126,7 @@ test('keyboard-nav Cartesian: ArrowUp from row-1 cell pitch hits gate of cell di
 
 test('keyboard-nav: caret never moves inside the pitch input on arrow keys', async ({ page, rack }) => {
   await spawnPatch(page, [
-    { id: 'seq', type: 'sequencer', params: { bpm: 120, length: 4, isPlaying: 0 } },
+    { id: 'seq', type: 'kria', params: { bpm: 120, running: 0} },
   ]);
 
   const step0 = page.locator('[data-testid="seq-pitch-seq-0"]');
@@ -147,7 +147,7 @@ test('keyboard-nav: caret never moves inside the pitch input on arrow keys', asy
 
 test('keyboard-nav: default value of new sequencer step is c3', async ({ page, rack }) => {
   await spawnPatch(page, [
-    { id: 'seq', type: 'sequencer', params: { bpm: 120, length: 4, isPlaying: 0 } },
+    { id: 'seq', type: 'kria', params: { bpm: 120, running: 0} },
   ]);
 
   // Without injecting any step data, the renderer should default to c3 in

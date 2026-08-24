@@ -329,7 +329,7 @@ test('@audio-drift 04-sequenced', async ({ browser }) => {
     description: 'Sequencer(120 BPM, 4 steps, fixed pattern) → VCO → ADSR → VCA → audioOut. Sequencer clock is the prime drift suspect.',
     patch: {
       nodes: [
-        { id: 'seq', type: 'sequencer', params: { bpm: 120, length: 4, isPlaying: 1, gateLength: 0.5, swing: 0 }, data: { steps: seqSteps } },
+        { id: 'seq', type: 'kria', params: { bpm: 120, running: 1}, data: { steps: seqSteps } },
         { id: 'vco', type: 'analogVco', params: { tune: 0 } },
         { id: 'adsr', type: 'adsr', params: { attack: 0.01, decay: 0.1, sustain: 0.4, release: 0.2 } },
         { id: 'vca', type: 'vca', params: { base: 0, cvAmount: 1 } },
@@ -360,7 +360,7 @@ test('@audio-drift 05-drummergirl', async ({ browser }) => {
     description: 'Sequencer (120 BPM, every 4th step) → DRUMMERGIRL gate → audioOut. Tests Faust drum voice + clocked gate drift.',
     patch: {
       nodes: [
-        { id: 'seq', type: 'sequencer', params: { bpm: 120, length: 16, isPlaying: 1, gateLength: 0.2 }, data: { steps: seqSteps } },
+        { id: 'seq', type: 'kria', params: { bpm: 120, running: 1}, data: { steps: seqSteps } },
         { id: 'dg', type: 'drummergirl', params: { pitch: 0, tone: 0.3, shape: 0.3, volume: 1, decay: 0.15 } },
         COMMON_AUDIO_OUT(),
       ],

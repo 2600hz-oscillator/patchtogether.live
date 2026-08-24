@@ -73,7 +73,7 @@ for (const src of SOURCES) {
       // 800ms test window so transient envelopes don't fool us.
       nodes.unshift({
         id: 'seq',
-        type: 'sequencer',
+        type: 'kria',
         params: { bpm: 240, length: 4, isPlaying: 1, gateLength: 0.5 },
       });
       if (src.pitchPort) {
@@ -141,7 +141,7 @@ test('integration (Group 2): sequencer drives analogVco + wavetableVco in parall
   await spawnPatch(
     page,
     [
-      { id: 'seq', type: 'sequencer',    params: { bpm: 240, length: 4, isPlaying: 1, gateLength: 0.5 } },
+      { id: 'seq', type: 'kria',    params: { bpm: 240, running: 1} },
       { id: 'a',   type: 'analogVco',    params: { tune: 0, fine: 0 } },
       { id: 'w',   type: 'wavetableVco', params: { tune: 0, fine: 0, wavePos: 0.3 } },
       { id: 'mix', type: 'mixer' },

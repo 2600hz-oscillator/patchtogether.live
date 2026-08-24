@@ -58,7 +58,7 @@ async function pickerPortIds(page: Page): Promise<string[]> {
 test.describe('patch-to picker — cv-family interchange', () => {
   test('SEQUENCER.gate → ADSR lists gate + every cv input (attack/decay/sustain/release)', async ({ page, rack }) => {
     await spawnPatch(page, [
-      { id: 'seq', type: 'sequencer', position: { x: 80, y: 120 } },
+      { id: 'seq', type: 'kria', position: { x: 80, y: 120 } },
       { id: 'adsr', type: 'adsr', position: { x: 700, y: 120 } },
     ]);
 
@@ -75,7 +75,7 @@ test.describe('patch-to picker — cv-family interchange', () => {
 
   test('SEQUENCER.pitch → ANALOG VCO lists pitch + cv params (tune/fmAmount), excludes audio', async ({ page, rack }) => {
     await spawnPatch(page, [
-      { id: 'seq', type: 'sequencer', position: { x: 80, y: 120 } },
+      { id: 'seq', type: 'kria', position: { x: 80, y: 120 } },
       { id: 'vco', type: 'analogVco', position: { x: 700, y: 120 } },
     ]);
 
@@ -111,7 +111,7 @@ test.describe('patch-to picker — cv-family interchange', () => {
 
   test('commits a cross-family edge: SEQUENCER.gate → ADSR.attack via the picker', async ({ page, rack }) => {
     await spawnPatch(page, [
-      { id: 'seq', type: 'sequencer', position: { x: 80, y: 120 } },
+      { id: 'seq', type: 'kria', position: { x: 80, y: 120 } },
       { id: 'adsr', type: 'adsr', position: { x: 700, y: 120 } },
     ]);
 

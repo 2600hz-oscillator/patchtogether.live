@@ -102,7 +102,7 @@ test('adsr: gate ping triggers an attack-then-decay envelope on env output', asy
   await spawnPatch(
     page,
     [
-      { id: 'seq', type: 'sequencer', params: { bpm: 240, length: 4, isPlaying: 1, gateLength: 0.5 } },
+      { id: 'seq', type: 'kria', params: { bpm: 240, running: 1} },
       { id: 'env', type: 'adsr',      params: { attack: 0.01, decay: 0.05, sustain: 0.6, release: 0.05 } },
       { id: 'scp', type: 'scope',     params: { timeMs: 200, ch1Range: 1 } },
     ],
@@ -294,7 +294,7 @@ test('timelorde: external clock drives gate-divider outputs', async ({ page, rac
   await spawnPatch(
     page,
     [
-      { id: 'seq', type: 'sequencer', params: { bpm: 480, length: 8, isPlaying: 1, gateLength: 0.5 } },
+      { id: 'seq', type: 'kria', params: { bpm: 480, running: 1} },
       { id: 'tl',  type: 'timelorde', params: { bpm: 480 } },
       { id: 'scp', type: 'scope',     params: { timeMs: 50, ch1Range: 1 } },
     ],
@@ -380,7 +380,7 @@ async function readCurrentStep(page: Page, nodeId: string): Promise<number | nul
 }
 
 for (const seq of [
-  { type: 'sequencer', stepsCount: 4 },
+  { type: 'kria', stepsCount: 4 },
   { type: 'polyseqz',  stepsCount: 4 },
   { type: 'drumseqz',  stepsCount: 4 },
 ]) {
@@ -487,7 +487,7 @@ test('cartesian: external clock drives pitch output (poly cable, lane 0 = pitch)
   await spawnPatch(
     page,
     [
-      { id: 'seq',  type: 'sequencer',  params: { bpm: 480, length: 8, isPlaying: 1, gateLength: 0.5 } },
+      { id: 'seq',  type: 'kria',  params: { bpm: 480, running: 1} },
       { id: 'cart', type: 'cartesian' },
       { id: 'scp',  type: 'scope',      params: { timeMs: 200, ch1Range: 1 } },
     ],
@@ -525,7 +525,7 @@ test('integration (Group 4): sequencer drives 3 drum voices in parallel via mixe
   await spawnPatch(
     page,
     [
-      { id: 'seq', type: 'sequencer',    params: { bpm: 240, length: 4, isPlaying: 1, gateLength: 0.5 } },
+      { id: 'seq', type: 'kria',    params: { bpm: 240, running: 1} },
       { id: 'dg',  type: 'drummergirl' },
       { id: 'mb',  type: 'meowbox' },
       { id: 'qb',  type: 'qbrt' },
