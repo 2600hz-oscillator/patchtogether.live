@@ -11,6 +11,7 @@ import {
   FOXY_WT_SAMPLES,
   FOXY_XYZ_DEFAULTS,
   FOXY_XYZ_3D_DEFAULTS,
+  FOXY_RELIEF_GAIN,
   lumaAt,
   simplifiedRuttetraField,
   boxHeightfield,
@@ -147,24 +148,61 @@ describe('fieldToWavetable', () => {
   });
 
   it('mid-grey field (zero displacement) yields a flat-zero wavetable', () => {
-    // lum 0.5 + yShape 0 => y == base ramp; (y - 0.5)*2 over the row-averaged
-    // box equals the ramp center contributions. With a single-row-per-frame
-    // box and yShape 0 the per-frame value is (v0 - 0.5)*2, NOT zero — so we
-    // pin the EXPECTED ramp-derived value instead of asserting flat zero.
+    // ⚠ THIS TEST'S TITLE WAS ALWAYS RIGHT AND ITS BODY WAS WRONG. A mid-grey
+    // raster displaces nothing, so the field IS its own base ramp and the
+    // relief is zero — a flat-zero table. Until 2026-08-23 the body instead
+    // computed `(fract(f/7) - 0.5) * 2` and pinned THAT, under a comment
+    // explaining that the per-frame value is "NOT zero — so we pin the
+    // EXPECTED ramp-derived value instead of asserting flat zero".
+    //
+    // The ramp it was pinning was the defect: `fieldToWavetable` subtracted
+    // the ramp's midpoint instead of the ramp, so a field with NO data
+    // produced a full-scale ±1 sweep of pure display coordinate. The test
+    // was rewritten to agree with that rather than to fail on it, which is
+    // why nothing caught it — a green gate certifying a live bug, and the
+    // one gate positioned to see it.
     const buf = makeBuffer(8, 8, () => 0.5);
     const params = { ...FOXY_XYZ_DEFAULTS, yShape: 0 };
     const field = simplifiedRuttetraField(buf, 8, 8, params, 8, 8);
     const wt = fieldToWavetable(field, 8, 8);
-    // frame f maps to source row f (8 rows → 8 frames, 1:1). y == fract(f/7),
-    // so the wavetable sample is (fract(f/7) - 0.5) * 2. The last row (f=7)
-    // wraps fract(1.0)=0 → sample -1 (faithful shapedRamp wrap).
-    wt.forEach((frame, f) => {
-      const v0 = f / 7;
-      const base = v0 - Math.floor(v0); // fract
-      const expected = (base - 0.5) * 2;
-      // ~0.004 residual from 8-bit luma quantization → 2-decimal tolerance.
-      for (const v of frame) expect(v).toBeCloseTo(expected, 2);
-    });
+    // The only non-zero left is 8-bit luma quantization: "mid grey" is the byte
+    // 128, i.e. 128/255 = 0.50196, not 0.5. So the bound is ONE CODE STEP
+    // through the gain — derived, not a tolerance dialled until it passed. The
+    // defect this replaces produced values up to the full ±1, ~42× this bound.
+    const QUANTIZATION_BOUND = FOXY_RELIEF_GAIN / 255;
+    for (const frame of wt) {
+      for (const v of frame) {
+        expect(Math.abs(v), 'flat luma ⇒ table within one 8-bit code step of zero')
+          .toBeLessThanOrEqual(QUANTIZATION_BOUND);
+      }
+    }
+  });
+
+  it('a field is scaled by its RELIEF, so the ramp cannot reach the table', () => {
+    // The negative control for the test above, in the other direction: a field
+    // whose ramp is STEEP but whose luma is flat must still be silent, and the
+    // steepness must not leak in. yShape is what shapes the ramp, so sweeping
+    // it across its whole range while the raster stays mid-grey proves the
+    // table is blind to the ruler by construction rather than by coincidence
+    // at one setting.
+    const buf = makeBuffer(8, 8, () => 0.5);
+    for (const yShape of [0, 0.25, 0.5, 0.75, 1]) {
+      const field = simplifiedRuttetraField(buf, 8, 8, { ...FOXY_XYZ_DEFAULTS, yShape }, 8, 8);
+      const wt = fieldToWavetable(field, 8, 8);
+      for (const frame of wt) {
+        for (const v of frame) {
+          expect(Math.abs(v), `yShape ${yShape} must not leak the ramp into the table`)
+            .toBeLessThanOrEqual(FOXY_RELIEF_GAIN / 255);
+        }
+      }
+    }
+    // ...and the POSITIVE leg: real luma variation DOES reach the table, so the
+    // check above is not passing because the function returns zeros.
+    const varied = makeBuffer(8, 8, (x, y) => ((x * 3 + y * 5) % 8) / 7);
+    const vField = simplifiedRuttetraField(varied, 8, 8, { ...FOXY_XYZ_DEFAULTS, yDisp: -1 }, 8, 8);
+    const vWt = fieldToWavetable(vField, 8, 8);
+    const peak = Math.max(...vWt.flat().map((v) => Math.abs(v)));
+    expect(peak, 'a field with real relief must produce a non-trivial table').toBeGreaterThan(0.2);
   });
 
   it('handles an empty field by emitting a flat table of the right dims', () => {

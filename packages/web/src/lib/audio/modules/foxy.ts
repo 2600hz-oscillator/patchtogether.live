@@ -68,8 +68,12 @@
 // FOXY exposes ALL of WAVECEL's params + IO (tune/fine/morph/spread/fold;
 // pitch/fm + morph_cv/spread_cv/fold_cv; out_l/out_r + scope_out +
 // wave3d_out) PLUS THREE sets of mini-SWOLEVCO source controls
-// (src_*/src2_*/src3_*) and the legacy XYZ window controls
-// (xyz_xshape/xyz_yshape/xyz_ydisp — used only by the on-card scope draw).
+// (src_*/src2_*/src3_*) and the XYZ window controls. Of those three,
+// xyz_xshape + xyz_yshape really are picture-only (they move the scanlines'
+// SHADING and RESTING POSITION, both of which the table subtracts), but
+// xyz_ydisp is the field's DEPTH and therefore the audio's — see foxy-map.ts
+// `FOXY_RELIEF_GAIN` for why "the table is the field's relief" makes that split
+// exact rather than approximate.
 // The WAVECEL params keep their original ids so the card + MIDI-learn
 // surface match WAVECEL exactly.
 //
@@ -99,8 +103,11 @@
 //     standalone WAVECEL module for MIDI-learn compatibility.
 //   src_tune / src_fine / src_timbre / src_symmetry / src_fold: source-A mini-SWOLEVCO.
 //   src2_… / src3_…: source-B / source-C mini-SWOLEVCOs (default tunes per the v3 design).
-//   xyz_xshape / xyz_yshape / xyz_ydisp (linear): legacy on-card XYZ window controls
-//     (only affect the on-card scope draw; the wavetable build now uses the 3-axis path).
+//   xyz_xshape / xyz_yshape (linear): XYZ window SHAPE — picture-only, and now
+//     provably so (xshape feeds stroke shading; yshape moves each scanline's
+//     resting position and the ruler alike, so it cancels out of the table).
+//   xyz_ydisp (linear): XYZ DEPTH — scales the luma lift that IS the wavetable,
+//     so it drives the picture and the oscillator by the same factor.
 //   freezeRasterA / B / C / Table (discrete 0..1): per-source freeze toggles.
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
@@ -564,9 +571,9 @@ export const foxyDef: AudioModuleDef = {
       controls: {
         ...controls,
         // XYZ volumetric controls.
-        xyz_xshape: 'XYZ X-SHAPE (0..1) — legacy XYZ-window control affecting the on-card scope draw (the v4 wavetable build uses the 3-axis raster path).',
-        xyz_yshape: 'XYZ Y-SHAPE (0..1) — legacy XYZ-window control affecting the on-card scope draw.',
-        xyz_ydisp: 'XYZ Y-DISPLACE (−1..+1) — legacy XYZ-window control affecting the on-card scope draw.',
+        xyz_xshape: 'XYZ X-SHAPE (0..1) — shades the XYZ window\'s scanlines by warping how raster A\'s terrain is read across the frame. Affects the PICTURE only: it feeds the stroke brightness, never the height, so the wavetable cannot hear it.',
+        xyz_yshape: 'XYZ Y-SHAPE (0..1) — bows the XYZ window\'s scanlines from flat rules toward a radial 3D perspective. Affects the PICTURE only: it moves each scanline\'s resting position AND the ruler that position is measured against, so it cancels exactly out of the wavetable.',
+        xyz_ydisp: 'XYZ Y-DISPLACE (−1..+1) — the DEPTH control, and the one XYZ knob you can hear: it scales how far raster B\'s (and, via Z-HEIGHT, raster C\'s) luma lifts the surface off its resting ramp. That lift IS the wavetable — the table carries the field\'s relief — so turning this up deepens the terrain in the XYZ window and drives the oscillator harder in exactly the same proportion. At 0 the surface is flat and the oscillator is silent. Negative pushes bright pixels UP, matching RUTTETRA.',
         xyz_warp: 'WARP (0..1) — how strongly raster C pulls raster A\'s lookup sideways, twisting the heightfield in the XY plane (a tunnel-like distortion of the wavetable surface). 0 = no warp.',
         xyz_zheight: 'Z-HEIGHT (0..1) — how much raster C adds a secondary vertical displacement on top of B\'s primary heightmap, deepening the 3D relief of the field.',
         xyz_zoom: 'ZOOM (1..8) — crops the displayed/scanned field to a centered sub-region of the box, giving fewer, larger peaks (4 = the default "zoomed-in" look).',
