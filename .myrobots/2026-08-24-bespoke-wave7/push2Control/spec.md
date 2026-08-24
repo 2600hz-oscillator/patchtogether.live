@@ -758,7 +758,7 @@ for (const f of walk('packages/web/src/lib/ui/modules')) {
 }
 ```
 
-against `WEBGL_CONTEXT_RE = /getContext\(\s*['"`]webgl2?['"`]/` (`:40`), applied
+against ``WEBGL_CONTEXT_RE = /getContext\(\s*['"`]webgl2?['"`]/`` (`:40`), applied
 **after** comment-stripping (`:42-53`).
 
 A new `packages/web/src/lib/ui/modules/push2Control/Push2SurfaceBody.svelte`
