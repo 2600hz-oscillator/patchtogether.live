@@ -106,6 +106,59 @@ adding it to the set** — `cameraInput`'s removal from that set on promotion
 (`legacy-fallback.ts:63-65`) is the shipped direction of travel. Recorded because
 *"never added"* and *"deliberately left out"* are indistinguishable from the tree.
 
+### 0.4.1 ⚠ AND 14 OF THE COHORT'S 16 e2e SPECS RUN IN THE SHELL WHERE A FACE CANNOT EXIST
+
+Measured over every spec covering these seven modules
+(`adsr-poly-midilane`, `control-surface`, `es9-card-shows-state`, `es9-hardware`,
+`es9-per-leg-patching`, `es9-shell-lifetime`, `gamepad`, `launchpad-arp`,
+`launchpad-clip-launch`, `launchpad-keys-record`,
+`launchpad-monitor-survives-card-collapse`, `launchpad-perf-controls`,
+`launchpad-scene-repeats`, `midi-lane`, `push2-clip-launch`,
+`toybox-control-surface`):
+
+**14 reach the canvas only through the `rack` fixture**, which is
+`page.goto('/rack?shell=legacy&seed=none')` (`e2e/tests/_fixtures.ts:91-93`). The
+fixture's own comment says why that matters (`:76-83`): *"the bare default `/rack`
+renders each module as a FACEPLATE tile… so a module's own card testids do not
+exist in the lane."* **So promotion is invisible to almost the entire e2e surface
+of this cohort** — those specs stay green because the legacy shell still exists, and
+not one of them observes a face.
+
+**Two exceptions, and both are load-bearing:**
+
+* `es9-shell-lifetime.spec.ts:56` — `page.goto('/rack' + (shell ? '' : '?shell=legacy'))`.
+  It **parameterises over BOTH shells**, which makes it the only spec in the cohort
+  that already exercises the default renderer for its module by construction.
+* `launchpad-monitor-survives-card-collapse.spec.ts:140` — `page.goto('/rack?seed=none')`,
+  the DEFAULT shell only, with the comment *"the configuration the bug needs. Under
+  `?shell=legacy` the card sits in the lane forever and never unmounts"* (`:138-139`).
+
+⚠ **The second one ASSERTS THE PLACEHOLDER, so it is `main`'s own proof of §0.4.**
+`:154-159` spawns `shapes → outToLaunch` and asserts
+`expect(page.locator('[data-testid="out-to-launch-card"]')).toHaveCount(0)` with the
+message *"the shell renders a placeholder tile, not the real card"*, under the
+comment *"Un-migrated (`bespoke-surface`) module under the shell: no real card in
+the lane at all. **Its card exists ONLY inside the dock full-view.**"* A derivation
+from `laneRenderKind` and a shipped CI assertion agreeing is much stronger evidence
+than either alone.
+
+**And it breaks two ways on promotion, with the RED one being the good half:**
+
+* `:173` — after `openFullView(page)`, `toHaveCount(1)` on `out-to-launch-card`.
+  ⛔ **RED**: `DockFullView` is gated on the `migrated` prop, so a promoted module
+  renders its FACE there, not the legacy card. Loud, in the right place, and the face
+  PR owns re-pointing it at the face's body. ⚠ Do NOT simply delete it — the
+  surrounding test proves an owner-facing P0 (the monitor survives card collapse) and
+  that claim must keep a subject.
+* `:155-159` — ⚠ **stays GREEN and becomes a DIFFERENT claim.** Today it means "the
+  shell renders a placeholder"; afterwards it means "the shell renders a faceplate",
+  and `toHaveCount(0)` on the legacy card is true in both worlds. That is the
+  green-and-blind class: an assertion whose precondition changed underneath it.
+
+⚠ **The asymmetry inside the launchpad family is worth stating**: `outToLaunch` has
+the best default-shell coverage in the cohort and `launchpadControlLeft` has **none**
+— all five of its specs are `rack`-fixture specs.
+
 ### 0.5 So the useful output is not one controller shape
 
 It is per-module and it is checkable: **what does each of these seven actually
