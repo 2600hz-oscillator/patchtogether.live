@@ -154,6 +154,24 @@ const EXTENSION_BODY_ROLES: Readonly<Record<string, BodyRule>> = {
   // residue named in this file's header, and the dock VRT baselines are what
   // see it.
   '4plexvid': { role: 'picture', why: 'the four-input video switcher\'s live output preview canvas and its SCREEN switch.' },
+  // ── audioOut — the roster's first AUDIO METER, and the first body whose
+  //    text-role question is about what it DOES NOT draw ────────────────────
+  //
+  // ⚠ THIS BODY DELIBERATELY PAINTS NO NUMBER INTO ITS CANVAS, and that is a
+  // decision rather than an omission, because a meter is exactly the surface
+  // where a dB scale looks like part of the instrument. It draws the two bars,
+  // three UNLABELLED tick marks and the ceiling mark, and nothing else — the
+  // measurement lives on `aria-valuetext`, which is speakable and assertable
+  // and unpainted. The mock this face was built from DID carry a `-inf/-24/
+  // -12/-6/-1` ruler and it was dropped: "a -1.0 dBFS label" is the hero
+  // readout strip with a haircut, and this roster is the only gate that can see
+  // canvas text at all.
+  //
+  // ⚠ THE ONE TEXT IN THE BODY IS DOM, NOT CANVAS, AND IT IS TRANSIENT: a
+  // `setSinkId` REJECTION line that does not exist unless a pick failed —
+  // feedback on a gesture, the same shape the platform's own `ShellFileCell`
+  // paints under its button. At rest there is no error and therefore no text.
+  audioOut: { role: 'picture', why: 'the rack\'s TERMINAL STEREO METER — two per-channel bars off the exact node feeding ctx.destination, with the brickwall ceiling mark read from MASTER_CEILING_DB — plus the setSinkId output-device picker, which is service state no ParamDef can express (the cameraInput precedent). ⚠ NO NUMBERS ARE PAINTED INTO THE CANVAS: no dB readout, no peak value, no axis labels, only unlabelled ticks and the ceiling mark; the measurement is on aria-valuetext. ⚠ IT READS THE PER-CHANNEL TAPS, never the mono one — an AnalyserNode analyses a mono downmix, so the mono key cannot tell only-L from only-R and reads ~0 for an anti-phase pair, which is the exact blindness the per-channel taps were added to remove. ⚠ NO SCREEN SWITCH and NO WATCH MARK, derived exactly as spectrograph\'s and samsloop\'s are: the video screen ruling runs over STRICT_FACES INTERSECT video defs and this is domain audio, and markWatched is a VideoEngine pull-set concept this module has no part in. On the merits it is videoOut\'s argument — with the meter collapsed this face is one fader, and seeing the level is the reason to open it.' },
   b3ntb0x: { role: 'picture', why: 'the feedback-bender\'s live output preview canvas and its SCREEN switch.' },
   backdraft: { role: 'picture', why: 'the 3-D scene preview canvas plus the preview-collapse toggle that became the fleet-wide SCREEN ON/OFF standard.' },
   bentbox: { role: 'picture', why: 'the pixel-bender\'s live output preview canvas and its SCREEN switch.' },

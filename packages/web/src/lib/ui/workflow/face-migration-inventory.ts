@@ -631,11 +631,39 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
   },
   {
     type: 'audioOut',
-    disposition: 'bespoke-surface',
-    why:
-      'a hardware OUTPUT BINDER around one master fader: a live enumerateDevices roster plus the ' +
-      'setSinkId support/error states, which are neither params nor node data and have no cell ' +
-      'kind that reads them.',
+    // ⚠ WAS `bespoke-surface`. The old record read: "a hardware OUTPUT BINDER
+    // around one master fader: a live enumerateDevices roster plus the setSinkId
+    // support/error states, which are neither params nor node data and have no
+    // cell kind that reads them."
+    //
+    // ⚠ EVERY FACT IN THAT SENTENCE IS STILL TRUE — the roster is still service
+    // state, `setSinkId` support is still not a `ParamDef`, and no cell kind
+    // reads either. What changed is that none of it is a BLOCKER, because the
+    // EXTENSION BODY is the rung of the ladder for exactly this. `cameraInput`
+    // had the identical problem (a `<select>` populated from
+    // `enumerateDevices()`, persisted to a `node.data` key) and
+    // `legacy-fallback.ts` records the resolution by name — the picker "moved
+    // into the faceplate's EXTENSION BODY, which is the one slot that can hold a
+    // control no `ParamDef` can express."
+    //
+    // ⚠ IT WAS NOT A FREE READ-THROUGH, AND THE WORK IS WORTH NAMING because
+    // the same shape still waits on `audioIn` above. The card was the SOLE
+    // caller of `setSinkId` and re-applied the saved device from a retry loop in
+    // its own `onMount` — and audioOut is in neither `DOM_SOURCE_LANE_TYPES` nor
+    // `CARD_PRODUCER_LANE_TYPES`, so unlike `cameraInput` NO headless host would
+    // have kept that card alive. Facing it without moving the apply would have
+    // silently stopped the saved output device being restored on load. The apply
+    // moved into the audio-out HANDLE, where the engine's own boot is the event
+    // the retry loop was polling for; the loop is deleted rather than hosted.
+    //
+    // ⚠ AND ITS SURFACE PROBLEM WAS NOT ITS OWN. One instance is PINNED into
+    // every rackspace and is canvas-hidden, so the 🎧 topbar panel is its only
+    // surface — and that panel never called `dockRailRendersFace`. Fixed first,
+    // in its own PR, because it moves `audioIn` too.
+    //
+    // ⚠ NO `why` FIELD — the type refuses one on `generic-face`, which is the
+    // rule enforced by `tsc` rather than by a test.
+    disposition: 'generic-face',
   },
   {
     type: 'blood',
