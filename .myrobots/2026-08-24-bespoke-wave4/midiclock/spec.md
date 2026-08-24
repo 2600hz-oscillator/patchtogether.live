@@ -467,6 +467,15 @@ Completeness: one param, one ranked key (`module-face-lint.test.ts:339`); no
 `controlFamilies`; no `noUserControl` needed — `divisor` is exactly the kind of param
 a player *should* control.
 
+⚠ **BOTH CELLS REACH THE LANE — CHECKED, NOT ASSUMED**, and D4's fix depends
+entirely on it. Only the `panel` kind is dock-only, by a named rule filtering on
+`kind === 'panel'` (`panelCellKeys()`, `shell-cells.ts:1805-1817`); an `action`
+cell is not restricted. The lane's roster derivation `laneOrder()`
+(`curated-face.ts:131-143`) drops exactly a declared `hero.cell` and each
+`xyPads` entry's `x` key, and **midiclock declares neither**. So `divisor` and
+`midiclock-connect` both survive to the lane tier, which is what makes the
+connect gesture reachable without opening the dock.
+
 ⚠ **The action cell needs a probe** and this is the case CLAUDE.md names: *"An
 ACTION-shaped cell needs a probe, exactly like a PANEL does."* `connect()` writes
 nothing to the graph — it grants MIDI access — so `readParam`/`readData` are

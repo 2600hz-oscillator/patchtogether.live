@@ -357,6 +357,20 @@ it looking at** — without opening anything. Today that costs a dock full-view 
 because an un-migrated matrixMix renders as a `moduleShellPlaceholder`
 (`legacy-fallback.ts:146`, `:151-163`).
 
+⚠ **AND THE CELLS REACH THE LANE — CHECKED, NOT ASSUMED.** It would be easy to
+assume that a shell cell is a dock thing, which would collapse this entire
+argument. Only the `panel` kind is dock-only, and it is dock-only by a *named*
+rule: `panelCellKeys()` (`shell-cells.ts:1805-1817`) filters on
+`kind === 'panel'` specifically, *"a 280 px SVG has no business being SELECTED
+into a 46 px lane knob column"*. The lane's own roster derivation,
+`laneOrder()` (`curated-face.ts:131-143`), drops exactly two things — a declared
+`hero.cell` and each `xyPads` entry's `x` key — and **matrixMix declares
+neither**, so its full `order` survives to every tier.
+
+The remaining question is the tier CAP (`faceTierCap`, `curated-face.ts:284`)
+rather than eligibility, and two cells is not where a cap bites. M5 in §13
+measures it rather than assuming that too.
+
 ### 5.3 BANDS — one, and no tab rail
 
 Two selector cells is one band. `DOCK_TAB_MIN_BANDS = 7`
@@ -727,6 +741,12 @@ was not performed.
   after its selector moves to the face. Its subject is undock-restores-position, not
   which element renders; confirm the assertion still fails when position is not
   restored.
+* **M5 — both selector cells actually PAINT in the lane tile**, at every lane tier
+  the shell uses. Eligibility is settled (§5.2); the open question is
+  `faceTierCap` (`curated-face.ts:284`). ⚠ Assert the cells are **present**, not
+  merely that the face resolves — the `joystick` shape (`module-face-lint.test.ts:2984-3014`)
+  is a face that ranks controls and renders zero of them, and it is exactly what a
+  two-cell face at the tightest tier could become.
 
 ---
 
