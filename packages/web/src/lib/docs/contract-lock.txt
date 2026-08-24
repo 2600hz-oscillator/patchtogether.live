@@ -3442,6 +3442,8 @@ vfpgaRunner param p5 0..1 linear default=0
 vfpgaRunner param p6 0..1 linear default=0
 vfpgaRunner param p7 0..1 linear default=0
 vfpgaRunner param p8 0..1 linear default=0
+vfpgaRunner family vfpga-cv kind=cell prefix=vfpga-cv
+vfpgaRunner family vfpga-preset kind=other prefix=vfpga-preset
 videobox meta domain=video
 videobox in play_trigger gate param=cv_play_trigger edge=trigger
 videobox out audio_l audio

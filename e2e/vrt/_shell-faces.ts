@@ -3385,6 +3385,39 @@ export const FACES = [
     // and nothing that advances between frames. The lamps change only when
     // `notify()` fires, and `notify()` fires only on a MIDI transport message.
   },
+
+  // ── VFPGA-RUNNER — the reconfigurable HOST, and the roster's only face whose
+  //    picture is a different PROGRAM depending on `node.data` ────────────────
+  {
+    type: 'vfpgaRunner',
+    // THREE bands: `program` (the bitstream picker), `slots` (the eight generic
+    // param knobs), `modulation` (the CV conditioning rack). No hero, so no band
+    // is emptied and the declared count IS the rendered count. Three is well
+    // under DOCK_TAB_MIN_BANDS and nothing is padded to reach it.
+    pages: 3,
+
+    videoFaceWhy:
+      'the dock faceplate carries this host\'s LIVE OUTPUT via hasVideoSurface plus the '
+      + 'extension body\'s own preview canvas, so the scene must take the VIDEO boot path — an '
+      + 'audio-path boot would wait out the full 90 s test timeout for a mixer-column membership '
+      + 'a video node never joins. '
+      + '⚠ AND THE FREEZE THE FLAG ALSO ENGAGES IS A NO-OP HERE, WHICH IS THE HONEST STATE '
+      + 'RATHER THAN A GAP: this def declares no `freeze` param, so `freezeFaceVideo` writes a '
+      + 'key nothing reads — and its assertion still passes, because the picture is ALREADY '
+      + 'still. The bitstream loaded on a fresh spawn is `smpte-bars` (DEFAULT_VFPGA_ID), whose '
+      + 'own spec header states the property this scene depends on: "Pure GL, deterministic (no '
+      + 'uTime in the colour math - the only time-varying input is the CV), so its CPU-snapshot '
+      + 'preview + a frozen-CV VRT scene are pixel-stable." With nothing patched the CV is 0, so '
+      + 'every frame is the same 75% colour-bar field. '
+      + '⚠ THE MODULATION RACK\'S TRACE CANVASES ARE STILL CANVASES AND freezeFaceVideo SAMPLES '
+      + 'THEM TOO. They are stable for a structural reason rather than a lucky one: with no cable '
+      + 'patched the post-scale/offset value is a constant 0, and `drawToyboxInputScope` draws a '
+      + 'ring of N equal samples as a flat line from x=0 to x=w-1 with a fill under it — the SAME '
+      + 'path for every ring length from 2 upward, so the picture does not depend on how many '
+      + 'frames elapsed before the capture. '
+      + '⚠ AND THE FABRIC FLOORPLAN IS NOT IN FRAME: `showFabric` is component state defaulting '
+      + 'to false, so the body mounts the preview canvas and the floorplan canvas does not exist.',
+  },
 ] as const;
 
 /**

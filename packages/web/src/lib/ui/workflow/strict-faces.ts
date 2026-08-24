@@ -4351,6 +4351,37 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // the three topbar surfaces with the faceplate system is real work and does
   // not belong on a module PR; #2173 repaired one of the three.
   'midiclock',
+  // VFPGA-RUNNER (2026-08-24) — the fleet's only RECONFIGURABLE module, and the
+  // entry whose ranking argument is that its identity is not a param at all.
+  //
+  // Every other video module IS one effect: its params are the effect. This one
+  // is a HOST that runs whichever `.vfpga` bitstream is loaded into it, and
+  // swapping that disposes the running GL pipeline and builds a different one.
+  // So the picker ranks FIRST — not as chrome above the controls, but because
+  // it is the control that decides what the other eleven mean — then the eight
+  // generic slot knobs in slot order (a spec maps its own params onto p1 upward,
+  // so slot order IS that program's priority), then the modulation rack.
+  //
+  // ⚠ EIGHT OF ITS SIXTEEN PARAMS DECLARE `noUserControl`. `cv1..4_val` and
+  // `g1..4_evt` exist so the CV bridge has somewhere to write; the def has said
+  // so in prose since it shipped and its card renders a knob for none of them.
+  // Both arms are anchored to the def's own ports (`writer: 'cv-port'`), and
+  // module-face-lint INVERTS its render-parity assertion for them — they must
+  // render exactly ZERO dock cells where every other param renders exactly one.
+  //
+  // ⚠ THREE AFFORDANCES WOULD HAVE BEEN DELETED BY THIS PROMOTION, and all
+  // three are recovered rather than exempted: the "load preset…" `<select>`
+  // (now the `vfpga-preset-{n}` selector cell), the per-CV SCALE/OFFSET
+  // attenuverters + traces and the gate lamps (now the `vfpga-cv-{n}`
+  // PF-14 panel — none of them are ParamDefs, and the roster is dynamic), and
+  // the `fabric` floorplan button (now in the extension body beside the SCREEN
+  // switch, which is where an alternate view of the picture belongs).
+  //
+  // ⚠ THE MODULATION PANEL'S PROBE DRIVES **OFFSET**, NOT SCALE, and the reason
+  // is measured: faces-parity always drags UPWARD, and `DEFAULT_INPUT_SCALE` is
+  // +1 — the TOP of the attenuverter's -1..+1 range. A SCALE probe would drag a
+  // control already at its ceiling and fail on a live panel.
+  'vfpgaRunner',
 ]);
 
 /**
