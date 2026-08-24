@@ -1075,13 +1075,19 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // (linux/moog921a, linux/moog921b, linux/moog904b) pending a `task vrt:update`
   // run on linux CI. DSP unit + ART (source-SHA-pinned .f32) + per-module-
   // per-port e2e provide the functional coverage.
-  // TWOTRACKS — 2-reel tape-loop emulator (P1). Waveform canvases are masked
-  // (see MODULES canvas entry above). The card chrome (buttons/knobs/LEDs/labels)
-  // is deterministic but VRT baselines are pending a `task vrt:update` run on
-  // each platform. Unit (transport state machine) + e2e (record→play RMS assert)
-  // + per-module-per-port provide functional coverage. Promote + capture baselines
-  // once darwin + linux PNGs are captured via vrt-update.yml workflow_dispatch.
-  twotracks: 'VRT baseline pending — 2-reel tape-loop emulator P1. Waveform canvas masked in MODULES. Unit (transport) + e2e (record→play→SCOPE RMS) + per-module-per-port cover function. Promote once darwin + linux baselines captured via vrt-update.yml.',
+  // TWOTRACKS — 2-reel tape-loop emulator. This entry covers the LEGACY CARD
+  // scene only; the module is PROMOTED and its faceplate IS captured (the
+  // `workflow-shell-faces` dock + compact scenes), so the visual gate is not
+  // absent here — it moved to the surface that ships.
+  //
+  // ⚠ THE EXIT CONDITION USED TO NAME A CAPTURE MODEL THAT NO LONGER EXISTS. It
+  // read "promote once darwin + linux baselines captured", which cannot be
+  // satisfied and therefore could never be discharged: `snapshotPathTemplate`
+  // has no `{platform}` segment, so there is ONE baseline set and LINUX CI
+  // AUTHORS IT. A two-platform condition is not a high bar, it is an unreachable
+  // one, and an exemption whose exit is unreachable is permanent by accident
+  // rather than by decision. Restated below in the vocabulary that exists.
+  twotracks: 'Legacy-card scene only — the FACEPLATE is captured (face-twotracks-dock / -compact). Both reel canvases are empty on a fresh spawn and masked (see the MODULES entry). Drop this entry when the legacy card is deleted, or earlier by dispatching `GREP=twotracks task vrt:commit` to let linux CI author the card baseline — the ONE set; there is no per-platform capture to wait for.',
   // BACKDRAFT (video feedback generator) — the ORIGINAL reason was a PAIR:
   // user-resizable (variable size) AND a live, non-deterministic feedback
   // PREVIEW (like ruttetra / videoOut / toybox). Both halves are now gone:
