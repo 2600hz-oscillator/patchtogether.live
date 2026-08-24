@@ -283,13 +283,13 @@ export const synesthesiaDef: AudioModuleDef = {
   // onward is DOCK-ONLY. Copy B never reaches a lane tier, which is honest — a
   // rack that patches both copies is working in the dock anyway.
   //
-  // ⚠ THREE BANDS, AND `pages` DISAGREES WITH `order` ON PURPOSE. `order` is
-  // priority (copy A entirely, then copy B); `pages` is SIGNAL ORDER, so each
-  // band holds the same stage of BOTH copies with the copies as CLUSTERS. That
-  // is the field's own worked example — two copies of one circuit are "the same
-  // idea, twice", which is a ~14 px sub-header, not a ~81 px band each. Six
-  // per-copy bands would have been padding, and `clusterFlow: 'row'` sets the
-  // two copies side by side so the whole face is three rows instead of six.
+  // ⚠ `pages` DISAGREES WITH `order` ON PURPOSE. `order` is priority (copy A
+  // entirely, then copy B); `pages` is SIGNAL ORDER, so each band holds the same
+  // stage of BOTH copies with the copies as CLUSTERS. That is the field's own
+  // worked example — two copies of one circuit are "the same idea, twice", which
+  // is a ~14 px sub-header, not a ~81 px band each. Eight per-copy bands would
+  // have been padding, and `clusterFlow: 'row'` sets the two copies side by side
+  // so the whole face is four rows instead of eight.
   //
   // ⚠ NO TAB RAIL, and the count is not the reason — the ARGUMENT is.
   // `DOCK_TAB_MIN_BANDS` is 7 and this is 3, but the owner's control-heavy
@@ -343,19 +343,47 @@ export const synesthesiaDef: AudioModuleDef = {
       {
         id: 'env',
         label: 'env out',
-        // POLARITY lives HERE rather than in a band of its own, and the reason is
-        // that it is a statement about the SAME two cables DEPTH scales: both
-        // shape what leaves `env_slow` / `env_fast` and neither touches the audio
-        // taps, the gates or the triggers. Scope reached the identical conclusion
-        // about `ch1Range` and put it inside the CH1 cluster.
-        hint: 'how much modulation each band sends, and in which polarity',
-        controls: COPIES.flatMap((c) => [
-          ...BANDS.map((b) => `${c}_envdepth${b}`),
-          `${c}_bipolar`,
-        ]),
+        hint: 'how much modulation each band sends',
+        controls: COPIES.flatMap((c) => BANDS.map((b) => `${c}_envdepth${b}`)),
         clusters: COPIES.map((c) => ({
           label: `copy ${c}`,
-          controls: [...BANDS.map((b) => `${c}_envdepth${b}`), `${c}_bipolar`],
+          controls: BANDS.map((b) => `${c}_envdepth${b}`),
+        })),
+        clusterFlow: 'row',
+      },
+      // ⚠ POLARITY IS ITS OWN BAND, AND A MEASUREMENT PUT IT THERE.
+      //
+      // It was first authored INSIDE the `env out` clusters, on a real argument:
+      // it is a statement about the SAME two cables DEPTH scales, and scope
+      // reached exactly that conclusion about `ch1Range` and put it inside the
+      // CH1 cluster. The dock scene's width assertion falsified the arrangement,
+      // not the argument.
+      //
+      // MEASURED on the faceplate (linux CI and reproduced locally, identical
+      // numbers): content 591 CSS px, `.faceplate-body` 686 — 95 px of empty
+      // plate against a 40 px ceiling. Ablated in the live DOM, one element at a
+      // time: hiding the VU wall, the title row, the badge row, the `input` band
+      // or the `band gain` band moved the body NOT AT ALL (686 every time);
+      // hiding the `env out` band dropped it to 537; and hiding JUST ITS TWO
+      // SEGMENTED CELLS dropped it to 537 as well. So the two POLARITY cells
+      // sitting in a cluster of four knobs were the entire 149 px, while drawing
+      // 70 px each.
+      //
+      // A four-knob cluster and a segmented cell are different cell SHAPES, and
+      // a cluster is for the same idea TWICE — four band depths are that, a
+      // polarity switch is not. Splitting it out costs one ~81 px band and buys
+      // back 95 px of width the owner ruling calls useless grey space; it also
+      // leaves `env out` the identical shape as `band gain`, which measures 537.
+      // Still four bands, still under `DOCK_TAB_MIN_BANDS`, still signal-ordered:
+      // in → balance the bands → how much they send → in which polarity.
+      {
+        id: 'polarity',
+        label: 'cv polarity',
+        hint: 'the convention the env CV outputs follow — set once for the destination',
+        controls: COPIES.map((c) => `${c}_bipolar`),
+        clusters: COPIES.map((c) => ({
+          label: `copy ${c}`,
+          controls: [`${c}_bipolar`],
         })),
         clusterFlow: 'row',
       },

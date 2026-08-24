@@ -356,9 +356,9 @@ describe('synesthesia face — the ranking is COPY-GROUPED, the bands are SIGNAL
     expect([...keys].sort()).toEqual([...face.order].sort());
   });
 
-  it('declares THREE bands, the copies as CLUSTERS in a ROW — not six pages', () => {
+  it('declares FOUR bands, the copies as CLUSTERS in a ROW — not eight pages', () => {
     const plan = dockFacePlan(def)!;
-    expect(plan.map((b) => b.id)).toEqual(['input', 'bands', 'env']);
+    expect(plan.map((b) => b.id)).toEqual(['input', 'bands', 'env', 'polarity']);
     for (const band of plan) {
       // Two clusters per band, one per copy, side by side — the ~14 px
       // sub-header, not a ~81 px band each.
@@ -369,12 +369,32 @@ describe('synesthesia face — the ranking is COPY-GROUPED, the bands are SIGNAL
     }
   });
 
-  it('⚠ POLARITY sits in ENV OUT, beside the depths that scale the same two cables', () => {
-    const env = dockFacePlan(def)!.find((b) => b.id === 'env')!;
+  it('⚠ POLARITY IS ITS OWN BAND — a MEASUREMENT overturned the first authoring', () => {
+    // It was first authored inside the `env out` clusters, on scope's `ch1Range`
+    // argument: it shapes the same two cables DEPTH scales. The dock scene's
+    // width assertion falsified the ARRANGEMENT, not the argument — a segmented
+    // cell sitting in a cluster of four knobs reserved 149 CSS px of plate while
+    // drawing 70, ablated in the live DOM one element at a time (hiding just
+    // those two cells dropped `.faceplate-body` from 686 to 537, the identical
+    // value as hiding the whole band). Pinned here so the split reads as
+    // derived rather than as taste, and so re-merging them goes red in the unit
+    // lane instead of only in a capture.
+    const plan = dockFacePlan(def)!;
+    const env = plan.find((b) => b.id === 'env')!;
+    const pol = plan.find((b) => b.id === 'polarity')!;
     for (const c of COPIES) {
-      const cluster = env.clusters.find((x) => x.label === `copy ${c}`)!;
-      expect(cluster.controls.map((x) => x.key)).toContain(`${c}_bipolar`);
+      const envCluster = env.clusters.find((x) => x.label === `copy ${c}`)!;
+      expect(envCluster.controls.map((x) => x.key)).toEqual(
+        BANDS.map((b) => `${c}_envdepth${b}`),
+      );
+      const polCluster = pol.clusters.find((x) => x.label === `copy ${c}`)!;
+      expect(polCluster.controls.map((x) => x.key)).toEqual([`${c}_bipolar`]);
     }
+    // The shape that made the difference: `env out` is now UNIFORM — every cell
+    // in it is a plain knob, the same shape as `band gain`, which measured 537.
+    const envKeys = env.clusters.flatMap((x) => x.controls.map((y) => y.key));
+    expect(envKeys.every((k) => k.includes('_envdepth'))).toBe(true);
+    expect(envKeys.some((k) => SWITCHES.includes(k))).toBe(false);
   });
 
   it('declares NO tab rail — and the count is not why', () => {

@@ -3388,7 +3388,7 @@ export const FACES = [
   // ── SYNESTHESIA (2026-08-24) ──────────────────────────────────────────────
   {
     type: 'synesthesia',
-    pages: 3,
+    pages: 4,
     // ⚠ NO `simPin`, AND THAT IS A DERIVED ANSWER RATHER THAN AN OMISSION —
     // stated because the sibling entry three above (`scope`) DOES pin, on what
     // looks like the same seam.

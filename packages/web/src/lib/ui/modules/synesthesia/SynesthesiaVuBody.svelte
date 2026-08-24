@@ -167,9 +167,13 @@
 <div class="syn-wall" data-testid="synesthesia-face-body">
   <div class="preview-wrap" data-preview-collapsed={previewCollapsed ? 'true' : 'false'}>
     {#if !previewCollapsed}
-      <!-- 208 × 96 per copy — the SAME buffer the legacy card has always used,
-           so the two surfaces draw the identical picture through the identical
-           pure function rather than two sizings of it. -->
+      <!-- 240 × 96 per copy. The card uses 208; the SHARED PURE FUNCTION is what
+           makes the two surfaces agree, not a shared number — `drawVuMeters`
+           divides `w` into four columns, so the picture is identical at both
+           sizes. The face is wider because the control bands beneath it already
+           ask the plate for more, and leaving a margin around the reason to open
+           the dock is the grey space the width ruling is about (see the style
+           block for the measurement). -->
       <!-- ⚠ THE ACCESSIBLE NAME IS ON A SIBLING, NOT ON THE CANVAS, and that is
            the scope precedent rather than a workaround: a `<canvas>` may not
            carry `role="img"` (svelte-check a11y), so each copy's meter pairs its
@@ -179,7 +183,7 @@
         <div class="vu">
           <canvas
             bind:this={canvasA}
-            width={208}
+            width={240}
             height={96}
             data-testid="synesthesia-face-vu-a"
             data-node-id={nodeId}
@@ -189,7 +193,7 @@
         <div class="vu">
           <canvas
             bind:this={canvasB}
-            width={208}
+            width={240}
             height={96}
             data-testid="synesthesia-face-vu-b"
             data-node-id={nodeId}
@@ -234,22 +238,40 @@
      is ~428 px — narrower than the `band gain` band's eight dials in two
      clusters — so the wall never sets the plate's width. `max-width` on the
      canvases keeps it that way if the plate is ever narrower than the meters. */
+  /* ⚠ EVERY WIDTH HERE IS DEFINITE, AND BOTH HALVES OF THAT WERE MEASURED.
+     `.faceplate-body` is `width: max-content`, and the dock scene fails a face
+     that RESERVES more width than it DRAWS (40 CSS px ceiling).
+
+     The first draft wrote `.vu { width: 100%; max-width: 208px }` inside a
+     `flex-wrap: wrap` row. That reads as "responsive" and is a max-content trap:
+     a percentage-width flex child has no definite basis to resolve against under
+     intrinsic sizing. Definite tracks make the asked-for width and the drawn
+     width the same number by construction.
+
+     ⚠ AND THE TRACK IS 240, NOT THE CARD'S 208, WHICH IS THE OTHER HALF. With
+     the meters at 208 the wall drew 428 px while the control bands beneath it
+     were already asking the plate for 537 — so the picture was the WIDEST DRAWN
+     thing on the plate and STILL left 55 px of grey (measured: content 482, body
+     537). The fix is not to add width, it is to USE the width the controls have
+     already earned: 2×240 + 12 = 492, which spends the plate the bands define
+     instead of leaving a margin around a picture that is the reason to open the
+     dock. `drawVuMeters` is scale-free (it divides `w` into four columns), so
+     the card at 208 and the face at 240 draw the identical picture at two sizes
+     — the shared pure function is what guarantees that, not a shared number. */
   .copies {
     display: flex;
     gap: 12px;
-    flex-wrap: wrap;
     justify-content: center;
   }
   .vu {
     position: relative;
     display: block;
-    width: 100%;
-    max-width: 208px;
+    width: 240px;
   }
   .vu canvas {
     display: block;
-    width: 100%;
-    height: auto;
+    width: 240px;
+    height: 96px;
     border: 1px solid var(--border);
     border-radius: 3px;
     background: #0c0e12;

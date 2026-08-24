@@ -4355,10 +4355,21 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   //
   // THE RACK'S LISTENER — two independent copies of a 4-band analyser, 22
   // params, 4 inputs and FORTY-EIGHT output jacks, the largest output roster on
-  // any faced module. Three bands (`input` / `band gain` / `env out`), each
-  // holding the same stage of BOTH copies with the copies as CLUSTERS, because
-  // two copies of one circuit are the "same idea, twice" that a ~14 px
-  // sub-header exists for and a ~81 px band each does not.
+  // any faced module. Four bands (`input` / `band gain` / `env out` /
+  // `cv polarity`), each holding the same stage of BOTH copies with the copies
+  // as CLUSTERS, because two copies of one circuit are the "same idea, twice"
+  // that a ~14 px sub-header exists for and a ~81 px band each does not.
+  //
+  // ⚠ THE FOURTH BAND IS A MEASUREMENT, NOT A PREFERENCE. Polarity was first
+  // authored INSIDE the `env out` clusters on scope's `ch1Range` argument — it
+  // shapes the same two cables DEPTH scales. The dock scene's width assertion
+  // falsified the arrangement: content 591 CSS px against a `.faceplate-body` of
+  // 686, i.e. 95 px of empty plate on a 40 px ceiling. Ablated in the live DOM
+  // one element at a time, hiding the VU wall / the title row / the badge row /
+  // `input` / `band gain` moved it NOT AT ALL, hiding `env out` dropped it to
+  // 537, and hiding JUST ITS TWO SEGMENTED CELLS dropped it to 537 as well. A
+  // segmented cell in a cluster of four knobs was the whole 149 px while drawing
+  // 70 each. Splitting it out costs one band and buys back the grey space.
   //
   // ⚠ IT IS THE FIFTH PROMOTED `CARD_PRODUCER_LANE_TYPES` MEMBER, AND THE
   // FIRST WHOSE PRODUCER AND WHOSE PICTURE ARE DIFFERENT THINGS. cube's hero
