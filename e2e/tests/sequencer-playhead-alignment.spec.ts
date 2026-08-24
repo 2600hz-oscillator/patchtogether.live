@@ -70,7 +70,25 @@ async function readEngine<T = unknown>(
   ) as T | null;
 }
 
-test('polyseqz: playhead matches sounding step (no off-by-one at start)', async ({ page, rack }) => {
+// ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; the body and every assertion
+// in it are UNCHANGED, so un-parking is deleting one `.fixme` plus one
+// SKIP_BUDGET entry.
+//
+// ONE recovered-on-retry occurrence on a hot shard (failed, then passed on the
+// retry, which #1903 correctly reddens rather than absorbs). ⚠ THE SCOPE OF
+// WHAT THIS COSTS IS NARROW AND WORTH STATING EXACTLY, because "park it" is
+// only defensible when the coverage loss is named: FOUR of this file's five
+// legs keep running, and two of them still cover polyseqz specifically — the
+// `all sequencers` audit guard at the bottom reads `currentStep` for EVERY
+// sequencer including this one, and the `sequencer` / `drumseqz` / `score` legs
+// exercise the identical freeze→read→advance instrument against the same seam.
+// So what lapses is the per-module off-by-one assertion for polyseqz alone, not
+// playhead alignment as a property and not this file's instrument.
+//
+// Not root-caused: the failure is in the freeze/advance handshake's timing
+// under shard load, and it has exactly one observation. A second occurrence
+// makes it a real investigation rather than a park.
+test.fixme('polyseqz: playhead matches sounding step (no off-by-one at start)', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — one recovered-on-retry occurrence on a hot shard; one leg of five, and polyseqz stays covered by the `all sequencers` currentStep audit guard plus three sibling legs on the same instrument' } }, async ({ page, rack }) => {
   // 60 BPM, 8th notes (POLYSEQZ default) → step every 500 ms. Slow enough
   // that the freeze-after-waitForStep window is comfortable.
   await spawnPatch(page, [

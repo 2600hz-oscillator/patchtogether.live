@@ -3905,6 +3905,90 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // `computeWebglHash`. Unlike frametable the FACTORY is untouched — VIDEOCUBE's
   // slot loads are session-only, so there is no re-hydrate to move.
   'videocube',
+  // SCOPE (2026-08-23) — the rack's PROBE, and the face whose central decision
+  // is a glyph REFUSAL that no gate would have made for it.
+  //
+  // ⚠ IT IS THE INVERSE OF DOCKSCOPE'S REFUSAL, AND THAT IS THE ENTRY. Read the
+  // dockscope entry above first: it declares `outputs: []`, so
+  // `primaryAudioOutPortId` returns null, every glyph literal falls to
+  // `{kind:'static'}`, and the unconditional dead-glyph clause catches it. That
+  // refusal is MECHANICAL — the platform makes it for you and an author who
+  // never thought about it still ships the right thing.
+  //
+  // SCOPE HAS NO SUCH PROTECTION. `scope.ts` declares `ch1_out` and `ch2_out`
+  // as `type: 'audio'`, so `primaryAudioOutPortId(scopeDef)` returns
+  // `'ch1_out'` and `glyphBinding` short-circuits to `{ kind: 'live-audio',
+  // portId: 'ch1_out' }`. That binding is LIVE. The dead-glyph clause is green.
+  // `VALID_GLYPHS` is satisfied. NOTHING ANYWHERE REDDENS.
+  //
+  // And the picture would be wrong in the one way that matters most here.
+  // `ch1_out` IS `gain1`: the factory creates it, connects it to `analyser1`,
+  // publishes it, and NOTHING ever writes `gain1.gain` — `setParam` writes the
+  // nine CV shadows instead. So `ch1_out` is bit-exactly the module's CH1
+  // INPUT, and a `live-audio` glyph on it paints a raw 2048-sample analyser
+  // dump invariant to `timeMs`, to `ch1Scale`/`ch1Offset`/`ch1Range`, to
+  // `mode`, to `intensity`, and to `ch2*` entirely. EVERY ONE OF THIS MODULE'S
+  // NINE CONTROLS.
+  //
+  // ⚠ THE `rasterize` NOTE ALREADY NAMED THIS CLASS — "resolves LIVE AND IS
+  // STILL BLIND, which no gate looks for" — and it is worse on scope for a
+  // reason specific to what the module IS. On a raster module a passthrough
+  // waveform is merely uninformative; nobody expects that tile to be a trace.
+  // ON A SCOPE, A WAVEFORM TRACE IS EXACTLY WHAT A PLAYER WILL BELIEVE IS THE
+  // SCOPE'S TRACE. It would not fail to inform, it would MISINFORM. So the face
+  // declares `glyph: 'none'` — not because nothing fits, but because the thing
+  // that fits is FALSE — and `scope-face-model.test.ts` asserts the mechanism
+  // as a PERMANENT NEGATIVE LEG, because the argument's whole premise is that
+  // no gate records it.
+  //
+  // ⚠ AND THE #2160 WIDENING IS NOT THE ESCAPE HATCH. A layout-source
+  // `glyph: 'algorithm'` would now resolve live-kind despite the audio outputs,
+  // and it was evaluated and refused on measurement: `ShellExtensionGlyphProps`
+  // is `{ num, numbers?, testid? }` with no `nodeId`, and `ModuleShell`
+  // hardcodes `topologyValue` to 0 — so every instance of scope would draw a
+  // BYTE-IDENTICAL SVG that cannot vary per node or over time, in the tile
+  // remainder that the three ranked cells want. The widening removed the
+  // refusal; it did not add a data path.
+  //
+  // THREE `options` ROSTERS, every name PROMOTED. `AUDIO`/`CV` come word for
+  // word from `dockscope.range` and from `ScopeCard`'s own button, which is the
+  // point of a fleet vocabulary rather than laziness. `SPLIT` is the one new
+  // word and it is a CORRECTION: the card paints `⇆` — a glyph that reads as
+  // "swap" — while the def's own comment and `scope-draw.ts`'s `drawSplit` have
+  // always called it split. The `mode` label moved `XY` → `Mode` in the same
+  // edit, because a cell captioned `XY` whose two positions read `SPLIT` and
+  // `XY` collides with itself.
+  //
+  // THE TUNER IS THE ONE OWNER-VISIBLE CALL. `read('pitch')` is an engine seam
+  // no other module has and nothing else consumes, and the card carries it as a
+  // labelled DOM row of derived values under the picture — structurally the
+  // HERO READOUT STRIP deleted fleet-wide on 2026-08-19. It is neither dropped
+  // nor hidden: the METER moves INTO the instrument as a graticule strip
+  // `drawScope` paints along the screen's bottom edge (the same class of
+  // annotation as its existing `±1.0`/`±5V` corner label), and the Hz, cents
+  // and confidence move to `aria-label` — speakable, assertable, unpainted.
+  //
+  // ⚠ ZERO ATTEST, MEASURED RATHER THAN REASONED.
+  // `bash scripts/webgl-attest-hash.sh --list | grep -i scope` returns exactly
+  // ONE path, `lib/video/toybox-scope-draw.ts` — a DIFFERENT module. `scope.ts`,
+  // `scope-draw.ts` and `ScopeCard.svelte` are absent from the basis, because
+  // the sweep is `lib/video/**` plus any `ui/modules` `.svelte` that creates a
+  // WebGL CONTEXT plus two named audio defs (`cube.ts`, `wavesculpt.ts`). So
+  // the three rosters — which would cost a GPU re-attest on `wavesculpt` — are
+  // free here. ⚠ Basis rule (2) is derived from CONTENT, so a body written
+  // against a WebGL context would enter the basis automatically and make every
+  // future edit to it cost a re-attest. `ScopeScreenBody.svelte` is 2D, and
+  // `drawScope` is a `CanvasRenderingContext2D` function, so there is no reason
+  // to reach for GL and a measured reason not to.
+  //
+  // ⚠ THE CARD DEBT IS PAID IN THE SAME PR, and NOT by promotion.
+  // `ScopeCard.svelte`'s XY toggle was a bare proxy assignment — not undoable,
+  // not origin-tagged — beside a range toggle three lines down that was both.
+  // #2025 argued a face pays that by construction; `raw-write-ledger.ts`
+  // refutes it by name, because promotion does not delete the card and the
+  // per-card VRT sweep still renders it under `?shell=legacy`. The card is
+  // edited and the ledger entry deleted in one diff.
+  'scope',
 
   // ── TIMELORDE (2026-08-23) ────────────────────────────────────────────────
   //

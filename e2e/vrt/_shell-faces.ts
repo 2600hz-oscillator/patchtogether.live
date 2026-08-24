@@ -2986,6 +2986,38 @@ export const FACES = [
       },
     ],
   },
+  // ── SCOPE (2026-08-23) ────────────────────────────────────────────────────
+  {
+    type: 'scope',
+    pages: 3,
+    simPin: [
+      {
+        global: '__scopeVrtSeed',
+        value: 1,
+        why:
+          'SCOPE\'s dock body paints a LIVE ANALYSER WINDOW — read(\'snapshot\') returns whatever '
+          + '2048 samples the two AnalyserNodes happen to hold when the frame runs — so with '
+          + 'nothing patched the traces are the input gains\' noise floor and with something '
+          + 'patched they are windows whose phase depends on when the capture landed. Neither is '
+          + 'stable across boots, and freezeFaceVideo cannot reach it: this is an AUDIO def, so '
+          + 'there is no VideoEngine frame to freeze. ⚠ AND THE TWO-CHANNEL CASE IS STRICTLY '
+          + 'WORSE THAN DOCKSCOPE\'S ONE-CHANNEL ONE, which is why this entry exists rather than '
+          + 'being a copy: two live oscillators are NOT phase-locked to each other, so in XY mode '
+          + 'the Lissajous figure\'s ORIENTATION drifts run-to-run even if each trace alone were '
+          + 'stable. The module already carries a deterministic seed for exactly this — fixed '
+          + 'phase-locked sines at 220/330 Hz with ch2Phase 0, at 48 kHz — and the faceplate body '
+          + 'reads the SAME global the card does, which is what lets the FACE be baselined and '
+          + 'not only the card. Reading a different global would leave this surface unbaselinable '
+          + 'while the card stayed pinned, the trap dockscope records by name. ⚠ The COMPACT '
+          + 'scene does not need it and that is worth stating: scope is domain audio, so '
+          + 'hasVideoSurface is false and the lane tile is three static fader cells with NO '
+          + 'picture at all — deterministic for free. The pin REACHES this module because scope '
+          + 'is main-thread and declares no renderLocus (the acidwarp case is what it would '
+          + 'otherwise hit), and it is read in the CARD and the BODY rather than in the factory, '
+          + 'so construction timing does not matter.',
+      },
+    ],
+  },
   // ── TIMELORDE (2026-08-23) ────────────────────────────────────────────────
   //
   // ⚠ NO `videoFaceWhy`, DELIBERATELY, AND IT IS THE OPPOSITE CALL FROM PONG'S
