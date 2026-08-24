@@ -202,6 +202,27 @@ export function isShellSwappable(type: string, hasResolvableCard: boolean): bool
 // `/rack?shell=legacy`, so they exercise the `false` arm forever. New coverage
 // for the `true` arm must drive the DEFAULT shell; see
 // `e2e/tests/workflow-drawer-face.spec.ts`.
+//
+// ⚠ THE RULE HAS A THIRD CALLER, AND IT HAD TO BE ADDED RATHER THAN FOUND.
+// `AudioIoSurface.svelte` — the 🎧 topbar panel — hosts the pinned AUDIO IN and
+// AUDIO OUT through this same `DockCardHost`, and it did not call this function
+// at all: both mounts passed six props and no `face`, so the host's
+// `face = false` default won and it mounted `nodeTypes[type]` unconditionally.
+// Those two are canvas-hidden pinned singletons, so by the argument above THAT
+// PANEL IS THE ONLY PLACE THEIR FACE CAN APPEAR — promoting either module
+// without the prop would have merged green and left the instance every user
+// has in every session on the legacy card.
+//
+// The blind spot repeated too: the panel's own dedicated VRT scene
+// (`e2e/vrt/workflow-audio-io-composite.spec.ts`) drives `/rack?shell=legacy`,
+// so it is the `false` arm forever exactly like the three drawer specs. The
+// prescription above is the fix in both places — the audio-I/O panel's
+// default-shell coverage is `e2e/tests/workflow-audio-io-face.spec.ts`.
+//
+// GENERAL FORM, for whoever adds a FOURTH host: a pure rule with an injected
+// input is only as good as its call sites, and nothing here can tell you a
+// caller is missing. When you mount `DockCardHost`, decide `face` — the default
+// is a decision too, and it is the wrong one for a pinned occupant.
 
 /** Inputs to the pure dock-rail render decision. */
 export interface DockRailRenderInput {
