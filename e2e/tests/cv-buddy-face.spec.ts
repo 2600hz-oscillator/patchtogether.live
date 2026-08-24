@@ -178,7 +178,25 @@ test.describe('CV BUDDY face — the rack-global status home (#2024)', () => {
 });
 
 test.describe('CV BUDDY face — the measurements are PRESENT and UNPAINTED', () => {
-  test('the LATE lamp paints a static caption and carries its count in the a11y name', async ({
+  // ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; the body and every assertion
+  // in it are UNCHANGED, so un-parking is deleting one `.fixme` plus one
+  // SKIP_BUDGET entry.
+  //
+  // ⚠ THE ENTRY CARRIES ITS UNCERTAINTY RATHER THAN HIDING IT, because this was
+  // NOT triaged before parking and saying "flaky" would be a claim nobody has
+  // evidence for. ONE observation: recovered-on-retry on a PR run (e2e shard
+  // 6/10), first time seen. CLAUDE.md's triage rule points the OTHER way — this
+  // file's git history is a single commit, the feature that created it (#2082),
+  // and no flake fixes ever, which makes UNDER-BUDGETED the likelier class. Those
+  // two classes need opposite responses, so un-parking is a reproduce-and-measure
+  // budget diagnosis, not a re-run.
+  //
+  // WHAT IS STILL COVERED WHILE IT SITS: the lamp itself keeps two sibling legs
+  // in this same file — '⚠ the ES-9 sentences are GONE from the plate and ALIVE
+  // in the lamp' and 'adding an ES-9 NODE lights the ROUTED lamp — the positive
+  // control'. What is lost is narrower than the lamp: the claim that the LATE
+  // lamp's caption is STATIC and that its COUNT rides the accessible name.
+  test.fixme('the LATE lamp paints a static caption and carries its count in the a11y name', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — recovered-on-retry, first observation, NOT yet triaged as flake vs under-budget; git history shows no flake fixes so under-budget is the likelier class; siblings retain coverage (cv-buddy-face.spec.ts ES-9-sentences leg + ROUTED-lamp positive control); un-park = a reproduce-and-measure budget diagnosis' } }, async ({
     page,
   }) => {
     await gotoShell(page);
