@@ -179,6 +179,10 @@
     pitchProbMenuLevels,
     pitchProbMenuCheckedLevel,
     applyPitchProbMenuPick,
+    clipPitchProbMenuCheckedLevel,
+    applyClipPitchProbPick,
+    clipPlayEveryMenuCheckedLevel,
+    applyClipPlayEveryPick,
   } from './clipplayer-prob-menu';
   // Pure SOURCE-AWARE cell-fill colour (white/purple/orange) — extracted so it
   // stays unit-tested + mirrors the launchpad's noteProbRgb buckets. The pitch-
@@ -1222,16 +1226,41 @@
     writeClipData(cycleVelocity(clip, step, midiForDisplayRow(clip, displayRow)));
   }
 
-  // ── PER-NOTE PROBABILITY menu (right-click a note cell). A card-local context
-  // menu with a "Probability" submenu: 100% (default) … 2.5%, the note's current
-  // level checked. Each item writes setNoteProb via the undoable clip write. Only
-  // opens on a cell that HOLDS a note (setNoteProb never creates one). ──
-  let probMenu = $state<{ x: number; y: number; step: number; midi: number; row: number } | null>(null);
-  /** The note's EFFECTIVE level (1..40): its own prob once set, else the clip
-   *  default (so an unset note in a 95% clip shows 95% checked), else 100%. */
+  // ── THE RIGHT-CLICK MENU — ONE menu, TWO entry points (owner, 2026-08-24).
+  //
+  // ⚠ THE BUG THIS SHAPE EXISTS TO KILL. There used to be two menus: a NOTE menu
+  // on the piano-roll cell and a separate CLIP menu on the launcher pad. When the
+  // owner asked for sub lists + copy/paste/clear, the restructure landed on the
+  // NOTE menu only — and the launcher pad, which is the surface they actually
+  // right-click, kept its flat 40-row "Clip probability" list. Every test was
+  // green: they drove the real card through its real mount, they just drove the
+  // OTHER surface. Two menus meant the fix could reach one of them; there is now
+  // ONE markup block and one option-list definition, so a change to the structure
+  // is a change to BOTH surfaces by construction and cannot land half-applied.
+  //
+  // The menu targets a CLIP either way (`idx`); the note entry point additionally
+  // carries the (step, midi) it was opened on, and the three probability rows read
+  // and write PER NOTE when it does, PER CLIP when it does not.
+  type MenuAt =
+    | { kind: 'note'; x: number; y: number; idx: number; step: number; midi: number; row: number }
+    | { kind: 'clip'; x: number; y: number; idx: number };
+  let probMenu = $state<MenuAt | null>(null);
+  /** The clip the OPEN menu acts on — the right-clicked pad, or the clip whose
+   *  note was right-clicked. Not `selectedClip`: a clip-pad menu is routinely
+   *  opened on a pad that is not the one loaded in the editor. */
+  function menuClip(): NoteClipRecord | null {
+    return probMenu ? clipAt(probMenu.idx) : null;
+  }
+  /** NOTE PROBABILITY's checked level. On a note: the note's EFFECTIVE level (its
+   *  own prob once set, else the clip default, else 100%). On a clip pad: the
+   *  clip's DEFAULT level, which is what every note without its own prob uses. */
   function probMenuCurrentLevel(): number {
+    void cardVersion;
     if (!probMenu) return PROB_LEVELS;
-    return probMenuCheckedLevel(clipAt(selectedClip), probMenu.step, probMenu.midi);
+    const clip = menuClip();
+    return probMenu.kind === 'note'
+      ? probMenuCheckedLevel(clip, probMenu.step, probMenu.midi)
+      : clipProbMenuCheckedLevel(clip);
   }
   function openProbMenu(e: MouseEvent, step: number, displayRow: number) {
     e.preventDefault();
@@ -1240,15 +1269,50 @@
     if (!clip) return;
     const midi = midiForDisplayRow(clip, displayRow);
     if (!noteCovering(clip, step, midi)) return; // no note here → nothing to set
-    probMenu = { x: e.clientX, y: e.clientY, step, midi, row: displayRow };
+    probMenu = { kind: 'note', x: e.clientX, y: e.clientY, idx: selectedClip, step, midi, row: displayRow };
     probSub = null;
   }
+  /** Right-click a GRID clip pad → the SAME menu, clip-scoped. Opens on EVERY
+   *  pad, loaded or empty: `paste` onto an empty pad is how a clip is duplicated
+   *  on a Launchpad, and the owner asked for copy/paste that works "the same as
+   *  when we copy/paste on the push or launchpad". The rows that need a clip
+   *  (the three probability lists, copy, clear) are DISABLED on an empty pad
+   *  rather than absent, so the menu's shape is the same everywhere. */
+  function openClipProbMenu(e: MouseEvent, idx: number) {
+    e.preventDefault();
+    e.stopPropagation(); // don't also open the node's "Module actions" context menu
+    probMenu = { kind: 'clip', x: e.clientX, y: e.clientY, idx };
+    probSub = null;
+  }
+  /** True while the open menu has a clip to act on (always, from a note cell). */
+  function menuHasClip(): boolean {
+    void cardVersion;
+    return menuClip() !== null;
+  }
+  function closeMenu() {
+    probMenu = null;
+    probSub = null;
+  }
+  /** Write a clip the OPEN menu targets — the index-parameterised `writeClipData`
+   *  (which is hard-wired to `selectedClip` and therefore wrong for a clip-pad
+   *  menu opened on some other pad). Undoable, same transaction shape. */
+  function writeMenuClip(next: NoteClipRecord) {
+    if (!probMenu) return;
+    const key = String(probMenu.idx);
+    writeDataUndoable((d) => {
+      if (!d.clips) d.clips = {};
+      d.clips[key] = { ...next, steps: next.steps.map((s) => ({ ...s })) };
+    });
+  }
 
-  // ── THE NOTE MENU'S SUBMENU CASCADE (owner, 2026-08-24: "right now we have one
-  // long list — what i want is a list with sub lists 'gate probability', 'pitch
-  // probability', 'play every' and those expand into sub lists with their
-  // options"). The three option sets are UNCHANGED and every item keeps its
-  // testid; only the presentation regroups, so nothing is lost.
+  // ── THE SUBMENU CASCADE (owner, 2026-08-24: "right now we have one long list —
+  // what i want is a list with sub lists 'note probability', 'pitch probability',
+  // 'skip every' and those expand into sub lists with their options"). The three
+  // option sets are UNCHANGED and every item keeps its testid; only the
+  // presentation regroups, so nothing is lost. The owner's final labels are
+  // "note probability" (was "gate probability") and "skip every" (was "play
+  // every") — the wording is theirs, the option lists are the same 40 levels,
+  // 41 pitch levels and 1..8 counts.
   //
   // Before this, all three lists were stacked in ONE column under three inert
   // headers — ~90 rows tall, which is what made the menu need viewport clamping
@@ -1261,7 +1325,7 @@
   // the anchor was the first attempt and it is WRONG at the window's right edge:
   // it slides the flyout back left, over the parent menu. See cascadeMenu's
   // header for the measurement.
-  type ProbSubKind = 'gate' | 'pitch' | 'every';
+  type ProbSubKind = 'note' | 'pitch' | 'skip';
   type RowRect = { left: number; top: number; right: number; bottom: number; width: number; height: number };
   let probSub = $state<{ which: ProbSubKind; rect: RowRect } | null>(null);
   /** Open (or switch to) a parent row's flyout, placed beside that row. Hover
@@ -1291,11 +1355,12 @@
     };
   }
 
-  // ── CLIP-level actions on the NOTE menu: COPY / PASTE / CLEAR. These act on
-  // the clip OPEN IN THE EDITOR (`selectedClip`) — the owner asked for them on
-  // the note right-click, and the operand a Launchpad copy/paste has always used
-  // is a whole CLIP, so "the same as when we copy/paste on the push or launchpad"
-  // means the clip you are editing, not the one note you happened to right-click.
+  // ── CLIP-level actions: COPY / PASTE / CLEAR. They act on the clip the MENU
+  // targets — the right-clicked PAD on the launcher grid, the clip open in the
+  // editor when the menu came from a note cell. The operand a Launchpad
+  // copy/paste has always used is a whole CLIP, so "the same as when we
+  // copy/paste on the push or launchpad" means the clip, not the one note you
+  // happened to right-click.
   //
   // The SEMANTICS ARE NOT RE-INVENTED: this is the same typed buffer
   // (clip-clipboard.ts), filled by the same `copyClip` + `readAutoClip`
@@ -1307,16 +1372,14 @@
   // and a source that carried none DELETES the target's stale record, all in one
   // undoable transaction.
 
-  /** COPY the edited clip (+ its sibling automation) onto the shared clipboard. */
+  /** COPY the menu's clip (+ its sibling automation) onto the shared clipboard. */
   function copyEditClip() {
-    const clip = clipAt(selectedClip);
+    if (!probMenu) return;
+    const idx = probMenu.idx;
+    const clip = clipAt(idx);
     if (!clip) return;
-    setClipboardBuffer(
-      { kind: 'clip', clip: copyClip(clip), auto: readAutoClip(dataObj(), selectedClip) },
-      selectedClip,
-    );
-    probMenu = null;
-    probSub = null;
+    setClipboardBuffer({ kind: 'clip', clip: copyClip(clip), auto: readAutoClip(dataObj(), idx) }, idx);
+    closeMenu();
   }
 
   /** True when the clipboard holds something this menu can paste — a CLIP buffer.
@@ -1330,11 +1393,12 @@
    *  (the card's mirror of the Launchpad's `writeClipWithAuto`). */
   function pasteEditClip() {
     const bc = clipboardClip();
-    if (!bc || !canPasteClip()) { probMenu = null; probSub = null; return; }
-    const before = clipAt(selectedClip);
+    if (!probMenu || !bc || !canPasteClip()) { closeMenu(); return; }
+    const idx = probMenu.idx;
+    const before = clipAt(idx);
     const next = copyClip(bc);
     const plainAuto = plainCloneAutoClip(clipboardClipAuto());
-    const key = String(selectedClip);
+    const key = String(idx);
     writeDataUndoable((d) => {
       if (!d.clips) d.clips = {};
       d.clips[key] = { ...next, steps: next.steps.map((s) => ({ ...s })) };
@@ -1345,9 +1409,8 @@
     // A paste REPLACES every note, so it is a note REMOVAL for anything the old
     // clip left sounding — cut those voices NOW rather than next loop (the same
     // stale-note reconcile `toggleNote` does).
-    if (before) reconcileClipRemoval(id, before, next, selectedClip, dataObj());
-    probMenu = null;
-    probSub = null;
+    if (before) reconcileClipRemoval(id, before, next, idx, dataObj());
+    closeMenu();
   }
 
   /** CLEAR — the owner's word, and they were explicit that it "deletes the clip",
@@ -1357,18 +1420,30 @@
    *  editor's ⌫, which empties the notes but keeps the clip record.
    *  The editor only renders `cardView === 'clip' && editClip`, so once the clip
    *  is gone that pane has nothing to show — return to the launch grid rather
-   *  than leaving the card on a blank view. */
+   *  than leaving the card on a blank view. From a launcher PAD there is nothing
+   *  to leave, so the view stays put. */
   function clearEditClip() {
-    probMenu = null;
-    probSub = null;
-    deleteClipAt(selectedClip);
-    cardView = 'grid';
+    if (!probMenu) return;
+    const fromNote = probMenu.kind === 'note';
+    const idx = probMenu.idx;
+    closeMenu();
+    deleteClipAt(idx);
+    if (fromNote) cardView = 'grid';
   }
+  /** NOTE PROBABILITY pick. On a note it sets THAT note's own `prob`; on a clip
+   *  pad it sets the clip's DEFAULT — the value every note without its own prob
+   *  inherits, which is the clip-level meaning of the same category. */
   function pickProbLevel(level: number) {
     if (!probMenu) return;
-    const clip = clipAt(selectedClip);
-    if (clip) writeClipData(applyProbMenuPick(clip, probMenu.step, probMenu.midi, level));
-    probMenu = null;
+    const clip = menuClip();
+    if (clip) {
+      writeMenuClip(
+        probMenu.kind === 'note'
+          ? applyProbMenuPick(clip, probMenu.step, probMenu.midi, level)
+          : applyClipProbMenuPick(clip, level),
+      );
+    }
+    closeMenu();
   }
   // ── PER-NOTE PLAY EVERY (same right-click menu as Probability, card↔Launchpad
   // parity with the SHIFT+double-tap Play-Every view). A row of 1..8: "1" (every
@@ -1376,16 +1451,27 @@
   // write. The two gates STACK (a note fires only on its Nth loop AND if it wins
   // its probability roll). ──
   const playEveryLevels = Array.from({ length: PLAY_EVERY_MAX }, (_, i) => i + 1);
-  function playEveryMenuCurrent(): number {
+  /** The checked count. On a note: that note's own. On a clip pad: the count
+   *  every note AGREES on, or `null` when they differ — a mixed clip shows
+   *  nothing checked rather than claiming the first note's value for all. */
+  function playEveryMenuCurrent(): number | null {
+    void cardVersion;
     if (!probMenu) return 1;
-    const clip = clipAt(selectedClip);
+    const clip = menuClip();
+    if (probMenu.kind === 'clip') return clipPlayEveryMenuCheckedLevel(clip);
     return clip ? playEveryEff(noteCovering(clip, probMenu.step, probMenu.midi) ?? undefined) : 1;
   }
   function pickPlayEvery(n: number) {
     if (!probMenu) return;
-    const clip = clipAt(selectedClip);
-    if (clip) writeClipData(setNotePlayEvery(clip, probMenu.step, probMenu.midi, n));
-    probMenu = null;
+    const clip = menuClip();
+    if (clip) {
+      writeMenuClip(
+        probMenu.kind === 'note'
+          ? setNotePlayEvery(clip, probMenu.step, probMenu.midi, n)
+          : applyClipPlayEveryPick(clip, n),
+      );
+    }
+    closeMenu();
   }
   // ── PER-NOTE PITCH PROBABILITY (the third row of the same right-click menu).
   // OFF (the default) … 100% in the same 40 increments as Probability, so the
@@ -1393,59 +1479,36 @@
   // CARD-ONLY (owner: "we'll add this to the physical controls later"). Writes
   // setNotePitchProb through the undoable clip write. ORTHOGONAL to the two
   // above: they decide whether the note fires, this decides at what pitch. ──
-  function pitchProbMenuCurrent(): number {
+  function pitchProbMenuCurrent(): number | null {
+    void cardVersion;
     if (!probMenu) return 0;
-    return pitchProbMenuCheckedLevel(clipAt(selectedClip), probMenu.step, probMenu.midi);
+    const clip = menuClip();
+    return probMenu.kind === 'note'
+      ? pitchProbMenuCheckedLevel(clip, probMenu.step, probMenu.midi)
+      : clipPitchProbMenuCheckedLevel(clip);
   }
   function pickPitchProb(level: number) {
     if (!probMenu) return;
-    const clip = clipAt(selectedClip);
-    if (clip) writeClipData(applyPitchProbMenuPick(clip, probMenu.step, probMenu.midi, level));
-    probMenu = null;
+    const clip = menuClip();
+    if (clip) {
+      writeMenuClip(
+        probMenu.kind === 'note'
+          ? applyPitchProbMenuPick(clip, probMenu.step, probMenu.midi, level)
+          : applyClipPitchProbPick(clip, level),
+      );
+    }
+    closeMenu();
   }
   /** The note cell's tooltip — the base gesture help plus the note's PITCH
    *  INSTABILITY when it carries any (the magnitude the dashed border cannot
    *  show; see clipplayer-prob-color.ts on why it is not a third colour). */
   function cellTitle(clip: NoteClipRecord, step: number, midi: number): string {
     const base =
-      'Click: note on/off (Shift-click: cycle velocity) · Right-click: gate probability (colour = purple ∝ probability, white = 100%), pitch probability, play every — plus copy / paste / clear for the whole clip';
+      'Click: note on/off (Shift-click: cycle velocity) · Right-click: note probability (colour = purple ∝ probability, white = 100%), pitch probability, skip every — plus copy / paste / clear for the whole clip';
     const pp = noteCellPitchProb(clip, step, midi);
     return pp > 0 ? `${base} — PITCH PROBABILITY ${pitchProbLabel(pp)} (dashed border)` : base;
   }
 
-  // ── CLIP-DEFAULT PROBABILITY menu (right-click a GRID clip pad — the card
-  // mirror of the Launchpad SHIFT+clip PROB page). A "Clip probability" submenu:
-  // 100% (default) … 2.5%, the clip's current default level checked. Each item
-  // writes setClipDefaultProb via the undoable clip write, applied to the RIGHT-
-  // CLICKED pad's clip (not the selected editor clip). Only opens on a pad that
-  // HOLDS a clip (a clip default needs a clip; an empty pad is a no-op). ──
-  let clipProbMenu = $state<{ x: number; y: number; idx: number } | null>(null);
-  /** The right-clicked clip's current default level (1..40), or PROB_LEVELS (100%)
-   *  when it has no default — so 100% shows as the default-checked item. */
-  function clipProbMenuCurrentLevel(): number {
-    void cardVersion;
-    if (!clipProbMenu) return PROB_LEVELS;
-    return clipProbMenuCheckedLevel(clipAt(clipProbMenu.idx));
-  }
-  function openClipProbMenu(e: MouseEvent, idx: number) {
-    e.preventDefault();
-    e.stopPropagation(); // don't also open the node's "Module actions" context menu
-    if (!clipAt(idx)) return; // empty pad → no clip to carry a default
-    clipProbMenu = { x: e.clientX, y: e.clientY, idx };
-  }
-  function pickClipProbLevel(level: number) {
-    if (!clipProbMenu) return;
-    const idx = clipProbMenu.idx;
-    const clip = clipAt(idx);
-    if (clip) {
-      const next = applyClipProbMenuPick(clip, level);
-      writeDataUndoable((d) => {
-        if (!d.clips) d.clips = {};
-        d.clips[String(idx)] = { ...next, steps: next.steps.map((s) => ({ ...s })) };
-      });
-    }
-    clipProbMenu = null;
-  }
   /** DELETE the right-clicked clip (card-only — deliberately NO Launchpad/Push
    *  binding). Three deliberate choices:
    *
@@ -1473,7 +1536,7 @@
       // The envelope belongs to the clip (same rule as ensureClip / clearClip).
       if (d.auto && d.auto[key] !== undefined && d.auto[key] !== null) delete d.auto[key];
     });
-    clipProbMenu = null;
+    closeMenu();
   }
   // --- per-lane MONO toggle (left of each launch-grid row) ---
   function laneIsMono(lane: number): boolean {
@@ -2029,9 +2092,10 @@
                 {@const laneCd = autoCdByLane[lane]}
                 {@const cd = laneCd && laneCd.slot === slot ? laneCd : null}
                 {@const hasAuto = autoCarriers.has(String(idx))}
-                <!-- The tooltip's right-click clause uses the SAME predicate
-                     openClipProbMenu gates on (a pad that HOLDS a clip), so it
-                     can never promise a menu that won't open. -->
+                <!-- The right-click menu now opens on EVERY pad (paste needs an
+                     empty target), so the tooltip differs only in WHICH rows are
+                     live: a loaded pad gets the whole list, an empty one gets
+                     paste. -->
                 {@const hasClip = clipAt(idx) !== null}
                 <button
                   class="pad {st}"
@@ -2042,8 +2106,8 @@
                   style={`--lane-color:${laneColorEff(lane)}`}
                   aria-label={`lane ${lane + 1} slot ${slot + 1} ${st}${hasAuto ? ' (has automation)' : ''}`}
                   title={hasClip
-                    ? 'Click: launch/stop · Double-click: edit · Right-click: clip probability (default firing chance for all notes) + delete clip'
-                    : 'Click: launch/stop · Double-click: edit'}
+                    ? 'Click: launch/stop · Double-click: edit · Right-click: note probability, pitch probability, skip every, copy / paste / clear'
+                    : 'Click: launch/stop · Double-click: edit · Right-click: paste a copied clip here'}
                   data-clip={idx}
                   data-lane={lane}
                   data-slot={slot}
@@ -2131,62 +2195,6 @@
               >◉</button>
             {/each}
           </div>
-          {#if clipProbMenu}
-            {@const clipCurrent = clipProbMenuCurrentLevel()}
-            <!-- CLIP-DEFAULT PROBABILITY menu (right-click a GRID clip pad — the
-                 card mirror of the Launchpad SHIFT+clip PROB page): the "Clip
-                 probability" submenu, 100% (default) … 2.5%, the clip's default
-                 level checked. Each item writes setClipDefaultProb (undoable).
-                 Portaled to <body> + viewport-clamped so the menu is FULLY in
-                 view even at the window's right/bottom edge. -->
-            <div use:portal>
-              <button
-                type="button"
-                class="prob-menu-backdrop"
-                aria-label="close clip probability menu"
-                onclick={() => (clipProbMenu = null)}
-                oncontextmenu={(e) => { e.preventDefault(); clipProbMenu = null; }}
-              ></button>
-              <div
-                class="prob-menu"
-                role="menu"
-                aria-label="Clip actions"
-                use:clampMenu={{ x: clipProbMenu.x, y: clipProbMenu.y }}
-                data-testid={`clipplayer-clip-prob-menu-${id}`}
-              >
-                <div class="prob-menu-head">Clip probability ▸</div>
-                <div class="prob-menu-list">
-                  {#each probMenuLevels() as level (level)}
-                    <button
-                      class="prob-menu-item clip"
-                      class:checked={clipCurrent === level}
-                      role="menuitemcheckbox"
-                      aria-checked={clipCurrent === level}
-                      data-testid={`clipplayer-clip-prob-item-${level}`}
-                      onclick={() => pickClipProbLevel(level)}
-                    >{probPctLabel(probLevelToValue(level))}</button>
-                  {/each}
-                </div>
-                <!-- DELETE (owner ask) — destructive, so it is separated from
-                     the probability list and tinted red. No confirm: the write
-                     is undoable through the card's own ↶ (see deleteClipAt).
-                     Never reachable on an EMPTY pad — the menu doesn't open
-                     there at all. The index is exposed as `data-clip-idx`, NOT
-                     `data-clip`: the latter is the grid PAD selector, and a
-                     second match for it while the menu is open would make every
-                     existing `[data-clip="n"]` locator ambiguous. -->
-                <div class="prob-menu-sep" role="separator"></div>
-                <button
-                  class="prob-menu-item danger"
-                  role="menuitem"
-                  title="Delete this clip (and its recorded automation). Undo with ↶."
-                  data-clip-idx={clipProbMenu.idx}
-                  data-testid={`clipplayer-clip-delete-${id}`}
-                  onclick={() => deleteClipAt(clipProbMenu!.idx)}
-                >Delete clip</button>
-              </div>
-            </div>
-          {/if}
         </div>
 
         <!-- params -->
@@ -2372,178 +2380,6 @@
               </div>
             {/each}
           </div>
-          {#if probMenu}
-            {@const current = probMenuCurrentLevel()}
-            {@const curEvery = playEveryMenuCurrent()}
-            {@const curPitch = pitchProbMenuCurrent()}
-            <!-- PER-NOTE menu (right-click a note). TOP LEVEL: three submenu
-                 rows (gate probability / pitch probability / play every) that
-                 expand into their option lists, then the CLIP actions copy /
-                 paste / clear. Portaled to <body> + viewport-clamped so the menu
-                 is FULLY in view even when the right-clicked cell sits at the
-                 window's right/bottom edge (the owner's clipped-menu screenshot).
-                 "Probability" is now "gate probability": it decides whether the
-                 note's GATE opens, which is what distinguishes it from the pitch
-                 probability directly beneath — the two used to sit under headers
-                 far enough apart to read as unrelated. -->
-            <div use:portal>
-              <button
-                type="button"
-                class="prob-menu-backdrop"
-                aria-label="close probability menu"
-                onclick={() => { probMenu = null; probSub = null; }}
-                oncontextmenu={(e) => { e.preventDefault(); probMenu = null; probSub = null; }}
-              ></button>
-              <div
-                class="prob-menu"
-                role="menu"
-                aria-label="Note"
-                use:clampMenu={{ x: probMenu.x, y: probMenu.y }}
-                data-testid={`clipplayer-prob-menu-${id}`}
-              >
-                <div class="prob-menu-list">
-                  <button
-                    class="prob-menu-item sub"
-                    class:open={probSub?.which === 'gate'}
-                    role="menuitem"
-                    aria-haspopup="menu"
-                    aria-expanded={probSub?.which === 'gate'}
-                    title="How likely this note is to FIRE at all"
-                    data-testid={`clipplayer-sub-gate-${id}`}
-                    onpointerenter={(e) => openProbSub(e, 'gate')}
-                    onclick={(e) => openProbSub(e, 'gate')}
-                  >gate probability</button>
-                  <button
-                    class="prob-menu-item sub"
-                    class:open={probSub?.which === 'pitch'}
-                    role="menuitem"
-                    aria-haspopup="menu"
-                    aria-expanded={probSub?.which === 'pitch'}
-                    title="How far this note's PITCH may wander when it fires"
-                    data-testid={`clipplayer-sub-pitch-${id}`}
-                    onpointerenter={(e) => openProbSub(e, 'pitch')}
-                    onclick={(e) => openProbSub(e, 'pitch')}
-                  >pitch probability</button>
-                  <button
-                    class="prob-menu-item sub"
-                    class:open={probSub?.which === 'every'}
-                    role="menuitem"
-                    aria-haspopup="menu"
-                    aria-expanded={probSub?.which === 'every'}
-                    title="Play this note only on every Nth loop of the clip"
-                    data-testid={`clipplayer-sub-every-${id}`}
-                    onpointerenter={(e) => openProbSub(e, 'every')}
-                    onclick={(e) => openProbSub(e, 'every')}
-                  >play every</button>
-                </div>
-                <!-- CLIP actions. COPY/PASTE run on the SHARED typed clipboard —
-                     the same buffer the Launchpad and Push 2 use, so a clip
-                     copied here pastes there. PASTE is DISABLED (not a silent
-                     no-op) when the buffer is empty or holds a SCENE, which is
-                     the `pasteApplies` type gate made visible. -->
-                <div class="prob-menu-sep" role="separator"></div>
-                <div class="prob-menu-list">
-                  <button
-                    class="prob-menu-item"
-                    role="menuitem"
-                    title="Copy this clip (and its recorded automation) — pastes here, on a Launchpad or on Push 2"
-                    data-testid={`clipplayer-note-copy-${id}`}
-                    onpointerenter={() => (probSub = null)}
-                    onclick={copyEditClip}
-                  >copy</button>
-                  <button
-                    class="prob-menu-item"
-                    role="menuitem"
-                    disabled={!canPasteClip()}
-                    title={canPasteClip()
-                      ? 'Paste the copied clip over this one (replaces its notes AND its automation). Undo with ↶.'
-                      : 'Nothing to paste — copy a clip first (a whole SCENE can only be pasted onto a scene)'}
-                    data-testid={`clipplayer-note-paste-${id}`}
-                    onpointerenter={() => (probSub = null)}
-                    onclick={pasteEditClip}
-                  >paste</button>
-                </div>
-                <!-- CLEAR deletes the CLIP (owner's wording and their explicit
-                     intent) — destructive, so it is separated and tinted red,
-                     like the grid pad's Delete it shares an implementation with.
-                     No confirm: the write is undoable through the card's ↶. -->
-                <div class="prob-menu-sep" role="separator"></div>
-                <button
-                  class="prob-menu-item danger"
-                  role="menuitem"
-                  title="Delete this clip (and its recorded automation). Undo with ↶."
-                  data-testid={`clipplayer-note-clear-${id}`}
-                  onpointerenter={() => (probSub = null)}
-                  onclick={clearEditClip}
-                >clear</button>
-              </div>
-              {#if probSub}
-                <!-- The FLYOUT: one option list, placed BESIDE its parent row —
-                     to its right, or to its LEFT when the right side has no room
-                     (a note menu opened at the window's right edge), so it never
-                     covers the menu it came from. -->
-                <div
-                  class="prob-menu prob-submenu"
-                  role="menu"
-                  aria-label={probSub.which === 'gate'
-                    ? 'gate probability'
-                    : probSub.which === 'pitch'
-                      ? 'pitch probability'
-                      : 'play every'}
-                  use:cascadeMenu={{ rect: probSub.rect }}
-                  data-testid={`clipplayer-submenu-${probSub.which}-${id}`}
-                >
-                  {#if probSub.which === 'gate'}
-                    <div class="prob-menu-list">
-                      {#each probMenuLevels() as level (level)}
-                        <button
-                          class="prob-menu-item"
-                          class:checked={current === level}
-                          role="menuitemcheckbox"
-                          aria-checked={current === level}
-                          data-testid={`clipplayer-prob-item-${level}`}
-                          onclick={() => pickProbLevel(level)}
-                        >{probPctLabel(probLevelToValue(level))}</button>
-                      {/each}
-                    </div>
-                  {:else if probSub.which === 'pitch'}
-                    <!-- PITCH PROBABILITY: how far the note's PITCH may wander
-                         when it fires (off = the authored pitch, exactly). 40
-                         increments, the same grid as gate probability. -->
-                    <div class="prob-menu-list">
-                      {#each pitchProbMenuLevels() as level (level)}
-                        <button
-                          class="prob-menu-item pitch"
-                          class:checked={curPitch === level}
-                          role="menuitemcheckbox"
-                          aria-checked={curPitch === level}
-                          data-testid={`clipplayer-pitch-prob-item-${level}`}
-                          title={level === 0
-                            ? 'Fixed pitch — play exactly the note you drew (default)'
-                            : `Pitch instability ${pitchProbLabel(pitchProbLevelToValue(level))} — the note may land on a nearby scale degree instead`}
-                          onclick={() => pickPitchProb(level)}
-                        >{level === 0 ? 'off (fixed)' : pitchProbLabel(pitchProbLevelToValue(level))}</button>
-                      {/each}
-                    </div>
-                  {:else}
-                    <div class="prob-menu-list">
-                      {#each playEveryLevels as n (n)}
-                        <button
-                          class="prob-menu-item"
-                          class:checked={curEvery === n}
-                          role="menuitemcheckbox"
-                          aria-checked={curEvery === n}
-                          data-testid={`clipplayer-play-every-item-${n}`}
-                          title={n === 1 ? 'Every loop (default)' : `Every ${n}th loop`}
-                          onclick={() => pickPlayEvery(n)}
-                        >{n === 1 ? '1 (every)' : n}</button>
-                      {/each}
-                    </div>
-                  {/if}
-                </div>
-              {/if}
-            </div>
-          {/if}
           <!-- Launch the clip you're editing without leaving the editor:
                NOW = jump straight in (immediate, ignores QNT); QUEUE = arm it to
                drop in on the lane's next loop boundary (follows QNT). Both target
@@ -2569,6 +2405,208 @@
     </div>
   </PatchPanel>
 </div>
+
+<!-- ══ THE RIGHT-CLICK MENU — ONE definition, BOTH surfaces ══════════════════
+     Rendered OUTSIDE the cardView branches on purpose: the launcher grid and the
+     note editor are mutually exclusive views, and while this markup lived inside
+     one of them the other surface could only ever get a SECOND, separately
+     maintained menu. That is exactly how the launcher pad kept a flat 40-row
+     list after the note menu was restructured. One block, one option-list
+     definition, two entry points (openProbMenu / openClipProbMenu).
+
+     TOP LEVEL, in the owner's order and wording: note probability ▸ / pitch
+     probability ▸ / skip every ▸ / copy / paste / clear. Portaled to <body> +
+     viewport-clamped so the whole menu stays in view at the window's edges. -->
+{#if probMenu}
+  {@const isClip = probMenu.kind === 'clip'}
+  {@const hasClip = menuHasClip()}
+  {@const current = probMenuCurrentLevel()}
+  {@const curEvery = playEveryMenuCurrent()}
+  {@const curPitch = pitchProbMenuCurrent()}
+  <div use:portal>
+    <button
+      type="button"
+      class="prob-menu-backdrop"
+      aria-label="close clip menu"
+      onclick={closeMenu}
+      oncontextmenu={(e) => { e.preventDefault(); closeMenu(); }}
+    ></button>
+    <div
+      class="prob-menu"
+      role="menu"
+      aria-label={isClip ? 'Clip actions' : 'Note'}
+      use:clampMenu={{ x: probMenu.x, y: probMenu.y }}
+      data-menu-kind={probMenu.kind}
+      data-testid={isClip ? `clipplayer-clip-prob-menu-${id}` : `clipplayer-prob-menu-${id}`}
+    >
+      <div class="prob-menu-list">
+        <!-- NOTE PROBABILITY. Per note it is that note's own firing chance; per
+             clip it is the DEFAULT every note without its own inherits — the
+             same category at the two scopes, not two features. -->
+        <button
+          class="prob-menu-item sub"
+          class:open={probSub?.which === 'note'}
+          role="menuitem"
+          aria-haspopup="menu"
+          aria-expanded={probSub?.which === 'note'}
+          disabled={!hasClip}
+          title={isClip
+            ? "This clip's DEFAULT firing chance — used by every note that has no probability of its own"
+            : 'How likely this note is to FIRE at all'}
+          data-testid={`clipplayer-sub-note-${id}`}
+          onpointerenter={(e) => openProbSub(e, 'note')}
+          onclick={(e) => openProbSub(e, 'note')}
+        >note probability</button>
+        <button
+          class="prob-menu-item sub"
+          class:open={probSub?.which === 'pitch'}
+          role="menuitem"
+          aria-haspopup="menu"
+          aria-expanded={probSub?.which === 'pitch'}
+          disabled={!hasClip}
+          title={isClip
+            ? "How far EVERY note in this clip may wander in pitch when it fires"
+            : "How far this note's PITCH may wander when it fires"}
+          data-testid={`clipplayer-sub-pitch-${id}`}
+          onpointerenter={(e) => openProbSub(e, 'pitch')}
+          onclick={(e) => openProbSub(e, 'pitch')}
+        >pitch probability</button>
+        <button
+          class="prob-menu-item sub"
+          class:open={probSub?.which === 'skip'}
+          role="menuitem"
+          aria-haspopup="menu"
+          aria-expanded={probSub?.which === 'skip'}
+          disabled={!hasClip}
+          title={isClip
+            ? 'Play EVERY note in this clip only on every Nth loop'
+            : 'Play this note only on every Nth loop of the clip'}
+          data-testid={`clipplayer-sub-skip-${id}`}
+          onpointerenter={(e) => openProbSub(e, 'skip')}
+          onclick={(e) => openProbSub(e, 'skip')}
+        >skip every</button>
+      </div>
+      <!-- CLIP actions. COPY/PASTE run on the SHARED typed clipboard — the same
+           buffer the Launchpad and Push 2 use, so a clip copied here pastes
+           there and vice versa. PASTE is DISABLED (not a silent no-op) when the
+           buffer is empty or holds a SCENE, which is the `pasteApplies` type
+           gate made visible. On an EMPTY pad only PASTE is live: that is how a
+           clip is duplicated onto a free slot. -->
+      <div class="prob-menu-sep" role="separator"></div>
+      <div class="prob-menu-list">
+        <button
+          class="prob-menu-item"
+          role="menuitem"
+          disabled={!hasClip}
+          title={hasClip
+            ? 'Copy this clip (and its recorded automation) — pastes here, on a Launchpad or on Push 2'
+            : 'Nothing to copy — this slot is empty'}
+          data-testid={`clipplayer-menu-copy-${id}`}
+          onpointerenter={() => (probSub = null)}
+          onclick={copyEditClip}
+        >copy</button>
+        <button
+          class="prob-menu-item"
+          role="menuitem"
+          disabled={!canPasteClip()}
+          title={canPasteClip()
+            ? 'Paste the copied clip over this one (replaces its notes AND its automation). Undo with ↶.'
+            : 'Nothing to paste — copy a clip first (a whole SCENE can only be pasted onto a scene)'}
+          data-testid={`clipplayer-menu-paste-${id}`}
+          onpointerenter={() => (probSub = null)}
+          onclick={pasteEditClip}
+        >paste</button>
+      </div>
+      <!-- CLEAR deletes the CLIP (the owner's wording and their explicit intent)
+           — destructive, so it is separated and tinted red. No confirm: the
+           write is undoable through the card's ↶. The index is exposed as
+           `data-clip-idx`, NOT `data-clip`: the latter is the grid PAD selector,
+           and a second match for it while the menu is open would make every
+           existing `[data-clip="n"]` locator ambiguous. -->
+      <div class="prob-menu-sep" role="separator"></div>
+      <button
+        class="prob-menu-item danger"
+        role="menuitem"
+        disabled={!hasClip}
+        title={hasClip
+          ? 'Delete this clip (and its recorded automation). Undo with ↶.'
+          : 'Nothing to clear — this slot is empty'}
+        data-clip-idx={probMenu.idx}
+        data-testid={`clipplayer-menu-clear-${id}`}
+        onpointerenter={() => (probSub = null)}
+        onclick={clearEditClip}
+      >clear</button>
+    </div>
+    {#if probSub}
+      <!-- The FLYOUT: one option list, placed BESIDE its parent row — to its
+           right, or to its LEFT when the right side has no room (a menu opened
+           at the window's right edge), so it never covers the menu it came
+           from. -->
+      <div
+        class="prob-menu prob-submenu"
+        role="menu"
+        aria-label={probSub.which === 'note'
+          ? 'note probability'
+          : probSub.which === 'pitch'
+            ? 'pitch probability'
+            : 'skip every'}
+        use:cascadeMenu={{ rect: probSub.rect }}
+        data-testid={`clipplayer-submenu-${probSub.which}-${id}`}
+      >
+        {#if probSub.which === 'note'}
+          <div class="prob-menu-list">
+            {#each probMenuLevels() as level (level)}
+              <button
+                class="prob-menu-item"
+                class:clip={isClip}
+                class:checked={current === level}
+                role="menuitemcheckbox"
+                aria-checked={current === level}
+                data-testid={isClip
+                  ? `clipplayer-clip-prob-item-${level}`
+                  : `clipplayer-prob-item-${level}`}
+                onclick={() => pickProbLevel(level)}
+              >{probPctLabel(probLevelToValue(level))}</button>
+            {/each}
+          </div>
+        {:else if probSub.which === 'pitch'}
+          <!-- PITCH PROBABILITY: how far the pitch may wander when the note
+               fires (off = the authored pitch, exactly). 40 increments, the same
+               grid as note probability. -->
+          <div class="prob-menu-list">
+            {#each pitchProbMenuLevels() as level (level)}
+              <button
+                class="prob-menu-item pitch"
+                class:checked={curPitch === level}
+                role="menuitemcheckbox"
+                aria-checked={curPitch === level}
+                data-testid={`clipplayer-pitch-prob-item-${level}`}
+                title={level === 0
+                  ? 'Fixed pitch — play exactly the note you drew (default)'
+                  : `Pitch instability ${pitchProbLabel(pitchProbLevelToValue(level))} — the note may land on a nearby scale degree instead`}
+                onclick={() => pickPitchProb(level)}
+              >{level === 0 ? 'off (fixed)' : pitchProbLabel(pitchProbLevelToValue(level))}</button>
+            {/each}
+          </div>
+        {:else}
+          <div class="prob-menu-list">
+            {#each playEveryLevels as n (n)}
+              <button
+                class="prob-menu-item"
+                class:checked={curEvery === n}
+                role="menuitemcheckbox"
+                aria-checked={curEvery === n}
+                data-testid={`clipplayer-play-every-item-${n}`}
+                title={n === 1 ? 'Every loop (default)' : `Every ${n}th loop`}
+                onclick={() => pickPlayEvery(n)}
+              >{n === 1 ? '1 (every)' : n}</button>
+            {/each}
+          </div>
+        {/if}
+      </div>
+    {/if}
+  </div>
+{/if}
 
 {#if arrangeEditorOpen}
   <ClipArrangeEditor {id} {node} onClose={() => (arrangeEditorOpen = false)} />
@@ -3159,7 +3197,10 @@
     padding: 3px;
     font-size: 11px;
   }
-  .prob-menu-head { padding: 3px 8px 4px; color: #9a8fb0; font-weight: 600; }
+  /* NOTE: there is no `.prob-menu-head` any more. The flat clip menu carried an
+     INERT "Clip probability ▸" heading whose ▸ promised a flyout it did not
+     have — the owner read it as a broken submenu, which is what it looked like.
+     Every ▸ in this menu is now on a row that actually expands. */
   .prob-menu-list { display: flex; flex-direction: column; }
   .prob-menu-item {
     display: flex;
@@ -3190,9 +3231,10 @@
      parent. It shares .prob-menu's chrome and adds only the taller scroll cap
      the long option lists need. */
   .prob-submenu { max-height: 300px; }
-  /* The CLIP-DEFAULT menu tints ORANGE (matching the clip-default note colour +
-     the Launchpad clip-PROB page's orange bar), distinct from the purple per-note
-     menu. */
+  /* The CLIP-DEFAULT probability list tints ORANGE (matching the clip-default
+     note colour + the Launchpad clip-PROB page's orange bar), distinct from the
+     purple per-note list — so the same row opened from a PAD and from a NOTE is
+     visibly a different scope. */
   .prob-menu-item.clip:hover { background: hsl(30 60% 32%); }
   .prob-menu-item.clip.checked { background: hsl(30 75% 42%); color: #fff; }
   /* The PITCH-PROBABILITY row tints TEAL — a third menu hue, which is safe here
