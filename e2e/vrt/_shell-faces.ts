@@ -3385,6 +3385,38 @@ export const FACES = [
     // and nothing that advances between frames. The lamps change only when
     // `notify()` fires, and `notify()` fires only on a MIDI transport message.
   },
+
+  // ── MOOG960 — the first GRID face ────────────────────────────────────────
+  {
+    type: 'moog960',
+    // SIX bands: clock · row range · row 1 · row 2 · row 3 · step mode. One
+    // under `DOCK_TAB_MIN_BANDS = 7` on purpose — the three row banks are one
+    // idea three times and a player reads them together, so a rail would hide
+    // two thirds of the sequence. Nothing is padded to reach the rail.
+    pages: 6,
+
+    // ⚠ THE MODULE RUNS, AND THE FACE STILL DOES NOT MOVE — which is the only
+    // thing that makes this scene baselineable, so it is stated rather than
+    // assumed. moog960 AUTO-RUNS on placement (its own docs say so), and a
+    // column pointer really is sweeping while the shot is taken. But every cell
+    // on this faceplate is a PARAM — 24 step pots, 3 RANGE switches, 8 MODE
+    // switches and RATE — and a running pointer changes none of them. What
+    // advances is the OUTPUT (three row CVs and a clock pulse), and no output
+    // is painted here: the face declares `glyph: 'none'` (this def has no
+    // primary audio output, so every glyph would resolve to `{kind:'static'}`),
+    // it has no hero cell, and it has no panel. There is no surface for the
+    // motion to reach.
+    //
+    // ⚠ NO `simPin` AND NO `videoFaceWhy`, and the absence is derived rather
+    // than inherited: `domain: 'audio'`, outputs are `cv` + `gate` only, and
+    // there is no canvas anywhere on the plate. There is no clock to pin
+    // because nothing on the plate reads one.
+    //
+    // The module is already in `STRICT_VRT_MODULES` — its legacy CARD has held
+    // committed linux baselines since #953 on the same determinism argument —
+    // so this scene extends an existing claim to the faceplate rather than
+    // making a new one.
+  },
 ] as const;
 
 /**
