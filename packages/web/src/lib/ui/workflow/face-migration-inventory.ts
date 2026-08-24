@@ -964,9 +964,17 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
     note: 'the COURT is the module and the three faders are not, so its picture lives in a '
       + 'fullViewBody extension rather than a glyph. ⚠ The lane tile still gets NO picture: '
       + 'pong is domain audio so hasVideoSurface is false, and both outputs are gate so every '
-      + 'glyph literal except none reddens the dead-glyph clause. That is the five-module '
-      + 'platform gap (with timelorde, scope, rasterize, wavesculpt), not a property of this '
-      + 'module.',
+      + 'glyph literal except none reddens the dead-glyph clause. That is a PLATFORM gap '
+      + 'shared with timelorde, scope, rasterize and wavesculpt, not a property of this '
+      + 'module. ⚠ AND ITS SHAPE CHANGED WITH #2160, which is why this no longer says '
+      + '"the five-module platform gap": the widening added `algorithm` + `layoutSource`, '
+      + 'so a glyph literal now RESOLVES for that cohort — the gap closed MECHANICALLY. It '
+      + 'remains open SUBSTANTIVELY, and that is the half that matters: `ModuleShell` '
+      + 'hardcodes topologyValue to 0 when paramId is null and ShellExtensionGlyphProps '
+      + 'carries no nodeId, so what resolves is a CONSTANT picture, identical on every node '
+      + 'and over time. The old sentence now over-claims in one direction (a kind does fit) '
+      + 'and under-claims in the other (fitting buys nothing). rasterize is where this is '
+      + 'easiest to check, being the only cohort member already faced.',
   },
   {
     type: 'push2Control',
