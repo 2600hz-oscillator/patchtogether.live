@@ -79,10 +79,17 @@ const REPS = 5;
  *  every face in the roster. */
 const SUBJECT = 'adsr';
 
-const ms = (n: number) => `${n.toFixed(0)} ms`;
+const ms = (n: number | undefined) => (n === undefined ? 'n/a' : `${n.toFixed(0)} ms`);
+// ⚠ EMPTY-SAFE, AND IT COST A WHOLE SWEEP. With `PROBE_TIERS=dock` the compact
+// timing array is legitimately empty, `s[0]` is `undefined`, and `.toFixed` threw
+// — AFTER every comparison had run and BEFORE the offender list was printed. The
+// probe's own summary destroyed the probe's own finding. Hence this, and hence the
+// offenders being reported FIRST below: a reporting bug must never be able to eat
+// the measurement it is reporting.
 const stats = (xs: number[]) => {
+  if (xs.length === 0) return 'n=0 (not measured in this run)';
   const s = [...xs].sort((a, b) => a - b);
-  return `n=${s.length} min=${ms(s[0]!)} med=${ms(s[s.length >> 1]!)} max=${ms(s[s.length - 1]!)}`;
+  return `n=${s.length} min=${ms(s[0])} med=${ms(s[s.length >> 1])} max=${ms(s[s.length - 1])}`;
 };
 
 test.describe('BOOT PROBE — what a VRT scene spends its time on', () => {
@@ -467,20 +474,23 @@ test.describe('D: shared page vs fresh page — same pixels?', () => {
       await ctx.close();
     }
 
-    const med = (xs: number[]) => [...xs].sort((a, b) => a - b)[xs.length >> 1]!;
-    console.log('\n── D: shared page vs fresh boot ──');
-    console.log(`   subjects             ${ORDER_SUBJECTS.join(', ')}`);
+    // ⚠ THE FINDING FIRST. The timing summary below is a convenience; the
+    // offender list is the measurement, and a crash in the convenience once
+    // destroyed it after a 13-minute sweep had already computed it.
+    console.log(`\n── D: OFFENDERS (${offenders.length}) at ${IDENTITY_DELTA}/255 ──`);
+    console.log(`   subjects (${ORDER_SUBJECTS.length}): ${ORDER_SUBJECTS.join(', ')}`);
+    for (const o of offenders) console.log(`   ${o}`);
+    if (offenders.length === 0) console.log('   none — every scene captured the same pixels shared as fresh');
+
+    const med = (xs: number[]) => (xs.length ? [...xs].sort((a, b) => a - b)[xs.length >> 1]! : NaN);
+    const ratio = (a: number, b: number) => (Number.isFinite(a / b) ? `${(a / b).toFixed(2)}x` : 'n/a');
+    console.log('\n── D: timings ──');
     console.log(`   compact fresh        ${stats(freshMs)}`);
     console.log(`   compact shared       ${stats(sharedMs)}`);
-    console.log(`     speed-up           ${(med(freshMs) / med(sharedMs)).toFixed(2)}x  `
-      + `(${ms(med(freshMs) - med(sharedMs))} saved per scene)`);
+    console.log(`     speed-up           ${ratio(med(freshMs), med(sharedMs))}`);
     console.log(`   dock fresh           ${stats(freshDockMs)}`);
     console.log(`   dock shared          ${stats(sharedDockMs)}`);
-    console.log(`     speed-up           ${(med(freshDockMs) / med(sharedDockMs)).toFixed(2)}x  `
-      + `(${ms(med(freshDockMs) - med(sharedDockMs))} saved per scene)`);
-    console.log(`   identity delta       ${IDENTITY_DELTA}/255 (NOT the gate's 26/255)`);
-    console.log(`   offenders            ${offenders.length}`);
-    for (const o of offenders.slice(0, 12)) console.log(`     ${o}`);
+    console.log(`     speed-up           ${ratio(med(freshDockMs), med(sharedDockMs))}`);
 
     expect(
       offenders,
