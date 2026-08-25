@@ -236,7 +236,7 @@ export const nodeVarispeed = {
  * ⚠ REGISTERED FROM THE SINGLETON, NOT FROM THE CARD, and the move is the point.
  * The card used to register a per-node reader closure in its own `$effect`, so
  * the hook returned NULL whenever no card was mounted — which is precisely the
- * condition `videovarispeed-node-lifetime.spec.ts` has to observe. A probe that
+ * condition `node-source-videovarispeed.spec.ts` has to observe. A probe that
  * cannot see the state under test is not a probe.
  */
 if (typeof window !== 'undefined') {

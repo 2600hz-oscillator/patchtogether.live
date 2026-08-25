@@ -1,4 +1,20 @@
-// e2e/tests/videovarispeed-node-lifetime.spec.ts
+// e2e/tests/node-source-videovarispeed.spec.ts
+//
+// ⚠ THE FILENAME IS LOAD-BEARING — DO NOT RENAME THIS BACK TO `videovarispeed-node-lifetime.spec.ts`.
+// `e2e/webgl-heavy-globs.ts` classifies by PREFIX (`**/videobox-*.spec.ts`,
+// `**/videovarispeed-*.spec.ts`), so a spec named after either module is swept
+// into the WebGL-HEAVY lane whatever it actually does. That lane is EXCLUDED
+// from the sharded e2e matrix (`E2E_WEBGL_HEAVY=exclude`) and the attest job
+// SKIPS it whenever the attest hash is unchanged — its log says so outright:
+// "Heavy WebGL lane skipped (trusting the local run)". Under the old name this
+// spec therefore ran NOWHERE in PR CI, green run after green run, while being
+// the acceptance test for the whole conversion.
+//
+// Nothing here is WebGL-heavy: it reads graph edges, element counts and a slot
+// index, and samples no pixels. `collapse-keeps-playing.spec.ts` does the same
+// real-video-decode work under a non-matching name and rides the sharded lane,
+// which is the precedent this follows. The glob list is deliberately NOT edited
+// — the classification is fine, the prefix collision was the accident.
 //
 // LEG-02 P2 (#1511) — VIDEOVARISPEED's transport, slot state and CV inputs
 // belong to the NODE, not to a mounted card.
@@ -67,7 +83,7 @@ const VVS = 'vv-life';
 const CLIP = 'clip-life';
 
 /** ⚠ Raised above the fleet's 30 s for the measured reason recorded in
- *  videobox-node-lifetime.spec.ts: the FIRST `goto` against a cold dev server
+ *  node-source-videobox.spec.ts: the FIRST `goto` against a cold dev server
  *  pays Vite's whole-module-graph transform, while every later one is warm.
  *  Nothing here is gated on elapsed time — the gates are graph edges, a slot
  *  index and two element counts. */

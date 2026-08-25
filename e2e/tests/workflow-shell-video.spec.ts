@@ -1404,7 +1404,7 @@ test.describe('?shell=1 video CHAIN parity', () => {
     // the test that owns the host's behaviour, so the two answers live side by
     // side and a future edit cannot give videobox a host back unnoticed.
     // Whether its SOURCE is actually live without one is
-    // `videobox-node-lifetime.spec.ts`'s job — this leg only owns the host.
+    // `node-source-videobox.spec.ts`'s job — this leg only owns the host.
     for (const [nodeId, type] of [['vb1', 'videobox'], ['vv1', 'videovarispeed']] as const) {
       await injectPatch(page, [{ id: nodeId, type, position: { x: -1600, y: 5100 } }]);
       await expect(

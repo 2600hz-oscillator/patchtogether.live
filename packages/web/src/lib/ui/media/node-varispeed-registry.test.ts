@@ -16,7 +16,7 @@
 //     which an ordinary expand/collapse performs.
 //
 // Both are asserted here as properties of the controller, and again end-to-end
-// in `videovarispeed-node-lifetime.spec.ts` against a real clip player.
+// in `node-source-videovarispeed.spec.ts` against a real clip player.
 
 import { describe, it, expect } from 'vitest';
 import type { ModuleNode } from '$lib/graph/types';
