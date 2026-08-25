@@ -3266,12 +3266,35 @@ describe('module-face lint — STRICT_FACES is DERIVED FROM THE ARTIFACT, not fl
       // The claim is that a META member with a face is VISIBLE there with its
       // face intact — if the concat ever loses the meta registry, or the field
       // is stripped on the way through, this is what says so.
-      const metaWithFace = allDefs().filter((d) => d.domain === 'meta' && d.face);
+      //
+      // ⚠ THIS USED TO BE `toEqual(['matrixMix'])` — a HAND-TYPED ROSTER of
+      // which meta defs carry a face, i.e. a population written down by name.
+      // It went stale the moment a second meta module was promoted, and it is
+      // the construct that AUTO-MERGES CLEANLY AND WRONGLY: two branches each
+      // promoting one meta module would each have written a correct two-name
+      // list and the merged truth would be three. The claim the leg is really
+      // making has two halves, and both are expressible without naming anybody:
+      // the meta registry must REACH `allDefs()` with `face` intact (the
+      // vacuity legs), and the set that arrives must BE the promoted meta set
+      // (derived membership, both directions).
+      const metaDefs = allDefs().filter((d) => d.domain === 'meta');
+      const metaWithFace = metaDefs.filter((d) => d.face);
+      expect(
+        metaDefs.length,
+        'the LIVE meta registry must reach allDefs() at all — an empty meta slice here makes ' +
+          'every leg below vacuous',
+      ).toBeGreaterThan(0);
+      expect(
+        metaWithFace.length,
+        'the LIVE meta registry must reach allDefs() CARRYING `face` — if this is empty while a ' +
+          'meta def declares a face, the anchor above is blind to the whole domain again',
+      ).toBeGreaterThan(0);
       expect(
         metaWithFace.map((d) => d.type).sort(),
-        'the LIVE meta registry must reach allDefs() carrying `face` — if this is empty ' +
-          'while a meta def declares a face, the anchor above is blind to the whole domain again',
-      ).toEqual(['matrixMix']);
+        'the meta defs arriving with a `face` must BE the meta defs in STRICT_FACES — a name in ' +
+          'one and not the other means the field was stripped on the way through the concat, or ' +
+          'promoted without one',
+      ).toEqual(metaDefs.filter((d) => STRICT_FACES.has(d.type)).map((d) => d.type).sort());
       for (const d of metaWithFace) {
         expect(d.face?.order.length, `${d.type}: a promoted meta face must rank something`).toBeGreaterThan(0);
       }

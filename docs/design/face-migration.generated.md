@@ -91,6 +91,7 @@ author a `face` and rank the controls — no new platform capability.
 | `karplus` | audio | done | — |
 | `kickdrum` | audio | done | — |
 | `kria` | audio | done | — |
+| `launchpadControlLeft` | meta | done | — |
 | `lfo` | audio | done | — |
 | `lines` | video | done | — |
 | `loopback` | video | done | — |
@@ -217,7 +218,6 @@ the primary interaction is not param-shaped — needs a purpose-built surface.
 | `frogger` | audio | — | — |
 | `gamepad` | audio | — | — |
 | `gibribbon` | video | — | — |
-| `launchpadControlLeft` | meta | — | — |
 | `livecode` | audio | — | — |
 | `mappy` | video | — | — |
 | `midiCvBuddy` | audio | — | — |

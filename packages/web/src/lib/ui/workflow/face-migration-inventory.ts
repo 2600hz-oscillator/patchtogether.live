@@ -824,11 +824,25 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
   },
   {
     type: 'launchpadControlLeft',
-    disposition: 'bespoke-surface',
-    why:
-      'a Launchpad PAD MAPPER — an 8×8 pad matrix bound to a hardware surface. It has no params; ' +
-      'the pad map is the interaction. (Note the type id is launchpadControlLeft, not the ' +
-      '`launchpadControl` the older carve-out lists name.)',
+    disposition: 'generic-face',
+    note:
+      'PROMOTED, and it is the SECOND META-DOMAIN FACE. ⚠ THIS ENTRY USED TO SAY "an 8×8 pad ' +
+      'matrix bound to a hardware surface … the pad map is the interaction", AND THERE IS NO 8×8 ' +
+      'GRID ANYWHERE IN THE APP. The matrix is on the HARDWARE. Since the LEFT + RIGHT cards were ' +
+      'consolidated into one, LaunchpadControlCard.svelte renders a title, four buttons, a status ' +
+      'line and a docs hint — no canvas, no pad matrix, and not even the colour legend a sibling ' +
+      'artifact credited it with (that moved to LaunchpadDocs.svelte). Three shipped artifacts ' +
+      'described that surface and all three predated the consolidation; this is the recorderbox ' +
+      'stale-`why` class arriving from the other direction, and it is retired here BY ' +
+      'CONSTRUCTION, since a promoted module must carry a `note` rather than a `why`. What the ' +
+      'module actually is: a DEVICE BINDER with four gestures and zero params. Two of them — ' +
+      'SINGLE and PAIR — are ranked action cells that reach the lane tile; BIND and the ' +
+      'four-role view segment are in a `fullViewBody` extension, because ShellActionCell.label is ' +
+      'a plain string (so a cell cannot flip between Bind and Unbind) and a selector whose roster ' +
+      'is empty in pair mode is the same defect one kind over. ⚠ AND THE PROMOTION IS A ' +
+      'DELETION: this was the only queued module carved out of NON_SHELL_LANE_TYPES, which ' +
+      'short-circuits laneRenderKind BEFORE `migrated` is read, so the carve-out entry had to go ' +
+      'in the same commit or the face would have been unreachable in the lane.',
   },
   {
     type: 'livecode',

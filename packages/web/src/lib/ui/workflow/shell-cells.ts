@@ -168,6 +168,7 @@ import {
   matrixmixYAxisValue,
 } from '$lib/ui/modules/matrixmix-cell-actions';
 import { midiclockConnect } from '$lib/ui/modules/midiclock-cell-actions';
+import { launchpadConnectSingle, launchpadPair } from '$lib/ui/modules/launchpad-cell-actions';
 import { timelordeFaceTap } from '$lib/ui/modules/timelorde/face-tap';
 import {
   WAVESCULPT_WAV_ACCEPT,
@@ -2269,6 +2270,58 @@ const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
       // — which is exactly the caller→seam gap this ledger exists to close.
       probe: { effect: { kind: 'audition', seam: 'engine-message' } },
       onFire: (nodeId) => { midiclockConnect(nodeId); },
+    },
+  },
+
+  // ── LAUNCHPAD CONTROL — the SECOND meta-domain face, and the first whose
+  //    whole control surface is gestures ────────────────────────────────────
+  //
+  // Two handshakes over one physical Novation pair: SINGLE binds one unit whose
+  // role the dock's VIEW segment flips, PAIR runs the press-a-pad L/R split.
+  // They are the module's only always-meaningful controls — BIND is a no-op
+  // until a clip-player exists and the VIEW segment does not exist in pair mode,
+  // so both live in the extension body (see that file).
+  //
+  // ⚠ BOTH LABELS ARE STATIC, AND THAT IS HONEST HERE RATHER THAN A COMPROMISE.
+  // The legacy card flipped its captions to `Re-pair Launchpads` /
+  // `Re-connect single` once a deployment was live, and `ShellActionCell.label`
+  // is a plain string so a cell cannot. Nothing is lost, because the ACTION does
+  // not change: pressing either one re-runs the same handshake from the top,
+  // exactly as the card's second press did. That is the discriminator midiclock
+  // states from the other side ("a fixed label because its action never
+  // changes"), and it is why BIND — where the two presses do OPPOSITE things —
+  // is not a cell.
+  //
+  // ⚠ THEY TAKE ONLY A nodeId AND IGNORE `env`. This module is `domain: 'meta'`
+  // — no ports, no factory, no engine node — so `ShellCellEnv.engine` has
+  // nothing to offer it. The gestures reach the launchpad-device singleton,
+  // which is the module's actual handle.
+  //
+  // ⚠ AN AUDITION, AND `delivered: false` IS REACHABLE. See the header of
+  // `$lib/ui/modules/launchpad-cell-actions.ts`: the press is recorded as
+  // delivered when Web MIDI exists to be reached and NOT delivered when it does
+  // not, which is the card's own first branch and the one condition under which
+  // both buttons are genuinely wired to nothing. A `data` probe was not an
+  // option in any case — this module writes to `node.data` zero times and must
+  // keep doing so; every piece of its state is per-machine `localStorage` or
+  // the device itself, deliberately (a physical device attached to one person's
+  // machine is not a shared fact).
+  launchpadControlLeft: {
+    'launchpad-control-single-{n}': {
+      kind: 'action',
+      label: 'Connect single',
+      title: 'Bind ONE Launchpad — the dock’s view segment flips it between the clip matrix and the command deck',
+      mode: 'trigger',
+      probe: { effect: { kind: 'audition', seam: 'engine-message' } },
+      onFire: (nodeId) => { launchpadConnectSingle(nodeId); },
+    },
+    'launchpad-control-pair-{n}': {
+      kind: 'action',
+      label: 'Pair Launchpads',
+      title: 'Run the press-a-pad handshake over TWO Launchpads — the one you press becomes the LEFT (matrix) unit',
+      mode: 'trigger',
+      probe: { effect: { kind: 'audition', seam: 'engine-message' } },
+      onFire: (nodeId) => { launchpadPair(nodeId); },
     },
   },
 };

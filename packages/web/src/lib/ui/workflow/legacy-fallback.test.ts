@@ -226,7 +226,24 @@ describe('NON_SHELL_LANE_TYPES is ANCHORED to the registry (#1579)', () => {
     // this pins the carve-out to that exported constant rather than to anyone's
     // memory of it.
     expect(LAUNCHPAD_CONTROL_TYPE).toBe('launchpadControlLeft');
-    expect(NON_SHELL_LANE_TYPES.has(LAUNCHPAD_CONTROL_TYPE)).toBe(true);
+    // ⚠ THIS USED TO BE `toBe(true)` — the module was carved out, and this leg
+    // pinned the carve-out to the def's own exported constant so a re-typing
+    // could not drift it again. It is now PROMOTED: it carries a `face`, it is
+    // in STRICT_FACES, and the carve-out entry was deleted in the same commit
+    // (see the lineage note in legacy-fallback.ts — the "grid / launcher /
+    // mapper" clause was never true of this card, and the half that WAS true —
+    // that a placeholder would be lossy — is discharged by the face carrying
+    // all four gestures). Flipped rather than deleted, and flipped rather than
+    // RE-POINTED AT ANOTHER MEMBER: this block exists because THIS id drifted,
+    // so the honest form is the cameraInput lineage note
+    // (dom-source-modules.test.ts, `expect(NON_SHELL_LANE_TYPES.has(
+    // 'cameraInput')).toBe(false)` with the old assertion kept as a comment),
+    // not a substitute subject.
+    expect(NON_SHELL_LANE_TYPES.has(LAUNCHPAD_CONTROL_TYPE)).toBe(false);
+    // ⚠ THIS LINE STAYS, AND IT IS THE HALF THAT GUARDS #1579's ACTUAL DEFECT
+    // (a misspelled id that resolves to no def). It is independent of
+    // membership: the unregistered spelling must be absent whether the real one
+    // is present or not.
     expect(NON_SHELL_LANE_TYPES.has('launchpadControl'), 'the unregistered id must be GONE').toBe(false);
   });
 
