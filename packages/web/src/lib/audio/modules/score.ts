@@ -362,13 +362,28 @@ export const scoreDef: AudioModuleDef = {
      * means "a 16th"; tripling it here would re-time every patch that uses
      * SCORE as a clock source. Only note emission subdivides.
      */
-    function emitSlot(slotIndex: number, atTime: number, slotDur: number) {
+    function emitSlot(
+      slotIndex: number,
+      atTime: number,
+      slotDur: number,
+      /** The caller's `ctx.currentTime` snapshot — NOT re-read here. */
+      now: number = ctx.currentTime,
+    ) {
       // #229 canary: a slot with a past timestamp = the drop guard failed and
       // Web Audio is about to clamp+bunch this onto "now". Kept at 0. Measured
       // on the slot boundary, exactly as it was before subdividing — the
       // sub-slot emits only ever move FORWARD from it, so this cannot
       // manufacture a past-due that the pre-fix code would not also have had.
-      if (atTime < ctx.currentTime - LATE_DROP_EPS) pastDueEmits++;
+      //
+      // ⚠ JUDGED AGAINST THE CALLER'S `now`, not a fresh read. Re-reading the
+      // clock here compared this slot against a LATER now than the drop guard
+      // used, so a slot within LATE_DROP_EPS of the boundary could be admitted
+      // by the guard and then counted past-due microseconds later — a false
+      // canary with no late scheduling behind it. kria hit exactly this on main
+      // (it emits per TRACK, so one borderline tick logged four at once); score
+      // emits once per slot, so its window is narrower and it flaked far more
+      // rarely, but the race is the same one and it is fixed here too.
+      if (atTime < now - LATE_DROP_EPS) pastDueEmits++;
       emitClockPulse(atTime);
       for (const { absTick, offset } of slotEmitPlan(slotIndex)) {
         emitTick(absTick, atTime + offset * slotDur, slotDur);
@@ -655,11 +670,13 @@ export const scoreDef: AudioModuleDef = {
               }
             }
             // #229: drop past-due backlog instead of bunching it onto "now".
-            if (nextStepTime < ctx.currentTime - LATE_DROP_EPS) {
+            // ONE clock read, shared with the canary inside emitSlot.
+            const nowSnapshot = ctx.currentTime;
+            if (nextStepTime < nowSnapshot - LATE_DROP_EPS) {
               lateStepsDropped++;
             } else {
               tickPlayhead.schedule(tickIndex, nextStepTime);
-              emitSlot(tickIndex, nextStepTime, slotDur);
+              emitSlot(tickIndex, nextStepTime, slotDur, nowSnapshot);
             }
             nextStepTime += slotDur;
             tickIndex = (tickIndex + 1) % total16ths;
