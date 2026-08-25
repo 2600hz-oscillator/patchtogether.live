@@ -567,10 +567,13 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
   { type: 'vdelay', disposition: 'generic-face' },
   {
     type: 'vstInstrument',
-    disposition: 'bespoke-surface',
-    why:
-      'DONE. The disposition is CORRECT and stays — this really is a bespoke surface, and the ' +
-      'face rides a `fullViewBody` extension. The `why` was the most accurate in this migration ' +
+    disposition: 'generic-face',
+    note:
+      'PROMOTED (with vstFx, one PR). The disposition MOVED from `bespoke-surface` on promotion, ' +
+      'like es9 and midiclock before it — the identity gate below requires every def that ' +
+      'declares a `face` to be dispositioned generic-face, and the extension seam it uses is ' +
+      'the shipped platform rather than the missing one that word was reserved for. ' +
+      'The old `why` was the most accurate in this migration ' +
       'and still had two false clauses, recorded because the ten faces before it were wrong in ' +
       'bulk and this one was not. RIGHT: "zero params — the surface IS the bridge control plane" ' +
       'is exact, and it is why this face is TWO cells where es9 (whose identical-sounding `why` ' +
@@ -588,9 +591,9 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
   },
   {
     type: 'vstFx',
-    disposition: 'bespoke-surface',
-    why:
-      'DONE. Promoted in the SAME PR as vstInstrument, because the two cards are one component: ' +
+    disposition: 'generic-face',
+    note:
+      'PROMOTED in the SAME PR as vstInstrument, because the two cards are one component: ' +
       'both are a PatchPanel wrapped around the same VstBridgePanel, differing only in their ' +
       'port sets and in which plugin kinds the picker lists. They share one `vstBridge` shell ' +
       'extension for the same reason. See the vstInstrument note for the two clauses this ' +

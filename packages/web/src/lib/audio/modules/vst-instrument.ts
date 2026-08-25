@@ -161,14 +161,14 @@ export const vstInstrumentDef: AudioModuleDef = {
         "The plugin's audio return, right (stereo-paired with out_l, so patching only the left side normals both).",
     },
     controls: {
-      'vst-connect':
+      'vst-connect-{n}':
         "Opens this card's own session with the vst-bridge helper — one WebSocket, one plugin "
         + 'instance, keyed by this node id. It also RESTARTS a live session at the engine\'s current '
         + 'sample rate, which is the recovery path when another browser tab has claimed this card\'s '
         + 'instance: press it and the instance comes back here. The engine already connects on its '
         + 'own when the node is created, so this is for the case where the helper was not running '
         + 'yet, or where you disconnected on purpose.',
-      'vst-disconnect':
+      'vst-disconnect-{n}':
         'Drops the session without deleting the node — the helper PARKS this plugin instance rather '
         + 'than destroying it (about 90 seconds), so a reconnect re-adopts the same plugin with its '
         + 'state intact. Use it to hand one of the helper\'s sixteen concurrent instances to another '

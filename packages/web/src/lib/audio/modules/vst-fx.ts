@@ -137,14 +137,14 @@ export const vstFxDef: AudioModuleDef = {
         "The plugin's processed return, right (stereo-paired with out_l).",
     },
     controls: {
-      'vst-connect':
+      'vst-connect-{n}':
         "Opens this card's own session with the vst-bridge helper — one WebSocket, one plugin "
         + 'instance, keyed by this node id. It also RESTARTS a live session at the engine\'s current '
         + 'sample rate, which is the recovery path when another browser tab has claimed this card\'s '
         + 'instance. The engine already connects on its own when the node is created, so this is for '
         + 'the case where the helper was not running yet, or where you disconnected on purpose. Until '
         + 'it succeeds the insert bypasses locally, so the lane keeps flowing either way.',
-      'vst-disconnect':
+      'vst-disconnect-{n}':
         'Drops the session without deleting the node — the helper PARKS this plugin instance rather '
         + 'than destroying it (about 90 seconds), so a reconnect re-adopts the same plugin with its '
         + 'state intact. The insert falls back to a local bypass, so the lane keeps its audio; you '
