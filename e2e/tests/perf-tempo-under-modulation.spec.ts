@@ -272,10 +272,16 @@ async function stressFader(
 }
 
 // ⏸ FLAKE-PARK — both tests parked with `test.fixme`; bodies and assertions are
-// UNCHANGED. NONDETERMINISM: 2 hard failures across 2 SHAs / 2 branches on
-// 2026-08-25 (#2200 shard 3 at :274, #2202 shard 3 at :414, job 97709034187:
+// UNCHANGED. NONDETERMINISM: 2 observations across 2 SHAs / 2 branches on
+// 2026-08-25 — ONE HARD failure (#2200 shard 3 at :274, failed both attempts)
+// and ONE RECOVERED FLAKE (#2202 shard 3, `1 flaky · 189 passed`, failed then
+// passed on retry, red only via --fail-on-flaky). Measured on the flake:
 // `delta=92 (8→100) windowMs=3000.1 expected~102.40 band=[94,111]` — short of
-// the floor by exactly TEMPO_SLOP_STEPS).
+// the floor by exactly TEMPO_SLOP_STEPS.
+//
+// ⚠ THE MIX MATTERS FOR WHOEVER UN-PARKS THIS. It is not deterministically
+// broken: one of the two recovered on retry. Do NOT go looking for a
+// determinism bug the runs do not evidence — the shape is load sensitivity.
 //
 // ⚠ THIS IS THE THIRD ATTEMPT, WHICH IS WHY IT IS A PARK AND NOT A FOURTH FIX.
 // `182e905fc` root-caused the original chronic shard-7 flake (Playwright IPC
