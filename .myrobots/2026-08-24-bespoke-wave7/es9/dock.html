@@ -1,0 +1,384 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>ES-9 face — the dock faceplate, BRIDGE DOWN</title>
+<style>
+/* ─────────────────────────────────────────────────────────────────────────
+   ES-9 FACEPLATE — MOCKUP, state 1 of 2 (BRIDGE DOWN).
+   SPEC AND MOCKUP ONLY. Nothing here is implemented. See spec.md.
+
+   House tokens, the wave-1..6 set.
+
+   ⚠ THIS IS THE STATE EVERY CI RUNNER CAPTURES, and it is the whole VRT
+   argument: es9.ts:378 calls acquireEs9Bridge in the FACTORY, unconditionally,
+   so the transport worker really does spawn on every runner and really does
+   fail to reach ws://127.0.0.1:9209 forever (bridge.worker.ts, scheduleReconnect).
+   The CARD paints that as text and therefore cycles; the FACE paints two dark
+   lamps and a static sentence. The drain is a CONSEQUENCE of the face, not a bet.
+
+   ⚠ WHAT IS DELIBERATELY ABSENT, and why — this is the review:
+     * NO state word.  Es9Card.svelte:178 paints `stateLabel` — one of eight
+       strings. The ruling deletes it; the BRIDGE lamp replaces it (spec §4.1).
+     * NO `48 kHz · 16×16 · rtt 4.2 ms`  (card :187-188).
+     * NO `xruns 0/0`  (card :189)  → the XRUN lamp (spec §4.4).
+     * NO `Jacks driven by CV Buddy: …`  (card :197) → per-cell marks (spec §4.7).
+     * NO `±1.0 ≙ ±10 V at the jacks`  (card :234) → docs.explanation already
+       says it verbatim (es9.ts:307).
+     * NO decimal anywhere. NO right-hand column. NO tab rail (3 bands < 7).
+
+   WHAT IS PRESENT, and which permitted role each string plays:
+     * "es-9"                        → the module NAME (dock title bar)
+     * "bridge" / "out jacks" /
+       "in twins"                    → TAB/SECTION labels
+     * "CONNECT" / "DISCONNECT"      → CONTROL CAPTIONS (two STATIC captions on
+                                       two cells — never one that flips)
+     * "BRIDGE" / "XRUN"             → StatusLed captions, STATIC BY CONTRACT
+     * "1".."8", "1".."14"           → CONTROL CAPTIONS (the tidyVco A/D/S/R case:
+                                       fourteen identical controls, and the number
+                                       is the only thing separating them)
+     * audio / cv / pitch / gate     → OPTION NAMES inside the control that selects
+                                       them
+     * "Run the es9-bridge app
+        (Chromium required), then
+        connect."                    → an EMPTY-STATE hint, the midiclock precedent
+   Nothing else is text.
+   ───────────────────────────────────────────────────────────────────────── */
+:root{
+  --bg:#0e1013; --dock:#12161c; --pbody:#1c1f24; --line:#2c3037; --tile:#33383f;
+  --ink:#eef1f5; --dim:#9aa2ad; --faint:#646c77;
+  --accent:#6cf; --ch1:#fbbf24; --warn:#e6b800; --good:#8fe6b0; --bad:#e08b8b;
+  --c-audio:#f0a868; --c-cv:#7dd3fc; --c-gate:#e8c66a; --c-pitch:#c084fc;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+  font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1240px;margin:0 auto;padding:26px 20px 90px}
+h1{font-size:21px;font-weight:800;margin:0 0 6px;letter-spacing:.01em}
+h2{font-size:13px;font-weight:800;margin:26px 0 8px;letter-spacing:.05em;
+  text-transform:uppercase;color:var(--dim);font-family:var(--mono)}
+.sub{color:var(--dim);font-size:12.5px;margin:0 0 14px;max-width:108ch}
+.sub b{color:var(--ink)}
+code{font-family:var(--mono);font-size:11.5px;color:var(--ch1)}
+.nav{display:flex;gap:8px;margin:0 0 20px;font-size:11px;flex-wrap:wrap}
+.nav a{color:var(--ink);text-decoration:none;border:1px solid var(--line);border-radius:6px;
+  padding:6px 12px;background:#12161c;font-family:var(--mono);letter-spacing:.06em;text-transform:uppercase}
+.nav a.on{border-color:var(--c-audio);color:var(--c-audio)}
+.warn{border:1px solid #6a5330;background:#1c1811;border-radius:8px;padding:11px 14px;
+  margin:12px 0;font-size:12.5px;color:#e8cf9a;max-width:120ch}
+.warn b{color:var(--warn)}
+.ok{border:1px solid #3b5a48;background:#111a15;border-radius:8px;padding:11px 14px;
+  margin:12px 0;font-size:12.5px;color:#a9d8bd;max-width:120ch}
+.ok b{color:var(--good)}
+.cols{display:grid;grid-template-columns:minmax(0,1fr) 400px;gap:22px;align-items:start}
+@media (max-width:1140px){.cols{grid-template-columns:minmax(0,1fr)}}
+
+/* ── the dock pane ─────────────────────────────────────────────────────── */
+.pane{background:#0b0e12;border:1px dashed #2a2f38;border-radius:12px;padding:16px;position:relative}
+.pane::after{content:'DOCK PANE — 1220 px in the real shell';position:absolute;
+  right:12px;bottom:7px;font-family:var(--mono);font-size:8.6px;letter-spacing:.09em;color:#3d444e}
+.dock{background:var(--dock);border:1px solid var(--line);border-radius:11px;overflow:hidden;
+  padding:11px;width:max-content}
+.chromebar{display:flex;align-items:baseline;gap:9px;padding:0 2px 8px}
+.chromebar .nm{font-size:13px;font-weight:800;letter-spacing:.03em}
+.chromebar .x{margin-left:auto;color:var(--faint);font-family:var(--mono);font-size:12px}
+.plate{background:var(--pbody);border:1px solid var(--tile);border-left:4px solid var(--c-audio);
+  border-radius:10px;padding:0 0 6px;width:max-content;max-width:100%}
+
+/* ── the fullViewBody (role: status-primitive) ─────────────────────────── */
+.extbody{margin:11px 12px 4px;padding:8px 11px;display:flex;align-items:center;gap:14px;
+  border:1px solid #2b3038;border-radius:4px;background:#171b21;min-width:392px}
+.hint{margin:0;font-size:10px;line-height:1.35;color:var(--dim);max-width:34ch}
+.lamps{display:inline-flex;align-items:center;gap:14px;margin-left:auto}
+.led{display:inline-flex;align-items:center;gap:5px;font-size:9px;font-weight:600;
+  letter-spacing:.6px;color:var(--faint);text-transform:uppercase;font-family:var(--sans)}
+.led .lamp{width:7px;height:7px;border-radius:50%;background:#33383f;
+  box-shadow:inset 0 0 2px rgba(0,0,0,.8);flex:0 0 auto}
+.led.lit .lamp{background:var(--c-cv);box-shadow:0 0 6px var(--c-cv)}
+.led.lit{color:var(--ink)}
+.led.warn.lit .lamp{background:var(--warn);box-shadow:0 0 6px var(--warn)}
+.led.warn.lit{color:var(--warn)}
+
+/* ── bands ─────────────────────────────────────────────────────────────── */
+.band{padding:9px 12px 4px;border-top:1px solid #23272e;margin-top:6px}
+.band:first-of-type{border-top:0;margin-top:0}
+.bh{font-family:var(--mono);font-size:9px;letter-spacing:.11em;text-transform:uppercase;
+  color:var(--faint);margin:0 0 2px}
+.bhint{font-size:10px;color:#59616b;margin:0 0 8px;max-width:56ch;line-height:1.35}
+.cells{display:flex;flex-wrap:wrap;gap:8px 10px}
+
+/* an ACTION cell */
+.act{display:flex;flex-direction:column;align-items:center;gap:4px;width:82px}
+.act .btn{width:100%;text-align:center;padding:6px 0;border:1px solid #33404d;border-radius:4px;
+  background:#152029;color:var(--c-cv);font-family:var(--mono);font-size:9.6px;letter-spacing:.09em}
+.act .btn.dis{border-color:#2a3038;background:#14171c;color:var(--faint)}
+
+/* a SEGMENTED param cell (4 options ≤ SEGMENTED_MAX_OPTIONS = 6 ⇒ segmented at dock) */
+.cell{display:flex;flex-direction:column;gap:4px;width:118px}
+.cap{font-family:var(--mono);font-size:8.6px;letter-spacing:.1em;color:var(--faint);
+  text-transform:uppercase;text-align:center}
+.seg{display:flex;border:1px solid #2a3038;border-radius:4px;overflow:hidden;background:#0d1116}
+.seg span{flex:1;text-align:center;font-family:var(--mono);font-size:8px;letter-spacing:.05em;
+  padding:4px 0;color:#5a626c;border-right:1px solid #1e242b}
+.seg span:last-child{border-right:0}
+.seg span.on{background:#2a2015;color:var(--c-audio)}
+.seg.cvsel span.on{background:#0f2733;color:var(--c-cv)}
+
+/* the compact LANE tile, for scale */
+.lanewrap{display:flex;gap:18px;align-items:flex-start;margin-top:14px}
+.lane{width:192px;background:var(--pbody);border:1px solid var(--tile);
+  border-left:3px solid var(--c-audio);border-radius:8px;padding:7px 8px}
+.lane .nm{font-size:11px;font-weight:800;letter-spacing:.02em;margin-bottom:5px}
+.lane .glyph{height:34px;border:1px solid #262b32;border-radius:3px;background:#0c1015;
+  margin-bottom:6px;position:relative;overflow:hidden}
+.lane .glyph::after{content:'';position:absolute;left:6px;right:6px;bottom:9px;height:1px;
+  background:#2a3038}
+.lane .glyph::before{content:'meter · in1';position:absolute;left:6px;top:5px;
+  font-family:var(--mono);font-size:7px;letter-spacing:.08em;color:#39414b}
+.lane .lc{display:flex;gap:5px}
+.lane .lc>*{flex:1}
+.lanenote{font-size:11.6px;color:var(--dim);max-width:38ch}
+.lanenote b{color:var(--ink)}
+
+/* ── the annotation column ─────────────────────────────────────────────── */
+.side{font-size:12.3px;color:var(--dim)}
+.side h3{font-size:10.4px;font-family:var(--mono);letter-spacing:.09em;text-transform:uppercase;
+  color:var(--faint);margin:16px 0 6px;font-weight:600}
+.side h3:first-child{margin-top:0}
+.side p{margin:0 0 9px}
+.side b{color:var(--ink)}
+.kill{color:#c98d8d}
+table{border-collapse:collapse;width:100%;font-size:11.6px;margin:6px 0 12px}
+th,td{border:1px solid #23272e;padding:5px 8px;text-align:left;vertical-align:top}
+th{background:#12161c;color:var(--faint);font-family:var(--mono);font-size:9.2px;
+  letter-spacing:.07em;text-transform:uppercase;font-weight:600}
+td code{font-size:10.6px}
+.aria{font-family:var(--mono);font-size:10.4px;color:#8fbfe0;background:#0d1218;
+  border:1px solid #1c2530;border-radius:5px;padding:7px 9px;margin:5px 0 11px;
+  white-space:pre-wrap;word-break:break-word}
+.measure{font-family:var(--mono);font-size:10.6px;color:var(--good)}
+</style>
+
+<div class="wrap">
+
+<h1>es-9 — the dock faceplate, BRIDGE DOWN</h1>
+<p class="sub">Wave 7, cohort B. State 1 of 2. <b>Mockup only; nothing here is implemented.</b>
+The reasoning is in <code>spec.md</code>. ⚠ This is the state the VRT capture takes and the
+state a first-run user meets, because <code>es9.ts:378</code> attempts the bridge at node
+construction whether or not the native helper is running.</p>
+
+<div class="nav">
+  <a class="on" href="dock.html">dock · bridge down</a>
+  <a href="dock-connected.html">dock · connected</a>
+  <a href="spec.md">spec.md</a>
+  <a href="../midiLane/spec.md">midiLane/spec.md</a>
+</div>
+
+<div class="cols">
+<div>
+
+<div class="pane">
+  <div class="dock">
+    <div class="chromebar">
+      <span class="nm">es-9</span>
+      <span class="x">✕</span>
+    </div>
+
+    <div class="plate">
+
+      <!-- the fullViewBody: role status-primitive. Two lamps + one empty-state hint. -->
+      <div class="extbody">
+        <p class="hint">Run the es9-bridge app (Chromium required), then connect.</p>
+        <span class="lamps">
+          <span class="led" title="aria-label: BRIDGE — no es9-bridge app answered on ws://127.0.0.1:9209">
+            <span class="lamp"></span>BRIDGE</span>
+          <span class="led warn" title="aria-label: XRUN — no bridge, so nothing measured">
+            <span class="lamp"></span>XRUN</span>
+        </span>
+      </div>
+
+      <div class="band">
+        <p class="bh">bridge</p>
+        <p class="bhint">The native helper owns CoreAudio and serves ws://127.0.0.1:9209. Nothing
+          flows until it answers; both jacks and twins sit at rest meanwhile.</p>
+        <div class="cells">
+          <div class="act"><span class="btn">CONNECT</span></div>
+          <div class="act"><span class="btn dis">DISCONNECT</span></div>
+        </div>
+      </div>
+
+      <div class="band">
+        <p class="bh">out jacks</p>
+        <p class="bhint">The eight physical DC-coupled jacks (USB channels 9–16). The class sets the
+          inverse voltage mapping AND the failure policy: cv and pitch HOLD, gate and audio fall to zero.</p>
+        <div class="cells">
+          <div class="cell"><span class="cap">1</span><span class="seg"><span class="on">AUD</span><span>CV</span><span>PIT</span><span>GAT</span></span></div>
+          <div class="cell"><span class="cap">2</span><span class="seg"><span class="on">AUD</span><span>CV</span><span>PIT</span><span>GAT</span></span></div>
+          <div class="cell"><span class="cap">3</span><span class="seg"><span class="on">AUD</span><span>CV</span><span>PIT</span><span>GAT</span></span></div>
+          <div class="cell"><span class="cap">4</span><span class="seg"><span class="on">AUD</span><span>CV</span><span>PIT</span><span>GAT</span></span></div>
+          <div class="cell"><span class="cap">5</span><span class="seg"><span class="on">AUD</span><span>CV</span><span>PIT</span><span>GAT</span></span></div>
+          <div class="cell"><span class="cap">6</span><span class="seg"><span class="on">AUD</span><span>CV</span><span>PIT</span><span>GAT</span></span></div>
+          <div class="cell"><span class="cap">7</span><span class="seg"><span class="on">AUD</span><span>CV</span><span>PIT</span><span>GAT</span></span></div>
+          <div class="cell"><span class="cap">8</span><span class="seg"><span class="on">AUD</span><span>CV</span><span>PIT</span><span>GAT</span></span></div>
+        </div>
+      </div>
+
+      <div class="band">
+        <p class="bh">in twins</p>
+        <p class="bhint">Each hardware input jack 1–14 has a raw audio port and a class-scaled CV twin.
+          This sets the twin only; the raw port is unaffected.</p>
+        <div class="cells">
+          <div class="cell"><span class="cap">1</span><span class="seg cvsel"><span>AUD</span><span class="on">CV</span><span>PIT</span><span>GAT</span></span></div>
+          <div class="cell"><span class="cap">2</span><span class="seg cvsel"><span>AUD</span><span class="on">CV</span><span>PIT</span><span>GAT</span></span></div>
+          <div class="cell"><span class="cap">3</span><span class="seg cvsel"><span>AUD</span><span class="on">CV</span><span>PIT</span><span>GAT</span></span></div>
+          <div class="cell"><span class="cap">4</span><span class="seg cvsel"><span>AUD</span><span class="on">CV</span><span>PIT</span><span>GAT</span></span></div>
+          <div class="cell"><span class="cap">5</span><span class="seg cvsel"><span>AUD</span><span class="on">CV</span><span>PIT</span><span>GAT</span></span></div>
+          <div class="cell"><span class="cap">6</span><span class="seg cvsel"><span>AUD</span><span class="on">CV</span><span>PIT</span><span>GAT</span></span></div>
+          <div class="cell"><span class="cap">7</span><span class="seg cvsel"><span>AUD</span><span class="on">CV</span><span>PIT</span><span>GAT</span></span></div>
+          <div class="cell"><span class="cap">8</span><span class="seg cvsel"><span>AUD</span><span class="on">CV</span><span>PIT</span><span>GAT</span></span></div>
+          <div class="cell"><span class="cap">9</span><span class="seg cvsel"><span>AUD</span><span class="on">CV</span><span>PIT</span><span>GAT</span></span></div>
+          <div class="cell"><span class="cap">10</span><span class="seg cvsel"><span>AUD</span><span class="on">CV</span><span>PIT</span><span>GAT</span></span></div>
+          <div class="cell"><span class="cap">11</span><span class="seg cvsel"><span>AUD</span><span class="on">CV</span><span>PIT</span><span>GAT</span></span></div>
+          <div class="cell"><span class="cap">12</span><span class="seg cvsel"><span>AUD</span><span class="on">CV</span><span>PIT</span><span>GAT</span></span></div>
+          <div class="cell"><span class="cap">13</span><span class="seg cvsel"><span>AUD</span><span class="on">CV</span><span>PIT</span><span>GAT</span></span></div>
+          <div class="cell"><span class="cap">14</span><span class="seg cvsel"><span>AUD</span><span class="on">CV</span><span>PIT</span><span>GAT</span></span></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<div class="lanewrap">
+  <div class="lane">
+    <div class="nm">es-9</div>
+    <div class="glyph"></div>
+    <div class="lc">
+      <div class="act" style="width:auto"><span class="btn" style="font-size:8px">CONNECT</span></div>
+      <div class="act" style="width:auto"><span class="btn dis" style="font-size:8px">DISCONN</span></div>
+    </div>
+  </div>
+  <p class="lanenote"><b>The compact lane tile at 1/8.</b> Today this module renders a
+    <code>moduleShellPlaceholder</code> — a RACKLINE tile with <b>no ranked controls at all</b>
+    (<code>ModuleShellPlaceholder.svelte:1-10</code>). Promotion's whole lane effect is
+    "which cells appear on a tile that currently has none", and on es9 the two gestures come
+    first because the module is inert until the bridge answers. <b>The glyph is a real
+    <code>meter</code> on <code>in1</code></b> — the cohort's only reachable live glyph
+    (<code>spec.md §3.2</code>).</p>
+</div>
+
+<h2>What the plate does NOT paint</h2>
+<table>
+  <tr><th>on the card today</th><th>where</th><th>on the face</th></tr>
+  <tr><td><code>connecting…</code> / <code>bridge not found</code> / <code>ES-9 unplugged</code> …</td>
+      <td><code>Es9Card.svelte:155-165</code>, painted <code>:178</code></td>
+      <td class="kill">REMOVED — a state word about the module, painted outside every control.
+        ⚠ It is also the ONLY non-deterministic pixel region on this card, so removing it is
+        what makes the VRT drain possible</td></tr>
+  <tr><td><code>48 kHz · 16×16 · rtt 4.2 ms</code></td><td><code>:187-188</code></td>
+      <td class="kill">REMOVED — three derived numbers. The rate is always the AudioContext rate
+        and 16×16 is a constant of the hardware</td></tr>
+  <tr><td><code>xruns 0/0</code></td><td><code>:189</code></td>
+      <td class="kill">REMOVED as text → the <b>XRUN lamp</b>, <code>tone="warn"</code>. ⚠ The
+        finding does NOT lapse: <code>CvBuddyStatusBody.svelte</code> names this readout, in a
+        shipped faceplate, as the other half of a two-lamp diagnosis</td></tr>
+  <tr><td><code>Jacks driven by CV Buddy: 3, 4, 7 (run), 8 (clock)</code></td><td><code>:196-198</code></td>
+      <td class="kill">REMOVED as text → per-cell marks on the claimed OUT cells (see the other
+        mock). Strictly better than the card's version, which tells you which NUMBERS and not
+        which CONTROL</td></tr>
+  <tr><td><code>±1.0 ≙ ±10 V at the jacks</code></td><td><code>:234</code></td>
+      <td class="kill">REMOVED — a permanent sentence. A <b>RELOCATION</b>: <code>es9.ts:307</code>
+        says it verbatim in <code>docs.explanation</code>, and every per-jack doc repeats it</td></tr>
+  <tr><td><code>Run the es9-bridge app (Chromium required), then connect.</code></td><td><code>:194</code></td>
+      <td><b>KEPT</b> — instructional copy in an EMPTY state, permitted by name in
+        <code>MidiclockDeviceBody.svelte</code>'s own header</td></tr>
+</table>
+
+<div class="warn">
+  <b>⚠ The BRIDGE lamp is strictly weaker than the label it replaces, and that is the ruling's
+  intended trade.</b> <code>Es9ConnectionState</code> has eight values
+  (<code>bridge-client.ts:19-27</code>); a boolean lamp has two, so <code>busy</code> and
+  <code>device_lost</code> — genuinely different failures with genuinely different fixes — show
+  the same dark lamp at rest. The sentence is on <code>aria-label</code> and <code>title</code>,
+  the empty-state hint covers the common case, and <code>spec.md §4.1</code> records why a second
+  FAULT lamp was <i>considered and refused</i> rather than left unexamined.
+</div>
+
+</div>
+
+<div class="side">
+
+<h3>Width — nothing is earned, and nothing is asked for</h3>
+<p>No live picture, no scope trace, no video preview, no XY pad — the four things the ruling
+names as genuine earners. <code>face.hero</code> is not declared, and
+<code>face-width-source.test.ts</code> gets <b>no entry</b> (its
+<code>PLATE_FLOOR_EXEMPTIONS</code> is empty and stays empty).</p>
+<p>es9 is a <b>wide-BAND face, not a wide PLATE</b>: fourteen cells on one row is content, not
+reserve. The gate measures <span class="measure">bodyW − contentW ≤ 40 px</span> against modes
+at <span class="measure">15</span> and <span class="measure">32-33</span> px, and cells wrap
+before they clip — <code>hiddenX === 0</code> is the leg that catches a clip, and it is in the
+required lane.</p>
+
+<h3>Three bands. No tab rail.</h3>
+<p><code>DOCK_TAB_MIN_BANDS</code> is 7 and <code>face.tabbed</code> is owner-instruction-only.
+Three honest bands render as a column, <i>and that is correct</i> — the type's own doc-comment
+says so. Nothing is padded to reach a rail and nothing is merged to avoid one.</p>
+
+<h3>The permitted text roles, and every string on the plate</h3>
+<table>
+  <tr><th>string</th><th>role</th></tr>
+  <tr><td><code>es-9</code></td><td>module NAME</td></tr>
+  <tr><td><code>bridge · out jacks · in twins</code></td><td>SECTION labels</td></tr>
+  <tr><td><code>CONNECT · DISCONNECT</code></td><td>CONTROL CAPTIONS — two <b>static</b> captions
+      on two cells, never one that flips</td></tr>
+  <tr><td><code>BRIDGE · XRUN</code></td><td><code>StatusLed</code> captions, <b>static by
+      contract</b> — painted identically whether lit or dark</td></tr>
+  <tr><td><code>1</code>…<code>14</code></td><td>CONTROL CAPTIONS. The tidyVco A/D/S/R case:
+      fourteen identical controls and the number is the only separator. <b><code>face.bareCells</code>
+      is NOT declared</b></td></tr>
+  <tr><td><code>AUD CV PIT GAT</code></td><td>OPTION NAMES inside the control that selects them.
+      ⚠ <code>looksNumeric</code> matches none of them, so <b>no
+      <code>NUMERIC_LABEL_EXEMPTIONS</code> entry</b></td></tr>
+  <tr><td>the empty-state hint</td><td>instructional copy in a state with no other content</td></tr>
+</table>
+<p>There is no eighth string. That is the whole test.</p>
+
+<h3>Where the values went</h3>
+<div class="aria">BRIDGE lamp
+  aria-label = "BRIDGE — no es9-bridge app
+    answered on ws://127.0.0.1:9209"
+
+  (connected:)
+  "BRIDGE — connected to ES-9,
+    48 kHz, 16×16, round trip 4.2 ms"</div>
+<div class="aria">XRUN lamp  (tone="warn")
+  aria-label = "XRUN — 3 underruns,
+    0 overruns since the bridge came up"</div>
+<div class="aria">OUT 3 cell
+  aria-valuetext = "gate"
+  title          = "gate — 0|1 → 0/+5 V;
+    falls to zero on a stream hiccup"</div>
+<p>Speakable and assertable, never painted. Every string is produced by a <b>pure model file
+beside the body</b>, for the reason the shipped binder body gives: an unpainted string that is
+wrong is invisible to a VRT baseline and to a human reading one.</p>
+
+<h3>The glyph is <code>meter</code>, and es9 is the cohort's only member that gets one</h3>
+<p><code>primaryAudioOutPortId</code> matches <code>type === 'audio'</code> exactly
+(<code>shell-glyph-live.ts:111-113</code>). Every other binder — <code>midiCvBuddy</code>,
+<code>midiOutBuddy</code>, <code>chromaconsole</code>, <code>midiclock</code>,
+<code>midiLane</code> — has no <code>audio</code> output, so all five are forced to
+<code>'none'</code>. <b>es9 declares sixteen</b>, so a live meter on <code>in1</code> binds.</p>
+<p>⚠ That makes es9 <b>evidence against</b> the sixth-glyph platform ask being cohort-wide.
+The honest population for "binding state + event rate" is <b>binders whose payload is EVENTS</b>,
+not binders — because the one that moves AUDIO already has a picture.</p>
+
+<h3>⚠ And there is a P0 under this plate</h3>
+<p><code>updateEs9Config</code> has <b>exactly one caller in the tree</b>
+(<code>Es9Card.svelte:89</code>), on a card the default shell never mounts — so the bridge's
+per-jack UNDERRUN POLICY does not follow the class param, and the CV-Buddy janitor's class
+writes never reach it at all. <b>Promotion would delete that caller.</b> It is
+<code>spec.md §11</code>, and it is a <i>precursor</i>, not a face question.</p>
+
+</div>
+</div>
+</div>

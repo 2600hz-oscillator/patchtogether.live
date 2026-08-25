@@ -1,0 +1,344 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>GAMEPAD face — the dock faceplate (disconnected)</title>
+<style>
+/* ─────────────────────────────────────────────────────────────────────────
+   GAMEPAD FACEPLATE — MOCKUP, state 1 of 2: DISCONNECTED.
+   SPEC AND MOCKUP ONLY. Nothing here is implemented. See spec.md.
+
+   ⚠ THIS IS THE STATE THE DOCK VRT BASELINE CAPTURES, and spec.md §6.3 is
+   why: a CI runner has no controller, navigator.getGamepads() returns no
+   populated pad, the factory takes its `if (!pad)` branch (gamepad.ts:1088)
+   and snapshot.connected stays false FOREVER — reaching the connected state
+   requires a physical button press this suite cannot perform. Every pixel
+   below is a function of the code. That is midiclock's discharge argument
+   (_shell-faces.ts:3350-3372), structurally identical.
+
+   House tokens — the same set the wave-1..6 mocks use.
+   ───────────────────────────────────────────────────────────────────────── */
+:root{
+  --bg:#0e1013; --dock:#12161c; --pbody:#1c1f24; --well:#0a0c0f;
+  --line:#2c3037; --tile:#33383f; --ink:#eef1f5; --dim:#9aa2ad; --faint:#646c77;
+  --cv:#7dd3fc; --gate:#a3e635; --accent:#6cf; --ch1:#fbbf24; --warn:#f2c14e; --good:#8fe6b0;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+  font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1240px;margin:0 auto;padding:26px 20px 90px}
+h1{font-size:21px;font-weight:800;margin:0 0 6px}
+.sub{color:var(--dim);font-size:12.5px;margin:0 0 14px;max-width:106ch}
+.sub b{color:var(--ink)} code{font-family:var(--mono);font-size:11.5px;color:var(--ch1)}
+.nav{display:flex;gap:8px;margin:0 0 20px;font-size:11px;flex-wrap:wrap}
+.nav a{color:var(--ink);text-decoration:none;border:1px solid var(--line);border-radius:6px;
+  padding:6px 12px;background:#12161c;font-family:var(--mono);letter-spacing:.06em;text-transform:uppercase}
+.nav a.on{border-color:var(--cv);color:var(--cv)}
+.ok{border:1px solid #3b5a48;background:#111a15;border-radius:8px;padding:11px 14px;
+  margin:12px 0;font-size:12.5px;color:#a9d8bd;max-width:118ch}
+.ok b{color:var(--good)}
+.warn{border:1px solid #6a5330;background:#1c1811;border-radius:8px;padding:11px 14px;
+  margin:12px 0;font-size:12.5px;color:#e8cf9a;max-width:118ch}
+.warn b{color:var(--warn)}
+.cols{display:grid;grid-template-columns:minmax(0,1fr) 400px;gap:18px;align-items:start}
+@media (max-width:1120px){.cols{grid-template-columns:minmax(0,1fr)}}
+
+.dock{background:var(--dock);border:1px solid var(--line);border-radius:11px;overflow:hidden;padding:11px}
+.chromebar{display:flex;align-items:baseline;gap:9px;padding:0 2px 8px}
+.chromebar .nm{font-size:13px;font-weight:800;letter-spacing:.03em}
+.chromebar .rl{font-size:9.4px;letter-spacing:.09em;text-transform:uppercase;color:var(--faint);font-family:var(--mono)}
+.chromebar .x{margin-left:auto;color:var(--faint);font-family:var(--mono);font-size:12px}
+.plate{background:var(--pbody);border:1px solid var(--tile);border-left:4px solid var(--cv);
+  border-radius:10px;padding:0 0 12px;width:max-content;max-width:100%}
+
+.extbody{padding:12px 14px 10px;width:284px;max-width:100%}
+
+/* the four StatusLeds — a static literal caption, a boolean lamp, the
+   measurement in `detail` → aria-label. NEVER a text node. */
+.lamps{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 10px}
+.led{display:flex;align-items:center;gap:5px;border:1px solid var(--line);border-radius:4px;
+  padding:3px 7px;background:#171b22}
+.led .dot{width:7px;height:7px;border-radius:50%;background:#39404a;border:1px solid #2a3038}
+.led.on .dot{background:var(--good);box-shadow:0 0 5px rgba(143,230,176,.8)}
+.led.warnl.on .dot{background:var(--warn);box-shadow:0 0 5px rgba(242,193,78,.8)}
+.led .cap{font-size:8px;letter-spacing:.09em;text-transform:uppercase;color:var(--faint);font-family:var(--mono)}
+
+.hint{border:1px dashed #3a4150;border-radius:4px;padding:7px 9px;margin:0 0 10px;
+  color:var(--dim);font-size:9.6px;text-align:center;line-height:1.45}
+
+.sticks{display:flex;justify-content:center;gap:14px;margin:0 0 9px}
+.sblk{display:flex;flex-direction:column;align-items:center;gap:3px}
+.pad{width:64px;height:64px;border:1px solid #2a2f3a;border-radius:3px;background:#0e1015;position:relative}
+.pad .ch,.pad .cv2{position:absolute;background:#232833}
+.pad .ch{left:0;right:0;top:50%;height:1px}
+.pad .cv2{top:0;bottom:0;left:50%;width:1px}
+.pad .dot{position:absolute;width:8px;height:8px;border-radius:50%;background:var(--cv);
+  left:0;top:0;transform:translate(28px,28px)}
+.slbl{font-size:8.4px;font-family:var(--mono);color:var(--dim)}
+.rowx{display:flex;gap:4px}
+.mini{font-size:7.6px;font-family:var(--mono);padding:1px 6px;border-radius:2px;
+  border:1px solid #404652;background:#1a1f2a;color:var(--dim)}
+.mini.tag{border-color:transparent;background:none;color:var(--faint);padding:1px 2px}
+
+.calib{display:flex;gap:6px;margin:0 0 9px;flex-wrap:wrap}
+.btn{font-size:8px;font-family:var(--mono);letter-spacing:.05em;padding:3px 8px;border-radius:2px;
+  border:1px solid #404652;background:#1a1f2a;color:var(--dim);white-space:nowrap}
+
+.maprow{display:flex;gap:6px;margin:0 0 10px;flex-wrap:wrap}
+
+.trigs{display:flex;flex-direction:column;gap:5px;margin:0 0 10px}
+.trow{display:flex;align-items:center;gap:7px}
+.tlbl{width:22px;font-size:8px;font-family:var(--mono);color:var(--dim);text-align:center;
+  border:1px solid #404652;border-radius:2px;padding:1px 0;background:#1a1f2a}
+.tbar{flex:1;height:7px;border-radius:3px;background:#20252e;overflow:hidden}
+.tbar i{display:block;height:100%;background:var(--cv);width:0}
+
+.leds{display:grid;grid-template-columns:repeat(6,1fr);gap:5px}
+.bl{border:1px solid #333a44;border-radius:3px;background:#171b22;color:var(--dim);
+  font-family:var(--mono);font-size:8px;text-align:center;padding:5px 0;position:relative}
+.bl.on{background:color-mix(in oklab,var(--gate) 30%,#171b22);border-color:var(--gate);color:var(--ink)}
+.bl .mk{position:absolute;top:1px;right:2px;font-size:6px;color:var(--warn)}
+
+.bands{margin:10px 14px 0;padding-top:9px;border-top:1px solid var(--line)}
+.cell{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:5px;
+  padding:5px 9px;background:#171b22}
+.cell .cn{font-size:8.6px;letter-spacing:.09em;text-transform:uppercase;color:var(--faint);font-family:var(--mono)}
+.seg{display:flex;border:1px solid #3a4150;border-radius:3px;overflow:hidden}
+.seg span{font-family:var(--mono);font-size:8.6px;padding:2px 9px;color:var(--dim);border-right:1px solid #3a4150}
+.seg span:last-child{border-right:0}
+.seg span.on{background:color-mix(in oklab,var(--cv) 32%,#171b22);color:var(--ink)}
+
+.lane{width:192px;height:180px;background:var(--pbody);border:1px solid var(--tile);
+  border-left:3px solid var(--cv);border-radius:7px;padding:7px 8px;display:flex;flex-direction:column}
+.lane .t{font-size:8.6px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--dim);font-family:var(--mono);margin:0 0 8px}
+.lane .jacks{margin-top:auto;display:grid;grid-template-columns:repeat(9,1fr);gap:3px}
+.lane .jacks i{height:7px;border-radius:50%;background:#2a3038;border:1px solid #39404a}
+.lane .jacks i.cvj{border-color:var(--cv)} .lane .jacks i.gj{border-color:var(--gate)}
+.meas{font-family:var(--mono);font-size:9px;color:var(--faint);margin:6px 0 0;text-align:center}
+
+.notes{display:flex;flex-direction:column;gap:12px}
+.card{border:1px solid var(--line);background:#101419;border-radius:9px;padding:12px 14px}
+.card h3{margin:0 0 7px;font-size:10px;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--accent);font-family:var(--mono);font-weight:700}
+.card p{margin:0 0 8px;font-size:12px;color:var(--dim)} .card p:last-child{margin-bottom:0}
+.card b{color:var(--ink)}
+table{border-collapse:collapse;width:100%;font-size:11px;margin:2px 0 0}
+th,td{text-align:left;padding:4px 7px 4px 0;border-bottom:1px solid #1e242c;vertical-align:top;color:var(--dim)}
+th{color:var(--faint);font-family:var(--mono);font-size:8.6px;letter-spacing:.09em;text-transform:uppercase;font-weight:400}
+td b{color:var(--ink)}
+.aria{font-family:var(--mono);font-size:10.5px;color:#8fe6b0}
+.gone{text-decoration:line-through;color:#5a616c}
+</style>
+
+<div class="wrap">
+<h1>GAMEPAD — the dock faceplate, DISCONNECTED</h1>
+<p class="sub">
+  <b>SPEC + MOCKUP. Nothing here is implemented.</b> A <code>control-grid</code>
+  <code>fullViewBody</code> — the mapping board — over one ranked band carrying the
+  <code>SLOT</code> cell. <b>This is the state a CI runner produces and the state the dock
+  baseline captures</b> (spec.md §6.3).
+</p>
+
+<div class="nav">
+  <a class="on" href="dock.html">DOCK — disconnected (the baseline)</a>
+  <a href="dock-remapping.html">DOCK — connected, armed, sweeping</a>
+</div>
+
+<div class="ok">
+  <b>VERDICT: PROMOTE.</b> No precursor, no platform ask, no blocker in the inventory, and
+  <b>no tier lost</b> — <code>gamepad</code> is not in <code>NON_SHELL_LANE_TYPES</code>, so
+  the lane holds a <b>placeholder with zero ranked controls</b> today
+  (<code>legacy-fallback.ts:156-160</code>) and the real card is reachable only through the
+  <code>⤢</code> more-affordance. Promotion replaces a placeholder, not a working surface.
+</div>
+
+<div class="cols">
+<div>
+
+<div class="dock">
+  <div class="chromebar">
+    <span class="nm">GAMEPAD</span><span class="rl">dock full view</span><span class="x">✕</span>
+  </div>
+
+  <div class="plate">
+    <div class="extbody">
+
+      <!-- FOUR StatusLeds, all dark. The pad id, both calibrated badges and every
+           mapping outcome live in `detail` → aria-label, never a text node. -->
+      <div class="lamps">
+        <span class="led" title="aria-label: PAD — no controller. Press any button on a connected gamepad; the browser reveals it only after a press."><i class="dot"></i><span class="cap">PAD</span></span>
+        <span class="led" title="aria-label: CAL L — left stick not calibrated; the fixed 0.08 deadzone is in use"><i class="dot"></i><span class="cap">CAL L</span></span>
+        <span class="led" title="aria-label: CAL R — right stick not calibrated"><i class="dot"></i><span class="cap">CAL R</span></span>
+        <span class="led warnl" title="aria-label: MAPPING — no mapping loaded or saved this session"><i class="dot"></i><span class="cap">MAPPING</span></span>
+      </div>
+
+      <!-- The EMPTY-STATE instruction. midiclock's shipped precedent by name:
+           "instructional copy in an EMPTY state" (MidiclockDeviceBody.svelte:22-25). -->
+      <div class="hint">Press any button on your gamepad — the browser reveals a controller only after a press.</div>
+
+      <div class="sticks">
+        <div class="sblk">
+          <div class="pad" title="aria-label: Left stick — LX/LY. aria-valuetext: 0.00, 0.00"><i class="ch"></i><i class="cv2"></i><i class="dot"></i></div>
+          <div class="slbl">L</div>
+          <div class="rowx"><span class="mini">X</span><span class="mini">Y</span></div>
+          <div class="rowx"><span class="mini tag">inv</span><span class="mini">x</span><span class="mini">y</span></div>
+          <div class="rowx"><span class="mini">set center</span></div>
+        </div>
+        <div class="sblk">
+          <div class="pad" title="aria-label: Right stick — RX/RY. aria-valuetext: 0.00, 0.00"><i class="ch"></i><i class="cv2"></i><i class="dot"></i></div>
+          <div class="slbl">R</div>
+          <div class="rowx"><span class="mini">X</span><span class="mini">Y</span></div>
+          <div class="rowx"><span class="mini tag">inv</span><span class="mini">x</span><span class="mini">y</span></div>
+          <div class="rowx"><span class="mini">set center</span></div>
+        </div>
+      </div>
+
+      <div class="calib">
+        <span class="btn">calibrate left stick</span>
+        <span class="btn">calibrate right stick</span>
+      </div>
+
+      <div class="maprow">
+        <span class="btn">save mapping</span>
+        <span class="btn">load mapping…</span>
+        <span class="btn">load preset… ▾</span>
+      </div>
+
+      <div class="trigs">
+        <div class="trow"><span class="tlbl">LT</span><span class="tbar"><i></i></span></div>
+        <div class="trow"><span class="tlbl">RT</span><span class="tbar"><i></i></span></div>
+      </div>
+
+      <!-- 6 columns × 12 tiles = 2 rows. The widest thing on the surface, ≈220 px. -->
+      <div class="leds">
+        <span class="bl">LB</span><span class="bl">RB</span><span class="bl">A</span>
+        <span class="bl">B</span><span class="bl">X</span><span class="bl">Y</span>
+        <span class="bl">⬆</span><span class="bl">⬇</span><span class="bl">⬅</span>
+        <span class="bl">⮕</span><span class="bl">STA</span><span class="bl">SEL</span>
+      </div>
+
+    </div>
+
+    <!-- ONE BAND. One cell against DOCK_TAB_MIN_BANDS = 7 — no rail, nothing padded. -->
+    <div class="bands">
+      <div class="cell">
+        <span class="cn">SLOT</span>
+        <span class="seg"><span class="on">0</span><span>1</span><span>2</span><span>3</span></span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="ok" style="margin-top:16px">
+  <b>WIDTH IS NOT EARNED, AND NONE IS REQUESTED.</b> Measured off the card's own CSS: two
+  64 px stick pads plus a 14 px gap = <b>142 px</b>; the LED grid is
+  <code>repeat(6, 1fr)</code> at ≈<b>220 px</b> — the widest element on the surface. Everything
+  fits inside the card's existing <code>min-width: 280px</code>
+  (<code>GamepadCard.svelte:780</code>), which means this surface was always compact.
+  ⚠ <b>That floor must not come across</b>: the face body sizes to its content.
+  No <code>FACE_WIDTH_EXEMPTIONS</code> entry.
+</div>
+
+<h3 style="font-size:11px;letter-spacing:.09em;text-transform:uppercase;color:var(--faint);
+  font-family:var(--mono);margin:22px 0 8px">The lane tile, to scale</h3>
+
+<div style="display:flex;gap:30px;align-items:flex-start;flex-wrap:wrap">
+  <div>
+    <div class="lane">
+      <div class="t">GAMEPAD</div>
+      <div class="cell" style="align-self:flex-start">
+        <span class="cn">SLOT</span>
+        <span class="seg"><span class="on">0</span><span>1</span><span>2</span><span>3</span></span>
+      </div>
+      <div class="jacks">
+        <i class="cvj"></i><i class="cvj"></i><i class="cvj"></i><i class="cvj"></i><i class="cvj"></i>
+        <i class="cvj"></i><i class="gj"></i><i class="gj"></i><i class="gj"></i>
+        <i class="gj"></i><i class="gj"></i><i class="gj"></i><i class="gj"></i><i class="gj"></i>
+        <i class="gj"></i><i class="gj"></i><i class="gj"></i><i class="gj"></i>
+      </div>
+    </div>
+    <p class="meas">192 × 180 — <code>SHELL_TILE_W</code> / <code>SHELL_TILE_H_SLOT</code></p>
+  </div>
+  <div style="max-width:46ch">
+    <p class="sub" style="margin:0">
+      <b>One cell is enough here, and for a reason that does not generalise.</b>
+      <code>padIndex</code> is the only thing on this module a player changes
+      <i>without looking at the device</i>. Remapping, calibrating and inverting are all
+      “move the physical control and watch” gestures — meaningless without the echo — so they
+      belong where the echo is, and the echo cannot fit in 192 px.
+      <b>The one cell in the lane is the one control that is useful there.</b>
+      <code>glyph: 'none'</code>: no output is <code>type: 'audio'</code>, so every live glyph
+      resolves to a dead <code>{kind:'static'}</code>.
+    </p>
+  </div>
+</div>
+
+</div>
+
+<div class="notes">
+
+  <div class="card">
+    <h3>Body role — <code>control-grid</code>, and the first hard case</h3>
+    <p>Predicate: <code>/aria-label=/ &amp;&amp; !paintsCanvas</code>. Both hold.
+      <b>Not <code>picture</code></b> — no canvas, mechanically refused for the right reason.</p>
+    <p><b>The extension of the role:</b> matrixMix's cells reflect <b>graph</b> state
+      (<code>patch.edges</code>); these reflect <b>live device</b> state read through
+      <code>engine.read(node,'snapshot')</code>. The predicate holds either way and the prose
+      survives, but this is the first control grid driven from outside the document.</p>
+    <p>⚠ <b>It also satisfies <code>status-primitive</code></b> (four <code>StatusLed</code>s,
+      no canvas). Legal — the gate checks only the DECLARED role and the roles are
+      <i>“not exclusive by intent”</i>. The grid is what the module is OPERATED from, so
+      <code>control-grid</code> is the honest declaration.</p>
+  </div>
+
+  <div class="card">
+    <h3>Removed text, and where each finding went</h3>
+    <table>
+      <tr><th>was painted</th><th>now</th></tr>
+      <tr><td class="gone">Xbox Wireless Controller / press any button to connect</td><td><b>PAD</b> lamp + <code>detail</code></td></tr>
+      <tr><td class="gone">calibrated ×2</td><td><b>CAL L</b> / <b>CAL R</b> lamps</td></tr>
+      <tr><td class="gone">x [−0.98, 0.97] · y […]</td><td><b>a drawn sweep box</b> — see the other mock</td></tr>
+      <tr><td class="gone">mapping saved / ignored: invalid JSON</td><td><b>MAPPING</b> lamp, <code>tone</code> = accent / warn</td></tr>
+      <tr><td class="gone">title=“L-X ← axis 3 …”</td><td><code>aria-label</code>, permanently</td></tr>
+      <tr><td class="gone">listening… bind <b>L-X</b> (Esc)</td><td>the armed cell's own state + dot</td></tr>
+    </table>
+  </div>
+
+  <div class="card">
+    <h3>What stayed, and why</h3>
+    <p><b>The twelve LED captions.</b> <code>tidyVco</code>'s A/D/S/R argument at three times
+      the scale — they are the only thing separating twelve identical tiles. They are read from
+      <code>GAMEPAD_OUTPUTS</code> so a def-side label edit propagates, which is the one-source
+      rule applied to captions.</p>
+    <p><b><code>SLOT 0 1 2 3</code></b> — option NAMES inside the control that selects them, at
+      the strongest possible position: they are the segmented cell's own option labels.</p>
+    <p><b><code>NXT Gladiator</code></b> in the preset dropdown — an option name inside the
+      control that selects it. The settled discriminator, applied.</p>
+  </div>
+
+  <div class="card">
+    <h3>The speakable leg BITES here</h3>
+    <p>The naive port writes <code>aria-label={btn.label}</code> beside
+      <code>&gt;{btn.label}&lt;</code> on twelve tiles — <b>exactly</b> what
+      <code>face-rack-status-source.test.ts:826-860</code> refuses. So:</p>
+    <p class="aria">aria-label = “A — gate output, driven by button 0. Right-click to rebind,
+      alt-click to reset.”</p>
+    <p>which is the removed hover string plus the removed mark, made speakable and permanent.</p>
+  </div>
+
+  <div class="card">
+    <h3>Nothing to connect</h3>
+    <p>The Gamepad API has <b>no permission prompt</b> and <b>no events this module uses</b> —
+      <i>“the Gamepad API has no events, so an armed listener must poll”</i>. The protocol is a
+      <b>gesture gate</b>: press a button on the hardware. There is no in-page affordance that
+      can cause it, so the copy is an instruction, not a button.</p>
+    <p>⚠ And the poll that drives the <b>audio</b> lives in the FACTORY, not the card
+      (<code>gamepad.ts:1268-1288</code>, torn down in <code>dispose()</code>). <b>Collapse the
+      card and every output keeps running.</b> No status registry is needed and none should be
+      built — a copy would be a second owner of state the engine already owns.</p>
+  </div>
+
+</div>
+</div>
+</div>
