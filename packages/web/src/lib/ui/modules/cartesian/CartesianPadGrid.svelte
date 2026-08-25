@@ -54,17 +54,15 @@
   import { onMeterFrame } from '$lib/ui/meter-frame';
   import { useEngine } from '$lib/audio/engine-context';
   import TextEntry from '$lib/ui/controls/TextEntry.svelte';
-  import type { ModuleNode } from '$lib/graph/types';
-  import { CELL_COUNT, GRID_DIM } from '$lib/audio/modules/cartesian';
+  import { noteNameForMidi } from '$lib/audio/note-entry';
+  import { resolveArrowNav, type ArrowKey } from '$lib/audio/grid-nav';
+  import { CELL_COUNT, GRID_DIM, type Cell } from '$lib/audio/modules/cartesian';
   import {
     cartesianCellsOf,
-    cartesianPitchText,
     commitCartesianPitch,
     cycleCartesianChord,
-    cartesianGateValue,
     parseCartesianPitch,
     setCartesianGate,
-    cartesianChordValue,
   } from '$lib/ui/modules/cartesian-cell-actions';
 
   interface Props {
@@ -72,12 +70,25 @@
   }
   let { nodeId }: Props = $props();
 
+  // ⚠ THE VERSION MUST BE READ INSIDE THE DERIVE THAT PROJECTS THE DATA, NOT IN
+  // ONE THAT RETURNS THE NODE. The first draft did
+  // `node = $derived.by(() => { void version; return patch.nodes[nodeId]; })`
+  // and then `cells = $derived(cartesianCellsOf(node))` — which LOOKS correct
+  // and is not: `patch.nodes[nodeId]` is a Yjs proxy whose IDENTITY is stable
+  // across mutations, so `node` never changes reference, the downstream derive
+  // never re-runs, and every pad paints its spawn value forever. Typing a note
+  // committed MIDI 49 to the graph while the box still read `c3`.
+  //
+  // `cartesian-face.spec.ts` caught it because it asserts the DISPLAY as well
+  // as the graph; a test that only read `node.data` would have passed on a
+  // face that shows nothing the player does. Same shape as CartesianCard's own
+  // `cells` derive, which reads `.cells` inside the version-dependent block for
+  // exactly this reason.
   let version = $derived(nodeVersion(nodeId));
-  let node = $derived.by<ModuleNode | undefined>(() => {
+  let cells = $derived.by<Cell[]>(() => {
     void version;
-    return patch?.nodes?.[nodeId];
+    return cartesianCellsOf(patch?.nodes?.[nodeId]);
   });
-  let cells = $derived(cartesianCellsOf(node));
 
   // ── THE PLAYHEAD ──────────────────────────────────────────────────────────
   // The card shows which pad the cursor is on and it is the module's identity
@@ -103,6 +114,74 @@
     return () => h.stop();
   });
 
+  // ── KEYBOARD NAVIGATION ───────────────────────────────────────────────────
+  //
+  // ⚠ THIS IS PARITY, NOT AN ACCESSIBILITY ADDITION, and the difference is why
+  // it is here at all under the standing no-keyboard-a11y ruling. Arrow-walking
+  // the pads and Enter-stepping to the next one is how this module is PLAYED —
+  // `CartesianCard` has had it since D5, and promotion deletes that card from
+  // both surfaces, so a face without it drops a gesture the player has today.
+  //
+  // ⚠ AND THE GATE BUTTON CARRIES #1790's GUARD. Bare Tab is also the rack-flip
+  // gesture, claimed by two plain `window` listeners in Canvas.svelte. Both bail
+  // on `isTypingTarget`, so the PITCH side — an <input> — was never affected;
+  // a gate <button> is not a typing target, so without `stopPropagation` the
+  // flip owner acts on the very keystroke this grid just consumed (Tab advances
+  // a pad AND turns the rack around). `preventDefault` does not reach a sibling
+  // window listener; only `stopPropagation` does. ONLY when we handled it — at
+  // the grid bound `resolveArrowNav` declines, the event propagates ON PURPOSE,
+  // and the rack flips, which is the global gesture doing its job.
+  const NAV_SPEC = { cols: GRID_DIM, cellRows: GRID_DIM };
+
+  function focusPad(idx: number, role: 'pitch' | 'gate'): boolean {
+    // The pitch side is addressed by the PRIMITIVE's own `data-role="entry"`
+    // rather than by a nav attribute TextEntry would have to grow a prop for:
+    // the shared primitive already marks itself, and one selector fewer is one
+    // fewer thing to keep in step.
+    const sel = role === 'gate' ? '[data-nav="gate"]' : 'input[data-role="entry"]';
+    const t = gridEl?.querySelector<HTMLElement>(`[data-pad="${idx}"] ${sel}`);
+    if (!t) return false;
+    t.focus();
+    if (t.tagName === 'INPUT') (t as HTMLInputElement).select();
+    return true;
+  }
+
+  function handleNav(e: KeyboardEvent, idx: number, role: 'pitch' | 'gate'): boolean {
+    const max = CELL_COUNT - 1;
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+      const next = resolveArrowNav({ index: idx, role }, e.key as ArrowKey, NAV_SPEC);
+      if (!next) return false;
+      return focusPad(next.index, next.role);
+    }
+    if (e.key === 'Enter' && role === 'pitch') {
+      const next = idx === max ? max : idx + 1;
+      Promise.resolve().then(() => focusPad(next, 'pitch'));
+      return true;
+    }
+    if (e.key === 'Tab') {
+      const next = idx + (e.shiftKey ? -1 : 1);
+      if (next < 0 || next > max) return false; // decline: the rack flips
+      return focusPad(next, role);
+    }
+    return false;
+  }
+
+  function onGateKeydown(e: KeyboardEvent, i: number) {
+    if (e.key === ' ' || e.key === 'Enter') {
+      e.preventDefault();
+      setCartesianGate(nodeId, i, !(cells[i]?.on ?? false));
+      return;
+    }
+    if (
+      e.key === 'ArrowLeft' || e.key === 'ArrowRight' ||
+      e.key === 'ArrowUp' || e.key === 'ArrowDown' || e.key === 'Tab'
+    ) {
+      if (!handleNav(e, i, 'gate')) return; // declined — let the flip owner have it
+      e.preventDefault();
+      if (e.key === 'Tab') e.stopPropagation(); // #1790, and ONLY for Tab
+    }
+  }
+
   function chordGlyph(q: string): string {
     if (q === 'maj') return 'M';
     if (q === 'min') return 'm';
@@ -122,9 +201,10 @@
   style={`--cart-cols:${GRID_DIM}`}
 >
   {#each Array.from({ length: CELL_COUNT }, (_, i) => i) as i (i)}
-    {@const on = cartesianGateValue(node, i)}
-    {@const chord = cartesianChordValue(node, i)}
-    <div class="pad" class:active={i === currentStep}>
+    {@const pad = cells[i]}
+    {@const on = pad?.on ?? false}
+    {@const chord = pad?.chord ?? 'mono'}
+    <div class="pad" class:active={i === currentStep} data-pad={i}>
       <button
         class="gate"
         class:on
@@ -132,16 +212,19 @@
         aria-pressed={on}
         aria-label={`Pad ${i} (${padWhere(i)}) gate`}
         data-testid={`cart-face-gate-${i}`}
+        data-nav="gate"
         onclick={() => setCartesianGate(nodeId, i, !on)}
+        onkeydown={(e) => onGateKeydown(e, i)}
       ></button>
       <TextEntry
-        stored={cartesianPitchText(node, i)}
+        stored={pad?.midi == null ? '' : noteNameForMidi(pad.midi)}
         parse={parseCartesianPitch}
         onCommit={(midi) => commitCartesianPitch(nodeId, i, midi)}
         ariaLabel={`Pad ${i} (${padWhere(i)}) note`}
         placeholder="—"
         maxLength={12}
         testid={`cart-face-pitch-${i}`}
+        onNavKey={(e) => handleNav(e, i, 'pitch')}
       />
       <button
         class="chord"

@@ -800,7 +800,15 @@ test('#1790 cartesian GATE: the flip key advances the cell and does NOT flip —
   await openFullView(page, 'seq');
   await expect(drawer).toHaveAttribute('data-fullview-flipped', 'false');
 
-  const gateAt = (i: number) => page.getByTestId(`cart-gate-seq-${i}`);
+  // ⚠ THE SUBJECT MOVED TO THE FACE (#1509), AND THAT IS THE POINT OF THE TEST.
+  // `cartesian` is now in STRICT_FACES, so `migrated()` makes the dock render
+  // `ModuleShell` INSTEAD of `CartesianCard` — the card testids this used to
+  // drive are not on this surface any more. Re-POINTED rather than relaxed: the
+  // face grid (`CartesianPadGrid`) re-implements the same gate <button>, so it
+  // inherits the same #1790 exposure, and the guard has to be proven where the
+  // player actually is. A version of this test left on the card would have gone
+  // GREEN AND BLIND — passing against a surface promotion had already removed.
+  const gateAt = (i: number) => page.getByTestId(`cart-face-gate-${i}`);
 
   // (a) HANDLED — mid-grid. Focus a gate cell (a <button>: NOT a typing
   //     target, which is the whole defect) and press the flip key.

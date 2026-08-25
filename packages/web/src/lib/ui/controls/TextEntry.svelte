@@ -48,6 +48,18 @@
     maxLength?: number;
     testid?: string;
     title?: string;
+    /**
+     * OPTIONAL grid navigation, for a host that lays these out as a GRID.
+     * Returns true if the host moved focus.
+     *
+     * ⚠ OPT-IN, and the default matters more than the feature. A lone band cell
+     * must leave the arrows alone — they are caret movement inside a text field,
+     * and claiming them there would break ordinary editing to solve a problem
+     * that surface does not have. A GRID host is the case where "left" means the
+     * pad to the left, and only the host knows its own topology. Same prop, same
+     * contract and same reason as `NoteEntry.onNavKey`.
+     */
+    onNavKey?: (e: KeyboardEvent) => boolean;
   }
 
   let {
@@ -59,6 +71,7 @@
     maxLength,
     testid,
     title,
+    onNavKey,
   }: Props = $props();
 
   let inputEl: HTMLInputElement | undefined = $state();
@@ -103,13 +116,35 @@
     if (e.key === 'Enter') {
       e.preventDefault();
       commit();
+      onNavKey?.(e);
+      return;
     }
-    // ⚠ ARROWS AND TAB ARE DELIBERATELY NOT HANDLED. Bare Tab is the rack-flip
-    // gesture (#1629) and the arrows reach xyflow's node-move, but both owners
-    // bail on `isTypingTarget` / `isInputDOMNode`, which wave an <input>
-    // through — that is why #1790 bit NoteEntry's gate <button> and never its
-    // pitch field. Claiming them here would break caret movement inside the
-    // field to solve a problem this element does not have.
+    // ⚠ WITHOUT A GRID HOST, ARROWS AND TAB ARE DELIBERATELY NOT HANDLED. Bare
+    // Tab is the rack-flip gesture (#1629) and the arrows reach xyflow's
+    // node-move, but both owners bail on `isTypingTarget` / `isInputDOMNode`,
+    // which wave an <input> through — that is why #1790 bit NoteEntry's gate
+    // <button> and never its pitch field. Claiming them in a lone band cell
+    // would break caret movement to solve a problem that surface does not have.
+    if (!onNavKey) return;
+    // ⚠ WITH one, the arrows are the GRID's. `preventDefault` runs FIRST and
+    // unconditionally, so a declined move (clamped at an edge) leaves focus put
+    // rather than letting the caret jump — the "rapid arrow-only editing" the
+    // grid hosts were built for, and the same ordering NoteEntry uses.
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+      e.preventDefault();
+      const handled = onNavKey(e);
+      if (handled && editing) commit();
+      return;
+    }
+    if (e.key === 'Tab') {
+      // ⚠ NO `stopPropagation` HERE, AND THAT IS #1790 READ CORRECTLY. The flip
+      // owners bail on `isTypingTarget`, which an <input> IS — so a Tab in this
+      // field never reaches them and there is nothing to stop. The gate
+      // <button> beside it is the element that needs the guard, and its host
+      // applies it. Calling it here would be cargo-culting the fix onto the
+      // element that never had the bug.
+      if (onNavKey(e)) e.preventDefault();
+    }
   }
 </script>
 
