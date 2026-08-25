@@ -26,13 +26,17 @@
   // implementation of controls the face already owns.
   //
   // ⚠ WHERE THE CARD'S VIOLET WENT. `MidiOutBuddyCard.svelte` outlined the
-  // whole card in `--cable-video` and painted a `CH n != LANE m` badge whenever
-  // the module routed off its lane. Both are derived-state text or a
-  // derived-state colour standing in for one, so neither may appear at rest.
-  // They are the LANE lamp: `tone="warn"` for "this is a fault rather than a
-  // readiness", `lit` for the divergence itself, and the badge's own sentence —
-  // including how to undo it — as the `detail`. The status model beside this
-  // file argues why the violet specifically is not ported.
+  // whole card in the VIDEO CABLE-DOMAIN HUE — the token is spelled out in
+  // words here on purpose, because `midi-out-buddy-face-model.test.ts` GREPS
+  // THIS SOURCE for it and, like every source gate in this tree, cannot tell
+  // code from a comment (the backdraft-range trap) — and painted a
+  // `CH n != LANE m` badge whenever the module routed off its lane. Both are
+  // derived-state text, or a derived-state colour standing in for one, so
+  // neither may appear at rest. They are the LANE lamp: `tone="warn"` for "this
+  // is a fault rather than a readiness", `lit` for the divergence itself, and
+  // the badge's own sentence — including how to undo it — as the `detail`. The
+  // status model beside this file argues why that hue specifically is not
+  // ported: it means CABLE DOMAIN everywhere else in the product.
   //
   // ⚠ THE `channel` SCALARS COME FROM THE DEF'S OWN HELPERS, never re-derived
   // here. `effectiveMidiOutChannel` and `laneChannelOf` are the same functions

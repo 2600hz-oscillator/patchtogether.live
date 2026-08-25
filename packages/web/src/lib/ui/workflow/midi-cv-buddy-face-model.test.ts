@@ -13,6 +13,8 @@
 // ⚠ EACH ASSERTION HERE EXISTS BECAUSE A PLAUSIBLE EDIT WOULD DEFEAT IT
 // QUIETLY, and the comment on each says which edit.
 
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, it, expect } from 'vitest';
 import '$lib/audio/modules';
 import {
@@ -172,6 +174,50 @@ describe('midiCvBuddy face — the dock plan is two honest bands', () => {
     for (const p of FACE().pages ?? []) {
       expect(['voice', 'signal']).not.toContain(p.id);
     }
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// THE INVERSE ASSERTION — the deleted readout is DELETED, not merely moved.
+//
+// ⚠ RELOCATION AND DELETION LOOK IDENTICAL FROM A GREEN RUN, which is why this
+// leg exists at all: the status-model test above proves the note and the
+// velocity reached the lamp's `detail`, and NOTHING in it would fail if the
+// body ALSO still painted them as text. The owner's ruling is that the data is
+// "gone, not there but hidden", so the absence has to be asserted on its own.
+//
+// ⚠ SOURCE-LEVEL, BECAUSE NO RUNTIME GATE SEES IT. The dock VRT baseline is a
+// picture a human reviews; `face-resting-text-source` denies `ModuleFace`
+// FIELDS rather than an extension body's markup, and its own header names
+// exactly this blind spot. So the body's source is the subject. Like every
+// source gate in this tree it cannot tell code from a comment — which is why
+// the strings below are built rather than written out.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('midiCvBuddy — the card\'s NOTE/VEL readout rows are GONE from the plate', () => {
+  const bodySource = (): string =>
+    readFileSync(
+      resolve(import.meta.dirname, '../modules/midiCvBuddy/MidiCvBuddyDeviceBody.svelte'),
+      'utf8',
+    );
+
+  it('the body paints no readout row and no note/velocity text node', () => {
+    const src = bodySource();
+    // The card's markup, by the class names it used. Assembled from fragments
+    // so this file's own prose cannot satisfy the grep it is checking.
+    for (const marker of ['read' + 'out-row', 'class="read' + 'out"', 'activeNote' + 'Label']) {
+      expect(src.includes(marker), `the body must not carry \`${marker}\``).toBe(false);
+    }
+  });
+
+  it('POSITIVE CONTROL: the note IS reachable — through `detail`, on the lamp', () => {
+    // ⚠ THE NEGATIVE ABOVE IS SATISFIED BY AN EMPTY FILE, so it proves nothing
+    // on its own. This is the half that says the information survived the move:
+    // the body wires the status model's sentence into `StatusLed`'s `detail`,
+    // which reaches `aria-label` and `title` and never a text node.
+    const src = bodySource();
+    expect(src).toContain('midiCvBuddyNoteDetail');
+    expect(src).toContain('detail={noteDetail}');
   });
 });
 

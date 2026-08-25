@@ -11,6 +11,8 @@
 // ⚠ EACH ASSERTION HERE EXISTS BECAUSE A PLAUSIBLE EDIT WOULD DEFEAT IT
 // QUIETLY, and the comment on each says which edit.
 
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, it, expect } from 'vitest';
 import '$lib/audio/modules';
 import {
@@ -119,6 +121,56 @@ describe('midiOutBuddy face — the dock plan is ONE honest band', () => {
     for (const p of FACE().pages ?? []) {
       expect(['voice', 'signal']).not.toContain(p.id);
     }
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// THE INVERSE ASSERTION — the card's CH-vs-LANE badge is GONE from the plate.
+//
+// ⚠ RELOCATION AND DELETION LOOK IDENTICAL FROM A GREEN RUN. The status-model
+// test proves the warning's two numbers and its undo instruction reached the
+// lamp's `detail`; nothing in it would fail if the body ALSO still painted the
+// badge, or still outlined itself violet. Both are derived state, both are
+// refused at rest, and both absences have to be asserted on their own.
+//
+// ⚠ SOURCE-LEVEL, BECAUSE NO RUNTIME GATE SEES IT.
+// `face-resting-text-source` denies `ModuleFace` FIELDS, not an extension
+// body's markup, and states that blind spot in its own header. Like every
+// source gate here it cannot tell code from a comment, which is why the
+// strings below are assembled rather than written out.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('midiOutBuddy — the card\'s CH-vs-LANE badge and violet outline are GONE', () => {
+  const bodySource = (): string =>
+    readFileSync(
+      resolve(import.meta.dirname, '../modules/midiOutBuddy/MidiOutBuddyDeviceBody.svelte'),
+      'utf8',
+    );
+
+  it('the body paints no badge, no readout row, and no divergence text node', () => {
+    const src = bodySource();
+    for (const marker of ['ch-' + 'badge', 'read' + 'out-row', 'activeNote' + 'Label', '↯']) {
+      expect(src.includes(marker), `the body must not carry \`${marker}\``).toBe(false);
+    }
+  });
+
+  it('and it does NOT re-spend the video CABLE HUE on a non-domain meaning', () => {
+    // ⚠ THE COLOUR IS HALF THE DELETED WARNING, so it needs its own leg. The
+    // card outlined itself in `--cable-video` because it was "the only purple
+    // in the token set" — a domain hue standing in for a fault, which is the
+    // collision `rear-direction.test.ts` refuses on the rear rails. The lamp's
+    // `warn` tone is the app's own fault colour and carries the same fact.
+    expect(bodySource().includes('--cable-' + 'video')).toBe(false);
+  });
+
+  it('POSITIVE CONTROL: the warning IS reachable — through `detail`, on a WARN lamp', () => {
+    // ⚠ THE NEGATIVES ABOVE ARE SATISFIED BY AN EMPTY FILE, so they prove
+    // nothing on their own. This is the half that says the information
+    // survived the move.
+    const src = bodySource();
+    expect(src).toContain('midiOutBuddyLaneDetail');
+    expect(src).toContain('detail={laneDetail}');
+    expect(src).toContain('tone="warn"');
   });
 });
 
