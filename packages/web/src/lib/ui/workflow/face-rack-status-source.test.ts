@@ -546,6 +546,39 @@ const EXTENSION_BODY_ROLES: Readonly<Record<string, BodyRule>> = {
       + 'control captions, and an ERROR that is absent whenever nothing is wrong.',
   },
 
+  // ── MIDI LANE — the THIRD binder body, and the one whose lamps carry the
+  //    most deleted text ─────────────────────────────────────────────────────
+  midiLane: {
+    role: 'status-primitive',
+    why:
+      'the DEVICE BINDING strip for the per-channel instrument bus: the runtime-enumerated input '
+      + 'picker, the pre-connect hint, the access-failure message, and four lamps — MIDI, NOTE, '
+      + 'CC A, CC B. The picker is the ONE affordance on this module that cannot be a face cell, '
+      + 'for the reason midiclock states one entry up: its roster lives on the engine handle '
+      + 'behind `requestMIDIAccess()` and differs per machine, so it is neither a `ParamDef` nor '
+      + 'an `options` roster, which is a fixed set known when the def is authored. ⚠ NONE of the '
+      + 'ten ranked cells is duplicated here — CONNECT in particular is a real `action` cell, '
+      + 'which is what puts the permission gesture on the LANE TILE rather than behind the dock. '
+      + '⚠ THE LAMPS ARE WHERE THREE DELETED READOUTS WENT, and each is a picture with its '
+      + 'sentence in `aria-label`: NOTE replaces the card\'s `NOTE`/`VEL` rows and is the only '
+      + 'thing in the product that says this lane is RECEIVING (a lane on the wrong channel is '
+      + 'silent, and so is a correct one between notes) — it binds to `heldCount`, a field added '
+      + 'for it, because `lastNote` is LATCHED and a lamp bound to it would light once and never '
+      + 'go dark; CC A and CC B replace the two bound-controller NUMBERS the card printed and say '
+      + 'strictly more, since they also carry the value the tap is receiving and whether it is '
+      + 'ARMED. ⚠ Unlike cameraInput this body needs no status registry: midiLane is in neither '
+      + '`DOM_SOURCE_LANE_TYPES` nor `CARD_PRODUCER_LANE_TYPES`, so promotion parks no live card '
+      + 'off-screen and the MIDI handler is installed engine-side through an identity-scoped '
+      + 'claim in the factory — there is no second owner to coordinate with. ⚠ It mounts no '
+      + '`<canvas>` and must not grow one, and it declares no `face.rackStatus`: this module is '
+      + 'deliberately multi-instance, every lane is independent, and there is no shared resource '
+      + 'and no primary. ⚠ NO SCREEN SWITCH and NO WATCH MARK — the video-screen ruling runs over '
+      + 'STRICT_FACES intersect video defs and this is `domain: audio`. Every text node is an '
+      + 'option NAME (the device\'s own name, the cameraInput precedent), a control caption, '
+      + 'instructional copy in the EMPTY pre-connect state, or an ERROR that is absent whenever '
+      + 'nothing is wrong.',
+  },
+
   // ── LAUNCHPAD CONTROL — the second BINDER, and the body whose defining
   //    property is what it REFUSES to draw ───────────────────────────────────
   //

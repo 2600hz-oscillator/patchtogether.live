@@ -31,7 +31,7 @@
 import type { Component } from 'svelte';
 import type { ModuleNode, ParamLandmark } from '$lib/graph/types';
 import type { SelectorOption } from '$lib/ui/controls';
-import type { EntryParse } from '$lib/ui/controls/text-entry-model';
+import { entryAccept, entryReject, type EntryParse } from '$lib/ui/controls/text-entry-model';
 import CartesianPadGrid from '$lib/ui/modules/cartesian/CartesianPadGrid.svelte';
 import { testHooksEnabled } from '$lib/dev/test-hooks';
 import WavecelWavetablePanel from '$lib/ui/modules/wavecel/WavecelWavetablePanel.svelte';
@@ -168,6 +168,25 @@ import {
   matrixmixYAxisValue,
 } from '$lib/ui/modules/matrixmix-cell-actions';
 import { midiclockConnect } from '$lib/ui/modules/midiclock-cell-actions';
+import {
+  midiLaneChannelValue,
+  midiLaneClearCcA,
+  midiLaneClearCcB,
+  midiLaneConnect,
+  midiLaneLearnCcA,
+  midiLaneLearnCcB,
+  midiLaneModeValue,
+  midiLaneNoteText,
+  midiLanePriorityOptions,
+  midiLanePriorityValue,
+  midiLaneRetrigValue,
+  midiLaneSetChannel,
+  midiLaneSetMode,
+  midiLaneSetNote,
+  midiLaneSetPriority,
+  midiLaneSetRetrig,
+} from '$lib/ui/modules/midi-lane-cell-actions';
+import { midiLaneChannelChoices, parseNoteGateNote } from '$lib/audio/modules/midi-lane';
 import { launchpadConnectSingle, launchpadPair } from '$lib/ui/modules/launchpad-cell-actions';
 import { timelordeFaceTap } from '$lib/ui/modules/timelorde/face-tap';
 import {
@@ -2270,6 +2289,174 @@ const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
       // — which is exactly the caller→seam gap this ledger exists to close.
       probe: { effect: { kind: 'audition', seam: 'engine-message' } },
       onFire: (nodeId) => { midiclockConnect(nodeId); },
+    },
+  },
+
+  // ── MIDI LANE — a ZERO-PARAM face, and the `entry` cell's FIRST adopter ────
+  //
+  // Every control this module has lives on `node.data`, so all ten of them are
+  // static cells rather than params. That is what a zero-param face looks like
+  // when the module genuinely has controls: `order: []` would have been legal
+  // and would have painted a blank tile.
+  //
+  // ⚠ THE NOTE FIELD IS AN `entry` CELL, NOT A 128-OPTION ROSTER, and the
+  // choice is forced from three directions rather than preferred:
+  //
+  //   1. `face-migration-inventory.test.ts`'s TYPED-ENTRY leg asks whether a
+  //      faced module whose CARD types carries typed entry on its FACE, and
+  //      answers it with `shellCellKindsFor(type)` — `'entry'` or `'panel'`.
+  //      `MidiLaneCard.svelte` mounts `<input type="number">`, and the card
+  //      SURVIVES promotion under `?shell=legacy`, so a roster here leaves that
+  //      leg RED with no way to green it except editing the legacy card.
+  //   2. WIDTH. Measured on the dock: `selector` 168 px, `entry` 72 px. Compact
+  //      is the default and width must be earned; a roster earns none here.
+  //   3. RANGE PARITY. A roster labelled by `noteNameForMidi` would carry 31
+  //      BLANK labels — the speller returns `''` outside MIDI 12..108 — while
+  //      the card's input reaches all of 0..127. The typed field reaches every
+  //      value the card reaches and adds note names on top.
+  //
+  // ⚠ AND IT CLOSES A REAL GAP. `ShellEntryCell` shipped with #1509 alongside
+  // its `TextEntry` primitive, its `ModuleShell` render branch and its pure-lane
+  // probe check, and until this module NOTHING REGISTERED ONE — the branch was
+  // reachable only through this registry. That is the `warped-fader` shape this
+  // file warns about one screen down (a cell kind, a render branch and a source
+  // gate that no control could reach), caught before it aged.
+  midiLane: {
+    // CONNECT — the same gesture, the same argument and the same probe as
+    // midiclock's, one block up. This module is equally inert before the grant:
+    // no device is visible, so all seven jacks sit at rest.
+    'midi-lane-connect-{n}': {
+      kind: 'action',
+      label: 'Connect MIDI…',
+      title: 'Grant this site access to Web MIDI (one-time per origin), then pick a device in the dock',
+      mode: 'trigger',
+      probe: { effect: { kind: 'audition', seam: 'engine-message' } },
+      onFire: (nodeId) => { midiLaneConnect(nodeId); },
+    },
+    // CHANNEL — a FIXED 17-entry roster (ALL + 1..16), built from
+    // `MIDI_CHANNEL_COUNT` rather than written out. It is the one control the
+    // module is really about, so it ranks second and reaches the lane tile.
+    'midi-lane-channel-{n}': {
+      kind: 'selector',
+      tag: 'CH',
+      options: () => midiLaneChannelChoices(),
+      value: (node) => midiLaneChannelValue(node),
+      onchange: (nodeId, v) => midiLaneSetChannel(nodeId, v),
+    },
+    // MODE — two states, and a SELECTOR rather than a TOGGLE deliberately.
+    // MONO and POLY are two named alternatives, not an on/off: neither is the
+    // absence of the other, and a switch would have to pick one as "off" and
+    // print nothing for it.
+    'midi-lane-mode-{n}': {
+      kind: 'selector',
+      tag: 'MODE',
+      options: () => [
+        { value: 'mono', label: 'MONO', title: 'PITCH and GATE follow one winning note' },
+        { value: 'poly', label: 'POLY', title: 'PITCH and GATE stay quiet; take the chord off POLY' },
+      ],
+      value: (node) => midiLaneModeValue(node),
+      onchange: (nodeId, v) => midiLaneSetMode(nodeId, v),
+    },
+    // THE BY-NOTE GATE'S NOTE — see the block header above.
+    'midi-lane-note-{n}': {
+      kind: 'entry',
+      label: 'NOTE',
+      title: 'Which note fires the NOTE jack — a note name (c2) or a MIDI number (0..127)',
+      placeholder: 'c2',
+      // Long enough for the longest accepted string (`a#-1` is 4, `127` is 3)
+      // with room for a typo before the parser is consulted.
+      maxLength: 8,
+      text: (node) => midiLaneNoteText(node),
+      // ⚠ IMPORTED, NEVER RE-TYPED. The grammar lives beside the engine that
+      // consumes it so the card and the face cannot disagree about what the
+      // user typed — the same one-source rule the warped fader's map obeys.
+      parse: (t) => {
+        const n = parseNoteGateNote(t);
+        return n === null ? entryReject<number>() : entryAccept(n);
+      },
+      onCommit: (nodeId, v) => { midiLaneSetNote(nodeId, v); },
+      probe: {
+        // A note the module does NOT default to, so a write is visible against
+        // the default 36 (GM kick). 38 is the GM snare.
+        accepts: '38',
+        // ⚠ THE REJECT LEG IS THE POINT, AND THIS STRING IS CHOSEN RATHER THAN
+        // PICKED. `128` is one past the top of the 7-bit note space and is
+        // EXACTLY what the engine's own `setNoteGateNote` would silently clamp
+        // to 127. A cell that clamped would pass the `accepts` leg perfectly;
+        // only this leg separates a validator from a funnel.
+        rejects: '128',
+        effect: { kind: 'data', key: 'noteGateNote', expect: 'changed' },
+      },
+    },
+    // VOICE PRIORITY — three named behaviours, from the module's own
+    // `VoicePriority` union so a roster entry the engine has no branch for is a
+    // COMPILE error rather than a dead option.
+    'midi-lane-priority-{n}': {
+      kind: 'selector',
+      tag: 'PRIO',
+      options: () => midiLanePriorityOptions(),
+      value: (node) => midiLanePriorityValue(node),
+      onchange: (nodeId, v) => midiLaneSetPriority(nodeId, v),
+    },
+    // RETRIGGER — a genuine on/off (the gate either dips on a new note or it
+    // does not), so a toggle is the honest primitive and the 52 px one.
+    'midi-lane-retrig-{n}': {
+      kind: 'toggle',
+      label: 'RETRIG',
+      value: (node) => midiLaneRetrigValue(node),
+      onchange: (nodeId, on) => midiLaneSetRetrig(nodeId, on),
+    },
+    // ── THE CC TAPS ────────────────────────────────────────────────────────
+    //
+    // ⚠ FOUR CELLS, NOT TWO ROSTERS. The obvious-looking shape is a 129-entry
+    // "which CC number" picker per tap; it is the wrong one twice over. It is
+    // the DENSE-ROSTER trap (168 px each, and 129 options is a scroll rather
+    // than a choice), and more importantly it is not what the module does:
+    // which physical control sends which number is a property of the DEVICE,
+    // so the affordance the card offers — and the only one that works without
+    // the manual in your other hand — is "arm, then wiggle the thing".
+    //
+    // ⚠ AND CLEAR STAYS ITS OWN CELL. With no number picker there is no `NONE`
+    // option for it to collapse into, so dropping it would delete the only way
+    // to unassign a tap — a parity loss, not a simplification.
+    //
+    // ⚠ THE `WIGGLE…` CAPTION FLIP IS NOT PORTED. `ShellActionCell.label` is a
+    // plain string, and a caption that changes with state is the shape the
+    // resting-text ruling denies. The armed state is carried by the CC lamps in
+    // the device strip, whose `detail` says which tap is listening; the
+    // instruction the flipped caption used to give lives in `title` and in the
+    // family's `docs.controls` prose. A real reduction at rest, named.
+    'midi-lane-learn-a-{n}': {
+      kind: 'action',
+      label: 'LEARN A',
+      title: 'Arm CC tap A — the next controller number that arrives on this lane binds to it',
+      mode: 'trigger',
+      probe: { effect: { kind: 'audition', seam: 'engine-message' } },
+      onFire: (nodeId) => { midiLaneLearnCcA(nodeId); },
+    },
+    'midi-lane-clear-a-{n}': {
+      kind: 'action',
+      label: 'CLEAR A',
+      title: 'Unassign CC tap A so no controller drives the CC A jack',
+      mode: 'trigger',
+      probe: { effect: { kind: 'audition', seam: 'engine-message' } },
+      onFire: (nodeId) => { midiLaneClearCcA(nodeId); },
+    },
+    'midi-lane-learn-b-{n}': {
+      kind: 'action',
+      label: 'LEARN B',
+      title: 'Arm CC tap B — the next controller number that arrives on this lane binds to it',
+      mode: 'trigger',
+      probe: { effect: { kind: 'audition', seam: 'engine-message' } },
+      onFire: (nodeId) => { midiLaneLearnCcB(nodeId); },
+    },
+    'midi-lane-clear-b-{n}': {
+      kind: 'action',
+      label: 'CLEAR B',
+      title: 'Unassign CC tap B so no controller drives the CC B jack',
+      mode: 'trigger',
+      probe: { effect: { kind: 'audition', seam: 'engine-message' } },
+      onFire: (nodeId) => { midiLaneClearCcB(nodeId); },
     },
   },
 
