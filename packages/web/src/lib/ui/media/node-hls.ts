@@ -17,6 +17,16 @@
 // teardown is registered with `nodeMedia.setDisposer` so it runs when the NODE
 // dies rather than when a card moves.
 //
+// ⚠ AND (2) IS NOW UNSPELLABLE RATHER THAN MERELY FIXED (LEG-02 P3, #1511).
+// Neither card owns an hls.js instance any longer — `node-hls-source-registry`
+// creates, replaces and destroys them on GRAPH lifetime, and a card only adopts
+// the element for display. So the `getNodeHls` reader this file used to export,
+// whose whole purpose was letting a remounting CARD rehydrate its mirror, was
+// deleted with the mirror it served: there is no remount that could observe a
+// stale one. The repo standard for a paid debt is to delete the mechanism
+// entirely rather than leave it for the next occupant, and an exported reader
+// with no caller is exactly that invitation.
+//
 // Typed structurally (`{ destroy(): void }`) rather than against `Hls` so this
 // module carries no hls.js import and unit-tests with a fake.
 
@@ -26,12 +36,6 @@ export interface DestroyableStream {
 }
 
 const byNode = new Map<string, DestroyableStream>();
-
-/** The instance currently attached for `nodeId`, if any. A remounting card
- *  reads this instead of assuming there is none. */
-export function getNodeHls(nodeId: string): DestroyableStream | null {
-  return byNode.get(nodeId) ?? null;
-}
 
 /**
  * Hand `inst` to the node. Any PREVIOUS instance for that node is destroyed
