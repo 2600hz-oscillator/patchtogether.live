@@ -276,6 +276,45 @@ async function settledCapture(el: Locator, max = 4): Promise<SettledCapture> {
 }
 
 /**
+ * ⚠ THE INSTRUMENT'S OWN STATED BLIND SPOT, AND THE CONTROL FOR IT.
+ *
+ * Both boots run in ONE Playwright context, so the second one meets whatever
+ * the first left behind. `bootWithFace` starts with `page.goto('/rack')` — a
+ * REAL document navigation, so every scrap of in-memory app state is torn down
+ * — but localStorage, sessionStorage, IndexedDB and the HTTP/font cache all
+ * survive it. If boot 2 were matching boot 1 because it INHERITED something,
+ * this probe would read "deterministic" for the same reason the scene is
+ * broken: the classic gate-whose-precondition-is-the-defect shape.
+ *
+ * `ZDET_WIPE_STORAGE=1` wipes all of it between boots. Run a subset both ways:
+ * numbers that do not move mean persisted state is not what is holding the two
+ * captures together. It is a CONTROL, deliberately not the default — the gate
+ * itself captures against a baseline taken on a warm CI runner, so the
+ * warm-cache boot is the faithful one and the cold one is the check on it.
+ */
+async function wipeStorage(page: Page): Promise<void> {
+  await page.context().clearCookies();
+  await page.evaluate(async () => {
+    localStorage.clear();
+    sessionStorage.clear();
+    const dbs = (await indexedDB.databases?.()) ?? [];
+    await Promise.all(
+      dbs.map(
+        (d) =>
+          new Promise<void>((resolve) => {
+            if (!d.name) return resolve();
+            const req = indexedDB.deleteDatabase(d.name);
+            req.onsuccess = req.onerror = req.onblocked = (): void => resolve();
+          }),
+      ),
+    );
+    if (globalThis.caches) {
+      for (const k of await caches.keys()) await caches.delete(k);
+    }
+  });
+}
+
+/**
  * ONE boot of ONE scene, byte-for-byte the sequence
  * `workflow-shell-faces.spec.ts` runs for that tier.
  */
@@ -341,6 +380,7 @@ ROSTER.forEach(({ type, pages, videoFaceWhy, singletonAdoptWhy, simPin }, index)
       page.on('pageerror', (e) => errors.push(e.message));
 
       const boot1 = await captureScene(page, type, tier, pages, bootOpts);
+      if (process.env.ZDET_WIPE_STORAGE === '1') await wipeStorage(page);
       const boot2 = await captureScene(page, type, tier, pages, bootOpts);
       const d = await diffDetail(page, boot1.png, boot2.png);
 
@@ -372,6 +412,7 @@ ROSTER.forEach(({ type, pages, videoFaceWhy, singletonAdoptWhy, simPin }, index)
           + `maxDelta=${d.maxDelta} box=${JSON.stringify(d.box)} `
           + `settled=${boot1.settled}/${boot2.settled} tries=${boot1.tries}/${boot2.tries} `
           + `video=${videoFaceWhy ? 'y' : 'n'} simPin=${simPin ? 'y' : 'n'} `
+          + `wipe=${process.env.ZDET_WIPE_STORAGE === '1' ? 'y' : 'n'} `
           + `budget=${tier === 'compact' ? 'COMPACT_MAX_DIFF' : 'DOCK_MAX_DIFF'} `
           + `pageerrors=${errors.length}`,
       );
