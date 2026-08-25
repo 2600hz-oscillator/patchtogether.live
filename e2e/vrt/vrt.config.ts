@@ -136,16 +136,6 @@ const FULL_MATCH = [
   'groups.spec.ts',
   'dashboard.spec.ts',
   'landing.spec.ts',
-  // ⚠ TEMPORARY — MEASUREMENT BRANCH ONLY, REMOVE BEFORE MERGE.
-  // `vrt-determinism-probe.spec.ts` belongs in PROBE_MATCH (it is below there
-  // too) and costs CI nothing from that list. It is ALSO listed here for one
-  // mechanical reason: the only dispatchable linux/SwiftShader runner for a VRT
-  // spec is `vrt-update.yml`'s capture job, which runs `task vrt:update --
-  // --grep "$GREP"` and sets no env, so `testMatch()` resolves to FULL_MATCH
-  // and a PROBE_MATCH-only spec is unreachable there. The probe writes no
-  // snapshot, so `--update-snapshots=changed` regenerates nothing and the
-  // capture job's commit step finds an empty diff.
-  'vrt-determinism-probe.spec.ts',
 ];
 
 // `VRT_PROBE=1` swaps the whole suite for the MEASUREMENT tools below. None of
