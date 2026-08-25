@@ -252,12 +252,32 @@ test.describe('BOOT PROBE — what a VRT scene spends its time on', () => {
 // wrong by leaving a pinned node displaced). A probe that only exercised the
 // common branch would return a clean number and prove nothing about the other
 // two.
-const ORDER_SUBJECTS = (
-  process.env.PROBE_FACES ?? 'adsr,vca,mapper,timelorde'
-)
-  .split(',')
-  .map((s) => s.trim())
-  .filter(Boolean);
+//
+// ⚠ `PROBE_FACES=all` SWEEPS THE WHOLE ROSTER, and that is the mode that
+// actually answers the question. A hand-picked sample can only ever find the
+// classes someone already suspected — and the one this probe DID find
+// (`timelorde`: 41,205 px, deterministic, dock only) was found because a
+// suspect was in the sample, which is luck rather than method. The sweep is
+// slow (roughly a fresh boot plus a shared scene per face), so it is opt-in;
+// `PROBE_ORDERS=1` and `PROBE_TIERS=dock` cut it to the cheapest form that
+// still discriminates, since every failure seen so far is a dock failure and
+// none has depended on order.
+const ORDER_SUBJECTS = (() => {
+  const raw = process.env.PROBE_FACES ?? 'adsr';
+  if (raw !== 'all') return raw.split(',').map((s) => s.trim()).filter(Boolean);
+  return (FACES as readonly { type: string; freshPageWhy?: string; simPin?: unknown }[])
+    // A face that already DECLARES it cannot share is not a finding, it is the
+    // declaration working — exclude it so the sweep's output is only news.
+    .filter((f) => !f.freshPageWhy && !f.simPin)
+    .map((f) => f.type);
+})();
+
+/** Which orders to run. One is enough to find a face that cannot share at all;
+ *  three is what proves ORDER-independence for the ones that can. */
+const PROBE_ORDERS = Number(process.env.PROBE_ORDERS ?? 3);
+/** Which tiers to compare. `dock` alone halves the sweep and is where every
+ *  difference measured so far has appeared. */
+const PROBE_TIERS = (process.env.PROBE_TIERS ?? 'compact,dock').split(',');
 
 /** ⚠ 1/255, NOT the gate's 26/255. The gate's tolerance exists to absorb GPU
  *  anti-aliasing drift between RUNS; this comparison is two captures in ONE run
@@ -359,7 +379,7 @@ test.describe('D: shared page vs fresh page — same pixels?', () => {
     const freshMs: number[] = [];
     const freshDockMs: number[] = [];
     for (const type of ORDER_SUBJECTS) {
-      {
+      if (PROBE_TIERS.includes('compact')) {
         const ctx = await browser.newContext({
           viewport: LEGACY_FOLD_VIEWPORT, deviceScaleFactor: 1, reducedMotion: 'reduce',
         });
@@ -371,7 +391,7 @@ test.describe('D: shared page vs fresh page — same pixels?', () => {
         freshMs.push(Date.now() - t);
         await ctx.close();
       }
-      {
+      if (PROBE_TIERS.includes('dock')) {
         const ctx = await browser.newContext({
           viewport: LEGACY_FOLD_VIEWPORT, deviceScaleFactor: 1, reducedMotion: 'reduce',
         });
@@ -399,7 +419,7 @@ test.describe('D: shared page vs fresh page — same pixels?', () => {
     const offenders: string[] = [];
     const sharedMs: number[] = [];
     const sharedDockMs: number[] = [];
-    for (const [label, order] of Object.entries(orders)) {
+    for (const [label, order] of Object.entries(orders).slice(0, PROBE_ORDERS)) {
       const ctx = await browser.newContext({
         viewport: LEGACY_FOLD_VIEWPORT, deviceScaleFactor: 1, reducedMotion: 'reduce',
       });
@@ -410,7 +430,7 @@ test.describe('D: shared page vs fresh page — same pixels?', () => {
 
       for (const type of order) {
         // COMPACT
-        {
+        if (PROBE_TIERS.includes('compact')) {
           await page.setViewportSize(LEGACY_FOLD_VIEWPORT);
           const t = Date.now();
           await resetFaceRack(page, pristine);
@@ -422,7 +442,7 @@ test.describe('D: shared page vs fresh page — same pixels?', () => {
           }
         }
         // DOCK — pixels AND the geometry the gate asserts on.
-        {
+        if (PROBE_TIERS.includes('dock')) {
           const t = Date.now();
           await resetFaceRack(page, pristine);
           // AFTER the load, because there is no load left — the shared page

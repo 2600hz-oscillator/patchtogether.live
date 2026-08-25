@@ -316,12 +316,13 @@ const FACE_WIDTH_EXEMPTIONS: Readonly<Record<string, string>> = {
 };
 
 test.describe('VRT: P1 curated faces (?shell=1) — compact lane tile + dock full-view', () => {
-  for (const { type, pages, videoFaceWhy, singletonAdoptWhy, simPin, tabbedOptIn } of FACES as readonly {
+  for (const { type, pages, videoFaceWhy, singletonAdoptWhy, simPin, freshPageWhy, tabbedOptIn } of FACES as readonly {
     type: string;
     pages: number;
     videoFaceWhy?: string;
     singletonAdoptWhy?: string;
     simPin?: BootFaceOptions['simPin'];
+    freshPageWhy?: string;
     tabbedOptIn?: true;
   }[]) {
     // ONE opts object for BOTH tiers, deliberately. The compact tile and the
@@ -334,6 +335,13 @@ test.describe('VRT: P1 curated faces (?shell=1) — compact lane tile + dock ful
       ...(videoFaceWhy ? { videoFaceWhy } : {}),
       ...(singletonAdoptWhy ? { singletonAdoptWhy } : {}),
       ...(simPin ? { simPin } : {}),
+      // ⚠ CARRIED INTO THE OPTS SO IT REACHES BOTH TIERS, for the same reason
+      // the block above gives: a determinism declaration that reached only one
+      // of a face's two scenes would leave the other one wrong. `timelorde`'s
+      // compact scene measures 0 px on a shared page and its dock scene 41,205 —
+      // declaring per tier would have been an invitation to share the half that
+      // happens to work today.
+      ...(freshPageWhy ? { freshPageWhy } : {}),
     };
     test(`face-${type}-compact: the compact lane tile matches baseline`, async ({ faceSession }) => {
       // PER-SCENE, never the config's flat cap — the `foldViewportFor` shape

@@ -3143,6 +3143,20 @@ export const FACES = [
   {
     type: 'timelorde',
     pages: 4,
+    freshPageWhy:
+      'ITS PICTURE IS A FUNCTION OF THE PAGE\'S AGE, NOT OF THE GRAPH, so no reset can restore '
+      + 'it. `TimelordeCard`\'s rAF is the SOLE writer of `displayFrame` and the card lives in an '
+      + 'off-screen `HeadlessSourceHost` for the life of the PAGE — the body only BLITS what it '
+      + 'composited. `resetFaceRack` restores the graph; it cannot un-age a card. MEASURED on the '
+      + 'shared page: the DOCK scene differs from its own fresh-boot capture by 41,205 px of a '
+      + '417x759 plate, on the same machine in the same run, IDENTICALLY in declared / reversed / '
+      + 'shuffled order — deterministic, so it is a property of sharing rather than of ordering. '
+      + '⚠ Its COMPACT scene is unaffected (0 px) and the split is diagnostic rather than lucky: '
+      + 'that tile paints no picture at all (domain audio, `hasVideoSurface` false, '
+      + '`glyph: \'none\'`, three plain cells), so there is no card-owned frame in it to be stale. '
+      + 'The whole face takes a fresh page anyway — one boot is cheaper than a per-tier rule '
+      + 'nobody would remember, and the compact scene\'s 0 px is not a licence to share the half '
+      + 'of the face that happens to work today.',
     singletonAdoptWhy:
       'THE FIRST FACED RACK SINGLETON, and the harness cannot spawn its subject. timelorde is '
       + 'maxInstances 1 AND is named in cap.ts\'s PINNED_COUNTS_TOWARD_CAP ("the pinned TIMELORDE '
@@ -4839,6 +4853,31 @@ export interface BootFaceOptions {
     /** Why this scene needs its sim phase pinned. */
     readonly why: string;
   }[];
+  /**
+   * Why this face CANNOT share the boot-amortised page, in its own words.
+   *
+   * ⚠ DENY-BY-DEFAULT WITH A REQUIRED REASON, and a `string` rather than a flag
+   * so `tsc` refuses an undeclared opt-out. Presence is what
+   * `faceSceneNeedsFreshPage` reads; the text is what stops the next reader from
+   * deleting it as unnecessary.
+   *
+   * ⚠ THE CLASS IT EXISTS FOR IS NOT FIXABLE BY ANY RESET, which is why it is a
+   * declaration rather than a bug. `resetFaceRack` can restore the GRAPH; it
+   * cannot restore how long a CARD has been alive. A face whose picture is
+   * produced by a card that `HeadlessSourceHost` keeps mounted — rather than by
+   * the video engine, which the scene can freeze — has a surface whose state is a
+   * function of the PAGE's age, and a shared page is by definition older than a
+   * fresh one.
+   *
+   * MEASURED, and it is the reason this field exists: `timelorde`'s DOCK scene
+   * differs from its own fresh-boot capture by 41 205 px of a 417x759 plate, on
+   * the same machine, in the same run, IDENTICALLY in declared / reversed /
+   * shuffled order — i.e. deterministic, not flaky, and not an ordering effect.
+   * Its compact scene is unaffected (0 px), which fits: that tile paints no
+   * picture at all (`glyph: 'none'`, no video surface), so there is no card-owned
+   * frame in it to be stale.
+   */
+  freshPageWhy?: string;
 }
 
 /** How many times the suspend may be re-applied before the scene gives up. The
@@ -5896,7 +5935,7 @@ export async function resetFaceRack(page: Page, pristine: FaceRackPristine): Pro
  * two are belt and braces on the same defect.
  */
 export function faceSceneNeedsFreshPage(opts: BootFaceOptions): boolean {
-  return (opts.simPin?.length ?? 0) > 0;
+  return (opts.simPin?.length ?? 0) > 0 || !!opts.freshPageWhy;
 }
 
 /** Every node id of `type` currently in the patch. */
