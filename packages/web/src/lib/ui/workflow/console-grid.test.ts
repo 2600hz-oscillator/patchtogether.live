@@ -157,6 +157,28 @@ describe('console grid — which SHIPPED bands it claims (derived membership)', 
       // there is nothing to align, and handing ModuleShell a column ruler for a
       // flex row is two layout systems disagreeing about one element.
       'mixmstrs/sends=9',
+      // ⚠ THE FIRST MEMBER WHOSE CLUSTERS ARE A **WRAP**, NOT A CORRESPONDENCE —
+      // and it is listed with that difference stated rather than blended in,
+      // because the rule's stated property is "column j means the same thing in
+      // every cluster" and this is a weaker claim than moog984's.
+      //
+      // moog960's eight columns are one LINEAR sequence, and the two clusters
+      // are its halves (cols 1-4, cols 5-8). So column j is step j in the first
+      // cluster and step j+4 in the second — not the same control, the way
+      // OUTPUT j genuinely is the same output in every one of moog984's input
+      // rows. What makes the alignment correct anyway is musical rather than
+      // structural: on a step sequencer, steps j and j+4 are the SAME POSITION
+      // in each half of the run, so a column ruler stacks the two halves the
+      // way a player already reads them.
+      //
+      // ⚠ AND THE BAND IS CLUSTERED FOR A MEASURED REASON, not for looks. These
+      // are SEGMENTED cells painting three option labels each (NORM/SKIP/STOP),
+      // which makes a mode cell far wider than a knob: eight in one row put the
+      // dock faceplate at 1336 CSS px of content against a 1220 px capture box,
+      // and `workflow-shell-faces.spec.ts` correctly refused it. Clustering into
+      // halves is what makes the plate fit, and it fits WITHOUT claiming a width
+      // exemption a knob grid has not earned.
+      'moog960/stepmode=4',
       // ⚠ THE FIRST BAND WHOSE COLUMNS ARE NOT CHANNELS. moog984 is a 4×4
       // MATRIX: its four clusters are the four INPUT rows and column j is
       // OUTPUT j, so the property this rule tests for — "column j means the
@@ -267,6 +289,13 @@ describe('console grid — which SHIPPED bands it claims (derived membership)', 
       // statement moog984 and quadralogical make below: a lone console band has
       // nothing to align to.
       'kria',
+      // moog960's `stepmode` is its only console band — the three row banks
+      // carry no clusters (their eight knobs are one flat row) and `clock` /
+      // `ranges` carry none either. So the FACE-WIDE ruler must not engage:
+      // there is nothing for a lone console band to align against, and the
+      // three knob rows are deliberately NOT clustered, since a knob cell is
+      // narrow enough that eight fit without help.
+      'moog960',
       // moog984 is the STRONGEST member of this control: it is the only face
       // whose console band is the module's entire surface, so if the face-wide
       // ruler ever engaged below its declared minimum it would engage here
