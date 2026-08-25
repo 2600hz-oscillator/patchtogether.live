@@ -477,13 +477,43 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // Removed from BOTH lists (vrt-meta.test.ts asserts set equality in both
   // directions, so a one-sided delete is red), which enrols the legacy card in
   // vrt.spec.ts alongside the two face scenes promotion added.
-  // ES9 — native-bridge 16×16 hardware I/O. The card is static chrome
-  // (status LED + class selectors + sectioned patch panel, no canvas), so
-  // it IS baseline-able — pending the darwin/linux capture pass (4plexvid
-  // precedent). Functional coverage: es9-bridge-core unit tests (dsp: ring,
-  // class scaling, gate hysteresis, underrun policies) + es9.test.ts (def
-  // shape, class→worklet mapping) + the per-module handle-presence sweep.
-  es9: 'VRT baseline pending; es9-bridge-core (dsp) + es9.test.ts unit suites cover the logic, card is static chrome. Promote + capture darwin/linux baselines in a follow-up PR.',
+  // ── ES9 — native-bridge 16×16 hardware I/O ────────────────────────────────
+  //
+  // ⚠ THIS ENTRY USED TO ASSERT THE OPPOSITE OF THE MODULE'S BEHAVIOUR, and
+  // the conclusion was right by accident. It read: *"The card is static chrome
+  // (status LED + class selectors + sectioned patch panel, no canvas), so it IS
+  // baseline-able — pending the darwin/linux capture pass"*, and invited a
+  // drain on that premise. It is not static chrome. `Es9Card.svelte` paints
+  // `stateLabel`, and `es9.ts`'s FACTORY calls `acquireEs9Bridge`
+  // UNCONDITIONALLY — `SharedArrayBuffer` is present on `/rack` (COOP/COEP for
+  // Faust), so the transport Worker spawns on every runner, fails to reach
+  // ws://127.0.0.1:9209, and `bridge.worker.ts` cycles connecting → close →
+  // `scheduleReconnect()` on a doubling 1 s→5 s backoff forever. **es9 has the
+  // `vstInstrument` hazard three entries down, verbatim.**
+  //
+  // ⚠ MEASURED 2026-08-25, AND THE FIRST INSTRUMENT WAS WRONG IN THE
+  // REASSURING DIRECTION — which is the reason this is written out. Sampling
+  // the card's status row from inside the page every 37 ms for 12 s returned
+  // **325/325 samples reading `bridge not found`, one distinct value**: a
+  // card that looks perfectly deterministic. A MutationObserver on the same
+  // element over the same window returned **6 transitions —
+  // `bridge not found` ↔ `connecting…`, three full cycles.** The `connecting`
+  // phase is real and only a few milliseconds long, because a refused
+  // localhost TCP connection resolves almost instantly, so a coarse sampler
+  // never lands in it and NEITHER DOES A SINGLE LOCAL `task vrt:one -- es9`
+  // RUN. A green local capture is not evidence here; it is the likely outcome
+  // of a ~0.1 %-per-run lottery, and the cost of losing it is a red `main`.
+  //
+  // So the module is PROMOTED (STRICT_FACES) with pixel coverage on the two
+  // face scenes — `face-es9-compact` / `face-es9-dock` — and the LEGACY card
+  // stays exempt. The face is capturable for a reason the card is not: every
+  // one of those cycling strings is deleted by the resting-text ruling, so the
+  // faceplate paints three dark lamps, a static hint and 24 cells at their
+  // declared defaults. Functional coverage for the card: es9-bridge-core unit
+  // tests (dsp: ring, class scaling, gate hysteresis, underrun policies) +
+  // es9.test.ts (def shape, class→worklet mapping) + es9-card-shows-state /
+  // es9-per-leg-patching e2e + the per-module handle-presence sweep.
+  es9: 'the LEGACY card only (?shell=legacy). es9 is in STRICT_FACES, so pixel coverage of the surface a player operates is face-es9-compact / face-es9-dock. The card is NOT baseline-able and this entry used to claim it was: its status row cycles "bridge not found" ↔ "connecting…" on the transport worker\'s 1-5 s reconnect backoff, which runs on every runner because the factory acquires the bridge unconditionally — the vstInstrument hazard exactly. MEASURED: a 37 ms in-page sampler saw 325/325 identical samples over 12 s (i.e. a single local capture reads clean) while a MutationObserver over the same window saw 6 transitions. Functional coverage: es9-bridge-core (dsp) + es9.test.ts + es9-card-shows-state.spec.ts + es9-per-leg-patching.spec.ts.',
   // VST BRIDGE cards — the connection pill is a LIVE state machine: with no
   // vst-bridge helper on the runner the transport worker cycles
   // "connecting…" ↔ "helper not found" on its 1-5 s reconnect backoff
@@ -1327,6 +1357,15 @@ export const ALLOWED_PERMANENT_EXEMPT: ReadonlySet<string> = new Set([
   // than masked in the capture — see the note where its entry used to stand in
   // EXEMPT_FROM_VRT. This list is ANCHORED in both directions, so leaving the
   // name here while the module is baselined would be RED.
+  //
+  // ⚠ `es9` STAYS, THOUGH IT WAS PROMOTED IN THE SAME WINDOW — and the reason
+  // is a measurement, not an omission. Its FACE is baselined
+  // (face-es9-compact / face-es9-dock); its LEGACY card is not, because that
+  // card's status row cycles on the bridge worker's reconnect backoff. Read
+  // together, these two entries are the useful pair: a drain and a refusal
+  // decided in the same week on the same kind of module, each on its own
+  // evidence. See es9's entry in EXEMPT_FROM_VRT, which records the two
+  // instruments that disagreed about it and which of them was right.
   'es9', 'onetonine',
   'shapegen', 'sixstrum', 'mirrorpool', 'grainsOfVision',
   'frametable', 'videocube', 'sourcery', 'scoreboard',

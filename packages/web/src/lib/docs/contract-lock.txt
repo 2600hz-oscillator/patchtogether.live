@@ -1043,6 +1043,8 @@ es9 param out5_class 0..3 discrete default=0
 es9 param out6_class 0..3 discrete default=0
 es9 param out7_class 0..3 discrete default=0
 es9 param out8_class 0..3 discrete default=0
+es9 family es9-connect kind=other prefix=es9-connect
+es9 family es9-disconnect kind=other prefix=es9-disconnect
 fader meta domain=video
 fader in in_a video
 fader in in_b video

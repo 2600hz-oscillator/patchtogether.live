@@ -4653,6 +4653,46 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // `?shell=legacy`.
   'midiLane',
 
+  // ── ES-9 — a REAL Eurorack system patched into the rack, and the
+  //    bespoke-surface disposition that was wrong in four of five clauses ────
+  //
+  // Sixteen hardware inputs and sixteen USB output channels through an Expert
+  // Sleepers ES-9 and the es9-bridge companion app. The browser cannot do this
+  // alone — getUserMedia caps the device at its first stereo pair and setSinkId
+  // picks whole devices, never channel ranges — so a native process owns
+  // CoreAudio and serves a localhost WebSocket, and this module is its in-graph
+  // face.
+  //
+  // ⚠ THE INVENTORY CALLED IT `bespoke-surface`, AND FOUR OF THE FIVE THINGS
+  // IT NAMED ARE THINGS THE RESTING-TEXT RULING DELETES. "Connection state
+  // machine" was a seven-way string switch painted as one `<span>`; "device
+  // rate and channel-count detail" was three derived numbers; "xrun/rtt
+  // telemetry" was a count and a measurement with a decimal. All three are
+  // lamps now, with the sentences on `aria-label`. "Sectioned routing across
+  // many jacks" was twenty-two ordinary `ParamDef`s plus a `PatchPanel`, which
+  // on a face is the REAR CARD. Only "connect/disconnect gestures" survived
+  // contact, and two gestures are two `action` cells. So this needed strictly
+  // LESS bespoke machinery than `kria`, which was re-dispositioned while still
+  // needing a real PF-14 panel component.
+  //
+  // ⚠ AND THE PROMOTION IS THE COHORT'S BIGGEST LANE CHANGE, because es9 is the
+  // only member with real params. `laneRenderKind` returned 'placeholder' here
+  // — a rackline tile with ZERO ranked controls — so both gestures AND all 22
+  // routing params were reachable only by discovering the dock full view
+  // first. An `action` cell is not dock-restricted, so CONNECT and DISCONNECT
+  // land on the tile.
+  //
+  // ⚠ IT SHIPS WITH A SAFETY FIX IT DID NOT CAUSE. `updateEs9Config` — the
+  // message that carries the bridge's per-jack UNDERRUN POLICY — had exactly
+  // one caller, on a card the default shell has not mounted in a lane since
+  // ownership moved to the engine node. So a class change did not move the
+  // policy for anyone, and the CV-Buddy janitor's `out{N}_class` writes never
+  // could, since they go straight through the store and touch no view. The
+  // push now lives on the engine handle's `setParam`, which is the one place
+  // that sees a class change with no UI involved. A jack left on HOLD freezes
+  // its last voltage on a hiccup, and for a gate that is a stuck note or a
+  // stopped clock — the module's own def says so at length.
+  'es9',
   // ── ELECTRA CONTROL — the FOURTH meta-domain face, the LAST module to leave
   //    NON_SHELL_LANE_TYPES, and the first face whose primary surface is the
   //    workflow DRAWER rather than a lane tile or a dock pane ─────────────────
