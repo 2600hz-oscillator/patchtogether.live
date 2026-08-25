@@ -4074,6 +4074,8 @@ export const FACES = [
     // and no canvas anywhere on the surface. The lamps change only when
     // `notify()` fires, which needs a gate edge on an input this scene patches
     // nothing into.
+  },
+
   // ── THE CODE-BUFFER PAIR — the first faceplates whose body is a TEXT EDITOR
   //    ─────────────────────────────────────────────────────────────────────
   //
