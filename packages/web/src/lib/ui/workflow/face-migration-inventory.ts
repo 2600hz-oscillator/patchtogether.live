@@ -338,6 +338,32 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
       'so `sync_mode` stopped rendering as an anonymous three-state rotary.',
   },
   { type: 'freezeframe', disposition: 'generic-face' },
+  // ⚠ MOVED HERE FROM `bespoke-surface` (2026-08-24), AND ITS OLD `why` WAS
+  // FALSE ON TWO COUNTS — measured against the card and the def rather than
+  // re-read. It said "a live device roster", of which there is NONE: the card
+  // shows `snapshot.id`, the OS name of the pad in the CURRENTLY SELECTED SLOT
+  // ONLY, beside four BLIND buttons labelled `0 1 2 3`. Nothing anywhere
+  // enumerates which pads are in which slots — you pick a slot and read the
+  // header to find out what you got. And it said "none of it is a param" while
+  // `padIndex` is one, and is now this face's only ranked cell. A stale claim in
+  // a field agents read as current fact is the `recorderbox` class, so it is
+  // rewritten rather than left to be re-discovered. What the entry got RIGHT —
+  // the mapping table, the importable mapping files, the live input echo — is
+  // exactly the surface that became the `control-grid` fullViewBody.
+  {
+    type: 'gamepad',
+    disposition: 'generic-face',
+    note:
+      'DONE (2026-08-24). Its "roster" is FOUR NUMBERED SLOTS, not a device list: the Gamepad ' +
+      'API caps at four pads and indexes them 0..3, which is a fixed set known when the def was ' +
+      'authored — precisely the condition a RUNTIME roster fails — so `padIndex` is an ordinary ' +
+      'ParamDef with an `options` roster, renders as a segmented cell, and reaches the lane ' +
+      'tile. That is what separates this module from its cohort-mates, whose pickers all need a ' +
+      'surface. The mapping board (twelve button LEDs, two trigger rows, two stick pads, both ' +
+      'stick calibrations, four inverts, save/load/preset) is a `control-grid` fullViewBody, ' +
+      'because every one of those gestures is "move the physical control and watch what lights ' +
+      'up" and the live echo cannot fit in 192 px.',
+  },
   { type: 'gatemaiden', disposition: 'generic-face' },
   { type: 'grainsOfVision', disposition: 'generic-face' },
   { type: 'graphicEq', disposition: 'generic-face' },
@@ -802,13 +828,6 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
     type: 'frogger',
     disposition: 'bespoke-surface',
     why: 'a GAME viewport driven by the keyboard — one knob beside it does not make it a face.',
-  },
-  {
-    type: 'gamepad',
-    disposition: 'bespoke-surface',
-    why:
-      'a GAMEPAD MAPPER: a live device roster, a per-button/axis mapping table with importable ' +
-      'mapping files, and live input echo. The table is the interaction and none of it is a param.',
   },
   {
     type: 'gibribbon',
