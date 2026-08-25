@@ -21,12 +21,18 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import '$lib/meta/modules'; // side-effect: register meta module defs
 import { electraControlDef, ELECTRA_CONTROL_TYPE } from '$lib/meta/modules/electra-control';
+import { curatedFace, laneOrder, type FaceDefLike } from '$lib/ui/workflow/curated-face';
 import { STRICT_FACES, migrated } from '$lib/ui/workflow/strict-faces';
 import { NON_SHELL_LANE_TYPES, laneRenderKind, dockRailRendersFace } from '$lib/ui/workflow/legacy-fallback';
 import { shellCellFor } from '$lib/ui/workflow/shell-cells';
 import { electraPosOf, ELECTRA_BANKS, ELECTRA_SLOT_COUNT } from '$lib/graph/electra-control';
 import { slotPositionName, emptySlotName, boardName } from './electraControl/electra-board-model';
+
+const DEF = electraControlDef as unknown as FaceDefLike;
+/** Every LANE tier — the dock is not one, and is asserted separately. */
+const LANE_TIERS = ['mini', 'compact', 'full'] as const;
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const BODY = resolve(HERE, 'electraControl', 'ElectraGridBody.svelte');
@@ -107,6 +113,28 @@ describe('electraControl face — the ONE ranked cell', () => {
     expect(cell, 'the ranked key resolves a cell').toBeTruthy();
     expect(cell!.kind).toBe('action');
     expect(electraControlDef.face!.order.length, 'a face that ranks nothing is a blank tile').toBeGreaterThan(0);
+  });
+
+  // ⚠ THE `joystick` LEG, AND IT IS OWED BY THIS FACE'S OWN CLAIM. The def's
+  // face comment says "at EVERY tier you get the gesture the board is inert
+  // without", and `STRICT_FACES` repeats it — but #1974's refusal is a face that
+  // RANKS controls and RENDERS ZERO of them, on which every "does the face
+  // resolve" gate is green. `laneOrder` drops a declared `hero.cell` and each
+  // `xyPads` entry's `x` key; this face declares neither, so the one ranked key
+  // must survive to every lane tier. Asserted as PRESENCE at each tier, not as
+  // "the face resolves", because those are different questions and only the
+  // first one is the claim.
+  it('the SEND cell is PRESENT at EVERY lane tier — the claim the face comment makes', () => {
+    for (const tier of LANE_TIERS) {
+      const face = curatedFace(DEF, tier);
+      expect(face, `lane tier '${tier}': the face resolves`).not.toBeNull();
+      expect(
+        face!.controls.map((c) => c.key),
+        `lane tier '${tier}': the one gesture this module is inert without must reach the tile`,
+      ).toEqual([KEY]);
+    }
+    // …and `laneOrder` itself keeps it, which is the mechanism behind the above.
+    expect(laneOrder(electraControlDef.face!)).toEqual([KEY]);
   });
 
   it('has no pages, no rear groups, and a glyph of none', () => {
