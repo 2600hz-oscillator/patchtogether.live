@@ -37,10 +37,15 @@ export type LaneRenderKind = 'legacy' | 'shell' | 'placeholder' | 'stub';
  * preview — they keep rendering their real in-lane card:
  *   - organizational chrome with no "module card" to dock (group / sticky),
  *   - the CADILLAC roaming sprite (already filtered from flowNodes upstream),
- *   - clipplayer + the MIDI control surfaces — SNOWFLAKES whose lane face is a
- *     grid / launcher / mapper, not a ranked-knob skeleton (plan §6): they get
- *     bespoke faces in a later spike, and stay on the verbatim legacy card until
- *     then rather than a lossy placeholder,
+ *   - clipplayer + the remaining MIDI control surfaces — SNOWFLAKES whose lane
+ *     face is a grid / launcher / mapper, not a ranked-knob skeleton (plan §6):
+ *     they get bespoke faces in a later spike, and stay on the verbatim legacy
+ *     card until then rather than a lossy placeholder,
+ *     ⚠ READ THAT CLAUSE AS A CLAIM ABOUT EACH CARD, NOT AS A LABEL FOR THE
+ *     GROUP. It is true of `clipplayer`, whose card IS a launcher grid. It was
+ *     NOT true of `launchpadControlLeft` (below), whose card is four buttons
+ *     and a status line — and reasoning from the group label rather than from
+ *     the card is how that entry outlived its reason by a whole consolidation.
  *   ⚠ videoOut USED TO BE IN THIS SET and is not any more (#1821). Its entry
  *     read: "the VIDEO SURFACE snowflake: its legacy card BODY IS the live,
  *     freely-resizable output screen … swapping it for a placeholder tile
@@ -104,6 +109,34 @@ export type LaneRenderKind = 'legacy' | 'shell' | 'placeholder' | 'stub';
  *     card's capture state and registers its acquire command so the faceplate
  *     can show and drive them, WITHOUT a second getUserMedia owner existing.
  *     Parity was preserved first; the promotion followed.
+ *   ⚠ launchpadControlLeft USED TO BE IN THIS SET and is not any more. Its
+ *     entry was the #1579 anchor case — the list once named the unsuffixed
+ *     `launchpadControl`, which resolves to NO def, so the carve-out silently
+ *     never fired — and the id-drift half of that lesson is unchanged and still
+ *     gated (`legacy-fallback.test.ts`: every member must resolve to a
+ *     registered def, and the unregistered id must stay GONE).
+ *     ⚠ WHAT DID NOT SURVIVE IS THE CARVE-OUT'S STATED REASON. It sat under the
+ *     "grid / launcher / mapper" clause above, and that has not described this
+ *     module since the LEFT + RIGHT cards were consolidated into one: the card
+ *     is a title, four buttons, a status line and a docs hint — no canvas, no
+ *     pad matrix, not even the colour legend the VRT exemption credited it with
+ *     (that moved to LaunchpadDocs.svelte). The 8×8 matrix this module drives
+ *     is on the HARDWARE, which is why nothing in the app ever painted it.
+ *     ⚠ THE OTHER HALF OF THE CLAUSE WAS TRUE AND IS DISCHARGED, WHICH IS WHAT
+ *     RETIRES THE ENTRY. "A placeholder tile would be LOSSY" is exactly right —
+ *     `ModuleShellPlaceholder` offers no route to Pair, Connect single, Bind or
+ *     the view segment, and those four gestures are the whole module. The face
+ *     carries them: SINGLE and PAIR are ranked `action` cells and therefore
+ *     reach the lane tile (only `panel` cells are dock-restricted), and BIND +
+ *     the view segment are in the extension body
+ *     ($lib/ui/modules/launchpadControl/LaunchpadBinderBody.svelte) because a
+ *     `ShellActionCell.label` is a plain string and cannot flip between two
+ *     opposite actions. Same shape as cameraInput's (b): the clause was true,
+ *     and it was answered by building the surface rather than by re-arguing it.
+ *     ⚠ AND THIS ONE NEEDED NO STATUS REGISTRY, because it is in NEITHER half
+ *     of HEADLESS_MOUNT_LANE_TYPES — it owns no media element and pushes
+ *     nothing into an engine handle — so its card is simply not mounted after
+ *     promotion and there is no `pointer-events: none` host to reach through.
  * Everything else with a resolvable card swaps.
  */
 export const NON_SHELL_LANE_TYPES: ReadonlySet<string> = new Set<string>([
@@ -113,15 +146,6 @@ export const NON_SHELL_LANE_TYPES: ReadonlySet<string> = new Set<string>([
   'clipplayer',
   'controlSurface',
   'electraControl',
-  // ⚠ The REGISTERED id — `launchpadControlLeft`, not `launchpadControl`
-  // (#1579). The def keeps the Left-suffixed type so saved LEFT nodes load
-  // (launchpad-control.ts LAUNCHPAD_CONTROL_TYPE); this list once named the
-  // unsuffixed id, which resolves to NO def, so the carve-out silently never
-  // fired and the pad-mapping surface rendered as a placeholder tile. This
-  // file is deliberately registry-free, so the string is anchored in
-  // legacy-fallback.test.ts: every member of this set must resolve to a
-  // registered def, and this entry must equal the def's own exported type.
-  'launchpadControlLeft',
 ]);
 
 /** Inputs to the pure lane-render decision. */

@@ -3417,6 +3417,67 @@ export const FACES = [
     // this scene while implying the scene needed it.
   },
 
+  // ── LAUNCHPAD CONTROL — the second BINDER, and the second META scene ───────
+  {
+    type: 'launchpadControlLeft',
+    // ONE band: the two handshake cells. `params: []`, so there is nothing else
+    // that could rank; `DOCK_TAB_MIN_BANDS` is 7 and nothing is padded toward
+    // it.
+    pages: 1,
+
+    // ⚠ THIS SCENE IS WHY THE MODULE COULD LEAVE `ALLOWED_PERMANENT_EXEMPT`,
+    // and — like midiclock's — the argument is the exemption's own, pointed at
+    // the state the capture can actually reach.
+    //
+    // The exemption said the body is "device/binding-dependent (Pair/Bind state
+    // + status absent in CI)". Every clause of that is true of the CONNECTED
+    // state and none of it is reachable here:
+    //
+    //   * `connect()` has exactly two callers, `startPairing` and
+    //     `startSingle`, and this suite presses nothing — so `isPairBound()`
+    //     and `isSingleBound()` are both false and cannot become true;
+    //   * `restoreLaunchpadDeployment()` reads `localStorage`, which is empty
+    //     in a fresh Playwright context, so the deployment and the single-unit
+    //     role take their defaults;
+    //   * a solo spawn has no clipplayer, so `launchpadBindVisible` is false
+    //     and the BIND control does not render;
+    //   * `launchpadViewSegVisible` needs a bound SINGLE unit, so the four-role
+    //     segment does not render either.
+    //
+    // What IS in frame: the module name, two ranked action buttons, two DARK
+    // lamps, and — on the compact tile — nothing else. Every pixel is a
+    // function of the code.
+    //
+    // ⚠ AND THE UNREACHABILITY IS STRUCTURAL. Reaching the hardware-dependent
+    // state requires a gesture, and there is no gesture. That is what makes
+    // this a discharge rather than a bet.
+    //
+    // ⚠ THE ONE GENUINE VARIABLE, stated rather than buried: `midiAvailable()`
+    // (`typeof navigator.requestMIDIAccess === 'function'`) picks between the
+    // body's two top-level branches. It is a property of the browser BUILD, not
+    // of attached hardware, and the baseline is authored by ONE linux CI runner
+    // — `snapshotPathTemplate` has no `{platform}` segment — so it is a
+    // constant where it gates. A local darwin run that disagreed would not be a
+    // verification either way, which is the standing rule rather than special
+    // pleading here.
+    //
+    // ⚠ WHAT THIS BASELINE DOES **NOT** COVER: the bound states — the BIND
+    // control, the four-role segment, the lit lamps and the `one-unit` /
+    // `no-device` errors. Reaching them needs a simulated Launchpad, and the
+    // harness for that exists (`__launchpadTestInstallSingle`, installed by
+    // Canvas.svelte) but installing it in the VRT rig is a change to the
+    // HARNESS rather than to this module. Those surfaces are asserted where
+    // they can be asserted instead of photographed:
+    // `launchpad-binder-status-model.test.ts` pins every string the body can
+    // produce (including the ones that are never painted), and
+    // `launchpad-face.spec.ts` drives the real segment through the singleton.
+    //
+    // ⚠ NO `videoFaceWhy` AND NO `simPin`. `domain: 'meta'` — no ports, no
+    // canvas, no engine node. Nothing on this surface advances between frames:
+    // the lamps change only when the device layer bumps a version rune, and
+    // nothing bumps one without a gesture.
+  },
+
   // ── MOOG960 — the first GRID face ────────────────────────────────────────
   {
     type: 'moog960',

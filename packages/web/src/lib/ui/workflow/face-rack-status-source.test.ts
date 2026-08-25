@@ -520,6 +520,44 @@ const EXTENSION_BODY_ROLES: Readonly<Record<string, BodyRule>> = {
       + 'control captions, and an ERROR that is absent whenever nothing is wrong.',
   },
 
+  // ── LAUNCHPAD CONTROL — the second BINDER, and the body whose defining
+  //    property is what it REFUSES to draw ───────────────────────────────────
+  //
+  // ⚠ BOTH `status-primitive` AND `control-grid` HOLD OF THIS SOURCE (it
+  // imports StatusLed, it sets aria-label, and it mounts no canvas), and the
+  // roles are not mutually exclusive by construction — the predicates are
+  // ordered by the canvas test, not partitioned. `status-primitive` is the
+  // honest one: `control-grid`'s own arrival note defines it as "a table of
+  // clickable cross-points … the surface the module is OPERATED from", and this
+  // is a device-status panel with three gestures on it, not a table. Declaring
+  // `control-grid` here would dilute the role matrixMix added for a reason.
+  launchpadControl: {
+    role: 'status-primitive',
+    why:
+      'the LAUNCHPAD BINDING panel: the BIND / UNBIND control, the four-role single-unit view '
+      + 'segment, the hardware and permission errors, the transient handshake instruction, and the '
+      + 'LINK / CLIP lamps. ⚠ IT MOUNTS NO CANVAS AND MUST NOT GROW ONE. The 8x8 pad matrix this '
+      + 'module drives is on the HARDWARE and is deliberately not mirrored: nothing in the app has '
+      + 'ever painted it, so nothing loses a surface by its absence, and a half-fidelity mirror '
+      + 'invented on a module PR would become the fleet\'s answer to "show me the device" by '
+      + 'accident of being first. The firmware-accurate colour language already lives at '
+      + '/docs/modules/launchpadControlLeft. ⚠ ALL PAINTED TEXT IS A CONTROL CAPTION, AN OPTION '
+      + 'NAME, AN ERROR OR EMPTY-STATE COPY: the BIND caption (which names the action it will '
+      + 'perform, and is why that control is not a cell — ShellActionCell.label is a plain '
+      + 'string), the four role names GRID/CLIP/ARR/CTRL, the four hardware/permission error '
+      + 'branches, one empty-state line replaced by the BIND control the moment a clip-player '
+      + 'exists, and the pairing instruction that is reachable only mid-handshake and therefore '
+      + 'never at rest. No value, no measurement, no state word. ⚠ THE CARD\'S NINE-BRANCH STATUS '
+      + 'LINE IS WHAT THESE LAMPS ABSORBED, and the finding that lost its painted surface is named '
+      + 'rather than allowed to lapse: WHICH clip-player node the pair drives was printed in the '
+      + 'lane and is now the CLIP lamp\'s aria-label in the dock — on a rack with two clip-players '
+      + 'that id is the only thing distinguishing them. Every string the surface can produce, '
+      + 'painted or not, is decided in launchpad-binder-status-model.ts where a unit test reads '
+      + 'them. ⚠ PAIR AND CONNECT ARE NOT HERE, deliberately: both are ranked action cells, which '
+      + 'is what puts them on the lane tile at all. ⚠ NO SCREEN SWITCH AND NO WATCH MARK: the '
+      + 'video-screen ruling runs over STRICT_FACES INTERSECT video defs and this is domain meta.',
+  },
+
   // ── STATUS — the FIRST body whose subject is not a picture (midiclock above
   // is the second; this line used to say "the one", and it stopped being true
   // the moment a second binder arrived).

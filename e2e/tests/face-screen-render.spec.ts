@@ -109,8 +109,15 @@ interface Subject {
  *   * `videoOut` — carries no SCREEN switch at all, and is the one NAMED exemption
  *     in `video-face-screen-source.test.ts`: it IS the screen, so collapsing it
  *     would remove the module's whole reason to exist.
- *   * `cvBuddy` — its `fullViewBody` is the roster's only `status-primitive`: no
- *     canvas, no preview, nothing to switch off.
+ *   * `cvBuddy`, `midiclock`, `launchpadControl` — each `fullViewBody` is a
+ *     `status-primitive` surface: no canvas, no preview, nothing to switch off.
+ *     ⚠ THIS USED TO SAY cvBuddy WAS "the roster's only `status-primitive`",
+ *     and it stopped being true when the MIDI binders were promoted. The
+ *     exclusion never rested on rarity — it rests on the ROLE, which is why the
+ *     corrected line names the property rather than a population. (The roles
+ *     themselves are enumerated and gate-checked in
+ *     `face-rack-status-source.test.ts`; this is prose about why they are not
+ *     subjects HERE.)
  */
 const SUBJECTS: readonly Subject[] = [
   // ── the four this file was opened for (batch 22 · group 4) ────────────────

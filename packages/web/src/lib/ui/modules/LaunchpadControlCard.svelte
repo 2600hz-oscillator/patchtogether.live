@@ -228,8 +228,14 @@
       {/if}
     {/if}
 
+    <!-- ⚠ THE POINTER NAMES THE MENU ITEM, AND IT USED TO NAME THE WRONG ONE.
+         This read "right-click → View docs"; NodeContextMenu labels that entry
+         `Docs`. A caption naming a control that does not exist under that name
+         is a small live defect, and it was pinned into a committed VRT baseline
+         the moment this card was drained from EXEMPT_FROM_VRT — so it is fixed
+         in the same PR that captures it. -->
     <p class="lp-hint" data-testid="launchpad-control-docs-hint">
-      Colour guide → right-click → <b>View docs</b>.
+      Colour guide → right-click → <b>Docs</b>.
     </p>
   </div>
 </div>
