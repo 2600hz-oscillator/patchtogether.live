@@ -252,6 +252,40 @@ const EXTENSION_BODY_ROLES: Readonly<Record<string, BodyRule>> = {
   grainsOfVision: { role: 'picture', why: 'the video-granulator\'s live preview canvas and its SCREEN switch (#1928 — the toggle a promotion would otherwise delete with the card).' },
   mandelbulb: { role: 'picture', why: 'the raymarched fractal\'s live preview canvas and its SCREEN switch.' },
   mirrorpool: { role: 'picture', why: 'the kaleidoscopic reflector\'s live preview canvas and its SCREEN switch.' },
+  // ⚠ THE ONE `picture` BODY WHOSE PICTURE IS NOT THE ENGINE'S OUTPUT, because
+  // this module HAS no output: `outToLaunchDef` declares `outputs: []` and its
+  // surface is `{ fbo: null, texture: null }` — the only video def in the fleet
+  // that is a pure SINK, whose "screen" is 81 physical LEDs. So there is nothing
+  // for `blitOutputForPreview` to blit, and the canvas is drawn from the
+  // module's own `read('grid9x9')` readback through the shared
+  // `drawOutToLaunchPreview` that the LEGACY CARD also imports — which is what
+  // makes "the preview shows exactly what the LEDs show" a structural fact
+  // rather than two components that happen to agree today.
+  //
+  // ⚠ AND IT NEEDS NO `markWatched` DANCE, WHERE EVERY OTHER SCREEN-SWITCH BODY
+  // HERE DOES. The siblings mark because their preview blit IS the watch mark
+  // and a node drops out of the pull set 1.5 s after its last one; `isPullRoot`
+  // returns true UNCONDITIONALLY for a `pullExempt` node before it ever consults
+  // `watchedAt`, and this def declares `pullExempt: true` precisely so its
+  // readback stays fresh with no observer. Recorded rather than inherited,
+  // because the prediction was made from the sibling pattern and then checked
+  // against `video/engine.ts` — the `scoreboard` row in `face-screen-render`
+  // documents the same discipline.
+  //
+  // The painted TEXT is exhaustively: control captions (`SCREEN ON`/`OFF`,
+  // `Unbind Launchpad`), OPTION NAMES (each Launchpad output's own name, with
+  // the card's `(in use)` suffix that distinguishes a claimed one), an ERROR
+  // line that is absent whenever nothing is wrong, an EMPTY-STATE line that is
+  // replaced by the picker the moment there is a roster, and a static lamp
+  // caption. No value, no measurement, no state word.
+  outToLaunch: {
+    role: 'picture',
+    why:
+      'the LIVE 9x9 MONITOR — the picture this module exists to put on a Launchpad Mini Mk3, '
+      + 'drawn from the module\'s own GPU readback rather than from an output texture it does not '
+      + 'have — plus its SCREEN switch, the per-machine Launchpad port picker, UNBIND, and the '
+      + 'MONITOR lamp carrying the card\'s exclusivity warning in its accessible name.',
+  },
   // ⚠ THE ONLY BODY IN THIS ROSTER THAT PAINTS **TWO** PICTURES, and the second
   // one is why the entry needs more than a line. VFPGA-RUNNER's body carries the
   // live output canvas plus the FABRIC floorplan — a read-only tile-grid + lit-

@@ -4714,6 +4714,32 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // proxies and thirty-six rename fields are unaddressable at any rank, which is
   // the definitional reason this module needs a `control-grid` body.
   'electraControl',
+
+  // OUT TO LAUNCH — the fourth device BINDER in this block, and the first that
+  // is also a VIDEO module. Its lane render was `'placeholder'` today: a uniform
+  // rackline tile with ZERO ranked controls, on a module whose card only ever
+  // existed inside the dock full view. Promotion replaces that with a real tile
+  // — the live thumbnail, CONNECT and BRIGHT — and replaces the card with the
+  // same surface, gesture for gesture.
+  //
+  // ⚠ THE INVENTORY `why` WAS RIGHT ABOUT THE BINDER AND WRONG BY OMISSION. It
+  // read "device pick, bind/unbind, and a warning … The two knobs are incidental
+  // to the binding flow", and never mentioned the 9×9 PREVIEW — the module's own
+  // docs call it the thing that lets you dial the picture in without hardware,
+  // and it is the only surface the module has on a machine with no Launchpad
+  // attached. Reading the CARD rather than the field found it, which is now the
+  // eighth consecutive face where that has been the difference.
+  //
+  // ⚠ IT IS ALSO THE ONE VIDEO DEF IN THE FLEET WITH `texture: null` — a SINK
+  // whose output is 81 LEDs — and that turned out to be a live defect rather
+  // than a curiosity: `VideoTileThumb` blits a node's texture into the shared
+  // drawing buffer and then snapshots that buffer, so a node with no texture
+  // snapshots whatever the LAST node blitted. Measured before the fix: this
+  // module's tile was byte-identical to a `videoOut` tile in the same rack
+  // (mean 710.891875, max 765 on both) while nothing at all was patched into
+  // it. Fixed in `VideoTileThumb.svelte`; see `outtolaunch-face-model.test.ts`
+  // and the lane-tile leg of `out-to-launch-face.spec.ts`.
+  'outToLaunch',
 ]);
 
 /**

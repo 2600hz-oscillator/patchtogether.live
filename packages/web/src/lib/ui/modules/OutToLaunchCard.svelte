@@ -41,14 +41,15 @@
     type LaunchpadPort,
   } from '$lib/control/launchpad/launchpad-device.svelte';
   import { nodeLaunchpadMonitor } from './node-launchpad-monitor-registry.svelte';
+  // ⚠ THE PREVIEW ARITHMETIC MOVED OUT OF THIS FILE and is now imported by BOTH
+  // surfaces. Promotion means the faceplate body draws the same 9×9, and no
+  // runtime gate compares two `.svelte` files — so a re-typed copy in the body
+  // could have diverged silently and shown a different picture than this card
+  // and the hardware. One module, two importers.
   import {
-    LP_MONITOR_COLS,
-    LP_MONITOR_ROWS,
-    lpMonitorIndex,
-    rgb8ToLp,
-    CC_LOGO,
-    LP_RGB_MAX,
-  } from '$lib/control/launchpad/launchpad-sysex';
+    drawOutToLaunchPreview,
+    OTL_PREVIEW_PX,
+  } from './outToLaunch/out-to-launch-preview';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -90,64 +91,10 @@
   let canvasEl: HTMLCanvasElement | null = $state(null);
   let rafId: number | null = null;
 
-  // Preview geometry.
-  const CELL = 22;
-  const GAP = 3;
-  const PAD = 7;
-  const CANVAS_PX = LP_MONITOR_COLS * CELL + (LP_MONITOR_COLS - 1) * GAP + PAD * 2; // square
-
-  /** Display value for an 8-bit channel through the SAME transform the LEDs get
-   *  (so the preview matches the hardware), then scaled back to 0..255. */
-  function disp(v8: number, bright: number, gamma: number): number {
-    return Math.round((rgb8ToLp(v8, bright, gamma) / LP_RGB_MAX) * 255);
-  }
-
-  function cellXY(col: number, row: number): { x: number; y: number } {
-    // col 0..8 left→right; row 0..8 BOTTOM→top → canvas y is top-origin.
-    const x = PAD + col * (CELL + GAP);
-    const y = PAD + (LP_MONITOR_ROWS - 1 - row) * (CELL + GAP);
-    return { x, y };
-  }
-
   function drawPreview(grid: Uint8Array | undefined, bright: number, gamma: number): void {
     const c2d = canvasEl?.getContext('2d', { alpha: false });
     if (!c2d) return;
-    c2d.fillStyle = '#060608';
-    c2d.fillRect(0, 0, CANVAS_PX, CANVAS_PX);
-    for (let row = 0; row < LP_MONITOR_ROWS; row++) {
-      for (let col = 0; col < LP_MONITOR_COLS; col++) {
-        const p = (row * LP_MONITOR_COLS + col) * 4;
-        const r = grid ? disp(grid[p] ?? 0, bright, gamma) : 0;
-        const g = grid ? disp(grid[p + 1] ?? 0, bright, gamma) : 0;
-        const b = grid ? disp(grid[p + 2] ?? 0, bright, gamma) : 0;
-        const { x, y } = cellXY(col, row);
-        const index = lpMonitorIndex(col, row);
-        const isPad = col < 8 && row < 8;
-        // Socket (unlit) then the lit colour on top so the 9×9 is always visible.
-        c2d.fillStyle = '#131318';
-        paintCell(c2d, x, y, isPad, index);
-        if (r + g + b > 0) {
-          c2d.fillStyle = `rgb(${r}, ${g}, ${b})`;
-          paintCell(c2d, x, y, isPad, index);
-        }
-      }
-    }
-  }
-
-  /** Pads render as rounded squares; the top row / right column / logo render as
-   *  circles to mirror the Launchpad's round buttons. */
-  function paintCell(c2d: CanvasRenderingContext2D, x: number, y: number, isPad: boolean, index: number): void {
-    c2d.beginPath();
-    if (isPad) {
-      const rr = 4;
-      c2d.roundRect(x, y, CELL, CELL, rr);
-    } else {
-      const cx = x + CELL / 2;
-      const cy = y + CELL / 2;
-      const rad = index === CC_LOGO ? CELL * 0.32 : CELL * 0.42;
-      c2d.arc(cx, cy, rad, 0, Math.PI * 2);
-    }
-    c2d.fill();
+    drawOutToLaunchPreview(c2d, grid, bright, gamma);
   }
 
   /** PREVIEW ONLY. The LED push moved to the node registry's pump (#1728); this
@@ -163,8 +110,8 @@
 
   onMount(() => {
     if (canvasEl) {
-      canvasEl.width = CANVAS_PX;
-      canvasEl.height = CANVAS_PX;
+      canvasEl.width = OTL_PREVIEW_PX;
+      canvasEl.height = OTL_PREVIEW_PX;
     }
     rafId = requestAnimationFrame(tick);
   });

@@ -1018,10 +1018,37 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
   },
   {
     type: 'outToLaunch',
-    disposition: 'bespoke-surface',
-    why:
-      'a Launchpad OUTPUT BINDER: device pick, bind/unbind, and a warning that the bound surface ' +
-      'can no longer be used for control. The two knobs are incidental to the binding flow.',
+    disposition: 'generic-face',
+    note:
+      'DONE (2026-08-25). The fourth device BINDER faced and the first that is also a VIDEO ' +
+      'module. THREE ranked cells — CONNECT LAUNCHPAD, BRIGHT, GAMMA — over a `picture` ' +
+      'fullViewBody carrying the live 9x9 monitor, its SCREEN switch, the per-machine port ' +
+      'picker, UNBIND and the MONITOR lamp. ' +
+      '⚠ THIS ENTRY\'S OWN `why` WAS WRONG IN TWO WAYS AND IS KEPT HERE AS THE CORRECTION. It ' +
+      'read: "a Launchpad OUTPUT BINDER: device pick, bind/unbind, and a warning that the bound ' +
+      'surface can no longer be used for control. The two knobs are incidental to the binding ' +
+      'flow." The binder half was accurate. But (1) "the two knobs are incidental" is a claim ' +
+      'about ONE FLOW read as a claim about the module: `bright` and `gamma` are real ParamDefs ' +
+      'that the LED pump reads off the live engine handle every frame, so they shape EVERY frame ' +
+      'that reaches the hardware, and `gamma`\'s 2.2 default is the picture actually shipping; ' +
+      'and (2) it never mentioned the 9x9 PREVIEW at all — the def\'s own docs call it the thing ' +
+      'that lets you "dial it in without hardware", and it is the module\'s ONLY surface on a ' +
+      'machine with no Launchpad attached. An inventory that leads with "the knobs are ' +
+      'incidental" and omits the picture is what made this look like a pure binder. Found by ' +
+      'reading the CARD instead of the field, which is now the eighth consecutive face where ' +
+      'that was the difference. ' +
+      'The picker and UNBIND are body controls for the reasons their siblings record — a roster ' +
+      'enumerated from the MACHINE is not a ParamDef\'s `options` and cannot be a ' +
+      'ShellSelectorCell either, because ModuleShell re-projects a cell only on `nodeVersion(id)` ' +
+      'and `bindMonitor` writes `node.data` ZERO times by design; and UNBIND\'s two presses do ' +
+      'OPPOSITE things to CONNECT\'s while `ShellActionCell.label` is a plain string. The ' +
+      'WARNING survives as the MONITOR lamp\'s accessible name, which is where the resting-text ' +
+      'ruling puts a derived sentence. ' +
+      '⚠ AND PROMOTION SURFACED A LIVE DEFECT: this is the one video def with a null surface ' +
+      'texture, and `VideoTileThumb` snapshots the engine\'s SHARED drawing buffer after a blit ' +
+      'that does nothing on such a node — so its lane tile painted whichever node blitted last ' +
+      '(measured byte-identical to a `videoOut` tile with nothing patched in). Fixed in the ' +
+      'thumbnail rather than masked in the baseline.',
   },
   {
     type: 'painter',
