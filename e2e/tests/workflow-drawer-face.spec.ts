@@ -935,8 +935,17 @@ test.describe('workflow · the pinned `e` tray renders the ELECTRA board', () =>
     await expect(grid).toHaveAttribute('aria-label', 'Electra One board — 6 rows of 6, 0 assigned');
 
     // THE RANKED CELL — the one gesture that leaves the browser. It is a face
-    // cell now, not markup inside the body.
-    await expect(card.getByTestId('electra-connect-button')).toBeVisible();
+    // cell now, not markup inside the body, so its testid is the SHELL's
+    // (`shell-cell-<familyId>`) rather than the legacy button's
+    // (`electra-connect-button`, which the card still emits under
+    // `?shell=legacy`). Both spellings exist on purpose and neither matches the
+    // other, which is what keeps the two surfaces' assertions honest.
+    await expect(card.getByTestId('shell-cell-electra-connect-button')).toBeVisible();
+    await expect(card.getByTestId('shell-cell-electra-connect-button')).toBeEnabled();
+    await expect(
+      card.getByTestId('electra-connect-button'),
+      'the legacy button belongs to the card, which is not mounted here',
+    ).toHaveCount(0);
 
     expect(errors, `pageerrors: ${errors.join(' | ')}`).toEqual([]);
   });
@@ -953,7 +962,15 @@ test.describe('workflow · the pinned `e` tray renders the ELECTRA board', () =>
     // ASSIGN — the real three-level cascade on the SOURCE control, which is the
     // ONLY way a slot is ever filled (the board itself has no assign affordance;
     // that gap is recorded in the promotion note, not closed here).
-    const attack = page.locator('.svelte-flow__node[data-id="adsr-1"] [role="slider"][aria-label="Attack"]');
+    // ⚠ THE SOURCE CONTROL IS ADDRESSED BY ITS SHELL TESTID, NOT BY AN ARIA
+    // LABEL. This file drives the DEFAULT shell, so `adsr` is itself a promoted
+    // face: its lane tile is a `ModuleShell` emitting `control-<paramId>`, not
+    // the legacy card whose knob carried `aria-label="Attack"`. That is the
+    // difference between this block and `electra-control.spec.ts`, which drives
+    // `?shell=legacy` and can still use the label.
+    const attack = page
+      .locator('.svelte-flow__node[data-id="adsr-1"]')
+      .getByTestId('control-attack');
     await expect(attack).toBeVisible();
     await attack.click({ button: 'right' });
     const menu = page.locator('[data-testid="control-context-menu"]');
@@ -998,7 +1015,10 @@ test.describe('workflow · the pinned `e` tray renders the ELECTRA board', () =>
     // once: the mutators write the slot map IN PLACE inside one transact, and a
     // body that rebuilt it would die here. The zero-pageerror assert at the end
     // is what makes this leg real rather than decorative.
-    const decay = page.locator('.svelte-flow__node[data-id="adsr-1"] [role="slider"][aria-label="Decay"]');
+    const decay = page
+      .locator('.svelte-flow__node[data-id="adsr-1"]')
+      .getByTestId('control-decay');
+    await expect(decay).toBeVisible();
     await decay.click({ button: 'right' });
     await expect(page.locator('[data-testid="control-context-menu"]')).toBeVisible();
     await page.locator(`[data-testid="ctx-electra-${EC}"]`).click();
