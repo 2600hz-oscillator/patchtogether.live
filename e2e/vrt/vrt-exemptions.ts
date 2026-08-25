@@ -847,12 +847,35 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // + bottom mix + preset bar). ART + unit + E2E provide coverage. Promote
   // into MODULES + capture darwin/linux baselines in a follow-up PR.
   cloudseed: 'VRT baseline pending; complex card; ART + unit + E2E provide coverage.',
-  // LIVECODE is a CodeMirror editor card with no ports. Cursor blink +
-  // syntax highlight transitions make baselines flap. Functional
-  // coverage is e2e/tests/livecode.spec.ts + the JS-runtime unit suite.
-  livecode: 'CodeMirror caret + syntax-highlight transitions defeat deterministic capture; e2e + unit tests cover behavior',
-  // CLOCKED runner — same CodeMirror caret issue as LIVECODE.
-  clockedRunner: 'CodeMirror caret + dynamic status (fires-since-mount counter) defeat deterministic capture; e2e + unit tests cover behavior',
+  // ── THE CODE-BUFFER PAIR — BOTH ENTRIES ARE NOW ABOUT THE `?shell=legacy`
+  //    CARD ONLY, AND THAT NARROWING IS THE POINT ───────────────────────────
+  //
+  // Both were promoted (2026-08-25) and both faces ARE baselined —
+  // `face-livecode-{compact,dock}` and `face-clockedRunner-{compact,dock}` are
+  // captured by the linux job like every other face scene — so the pixel surface
+  // real users operate is covered. This is the rings / attenumix / es9
+  // precedent: a face is baselined while its legacy card is not, on evidence
+  // that belongs to the surface being captured.
+  //
+  // ⚠ THE NARROWING MATTERS BECAUSE THE OLD WORDING WOULD HAVE OUTLIVED ITS
+  // SCOPE. Read as written — "CodeMirror defeats deterministic capture" — it is
+  // a claim about the RENDERER, and the next agent to meet it would conclude
+  // these modules can never be baselined and defer, which is this repo's
+  // best-documented failure mode (a stale TEST goes red and gets fixed; a stale
+  // SCOPING CLAIM goes quietly green forever and produces only absent work).
+  // It was never a claim about the renderer. Measured on the FACE, two ways:
+  // four independent boots gave byte-identical captures (one distinct SHA-256
+  // per scene), and an in-page MutationObserver over two consecutive 750 ms
+  // windows read 1 then 0 — the single settle mutation being `aria-autocomplete`
+  // on `.cm-content`, which paints nothing — with `document.getAnimations()`
+  // over the plate empty. The caret blink rule is
+  // `.cm-focused > .cm-scroller > .cm-cursorLayer` and a scene never focuses the
+  // buffer; a scene spawns one node and writes no data, so there is nothing to
+  // highlight.
+  //
+  // What is STILL true of each CARD, and is why these two entries stay:
+  livecode: 'the ?shell=legacy CARD paints a live status line (an instruction, then a mutation COUNT or a line:col error) whose text depends on run history; the FACEPLATE is baselined (face-livecode-compact/dock) and paints none of it. e2e/tests/livecode.spec.ts + the JS-runtime unit suite cover the card.',
+  clockedRunner: 'the ?shell=legacy CARD paints a fires-since-mount COUNTER that advances on every division boundary — genuinely non-deterministic, unlike the face, whose FIRING lamp is a boolean that stays dark on an empty body. The FACEPLATE is baselined (face-clockedRunner-compact/dock). e2e + unit tests cover the card.',
   // MIDI-CV-BUDDY card body depends on connected MIDI device (which
   // doesn't exist under VRT) — the "Connect MIDI…" empty state would
   // be the only deterministic baseline, and even that paints differently
