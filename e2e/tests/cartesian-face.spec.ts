@@ -10,6 +10,21 @@
 // adopter yet; the first will be a band-shaped field (recorderbox's filename,
 // once #1511 deletes `needs-media-controller`).
 //
+// ⚠ IT BOOTS THE LANE'S OWN WAY, NOT `bootWithFace`, AND THAT IS A FIX RATHER
+// THAN A PREFERENCE. The first version imported `bootWithFace` /
+// `unfoldDockPane` from `e2e/vrt/_shell-faces.ts`. Those are budgeted by the VRT
+// config (which sets generous per-scene timeouts via `faceSceneTimeout`); this
+// lane's default is 30 s for the WHOLE test. MEASURED: it passed locally in ~5 s
+// and 10/10 under `E2E_SWIFTSHADER=1`, then timed out on CI shard 9/10 and
+// PASSED ON RETRY — i.e. it lost the runner lottery under ten parallel shards,
+// which is a RED here (a recovered flake fails the job). The reported error was
+// `locator.blur: Test timeout of 30000ms exceeded`, which names what it was
+// doing when the budget expired, NOT a broken call — the expensive part was the
+// boot. `gotoWorkflow` + `spawnPatch` + `__openDockFullView` is what every other
+// dock spec in this directory uses, is CI-validated at these budgets, and skips
+// the VRT font-pinning / frame-settling / audio-freeze machinery this test does
+// not need.
+//
 // ⚠ THE THREE LEGS ARE PERMANENT, NOT SCAFFOLDING, and the middle one is the
 // entire argument for the parse contract's shape:
 //
@@ -26,19 +41,40 @@
 //      offered it — a silent functional-parity loss inside the cell built to
 //      prevent silent parity losses. That is why `EntryParse` is a tagged union.
 
-import { test, expect } from './_fixtures';
-import {
-  bootWithFace,
-  foldViewportFor,
-  frameMember,
-  openDock,
-  unfoldDockPane,
-} from '../vrt/_shell-faces';
+import { test, expect, type Page } from '@playwright/test';
+import { spawnPatch } from './_helpers';
 
 test.describe.configure({ mode: 'parallel' });
 
-/** Pad 0's stored MIDI value, read straight off the live graph. */
-async function padMidi(page: import('@playwright/test').Page, nodeId: string, i = 0) {
+const NODE = 'cart';
+
+/** The same 15 s FIRST-LOAD budget `workflow-rear-card` and `workflow-shell`
+ *  use for this route: SvelteKit dev compiles `/rack` on demand, and only the
+ *  first navigation of a run pays it. A budget that bounds the failure, never a
+ *  gate — a real regression still fails, just later. */
+async function gotoWorkflow(page: Page): Promise<void> {
+  await page.goto('/rack');
+  await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: 15_000 });
+  await page.locator('.svelte-flow__pane:visible').first().waitFor({ state: 'visible' });
+}
+
+/** Open the node's dock full-view through the shipped hook the EXPAND button
+ *  calls — the idiom every other dock spec in this directory uses. */
+async function openFace(page: Page, nodeId: string) {
+  await page.waitForFunction(
+    () => typeof (globalThis as unknown as { __openDockFullView?: unknown }).__openDockFullView === 'function',
+  );
+  await page.evaluate(
+    (id) => (globalThis as unknown as { __openDockFullView: (id: string) => void }).__openDockFullView(id),
+    nodeId,
+  );
+  const pane = page.locator(`[data-testid="dock-full-view"][data-fullview-node="${nodeId}"]`);
+  await expect(pane).toBeVisible();
+  return pane;
+}
+
+/** Pad `i`'s stored MIDI value, read straight off the live graph. */
+function padMidi(page: Page, nodeId: string, i = 0) {
   return page.evaluate(
     ({ id, idx }) => {
       const w = globalThis as unknown as {
@@ -55,26 +91,21 @@ async function padMidi(page: import('@playwright/test').Page, nodeId: string, i 
 test('cartesian face: a typed note reaches the graph, a REFUSED one does not, and empty is a REST', async ({
   page,
 }) => {
-  await page.setViewportSize(foldViewportFor('cartesian'));
-  const memberId = await bootWithFace(page, 'cartesian');
-  await frameMember(page, memberId, 0.7, 'full');
-  await openDock(page, memberId, 2);
-  await unfoldDockPane(page);
+  await gotoWorkflow(page);
+  await spawnPatch(page, [{ id: NODE, type: 'cartesian', position: { x: 460, y: 240 } }]);
+  const pane = await openFace(page, NODE);
 
-  // ⚠ SCOPED TO THE DOCK. The same grid paints in the lane tile too, so an
+  // ⚠ SCOPED TO THE PANE. The same grid paints in the lane tile too, so an
   // unscoped locator is a strict-mode violation rather than a defect.
-  const field = page
-    .getByTestId('faceplate-editor')
-    .locator('[data-testid="cart-face-pitch-0"]');
+  const field = pane.locator('[data-testid="cart-face-pitch-0"]');
   await expect(field, 'the pad grid paints a writable note box on the FACE').toBeVisible();
   await expect(field, 'and it is not a disabled readout').toBeEnabled();
 
   // ── LEG 1 · a valid note COMMITS ────────────────────────────────────────
-  await field.focus();
   await field.fill('c#3');
   await field.blur();
   await expect
-    .poll(() => padMidi(page, memberId), {
+    .poll(() => padMidi(page, NODE), {
       message: 'typing c#3 into the faceplate commits MIDI 49 into node.data.cells[0]',
     })
     .toBe(49);
@@ -83,11 +114,10 @@ test('cartesian face: a typed note reaches the graph, a REFUSED one does not, an
   // ── LEG 2 · a REFUSED note writes NOTHING ───────────────────────────────
   // `c9` is note-SHAPED and out of the module's declared c0..c8 span, so it
   // proves the RANGE check runs — `zzz` would only prove the grammar does.
-  await field.focus();
   await field.fill('c9');
   await field.blur();
   await expect
-    .poll(() => padMidi(page, memberId), {
+    .poll(() => padMidi(page, NODE), {
       message:
         'a refused note must leave the pad EXACTLY as it was — no clamp to c8, no rounding, ' +
         'no partial write',
@@ -96,11 +126,10 @@ test('cartesian face: a typed note reaches the graph, a REFUSED one does not, an
   await expect(field, 'and the box reverts rather than keeping the refused text').toHaveValue('c#3');
 
   // ── LEG 3 · clearing is a REST, not a refusal ───────────────────────────
-  await field.focus();
   await field.fill('');
   await field.blur();
   await expect
-    .poll(() => padMidi(page, memberId), {
+    .poll(() => padMidi(page, NODE), {
       message: 'clearing the box commits a REST (midi null) — an accepted value, not a rejection',
     })
     .toBe(null);
@@ -113,13 +142,10 @@ test('cartesian face: the pad grid writes gate and chord through the same node.d
   // deleted with the card. Asserted here rather than trusted to the panel probe:
   // faces-parity drives ONE declared probe (the gate), so the chord badge has no
   // other coverage.
-  await page.setViewportSize(foldViewportFor('cartesian'));
-  const memberId = await bootWithFace(page, 'cartesian');
-  await frameMember(page, memberId, 0.7, 'full');
-  await openDock(page, memberId, 2);
-  await unfoldDockPane(page);
+  await gotoWorkflow(page);
+  await spawnPatch(page, [{ id: NODE, type: 'cartesian', position: { x: 460, y: 240 } }]);
+  const pane = await openFace(page, NODE);
 
-  const pane = page.getByTestId('faceplate-editor');
   const readCell = () =>
     page.evaluate((id) => {
       const w = globalThis as unknown as {
@@ -129,7 +155,7 @@ test('cartesian face: the pad grid writes gate and chord through the same node.d
       };
       const c = w.__patch.nodes[id]?.data?.cells?.[1];
       return { on: c?.on ?? false, chord: c?.chord ?? 'mono' };
-    }, memberId);
+    }, NODE);
 
   const before = await readCell();
   await pane.locator('[data-testid="cart-face-gate-1"]').click();
