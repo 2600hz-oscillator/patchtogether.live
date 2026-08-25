@@ -44,6 +44,7 @@ import {
   launchpadActiveView,
   __test_resetBinding,
   __test_setDeployment,
+  restoreLaunchpadDeployment,
   __test_mode,
   __test_copyBuffer,
 } from './launchpad-control.svelte';
@@ -1630,5 +1631,66 @@ describe('SINGLE — SCENE copy/paste (typed buffer + 4-combo type gate)', () =>
     for (let lane = 0; lane < CLIP_LANES; lane++) {
       expect(clipAt(5, lane), `lane ${lane} cleared`).toBeUndefined();
     }
+  });
+});
+
+// ===========================================================================
+// THE RESTORE GUARD — a load-time restore must never run over a LIVE binding.
+// ===========================================================================
+//
+// ⚠ FOUND WHILE PROMOTING launchpadControlLeft TO A FACEPLATE, and it is a
+// defect the LEGACY CARD already had. `restoreLaunchpadDeployment()` documented
+// its precondition in prose — "call once on load, BEFORE binding" — and left it
+// to the caller. That was safe while the only caller was a card mounted at rack
+// load, and it stopped being safe the moment a caller could mount LATER:
+//
+//   * the legacy card is destroyed and re-created by a dock COLLAPSE / LRU
+//     evict (the #1531 / #1574 / #1583 node-lifetime class), and
+//   * the faceplate's binder body mounts when the DOCK IS OPENED, which is
+//     routinely after a handshake.
+//
+// Unguarded, either one reads a `localStorage` the live session has not written
+// and flips a BOUND single unit back to `pair` / `grid`. That is not a UI
+// reset: `handleL`, `renderLeds` and the arp all branch on `deployment`, so
+// every pad re-routes and every LED repaints.
+//
+// The e2e caught it (`launchpad-face.spec.ts` — the CLIP role read
+// `aria-pressed="false"` the instant the dock opened). This is the cheap
+// permanent leg, at the layer that owns the invariant.
+describe('restoreLaunchpadDeployment — REFUSES to run over a live binding', () => {
+  beforeEach(async () => {
+    await installSimulatedLaunchpadSingle();
+  });
+
+  it('a bound SINGLE unit keeps its deployment and view when a surface re-mounts', () => {
+    seedClipPlayer({ clips: { [clipIndex(0, 0)]: noteClip() } });
+    __test_setDeployment('single', 'grid');
+    bindLaunchpadToClip(NODE_ID);
+    setLaunchpadView('arranger');
+    expect(isSingleBound()).toBe(true);
+
+    // The re-mount. Before the guard this reset the pair to `pair` / `grid`.
+    restoreLaunchpadDeployment();
+
+    expect(launchpadDeployment(), 'the live deployment survives a re-mount').toBe('single');
+    expect(launchpadActiveView(), 'and so does the live role').toBe('arranger');
+  });
+
+  it('⚠ NEGATIVE CONTROL: with NOTHING bound it still restores, so the guard is about the BINDING', () => {
+    // A guard that simply never restored would pass the leg above and delete
+    // the function's whole purpose. Unbound, the STORED values must win — and
+    // in this environment there is no `localStorage` at all, so the function
+    // takes its own documented fallback (`pair` / `grid`). That is still a
+    // restore RUNNING and overwriting live values, which is the thing this leg
+    // has to be able to see.
+    __test_setDeployment('single', 'arranger');
+    unbindLaunchpad();
+    __test_resetLaunchpad();
+    expect(isSingleBound(), 'the precondition of this leg: nothing is bound').toBe(false);
+
+    restoreLaunchpadDeployment();
+
+    expect(launchpadDeployment()).toBe('pair');
+    expect(launchpadActiveView()).toBe('grid');
   });
 });
