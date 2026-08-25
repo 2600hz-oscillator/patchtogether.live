@@ -941,3 +941,47 @@ export function faceMonitorPlan(args: {
   const available = isFaceplateView(args.view) && args.declared && args.extBody;
   return { available, bandsHidden: available && args.hidden };
 }
+
+/**
+ * The lane tile's SIGNAL-FLOW label — "▶ ch3" / "▶ s1" / "▶ out".
+ *
+ * ⚠ EXTRACTED FROM `ModuleShellPlaceholder.svelte` BECAUSE IT WAS A LIVE CRASH
+ * THERE, and the crash is worth reading before editing this.
+ *
+ * The placeholder read `node.data.channel` and interpolated it, typed as
+ * `{ channel?: number }` — the MIXER-LANE membership a midi-out-buddy column
+ * writes. `node.data` is an open `Record<string, unknown>` that every module
+ * owns its own shape of, so that type was a claim about a key, not a fact about
+ * it: `tvLibrarian` writes `data.channel` as a `TvChannelMeta` OBJECT (nanoid,
+ * name, streamUrl, country, languages).
+ *
+ * ⚠ AND IT THREW RATHER THAN MERELY PRINTING GARBAGE, which is what makes it a
+ * crash instead of a cosmetic bug. The value read back is not the object the
+ * card assigned: assigning into the Y-backed `patch` proxy converts it to a
+ * Y.Map, and reading it yields a PROXY with no usable `toString` / `valueOf` /
+ * `Symbol.toPrimitive`. Interpolating THAT raises `TypeError: Cannot convert
+ * object to primitive value` inside the `$derived`, which takes the whole xyflow
+ * node render down — so a tvLibrarian that had been tuned to any channel had a
+ * BROKEN LANE TILE under the default shell, on a saved rack, before the user
+ * touched anything. A plain object would have printed `▶ ch[object Object]`
+ * instead; the unit test pins BOTH halves, because one fix covers both and a
+ * fixture built from a plain object would have missed the crash entirely.
+ *
+ * Found by `e2e/tests/node-source-hls.spec.ts` (LEG-02 P3) as an unexpected
+ * `pageerror`, not by looking for it. It is pre-existing and orthogonal to that
+ * conversion — the same throw happens on a rack whose tvLibrarian card is
+ * headless-hosted, because the LANE still renders this tile either way.
+ *
+ * The fix is the TYPE CHECK, not a try/catch: the label means "mixer channel N",
+ * and a value that is not a number is not that. Deny by default — an unknown
+ * shape falls through to `▶ out` rather than being coerced.
+ */
+export function laneFlowLabel(data: Readonly<Record<string, unknown>> | undefined): string {
+  if (typeof data?.channel === 'number' && Number.isFinite(data.channel)) {
+    return `▶ ch${data.channel}`;
+  }
+  if (typeof data?.sendSlot === 'number' && Number.isFinite(data.sendSlot)) {
+    return `▶ s${data.sendSlot}`;
+  }
+  return '▶ out';
+}

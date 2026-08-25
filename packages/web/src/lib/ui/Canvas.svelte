@@ -231,6 +231,7 @@
   import { nodeExtras } from '$lib/ui/media/node-extras';
   import { nodeVideoSource } from '$lib/ui/media/node-video-source.svelte';
   import { nodeVarispeed } from '$lib/ui/media/node-varispeed.svelte';
+  import { nodeHlsSource } from '$lib/ui/media/node-hls-source.svelte';
   import { nodePresent } from '$lib/ui/modules/node-present-registry.svelte';
   import { nodeRecorder } from '$lib/ui/modules/node-recorder-registry.svelte';
   import { nodeSamsloop } from '$lib/ui/modules/node-samsloop-registry.svelte';
@@ -2389,6 +2390,19 @@
     // expand/collapse reset `activeSlot` to 0 and wiped all seven virtual
     // playheads, because both were card `$state` with no persistence path.
     nodeVarispeed.sweep(liveIds);
+    // ...and the NODE-OWNED HLS TUNER (LEG-02 P3, #1511:
+    // $lib/ui/media/node-hls-source-registry), which is where the epic stops
+    // being about FILE players. PEERTUBE and TV LIBRARIAN own a NETWORK stream,
+    // and with no card anywhere they were not degraded but DEAD: no attach so
+    // `video` was black, no CV poll so play/next/random did nothing, no
+    // selection effect so a SAVED rack came back on nothing and a peer's tune
+    // never landed, and no audio wire so both audio outs were silent with the
+    // element left `muted`. Two further defects hit an ORDINARY rack: every
+    // expand/collapse tore down and rebuilt a LIVE hls.js demuxer (dropping
+    // `stream_online` to 0 on the way), and a card unmounted inside the ~5 s
+    // audio-wire retry stranded the element muted forever with nothing running
+    // to un-mute it.
+    nodeHlsSource.sweep(liveIds);
   });
 
   /** THE EXTRAS-CHANNEL PRODUCER SEAM (#1720). The sixth instance of the #1583
@@ -2446,6 +2460,22 @@
    *  not on air. See the registry header. */
   $effect(() => {
     nodeVarispeed.sync(snapshot.nodes, engine);
+  });
+
+  /** THE NODE-OWNED HLS TUNER (LEG-02 P3, #1511). Same snapshot and same
+   *  reasoning as the two syncs above, and ONE registry for BOTH streaming
+   *  modules rather than a sibling each: peertube and tvLibrarian are the same
+   *  model (a catalogue, a pick, an .m3u8, an audio tap, an advance trigger),
+   *  and they are the same model because peertube was written by cloning
+   *  tv-librarian. See the registry header — the hand-copy that produced them is
+   *  also what shipped tvLibrarian silent for a month.
+   *
+   *  ⚠ Running on the graph snapshot is what makes a PEER's tune land at all.
+   *  The card's `$effect` on `node.data` used to be the only thing that turned a
+   *  persisted selection into a playing stream, so with no card mounted the
+   *  module ignored both a rack load and every remote change. */
+  $effect(() => {
+    nodeHlsSource.sync(snapshot.nodes, engine);
   });
 
   let headlessSourceNodes = $derived.by<ModuleNode[]>(() => {

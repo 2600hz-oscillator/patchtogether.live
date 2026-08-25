@@ -108,9 +108,22 @@ export const DENIED: Readonly<Record<string, string>> = {
   archivist:
     'fetches archive.org over the NETWORK at mount and its media is CORS-tainted by design — ' +
     'a fixture must never depend on a third-party host being reachable from the runner',
+  // ⚠ THE SECOND HALF OF THIS REASON USED TO BE FALSE, AND IT IS CORRECTED
+  // RATHER THAN DELETED. It read: "…and the module itself is known-broken — no
+  // audio, red CI (#786)". Both clauses are wrong and were wrong on the day
+  // peertube shipped: `git log -S'muted = false'` on `PeerTubeCard.svelte`
+  // returns exactly ONE commit — #786 itself — so the module was BORN with the
+  // un-mute that the tv-librarian no-audio bug (#785, one day earlier) taught,
+  // and #786 also shipped the real-media audio guard that still runs on every
+  // PR (`peertube.spec.ts` asserts a non-zero peak at an AUDIO OUT terminal plus
+  // `muted === false`). A reason string is ungated prose, so a claim like that
+  // survives indefinitely and reads as evidence; this one was still being cited
+  // as fact two months later. The FIRST half is true and is sufficient on its
+  // own.
   peertube:
-    'queries a remote PeerTube instance over the network at mount (same third-party-host class ' +
-    'as archivist), and the module itself is known-broken — no audio, red CI (#786)',
+    'resolves a remote PeerTube instance over the network to play anything (same ' +
+    'third-party-host class as archivist) — a fixture must never depend on a third-party host ' +
+    'being reachable from the runner',
   doom:
     'OWNER RULING (2026-08-17): never touch DOOM in any way without specific approval. It is ' +
     'named here so a DERIVED pool can never select it silently — the mechanical reason is that ' +
