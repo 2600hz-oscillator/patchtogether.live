@@ -136,6 +136,16 @@ const FULL_MATCH = [
   'groups.spec.ts',
   'dashboard.spec.ts',
   'landing.spec.ts',
+  // ⚠ TEMPORARY — MEASUREMENT BRANCH ONLY, REMOVE BEFORE MERGE.
+  // `vrt-determinism-probe.spec.ts` belongs in PROBE_MATCH (it is below there
+  // too) and costs CI nothing from that list. It is ALSO listed here for one
+  // mechanical reason: the only dispatchable linux/SwiftShader runner for a VRT
+  // spec is `vrt-update.yml`'s capture job, which runs `task vrt:update --
+  // --grep "$GREP"` and sets no env, so `testMatch()` resolves to FULL_MATCH
+  // and a PROBE_MATCH-only spec is unreachable there. The probe writes no
+  // snapshot, so `--update-snapshots=changed` regenerates nothing and the
+  // capture job's commit step finds an empty diff.
+  'vrt-determinism-probe.spec.ts',
 ];
 
 // `VRT_PROBE=1` swaps the whole suite for the MEASUREMENT tools below. None of
@@ -178,7 +188,15 @@ const FULL_MATCH = [
 //     FROZEN. `moving > 0` is the free-running condition measured at its cause;
 //     the paired capture diffs are the pixel consequence. `PROBE_FACES=<types>`
 //     points it at modules outside the FACES roster.
+//   * vrt-determinism-probe.spec.ts — does this face SCENE REPRODUCE? Boots the
+//     same face TWICE through the gate's own scene code and prints the diff of
+//     BOOT 1 against BOOT 2 at threshold 1/255 (any difference at all) as well
+//     as the 26/255 the gate applies, plus the max channel delta and the
+//     bounding box. The baseline is out of the loop entirely, so a non-zero row
+//     cannot mean "the baseline is stale" — it can only mean the scene does not
+//     reproduce. Carries a negative AND a positive control on every row.
 const PROBE_MATCH = [
+  'vrt-determinism-probe.spec.ts',
   'vrt-lane-tier-probe.spec.ts',
   'vrt-surface-probe.spec.ts',
   'vrt-face-audio-probe.spec.ts',
