@@ -41,6 +41,7 @@
     selectedDeviceId: null,
     lastNote: null,
     lastVelocity: 0,
+    heldCount: 0,
     lastCcA: null,
     lastCcB: null,
     ccANum: null,
@@ -188,7 +189,22 @@
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <div class="body">
       {#if !cardState.connected}
-        <button class="connect-btn" type="button" onclick={onClickConnect}>
+        <!-- ⚠ THE TESTIDS BELOW CARRY THE CONTROL FAMILIES' `testidPrefix`es.
+             Every one of this module's ten controls is a declared
+             `controlFamilies` entry now (they are what the face's ranked cells
+             resolve against, since the module declares `params: []`), and
+             `module-docs-lint` requires every declared prefix to appear in card
+             source — the gate that keeps a family declaration and the surface it
+             describes from drifting apart. The card really does have all ten
+             gestures, so naming them here is agreement rather than paperwork,
+             and a testid survives a caption edit where the old
+             `getByRole('button', { name: /Connect MIDI/ })` did not. -->
+        <button
+          class="connect-btn"
+          type="button"
+          data-testid="midi-lane-connect-{id}"
+          onclick={onClickConnect}
+        >
           Connect MIDI…
         </button>
         {#if cardState.permissionDenied}
@@ -199,7 +215,7 @@
       {:else}
         <label class="row">
           <span class="lbl">DEVICE</span>
-          <select onchange={onChangeDevice} value={cardState.selectedDeviceId ?? ''}>
+          <select data-testid="midi-lane-device-{id}" onchange={onChangeDevice} value={cardState.selectedDeviceId ?? ''}>
             <option value="" disabled>(pick one)</option>
             {#each cardState.devices as d (d.id)}
               <option value={d.id}>{d.name}</option>
@@ -209,7 +225,7 @@
 
         <label class="row">
           <span class="lbl">CH</span>
-          <select onchange={onChangeChannel} value={channelLabel}>
+          <select data-testid="midi-lane-channel-{id}" onchange={onChangeChannel} value={channelLabel}>
             <option value="all">ALL</option>
             {#each Array(16) as _, i (i)}
               <option value={String(i)}>{i + 1}</option>
@@ -219,7 +235,7 @@
 
         <label class="row">
           <span class="lbl">MODE</span>
-          <select onchange={onChangeMode} value={mode}>
+          <select data-testid="midi-lane-mode-{id}" onchange={onChangeMode} value={mode}>
             <option value="mono">MONO</option>
             <option value="poly">POLY</option>
           </select>
@@ -228,7 +244,7 @@
         {#if mode === 'mono'}
           <label class="row">
             <span class="lbl">PRIO</span>
-            <select onchange={onChangePriority} value={priority}>
+            <select data-testid="midi-lane-priority-{id}" onchange={onChangePriority} value={priority}>
               <option value="last">LAST</option>
               <option value="low">LOW</option>
               <option value="high">HIGH</option>
@@ -236,7 +252,7 @@
           </label>
 
           <label class="row retrig">
-            <input type="checkbox" checked={retrig} onchange={onToggleRetrig} />
+            <input type="checkbox" data-testid="midi-lane-retrig-{id}" checked={retrig} onchange={onToggleRetrig} />
             <span>RETRIG</span>
           </label>
         {/if}
@@ -244,24 +260,25 @@
         <div class="cc-row">
           <span class="lbl">CC A</span>
           <span class="cc-val">{ccA === null ? '—' : ccA}</span>
-          <button class="mini" class:learning={cardState.learningCcA} type="button" onclick={onLearnCcA}>
+          <button class="mini" class:learning={cardState.learningCcA} type="button" data-testid="midi-lane-learn-a-{id}" onclick={onLearnCcA}>
             {cardState.learningCcA ? 'WIGGLE…' : 'LEARN'}
           </button>
-          <button class="mini" type="button" onclick={onClearCcA}>✕</button>
+          <button class="mini" type="button" data-testid="midi-lane-clear-a-{id}" onclick={onClearCcA}>✕</button>
         </div>
         <div class="cc-row">
           <span class="lbl">CC B</span>
           <span class="cc-val">{ccB === null ? '—' : ccB}</span>
-          <button class="mini" class:learning={cardState.learningCcB} type="button" onclick={onLearnCcB}>
+          <button class="mini" class:learning={cardState.learningCcB} type="button" data-testid="midi-lane-learn-b-{id}" onclick={onLearnCcB}>
             {cardState.learningCcB ? 'WIGGLE…' : 'LEARN'}
           </button>
-          <button class="mini" type="button" onclick={onClearCcB}>✕</button>
+          <button class="mini" type="button" data-testid="midi-lane-clear-b-{id}" onclick={onClearCcB}>✕</button>
         </div>
 
         <label class="row">
           <span class="lbl">NOTE#</span>
           <input
             class="note-num"
+            data-testid="midi-lane-note-{id}"
             type="number"
             min="0"
             max="127"
