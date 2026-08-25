@@ -3593,6 +3593,94 @@ export const FACES = [
       + '⚠ AND THE FABRIC FLOORPLAN IS NOT IN FRAME: `showFabric` is component state defaulting '
       + 'to false, so the body mounts the preview canvas and the floorplan canvas does not exist.',
   },
+
+  // ── PUSH 2 CONTROL — the THIRD META scene, and the roster's only picture
+  //    that is a REPLICA of a physical object rather than a render ───────────
+  {
+    type: 'push2Control',
+    // ONE band: the single CONNECT action cell. `params: []`, so there is
+    // nothing else that could rank; `DOCK_TAB_MIN_BANDS` is 7 and nothing is
+    // padded toward it.
+    pages: 1,
+
+    // ⚠ THIS SCENE IS WHY THE MODULE COULD LEAVE `ALLOWED_PERMANENT_EXEMPT`,
+    // and unlike the four binders drained before it, ONE of its three stated
+    // grounds was genuinely still true — so the discharge is in two parts.
+    //
+    // PART ONE, the two grounds that were about the ENVIRONMENT rather than the
+    // feature ("Connect/Bind state absent in CI", "view segment absent in CI").
+    // Both describe the ONLY state the capture can reach, which makes them the
+    // baseline rather than the obstacle:
+    //
+    //   * `connectPush()` is reached from exactly one affordance and this suite
+    //     presses nothing, so `isConnected()` is false and cannot become true;
+    //   * the view segment and the BIND control are both gated on `connected`,
+    //     so neither renders;
+    //   * `selectedChannelIndex()` and the per-lane focus memory both read
+    //     `localStorage`, which is empty in a fresh Playwright context, so the
+    //     lane and the focus take their defaults;
+    //   * `usbAvailable()` is read ONCE at body construction, so CONNECT
+    //     DISPLAY is present or absent for the whole capture rather than
+    //     flickering.
+    //
+    // The unreachability is STRUCTURAL: reaching the device-dependent state
+    // requires a gesture, and there is no gesture.
+    //
+    // PART TWO, and this is the ground the other binders did not have. The
+    // exemption also said "the push-card preview canvas renders whatever module
+    // happens to be in lane 1, so the card face is patch-dependent". ⚠ THAT IS
+    // TRUE, AND IT IS A PROPERTY OF THE FEATURE — no argument about CI can
+    // discharge it. It is defeated by SCENE CONSTRUCTION instead, which is
+    // matrixMix's route one door over: the thing that varies is the PATCH, and
+    // a VRT scene controls the patch.
+    //
+    // This scene declares no `upstream`, so `bootWithFace` spawns exactly ONE
+    // node — and then WAITS for `pinned-mixmstrs.data.columns['1'].length === 1`
+    // before it proceeds. So lane 1 resolves to push2Control ITSELF, whose def
+    // declares `params: []`, and `currentPushCardView()` returns its
+    // deterministic `empty: 'no-controls'` card. ⚠ THAT IS A MEASURED
+    // PRECONDITION RATHER THAN A HOPE: a second occupant of lane 1 would have
+    // failed the boot's own wait long before any pixel was compared, so the
+    // scene cannot silently drift into the patch-dependent picture it is
+    // arguing it avoids.
+    //
+    // (The recursion — a module whose screen shows other modules' cards showing
+    // its own — is real and harmless. A module with no turnable params has an
+    // empty push card, and that is a CORRECT picture of it.)
+    //
+    // What IS in frame: the module name, one ranked action button, the 960×160
+    // replica painting its empty card, the eight lane buttons with lane 1
+    // active, the ‹ › flip, three DARK lamps, and — on the compact tile —
+    // nothing but the cell. Every pixel is a function of the code.
+    //
+    // ⚠ WHAT THIS BASELINE DOES **NOT** COVER: the connected surface — a lit
+    // PUSH lamp, the four-role view segment, BIND, and a replica showing
+    // ANOTHER module's eight strips of name + bar + readout. Reaching those
+    // needs a simulated Push; the harness exists (`__push2TestInstall` /
+    // `__push2Sim`, installed under `VITE_E2E_HOOKS`) but installing it in the
+    // VRT rig is a change to the HARNESS rather than to this module — the
+    // boundary `midiclock`, `launchpadControlLeft` and `gamepad` each drew.
+    // Those surfaces are asserted where they can be asserted instead of
+    // photographed: `push2-binder-status-model.test.ts` pins every string the
+    // body can produce including the ones no baseline will ever show, and
+    // `push2-face.spec.ts` drives the promoted surface against the graph.
+    //
+    // ⚠ THE ONE GENUINE VARIABLE, stated rather than buried: `midiAvailable()`
+    // (`typeof navigator.requestMIDIAccess === 'function'`) picks between the
+    // body's two top-level branches. It is a property of the browser BUILD, not
+    // of attached hardware, and the baseline is authored by ONE linux CI runner
+    // — `snapshotPathTemplate` has no `{platform}` segment — so it is a
+    // constant where it gates.
+    //
+    // ⚠ NO `videoFaceWhy` AND NO `simPin`. `domain: 'meta'` — no ports and no
+    // engine node, so `hasVideoSurface` is false and the AUDIO boot path is the
+    // right one (matrixMix and launchpadControlLeft take it too, and the
+    // column-membership premise that once refused port-less defs was measured
+    // false: membership is decided by DROP POSITION). And nothing on this
+    // surface advances between frames — `paintPushOps` is driven by the card
+    // view, which changes only when a version rune bumps, and nothing bumps one
+    // without a gesture or a graph edit.
+  },
 ] as const;
 
 /**

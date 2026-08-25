@@ -634,6 +634,69 @@ const EXTENSION_BODY_ROLES: Readonly<Record<string, BodyRule>> = {
       + 'own muted keep-alive gain keeps processing regardless — there is no pull set to fall out '
       + 'of, so SCREEN OFF skips only the paint (#2015).',
   },
+  // ── PUSH 2 CONTROL (2026-08-25) — the roster's THIRD meta body, and the only
+  //    PICTURE in it that is a REPLICA OF A PHYSICAL OBJECT ────────────────────
+  //
+  // ⚠ THIS IS THE FLEET'S HARDEST IN-CANVAS-TEXT CASE AND ALSO ITS CLEAREST,
+  // which is why the entry argues it rather than asserting it. The canvas is
+  // 960×160 of names, bar graphs and FORMATTED NUMERIC READOUTS — under a
+  // literal reading of the resting-text ruling, a wall of refused text. The
+  // wave-5 games ruling already settled the shape ("pixels the MODULE renders
+  // into its OWN surface are the module's artwork, not the face's chrome"), and
+  // every prior instance was about pixels a module CHOSE to draw. These are a
+  // byte-accurate copy of an op list already on its way to a physical OLED over
+  // WebUSB. So deleting them would not remove a readout from the PRODUCT — the
+  // hardware still paints it — it would only make the on-screen copy DISAGREE
+  // with the panel, which is the single property the shared-seam design exists
+  // to make impossible. A "compact" half-strip replica is "there but hidden"
+  // applied to a picture of a real object, and additionally wrong.
+  //
+  // ⚠ NO GATE SEES ANY OF THAT. `face-resting-text-source` reads `ModuleFace`
+  // FIELDS and is blind to a body's markup by its own admission, and canvas
+  // pixels are invisible to every source gate in the tree. The enforcement is
+  // the dock VRT baseline and a human reading it — which is exactly why this
+  // roster requires the body to write down what its canvas draws.
+  push2Control: {
+    role: 'picture',
+    why:
+      'a PIXEL-EXACT REPLICA of the Push 2\'s physical 960×160 OLED, painted by '
+      + '`paintPushOps(ctx, pushDisplayOps())` — the SAME op list already on its way to the '
+      + 'hardware over WebUSB, so the plate and the panel cannot disagree about what is on screen '
+      + '(hold the device\'s LEGEND button and this picture changes too) — plus the eight LANE '
+      + 'buttons, the card ‹ › flip, the four-role view segment, BIND/UNBIND, the separate WebUSB '
+      + 'display permission and the PUSH/SCREEN/BOUND lamps. ⚠ THE CANVAS PAINTS ANOTHER NODE\'S '
+      + 'CONTROLS: eight strips of name + bar + formatted readout belonging to whichever module '
+      + 'the selected lane is focused on, which is why this module\'s VRT exemption called its '
+      + 'card patch-dependent — and why its VRT scene spawns it ALONE, so the lane resolves to '
+      + 'this module itself and the picture is a function of code. Under the resting-text ruling '
+      + 'those readouts are the MODULE\'S ARTWORK rather than the face\'s chrome, and here more '
+      + 'strongly than anywhere else in the fleet, because deleting them would not remove a '
+      + 'readout from the product (the hardware still paints it) but WOULD break the one-seam '
+      + 'guarantee. ⚠ IT IS A 2-D CONTEXT AND MUST STAY ONE: WebGL attest basis membership is '
+      + 'derived mechanically by walking lib/ui/modules for a GL context request, so a shader '
+      + 'here would enrol a meta module in the GPU attest for a picture that is eight rectangles '
+      + 'and some text. ⚠ NO STATE HERE IS IN THE Y.DOC — `mutateNode` and `setNodeParam` both '
+      + 'appear ZERO times in the push2 layer; the selected lane is localStorage and the binding, '
+      + 'focus and active view are module-level runes, deliberately, so two collaborators each '
+      + 'drive their own Push on their own lane. That is ALSO why the lane select is a body '
+      + 'control and not a selector cell: ModuleShell re-projects a cell only on `nodeVersion`, so '
+      + 'a cell would never notice the eight buttons ON THE HARDWARE moving it. ⚠ IT ALSO IMPORTS '
+      + 'StatusLed, so the status-primitive predicate would hold but for the canvas; the declared '
+      + 'role is `picture` because the replica IS the surface. ⚠ ALL PAINTED DOM TEXT IS A CAPTION '
+      + 'OR AN OPTION NAME: the eight lane digits, the four view names, ‹ ›, the BIND caption and '
+      + '"Connect display" — plus errors that are absent whenever nothing is wrong and ONE empty '
+      + 'state ("add a clip-player to drive") that is replaced by BIND the moment one exists. The '
+      + 'card\'s "Not connected." and its "Driving clip-player {id} — {VIEW} view." sentence are '
+      + 'DELETED; the finding they carried (WHICH clip-player, on a rack that can hold several) '
+      + 'is the BOUND lamp\'s aria-label, and the flip\'s deleted i/N badge is the flip group\'s '
+      + 'accessible name. Every string the surface can produce, painted or not, is decided in '
+      + 'push2-binder-status-model.ts where a unit test reads them. ⚠ CONNECT PUSH 2 IS NOT HERE, '
+      + 'deliberately: it is the ranked action cell, which is what puts it on the lane tile at '
+      + 'all. ⚠ NO SCREEN SWITCH AND NO WATCH MARK: the video-screen ruling runs over STRICT_FACES '
+      + 'INTERSECT video defs and this is domain meta — and the "screen" this module has is a '
+      + 'physical panel over WebUSB, not a VideoEngine preview, so the ruling\'s subject does not '
+      + 'exist here in either sense.',
+  },
 };
 
 /**

@@ -4539,6 +4539,39 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // 'placeholder' TODAY — a uniform rackline tile with zero ranked controls.
   // There is no tier to lose.
   'gamepad',
+  // PUSH 2 CONTROL (2026-08-25) — the THIRD meta-domain face, and the fleet's
+  // only faceplate whose picture is a BYTE-ACCURATE REPLICA of a physical
+  // object that is not on the screen.
+  //
+  // ⚠ THE PROMOTION LOSES NOTHING, and that is the STOP-1 answer rather than a
+  // hope. `push2Control` is NOT in `NON_SHELL_LANE_TYPES` — the set is `group`,
+  // `sticky`, `cadillac`, `clipplayer`, `controlSurface`, `electraControl` —
+  // so `laneRenderKind` returns `'placeholder'` TODAY: a uniform rackline tile
+  // with ZERO ranked controls, on a module that also declares `inputs: []` and
+  // `outputs: []`, so its jack rail is empty too. A name and a badge. Its
+  // entire surface was reachable only through the dock, on a module that does
+  // NOTHING until Web MIDI is granted and has no cable to hint that it exists.
+  // That is `midiclock` #2187 with a stronger premise, and there is no tier to
+  // lose.
+  //
+  // ⚠ A CLAIM IN THE BUILD SPEC AND IN THE INVENTORY THAT IS FALSE, corrected
+  // here because both are fields agents read as current fact. Neither this
+  // module nor `launchpadControlLeft` paints a PAD GRID: the pads are on the
+  // hardware and nothing in the app has ever drawn them. What the card actually
+  // renders — and what the face keeps — is the 960×160 DISPLAY, mirrored
+  // through the shared `pushDisplayOps()` seam. Same `recorderbox` stale-`why`
+  // class the `launchpadControlLeft` and `gamepad` promotions each hit.
+  //
+  // ONE ranked cell (CONNECT), because it is the only unconditional,
+  // always-meaningful gesture; the replica, the eight-lane select, the card
+  // flip, the four-role view segment, BIND and the WebUSB display permission
+  // are a `picture` `fullViewBody`. The lane select is a BODY control for a
+  // reason that reads backwards until you check it: a `ShellSelectorCell` COULD
+  // ignore its `node` and read a module-scope rune, but ModuleShell re-projects
+  // a cell only on `nodeVersion(id)`, and this module writes `node.data` ZERO
+  // times — so the cell would never notice the hardware's own lane buttons
+  // moving it. See the extension for the full argument.
+  'push2Control',
 ]);
 
 /**

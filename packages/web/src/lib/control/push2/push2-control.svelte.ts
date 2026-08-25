@@ -65,7 +65,9 @@ import {
   unbindLaunchpad,
   launchpadDpadNav,
   boundClipNode,
-  setLaunchpadView,
+  // ⚠ ALIASED, NOT RE-EXPORTED — see `setLaunchpadView` at the bottom of this
+  // file for the defect the bare pass-through caused.
+  setLaunchpadView as setLaunchpadViewRaw,
   launchpadLegendContext,
   type ControlSurfacePort,
 } from '$lib/control/launchpad/launchpad-control.svelte';
@@ -990,8 +992,35 @@ export function disconnectPush(): void {
   bump();
 }
 
-/** Re-export the card's view switcher (drives the parity single-mode view). */
-export { setLaunchpadView };
+/**
+ * The card's / faceplate's view switcher (drives the parity single-mode view).
+ *
+ * ⚠ IT BUMPS, AND THE BARE RE-EXPORT IT REPLACES WAS A LIVE DEFECT. This used
+ * to be `export { setLaunchpadView }` — the launchpad function, passed straight
+ * through. That function bumps the LAUNCHPAD layer's `viewRune()`, and every
+ * push2 surface derives on THIS module's `statusRune()`, so the two never met:
+ * clicking GRID / CLIP / ARR / CTRL changed the parity brain's view and
+ * repainted NOTHING. `Push2ControlCard.svelte`'s `activeView` (`$derived((statusRune(),
+ * launchpadActiveView()))`) kept its old `.active` highlight and its status
+ * line kept naming the previous view until some unrelated event bumped.
+ *
+ * Found by `push2-face.spec.ts`, which asserts the SINGLETON rather than the
+ * button — the poll on `__push2Sim.state().singleView` went green (the click
+ * really did reach `setLaunchpadView`) while the button's `aria-pressed` stayed
+ * false. That is exactly the split an `aria-pressed`-only assertion cannot see,
+ * in either direction: a button that repaints without writing, and a write that
+ * does not repaint.
+ *
+ * Fixed HERE rather than in each surface so both of them get it: the legacy
+ * card still ships and still renders under `?shell=legacy`. The faceplate body
+ * additionally derives on `viewRune()` directly, which is what covers a view
+ * changed FROM THE HARDWARE — a route that never passes through this function
+ * at all.
+ */
+export function setLaunchpadView(view: Parameters<typeof setLaunchpadViewRaw>[0]): void {
+  setLaunchpadViewRaw(view);
+  bump();
+}
 
 // ---------------------------------------------------------------------------
 // Test seams
