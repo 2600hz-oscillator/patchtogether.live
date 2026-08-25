@@ -69,6 +69,32 @@
         }
         if (videoEngine) {
           try {
+            // ⚠ A NODE WITH NO OUTPUT TEXTURE MUST NOT SNAPSHOT THE SHARED
+            // BUFFER — it would paint the LAST node that blitted into it.
+            //
+            // The two calls below are a blit into ONE drawing buffer the whole
+            // engine shares, followed by a `drawImage` OF that buffer. When the
+            // blit does nothing the `drawImage` still runs, so the tile shows
+            // whichever node most recently succeeded. `blitOutputToDrawingBuffer`
+            // does nothing exactly when `handle.surface.texture` is null, and it
+            // returns `void`, so the snapshot cannot tell.
+            //
+            // MEASURED (2026-08-25, before this guard): a rack holding `shapes →
+            // videoOut` plus an UNPATCHED `outToLaunch` painted the two tiles
+            // byte-identically — mean 710.891875, max 765 on both — i.e. the
+            // monitor tile showed the videoOut picture. `outToLaunch` is the one
+            // video def in the fleet whose surface is `{ fbo: null, texture:
+            // null }` (it is a SINK; its screen is 81 physical LEDs), so it is
+            // the only module this has ever been reachable on — and for a video
+            // module the picture IS its identity in a rack (owner, #1785), which
+            // makes "somebody else's frame" the worst available answer.
+            //
+            // `outputTexture(nodeId)` is the public query for the same field the
+            // blit tests, so the guard cannot drift from the condition it
+            // guards. On a texture-less node the dark well below is the honest
+            // picture, and it is DETERMINISTIC — which is also what lets
+            // `face-outToLaunch-compact` be a real baseline instead of a mask.
+            const hasPicture = videoEngine.outputTexture(nodeId) !== null;
             // The legacy preview seam: blit THIS node's FBO into the engine's
             // drawing buffer (marks it watched), then snapshot it. Never let an
             // engine hiccup kill the loop.
@@ -77,14 +103,16 @@
             if (ctx2d) {
               ctx2d.fillStyle = '#050608';
               ctx2d.fillRect(0, 0, el.width, el.height);
-              const src = videoEngine.canvas as CanvasImageSource;
-              const r = thumbFitRect(
-                videoEngine.canvas.width,
-                videoEngine.canvas.height,
-                el.width,
-                el.height,
-              );
-              drawPreviewDownscaled(ctx2d, src, r.x, r.y, r.w, r.h);
+              if (hasPicture) {
+                const src = videoEngine.canvas as CanvasImageSource;
+                const r = thumbFitRect(
+                  videoEngine.canvas.width,
+                  videoEngine.canvas.height,
+                  el.width,
+                  el.height,
+                );
+                drawPreviewDownscaled(ctx2d, src, r.x, r.y, r.w, r.h);
+              }
             }
           } catch {
             /* engine mid-teardown — keep looping, next tick recovers */
