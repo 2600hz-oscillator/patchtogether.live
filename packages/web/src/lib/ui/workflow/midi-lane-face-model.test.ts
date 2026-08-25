@@ -67,14 +67,22 @@ describe('midiLane face — the promotion itself', () => {
     // families below stop being the only route — which is a design change, not
     // a refactor, and it should have to be made deliberately.
     expect(midiLaneDef.params).toEqual([]);
-    const familyIds = (midiLaneDef.controlFamilies ?? []).map((f) => f.id).sort();
-    // Every ranked key is `<familyId>-{n}` — derived from the order, never
-    // typed as a count.
+
+    // `resolveFaceControl` resolves a key to a PARAM id, a family TEMPLATE
+    // (`FAMILY_TEMPLATE = /^(.+)-\{n\}$/`, a LITERAL `-{n}` suffix) or a legend
+    // STATIC. With no params and no legend file, EVERY key must be a template —
+    // so a key that is not one resolves to nothing and renders the inert cell.
+    const notTemplates = MIDI_LANE_FACE.order.filter((k) => !/^(.+)-\{n\}$/.test(k));
+    expect(notTemplates, 'every ranked key must be a family template').toEqual([]);
+
+    // And the templates and the declared families must be the SAME set, both
+    // directions — derived from each artifact, never typed as a count. A
+    // family nobody ranks is dead weight in the contract; a template with no
+    // family is an unresolvable key.
     const impliedFamilies = MIDI_LANE_FACE.order
-      .map((k) => /^(.+)-\{n\}$/.exec(k)?.[1])
-      .filter((v): v is string => v !== undefined)
+      .map((k) => k.replace(/-\{n\}$/, ''))
       .sort();
-    expect(impliedFamilies).toEqual([...MIDI_LANE_FACE.order].map((k) => k.replace(/-\{n\}$/, '')).sort());
+    const familyIds = (midiLaneDef.controlFamilies ?? []).map((f) => f.id).sort();
     expect(impliedFamilies).toEqual(familyIds);
   });
 

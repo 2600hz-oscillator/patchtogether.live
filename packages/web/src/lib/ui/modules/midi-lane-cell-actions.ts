@@ -94,7 +94,7 @@ export function midiLaneModeValue(node: ModuleNode | undefined): string {
 }
 
 export function midiLaneSetMode(nodeId: string, value: string): void {
-  const mode = (value === 'poly' ? 'poly' : 'mono') satisfies LaneMode as LaneMode;
+  const mode: LaneMode = value === 'poly' ? 'poly' : 'mono';
   midiLaneApi(nodeId)?.setMode(mode);
   writeData(nodeId, { mode });
 }
