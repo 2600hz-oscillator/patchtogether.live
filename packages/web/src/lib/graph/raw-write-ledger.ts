@@ -162,11 +162,19 @@ export const RAW_WRITE_LEDGER: Readonly<Record<string, RawWriteEntry>> = {
     kind: 'debt',
     why: 'card control writes — user gesture, should be undoable + synced',
   },
-  'ui/modules/GamepadCard.svelte': {
-    keys: ['padIndex'],
-    kind: 'debt',
-    why: 'pad-slot picker write — user gesture, should be undoable + synced',
-  },
+  // ⚠ `ui/modules/GamepadCard.svelte` WAS HERE AND IS PAID (2026-08-24, with
+  // the gamepad face). Its entry read *"pad-slot picker write — user gesture,
+  // should be undoable + synced"*, and the payment is one line: `setPadIndex`
+  // now calls `setNodeParam`, so the slot change rides the Y.Doc transaction
+  // with `LOCAL_ORIGIN` and reaches the UndoManager. Cmd-Z could not undo a slot
+  // change before this.
+  //   ⚠ AND IT IS THE GATEMAIDEN LESSON APPLIED RATHER THAN RE-LEARNED. That
+  //   entry's note (below) records #2025 arguing a debt was "paid by
+  //   construction" because the module got a FACE. It is not: this ledger is
+  //   keyed by CARD PATH and anchored to the source, promotion does not delete
+  //   the card, and the per-card VRT sweep still renders it under
+  //   `?shell=legacy`. So the face PR paid this one EXPLICITLY, by editing the
+  //   card — and only then deleted the row. A face does not pay a card's debt.
   // ⚠ `ui/modules/GatemaidenCard.svelte` WAS HERE AND IS PAID (queue Q53,
   // 2026-08-20). Its entry read *"card button write — user gesture, should be
   // undoable + synced"*, and the payment is the plainest form of it: the shape

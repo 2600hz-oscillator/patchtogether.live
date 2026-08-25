@@ -4544,6 +4544,40 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // basis rule (2) is derived from CONTENT, and a WebGL grid would make every
   // later edit here cost a real-GPU re-attest window.
   'cartesian',
+
+  // GAMEPAD (2026-08-24) — the bespoke-surface cohort's POLL-WITH-NO-GRANT
+  // member, and the only one in it whose device picker is an ordinary param.
+  //
+  // ⚠ IT IS A THIRD DEVICE LIFECYCLE, and that is what makes it cheap where its
+  // cohort-mates were expensive. The MIDI binders need `requestMIDIAccess()`
+  // and get back a live per-machine roster; cameraInput needs `getUserMedia()`
+  // and `enumerateDevices()`. The Gamepad API has NEITHER — no permission
+  // prompt, no events, and no roster at all. Its gate is a PHYSICAL BUTTON
+  // PRESS ON THE HARDWARE ("a 'gesture' gate to prevent fingerprinting", this
+  // def's own header), which no in-page affordance can perform, and its
+  // "roster" is four numbered slots known when the def was authored. That is
+  // precisely the condition `legacy-fallback` says a runtime roster fails, so
+  // `padIndex` is a `ParamDef` with an `options` roster and a SEGMENTED cell —
+  // this cohort's only picker that reaches the lane tile.
+  //
+  // ⚠ THE INVENTORY'S `why` WAS WRONG ON TWO COUNTS AND BOTH ARE FIXED IN THIS
+  // PR. It claimed "a live device roster" (there is none — four blind buttons
+  // labelled 0 1 2 3 and one `pad.id` read back from whichever slot you picked)
+  // and "none of it is a param" (`padIndex` is one, and it is the face's only
+  // ranked cell). A stale claim in a field agents read as current fact is the
+  // `recorderbox` class; it is rewritten alongside the disposition flip.
+  //
+  // ONE ranked cell, and the mapping board — twelve button LEDs, two trigger
+  // rows, two stick pads, both calibrations, four inverts, save/load/preset —
+  // is a `control-grid` `fullViewBody`. Not padded, not split: every one of
+  // those gestures is "move the physical control and watch what lights up", so
+  // they belong where the echo is and the echo cannot fit in 192 px.
+  //
+  // ⚠ AND THE PROMOTION LOSES NOTHING, which is the STOP-1 answer rather than a
+  // hope: `gamepad` is not in `NON_SHELL_LANE_TYPES`, so its lane render is
+  // 'placeholder' TODAY — a uniform rackline tile with zero ranked controls.
+  // There is no tier to lose.
+  'gamepad',
 ]);
 
 /**

@@ -563,11 +563,30 @@ extension is its LAST rung — reach for the earlier ones first:
 
 **Slots** (`ShellExtension`): `glyph` (wired — renders inside the generic
 `.topo-glyph` plate AND as the `paramCells:'grid'` per-cell picture),
-`editorSurface` and `fullViewBody` (declared contract, **no render site yet**
-— the first adopter wires the `{#if ext?.…}` in ModuleShell and moves the slot
-into `WIRED_SHELL_EXTENSION_SLOTS` in the same diff; until then
+`fullViewBody` (**WIRED** — `WIRED_SHELL_EXTENSION_SLOTS = ['glyph',
+'fullViewBody']`, one render site in `ModuleShell.svelte`, ~30 shipped
+adopters; it claims the dock full view's HEAD and takes the place of the
+generic hero glyph), and `editorSurface` (declared contract, **no render site
+yet** — the first adopter wires the `{#if ext?.…}` in ModuleShell and moves the
+slot into `WIRED_SHELL_EXTENSION_SLOTS` in the same diff; until then
 `shell-extensions.test.ts` refuses an extension exporting one, so a slot can
 never silently no-op).
+
+⚠ **This paragraph used to call `fullViewBody` unwired too, and that claim
+outlived #1726 by months.** It is the SCOPING-CLAIM failure mode this file
+already warns about at the bottom: a stale test goes red and gets fixed, a
+stale scoping claim goes *quietly green forever* — it produces no failure, only
+absent work, and reads as a considered boundary rather than a snapshot. Found
+by the `gamepad` promotion (2026-08-24), whose whole surface is that slot.
+
+⚠ **A `fullViewBody` also owes an `EXTENSION_BODY_ROLES` entry**
+(`face-rack-status-source.test.ts`) saying what it PAINTS — `picture`,
+`status-primitive` or `control-grid`, each with a mechanical predicate the
+source must satisfy. Membership is derived off the DIRECTORY, so the entry is
+deny-by-default: a new body with no entry is RED, and it has caught four on a
+merge. ⚠ Those predicates GREP RAW SOURCE and cannot tell code from a comment,
+so writing the literal `<canvas` in a comment — even to say the body has none —
+reddens `control-grid`. Same trap as the backdraft range gate.
 
 ### The dx7 example (the proof migration)
 

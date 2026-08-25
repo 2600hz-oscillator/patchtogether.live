@@ -82,6 +82,7 @@ author a `face` and rank the controls — no new platform capability.
 | `foxy` | audio | done | — |
 | `frametable` | video | done | — |
 | `freezeframe` | video | done | — |
+| `gamepad` | audio | done | — |
 | `gatemaiden` | audio | done | — |
 | `grainsOfVision` | video | done | — |
 | `graphicEq` | video | done | — |
@@ -216,7 +217,6 @@ the primary interaction is not param-shaped — needs a purpose-built surface.
 | `electraControl` | meta | — | — |
 | `es9` | audio | — | — |
 | `frogger` | audio | — | — |
-| `gamepad` | audio | — | — |
 | `gibribbon` | video | — | — |
 | `livecode` | audio | — | — |
 | `mappy` | video | — | — |

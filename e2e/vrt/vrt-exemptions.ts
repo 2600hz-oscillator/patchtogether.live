@@ -860,12 +860,33 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // JOYSTICK first-slice PR: card is small + simple (XY pad + four CV
   // ports), VRT baseline pending. Unit + E2E provide coverage.
   joystick: 'VRT baseline pending; unit + E2E provide coverage. UI is small + stable — pinning baselines in a follow-up PR.',
-  // GAMEPAD — card content depends on the connected controller's live
-  // state (stick dot positions, button LEDs, trigger fill bars), all
-  // changing at rAF rate. A deterministic baseline would need to stub
-  // navigator.getGamepads(), out of scope here. Unit + E2E cover the
-  // def shape + helper functions; the live path is per-user.
-  gamepad: 'card content driven by live navigator.getGamepads() poll; defeats deterministic capture. Unit + E2E cover the def + helpers.',
+  // ⚠ `gamepad` DRAINED 2026-08-24 — the third drain, after `cvBuddy` and
+  // `midiclock`, and it discharges the SAME shape of wrong conclusion those two
+  // did. The entry read: "card content driven by live navigator.getGamepads()
+  // poll; defeats deterministic capture." The premise is TRUE — the poll is
+  // live — and the conclusion does not follow, because ITS OUTPUT ON A CI
+  // RUNNER IS A CONSTANT. With no controller attached `navigator.getGamepads()`
+  // returns no populated pad, `pollPad` takes its `if (!pad)` early return, and
+  // `snapshot.connected` stays false FOREVER: the dark PAD lamp with its
+  // instruction, both dots pinned at pad centre, both trigger fills at zero, all
+  // twelve LEDs unlit, no `●` marks, both calibrate buttons in their off state
+  // and SLOT 0 selected. Every pixel is a function of the code.
+  //
+  // ⚠ AND THE UNREACHABILITY IS STRUCTURAL, NOT INCIDENTAL, which is what makes
+  // this a discharge rather than a bet: reaching the connected state requires a
+  // PHYSICAL BUTTON PRESS ON A CONTROLLER (the API's own anti-fingerprinting
+  // gate), and no gesture this suite can perform substitutes for one. Nothing
+  // animates and nothing can.
+  //
+  // ⚠ WHAT THE BASELINES DO **NOT** COVER, stated rather than implied: the
+  // CONNECTED surface — every dot position, every lit LED, every remap mark.
+  // `e2e/tests/gamepad.spec.ts` already monkey-patches `navigator.getGamepads()`
+  // with a deterministic fake, so a mocked baseline is reachable, but installing
+  // that mock in the VRT harness is a change to the HARNESS rather than to this
+  // module — the same boundary `midiclock` drew for its post-connect picker.
+  //
+  // (The name is also removed from ALLOWED_PERMANENT_EXEMPT below; that list is
+  // anchored in BOTH directions, so a one-sided delete is RED.)
   // NUMPAD+ — card has a current-step highlight box + REC ARM pulse
   // animation that animates whether the sequence is running or not.
   // Functional coverage via the e2e spec; pinning baselines pending.
@@ -1232,7 +1253,11 @@ export const ALLOWED_PERMANENT_EXEMPT: ReadonlySet<string> = new Set([
   'midiOutBuddy', 'midiLane',
   'modtris', 'gibribbon', 'frogger', 'skifree',
   'analogLogicMaths', 'bentbox', 'b3ntb0x', 'acidwarp',
-  'tempest', 'vfpgaRunner', 'joystick', 'gamepad',
+  // ⚠ `gamepad` REMOVED 2026-08-24 — the third drain, after `cvBuddy` and
+  // `midiclock`. See the note where its entry used to stand in EXEMPT_FROM_VRT
+  // for the argument. This list is ANCHORED in both directions, so leaving the
+  // name here while the module is baselined would be RED.
+  'tempest', 'vfpgaRunner', 'joystick',
   'numpadPlus', 'slewSwitch', 'delay', 'doom',
   'blood', 'warrensspectrum', 'videobox', 'tvLibrarian',
   'peertube', 'videovarispeed', 'chromakey', 'fader',

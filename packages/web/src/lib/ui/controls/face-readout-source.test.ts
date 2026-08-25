@@ -80,6 +80,9 @@ import { TIMELORDE_SWING_SOURCES } from '$lib/audio/modules/timelorde';
 // cellshade's exemptions are DERIVED from the array its options are built from,
 // so the two cannot drift apart.
 import { CELLSHADE_BAND_STEPS } from '$lib/video/modules/cellshade';
+// The four controller-slot indices `padIndex` selects — derived from the def's
+// own `min`/`max` span, so the exemption cannot outlive the roster it names.
+import { GAMEPAD_SLOT_OPTIONS } from '$lib/audio/modules/gamepad';
 import { listModuleDefs } from '$lib/audio/module-registry';
 import { listVideoModuleDefs } from '$lib/video/module-registry';
 import { listMetaModuleDefs } from '$lib/meta/module-registry';
@@ -535,6 +538,43 @@ const NUMERIC_LABEL_EXEMPTIONS: readonly { type: string; param: string; label: s
       + `${bands} flat tonal steps. A player says "${bands} bands" out loud, the param is labelled `
       + 'BANDS, and the def\'s own docs describe the control as picking 2/3/4/6/8. There is no '
       + 'name for it that is not the integer, and inventing one would be vocabulary-invention.',
+  })),
+  // ── GAMEPAD · `padIndex` (2026-08-24) ────────────────────────────────────
+  //
+  // ⚠ DERIVED FROM `GAMEPAD_SLOT_OPTIONS`, the roster the def builds from its
+  // own `min`/`max` span — the same stronger form the PPQN and BANDS blocks use,
+  // and here the derivation goes one step further: those labels are
+  // `String(value)` BY CONSTRUCTION, so a hand-typed copy could not even be
+  // wrong in an interesting way, only stale.
+  //
+  // ⚠ THIS IS THE ONE ENTRY WHERE "INVENT A NAME" IS NOT MERELY DECLINED, IT IS
+  // FORBIDDEN BY THE PLATFORM. The other numeric rosters at least HAVE candidate
+  // names somebody could argue for (`cinema` for 24 fps, `coarse` for 2 bands).
+  // Here there is nothing to name: the Web Gamepad spec exposes up to four pads
+  // and indexes them 0..3, and NOTHING says which controller is in which slot
+  // until you select one and read `pad.id` back. `Player 1` would be a fact the
+  // API does not provide; a device name would be a runtime value this label
+  // cannot hold. The index IS the state, it is what the legacy card's four
+  // buttons have always printed, and it is what a player says out loud ("try
+  // slot 2").
+  //
+  // ⚠ AND THE ROSTER EXISTS FOR SELECTABILITY, NOT DECORATION — the moog962
+  // argument, one state wider. `padIndex` is `0..3 discrete`: drawn as a bare
+  // dial it has four reachable positions across the whole travel, so every drag
+  // lands on a quantisation boundary and the control is inert while every
+  // def-reading gate stays green. `gamepad-face-model.test.ts` proves it by
+  // stripping the roster and re-running the resolver.
+  ...GAMEPAD_SLOT_OPTIONS.map((o) => ({
+    type: 'gamepad',
+    param: 'padIndex',
+    label: o.label,
+    why:
+      `a CONTROLLER SLOT INDEX — ${o.label} is not a reading of the dial, it is the slot's own `
+      + 'address in `navigator.getGamepads()`. The Web Gamepad spec allows four simultaneous pads '
+      + 'and identifies them ONLY by index; nothing reports which controller sits in which slot '
+      + 'until one is selected and its `pad.id` is read back, so there is no name for this state '
+      + 'that is not the integer and inventing one ("Player 1") would assert a fact the platform '
+      + 'does not provide. The legacy card has always printed exactly these four glyphs.',
   })),
 ];
 

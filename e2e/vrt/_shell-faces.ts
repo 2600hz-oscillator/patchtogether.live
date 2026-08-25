@@ -3443,6 +3443,54 @@ export const FACES = [
     // this scene while implying the scene needed it.
   },
 
+  // ── GAMEPAD — the POLL-WITH-NO-GRANT device, and the third VRT drain ──────
+  {
+    type: 'gamepad',
+    // ONE band: the segmented SLOT cell. The face declares no `face.pages`, so
+    // the dock renders a single unlabelled section — a `slot` header over a cell
+    // already captioned `Slot` would be the same word twice. Nowhere near
+    // `DOCK_TAB_MIN_BANDS = 7`, and nothing is padded to reach a rail.
+    pages: 1,
+
+    // ⚠ THIS SCENE IS WHY THE MODULE COULD LEAVE `ALLOWED_PERMANENT_EXEMPT`,
+    // AND THE ARGUMENT IS THE EXEMPTION'S OWN PREMISE POINTED AT THE RIGHT
+    // SUBJECT. `vrt-exemptions.ts` said "card content driven by live
+    // navigator.getGamepads() poll; defeats deterministic capture". THE POLL IS
+    // LIVE; ITS OUTPUT ON THIS RUNNER IS NOT. With no controller attached
+    // `navigator.getGamepads()` returns no populated pad, the factory's
+    // `pollPad` takes its `if (!pad)` early return on every frame, and
+    // `snapshot.connected` never becomes true — so the whole surface is a
+    // function of the code: a dark PAD lamp with its instruction, both stick
+    // dots pinned at pad centre (`dotX(0) = dotY(0) = 32`), both trigger fills
+    // at zero width, all twelve LEDs unlit, no remap marks, both calibrate
+    // buttons in their off state, a dark MAPPING lamp, and SLOT 0 selected.
+    //
+    // ⚠ AND THE UNREACHABILITY IS STRUCTURAL, NOT INCIDENTAL — the property that
+    // makes this a discharge rather than a bet. The Gamepad API deliberately
+    // hides a controller until the user PRESSES A BUTTON ON IT (an
+    // anti-fingerprinting gate, this module's own header says so), and there is
+    // no in-page gesture that substitutes for one. The capture cannot drift into
+    // the hardware-dependent state, because reaching it requires hardware this
+    // runner does not have and an action this suite cannot perform. Substitute
+    // "no controller and no button press" into `midiclock`'s discharge paragraph
+    // below and it reads unchanged.
+    //
+    // ⚠ WHAT THIS BASELINE DOES **NOT** COVER, stated rather than implied: the
+    // CONNECTED surface — every dot position, every lit LED, every remap mark,
+    // and the calibration sweep box. `e2e/tests/gamepad.spec.ts` already
+    // monkey-patches `navigator.getGamepads()` with a deterministic fake, so a
+    // mocked baseline is REACHABLE; installing that mock in the VRT harness is a
+    // change to the harness rather than to this module. Not this PR — exactly
+    // the boundary `midiclock` drew for its post-connect picker. Behaviour is
+    // covered by `gamepad.spec.ts` and by `gamepad-face-model.test.ts`.
+    //
+    // ⚠ NO `videoFaceWhy` AND NO `simPin`. `domain: 'audio'` with eighteen cv /
+    // gate outputs and NO canvas anywhere on the surface — the stick pads and
+    // trigger bars are `<svg>`, whose geometry is a pure function of a snapshot
+    // that never changes here. There is no clock to pin and nothing that
+    // advances between frames.
+  },
+
   // ── LAUNCHPAD CONTROL — the second BINDER, and the second META scene ───────
   {
     type: 'launchpadControlLeft',
