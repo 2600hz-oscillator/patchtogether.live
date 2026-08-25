@@ -15,6 +15,7 @@
 
 import { test, expect, type Page } from '@playwright/test';
 import { LANE_TILES, MAIN_CANVAS, spawnPatch, waitForLaneTier } from './_helpers';
+import { REGISTRY } from './_registry';
 import {
   AUDIO_OPERABLE_FIXTURE,
   AUDIO_PLACEHOLDER_FIXTURE,
@@ -146,6 +147,66 @@ async function dropAndSettle(page: Page, spawn: () => Promise<unknown>, what: st
 }
 
 /** Drive the REAL palette-drop path into channel column `ch`. */
+/**
+ * A module type that renders a `module-shell-placeholder` in a lane — DERIVED
+ * from the live registry, never named.
+ *
+ * ⚠ WHY THIS EXISTS. A placeholder is what an UNPROMOTED module renders, so
+ * every hard-coded placeholder subject in this file was a standing bet that the
+ * module would stay unfaced. `synesthesia` lost that bet (#2194) and took three
+ * tests with it — the failing precondition WAS the promotion. `strictFace` is
+ * the manifest's own projection of STRICT_FACES membership, emitted for exactly
+ * this question, so selecting on it cannot drift from the thing it describes.
+ *
+ * ⚠ ONE SUBJECT, SELECTED BY A PROPERTY — deliberately NOT a registry-wide
+ * render sweep (the banned shape). Nothing here spawns a scene per module.
+ *
+ * `NON_SHELL_LANE_TYPES` are excluded because they render their real card in the
+ * lane and never a placeholder at all — including them would swap a stale
+ * subject for a vacuous one. The second exclusion is narrower and each entry
+ * carries its reason: a module whose SPAWN reaches for hardware or a permission
+ * prompt would make this geometry test depend on the runner's devices.
+ */
+function placeholderSubjectType(): string {
+  /** Renders its verbatim legacy card in the lane — never a placeholder. */
+  const NON_SHELL = new Set([
+    'group', 'sticky', 'cadillac', 'clipplayer',
+    'controlSurface', 'electraControl', 'launchpadControlLeft',
+  ]);
+  /** Spawning these reaches for a device or a permission the runner may not
+   *  have, which is not something a TILE-GEOMETRY test should depend on. */
+  const NEEDS_HARDWARE = new Set([
+    'audioIn',        // getUserMedia — a microphone permission prompt
+    'es9',            // an Expert Sleepers interface over a local helper
+    'gamepad',        // the Gamepad API + a physical pad
+    'joystick',       // as gamepad
+    'midiCvBuddy',    // WebMIDI + a device roster
+    'midiLane',       // as midiCvBuddy
+    'midiOutBuddy',   // as midiCvBuddy
+    'numpadPlus',     // a HID keypad
+    'vstFx',          // a plugin host / user-supplied binary
+    'vstInstrument',  // as vstFx
+  ]);
+  const candidates = REGISTRY.filter(
+    (m) => m.strictFace !== true
+      && m.domain === 'audio'
+      && !NON_SHELL.has(m.type)
+      && !NEEDS_HARDWARE.has(m.type),
+  )
+    .map((m) => m.type)
+    // Sorted so the pick is DETERMINISTIC across runs and shards — a test that
+    // measured a different module each run would be unreproducible.
+    .sort();
+  if (candidates.length === 0) {
+    throw new Error(
+      'no un-promoted, shell-eligible audio module is left to use as a PLACEHOLDER subject. '
+      + 'If the migration is genuinely complete, this test has outlived its subject and should '
+      + 'be retired deliberately — do not re-point it at a faced module.',
+    );
+  }
+  return candidates[0]!;
+}
+
 async function dropInColumn(page: Page, type: string, ch: number): Promise<void> {
   await dropAndSettle(
     page,
@@ -402,36 +463,78 @@ test.describe('P0.3b workflow-shell legacy-fallback bridge', () => {
 
   test('placeholder tiles are UNIFORM WIDTH + the FIXED slot height with a consistent badge anchor', async ({ page }) => {
     // The owner "same-size all modules HORIZONTALLY" + "tiles non-uniform / smaller
-    // than the mock" fix: under ?shell=1 the tile-swapped video-zone defaults
-    // (recorderbox 2u, synesthesia 3u — DIFFERENT rack tiers, so different
-    // LEGACY widths) render as the SAME uniform RACKLINE tile — identical WIDTH
-    // (SHELL_TILE_W) and the ONE fixed slot HEIGHT (SHELL_TILE_H_SLOT —
+    // than the mock" fix: under ?shell=1 the tile-swapped defaults render as the
+    // SAME uniform RACKLINE tile whatever their LEGACY card measured — identical
+    // WIDTH (SHELL_TILE_W) and the ONE fixed slot HEIGHT (SHELL_TILE_H_SLOT —
     // tier-invariant, the zoom-reposition fix), so the baseline number badges
-    // cap them flush. (videoOut is EXEMPT since the video-visibility fix — a
-    // NON_SHELL video-surface snowflake whose real resizable card stays in the
-    // lane; covered by workflow-shell-video.spec.ts.)
+    // cap them flush. (A PROMOTED occupant is out of scope here by construction:
+    // it renders `module-shell`, not a placeholder, and its width is covered by
+    // the faces suites.)
+    //
+    // ⚠ THE `data-shell-tier` FIELD THIS USED TO COLLECT WAS NEVER ASSERTED. The
+    // prose here claimed the pair spanned "DIFFERENT rack tiers, so different
+    // LEGACY widths", and the evaluate returned `tier` — but nothing ever
+    // compared it, so the tier spread was narrative, not coverage. Dropped
+    // rather than carried over, and the honest floor (≥2 distinct module types)
+    // is asserted below instead.
+    // ⚠ THE SUBJECTS ARE DERIVED FROM THE RACK, NOT NAMED — and the two names
+    // that used to be here (`workflow-recorderbox`, `workflow-synesthesia`) are
+    // why. A placeholder is what an UNPROMOTED module renders, so every name in
+    // this list was a bet that the module would still be unfaced; promoting
+    // `synesthesia` made the locator match nothing and this test failed on a
+    // change that had nothing to do with tile geometry. The precondition it
+    // depended on WAS the module being unmigrated.
+    //
+    // Asking the DOM which tiles are placeholders keeps the subject true by
+    // construction. It is also STRICTLY STRONGER than the two names: it covers
+    // every placeholder the default rack renders rather than a hand-picked pair,
+    // so a tile that regressed outside that pair can no longer hide.
+    //
+    // ⚠ NOT A REGISTRY-WIDE RENDER SWEEP (the banned shape). Nothing is spawned
+    // per module and no per-module scene is booted — this reads the ONE page the
+    // test already loaded and asserts a geometric invariant over what is on it.
+    //
+    // ⚠ MINIMUM-POPULATION GUARD, because "uniform" is trivially true of a set
+    // of one and vacuously true of a set of none. Two DISTINCT module types is
+    // the floor that makes the comparison mean anything, and if promotions ever
+    // drain the rack below it this fails LOUDLY — asking for a new subject —
+    // rather than passing while measuring nothing.
     await gotoWorkflow(page, { shell: true });
-    const ids = ['workflow-recorderbox', 'workflow-synesthesia'];
-    for (const id of ids) {
-      await expect(
-        page.locator(`.svelte-flow__node[data-id="${id}"] [data-testid="module-shell-placeholder"]`),
-      ).toBeVisible({ timeout: PLACEHOLDER_PAINT_MS });
-    }
+    await waitForHooks(page);
+    // The default rack alone no longer clears the floor — promotions have
+    // drained it to ONE placeholder (measured 2026-08-24: `recorderbox`). So the
+    // second subject is DROPPED, and its type is derived rather than named, by
+    // the same rule that decides what a placeholder IS.
+    await dropInColumn(page, placeholderSubjectType(), 1);
+    const placeholders = page.locator(`${MAIN_CANVAS} [data-testid="module-shell-placeholder"]`);
+    await expect(placeholders.first()).toBeVisible({ timeout: PLACEHOLDER_PAINT_MS });
 
-    const metrics = await page.evaluate((nodeIds) => {
-      return nodeIds.map((id) => {
-        const tile = document.querySelector(
-          `.svelte-flow__node[data-id="${id}"] [data-testid="module-shell-placeholder"]`,
-        ) as HTMLElement | null;
-        const badge = tile?.querySelector('.tile-badge') as HTMLElement | null;
-        if (!tile || !badge) return null;
+    const metrics = await page.evaluate((canvasSel) => {
+      const tiles = Array.from(
+        document.querySelectorAll(`${canvasSel} [data-testid="module-shell-placeholder"]`),
+      ) as HTMLElement[];
+      return tiles.map((tile) => {
+        const badge = tile.querySelector('.tile-badge') as HTMLElement | null;
+        if (!badge) return null;
         // offset* are UNSCALED layout px (immune to the xyflow viewport zoom
         // transform): the TRUE tile W/H + the badge's anchor within the tile.
-        return { w: tile.offsetWidth, h: tile.offsetHeight, tier: tile.getAttribute('data-shell-tier'), badgeTop: badge.offsetTop };
+        return {
+          type: tile.getAttribute('data-shell-type'),
+          w: tile.offsetWidth,
+          h: tile.offsetHeight,
+          badgeTop: badge.offsetTop,
+        };
       });
-    }, ids);
+    }, MAIN_CANVAS);
 
-    expect(metrics.every((m) => m !== null), 'all three placeholders resolved').toBe(true);
+    expect(metrics.every((m) => m !== null), 'every placeholder resolved a badge').toBe(true);
+    const types = new Set(metrics.map((m) => m!.type));
+    expect(
+      types.size,
+      `uniformity needs at least two DISTINCT placeholder module types to mean anything — the `
+        + `default rack rendered ${types.size} ([${[...types].join(', ')}]). If promotions have `
+        + `drained it, give this test a new subject; do not relax the floor.`,
+    ).toBeGreaterThanOrEqual(2);
     // UNIFORM WIDTH — every tile the SAME SHELL_TILE_W across three rack tiers.
     for (const m of metrics) expect(m!.w).toBe(SHELL_TILE_W);
     // FIXED HEIGHT — every tile the ONE slot height regardless of the LOD tier.
@@ -637,6 +740,14 @@ test.describe('P0.3b workflow-shell legacy-fallback bridge', () => {
   // 96 h CI census to 2026-08-18 — never a hard failure, so every one of those jobs reported SUCCESS.
   // LOST WHILE PARKED: the tile header composition — domain-colour rule, gap, the FULL long name (not truncated) and the type badge on row 2; the identity a user reads a lane by.
   // Re-enable only on a root cause (#1847); "it passes now" is not one.
+  // ⚠ WHOEVER UN-PARKS THIS: ITS SUBJECT MOVED WHILE IT SLEPT (2026-08-24).
+  // `workflow-synesthesia` is PROMOTED, so it renders `module-shell` and never a
+  // `module-shell-placeholder` — this body's wait will time out for a reason
+  // that has nothing to do with #1847, and reading that as "still flaky" would
+  // be wrong. Give it a placeholder subject first (the live test above derives
+  // one from the rack rather than naming it, which is the pattern to copy).
+  // The BODY IS DELIBERATELY UNTOUCHED, per the park's own terms — this is a
+  // note, not an edit to the assertions.
   test.fixme('tile header: domain-colour rule ── gap ── FULL long name, type badge on row 2', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 2 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page }) => {
     // The owner tile-header redesign: the module NAME no longer shares its row
     // with the type badge (long names truncated as "RECORDE…"/"SYNESTH…"). Row 1
@@ -725,17 +836,31 @@ test.describe('P0.3b workflow-shell legacy-fallback bridge', () => {
 test.describe('P0.3b workflow-shell ?shell=1 bug fixes', () => {
   const VZONE_IDS = ['workflow-videoOut', 'workflow-recorderbox', 'workflow-synesthesia'];
 
-  /** The video-zone default's LANE FACE under the shell.
+  /** The video-zone default's LANE TILE under the shell — EITHER KIND.
    *
-   *  ⚠ videoOut renders a PROMOTED FACE TILE now (#1821). This used to special-
-   *  case it to `[data-testid="video-out-card"]` — its verbatim LEGACY card,
-   *  because it was a NON_SHELL video-surface snowflake — and the special case
-   *  is gone: it is a `module-shell` like any faced module, while
-   *  recorderbox/synesthesia are still un-migrated placeholders. */
+   *  ⚠ THIS USED TO BE A PER-ID TERNARY AND IT HAD ALREADY BEEN EDITED ONCE FOR
+   *  EXACTLY THIS REASON. It first named videoOut's verbatim legacy card
+   *  (`video-out-card`), because videoOut was a NON_SHELL video-surface
+   *  snowflake; #1821 promoted it and the arm was rewritten to `module-shell`,
+   *  leaving `recorderbox`/`synesthesia` on the placeholder arm — and the note
+   *  above it said so, in the present tense. Promoting `synesthesia` then broke
+   *  the two tests below for the third time in the same spot.
+   *
+   *  ⚠ SO THE MIGRATION STATUS WAS NEVER THIS SELECTOR'S SUBJECT. Both callers
+   *  use it as a READINESS WAIT and nothing else: the measurements are
+   *  `flowPos()` (the xyflow internal node, looked up BY ID) and screen bounding
+   *  boxes. Neither reads a testid, and neither assertion — "the tile sits below
+   *  the video baseline", "zoom is a geometric no-op" — has any opinion about
+   *  whether the occupant is a placeholder or a faceplate. Encoding one made a
+   *  POSITION test depend on the promotion queue.
+   *
+   *  Matching either testid is therefore strictly more general than the ternary
+   *  and weakens nothing: the wait still proves a tile PAINTED before anything is
+   *  measured, and it now proves it for whichever tile the module legitimately
+   *  renders. It cannot go stale on the next promotion, or the one after. */
   const vzFaceSelector = (id: string) =>
-    id === 'workflow-videoOut'
-      ? `.svelte-flow__node[data-id="${id}"] [data-testid="module-shell"]`
-      : `.svelte-flow__node[data-id="${id}"] [data-testid="module-shell-placeholder"]`;
+    `.svelte-flow__node[data-id="${id}"] `
+    + ':is([data-testid="module-shell"], [data-testid="module-shell-placeholder"])';
 
   /** Drop `type` at the tight SHELL pitch so the pitch-aware hit-test resolves the
    *  intended narrowed column `ch` (the wide COLUMN_W anchor would land elsewhere). */
@@ -894,6 +1019,15 @@ test.describe('P0.3b workflow-shell ?shell=1 bug fixes', () => {
   // 96 h CI census to 2026-08-18 — never a hard failure, so every one of those jobs reported SUCCESS.
   // LOST WHILE PARKED: that a port-heavy module's rail FITS its fixed tile — EXPAND stays fully visible and surplus ports collapse into a '···' that opens the drill-down instead of overflowing the tile.
   // Re-enable only on a root cause (#1847); "it passes now" is not one.
+  // ⚠ WHOEVER UN-PARKS THIS: ITS SUBJECT MOVED WHILE IT SLEPT (2026-08-24).
+  // `workflow-synesthesia` is PROMOTED, so it renders `module-shell` and never a
+  // `module-shell-placeholder` — this body's wait will time out for a reason
+  // unrelated to #1847. ⚠ AND THE REPLACEMENT IS NOT ANY PLACEHOLDER: this test
+  // needs a PORT-HEAVY one (the whole point is 8 preview dots overflowing a
+  // 192 px rail, and the assertions hard-code `< 8` and a '···'), so a derived
+  // pick that lands on a two-port module would go green while measuring nothing.
+  // Pick an unpromoted subject BY PORT COUNT and re-derive those numbers.
+  // The BODY IS DELIBERATELY UNTOUCHED, per the park's own terms.
   test.fixme('port-heavy rail FITS the tile: EXPAND fully visible, surplus dots collapse into "···" that opens the drill-down', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 2 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page }) => {
     await gotoWorkflow(page, { shell: true });
     const tile = page.locator(

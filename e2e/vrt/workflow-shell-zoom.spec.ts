@@ -97,11 +97,22 @@ test.describe('VRT: ?shell=1 rack holds position vs the lane grid at fixed zooms
       await page
         .locator('.svelte-flow__node[data-id="workflow-videoOut"] [data-testid="module-shell"]')
         .waitFor({ state: 'attached', timeout: 15_000 });
-      for (const vz of ['workflow-recorderbox', 'workflow-synesthesia']) {
-        await page
-          .locator(`.svelte-flow__node[data-id="${vz}"] [data-testid="module-shell-placeholder"]`)
-          .waitFor({ state: 'attached', timeout: 15_000 });
-      }
+      // ⚠ synesthesia MOVED FROM THE PLACEHOLDER WAIT TO THE SHELL WAIT
+      // (2026-08-24): it is a PROMOTED FACE TILE now, so `laneRenderKind`
+      // returns 'shell' and `module-shell-placeholder` never attaches for it.
+      // Waiting on the old testid would hang for the full 15 s and then fail,
+      // which is why the two occupants are split rather than looped together —
+      // they are no longer the same kind of tile. recorderbox is still
+      // un-migrated and still a placeholder.
+      // ⚠ ITS BASELINE MOVES: the video zone repacks around a 192 px tile where
+      // a wider placeholder used to sit, the same way it did when videoOut was
+      // promoted (#1821).
+      await page
+        .locator('.svelte-flow__node[data-id="workflow-synesthesia"] [data-testid="module-shell"]')
+        .waitFor({ state: 'attached', timeout: 15_000 });
+      await page
+        .locator('.svelte-flow__node[data-id="workflow-recorderbox"] [data-testid="module-shell-placeholder"]')
+        .waitFor({ state: 'attached', timeout: 15_000 });
       await page.evaluate(() => {
         const w = globalThis as unknown as {
           __setSpawnFlowPos: (p: { x: number; y: number }) => void;

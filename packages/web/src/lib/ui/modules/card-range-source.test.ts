@@ -114,6 +114,7 @@ import { kriaDef } from '$lib/audio/modules/kria';
 import { sidecarDef } from '$lib/audio/modules/sidecar';
 import { slewSwitchDef } from '$lib/audio/modules/slewswitch';
 import { snaredrumDef } from '$lib/audio/modules/snaredrum';
+import { synesthesiaDef } from '$lib/audio/modules/synesthesia';
 import { stereovcaDef } from '$lib/audio/modules/stereovca';
 import { swolevcoDef } from '$lib/audio/modules/swolevco';
 import { moog911Def } from '$lib/audio/modules/moog911';
@@ -262,6 +263,30 @@ import type { ParamDef } from '$lib/graph/types';
  */
 const RANGE_BOUND_CARDS: Readonly<Record<string, { params: readonly ParamDef[] }>> = {
   'AdsrCard.svelte': adsrDef,
+  // Converted with its FACEPLATE (2026-08-24). ⚠ THE FIRST ENROLMENT IN THIS SET
+  // WHERE THE CARD WAS ACTUALLY WRONG, not merely unbound-but-agreeing.
+  //
+  // Its eight ENV-DEPTH knobs passed literal `min={0} max={4}`; `synesthesiaDef`
+  // and the worklet's own `AudioParam` descriptor both declare `0..2`
+  // (`ENVDEPTH_MIN`/`ENVDEPTH_MAX`, packages/dsp/src/lib/synesthesia-dsp.ts).
+  // `setValueAtTime` clamps, so the entire upper half of all eight dials moved
+  // the pointer and changed nothing — a live, shipped instance of the backdraft
+  // class, on a module whose docs, def and DSP all agreed with each other and
+  // only the card did not.
+  //
+  // ⚠ AND `card-def-agreement` WAS STRUCTURALLY BLIND TO IT, which is the part
+  // worth keeping. That scanner names a control by `/paramId="([^"]+)"/` — a
+  // DOUBLE-QUOTED literal — and `continue`s on any tag whose id it cannot read.
+  // These knobs bind `paramId={`a_envdepth${b}`}` inside an `{#each}`, a
+  // template literal, so all eight were filed as "expression-bound" and excluded
+  // from the comparison by the file's own stated scope. A gate that applies a
+  // filter before the check quietly redefined the check's subject: eight
+  // out-of-contract controls, every def-reading gate green.
+  //
+  // Bound with `paramSpec` per param id — copy A's and copy B's controls are
+  // separate ParamDefs, so a single shared spec would go on agreeing after one
+  // of them moved.
+  'SynesthesiaCard.svelte': synesthesiaDef,
   // Converted with its FACEPLATE (2026-08-23). ⚠ ENROLLED WHILE NOTHING WAS
   // WRONG: all four of its knobs re-typed ranges that AGREED with the def, so
   // no value was ever clamped. The reason to convert is that the disagreement
@@ -643,6 +668,19 @@ const RANGE_BOUND_CARDS: Readonly<Record<string, { params: readonly ParamDef[] }
  */
 const MAPPING_BOUND_CARDS: readonly string[] = [
   'AdsrCard.svelte',
+  // Enrolled with its FACEPLATE (2026-08-24), and the anchor walked it here in
+  // exactly the two steps `ColourofmagicCard` took below — same shape, same
+  // cause, different prop. Binding the eight ENV-DEPTH ranges off the def (they
+  // were `max={4}` against a `0..2` contract, so this half was a real fix, not a
+  // tidy-up) made the card range-bound and the anchor demanded the
+  // RANGE_BOUND_CARDS row. That surfaced four `curve="linear"` props the curve
+  // clause could not check, because all sixteen band knobs sit in an `{#each}`
+  // with a DYNAMIC `paramId={`a_gain${b}`}` and a source-level gate has no
+  // literal id to resolve. Binding the curve off the def removed the
+  // unverifiable claim and left the card re-typing NO mapping literal either,
+  // which is this list's entry condition. Value-identical: the def already
+  // declared `linear` for every one of them.
+  'SynesthesiaCard.svelte',
   // Enrolled with its FACEPLATE (2026-08-20), and the anchor walked it here in
   // two steps rather than one — which is the ratchet being stricter than the
   // author, not a detour. Facing `colourofmagic` made the card read the preview
