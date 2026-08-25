@@ -2,11 +2,10 @@
 //
 // OUT TO LAUNCH — turns a Novation Launchpad Mini Mk3 into a live 9×9 RGB video
 // MONITOR. Takes a `video` input, downsamples it to a 9×9 RGB grid on the GPU,
-// and (from the CARD's throttled rAF loop) pushes those 81 pixels to a BOUND
-// Launchpad's LEDs via the batch-RGB SysEx. The full addressable surface is a
-// 9×9 grid — the 8×8 pads + the top CC row + the right scene column + the corner
-// logo — so the downsample maps DIRECTLY onto the hardware (see lpMonitorIndex
-// in launchpad-sysex).
+// and pushes those 81 pixels to a BOUND Launchpad's LEDs via the batch-RGB
+// SysEx. The full addressable surface is a 9×9 grid — the 8×8 pads + the top CC
+// row + the right scene column + the corner logo — so the downsample maps
+// DIRECTLY onto the hardware (see lpMonitorIndex in launchpad-sysex).
 //
 // ── Where the work is split ────────────────────────────────────────────────
 //   * THIS factory is pure-GL + DOM-free: it box-averages the input into a tiny
@@ -14,11 +13,22 @@
 //     frame, exposed via read('grid9x9'). Same downsample-then-readback pattern
 //     SHAPEGEN uses, just to a 9×9 target. It never touches Web MIDI (kept out
 //     of the render-hot path + out of the jsdom-test surface).
-//   * The CARD (OutToLaunchCard.svelte) owns the device: connect (gesture-gated
-//     sysex), pick + bindMonitor a Launchpad output, and — in its rAF loop —
-//     read('grid9x9'), map it to LED colours (monitorGridToLeds), and
-//     setMonitorFrame() at a throttled ~30 fps. It also draws the same grid as
-//     an on-card preview so you can see the monitor with no hardware.
+//   * THE 30 fps LED PUMP IS ON THE NODE, not on any component:
+//     $lib/ui/modules/node-launchpad-monitor-registry. It reads `grid9x9` and
+//     the live `bright`/`gamma` off the ENGINE and calls setMonitorFrame(). This
+//     is #1728 — a card unmounts on collapse and on LRU eviction, and a
+//     performer closing a pane is not a performer finished with their hardware.
+//   * THE SURFACE is the PF-20 faceplate ($lib/ui/modules/outToLaunch/): a
+//     ranked CONNECT cell that reaches the lane tile, plus a `fullViewBody`
+//     carrying the 9×9 preview, its SCREEN switch, the port picker, UNBIND and
+//     the MONITOR lamp. `OutToLaunchCard.svelte` still ships and still renders
+//     under `?shell=legacy`; both draw the preview through the SAME
+//     `out-to-launch-preview` module, so they cannot show different pictures.
+//
+// ⚠ THE PARAGRAPH ABOVE USED TO SAY "the CARD owns the device … in its rAF
+// loop … setMonitorFrame() at a throttled ~30 fps", and it was already wrong
+// before this module was faced — #1728 moved the pump onto the node and left
+// the header describing the bug it had just fixed.
 //
 // pullExempt: the module drives EXTERNAL hardware (a real side effect with no
 // audio surface + no video output), so its draw() must keep running to refresh
