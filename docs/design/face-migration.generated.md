@@ -12,8 +12,8 @@ Every registered module carries exactly one **disposition**: what kind of work i
 |  | count |
 |---|---|
 | registered modules | 193 |
-| done (faced + promoted) | 159 |
-| remaining (excludes organizational-native) | 31 |
+| done (faced + promoted) | 161 |
+| remaining (excludes organizational-native) | 29 |
 | registered with NO disposition (must be zero) | 0 |
 | inventory entries naming a dead def (must be zero) | 0 |
 
@@ -21,9 +21,9 @@ Every registered module carries exactly one **disposition**: what kind of work i
 
 | disposition | what it means | modules | done |
 |---|---|---|---|
-| `generic-face` | author a `face` and rank the controls — no new platform capability | 160 | 159 |
+| `generic-face` | author a `face` and rank the controls — no new platform capability | 162 | 161 |
 | `blocked` | would be a face today but for the named capability, and nothing else | 0 | — |
-| `bespoke-surface` | the primary interaction is not param-shaped — needs a purpose-built surface | 30 | — |
+| `bespoke-surface` | the primary interaction is not param-shaped — needs a purpose-built surface | 28 | — |
 | `organizational-native` | rack furniture; not a migration at all | 3 | — |
 
 ## What each blocker buys
@@ -57,6 +57,7 @@ author a `face` and rank the controls — no new platform capability.
 | `chroma` | video | done | — |
 | `chromakey` | video | done | — |
 | `clap` | audio | done | — |
+| `clockedRunner` | audio | done | — |
 | `clouds` | audio | done | — |
 | `cloudseed` | audio | done | — |
 | `cofefve` | audio | done | — |
@@ -97,6 +98,7 @@ author a `face` and rank the controls — no new platform capability.
 | `launchpadControlLeft` | meta | done | — |
 | `lfo` | audio | done | — |
 | `lines` | video | done | — |
+| `livecode` | audio | done | — |
 | `loopback` | video | done | — |
 | `luma` | video | done | — |
 | `lumakey` | video | done | — |
@@ -216,12 +218,10 @@ the primary interaction is not param-shaped — needs a purpose-built surface.
 | `blood` | video | — | — |
 | `chromaconsole` | audio | — | — |
 | `clipplayer` | audio | — | — |
-| `clockedRunner` | audio | — | — |
 | `controlSurface` | meta | — | — |
 | `doom` | video | — | — |
 | `frogger` | audio | — | — |
 | `gibribbon` | video | — | — |
-| `livecode` | audio | — | — |
 | `mappy` | video | — | — |
 | `midiCvBuddy` | audio | — | — |
 | `midiOutBuddy` | audio | — | — |

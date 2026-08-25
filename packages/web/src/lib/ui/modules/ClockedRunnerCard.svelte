@@ -17,6 +17,11 @@
   import { captureFlowStore } from './card-kit';
   import { createDebouncedCommit } from './debounced-commit';
   import { patch, ydoc, LOCAL_ORIGIN } from '$lib/graph/store';
+  import { nodeVersion } from '$lib/graph/node-versions.svelte';
+  import {
+    clockedRunnerDivisionValue,
+    setClockedRunnerDivision,
+  } from './clocked-runner-cell-actions';
   import { useEngine } from '$lib/audio/engine-context';
   import { makeEditor, type EditorHandle } from '$lib/livecode/editor';
   import { makeCompletionSource } from '$lib/livecode/completions';
@@ -28,6 +33,14 @@
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
   const engineCtx = useEngine();
+
+  // ⚠ EVERY `node.data` DERIVATION BELOW IS KEYED ON THIS, and it is a fix
+  // rather than ceremony. `patch.nodes[id]` is a Yjs proxy whose IDENTITY never
+  // changes, so a `$derived` reading through it recomputes NEVER: the graph
+  // updates and the view silently shows the value it had at mount — which on
+  // THIS card means a `clocked()` call that rewrites the body would not appear.
+  // `nodeVersion(id)` is the node's own Y.Doc revision, a value that changes.
+  let dataVersion = $derived(nodeVersion(id));
   // Guarded: the dock full-view plain-mounts this card OUTSIDE the
   // SvelteFlow provider, where a bare useStore() throws and killed the
   // card at init (no video in the expanded faceplate). Inside the
@@ -42,8 +55,14 @@
   const MIN_WIDTH = 360;
   const MIN_HEIGHT = 180;
 
-  let cardWidth = $derived<number>((node?.data?.width as number | undefined) ?? DEFAULT_WIDTH);
-  let cardHeight = $derived<number>((node?.data?.height as number | undefined) ?? DEFAULT_HEIGHT);
+  let cardWidth = $derived.by<number>(() => {
+    void dataVersion;
+    return (node?.data?.width as number | undefined) ?? DEFAULT_WIDTH;
+  });
+  let cardHeight = $derived.by<number>(() => {
+    void dataVersion;
+    return (node?.data?.height as number | undefined) ?? DEFAULT_HEIGHT;
+  });
   let resizing = $state(false);
   let resizeAbort: AbortController | null = null;
 
@@ -73,8 +92,19 @@
 
   // ───── Data ────────────────────────────────────────────────────
   // (displayName moved into ModuleTitle in the title chrome.)
-  let division = $derived<string>((node?.data?.division as string | undefined) ?? '1/16');
-  let storedSource = $derived<string>((node?.data?.source as string | undefined) ?? '');
+  // ⚠ THE DEFAULT IS IMPORTED, NEVER RE-TYPED. It lived here as a literal
+  // '1/16' while the def exported `CLOCKED_RUNNER_DEFAULT_DIVISION` and the
+  // factory read that — two copies of one contract, in the file most likely to
+  // be edited without the def open. `clockedRunnerDivisionValue` is the seam the
+  // faceplate's selector cell reads, so the two surfaces cannot disagree.
+  let division = $derived.by<string>(() => {
+    void dataVersion;
+    return clockedRunnerDivisionValue(node);
+  });
+  let storedSource = $derived.by<string>(() => {
+    void dataVersion;
+    return (node?.data?.source as string | undefined) ?? '';
+  });
 
   // ───── Editor ──────────────────────────────────────────────────
   let editorEl: HTMLDivElement | null = $state(null);
@@ -103,16 +133,8 @@
     draft.schedule(value);
   }
 
-  function setDivision(d: string) {
-    const target = patch.nodes[id];
-    if (!target) return;
-    ydoc.transact(() => {
-      const t = patch.nodes[id];
-      if (!t) return;
-      if (!t.data) t.data = {};
-      t.data.division = d;
-    }, LOCAL_ORIGIN);
-  }
+  // ONE writer, shared with the faceplate's DIV cell.
+  const setDivision = (d: string) => setClockedRunnerDivision(id, d);
 
   onMount(() => {
     if (!editorEl) return;
