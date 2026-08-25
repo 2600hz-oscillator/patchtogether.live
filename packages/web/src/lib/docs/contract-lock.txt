@@ -1673,6 +1673,10 @@ midiCvBuddy meta domain=audio
 midiCvBuddy out gate gate edge=gate
 midiCvBuddy out pitch_cv cv
 midiCvBuddy out velocity_cv cv
+midiCvBuddy family midi-cv-buddy-channel kind=other prefix=midi-cv-buddy-channel
+midiCvBuddy family midi-cv-buddy-connect kind=other prefix=midi-cv-buddy-connect
+midiCvBuddy family midi-cv-buddy-priority kind=other prefix=midi-cv-buddy-priority
+midiCvBuddy family midi-cv-buddy-retrig kind=other prefix=midi-cv-buddy-retrig
 midiLane meta domain=audio
 midiLane out cc_a cv
 midiLane out cc_b cv
@@ -1696,6 +1700,8 @@ midiOutBuddy in gate gate edge=gate
 midiOutBuddy in pitch cv
 midiOutBuddy in poly polyPitchGate
 midiOutBuddy in velocity cv
+midiOutBuddy family midi-out-buddy-channel kind=other prefix=midi-out-buddy-channel
+midiOutBuddy family midi-out-buddy-connect kind=other prefix=midi-out-buddy-connect
 milkdrop meta domain=video
 milkdrop in audio audio
 milkdrop in bass cv param=bass cvScale=linear

@@ -3995,6 +3995,86 @@ export const FACES = [
       + 'stability assertion passes because the picture is ALREADY still, which is the vfpgaRunner '
       + 'case re-verified against this body rather than inherited from it.',
   },
+
+  // ── MIDI-CV-BUDDY — the fifth BINDER baselined ───────────────────────────
+  {
+    type: 'midiCvBuddy',
+    // TWO bands: `input` (connect + channel) and `mono` (priority + retrig).
+    // `DOCK_TAB_MIN_BANDS` is 7, so no rail — and nothing is padded toward one
+    // or merged to stay under it. There is no hero, so no band is emptied by a
+    // promotion and the post-hero count is the authored count.
+    pages: 2,
+
+    // ⚠ THE PRE-CONNECT SURFACE IS A FUNCTION OF THE CODE, NOT OF THE RUNNER,
+    // and the argument is this module's own rather than inherited. A freshly
+    // spawned midiCvBuddy has NO MIDI ACCESS: the def's header says so in
+    // terms — *"Web MIDI permission is NOT requested at module
+    // instantiation"* — and the only caller of `api.connect()` in the product
+    // is the CONNECT cell, which this scene does not press. So `access` is
+    // null, the device roster does not merely happen to be empty but does not
+    // EXIST (`snapshotState()` builds `devices` from `access.inputs`), the
+    // extension body renders its pre-connect branch — one hint sentence and two
+    // DARK lamps — and both bands paint their cells at the defaults the def
+    // declares.
+    //
+    // ⚠ AND THE UNREACHABILITY IS STRUCTURAL, NOT INCIDENTAL. On a runner with
+    // no MIDI devices and no prior grant, the connected state is not merely
+    // unlikely — there is no path to it without a click, so the capture cannot
+    // DRIFT into the hardware-dependent state.
+    //
+    // ⚠ ITS `EXEMPT_FROM_VRT` CARD ENTRY IS DELIBERATELY LEFT STANDING. That
+    // exemption is about the LEGACY CARD scene in `vrt.spec.ts`, which is a
+    // different subject from these two face scenes, and the block those entries
+    // share is explicit that discharging the argument for one module does not
+    // discharge it for a sibling. Draining it is a separate, deliberate edit on
+    // its own evidence; this promotion does not make it.
+    //
+    // ⚠ WHAT THIS BASELINE DOES **NOT** COVER, stated rather than implied: the
+    // post-connect device picker and the NOTE lamp LIT. Both need a mocked
+    // `requestMIDIAccess` — which `e2e/tests/_per-port-drivers.ts` already has,
+    // built for the per-port sweep — but installing that mock in the VRT
+    // harness is a change to the HARNESS rather than to this module. Not this
+    // PR. Those states are asserted in `midi-cv-buddy.spec.ts` and their
+    // strings in `midi-cv-buddy-status-model.test.ts`.
+    //
+    // ⚠ NO `videoFaceWhy` AND NO `simPin`. `domain: 'audio'` with three cv/gate
+    // outputs and no canvas anywhere on the surface: there is no clock to pin
+    // and nothing that advances between frames. The lamps change only when
+    // `notify()` fires, and `notify()` fires only on an incoming MIDI message.
+  },
+
+  // ── MIDI-OUT-BUDDY — the sixth BINDER baselined, and the first ZERO-OUTPUT
+  //    module in this roster ─────────────────────────────────────────────────
+  {
+    type: 'midiOutBuddy',
+    // ONE band: connect + channel. Two cells, one IDEA — put these notes on
+    // that instrument — so nothing is padded toward the 7-band rail threshold.
+    // There is no hero, so the post-hero count is the authored count.
+    pages: 1,
+
+    // ⚠ SAME STRUCTURAL PRE-CONNECT ARGUMENT AS THE SIBLING ABOVE, made on this
+    // module's own state machine: `midi-out-buddy.ts` requests nothing on
+    // mount, `snapshotState()` builds `devices` from `access.outputs`, and
+    // `access` stays null until the CONNECT cell is pressed. The plate paints
+    // its hint line and three DARK lamps.
+    //
+    // ⚠ THE LANE LAMP IS DARK IN THIS SCENE, AND THAT IS THE CORRECT CAPTURE
+    // RATHER THAN A MISSED STATE. `bootWithFace` spawns one node on the free
+    // canvas, so it has no `data.channel` and `laneChannelOf` returns null —
+    // nothing to diverge from. The DIVERGED state is a workflow-lane condition
+    // this harness does not construct, and it is asserted in
+    // `midi-out-buddy-status-model.test.ts` (both the boolean and the sentence)
+    // plus `workflow-channel-columns.spec.ts` on the legacy card, which
+    // survives under `?shell=legacy`.
+    //
+    // ⚠ ITS `EXEMPT_FROM_VRT` CARD ENTRY IS ALSO LEFT STANDING, for the reason
+    // the sibling entry gives.
+    //
+    // ⚠ NO `videoFaceWhy` AND NO `simPin`. `domain: 'audio'`, `outputs: []`,
+    // and no canvas anywhere on the surface. The lamps change only when
+    // `notify()` fires, which needs a gate edge on an input this scene patches
+    // nothing into.
+  },
   // ── THE VST BRIDGE PAIR — two scenes each, and the determinism argument is
   //    es9's, one module family over ────────────────────────────────────────
   //
