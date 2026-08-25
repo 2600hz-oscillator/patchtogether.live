@@ -199,12 +199,18 @@
     border-radius: 3px;
     background: var(--panel, #1b1b1b);
   }
+  /* ⚠ THE CAP IS A WIDTH DECISION, NOT A TYPOGRAPHIC ONE — see the sibling
+     body's note for the measurement. `.faceplate-body` is `width: max-content`
+     and a paragraph's max-content is its UNWRAPPED width unless capped, so an
+     uncapped hint sizes the whole plate and leaves empty space beside every
+     control. This strip carries THREE lamps rather than two, so it has even
+     less room to spend on prose. `ch` rather than px so it tracks the font. */
   .hint,
   .err {
     margin: 0;
     font-size: 10px;
     line-height: 1.3;
-    max-width: 34ch;
+    max-width: 20ch;
   }
   .hint { color: var(--muted, #888); }
   .err { color: #d66; }

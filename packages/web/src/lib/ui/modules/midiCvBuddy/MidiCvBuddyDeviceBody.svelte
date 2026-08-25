@@ -169,12 +169,25 @@
     border-radius: 3px;
     background: var(--panel, #1b1b1b);
   }
+  /* ⚠ THE CAP IS A WIDTH DECISION, NOT A TYPOGRAPHIC ONE, AND IT IS MEASURED.
+     `.faceplate-body` is `width: max-content`, so the plate is sized by the
+     widest child's MAX-CONTENT — and a paragraph's max-content is its
+     UNWRAPPED width unless it is capped. At the 34ch this body was copied with,
+     the pre-connect hint measured 213 CSS px and made the device strip 332,
+     against a widest control row of 294: the plate came out 38 px wider than
+     anything drawn in it, and `workflow-shell-faces`' width gate reddened at
+     44 px of empty plate against its 40 px ceiling (the shell's own chrome —
+     the editor's 22 px padding, the body's 10 and a 1 px border — accounts for
+     33 of that on every face, which is the gate's documented normal mode).
+     A narrow column of instructional copy keeps the CONTROLS as the thing that
+     sizes the plate, which is what "compact is the default" means here. `ch`
+     rather than px so it tracks the font. */
   .hint,
   .err {
     margin: 0;
     font-size: 10px;
     line-height: 1.3;
-    max-width: 34ch;
+    max-width: 20ch;
   }
   .hint { color: var(--muted, #888); }
   .err { color: #d66; }
