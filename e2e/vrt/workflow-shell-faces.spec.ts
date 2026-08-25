@@ -96,9 +96,17 @@
 //      Deliberately NOT bundled with the fold fix: it is a separate coverage
 //      change that adds 42 baselines across platforms, and this PR already moves
 //      nine while two other baseline-touching PRs are in flight.
-//   4. Anything inside the per-scene budget (COMPACT_MAX_DIFF / DOCK_MAX_DIFF).
-//      A sub-tolerance render change is invisible to the gate AND unfixable by
-//      `--update-snapshots`; see the A2/#1213 note in CLAUDE.md.
+//   4. ~~Anything inside the per-scene budget (COMPACT_MAX_DIFF /
+//      DOCK_MAX_DIFF).~~ CLOSED 2026-08-25. It used to read: "a sub-tolerance
+//      render change is invisible to the gate AND unfixable by
+//      `--update-snapshots`; see the A2/#1213 note in CLAUDE.md." Both budgets
+//      are now ZERO, as are vrt.config's `threshold` and `maxDiffPixelRatio`,
+//      so there is no longer a band of change this gate cannot see — and the
+//      `--update-snapshots` half goes with it, since a stale baseline now
+//      FAILS and is therefore rewritable. What made that safe is measured, not
+//      hoped: every face scene in the roster but three was bit-exact across two
+//      cold ubuntu boots (vrt-determinism-probe), and the three were two
+//      unpinned simulations, fixed in the same diff.
 //   5. The capture is `.dock-faceplate`, whose 4 px `padding-bottom` is
 //      TRANSPARENT — so the bottom four rows of every dock baseline pin whatever
 //      canvas sits behind the drawer, not the faceplate. Measured at 15 px of
@@ -175,9 +183,17 @@ import {
 test.describe.configure({ mode: 'default' });
 
 /** The per-channel delta (0-255) at which `diffRegion` counts a pixel as
- *  different. 26 ≈ Playwright's own `threshold: 0.1` in vrt.config, so the
- *  negative control's pixel counts are directly comparable to the budget the
- *  real gate applies. */
+ *  different, for the NEGATIVE CONTROLS in this file only — never for the gate.
+ *
+ *  ⚠ IT NO LONGER MIRRORS THE GATE. This used to read "26 ≈ Playwright's own
+ *  `threshold: 0.1` in vrt.config, so the negative control's pixel counts are
+ *  directly comparable to the budget the real gate applies", and as of
+ *  2026-08-25 that budget is ZERO on all four knobs. Kept at 26 on purpose: the
+ *  controls below exist to prove the capture SEES a deliberate perturbation (an
+ *  8 px band shift, a live analyser trace), and a coarse delta makes that claim
+ *  about a real visual change rather than about shimmer. The gate's own bar is
+ *  proved on every run by the baseline comparisons themselves, which are now
+ *  byte-exact — a strictly stronger permanent control than this constant. */
 const NC_CHANNEL_DELTA = 26;
 /** The negative control's perturbation: shift one band sideways. CSS px. */
 const NC_SHIFT_PX = 8;

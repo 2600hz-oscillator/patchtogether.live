@@ -49,8 +49,17 @@ import { diffRegion } from './vrt-surface-stats';
 import { tryFreezeAudioContext } from './vrt-audio-freeze';
 import type { Page } from '@playwright/test';
 
-/** The gate's own per-channel delta (vrt.config `threshold: 0.1` ≈ 26/255), so
- *  the printed pixel counts are directly comparable to COMPACT_MAX_DIFF. */
+/** The per-channel delta this probe counts a pixel as different at.
+ *
+ *  ⚠ IT NO LONGER MIRRORS THE GATE, and saying so is the point. It used to read
+ *  "the gate's own per-channel delta (vrt.config `threshold: 0.1` ≈ 26/255), so
+ *  the printed pixel counts are directly comparable to COMPACT_MAX_DIFF" — and
+ *  as of 2026-08-25 the gate's `threshold` is 0 and both per-scene budgets are
+ *  0, so a row this probe prints as `0 px` can still be a REAL gate failure.
+ *  Kept at 26 deliberately: this is a MEASUREMENT tool for "is the audio graph
+ *  running under this scene", and a coarse delta separates a live analyser
+ *  trace from last-significant-bit shimmer. Use `vrt-determinism-probe` when
+ *  the question is the gate's own bar. */
 const CHANNEL_DELTA = 26;
 
 const EXTRA = (process.env.PROBE_FACES ?? '')
@@ -85,9 +94,12 @@ async function captureStability(
 // committed dock baseline"); this is its COMPACT sibling, and together they
 // cover all 42 committed face baselines.
 //
-// It answers the one question a green `toHaveScreenshot` cannot: is the
-// baseline IDENTICAL, or merely inside COMPACT_MAX_DIFF (150 px of a ~7 200 px
-// tile — 2 % of the image)? Playwright only rewrites a snapshot whose
+// It answered the one question a green `toHaveScreenshot` could not: is the
+// baseline IDENTICAL, or merely inside COMPACT_MAX_DIFF (then 150 px of a
+// ~7 200 px tile — 2 % of the image)? ⚠ THAT GAP IS CLOSED AS OF 2026-08-25:
+// COMPACT_MAX_DIFF, DOCK_MAX_DIFF, `threshold` and `maxDiffPixelRatio` are all
+// ZERO, so "passes" and "identical" now mean the same thing and this audit is
+// history rather than a live blind spot. Playwright only rewrites a snapshot whose
 // comparison FAILS, so a sub-tolerance change is invisible to the gate AND
 // unfixable by `--update-snapshots` (the A2/#1213 hole). "43 scenes passed" is
 // therefore NOT the evidence that adding the audio freeze moved nothing; this

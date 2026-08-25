@@ -10,14 +10,23 @@
 //
 // Owner premise (2026-08-25): a Svelte web app's components CAN render
 // deterministically every time, so every pixel of VRT tolerance is HIDING A BUG
-// rather than accommodating physics. The gate today allows
+// rather than accommodating physics. What the gate allowed WHEN THIS PROBE WAS
+// WRITTEN — the state this file was built to interrogate, kept as history and
+// NOT as a description of the gate today:
 //
 //     DOCK_MAX_DIFF    = 1500 px      (_shell-faces.ts)
-//     COMPACT_MAX_DIFF =  150 px      (documented as INERT — the config ratio binds)
+//     COMPACT_MAX_DIFF =  150 px      (documented as INERT — the config ratio bound)
 //     threshold        = 0.1          (26/255 per channel, vrt.config.ts)
 //     maxDiffPixelRatio= 0.01
 //
-// Before any of that can move, one number has to exist: HOW MANY FACE SCENES
+// ⚠ ALL FOUR ARE NOW ZERO. This probe's own measurement is what moved them, in
+// the same PR: EVERY face scene in the roster but THREE was BIT-EXACT across
+// two cold ubuntu boots, and the three that were not (spirographs dock +
+// compact, pong dock) were two unpinned simulations rather than renderer
+// physics — both pinned in that same diff. Read the numbers above as the
+// question, and `_shell-faces.ts` / `vrt.config.ts` for the answer.
+//
+// Before any of that could move, one number had to exist: HOW MANY FACE SCENES
 // ARE ACTUALLY NON-DETERMINISTIC BOOT-TO-BOOT, on the renderer that gates
 // (linux / SwiftShader)?
 //

@@ -1170,7 +1170,11 @@ export const FACES = [
     // compact scene was PASSING and a capture cannot regenerate a passing
     // baseline — so "it went green" would have been indistinguishable from "it
     // is stale but under COMPACT_MAX_DIFF", and only an explicit `git rm`
-    // reaches the second case. #1805 changed the fader PRIMITIVE again (it
+    // reaches the second case. ⚠ THAT HAZARD IS RETIRED as of 2026-08-25 —
+    // COMPACT_MAX_DIFF is 0, so a stale baseline FAILS and is therefore
+    // rewritable by the capture; the `git rm` step is no longer the only way in.
+    // The narrative below is kept because it is the evidence for the row, not
+    // because the trap is still open. #1805 changed the fader PRIMITIVE again (it
     // deleted the resting readout outright), which by the row above should have
     // reached every tier that paints a fader cell. It did not, and the reason is
     // that the readout was never a lane element in the first place:
@@ -4906,14 +4910,27 @@ export interface BootFaceOptions {
    *
    * ⚠ THIS IS A DIFFERENT AXIS FROM `videoFaceWhy`, AND THE DIFFERENCE IS THE
    * WHOLE BUG. `freezeFaceVideo` holds the LAST DRAWN frame — it makes the
-   * picture STOP, and says nothing about WHICH picture it stopped on. For a
-   * module whose field is a pure function of frame.time that is enough. For a
-   * STATEFUL sim it is not: the frozen frame is whatever the field had
-   * integrated to when the harness got around to writing `freeze`, which is a
-   * different number of elapsed milliseconds on every boot.
+   * picture STOP, and says nothing about WHICH picture it stopped on.
+   *
+   * ⚠⚠ THIS PARAGRAPH USED TO SAY "for a module whose field is a pure function
+   * of frame.time that is enough". IT IS NOT, and the correction is measured
+   * (2026-08-25): `spirographs` is exactly that module — every centre is
+   * `advanceCenter(base, r, W, H, frame.time)` — it carries a `freeze` ParamDef,
+   * and two ubuntu boots of its dock scene differed by 2711 px at maxCh 243,
+   * OVER the 1500 px budget that was live at the time. A clock-driven picture
+   * needs the CLOCK pinned (`simPin: __videoEngineFreezeTime`), because "which
+   * frame did the freeze hold" is a different frame on every boot; pinning the
+   * clock makes them all the same frame and the question dissolves.
+   *
+   * For a STATEFUL sim the freeze is insufficient for a DIFFERENT reason, and
+   * the clock pin is insufficient too: the frozen frame is whatever the field
+   * had integrated to when the harness got around to writing `freeze`, which is
+   * a different number of DRAWS on every boot. mirrorpool records three globals
+   * for that; lushgarden and pong suppress the sim outright.
    *
    * ⚠ MEASURED (outlines, #1939): `face-outlines-dock` missed its OWN freshly
-   * captured baseline by 6724 px against a `DOCK_MAX_DIFF` of 1500 — 4.5x the
+   * captured baseline by 6724 px against the then-1500 px `DOCK_MAX_DIFF`
+   * (zero since 2026-08-25) — 4.5x the
    * tolerance, capture and comparison both on ubuntu CI. The diff PNG showed
    * ONLY the spawned shapes' POSITIONS moving: chrome, labels and knobs were
    * pixel-identical and the shape COUNT was roughly equal. That is the exact
