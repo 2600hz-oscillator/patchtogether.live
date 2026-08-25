@@ -1356,30 +1356,61 @@ test.describe('?shell=1 video CHAIN parity', () => {
     await gotoShell(page);
     await expect(videoOutLane(page)).toBeVisible({ timeout: 15_000 });
 
-    // VIDEOBOX: its picture comes from a card-owned <video> handed to the engine
-    // via attachExternalSource — the class that went dark under the shell.
-    await injectPatch(page, [{ id: 'vb1', type: 'videobox', position: { x: -1200, y: 5100 } }]);
+    // ⚠ SUBJECT MOVED FROM `videobox` TO `videovarispeed` (LEG-02 P1, #1511),
+    // and the move is the point rather than a convenience. This test's subject
+    // is "a module whose engine-visible source lives on its CARD gets an
+    // off-screen host". VIDEOBOX IS NO LONGER SUCH A MODULE: its attach, audio
+    // wiring and loops moved to `$lib/ui/media/node-video-source-registry` on
+    // graph lifetime, so it left `DOM_SOURCE_LANE_TYPES` and gets no host at all.
+    //
+    // Left pointed at videobox, this test would have gone RED — but the wrong
+    // repair is what to watch for here: relaxing it to `toHaveCount(0)` would
+    // have kept the NAME while inverting the CLAIM, leaving a test called "keeps
+    // its REAL card alive off-screen" that asserts nothing of the kind. So the
+    // subject is re-pointed at a module that still has the property, and
+    // videobox's new behaviour is asserted separately below as its own claim.
+    // `videovarispeed` is unfaced and still card-owned, so it renders the same
+    // placeholder tile videobox used to and exercises the identical arm.
+    await injectPatch(page, [{ id: 'vv1', type: 'videovarispeed', position: { x: -1200, y: 5100 } }]);
 
     // The LANE still shows the uniform tile (the shell look is preserved — this
     // fix is NOT "give every source module the legacy card back")…
     await expect(
-      page.locator(`.svelte-flow__node[data-id="vb1"] [data-testid="module-shell-placeholder"]`),
-      'videobox still renders the uniform RACKLINE tile in its lane',
+      page.locator(`.svelte-flow__node[data-id="vv1"] [data-testid="module-shell-placeholder"]`),
+      'videovarispeed still renders the uniform RACKLINE tile in its lane',
     ).toHaveCount(1);
 
     // …while its REAL card is mounted in the off-screen lifecycle host, so its
     // source attach/detach still runs.
-    const host = page.locator('[data-testid="headless-source-host"][data-node-id="vb1"]');
-    await expect(host, 'videobox gets an off-screen lifecycle host').toHaveCount(1);
-    await expect(host, 'the host mounts the REAL videobox card').toHaveAttribute('data-node-type', 'videobox');
+    const host = page.locator('[data-testid="headless-source-host"][data-node-id="vv1"]');
+    await expect(host, 'videovarispeed gets an off-screen lifecycle host').toHaveCount(1);
+    await expect(host, 'the host mounts the REAL videovarispeed card').toHaveAttribute('data-node-type', 'videovarispeed');
     await expect(
-      host.locator('[data-testid="videobox-card"]'),
+      host.locator('[data-testid="videovarispeed-card"]'),
       "the hosted card is the module's real card, not a stub",
     ).toHaveCount(1);
+
+    // ── THE CONVERTED MODULE, asserted as its own claim ──────────────────────
+    //
+    // A node-owned source gets NO host, and that absence is the whole payoff of
+    // #1511: the off-screen mount was a tax every rack paid. Asserted here, in
+    // the test that owns the host's behaviour, so the two answers live side by
+    // side and a future edit cannot give videobox a host back unnoticed.
+    // Whether its SOURCE is actually live without one is
+    // `videobox-node-lifetime.spec.ts`'s job — this leg only owns the host.
+    await injectPatch(page, [{ id: 'vb1', type: 'videobox', position: { x: -1600, y: 5100 } }]);
     await expect(
-      host.locator('[data-testid="videobox-video"]'),
-      '…including the <video> element it hands to the engine (attachExternalSource)',
+      page.locator(`.svelte-flow__node[data-id="vb1"] [data-testid="module-shell-placeholder"]`),
+      'videobox still renders the uniform RACKLINE tile in its lane',
     ).toHaveCount(1);
+    await expect(
+      page.locator('[data-testid="headless-source-host"][data-node-id="vb1"]'),
+      'videobox got an off-screen host — its lifecycle is node-owned, so nothing should be keeping its card alive',
+    ).toHaveCount(0);
+    await expect(
+      page.locator('[data-testid="videobox-card"]'),
+      'a videobox card is mounted somewhere despite the module being converted',
+    ).toHaveCount(0);
 
     // Exactly ONE mount FOR THIS NODE: a second live <video> would double
     // getUserMedia/decode and the first to unmount would detach the survivor.
@@ -1392,7 +1423,7 @@ test.describe('?shell=1 video CHAIN parity', () => {
     // about videobox having changed. A per-node count states what it means and
     // cannot be moved by an unrelated module joining the set.
     await expect(
-      page.locator('[data-testid="headless-source-host"][data-node-id="vb1"]'),
+      page.locator('[data-testid="headless-source-host"][data-node-id="vv1"]'),
     ).toHaveCount(1);
 
     // ⚠ cameraInput IS HOSTED NOW, AND THIS ASSERTION USED TO SAY THE OPPOSITE.

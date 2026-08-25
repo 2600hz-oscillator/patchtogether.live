@@ -192,6 +192,22 @@ interface ExtrasOwnerVerdict {
 // first time it ran. Their producers are anchored instead by
 // `EXTRAS_PRODUCERS` (see the producer-anchoring leg), which is the artifact
 // that actually implements them.
+//
+// ⚠ VIDEOBOX IS NOW THE THIRD, AND IT ARRIVED FROM THE OTHER DIRECTION (LEG-02
+// P1, #1511). The other two never had a media element; videobox did, and its
+// entry read `owner: 'headless-card-mount'` — "the DOM-source rule already keeps
+// this card mounted off-screen". That verdict was TRUE and is now false: the
+// element's attach, its audio wiring and its three loops moved to
+// `$lib/ui/media/node-video-source-registry` on graph lifetime, so nothing keeps
+// a videobox card alive anywhere and nothing needs to.
+//
+// The card's `getExtras()` helper was DELETED rather than left unused, which is
+// what took it off this channel — and that deletion is load-bearing in the way
+// this file cares about: a card that cannot reach the handle cannot tear it
+// down, so the defect this gate exists for becomes unspellable rather than
+// merely absent. This leg reddened on exactly that entry, which is the anchoring
+// working as designed: the verdict could not quietly outlive the mechanism it
+// described.
 const EXTRAS_OWNERS: Readonly<Record<string, ExtrasOwnerVerdict>> = {
   PainterCard: {
     owner: 'node-lifetime-producer',
@@ -212,10 +228,6 @@ const EXTRAS_OWNERS: Readonly<Record<string, ExtrasOwnerVerdict>> = {
   TvLibrarianCard: {
     owner: 'headless-card-mount',
     why: 'same as archivist — a card-owned <video> handed to the engine by attachExternalSource',
-  },
-  VideoboxCard: {
-    owner: 'headless-card-mount',
-    why: 'a card-owned <video> fed from a user file blob; the DOM-source rule already keeps this card mounted off-screen',
   },
   VideoVarispeedCard: {
     owner: 'headless-card-mount',
