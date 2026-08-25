@@ -182,14 +182,45 @@ export const synesthesiaDef: AudioModuleDef = {
   params: [
     // Per-copy MODE: 0 = AUDIO (spectral bands), 1 = VIDEO (R/G/B/Luma). Each
     // copy switches independently. Discrete 0/1 (a toggle on the card).
-    { id: 'a_mode', label: 'A Mode', defaultValue: 0, min: 0, max: 1, curve: 'discrete' },
-    { id: 'b_mode', label: 'B Mode', defaultValue: 0, min: 0, max: 1, curve: 'discrete' },
+    //
+    // ⚠ THE `options` ROSTER IS NOT DECORATION — it is what makes the DOCK cell
+    // a NAMED two-state control instead of an unnamed switch. `paramCellKind`
+    // (shell-control-kind.ts:312-316) tests `p.options?.length` BEFORE
+    // `looksLikeToggle`, so without a roster this resolves to a bare `toggle`
+    // whose two positions carry no words at all — and the legacy card has
+    // printed `AUDIO` / `VIDEO` on its own button since it shipped
+    // (SynesthesiaCard.svelte:233). The labels below are THAT string, verbatim,
+    // and the same pair the def's own `docs.controls` and the worklet header
+    // (packages/dsp/src/synesthesia.ts:30) use. An option NAME is permitted
+    // resting text precisely because it disambiguates a control's own position.
+    //
+    // ⚠ NO `optionsExhaustive`. The roster is DENSE (one option per discrete
+    // step of a 0..1 param), which `param-vocabulary` treats as redundant.
+    { id: 'a_mode', label: 'A Mode', defaultValue: 0, min: 0, max: 1, curve: 'discrete',
+      options: [
+        { value: 0, label: 'AUDIO', title: 'analyse the audio input into 4 spectral bands' },
+        { value: 1, label: 'VIDEO', title: 'the 4 lanes become R / G / B / Luma of the patched frame' },
+      ] },
+    { id: 'b_mode', label: 'B Mode', defaultValue: 0, min: 0, max: 1, curve: 'discrete',
+      options: [
+        { value: 0, label: 'AUDIO', title: 'analyse the audio input into 4 spectral bands' },
+        { value: 1, label: 'VIDEO', title: 'the 4 lanes become R / G / B / Luma of the patched frame' },
+      ] },
     // Per-copy POLARITY of the env CV outputs: 0 = UNIPOLAR [0,1] (default,
     // preserves existing patches), 1 = BIPOLAR [-1,+1]. Bipolar makes a strong
     // kick sweep the FULL destination range through the knob-centered cv→video
     // bridge instead of just the upper half. Discrete 0/1 (a toggle on the card).
-    { id: 'a_bipolar', label: 'A Polarity', defaultValue: 0, min: 0, max: 1, curve: 'discrete' },
-    { id: 'b_bipolar', label: 'B Polarity', defaultValue: 0, min: 0, max: 1, curve: 'discrete' },
+    // Roster: the card's own button strings (SynesthesiaCard.svelte:242).
+    { id: 'a_bipolar', label: 'A Polarity', defaultValue: 0, min: 0, max: 1, curve: 'discrete',
+      options: [
+        { value: 0, label: 'UNI', title: 'unipolar env CV — 0..1' },
+        { value: 1, label: 'BI', title: 'bipolar env CV — −1..+1, so an onset sweeps a destination’s full range' },
+      ] },
+    { id: 'b_bipolar', label: 'B Polarity', defaultValue: 0, min: 0, max: 1, curve: 'discrete',
+      options: [
+        { value: 0, label: 'UNI', title: 'unipolar env CV — 0..1' },
+        { value: 1, label: 'BI', title: 'bipolar env CV — −1..+1, so an onset sweeps a destination’s full range' },
+      ] },
     // Master gain: 0.5×@7:00 → 1.5×@5:00 (unity at 12:00) — raises/lowers floor.
     { id: 'a_master', label: 'A Mas', defaultValue: 1, min: 0.5, max: 1.5, curve: 'linear' },
     { id: 'b_master', label: 'B Mas', defaultValue: 1, min: 0.5, max: 1.5, curve: 'linear' },
@@ -215,6 +246,243 @@ export const synesthesiaDef: AudioModuleDef = {
     { id: 'b_envdepth3', label: 'b3 dpt', defaultValue: 1, min: 0, max: 2, curve: 'linear' },
     { id: 'b_envdepth4', label: 'b4 dpt', defaultValue: 1, min: 0, max: 2, curve: 'linear' },
   ],
+
+  // ── FACE (PF-20) ──────────────────────────────────────────────────────────
+  //
+  // WHAT IT IS FOR, MUSICALLY: SYNESTHESIA is the rack's LISTENER. Every other
+  // modulation source in the box decides on its own what to do — an LFO runs, an
+  // envelope answers a gate. This one has no opinion at all: it takes a signal
+  // you are ALREADY making, splits it four ways, and hands back four independent
+  // streams of "how loud is this part of it right now". The verb a player
+  // performs is BALANCE — deciding which quarter of the spectrum drives the
+  // patch, and how hard. And it does that twice, on two copies that share
+  // nothing but a box, so one rack can listen to the kick and the pads at once.
+  //
+  // ⚠ RANKED BY COPY, NOT INTERLEAVED — the scope argument, and it is the one
+  // rank on this face worth defending. The obvious alternative reads better as a
+  // TABLE (`a_master, b_master, a_gain1, b_gain1, …`) and worse as an
+  // INSTRUMENT: a player working on SYNESTHESIA is listening to ONE source
+  // through ONE copy, and interleaving makes every adjustment a two-column hunt.
+  // Copy A is ranked whole, then copy B is ranked whole.
+  //
+  // Within a copy the rank descends the DSP, not the declaration order:
+  //   1. `master` — the ONLY control that moves all four of that copy's bands at
+  //      once, so it is the highest-leverage knob on the copy by construction.
+  //   2. `mode`   — AUDIO vs VIDEO decides what the four lanes MEAN; every
+  //      control below it is interpreted through that choice, and it is the one
+  //      switch a lane tile can usefully carry.
+  //   3. the four band GAINS — the balance you actually ride.
+  //   4. the four env DEPTHS — downstream of the analysis; they scale what the
+  //      module SENDS, not what it hears.
+  //   5. `bipolar` — a patching CONVENTION set once for the destination you are
+  //      driving and then left alone (the `ch1Range` shape on scope).
+  //
+  // Read back as a sentence: the LANE tile is copy A's trim, its AUDIO/VIDEO
+  // switch and its bass band (compact = 3 cells, no glyph); the full-in-lane
+  // plate adds copy A's other three bands; everything from copy A's depths
+  // onward is DOCK-ONLY. Copy B never reaches a lane tier, which is honest — a
+  // rack that patches both copies is working in the dock anyway.
+  //
+  // ⚠ `pages` DISAGREES WITH `order` ON PURPOSE. `order` is priority (copy A
+  // entirely, then copy B); `pages` is SIGNAL ORDER, so each band holds the same
+  // stage of BOTH copies with the copies as CLUSTERS. That is the field's own
+  // worked example — two copies of one circuit are "the same idea, twice", which
+  // is a ~14 px sub-header, not a ~81 px band each. Eight per-copy bands would
+  // have been padding, and `clusterFlow: 'row'` sets the two copies side by side
+  // so the whole face is four rows instead of eight.
+  //
+  // ⚠ NO TAB RAIL, and the count is not the reason — the ARGUMENT is.
+  // `DOCK_TAB_MIN_BANDS` is 7 and this is 3, but the owner's control-heavy
+  // ruling is about "lots of controls of DIFFERENT types", and 22 params here
+  // are FOUR types (two named two-state switches, two masters, eight gains,
+  // eight depths) laid out in perfect A/B symmetry. This is control-REPETITIVE,
+  // the mixmstrs shape, not the backdraft shape — and the ruling's own words are
+  // *never pad pages to force the rail*.
+  //
+  // ⚠ NO `bareCells`. Every caption here is the tidyVco side of that ruling, not
+  // the mixmstrs side: `A1`…`A4` under a `copy a` cluster are the ONLY thing
+  // separating four otherwise-identical dials, and hiding them would leave a row
+  // of anonymous knobs. The clusters carry the copy; the captions carry the band.
+  //
+  // ⚠ NO HERO. `heroFacePlan` MOVES a promoted key out of its band, and there is
+  // no picture here to promote: this module's picture is the VU wall, which is
+  // not a `panel` CELL at all (nothing on it is editable) but the module's own
+  // full-width surface — see `extension` below.
+  face: {
+    order: COPIES.flatMap((c) => [
+      `${c}_master`,
+      `${c}_mode`,
+      ...BANDS.map((b) => `${c}_gain${b}`),
+      ...BANDS.map((b) => `${c}_envdepth${b}`),
+      `${c}_bipolar`,
+    ]),
+
+    pages: [
+      {
+        id: 'input',
+        label: 'input',
+        hint: 'what each copy is listening to, and how hard it is driven',
+        controls: COPIES.flatMap((c) => [`${c}_mode`, `${c}_master`]),
+        clusters: COPIES.map((c) => ({
+          label: `copy ${c}`,
+          controls: [`${c}_mode`, `${c}_master`],
+        })),
+        clusterFlow: 'row',
+      },
+      {
+        id: 'bands',
+        label: 'band gain',
+        hint: 'balance the four bands against each other before they are followed',
+        controls: COPIES.flatMap((c) => BANDS.map((b) => `${c}_gain${b}`)),
+        clusters: COPIES.map((c) => ({
+          label: `copy ${c}`,
+          controls: BANDS.map((b) => `${c}_gain${b}`),
+        })),
+        clusterFlow: 'row',
+      },
+      {
+        id: 'env',
+        label: 'env out',
+        hint: 'how much modulation each band sends',
+        controls: COPIES.flatMap((c) => BANDS.map((b) => `${c}_envdepth${b}`)),
+        clusters: COPIES.map((c) => ({
+          label: `copy ${c}`,
+          controls: BANDS.map((b) => `${c}_envdepth${b}`),
+        })),
+        clusterFlow: 'row',
+      },
+      // ⚠ POLARITY IS ITS OWN BAND, AND A MEASUREMENT PUT IT THERE.
+      //
+      // It was first authored INSIDE the `env out` clusters, on a real argument:
+      // it is a statement about the SAME two cables DEPTH scales, and scope
+      // reached exactly that conclusion about `ch1Range` and put it inside the
+      // CH1 cluster. The dock scene's width assertion falsified the arrangement,
+      // not the argument.
+      //
+      // MEASURED on the faceplate (linux CI and reproduced locally, identical
+      // numbers): content 591 CSS px, `.faceplate-body` 686 — 95 px of empty
+      // plate against a 40 px ceiling. Ablated in the live DOM, one element at a
+      // time: hiding the VU wall, the title row, the badge row, the `input` band
+      // or the `band gain` band moved the body NOT AT ALL (686 every time);
+      // hiding the `env out` band dropped it to 537; and hiding JUST ITS TWO
+      // SEGMENTED CELLS dropped it to 537 as well. So the two POLARITY cells
+      // sitting in a cluster of four knobs were the entire 149 px, while drawing
+      // 70 px each.
+      //
+      // A four-knob cluster and a segmented cell are different cell SHAPES, and
+      // a cluster is for the same idea TWICE — four band depths are that, a
+      // polarity switch is not. Splitting it out costs one ~81 px band and buys
+      // back 95 px of width the owner ruling calls useless grey space; it also
+      // leaves `env out` the identical shape as `band gain`, which measures 537.
+      // Still four bands, still under `DOCK_TAB_MIN_BANDS`, still signal-ordered:
+      // in → balance the bands → how much they send → in which polarity.
+      {
+        id: 'polarity',
+        label: 'cv polarity',
+        hint: 'the convention the env CV outputs follow — set once for the destination',
+        controls: COPIES.map((c) => `${c}_bipolar`),
+        clusters: COPIES.map((c) => ({
+          label: `copy ${c}`,
+          controls: [`${c}_bipolar`],
+        })),
+        clusterFlow: 'row',
+      },
+    ],
+
+    // ⚠ `'none'` — AND IT IS REFUSED FOR SCOPE'S REASON, NOT DOCKSCOPE'S.
+    //
+    // dockscope declares `outputs: []`, so `primaryAudioOutPortId` returns null,
+    // every glyph literal falls to `{kind:'static'}` and the dead-glyph clause
+    // catches it. That refusal is MECHANICAL — a gate makes it for you.
+    //
+    // SYNESTHESIA HAS NO SUCH PROTECTION. `a_band1_audio` is the FIRST declared
+    // `type: 'audio'` output on this def, so `primaryAudioOutPortId` returns it
+    // and `glyphBinding` short-circuits to
+    // `{ kind: 'live-audio', portId: 'a_band1_audio' }` — LIVE, green on the
+    // dead-glyph clause, green on `VALID_GLYPHS`, red nowhere. And the picture
+    // would still be false, in the way that matters most on THIS module: that
+    // port is copy A's BASS band and nothing else. A trace on it is invariant to
+    // the other three bands, to copy B entirely (half the instrument), to both
+    // envelope stages, to every depth, to both polarities and to VIDEO mode.
+    // This module's entire product is the COMPARISON ACROSS BANDS; a
+    // single-band waveform is exactly the picture a player would read as "the
+    // analysis", so it would not fail to inform — it would MISINFORM.
+    //
+    // ⚠ A `'meter'` LITERAL DOES NOT RESCUE IT. `glyphBinding` never looks at
+    // which literal was written once a primary audio out exists (the
+    // `if (audioOut) return live-audio` short-circuit at shell-glyph-live.ts:184
+    // catches 'scope', 'meter' and 'waveform' alike), so `'meter'` resolves to
+    // the SAME single-band tap and renders it as one RMS bar instead of four
+    // columns — strictly less of the picture, not more.
+    //
+    // ⚠ AND `'algorithm'` IS NOT THE ESCAPE EITHER. The #2160 widening resolves
+    // an extension arm ahead of that short-circuit, so this def COULD legally
+    // declare a layout-source glyph — but `ShellExtensionGlyphProps` is
+    // `{ num, numbers?, testid? }`, with no `nodeId`, no engine and no store, so
+    // every instance would draw a byte-identical SVG that cannot vary per node
+    // or over time. The widening removed the refusal; it did not add a data path.
+    //
+    // The lane consequence is stated rather than discovered: with `'none'` and a
+    // dock-only body, SYNESTHESIA's lane tile paints its three ranked cells and
+    // no picture at all — and, because `laneGlyphFor` reads 'none', that tile
+    // gets THREE cells rather than the two a glyph-bearing face would.
+    glyph: 'none',
+
+    // ⚠ THE VU WALL IS WHY THIS PROMOTION IS SAFE AT ALL, and it arrives here.
+    //
+    // Promotion stops BOTH surfaces rendering `SynesthesiaCard.svelte`, and that
+    // card owns the two 10-bar-per-band VU meters — the only place the analysis
+    // is VISIBLE. `synesthesia` is already in `CARD_PRODUCER_LANE_TYPES`
+    // (dom-source-modules.ts:208), so the headless host keeps the real card
+    // mounted OFF-SCREEN and the engine-side work (the VIDEO-mode
+    // `write(node,'video_levels_a'/'_b')` pump) survives promotion untouched.
+    // But off-screen is not on screen: without this slot a faced SYNESTHESIA
+    // would be twenty-two ways to adjust an analysis nobody can see.
+    //
+    // The samples are reachable through exactly ONE seam — the engine handle's
+    // `read('snapshot')` key — and no glyph binding calls `engine.read`. A
+    // `fullViewBody` is the wired slot that can. `$lib/ui/modules/synesthesia/
+    // shell-extension.ts` is that, and it draws through `drawVuMeters`, this
+    // module's OWN pure function, which is what stops the card and the faceplate
+    // from ever disagreeing about what the meters look like.
+    extension: 'synesthesia',
+
+    // ⚠ OUTPUTS GROUPED BY COPY — a split that MEANS something, which is the bar
+    // for authoring one at all. The derived default splits the 48 output jacks
+    // by CABLE DOMAIN (audio / cv / gate / mono-video), and that restates
+    // information the rail already carries in colour. The split that is NOT
+    // already on screen is which COPY a jack belongs to: A and B are two
+    // independent instruments that share only a chassis, and patching the wrong
+    // one is the mistake this rail can actually prevent. It is also PARITY —
+    // `SynesthesiaCard`'s own PatchPanel has always sectioned its jacks
+    // `Copy A` / `Copy B` (SynesthesiaCard.svelte:77-80).
+    //
+    // ⚠ `direction: 'output'` ON BOTH, and it is load-bearing: the field
+    // DEFAULTS to `'input'`, and an output group that forgets it resolves to no
+    // port at all and silently never renders.
+    //
+    // ⚠ THE INPUTS ARE DELIBERATELY NOT AUTHORED. All four (`a_in`, `b_in`,
+    // `a_video_in`, `b_video_in`) carry no `paramTarget`, so the derived rule
+    // files them into the leading `signal` band together — four jacks, one
+    // section, already right. Declaring a curated INPUT group here would have to
+    // claim `'voice'`/`'signal'` or name a page id to reach a slot at all, and
+    // splitting four jacks two ways buys nothing.
+    rear: {
+      groups: COPIES.map((c) => ({
+        id: `copy-${c}`,
+        label: `copy ${c}`,
+        direction: 'output' as const,
+        ports: BANDS.flatMap((b) => [
+          `${c}_band${b}_audio`,
+          `${c}_band${b}_env_slow`,
+          `${c}_band${b}_env_fast`,
+          `${c}_band${b}_gate`,
+          `${c}_band${b}_trig`,
+          `${c}_band${b}_raster`,
+        ]),
+      })),
+    },
+  },
 
   docs: (() => {
     const BAND_NAMES: Record<number, string> = {

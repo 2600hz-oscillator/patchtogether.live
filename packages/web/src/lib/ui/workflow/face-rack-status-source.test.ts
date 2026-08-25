@@ -572,6 +572,42 @@ const EXTENSION_BODY_ROLES: Readonly<Record<string, BodyRule>> = {
       + 'node on the surface is the slot name, which is a NAME (two CV Buddies are otherwise '
       + 'identical plates, and the jacks they own is the only thing that tells them apart).',
   },
+  // ── SYNESTHESIA (2026-08-24) — the roster's second AUDIO METER ────────────
+  //
+  // TEXT ON THE SURFACE, exhaustively: the SCREEN button's own caption. Nothing
+  // else — the meters are bars, and `drawVuMeters` paints no numerals, no scale
+  // and no axis labels into either canvas (it emits `fillRect` and `fillStyle`
+  // and nothing else; the module's own face-model test reads the whole op
+  // stream). ⚠ NOTHING HAD TO BE REMOVED ON PROMOTION EITHER: unlike scope's
+  // `PITCH 440.0 Hz | NOTE A4` row, `SynesthesiaCard` printed no readout at all,
+  // so there is no deleted finding whose surface lapsed here.
+  //
+  // ⚠ THE MEASUREMENT IS ON `aria-label`, WHICH IS THIS ENTRY'S ONE SUBTLETY.
+  // Eight band levels drawn as bars are unreadable to a screen reader and
+  // unassertable to a spec, so each canvas carries a `role="img"` name listing
+  // its four levels — AND naming what the four lanes currently ARE, which is the
+  // one fact the picture genuinely cannot show (in VIDEO mode column 0 is RED,
+  // not bass). That name is never also a text node; `synesthesia-face-model`
+  // asserts both halves, since the `control-grid` leg below does not run on a
+  // `picture`.
+  synesthesia: {
+    role: 'picture',
+    why:
+      'the DUAL VU WALL — both copies\' four band meters, 10 segments each, drawn through the '
+      + 'module\'s own `drawVuMeters` from the `read(\'snapshot\')` levels the worklet posts — plus '
+      + 'the SCREEN switch. ⚠ THE PICTURE IS THE PRODUCT ARGUMENT ON THIS MODULE: twenty-two '
+      + 'controls all balance an ANALYSIS, and "which quarter of this signal is loud" is not '
+      + 'answerable from any dial reading, so a faced synesthesia without this slot would be '
+      + 'twenty-two ways to adjust something invisible. ⚠ IT IS A READER, NOT A PRODUCER, and '
+      + 'that distinction is load-bearing rather than descriptive: synesthesia is in '
+      + 'CARD_PRODUCER_LANE_TYPES because its CARD runs the VIDEO-mode `video_levels_a/_b` pump, '
+      + 'which lives nowhere else — so this body must never grow a second writer and the module '
+      + 'must stay OUT of FACE_MOUNTS_PRODUCER, or opening the dock would drop the headless host '
+      + 'and freeze VIDEO mode (the timelorde shape). ⚠ NO WATCH MARK: markWatched is a '
+      + 'VideoEngine pull-set concept, and these levels come from an AudioWorklet the module\'s '
+      + 'own muted keep-alive gain keeps processing regardless — there is no pull set to fall out '
+      + 'of, so SCREEN OFF skips only the paint (#2015).',
+  },
 };
 
 /**

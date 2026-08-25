@@ -3385,6 +3385,37 @@ export const FACES = [
     // and nothing that advances between frames. The lamps change only when
     // `notify()` fires, and `notify()` fires only on a MIDI transport message.
   },
+  // ── SYNESTHESIA (2026-08-24) ──────────────────────────────────────────────
+  {
+    type: 'synesthesia',
+    pages: 4,
+    // ⚠ NO `simPin`, AND THAT IS A DERIVED ANSWER RATHER THAN AN OMISSION —
+    // stated because the sibling entry three above (`scope`) DOES pin, on what
+    // looks like the same seam.
+    //
+    // Scope's dock body paints `read('snapshot')` and its snapshot IS a live
+    // 2048-sample ANALYSER WINDOW: whatever the AnalyserNode happened to hold
+    // when the frame ran, whose phase depends on when the capture landed. That
+    // is unstable across boots however quiet the graph is.
+    //
+    // SYNESTHESIA's `read('snapshot')` is NOT a window — it is
+    // `{ levelsA, levelsB }`, two arrays of four SCALARS the worklet posts, and
+    // `drawVuMeters` is a stateless pure function of them (no peak hold, no
+    // decay, no clock; synesthesia-draw.ts). With nothing patched the worklet
+    // has nothing to follow, so the levels are the `[0,0,0,0]` the factory
+    // initialises and the wall paints forty UNLIT segments — the meter's own
+    // idle state, identical on every boot BY CONSTRUCTION rather than by a
+    // freeze. The face harness's audio suspend makes it doubly true (a
+    // suspended worklet posts nothing at all), but the picture does not depend
+    // on that.
+    //
+    // ⚠ THE MODULE'S EXISTING `__synesthesiaVrtFreeze` IS FOR A DIFFERENT
+    // SURFACE and must not be reached for here. It swaps the per-band RASTER
+    // output's live analyser buffer for a fixed synthetic waveform, which is
+    // genuinely nondeterministic; the raster is a `mono-video` OUTPUT PORT and
+    // appears nowhere on the faceplate. Setting it would change no pixel in
+    // this scene while implying the scene needed it.
+  },
 
   // ── LAUNCHPAD CONTROL — the second BINDER, and the second META scene ───────
   {

@@ -509,7 +509,7 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
   { type: 'spirographs', disposition: 'generic-face', note: 'the hue wheel writes a single continuous param — a knob at worst, a colour cell if the range is packed RGB' },
   { type: 'stereovca', disposition: 'generic-face' },
   { type: 'swolevco', disposition: 'generic-face' },
-  { type: 'synesthesia', disposition: 'generic-face', note: 'mode/polarity buttons write params; the two band displays are read-only pictures (nearest kind: `meter`)' },
+  { type: 'synesthesia', disposition: 'generic-face', note: 'FACED 2026-08-24 as `glyph: none` + a `fullViewBody` VU wall — the mode/polarity buttons became named two-state cells (an `options` roster each), and the read-only band displays moved to the extension because a glyph would resolve LIVE here and paint copy A\'s bass band as though it were the analysis' },
   { type: 'tempest', disposition: 'generic-face' },
   { type: 'tidyVco', disposition: 'generic-face' },
   { type: 'tiler', disposition: 'generic-face' },
