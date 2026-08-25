@@ -24,7 +24,7 @@ import { WEBGL_HEAVY_GLOBS } from '../e2e/webgl-heavy-globs';
 const REPO = join(dirname(fileURLToPath(import.meta.url)), '..');
 const SPEC_DIR = join(REPO, 'e2e/tests');
 
-const SHARDS = 10;
+const SHARDS = 12;
 
 describe('the partition covers the suite exactly', () => {
   const timings: Record<string, number> = loadTimings();
