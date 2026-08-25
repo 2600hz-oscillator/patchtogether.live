@@ -38,6 +38,7 @@ import {
   clearBindingOnData,
   exportMapping,
   applyMapping,
+  shapeOutputValue,
   isGamepadMapping,
   GAMEPAD_PRESETS,
   type GamepadData,
@@ -565,10 +566,31 @@ describe('gamepad remap bindings', () => {
     buttons: btnValues.map((v) => ({ value: v, pressed: v > 0.5 })),
   });
 
-  it('DEFAULT_GAMEPAD_BINDINGS covers all 18 outputs with the standard mapping', () => {
+  // The outputs that ship bound to NOTHING, each carrying WHY. Deny-by-default:
+  // every other output must have a standard-mapping default, and an entry here
+  // that is no longer an output is RED — so this cannot rot into a stale list.
+  const UNBOUND_BY_DEFAULT: Record<string, string> = {
+    ax: 'aux stick X — a flight stick\'s twist/rudder has no standard-mapping axis '
+      + 'to default to, so any default would be a guess at physical hardware',
+    ay: 'aux stick Y — same, and silence is load-bearing: the VKB Gladiator EVO R\'s '
+      + 'axis 1 RESTS at -0.177, so a fall-through would park a constant negative CV '
+      + 'on a jack the player believes is unpatched',
+  };
+
+  it('DEFAULT_GAMEPAD_BINDINGS covers every output EXCEPT the deliberately-unbound aux pair', () => {
     const outIds = GAMEPAD_OUTPUTS.map((o) => o.id);
     for (const id of outIds) {
-      expect(DEFAULT_GAMEPAD_BINDINGS[id], `default for ${id}`).toBeDefined();
+      const why = UNBOUND_BY_DEFAULT[id];
+      if (why) {
+        expect(DEFAULT_GAMEPAD_BINDINGS[id], `${id} must ship UNBOUND — ${why}`).toBeUndefined();
+      } else {
+        expect(DEFAULT_GAMEPAD_BINDINGS[id], `default for ${id}`).toBeDefined();
+      }
+    }
+    // ANCHORED TO THE ARTIFACT (both directions): a name exempted here that is not
+    // an output means the exemption outlived the thing it exempted.
+    for (const id of Object.keys(UNBOUND_BY_DEFAULT)) {
+      expect(outIds, `${id} is exempted from the defaults table but is not an output`).toContain(id);
     }
     // Stick axes → axes 0..3; everything else → a button.
     expect(DEFAULT_GAMEPAD_BINDINGS.lx).toEqual({ kind: 'axis', index: 0 });
@@ -743,13 +765,24 @@ describe('gamepad remap bindings', () => {
 // PER-AXIS INVERT — pure transform + composition with remap (4 toggles).
 // ---------------------------------------------------------------------------
 describe('gamepad per-axis invert', () => {
-  it('INVERTIBLE_AXES is exactly the four stick-axis outputs', () => {
-    expect([...INVERTIBLE_AXES].sort()).toEqual(['lx', 'ly', 'rx', 'ry']);
+  // DERIVED MEMBERSHIP rather than a re-typed list: the invertible set IS "every
+  // cv output that is a stick axis" — the cv outputs minus the two unipolar
+  // triggers, whose 0..1 travel has no sign to flip. A new stick axis enrols
+  // itself; one that forgets to join INVERTIBLE_AXES fails here.
+  const UNIPOLAR_CV = ['lt', 'rt'];
+  const stickAxisIds = GAMEPAD_OUTPUTS
+    .filter((o) => o.type === 'cv' && !UNIPOLAR_CV.includes(o.id))
+    .map((o) => o.id);
+
+  it('INVERTIBLE_AXES is exactly the BIPOLAR stick-axis outputs (derived from the port table)', () => {
+    expect([...INVERTIBLE_AXES].sort()).toEqual([...stickAxisIds].sort());
   });
 
-  it('isInvertibleAxis is true only for the four stick axes', () => {
-    for (const id of ['lx', 'ly', 'rx', 'ry']) expect(isInvertibleAxis(id)).toBe(true);
-    for (const id of ['lt', 'rt', 'a', 'du', 'start', 'nope']) expect(isInvertibleAxis(id)).toBe(false);
+  it('isInvertibleAxis is true for exactly the bipolar stick axes', () => {
+    for (const id of stickAxisIds) expect(isInvertibleAxis(id), id).toBe(true);
+    for (const id of [...UNIPOLAR_CV, 'a', 'du', 'start', 'nope']) {
+      expect(isInvertibleAxis(id), id).toBe(false);
+    }
   });
 
   it('applyInvert negates the value (v → -v) when the axis flag is set', () => {
@@ -1042,5 +1075,168 @@ describe('gamepad built-in presets', () => {
     // The measured stick calibration travels with the preset.
     expect(target.leftStickCalibration?.deadzone).toBe(0.1);
     expect(target.rightStickCalibration?.maxX).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// THE VKB GLADIATOR EVO R — the owner's flight stick, from measured hardware.
+//
+// Every number below was captured on the real device (browser console,
+// `navigator.getGamepads()`), not invented:
+//
+//   * TEN axes are reported, so the browser is NOT collapsing the stick to the
+//     4-axis `standard` mapping.
+//   * Physical axis 5 is the TWIST, and it is an ordinary full-range bipolar
+//     axis: rest 0.000, full twist one way -1.000, the other way +1.000.
+//   * Physical axis 1 RESTS AT -0.177 — genuinely off-centre at rest, and it
+//     never moves more than ~0.011 while the stick is being twisted.
+//   * Physical axis 0 (the primary X) is dragged to ~0.26 by a full twist,
+//     because you cannot twist this stick without leaning on it a little.
+// ---------------------------------------------------------------------------
+describe('VKB Gladiator EVO R (measured hardware)', () => {
+  /** A 10-axis reading with all buttons released — the shape this device sends. */
+  const evoR = (axes: number[]): RawGamepadReading => ({
+    axes,
+    buttons: Array.from({ length: 20 }, () => ({ value: 0, pressed: false })),
+  });
+  //                        ax0     ax1     2  3  4  ax5    6  7  8  9
+  const REST      = evoR([  0.000, -0.177, 0, 0, 0,  0.000, 0, 0, 0, 0]);
+  const TWIST_POS = evoR([  0.261, -0.163, 0, 0, 0,  1.000, 0, 0, 0, 0]);
+  const TWIST_NEG = evoR([ -0.123, -0.167, 0, 0, 0, -1.000, 0, 0, 0, 0]);
+
+  // -------------------------------------------------------------------------
+  // THE DIAGNOSIS. A POSITIVE CONTROL on the DETECTOR, run against the real
+  // numbers, recording a NEGATIVE finding: the learn path picks axis 5 correctly,
+  // so "the twist cannot be assigned" was never a detection failure. (The card
+  // diffs the CURRENT reading against the reading captured WHEN YOU ARMED —
+  // `prev` is the arm baseline, not the previous frame — so a full ±1 twist
+  // clears the 0.5 threshold with room to spare.) The real defect was in the
+  // GESTURE that arms the listener; see GamepadMappingBody's AXIS_GESTURES.
+  // -------------------------------------------------------------------------
+  it('the armed learn listener picks the TWIST (axis 5), both directions', () => {
+    expect(detectChangedControl(REST, TWIST_POS, { only: 'axis' }))
+      .toEqual({ kind: 'axis', index: 5 });
+    expect(detectChangedControl(REST, TWIST_NEG, { only: 'axis' }))
+      .toEqual({ kind: 'axis', index: 5 });
+  });
+
+  it('the primary-X drag a twist causes never out-votes the twist', () => {
+    // Axis 0 reaches 0.261 during a full twist — real movement the owner can feel
+    // — but it is a fifth of the twist's travel and below the threshold, so it can
+    // neither win the ranking nor capture the bind on its own.
+    const xOnly = evoR([0.261, -0.177, 0, 0, 0, 0.000, 0, 0, 0, 0]);
+    expect(detectChangedControl(REST, xOnly, { only: 'axis' })).toBeNull();
+    expect(Math.abs(0.261 - 0.0)).toBeLessThan(REMAP_AXIS_THRESHOLD);
+  });
+
+  it('the off-centre resting axis 1 never captures a bind by sitting still', () => {
+    // NEGATIVE CONTROL, and the sharp one: axis 1 sits at -0.177 forever. Because
+    // detection diffs against the ARM BASELINE (which also read -0.177), a
+    // permanently off-centre axis contributes a delta of ~0, not 0.177.
+    const idle = evoR([0.006, -0.170, 0, 0, 0, 0.000, 0, 0, 0, 0]);
+    expect(detectChangedControl(REST, idle, { only: 'axis' })).toBeNull();
+  });
+
+  // -------------------------------------------------------------------------
+  // THE AUX STICK — the owner's actual request: a third X/Y pair, twist on X,
+  // Y left unpatched.
+  // -------------------------------------------------------------------------
+  const shape = (outputId: string, reading: RawGamepadReading, bindings: RemapBindings) =>
+    shapeOutputValue({
+      outputId,
+      outputType: 'cv',
+      control: bindingForOutput(outputId, bindings),
+      reading,
+      calibrated: null,
+      invert: undefined,
+    });
+
+  it('AX bound to axis 5 follows the twist across the FULL ±1 range', () => {
+    const bindings: RemapBindings = { ax: { kind: 'axis', index: 5 } };
+    expect(shape('ax', REST, bindings)).toBe(0);
+    expect(shape('ax', TWIST_POS, bindings)).toBeCloseTo(1, 6);
+    expect(shape('ax', TWIST_NEG, bindings)).toBeCloseTo(-1, 6);
+    // Monotonic in between rather than only correct at the extremes — half a
+    // twist lands near half scale, neither pinned nor dead.
+    const half = evoR([0.13, -0.17, 0, 0, 0, 0.5, 0, 0, 0, 0]);
+    const q = shape('ax', half, bindings);
+    expect(q).toBeGreaterThan(0.4);
+    expect(q).toBeLessThan(0.6);
+  });
+
+  it('⚠ AY, left UNBOUND, reads EXACTLY 0 at rest AND through every motion', () => {
+    // THE BUG THIS DESIGN COULD HAVE SHIPPED. If an unbound output fell through to
+    // a default physical axis index, `ay` would sit at a constant -0.177 on this
+    // hardware — a live negative CV on a jack the owner believes is unpatched.
+    const bindings: RemapBindings = { ax: { kind: 'axis', index: 5 } };
+    const pressed: RawGamepadReading = {
+      axes: TWIST_POS.axes,
+      buttons: Array.from({ length: 20 }, () => ({ value: 1, pressed: true })),
+    };
+    const motions: [string, RawGamepadReading][] = [
+      ['rest', REST], ['twist +', TWIST_POS], ['twist -', TWIST_NEG], ['buttons held', pressed],
+    ];
+    for (const [name, r] of motions) {
+      expect(shape('ay', r, bindings), `ay must be silent (${name})`).toBe(0);
+    }
+    // Silent even with an INVERT flag set — invert must not resurrect an unbound
+    // output by negating a fall-through value into existence.
+    expect(shapeOutputValue({
+      outputId: 'ay',
+      outputType: 'cv',
+      control: bindingForOutput('ay', bindings),
+      reading: TWIST_POS,
+      calibrated: null,
+      invert: { ay: true },
+    })).toBe(0);
+  });
+
+  it('binding AX does not disturb the natural sticks', () => {
+    const bindings: RemapBindings = { ax: { kind: 'axis', index: 5 } };
+    expect(shape('lx', TWIST_POS, bindings)).toBeCloseTo(applyDeadzone(0.261), 6);
+    // LY is the natural Y axis, so it is sign-flipped: the resting -0.177 reads
+    // POSITIVE. (This is the UN-calibrated path; calibration's captured rest
+    // centre is what actually zeroes a stick that rests off-centre.)
+    expect(shape('ly', REST, bindings)).toBeCloseTo(-applyDeadzone(-0.177), 6);
+  });
+
+  // -------------------------------------------------------------------------
+  // THE PRESET — offered in the picker, never auto-applied on a device match.
+  // -------------------------------------------------------------------------
+  const GLADIATOR_EVO_R = 'Gladiator EVO R (twist → AUX X)';
+
+  it('ships a Gladiator EVO R preset that puts the twist on AX and leaves AY unbound', () => {
+    const preset = GAMEPAD_PRESETS.find((p) => p.name === GLADIATOR_EVO_R);
+    expect(preset, `a preset named "${GLADIATOR_EVO_R}" must exist`).toBeDefined();
+    expect(preset!.mapping.bindings?.ax).toEqual({ kind: 'axis', index: 5 });
+    expect(preset!.mapping.bindings?.ay, 'AY must be left unbound by the preset').toBeUndefined();
+  });
+
+  it('applying the preset binds AX, and clearing it restores the default silence', () => {
+    // POSITIVE CONTROL, both directions: the state genuinely CHANGES on apply and
+    // genuinely reverts, so a preset that did nothing could not pass this.
+    const data: GamepadData = {};
+    const preset = GAMEPAD_PRESETS.find((p) => p.name === GLADIATOR_EVO_R)!;
+
+    expect(bindingForOutput('ax', data.bindings)).toBeUndefined();
+    expect(shape('ax', TWIST_POS, data.bindings ?? {})).toBe(0);
+
+    applyMapping(data, preset.mapping);
+    expect(bindingForOutput('ax', data.bindings)).toEqual({ kind: 'axis', index: 5 });
+    expect(shape('ax', TWIST_POS, data.bindings!)).toBeCloseTo(1, 6);
+    expect(bindingForOutput('ay', data.bindings)).toBeUndefined();
+    expect(shape('ay', TWIST_POS, data.bindings!)).toBe(0);
+
+    applyMapping(data, {});
+    expect(bindingForOutput('ax', data.bindings)).toBeUndefined();
+    expect(shape('ax', TWIST_POS, data.bindings ?? {})).toBe(0);
+  });
+
+  it('applying the preset twice in a row is safe and idempotent', () => {
+    const data: GamepadData = {};
+    const preset = GAMEPAD_PRESETS.find((p) => p.name === GLADIATOR_EVO_R)!;
+    applyMapping(data, preset.mapping);
+    expect(() => applyMapping(data, preset.mapping)).not.toThrow();
+    expect(bindingForOutput('ax', data.bindings)).toEqual({ kind: 'axis', index: 5 });
   });
 });

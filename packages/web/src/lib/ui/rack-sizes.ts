@@ -60,7 +60,16 @@ export const RACK_SIZE_DEFAULTS: Record<string, { size: RackSize; hp: number }> 
   // rack-sizing.test.ts DYNAMIC_SIZED. Their DEFAULT/MIN constants are rounded
   // to 180-multiples so they still land on-grid out of the box.
   frogger: { size: '2u', hp: 2 }, // 380×260px
-  gamepad: { size: '2u', hp: 2 }, // 267×280px
+  // GAMEPAD — bumped 2u→3u when the AUX stick's `ax`/`ay` jacks landed. The card
+  // packs two stick pads, their remap/invert/set-centre rows, the calibration and
+  // mapping rows, two trigger bars, twelve button LEDs and the slot picker over a
+  // PatchPanel that now carries TWENTY ports, and it was already sitting on the
+  // 2u tile's 360px ceiling: adding the two jacks put `div.body` 28.9 CSS px past
+  // the card's BOTTOM edge (measured by the card-overflow sweep; horizontal
+  // overflow stayed 0, so the 2hp width is still right). Same remedy the `adsr`
+  // entry above took when its glyph outgrew the 1u tile — the content genuinely
+  // grew, so the tile does.
+  gamepad: { size: '3u', hp: 2 }, // ~389×360px natural → 360×540 tile
   gatemaiden: { size: '1u', hp: 1 }, // 199×200px
   grainsOfVision: { size: '3u', hp: 4 }, // 720×540px — 2-col: OUT preview left, GRAIN/FEEDBACK/REVERB/COMP single-row fader sections right (widened 2hp→4hp so ~19 controls fit; was 2hp/3u where the 967px fader stack overflowed the 540px tier)
   graphicEq: { size: '2u', hp: 2 }, // 360×360px — Winamp-style VU-meter video output
