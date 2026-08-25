@@ -55,8 +55,27 @@
   //     lamp's, and the plugin latency into the PLUGIN lamp's.
   //
   //   `state saved in patch · … KB` / `state too large …` — a size and a
-  //     warning. It is the SAVED lamp, and the dark half is the one that
-  //     matters: an unsaveable blob means the plugin returns EMPTY next load.
+  //     warning. It is a CLAUSE ON THE PLUGIN LAMP, not a lamp of its own, and
+  //     that is a MEASURED decision rather than a tidy-up: it started as a
+  //     fourth `StatusLed` and the dock width gate priced it out at 44 CSS px
+  //     of empty plate against a 40 px ceiling. A lamp's dot and its flex gaps
+  //     are chrome `contentW` cannot see (it walks cell boxes and TEXT ranges)
+  //     while `bodyW`'s `max-content` includes them, so on a TWO-cell face the
+  //     lamp row is the widest thing on the plate. The half that matters — an
+  //     unsaveable blob means the plugin returns EMPTY next load — is a fact
+  //     about the mounted plugin, so it belongs in the mounted plugin's own
+  //     sentence. `vst-face-model.test.ts` asserts it is still reachable there,
+  //     in both directions, because "relocated" and "deleted" look identical
+  //     from a green run.
+  //
+  // ⚠ AND THIS BODY PAINTS NO PANEL CHROME — no border, no background, no
+  // horizontal padding. es9's body can afford the bordered-panel look because
+  // twenty-four cells make its plate 780 px wide; two cells do not. Every one
+  // of those pixels sits to the RIGHT of the rightmost ink and is charged to
+  // the face as "useless grey space" (owner ruling 2026-08-17). Stripped, this
+  // face measures 33 px of slack — the platform FLOOR that moog911, vca,
+  // wavetableVco and unityscalemathematik all sit at, i.e. `.faceplate-body`'s
+  // own padding and nothing of ours.
   //
   //   `{snap.mounted.plugin.name}` — the card printed the mounted plugin's name
   //     beside the buttons. It is NOT reproduced as a text node: the picker
@@ -90,8 +109,6 @@
     vstLoadLit,
     vstPluginDetail,
     vstPluginLit,
-    vstSavedDetail,
-    vstSavedLit,
   } from './vst-status-model';
 
   let { nodeId }: { nodeId: string } = $props();
@@ -240,7 +257,7 @@
       caption="PLUGIN"
       lit={vstPluginLit(snap)}
       tone={snap.mountError ? 'warn' : 'accent'}
-      detail={vstPluginDetail(snap)}
+      detail={vstPluginDetail(snap, persisted)}
       testid="vst-led-plugin-{nodeId}"
     />
     <StatusLed
@@ -250,31 +267,48 @@
       detail={vstLoadDetail(snap)}
       testid="vst-led-load-{nodeId}"
     />
-    <StatusLed
-      caption="SAVED"
-      lit={vstSavedLit(persisted)}
-      detail={vstSavedDetail(persisted)}
-      testid="vst-led-saved-{nodeId}"
-    />
   </span>
 </div>
 
 <style>
+  /* ⚠ EVERY NUMBER HERE IS A WIDTH BUDGET, NOT A TASTE. `.faceplate-body` is
+     `width: max-content`, and the dock gate measures `bodyW - contentW` where
+     `contentW` walks CELL BOXES AND TEXT RANGES ONLY — so any chrome to the
+     RIGHT of the rightmost ink is width the content measurement is
+     structurally blind to and the gate charges to the face. On a two-cell face
+     this body IS the widest row, so its chrome lands directly in the "useless
+     grey space" the owner ruling forbids.
+
+     MEASURED, dock, CSS px, on this branch:
+
+       first authoring (4 lamps, border, `padding: 6px 10px`)   slack 44  RED
+       3 lamps, border, `padding: 4px 6px`                      slack 40  at ceiling
+       3 lamps, border, `padding: 0`                            slack 34
+       3 lamps, NO border/background, `padding: 2px 0`          slack 33  ← shipped
+
+     33 is the PLATFORM FLOOR, not a lucky number: the spec's own measurement
+     table records moog911, vca, wavetableVco and unityscalemathematik all at
+     exactly 33, which is `.faceplate-body`'s own padding. So this face now
+     contributes ZERO — there is nothing further to win here, and 7 px of
+     margin under the 40 px ceiling is the same margin every other narrow face
+     in the fleet has. If this box ever needs to grow, RE-MEASURE the dock
+     scene; do not assume the slack absorbed it, and do not reach for a
+     FACE_WIDTH_EXEMPTIONS entry — there is nothing here that consumes width. */
   .vst-face-body {
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: 8px;
     flex-wrap: wrap;
-    padding: 6px 10px;
-    border: 1px solid var(--border, #333);
-    border-radius: 3px;
-    background: var(--panel, #1b1b1b);
+    /* VERTICAL ONLY. Horizontal padding on this element is width the gate
+       charges to the face, because it sits to the RIGHT of the rightmost ink;
+       vertical padding is free. */
+    padding: 2px 0;
   }
   .hint {
     margin: 0;
     font-size: 10px;
     line-height: 1.3;
-    max-width: 34ch;
+    max-width: 30ch;
     color: var(--muted, #888);
   }
   .picker-row { display: flex; gap: 4px; align-items: center; }
@@ -310,7 +344,7 @@
   .lamps {
     display: inline-flex;
     align-items: center;
-    gap: 12px;
+    gap: 8px;
     margin-left: auto;
   }
 </style>

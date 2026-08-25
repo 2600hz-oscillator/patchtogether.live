@@ -81,14 +81,31 @@ export function vstPluginLit(snap: VstOwnerSnapshot): boolean {
 }
 
 /**
- * The PLUGIN lamp's detail — which plugin is live, and what it costs.
+ * The PLUGIN lamp's detail — which plugin is live, what it costs, and whether
+ * its own state travels with the patch.
  *
  * ⚠ THIS IS WHERE THE `latency … smp` READOUT WENT, and it is the one number on
  * this surface a player might genuinely act on: an insert reporting thousands
  * of samples is a look-ahead limiter, and knowing that is the difference
  * between "the rack drifted" and "this plugin is doing its job".
+ *
+ * ⚠ AND IT IS WHERE THE PERSISTENCE STATUS WENT TOO, which started as a fourth
+ * SAVED lamp and was FOLDED IN after measuring the plate. The dock width gate
+ * read 44 CSS px of empty plate against a 40 px ceiling (content 486, body 530)
+ * — because a lamp's DOT and its flex gaps are chrome that `contentW` cannot
+ * see (it measures cell boxes and TEXT ranges) while `bodyW`'s `max-content`
+ * includes them. On a face with twenty-four cells that chrome is a rounding
+ * error; on a face with TWO it is the widest row on the plate. Owner ruling
+ * 2026-08-17 is that width must be EARNED, and a lamp whose DARK state is
+ * ambiguous between "nothing mounted yet" and "the blob was too large" does not
+ * earn it — the half that matters is a property OF the mounted plugin, so it
+ * belongs in the mounted plugin's own sentence. Nothing was lost: the "returns
+ * EMPTY next load" warning is stated here in full.
  */
-export function vstPluginDetail(snap: VstOwnerSnapshot): string {
+export function vstPluginDetail(
+  snap: VstOwnerSnapshot,
+  persisted?: { pluginId?: string; stateBytes?: number; stateB64?: string },
+): string {
   if (snap.mountError) {
     return `${snap.mountError.pluginId} failed to mount: ${snap.mountError.message}`;
   }
@@ -97,7 +114,8 @@ export function vstPluginDetail(snap: VstOwnerSnapshot): string {
     return 'nothing is mounted — the bridge passes audio through bit-transparently';
   }
   const p = snap.mounted.plugin;
-  return `${p.name} by ${p.manufacturer} is mounted, reporting ${snap.mounted.latencySamples} samples of latency`;
+  return `${p.name} by ${p.manufacturer} is mounted, reporting ${snap.mounted.latencySamples} `
+    + `samples of latency. ${vstSavedDetail(persisted)}`;
 }
 
 /**
@@ -139,13 +157,16 @@ function peakDb(v: number[] | undefined): string {
 }
 
 /**
- * The SAVED lamp — is this plugin's own state travelling with the patch?
+ * IS this plugin's own state travelling with the patch?
  *
- * ⚠ IT IS A THREE-WAY FACT ON A TWO-WAY LAMP, and the dark half is the one that
- * matters: `stateBytes` present with NO `stateB64` means the blob was too large
- * to keep in the patch, so the plugin will come back as an EMPTY instance on
- * the next load. That is a real consequence a player must be able to discover,
- * which is why the sentence spells it out rather than reporting a size.
+ * ⚠ THIS IS A THREE-WAY FACT, WHICH IS EXACTLY WHY IT IS NO LONGER A LAMP. It
+ * had one; the dark half was ambiguous between "nothing mounted yet" and "the
+ * blob was too large", and the second of those is the only one that matters —
+ * `stateBytes` present with NO `stateB64` means the plugin comes back as an
+ * EMPTY instance on the next load. A two-state picture cannot say that, and the
+ * plate could not afford a fourth lamp's chrome (see `vstPluginDetail`). The
+ * predicate survives because the SENTENCE below needs it and because the unit
+ * lane asserts all three regimes produce three different sentences.
  */
 export function vstSavedLit(persisted: { stateBytes?: number; stateB64?: string } | undefined): boolean {
   return persisted?.stateB64 !== undefined;

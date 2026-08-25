@@ -363,7 +363,14 @@ describe('the LOAD lamp — where the meter row went', () => {
   });
 });
 
-describe('the SAVED lamp — where the persisted-state size went', () => {
+describe('the PERSISTENCE sentence — folded INTO the PLUGIN lamp, not its own', () => {
+  // ⚠ THIS WAS A FOURTH LAMP AND THE DOCK WIDTH GATE PRICED IT OUT: 44 CSS px
+  // of empty plate against a 40 px ceiling (content 486, body 530), because a
+  // lamp's dot and its flex gaps are chrome `contentW` cannot see. The
+  // predicate survives because the sentence needs it; the picture did not earn
+  // its width on a two-cell face. These pins are what keep the FOLD honest —
+  // the information has to still be reachable, or the width fix deleted a
+  // finding instead of relocating it.
   it('lights only when the state blob itself travels', () => {
     expect(vstSavedLit({ stateBytes: 2048, stateB64: 'AAAA' })).toBe(true);
     expect(vstSavedLit({ stateBytes: 900_000 })).toBe(false);
@@ -381,11 +388,47 @@ describe('the SAVED lamp — where the persisted-state size went', () => {
   });
 
   it('the three regimes produce three different sentences', () => {
-    // ⚠ PERMANENT NEGATIVE CONTROL over the same predicate the lamp calls.
+    // ⚠ PERMANENT NEGATIVE CONTROL over the same predicate the fold calls.
     const none = vstSavedDetail(undefined);
     const saved = vstSavedDetail({ pluginId: 'x', stateBytes: 2048, stateB64: 'AAAA' });
     const huge = vstSavedDetail({ pluginId: 'x', stateBytes: 900_000 });
     expect(new Set([none, saved, huge]).size).toBe(3);
     expect(saved).toContain('2.0 KB');
+  });
+
+  it('the PLUGIN lamp CARRIES it — the fold relocated the finding, not deleted it', () => {
+    // ⚠ THE INVERSE ASSERTION THE RELOCATION OWES. "Moved" and "dropped" look
+    // identical from a green run, so this asserts the too-large warning is
+    // REACHABLE on the surviving lamp rather than merely absent from the plate.
+    const d = vstPluginDetail(
+      snapshot({ state: 'connected', mounted: mounted() }),
+      { pluginId: 'x', stateBytes: 900_000 },
+    );
+    expect(d).toContain('AUDelay');
+    expect(d).toContain('too large');
+    expect(d).toContain('save presets inside the plugin');
+  });
+
+  it('the PLUGIN lamp says something DIFFERENT when the state DOES travel', () => {
+    // The other direction of the same control: if the fold hard-coded the
+    // warning, this would be identical to the case above.
+    const saved = vstPluginDetail(
+      snapshot({ state: 'connected', mounted: mounted() }),
+      { pluginId: 'x', stateBytes: 2048, stateB64: 'AAAA' },
+    );
+    const huge = vstPluginDetail(
+      snapshot({ state: 'connected', mounted: mounted() }),
+      { pluginId: 'x', stateBytes: 900_000 },
+    );
+    expect(saved).not.toBe(huge);
+    expect(saved).toContain('travels with the patch');
+  });
+
+  it('an UNMOUNTED plugin lamp never mentions persistence at all', () => {
+    // Nothing is mounted, so there is no plugin whose state could travel —
+    // appending a persistence clause there would be a sentence about nothing.
+    const d = vstPluginDetail(snapshot({ state: 'connected' }), { pluginId: 'x', stateBytes: 900_000 });
+    expect(d).toContain('bit-transparently');
+    expect(d).not.toContain('too large');
   });
 });
