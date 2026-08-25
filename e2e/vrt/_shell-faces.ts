@@ -5631,6 +5631,49 @@ export interface FaceRackPristine {
  * — and "the rack came back wrong" is invisible in a PNG until a baseline moves.
  */
 export async function sampleFaceRackPristine(page: Page): Promise<FaceRackPristine> {
+  // ⚠ WAIT FOR THE PINNED RACK, DO NOT RACE IT. `loadFaceRack` returns when the
+  // app's hooks exist, which is BEFORE the `?shell=1` workflow rack has finished
+  // constructing. Sampling a half-built rack would make every subsequent reset
+  // restore a half-built rack — and it would do it silently, because the scenes
+  // spawn their own node afterwards and the picture would look plausible. The
+  // channel lanes are what `spawnFace` waits on, so they are what this waits for.
+  await page.waitForFunction(
+    () => {
+      const w = globalThis as unknown as {
+        __patch?: { nodes: Record<string, { data?: { columns?: Record<string, string[]> } } | undefined> };
+      };
+      return !!w.__patch?.nodes['pinned-mixmstrs']?.data?.columns;
+    },
+    undefined,
+    { timeout: 30_000 },
+  );
+  // ⚠ AND WAIT FOR THE NODE SET TO STOP MOVING, which is a STRICTER condition
+  // than "the lanes exist" and is load-bearing for one branch in particular.
+  // `singletonAdoptWhy` does not spawn — it adopts a node the rack spawns on its
+  // own, asynchronously. If that node arrived AFTER this sample it would not be
+  // in the pristine set, so the very first reset would DELETE it, and the next
+  // adopt would refuse with "expects EXACTLY ONE existing instance, found []" —
+  // a failure that names the module and blames the wrong thing. Sampling a
+  // QUIESCENT rack removes the race rather than widening a timeout at it.
+  await expect
+    .poll(
+      async () => {
+        const a = await page.evaluate(() => Object.keys(
+          (globalThis as unknown as { __patch: { nodes: Record<string, unknown> } }).__patch.nodes,
+        ).sort().join(','));
+        await settle(page);
+        const b = await page.evaluate(() => Object.keys(
+          (globalThis as unknown as { __patch: { nodes: Record<string, unknown> } }).__patch.nodes,
+        ).sort().join(','));
+        return a === b ? a : `${a}|MOVED|${b}`;
+      },
+      {
+        message: 'the pinned rack never stopped adding nodes — a pristine sample taken while it '
+          + 'is still constructing would omit a node the first reset then DELETES',
+        timeout: 30_000,
+      },
+    )
+    .not.toContain('|MOVED|');
   // Two frames so the workflow's own initial framing has landed: reading
   // mid-transition would pin a viewport no boot ever ends on.
   await settle(page);
@@ -5666,6 +5709,22 @@ export async function sampleFaceRackPristine(page: Page): Promise<FaceRackPristi
       nodes,
       edges: Object.keys(w.__patch.edges),
     };
+  }).then((p) => {
+    // NON-VACUITY, both ways. An empty sample would make `resetFaceRack` a
+    // no-op that passes every assertion it makes about itself, and a lane 1 that
+    // already held members at boot would make the reset restore a rack the
+    // scenes cannot spawn into.
+    expect(
+      Object.keys(p.nodes).length,
+      'the pristine rack sample is EMPTY — every reset built from it would be a no-op that '
+        + 'still satisfied its own postcondition',
+    ).toBeGreaterThan(0);
+    expect(
+      p.nodes['pinned-mixmstrs']?.columns?.['1'] ?? null,
+      'a fresh rack must have an EMPTY channel lane 1 — `spawnFace` waits on a member COUNT, '
+        + 'so a pristine sample that already holds members would hand every scene the wrong node',
+    ).toEqual([]);
+    return p;
   });
 }
 
