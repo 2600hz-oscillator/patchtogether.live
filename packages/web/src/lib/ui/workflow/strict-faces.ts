@@ -4352,6 +4352,61 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // not belong on a module PR; #2173 repaired one of the three.
   'midiclock',
 
+  // ── LAUNCHPAD CONTROL — the SECOND meta-domain face, and the first
+  //    promotion that is a DELETION ──────────────────────────────────────────
+  //
+  // Every other entry in this set was ADDITIVE: author a `face`, add the name,
+  // and the lane swaps a placeholder for a faceplate. This module was in
+  // `NON_SHELL_LANE_TYPES`, and that set short-circuits `laneRenderKind` two
+  // lines BEFORE `migrated` is consulted (`legacy-fallback.ts`) — so adding the
+  // name here while the carve-out stood would have promoted a module whose lane
+  // still rendered its verbatim card. The carve-out entry is deleted in the
+  // same commit, and that deletion IS the promotion.
+  //
+  // ⚠ THE CARVE-OUT WAS RIGHT TO EXIST, FOR A REASON ITS OWN TEXT DID NOT GIVE,
+  // and the distinction is why it can retire now. Its stated reason was "a lane
+  // face that is a grid / launcher / mapper, not a ranked-knob skeleton". That
+  // is FALSE of this module and has been since the LEFT+RIGHT consolidation:
+  // the card is four buttons, a status line and a docs hint — there is no
+  // canvas, no pad matrix and no colour legend anywhere in it (the legend moved
+  // to `LaunchpadDocs.svelte`). What the entry actually protected was the
+  // second half of its sentence — that a PLACEHOLDER tile would be lossy, since
+  // `ModuleShellPlaceholder` offers no route to the four gestures. True, and
+  // discharged rather than argued away: two of the gestures are ranked cells
+  // that reach the lane tile, and the other two are in the extension body.
+  // This is cameraInput's shape exactly (its picker clause was true and was
+  // ANSWERED by building the surface that carries it).
+  //
+  // ⚠ THE ALTERNATIVE — keep the carve-out, author a DOCK-ONLY face — was
+  // measured and refused. `DockFullView` gates on `migrated` alone, so it
+  // works; what it ships is TWO DESIGNS for one module. The lane would keep the
+  // 320-340 px legacy card and its nine-branch status line while the dock
+  // painted a compact faceplate with neither, on the same node at the same
+  // moment; the tile would keep its card's native box in a rack of RACKLINE
+  // tiles forever (`Canvas.svelte`'s two sizing sites also key off
+  // NON_SHELL_LANE_TYPES); and the resting-text ruling — which is about
+  // faceplates, "the legacy cards are untouched" — would then apply to half a
+  // module. #1739's owner ruling on the `m` tray is the same complaint one
+  // surface earlier, and its fix was to make the surfaces AGREE.
+  //
+  // THE FACE: two ranked `action` cells (SINGLE, then PAIR — see the def for
+  // why that asymmetry is measured rather than preferred) plus a dock-only
+  // `fullViewBody` carrying the three things that cannot be cells: a BIND
+  // control whose two presses do opposite things, a four-role segment that
+  // exists only in single-unit mode, and the hardware/permission errors. ONE
+  // band, no rail, `glyph: 'none'` (no outputs at all, so every other literal
+  // is a dead glyph).
+  //
+  // ⚠ ZERO ATTEST, ZERO ART, ZERO DOCS — all three structural. `lib/meta/**`
+  // appears in no clause of the WebGL basis (only `video/module-registry.ts` is
+  // in it, not `meta/`); there is no audio path to fingerprint; and
+  // `MetaModuleDef` has no `docs` field at all, so `STRICT_DOCS` cannot contain
+  // this module however well documented it is — and it is the best-documented
+  // module in its cohort, with a hand-authored route page at
+  // /docs/modules/launchpadControlLeft. That gap is real and is NOT this PR's
+  // to close: `strict-docs.ts` is explicit that whoever adds `docs?` to
+  // `MetaModuleDef` must re-point `module-annotate.spec.ts` in the same diff.
+  'launchpadControlLeft',
   // moog960 — the System 55 step sequencer, and the FIRST GRID face: 24 step
   // pots in 3 rows × 8 columns, plus a per-row RANGE and a per-column MODE.
   //

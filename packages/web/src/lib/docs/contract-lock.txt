@@ -1469,6 +1469,8 @@ kria family kria-root kind=other prefix=kria-root
 kria family kria-scale kind=other prefix=kria-scale
 kria family kria-time-division kind=other prefix=kria-time-division
 launchpadControlLeft meta domain=meta
+launchpadControlLeft family launchpad-control-pair kind=other prefix=launchpad-control-pair
+launchpadControlLeft family launchpad-control-single kind=other prefix=launchpad-control-single
 lfo meta domain=audio
 lfo in clock gate edge=trigger
 lfo in depth_cv cv param=depth cvScale=linear

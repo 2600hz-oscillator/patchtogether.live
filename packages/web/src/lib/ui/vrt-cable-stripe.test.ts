@@ -200,8 +200,28 @@ const PENDING_PALETTE_REGEN: readonly string[] = [];
  * "card renders no .stripe element"). It is NOT the hardcoded-hex divergence
  * this list warns about; there is no hex, and no stripe.
  */
+// ⚠ `launchpadControlLeft` JOINED 2026-08-24, and it joined for the reason this
+// list already documents for `chromaconsole` / `electraControl` / `matrixMix`: a
+// control surface for an EXTERNAL DEVICE, with zero ports both ways, so there is
+// no cable for a stripe to colour and `LaunchpadControlCard.svelte` renders no
+// `.stripe` element at all (`grep -c stripe` → 0). It appears here now only
+// because the module was drained from `EXEMPT_FROM_VRT` in the same PR that gave
+// it a faceplate — before that it had no baseline for `measure()` to walk.
+//
+// ⚠ AND THE REPORTED REASON IS NOT THE ONE ABOVE, WHICH IS WORTH KNOWING. The
+// skip line reads *"no card component (LaunchpadControlLeftCard.svelte)"*, not
+// "no stripe": `cardBasenameByType()` matches `/^\s*type:\s*'([^']+)'/`, and this
+// def writes `type: LAUNCHPAD_CONTROL_TYPE` (a constant, so saved LEFT nodes and
+// the `NON_SHELL_LANE_TYPES` anchor could never re-type it independently). So the
+// def never enters the explicit map and the resolver falls back to the
+// CONVENTIONAL basename, which does not exist. Both facts are true of this module
+// and both put it in the same place, so the entry is right either way — but a def
+// that declared its type as a constant AND whose card DID pin a stripe would be
+// dropped from this gate silently, and that is a blind spot in the resolver
+// rather than in the list. Recorded, not fixed: widening the regex moves
+// `dropped` for the whole tree and belongs in a PR whose subject is this gate.
 const NOT_TOKEN_PINNED_SCENES: readonly string[] = [
-  'audioOut', 'chromaconsole', 'electraControl', 'matrixMix', 'mixer',
+  'audioOut', 'chromaconsole', 'electraControl', 'launchpadControlLeft', 'matrixMix', 'mixer',
   'moog903a', 'moog904b', 'moog904c', 'moog905', 'moog907a', 'moog911a', 'moog912',
   'moog914', 'moog921a', 'moog921b', 'moog923', 'moog956', 'moog960', 'moog961',
   'moog962', 'moog984', 'moog992', 'moog993', 'moog994', 'moog995',
