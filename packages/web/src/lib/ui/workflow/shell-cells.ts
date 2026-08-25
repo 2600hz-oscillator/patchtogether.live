@@ -169,6 +169,7 @@ import {
 } from '$lib/ui/modules/matrixmix-cell-actions';
 import { midiclockConnect } from '$lib/ui/modules/midiclock-cell-actions';
 import { es9Connect, es9Disconnect } from '$lib/ui/modules/es9-cell-actions';
+import { vstConnect, vstDisconnect } from '$lib/ui/modules/vst-cell-actions';
 import {
   midiCvBuddyChannelValue,
   midiCvBuddyConnect,
@@ -2459,6 +2460,89 @@ const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
       mode: 'trigger',
       probe: { effect: { kind: 'audition', seam: 'engine-message' } },
       onFire: (nodeId) => { es9Disconnect(nodeId); },
+    },
+  },
+
+  // ── THE VST BRIDGE PAIR — the thinnest cell sets in the registry, and that
+  //    is the FINDING rather than an omission ─────────────────────────────────
+  //
+  // `vstInstrumentDef` and `vstFxDef` both declare `params: []`. Unlike es9 —
+  // whose "bespoke surface" turned out to be twenty-two ordinary ParamDefs —
+  // there is genuinely nothing here to rank except gestures, and only TWO of the
+  // gestures can be cells at all. The other five (pick / filter / mount / swap /
+  // unmount / open editor) ride the `vstBridge` extension body, for two reasons
+  // that are mechanical and measured rather than aesthetic:
+  //
+  //   * THE PLUGIN ROSTER IS EMPTY ON EVERY RUNNER. It is the user's installed
+  //     AU library, enumerated by a native helper over a localhost WebSocket, so
+  //     with no helper `snap.plugins` is `[]`. `faces-parity`'s selector branch
+  //     asserts the roster `toBeGreaterThan(1)` and then picks a DIFFERENT
+  //     option, so a `ShellSelectorCell` here would fail deterministically on CI
+  //     forever. This is precisely the "device picker" case the `ShellCellEnv`
+  //     note above says an `env` on `options` would not have unblocked — and the
+  //     reason is not the READ (a module-owned action file reaches `vstSnapshot`
+  //     from a nodeId perfectly well), it is that the roster is a property of the
+  //     machine.
+  //   * THE TEXT FILTER IS NOT AN `entry` CELL. `ShellEntryProbe.effect` must be
+  //     a `node.data` key, and `node.data` rides the Y.Doc — synced to every
+  //     collaborator and saved with the patch. A search box is a private VIEW
+  //     setting; persisting it would re-filter everyone else's screen and dirty
+  //     the patch per keystroke, which is the exact hazard `ShellPanelProbe`'s
+  //     `text` note exists for. (The face-migration inventory called it "the
+  //     typed entry"; that clause is corrected in the same diff.)
+  //
+  // MOUNT / SWAP / UNMOUNT / OPEN EDITOR fail a third, simpler test: all four
+  // exist ONLY while the helper is connected and a plugin is selected, and a
+  // ranked `action` cell must render unconditionally and pass `toBeEnabled()`.
+  //
+  // ⚠ ONE ACTION PAIR, REGISTERED TWICE. The gestures are identical across the
+  // two modules and `vst-cell-actions.ts` derives the only difference
+  // (`sendPlanes`) from the node's own type, so both entries name the same two
+  // functions. They are separate registry entries because SHELL_CELLS is keyed
+  // by module type — which is what lets a future divergence be expressed here
+  // rather than smuggled into a shared closure.
+  vstInstrument: {
+    'vst-connect-{n}': {
+      kind: 'action',
+      label: 'Connect',
+      title: 'Dial the vst-bridge helper app on this machine and open this card\'s plugin session',
+      mode: 'trigger',
+      // ⚠ AN AUDITION, NOT A `data` PROBE — the es9 argument verbatim, and it
+      // applies here for the same structural reason. The connection lives in a
+      // module-level registry keyed by node id, on GRAPH lifetime; it is not a
+      // param and not a `node.data` key, so `readParam` and `readData` are blind
+      // and a `data` probe would pass on a dead button. The obvious state read
+      // (`hasVstBridge` flipping) is the WRONG observable: no CI runner has a
+      // vst-bridge process listening on ws://127.0.0.1:9309, so it would depend
+      // on the machine rather than on the button.
+      probe: { effect: { kind: 'audition', seam: 'engine-message' } },
+      onFire: (nodeId) => { vstConnect(nodeId); },
+    },
+    'vst-disconnect-{n}': {
+      kind: 'action',
+      label: 'Disconnect',
+      title: 'Drop this card\'s helper session without deleting the node — the plugin instance parks and a reconnect re-adopts it',
+      mode: 'trigger',
+      probe: { effect: { kind: 'audition', seam: 'engine-message' } },
+      onFire: (nodeId) => { vstDisconnect(nodeId); },
+    },
+  },
+  vstFx: {
+    'vst-connect-{n}': {
+      kind: 'action',
+      label: 'Connect',
+      title: 'Dial the vst-bridge helper app on this machine and open this card\'s plugin session',
+      mode: 'trigger',
+      probe: { effect: { kind: 'audition', seam: 'engine-message' } },
+      onFire: (nodeId) => { vstConnect(nodeId); },
+    },
+    'vst-disconnect-{n}': {
+      kind: 'action',
+      label: 'Disconnect',
+      title: 'Drop this card\'s helper session without deleting the node — the plugin instance parks and a reconnect re-adopts it',
+      mode: 'trigger',
+      probe: { effect: { kind: 'audition', seam: 'engine-message' } },
+      onFire: (nodeId) => { vstDisconnect(nodeId); },
     },
   },
 

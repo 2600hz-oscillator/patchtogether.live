@@ -4075,6 +4075,78 @@ export const FACES = [
     // `notify()` fires, which needs a gate edge on an input this scene patches
     // nothing into.
   },
+  // ── THE VST BRIDGE PAIR — two scenes each, and the determinism argument is
+  //    es9's, one module family over ────────────────────────────────────────
+  //
+  // ONE band each (`bridge`, holding CONNECT + DISCONNECT). No hero, so nothing
+  // empties it and the post-hero count is the authored count.
+  //
+  // ⚠ THE DETERMINISM ARGUMENT IS THE INVERSE OF THE LEGACY CARD'S, AND THE FACE
+  // IS WHAT SUPPLIES IT. Both defs' factories call `acquireVstBridge`
+  // UNCONDITIONALLY, `SharedArrayBuffer` is present on `/rack` (COOP/COEP for
+  // Faust), so `vstBridgeAvailable()` is true on every runner, the transport
+  // Worker really does spawn, really does fail to reach ws://127.0.0.1:9309, and
+  // reconnects on a 1-5 s backoff forever. On the CARD that makes the status row
+  // phase-dependent — it paints `stateLabel`, alternating "connecting…" ↔
+  // "helper not found" — which is why the card is and stays VRT-exempt.
+  //
+  // THE FACE DOES NOT PAINT IT AT ALL. Every one of those strings is deleted by
+  // the resting-text ruling (see `vst-status-model.ts`, which is where they
+  // went), so what remains on a helperless runner is:
+  //
+  //   * four DARK lamps — `connState` never reaches 'connected', so `linkUp` is
+  //     false, `snap.mounted` is null, `snap.meters` is null and nothing is
+  //     persisted; every lamp's varying text is on `aria-label`/`title`, which
+  //     no baseline reads;
+  //   * the static empty-state hint, because `snap.supported` is true and the
+  //     link is down. ⚠ The picker/mount row is inside the SAME `{#if linkUp}`
+  //     that the hint is the else-branch of, so on CI it never renders at all —
+  //     the one live roster on this surface is structurally absent from the
+  //     image rather than merely stable in it;
+  //   * two cells at their declared labels;
+  //   * the `meter` glyph on `out_l`, fed by a worklet whose rings the worker
+  //     never fills — digital silence, i.e. the same flat centreline every other
+  //     faced module's live glyph draws — and `bootWithFace` freezes the audio
+  //     graph on top of that.
+  //
+  // ⚠ MEASURED TWO WAYS, AND THE SECOND INSTRUMENT FOUND SOMETHING — which is
+  // why it is written out rather than summarised as "deterministic". A single
+  // sampler is what made es9's CARD look clean (325/325 identical samples over
+  // 12 s against 6 MutationObserver transitions in the same window), so this
+  // face was probed with BOTH: an in-page 37 ms sampler over `.faceplate-body`
+  // and a MutationObserver over the same subtree (subtree + childList +
+  // characterData + attributes), both accumulating INSIDE the page.
+  //
+  //   sampler          216-242 samples / ~12,039 ms — ONE distinct value
+  //   MutationObserver 16 records, and EVERY ONE of them is
+  //                    `attr:SPAN.aria-label` or `attr:SPAN.title`
+  //
+  // So the reconnect state machine IS LIVE under the capture, exactly as it is
+  // on the card — the difference is WHERE it lands. Sixteen mutations in twelve
+  // seconds is the BRIDGE lamp's `detail` sentence alternating between
+  // "opening the connection…" and "the helper did not answer", and the
+  // resting-text ruling put that string on `aria-label`/`title`, which no
+  // baseline reads. ZERO records touched `class`, `data-lit`, `characterData`
+  // or `childList`, so the lamp's PICTURE never flips (`lit` is
+  // `state === 'connected'`, unreachable here) and no text node changes.
+  //
+  // That is a stronger claim than "nothing happens", and it is the honest one:
+  // the face is not still, it is UNPAINTED where it moves.
+  //
+  // ⚠ WHAT THESE BASELINES DO **NOT** COVER, stated rather than implied: the
+  // connected state — the plugin picker, its filter, the mount/swap/unmount/
+  // editor row, a lit PLUGIN or LOAD or SAVED lamp. All of it needs a vst-bridge
+  // helper process and an installed AU, which no runner has and which is the
+  // whole reason these modules exist. Their strings are unit-asserted in
+  // `vst-face-model.test.ts` (every string the four lamps can produce, painted
+  // or not), and the surface itself is driven against a REAL mock helper in
+  // `vst-bridge.spec.ts` / `vst-lane-autowire.spec.ts`.
+  //
+  // ⚠ NO `videoFaceWhy` AND NO `simPin` on either. `domain: 'audio'`; the only
+  // canvas on the surface is the shell's own live-audio glyph, which
+  // `bootWithFace` already freezes.
+  { type: 'vstInstrument', pages: 1 },
+  { type: 'vstFx', pages: 1 },
 ] as const;
 
 /**
@@ -4270,6 +4342,7 @@ export const FACES_WITHOUT_SCENES: readonly UnbaselinableFace[] = [
       'packages/web/src/lib/ui/modules/milkdrop-face-model.test.ts',
     ],
   },
+
 ];
 
 /**

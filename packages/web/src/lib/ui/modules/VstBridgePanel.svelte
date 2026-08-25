@@ -131,7 +131,12 @@
     <span class="led" class:on={connState === 'connected'} class:err={connState === 'busy' || connState === 'evicted'}></span>
     <span class="state">{stateLabel}</span>
     {#if connState === 'connected'}
-      <button class="linkish" onclick={() => stopVstBridge(id)}>disconnect</button>
+      <!-- The testid is what `module-docs-lint`'s card-drift leg looks for: the
+           `vst-disconnect` control family the faceplate declares must appear in
+           real UI source, and this button has always been the affordance it
+           names. Adding it is the honest fix (the es9 precedent); dropping the
+           family would be fixing a declaration to satisfy a gate. -->
+      <button class="linkish" data-testid="vst-disconnect-{id}" onclick={() => stopVstBridge(id)}>disconnect</button>
     {:else if connState !== 'connecting' && connState !== 'unsupported'}
       <button class="linkish" data-testid="vst-connect-{id}" onclick={() => restartVstBridge(id, sampleRate(), { clientId: id, sendPlanes })}>connect</button>
     {/if}
