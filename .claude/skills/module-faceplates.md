@@ -819,17 +819,42 @@ geometry is real code and stays in the hash, deliberately.)
   from a different seam — so `'none' + blank tile` and `'none' + live thumb`
   are indistinguishable from the declaration. **Assert `hasVideoSurface`.**
 
-  **THE ACTUAL BLOCKER (#1726): face completeness has no exemption for a param
-  with NO USER CONTROL.** `module-face-lint` loops every `ParamDef` with no
-  filter and no skip-list, a second gate requires each to render exactly one
-  interactive cell, and `ModuleFace` has no `hidden` field. Several video
-  modules carry hidden SYNTHETIC params that exist only so a CV bridge has
-  somewhere to write a gate edge, plus a `freeze` VRT hook — `backdraft` has
-  seven. No faced module has ever had one, so there is no precedent to copy,
-  and since they declare `curve: 'linear'` they would render as continuous
-  rotaries over raw gate swings. Settle that on `ModuleFace` before picking a
-  first video face. Full audit:
-  `.myrobots/plans/faceplate-queue-2026-08-14.md` §16-§17.
+  ⚠ **AND THE "ACTUAL BLOCKER" THIS ENTRY USED TO NAME IS CLOSED. VIDEO FACES
+  ARE THE NORM NOW** — over fifty are promoted, and `vfpgaRunner` (2026-08-24)
+  was the last `generic-face` video module in the fleet. Do not read this
+  section as a refusal; read the three notes below, which are the parts that
+  are still true and still cost time.
+
+  **#1726 is FIXED — the field is `noUserControl`, and it lives ON THE DEF, not
+  on `face`.** The old text said face completeness had no exemption for a param
+  with no user control, so `backdraft`'s seven synthetic CV/gate params would
+  each have demanded a rotary over a raw gate swing. `NoUserControlParam`
+  (`graph/types.ts`) now declares them: `param` must name a live `ParamDef`,
+  `writer` is `'cv-port'` (a port targeting it must EXIST) or `'internal'` (one
+  must NOT), and `why` is required by the TYPE. It INVERTS the gates rather
+  than skipping them — a declared param must rank NOWHERE in `face.order` and
+  render EXACTLY ZERO dock cells, so a mis-declaration is red in the direction
+  it would actually break. `vfpgaRunner` declares eight of its sixteen params
+  this way, derived from the same port rosters that generate them.
+
+  ⚠ **EVERY faced video module MUST own a `face.extension` whose `fullViewBody`
+  carries the SCREEN switch** — `video-face-screen-source.test.ts` is
+  deny-by-default over `STRICT_FACES ∩ video defs` and checks the source READS
+  `previewCollapsed`, WRITES it through the node-data idiom, and exposes a
+  `<button>`. `mirrorpool` is the smallest thing to copy. Its RENDER half is
+  `e2e/tests/face-screen-render.spec.ts`, whose header states the convention:
+  **a promotion adds its `SUBJECTS` row in the same diff.** ⚠ That row's
+  `prefix` is not always the type (`videoMixer` → `video-mixer`, `4plexvid` →
+  `fourplexvid`, `vfpgaRunner` → `vfpga`), which is why it is written down.
+
+  ⚠ **A video FACES scene MUST declare `videoFaceWhy`, and it is the BOOT
+  SELECTOR first and the freeze opt-in second.** Without it `bootWithFace`
+  takes the AUDIO path and waits out the full 90 s test timeout for a
+  mixer-column membership a video node never acquires — a TIMEOUT, not an
+  error, and indistinguishable from a slow scene. `vrt-meta.test.ts` gates it.
+  Also declare an `EXTENSION_BODY_ROLES` entry
+  (`face-rack-status-source.test.ts`) saying what the body PAINTS; a
+  `fullViewBody` with no entry is RED.
 - **The lane-tile snowflakes** in `NON_SHELL_LANE_TYPES` (clipplayer, the MIDI
   surfaces, videoOut, cameraInput, group, sticky, cadillac) — they get bespoke
   faces in a later spike, and the dock-side story for them is unsolved.

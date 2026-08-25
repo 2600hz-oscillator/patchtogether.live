@@ -71,6 +71,27 @@
      *  silently skip the feature. */
     moduleId?: string;
     paramId?: string;
+    /**
+     * OVERRIDE for the emitted `data-testid`, for a knob that is MIDI-assignable
+     * but is NOT a def param cell.
+     *
+     * ⚠ IT EXISTS BECAUSE THE DEFAULT `control-<paramId>` IS A CLAIM, NOT A
+     * NAME. `faces-parity.spec.ts` asserts EXACT MULTISET EQUALITY between the
+     * dock's `[data-testid^="control-"]` elements and the live def's ParamDef
+     * ids, so any knob emitting that prefix is asserting "I am one of this
+     * module's declared params". A PF-14 panel edits `node.data`, not params
+     * (shell-cells.ts rule 1), and a panel knob keyed by a pseudo-param
+     * (`cv1:scale`) would read to that gate as an EXTRA control with no def
+     * backing and fail the whole face.
+     *
+     * ⚠ AND DROPPING `paramId` IS NOT THE FIX — that is the trap this prop
+     * exists to avoid. `paramId` is also the MIDI-learn binding key
+     * (makeMidiAssignable), so a panel that suppressed the testid by omitting
+     * it would silently delete MIDI Learn from every control in the panel.
+     * Separating the two lets a panel keep the binding and give up only the
+     * claim it has no right to make.
+     */
+    testid?: string;
   }
 
   let {
@@ -86,6 +107,7 @@
     formatValue,
     moduleId,
     paramId,
+    testid,
   }: Props = $props();
 
   // ---------------- MIDI Learn integration (shared factory) ----------------
@@ -290,7 +312,7 @@
     class="knob"
     role="slider"
     tabindex="0"
-    data-testid={paramId ? `control-${paramId}` : undefined}
+    data-testid={testid ?? (paramId ? `control-${paramId}` : undefined)}
     aria-label={label}
     aria-valuemin={min}
     aria-valuemax={max}

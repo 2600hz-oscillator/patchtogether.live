@@ -394,8 +394,13 @@ export const kriaDef: AudioModuleDef = {
       step: number,
       at: number,
       stepDur: number,
+      /** The caller's `ctx.currentTime` snapshot — NOT re-read here. */
+      now: number,
     ): void {
-      if (at < ctx.currentTime - LATE_DROP_EPS) pastDueEmits++;
+      // #229 CANARY. Judged against the caller's `now` so it cannot disagree
+      // with the drop decision that already let this emit through; a fresh
+      // read here made a borderline step look past-due once per TRACK.
+      if (at < now - LATE_DROP_EPS) pastDueEmits++;
       const track = pat.tracks[t]!;
       currentStepIdx[t] = step;
       const voct = stepVOct(pat, track, step);
@@ -443,7 +448,16 @@ export const kriaDef: AudioModuleDef = {
     /** Advance all tracks ONE base-grid tick at audio time `at`. Each track
      *  only advances when its TIME-division countdown hits zero. Track 0's
      *  loop boundary drives the pattern-cue quantize. */
-    function advanceBaseTick(at: number, stepDur: number, emit = true): void {
+    function advanceBaseTick(
+      at: number,
+      stepDur: number,
+      emit = true,
+      /** The tick's SINGLE `ctx.currentTime` snapshot — see the call sites.
+       *  Threaded so the past-due canary judges `at` against the same `now`
+       *  the drop decision used, instead of re-reading a clock that has moved
+       *  on. Defaults to a fresh read only for callers outside the tick. */
+      now: number = ctx.currentTime,
+    ): void {
       const pat = activePattern(liveData());
       if (!pat) return;
       let track0Boundary = false;
@@ -460,7 +474,7 @@ export const kriaDef: AudioModuleDef = {
         const boundary = willWrap(track, cursor[t]!);
         const { step, cursor: next } = advanceStep(track, cursor[t]!);
         cursor[t] = next;
-        if (emit) emitTrackStep(pat, t, step, at, stepDur * Math.max(1, Math.round(track.timeDivision)));
+        if (emit) emitTrackStep(pat, t, step, at, stepDur * Math.max(1, Math.round(track.timeDivision)), now);
         if (t === 0) {
           track0Advanced = true;
           if (boundary) track0Boundary = true;
@@ -524,19 +538,35 @@ export const kriaDef: AudioModuleDef = {
 
         const stepDur = 60 / Math.max(1, bpm) / 4; // 16th-note base grid
 
+        // ⚠ ONE CLOCK READ PER TICK, and it is the whole fix for #229's canary.
+        // `ctx.currentTime` advances between every read of it, so the drop
+        // decision below and `emitTrackStep`'s past-due check were comparing
+        // the SAME step against TWO DIFFERENT nows. A step sitting inside
+        // LATE_DROP_EPS of the boundary could be judged on-time here and
+        // past-due a few microseconds later inside the emit — and kria emits
+        // once per TRACK, so one borderline base tick recorded KRIA_TRACKS
+        // past-due emits at once (main went red on exactly `got 4`).
+        //
+        // That was a false positive in the INSTRUMENT, not a hole in the guard:
+        // no step was actually scheduled late, the two observers just disagreed
+        // about when "now" was. Snapshotting once makes them agree BY
+        // CONSTRUCTION, and `pastDueEmits` keeps the job it exists for —
+        // catching an emit path that bypasses the guard entirely.
+        const now = ctx.currentTime;
+
         if (isClockConnected()) {
-          const edges = clockCounter.poll(ctx.currentTime);
+          const edges = clockCounter.poll(now);
           for (let e = 0; e < edges; e++) {
-            advanceBaseTick(ctx.currentTime + 0.005, stepDur);
+            advanceBaseTick(now + 0.005, stepDur, true, now);
           }
         } else {
-          while (nextStepTime < ctx.currentTime + LOOKAHEAD_S) {
+          while (nextStepTime < now + LOOKAHEAD_S) {
             // #229: after a stall > lookahead, the grid marches on but the
             // past-due backlog is DROPPED — advancing cursors without
             // emitting, so it cannot bunch into one audible burst at "now".
-            const late = nextStepTime < ctx.currentTime - LATE_DROP_EPS;
+            const late = nextStepTime < now - LATE_DROP_EPS;
             if (late) lateStepsDropped++;
-            advanceBaseTick(nextStepTime, stepDur, !late);
+            advanceBaseTick(nextStepTime, stepDur, !late, now);
             nextStepTime += stepDur;
           }
         }

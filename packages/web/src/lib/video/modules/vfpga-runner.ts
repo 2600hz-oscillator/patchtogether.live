@@ -219,8 +219,146 @@ export const vfpgaRunnerDef: VideoModuleDef = {
     })),
   ],
 
+  // ── CONTROL FAMILIES ─────────────────────────────────────────────────────
+  //
+  // The two DOM-only control surfaces this card has always carried and no
+  // `ParamDef` can describe. Both are DYNAMIC — the picker's roster is the
+  // bundled `.vfpga` catalog, and the CV rack renders one strip per CV role the
+  // LOADED bitstream declares — which is exactly what this construct is for.
+  //
+  // ⚠ THE `testidPrefix` VALUES ARE THE CARD'S OWN, NOT NEW NAMES.
+  // `module-docs-lint` greps card source for each prefix precisely so a
+  // declared family cannot drift off the card, and `VfpgaRunnerCard.svelte`
+  // already emits `data-testid="vfpga-preset"` and `data-testid="vfpga-cv"`.
+  // Inventing prettier ids would have meant editing the card's testids, which
+  // `e2e/tests/vfpga-runner.spec.ts` addresses by name.
+  //
+  // ⚠ A FAMILY, NOT AN `options` ROSTER ON A PARAM — the milkdrop/dx7 choice,
+  // for the same two reasons. There is no param to put a roster ON (the loaded
+  // bitstream is `node.data.vfpga`, not a ParamDef), and `params` is real code
+  // where `controlFamilies` is hash-transparent, so a roster would have cost a
+  // real-GPU re-attest this whole faceplate otherwise avoids.
+  controlFamilies: [
+    { id: 'vfpga-preset', label: 'VFPGA picker', kind: 'other', testidPrefix: 'vfpga-preset' },
+    { id: 'vfpga-cv', label: 'Modulation rack', kind: 'cell', testidPrefix: 'vfpga-cv' },
+  ],
+
+  // ── PARAMS WITH NO USER CONTROL (#1726) ──────────────────────────────────
+  //
+  // EIGHT of this def's sixteen params exist so the CV BRIDGE has somewhere to
+  // write, not so a player has something to turn. The def's own comments have
+  // said so since it shipped ("no card knob — rendered only as the cv jacks"),
+  // and `VfpgaRunnerCard.svelte` renders a knob for NONE of them: its grid is
+  // built from `spec.params` (the p1..p8 slots) and its CV/gate rows are the
+  // attenuverter + LED, never the raw sample.
+  //
+  // `writer: 'cv-port'` is the ANCHORED arm — every one of these is the
+  // `paramTarget` of a declared input port above, so renaming a port reddens
+  // the entry rather than leaving it quietly true. DERIVED from the same two
+  // port rosters that generate the params, so the two lists cannot drift.
+  noUserControl: [
+    ...VFPGA_CV_PORTS.map((portId, i) => ({
+      param: cvValParam(i + 1),
+      writer: 'cv-port' as const,
+      why:
+        `the raw sample the ${portId} jack writes. A player conditions it with that input's `
+        + 'SCALE attenuverter + OFFSET (node.data.cvInputs, the CV band\'s panel) and the loaded '
+        + "VFPGA's cvRole decides which shader uniform it lands on — nothing anywhere turns this "
+        + 'value directly.',
+    })),
+    ...VFPGA_GATE_PORTS.map((portId, i) => ({
+      param: gateEvtParam(i + 1),
+      writer: 'cv-port' as const,
+      why:
+        `the raw gate level the ${portId} jack writes. The factory hysteresis edge-detector turns `
+        + "it into the held-level and rising-edge-count uniforms the loaded VFPGA's gateRole "
+        + 'reads; a rotary over a raw 0/1 swing would be a control over the cable, not over the '
+        + 'module.',
+    })),
+  ],
+
+  // ── FACEPLATE (PF-20) ────────────────────────────────────────────────────
+  //
+  // WHAT THIS MODULE IS, MUSICALLY. Every other video module in the fleet IS
+  // one effect: its params are the effect. VFPGA-RUNNER is a HOST — it is
+  // whichever `.vfpga` bitstream is loaded into it, and swapping that rebuilds
+  // the entire GL pipeline. So the player's verb is not "turn a knob", it is
+  // LOAD A PROGRAM and then play the eight generic slots that program mapped
+  // onto itself. Nothing else here is reconfigurable at runtime.
+  //
+  // THE TIER LADDER, read back as a sentence: the one control that decides what
+  // this module IS comes first (the VFPGA picker), then the slot bank in slot
+  // order (a loaded spec maps its params onto p1 upward, so slot order IS the
+  // spec's own priority), and the CV conditioning rack last — it is a DOCK-ONLY
+  // panel, and rank 10 is comfortably past the six-cell lane plate, so it costs
+  // no lane rank it could not use.
+  //
+  // ⚠ NO HERO. `heroFacePlan` MOVES the promoted key out of its band, and two
+  // of the three bands here hold exactly one cell — promoting either would
+  // empty its band, drop the band, and render its authored hint nowhere. The
+  // module's picture arrives from `hasVideoSurface` + the extension body
+  // instead, which is where a video face's identity belongs anyway.
+  face: {
+    // DERIVED from the same roster that generates the params — never a
+    // hand-typed slot list.
+    order: [
+      'vfpga-preset-{n}',
+      ...VFPGA_PARAM_SLOTS,
+      'vfpga-cv-{n}',
+    ],
+
+    pages: [
+      {
+        id: 'program',
+        label: 'program',
+        hint:
+          'which .vfpga bitstream is loaded. Picking one disposes the running GL pipeline and '
+          + "builds the new spec's, seeding that spec's param-slot defaults — so the slots below "
+          + 'mean something different for every entry in this list',
+        controls: ['vfpga-preset-{n}'],
+      },
+      {
+        id: 'slots',
+        label: 'slots',
+        hint:
+          'the generic 0..1 param bank the host owns. The loaded VFPGA maps its own params onto '
+          + 'these in slot order and scales each into its declared range, so P1 is always that '
+          + "program's first parameter and a slot the program does not map is inert",
+        controls: [...VFPGA_PARAM_SLOTS],
+      },
+      {
+        id: 'modulation',
+        label: 'modulation',
+        hint:
+          "what the patch is doing to the loaded program: a SCALE attenuverter (bipolar, so it "
+          + 'inverts) and an OFFSET per active CV role, applied before the value reaches the '
+          + 'shader uniform, with a live trace of what actually arrives — and an activity lamp '
+          + 'per active gate role',
+        controls: ['vfpga-cv-{n}'],
+      },
+    ],
+
+    // ⚠ MANDATORY FOR A VIDEO DEF. `primaryAudioOutPortId` matches
+    // `type === 'audio'` and both outputs here are video, so ANY other glyph
+    // literal falls through `glyphBinding` to `{kind:'static'}` and reddens
+    // module-face-lint's dead-glyph clause. The picture arrives through
+    // `hasVideoSurface(def)` and the extension's `fullViewBody` instead.
+    glyph: 'none',
+
+    // The module-owned dock body: the live output picture, the fleet-standard
+    // SCREEN ON/OFF switch (owner ruling 2026-08-18), and the FABRIC floorplan
+    // view the card's `fabric` button used to be the only route to.
+    extension: 'vfpgaRunner',
+
+    // ⚠ NO `monitor`: `face-monitor-source.test.ts` derives its subject from
+    // cards that mount a hide-controls monitor, and this card never has one.
+    // ⚠ NO `rear` curation: three cable domains on the input rail is exactly
+    // what the DERIVED default already splits on, and the skill is explicit
+    // that a group should mean something other than restating the domains.
+  },
+
   docs: {
-    explanation: "vfpga-runner is a runtime that executes a loaded .vfpga declarative spec — a \"virtual FPGA bitstream\" — as a WebGL video effect. ONE registered host module declares the full I/O superset it can ever wire (4 video ins, 4 CV, 4 gates, 2 video outs, an 8-slot generic param bank); the loaded VfpgaSpec selects which subset is ACTIVE and what render-graph runs, the way a bitstream reconfigures an FPGA fabric. A fabric-described spec (a grid of typed tiles wired by a routing netlist) is place-and-routed into the GL pass pipeline; a spec may also carry a legacy hand-authored render graph as an escape hatch, and when a spec declares both, the fabric path wins at runtime (smpte-bars ships both — its fabric lowers byte-identically to its legacy effect — to dogfood place-and-route on the reference VFPGA). Changing the preset hot-swaps the effect: the old GL pipeline is disposed and a new one built, with the new spec's param-slot defaults seeded. Usage: pick a VFPGA from the card's \"load preset…\" menu (the bundled catalog ships smpte-bars as the default test-pattern generator plus glitch/datamosh-style effects: chroma-rot, databend-cvbs, framestore-howl, macroblock-mosh, scaler-glitch, sync-bender and tmds-sparkle). The card preview shows the REAL output of whatever VFPGA is loaded (a live blit of this node's own output FBO, not a frozen CPU snapshot); the \"fabric\" button toggles a read-only floorplan view (tile grid + lit routing nets). The card surfaces controls only for the loaded spec's active roles — a knob per mapped param slot, a SCALE attenuverter + OFFSET + always-on scope per active CV input, and an activity LED per active gate input — while the PatchPanel still renders the full superset of jacks (inactive ports dimmed). The def declares the off-main-thread worker render locus (every catalog VFPGA is pure-GL, so it is eligible to render off the main thread).",
+    explanation: "vfpga-runner is a runtime that executes a loaded .vfpga declarative spec — a \"virtual FPGA bitstream\" — as a WebGL video effect. ONE registered host module declares the full I/O superset it can ever wire (4 video ins, 4 CV, 4 gates, 2 video outs, an 8-slot generic param bank); the loaded VfpgaSpec selects which subset is ACTIVE and what render-graph runs, the way a bitstream reconfigures an FPGA fabric. A fabric-described spec (a grid of typed tiles wired by a routing netlist) is place-and-routed into the GL pass pipeline; a spec may also carry a legacy hand-authored render graph as an escape hatch, and when a spec declares both, the fabric path wins at runtime (smpte-bars ships both — its fabric lowers byte-identically to its legacy effect — to dogfood place-and-route on the reference VFPGA). Changing the preset hot-swaps the effect: the old GL pipeline is disposed and a new one built, with the new spec's param-slot defaults seeded. Usage: pick a VFPGA from the card's \"load preset…\" menu (the bundled catalog ships smpte-bars as the default test-pattern generator plus glitch/datamosh-style effects: chroma-rot, databend-cvbs, framestore-howl, macroblock-mosh, scaler-glitch, sync-bender and tmds-sparkle). The card preview shows the REAL output of whatever VFPGA is loaded (a live blit of this node's own output FBO, not a frozen CPU snapshot); the \"fabric\" button toggles a read-only floorplan view (tile grid + lit routing nets). The card surfaces controls only for the loaded spec's active roles — a knob per mapped param slot, a SCALE attenuverter + OFFSET + always-on scope per active CV input, and an activity LED per active gate input — while the PatchPanel still renders the full superset of jacks (inactive ports dimmed). On the FACEPLATE the same surface is arranged as three bands - the VFPGA picker, the eight generic slot knobs, and a CV conditioning rack carrying each active CV role's SCALE attenuverter, OFFSET and live trace - with the output picture, a SCREEN on/off switch and the fabric floorplan view in the plate's own body. This module renders on the MAIN thread: it declares four video inputs the render worker cannot supply textures for, two video outputs the single-ImageBitmap return protocol cannot both carry, and a per-frame gate-state probe the worker proxy can only serve by materialising a main-thread fallback anyway.",
     inputs: {
       "vin1": "Video input 1. Bound to the loaded spec's first declared video-in sampler (a spec consumes 0–4 of these); a pattern generator like smpte-bars consumes none. Unpatched here samples a 1×1 transparent-black fallback so the shader never reads garbage.",
       "vin2": "Video input 2. Sampled by the loaded VFPGA only if its spec declares a video-in for this slot; otherwise dimmed/inactive and a transparent-black fallback is bound.",
@@ -240,6 +378,8 @@ export const vfpgaRunnerDef: VideoModuleDef = {
       "vout2": "Secondary video output. Exposed only when the loaded spec declares a vout2 FBO (read('outputTexture:vout2')); otherwise null/inactive. Lets a multi-output effect tap a second buffer.",
     },
     controls: {
+      "vfpga-preset-{n}": "VFPGA picker - the dropdown listing every bundled .vfpga bitstream by name (smpte-bars, chroma-rot, databend-cvbs, framestore-howl, macroblock-mosh, scaler-glitch, sync-bender, tmds-sparkle). Picking one writes node.data.vfpga and hot-swaps the running effect: the old GL pipeline is disposed, the new spec's passes are compiled, and its param-slot defaults are seeded into p1..p8 so the loaded program renders with its intended bend amounts immediately. It is the module's identity control - every other control here means something different depending on what this one says. On the legacy card the same action is the \"load preset...\" menu.",
+      "vfpga-cv-{n}": "Modulation rack - one strip per CV role the LOADED VFPGA declares, each carrying a SCALE attenuverter (-1..+1, so it inverts), an OFFSET (0..1), and an always-on trace of the value that actually reaches the shader uniform; then an activity lamp per active gate role. SCALE and OFFSET are applied to the raw cv1..cv4 sample before the spec's cvRole adds it onto its uniform, so they set how far and in which direction a patched cable swings that role. They live in node.data.cvInputs (never per-frame Y.Doc writes) and are the same values the legacy card's per-CV SCALE/OFFSET knobs write. The lamps read the factory's held gate state, the same read('gateState') seam the card polls. A spec that declares neither CV nor gate roles renders an empty rack.",
       "p1": "Generic param slot 1 (host 0..1). A loaded VFPGA maps and labels one of its params onto this slot; the card renders a knob in the spec's [min,max] range only when the loaded spec uses the slot. The mapped value drives the bound shader uniform.",
       "p2": "Generic param slot 2. Surfaced as a labeled knob (in the spec's mapped range) only if the loaded VFPGA maps a param onto it; otherwise hidden. CV patched to the same uniform adds on top of this base.",
       "p3": "Generic param slot 3. A labeled knob appears only when the loaded spec maps a param here; the host slot is generic 0..1, shown to the user in the spec's [min,max] range.",

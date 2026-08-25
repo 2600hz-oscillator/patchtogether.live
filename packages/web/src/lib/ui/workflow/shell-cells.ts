@@ -59,6 +59,12 @@ import {
   loadVideocubeSlotFile,
   setVideocubeSlotLive,
 } from '$lib/ui/modules/videocube-slot-actions';
+import {
+  selectVfpgaPreset,
+  vfpgaPresetOptions,
+  vfpgaPresetValue,
+} from '$lib/ui/modules/vfpga-runner-face-actions';
+import VfpgaModulationPanel from '$lib/ui/modules/VfpgaModulationPanel.svelte';
 import Dx7OperatorMap from '$lib/ui/modules/dx7/Dx7OperatorMap.svelte';
 import Dx7OpDetail from '$lib/ui/modules/dx7/Dx7OpDetail.svelte';
 import AnalogVcoHeroPanel from '$lib/ui/modules/AnalogVcoHeroPanel.svelte';
@@ -726,6 +732,63 @@ const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
       title: 'Import a Winamp Milkdrop .milk preset (appended to the picker for this session)',
       accept: MILK_ACCEPT,
       onFile: (nodeId, file) => loadMilkFile(nodeId, file),
+    },
+  },
+  vfpgaRunner: {
+    // THE BITSTREAM PICKER — this module's IDENTITY control, and the one cell
+    // whose absence would make the faceplate a different module. VFPGA-RUNNER
+    // is a HOST: it IS whichever `.vfpga` is loaded, and every other control on
+    // the plate means something different per entry in this list. The card's
+    // "load preset…" `<select>` is the only route to it, so promotion without
+    // this cell would leave a module that can never leave its default program.
+    //
+    // ⚠ IT CALLS THE SHARED ACTION, not `setVfpgaSpec` directly. Loading a
+    // bitstream is TWO writes — the node.data id (+ slot-default seeding) and
+    // the `__reloadVfpga` engine pulse that disposes the running GL pipeline
+    // and builds the new one. Doing only the first writes the id and leaves the
+    // OLD effect compiled: a picker that looks like it works while the picture
+    // never changes.
+    'vfpga-preset-{n}': {
+      kind: 'selector',
+      tag: 'vfpga',
+      options: () => vfpgaPresetOptions(),
+      value: (node) => vfpgaPresetValue(node),
+      onchange: (nodeId, value) => selectVfpgaPreset(nodeId, value),
+    },
+    // THE MODULATION RACK — a SCALE attenuverter + OFFSET + live trace per CV
+    // role the loaded bitstream declares, then an activity lamp per gate role.
+    //
+    // ⚠ A PANEL BECAUSE NEITHER HALF IS PARAM-SHAPED. SCALE/OFFSET are
+    // `node.data.cvInputs` (the shared TOYBOX shape), not ParamDefs, and the
+    // ROSTER is dynamic — which strips exist is a property of the loaded
+    // bitstream — so there is nothing static for the def to declare and no
+    // generic cell kind that holds N pairs of continuous controls.
+    //
+    // ⚠ THE PROBE DRIVES **OFFSET**, NOT SCALE, AND THAT IS MEASURED RATHER
+    // THAN ARBITRARY. faces-parity's drag is `move(cx, cy - 24)` — always
+    // UPWARD, i.e. always toward the maximum. `DEFAULT_INPUT_SCALE` is +1,
+    // which IS the top of the attenuverter's -1..+1 range, so a probe on SCALE
+    // would drag a control that is already at its ceiling, read no change, and
+    // fail on a perfectly live panel. OFFSET defaults to 0 at the BOTTOM of
+    // 0..1, so the same gesture always moves it.
+    'vfpga-cv-{n}': {
+      kind: 'panel',
+      // ⚠ NOT 'modulation' — the band above this cell is already headed
+      // MODULATION, and the owner's caption ruling is explicit that a
+      // per-control label is clutter when the section heading already conveys
+      // it. Measured off the first dock capture, where the word printed twice,
+      // ~10 px apart. This caption says what the cell CONTAINS, which the
+      // heading does not.
+      label: 'cv + gates',
+      component: VfpgaModulationPanel,
+      // Two knob columns + a 64px trace + the role caption, with room for the
+      // widest role label the catalog ships ('RE-ROLL' / 'I-FRAME').
+      minWidth: 260,
+      probe: {
+        testid: 'vfpga-offset-1',
+        action: 'drag',
+        effect: { kind: 'data', key: 'cvInputs', expect: 'changed' },
+      },
     },
   },
   frametable: {
