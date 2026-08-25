@@ -183,12 +183,55 @@ export const cartesianDef: AudioModuleDef = {
       snh:
         "Sample & hold on the pitch output, on by default: when on (the card's S&H face button), in FREEFORM mode the pitch CV is rewritten only when a gate fires and otherwise holds, so the pitch doesn't smear as the cursor passes over silent pads; turn it off for continuous re-emit on every cursor move. The LFO outputs are never held.",
       "cart-pitch-{n}":
-        "Pad {n}'s note — the editable pitch box for this cell of the 4×4 grid. Type a note name (e.g. C3, F#4, Bb2) or focus it and use the arrow keys to move around the grid; Enter commits and steps to the next pad's box. The box shows the canonical note name, glows green while valid and red while not, and clearing it (empty) turns the pad into a rest even if its gate is lit. When the cursor lands on this pad the note is emitted as V/oct on the PITCH output, shifted by the OCT control and (for a chord pad) used as the chord's root.",
+        "Pad {n} of the 4×4 grid — its note, its gate and its chord. Type a note name into the pitch box (e.g. C3, F#4, Bb2); the box shows the canonical spelling, rings green while what you have typed is a valid note and red while it is not, and REFUSES anything outside c0..c8 rather than snapping it to the nearest legal note — a refused entry leaves the pad exactly as it was. Clearing the box is not a refusal: an empty pad is a REST, and it stays silent even when its gate is lit. The small bar above the box is the gate (click to light it); the badge below cycles the chord through mono / major / minor. When the cursor lands on this pad its note is emitted as V/oct on the PITCH output, shifted by the OCT control and, for a chord pad, used as the chord's root. On the card each pad is a note box with its gate; on the faceplate the same sixteen pads are one grid panel.",
     },
   },
 
+  // ── THE FACE (#1509) ──────────────────────────────────────────────────────
+  //
+  // WHAT THIS MODULE IS FOR: picking a note by WHERE IT SITS on a 4×4 surface
+  // rather than by position in a line. The verb is "steer the cursor" — with CV,
+  // with a clock, or with the built-in quadrature LFO drawing a Lissajous over
+  // the pads. Every rank below descends from that.
+  //
+  // ⚠ THE GRID RANKS FIRST, AND THE LANE STILL GETS THE PARAMS. `cart-pitch-{n}`
+  // resolves to a PF-14 PANEL (see CartesianPadGrid.svelte for why sixteen
+  // generic cells is not expressible), and `module-face-lint` refuses a panel
+  // selected into a 46 px lane knob column. PF-22 is the fix: `laneOrder` drops
+  // `face.hero.cell` from the LANE roster only, so the grid costs no lane rank.
+  // `order` and the lane ladder therefore DISAGREE ON PURPOSE — the dock leads
+  // with the instrument, the lane tile shows `octave` / `gateLength` / `snh`,
+  // which are the two-or-three controls a player actually reaches for while a
+  // sequence runs. Do NOT "fix" this into agreement by demoting the grid.
+  //
+  // ⚠ TWO BANDS, NOT MORE. The grid is the hero, so its band is emptied by
+  // `heroFacePlan` and disappears; VOICE and LFO are genuinely different ideas
+  // (what a pad sounds like vs. what steers the cursor). There is no third idea
+  // here and padding to reach the seven-band tab rail would be exactly the
+  // thing the rail threshold exists to prevent.
+  face: {
+    order: ['cart-pitch-{n}', 'octave', 'gateLength', 'snh', 'lfoDiv', 'lfoShape'],
+    pages: [
+      { id: 'voice', label: 'voice', controls: ['octave', 'gateLength', 'snh'] },
+      { id: 'lfo', label: 'lfo', controls: ['lfoDiv', 'lfoShape'] },
+    ],
+    // The grid, promoted to the dock hero. It suppresses the hero glyph, which
+    // costs nothing on a module that declares none.
+    hero: { cell: 'cart-pitch-{n}' },
+    // ⚠ `'none'` IS REQUIRED, not a shrug. This module has no `audio`-typed
+    // output (pitch is polyPitchGate, gate/clock are gate, lfo_* are cv), so
+    // `primaryAudioOutPortId` is null and any live-glyph literal would resolve
+    // to a dead static picture and redden the dead-glyph clause.
+    glyph: 'none',
+  },
+
   controlFamilies: [
-    { id: 'cart-pitch', label: 'Per-pad note entry', kind: 'cell', testidPrefix: 'cart-pitch' },
+    // ⚠ ONE family, and its label now names the whole pad rather than the note
+    // alone: the CARD renders it as sixteen `NoteEntry` composites (pitch + gate)
+    // beside sixteen chord badges, and the FACE renders it as one grid panel
+    // carrying all three. `testidPrefix` stays `cart-pitch` — the literal the
+    // card emits, which is what `module-docs-lint`'s card-drift leg reads.
+    { id: 'cart-pitch', label: 'The 4×4 pad grid', kind: 'cell', testidPrefix: 'cart-pitch' },
   ],
 
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {

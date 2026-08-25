@@ -31,6 +31,8 @@
 import type { Component } from 'svelte';
 import type { ModuleNode, ParamLandmark } from '$lib/graph/types';
 import type { SelectorOption } from '$lib/ui/controls';
+import type { EntryParse } from '$lib/ui/controls/text-entry-model';
+import CartesianPadGrid from '$lib/ui/modules/cartesian/CartesianPadGrid.svelte';
 import { testHooksEnabled } from '$lib/dev/test-hooks';
 import WavecelWavetablePanel from '$lib/ui/modules/wavecel/WavecelWavetablePanel.svelte';
 import {
@@ -489,13 +491,93 @@ export interface ShellWarpedFaderCell {
   format?: (value: number) => string;
 }
 
+/**
+ * How faces-parity proves a TYPED string reached the graph.
+ *
+ * ⚠ TWO STRINGS, AND THE SECOND IS THE POINT. `accepts` proves the field is
+ * live; `rejects` proves it is a VALIDATOR rather than a funnel. Without the
+ * negative leg a cell that clamped every input to its nearest legal value would
+ * pass the positive one perfectly — which is the backdraft class exactly (a
+ * control writing what the contract forbids while the model quietly corrected
+ * it, with every def-reading gate blind). Only the module knows what its own
+ * domain excludes, so the refused string is declared per cell rather than
+ * guessed by the sweep.
+ *
+ * ⚠ AND BOTH ARE CHECKED IN THE PURE LANE FIRST. `shell-cells.test.ts` runs
+ * `parse(accepts).ok === true` and `parse(rejects).ok === false` over every
+ * registered entry cell, so a probe whose strings are the wrong way round — or
+ * whose `rejects` is quietly legal — fails in milliseconds instead of 25
+ * minutes later on a CI shard.
+ */
+export interface ShellEntryProbe {
+  /** A VALID string. The sweep types it and asserts the effect fires. */
+  accepts: string;
+  /** A string this field MUST refuse. Typed second; the sweep asserts the
+   *  stored value did NOT move and the field reports itself invalid. */
+  rejects: string;
+  /** The observable. `node.data` is the right oracle for a typed field: unlike
+   *  an audition it writes something durable by design, so the ledger's
+   *  "delivered but invisible" problem does not arise here. */
+  effect: { kind: 'data'; key: string; expect: 'changed' };
+}
+
+/**
+ * A TYPED-ENTRY field — the cell whose CONTENT IS the control.
+ *
+ * ⚠ THIS IS THE ONE CELL PERMITTED TO PAINT A STRING AT REST, and the licence is
+ * narrow. The resting-faceplate ruling forbids derived text in any shape because
+ * such text RESTATES something a control already shows: a decimal under a dial
+ * says what the angle says. A text field has no non-text form — its content is
+ * not a readout OF the control, it IS the control — so it carries the
+ * `'authored-entry'` role in `face-resting-text-source.test.ts`, and that role
+ * is legal only on a cell that is genuinely user-writable. `onCommit` is
+ * REQUIRED for exactly that reason: a display has no write, so it cannot claim
+ * the role, and the gate checks the field is non-optional on this interface
+ * rather than taking the declaration's word for it.
+ *
+ * ⚠ THE MODULE NEVER SEES RAW TEXT. `parse` is the ONE place validity is
+ * decided; the shell calls it and hands `onCommit` a value that was already
+ * accepted. A rejection writes NOTHING — it does not clamp, round, truncate or
+ * substitute — so there is no code path in which a silent correction could live.
+ * See `text-entry-model.ts` for why the reject sentinel is a tagged union and
+ * not `null` (cartesian's empty box is a REST, which is an accepted value whose
+ * stored form is null).
+ *
+ * ⚠ IMPORT THE VALIDATOR, NEVER RE-TYPE IT — the same one-source rule the warped
+ * fader's `toKnob`/`fromKnob` obey, for the same reason: a card and a face that
+ * parse differently both look correct and disagree about what the user typed,
+ * and no runtime gate reads a grammar.
+ */
+export interface ShellEntryCell<T = unknown> {
+  kind: 'entry';
+  /** Caption under the field — a CONTROL CAPTION, an already-permitted role. */
+  label: string;
+  title?: string;
+  /** The text the field shows at REST: the user's own stored content, round-
+   *  tripped by the module. Never a formatter over a derived quantity. */
+  text: (node: ModuleNode | undefined) => string;
+  /** Text -> the module's stored form, or a REJECTION. */
+  parse: (text: string) => EntryParse<T>;
+  /** REQUIRED. Called ONLY with an accepted `parse` result. */
+  onCommit: (nodeId: string, value: T) => void;
+  placeholder?: string;
+  maxLength?: number;
+  /** REQUIRED — see ShellEntryProbe. */
+  probe: ShellEntryProbe;
+}
+
 export type ShellCell =
   | ShellSelectorCell
   | ShellActionCell
   | ShellFileCell
   | ShellToggleCell
   | ShellPanelCell
-  | ShellWarpedFaderCell;
+  | ShellWarpedFaderCell
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- the registry
+  // is a heterogeneous map, so the union member must admit any stored form; the
+  // per-cell `parse`/`onCommit` pair is still checked against ONE `T` at each
+  // declaration site.
+  | ShellEntryCell<any>;
 
 /**
  * Per-module cell specs, keyed by module type then by the EXACT `face.order`
@@ -505,6 +587,48 @@ export type ShellCell =
  * gates at once instead of silently un-rendering one of them.
  */
 const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
+  cartesian: {
+    // THE 4×4 PAD GRID — the module itself, and the `TextEntry` primitive's
+    // first adopter (#1509).
+    //
+    // ⚠ ONE PANEL, NOT FORTY-EIGHT GENERIC CELLS, and the first attempt was the
+    // other thing. A face key is a PARAM id, a family TEMPLATE (`-{n}` literal,
+    // ONE cell, no per-member index) or a legend STATIC (needs a committed
+    // legend JSON cartesian does not have). Sixteen ranked pads therefore needs
+    // forty-eight family ids, and `module-docs-lint`'s card-drift leg requires
+    // each declared `testidPrefix` to appear in real UI source — MEASURED:
+    // twelve face-only families fail it. Both escapes are refused by standing
+    // rules. See `CartesianPadGrid.svelte`'s header for the full derivation.
+    //
+    // ⚠ MEASURED WIDTHS, kept because the next face author otherwise
+    // rediscovers them (dock, 1220 px pane, CSS px): `selector` 168 ·
+    // `entry` 72 · `action` 58 · `toggle` 52 · `knob` 40. Four selector cells
+    // were 49% of a 1374 px band and pushed 220 px of the plate outside the
+    // capture box; that is what sent this grid to a panel rather than to
+    // `clusters`.
+    //
+    // ⚠ THE PROBE CLICKS A GATE, NOT A PITCH BOX. faces-parity drives a panel
+    // with a click or a drag — it cannot type — so the honest observable here
+    // is the gate toggle, which writes the same `node.data.cells` key. The
+    // TYPED half is proven by `cartesian-face.spec.ts`, whose three legs
+    // (accepts / REFUSES-without-clamping / clears-to-a-rest) are the reason
+    // the parse contract is shaped the way it is. Naming a pitch box here and
+    // clicking it would assert nothing at all.
+    'cart-pitch-{n}': {
+      kind: 'panel',
+      label: 'pads',
+      component: CartesianPadGrid,
+      // Four columns of a ~72 px entry plus gate/chord buttons, with the 4 px
+      // grid gaps and the pad's own 2 px padding — measured at 316 px, floored
+      // just above so a narrow dock cannot squeeze a note name to ellipsis.
+      minWidth: 320,
+      probe: {
+        testid: 'cart-face-gate-1',
+        action: 'click',
+        effect: { kind: 'data', key: 'cells', expect: 'changed' },
+      },
+    },
+  },
   bluebox: {
     // THE TONE BANK — ten bars, one per oscillator, promoted into the hero slot
     // (`face.hero.cell`). A panel rather than a glyph because it is not a trace
@@ -2269,6 +2393,15 @@ export function shellCellKeys(moduleType: string): string[] {
   return Object.keys(SHELL_CELLS[moduleType] ?? {}).sort();
 }
 
+/** The KINDS one module registers, deduped and sorted. Used by the typed-entry
+ *  parity leg in `face-migration-inventory.test.ts`, which asks whether a face
+ *  carries the affordance its card has — a question about kinds, not keys.
+ *  Pure. */
+export function shellCellKindsFor(moduleType: string): string[] {
+  const specs = SHELL_CELLS[moduleType] ?? {};
+  return [...new Set(Object.values(specs).map((c) => c.kind))].sort();
+}
+
 /**
  * The face keys one module registers as PANEL cells. Used by the face-lint
  * rule that keeps a panel DOCK-ONLY: a 280 px SVG has no business being
@@ -2353,9 +2486,28 @@ export function shellActionProbes(): Record<string, Record<string, ShellActionPr
 
 /** Expose the shell-layer metadata the faces-parity e2e reads (dev/autotest
  *  builds only — the same `testHooksEnabled()` gate `__moduleSpecs` uses). */
+/**
+ * Every declared ENTRY probe, `moduleType → faceKey → probe`. Pure projection,
+ * published to the page for the faces-parity sweep exactly like the panel and
+ * action probes beside it — the sweep needs the module's own `accepts` /
+ * `rejects` strings, because only the module knows what its domain excludes.
+ */
+export function shellEntryProbes(): Record<string, Record<string, ShellEntryProbe>> {
+  const out: Record<string, Record<string, ShellEntryProbe>> = {};
+  for (const [type, specs] of Object.entries(SHELL_CELLS)) {
+    for (const [key, cell] of Object.entries(specs)) {
+      if (cell.kind !== 'entry') continue;
+      (out[type] ??= {})[key] = cell.probe;
+    }
+  }
+  return out;
+}
+
 export function exposeShellPanelProbesForTests(): void {
   if (!testHooksEnabled()) return;
   if (typeof window === 'undefined') return;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (window as any).__shellEntryProbes = shellEntryProbes();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (window as any).__shellPanelProbes = shellPanelProbes();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

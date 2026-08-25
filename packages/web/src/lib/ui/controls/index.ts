@@ -18,6 +18,11 @@ export { default as VuMeter } from './VuMeter.svelte';
 export { default as ScopeScreen } from './ScopeScreen.svelte';
 export { default as MidiAssignButton } from './MidiAssignButton.svelte';
 export { default as NoteEntry } from './NoteEntry.svelte';
+// The GENERIC typed-entry field — one writable <input>, no gate button and no
+// grid navigation. `NoteEntry` above stays the sequencer-step COMPOSITE it has
+// always been; this is what a faceplate cell mounts. See TextEntry.svelte for
+// why the two are separate rather than one parameterised component.
+export { default as TextEntry } from './TextEntry.svelte';
 export { default as WaveformGlyph } from './WaveformGlyph.svelte';
 
 // ── P0.3a primitives ──

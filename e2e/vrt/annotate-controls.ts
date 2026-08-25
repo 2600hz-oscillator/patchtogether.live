@@ -59,6 +59,13 @@ const CONTROL_SELECTOR = [
   // fields (search / URL / name inputs on other cards). These collapse to one
   // family callout (seq-pitch / cart-pitch / …) via the dense-family grouping below.
   'input[data-role="pitch"]',
+  // The FACEPLATE's typed-entry cell (#1509, TextEntry.svelte). Scoped by
+  // `data-role` for the same reason the pitch box above is: it picks out
+  // exactly the module-control text fields and leaves unrelated search / URL /
+  // name inputs on other cards alone. Without this row an entry cell is
+  // silently DROPPED from the numbered overlay — the annotated scene would
+  // number every control on a face except the one you type into.
+  'input[data-role="entry"]',
   'select',
   'button',
 ].join(', ');

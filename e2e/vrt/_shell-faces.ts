@@ -3170,6 +3170,32 @@ export const FACES = [
     // the lit-cell sets for the trig / note / octave states plus the
     // track-switch negative control.
   },
+  // ── CARTESIAN — the second faced SEQUENCER, and the TYPED one ─────────────
+  {
+    type: 'cartesian',
+    // Two bands: `voice` and `lfo`. The pad grid is `face.hero.cell`, so
+    // `heroFacePlan` promotes it out of its band and the band disappears —
+    // count the POST-hero bands, not the declared pages.
+    pages: 2,
+    // ⚠ THE PLAYHEAD IS THE ONE LIVE THING HERE, and unlike kria's it is NOT
+    // deterministic for free. kria's `running` defaults to 0, so its cursor
+    // never starts; cartesian has no transport param at all — in FREEFORM (no
+    // clock patched, which is a fresh spawn) the cursor follows the X/Y CV
+    // inputs, and its `currentStep` is an engine read per frame through the
+    // shared meter pump. `bootWithFace` suspends the AudioContext before
+    // capture (`freezeFaceAudio`), which pins that read, so the highlighted pad
+    // is stable — but the safety comes from the FREEZE, not from the module,
+    // and a future scene that skipped it would see this move. That is the
+    // analogVco class, one module over, and it is recorded here rather than
+    // discovered from three differing captures.
+    //
+    // ⚠ WHAT THIS BASELINE DOES NOT COVER: pad CONTENT. A fresh cartesian seeds
+    // every pad to C3 with its gate off, so all sixteen boxes read `c3` and the
+    // PNG is blind to which pad holds which note — a note typed into the wrong
+    // pad would not move it. That is covered more precisely than a picture
+    // could, in `cartesian-face.spec.ts`: typed input lands in `cells[0]`, a
+    // refused note leaves it untouched, and clearing it commits a REST.
+  },
   {
     type: 'audioOut',
     // ONE param, no `face.pages` — so no labelled section bands, exactly like

@@ -49,7 +49,7 @@
   import { cardParams, portsFromDef } from './card-kit';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import VideoTileThumb from './VideoTileThumb.svelte';
-  import { Button, ColorField, HueWheel, KnobConic, NeonFader, ParamGrid, ScopeScreen, Segmented, Selector, Toggle, VuMeter, XyPad } from '$lib/ui/controls';
+  import { Button, ColorField, HueWheel, KnobConic, NeonFader, ParamGrid, ScopeScreen, Segmented, Selector, TextEntry, Toggle, VuMeter, XyPad } from '$lib/ui/controls';
   import {
     curatedFace,
     dockFacePlan,
@@ -1289,6 +1289,32 @@
             >{cellStatus[ctl.key]?.error ?? cellStatus[ctl.key]?.status}</span>
           {/if}
         </div>
+      {:else if cell?.kind === 'entry'}
+        <!-- TYPED ENTRY (#1509) — the ONE cell whose CONTENT is the control.
+             Every other cell paints a control and keeps its value in
+             `aria-valuetext`; this one has no non-text form, so the string it
+             shows IS the thing being operated rather than a readout of it.
+             That is the whole of the `'authored-entry'` licence in
+             `face-resting-text-source.test.ts`, and it is held STRUCTURALLY:
+             the value reaches the DOM only as `value=` on a writable <input>
+             (a readout would need a text node, and there is none), and the
+             field is never `readonly` or `disabled` — an inert box painting a
+             computed string is the "there but hidden" shape refused by name.
+             The module never sees raw text: `parse` decides validity and a
+             rejection writes NOTHING, so no silent clamp is expressible. -->
+        <div class="kcol ms-cell-entry" data-cell-kind={ctl.kind} data-cell-control="entry" data-cell-key={ctl.key} style:--ka={ka}>
+          <TextEntry
+            stored={cell.text(liveCell.n)}
+            parse={cell.parse}
+            onCommit={(v) => cell.onCommit(id, v)}
+            ariaLabel={cell.label}
+            placeholder={cell.placeholder}
+            maxLength={cell.maxLength}
+            title={cell.title ?? cell.label}
+            testid={cellTestId(ctl)}
+          />
+          {#if faceplateView}<span class="cell-cap">{cell.label}</span>{/if}
+        </div>
       {:else if cell?.kind === 'panel'}
         <!-- BESPOKE PANEL (PF-14): the module's own component — a live SVG
              map, a draggable envelope editor — for a control that is not one
@@ -1920,6 +1946,24 @@
     max-width: none;
     align-items: flex-start;
     gap: 4px;
+  }
+
+  /* TYPED-ENTRY cell. Sized like a knob COLUMN rather than like a selector:
+     the field is a short token (a note name, a filename stem), not a roster,
+     so it has not earned a roster's width. The floor is what a 4-character
+     monospace value plus the focus ring needs; the ceiling keeps a long
+     placeholder from stretching a band. */
+  .ms-cell-entry {
+    justify-content: center;
+    min-width: 52px;
+    /* A note name is at most four glyphs ('g#-1'); a filename stem is longer
+       but ellipsises rather than earning a roster's width. Measured: at 96 px
+       four of these cost 384 px of a band, at 72 px they cost 288. */
+    max-width: 72px;
+  }
+  .rl-tile.dock-full .ms-cell-entry {
+    align-items: center;
+    gap: 3px;
   }
 
   /* The cell's own caption under a dock-tier selector/import (the DECLARED
