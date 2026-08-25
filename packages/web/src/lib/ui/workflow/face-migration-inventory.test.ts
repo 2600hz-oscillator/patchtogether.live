@@ -79,6 +79,7 @@ import type { ModuleFace } from '$lib/graph/types';
 import { STRICT_FACES } from './strict-faces';
 import { DOM_SOURCE_LANE_TYPES, HEADLESS_MOUNT_LANE_TYPES } from './dom-source-modules';
 import { shellExtensionIds, WIRED_SHELL_EXTENSION_SLOTS } from './shell-extensions';
+import { shellCellKindsFor } from './shell-cells';
 import {
   FACE_MIGRATION_INVENTORY,
   MIGRATION_BLOCKERS,
@@ -121,6 +122,30 @@ function cardPathFor(def: RegisteredDef): string {
   return join(CARD_DIR, `${def.card ?? conventionalCardName(def.type)}.svelte`);
 }
 
+/** The declared `face` for one module type, or undefined. */
+function faceOf(type: string): ModuleFace | undefined {
+  return allDefs().find((d) => d.type === type)?.face;
+}
+
+/**
+ * The SOURCE of an extension's `fullViewBody` component, or null.
+ *
+ * ⚠ THE FILE, NOT THE COMPONENT: `shell-extensions`' `import.meta.glob` is LAZY,
+ * so the component object is unreachable from a node-env test. Same ten-liner as
+ * `face-rack-status-source.test.ts` — two gates reading one seam the same way.
+ */
+function fullViewBodySource(extId: string): string | null {
+  const ext = resolve(CARD_DIR, extId, 'shell-extension.ts');
+  if (!existsSync(ext)) return null;
+  const src = readFileSync(ext, 'utf8');
+  const m = /fullViewBody:\s*([A-Za-z0-9_]+)/.exec(src);
+  if (!m) return null;
+  const imported = new RegExp(`import\\s+${m[1]}\\s+from\\s+'\\./([^']+)'`).exec(src);
+  if (!imported) return null;
+  const file = resolve(CARD_DIR, extId, imported[1]!);
+  return existsSync(file) ? readFileSync(file, 'utf8') : null;
+}
+
 /** The RENDERED markup only: script blocks, style blocks and comments removed.
  *  Documentation that spells out a banned form must never read as the form —
  *  the same discipline the PatchPanel gate applies one directory up. */
@@ -143,6 +168,12 @@ export function cardTemplate(src: string): string {
  */
 export function mountsTypedEntry(template: string): boolean {
   if (/<NoteEntry[\s/>]/.test(template)) return true;
+  // The GENERIC typed-entry primitive (#1509), beside the note-specific
+  // composite above. Both are component tags that render a typed `<input>`, so
+  // a subject that named only one of them would read "no typed entry" on a
+  // surface that has it — which on `ModuleShell` is the difference between the
+  // note-entry blocker being live and being stale.
+  if (/<TextEntry[\s/>]/.test(template)) return true;
   if (/<textarea[\s/>]/.test(template)) return true;
   if (/contenteditable/.test(template)) return true;
   return /<input\b[^>]*\btype="(text|number|url|search|email|tel)"/.test(template);
@@ -506,25 +537,101 @@ describe('face-migration inventory — DERIVED from the tree, not from this list
     );
   });
 
-  it('TYPED ENTRY: no generic-face module mounts it, and every module that does declares the blocker', () => {
+  // ── TYPED ENTRY — THE PARITY FORM (#1509) ─────────────────────────────────
+  //
+  // ⚠ THIS LEG USED TO BE A FLAT PROHIBITION, AND ITS PRECONDITION IS THE THING
+  // #1509 REMOVED. It read: a `generic-face` module whose CARD mounts typed
+  // entry is an offender, *"the face system has no text cell"* — with the rest
+  // of the fleet required to declare `needs-note-entry-cell` instead. Both
+  // halves are now false: `ModuleShell` mounts `ShellEntryCell` -> `TextEntry`,
+  // and the blocker is deleted.
+  //
+  // ⚠ SO THIS IS A REPAIR, NOT A RELAXATION, AND THE DIRECTION MATTERS. Left
+  // alone the old leg does not go vacuous — it goes INVERTED, refusing exactly
+  // the legitimate faces the capability was built to enable (cartesian is the
+  // first). Deleting it would be the relaxation. Instead the premise is
+  // rewritten to what it was always trying to say:
+  //
+  //   the face may carry typed entry — it must just ACTUALLY CARRY IT.
+  //
+  // A `generic-face` module whose card mounts typed entry is an offender UNLESS
+  // its face carries the affordance, by one of the two routes that exist:
+  //
+  //   (1) a registered `entry`/`panel` cell in `SHELL_CELLS[type]` — the panel
+  //       arm is not a loophole: a panel is module-owned markup that a face
+  //       renders, which is exactly "the face carries it" (cartesian's grid).
+  //   (2) `face.extension` whose `fullViewBody` source mounts typed entry —
+  //       the wave-6/7 cohort's route (a device picker's own body).
+  //
+  // DENY-BY-DEFAULT WITH NO LIST: there is no exemption roster, and the escape
+  // is carrying the affordance, which is the outcome wanted anyway. ANCHORED
+  // BOTH WAYS: if a face later drops its entry cell or its body drops its
+  // `<input>`, this reddens again — which is the regression a face PR could
+  // otherwise introduce silently.
+  //
+  // ⚠ WHAT IT STILL CANNOT SEE, stated rather than discovered later: a SOURCE
+  // scan cannot tell that the face's typed field is the SAME affordance the
+  // card had — only that one of the same kind exists. That is the identical gap
+  // `module-docs-lint`'s family↔card leg names about itself ("PRESENCE-ONLY"),
+  // and it is the right trade at this tier: presence is checkable in the unit
+  // lane, identity is not. A RUNTIME oracle would be worse rather than better —
+  // a device-picker body renders its `<input>` only after a hardware grant, and
+  // CI has no device, so the scan would read "no typed entry" and pass FOR THE
+  // WRONG REASON.
+  it('TYPED ENTRY: a faced module whose CARD types must CARRY typed entry on its face', () => {
     const offenders: string[] = [];
     for (const [type, tmpl] of templates) {
       if (!mountsTypedEntry(tmpl)) continue;
       const entry = inventoryEntry(type);
       if (!entry) continue; // reported by the totality gate
-      if (entry.disposition === 'generic-face') {
-        offenders.push(
-          `${type}: dispositioned generic-face, but its card mounts typed entry — the face system ` +
-            'has no text cell (card-primitive-parity: NoteEntry via:none)',
-        );
-        continue;
-      }
       if (entry.disposition === 'organizational-native') continue; // the text IS the object
-      if (!migrationBlockers(entry).includes('needs-note-entry-cell')) {
-        offenders.push(`${type}: its card mounts typed entry but it does not declare needs-note-entry-cell`);
+      if (entry.disposition !== 'generic-face') continue; // not faced yet — nothing to carry
+      const kinds = shellCellKindsFor(type);
+      const hasCell = kinds.includes('entry') || kinds.includes('panel');
+      const extId = faceOf(type)?.extension;
+      const body = extId ? fullViewBodySource(extId) : null;
+      const hasBody = !!body && mountsTypedEntry(body);
+      if (!hasCell && !hasBody) {
+        offenders.push(
+          `${type}: its CARD mounts typed entry and its face carries none — no 'entry'/'panel' ` +
+            `cell in SHELL_CELLS['${type}'] and no face.extension fullViewBody that types. ` +
+            'Promotion deletes the card from both surfaces, so that affordance is now unreachable.',
+        );
       }
     }
     expect(offenders.sort()).toEqual([]);
+  });
+
+  it('NEGATIVE CONTROL: the parity form FIRES on a faced module carrying nothing', () => {
+    // The leg above is an ABSENCE over a population that is currently small, so
+    // a bad predicate greens it silently. Drive the same two clauses over a
+    // synthetic module that types on its card and carries nothing on its face,
+    // and over one that carries a cell — the check must separate them.
+    const carries = (cellKinds: string[], bodySrc: string | null) =>
+      cellKinds.some((k) => k === 'entry' || k === 'panel') ||
+      (!!bodySrc && mountsTypedEntry(bodySrc));
+    expect(carries([], null), 'a face carrying nothing must NOT pass').toBe(false);
+    expect(carries(['selector', 'toggle'], null), 'unrelated cells must NOT pass').toBe(false);
+    expect(carries(['entry'], null), 'an entry cell carries it').toBe(true);
+    expect(carries(['panel'], null), 'a panel carries it').toBe(true);
+    expect(carries([], '<textarea bind:value={t}></textarea>'), 'a typing body carries it').toBe(true);
+    expect(carries([], '<button>press</button>'), 'a non-typing body does NOT').toBe(false);
+  });
+
+  it('POSITIVE CONTROL: cartesian is the faced module this leg actually exercises', () => {
+    // Membership, not size — and anchored so that if cartesian is ever
+    // un-faced or its grid panel is renamed, the leg above stops being
+    // exercised LOUDLY rather than silently.
+    const entry = inventoryEntry('cartesian');
+    expect(entry?.disposition, 'cartesian is faced').toBe('generic-face');
+    expect(
+      mountsTypedEntry(templates.get('cartesian') ?? ''),
+      'CartesianCard still mounts <NoteEntry> — the condition this leg tests',
+    ).toBe(true);
+    expect(
+      shellCellKindsFor('cartesian').includes('panel'),
+      'and its face carries the pad grid panel',
+    ).toBe(true);
   });
 
   it('POSITIVE CONTROL: the typed-entry scan finds the cards it must', () => {

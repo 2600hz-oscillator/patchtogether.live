@@ -341,6 +341,12 @@ type CellControl =
   | 'action'
   | 'file'
   | 'panel'
+  // TYPED ENTRY (#1509) — the one cell driven by TYPING rather than pointing.
+  // Its branch lands here in the platform PR, before any face adopts it, per
+  // this union's own rule: cartesian, the first #1509 adopter, reaches the
+  // primitive through a PANEL, so the first cell-level adopter will be a
+  // band-shaped field (recorderbox's filename once #1511 lands).
+  | 'entry'
   | 'inert';
 
 /** A panel's DECLARED operability probe (PF-14 — shell-cells.ts ShellPanelProbe).
@@ -572,6 +578,26 @@ function readActionProbe(page: Page, type: string, key: string): Promise<ActionP
         __shellActionProbes?: Record<string, Record<string, ActionProbe>>;
       };
       return w.__shellActionProbes?.[type]?.[key] ?? null;
+    },
+    { type, key },
+  );
+}
+
+/** An ENTRY cell's declared probe (`window.__shellEntryProbes`). Carries the
+ *  module's own `accepts` / `rejects` strings — see ShellEntryProbe for why the
+ *  refusal is declared per cell rather than guessed by the sweep. */
+interface EntryProbe {
+  accepts: string;
+  rejects: string;
+  effect: { kind: 'data'; key: string; expect: 'changed' };
+}
+function readEntryProbe(page: Page, type: string, key: string): Promise<EntryProbe | null> {
+  return page.evaluate(
+    ({ type, key }) => {
+      const w = globalThis as unknown as {
+        __shellEntryProbes?: Record<string, Record<string, EntryProbe>>;
+      };
+      return w.__shellEntryProbes?.[type]?.[key] ?? null;
     },
     { type, key },
   );
@@ -1555,6 +1581,56 @@ async function driveCell(
       host.locator('[data-testid$="-status"]'),
       `${where}: the import action ran and reported back`,
     ).toBeVisible();
+    return;
+  }
+
+  if (cell.control === 'entry') {
+    // TYPED ENTRY (#1509). Two legs, and the SECOND is the reason this cell
+    // kind exists in the shape it does.
+    //
+    // The declared probe carries an `accepts` string and a `rejects` string,
+    // because only the module knows what its own domain excludes. A positive
+    // leg alone would pass on a cell that CLAMPED every input to its nearest
+    // legal value — the backdraft class, where a control writes what the
+    // contract forbids and the model quietly corrects it with every def-reading
+    // gate blind. So the refusal is asserted as an ABSENCE OF CHANGE.
+    const probe = await readEntryProbe(page, spec.type, cell.key);
+    expect(probe, `${where}: an entry cell must declare its probe`).toBeTruthy();
+    const field = host.locator('input[data-role="entry"]');
+    await expect(field, `${where}: renders a writable text input`).toBeVisible();
+    await expect(field, `${where}: is not readonly`).not.toHaveAttribute('readonly', /.*/);
+    await expect(field, `${where}: is not disabled`).toBeEnabled();
+
+    const key = probe!.effect.key;
+    const before = JSON.stringify(await readData(page, nodeId, key));
+    await field.focus();
+    await field.fill(probe!.accepts);
+    await field.blur();
+    await expect
+      .poll(async () => JSON.stringify(await readData(page, nodeId, key)), {
+        message: `${where}: typing '${probe!.accepts}' commits into node.data['${key}']`,
+      })
+      .not.toBe(before);
+
+    const committed = JSON.stringify(await readData(page, nodeId, key));
+    await field.focus();
+    await field.fill(probe!.rejects);
+    await field.blur();
+    // ⚠ AN ABSENCE, AND IT IS CHECKED AFTER A REAL ROUND TRIP rather than
+    // immediately: `expect.poll` cannot prove a negative, so the positive leg
+    // above is what establishes that a commit is observable within the poll
+    // window at all. If a write were going to happen it would have happened by
+    // the same mechanism.
+    await expect
+      .poll(async () => JSON.stringify(await readData(page, nodeId, key)), {
+        message: `${where}: a REFUSED entry ('${probe!.rejects}') must not clamp, round or ` +
+          'partially write — the stored value must be untouched',
+      })
+      .toBe(committed);
+    await expect(
+      field,
+      `${where}: and the field reverts to the stored value rather than keeping the refused text`,
+    ).not.toHaveValue(probe!.rejects);
     return;
   }
 

@@ -31,7 +31,6 @@ Every registered module carries exactly one **disposition**: what kind of work i
 | blocker | issue | modules waiting |
 |---|---|---|
 | `needs-media-controller` | #1511 | 8 |
-| `needs-note-entry-cell` | #1509 | 12 |
 
 ## `generic-face`
 
@@ -52,6 +51,7 @@ author a `face` and rank the controls — no new platform capability.
 | `bluebox` | audio | done | — |
 | `buggles` | audio | done | — |
 | `cameraInput` | video | done | — |
+| `cartesian` | audio | done | — |
 | `cellshade` | video | done | — |
 | `charlottesEchos` | audio | done | — |
 | `chroma` | video | done | — |
@@ -146,7 +146,6 @@ author a `face` and rank the controls — no new platform capability.
 | `polarizer` | audio | done | — |
 | `pong` | audio | done | — |
 | `posterbox` | video | done | — |
-| `push2Control` | meta | done | — |
 | `qbrt` | audio | done | — |
 | `quadralogical` | video | done | — |
 | `rasterize` | audio | done | — |
@@ -207,41 +206,41 @@ the primary interaction is not param-shaped — needs a purpose-built surface.
 
 | module | domain | state | blockers |
 |---|---|---|---|
-| `archivist` | video | — | `needs-media-controller` `needs-note-entry-cell` |
+| `archivist` | video | — | `needs-media-controller` |
 | `audioIn` | audio | — | `needs-media-controller` |
 | `blood` | video | — | — |
-| `cartesian` | audio | — | `needs-note-entry-cell` |
 | `chromaconsole` | audio | — | — |
 | `clipplayer` | audio | — | — |
 | `clockedRunner` | audio | — | — |
-| `controlSurface` | meta | — | `needs-note-entry-cell` |
+| `controlSurface` | meta | — | — |
 | `doom` | video | — | — |
-| `electraControl` | meta | — | `needs-note-entry-cell` |
+| `electraControl` | meta | — | — |
 | `es9` | audio | — | — |
 | `frogger` | audio | — | — |
 | `gibribbon` | video | — | — |
 | `livecode` | audio | — | — |
 | `mappy` | video | — | — |
 | `midiCvBuddy` | audio | — | — |
-| `midiLane` | audio | — | `needs-note-entry-cell` |
+| `midiLane` | audio | — | — |
 | `midiOutBuddy` | audio | — | — |
 | `modtris` | audio | — | — |
 | `moog956` | audio | — | — |
 | `nibbles` | video | — | — |
 | `numpadPlus` | audio | — | — |
 | `outToLaunch` | video | — | — |
-| `painter` | video | — | `needs-note-entry-cell` |
-| `peertube` | video | — | `needs-media-controller` `needs-note-entry-cell` |
-| `recorderbox` | video | — | `needs-media-controller` `needs-note-entry-cell` |
+| `painter` | video | — | — |
+| `peertube` | video | — | `needs-media-controller` |
+| `push2Control` | meta | — | — |
+| `recorderbox` | video | — | `needs-media-controller` |
 | `score` | audio | — | — |
 | `skifree` | audio | — | — |
-| `textmarquee` | video | — | `needs-note-entry-cell` |
-| `toybox` | video | — | `needs-media-controller` `needs-note-entry-cell` |
+| `textmarquee` | video | — | — |
+| `toybox` | video | — | `needs-media-controller` |
 | `tvLibrarian` | video | — | `needs-media-controller` |
 | `videobox` | video | — | `needs-media-controller` |
 | `videovarispeed` | video | — | `needs-media-controller` |
-| `vstFx` | audio | — | `needs-note-entry-cell` |
-| `vstInstrument` | audio | — | `needs-note-entry-cell` |
+| `vstFx` | audio | — | — |
+| `vstInstrument` | audio | — | — |
 
 ## `organizational-native`
 

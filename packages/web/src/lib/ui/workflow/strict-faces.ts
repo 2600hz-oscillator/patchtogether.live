@@ -4100,9 +4100,17 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   //
   // THE FIRST FACED SEQUENCER, and the one member of that class the
   // `needs-note-entry-cell` blocker never gated: its steps are CLICKED, not
-  // typed. The blocker is about a typed pitch field ("c#3") having no face
-  // representation, which is real and still blocks `sequencer`, `drumseqz`,
-  // `polyseqz`, `macseq`, `writeseq`, `midiLane` and `cartesian`. kria's step
+  // typed.
+  //
+  // ⚠ THIS PARAGRAPH USED TO NAME SEVEN MODULES THE BLOCKER "STILL BLOCKS", AND
+  // THE LIST WAS STALE IN BOTH DIRECTIONS. Five of them — `sequencer`,
+  // `drumseqz`, `polyseqz`, `macseq`, `writeseq` — were DELETED in `cef7c16c0`
+  // (deprecated by CLIP PLAYER), and the blocker itself is gone: #1509 shipped
+  // the typed-entry cell, `cartesian` is faced two entries down, and `midiLane`
+  // answers its typed field with a 128-entry roster rather than a text box. A
+  // list of names in a comment is the construct that goes quietly wrong — it
+  // has no gate — so this one is replaced by the fact rather than re-typed.
+  // kria's step
   // roster is a pointer handler on a <button>, so it is buildable today — and
   // it turned out to need NO platform seam at all: no shell extension, no new
   // wired slot, one PF-14 panel plus seven generic cells.
@@ -4506,6 +4514,37 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // +1 — the TOP of the attenuverter's -1..+1 range. A SCALE probe would drag a
   // control already at its ceiling and fail on a live panel.
   'vfpgaRunner',
+
+  // ── cartesian ─────────────────────────────────────────────────────────────
+  //
+  // THE SECOND FACED SEQUENCER, and the module that PROVES the typed-entry cell
+  // (#1509). Its pads are TYPED, not clicked — which is the half of the
+  // sequencer cohort `kria` explicitly did not cover ("kria's steps are CLICKED,
+  // not typed"), and the reason `needs-note-entry-cell` existed at all.
+  //
+  // ⚠ THE GRID IS A PANEL, AND THAT IS NOT A CONCESSION. The first build ranked
+  // sixteen pads as forty-eight generic band cells. It cannot exist: a face key
+  // is a PARAM, a family TEMPLATE (one cell — `FAMILY_TEMPLATE` needs a literal
+  // `-{n}`, so there is no per-member index) or a legend STATIC (cartesian has
+  // no committed legend). Forty-eight family ids would need forty-eight
+  // `testidPrefix`es present in real UI source, and MEASURED, twelve face-only
+  // families already fail `module-docs-lint`'s card-drift leg. Adding dead
+  // testids to the card to satisfy it is *fixing a declaration to satisfy a
+  // gate*; widening the gate is new machinery. So the grid took rung 2 of the
+  // bespoke ladder — one picture-you-edit — which is where this module's own
+  // migration `why` had pointed all along ("the grid is the module").
+  //
+  // ⚠ WIDTH, MEASURED, because the numbers are reusable. Dock, 1220 px pane,
+  // CSS px: `selector` 168 · `entry` 72 · `action` 58 · `toggle` 52 · `knob` 40.
+  // The generic-cell attempt put four selectors in one band — 49% of 1374 px —
+  // and pushed 220 px of the faceplate outside the capture box.
+  //
+  // ⚠ ZERO ATTEST. No cartesian file is in `webgl-attest-hash.sh --list`, and
+  // the grid panel is deliberately DOM rather than canvas so it stays that way:
+  // basis rule (2) is derived from CONTENT, and a WebGL grid would make every
+  // later edit here cost a real-GPU re-attest window.
+  'cartesian',
+
   // GAMEPAD (2026-08-24) — the bespoke-surface cohort's POLL-WITH-NO-GRANT
   // member, and the only one in it whose device picker is an ordinary param.
   //

@@ -1,4 +1,20 @@
-// e2e/tests/videobox-node-lifetime.spec.ts
+// e2e/tests/node-source-videobox.spec.ts
+//
+// ⚠ THE FILENAME IS LOAD-BEARING — DO NOT RENAME THIS BACK TO `videobox-node-lifetime.spec.ts`.
+// `e2e/webgl-heavy-globs.ts` classifies by PREFIX (`**/videobox-*.spec.ts`,
+// `**/videovarispeed-*.spec.ts`), so a spec named after either module is swept
+// into the WebGL-HEAVY lane whatever it actually does. That lane is EXCLUDED
+// from the sharded e2e matrix (`E2E_WEBGL_HEAVY=exclude`) and the attest job
+// SKIPS it whenever the attest hash is unchanged — its log says so outright:
+// "Heavy WebGL lane skipped (trusting the local run)". Under the old name this
+// spec therefore ran NOWHERE in PR CI, green run after green run, while being
+// the acceptance test for the whole conversion.
+//
+// Nothing here is WebGL-heavy: it reads graph edges, element counts and a slot
+// index, and samples no pixels. `collapse-keeps-playing.spec.ts` does the same
+// real-video-decode work under a non-matching name and rides the sharded lane,
+// which is the precedent this follows. The glob list is deliberately NOT edited
+// — the classification is fine, the prefix collision was the accident.
 //
 // LEG-02 P1 (#1511) — VIDEOBOX's source belongs to the NODE, not to a mounted
 // card. This is the acceptance test for that claim, and it is written so that it

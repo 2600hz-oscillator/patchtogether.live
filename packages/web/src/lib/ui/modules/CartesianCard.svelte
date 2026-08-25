@@ -4,7 +4,7 @@
   import NeonFader from '$lib/ui/controls/NeonFader.svelte';
   import NoteEntry from '$lib/ui/controls/NoteEntry.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
-  import { patch, ydoc } from '$lib/graph/store';
+  import { patch } from '$lib/graph/store';
   import { nodeVersion, edgesVersion, nodesStructuralVersion } from '$lib/graph/node-versions.svelte';
   import {
     cartesianDef,
@@ -15,12 +15,17 @@
     coerceToCartesianCell,
     type Cell,
   } from '$lib/audio/modules/cartesian';
-  import { type ChordQuality, nextChordQuality } from '$lib/audio/poly';
-  import { parseNoteName } from '$lib/audio/note-entry';
   import { resolveArrowNav, type ArrowKey } from '$lib/audio/grid-nav';
+  import type { ChordQuality } from '$lib/audio/poly';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
   import { cardParams, portsFromDef } from './card-kit';
+  import {
+    commitCartesianPitch,
+    cycleCartesianChord,
+    parseCartesianPitch,
+    setCartesianGate,
+  } from './cartesian-cell-actions';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -106,44 +111,28 @@
     if (raf !== null) cancelAnimationFrame(raf);
   });
 
-  function readCellsCopy(): Cell[] {
-    const t = patch.nodes[id];
-    if (!t?.data) return defaultCells();
-    const raw = (t.data as Record<string, unknown>).cells;
-    if (Array.isArray(raw)) return (raw as unknown[]).map(coerceToCartesianCell);
-    return defaultCells();
-  }
-  function writeCells(arr: Cell[]) {
-    const t = patch.nodes[id];
-    if (!t) return;
-    ydoc.transact(() => {
-      if (!t.data) t.data = {};
-      (t.data as Record<string, unknown>).cells = arr.map((c) => ({
-        on: c.on,
-        midi: c.midi,
-        chord: c.chord ?? 'mono',
-      }));
-    });
-  }
+  // ⚠ THE WRITES LIVE IN `cartesian-cell-actions`, NOT HERE (#1509). This card
+  // owned a private read-modify-write over `node.data.cells` until the face
+  // landed; now BOTH surfaces call the same module. The DX7 is the precedent
+  // for why that matters — a card that owned its own action shipped a faceplate
+  // that could not change the voice at all — and the specific hazard here is
+  // the FIELDS A WRITE DOES NOT OWN: a pitch commit has to carry `on` and
+  // `chord` through untouched, and two implementations drifting on that is how
+  // retyping a note silently un-voices a chord pad.
   function commitPitch(i: number, input: string) {
-    const arr = readCellsCopy();
-    const cur = arr[i] ?? { on: false, midi: null, chord: 'mono' as ChordQuality };
-    const trimmed = input.trim();
-    const parsed = trimmed === '' ? null : parseNoteName(trimmed);
-    arr[i] = { on: cur.on, midi: parsed, chord: cur.chord ?? 'mono' };
-    writeCells(arr);
+    const parsed = parseCartesianPitch(input);
+    // The card has always treated an unparseable entry as a REST, and that
+    // behaviour is preserved deliberately rather than quietly aligned with the
+    // face (which refuses and reverts): changing what the legacy surface does
+    // with bad input is a behaviour change nobody asked for, and this card is
+    // what `?shell=legacy` renders.
+    commitCartesianPitch(id, i, parsed.ok ? parsed.value : null);
   }
   function toggleGate(i: number) {
-    const arr = readCellsCopy();
-    const cur = arr[i] ?? { on: false, midi: null, chord: 'mono' as ChordQuality };
-    arr[i] = { on: !cur.on, midi: cur.midi, chord: cur.chord ?? 'mono' };
-    writeCells(arr);
+    setCartesianGate(id, i, !(cells[i]?.on ?? false));
   }
   function cycleChord(i: number) {
-    const arr = readCellsCopy();
-    const cur = arr[i] ?? { on: false, midi: null, chord: 'mono' as ChordQuality };
-    arr[i] = { on: cur.on, midi: cur.midi, chord: nextChordQuality(cur.chord) };
-    writeCells(arr);
+    cycleCartesianChord(id, i);
   }
   function chordLabel(c: ChordQuality | undefined): string {
     if (c === 'maj') return 'M';

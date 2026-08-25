@@ -87,8 +87,19 @@ import type { LaneRenderKind } from './legacy-fallback';
  * exercise that path for real.
  */
 /**
- * ⚠ VIDEOBOX HAS LEFT THIS SET (LEG-02 P1, #1511) — the first member ever to,
- * and the shape every remaining one follows.
+ * ⚠ VIDEOBOX (P1) AND VIDEOVARISPEED (P2) HAVE LEFT THIS SET (LEG-02, #1511) —
+ * the first two members ever to, and the shape every remaining one follows.
+ *
+ * ⚠ VARISPEED'S DEPARTURE FIXED THREE LIVE DEFECTS RATHER THAN JUST MOVING A
+ * LIFETIME, and they are worth naming because they are what card-ownership
+ * actually costs: a varispeed inside a COLLAPSED GROUP had no card anywhere
+ * (`needsHeadlessSourceMount` returns false on the `laneOmitsNode` arm for a
+ * non-producer), so its transport and all five CV triggers — including the
+ * ASSET slot select a clip player drives — were dead with the jacks still
+ * visibly patched; `activeSlot` and its seven virtual playheads reset on every
+ * expand/collapse; and a rack saved WITH a crop applied none on load. The
+ * headless host was MASKING those in the common case, which is worse than the
+ * per-rack tax it was introduced to pay.
  *
  * Nothing about videobox's PICTURE changed. What changed is who owns the
  * lifecycle: `$lib/ui/media/node-video-source-registry` now owns the element's
@@ -113,7 +124,6 @@ export const DOM_SOURCE_LANE_TYPES: ReadonlySet<string> = new Set<string>([
   'loopback',
   'peertube',
   'tvLibrarian',
-  'videovarispeed',
 ]);
 
 /**
