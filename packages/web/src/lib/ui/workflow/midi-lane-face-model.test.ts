@@ -27,7 +27,7 @@ import {
 import { noteNameForMidi } from '$lib/audio/note-entry';
 import { STRICT_FACES } from './strict-faces';
 import { curatedFace } from './curated-face';
-import { shellCellKeys, shellCellKindsFor } from './shell-cells';
+import { panelCellKeys, shellCellKeys, shellCellKindsFor } from './shell-cells';
 import {
   midiLaneCcDetail,
   midiLaneCcLit,
@@ -102,6 +102,16 @@ describe('midiLane face — the promotion itself', () => {
           + 'module does nothing without',
       ).toContain('midi-lane-connect-{n}');
     }
+  });
+
+  it('and NOTHING here is dock-restricted — the other half of that claim', () => {
+    // `curatedFace` deciding a key survives the compact tier is necessary and
+    // not sufficient: a PANEL cell is filtered out of every non-dock tier by a
+    // face-lint rule keyed on `panelCellKeys`. This module registers no panel,
+    // so the plan above is what the lane actually renders. Pinning it here
+    // means "CONNECT reaches the lane" cannot be quietly falsified by someone
+    // later re-shaping a cell into a panel.
+    expect(panelCellKeys('midiLane')).toEqual([]);
   });
 
   it('NEGATIVE CONTROL: the tier selector CAN drop a key, so the leg above is not vacuous', () => {
