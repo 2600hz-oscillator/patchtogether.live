@@ -20,21 +20,11 @@
 // red.
 
 import { patch, ydoc } from '$lib/graph/store';
-import { parseNoteName, noteNameForMidi } from '$lib/audio/note-entry';
-import { CHORD_QUALITIES, nextChordQuality, type ChordQuality } from '$lib/audio/poly';
+import { parseNoteName } from '$lib/audio/note-entry';
+import { nextChordQuality, type ChordQuality } from '$lib/audio/poly';
 import { coerceToCartesianCell, defaultCells, type Cell } from '$lib/audio/modules/cartesian';
 import type { ModuleNode } from '$lib/graph/types';
-import type { SelectorOption } from '$lib/ui/controls';
 import { entryAccept, entryReject, type EntryParse } from '$lib/ui/controls/text-entry-model';
-
-/** The live pad array for a node, normalized. Pure read — no transaction. */
-export function readCartesianCells(nodeId: string): Cell[] {
-  const t = patch?.nodes?.[nodeId];
-  if (!t?.data) return defaultCells();
-  const raw = (t.data as Record<string, unknown>).cells;
-  if (Array.isArray(raw)) return (raw as unknown[]).map(coerceToCartesianCell);
-  return defaultCells();
-}
 
 /** The pad array off an already-resolved node (the shell's cell readers hand us
  *  the live node rather than an id). Pure. */
@@ -59,7 +49,7 @@ function writeCartesianCells(nodeId: string, arr: Cell[]): void {
 
 /** Read-modify-write ONE pad, preserving every field the caller did not set. */
 function mutateCell(nodeId: string, i: number, edit: (c: Cell) => Cell): void {
-  const arr = readCartesianCells(nodeId);
+  const arr = cartesianCellsOf(patch?.nodes?.[nodeId]);
   const cur = arr[i] ?? { on: false, midi: null, chord: 'mono' as ChordQuality };
   arr[i] = edit({ on: cur.on, midi: cur.midi, chord: cur.chord ?? 'mono' });
   writeCartesianCells(nodeId, arr);
@@ -84,12 +74,6 @@ export function parseCartesianPitch(text: string): EntryParse<number | null> {
   return midi === null ? entryReject<number | null>() : entryAccept<number | null>(midi);
 }
 
-/** The canonical note name for pad `i`, or '' for a rest. */
-export function cartesianPitchText(node: ModuleNode | undefined, i: number): string {
-  const midi = cartesianCellsOf(node)[i]?.midi ?? null;
-  return midi === null ? '' : noteNameForMidi(midi);
-}
-
 /** Commit an ALREADY-VALIDATED pitch (or a rest). Never takes raw text. */
 export function commitCartesianPitch(nodeId: string, i: number, midi: number | null): void {
   mutateCell(nodeId, i, (c) => ({ ...c, midi }));
@@ -97,38 +81,11 @@ export function commitCartesianPitch(nodeId: string, i: number, midi: number | n
 
 // ── GATE ────────────────────────────────────────────────────────────────────
 
-export function cartesianGateValue(node: ModuleNode | undefined, i: number): boolean {
-  return cartesianCellsOf(node)[i]?.on ?? false;
-}
-
 export function setCartesianGate(nodeId: string, i: number, on: boolean): void {
   mutateCell(nodeId, i, (c) => ({ ...c, on }));
 }
 
 // ── CHORD ───────────────────────────────────────────────────────────────────
-
-/** The chord roster. ⚠ Labels are the module's OWN words — the card prints
- *  `—` / `M` / `m` in a badge, and those single glyphs are unreadable as a
- *  roster, so the roster spells them. Nothing is invented: these are the three
- *  values `ChordQuality` already declares. */
-const CHORD_LABELS: Readonly<Record<ChordQuality, string>> = {
-  mono: 'mono',
-  maj: 'maj',
-  min: 'min',
-};
-
-export function cartesianChordOptions(): SelectorOption<string>[] {
-  return CHORD_QUALITIES.map((q) => ({ value: q, label: CHORD_LABELS[q] }));
-}
-
-export function cartesianChordValue(node: ModuleNode | undefined, i: number): string {
-  return cartesianCellsOf(node)[i]?.chord ?? 'mono';
-}
-
-export function setCartesianChord(nodeId: string, i: number, q: string): void {
-  if (q !== 'mono' && q !== 'maj' && q !== 'min') return;
-  mutateCell(nodeId, i, (c) => ({ ...c, chord: q }));
-}
 
 /** Advance pad `i` to the next chord quality — the CARD's own gesture
  *  (`chord-badge` cycles mono → maj → min), through `nextChordQuality` so the
