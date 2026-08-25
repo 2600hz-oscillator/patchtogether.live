@@ -6,7 +6,7 @@
   // empty slots render empty regardless of how many are filled.
   //
   // The grid is split into three 2-row banks with separators — TOP (Row1+2),
-  // MIDDLE (Row3+4), BOTTOM (Row5+6) — mirroring the Electra's three stacked
+  // MID (Row3+4), BOT (Row5+6) — mirroring the Electra's three stacked
   // 12-pot control sets. Each filled slot renders a proxied Knob keyed by the
   // source control's moduleId:paramId (so MIDI / the source's own knob / this
   // proxy / the Electra pot all share one binding), plus an editable label (the
@@ -205,7 +205,7 @@
     <!-- On-card "Send to Electra": generates the 3-page preset from the whole
          rack + pushes it to a connected Electra One. Reuses the shared button. -->
     <div class="ec-actions">
-      <ElectraConnectButton />
+      <ElectraConnectButton nodeId={id} />
     </div>
   </div>
 

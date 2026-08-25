@@ -137,6 +137,42 @@ export type LaneRenderKind = 'legacy' | 'shell' | 'placeholder' | 'stub';
  *     of HEADLESS_MOUNT_LANE_TYPES — it owns no media element and pushes
  *     nothing into an engine handle — so its card is simply not mounted after
  *     promotion and there is no `pointer-events: none` host to reach through.
+ *   ⚠ electraControl USED TO BE IN THIS SET and is not any more, and it was the
+ *     LAST meta module in it. Its removal is not optional paperwork attached to
+ *     the promotion — it is a PRECONDITION of it, for the reason
+ *     launchpadControlLeft's inventory note already records: this set
+ *     short-circuits `laneRenderKind` BEFORE `migrated` is read, so a carved-out
+ *     type's lane can never become a shell. Two further mechanisms make it
+ *     load-bearing rather than tidy: `FACES` (e2e/vrt/_shell-faces.ts) is
+ *     asserted EQUAL to `STRICT_FACES` in both directions, so a promoted module
+ *     MUST have VRT scenes; and `bootWithFace` waits on
+ *     `.svelte-flow__node[data-id=…] [data-testid="module-shell"]`, which a
+ *     carved-out type never renders. Membership and promotion are therefore
+ *     mutually exclusive by construction, not by preference.
+ *     ⚠ WHAT THE STATED REASON WAS, AND WHICH HALF SURVIVED. The "grid /
+ *     launcher / mapper" clause above is TRUE of this card — it really is a 6×6
+ *     mapper — and that half is not the operative one. The operative half is
+ *     "…and stay on the verbatim legacy card UNTIL THEN rather than a lossy
+ *     placeholder": the alternative was never a placeholder once the face
+ *     existed, exactly as for videoOut and launchpadControlLeft, and this PR is
+ *     the "later spike" the clause defers to.
+ *     ⚠ THE ARITHMETIC IS REAL AND IS ANSWERED RATHER THAN WAVED AWAY. The
+ *     board's narrowest honest width is six 48 px columns plus bank gutters
+ *     (`min-width: 360px` on the card) against SHELL_TILE_W = 192, so it cannot
+ *     be a lane tile and `fullViewBody` is not painted at the lane. That is the
+ *     same measurement on which controlSurface was refused — and it does not
+ *     refuse this module, because THIS ONE'S DESIGN HOME IS NOT A LANE TILE.
+ *     electraControl is the `E` of the M/E/C pin trio with `surface: 'drawer'`
+ *     and `data.pinned`, so its always-on instance is canvas-hidden and has no
+ *     lane tile at all; `dockRailRendersFace` flips its drawer to
+ *     `<ModuleShell view='drawer'>`, and `dockFullViewHeadPlan` gates the body
+ *     on `isFaceplateView(view)` (`view !== 'lane'`), so the board paints there
+ *     at full faceplate width. For the instance every workflow rack has, the
+ *     192 px number never applies. A SECOND, user-spawned canvas instance is
+ *     reachable (graph/cap.ts excludes the pin from `maxInstances`), and for
+ *     that one the board moves from inline-on-the-tile to one click away in the
+ *     dock full view — the ordinary semantic-zoom contract every promoted module
+ *     accepts, with no affordance lost.
  * Everything else with a resolvable card swaps.
  */
 export const NON_SHELL_LANE_TYPES: ReadonlySet<string> = new Set<string>([
@@ -145,7 +181,6 @@ export const NON_SHELL_LANE_TYPES: ReadonlySet<string> = new Set<string>([
   'cadillac',
   'clipplayer',
   'controlSurface',
-  'electraControl',
 ]);
 
 /** Inputs to the pure lane-render decision. */

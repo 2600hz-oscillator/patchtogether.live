@@ -836,10 +836,33 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
   },
   {
     type: 'electraControl',
-    disposition: 'bespoke-surface',
-    why:
-      'the Electra One HARDWARE MAPPER: a fixed row/knob slot matrix that other modules params ' +
-      'are dropped into and renamed in place. No params of its own; the matrix is the interaction.',
+    disposition: 'generic-face',
+    note:
+      'PROMOTED — the FOURTH meta-domain face, and the LAST module to leave NON_SHELL_LANE_TYPES. ' +
+      '⚠ TWO CLAUSES OF THE OLD `why` WERE FALSE, and they are retired here BY CONSTRUCTION since ' +
+      'a promoted module carries a `note` rather than a `why`. It said slots are what other ' +
+      'modules params "are dropped into": there is NO drag-and-drop anywhere near this module and ' +
+      'NO affordance on the board at all — assignment is a three-level cascade on the SOURCE ' +
+      'control\'s context menu, and an empty cell cannot solicit one, which is a real UX gap the ' +
+      'promotion does not close. And it said "the matrix is the interaction": the matrix is the ' +
+      'LAYOUT, and the interaction that makes the module DO anything is SEND TO ELECTRA, which is ' +
+      'the only gesture here that leaves the browser. Same stale-`why` class as recorderbox, ' +
+      'launchpadControlLeft, gamepad and push2Control. What was right and is kept: a fixed 6×6 ' +
+      'row/knob matrix, renameable in place, with no params of its own. ' +
+      'ONE ranked ACTION cell — SEND TO ELECTRA — and it is the one ranked cell because it is the ' +
+      'only ADDRESSABLE one, not because the others lost a ranking argument: every other control ' +
+      'proxies a param on a DIFFERENT node, and a face key resolves only to a param on THIS def, ' +
+      'a `<familyId>-{n}` template (ONE cell, no per-member index), or a legend static — so ' +
+      'thirty-six proxies and thirty-six rename fields are unaddressable at any rank. They are a ' +
+      '`control-grid` fullViewBody, which reaches the workflow DRAWER because ' +
+      'dockFullViewHeadPlan gates it on isFaceplateView(view) = view !== \'lane\'. ' +
+      '⚠ THE STOP-1 ANSWER IS UNLIKE ITS SIBLINGS\': gamepad, push2Control and ' +
+      'launchpadControlLeft each rendered `placeholder` already and argued "no tier to lose". ' +
+      'This one rendered `legacy`, so it HAD a tier. It is still a gain, because the module\'s ' +
+      'design home is not a lane tile: it is the `E` of the M/E/C pin trio with surface `drawer`, ' +
+      'canvas-hidden, so its always-on instance has no lane tile and its drawer gains the face. ' +
+      'The residual is a second, user-spawned canvas instance whose board moves one click into ' +
+      'the dock full view — the ordinary semantic-zoom contract, with no affordance lost.',
   },
   {
     type: 'es9',
@@ -1040,7 +1063,11 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
     blockers: ['needs-media-controller'],
     why:
       'a fediverse SEARCH BROWSER: typed query plus an optional instance host, a result list, and ' +
-      'a player whose <video> source is card-owned.',
+      'a player. ⚠ ITS SOURCE IS NO LONGER CARD-OWNED (LEG-02 P3, #1511) — the element, the ' +
+      'hls.js demuxer, the attach, the audio wire, the catalogue and both triggers moved to ' +
+      '$lib/ui/media/node-hls-source-registry on graph lifetime. The blocker stays because it is ' +
+      'ALL-OR-NOTHING: its probe is HEADLESS_MOUNT_LANE_TYPES being EMPTY, and archivist, ' +
+      'cameraInput and loopback are still in it.',
   },
   // ⚠ RECLASSIFIED 2026-08-24, bespoke-surface -> generic-face, and — like pong's
   // reclassification below — THE OLD WHY WAS RIGHT ABOUT THE MODULE AND WRONG ABOUT
@@ -1142,8 +1169,10 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
     disposition: 'bespoke-surface',
     blockers: ['needs-media-controller'],
     why:
-      'a CHANNEL BROWSER: a station roster with tuning gestures over a player whose <video> source ' +
-      'is card-owned. The browse-and-tune flow is the interaction.',
+      'a CHANNEL BROWSER: a world map plus a station roster with tuning gestures over a player. ' +
+      'The browse-and-tune flow is the interaction. ⚠ ITS SOURCE IS NO LONGER CARD-OWNED ' +
+      '(LEG-02 P3, #1511) — same registry and same reason as peertube; the CARD keeps only the ' +
+      'country dataset, which is picker data nothing engine-visible depends on.',
   },
   {
     type: 'twotracks',
