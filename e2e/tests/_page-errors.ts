@@ -62,7 +62,7 @@
 // resource (see OPTIONAL_RUNTIME_ASSETS) while adding every third-party 4xx to
 // the sweep's flake surface.
 
-import type { Page } from '@playwright/test';
+import type { ConsoleMessage, Page } from '@playwright/test';
 
 // ────────── Named optional runtime assets ──────────
 //
@@ -199,21 +199,41 @@ export interface PageErrorCollector {
   readonly all: readonly PageErrorEntry[];
   /** The lines a sweep asserts `toEqual([])` on. */
   significant(): string[];
+  /**
+   * Detach the listeners this collector attached.
+   *
+   * ⚠ REQUIRED WHEN THE PAGE OUTLIVES THE TEST. On a test-scoped page the page
+   * is discarded at teardown and the listeners go with it, so nothing ever
+   * needed this. A worker-scoped rack session (support/rack-session.ts) reuses
+   * ONE page across every row in the file, and there an un-disposed collector
+   * is two compounding bugs rather than a leak: the Nth row runs with N
+   * listener pairs attached, and — the part that changes a RESULT — row N's
+   * `all` keeps growing from rows N+1.., so a later row's error is attributed
+   * to an earlier row that had already passed. That reads as a flaky assertion
+   * in a test that is not the one at fault.
+   */
+  dispose(): void;
 }
 
 /** Attach console + pageerror listeners and return the collector. Call BEFORE
- *  the first `page.goto`. */
+ *  the first `page.goto`. Dispose it when the page outlives the test. */
 export function collectPageErrors(page: Page): PageErrorCollector {
   const all: PageErrorEntry[] = [];
-  page.on('pageerror', (e) => {
+  const onPageError = (e: Error): void => {
     all.push({ kind: 'pageerror', text: e.message, url: '' });
-  });
-  page.on('console', (m) => {
+  };
+  const onConsole = (m: ConsoleMessage): void => {
     if (m.type() !== 'error') return;
     all.push({ kind: 'console', text: m.text(), url: m.location()?.url ?? '' });
-  });
+  };
+  page.on('pageerror', onPageError);
+  page.on('console', onConsole);
   return {
     all,
     significant: () => all.filter((e) => !isBenign(e)).map(formatEntry),
+    dispose: () => {
+      page.off('pageerror', onPageError);
+      page.off('console', onConsole);
+    },
   };
 }

@@ -8,7 +8,7 @@
 //
 // Measured cost of this dimension: 1652.6 s / 173 tests (+ heavy-GL budget)
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './support/rack-session';
 import {
   EXEMPT_INPUT_DRIVE,
   HEAVY_GL_MOUNT_MS,
@@ -68,7 +68,7 @@ test.describe('per-module per-port: inputs accept signal (wire-up)', () => {
       continue;
     }
 
-    test(title, async ({ page }) => {
+    test(title, async ({ rack }) => {
       // Per-iteration: spawnPatch (~1s under-load) + 100ms wait + edge-read
       // (~50ms). The default 30s test budget is ALWAYS too tight under shard
       // CPU contention — even at the previous "> 20 inputs" gate, modules
@@ -92,7 +92,6 @@ test.describe('per-module per-port: inputs accept signal (wire-up)', () => {
       // GL cards (WAVESCULPT: wall1..6 video ins + video_out) also freeze the
       // render + get the heavy budget instead of timing out wiring inputs.
       if (touchesVideo(mod)) {
-        await freezeVideoRender(page);
         // The inner `Math.max(45_000, …)` that used to sit here is GONE. It was
         // a second floor stacked under the first — binding below 8 inputs, and
         // then swallowed whole by the 90 000 above it, so it could never change
@@ -101,16 +100,36 @@ test.describe('per-module per-port: inputs accept signal (wire-up)', () => {
         test.setTimeout(wireUpBudgetMs(mod.inputs.length));
       }
 
-      const errors = collectPageErrors(page);
-
-      await page.goto('/rack?shell=legacy&seed=none');
+      // ⚠ DOOM RUNS ON ITS OWN FRESHLY-NAVIGATED PAGE, EXCLUDED BY NAME.
+      //
+      // Not a performance carve-out — a correctness one, and the owner's
+      // standing ruling that DOOM is not to be touched without specific
+      // approval is the reason it is stated rather than quietly folded in.
+      // `doomAssetsPresent` + `test.skip` decide whether this row runs AT ALL,
+      // and that decision is made against a page this row must own: skipping
+      // mid-row on a SHARED page would abandon the session half-reset for
+      // whatever module runs next. Its shape is therefore byte-identical to
+      // what it was before this file was amortised — one navigation, one page,
+      // one row — so nothing about DOOM's behaviour, timing or game clock
+      // moves. Every other module in the sweep shares the worker's rack.
+      const isDoom = mod.type === 'doom';
+      const page = isDoom
+        ? await rack.freshPage({
+            // Byte-identical to the pre-amortisation order: the freeze is an
+            // `addInitScript`, so it must be installed BEFORE the navigation.
+            beforeBoot: touchesVideo(mod) ? freezeVideoRender : undefined,
+          })
+        : rack.page;
+      const errors = isDoom
+        ? collectPageErrors(page)
+        : await rack.reset({ videoFreeze: touchesVideo(mod) });
 
       // DOOM-asset skip — when the WASM blob isn't present the module
       // can't materialise its input handles, breaking the edge assertion.
       // The handle-presence dim STILL runs (it reads the def-side handles
       // off the rendered card, which the SvelteKit dev server renders
       // regardless of WASM presence).
-      if (mod.type === 'doom') {
+      if (isDoom) {
         const { wasm, wad } = await doomAssetsPresent(page);
         test.skip(!wasm || !wad, 'DOOM WASM/WAD not built — see static/doom/DOWNLOAD_INSTRUCTIONS.md');
       }
