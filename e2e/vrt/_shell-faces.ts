@@ -3670,6 +3670,65 @@ export const FACES = [
     // change only when `notify()` fires, and `notify()` fires only on an
     // incoming MIDI message.
   },
+
+  // ── ES-9 — the widest face in the cohort, and the one whose determinism
+  //    argument is the INVERSE of midiclock's ────────────────────────────────
+  {
+    type: 'es9',
+    // THREE bands: `bridge` (connect + disconnect), `out jacks` (eight class
+    // switches, clustered into halves) and `in twins` (fourteen, clustered
+    // 4/4/4/2). `DOCK_TAB_MIN_BANDS` is 7, so no rail — nothing is padded
+    // toward one or merged to stay under it. There is no hero, so no band is
+    // emptied by a promotion and the post-hero count is the authored count.
+    pages: 3,
+
+    // ⚠ THE DETERMINISM ARGUMENT HERE IS THE OPPOSITE OF `midiclock`'s AND
+    // `midiLane`'s, and it is the FACE that supplies it rather than the
+    // absence of a gesture. Those two are stable because nothing happens until
+    // CONNECT is pressed and this suite presses nothing. es9 has no such gate:
+    // its FACTORY calls `acquireEs9Bridge` unconditionally, `SharedArrayBuffer`
+    // is present on `/rack` (COOP/COEP for Faust), so `es9BridgeAvailable()` is
+    // true on every runner, the transport Worker really does spawn and really
+    // does fail to reach ws://127.0.0.1:9209, and `bridge.worker.ts` cycles
+    // connecting → close → `scheduleReconnect()` on a doubling 1 s→5 s backoff
+    // forever.
+    //
+    // On the LEGACY CARD that makes the status row phase-dependent — it paints
+    // `stateLabel`, which alternates between "connecting…" and "bridge not
+    // found". THE FACE DOES NOT PAINT IT AT ALL. Every one of those strings is
+    // deleted by the resting-text ruling (see `es9-status-model.ts`, which is
+    // where they went), so what remains is:
+    //
+    //   * BRIDGE and CV BUDDY lamps DARK and XRUN dark — `connState` never
+    //     reaches 'connected' with no helper listening, so no `deviceInfo`
+    //     arrives, `snap.meters` stays null and `es9XrunLit` is false; and a
+    //     scene with no cvBuddy in it leaves the third lamp dark too;
+    //   * the static empty-state hint, because `snap.supported` is true and the
+    //     link is down;
+    //   * 24 cells at the defaults the def declares;
+    //   * the `meter` glyph on `in1`, fed by a worklet whose rings the worker
+    //     never fills — digital silence, i.e. the same flat centreline every
+    //     other faced module's live glyph draws — and `bootWithFace` freezes
+    //     the audio graph on top of that.
+    //
+    // So every pixel is a function of the code and none of it of the runner's
+    // hardware. The face is not merely capturable DESPITE the retrying worker;
+    // it is what makes the claim true.
+    //
+    // ⚠ WHAT THIS BASELINE DOES **NOT** COVER, stated rather than implied: the
+    // connected state (a device name, a rate, a round-trip time), a lit XRUN
+    // lamp, and the CV BUDDY lamp lit. The first two need an es9-bridge process
+    // listening on localhost, which no runner has and which is the whole reason
+    // the module exists. Their strings are unit-asserted in
+    // `es9-face-model.test.ts` (every string the lamps can produce, painted or
+    // not); the lamp bindings and the unpainted-but-present half are asserted
+    // in `es9-face.spec.ts`, which also drives a REAL CV Buddy so the third
+    // lamp is proved able to light rather than merely observed dark.
+    //
+    // ⚠ NO `videoFaceWhy` AND NO `simPin`. `domain: 'audio'`; the only canvas
+    // on the surface is the shell's own live-audio glyph, which `bootWithFace`
+    // already freezes.
+  },
 ] as const;
 
 /**
