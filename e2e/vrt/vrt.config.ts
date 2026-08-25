@@ -181,10 +181,13 @@ const FULL_MATCH = [
 //   * vrt-determinism-probe.spec.ts — does this face SCENE REPRODUCE? Boots the
 //     same face TWICE through the gate's own scene code and prints the diff of
 //     BOOT 1 against BOOT 2 at threshold 1/255 (any difference at all) as well
-//     as the 26/255 the gate applies, plus the max channel delta and the
-//     bounding box. The baseline is out of the loop entirely, so a non-zero row
-//     cannot mean "the baseline is stale" — it can only mean the scene does not
-//     reproduce. Carries a negative AND a positive control on every row.
+//     as at 26/255 — the threshold the gate applied when this probe was written,
+//     kept as a second column because it separates a real render change from
+//     last-significant-bit shimmer. The gate's own threshold is now 0, so the
+//     1/255 column is the one that matches it. Also prints the max channel delta
+//     and the bounding box. The baseline is out of the loop entirely, so a
+//     non-zero row cannot mean "the baseline is stale" — it can only mean the
+//     scene does not reproduce. Negative AND positive control on every row.
 const PROBE_MATCH = [
   'vrt-determinism-probe.spec.ts',
   'vrt-lane-tier-probe.spec.ts',
