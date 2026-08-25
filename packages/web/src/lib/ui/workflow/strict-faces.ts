@@ -4584,8 +4584,12 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   //
   // ⚠ THE PROMOTION LOSES NOTHING, and that is the STOP-1 answer rather than a
   // hope. `push2Control` is NOT in `NON_SHELL_LANE_TYPES` — the set is `group`,
-  // `sticky`, `cadillac`, `clipplayer`, `controlSurface`, `electraControl` —
-  // so `laneRenderKind` returns `'placeholder'` TODAY: a uniform rackline tile
+  // `sticky`, `cadillac`, `clipplayer`, `controlSurface` (⚠ this sentence used
+  // to name `electraControl` too, and that MEMBERSHIP ENDED with its own
+  // promotion below; a hand-transcribed copy of another module's set is exactly
+  // the thing that goes quietly stale, so it is corrected here rather than left
+  // to read as current fact) — so `laneRenderKind` returns `'placeholder'`
+  // TODAY: a uniform rackline tile
   // with ZERO ranked controls, on a module that also declares `inputs: []` and
   // `outputs: []`, so its jack rail is empty too. A name and a badge. Its
   // entire surface was reachable only through the dock, on a module that does
@@ -4689,6 +4693,68 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // its last voltage on a hiccup, and for a gate that is a stuck note or a
   // stopped clock — the module's own def says so at length.
   'es9',
+  // ── ELECTRA CONTROL — the FOURTH meta-domain face, the LAST module to leave
+  //    NON_SHELL_LANE_TYPES, and the first face whose primary surface is the
+  //    workflow DRAWER rather than a lane tile or a dock pane ─────────────────
+  //
+  // The only module in the fleet whose subject is OTHER MODULES: a fixed 6×6
+  // board of thirty-six holes you fill by right-clicking any knob anywhere in
+  // the rack. It stores POINTERS, not values, so a filled slot is a live proxy —
+  // and the board IS the preset a physical Electra One gets flashed with, which
+  // is why the geometry is positional and fixed.
+  //
+  // ⚠ THE PROMOTION IS A DELETION, and unlike launchpadControlLeft's the
+  // deletion is a PRECONDITION rather than a tidy-up. `electraControl` was the
+  // last meta module in `NON_SHELL_LANE_TYPES`, which short-circuits
+  // `laneRenderKind` BEFORE `migrated` is read. Two further mechanisms make the
+  // two states mutually exclusive: `FACES` is asserted EQUAL to this set in both
+  // directions, so a promoted module MUST have VRT scenes, and `bootWithFace`
+  // waits on a `module-shell` testid inside the lane flow node, which a
+  // carved-out type never renders. There was no configuration in which this
+  // module could be both promoted and carved out.
+  //
+  // ⚠ THE STOP-1 ANSWER IS DIFFERENT FROM EVERY OTHER MODULE IN THIS BATCH, and
+  // it is worth being exact because the surface arithmetic looks like the one
+  // that REFUSED `controlSurface`. gamepad, push2Control and launchpadControlLeft
+  // each argued "there is no tier to lose" — they rendered `'placeholder'`
+  // already. That is NOT true here: this module rendered `'legacy'`, so it had a
+  // real tier. What makes the promotion a gain anyway is WHERE THE MODULE LIVES.
+  // It is the `E` of the M/E/C pin trio with `surface: 'drawer'`, spawned into
+  // every workflow rackspace with `data.pinned` and CANVAS-HIDDEN — so its
+  // always-on instance has no lane tile at all, and `dockRailRendersFace`
+  // (`shellFaces && pinned && migrated`) flips its drawer from the legacy card to
+  // `<ModuleShell view='drawer'>`. `dockFullViewHeadPlan` gates the extension
+  // body on `isFaceplateView(view)` = `view !== 'lane'` — "the pinned drawer
+  // paints the same full faceplate and wants the same head precedence (#1739)" —
+  // so the board paints there at full width and the 192 px tile arithmetic that
+  // refused controlSurface never applies to the instance every user has.
+  //
+  // The residual is a SECOND, user-spawned canvas instance, which IS reachable
+  // (`graph/cap.ts` excludes the pin from `maxInstances` counting, so the palette
+  // offers exactly one). Its board moves from inline-on-the-tile to one click
+  // away in the dock full view. No affordance is lost — every one of the card's
+  // twelve is on the face — and that is the ordinary semantic-zoom contract, not
+  // a parity loss.
+  //
+  // ⚠ TWO CLAUSES OF THE INVENTORY `why` WERE FALSE, corrected in the inventory
+  // note and repeated here because this is the field agents read as current
+  // fact. It said slots are what "other modules params are dropped into": there
+  // is NO drag-and-drop and no affordance on the board at all — assignment is a
+  // three-level cascade on the SOURCE control's context menu, and an empty cell
+  // cannot solicit one. And it said "the matrix is the interaction": the matrix
+  // is the LAYOUT, and the interaction that makes the module do anything is SEND
+  // TO ELECTRA. Same stale-`why` class as recorderbox, launchpadControlLeft,
+  // gamepad and push2Control — the seventh consecutive face to find it.
+  //
+  // ONE ranked cell (SEND TO ELECTRA), and it is the one ranked cell because it
+  // is the only ADDRESSABLE one rather than because the others lost a ranking
+  // argument: every other control here proxies a param on a DIFFERENT node, and
+  // a face key resolves only to a param on THIS def, a `<familyId>-{n}` template
+  // (ONE cell, no per-member index — #1509), or a legend static. Thirty-six
+  // proxies and thirty-six rename fields are unaddressable at any rank, which is
+  // the definitional reason this module needs a `control-grid` body.
+  'electraControl',
+
   // OUT TO LAUNCH — the fourth device BINDER in this block, and the first that
   // is also a VIDEO module. Its lane render was `'placeholder'` today: a uniform
   // rackline tile with ZERO ranked controls, on a module whose card only ever

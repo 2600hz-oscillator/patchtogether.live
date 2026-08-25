@@ -865,3 +865,176 @@ test.describe('workflow · the pinned `m` tray renders the promoted face (#1739)
     expect(errors, `pageerrors: ${errors.join(' | ')}`).toEqual([]);
   });
 });
+
+// ── THE `e` TRAY — ELECTRA CONTROL ─────────────────────────────────────────
+//
+// The SECOND drawer pin to be promoted, and the one where the tray is not
+// merely the surface the owner asked about but the ONLY surface the module has.
+// `electraControl` is `surface: 'drawer'` and canvas-hidden, so before this
+// promotion its entire 6×6 board — thirty-six proxies, the rename, the flash —
+// was reachable only by opening the `e` drawer onto a legacy card. Promotion
+// swaps that card for `<ModuleShell view='drawer'>`, so if the extension body
+// did not paint here the module would simply be GONE for every workflow user.
+//
+// ⚠ THIS IS THE ONLY PLACE THAT IS ASSERTED, which is why the block exists.
+// `electra-control.spec.ts` drives the same testids against the CARD on
+// `?shell=legacy` — the `false` arm of `dockRailRendersFace`, which promotion
+// cannot reach — and the face's two VRT scenes photograph a canvas instance's
+// EMPTY board, so they cannot see a proxy, a colour, a name or the flash button
+// at all. Without this, the promotion's actual subject has no coverage on its
+// actual surface: exactly the gap this file's own header describes for mixmstrs.
+test.describe('workflow · the pinned `e` tray renders the ELECTRA board', () => {
+  const EC = 'pinned-electraControl';
+
+  /** Open the pinned ELECTRA drawer via the E keymap; return the card host. */
+  async function openElectraTray(page: Page) {
+    await page.locator('.svelte-flow__pane:visible').first().click({ position: { x: 500, y: 380 } });
+    await page.keyboard.press('e');
+    const drawer = page.getByTestId('dock-zone-bottom');
+    await expect(drawer).toBeVisible();
+    await expect(drawer).toHaveAttribute('data-dock-type', 'electraControl');
+    const card = drawer.locator(`[data-dock-card="${EC}"]`);
+    await expect(card).toBeVisible();
+    return card;
+  }
+
+  test('the tray mounts the FACE and its BOARD — not the legacy card', async ({ page }) => {
+    const errors = collectErrors(page);
+    await gotoWorkflow(page);
+    await waitForPin(page, EC);
+    const card = await openElectraTray(page);
+
+    // The promoted shell, at the drawer view — the `true` arm of
+    // `dockRailRendersFace`, which the three legacy-shell drawer specs can never
+    // reach.
+    await expect(card.locator('[data-testid="module-shell"]')).toHaveAttribute('data-shell-view', 'drawer');
+    // …and the verbatim card is NOT mounted anywhere on the page.
+    await expect(page.locator('[data-testid="electra-control-card"]')).toHaveCount(0);
+
+    // THE BOARD. All three banks, and every one of its places.
+    const grid = card.locator('[data-testid="electra-control-grid"]');
+    await expect(grid).toBeVisible();
+    for (const bank of ['TOP', 'MID', 'BOT']) {
+      await expect(grid.locator(`[data-testid="electra-control-bank-${bank}"]`)).toBeVisible();
+    }
+    // The cell count is the PRODUCT of the structure actually on screen (banks ×
+    // 2 rows × 6 knobs), not a typed 36 — so a geometry change moves both sides
+    // of the assertion together instead of leaving a stale literal behind.
+    const bankCount = await grid.locator('[data-testid^="electra-control-bank-"]').count();
+    await expect(grid.locator('[data-testid^="electra-control-slot-"]')).toHaveCount(bankCount * 2 * 6);
+
+    // A fresh rack's board is EMPTY, and every empty place is SPEAKABLE — the
+    // one behaviour the port deliberately changed (the card marked all
+    // thirty-six `aria-hidden`, so a board whose whole premise is that an empty
+    // slot is a visible PLACE had thirty-six unspeakable ones). Row 3 is an ODD
+    // row, so it is the TOP sub-row of control set 2 and its pots are 1-6 — the
+    // firmware walk the module's own header warns not to derive naively.
+    await expect(grid.locator('[data-testid^="electra-control-slot-"][data-filled="true"]')).toHaveCount(0);
+    await expect(grid.getByLabel('Row 3 knob 4, control set 2 pot 4 — empty')).toBeVisible();
+    // The container names the shape and its DERIVED assigned count.
+    await expect(grid).toHaveAttribute('aria-label', 'Electra One board — 6 rows of 6, 0 assigned');
+
+    // THE RANKED CELL — the one gesture that leaves the browser. It is a face
+    // cell now, not markup inside the body, so its testid is the SHELL's
+    // (`shell-cell-<familyId>`) rather than the legacy button's
+    // (`electra-connect-button`, which the card still emits under
+    // `?shell=legacy`). Both spellings exist on purpose and neither matches the
+    // other, which is what keeps the two surfaces' assertions honest.
+    await expect(card.getByTestId('shell-cell-electra-connect-button')).toBeVisible();
+    await expect(card.getByTestId('shell-cell-electra-connect-button')).toBeEnabled();
+    await expect(
+      card.getByTestId('electra-connect-button'),
+      'the legacy button belongs to the card, which is not mounted here',
+    ).toHaveCount(0);
+
+    expect(errors, `pageerrors: ${errors.join(' | ')}`).toEqual([]);
+  });
+
+  test('the full assign → rename → proxy-writes-source lifecycle works FROM THE TRAY', async ({ page }) => {
+    const errors = collectErrors(page);
+    await gotoWorkflow(page);
+    await waitForPin(page, EC);
+    await spawnPatch(page, [{ id: 'adsr-1', type: 'adsr', position: { x: 60, y: 60 } }]);
+    await waitForPin(page, EC);
+    const card = await openElectraTray(page);
+    const grid = card.locator('[data-testid="electra-control-grid"]');
+
+    // ASSIGN — the real three-level cascade on the SOURCE control, which is the
+    // ONLY way a slot is ever filled (the board itself has no assign affordance;
+    // that gap is recorded in the promotion note, not closed here).
+    // ⚠ THE SOURCE CONTROL IS ADDRESSED BY ITS SHELL TESTID, NOT BY AN ARIA
+    // LABEL. This file drives the DEFAULT shell, so `adsr` is itself a promoted
+    // face: its lane tile is a `ModuleShell` emitting `control-<paramId>`, not
+    // the legacy card whose knob carried `aria-label="Attack"`. That is the
+    // difference between this block and `electra-control.spec.ts`, which drives
+    // `?shell=legacy` and can still use the label.
+    const attack = page
+      .locator('.svelte-flow__node[data-id="adsr-1"]')
+      .getByTestId('control-attack');
+    await expect(attack).toBeVisible();
+    await attack.click({ button: 'right' });
+    const menu = page.locator('[data-testid="control-context-menu"]');
+    await expect(menu).toBeVisible();
+    await menu.locator(`[data-testid="ctx-electra-${EC}"]`).click();
+    await menu.locator(`[data-testid="ctx-electra-${EC}-row-2"]`).click();
+    await menu.locator(`[data-testid="ctx-electra-${EC}-row-2-knob-2"]`).click();
+
+    // slotIndex(2,2) = 7. The BODY paints the proxy — this is the assertion that
+    // would have failed if `fullViewBody` did not reach `view='drawer'`.
+    const slot22 = grid.locator('[data-testid="electra-control-slot-2-2"]');
+    await expect(slot22).toHaveAttribute('data-filled', 'true');
+    await expect(slot22.locator('[role="slider"]')).toBeVisible();
+    // The live source-colour stripe is a passthrough read of the SOURCE module.
+    await expect(slot22.locator('[data-testid="electra-control-stripe-2-2"]')).toBeVisible();
+    // The derived count in the accessible name moved with it.
+    await expect(grid).toHaveAttribute('aria-label', 'Electra One board — 6 rows of 6, 1 assigned');
+
+    // RENAME — the affordance most at risk in this promotion, because thirty-six
+    // per-slot typed fields are NOT addressable as face cells at any rank
+    // (#1509: a family template renders ONE cell however many members it names).
+    // It survives as body markup, exactly as on the card.
+    await slot22.locator('[data-testid="electra-control-rename-2-2"]').click();
+    const renameInput = slot22.locator('[data-testid="electra-control-rename-input-2-2"]');
+    await expect(renameInput).toBeVisible();
+    await renameInput.fill('Punch');
+    await renameInput.press('Enter');
+    await expect
+      .poll(async () =>
+        page.evaluate((id) => {
+          const w = globalThis as unknown as {
+            __patch: { nodes: Record<string, { data?: { slots?: Record<string, unknown> } } | undefined> };
+          };
+          return w.__patch.nodes[id]?.data?.slots ?? null;
+        }, EC),
+      )
+      .toEqual({ '7': { moduleId: 'adsr-1', paramId: 'attack', name: 'Punch' } });
+    await expect(slot22).toContainText('Punch');
+
+    // ⚠ A SECOND ASSIGN TO A DIFFERENT SLOT MUST NOT THROW. This is the shipped
+    // Yjs crash ("Type already integrated") that already broke send-to-surface
+    // once: the mutators write the slot map IN PLACE inside one transact, and a
+    // body that rebuilt it would die here. The zero-pageerror assert at the end
+    // is what makes this leg real rather than decorative.
+    const decay = page
+      .locator('.svelte-flow__node[data-id="adsr-1"]')
+      .getByTestId('control-decay');
+    await expect(decay).toBeVisible();
+    await decay.click({ button: 'right' });
+    await expect(page.locator('[data-testid="control-context-menu"]')).toBeVisible();
+    await page.locator(`[data-testid="ctx-electra-${EC}"]`).click();
+    await page.locator(`[data-testid="ctx-electra-${EC}-row-6"]`).click();
+    await page.locator(`[data-testid="ctx-electra-${EC}-row-6-knob-6"]`).click();
+    await expect(grid.locator('[data-testid="electra-control-slot-6-6"]')).toHaveAttribute('data-filled', 'true');
+
+    // PROXY PROOF — the proxied knob writes the SOURCE node's param, which is
+    // the entire mechanism the module exists for.
+    await page.evaluate(() => {
+      const w = globalThis as unknown as { __patch: { nodes: Record<string, { params: Record<string, number> }> } };
+      w.__patch.nodes['adsr-1']!.params.attack = 0.9;
+    });
+    await slot22.locator('[role="slider"]').dblclick();
+    await expect.poll(() => readParam(page, 'adsr-1', 'attack')).not.toBe(0.9);
+
+    expect(errors, `pageerrors: ${errors.join(' | ')}`).toEqual([]);
+  });
+});
