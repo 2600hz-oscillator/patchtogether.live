@@ -5635,14 +5635,20 @@ export async function sampleFaceRackPristine(page: Page): Promise<FaceRackPristi
   // app's hooks exist, which is BEFORE the `?shell=1` workflow rack has finished
   // constructing. Sampling a half-built rack would make every subsequent reset
   // restore a half-built rack — and it would do it silently, because the scenes
-  // spawn their own node afterwards and the picture would look plausible. The
-  // channel lanes are what `spawnFace` waits on, so they are what this waits for.
+  // spawn their own node afterwards and the picture would look plausible.
+  //
+  // ⚠ IT WAITS FOR THE NODE, NOT FOR `data.columns`, AND THE FIRST VERSION GOT
+  // THAT WRONG — it timed out at 30 s on a perfectly healthy rack. `data.columns`
+  // does not exist until a member first joins a lane; `spawnFace` reads it as
+  // `(… ?? []).length`, which is exactly why it never noticed. Waiting on a key
+  // that is absent BY DESIGN in the state being waited for is a wait that can
+  // only ever expire.
   await page.waitForFunction(
     () => {
       const w = globalThis as unknown as {
-        __patch?: { nodes: Record<string, { data?: { columns?: Record<string, string[]> } } | undefined> };
+        __patch?: { nodes: Record<string, unknown | undefined> };
       };
-      return !!w.__patch?.nodes['pinned-mixmstrs']?.data?.columns;
+      return !!w.__patch?.nodes['pinned-mixmstrs'];
     },
     undefined,
     { timeout: 30_000 },
@@ -5720,7 +5726,15 @@ export async function sampleFaceRackPristine(page: Page): Promise<FaceRackPristi
         + 'still satisfied its own postcondition',
     ).toBeGreaterThan(0);
     expect(
-      p.nodes['pinned-mixmstrs']?.columns?.['1'] ?? null,
+      p.nodes['pinned-mixmstrs'],
+      'the pinned workflow rack has no `pinned-mixmstrs` — the scenes spawn INTO its channel '
+        + 'lanes, so a reset built from this sample would restore a rack they cannot use',
+    ).toBeDefined();
+    // ⚠ `?? []` RATHER THAN `?? null`, because ABSENT IS THE CORRECT FRESH STATE:
+    // `data.columns` is only created when a member first joins. Demanding the key
+    // here is what made the wait above expire on a healthy rack.
+    expect(
+      p.nodes['pinned-mixmstrs']?.columns?.['1'] ?? [],
       'a fresh rack must have an EMPTY channel lane 1 — `spawnFace` waits on a member COUNT, '
         + 'so a pristine sample that already holds members would hand every scene the wrong node',
     ).toEqual([]);
@@ -5804,10 +5818,19 @@ export async function resetFaceRack(page: Page, pristine: FaceRackPristine): Pro
         // columns map holds LIVE Y types; assigning a fresh plain object over it
         // detaches the observers the membership path is driven by (the
         // "never rebuild maps holding live Y types" hazard).
-        if (want.columns && node.data?.columns) {
-          for (const [lane, ids] of Object.entries(want.columns)) {
+        //
+        // ⚠ AND THE LOOP IS OVER THE LIVE LANES, NOT OVER THE PRISTINE ONES.
+        // `data.columns` does not exist on a fresh rack — it is created when the
+        // first member joins — so the pristine snapshot for it is legitimately
+        // `null`, and a loop over the SNAPSHOT would then restore nothing and
+        // leave the previous scene's member sitting in lane 1. That is the exact
+        // leftover the postcondition below exists to catch, and it would have been
+        // caused here. Absent in the snapshot therefore means EMPTY, not "skip".
+        if (node.data?.columns) {
+          for (const lane of Object.keys(node.data.columns)) {
             const live = node.data.columns[lane];
             if (!live) continue;
+            const ids = want.columns?.[lane] ?? [];
             if (live.length !== ids.length || live.some((v, i) => v !== ids[i])) {
               live.splice(0, live.length, ...ids);
             }
@@ -5847,7 +5870,11 @@ export async function resetFaceRack(page: Page, pristine: FaceRackPristine): Pro
       + 'scene would spawn into a rack it did not expect, and the red would land on THAT module '
       + 'rather than on this reset',
   ).toEqual(Object.keys(pristine.nodes).sort());
-  for (const [lane, ids] of Object.entries(pristine.nodes['pinned-mixmstrs']?.columns ?? {})) {
+  // ⚠ OVER THE LANES THAT EXIST NOW, not over the pristine snapshot: a fresh rack
+  // has no `columns` at all, so iterating the snapshot would check NOTHING and
+  // pass on a rack that still held the previous scene's member.
+  for (const lane of Object.keys(after.lanes)) {
+    const ids = pristine.nodes['pinned-mixmstrs']?.columns?.[lane] ?? [];
     expect(
       after.lanes[lane] ?? [],
       `resetFaceRack: channel lane ${lane} did not come back to its pristine membership — `
