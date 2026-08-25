@@ -33,6 +33,7 @@
 //     platform exists to end, reintroduced one layer up.
 
 import { test, expect, type Page } from '@playwright/test';
+import { createPageReset } from './support/rack-session';
 import { spawnPatch } from './_helpers';
 import { showAllBands, type BandFocusDecl } from './_band-focus';
 import { setNodeParams } from './_module-coverage-helpers';
@@ -470,9 +471,25 @@ test.describe('PF-20 annotations — declared prose ⇔ the toggle that reveals 
     // face and is what reddened e2e shard 3/10 when this went 1 -> 5 adopters.
     test.setTimeout(sweepBudgetMs(adopters.length));
 
+    // ⚠ RESET, NOT RE-BOOT. This loop already ran on ONE page and re-navigated
+    // it once per adopter; only the navigation goes away. `resetFace` restores
+    // the viewport the first boot landed on and clears the graph, which is what
+    // the discarded navigation used to do — see support/rack-session.ts.
+    const resetFace = await createPageReset(page);
     for (const spec of adopters) {
-      await gotoShell(page);
-      await spawnPatch(page, [{ id: 'an', type: spec.type, position: { x: 460, y: 240 } }]);
+      await resetFace();
+      // ⚠ A NODE ID PER ADOPTER, AND IT IS LOAD-BEARING. Annotate mode is keyed
+      // by nodeId in a module-level singleton (`annotate-mode.svelte.ts`) that
+      // is deliberately NOT Yjs state, so clearing the patch does not clear it
+      // — only the node-delete path does, and the reset writes the Y.Doc
+      // directly. With the id reused, the `annot.click()` at the END of each
+      // iteration left annotate ON for the next one, and the "OFF is the
+      // default" leg below read 6 band hints where it demanded 0. A unique id
+      // makes the carry-over impossible by construction rather than by
+      // remembering to toggle it back, and it keeps that leg a real assertion
+      // about a fresh node instead of a cleanup check.
+      const anId = `an-${spec.type}`;
+      await spawnPatch(page, [{ id: anId, type: spec.type, position: { x: 460, y: 240 } }]);
       // ⚠ EVERY COUNT BELOW IS THE DEF'S DECLARED TOTAL, so a BAND-FOCUSED face
       // has to be opened at its show-all value or this sweep asserts a whole
       // face's prose against a plate holding one band of it. MEASURED: this is
@@ -484,8 +501,8 @@ test.describe('PF-20 annotations — declared prose ⇔ the toggle that reveals 
       // DECLARED totals, so a pin that failed to land leaves the same red, with
       // declared-vs-received in the message. (That is not true of every sweep —
       // PF-21 below carries its own membership leg for exactly that reason.)
-      await showAllBands(page, 'an', spec);
-      const fp = await openFaceplate(page, 'an');
+      await showAllBands(page, anId, spec);
+      const fp = await openFaceplate(page, anId);
       const shell = fp.locator('[data-testid="module-shell"]');
       const { title, pageHint, bandHints } = spec.faceAnnotations!;
       const tabbed = await fp.getByTestId('faceplate-tabrail').count();
@@ -630,8 +647,12 @@ test.describe('PF-21 row plan — sections share a row, legibly and without over
     let scrollAbsorbed = 0;
     const shapes: string[] = [];
 
+    // ⚠ RESET, NOT RE-BOOT — and this is the hottest boot in the file: one
+    // navigation per face across the WHOLE migrated roster, run once per pane
+    // width. Same argument as the PF-20 sweep above.
+    const resetFace = await createPageReset(page);
     for (const spec of faces) {
-      await gotoShell(page);
+      await resetFace();
       await spawnPatch(page, [{ id: 'rp', type: spec.type, position: { x: 460, y: 240 } }]);
       // The ROW PLAN is a property of the whole band set, so a band-focused face
       // is measured at its show-all value — otherwise this sweep would price
