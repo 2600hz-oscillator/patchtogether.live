@@ -106,11 +106,28 @@ function frameDistance(x: RenderStats, y: RenderStats): number {
  *  they disagree about ANTI-ALIASING, not about whether the hue rotated. */
 const MIN_CLOCK_RESPONSE = 1.0;
 
-/** Two reads at the SAME pinned clock return the same bytes, so the same
- *  doubles. This is an equality check with a floating-point apology, not a
- *  tolerance — anything above zero here means something other than the pinned
- *  clock is moving the picture. */
-const PURE_FUNCTION_EPSILON = 1e-9;
+/**
+ * "Same pinned clock ⇒ same frame", at the tolerance the whole render-smoke
+ * FAMILY already uses for that claim: `|Δmean| < 0.5` and `|Δvariance| < 1.0`,
+ * the pair spelled out in spirographs-, mandelbulb- and this file's own first
+ * test. Expressed in the combined metric above that is 0.5 + 1.0/100.
+ *
+ * ⚠ IT IS THE FAMILY'S NUMBER RATHER THAN THE MEASURED ONE, DELIBERATELY.
+ * Measured here on a real GPU the two reads are BIT-IDENTICAL — distance
+ * exactly 0, three runs — and an epsilon of 1e-9 would have passed locally. But
+ * this spec runs on CI in the `webgl-smoke` job's cheap render-smoke floor,
+ * under linux SwiftShader, and nothing in this repo has ever asserted
+ * bit-exactness of a readback THERE; every sibling that makes this same claim
+ * chose 0.5/1.0. Tightening past the only bar with CI evidence behind it would
+ * be trading a real flake risk for precision the assertion does not need.
+ *
+ * It costs no discriminating power, which is the part that matters: the
+ * alternative this leg has to exclude sits 8.68 away on the same metric, so the
+ * two hypotheses are still separated by ~17x the ceiling. An accumulator big
+ * enough to matter cannot hide under 0.51 when merely rotating the hue moves
+ * the frame by 2.89 in mean alone.
+ */
+const SAME_CLOCK_TOLERANCE = 0.5 + 1.0 / 100;
 
 test.describe('MANDLEBLOT — deterministic render smoke', () => {
   test('freeze + pause + synchronous step → non-black, structured, frame-stable, zero GL errors', async ({ page, errorWatch }) => {
@@ -190,7 +207,7 @@ test.describe('MANDLEBLOT — deterministic render smoke', () => {
   // precisely the state the face scene is in, and precisely how the missing pin
   // survived. A test that only checks "same clock, same frame" would have been
   // green on a module where the clock reached nothing.
-  test('the engine clock pin is LOAD-BEARING — the picture tracks it, and returns to the same frame bit-exactly', async ({ page }) => {
+  test('the engine clock pin is LOAD-BEARING — the picture tracks it, and returns to the same frame when it is wound back', async ({ page }) => {
     test.setTimeout(60_000);
 
     await installRenderSmokeHooks(page, T_A);
@@ -248,8 +265,9 @@ test.describe('MANDLEBLOT — deterministic render smoke', () => {
         + `surface read mean ${c.mean} / variance ${c.variance} against the first read at that `
         + `same clock, mean ${a.mean} / variance ${a.variance}. A difference here means state `
         + `survived the excursion to t=${T_B}s, and a clock pin alone would NOT make the face `
-        + `scene deterministic — it would need the mirrorpool treatment.`,
-    ).toBeLessThan(PURE_FUNCTION_EPSILON);
+        + `scene deterministic — it would need the mirrorpool treatment. For scale: the frame at `
+        + `t=${T_B}s sits ${frameDistance(a, b).toFixed(2)} away on this metric.`,
+    ).toBeLessThan(SAME_CLOCK_TOLERANCE);
 
     // ── D: an IRREGULAR pin value — neither a whole nor a half period from
     //       either of the two above, so the equalities cannot be an aliasing
