@@ -136,6 +136,19 @@ describe('launchpad cells — the OUTCOME store, which is what the body paints f
     expect(launchpadGestureOutcome()).toBe('no-device');
   });
 
+  it('⚠ A REFUSED PERMISSION PROMPT is an OUTCOME, not an unhandled rejection', () => {
+    // `requestMIDIAccess` REJECTS when the user declines or the browser blocks
+    // sysex — the ordinary path. Without a `.catch` the plate would sit on
+    // "pairing" forever AND every e2e in the suite that watches `pageerror`
+    // would redden on a user saying no.
+    const rejected = Promise.reject(new Error('NotAllowedError'));
+    const seam = fakeSeam({ startPairing: () => rejected });
+    launchpadPair('n1', seam);
+    return rejected.catch(() => {}).then(() => Promise.resolve()).then(() => {
+      expect(launchpadGestureOutcome()).toBe('no-midi');
+    });
+  });
+
   it('a SAVED binding restores silently rather than reporting a failure', async () => {
     const seam = fakeSeam({ startSingle: async () => false, restoreSingle: () => true });
     launchpadConnectSingle('n1', seam);

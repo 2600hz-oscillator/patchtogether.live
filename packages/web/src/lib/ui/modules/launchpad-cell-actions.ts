@@ -198,7 +198,14 @@ export function launchpadPair(nodeId: string, seam: LaunchpadGestureSeam = LIVE_
       } else {
         setOutcome('one-unit');
       }
-    });
+    })
+    // ⚠ A REJECTION IS AN OUTCOME, NOT A CRASH. `startPairing` sits on
+    // `requestMIDIAccess`, which REJECTS when the user refuses the prompt or
+    // the browser blocks sysex — the ordinary path, not an exceptional one.
+    // Without this the refusal becomes an unhandled rejection: the plate keeps
+    // saying "pairing" forever, and every e2e in the suite that watches
+    // `pageerror` reddens on a user declining a permission.
+    .catch(() => { setOutcome('no-midi'); });
   return true;
 }
 
@@ -232,7 +239,10 @@ export function launchpadConnectSingle(
       } else {
         setOutcome('no-device');
       }
-    });
+    })
+    // Same as PAIR above: a refused or blocked `requestMIDIAccess` is an
+    // outcome the plate must be able to say, not an unhandled rejection.
+    .catch(() => { setOutcome('no-midi'); });
   return true;
 }
 
