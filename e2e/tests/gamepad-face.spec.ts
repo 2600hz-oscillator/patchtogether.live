@@ -239,6 +239,27 @@ test.describe('GAMEPAD faceplate', () => {
     await waitFrames(page, 4);
     await led.click({ button: 'right' });
 
+    // ⚠ THE ARMED LISTENER NEEDS ONE FRAME BEFORE THE STIMULUS, AND LEAVING IT
+    // OUT IS A RACE THAT ONLY FIRES UNDER LOAD. It failed exactly once on CI
+    // (shard 9/10) and passed on retry, which is the shape the flake gate
+    // exists to refuse — so this is the root cause rather than a re-run.
+    //
+    // `armRemap` sets `remap.baseline = null`; the body's rAF poll SEEDS that
+    // baseline on its next tick, from whatever the pad reads THEN, and only
+    // afterwards can `detectChangedControl` diff against it. Press the button
+    // before that tick and the baseline is captured WITH X ALREADY DOWN — the
+    // diff finds no change, nothing binds, and the 8 s arm timeout cancels the
+    // listener. Locally the Playwright round-trip for the press is longer than
+    // a frame so the ordering holds by accident; on a starved shard several
+    // round-trips fit between two frames and it does not.
+    //
+    // The thing that has to have happened is "the poll has run once while
+    // armed", which is a COUNT OF FRAMES and nothing else — the case
+    // `waitFrames`' own header names ("a stimulus that only an rAF-driven
+    // reader can observe"). There is no DOM signal for it: `class:armed` lands
+    // synchronously on the click and says nothing about the poll.
+    await waitFrames(page, 3);
+
     // Press physical X (button 2) → the detector binds the `a` OUTPUT to it.
     await updateFakeGamepad(page, { buttons: pressX });
     await expect
@@ -286,6 +307,12 @@ test.describe('GAMEPAD faceplate', () => {
     // ── CALIBRATE — the sweep, gated by the module's own usability rule ────
     const start = dock.getByTestId(`gamepad-calibrate-left-${NODE}`);
     await start.click();
+    // Same ordering as the remap above, for the same reason: the sweep is
+    // FOLDED on the body's rAF, so a stimulus that lands before the first
+    // armed tick is simply not counted. Here it costs a sample rather than the
+    // whole gesture (the loop below feeds fourteen), but the shape is identical
+    // and being explicit is cheaper than re-deriving it from a red shard.
+    await waitFrames(page, 2);
     const complete = dock.getByTestId(`gamepad-calibrate-complete-${NODE}`);
     // ⚠ "AM I THERE YET" IS ANSWERED BY A CONTROL'S ENABLED STATE, not by a
     // printed number — which is half the reason the card's four live decimals
