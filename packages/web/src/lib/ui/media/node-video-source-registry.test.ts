@@ -493,7 +493,7 @@ describe('SCOPE — what this gate structurally cannot see', () => {
   it('reads no pixels and mounts no component, stated as an assertion', () => {
     // Every element here is a plain object. Whether the engine actually SAMPLES
     // the attached element into its FBO is the e2e's job
-    // (videobox-node-lifetime.spec.ts), and no amount of green here implies it.
+    // (node-source-videobox.spec.ts), and no amount of green here implies it.
     const c = makeClock();
     const h = makeHarness(c.clock, makeEngine().engine);
     const reg = createNodeVideoSourceRegistry(h.deps);

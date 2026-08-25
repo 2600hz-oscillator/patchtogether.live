@@ -193,8 +193,8 @@ interface ExtrasOwnerVerdict {
 // `EXTRAS_PRODUCERS` (see the producer-anchoring leg), which is the artifact
 // that actually implements them.
 //
-// ⚠ VIDEOBOX IS NOW THE THIRD, AND IT ARRIVED FROM THE OTHER DIRECTION (LEG-02
-// P1, #1511). The other two never had a media element; videobox did, and its
+// ⚠ VIDEOBOX (P1) AND VIDEOVARISPEED (P2) ARRIVED FROM THE OTHER DIRECTION
+// (LEG-02, #1511). The other two never had a media element; videobox did, and its
 // entry read `owner: 'headless-card-mount'` — "the DOM-source rule already keeps
 // this card mounted off-screen". That verdict was TRUE and is now false: the
 // element's attach, its audio wiring and its three loops moved to
@@ -228,10 +228,6 @@ const EXTRAS_OWNERS: Readonly<Record<string, ExtrasOwnerVerdict>> = {
   TvLibrarianCard: {
     owner: 'headless-card-mount',
     why: 'same as archivist — a card-owned <video> handed to the engine by attachExternalSource',
-  },
-  VideoVarispeedCard: {
-    owner: 'headless-card-mount',
-    why: 'a card-owned <video> plus the varispeed transport; the collapse-keeps-playing sweep is built on this card staying mounted',
   },
   BloodCard: {
     owner: 'module-renders-itself',
