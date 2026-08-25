@@ -50,7 +50,20 @@
 
 import { test, expect } from '@playwright/test';
 import { pinVrtFonts, awaitVrtFonts } from './_fonts';
-import { waitForHooks, bootWithFace, LEGACY_FOLD_VIEWPORT } from './_shell-faces';
+import { diffRegion } from './vrt-surface-stats';
+import {
+  waitForHooks,
+  bootWithFace,
+  loadFaceRack,
+  spawnFace,
+  resetFaceRack,
+  sampleFaceRackPristine,
+  frameMember,
+  freezeFaceAudio,
+  LEGACY_FOLD_VIEWPORT,
+  FACES,
+  type FaceRackPristine,
+} from './_shell-faces';
 
 /** How many repeats each phase is sampled over. Small: this is a probe, and the
  *  quantity being measured is seconds, not milliseconds. */
@@ -186,5 +199,134 @@ test.describe('BOOT PROBE — what a VRT scene spends its time on', () => {
     console.log(`   => SCENE tail        ${ms(med(whole) - med(prefix))} (spawn + column + style + freeze)`);
     console.log(`   => LOAD is ${((100 * med(prefix)) / med(whole)).toFixed(0)}% of bootWithFace`);
     expect(whole.length).toBe(REPS);
+  });
+});
+
+// ── D: THE DECISIVE EXPERIMENT ──────────────────────────────────────────────
+//
+// ⚠ THE ONLY QUESTION THAT MATTERS FOR A LANE THAT PINS 308 COMMITTED PNGs:
+// does a scene captured on a SHARED page produce the same pixels as the same
+// scene captured on a FRESH one?
+//
+// ⚠ AND IT IS A SAME-MACHINE COMPARISON ON PURPOSE, which is what makes it
+// valid here. A local macOS run cannot be compared against the linux baselines
+// (`vrt.config.ts` says so at length — one baseline set, authored by linux CI,
+// and font rasterization differs). But this compares MY fresh-boot capture
+// against MY shared-page capture, on one machine, in one run. The platform
+// cancels; the only variable left is the thing under test.
+//
+// It runs the roster in THREE ORDERS plus a fresh-boot control, because the
+// failure this must rule out is ORDER-DEPENDENCE — a scene that is correct
+// alone and wrong after fifty others. `rack-session.ts` measured exactly that
+// class in the functional lane: 20 of 24 modules differed between declared,
+// reversed and shuffled order, all of it leaked canvas zoom.
+const ORDER_SUBJECTS = (process.env.PROBE_FACES ?? 'adsr,vca,filter,lfo,mixer,reverb')
+  .split(',')
+  .map((s) => s.trim())
+  .filter(Boolean);
+
+test.describe('D: shared page vs fresh page — same pixels?', () => {
+  test.setTimeout(900_000);
+
+  test('a compact tile is IDENTICAL from a shared page and from a fresh boot, in any order', async ({
+    browser,
+  }) => {
+    // Widened exactly the way the gate widens it — see the `FACES as readonly
+    // {…}[]` cast at the top of `workflow-shell-faces.spec.ts`. The roster is a
+    // `const` tuple, so its per-entry types are literal unions and the optional
+    // `why` fields exist on only some members.
+    type RosterEntry = {
+      type: string;
+      pages: number;
+      videoFaceWhy?: string;
+      singletonAdoptWhy?: string;
+      simPin?: unknown;
+    };
+    const roster = new Map(
+      (FACES as readonly RosterEntry[]).map((f) => [f.type, f] as const),
+    );
+    for (const t of ORDER_SUBJECTS) {
+      expect(roster.has(t), `${t} is not in the FACES roster — this probe would measure nothing`)
+        .toBe(true);
+    }
+
+    /** One compact scene, from `spawnFace` onward — the SAME calls the gate makes. */
+    const captureCompact = async (page: import('@playwright/test').Page, type: string) => {
+      const entry = roster.get(type)!;
+      const opts = {
+        ...(entry.videoFaceWhy ? { videoFaceWhy: entry.videoFaceWhy } : {}),
+        ...(entry.singletonAdoptWhy ? { singletonAdoptWhy: entry.singletonAdoptWhy } : {}),
+      };
+      const memberId = await spawnFace(page, type, opts);
+      await frameMember(page, memberId, 0.45, 'compact');
+      await freezeFaceAudio(page, `probe-${type}`);
+      const tile = page.locator(
+        `.svelte-flow__node[data-id="${memberId}"] [data-testid="module-shell"]`,
+      );
+      return (await tile.screenshot()).toString('base64');
+    };
+
+    // ── the CONTROL: one fresh context+page per scene, exactly as main does ──
+    const fresh = new Map<string, string>();
+    const freshMs: number[] = [];
+    for (const type of ORDER_SUBJECTS) {
+      const ctx = await browser.newContext({
+        viewport: LEGACY_FOLD_VIEWPORT, deviceScaleFactor: 1, reducedMotion: 'reduce',
+      });
+      const page = await ctx.newPage();
+      const t = Date.now();
+      await page.setViewportSize(LEGACY_FOLD_VIEWPORT);
+      await loadFaceRack(page, {});
+      fresh.set(type, await captureCompact(page, type));
+      freshMs.push(Date.now() - t);
+      await ctx.close();
+    }
+
+    // ── the SHARED page, three orders ───────────────────────────────────────
+    const orders: Record<string, string[]> = {
+      declared: [...ORDER_SUBJECTS],
+      reversed: [...ORDER_SUBJECTS].reverse(),
+      // Deterministic shuffle: a fixed rotation + swap, so a failure reproduces.
+      shuffled: [...ORDER_SUBJECTS].slice(2).concat([...ORDER_SUBJECTS].slice(0, 2)).reverse(),
+    };
+
+    const offenders: string[] = [];
+    const sharedMs: number[] = [];
+    for (const [label, order] of Object.entries(orders)) {
+      const ctx = await browser.newContext({
+        viewport: LEGACY_FOLD_VIEWPORT, deviceScaleFactor: 1, reducedMotion: 'reduce',
+      });
+      const page = await ctx.newPage();
+      await page.setViewportSize(LEGACY_FOLD_VIEWPORT);
+      await loadFaceRack(page, {});
+      const pristine: FaceRackPristine = await sampleFaceRackPristine(page);
+
+      for (const type of order) {
+        const t = Date.now();
+        await resetFaceRack(page, pristine);
+        const shot = await captureCompact(page, type);
+        sharedMs.push(Date.now() - t);
+        const d = await diffRegion(page, fresh.get(type)!, shot, 26);
+        if (d.diffPixels > 0) {
+          offenders.push(`${label}/${type}: ${d.diffPixels} px differ (${JSON.stringify(d)})`);
+        }
+      }
+      await ctx.close();
+    }
+
+    const med = (xs: number[]) => [...xs].sort((a, b) => a - b)[xs.length >> 1]!;
+    console.log('\n── D: shared page vs fresh boot ──');
+    console.log(`   subjects             ${ORDER_SUBJECTS.join(', ')}`);
+    console.log(`   fresh-boot scene     ${stats(freshMs)}`);
+    console.log(`   shared-page scene    ${stats(sharedMs)}`);
+    console.log(`   speed-up             ${(med(freshMs) / med(sharedMs)).toFixed(2)}x  `
+      + `(${ms(med(freshMs) - med(sharedMs))} saved per scene)`);
+    console.log(`   pixel offenders      ${offenders.length}`);
+
+    expect(
+      offenders,
+      'a shared-page capture differs from a fresh-boot capture of the SAME scene on the SAME '
+        + 'machine — the shared page is not equivalent and this lane pins committed PNGs',
+    ).toEqual([]);
   });
 });

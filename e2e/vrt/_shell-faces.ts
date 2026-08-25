@@ -5294,6 +5294,36 @@ export async function bootWithFace(
   type: string,
   opts: BootFaceOptions = {},
 ): Promise<string> {
+  await loadFaceRack(page, opts);
+  return spawnFace(page, type, opts);
+}
+
+/**
+ * THE LOAD HALF of `bootWithFace` — everything up to and including "the app's
+ * hooks are up", and nothing that touches the graph.
+ *
+ * ⚠ SPLIT OUT, NOT COPIED, AND THAT IS THE WHOLE POINT. It is what a shared
+ * page pays ONCE instead of once per scene, and the only way a shared page can
+ * be argued to produce the same pixels as a fresh one is if it runs literally
+ * this code and literally `spawnFace` below — never a second boot path that
+ * "does the same thing". `bootWithFace` is now the composition of the two, so
+ * a fresh-page scene and a shared-page scene cannot drift apart by
+ * construction. (`_shell-faces.ts`'s own header makes the identical argument
+ * about why the roster lives here rather than in the spec.)
+ *
+ * MEASURED (this worktree, warm dev server, headless SwiftShader, 1 worker,
+ * `vrt-boot-probe.spec.ts`): this half is 1 500 ms of a 2 581 ms
+ * `bootWithFace('adsr')` — 58 % — and 1 428 ms of that 1 500 is `networkidle`
+ * alone. ⚠ AND IT IS NOT CACHE-BOUND, which is the finding that decides the
+ * design: a REPEAT `goto` on an already-warm page still costs 1 312 ms against
+ * a cold 1 473 ms, i.e. a warm HTTP + V8 cache is worth only 161 ms. So
+ * "re-navigate a reused page" saves nothing worth having, and neither does
+ * reusing the BrowserContext (`newContext` + `newPage` measured 38 ms). The
+ * expense is the app booting — the module registry's `import.meta.glob`, the
+ * pinned workflow rack's construction — and the only way not to pay it per
+ * scene is genuinely not to navigate.
+ */
+export async function loadFaceRack(page: Page, opts: BootFaceOptions = {}): Promise<void> {
   await pinVrtFonts(page);
 
   // ── SIM PHASE PIN — INSTALLED BEFORE `goto`, WHICH IS THE ENTIRE POINT ────
@@ -5342,7 +5372,32 @@ export async function bootWithFace(
         + `phase differs on every boot. Check that addInitScript still runs BEFORE goto.`,
     ).toBe(value);
   }
+}
 
+/**
+ * THE SPAWN HALF of `bootWithFace` — everything after the app's hooks are up.
+ *
+ * Runs against an ALREADY-LOADED rack, so it is what a shared page pays per
+ * scene. MEASURED at 1 081 ms against the 1 500 ms load it no longer repeats.
+ *
+ * ⚠ IT ASSUMES AN EMPTY LANE 1, which is true of a fresh boot and is the
+ * postcondition `resetFaceRack` restores on a shared one. The channel-column
+ * wait counts MEMBERS (`chain.indexOf(t) + 1`), so a leftover member from a
+ * previous scene would satisfy the wait one spawn early and hand back the WRONG
+ * node — a scene that captures a plausible picture of a different module rather
+ * than failing. `resetFaceRack` asserts the lane is empty for exactly that
+ * reason; do not call this without one or the other.
+ *
+ * ⚠ `simPin` IS CONSUMED BY `loadFaceRack`, NOT HERE, and it cannot move: the
+ * module reads those globals at CONSTRUCTION and `addInitScript` only applies
+ * on a navigation. A scene that declares `simPin` therefore cannot share a
+ * page — see `faceSceneNeedsFreshPage`.
+ */
+export async function spawnFace(
+  page: Page,
+  type: string,
+  opts: BootFaceOptions = {},
+): Promise<string> {
   // ── VIDEO FACES BOOT INTO THE VIDEO ZONE, not a channel column ──────────
   // See BootFaceOptions.videoFaceWhy. Only the MEMBER RESOLUTION differs; the
   // scene style + audio freeze tail below is shared, so an audio face runs the
@@ -5483,11 +5538,279 @@ export async function bootWithFace(
  *  that could drift — a scene styled even slightly differently is measuring a
  *  different box. */
 async function applyFaceSceneStyle(page: Page): Promise<void> {
-  await page.addStyleTag({
-    content:
-      '.svelte-flow__minimap,.svelte-flow__controls,.svelte-flow__attribution,.minimap-toggle{display:none !important;}' +
-      '*,*::before,*::after{animation:none !important;transition:none !important;}',
+  // ⚠ ID-KEYED AND IDEMPOTENT, because a SHARED page applies it once per scene.
+  // `addStyleTag` appends unconditionally, so on a reused page the tags would
+  // accumulate one per scene — identical CSS, so the pixels are unaffected, but
+  // it is a growing DOM whose size depends on how many scenes ran before this
+  // one, which is precisely the kind of order-dependence a shared page must not
+  // acquire. Writing through one element keeps the resulting DOM equal to a
+  // fresh page's, which is the property the shared-page argument rests on.
+  await page.evaluate((css) => {
+    let el = document.getElementById('vrt-face-scene') as HTMLStyleElement | null;
+    if (!el) {
+      el = document.createElement('style');
+      el.id = 'vrt-face-scene';
+      document.head.appendChild(el);
+    }
+    if (el.textContent !== css) el.textContent = css;
+  },
+  '.svelte-flow__minimap,.svelte-flow__controls,.svelte-flow__attribution,.minimap-toggle{display:none !important;}'
+    + '*,*::before,*::after{animation:none !important;transition:none !important;}');
+}
+
+// ── THE SHARED PAGE ─────────────────────────────────────────────────────────
+//
+// ⚠ WHY THIS EXISTS AT ALL, MEASURED. `vrt-strict` is a `workers: 1`,
+// `retries: 0`, REQUIRED lane, and it started TIMING OUT rather than failing:
+// ci.yml run 32869571989, shards 6/8 and 7/8, `45 passed (10.0m), 1 did not
+// run`, ZERO test failures, killed by the 600 s `--global-timeout`. The lane is
+// 4 334 CPU-s over 360 tests = 542 s of fair share against that 600 s cap, and
+// `workflow-shell-faces.spec.ts` is 4 005 s of it (92 %). Every face that merges
+// adds ~25 s to the lane, so this gets worse on a schedule.
+//
+// The load is 1 500 ms of a 2 581 ms `bootWithFace` (see `loadFaceRack`), and it
+// is NOT cache-bound — a repeat `goto` on a warm page still costs 1 312 ms. So
+// the only lever that pays is not navigating, which means one booted page
+// serving many scenes, which means a RESET.
+//
+// ── AND THE RESET IS THE ENTIRE CORRECTNESS ARGUMENT ────────────────────────
+//
+// This lane pins committed PNGs. "Faster" is worth nothing if a scene captures a
+// pixel it would not have captured from a fresh boot, so the design rule is
+// REUSE THE PAGE, NEVER REPLACE THE RENDER CONTEXT: the same real rack, the same
+// real spawn path, the same `spawnFace` code a fresh boot runs — only the
+// navigation is skipped.
+//
+// The four things a discarded page used to reset, and which now have to be reset
+// explicitly, are the same four `e2e/tests/support/rack-session.ts` enumerates
+// for the functional sweeps. Its measurement is carried here rather than
+// re-derived, and one of them is why that file exists:
+//
+//   1. ⚠ THE CANVAS VIEWPORT. Sweeping 24 modules in declared / reversed /
+//      shuffled order there produced DIFFERENT results for 20 of them, differing
+//      only in the on-screen size of the shell, because xyflow's zoom carried
+//      over. EVERY geometry assertion in `workflow-shell-faces.spec.ts` is
+//      exposed to this — `readFoldGeometry`'s `hiddenY` / `hiddenX` / `topY`, the
+//      width-slack ceiling, `plateW >= bodyW`, the tab count — and so is every
+//      captured PNG's size.
+//      ⚠ AND RESTORING A HAND-PICKED `{0,0,1}` "IDENTITY" IS ALSO WRONG, which is
+//      the part that is not obvious: it is not neutral, it is merely a DIFFERENT
+//      viewport from the one a real boot lands on, and it failed 51 of 58 rows
+//      there on shells that were genuinely off-screen. So the pristine viewport
+//      is READ OFF A REAL BOOT and replayed — never chosen.
+//   2. THE DOCK, closed through the product's own affordance.
+//   3. THE FOLD STYLE, which `unfoldDockPane` injects and a fresh page never has.
+//   4. THE GRAPH — including two mutations a plain "delete everything" would get
+//      wrong in opposite directions (see `resetFaceRack`).
+//
+// ⚠ WHAT IT DELIBERATELY DOES NOT DO: it does not reset `addInitScript` globals,
+// because there is no navigation for one to apply to. A scene that needs one
+// gets a FRESH PAGE instead — `faceSceneNeedsFreshPage`, deny-by-default.
+
+/** The state a freshly-loaded face rack is in, sampled from a REAL boot. */
+export interface FaceRackPristine {
+  /** The viewport a fresh boot lands on. ⚠ Sampled, never a constant — see above. */
+  readonly viewport: { x: number; y: number; zoom: number };
+  /** Every node the pinned rack ships with, and the fields a scene can mutate. */
+  readonly nodes: Readonly<Record<string, {
+    pinned: boolean;
+    position: { x: number; y: number } | null;
+    columns: Record<string, string[]> | null;
+  }>>;
+  /** The edge ids the pinned rack ships with. */
+  readonly edges: readonly string[];
+}
+
+/**
+ * Sample the pristine rack, immediately after `loadFaceRack` and before any
+ * scene has run.
+ *
+ * ⚠ IT IS A SAMPLE OF THIS BOOT, not a description of the seed. The pinned
+ * workflow rack is a product artifact that changes when the seed changes, so
+ * anything written down here would be a second copy of it that drifts silently
+ * — and "the rack came back wrong" is invisible in a PNG until a baseline moves.
+ */
+export async function sampleFaceRackPristine(page: Page): Promise<FaceRackPristine> {
+  // Two frames so the workflow's own initial framing has landed: reading
+  // mid-transition would pin a viewport no boot ever ends on.
+  await settle(page);
+  return page.evaluate(() => {
+    const w = globalThis as unknown as {
+      __flow: { getViewport: () => { x: number; y: number; zoom: number } };
+      __patch: {
+        nodes: Record<string, {
+          data?: { pinned?: boolean; columns?: Record<string, string[]> };
+          position?: { x: number; y: number };
+        } | undefined>;
+        edges: Record<string, unknown>;
+      };
+    };
+    const nodes: Record<string, {
+      pinned: boolean;
+      position: { x: number; y: number } | null;
+      columns: Record<string, string[]> | null;
+    }> = {};
+    for (const [id, n] of Object.entries(w.__patch.nodes)) {
+      const cols = n?.data?.columns;
+      nodes[id] = {
+        pinned: n?.data?.pinned === true,
+        position: n?.position ? { x: n.position.x, y: n.position.y } : null,
+        // Deep-copied out of the live Y types on purpose: the snapshot must be
+        // plain data, or "restore it" would be restoring a reference to the
+        // very thing that got mutated.
+        columns: cols ? Object.fromEntries(Object.entries(cols).map(([k, v]) => [k, [...v]])) : null,
+      };
+    }
+    return {
+      viewport: w.__flow.getViewport(),
+      nodes,
+      edges: Object.keys(w.__patch.edges),
+    };
   });
+}
+
+/**
+ * Return a shared page to the state `loadFaceRack` left it in.
+ *
+ * ⚠ IT RESTORES, IT DOES NOT WIPE, and the difference is load-bearing in BOTH
+ * directions — a plain "delete every node", which is what the functional sweeps'
+ * reset does, is wrong here twice over:
+ *
+ *   * DELETING TOO MUCH. These scenes spawn INTO the pinned workflow rack
+ *     (`pinned-mixmstrs`'s lane 1 is where `spawnFace` waits for membership), so
+ *     a wipe removes the thing the next scene needs to exist. The functional
+ *     sweeps can wipe precisely because they rebuild the whole patch afterwards
+ *     with `spawnPatch`; this path never does.
+ *   * DELETING TOO LITTLE. `adoptCanvasSingleton` does not spawn a node at all —
+ *     it UN-PINS one the rack already shipped and moves it onto free canvas. That
+ *     node survives a "delete what this scene spawned" reset, and the next
+ *     `adoptCanvasSingleton` would then find it un-pinned and displaced, or the
+ *     next ordinary scene would find a stray tile in frame. So the pinned nodes'
+ *     own mutable fields are restored, not just the roster of ids.
+ *
+ * Ordered deliberately: dock first (it is an interaction), then the fold style,
+ * then the graph, then the viewport LAST so nothing that follows re-pans it.
+ *
+ * Finally it ASSERTS its own postcondition. A reset that half-worked is the
+ * nastiest failure a shared page can have, because the red lands on the NEXT
+ * scene and names an innocent module.
+ */
+export async function resetFaceRack(page: Page, pristine: FaceRackPristine): Promise<void> {
+  // 2 — THE DOCK, through the product's own close affordance rather than a
+  // store reached from the test (the same argument rack-session.ts makes: a new
+  // hook in Canvas.svelte would force a trusted-GPU re-attest for a teardown
+  // convenience).
+  const dock = page.getByTestId('dock-full-view');
+  if (await dock.isVisible().catch(() => false)) {
+    await page.getByTestId('faceplate-close').click().catch(() => undefined);
+    await dock.waitFor({ state: 'hidden', timeout: 10_000 }).catch(() => undefined);
+  }
+
+  await page.evaluate((p) => {
+    const w = globalThis as unknown as {
+      __patch: {
+        nodes: Record<string, {
+          data?: { pinned?: boolean; columns?: Record<string, string[]> };
+          position?: { x: number; y: number };
+        } | undefined>;
+        edges: Record<string, unknown>;
+      };
+      __ydoc: { transact: (fn: () => void) => void };
+      __flow: { setViewport: (vp: { x: number; y: number; zoom: number }, o?: { duration?: number }) => void };
+    };
+
+    // 3 — the fold style. A fresh page has no such element, so removing it (not
+    // blanking it) is what makes the shared page's DOM equal to a fresh one's.
+    document.getElementById('vrt-dock-fold')?.remove();
+
+    // 4 — THE GRAPH, in ONE transaction so no reconcile ever observes a
+    // half-restored rack.
+    w.__ydoc.transact(() => {
+      for (const id of Object.keys(w.__patch.edges)) {
+        if (!p.edges.includes(id)) delete w.__patch.edges[id];
+      }
+      for (const id of Object.keys(w.__patch.nodes)) {
+        if (!(id in p.nodes)) { delete w.__patch.nodes[id]; continue; }
+        // A pristine node: restore only the fields a scene can move, and only
+        // when they actually differ — a needless write is a needless reconcile.
+        const want = p.nodes[id]!;
+        const node = w.__patch.nodes[id];
+        if (!node) continue;
+        if (node.data && node.data.pinned !== want.pinned) node.data.pinned = want.pinned;
+        if (want.position && node.position
+          && (node.position.x !== want.position.x || node.position.y !== want.position.y)) {
+          node.position = { x: want.position.x, y: want.position.y };
+        }
+        // ⚠ THE LANE ARRAYS ARE MUTATED IN PLACE, never replaced wholesale. The
+        // columns map holds LIVE Y types; assigning a fresh plain object over it
+        // detaches the observers the membership path is driven by (the
+        // "never rebuild maps holding live Y types" hazard).
+        if (want.columns && node.data?.columns) {
+          for (const [lane, ids] of Object.entries(want.columns)) {
+            const live = node.data.columns[lane];
+            if (!live) continue;
+            if (live.length !== ids.length || live.some((v, i) => v !== ids[i])) {
+              live.splice(0, live.length, ...ids);
+            }
+          }
+        }
+      }
+    });
+
+    // 1 — ⚠ THE VIEWPORT, restored to what a REAL boot produced. See the block
+    // above for why the obvious `{0,0,1}` is wrong and what it cost.
+    w.__flow.setViewport(p.viewport, { duration: 0 });
+  }, pristine as unknown as {
+    viewport: { x: number; y: number; zoom: number };
+    nodes: Record<string, { pinned: boolean; position: { x: number; y: number } | null; columns: Record<string, string[]> | null }>;
+    edges: string[];
+  });
+
+  // Let the unmounts and the viewport land before the next scene spawns into them.
+  await settle(page);
+
+  // ⚠ THE POSTCONDITION, ASSERTED. `spawnFace` counts channel-column members, so
+  // a lane that did not empty makes the NEXT scene's wait succeed one spawn early
+  // and hand back the wrong node — a plausible picture of a different module,
+  // captured green. That is exactly the class a shared page must not have, and it
+  // is cheap to refuse instead.
+  const after = await page.evaluate(() => {
+    const w = globalThis as unknown as {
+      __patch: { nodes: Record<string, { data?: { columns?: Record<string, string[]> } } | undefined> };
+    };
+    const ids = Object.keys(w.__patch.nodes).sort();
+    const cols = w.__patch.nodes['pinned-mixmstrs']?.data?.columns ?? {};
+    return { ids, lanes: Object.fromEntries(Object.entries(cols).map(([k, v]) => [k, [...v]])) };
+  });
+  expect(
+    after.ids,
+    'resetFaceRack: the rack did not come back to the node set a fresh boot has — the next '
+      + 'scene would spawn into a rack it did not expect, and the red would land on THAT module '
+      + 'rather than on this reset',
+  ).toEqual(Object.keys(pristine.nodes).sort());
+  for (const [lane, ids] of Object.entries(pristine.nodes['pinned-mixmstrs']?.columns ?? {})) {
+    expect(
+      after.lanes[lane] ?? [],
+      `resetFaceRack: channel lane ${lane} did not come back to its pristine membership — `
+        + '`spawnFace` waits on a member COUNT, so a leftover member satisfies the next scene\'s '
+        + 'wait one spawn early and returns the WRONG node id',
+    ).toEqual(ids);
+  }
+}
+
+/**
+ * Must this scene have a page of its own?
+ *
+ * ⚠ DENY-BY-DEFAULT ON THE MECHANISM, NOT A LIST OF MODULES. `simPin` is
+ * delivered by `page.addInitScript`, which only applies on a NAVIGATION — and
+ * skipping the navigation is the whole point of the shared page. A pinned sim
+ * that never reached the document produces a perfectly plausible picture with a
+ * different phase every run, so this is refused structurally rather than
+ * remembered per module. `loadFaceRack` also verifies each pin landed, so the
+ * two are belt and braces on the same defect.
+ */
+export function faceSceneNeedsFreshPage(opts: BootFaceOptions): boolean {
+  return (opts.simPin?.length ?? 0) > 0;
 }
 
 /** Every node id of `type` currently in the patch. */
