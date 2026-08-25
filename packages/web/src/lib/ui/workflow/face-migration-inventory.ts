@@ -812,11 +812,28 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
   },
   {
     type: 'es9',
-    disposition: 'bespoke-surface',
-    why:
-      'the ES-9 BRIDGE: connection state machine, connect/disconnect gestures, device rate and ' +
+    disposition: 'generic-face',
+    note:
+      'PROMOTED, and the `why` was wrong in FOUR of its five clauses — each in the same way, and ' +
+      'the way is instructive: it named READOUTS as if they were surface. It read "the ES-9 ' +
+      'BRIDGE: connection state machine, connect/disconnect gestures, device rate and ' +
       'channel-count detail, xrun/rtt telemetry, and sectioned routing across many jacks. The ' +
-      'params are routing, the surface is the bridge.',
+      'params are routing, the surface is the bridge." Measured against the card: the ' +
+      '"connection state machine" is `stateLabel`, a seven-way string switch painted as one ' +
+      '<span> — a STATE WORD outside every control, which is the shape the resting-text ruling ' +
+      'deletes; "device rate and channel-count detail" is three derived numbers; "xrun/rtt ' +
+      'telemetry" is a count and a measurement with a decimal. All three are `StatusLed` lamps ' +
+      'now, with their sentences on `aria-label`. "Sectioned routing across many jacks" is ' +
+      'twenty-two ordinary `ParamDef`s already in contract-lock plus a PatchPanel, which on a ' +
+      'face is the REAR CARD rather than the plate. Only "connect/disconnect gestures" survived ' +
+      'contact, and two gestures are two `action` cells — the midiclock precedent, with the ' +
+      'difference that this module waits on a PROCESS (the es9-bridge companion app) rather ' +
+      'than on a browser permission, so there is no prompt and no device roster: `maxInstances` ' +
+      'is 1 and the app accepts one client. What is left that a generic face cannot do is ' +
+      'exactly the lamps, since `StatusLed` renders only from a module-owned `fullViewBody` — a ' +
+      'shipped `status-primitive` body of the same shape midiclock and cvBuddy already carry. ' +
+      'So this needed strictly LESS bespoke machinery than `kria`, which was re-dispositioned ' +
+      'while still needing a real PF-14 panel component.',
   },
   {
     type: 'frogger',
