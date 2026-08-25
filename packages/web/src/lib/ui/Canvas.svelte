@@ -230,6 +230,7 @@
   import { nodeMedia } from '$lib/ui/media/node-media-registry';
   import { nodeExtras } from '$lib/ui/media/node-extras';
   import { nodeVideoSource } from '$lib/ui/media/node-video-source.svelte';
+  import { nodeVarispeed } from '$lib/ui/media/node-varispeed.svelte';
   import { nodePresent } from '$lib/ui/modules/node-present-registry.svelte';
   import { nodeRecorder } from '$lib/ui/modules/node-recorder-registry.svelte';
   import { nodeSamsloop } from '$lib/ui/modules/node-samsloop-registry.svelte';
@@ -2380,6 +2381,14 @@
     // thing that ever ends one — a card teardown must not, which is the whole
     // point.
     nodeVideoSource.sweep(liveIds);
+    // ...and the NODE-OWNED VARISPEED TRANSPORT (LEG-02 P2, #1511:
+    // $lib/ui/media/node-varispeed-registry). Two live defects made this one
+    // more than a lifetime move: a varispeed inside a COLLAPSED GROUP had no
+    // card anywhere, so its transport and all five CV triggers — including the
+    // ASSET slot select a clip player drives — were simply dead; and every
+    // expand/collapse reset `activeSlot` to 0 and wiped all seven virtual
+    // playheads, because both were card `$state` with no persistence path.
+    nodeVarispeed.sweep(liveIds);
   });
 
   /** THE EXTRAS-CHANNEL PRODUCER SEAM (#1720). The sixth instance of the #1583
@@ -2427,6 +2436,16 @@
    *  wholesale. It reaches the engine only through existing public calls. */
   $effect(() => {
     nodeVideoSource.sync(snapshot.nodes, engine);
+  });
+
+  /** THE NODE-OWNED VARISPEED TRANSPORT (LEG-02 P2, #1511). Same snapshot and
+   *  same reasoning as the source sync above; a SIBLING controller rather than a
+   *  parameterisation of it, because the two transports are different models
+   *  rather than one model with a flag — videobox corrects a WALL CLOCK, while
+   *  varispeed advances seven VIRTUAL playheads, six of them for clips that are
+   *  not on air. See the registry header. */
+  $effect(() => {
+    nodeVarispeed.sync(snapshot.nodes, engine);
   });
 
   let headlessSourceNodes = $derived.by<ModuleNode[]>(() => {

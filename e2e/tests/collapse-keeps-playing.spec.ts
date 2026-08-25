@@ -94,7 +94,15 @@ function videoSourceTypes(): string[] {
     '../../packages/web/src/lib/ui/media/node-video-source-registry.ts',
     'NODE_VIDEO_SOURCE_TYPES',
   );
-  const all = [...new Set([...cardOwned, ...nodeOwned])].sort();
+  // ⚠ AND THE VARISPEED OWNER SET (P2). Each conversion mints a new owner
+  // declaration, and every one of them has to be added HERE or the module it
+  // owns silently leaves this sweep — which is the exact failure the union was
+  // introduced to stop, re-appearing one phase later by a different route.
+  const varispeedOwned = parseTypeSet(
+    '../../packages/web/src/lib/ui/media/node-varispeed-registry.ts',
+    'NODE_VARISPEED_TYPES',
+  );
+  const all = [...new Set([...cardOwned, ...nodeOwned, ...varispeedOwned])].sort();
   if (all.length === 0) throw new Error('BOTH source-owner sets parsed EMPTY — refusing to pass vacuously');
   return all;
 }
