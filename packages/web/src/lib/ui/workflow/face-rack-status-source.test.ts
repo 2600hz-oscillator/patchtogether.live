@@ -639,6 +639,70 @@ const EXTENSION_BODY_ROLES: Readonly<Record<string, BodyRule>> = {
       + 'instructional copy in the EMPTY state where no link exists.',
   },
 
+  // ── VST BRIDGE — ONE body for TWO defs, and the first entry in this roster
+  //    whose module declares NO PARAMS AT ALL ─────────────────────────────────
+  //
+  // `vstInstrument` and `vstFx` both declare `face.extension: 'vstBridge'`.
+  // That is legal by construction — `shell-extensions.test.ts` requires every
+  // discovered extension to be declared by AT LEAST ONE def — and it is the
+  // honest shape rather than a shortcut: the two modules already share one
+  // engine factory, one worklet, one transport and one legacy card body, so a
+  // second copy of this surface would be a second place for it to drift.
+  //
+  // ⚠ THIS ROSTER IS KEYED BY EXTENSION ID, NOT BY MODULE TYPE, so a shared
+  // extension is ONE entry and the deny-by-default sweep still holds in both
+  // directions.
+  vstBridge: {
+    role: 'status-primitive',
+    why:
+      'the PLUGIN surface for the two vst-bridge cards: the runtime-enumerated plugin picker, '
+      + 'its text filter, the mount / swap / unmount and native-editor gestures, the pre-connect '
+      + 'hint, and four lamps — BRIDGE (the helper app answered), PLUGIN (`tone: warn` while a '
+      + 'mount has failed; which plugin is live and what latency it reports), LOAD (`tone: warn`; '
+      + 'the helper cannot keep up) and SAVED (this plugin\'s own state travels with the patch). '
+      + '⚠ THE PICKER CANNOT BE A FACE CELL, for the reason midiclock and midiLane state above and '
+      + 'one degree more sharply: its roster is the USER\'S INSTALLED AU LIBRARY, enumerated by a '
+      + 'native helper over a localhost WebSocket, so it is neither a `ParamDef` nor an `options` '
+      + 'roster (a fixed set known when the def is authored) AND it is EMPTY on every CI runner — '
+      + 'faces-parity\'s selector branch asserts the roster offers more than one option and then '
+      + 'picks a different one, so a selector cell here would fail deterministically forever. '
+      + '⚠ THE TEXT FILTER IS NOT AN `entry` CELL EITHER, and the face-migration inventory called '
+      + 'it "the typed entry", which is corrected in the same diff: `ShellEntryProbe` requires the '
+      + 'observable to be a `node.data` key, and `node.data` rides the Y.Doc, so persisting a '
+      + 'search box would sync one player\'s keystrokes to every collaborator and dirty the patch '
+      + 'per keystroke — the exact hazard ShellPanelProbe\'s `text` note is written about. It is a '
+      + 'private view setting and lives beside the picker it narrows. ⚠ MOUNT / SWAP / UNMOUNT / '
+      + 'OPEN EDITOR fail a third and simpler test: all four exist ONLY while the helper is '
+      + 'connected and a plugin is selected, while a ranked `action` cell must render '
+      + 'unconditionally and pass `toBeEnabled()`. ⚠ CONNECT AND DISCONNECT ARE NOT DUPLICATED '
+      + 'HERE: both are real ranked `action` cells, which is what puts the gesture on the LANE '
+      + 'TILE, and a body carrying them too would be a second implementation of controls the face '
+      + 'already owns. ⚠ THE LAMPS ARE WHERE THREE DELETED READOUT ROWS WENT, each a picture with '
+      + 'its sentence in `aria-label`: BRIDGE replaces the seven-way state word and the round-trip '
+      + 'time, with the narrowing stated in vst-status-model.ts (seven connection states onto two '
+      + 'lamp states, mitigated by naming the exact failure in the detail — which matters most for '
+      + '`busy` and `evicted`, since both are recoverable by the CONNECT the plate already offers '
+      + 'and a bare dark lamp would read as broken); LOAD replaces the `in dB / out dB / load %` '
+      + 'meter row; PLUGIN replaces the `latency … smp` figure and the mount-error line; SAVED '
+      + 'replaces the persisted-state size, and its dark half is the one that matters, because '
+      + '`stateBytes` with no `stateB64` means the plugin returns EMPTY on the next load. ⚠ THE '
+      + 'MOUNTED PLUGIN NAME IS NOT REPRODUCED as a text node — the picker directly above already '
+      + 'shows it as its own selected OPTION NAME, a permitted role, and a second copy would '
+      + 'restate a control rather than inform. ⚠ IT NEEDS NO STATUS REGISTRY, unlike cameraInput: '
+      + 'neither def is in `DOM_SOURCE_LANE_TYPES` or `CARD_PRODUCER_LANE_TYPES`, so promotion '
+      + 'parks no live card off-screen, and every connection, ring and the whole persistence '
+      + 'driver already live in node-keyed ENGINE-side registries on GRAPH lifetime '
+      + '($lib/audio/vst/bridge-owner, createVstHandle). The body SUBSCRIBES rather than polling, '
+      + 'because that registry deliberately keeps listeners outside its entries so a view may '
+      + 'pre-date the connection. ⚠ It mounts no canvas element and must not grow one (the role '
+      + 'predicates GREP RAW SOURCE and cannot tell code from a comment, so this sentence '
+      + 'deliberately spells the tag out in words). ⚠ NO SCREEN SWITCH and NO WATCH MARK — the '
+      + 'video-screen ruling runs over STRICT_FACES intersect video defs and both these defs are '
+      + '`domain: audio`. Every text node is a lamp CAPTION, a control caption on its own button, '
+      + 'an option NAME in the picker, or instructional copy in the EMPTY state where no session '
+      + 'exists.',
+  },
+
   // ── MIDI LANE — the THIRD binder body, and the one whose lamps carry the
   //    most deleted text ─────────────────────────────────────────────────────
   midiLane: {

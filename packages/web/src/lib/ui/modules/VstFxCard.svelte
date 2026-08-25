@@ -8,6 +8,9 @@
   import ModuleTitle from './ModuleTitle.svelte';
   import VstBridgePanel from './VstBridgePanel.svelte';
   import { vstFxDef } from '$lib/audio/modules/vst-fx';
+  // IMPORTED, NEVER RE-TYPED — the faceplate's extension body lists the same
+  // plugins from the same roster (see vst-bridge-shared.ts).
+  import { VST_FX_PLUGIN_KINDS } from '$lib/audio/modules/vst-bridge-shared';
   import type { ModuleNode } from '$lib/graph/types';
   import { cardParams, portsFromDef } from './card-kit';
 
@@ -32,7 +35,7 @@
   <ModuleTitle {id} {data} defaultLabel="VST FX" />
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
-    <VstBridgePanel {id} {node} kinds={['effect', 'musicEffect']} sendPlanes={true} {sampleRate} />
+    <VstBridgePanel {id} {node} kinds={VST_FX_PLUGIN_KINDS} sendPlanes={true} {sampleRate} />
   </PatchPanel>
 </div>
 

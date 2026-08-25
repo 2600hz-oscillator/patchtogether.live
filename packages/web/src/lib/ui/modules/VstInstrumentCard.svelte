@@ -9,6 +9,9 @@
   import ModuleTitle from './ModuleTitle.svelte';
   import VstBridgePanel from './VstBridgePanel.svelte';
   import { vstInstrumentDef } from '$lib/audio/modules/vst-instrument';
+  // IMPORTED, NEVER RE-TYPED — the faceplate's extension body lists the same
+  // plugins from the same roster (see vst-bridge-shared.ts).
+  import { VST_INSTRUMENT_PLUGIN_KINDS } from '$lib/audio/modules/vst-bridge-shared';
   import type { ModuleNode } from '$lib/graph/types';
   import { cardParams, portsFromDef } from './card-kit';
 
@@ -37,7 +40,7 @@
   <ModuleTitle {id} {data} defaultLabel="VST INSTRUMENT" />
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
-    <VstBridgePanel {id} {node} kinds={['instrument', 'generator', 'musicEffect']} sendPlanes={false} {sampleRate} />
+    <VstBridgePanel {id} {node} kinds={VST_INSTRUMENT_PLUGIN_KINDS} sendPlanes={false} {sampleRate} />
   </PatchPanel>
 </div>
 

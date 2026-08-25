@@ -569,17 +569,32 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
     type: 'vstInstrument',
     disposition: 'bespoke-surface',
     why:
-      'a VST BRIDGE card (the es9 shape): connection state machine, plugin picker with text ' +
-      'filter (the typed entry), mount/unmount/swap gestures, native-editor toggle, and ' +
-      'meter/rtt/latency telemetry. Zero params — the surface IS the bridge control plane.',
+      'DONE. The disposition is CORRECT and stays — this really is a bespoke surface, and the ' +
+      'face rides a `fullViewBody` extension. The `why` was the most accurate in this migration ' +
+      'and still had two false clauses, recorded because the ten faces before it were wrong in ' +
+      'bulk and this one was not. RIGHT: "zero params — the surface IS the bridge control plane" ' +
+      'is exact, and it is why this face is TWO cells where es9 (whose identical-sounding `why` ' +
+      'named the same "connection state machine") turned out to have twenty-two ParamDefs. ' +
+      'WRONG 1: the text filter is NOT "the typed entry" — a ShellEntryCell probe requires a ' +
+      'node.data observable and node.data rides the Y.Doc, so persisting a search box would sync ' +
+      "one player's keystrokes to every collaborator and dirty the patch per keystroke; it is a " +
+      'private view setting and lives beside the picker it narrows. WRONG 2 (on the vstFx entry, ' +
+      'which claimed "nothing to rank into a generic face"): CONNECT and DISCONNECT rank as ' +
+      'action cells exactly as es9\'s do, which is what puts them on the LANE TILE where the ' +
+      'extension body cannot go. The picker itself cannot be a selector cell for a reason that ' +
+      'is about the MACHINE, not the read: its roster is the user\'s installed AU library, so it ' +
+      "is EMPTY on every runner, and faces-parity's selector branch asserts the roster offers " +
+      'more than one option.',
   },
   {
     type: 'vstFx',
     disposition: 'bespoke-surface',
     why:
-      'the VST BRIDGE stereo-insert card — the same bridge control plane as vstInstrument ' +
-      '(shared VstBridgePanel: picker with its typed filter entry, mount/unmount, editor, ' +
-      'meters) with zero params; nothing to rank into a generic face.',
+      'DONE. Promoted in the SAME PR as vstInstrument, because the two cards are one component: ' +
+      'both are a PatchPanel wrapped around the same VstBridgePanel, differing only in their ' +
+      'port sets and in which plugin kinds the picker lists. They share one `vstBridge` shell ' +
+      'extension for the same reason. See the vstInstrument note for the two clauses this ' +
+      "entry's own `why` got wrong.",
   },
   { type: 'vfpgaRunner', disposition: 'generic-face', note: 'preset roster → selector cell, fabric floorplan → a toggled read-only panel; the params are def-declared, so rank those and not the manifest' },
   { type: 'videoMixer', disposition: 'generic-face' },
