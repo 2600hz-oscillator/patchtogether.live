@@ -327,8 +327,39 @@
                   </button>
                 {/if}
               {:else}
+                <!-- ⚠ THE PLACEHOLDER IS AN <svg> CIRCLE, NOT A CSS-BORDERED
+                     DIV, AND THAT IS A MEASUREMENT DECISION RATHER THAN A
+                     STYLING ONE. The dock width gate derives "content" from an
+                     INK SWEEP: boxes for things that ARE their content
+                     (`[data-cell-key]`, `.tile-glyph`, canvas, svg, img) and
+                     TEXT RANGES for everything else. An EMPTY board has no
+                     text but its three bank labels and no cells at all, so a
+                     dashed BORDER on a plain div is invisible to it — the
+                     sweep measured 195 px of ink against a 408 px board and
+                     reported 213 px of "empty plate" on a surface that is
+                     drawing thirty-six marks across every pixel of it. Same
+                     reason gamepad's stick pads and trigger bars are svg:
+                     "deliberately, so their marks stay in the DOM where a
+                     source gate can see them." The mark is identical; it is
+                     now expressed where the instrument can read it. -->
                 <div class="ec-empty" role="img" aria-label={emptySlotName(c.row, c.knob)}>
-                  <div class="ec-empty-dial"></div>
+                  <svg
+                    class="ec-empty-dial"
+                    width="48"
+                    height="30"
+                    viewBox="0 0 48 30"
+                    aria-hidden="true"
+                  >
+                    <circle
+                      cx="24"
+                      cy="15"
+                      r="14.5"
+                      fill="#14171c"
+                      stroke="#404652"
+                      stroke-width="1"
+                      stroke-dasharray="3 3"
+                    />
+                  </svg>
                 </div>
               {/if}
             </div>
@@ -347,14 +378,17 @@
      width ruling asks for, not an exemption from it: `face-width-source.test.ts`
      polices `_dock-faceplate.css`, the shared width chain, and a component's own
      internal layout is neither in its scope nor should be. */
+  /* ⚠ NO OUTER FRAME, WHERE THE CARD HAD ONE, AND IT IS A SIMPLIFICATION
+     RATHER THAN A CONCESSION. On the legacy card the grid needed its own
+     border + padding to separate itself from the title row it sat under; in a
+     faceplate the shell's own editor frame already does that, so the outer box
+     was drawing a second border immediately inside a first. The three BANK
+     frames stay — they carry the meaning (the Electra's three stacked 12-pot
+     control sets) and are the only grouping a player reads. */
   .ec-grid {
     display: flex;
     flex-direction: column;
     gap: 6px;
-    border: 1px solid #2a2f3a;
-    border-radius: 5px;
-    background: #0e1015;
-    padding: 6px;
     box-sizing: border-box;
     width: max-content;
     max-width: 100%;
@@ -406,12 +440,10 @@
     height: 100%;
     opacity: 0.4;
   }
+  /* The dashed ring itself is drawn by the <svg> circle in the markup — see the
+     comment there for why it is an svg rather than a bordered div. */
   .ec-empty-dial {
-    width: 30px;
-    height: 30px;
-    border-radius: 50%;
-    border: 1px dashed #404652;
-    background: #14171c;
+    display: block;
   }
   /* Defensive label clamp (matches Knob.svelte / the legacy card). */
   .ec-slot :global(.label) {
