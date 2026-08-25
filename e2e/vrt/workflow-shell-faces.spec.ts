@@ -130,7 +130,18 @@
 // spec.ts` (the PF-21 row sweep + the annotation/sidebar sweeps) and the pure
 // `dock-row-plan` / `module-face-lint` units, which read the whole faceplate.
 
-import { test, expect } from '@playwright/test';
+// ⚠ `test` COMES FROM THE FACE SESSION, NOT FROM `@playwright/test`. It is
+// `base.extend(...)`, so every built-in fixture is unchanged — the one-off
+// controls and ANCHOR tests below keep destructuring `{ page }` and keep getting
+// an ordinary per-test page, which several of them need because they drive
+// abnormal states (an UNFROZEN audio graph, a RE-FOLDED pane) that must not leak
+// into a scene. What it ADDS is `faceSession`, the worker-scoped booted rack the
+// per-face scenes use so a shard pays ~4 `/rack` boots instead of ~46.
+//
+// The measurement, the safety argument and the probe that proves the shared page
+// captures the same pixels all live in `_face-session.ts`, beside the code that
+// implements them.
+import { test, expect } from './_face-session';
 import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { diffRegion } from './vrt-surface-stats';
@@ -149,6 +160,8 @@ import {
   LEGACY_FOLD_VIEWPORT,
   assertFaceAudioFrozen,
   bootWithFace,
+  spawnFace,
+  faceSceneNeedsFreshPage,
   faceSceneTimeout,
   frameMember,
   freezeFaceAudio,
@@ -322,7 +335,7 @@ test.describe('VRT: P1 curated faces (?shell=1) — compact lane tile + dock ful
       ...(singletonAdoptWhy ? { singletonAdoptWhy } : {}),
       ...(simPin ? { simPin } : {}),
     };
-    test(`face-${type}-compact: the compact lane tile matches baseline`, async ({ page }) => {
+    test(`face-${type}-compact: the compact lane tile matches baseline`, async ({ faceSession }) => {
       // PER-SCENE, never the config's flat cap — the `foldViewportFor` shape
       // applied to TIME instead of height (#1949). Returns the shared 90 s
       // unless the roster entry declares a measured `sceneWeight`. This is a
@@ -330,13 +343,27 @@ test.describe('VRT: P1 curated faces (?shell=1) — compact lane tile + dock ful
       // `expect.timeout` (30 s), which is where a scene that never settles
       // fails. See the note on `faceSceneTimeout`.
       test.setTimeout(faceSceneTimeout(type, 'compact'));
+
+      // ⚠ SHARED PAGE OR FRESH ONE, DECIDED FROM THE MECHANISM. `simPin` is
+      // delivered by `addInitScript`, which only applies on a navigation, and
+      // skipping the navigation is the whole point of the shared page — so a
+      // pinned-sim scene gets a page of its own. Deny-by-default, in
+      // `faceSceneNeedsFreshPage`, so nobody has to remember it per module.
+      const page = faceSceneNeedsFreshPage(bootOpts)
+        ? await faceSession.freshPage(bootOpts)
+        : await faceSession.reset();
       const errors: string[] = [];
-      page.on('pageerror', (e) => errors.push(e.message));
+      // ⚠ REMOVED AT THE END, because the page outlives the scene. A listener
+      // left attached keeps collecting from LATER scenes, so a failure gets
+      // reported against a module that already passed — the shared page's
+      // nastiest failure mode, where the red is never the guilty test.
+      const onError = (e: Error) => errors.push(e.message);
+      page.on('pageerror', onError);
 
       // The compact tile is pinned at the config viewport — the dock scene's
       // taller one would be a baseline move for no reason.
       await page.setViewportSize(LEGACY_FOLD_VIEWPORT);
-      const memberId = await bootWithFace(page, type, bootOpts);
+      const memberId = await spawnFace(page, type, bootOpts);
       // zoom 0.45 = the LOD 'compact' band [0.30, 0.52) — the design-point tile.
       await frameMember(page, memberId, 0.45, 'compact');
 
@@ -363,28 +390,44 @@ test.describe('VRT: P1 curated faces (?shell=1) — compact lane tile + dock ful
         maxDiffPixels: COMPACT_MAX_DIFF,
       });
 
+      page.off('pageerror', onError);
       expect(
         errors.filter((e) => !/getUserMedia|audio/i.test(e)),
         `pageerrors: ${errors.join(' | ')}`,
       ).toEqual([]);
     });
 
-    test(`face-${type}-dock: the dock full-view faceplate matches baseline`, async ({ page }) => {
+    test(`face-${type}-dock: the dock full-view faceplate matches baseline`, async ({ faceSession }) => {
       // PER-SCENE — see the compact scene above. The dock scene is the more
       // expensive of the two for every face measured (it mounts the whole
       // faceplate, and for a video face the `fullViewBody` extension too), so
       // `sceneWeight` carries the two durations separately rather than one
       // number scaled by a guess.
       test.setTimeout(faceSceneTimeout(type, 'dock'));
+
+      // Shared page or fresh one — see the compact scene above.
+      const page = faceSceneNeedsFreshPage(bootOpts)
+        ? await faceSession.freshPage(bootOpts)
+        : await faceSession.reset();
       const errors: string[] = [];
-      page.on('pageerror', (e) => errors.push(e.message));
+      const onError = (e: Error) => errors.push(e.message);
+      page.on('pageerror', onError);
 
       // PER-SCENE, never the bare constant: a face whose unfolded pane is taller
       // than the shared default needs its own window, and raising the shared one
       // was MEASURED to move every other dock scene's pixels (see
       // `foldViewportFor`). `mixmstrs` is the case that found it.
+      //
+      // ⚠ ON A SHARED PAGE THIS RESIZES AN APP THAT BOOTED AT THE COMPACT
+      // HEIGHT, where a fresh scene loaded already at this one. That asymmetry is
+      // unavoidable — there is no navigation left to size — so it is MEASURED
+      // rather than assumed away: `vrt-boot-probe.spec.ts` builds its fresh dock
+      // control by sizing BEFORE the load, exactly as this line used to, and
+      // compares both the PNG and every geometry number the assertions below read.
+      // Sizing both sides after the load would have made that comparison blind to
+      // precisely this difference.
       await page.setViewportSize(foldViewportFor(type));
-      const memberId = await bootWithFace(page, type, bootOpts);
+      const memberId = await spawnFace(page, type, bootOpts);
       // Frame at the 'full' tier so the jack-rail EXPAND affordance is
       // comfortably clickable, then open the dock full-view.
       await frameMember(page, memberId, 0.7, 'full');
@@ -514,6 +557,7 @@ test.describe('VRT: P1 curated faces (?shell=1) — compact lane tile + dock ful
         maxDiffPixels: DOCK_MAX_DIFF,
       });
 
+      page.off('pageerror', onError);
       expect(
         errors.filter((e) => !/getUserMedia|audio/i.test(e)),
         `pageerrors: ${errors.join(' | ')}`,

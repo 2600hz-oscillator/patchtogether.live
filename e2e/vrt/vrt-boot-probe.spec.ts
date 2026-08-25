@@ -60,6 +60,11 @@ import {
   sampleFaceRackPristine,
   frameMember,
   freezeFaceAudio,
+  openDock,
+  unfoldDockPane,
+  readFoldGeometry,
+  foldViewportFor,
+  settle,
   LEGACY_FOLD_VIEWPORT,
   FACES,
   type FaceRackPristine,
@@ -89,6 +94,7 @@ test.describe('BOOT PROBE — what a VRT scene spends its time on', () => {
     const idleMs: number[] = [];
     const fontMs: number[] = [];
     const hookMs: number[] = [];
+    const reqCounts: (() => { reqs: number; bytes: number })[] = [];
 
     for (let i = 0; i < REPS; i++) {
       let t = Date.now();
@@ -101,6 +107,21 @@ test.describe('BOOT PROBE — what a VRT scene spends its time on', () => {
       });
       const page = await ctx.newPage();
       contextMs.push(Date.now() - t);
+
+      // ⚠ WHAT THE LOAD ACTUALLY IS, counted rather than characterised. This
+      // lane targets `localBaseUrl('dev')` — the VITE DEV SERVER — while the e2e
+      // lane serves the built bundle (`E2E_USE_PREVIEW=1`). A dev load is one
+      // request per unbundled module; a preview load is a handful of chunks. The
+      // difference is a real further saving, but it needs `build-web`'s artifact
+      // plumbed into the vrt job, so this MEASURES it and changes nothing.
+      let reqs = 0;
+      let bytes = 0;
+      page.on('response', (r) => {
+        reqs += 1;
+        const len = Number(r.headers()['content-length'] ?? 0);
+        if (Number.isFinite(len)) bytes += len;
+      });
+      reqCounts.push(() => ({ reqs, bytes }));
 
       await pinVrtFonts(page);
       t = Date.now(); await page.goto('/rack'); gotoMs.push(Date.now() - t);
@@ -120,6 +141,10 @@ test.describe('BOOT PROBE — what a VRT scene spends its time on', () => {
     console.log(`   waitForHooks         ${stats(hookMs)}`);
     const total = contextMs.map((c, i) => c + gotoMs[i]! + idleMs[i]! + fontMs[i]! + hookMs[i]!);
     console.log(`   A+B TOTAL            ${stats(total)}`);
+    const counted = reqCounts.map((f) => f());
+    console.log('── WHAT THE DEV SERVER SHIPS (quantified, not changed) ──');
+    console.log(`   responses per load   ${stats(counted.map((c) => c.reqs))}`);
+    console.log(`   content-length sum   ${stats(counted.map((c) => c.bytes / 1e6))} (MB)`);
     expect(total.length).toBe(REPS);
   });
 
@@ -220,10 +245,26 @@ test.describe('BOOT PROBE — what a VRT scene spends its time on', () => {
 // alone and wrong after fifty others. `rack-session.ts` measured exactly that
 // class in the functional lane: 20 of 24 modules differed between declared,
 // reversed and shuffled order, all of it leaked canvas zoom.
-const ORDER_SUBJECTS = (process.env.PROBE_FACES ?? 'adsr,vca,filter,lfo,mixer,reverb')
+// ⚠ THE SUBJECTS COVER EVERY BOOT BRANCH, not just the common one. `spawnFace`
+// has three: the ordinary channel column, `videoFaceWhy` (the video zone, plus a
+// video freeze), and `singletonAdoptWhy` (which does not spawn at all — it
+// UN-PINS a node the rack already shipped, so it is the branch a reset can get
+// wrong by leaving a pinned node displaced). A probe that only exercised the
+// common branch would return a clean number and prove nothing about the other
+// two.
+const ORDER_SUBJECTS = (
+  process.env.PROBE_FACES ?? 'adsr,vca,filter,lfo,mixer,reverb,mapper,timelorde'
+)
   .split(',')
   .map((s) => s.trim())
   .filter(Boolean);
+
+/** ⚠ 1/255, NOT the gate's 26/255. The gate's tolerance exists to absorb GPU
+ *  anti-aliasing drift between RUNS; this comparison is two captures in ONE run
+ *  on ONE machine, so there is nothing legitimate for a tolerance to absorb and
+ *  a threshold here would only hide the thing being measured. Identity is the
+ *  claim, so identity is what is asserted. */
+const IDENTITY_DELTA = 1;
 
 test.describe('D: shared page vs fresh page — same pixels?', () => {
   test.setTimeout(900_000);
@@ -250,14 +291,17 @@ test.describe('D: shared page vs fresh page — same pixels?', () => {
         .toBe(true);
     }
 
-    /** One compact scene, from `spawnFace` onward — the SAME calls the gate makes. */
-    const captureCompact = async (page: import('@playwright/test').Page, type: string) => {
+    const optsFor = (type: string) => {
       const entry = roster.get(type)!;
-      const opts = {
+      return {
         ...(entry.videoFaceWhy ? { videoFaceWhy: entry.videoFaceWhy } : {}),
         ...(entry.singletonAdoptWhy ? { singletonAdoptWhy: entry.singletonAdoptWhy } : {}),
       };
-      const memberId = await spawnFace(page, type, opts);
+    };
+
+    /** One compact scene, from `spawnFace` onward — the SAME calls the gate makes. */
+    const captureCompact = async (page: import('@playwright/test').Page, type: string) => {
+      const memberId = await spawnFace(page, type, optsFor(type));
       await frameMember(page, memberId, 0.45, 'compact');
       await freezeFaceAudio(page, `probe-${type}`);
       const tile = page.locator(
@@ -266,20 +310,77 @@ test.describe('D: shared page vs fresh page — same pixels?', () => {
       return (await tile.screenshot()).toString('base64');
     };
 
+    /**
+     * One DOCK scene — the tier that carries the geometry assertions.
+     *
+     * ⚠ THIS IS WHERE LEAKED ZOOM WOULD SHOW, which is why the probe does not
+     * stop at the compact tile. `readFoldGeometry`'s `hiddenY` / `hiddenX` /
+     * `topY`, the width-slack ceiling and `plateW >= bodyW` are all read in CSS
+     * px off a live layout, so every one of them is a number a shared page could
+     * move without moving a single pixel of the tile above. Both the PNG and the
+     * geometry are compared.
+     */
+    const captureDock = async (page: import('@playwright/test').Page, type: string) => {
+      const entry = roster.get(type)!;
+      // ⚠ NOT RESIZED HERE — the caller does it, and WHEN it does is the thing
+      // under test. The gate sizes the window BEFORE the navigation, so a fresh
+      // scene loads the app already at its dock height; a shared scene has no
+      // navigation left to size, so it must resize an app that booted at the
+      // compact height. Resizing on both sides would make this comparison
+      // invariant to the very difference the shared page introduces — a metric
+      // blind to its own subject, which is the failure this repo names first.
+      const memberId = await spawnFace(page, type, optsFor(type));
+      await frameMember(page, memberId, 0.7, 'full');
+      const faceplate = await openDock(page, memberId, entry.pages);
+      await unfoldDockPane(page);
+      const g = await readFoldGeometry(page);
+      await freezeFaceAudio(page, `probe-${type}-dock`);
+      await settle(page);
+      return {
+        png: (await faceplate.screenshot()).toString('base64'),
+        // Only the fields the gate ASSERTS on — a probe that compared every
+        // field would go red on something no gate reads and teach nothing.
+        geom: {
+          hiddenY: g.hiddenY, hiddenX: g.hiddenX, topY: g.topY,
+          bodyW: g.bodyW, contentW: g.contentW, plateW: g.plateW,
+          tabs: g.tabs, renderedBands: g.renderedBands, bands: g.bands.length,
+        },
+      };
+    };
+
     // ── the CONTROL: one fresh context+page per scene, exactly as main does ──
     const fresh = new Map<string, string>();
+    const freshDock = new Map<string, { png: string; geom: Record<string, number> }>();
     const freshMs: number[] = [];
+    const freshDockMs: number[] = [];
     for (const type of ORDER_SUBJECTS) {
-      const ctx = await browser.newContext({
-        viewport: LEGACY_FOLD_VIEWPORT, deviceScaleFactor: 1, reducedMotion: 'reduce',
-      });
-      const page = await ctx.newPage();
-      const t = Date.now();
-      await page.setViewportSize(LEGACY_FOLD_VIEWPORT);
-      await loadFaceRack(page, {});
-      fresh.set(type, await captureCompact(page, type));
-      freshMs.push(Date.now() - t);
-      await ctx.close();
+      {
+        const ctx = await browser.newContext({
+          viewport: LEGACY_FOLD_VIEWPORT, deviceScaleFactor: 1, reducedMotion: 'reduce',
+        });
+        const page = await ctx.newPage();
+        const t = Date.now();
+        await page.setViewportSize(LEGACY_FOLD_VIEWPORT);
+        await loadFaceRack(page, {});
+        fresh.set(type, await captureCompact(page, type));
+        freshMs.push(Date.now() - t);
+        await ctx.close();
+      }
+      {
+        const ctx = await browser.newContext({
+          viewport: LEGACY_FOLD_VIEWPORT, deviceScaleFactor: 1, reducedMotion: 'reduce',
+        });
+        const page = await ctx.newPage();
+        const t = Date.now();
+        // BEFORE the load — exactly the order `workflow-shell-faces.spec.ts`
+        // uses today, so this control is the real thing and not a convenient
+        // rearrangement of it.
+        await page.setViewportSize(foldViewportFor(type));
+        await loadFaceRack(page, {});
+        freshDock.set(type, await captureDock(page, type));
+        freshDockMs.push(Date.now() - t);
+        await ctx.close();
+      }
     }
 
     // ── the SHARED page, three orders ───────────────────────────────────────
@@ -292,6 +393,7 @@ test.describe('D: shared page vs fresh page — same pixels?', () => {
 
     const offenders: string[] = [];
     const sharedMs: number[] = [];
+    const sharedDockMs: number[] = [];
     for (const [label, order] of Object.entries(orders)) {
       const ctx = await browser.newContext({
         viewport: LEGACY_FOLD_VIEWPORT, deviceScaleFactor: 1, reducedMotion: 'reduce',
@@ -302,13 +404,39 @@ test.describe('D: shared page vs fresh page — same pixels?', () => {
       const pristine: FaceRackPristine = await sampleFaceRackPristine(page);
 
       for (const type of order) {
-        const t = Date.now();
-        await resetFaceRack(page, pristine);
-        const shot = await captureCompact(page, type);
-        sharedMs.push(Date.now() - t);
-        const d = await diffRegion(page, fresh.get(type)!, shot, 26);
-        if (d.diffPixels > 0) {
-          offenders.push(`${label}/${type}: ${d.diffPixels} px differ (${JSON.stringify(d)})`);
+        // COMPACT
+        {
+          await page.setViewportSize(LEGACY_FOLD_VIEWPORT);
+          const t = Date.now();
+          await resetFaceRack(page, pristine);
+          const shot = await captureCompact(page, type);
+          sharedMs.push(Date.now() - t);
+          const d = await diffRegion(page, fresh.get(type)!, shot, IDENTITY_DELTA);
+          if (d.diffPixels > 0) {
+            offenders.push(`${label}/${type}-compact: ${d.diffPixels} px differ ${JSON.stringify(d)}`);
+          }
+        }
+        // DOCK — pixels AND the geometry the gate asserts on.
+        {
+          const t = Date.now();
+          await resetFaceRack(page, pristine);
+          // AFTER the load, because there is no load left — the shared page
+          // booted at the compact height. This is the asymmetry being measured.
+          await page.setViewportSize(foldViewportFor(type));
+          const got = await captureDock(page, type);
+          sharedDockMs.push(Date.now() - t);
+          const want = freshDock.get(type)!;
+          const d = await diffRegion(page, want.png, got.png, IDENTITY_DELTA);
+          if (d.diffPixels > 0) {
+            offenders.push(`${label}/${type}-dock: ${d.diffPixels} px differ ${JSON.stringify(d)}`);
+          }
+          if (JSON.stringify(got.geom) !== JSON.stringify(want.geom)) {
+            offenders.push(
+              `${label}/${type}-dock GEOMETRY: shared ${JSON.stringify(got.geom)} vs `
+                + `fresh ${JSON.stringify(want.geom)} — a shared page moved a number the gate `
+                + 'ASSERTS on even where it moved no pixel',
+            );
+          }
         }
       }
       await ctx.close();
@@ -317,16 +445,162 @@ test.describe('D: shared page vs fresh page — same pixels?', () => {
     const med = (xs: number[]) => [...xs].sort((a, b) => a - b)[xs.length >> 1]!;
     console.log('\n── D: shared page vs fresh boot ──');
     console.log(`   subjects             ${ORDER_SUBJECTS.join(', ')}`);
-    console.log(`   fresh-boot scene     ${stats(freshMs)}`);
-    console.log(`   shared-page scene    ${stats(sharedMs)}`);
-    console.log(`   speed-up             ${(med(freshMs) / med(sharedMs)).toFixed(2)}x  `
+    console.log(`   compact fresh        ${stats(freshMs)}`);
+    console.log(`   compact shared       ${stats(sharedMs)}`);
+    console.log(`     speed-up           ${(med(freshMs) / med(sharedMs)).toFixed(2)}x  `
       + `(${ms(med(freshMs) - med(sharedMs))} saved per scene)`);
-    console.log(`   pixel offenders      ${offenders.length}`);
+    console.log(`   dock fresh           ${stats(freshDockMs)}`);
+    console.log(`   dock shared          ${stats(sharedDockMs)}`);
+    console.log(`     speed-up           ${(med(freshDockMs) / med(sharedDockMs)).toFixed(2)}x  `
+      + `(${ms(med(freshDockMs) - med(sharedDockMs))} saved per scene)`);
+    console.log(`   identity delta       ${IDENTITY_DELTA}/255 (NOT the gate's 26/255)`);
+    console.log(`   offenders            ${offenders.length}`);
+    for (const o of offenders.slice(0, 12)) console.log(`     ${o}`);
 
     expect(
       offenders,
       'a shared-page capture differs from a fresh-boot capture of the SAME scene on the SAME '
         + 'machine — the shared page is not equivalent and this lane pins committed PNGs',
     ).toEqual([]);
+  });
+
+  // ── E: HOW FAR CAN ONE PAGE BE PUSHED? ────────────────────────────────────
+  //
+  // ⚠ THE SHARED PAGE DEGRADES, AND THIS IS WHAT PRICES THE CEILING.
+  // `rack-session.ts` measured ~10 % on `wavesculpt` after ~50 rows and capped
+  // reuse at 20 — but that is the FUNCTIONAL lane, where wavesculpt is the only
+  // GL-heavy row among DOM ones. Here EVERY scene is GL and every scene
+  // screenshots, so the constant is RE-MEASURED rather than ported: carrying a
+  // threshold across a change in the population it was measured on is the exact
+  // shape this repo keeps getting bitten by.
+  //
+  // It reports the per-scene cost bucketed by POSITION on the page, and the
+  // pixel diff against the fresh control at every position — because the ceiling
+  // has to bound whichever comes first, the slowdown or a moved pixel.
+  test('E: the per-scene cost and pixel identity as ONE page ages', async ({ browser }) => {
+    const laps = Number(process.env.PROBE_LAPS ?? 4);
+    const subjects = ORDER_SUBJECTS.slice(0, 6);
+
+    // The fresh control, once per subject.
+    const control = new Map<string, string>();
+    for (const type of subjects) {
+      const ctx = await browser.newContext({
+        viewport: LEGACY_FOLD_VIEWPORT, deviceScaleFactor: 1, reducedMotion: 'reduce',
+      });
+      const page = await ctx.newPage();
+      await page.setViewportSize(LEGACY_FOLD_VIEWPORT);
+      await loadFaceRack(page, {});
+      const memberId = await spawnFace(page, type, {});
+      await frameMember(page, memberId, 0.45, 'compact');
+      await freezeFaceAudio(page, `age-${type}`);
+      control.set(type, (await page
+        .locator(`.svelte-flow__node[data-id="${memberId}"] [data-testid="module-shell"]`)
+        .screenshot()).toString('base64'));
+      await ctx.close();
+    }
+
+    const ctx = await browser.newContext({
+      viewport: LEGACY_FOLD_VIEWPORT, deviceScaleFactor: 1, reducedMotion: 'reduce',
+    });
+    const page = await ctx.newPage();
+    await page.setViewportSize(LEGACY_FOLD_VIEWPORT);
+    await loadFaceRack(page, {});
+    const pristine = await sampleFaceRackPristine(page);
+
+    const rows: { n: number; type: string; ms: number; diff: number }[] = [];
+    let n = 0;
+    for (let lap = 0; lap < laps; lap++) {
+      for (const type of subjects) {
+        n += 1;
+        const t = Date.now();
+        await resetFaceRack(page, pristine);
+        const memberId = await spawnFace(page, type, {});
+        await frameMember(page, memberId, 0.45, 'compact');
+        await freezeFaceAudio(page, `age-${type}-${n}`);
+        const shot = (await page
+          .locator(`.svelte-flow__node[data-id="${memberId}"] [data-testid="module-shell"]`)
+          .screenshot()).toString('base64');
+        const ms2 = Date.now() - t;
+        const d = await diffRegion(page, control.get(type)!, shot, IDENTITY_DELTA);
+        rows.push({ n, type, ms: ms2, diff: d.diffPixels });
+      }
+    }
+    await ctx.close();
+
+    const bucket = (lo: number, hi: number) =>
+      rows.filter((r) => r.n > lo && r.n <= hi).map((r) => r.ms);
+    const med = (xs: number[]) => (xs.length ? [...xs].sort((a, b) => a - b)[xs.length >> 1]! : NaN);
+    console.log(`\n── E: one page, ${rows.length} scenes ──`);
+    for (let lo = 0; lo < rows.length; lo += subjects.length) {
+      const b = bucket(lo, lo + subjects.length);
+      console.log(`   scenes ${String(lo + 1).padStart(2)}-${String(lo + subjects.length).padStart(2)}  med ${ms(med(b))}`);
+    }
+    const first = med(bucket(0, subjects.length));
+    const last = med(bucket(rows.length - subjects.length, rows.length));
+    console.log(`   drift first->last    ${((100 * (last - first)) / first).toFixed(1)}%`);
+    const moved = rows.filter((r) => r.diff > 0);
+    console.log(`   scenes whose pixels moved: ${moved.length}`);
+    for (const m of moved.slice(0, 10)) console.log(`     #${m.n} ${m.type}: ${m.diff} px`);
+
+    expect(
+      moved.map((m) => `#${m.n} ${m.type}: ${m.diff} px`),
+      'a scene late on a shared page captured different pixels from the same scene on a fresh '
+        + 'boot — the reuse ceiling must be below this position',
+    ).toEqual([]);
+  });
+
+  // ── THE CONTROL ON THE CONTROL ────────────────────────────────────────────
+  //
+  // ⚠ THE TEST ABOVE HAS A BLIND SPOT AND IT IS THE CLASSIC ONE: both of its
+  // sides are contexts I built by hand with `browser.newContext({…})`. A shared
+  // context does NOT inherit the config's `use` block — Playwright applies
+  // viewport / deviceScaleFactor / reducedMotion through the `context` and `page`
+  // FIXTURES, not to a context created off the `browser` fixture. So if my option
+  // set differs from the config's, BOTH sides of that comparison are equally
+  // wrong, the diff is 0, and the metric is invariant to the very dimension under
+  // test. `rack-session.ts` calls `browser.newContext()` with no options at all,
+  // which is harmless for a functional sweep and would be a silent baseline move
+  // here.
+  //
+  // So this compares the config's OWN `page` fixture against a hand-built
+  // context, and it is the leg that would go red if the shared context's options
+  // ever drift from `vrt.config.ts`'s `use` block.
+  test('CONTROL: a hand-built context captures what the config’s own page fixture does', async ({
+    page,
+    browser,
+  }) => {
+    const type = ORDER_SUBJECTS[0]!;
+    await page.setViewportSize(LEGACY_FOLD_VIEWPORT);
+    await loadFaceRack(page, {});
+    const memberId = await spawnFace(page, type, {});
+    await frameMember(page, memberId, 0.45, 'compact');
+    await freezeFaceAudio(page, `control-${type}`);
+    const viaFixture = (await page
+      .locator(`.svelte-flow__node[data-id="${memberId}"] [data-testid="module-shell"]`)
+      .screenshot()).toString('base64');
+
+    const ctx = await browser.newContext({
+      viewport: LEGACY_FOLD_VIEWPORT, deviceScaleFactor: 1, reducedMotion: 'reduce',
+    });
+    const p2 = await ctx.newPage();
+    await p2.setViewportSize(LEGACY_FOLD_VIEWPORT);
+    await loadFaceRack(p2, {});
+    const m2 = await spawnFace(p2, type, {});
+    await frameMember(p2, m2, 0.45, 'compact');
+    await freezeFaceAudio(p2, `control-${type}-manual`);
+    const viaManual = (await p2
+      .locator(`.svelte-flow__node[data-id="${m2}"] [data-testid="module-shell"]`)
+      .screenshot()).toString('base64');
+    await ctx.close();
+
+    const d = await diffRegion(page, viaFixture, viaManual, IDENTITY_DELTA);
+    console.log(`\n── CONTROL: config page fixture vs hand-built context (${type}) ──`);
+    console.log(`   ${d.width}x${d.height}, ${d.diffPixels} px differ at ${IDENTITY_DELTA}/255`);
+    expect(
+      d.diffPixels,
+      'the hand-built context does not render what the config’s `use` block renders — every '
+        + 'shared-page measurement is then comparing two equally-wrong captures, and the shared '
+        + 'page would move baselines while every probe stayed green',
+    ).toBe(0);
   });
 });
