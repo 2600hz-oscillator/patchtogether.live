@@ -1,17 +1,88 @@
-# VRT zero-tolerance: Phase 1 measurement (in progress)
+# VRT zero-tolerance: the measurement, and what it decided
 
-Owner premise: a Svelte component tree can render deterministically every time,
-so every pixel of VRT tolerance is hiding a bug.
+Owner premise (2026-08-25): a Svelte component tree can render deterministically
+every time, so every pixel of VRT tolerance is hiding a bug rather than
+accommodating physics. *"VRTs are useless if they can't be pixel perfect every
+time … i would never have consciously allowed even a 1px tolerance"*, and *"the
+same PR should add updated VRTs and also move maxDiff and threshold to 0"*.
 
-Current tolerances (e2e/vrt/_shell-faces.ts, e2e/vrt/vrt.config.ts):
-  DOCK_MAX_DIFF    = 1500 px
-  COMPACT_MAX_DIFF =  150 px  (documented as INERT)
-  threshold        = 0.1  (26/255 per channel)
-  maxDiffPixelRatio= 0.01
+## Tolerances before / after
 
-Phase 1 question: boot each face TWICE on linux CI and diff at ZERO tolerance
-(threshold 1/255, any difference at all). Population of non-deterministic
-scenes is what the decision rests on.
+|  | before | after |
+|---|---|---|
+| `DOCK_MAX_DIFF` (`e2e/vrt/_shell-faces.ts`) | 1500 px | **0** |
+| `COMPACT_MAX_DIFF` (same file, documented INERT) | 150 px | **0** |
+| `threshold` (`e2e/vrt/vrt.config.ts`) | 0.1 = 26/255 | **0** |
+| `maxDiffPixelRatio` (same) | 0.01 | **0** |
 
-This file is scaffolding for the branch; the measurement lives in the probe
-spec and the report.
+## Phase 1 — does the scene REPRODUCE? (the question the baseline cannot answer)
+
+`e2e/vrt/vrt-determinism-probe.spec.ts` boots each face TWICE on ubuntu CI
+through the gate's own scene code and diffs BOOT 1 against BOOT 2 at threshold
+1/255. The baseline is out of the loop entirely, so a non-zero row cannot mean
+"the baseline is stale" — only "this scene does not reproduce". Negative AND
+positive controls on every row; a storage-wipe control (cookies / localStorage /
+sessionStorage / IndexedDB / CacheStorage) rules out a pair matching by
+inheriting state.
+
+**Every face scene but THREE was bit-exact across two cold boots.**
+
+```
+scene                diff@1  diff@26  maxCh  old budget  over?
+spirographs-dock       2711     1950    243        1500  YES  <- live latent flake
+pong-dock                72       72    237        1500  no
+spirographs-compact      25       10    120         150  no
+```
+
+So the tolerance was not absorbing renderer physics. It was absorbing **two
+unpinned simulations**, one of which was already outside the budget it lived
+under.
+
+## The two fixes
+
+* **spirographs** — has a `freeze` ParamDef, which buys intra-boot stillness
+  only: `draw` returns before `const timeSec = frame.time`, so the freeze holds
+  *whichever* frame the harness caught, and every centre is
+  `advanceCenter(base, r, W, H, timeSec)`. Fixed with
+  `simPin: __videoEngineFreezeTime = 1.0` — INWARDS' half of the split, since
+  `resolveSpiros` rebuilds `base` from constants each call (no ping-pong FBO, no
+  accumulator, no RNG). The ParamDef stays: it is in `params`, hence in the
+  attest basis and contract-lock.
+* **pong** — DOES declare a `freeze` param (correcting the working assumption at
+  the start of the task; the write does not land on an undeclared key). Its
+  `simPin` pinned only the serve RNG; the court accumulates one step per
+  scheduler tick, so the frame depends on how many ticks ran before the suspend.
+  Fixed the lushgarden way: under `__pongVrtSeed` the factory steps 48 ticks at
+  construction and then stops ticking — time-invariant, not frozen.
+
+## The doctrine that pointed the wrong way
+
+`_shell-faces.ts`'s 4plexvid note said a `freeze` ParamDef was *"the template"*
+and *"Do NOT reach for `simPin`"* — and it named **spirographs** as that
+template, the module the measurement caught at 2711 px *with* its freeze param.
+Corrected in the same diff, keeping the durable half (a `freeze` ParamDef costs
+an owner-machine re-attest and a contract re-pin because `params` is in the
+attest basis; `simPin` costs neither, because e2e files are excluded from the
+attest hash).
+
+## Local verification (darwin), and one honest caveat
+
+Both scenes, both tiers, after the fixes: `diff@1=0`, DETERMINISTIC, controls
+green.
+
+The instrument was then checked in both directions on the same machine:
+
+* pong-dock with the court pin REMOVED (seed still pinned) read **0 px locally**
+  — this machine happened to land the same tick count twice, so the local probe
+  is not a sensitive instrument for that defect here. The CI row (72 px) is.
+* pong-dock with the SEED removed as well read **72 px, maxDelta 237, box
+  14×15** — the same signature as the CI row, which is what proves the probe can
+  see this defect at all rather than being blind to pong.
+
+## Known consequence, deliberately not solved
+
+At `threshold: 0` a local macOS VRT run fails on last-significant-bit text
+shimmer — measured `dx7-dock` 17 px, `mirrorpool-compact` 8 px,
+`moog903a-compact` 4 px, `scaler-compact` 4 px, all maxDelta 1-2, all 0 at the
+old 26/255, none reproducing on linux. Linux CI is and always was the authority.
+No platform carve-out was added; `task vrt:docker` is the local loop.
