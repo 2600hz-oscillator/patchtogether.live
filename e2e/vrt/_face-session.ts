@@ -71,7 +71,7 @@
 // sides of every other comparison could be equally wrong and every number would
 // still come back clean.
 
-import { test as base, expect, type BrowserContext, type Page } from '@playwright/test';
+import { test as base, expect, type BrowserContext, type Page, type TestInfo } from '@playwright/test';
 import {
   loadFaceRack,
   resetFaceRack,
@@ -173,6 +173,33 @@ async function hostIsHealthy(page: Page): Promise<boolean> {
 }
 
 /**
+ * Attach a failure screenshot for a scene on the shared page.
+ *
+ * ⚠ THE CONFIG'S `screenshot: 'only-on-failure'` FOLLOWS THE `page` FIXTURE, and
+ * a shared page is not it — so a failing scene would otherwise arrive with no
+ * picture of the page it failed on, in the one lane whose whole subject is what
+ * the page looked like. Driven manually here, mirroring the config's setting.
+ *
+ * ⚠ TRACING IS DELIBERATELY NOT DRIVEN HERE. Playwright's artifact manager
+ * instruments EVERY context created from the `browser` fixture — including this
+ * one — and drives the per-test trace chunks itself. `rack-session.ts` drove it a
+ * second time and failed 85 of 175 otherwise-green rows with "Must start tracing
+ * before starting a new chunk": a harness bug wearing the costume of a product
+ * failure. `trace: 'retain-on-failure'` therefore works unchanged; `video` is
+ * already `off` in this config, so nothing is lost there either.
+ */
+async function attachFailureShot(page: Page, testInfo: TestInfo): Promise<void> {
+  if (testInfo.status === testInfo.expectedStatus) return;
+  if (page.isClosed()) return;
+  try {
+    const shot = await page.screenshot({ fullPage: false });
+    await testInfo.attach('face-session-failure', { body: shot, contentType: 'image/png' });
+  } catch {
+    /* never let artifact handling change a scene's verdict */
+  }
+}
+
+/**
  * The face suite's `test` object: `@playwright/test`'s, plus `faceSession`.
  *
  * `faceSession` is WORKER-scoped, and `vrt.config.ts` is `workers: 1`, so a shard
@@ -195,7 +222,7 @@ export const test = base.extend<
     { scope: 'worker' },
   ],
 
-  faceSession: async ({ faceHost }, use) => {
+  faceSession: async ({ faceHost }, use, testInfo) => {
     const owned: Page[] = [];
 
     // ⚠ RE-BOOT RATHER THAN INHERIT, for either of two reasons: the previous
@@ -228,6 +255,7 @@ export const test = base.extend<
 
     await use(session);
 
+    await attachFailureShot(faceHost.page, testInfo);
     for (const p of owned) if (!p.isClosed()) await p.close().catch(() => undefined);
   },
 });
