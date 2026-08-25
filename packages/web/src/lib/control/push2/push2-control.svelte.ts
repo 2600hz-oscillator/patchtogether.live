@@ -444,6 +444,20 @@ function logUnboundPushCc(raw: Push2RxEvent): void {
 // Picks which lane's PUSH CARDS the screen shows (and which lane colour the
 // button row mirrors).
 // ---------------------------------------------------------------------------
+/**
+ * The lane INDICES the eight above-display buttons select, 0-based.
+ *
+ * ⚠ DERIVED FROM `MIXMSTRS_CHANNELS`, NEVER RE-TYPED, and it lives here rather
+ * than beside the UI that renders it because THIS is where the rule is
+ * enforced: `selectChannel` below rejects anything outside
+ * `[0, MIXMSTRS_CHANNELS.length)`. A surface that painted its own
+ * `[0,1,2,3,4,5,6,7]` would be a second source of truth for a population — the
+ * construct the repo forbids by name — and the failure would be silent in the
+ * worst direction: add a ninth mixer channel and the buttons keep saying eight
+ * while the setter happily accepts the ninth from the hardware.
+ */
+export const PUSH2_LANE_INDICES: readonly number[] = MIXMSTRS_CHANNELS.map((_, i) => i);
+
 export function selectChannel(channel: number): void {
   if (channel < 0 || channel >= MIXMSTRS_CHANNELS.length) return;
   selectedChannel = channel;

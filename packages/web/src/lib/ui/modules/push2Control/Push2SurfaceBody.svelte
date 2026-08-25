@@ -40,8 +40,9 @@
   //   * THE CARD FLIP — the ‹ › pair that walks the selected lane's modules,
   //     the #2-from-the-left encoder's gesture. The card printed the module's
   //     name and an `i/N` badge beside it; the NAME is deleted because the
-  //     canvas three pixels above already paints it, and the POSITION lives in
-  //     `aria-valuetext` (see `push2FlipValue`).
+  //     canvas three pixels above already paints it, and the POSITION lives on
+  //     the flip group's `aria-label` (see `push2FlipValue`, and the note at
+  //     the call site for why `aria-valuetext` would be invalid on a group).
   //   * THE BIND CONTROL — a button whose caption names the action it will
   //     perform. HERE and not a ranked cell for two mechanical reasons:
   //     `ShellActionCell.label` is a plain `string`, so a cell could not say
@@ -105,7 +106,12 @@
   // `setLaunchpadView` wrapper bumps, which is what repairs the LEGACY CARD.)
   import { launchpadActiveView, viewRune, bindingRune } from '$lib/control/launchpad/launchpad-control.svelte';
   import type { SingleView } from '$lib/control/launchpad/launchpad-map';
-  import { PUSH2_LANES } from '$lib/meta/modules/push2-control';
+  // ⚠ THE LANE ROSTER IS DERIVED, NOT DECLARED HERE. `PUSH2_LANE_INDICES` is
+  // `MIXMSTRS_CHANNELS.map((_, i) => i)`, exported beside `selectChannel` —
+  // the function that clamps against that same authority. Painting a literal
+  // `[0,1,2,3,4,5,6,7]` in this file would be a second source of truth for a
+  // population, invisible to every runtime gate because it lives in `.svelte`.
+  import { PUSH2_LANE_INDICES } from '$lib/control/push2/push2-control.svelte';
   import {
     firstClipplayer,
     onPush2Gesture,
@@ -224,7 +230,7 @@
 
   <!-- LANE SELECT — the eight buttons above the hardware display. -->
   <div class="p2-row p2-lanes" role="group" aria-label="Push lane" data-testid="push2-face-lanes-{nodeId}">
-    {#each PUSH2_LANES as c (c)}
+    {#each PUSH2_LANE_INDICES as c (c)}
       <button
         class="p2-btn p2-lane-btn nodrag"
         class:active={lane === c}

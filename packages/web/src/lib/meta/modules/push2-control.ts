@@ -68,8 +68,13 @@ export const PUSH2_VIEWS = [
   { id: 'control', label: 'CTRL' },
 ] as const;
 
-/** The eight lanes the row of buttons above the Push's display selects. */
-export const PUSH2_LANES = [0, 1, 2, 3, 4, 5, 6, 7] as const;
+// ⚠ THE LANE ROSTER IS NOT DECLARED HERE. It is `PUSH2_LANE_INDICES` in
+// `$lib/control/push2/push2-control.svelte`, DERIVED from `MIXMSTRS_CHANNELS` —
+// beside `selectChannel`, which is the function that clamps against the same
+// authority. Writing `[0,1,2,3,4,5,6,7]` on this def would be a second source of
+// truth for a population, and it would fail silently in the worst direction: a
+// ninth mixer channel would leave the faceplate painting eight buttons while
+// the setter accepted the ninth from the hardware.
 
 export const push2ControlDef: MetaModuleDef = {
   type: PUSH2_CONTROL_TYPE,
