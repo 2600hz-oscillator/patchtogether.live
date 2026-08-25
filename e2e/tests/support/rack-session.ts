@@ -145,6 +145,37 @@ export const FACEPLATE_RACK_URL = '/rack';
 
 const BOOT_TIMEOUT_MS = 60_000;
 
+/**
+ * How many rows one shared page may serve before it is recycled.
+ *
+ * ⚠ THE SHARED PAGE DEGRADES, AND THIS BOUNDS IT. A policy threshold on a
+ * MEASURED quantity, not a population count — it prices page reuse, and it does
+ * not go stale when the roster grows.
+ *
+ * MEASURED on `wavesculpt`, the heaviest GL face in the parity sweep and the
+ * only row in that family over 5 s (67.5 s of the family's 284.5 s). Its five
+ * chunks, same machine, `E2E_USE_PREVIEW=1`, one worker:
+ *
+ *   fresh page per row (main)                     10.7 12.2 12.3 12.0 14.0
+ *   shared page, run ALONE (~no accumulation)     10.0 11.6 12.1 11.7 13.7
+ *   shared page, after ~50 other faces            11.9 13.6 13.5 13.2 15.3
+ *
+ * Run alone the shared page MATCHES a fresh one, so the reset path itself is
+ * not the cost — what costs ~10 % is state the page accumulates across rows
+ * (GL resources a Y.Doc node delete does not tear down). Left unbounded that
+ * grows with the roster.
+ *
+ * It is not merely a slow row: under four workers on the same machine the
+ * unbounded version blew wavesculpt's budget on FOUR chunks where a fresh page
+ * blew it on one, and CI runs these shards three workers wide. So the risk this
+ * bounds is a CONTENTION FLAKE on the heaviest module, not a few seconds.
+ *
+ * 20 keeps the amortisation (a ~216-row family pays ~11 boots instead of 216,
+ * i.e. ~10 s of the ~105 s saved) while capping accumulation at a fraction of
+ * what produced the measurement above.
+ */
+const MAX_ROWS_PER_PAGE = 20;
+
 /** A pan/zoom triple, in xyflow's own units. */
 export interface Viewport {
   x: number;
@@ -346,7 +377,13 @@ export const test = base.extend<
   { rack: RackSession },
   {
     rackUrl: string;
-    rackHost: { context: BrowserContext; page: Page; url: string; pristine: Viewport };
+    rackHost: {
+      context: BrowserContext;
+      page: Page;
+      url: string;
+      pristine: Viewport;
+      rows: number;
+    };
   }
 >({
   // Declared `option: true` so a suite sets it with `test.use({ rackUrl })`.
@@ -358,7 +395,7 @@ export const test = base.extend<
       const context = await browser.newContext();
       const page = await context.newPage();
       const pristine = await bootRack(page, url);
-      await use({ context, page, url, pristine });
+      await use({ context, page, url, pristine, rows: 0 });
       await context.close();
     },
     { scope: 'worker' },
@@ -369,13 +406,18 @@ export const test = base.extend<
     const { context, url } = rackHost;
     let { pristine } = rackHost;
 
-    // ⚠ RE-BOOT RATHER THAN INHERIT. A previous row may have killed the page.
-    if (!(await sessionIsHealthy(page, url))) {
+    // ⚠ RE-BOOT RATHER THAN INHERIT, for either of two reasons: the previous
+    // row may have killed the page, or the page may simply have served enough
+    // rows to have accumulated measurable state (see MAX_ROWS_PER_PAGE).
+    rackHost.rows += 1;
+    const worn = rackHost.rows > MAX_ROWS_PER_PAGE;
+    if (worn || !(await sessionIsHealthy(page, url))) {
       if (!page.isClosed()) await page.close().catch(() => undefined);
       page = await context.newPage();
       rackHost.page = page;
       pristine = await bootRack(page, url);
       rackHost.pristine = pristine;
+      rackHost.rows = 1;
     }
 
     const extraPages: Page[] = [];
