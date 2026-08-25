@@ -86,13 +86,33 @@ import type { LaneRenderKind } from './legacy-fallback';
  * the FIRST member of this set to be promoted, so it is also the first to
  * exercise that path for real.
  */
+/**
+ * ⚠ VIDEOBOX HAS LEFT THIS SET (LEG-02 P1, #1511) — the first member ever to,
+ * and the shape every remaining one follows.
+ *
+ * Nothing about videobox's PICTURE changed. What changed is who owns the
+ * lifecycle: `$lib/ui/media/node-video-source-registry` now owns the element's
+ * attach, its audio wiring, the multiplayer drift loop, the `play_trigger` gate
+ * loop, the sync→element application and the saved-handle restore, on GRAPH
+ * lifetime via Canvas's sync/sweep effects. `VideoboxCard.svelte` creates
+ * nothing and disposes nothing, so its subtree no longer calls
+ * `attachExternalSource(` at all — which is what the grep gate below reads, and
+ * why this deletion and that card edit are ONE atomic change.
+ *
+ * ⚠ ITS ABSENCE IS NOW A GATE-ANCHORED STATEMENT, exactly like picturebox's
+ * absence from `CARD_PRODUCER_LANE_TYPES`: the set is DERIVED, so videobox being
+ * missing here is not a list someone forgot to update — it is the tree asserting
+ * that no card mount is load-bearing for that module. The new owner is anchored
+ * in the other direction by `NODE_VIDEO_SOURCE_TYPES`, which the registry's own
+ * test asserts is DISJOINT from this set: a module in both would mean two owners
+ * for one element.
+ */
 export const DOM_SOURCE_LANE_TYPES: ReadonlySet<string> = new Set<string>([
   'archivist',
   'cameraInput',
   'loopback',
   'peertube',
   'tvLibrarian',
-  'videobox',
   'videovarispeed',
 ]);
 
