@@ -1,10 +1,27 @@
 <script lang="ts">
-  // VideoboxCard — file picker + multiplayer playhead.
+  // VideoboxCard — a VIEW over the node's video source, plus the gestures only
+  // a mounted surface can perform.
   //
-  // The card owns the <video> element + the object-URL pointing at the
-  // user's picked File; the engine module (videobox.ts) samples that
-  // element each video frame into its FBO + (after wireAudio) routes
-  // its audio into the cross-domain audio bridge.
+  // ⚠ THIS CARD OWNS NO LIFECYCLE ANY MORE (LEG-02, #1511). It used to own the
+  // `attachExternalSource` poll, the `wireAudio` retry, the 500 ms multiplayer
+  // drift loop, the 33 ms `play_trigger` gate loop, the sync→element
+  // application and the saved-handle restore — all in its own component
+  // lifetime. So a rack containing VIDEOBOX had a source only because
+  // `<HeadlessSourceHost>` parked this card off-screen, and videobox was in
+  // `DOM_SOURCE_LANE_TYPES` for exactly that reason.
+  //
+  // All six now belong to a node-scoped controller
+  // ($lib/ui/media/node-video-source-registry), created and disposed by the
+  // GRAPH from Canvas's sync/sweep effects. This card CREATES NOTHING AND
+  // DISPOSES NOTHING: it adopts the node-owned <video> for display, renders the
+  // transport, and forwards user gestures through `nodeVideoSource.request(...)`.
+  // Everything it still cleans up in `onDestroy` is its own (a display timer, a
+  // resize listener, the media lease).
+  //
+  // The engine module (videobox.ts) samples the element each video frame into
+  // its FBO + (after wireAudio) routes its audio into the cross-domain audio
+  // bridge — unchanged, and deliberately: it is in the WebGL attest basis, so
+  // this whole conversion reaches it only through existing public calls.
   //
   // Multiplayer (node.data via Yjs/SyncedStore):
   //   data.fileMeta              — name + duration, set by the loader,
@@ -27,40 +44,26 @@
   import { onMount, onDestroy } from 'svelte';
   import { type NodeProps } from '@xyflow/svelte';
   import { useEngine } from '$lib/audio/engine-context';
-  import { patch, ydoc, LOCAL_ORIGIN } from '$lib/graph/store';
+  import { patch } from '$lib/graph/store';
   import { startCornerResize } from './card-resize';
   import { createFullscreen } from './use-fullscreen.svelte';
   import { createFullFrame } from './use-full-frame.svelte';
   import { attachRenderLease } from './use-render-lease.svelte';
   import { nodeMedia, type NodeMediaLease } from '$lib/ui/media/node-media-registry';
   import VideoCanvasContextMenu from './VideoCanvasContextMenu.svelte';
-  import type { VideoEngine } from '$lib/video/engine';
   import type { ModuleNode } from '$lib/graph/types';
-  import {
-    videoboxDef,
-    type VideoboxHandleExtras,
-    type VideoboxData,
-  } from '$lib/video/modules/videobox';
-  import {
-    buildSyncWrite,
-    decideDriftCorrection,
-    type VideoboxFileMeta,
-  } from '$lib/video/modules/videobox-sync';
+  import { videoboxDef, type VideoboxData } from '$lib/video/modules/videobox';
+  import { type VideoboxFileMeta } from '$lib/video/modules/videobox-sync';
   import {
     canPersistVideoHandles,
-    newVideoFileId,
-    putVideoFileHandle,
-    getVideoFileHandle,
-    deleteVideoFileHandle,
-    queryHandleReadPermission,
-    requestHandleReadPermission,
     formatFileSize,
     type StoredFileHandle,
   } from '$lib/video/video-file-store';
   import {
-    registerVideoExport,
-    unregisterVideoExport,
-  } from '$lib/video/video-export-registry';
+    nodeVideoSource,
+    reAllowVideoHandle,
+    VIDEO_SOURCE_SLOT,
+  } from '$lib/ui/media/node-video-source.svelte';
   import ModuleTitle from './ModuleTitle.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import { captureFlowStore, portsFromDef } from './card-kit';
@@ -97,29 +100,32 @@
   // header for the measurement.
   let videoHost: HTMLDivElement | null = $state(null);
   let videoEl: HTMLVideoElement | null = $state(null);
-  /** Registry-owned: read via `nodeMedia.objectUrl(id, MEDIA_SLOT)`, written
-   *  via `setObjectUrl`. NEVER revoked by this card. */
-  const MEDIA_SLOT = 'main';
-  let localFileName = $state<string | null>(null);
+  const MEDIA_SLOT = VIDEO_SOURCE_SLOT;
   let isDragOver = $state(false);
-  let loadError = $state<string | null>(null);
+
+  // ---- Status, READ from the node's controller ----
+  //
+  // ⚠ DERIVED, NEVER MIRRORED. These were card `$state` written by the card's
+  // own load path, and that is precisely how a remount came up believing the
+  // node had no local file — re-showing the re-link prompt over a video that
+  // was still playing. Reading them through the controller makes the stale
+  // mirror unspellable: there is one owner and the card is not it.
+  let sourceStatus = $derived(nodeVideoSource.view(id));
+  let localFileName = $derived<string | null>(sourceStatus.fileName);
+  let loadError = $derived<string | null>(sourceStatus.error);
+  /** The name of a remembered handle whose read permission is in the 'prompt'
+   *  state. The controller can detect it but CANNOT act on it —
+   *  `requestPermission()` is only honoured inside a real user gesture — so it
+   *  publishes the offer and this card performs it (`onReAllow`). */
+  let pendingHandleName = $derived<string | null>(sourceStatus.pendingHandleName);
 
   // ---- Persistence: remembered file handle (Chromium) ----
-  // When the user picks a file via showOpenFilePicker() (or drops one and
-  // the browser exposes getAsFileSystemHandle()), we keep the returned
-  // FileSystemFileHandle in IndexedDB keyed by an id, and stamp that id +
-  // file size into the synced fileMeta. On a later patch load this lets us
-  // reload the same file automatically (or in one click after a permission
-  // re-grant). Firefox / Safari never produce a handle and use the re-link
-  // prompt path only.
+  // When the user picks a file via showOpenFilePicker() (or drops one and the
+  // browser exposes getAsFileSystemHandle()), the handle rides along with the
+  // load gesture and the CONTROLLER persists it in IndexedDB + stamps its id
+  // into the synced fileMeta. Firefox / Safari never produce a handle and use
+  // the re-link prompt path only. All this card decides is which picker to open.
   const canRememberHandle = canPersistVideoHandles();
-  // A handle we resolved from IDB on load but whose read permission is in
-  // the 'prompt' state — the card shows a one-click "re-allow" affordance
-  // (requestPermission must run inside a user gesture).
-  let pendingHandle = $state<StoredFileHandle | null>(null);
-  // True once we've attempted the auto/handle reload for the loaded patch
-  // so we don't re-run it on every reactive tick.
-  let handleReloadAttempted = false;
 
   // ---- Reactive reads from data (Yjs-backed) ----
   let fileMeta = $derived<VideoboxFileMeta | null>(
@@ -139,159 +145,39 @@
   /** Track whether THIS browser has loaded a local copy of the file. */
   let hasLocalFile = $derived<boolean>(localFileName !== null);
 
-  // ---- Extras helper ----
-  function getExtras(): VideoboxHandleExtras | null {
-    const e = engineCtx.get();
-    if (!e) return null;
-    try {
-      const ve = e.getDomain<VideoEngine>('video');
-      return (ve.read(id, 'extras') as VideoboxHandleExtras | undefined) ?? null;
-    } catch {
-      return null;
-    }
-  }
+  // ⚠ THIS CARD IS NO LONGER ON THE PRIVATE `extras` CHANNEL AT ALL, and that
+  // is a stronger statement than "it stopped calling wireAudio". It used to
+  // hold `getExtras()` (a `read(id,'extras')` reach into the handle) and
+  // `videoEngine()` purely to drive the audio wiring and the attach retry. Both
+  // are the controller's now, so both helpers are DELETED rather than left
+  // unused — which is what takes `VideoboxCard` out of `EXTRAS_OWNERS` in
+  // `card-media-lifetime.test.ts`, the same way textmarquee and picturebox left
+  // it when their pushes moved to a node-lifetime producer. A card that cannot
+  // reach the handle cannot tear it down.
 
-  function videoEngine(): VideoEngine | null {
-    const e = engineCtx.get();
-    if (!e) return null;
-    try {
-      return e.getDomain<VideoEngine>('video');
-    } catch {
-      return null;
-    }
-  }
-
-  // ---- Sync writers (call inside a single transact so peers see one
-  //      coherent update) ----
-  function writeSync(args: { isPlaying: boolean; currentPositionSec: number }): void {
-    const next = buildSyncWrite({
-      isPlaying: args.isPlaying,
-      currentPositionSec: args.currentPositionSec,
-      nowWallclockMs: Date.now(),
-    });
-    ydoc.transact(() => {
-      const t = patch.nodes[id];
-      if (!t) return;
-      if (!t.data) t.data = {};
-      const d = t.data as Partial<VideoboxData>;
-      d.isPlaying = next.isPlaying;
-      d.lastSyncTime = next.lastSyncTime;
-      d.lastSyncPosition = next.lastSyncPosition;
-    }, LOCAL_ORIGIN);
-  }
-
-  function writeFileMeta(meta: VideoboxFileMeta): void {
-    // If we're replacing a file that had a DIFFERENT remembered handle in
-    // THIS browser's IDB, drop the stale handle so it doesn't leak. (Only
-    // when the id actually changes — a reload reuses the same id.)
-    const prevId = fileMeta?.handleId;
-    if (prevId && prevId !== meta.handleId) {
-      void deleteVideoFileHandle(prevId);
-    }
-    ydoc.transact(() => {
-      const t = patch.nodes[id];
-      if (!t) return;
-      if (!t.data) t.data = {};
-      const d = t.data as Partial<VideoboxData>;
-      const isSameFile =
-        prevId !== undefined && meta.handleId !== undefined && prevId === meta.handleId;
-      d.fileMeta = meta;
-      // Reset the playhead ONLY for a genuinely DIFFERENT file, so peers don't
-      // extrapolate against a stale lastSyncPosition that may exceed the new
-      // duration. Doing it unconditionally was a SECOND, independent cause of
-      // "it stopped playing": the IndexedDB handle-reload path re-loads the
-      // SAME file through here, so a card that restored itself came back
-      // paused at 0 even though the node's synced state said it was playing.
-      if (!isSameFile) {
-        d.isPlaying = false;
-        d.lastSyncTime = Date.now();
-        d.lastSyncPosition = 0;
-      }
-    }, LOCAL_ORIGIN);
-  }
-
-  // ---- File-picker handling ----
+  // ---- Gestures, FORWARDED to the node's controller ----
   //
-  // `opts.handle` — a FileSystemFileHandle to persist for one-click reload
-  //   (from showOpenFilePicker / a drop that exposed getAsFileSystemHandle).
-  // `opts.reuseHandleId` — when reloading from an existing remembered
-  //   handle, keep the patch's existing handleId rather than minting a new
-  //   one (the handle is already stored under it).
-  async function loadFile(
-    file: File,
-    opts?: { handle?: StoredFileHandle | null; reuseHandleId?: string },
-  ): Promise<void> {
-    loadError = null;
-    pendingHandle = null;
-    if (!file.type.startsWith('video/')) {
-      loadError = `Not a video file: ${file.type || file.name}`;
-      return;
-    }
-    // Hand the new object URL to the NODE-owned registry. It revokes the
-    // PREVIOUS url for this node (so a swap still frees ~30 MB of blob
-    // storage) and keeps the new one alive across card unmounts — this card
-    // must never revoke it itself.
-    nodeMedia.setObjectUrl(id, MEDIA_SLOT, URL.createObjectURL(file), file.name);
-    const objectUrl = nodeMedia.objectUrl(id, MEDIA_SLOT)!;
-    localFileName = file.name;
-    if (!videoEl) return;
-    videoEl.src = objectUrl;
-    // muted=false so audio plays through MediaElementSource (which IS
-    // the audio output once we wireAudio()). The video element's own
-    // speaker output is muted-by-Web-Audio once createMediaElementSource
-    // is called, so this attribute only matters for the brief window
-    // before wireAudio runs.
-    videoEl.muted = false;
-
-    // Wait for metadata so duration + readyState are populated before
-    // we publish fileMeta. loadedmetadata fires fast (<100ms typical).
-    await new Promise<void>((resolve) => {
-      if (!videoEl) { resolve(); return; }
-      if (videoEl.readyState >= 1 /* HAVE_METADATA */) { resolve(); return; }
-      const onMeta = (): void => { videoEl?.removeEventListener('loadedmetadata', onMeta); resolve(); };
-      videoEl.addEventListener('loadedmetadata', onMeta, { once: true });
+  // ⚠ THE CARD NO LONGER LOADS ANYTHING. `loadFile` used to mint the object URL,
+  // set `videoEl.src`, await metadata, persist the handle, write fileMeta and
+  // drive the `wireAudio` retry — six node-lifetime concerns in a component that
+  // may not be mounted. It now hands the File to the controller, which owns all
+  // six and is alive for as long as the node is.
+  //
+  // A gesture is the ONE thing that genuinely needs a mounted surface: a file
+  // picker and a permission re-grant are only honoured inside a real user
+  // gesture. That is why the seam is a command rather than an ownership split.
+  function loadFile(file: File, opts?: { handle?: StoredFileHandle | null }): void {
+    const res = nodeVideoSource.request(id, {
+      kind: 'load',
+      file,
+      handle: opts?.handle ?? undefined,
     });
-    if (!videoEl) return;
-
-    // Persist the handle (if we have one + the browser supports it) so a
-    // later patch load can reload this exact file in one click. We do this
-    // BEFORE writing fileMeta so the handleId we stamp is the one the
-    // handle is stored under. If anything fails we just omit handleId and
-    // the re-link prompt remains the fallback.
-    let handleId: string | undefined = opts?.reuseHandleId;
-    if (opts?.handle && canRememberHandle) {
-      if (!handleId) handleId = newVideoFileId();
-      await putVideoFileHandle(handleId, opts.handle);
+    // DELIVERY IS REPORTED, NEVER DROPPED. A load writes nothing to the graph
+    // until metadata resolves, so "the picker did nothing" and "no controller
+    // was listening" are otherwise indistinguishable from the UI.
+    if (!res.delivered) {
+      console.warn(`[videobox] no source controller for node ${id} — the graph sync has not run`);
     }
-
-    writeFileMeta({
-      name: file.name,
-      duration: Number.isFinite(videoEl.duration) ? videoEl.duration : 0,
-      size: Number.isFinite(file.size) ? file.size : undefined,
-      handleId,
-    });
-
-    // Now that the element has src + metadata, wire its audio into the graph.
-    // RETRY until it sticks: wireAudio() no-ops when getExtras() is still null
-    // (engine hasn't materialized this card's video node yet — slower to settle
-    // when a cross-domain audio edge is already present) or the factory's own
-    // <video> ref isn't set yet (attachExternalSource, driven by the onMount
-    // poll, hasn't run). Calling it once lost that race and left audio_l /
-    // audio_r stuck on the silent placeholder -> downstream AUDIO-OUT silent.
-    // wireAudio() is idempotent, so retrying until isAudioWired() converges as
-    // soon as both the handle and the element are ready.
-    ensureAudioWired();
-  }
-
-  let audioWireTimer: ReturnType<typeof setTimeout> | null = null;
-  function ensureAudioWired(attempt = 0): void {
-    if (audioWireTimer) { clearTimeout(audioWireTimer); audioWireTimer = null; }
-    if (!hasLocalFile) return; // file was cleared; nothing to wire
-    const extras = getExtras();
-    extras?.wireAudio();
-    if (extras?.isAudioWired()) return;
-    if (attempt >= 50) return; // ~5s of 100ms retries; give up quietly
-    audioWireTimer = setTimeout(() => ensureAudioWired(attempt + 1), 100);
   }
 
   function onFileInputChange(ev: Event): void {
@@ -326,7 +212,7 @@
       const handle = handles?.[0];
       if (!handle) return true; // user cancelled — still "handled"
       const file = await handle.getFile();
-      await loadFile(file, { handle });
+      loadFile(file, { handle });
     } catch (e) {
       // AbortError = user cancelled the picker; ignore. Anything else:
       // surface it but still count as handled (don't double-open inputs).
@@ -370,190 +256,67 @@
     if (file) void loadFile(file, { handle });
   }
 
-  // ---- Persistence: reload from a remembered handle on patch load ----
+  // ---- The one-click "re-allow <name>" gesture ----
   //
-  // After the patch loads, fileMeta may carry a handleId pointing at a
-  // handle THIS browser persisted. We:
-  //   1. look the handle up in IDB by id;
-  //   2. if not found (different machine/browser, or never stored) → leave
-  //      it; the re-link prompt shows;
-  //   3. if found + read permission is 'granted' → reload immediately;
-  //   4. if found + permission is 'prompt' → stash it in pendingHandle so
-  //      the card shows a one-click "re-allow <name>" button (the actual
-  //      requestPermission() must run inside that click's user gesture);
-  //   5. if 'denied' → leave it; re-link prompt shows.
-  async function tryReloadFromHandle(): Promise<void> {
-    const id = fileMeta?.handleId;
-    if (!id || hasLocalFile) return;
-    const handle = await getVideoFileHandle(id);
-    if (!handle) return; // not in this browser → re-link prompt path
-    const perm = await queryHandleReadPermission(handle);
-    if (perm === 'granted') {
-      try {
-        const file = await handle.getFile();
-        await loadFile(file, { handle, reuseHandleId: id });
-      } catch {
-        // File moved/deleted on disk since the handle was stored — fall
-        // through to the re-link prompt.
-      }
-      return;
-    }
-    if (perm === 'prompt') {
-      pendingHandle = handle;
-    }
-    // 'denied' → nothing; the re-link prompt covers it.
-  }
-
-  // One-click "re-allow <name>": request read permission inside this click
-  // gesture, then reload. Bound to the re-allow button.
+  // The CONTROLLER detects that a remembered handle needs a permission re-grant
+  // and publishes it as `pendingHandleName`; it deliberately does not act,
+  // because `requestPermission()` is only honoured inside a real user gesture
+  // and a controller has none. This handler runs inside the click, and hands the
+  // resulting File straight back to the controller's normal load path — so the
+  // card is the gesture, never the owner.
   async function onReAllow(): Promise<void> {
-    const handle = pendingHandle;
-    const id = fileMeta?.handleId;
-    if (!handle) return;
-    const perm = await requestHandleReadPermission(handle);
-    if (perm === 'granted') {
-      pendingHandle = null;
-      try {
-        const file = await handle.getFile();
-        await loadFile(file, { handle, reuseHandleId: id ?? undefined });
-        return;
-      } catch { /* fall through to re-link */ }
-    }
-    // Denied or file gone — drop the pending handle so the re-link prompt
-    // takes over.
-    pendingHandle = null;
+    await reAllowVideoHandle(id);
   }
 
   // Re-link prompt visibility: we have saved fileMeta (a file was loaded
   // when the patch was saved) but THIS browser has no local copy AND we
   // can't auto-reload from a remembered handle (none, denied, or a
-  // different machine/browser). The pendingHandle case shows the one-click
+  // different machine/browser). The pendingHandleName case shows the one-click
   // re-allow affordance instead.
   let showRelinkPrompt = $derived<boolean>(
-    !hasLocalFile && fileMeta !== null && pendingHandle === null,
+    !hasLocalFile && fileMeta !== null && pendingHandleName === null,
   );
 
-  // Run the handle-reload attempt once fileMeta becomes available (covers
-  // both an initial patch load and a load that swaps fileMeta in later).
-  $effect(() => {
-    void fileMeta?.handleId;
-    if (handleReloadAttempted) return;
-    if (!fileMeta?.handleId) return;
-    if (hasLocalFile) return;
-    handleReloadAttempted = true;
-    void tryReloadFromHandle();
-  });
-
-  // ---- Play / pause / seek ----
+  // ---- Transport, FORWARDED ----
+  //
+  // ⚠ THE SAVED-HANDLE RESTORE IS GONE FROM HERE ENTIRELY, and its absence is
+  // the headline of this conversion rather than a tidy-up. It used to be a card
+  // `$effect`, so a rack saved with a loaded video and reopened with nothing
+  // expanded restored NOTHING until the user opened the dock. The controller
+  // runs it at node creation, which is what makes "rack save/reload restores the
+  // source without a card ever mounting" true.
+  //
+  // Play/pause/seek forward for the same reason the load path does: the write is
+  // a MULTIPLAYER write, and its correct position comes from the element the
+  // controller owns, not from a `videoEl` this card may or may not have adopted.
   function togglePlay(): void {
-    if (!videoEl) {
-      // No local file — still flip the shared isPlaying so peers WITH a
-      // local copy follow. Position stays where it was.
-      writeSync({ isPlaying: !isPlaying, currentPositionSec: lastSyncPosition });
-      return;
-    }
-    const next = !isPlaying;
-    writeSync({ isPlaying: next, currentPositionSec: videoEl.currentTime });
+    nodeVideoSource.request(id, { kind: 'togglePlay' });
   }
 
   function onSeek(ev: Event): void {
     const input = ev.target as HTMLInputElement;
     const target = Number(input.value);
     if (!Number.isFinite(target)) return;
-    if (videoEl && hasLocalFile) {
-      videoEl.currentTime = target;
-    }
-    // Write the seek REGARDLESS of whether we have a local copy — peers
-    // with copies will pick it up + jump there.
-    writeSync({ isPlaying, currentPositionSec: target });
+    nodeVideoSource.request(id, { kind: 'seek', toSec: target });
   }
 
-  // ---- Sync-driven local element control ----
+  // ---- What used to be here, and where it went ----
   //
-  // Whenever any of (isPlaying / lastSyncTime / lastSyncPosition) change,
-  // bring our local <video> back in line:
-  //   - if the shared state says playing but our element is paused, play
-  //   - if shared says paused but ours is playing, pause
-  //   - if our position drifts > 0.5s off expected, seek
-  $effect(() => {
-    void isPlaying; void lastSyncTime; void lastSyncPosition;
-    if (!videoEl || !hasLocalFile) return;
-    const playState = isPlaying;
-    if (playState && videoEl.paused) {
-      // Programmatic play() can reject on autoplay-policy grounds even
-      // after a user has gestured for the page (browsers gate per-element
-      // sometimes). Swallow — the next user click on the play button
-      // will retry from a fresh gesture.
-      void videoEl.play().catch(() => { /* autoplay blocked */ });
-    } else if (!playState && !videoEl.paused) {
-      try { videoEl.pause(); } catch { /* */ }
-    }
-    const decision = decideDriftCorrection(
-      { isPlaying: playState, lastSyncTime, lastSyncPosition },
-      videoEl.currentTime,
-      Date.now(),
-      durationSec,
-    );
-    if (decision.kind === 'seek') {
-      try { videoEl.currentTime = decision.to; } catch { /* */ }
-    }
-  });
-
-  // While playing, the local element advances on its own; we ALSO need
-  // a periodic drift check (separate from the sync-state change above)
-  // so a local element that's running slow gradually catches up. 500ms
-  // is plenty — the threshold is 0.5s, so a check at the same rate
-  // bounds total drift at ~1s worst case before correction.
-  let driftTimer: ReturnType<typeof setInterval> | null = null;
-  function startDriftLoop(): void {
-    if (driftTimer !== null) return;
-    driftTimer = setInterval(() => {
-      if (!videoEl || !hasLocalFile) return;
-      if (!isPlaying) return;
-      const dec = decideDriftCorrection(
-        { isPlaying: true, lastSyncTime, lastSyncPosition },
-        videoEl.currentTime,
-        Date.now(),
-        durationSec,
-      );
-      if (dec.kind === 'seek') {
-        try { videoEl.currentTime = dec.to; } catch { /* */ }
-      }
-    }, 500);
-  }
-  function stopDriftLoop(): void {
-    if (driftTimer !== null) { clearInterval(driftTimer); driftTimer = null; }
-  }
-
-  // ---- play_trigger gate input edge detection ----
+  // THREE node-lifetime loops lived in this card and are now the controller's
+  // ($lib/ui/media/node-video-source-registry):
   //
-  // When a gate fires into play_trigger, the engine writes the rising-
-  // edge value into the synthetic cv_play_trigger param. We poll the
-  // engine's readParam for that synthetic param + detect a rising edge,
-  // then toggle play state. Polling rather than reaching into the
-  // factory keeps this single-direction (card observes engine; engine
-  // never reaches into the card).
-  let lastGateValue = 0;
-  let gateTimer: ReturnType<typeof setInterval> | null = null;
-  function startGateLoop(): void {
-    if (gateTimer !== null) return;
-    gateTimer = setInterval(() => {
-      const e = engineCtx.get();
-      if (!e || !node) return;
-      const v = e.readParam(node, 'cv_play_trigger');
-      if (typeof v !== 'number') return;
-      // Rising edge across 0.5: pulse → toggle.
-      if (lastGateValue < 0.5 && v >= 0.5) {
-        // Compose toggle as if the user clicked play/pause locally.
-        const cur = videoEl?.currentTime ?? lastSyncPosition;
-        writeSync({ isPlaying: !isPlaying, currentPositionSec: cur });
-      }
-      lastGateValue = v;
-    }, 33);
-  }
-  function stopGateLoop(): void {
-    if (gateTimer !== null) { clearInterval(gateTimer); gateTimer = null; }
-  }
+  //   * the SYNC→ELEMENT `$effect` — a peer's play/pause/seek reaching the local
+  //     <video>. With the card unmounted it reached nothing, so a collaborator
+  //     pressing play moved every rack except the one whose card was collapsed.
+  //   * the 500 ms DRIFT loop — the periodic correction that keeps a local
+  //     element from sliding away from the shared playhead.
+  //   * the 33 ms `play_trigger` GATE loop — a patched gate cable toggling
+  //     transport. Card-owned, it did nothing whenever no card was mounted,
+  //     which under the shipping shell is the DEFAULT state of a saved rack.
+  //
+  // All three are pure functions of graph state and the node-owned element, so
+  // none of them ever needed a component. Keeping them here is what put videobox
+  // in `DOM_SOURCE_LANE_TYPES` and cost every rack an off-screen card mount.
 
   // ---- Adopt the NODE-owned <video> into this card ----
   //
@@ -575,78 +338,41 @@
     });
     mediaLease = lease;
     videoEl = lease.el as HTMLVideoElement;
-    // REHYDRATE the card-local reactive mirror from the node-owned registry.
-    // Without this a remount believes the node has no local file, re-shows the
-    // re-link prompt and lets the transport pause a video that is still
-    // playing (measured on the re-expand leg).
-    localFileName = nodeMedia.mediaName(id, MEDIA_SLOT);
-    attachVideoEl();
+    // ⚠ NO REHYDRATE STEP ANY MORE, and its deletion is the point. This used to
+    // copy `nodeMedia.mediaName(...)` into a card-local `$state` mirror, because
+    // a remount otherwise came up believing the node had no local file — it
+    // re-showed the re-link prompt and let the transport pause a video that was
+    // still playing. `localFileName` is now `$derived` from the controller's
+    // published status, so there is no mirror to go stale and no moment at which
+    // the card's answer and the node's answer can differ.
+    //
+    // ⚠ AND NO ATTACH CALL. The element arrives already attached: the controller
+    // `ensure`s and attaches it at NODE creation, long before any card exists.
+    // Adoption here is a DOM re-parent for display only.
     return () => {
       lease.release();
       if (mediaLease === lease) mediaLease = null;
     };
   });
 
-  // ---- Attach the <video> element to the engine module ----
-  //
-  // Mirrors CameraInputCard: the factory may not exist yet when the
-  // card mounts (engine.addNode is async); poll until it does or we
-  // give up after ~5s.
-  function attachVideoEl(): void {
-    const ve = videoEngine();
-    if (!ve || !videoEl) return;
-    try { ve.attachExternalSource(id, 'video', videoEl); } catch { /* not ready */ }
-  }
-
   // ---- Mount / unmount ----
-  onMount(() => {
-    // Register the portable "Export performance" (.zip) bytes resolver ONCE on
-    // mount, reading the NODE-owned url rather than a card-local one. It used
-    // to be registered inside loadFile, which meant a card remount (collapse /
-    // expand) left the node's loaded video out of the export even though the
-    // bytes were still live. Name falls back to the synced fileMeta so a
-    // remounted card that never ran loadFile still exports a named file.
-    registerVideoExport(id, async () => {
-      const url = nodeMedia.objectUrl(id, MEDIA_SLOT);
-      if (!url) return null;
-      const resp = await fetch(url);
-      const ab = await (await resp.blob()).arrayBuffer();
-      return {
-        bytes: new Uint8Array(ab),
-        name: localFileName ?? fileMeta?.name ?? 'videobox.mp4',
-      };
-    });
-
-    let attempts = 0;
-    const attach = setInterval(() => {
-      attempts++;
-      const ve = videoEngine();
-      if (ve && videoEl) {
-        try {
-          ve.attachExternalSource(id, 'video', videoEl);
-          const present = ve.read(id, 'hasVideoElement');
-          if (present === true) clearInterval(attach);
-        } catch { /* not ready */ }
-      }
-      if (attempts > 50) clearInterval(attach);
-    }, 100);
-
-    startDriftLoop();
-    startGateLoop();
-  });
-
+  //
+  // ⚠ NO `attachExternalSource` ANYWHERE IN THIS FILE, and that is the
+  // mechanical fact that takes videobox out of `DOM_SOURCE_LANE_TYPES`. The
+  // grep gate (`dom-source-modules.test.ts`) derives that set by walking each
+  // card's component subtree for exactly this call, so the declaration and the
+  // code cannot drift: the type leaves the set in the same diff the call leaves
+  // the card. The attach — and its retry against the engine's async `addNode` —
+  // is the controller's, on node lifetime.
+  //
+  // The export resolver moved for the same reason: registered here, a node whose
+  // card had never mounted was silently missing from "Export performance" even
+  // though its bytes were live in the registry.
   onDestroy(() => {
-    stopDriftLoop();
-    stopGateLoop();
-    if (audioWireTimer) { clearTimeout(audioWireTimer); audioWireTimer = null; }
-    // NOTE what is deliberately ABSENT here: no `attachExternalSource(id,
-    // 'video', null)`, no `revokeObjectURL`, no `unwireAudio()`. The element,
-    // its URL and its audio wiring belong to the NODE and must survive this
-    // card being unmounted — a collapse/expand is a card move, not a node
-    // deletion. Teardown happens in nodeMedia.sweep() when the node actually
-    // leaves the graph. `unregisterVideoExport` stays: the export resolver is
-    // re-registered on the next load and closes over card-local state.
-    unregisterVideoExport(id);
+    // Everything released here is THIS CARD'S OWN. The element, its object URL,
+    // its audio wiring, the attach and all three loops belong to the node and
+    // must survive this unmount — a collapse is a card move, not a node
+    // deletion. Their teardown is Canvas's graph sweep.
     mediaLease?.release();
     mediaLease = null;
   });
@@ -805,7 +531,7 @@
           <div>Drop a video file</div>
           <div class="sub">or click to select</div>
         </div>
-      {:else if !hasLocalFile && pendingHandle}
+      {:else if !hasLocalFile && pendingHandleName}
         <!-- One-click re-allow: a remembered handle exists in THIS browser
              but its read permission lapsed (patch reopened). Re-grant +
              reload in a single user gesture. -->

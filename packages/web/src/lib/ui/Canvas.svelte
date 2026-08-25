@@ -229,6 +229,7 @@
   import { groupCardHostsChildCard } from '$lib/ui/modules/group-viz-hosts';
   import { nodeMedia } from '$lib/ui/media/node-media-registry';
   import { nodeExtras } from '$lib/ui/media/node-extras';
+  import { nodeVideoSource } from '$lib/ui/media/node-video-source.svelte';
   import { nodePresent } from '$lib/ui/modules/node-present-registry.svelte';
   import { nodeRecorder } from '$lib/ui/modules/node-recorder-registry.svelte';
   import { nodeSamsloop } from '$lib/ui/modules/node-samsloop-registry.svelte';
@@ -2368,6 +2369,17 @@
     // leave a pump measuring the viewport forever.
     loopbackStatus.sweep(liveIds);
     loopbackCropPump.sweep(liveIds);
+    // ...and the NODE-OWNED VIDEO SOURCE (LEG-02, #1511:
+    // $lib/ui/media/node-video-source-registry) — the row that lets a
+    // file-backed video module leave `DOM_SOURCE_LANE_TYPES` altogether. Before
+    // it, VIDEOBOX's attach, its audio wiring, its multiplayer drift loop, its
+    // play_trigger gate loop and its saved-handle restore all lived in
+    // `VideoboxCard.svelte`'s own component lifetime, so the source existed only
+    // because `<HeadlessSourceHost>` parked the real card off-screen. The
+    // controller owns all six on GRAPH lifetime, and this sweep is the only
+    // thing that ever ends one — a card teardown must not, which is the whole
+    // point.
+    nodeVideoSource.sweep(liveIds);
   });
 
   /** THE EXTRAS-CHANNEL PRODUCER SEAM (#1720). The sixth instance of the #1583
@@ -2394,6 +2406,27 @@
    *  changes its data, or leaves is handled by one authority: the graph. */
   $effect(() => {
     nodeExtras.sync(snapshot.nodes, engine);
+  });
+
+  /** THE NODE-OWNED VIDEO SOURCE SEAM (LEG-02, #1511). Same shape and same
+   *  snapshot as the extras sync above, and for a strictly stronger reason: the
+   *  extras producers push state a card could recompute from `node.data`,
+   *  whereas a file-backed video source cannot be recomputed at all — the bytes
+   *  live behind an object URL that only a user gesture can mint.
+   *
+   *  So the controller does not reproduce a card's push; it REPLACES the card as
+   *  the owner. It `ensure`s the node's `<video>` (created PARKED, so it exists
+   *  and decodes before any card mounts), attaches it to the engine, wires its
+   *  audio, and runs the drift + gate loops. `VideoboxCard` now adopts that
+   *  element for display and forwards gestures — it creates nothing and
+   *  disposes nothing.
+   *
+   *  ⚠ The engine reference is passed rather than imported for the same reason
+   *  `nodeExtras` takes it: the registry lives under `$lib/ui/**` and must stay
+   *  hash-transparent to the WebGL attest, which walks `$lib/video/**`
+   *  wholesale. It reaches the engine only through existing public calls. */
+  $effect(() => {
+    nodeVideoSource.sync(snapshot.nodes, engine);
   });
 
   let headlessSourceNodes = $derived.by<ModuleNode[]>(() => {
