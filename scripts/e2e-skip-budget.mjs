@@ -519,6 +519,31 @@ export const SKIP_BUDGET = [
       + 'cancel, an irreversible Clear or a leaking patch load all ship green.',
   },
   {
+    specs: ['perf-tempo-under-modulation.spec.ts'],
+    reason: /FLAKE-PARK/,
+    lanes: ['e2e'],
+    homeLane: 'e2e',
+    why:
+      'PARKED 2026-08-25 — BOTH tests in the file: the hand-drag commit-coalescing assertion (:274) and its '
+      + 'no-drag CONTROL (:414). Census: 2 HARD failures across 2 SHAs / 2 branches on one day (#2200 shard 3 '
+      + 'at :274; #2202 shard 3 at :414, job 97709034187, `delta=92 … expected~102.40 band=[94,111]` — short '
+      + 'of the floor by exactly TEMPO_SLOP_STEPS). Hard failures, not recovered-on-retry, so no fail-on-flaky '
+      + 'gate was involved. '
+      + 'THIS IS THE THIRD ATTEMPT: 182e905fc root-caused the original chronic shard-7 flake (Playwright IPC '
+      + 'overhead spilling into a RUN_MS-based count) and anchored the window inside the page — correct, still '
+      + 'in place; 311a82ac6 then widened TEMPO_SLOP_STEPS to 2, and it still misses by 2 on a loaded '
+      + 'ten-shard runner. A fourth widening would fix the THRESHOLD, not the subject: the band is already '
+      + '±8%, and at ±10% it stops measuring "the clock keeps tempo" at all. '
+      + 'UN-PARK LEAD: both tests count advances against a WALL-CLOCK window, so a CPU-starved runner is '
+      + 'indistinguishable from a slipping scheduler. Re-anchor the count to AUDIO time (ctx.currentTime), '
+      + 'which does not stretch under CPU load — the same "count the right clock" move this repo already '
+      + 'applies to renderer-dependent waits. '
+      + 'COVERAGE LOST, STATED: this file is the ONLY proof that a hand-drag coalesces patch-store commits to '
+      + '<= rAF rate — the owner-reported "unstable tempo when dragging stuff around" case. Both parked '
+      + 'together deliberately, because :414 is :274\'s control and parking one leaves the half-open pair '
+      + 'this budget calls out as half-coverage.',
+  },
+  {
     specs: [
       'clip-automation.spec.ts',
       'clip-prob-default.spec.ts',
