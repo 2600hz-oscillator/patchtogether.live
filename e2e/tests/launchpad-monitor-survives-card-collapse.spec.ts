@@ -1,7 +1,20 @@
 // e2e/tests/launchpad-monitor-survives-card-collapse.spec.ts
 //
-// OUT TO LAUNCH must keep driving its Launchpad when its card goes away
-// (#1728, from the #1583 audit's `pumps-leases` lens).
+// OUT TO LAUNCH must keep driving its Launchpad when the surface that bound it
+// goes away (#1728, from the #1583 audit's `pumps-leases` lens).
+//
+// ⚠ THE FILENAME STILL SAYS "CARD" AND THE SUBJECT IS NOW THE FACEPLATE BODY.
+// The module was promoted to a PF-20 face (2026-08-25), so `migrated()` is true
+// and neither surface renders `OutToLaunchCard` any more: the binder lives in
+// the extension's `fullViewBody`, which unmounts on dock collapse and on LRU
+// eviction in EXACTLY the same way the card did. The defect class is unchanged
+// and so is every assertion below it — only the element that comes and goes is
+// different. The name is kept because #1728 is what people search for.
+//
+// ⚠ AND ONE ASSERTION HAD TO MOVE RATHER THAN BE RE-POINTED CASUALLY. The
+// ARRANGE leg proving the collapse DID something used to count the card, which
+// after promotion is 0 in every state — green, blind, and ready to certify the
+// next regression. See the note at the ACT step.
 //
 // `OutToLaunchCard` ran:
 //
@@ -58,6 +71,12 @@ import { spawnPatch } from './_helpers';
 
 const SRC = 'src';
 const OTL = 'otl';
+/** The faceplate binder body — the surface that unmounts on collapse now that
+ *  the module is faced, i.e. THIS SPEC'S SUBJECT. */
+const BODY = `out-to-launch-binder-body-${OTL}`;
+/** The MONITOR lamp: the card's `MONITOR ACTIVE` banner, as the resting-text
+ *  ruling requires it — a boolean picture with the sentence in `aria-label`. */
+const LAMP = `out-to-launch-led-monitor-${OTL}`;
 
 interface DeviceState {
   /** Is the surface in PROGRAMMER mode (we own its LEDs)? */
@@ -151,11 +170,14 @@ test.describe('the Launchpad monitor OUTLIVES its card', () => {
       [{ id: 'e1', from: { nodeId: SRC, portId: 'out' }, to: { nodeId: OTL, portId: 'in' }, sourceType: 'mono-video', targetType: 'video' }],
     );
 
-    // Un-migrated (`bespoke-surface`) module under the shell: no real card in
-    // the lane at all. Its card exists ONLY inside the dock full-view.
+    // A FACED module under the shell: the lane renders `ModuleShell`, never the
+    // legacy card. (Before the promotion this read "a placeholder tile, not the
+    // real card" — the module was `bespoke-surface`, so the lane was a uniform
+    // rackline tile with zero controls. Either way the card is not here; what
+    // changed is that the tile now carries CONNECT and BRIGHT.)
     await expect(
       page.locator('[data-testid="out-to-launch-card"]'),
-      'the shell renders a placeholder tile, not the real card',
+      'the shell renders the faceplate tile, not the real card',
     ).toHaveCount(0);
 
     // ── ARRANGE: a Launchpad that no clip-launcher unit has claimed. ──
@@ -166,20 +188,34 @@ test.describe('the Launchpad monitor OUTLIVES its card', () => {
     );
     expect(outputId, 'the simulated Launchpad output port id').toBeTruthy();
 
-    // EXPAND — the dock full-view, where the real card and its Connect/pick UI
-    // live. Same call the tile's EXPAND button makes.
+    // EXPAND — the dock full-view, where the faceplate's binder body and its
+    // pick/unbind controls live. Same call the tile's EXPAND button makes.
     await openFullView(page);
     const pane = page.locator('.dock-fullview-pane');
     await expect(pane).toBeVisible({ timeout: 15_000 });
-    await expect(page.locator('[data-testid="out-to-launch-card"]'), 'real card mounted in the dock full-view').toHaveCount(1);
+    await expect(
+      page.getByTestId(BODY),
+      'the faceplate binder body mounted in the dock full-view',
+    ).toHaveCount(1);
 
-    // BIND through the REAL card controls: Connect (which short-circuits on the
-    // already-installed access, so no Web-MIDI prompt), then pick the port.
-    await page.getByTestId('out-to-launch-connect').click();
-    const picker = page.getByTestId('out-to-launch-picker');
-    await expect(picker, 'the card enumerated the simulated Launchpad').toBeVisible({ timeout: 15_000 });
+    // BIND through the REAL face controls: the ranked CONNECT cell (which
+    // short-circuits on the already-installed access, so no Web-MIDI prompt),
+    // then pick the port from the body's roster.
+    //
+    // ⚠ CONNECT IS PRESSED ON THE LANE TILE, not in the pane, and that is the
+    // gesture the promotion moved: it is an `action` cell, so it reaches every
+    // tier, while the roster it fills can only live on a surface.
+    await page
+      .locator(`.svelte-flow__node[data-id="${OTL}"] [data-testid="module-shell"]`)
+      .getByTestId('shell-cell-out-to-launch-connect')
+      .click();
+    const picker = page.getByTestId(`out-to-launch-binder-picker-${OTL}`);
+    await expect(picker, 'the face enumerated the simulated Launchpad').toBeVisible({ timeout: 15_000 });
     await picker.locator('button').first().click();
-    await expect(page.getByTestId('out-to-launch-active'), 'the card reports MONITOR ACTIVE').toBeVisible();
+    await expect(
+      page.getByTestId(LAMP),
+      'the MONITOR lamp is lit — the card banner\'s surviving form',
+    ).toHaveAttribute('data-lit', '1');
 
     const bound = await probe(page);
     expect(bound.bound, `bindMonitor did not claim the device: ${JSON.stringify(bound)}`).toBe(true);
@@ -209,10 +245,22 @@ test.describe('the Launchpad monitor OUTLIVES its card', () => {
       })
       .not.toBe(beforeControl);
 
-    // ── ACT: COLLAPSE the full view. This UNMOUNTS OutToLaunchCard. ──
+    // ── ACT: COLLAPSE the full view. This UNMOUNTS the binder body. ──
+    //
+    // ⚠ THE SUBJECT MOVED WITH THE PROMOTION, AND ASSERTING ON THE OLD ONE
+    // WOULD HAVE BEEN VACUOUS. This line used to read `expect(
+    // '[data-testid="out-to-launch-card"]').toHaveCount(0)` — "the real card
+    // really did unmount" — which is the ARRANGE leg proving the collapse
+    // actually did something. Once `outToLaunch` entered `STRICT_FACES` the card
+    // never mounts on this shell at all, so that count is 0 before the click,
+    // after it, and on a build where collapse is a no-op. It would have gone
+    // GREEN AND BLIND and certified the next #1728: precisely the
+    // precondition-is-the-defect class, fixed by re-pointing the SUBJECT at the
+    // surface that genuinely comes and goes rather than by loosening anything.
     const atCollapse = await probe(page);
+    await expect(page.getByTestId(BODY), 'ARRANGE: the body is mounted before the collapse').toHaveCount(1);
     await page.getByTestId('faceplate-collapse').click();
-    await expect(page.locator('[data-testid="out-to-launch-card"]'), 'the real card really did unmount').toHaveCount(0);
+    await expect(page.getByTestId(BODY), 'the faceplate body really did unmount').toHaveCount(0);
 
     // ── ASSERT 1: THE CLAIM. `unbindMonitor` deletes the entry, which also
     // releases the surface to LAUNCHPAD CONTROL. This is the worse half.
@@ -275,12 +323,18 @@ test.describe('the Launchpad monitor OUTLIVES its card', () => {
       `the pump ran but nothing reached the device: ${JSON.stringify(pumped)}`,
     ).toBeGreaterThan(afterCollapse.device!.framesReceived);
 
-    // ── Re-expanding adopts the LIVE binding, not a fresh unbound card. ──
+    // ── Re-expanding adopts the LIVE binding, not a fresh unbound plate. ──
     await openFullView(page);
     await expect(
-      page.getByTestId('out-to-launch-active'),
-      're-expanding showed a card that had forgotten its bound Launchpad',
-    ).toBeVisible({ timeout: 15_000 });
+      page.getByTestId(LAMP),
+      're-expanding showed a faceplate that had forgotten its bound Launchpad',
+    ).toHaveAttribute('data-lit', '1', { timeout: 15_000 });
+    // …and the UNBIND control is there, which is what makes the binding
+    // RELEASABLE after a remount rather than merely visible.
+    await expect(
+      page.getByTestId(`out-to-launch-binder-unbind-${OTL}`),
+      'and it offers the release control, so the claim is not a one-way trip',
+    ).toBeVisible();
 
     // ── NEGATIVE CONTROL, IN SITU, and it is load-bearing. "Never unbinds" is
     // a trivially passing implementation of everything above, and it is its own

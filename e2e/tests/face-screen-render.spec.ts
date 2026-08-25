@@ -156,6 +156,17 @@ const SUBJECTS: readonly Subject[] = [
   { type: 'mandelbulb', prefix: 'mandelbulb', domain: 'video', why: 'the raymarched fractal\'s preview; the heaviest renderer in the table, which is why its cost is measured rather than assumed.' },
   { type: 'mirrorpool', prefix: 'mirrorpool', domain: 'video', why: 'the kaleidoscopic reflector\'s preview; its ping-pong height field is the case where pinning a clock is NOT sufficient for determinism.' },
   { type: 'outlines', prefix: 'outlines', domain: 'video', why: 'the edge-detector\'s preview; the module whose hard-coded `mapped` output MAPPER generalises.' },
+  // ⚠ THE ONLY SUBJECT WHOSE PICTURE IS NOT THE ENGINE'S OUTPUT. Every other
+  // row here previews a texture the node renders; `outToLaunch` declares
+  // `outputs: []` and its surface is `{ fbo: null, texture: null }` — a SINK
+  // whose real screen is 81 physical LEDs — so there is nothing to blit and the
+  // canvas is drawn from the module's own `read('grid9x9')` readback. The
+  // SCREEN switch therefore protects a per-frame 2-D repaint rather than a GPU
+  // blit, and OFF cannot starve the producer at all: `isPullRoot` returns true
+  // unconditionally for a `pullExempt` node, which this def declares. Predicted
+  // from the sibling pattern and then re-verified against `video/engine.ts` and
+  // against the body, which is the discipline the `scoreboard` row records.
+  { type: 'outToLaunch', prefix: 'outToLaunch', domain: 'video', why: 'the 9x9 Launchpad monitor preview — the module\'s only surface on a machine with no hardware attached, and the one subject here whose picture comes from a CPU readback rather than an output texture, because this def is a texture-less sink.' },
   { type: 'spirographs', prefix: 'spirographs', domain: 'video', why: 'the harmonograph\'s plot canvas — the module whose right-hand TEXT column the 2026-08-19 ruling deleted, leaving the picture as the surface.' },
   { type: 'warrensvisions', prefix: 'warrensvisions', domain: 'video', why: 'the shader-visions preview canvas.' },
 

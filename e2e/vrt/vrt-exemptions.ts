@@ -438,16 +438,45 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // component can hold CONTRADICTORY VRT positions and no gate compares them.
   // An exemption is a claim about a RENDER, not about a module id — so when a
   // component is shared, check its siblings before believing one.
-  // OUT TO LAUNCH — Launchpad Mini Mk3 as a live 9×9 RGB video monitor. The
-  // card is a live MONITOR preview canvas (the 9×9 grid) driven by the module's
-  // per-frame GPU readback + a device-picker; nothing patched is a black grid,
-  // and the live render + Web-MIDI device list vary across runners. Coverage:
-  // the pure surface mapping (launchpad-monitor.test.ts: lpMonitorIndex /
-  // rgb8ToLp / monitorGridToLeds), the monitor device binding
-  // (launchpad-device.test.ts: bind/claim/setMonitorFrame diff/unbind), and the
-  // module def+factory (out-to-launch.test.ts). Promote + capture darwin/linux
-  // baselines (live preview masked) via vrt-update.yml in a follow-up PR.
-  outToLaunch: 'VRT baseline pending; live 9×9 monitor preview + Web-MIDI device list are non-deterministic. Coverage = launchpad-monitor.test.ts (surface mapping) + launchpad-device.test.ts (monitor bind/claim/diff/unbind) + out-to-launch.test.ts (def+factory). Capture darwin/linux baselines (live preview masked) in a follow-up PR.',
+  // ⚠ `outToLaunch` WAS HERE AND IS DRAINED (2026-08-25) — the fifth drain in
+  // this binder block, and the first on a VIDEO def. Its entry read: *"VRT
+  // baseline pending; live 9×9 monitor preview + Web-MIDI device list are
+  // non-deterministic … Capture darwin/linux baselines (live preview masked) in
+  // a follow-up PR."* Both grounds are discharged, and one of them was
+  // discharged by fixing the product rather than by re-arguing the exemption.
+  //
+  //   * "LIVE 9×9 MONITOR PREVIEW" — defeated BY THE SHADER, which is stronger
+  //     than the scene construction `push2Control` needed. `out-to-launch.ts`'s
+  //     fragment source opens `if (uHasInput < 0.5) { outColor = vec4(0.0, 0.0,
+  //     0.0, 1.0); return; }`, and `hasInput` is
+  //     `frame.getInputTexture(node.id, 'in') !== null`. A face scene spawns ONE
+  //     node and patches nothing into it, so all 81 texels are a compile-time
+  //     constant and the readback is 324 zero bytes. There is no path from an
+  //     unpatched input to a non-black texel — the preview is not "still for
+  //     now", it is invariant.
+  //   * "WEB-MIDI DEVICE LIST" — the same structural unreachability `midiLane`
+  //     recorded. The face's roster is `outToLaunchPorts()`, empty until
+  //     `outToLaunchConnect()` publishes into it, and its only caller is the
+  //     CONNECT cell. On a runner with no device and no prior grant the picker
+  //     branch is not merely unlikely, it has no path without a click, so the
+  //     capture cannot DRIFT into the hardware-dependent state.
+  //
+  // ⚠ A THIRD GROUND EXISTED, WAS NEVER WRITTEN DOWN, AND WAS A REAL DEFECT.
+  // The compact tile paints a `VideoTileThumb`, which blits a node's texture
+  // into the engine's SHARED drawing buffer and then snapshots that buffer.
+  // This is the ONE video def with `{ fbo: null, texture: null }` — a sink whose
+  // screen is 81 LEDs — so the blit did nothing and the snapshot showed whatever
+  // node blitted last. Measured: byte-identical to a `videoOut` tile in the same
+  // rack (mean 710.891875, max 765 on both) with nothing patched in. Masking it
+  // would have hidden a live bug; the guard is in `VideoTileThumb.svelte`.
+  //
+  // ⚠ AND THE OLD TEXT'S "capture darwin/linux baselines" WAS ALREADY WRONG
+  // WHEN WRITTEN — there is ONE baseline set and linux CI authors it, the same
+  // stale clause the `4plexvid` note above records.
+  //
+  // Removed from BOTH lists (vrt-meta.test.ts asserts set equality in both
+  // directions, so a one-sided delete is red), which enrols the legacy card in
+  // vrt.spec.ts alongside the two face scenes promotion added.
   // ES9 — native-bridge 16×16 hardware I/O. The card is static chrome
   // (status LED + class selectors + sectioned patch panel, no canvas), so
   // it IS baseline-able — pending the darwin/linux capture pass (4plexvid
@@ -1291,7 +1320,14 @@ export const ALLOWED_PERMANENT_EXEMPT: ReadonlySet<string> = new Set([
   // ⚠ `cvBuddy` REMOVED 2026-08-20 — it is no longer in EXEMPT_FROM_VRT, and
   // this list is ANCHORED: an entry naming a module that is not exempt is RED,
   // so a drained module cannot leave a stale licence to re-exempt itself.
-  'outToLaunch', 'es9', 'onetonine',
+  // ⚠ `outToLaunch` REMOVED 2026-08-25 — the fifth drain in the binder block,
+  // and the first whose grounds included one that was never stated: its lane
+  // tile painted ANOTHER node's frame, because a texture-less video sink
+  // snapshots the shared drawing buffer. That is fixed in the product rather
+  // than masked in the capture — see the note where its entry used to stand in
+  // EXEMPT_FROM_VRT. This list is ANCHORED in both directions, so leaving the
+  // name here while the module is baselined would be RED.
+  'es9', 'onetonine',
   'shapegen', 'sixstrum', 'mirrorpool', 'grainsOfVision',
   'frametable', 'videocube', 'sourcery', 'scoreboard',
   'cameraInput', 'loopback', 'audioIn', 'group',
