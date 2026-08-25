@@ -25,7 +25,7 @@
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { patch } from '$lib/graph/store';
-  import { mutateNode } from '$lib/graph/mutate';
+  import { mutateNode, setNodeParam } from '$lib/graph/mutate';
   import { useEngine } from '$lib/audio/engine-context';
   import {
     GAMEPAD_OUTPUTS,
@@ -53,6 +53,9 @@
     applyMapping,
     isGamepadMapping,
     GAMEPAD_PRESETS,
+    GAMEPAD_SLOT_MAX,
+    GAMEPAD_SLOT_MIN,
+    GAMEPAD_SLOT_OPTIONS,
     type GamepadMapping,
   } from '$lib/audio/modules/gamepad';
   import type { ModuleNode } from '$lib/graph/types';
@@ -388,12 +391,32 @@
 
   // Pad-slot picker.
   let padIndex = $derived<number>(
-    Math.max(0, Math.min(3, Math.round((node?.params?.padIndex as number | undefined) ?? 0))),
+    Math.max(
+      GAMEPAD_SLOT_MIN,
+      Math.min(
+        GAMEPAD_SLOT_MAX,
+        Math.round((node?.params?.padIndex as number | undefined) ?? GAMEPAD_SLOT_MIN),
+      ),
+    ),
   );
+  /** ⚠ WAS A BARE PROXY WRITE — a direct assignment onto the live params proxy
+   *  with no `ydoc.transact` and no `LOCAL_ORIGIN`, while EVERY `node.data`
+   *  write on this file already went through `mutateNode`. It synced to
+   *  collaborators but never reached the UndoManager, so Cmd-Z could not undo a
+   *  slot change and the local reconciler did not see it as a user edit.
+   *  `setNodeParam` is the sanctioned seam (`mutateNode` with a single in-place
+   *  key set) and is the same one the faceplate's segmented SLOT cell writes
+   *  through, so both surfaces now commit identically.
+   *  ⚠ The old spelling is deliberately NOT quoted here: `gamepad-face-model`
+   *  greps this file's SOURCE for it, and a source gate cannot tell code from a
+   *  comment (the backdraft lesson — a comment that merely spelled a literal out
+   *  reddened that gate too). */
   function setPadIndex(n: number) {
-    const t = patch.nodes[id];
-    if (!t) return;
-    t.params.padIndex = Math.max(0, Math.min(3, Math.round(n)));
+    setNodeParam(
+      id,
+      'padIndex',
+      Math.max(GAMEPAD_SLOT_MIN, Math.min(GAMEPAD_SLOT_MAX, Math.round(n))),
+    );
   }
 
   // PatchPanel ports — every output the engine def declares, plus the
@@ -753,14 +776,19 @@
 
       <div class="slot-row">
         <span class="slot-label">SLOT</span>
-        {#each [0, 1, 2, 3] as i (i)}
+        <!-- ⚠ THE ROSTER COMES FROM THE DEF, not a literal array here. The same
+             `GAMEPAD_SLOT_OPTIONS` drives the faceplate's segmented cell, so the
+             card and the face cannot disagree about which slots exist — the
+             one-place rule that `card-range-source` exists to protect, applied
+             to a roster rather than a range. -->
+        {#each GAMEPAD_SLOT_OPTIONS as opt (opt.value)}
           <button
             type="button"
             class="slot-btn"
-            class:on={padIndex === i}
-            onclick={() => setPadIndex(i)}
-            data-testid="gamepad-slot-{i}"
-          >{i}</button>
+            class:on={padIndex === opt.value}
+            onclick={() => setPadIndex(opt.value)}
+            data-testid="gamepad-slot-{opt.value}"
+          >{opt.label}</button>
         {/each}
       </div>
     </div>
