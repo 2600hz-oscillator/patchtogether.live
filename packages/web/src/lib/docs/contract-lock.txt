@@ -2386,6 +2386,7 @@ outToLaunch meta domain=video
 outToLaunch in in video
 outToLaunch param bright 0..1 linear default=1
 outToLaunch param gamma 0.5..3 linear default=2.2
+outToLaunch family out-to-launch-connect kind=other prefix=out-to-launch-connect
 painter meta domain=video
 painter out out video
 peakstate meta domain=video

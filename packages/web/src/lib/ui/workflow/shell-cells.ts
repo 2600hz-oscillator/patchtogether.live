@@ -190,6 +190,7 @@ import {
 import { midiLaneChannelChoices, parseNoteGateNote } from '$lib/audio/modules/midi-lane';
 import { launchpadConnectSingle, launchpadPair } from '$lib/ui/modules/launchpad-cell-actions';
 import { push2Connect } from '$lib/ui/modules/push2-cell-actions';
+import { outToLaunchConnect } from '$lib/ui/modules/out-to-launch-cell-actions';
 import { timelordeFaceTap } from '$lib/ui/modules/timelorde/face-tap';
 import {
   WAVESCULPT_WAV_ACCEPT,
@@ -2603,6 +2604,41 @@ const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
       mode: 'trigger',
       probe: { effect: { kind: 'audition', seam: 'engine-message' } },
       onFire: (nodeId) => { push2Connect(nodeId); },
+    },
+  },
+
+  // ── OUT TO LAUNCH — the FIRST VIDEO module whose ranked surface is a device
+  //    gesture, and the fourth binder to reach this registry ────────────────
+  //
+  // The module drives nothing at all until a Launchpad is bound, and before
+  // promotion BOTH halves of that binding were dock-only: `outToLaunch` is not
+  // in `NON_SHELL_LANE_TYPES`, so its lane render was a `placeholder` and its
+  // card existed only inside the dock full view. This cell moves the half that
+  // needs a privilege onto the lane tile.
+  //
+  // ⚠ THIS CELL DOES NOT COMPLETE THE BINDING, WHERE THE THREE BEFORE IT DID.
+  // `launchpadConnectSingle` binds, `push2Connect` auto-binds, `midiclockConnect`
+  // attaches; this one grants a permission and enumerates. The full argument for
+  // ranking it anyway is on `outToLaunchConnect` — in short, it is the only half
+  // the browser gesture-gates, the other half is a per-machine roster that no
+  // cell kind can express, and promotion therefore widens reach without
+  // narrowing it anywhere.
+  //
+  // ⚠ AN AUDITION, AND `delivered: false` IS REACHABLE. The press is recorded as
+  // delivered when Web MIDI exists to be reached and NOT delivered when it does
+  // not — the card's own first branch, and the one condition under which the
+  // button is genuinely wired to nothing. A `data` probe was never an option:
+  // `bindMonitor` writes to `node.data` ZERO times by design, because the claim
+  // lives in the device layer's node-keyed `monitors` map so that ONE map
+  // arbitrates across both consumers of a physical surface.
+  outToLaunch: {
+    'out-to-launch-connect-{n}': {
+      kind: 'action',
+      label: 'Connect Launchpad',
+      title: 'Grant this site Web MIDI and list the Launchpads attached to this machine — pick one on the faceplate to drive its 81 LEDs with the video',
+      mode: 'trigger',
+      probe: { effect: { kind: 'audition', seam: 'engine-message' } },
+      onFire: (nodeId) => { outToLaunchConnect(nodeId); },
     },
   },
 };

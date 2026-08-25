@@ -3817,6 +3817,62 @@ export const FACES = [
     // on the surface is the shell's own live-audio glyph, which `bootWithFace`
     // already freezes.
   },
+
+  // ── OUT TO LAUNCH — the fourth BINDER baselined, and the first that is also
+  //    a VIDEO module ───────────────────────────────────────────────────────
+  {
+    type: 'outToLaunch',
+    // ONE band: the ranked CONNECT action cell plus BRIGHT and GAMMA. Three
+    // cells, one IDEA — put this video on that hardware — so no `face.pages` is
+    // declared and the dock renders a single section. `DOCK_TAB_MIN_BANDS` is 7
+    // and nothing is padded toward it. There is no hero, so no band is emptied
+    // by a promotion and the post-hero count is the authored count.
+    pages: 1,
+
+    // ⚠ THIS SCENE IS WHY THE MODULE COULD LEAVE `ALLOWED_PERMANENT_EXEMPT`.
+    // Its exemption named TWO grounds and both are discharged on this module's
+    // own evidence rather than by inheriting a sibling's argument.
+    //
+    // GROUND 1 — "live 9×9 monitor preview". Discharged BY THE SHADER, which is
+    // stronger than scene construction: `out-to-launch.ts`'s fragment source
+    // opens with `if (uHasInput < 0.5) { outColor = vec4(0.0, 0.0, 0.0, 1.0); }`
+    // and `hasInput` is `frame.getInputTexture(node.id, 'in') !== null`. A
+    // `bootWithFace` scene spawns exactly ONE node and patches nothing into it,
+    // so every one of the 81 texels is a compile-time constant, the readback is
+    // 324 zero bytes, and both surfaces that draw it paint the unlit socket
+    // grid. This is not "the picture happens to be still" — there is no path
+    // from an unpatched input to a non-black texel.
+    //
+    // GROUND 2 — "Web-MIDI device list". Same structural unreachability
+    // `midiLane`'s entry records, one layer over. The roster this face renders
+    // is `outToLaunchPorts()`, which is EMPTY until `outToLaunchConnect()`
+    // publishes into it, and the only caller of that is the CONNECT cell, which
+    // this scene does not press. So the picker branch does not merely happen to
+    // be unreachable on a device-less runner — it cannot be reached without a
+    // click. The plate paints its EMPTY-STATE line and one dark lamp.
+    //
+    // ⚠ THE COMPACT SCENE HAD A THIRD, UNSTATED GROUND, AND IT IS FIXED RATHER
+    // THAN ARGUED AWAY. The lane tile paints a `VideoTileThumb`, which blits a
+    // node's texture into the engine's SHARED drawing buffer and then snapshots
+    // that buffer — and this is the one video def whose surface is `{ fbo:
+    // null, texture: null }`, so the blit did nothing and the snapshot showed
+    // whichever node blitted last. Measured: byte-identical to a `videoOut`
+    // tile in the same rack. A one-node capture would have been deterministic
+    // by luck and the product would still have been wrong, so the guard is in
+    // `VideoTileThumb.svelte` and the tile now paints its own dark well.
+    videoFaceWhy:
+      'BOTH scenes carry a video surface: the compact lane tile paints a VideoTileThumb through '
+      + 'hasVideoSurface (domain === "video"), and the dock body is the module\'s own fullViewBody '
+      + 'extension drawing the live 9x9 monitor from read("grid9x9"). So it must boot into the '
+      + 'VIDEO ZONE — the audio path would wait out the full 90 s timeout on a mixer-column '
+      + 'membership a video node never acquires. ⚠ NEITHER SURFACE NEEDS A CLOCK PINNED, and the '
+      + 'reason is the def rather than the harness: with nothing patched into `in` the fragment '
+      + 'shader takes its `uHasInput < 0.5` branch and writes a CONSTANT black, so the 9x9 is '
+      + 'invariant in time; and the tile is a texture-less sink, which now paints the dark well. '
+      + 'This def declares no `freeze` param, so freezeFaceVideo writes a key nothing reads — its '
+      + 'stability assertion passes because the picture is ALREADY still, which is the vfpgaRunner '
+      + 'case re-verified against this body rather than inherited from it.',
+  },
 ] as const;
 
 /**
