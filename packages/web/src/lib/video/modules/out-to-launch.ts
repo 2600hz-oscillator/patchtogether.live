@@ -147,7 +147,11 @@ export const outToLaunchDef: VideoModuleDef = {
     controls: {
       bright: "BRIGHT (0..1, default 1) scales the overall LED brightness — every cell's RGB is multiplied by this before it's sent, so lower values dim the whole monitor (useful because the RGB LEDs are very bright). Applied identically to the on-card preview.",
       gamma: "GAMMA (0.5..3, default 2.2) is the gamma exponent applied to each colour channel before scaling. 1 is a literal what-you-see map; above 1 deepens the mid-tones and blacks (usually flatters the bright LEDs on a moving source); below 1 lifts dim detail. Applied identically to the on-card preview.",
-      'out-to-launch-connect': "CONNECT LAUNCHPAD asks the browser for Web MIDI with sysex — a permission that must be granted from a real click, and that the whole module is inert without — and then lists the Launchpad outputs attached to this machine. Picking one from that list is what binds it as a monitor; the list and the UNBIND that releases it live on the faceplate's own surface, because a roster enumerated from the machine is not something a control can declare in advance. Pressing CONNECT again re-asks and re-lists, which is how you pick up a Launchpad that was plugged in after the first time.",
+      // ⚠ THE `-{n}` SUFFIX IS REQUIRED: module-docs-lint resolves a docs key to
+      // a control FAMILY only through `FAMILY_KEY = /^(.+)-\{n\}$/`, the same
+      // spelling `face.order` uses. The bare family id reads as a param name and
+      // is reported as an orphan.
+      'out-to-launch-connect-{n}': "CONNECT LAUNCHPAD asks the browser for Web MIDI with sysex — a permission that must be granted from a real click, and that the whole module is inert without — and then lists the Launchpad outputs attached to this machine. Picking one from that list is what binds it as a monitor; the list and the UNBIND that releases it live on the faceplate's own surface, because a roster enumerated from the machine is not something a control can declare in advance. Pressing CONNECT again re-asks and re-lists, which is how you pick up a Launchpad that was plugged in after the first time.",
     },
   },
 
