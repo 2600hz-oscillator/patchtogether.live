@@ -254,9 +254,9 @@ test.describe('MANDLEBLOT — deterministic render smoke', () => {
         + `every assertion below then passes for free.`,
     ).toBeGreaterThan(MIN_CLOCK_RESPONSE);
 
-    // ── C: wind the pin BACK to T_A. The frame must be bit-identical to A. This
-    //       is the roster's actual claim — no accumulator, no ping-pong, no RNG
-    //       — and a renderer carrying any of those cannot satisfy it.
+    // ── C: wind the pin BACK to T_A. The frame must return to A. This is the
+    //       roster's actual claim — no accumulator, no ping-pong, no RNG — and a
+    //       renderer carrying any of those cannot satisfy it.
     await setEngineClock(page, T_A);
     const c = await burst();
     expect(
