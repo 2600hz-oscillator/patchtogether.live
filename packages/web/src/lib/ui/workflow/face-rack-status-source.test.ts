@@ -209,6 +209,25 @@ const EXTENSION_BODY_ROLES: Readonly<Record<string, BodyRule>> = {
   grainsOfVision: { role: 'picture', why: 'the video-granulator\'s live preview canvas and its SCREEN switch (#1928 — the toggle a promotion would otherwise delete with the card).' },
   mandelbulb: { role: 'picture', why: 'the raymarched fractal\'s live preview canvas and its SCREEN switch.' },
   mirrorpool: { role: 'picture', why: 'the kaleidoscopic reflector\'s live preview canvas and its SCREEN switch.' },
+  // ⚠ THE ONLY BODY IN THIS ROSTER THAT PAINTS **TWO** PICTURES, and the second
+  // one is why the entry needs more than a line. VFPGA-RUNNER's body carries the
+  // live output canvas plus the FABRIC floorplan — a read-only tile-grid + lit-
+  // nets diagram of the loaded bitstream, drawn on its own Canvas2D by
+  // `VfpgaFloorplan` — and the two SWAP: `showFabric` chooses which one occupies
+  // the picture area, so there is never a third region and never a text column.
+  //
+  // TEXT ON THE SURFACE, exhaustively: `FABRIC` and `SCREEN ON`/`SCREEN OFF`,
+  // both CONTROL CAPTIONS on their own buttons — the second is the fleet's
+  // standard switch caption, unchanged from mirrorpool's. Nothing else is a text
+  // node. What the floorplan CANVAS draws (tile-type letters and its own legend)
+  // is the residue this file's header names and the dock VRT baseline sees.
+  //
+  // ⚠ AND WHAT IS DELIBERATELY *NOT* HERE: the loaded bitstream's NAME. It is
+  // the picker's selected option label, one band below — permitted resting text
+  // because it disambiguates that control's own position — and painting it a
+  // second time over the picture would be a derived-state caption with no
+  // control under it, which is the shape the 2026-08-19 rulings deleted.
+  vfpgaRunner: { role: 'picture', why: 'the host\'s live output canvas for whatever bitstream is loaded, the FABRIC floorplan that swaps in for it, and the SCREEN switch.' },
   // ⚠ THE THIRD BODY CAUGHT ON A MERGE IN AS MANY ROUNDS — monoglitch (#2081),
   // reshaper (#2086), now milkdrop (#2087). Three unrelated PRs in two days,
   // each named on first contact. Membership is derived off the DIRECTORY for
