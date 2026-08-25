@@ -726,7 +726,64 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // Removed from BOTH lists (vrt-meta.test.ts asserts set equality in both
   // directions, so a one-sided delete is red), which enrols the legacy card in
   // vrt.spec.ts alongside the two face scenes promotion added.
-  push2Control: 'meta control-surface card (Ableton Push 2); body is device/binding-dependent (Connect/Bind state + view segment absent in CI) AND the push-card preview canvas renders whatever module happens to be in lane 1, so the card face is patch-dependent — like electraControl/controlSurface. Covered by push2-sysex/map/control/lane/schema/model/layout/paint unit suites + the real-source-chain push2-clip-launch e2e (sim pad → audible RMS + lane select → the push card + a display encoder → that card param + master encoder → MixMasters + D-Pad nav).',
+  // ⚠ `push2Control` WAS HERE AND IS DRAINED (2026-08-25) — the FOURTH drain in
+  // this block, after `cvBuddy`, `midiclock`, `launchpadControlLeft` and
+  // `gamepad`, and the first whose stated reason was NOT simply stale. Its
+  // entry gave THREE grounds and they fail for two different reasons, which is
+  // why it is written out rather than deleted quietly:
+  //
+  //   * "Connect/Bind state … absent in CI" and "view segment absent in CI" —
+  //     these describe the ONLY states a capture can reach, which makes them
+  //     the baseline rather than the obstacle. `connectPush()` has exactly one
+  //     caller reachable from the UI and this suite presses nothing, so
+  //     `isConnected()` cannot become true; the view segment and the BIND
+  //     control are both `{#if connected}`, so neither renders; and
+  //     `selectedChannelIndex()` reads a `localStorage` that is empty in a
+  //     fresh Playwright context, so the lane takes its default. The
+  //     unreachability is STRUCTURAL, exactly as it is for the four binders
+  //     drained before it: there is no path to the device-dependent state
+  //     without a gesture the suite does not perform.
+  //   * "the push-card preview canvas renders whatever module happens to be in
+  //     lane 1, so the card face is patch-dependent" — ⚠ THIS ONE IS TRUE, and
+  //     it is a property of the FEATURE rather than of the environment, so it
+  //     could not be discharged by the argument above. It is defeated instead
+  //     by SCENE CONSTRUCTION, which is matrixMix's route: the thing that
+  //     varies is the PATCH, and a VRT scene controls the patch.
+  //       - the FACE scenes boot through `_shell-faces.ts`, which spawns
+  //         exactly ONE node into lane 1 and then WAITS for
+  //         `pinned-mixmstrs.data.columns['1'].length === 1` before proceeding.
+  //         So lane 1 resolves to push2Control ITSELF, whose def declares
+  //         `params: []`, and the replica paints its deterministic
+  //         `empty: 'no-controls'` card. That is a measured precondition rather
+  //         than a hope — a second occupant would have failed the boot's own
+  //         wait long before any pixel was compared.
+  //       - the CARD scene boots `/rack?shell=legacy&seed=none` with no pinned
+  //         mixer at all, so `hasLaneColumns()` is false and the canvas paints
+  //         its `'no-lane'` state.
+  //     Both are stable pictures and both are the honest fresh-spawn state.
+  //
+  // ⚠ WHAT THESE BASELINES DO **NOT** COVER, stated rather than implied: the
+  // connected surface — a lit PUSH lamp, the four-role view segment, BIND, and
+  // a replica showing ANOTHER module's eight controls. Reaching those needs a
+  // simulated Push, and the harness for it exists (`__push2TestInstall` /
+  // `__push2Sim`, installed under `VITE_E2E_HOOKS`) but installing it in the
+  // VRT rig is a change to the HARNESS rather than to this module — the
+  // boundary `midiclock` and `gamepad` both drew. They are asserted where they
+  // can be asserted instead of photographed: `push2-binder-status-model.test.ts`
+  // pins every string the body can produce including the ones no baseline will
+  // ever show, `push2-clip-launch.spec.ts` drives the real source chain to
+  // audible RMS, and `push2-face.spec.ts` drives the promoted surface.
+  //
+  // ⚠ THE ONE GENUINE VARIABLE is `midiAvailable()` (`typeof
+  // navigator.requestMIDIAccess === 'function'`), which picks between the
+  // body's two top-level branches. It is a property of the browser BUILD, not
+  // of attached hardware, and the baseline is authored by ONE linux CI runner
+  // (`snapshotPathTemplate` has no `{platform}` segment), so it is a constant
+  // where it gates.
+  //
+  // Removed from BOTH lists (vrt-meta.test.ts asserts set equality in both
+  // directions, so a one-sided delete is red), which enrols the legacy card in
+  // vrt.spec.ts alongside the two face scenes promotion added.
   // CLOUDS first-slice PR (#166): VRT baseline pending; ART + unit + E2E
   // provide coverage. Promote into MODULES + capture baselines on both
   // platforms in a follow-up PR.
@@ -1288,7 +1345,14 @@ export const ALLOWED_PERMANENT_EXEMPT: ReadonlySet<string> = new Set([
   // beside in EXEMPT_FROM_VRT. Anchored in both directions, so leaving the name
   // here while the module is baselined would be RED.
   'cadillac', 'controlSurface',
-  'push2Control', 'clouds',
+  // ⚠ `push2Control` REMOVED 2026-08-25 — the fourth drain in the MIDI-binder
+  // block, and the first whose exemption named a ground that was genuinely
+  // still true (its replica canvas paints whatever module is in lane 1). That
+  // ground is defeated by SCENE CONSTRUCTION rather than by re-argument — see
+  // the note where its entry used to stand in EXEMPT_FROM_VRT. This list is
+  // ANCHORED in both directions, so leaving the name here while the module is
+  // baselined would be RED.
+  'clouds',
   'rings', 'marbles', 'attenumix', 'sidecar',
   'cloudseed', 'livecode', 'clockedRunner', 'midiCvBuddy',
   // ⚠ `midiclock` REMOVED 2026-08-24 — the second drain, after `cvBuddy` above,

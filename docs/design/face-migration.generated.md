@@ -148,6 +148,7 @@ author a `face` and rank the controls — no new platform capability.
 | `polarizer` | audio | done | — |
 | `pong` | audio | done | — |
 | `posterbox` | video | done | — |
+| `push2Control` | meta | done | — |
 | `qbrt` | audio | done | — |
 | `quadralogical` | video | done | — |
 | `rasterize` | audio | done | — |
@@ -230,7 +231,6 @@ the primary interaction is not param-shaped — needs a purpose-built surface.
 | `outToLaunch` | video | — | — |
 | `painter` | video | — | — |
 | `peertube` | video | — | `needs-media-controller` |
-| `push2Control` | meta | — | — |
 | `recorderbox` | video | — | `needs-media-controller` |
 | `score` | audio | — | — |
 | `skifree` | audio | — | — |

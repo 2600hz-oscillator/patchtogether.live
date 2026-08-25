@@ -220,12 +220,34 @@ const PENDING_PALETTE_REGEN: readonly string[] = [];
 // dropped from this gate silently, and that is a blind spot in the resolver
 // rather than in the list. Recorded, not fixed: widening the regex moves
 // `dropped` for the whole tree and belongs in a PR whose subject is this gate.
+// ⚠ `push2Control` JOINED 2026-08-25, for the same documented reason as
+// `chromaconsole` / `electraControl` / `matrixMix` / `launchpadControlLeft`: a
+// control surface for an EXTERNAL DEVICE, with zero ports both ways, so there is
+// no cable for a stripe to colour and `Push2ControlCard.svelte` renders no
+// `.stripe` element at all (`grep -c stripe` → 0). It appears here now only
+// because the module was drained from `EXEMPT_FROM_VRT` in the same PR that gave
+// it a faceplate — before that it had no baseline for `measure()` to walk.
+//
+// ⚠ AND ITS REPORTED REASON IS THE HONEST ONE, unlike the entry above it. The
+// skip line reads *"card renders no .stripe element"*, not "no card component":
+// this def declares `card: 'Push2ControlCard'` explicitly, so it enters the map
+// through the explicit branch and `cardBasenameByType()`'s string-literal `type:`
+// blind spot never applies. The resolver really did find and read the card, and
+// the card really has no stripe. Recorded because the neighbouring entry
+// documents the opposite case, and the difference is the whole reason that
+// warning is worth keeping.
+//
+// ⚠ THIS ENTRY COULD NOT BE WRITTEN BEFORE THE CAPTURE LANDED. The set is
+// derived by WALKING THE COMMITTED BASELINES, so a declared name with no PNG is
+// an extra member and `toEqual` goes red in the other direction. That ordering —
+// promote, drain, capture, THEN declare — is why a face PR must re-run the full
+// unit lane AFTER the baseline bot commits, not only before the push.
 const NOT_TOKEN_PINNED_SCENES: readonly string[] = [
   'audioOut', 'chromaconsole', 'electraControl', 'launchpadControlLeft', 'matrixMix', 'mixer',
   'moog903a', 'moog904b', 'moog904c', 'moog905', 'moog907a', 'moog911a', 'moog912',
   'moog914', 'moog921a', 'moog921b', 'moog923', 'moog956', 'moog960', 'moog961',
   'moog962', 'moog984', 'moog992', 'moog993', 'moog994', 'moog995',
-  'sticky', 'wavesculpt',
+  'push2Control', 'sticky', 'wavesculpt',
 ];
 
 /** module type → card component basename, mirroring modules-card-map.ts. */

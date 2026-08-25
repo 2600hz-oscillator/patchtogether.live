@@ -65,7 +65,9 @@ import {
   unbindLaunchpad,
   launchpadDpadNav,
   boundClipNode,
-  setLaunchpadView,
+  // ⚠ ALIASED, NOT RE-EXPORTED — see `setLaunchpadView` at the bottom of this
+  // file for the defect the bare pass-through caused.
+  setLaunchpadView as setLaunchpadViewRaw,
   launchpadLegendContext,
   type ControlSurfacePort,
 } from '$lib/control/launchpad/launchpad-control.svelte';
@@ -442,6 +444,20 @@ function logUnboundPushCc(raw: Push2RxEvent): void {
 // Picks which lane's PUSH CARDS the screen shows (and which lane colour the
 // button row mirrors).
 // ---------------------------------------------------------------------------
+/**
+ * The lane INDICES the eight above-display buttons select, 0-based.
+ *
+ * ⚠ DERIVED FROM `MIXMSTRS_CHANNELS`, NEVER RE-TYPED, and it lives here rather
+ * than beside the UI that renders it because THIS is where the rule is
+ * enforced: `selectChannel` below rejects anything outside
+ * `[0, MIXMSTRS_CHANNELS.length)`. A surface that painted its own
+ * `[0,1,2,3,4,5,6,7]` would be a second source of truth for a population — the
+ * construct the repo forbids by name — and the failure would be silent in the
+ * worst direction: add a ninth mixer channel and the buttons keep saying eight
+ * while the setter happily accepts the ninth from the hardware.
+ */
+export const PUSH2_LANE_INDICES: readonly number[] = MIXMSTRS_CHANNELS.map((_, i) => i);
+
 export function selectChannel(channel: number): void {
   if (channel < 0 || channel >= MIXMSTRS_CHANNELS.length) return;
   selectedChannel = channel;
@@ -990,8 +1006,35 @@ export function disconnectPush(): void {
   bump();
 }
 
-/** Re-export the card's view switcher (drives the parity single-mode view). */
-export { setLaunchpadView };
+/**
+ * The card's / faceplate's view switcher (drives the parity single-mode view).
+ *
+ * ⚠ IT BUMPS, AND THE BARE RE-EXPORT IT REPLACES WAS A LIVE DEFECT. This used
+ * to be `export { setLaunchpadView }` — the launchpad function, passed straight
+ * through. That function bumps the LAUNCHPAD layer's `viewRune()`, and every
+ * push2 surface derives on THIS module's `statusRune()`, so the two never met:
+ * clicking GRID / CLIP / ARR / CTRL changed the parity brain's view and
+ * repainted NOTHING. `Push2ControlCard.svelte`'s `activeView` (`$derived((statusRune(),
+ * launchpadActiveView()))`) kept its old `.active` highlight and its status
+ * line kept naming the previous view until some unrelated event bumped.
+ *
+ * Found by `push2-face.spec.ts`, which asserts the SINGLETON rather than the
+ * button — the poll on `__push2Sim.state().singleView` went green (the click
+ * really did reach `setLaunchpadView`) while the button's `aria-pressed` stayed
+ * false. That is exactly the split an `aria-pressed`-only assertion cannot see,
+ * in either direction: a button that repaints without writing, and a write that
+ * does not repaint.
+ *
+ * Fixed HERE rather than in each surface so both of them get it: the legacy
+ * card still ships and still renders under `?shell=legacy`. The faceplate body
+ * additionally derives on `viewRune()` directly, which is what covers a view
+ * changed FROM THE HARDWARE — a route that never passes through this function
+ * at all.
+ */
+export function setLaunchpadView(view: Parameters<typeof setLaunchpadViewRaw>[0]): void {
+  setLaunchpadViewRaw(view);
+  bump();
+}
 
 // ---------------------------------------------------------------------------
 // Test seams
