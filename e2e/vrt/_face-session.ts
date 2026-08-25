@@ -124,6 +124,17 @@ export interface FaceSession {
    */
   reset(): Promise<Page>;
   /**
+   * Start collecting `pageerror` for THIS scene, and stop at scene teardown.
+   *
+   * ⚠ THE LISTENER HAS TO BE OWNED BY THE FIXTURE, NOT BY THE TEST BODY. On a
+   * page that outlives the scene, a listener the body forgets to remove keeps
+   * collecting from LATER scenes — and a body only removes it on the path where
+   * nothing threw, which is exactly the path where it does not matter. The
+   * failure that results is the shared page's nastiest: an error raised by
+   * module A is reported against module B, which already passed.
+   */
+  armErrors(page: Page): string[];
+  /**
    * A page of this scene's own, freshly navigated.
    *
    * ⚠ THE DECLARED ESCAPE HATCH, NOT A CONVENIENCE. A scene whose setup must run
@@ -238,11 +249,20 @@ export const test = base.extend<
       faceHost.scenes = 1;
     }
 
+    const armed: { page: Page; handler: (e: Error) => void }[] = [];
+
     const session: FaceSession = {
       get page() { return faceHost.page; },
       async reset() {
         await resetFaceRack(faceHost.page, faceHost.pristine);
         return faceHost.page;
+      },
+      armErrors(page: Page) {
+        const errors: string[] = [];
+        const handler = (e: Error) => errors.push(e.message);
+        page.on('pageerror', handler);
+        armed.push({ page, handler });
+        return errors;
       },
       async freshPage(opts: BootFaceOptions = {}) {
         const p = await faceHost.context.newPage();
@@ -255,6 +275,11 @@ export const test = base.extend<
 
     await use(session);
 
+    // ⚠ DETACHED HERE, ON EVERY PATH — including the one where the scene threw,
+    // which is the only path that matters (see `armErrors`).
+    for (const { page, handler } of armed) {
+      if (!page.isClosed()) page.off('pageerror', handler);
+    }
     await attachFailureShot(faceHost.page, testInfo);
     for (const p of owned) if (!p.isClosed()) await p.close().catch(() => undefined);
   },

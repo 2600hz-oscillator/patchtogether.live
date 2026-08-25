@@ -352,13 +352,10 @@ test.describe('VRT: P1 curated faces (?shell=1) — compact lane tile + dock ful
       const page = faceSceneNeedsFreshPage(bootOpts)
         ? await faceSession.freshPage(bootOpts)
         : await faceSession.reset();
-      const errors: string[] = [];
-      // ⚠ REMOVED AT THE END, because the page outlives the scene. A listener
-      // left attached keeps collecting from LATER scenes, so a failure gets
-      // reported against a module that already passed — the shared page's
-      // nastiest failure mode, where the red is never the guilty test.
-      const onError = (e: Error) => errors.push(e.message);
-      page.on('pageerror', onError);
+      // ARMED BY THE FIXTURE, detached at scene teardown on EVERY path — see
+      // `armErrors`. A listener the body removes only on the happy path keeps
+      // collecting from LATER scenes on the path that matters.
+      const errors = faceSession.armErrors(page);
 
       // The compact tile is pinned at the config viewport — the dock scene's
       // taller one would be a baseline move for no reason.
@@ -390,7 +387,6 @@ test.describe('VRT: P1 curated faces (?shell=1) — compact lane tile + dock ful
         maxDiffPixels: COMPACT_MAX_DIFF,
       });
 
-      page.off('pageerror', onError);
       expect(
         errors.filter((e) => !/getUserMedia|audio/i.test(e)),
         `pageerrors: ${errors.join(' | ')}`,
@@ -409,9 +405,9 @@ test.describe('VRT: P1 curated faces (?shell=1) — compact lane tile + dock ful
       const page = faceSceneNeedsFreshPage(bootOpts)
         ? await faceSession.freshPage(bootOpts)
         : await faceSession.reset();
-      const errors: string[] = [];
-      const onError = (e: Error) => errors.push(e.message);
-      page.on('pageerror', onError);
+      // ARMED BY THE FIXTURE, detached at scene teardown on EVERY path — see
+      // `armErrors`.
+      const errors = faceSession.armErrors(page);
 
       // PER-SCENE, never the bare constant: a face whose unfolded pane is taller
       // than the shared default needs its own window, and raising the shared one
@@ -557,7 +553,6 @@ test.describe('VRT: P1 curated faces (?shell=1) — compact lane tile + dock ful
         maxDiffPixels: DOCK_MAX_DIFF,
       });
 
-      page.off('pageerror', onError);
       expect(
         errors.filter((e) => !/getUserMedia|audio/i.test(e)),
         `pageerrors: ${errors.join(' | ')}`,
