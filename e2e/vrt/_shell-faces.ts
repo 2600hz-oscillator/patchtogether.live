@@ -2774,7 +2774,75 @@ export const FACES = [
       + 'holds no accumulator at all — every frame is recomputed from (centre, zoom, iterations, '
       + 'rotation, colour, time) — so there is no ping-pong for a pinned clock to leave '
       + 'advancing. Its card already drew this fractal; the face adds the SCREEN switch, and '
-      + 'drops the derived magnification readout the resting faceplate may not paint.',
+      + 'drops the derived magnification readout the resting faceplate may not paint. '
+      + '⚠ AND THIS PARAGRAPH DESCRIBED A PIN THAT WAS NOT INSTALLED. Every sentence above was '
+      + 'written before the `simPin` below existed: the entry carried `videoFaceWhy` and NO '
+      + '`simPin`, so `__videoEngineFreezeTime` was never set for this scene, '
+      + '`engineFrozenTimeSec()` returned null, and the engine clock ran free through both '
+      + 'captures. The declaration is what was missing, not the argument — see the pin.',
+    // ⚠ THE PIN THE PROSE ABOVE ALREADY CLAIMED, AND THE REASON THE SCENE
+    // SURVIVED FOR MONTHS WITHOUT IT IS WORSE THAN THE MISSING DECLARATION.
+    //
+    // `freezeFaceVideo` runs for every entry carrying `videoFaceWhy` and
+    // REQUIRES the captured surface to be byte-identical across a second read.
+    // That assertion has been passing on this scene — and it was not passing
+    // because anything held the picture. It was passing because THE PICTURE
+    // HOLDS NO DATA.
+    //
+    // MEASURED through the render-smoke harness (paused loop, engine clock
+    // driven by hand, `color_out` read back via readPixels) at this module's
+    // SHIPPED DEFAULTS — zoom 0.2 → ~15.8x, centre (-0.7, 0), iterations 150,
+    // color_cycle 1 — at clock 2.0 s and again at 7.0 s, half a hue period
+    // apart:
+    //
+    //     nonZeroFrac 0      variance 0      mean 0      at BOTH clocks
+    //
+    // The default view lies entirely inside the main cardioid, so every sampled
+    // point is IN-SET, and `if (iter >= uIterations) col = vec3(0.0)` paints the
+    // colour pass uniformly black. The committed baselines say the same thing
+    // from the other end: `face-mandleblot-dock.png` carries a SOLID rgb(0,0,0)
+    // rectangle 480x339 where the preview is, and the compact tile 31x23.
+    //
+    // ⚠ SO THE STILLNESS CHECK ON THIS SCENE IS STILL VACUOUS AFTER THIS PIN,
+    // and saying so is the point of writing it here. The pin removes a live LIE
+    // — the paragraph above claimed a mechanism nothing installed — and it makes
+    // the scene deterministic BY CONSTRUCTION rather than by luck, which is what
+    // the roster is for. It does not make the stillness assertion falsifiable,
+    // because nothing can move a frame that has no data in it. The precondition
+    // that assertion measures is the ABSENCE OF A PICTURE, and only changing
+    // what MANDLEBLOT paints at rest can change that — a look change, and
+    // therefore the owner's call rather than this PR's.
+    //
+    // ⚠ AND `simPin` RATHER THAN A `freeze` ParamDef, which is the same choice
+    // the `inwards` entry argues out at length a few hundred lines up. MANDLEBLOT
+    // is the stateless half of that split — no ping-pong, no accumulator, no RNG,
+    // its draw reads `frame.time` and nothing else that moves — so pinning the
+    // clock makes the picture a pure function of the params, which is TOTAL
+    // determinism rather than the partial settle a freeze buys. A `freeze` param
+    // would be strictly weaker (it holds whatever frame the harness happened to
+    // catch) and strictly more expensive: `params` is in the WebGL attest basis
+    // and in contract-lock, so it would cost a real-GPU re-attest and a contract
+    // re-pin to solve a problem the engine already solves for every video module
+    // at once.
+    //
+    // The positive control is `e2e/tests/mandleblot-render-smoke.spec.ts` — it
+    // drives a view that DOES paint and shows the picture is a pure function of
+    // this exact global.
+    simPin: [
+      {
+        global: '__videoEngineFreezeTime',
+        value: 1.0,
+        why:
+          'pins `frame.time`, the ONLY moving term this module reads — the hue is '
+          + '`mod(mu*0.05 + uTime*0.1*uColorCycle + log(uZoom)*0.1*uColorCycle, 1)` and '
+          + '`color_cycle` ships at 1, so at rest the palette cycles with a 10 s period and an '
+          + 'unpinned scene would sample a different rotation on every boot. The module holds no '
+          + 'accumulator, so this one value is the whole of its determinism: the frame becomes a '
+          + 'pure function of the params. 1.0 rather than 0 to keep the drift terms exercised '
+          + 'instead of landing on the degenerate t=0, matching the `inwards` entry this one '
+          + 'follows.',
+      },
+    ],
   },
   // ── CAMERA — the first card-owned-source promotion ────────────────────────
   {
