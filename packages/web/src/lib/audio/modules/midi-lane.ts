@@ -108,6 +108,7 @@ import {
   bendToVOct,
   channelMatches,
   DEFAULT_BEND_SEMITONES,
+  MIDI_CHANNEL_COUNT,
   parseNoteEvent,
   parsePitchBend,
   pickWinner,
@@ -124,9 +125,14 @@ import {
  *  population count — MIDI 1.0 puts the channel in the low nibble of the
  *  status byte, so it is 16 by the wire format and cannot drift. Exported so
  *  the channel filter, the card's dropdown and the faceplate's channel roster
- *  all read the same number from one place instead of re-typing `16` three
- *  times. */
-export const MIDI_CHANNEL_COUNT = 16;
+ *  all read the same number from one place instead of re-typing `16`.
+ *
+ *  ⚠ RE-EXPORTED, NOT DECLARED. It now lives on `midi-cv-buddy.ts`, whose own
+ *  face needs the same roster — and the dependency between these two files runs
+ *  midi-lane → midi-cv-buddy (`VoicePriority`, `channelMatches`, …), so that is
+ *  the only end that can hold it without a cycle. Every existing importer of
+ *  this name is untouched. */
+export { MIDI_CHANNEL_COUNT };
 
 /** Returns a Set of channels (0-indexed, 0..15) selected; null = all.
  *  An `expandChannelSet` helper so a lane can collect a subset of
