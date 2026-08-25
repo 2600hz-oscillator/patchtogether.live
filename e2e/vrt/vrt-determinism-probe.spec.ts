@@ -279,7 +279,7 @@ async function settledCapture(el: Locator, max = 4): Promise<SettledCapture> {
  * ⚠ THE INSTRUMENT'S OWN STATED BLIND SPOT, AND THE CONTROL FOR IT.
  *
  * Both boots run in ONE Playwright context, so the second one meets whatever
- * the first left behind. `bootWithFace` starts with `page.goto('/rack')` — a
+ * the first left behind. `bootWithFace` starts by navigating to `/rack` — a
  * REAL document navigation, so every scrap of in-memory app state is torn down
  * — but localStorage, sessionStorage, IndexedDB and the HTTP/font cache all
  * survive it. If boot 2 were matching boot 1 because it INHERITED something,
