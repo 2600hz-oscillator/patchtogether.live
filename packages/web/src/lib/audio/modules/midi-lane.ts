@@ -94,7 +94,8 @@
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
-import { midiToVOct } from '$lib/audio/note-entry';
+import type { ModuleFace } from '$lib/graph/types';
+import { midiToVOct, noteNameForMidi, parseNoteName } from '$lib/audio/note-entry';
 import { createPolySender, type PolySender } from '$lib/audio/poly';
 import { createMidiScheduler } from '$lib/audio/midi-timing';
 import { createMidiInputClaim } from '$lib/midi/input-attach';
@@ -119,6 +120,14 @@ import {
 
 // ---------------- Pure helpers (testable) ----------------
 
+/** How many channels the MIDI protocol has. A PROTOCOL CONSTANT, not a
+ *  population count — MIDI 1.0 puts the channel in the low nibble of the
+ *  status byte, so it is 16 by the wire format and cannot drift. Exported so
+ *  the channel filter, the card's dropdown and the faceplate's channel roster
+ *  all read the same number from one place instead of re-typing `16` three
+ *  times. */
+export const MIDI_CHANNEL_COUNT = 16;
+
 /** Returns a Set of channels (0-indexed, 0..15) selected; null = all.
  *  An `expandChannelSet` helper so a lane can collect a subset of
  *  channels — the bass track + any CC automation on the same channel
@@ -128,9 +137,59 @@ export function expandLaneChannels(channels: number[] | null): Set<number> | nul
   if (channels === null) return null;
   const s = new Set<number>();
   for (const c of channels) {
-    if (Number.isInteger(c) && c >= 0 && c < 16) s.add(c);
+    if (Number.isInteger(c) && c >= 0 && c < MIDI_CHANNEL_COUNT) s.add(c);
   }
   return s;
+}
+
+// ---------------- The CHANNEL choice, as one roster ----------------
+//
+// The card's dropdown and the faceplate's selector cell offer the SAME
+// seventeen choices — ALL, then the sixteen channels displayed 1-based the way
+// every piece of hardware labels them while the wire format is 0-based. The
+// roster is BUILT from `MIDI_CHANNEL_COUNT` rather than written out, so there is
+// no list to keep in step with anything, and both surfaces import it instead of
+// re-deriving the off-by-one. (`MidiLaneCard.svelte` used to spell the
+// `{#each Array(16)}` and the `i + 1` inline; a face that spelled them again
+// would be two encodings of one convention.)
+
+/** The `channels` value meaning "listen to every channel" — `null` in the
+ *  stored form, and this string in any picker, since a `<select>` value and a
+ *  `SelectorOption` value are both strings. */
+export const MIDI_LANE_CHANNEL_ALL = 'all';
+
+/** ALL + one entry per MIDI channel, `value` 0-based (the wire form) and
+ *  `label` 1-based (the form printed on the front of every sequencer). */
+export function midiLaneChannelChoices(): Array<{ value: string; label: string }> {
+  return [
+    { value: MIDI_LANE_CHANNEL_ALL, label: 'ALL' },
+    ...Array.from({ length: MIDI_CHANNEL_COUNT }, (_, i) => ({
+      value: String(i),
+      label: String(i + 1),
+    })),
+  ];
+}
+
+/** The stored `channels` array for a picker value, and back. `null` is ALL. */
+export function channelsForChoice(choice: string): number[] | null {
+  if (choice === MIDI_LANE_CHANNEL_ALL) return null;
+  const n = Number.parseInt(choice, 10);
+  if (!Number.isInteger(n) || n < 0 || n >= MIDI_CHANNEL_COUNT) return null;
+  return [n];
+}
+
+/** The picker value for a stored `channels` array. A multi-channel set has no
+ *  single-channel choice to show, so it reads as ALL — which is what the card
+ *  has always done (`channelLabel`), and the engine still honours the real Set.
+ */
+export function choiceForChannels(channels: number[] | null | undefined): string {
+  if (channels === null || channels === undefined) return MIDI_LANE_CHANNEL_ALL;
+  if (channels.length !== 1) return MIDI_LANE_CHANNEL_ALL;
+  const only = channels[0];
+  if (!Number.isInteger(only) || only < 0 || only >= MIDI_CHANNEL_COUNT) {
+    return MIDI_LANE_CHANNEL_ALL;
+  }
+  return String(only);
 }
 
 /** True if a raw MIDI status byte's channel matches the lane's channel set
@@ -198,6 +257,19 @@ export interface MidiLaneCardState {
   /** Last note received on the lane (MIDI int) for the readout. */
   lastNote: number | null;
   lastVelocity: number;
+  /**
+   * How many keys are held on this lane RIGHT NOW.
+   *
+   * ⚠ ADDED FOR THE FACEPLATE, BECAUSE `lastNote` CANNOT ANSWER THE QUESTION.
+   * `lastNote` is LATCHED — it is assigned on note-on and never cleared, not on
+   * note-off and not on a channel change — so a lamp bound to
+   * `lastNote !== null` lights on the first note of the session and never goes
+   * dark again, which is a lamp that says nothing. The card got away with it by
+   * painting the note NAME (a latched last value is a defensible readout); a
+   * lamp is a live indicator and needs a live quantity. `heldStack.length` is
+   * that quantity and it is already maintained on every note-on and note-off.
+   */
+  heldCount: number;
   /** Last CC VALUE (0..127) seen for cc_a / cc_b (live readout). */
   lastCcA: number | null;
   lastCcB: number | null;
@@ -236,6 +308,64 @@ export const DEFAULT_DATA: MidiLaneData = {
   lastDeviceId: null,
 };
 
+// ---------------- The by-note GATE's note number, as one validator ----------
+//
+// ⚠ ONE GRAMMAR, TWO SURFACES. The card types this number into an
+// `<input type="number" min="0" max="127">` and the faceplate types it into a
+// `ShellEntryCell`; a card and a face that parse differently both look correct
+// and disagree about what the user typed, and no runtime gate reads a grammar.
+// So the grammar lives here, beside the engine that consumes it, and both
+// surfaces import it.
+//
+// ⚠ THE FACE REFUSES WHERE THE CARD CLAMPED, DELIBERATELY. `setNoteGateNote`
+// ends in `Math.max(0, Math.min(127, Math.round(n)))` — type `200` on the card
+// and the gate silently re-points at 127, which is the backdraft shape (a
+// control writing a value the domain does not contain while the model quietly
+// corrects it). `ShellEntryCell.parse` returns a tagged union precisely so a
+// rejection can write NOTHING, so the faceplate reports `200` as invalid and
+// leaves the stored note alone. The engine's clamp stays as the last line of
+// defence for a value arriving from an older saved patch.
+
+/** Lowest / highest MIDI note number the by-note gate accepts. The MIDI note
+ *  space is 7-bit and `setNoteGateNote` has always taken all of it; the card's
+ *  `min="0" max="127"` is the same range spelled in HTML. */
+export const NOTE_GATE_MIN_NOTE = 0;
+export const NOTE_GATE_MAX_NOTE = 127;
+
+/**
+ * Parse a typed by-note-gate note. Accepts EITHER a bare MIDI number (`36` —
+ * the form the card's number input takes, and the form drum programmers think
+ * in) OR a note NAME (`c2`, `f#3` — the spelling the card prints beside the
+ * number). Returns null for anything else, INCLUDING an out-of-range number.
+ *
+ * ⚠ THE TWO ACCEPTED FORMS COVER DIFFERENT RANGES, AND THE UNION IS WHY BOTH
+ * ARE HERE. `parseNoteName` is bounded to `MIN_MIDI`..`MAX_MIDI` (12..108, the
+ * range that has a printable name), so a name-only field could not reach the
+ * 31 note numbers outside it that the card's input reaches today — a parity
+ * loss of exactly the kind promotion must not introduce. The numeric form
+ * covers the full 0..127, and the name form is the affordance added on top.
+ */
+export function parseNoteGateNote(text: string): number | null {
+  const s = text.trim();
+  if (s === '') return null;
+  if (/^[0-9]{1,3}$/.test(s)) {
+    const n = Number.parseInt(s, 10);
+    return n >= NOTE_GATE_MIN_NOTE && n <= NOTE_GATE_MAX_NOTE ? n : null;
+  }
+  return parseNoteName(s);
+}
+
+/**
+ * How a stored note number spells itself back into the field. The NAME where
+ * one exists (`36` → `c2`), the bare number where it does not — so the text is
+ * always something `parseNoteGateNote` accepts and the field round-trips for
+ * every value the module can hold.
+ */
+export function noteGateNoteText(note: number): string {
+  const name = noteNameForMidi(note);
+  return name === '' ? String(note) : name;
+}
+
 /** GATE_PULSE_S — how long the note_gate stays high for a one-shot note
  *  trigger before falling. ~6 ms is long enough to clear a downstream
  *  edge detector + an ADSR's first block, short enough to retrigger fast
@@ -258,6 +388,135 @@ export interface MidiLaneApi {
   getState(): MidiLaneCardState;
   subscribe(cb: (s: MidiLaneCardState) => void): () => void;
 }
+
+// ---------------- The FACEPLATE (PF-20) ----------------
+//
+// WHAT MIDI LANE IS FOR, IN ONE PARAGRAPH. It is the module that lets ONE track
+// of a hardware sequencer play ONE instrument in the rack. Everything it emits
+// — pitch, gate, velocity, two CC taps, a by-note drum gate and an always-live
+// poly chord — is a demux of a single MIDI channel. The verb a player performs
+// is BIND: grant the browser MIDI, point this lane at a channel, and the track
+// is now an instrument. Every rank below descends from that.
+//
+// ── THE TIER LADDER, READ BACK AS A SENTENCE ────────────────────────────────
+//
+// `glyph: 'none'`, so the compact tier shows THREE controls: CONNECT, CH and
+// MODE — grant access, choose the track, decide whether the mono jacks speak.
+// That is the whole of "bind this lane" and it fits on a 192 px lane tile. The
+// plate tier adds NOTE#, PRIO and RETRIG: the drum tap and the two settings
+// that shape how a held chord collapses onto PITCH/GATE. The dock adds the four
+// CC-tap gestures, which are the only controls here that cannot do anything
+// until a device is in the player's hands and being wiggled.
+//
+// ⚠ CONNECT IS RANK 1 AND THAT IS THE POINT OF THE PROMOTION, not a nicety.
+// `laneRenderKind` returns 'placeholder' for this module today — a tile with NO
+// ranked controls at all — and `connect()` is reachable only from a mounted
+// legacy card, so on a module that is completely inert until Web MIDI is
+// granted, the grant required first discovering that the dock full view exists.
+// An `action` cell is not dock-restricted (only `panel` is), so the gesture
+// lands on the lane tile. This is midiclock's argument verbatim (#2187) and it
+// applies here for the same mechanical reason.
+//
+// ⚠ WHY `order` AND `pages` DISAGREE. `order` is PRIORITY — it decides what
+// survives at the mini/compact/plate tiers, so it is sorted by "what breaks if
+// this is wrong". `pages` is SIGNAL ORDER on the one tier that shows
+// everything, so it groups by which part of the module a control belongs to:
+// NOTE# ranks 4th (a lane whose drum tap is on the wrong note is silently dead)
+// but pages LAST, because the by-note gate is a separate tap off the same
+// stream rather than part of the mono voice.
+//
+// ⚠ FOUR BANDS, NO TAB RAIL. `DOCK_TAB_MIN_BANDS` is 7 and `face.tabbed` is
+// owner-instruction-only. Nothing is padded to reach a rail and nothing is
+// merged to stay under one — these are the four ideas the module actually has.
+//
+// ⚠ `note gate` IS A ONE-CONTROL BAND ON IDENTITY GROUNDS. The rule is that
+// a page earns a header at ≥2 controls, or 1 that is the module's identity, and
+// the by-note gate is one of exactly two things that make this module not
+// MIDI-CV-BUDDY (the other is the CC bank, which has its own band). The def's
+// own header says so: it "generalizes the per-device drum router … via
+// configuration, not 8 fixed ports".
+//
+// ⚠ NO HERO. A hero promotes a CONTROL, and there is nothing here that wants to
+// be big: no live picture, no scope trace, no XY pad. Declaring one would also
+// EMPTY ITS BAND (`heroFacePlan` MOVES the key), and every band here is already
+// at its honest size.
+//
+// ⚠ NO `face.rear`. The rear card is a projection of `pages`; this module has
+// no inputs at all, and its seven outputs take the derived default — one `out`
+// section splitting by cable domain. Authoring a group would restate the
+// domains, which is the case the derived default exists for.
+export const MIDI_LANE_FACE: ModuleFace = {
+  // ⚠ MECHANICALLY FORCED, not a style choice. `glyphBinding` reaches a live
+  // trace through `primaryAudioOutPortId`, which matches `type === 'audio'`
+  // EXACTLY. This module's seven outputs are cv / gate / cv / cv / cv / gate /
+  // polyPitchGate — not one `audio` port — so any other glyph value falls
+  // through to `{kind:'static'}`, the dead binding module-face-lint reddens.
+  glyph: 'none',
+  // The DEVICE ROSTER is the one affordance here that cannot be a cell: it
+  // lives on the engine handle behind `requestMIDIAccess()` and differs on
+  // every machine, so it is neither a ParamDef nor an `options` roster (a
+  // roster is a fixed set known when the def is authored). See the extension.
+  extension: 'midiLane',
+  order: [
+    'midi-lane-connect-{n}',
+    'midi-lane-channel-{n}',
+    'midi-lane-mode-{n}',
+    'midi-lane-note-{n}',
+    'midi-lane-priority-{n}',
+    'midi-lane-retrig-{n}',
+    'midi-lane-learn-a-{n}',
+    'midi-lane-clear-a-{n}',
+    'midi-lane-learn-b-{n}',
+    'midi-lane-clear-b-{n}',
+  ],
+  pages: [
+    {
+      id: 'lane',
+      label: 'lane',
+      hint:
+        'Web MIDI needs the browser\'s consent before any device is even visible, and until it '
+        + 'is granted this lane has no stream to demux. Then point the lane at one channel: '
+        + '"one MIDI channel = one instrument" is the workflow the module exists for, and a lane '
+        + 'aimed at the wrong channel is silent rather than wrong. ALL collects every channel.',
+      controls: ['midi-lane-connect-{n}', 'midi-lane-channel-{n}'],
+    },
+    {
+      id: 'mono',
+      label: 'mono',
+      hint:
+        'How a held chord collapses onto the single PITCH and GATE jacks. MONO picks one winning '
+        + 'note by voice priority; POLY leaves those two jacks quiet and you take the chord off '
+        + 'the POLY jack, which carries it in BOTH modes. RETRIG dips the gate for a block on each '
+        + 'new note so a downstream envelope re-fires instead of sustaining through the change.',
+      controls: ['midi-lane-mode-{n}', 'midi-lane-priority-{n}', 'midi-lane-retrig-{n}'],
+    },
+    {
+      id: 'cc',
+      label: 'cc taps',
+      hint:
+        'Two independent 0..1 CV taps off the same channel. Press LEARN and move a controller on '
+        + 'the device to bind the next CC number that arrives; CLEAR unassigns the tap so nothing '
+        + 'drives it. Wire them at audio params, or at video params through the cross-domain '
+        + 'bridge. Which number each tap is bound to is on its lamp in the device strip above.',
+      controls: [
+        'midi-lane-learn-a-{n}',
+        'midi-lane-clear-a-{n}',
+        'midi-lane-learn-b-{n}',
+        'midi-lane-clear-b-{n}',
+      ],
+    },
+    {
+      id: 'note',
+      label: 'note gate',
+      hint:
+        'The NOTE jack fires a one-shot pulse when this exact note arrives on the lane\'s '
+        + 'channel(s) — the drum-router pattern through one configurable port instead of eight '
+        + 'fixed ones. Type a note name (c2) or a bare MIDI number (36); both are accepted and an '
+        + 'out-of-range value is refused rather than quietly rounded to the nearest legal one.',
+      controls: ['midi-lane-note-{n}'],
+    },
+  ],
+};
 
 export const midiLaneDef: AudioModuleDef = {
   type: 'midiLane',
@@ -282,6 +541,39 @@ export const midiLaneDef: AudioModuleDef = {
   ],
   params: [],
 
+  face: MIDI_LANE_FACE,
+
+  // ⚠ TEN FAMILIES FOR TEN CELLS, AND THE COUNT IS FORCED BY THE RESOLVER.
+  // `resolveFaceControl` resolves a face key to a PARAM id, a family TEMPLATE
+  // (`<id>-{n}`) or a legend STATIC — and this module declares `params: []`, so
+  // every one of its controls has to arrive as a family. That is not a
+  // workaround: each of these really is a named affordance the module owns, and
+  // each has a real control on the legacy card carrying the same
+  // `testidPrefix`, which is what `module-docs-lint`'s card-drift leg checks.
+  //
+  // ⚠ THE SETTINGS STAY ON `node.data` AND ARE **NOT** MIGRATED TO PARAMS in
+  // this PR, deliberately. Turning the seven of them into `ParamDef`s is a real
+  // and probably good idea — it would buy automation, MIDI-learn, group-expose,
+  // undo and a Push 2 card — but it is a CONTRACT migration that needs a
+  // saved-patch read order (params → legacy `data` → default) per key, ten new
+  // contract-lock lines, a Push 2 card where there is none today, and a fresh
+  // ART pass on the poly path. `ShellSelectorCell` / `ShellToggleCell` /
+  // `ShellEntryCell` all read and write `node.data` through closures by design,
+  // so the face needs none of that to be complete, and bundling it would put a
+  // contract migration inside a promotion.
+  controlFamilies: [
+    { id: 'midi-lane-connect',  label: 'Connect MIDI', kind: 'other', testidPrefix: 'midi-lane-connect' },
+    { id: 'midi-lane-channel',  label: 'Channel',      kind: 'other', testidPrefix: 'midi-lane-channel' },
+    { id: 'midi-lane-mode',     label: 'Mode',         kind: 'other', testidPrefix: 'midi-lane-mode' },
+    { id: 'midi-lane-note',     label: 'Note',         kind: 'other', testidPrefix: 'midi-lane-note' },
+    { id: 'midi-lane-priority', label: 'Priority',     kind: 'other', testidPrefix: 'midi-lane-priority' },
+    { id: 'midi-lane-retrig',   label: 'Retrigger',    kind: 'other', testidPrefix: 'midi-lane-retrig' },
+    { id: 'midi-lane-learn-a',  label: 'Learn CC A',   kind: 'other', testidPrefix: 'midi-lane-learn-a' },
+    { id: 'midi-lane-clear-a',  label: 'Clear CC A',   kind: 'other', testidPrefix: 'midi-lane-clear-a' },
+    { id: 'midi-lane-learn-b',  label: 'Learn CC B',   kind: 'other', testidPrefix: 'midi-lane-learn-b' },
+    { id: 'midi-lane-clear-b',  label: 'Clear CC B',   kind: 'other', testidPrefix: 'midi-lane-clear-b' },
+  ],
+
   docs: {
     explanation:
       "A per-channel instrument bus that demuxes ONE MIDI channel (or a small set of channels) out of a hardware sequencer into everything the rack needs to play that track — pitch, gate, velocity, two assignable CC taps, a by-note-number gate, AND a polyphonic chord output. The intended workflow is DAW-style 'one MIDI channel = one instrument': assign each track of an external sequencer (Reliq, Cre8audio Programm, Empress ZOIA, …) to its own MIDI channel, drop one MIDI LANE per instrument, and point each lane at its track's channel. It is the channel-aware successor of MIDI-CV-BUDDY: the mono pitch/gate/velocity behave the same (a voice-priority winner of the held stack), but a multi-select channel filter, a learn-assignable CC bank, a by-note gate, and an always-live poly output are added. The card's `mode` setting governs only the MONO outputs — 'mono' collapses a held chord to one winning note on PITCH/GATE, 'poly' leaves those quiet — while the POLY output carries the whole held chord in BOTH modes. Device, channel set, voice priority, retrigger, mode, CC# assignments and the note# are all discrete card settings saved in the patch (no audio-side knobs). The SAME outputs drive video modules for free via the cross-domain CV/gate bridge.",
@@ -302,7 +594,28 @@ export const midiLaneDef: AudioModuleDef = {
       poly:
         "A polyphonic pitch+gate bus (up to 10 voices) that ALWAYS carries the full held chord, in both 'mono' and 'poly' modes. Wire it to a poly-aware voice — DX7, CUBE, or a module with a poly input — and the chord plays straight away with no mode toggle. This is the real polyphonic source chain: MIDI LANE.poly → poly synth produces audible chords (it does not need the mono outputs).",
     },
-    controls: {},
+    controls: {
+      'midi-lane-connect-{n}':
+        "The one-time-per-origin permission gesture, and the first thing to press on a lane that has never been used. Web MIDI needs the browser's consent before any device is even visible, so until it is granted this module has no stream to demux and all seven jacks sit at rest — it is not optional and it is not a setting. Once access is granted the device strip at the top of the dock faceplate lists the inputs that were found and remembers the one you pick, so a reloaded patch re-attaches without another press. The grant is per origin, not per lane: drop a second MIDI LANE afterwards and it is already connected.",
+      'midi-lane-channel-{n}':
+        "Which MIDI channel this lane listens to — the setting the whole module is built around. The intended workflow is DAW-style 'one channel = one instrument': assign each track of the external sequencer to its own channel, drop one lane per track, and set each lane's channel to match. Channels are shown 1..16 the way the hardware labels them, while the wire format counts from zero; ALL collects every channel into this one lane, which is what you want for a single-track device and what you do not want the moment two tracks are playing. Changing it clears any held notes so a channel switch cannot strand a gate high.",
+      'midi-lane-mode-{n}':
+        "Whether the MONO jacks speak. In MONO the held stack collapses to one winning note (see PRIORITY) and drives PITCH and GATE; in POLY those two jacks stay quiet and the chord goes out of the POLY jack instead. The thing worth knowing is that POLY is not a mode you have to find: the POLY jack carries the full held chord in BOTH settings, so wiring it to a poly-aware voice plays straight away and this control only decides whether the mono pair is ALSO live. Switching clears held notes so the bank you just left cannot leave a voice sounding.",
+      'midi-lane-note-{n}':
+        "Which single MIDI note fires the NOTE jack — the by-note drum tap. When a note-on with exactly this number arrives on the lane's channel(s), NOTE emits a short one-shot pulse suitable for a drum voice's strike or any trigger input; every other note is ignored by this jack and still flows through PITCH/GATE/POLY as usual. It generalizes the per-device drum-router pattern (a Programm or Reliq sending its kit on channel 10 by note number) through one configurable port rather than eight fixed ones, so a rack with six drum voices is six lanes on one channel with six different notes here. Type either a note name (c2, f#3) or a bare MIDI number (0..127); the default 36 is the General MIDI kick. A value outside 0..127 is refused rather than rounded to the nearest legal one.",
+      'midi-lane-priority-{n}':
+        "Which held note wins when several are down and the lane is in MONO. LAST follows the most recently pressed key, which is what feels like playing; LOW holds the bottom of the chord, the classic bass-line behaviour that lets you play over a held root; HIGH holds the top, so a melody survives notes added underneath it. It has no effect at all in POLY, where every held note gets its own voice on the POLY jack.",
+      'midi-lane-retrig-{n}':
+        "Whether a new note while another is already held re-fires downstream envelopes. ON drops the GATE jack for a single audio block and raises it again, which an ADSR reads as a fresh note-on, so legato playing articulates every note. OFF leaves the gate high through the change, so the envelope sustains and only the pitch moves — the legato behaviour you want for a slide or a portamento line. MONO only; it has no bearing on the POLY jack, where each voice has its own gate.",
+      'midi-lane-learn-a-{n}':
+        "Arms CC tap A to bind itself to the next controller number that arrives on this lane's channel(s). Press it, then move the control you want on the device — a mod wheel, a fader, a track's automation lane — and tap A follows that CC number from then on, emitting it as 0..1 CV on the CC A jack. This is how a tap gets bound: there is no list of controller numbers to hunt through, because which physical control sends which number is a property of the device rather than of this module. The binding is saved with the patch. Only one tap arms at a time, so arming A disarms B.",
+      'midi-lane-clear-a-{n}':
+        "Unassigns CC tap A, so no controller number drives it and the CC A jack holds its last value instead of following anything. Use it to free a tap you bound by accident, or to park a lane's modulation before re-learning it to a different control. It does not change the CC A jack's current level, and it does not touch tap B.",
+      'midi-lane-learn-b-{n}':
+        "Arms CC tap B, the second independent modulation tap, exactly as LEARN A arms the first — press it and move a control on the device to bind the next controller number that arrives. Two taps is what lets one track carry two hands' worth of modulation: a wheel into a filter and a pedal into a delay send, say, from the same channel. Arming B disarms A, since only one tap can be listening for the next number.",
+      'midi-lane-clear-b-{n}':
+        "Unassigns CC tap B, leaving the CC B jack holding its last value with nothing driving it. The mirror of CLEAR A, and independent of it — clearing one tap never disturbs the other's binding.",
+    },
   },
 
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
@@ -373,6 +686,7 @@ export const midiLaneDef: AudioModuleDef = {
         selectedDeviceId,
         lastNote,
         lastVelocity,
+        heldCount: heldStack.length,
         lastCcA,
         lastCcB,
         ccANum: ccA,

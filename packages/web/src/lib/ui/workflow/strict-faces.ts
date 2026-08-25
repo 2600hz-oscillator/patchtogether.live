@@ -4611,6 +4611,43 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // times — so the cell would never notice the hardware's own lane buttons
   // moving it. See the extension for the full argument.
   'push2Control',
+
+  // ── MIDI LANE — the per-channel instrument bus, and the FIRST face to
+  //    register a TYPED-ENTRY cell ─────────────────────────────────────────
+  //
+  // One track of a hardware sequencer, demuxed into everything the rack needs
+  // to play it: pitch, gate, velocity, two learn-assignable CC taps, a
+  // by-note-number drum gate and an always-live poly chord. The workflow it
+  // exists for is DAW-style — one MIDI channel is one instrument — so you drop
+  // one lane per instrument and point each at its track's channel.
+  //
+  // ⚠ IT IS A ZERO-PARAM FACE. `params: []`, so all ten controls arrive as
+  // `controlFamilies` + `SHELL_CELLS` entries over `node.data`, which is where
+  // this module has always kept them. `order: []` would have been legal and
+  // would have painted a blank tile, which is worse than the placeholder it
+  // replaces — the matrixMix lesson.
+  //
+  // ⚠ THE PROMOTION FIXES THE SAME PRACTICAL DEFECT midiclock HAD, for the same
+  // mechanical reason. `laneRenderKind` returns 'placeholder' here today — a
+  // tile with no ranked controls at all — and `connect()` is reachable only
+  // from a mounted legacy card. On a module that is completely inert until Web
+  // MIDI is granted, the grant required first discovering the dock full view.
+  // CONNECT is `face.order[0]` and an `action` cell is not dock-restricted, so
+  // the gesture lands on the lane tile.
+  //
+  // ⚠ AND IT IS THE FIRST ADOPTER OF `ShellEntryCell` (#1509). That cell kind,
+  // its `TextEntry` primitive, its `ModuleShell` render branch and its
+  // pure-lane probe check all shipped together, and until this face NOTHING
+  // REGISTERED ONE — the branch is reachable only through `SHELL_CELLS`. The
+  // by-note gate's note number is what it was built for. The alternative — a
+  // 128-option roster — was measured and refused three ways: 168 px against
+  // 72 px per cell; 31 of its 128 labels would have been BLANK, since
+  // `noteNameForMidi` returns '' outside MIDI 12..108 while the card's field
+  // reaches all of 0..127; and it would have left the face-migration
+  // inventory's TYPED-ENTRY parity leg RED, because that leg reads
+  // `shellCellKindsFor(type)` and the legacy card keeps its `<input>` under
+  // `?shell=legacy`.
+  'midiLane',
 ]);
 
 /**

@@ -933,11 +933,19 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
   },
   {
     type: 'midiLane',
-    disposition: 'bespoke-surface',
-    why:
-      'a MIDI DEVICE BINDER with a typed note-number field for the gate tap: permission gesture, ' +
-      'live device roster, channel/mode selection. No params, and the one numeric field is typed ' +
-      'entry.',
+    disposition: 'generic-face',
+    note:
+      'PROMOTED. The `why` was accurate about the SHAPE and wrong about the CONCLUSION, and the ' +
+      'part that turned is the typed field. "The one numeric field is typed entry" was the reason ' +
+      'this sat in bespoke-surface, and #1509 shipped `ShellEntryCell` — so the field is now a ' +
+      'ranked `entry` cell and midiLane is that cell type\'s FIRST adopter (it had a render ' +
+      'branch, a primitive, a probe contract and no registered instance). "Permission gesture" is ' +
+      'a ranked `action` cell, the midiclock precedent. "Channel/mode selection" is two ' +
+      '`ShellSelectorCell`s, and "no params" turned out to imply nothing: a selector cell reads ' +
+      'and writes `node.data` through closures, so ten controls rank without the module ' +
+      'declaring a single ParamDef. Only the LIVE DEVICE ROSTER genuinely cannot be a cell — a ' +
+      'roster is a fixed set known when the def is authored and this one lives behind ' +
+      '`requestMIDIAccess()` — so it is a `fullViewBody` extension, exactly as on midiclock.',
   },
   {
     type: 'midiOutBuddy',

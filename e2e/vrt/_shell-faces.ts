@@ -3707,6 +3707,57 @@ export const FACES = [
     // view, which changes only when a version rune bumps, and nothing bumps one
     // without a gesture or a graph edit.
   },
+
+  // ── MIDI LANE — the second BINDER baselined, and a second exemption
+  //    discharged on its OWN evidence ────────────────────────────────────────
+  {
+    type: 'midiLane',
+    // FOUR bands: `lane` (connect + channel), `mono` (mode + priority +
+    // retrig), `cc taps` (four gestures) and `note gate` (the typed field).
+    // `DOCK_TAB_MIN_BANDS` is 7, so no rail — and nothing is padded toward one
+    // or merged to stay under it. There is no hero, so no band is emptied by a
+    // promotion and the post-hero count is the authored count.
+    pages: 4,
+
+    // ⚠ THIS SCENE IS WHY THE MODULE COULD LEAVE `ALLOWED_PERMANENT_EXEMPT`,
+    // AND THE ARGUMENT IS THE EXEMPTION'S OWN — made on THIS card rather than
+    // inherited from midiclock's, which the block those entries share is
+    // explicit is not the same thing. `vrt-exemptions.ts` said "card content
+    // depends on connected MIDI device" and conceded the other half in the same
+    // sentence: *"the pre-Connect state is just the 'Connect MIDI…' button +
+    // hint."* Both halves are true, and only the second is ever in frame.
+    //
+    // A freshly spawned midiLane has NO MIDI ACCESS. `midi-lane.ts`'s own
+    // header says so — *"we DON'T request Web MIDI on mount"* — and the only
+    // caller of `api.connect()` in the product is the CONNECT gesture, which
+    // this scene does not press. So `access` is null, the device roster does
+    // not merely happen to be empty but does not EXIST (`snapshotState()`
+    // builds `devices` from `access.inputs`), the extension body renders its
+    // pre-connect branch — one hint sentence and four DARK lamps — and the four
+    // bands paint their cells at the defaults the def declares. Every pixel is
+    // a function of the code, none of it of the runner's hardware.
+    //
+    // ⚠ AND THE UNREACHABILITY IS STRUCTURAL, NOT INCIDENTAL. On a runner with
+    // no MIDI devices and no prior grant, the connected state is not merely
+    // unlikely — there is no path to it without a click. That is what makes
+    // this a discharge rather than a bet: the capture cannot DRIFT into the
+    // hardware-dependent state.
+    //
+    // ⚠ WHAT THIS BASELINE DOES **NOT** COVER, stated rather than implied: the
+    // post-connect device picker, the CC-learn armed lamp, and the NOTE lamp
+    // lit. All three need a mocked `requestMIDIAccess` — which
+    // `e2e/tests/_per-port-drivers.ts` already has, built for the per-port
+    // sweep — but installing that mock in the VRT harness is a change to the
+    // HARNESS rather than to this module. Not this PR. Those states are
+    // asserted in `midi-lane.spec.ts` and their strings in
+    // `midi-lane-status-model.test.ts`.
+    //
+    // ⚠ NO `videoFaceWhy` AND NO `simPin`. `domain: 'audio'` with seven cv /
+    // gate / polyPitchGate outputs and no canvas anywhere on the surface: there
+    // is no clock to pin and nothing that advances between frames. The lamps
+    // change only when `notify()` fires, and `notify()` fires only on an
+    // incoming MIDI message.
+  },
 ] as const;
 
 /**

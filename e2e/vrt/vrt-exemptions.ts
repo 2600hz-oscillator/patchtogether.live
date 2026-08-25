@@ -814,21 +814,32 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // not merely happen to be empty — it does not exist — and reaching the
   // hardware-dependent state requires a CONNECT press this suite never makes.
   //
-  // ⚠ THE OTHER THREE ENTRIES IN THIS BLOCK ARE UNCHANGED, DELIBERATELY.
-  // `midiCvBuddy`, `midiOutBuddy` and `midiLane` say "same rationale as
-  // midiCvBuddy", so ONE argument is written once and referenced four times.
-  // Discharging it here does NOT discharge it there: each of those cards paints
-  // its post-Connect surface differently and none of them is promoted, so the
-  // decision has to be made at each on its own evidence. Falsifying the
-  // rationale for one module is not falsifying it for the module it was
-  // written about.
+  // ⚠ THE OTHER TWO ENTRIES IN THIS BLOCK ARE UNCHANGED, DELIBERATELY.
+  // `midiCvBuddy` and `midiOutBuddy` say "same rationale as midiCvBuddy", so
+  // ONE argument is written once and referenced three times. Discharging it for
+  // one does NOT discharge it for the others: each of those cards paints its
+  // post-Connect surface differently, so the decision has to be made at each on
+  // its own evidence. Falsifying the rationale for one module is not falsifying
+  // it for the module it was written about.
   //
-  // MIDI LANE: same rationale as midiCvBuddy — the rich card UI (device
-  // picker, channel/mode/CC/note controls, live readout) only appears AFTER
-  // Connect, which depends on hardware absent in CI; the pre-Connect state is
-  // just the "Connect MIDI…" button + hint. Unit (midi-lane.test.ts) + E2E
-  // (midi-lane.spec.ts + per-port driver) provide coverage.
-  midiLane: 'card content depends on connected MIDI device; unit + E2E provide coverage',
+  // ⚠ `midiLane` REMOVED 2026-08-25 — the SECOND drain in this block, after
+  // `midiclock`, and made on its own evidence rather than by inheriting that
+  // one. Its entry read: *"the rich card UI (device picker, channel/mode/CC/
+  // note controls, live readout) only appears AFTER Connect, which depends on
+  // hardware absent in CI; the pre-Connect state is just the 'Connect MIDI…'
+  // button + hint."* Both clauses are true and only the SECOND is ever in
+  // frame. `midi-lane.ts`'s own header says *"we DON'T request Web MIDI on
+  // mount"*, and the only product caller of `api.connect()` is the CONNECT
+  // gesture — so on a freshly spawned lane `access` is null, the device roster
+  // does not merely happen to be empty but does not EXIST
+  // (`snapshotState().devices` is built from `access.inputs`), and
+  // `MidiLaneCard.svelte` takes its `{#if !cardState.connected}` branch: one
+  // button and one static sentence. Every pixel is a function of the code.
+  //
+  // ⚠ AND THE UNREACHABILITY IS STRUCTURAL, NOT INCIDENTAL. On a runner with no
+  // MIDI devices and no prior grant, the connected state is not merely
+  // unlikely — there is no path to it without a click this suite never makes.
+  // That is what makes this a discharge rather than a bet.
   // PONG research prototype: animated game state (ball moving) defeats a
   // deterministic single-frame baseline. Unit + ART + E2E provide coverage
   // until either (a) a deterministic-time test harness is added so VRT can
@@ -1314,7 +1325,13 @@ export const ALLOWED_PERMANENT_EXEMPT: ReadonlySet<string> = new Set([
   // directions, so leaving the name here while the module is baselined would be
   // RED — which is exactly the property that makes a drain a two-line edit
   // rather than a policy discussion.
-  'midiOutBuddy', 'midiLane',
+  // ⚠ `midiLane` REMOVED 2026-08-25 — the fourth drain, and the second in the
+  // MIDI-binder block after `midiclock`. See the note where its entry stood in
+  // EXEMPT_FROM_VRT for the argument, which is the pre-connect determinism one
+  // made on this module's own card rather than inherited. This list is ANCHORED
+  // in both directions, so leaving the name here while the module is baselined
+  // would be RED.
+  'midiOutBuddy',
   'modtris', 'gibribbon', 'frogger', 'skifree',
   'analogLogicMaths', 'bentbox', 'b3ntb0x', 'acidwarp',
   // ⚠ `gamepad` REMOVED 2026-08-24 — the third drain, after `cvBuddy` and

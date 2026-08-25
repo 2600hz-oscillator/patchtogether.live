@@ -1678,6 +1678,16 @@ midiLane out note_gate gate edge=trigger
 midiLane out pitch_cv cv
 midiLane out poly polyPitchGate
 midiLane out velocity_cv cv
+midiLane family midi-lane-channel kind=other prefix=midi-lane-channel
+midiLane family midi-lane-clear-a kind=other prefix=midi-lane-clear-a
+midiLane family midi-lane-clear-b kind=other prefix=midi-lane-clear-b
+midiLane family midi-lane-connect kind=other prefix=midi-lane-connect
+midiLane family midi-lane-learn-a kind=other prefix=midi-lane-learn-a
+midiLane family midi-lane-learn-b kind=other prefix=midi-lane-learn-b
+midiLane family midi-lane-mode kind=other prefix=midi-lane-mode
+midiLane family midi-lane-note kind=other prefix=midi-lane-note
+midiLane family midi-lane-priority kind=other prefix=midi-lane-priority
+midiLane family midi-lane-retrig kind=other prefix=midi-lane-retrig
 midiOutBuddy meta domain=audio
 midiOutBuddy in gate gate edge=gate
 midiOutBuddy in pitch cv
