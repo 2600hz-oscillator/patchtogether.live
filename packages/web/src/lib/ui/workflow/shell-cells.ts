@@ -32,14 +32,7 @@ import type { Component } from 'svelte';
 import type { ModuleNode, ParamLandmark } from '$lib/graph/types';
 import type { SelectorOption } from '$lib/ui/controls';
 import type { EntryParse } from '$lib/ui/controls/text-entry-model';
-import {
-  cartesianGateValue,
-  cartesianPitchText,
-  commitCartesianPitch,
-  cycleCartesianChord,
-  parseCartesianPitch,
-  setCartesianGate,
-} from '$lib/ui/modules/cartesian-cell-actions';
+import CartesianPadGrid from '$lib/ui/modules/cartesian/CartesianPadGrid.svelte';
 import { testHooksEnabled } from '$lib/dev/test-hooks';
 import WavecelWavetablePanel from '$lib/ui/modules/wavecel/WavecelWavetablePanel.svelte';
 import {
@@ -592,78 +585,48 @@ export type ShellCell =
  * shell all address the control by the SAME string — a rename breaks all three
  * gates at once instead of silently un-rendering one of them.
  */
-/**
- * The three cells one cartesian pad needs, keyed by their family templates.
- *
- * ⚠ GENERATED RATHER THAN WRITTEN OUT SIXTEEN TIMES, deliberately. Every other
- * block in this file is a literal because each entry is a different control
- * with a different argument; these sixteen are the SAME control repeated over an
- * index, and the failure mode of hand-copying them is a pad whose three cells
- * disagree about which index they address — invisible in review and silent at
- * runtime (pad 7's box edits pad 6's note). The index appears exactly once per
- * cell here.
- */
-function cartesianSpikeRow(i: number): Record<string, ShellCell> {
-  return {
-    [`cart-pad${i}-pitch-{n}`]: {
-      kind: 'entry',
-      label: `${i}`,
-      title: `Pad ${i} note — type a note name (c3, f#4, bb2). Empty is a REST.`,
-      text: (node) => cartesianPitchText(node, i),
-      parse: parseCartesianPitch,
-      onCommit: (nodeId, midi) => commitCartesianPitch(nodeId, i, midi),
-      placeholder: '—',
-      maxLength: 12,
-      // `rejects` is a note-SHAPED string that is out of the module's declared
-      // c0..c8 span, not obvious garbage: it proves the range check runs, which
-      // a `zzz` would not (the grammar alone would refuse that).
-      probe: { accepts: 'c#3', rejects: 'c9', effect: { kind: 'data', key: 'cells', expect: 'changed' } },
-    },
-    [`cart-pad${i}-gate-{n}`]: {
-      kind: 'toggle',
-      label: `on ${i}`,
-      value: (node) => cartesianGateValue(node, i),
-      onchange: (nodeId, on) => setCartesianGate(nodeId, i, on),
-    },
-    // ⚠ A CYCLING ACTION, NOT A SELECTOR, AND THE CARD IS WHY. `CartesianCard`
-    // renders this control as a `chord-badge` <button> that CYCLES
-    // mono → maj → min on click; a dropdown would be a different affordance
-    // wearing the same values. It is also 3.2× narrower — measured on the
-    // spike, four `selector` cells cost 672 px of a 1374 px band and pushed
-    // 220 px of the faceplate outside the 1220 px dock capture box, while four
-    // buttons cost ~208 px. Parity and width point the same way here, which is
-    // the usual sign that the card had already answered the question.
-    [`cart-pad${i}-chord-{n}`]: {
-      kind: 'action',
-      label: `chd ${i}`,
-      title: `Pad ${i} chord — click to cycle mono / maj / min`,
-      mode: 'trigger',
-      probe: { effect: { kind: 'data', key: 'cells', expect: 'changed' } },
-      onFire: (nodeId) => cycleCartesianChord(nodeId, i),
-    },
-  };
-}
-
 const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
-  // ── cartesian ─────────────────────────────────────────────────────────────
-  //
-  // ⚠ WIDTH SPIKE — PAD ROW 0 ONLY (pads 0..3). The full grid is 16 pads x 3
-  // controls; this row exists to MEASURE a band of twelve before the other
-  // three rows are written, because a face that overflows the 1220 px dock
-  // capture box fails the VRT capture outright and the selector cells here are
-  // the wide ones. Do not read this block as the finished face.
-  //
-  // Each pad is THREE cells because a control family renders as ONE cell with
-  // no member index (see the wavesculpt note below), so a per-pad control needs
-  // its own family id. All three call `cartesian-cell-actions`, which
-  // `CartesianCard.svelte` calls too — a pad is a read-modify-write over
-  // `{ on, midi, chord }` and two surfaces disagreeing about the fields they do
-  // not own is how a retyped note silently un-voices a chord pad.
   cartesian: {
-    ...cartesianSpikeRow(0),
-    ...cartesianSpikeRow(1),
-    ...cartesianSpikeRow(2),
-    ...cartesianSpikeRow(3),
+    // THE 4×4 PAD GRID — the module itself, and the `TextEntry` primitive's
+    // first adopter (#1509).
+    //
+    // ⚠ ONE PANEL, NOT FORTY-EIGHT GENERIC CELLS, and the first attempt was the
+    // other thing. A face key is a PARAM id, a family TEMPLATE (`-{n}` literal,
+    // ONE cell, no per-member index) or a legend STATIC (needs a committed
+    // legend JSON cartesian does not have). Sixteen ranked pads therefore needs
+    // forty-eight family ids, and `module-docs-lint`'s card-drift leg requires
+    // each declared `testidPrefix` to appear in real UI source — MEASURED:
+    // twelve face-only families fail it. Both escapes are refused by standing
+    // rules. See `CartesianPadGrid.svelte`'s header for the full derivation.
+    //
+    // ⚠ MEASURED WIDTHS, kept because the next face author otherwise
+    // rediscovers them (dock, 1220 px pane, CSS px): `selector` 168 ·
+    // `entry` 72 · `action` 58 · `toggle` 52 · `knob` 40. Four selector cells
+    // were 49% of a 1374 px band and pushed 220 px of the plate outside the
+    // capture box; that is what sent this grid to a panel rather than to
+    // `clusters`.
+    //
+    // ⚠ THE PROBE CLICKS A GATE, NOT A PITCH BOX. faces-parity drives a panel
+    // with a click or a drag — it cannot type — so the honest observable here
+    // is the gate toggle, which writes the same `node.data.cells` key. The
+    // TYPED half is proven by `cartesian-face.spec.ts`, whose three legs
+    // (accepts / REFUSES-without-clamping / clears-to-a-rest) are the reason
+    // the parse contract is shaped the way it is. Naming a pitch box here and
+    // clicking it would assert nothing at all.
+    'cart-pitch-{n}': {
+      kind: 'panel',
+      label: 'pads',
+      component: CartesianPadGrid,
+      // Four columns of a ~72 px entry plus gate/chord buttons, with the 4 px
+      // grid gaps and the pad's own 2 px padding — measured at 316 px, floored
+      // just above so a narrow dock cannot squeeze a note name to ellipsis.
+      minWidth: 320,
+      probe: {
+        testid: 'cart-face-gate-1',
+        action: 'click',
+        effect: { kind: 'data', key: 'cells', expect: 'changed' },
+      },
+    },
   },
   bluebox: {
     // THE TONE BANK — ten bars, one per oscillator, promoted into the hero slot
@@ -2377,6 +2340,15 @@ export function shellCellKeys(moduleType: string): string[] {
   return Object.keys(SHELL_CELLS[moduleType] ?? {}).sort();
 }
 
+/** The KINDS one module registers, deduped and sorted. Used by the typed-entry
+ *  parity leg in `face-migration-inventory.test.ts`, which asks whether a face
+ *  carries the affordance its card has — a question about kinds, not keys.
+ *  Pure. */
+export function shellCellKindsFor(moduleType: string): string[] {
+  const specs = SHELL_CELLS[moduleType] ?? {};
+  return [...new Set(Object.values(specs).map((c) => c.kind))].sort();
+}
+
 /**
  * The face keys one module registers as PANEL cells. Used by the face-lint
  * rule that keeps a panel DOCK-ONLY: a 280 px SVG has no business being
@@ -2461,9 +2433,28 @@ export function shellActionProbes(): Record<string, Record<string, ShellActionPr
 
 /** Expose the shell-layer metadata the faces-parity e2e reads (dev/autotest
  *  builds only — the same `testHooksEnabled()` gate `__moduleSpecs` uses). */
+/**
+ * Every declared ENTRY probe, `moduleType → faceKey → probe`. Pure projection,
+ * published to the page for the faces-parity sweep exactly like the panel and
+ * action probes beside it — the sweep needs the module's own `accepts` /
+ * `rejects` strings, because only the module knows what its domain excludes.
+ */
+export function shellEntryProbes(): Record<string, Record<string, ShellEntryProbe>> {
+  const out: Record<string, Record<string, ShellEntryProbe>> = {};
+  for (const [type, specs] of Object.entries(SHELL_CELLS)) {
+    for (const [key, cell] of Object.entries(specs)) {
+      if (cell.kind !== 'entry') continue;
+      (out[type] ??= {})[key] = cell.probe;
+    }
+  }
+  return out;
+}
+
 export function exposeShellPanelProbesForTests(): void {
   if (!testHooksEnabled()) return;
   if (typeof window === 'undefined') return;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (window as any).__shellEntryProbes = shellEntryProbes();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (window as any).__shellPanelProbes = shellPanelProbes();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

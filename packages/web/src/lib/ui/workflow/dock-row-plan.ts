@@ -190,7 +190,18 @@ export function cellWidthClass(ctl: FaceControl, def: RowPlanDefLike | undefined
   // import is the same primitive with a long caption (114.6 px) and a status
   // line under it, a SELECTOR is a 168 px chip, and a PANEL declares its own
   // `minWidth` (280–560 px). Only the first two of those stay in a column.
-  return cell.kind === 'action' || cell.kind === 'toggle' ? 'column' : 'wide';
+  // ⚠ `entry` IS A COLUMN, AND IT IS NAMED RATHER THAN LEFT TO THE DEFAULT. A
+  // typed-entry field is a short token (a note name, a filename stem), not a
+  // roster: MEASURED at 72 px on the dock — between a knob column (40–68.8) and
+  // a `segmented` row (94.3), and 2.3× narrower than the 168 px `selector` it
+  // replaced on cartesian. Letting it fall to the deny-by-default `'wide'` arm
+  // below would send EVERY band holding one to a row of its own, which is the
+  // `fader`/#1464 regression this file's header is a warning about: an
+  // unresolvable cell and a cell nobody classified are different questions, and
+  // only the first one deserves the conservative answer.
+  return cell.kind === 'action' || cell.kind === 'toggle' || cell.kind === 'entry'
+    ? 'column'
+    : 'wide';
 }
 
 /** Every cell a band paints — un-clustered first, then each cluster's, the same

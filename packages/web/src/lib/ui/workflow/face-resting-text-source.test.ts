@@ -100,6 +100,8 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const TYPES = resolve(HERE, '../../graph/types.ts');
 const SHELL = resolve(HERE, '../modules/ModuleShell.svelte');
 const DOCK = resolve(HERE, '../dock/DockFullView.svelte');
+const CELLS = resolve(HERE, './shell-cells.ts');
+const TEXT_ENTRY = resolve(HERE, '../controls/TextEntry.svelte');
 
 function read(p: string): string {
   return readFileSync(p, 'utf8');
@@ -116,7 +118,48 @@ function read(p: string): string {
 // `role` is one of the four permitted roles, or `'none'` for a field that
 // carries no painted text at all (ids, keys, flags, geometry).
 
-type TextRole = 'none' | 'section-label' | 'control-caption' | 'option-name' | 'annotation';
+type TextRole =
+  | 'none'
+  | 'section-label'
+  | 'control-caption'
+  | 'option-name'
+  | 'annotation'
+  // ── #1509 · USER-AUTHORED ENTRY CONTENT ───────────────────────────────────
+  //
+  // ⚠ THE FIFTH ROLE, ADDED DELIBERATELY, AND THE UNION STAYS CLOSED. Every
+  // previous addition to this file was a DELETION; this is the one time a role
+  // is added, so the argument is written here rather than in a PR nobody will
+  // find.
+  //
+  // The four roles above exist because the ruling's target is text that
+  // RESTATES something a control already shows: a decimal under a dial says
+  // what the angle says, a hero strip says what the meter says. That is why
+  // "the value lives in `aria-valuetext`" is a complete answer for them — the
+  // control still expresses the value, just not in ink.
+  //
+  // A TEXT FIELD HAS NO NON-TEXT FORM. Its content is not a readout OF the
+  // control; it IS the control, the way a knob's angle is. Moving it to
+  // `aria-valuetext` would not relocate a redundant restatement, it would
+  // delete the only expression the control has — which is how a REST became
+  // unreachable in the first draft of this cell (see text-entry-model.ts).
+  //
+  // ⚠ SO THE LICENCE IS NARROW AND HELD STRUCTURALLY, NOT BY PROMISE. Three
+  // properties, each asserted below, and together they make it impossible for a
+  // DISPLAY to adopt this role:
+  //
+  //   1. TYPE     — legal only on a cell whose interface REQUIRES a write
+  //                 handler. A display has none, so it cannot claim the role.
+  //   2. DOM      — the render site must be a writable <input>: no `readonly`,
+  //                 no `disabled`, no `aria-readonly`. An inert box painting a
+  //                 computed string is exactly the "there but hidden" shape the
+  //                 owner refused BY NAME when `persistentReadout=false` was
+  //                 proposed as the fix for offence (1).
+  //   3. NO TEXT NODE — the string reaches the DOM only as `value=` on that
+  //                 form control. This is the categorical one: a readout needs
+  //                 a text node, and this role forbids one. It is not a rule
+  //                 about intent, it is a rule about which DOM node the
+  //                 characters land in.
+  | 'authored-entry';
 
 interface FaceFieldRule {
   /** Which permitted text role this field's strings play at REST. */
@@ -335,6 +378,216 @@ describe('the resting faceplate — every declarable field has a PERMITTED text 
       .filter(([, r]) => r.why.trim().length < 40)
       .map(([k]) => k);
     expect(thin, 'an entry without a stated reason is a suppression').toEqual([]);
+  });
+});
+
+// ── LEG 1b · THE CELL SURFACE ──────────────────────────────────────────────
+//
+// ⚠ THIS ROSTER CLOSES A HOLE THAT PREDATES #1509, AND THE HOLE IS THE POINT.
+// LEG 1 enumerates `ModuleFace` FIELDS — what a DEF may declare. But a face's
+// text is painted by CELLS, and a `ShellCell` kind is not a `face` field, so
+// **no cell kind has ever been checked by this file**. That is not theoretical:
+// `dx7` has shipped four typed `<input>`s and a `{presetName}{dirty ? ' ✱' : ''}`
+// chip on its FACE since PF-14, inside the `dx7-op-detail-{n}` PANEL, and every
+// leg here is blind to them because a panel is module-owned markup rather than a
+// declared field.
+//
+// So the same deny-by-default shape is applied one layer down: every kind in the
+// `ShellCell` union names the role its strings play, a kind with no entry is RED
+// on the TYPE, and an entry naming a kind that no longer exists is RED.
+//
+// ⚠ WHAT THIS STILL CANNOT SEE, unchanged and stated rather than implied: what a
+// PANEL's own component paints. `panel` is declared `'none'` because the CELL
+// contributes no text of its own — the component inside it is the canvas blind
+// spot this file's header names, and only the dock VRT baselines and a human
+// reviewing them can see it. Declaring `'none'` here is a statement about the
+// cell, NOT a clearance for its contents.
+
+interface CellKindRule {
+  role: TextRole;
+  why: string;
+  /**
+   * For `'authored-entry'` ONLY: the interface field that makes the cell
+   * user-writable. Asserted NON-OPTIONAL in `shell-cells.ts` source, which is
+   * what stops a read-only cell claiming the role. Required by the TYPE for
+   * that role via the assertion below rather than by convention.
+   */
+  writeField?: string;
+}
+
+const CELL_KINDS: Readonly<Record<string, CellKindRule>> = {
+  selector: {
+    role: 'option-name',
+    why: 'A dropdown over a named roster. Its resting string is the CURRENT OPTION NAME — a word that disambiguates the control\'s own position, which is a permitted role — plus a small uppercase `tag` that is a control caption.',
+  },
+  action: {
+    role: 'control-caption',
+    why: 'A <Button>. Its text is the button\'s own name (STRIKE, REC, Save table) — a control caption. Its observable is the audition ledger or a node.data key, never a printed result.',
+  },
+  file: {
+    role: 'control-caption',
+    why: 'An import button whose text is its caption ("Load .syx bank"). ⚠ It ALSO paints a status/error line after an import — which is a RESULT, not a resting string: it exists only after the player acts, and is absent on every fresh plate. Resting text is what this file governs.',
+  },
+  toggle: {
+    role: 'control-caption',
+    why: 'A 0/1 switch backed by node.data. It paints its own label and nothing else; the state is carried by the switch\'s appearance and `aria-pressed`, not by a word.',
+  },
+  panel: {
+    role: 'none',
+    why: 'A bespoke component rendered inside a cell. The CELL contributes one caption (handled as a control caption by the shell) and no other text. ⚠ What the COMPONENT paints is this file\'s canvas blind spot — declaring `none` here describes the cell, and is NOT a clearance for the component\'s contents.',
+  },
+  'warped-fader': {
+    role: 'option-name',
+    why: 'A throw over a param whose card converts at the boundary. It paints its caption and its LANDMARK NAMES — words placed at named waypoints, which is the option/landmark role — while the value itself goes to `aria-valuetext` through the declared `format`.',
+  },
+  entry: {
+    role: 'authored-entry',
+    why: 'The typed-entry field (#1509). Its resting string is what the USER TYPED, round-tripped from the module\'s own store — not a derived quantity, and not a restatement of something the control shows another way, because a text field has no other way. Held structurally: the string reaches the DOM only as `value=` on a writable <input>, so a display cannot adopt this role without becoming one.',
+    writeField: 'onCommit',
+  },
+};
+
+/**
+ * The `kind` literal every ShellCell interface declares, read from SOURCE so a
+ * kind that is typed but not yet used by any module is still covered.
+ *
+ * ⚠ IT WALKS THE `ShellCell` UNION, NOT EVERY `kind:` IN THE FILE. The naive
+ * scan matched the PROBE discriminants too (`kind: 'audition'`, `kind: 'param'`
+ * inside `ShellActionProbe.effect`), which are a different vocabulary entirely —
+ * what an action's effect IS, not what a cell PAINTS. Demanding a text role for
+ * them would be nonsense, and quietly excluding them by pattern would leave the
+ * scan's real subject undefined. The union is the definition of "a ShellCell
+ * kind", so that is what this reads.
+ */
+function declaredCellKinds(src: string): string[] {
+  const union = /export type ShellCell =([\s\S]*?);/.exec(src);
+  if (!union) return [];
+  const names = [...union[1]!.matchAll(/\|\s*(Shell[A-Za-z]+Cell)/g)].map((m) => m[1]!);
+  const out = new Set<string>();
+  for (const name of names) {
+    const iface = new RegExp(`export interface ${name}(?:<[^>]*>)?\\s*\\{([\\s\\S]*?)\\n\\}`).exec(src);
+    if (!iface) continue;
+    const kind = /^\s*kind:\s*'([a-z-]+)';/m.exec(iface[1]!);
+    if (kind) out.add(kind[1]!);
+  }
+  return [...out].sort();
+}
+
+describe('the resting faceplate — every CELL KIND has a permitted text role', () => {
+  const cellSrc = stripSourceComments(read(CELLS));
+
+  it('POSITIVE CONTROL: the kind scan read a real registry and found the shipped kinds', () => {
+    // Both assertions below are ABSENCES over a derived set, so an empty or
+    // misread source would green them silently.
+    const kinds = declaredCellKinds(cellSrc);
+    expect(cellSrc.length, 'the probe read an empty/missing shell-cells.ts').toBeGreaterThan(10000);
+    expect(kinds, 'the scan must find the kinds that demonstrably ship').toEqual(
+      expect.arrayContaining(['selector', 'action', 'file', 'toggle', 'panel', 'entry']),
+    );
+  });
+
+  it('no ShellCell kind is declarable without a named text role', () => {
+    const undeclared = declaredCellKinds(cellSrc).filter((k) => !(k in CELL_KINDS));
+    expect(
+      undeclared,
+      'a new `ShellCell` kind exists with no CELL_KINDS entry. Before adding one, ask what its ' +
+        'strings PAINT at rest. A cell that paints a derived value has no permitted role — and ' +
+        '`authored-entry` is not the escape hatch: it is legal only on a cell that is genuinely ' +
+        'user-writable, which the legs below check rather than take on trust.',
+    ).toEqual([]);
+  });
+
+  it('ANCHOR: every roster entry still names a real kind — a dead entry is RED', () => {
+    const live = new Set(declaredCellKinds(cellSrc));
+    const dead = Object.keys(CELL_KINDS).filter((k) => !live.has(k));
+    expect(
+      dead,
+      'a CELL_KINDS entry names a kind that no longer exists. Delete it — a stale entry silently ' +
+        'pre-approves whatever takes its name next.',
+    ).toEqual([]);
+  });
+
+  it('every entry carries a REASON, not a shrug', () => {
+    const thin = Object.entries(CELL_KINDS)
+      .filter(([, r]) => r.why.trim().length < 40)
+      .map(([k]) => k);
+    expect(thin, 'an entry without a stated reason is a suppression').toEqual([]);
+  });
+
+  // ── THE THREE STRUCTURAL LEGS FOR `authored-entry` ────────────────────────
+
+  it('LEG 1 (TYPE): an authored-entry kind REQUIRES a write handler', () => {
+    const offenders: string[] = [];
+    for (const [kind, rule] of Object.entries(CELL_KINDS)) {
+      if (rule.role !== 'authored-entry') {
+        if (rule.writeField) offenders.push(`${kind}: declares writeField but is not authored-entry`);
+        continue;
+      }
+      if (!rule.writeField) {
+        offenders.push(`${kind}: claims 'authored-entry' without naming the field that makes it writable`);
+        continue;
+      }
+      // The field must be declared NON-OPTIONAL on the interface. `foo?:` is the
+      // optional form, so its absence beside a present `foo:` is the assertion.
+      const required = new RegExp(`^\\s*${rule.writeField}:`, 'm').test(cellSrc);
+      const optional = new RegExp(`^\\s*${rule.writeField}\\?:`, 'm').test(cellSrc);
+      if (!required || optional) {
+        offenders.push(
+          `${kind}: '${rule.writeField}' is not a REQUIRED field in shell-cells.ts. A cell that can ` +
+            'omit its write is a display, and a display may not paint an authored-entry string.',
+        );
+      }
+    }
+    expect(offenders, 'the authored-entry role must be unusable by a read-only cell').toEqual([]);
+  });
+
+  it('LEG 2 (DOM): the entry render site is a WRITABLE input — never readonly or disabled', () => {
+    const shell = stripSourceComments(read(SHELL));
+    const site = /<div class="kcol ms-cell-entry"[\s\S]*?<\/div>/.exec(shell);
+    expect(site, 'no `ms-cell-entry` render site found in ModuleShell — this leg would be vacuous').toBeTruthy();
+    const block = site![0];
+    for (const banned of ['readonly', 'disabled', 'aria-readonly']) {
+      expect(
+        block.includes(banned),
+        `the entry cell's render site declares \`${banned}\`. An inert box painting a computed ` +
+          'string is a READOUT wearing an input\'s clothes — "there but hidden", refused by name.',
+      ).toBe(false);
+    }
+    // And the primitive it mounts must itself be writable.
+    const prim = stripSourceComments(read(TEXT_ENTRY));
+    expect(prim.includes('<input'), 'TextEntry must render a real <input>').toBe(true);
+    for (const banned of ['readonly', 'disabled', 'aria-readonly']) {
+      expect(prim.includes(banned), `TextEntry declares \`${banned}\``).toBe(false);
+    }
+  });
+
+  it('LEG 3 (NO TEXT NODE): the entry value reaches the DOM only as `value=`', () => {
+    // The categorical leg. A readout REQUIRES a text node; if the typed string
+    // can only ever be an attribute/property of a form control, no amount of
+    // re-declaration turns this cell into one.
+    const prim = stripSourceComments(read(TEXT_ENTRY));
+    expect(
+      /value=\{displayValue\}/.test(prim),
+      'TextEntry must bind its string to the input\'s `value`',
+    ).toBe(true);
+    // `{displayValue}` anywhere OUTSIDE a `value=` binding would be a text node.
+    const textNodeUse = prim.replace(/value=\{displayValue\}/g, '').includes('{displayValue}');
+    expect(
+      textNodeUse,
+      'TextEntry interpolates its string somewhere other than the input\'s `value` — that is a ' +
+        'TEXT NODE, which is what makes something a readout. The whole licence for the ' +
+        "'authored-entry' role is that this cannot happen.",
+    ).toBe(false);
+    // NEGATIVE CONTROL, in both directions: the probe can see a text node when
+    // there is one, and does not fire on the `value=` binding alone.
+    expect(
+      '<span>{displayValue}</span>'.replace(/value=\{displayValue\}/g, '').includes('{displayValue}'),
+      'positive control — a real text node must be detected',
+    ).toBe(true);
+    expect(
+      '<input value={displayValue} />'.replace(/value=\{displayValue\}/g, '').includes('{displayValue}'),
+      'negative control — the permitted binding must NOT read as a text node',
+    ).toBe(false);
   });
 });
 

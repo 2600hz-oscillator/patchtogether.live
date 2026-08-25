@@ -95,7 +95,15 @@ export type FaceMigrationDisposition =
  * declaration, a declaration nobody needs, and a declaration whose capability is
  * ALREADY THERE are all RED in the gate.
  */
-export type MigrationBlockerId = 'needs-note-entry-cell' | 'needs-media-controller';
+// ⚠ `'needs-note-entry-cell'` (#1509) WAS HERE AND IS DELETED, NOT RETIRED —
+// its capability SHIPPED. `ModuleShell` now mounts a typed-entry cell
+// (`ShellEntryCell` -> `TextEntry`), so the blocker's own probe fires and the
+// gate below would fail the whole registry while the declaration stood. Twelve
+// modules named it; eight named nothing else and now carry no `blockers` key at
+// all. Deleting is the correct disposal: a blocker whose capability exists is
+// not "done", it is FALSE, and leaving it would pre-approve the next thing to
+// take its name.
+export type MigrationBlockerId = 'needs-media-controller';
 
 /**
  * THE LIVE TREE, reduced to the handful of facts the capability probes read.
@@ -170,25 +178,6 @@ export interface MigrationBlocker {
  * a stale entry, not a roadmap.
  */
 export const MIGRATION_BLOCKERS: Readonly<Record<MigrationBlockerId, MigrationBlocker>> = {
-  'needs-note-entry-cell': {
-    issue: 1509,
-    capability:
-      'a note/short-text entry face cell — card-primitive-parity declares NoteEntry `via: none`, ' +
-      'and a raw <input type="text"> shares the gap, so a typed pitch field ("c#3"), a MIDI note ' +
-      'number or a name field has no face representation at all',
-    unblocks:
-      'the sequencer-class surfaces (their step rosters are typed, not turned) and every card ' +
-      'carrying a short-text field, which today can only hand-roll one',
-    probe: {
-      evidence:
-        'ModuleShell.svelte — the ONE renderer every face cell is painted by — mounts typed ' +
-        'entry. There is nowhere else it could land: no ParamCellKind paints text, so the cell ' +
-        'cannot exist without the shared shell mounting a <NoteEntry>, a <textarea>, a ' +
-        'contenteditable or a typed <input>.',
-      shipped: (tree) => tree.faceShellMountsTypedEntry,
-      landed: (tree) => ({ ...tree, faceShellMountsTypedEntry: true }),
-    },
-  },
   'needs-media-controller': {
     issue: 1511,
     capability:
@@ -522,7 +511,6 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
   {
     type: 'vstInstrument',
     disposition: 'bespoke-surface',
-    blockers: ['needs-note-entry-cell'],
     why:
       'a VST BRIDGE card (the es9 shape): connection state machine, plugin picker with text ' +
       'filter (the typed entry), mount/unmount/swap gestures, native-editor toggle, and ' +
@@ -531,7 +519,6 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
   {
     type: 'vstFx',
     disposition: 'bespoke-surface',
-    blockers: ['needs-note-entry-cell'],
     why:
       'the VST BRIDGE stereo-insert card — the same bridge control plane as vstInstrument ' +
       '(shared VstBridgePanel: picker with its typed filter entry, mount/unmount, editor, ' +
@@ -634,7 +621,7 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
   {
     type: 'archivist',
     disposition: 'bespoke-surface',
-    blockers: ['needs-media-controller', 'needs-note-entry-cell'],
+    blockers: ['needs-media-controller'],
     why:
       'an archive.org SEARCH BROWSER: a typed query with year bounds, a result list to pick from, ' +
       'and a player. The list is the interaction, the query is typed, and the <video> source is ' +
@@ -738,11 +725,20 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
   },
   {
     type: 'cartesian',
-    disposition: 'bespoke-surface',
-    blockers: ['needs-note-entry-cell'],
-    why:
-      'an X/Y PAD SEQUENCER: a grid of cells, each with a typed pitch and a cycling chord button, ' +
-      'walked by a cursor. The faders around it are params; the grid is the module.',
+    disposition: 'generic-face',
+    // ⚠ THE OLD `why` WAS RIGHT AND IS WORTH QUOTING RATHER THAN JUST DELETING:
+    // *"the grid is the module."* This entry read `bespoke-surface` on that
+    // basis, and the first attempt at the face tried to overturn it by ranking
+    // sixteen pads as forty-eight generic band cells. That is not expressible
+    // (see CartesianPadGrid.svelte), so the grid became a PF-14 panel — one
+    // picture-you-edit inside the generic face, kria's shape — which is a
+    // GENERIC face carrying a bespoke cell, not a bespoke surface. The sentence
+    // was correct about the module and wrong only about which rung of the
+    // ladder that implies.
+    note:
+      'the 4×4 pad grid is a PF-14 PANEL (`cart-pitch-{n}` -> CartesianPadGrid), promoted to ' +
+      'face.hero.cell so PF-22 keeps it off the lane roster; the five faders are ordinary param ' +
+      'cells. First adopter of the #1509 TextEntry primitive.',
   },
   {
     type: 'chromaconsole',
@@ -770,7 +766,6 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
   {
     type: 'controlSurface',
     disposition: 'bespoke-surface',
-    blockers: ['needs-note-entry-cell'],
     why:
       'a free-form CONTROL SURFACE: knob boxes dragged into place per source module, renameable in ' +
       'situ. Its content is other modules parameters, so it has no params of its own to rank.',
@@ -785,7 +780,6 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
   {
     type: 'electraControl',
     disposition: 'bespoke-surface',
-    blockers: ['needs-note-entry-cell'],
     why:
       'the Electra One HARDWARE MAPPER: a fixed row/knob slot matrix that other modules params ' +
       'are dropped into and renamed in place. No params of its own; the matrix is the interaction.',
@@ -876,7 +870,6 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
   {
     type: 'midiLane',
     disposition: 'bespoke-surface',
-    blockers: ['needs-note-entry-cell'],
     why:
       'a MIDI DEVICE BINDER with a typed note-number field for the gate tap: permission gesture, ' +
       'live device roster, channel/mode selection. No params, and the one numeric field is typed ' +
@@ -938,7 +931,6 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
   {
     type: 'painter',
     disposition: 'bespoke-surface',
-    blockers: ['needs-note-entry-cell'],
     why:
       'a DRAWING SURFACE: freehand strokes on a canvas plus a typed text stamp. Direct pointer ' +
       'painting is the module and it declares no params at all.',
@@ -946,7 +938,7 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
   {
     type: 'peertube',
     disposition: 'bespoke-surface',
-    blockers: ['needs-media-controller', 'needs-note-entry-cell'],
+    blockers: ['needs-media-controller'],
     why:
       'a fediverse SEARCH BROWSER: typed query plus an optional instance host, a result list, and ' +
       'a player whose <video> source is card-owned.',
@@ -1019,7 +1011,7 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
   {
     type: 'recorderbox',
     disposition: 'bespoke-surface',
-    blockers: ['needs-media-controller', 'needs-note-entry-cell'],
+    blockers: ['needs-media-controller'],
     why:
       'a RECORDER: arm/record/stop transport, quality selection, a typed filename, a take list and ' +
       'a save flow — and the capture canvas plus its per-frame encode loop live on the card, so ' +
@@ -1040,7 +1032,6 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
   {
     type: 'textmarquee',
     disposition: 'bespoke-surface',
-    blockers: ['needs-note-entry-cell'],
     why:
       'a RICH TEXT EDITOR: a contenteditable marquee with per-run colour and formatting. Typing ' +
       'the text IS the module, and it is beyond a short-text field.',
@@ -1048,7 +1039,7 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
   {
     type: 'toybox',
     disposition: 'bespoke-surface',
-    blockers: ['needs-media-controller', 'needs-note-entry-cell'],
+    blockers: ['needs-media-controller'],
     why:
       'a whole SUB-RACK in a card: a node menu, many source pickers and file imports, a named ' +
       'preset store, its own camera capture and an interactive canvas. It declares no params — ' +

@@ -89,7 +89,7 @@ const CARD_DIR = resolve(HERE, '../modules');
  */
 type FaceAnswer =
   | { via: 'param-cell'; kind: ParamCellKind; note?: string }
-  | { via: 'shell-cell'; kind: 'selector' | 'action' | 'file' | 'toggle' | 'panel'; note?: string }
+  | { via: 'shell-cell'; kind: 'selector' | 'action' | 'file' | 'toggle' | 'panel' | 'entry'; note?: string }
   | { via: 'glyph'; kind: NonNullable<ModuleFace['glyph']>; note?: string }
   | { via: 'ambient'; why: string }
   | { via: 'panel-only'; why: string }
@@ -186,12 +186,26 @@ const FACE_ANSWER: Readonly<Record<string, FaceAnswer>> = {
       'no lane rank, so it may rank FIRST.',
   },
   NoteEntry: {
-    via: 'none',
-    why:
-      'NO text-entry cell of any kind. `ShellCell` is selector | action | file | toggle | panel, ' +
-      'and none of them accepts typed input, so a sequencer step\'s pitch field ("c#3") has no ' +
-      'face representation. Its params are per-step `controlFamilies` cells rather than ' +
-      'ParamDefs, so a face would reach it through a panel — which is the same PF-22 rank floor.',
+    via: 'shell-cell',
+    kind: 'entry',
+    note:
+      'CLOSED BY #1509. This read `via: none` — "NO text-entry cell of any kind" — and was the ' +
+      'LAST gap in this table. `ShellEntryCell` is now a first-class kind: ModuleShell mounts it ' +
+      'as a writable <input> through the shared `TextEntry` primitive, and the module supplies a ' +
+      'parse/commit pair so a refused string writes nothing at all. ⚠ The generic CELL and this ' +
+      'note-specific COMPOSITE are different components on purpose — NoteEntry bundles a pitch ' +
+      'box with a gate button and grid navigation, which a faceplate cell has no business ' +
+      'carrying. cartesian, the first adopter, mounts NoteEntry on its CARD and TextEntry inside ' +
+      'its face grid PANEL.',
+  },
+  TextEntry: {
+    via: 'shell-cell',
+    kind: 'entry',
+    note:
+      'The primitive the #1509 cell mounts, so it IS the face answer rather than merely having ' +
+      'one. Listed because this roster is anchored to the $lib/ui/controls directory: a ' +
+      'primitive added there with no entry is RED, which is what stopped this file quietly ' +
+      'ceasing to describe the tree when the directory grew.',
   },
 };
 
@@ -518,9 +532,16 @@ describe('card ↔ face PRIMITIVE PARITY — CONTROLS on the predicate', () => {
 describe('card ↔ face PRIMITIVE PARITY — stated scope', () => {
   it('it reads COMPONENT tags only — raw HTML affordances are out of scope', () => {
     // A card's `<select>` / `<input type="file">` / `<input type="text">` are
-    // invisible here. The first two have face answers (ShellSelectorCell /
-    // ShellFileCell) and are registered per module in shell-cells.ts; the THIRD
-    // does not, and shares NoteEntry's gap. Asserted rather than claimed:
+    // invisible here — this gate reads COMPONENT tags, and raw HTML has none.
+    // ⚠ ALL THREE NOW HAVE FACE ANSWERS, registered per module in
+    // shell-cells.ts: `ShellSelectorCell`, `ShellFileCell` and — since #1509 —
+    // `ShellEntryCell`. This comment used to say the third "does not, and
+    // shares NoteEntry's gap", which was true when written and is the kind of
+    // scoping claim that goes quietly stale: it produces no failure, only a
+    // reader who defers. The SCOPE below is unchanged and still correct — a raw
+    // `<input>` is invisible to this gate whatever the face can express — and
+    // `face-migration-inventory`'s typed-entry leg is what reads raw markup.
+    // Asserted rather than claimed:
     const raw = `<select><option>a</option></select><input type="text" />`;
     expect(Object.keys(FACE_ANSWER).filter((p) => boundParams(raw, p).length)).toEqual([]);
   });
@@ -562,6 +583,38 @@ describe('card ↔ face PRIMITIVE PARITY — stated scope', () => {
     // param to a gap primitive, the platform still owes that module a cell kind,
     // whether or not the module also hand-built a panel. Making the panel
     // silence the gate would re-open the hole one indirection down.
-    expect(FACE_ANSWER.NoteEntry!.via).toBe('none');
+    //
+    // ⚠ THIS LEG USED TO ASSERT `FACE_ANSWER.NoteEntry.via === 'none'`, AND
+    // #1509 DELETED ITS SUBJECT. NoteEntry was the last `via: 'none'` row, so
+    // that assertion is now false — and the rule it was protecting is NOT. The
+    // rule is "a hand-built panel does not excuse a missing cell kind"; the
+    // NoteEntry row was merely the example that happened to be live.
+    //
+    // ⚠ AND THE REPLACEMENT IS DELIBERATELY NOT A NEW GAP. The tempting fix is
+    // to find another primitive to mark `'none'` so the row exists again; that
+    // would be manufacturing a defect to keep a test's subject alive. The table
+    // reaching ZERO gaps is the correct end state. What keeps this leg honest
+    // instead is the pair of PERMANENT NEGATIVE CONTROLS this file already
+    // carries — `GAPPED` and `patched`, each forcing a real primitive back to
+    // `'none'` over a synthetic table — so the `'none'` machinery is still
+    // exercised on every run without any module being broken to do it.
+    expect(
+      Object.entries(FACE_ANSWER).filter(([, a]) => a.via === 'none'),
+      'no primitive is left without a face answer — and if one ever is, it must be a REAL gap, ' +
+        'never one invented to give this leg a subject',
+    ).toEqual([]);
+    // The rule itself, driven over a synthetic table so it does not depend on
+    // which primitives happen to be gapped today: a panel-backed answer and a
+    // gap are different verdicts, and the gap still reports.
+    const synthetic: Record<string, FaceAnswer> = {
+      Knob: { via: 'param-cell', kind: 'knob' },
+      NoteEntry: { via: 'none', why: 'synthetic gap for this control' },
+    };
+    const def = { type: 'synthetic', face: { order: ['pitch'] }, params: [{ id: 'pitch' }] };
+    expect(
+      downgradesIn(def as never, 'SyntheticCard.svelte', '<NoteEntry paramId="pitch" />', synthetic)
+        .map((o) => o.primitive),
+      'a gap primitive bound to a RANKED param still reports even though panels exist',
+    ).toEqual(['NoteEntry']);
   });
 });

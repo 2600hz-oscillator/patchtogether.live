@@ -38,6 +38,7 @@ import {
   typesWithShellCells,
   type ShellActionCell,
   type ShellActionProbe,
+  type ShellEntryCell,
   type ShellPanelProbe,
 } from './shell-cells';
 
@@ -501,5 +502,52 @@ describe('shell cells — NO ORPHANS (a renamed face key cannot leave a dead hoo
       }
     }
     expect(orphans.join('\n'), 'orphaned shell-cell spec(s) — fix the key or delete the hook').toBe('');
+  });
+});
+
+// ── ENTRY CELLS (#1509) ─────────────────────────────────────────────────────
+//
+// ⚠ THE PROBE'S TWO STRINGS ARE CHECKED HERE, IN THE PURE LANE, BEFORE ANY E2E.
+// `ShellEntryProbe` declares an `accepts` and a `rejects` string per cell,
+// because only the module knows what its own domain excludes. Those strings are
+// the entire negative leg of the faces-parity drive — and a probe whose strings
+// are the wrong way round, or whose `rejects` is quietly legal, would make that
+// leg pass while proving nothing. Running the module's OWN `parse` over its own
+// declared strings costs microseconds and fails in milliseconds instead of 25
+// minutes later on a CI shard.
+describe('shell-cells — an ENTRY cell probe: its strings really are accepted and refused', () => {
+  const entries: [string, string, ShellEntryCell][] = [];
+  for (const type of typesWithShellCells()) {
+    for (const key of shellCellKeys(type)) {
+      const cell = shellCellFor(type, { key, kind: 'family', label: key } as never);
+      if (cell?.kind === 'entry') entries.push([type, key, cell as ShellEntryCell]);
+    }
+  }
+
+  it('every declared `accepts` string PARSES', () => {
+    const bad = entries
+      .filter(([, , c]) => !c.parse(c.probe.accepts).ok)
+      .map(([t, k, c]) => `${t}:${k} — accepts '${c.probe.accepts}' is REFUSED by its own parse`);
+    expect(bad, 'the positive leg of the faces-parity drive would fail on a live cell').toEqual([]);
+  });
+
+  it('every declared `rejects` string is REFUSED', () => {
+    const bad = entries
+      .filter(([, , c]) => c.parse(c.probe.rejects).ok)
+      .map(([t, k, c]) => `${t}:${k} — rejects '${c.probe.rejects}' is ACCEPTED by its own parse`);
+    expect(
+      bad,
+      'the no-silent-clamp leg would be VACUOUS: the sweep would type a legal string and ' +
+        'assert nothing changed, which is a gate that cannot fail on the defect it names',
+    ).toEqual([]);
+  });
+
+  it('SCOPE: this checks the DECLARED strings, not that the domain is right', () => {
+    // Stated inside the gate. A module could declare a needlessly narrow domain
+    // and this would happily agree with it — what is checked is that the probe
+    // and the parser AGREE, which is what makes the e2e's negative leg real.
+    // Whether the domain matches the module's contract is the module's own
+    // model test (cartesian: note-entry.test.ts pins c0..c8).
+    expect(entries.every(([, , c]) => typeof c.parse === 'function')).toBe(true);
   });
 });
