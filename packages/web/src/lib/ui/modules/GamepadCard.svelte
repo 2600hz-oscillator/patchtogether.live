@@ -1,6 +1,9 @@
 <script lang="ts">
   // GamepadCard — display the live state of a connected gamepad
-  // alongside the 18 patchable CV/gate outputs.
+  // alongside its patchable CV/gate outputs (derived from GAMEPAD_OUTPUTS, so
+  // the jacks follow the def; the AUX stick's ax/ay appear here automatically,
+  // though this legacy surface has no aux REMAP buttons — the faceplate's
+  // mapping board is where the aux stick is bound).
   //
   // Browser security: Gamepad API exposes the controller only after
   // the user has pressed a button on it. Until then,
@@ -90,9 +93,15 @@
   // ---------------- control REMAP (arm → detect → bind) ----------------
   // The Gamepad API has no events, so an armed "learn" listener must DIFF
   // consecutive polled snapshots (gamepad.ts detectChangedControl) and pick the
-  // single control the user moved/pressed. Two entry points share this FSM:
+  // single control the user moved/pressed. Two entry points share this FSM, and
+  // they now share ONE GESTURE — right-click arms, alt-click resets:
   //   * right-click a button LED / trigger row → arm `only:'button'`,
-  //   * the "Remap X" / "Remap Y" buttons under a stick → arm `only:'axis'`.
+  //   * right-click (or plain click) an X / Y button under a stick → `only:'axis'`.
+  // ⚠ The axis buttons used to be the INVERSE of the other two — they armed on
+  // left-click and RESET on right-click. Right-clicking the axis you wanted to
+  // bind therefore cleared its binding and armed nothing, so the control you then
+  // moved was measured against a listener that was never listening. That is the
+  // whole of the "the twist axis cannot be assigned" report.
   // The committed binding lives on node.data.bindings (single in-place Y.Doc
   // write); the factory reads it each frame so a remap takes effect immediately
   // + survives reload + syncs to rack-mates. Esc or a timeout cancels.
@@ -118,6 +127,12 @@
     const b = bindingForOutput(outputId, bindings);
     return b ? describeControl(b) : '';
   }
+
+  /** Captions for the four stick-axis remap buttons, so the right-click (arm)
+   *  handler names the same output its left-click twin does. */
+  const REMAP_AXIS_LABEL: Record<string, string> = {
+    lx: 'L-X', ly: 'L-Y', rx: 'R-X', ry: 'R-Y',
+  };
 
   function armRemap(outputId: string, only: 'axis' | 'button', label: string) {
     cancelRemap();
@@ -500,9 +515,9 @@
               class="remap-btn"
               class:armed={remap?.outputId === 'lx'}
               class:bound={isRemapped('lx')}
-              onclick={() => armRemap('lx', 'axis', 'L-X')}
-              title={isRemapped('lx') ? `L-X ← ${bindingLabel('lx')} (right-click to reset)` : 'remap left-stick X axis'}
-              oncontextmenu={(e) => { e.preventDefault(); clearRemap('lx'); }}
+              onclick={(e) => { if (e.altKey) clearRemap('lx'); else armRemap('lx', 'axis', 'L-X'); }}
+              title={isRemapped('lx') ? `L-X ← ${bindingLabel('lx')} (alt-click to reset)` : 'right-click (or click) to remap left-stick X axis'}
+              oncontextmenu={(e) => { e.preventDefault(); armRemap('lx', 'axis', REMAP_AXIS_LABEL['lx']); }}
               data-testid="gamepad-remap-lx"
             >X</button>
             <button
@@ -510,9 +525,9 @@
               class="remap-btn"
               class:armed={remap?.outputId === 'ly'}
               class:bound={isRemapped('ly')}
-              onclick={() => armRemap('ly', 'axis', 'L-Y')}
-              title={isRemapped('ly') ? `L-Y ← ${bindingLabel('ly')} (right-click to reset)` : 'remap left-stick Y axis'}
-              oncontextmenu={(e) => { e.preventDefault(); clearRemap('ly'); }}
+              onclick={(e) => { if (e.altKey) clearRemap('ly'); else armRemap('ly', 'axis', 'L-Y'); }}
+              title={isRemapped('ly') ? `L-Y ← ${bindingLabel('ly')} (alt-click to reset)` : 'right-click (or click) to remap left-stick Y axis'}
+              oncontextmenu={(e) => { e.preventDefault(); armRemap('ly', 'axis', REMAP_AXIS_LABEL['ly']); }}
               data-testid="gamepad-remap-ly"
             >Y</button>
           </div>
@@ -566,9 +581,9 @@
               class="remap-btn"
               class:armed={remap?.outputId === 'rx'}
               class:bound={isRemapped('rx')}
-              onclick={() => armRemap('rx', 'axis', 'R-X')}
-              title={isRemapped('rx') ? `R-X ← ${bindingLabel('rx')} (right-click to reset)` : 'remap right-stick X axis'}
-              oncontextmenu={(e) => { e.preventDefault(); clearRemap('rx'); }}
+              onclick={(e) => { if (e.altKey) clearRemap('rx'); else armRemap('rx', 'axis', 'R-X'); }}
+              title={isRemapped('rx') ? `R-X ← ${bindingLabel('rx')} (alt-click to reset)` : 'right-click (or click) to remap right-stick X axis'}
+              oncontextmenu={(e) => { e.preventDefault(); armRemap('rx', 'axis', REMAP_AXIS_LABEL['rx']); }}
               data-testid="gamepad-remap-rx"
             >X</button>
             <button
@@ -576,9 +591,9 @@
               class="remap-btn"
               class:armed={remap?.outputId === 'ry'}
               class:bound={isRemapped('ry')}
-              onclick={() => armRemap('ry', 'axis', 'R-Y')}
-              title={isRemapped('ry') ? `R-Y ← ${bindingLabel('ry')} (right-click to reset)` : 'remap right-stick Y axis'}
-              oncontextmenu={(e) => { e.preventDefault(); clearRemap('ry'); }}
+              onclick={(e) => { if (e.altKey) clearRemap('ry'); else armRemap('ry', 'axis', 'R-Y'); }}
+              title={isRemapped('ry') ? `R-Y ← ${bindingLabel('ry')} (alt-click to reset)` : 'right-click (or click) to remap right-stick Y axis'}
+              oncontextmenu={(e) => { e.preventDefault(); armRemap('ry', 'axis', REMAP_AXIS_LABEL['ry']); }}
               data-testid="gamepad-remap-ry"
             >Y</button>
           </div>

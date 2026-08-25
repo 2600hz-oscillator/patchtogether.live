@@ -53,7 +53,16 @@
 // in-lane top-N curation is covered by workflow-shell-faces. Runs on
 // /rack?shell=legacy (no DB/relay) — the normal e2e lane.
 
-import { test, expect, type Locator, type Page } from '@playwright/test';
+import type { Locator, Page } from '@playwright/test';
+// ⚠ `test` COMES FROM THE SHARED RACK SESSION, NOT FROM `@playwright/test`.
+// It is `base.extend(...)`, so every built-in fixture is unchanged — the
+// one-off regression describes further down keep destructuring `{ page }` and
+// keep getting an ordinary per-test page. What it ADDS is `rack`, the
+// worker-scoped booted rack the per-module rows use so the sweep pays one
+// `/rack` boot per worker instead of one per face. See support/rack-session.ts
+// for the measurement and, more importantly, for the four things the discarded
+// page used to reset that now have to be reset explicitly.
+import { FACEPLATE_RACK_URL, test, expect, type RackSession } from './rack-session';
 import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { idsCoveredBy, paramsCoveredByCell } from './cell-coverage';
@@ -1722,15 +1731,41 @@ interface FaceRowScope {
  * ⚠ THE SPLIT IS SIZED, NOT ARBITRARY. See FACE_CELL_CHUNK_CAP for why the
  * operability walk is chunked at all and how the cap was derived.
  */
-async function runFaceParityRow(page: Page, type: string, scope: FaceRowScope): Promise<void> {
+async function runFaceParityRow(rack: RackSession, type: string, scope: FaceRowScope): Promise<void> {
       // Stage 1 of the derived budget (see FACE_FIXED_MS): covers boot + spawn
       // + dock open + the parity reads, i.e. everything before the cell count
       // is even knowable.
       test.setTimeout(FACE_FIXED_MS);
-      // The type is passed so a face that DECLARES a quiesce gets it installed
-      // before boot. The sweep names no module: it hands over the type it is
-      // already iterating and the roster decides (deny-by-default).
-      await gotoShell(page, type);
+      // ── THE ROW NO LONGER BOOTS; IT RESETS ────────────────────────────────
+      //
+      // `gotoShell(page, type)` used to install this face's quiesce as an
+      // `addInitScript` and then navigate. The navigation was ~70-85 % of a
+      // median row (support/rack-session.ts carries the measurement), and it
+      // is the ONLY thing being removed: the quiesce still lands before the
+      // module is constructed, because construction happens in `spawnPatch`
+      // below and the reset runs before it.
+      //
+      // ⚠ THE QUIESCE IS STILL VERIFIED TO HAVE LANDED, and that check is
+      // strictly more meaningful here than it was before. `gotoShell`'s
+      // version read back the same name it had just written, which its own
+      // comment admits is a tautology over the NAME. This one is a tautology
+      // over the name too — but it now also proves the global survived the
+      // PREVIOUS row, which is exactly the new failure mode a shared page
+      // introduces and the old shape could not have.
+      const quiesce = FACE_QUIESCE[type];
+      const page = rack.page;
+      await rack.reset({ quiesce });
+      if (quiesce) {
+        const landed = await page.evaluate(
+          (g) => (globalThis as unknown as Record<string, unknown>)[g],
+          quiesce.global,
+        );
+        expect(
+          landed,
+          `${type}: the declared quiesce ${quiesce.global} did not reach the page — `
+            + 'the row is running UNQUIESCED and its budget no longer means what it says',
+        ).toBe(quiesce.value);
+      }
       await spawnPatch(page, [{ id: 'm', type, position: { x: 460, y: 240 } }]);
 
       const spec = await readSpec(page, type);
@@ -1977,6 +2012,21 @@ async function runFaceParityRow(page: Page, type: string, scope: FaceRowScope): 
 
 /** Register ONE partition's per-module parity rows. */
 export function registerFacesParityTests(partition: number, partitions: number = FACES_PARITY_PARTITIONS): void {
+  // ⚠ THE FACEPLATE RENDERER, NOT `?shell=legacy`. This sweep asserts on
+  // `[data-testid="module-shell"]`, which only the DEFAULT renderer paints —
+  // the legacy one renders each module's verbatim *Card.svelte instead. The
+  // shared session defaults to the legacy rack because the per-port sweeps
+  // want it, so this suite has to say so. Hard-coding the legacy URL in the
+  // session failed 51 of 58 rows here with `element(s) not found`.
+  //
+  // ⚠ IT LIVES HERE, NOT IN THE FOUR PARTITION FILES, AND NOT IN THE DESCRIBE.
+  // `rackUrl` is WORKER-scoped, and Playwright refuses `test.use()` for a
+  // worker option inside a describe ("it forces a new worker"). It must run at
+  // FILE scope — which this function does, because each partition file calls it
+  // at its top level. Putting it here instead of in all four files keeps the
+  // partition files what their headers promise: a declaration of which
+  // partition they are, and nothing else.
+  test.use({ rackUrl: FACEPLATE_RACK_URL });
   test.describe(`faces render-parity (partition ${partition + 1}/${partitions}): every STRICT_FACES dock full-view carries the def's FULL control surface`, () => {
   for (const type of facesParityTypesFor(partition, partitions)) {
     const chunks = faceCellChunkCount(type);
@@ -1984,20 +2034,20 @@ export function registerFacesParityTests(partition: number, partitions: number =
       // AT OR UNDER THE CAP: one row, both halves — byte-identical to the shape
       // this sweep had before chunking, including its title. Most of the fleet
       // takes this path, so chunking costs those faces nothing at all.
-      test(`${type}: dock control set === def param set (+families, no extras) and EVERY cell operates`, async ({ page }) => {
-        await runFaceParityRow(page, type, { setParity: true, chunk: { index: 0, count: 1 } });
+      test(`${type}: dock control set === def param set (+families, no extras) and EVERY cell operates`, async ({ rack }) => {
+        await runFaceParityRow(rack, type, { setParity: true, chunk: { index: 0, count: 1 } });
       });
       continue;
     }
     // OVER THE CAP: the set properties stay whole on their own row, and the
     // per-cell walk splits. The chunk indices are computed here at COLLECTION
     // time from the registry — no module is named and no count is typed.
-    test(`${type}: dock control set === def param set (+families, no extras)`, async ({ page }) => {
-      await runFaceParityRow(page, type, { setParity: true, chunk: null });
+    test(`${type}: dock control set === def param set (+families, no extras)`, async ({ rack }) => {
+      await runFaceParityRow(rack, type, { setParity: true, chunk: null });
     });
     for (let index = 0; index < chunks; index++) {
-      test(`${type}: EVERY cell operates (chunk ${index + 1}/${chunks})`, async ({ page }) => {
-        await runFaceParityRow(page, type, { setParity: false, chunk: { index, count: chunks } });
+      test(`${type}: EVERY cell operates (chunk ${index + 1}/${chunks})`, async ({ rack }) => {
+        await runFaceParityRow(rack, type, { setParity: false, chunk: { index, count: chunks } });
       });
     }
   }

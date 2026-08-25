@@ -21,6 +21,7 @@
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { ModuleNode } from '$lib/graph/types';
+import type { VstPluginKind } from '$lib/audio/vst/vst-protocol';
 import {
   acquireVstBridge,
   releaseVstBridge,
@@ -53,6 +54,44 @@ export const VST_VEL = 5;
 const NUM_INPUTS = 6;
 
 export type VstCardMode = 'fx' | 'instrument';
+
+/**
+ * WHICH PLUGIN KINDS EACH CARD LISTS, and WHETHER ITS TRANSPORT SENDS AUDIO
+ * PLANES — declared ONCE, here, because THREE surfaces now need them and two of
+ * them are not the card.
+ *
+ * ⚠ THIS IS THE BACKDRAFT ONE-SOURCE RULE APPLIED TO A ROSTER. Before the face
+ * promotion both literals lived only in the two `*Card.svelte` files, which was
+ * defensible while the card was the only reader. It is not defensible now: the
+ * faceplate's `fullViewBody` lists the same plugins and its CONNECT cell opens
+ * the same transport, so a re-typed `kinds` array would let the card and the
+ * face disagree about which of the user's plugins exist — with every def-reading
+ * gate blind, since none of this is a `ParamDef`. `sendPlanes` is worse than
+ * cosmetic if it drifts: an instrument card that sent audio planes would push
+ * silence into a synth's input bus every quantum.
+ *
+ * Keyed by MODULE TYPE rather than by `VstCardMode` because the two consumers
+ * that are not the card (the shell-cell actions and the extension body) are
+ * handed a `nodeId` and can resolve a type, but have no mode in hand.
+ */
+export const VST_INSTRUMENT_PLUGIN_KINDS = ['instrument', 'generator', 'musicEffect'] as const;
+export const VST_FX_PLUGIN_KINDS = ['effect', 'musicEffect'] as const;
+
+/** The plugin kinds a given VST card's picker lists. Unknown type ⇒ empty, so a
+ *  caller that resolves the wrong node shows NO plugins rather than the wrong
+ *  ones. */
+export function vstPluginKindsForType(type: string | undefined): readonly VstPluginKind[] {
+  if (type === 'vstInstrument') return VST_INSTRUMENT_PLUGIN_KINDS;
+  if (type === 'vstFx') return VST_FX_PLUGIN_KINDS;
+  return [];
+}
+
+/** Does this card's transport carry audio planes (fx insert) or mask-0 clock
+ *  blocks (instrument)? The value `hello` is opened with — see `createVstHandle`,
+ *  which derives the same answer from its `mode` argument. */
+export function vstSendPlanesForType(type: string | undefined): boolean {
+  return type === 'vstFx';
+}
 
 /**
  * Build the engine handle for either VST card. `mode` picks which def ports

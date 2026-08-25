@@ -4903,6 +4903,44 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // pane used to discard the log and the error you were reading.
   'clockedRunner',
   'livecode',
+  // ── THE VST BRIDGE PAIR — promoted TOGETHER, because their control plane is
+  //    literally one component ────────────────────────────────────────────────
+  //
+  // `VstInstrumentCard` and `VstFxCard` are both a `PatchPanel` wrapped around
+  // the SAME `VstBridgePanel`, differing only in their port sets and in which
+  // plugin kinds the picker lists. Splitting them would have meant two PRs
+  // authoring one surface twice.
+  //
+  // ⚠ THE INVENTORY `why` WAS THE MOST ACCURATE IN THIS WHOLE MIGRATION, AND
+  // STILL HAD TWO FALSE CLAUSES — which is worth recording precisely because the
+  // preceding ten were wrong in bulk and this one is not. "Zero params — the
+  // surface IS the bridge control plane" is exactly right, and it is the reason
+  // these faces are two cells rather than es9's twenty-four. What it got wrong:
+  //
+  //   * "plugin picker with text filter (THE TYPED ENTRY)" — the filter is NOT
+  //     a `ShellEntryCell`. That cell's probe requires a `node.data` observable,
+  //     and `node.data` rides the Y.Doc: persisting a search box would sync one
+  //     player's keystrokes to every collaborator and dirty the patch. It is a
+  //     private view setting and belongs beside the picker it narrows.
+  //   * "nothing to rank into a generic face" — false. CONNECT and DISCONNECT
+  //     are unconditional gestures with an audition-ledger observable, and they
+  //     rank exactly as es9's do. Ranking them is what puts them on the LANE
+  //     TILE, where the extension body cannot go.
+  //
+  // ⚠ AND THE CARD-ONLY SIDE-EFFECT AUDIT CAME BACK CLEAN, which is NOT what
+  // the es9 promotion found one commit earlier and is the reason it was run.
+  // es9's `updateEs9Config` — the per-jack underrun policy — reached the native
+  // app from exactly ONE call site on a card the default shell no longer mounts.
+  // Neither VST module is in `DOM_SOURCE_LANE_TYPES` or
+  // `CARD_PRODUCER_LANE_TYPES`, so promotion genuinely does delete their cards
+  // from both surfaces — but every push that must survive that already runs from
+  // the ENGINE FACTORY: `acquireVstBridge` (the socket and its hello),
+  // the `rings`/`mode` postMessage, the live-state relay, `detach` on dispose,
+  // and the whole `VstPersistenceDriver` (auto-remount and setState) are all
+  // constructed in `createVstHandle`. The only card-only sends are the GESTURES,
+  // and those are what this promotion turns into cells and a body.
+  'vstFx',
+  'vstInstrument',
 ]);
 
 /**
