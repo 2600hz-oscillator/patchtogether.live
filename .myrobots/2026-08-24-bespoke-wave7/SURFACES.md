@@ -1146,3 +1146,42 @@ errors, not only page errors. **Whether Playwright surfaces the worker's failed-
 WebSocket console error decides whether `es9`'s drain is 3 files or 2.** Nothing on
 `main` answers it: neither `es9` e2e spec requests `errorWatch`. Recorded as a
 measurement to take, not a guess to carry.
+
+#### ✅ TAKEN, 2026-08-24 — **the answer is NO: the `es9` card row PASSES, console-error assertion included.**
+
+Recorded here with its METHOD so the next reader can re-run it rather than believe it.
+
+1. `task vrt:one -- es9` with the exemption in place → **"No tests found"**. An exempt
+   module generates no row at all, so the naive run answers nothing. That is the first
+   trap and it looks like a result.
+2. Temporarily removed the `es9:` key from `EXEMPT_FROM_VRT` → the row generates.
+3. First run FAILED on *"A snapshot doesn't exist … writing actual"* — the expected
+   first-capture behaviour.
+4. ⚠ **THAT FIRST RESULT WAS INCONCLUSIVE AND WAS VERY NEARLY REPORTED AS THE ANSWER.**
+   The console-error assertion is `vrt.spec.ts:188`
+   (`expect(errors, '<mod>: no console / page errors').toEqual([])`), which sits **after**
+   the screenshot call — so a run that dies AT the screenshot never reaches it.
+   *"No console-error failure appeared"* and *"no console errors occurred"* are different
+   facts, and only the second one is the question. This is CLAUDE.md's
+   validate-the-instrument shape: the gate was never executed, and its silence read
+   exactly like a pass.
+5. Second run, with the snapshot now present: **1 passed.** It got past the screenshot,
+   reached `:188`, and `errors` was empty.
+
+The exemption was then restored byte-for-byte, the macOS `es9.png` that run wrote was
+deleted, and `test-results` cleared — tree verified clean.
+
+**Two honest limits, recorded with the verdict rather than after it:**
+
+* This is a **local macOS run**. The WebSocket retry is not renderer-dependent, so it
+  should hold on linux, but the definitive answer is a CI run. Say that rather than
+  promising it.
+* The passing run took **1.6 s**. A connection-refused on localhost errors immediately,
+  so the window is adequate — it is not unlimited, and a slower failure mode (a DNS
+  timeout, a proxy) would not be covered by this measurement.
+
+**What it means for the drain:** `es9`'s exemption text already reads *"VRT baseline
+pending … card is static chrome. Promote + capture baselines in a follow-up PR"* — a
+DEFERRAL, not a structural refusal — and this removes the one live objection to acting
+on it. **`es9`'s drain is the SMALLER number, not the larger one.** It is not done here:
+that is `es9`'s own promotion work.

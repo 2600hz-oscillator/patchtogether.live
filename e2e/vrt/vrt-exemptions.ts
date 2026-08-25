@@ -664,27 +664,39 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // surfaces mount ModuleShell"). vrt.spec.ts boots `/rack?shell=legacy&seed=none`
   // and `laneRenderKind` returns 'legacy' whenever `shellFaces` is false,
   // regardless of STRICT_FACES membership — so this scene has a subject.
-  // LAUNCHPAD CONTROL LEFT / RIGHT — meta control-surface cards that bind a
-  // physical Novation Launchpad pair to a clip-player. Like CONTROL SURFACE /
-  // ELECTRA, the card body is DEVICE-dependent (Pair / Bind state + a status
-  // line that varies with whether MIDI access + a paired pair exist — all
-  // absent in CI). The deterministic solo-spawn state is just the blurb + a
-  // "Pair Launchpads" button + a colour legend (no module-specific pixels worth
-  // pinning beyond the legend, which is itself driven by the live map constants
-  // exercised in the unit suite). Coverage: launchpad-sysex.test.ts (codec
-  // golden vectors), launchpad-map.test.ts (placement + RGB colour language),
-  // launchpad-control.test.ts (binding mode-machine), and the real-source-chain
-  // e2e launchpad-clip-launch.spec.ts (TIMELORDE → clipplayer → simulated pad →
-  // audible RMS). Same treatment as controlSurface (fully exempt).
+  // ⚠ `launchpadControlLeft` WAS HERE AND IS DRAINED — the third drain in this
+  // block, after `cvBuddy` and `midiclock`, and the argument is midiclock's
+  // applied structurally rather than by analogy.
   //
-  // ⚠ THIS LINE USED TO SAY "controlSurface/matrixMix" AND matrixMix IS DRAINED.
-  // Corrected here rather than left to read as company: matrixMix's exemption
-  // rested on a solo spawn having no stable pixels, which stopped being true;
-  // THIS one rests on the body being DEVICE-dependent — a Pair/Bind state and a
-  // status line that require hardware CI does not have. Those are different
-  // arguments and only one of them was overturned.
-  launchpadControlLeft: 'meta control-surface card (consolidated launchpad-control pair); body is device/binding-dependent (Pair/Bind state + status absent in CI), like controlSurface/electraControl. Covered by launchpad-sysex/map/control unit suites + the real-source-chain launchpad-clip-launch e2e (pad → audible RMS).',
-  push2Control: 'meta control-surface card (Ableton Push 2); body is device/binding-dependent (Connect/Bind state + view segment absent in CI) AND the push-card preview canvas renders whatever module happens to be in lane 1, so the card face is patch-dependent — like launchpadControlLeft/electraControl. Covered by push2-sysex/map/control/lane/schema/model/layout/paint unit suites + the real-source-chain push2-clip-launch e2e (sim pad → audible RMS + lane select → the push card + a display encoder → that card param + master encoder → MixMasters + D-Pad nav).',
+  // Its entry read: "body is device/binding-dependent (Pair/Bind state + status
+  // absent in CI)". Both halves of that were checked and BOTH failed:
+  //
+  //   * "the deterministic solo-spawn state is just the blurb + a Pair button +
+  //     A COLOUR LEGEND" — `grep -n "legend" LaunchpadControlCard.svelte`
+  //     returns NO MATCH. The legend moved to LaunchpadDocs.svelte when the
+  //     LEFT + RIGHT cards were consolidated, and the exemption's stated
+  //     evidence went with it. That is the SECOND stale clause in this one
+  //     comment block; the note below already corrected the first.
+  //   * "Pair/Bind state … absent in CI" describes the ONLY state the capture
+  //     can reach, which makes it the baseline rather than the obstacle.
+  //     `startPairing` / `startSingle` are the only callers of `connect()` and
+  //     this suite presses nothing, so `isPairBound()` and `isSingleBound()`
+  //     cannot become true without a gesture; `restoreLaunchpadDeployment()`
+  //     reads a `localStorage` that is empty in a fresh Playwright context; and
+  //     a solo spawn has no clipplayer, so the BIND button does not render. The
+  //     unreachability is STRUCTURAL, not lucky — there is no path to the
+  //     hardware-dependent state without a click the suite does not perform.
+  //
+  // ⚠ THE ONE GENUINE VARIABLE is `midiAvailable()` (`typeof
+  // navigator.requestMIDIAccess === 'function'`), which picks between the two
+  // top-level branches. It is a property of the browser BUILD, and the baseline
+  // is authored by one linux CI runner (`snapshotPathTemplate` has no
+  // `{platform}` segment), so it is a constant where it gates.
+  //
+  // Removed from BOTH lists (vrt-meta.test.ts asserts set equality in both
+  // directions, so a one-sided delete is red), which enrols the legacy card in
+  // vrt.spec.ts alongside the two face scenes promotion added.
+  push2Control: 'meta control-surface card (Ableton Push 2); body is device/binding-dependent (Connect/Bind state + view segment absent in CI) AND the push-card preview canvas renders whatever module happens to be in lane 1, so the card face is patch-dependent — like electraControl/controlSurface. Covered by push2-sysex/map/control/lane/schema/model/layout/paint unit suites + the real-source-chain push2-clip-launch e2e (sim pad → audible RMS + lane select → the push card + a display encoder → that card param + master encoder → MixMasters + D-Pad nav).',
   // CLOUDS first-slice PR (#166): VRT baseline pending; ART + unit + E2E
   // provide coverage. Promote into MODULES + capture baselines on both
   // platforms in a follow-up PR.
@@ -1200,7 +1212,14 @@ export const ALLOWED_PERMANENT_EXEMPT: ReadonlySet<string> = new Set([
   // note in EXEMPT_FROM_VRT for why the stated reason stopped being true.
   // ⚠ `macseq` + `writeseq` REMOVED with the five deprecated sequencers
   // (2026-08-24) — the same anchor applies: their defs no longer exist.
-  'cadillac', 'controlSurface', 'launchpadControlLeft',
+  // ⚠ `launchpadControlLeft` REMOVED 2026-08-24 — the THIRD drain, and the
+  // second in the MIDI-binder block. Its stated reason had gone stale twice
+  // over (a colour legend the card has not carried since the LEFT + RIGHT
+  // consolidation, and a device-dependent state that no capture can reach
+  // without a gesture this suite never performs). See the note it used to sit
+  // beside in EXEMPT_FROM_VRT. Anchored in both directions, so leaving the name
+  // here while the module is baselined would be RED.
+  'cadillac', 'controlSurface',
   'push2Control', 'clouds',
   'rings', 'marbles', 'attenumix', 'sidecar',
   'cloudseed', 'livecode', 'clockedRunner', 'midiCvBuddy',

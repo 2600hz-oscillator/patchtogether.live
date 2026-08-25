@@ -1087,9 +1087,34 @@ export function restoreLaunchpadSingle(): boolean {
   return true;
 }
 
-/** Restore the persisted deployment + view (call once on load, before binding,
- *  so a re-load resumes single mode in the right view). Pair is the default. */
+/**
+ * Restore the persisted deployment + view (call on load, so a re-load resumes
+ * single mode in the right view). Pair is the default.
+ *
+ * ⚠ IT REFUSES TO RUN OVER A LIVE BINDING, AND THAT GUARD IS A BUG FIX RATHER
+ * THAN A PRECAUTION. The doc used to say "call once on load, BEFORE binding"
+ * and left the precondition to the caller — which was fine while the only
+ * caller was a card mounted at rack load, and stopped being fine the moment a
+ * caller could mount later. Both surfaces can:
+ *
+ *   * the LEGACY CARD is destroyed and re-created by a dock COLLAPSE / LRU
+ *     evict (#1531 / #1574 / #1583, the node-lifetime class), and
+ *   * the FACEPLATE's binder body mounts when the DOCK IS OPENED, which is
+ *     routinely after a handshake.
+ *
+ * In either case an unguarded restore reads a `localStorage` that the live
+ * session has not written yet and silently flips `deployment` back to 'pair'
+ * and `singleView` back to 'grid' — on a BOUND single unit, which re-routes
+ * every pad and repaints every LED. It is not merely a UI reset: `handleL`,
+ * `renderLeds` and the arp all branch on `deployment`.
+ *
+ * The persisted keys are only ever written by the gestures themselves
+ * (`persistDeployment`), and every gesture sets `deployment` directly, so
+ * skipping the restore while a unit is bound cannot lose anything: the live
+ * values ARE the restored ones, or newer.
+ */
 export function restoreLaunchpadDeployment(): void {
+  if (isUnitBound('L') || isUnitBound('R')) return;
   try {
     const d = localStorage.getItem(STORAGE_KEY_DEPLOYMENT);
     deployment = d === 'single' ? 'single' : 'pair';
