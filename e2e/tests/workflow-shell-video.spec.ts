@@ -1356,15 +1356,18 @@ test.describe('?shell=1 video CHAIN parity', () => {
     await gotoShell(page);
     await expect(videoOutLane(page)).toBeVisible({ timeout: 15_000 });
 
-    // ⚠ SUBJECT MOVED TWICE (LEG-02, #1511): `videobox` in P1, then
-    // `videovarispeed` in P2 — and the SECOND move is the cautionary one. P1
-    // re-pointed this test at videovarispeed; P2 converted videovarispeed, so
-    // the subject went stale again and this test went RED ON CI ("videovarispeed
-    // gets an off-screen lifecycle host"), caught by nothing local because the
-    // phase's own spec runs were scoped to the module's OWN specs. The lesson is
-    // mechanical: converting a module means re-running every spec that NAMES it,
-    // found by grep, not by filename. `tvLibrarian` is card-owned and unfaced,
-    // so it exercises the same arm; when IT converts, re-point again. This test's subject
+    // ⚠ SUBJECT MOVED THREE TIMES (LEG-02, #1511): `videobox` in P1,
+    // `videovarispeed` in P2, `tvLibrarian` after that — and the SECOND move is
+    // the cautionary one. P1 re-pointed this test at videovarispeed; P2
+    // converted videovarispeed, so the subject went stale again and this test
+    // went RED ON CI ("videovarispeed gets an off-screen lifecycle host"),
+    // caught by nothing local because the phase's own spec runs were scoped to
+    // the module's OWN specs. The lesson is mechanical: converting a module
+    // means re-running every spec that NAMES it, found by grep, not by filename.
+    // P3 converted BOTH tuners, so the subject is now `archivist` — card-owned,
+    // unfaced, and exercising the identical arm. When IT converts, re-point
+    // again; when the set empties, this test's subject is gone for good and the
+    // test goes with it. This test's subject
     // is "a module whose engine-visible source lives on its CARD gets an
     // off-screen host". VIDEOBOX IS NO LONGER SUCH A MODULE: its attach, audio
     // wiring and loops moved to `$lib/ui/media/node-video-source-registry` on
@@ -1376,24 +1379,24 @@ test.describe('?shell=1 video CHAIN parity', () => {
     // its REAL card alive off-screen" that asserts nothing of the kind. So the
     // subject is re-pointed at a module that still has the property, and
     // videobox's new behaviour is asserted separately below as its own claim.
-    // `videovarispeed` is unfaced and still card-owned, so it renders the same
+    // `archivist` is unfaced and still card-owned, so it renders the same
     // placeholder tile videobox used to and exercises the identical arm.
-    await injectPatch(page, [{ id: 'tv1', type: 'tvLibrarian', position: { x: -1200, y: 5100 } }]);
+    await injectPatch(page, [{ id: 'arc1', type: 'archivist', position: { x: -1200, y: 5100 } }]);
 
     // The LANE still shows the uniform tile (the shell look is preserved — this
     // fix is NOT "give every source module the legacy card back")…
     await expect(
-      page.locator(`.svelte-flow__node[data-id="tv1"] [data-testid="module-shell-placeholder"]`),
-      'tvLibrarian still renders the uniform RACKLINE tile in its lane',
+      page.locator(`.svelte-flow__node[data-id="arc1"] [data-testid="module-shell-placeholder"]`),
+      'archivist still renders the uniform RACKLINE tile in its lane',
     ).toHaveCount(1);
 
     // …while its REAL card is mounted in the off-screen lifecycle host, so its
     // source attach/detach still runs.
-    const host = page.locator('[data-testid="headless-source-host"][data-node-id="tv1"]');
-    await expect(host, 'tvLibrarian gets an off-screen lifecycle host').toHaveCount(1);
-    await expect(host, 'the host mounts the REAL tvLibrarian card').toHaveAttribute('data-node-type', 'tvLibrarian');
+    const host = page.locator('[data-testid="headless-source-host"][data-node-id="arc1"]');
+    await expect(host, 'archivist gets an off-screen lifecycle host').toHaveCount(1);
+    await expect(host, 'the host mounts the REAL archivist card').toHaveAttribute('data-node-type', 'archivist');
     await expect(
-      host.locator('[data-testid="tv-librarian-card"]'),
+      host.locator('[data-testid="archivist-card"]'),
       "the hosted card is the module's real card, not a stub",
     ).toHaveCount(1);
 
@@ -1405,7 +1408,20 @@ test.describe('?shell=1 video CHAIN parity', () => {
     // side and a future edit cannot give videobox a host back unnoticed.
     // Whether its SOURCE is actually live without one is
     // `node-source-videobox.spec.ts`'s job — this leg only owns the host.
-    for (const [nodeId, type] of [['vb1', 'videobox'], ['vv1', 'videovarispeed']] as const) {
+    //
+    // ⚠ THE CARD TESTID IS CARRIED PER ROW rather than derived from the type.
+    // It used to be `type.toLowerCase() + '-card'`, which happens to be right
+    // for videobox and videovarispeed and is WRONG for `tvLibrarian`
+    // (`tv-librarian-card`) — so P3's additions would have looked for a selector
+    // that matches nothing and the `toHaveCount(0)` leg would have passed
+    // vacuously, certifying exactly the state it exists to refuse.
+    const converted = [
+      ['vb1', 'videobox', 'videobox-card'],
+      ['vv1', 'videovarispeed', 'videovarispeed-card'],
+      ['pt1', 'peertube', 'peertube-card'],
+      ['tv1', 'tvLibrarian', 'tv-librarian-card'],
+    ] as const;
+    for (const [nodeId, type, cardTestId] of converted) {
       await injectPatch(page, [{ id: nodeId, type, position: { x: -1600, y: 5100 } }]);
       await expect(
         page.locator(`.svelte-flow__node[data-id="${nodeId}"] [data-testid="module-shell-placeholder"]`),
@@ -1416,7 +1432,7 @@ test.describe('?shell=1 video CHAIN parity', () => {
         `${type} got an off-screen host — its lifecycle is node-owned, so nothing should be keeping its card alive`,
       ).toHaveCount(0);
       await expect(
-        page.locator(`[data-testid="${type.toLowerCase()}-card"]`),
+        page.locator(`[data-testid="${cardTestId}"]`),
         `a ${type} card is mounted somewhere despite the module being converted`,
       ).toHaveCount(0);
     }
@@ -1432,7 +1448,7 @@ test.describe('?shell=1 video CHAIN parity', () => {
     // about videobox having changed. A per-node count states what it means and
     // cannot be moved by an unrelated module joining the set.
     await expect(
-      page.locator('[data-testid="headless-source-host"][data-node-id="tv1"]'),
+      page.locator('[data-testid="headless-source-host"][data-node-id="arc1"]'),
     ).toHaveCount(1);
 
     // ⚠ cameraInput IS HOSTED NOW, AND THIS ASSERTION USED TO SAY THE OPPOSITE.

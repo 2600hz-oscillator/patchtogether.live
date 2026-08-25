@@ -47,6 +47,7 @@ import {
   dockFullViewHeadPlan,
   faceMonitorPlan,
   isFaceplateView,
+  laneFlowLabel,
   type ShellDefLike,
   type ShellView,
 } from './module-shell-model';
@@ -896,6 +897,96 @@ describe('faceMonitorPlan — hide the controls, keep the picture', () => {
     // satisfy every implication above without doing anything. It must actually
     // fire — on the two faceplate hosts, and nowhere else.
     expect(sawHidden, 'the invariant must have had something to check').toBe(2);
+  });
+});
+
+describe('laneFlowLabel — the lane tile CRASHED on a key it did not own', () => {
+  // ⚠ THE REGRESSION THIS PINS IS A CRASH, NOT A WRONG STRING.
+  //
+  // `ModuleShellPlaceholder` typed `node.data` as `{ channel?: number }` and
+  // interpolated `data.channel` whenever it was `!= null`. `node.data` is an
+  // open `Record<string, unknown>` that every module owns its own shape of, so
+  // that cast was a CLAIM ABOUT A KEY rather than a fact about it — and
+  // `tvLibrarian` writes `data.channel` as a `TvChannelMeta` OBJECT. The
+  // template literal threw `Cannot convert object to primitive value` inside a
+  // `$derived`, which takes the whole xyflow node render down: a tvLibrarian
+  // that had ever been tuned had a BROKEN LANE TILE under the default shell, on
+  // a saved rack, before anything was touched.
+  //
+  // Surfaced as an unexpected `pageerror` by `e2e/tests/node-source-hls.spec.ts`
+  // — i.e. by a spec looking for something else entirely, which is the only
+  // reason it was found at all.
+
+  it('renders the MIXER-LANE badge for the numeric shapes it is actually for', () => {
+    expect(laneFlowLabel({ channel: 3 })).toBe('▶ ch3');
+    expect(laneFlowLabel({ sendSlot: 1 })).toBe('▶ s1');
+    // channel 0 is a real lane, and this leg exists so a "fix" that reached for
+    // truthiness instead of a type check is caught.
+    expect(laneFlowLabel({ channel: 0 })).toBe('▶ ch0');
+  });
+
+  /** The pre-fix derivation, verbatim. Kept as a callable POSITIVE CONTROL so
+   *  every claim below is measured against the real old code rather than
+   *  against a description of it. */
+  const preFix = (data: unknown): string => {
+    const d = data as { channel?: number; sendSlot?: number } | undefined;
+    if (d?.channel != null) return `▶ ch${d.channel}`;
+    if (d?.sendSlot != null) return `▶ s${d.sendSlot}`;
+    return '▶ out';
+  };
+
+  const TUNED_CHANNEL = {
+    nanoid: 'usa1',
+    name: 'Mock News USA',
+    streamUrl: 'https://x/y.m3u8',
+    country: 'us',
+    languages: ['eng'],
+  };
+
+  it('THE CRASH: an object with NO primitive conversion took the whole node down', () => {
+    // ⚠ WHY A NULL-PROTOTYPE OBJECT AND NOT A PLAIN ONE. In the browser
+    // `node.data.channel` is not the object the card assigned — assigning into
+    // the Y-backed `patch` proxy converts it to a Y.Map, and reading it back
+    // yields a PROXY with no usable `toString`/`valueOf`/`Symbol.toPrimitive`.
+    // Interpolating THAT is what threw `Cannot convert object to primitive
+    // value`. A plain object would have quietly produced garbage instead (see
+    // the next leg), so a fixture that used one would prove the milder half and
+    // miss the crash entirely.
+    const proxyLike = Object.assign(Object.create(null) as Record<string, unknown>, TUNED_CHANNEL);
+    expect(
+      () => preFix({ countryCode: 'US', channel: proxyLike }),
+      'the old derivation no longer throws — this test has stopped pinning anything',
+    ).toThrow(/convert object to primitive/i);
+    expect(laneFlowLabel({ countryCode: 'US', channel: proxyLike })).toBe('▶ out');
+  });
+
+  it('...and the MILDER half: a plain object produced a garbage label instead', () => {
+    // The same defect one step less severe, and worth pinning separately: a
+    // caller reading `node.data` off a non-synced path gets a plain object, and
+    // the old code printed `▶ ch[object Object]` in the lane tile rather than
+    // throwing. Both are the same root cause — coercing a key this component
+    // does not own — and one fix covers both.
+    expect(preFix({ countryCode: 'US', channel: TUNED_CHANNEL })).toBe('▶ ch[object Object]');
+    expect(laneFlowLabel({ countryCode: 'US', channel: TUNED_CHANNEL })).toBe('▶ out');
+  });
+
+  it('NEGATIVE CONTROL: the fix changes NOTHING for the shapes the badge is for', () => {
+    // The direction that would make this a regression rather than a fix. If the
+    // type check were too strict, the mixer badge would silently disappear.
+    for (const data of [{ channel: 0 }, { channel: 7 }, { sendSlot: 2 }, {}, undefined]) {
+      expect(laneFlowLabel(data), `label for ${JSON.stringify(data)}`).toBe(preFix(data));
+    }
+  });
+
+  it('falls through on every other non-numeric shape, rather than guessing', () => {
+    expect(laneFlowLabel(undefined)).toBe('▶ out');
+    expect(laneFlowLabel({})).toBe('▶ out');
+    expect(laneFlowLabel({ channel: null })).toBe('▶ out');
+    expect(laneFlowLabel({ channel: 'usa1' })).toBe('▶ out');
+    expect(laneFlowLabel({ channel: [] })).toBe('▶ out');
+    // NaN and Infinity ARE numbers, and would print "▶ chNaN" / "▶ chInfinity".
+    expect(laneFlowLabel({ channel: Number.NaN })).toBe('▶ out');
+    expect(laneFlowLabel({ sendSlot: Number.POSITIVE_INFINITY })).toBe('▶ out');
   });
 });
 

@@ -1013,7 +1013,11 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
     blockers: ['needs-media-controller'],
     why:
       'a fediverse SEARCH BROWSER: typed query plus an optional instance host, a result list, and ' +
-      'a player whose <video> source is card-owned.',
+      'a player. ⚠ ITS SOURCE IS NO LONGER CARD-OWNED (LEG-02 P3, #1511) — the element, the ' +
+      'hls.js demuxer, the attach, the audio wire, the catalogue and both triggers moved to ' +
+      '$lib/ui/media/node-hls-source-registry on graph lifetime. The blocker stays because it is ' +
+      'ALL-OR-NOTHING: its probe is HEADLESS_MOUNT_LANE_TYPES being EMPTY, and archivist, ' +
+      'cameraInput and loopback are still in it.',
   },
   // ⚠ RECLASSIFIED 2026-08-24, bespoke-surface -> generic-face, and — like pong's
   // reclassification below — THE OLD WHY WAS RIGHT ABOUT THE MODULE AND WRONG ABOUT
@@ -1115,8 +1119,10 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
     disposition: 'bespoke-surface',
     blockers: ['needs-media-controller'],
     why:
-      'a CHANNEL BROWSER: a station roster with tuning gestures over a player whose <video> source ' +
-      'is card-owned. The browse-and-tune flow is the interaction.',
+      'a CHANNEL BROWSER: a world map plus a station roster with tuning gestures over a player. ' +
+      'The browse-and-tune flow is the interaction. ⚠ ITS SOURCE IS NO LONGER CARD-OWNED ' +
+      '(LEG-02 P3, #1511) — same registry and same reason as peertube; the CARD keeps only the ' +
+      'country dataset, which is picker data nothing engine-visible depends on.',
   },
   {
     type: 'twotracks',

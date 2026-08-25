@@ -62,6 +62,28 @@ function parseTypeSet(file: string, symbol: string): string[] {
 }
 
 /**
+ * The HLS tuner owner set (P3), which has NO literal array to parse.
+ *
+ * ⚠ AND THAT IS THE REGISTRY BEING RIGHT, NOT AWKWARD. `NODE_HLS_SOURCE_TYPES`
+ * is DERIVED from the profile objects (`HLS_TUNER_PROFILES.map(p => p.type)`),
+ * so a profile added without an entry — or an entry with no profile — is
+ * impossible rather than merely discouraged. What that costs is this parser,
+ * which reads the same truth one level down: the `type:` field of each exported
+ * profile. It throws when it finds NOTHING, so a rename cannot silently shrink
+ * this sweep, which is the failure mode the whole union exists to prevent.
+ */
+function parseHlsProfileTypes(file: string): string[] {
+  const src = readFileSync(fileURLToPath(new URL(file, import.meta.url)), 'utf8');
+  const out = [
+    ...src.matchAll(/export const \w+_PROFILE: HlsTunerProfile = \{\s*\n\s*type: '([^']+)'/g),
+  ].map((m) => m[1]!);
+  if (out.length === 0) {
+    throw new Error('could not parse any HlsTunerProfile `type:` — has the profile shape changed?');
+  }
+  return out;
+}
+
+/**
  * EVERY module that owns a video source, WHOEVER owns its lifecycle.
  *
  * ⚠ THIS USED TO BE `DOM_SOURCE_LANE_TYPES` ALONE, AND THAT SUBJECT IS
@@ -102,8 +124,18 @@ function videoSourceTypes(): string[] {
     '../../packages/web/src/lib/ui/media/node-varispeed-registry.ts',
     'NODE_VARISPEED_TYPES',
   );
-  const all = [...new Set([...cardOwned, ...nodeOwned, ...varispeedOwned])].sort();
-  if (all.length === 0) throw new Error('BOTH source-owner sets parsed EMPTY — refusing to pass vacuously');
+  // ⚠ ...AND THE HLS TUNER OWNER SET (P3), for exactly the reason the paragraph
+  // above predicted. peertube and tvLibrarian left `DOM_SOURCE_LANE_TYPES` in
+  // that phase, so without this line they would have vanished from this sweep
+  // the moment the conversion landed — and the sweep would have gone GREEN on
+  // its way out, because both are network sources that every run skips anyway.
+  // A subject that leaves silently and a subject that was never there look the
+  // same from a green run; the union is what stops that.
+  const hlsOwned = parseHlsProfileTypes(
+    '../../packages/web/src/lib/ui/media/node-hls-source-registry.ts',
+  );
+  const all = [...new Set([...cardOwned, ...nodeOwned, ...varispeedOwned, ...hlsOwned])].sort();
+  if (all.length === 0) throw new Error('EVERY source-owner set parsed EMPTY — refusing to pass vacuously');
   return all;
 }
 
@@ -487,9 +519,10 @@ test('the sweep is NOT VACUOUS: it still exercises real file players', () => {
   expect(
     players,
     'this sweep enrols NO file player, so every one of its tests skips and it proves nothing. ' +
-      `Subjects derived from both ownership sets: ${TYPES.join(', ')}. A conversion that moved a ` +
-      'player out of BOTH `DOM_SOURCE_LANE_TYPES` and `NODE_VIDEO_SOURCE_TYPES` is the likely cause ' +
-      '— re-point this derivation at whatever owns it now rather than lowering anything here.',
+      `Subjects derived from EVERY ownership set: ${TYPES.join(', ')}. A conversion that moved a ` +
+      'player out of `DOM_SOURCE_LANE_TYPES` without adding its new owner set to `videoSourceTypes()` ' +
+      'is the likely cause — re-point that derivation at whatever owns it now rather than lowering ' +
+      'anything here.',
   ).not.toEqual([]);
 });
 
