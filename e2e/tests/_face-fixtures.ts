@@ -325,6 +325,13 @@ function uniformDomainClass(type: string): string | null {
  * filter without adding this one would have put them straight into the pool and
  * failed in the confusing direction. `VIDEO_SINK_FIXTURE` already documents
  * this exact class; the audio side now states it too.
+ *
+ * ⚠ THE EXAMPLES IN THAT SENTENCE ARE A SNAPSHOT, AND ONE OF THEM HAS EXPIRED:
+ * `electraControl` was promoted and left `NON_SHELL_LANE_TYPES`, so it is no
+ * longer a snowflake. The ARGUMENT is unaffected and the code cannot drift —
+ * `rendersPlaceholderTile` reads the LIVE set below rather than any list here —
+ * but the names are corrected because a reader takes a parenthetical for a fact.
+ * `clipplayer` and `controlSurface` remain members.
  */
 function rendersPlaceholderTile(type: string): string | null {
   if (cardSource(type) === null) {

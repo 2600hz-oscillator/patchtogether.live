@@ -973,6 +973,7 @@ edges out out mono-video
 edges param thickness 1..8 linear default=2 unit=px
 edges param threshold 0..1 linear default=0.2
 electraControl meta domain=meta maxInstances=1
+electraControl family electra-connect-button kind=other prefix=electra-connect-button
 es9 meta domain=audio maxInstances=1
 es9 in out1 audio accepts=cv,gate,pitch
 es9 in out2 audio accepts=cv,gate,pitch

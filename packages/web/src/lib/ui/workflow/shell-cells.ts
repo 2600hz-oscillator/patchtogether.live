@@ -189,6 +189,7 @@ import {
 import { midiLaneChannelChoices, parseNoteGateNote } from '$lib/audio/modules/midi-lane';
 import { launchpadConnectSingle, launchpadPair } from '$lib/ui/modules/launchpad-cell-actions';
 import { push2Connect } from '$lib/ui/modules/push2-cell-actions';
+import { electraSendToDevice } from '$lib/ui/modules/electra-cell-actions';
 import { outToLaunchConnect } from '$lib/ui/modules/out-to-launch-cell-actions';
 import { timelordeFaceTap } from '$lib/ui/modules/timelorde/face-tap';
 import {
@@ -2553,6 +2554,64 @@ const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
       mode: 'trigger',
       probe: { effect: { kind: 'audition', seam: 'engine-message' } },
       onFire: (nodeId) => { push2Connect(nodeId); },
+    },
+  },
+
+  // ── ELECTRA CONTROL — the FOURTH meta-domain face, and the only one whose
+  //    gesture leaves the browser carrying the rack's OWN LAYOUT ──────────────
+  //
+  // SEND TO ELECTRA generates a 3-page `.epr` preset plus a Lua bundle from the
+  // whole rack and pushes them to a physical Electra One over sysex. Until
+  // promotion the only button that could do it lived on the legacy card, and the
+  // module is the `E` of the workflow pin trio — canvas-hidden, drawer-only — so
+  // the gesture was reachable ONLY by opening the bottom drawer. An `action`
+  // cell is not dock-restricted (only `panel` is, by `panelCellKeys`), so
+  // ranking this key is what puts the flash on the lane tile of any canvas
+  // instance as well.
+  //
+  // ⚠ IT IS THE ONE RANKED CELL BECAUSE IT IS THE ONLY ADDRESSABLE ONE, not
+  // because the others lost a ranking argument. Every other control on this
+  // module is a proxy of a param on a DIFFERENT node, and a face key resolves
+  // only to a param on THIS def, a `<familyId>-{n}` template (one cell, no
+  // per-member index — #1509), or a legend static. Thirty-six proxies and
+  // thirty-six rename fields are unaddressable at any rank; they are the
+  // extension body.
+  //
+  // ⚠ THE LABEL IS THE STATIC LITERAL `Send to Electra`, WHERE THE BUTTON
+  // FLIPPED THROUGH FIVE WORDS (`Send to Electra` / `Configuring…` / `Electra ✓`
+  // / `No MIDI`), AND NOTHING IS LOST — because the ACTION does not change.
+  // Every press runs the same flow: stop the previous orchestrator, build a
+  // host, run the autoconfig. The four other words carried the module's STATE,
+  // not the gesture, and `ShellActionCell.label` is a plain string that cannot
+  // say which of several things it is about to do. That is the discriminator
+  // midiclock states from the other side ("a fixed label because its action
+  // never changes"); the state bit lives on the extension body's status line and
+  // on the accessible name, where the resting-text ruling puts it.
+  //
+  // ⚠ IT TAKES ONLY A nodeId AND IGNORES `env`. This module is `domain: 'meta'`
+  // — no ports, no factory, no engine node — so `ShellCellEnv.engine` has
+  // nothing to offer it. The gesture reaches the Electra broker + autoconfig,
+  // which is the module's actual handle, and `getActiveEngine()` is how the host
+  // reads the rack (the general route the module-owned action file resolves).
+  //
+  // ⚠ AN AUDITION, AND `delivered: false` IS REACHABLE. See the header of
+  // `$lib/ui/modules/electra-cell-actions.ts`: the press is recorded as
+  // delivered when Web MIDI exists to be reached and NOT delivered when it does
+  // not, which is the autoconfig's own first branch (`broker.connect()` → `{ ok:
+  // false, reason: 'no-midi-access' }`) and the one condition under which the
+  // button is genuinely wired to nothing. A `data` probe was not an option in
+  // any case: this node's `data.slots` is not touched by a flash at all — the
+  // preset is generated FROM it and pushed outward — so a `data` probe would
+  // fail on a perfectly live button, and a `data-rev` probe is the dead-button
+  // hazard this file warns about two entries up.
+  electraControl: {
+    'electra-connect-button-{n}': {
+      kind: 'action',
+      label: 'Send to Electra',
+      title: 'Generate a 3-page Electra One preset (Control Surface / MixMaster / System) from this rack and push it to a connected Electra. Asks for MIDI access on first click.',
+      mode: 'trigger',
+      probe: { effect: { kind: 'audition', seam: 'engine-message' } },
+      onFire: (nodeId) => { electraSendToDevice(nodeId); },
     },
   },
 
