@@ -187,8 +187,56 @@ export const cartesianDef: AudioModuleDef = {
     },
   },
 
+  // ⚠ WIDTH SPIKE (#1509) — PAD ROW 0..3 ONLY, and the face below ranks a
+  // SINGLE band of twelve so its rendered width can be MEASURED against the
+  // 1220 px dock capture box before the remaining pads are written. The
+  // finished face is 16 pads; this is not it.
+  //
+  // Each pad needs THREE family ids because a control family renders as ONE
+  // cell with no member index (the wavesculpt precedent — twelve ids for four
+  // oscillators × three controls).
+  face: {
+    order: [
+      'cart-pad0-pitch-{n}', 'cart-pad0-gate-{n}', 'cart-pad0-chord-{n}',
+      'cart-pad1-pitch-{n}', 'cart-pad1-gate-{n}', 'cart-pad1-chord-{n}',
+      'cart-pad2-pitch-{n}', 'cart-pad2-gate-{n}', 'cart-pad2-chord-{n}',
+      'cart-pad3-pitch-{n}', 'cart-pad3-gate-{n}', 'cart-pad3-chord-{n}',
+      'octave', 'gateLength', 'snh', 'lfoDiv', 'lfoShape',
+    ],
+    pages: [
+      {
+        id: 'row0',
+        label: 'row 0',
+        controls: [
+          'cart-pad0-pitch-{n}', 'cart-pad0-gate-{n}', 'cart-pad0-chord-{n}',
+          'cart-pad1-pitch-{n}', 'cart-pad1-gate-{n}', 'cart-pad1-chord-{n}',
+          'cart-pad2-pitch-{n}', 'cart-pad2-gate-{n}', 'cart-pad2-chord-{n}',
+          'cart-pad3-pitch-{n}', 'cart-pad3-gate-{n}', 'cart-pad3-chord-{n}',
+        ],
+      },
+      { id: 'voice', label: 'voice', controls: ['octave', 'gateLength', 'snh'] },
+      { id: 'lfo', label: 'lfo', controls: ['lfoDiv', 'lfoShape'] },
+    ],
+    // No audio-typed output exists on this module (pitch is polyPitchGate,
+    // gate/clock are gate, lfo_* are cv), so `primaryAudioOutPortId` finds
+    // nothing and any other glyph would resolve to a dead static trace.
+    glyph: 'none',
+  },
+
   controlFamilies: [
     { id: 'cart-pitch', label: 'Per-pad note entry', kind: 'cell', testidPrefix: 'cart-pitch' },
+    { id: 'cart-pad0-pitch', label: 'Pad 0 note', kind: 'cell', testidPrefix: 'cart-pad0-pitch' },
+    { id: 'cart-pad0-gate', label: 'Pad 0 gate', kind: 'cell', testidPrefix: 'cart-pad0-gate' },
+    { id: 'cart-pad0-chord', label: 'Pad 0 chord', kind: 'cell', testidPrefix: 'cart-pad0-chord' },
+    { id: 'cart-pad1-pitch', label: 'Pad 1 note', kind: 'cell', testidPrefix: 'cart-pad1-pitch' },
+    { id: 'cart-pad1-gate', label: 'Pad 1 gate', kind: 'cell', testidPrefix: 'cart-pad1-gate' },
+    { id: 'cart-pad1-chord', label: 'Pad 1 chord', kind: 'cell', testidPrefix: 'cart-pad1-chord' },
+    { id: 'cart-pad2-pitch', label: 'Pad 2 note', kind: 'cell', testidPrefix: 'cart-pad2-pitch' },
+    { id: 'cart-pad2-gate', label: 'Pad 2 gate', kind: 'cell', testidPrefix: 'cart-pad2-gate' },
+    { id: 'cart-pad2-chord', label: 'Pad 2 chord', kind: 'cell', testidPrefix: 'cart-pad2-chord' },
+    { id: 'cart-pad3-pitch', label: 'Pad 3 note', kind: 'cell', testidPrefix: 'cart-pad3-pitch' },
+    { id: 'cart-pad3-gate', label: 'Pad 3 gate', kind: 'cell', testidPrefix: 'cart-pad3-gate' },
+    { id: 'cart-pad3-chord', label: 'Pad 3 chord', kind: 'cell', testidPrefix: 'cart-pad3-chord' },
   ],
 
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {

@@ -4400,6 +4400,15 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // +1 — the TOP of the attenuverter's -1..+1 range. A SCALE probe would drag a
   // control already at its ceiling and fail on a live panel.
   'vfpgaRunner',
+
+  // ── cartesian ─────────────────────────────────────────────────────────────
+  //
+  // ⚠ WIDTH SPIKE (#1509), NOT A FINISHED FACE. The def ranks pad ROW 0 only —
+  // twelve cells — so the rendered content width can be measured against the
+  // 1220 px dock capture box before the other three rows are written. Either
+  // this comment is replaced by the real argument in the same PR, or the entry
+  // comes back out.
+  'cartesian',
 ]);
 
 /**

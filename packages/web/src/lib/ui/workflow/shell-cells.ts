@@ -31,6 +31,15 @@
 import type { Component } from 'svelte';
 import type { ModuleNode, ParamLandmark } from '$lib/graph/types';
 import type { SelectorOption } from '$lib/ui/controls';
+import type { EntryParse } from '$lib/ui/controls/text-entry-model';
+import {
+  cartesianGateValue,
+  cartesianPitchText,
+  commitCartesianPitch,
+  cycleCartesianChord,
+  parseCartesianPitch,
+  setCartesianGate,
+} from '$lib/ui/modules/cartesian-cell-actions';
 import { testHooksEnabled } from '$lib/dev/test-hooks';
 import WavecelWavetablePanel from '$lib/ui/modules/wavecel/WavecelWavetablePanel.svelte';
 import {
@@ -488,13 +497,93 @@ export interface ShellWarpedFaderCell {
   format?: (value: number) => string;
 }
 
+/**
+ * How faces-parity proves a TYPED string reached the graph.
+ *
+ * ⚠ TWO STRINGS, AND THE SECOND IS THE POINT. `accepts` proves the field is
+ * live; `rejects` proves it is a VALIDATOR rather than a funnel. Without the
+ * negative leg a cell that clamped every input to its nearest legal value would
+ * pass the positive one perfectly — which is the backdraft class exactly (a
+ * control writing what the contract forbids while the model quietly corrected
+ * it, with every def-reading gate blind). Only the module knows what its own
+ * domain excludes, so the refused string is declared per cell rather than
+ * guessed by the sweep.
+ *
+ * ⚠ AND BOTH ARE CHECKED IN THE PURE LANE FIRST. `shell-cells.test.ts` runs
+ * `parse(accepts).ok === true` and `parse(rejects).ok === false` over every
+ * registered entry cell, so a probe whose strings are the wrong way round — or
+ * whose `rejects` is quietly legal — fails in milliseconds instead of 25
+ * minutes later on a CI shard.
+ */
+export interface ShellEntryProbe {
+  /** A VALID string. The sweep types it and asserts the effect fires. */
+  accepts: string;
+  /** A string this field MUST refuse. Typed second; the sweep asserts the
+   *  stored value did NOT move and the field reports itself invalid. */
+  rejects: string;
+  /** The observable. `node.data` is the right oracle for a typed field: unlike
+   *  an audition it writes something durable by design, so the ledger's
+   *  "delivered but invisible" problem does not arise here. */
+  effect: { kind: 'data'; key: string; expect: 'changed' };
+}
+
+/**
+ * A TYPED-ENTRY field — the cell whose CONTENT IS the control.
+ *
+ * ⚠ THIS IS THE ONE CELL PERMITTED TO PAINT A STRING AT REST, and the licence is
+ * narrow. The resting-faceplate ruling forbids derived text in any shape because
+ * such text RESTATES something a control already shows: a decimal under a dial
+ * says what the angle says. A text field has no non-text form — its content is
+ * not a readout OF the control, it IS the control — so it carries the
+ * `'authored-entry'` role in `face-resting-text-source.test.ts`, and that role
+ * is legal only on a cell that is genuinely user-writable. `onCommit` is
+ * REQUIRED for exactly that reason: a display has no write, so it cannot claim
+ * the role, and the gate checks the field is non-optional on this interface
+ * rather than taking the declaration's word for it.
+ *
+ * ⚠ THE MODULE NEVER SEES RAW TEXT. `parse` is the ONE place validity is
+ * decided; the shell calls it and hands `onCommit` a value that was already
+ * accepted. A rejection writes NOTHING — it does not clamp, round, truncate or
+ * substitute — so there is no code path in which a silent correction could live.
+ * See `text-entry-model.ts` for why the reject sentinel is a tagged union and
+ * not `null` (cartesian's empty box is a REST, which is an accepted value whose
+ * stored form is null).
+ *
+ * ⚠ IMPORT THE VALIDATOR, NEVER RE-TYPE IT — the same one-source rule the warped
+ * fader's `toKnob`/`fromKnob` obey, for the same reason: a card and a face that
+ * parse differently both look correct and disagree about what the user typed,
+ * and no runtime gate reads a grammar.
+ */
+export interface ShellEntryCell<T = unknown> {
+  kind: 'entry';
+  /** Caption under the field — a CONTROL CAPTION, an already-permitted role. */
+  label: string;
+  title?: string;
+  /** The text the field shows at REST: the user's own stored content, round-
+   *  tripped by the module. Never a formatter over a derived quantity. */
+  text: (node: ModuleNode | undefined) => string;
+  /** Text -> the module's stored form, or a REJECTION. */
+  parse: (text: string) => EntryParse<T>;
+  /** REQUIRED. Called ONLY with an accepted `parse` result. */
+  onCommit: (nodeId: string, value: T) => void;
+  placeholder?: string;
+  maxLength?: number;
+  /** REQUIRED — see ShellEntryProbe. */
+  probe: ShellEntryProbe;
+}
+
 export type ShellCell =
   | ShellSelectorCell
   | ShellActionCell
   | ShellFileCell
   | ShellToggleCell
   | ShellPanelCell
-  | ShellWarpedFaderCell;
+  | ShellWarpedFaderCell
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- the registry
+  // is a heterogeneous map, so the union member must admit any stored form; the
+  // per-cell `parse`/`onCommit` pair is still checked against ONE `T` at each
+  // declaration site.
+  | ShellEntryCell<any>;
 
 /**
  * Per-module cell specs, keyed by module type then by the EXACT `face.order`
@@ -503,7 +592,79 @@ export type ShellCell =
  * shell all address the control by the SAME string — a rename breaks all three
  * gates at once instead of silently un-rendering one of them.
  */
+/**
+ * The three cells one cartesian pad needs, keyed by their family templates.
+ *
+ * ⚠ GENERATED RATHER THAN WRITTEN OUT SIXTEEN TIMES, deliberately. Every other
+ * block in this file is a literal because each entry is a different control
+ * with a different argument; these sixteen are the SAME control repeated over an
+ * index, and the failure mode of hand-copying them is a pad whose three cells
+ * disagree about which index they address — invisible in review and silent at
+ * runtime (pad 7's box edits pad 6's note). The index appears exactly once per
+ * cell here.
+ */
+function cartesianSpikeRow(i: number): Record<string, ShellCell> {
+  return {
+    [`cart-pad${i}-pitch-{n}`]: {
+      kind: 'entry',
+      label: `${i}`,
+      title: `Pad ${i} note — type a note name (c3, f#4, bb2). Empty is a REST.`,
+      text: (node) => cartesianPitchText(node, i),
+      parse: parseCartesianPitch,
+      onCommit: (nodeId, midi) => commitCartesianPitch(nodeId, i, midi),
+      placeholder: '—',
+      maxLength: 12,
+      // `rejects` is a note-SHAPED string that is out of the module's declared
+      // c0..c8 span, not obvious garbage: it proves the range check runs, which
+      // a `zzz` would not (the grammar alone would refuse that).
+      probe: { accepts: 'c#3', rejects: 'c9', effect: { kind: 'data', key: 'cells', expect: 'changed' } },
+    },
+    [`cart-pad${i}-gate-{n}`]: {
+      kind: 'toggle',
+      label: `on ${i}`,
+      value: (node) => cartesianGateValue(node, i),
+      onchange: (nodeId, on) => setCartesianGate(nodeId, i, on),
+    },
+    // ⚠ A CYCLING ACTION, NOT A SELECTOR, AND THE CARD IS WHY. `CartesianCard`
+    // renders this control as a `chord-badge` <button> that CYCLES
+    // mono → maj → min on click; a dropdown would be a different affordance
+    // wearing the same values. It is also 3.2× narrower — measured on the
+    // spike, four `selector` cells cost 672 px of a 1374 px band and pushed
+    // 220 px of the faceplate outside the 1220 px dock capture box, while four
+    // buttons cost ~208 px. Parity and width point the same way here, which is
+    // the usual sign that the card had already answered the question.
+    [`cart-pad${i}-chord-{n}`]: {
+      kind: 'action',
+      label: `chd ${i}`,
+      title: `Pad ${i} chord — click to cycle mono / maj / min`,
+      mode: 'trigger',
+      probe: { effect: { kind: 'data', key: 'cells', expect: 'changed' } },
+      onFire: (nodeId) => cycleCartesianChord(nodeId, i),
+    },
+  };
+}
+
 const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
+  // ── cartesian ─────────────────────────────────────────────────────────────
+  //
+  // ⚠ WIDTH SPIKE — PAD ROW 0 ONLY (pads 0..3). The full grid is 16 pads x 3
+  // controls; this row exists to MEASURE a band of twelve before the other
+  // three rows are written, because a face that overflows the 1220 px dock
+  // capture box fails the VRT capture outright and the selector cells here are
+  // the wide ones. Do not read this block as the finished face.
+  //
+  // Each pad is THREE cells because a control family renders as ONE cell with
+  // no member index (see the wavesculpt note below), so a per-pad control needs
+  // its own family id. All three call `cartesian-cell-actions`, which
+  // `CartesianCard.svelte` calls too — a pad is a read-modify-write over
+  // `{ on, midi, chord }` and two surfaces disagreeing about the fields they do
+  // not own is how a retyped note silently un-voices a chord pad.
+  cartesian: {
+    ...cartesianSpikeRow(0),
+    ...cartesianSpikeRow(1),
+    ...cartesianSpikeRow(2),
+    ...cartesianSpikeRow(3),
+  },
   bluebox: {
     // THE TONE BANK — ten bars, one per oscillator, promoted into the hero slot
     // (`face.hero.cell`). A panel rather than a glyph because it is not a trace
