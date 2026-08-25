@@ -47,7 +47,7 @@
   } from '$lib/video/vfpga/types';
   import { getCvInput, DEFAULT_INPUT_SCALE, DEFAULT_INPUT_OFFSET, type CvInputs } from '$lib/video/toybox-cv-routes';
   import { drawToyboxInputScope, type ToyboxScopeColors } from '$lib/video/toybox-scope-draw';
-  import { setVfpgaSpec } from '$lib/graph/vfpga-runner';
+  import { selectVfpgaPreset } from './vfpga-runner-face-actions';
   import ModuleTitle from './ModuleTitle.svelte';
   import VfpgaFloorplan from './VfpgaFloorplan.svelte';
   import { drawPreviewDownscaled } from './preview-downscale';
@@ -118,18 +118,16 @@
   }
 
   // ── Preset (= VFPGA) selector ──
+  // ⚠ THE ACTION IS SHARED WITH THE FACEPLATE, NOT DUPLICATED. Loading a VFPGA
+  // is two writes that must happen together (the node.data id + slot-default
+  // seeding, and the engine hot-swap pulse); both surfaces call the same
+  // `selectVfpgaPreset` so a picker cannot work on one and no-op on the other.
   let presetSelect = $state('');
   function onPresetChange(ev: Event) {
     const sel = (ev.target as HTMLSelectElement).value;
     if (!sel) return;
-    setVfpgaSpec(id, sel);
+    selectVfpgaPreset(id, sel);
     bumpData();
-    // Trigger the engine handle's hot-swap (rebuild from the new data.vfpga id);
-    // the worker proxy forwards the pulse to the worker node too.
-    const e = engineCtx.get();
-    if (e) {
-      try { e.getDomain<VideoEngine>('video').setParam(id, '__reloadVfpga', 1); } catch { /* */ }
-    }
     presetSelect = ''; // reset to placeholder after apply
   }
 

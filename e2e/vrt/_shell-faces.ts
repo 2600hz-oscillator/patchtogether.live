@@ -3417,6 +3417,42 @@ export const FACES = [
     // so this scene extends an existing claim to the faceplate rather than
     // making a new one.
   },
+  // ── VFPGA-RUNNER — the reconfigurable HOST, and the roster's only face whose
+  //    picture is a different PROGRAM depending on `node.data` ────────────────
+  {
+    type: 'vfpgaRunner',
+    // THREE bands: `program` (the bitstream picker), `slots` (the eight generic
+    // param knobs), `modulation` (the CV conditioning rack). No hero, so no band
+    // is emptied and the declared count IS the rendered count. Three is well
+    // under DOCK_TAB_MIN_BANDS and nothing is padded to reach it.
+    pages: 3,
+
+    videoFaceWhy:
+      'the dock faceplate carries this host\'s LIVE OUTPUT via hasVideoSurface plus the '
+      + 'extension body\'s own preview canvas, so the scene must take the VIDEO boot path — an '
+      + 'audio-path boot would wait out the full 90 s test timeout for a mixer-column membership '
+      + 'a video node never joins. '
+      + '⚠ AND THE FREEZE THE FLAG ALSO ENGAGES IS A NO-OP HERE, WHICH IS THE HONEST STATE '
+      + 'RATHER THAN A GAP: this def declares no `freeze` param, so `freezeFaceVideo` writes a '
+      + 'key nothing reads — and its assertion still passes, because the picture is ALREADY '
+      + 'still. The bitstream loaded on a fresh spawn is `smpte-bars` (DEFAULT_VFPGA_ID), whose '
+      + 'own spec header states the property this scene depends on: "Pure GL, deterministic (no '
+      + 'uTime in the colour math - the only time-varying input is the CV), so its CPU-snapshot '
+      + 'preview + a frozen-CV VRT scene are pixel-stable." With nothing patched the CV is 0, so '
+      + 'every frame is the same 75% colour-bar field. '
+      + '⚠ THE MODULATION RACK\'S TRACE CANVASES ARE STILL CANVASES AND freezeFaceVideo SAMPLES '
+      + 'THEM TOO. They are stable for a structural reason rather than a lucky one: with no cable '
+      + 'patched the post-scale/offset value is a constant 0, and `drawToyboxInputScope` draws a '
+      + 'ring of N equal samples as a flat line from x=0 to x=w-1 with a fill under it — the SAME '
+      + 'path for every ring length from 2 upward, so the picture does not depend on how many '
+      + 'frames elapsed before the capture. MEASURED per-canvas (4 rounds x 6 rAFs, '
+      + 'E2E_SWIFTSHADER=1): `vfpga-face-canvas` distinct=1, `vfpga-trace-1` distinct=1 — every '
+      + 'surface this scene photographs is byte-identical across rounds. (That measurement is '
+      + 'also what found the INSTRUMENT bug this branch fixed: the only mover on the page was '
+      + '`pinned-timelorde`, which is rack furniture and not in the capture. See freezeFaceVideo.) '
+      + '⚠ AND THE FABRIC FLOORPLAN IS NOT IN FRAME: `showFabric` is component state defaulting '
+      + 'to false, so the body mounts the preview canvas and the floorplan canvas does not exist.',
+  },
 ] as const;
 
 /**
@@ -4216,6 +4252,33 @@ export const FREEZE_RACE_FRAMES = 3;
 const VIDEO_FREEZE_SETTLE_FRAMES = 6;
 
 /**
+ * How many 6-frame windows the surface gets to REACH stillness before this is
+ * called a moving picture.
+ *
+ * ⚠ IT IS HERE BECAUSE A READINESS GATE WAS WRITTEN AS A SNAPSHOT COMPARE, and
+ * that is a different assertion on every runner. "Is the surface still?" is a
+ * STATE-READINESS question, and CLAUDE.md's rule for those is an auto-retrying
+ * check on the real subject — a single compare of two samples six frames apart
+ * asks instead "did these two particular frames match", which a first-paint or
+ * a wall-clock preview cadence can answer NO to on a slow box and YES on a fast
+ * one while the surface is equally still by the time the shot is taken.
+ * (`blitOutputForPreview` really does gate on a wall-clock `minIntervalMs`, so a
+ * preview canvas repaints on a cadence that is a DIFFERENT number of frames per
+ * renderer — the exact shape the frames-not-milliseconds rule is about, one
+ * layer down.)
+ *
+ * ⚠ IT DOES NOT WEAKEN THE ASSERTION, and the reason is what the caller does
+ * next: `settle(page)` runs BEFORE `toHaveScreenshot`, so the property that
+ * actually matters is "still by capture time", not "still at this instant". A
+ * genuinely live surface — a running sim, an unfrozen renderer — never settles
+ * and still fails, now naming which canvas.
+ *
+ * A COUNT OF WINDOWS, not a wall-clock budget, so it is the same assertion on
+ * every renderer. Six windows is ~36 frames.
+ */
+const VIDEO_FREEZE_ATTEMPTS = 6;
+
+/**
  * Pin a face scene's LIVE VIDEO SURFACE by writing the module's own `freeze`
  * param, and PROVE it held — the video sibling of `freezeFaceAudio`.
  *
@@ -4252,6 +4315,44 @@ const VIDEO_FREEZE_SETTLE_FRAMES = 6;
  * `e2e/tests/backdraft-preview-toggle.spec.ts`, which asserts the same canvas
  * genuinely animates (distinct frames across rAFs) before it concludes anything
  * about it stopping. A passing negative control is not enough on its own.
+ *
+ * ⚠ IT SAMPLES THE SUBJECT'S OWN SURFACES, NOT THE PAGE — AND IT USED TO SAMPLE
+ * THE PAGE, WHICH MADE IT FLAKY FOR EVERY VIDEO FACE IN THE ROSTER.
+ *
+ * `document.querySelectorAll('canvas')` collects the RACK'S FURNITURE too, and
+ * one piece of that furniture animates on a rAF no video freeze reaches:
+ * `pinned-timelorde`'s owl display, which `workflow-pins.ts` spawns into every
+ * workflow rackspace. So the helper was asserting stillness of a canvas that is
+ * (a) always moving and (b) NOT IN THE CAPTURE — `toHaveScreenshot` is taken on
+ * the faceplate / tile locator, never on the document — which can only ever
+ * produce a FALSE FAILURE. Two samples six rAFs apart usually landed on the same
+ * owl frame, so it read green; it is a coin flip, and a slow runner flips it.
+ *
+ * MEASURED (2026-08-24, this branch, `E2E_SWIFTSHADER=1`, 4 rounds × 6 rAFs,
+ * per-canvas signatures rather than the joined string this helper compares):
+ *
+ *   vfpgaRunner dock scene — 9 canvases:
+ *     vfpga-face-canvas .................... distinct=1
+ *     vfpga-trace-1 ........................ distinct=1
+ *     video-tile-thumb ×3 .................. distinct=1
+ *     audioout-face-canvas ................. distinct=1
+ *     synesthesia-vu-a / -b ................ distinct=1
+ *     timelorde-display-pinned-timelorde ... distinct=3   <-- the only mover
+ *
+ *   mirrorpool dock scene — 8 canvases, a SHIPPED and BASELINED face:
+ *     mirrorpool-face-canvas ............... distinct=1
+ *     timelorde-display-pinned-timelorde ... distinct=4   <-- the same mover
+ *
+ * The control is what makes this a fix rather than a guess: the mover is
+ * identical on a face that has been green for weeks, so it is a property of the
+ * INSTRUMENT and not of any module. (`vfpgaRunner` is simply where it finally
+ * came up tails — on ubuntu CI, run 32791506814.)
+ *
+ * ⚠ AND NARROWING CANNOT WEAKEN THE ASSERTION, because it can only REMOVE
+ * canvases that were never going to be photographed. What it must not do is
+ * narrow to NOTHING — a zero-canvas sweep is trivially "still" — so the count is
+ * asserted non-zero and printed either way, which is the positive control the
+ * doc-comment above says a negative one cannot replace.
  */
 export async function freezeFaceVideo(page: Page, nodeId: string, label: string): Promise<void> {
   await page.evaluate((id) => {
@@ -4270,32 +4371,83 @@ export async function freezeFaceVideo(page: Page, nodeId: string, label: string)
   // THE EFFECT, sampled IN THE PAGE across real frames — never a Playwright
   // poll loop, which would be one round-trip per sample on the same main thread
   // as the subject and cannot tell "frozen" from "never looked".
-  const held = await page.evaluate(async (frames: number) => {
-    const canvases = Array.from(document.querySelectorAll('canvas')) as HTMLCanvasElement[];
-    const sample = (): string =>
-      canvases
-        .map((c) => {
-          try {
-            return c.width && c.height ? c.toDataURL().slice(-64) : 'x';
-          } catch {
-            return 'x'; // a tainted/GL canvas contributes nothing rather than throwing
-          }
-        })
-        .join('|');
-    const first = sample();
-    for (let i = 0; i < frames; i++) {
-      await new Promise((r) => requestAnimationFrame(() => r(null)));
+  const held = await page.evaluate(async (
+    { frames, attempts, id }: { frames: number; attempts: number; id: string },
+  ) => {
+    // THE SUBJECT'S OWN SURFACES — the two containers the two scenes actually
+    // photograph, and nothing else. `dock-full-view` is the dock scene's capture
+    // root; the flow node is the compact scene's. Either may be absent (the
+    // compact scene never opens a dock), so both are optional and the union is
+    // what gets sampled.
+    const roots = [
+      document.querySelector('[data-testid="dock-full-view"]'),
+      document.querySelector(`.svelte-flow__node[data-id="${id}"]`),
+    ].filter((el): el is Element => !!el);
+    const canvases = roots.flatMap((r) =>
+      Array.from(r.querySelectorAll('canvas')) as HTMLCanvasElement[],
+    );
+    const name = (c: HTMLCanvasElement, i: number) =>
+      c.getAttribute('data-testid') ?? `canvas#${i}(${c.width}x${c.height})`;
+    const sample = (): string[] =>
+      canvases.map((c) => {
+        try {
+          return c.width && c.height ? c.toDataURL().slice(-64) : 'x';
+        } catch {
+          return 'x'; // a tainted/GL canvas contributes nothing rather than throwing
+        }
+      });
+
+    let prev = sample();
+    let movers: string[] = [];
+    for (let a = 0; a < attempts; a++) {
+      for (let i = 0; i < frames; i++) {
+        await new Promise((r) => requestAnimationFrame(() => r(null)));
+      }
+      const next = sample();
+      movers = next.map((s, i) => (s === prev[i] ? '' : name(canvases[i]!, i))).filter(Boolean);
+      prev = next;
+      if (!movers.length) {
+        return { same: true, movers, canvases: canvases.length, roots: roots.length, frames, tries: a + 1 };
+      }
     }
-    const second = sample();
-    return { same: first === second, canvases: canvases.length, frames };
-  }, VIDEO_FREEZE_SETTLE_FRAMES);
+    return { same: false, movers, canvases: canvases.length, roots: roots.length, frames, tries: attempts };
+  }, { frames: VIDEO_FREEZE_SETTLE_FRAMES, attempts: VIDEO_FREEZE_ATTEMPTS, id: nodeId });
+
+  // THE POSITIVE CONTROL FOR THE NARROWING, and it is not decoration: scoping to
+  // the subject makes a MISSING subject indistinguishable from a still one, and
+  // "still" is what this function returns. A scene whose faceplate never
+  // mounted, or whose capture-root testid was renamed by a refactor, would sail
+  // through the stillness check below on an empty list and report green.
+  //
+  // ⚠ IT ASSERTS THE CONTAINERS, NOT THE CANVASES, and the difference is a
+  // measured one rather than a hedge. `roots > 0` is true of every scene BY
+  // CONSTRUCTION — the compact scene has framed the flow node, the dock scene
+  // has opened `dock-full-view` — so it can only fail when the instrument has
+  // genuinely lost its subject. `canvases > 0` is NOT universally true: `pong`
+  // declares `videoFaceWhy` (it needs the video BOOT PATH) but is `domain:
+  // 'audio'` with gate outputs, so `laneGlyphFor` gives its lane tile no
+  // picture at all and its COMPACT scene legitimately samples zero canvases.
+  // Requiring one there would redden a scene that is green and correct.
+  //
+  // ⚠ SO A ZERO-CANVAS SUBJECT MAKES THE CHECK BELOW VACUOUS, and the count is
+  // printed in both messages rather than left to be inferred. That hole is not
+  // new — the page-wide version was equally blind to it and merely could not
+  // LOOK vacuous, because the rack furniture always supplied canvases whether or
+  // not the subject had any.
+  expect(
+    held.roots,
+    `${label}: freezeFaceVideo found NEITHER capture container for '${nodeId}' — no ` +
+      `[data-testid="dock-full-view"] and no .svelte-flow__node[data-id="${nodeId}"]. An empty ` +
+      `sweep is trivially "still", so this is a broken instrument rather than a frozen picture.`,
+  ).toBeGreaterThan(0);
 
   expect(
     held.same,
-    `${label}: the video surface was still MOVING after writing freeze=1 on '${nodeId}' ` +
-      `(${held.canvases} canvases sampled across ${held.frames} rAFs). A scene captured now ` +
-      `would be a moving target — the param did not reach the engine, or this module's picture ` +
-      `is driven by something freeze does not stop.`,
+    `${label}: the video surface was still MOVING after writing freeze=1 on '${nodeId}'. ` +
+      `STILL CHANGING after ${held.tries} × ${held.frames} rAFs: ${held.movers.join(', ')} ` +
+      `(of ${held.canvases} canvases inside ${held.roots} capture container(s)). A scene ` +
+      `captured now would be a moving target — the param did not reach the engine, or this ` +
+      `module's picture is driven by something freeze does not stop.`,
   ).toBe(true);
 }
 

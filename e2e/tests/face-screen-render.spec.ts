@@ -330,6 +330,20 @@ const SUBJECTS: readonly Subject[] = [
   // override names the container the `{#if}` adds and removes, which is both of
   // them.
   { type: 'twotracks', prefix: 'twotracks', canvas: 'twotracks-face-reels', domain: 'audio', why: 'the two tape reels — each reel\'s peak envelope, the wash over the tape outside its loop window, the two draggable loop markers and the live playhead. ⚠ THE SWITCH IS LEGITIMATE HERE FOR THE `scope` REASON RATHER THAN THE `videoOut` ONE: the picture is a preview beside twenty-nine params across seven bands, four of which are not about the tape at all, so with it collapsed you still have a complete, usable tape machine — and on the fleet\'s second seven-band face, reclaiming that vertical space on the bands where the tape is not the subject is worth real screen. ⚠ AND THE SURFACE IS ALSO HOW FOUR PARAMS ARE OPERATED (start/end per reel are positions IN these pictures), which is why collapsing it is a VIEW choice and not a control loss: those four keep ordinary param cells in the TAPE bands, so the plate can still set a loop window with the screen off. ⚠ SCREEN OFF SKIPS THE PAINT AND NEVER THE PER-FRAME ENGINE READ, so switching it back on shows the LIVE tape rather than the frame it was wearing when it shut — the ORDER is asserted at source because no gate can see it.' },
+  // ── vfpga-runner (2026-08-24) — the RECONFIGURABLE host ───────────────────
+  //
+  // Added in the SAME diff as the promotion, per this file's convention.
+  // Verified before writing rather than assumed: the body uses the standard
+  // `{#if !previewCollapsed}` REMOVES mechanism and declares the conventional
+  // `<prefix>-face-canvas`, so no `canvas` override is needed.
+  //
+  // ⚠ ITS `prefix` IS NOT ITS `type`, which is the case this field exists for
+  // (`videoMixer` / `4plexvid` are the others). The extension id is `vfpgaRunner`
+  // but every testid on the body and the card is spelled `vfpga-*`, because
+  // `vfpga` is what the module is called everywhere else in the tree — the
+  // registry, the specs directory, the docs slugs. A computed prefix would match
+  // nothing here and pass silently.
+  { type: 'vfpgaRunner', prefix: 'vfpga', domain: 'video', why: '⚠ THE ONLY BODY IN THIS TABLE WITH A SECOND VIEW BEHIND THE SAME `{#if}`: FABRIC swaps the live picture for a read-only floorplan of the loaded bitstream, so SCREEN OFF must remove BOTH and the FABRIC button is disabled while it is off. The switch is legitimate here for the `scope` reason rather than the `videoOut` one — the picture is a preview beside a bitstream picker, eight slot knobs and a CV conditioning rack, so with it collapsed you still have a complete, usable host. ⚠ AND THE WATCH MARK IS LOAD-BEARING FOR A REASON UNIQUE TO A HOST: what this module renders is not one effect but whichever `.vfpga` is loaded, and several catalog bitstreams (framestore-howl, macroblock-mosh) are REGISTER-BASED — the P&R fabric ping-pongs an FBO pair every frame, so a lapsed mark does not stall a preview, it stalls a clock the picture is an accumulation of. The body retains `markWatched` in BOTH the collapsed and the fabric branch for exactly that.' },
 ] as const;
 
 /** The representative module for the PERSISTENCE leg — see that test's comment. */
