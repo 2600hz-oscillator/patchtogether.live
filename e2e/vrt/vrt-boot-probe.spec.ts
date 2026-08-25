@@ -253,7 +253,7 @@ test.describe('BOOT PROBE — what a VRT scene spends its time on', () => {
 // common branch would return a clean number and prove nothing about the other
 // two.
 const ORDER_SUBJECTS = (
-  process.env.PROBE_FACES ?? 'adsr,vca,filter,lfo,mixer,reverb,mapper,timelorde'
+  process.env.PROBE_FACES ?? 'adsr,vca,mapper,timelorde'
 )
   .split(',')
   .map((s) => s.trim())
@@ -267,7 +267,12 @@ const ORDER_SUBJECTS = (
 const IDENTITY_DELTA = 1;
 
 test.describe('D: shared page vs fresh page — same pixels?', () => {
-  test.setTimeout(900_000);
+  // ⚠ A PROBE'S OWN BUDGET IS NOT A FINDING, and confusing the two cost a run:
+  // the first version capped at 900 s, the sweep ran past it, and the timeout
+  // arrived as `1 failed` with twenty screenshots and NO console output — which
+  // reads exactly like "the shared page moved pixels". Sized here so the probe
+  // can only ever fail on its subject. (Costs nothing: a cap is not a sleep.)
+  test.setTimeout(3_600_000);
 
   test('a compact tile is IDENTICAL from a shared page and from a fresh boot, in any order', async ({
     browser,

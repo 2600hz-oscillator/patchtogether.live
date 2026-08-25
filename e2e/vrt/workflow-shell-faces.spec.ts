@@ -401,9 +401,12 @@ test.describe('VRT: P1 curated faces (?shell=1) — compact lane tile + dock ful
       // number scaled by a guess.
       test.setTimeout(faceSceneTimeout(type, 'dock'));
 
-      // Shared page or fresh one — see the compact scene above.
+      // Shared page or fresh one — see the compact scene above. ⚠ The fresh
+      // hatch is handed THIS scene's viewport so it sizes BEFORE the navigation,
+      // exactly as main does; the shared path cannot, and that asymmetry is what
+      // the probe measures (see the note on the resize below).
       const page = faceSceneNeedsFreshPage(bootOpts)
-        ? await faceSession.freshPage(bootOpts)
+        ? await faceSession.freshPage(bootOpts, foldViewportFor(type))
         : await faceSession.reset();
       // ARMED BY THE FIXTURE, detached at scene teardown on EVERY path — see
       // `armErrors`.

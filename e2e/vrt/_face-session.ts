@@ -143,7 +143,14 @@ export interface FaceSession {
    * exactly that, and `faceSceneNeedsFreshPage` decides it from the mechanism
    * rather than from a list of modules.
    */
-  freshPage(opts?: BootFaceOptions): Promise<Page>;
+  //
+  // ⚠ `viewport` IS APPLIED BEFORE THE NAVIGATION, and that is not a detail. A
+  // fresh scene on `main` sizes the window and THEN boots, so the app lays out at
+  // its final height from the first frame; a shared scene has no navigation left
+  // and must resize afterwards. This hatch exists precisely because a scene could
+  // NOT share, so it has to reproduce main's order exactly — otherwise the escape
+  // hatch would quietly introduce the one difference it was taken to avoid.
+  freshPage(opts?: BootFaceOptions, viewport?: { width: number; height: number }): Promise<Page>;
 }
 
 interface FaceHost {
@@ -264,10 +271,10 @@ export const test = base.extend<
         armed.push({ page, handler });
         return errors;
       },
-      async freshPage(opts: BootFaceOptions = {}) {
+      async freshPage(opts: BootFaceOptions = {}, viewport = LEGACY_FOLD_VIEWPORT) {
         const p = await faceHost.context.newPage();
         owned.push(p);
-        await p.setViewportSize(LEGACY_FOLD_VIEWPORT);
+        await p.setViewportSize(viewport);
         await loadFaceRack(p, opts);
         return p;
       },
