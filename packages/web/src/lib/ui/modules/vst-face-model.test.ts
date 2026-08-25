@@ -11,7 +11,7 @@
 //      The structural claims (two ranked family keys, one page, no hero, the
 //      shared extension) therefore need asserting here or nowhere.
 //
-//   2. EVERY STRING THE FOUR LAMPS CAN PRODUCE, INCLUDING THE ONES NO RUNNER
+//   2. EVERY STRING THE THREE LAMPS CAN PRODUCE, INCLUDING THE ONES NO RUNNER
 //      WILL EVER RENDER. This is the point. `vst-status-model.ts` is where three
 //      deleted readout rows went, and they went onto `aria-label`/`title` — a
 //      VRT baseline cannot see them, and on a CI runner the bridge never
@@ -47,7 +47,6 @@ import {
   vstPluginDetail,
   vstPluginLit,
   vstSavedDetail,
-  vstSavedLit,
 } from './vstBridge/vst-status-model';
 
 const CONNECT = 'vst-connect-{n}';
@@ -371,12 +370,6 @@ describe('the PERSISTENCE sentence — folded INTO the PLUGIN lamp, not its own'
   // its width on a two-cell face. These pins are what keep the FOLD honest —
   // the information has to still be reachable, or the width fix deleted a
   // finding instead of relocating it.
-  it('lights only when the state blob itself travels', () => {
-    expect(vstSavedLit({ stateBytes: 2048, stateB64: 'AAAA' })).toBe(true);
-    expect(vstSavedLit({ stateBytes: 900_000 })).toBe(false);
-    expect(vstSavedLit(undefined)).toBe(false);
-  });
-
   it('the TOO-LARGE case explains the consequence, not just the size', () => {
     // ⚠ THIS IS THE ONE THAT MATTERS. `stateBytes` with no `stateB64` means the
     // plugin comes back EMPTY on the next load — a real consequence a player

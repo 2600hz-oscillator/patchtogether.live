@@ -157,21 +157,25 @@ function peakDb(v: number[] | undefined): string {
 }
 
 /**
- * IS this plugin's own state travelling with the patch?
+ * IS this plugin's own state travelling with the patch — as a SENTENCE, because
+ * it cannot honestly be a picture.
  *
- * ⚠ THIS IS A THREE-WAY FACT, WHICH IS EXACTLY WHY IT IS NO LONGER A LAMP. It
- * had one; the dark half was ambiguous between "nothing mounted yet" and "the
- * blob was too large", and the second of those is the only one that matters —
- * `stateBytes` present with NO `stateB64` means the plugin comes back as an
- * EMPTY instance on the next load. A two-state picture cannot say that, and the
- * plate could not afford a fourth lamp's chrome (see `vstPluginDetail`). The
- * predicate survives because the SENTENCE below needs it and because the unit
- * lane asserts all three regimes produce three different sentences.
+ * ⚠ THIS IS A THREE-WAY FACT, WHICH IS EXACTLY WHY IT IS NO LONGER A LAMP, and
+ * the matching `vstSavedLit` predicate is DELETED rather than left standing. It
+ * had a lamp; the dark half was ambiguous between "nothing mounted yet" and
+ * "the blob was too large", and only the second matters — `stateBytes` present
+ * with NO `stateB64` means the plugin comes back as an EMPTY instance on the
+ * next load. A two-state picture cannot say that, and the plate could not
+ * afford a fourth lamp's chrome either (see `vstPluginDetail` for the
+ * measurement).
+ *
+ * ⚠ THE PREDICATE WENT WITH IT ON PURPOSE. Keeping `vstSavedLit` around would
+ * have left an exported boolean with no product consumer, kept alive only by
+ * the test that asserted it — the "ledger of known answers" shape the repo
+ * standards refuse. When the mechanism is paid off, delete the mechanism. This
+ * function has a live caller (`vstPluginDetail`), which is what makes IT worth
+ * keeping and testing.
  */
-export function vstSavedLit(persisted: { stateBytes?: number; stateB64?: string } | undefined): boolean {
-  return persisted?.stateB64 !== undefined;
-}
-
 export function vstSavedDetail(
   persisted: { pluginId?: string; stateBytes?: number; stateB64?: string } | undefined,
 ): string {
