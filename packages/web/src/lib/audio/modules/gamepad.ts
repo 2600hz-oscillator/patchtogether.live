@@ -379,6 +379,16 @@ const OUTPUT_DEFS = [
   { id: 'ly',    type: 'cv'   as const, label: 'L-Y' },
   { id: 'rx',    type: 'cv'   as const, label: 'R-X' },
   { id: 'ry',    type: 'cv'   as const, label: 'R-Y' },
+  // THE AUX ("third") STICK. Unlike every other output these two ship with NO
+  // default binding — see DEFAULT_GAMEPAD_BINDINGS. A flight stick's extra axes
+  // (a twist/rudder, a throttle lever, a hat) have no standard-mapping index to
+  // fall back on, so a default here could only ever be a GUESS at a physical
+  // axis, and a wrong guess is worse than silence: the VKB Gladiator's axis 1
+  // RESTS at -0.177, so falling through to some default index would put a
+  // constant negative CV on a jack the player believes is unpatched. Unbound
+  // reads exactly 0 forever; you bind them from the mapping board or a preset.
+  { id: 'ax',    type: 'cv'   as const, label: 'A-X' },
+  { id: 'ay',    type: 'cv'   as const, label: 'A-Y' },
   { id: 'lt',    type: 'cv'   as const, label: 'LT'  },
   { id: 'rt',    type: 'cv'   as const, label: 'RT'  },
   { id: 'lb',    type: 'gate' as const, label: 'LB'  },
@@ -443,6 +453,13 @@ export const DEFAULT_GAMEPAD_BINDINGS: Readonly<RemapBindings> = {
   ly: { kind: 'axis', index: STD_AXIS.ly },
   rx: { kind: 'axis', index: STD_AXIS.rx },
   ry: { kind: 'axis', index: STD_AXIS.ry },
+  // ⚠ `ax` / `ay` are DELIBERATELY ABSENT. They are the aux stick, and there is
+  // no standard-mapping axis for a twist/rudder to default to. An output with no
+  // entry here resolves to `undefined` through `bindingForOutput`, and the read
+  // loop turns that into a hard 0 — see the `!control` branch in pollPad. That
+  // silence is the FEATURE: it is what lets a preset bind `ax` alone and leave
+  // `ay` genuinely unpatched instead of quietly emitting a resting axis's
+  // off-centre value.
   lt: { kind: 'button', index: STD_BTN.lt },
   rt: { kind: 'button', index: STD_BTN.rt },
   lb: { kind: 'button', index: STD_BTN.lb },
@@ -670,10 +687,17 @@ export interface StickInvert {
   ly?: boolean;
   rx?: boolean;
   ry?: boolean;
+  ax?: boolean;
+  ay?: boolean;
 }
 
-/** The four invertible stick-axis output ids. */
-export const INVERTIBLE_AXES = ['lx', 'ly', 'rx', 'ry'] as const;
+/** The invertible stick-axis output ids — the two natural sticks plus the aux
+ *  stick. A rudder/twist axis is exactly the case where a sign flip is wanted
+ *  often (which way is "right" depends on the airframe), so the aux pair carries
+ *  the same INVERT affordance as the other two. ONE PLACE: `cloneInvert` and the
+ *  card's toggle roster both iterate this, so adding an axis here is the whole
+ *  change. */
+export const INVERTIBLE_AXES = ['lx', 'ly', 'rx', 'ry', 'ax', 'ay'] as const;
 export type InvertibleAxis = (typeof INVERTIBLE_AXES)[number];
 
 /** True when `id` names one of the four invertible stick axes. */
@@ -692,6 +716,73 @@ export function applyInvert(
 ): number {
   if (!invert || !isInvertibleAxis(outputId)) return value;
   return invert[outputId] ? -value : value;
+}
+
+/** THE PER-OUTPUT SHAPING, whole, as a pure function — everything the read loop
+ *  does to turn one physical control into one output's CV/gate level. Extracted
+ *  from `pollPad` so these rules are assertable WITHOUT an AudioContext, a live
+ *  Y.Doc or a physical controller; the factory's loop is now just a call to this
+ *  per output.
+ *
+ *  ⚠ THE FIRST BRANCH IS THE LOAD-BEARING ONE. An output with NO binding reads
+ *  EXACTLY 0 and skips every later step, INVERT included. `ax`/`ay` ship unbound
+ *  (they are the aux stick — a flight stick's twist/rudder/lever, which has no
+ *  standard-mapping index to default to), and "unbound" has to mean SILENT
+ *  rather than "whatever some default physical axis rests at". That is not
+ *  hypothetical: on the VKB Gladiator EVO R physical axis 1 rests at -0.177, so
+ *  an output falling through to a default index would emit a constant negative
+ *  CV on a jack the player is entitled to believe is unpatched — audible in the
+ *  patch, invisible on the board, and very slow to track down.
+ *
+ *  `calibrated` is the stick-calibrated value for this output when one applies
+ *  (the caller computes the 2D radial map once per stick), else null.
+ *  Order of operations: unbound → calibrated → trigger → cv (deadzone +
+ *  natural-Y flip) → gate, then INVERT last so it composes on top of all of it. */
+export function shapeOutputValue(opts: {
+  outputId: string;
+  outputType: 'cv' | 'gate';
+  /** The bound control, or undefined when this output has no binding at all. */
+  control: PhysicalControl | undefined;
+  reading: RawGamepadReading;
+  calibrated: number | null;
+  invert: StickInvert | undefined;
+}): number {
+  const { outputId, outputType, control, reading, calibrated, invert } = opts;
+  // UNBOUND → hard 0. See the doc comment; this branch is why an unpatched aux
+  // jack is silent instead of carrying a resting axis's offset.
+  if (!control) return 0;
+
+  const raw = readControlValue(reading, control);
+  let v: number;
+  if (calibrated !== null) {
+    v = calibrated;
+  } else if (outputId === 'lt' || outputId === 'rt') {
+    // Trigger outputs read the analog button value (or a remapped axis,
+    // rectified to 0..1) as a smooth 0..1 CV.
+    v = triggerToCv(control.kind === 'axis' ? Math.abs(raw) : raw);
+  } else if (outputType === 'cv') {
+    // Stick-axis CV outputs: deadzone. ly/ry invert (so +1 = up) when on their
+    // natural Y axis; a remapped axis keeps its raw sign. (An off-centre-resting
+    // stick is handled by CALIBRATION's captured rest centre, which already took
+    // precedence in the branch above.)
+    const isNaturalY =
+      (outputId === 'ly' && control.kind === 'axis' && control.index === STD_AXIS.ly) ||
+      (outputId === 'ry' && control.kind === 'axis' && control.index === STD_AXIS.ry);
+    const dz = control.kind === 'axis' ? applyDeadzone(raw) : raw;
+    v = isNaturalY ? -dz : dz;
+  } else {
+    // Gate outputs: 1 when the source crosses the pressed threshold. A button
+    // source uses its pressed flag; a remapped axis crosses at half deflection.
+    const pressed =
+      control.kind === 'button'
+        ? !!reading.buttons[control.index]?.pressed
+        : Math.abs(raw) >= 0.5;
+    v = pressed ? 1 : 0;
+  }
+  // INVERT (last step) — flips a stick-axis output when its flag is set,
+  // composing on top of the remap / calibration / Y-inversion above. A no-op for
+  // non-axis outputs and un-inverted axes.
+  return applyInvert(outputId, v, invert);
 }
 
 /** Toggle ONE axis's invert flag on a node's `data` IN PLACE (safe against the
@@ -948,6 +1039,32 @@ export const GAMEPAD_PRESETS: readonly GamepadPreset[] = [
       rightStickCalibration: { minX: -1, maxX: 1, minY: -1, maxY: 1, deadzone: 0.1 },
     },
   },
+  {
+    // GLADIATOR EVO R — TWIST. Offered in the picker; NEVER auto-applied on a
+    // device-id match, because silently rebinding someone's outputs the moment a
+    // USB device enumerates is indistinguishable from a bug when they come to
+    // debug it later.
+    //
+    // Measured on the owner's `VKBsim Gladiator EVO R` (10 axes, so the browser
+    // is NOT collapsing it to the 4-axis standard mapping): the stick's TWIST is
+    // physical axis 5, and it is a normal full-range bipolar axis — resting at
+    // 0.000, reaching -1.000 twisted fully one way and +1.000 the other. That is
+    // why it needs no calibration record: it already spans the full ±1 that
+    // calibration exists to recover, so the fixed deadzone is the correct
+    // treatment and `applyDeadzone` gives the whole throw.
+    //
+    // The twist goes to the AUX stick's X output. `ay` is deliberately left out
+    // of `bindings` — the owner has nothing to put on it yet, and an output with
+    // no binding reads a hard 0 rather than falling through to a physical axis.
+    // That matters on this exact device: its axis 1 RESTS at -0.177, so a
+    // fall-through would have parked a constant negative CV on an idle jack.
+    name: 'Gladiator EVO R (twist → AUX X)',
+    mapping: {
+      bindings: {
+        ax: { kind: 'axis', index: 5 },
+      },
+    },
+  },
 ];
 
 // ---------------- the SLOT param + the faceplate ----------------
@@ -1028,8 +1145,8 @@ export const GAMEPAD_SLOT_PARAM: ParamDef = {
  * ⚠ `glyph: 'none'` IS THE ONLY LITERAL THAT COMPILES INTO A GREEN RUN, and it
  * is derived rather than chosen. Every live glyph binding resolves through
  * `primaryAudioOutPortId`, which is `outputs.find(o => o.type === 'audio')?.id`.
- * This module has EIGHTEEN outputs and not one is `type: 'audio'` — six `cv`,
- * twelve `gate` — so a `scope` / `meter` / `waveform` glyph would resolve to
+ * Not one of this module's outputs is `type: 'audio'` — they are all `cv` or
+ * `gate` — so a `scope` / `meter` / `waveform` glyph would resolve to
  * `{kind:'static'}` and `module-face-lint` reddens it as a dead glyph.
  * `gamepad-face-model.test.ts` proves the antecedent rather than asserting the
  * literal.
@@ -1057,6 +1174,8 @@ export const gamepadDef: AudioModuleDef = {
     { id: 'ly',    type: 'cv' },
     { id: 'rx',    type: 'cv' },
     { id: 'ry',    type: 'cv' },
+    { id: 'ax',    type: 'cv' },
+    { id: 'ay',    type: 'cv' },
     { id: 'lt',    type: 'cv' },
     { id: 'rt',    type: 'cv' },
     { id: 'lb',    type: 'gate', edge: 'gate' },
@@ -1078,13 +1197,15 @@ export const gamepadDef: AudioModuleDef = {
 
   docs: {
     explanation:
-      "A connected USB or Bluetooth game controller turned into a bank of CV and gate signals — eighteen outputs covering the full standard Xbox-style layout (two analog sticks, two triggers, the bumpers, the four face buttons, the D-pad, and Start/Back). The card polls the controller at ~60 Hz and pushes each axis and button into its own output, so you play the rack with a gamepad: stick axes sweep filters or pan a scene, triggers ride a VCA, face buttons fire drum strikes or scene changes. Sticks come out bipolar (±1) with a small deadzone so a worn stick's rest-drift reads 0, the Y axis flipped so 'up' is +1; triggers are unipolar 0..1; every button is a 0/1 gate. The faceplate's mapping board is where you TEACH THE RACK WHAT YOUR CONTROLLER IS, in three layers that each exist because some real device failed the one below: REMAP (right-click any button LED or trigger row, or press Remap X / Remap Y under a stick, then move the physical control you want bound — the Gamepad API has no events, so the armed listener diffs consecutive polls and takes the first thing that moves past a threshold); CALIBRATE, available on BOTH sticks independently (sweep one through its full travel and its observed min/max become full ±1, with a captured true rest centre so a stick that physically rests off-centre still reads 0, plus a per-stick 'set center' that captures that centre on its own); and INVERT, four per-axis sign flips that compose on top of both. The whole bundle — every binding, both calibrations, all four inverts — saves to a .json you can reload or share, and one built-in preset ships. Browser security only reveals a controller after you press a button on it, so the PAD lamp stays dark and the plate says so until a pad appears. These outputs also drive video modules through the cross-domain CV/gate bridge.",
+      "A connected USB or Bluetooth game controller turned into a bank of CV and gate signals covering the full standard Xbox-style layout (two analog sticks, two triggers, the bumpers, the four face buttons, the D-pad, and Start/Back) plus an AUX stick — a third X/Y pair with no default binding, there for the axes a flight stick has and a gamepad does not, such as a twist/rudder or a throttle lever. The card polls the controller at ~60 Hz and pushes each axis and button into its own output, so you play the rack with a gamepad: stick axes sweep filters or pan a scene, triggers ride a VCA, face buttons fire drum strikes or scene changes. Sticks come out bipolar (±1) with a small deadzone so a worn stick's rest-drift reads 0, the Y axis flipped so 'up' is +1; triggers are unipolar 0..1; every button is a 0/1 gate. The faceplate's mapping board is where you TEACH THE RACK WHAT YOUR CONTROLLER IS, in three layers that each exist because some real device failed the one below: REMAP (right-click ANY cell on the board — a button LED, a trigger row, or an X / Y button under a stick — then move the physical control you want bound; alt-click resets a cell to its default. The Gamepad API has no events, so the armed listener diffs polls against the reading it captured when you armed it and takes the first control that moves past a threshold); CALIBRATE, available on both natural sticks independently (sweep one through its full travel and its observed min/max become full ±1, with a captured true rest centre so a stick that physically rests off-centre still reads 0, plus a per-stick 'set center' that captures that centre on its own — the aux stick has no calibration, because an axis you bind by hand is normally already full-range); and INVERT, a per-axis sign flip on every stick axis that composes on top of both. The whole bundle — every binding, both calibrations, every invert — saves to a .json you can reload or share, and built-in presets ship for the NXT Gladiator and for the Gladiator EVO R's twist axis. Presets are OFFERED in the picker and never applied automatically on a device match. Browser security only reveals a controller after you press a button on it, so the PAD lamp stays dark and the plate says so until a pad appears. These outputs also drive video modules through the cross-domain CV/gate bridge.",
     inputs: {},
     outputs: {
       lx: "Left stick X as bipolar CV, −1 (left) through 0 (center) to +1 (right), after a small deadzone and re-normalization (and the left-stick calibration if you've run it).",
       ly: "Left stick Y as bipolar CV, −1 (down) through 0 to +1 (up) — the axis is flipped so pushing up reads positive — with the same deadzone/calibration treatment as LX.",
       rx: "Right stick X as bipolar CV, −1 (left) to +1 (right), with the stick deadzone applied.",
       ry: "Right stick Y as bipolar CV, −1 (down) to +1 (up), Y flipped, with the stick deadzone applied.",
+      ax: "Aux stick X as bipolar CV, −1 to +1, with the stick deadzone applied. The aux pair is the THIRD X/Y set, and unlike every other output it starts life bound to NOTHING — a flight stick's twist, rudder or throttle lever has no standard-mapping index to default to, so until you bind it (from the mapping board, or by loading a preset) this jack reads exactly 0 rather than guessing at a physical axis. Load the 'Gladiator EVO R (twist → AUX X)' preset and this becomes the stick's twist.",
+      ay: "Aux stick Y as bipolar CV, −1 to +1, with the stick deadzone applied — the aux pair's second axis, for a second unmapped control such as a throttle lever or a slider. Like AX it is unbound by default and reads exactly 0 until you bind something to it; an unbound jack is silent, never the resting value of some default axis.",
       lt: "Left trigger as unipolar CV, 0 fully released to +1 fully pressed — its analog travel, useful as a swell or VCA ride.",
       rt: "Right trigger as unipolar CV, 0 released to +1 pressed.",
       lb: "Left bumper as a gate: 1 while the button is held, 0 when released.",
@@ -1292,46 +1413,25 @@ export const gamepadDef: AudioModuleDef = {
 
       const next: Record<string, number> = {};
       for (const o of OUTPUT_DEFS) {
-        const control = bindingForOutput(o.id, bindings)!;
-        const raw = readControlValue(reading, control);
-        let v: number;
-        if (o.id === 'lx' && calLx !== null) {
-          v = calLx;
-        } else if (o.id === 'ly' && calLy !== null) {
-          v = calLy;
-        } else if (o.id === 'rx' && calRx !== null) {
-          v = calRx;
-        } else if (o.id === 'ry' && calRy !== null) {
-          v = calRy;
-        } else if (o.id === 'lt' || o.id === 'rt') {
-          // Trigger outputs read the analog button value (or a remapped axis,
-          // rectified to 0..1) as a smooth 0..1 CV.
-          v = triggerToCv(control.kind === 'axis' ? Math.abs(raw) : raw);
-        } else if (o.type === 'cv') {
-          // Stick-axis CV outputs: deadzone. ly/ry invert (so +1 = up) when on
-          // their natural Y axis; a remapped axis keeps its raw sign. (An
-          // off-centre-resting stick is handled by CALIBRATION's captured rest
-          // centre — calLx/calLy/calRx/calRy already took precedence above.)
-          const isNaturalY =
-            (o.id === 'ly' && control.kind === 'axis' && control.index === STD_AXIS.ly) ||
-            (o.id === 'ry' && control.kind === 'axis' && control.index === STD_AXIS.ry);
-          const dz = control.kind === 'axis' ? applyDeadzone(raw) : raw;
-          v = isNaturalY ? -dz : dz;
-        } else {
-          // Gate outputs: 1 when the source crosses the pressed threshold. A
-          // button source uses its pressed flag; a remapped axis crosses at half
-          // deflection.
-          const pressed =
-            control.kind === 'button'
-              ? !!reading.buttons[control.index]?.pressed
-              : Math.abs(raw) >= 0.5;
-          v = pressed ? 1 : 0;
-        }
-        // INVERT (last step) — flips the four stick-axis outputs when their flag
-        // is set, composing on top of the remap / calibration / Y-inversion
-        // above. A no-op for non-axis outputs + un-inverted axes.
-        next[o.id] = applyInvert(o.id, v, invert);
+        const calibratedValue =
+          o.id === 'lx' ? calLx
+          : o.id === 'ly' ? calLy
+          : o.id === 'rx' ? calRx
+          : o.id === 'ry' ? calRy
+          : null;
+        next[o.id] = shapeOutputValue({
+          outputId: o.id,
+          outputType: o.type,
+          control: bindingForOutput(o.id, bindings),
+          reading,
+          calibrated: calibratedValue,
+          invert,
+        });
       }
+      // (The per-output shaping itself is `shapeOutputValue`, a PURE function
+      // defined above — extracted so the rules it encodes, above all "an UNBOUND
+      // output reads exactly 0", are assertable at the unit tier instead of only
+      // being reachable through a real AudioContext and a real gamepad.)
 
       // Push only on change to keep the audio thread's param queue
       // shallow. The if-changed compare against the cached snapshot

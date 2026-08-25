@@ -1224,6 +1224,8 @@ frogger out level_gate gate edge=trigger
 frogger param initialTime 10..120 linear default=60
 gamepad meta domain=audio
 gamepad out a gate edge=gate
+gamepad out ax cv
+gamepad out ay cv
 gamepad out b gate edge=gate
 gamepad out back gate edge=gate
 gamepad out dd gate edge=gate
