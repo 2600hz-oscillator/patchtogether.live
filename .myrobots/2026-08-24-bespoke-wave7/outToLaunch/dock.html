@@ -1,0 +1,306 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>OUT TO LAUNCH face — the dock faceplate (spawn)</title>
+<style>
+/* ─────────────────────────────────────────────────────────────────────────
+   OUT TO LAUNCH FACEPLATE — MOCKUP, state 1 of 2.
+   SPEC AND MOCKUP ONLY. Nothing here is implemented. See spec.md.
+
+   House tokens, the same set the wave-4/5/6 mocks use. The 9x9 MONITOR is a
+   CSS stand-in for the body's 236 px <canvas>, painted from
+   `read(nodeId, 'grid9x9')` through rgb8ToLp(bright, gamma) — the SAME
+   transform the LED push uses (spec.md §2).
+
+   ⚠ THIS IS THE SPAWN STATE, and it is also exactly what the VRT dock baseline
+   captures: nothing patched, so the shader takes its `uHasInput < 0.5` branch
+   (out-to-launch.ts:65-68) and every one of the 81 cells is an unlit socket.
+   No Connect has been pressed, so `ports` is [] and no picker exists.
+   ───────────────────────────────────────────────────────────────────────── */
+:root{
+  --bg:#0e1013; --dock:#12161c; --plate:#262a31; --pbody:#1c1f24; --well:#0a0c0f;
+  --line:#2c3037; --tile:#33383f; --ink:#eef1f5; --dim:#9aa2ad; --faint:#646c77;
+  --accent:#6cf; --warn:#f2c14e; --good:#8fe6b0; --bad:#ff8a8a;
+  --vid:#f472b6;
+  --socket:#131318; --wellbg:#060608;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+  font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1240px;margin:0 auto;padding:26px 20px 90px}
+h1{font-size:21px;font-weight:800;margin:0 0 6px;letter-spacing:.01em}
+.sub{color:var(--dim);font-size:12.5px;margin:0 0 14px;max-width:106ch}
+.sub b{color:var(--ink)} code{font-family:var(--mono);font-size:11.5px;color:var(--warn)}
+.nav{display:flex;gap:8px;margin:0 0 20px;font-size:11px;flex-wrap:wrap}
+.nav a{color:var(--ink);text-decoration:none;border:1px solid var(--line);border-radius:6px;
+  padding:6px 12px;background:#12161c;font-family:var(--mono);letter-spacing:.06em;text-transform:uppercase}
+.nav a.on{border-color:var(--vid);color:var(--vid)}
+.warn{border:1px solid #6a5330;background:#1c1811;border-radius:8px;padding:11px 14px;
+  margin:12px 0;font-size:12.5px;color:#e8cf9a;max-width:118ch}
+.warn b{color:var(--warn)}
+.ok{border:1px solid #3b5a48;background:#111a15;border-radius:8px;padding:11px 14px;
+  margin:12px 0;font-size:12.5px;color:#a9d8bd;max-width:118ch}
+.ok b{color:var(--good)}
+.bad{border:1px solid #6b3a3a;background:#1c1214;border-radius:8px;padding:11px 14px;
+  margin:12px 0;font-size:12.5px;color:#f0b8b8;max-width:118ch}
+.bad b{color:var(--bad)}
+.cols{display:grid;grid-template-columns:minmax(0,1fr) 420px;gap:18px;align-items:start}
+@media (max-width:1160px){.cols{grid-template-columns:minmax(0,1fr)}}
+
+.dock{background:var(--dock);border:1px solid var(--line);border-radius:11px;overflow:hidden;padding:11px}
+.chromebar{display:flex;align-items:baseline;gap:9px;padding:0 2px 8px}
+.chromebar .nm{font-size:13px;font-weight:800;letter-spacing:.03em}
+.chromebar .rl{font-size:9.4px;letter-spacing:.09em;text-transform:uppercase;color:var(--faint);font-family:var(--mono)}
+.chromebar .x{margin-left:auto;color:var(--faint);font-family:var(--mono);font-size:12px}
+.plate{background:var(--pbody);border:1px solid var(--tile);border-left:4px solid var(--vid);
+  border-radius:10px;padding:0 0 12px;width:max-content;max-width:100%}
+
+/* THE BODY. 236 px of canvas + 13 px of padding either side = 262 px.
+   The plate shrink-wraps that; nothing else on the face is wider. */
+.extbody{padding:12px 13px 10px;width:262px;max-width:100%;position:relative}
+
+/* ── the 9x9 monitor ─────────────────────────────────────────────────────
+   CELL 22, GAP 3, PAD 7 → 9*22 + 8*3 + 2*7 = 236 (OutToLaunchCard.svelte:94-97).
+   Pads (cols 0-7, rows 0-7) are rounded squares; the top CC row, the right
+   scene column and the corner logo are circles — the hardware's own shapes. */
+.mon{width:236px;height:236px;background:var(--wellbg);border:1px solid #000;border-radius:6px;
+  box-shadow:inset 0 0 10px rgba(0,0,0,.7),0 0 4px rgba(0,0,0,.3);
+  padding:7px;display:grid;grid-template-columns:repeat(9,22px);grid-auto-rows:22px;gap:3px;position:relative}
+.c{width:22px;height:22px;background:var(--socket);border-radius:4px}
+.c.r{border-radius:50%;width:18.5px;height:18.5px;margin:1.75px}
+.c.logo{width:14px;height:14px;margin:4px}
+.screen{position:absolute;right:5px;bottom:5px;font-size:8.4px;letter-spacing:.06em;
+  padding:2px 8px;border:1px solid var(--line);border-radius:2px;font-family:var(--mono);
+  background:rgba(5,6,8,.78);color:var(--ink);z-index:3}
+
+.row{display:flex;align-items:center;gap:8px;margin:9px 0 0;flex-wrap:wrap}
+.btn{display:inline-block;padding:4px 11px;border-radius:3px;font-size:9.2px;
+  font-family:var(--mono);letter-spacing:.06em;text-transform:uppercase;font-weight:700;
+  border:1px solid #4a5260;background:#1a1f2a;color:var(--dim)}
+.btn.pri{background:transparent;border-color:#5a7;color:#5a7}
+.hint{margin:9px 0 0;font-size:9.6px;line-height:1.35;color:var(--faint);max-width:34ch}
+
+/* the StatusLed row — the ONLY status surface a face may use. */
+.lamps{display:flex;gap:12px;align-items:center;margin:10px 0 0;padding-top:9px;border-top:1px solid var(--line)}
+.led{display:flex;align-items:center;gap:5px}
+.led .dot{width:8px;height:8px;border-radius:50%;background:#242832;border:1px solid #343a46}
+.led .dot.lit{background:var(--good);border-color:var(--good);box-shadow:0 0 6px rgba(143,230,176,.6)}
+.led .cap{font-size:8.4px;font-family:var(--mono);letter-spacing:.09em;color:var(--faint)}
+
+/* ── the band ────────────────────────────────────────────────────────── */
+.band{margin:10px 13px 0;padding-top:9px;border-top:1px solid var(--line)}
+.cells{display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap}
+.cell{display:flex;flex-direction:column;align-items:center;gap:5px;width:56px}
+.knob{width:44px;height:44px;border-radius:50%;background:
+   radial-gradient(circle at 50% 34%,#3a4049 0%,#22262d 62%,#171a1f 100%);
+  border:1px solid #444a55;position:relative}
+.knob::after{content:"";position:absolute;left:50%;top:5px;width:2px;height:13px;margin-left:-1px;
+  background:var(--ink);border-radius:1px;transform-origin:50% 17px}
+.knob.k1::after{transform:rotate(135deg)}   /* bright = 1 of 0..1  → full CW */
+.knob.k2::after{transform:rotate(72deg)}    /* gamma = 2.2 of 0.5..3 → ~68% */
+.cell .cap{font-size:8.4px;font-family:var(--mono);letter-spacing:.09em;color:var(--dim);text-transform:uppercase}
+.cell.act{width:auto}
+.actbtn{padding:5px 12px;border-radius:3px;border:1px solid #5a7;color:#5a7;background:transparent;
+  font-size:9.2px;font-family:var(--mono);letter-spacing:.06em;text-transform:uppercase;font-weight:700}
+
+/* ── the LANE tile ────────────────────────────────────────────────────── */
+.lanes{display:flex;gap:24px;align-items:flex-start;flex-wrap:wrap;margin-top:8px}
+.lane{width:192px;background:var(--pbody);border:1px solid var(--tile);border-left:3px solid var(--vid);
+  border-radius:7px;padding:7px 8px 9px}
+.lane .t{font-size:8.6px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--dim);font-family:var(--mono);margin:0 0 7px}
+.lane .lcells{display:flex;gap:10px;align-items:flex-start;justify-content:center}
+.lane .cell{width:46px}
+.lane .knob{width:34px;height:34px}
+.lane .knob::after{height:10px;top:4px;transform-origin:50% 13px}
+.lane .cap{font-size:7.6px}
+.lane .actbtn{padding:3px 7px;font-size:7.8px}
+.lane .note{font-size:8.2px;color:var(--faint);font-family:var(--mono);text-align:center;margin:8px 0 0}
+.lane.bad-tile{border-left-color:var(--bad)}
+.lane .stolen{width:160px;height:120px;margin:0 auto;border-radius:2px;border:1px solid #1a1f2a;
+  background:linear-gradient(165deg,#0f2033 0%,#1d4763 44%,#4d7d84 76%,#c9b184 100%);position:relative}
+.lane .stolen::after{content:"NOT THIS NODE";position:absolute;inset:0;display:flex;align-items:center;
+  justify-content:center;font-family:var(--mono);font-size:8.4px;letter-spacing:.1em;color:#ffdede;
+  background:rgba(90,20,20,.5)}
+
+.notes{display:flex;flex-direction:column;gap:12px}
+.card{border:1px solid var(--line);background:#101419;border-radius:9px;padding:12px 14px}
+.card h3{margin:0 0 7px;font-size:10px;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--accent);font-family:var(--mono);font-weight:700}
+.card p{margin:0 0 8px;font-size:12px;color:var(--dim)}
+.card p:last-child{margin-bottom:0}
+.card b{color:var(--ink)}
+table{border-collapse:collapse;width:100%;font-size:11px;margin:2px 0 0}
+th,td{text-align:left;padding:4px 7px 4px 0;border-bottom:1px solid #1e242c;vertical-align:top;color:var(--dim)}
+th{color:var(--faint);font-family:var(--mono);font-size:8.6px;letter-spacing:.09em;text-transform:uppercase;font-weight:400}
+td b{color:var(--ink)}
+.aria{font-family:var(--mono);font-size:10.5px;color:var(--good)}
+.gone{text-decoration:line-through;color:#5a616c}
+.no{color:var(--bad);font-weight:700}
+.yes{color:var(--good);font-weight:700}
+</style>
+<div class="wrap">
+
+<h1>OUT TO LAUNCH — the dock faceplate (spawn state)</h1>
+<p class="sub">
+  <b>SPEC AND MOCKUP ONLY. Nothing here is implemented.</b> Nothing patched, nothing
+  connected — which is both the state a player meets first <i>and</i> exactly what the VRT
+  dock baseline captures. The body is a <b>236 px</b> 9&times;9 canvas: the plate shrink-wraps
+  it, so this face is <b>compact by measurement</b>, not by claim (<code>spec.md &sect;6.4</code>).
+</p>
+
+<div class="nav">
+  <a class="on" href="dock.html">1 &middot; the dock face (spawn)</a>
+  <a href="dock-bound.html">2 &middot; connected, bound, and the lane</a>
+  <a href="spec.md">spec.md</a>
+</div>
+
+<div class="bad">
+  <b>&#9888; THE LANE TILE IS BROKEN ON <code>main</code> TODAY, AND PROMOTION WOULD MAKE IT WORSE.</b>
+  <code>hasVideoSurface</code> is <code>domain === 'video'</code>
+  (<code>module-shell-model.ts:177-179</code>), so this module's placeholder tile mounts
+  <code>VideoTileThumb</code> &mdash; but its handle is <code>{ fbo: null, texture: null }</code>
+  (<code>out-to-launch.ts:165-167</code>), so <code>blitOutputToDrawingBuffer</code> returns early
+  (<code>engine.ts:1765-1766</code>) and the thumb's <code>drawImage</code> copies whatever the shared
+  engine drawing buffer last held &mdash; <b>another node's picture</b>. After promotion that
+  picture would <b>OUTRANK</b> the two knobs (#1785). <b>PR A fixes it, alone, and is attest-zero.</b>
+  See <code>spec.md &sect;0</code>.
+</div>
+
+<div class="cols">
+<div>
+
+  <div class="dock">
+    <div class="chromebar">
+      <span class="nm">OUT TO LAUNCH</span>
+      <span class="rl">dock &middot; full view</span>
+      <span class="x">&#10005;</span>
+    </div>
+
+    <div class="plate">
+      <div class="extbody">
+
+        <div class="mon" title="the 9x9 monitor — 81 unlit sockets at spawn">
+          <!-- row 9 (top): 8 CC circles + the corner LOGO -->
+          <div class="c r"></div><div class="c r"></div><div class="c r"></div><div class="c r"></div>
+          <div class="c r"></div><div class="c r"></div><div class="c r"></div><div class="c r"></div>
+          <div class="c r logo"></div>
+          <!-- rows 8..1: 8 pads + 1 scene circle -->
+          <div class="c"></div><div class="c"></div><div class="c"></div><div class="c"></div><div class="c"></div><div class="c"></div><div class="c"></div><div class="c"></div><div class="c r"></div>
+          <div class="c"></div><div class="c"></div><div class="c"></div><div class="c"></div><div class="c"></div><div class="c"></div><div class="c"></div><div class="c"></div><div class="c r"></div>
+          <div class="c"></div><div class="c"></div><div class="c"></div><div class="c"></div><div class="c"></div><div class="c"></div><div class="c"></div><div class="c"></div><div class="c r"></div>
+          <div class="c"></div><div class="c"></div><div class="c"></div><div class="c"></div><div class="c"></div><div class="c"></div><div class="c"></div><div class="c"></div><div class="c r"></div>
+          <div class="c"></div><div class="c"></div><div class="c"></div><div class="c"></div><div class="c"></div><div class="c"></div><div class="c"></div><div class="c"></div><div class="c r"></div>
+          <div class="c"></div><div class="c"></div><div class="c"></div><div class="c"></div><div class="c"></div><div class="c"></div><div class="c"></div><div class="c"></div><div class="c r"></div>
+          <div class="c"></div><div class="c"></div><div class="c"></div><div class="c"></div><div class="c"></div><div class="c"></div><div class="c"></div><div class="c"></div><div class="c r"></div>
+          <div class="c"></div><div class="c"></div><div class="c"></div><div class="c"></div><div class="c"></div><div class="c"></div><div class="c"></div><div class="c"></div><div class="c r"></div>
+          <span class="screen">SCREEN ON</span>
+        </div>
+
+        <div class="lamps">
+          <span class="led"><span class="dot"></span><span class="cap">MONITOR</span></span>
+        </div>
+
+        <p class="hint">Press Connect, then pick a Launchpad.</p>
+
+      </div>
+
+      <div class="band">
+        <div class="cells">
+          <div class="cell"><span class="knob k1"></span><span class="cap">Bright</span></div>
+          <div class="cell"><span class="knob k2"></span><span class="cap">Gamma</span></div>
+          <div class="cell act"><span class="actbtn">Connect&hellip;</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <h3 style="font-size:11px;letter-spacing:.09em;text-transform:uppercase;color:var(--faint);
+    font-family:var(--mono);font-weight:400;margin:22px 0 6px">The lane tile &mdash; before and after PR A</h3>
+  <div class="lanes">
+    <div class="lane bad-tile">
+      <p class="t">Today (placeholder)</p>
+      <div class="stolen"></div>
+      <p class="note">borrowed picture &mdash; <code>spec.md &sect;0</code></p>
+    </div>
+    <div class="lane">
+      <p class="t">Faced (after PR A)</p>
+      <div class="lcells">
+        <div class="cell"><span class="knob k1"></span><span class="cap">Bright</span></div>
+        <div class="cell"><span class="knob k2"></span><span class="cap">Gamma</span></div>
+      </div>
+      <div style="display:flex;justify-content:center;margin-top:8px"><span class="actbtn">Connect&hellip;</span></div>
+      <p class="note">glyph: 'none' &mdash; forced</p>
+    </div>
+  </div>
+
+</div>
+
+<div class="notes">
+
+  <div class="card">
+    <h3>Why 236 px, exactly</h3>
+    <p>
+      <code>CELL 22</code>, <code>GAP 3</code>, <code>PAD 7</code>,
+      <code>LP_MONITOR_COLS 9</code> (<code>OutToLaunchCard.svelte:94-97</code>) &rarr;
+      <code>9&times;22 + 8&times;3 + 2&times;7 = 236</code>. The legacy card is
+      <code>width: 300px</code> (<code>:271</code>) <i>because</i> of it.
+    </p>
+    <p>
+      A live picture is the ruling's <b>first named width earner</b> &mdash; but this one earns
+      only 236 px, narrower than most faces in the fleet. <b>No <code>FACE_WIDTH_EXEMPTIONS</code>
+      entry is needed</b>, and the grid must not be scaled up to fill space that does not exist.
+    </p>
+  </div>
+
+  <div class="card">
+    <h3>What the card paints today, and where it goes</h3>
+    <table>
+      <tr><th>card</th><th>&rarr;</th></tr>
+      <tr><td class="gone">MONITOR ACTIVE &mdash; &hellip; can't be used for control while bound.</td>
+          <td>the <b>MONITOR</b> lamp + <span class="aria">aria-label</span>. The sentence survives
+              <b>verbatim and longer</b> in <code>docs.explanation</code> (<code>:114</code>),
+              in <code>DESCRIPTIONS</code>, and on the generated docs page &mdash; a
+              <b>relocation to three surfaces</b>, not a loss.</td></tr>
+      <tr><td class="gone">Bound to <code>&lt;port id&gt;</code>.</td>
+          <td>the lamp's <code>detail</code> &rarr; <span class="aria">aria-label</span>. The port
+              <b>NAME</b> stays painted inside the picker, where an option name is permitted.</td></tr>
+      <tr><td class="gone">&hellip; (in use)</td>
+          <td>the <code>disabled</code> attribute (already there, <code>:255</code>) + the accessible
+              name. <code>title=</code> is "there but hidden" and goes.</td></tr>
+      <tr><td>Connect Launchpad / Unbind Launchpad</td>
+          <td><span class="yes">KEEP</span> &mdash; control captions naming their own action.</td></tr>
+      <tr><td>the two Web-MIDI error blocks</td>
+          <td><span class="yes">KEEP</span> &mdash; errors, absent whenever nothing is wrong
+              (midiclock's precedent).</td></tr>
+      <tr><td>the 9&times;9 canvas</td>
+          <td><span class="yes">KEEP</span> &mdash; and it draws <b>no text at all</b>
+              (<code>fillRect</code> / <code>roundRect</code> / <code>arc</code> only), so it does
+              not even reach the in-canvas-text question.</td></tr>
+    </table>
+  </div>
+
+  <div class="card">
+    <h3>The SCREEN switch is required, and it is safe here</h3>
+    <p>
+      <code>video-face-screen-source.test.ts</code> runs over <code>STRICT_FACES &cap; video defs</code>
+      and <code>NO_SCREEN_SWITCH</code> holds only <code>videoOut</code>. This module is in scope and
+      deserves no exemption: its reason to exist is <b>the LEDs</b>, and the canvas is explicitly the
+      no-hardware fallback (<code>out-to-launch.ts:20-21</code>).
+    </p>
+    <p>
+      <b>&#9888; SCREEN OFF cannot darken a performer's hardware</b>, structurally: the 30 fps LED
+      pump lives on <code>node-launchpad-monitor-registry</code>, not on any card or body &mdash;
+      which is #1728's entire point. Collapsing skips a <code>drawPreview</code> and nothing else.
+    </p>
+    <p>
+      &#9888; It also adds this module's <b>first <code>node.data</code> write</b>. It must be
+      <code>mutateNode</code> + <code>LOCAL_ORIGIN</code> on the first commit &mdash;
+      <code>mutate.guard</code> anchors on <code>.params</code> and cannot see it.
+    </p>
+  </div>
+
+</div>
+</div>
+</div>

@@ -4351,6 +4351,24 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // the three topbar surfaces with the faceplate system is real work and does
   // not belong on a module PR; #2173 repaired one of the three.
   'midiclock',
+
+  // moog960 — the System 55 step sequencer, and the FIRST GRID face: 24 step
+  // pots in 3 rows × 8 columns, plus a per-row RANGE and a per-column MODE.
+  //
+  // ⚠ ITS TWO SWITCH FAMILIES WOULD HAVE SHIPPED INERT. `range*` and `mode*`
+  // are `0..2 discrete` — three states across a whole dial — which is the
+  // moog962 SELECTABILITY TRAP: a drag quantises straight back to where it
+  // started, so eleven of this module's controls would have been unusable while
+  // every def-reading gate stayed green. Both families now carry an `options`
+  // roster so `paramCellKind` derives a segmented cell, and the labels are the
+  // hardware's own (×1/×2/×4, NORM/SKIP/STOP) taken from this def's existing
+  // `docs`, not invented for the face.
+  //
+  // SIX bands, deliberately one under `DOCK_TAB_MIN_BANDS = 7`: the three row
+  // banks are one idea three times and a player reads them together, so a tab
+  // rail would hide two thirds of the sequence at all times. Not padded to
+  // reach the rail, per the owner's own instruction about that threshold.
+  'moog960',
   // VFPGA-RUNNER (2026-08-24) — the fleet's only RECONFIGURABLE module, and the
   // entry whose ranking argument is that its identity is not a param at all.
   //
