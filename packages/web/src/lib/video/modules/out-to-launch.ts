@@ -106,8 +106,36 @@ export const outToLaunchDef: VideoModuleDef = {
     { id: 'gamma',  label: 'Gamma',  defaultValue: OUT_TO_LAUNCH_DEFAULTS.gamma,  min: 0.5, max: 3, curve: 'linear' },
   ],
   // Drives external hardware LEDs (no output texture, no audio) — keep drawing
-  // while unobserved so the 9×9 readback the card pushes stays fresh.
+  // while unobserved so the 9×9 readback the node registry pushes stays fresh.
   pullExempt: true,
+
+  // ── THE CONNECT GESTURE, DECLARED AS A ONE-MEMBER FAMILY ──────────────────
+  //
+  // `face.order` may hold a NON-param key exactly two ways: a `<familyId>-{n}`
+  // template whose prefix is a family DECLARED here, or an entry in a committed
+  // `<type>.legend.json`, of which three exist in the whole repo and none is
+  // this module's. So the family is what lets the binding gesture be RANKED at
+  // all, and ranking it is what puts it on the lane tile.
+  //
+  // ⚠ EXACTLY ONE FAMILY, and the ceiling is a GATE rather than a preference:
+  // module-face-lint requires every declared family to appear in `face.order`
+  // AND the dock plan to render it exactly once. A family is a promise to RANK,
+  // not a vocabulary list — declaring the port picker or UNBIND here would force
+  // them into cells they cannot be, for the mechanical reasons the face comment
+  // below gives.
+  //
+  // The `testidPrefix` is a literal the LEGACY CARD already emits
+  // (`OutToLaunchCard.svelte`, the Connect button), which is what
+  // module-docs-lint's card grep checks — so a rename on either surface is RED.
+  // The card file survives promotion: `?shell=legacy` still renders it.
+  controlFamilies: [
+    {
+      id: 'out-to-launch-connect',
+      label: 'Connect',
+      kind: 'other',
+      testidPrefix: 'out-to-launch-connect',
+    },
+  ],
 
   docs: {
     explanation:
@@ -119,7 +147,83 @@ export const outToLaunchDef: VideoModuleDef = {
     controls: {
       bright: "BRIGHT (0..1, default 1) scales the overall LED brightness — every cell's RGB is multiplied by this before it's sent, so lower values dim the whole monitor (useful because the RGB LEDs are very bright). Applied identically to the on-card preview.",
       gamma: "GAMMA (0.5..3, default 2.2) is the gamma exponent applied to each colour channel before scaling. 1 is a literal what-you-see map; above 1 deepens the mid-tones and blacks (usually flatters the bright LEDs on a moving source); below 1 lifts dim detail. Applied identically to the on-card preview.",
+      'out-to-launch-connect': "CONNECT LAUNCHPAD asks the browser for Web MIDI with sysex — a permission that must be granted from a real click, and that the whole module is inert without — and then lists the Launchpad outputs attached to this machine. Picking one from that list is what binds it as a monitor; the list and the UNBIND that releases it live on the faceplate's own surface, because a roster enumerated from the machine is not something a control can declare in advance. Pressing CONNECT again re-asks and re-lists, which is how you pick up a Launchpad that was plugged in after the first time.",
     },
+  },
+
+  // ── THE FACE ──────────────────────────────────────────────────────────────
+  //
+  // WHAT IT IS FOR: this is the only module that turns a piece of MIDI control
+  // hardware into a video DISPLAY. Every other video sink ends in a screen; this
+  // one ends in 81 RGB buttons, and the whole 9×9 addressable surface of a
+  // Launchpad Mini Mk3 maps onto the frame with no cropping and no flip. The
+  // verb a player performs is BIND A DEVICE — until one is bound the module
+  // drives nothing — and the two knobs exist because LEDs are not a screen: they
+  // are far brighter and far more contrasty, so a literal 1:1 map looks blown
+  // out and GAMMA's 2.2 default is the picture actually shipping.
+  //
+  // ⚠ THE INVENTORY `why` CALLED THE KNOBS "INCIDENTAL TO THE BINDING FLOW" AND
+  // THAT IS TRUE OF THE FLOW AND MISLEADING ABOUT THE MODULE. `bright` and
+  // `gamma` are real `ParamDef`s that the LED pump reads off the live engine
+  // handle every frame (`node-launchpad-monitor-registry` → `monitorGridToLeds`),
+  // so they shape EVERY frame that reaches the hardware. What the `why` omitted
+  // entirely is the 9×9 PREVIEW — the module's own docs call it the thing that
+  // lets you "dial it in without hardware", and it is the only surface this
+  // module has on a machine with no Launchpad attached. Ranked cells are exactly
+  // how a control incidental to one flow and essential to the module should
+  // appear, so all three rank.
+  //
+  // THE LADDER, read back as a sentence: at every tier you get the live picture
+  // and the gesture the module is completely inert without; at compact you also
+  // get BRIGHT, the knob that decides whether the panel is legible in the room
+  // you are standing in; at the dock you additionally get GAMMA, the full-size
+  // 9×9 monitor with its SCREEN switch, the port picker, UNBIND, and the lamp
+  // that says which device is being driven and what that costs you.
+  //
+  // ⚠ CONNECT IS RANK 1 OVER BOTH KNOBS. The knobs shape a picture; CONNECT is
+  // the reason there is anywhere to put it. A rack with an unbound OUT TO LAUNCH
+  // drives no hardware at all, and the permission CONNECT asks for is
+  // gesture-gated by the browser — so it is the one control here that a player
+  // cannot route around and cannot reach by any other means.
+  //
+  // ⚠ BRIGHT OUTRANKS GAMMA, and the argument would be wrong for a different
+  // module. On a normal display these are two shaping knobs of similar weight.
+  // On this one they are not: `bright` is a linear scale over the whole surface
+  // and is the control you reach for when the panel is physically too bright to
+  // look at, which is the first thing a player notices about a Launchpad running
+  // at full RGB. `gamma` redistributes mid-tones and is a look decision made
+  // once. The lane tier shows two cells beside the picture; the first-reached
+  // control belongs in it.
+  //
+  // ⚠ `glyph: 'none'` IS FORCED, NOT CHOSEN, and here the premise is true by
+  // inspection: `outputs` is EMPTY, so `primaryAudioOutPortId`
+  // (`outputs.find(o => o.type === 'audio')`) resolves null and every live-audio
+  // glyph binding short-circuits to `{kind:'static'}`, which module-face-lint
+  // reddens by name (#1692) with no exemption list. The tile's picture arrives
+  // through a different seam entirely — `hasVideoSurface(def)` is
+  // `domain === 'video'` — so `'none' + blank tile` and `'none' + live thumb`
+  // are indistinguishable from this declaration, and `outtolaunch-face-model
+  // .test.ts` asserts `hasVideoSurface` rather than trusting the literal.
+  //
+  // ⚠ NO `pages`. Three ranked cells and ONE idea: put this video on that
+  // hardware. A header reading "device" over a single CONNECT cell and a second
+  // reading "look" over two knobs would add ~81 px of band to say what the
+  // captions already say, on a module whose plate is set by a 236 px picture.
+  // `face.pages` is for a face with more than one IDEA in it.
+  //
+  // ⚠ NO `rear` GROUPS. `inputs` is one video jack and `outputs` is empty, so
+  // the derived default is exactly right: one input section, one out-rail
+  // section that renders nothing. An authored group here could only restate the
+  // domain, which is the thing the rear-card note says not to author.
+  //
+  // The 9×9 monitor, its SCREEN switch, the port picker, UNBIND and the MONITOR
+  // lamp are the extension's `fullViewBody` — see
+  // $lib/ui/modules/outToLaunch/shell-extension.ts for why each one cannot be a
+  // cell.
+  face: {
+    glyph: 'none',
+    order: ['out-to-launch-connect-{n}', 'bright', 'gamma'],
+    extension: 'outToLaunch',
   },
 
   factory(ctx, node): VideoNodeHandle {
