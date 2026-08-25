@@ -53,12 +53,19 @@
   const { set, engineCtx } = cardParams(es9Def, () => id, () => node);
 
   // ---- per-tab transient state (never in Yjs) — MIRRORED from the owner ----
+  //
+  // ⚠ `snap.detail` IS NOT DERIVED HERE ANY MORE, AND ITS ABSENCE IS THE POINT.
+  // This file used to compute `stateDetail = snap.detail` and then never read
+  // it in any template branch — the bridge worker sends a real detail string on
+  // every status message and the card threw the most specific thing it knew
+  // straight away. It has a consumer now, on the FACEPLATE: `es9BridgeDetail`
+  // composes it into the BRIDGE lamp's `aria-label`, which is where the
+  // resting-text ruling sends a measurement.
   // svelte-ignore state_referenced_locally -- SEED only. The $effect below re-reads
   // es9Snapshot(nodeId) from the live id and subscribes, so this initial value is
   // replaced before the first paint that could show a stale one.
   let snap = $state<Es9OwnerSnapshot>(es9Snapshot(id));
   let connState = $derived<Es9ConnectionState>(snap.state);
-  let stateDetail = $derived<string | undefined>(snap.detail);
   let device = $derived<Es9DeviceInfo | null>(snap.device);
   let meters = $derived<Es9Meters | null>(snap.meters);
   let rtt = $derived<number | null>(snap.rtt);
