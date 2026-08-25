@@ -143,6 +143,12 @@ export function cardTemplate(src: string): string {
  */
 export function mountsTypedEntry(template: string): boolean {
   if (/<NoteEntry[\s/>]/.test(template)) return true;
+  // The GENERIC typed-entry primitive (#1509), beside the note-specific
+  // composite above. Both are component tags that render a typed `<input>`, so
+  // a subject that named only one of them would read "no typed entry" on a
+  // surface that has it — which on `ModuleShell` is the difference between the
+  // note-entry blocker being live and being stale.
+  if (/<TextEntry[\s/>]/.test(template)) return true;
   if (/<textarea[\s/>]/.test(template)) return true;
   if (/contenteditable/.test(template)) return true;
   return /<input\b[^>]*\btype="(text|number|url|search|email|tel)"/.test(template);
