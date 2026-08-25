@@ -155,6 +155,7 @@
     triggerSentence,
     type MappingOutcome,
     type Stick,
+    type StickSlot,
   } from './gamepad-board-model';
 
   let { nodeId }: { nodeId: string } = $props();
@@ -419,13 +420,30 @@
   }
 
   const LED_GESTURES = 'Right-click to rebind it, alt-click to reset it.';
-  const AXIS_GESTURES = 'Click to rebind it, right-click to reset it.';
+  // ⚠ THE ARM GESTURE IS RIGHT-CLICK ON EVERY CELL OF THIS BOARD, AND THAT USED
+  // TO BE FALSE HERE. The axis buttons alone armed on LEFT-click and used
+  // right-click to RESET — the exact inverse of the LEDs and the trigger rows
+  // beside them, and the inverse of this module's own `docs.explanation`, which
+  // has always told the player to right-click the control they want to rebind.
+  // So a player who right-clicked "X" to bind a twist axis did not arm anything:
+  // they CLEARED the binding, then moved the stick against a listener that was
+  // never listening, and the axis "could not be assigned". Right-click now arms
+  // everywhere; alt-click resets everywhere; left-click still arms an axis
+  // button, because that is what shipped and nothing is served by taking it away.
+  const AXIS_GESTURES = 'Right-click (or click) to rebind it, alt-click to reset it.';
   const TRIGGER_GESTURES = 'Right-click to rebind it, alt-click to reset it.';
 
-  const AXES: { stick: Stick; cap: string; x: string; y: string }[] = [
-    { stick: 'left', cap: 'L', x: 'lx', y: 'ly' },
-    { stick: 'right', cap: 'R', x: 'rx', y: 'ry' },
+  // The three stick BLOCKS. `aux` is the third X/Y pair — a flight stick's
+  // twist / rudder / lever — and is not calibratable (no record to sweep into).
+  const AXES: { stick: StickSlot; cap: string; x: string; y: string; calibratable: boolean }[] = [
+    { stick: 'left', cap: 'L', x: 'lx', y: 'ly', calibratable: true },
+    { stick: 'right', cap: 'R', x: 'rx', y: 'ry', calibratable: true },
+    { stick: 'aux', cap: 'A', x: 'ax', y: 'ay', calibratable: false },
   ];
+  /** The calibration row's own roster — NARROW, so a stick with nowhere to store
+   *  a sweep cannot reach `startCalibration`. Derived from AXES rather than
+   *  re-typed, so a fourth block would enrol itself correctly or not at all. */
+  const CAL_STICKS: Stick[] = AXES.filter((a) => a.calibratable).map((a) => a.stick as Stick);
   const TRIGGERS: { id: string; label: string }[] = [
     { id: 'lt', label: 'LT' },
     { id: 'rt', label: 'RT' },
@@ -461,8 +479,10 @@
   <div class="sticks">
     {#each AXES as ax (ax.stick)}
       {@const live = { x: snapshot.values[ax.x] ?? 0, y: snapshot.values[ax.y] ?? 0 }}
-      {@const box = ax.stick === 'left' ? leftBox : rightBox}
-      {@const calibrated = ax.stick === 'left' ? snapshot.calibrated : snapshot.rightCalibrated}
+      {@const box = ax.stick === 'left' ? leftBox : ax.stick === 'right' ? rightBox : null}
+      {@const calibrated = !ax.calibratable
+        ? null
+        : ax.stick === 'left' ? snapshot.calibrated : snapshot.rightCalibrated}
       <div class="stick-block">
         <svg
           class="stick-pad"
@@ -507,8 +527,8 @@
               class="mini"
               class:armed={remap?.outputId === a.port}
               class:bound={!!bindings[a.port]}
-              onclick={() => armRemap(a.port, 'axis')}
-              oncontextmenu={(e) => { e.preventDefault(); clearRemap(a.port); }}
+              onclick={(e) => { if (e.altKey) clearRemap(a.port); else armRemap(a.port, 'axis'); }}
+              oncontextmenu={(e) => { e.preventDefault(); armRemap(a.port, 'axis'); }}
               aria-label={remapSentence({
                 outputId: a.port,
                 caption: a.axis.toUpperCase(),
@@ -537,12 +557,16 @@
           {/each}
         </div>
 
-        <button
-          type="button"
-          class="wide"
-          onclick={() => setCenter(ax.stick)}
-          data-testid="gamepad-setcenter-{ax.stick}-{nodeId}"
-        >set center</button>
+        {#if ax.calibratable}
+          <!-- SET CENTER writes into a StickCalibration record, so it exists for
+               exactly the sticks that own one. The aux pair has none. -->
+          <button
+            type="button"
+            class="wide"
+            onclick={() => setCenter(ax.stick as Stick)}
+            data-testid="gamepad-setcenter-{ax.stick}-{nodeId}"
+          >set center</button>
+        {/if}
       </div>
     {/each}
   </div>
@@ -554,16 +578,16 @@
        armed pad's own border and its sweep box carry both. -->
   <div class="calib" data-testid="gamepad-calib-{nodeId}">
     {#if !calibrating}
-      {#each AXES as ax (ax.stick)}
-        {@const calibrated = ax.stick === 'left' ? snapshot.calibrated : snapshot.rightCalibrated}
+      {#each CAL_STICKS as stick (stick)}
+        {@const calibrated = stick === 'left' ? snapshot.calibrated : snapshot.rightCalibrated}
         <span class="calib-stick">
           <button
             type="button"
             class="wide"
-            onclick={() => startCalibration(ax.stick)}
-            data-testid="gamepad-calibrate-{ax.stick}-{nodeId}"
-          >calibrate {ax.stick}</button>
-          {#if ax.stick === 'left'}
+            onclick={() => startCalibration(stick)}
+            data-testid="gamepad-calibrate-{stick}-{nodeId}"
+          >calibrate {stick}</button>
+          {#if stick === 'left'}
             <StatusLed
               caption="CAL L"
               lit={calibrated}
@@ -582,9 +606,9 @@
             <button
               type="button"
               class="mini"
-              onclick={() => clearCalibration(ax.stick)}
-              aria-label={`clear the ${ax.stick} stick calibration and fall back to the fixed deadzone`}
-              data-testid="gamepad-calibrate-clear-{ax.stick}-{nodeId}"
+              onclick={() => clearCalibration(stick)}
+              aria-label={`clear the ${stick} stick calibration and fall back to the fixed deadzone`}
+              data-testid="gamepad-calibrate-clear-{stick}-{nodeId}"
             >✕</button>
           {/if}
         </span>
@@ -761,6 +785,10 @@
   .sticks {
     display: flex;
     gap: 14px;
+    /* WRAP, so the third (aux) stick block cannot buy the plate extra width.
+       Compact is the default and width has to be earned; a third block that
+       does not fit belongs on the next row, never on a wider faceplate. */
+    flex-wrap: wrap;
   }
   .stick-block {
     display: flex;

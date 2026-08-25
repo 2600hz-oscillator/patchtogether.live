@@ -1224,6 +1224,8 @@ frogger out level_gate gate edge=trigger
 frogger param initialTime 10..120 linear default=60
 gamepad meta domain=audio
 gamepad out a gate edge=gate
+gamepad out ax cv
+gamepad out ay cv
 gamepad out b gate edge=gate
 gamepad out back gate edge=gate
 gamepad out dd gate edge=gate
@@ -3591,6 +3593,8 @@ vstFx out out_l audio
 vstFx out out_r audio
 vstFx stereo in_l+in_r
 vstFx stereo out_l+out_r
+vstFx family vst-connect kind=other prefix=vst-connect
+vstFx family vst-disconnect kind=other prefix=vst-disconnect
 vstInstrument meta domain=audio
 vstInstrument in gate gate edge=gate
 vstInstrument in pitch cv
@@ -3599,6 +3603,8 @@ vstInstrument in vel cv
 vstInstrument out out_l audio
 vstInstrument out out_r audio
 vstInstrument stereo out_l+out_r
+vstInstrument family vst-connect kind=other prefix=vst-connect
+vstInstrument family vst-disconnect kind=other prefix=vst-disconnect
 warrensspectrum meta domain=audio
 warrensspectrum in audio_in audio
 warrensspectrum in center_cv cv param=spectralCenter cvScale=linear

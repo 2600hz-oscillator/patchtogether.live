@@ -25,7 +25,77 @@
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
+import type { ModuleFace } from '$lib/graph/types';
 import { createVstHandle } from './vst-bridge-shared';
+
+/**
+ * THE FACE — and it is the thinnest in the fleet, which is the honest outcome
+ * rather than a gap.
+ *
+ * WHAT THIS MODULE IS FOR, MUSICALLY: it makes a plugin you already own behave
+ * like a module you patched. The one thing it does that no sibling does is
+ * borrow a voice from OUTSIDE the browser and give it rack citizenship — poly CV
+ * in, stereo audio out, sample-accurate MIDI in between. The verb a player
+ * performs is MOUNT: choose an instrument and hand it the lane's notes.
+ *
+ * ⚠ THE RANKING IS FORCED BY THE CONTRACT, NOT CHOSEN. `params: []` — this def
+ * declares no ParamDef at all, so there is no scalar to rank. The whole surface
+ * is a control plane, and exactly two of its gestures are expressible as generic
+ * cells (see the `vstInstrument` entry in `shell-cells.ts` for the two gate
+ * mechanics that decide the other five, and `VstBridgeFaceBody.svelte` for the
+ * long form).
+ *
+ * THE TIER LADDER, READ BACK AS A SENTENCE: at every tier from mini upward the
+ * player gets CONNECT, because a card that never connects is silent and nothing
+ * else on the plate can change that; compact adds DISCONNECT, the gesture that
+ * frees a plugin slot when the helper's sixteen are full; and the dock adds the
+ * plugin surface itself, which is where a plugin is actually chosen. That is a
+ * genuine priority ordering rather than a declaration order — CONNECT outranks
+ * DISCONNECT because one of them is the precondition for every other affordance
+ * this module has, and the other is a housekeeping gesture.
+ *
+ * ONE PAGE, and it earns its header on the "1 control that is the module's
+ * identity" clause: `bridge` is the only idea here. A second page would be a
+ * header over nothing — the plugin controls are not `order` keys, they are the
+ * extension body's own surface, so there is no second group of keys to name.
+ *
+ * ⚠ NO HERO. `heroFacePlan` MOVES a key out of its band, and this face has ONE
+ * band holding exactly two keys — promoting either would leave a band whose hint
+ * renders nowhere, and promoting both would empty the band entirely. A hero also
+ * SUPPRESSES the shell glyph at the dock, and the glyph is the only live picture
+ * this plate has.
+ *
+ * ⚠ GLYPH `'meter'`, matching es9 and derived rather than decorative: the def
+ * has an audio out (`out_l`), so `glyphBinding` resolves a real analyser tap. On
+ * a runner with no helper the plugin returns digital silence, so it draws the
+ * same flat centreline every other faced module's live glyph draws — which is
+ * what keeps the VRT scene a function of the code rather than of the machine.
+ *
+ * ⚠ NO `rear.groups`. The derived default is already right: the input rail is
+ * the four note inputs (poly / pitch / gate / vel) and the output rail is the
+ * stereo pair. Authoring a group here would restate the cable domains, which the
+ * rear-card rules name as the thing NOT to author.
+ */
+export const VST_INSTRUMENT_FACE: ModuleFace = {
+  glyph: 'meter',
+  // The plugin surface — picker, its text filter, mount/swap/unmount and the
+  // native-editor toggle — is a module-owned `fullViewBody`, shared with vstFx.
+  extension: 'vstBridge',
+  order: ['vst-connect-{n}', 'vst-disconnect-{n}'],
+  pages: [
+    {
+      id: 'bridge',
+      label: 'bridge',
+      hint:
+        'The session with the vst-bridge helper app, which hosts your plugin through CoreAudio and '
+        + 'serves it over a localhost WebSocket. It is not a browser permission: the app has to be '
+        + 'running on this machine, and the plugin has to be installed on it. Until it answers, this '
+        + 'card is silent and harmless. The session belongs to the node and is keyed by its id, so '
+        + 'collapsing this pane does not drop it and a page reload re-adopts the running plugin.',
+      controls: ['vst-connect-{n}', 'vst-disconnect-{n}'],
+    },
+  ],
+};
 
 export const vstInstrumentDef: AudioModuleDef = {
   type: 'vstInstrument',
@@ -56,6 +126,21 @@ export const vstInstrumentDef: AudioModuleDef = {
   ],
   params: [],
 
+  face: VST_INSTRUMENT_FACE,
+
+  // ⚠ TWO FAMILIES FOR TWO GESTURES, because `resolveFaceControl` resolves a
+  // face key to a PARAM id, a family TEMPLATE (`<id>-{n}`) or a legend STATIC,
+  // and CONNECT/DISCONNECT are none of the first. They are real affordances the
+  // module owns — `VstBridgePanel` has had both buttons since it shipped — and
+  // `module-docs-lint`'s card-drift leg requires each declared `testidPrefix` to
+  // appear in real UI source. CONNECT already carried its testid; DISCONNECT
+  // grows one in this same diff. Adding the testid is the honest fix; dropping
+  // the family would be fixing a declaration to satisfy a gate.
+  controlFamilies: [
+    { id: 'vst-connect', label: 'Connect', kind: 'other', testidPrefix: 'vst-connect' },
+    { id: 'vst-disconnect', label: 'Disconnect', kind: 'other', testidPrefix: 'vst-disconnect' },
+  ],
+
   docs: {
     explanation:
       "Plays one of YOUR installed instrument plugins — the AU builds of your VSTs (Arturia, Serum, Apple's built-in DLS synth, …) — as a first-class rack voice, through the vst-bridge native helper app (macOS, ws://127.0.0.1:9309). Drop it in a channel lane and it behaves exactly like an internal instrument: the lane's clip player auto-wires its pitch, gate and velocity outputs here, the card's stereo output auto-wires into the lane chain, and the worklet converts poly CV to sample-accurate MIDI (0.0 pitch CV = C4 = MIDI 60, 1.0 = one octave; gate threshold 0.5; tied steps become legato NoteOff+NoteOn pairs; velocity 0..1 maps to MIDI 1..127, default 100 when vel is unpatched). Pick a plugin on the card, mount it, and OPEN EDITOR raises the plugin's own native window on your machine. One card = one plugin instance (the helper caps at 16); a page refresh re-adopts the running instance, so the plugin and its state survive reloads. Requires the vst-bridge helper running locally (Chromium/Firefox; the card shows status) — without it the card sits silent and harmless. In a shared patch, audio renders only on the machine running the helper with the plugin installed; collaborators see the card but hear this voice only through your machine's contribution.",
@@ -75,7 +160,20 @@ export const vstInstrumentDef: AudioModuleDef = {
       out_r:
         "The plugin's audio return, right (stereo-paired with out_l, so patching only the left side normals both).",
     },
-    controls: {},
+    controls: {
+      'vst-connect-{n}':
+        "Opens this card's own session with the vst-bridge helper — one WebSocket, one plugin "
+        + 'instance, keyed by this node id. It also RESTARTS a live session at the engine\'s current '
+        + 'sample rate, which is the recovery path when another browser tab has claimed this card\'s '
+        + 'instance: press it and the instance comes back here. The engine already connects on its '
+        + 'own when the node is created, so this is for the case where the helper was not running '
+        + 'yet, or where you disconnected on purpose.',
+      'vst-disconnect-{n}':
+        'Drops the session without deleting the node — the helper PARKS this plugin instance rather '
+        + 'than destroying it (about 90 seconds), so a reconnect re-adopts the same plugin with its '
+        + 'state intact. Use it to hand one of the helper\'s sixteen concurrent instances to another '
+        + 'card, or to silence this voice without losing the patch.',
+    },
   },
 
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {

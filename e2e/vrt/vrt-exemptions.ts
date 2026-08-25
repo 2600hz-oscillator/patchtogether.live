@@ -514,18 +514,32 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // es9.test.ts (def shape, class→worklet mapping) + es9-card-shows-state /
   // es9-per-leg-patching e2e + the per-module handle-presence sweep.
   es9: 'the LEGACY card only (?shell=legacy). es9 is in STRICT_FACES, so pixel coverage of the surface a player operates is face-es9-compact / face-es9-dock. The card is NOT baseline-able and this entry used to claim it was: its status row cycles "bridge not found" ↔ "connecting…" on the transport worker\'s 1-5 s reconnect backoff, which runs on every runner because the factory acquires the bridge unconditionally — the vstInstrument hazard exactly. MEASURED: a 37 ms in-page sampler saw 325/325 identical samples over 12 s (i.e. a single local capture reads clean) while a MutationObserver over the same window saw 6 transitions. Functional coverage: es9-bridge-core (dsp) + es9.test.ts + es9-card-shows-state.spec.ts + es9-per-leg-patching.spec.ts.',
-  // VST BRIDGE cards — the connection pill is a LIVE state machine: with no
-  // vst-bridge helper on the runner the transport worker cycles
-  // "connecting…" ↔ "helper not found" on its 1-5 s reconnect backoff
-  // forever, so a captured PNG is a lottery on which phase the settle lands
-  // in — a baseline here would flake vrt-strict on unrelated PRs (the cvBuddy
-  // hardware-facing precedent). Coverage: vst-defs + vst-transport +
-  // dsp vst-bridge-core unit suites, and the mocked-helper e2e
-  // (vst-bridge.spec.ts / vst-lane-autowire.spec.ts) exercises the real card
-  // UI (picker/mount/editor testids). Promote + capture once the status row
-  // is masked or the look is owner-locked.
-  vstInstrument: 'VRT baseline pending — the connection pill cycles connecting/helper-not-found on the reconnect backoff with no helper on CI, so a PNG is phase-dependent; card UI is exercised by the mocked-helper e2e (vst-bridge.spec.ts) and the logic by vst-defs/vst-transport/vst-bridge-core suites. Promote + capture with the status row masked once the look is owner-locked.',
-  vstFx: 'VRT baseline pending — same live connection pill as vstInstrument (connecting/helper-not-found backoff cycle on a helperless runner); card UI exercised by the mocked-helper e2e (vst-bridge.spec.ts / vst-lane-autowire.spec.ts), logic by the vst unit suites. Promote + capture with the status row masked once the look is owner-locked.',
+  // ── THE VST BRIDGE PAIR — the LEGACY cards only, and the "pending" half of
+  //    these entries is now RESOLVED rather than still waiting ───────────────
+  //
+  // Both entries used to end "Promote + capture with the status row masked once
+  // the look is owner-locked", which framed the module's pixel coverage as
+  // blocked on a MASK. It was not: both modules are now in STRICT_FACES and the
+  // surface a player operates is covered by four face scenes —
+  // face-vstInstrument-compact / -dock and face-vstFx-compact / -dock — with NO
+  // mask on any of them. Nothing had to be hidden, because the resting-text
+  // ruling DELETES every cycling string rather than covering it.
+  //
+  // The CARDS stay exempt, permanently, and for a reason that is a property of
+  // the card rather than of the schedule: `VstBridgePanel` paints `stateLabel`,
+  // a seven-way switch over the live connection state, and both factories call
+  // `acquireVstBridge` UNCONDITIONALLY — `SharedArrayBuffer` is present on
+  // `/rack` (COOP/COEP for Faust), so the transport Worker spawns on every
+  // runner, fails to reach ws://127.0.0.1:9309, and reconnects on a 1-5 s
+  // backoff forever. That is the es9 hazard exactly, and es9's entry three above
+  // records why a single local capture is not evidence against it: a 37 ms
+  // in-page sampler read 325/325 identical samples over 12 s while a
+  // MutationObserver over the same window saw 6 transitions. The `connecting`
+  // phase is real and only milliseconds long, so a coarse sampler misses it and
+  // so does one local `vrt:one` run. A green capture here would be a ~0.1 %
+  // lottery whose losing ticket is a red `main`.
+  vstInstrument: 'the LEGACY card only (?shell=legacy). vstInstrument is in STRICT_FACES, so pixel coverage of the surface a player operates is face-vstInstrument-compact / face-vstInstrument-dock, captured with NO mask. The card is not baseline-able: its status row paints `stateLabel`, which cycles "connecting…" ↔ "helper not found" on the transport worker\'s 1-5 s reconnect backoff, running on every runner because the factory acquires the bridge unconditionally — the es9 hazard exactly, including that a single local capture reads clean (es9 measured 325/325 identical in-page samples against 6 MutationObserver transitions over the same window). Functional coverage for the card: vst-defs + vst-transport + dsp vst-bridge-core unit suites, and the mocked-helper e2e (vst-bridge.spec.ts) which drives the real picker/mount/editor testids.',
+  vstFx: 'the LEGACY card only (?shell=legacy). vstFx is in STRICT_FACES, so pixel coverage of the surface a player operates is face-vstFx-compact / face-vstFx-dock, captured with NO mask. The card is not baseline-able for the same reason as vstInstrument — it is the SAME component (VstBridgePanel), so its status row cycles connecting/helper-not-found on the same unconditional reconnect backoff. Functional coverage for the card: the vst unit suites plus the mocked-helper e2e (vst-bridge.spec.ts / vst-lane-autowire.spec.ts).',
   // ONE TO NINE — 1-in/9-out fixed 3×3 splitter. The card is a live MONITOR
   // preview canvas (input + grid + numbers) + a GRID toggle + the IN/OUT1..OUT9
   // patch panel; nothing patched is a black preview, and the live render is

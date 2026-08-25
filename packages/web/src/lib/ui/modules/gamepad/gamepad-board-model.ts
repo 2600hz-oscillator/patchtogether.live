@@ -97,8 +97,19 @@ export function sweepBox(
   };
 }
 
-/** Which stick, spelled for a sentence. */
+/** Which CALIBRATABLE stick, spelled for a sentence. Exactly the two sticks that
+ *  own a persisted `StickCalibration` record (`leftStickCalibration` /
+ *  `rightStickCalibration`), which is why it stays narrow: `calibrationDetail`
+ *  and `startCalibration` must not accept a stick that has nowhere to store a
+ *  sweep. */
 export type Stick = 'left' | 'right';
+
+/** Which stick BLOCK on the board — the two calibratable sticks plus `aux`, the
+ *  third X/Y pair a flight stick's twist / rudder / lever gets bound to. `aux`
+ *  is deliberately NOT a `Stick`: it has a live pad, remap buttons and invert
+ *  toggles, but no calibration record, because its axes are bound by hand or by
+ *  preset and a bound axis that already spans ±1 has nothing to calibrate. */
+export type StickSlot = Stick | 'aux';
 
 function fixed(v: number): string {
   return Number.isFinite(v) ? v.toFixed(2) : '—';
@@ -192,7 +203,7 @@ export function remapSentence(opts: {
 }
 
 /** The sentence on an INVERT toggle. */
-export function invertSentence(stick: Stick, axis: 'x' | 'y', on: boolean): string {
+export function invertSentence(stick: StickSlot, axis: 'x' | 'y', on: boolean): string {
   return `invert ${stick} stick ${axis.toUpperCase()} — currently ${on ? 'INVERTED' : 'normal'}. `
     + 'Flips the sign of whatever physical axis is mapped to that output, on top of any remap.';
 }
@@ -204,10 +215,13 @@ export function invertSentence(stick: Stick, axis: 'x' | 'y', on: boolean): stri
  *  still assertable; what changed is that the SIGHTED channel became the box
  *  drawn inside the pad (`sweepBox`) rather than a row of decimals. */
 export function stickSentence(opts: {
-  stick: Stick;
+  stick: StickSlot;
   x: number;
   y: number;
-  calibrated: boolean;
+  /** `null` for a stick that has no calibration record at all (the aux pair) —
+   *  the sentence then ends after the position rather than claiming
+   *  "Uncalibrated.", which would name a state that stick cannot be in. */
+  calibrated: boolean | null;
   sweep: CalibrationSweep | null;
 }): string {
   const { stick, x, y, calibrated, sweep } = opts;
@@ -218,6 +232,7 @@ export function stickSentence(opts: {
       + `y [${fixed(sweep.minY)}, ${fixed(sweep.maxY)}] over ${sweep.samples} samples. `
       + 'Sweep to the pad\'s edges, then COMPLETE.';
   }
+  if (calibrated === null) return head;
   return `${head} ${calibrated ? 'Calibrated.' : 'Uncalibrated.'}`;
 }
 
