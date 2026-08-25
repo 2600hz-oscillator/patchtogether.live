@@ -31,7 +31,7 @@ import {
 } from '$lib/audio/modules/midi-cv-buddy';
 import { STRICT_FACES } from './strict-faces';
 import { shellCellFor, shellActionProbes } from './shell-cells';
-import { dockFacePlan, dockPlanControls, laneOrder } from './curated-face';
+import { curatedFace, dockFacePlan, dockPlanControls, laneOrder } from './curated-face';
 
 const FACE = () => midiCvBuddyDef.face!;
 
@@ -100,6 +100,23 @@ describe('midiCvBuddy face — ALL FOUR cells reach the LANE', () => {
       label: 'Connect MIDI',
     } as never);
     expect(cell?.kind, 'an action cell, which lane tiers render').toBe('action');
+  });
+
+  it('and it SURVIVES THE TIER CAP at every lane tier, mini included', () => {
+    // ⚠ `laneOrder` IS NOT THE TILE. The roster above is what the lane MAY
+    // draw; `curatedFace` then slices it to `faceTierCap`, which is 1 at mini
+    // and 2-or-3 at compact depending on whether a glyph is eating a slot. A
+    // key that ranks first in the roster and falls off the cap is invisible on
+    // the surface a player actually meets — which on this module means the
+    // permission gesture is unreachable again, the exact defect the promotion
+    // exists to fix, with the dock plan still perfect and every other gate
+    // still green.
+    for (const tier of ['mini', 'compact', 'full'] as const) {
+      const keys = (curatedFace(midiCvBuddyDef, tier)?.controls ?? []).map((c) => c.key);
+      expect(keys[0], `${tier} tier leads with the permission gesture`).toBe(
+        'midi-cv-buddy-connect-{n}',
+      );
+    }
   });
 
   it('RETRIG is a TOGGLE and the two rosters are SELECTORS', () => {

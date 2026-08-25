@@ -27,7 +27,7 @@ import {
 import { MIDI_CHANNEL_COUNT } from '$lib/audio/modules/midi-cv-buddy';
 import { STRICT_FACES } from './strict-faces';
 import { shellCellFor, shellActionProbes } from './shell-cells';
-import { dockFacePlan, dockPlanControls, laneOrder } from './curated-face';
+import { curatedFace, dockFacePlan, dockPlanControls, laneOrder } from './curated-face';
 
 const FACE = () => midiOutBuddyDef.face!;
 
@@ -76,6 +76,21 @@ describe('midiOutBuddy face — BOTH cells reach the LANE', () => {
       label: 'Connect MIDI',
     } as never);
     expect(cell?.kind, 'an action cell, which lane tiers render').toBe('action');
+  });
+
+  it('and it SURVIVES THE TIER CAP at every lane tier, mini included', () => {
+    // ⚠ `laneOrder` IS NOT THE TILE. The roster above is what the lane MAY
+    // draw; `curatedFace` then slices it to `faceTierCap`, which is 1 at mini.
+    // A key that ranks first in the roster and falls off the cap is invisible
+    // on the surface a player meets — which on this module means the permission
+    // gesture is unreachable again, with the dock plan still perfect and every
+    // other gate still green.
+    for (const tier of ['mini', 'compact', 'full'] as const) {
+      const keys = (curatedFace(midiOutBuddyDef, tier)?.controls ?? []).map((c) => c.key);
+      expect(keys[0], `${tier} tier leads with the permission gesture`).toBe(
+        'midi-out-buddy-connect-{n}',
+      );
+    }
   });
 });
 
