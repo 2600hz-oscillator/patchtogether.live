@@ -4029,12 +4029,29 @@ export const FACES = [
   //     faced module's live glyph draws — and `bootWithFace` freezes the audio
   //     graph on top of that.
   //
-  // So every pixel is a function of the code and none of it of the runner's
-  // machine. MEASURED TWO WAYS on this branch, because a single sampler is what
-  // made es9's card look clean: an in-page 37 ms sampler over the faceplate AND
-  // a MutationObserver over the same subtree across the same window — the pair
-  // that caught es9's card (325/325 identical samples vs 6 observed
-  // transitions). Both read ZERO changes on the FACE.
+  // ⚠ MEASURED TWO WAYS, AND THE SECOND INSTRUMENT FOUND SOMETHING — which is
+  // why it is written out rather than summarised as "deterministic". A single
+  // sampler is what made es9's CARD look clean (325/325 identical samples over
+  // 12 s against 6 MutationObserver transitions in the same window), so this
+  // face was probed with BOTH: an in-page 37 ms sampler over `.faceplate-body`
+  // and a MutationObserver over the same subtree (subtree + childList +
+  // characterData + attributes), both accumulating INSIDE the page.
+  //
+  //   sampler          216-242 samples / ~12,039 ms — ONE distinct value
+  //   MutationObserver 16 records, and EVERY ONE of them is
+  //                    `attr:SPAN.aria-label` or `attr:SPAN.title`
+  //
+  // So the reconnect state machine IS LIVE under the capture, exactly as it is
+  // on the card — the difference is WHERE it lands. Sixteen mutations in twelve
+  // seconds is the BRIDGE lamp's `detail` sentence alternating between
+  // "opening the connection…" and "the helper did not answer", and the
+  // resting-text ruling put that string on `aria-label`/`title`, which no
+  // baseline reads. ZERO records touched `class`, `data-lit`, `characterData`
+  // or `childList`, so the lamp's PICTURE never flips (`lit` is
+  // `state === 'connected'`, unreachable here) and no text node changes.
+  //
+  // That is a stronger claim than "nothing happens", and it is the honest one:
+  // the face is not still, it is UNPAINTED where it moves.
   //
   // ⚠ WHAT THESE BASELINES DO **NOT** COVER, stated rather than implied: the
   // connected state — the plugin picker, its filter, the mount/swap/unmount/
