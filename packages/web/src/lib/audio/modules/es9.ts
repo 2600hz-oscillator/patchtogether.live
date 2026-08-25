@@ -22,10 +22,16 @@
 //        (native app)          (es9/bridge.worker.ts)          AudioWorklet
 //                                                              (packages/dsp)
 //
-// The CARD (Es9Card.svelte) owns the connection lifecycle (worker + rings,
-// via $lib/audio/es9/bridge-client.ts) and hands ring specs to this factory
-// through the __es9Attach handle hook — the audioin.ts card/engine seam, so
-// this factory stays DOM-free and jsdom-testable.
+// ⚠ THE CONNECTION IS OWNED HERE, BY THE ENGINE NODE — not by any view.
+// This paragraph used to say "The CARD (Es9Card.svelte) owns the connection
+// lifecycle", and it had been false since ownership moved to
+// $lib/audio/es9/bridge-owner: see the factory below, which acquires the
+// bridge and releases it in dispose(). The stale sentence mattered because a
+// faceplate-body author reading this header would have built the wrong
+// lifetime — the exact defect bridge-owner exists to prevent. The
+// __es9Attach handle hook survives as the audioin.ts card/engine seam for a
+// view that already holds ring specs; nothing in the product uses it today,
+// and this factory stays DOM-free and jsdom-testable either way.
 //
 // SIGNALS + the per-jack CLASS model: the wire carries RAW hardware floats
 // (±1.0 ≙ ±10 V). Because canConnect() forbids one port serving both the
@@ -46,9 +52,14 @@
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
-import type { ParamDef, PortDef } from '$lib/graph/types';
+import type { ModuleFace, ParamDef, ParamOption, PortDef } from '$lib/graph/types';
 import type { RingSpec } from '$lib/audio/es9/es9-ring';
-import { acquireEs9Bridge, releaseEs9Bridge } from '$lib/audio/es9/bridge-owner';
+import {
+  acquireEs9Bridge,
+  releaseEs9Bridge,
+  updateEs9Config,
+  type Es9BridgeConfigLike,
+} from '$lib/audio/es9/bridge-owner';
 import workletUrl from '@patchtogether.live/dsp/dist/es9-bridge.js?url';
 
 import { createWorkletNode } from '$lib/audio/worklet-guard';
@@ -62,6 +73,33 @@ export const ES9_CLASS_CV = 1;
 export const ES9_CLASS_PITCH = 2;
 export const ES9_CLASS_GATE = 3;
 export const ES9_CLASS_NAMES = ['audio', 'cv', 'pitch', 'gate'] as const;
+
+/**
+ * The four signal classes as a param ROSTER — DERIVED from `ES9_CLASS_NAMES`,
+ * never re-typed, so the names the face paints and the names the worklet
+ * indexes cannot drift.
+ *
+ * ⚠ THIS IS ABOUT SELECTABILITY, NOT LABELS. A `0..3 discrete` param with no
+ * roster falls through `paramCellKind` to a KNOB, and a four-state switch
+ * drawn as a dial is a control a drag quantises straight back to where it
+ * started (`moog962` shipped that way and `faces-parity` failed it twice). A
+ * roster makes `paramCellKind` derive a SEGMENTED cell at the dock, where each
+ * state is one press.
+ *
+ * ⚠ AND `optionsExhaustive` MUST NOT BE DECLARED HERE. `0..3 discrete` has
+ * four steps and the roster has four members, so it is DENSE —
+ * `param-vocabulary` refuses a redundant declaration by name ("roster covers
+ * every step … so optionsExhaustive is redundant — delete it"), and there is
+ * no between-member value for `snapToOptions` to repair. The SNAP contract
+ * keys on the DECLARATION, not on "discrete with options".
+ *
+ * Cosmetic, like every roster: `serializeModuleContract` projects
+ * id/min/max/curve/defaultValue/units and nothing else, so these 22 rosters
+ * cost zero contract-lock lines.
+ */
+export const ES9_CLASS_OPTIONS: readonly ParamOption[] = ES9_CLASS_NAMES.map(
+  (label, value) => ({ value, label }),
+);
 
 const HW_CHANNELS = 16;
 const CV_TWIN_BASE = 16;
@@ -148,6 +186,35 @@ export function es9OutputModes(params: Record<string, number> | undefined): Reco
   return modes;
 }
 
+/**
+ * The whole bridge CONFIG message for a node's current params — the channel
+ * masks plus the per-jack underrun policy.
+ *
+ * ⚠ ONE BUILDER, BECAUSE TWO OF THEM IS THE BUG THAT WAS ALREADY LIVE. The
+ * factory built this inline at acquire time and `Es9Card.svelte` built its own
+ * copy at selector-change time, and only the card's ever reached
+ * `updateEs9Config` — on a card the default shell has not mounted in a lane
+ * since ownership moved to the engine node. So on the renderer every user
+ * actually gets, the native app kept whatever failure policy it was handed at
+ * NODE CONSTRUCTION, and neither a class change nor the CV-Buddy janitor's
+ * `out{N}_class` writes (which go straight through the store under
+ * `CVBUDDY_JANITOR_ORIGIN` and touch no card at all) ever moved it. That is
+ * safety-relevant by this file's own words: a jack left on a HOLD policy
+ * freezes its last voltage on a stream hiccup, which for a gate is a stuck
+ * note or a stopped clock. `setParam` below now pushes it, so the policy
+ * follows the param wherever the param is written from.
+ *
+ * v1 subscribes/drives all channels — loopback bandwidth is trivial and it
+ * keeps the masks decoupled from patch-edge churn.
+ */
+export function es9BridgeConfig(params: Record<string, number> | undefined): Es9BridgeConfigLike {
+  return {
+    inputChannels: Array.from({ length: HW_CHANNELS }, (_, c) => c),
+    outputChannels: Array.from({ length: HW_CHANNELS }, (_, c) => c),
+    outputModes: es9OutputModes(params),
+  };
+}
+
 // ---- docs (STRICT_DOCS: every port + control documented) ----------------
 
 function inputDocs(): Record<string, string> {
@@ -198,8 +265,167 @@ function controlDocs(): Record<string, string> {
     docs[`out${n}_class`] =
       `Signal class for hardware output jack ${n} (audio/cv/pitch/gate; default audio). Sets the inverse voltage mapping for signals patched into out${n} (cv = ±1 → ±5 V, pitch = 1.0/oct → 1 V/oct, gate = 0|1 → 0/+5 V, audio = raw full scale) AND the bridge's failure policy for the jack on a stream hiccup: cv and pitch HOLD their last voltage (a pitch collapsing to 0 V would be a wrong note), while gate and audio FALL TO ZERO (a frozen gate is a stuck note or a stalled clock, which is worse than a dropped pulse).`;
   }
+  docs['es9-connect-{n}'] =
+    "Bring the hardware link up. Unlike a browser permission this is not a grant the page can ask for — the es9-bridge companion app has to be RUNNING on this machine, because Chromium can only reach an ES-9's first stereo pair through getUserMedia and cannot pick a channel range at all. The app owns CoreAudio's full 16-in/16-out and serves a localhost WebSocket; pressing CONNECT points this node at it. Until it answers, every jack on this module sits silent and harmless in the patch. The link belongs to the NODE, not to any view, so it survives collapsing the dock, switching surfaces and never opening this plate again — and pressing CONNECT on an already-live link simply restarts it at the engine's current sample rate, which is the one rate the ring may run at.";
+  docs['es9-disconnect-{n}'] =
+    'Drop the hardware link without deleting the node. The jacks stay patched and the class settings stay exactly as they are; the native app simply stops being driven, which frees it for another client (it accepts one at a time) and stops the browser feeding the hardware. Use it before quitting the bridge app, or to hand the ES-9 to a DAW for a while. Press CONNECT to bring the same node back up — the SharedArrayBuffer rings live on this side of the worker, so a reconnect resumes against the rings the audio thread is already reading rather than needing the node rebuilt.';
   return docs;
 }
+
+// ---- the FACE ------------------------------------------------------------
+
+/**
+ * PF-20 FACEPLATE.
+ *
+ * ⚠ THIS MODULE WAS DISPOSITIONED `bespoke-surface`, AND THE ENTRY WAS WRONG
+ * IN FOUR OF ITS FIVE CLAUSES. It read: *"the ES-9 BRIDGE: connection state
+ * machine, connect/disconnect gestures, device rate and channel-count detail,
+ * xrun/rtt telemetry, and sectioned routing across many jacks."* Measured
+ * against `Es9Card.svelte`:
+ *
+ *   * "connection state machine"  → `stateLabel`, a seven-way string switch
+ *     painted as one `<span>`. A STATE WORD about the module, outside every
+ *     control — the shape the resting-text ruling deletes. It is a lamp now.
+ *   * "device rate and channel-count detail" → three derived numbers. Deleted.
+ *   * "xrun/rtt telemetry" → a count and a measurement with a decimal.
+ *     Deleted as text; the count reaches a lamp's `aria-label`.
+ *   * "sectioned routing across many jacks" → twenty-two ordinary `ParamDef`s
+ *     that have been in `contract-lock.txt` since the module shipped, plus a
+ *     `PatchPanel` — which on a face is the REAR CARD, not the plate.
+ *
+ * Only "connect/disconnect gestures" survived, and two gestures are two
+ * `action` cells. So the surface this module needs is two buttons and three
+ * lamps: strictly LESS bespoke machinery than `kria`, which needed a real
+ * PF-14 panel component and was re-dispositioned anyway.
+ *
+ * ⚠ THE PROMOTION'S POINT IS THE SAME ONE `midiclock` AND `midiLane` MADE, and
+ * it is larger here. `laneRenderKind` returns 'placeholder' for es9 today — a
+ * rackline tile with ZERO ranked controls — so both gestures AND all 22
+ * routing params are reachable only by discovering that the dock full view
+ * exists. An `action` cell is not dock-restricted, so CONNECT and DISCONNECT
+ * land on the lane tile; and this is the only module in its cohort with real
+ * params, so it is the biggest such change in it.
+ *
+ * ── THE TIER LADDER, READ BACK AS A SENTENCE ──────────────────────────────
+ *
+ * At the smallest tier you get CONNECT — because a module whose hardware link
+ * is down is silent, and nothing else on the plate does anything until it is
+ * up. One tier out, DISCONNECT joins it, because the ES-9 accepts a single
+ * client and handing it back to a DAW is a first-class gesture rather than a
+ * teardown. Then the eight OUT-JACK classes, because they are the ones a
+ * player MUST touch: the def defaults them to `audio` deliberately
+ * (bit-transparent), so sending a patchtogether LFO to a hardware VCA means
+ * changing one, and leaving it means sending full-scale audio into a CV input.
+ * The fourteen IN twins come last because their default is already right for
+ * the modular-native case (`cv`), which is the def's own stated reason for the
+ * split — not a guess from the card, whose IN-before-OUT column order is
+ * merely "IN has more rows".
+ *
+ * ⚠ `order` AND `pages` AGREE HERE, unusually. Priority and signal order are
+ * the same list because the module has exactly one story: bring the link up,
+ * then say what each jack carries.
+ *
+ * ── WHY THE CLASS BANDS ARE CLUSTERED ─────────────────────────────────────
+ *
+ * Not for looks — for the capture box. These are SEGMENTED cells painting four
+ * option labels each, which makes them far wider than a knob;
+ * `moog960/stepmode` measured EIGHT three-option cells at 1336 CSS px against
+ * a 1220 px box and was clustered into halves for exactly this reason. Four
+ * per row is the same fix with one more option per cell. The OUT band's two
+ * equal clusters make it a CONSOLE GRID (`console-grid.ts`) — column j is
+ * "the j-th jack of this half", the moog960 correspondence — while the IN
+ * band's 4/4/4/2 is deliberately ragged, since fourteen does not divide into
+ * rows that both fit and align.
+ *
+ * ── WHAT IS NOT DECLARED, AND WHY ─────────────────────────────────────────
+ *
+ * No `hero`: there is no live picture, scope trace, video preview or XY pad
+ * here, and a hero that promoted one of 22 identical class switches would be
+ * picking a favourite jack. No `tabbed`: three honest bands, and the rail
+ * engages at seven. No `bareCells`: the per-cell jack NUMBER is the only thing
+ * separating fourteen otherwise-identical controls — tidyVco's A/D/S/R
+ * exactly — and the band label "in twins" does not say WHICH jack. No
+ * `rackStatus`: `maxInstances: 1`, so there is no second instance and no band
+ * to suppress (the CV-Buddy relationship runs the other way; that module
+ * declares `rackStatus` and this is the shared hardware it points at).
+ *
+ * ⚠ `glyph: 'meter'` IS REACHABLE, and this module is the first in its cohort
+ * for which that is true. `glyphBinding` short-circuits on
+ * `primaryAudioOutPortId`, which matches `type === 'audio'` exactly; the MIDI
+ * binders declare no audio output and are all forced to `'none'`. es9 declares
+ * sixteen, so `in1` resolves and the binding is `{ kind: 'live-audio' }`. The
+ * glance it buys is the right one — IS THE EURORACK SENDING ANYTHING — and its
+ * one ambiguity is stated rather than hidden: a dark meter cannot tell "the
+ * bridge is down" from "jack 1 is unpatched", which is what the BRIDGE lamp
+ * two rows down answers.
+ */
+export const ES9_FACE: ModuleFace = {
+  glyph: 'meter',
+  // The three LAMPS are the only thing here that cannot be a cell: `StatusLed`
+  // is rendered from a module-owned `fullViewBody` and nowhere else.
+  extension: 'es9',
+  order: [
+    'es9-connect-{n}',
+    'es9-disconnect-{n}',
+    'out1_class', 'out2_class', 'out3_class', 'out4_class',
+    'out5_class', 'out6_class', 'out7_class', 'out8_class',
+    'in1_class', 'in2_class', 'in3_class', 'in4_class', 'in5_class',
+    'in6_class', 'in7_class', 'in8_class', 'in9_class', 'in10_class',
+    'in11_class', 'in12_class', 'in13_class', 'in14_class',
+  ],
+  pages: [
+    {
+      id: 'bridge',
+      label: 'bridge',
+      hint:
+        'The link to the es9-bridge companion app, which owns the ES-9 through CoreAudio and '
+        + 'serves it over a localhost WebSocket. It is not a browser permission: the app has to '
+        + 'be running on this machine. Until it answers, every jack here is silent and harmless. '
+        + 'The link belongs to the node, so collapsing this pane does not drop it.',
+      controls: ['es9-connect-{n}', 'es9-disconnect-{n}'],
+    },
+    {
+      id: 'out',
+      label: 'out jacks',
+      hint:
+        'What each of the eight physical output jacks carries, which sets BOTH the voltage '
+        + 'scaling on the way out (cv ±1 → ±5 V, pitch 1.0/oct → 1 V/oct, gate 0|1 → 0/+5 V, '
+        + 'audio raw full scale) AND how the jack fails if the stream hiccups: cv and pitch HOLD '
+        + 'their last voltage, since a pitch collapsing to 0 V is a wrong note, while gate and '
+        + 'audio fall to zero, since a frozen gate is a stuck note or a stopped clock. They '
+        + 'default to audio, so sending a rack LFO to hardware means changing one.',
+      controls: [
+        'out1_class', 'out2_class', 'out3_class', 'out4_class',
+        'out5_class', 'out6_class', 'out7_class', 'out8_class',
+      ],
+      clusters: [
+        { label: 'jacks 1-4', controls: ['out1_class', 'out2_class', 'out3_class', 'out4_class'] },
+        { label: 'jacks 5-8', controls: ['out5_class', 'out6_class', 'out7_class', 'out8_class'] },
+      ],
+    },
+    {
+      id: 'in',
+      label: 'in twins',
+      hint:
+        'How each hardware input jack\'s CV TWIN maps volts onto app units — cv ±5 V → ±1, pitch '
+        + '1 V/oct → 1.0/oct with 0 V ≙ C4, gate through a 2 V / 1 V hysteresis comparator to a '
+        + 'clean 0|1, audio raw. It changes the in{n}_cv port only; the raw in{n} port beside it '
+        + 'always carries ±1.0 ≙ ±10 V whatever this says. cv is the default because a modular '
+        + 'patch into a rack param is the case this twin exists for.',
+      controls: [
+        'in1_class', 'in2_class', 'in3_class', 'in4_class', 'in5_class',
+        'in6_class', 'in7_class', 'in8_class', 'in9_class', 'in10_class',
+        'in11_class', 'in12_class', 'in13_class', 'in14_class',
+      ],
+      clusters: [
+        { label: 'jacks 1-4', controls: ['in1_class', 'in2_class', 'in3_class', 'in4_class'] },
+        { label: 'jacks 5-8', controls: ['in5_class', 'in6_class', 'in7_class', 'in8_class'] },
+        { label: 'jacks 9-12', controls: ['in9_class', 'in10_class', 'in11_class', 'in12_class'] },
+        { label: 'jacks 13-14', controls: ['in13_class', 'in14_class'] },
+      ],
+    },
+  ],
+};
 
 // ---- def ----------------------------------------------------------------
 
@@ -278,33 +504,48 @@ export const es9Def: AudioModuleDef = {
   params: [
   // 0=audio 1=cv 2=pitch 3=gate. Inputs default cv (the modular-native
   // case for the cv twin); outputs default audio (bit-transparent).
-  { id: 'in1_class', label: 'In 1 class', defaultValue: 1, min: 0, max: 3, curve: 'discrete' },
-  { id: 'in2_class', label: 'In 2 class', defaultValue: 1, min: 0, max: 3, curve: 'discrete' },
-  { id: 'in3_class', label: 'In 3 class', defaultValue: 1, min: 0, max: 3, curve: 'discrete' },
-  { id: 'in4_class', label: 'In 4 class', defaultValue: 1, min: 0, max: 3, curve: 'discrete' },
-  { id: 'in5_class', label: 'In 5 class', defaultValue: 1, min: 0, max: 3, curve: 'discrete' },
-  { id: 'in6_class', label: 'In 6 class', defaultValue: 1, min: 0, max: 3, curve: 'discrete' },
-  { id: 'in7_class', label: 'In 7 class', defaultValue: 1, min: 0, max: 3, curve: 'discrete' },
-  { id: 'in8_class', label: 'In 8 class', defaultValue: 1, min: 0, max: 3, curve: 'discrete' },
-  { id: 'in9_class', label: 'In 9 class', defaultValue: 1, min: 0, max: 3, curve: 'discrete' },
-  { id: 'in10_class', label: 'In 10 class', defaultValue: 1, min: 0, max: 3, curve: 'discrete' },
-  { id: 'in11_class', label: 'In 11 class', defaultValue: 1, min: 0, max: 3, curve: 'discrete' },
-  { id: 'in12_class', label: 'In 12 class', defaultValue: 1, min: 0, max: 3, curve: 'discrete' },
-  { id: 'in13_class', label: 'In 13 class', defaultValue: 1, min: 0, max: 3, curve: 'discrete' },
-  { id: 'in14_class', label: 'In 14 class', defaultValue: 1, min: 0, max: 3, curve: 'discrete' },
-  { id: 'out1_class', label: 'Out 1 class', defaultValue: 0, min: 0, max: 3, curve: 'discrete' },
-  { id: 'out2_class', label: 'Out 2 class', defaultValue: 0, min: 0, max: 3, curve: 'discrete' },
-  { id: 'out3_class', label: 'Out 3 class', defaultValue: 0, min: 0, max: 3, curve: 'discrete' },
-  { id: 'out4_class', label: 'Out 4 class', defaultValue: 0, min: 0, max: 3, curve: 'discrete' },
-  { id: 'out5_class', label: 'Out 5 class', defaultValue: 0, min: 0, max: 3, curve: 'discrete' },
-  { id: 'out6_class', label: 'Out 6 class', defaultValue: 0, min: 0, max: 3, curve: 'discrete' },
-  { id: 'out7_class', label: 'Out 7 class', defaultValue: 0, min: 0, max: 3, curve: 'discrete' },
-  { id: 'out8_class', label: 'Out 8 class', defaultValue: 0, min: 0, max: 3, curve: 'discrete' },
+  { id: 'in1_class', label: 'In 1 class', defaultValue: 1, min: 0, max: 3, curve: 'discrete', options: ES9_CLASS_OPTIONS },
+  { id: 'in2_class', label: 'In 2 class', defaultValue: 1, min: 0, max: 3, curve: 'discrete', options: ES9_CLASS_OPTIONS },
+  { id: 'in3_class', label: 'In 3 class', defaultValue: 1, min: 0, max: 3, curve: 'discrete', options: ES9_CLASS_OPTIONS },
+  { id: 'in4_class', label: 'In 4 class', defaultValue: 1, min: 0, max: 3, curve: 'discrete', options: ES9_CLASS_OPTIONS },
+  { id: 'in5_class', label: 'In 5 class', defaultValue: 1, min: 0, max: 3, curve: 'discrete', options: ES9_CLASS_OPTIONS },
+  { id: 'in6_class', label: 'In 6 class', defaultValue: 1, min: 0, max: 3, curve: 'discrete', options: ES9_CLASS_OPTIONS },
+  { id: 'in7_class', label: 'In 7 class', defaultValue: 1, min: 0, max: 3, curve: 'discrete', options: ES9_CLASS_OPTIONS },
+  { id: 'in8_class', label: 'In 8 class', defaultValue: 1, min: 0, max: 3, curve: 'discrete', options: ES9_CLASS_OPTIONS },
+  { id: 'in9_class', label: 'In 9 class', defaultValue: 1, min: 0, max: 3, curve: 'discrete', options: ES9_CLASS_OPTIONS },
+  { id: 'in10_class', label: 'In 10 class', defaultValue: 1, min: 0, max: 3, curve: 'discrete', options: ES9_CLASS_OPTIONS },
+  { id: 'in11_class', label: 'In 11 class', defaultValue: 1, min: 0, max: 3, curve: 'discrete', options: ES9_CLASS_OPTIONS },
+  { id: 'in12_class', label: 'In 12 class', defaultValue: 1, min: 0, max: 3, curve: 'discrete', options: ES9_CLASS_OPTIONS },
+  { id: 'in13_class', label: 'In 13 class', defaultValue: 1, min: 0, max: 3, curve: 'discrete', options: ES9_CLASS_OPTIONS },
+  { id: 'in14_class', label: 'In 14 class', defaultValue: 1, min: 0, max: 3, curve: 'discrete', options: ES9_CLASS_OPTIONS },
+  { id: 'out1_class', label: 'Out 1 class', defaultValue: 0, min: 0, max: 3, curve: 'discrete', options: ES9_CLASS_OPTIONS },
+  { id: 'out2_class', label: 'Out 2 class', defaultValue: 0, min: 0, max: 3, curve: 'discrete', options: ES9_CLASS_OPTIONS },
+  { id: 'out3_class', label: 'Out 3 class', defaultValue: 0, min: 0, max: 3, curve: 'discrete', options: ES9_CLASS_OPTIONS },
+  { id: 'out4_class', label: 'Out 4 class', defaultValue: 0, min: 0, max: 3, curve: 'discrete', options: ES9_CLASS_OPTIONS },
+  { id: 'out5_class', label: 'Out 5 class', defaultValue: 0, min: 0, max: 3, curve: 'discrete', options: ES9_CLASS_OPTIONS },
+  { id: 'out6_class', label: 'Out 6 class', defaultValue: 0, min: 0, max: 3, curve: 'discrete', options: ES9_CLASS_OPTIONS },
+  { id: 'out7_class', label: 'Out 7 class', defaultValue: 0, min: 0, max: 3, curve: 'discrete', options: ES9_CLASS_OPTIONS },
+  { id: 'out8_class', label: 'Out 8 class', defaultValue: 0, min: 0, max: 3, curve: 'discrete', options: ES9_CLASS_OPTIONS },
+  ],
+
+  face: ES9_FACE,
+
+  // ⚠ TWO FAMILIES FOR TWO GESTURES, because `resolveFaceControl` resolves a
+  // face key to a PARAM id, a family TEMPLATE (`<id>-{n}`) or a legend STATIC,
+  // and CONNECT/DISCONNECT are none of the first. They are real affordances the
+  // module owns — the legacy card has had both buttons since it shipped — and
+  // `module-docs-lint`'s card-drift leg requires each declared `testidPrefix`
+  // to appear in real UI source, which is why `Es9Card.svelte` grows the two
+  // testids in this same diff. Adding the testid is the honest fix; dropping
+  // the family would be fixing a declaration to satisfy a gate.
+  controlFamilies: [
+    { id: 'es9-connect', label: 'Connect', kind: 'other', testidPrefix: 'es9-connect' },
+    { id: 'es9-disconnect', label: 'Disconnect', kind: 'other', testidPrefix: 'es9-disconnect' },
   ],
 
   docs: {
     explanation:
-      "Patches a REAL Eurorack system into the rack, both directions, through an Expert Sleepers ES-9 and the es9-bridge native companion app (macOS; runs at ws://127.0.0.1:9209). All 16 hardware inputs and 16 USB output channels are individually patchable — audio AND CV, because the ES-9's jacks are DC-coupled: send a hardware Maths LFO into any cv input here, or send a patchtogether LFO out to a hardware VCA. Each hardware input jack 1-14 has two ports: a raw audio port (±1.0 ≙ ±10 V) and a class-scaled CV twin whose selector (audio/cv/pitch/gate) maps volts onto app conventions (±5 V→±1 cv, 1 V/oct→1.0/oct pitch with 0 V ≙ C4, clean 0|1 gates via a hysteresis comparator). The 8 hardware output jacks take audio or CV-family cables directly, inverse-scaled by their own class selectors; cv-ish outputs HOLD their last voltage if the connection hiccups (a CV snapping to 0 V would yank every patched hardware parameter), audio outputs fade. Audio never touches the main thread — a transport Worker owns the localhost WebSocket and SharedArrayBuffer rings feed the audio thread — so canvas jank can't glitch the hardware stream. Requires the native bridge app running (Chromium; the card shows status). Without it the module sits silent and harmless in the patch.",
+      "Patches a REAL Eurorack system into the rack, both directions, through an Expert Sleepers ES-9 and the es9-bridge native companion app (macOS; runs at ws://127.0.0.1:9209). All 16 hardware inputs and 16 USB output channels are individually patchable — audio AND CV, because the ES-9's jacks are DC-coupled: send a hardware Maths LFO into any cv input here, or send a patchtogether LFO out to a hardware VCA. Each hardware input jack 1-14 has two ports: a raw audio port (±1.0 ≙ ±10 V) and a class-scaled CV twin whose selector (audio/cv/pitch/gate) maps volts onto app conventions (±5 V→±1 cv, 1 V/oct→1.0/oct pitch with 0 V ≙ C4, clean 0|1 gates via a hysteresis comparator). The 8 hardware output jacks take audio or CV-family cables directly, inverse-scaled by their own class selectors; cv-ish outputs HOLD their last voltage if the connection hiccups (a CV snapping to 0 V would yank every patched hardware parameter), audio outputs fade. Audio never touches the main thread — a transport Worker owns the localhost WebSocket and SharedArrayBuffer rings feed the audio thread — so canvas jank can't glitch the hardware stream. Requires the native bridge app running (Chromium; the faceplate's BRIDGE lamp says whether it answered, and CONNECT is on the module's tile as well as its dock plate). Without it the module sits silent and harmless in the patch.",
     inputs: inputDocs(),
     outputs: outputDocs(),
     controls: controlDocs(),
@@ -375,13 +616,7 @@ export const es9Def: AudioModuleDef = {
     // renders a module. Collapsing the dock pane, switching to ?shell=1, or
     // never opening the card at all can no longer stop the hardware stream.
     // No-ops without Worker/SAB (node, vitest, the ART harness).
-    const rings = acquireEs9Bridge(node.id, ctx.sampleRate, {
-      // v1 subscribes/drives all channels — loopback bandwidth is trivial and it
-      // keeps masks decoupled from patch-edge churn.
-      inputChannels: Array.from({ length: HW_CHANNELS }, (_, c) => c),
-      outputChannels: Array.from({ length: HW_CHANNELS }, (_, c) => c),
-      outputModes: es9OutputModes(node.params),
-    });
+    const rings = acquireEs9Bridge(node.id, ctx.sampleRate, es9BridgeConfig(node.params));
     if (rings) {
       worklet.port.postMessage({ type: 'rings', in: rings.inRing, out: rings.outRing });
     }
@@ -394,6 +629,16 @@ export const es9Def: AudioModuleDef = {
         if (/^(in\d+|out\d+)_class$/.test(paramId)) {
           liveParams[paramId] = value;
           pushClasses(liveParams);
+          // ⚠ AND PUSH THE BRIDGE'S FAILURE POLICY. These are two different
+          // messages to two different consumers: `classes` reaches the
+          // AudioWorklet's per-jack voltage scaling, `config` reaches the
+          // NATIVE APP's underrun policy (HOLD vs FADE). Only the first used
+          // to happen without a mounted card, so a jack could be scaling as
+          // `gate` while the app still failed it as `cv` — a held gate rather
+          // than a dropped pulse. This is the one place that knows a class
+          // changed with no view involved, which is what makes it the right
+          // place: a store write from the CV-Buddy janitor arrives here too.
+          updateEs9Config(node.id, es9BridgeConfig(liveParams));
         }
       },
       readParam(paramId) {

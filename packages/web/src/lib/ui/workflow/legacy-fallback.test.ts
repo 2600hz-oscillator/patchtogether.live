@@ -186,8 +186,24 @@ describe('isShellSwappable — eligibility', () => {
     // there is exactly ONE client per node and views merely subscribe.
     expect(NON_SHELL_LANE_TYPES.has('es9')).toBe(false);
     expect(isShellSwappable('es9', true)).toBe(true);
-    // Un-migrated (no curated face yet) ⇒ the uniform placeholder tile, whose
-    // EXPAND opens the dock full view. That is the owner's requested shape.
+    // ⚠ THIS CLAUSE IS ABOUT THE PURE FUNCTION, NOT ABOUT es9 ANY MORE, and the
+    // distinction had to be written down the day es9 was PROMOTED. The comment
+    // here used to read "Un-migrated (no curated face yet) ⇒ the uniform
+    // placeholder tile … That is the owner's requested shape" — and both halves
+    // have expired. es9 declares a `face` and is in `STRICT_FACES`, so a real
+    // rack renders `<ModuleShell>` with ranked cells (CONNECT first), and the
+    // placeholder is what the promotion REPLACED rather than what the owner
+    // asked for. The assertion survives only because `base` hard-codes
+    // `migrated: false`: it says "given an un-migrated module with a card, the
+    // lane is a placeholder", which is a statement about `laneRenderKind` and
+    // stays true for every module that is genuinely un-migrated.
+    //
+    // Kept rather than deleted, because the OTHER two clauses in this test are
+    // the ones with es9's name on them (`NON_SHELL_LANE_TYPES` membership and
+    // the legacy render), and both are still exactly about es9. The live
+    // promotion is asserted where it can actually be observed —
+    // `es9-face-model.test.ts` runs the real tier selector, and
+    // `es9-shell-lifetime.spec.ts` reads `moduleShell` off a rendered tile.
     expect(laneRenderKind({ ...base, type: 'es9', hasCard: isShellSwappable('es9', true) })).toBe(
       'placeholder',
     );

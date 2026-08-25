@@ -131,6 +131,30 @@ describe('console grid — which SHIPPED bands it claims (derived membership)', 
 
   it('claims EXACTLY these bands — a new one is a baseline dispatch, not a diff to accept', () => {
     expect(claimed()).toEqual([
+      // ⚠ THE SECOND BAND CLUSTERED PURELY TO FIT THE CAPTURE BOX, and it is
+      // the moog960 argument one entry down applied to a WIDER cell. es9's
+      // eight OUT-JACK class switches are SEGMENTED cells painting FOUR option
+      // labels each (audio / cv / pitch / gate) — one more option than
+      // moog960's NORM/SKIP/STOP, which already measured 1336 CSS px for eight
+      // in one row against a 1220 px box. Splitting into halves is what makes
+      // the plate fit, without a width exemption a routing switch has not
+      // earned.
+      //
+      // The correspondence is the moog960 one rather than the moog984 one:
+      // column j is "the j-th jack of this half", not the same control twice.
+      // On eight identical physical jacks that is exactly how a player reads
+      // them, so the aligned columns are right for the same musical reason.
+      //
+      // ⚠ ITS SIBLING BAND IS DELIBERATELY *NOT* HERE. es9's `in` band holds
+      // FOURTEEN of the same cell and is clustered 4/4/4/2 — RAGGED, so
+      // `consoleGridCols` refuses it, which is correct: fourteen does not
+      // divide into rows that both fit the box and align. That refusal is what
+      // keeps es9 a ONE-console-band face and therefore off the face-wide
+      // ruler below.
+      //
+      // NO EXISTING BASELINE MOVES — the face is new in this PR, so its first
+      // captured baseline has the aligned columns from the start.
+      'es9/out=4',
       'kickdrum/dynamics=3',
       // ⚠ THE NARROWEST CONSOLE BAND THAT CAN EXIST — two columns — and it
       // arrived with kria's face. Its `track` band holds two equal clusters,
@@ -283,6 +307,12 @@ describe('console grid — which SHIPPED bands it claims (derived membership)', 
       if (consoleBands.length === 1) singles.push(def.type);
     }
     expect(singles.sort(), 'the roster must still contain single-console-band faces').toEqual([
+      // es9's `out` band is its only console band. The `in` band holds the
+      // SAME cell fourteen times and is clustered 4/4/4/2 — ragged, so the
+      // rule refuses it — and `bridge` carries no clusters at all. So the
+      // face-wide ruler must not engage, and a lone console band has nothing
+      // to align against.
+      'es9',
       'kickdrum',
       // kria's `track` is its only console band — `transport` and `scale` carry
       // no clusters at all — so the FACE-WIDE ruler must not engage. Same

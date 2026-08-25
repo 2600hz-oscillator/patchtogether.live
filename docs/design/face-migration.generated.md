@@ -12,8 +12,8 @@ Every registered module carries exactly one **disposition**: what kind of work i
 |  | count |
 |---|---|
 | registered modules | 193 |
-| done (faced + promoted) | 160 |
-| remaining (excludes organizational-native) | 30 |
+| done (faced + promoted) | 159 |
+| remaining (excludes organizational-native) | 31 |
 | registered with NO disposition (must be zero) | 0 |
 | inventory entries naming a dead def (must be zero) | 0 |
 
@@ -21,9 +21,9 @@ Every registered module carries exactly one **disposition**: what kind of work i
 
 | disposition | what it means | modules | done |
 |---|---|---|---|
-| `generic-face` | author a `face` and rank the controls — no new platform capability | 161 | 160 |
+| `generic-face` | author a `face` and rank the controls — no new platform capability | 160 | 159 |
 | `blocked` | would be a face today but for the named capability, and nothing else | 0 | — |
-| `bespoke-surface` | the primary interaction is not param-shaped — needs a purpose-built surface | 29 | — |
+| `bespoke-surface` | the primary interaction is not param-shaped — needs a purpose-built surface | 30 | — |
 | `organizational-native` | rack furniture; not a migration at all | 3 | — |
 
 ## What each blocker buys
@@ -74,6 +74,7 @@ author a `face` and rank the controls — no new platform capability.
 | `dx7` | audio | done | — |
 | `edges` | video | done | — |
 | `electraControl` | meta | done | — |
+| `es9` | audio | done | — |
 | `fader` | video | done | — |
 | `featurecv` | audio | done | — |
 | `feedback` | video | done | — |
@@ -108,9 +109,7 @@ author a `face` and rank the controls — no new platform capability.
 | `matrixMix` | meta | done | — |
 | `meowbox` | audio | done | — |
 | `midiclock` | audio | done | — |
-| `midiCvBuddy` | audio | done | — |
 | `midiLane` | audio | done | — |
-| `midiOutBuddy` | audio | done | — |
 | `milkdrop` | video | done | — |
 | `mirrorpool` | video | done | — |
 | `mixer` | audio | done | — |
@@ -220,11 +219,12 @@ the primary interaction is not param-shaped — needs a purpose-built surface.
 | `clockedRunner` | audio | — | — |
 | `controlSurface` | meta | — | — |
 | `doom` | video | — | — |
-| `es9` | audio | — | — |
 | `frogger` | audio | — | — |
 | `gibribbon` | video | — | — |
 | `livecode` | audio | — | — |
 | `mappy` | video | — | — |
+| `midiCvBuddy` | audio | — | — |
+| `midiOutBuddy` | audio | — | — |
 | `modtris` | audio | — | — |
 | `moog956` | audio | — | — |
 | `nibbles` | video | — | — |

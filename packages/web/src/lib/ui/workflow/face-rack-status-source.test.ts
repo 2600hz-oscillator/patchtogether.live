@@ -597,6 +597,48 @@ const EXTENSION_BODY_ROLES: Readonly<Record<string, BodyRule>> = {
       + 'control captions, and an ERROR that is absent whenever nothing is wrong.',
   },
 
+  // ── ES-9 — the LINK STATUS strip, and the first body in this roster that
+  //    carries no picker at all ──────────────────────────────────────────────
+  es9: {
+    role: 'status-primitive',
+    why:
+      'the HARDWARE LINK strip for the ES-9: an empty-state hint and three lamps — BRIDGE (the '
+      + 'es9-bridge companion app answered), XRUN (`tone: warn`; the stream under-ran or '
+      + 'over-ran the ring) and CV BUDDY (a CV Buddy has claimed some out jacks). ⚠ IT CARRIES '
+      + 'NO PICKER AND NO BUTTON, and unlike the MIDI binders one entry up that is not a '
+      + 'constraint being worked around: `maxInstances` is 1 and the native app accepts a single '
+      + 'client, so there is exactly one device and no roster to choose from, while CONNECT and '
+      + 'DISCONNECT are real ranked `action` cells — which is what puts the gesture on the LANE '
+      + 'TILE rather than behind the dock, on a module that is silent until it is pressed. ⚠ THE '
+      + 'LAMPS ARE WHERE FOUR DELETED READOUTS WENT, each a picture with its sentence in '
+      + '`aria-label`: BRIDGE replaces the seven-way state word AND the rate / channel-count / '
+      + 'round-trip row, with the narrowing stated in es9-status-model.ts (eight connection '
+      + 'states onto two lamp states, mitigated by naming the exact failure in the detail and '
+      + 'refusing a second FAULT lamp that would read as a malfunction after a deliberate '
+      + 'DISCONNECT); XRUN replaces the `underruns/overruns` COUNT, and it is the removal with a '
+      + 'downstream dependant, because cvBuddy\'s shipped body names the ES-9\'s xruns as the '
+      + 'other half of diagnosing an unstable clock and says the two have opposite fixes; '
+      + 'CV BUDDY replaces the "jacks driven by CV Buddy" LIST, which the card undersold as '
+      + 'purely informational — the reconciler OWNS those jacks\' out-class under '
+      + 'CVBUDDY_JANITOR_ORIGIN, so a plate rendering eight identical editable class cells while '
+      + 'three of them are silently reverted would be a control that looks alive and is not. '
+      + '⚠ IT NEEDS NO STATUS REGISTRY, unlike cameraInput: es9 is in neither '
+      + '`DOM_SOURCE_LANE_TYPES` nor `CARD_PRODUCER_LANE_TYPES`, so promotion parks no live card '
+      + 'off-screen, and the connection already lives in a node-keyed engine-side registry on '
+      + 'GRAPH lifetime ($lib/audio/es9/bridge-owner) that was built for exactly this — the '
+      + 'registry cameraInput had to invent is the thing this module already had. The body '
+      + 'SUBSCRIBES rather than polling, because that registry deliberately keeps listeners '
+      + 'outside its entries so a view may pre-date the connection. ⚠ It mounts no canvas '
+      + 'element and must not grow one (the role predicates GREP RAW SOURCE and cannot tell code '
+      + 'from a comment, so this sentence deliberately spells the tag out in words), and it '
+      + 'declares no `face.rackStatus`: `maxInstances` is 1, so there is no second instance and '
+      + 'no band to suppress — the CV-Buddy relationship runs the other way, with that module '
+      + 'declaring rackStatus and this being the shared hardware it points at. ⚠ NO SCREEN '
+      + 'SWITCH and NO WATCH MARK — the video-screen ruling runs over STRICT_FACES intersect '
+      + 'video defs and this is `domain: audio`. Every text node is either a lamp CAPTION or '
+      + 'instructional copy in the EMPTY state where no link exists.',
+  },
+
   // ── MIDI LANE — the THIRD binder body, and the one whose lamps carry the
   //    most deleted text ─────────────────────────────────────────────────────
   midiLane: {

@@ -168,6 +168,7 @@ import {
   matrixmixYAxisValue,
 } from '$lib/ui/modules/matrixmix-cell-actions';
 import { midiclockConnect } from '$lib/ui/modules/midiclock-cell-actions';
+import { es9Connect, es9Disconnect } from '$lib/ui/modules/es9-cell-actions';
 import {
   midiCvBuddyChannelValue,
   midiCvBuddyConnect,
@@ -2408,6 +2409,56 @@ const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
       // — which is exactly the caller→seam gap this ledger exists to close.
       probe: { effect: { kind: 'audition', seam: 'engine-message' } },
       onFire: (nodeId) => { midiclockConnect(nodeId); },
+    },
+  },
+
+  // ── ES-9 — the HARDWARE LINK, and the only cells on a 22-PARAM face ───────
+  //
+  // Everything else this module has is an ordinary `ParamDef` that has been in
+  // `contract-lock.txt` since it shipped. These two are the whole of what the
+  // face needed a registry entry for, and they are here for the midiclock
+  // reason one block up with one difference worth stating: this module is not
+  // waiting on a browser PERMISSION, it is waiting on a PROCESS. The
+  // es9-bridge companion app must be running on this machine, because Chromium
+  // can only reach an ES-9's first stereo pair through getUserMedia. So there
+  // is no prompt to grant and no roster to pick from — one bridge, one device,
+  // `maxInstances: 1` — and the gesture is simply "dial the helper".
+  //
+  // ⚠ TWO CELLS WITH STATIC CAPTIONS, NOT ONE THAT FLIPS. The legacy card
+  // renders CONNECT *or* DISCONNECT depending on state, and a single cell whose
+  // label followed suit would be a caption that changes — the exact shape
+  // `StatusLed`'s contract refuses at the call site, for the same reason: a
+  // caption is the STATIC name of the thing, and a reader who has to re-read it
+  // to know what state they are in is reading a readout. Both cells are always
+  // present and neither is dead out of state: `restartEs9Bridge` on a node with
+  // no entry CREATES one ("Connect must CONNECT — silently doing nothing here
+  // is half of what made the button look dead", `bridge-owner.ts`), and
+  // `stopEs9Bridge` on an already-stopped client is a no-op.
+  es9: {
+    'es9-connect-{n}': {
+      kind: 'action',
+      label: 'Connect',
+      title: 'Dial the es9-bridge companion app on this machine and bring the hardware link up',
+      mode: 'trigger',
+      // ⚠ AN AUDITION, NOT A `data` PROBE. The connection lives in a
+      // module-level registry keyed by node id, on GRAPH lifetime — it is not
+      // a param and not a `node.data` key — so `readParam` and `readData` are
+      // structurally blind to both gestures and a `data` probe would pass on a
+      // dead button. And the obvious state read (`hasEs9Bridge` flipping) is
+      // the WRONG observable for the midiclock reason: no CI runner has an
+      // es9-bridge process listening, so it depends on the machine rather than
+      // on the button. The audition asks what the runner CAN answer — did the
+      // press resolve the live engine and this node, and reach the owner.
+      probe: { effect: { kind: 'audition', seam: 'engine-message' } },
+      onFire: (nodeId) => { es9Connect(nodeId); },
+    },
+    'es9-disconnect-{n}': {
+      kind: 'action',
+      label: 'Disconnect',
+      title: 'Drop the hardware link without deleting the node — frees the ES-9 for another client',
+      mode: 'trigger',
+      probe: { effect: { kind: 'audition', seam: 'engine-message' } },
+      onFire: (nodeId) => { es9Disconnect(nodeId); },
     },
   },
 

@@ -48,6 +48,22 @@ async function cardMounted(page: Page): Promise<boolean> {
   return (await page.locator(`[data-testid="es9-status-${NODE}"]`).count()) > 0;
 }
 
+/**
+ * Is the module's own DOCK FULL-VIEW surface mounted anywhere?
+ *
+ * ⚠ THIS USED TO BE `cardMounted` AND HAD TO MOVE WHEN es9 WAS PROMOTED. The
+ * dock full view renders `<ModuleShell view="dock-full">` for a migrated
+ * module, so `Es9Card` is not what expands any more — the faceplate's own
+ * extension body is. Re-pointing rather than deleting is the honest fix,
+ * because the SUBJECT of the tests below is the connection's lifetime across
+ * expand/collapse, and that subject is unchanged: it just needs a locator for
+ * "the pane is open" that survives the promotion. The bridge lamp is that
+ * locator — it mounts and unmounts with the pane, and nothing else does.
+ */
+async function faceBodyMounted(page: Page): Promise<boolean> {
+  return (await page.locator(`[data-testid="es9-bridge-body-${NODE}"]`).count()) > 0;
+}
+
 async function spawnEs9(page: Page, shell: boolean): Promise<void> {
   // `shell` true → the FACEPLATE default (bare /rack); false → legacy cards.
   // ⚠ Was `?shell=legacy${shell ? '&shell=1' : ''}` after the sweep — a
@@ -67,14 +83,25 @@ test('?shell=1 renders es9 COMPACT, and the bridge is owned with NO card mounted
 }) => {
   await spawnEs9(page, true);
 
-  // The lane tile is the uniform shell placeholder — NOT the legacy card. This
-  // is the half the previous fix had to give up.
+  // The lane tile is a shell tile — NOT the legacy card. This is the half the
+  // previous fix had to give up.
+  //
+  // ⚠ IT IS `moduleShell`, NOT `moduleShellPlaceholder`, SINCE THE PROMOTION,
+  // and the difference is the whole point of it. A placeholder is a rackline
+  // tile with ZERO ranked controls, so both connect gestures AND all 22
+  // routing params lived behind the dock full view on a module that is silent
+  // until one of them is pressed. es9 now declares a `face`, so the lane paints
+  // `<ModuleShell>` with ranked cells — CONNECT first.
   const lane = page.locator(`.svelte-flow__node[data-id="${NODE}"]`);
   await expect(lane).toHaveCount(1);
   const laneClass = (await lane.getAttribute('class')) ?? '';
-  expect(laneClass, 'es9 renders as a shell tile, not its legacy card').toContain(
-    'moduleShellPlaceholder',
+  expect(laneClass, 'es9 renders as a faced shell tile, not its legacy card').toContain(
+    'moduleShell',
   );
+  expect(
+    laneClass,
+    'and NOT the placeholder it rendered before promotion — the ranked cells are the point',
+  ).not.toContain('moduleShellPlaceholder');
 
   // …and the connection exists regardless. Before this change the bridge could
   // not exist without a mounted card; now the card is not even rendered.
@@ -90,13 +117,18 @@ test('EXPAND to dock then COLLAPSE does not touch the connection', async ({ page
     const w = globalThis as unknown as { __openDockFullView?: (n: string) => void };
     w.__openDockFullView?.(id);
   }, NODE);
-  await expect.poll(() => cardMounted(page), { timeout: 10_000 }).toBe(true);
+  await expect.poll(() => faceBodyMounted(page), { timeout: 10_000 }).toBe(true);
   expect(await bridgeOwned(page), 'still owned while expanded').toBe(true);
+  // ⚠ AND THE LEGACY CARD IS NOWHERE, which is the promotion's own claim and
+  // the reason the locator above had to move. Asserted rather than assumed: if
+  // the dock ever went back to mounting the card, the lifetime tests below
+  // would still pass while measuring a different surface.
+  expect(await cardMounted(page), 'the dock renders the FACE, not the card').toBe(false);
 
   // COLLAPSE — the exact gesture that used to kill the stream. ESC closes the
   // whole dock full view (Canvas's dock-key handler).
   await page.keyboard.press('Escape');
-  await expect.poll(() => cardMounted(page), { timeout: 10_000 }).toBe(false);
+  await expect.poll(() => faceBodyMounted(page), { timeout: 10_000 }).toBe(false);
 
   expect(await bridgeOwned(page), 'THE BUG: collapsing must NOT drop the bridge').toBe(true);
 
@@ -106,7 +138,7 @@ test('EXPAND to dock then COLLAPSE does not touch the connection', async ({ page
     const w = globalThis as unknown as { __openDockFullView?: (n: string) => void };
     w.__openDockFullView?.(id);
   }, NODE);
-  await expect.poll(() => cardMounted(page), { timeout: 10_000 }).toBe(true);
+  await expect.poll(() => faceBodyMounted(page), { timeout: 10_000 }).toBe(true);
   expect(await bridgeOwned(page)).toBe(true);
 });
 
