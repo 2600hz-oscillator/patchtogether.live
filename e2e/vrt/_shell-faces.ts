@@ -3491,6 +3491,60 @@ export const FACES = [
     // advances between frames.
   },
 
+  // ── ELECTRA CONTROL — the FOURTH META scene, and the only faced module whose
+  //    always-on instance lives in the workflow DRAWER ────────────────────────
+  {
+    type: 'electraControl',
+    // ONE band: the single SEND TO ELECTRA action cell. `params: []`, so there
+    // is nothing else that could rank — the thirty-six proxies are a body, for
+    // the addressability reason the def's face comment gives. `DOCK_TAB_MIN_BANDS`
+    // is 7 and nothing is padded toward it.
+    pages: 1,
+
+    // ⚠ THE CAPTURE STATE IS DETERMINISTIC BY CONSTRUCTION, and this is the
+    // strongest such argument in the roster — which is the same fact as its
+    // weakest coverage story, so both are stated.
+    //
+    // A freshly spawned electraControl has ZERO slots filled (asserted directly
+    // at `e2e/tests/electra-control.spec.ts`, which reads `data.slots` on a new
+    // node). The body ENUMERATES all thirty-six cells from `(row, knob)` and
+    // never from the data, so the empty board is not a blank region that happens
+    // to be quiet — it is the full 6×6 grid of dashed placeholder dials, three
+    // bank labels, and nothing else. There is no canvas, no clock, no animation
+    // and no engine node: `domain: 'meta'` with `inputs: []` and `outputs: []`.
+    // The patch-dependent surface — proxied knobs, live source colours, custom
+    // names — is structurally OUT OF FRAME rather than merely still, because it
+    // cannot paint at all without a binding, and a solo spawn has none.
+    //
+    // ⚠ WHAT THIS BASELINE DOES **NOT** COVER, stated rather than implied: the
+    // FILLED board. Every proxied knob, every colour stripe, every custom name
+    // and the rename field are invisible to it — which is most of the module's
+    // subject. A mocked baseline is reachable (the e2e already builds a filled
+    // board through the real assign path), but installing that in the VRT
+    // harness is a change to the harness rather than to this module, and it is
+    // the boundary `gamepad` and `midiclock` both drew. The filled surface is
+    // covered by `e2e/tests/electra-control.spec.ts` (the card, verbatim, under
+    // `?shell=legacy`), by `e2e/tests/workflow-drawer-face.spec.ts` (this body,
+    // in the pinned `e` tray, on the DEFAULT shell) and by
+    // `electracontrol-face-model.test.ts`.
+    //
+    // ⚠ NO `videoFaceWhy` AND NO `simPin`. `domain: 'meta'` — no ports, no
+    // canvas, no engine node — so `hasVideoSurface` is false and the AUDIO boot
+    // path is the right one (matrixMix, launchpadControlLeft and push2Control all
+    // take it too). There is no clock to pin and nothing that advances between
+    // frames.
+    //
+    // ⚠ AND NO `singletonAdoptWhy`, WHICH LOOKS WRONG UNTIL IT IS CHECKED. This
+    // module is `maxInstances: 1` AND its pinned instance is canvas-hidden —
+    // exactly `timelorde`'s shape, the one module that needs that field. The
+    // difference is `PINNED_COUNTS_TOWARD_CAP` (`graph/cap.ts`), which is derived
+    // as `WORKFLOW_PINNED_SURFACES.filter(presence === 'type')` — timelorde only.
+    // electraControl is in `WORKFLOW_PINNED_MODULES`, so its pin does NOT consume
+    // the cap ("additional instances spawn as normal canvas cards",
+    // workflow-pins.ts), `__spawnFromPalette` is not refused, and the ordinary
+    // boot path applies.
+  },
+
   // ── LAUNCHPAD CONTROL — the second BINDER, and the second META scene ───────
   {
     type: 'launchpadControlLeft',

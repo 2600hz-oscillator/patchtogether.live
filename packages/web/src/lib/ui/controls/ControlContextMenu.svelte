@@ -1,6 +1,12 @@
 <script lang="ts">
   // Right-click context menu for a single knob / slider.
   //
+  import {
+    ELECTRA_ROWS as ELECTRA_ROW_COUNT,
+    ELECTRA_KNOBS as ELECTRA_KNOB_COUNT,
+    slotIndex as electraSlot,
+  } from '$lib/graph/electra-control';
+  //
   //   MIDI Learn          — capture next CC and bind it to this control
   //   Forget MIDI binding — drop the saved binding (if any)
   //
@@ -69,12 +75,19 @@
   }: Props = $props();
 
   // Fixed 6×6 layout enumeration for the Electra "Send to … → Row → knob"
-  // flyout. slot = (row-1)*6 + (knob-1), matching $lib/graph/electra-control.
-  const ELECTRA_ROWS = [1, 2, 3, 4, 5, 6] as const;
-  const ELECTRA_KNOBS = [1, 2, 3, 4, 5, 6] as const;
-  function electraSlot(row: number, knob: number): number {
-    return (row - 1) * 6 + (knob - 1);
-  }
+  // flyout.
+  //
+  // ⚠ IMPORTED, NOT RE-DERIVED, AND THIS IS THE ONE PLACE IT MATTERED MOST.
+  // `$lib/graph/electra-control` is explicitly the ONE home for this geometry,
+  // and `push-electra-model.ts` re-exports from it "so the Push layer never
+  // re-derives 6". This file did neither: it hand-wrote the row/knob rosters and
+  // `(row-1)*6 + (knob-1)`, held together only by a comment saying they matched.
+  // Of the three renderers of this one grid it is the ONLY WRITER — a wrong slot
+  // index here binds a control to the wrong physical pot, silently, and no gate
+  // reads a literal inside a `.svelte` file. Same one-source rule as the
+  // backdraft ranges, applied to a coordinate map.
+  const ELECTRA_ROWS = Array.from({ length: ELECTRA_ROW_COUNT }, (_, i) => i + 1);
+  const ELECTRA_KNOBS = Array.from({ length: ELECTRA_KNOB_COUNT }, (_, i) => i + 1);
 
   // Hover cascade state for the Electra flyout: which electra's Row column is
   // open, and which Row's knob column is open. Reset on every reopen.

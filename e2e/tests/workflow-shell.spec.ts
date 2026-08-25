@@ -25,6 +25,9 @@ import {
   fixtureType,
 } from './_face-fixtures';
 import { BOOT_MS, PLACEHOLDER_PAINT_MS } from '../_helpers/boot-budget';
+// Zero-import pure module — see `placeholderSubjectType` for why this is
+// imported rather than transcribed.
+import { NON_SHELL_LANE_TYPES } from '../../packages/web/src/lib/ui/workflow/legacy-fallback';
 
 // Boot and first-paint waits are pure LATENCY BOUNDS, not behavior assertions
 // (#1875 — this spec lost two main push runs in one day to flat ones). The
@@ -168,11 +171,20 @@ async function dropAndSettle(page: Page, spawn: () => Promise<unknown>, what: st
  * prompt would make this geometry test depend on the runner's devices.
  */
 function placeholderSubjectType(): string {
-  /** Renders its verbatim legacy card in the lane — never a placeholder. */
-  const NON_SHELL = new Set([
-    'group', 'sticky', 'cadillac', 'clipplayer',
-    'controlSurface', 'electraControl', 'launchpadControlLeft',
-  ]);
+  /**
+   * Renders its verbatim legacy card in the lane — never a placeholder.
+   *
+   * ⚠ IMPORTED, NOT RE-TYPED, AND THAT IS A REPAIR. This used to be a hand
+   * copy of `NON_SHELL_LANE_TYPES`, and by the time anyone looked it named TWO
+   * modules the live set no longer contains: `launchpadControlLeft` (removed on
+   * its own promotion) and `electraControl` (removed on its). Neither drift was
+   * detectable here, because the copy is only ever used to EXCLUDE candidates —
+   * an over-broad copy silently narrows the subject pool and stays green, which
+   * is the blind-gate shape CLAUDE.md names. `legacy-fallback.ts` has zero
+   * imports, so it loads in the Playwright runtime directly and the set cannot
+   * drift from the rule it names.
+   */
+  const NON_SHELL = NON_SHELL_LANE_TYPES;
   /** Spawning these reaches for a device or a permission the runner may not
    *  have, which is not something a TILE-GEOMETRY test should depend on. */
   const NEEDS_HARDWARE = new Set([
