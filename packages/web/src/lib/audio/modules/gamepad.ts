@@ -30,10 +30,12 @@
 //   menu (gate):
 //     start, back
 //
-// Reading other-than-the-first controller is deferred — the
-// `padIndex` param is exposed so the card / a future picker UI can
-// select the gamepad slot (0..3); v1 only auto-selects slot 0 of
-// whichever was most-recently connected.
+// Multi-controller: `padIndex` (0..3) picks which slot of
+// navigator.getGamepads() the poll reads, LIVE — `pollPad` re-reads it
+// every frame, so switching slots takes effect on the next poll. It
+// carries an `options` roster so the faceplate renders it as a
+// segmented picker rather than a four-position dial nobody can aim
+// (see GAMEPAD_SLOT_OPTIONS).
 //
 // Inputs: none.
 //
@@ -50,6 +52,7 @@
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
+import type { ModuleFace, ParamDef, ParamOption } from '$lib/graph/types';
 import { patch as livePatch } from '$lib/graph/store';
 
 /** Stick deadzone. Xbox sticks (especially older ones) have notable
@@ -947,6 +950,97 @@ export const GAMEPAD_PRESETS: readonly GamepadPreset[] = [
   },
 ];
 
+// ---------------- the SLOT param + the faceplate ----------------
+
+/** The lowest / highest `navigator.getGamepads()` index this module will read.
+ *  The Web Gamepad spec exposes at most four simultaneous pads, so the legal
+ *  span is exactly 0..3 — a physical property of the API, not a population of
+ *  anything in this repo. ONE PLACE: `readPadIndex` in the factory and the
+ *  card's own picker both clamp against these, and the `options` roster below
+ *  is DERIVED from the span rather than typed, so the labels cannot drift from
+ *  `min`/`max`. */
+export const GAMEPAD_SLOT_MIN = 0;
+export const GAMEPAD_SLOT_MAX = 3;
+
+/** The SLOT roster, derived from the span above.
+ *
+ * ⚠ IT EXISTS FOR SELECTABILITY, NOT FOR NAMES. `padIndex` is `0..3 discrete`,
+ * so drawn as a bare dial it has FOUR reachable positions across the whole
+ * travel and every drag lands on a quantisation boundary — the `moog962`
+ * inertness class (`faces-parity`: "dragging the knob commits a param change
+ * into the graph"). `options` is the only mechanism that fixes it:
+ * `paramCellKind` derives a SEGMENTED cell from a roster (4 ≤
+ * SEGMENTED_MAX_OPTIONS), so each slot becomes a tap target.
+ *
+ * ⚠ THE LABELS ARE THE STATES' OWN VALUES, and inventing anything else here
+ * would be a lie. There is no device roster behind these: nothing in the
+ * Gamepad API says which controller is in which slot until you select one and
+ * read `pad.id` back, which is why the legacy card's four buttons are printed
+ * `0 1 2 3` too. The skill's rule verbatim — "the states' own values where they
+ * are literally quantities; never fabricate semantics".
+ *
+ * ⚠ NO `optionsExhaustive`. The roster covers EVERY step of the span, so the
+ * declaration would buy nothing and `param-vocabulary.test.ts` refuses a
+ * redundant one BY NAME ("roster covers every step … delete it"). The sparse
+ * form is for a param whose gaps are meaningless (midiclock's divisor); every
+ * slot here is legal. */
+export const GAMEPAD_SLOT_OPTIONS: readonly ParamOption[] = Array.from(
+  { length: GAMEPAD_SLOT_MAX - GAMEPAD_SLOT_MIN + 1 },
+  (_, i) => ({ value: GAMEPAD_SLOT_MIN + i, label: String(GAMEPAD_SLOT_MIN + i) }),
+);
+
+/** Which slot of `navigator.getGamepads()` to read. Default 0 = "first
+ *  connected". The ONE param this module has — everything else a player
+ *  configures (remaps, inverts, both calibrations) is `node.data`. */
+export const GAMEPAD_SLOT_PARAM: ParamDef = {
+  id: 'padIndex',
+  label: 'Slot',
+  defaultValue: GAMEPAD_SLOT_MIN,
+  min: GAMEPAD_SLOT_MIN,
+  max: GAMEPAD_SLOT_MAX,
+  curve: 'discrete',
+  options: GAMEPAD_SLOT_OPTIONS,
+};
+
+/**
+ * THE GAMEPAD FACEPLATE.
+ *
+ * ⚠ ONE RANKED CELL, AND THAT IS THE WHOLE `order` — because SLOT is the only
+ * thing on this module a player changes WITHOUT LOOKING AT THE DEVICE.
+ * Remapping, calibrating and inverting are all "move the physical control and
+ * watch what lights up" gestures: they are meaningless without the live echo,
+ * and the echo (two stick pads, two trigger bars, twelve button LEDs) does not
+ * fit in a 192 px lane tile. So the mapping board is a `fullViewBody` and the
+ * lane keeps the one control that is useful there.
+ *
+ * ⚠ AND PROMOTION LOSES NOTHING, which is why this is not the `joystick` shape.
+ * `gamepad` is NOT in `NON_SHELL_LANE_TYPES`, so its lane render is
+ * `'placeholder'` today — the uniform rackline tile with NO ranked controls at
+ * all, whose `⤢` opens the legacy card in the dock. The face replaces a
+ * placeholder with a real tile and replaces the card with the same surface,
+ * gesture for gesture (see `$lib/ui/modules/gamepad/GamepadMappingBody.svelte`).
+ *
+ * ⚠ NO PAGES. One control is one band; a `slot` header over a cell already
+ * captioned `Slot` would be the same word twice, and "do not add a page just to
+ * get a header" is the standing rule. Nowhere near `DOCK_TAB_MIN_BANDS = 7`, so
+ * no tab rail — and `face.tabbed` is owner-instruction only.
+ *
+ * ⚠ `glyph: 'none'` IS THE ONLY LITERAL THAT COMPILES INTO A GREEN RUN, and it
+ * is derived rather than chosen. Every live glyph binding resolves through
+ * `primaryAudioOutPortId`, which is `outputs.find(o => o.type === 'audio')?.id`.
+ * This module has EIGHTEEN outputs and not one is `type: 'audio'` — six `cv`,
+ * twelve `gate` — so a `scope` / `meter` / `waveform` glyph would resolve to
+ * `{kind:'static'}` and `module-face-lint` reddens it as a dead glyph.
+ * `gamepad-face-model.test.ts` proves the antecedent rather than asserting the
+ * literal.
+ */
+export const GAMEPAD_FACE: ModuleFace = {
+  glyph: 'none',
+  // DERIVED from the param that produces it — never a re-typed key list.
+  order: [GAMEPAD_SLOT_PARAM.id],
+  extension: 'gamepad',
+};
+
 export const gamepadDef: AudioModuleDef = {
   type: 'gamepad',
   palette: { top: 'Audio modules', sub: 'I/O' },
@@ -978,15 +1072,13 @@ export const gamepadDef: AudioModuleDef = {
     { id: 'start', type: 'gate', edge: 'gate' },
     { id: 'back',  type: 'gate', edge: 'gate' },
   ],
-  params: [
-    // Which slot of navigator.getGamepads() to read. 0..3 (Web spec
-    // caps at 4 simultaneous pads). Default 0 = "first connected".
-    { id: 'padIndex', label: 'Slot', defaultValue: 0, min: 0, max: 3, curve: 'discrete' },
-  ],
+  params: [GAMEPAD_SLOT_PARAM],
+
+  face: GAMEPAD_FACE,
 
   docs: {
     explanation:
-      "A connected USB or Bluetooth game controller turned into a bank of CV and gate signals — eighteen outputs covering the full standard Xbox-style layout (two analog sticks, two triggers, the bumpers, the four face buttons, the D-pad, and Start/Back). The card polls the controller at ~60 Hz and pushes each axis and button into its own output, so you play the rack with a gamepad: stick axes sweep filters or pan a scene, triggers ride a VCA, face buttons fire drum strikes or scene changes. Sticks come out bipolar (±1) with a small deadzone so a worn stick's rest-drift reads 0, the Y axis flipped so 'up' is +1; triggers are unipolar 0..1; every button is a 0/1 gate. The left stick can be CALIBRATED on the card (sweep it to capture its true range + rest center) for a precise, drift-free mapping. Browser security only reveals a controller after you press a button on it, so the card shows a 'press any button' prompt until a pad appears. These outputs also drive video modules through the cross-domain CV/gate bridge.",
+      "A connected USB or Bluetooth game controller turned into a bank of CV and gate signals — eighteen outputs covering the full standard Xbox-style layout (two analog sticks, two triggers, the bumpers, the four face buttons, the D-pad, and Start/Back). The card polls the controller at ~60 Hz and pushes each axis and button into its own output, so you play the rack with a gamepad: stick axes sweep filters or pan a scene, triggers ride a VCA, face buttons fire drum strikes or scene changes. Sticks come out bipolar (±1) with a small deadzone so a worn stick's rest-drift reads 0, the Y axis flipped so 'up' is +1; triggers are unipolar 0..1; every button is a 0/1 gate. The faceplate's mapping board is where you TEACH THE RACK WHAT YOUR CONTROLLER IS, in three layers that each exist because some real device failed the one below: REMAP (right-click any button LED or trigger row, or press Remap X / Remap Y under a stick, then move the physical control you want bound — the Gamepad API has no events, so the armed listener diffs consecutive polls and takes the first thing that moves past a threshold); CALIBRATE, available on BOTH sticks independently (sweep one through its full travel and its observed min/max become full ±1, with a captured true rest centre so a stick that physically rests off-centre still reads 0, plus a per-stick 'set center' that captures that centre on its own); and INVERT, four per-axis sign flips that compose on top of both. The whole bundle — every binding, both calibrations, all four inverts — saves to a .json you can reload or share, and one built-in preset ships. Browser security only reveals a controller after you press a button on it, so the PAD lamp stays dark and the plate says so until a pad appears. These outputs also drive video modules through the cross-domain CV/gate bridge.",
     inputs: {},
     outputs: {
       lx: "Left stick X as bipolar CV, −1 (left) through 0 (center) to +1 (right), after a small deadzone and re-normalization (and the left-stick calibration if you've run it).",
@@ -1080,8 +1172,8 @@ export const gamepadDef: AudioModuleDef = {
 
     function readPadIndex(): number {
       const v = (node.params ?? {}).padIndex;
-      const n = typeof v === 'number' ? Math.round(v) : 0;
-      return Math.max(0, Math.min(3, n));
+      const n = typeof v === 'number' ? Math.round(v) : GAMEPAD_SLOT_PARAM.defaultValue;
+      return Math.max(GAMEPAD_SLOT_MIN, Math.min(GAMEPAD_SLOT_MAX, n));
     }
 
     /** Read the active gamepad's state + push to all sources. Skipped

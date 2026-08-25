@@ -12,8 +12,8 @@ Every registered module carries exactly one **disposition**: what kind of work i
 |  | count |
 |---|---|
 | registered modules | 193 |
-| done (faced + promoted) | 152 |
-| remaining (excludes organizational-native) | 38 |
+| done (faced + promoted) | 153 |
+| remaining (excludes organizational-native) | 37 |
 | registered with NO disposition (must be zero) | 0 |
 | inventory entries naming a dead def (must be zero) | 0 |
 
@@ -21,9 +21,9 @@ Every registered module carries exactly one **disposition**: what kind of work i
 
 | disposition | what it means | modules | done |
 |---|---|---|---|
-| `generic-face` | author a `face` and rank the controls — no new platform capability | 153 | 152 |
+| `generic-face` | author a `face` and rank the controls — no new platform capability | 154 | 153 |
 | `blocked` | would be a face today but for the named capability, and nothing else | 0 | — |
-| `bespoke-surface` | the primary interaction is not param-shaped — needs a purpose-built surface | 37 | — |
+| `bespoke-surface` | the primary interaction is not param-shaped — needs a purpose-built surface | 36 | — |
 | `organizational-native` | rack furniture; not a migration at all | 3 | — |
 
 ## What each blocker buys
@@ -82,6 +82,7 @@ author a `face` and rank the controls — no new platform capability.
 | `foxy` | audio | done | — |
 | `frametable` | video | done | — |
 | `freezeframe` | video | done | — |
+| `gamepad` | audio | done | — |
 | `gatemaiden` | audio | done | — |
 | `grainsOfVision` | video | done | — |
 | `graphicEq` | video | done | — |
@@ -217,7 +218,6 @@ the primary interaction is not param-shaped — needs a purpose-built surface.
 | `electraControl` | meta | — | `needs-note-entry-cell` |
 | `es9` | audio | — | — |
 | `frogger` | audio | — | — |
-| `gamepad` | audio | — | — |
 | `gibribbon` | video | — | — |
 | `livecode` | audio | — | — |
 | `mappy` | video | — | — |
