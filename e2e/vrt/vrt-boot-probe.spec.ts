@@ -48,7 +48,7 @@
 // matches, but CI is a 2-core runner. Read the RATIOS, and scale with the
 // lane's own measured mean rather than assuming.
 
-import { test, expect } from '@playwright/test';
+import { test, expect, type BrowserContext } from '@playwright/test';
 import { pinVrtFonts, awaitVrtFonts } from './_fonts';
 import { diffRegion } from './vrt-surface-stats';
 import {
@@ -286,6 +286,24 @@ const PROBE_ORDERS = Number(process.env.PROBE_ORDERS ?? 3);
  *  difference measured so far has appeared. */
 const PROBE_TIERS = (process.env.PROBE_TIERS ?? 'compact,dock').split(',');
 
+/**
+ * ⚠ THE CONTROL THIS PROBE WAS MISSING, AND IT IS THE ONE THAT DECIDES WHAT AN
+ * OFFENDER MEANS. `PROBE_FRESH_CONTROL=1` runs the "shared" side on a FRESH page
+ * too — two independent boots of the same scene, compared the same way.
+ *
+ * Without it, "the shared page changed this scene" and "this scene is not
+ * deterministic boot-to-boot ANYWAY" are indistinguishable from the output, and
+ * they need opposite responses: the first is a reason not to share, the second is
+ * a pre-existing property of the scene that has nothing to do with this change and
+ * that the 26/255 gate tolerance is presumably already absorbing.
+ *
+ * The full-roster sweep made that ambiguity concrete: it flagged `moog995` at
+ * ONE pixel and `clouds` at 52 — magnitudes that look far more like scene noise
+ * than like a stale shared page, sitting in the same list as `mandelbulb` at
+ * 67 943.
+ */
+const PROBE_FRESH_CONTROL = process.env.PROBE_FRESH_CONTROL === '1';
+
 /** ⚠ 1/255, NOT the gate's 26/255. The gate's tolerance exists to absorb GPU
  *  anti-aliasing drift between RUNS; this comparison is two captures in ONE run
  *  on ONE machine, so there is nothing legitimate for a tolerance to absorb and
@@ -451,11 +469,26 @@ test.describe('D: shared page vs fresh page — same pixels?', () => {
         // DOCK — pixels AND the geometry the gate asserts on.
         if (PROBE_TIERS.includes('dock')) {
           const t = Date.now();
-          await resetFaceRack(page, pristine);
-          // AFTER the load, because there is no load left — the shared page
-          // booted at the compact height. This is the asymmetry being measured.
-          await page.setViewportSize(foldViewportFor(type));
-          const got = await captureDock(page, type);
+          // ⚠ UNDER `PROBE_FRESH_CONTROL` THE "SHARED" SIDE IS A SECOND FRESH
+          // BOOT, so any difference that survives is the SCENE's own
+          // nondeterminism and not a property of sharing. See the flag.
+          let got: { png: string; geom: Record<string, number> };
+          let ctl: BrowserContext | null = null;
+          if (PROBE_FRESH_CONTROL) {
+            ctl = await browser.newContext({
+              viewport: LEGACY_FOLD_VIEWPORT, deviceScaleFactor: 1, reducedMotion: 'reduce',
+            });
+            const p2 = await ctl.newPage();
+            await p2.setViewportSize(foldViewportFor(type));
+            await loadFaceRack(p2, {});
+            got = await captureDock(p2, type);
+          } else {
+            await resetFaceRack(page, pristine);
+            // AFTER the load, because there is no load left — the shared page
+            // booted at the compact height. This is the asymmetry being measured.
+            await page.setViewportSize(foldViewportFor(type));
+            got = await captureDock(page, type);
+          }
           sharedDockMs.push(Date.now() - t);
           const want = freshDock.get(type)!;
           const d = await diffRegion(page, want.png, got.png, IDENTITY_DELTA);
@@ -469,6 +502,7 @@ test.describe('D: shared page vs fresh page — same pixels?', () => {
                 + 'ASSERTS on even where it moved no pixel',
             );
           }
+          if (ctl) await ctl.close();
         }
       }
       await ctx.close();
