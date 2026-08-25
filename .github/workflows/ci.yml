@@ -44,7 +44,7 @@ name: CI
 #                            | preview bundle ONCE (VITE_E2E_HOOKS=1) → the
 #                            | web-preview-dist artifact the e2e shards serve
 #   art             ~60 s  | needs: dsp-build (restores dist, dsp:build no-ops)
-#   e2e (× 10)    ~3-4 min | matrix shards 1..10/10, blob reporter; needs:
+#   e2e (× 12)    ~3-4 min | matrix shards 1..12/12, blob reporter; needs:
 #                            | [dsp-build, build-web]; runs E2E_USE_PREVIEW=1
 #                            | against the prebuilt bundle (`vite preview`,
 #                            | :4173) instead of booting `vite dev` per shard.
@@ -1033,7 +1033,7 @@ jobs:
   # DB schema + DOOM assets are needed (same as the previous monolithic job).
   # -----------------------------------------------------------------------
   e2e:
-    name: e2e (shard ${{ matrix.shard }}/10)
+    name: e2e (shard ${{ matrix.shard }}/12)
     needs: [dsp-build, build-web]
     runs-on: ubuntu-latest
     # ⚠ HUNG-JOB SAFETY CAP, NOT A PERFORMANCE GATE — and it has to clear the
@@ -1069,7 +1069,7 @@ jobs:
         # long pole shortens. Nothing aggregates across shards any more (the
         # `merge-reports` job was deleted 2026-08-17), so the shard COUNT is a
         # free parameter: each shard reports and audits itself.
-        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
 
     env:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/patchtogether_test
@@ -1272,9 +1272,9 @@ jobs:
       # repo keeps getting bitten by. `scripts/ci-playwright-timeout.test.ts`
       # enforces the invariant for whatever IS guarded and PINS the unguarded
       # set, so adding a guard later is cheap and forgetting one is visible.
-      - name: Run E2E (shard ${{ matrix.shard }}/10, blob reporter, no @collab, no @capacity, no behavioral)
+      - name: Run E2E (shard ${{ matrix.shard }}/12, blob reporter, no @collab, no @capacity, no behavioral)
         env:
-          E2E_SHARD_BUDGET_LABEL: shard ${{ matrix.shard }}/10
+          E2E_SHARD_BUDGET_LABEL: shard ${{ matrix.shard }}/12
         run: |
           set -euo pipefail
           # COST-BASED SHARDING (#1538). `--shard=N/10` splits by TEST COUNT,
@@ -1322,8 +1322,8 @@ jobs:
           SPECS=$(cd e2e && flox activate -- npx playwright test --list --reporter=json 2>/dev/null \
             | flox activate -- node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>{const r=JSON.parse(d),f=new Set();(function w(s){for(const x of s||[]){if(x.file)f.add(x.file);w(x.suites);}})(r.suites);console.log([...f].sort().join(" "));})')
           # shellcheck disable=SC2086 # why: $SPECS is a SPACE-SEPARATED SPEC LIST and word splitting is the mechanism, not an accident — quoting it would hand the planner one argument that is the whole suite concatenated.
-          FILES=$(flox activate -- node scripts/e2e-shard-plan.mjs ${{ matrix.shard }} 10 --files $SPECS)
-          echo "shard ${{ matrix.shard }}/10 -> $(echo "$FILES" | wc -w) spec files"
+          FILES=$(flox activate -- node scripts/e2e-shard-plan.mjs ${{ matrix.shard }} 12 --files $SPECS)
+          echo "shard ${{ matrix.shard }}/12 -> $(echo "$FILES" | wc -w) spec files"
           # shellcheck disable=SC2086 # why: $FILES is this shard's spec list; word splitting is how playwright receives one argument per spec file. Quoting it would pass a single nonexistent filename.
           flox activate -- npx --workspace e2e playwright test \
             --global-timeout 1020000 \
