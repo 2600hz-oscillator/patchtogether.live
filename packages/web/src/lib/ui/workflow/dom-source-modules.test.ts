@@ -62,6 +62,10 @@ import {
   HEADLESS_MOUNT_LANE_TYPES,
   needsHeadlessSourceMount,
 } from './dom-source-modules';
+// The OTHER side of the ownership question (LEG-02, #1511). Imported here rather
+// than asserted from a second copy of the list, so "who owns this module's
+// source" has exactly one answer per module and this gate can check it.
+import { NODE_VIDEO_SOURCE_TYPES } from '$lib/ui/media/node-video-source-registry';
 import { STRICT_FACES } from './strict-faces';
 import { NON_SHELL_LANE_TYPES, laneRenderKind, type LaneRenderKind } from './legacy-fallback';
 
@@ -852,7 +856,7 @@ describe('DOM_SOURCE_LANE_TYPES — the grep gate (a new source module cannot sh
   });
 
   it('lists the known capture/media-source modules (readable failure if one is dropped)', () => {
-    for (const t of ['cameraInput', 'videobox', 'videovarispeed', 'archivist', 'peertube', 'tvLibrarian', 'loopback']) {
+    for (const t of ['cameraInput', 'videovarispeed', 'archivist', 'peertube', 'tvLibrarian', 'loopback']) {
       expect(DOM_SOURCE_LANE_TYPES.has(t), `${t} is a DOM-source module`).toBe(true);
     }
     // Boundary 1: a pure-GPU generator is NOT one (acidwarp renders from a shader
@@ -869,6 +873,49 @@ describe('DOM_SOURCE_LANE_TYPES — the grep gate (a new source module cannot sh
         `${t} attaches a ONE-SHOT atlas import, not a live source — it must NOT be a DOM-source module`,
       ).toBe(false);
     }
+    // Boundary 3 (LEG-02 P1, #1511): a module whose source is genuinely LIVE and
+    // genuinely file-backed, and which is still not a member — because its
+    // lifecycle moved OFF the card to a node-scoped controller. This is the
+    // boundary every remaining member is meant to cross, so it is asserted in
+    // BOTH directions rather than as a deleted name: absent here AND present in
+    // the registry that took over. Membership of both would mean two owners for
+    // one element, which is the failure mode `nodeMedia`'s owner-checked
+    // adoption exists to make impossible — and the one this epic could
+    // reintroduce at a higher level.
+    for (const t of ['videobox']) {
+      expect(
+        DOM_SOURCE_LANE_TYPES.has(t),
+        `${t}'s attach, audio wiring and loops belong to $lib/ui/media/node-video-source-registry ` +
+          'on graph lifetime — its card mount is not load-bearing, so it must NOT be a DOM-source module',
+      ).toBe(false);
+      expect(
+        NODE_VIDEO_SOURCE_TYPES.has(t),
+        `${t} left DOM_SOURCE_LANE_TYPES, so something must have taken ownership — it is absent from ` +
+          'NODE_VIDEO_SOURCE_TYPES too, which would mean NOBODY owns its source',
+      ).toBe(true);
+    }
+  });
+
+  it('the two OWNERSHIP sets are DISJOINT — a module has exactly one source owner', () => {
+    // The direction that costs. `DOM_SOURCE_LANE_TYPES` means "the CARD attaches
+    // and the engine keeps it"; `NODE_VIDEO_SOURCE_TYPES` means "a node-scoped
+    // controller attaches". A type in both would be two attach sites for one
+    // element, and whichever ran last would win non-deterministically — the
+    // double-mount hazard, one level up from the one `nodeMedia` already solved.
+    //
+    // ⚠ This is what makes a conversion ATOMIC rather than merely conventional:
+    // a PR that adds a controller without removing the card's attach reddens
+    // here, and one that removes the card's attach without adding a controller
+    // reddens on the derivation leg above. Neither half can land alone.
+    const both = [...NODE_VIDEO_SOURCE_TYPES].filter((t) => DOM_SOURCE_LANE_TYPES.has(t));
+    expect(
+      both,
+      `type(s) claimed by BOTH a card attach and a node controller: ${both.join(', ')}`,
+    ).toEqual([]);
+    // VACUITY: the disjointness above is trivially true of an empty controller
+    // set, which is exactly what it looks like the day someone deletes the
+    // registry import. Anchor it to a real member.
+    expect(NODE_VIDEO_SOURCE_TYPES.size, 'no module has a node-owned video source').toBeGreaterThan(0);
   });
 });
 
@@ -970,9 +1017,35 @@ describe('needsHeadlessSourceMount — the pure headless-mount decision', () => 
   const KINDS: LaneRenderKind[] = ['legacy', 'shell', 'placeholder', 'stub'];
 
   it('mounts ONLY when the shell swapped the card away (shell | placeholder)', () => {
+    // ⚠ SUBJECT MOVED (LEG-02 P1, #1511): this leg used `videobox`, which is no
+    // longer a member of either set — so on the converted tree it asserted that
+    // a non-member gets a headless mount, and went RED. The right repair is a
+    // live subject, never a relaxed expectation: `videovarispeed` is still
+    // card-owned today and exercises the same arm for the same reason.
     for (const kind of KINDS) {
       const want = kind === 'shell' || kind === 'placeholder';
-      expect(needsHeadlessSourceMount({ kind, type: 'videobox' }), `videobox @ ${kind}`).toBe(want);
+      expect(
+        needsHeadlessSourceMount({ kind, type: 'videovarispeed' }),
+        `videovarispeed @ ${kind}`,
+      ).toBe(want);
+    }
+  });
+
+  it('NEVER mounts a module whose source moved to a node controller, on ANY lane kind', () => {
+    // The inverse of the leg above, and the property that makes the conversion
+    // worth anything: a converted module must not keep paying the off-screen
+    // mount. Derived from the ownership set rather than naming videobox, so the
+    // next conversion inherits the assertion instead of needing a new one.
+    for (const type of NODE_VIDEO_SOURCE_TYPES) {
+      for (const kind of KINDS) {
+        expect(
+          needsHeadlessSourceMount({ kind, type }),
+          `${type} @ ${kind}: its lifecycle is node-owned, so nothing should keep a card alive for it`,
+        ).toBe(false);
+      }
+      // ...including the two arms that are NOT about the lane kind at all.
+      expect(needsHeadlessSourceMount({ kind: 'shell', type, laneOmitsNode: true }), `${type} in a collapsed group`).toBe(false);
+      expect(needsHeadlessSourceMount({ kind: 'placeholder', type, hostedElsewhere: false }), `${type} hosted nowhere`).toBe(false);
     }
   });
 
