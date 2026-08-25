@@ -170,6 +170,25 @@ import {
 import { midiclockConnect } from '$lib/ui/modules/midiclock-cell-actions';
 import { es9Connect, es9Disconnect } from '$lib/ui/modules/es9-cell-actions';
 import {
+  midiCvBuddyChannelValue,
+  midiCvBuddyConnect,
+  midiCvBuddyPriorityValue,
+  midiCvBuddyRetrigValue,
+  midiCvBuddySetChannel,
+  midiCvBuddySetPriority,
+  midiCvBuddySetRetrig,
+} from '$lib/ui/modules/midi-cv-buddy-cell-actions';
+import {
+  midiCvBuddyChannelChoices,
+  midiCvBuddyPriorityOptions,
+} from '$lib/audio/modules/midi-cv-buddy';
+import {
+  midiOutBuddyChannelValue,
+  midiOutBuddyConnect,
+  midiOutBuddySetChannel,
+} from '$lib/ui/modules/midi-out-buddy-cell-actions';
+import { midiOutBuddyChannelChoices } from '$lib/audio/modules/midi-out-buddy';
+import {
   midiLaneChannelValue,
   midiLaneClearCcA,
   midiLaneClearCcB,
@@ -2265,6 +2284,103 @@ const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
       onchange: (nodeId, v) => matrixmixSetYAxis(nodeId, v),
     },
   },
+  // ── MIDI-CV-BUDDY — the ZERO-PARAM BINDER, and the module whose promotion
+  //    found a live CHANNEL-KEY COLLISION ─────────────────────────────────────
+  //
+  // Four controls, all on `node.data`, all static cells: this module declares
+  // `params: []`. Same shape as `midiLane` below with the CC taps and the typed
+  // note field removed — which is exactly what it is, since midiLane is
+  // described on its own def as this module's channel-aware successor.
+  //
+  // ⚠ THE CHANNEL CELL WRITES `midiInChannel`, NOT `channel`, AND THAT IS A BUG
+  // FIX RATHER THAN A NAMING PREFERENCE. `channel-columns.ts` declares
+  // `data.channel: 1..8` to be workflow COLUMN MEMBERSHIP TRUTH; the legacy card
+  // wrote a 0..15 MIDI filter into the same key, so picking a channel ejected
+  // the module from its lane or teleported it into another's, and the factory
+  // reading that key back made a lane-dropped module listen to one channel it
+  // never chose. `MidiOutBuddyCard.svelte` has carried a header about this since
+  // #1168 and gained its own `midiOutChannel` key for it; the input side was
+  // never checked. `midi-cv-buddy.ts`'s `midiInChannelOf` carries the full
+  // measurement and the argument for why there is no legacy fallback.
+  midiCvBuddy: {
+    // CONNECT — the same gesture, the same argument and the same probe as
+    // midiclock's, one block down. This module is equally inert before the
+    // grant: no device is visible, so all three jacks sit at rest.
+    'midi-cv-buddy-connect-{n}': {
+      kind: 'action',
+      label: 'Connect MIDI…',
+      title: 'Grant this site access to Web MIDI (one-time per origin), then pick a device in the dock',
+      mode: 'trigger',
+      probe: { effect: { kind: 'audition', seam: 'engine-message' } },
+      onFire: (nodeId) => { midiCvBuddyConnect(nodeId); },
+    },
+    // CHANNEL — a FIXED 17-entry roster (ALL + 1..16), built from
+    // `MIDI_CHANNEL_COUNT` rather than written out. A keyboard on the wrong
+    // channel is SILENT rather than wrong, so this ranks second and reaches the
+    // lane tile.
+    'midi-cv-buddy-channel-{n}': {
+      kind: 'selector',
+      tag: 'CH',
+      options: () => midiCvBuddyChannelChoices(),
+      value: (node) => midiCvBuddyChannelValue(node),
+      onchange: (nodeId, v) => midiCvBuddySetChannel(nodeId, v),
+    },
+    // VOICE PRIORITY — three named behaviours, from the module's own
+    // `VoicePriority` union so a roster entry the engine has no branch for is a
+    // COMPILE error rather than a dead option.
+    'midi-cv-buddy-priority-{n}': {
+      kind: 'selector',
+      tag: 'PRIO',
+      options: () => midiCvBuddyPriorityOptions(),
+      value: (node) => midiCvBuddyPriorityValue(node),
+      onchange: (nodeId, v) => midiCvBuddySetPriority(nodeId, v),
+    },
+    // RETRIGGER — a genuine on/off (the gate either dips on a new note or it
+    // does not), so a toggle is the honest primitive and the 52 px one.
+    'midi-cv-buddy-retrig-{n}': {
+      kind: 'toggle',
+      label: 'RETRIG',
+      value: (node) => midiCvBuddyRetrigValue(node),
+      onchange: (nodeId, on) => midiCvBuddySetRetrig(nodeId, on),
+    },
+  },
+
+  // ── MIDI-OUT-BUDDY — the only module in the fleet that points OUTWARDS ─────
+  //
+  // Two controls, both on `node.data`, both static cells: `params: []` again.
+  //
+  // ⚠ THE CHANNEL CELL READS THE **EFFECTIVE** CHANNEL, NOT THE STORED
+  // OVERRIDE. `effectiveMidiOutChannel` is override → lane → 1, so a module
+  // dropped in lane 5 that has never been touched shows `5` — which is what it
+  // is actually sending on. Reading the raw `midiOutChannel` would paint `1` on
+  // a module sending on 5, i.e. a cell that lies about the graph, and the face's
+  // whole claim is that it tracks the graph.
+  //
+  // ⚠ AND IT WRITES `midiOutChannel` ONLY (#1168) — writing `channel` would
+  // hand the value to the workflow column reconciler as a LANE REASSIGNMENT and
+  // drop the module's clip assignment.
+  midiOutBuddy: {
+    'midi-out-buddy-connect-{n}': {
+      kind: 'action',
+      label: 'Connect MIDI…',
+      title: 'Grant this site access to Web MIDI (one-time per origin), then pick an output in the dock',
+      mode: 'trigger',
+      probe: { effect: { kind: 'audition', seam: 'engine-message' } },
+      onFire: (nodeId) => { midiOutBuddyConnect(nodeId); },
+    },
+    // CHANNEL — a FIXED 16-entry roster, 1-based on BOTH sides here because
+    // this module's stored channel IS 1..16 (it is compared directly against a
+    // lane number). The input side stores the 0..15 wire nibble instead; the
+    // asymmetry is in the saved shapes, not in this file.
+    'midi-out-buddy-channel-{n}': {
+      kind: 'selector',
+      tag: 'CH',
+      options: () => midiOutBuddyChannelChoices(),
+      value: (node) => midiOutBuddyChannelValue(node),
+      onchange: (nodeId, v) => midiOutBuddySetChannel(nodeId, v),
+    },
+  },
+
   midiclock: {
     // CONNECT MIDI — the permission gesture, and the reason this module's face
     // is worth more than a re-skin. Web MIDI shows NO device until the browser

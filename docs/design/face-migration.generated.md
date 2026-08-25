@@ -111,7 +111,9 @@ author a `face` and rank the controls — no new platform capability.
 | `matrixMix` | meta | done | — |
 | `meowbox` | audio | done | — |
 | `midiclock` | audio | done | — |
+| `midiCvBuddy` | audio | done | — |
 | `midiLane` | audio | done | — |
+| `midiOutBuddy` | audio | done | — |
 | `milkdrop` | video | done | — |
 | `mirrorpool` | video | done | — |
 | `mixer` | audio | done | — |
@@ -223,8 +225,6 @@ the primary interaction is not param-shaped — needs a purpose-built surface.
 | `frogger` | audio | — | — |
 | `gibribbon` | video | — | — |
 | `mappy` | video | — | — |
-| `midiCvBuddy` | audio | — | — |
-| `midiOutBuddy` | audio | — | — |
 | `modtris` | audio | — | — |
 | `moog956` | audio | — | — |
 | `nibbles` | video | — | — |
