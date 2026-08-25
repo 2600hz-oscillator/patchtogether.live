@@ -1,60 +1,74 @@
 <script lang="ts">
-  // TvLibrarianCard — international live-TV source.
+  // TvLibrarianCard — the SURFACE for an international live-TV source whose
+  // lifecycle belongs to the NODE.
   //
-  // FLOW: a 2D world map (NO three.js — equirectangular, click → nearest
-  // country) OR a country dropdown → a channel list (filtered famelack data) →
-  // pick a channel → hls.js attaches its .m3u8 to a card-owned
-  // <video crossorigin=anonymous> → the engine module (tv-librarian.ts) samples
-  // it into the FBO (video out) + extracts stereo audio (audio_l/audio_r).
+  // ⚠ THIS CARD CREATES NOTHING AND DISPOSES NOTHING (LEG-02 P3, #1511). The
+  // <video>, its hls.js demuxer, the engine attach, the audio wire + un-mute,
+  // the CHANNEL catalogue, the channel→stream application, the next/random
+  // trigger poll and the unavailable auto-skip are ALL owned by
+  // `$lib/ui/media/node-hls-source-registry` on GRAPH lifetime, created and
+  // swept from Canvas's own effects. This file adopts the node's element for
+  // display, renders the picker, and forwards user GESTURES through
+  // `nodeHlsSource.request(...)`.
   //
-  // Phase-0 spike (validated under the real /r/ COEP require-corp headers):
-  // famelack HLS plays + yields an UNTAINTED WebGL2 texture (6/6 streams). So
-  // `video` out is a real downstream-usable texture, not play-only.
+  // ⚠ NO `attachExternalSource` ANYWHERE IN THIS FILE — the mechanical fact that
+  // takes `tvLibrarian` out of `DOM_SOURCE_LANE_TYPES`, since the grep gate
+  // (`dom-source-modules.test.ts`) derives that set by walking each card's
+  // component subtree for exactly this call.
   //
-  // Multiplayer: the selected countryCode + channel (incl. name + url) live on
-  // node.data so all rack-mates tune to the SAME stream. Transient playback
-  // state (loading/error/hls instance) stays render-local (never written to the
-  // synced store — the per-frame-write storm lesson).
+  // ⚠ NO `read(id, 'extras')` EITHER: a card that cannot reach the handle cannot
+  // tear it down. Its EXTRAS_OWNERS entry went with it.
+  //
+  // WHAT THIS CARD STILL OWNS, and why: the COUNTRY dataset. The world map and
+  // the dropdown are a picker, not engine-visible state — nothing downstream of
+  // this module can tell whether the country list ever loaded, and no CV input
+  // reaches it. The CHANNEL list is different and moved: `next` and `random` are
+  // gate INPUTS, so the thing they advance through has to exist whether or not a
+  // card does.
+  //
+  // FLOW (unchanged for the player): a 2D world map (NO three.js —
+  // equirectangular, click → nearest country) OR a country dropdown → the
+  // controller's channel list (filtered famelack data) → pick a channel → the
+  // controller hands its .m3u8 to hls.js → the engine module (tv-librarian.ts)
+  // samples the element into the FBO (video out) + extracts stereo audio
+  // (audio_l/audio_r).
+  //
+  // THE AUDIO TRAP, for the reader who comes looking: the element is created
+  // `muted` so the programmatic play() is allowed without a user gesture, and
+  // MUST be un-muted after createMediaElementSource succeeds — a muted element
+  // feeds SILENCE into its MediaElementAudioSourceNode because the mute gates
+  // the audio AT THE SOURCE. That is #tv-librarian-audio, and the step now lives
+  // in the controller's `ensureAudioWired` on node lifetime, which is what stops
+  // a card unmount mid-retry from stranding the element muted forever.
   //
   // Legal posture: an in-card disclaimer ("third-party public streams, not
   // hosted here") + dataset attribution; geo-blocked channels are MARKED;
   // dead/unavailable streams fail cleanly → auto-skip, never hang.
   import { onMount, onDestroy } from 'svelte';
   import { nodeMedia, type NodeMediaLease } from '$lib/ui/media/node-media-registry';
-  import { setNodeHls, getNodeHls, destroyNodeHls } from '$lib/ui/media/node-hls';
+  import { nodeHlsSource, HLS_SOURCE_SLOT } from '$lib/ui/media/node-hls-source.svelte';
   import { type NodeProps } from '@xyflow/svelte';
-  import Hls from 'hls.js';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
-  import { useEngine } from '$lib/audio/engine-context';
   import { patch, ydoc, LOCAL_ORIGIN } from '$lib/graph/store';
   import { startCornerResize } from './card-resize';
   import ModuleTitle from './ModuleTitle.svelte';
-  import type { VideoEngine } from '$lib/video/engine';
   import type { ModuleNode } from '$lib/graph/types';
   import {
     tvLibrarianDef,
-    type TvLibrarianHandleExtras,
     type TvLibrarianData,
     type TvChannelMeta,
   } from '$lib/video/modules/tv-librarian';
   import {
     countriesMetadataUrl,
-    countryChannelsUrl,
     parseCountriesMetadata,
-    parseChannels,
-    filterChannels,
-    nextChannel,
-    randomChannel,
     languageLabel,
     type CountryMeta,
-    type Channel,
   } from '$lib/video/modules/tv-librarian-data';
   import { countryMarkers, nearestCountry } from '$lib/video/modules/tv-librarian-geo';
   import { captureFlowStore, portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
-  const engineCtx = useEngine();
   // Guarded: the dock full-view plain-mounts this card OUTSIDE the
   // SvelteFlow provider, where a bare useStore() throws and killed the
   // card at init (no video in the expanded faceplate). Inside the
@@ -77,87 +91,47 @@
     (node?.data as Partial<TvLibrarianData> | undefined)?.channel ?? null,
   );
 
-  // ---- Render-local (transient) state ----
-  // The <video> is owned by the NODE, not by this card (see
-  // $lib/ui/media/node-media-registry): expand/collapse moves the card between
-  // two different MOUNTS, and the pre-fix card destroyed its element, detached
-  // the engine and tore down hls on every such move.
+  // ---- The controller's published status ----
+  let src = $derived(nodeHlsSource.view(id));
+  let streamState = $derived(src.streamState);
+  let channels = $derived(src.catalogue);
+  let loadingChannels = $derived(src.loadingCatalogue);
+
+  // ---- Card-local UI state (the PICKER, not the player) ----
   let videoHost: HTMLDivElement | null = $state(null);
-  let videoEl: HTMLVideoElement | null = $state(null);
   let mediaLease: NodeMediaLease<HTMLElement> | null = null;
-  const MEDIA_SLOT = 'main';
-  /** Mirror of the NODE-owned hls.js instance ($lib/ui/media/node-hls).
-   *  Rehydrated on adopt so a remounted card knows an instance is already
-   *  attached and never builds a second one for the same element. */
-  let hls: Hls | null = null;
-  function setHls(next: Hls | null): void {
-    hls = next;
-    setNodeHls(id, next);
-  }
   let countries = $state<CountryMeta[]>([]);
-  let channels = $state<Channel[]>([]);       // filtered, playable
-  let datasetError = $state<string | null>(null);
+  let countryError = $state<string | null>(null);
   let loadingCountries = $state(false);
-  let loadingChannels = $state(false);
-  let streamState = $state<'idle' | 'loading' | 'playing' | 'unavailable'>('idle');
   let viewMode = $state<'map' | 'list'>('map');
+  /** The country dataset's own failure, else the controller's. */
+  let datasetError = $derived(countryError ?? src.error);
 
   let availableCodes = $derived(new Set(countries.map((c) => c.code)));
   let markers = $derived(countryMarkers(availableCodes));
 
-  // ---- Engine extras helper ----
-  function getExtras(): TvLibrarianHandleExtras | null {
-    const e = engineCtx.get();
-    if (!e) return null;
-    try {
-      const ve = e.getDomain<VideoEngine>('video');
-      return (ve.read(id, 'extras') as TvLibrarianHandleExtras | undefined) ?? null;
-    } catch {
-      return null;
-    }
-  }
-  function videoEngine(): VideoEngine | null {
-    const e = engineCtx.get();
-    if (!e) return null;
-    try { return e.getDomain<VideoEngine>('video'); } catch { return null; }
-  }
-
-  // ---- Dataset fetch (runtime, graceful failure) ----
+  // ---- Country dataset fetch (runtime, graceful failure) ----
+  //
+  // Card-lifetime ON PURPOSE — see the header. This is the map's data and
+  // nothing engine-visible depends on it.
   async function fetchCountries(): Promise<void> {
     if (countries.length > 0 || loadingCountries) return;
     loadingCountries = true;
-    datasetError = null;
+    countryError = null;
     try {
       const resp = await fetch(countriesMetadataUrl(), { mode: 'cors' });
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       const json = await resp.json();
       countries = parseCountriesMetadata(json);
-      if (countries.length === 0) datasetError = 'No countries in dataset response.';
+      if (countries.length === 0) countryError = 'No countries in dataset response.';
     } catch (err) {
-      datasetError = `Could not load channel list: ${(err as Error)?.message ?? 'network error'}`;
+      countryError = `Could not load channel list: ${(err as Error)?.message ?? 'network error'}`;
     } finally {
       loadingCountries = false;
     }
   }
 
-  async function fetchChannels(code: string): Promise<void> {
-    loadingChannels = true;
-    datasetError = null;
-    channels = [];
-    try {
-      const resp = await fetch(countryChannelsUrl(code), { mode: 'cors' });
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-      const json = await resp.json();
-      // Keep geo-blocked (marked in UI), drop youtube-only (no clean texture).
-      channels = filterChannels(parseChannels(json), { requirePlayable: true });
-    } catch (err) {
-      datasetError = `Could not load channels: ${(err as Error)?.message ?? 'network error'}`;
-    } finally {
-      loadingChannels = false;
-    }
-  }
-
-  // ---- Synced writes (single transact) ----
+  // ---- Synced write (single transact) ----
   function writeCountry(code: string): void {
     ydoc.transact(() => {
       const t = patch.nodes[id];
@@ -168,35 +142,19 @@
     }, LOCAL_ORIGIN);
   }
 
-  function writeChannel(c: Channel): void {
-    const meta: TvChannelMeta = {
-      nanoid: c.nanoid,
-      name: c.name,
-      streamUrl: c.streamUrl ?? '',
-      country: c.country,
-      languages: c.languages,
-    };
-    ydoc.transact(() => {
-      const t = patch.nodes[id];
-      if (!t) return;
-      if (!t.data) t.data = {};
-      const d = t.data as Partial<TvLibrarianData>;
-      d.channel = meta;
-    }, LOCAL_ORIGIN);
-  }
-
   // ---- Country / channel selection ----
-  async function selectCountry(code: string): Promise<void> {
+  function selectCountry(code: string): void {
     writeCountry(code);
-    await fetchChannels(code);
+    // The controller would pick this up from `node.data` on the next graph tick
+    // anyway (that is what makes a PEER's country change land). Asking directly
+    // as well makes the LOCAL pick instant — the difference between a picker
+    // that feels wired and one that feels laggy — and cannot double-fetch,
+    // because the controller records the key it loaded.
+    nodeHlsSource.request(id, { kind: 'catalogue', key: code });
   }
 
-  function selectChannel(c: Channel): void {
-    if (!c.streamUrl) return;
-    writeChannel(c);
-    // pulse the channel_changed trigger output.
-    getExtras()?.pulseChannelChanged();
-    attachStream(c.streamUrl);
+  function selectChannel(key: string): void {
+    nodeHlsSource.request(id, { kind: 'select', candidateKey: key });
   }
 
   function onMapClick(ev: MouseEvent): void {
@@ -205,175 +163,29 @@
     const x = (ev.clientX - r.left) / r.width;
     const y = (ev.clientY - r.top) / r.height;
     const code = nearestCountry(x, y, availableCodes);
-    if (code) void selectCountry(code);
+    if (code) selectCountry(code);
   }
 
   function pickRandom(): void {
-    if (channels.length === 0) return;
-    const c = randomChannel(channels, channel?.nanoid ?? null);
-    if (c) selectChannel(c);
+    nodeHlsSource.request(id, { kind: 'random' });
   }
   function pickNext(): void {
-    if (channels.length === 0) return;
-    const c = nextChannel(channels, channel?.nanoid ?? null);
-    if (c) selectChannel(c);
+    nodeHlsSource.request(id, { kind: 'next' });
   }
 
-  // ---- HLS attach (robust: timeout + error → unavailable + auto-skip) ----
-  let unavailableSkipTimer: ReturnType<typeof setTimeout> | null = null;
-  let loadTimeout: ReturnType<typeof setTimeout> | null = null;
-
-  function teardownHls(): void {
-    if (loadTimeout) { clearTimeout(loadTimeout); loadTimeout = null; }
-    destroyNodeHls(id);
-    hls = null;
-  }
-
-  function markUnavailable(): void {
-    streamState = 'unavailable';
-    getExtras()?.setStreamOnline(false);
-    teardownHls();
-    // Auto-skip to the next channel after a short beat (never hang on a dead
-    // stream). Learned from the archivist hang bug.
-    if (unavailableSkipTimer) clearTimeout(unavailableSkipTimer);
-    unavailableSkipTimer = setTimeout(() => {
-      unavailableSkipTimer = null;
-      if (channels.length > 1 && streamState === 'unavailable') pickNext();
-    }, 1800);
-  }
-
-  function attachStream(url: string): void {
-    if (!videoEl || !url) return;
-    teardownHls();
-    if (unavailableSkipTimer) { clearTimeout(unavailableSkipTimer); unavailableSkipTimer = null; }
-    streamState = 'loading';
-    getExtras()?.setStreamOnline(false);
-    getExtras()?.unwireAudio();
-    // Re-mute for THIS stream's autoplay attempt. The programmatic play() below
-    // (on channel select / remote tune — no user gesture) is only allowed on a
-    // muted element; ensureAudioWired() un-mutes again once the audio is routed
-    // into Web Audio (see the comment there). On a channel SWAP the previous
-    // stream left the element un-muted, so without this the new play() would be
-    // autoplay-blocked.
-    if (videoEl) videoEl.muted = true;
-
-    const onPlaying = (): void => {
-      streamState = 'playing';
-      getExtras()?.setStreamOnline(true);
-      ensureAudioWired();
-      if (loadTimeout) { clearTimeout(loadTimeout); loadTimeout = null; }
-    };
-
-    // 12s hard timeout: a stream that never produces a frame is "unavailable".
-    if (loadTimeout) clearTimeout(loadTimeout);
-    loadTimeout = setTimeout(() => {
-      if (streamState !== 'playing') markUnavailable();
-    }, 12000);
-
-    if (Hls.isSupported()) {
-      const inst = new Hls({ enableWorker: true, lowLatencyMode: false });
-      setHls(inst);
-      inst.on(Hls.Events.MANIFEST_PARSED, () => { void videoEl?.play().catch(() => {}); });
-      inst.on(Hls.Events.ERROR, (_e, d) => {
-        // Fatal errors (incl. COEP/CORS blocks → fragLoadError code 0) →
-        // unavailable. Non-fatal errors inst.js recovers from on its own.
-        if (d?.fatal) markUnavailable();
-      });
-      inst.loadSource(url);
-      inst.attachMedia(videoEl);
-    } else if (videoEl.canPlayType('application/vnd.apple.mpegurl')) {
-      // Safari native HLS.
-      videoEl.src = url;
-      void videoEl.play().catch(() => {});
-    } else {
-      markUnavailable();
-      return;
-    }
-    videoEl.addEventListener('playing', onPlaying, { once: true });
-    videoEl.addEventListener('loadeddata', () => {
-      if (videoEl && videoEl.readyState >= 2) onPlaying();
-    }, { once: true });
-  }
-
-  // ---- Audio wiring retry (mirror VIDEOBOX.ensureAudioWired) ----
-  let audioWireTimer: ReturnType<typeof setTimeout> | null = null;
-  function ensureAudioWired(attempt = 0): void {
-    if (audioWireTimer) { clearTimeout(audioWireTimer); audioWireTimer = null; }
-    const extras = getExtras();
-    extras?.wireAudio();
-    if (extras?.isAudioWired()) {
-      // CRITICAL: the <video> is created `muted` so the programmatic play()
-      // satisfies the autoplay policy (an UNmuted auto-play() without a user
-      // gesture is rejected → stream never starts). But a MUTED media element
-      // feeds SILENCE into its MediaElementAudioSourceNode — the mute gates the
-      // audio AT THE SOURCE, upstream of the Web Audio tap — so audio_l/audio_r
-      // would carry zero even with the splitter correctly wired. Now that
-      // wireAudio() has succeeded, createMediaElementSource has redirected the
-      // element's audio INTO the Web Audio graph (its native speaker output is
-      // disconnected), so un-muting un-gates the tap WITHOUT playing through the
-      // speaker. This is the exact `videoEl.muted = false` step VIDEOBOX does
-      // after load — TV LIBRARIAN was missing it, which is why the tuned
-      // stream's audio never reached the outputs. (#tv-librarian-audio)
-      if (videoEl) videoEl.muted = false;
-      return;
-    }
-    if (attempt >= 50) return;
-    audioWireTimer = setTimeout(() => ensureAudioWired(attempt + 1), 100);
-  }
-
-  // ---- next / random trigger-input polling (mirror VIDEOBOX play_trigger) ----
-  // The CV bridge writes the gate level into the synthetic cv_next / cv_random
-  // params on a rising edge; we read the instantaneous value + detect the edge.
-  // (Reading a single bridge-written param value can't double-count — that's an
-  // AnalyserNode-rescan bug; this is the established video-module convention.)
-  let lastNext = 0;
-  let lastRandom = 0;
-  let triggerTimer: ReturnType<typeof setInterval> | null = null;
-  function startTriggerLoop(): void {
-    if (triggerTimer !== null) return;
-    triggerTimer = setInterval(() => {
-      const e = engineCtx.get();
-      if (!e || !node) return;
-      const vn = e.readParam(node, 'cv_next');
-      const vr = e.readParam(node, 'cv_random');
-      if (typeof vn === 'number') {
-        if (lastNext < 0.5 && vn >= 0.5) pickNext();
-        lastNext = vn;
-      }
-      if (typeof vr === 'number') {
-        if (lastRandom < 0.5 && vr >= 0.5) pickRandom();
-        lastRandom = vr;
-      }
-    }, 33);
-  }
-  function stopTriggerLoop(): void {
-    if (triggerTimer !== null) { clearInterval(triggerTimer); triggerTimer = null; }
-  }
-
-  // ---- Attach <video> element to the engine module (poll until ready) ----
   // ---- Adopt the NODE-owned <video> into this card ----
+  //
+  // ⚠ NO ATTACH CALL AND NO DISPOSER. The element arrives already attached and
+  // already carrying its hls teardown: the controller `ensure`s it, attaches it
+  // and registers the disposer at NODE creation, long before any card exists.
+  // Adoption here is a DOM re-parent for display only, and it is a TRANSFER with
+  // an owner-checked release, so the two mounts a collapse straddles cannot
+  // fight over the element in either order.
   $effect(() => {
     const host = videoHost;
     if (!host) return;
-    const lease = nodeMedia.adopt(id, MEDIA_SLOT, host, {
-      kind: 'video',
-      init: (el) => {
-        const v = el as HTMLVideoElement;
-        v.crossOrigin = 'anonymous';
-        // THE AUDIO TRAP the card header documents: created muted so the
-        // programmatic play() is allowed to start without a user gesture.
-        v.muted = true;
-        v.playsInline = true;
-        v.setAttribute('data-testid', 'tv-video');
-      },
-    });
+    const lease = nodeMedia.adopt(id, HLS_SOURCE_SLOT, host, { kind: 'video' });
     mediaLease = lease;
-    videoEl = lease.el as HTMLVideoElement;
-    // Rehydrate the hls mirror: an instance may already be feeding this
-    // element from a previous mount.
-    hls = getNodeHls(id) as Hls | null;
-    // Teardown belongs to the NODE, not to this card.
-    nodeMedia.setDisposer(id, MEDIA_SLOT, () => destroyNodeHls(id));
     return () => {
       lease.release();
       if (mediaLease === lease) mediaLease = null;
@@ -381,56 +193,14 @@
   });
 
   onMount(() => {
-    let attempts = 0;
-    const attach = setInterval(() => {
-      attempts++;
-      const ve = videoEngine();
-      if (ve && videoEl) {
-        try {
-          ve.attachExternalSource(id, 'video', videoEl);
-          if (ve.read(id, 'hasVideoElement') === true) clearInterval(attach);
-        } catch { /* not ready */ }
-      }
-      if (attempts > 50) clearInterval(attach);
-    }, 100);
-    startTriggerLoop();
     void fetchCountries();
   });
 
-  // When a country is already selected (patch load / remote peer), load its
-  // channels once countries are available. Tracks last-loaded to avoid refetch.
-  let lastLoadedCountry: string | null = null;
-  $effect(() => {
-    const code = countryCode;
-    if (!code) return;
-    if (code === lastLoadedCountry) return;
-    lastLoadedCountry = code;
-    void fetchChannels(code);
-  });
-
-  // When the persisted channel changes (local pick OR remote peer), attach its
-  // stream locally. Tracks last-attached url so we don't re-attach on every tick.
-  let lastAttachedUrl: string | null = null;
-  $effect(() => {
-    const url = channel?.streamUrl ?? null;
-    void videoEl; // re-run once the element exists
-    if (!url || !videoEl) return;
-    if (url === lastAttachedUrl) return;
-    lastAttachedUrl = url;
-    attachStream(url);
-  });
-
   onDestroy(() => {
-    stopTriggerLoop();
-    if (audioWireTimer) clearTimeout(audioWireTimer);
-    if (unavailableSkipTimer) clearTimeout(unavailableSkipTimer);
     // NOTE what is deliberately ABSENT: no teardownHls, no detach, no
-    // unwireAudio, no setStreamOnline(false). The element, its hls.js demuxer
-    // and its audio wiring belong to the NODE and must survive this card being
-    // unmounted — expand/collapse MOVES the card between the headless host and
-    // the dock full-view. The stream really is still online; saying otherwise
-    // here is what made the tuner go dead on a collapse. Teardown runs from
-    // nodeMedia's disposer when the node leaves the graph.
+    // unwireAudio, no setStreamOnline(false), no trigger-loop stop. NONE of
+    // those exist here any more — they are the controller's, on node lifetime.
+    // Everything released here is THIS CARD'S OWN.
     mediaLease?.release();
     mediaLease = null;
   });
@@ -532,7 +302,7 @@
         <select
           class="country-select"
           value={countryCode ?? ''}
-          onchange={(e) => void selectCountry((e.currentTarget as HTMLSelectElement).value)}
+          onchange={(e) => selectCountry((e.currentTarget as HTMLSelectElement).value)}
           data-testid="tv-country-select"
         >
           <option value="" disabled>— country —</option>
@@ -553,18 +323,18 @@
           {:else if channels.length === 0}
             <div class="muted">no playable channels</div>
           {:else}
-            {#each channels as c (c.nanoid)}
+            {#each channels as c (c.key)}
               <button
                 type="button"
                 class="chan"
-                class:sel={c.nanoid === channel?.nanoid}
-                onclick={() => selectChannel(c)}
+                class:sel={c.key === channel?.nanoid}
+                onclick={() => selectChannel(c.key)}
                 data-testid="tv-channel"
-                data-nanoid={c.nanoid}
+                data-nanoid={c.key}
               >
-                <span class="chan-name">{c.name}</span>
-                {#if c.isGeoBlocked}<span class="badge geo" title="May be geo-blocked in your region">geo</span>{/if}
-                {#if languageLabel(c.languages)}<span class="chan-lang">{languageLabel(c.languages)}</span>{/if}
+                <span class="chan-name">{c.label}</span>
+                {#if c.badge === 'geo'}<span class="badge geo" title="May be geo-blocked in your region">geo</span>{/if}
+                {#if c.sublabel}<span class="chan-lang">{c.sublabel}</span>{/if}
               </button>
             {/each}
           {/if}

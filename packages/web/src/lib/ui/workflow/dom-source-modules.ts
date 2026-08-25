@@ -87,8 +87,23 @@ import type { LaneRenderKind } from './legacy-fallback';
  * exercise that path for real.
  */
 /**
- * ⚠ VIDEOBOX (P1) AND VIDEOVARISPEED (P2) HAVE LEFT THIS SET (LEG-02, #1511) —
- * the first two members ever to, and the shape every remaining one follows.
+ * ⚠ VIDEOBOX (P1), VIDEOVARISPEED (P2) AND THE HLS PAIR — PEERTUBE +
+ * TVLIBRARIAN (P3) — HAVE LEFT THIS SET (LEG-02, #1511). Four departures, one
+ * shape, and every remaining member follows it.
+ *
+ * ⚠ P3 IS THE PHASE WHERE THE SET STOPS BEING ABOUT FILE PLAYERS. peertube and
+ * tvLibrarian own a NETWORK stream — an hls.js demuxer feeding a `<video>` —
+ * and both were card-owned in exactly the way videobox was, with the same three
+ * classes of consequence. The one worth reading before touching either module:
+ * with NO card anywhere (a collapsed group, a canvas-hidden node) the modules
+ * were not degraded, they were DEAD — no attach, so `video` is black; no CV
+ * poll, so `play_trigger`/`next_trigger` and `next`/`random` do nothing; no
+ * selection effect, so a SAVED rack came back on nothing and a peer's tune never
+ * landed; no audio wire, so both audio outs were silent AND the element stayed
+ * `muted`. Their new owner is `$lib/ui/media/node-hls-source-registry`, which is
+ * ONE registry with two profiles rather than a sibling per module — see its
+ * header for why the P2 "do not generalise on a population of two" argument
+ * points the other way here.
  *
  * ⚠ VARISPEED'S DEPARTURE FIXED THREE LIVE DEFECTS RATHER THAN JUST MOVING A
  * LIFETIME, and they are worth naming because they are what card-ownership
@@ -122,8 +137,6 @@ export const DOM_SOURCE_LANE_TYPES: ReadonlySet<string> = new Set<string>([
   'archivist',
   'cameraInput',
   'loopback',
-  'peertube',
-  'tvLibrarian',
 ]);
 
 /**

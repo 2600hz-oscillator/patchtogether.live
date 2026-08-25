@@ -208,6 +208,18 @@ interface ExtrasOwnerVerdict {
 // merely absent. This leg reddened on exactly that entry, which is the anchoring
 // working as designed: the verdict could not quietly outlive the mechanism it
 // described.
+//
+// ⚠ PEERTUBE AND TVLIBRARIAN LEFT THE SAME WAY IN P3, and their departure is
+// worth reading as a pattern rather than two more names. Both entries said
+// `owner: 'headless-card-mount'` — "the DOM-source rule already keeps this card
+// mounted off-screen" — and that verdict was true for the LANE and false
+// everywhere else: `needsHeadlessSourceMount` returns FALSE on the
+// `laneOmitsNode` arm for a non-producer, so a collapsed-group or canvas-hidden
+// tuner had no card in any surface and no host either, i.e. the very mount this
+// verdict named as the owner did not exist. `getExtras()` was DELETED from both
+// cards rather than left unused, which is what took them off this channel;
+// `$lib/ui/media/node-hls-source-registry` reaches the handle now, on graph
+// lifetime.
 const EXTRAS_OWNERS: Readonly<Record<string, ExtrasOwnerVerdict>> = {
   PainterCard: {
     owner: 'node-lifetime-producer',
@@ -220,14 +232,6 @@ const EXTRAS_OWNERS: Readonly<Record<string, ExtrasOwnerVerdict>> = {
   ArchivistCard: {
     owner: 'headless-card-mount',
     why: 'the extras channel rides alongside a card-owned DOM media element the engine holds via attachExternalSource, so the card must stay mounted for the SOURCE regardless',
-  },
-  PeerTubeCard: {
-    owner: 'headless-card-mount',
-    why: 'same as archivist — a card-owned <video> plus an hls.js instance; the element is node-owned by nodeMedia but the attach is the card mount',
-  },
-  TvLibrarianCard: {
-    owner: 'headless-card-mount',
-    why: 'same as archivist — a card-owned <video> handed to the engine by attachExternalSource',
   },
   BloodCard: {
     owner: 'module-renders-itself',
