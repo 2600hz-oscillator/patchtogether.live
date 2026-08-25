@@ -178,7 +178,15 @@ const FULL_MATCH = [
 //     FROZEN. `moving > 0` is the free-running condition measured at its cause;
 //     the paired capture diffs are the pixel consequence. `PROBE_FACES=<types>`
 //     points it at modules outside the FACES roster.
+//   * vrt-boot-probe.spec.ts — where does a scene's TIME go? Prints the three
+//     things that get conflated as "boot" — a new BrowserContext, the cold
+//     `/rack` load, and the scene tail after the hooks are up — plus what a
+//     REPEAT load costs on an already-warm page. The instrument behind any
+//     claim that this lane is bounded by boot rather than by render, written
+//     because "page load is most of a scene" and "page load is a tenth of a
+//     scene" need opposite fixes and are indistinguishable from the lane total.
 const PROBE_MATCH = [
+  'vrt-boot-probe.spec.ts',
   'vrt-lane-tier-probe.spec.ts',
   'vrt-surface-probe.spec.ts',
   'vrt-face-audio-probe.spec.ts',
