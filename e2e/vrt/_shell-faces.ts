@@ -4252,6 +4252,33 @@ export const FREEZE_RACE_FRAMES = 3;
 const VIDEO_FREEZE_SETTLE_FRAMES = 6;
 
 /**
+ * How many 6-frame windows the surface gets to REACH stillness before this is
+ * called a moving picture.
+ *
+ * ⚠ IT IS HERE BECAUSE A READINESS GATE WAS WRITTEN AS A SNAPSHOT COMPARE, and
+ * that is a different assertion on every runner. "Is the surface still?" is a
+ * STATE-READINESS question, and CLAUDE.md's rule for those is an auto-retrying
+ * check on the real subject — a single compare of two samples six frames apart
+ * asks instead "did these two particular frames match", which a first-paint or
+ * a wall-clock preview cadence can answer NO to on a slow box and YES on a fast
+ * one while the surface is equally still by the time the shot is taken.
+ * (`blitOutputForPreview` really does gate on a wall-clock `minIntervalMs`, so a
+ * preview canvas repaints on a cadence that is a DIFFERENT number of frames per
+ * renderer — the exact shape the frames-not-milliseconds rule is about, one
+ * layer down.)
+ *
+ * ⚠ IT DOES NOT WEAKEN THE ASSERTION, and the reason is what the caller does
+ * next: `settle(page)` runs BEFORE `toHaveScreenshot`, so the property that
+ * actually matters is "still by capture time", not "still at this instant". A
+ * genuinely live surface — a running sim, an unfrozen renderer — never settles
+ * and still fails, now naming which canvas.
+ *
+ * A COUNT OF WINDOWS, not a wall-clock budget, so it is the same assertion on
+ * every renderer. Six windows is ~36 frames.
+ */
+const VIDEO_FREEZE_ATTEMPTS = 6;
+
+/**
  * Pin a face scene's LIVE VIDEO SURFACE by writing the module's own `freeze`
  * param, and PROVE it held — the video sibling of `freezeFaceAudio`.
  *
@@ -4344,7 +4371,9 @@ export async function freezeFaceVideo(page: Page, nodeId: string, label: string)
   // THE EFFECT, sampled IN THE PAGE across real frames — never a Playwright
   // poll loop, which would be one round-trip per sample on the same main thread
   // as the subject and cannot tell "frozen" from "never looked".
-  const held = await page.evaluate(async ({ frames, id }: { frames: number; id: string }) => {
+  const held = await page.evaluate(async (
+    { frames, attempts, id }: { frames: number; attempts: number; id: string },
+  ) => {
     // THE SUBJECT'S OWN SURFACES — the two containers the two scenes actually
     // photograph, and nothing else. `dock-full-view` is the dock scene's capture
     // root; the flow node is the compact scene's. Either may be absent (the
@@ -4357,23 +4386,32 @@ export async function freezeFaceVideo(page: Page, nodeId: string, label: string)
     const canvases = roots.flatMap((r) =>
       Array.from(r.querySelectorAll('canvas')) as HTMLCanvasElement[],
     );
-    const sample = (): string =>
-      canvases
-        .map((c) => {
-          try {
-            return c.width && c.height ? c.toDataURL().slice(-64) : 'x';
-          } catch {
-            return 'x'; // a tainted/GL canvas contributes nothing rather than throwing
-          }
-        })
-        .join('|');
-    const first = sample();
-    for (let i = 0; i < frames; i++) {
-      await new Promise((r) => requestAnimationFrame(() => r(null)));
+    const name = (c: HTMLCanvasElement, i: number) =>
+      c.getAttribute('data-testid') ?? `canvas#${i}(${c.width}x${c.height})`;
+    const sample = (): string[] =>
+      canvases.map((c) => {
+        try {
+          return c.width && c.height ? c.toDataURL().slice(-64) : 'x';
+        } catch {
+          return 'x'; // a tainted/GL canvas contributes nothing rather than throwing
+        }
+      });
+
+    let prev = sample();
+    let movers: string[] = [];
+    for (let a = 0; a < attempts; a++) {
+      for (let i = 0; i < frames; i++) {
+        await new Promise((r) => requestAnimationFrame(() => r(null)));
+      }
+      const next = sample();
+      movers = next.map((s, i) => (s === prev[i] ? '' : name(canvases[i]!, i))).filter(Boolean);
+      prev = next;
+      if (!movers.length) {
+        return { same: true, movers, canvases: canvases.length, roots: roots.length, frames, tries: a + 1 };
+      }
     }
-    const second = sample();
-    return { same: first === second, canvases: canvases.length, roots: roots.length, frames };
-  }, { frames: VIDEO_FREEZE_SETTLE_FRAMES, id: nodeId });
+    return { same: false, movers, canvases: canvases.length, roots: roots.length, frames, tries: attempts };
+  }, { frames: VIDEO_FREEZE_SETTLE_FRAMES, attempts: VIDEO_FREEZE_ATTEMPTS, id: nodeId });
 
   // THE POSITIVE CONTROL FOR THE NARROWING, and it is not decoration: scoping to
   // the subject makes a MISSING subject indistinguishable from a still one, and
@@ -4405,10 +4443,11 @@ export async function freezeFaceVideo(page: Page, nodeId: string, label: string)
 
   expect(
     held.same,
-    `${label}: the video surface was still MOVING after writing freeze=1 on '${nodeId}' ` +
-      `(${held.canvases} canvases inside ${held.roots} capture container(s), sampled across ` +
-      `${held.frames} rAFs). A scene captured now would be a moving target — the param did not ` +
-      `reach the engine, or this module's picture is driven by something freeze does not stop.`,
+    `${label}: the video surface was still MOVING after writing freeze=1 on '${nodeId}'. ` +
+      `STILL CHANGING after ${held.tries} × ${held.frames} rAFs: ${held.movers.join(', ')} ` +
+      `(of ${held.canvases} canvases inside ${held.roots} capture container(s)). A scene ` +
+      `captured now would be a moving target — the param did not reach the engine, or this ` +
+      `module's picture is driven by something freeze does not stop.`,
   ).toBe(true);
 }
 

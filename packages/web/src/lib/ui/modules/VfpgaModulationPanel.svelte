@@ -134,9 +134,25 @@
       const raw = (ve.readParam?.(nodeId, `cv${slot}_val`) ?? 0) as number;
       const { scale, offset } = conditioning(slot);
       const eff = Math.max(0, Math.min(1, raw * scale + offset));
+      // ⚠ THE RING IS BORN FULL, AND THAT IS A DETERMINISM FIX RATHER THAN A
+      // STYLE CHOICE. `drawToyboxInputScope` draws THREE different pictures for
+      // the same constant value depending on how many samples it holds: at
+      // length 0 it takes an early-return branch that strokes a bare baseline
+      // and no fill at all, at length 1 every x collapses to 0 (`m > 1 ? … : 0`),
+      // and only from 2 upward does it draw the flat line across the full width.
+      // Growing one sample per rAF therefore makes the trace a function of HOW
+      // LONG THE PANEL HAS BEEN MOUNTED — which is a different number of frames
+      // on every renderer, and would put a frame-count dependency inside a VRT
+      // baseline. Seeding the whole window with the current value makes the
+      // resting picture identical on frame 1 and frame 1000, and costs nothing
+      // once a cable is patched: the real samples wash through exactly as before.
       const ring = scopeRings.get(slot)!;
-      ring.push(eff);
-      if (ring.length > SCOPE_LEN) ring.shift();
+      if (ring.length === 0) {
+        for (let i = 0; i < SCOPE_LEN; i++) ring.push(eff);
+      } else {
+        ring.push(eff);
+        if (ring.length > SCOPE_LEN) ring.shift();
+      }
       drawToyboxInputScope(ctx, {
         width: el.width,
         height: el.height,
