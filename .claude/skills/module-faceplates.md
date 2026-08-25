@@ -451,6 +451,87 @@ value leaves a state the dial can reach and the picker cannot name.
 
 ---
 
+## ⚠ A FACE KEY CANNOT ADDRESS ONE MEMBER OF A FAMILY — measured, #1509
+
+If you are about to rank N per-member cells (sixteen sequencer steps, eight
+channel strips), **stop and read this**, because the shape that looks obvious
+cannot be built and you will find out three hours in.
+
+`resolveFaceControl` resolves a key to exactly one of three things:
+
+- a **PARAM** id;
+- a **family TEMPLATE** — `FAMILY_TEMPLATE = /^(.+)-\{n\}$/`, so the key must end
+  in a LITERAL `-{n}`. `cart-pitch-0` does **not** match; there is **no
+  per-member index**, and a family renders **ONE cell**;
+- a **legend STATIC**, legal only if a committed
+  `e2e/vrt/__annotated__/<type>.legend.json` names it (three such files exist).
+
+So N cells needs N family ids — and `module-docs-lint`'s card-drift leg requires
+every declared `testidPrefix` to appear in real UI source. **Measured on
+cartesian: twelve face-only families FAIL it; forty-eight would too.** wavesculpt
+gets away with twelve only because its CARD genuinely renders all twelve testids.
+
+Both escapes are refused by standing rules: adding dead testids to the card is
+*fixing a declaration to satisfy a gate*, and widening the gate is new machinery.
+
+⚠ **The answer is rung 2 of the ladder below — ONE panel.** `kria` and
+`cartesian`, the two faced sequencers, both landed there. And note cartesian's
+migration `why` had already said *"the grid is the module"*: **when an inventory
+`why` and a proposed ranking disagree, check addressability before assuming the
+`why` is stale.**
+
+⚠ **`allCardSource()` IS WEAKER THAN ITS MESSAGE.** It says *"not found in any
+card"* but concatenates **every `.svelte` under `lib/ui/`**, so a testid in any
+component satisfies it. Do not use that to smuggle face-only families past it.
+
+## Cell WIDTHS at the dock — measured, so you need not re-derive them
+
+The dock capture box is **1220 CSS px** and a face that overflows it fails the
+VRT capture outright (`hiddenX` must be 0). Measured 2026-08-24, dock, CSS px:
+
+| kind | width |
+|---|---|
+| `selector` | **168** |
+| `grid` chip | 120–168 |
+| `segmented` | 94.3–430.9 |
+| `entry` | 72 |
+| `action` | 58 |
+| `toggle` | 52 |
+| `knob` | 40–68.8 |
+
+⚠ **Rosters are the width, not captions.** Four `selector` cells were **672 px of
+a 1374 px band — 49%** — and pushed 220 px of the plate outside the box. Declaring
+`bareCells` moves the measurement by zero.
+
+⚠ **Before building N of anything, build ONE band and measure it.** The spike
+costs one e2e run; discovering it at 48 cells costs the layout.
+
+⚠ **Check the CARD before reaching for `clusters`.** cartesian's chord control is
+a *cycling badge button* on the card, not a dropdown — so an `action` cell was
+both the parity-correct affordance and 3.2× narrower. Width problems are often a
+primitive chosen without looking at what the card already does.
+
+## TYPED ENTRY — the cell exists now (#1509)
+
+`ShellEntryCell` (`kind: 'entry'`) → the shared `TextEntry` primitive, mounted by
+`ModuleShell`. `needs-note-entry-cell` is DELETED; a typed pitch field, a
+filename or a search term all have a face representation.
+
+- The module declares `text` / `parse` / `onCommit` / `probe`. **The shell hands
+  `onCommit` only a value `parse` already accepted**, so a module never sees raw
+  text and a silent clamp is not expressible.
+- ⚠ **`parse` returns a TAGGED UNION (`EntryParse`), never `T | null`.** Under a
+  null sentinel, "there is no value here" and "that text is invalid" are the same
+  return — which would have made cartesian's REST unreachable from the face while
+  its card still offered it. If your stored form is nullable, this is why.
+- **Blur with invalid text REVERTS and writes nothing** — a deliberate divergence
+  from `NoteEntry.svelte`, which commits on blur and lets its module no-op.
+- The probe declares `accepts` AND `rejects`; the `rejects` leg is what stops a
+  clamping cell passing. `shell-cells.test.ts` runs both through the cell's own
+  parser in the pure lane.
+- `NoteEntry.svelte` remains the sequencer-step COMPOSITE (pitch + gate + grid
+  nav). Do not mount it as a generic cell.
+
 ## Bespoke surfaces — the EXTENSION registry (#1512)
 
 When a module needs more than the generic cells, there is a ladder, and the
