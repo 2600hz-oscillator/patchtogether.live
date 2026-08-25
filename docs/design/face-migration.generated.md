@@ -12,8 +12,8 @@ Every registered module carries exactly one **disposition**: what kind of work i
 |  | count |
 |---|---|
 | registered modules | 193 |
-| done (faced + promoted) | 155 |
-| remaining (excludes organizational-native) | 35 |
+| done (faced + promoted) | 156 |
+| remaining (excludes organizational-native) | 34 |
 | registered with NO disposition (must be zero) | 0 |
 | inventory entries naming a dead def (must be zero) | 0 |
 
@@ -21,9 +21,9 @@ Every registered module carries exactly one **disposition**: what kind of work i
 
 | disposition | what it means | modules | done |
 |---|---|---|---|
-| `generic-face` | author a `face` and rank the controls — no new platform capability | 156 | 155 |
+| `generic-face` | author a `face` and rank the controls — no new platform capability | 157 | 156 |
 | `blocked` | would be a face today but for the named capability, and nothing else | 0 | — |
-| `bespoke-surface` | the primary interaction is not param-shaped — needs a purpose-built surface | 34 | — |
+| `bespoke-surface` | the primary interaction is not param-shaped — needs a purpose-built surface | 33 | — |
 | `organizational-native` | rack furniture; not a migration at all | 3 | — |
 
 ## What each blocker buys
@@ -147,6 +147,7 @@ author a `face` and rank the controls — no new platform capability.
 | `polarizer` | audio | done | — |
 | `pong` | audio | done | — |
 | `posterbox` | video | done | — |
+| `push2Control` | meta | done | — |
 | `qbrt` | audio | done | — |
 | `quadralogical` | video | done | — |
 | `rasterize` | audio | done | — |
@@ -230,7 +231,6 @@ the primary interaction is not param-shaped — needs a purpose-built surface.
 | `outToLaunch` | video | — | — |
 | `painter` | video | — | — |
 | `peertube` | video | — | `needs-media-controller` |
-| `push2Control` | meta | — | — |
 | `recorderbox` | video | — | `needs-media-controller` |
 | `score` | audio | — | — |
 | `skifree` | audio | — | — |

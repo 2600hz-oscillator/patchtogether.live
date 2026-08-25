@@ -188,6 +188,7 @@ import {
 } from '$lib/ui/modules/midi-lane-cell-actions';
 import { midiLaneChannelChoices, parseNoteGateNote } from '$lib/audio/modules/midi-lane';
 import { launchpadConnectSingle, launchpadPair } from '$lib/ui/modules/launchpad-cell-actions';
+import { push2Connect } from '$lib/ui/modules/push2-cell-actions';
 import { timelordeFaceTap } from '$lib/ui/modules/timelorde/face-tap';
 import {
   WAVESCULPT_WAV_ACCEPT,
@@ -2509,6 +2510,48 @@ const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
       mode: 'trigger',
       probe: { effect: { kind: 'audition', seam: 'engine-message' } },
       onFire: (nodeId) => { launchpadPair(nodeId); },
+    },
+  },
+
+  // ── PUSH 2 CONTROL — the THIRD meta-domain face, and the second device
+  //    binder whose whole ranked surface is ONE gesture ───────────────────────
+  //
+  // The module is completely inert until Web MIDI is granted, and it declares
+  // no ports at all — so before promotion its entire surface was reachable only
+  // through the dock. This cell is what puts the gesture on the lane tile.
+  //
+  // ⚠ THE LABEL IS THE STATIC LITERAL `Connect Push 2`, WHERE THE CARD FLIPPED
+  // TO `Re-connect Push 2` ONCE LIVE — and nothing is lost, because the ACTION
+  // does not change. `connect()` does not branch: it calls `connectPush()` and
+  // auto-binds, identically, in both states, so the `Re-` prefix carried one
+  // bit about the MODULE'S STATE and nothing about the gesture. That is the
+  // discriminator `midiclock` states from the other side ("a fixed label
+  // because its action never changes"); the state bit is the PUSH lamp's job in
+  // the extension body. BIND, by contrast, is NOT a cell precisely because its
+  // two presses do OPPOSITE things.
+  //
+  // ⚠ IT TAKES ONLY A nodeId AND IGNORES `env`. This module is `domain: 'meta'`
+  // — no ports, no factory, no engine node — so `ShellCellEnv.engine` has
+  // nothing to offer it. The gesture reaches the push2-control singleton, which
+  // is the module's actual handle.
+  //
+  // ⚠ AN AUDITION, AND `delivered: false` IS REACHABLE. See the header of
+  // `$lib/ui/modules/push2-cell-actions.ts`: the press is recorded as delivered
+  // when Web MIDI exists to be reached and NOT delivered when it does not,
+  // which is the card's own first branch and the one condition under which the
+  // button is genuinely wired to nothing. A `data` probe was not an option in
+  // any case — this module writes to `node.data` ZERO times and must keep doing
+  // so; the selected lane is `localStorage` and every other piece of its state
+  // is a module-level rune or the device itself, deliberately (a physical
+  // device attached to one person's machine is not a shared fact).
+  push2Control: {
+    'push2-control-connect-{n}': {
+      kind: 'action',
+      label: 'Connect Push 2',
+      title: 'Grant this site Web MIDI and bind an Ableton Push 2 — pads, encoders and the eight lane buttons. The 960×160 screen is a separate WebUSB permission in the dock.',
+      mode: 'trigger',
+      probe: { effect: { kind: 'audition', seam: 'engine-message' } },
+      onFire: (nodeId) => { push2Connect(nodeId); },
     },
   },
 };

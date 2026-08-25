@@ -467,6 +467,37 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
   { type: 'pentemelodica', disposition: 'generic-face' },
   { type: 'polarizer', disposition: 'generic-face' },
   { type: 'posterbox', disposition: 'generic-face' },
+  // ⚠ MOVED HERE FROM `bespoke-surface` (2026-08-25), AND ITS OLD `why` LED
+  // WITH A SURFACE THAT DOES NOT EXIST. It said "a pad grid plus the hardware
+  // screen mirror". There is NO PAD GRID: `Push2ControlCard.svelte` renders
+  // three buttons, one canvas, a ‹ › flip row, eight lane buttons, four view
+  // buttons and a status region — and nothing anywhere in the app has ever
+  // painted an 8×8 matrix, because the pads are ON THE HARDWARE. That is the
+  // same false claim `launchpadControlLeft`'s entry carried, discovered the
+  // same way (by reading the card instead of the field), and it matters here
+  // because the imagined pad grid is what made the module look un-faceable: the
+  // thing the app actually mirrors is the DISPLAY, byte-for-byte through a
+  // shared seam, which is an ordinary `picture` body. The rest of the old
+  // sentence was right and is kept.
+  {
+    type: 'push2Control',
+    disposition: 'generic-face',
+    note:
+      'DONE (2026-08-25). The THIRD meta-domain face. ONE ranked ACTION cell — CONNECT PUSH 2 — ' +
+      'because the module is completely inert until Web MIDI is granted and it declares NO PORTS ' +
+      'AT ALL, so before promotion its whole surface was dock-only on a module with not even a ' +
+      'cable to hint it exists (the midiclock #2187 shape, with a stronger premise). Everything ' +
+      'else is a `picture` fullViewBody built around a 960×160 REPLICA of the hardware screen, ' +
+      'painted by the SAME `pushDisplayOps()` op list that goes to the panel over WebUSB — so the ' +
+      'plate cannot disagree with the device. BIND is a body control because its two presses do ' +
+      'OPPOSITE things and `ShellActionCell.label` is a plain string; CONNECT DISPLAY is one ' +
+      'because a separate WebUSB permission that is never required cannot be an unconditional ' +
+      'cell; and the eight-lane select and four-role view segment are body controls for a reason ' +
+      'that reads backwards until checked — a `ShellSelectorCell` could ignore its `node` and ' +
+      'read a module-scope rune, but ModuleShell re-projects a cell only on `nodeVersion(id)` and ' +
+      'this module writes `node.data` ZERO times, so the cell would never notice the eight ' +
+      'buttons ON THE HARDWARE moving it.',
+  },
   { type: 'qbrt', disposition: 'generic-face' },
   { type: 'quadralogical', disposition: 'generic-face', note: 'the quad mix pad is a HAND-CLONE → the shared `xy` cell (#1509 §3)' },
   {
@@ -1041,13 +1072,6 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
       + 'and over time. The old sentence now over-claims in one direction (a kind does fit) '
       + 'and under-claims in the other (fitting buys nothing). rasterize is where this is '
       + 'easiest to check, being the only cohort member already faced.',
-  },
-  {
-    type: 'push2Control',
-    disposition: 'bespoke-surface',
-    why:
-      'the Push 2 SURFACE: a pad grid plus the hardware screen mirror (WebMIDI pads, WebUSB ' +
-      'display). It has no params and its whole job is driving a physical control surface.',
   },
   {
     type: 'recorderbox',
