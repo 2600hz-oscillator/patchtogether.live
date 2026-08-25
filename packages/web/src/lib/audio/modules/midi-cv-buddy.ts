@@ -62,6 +62,7 @@
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
+import type { ModuleFace } from '$lib/graph/types';
 import { midiToVOct } from '$lib/audio/note-entry';
 import { createMidiScheduler } from '$lib/audio/midi-timing';
 import { createMidiInputClaim } from '$lib/midi/input-attach';
@@ -151,6 +152,121 @@ export function bendToVOct(bend14: number, semitonesEachSide = 2): number {
 export function channelMatches(statusByte: number, channelFilter: number | null): boolean {
   if (channelFilter === null) return true;
   return (statusByte & 0x0f) === channelFilter;
+}
+
+// ---------------- The CHANNEL and PRIORITY rosters ----------------
+//
+// Both the legacy card's `<select>` and the faceplate's selector cell offer the
+// SAME choices, built here once so neither surface re-derives them. The card
+// used to spell `{#each Array(16)}` and the `i + 1` inline, and a face that
+// spelled them again would be two encodings of one convention — the same
+// ONE-PLACE rule the range gates apply to numbers.
+
+/** The MIDI specification's channel count. A PROTOCOL constant, not a
+ *  population: it is 16 because the status byte carries a 4-bit channel nibble,
+ *  and no amount of code in this repo can change it.
+ *
+ *  ⚠ CANONICAL HERE rather than in `midi-lane.ts`, which re-exports it. The
+ *  dependency runs midi-lane → midi-cv-buddy already (`VoicePriority`), so this
+ *  is the only direction that shares one declaration without a cycle. */
+export const MIDI_CHANNEL_COUNT = 16;
+
+/** The picker value meaning "listen to every channel" — `null` in the stored
+ *  form, and this string in any picker, since a `<select>` value and a
+ *  `SelectorOption` value are both strings. */
+export const MIDI_CV_BUDDY_CHANNEL_ALL = 'all';
+
+/** ALL + one entry per MIDI channel, `value` 0-based (the wire form) and
+ *  `label` 1-based (the form printed on the front of every piece of gear). */
+export function midiCvBuddyChannelChoices(): Array<{ value: string; label: string }> {
+  return [
+    { value: MIDI_CV_BUDDY_CHANNEL_ALL, label: 'ALL' },
+    ...Array.from({ length: MIDI_CHANNEL_COUNT }, (_, i) => ({
+      value: String(i),
+      label: String(i + 1),
+    })),
+  ];
+}
+
+/** The stored filter for a picker value. `null` is ALL, and so is anything
+ *  outside the wire range — an unparseable choice must widen rather than mute. */
+export function channelForChoice(choice: string): number | null {
+  if (choice === MIDI_CV_BUDDY_CHANNEL_ALL) return null;
+  const n = Number.parseInt(choice, 10);
+  if (!Number.isInteger(n) || n < 0 || n >= MIDI_CHANNEL_COUNT) return null;
+  return n;
+}
+
+/** The picker value for a stored filter. */
+export function choiceForChannel(channel: number | null | undefined): string {
+  if (typeof channel !== 'number' || !Number.isInteger(channel)) {
+    return MIDI_CV_BUDDY_CHANNEL_ALL;
+  }
+  if (channel < 0 || channel >= MIDI_CHANNEL_COUNT) return MIDI_CV_BUDDY_CHANNEL_ALL;
+  return String(channel);
+}
+
+/** The three priorities `pickWinner` implements, as a roster. Typed
+ *  `VoicePriority` so adding a name the union does not have is a COMPILE error
+ *  rather than a dead option the engine has no branch for. */
+export const MIDI_CV_BUDDY_PRIORITIES: ReadonlyArray<{ value: VoicePriority; label: string }> = [
+  { value: 'last', label: 'LAST' },
+  { value: 'low', label: 'LOW' },
+  { value: 'high', label: 'HIGH' },
+];
+
+/** The priority roster in the shape a `<select>` and a `SelectorOption` share. */
+export function midiCvBuddyPriorityOptions(): Array<{ value: string; label: string }> {
+  return MIDI_CV_BUDDY_PRIORITIES.map((p) => ({ value: p.value, label: p.label }));
+}
+
+/** Narrow an arbitrary picker value back onto the union. */
+export function priorityForChoice(choice: string): VoicePriority {
+  return MIDI_CV_BUDDY_PRIORITIES.find((p) => p.value === choice)?.value ?? 'last';
+}
+
+/**
+ * The MIDI channel FILTER stored on a node, or `null` for ALL.
+ *
+ * ⚠ THE KEY IS `midiInChannel`, NOT `channel`, AND THE RENAME IS A BUG FIX
+ * (#1168's other half, found on this module's promotion 2026-08-25).
+ *
+ * `channel-columns.ts` declares `data.channel: 1..8` to be COLUMN MEMBERSHIP
+ * TRUTH — the workflow reconciler DROPS a node from a lane whose order array
+ * lists it while `data.channel !== ch`, and ADOPTS any node whose
+ * `data.channel === ch`. `MidiOutBuddyCard.svelte` has carried a header about
+ * this since #1168 (*"this card must NEVER write it, or the column reconciler
+ * moves the module to another lane and drops its clip assignment"*) and gained
+ * its own `midiOutChannel` key for exactly that reason. **The sibling was never
+ * checked, and it collided on the same key in BOTH directions:**
+ *
+ *   * WRITE — picking a MIDI channel wrote `data.channel = 0..15`. Lane columns
+ *     are 1..8, so channel 1 (stored 0), or anything above 8, ejected the module
+ *     from its lane entirely, and channels 2..9 TELEPORTED it into another
+ *     lane's stack. One dropdown change, silently, with no undo entry.
+ *   * READ — the factory read `savedData.channel` as the filter, and lane
+ *     membership is POSITIONAL (drop position decides, not port shape), so
+ *     dropping a fresh MIDI-CV-BUDDY into channel column 5 made the workflow
+ *     write `channel: 5` and the module then listened to MIDI channel 6 ONLY.
+ *     That one needs no user action at all: the module simply goes deaf on
+ *     fifteen of sixteen channels for no visible reason.
+ *
+ * ⚠ AND THE LEGACY KEY IS NOT READ AS A FALLBACK, WHICH IS A DECISION RATHER
+ * THAN AN OMISSION. A stored `3` is the same bytes whether the card wrote a
+ * filter or the reconciler wrote a lane, so there is no discriminator to write.
+ * Reading it would mean choosing to be wrong on the case that happens with NO
+ * user action (the deafness above) in order to be right on the case that
+ * requires one — and the case that requires one ALSO ejected the module from
+ * its lane, so it was never a working configuration either. A rack saved with a
+ * filter therefore re-opens on ALL, which is the recoverable direction: too many
+ * notes is audible and one click from correct, where selective deafness is
+ * neither.
+ */
+export function midiInChannelOf(data: Partial<MidiCvBuddyData> | undefined | null): number | null {
+  const raw = data?.midiInChannel;
+  if (typeof raw !== 'number' || !Number.isInteger(raw)) return null;
+  if (raw < 0 || raw >= MIDI_CHANNEL_COUNT) return null;
+  return raw;
 }
 
 /** Apply one MIDI event to a held-keys stack. Returns the new stack +
@@ -253,14 +369,29 @@ export interface MidiCvBuddyCardState {
   /** Last note received (MIDI int) for the on-card "ACTIVE NOTE" readout. */
   lastNote: number | null;
   lastVelocity: number;
+  /** How many keys are held RIGHT NOW.
+   *
+   *  ⚠ ADDED FOR THE FACEPLATE'S NOTE LAMP, and it is not redundant with
+   *  `lastNote`. `lastNote` is LATCHED — it keeps the last value after every key
+   *  is released, deliberately, so a downstream VCO holds its pitch through the
+   *  gate's fall — so a lamp bound to it would light on the first note and
+   *  never go dark again. midiLane added the same field for the same reason.
+   *  This is the only thing on the promoted surface that says the module is
+   *  RECEIVING, which matters because the two failure modes (nothing patched to
+   *  the keyboard, and a channel filter aimed at the wrong channel) are both
+   *  perfectly silent and look identical to a correct module between notes. */
+  heldCount: number;
 }
 
 /** Saved per-instance data on the patch node. Lives under
  *  `node.data` (the engine reads `node.params` for AudioParams; this
  *  shape is for non-numeric state). */
 export interface MidiCvBuddyData {
-  /** Channel filter: 0..15 or null for "all". */
-  channel: number | null;
+  /** Channel filter: 0..15 or null for "all".
+   *
+   *  ⚠ NOT `channel` — see `midiInChannelOf` above for why that key belongs to
+   *  the workflow channel-column reconciler and cannot be shared. */
+  midiInChannel: number | null;
   priority: VoicePriority;
   /** When true, momentary key changes drop the gate to 0 for one block
    *  before re-rising. When false, the gate stays high through legato
@@ -272,7 +403,7 @@ export interface MidiCvBuddyData {
 }
 
 export const DEFAULT_DATA: MidiCvBuddyData = {
-  channel: null,
+  midiInChannel: null,
   priority: 'last',
   retrig: true,
   lastDeviceId: null,
@@ -307,6 +438,81 @@ export function webMidiAvailable(): boolean {
   );
 }
 
+// ---------------- The FACEPLATE ----------------
+//
+// WHAT THIS MODULE IS FOR, MUSICALLY. It is the mono workhorse that lets you
+// PLAY the rack from a keyboard: one winning note out of whatever you are
+// holding, as pitch + gate + velocity CV. MIDI LANE is its channel-aware
+// successor and CUBE/DX7 take chords; this one is the thing you reach for when
+// you want a keyboard to drive one VCO and one envelope, which is most of the
+// time. The verb is "press a key and hear it".
+//
+// ⚠ IT IS A ZERO-PARAM FACE. `params: []` — every setting lives on `node.data`,
+// so all four controls arrive as `controlFamilies` + `SHELL_CELLS` entries.
+// `order: []` would have been legal and would have painted a blank tile, which
+// is worse than the placeholder it replaces (the matrixMix lesson).
+//
+// THE TIER LADDER, read back as a sentence: the mini tile shows CONNECT,
+// because nothing else on this module means anything until Web MIDI is granted;
+// the compact tile adds CHANNEL, because a keyboard on the wrong channel is
+// SILENT rather than wrong and that is the second thing to get right; the plate
+// adds PRIORITY and RETRIGGER, which shape how a held chord collapses onto one
+// voice and are the only two settings you can usefully audition by ear.
+//
+// `order` and `pages` AGREE here, unusually. Priority is not a fifth-most-
+// important control that happens to belong with retrigger — the two really are
+// the second IDEA, and the first two really are the first, so the ranking and
+// the signal order are the same list. Said out loud because a face whose two
+// lists agree is normally a face that only wrote one of them.
+export const MIDI_CV_BUDDY_FACE: ModuleFace = {
+  // ⚠ MECHANICALLY FORCED, not a style choice — the midiLane argument, and the
+  // same three output types. `glyphBinding` reaches a live trace through
+  // `primaryAudioOutPortId`, which matches `type === 'audio'` EXACTLY. This
+  // module's outputs are cv / gate / cv, so any other glyph value falls through
+  // to `{kind:'static'}`, the dead binding module-face-lint reddens.
+  glyph: 'none',
+  // The DEVICE ROSTER is the one affordance here that cannot be a cell: it
+  // lives on the engine handle behind `requestMIDIAccess()` and differs on
+  // every machine, so it is neither a `ParamDef` nor an `options` roster (a
+  // roster is a fixed set known when the def is authored). See the extension.
+  extension: 'midiCvBuddy',
+  order: [
+    'midi-cv-buddy-connect-{n}',
+    'midi-cv-buddy-channel-{n}',
+    'midi-cv-buddy-priority-{n}',
+    'midi-cv-buddy-retrig-{n}',
+  ],
+  pages: [
+    {
+      id: 'input',
+      label: 'input',
+      hint:
+        'Web MIDI needs the browser\'s consent before any device is even visible, and until it '
+        + 'is granted this module has no stream to listen to and all three jacks sit at rest. '
+        + 'Then point it at one channel: a keyboard on the wrong channel is SILENT rather than '
+        + 'wrong, which is the hardest kind of fault to spot. ALL listens to every channel.',
+      controls: ['midi-cv-buddy-connect-{n}', 'midi-cv-buddy-channel-{n}'],
+    },
+    {
+      // ⚠ `mono`, NOT `voice` — the dx7 double-band scar. `rearFieldPlan`
+      // derives a LEADING `voice`/`signal` section for a module whose ports
+      // carry gate/pitch drive, and this module's three outputs do; a page with
+      // that id renders a SECOND band carrying the same name. midiLane calls
+      // the same idea `mono`, which is also the more honest word here: it is
+      // the module's defining limitation, not a synth voice.
+      id: 'mono',
+      label: 'mono',
+      hint:
+        'How a held chord collapses onto the single PITCH and GATE jacks, because this module is '
+        + 'monophonic on purpose. LAST follows the newest key (what a keyboard player expects), '
+        + 'LOW pins the bass note and HIGH the melody note. RETRIG dips the gate for one block on '
+        + 'each new note so a downstream envelope re-fires instead of sustaining through the '
+        + 'change; turn it off for legato.',
+      controls: ['midi-cv-buddy-priority-{n}', 'midi-cv-buddy-retrig-{n}'],
+    },
+  ],
+};
+
 export const midiCvBuddyDef: AudioModuleDef = {
   type: 'midiCvBuddy',
   palette: { top: 'MIDI', sub: 'MIDI' },
@@ -326,6 +532,22 @@ export const midiCvBuddyDef: AudioModuleDef = {
   // not continuous, so they don't fit the AudioParam shape.)
   params: [],
 
+  face: MIDI_CV_BUDDY_FACE,
+
+  // ⚠ FOUR FAMILIES FOR FOUR CELLS, AND THE COUNT IS FORCED BY THE RESOLVER.
+  // `resolveFaceControl` resolves a face key to a PARAM id, a family TEMPLATE
+  // (`<id>-{n}`) or a legend STATIC — and this module declares `params: []`, so
+  // every one of its controls has to arrive as a family. Each really is a named
+  // affordance the module owns, and each has a real control on the legacy card
+  // carrying the same `testidPrefix`, which is what `module-docs-lint`'s
+  // card-drift leg checks.
+  controlFamilies: [
+    { id: 'midi-cv-buddy-connect',  label: 'Connect MIDI', kind: 'other', testidPrefix: 'midi-cv-buddy-connect' },
+    { id: 'midi-cv-buddy-channel',  label: 'Channel',      kind: 'other', testidPrefix: 'midi-cv-buddy-channel' },
+    { id: 'midi-cv-buddy-priority', label: 'Priority',     kind: 'other', testidPrefix: 'midi-cv-buddy-priority' },
+    { id: 'midi-cv-buddy-retrig',   label: 'Retrigger',    kind: 'other', testidPrefix: 'midi-cv-buddy-retrig' },
+  ],
+
   docs: {
     explanation:
       "Turns a hardware MIDI keyboard or controller into the pitch + gate + velocity CV the rest of the rack speaks — the classic MIDI-to-CV interface. It is MONOPHONIC: when you hold a chord it picks one winning note (by the card's voice-priority setting — last-played, lowest, or highest) and tracks that. Mental model: play a key and PITCH follows it as 1V/octave, GATE goes high while you hold and dips briefly on a retrigger so envelopes re-fire, and VELOCITY latches how hard you struck. Pitch-bend is summed into the pitch output. The card owns the device dropdown, channel filter, voice-priority and retrigger choices (all discrete, saved in the patch — no audio-side knobs); Web MIDI permission is requested only when you click Connect, not on patch load. For polyphony, use MIDI LANE's poly output instead; this module is the simple mono workhorse.",
@@ -338,7 +560,16 @@ export const midiCvBuddyDef: AudioModuleDef = {
       velocity_cv:
         "How hard the most recent note was struck, as 0..1 CV (MIDI velocity 0..127 scaled by 1/127). It updates on each note-on and latches between events, so you can route it to a VCA level or a filter cutoff for velocity-sensitive dynamics.",
     },
-    controls: {},
+    controls: {
+      'midi-cv-buddy-connect-{n}':
+        "The one-time-per-origin permission gesture. Web MIDI needs the browser's consent before any device is even visible, and until it is granted this module has no stream to listen to and all three jacks sit at rest — so this is the first thing to press, not an optional extra. It reaches the same request every MIDI module in the rack shares, which always yields a nameable outcome: granted, refused, unsupported, or the quiet case where the browser suppressed its own prompt without telling anyone. Once access is granted the dock's device body lists the inputs it found and remembers the one you pick, so a reloaded patch re-attaches without another click.",
+      'midi-cv-buddy-channel-{n}':
+        "Which MIDI channel this module listens to — ALL, or one of the sixteen. The channels are shown 1..16 the way every keyboard and sequencer prints them on its own front panel, while the wire format underneath is 0..15. Pick a channel when more than one instrument is sending on the same cable and you want this one to hear only its own track; leave it on ALL for a single keyboard, where a filter can only ever make the module silent. Changing it clears any held keys first, because a note-off arriving on the OLD channel would otherwise be dropped and strand the gate high forever.",
+      'midi-cv-buddy-priority-{n}':
+        "Which held key wins when you are holding more than one, because this module drives a single PITCH and GATE pair and has to choose. LAST follows the most recently pressed note, which is what a keyboard player expects and what almost every software synth does. LOW pins the lowest note, the classic mono-bass behaviour — hold a root and play a melody above it and the bass never moves. HIGH pins the highest, which does the same for a lead line under a held pedal tone. Changing it re-picks the winner immediately but does NOT re-fire the gate, so a settings change never sounds like a new note.",
+      'midi-cv-buddy-retrig-{n}':
+        "Whether a fresh key press re-fires downstream envelopes while you are already holding a note. ON drops the gate to 0 for exactly one audio block before re-raising it, which an ADSR or a VCA reads as a new note and re-attacks; that is the percussive, every-note-articulated feel. OFF leaves the gate high through the change, so the pitch moves and the envelope keeps whatever it was doing — legato, and the only way to get a real slide out of a mono line. It applies from the next note-on; the currently sounding note is untouched.",
+    },
   },
 
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
@@ -363,7 +594,12 @@ export const midiCvBuddyDef: AudioModuleDef = {
 
     // ---------------- Saved data (with defaults) ----------------
     const savedData = ((node.data ?? {}) as Partial<MidiCvBuddyData>);
-    let channel: number | null = savedData.channel ?? DEFAULT_DATA.channel;
+    // ⚠ `midiInChannelOf`, never `savedData.channel` — that key is the workflow
+    // channel-column reconciler's membership truth and reading it made a
+    // lane-dropped module listen to one channel it never chose. See the
+    // function's own header for the measurement and for why there is no legacy
+    // fallback to write.
+    let channel: number | null = midiInChannelOf(savedData);
     let priority: VoicePriority = savedData.priority ?? DEFAULT_DATA.priority;
     let retrig: boolean = savedData.retrig ?? DEFAULT_DATA.retrig;
     let selectedDeviceId: string | null = savedData.lastDeviceId ?? DEFAULT_DATA.lastDeviceId;
@@ -393,6 +629,7 @@ export const midiCvBuddyDef: AudioModuleDef = {
         selectedDeviceId,
         lastNote,
         lastVelocity,
+        heldCount: heldStack.length,
       };
     }
 

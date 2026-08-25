@@ -949,10 +949,27 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
   },
   {
     type: 'midiCvBuddy',
-    disposition: 'bespoke-surface',
-    why:
-      'a MIDI DEVICE BINDER: permission gesture, live input-device roster, channel and mode ' +
-      'selection. It declares no params at all — the rosters are WebMIDI service state.',
+    disposition: 'generic-face',
+    note:
+      'PROMOTED. The `why` was right about the SHAPE, wrong about the CONCLUSION, and wrong ' +
+      'about the CONTROLS — it read: "a MIDI DEVICE BINDER: permission gesture, live ' +
+      'input-device roster, channel and mode selection. It declares no params at all — the ' +
+      'rosters are WebMIDI service state." ⚠ THERE IS NO MODE ON THIS MODULE. `mode` is ' +
+      'midiLane\'s MONO/POLY switch; this one is monophonic by construction and has no such ' +
+      'setting. The two controls the `why` omitted entirely are VOICE PRIORITY and RETRIGGER, ' +
+      'which are half of everything the card offers. "No params" turned out to imply nothing: a ' +
+      '`ShellSelectorCell` reads and writes `node.data` through closures, so four controls rank ' +
+      'without the module declaring a single ParamDef. "Permission gesture" is a ranked `action` ' +
+      'cell, the midiclock precedent. Only the LIVE DEVICE ROSTER genuinely cannot be a cell — a ' +
+      'roster is a fixed set known when the def is authored and this one lives behind ' +
+      '`requestMIDIAccess()` — so it is a `fullViewBody` extension, exactly as on midiclock and ' +
+      'midiLane. ⚠ AND THE PROMOTION FOUND A LIVE DEFECT THE `why` COULD NOT HAVE: the card ' +
+      'wrote its MIDI channel filter into `node.data.channel`, which `channel-columns.ts` ' +
+      'declares to be workflow COLUMN MEMBERSHIP TRUTH, so picking a channel ejected the module ' +
+      'from its lane or teleported it into another\'s — and the factory read the same key back, ' +
+      'so dropping a fresh module into channel column 5 made it listen to MIDI channel 6 only, ' +
+      'with no user action at all. That is #1168, fixed on the OUTPUT sibling in 2026-08 and ' +
+      'never checked here. The filter is now `midiInChannel`.',
   },
   {
     type: 'midiLane',
@@ -972,10 +989,22 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
   },
   {
     type: 'midiOutBuddy',
-    disposition: 'bespoke-surface',
-    why:
-      'a MIDI OUTPUT BINDER: permission gesture plus live output-port and channel rosters, with no ' +
-      'params of its own to rank.',
+    disposition: 'generic-face',
+    note:
+      'PROMOTED. The `why` read: "a MIDI OUTPUT BINDER: permission gesture plus live output-port ' +
+      'and channel rosters, with no params of its own to rank." Every clause is accurate and the ' +
+      'conclusion drawn from them was still wrong, in the way this file keeps recording: ' +
+      '"permission gesture" is a ranked `action` cell (the midiclock precedent), "channel roster" ' +
+      'is a FIXED sixteen-entry list known when the def is authored and therefore an ordinary ' +
+      '`ShellSelectorCell`, and "no params to rank" implies nothing because a selector cell reads ' +
+      'and writes `node.data` through closures. ⚠ ONLY THE OUTPUT-PORT ROSTER IS ACTUALLY ' +
+      'SERVICE STATE — the `why` bracketed it with the channel roster as if the two were the ' +
+      'same kind of thing, and they are not: one lives behind `requestMIDIAccess()` and differs ' +
+      'per machine, the other is the MIDI specification. That single genuine blocker is a ' +
+      '`fullViewBody` extension. ⚠ AND THE `why` OMITTED THE AFFORDANCE THAT ACTUALLY NEEDED ' +
+      'THOUGHT: the CH-vs-LANE divergence warning, which the card carried as a violet outline ' +
+      'plus a badge and which is derived state a faceplate may not paint in either form. It is ' +
+      'the LANE lamp, `tone="warn"`, with the badge\'s own sentence as its detail.',
   },
   {
     type: 'midiclock',

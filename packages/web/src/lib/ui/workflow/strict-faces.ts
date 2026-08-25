@@ -4740,6 +4740,79 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // it. Fixed in `VideoTileThumb.svelte`; see `outtolaunch-face-model.test.ts`
   // and the lane-tile leg of `out-to-launch-face.spec.ts`.
   'outToLaunch',
+
+  // ── MIDI-CV-BUDDY — the FIFTH binder, and the one whose promotion found a
+  //    live CHANNEL-KEY COLLISION with the workflow lanes ────────────────────
+  //
+  // The mono workhorse that lets you PLAY the rack from a keyboard: one winning
+  // note out of whatever is held, as pitch + gate + velocity CV. MIDI LANE is
+  // its channel-aware successor and says so on its own def; this one is what
+  // you reach for when a keyboard should drive one VCO and one envelope.
+  //
+  // ⚠ IT IS A ZERO-PARAM FACE. `params: []`, so all four controls arrive as
+  // `controlFamilies` + `SHELL_CELLS` entries over `node.data`. `order: []`
+  // would have been legal and would have painted a blank tile, which is worse
+  // than the placeholder it replaces — the matrixMix lesson.
+  //
+  // ⚠ THE PROMOTION FIXES THE SAME PRACTICAL DEFECT midiclock AND midiLane HAD,
+  // for the same mechanical reason: `laneRenderKind` returned 'placeholder'
+  // here, and `connect()` was reachable only from a mounted legacy card. On a
+  // module that is completely inert until Web MIDI is granted, the grant
+  // required first discovering the dock full view. CONNECT is `face.order[0]`
+  // and an `action` cell is not dock-restricted, so the gesture lands on the
+  // lane tile where the module is met.
+  //
+  // ⚠ AND IT FIXES A DEFECT THE OTHER FOUR DID NOT HAVE, which is the reason
+  // this entry is long. `channel-columns.ts` declares `data.channel: 1..8` to be
+  // workflow COLUMN MEMBERSHIP TRUTH; this module's card wrote a 0..15 MIDI
+  // channel FILTER into that same key and its factory read the key back as one.
+  // Both directions were live:
+  //
+  //   * picking a channel ejected the module from its lane (values 0 and 9..15
+  //     match no column) or TELEPORTED it into another lane's stack, re-planning
+  //     that lane's clip note-taps on the way;
+  //   * and because lane membership is POSITIONAL — drop position decides, not
+  //     port shape — dropping a fresh module into channel column 5 made the
+  //     workflow write `channel: 5`, after which the module listened to MIDI
+  //     channel 6 ONLY. That one needs no user action at all.
+  //
+  // `MidiOutBuddyCard.svelte` has carried a header about exactly this since
+  // #1168 and gained its own `midiOutChannel` key for it. The INPUT side was
+  // never checked, which is the shape this repo keeps meeting: a fix argued and
+  // applied on one module, and the sibling it was obviously also true of left
+  // alone. The filter is now `midiInChannel`; `midiInChannelOf` in the def
+  // carries the measurement and the argument for why the legacy key gets no
+  // fallback read.
+  'midiCvBuddy',
+
+  // ── MIDI-OUT-BUDDY — the SIXTH binder, and the only module in the fleet that
+  //    points OUTWARDS ────────────────────────────────────────────────────────
+  //
+  // A gate and a pitch from anywhere inside the rack become MIDI notes on a
+  // hardware synth in the room. Every other note-sink makes sound in the
+  // browser; this one makes something else make sound.
+  //
+  // ⚠ ZERO PARAMS AGAIN, so both controls are `controlFamilies` + `SHELL_CELLS`
+  // entries. Two cells is ONE band and nothing is padded toward more.
+  //
+  // ⚠ ITS GLYPH IS FORCED BY THE STRONGEST FORM OF THE ARGUMENT IN THE FLEET.
+  // `glyphBinding` reaches a live trace through `primaryAudioOutPortId`, which
+  // matches `type === 'audio'` exactly — and this def declares `outputs: []`. It
+  // is a terminal MIDI sink, so there is not merely no audio port, there is no
+  // port at all, and any glyph other than `'none'` resolves to the dead
+  // `{kind:'static'}` binding module-face-lint reddens. push2Control was forced
+  // the same way.
+  //
+  // ⚠ THE AFFORDANCE MOST AT RISK HERE WAS THE CH-vs-LANE WARNING, not the
+  // permission gesture. The card outlined itself violet and painted a
+  // `CH n != LANE m` badge whenever the module routed off its lane — a real
+  // divergence with a real consequence, since the clip lane drives it while a
+  // different synth hears it. Both the badge and the colour are derived state,
+  // which a resting faceplate may not paint in any shape, so it is the LANE
+  // lamp: `tone="warn"`, lit on divergence, with the badge's own sentence —
+  // including how to undo it — as the `detail`. `midi-out-buddy-status-model.ts`
+  // argues why the violet specifically is not ported.
+  'midiOutBuddy',
 ]);
 
 /**
