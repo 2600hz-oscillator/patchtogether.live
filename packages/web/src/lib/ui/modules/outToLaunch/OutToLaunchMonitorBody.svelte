@@ -252,13 +252,18 @@
           aria-label="Launchpad outputs"
           data-testid="out-to-launch-binder-picker-{nodeId}"
         >
-          {#each v.ports as p (p.outputId)}
+          <!-- The testid carries the ROW INDEX, not the outputId: a port id is
+               machine-specific (and on Windows two Launchpads can report the
+               same name, #1101), so an id-keyed testid would be unaddressable
+               from a spec. The `key` still uses outputId, which is what keeps
+               the DOM stable across a re-enumeration. -->
+          {#each v.ports as p, i (p.outputId)}
             <button
               class="otl-btn port nodrag"
               type="button"
               disabled={claimedByOther(p)}
               title={outToLaunchPortTitle(claimedByOther(p))}
-              data-testid="out-to-launch-binder-port-{nodeId}"
+              data-testid="out-to-launch-binder-port-{i}-{nodeId}"
               onclick={() => pick(p)}
             >{outToLaunchPortLabel(p, claimedByOther(p))}</button>
           {/each}
