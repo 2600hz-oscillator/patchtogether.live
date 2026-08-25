@@ -21,9 +21,9 @@ Every registered module carries exactly one **disposition**: what kind of work i
 
 | disposition | what it means | modules | done |
 |---|---|---|---|
-| `generic-face` | author a `face` and rank the controls — no new platform capability | 154 | 152 |
+| `generic-face` | author a `face` and rank the controls — no new platform capability | 153 | 152 |
 | `blocked` | would be a face today but for the named capability, and nothing else | 0 | — |
-| `bespoke-surface` | the primary interaction is not param-shaped — needs a purpose-built surface | 36 | — |
+| `bespoke-surface` | the primary interaction is not param-shaped — needs a purpose-built surface | 37 | — |
 | `organizational-native` | rack furniture; not a migration at all | 3 | — |
 
 ## What each blocker buys
@@ -31,6 +31,7 @@ Every registered module carries exactly one **disposition**: what kind of work i
 | blocker | issue | modules waiting |
 |---|---|---|
 | `needs-media-controller` | #1511 | 8 |
+| `needs-note-entry-cell` | #1509 | 12 |
 
 ## `generic-face`
 
@@ -51,7 +52,6 @@ author a `face` and rank the controls — no new platform capability.
 | `bluebox` | audio | done | — |
 | `buggles` | audio | done | — |
 | `cameraInput` | video | done | — |
-| `cartesian` | audio | done | — |
 | `cellshade` | video | done | — |
 | `charlottesEchos` | audio | done | — |
 | `chroma` | video | done | — |
@@ -172,7 +172,7 @@ author a `face` and rank the controls — no new platform capability.
 | `spirographs` | video | done | — |
 | `stereovca` | audio | done | — |
 | `swolevco` | audio | done | — |
-| `synesthesia` | audio | — | — |
+| `synesthesia` | audio | done | — |
 | `tempest` | video | done | — |
 | `tidyVco` | audio | done | — |
 | `tiler` | video | done | — |
@@ -205,15 +205,16 @@ the primary interaction is not param-shaped — needs a purpose-built surface.
 
 | module | domain | state | blockers |
 |---|---|---|---|
-| `archivist` | video | — | `needs-media-controller` |
+| `archivist` | video | — | `needs-media-controller` `needs-note-entry-cell` |
 | `audioIn` | audio | — | `needs-media-controller` |
 | `blood` | video | — | — |
+| `cartesian` | audio | — | `needs-note-entry-cell` |
 | `chromaconsole` | audio | — | — |
 | `clipplayer` | audio | — | — |
 | `clockedRunner` | audio | — | — |
-| `controlSurface` | meta | — | — |
+| `controlSurface` | meta | — | `needs-note-entry-cell` |
 | `doom` | video | — | — |
-| `electraControl` | meta | — | — |
+| `electraControl` | meta | — | `needs-note-entry-cell` |
 | `es9` | audio | — | — |
 | `frogger` | audio | — | — |
 | `gamepad` | audio | — | — |
@@ -221,26 +222,26 @@ the primary interaction is not param-shaped — needs a purpose-built surface.
 | `livecode` | audio | — | — |
 | `mappy` | video | — | — |
 | `midiCvBuddy` | audio | — | — |
-| `midiLane` | audio | — | — |
+| `midiLane` | audio | — | `needs-note-entry-cell` |
 | `midiOutBuddy` | audio | — | — |
 | `modtris` | audio | — | — |
 | `moog956` | audio | — | — |
 | `nibbles` | video | — | — |
 | `numpadPlus` | audio | — | — |
 | `outToLaunch` | video | — | — |
-| `painter` | video | — | — |
-| `peertube` | video | — | `needs-media-controller` |
+| `painter` | video | — | `needs-note-entry-cell` |
+| `peertube` | video | — | `needs-media-controller` `needs-note-entry-cell` |
 | `push2Control` | meta | — | — |
-| `recorderbox` | video | — | `needs-media-controller` |
+| `recorderbox` | video | — | `needs-media-controller` `needs-note-entry-cell` |
 | `score` | audio | — | — |
 | `skifree` | audio | — | — |
-| `textmarquee` | video | — | — |
-| `toybox` | video | — | `needs-media-controller` |
+| `textmarquee` | video | — | `needs-note-entry-cell` |
+| `toybox` | video | — | `needs-media-controller` `needs-note-entry-cell` |
 | `tvLibrarian` | video | — | `needs-media-controller` |
 | `videobox` | video | — | `needs-media-controller` |
 | `videovarispeed` | video | — | `needs-media-controller` |
-| `vstFx` | audio | — | — |
-| `vstInstrument` | audio | — | — |
+| `vstFx` | audio | — | `needs-note-entry-cell` |
+| `vstInstrument` | audio | — | `needs-note-entry-cell` |
 
 ## `organizational-native`
 
