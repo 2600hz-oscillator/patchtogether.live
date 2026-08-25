@@ -322,8 +322,27 @@ export const pongDef: AudioModuleDef = {
     // constant, never a measurement), so `Math.random` at serve time is the only
     // nondeterminism left — and both stepper entry points already accept an
     // injectable rng.
+    //
+    // ⚠⚠ AND THE SEED ALONE WAS NOT ENOUGH EITHER — MEASURED 2026-08-25, and it
+    // is the reason this block now pins the COURT and not only the SERVE.
+    // Booting `face-pong-dock` twice on ubuntu CI through the gate's own scene
+    // code and diffing the two captures at threshold 1/255 gave **72 differing
+    // pixels, max channel delta 237, in a 23x9 box** — the BALL, and nothing
+    // else. The seed fixed WHICH trajectory; it could not fix HOW FAR ALONG it
+    // the capture landed, because the number of scheduler ticks that ran before
+    // the harness's audio suspend + `freeze` write arrived is a function of boot
+    // speed. Same shape as mirrorpool's ping-pong field and lushgarden's spawn
+    // rate: a state ACCUMULATOR that a phase pin leaves running.
+    //
+    // THE FIX IS LUSHGARDEN'S, and it is strictly stronger than a freeze: when
+    // the seed is present the factory steps the pure stepper a FIXED number of
+    // ticks at construction and then STOPS TICKING ALTOGETHER, so the court is
+    // TIME-INVARIANT rather than frozen at whatever moment the harness reached.
+    // Nothing about the shipped game changes — `__pongVrtSeed` is set only by
+    // `addInitScript` from the VRT face harness.
     const vrtSeed = (globalThis as { __pongVrtSeed?: number }).__pongVrtSeed;
-    const rng = typeof vrtSeed === "number" ? mulberry32(vrtSeed) : Math.random;
+    const vrtPinned = typeof vrtSeed === "number";
+    const rng = vrtPinned ? mulberry32(vrtSeed) : Math.random;
     let state: PongState = initPongState(params, { rng });
 
     // ---- Scheduler tick subscription -----------------------------------
@@ -332,7 +351,43 @@ export const pongDef: AudioModuleDef = {
     // main-thread jank because the tick source is a Web Worker. Each
     // tick: read CVs, step the stepper, fire any score gate.
     const dtSeconds = SCHEDULER_TICK_MS / 1000;
+
+    if (vrtPinned) {
+      // ⚠ NOT A POPULATION COUNT — it is a POSITION on the game's own timeline,
+      // the one physical constant this pin needs: how far into the rally the
+      // baseline sits. 48 ticks x 25 ms = 1.2 s of play.
+      //
+      // CHOSEN FROM THE COMPUTED TRAJECTORY rather than picked, so the picture
+      // is legible AND falsifiable. Stepping `initPongState` under
+      // `mulberry32(0x50ec)` with both paddle CVs at rest (the scene patches
+      // nothing, so `readPaddle*Cv` reads 0 and both paddles sit at y = 0.5):
+      //
+      //     tick   ballX    ballY    ballVX
+      //        0   0.5000   0.5000   +0.5499   serve, dead centre
+      //       24   0.8299   0.5062   +0.5499   outbound
+      //       36   0.9880   0.5093   -0.5491   RIGHT PADDLE BOUNCE
+      //       48   0.8233   0.5186   -0.5491   <- the pinned frame
+      //
+      // 48 is deliberately PAST the first bounce: the sign of `ballVX` has
+      // flipped, so this frame differs from the serve frame in DIRECTION as
+      // well as position and cannot be reached by a stepper that never ran. No
+      // score fires anywhere in the first 160 ticks under this seed with the
+      // paddles centred, so the rng is untouched after init and the frame does
+      // not depend on serve-reset ordering.
+      const VRT_PINNED_TICKS = 48;
+      for (let i = 0; i < VRT_PINNED_TICKS; i++) {
+        state = stepPongState(state, { paddleLCv: 0, paddleRCv: 0, dtSeconds, rng }, params);
+      }
+    }
+
     const tick = () => {
+      // ⚠ THE COURT PIN, AND IT MUST COME BEFORE THE FREEZE GATE. Under
+      // `__pongVrtSeed` the state above IS the answer; letting the clock advance
+      // it even once re-introduces the boot-speed dependence the pin exists to
+      // remove, because the harness's `freeze` write lands an unknown number of
+      // ticks later. This is the "SUPPRESSES ALL FURTHER SPAWNING" half of
+      // lushgarden's pin, not a second freeze.
+      if (vrtPinned) return;
       // ⚠ THE FREEZE GATE, AND IT MUST COME FIRST. Returning before the step holds
       // the ball, the paddles AND the score. A freeze that ran the step and merely
       // skipped the draw would still advance the game and still fire score gates
