@@ -674,6 +674,104 @@ const EXTENSION_BODY_ROLES: Readonly<Record<string, BodyRule>> = {
       + 'nothing is wrong.',
   },
 
+  // ── MIDI-CV-BUDDY — the FIFTH binder body, and the one whose deleted readout
+  //    needed a NEW ENGINE FIELD to survive ──────────────────────────────────
+  //
+  // ⚠ THE NOTE LAMP COULD NOT BIND TO WHAT THE CARD PAINTED, and that is the
+  // interesting half. The card printed `NOTE C4` off `lastNote`, which is
+  // LATCHED on purpose — the module keeps it after every key is released so a
+  // downstream VCO holds its pitch through the gate's fall — so a lamp bound to
+  // it would light on the first note of a session and never go dark, i.e. a
+  // lamp that says nothing. `heldCount` was added to the card state for this,
+  // exactly as midiLane added the same field for the same reason. Reading a
+  // readout's value and moving it is not enough; the QUESTION the lamp answers
+  // is different from the one the number answered, and it needs its own source.
+  midiCvBuddy: {
+    role: 'status-primitive',
+    why:
+      'the DEVICE BINDING for the mono MIDI-to-CV bridge: the runtime-enumerated input picker, '
+      + 'the pre-connect hint, the access-failure message, and two lamps — MIDI and NOTE. The '
+      + 'picker is the ONE affordance on this module that cannot be a face cell, for the reason '
+      + 'midiclock states above: its roster lives on the engine handle behind '
+      + '`requestMIDIAccess()` and differs per machine, so it is neither a `ParamDef` nor an '
+      + '`options` roster, which is a fixed set known when the def is authored. ⚠ NONE of the '
+      + 'four ranked cells is duplicated here — CONNECT in particular is a real `action` cell, '
+      + 'which is what puts the permission gesture on the LANE TILE rather than behind the dock. '
+      + '⚠ THE NOTE LAMP IS WHERE TWO DELETED READOUT ROWS WENT (`NOTE` and `VEL`), and it says '
+      + 'strictly more than they did: its `detail` carries the note, the velocity AND how many '
+      + 'keys are down, and the dark-but-connected branch names the note the PITCH jack is still '
+      + 'LATCHED at, which is a real behaviour a player can be surprised by and which nothing '
+      + 'else on the surface explains. It binds to `heldCount`, a field added for it, because '
+      + '`lastNote` is latched and a lamp bound to it would light once and never go dark. It is '
+      + 'also the only thing on the promoted surface that says this module is RECEIVING, which '
+      + 'matters because the two ways it disappoints — nothing patched to the keyboard, and a '
+      + 'channel filter aimed at a channel the keyboard is not sending on — are both perfectly '
+      + 'silent and look identical to a correct module between notes. ⚠ Unlike cameraInput this '
+      + 'body needs no status registry: midiCvBuddy is in neither `DOM_SOURCE_LANE_TYPES` nor '
+      + '`CARD_PRODUCER_LANE_TYPES`, so promotion parks no live card off-screen and the MIDI '
+      + 'handler is installed engine-side through an identity-scoped claim in the factory — '
+      + 'there is no second owner to coordinate with. ⚠ It mounts no canvas element and must not '
+      + 'grow one (the role predicates GREP RAW SOURCE and cannot tell code from a comment, so '
+      + 'this sentence deliberately spells the tag out in words), and it declares no '
+      + '`face.rackStatus`: this module is deliberately multi-instance, every instance binds its '
+      + 'own device, and there is no shared resource and no primary. ⚠ NO SCREEN SWITCH and NO '
+      + 'WATCH MARK — the video-screen ruling runs over STRICT_FACES intersect video defs and '
+      + 'this is `domain: audio`. Every text node is an option NAME (the device\'s own name, the '
+      + 'cameraInput precedent), a control caption, instructional copy in the EMPTY pre-connect '
+      + 'state, or an ERROR that is absent whenever nothing is wrong.',
+  },
+
+  // ── MIDI-OUT-BUDDY — the SIXTH binder body, and the first whose deleted
+  //    warning was carried by a COLOUR rather than by prose ──────────────────
+  //
+  // ⚠ THE CH-vs-LANE WARNING IS THE AFFORDANCE MOST AT RISK IN THIS PROMOTION.
+  // The card outlined itself in `--cable-video` and painted a `CH n != LANE m`
+  // badge whenever the module routed off its lane. Both halves are derived
+  // state — the badge in text, the outline in colour — and a resting faceplate
+  // may paint neither. Neither is dropped: `tone="warn"` carries "this is a
+  // fault rather than a readiness", `lit` carries the divergence itself, and
+  // the badge's own sentence including HOW to undo it is the `detail`, which
+  // `StatusLed` puts in both `aria-label` and `title`.
+  //
+  // ⚠ AND THE VIOLET SPECIFICALLY IS NOT PORTED, DELIBERATELY. `--cable-video`
+  // means CABLE DOMAIN everywhere else in the product; the card borrowed it as
+  // "the only purple in the token set", which is the collision
+  // `rear-direction.test.ts` already refuses on the rear rails (no
+  // direction-qualified rule may assign a domain hue). The lamp's warn amber is
+  // the app's own fault colour and says the same thing without spending a
+  // domain hue on it.
+  midiOutBuddy: {
+    role: 'status-primitive',
+    why:
+      'the OUTPUT BINDING for the rack\'s only outward-facing module: the runtime-enumerated '
+      + 'output-port picker, the pre-connect hint, the access-failure message, and three lamps — '
+      + 'MIDI, SEND and LANE. The picker is the ONE affordance here that cannot be a face cell, '
+      + 'for the reason midiclock states above: its roster lives on the engine handle behind '
+      + '`requestMIDIAccess()` and differs per machine, so it is neither a `ParamDef` nor an '
+      + '`options` roster. ⚠ NEITHER ranked cell is duplicated here — CONNECT is a real `action` '
+      + 'cell, which is what puts the permission gesture on the LANE TILE. ⚠ THE SEND LAMP is '
+      + 'where the card\'s `NOTE` row and its lit dot went, and unlike the sibling module\'s it '
+      + 'needs no companion field: `activeNote` is the tracker\'s `soundingNote`, set on the Note '
+      + 'On this module sent and cleared on the matching Note Off, so it really does follow the '
+      + 'note. Its detail names the CHANNEL in every branch, because "nothing is happening" and '
+      + '"everything is happening on a channel your synth is not listening to" are the two states '
+      + 'this module is most often in and are otherwise indistinguishable. ⚠ THE LANE LAMP is the '
+      + 'card\'s violet CH-vs-LANE badge, as `tone="warn"` plus a detail that names both numbers '
+      + 'and how to reconcile them; the un-diverged branches are not filler, because "follows its '
+      + 'lane" and "has no lane" are two different facts a player acts on differently and a bare '
+      + 'dark lamp cannot tell them apart. ⚠ Unlike cameraInput this body needs no status '
+      + 'registry: midiOutBuddy is in neither `DOM_SOURCE_LANE_TYPES` nor '
+      + '`CARD_PRODUCER_LANE_TYPES`, so promotion parks no live card off-screen and the note '
+      + 'sender lives on the engine handle. ⚠ It mounts no canvas element and must not grow one '
+      + '(the role predicates GREP RAW SOURCE and cannot tell code from a comment, so this '
+      + 'sentence deliberately spells the tag out in words), and it declares no `face.rackStatus` '
+      + '— every instance binds its own output port and none is a property of another. ⚠ NO '
+      + 'SCREEN SWITCH and NO WATCH MARK: the video-screen ruling runs over STRICT_FACES '
+      + 'intersect video defs and this is `domain: audio`. Every text node is an option NAME (the '
+      + 'port\'s own name), a control caption, instructional copy in the EMPTY pre-connect state, '
+      + 'or an ERROR that is absent whenever nothing is wrong.',
+  },
+
   // ── LAUNCHPAD CONTROL — the second BINDER, and the body whose defining
   //    property is what it REFUSES to draw ───────────────────────────────────
   //
