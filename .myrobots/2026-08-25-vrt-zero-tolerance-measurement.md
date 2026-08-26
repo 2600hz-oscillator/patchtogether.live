@@ -155,6 +155,50 @@ moog912's faceplate.
 no coverage at the tile's real zoom, so a layout change anywhere silently changes
 which ports the rail shows.
 
+## The FULL re-capture, and the two things it found (2026-08-26)
+
+Owner: *"all this is fine. recapture all."* Dispatched `ALL=1` through the FIXED
+`=all` path (run 32982998478). It finished its Playwright step ~30 s inside the
+job's 125-minute cap.
+
+**PREDICTED 19 (the gating lane's failing set, read off the `-diff.png`
+artifacts). THE BOT COMMITTED 115.** Every one was decoded and compared against
+the version it replaced:
+
+| | files |
+|---|---|
+| in `vrt-strict` — a CI job compares them | **20** (7 cards + 13 face scenes) |
+| NOT in `vrt-strict` — **no CI job compares them** | 95 |
+| bytes-only (pixel-identical re-encode) | **0** |
+
+### FINDING 1 — 95 baselines that nothing has compared since 2026-08-17
+
+14 cards outside `STRICT_VRT_MODULES` plus 81 belonging to the composite /
+toybox / quadralogical / colourofmagic / rear-card / zoom / dashboard /
+interactions specs. Those live in the INFORMATIONAL `vrt` lane, and that job was
+deleted from `ci.yml` on 2026-08-17. They had drifted — some enormously
+(`workflow-dock-patch` 353,418 px; `rear-sixstrum` 242,708; `videoOut` 159,824)
+— and no gate could say so.
+
+⚠ **And `=changed` could never have refreshed them**, because it only writes on a
+FAILING comparison and nothing was comparing them at all. That is the workflow
+defect at its widest: 95 baselines simultaneously unwatched AND unrepinnable.
+
+### FINDING 2 — `face-dx7-dock` is a THIRD non-deterministic scene, at 1 LSB
+
+It was NOT among the 19: it PASSED the zero-tolerance `vrt-strict` run with ZERO
+differing pixels. The capture then rewrote it at **8 px, maxChannel 1**. Two
+settled captures of the same commit differing at one least-significant-bit is
+non-determinism, not staleness.
+
+⚠ **This falsifies this file's own note below** that the darwin LSB shimmer
+(`dx7-dock` 17 px, maxDelta 1-2) does not reproduce on linux. It does; it is
+rare enough for one run to miss. `face-videoOut-compact` (86 px, **maxCh 1**) is
+the same class and merely landed on the failing side that day.
+
+Left captured rather than removed: the owner has not ruled on them, and one
+observation is not a population. A future red on either is EVIDENCE, not a flake.
+
 ## The two non-deterministic scenes are REMOVED (2026-08-26)
 
 Owner: *"remove these VRTs for now"*. `face-mirrorpool-compact` and
