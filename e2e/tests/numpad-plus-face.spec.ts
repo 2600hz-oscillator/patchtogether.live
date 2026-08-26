@@ -439,5 +439,35 @@ test.describe('NUMPAD+ — ⚠ the VRT exemption this PR DELETES, measured on th
       'a fresh NUMPAD+ card paints nothing that moves — which is why the permanent ' +
         'VRT exemption naming those two animations described a state the capture never reaches',
     ).toEqual({ activeStep: 0, armed: 0, listening: 0, animations: 0 });
+
+    // ⚠ THE POSITIVE CONTROL, AND IT IS THE HALF THAT MATTERS. Every count above
+    // is ZERO, which is also exactly what a WRONG SELECTOR returns — and this
+    // assertion is what licenses deleting a permanent VRT exemption, so "the
+    // probe read nothing" and "there is nothing to read" must be told apart.
+    // Arming REC and starting the transport makes BOTH named animations appear;
+    // if the selectors could not see them, that is a test certifying a baseline
+    // it never actually checked.
+    await page.evaluate((id) => {
+      const w = globalThis as unknown as { __patch: { nodes: Record<string, { params: Record<string, number> }> } };
+      const n = w.__patch.nodes[id];
+      if (n) { n.params.recArm = 1; n.params.isPlaying = 1; }
+    }, NODE);
+    await expect
+      .poll(
+        () => page.evaluate(() => {
+          const el = document.querySelector('[data-testid="numpad-plus-card"]')!;
+          return {
+            activeStep: el.querySelectorAll('.cell.active').length,
+            armed: el.querySelectorAll('.rec-btn.armed').length,
+          };
+        }),
+        {
+          timeout: 10_000,
+          message:
+            'the SAME selectors must be able to SEE both animations once the transport runs — ' +
+            'otherwise the zeros above are a wrong selector rather than a still card',
+        },
+      )
+      .toEqual({ activeStep: 1, armed: 1 });
   });
 });
