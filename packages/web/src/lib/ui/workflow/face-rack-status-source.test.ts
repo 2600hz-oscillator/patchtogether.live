@@ -266,6 +266,24 @@ const EXTENSION_BODY_ROLES: Readonly<Record<string, BodyRule>> = {
   backdraft: { role: 'picture', why: 'the 3-D scene preview canvas plus the preview-collapse toggle that became the fleet-wide SCREEN ON/OFF standard.' },
   bentbox: { role: 'picture', why: 'the pixel-bender\'s live output preview canvas and its SCREEN switch.' },
   colourofmagic: { role: 'picture', why: 'the multi-colorspace processor\'s live preview canvas and its SCREEN switch (#2015: OFF stops the preview copy, never the engine).' },
+  // ── FROGGER (2026-08-26) — the roster's first ARCADE BOARD ───────────────
+  //
+  // ⚠ THE ONE ENTRY HERE WHOSE CANVAS DELIBERATELY PAINTS NUMBERS, and it is
+  // on the ALLOWED side of the resting-text ruling rather than an exception to
+  // it. `drawFrogger` paints `LIVES n  LV n  T n` and `SCORE n` INTO THE
+  // PLAYFIELD, by the module's own pure function — that is the game's own
+  // artwork, part of the picture that earns the width, and it is what the
+  // legacy card painted too. What is FORBIDDEN is a score or lives row rendered
+  // as CHROME BESIDE the playfield, and this body renders none: its entire DOM
+  // text is the SCREEN switch caption, asserted exhaustively (and
+  // negative-controlled) in `frogger-face-model.test.ts`.
+  //
+  // ⚠ AND THE PAINTED NUMBERS ARE SPEAKABLE, which a canvas otherwise makes
+  // impossible: the board frame carries `role="img"` with an `aria-label`
+  // naming lives / level / seconds / score. That is where the ruling puts this
+  // class, and the model test pins that it stays an ATTRIBUTE rather than
+  // becoming a text node.
+  frogger: { role: 'picture', why: 'the ARCADE BOARD — a 14x13 grid of traffic, river rafts and home pads painted every rAF from the engine snapshot by the module\'s own exported `drawFrogger`, plus its SCREEN switch. ⚠ IT IS THE MODULE\'S IDENTITY, NOT A PREVIEW OF SOMETHING ELSEWHERE: the board IS how you read what the gate outputs are doing, and before promotion it existed only on a legacy card the shipping shell does not mount (frogger is not in NON_SHELL_LANE_TYPES, not a CARD_PRODUCER and not in HEADLESS_MOUNT_LANE_TYPES, so its lane tile was a blank placeholder). ⚠ THE HUD NUMBERS ARE PAINTED INTO THE CANVAS BY THE GAME and are allowed as the game\'s own artwork; the face adds NO chrome row of its own, and the body\'s only DOM text is the SCREEN caption. The measurements reach the a11y tree through role="img" + aria-label on the board frame. ⚠ SCREEN OFF IS UNUSUALLY SAFE HERE and the reason is worth copying carefully: the game runs on the shared SCHEDULER CLOCK subscribed in the module\'s FACTORY — not in this component, not on rAF, and not gated on the AudioContext (the clock is a Web Worker setInterval) — so collapsing the board stops a drawFrogger call and NOTHING else: the timer counts, the traffic moves and HOME/DEAD/LEVEL keep firing. `skifree`, one module away in the same family, does NOT have that property. ⚠ NO WATCH MARK: markWatched is a VideoEngine pull-set concept and this is domain audio with three gate outputs.' },
   foxy: { role: 'picture', why: 'the video-synth\'s live output preview canvas and its SCREEN switch.' },
   freezeframe: { role: 'picture', why: 'the frame-hold preview canvas — the one surface on which "is it frozen?" is answerable at all.' },
   frametable: { role: 'picture', why: 'the video wavetable oscillator\'s live scan preview and its SCREEN switch — a picture FrametableCard.svelte already drew at 176x92, so this slot is a PORT rather than an addition and promotion would have deleted the surface without it. ⚠ It is also the roster\'s strongest watch-mark case after `vdelay`: this module\'s subject is a SIXTY-LAYER RING advanced once per draw, so a lapsed mark does not merely pause a preview, it punches a permanent GAP in the history you scan back through — which is the exact seam `frametableDef.pullExempt` exists to prevent, in its own words.' },

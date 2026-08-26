@@ -297,3 +297,119 @@ describe('detectRisingEdge', () => {
     expect(detectRisingEdge(1, 0)).toBe(false);     // falling edge
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// THE TIME KNOB IS LIVE — the fix for "FROGGER's only control does nothing".
+//
+// Before this, `params.initialTime` was read at exactly two sites and both were
+// CONSTRUCTORS (`initFroggerState`, `startGame`). The ceiling was then
+// decremented in place by `handleLevelComplete`, so a knob move had nothing to
+// write to and TIME was inert until the next START pulse — while `readParam`
+// reported the new value at once, which is what made it look like it worked.
+//
+// ⚠ EVERY LEG BELOW FAILS ON THE OLD CODE, which is the only thing that makes
+// this a regression pin rather than a restatement of the new implementation.
+// The decay leg is the sharp one: it is the half a naive fix (assign
+// `defaultTime` on change) silently breaks, because it would erase the levels
+// already cleared.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('frogger-state — the TIME knob reaches the running game (§13.1)', () => {
+  /** Start a game at `initialTime` and burn `elapsed` seconds off the clock. */
+  function playing(initialTime: number, elapsed = 0): { s: FroggerState; params: FroggerParams } {
+    const params: FroggerParams = { initialTime };
+    let s = initFroggerState(params);
+    s = stepFroggerState(s, { ...NO_INPUTS, start: true }, params, 0);
+    if (elapsed > 0) s = stepFroggerState(s, NO_INPUTS, params, elapsed);
+    return { s, params };
+  }
+
+  it('LOWERING it truncates the life IN PROGRESS — the ceiling is a ceiling', () => {
+    // The musically load-bearing direction: a shorter life is a faster
+    // dead_gate, and a player reaching for that wants it NOW, not next life.
+    const { s: started } = playing(120, 10);
+    expect(started.time, 'seconds remaining before the knob moves').toBe(110);
+    const s = stepFroggerState(started, NO_INPUTS, { initialTime: 20 }, 0);
+    expect(s.defaultTime, 'the ceiling follows the knob on the very next step').toBe(20);
+    expect(s.time, 'and the life in progress is clamped DOWN to it').toBe(20);
+  });
+
+  it('RAISING it does NOT extend the life in progress — no countdown jumps upward', () => {
+    // The deliberate asymmetry. An arcade timer that grew under the player
+    // would be a bug wearing a feature.
+    const { s: started } = playing(30, 10);
+    expect(started.time).toBe(20);
+    const s = stepFroggerState(started, NO_INPUTS, { initialTime: 120 }, 0);
+    expect(s.time, 'the life in flight keeps its remaining seconds').toBe(20);
+    expect(s.defaultTime, 'but the ceiling for the NEXT life is already the new one').toBe(120);
+  });
+
+  it('…and the NEXT life gets the raised ceiling', () => {
+    const raised: FroggerParams = { initialTime: 120 };
+    const { s: started } = playing(30, 10);
+    // Run the clock out under the RAISED knob: death reseats `time` from the
+    // live ceiling, not from the one that was live at start.
+    const s = stepFroggerState(started, NO_INPUTS, raised, 25);
+    expect(s.events.died, 'the timer expired').toBe(true);
+    expect(s.time, 'the new life starts at the knob value, not the start-time snapshot').toBe(120);
+  });
+
+  it('NEGATIVE CONTROL: an UNMOVED knob changes nothing — the ceiling is not merely volatile', () => {
+    // Without this leg every assertion above passes on an implementation that
+    // resets the timer on every step, which would be a far worse bug and would
+    // look identical from the three tests above.
+    const { s: started, params } = playing(45, 12);
+    expect(started.time).toBe(33);
+    const s = stepFroggerState(started, NO_INPUTS, params, 0);
+    expect(s.time, 'a step with no knob move and no elapsed time must not reseat the clock').toBe(33);
+    expect(s.defaultTime).toBe(45);
+  });
+
+  it('the -5 s PER LEVEL decay SURVIVES, and is measured from the NEW ceiling', () => {
+    // ⚠ THE LEG A NAIVE FIX BREAKS. Assigning `params.initialTime` straight
+    // into `defaultTime` on change would make the knob live AND silently erase
+    // every level already cleared. The decay is BANKED (`levelDecayS`) and the
+    // ceiling is re-derived, so both properties hold at once.
+    const params: FroggerParams = { initialTime: 100 };
+    let s = initFroggerState(params);
+    s = stepFroggerState(s, { ...NO_INPUTS, start: true }, params, 0);
+
+    // Clear a level: fill four homes and walk into the fifth.
+    for (const kind of [5, 6, 7, 8]) {
+      s.sprites.find((sp) => sp.key === `player-home-${kind}`)!.visable = true;
+    }
+    s.player.frogsHomeCount = 4;
+    s.player.x = 14;
+    s.player.y = 2;
+    s = stepFroggerState(s, { ...NO_INPUTS, up: true }, params, 0);
+    expect(s.events.levelComplete).toBe(true);
+    expect(s.levelDecayS, 'one level cleared banks 5 s of decay').toBe(5);
+    expect(s.defaultTime, '100 - 5').toBe(95);
+
+    // Now move the knob DOWN. The decay must still be one level's worth,
+    // subtracted from the NEW ceiling rather than from the old one.
+    const lowered = stepFroggerState(s, NO_INPUTS, { initialTime: 40 }, 0);
+    expect(lowered.levelDecayS, 'a knob move does not clear earned difficulty').toBe(5);
+    expect(lowered.defaultTime, '40 - 5, NOT 40 and NOT 95').toBe(35);
+  });
+
+  it('the ceiling never falls below LOWEST_TIME, however many levels are banked', () => {
+    // The floor is the upstream rule and it has to survive the re-derivation.
+    const params: FroggerParams = { initialTime: 10 };
+    let s = initFroggerState(params);
+    s = stepFroggerState(s, { ...NO_INPUTS, start: true }, params, 0);
+    s.levelDecayS = 500; // 100 levels' worth
+    s = stepFroggerState(s, NO_INPUTS, params, 0);
+    expect(s.defaultTime).toBe(10);
+    expect(s.time).toBe(10);
+  });
+
+  it('a fresh START re-earns the ramp from scratch', () => {
+    const params: FroggerParams = { initialTime: 60 };
+    let s = initFroggerState(params);
+    s = stepFroggerState(s, { ...NO_INPUTS, start: true }, params, 0);
+    s.levelDecayS = 20;
+    s = stepFroggerState(s, { ...NO_INPUTS, start: true }, params, 0);
+    expect(s.levelDecayS).toBe(0);
+    expect(s.defaultTime).toBe(60);
+  });
+});
