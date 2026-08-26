@@ -4075,7 +4075,6 @@ export const FACES = [
     // `notify()` fires, which needs a gate edge on an input this scene patches
     // nothing into.
   },
-<<<<<<< HEAD
 
   // ── THE CODE-BUFFER PAIR — the first faceplates whose body is a TEXT EDITOR
   //    ─────────────────────────────────────────────────────────────────────
@@ -4138,7 +4137,6 @@ export const FACES = [
     // which this scene invokes. So the resting plate is the buffer, one dark
     // lamp and the RUN band, with no empty-state placeholder to drift.
   },
-=======
   // ── THE VST BRIDGE PAIR — two scenes each, and the determinism argument is
   //    es9's, one module family over ────────────────────────────────────────
   //
@@ -4211,7 +4209,6 @@ export const FACES = [
   // `bootWithFace` already freezes.
   { type: 'vstInstrument', pages: 1 },
   { type: 'vstFx', pages: 1 },
->>>>>>> origin/main
 ] as const;
 
 /**
