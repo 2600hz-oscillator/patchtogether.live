@@ -4311,6 +4311,90 @@ export const FACES = [
   { type: 'vstInstrument', pages: 1 },
   { type: 'vstFx', pages: 1 },
 
+  // ── FROGGER — the first ARCADE BOARD baselined, and the promotion that
+  //    DISCHARGED ITS OWN NAMED RATCHET ────────────────────────────────────
+  //
+  // ⚠ THE TWO SCENES ON THIS MODULE HAVE COMPLETELY DIFFERENT DETERMINISM
+  // ARGUMENTS, exactly as pong's do, and conflating them is how a scene ends up
+  // pinned by nothing.
+  //
+  //   COMPACT has NO PICTURE AT ALL and is deterministic for free. All three
+  //     outputs are `type: 'gate'`, so `primaryAudioOutPortId` is null, every
+  //     glyph literal but `'none'` resolves `{kind:'static'}` and the face
+  //     declares `glyph: 'none'`. `hasVideoSurface` is `domain === 'video'` and
+  //     this is an AUDIO def, so there is no `VideoTileThumb` either. The tile
+  //     is ONE KNOB. ⚠ If `ShellExtensionGlyphProps` ever gains a `nodeId`,
+  //     THIS SCENE NEEDS THE DOCK SCENE'S TREATMENT and not this paragraph —
+  //     the same conditional pong's compact entry carries, and for the same
+  //     mechanical reason (a glyph component today cannot resolve a graph node,
+  //     so it cannot reach `eng.read(node, 'snapshot')`).
+  //
+  //   DOCK carries the LIVE BOARD — the module's `fullViewBody` extension
+  //     painting `drawFrogger` every rAF off the game snapshot — and is not
+  //     deterministic by any amount of settling. It needs the pin below.
+  //
+  // ⚠ NO `videoFaceWhy`, AND THE REASON IS NOT THE ONE THE BUILD SPEC GAVE.
+  // That field does two things: it boots into the VIDEO ZONE instead of a
+  // channel column, and it turns on `freezeFaceVideo`, which WRITES
+  // `params.freeze`. frogger declares no `freeze` param, so that write would
+  // invent an undeclared key and the assertion after it would be measuring a
+  // freeze that never happened — the `timelorde` hazard, verbatim. The channel
+  // column is reachable on the ordinary path regardless of port shape (column
+  // membership is decided by DROP POSITION, and eight gate/CV-only faces
+  // already join fine), and the tick pin makes the board time-invariant, so
+  // there is nothing left for a video freeze to do.
+  //
+  // ⚠ AND NO `freeze` ParamDef EITHER, on this file's own measured rule
+  // (2026-08-25): a `params` edit is in the WebGL attest basis AND in
+  // contract-lock, so it costs an owner-machine re-attest plus a contract
+  // re-pin, and it buys only INTRA-boot stillness — it holds whichever frame
+  // the harness caught, which is a different frame per boot. frogger is a
+  // STATEFUL SIM on the MAIN THREAD, which is precisely the case this file
+  // says takes a `simPin` on the module's OWN seam.
+  {
+    type: 'frogger',
+    // ONE band, ONE control. `order` and `pages` agree; there is no second idea
+    // to page and a rail needs DOCK_TAB_MIN_BANDS = 7.
+    pages: 1,
+    simPin: [
+      {
+        global: '__froggerVrtTicks',
+        value: 96,
+        why:
+          'pins WHICH BOARD, not merely a still one — the whole game state becomes a function '
+          + 'of (ticks, params) rather than of boot speed. ⚠ AND FROGGER NEEDS NO SEED, which is '
+          + 'what makes this the cheapest pin in the roster and is a property no sibling game '
+          + 'module shares: there is no `Math.random` anywhere in `frogger-state.ts` — a fixed '
+          + 'sprite clone, deterministic traffic, a constant `dtSeconds` — so the board was '
+          + 'ALREADY a pure function of TICK COUNT and the only nondeterminism was how many '
+          + 'ticks landed before the capture. ⚠ A freeze alone would NOT have been sufficient '
+          + 'and that is measured on the sibling with the same topology: pong drifted 72 pixels '
+          + 'at max channel delta 237 across two ubuntu boots WITH a seed, because the seed '
+          + 'fixes which trajectory and cannot fix how far along it the capture landed. So the '
+          + 'factory rebuilds the state, steps it exactly 96 ticks (96 x 25 ms = 2.4 s of play) '
+          + 'and then STOPS TICKING ALTOGETHER — lushgarden\'s and pong\'s shape, which makes '
+          + 'the board TIME-INVARIANT rather than frozen at an arbitrary moment. That matters '
+          + 'more here than anywhere: the game clock is a Web Worker `setInterval` that is NOT '
+          + 'gated on the AudioContext, so the harness audio suspend could never have stopped '
+          + 'this game. ⚠ 96 IS A POSITION ON THE GAME\'S TIMELINE, NOT A POPULATION COUNT: it '
+          + 'is past the synthetic auto-start, ~240 sprite ticks into the traffic\'s travel (the '
+          + 'sprite clock runs at ~100 Hz of game time inside the 40 Hz real tick) and two '
+          + 'seconds off the 60 s HUD timer, so the pinned frame differs from the boot frame in '
+          + 'the traffic layout AND in the HUD and cannot be reached by a stepper that never '
+          + 'ran. Nothing is patched into the steering inputs, so the frog sits at its spawn '
+          + 'cell and no gate has fired. ⚠ It REACHES this factory only because frogger is '
+          + 'main-thread: simPin installs boot-time globals via addInitScript, so a worker '
+          + 'renderLocus would put it out of reach (the acidwarp case). ⚠ THE SAME GLOBAL PINS '
+          + 'THE LEGACY CARD SCENE in vrt-scenes.ts, which is what let frogger leave '
+          + 'EXEMPT_FROM_VRT and ALLOWED_PERMANENT_EXEMPT in this same commit — one hook, three '
+          + 'baselines, and the exemption\'s own stated exit condition met rather than argued '
+          + 'around. ⚠ DOOM IS EXCLUDED FROM THIS MECHANISM BY NAME: its runTic() runs inside '
+          + 'surface.draw, so its game clock IS its frame clock and a tick pin would '
+          + 're-specify the game. No DOOM file was opened.',
+      },
+    ],
+  },
+
   // ── NUMPAD+ — the KEYPAD PERFORMANCE SEQUENCER ────────────────────────────
   //
   // `pages: 4` is the POST-hero band count. The declared pages are also four —

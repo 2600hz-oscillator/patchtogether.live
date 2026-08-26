@@ -4941,6 +4941,34 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // and those are what this promotion turns into cells and a body.
   'vstFx',
   'vstInstrument',
+  // ── FROGGER — the promotion that DISCHARGES ITS OWN NAMED RATCHET ─────────
+  //
+  // Its `EXEMPT_FROM_VRT` entry stated the exit condition verbatim — "Promote
+  // to a real VRT baseline once a deterministic-time test hook is added so the
+  // scene can freeze the game at a known tick" — and this PR builds that hook,
+  // so frogger leaves BOTH exemption lists in the same commit.
+  //
+  // ⚠ THE INVENTORY `why` WAS FACTUALLY WRONG AND IS CORRECTED IN THIS DIFF:
+  // "a GAME viewport driven by the keyboard" describes a module that does not
+  // exist. `FroggerCard.svelte` has NO keyboard handler of any kind and the def
+  // never had one — frogger is driven ENTIRELY by gate CV, which is the whole
+  // point of the port and is spelled out at length in its own header and in the
+  // public module manifest ("FULL CV-gate control with NO keyboard exposure").
+  // The `why` was refuting an affordance the module never had.
+  //
+  // ⚠ AND THE THING PROMOTION ACTUALLY REPLACES IS A BLANK TILE, NOT A CARD.
+  // frogger is not in NON_SHELL_LANE_TYPES, is not a CARD_PRODUCER and is not
+  // in HEADLESS_MOUNT_LANE_TYPES, so `laneRenderKind` already returned
+  // 'placeholder' and the shipping shell mounted no frogger surface at all
+  // while the game ran and fired gates underneath. Every frogger e2e drove
+  // `?shell=legacy`, so nothing in the suite had ever observed it. That is the
+  // REASON to promote, not a cost of promoting.
+  //
+  // The board moves to a `fullViewBody` extension (the `rasterize` shape — an
+  // audio-domain module with a JS-painted picture the shell has no generic
+  // route to, since `hasVideoSurface` is `domain === 'video'`).
+  'frogger',
+
   // ── NUMPAD+ (2026-08-26) — the KEYPAD PERFORMANCE SEQUENCER ───────────────
   //
   // The only module in the fleet where PLAYING it and WRITING it are the same

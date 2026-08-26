@@ -969,13 +969,33 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // generator + WAD sprite decoder are unit-tested; e2e/tests/gibribbon.spec.ts
   // covers spawn→clear→score, miss→degrade, + every event gate → SCOPE bridge.
   gibribbon: 'animated scrolling ribbon + sprites defeat deterministic single-frame capture; gibribbon-events + wad-sprites unit tests + gibribbon.spec.ts provide coverage',
-  // FROGGER research prototype: sprite-tick advances every ~10 ms of game-
-  // time + the start_gate auto-fire on first tick produces a moving frame
-  // by the time Playwright snapshots. Same rationale as PONG / MODTRIS;
-  // unit + E2E provide coverage. Promote to a real VRT baseline once a
-  // deterministic-time test hook is added so the scene can freeze the
-  // game at a known tick.
-  frogger: 'animated sprite motion (cars/logs/turtles) + auto-start defeat deterministic single-frame capture; unit + E2E provide coverage',
+  // ⚠ FROGGER REMOVED 2026-08-26 — THE EXEMPTION STATED ITS OWN EXIT CONDITION
+  // AND THE CONDITION IS NOW MET. It read: "Promote to a real VRT baseline once
+  // a deterministic-time test hook is added so the scene can freeze the game at
+  // a known tick." That hook is `__froggerVrtTicks` (see `frogger.ts`), and the
+  // module is now baselined on all three of its scenes (the legacy card here,
+  // plus `face-frogger-compact` / `face-frogger-dock`).
+  //
+  // The hook was unusually cheap on this module for a reason no sibling above
+  // shares: FROGGER HAS NO RNG AT ALL — not one `Math.random` in
+  // `frogger-state.ts`, a fixed sprite clone, deterministic traffic and a
+  // constant `dtSeconds` — so the board was ALREADY a pure function of tick
+  // count and there was nothing to seed. The only nondeterminism was how many
+  // ticks elapsed before the capture, and the pin runs a fixed number of them
+  // at construction and then stops ticking altogether, which makes the board
+  // TIME-INVARIANT rather than frozen at an arbitrary moment.
+  //
+  // ⚠ THIS LIST AND `ALLOWED_PERMANENT_EXEMPT` ARE ANCHORED IN BOTH DIRECTIONS,
+  // so frogger left both in the SAME commit. ⚠ AND THE SIBLINGS ABOVE AND BELOW
+  // ARE DELIBERATELY LEFT STANDING: modtris, gibribbon and skifree each need
+  // their own seam and their own argument, and skifree's is genuinely harder
+  // (its engine self-drives on rAF from bundle load). Nothing here generalises
+  // to them by family resemblance.
+  //
+  // ⚠ DOOM IS EXCLUDED FROM THIS REASONING BY NAME AND MUST STAY EXEMPT. Its
+  // `runtime.runTic()` runs inside `surface.draw`, so DOOM's game clock IS its
+  // frame clock and a tick pin would re-specify how far the marine walks. No
+  // DOOM file was opened for this change.
   // SKIFREE — the skifree.js engine self-drives via requestAnimationFrame
   // (terrain scrolls, snowboarders/yeti move, skier animation cycles) the
   // moment the bundle loads, so there is no naturally still frame to
@@ -1467,7 +1487,11 @@ export const ALLOWED_PERMANENT_EXEMPT: ReadonlySet<string> = new Set([
   // in both directions, so leaving the name here while the module is baselined
   // would be RED.
   'midiOutBuddy',
-  'modtris', 'gibribbon', 'frogger', 'skifree',
+  // ⚠ `frogger` REMOVED 2026-08-26 — it is baselined on all three of its scenes
+  // now. See the note where its entry stood in EXEMPT_FROM_VRT above for the
+  // argument. This list is ANCHORED in both directions, so leaving the name
+  // here while the module is baselined would be RED.
+  'modtris', 'gibribbon', 'skifree',
   'analogLogicMaths', 'bentbox', 'b3ntb0x', 'acidwarp',
   // ⚠ `gamepad` REMOVED 2026-08-24 — the third drain, after `cvBuddy` and
   // `midiclock`. See the note where its entry used to stand in EXEMPT_FROM_VRT
