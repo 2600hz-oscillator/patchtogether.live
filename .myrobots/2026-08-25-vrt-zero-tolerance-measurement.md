@@ -111,6 +111,32 @@ PASSED and `--update-snapshots` cannot rewrite a passing-but-stale baseline. Thi
 is the concrete precedent for "never re-capture a regression away" — it already
 happened once, and the tolerance is why nobody could tell.
 
+### The re-capture, and what it corrected (2026-08-26)
+
+`GREP=outlines task vrt:commit` -> run 32978915175, ~10 min against the 41-56 min
+a bare (unscoped) dispatch would have derived.
+
+**Predicted 1 file. The bot committed 2**, and the extra one is a finding:
+
+| baseline | old -> new, measured | verdict |
+|---|---|---|
+| `face-outlines-dock.png` | preview region mean luminance **2.1 var 214.6 -> 53.5 var 557.4**, 2057 px in an 85x211 box | the approved capture: a black rectangle becomes three drawn shapes |
+| `face-outlines-compact.png` | **24 px of 7216, maxCh 115**, 9x16 box at x[74..82] y[39..54]; both images draw the same three shapes in the same places, one shape's edge moved | ⚠ NOT bucket 1 — this is the FIX's own render change (the warm-up now runs at `rate: 0.5` from step 0), i.e. **bucket 2**. REVERTED. |
+
+So the claim in `dba15d09d`'s message — *"the compact one does not [need
+re-capturing]"* — was wrong by 24 px, and only the capture could have said so.
+Reverting keeps the branch to the one scene the owner named: accepting a bucket-2
+member while spirographs and pong stay red would silently decide a reserved
+question.
+
+⚠ **AND THE WATCHER LIED, WHICH IS THE INSTRUMENT LESSON.** `task vrt:watch`
+reported `baseline files committed: 0 — ⚠ ZERO BASELINES COMMITTED, THIS IS A RED
+FLAG`. It was run from a local branch whose name does not exist on the remote, so
+its `origin/<branch>` diff failed (`fatal: couldn't find remote ref`) and it
+printed the zero it had rather than the two that landed. "Committed nothing" and
+"could not look" print identically. The count above is read from
+`git diff --stat <before> origin/<pr branch>` instead.
+
 ### the "box glyph" — NOT tofu
 
 Three faces shared a byte-identical 42×9 signature, first read as a tofu box.
@@ -128,6 +154,26 @@ moog912's faceplate.
 ⚠ Worth gating (reported, not built): `railFit` is a width-dependent branch with
 no coverage at the tile's real zoom, so a layout change anywhere silently changes
 which ports the rail shows.
+
+## The two non-deterministic scenes are REMOVED (2026-08-26)
+
+Owner: *"remove these VRTs for now"*. `face-mirrorpool-compact` and
+`face-matrixMix-compact` are gone — the roster entry declares `scenes: ['dock']`,
+`workflow-shell-faces.spec.ts` never REGISTERS the compact test (not
+registered-and-skipped: a skip stays in the shard plan and in every
+did-this-lane-run-what-it-planned check), and both PNGs are deleted.
+
+No exemption, no known-flaky list, no budget. `vrt-meta.test.ts`'s *"every
+rostered face has BOTH committed baselines"* now reads the same `faceTiers()`
+list the spec registers from, and the direction that WOULD have been a loosening
+— a PNG surviving for a tier nothing compares — is asserted in the spec against
+the same list.
+
+The determinism probe still walks BOTH tiers deliberately: it is boot-vs-boot and
+needs no baseline, so it is the instrument that says when a removed tier has
+become capturable again. For mirrorpool the first suspect is
+`__mirrorpoolForceAnalytic` — the pinned picture takes a different height path
+from the shipped one.
 
 ## Known consequence, deliberately not solved
 
