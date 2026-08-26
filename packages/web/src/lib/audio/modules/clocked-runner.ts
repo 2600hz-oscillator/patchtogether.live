@@ -52,9 +52,90 @@ export const clockedRunnerDef: AudioModuleDef = {
   outputs: [],
   params: [],
 
+  // ⚠ ONE FAMILY, AND THE COUNT IS FORCED BY THE RESOLVER. `resolveFaceControl`
+  // resolves a face key to a PARAM id, a family TEMPLATE (`<id>-{n}`) or a legend
+  // STATIC — and this def declares `params: []`, so the division can only reach
+  // the plate as a family. It is not a workaround: the division is a real named
+  // affordance the module owns, and the `testidPrefix` is a literal the LEGACY
+  // CARD already emits (`ClockedRunnerCard.svelte`,
+  // `data-testid="clocked-runner-division"`), which is what module-docs-lint's
+  // card-drift grep checks — so a rename on either surface is RED. The card file
+  // survives promotion: `?shell=legacy` still renders it.
+  //
+  // ⚠ THE CALLBACK BODY IS NOT A FAMILY, and declaring one for it would be the
+  // mistake. A family is a promise to RANK, and module-face-lint requires every
+  // declared family to appear in `face.order` AND render exactly one cell — so
+  // declaring the buffer here would force it into a cell kind that does not
+  // exist. It rides the extension body instead.
+  controlFamilies: [
+    {
+      id: 'clocked-runner-division',
+      label: 'Division',
+      kind: 'other',
+      testidPrefix: 'clocked-runner-division',
+    },
+  ],
+
   docs: {
     explanation:
-      "A self-contained mini-LIVECODE that owns a single clocked() callback. You don't add it from the palette — a LIVECODE module spawns one for you when your script calls clocked(division, fn), and the runner stores that function body plus its musical division (e.g. 1/16) on its own state. It subscribes to the rack's shared clock and re-runs the body on every tick that crosses the next division boundary, locked to TIMELORDE's tempo (so a clock.bpm(140) call retimes it on the next tick, and a MIDI-locked tempo follows automatically). Its card shows the body in a code editor with a status line, and you can edit the body inline — it recompiles on change. It has no audio jacks: like LIVECODE itself, it acts by mutating the rack through the patch graph each tick. Deleting it cancels its clock subscription.",
+      "A self-contained mini-LIVECODE that owns a single clocked() callback. You don't add it from the palette — a LIVECODE module spawns one for you when your script calls clocked(division, fn), and the runner stores that function body plus its musical division (e.g. 1/16) on its own state. It subscribes to the rack's shared clock and re-runs the body on every tick that crosses the next division boundary, locked to TIMELORDE's tempo (so a clock.bpm(140) call retimes it on the next tick, and a MIDI-locked tempo follows automatically). Its faceplate shows the body in a code editor with a DIVISION picker beside it, and you can edit the body inline — it recompiles on change, and the next tick runs the new version. It has no audio jacks: like LIVECODE itself, it acts by mutating the rack through the patch graph each tick. The clock subscription belongs to the module rather than to any window onto it, so the body keeps firing whether or not its faceplate is open; deleting the module is what cancels it.",
+    controls: {
+      'clocked-runner-division-{n}':
+        "How often the callback body runs, as a division of TIMELORDE's beat. 1/16 is sixteen evaluations per beat, 1 is once per beat, and 2x and 4x are SLOWER than a beat — one evaluation every two or four. The period is re-derived from the live tempo on every tick rather than latched when the runner was made, so a clock.bpm(140) from the parent LIVECODE, or a tempo locked to incoming MIDI clock, retimes this runner on its next boundary with no restart. Changing the division takes effect the same way, on the next boundary. The finest three settings (1/128, 1/256, 1/512) are derived from the worker scheduler's own 25 ms tick rather than from a TIMELORDE output port, because the master clock does not publish divisions that fine — so at a fast tempo they approach the scheduler's own resolution and stop getting proportionally faster.",
+    },
+  },
+
+  // ── THE FACEPLATE (PF-20) ───────────────────────────────────────────────
+  //
+  // WHAT IT IS FOR, IN ONE PARAGRAPH. This is the only module in the fleet a
+  // PLAYER never adds: a LIVECODE script writes it into existence by calling
+  // `clocked(division, fn)`, and what it owns from then on is ONE callback body
+  // and the rate that body runs at. Everything else about a rack — the patching,
+  // the params, the spawning — is something this body DOES rather than something
+  // the module has. The verb a player performs on it is RETIME: the code is
+  // usually right and the question is how fast it should be happening.
+  //
+  // THE LADDER, read back as a sentence: at every tier you get the DIVISION, the
+  // one thing about this runner that is a setting rather than a program; at the
+  // dock you additionally get the body itself, editable in place, and the two
+  // lamps that say whether it is firing and whether it is throwing.
+  //
+  // ⚠ WHY THE DIVISION IS THE ONE RANKED CELL. It is the only affordance here
+  // that is not a document. It is also the only one that means anything at a
+  // 192 px lane tile: a callback body is unreadable at that size, and a rate is
+  // a single word.
+  //
+  // ⚠ `glyph: 'none'` IS THE ONLY LITERAL THAT COMPILES INTO A GREEN RUN, and
+  // the premise is true by inspection rather than by luck. `glyphBinding`'s
+  // live-audio arms all reach through `primaryAudioOutPortId`, which matches
+  // `type === 'audio'` exactly; `outputs` is EMPTY, so every one of them
+  // short-circuits. 'envelope' needs a/d/s/r params and there are none. Each
+  // falls to `{kind:'static'}`, which module-face-lint reddens by name with no
+  // exemption list. ('algorithm' would resolve, since it accepts a
+  // `face.extension` — but it demands a `glyph` SLOT on that extension, and this
+  // module's picture-of-itself is its own source code, which is not a glyph.)
+  //
+  // ⚠ NO `pages`. One ranked cell is one band, and a section header reading
+  // 'clock' over a single cell captioned DIV adds a ~81 px band to say nothing
+  // the cell has not said. `face.pages` is for a face with more than one IDEA in
+  // it; `DOCK_TAB_MIN_BANDS` is 7 and nothing here is padded toward a rail.
+  //
+  // ⚠ NO `rear` GROUPS: `inputs` and `outputs` are both empty, so there is no
+  // jack for a group to name and module-face-lint refuses a group that resolves
+  // to no port at all.
+  //
+  // ⚠ NO HERO. A hero promotes a CONTROL, and there is exactly one — promoting
+  // it would EMPTY its band (`heroFacePlan` MOVES the key), leaving a plate with
+  // a hero rail and no sections. There is no derived quantity wanting a stage
+  // either: the fire count and the tempo are on the FIRING lamp's accessible
+  // name, which is where the 2026-08-19 rulings put a measurement.
+  //
+  // The callback body, the FIRING lamp and the ERROR lamp are the extension's
+  // `fullViewBody` — see $lib/ui/modules/clockedRunner/shell-extension.ts.
+  face: {
+    glyph: 'none',
+    order: ['clocked-runner-division-{n}'],
+    extension: 'clockedRunner',
   },
 
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {

@@ -497,6 +497,7 @@ clipplayer family clipplayer-pad kind=cell prefix=clipplayer-pad
 clipplayer family clipplayer-rate kind=other prefix=clipplayer-rate
 clipplayer family clipplayer-scene-repeat kind=other prefix=clipplayer-scene-repeat
 clockedRunner meta domain=audio
+clockedRunner family clocked-runner-division kind=other prefix=clocked-runner-division
 clouds meta domain=audio
 clouds in blend_cv cv param=blend cvScale=linear
 clouds in density_cv cv param=density cvScale=linear
@@ -1501,6 +1502,7 @@ lines param orient 0..1 linear default=0
 lines param phase 0..1 linear default=0
 lines param thickness 0..1 linear default=0.35
 livecode meta domain=audio
+livecode family livecode-run kind=other prefix=livecode-run
 loopback meta domain=video maxInstances=2
 loopback out out video
 loopback param crop 0..1 discrete default=1

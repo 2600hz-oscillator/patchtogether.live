@@ -4853,6 +4853,56 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // including how to undo it — as the `detail`. `midi-out-buddy-status-model.ts`
   // argues why the violet specifically is not ported.
   'midiOutBuddy',
+  // ── THE CODE-BUFFER PAIR (bespoke wave, 2026-08-25) ─────────────────────
+  //
+  // LIVECODE and the CLOCKED RUNNER it spawns, promoted together because they
+  // are ONE instrument in two pieces: the parent writes the child into
+  // existence, they share a runtime, an api-surface and a CodeMirror factory,
+  // and their faces differ only in which single affordance is not a document.
+  //
+  // ⚠ BOTH INVENTORY `why`s WERE TRUE AND BOTH DREW THE WRONG CONCLUSION,
+  // which is now the tenth consecutive face where that has been the case.
+  // "Text editing has no cell kind and no glyph" is exactly right on both
+  // counts — `resolveFaceControl` resolves a key to a param, a `-{n}` family
+  // or a legend static and a buffer is none of them; and `glyphBinding` falls
+  // to `{kind:'static'}` for a def with no audio output, so `glyph: 'none'` is
+  // the correct declaration rather than a missing feature. Neither is a
+  // blocker: a `fullViewBody` hosts arbitrary markup, which is the whole
+  // premise electraControl's thirty-six rename fields established one wave
+  // earlier. "Nothing a ranked cell list can carry" was the half that was
+  // simply false — LIVECODE's RUN and the runner's DIVISION are both ordinary
+  // cells over `node.data`, and both testid prefixes already existed on the
+  // legacy cards.
+  //
+  // ⚠ AND ON LIVECODE THE PROMOTION FIXED A DEFECT IT WOULD OTHERWISE HAVE
+  // CAUSED, which is the finding worth carrying out of this pair.
+  // `livecodeDef.factory` returns a NO-OP handle — no node, no timer, no
+  // subscription — so `runScript()` on `LivecodeCard.svelte` was, literally,
+  // everything the module did. `migrated(type)` stops BOTH surfaces rendering
+  // a promoted module's card, so a promotion that left the gesture on the card
+  // would have shipped a module that cannot do anything, with every
+  // def-reading gate green because the def has nothing to read. The evaluation
+  // moved to `$lib/ui/modules/livecode-cell-actions.ts`, which the ranked RUN
+  // cell, the faceplate body and the legacy card all call.
+  //
+  // ⚠ THE CHILD IS THE OPPOSITE CASE AND THE CONTRAST IS THE POINT.
+  // `clockedRunner`'s tick loop is `clock.subscribe(tick)` inside its FACTORY
+  // closure, so it is materialised from the GRAPH by the reconciler and keeps
+  // evaluating with no card, no faceplate and no lane tile mounted anywhere.
+  // Its card only ever POLLED it. Two modules, one file apart, on opposite
+  // sides of the ES-9 card-only-side-effect question — and only one of them
+  // needed anything moved.
+  //
+  // ⚠ THE RESTING STATUS TEXT IS GONE ON BOTH. The runner painted
+  // `fired {n}× (every {division})` and LIVECODE painted
+  // `OK — {n} mutations applied`; a COUNT and a state sentence, outside any
+  // control, which is the deleted-readout shape verbatim. Both are now
+  // `StatusLed` lamps whose sentence reaches `aria-label` and `title` only.
+  // LIVECODE's run outcome additionally moved from component `$state` onto
+  // `node.data.lastRun`, which fixes a live #1531-class loss: collapsing the
+  // pane used to discard the log and the error you were reading.
+  'clockedRunner',
+  'livecode',
   // ── THE VST BRIDGE PAIR — promoted TOGETHER, because their control plane is
   //    literally one component ────────────────────────────────────────────────
   //

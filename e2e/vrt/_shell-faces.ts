@@ -4176,6 +4176,68 @@ export const FACES = [
     // `notify()` fires, which needs a gate edge on an input this scene patches
     // nothing into.
   },
+
+  // ── THE CODE-BUFFER PAIR — the first faceplates whose body is a TEXT EDITOR
+  //    ─────────────────────────────────────────────────────────────────────
+  //
+  // ⚠ BOTH MODULES CARRY A CARD EXEMPTION IN `EXEMPT_FROM_VRT` NAMING THE EXACT
+  // HAZARD THESE SCENES HAVE TO CLEAR, and it is not inherited — it is answered.
+  // The entries read "CodeMirror caret + syntax-highlight transitions defeat
+  // deterministic capture" and "CodeMirror caret + dynamic status
+  // (fires-since-mount counter)". Each names a real mechanism and each is about
+  // a state THESE SCENES CANNOT BE IN, for reasons that are properties of the
+  // boot rather than of luck:
+  //
+  //   THE CARET. `drawSelection()` renders `.cm-cursorLayer`, and CodeMirror's
+  //     own base theme animates it under `.cm-focused > .cm-scroller >
+  //     .cm-cursorLayer`. `bootWithFace` opens a faceplate and frames it; it
+  //     never clicks into the buffer, so the editor is UNFOCUSED and the blink
+  //     rule does not match. Instrumented two ways before baselining — an
+  //     in-page rAF sampler AND a MutationObserver over the same window — after
+  //     the es9 lesson that a 37 ms sampler read 325/325 identical while an
+  //     observer caught six transitions on the same surface.
+  //
+  //   THE SYNTAX HIGHLIGHTING. A scene spawns exactly ONE node and writes no
+  //     data, so `node.data.source` / `node.data.text` is absent and the buffer
+  //     is EMPTY. There are no tokens to colour, no diagnostics for the linter
+  //     to underline, and nothing for the Lezer parser to do incrementally. Not
+  //     "it settles quickly" — there is no work.
+  //
+  //   THE FIRES-SINCE-MOUNT COUNTER. It is GONE as text (the 2026-08-19 rulings
+  //     deleted the shape), and it could not move a pixel here anyway: it is now
+  //     the FIRING lamp's `lit` boolean, and `clocked-runner.ts`'s tick opens
+  //     `if (!source.trim()) return`, so an empty body never fires and the lamp
+  //     is dark in every frame.
+  //
+  // The CARD exemptions STAY. They are about `?shell=legacy`, where the card
+  // paints its own live status line, and this is the rings / attenumix / es9
+  // precedent: a face is baselined while its legacy card is not, on evidence
+  // that belongs to the surface being captured.
+  {
+    type: 'clockedRunner',
+    // ONE band: the single DIV selector cell. `params: []`, so nothing else
+    // could rank — the callback body is the extension's `fullViewBody`, for the
+    // addressability reason the def's face comment gives. No `face.pages` is
+    // declared, so the dock renders one `__unpaged` section.
+    pages: 1,
+    // ⚠ NO `videoFaceWhy` AND NO `simPin`. `domain: 'audio'` with NO ports at
+    // all, and nothing on the surface draws: the buffer is a DOM text editor and
+    // the two lamps are spans. There is no clock to pin — the module's own tick
+    // subscription exists and is inert, because an empty body returns before it
+    // reads the tempo.
+  },
+  {
+    type: 'livecode',
+    // ONE band: the single RUN action cell. Same shape as its child, and for the
+    // same reason — the script buffer and the output log are the body.
+    pages: 1,
+    // ⚠ THE OUTPUT LOG IS NOT IN THIS CAPTURE, and that is by construction
+    // rather than by masking. It renders only when `node.data.lastRun.log` has
+    // lines, `lastRun` is written only by `runLivecodeNode`, and its only
+    // callers are the RUN cell and the two editor surfaces' test hooks — none of
+    // which this scene invokes. So the resting plate is the buffer, one dark
+    // lamp and the RUN band, with no empty-state placeholder to drift.
+  },
   // ── THE VST BRIDGE PAIR — two scenes each, and the determinism argument is
   //    es9's, one module family over ────────────────────────────────────────
   //
