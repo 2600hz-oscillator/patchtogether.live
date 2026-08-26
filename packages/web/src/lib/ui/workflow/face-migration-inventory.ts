@@ -327,6 +327,39 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
       'so `sync_mode` stopped rendering as an anonymous three-state rotary.',
   },
   { type: 'freezeframe', disposition: 'generic-face' },
+  // ⚠ MOVED HERE FROM `bespoke-surface` (2026-08-26), AND ITS OLD `why` WAS
+  // FACTUALLY FALSE — it described a module that does not exist. It read "a
+  // GAME viewport driven by the keyboard — one knob beside it does not make it
+  // a face." `FroggerCard.svelte` has NO keyboard handler of any kind, and the
+  // def never had one: frogger is driven ENTIRELY by gate CV through five
+  // rising-edge inputs, which is the whole point of the port and is stated at
+  // length in the def's own header AND in the public module manifest ("FULL
+  // CV-gate control with NO keyboard exposure on the module"). The `why` was
+  // refusing an affordance the module never had, and nothing gated the claim.
+  //
+  // ⚠ AND THE PREMISE UNDER IT WAS WRONG TOO. "One knob beside it" compares the
+  // face against a working card — but frogger is not in NON_SHELL_LANE_TYPES,
+  // is not a CARD_PRODUCER and is not in HEADLESS_MOUNT_LANE_TYPES, so the
+  // shipping shell already rendered a BLANK PLACEHOLDER for it while the game
+  // ran and pulsed gates underneath. The comparison was never face-vs-card; it
+  // was face-vs-grey.
+  {
+    type: 'frogger',
+    disposition: 'generic-face',
+    note:
+      'DONE. One ranked param (TIME) plus the BOARD as a `fullViewBody` extension — the ' +
+      '`rasterize` shape, an audio-domain module whose picture the shell has no generic route ' +
+      'to (`hasVideoSurface` is `domain === "video"`). The promotion also DISCHARGED THE ' +
+      "MODULE'S OWN NAMED RATCHET: its EXEMPT_FROM_VRT entry stated its exit condition " +
+      'verbatim ("promote to a real VRT baseline once a deterministic-time test hook is added ' +
+      'so the scene can freeze the game at a known tick"), the hook is a boot-time tick pin — ' +
+      'cheap here because frogger has NO RNG at all, so the board is already a pure function of ' +
+      'tick count — and frogger left EXEMPT_FROM_VRT and ALLOWED_PERMANENT_EXEMPT in the same ' +
+      'commit. ⚠ THE LANE TILE STILL HAS NO PICTURE and that is not fixed here: all three ' +
+      'outputs are `gate`, so `primaryAudioOutPortId` is null and every glyph but `none` ' +
+      'resolves static, while `ShellExtensionGlyphProps` carries no `nodeId` so a glyph ' +
+      'component could not reach the game snapshot even if a kind fitted.',
+  },
   // ⚠ MOVED HERE FROM `bespoke-surface` (2026-08-24), AND ITS OLD `why` WAS
   // FALSE ON TWO COUNTS — measured against the card and the def rather than
   // re-read. It said "a live device roster", of which there is NONE: the card
@@ -921,11 +954,6 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
       'shipped `status-primitive` body of the same shape midiclock and cvBuddy already carry. ' +
       'So this needed strictly LESS bespoke machinery than `kria`, which was re-dispositioned ' +
       'while still needing a real PF-14 panel component.',
-  },
-  {
-    type: 'frogger',
-    disposition: 'bespoke-surface',
-    why: 'a GAME viewport driven by the keyboard — one knob beside it does not make it a face.',
   },
   {
     type: 'gibribbon',

@@ -628,6 +628,58 @@ export const VRT_SCENES: Record<string, VrtScene> = {
       'spawning, so the previewed surface is time-invariant with no suspend.',
   },
 
+  // ── FROGGER — the CARD scene that let the module leave EXEMPT_FROM_VRT ────
+  //
+  // The exemption said "animated sprite motion (cars/logs/turtles) + auto-start
+  // defeat deterministic single-frame capture" and named its own exit
+  // condition: a deterministic-time hook that can freeze the game at a KNOWN
+  // TICK. `__froggerVrtTicks` is that hook.
+  //
+  // ⚠ FROGGER NEEDS NO SEED, WHICH IS WHY THIS IS THREE LINES AND NIBBLES IS
+  // NOT. There is no `Math.random` anywhere in `frogger-state.ts`: the sprite
+  // table is a fixed clone, the traffic is deterministic and `dtSeconds` is a
+  // constant. The board was ALREADY a pure function of tick count — the only
+  // nondeterminism was HOW MANY ticks landed before the screenshot.
+  //
+  // ⚠ AND THE PIN SUPPRESSES THE GAME RATHER THAN FREEZING IT, which is
+  // strictly stronger than the audio suspend this scene also performs. The
+  // factory rebuilds the state, steps it exactly this many ticks, and then
+  // never steps again — so the captured board is TIME-INVARIANT, not "whichever
+  // frame the settle happened to reach". (The scheduler clock is a Web Worker
+  // `setInterval` and is NOT gated on the AudioContext, so `freezeAudio` alone
+  // could never have stopped this game.)
+  //
+  // ⚠ SET FROM `afterSpawn`, I.E. AFTER CONSTRUCTION — which the factory
+  // handles, because it reads the global BOTH at construction (the face
+  // harness installs it via `addInitScript`) and once more in the tick (this
+  // path). A construction-only read would leave this scene silently unpinned.
+  frogger: {
+    nodes: [
+      { id: 'vrt-1', type: 'frogger', position: { x: 80, y: 80 }, domain: 'audio' },
+    ],
+    edges: [],
+    afterSpawn: async (page) => {
+      await page.evaluate(() => {
+        // ⚠ NOT A POPULATION COUNT — it is a POSITION on the game's own
+        // timeline: how far into the first life this baseline sits. 96 ticks x
+        // 25 ms = 2.4 s of play, which is past the auto-start, well into the
+        // traffic's travel (the sprite clock runs at ~100 Hz of game time
+        // inside the 40 Hz real tick, so ~240 sprite ticks have landed) and two
+        // seconds off the 60 s timer — so the frame differs from the boot frame
+        // in the traffic layout AND in the HUD, and cannot be reached by a
+        // stepper that never ran. Nothing patched into the steering inputs, so
+        // the frog sits at its spawn cell and no gate has fired.
+        (globalThis as unknown as { __froggerVrtTicks?: number }).__froggerVrtTicks = 96;
+      });
+      // A few rAFs so the pinned board is painted before the suspend.
+      for (let i = 0; i < 3; i++) {
+        await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => r())));
+      }
+    },
+    settleMs: 300,
+    freezeAudio: true,
+  },
+
   // NIBBLES (snake game module): the game state is RNG-seeded and
   // tick-driven, so the on-card framebuffer evolves frame-to-frame.
   // We set globalThis.__nibblesVrtSeed BEFORE spawning so the factory
