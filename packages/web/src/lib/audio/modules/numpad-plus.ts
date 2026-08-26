@@ -27,9 +27,15 @@
 //
 // Live performance + recording
 //   Keypress: convert via keymap → semitone-in-octave → MIDI =
-//   octave*12 + semitone (+12 with Numpad+ held, -12 with Numpad-).
-//   Fire on the active layer's pitch+gate IMMEDIATELY. Held key =
-//   sustained gate; release = gate goes low.
+//   (octave + 1) * 12 + semitone. Fire on the active layer's
+//   pitch+gate IMMEDIATELY. Held key = sustained gate; release =
+//   gate goes low.
+//   ⚠ There is no HELD octave modifier and has not been since the
+//   keymap became remappable: octave up/down are remappable KEYS in
+//   the same map (OCTAVE_UP_ACTION / OCTAVE_DOWN_ACTION) that nudge
+//   the octave PARAM. `midiForKey`'s `modifierOctave` argument is
+//   passed 0 at its only production call site and is kept only so
+//   the pure function can be unit-tested across the three cases.
 //   Recording (REC ARM or OVERDUB): also write the note to the
 //   step the playhead is on now — quantized to nearest step if the
 //   keystroke lands closer to the next boundary.
@@ -41,19 +47,29 @@
 //   OVERDUB is "always recording" — every keypress writes the current
 //   nearest step, no clear, no auto-disarm.
 //
-// Exclusive numpad ownership
+// Exclusive keypad ownership
 //   When a NUMPAD+ exists in the rack, its main-thread keydown/keyup
-//   listener captures Numpad* event.codes + preventDefault — other
-//   modules that listen for keys never see the events. Listener is
-//   per-instance so multiple NUMPAD+ on the same rack all act on
-//   the same keypress (chord-stack style).
+//   listener captures whatever event.codes the node's keymap binds —
+//   ANY physical key, not just Numpad* — and preventDefaults them, so
+//   other modules that listen for keys never see those events. Text
+//   fields and a focused DOOM card are excluded by the handler.
+//   ⚠ THE LISTENER IS IN THE FACTORY, not on the card: it is installed
+//   in `factory()` and torn down in `dispose()`, so it survives the
+//   card being replaced by the v2 faceplate and works with no UI
+//   mounted at all. Listener is per-instance, so multiple NUMPAD+ on
+//   the same rack all act on the same keypress (chord-stack style).
 //
 // Inputs:
 //   clock (gate): external clock; rising edges advance the playhead. Unpatched = internal BPM.
-//   layer (cv): bipolar CV selecting the active layer (mapped to L1..L4 buckets).
+//   layer (cv): UNIPOLAR 0..1 CV selecting the active layer
+//               (round(cv * 4) clamped to 0..3). Negative CV rounds to
+//               <= 0 and clamps to L1 — the file used to call this port
+//               "bipolar" here while `:22`, docs.inputs.layer and
+//               cv-scale-registry.test.ts all correctly said 0..1.
 //
 // Outputs:
 //   l1_pitch / l1_gate .. l4_pitch / l4_gate: per-layer pitch + gate (4 layers × 2 = 8 outputs).
+//   poly: the ACTIVE layer's voices as ONE polyPitchGate bus — NINE outputs in total.
 //
 // Params:
 //   bpm (linear 30..300, default 120): internal tempo.
@@ -62,6 +78,9 @@
 //   recArm (discrete 0..1, default 0): RECORD-ARM toggle (numpad presses overwrite the nearest step).
 //   overdub (discrete 0..1, default 0): OVERDUB toggle (numpad presses sum into the nearest step).
 //   octave (discrete 0..8, default 4): numpad-keypad octave (live-play transposition).
+//   poly (discrete 0..1, default 0): POLY RECORDING — whether a capture stores every
+//     key held at capture time. It gates RECORDING, never the `poly` OUTPUT, which is
+//     always live.
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
@@ -69,7 +88,23 @@ import { patch as livePatch } from '$lib/graph/store';
 import { getSchedulerClock } from '$lib/audio/scheduler-clock';
 import { isInputPortConnected } from './transport-helpers';
 import { createEdgeCounter } from '$lib/audio/edge-detect';
-import { midiToVOct, coerceToNoteStep, NOTE_STEP_MAX_VOICES, type NoteStep } from '$lib/audio/note-entry';
+import {
+  midiToVOct,
+  noteNameForMidi,
+  coerceToNoteStep,
+  NOTE_STEP_MAX_VOICES,
+  type NoteStep,
+} from '$lib/audio/note-entry';
+// ⚠ THE WRITE SEAM. `numpad-plus-writes.ts` imports this module's SHAPE
+// constants back, which is an ES module cycle — safe here by construction and
+// stated rather than left to be rediscovered: neither side touches the other at
+// module-evaluation time (every use is inside a function body, and the seam's
+// only top-level values are a Symbol and two numeric literals of its own).
+import {
+  clearNumpadLayer,
+  setNumpadStep,
+  NUMPAD_RECORD_ORIGIN,
+} from './numpad-plus-writes';
 import { createPolySender, voicingToVOct, type PolySender } from '$lib/audio/poly';
 
 export const NUMPAD_PLUS_LAYERS = 4;
@@ -272,6 +307,49 @@ export function resolveActiveLayer(
   return Math.max(0, Math.min(NUMPAD_PLUS_LAYERS - 1, idx));
 }
 
+/**
+ * THE FOUR LAYERS, AS A NAMED ROSTER.
+ *
+ * `activeLayer` is `0..3 discrete`. Drawn as a bare dial that is FOUR reachable
+ * positions across the whole travel, so a short drag quantises back to where it
+ * started — the moog962 shape, which `faces-parity` failed twice. The names
+ * already existed and lived only in card markup (`L{l + 1}`); promoting them to
+ * the def makes the states SELECTABLE, nameable, MIDI-learnable and
+ * clip-automatable, and gives the dock a segmented row (4 <= SEGMENTED_MAX_OPTIONS)
+ * with all four visible at once — right for a control whose whole job is
+ * "which of these four".
+ *
+ * Lowercase per the repo's label standard. DERIVED from NUMPAD_PLUS_LAYERS, not
+ * typed out, so the roster cannot disagree with the module's own dimensions.
+ */
+export const NUMPAD_LAYER_OPTIONS: readonly { value: number; label: string }[] =
+  Array.from({ length: NUMPAD_PLUS_LAYERS }, (_, i) => ({ value: i, label: `l${i + 1}` }));
+
+/**
+ * THE NINE OCTAVES, NAMED BY THE NOTE THE KEYPAD'S FIRST KEY PLAYS.
+ *
+ * ⚠ THE NAMES ARE DERIVED FROM THE MODULE'S OWN ARITHMETIC, NOT TYPED. `octave`
+ * N means the keypad's `1` key plays C of octave N — `midiForKey` returns
+ * `(octave + 1) * 12 + semitone`, so octave N's C is MIDI `(N + 1) * 12`, and
+ * `noteNameForMidi` names it. Both endpoints are in range (MIN_MIDI 12 = c0,
+ * MAX_MIDI 108 = c8).
+ *
+ * ⚠ AND THE NAMES ARE WHY THERE IS A ROSTER AT ALL. The legacy card painted the
+ * octave as a NUMBER next to its two nudge arrows; the resting-text ruling
+ * deletes that, and without a roster the dock would show an anonymous
+ * nine-position dial with no way to tell which octave you are in — a real parity
+ * loss. Labelling the states `'0'..'8'` would restore the number under the
+ * control (the offence `face-readout-source` owns) and need NINE
+ * NUMERIC_LABEL_EXEMPTIONS entries, which that list's own header forbids doing
+ * from a red line. `c0..c8` is the state's NAME, and costs zero exemptions.
+ *
+ * ⚠ NO `optionsExhaustive` ON EITHER ROSTER. `param-vocabulary.test.ts` fails a
+ * roster that covers every step ("so optionsExhaustive is redundant — delete
+ * it"); both of these name every reachable value.
+ */
+export const NUMPAD_OCTAVE_OPTIONS: readonly { value: number; label: string }[] =
+  Array.from({ length: 9 }, (_, o) => ({ value: o, label: noteNameForMidi((o + 1) * 12) }));
+
 export const numpadPlusDef: AudioModuleDef = {
   type: 'numpadPlus',
   palette: { top: 'Audio modules', sub: 'Utility' },
@@ -299,10 +377,12 @@ export const numpadPlusDef: AudioModuleDef = {
   params: [
     { id: 'bpm',         label: 'BPM',  defaultValue: 120, min: 30, max: 300, curve: 'linear' },
     { id: 'isPlaying',   label: 'Play', defaultValue: 0,   min: 0,  max: 1,   curve: 'discrete' },
-    { id: 'activeLayer', label: 'Lyr',  defaultValue: 0,   min: 0,  max: 3,   curve: 'discrete' },
+    { id: 'activeLayer', label: 'Lyr',  defaultValue: 0,   min: 0,  max: 3,   curve: 'discrete',
+      options: NUMPAD_LAYER_OPTIONS },
     { id: 'recArm',      label: 'Rec',  defaultValue: 0,   min: 0,  max: 1,   curve: 'discrete' },
     { id: 'overdub',     label: 'Ovd',  defaultValue: 0,   min: 0,  max: 1,   curve: 'discrete' },
-    { id: 'octave',      label: 'Oct',  defaultValue: 4,   min: 0,  max: 8,   curve: 'discrete' },
+    { id: 'octave',      label: 'Oct',  defaultValue: 4,   min: 0,  max: 8,   curve: 'discrete',
+      options: NUMPAD_OCTAVE_OPTIONS },
     // Poly mode: when on, recording captures up to NOTE_STEP_MAX_VOICES of the
     // keys HELD on the keypad into the step (mono outs send the lowest).
     { id: 'poly',        label: 'Poly', defaultValue: 0,   min: 0,  max: 1,   curve: 'discrete' },
@@ -337,15 +417,175 @@ export const numpadPlusDef: AudioModuleDef = {
         "Record arm (the card's ARM button): when armed and play starts from step 1, recording latches and the active layer is cleared, then your keystrokes are written in; it auto-disarms after one 16-step pass.",
       overdub: "Overdub mode (the card's OVD button): when on, every keypress writes its note into the step (quantized to the nearest step while playing, immediately when stopped) without clearing the layer first — layer new notes over what's there.",
       octave: "The keypad's base octave (0..8, default 4); shifts which actual pitches the 12 note-keys produce. The remappable octave-up/down keys nudge it by one.",
-      poly: "Poly recording (the card's POLY button): when on, holding several keys at once records them as a chord into the step (up to 5 voices); when off, only the single key pressed is stored. The mono per-layer outputs always send the lowest note either way.",
+      poly:
+        "POLY RECORDING — a mode you switch on and leave on. While it is on, a capture stores every key you are HOLDING at that moment as a chord in the step (up to 5 voices); while it is off, a capture stores only the one key that triggered it. The mono per-layer outputs always send the lowest note either way, and this control gates RECORDING only — the POLY output jack is always live, at 0 or at 1.",
       "numpad-cell-{n}":
         "Step {n}'s note cell in the active layer's 4×4 grid — this IS the per-step note-entry area for the numpad sequencer (distinct from the keymap keys below it). It shows the step's note name when lit (a · when empty/off); clicking toggles the step on/off, and click-and-dragging up/down on the cell changes its note by hand. Steps are also filled in by RECORD / OVERDUB as you play the keypad, and a lit cell's note is what that step emits on the active layer's pitch output (base octave + key remapping applied). The current playhead step is highlighted while playing.",
+      "numpad-key-{n}":
+        "One remappable KEY BINDING. Fourteen of them: the twelve chromatic note keys (C … B, played at the current OCTAVE) and the two octave-nudge keys, all in one map. Each cap shows what it PLAYS and which physical key is currently bound to it — that engraving is the only feedback the remapping has, so binding a key and never learning which one you bound is what removing it would cost. Left-click a cap and press any physical key to bind it (Esc cancels); right-click for the same Remap plus Reset to default. The map is a bijection: binding a key that was already in use frees its old note, and binding a note that already had a key frees that key. It lives on the node and is saved with the patch, so a rack can hold several NUMPAD+ with different layouts.",
     },
   },
 
   controlFamilies: [
     { id: 'numpad-cell', label: 'Per-step note cell', kind: 'cell', testidPrefix: 'numpad-cell' },
+    // ⚠ ONE FAMILY FOR FOURTEEN CAPS, NOT TWO. The legacy card emitted two
+    // testid prefixes for what is one control kind — `numpad-key-${st}` for the
+    // twelve notes and `numpad-octkey-${act}` for the two octave actions — but
+    // the DEF has never agreed with that split: `DEFAULT_KEYMAP` is ONE
+    // fourteen-entry map and the octave actions are described in this file as
+    // "remappable KEYS too … keyed by sentinel 'semitone' values OUTSIDE the
+    // 0..11 note range". The card's own `physLabelFor` / `targetLabel` /
+    // `openKeyMenu` / `beginRemap` handle all fourteen identically. So the split
+    // was a card artefact; the card's prefix is unified into this one, which
+    // costs one contract line instead of two and removes the standing hazard
+    // that the second prefix drifts away from the first.
+    { id: 'numpad-key', label: 'Keypad key binding', kind: 'other', testidPrefix: 'numpad-key' },
   ],
+
+
+  face: {
+    // ⚠ `glyph: 'none'` IS THE ONLY LITERAL THAT COMPILES INTO A GREEN RUN, and
+    // the refusal is total rather than a preference. Not one of this module's
+    // NINE outputs is `type: 'audio'` (four pitch, four gate, one
+    // polyPitchGate), so `primaryAudioOutPortId` is null, `glyphBinding` can
+    // reach no live-audio binding, every non-'none' literal falls through to a
+    // dead `{ kind: 'static' }` picture, and `module-face-lint` reddens that
+    // unconditionally — no exemption list, no count.
+    //
+    // ⚠ WHAT PICTURE THIS MODULE WOULD WANT, recorded so nobody re-derives it as
+    // a fresh idea. The useful glance on a 192 px tile is "what is on the ACTIVE
+    // layer, and where is the playhead" — sixteen dots with one moving
+    // highlight. That is a picture of `node.data`, not of a signal, and it needs
+    // strictly more than the `nodeId` prop the glyph seam has been asked for
+    // twice: the node's `layers`, its `activeLayer` AND a per-frame engine read
+    // of `stepIndex`. kria's face declines for the identical arithmetic. Two
+    // independent sequencer faces reaching the same refusal the same way is the
+    // strongest form of that argument, and still not a reason to build the seam
+    // on a module PR.
+    glyph: 'none',
+
+    // The sixteen steps, promoted into the dock's hero slot. A panel declares
+    // its own `minWidth` and a lane knob column is 46 px, so `module-face-lint`
+    // refuses a panel SELECTED at a lane tier — which used to make a panel's
+    // first legal rank SEVEN. PF-22's `laneOrder` drops exactly `face.hero.cell`
+    // from the LANE roster, so a hero picture costs no lane rank and MAY rank
+    // first. Without it the module's only picture would sit below every switch.
+    hero: { cell: 'numpad-cell-{n}' },
+
+    // THE TIER LADDER, READ BACK AS A SENTENCE (`laneGlyphFor` -> 'none', so
+    // compact takes LANE_ROW_MAX_CELLS = 3 rather than the with-glyph 2):
+    //   at MINI you see which LAYER this instance is driving; at COMPACT also
+    //   what PITCH RANGE the keys are in and whether it is ARMED; at FULL the
+    //   whole transport too; at the DOCK the sixteen steps sit above all of it
+    //   and the keymap below.
+    //
+    // The two things that decide WHAT A KEYPRESS DOES lead — which layer it
+    // drives and which octave it plays — and only then how it is written and how
+    // the playhead walks. Every rank defended against the counter-argument that
+    // would be right for a different module:
+    //
+    // * `activeLayer` FIRST of the params, not `isPlaying`. numpadPlus SOUNDS
+    //   WHILE STOPPED — `tick()` returns early on `!isPlaying` but still calls
+    //   `applyOutputs`, so live keys play — so the transport is not the gate on
+    //   making a sound and the layer is: it decides which pitch/gate pair the
+    //   keys drive, which layer records, which layer the grid edits and which
+    //   layer feeds `poly`. It is also this module's ONE CV-addressable control
+    //   and the disambiguator when a rack holds several instances, which the
+    //   chord-stack design explicitly supports.
+    // * `octave` SECOND, above every mode. It transposes every key you press and
+    //   is touched constantly during a take; on a module whose instrument is the
+    //   keypad, "what do the keys play" outranks "how is it being recorded".
+    //   ⚠ AND THE ALTERNATIVE WAS MEASURED RATHER THAN ARGUED. Ranking `octave`
+    //   sixth (below the three modes) is equally defensible as prose and paints
+    //   HALF the lane: a roster param earns a name readout, so its lane cell is
+    //   LANE_KNOB_READOUT_H = 57 px against PLATE_ROW_H = 42, and the plate
+    //   charges the MAX of each row. Split across both rows the plate costs
+    //   57 + 4 + 57 = 118 px against LANE_BODY_H = 116 and the second row is
+    //   dropped — 'full' selects THREE cells, the same three as 'compact'. Both
+    //   57 px cells in row ONE costs 57 + 4 + 42 = 103 and both rows fit, so
+    //   'full' paints SIX. Measured both ways with the real `faceTierCap`, not
+    //   inferred.
+    // * `recArm` ABOVE `isPlaying`. They are one gesture in a fixed order: ARM,
+    //   then PLAY. Recording only latches when `recArm` is already high at the
+    //   play-from-start edge, so arming AFTER pressing play does nothing until
+    //   the next stop/start. The rank teaches the order.
+    // * `bpm` BELOW every mode. It is set once and is ignored entirely while an
+    //   external clock is patched. A tempo control that a cable disables is not
+    //   a top-three control.
+    // * `poly` LAST of the params. It gates RECORDING only, never the output —
+    //   the POLY jack works at 0 or 1 — so a player who never finds this switch
+    //   loses nothing audible.
+    // * `numpad-key-{n}` LAST, which makes it dock-only by ARITHMETIC rather
+    //   than by a rule: at lane roster index 8 it is past
+    //   LANE_PLATE_MAX_CELLS = 6, which is what satisfies `panelTierProblems`
+    //   for the second panel with no hero promotion to spend. It is SETUP, not
+    //   performance — the default map is a chromatic octave under the fingers —
+    //   and ranking it above `poly` would put a fourteen-cap grid in front of a
+    //   control you use every take.
+    order: [
+      'numpad-cell-{n}',
+      'activeLayer',
+      'octave',
+      'recArm',
+      'isPlaying',
+      'overdub',
+      'bpm',
+      'poly',
+      'numpad-key-{n}',
+    ],
+
+    // `order` and `pages` DISAGREE, deliberately: `order` is PRIORITY (what
+    // survives truncation at a lane tier), `pages` is SIGNAL ORDER (what the
+    // dock reads top to bottom — you record into a pattern, then you run it, and
+    // the keypad is the instrument underneath all of it).
+    //
+    // ⚠ FOUR BANDS, NO TAB RAIL, and the temptation is worth naming because this
+    // module looks like a rail candidate and is not. It has FIVE distinct cell
+    // kinds (panel, segmented, selector, toggle, knob) over nine ranked keys —
+    // more kinds than most faced modules — so splitting it into the seven bands
+    // `DOCK_TAB_MIN_BANDS` wants would be easy. It would be PADDING: `recArm`,
+    // `overdub` and `poly` are one idea (how a keypress is written) and
+    // `isPlaying` + `bpm` are one idea (how the playhead walks). The honest
+    // grouping lands at four.
+    pages: [
+      {
+        id: 'pattern',
+        label: 'pattern',
+        hint:
+          'the sixteen steps of the ACTIVE layer, and which layer that is. All four layers '
+          + 'share one playhead and one tempo, so four passes over the same sixteen steps build '
+          + 'four parallel lines into four downstream voices.',
+        controls: ['numpad-cell-{n}', 'activeLayer'],
+      },
+      {
+        id: 'record',
+        label: 'record',
+        hint:
+          'how a keypress is WRITTEN. ARM waits for the next play-from-start, then clears the '
+          + 'active layer and records one 16-step pass before disarming itself; OVERDUB is always '
+          + 'recording and never clears; POLY decides whether a capture stores every key you are '
+          + 'holding or only the one you pressed.',
+        controls: ['recArm', 'overdub', 'poly'],
+      },
+      {
+        id: 'transport',
+        label: 'transport',
+        hint:
+          'how the playhead walks. BPM is the internal 16th-note pace and is ignored entirely '
+          + 'while CLOCK IN is patched. Stopping does NOT silence the module — the playhead holds '
+          + 'at step 1 and live keys still sound.',
+        controls: ['isPlaying', 'bpm'],
+      },
+      {
+        id: 'keypad',
+        label: 'keypad',
+        hint:
+          'the instrument itself: which pitches the twelve note keys produce, and which physical '
+          + 'key is bound to each. The bindings are per-node and saved with the patch.',
+        controls: ['octave', 'numpad-key-{n}'],
+      },
+    ],
+  },
 
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     const nodeId = node.id;
@@ -435,39 +675,42 @@ export const numpadPlusDef: AudioModuleDef = {
       const raw = (live?.data as Record<string, unknown> | undefined)?.layers;
       return coerceLayers(raw);
     }
+    /**
+     * Record one step, through THE SHARED WRITE SEAM.
+     *
+     * ⚠ NON-UNDOABLE BY DECLARATION (`NUMPAD_RECORD_ORIGIN`), and that is a
+     * decision rather than an omission: a key held during OVERDUB writes a step
+     * several times a second with no pointer gesture on the graph, so tagging
+     * these LOCAL_ORIGIN would make Cmd-Z walk back through NOTES instead of
+     * through EDITS. The pointer edits — a grid click, a note drag, a remap, and
+     * the layer CLEAR below — all take the default (undoable) origin.
+     */
     function writeStepIntoLayer(
       layerIdx: number,
       stepIdx: number,
       midi: number,
       heldMidis?: readonly number[],
     ): void {
-      const live = livePatch.nodes[nodeId];
-      if (!live) return;
-      if (!live.data) live.data = {};
-      const data = live.data as Record<string, unknown>;
-      const layers = coerceLayers(data.layers);
-      const layer = layers[layerIdx];
-      if (!layer) return;
       // Poly mode passes the keys HELD at capture time → store up to 5 of them
       // (mono outs read `midi`, so set it to the LOWEST). Mono mode: plain note.
-      if (heldMidis && heldMidis.length > 1) {
-        const voices = heldNotesForStep(heldMidis);
-        layer[stepIdx] = { on: true, midi: lowestNote(voices) ?? midi, midis: voices };
-      } else {
-        layer[stepIdx] = { on: true, midi };
-      }
-      // Write back via SyncedStore so collaborators see it.
-      data.layers = layers.map((l) => l.map((s) => ({ ...s })));
+      const next: NoteStep =
+        heldMidis && heldMidis.length > 1
+          ? (() => {
+              const voices = heldNotesForStep(heldMidis);
+              return { on: true, midi: lowestNote(voices) ?? midi, midis: voices };
+            })()
+          : { on: true, midi };
+      setNumpadStep(nodeId, layerIdx, stepIdx, next, { origin: NUMPAD_RECORD_ORIGIN });
     }
+    /**
+     * ⚠ THE DESTRUCTIVE ONE, AND IT IS UNDOABLE ON PURPOSE. Arming REC and
+     * pressing PLAY erases sixteen steps in a single act; until the write seam
+     * existed this went through a bare SyncedStore proxy write with no
+     * transaction and no origin, so the one gesture that destroys a take was the
+     * one gesture Cmd-Z could not reach.
+     */
     function clearLayer(layerIdx: number): void {
-      const live = livePatch.nodes[nodeId];
-      if (!live) return;
-      if (!live.data) live.data = {};
-      const data = live.data as Record<string, unknown>;
-      const layers = coerceLayers(data.layers);
-      if (!layers[layerIdx]) return;
-      layers[layerIdx] = defaultLayer();
-      data.layers = layers.map((l) => l.map((s) => ({ ...s })));
+      clearNumpadLayer(nodeId, layerIdx);
     }
 
     function pollLayerCvSample(): number | null {
@@ -539,7 +782,16 @@ export const numpadPlusDef: AudioModuleDef = {
 
     let alive = true;
     let unsubscribeTick: (() => void) | null = null;
-    const LOOKAHEAD_S = 0.2;
+    /**
+     * The most steps one scheduler tick may replay.
+     *
+     * A tab that was backgrounded (or a machine that slept) resumes with
+     * `ctx.currentTime` far past the last boundary, and replaying every missed
+     * 16th would fire thousands of advances in one synchronous burst. One full
+     * pass is the honest cap: the playhead lands on the right STEP of the bar
+     * and nothing before it is re-fired.
+     */
+    const MAX_CATCHUP_STEPS = NUMPAD_PLUS_STEPS;
 
     function tick(): void {
       if (!alive) return;
@@ -576,14 +828,59 @@ export const numpadPlusDef: AudioModuleDef = {
           return;
         }
 
+        // ⚠ ADVANCE ONLY BOUNDARIES THAT HAVE ACTUALLY PASSED. This loop used
+        // to schedule into a 200 ms LOOKAHEAD:
+        //
+        //     const horizon = ctx.currentTime + LOOKAHEAD_S;   // now + 0.2
+        //     while (nextStepCtxTime < horizon) {
+        //       advanceStep();                                 // re-anchors
+        //       nextStepCtxTime = stepStartCtxTime + stepSec;  // to NOW
+        //     }
+        //
+        // and `advanceStep` sets `stepStartCtxTime = ctx.currentTime`, so the
+        // "bump" recomputed the SAME value instead of advancing the boundary.
+        // At 120 BPM `stepSec` is 0.125 and the horizon is 0.2, so the
+        // condition was true on entry and stayed true until `ctx.currentTime`
+        // itself had crept forward by 75 ms — i.e. the loop SPUN FOR 75 ms OF
+        // WALL CLOCK on every scheduler tick, and the scheduler ticks every
+        // ~25 ms. The comment on that line claimed the opposite ("so the
+        // while-loop terminates on a single tick").
+        //
+        // MEASURED in the browser, instrument negative-controlled in BOTH
+        // directions on the same page and the same 2 s rAF window: with the
+        // transport STOPPED the page ran at 120.5 fps; with ONE numpadPlus
+        // RUNNING on its internal clock it ran at 7.9 fps. A 15x collapse of
+        // the whole rack's frame rate, on this module's headline workflow.
+        //
+        // ⚠ AND THE LOOKAHEAD BOUGHT NOTHING EVEN IN PRINCIPLE, which is why
+        // this is a deletion rather than a repair. Every output write here is
+        // `setTargetAtTime(..., ctx.currentTime)` — applied immediately, never
+        // scheduled ahead — so there was no future to schedule into. Nothing in
+        // the fleet ever pressed PLAY on this module, which is how it survived:
+        // `isPlaying` defaults to 0 and the e2e suite drove keys, not transport.
         const bpm = Math.max(30, readParam('bpm', 120));
         const stepSec = (60 / bpm) / 4;
-        const horizon = ctx.currentTime + LOOKAHEAD_S;
-        while (nextStepCtxTime < horizon) {
+        //
+        // ⚠ AND THE BOUNDARY ACCUMULATES RATHER THAN RE-ANCHORING TO `now`,
+        // which is the second half of the same line's defect. `advanceStep`
+        // ends with `nextStepCtxTime = ctx.currentTime + stepSec`, so each step
+        // was charged its own 125 ms PLUS however late the ~25 ms scheduler
+        // tick happened to notice the boundary — a systematic slow drift, not a
+        // jitter that averages out. MEASURED after the spin fix but before this
+        // one: 6.98 steps/s against the 8.0 that 120 BPM in 16ths demands, i.e.
+        // the internal clock ran ~13% slow (120 BPM playing at about 105).
+        // Adding `stepSec` to the BOUNDARY makes the tempo a property of the
+        // audio clock instead of a property of tick latency.
+        let replayed = 0;
+        while (ctx.currentTime >= nextStepCtxTime && replayed < MAX_CATCHUP_STEPS) {
+          replayed += 1;
+          const boundary = nextStepCtxTime;
           advanceStep();
-          // Bump nextStepCtxTime to the next future boundary so the
-          // while-loop terminates on a single tick.
-          nextStepCtxTime = stepStartCtxTime + stepSec;
+          nextStepCtxTime = boundary + stepSec;
+        }
+        if (replayed >= MAX_CATCHUP_STEPS) {
+          // A long suspend: re-anchor rather than keep replaying next tick.
+          nextStepCtxTime = ctx.currentTime + stepSec;
         }
       } catch (err) {
         // eslint-disable-next-line no-console

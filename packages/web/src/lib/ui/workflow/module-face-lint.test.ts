@@ -648,6 +648,24 @@ describe('module-face lint — MOMENTARY pads (face.momentary)', () => {
     // bypass. Neither has a CV port, so nothing pulses them either.
     'grainsOfVision:fb_dry',
     'grainsOfVision:rev_dry',
+    // NUMPAD+, 2026-08-26. FOUR switch-shaped params, every one LATCHING, and
+    // each classification made AT THE READ SITE:
+    //   * `isPlaying` — `tick()` reads it as a LEVEL every scheduler tick and
+    //     compares it against `prevIsPlaying` for the play-from-start edge. A
+    //     momentary render would stop the transport on release.
+    //   * `recArm` — read as a level at the play-from-start edge, and the module
+    //     WRITES IT BACK TO 0 itself after sixteen steps. A press-pad would make
+    //     arming impossible, since arming MEANS "be on when PLAY is next
+    //     pressed".
+    //   * `overdub` — read as a level inside the keydown handler on every press.
+    //     It is the mode you leave on while you play.
+    //   * `poly` — read as a level per press; the same shape as `samsloop:poly`
+    //     above and for the same reason.
+    // The module has no press-pad of any kind, so it declares no `face.momentary`.
+    'numpadPlus:isPlaying',
+    'numpadPlus:recArm',
+    'numpadPlus:overdub',
+    'numpadPlus:poly',
     'kickdrum:hard',   // hard-clip mode switch — a bus state you leave engaged
     'snaredrum:hard',  // same clipper switch, the KICK sibling's precedent
     // CLOUDSEED, 2026-08-01. The five stage ENABLES that rest at 0. They only

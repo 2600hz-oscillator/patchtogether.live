@@ -189,10 +189,23 @@ export const STRICT_DOCS: ReadonlySet<string> = new Set<string>([
   // does it and is interactive; the engine-less doc sandbox just no-ops the
   // read) are on INTERACTIVE_DOC_MODULES: cartesian / drumseqz / macseq /
   // polyseqz / writeseq / marbles. Two stay STATIC:
-  // KRIA's card touches the WebSerial monome-grid API at init, and NUMPAD+'s
-  // card installs a document-level capturing keydown listener to own the Numpad
-  // keys — both side effects we keep out of the shared doc sandbox (face
-  // fallback). POLYSEQZ and NUMPAD+ are POLY: their poly output must feed a real
+  // KRIA's card touches the WebSerial monome-grid API at init, so it stays out
+  // of the shared doc sandbox (face fallback).
+  //
+  // ⚠ NUMPAD+ IS ALSO STATIC, AND THIS COMMENT USED TO GIVE THE WRONG REASON —
+  // corrected here rather than quietly, because a wrong reason for a decision
+  // outlives the decision. It read "NUMPAD+'s card installs a document-level
+  // capturing keydown listener to own the Numpad keys". THE CARD DOES NOT: the
+  // capture is installed by the FACTORY (`numpad-plus.ts`, torn down in
+  // `dispose()`), which the ENGINE-LESS doc sandbox never runs — and the card's
+  // only document listener is the conditional remap capture, alive only between
+  // "Remap…" and the next keystroke. By this allowlist's own stated criteria
+  // (a playhead-polling rAF is fine because the sandbox no-ops the read) the
+  // module would qualify. ⚠ THE CORRECTION DOES NOT LICENSE PROMOTING IT: that
+  // needs a `PROBES` row in `docs-virtual-module.spec.ts` and a verified live
+  // run, which is its own work.
+  //
+  // POLYSEQZ and NUMPAD+ are POLY: their poly output must feed a real
   // poly-aware voice (DX7 / a module with a poly input),
   // noted in their prose.
   'cartesian',

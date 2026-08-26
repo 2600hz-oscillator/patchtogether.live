@@ -75,6 +75,8 @@ import ClapHeroPanel from '$lib/ui/modules/ClapHeroPanel.svelte';
 import CubeHeroPanel from '$lib/ui/modules/cube/CubeHeroPanel.svelte';
 import CubeTableStackPanel from '$lib/ui/modules/cube/CubeTableStackPanel.svelte';
 import KriaGridPanel from '$lib/ui/modules/kria/KriaGridPanel.svelte';
+import NumpadStepGrid from '$lib/ui/modules/numpadPlus/NumpadStepGrid.svelte';
+import NumpadKeymapPanel from '$lib/ui/modules/numpadPlus/NumpadKeymapPanel.svelte';
 import CloudsRingPanel from '$lib/ui/modules/CloudsRingPanel.svelte';
 import CofefveEchoTrainPanel from '$lib/ui/modules/CofefveEchoTrainPanel.svelte';
 import KickdrumHeroPanel from '$lib/ui/modules/KickdrumHeroPanel.svelte';
@@ -2967,6 +2969,86 @@ const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
       mode: 'trigger',
       probe: { effect: { kind: 'data', key: 'lastRun', expect: 'changed' } },
       onFire: (nodeId) => { runLivecodeNode(nodeId); },
+    },
+  },
+
+  // ── NUMPAD+ — the KEYPAD PERFORMANCE SEQUENCER ────────────────────────────
+  //
+  // The second faced module whose instrument is entirely in `node.data`, and
+  // the reason is the one kria's block states: rank this module's SEVEN params
+  // honestly and you get a perfectly ordinary face — a tempo knob, four
+  // switches and two pickers — that is COMPLETE by `module-face-lint`'s
+  // definition and USELESS, because the player could not see a single note they
+  // had recorded and could not tell which key plays which pitch. Every param
+  // here is a MODE or a TEMPO; the two things a player MAKES — `data.layers`
+  // (4 x 16 recorded steps) and `data.keymap` (their own keyboard layout) —
+  // have no ParamDef, no rank, no docs key and no place on a generic face at
+  // all. That is the DX7 defect verbatim and the gap this registry closes.
+  //
+  // ⚠ THIRTY CONTROLS, TWO CELLS. A family template resolves to exactly ONE
+  // cell (`shellCellFor` indexes `SHELL_CELLS[type][ctl.key]`), so the sixteen
+  // steps are ONE cell whose component draws sixteen buttons and the fourteen
+  // caps are ONE cell whose component draws fourteen — which is what makes this
+  // face nine ranked keys instead of thirty-eight, and what makes each of those
+  // bands cost the row budget of one.
+  numpadPlus: {
+    // THE STEP GRID — the module's only picture, and `face.hero.cell`.
+    //
+    // ⚠ A `data` PROBE, NOT `data-rev`, AIMED AT A CELL THAT IS LIVE IN THE
+    // SHIPPED DEFAULT STATE — the property kria's block says to check. A fresh
+    // spawn has `activeLayer = 0` and step 0 at `{ on: false, midi: null }`, so
+    // the probe's click toggles it on with no seeding, no transport and no
+    // audio gate.
+    //
+    // ⚠ NARROWER THAN KRIA'S, DELIBERATELY. kria watches a whole lane array;
+    // this watches the exact step the probe clicks, which is strictly stronger
+    // BECAUSE the probe names the cell: a write that landed on a different step
+    // would leave `layers.0.0` untouched and redden, which is the failure mode
+    // a whole-array watch cannot distinguish.
+    'numpad-cell-{n}': {
+      kind: 'panel',
+      label: 'the steps',
+      component: NumpadStepGrid,
+      // FOUR columns of 36 px plus three 3 px gaps plus the panel's own 4 px
+      // padding and 1 px border. Width EARNED by a picture-you-edit, and the
+      // NARROWEST honest layout of sixteen steps: 8x2 measures 333 px and 16x1
+      // measures 621 px, which would make numpadPlus the widest face in the
+      // fleet on a module whose other controls are tiny. 4x4 is also what the
+      // legacy card already shipped, so it is the zero-surprise choice.
+      minWidth: 168,
+      probe: {
+        testid: 'numpad-cell-0',
+        action: 'click',
+        effect: { kind: 'data', key: 'layers.0.0', expect: 'changed' },
+      },
+    },
+
+    // THE KEYMAP — fourteen remappable caps, RANKED LAST so it is dock-only by
+    // ARITHMETIC (lane roster index 8, past LANE_PLATE_MAX_CELLS = 6) rather
+    // than by a rule, which is what satisfies `panelTierProblems` for a second
+    // panel with no hero promotion left to spend.
+    //
+    // ⚠ A `text` PROBE, AND THE REASON IS STATED RATHER THAN ASSUMED. Beginning
+    // a remap writes NOTHING to the graph — the listening target is component
+    // state — so a `data` probe would be RED on a perfectly live cap. This is
+    // exactly the case `text` exists for. The named witness is the panel's hint
+    // line, which is NOT the cap the probe clicks (a control that only relabels
+    // itself would pass the weak form), and it is present-and-empty at rest
+    // because `expect: 'changed'` over an absent→present element is not a
+    // comparison the sweep can make.
+    'numpad-key-{n}': {
+      kind: 'panel',
+      label: 'key map',
+      component: NumpadKeymapPanel,
+      // Seven columns of 26 px plus six 3 px gaps plus 4 px padding and a 1 px
+      // border. 7x2 is exactly fourteen with no ragged row; the legacy card let
+      // them WRAP at its own content width, which produced 12 + 2.
+      minWidth: 210,
+      probe: {
+        testid: 'numpad-key-0',
+        action: 'click',
+        effect: { kind: 'text', testid: 'numpad-key-hint', expect: 'changed' },
+      },
     },
   },
 };

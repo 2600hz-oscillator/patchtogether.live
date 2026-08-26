@@ -1058,10 +1058,26 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   //
   // (The name is also removed from ALLOWED_PERMANENT_EXEMPT below; that list is
   // anchored in BOTH directions, so a one-sided delete is RED.)
-  // NUMPAD+ — card has a current-step highlight box + REC ARM pulse
-  // animation that animates whether the sequence is running or not.
-  // Functional coverage via the e2e spec; pinning baselines pending.
-  numpadPlus: 'live step-highlight box + REC ARM animation defeat deterministic capture; unit + E2E provide coverage',
+  // ⚠ `numpadPlus` REMOVED 2026-08-26 (the face promotion), and its stated
+  // reason had been FALSE for as long as the entry existed. It read: "card has a
+  // current-step highlight box + REC ARM pulse animation that animates whether
+  // the sequence is running or not." BOTH named animations are gated on params
+  // that DEFAULT TO 0, so a capture never reaches either state:
+  //   * the step-highlight box is `.cell.active`, and `isActiveStep(s)` is
+  //     `stepIdx === stepIndexLive && pget('isPlaying', 0) >= 0.5` — `isPlaying`
+  //     defaults to 0, so the condition is never true on a fresh spawn;
+  //   * the REC ARM pulse is `.rec-btn.armed`, bound to the engine's
+  //     `armedRecording`, which is set ONLY at a play-from-start edge with
+  //     `recArm` already high. Both default to 0.
+  // Measured on the ARTIFACT before this deletion, not read off the source a
+  // second time: a spawned card settles with zero elements matching
+  // `.cell.active`, `.rec-btn.armed` or `.kmap-key.listening`, and
+  // `document.getAnimations()` over the card returns none.
+  //
+  // That is the midiclock / gamepad shape again — a stale exemption goes quietly
+  // green forever, produces no failure but only ABSENT work, and reads as a
+  // considered decision. The name is removed from ALLOWED_PERMANENT_EXEMPT too;
+  // that list is anchored in BOTH directions, so a one-sided delete is RED.
   // ATLANTIS-PATCH support module. VRT baseline pending; the demo
   // patch itself is the integration test.
   slewSwitch: 'VRT baseline pending — first-slice ATLANTIS-PATCH module; unit + E2E provide coverage',
@@ -1458,7 +1474,12 @@ export const ALLOWED_PERMANENT_EXEMPT: ReadonlySet<string> = new Set([
   // for the argument. This list is ANCHORED in both directions, so leaving the
   // name here while the module is baselined would be RED.
   'tempest', 'vfpgaRunner', 'joystick',
-  'numpadPlus', 'slewSwitch', 'delay', 'doom',
+  // ⚠ `numpadPlus` REMOVED 2026-08-26 — the fifth drain. See the note where its
+  // entry stood in EXEMPT_FROM_VRT: both animations its reason named are gated
+  // on params that default to 0, so the entry described a state the capture
+  // never reaches. This list is ANCHORED in both directions, so leaving the name
+  // here while the module is baselined would be RED.
+  'slewSwitch', 'delay', 'doom',
   'blood', 'warrensspectrum', 'videobox', 'tvLibrarian',
   'peertube', 'videovarispeed', 'chromakey', 'fader',
   'lumakey', 'quadralogical', 'colourofmagic', 'mappy',
