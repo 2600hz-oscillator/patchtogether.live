@@ -1,7 +1,7 @@
 // packages/web/src/lib/video/webgl-attest-coverage.test.ts
 //
 // FAIL-CLOSED coverage guard for the WebGL local-attestation "semaphore"
-// (.claude/skills/webgl-attest.md; fixes V3/V6/V10).
+// (.claude/skills/renderer-tests/SKILL.md; fixes V3/V6/V10).
 //
 // This is the load-bearing test of the whole scheme. The attestation only
 // gives its ONE robust property — "editing a hashed WebGL file forces a
