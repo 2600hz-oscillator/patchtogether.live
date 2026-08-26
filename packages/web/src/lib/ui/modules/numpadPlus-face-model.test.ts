@@ -29,6 +29,8 @@ import {
   numpadPlusDef,
   NUMPAD_LAYER_OPTIONS,
   NUMPAD_OCTAVE_OPTIONS,
+  NUMPAD_OCTAVE_MAX,
+  NUMPAD_OCTAVE_MIN,
   NUMPAD_PLUS_LAYERS,
   NUMPAD_PLUS_STEPS,
   DEFAULT_KEYMAP,
@@ -215,6 +217,25 @@ describe('numpadPlus face — the two rosters make states SELECTABLE (M2/M3)', (
     const looksNumeric = (s: string) => /^[+\-−]?[0-9]+(\.[0-9]+)?\s*[a-zA-Z%°¢×x]{0,3}$/.test(s.trim());
     for (const o of [...NUMPAD_LAYER_OPTIONS, ...NUMPAD_OCTAVE_OPTIONS]) {
       expect(looksNumeric(o.label), `label '${o.label}' reads as a number`).toBe(false);
+    }
+  });
+
+  it('⚠ the octave RANGE has ONE source — the param, the clamps and the roster agree', () => {
+    // It was typed in four places: the ParamDef's min/max, `midiForKey`'s
+    // clamp, `nudgeOctaveParam`'s clamp and the roster's length. A roster that
+    // named eight octaves while the param accepted nine would be a control with
+    // a state no label can reach, and nothing reads BOTH sides.
+    const p = PARAM('octave');
+    expect([p.min, p.max]).toEqual([NUMPAD_OCTAVE_MIN, NUMPAD_OCTAVE_MAX]);
+    expect(NUMPAD_OCTAVE_OPTIONS.map((o) => o.value))
+      .toEqual([...Array(NUMPAD_OCTAVE_MAX - NUMPAD_OCTAVE_MIN + 1).keys()].map((i) => NUMPAD_OCTAVE_MIN + i));
+    // The CLAMP is the third side, driven rather than read: an out-of-range
+    // octave must land on an octave the roster can name.
+    const cCode = codeForSemitone(DEFAULT_KEYMAP, 0)!;
+    const named = new Set(NUMPAD_OCTAVE_OPTIONS.map((o) => o.label));
+    for (const asked of [-5, NUMPAD_OCTAVE_MIN - 1, NUMPAD_OCTAVE_MAX + 1, 99]) {
+      const midi = midiForKey(cCode, asked, 0)!;
+      expect(named.has(noteNameForMidi(midi)), `octave ${asked} clamps into the roster`).toBe(true);
     }
   });
 

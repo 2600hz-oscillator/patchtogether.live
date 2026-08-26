@@ -110,6 +110,16 @@ import { createPolySender, voicingToVOct, type PolySender } from '$lib/audio/pol
 export const NUMPAD_PLUS_LAYERS = 4;
 export const NUMPAD_PLUS_STEPS = 16;
 
+/** The keypad's OCTAVE range, in ONE place.
+ *
+ * ⚠ It was typed in four: the `octave` ParamDef's min/max, `midiForKey`'s clamp,
+ * `nudgeOctaveParam`'s clamp, and (once the face landed) the length of the
+ * `c0..c8` roster. The backdraft rule applies to a range whatever shape it takes
+ * — a roster that named eight octaves while the param accepted nine would be a
+ * control with a state no label can reach, and nothing reads both sides. */
+export const NUMPAD_OCTAVE_MIN = 0;
+export const NUMPAD_OCTAVE_MAX = 8;
+
 /** Default keymap: 12 numpad keys → semitone offset (0..11) within
  *  the module's active octave. Layout follows the user's spec
  *  ("1,2,3,4,5,6,7,8,9, 0, /, * are a 12-note piano starting at 1"):
@@ -214,7 +224,7 @@ export function midiForKey(
   const semitone = keymap[code];
   // undefined = unmapped; ≥12 = an OCTAVE action sentinel, not a note.
   if (semitone === undefined || semitone < 0 || semitone > 11) return null;
-  const baseOctave = Math.max(0, Math.min(8, Math.round(octave)));
+  const baseOctave = Math.max(NUMPAD_OCTAVE_MIN, Math.min(NUMPAD_OCTAVE_MAX, Math.round(octave)));
   const effectiveOctave = Math.max(-1, Math.min(9, baseOctave + modifierOctave));
   // MIDI convention: octave 0 starts at C0 = MIDI 12. So octave N's
   // C-pitch is at (N + 1) * 12.
@@ -348,7 +358,13 @@ export const NUMPAD_LAYER_OPTIONS: readonly { value: number; label: string }[] =
  * it"); both of these name every reachable value.
  */
 export const NUMPAD_OCTAVE_OPTIONS: readonly { value: number; label: string }[] =
-  Array.from({ length: 9 }, (_, o) => ({ value: o, label: noteNameForMidi((o + 1) * 12) }));
+  Array.from(
+    { length: NUMPAD_OCTAVE_MAX - NUMPAD_OCTAVE_MIN + 1 },
+    (_, i) => {
+      const octave = NUMPAD_OCTAVE_MIN + i;
+      return { value: octave, label: noteNameForMidi((octave + 1) * 12) };
+    },
+  );
 
 export const numpadPlusDef: AudioModuleDef = {
   type: 'numpadPlus',
@@ -381,7 +397,8 @@ export const numpadPlusDef: AudioModuleDef = {
       options: NUMPAD_LAYER_OPTIONS },
     { id: 'recArm',      label: 'Rec',  defaultValue: 0,   min: 0,  max: 1,   curve: 'discrete' },
     { id: 'overdub',     label: 'Ovd',  defaultValue: 0,   min: 0,  max: 1,   curve: 'discrete' },
-    { id: 'octave',      label: 'Oct',  defaultValue: 4,   min: 0,  max: 8,   curve: 'discrete',
+    { id: 'octave',      label: 'Oct',  defaultValue: 4,
+      min: NUMPAD_OCTAVE_MIN, max: NUMPAD_OCTAVE_MAX, curve: 'discrete',
       options: NUMPAD_OCTAVE_OPTIONS },
     // Poly mode: when on, recording captures up to NOTE_STEP_MAX_VOICES of the
     // keys HELD on the keypad into the step (mono outs send the lowest).
@@ -668,7 +685,7 @@ export const numpadPlusDef: AudioModuleDef = {
       const live = livePatch.nodes[nodeId];
       if (!live?.params) return;
       const cur = typeof live.params.octave === 'number' ? live.params.octave : 4;
-      live.params.octave = Math.max(0, Math.min(8, cur + delta));
+      live.params.octave = Math.max(NUMPAD_OCTAVE_MIN, Math.min(NUMPAD_OCTAVE_MAX, cur + delta));
     }
     function readLayers(): NumpadLayer[] {
       const live = livePatch.nodes[nodeId];

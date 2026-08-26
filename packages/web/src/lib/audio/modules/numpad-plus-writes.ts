@@ -73,6 +73,8 @@ import { patch as livePatch } from '$lib/graph/store';
 import { coerceToNoteStep, type NoteStep } from '$lib/audio/note-entry';
 import {
   DEFAULT_KEYMAP,
+  NUMPAD_OCTAVE_MAX,
+  NUMPAD_OCTAVE_MIN,
   NUMPAD_PLUS_LAYERS,
   NUMPAD_PLUS_STEPS,
   defaultLayer,
@@ -212,8 +214,8 @@ export function toggleNumpadStep(
 
 /** The MIDI note a freshly lit step takes: C of the module's current octave. */
 export function numpadDefaultMidi(octave: number): number {
-  const o = Math.max(0, Math.min(8, Math.round(Number(octave) || 0)));
-  return 12 + o * 12;
+  const o = Math.max(NUMPAD_OCTAVE_MIN, Math.min(NUMPAD_OCTAVE_MAX, Math.round(Number(octave) || 0)));
+  return (o + 1) * 12;
 }
 
 /** Nudge one step's note by `semitones`, clamped to the storable note range.
