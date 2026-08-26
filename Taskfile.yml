@@ -1112,7 +1112,7 @@ tasks:
   # the full WebGL set on THIS machine's REAL GPU and writes a content-hash-named
   # attestation that CI verifies (then skips the heavy lane, trusting the local
   # run). See ci-webgl-attest/README.md +
-  # .claude/skills/webgl-attest.md.
+  # .claude/skills/renderer-tests/SKILL.md.
   webgl:attest:
     desc: |
       [pre-PR, REAL-GPU] Run the FULL WebGL test set on this machine's real GPU

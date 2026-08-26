@@ -2,15 +2,11 @@
 //
 // The agent-facing context files must describe the tree that actually exists.
 //
-// CLAUDE.md carries an index of `.claude/skills/`, and CLAUDE.md + AGENTS.md
-// point at process docs. An index is exactly the kind of hand-maintained prose
-// that rots silently: a skill added without an index row is invisible to every
-// agent, and an index row naming a deleted skill sends them looking for a file
-// that isn't there. Neither failure reddens anything on its own.
-//
-// ANCHORED TO THE ARTIFACT, both directions, and DERIVED — this asserts set
-// identity between the index and the directory listing, never a count. Adding a
-// skill and its row together is green; doing either alone is red.
+// Claude Code discovers packaged skills under `.claude/skills/`; Codex
+// discovers the shared subset under `.agents/skills/`. The latter are
+// symlinks, so one package is authoritative for both tools. This gate proves
+// both discovery paths and the CLAUDE.md import rather than maintaining a prose
+// index that can drift.
 //
 // The same file also holds the two `.myrobots/` gates (#1494), because
 // `.myrobots` is agent-consumed context under the same authority statement:
@@ -18,57 +14,36 @@
 //   2. the standing docs must not point at records it no longer contains.
 
 import { execFileSync } from 'node:child_process';
-import { readdirSync, readFileSync, existsSync } from 'node:fs';
+import { existsSync, lstatSync, readdirSync, readFileSync, realpathSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const REPO_ROOT = join(import.meta.dirname, '..');
 const CLAUDE_MD = join(REPO_ROOT, 'CLAUDE.md');
 const AGENTS_MD = join(REPO_ROOT, 'AGENTS.md');
-const SKILLS_DIR = join(REPO_ROOT, '.claude', 'skills');
+const CLAUDE_SKILLS_DIR = join(REPO_ROOT, '.claude', 'skills');
+const CODEX_SKILLS_DIR = join(REPO_ROOT, '.agents', 'skills');
+const CLAUDE_ONLY_SKILLS = new Set(['brief-replies']);
 
 /**
- * Skills on disk, in BOTH forms Claude Code supports:
- *
- *  - flat  — `<name>.md`                    (this repo's hand-authored skills)
- *  - packaged — `<name>/SKILL.md`           (what `@playwright/cli install --skills`
- *                                            writes, and the format vendored skills use)
- *
- * The flat-only version of this function was blind to the packaged form: a
- * vendored skill directory produced no `.md` at the top level, so it passed the
- * index check by being invisible rather than by being listed. That is the same
- * "the filter quietly redefined the subject" failure this gate exists to catch.
+ * Claude skills on disk. Phase 1 deliberately accepts only packaged skills:
+ * every top-level entry must be a directory containing SKILL.md.
  */
-function skillsOnDisk(): string[] {
-  const names: string[] = [];
-  for (const entry of readdirSync(SKILLS_DIR, { withFileTypes: true })) {
-    if (entry.isFile() && entry.name.endsWith('.md')) {
-      names.push(entry.name.replace(/\.md$/, ''));
-    } else if (entry.isDirectory() && existsSync(join(SKILLS_DIR, entry.name, 'SKILL.md'))) {
-      names.push(entry.name);
-    }
-  }
-  return names.sort();
-}
-
-/**
- * Skill names cited in CLAUDE.md's index table.
- *
- * The table lives under the `## The skills` heading; rows name one or more
- * skills in backticks (`a` · `b`). Parsing only that section keeps an inline
- * `.claude/skills/foo.md` pointer elsewhere in the file from counting as an
- * index entry — the index is the table, and only the table.
- */
-function skillsInIndex(claudeMd: string): string[] {
-  const start = claudeMd.indexOf('## The skills');
-  expect(start, 'CLAUDE.md must carry a `## The skills` index section').toBeGreaterThan(-1);
-  const section = claudeMd.slice(start);
-  const rows = section.split('\n').filter((l) => l.startsWith('|'));
-  const names = new Set<string>();
-  for (const row of rows) {
-    for (const [, name] of row.matchAll(/`([a-z0-9-]+)`/g)) names.add(name);
-  }
-  return [...names].sort();
+function claudeSkillsOnDisk(): string[] {
+  const entries = readdirSync(CLAUDE_SKILLS_DIR, { withFileTypes: true });
+  const malformed = entries
+    .filter(
+      (entry) =>
+        !entry.isDirectory() ||
+        !existsSync(join(CLAUDE_SKILLS_DIR, entry.name, 'SKILL.md')),
+    )
+    .map((entry) => entry.name)
+    .sort();
+  expect(
+    malformed,
+    'every .claude/skills entry must be a packaged skill with SKILL.md',
+  ).toEqual([]);
+  return entries.map((entry) => entry.name).sort();
 }
 
 /**
@@ -97,7 +72,7 @@ const readDocs = (paths: string[]): Doc[] =>
 const myrobotsRecords = (): Doc[] => readDocs(trackedFiles('.myrobots'));
 
 /**
- * The STANDING docs — the ones an agent is told to trust (authority tiers 2-5
+ * The STANDING docs — the ones an agent is told to trust (authority tiers 2-4
  * in AGENTS.md). A dead pointer here is worse than one in a session record,
  * because these are read as current.
  */
@@ -128,7 +103,7 @@ function citedMyrobotsPaths(text: string): string[] {
  * ⚠ WHAT THIS GATE CANNOT SEE, stated so a green run is not read as more than
  * it is:
  *   - Only `.myrobots/` is scanned. `runbooks/`, `docs/observability/`,
- *     `.claude/skills/deploy-pipeline.md`, `packages/`, `scripts/` and the
+ *     `.claude/skills/deploy/SKILL.md`, `packages/`, `scripts/` and the
  *     workflows all name secret VARIABLES legitimately — that is their job.
  *   - `DATABASE_URL` is deliberately absent from the patterns. `.myrobots`
  *     records discuss it as a TEST PRECONDITION ("@collab is vacuous without
@@ -183,22 +158,34 @@ function scanForSecretTopology(docs: Doc[]): string[] {
 }
 
 describe('agent context files describe the real tree', () => {
-  it('every skill on disk is listed in CLAUDE.md, and every listed skill exists', () => {
-    const onDisk = skillsOnDisk();
-    const indexed = skillsInIndex(readFileSync(CLAUDE_MD, 'utf8'));
-
-    // Both directions, each with its own message so a red run says WHICH way it broke.
-    const missingFromIndex = onDisk.filter((s) => !indexed.includes(s));
-    const missingFromDisk = indexed.filter((s) => !onDisk.includes(s));
-
+  it('Claude and Codex discover the intended skill packages from one source', () => {
+    const claude = claudeSkillsOnDisk();
     expect(
-      missingFromIndex,
-      'skills exist but no CLAUDE.md index row names them — agents will never load them',
-    ).toEqual([]);
-    expect(
-      missingFromDisk,
-      'CLAUDE.md names skills that do not exist — a stale row points agents at nothing',
-    ).toEqual([]);
+      claude,
+      'the old skill fleet must not survive the minimal cutover',
+    ).toEqual(['brief-replies', 'deploy', 'module-surfaces', 'renderer-tests']);
+
+    const codexEntries = readdirSync(CODEX_SKILLS_DIR, { withFileTypes: true });
+    const codex = codexEntries.map((entry) => entry.name).sort();
+    expect(codex, 'Codex must see every shared skill and no Claude-only skill').toEqual(
+      claude.filter((name) => !CLAUDE_ONLY_SKILLS.has(name)),
+    );
+
+    for (const entry of codexEntries) {
+      const link = join(CODEX_SKILLS_DIR, entry.name);
+      expect(
+        lstatSync(link).isSymbolicLink(),
+        `.agents/skills/${entry.name} must be a symlink, not a duplicate`,
+      ).toBe(true);
+      expect(realpathSync(link)).toBe(realpathSync(join(CLAUDE_SKILLS_DIR, entry.name)));
+    }
+  });
+
+  it('CLAUDE.md imports AGENTS.md and carries the Claude-only reply rule', () => {
+    const claude = readFileSync(CLAUDE_MD, 'utf8');
+    expect(claude).toMatch(/^@AGENTS\.md$/m);
+    expect(claude).toMatch(/one to four lines/i);
+    expect(claude).toMatch(/brief-replies\/SKILL\.md/);
   });
 
   it('the docs CLAUDE.md and AGENTS.md point at are really there', () => {
@@ -210,7 +197,7 @@ describe('agent context files describe the real tree', () => {
     // A pointer is only useful if it resolves; this is the same anchor rule as above.
     expect([...cited].filter((p) => !existsSync(join(REPO_ROOT, p)))).toEqual([]);
     // Non-vacuity: anchored to a NAME the set must contain, not to a count.
-    expect([...cited]).toContain('docs/process/issue-workflow.md');
+    expect([...cited]).toContain('docs/design/face-migration.generated.md');
   });
 
   it('every `.myrobots` record the standing docs point at still exists', () => {
@@ -300,12 +287,13 @@ describe('agent context files describe the real tree', () => {
     ]);
   });
 
-  it('AGENTS.md states the authority order and the issue rule', () => {
+  it('AGENTS.md states the authority order and owner-controlled issue rule', () => {
     const agents = readFileSync(AGENTS_MD, 'utf8');
     // `.myrobots` being evidence rather than instruction is an owner ruling that
     // agents get wrong by default — if the entry point stops saying it, that is a
     // regression in the thing this file exists to do.
     expect(agents).toMatch(/evidence, not instruction/i);
-    expect(agents).toMatch(/Fixes #N/);
+    expect(agents).toMatch(/do not create or reopen GitHub issues without explicit owner approval/i);
+    expect(agents).toMatch(/PRs do not require a matching issue/i);
   });
 });

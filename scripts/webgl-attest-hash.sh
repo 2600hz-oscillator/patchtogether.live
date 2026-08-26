@@ -11,7 +11,7 @@
 #   HASH=$(bash scripts/webgl-attest-hash.sh)          # the hash
 #   bash scripts/webgl-attest-hash.sh --list           # the basis file set
 #
-# See .claude/skills/webgl-attest.md.
+# See .claude/skills/renderer-tests/SKILL.md.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

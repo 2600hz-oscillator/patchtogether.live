@@ -37,7 +37,7 @@
 //      heavy spec FILE set with the SAME minimatch matcher Playwright uses, so
 //      the WebGL content-hash basis can't parse-drift from what actually runs
 //      (adversarial-review fix V4: a bash/regex text-parse of a TS literal is
-//      brittle and fails OPEN). See .claude/skills/webgl-attest.md.
+//      brittle and fails OPEN). See .claude/skills/renderer-tests/SKILL.md.
 //
 // Playwright's default shard splitter sorts SPEC FILES alphabetically then
 // round-robins, so the alphabetically-late, heavy cross-domain WebGL specs

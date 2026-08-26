@@ -8,8 +8,9 @@ thanks to DSP-artifact deduplication.
 | Workflow | File | Trigger | Purpose |
 | --- | --- | --- | --- |
 | **CI** | `ci.yml` | push to `main`/`first-mvp`, every PR, `workflow_dispatch` | PR-gate suite: typecheck, unit, ART, E2E, build, VRT |
-| **Deploy** | `deploy.yml` | push to main, PR, `workflow_dispatch` | Web (CF Pages) + relay (Fly) per tier; prod gated by version bump |
-| **VRT update** | `vrt-update.yml` | `workflow_dispatch` | regenerate VRT baselines for linux + darwin |
+| **Deploy** | `deploy.yml` | push to main, PR, `workflow_dispatch` | Web (CF Pages) + relay (Fly); main deploys dev/autotest, manual/version bumps can ship prod |
+| **Daily prod** | `daily-prod-deploy.yml` | nightly cron, `workflow_dispatch` | deploy the latest fully-green main SHA to production |
+| **VRT update** | `vrt-update.yml` | `workflow_dispatch` | author the single Linux VRT baseline set |
 | **Live smoke** | `live-smoke-alert.yml` | cron (~10 min), `workflow_dispatch` | probe dev web + relay; open GH issue on sustained unhealth |
 | **Flake check 3×** | `flake-check-3x.yml` | `workflow_dispatch` | run ONE test 3× with `retries=0` to prove stability |
 | **Behavioral flake purge** | `behavioral-flake-purge.yml` | push to `behavioral-purge/**`, dispatch | shard×pass matrix to find unstable behavioral tests |
@@ -37,8 +38,8 @@ Jobs run in parallel after the shared prep jobs (`dsp-build`, `build-web`):
 > (punch-list + roadmap prose: [`docs/testing/README.md`](../docs/testing/README.md)).
 > This section is the human-readable summary of that ledger's Bucket 3 + gating set.
 
-Branch ruleset **id 16042163** requires these **2 exact** status-check names (see
-`.claude/skills/pr-workflow.md`, verified against the live ruleset):
+Branch ruleset **id 16042163** requires these **2 exact** status-check names
+(verify against the live ruleset before changing them):
 
 1. **`typecheck + unit + ART + E2E`** — the `ci` umbrella job.
 2. **`vrt-strict (visual regression — strict subset)`** — the pure-DOM

@@ -1,7 +1,7 @@
 // scripts/webgl-attest-lib.ts
 //
 // Shared resolver + content-hash for the WebGL local-attestation "semaphore".
-// See .claude/skills/webgl-attest.md (§3 hash basis, §-1 fixes
+// See .claude/skills/renderer-tests/SKILL.md (hash basis and fixes
 // V3/V4/V6). Imported by BOTH:
 //   - scripts/webgl-attest-hash.ts        (the CLI that prints the hash)
 //   - the §12 coverage guard unit test    (webgl-attest-coverage.test.ts)

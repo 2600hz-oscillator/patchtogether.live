@@ -8,7 +8,7 @@
 // FOREVER: headless Chromium runs a NULL AUDIO SINK (measured `outputLatency`
 // ~0.072 ms vs 10–25 ms on real hardware), so a device underrun literally
 // cannot occur there. That assertion would pass with the entire feature
-// deleted. It is a textbook blind gate (`.claude/skills/blind-gates.md` §1) and
+// deleted. It is a textbook blind gate under AGENTS.md's instrument rule and
 // it must not be written.
 //
 // What CAN fail, and does so here on every unit run:

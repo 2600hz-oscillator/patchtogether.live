@@ -5,8 +5,9 @@ Two deploy targets per tier:
 - **Web** → Cloudflare Pages (`wrangler pages deploy`)
 - **Relay** → Fly.io (`flyctl deploy --config fly.<tier>.toml`)
 
-Deploys are normally automatic via `.github/workflows/deploy.yml`. This doc covers
-the triggers and the **exact by-hand commands** for a manual takeover.
+Deploys are normally automatic via `.github/workflows/deploy.yml` and
+`.github/workflows/daily-prod-deploy.yml`. This doc covers the triggers and the
+**exact by-hand commands** for a manual takeover.
 
 ## Tier map
 
@@ -24,12 +25,14 @@ the triggers and the **exact by-hand commands** for a manual takeover.
 | **PR opened / synced** | deploy to PR preview (autotest project, branch `pr-<N>`) | none (shares autotest relay) |
 | **push to `main`** | deploy **autotest + dev** | deploy autotest + dev **only if** `packages/server/**` or `fly.*.toml` changed |
 | **version bump on `main`** (package.json `.version` differs vs `HEAD~1`) | deploy **prod** | deploy prod relay (on version bump) |
+| **nightly production cron** | deploy the latest fully-green `main` SHA to **prod** | deploy its prod relay |
 | **`workflow_dispatch`** | deploy chosen tier(s) — escape hatch | same |
 
 Notes:
 
-- **Version-bump gates prod.** Routine merges deploy autotest+dev only. This
-  prevents accidental prod deploys.
+- **Routine merges deploy autotest+dev; nightly ships prod.** The daily workflow
+  selects the latest fully-green `main` SHA. A version bump still ships prod
+  immediately through `deploy.yml`.
 - **`workflow_dispatch` requires latest CI green** on the chosen branch
   (`verify-ci` job). Automatic push/version-bump deploys rely on branch protection
   having required CI to be green before merge.
@@ -152,9 +155,10 @@ known-good version.
 - **Relay (Fly):** redeploy the previous good image. `flyctl releases -a <app>`
   lists releases; `flyctl deploy` from the previous good commit rebuilds it. *Verify
   the release-rollback affordance in the Fly dashboard / `flyctl` for your version.*
-- **Prod gating:** because prod only deploys on a version bump, a bad prod deploy
-  is rolled back by deploying a corrected build (and after every relay redeploy,
-  re-verify the single-machine invariant).
+- **Prod gating:** nightly selects a fully-green `main` SHA and version bumps
+  can ship immediately. A bad prod deploy is rolled back by deploying a known
+  good build (and after every relay redeploy, re-verify the single-machine
+  invariant).
 
 ## Long-lived video branch
 

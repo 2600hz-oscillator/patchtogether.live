@@ -399,7 +399,7 @@ export function generateLedger() {
   // Boy-scout: the count was hand-typed as `2`. Derived from the list it
   // labels, so it cannot disagree with the lines printed underneath it.
   p(`Required status-check **contexts** (${b3.requiredContexts.length} — branch ruleset 16042163; not in-repo,`);
-  p('see `.claude/skills/pr-workflow.md`). Anchored by ci.yml JOB KEY, not by line');
+  p('see `runbooks/ci.md`). Anchored by ci.yml JOB KEY, not by line');
   p('number — a line number is invalidated by any edit above it:');
   for (const c of b3.requiredContexts) p(`- \`${c.name}\`  (ci.yml job \`${c.job}\`)`);
   p('');
