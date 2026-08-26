@@ -208,6 +208,12 @@ import {
   midiLaneSetRetrig,
 } from '$lib/ui/modules/midi-lane-cell-actions';
 import { midiLaneChannelChoices, parseNoteGateNote } from '$lib/audio/modules/midi-lane';
+import {
+  clockedRunnerDivisionOptions,
+  clockedRunnerDivisionValue,
+  setClockedRunnerDivision,
+} from '$lib/ui/modules/clocked-runner-cell-actions';
+import { runLivecodeNode } from '$lib/ui/modules/livecode-cell-actions';
 import { launchpadConnectSingle, launchpadPair } from '$lib/ui/modules/launchpad-cell-actions';
 import { push2Connect } from '$lib/ui/modules/push2-cell-actions';
 import { electraSendToDevice } from '$lib/ui/modules/electra-cell-actions';
@@ -2898,6 +2904,69 @@ const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
       mode: 'trigger',
       probe: { effect: { kind: 'audition', seam: 'engine-message' } },
       onFire: (nodeId) => { outToLaunchConnect(nodeId); },
+    },
+  },
+  // ── THE CODE-BUFFER PAIR ───────────────────────────────────────────────
+  //
+  // LIVECODE and the CLOCKED RUNNER it spawns. Both declare `params: []`,
+  // `inputs: []` and `outputs: []`, so every key their faces can rank arrives as
+  // a family — and both have exactly ONE affordance that is not a text document,
+  // which is what these two entries are. The buffers themselves ride each
+  // module's `fullViewBody`, because `resolveFaceControl` resolves a key to a
+  // param, a `-{n}` family or a legend static and a document is none of the
+  // three.
+  clockedRunner: {
+    // THE DIVISION — the only thing about a runner that is a SETTING rather
+    // than a program, and the only one that means anything on a 192 px lane
+    // tile (a callback body is unreadable there; a rate is one word).
+    //
+    // ⚠ A SELECTOR, NOT A SEGMENTED PARAM, and the SELECTABILITY trap is not
+    // what decides it. That trap is about a few-state DISCRETE PARAM drawn as a
+    // knob — two reachable positions across the dial's whole travel — and there
+    // is no param here at all: the division is `node.data`, written by the
+    // runtime when `clocked()` spawns the runner and re-read by the factory on
+    // every tick. What decides it is width and parity: nine divisions as a
+    // segmented cell is toward the top of that kind's 94.3-430.9 px range,
+    // a `selector` is a flat 168, and the LEGACY CARD's own affordance is a
+    // `<select>` — so the parity-correct primitive and the narrow one coincide.
+    'clocked-runner-division-{n}': {
+      kind: 'selector',
+      tag: 'DIV',
+      options: () => clockedRunnerDivisionOptions(),
+      value: (node) => clockedRunnerDivisionValue(node),
+      onchange: (nodeId, v) => setClockedRunnerDivision(nodeId, v),
+    },
+  },
+  livecode: {
+    // RUN — and on this module the cell is not a convenience, it is where the
+    // module's only behaviour now lives. `livecodeDef.factory` returns a no-op
+    // handle, so every evaluation LIVECODE ever performed happened inside
+    // `LivecodeCard.svelte`; `migrated(type)` stops both surfaces rendering a
+    // promoted module's card, so leaving the gesture there would have deleted
+    // the module. See `$lib/ui/modules/livecode-cell-actions.ts`.
+    //
+    // ⚠ A `data` PROBE, NOT AN AUDITION, because no seam is touched. An
+    // audition witnesses "the press resolved a callable off the live engine
+    // handle and called it"; a LIVECODE run compiles a string and writes the
+    // patch graph, reaching no engine handle at all, so an `audition` record
+    // would be a lie about what happened. This is `frametable-save-file`'s
+    // situation one module over, and `lastRun` is the same shape as
+    // `frametableSave`: an outcome record every exit writes, with `ok: false`
+    // KEPT, so "never pressed" and "pressed and threw" stay distinguishable.
+    //
+    // ⚠ AND IT IS NOT A `data-rev` IN DISGUISE. `seq` is one FIELD of the
+    // record rather than the observable: the probe compares the whole
+    // `{ seq, ok, error, mutations, log }`, so a button that bumped a counter
+    // and evaluated nothing would still have to fabricate an outcome to pass.
+    // `seq` is there so a SECOND run of an identical script is observably a
+    // second run, which a pure outcome record could not express.
+    'livecode-run-{n}': {
+      kind: 'action',
+      label: 'Run',
+      title: 'Evaluate the script and apply what it produced to the rack, in one undoable step',
+      mode: 'trigger',
+      probe: { effect: { kind: 'data', key: 'lastRun', expect: 'changed' } },
+      onFire: (nodeId) => { runLivecodeNode(nodeId); },
     },
   },
 };

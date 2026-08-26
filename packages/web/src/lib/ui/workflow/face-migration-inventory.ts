@@ -833,10 +833,25 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
   },
   {
     type: 'clockedRunner',
-    disposition: 'bespoke-surface',
-    why:
-      'a CODE EDITOR body (CodeMirror) with a clock division and a resize grip — the whole card is ' +
-      'the editor, and text editing has no cell kind and no glyph.',
+    disposition: 'generic-face',
+    note:
+      'PROMOTED, with LIVECODE, as the CODE-BUFFER pair. Every clause of the `why` was TRUE and ' +
+      'the conclusion drawn from them was wrong — the tenth consecutive face where that has been ' +
+      'the case. "Text editing has no cell kind" is exactly right: `resolveFaceControl` resolves ' +
+      'a key to a param, a `<id>-{n}` family or a legend static, and a document is none of the ' +
+      'three. That is what a `fullViewBody` is FOR, which electraControl established one wave ' +
+      'earlier by putting thirty-six unaddressable rename fields there. "No glyph" is right too, ' +
+      'and it is a DECLARATION rather than a gap: `outputs` is empty, so every live-audio binding ' +
+      "short-circuits and `glyph: 'none'` is the only literal that is not a dead static. What the " +
+      '`why` did not mention is the one affordance that IS cell-shaped — the DIVISION, a nine-entry ' +
+      '`node.data` roster the card already renders as a `<select>`, now a ranked `selector` cell ' +
+      'that reaches the lane tile. The RESIZE GRIP is deliberately not carried over: it writes ' +
+      'node.data.width/height, which size the CARD, and a dock plate is sized by its pane (the ' +
+      'videoOut ruling). The card keeps it under `?shell=legacy`, and the width is still READ by ' +
+      "LIVECODE's spawn geometry. ⚠ AND THIS MODULE IS THE PAIR'S CONTROL CASE for the ES-9 " +
+      'card-only-side-effect question: its tick loop is `clock.subscribe(tick)` inside the ' +
+      'FACTORY, so it evaluates with no card, no faceplate and no lane tile mounted anywhere. Its ' +
+      'card only ever POLLED it. Its parent answers the same question oppositely.',
   },
   {
     type: 'controlSurface',
@@ -954,10 +969,26 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
   },
   {
     type: 'livecode',
-    disposition: 'bespoke-surface',
-    why:
-      'a LIVE-CODE EDITOR: the card body is the code buffer and its evaluation status. No params, ' +
-      'no controls, nothing a ranked cell list can carry.',
+    disposition: 'generic-face',
+    note:
+      'PROMOTED, with the CLOCKED RUNNER it spawns, as the CODE-BUFFER pair. "The card body is ' +
+      'the code buffer" is TRUE and is why this needs a `fullViewBody` rather than a ranking. ' +
+      '"Nothing a ranked cell list can carry" was simply FALSE: RUN is an ordinary `action` cell ' +
+      'over a gesture the card already had at `data-testid="livecode-run"`, and an action cell is ' +
+      'not dock-restricted, so it now reaches the LANE TILE — one click from the rack, where ' +
+      'before promotion running a script meant first discovering the dock full view. "Its ' +
+      'evaluation status" is the half the rulings deleted: a resting instruction, a mutation ' +
+      'COUNT and an error sentence, all painted outside any control, now a StatusLed whose ' +
+      'sentence reaches aria-label and title only. ⚠ THE FINDING THIS PROMOTION TURNED UP is not ' +
+      'in the `why` at all, and it is the one worth carrying forward: `livecodeDef.factory` ' +
+      'returns a NO-OP handle, so `runScript()` on the card was LITERALLY everything the module ' +
+      'did — and `migrated(type)` stops both surfaces rendering a promoted module\'s card. ' +
+      'Promoting without moving the evaluation would have shipped a module that cannot do ' +
+      'anything, with every def-reading gate green because the def has nothing to read. It now ' +
+      'lives in `$lib/ui/modules/livecode-cell-actions.ts`, called by the ranked cell, the ' +
+      'faceplate body and the legacy card. The run OUTCOME moved from component `$state` onto ' +
+      '`node.data.lastRun` in the same change, which fixes a live #1531-class loss: collapsing ' +
+      'the pane used to discard the log and the error you were reading.',
   },
   {
     type: 'mappy',
