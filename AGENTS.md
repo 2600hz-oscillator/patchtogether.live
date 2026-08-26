@@ -69,6 +69,11 @@ flox activate -- task face:inventory:accept
 flox activate -- task vrt:commit
 ```
 
+For `art:update`, attribute every fingerprint entry before re-pinning: a
+peak/RMS-only move is a level change, a spectrum/feature move is timbral. An
+entry you cannot attribute to an intended change is an audio regression — stop
+and report it instead of re-pinning, because re-pinning is what turns it green.
+
 Before creating a worktree, run `task worktree:guard`; preserve dirty work and
 remember that git stash is shared by all worktrees. After a merge to `main`,
 run `task pr:conflict-sweep`.
@@ -96,6 +101,16 @@ run `task pr:conflict-sweep`.
 5. Merge only when this PR's exact final commit is green. A red `main` is P0.
 6. Never use `gh pr update-branch` on PRs that touch shared list/generated
    files; merge `origin/main` locally and verify both sides survived.
+7. **Main-thread trigger detection goes through the shared `createEdgeCounter`
+   seam.** Never hand-roll a whole-buffer rising-edge rescan of an
+   `AnalyserNode` buffer — the ring overlaps the scheduler tick and counts the
+   same edge twice. Worklet consumers are exempt; per-sample compare is correct
+   by construction. Gate consumers stay level-sensitive — do not convert one to
+   edge-only.
+8. **A poly or MIDI module ships an e2e wiring the real default-mode source
+   through the module to an audible-output assertion.** Driving the engine class
+   directly, or asserting only that an edge materializes, has shipped modules
+   that were green and silent.
 
 ## Skills
 
