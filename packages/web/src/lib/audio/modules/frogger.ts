@@ -23,15 +23,23 @@
 //   level_gate — pulses once per level cleared (all 5 homes filled).
 //
 // PARAMS:
-//   initialTime — seconds-per-level (10..120, default 60). Knob-only +
-//                 MIDI-learnable via the shared Knob component on the card.
+//   initialTime — seconds-per-life ceiling (10..120, default 60). LIVE: it is
+//                 re-resolved every scheduler tick, so a knob move reaches the
+//                 running game (see resolveDefaultTime in frogger-state.ts).
 //
-// vizPassthrough: true — the card's <canvas data-viz-passthrough> can be
-// portaled into a containing GroupCard for cross-domain video output (same
-// mechanism MODTRIS/PONG/SCOPE use). A dedicated video_out port is
-// intentionally NOT exposed here — Frogger is audio-domain like its game-
-// module siblings, and the cross-domain bridge already covers "make the
-// canvas visible downstream" without inventing a one-off port type.
+// vizPassthrough: true — the LICENCE to be portaled into a containing
+// GroupCard, and ⚠ NOT, TODAY, A WORKING PATH. `GROUP_VIZ_HOST_TYPES` is
+// `new Set(['scope'])`, so GroupCard opens a portal slot for this module and
+// then mounts no card into it: measured `canvasInSlot 0` for frogger (and for
+// modtris / pong / nibbles) against SCOPE's 1, recorded in
+// `group-viz-hosts.test.ts` and tracked as #1755. The flag is left declared
+// because it is the licence the eventual host fix reads, but the user-facing
+// prose that PROMISED cross-domain video has been removed — it described
+// something the product does not do. The board's real home is the DOCK
+// FACEPLATE BODY (see `face.extension` below).
+//
+// A dedicated video_out port is intentionally NOT exposed — Frogger is
+// audio-domain like its game-module siblings.
 //
 // Inputs:
 //   up_gate / down_gate / left_gate / right_gate (gate): rising-edge frog movement.
@@ -43,7 +51,7 @@
 //   level_gate (gate): one 5 ms pulse when the player completes a level.
 //
 // Params:
-//   initialTime (linear 10..120, default DEFAULT_TIME): seconds-per-life timer ceiling.
+//   initialTime (linear 10..120, default DEFAULT_TIME): LIVE seconds-per-life timer ceiling.
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
@@ -100,9 +108,87 @@ export const froggerDef: AudioModuleDef = {
     { id: 'initialTime', label: 'Time', defaultValue: DEFAULT_TIME, min: 10, max: 120, curve: 'linear' },
   ],
 
+  // ── THE FACEPLATE ────────────────────────────────────────────────────────
+  //
+  // THE TIER LADDER, read back as a sentence: at mini you get TIME; at compact,
+  // TIME; at plate, TIME; at the dock, TIME plus THE BOARD. It is the same
+  // sentence at every tier, and on a one-param module that is the correct
+  // outcome rather than a defect — derived through `curatedFace` in
+  // frogger-face-model.test.ts, never read off the cap constants.
+  //
+  // ⚠ THE RANK IS NOT A JUDGEMENT — there is one param — BUT THE ARGUMENT
+  // STILL HAS TO BE MADE, because the alternative was not ranking it at all.
+  // On a module whose three outputs are GATES, `initialTime` is the one control
+  // that changes the OUTPUT RATE: it is the ceiling on how long a life lasts,
+  // so it bounds the period of `dead_gate` in the degenerate case (nothing
+  // patched into the steering inputs, the frog sits still, and DEAD fires every
+  // `initialTime` seconds like a very slow LFO). That behaviour is real,
+  // reachable and musically useful, and it is the strongest thing this control
+  // does. ⚠ It is also only true SINCE THIS PR — the knob was inert mid-game
+  // until the `resolveDefaultTime` fix in frogger-state.ts. Ranking around a
+  // defect being fixed in the same diff would bake the defect into the UI.
+  //
+  // THE LOSER, NAMED: there is none, and saying so is the point — a reviewer
+  // should be able to confirm the absence rather than infer it.
+  //
+  // ⚠ `glyph: 'none'` IS ALL BUT FORCED HERE, and the "all but" is measured
+  // rather than hedged — the sibling faces that declare `'none'` genuinely
+  // CHOSE it, and it would be easy to write the same sentence here and be
+  // wrong. All three outputs are `type: 'gate'`, so `primaryAudioOutPortId` is
+  // NULL and every LIVE glyph kind — scope, meter, envelope, waveform — resolves
+  // `{kind:'static'}` and is refused by the dead-glyph clause. Exactly one kind
+  // still resolves: `'algorithm'` binds `{layoutSource:'frogger', paramId:null}`
+  // since #2160 widened it. It is refused anyway, and on its own merits: a null
+  // `paramId` means the shell feeds `topologyValue: 0`, and
+  // `ShellExtensionGlyphProps` is `{num, numbers?, testid?}` with NO `nodeId`,
+  // so the component could not resolve a graph node and could not reach the
+  // game snapshot. It would be a CONSTANT picture, identical on every frogger
+  // in the rack forever — which is not a picture of this module. The lane tile
+  // is therefore one knob and no board. Pinned both ways in
+  // frogger-face-model.test.ts, including the counterfactual.
+  face: {
+    order: ['initialTime'],
+    glyph: 'none',
+    // ONE band, ONE control, and `order` and `pages` therefore AGREE — unusual
+    // for this house style, and stated so a reader does not go hunting for the
+    // disagreement. There is no second idea to page and a rail needs
+    // DOCK_TAB_MIN_BANDS = 7 bands, so a tab rail is structurally out of reach.
+    //
+    // ⚠ THE HEADER IS A TASTE CALL AND IT IS DECLARED DELIBERATELY. The house
+    // rule is that a page earns a header at >= 2 controls, or 1 that is the
+    // module's identity — and `initialTime` is NOT frogger's identity, the
+    // BOARD is. The one-line revert is to drop `pages` entirely and let the
+    // dock render one unlabelled band (the `4plexvid` / `rasterize` shape). It
+    // is kept because a single knob floating under a game board with no
+    // section header reads as a stray control rather than a setting.
+    pages: [{ id: 'run', label: 'run', controls: ['initialTime'] }],
+    // The board. See $lib/ui/modules/frogger/shell-extension.ts.
+    extension: 'frogger',
+    // ⚠ AUTHORED RATHER THAN DERIVED. All five inputs are `gate` with NO
+    // `paramTarget` — they are the module's real signal inputs, not CV holes
+    // for a ranked param — so the input rail would get no page-derived section
+    // and would be five anonymous jacks. Grouped, the rail says what the module
+    // IS: four steering triggers and a restart. The OUTPUT rail takes the
+    // derived default (all three are `gate`, one section).
+    // ⚠ THE IDS ARE NOT FREE. An input group must claim the LEADING slot
+    // ('voice'/'signal') or name a declared page, or it appends as a stray band
+    // after every page and the rear totality gate cannot see it
+    // (module-face-lint). So the four steering triggers take the leading
+    // 'signal' slot — they ARE the module's signal inputs, the thing you play
+    // it with — and START takes the 'run' page's own slot, where it sits beside
+    // the TIME knob that shares that band. That is the module described in two
+    // sections rather than five anonymous gates.
+    rear: {
+      groups: [
+        { id: 'signal', label: 'steer', ports: ['up_gate', 'down_gate', 'left_gate', 'right_gate'] },
+        { id: 'run', label: 'run', ports: ['start_gate'] },
+      ],
+    },
+  },
+
   docs: {
     explanation:
-      "A playable Frogger arcade game wrapped as a CV/gate module — the gameplay IS the patch's modulation source. A frog at the bottom hops up a 13-row board (grass banks → a 5-lane road of cars/lorries → a river of logs/turtles → the five home pads at the top), avoiding traffic and drowning, before a per-life timer runs out. You DON'T touch the card to play — you patch gates into its four direction inputs (a sequencer, clock, LFO-through-comparator, or manual gate buttons drive the frog), and the game emits gate pulses on the events it produces: every home pad reached, every death, and every level cleared. So a clock pattern steering the frog becomes a generative trigger source whose rhythm depends on how the game unfolds. The game auto-starts once when the module is first placed (a synthetic START pulse) so you see it running immediately; the START input restarts it any time. The board renders on the card's 2D canvas and, because the module is vizPassthrough, that canvas can be portaled into a containing GROUP card for cross-domain video — there is no dedicated video output port. The TIME knob sets the per-life countdown ceiling.",
+      "A playable Frogger arcade game wrapped as a CV/gate module — the gameplay IS the patch's modulation source. A frog at the bottom hops up a 13-row board (grass banks → a 5-lane road of cars/lorries → a river of logs/turtles → the five home pads at the top), avoiding traffic and drowning, before a per-life timer runs out. You DON'T touch the card to play — you patch gates into its four direction inputs (a sequencer, clock, LFO-through-comparator, or manual gate buttons drive the frog), and the game emits gate pulses on the events it produces: every home pad reached, every death, and every level cleared. So a clock pattern steering the frog becomes a generative trigger source whose rhythm depends on how the game unfolds. The game auto-starts once when the module is first placed (a synthetic START pulse) so you see it running immediately; the START input restarts it any time. The board renders on a 2D canvas at the head of the module's dock faceplate (and on the legacy card), and there is no video output port — FROGGER speaks in gates, and the board is how you read what it is saying. The TIME knob sets the per-life countdown ceiling: lowering it shortens the life already in progress, so it is the direct control over how often DEAD fires when nothing is steering the frog.",
     inputs: {
       up_gate:
         "Move the frog UP one row on each rising edge — one hop toward the home pads per pulse (the move only fires on the gate's leading edge, so a held-high gate hops once, not continuously).",
@@ -122,7 +208,7 @@ export const froggerDef: AudioModuleDef = {
     },
     controls: {
       initialTime:
-        "The per-life countdown ceiling in seconds (10..120, default 60) — how long the frog has before the timer runs out and DEAD fires. Lower it for a frantic game (faster death pulses), raise it for a relaxed run. MIDI-learnable via the on-card knob.",
+        "The per-life countdown ceiling in seconds (10..120, default 60) — how long the frog has before the timer runs out and DEAD fires. Lower it for a frantic game (faster death pulses), raise it for a relaxed run. It applies to the RUNNING game: lowering it clamps the life already in progress down to the new ceiling straight away, while raising it takes effect on the next life rather than extending a countdown under you. Clearing a level still costs 5 s of ceiling (floored at 10 s), and that difficulty ramp is measured from wherever you have since moved this knob to. MIDI-learnable.",
     },
   },
 
@@ -193,7 +279,88 @@ export const froggerDef: AudioModuleDef = {
 
     // ---- Scheduler tick subscription -----------------------------------
     const dtSeconds = SCHEDULER_TICK_MS / 1000;
+
+    // ── THE VRT TICK PIN — the "deterministic-time test hook" the module's
+    //    own EXEMPT_FROM_VRT entry named as its exit condition ─────────────
+    //
+    // `vrt-exemptions.ts` said, verbatim: "Promote to a real VRT baseline once
+    // a deterministic-time test hook is added so the scene can freeze the game
+    // at a known tick." This is it, and it is unusually small here for one
+    // reason no sibling shares: FROGGER HAS NO RNG AT ALL. There is not one
+    // `Math.random` in `frogger-state.ts` — the sprite table is a fixed clone,
+    // the traffic is deterministic, and `dtSeconds` is a constant — so the
+    // board is already a pure function of TICK COUNT and there is nothing to
+    // seed. The only nondeterminism is HOW MANY TICKS elapsed before the
+    // capture, and that is exactly what this pins.
+    //
+    // ⚠ IT SUPPRESSES THE SIM RATHER THAN FREEZING IT, which is strictly
+    // stronger and is pong's / lushgarden's shape. A freeze holds WHICHEVER
+    // frame the harness happened to catch, and "which frame" is a function of
+    // boot speed — measured on pong at 72 differing pixels across two ubuntu
+    // boots WITH a seed. Running a FIXED number of ticks and then never
+    // ticking again makes the board TIME-INVARIANT: the same picture no matter
+    // when the capture lands.
+    //
+    // ⚠ AND A `freeze` ParamDef WAS CONSIDERED AND REFUSED, on the roster's own
+    // measured rule (`_shell-faces.ts`, 2026-08-25): a `params` edit is in the
+    // WebGL attest basis AND in contract-lock, so it costs an owner-machine
+    // re-attest plus a contract re-pin, and it buys only intra-boot stillness.
+    // A boot-time global costs neither and buys time-invariance. Reach for a
+    // ParamDef only when no boot-time global can reach the seam — a WORKER
+    // `renderLocus` is that case, and frogger's factory is main-thread.
+    //
+    // ⚠ IT IS READ TWICE, AT CONSTRUCTION AND ONCE MORE IN THE TICK, because
+    // the two capture paths install it at different moments. The FACE harness
+    // uses `simPin`, i.e. `addInitScript` BEFORE `goto`, so the global is
+    // already there when this factory runs. The CARD harness (`vrt-scenes.ts`)
+    // sets it from `afterSpawn`, i.e. AFTER construction. A construction-only
+    // read would leave the card scene silently unpinned — a dead pin that
+    // produces a plausible picture and a different one per boot, which is the
+    // precise failure `bootWithFace` asserts against.
+    //
+    // ⚠ NOTHING ABOUT THE SHIPPED GAME CHANGES: nothing in the app ever sets
+    // `__froggerVrtTicks`.
+    //
+    // ⚠ DOOM IS EXCLUDED FROM THIS MECHANISM BY NAME. It is the one other game
+    // module in the tree and it must never be re-timed: `runtime.runTic()` is
+    // called inside its `surface.draw`, so DOOM's game clock IS its frame
+    // clock and pinning ticks would re-specify how far the marine walks. No
+    // DOOM file is touched by this change and none should be.
+    let vrtPinned = false;
+    function readVrtTickPin(): number | undefined {
+      const v = (globalThis as { __froggerVrtTicks?: number }).__froggerVrtTicks;
+      return typeof v === 'number' && Number.isFinite(v) && v >= 0 ? Math.floor(v) : undefined;
+    }
+    function applyVrtTickPin(ticks: number): void {
+      // Rebuild from scratch so the pin is a pure function of (ticks, params)
+      // and not of however many real ticks already landed.
+      state = initFroggerState(params);
+      // Tick 1 carries the synthetic auto-start, exactly as a live boot does —
+      // ONE code path for the pinned board and the played one.
+      for (let i = 0; i < ticks; i++) {
+        state = stepFroggerState(state, {
+          up: false, down: false, left: false, right: false, start: i === 0,
+        }, params, dtSeconds);
+      }
+      pendingAutoStart = false;
+      vrtPinned = true;
+    }
+    const bootPin = readVrtTickPin();
+    if (bootPin !== undefined) applyVrtTickPin(bootPin);
+
     const tick = () => {
+      // ⚠ THE PIN COMES FIRST AND RETURNS. Letting the clock advance the board
+      // even once re-introduces the boot-speed dependence the pin exists to
+      // remove. This is the "suppress all further stepping" half, not a second
+      // freeze.
+      if (vrtPinned) return;
+      // The LATE install (the card scene's `afterSpawn`). One-shot: once it
+      // fires, the branch above owns every subsequent tick.
+      const latePin = readVrtTickPin();
+      if (latePin !== undefined) {
+        applyVrtTickPin(latePin);
+        return;
+      }
       const u = upTap.read(),    d = downTap.read(),  l = leftTap.read();
       const r = rightTap.read(), s = startTap.read();
       // Real CV edges.
