@@ -181,7 +181,7 @@ export const scoreDef: AudioModuleDef = {
       "score-pages-{n}":
         "How long the piece is, in pages of sixteen bars each, from one to four. Shrinking it is NON-DESTRUCTIVE: notes on a page that is no longer allocated stay in the patch and simply stop sounding, and growing back brings them back. The sequence length the playhead walks comes from this, so an unwanted page is sixteen bars of silence on every pass.",
       "score-slots-{n}":
-        "Four quicksave slots holding whole snapshots of the piece — every note, tie, dynamic, the key, the length, the loop flag, the stop bar and the five knob values. Arm SAVE, LOAD or QUEUE and then click a slot: SAVE writes, LOAD switches instantly, QUEUE switches at the end of the current pass. The four QUEUE 1..4 CV inputs queue the same slots from a patch cable, so this is where the patterns those inputs play come from. RESET drops any queued slot and restarts the playhead at the top.",
+        "Eight quicksave slots holding whole snapshots of the piece — every note, tie, dynamic, the key, the length, the loop flag, the stop bar and the five knob values. Arm SAVE, LOAD or QUEUE and then click a slot: SAVE writes, LOAD switches instantly, QUEUE switches at the end of the current pass. The four QUEUE CV inputs reach the FIRST FOUR of these slots from a patch cable, so this is where the patterns those inputs play come from; slots 5 to 8 are reachable by hand only. RESET drops any queued slot and restarts the playhead at the top.",
     },
   },
 

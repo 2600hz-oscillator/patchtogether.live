@@ -2,6 +2,14 @@
   // ScoreSlotsPanel — QUICKSAVE, as a PF-14 panel cell.
   //
   // ⚠ THIS IS NOT A CONVENIENCE. FOUR DECLARED INPUT PORTS DEPEND ON IT.
+  //
+  // ⚠ THE ROW PAINTS EIGHT SLOTS, NOT FOUR, AND THAT IS THE SHARED COMPONENT'S
+  // OWN ROSTER RATHER THAN THIS MODULE'S. `QuicksaveControls` renders
+  // `SLOT_KEYS`, which grew to eight for the sequencers that used the extended
+  // transport CV set — so SCORE has always shown eight here and only the first
+  // four are reachable from a cable. Carried over unchanged: this is a face PR,
+  // and trimming the roster per module is a change to a shared widget.
+  //
   // `queue1_cv … queue4_cv` are four of SCORE's eleven inputs, documented as
   // "queues saved pattern slot N", and their engine path bottoms out at
   // `data.slots[queued]`. `data.slots` is written by exactly one thing in the
