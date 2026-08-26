@@ -53,16 +53,14 @@ import {
   DYNAMIC_SCALE,
   MAX_PAGES,
   TICKS_PER_BAR,
+  coerceScoreData,
   dynamicAt,
-  emptyScoreData,
   slotEmitPlan,
   tickWidth,
   tieChainFrom,
   tieRoleFor,
   type ScoreData,
   type ScoreNote,
-  type DynamicMarker,
-  type Tie,
 } from './score-data';
 import {
   createTransportCv,
@@ -80,25 +78,14 @@ import { createPlayheadTracker, createPlayheadTrackerOf } from './playhead-track
 
 const ADSR_PREFIX = '/ADSR';
 
+// ⚠ ONE COERCION, SHARED WITH EVERY RENDERER. This used to be a twelve-line
+// copy, and the legacy card and the quicksave snapshot each carried their own —
+// three restatements of the same `pages` clamp and the same `stopBar` shape
+// test. The faceplate's staff panel would have been the fourth, and a placement
+// surface that disagreed with the playback surface about how many pages exist is
+// the drift `score-data.ts`'s scheduler-grid note is about, one layer up.
 function readScoreData(nodeId: string): ScoreData {
-  const live = livePatch.nodes[nodeId];
-  const raw = live?.data as Record<string, unknown> | undefined;
-  if (!raw) return emptyScoreData();
-  const notes = Array.isArray(raw.notes) ? (raw.notes as ScoreNote[]) : [];
-  const dynamics = Array.isArray(raw.dynamics) ? (raw.dynamics as DynamicMarker[]) : [];
-  const ties = Array.isArray(raw.ties) ? (raw.ties as Tie[]) : [];
-  const ks = typeof raw.keySignature === 'number' ? (raw.keySignature as number) : 0;
-  const pages =
-    typeof raw.pages === 'number'
-      ? Math.max(1, Math.min(MAX_PAGES, raw.pages as number))
-      : DEFAULT_PAGES;
-  const loop = typeof raw.loop === 'boolean' ? (raw.loop as boolean) : false;
-  const sb = raw.stopBar as { bar?: number; tick?: number } | undefined;
-  const stopBar =
-    sb && typeof sb === 'object' && typeof sb.bar === 'number' && typeof sb.tick === 'number'
-      ? { bar: sb.bar, tick: sb.tick }
-      : undefined;
-  return { notes, dynamics, ties, keySignature: ks, pages, loop, stopBar };
+  return coerceScoreData(livePatch.nodes[nodeId]?.data);
 }
 
 export const scoreDef: AudioModuleDef = {
@@ -176,19 +163,205 @@ export const scoreDef: AudioModuleDef = {
       release: "RELEASE — the ADSR's fade time after a note's gate releases.",
       isPlaying: "PLAY — the transport state: 1 plays from the playhead, 0 stops and forces the gate low. Starting playback returns the playhead to the top.",
       "score-note-{n}":
-        "A note on the staff — its vertical position sets the pitch and its note-head/flag sets the duration. Click an empty staff position with a note-value tool selected to add one, click a note to select/remove it; sharp/flat tools toggle its accidental. Each note is played as V/oct on the PITCH output with a gate, in score order, when the playhead reaches it.",
+        "The STAFF itself — click an empty position to write a note of the current VALUE there, click a note to select it, and click the selected note again to delete it. Drag a note to move it: sideways changes when it sounds, up and down changes its pitch. Each note plays as V/oct on the PITCH output with a gate, in score order, as the playhead reaches it. A note that will not fit — the bar is full, it overlaps a neighbour, or the pitch is outside C4..C6 — is refused and the bar flashes.",
       "score-tie-{n}":
-        "A tie joining two adjacent notes of the same pitch into one held note: the gate stays high across the tied span and a single envelope shapes the whole duration (only the last note in a tie chain releases the gate). Add ties with the tie tool.",
+        "Ties the SELECTED note to the next note in the piece, and unties it again — turning it off is the only way there is to remove a tie. A tie makes the two into one held note: the gate stays high across the whole span and a single envelope shapes it, with only the last note in a chain releasing the gate. With NOTHING selected it is legato mode: leave it on and each note you write is tied to the one before it.",
       "score-dyn-{n}":
-        "A dynamic marking (pp, p, mp, mf, f, ff) placed on the staff — from where it sits onward it scales the ENV output's loudness (forward-filled until the next marking; mf is the default before any marking). Drop them with the dynamics tools.",
+        "The dynamic marking sitting exactly at the SELECTED note (pp, p, mf, f, ff), or none. From where a marking sits onward it scales the ENV output's loudness, forward-filled until the next one, with mf in force before any marking at all. It shows the marking placed HERE rather than the level in force here — those are different facts, and picking the level already in force would silently add a second marking. With NOTHING selected it arms a level for the notes you write next, and a marking is only actually placed where it would change something.",
+      "score-value-{n}":
+        "Which note value the NEXT click on the staff writes: whole, half, quarter, eighth, triplet or sixteenth. It is the one setting that applies to the gesture you are about to make rather than to the note you have selected. Triplets sound on the full 48-tick grid, between the sixteenths, rather than being rounded onto them.",
+      "score-accidental-{n}":
+        "The accidental carried by the SELECTED note: sharp, natural, flat, or none. `key` means the note has no accidental of its own and follows the key signature; `natural` explicitly cancels the key signature on that one note, and a note you mark here keeps its spelling when the key signature changes. With NOTHING selected it arms the accidental for the notes you write next — so you can spell a note as you place it rather than going back to fix it.",
+      "score-key-{n}":
+        "The key signature, from seven flats to seven sharps, named by its major key. Changing it respells every note that carries no accidental of its own and leaves the ones you marked alone — so it is a bulk default you set once at the start, not a transpose.",
+      "score-stop-{n}":
+        "The stop-music double bar. `here` puts it at the SELECTED note, which is where the piece ends; with nothing selected it goes where the written music ends. `none` removes it and the piece plays to the end of its last page. What HAPPENS at that point is LOOP's decision, so the two are one idea in two controls. Drag the double bar on the staff to move it.",
+      "score-loop-{n}":
+        "What happens when the playhead reaches the end of the piece — the stop bar if one is set, otherwise the end of the last page. On, it wraps back to the top and keeps going; off, it stops and the transport returns to stopped.",
+      "score-pages-{n}":
+        "How long the piece is, in pages of sixteen bars each, from one to four. Shrinking it is NON-DESTRUCTIVE: notes on a page that is no longer allocated stay in the patch and simply stop sounding, and growing back brings them back. The sequence length the playhead walks comes from this, so an unwanted page is sixteen bars of silence on every pass.",
+      "score-slots-{n}":
+        "Four quicksave slots holding whole snapshots of the piece — every note, tie, dynamic, the key, the length, the loop flag, the stop bar and the five knob values. Arm SAVE, LOAD or QUEUE and then click a slot: SAVE writes, LOAD switches instantly, QUEUE switches at the end of the current pass. The four QUEUE 1..4 CV inputs queue the same slots from a patch cable, so this is where the patterns those inputs play come from. RESET drops any queued slot and restarts the playhead at the top.",
     },
   },
 
+  // ⚠ THESE ARE A DOCS-KEYING DEVICE FIRST AND A FACE ROSTER SECOND, and reading
+  // them the other way round makes the face impossible. A `controlFamily` is how
+  // a card control with no backing param gets keyed by the docs gate at all —
+  // the first three were declared for STRICT_DOCS long before any face existed.
+  // Read as "three controls to rank", they are either three copies of one
+  // picture or three mutually-exclusive selectors claiming one single-valued
+  // state. Read as keys, they become the note surface, the tie toggle and the
+  // dynamic selector, and none of them is a mode.
+  //
+  // ⚠ EACH `testidPrefix` IS A LITERAL BOTH SURFACES EMIT. `module-docs-lint`
+  // greps the whole `ui/` tree for the prefix string, so these deliberately
+  // reuse the names the legacy card already prints (`score-tool`, `score-page`,
+  // `quicksave`) rather than inventing a face-only namespace — which keeps the
+  // grep finding them on the card as well as on the faceplate.
   controlFamilies: [
     { id: 'score-note', label: 'Staff notes', kind: 'cell', testidPrefix: 'score-note' },
     { id: 'score-tie', label: 'Note ties', kind: 'cell', testidPrefix: 'score-tie' },
     { id: 'score-dyn', label: 'Dynamic markings', kind: 'cell', testidPrefix: 'score-dyn' },
+    { id: 'score-value', label: 'Note value', kind: 'cell', testidPrefix: 'score-tool' },
+    { id: 'score-accidental', label: 'Accidental', kind: 'cell', testidPrefix: 'score-tool-sharp' },
+    { id: 'score-key', label: 'Key signature', kind: 'cell', testidPrefix: 'score-key-sig' },
+    { id: 'score-stop', label: 'Stop bar', kind: 'cell', testidPrefix: 'score-stop-bar' },
+    { id: 'score-loop', label: 'Loop', kind: 'cell', testidPrefix: 'score-tool-loop' },
+    { id: 'score-pages', label: 'Pages', kind: 'cell', testidPrefix: 'score-page' },
+    { id: 'score-slots', label: 'Quicksave', kind: 'cell', testidPrefix: 'quicksave' },
   ],
+
+  face: {
+    // ⚠ THE STAFF RANKS FIRST, AND IT COSTS NO LANE RANK. `score-note-{n}` is a
+    // PF-14 PANEL, and `module-face-lint` refuses a panel SELECTED at a lane
+    // tier (a panel declares its own `minWidth`; a lane knob column is 46 px),
+    // which used to make a panel's first legal rank SEVEN. PF-22 drops a
+    // declared `hero.cell` from `laneOrder` only, so the picture may rank first
+    // and the 46 px protection is untouched. kria is the first adopter; this is
+    // the second, and for the same reason: everything a player plays is in
+    // `node.data` and none of it is a param.
+    //
+    // ⚠ AND THE RANK IS HONEST RATHER THAN CONVENIENT. Five of the six params
+    // are a built-in ADSR — a VOICE bolted to the side of a SEQUENCER, optional
+    // in any patch that drives a real envelope from GATE — and the sixth is the
+    // transport switch. NOT ONE PARAM IS THE MUSIC. The music is every note,
+    // tie, dynamic, the key signature, the page count, the loop flag and the
+    // stop bar, all of which live in `node.data`.
+    //
+    // Read the order back as a sentence: write the notes; start it; set the
+    // tempo; choose what the next click writes; then spell, shade, phrase and
+    // end what you selected; then the key, the length, the envelope, and
+    // finally the snapshots.
+    order: [
+      'score-note-{n}',
+      // `isPlaying` above `bpm` is not arbitrary: BPM is a FALLBACK. `tick()`
+      // checks `isClockInConnected()` first and runs the external-clock branch
+      // whenever a cable is present, ignoring the tempo entirely. The transport
+      // has no such conditional.
+      'isPlaying',
+      'bpm',
+      // The only cell that affects the NEXT gesture rather than the current
+      // selection — you set it before you click, every time.
+      'score-value-{n}',
+      // The marks, in the order a piece acquires them: pitch spelling →
+      // loudness → phrasing → where it ends → what happens there.
+      'score-accidental-{n}',
+      'score-dyn-{n}',
+      'score-tie-{n}',
+      'score-stop-{n}',
+      'score-loop-{n}',
+      // ⚠ THE KEY SIGNATURE RANKS TENTH, AND THAT IS THE DEMOTION MOST WORTH
+      // DEFENDING. It FEELS like a headline setting. It is not:
+      // `staffStepToMidi` applies it only to notes whose `accidental === null`,
+      // so it is a bulk respelling you perform once at the start and which never
+      // touches a note you have explicitly marked. Set and forget.
+      'score-key-{n}',
+      // Structural, changed rarely — but RANKED rather than buried, because the
+      // page count used to be a one-way ratchet and shrinking it is a repair a
+      // player needs a control for.
+      'score-pages-{n}',
+      'attack', 'decay', 'sustain', 'release',
+      // ⚠ LAST, AND ITS RANK IS WHAT PROTECTS IT. Quicksave is a PERFORMANCE
+      // affordance you reach for after the piece exists, and it is the largest
+      // cell after the staff. It is also the SECOND panel on this face, and —
+      // unlike the staff — it is not the hero, so it stays in `laneOrder`. It is
+      // safe at rank 16 only because the `full` lane cap is 6, which is the
+      // arithmetic `panelCellKeys`'s own comment calls "a coincidence that a
+      // future cap bump silently removes". ⚠ ANY RE-RANK THAT MOVES THIS ABOVE
+      // RANK 6 TURNS A TASTE CHANGE INTO A RED RUN, and the reason will not be
+      // obvious from the diff. `score-face-model.test.ts` asserts it directly so
+      // the failure names itself.
+      'score-slots-{n}',
+    ],
+
+    // ⚠ `'none'` IS THE ONLY LITERAL THAT COMPILES INTO A GREEN RUN, and it is
+    // worth recording why rather than leaving it looking like a default.
+    // `laneGlyphFor` returns `'picture'` only for `domain === 'video'`, and a
+    // `'trace'` glyph needs a live binding that resolves through
+    // `primaryAudioOutPortId` — `outputs.find(o => o.type === 'audio')`. SCORE
+    // has NO audio output at all: its four are pitch, gate, cv and gate. So
+    // every other glyph literal falls to a dead static picture and
+    // `module-face-lint`'s `deadGlyphProblems` reddens it unconditionally.
+    //
+    // ⚠ AND THE PICTURE SCORE WOULD WANT IS STRICTLY MORE THAN THE GLYPH SEAM
+    // BUYS. The useful glance is "where is the playhead in the piece?", which
+    // needs `data.notes` plus `data.pages` plus a per-frame engine read of
+    // `currentNoteId` — node data and a live handle, not a discrete param value,
+    // and `ShellExtensionGlyphProps` carries no nodeId at all. kria refused on
+    // the identical mechanism with the identical sentence ("the picture a player
+    // wants is the playhead over the SELECTED track's SELECTED lane, which is
+    // two more pieces of node.data"). Two instruments landing on the same
+    // refusal for the same structural reason is evidence the seam's limit is a
+    // SHAPE rather than an oversight.
+    glyph: 'none',
+
+    hero: { cell: 'score-note-{n}' },
+
+    // ⚠ FIVE BANDS, NO TAB RAIL, AND THE THRESHOLD IS `DOCK_TAB_MIN_BANDS = 7`.
+    // SCORE is the clearest "lots of controls of DIFFERENT types" case in the
+    // fleet — a picture-you-edit, a SECOND picture-you-edit, five selectors, two
+    // toggles, five faders and a discrete transport switch, six distinct
+    // primitives — and its honest semantic grouping still lands at five. The
+    // skill is explicit that an author may not pad pages to force the rail, so
+    // this does not: splitting `score` into notes+key, `marks` into
+    // dynamics+phrasing and `transport` into transport+length would reach seven
+    // and every one of those splits is one control in a band of its own.
+    // `face.tabbed` is owner-instruction-only. Recorded here because SCORE is
+    // now the third module to hit this gap from a different direction
+    // (ruttetra at 12 params in 3 bands, numpadPlus at 4), and three
+    // near-misses in the same direction is a measurement rather than three
+    // coincidences — but moving the threshold re-pins every dock baseline it
+    // newly captures, so it is the owner's call and not a face PR's.
+    pages: [
+      {
+        id: 'score',
+        label: 'score',
+        hint:
+          'click an empty staff position to write a note of the current VALUE, click a note to ' +
+          'select it, click the selected note again to delete it. ACC and KEY spell what you ' +
+          'wrote: KEY is the bulk default and ACC overrides it on the one note you selected.',
+        controls: ['score-note-{n}', 'score-value-{n}', 'score-accidental-{n}', 'score-key-{n}'],
+      },
+      {
+        id: 'marks',
+        label: 'marks',
+        hint:
+          'everything here acts on the SELECTED note, so there is no tool to arm and no mode to ' +
+          'be in. END says where the piece stops and LOOP says what happens there — one decision ' +
+          'in two controls, which is why they are clustered.',
+        controls: ['score-dyn-{n}', 'score-tie-{n}', 'score-stop-{n}', 'score-loop-{n}'],
+        clusters: [{ label: 'ending', controls: ['score-stop-{n}', 'score-loop-{n}'] }],
+      },
+      {
+        id: 'transport',
+        label: 'transport',
+        hint:
+          'BPM is a FALLBACK: patch anything into CLOCK IN and its rising edges drive the ' +
+          'playhead instead, one per sixteenth, and the tempo here is ignored. PAGES is how long ' +
+          'the piece is — shrinking it never deletes notes, they just stop sounding.',
+        controls: ['isPlaying', 'bpm', 'score-pages-{n}'],
+      },
+      {
+        id: 'envelope',
+        label: 'envelope',
+        hint:
+          'a small voice bolted to the side of the sequencer: it shapes the ENV output only, ' +
+          'scaled by whichever dynamic marking is in force. Every one of these has a CV input, ' +
+          'and a patch driving a real envelope from GATE can ignore the lot.',
+        controls: ['attack', 'decay', 'sustain', 'release'],
+      },
+      {
+        id: 'slots',
+        label: 'slots',
+        hint:
+          'four whole-piece snapshots. Arm SAVE, LOAD or QUEUE, then click a slot. This is also ' +
+          'where the QUEUE 1..4 CV inputs get the patterns they play, so an empty slot is a ' +
+          'silent patch cable.',
+        controls: ['score-slots-{n}'],
+      },
+    ],
+  },
 
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     const nodeId = node.id;

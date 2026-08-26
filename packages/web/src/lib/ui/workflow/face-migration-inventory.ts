@@ -1261,10 +1261,19 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
   },
   {
     type: 'score',
-    disposition: 'bespoke-surface',
-    why:
-      'a NOTATION EDITOR: note / tie / dynamic rosters placed on a staff. Editing a score is not ' +
-      'a ranked control list, and the staff is the interaction.',
+    disposition: 'generic-face',
+    note:
+      'PROMOTED. ⚠ THE OLD `why` — "editing a score is not a ranked control list, and the staff ' +
+      'IS the interaction" — was true and was not disqualifying, which is the same mistake kria\'s ' +
+      'entry made. A staff is ONE PICTURE-YOU-EDIT, which is a PF-14 panel\'s own description, and ' +
+      'PF-22 lets that panel rank first as the dock hero instead of being pushed past a lane cap ' +
+      'this module could never clear. Everything the staff is NOT — note value, accidental, key ' +
+      'signature, dynamic, tie, stop bar, loop, page count — is a generic selector or toggle over a ' +
+      'roster the module already had. What made it look bespoke was that the CARD expressed all of ' +
+      'them as fifteen MODAL toolbar buttons; the face expresses them as cells acting on a ' +
+      'SELECTED note, which is what makes them cell-shaped at all. Quicksave is a second panel, ' +
+      'and it had to be: four declared CV inputs (queue1..4) bottom out in `data.slots`, which ' +
+      'until this PR only the legacy card could write.',
   },
   {
     type: 'skifree',

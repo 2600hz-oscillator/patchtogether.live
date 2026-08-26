@@ -4968,6 +4968,53 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // audio-domain module with a JS-painted picture the shell has no generic
   // route to, since `hasVideoSurface` is `domain === 'video'`).
   'frogger',
+
+  // ── score ─────────────────────────────────────────────────────────────────
+  //
+  // THE SHEET-MUSIC SEQUENCER. Every other sequencer in this repo asks you to
+  // think in STEPS — a grid of on/off cells, a piano roll, an X/Y field. SCORE
+  // asks you to think in NOTATION: a treble staff in 4/4 with note VALUES,
+  // accidentals, a key signature, ties, dynamics from pp to ff and a
+  // stop-music double bar. The verb is WRITE, not PROGRAM, and the unit is a
+  // NOTE WITH A DURATION rather than a step with a gate.
+  //
+  // ⚠ NOT ONE OF ITS SIX PARAMS IS THE MUSIC. Five are a built-in ADSR — a
+  // VOICE bolted to the side of a SEQUENCER — and the sixth is `isPlaying`.
+  // The music (every note, tie, dynamic, the key, the page count, the loop
+  // flag, the stop bar and four quicksave slots) is `node.data`. That is the
+  // same inversion kria has and the reason both sat in `bespoke-surface`.
+  //
+  // ⚠ THE ENTRY THAT KEPT IT THERE SAID "the staff is the interaction", AND
+  // THAT WAS TRUE AND NOT DISQUALIFYING. A staff is one picture-you-edit,
+  // which is a PF-14 PANEL's own description, and PF-22 lets that panel rank
+  // FIRST as the dock hero. Everything else — note value, accidental, key,
+  // dynamic, tie, stop bar, loop, page count — is a generic selector or toggle
+  // over a roster the module already had. Nothing here is bespoke except the
+  // two pictures.
+  //
+  // ⚠ THE FACE IS NOT THE CARD WITH A NEW SKIN. The card is MODAL: fifteen
+  // toolbar buttons arm fifteen tools and the staff interprets a click. The
+  // face SELECTS instead, and that is forced rather than chosen — fifteen
+  // mutually-exclusive arming controls drawn as cells would be five controls
+  // claiming one single-valued state. Three live defects close as a
+  // CONSEQUENCE: a note becomes deletable by pointer at all, a tie becomes
+  // removable at all, and the def's own `docs.controls` stops promising a
+  // select/remove the module did not have. `?shell=legacy` still renders the
+  // modal card verbatim and `score.spec.ts` still gates it.
+  //
+  // ⚠ FOUR DECLARED INPUT PORTS GATED THIS PROMOTION. `queue1_cv … queue4_cv`
+  // resolve through `data.slots`, which is written by exactly one widget in the
+  // repo — the one mounted only by the legacy card. The face carries it as a
+  // SECOND panel; without that, four documented inputs would have been
+  // permanently inert with every registry test green.
+  //
+  // ⚠ ZERO ATTEST AND ZERO ART. `webgl-attest-hash.sh --list` contains no
+  // `audio/modules/score.ts`, no `score-data.ts` and no score card or panel
+  // (its two `score`-ish hits are `scoreboard`, a different, video module); and
+  // `art/baselines/` holds no score `.f32` — the ART scenario computes against
+  // a reference, and `score` is in `ART_BACKLOG`. The staff is an <svg> for the
+  // same reason kria's grid is DOM: basis rule (2) is derived from CONTENT.
+  'score',
 ]);
 
 /**

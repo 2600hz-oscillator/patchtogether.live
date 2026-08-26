@@ -501,13 +501,79 @@ export function unregisterSetter(moduleId: string, paramId: string): void {
   setters.delete(bindingKey(moduleId, paramId));
 }
 
+/**
+ * CONTROLS WHOSE BINDING ID CHANGED — `paramId` → the legacy ids a saved
+ * binding may still be filed under.
+ *
+ * ⚠ WHY THIS EXISTS. `bindingKey` is `${moduleId}:${paramId}` and bindings
+ * persist to localStorage, so a control that changes the id it binds under
+ * ORPHANS every saved binding: the record is still there, under a key nothing
+ * reads any more, and the pad simply stops working with no error and nothing to
+ * see. Node ids are stable across reloads, so this is not theoretical.
+ *
+ * ⚠ THE FIRST MEMBER IS A FACE PROMOTION, AND THE CLASS HAS MORE THAN ONE.
+ * `MidiAssignButton` binds under a SYNTHETIC ACTION ID — its own doc names
+ * `'play'` and `'clear'` as examples — because a card button has no backing
+ * param. Promoting a module replaces that button with a `<Toggle>` over the
+ * REAL param, so `score`'s PLAY moved from `<node>:play` to `<node>:isPlaying`.
+ * Every future promotion of a card carrying a MidiAssignButton is the same
+ * shape, which is why this is a declared table rather than a module `if`.
+ *
+ * ⚠ IT IS A ONE-WAY MIGRATION TOWARD THE DEFAULT SURFACE, deliberately.
+ * Adopting RE-KEYS the record, so a player who then opens `?shell=legacy` finds
+ * the legacy card's button unbound. That is the right direction: the faceplate
+ * is the product and the legacy card is an escape hatch, and leaving the record
+ * under both keys would give one physical pad two owners.
+ */
+const LEGACY_BINDING_ALIASES: Readonly<Record<string, readonly string[]>> = {
+  // score: the card's MidiAssignButton (`paramId="play"`, a synthetic action
+  // id) became the faceplate's `isPlaying` Toggle, which is the same
+  // `makeMidiAssignable({ kind:'note', controlType:'button' })` factory with the
+  // same press-edge toggle semantics — so the AFFORDANCE survived promotion
+  // intact and only the KEY moved.
+  isPlaying: ['play'],
+};
+
+/**
+ * Re-key a saved binding filed under a legacy id, on the control's own mount.
+ *
+ * DENY BY DEFAULT: it does nothing unless the target key is UNBOUND and a
+ * declared legacy key for the SAME NODE is bound. A control that already has a
+ * binding is never touched, so this cannot steal one.
+ */
+function adoptLegacyBinding(moduleId: string, paramId: string): void {
+  const legacyIds = LEGACY_BINDING_ALIASES[paramId];
+  if (!legacyIds) return;
+  const key = bindingKey(moduleId, paramId);
+  if (bindings.has(key)) return;
+  for (const legacy of legacyIds) {
+    const oldKey = bindingKey(moduleId, legacy);
+    const b = bindings.get(oldKey);
+    if (!b) continue;
+    bindings.delete(oldKey);
+    setters.delete(oldKey);
+    noteSetters.delete(oldKey);
+    bindings.set(key, { ...b, key });
+    touchBindings();
+    saveToStorage();
+    return;
+  }
+}
+
 /** Register / refresh the live GATE setter for a gate input / button. The NOTE
  *  analogue of registerSetter — stored in `noteSetters` UNCONDITIONALLY (no
  *  dependence on a binding existing yet) so a gate row / button mounted BEFORE
  *  its binding loads (Save/Load Performance flow) gets wired the moment the
  *  binding arrives. Idempotent. */
 export function registerGateSetter(moduleId: string, paramId: string, args: GateSetter): void {
+  adoptLegacyBinding(moduleId, paramId);
   noteSetters.set(bindingKey(moduleId, paramId), { onGate: args.onGate });
+}
+
+/** TEST SEAM for the alias table above — the adoption runs on MOUNT, which a
+ *  unit lane has no component to trigger. Not for product code. */
+export function _adoptLegacyBindingForTest(moduleId: string, paramId: string): void {
+  adoptLegacyBinding(moduleId, paramId);
 }
 
 /** Drop the live gate setter (called on gate-row / button unmount). */
