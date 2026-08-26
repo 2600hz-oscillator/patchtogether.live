@@ -58,6 +58,29 @@ const US_CHANNELS = [
   },
 ];
 
+/**
+ * ⚠ A ONE-CHANNEL COUNTRY, AND IT IS THE FIXTURE THAT MAKES THE TUNE LEGS
+ * DETERMINISTIC. The stub manifest below has no playable media on purpose, so
+ * hls.js resolves it to `unavailable` — and the module then does exactly what its
+ * docs promise: it AUTO-SKIPS to the next channel rather than hanging. With the
+ * two-channel US roster, "click the first row and assert the station name" is
+ * therefore a race against the module's own recovery, and the slower the runner
+ * the more reliably the skip wins. It passed locally three times over and lost on
+ * CI, which is the shape this repo keeps re-learning: the product was right and
+ * the assertion was.
+ *
+ * So the roster-SHAPE claims (a count, a geo badge) use the two-channel country,
+ * and every claim about WHICH STATION IS TUNED uses this one, where a skip has
+ * nowhere else to land.
+ */
+const FR_CHANNELS = [
+  {
+    nanoid: 'fra1', name: 'Mock Solo France',
+    stream_urls: ['https://mock.example/fr-solo/playlist.m3u8'], youtube_urls: [],
+    languages: ['fra'], country: 'fr', isGeoBlocked: false,
+  },
+];
+
 const STUB_M3U8 = '#EXTM3U\n#EXT-X-ENDLIST\n';
 
 async function installMocks(page: Page): Promise<void> {
@@ -68,7 +91,7 @@ async function installMocks(page: Page): Promise<void> {
     route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(US_CHANNELS) }),
   );
   await page.route('**/famelack-data/**/countries/fr.json', (route) =>
-    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) }),
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(FR_CHANNELS) }),
   );
   await page.route('**/*.m3u8', (route) =>
     route.fulfill({ status: 200, contentType: 'application/vnd.apple.mpegurl', body: STUB_M3U8 }),
@@ -154,27 +177,40 @@ test.describe('TV LIBRARIAN face — the promotion is what makes it tunable', ()
     // …and so is the attribution the dataset licence requires.
     await expect(body.getByTestId('tv-disclaimer')).toBeVisible();
 
+    // ⚠ NOW SWITCH TO THE ONE-CHANNEL COUNTRY FOR EVERY CLAIM ABOUT *WHICH*
+    // STATION IS TUNED — see FR_CHANNELS. The stub manifest is unplayable by
+    // design, so the module auto-skips off whatever it just tuned; against a
+    // two-row roster that makes "the first row is playing" a race with the
+    // module's own documented recovery, and the slower the runner the more
+    // reliably the skip wins.
+    await body.getByTestId('tv-country-select').selectOption('FR');
+    await expect(channels).toHaveCount(1);
     await channels.first().click();
 
     // ⚠ THE STATION NAME IS ON THE ACCESSIBLE NAME AND NOWHERE ELSE. Both halves
     // are asserted: the value survived the readout's deletion, and no text node
     // outside a control restates it.
-    await expect(body.getByTestId('tv-preview')).toHaveAttribute('aria-label', /Mock News USA/);
+    await expect(body.getByTestId('tv-preview')).toHaveAttribute('aria-label', /Mock Solo France/);
     await expect(body.getByTestId('tv-now-playing')).toHaveCount(0);
 
     // The selected row is the painted answer, and it is highlighted.
     await expect(body.locator('.chan.sel')).toHaveCount(1);
-    await expect(body.locator('.chan.sel')).toContainText('Mock News USA');
+    await expect(body.locator('.chan.sel')).toContainText('Mock Solo France');
 
     // It reached the graph, so a rack-mate tunes the same station.
-    const persisted = await page.evaluate(() => {
-      const w = globalThis as unknown as {
-        __patch: { nodes: Record<string, { data?: { channel?: { name?: string }; countryCode?: string } }> };
-      };
-      return w.__patch.nodes['tvf1']?.data ?? null;
-    });
-    expect(persisted?.countryCode).toBe('US');
-    expect(persisted?.channel?.name).toBe('Mock News USA');
+    await expect
+      .poll(async () =>
+        page.evaluate(() => {
+          const w = globalThis as unknown as {
+            __patch: {
+              nodes: Record<string, { data?: { channel?: { name?: string }; countryCode?: string } }>;
+            };
+          };
+          const d = w.__patch.nodes['tvf1']?.data;
+          return `${d?.countryCode ?? '-'}/${d?.channel?.name ?? '-'}`;
+        }),
+      )
+      .toBe('FR/Mock Solo France');
   });
 
   test('SCREEN OFF collapses the picture and does NOT stop the tuner @video', async ({ page }) => {
@@ -191,9 +227,11 @@ test.describe('TV LIBRARIAN face — the promotion is what makes it tunable', ()
     await expect(body.getByTestId('tv-face-canvas')).toBeVisible();
 
     await body.getByTestId('tv-view-list').click();
-    await body.getByTestId('tv-country-select').selectOption('US');
+    // The one-channel country: an unplayable stub makes the module auto-skip, and
+    // with a single candidate the skip has nowhere else to land. See FR_CHANNELS.
+    await body.getByTestId('tv-country-select').selectOption('FR');
     await body.getByTestId('tv-channel').first().click();
-    await expect(preview).toHaveAttribute('aria-label', /Mock News USA/);
+    await expect(preview).toHaveAttribute('aria-label', /Mock Solo France/);
 
     // ⚠ COLLAPSE FIRST, THEN WATCH THE TUNER FINISH — the order is the test.
     // Asserting "the state did not change across the toggle" would pass just as
@@ -217,8 +255,8 @@ test.describe('TV LIBRARIAN face — the promotion is what makes it tunable', ()
     // …and the rest of the surface is still operable with the screen off: the
     // roster is there to pick another station with, and the picture still knows
     // which one is playing.
-    await expect(body.getByTestId('tv-channel')).toHaveCount(2);
-    await expect(preview).toHaveAttribute('aria-label', /Mock News USA/);
+    await expect(body.getByTestId('tv-channel')).toHaveCount(1);
+    await expect(preview).toHaveAttribute('aria-label', /Mock Solo France/);
 
     // It comes back, and it comes back LIVE rather than as a stale frame.
     await toggle.click();
@@ -236,9 +274,10 @@ test.describe('TV LIBRARIAN face — the promotion is what makes it tunable', ()
     const dock = await openDock(page, 'tvf3');
     const body = dock.getByTestId('tv-librarian-face-body');
     await body.getByTestId('tv-view-list').click();
-    await body.getByTestId('tv-country-select').selectOption('US');
+    // One-channel country again — see FR_CHANNELS.
+    await body.getByTestId('tv-country-select').selectOption('FR');
     await body.getByTestId('tv-channel').first().click();
-    await expect(body.getByTestId('tv-preview')).toHaveAttribute('aria-label', /Mock News USA/);
+    await expect(body.getByTestId('tv-preview')).toHaveAttribute('aria-label', /Mock Solo France/);
 
     await page
       .locator('[data-testid="dock-fullview-pane"][data-pane-node="tvf3"]')
@@ -259,12 +298,12 @@ test.describe('TV LIBRARIAN face — the promotion is what makes it tunable', ()
       };
       return w.__patch.nodes['tvf3']?.data?.channel?.name ?? null;
     });
-    expect(stillTuned).toBe('Mock News USA');
+    expect(stillTuned).toBe('Mock Solo France');
 
     const reopened = await openDock(page, 'tvf3');
     await expect(reopened.getByTestId('tv-preview')).toHaveAttribute(
       'aria-label',
-      /Mock News USA/,
+      /Mock Solo France/,
     );
     await expect(reopened.getByTestId('tv-empty')).toHaveCount(0);
   });
