@@ -135,17 +135,48 @@ async function seedNotes(page: Page, notes: ScoreNoteRow[], nodeId = NODE): Prom
     .toBe(notes.length);
 }
 
+/**
+ * Click the staff at a FRACTION of its own box.
+ *
+ * ⚠ `locator.click({ position })` RATHER THAN `page.mouse.click(x, y)`, and the
+ * difference is not style. Raw mouse coordinates skip Playwright's actionability
+ * checks, so a portaled popover still lying over the plate silently eats the
+ * press and the test reports the DOWNSTREAM symptom — measured here as "the
+ * armed accidental did not apply at placement", which reads exactly like a
+ * product bug and is not one. Routing through the locator makes an intercepted
+ * click say so.
+ */
+async function clickStaff(staff: ReturnType<Page['locator']>, fx: number, fy: number) {
+  const box = (await staff.boundingBox())!;
+  await staff.click({ position: { x: box.width * fx, y: box.height * fy } });
+}
+
 function noteRow(over: Partial<ScoreNoteRow> & { id: string }): ScoreNoteRow {
   return { bar: 0, tick: 0, duration: 'quarter', midi: 72, staffStep: 3, accidental: null, ...over };
 }
 
-/** Pick a face SELECTOR cell by its family id, and choose an option by label. */
+/**
+ * Pick a face SELECTOR cell by its family id, and choose an option by label.
+ *
+ * ⚠ IT WAITS FOR THE ROSTER TO CLOSE, and that is a correctness requirement
+ * rather than tidiness. The listbox is PORTALED over the plate, so a click on
+ * the staff issued before it detaches lands on the popover instead — which
+ * showed up as "the armed accidental did not apply at placement", i.e. a
+ * product bug that was not one. Waiting on the observable state (the roster is
+ * gone) rather than on a duration keeps it renderer-independent.
+ */
 async function pickOption(pane: ReturnType<Page['locator']>, family: string, label: string) {
   const chip = pane.locator(`[data-cell-key="${family}-{n}"] [role="button"][aria-haspopup="listbox"]`);
   await expect(chip, `the ${family} cell paints a selector on the FACE`).toBeVisible();
   await chip.click();
-  const option = chip.page().locator(`[role="listbox"] [role="option"]`, { hasText: label }).first();
+  const page = chip.page();
+  const option = page.locator('[role="listbox"] [role="option"]', { hasText: label }).first();
   await option.click();
+  await expect(
+    page.locator('[role="listbox"]'),
+    `${family}: the roster closes before anything else is clicked`,
+  ).toHaveCount(0);
+  await expect(chip.locator('.val'), `${family}: the pick is committed`).toHaveText(label);
 }
 
 // ── 1 · IT PAINTS, AND BOTH PANELS ARE ALIVE ────────────────────────────────
@@ -220,8 +251,7 @@ test('score face: a click writes a note, a second click on it SELECTS, a third D
 
   // ── PLACE. No tool to arm: `data.noteValue` is absent, which reads as the
   // card's own default of `quarter`, so ONE click writes a quarter note.
-  const box = (await staff.boundingBox())!;
-  await page.mouse.click(box.x + box.width * 0.45, box.y + box.height * 0.3);
+  await clickStaff(staff, 0.45, 0.3);
 
   await expect
     .poll(async () => (await readData(page)).notes?.length ?? 0, {
@@ -461,4 +491,76 @@ test('score face: the staff paints no readout, and every removed number is in it
     .toBe('ff');
   const dyn = (await readData(page)).dynamics![0];
   expect(dyn, 'at the selection\'s own position, not at bar 0').toMatchObject({ bar: 0, tick: 24 });
+});
+
+
+// ── 7 · ARMED MARKS APPLY TO THE NOTE YOU WRITE NEXT ────────────────────────
+
+test('score face: with NOTHING selected the mark cells ARM the next note, and legato ties to the note BEFORE it', async ({ page }) => {
+  guardPageErrors(page);
+  await gotoWorkflow(page);
+  await spawnPatch(page, [{ id: NODE, type: 'score', position: { x: 460, y: 240 } }]);
+  const pane = await openFace(page, NODE);
+  const staff = pane.locator('[data-testid="score-staff-panel"]');
+  await expect(staff).toBeVisible();
+
+  // ⚠ NOTHING IS SELECTED — a fresh score has no notes, so there is nothing to
+  // select. The mark cells must still be live, and this is the leg that says so.
+  expect((await readData(page)).selectedNoteId).toBeUndefined();
+  await pickOption(pane, 'score-accidental', 'sharp');
+  await expect
+    .poll(async () => (await readData(page)).armedAccidental ?? null, {
+      message: 'ACC with nothing selected ARMS the accidental rather than doing nothing',
+    })
+    .toBe('sharp');
+
+  // Place a note: it arrives already spelled. The card could not do this at all
+  // — its ♯ was a mode that could only retouch a note after the fact.
+  await clickStaff(staff, 0.45, 0.3);
+  await expect
+    .poll(async () => (await readData(page)).notes?.[0]?.accidental ?? null, {
+      message: 'the armed accidental applies at PLACEMENT',
+    })
+    .toBe('sharp');
+  const first = (await readData(page)).notes![0];
+
+  // ── LEGATO. Arm the tie with the note still selected? No: placing selects
+  // nothing, so this is still the armed path.
+  const tie = pane.locator('[data-cell-key="score-tie-{n}"] [role="switch"]').first();
+  await tie.click();
+  await expect
+    .poll(async () => (await readData(page)).armedTie ?? false, {
+      message: 'TIE with nothing selected arms LEGATO',
+    })
+    .toBe(true);
+
+  // Write a note to the RIGHT of the first, then one BETWEEN them.
+  await clickStaff(staff, 0.8, 0.3);
+  await expect.poll(async () => (await readData(page)).notes?.length ?? 0).toBe(2);
+  await clickStaff(staff, 0.62, 0.3);
+  await expect.poll(async () => (await readData(page)).notes?.length ?? 0).toBe(3);
+
+  // ⚠ THE DISCRIMINATING ASSERTION, and it took two attempts to find the right
+  // instrument. The first version asserted that every tie joins ADJACENT notes
+  // in the FINAL order — which is not the property, and it failed on correct
+  // code: `right` was legitimately tied to `first` when it was written, and
+  // inserting `middle` between them afterwards separates them without either
+  // write having been wrong. What the fix actually decides is WHICH note a
+  // legato tie reaches for AT PLACEMENT TIME: the one immediately before it in
+  // SCORE ORDER, or "whichever note was written last". Those differ on exactly
+  // this sequence, and only on it — so the pair ids are the assertion.
+  const data = await readData(page);
+  const byPos = [...(data.notes ?? [])].sort((a, b) => a.bar * 48 + a.tick - (b.bar * 48 + b.tick));
+  const [left, middle, right] = byPos;
+  expect(left.id, 'the first note placed is still leftmost').toBe(first.id);
+
+  const pairs = (data.ties ?? [])
+    .map((t) => `${t.fromNoteId}->${t.toNoteId}`)
+    .sort();
+  expect(
+    pairs,
+    `a legato tie reaches the note immediately BEFORE it in score order. ` +
+      `The middle note must be tied to the one on its LEFT (${left.id}), not to the ` +
+      `note written most recently (${right.id}) — the pre-fix code produced the latter.`,
+  ).toEqual([`${left.id}->${middle.id}`, `${left.id}->${right.id}`].sort());
 });

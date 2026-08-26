@@ -289,12 +289,18 @@ export function addNote(
   if (!canPlace(bar, snapTick, duration, midi, data.notes, undefined, totalBars(data))) return null;
   const id = genId('n');
   editScore(nodeId, (d) => {
-    // ⚠ TIE TO THE PREVIOUS NOTE *BEFORE* PUSHING, so "the previous note" is
-    // resolved against the roster as it was — pushing first would make the new
-    // note its own predecessor's successor in a partially-sorted list.
-    const prev = armedTie ? sortedNotes(d.notes).at(-1) ?? null : null;
     d.notes.push({ id, bar, tick: snapTick, duration, midi, staffStep: step, accidental });
-    if (prev) d.ties.push({ id: genId('t'), fromNoteId: prev.id, toNoteId: id });
+    // ⚠ "THE NOTE BEFORE IT" IS RESOLVED IN SCORE ORDER *AFTER* THE PUSH, NOT AS
+    // "the last note written". Those differ the moment you fill a gap: place a
+    // note in the middle of an existing phrase and the last-written note is
+    // somewhere off to the right, so a tie to it would leap across the bar and
+    // hold a gate over music it has nothing to do with.
+    if (armedTie) {
+      const sorted = sortedNotes(d.notes);
+      const i = sorted.findIndex((n) => n.id === id);
+      const prev = i > 0 ? sorted[i - 1] : null;
+      if (prev) d.ties.push({ id: genId('t'), fromNoteId: prev.id, toNoteId: id });
+    }
     // ⚠ A MARKER IS PLACED ONLY WHEN IT WOULD CHANGE SOMETHING. `dynamicAt`
     // forward-fills, so stamping the armed level onto every note would litter
     // the staff with markings that say what is already in force.
