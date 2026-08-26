@@ -138,7 +138,7 @@
 // spec.ts` (the PF-21 row sweep + the annotation/sidebar sweeps) and the pure
 // `dock-row-plan` / `module-face-lint` units, which read the whole faceplate.
 
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
 import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { diffRegion } from './vrt-surface-stats';
@@ -149,6 +149,9 @@ import {
   DOCK_MAX_DIFF,
   FACES,
   FACES_WITHOUT_SCENES,
+  FACE_TIERS,
+  faceTiers,
+  type FaceTier,
   FOLD_VIEWPORT,
   ROSTERED_FACE_TYPES,
   foldViewportFor,
@@ -338,7 +341,29 @@ test.describe('VRT: P1 curated faces (?shell=1) — compact lane tile + dock ful
       ...(singletonAdoptWhy ? { singletonAdoptWhy } : {}),
       ...(simPin ? { simPin } : {}),
     };
-    test(`face-${type}-compact: the compact lane tile matches baseline`, async ({ page }) => {
+    // WHICH TIERS THIS FACE CAPTURES — `['compact', 'dock']` unless the roster
+    // entry says otherwise. Read through `faceTiers` rather than tested inline,
+    // because the baseline-existence check below and `vrt-meta.test.ts` ask the
+    // same question and a second copy of the subtraction is how the two drift.
+    //
+    // ⚠ A REMOVED TIER IS NOT REGISTERED AT ALL — not registered-and-skipped.
+    // `test.skip` would leave the scene in the shard plan, in the `list`
+    // reporter output and in every "did this lane run what it planned" check as
+    // a thing that exists, which is the green-and-blind shape. `faceTiers` says
+    // the scene does not exist; this makes that true of the runner too.
+    const tiers = faceTiers(type);
+    // ⚠ THE BODY IS TYPED EXPLICITLY, not as `Parameters<typeof test>[1]`.
+    // `test` is OVERLOADED, so that index resolves to the LAST overload's second
+    // parameter — `TestDetails`, an options bag — and every scene body below
+    // would have been checked against it, which silently makes `page` an `any`.
+    const tierTest = (
+      tier: FaceTier,
+      title: string,
+      body: (args: { page: Page }) => Promise<void>,
+    ): void => {
+      if (tiers.includes(tier)) test(title, body);
+    };
+    tierTest('compact', `face-${type}-compact: the compact lane tile matches baseline`, async ({ page }) => {
       // PER-SCENE, never the config's flat cap — the `foldViewportFor` shape
       // applied to TIME instead of height (#1949). Returns the shared 90 s
       // unless the roster entry declares a measured `sceneWeight`. This is a
@@ -385,7 +410,7 @@ test.describe('VRT: P1 curated faces (?shell=1) — compact lane tile + dock ful
       ).toEqual([]);
     });
 
-    test(`face-${type}-dock: the dock full-view faceplate matches baseline`, async ({ page }) => {
+    tierTest('dock', `face-${type}-dock: the dock full-view faceplate matches baseline`, async ({ page }) => {
       // PER-SCENE — see the compact scene above. The dock scene is the more
       // expensive of the two for every face measured (it mounts the whole
       // faceplate, and for a video face the `fullViewBody` extension too), so
@@ -685,9 +710,13 @@ test.describe('VRT: P1 curated faces (?shell=1) — compact lane tile + dock ful
     expect(rostered.size, 'the FACES roster is empty — did the import resolve?').toBeGreaterThan(0);
     expect(STRICT_FACES.size, 'STRICT_FACES is empty — did the import resolve?').toBeGreaterThan(0);
 
+    // ⚠ PER DECLARED TIER, not per (face x 2). A face that captures one tier is
+    // not missing the other — it does not HAVE the other — and the same
+    // `faceTiers` call that decides whether the scene is registered above
+    // decides what must exist on disk here, so the two cannot disagree.
     const missingBaseline: string[] = [];
     for (const { type } of FACES) {
-      for (const variant of ['compact', 'dock'] as const) {
+      for (const variant of faceTiers(type)) {
         const rel = `./__screenshots__/workflow-shell-faces.spec.ts/face-${type}-${variant}.png`;
         if (!existsSync(fileURLToPath(new URL(rel, import.meta.url)))) {
           missingBaseline.push(`face-${type}-${variant}.png`);
@@ -700,6 +729,30 @@ test.describe('VRT: P1 curated faces (?shell=1) — compact lane tile + dock ful
         `mid-sweep, which looks like a capture problem rather than a missing pin; ` +
         `worse, a plain VRT run recreates a deleted one as an UNTRACKED file that ` +
         `no gate reads. Capture with \`task vrt:commit\` and commit the result.`,
+    ).toEqual([]);
+
+    // ⚠ AND THE OTHER DIRECTION, because removing a tier moves the failure mode
+    // rather than deleting it: a PNG left behind for a tier no longer captured
+    // is a file NOTHING compares, sitting in the snapshot directory looking
+    // exactly like coverage. Anchored to the artifact, which is the rule this
+    // repo applies to every ledger.
+    const orphanBaseline: string[] = [];
+    for (const { type } of FACES) {
+      const captured = faceTiers(type);
+      for (const variant of FACE_TIERS) {
+        if (captured.includes(variant)) continue;
+        const rel = `./__screenshots__/workflow-shell-faces.spec.ts/face-${type}-${variant}.png`;
+        if (existsSync(fileURLToPath(new URL(rel, import.meta.url)))) {
+          orphanBaseline.push(`face-${type}-${variant}.png`);
+        }
+      }
+    }
+    expect(
+      orphanBaseline,
+      `a baseline is committed for a tier the roster no longer captures, so no ` +
+        `test compares it and nothing can make it fail. Either delete the PNG, or ` +
+        `— if the scene became capturable again — drop the \`scenes\` narrowing ` +
+        `from the roster entry so the test is generated for it.`,
     ).toEqual([]);
   });
 

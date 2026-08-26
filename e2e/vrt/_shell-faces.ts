@@ -1286,6 +1286,12 @@ export const FACES = [
   {
     type: 'mirrorpool',
     pages: 4,
+    // ⚠ COMPACT REMOVED 2026-08-26 — see `faceTiers`. It did not reproduce
+    // against its own baseline at the zeroed tolerance (335 px -> 339 px across
+    // two runs of the same shards on the same SHA) while every other failing
+    // scene reproduced exactly, and the two-boot determinism probe had called it
+    // BIT-EXACT. The DOCK scene is unaffected and still gates.
+    scenes: ['dock'],
     videoFaceWhy:
       'both scenes carry a LIVE picture: the compact tile paints a VideoTileThumb through '
       + 'hasVideoSurface, and the dock body is the module\'s own fullViewBody extension — the pool '
@@ -3493,6 +3499,13 @@ export const FACES = [
     // renders a single unlabelled section — nowhere near `DOCK_TAB_MIN_BANDS`,
     // and nothing here is padded to reach a rail.
     pages: 1,
+    // ⚠ COMPACT REMOVED 2026-08-26 — see `faceTiers`. At the zeroed tolerance
+    // it failed by 541 px on one run of `vrt-strict` and PASSED on a re-run of
+    // the same shards at the same SHA; every other failing scene in that sweep
+    // reproduced with a byte-identical pixel count. The two-boot determinism
+    // probe reported it BIT-EXACT, which is that probe's stated blind spot made
+    // concrete. The DOCK scene is unaffected and still gates.
+    scenes: ['dock'],
     // ⚠ DETERMINISTIC, AND THE ARGUMENT IS THE ONE THE OLD VRT EXEMPTION MADE —
     // now pointed at the right subject. That exemption read "grid body is
     // patch-dependent — solo-spawn shows only the axis dropdowns + a
@@ -4642,6 +4655,56 @@ export function faceSceneWeight(type: string): FaceSceneWeight | undefined {
     | { sceneWeight?: FaceSceneWeight }
     | undefined;
   return entry?.sceneWeight;
+}
+
+/** The two capture tiers a face can have. */
+export const FACE_TIERS = ['compact', 'dock'] as const;
+export type FaceTier = (typeof FACE_TIERS)[number];
+
+/**
+ * WHICH TIERS THIS FACE ACTUALLY CAPTURES. Absent from the roster entry — which
+ * is the case for all but two — means BOTH, and that is what generated the
+ * `face-<type>-compact` / `face-<type>-dock` pair for every face until now.
+ *
+ * ⚠ THIS IS NOT AN EXEMPTION, AND THE DIFFERENCE IS THE WHOLE POINT OF THE PR
+ * IT ARRIVED IN. An exemption is a scene that still exists and is allowed to
+ * fail; a tier absent from this list has NO test, NO baseline on disk and NO
+ * budget — the gate cannot go green-and-blind on it because there is nothing
+ * there to be green about. Every gate that walks the roster reads THIS
+ * function, so "the scene exists" is defined once (the `ROSTERED_FACE_TYPES`
+ * lesson one level down: two gates computing the same subtraction is the drift
+ * machine).
+ *
+ * ⚠ AND A REMOVED TIER MUST TAKE ITS PNG WITH IT. The baseline checks below and
+ * in `vrt-meta.test.ts` iterate this list, so a leftover PNG for a tier that is
+ * no longer captured is a file nothing compares — the orphan-anchor shape this
+ * repo treats as red everywhere else. Delete the baseline in the same commit.
+ *
+ * WHO DECLARES ONE TODAY, and why — recorded here because the answer is a
+ * MEASUREMENT and the entries themselves are one line each:
+ *
+ *   mirrorpool / matrixMix, compact removed 2026-08-26 (owner: *"remove these
+ *   VRTs for now"*). Both are NON-DETERMINISTIC at the zeroed tolerance and
+ *   both were reported BIT-EXACT by `vrt-determinism-probe.spec.ts`, whose
+ *   stated blind spot they are: two boots inside ONE browser session cannot see
+ *   a 1-in-N instability. Boot-vs-BASELINE found them instead — the same
+ *   `vrt-strict` shards re-run on the same SHA moved `face-mirrorpool-compact`
+ *   335 px -> 339 px and made `face-matrixMix-compact` (541 px) pass outright,
+ *   while the other 19 failing scenes reproduced with byte-identical counts.
+ *   mirrorpool's compact tile is a live `VideoTileThumb` whose pin includes
+ *   `__mirrorpoolForceAnalytic` — i.e. the pinned picture is a DIFFERENT height
+ *   path from the shipped one — which is the first place to look when restoring
+ *   it. The DOCK tier of both faces is untouched and still gates.
+ *
+ * The probe still walks BOTH tiers on purpose: it is boot-vs-boot, needs no
+ * baseline, and is therefore the instrument that says when a removed tier has
+ * become capturable again.
+ */
+export function faceTiers(type: string): readonly FaceTier[] {
+  const entry = FACES.find((f) => f.type === type) as
+    | { scenes?: readonly FaceTier[] }
+    | undefined;
+  return entry?.scenes ?? FACE_TIERS;
 }
 
 /**

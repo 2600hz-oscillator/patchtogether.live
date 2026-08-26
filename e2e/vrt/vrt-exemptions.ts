@@ -728,8 +728,15 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // NAME" and that membership "records that a module was exempt on the day the
   // brake landed — nothing more". Removed from BOTH lists (vrt-meta.test.ts
   // asserts set equality in both directions, so a one-sided delete is red), which
-  // enrols the legacy card in vrt.spec.ts alongside the two committed face scenes
-  // (face-matrixMix-compact / face-matrixMix-dock) that promotion added.
+  // enrols the legacy card in vrt.spec.ts alongside the committed face scene
+  // (face-matrixMix-dock) that promotion added.
+  //
+  // ⚠ IT ADDED TWO, AND ONE HAS SINCE BEEN REMOVED. `face-matrixMix-compact`
+  // went away on 2026-08-26 when the VRT tolerances were zeroed: it failed by
+  // 541 px on one `vrt-strict` run and PASSED on a re-run of the same shards at
+  // the same SHA, i.e. it does not reproduce against its own baseline. See
+  // `faceTiers` in e2e/vrt/_shell-faces.ts. The dock scene and this card scene
+  // both still gate, so the drain above is unaffected.
   //
   // ⚠ AND THE LEGACY CARD REALLY DOES STILL RENDER, which is worth stating
   // because several sibling entries in this file say the opposite about THEIR
