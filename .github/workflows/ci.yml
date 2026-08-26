@@ -2448,7 +2448,35 @@ jobs:
         # remedy for a cost table that does not know the population. Tracked as
         # a follow-up on #2103 — if this recurs a third time, automate the
         # refresh rather than adding two more shards.
-        shard: [1, 2, 3, 4, 5, 6, 7, 8]
+        #
+        # ⚠ 8 → 12 on 2026-08-26 (#2222), AND THIS ONE IS **NOT** THE STALE-
+        # ARTIFACT DEFECT the paragraph above describes — check before you
+        # assume a third repeat. Both prior incidents were diagnosed by a wide
+        # SPREAD (1.65x on the stale table); here the split was 1.002x and the
+        # previous run's eight shards landed 12m06s-12m51s against a predicted
+        # 12.00 min. The cost table is accurate; the lane simply grew into its
+        # own ceiling, so `timings:accept` had nothing to give and only capacity
+        # does.
+        #
+        # MEASURED, `node scripts/vrt-shard-plan.mjs --report N` (360 tests,
+        # 4333.9 CPU-s), against the 600 s `--global-timeout` below:
+        #    8 shards → 541.9 s/shard = 90.3% of budget  (two shards timed out)
+        #    9 shards → 480.5 s/shard = 80.1%
+        #   10 shards → 432.3 s/shard = 72.1%
+        #   12 shards → 363.6 s/shard = 60.6%  ← chosen, owner call
+        #
+        # 12 buys growth room rather than just clearing today's red: at 8 the
+        # lane was one slow runner from failing on ANY PR, which is what it did
+        # here on a docs-only commit with zero pixel diffs. Cost is +11.8 runner
+        # job-min (96.0 → 107.8); predicted job WALL drops 12.00 → 9.03 min, so
+        # PR feedback gets faster.
+        #
+        # ⚠ `timeout-minutes: 15` above STAYS. It is not slack to reclaim: the
+        # 600 s Playwright timeout must fire BEFORE the job is killed or the
+        # shard destroys its own evidence, and 178 s overhead + 600 s = 12.97
+        # min already. Lowering the cap to match the new 9.03 min prediction
+        # would put the job timeout INSIDE that window.
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
 
     env:
       # The lane's identity. Narrows testMatch to vrt.spec.ts +
