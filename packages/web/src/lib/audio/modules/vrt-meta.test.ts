@@ -74,6 +74,7 @@ import {
   EXEMPT_FACE_TYPES,
   FACES,
   ROSTERED_FACE_TYPES,
+  faceTiers,
 } from '../../../../../../e2e/vrt/_shell-faces';
 import { STRICT_FACES } from '$lib/ui/workflow/strict-faces';
 
@@ -774,14 +775,22 @@ describe('face VRT scenes — every promoted face is rostered AND captured', () 
     ).toEqual([]);
   });
 
-  it('every rostered face has BOTH committed baselines', () => {
+  it('every rostered face has a committed baseline for every tier it captures', () => {
     // ⚠ ANCHORED TO THE ARTIFACT, not to the list — the rule this repo applies
     // to every ledger. A roster entry whose PNGs are absent is exactly the
     // moog904a case above, and it is invisible to a comparison run that was
     // never told the file should exist.
+    //
+    // ⚠ "BOTH" BECAME "EVERY TIER IT CAPTURES" (2026-08-26), and that is not a
+    // loosening: the subject is the same `faceTiers` list that decides which
+    // scenes `workflow-shell-faces.spec.ts` REGISTERS. A face that captures one
+    // tier has one test and needs one PNG; asserting two would demand a baseline
+    // for a scene that does not exist. The direction that would be a loosening —
+    // a PNG surviving for a tier nobody compares — is asserted in that spec,
+    // against the same list.
     const missing: string[] = [];
     for (const type of [...rostered].sort()) {
-      for (const tier of ['compact', 'dock'] as const) {
+      for (const tier of faceTiers(type)) {
         if (!existsSync(faceBaseline(type, tier))) missing.push(`face-${type}-${tier}.png`);
       }
     }
@@ -849,7 +858,8 @@ describe('face VRT scenes — every promoted face is rostered AND captured', () 
       resolvable.length,
       'the existence probe resolved NO rostered face at all. That is the DIRECTORY being wrong ' +
         '(a moved snapshot root, a bad faceBaseline join) — not a missing capture, which the ' +
-        '"every rostered face has BOTH committed baselines" test above reports by name.',
+        '"every rostered face has a committed baseline for every tier it captures" test above ' +
+        'reports by name.',
     ).toBeGreaterThan(0);
   });
 });

@@ -51,15 +51,20 @@ git config user.email "vrt-baseline-bot@users.noreply.github.com"
 git add e2e/vrt/__screenshots__
 if git diff --cached --quiet; then
   echo "No VRT baseline changes — nothing to commit."
-  echo "::warning::vrt-update captured ZERO baselines. Playwright only rewrites a snapshot whose comparison FAILS, so a sub-tolerance diff writes nothing — investigate rather than assuming there was nothing to do."
+  echo "::warning::vrt-update captured ZERO baselines. The capture runs --update-snapshots=all, which rewrites on a BYTE difference, so zero means every scene IN SCOPE is byte-identical — investigate the scope rather than assuming there was nothing to do."
   summarize \
     "" \
     "### ZERO baselines committed" \
     "" \
-    "This run rendered its scope and rewrote **nothing**. That is NOT proof there was nothing to do:" \
-    "\`--update-snapshots\` only rewrites a snapshot whose comparison FAILS, so a stale-but-under-tolerance" \
-    "baseline passes and is never regenerated (\`git rm\` it and re-dispatch), and a scope that missed the" \
-    "changed cards looks exactly the same from here." \
+    "This run rendered its scope and rewrote **nothing**. That is NOT proof there was nothing to do." \
+    "" \
+    "The capture runs \`--update-snapshots=all\`, which does not consult the baseline for the decision" \
+    "and rewrites whenever the BYTES differ, so zero means every scene **in scope** is byte-identical to" \
+    "its committed baseline. A scope that missed the changed cards looks exactly the same from here." \
+    "" \
+    "(Before 2026-08-26 this ran \`=changed\`, where zero ALSO covered a stale-but-under-tolerance" \
+    "baseline that could not be regenerated at all without a \`git rm\` first. That mode is gone; a" \
+    "\`git rm\` is no longer part of the accept path.)" \
     "" \
     "**Count what you predicted against what landed before reading this as success.**"
   emit_pushed false

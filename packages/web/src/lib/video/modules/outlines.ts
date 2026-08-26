@@ -696,7 +696,47 @@ export const outlinesDef: VideoModuleDef = {
         // `freeze` ParamDef for why this module needs one at all. Read straight
         // off the live params so the harness's write reaches it on the very next
         // frame.
-        if (params.freeze >= 0.5) return;
+        //
+        // ⚠⚠ AND IT IS SKIPPED WHILE PINNED, BECAUSE THIS GATE USED TO CANCEL
+        // THE PIN. MEASURED 2026-08-26: `face-outlines-compact` rendered a
+        // SOLID BLACK preview where its baseline carries shapes — changed-region
+        // luminance 50.1 (var 301) -> 0.8 (var 2.9), reproduced on ubuntu CI in
+        // two independent runs and locally on darwin.
+        //
+        // THE MECHANISM, and it is an ORDERING bug between this module's TWO
+        // determinism mechanisms rather than a bug in either one:
+        //
+        //   1. `freezeFaceVideo` writes `params.freeze = 1` from the harness.
+        //   2. This early return then fires on EVERY draw.
+        //   3. So the VRT PHASE PIN below — the `for (i < VRT_PIN_STEPS)`
+        //      warm-up that is the ONLY thing that ever spawns a shape while
+        //      pinned — is never reached, and `vrtPinWarmed` stays false.
+        //   4. The sim holds ZERO circles, `paintScenes` never runs, the four
+        //      FBOs are never written, and the preview samples an untouched
+        //      texture: black.
+        //
+        // ⚠ IT IS A RACE, NOT AN EDIT, which is why no commit "caused" it and
+        // why the module source has not changed since the baseline was captured
+        // (795d7d92f). Whether the pin warms depends on whether ONE draw lands
+        // before the harness's freeze write. The DOCK scene still wins that race
+        // and passes; the COMPACT tile mounts its VideoTileThumb later and loses
+        // it. A latent race that happens to be landing the same way today is
+        // still a race, and the fix is to remove the interaction, not to time it.
+        //
+        // ⚠ THE FREEZE IS REDUNDANT WHILE PINNED — that is what makes skipping
+        // it safe rather than a behaviour change. After the warm-up the pin sets
+        // `dtMs = 0` forever, and `OutlinesSim.step(0)` is INERT: `dt = 0` adds
+        // nothing to `rateAccumMs` (no spawns), `dts = 0` moves no shape and
+        // ages none, and `collide` is false at the default `cv_collide: 0`. So
+        // every frame after the warm-up already paints an IDENTICAL picture and
+        // there is nothing left for a freeze to hold still. The pin is strictly
+        // stronger than the freeze here — the lushgarden/pong shape.
+        //
+        // ⚠ LIVE BEHAVIOUR IS BYTE-IDENTICAL: `vrtPinned` is
+        // `typeof globalThis.__outlinesVrtSeed === 'number'`, which the capture
+        // harness sets via `addInitScript` and nothing in the product ever sets.
+        // Outside VRT this condition is unchanged.
+        if (!vrtPinned && params.freeze >= 0.5) return;
 
         // ── THE VRT PHASE PIN ────────────────────────────────────────────
         //
@@ -730,6 +770,37 @@ export const outlinesDef: VideoModuleDef = {
           if (vrtPinWarmed) {
             dtMs = 0;
           } else {
+            // ⚠⚠ THE LIVE PARAMS MUST REACH THE SIM BEFORE THE WARM-UP RUNS,
+            // and this line being BELOW the loop is what blanked the picture.
+            //
+            // MEASURED 2026-08-26: `face-outlines-compact` rendered a SOLID
+            // BLACK preview against a baseline carrying shapes. `OutlinesSim`'s
+            // own constructor default is `rate: 0` (see its `params` field), and
+            // `mapRateIntervalMs(0)` returns NULL because 0 <=
+            // RATE_ENGAGE_THRESHOLD (0.001) — "clock off". `step()` then takes
+            // the `interval == null` branch, which ZEROES `rateAccumMs` instead
+            // of accumulating, so NOTHING SPAWNS.
+            //
+            // The module's own default is `rate: 0.5`, but it only reaches the
+            // sim through `sim.setParams(liveSpawnParams())` — which sat AFTER
+            // this loop. So all VRT_PIN_STEPS ran against the constructor
+            // default with the clock off, spawning zero shapes; then `setParams`
+            // finally pushed `rate: 0.5` and the very next `sim.step(dtMs)` ran
+            // with `dtMs = 0`, which adds nothing to `rateAccumMs`. And `dtMs`
+            // is 0 on every frame from then on, so the rate clock could never
+            // accumulate again: ZERO SHAPES, PERMANENTLY. Solid black.
+            //
+            // ⚠ IT IS INVISIBLE OUTSIDE VRT, which is why it survived: the live
+            // path takes the `else` branch below, where `dtMs` is a real elapsed
+            // time and the FIRST `sim.step` after `setParams` already carries the
+            // live `rate`. Only the pinned path front-loads its entire
+            // simulation into a window that ran before the params arrived.
+            //
+            // With the push moved here the warm-up runs at `rate: 0.5` ->
+            // `mapRateIntervalMs` = 4000 + 0.5*(500-4000) = 2250 ms, so the
+            // 480 x 16.67 ms = 8000 ms warm-up spawns 3 shapes — which is what
+            // the committed baseline shows.
+            sim.setParams(liveSpawnParams());
             // Advance in FIXED sub-steps rather than one large dt: the
             // integrator moves each shape by `v * dt` and bounces it off the
             // walls, so a single multi-second step would tunnel shapes through

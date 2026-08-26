@@ -57,8 +57,13 @@ concurrency:
 
 jobs:
   # ---------------------------------------------------------------------------
-  # The capture. Runs the FULL_MATCH sweep with --update-snapshots=changed and
-  # commits the regenerated e2e/vrt/__screenshots__/ PNGs.
+  # The capture. Runs the FULL_MATCH sweep with --update-snapshots=all (see the
+  # long note on `vrt:update` in Taskfile.yml — `=changed` could not refresh a
+  # baseline that PASSES, which is how an all-black `face-outlines-dock` stayed
+  # pinned from 740bac121 onward) and commits the regenerated
+  # e2e/vrt/__screenshots__/ PNGs. `=all` skips the baseline comparison entirely
+  # and rewrites on a BYTE difference, so an unchanged scene is still not
+  # rewritten and the bot's commit stays the set of scenes that actually moved.
   #
   # It used to say "mirrors the ci.yml `vrt` job (postgres service container)".
   # That job was deleted 2026-08-17, and the mirroring is what put a database in

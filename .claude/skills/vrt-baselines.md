@@ -95,18 +95,43 @@ it. If you find a reference to `EXEMPT_BASELINE_PAIRS`, `darwinOnly`,
 
 **Three hazards survive the collapse — they were never about platforms:**
 
-- ⚠ **`--update-snapshots` CANNOT regenerate a PASSING-but-stale baseline.**
-  Playwright only rewrites on a FAILING comparison, so a scene genuinely out of
-  date still commits **nothing** if its diff lands under tolerance. Found on A2
+- ✅ **FIXED 2026-08-26 — "`--update-snapshots` cannot regenerate a
+  PASSING-but-stale baseline", and the `git rm` workaround with it.** Keep the
+  history, drop the ritual.
+
+  **What it was.** `task vrt:update` passed `--update-snapshots=changed`, and
+  `=changed` only rewrites on a FAILING comparison — so a scene genuinely out of
+  date committed **nothing** when its diff landed under tolerance. Found on A2
   (#1213): swapping filter's MODE from a bare detented knob to a labelled
   Segmented moved the dock face by **865 px** — a whole primitive swap — and the
-  dispatch committed zero files, twice. **Fix: `git rm` the stale baseline
-  first**; Playwright always writes a MISSING snapshot (`updateSnapshots`
-  defaults to `'missing'`, and `'changed'` — what `task vrt:update` passes —
-  explicitly creates missing ones too). The same arithmetic means the ordinary
-  VRT gate would not have flagged that swap either. **Treat a green dispatch
-  that committed nothing as a RED FLAG, never as "nothing to do", and COUNT the
-  files the bot commits against what you predicted.**
+  dispatch committed zero files, twice. It cost a second one: `face-outlines-dock`
+  was captured **all-black** at `740bac121` while the preview was broken, and
+  passed every run afterwards because black matched black; nothing could re-pin it
+  until the render changed.
+
+  **What it is now.** The capture passes `--update-snapshots=all`. Read at the
+  source (`playwright/lib/matchers/toMatchSnapshot.js`, 1.59.1), the two modes
+  are not degrees of the same thing:
+
+  | | what decides | passing-but-stale |
+  |---|---|---|
+  | `=changed` | the TOLERANCE comparator; `expected` is passed to `_expectScreenshot` | returns `handleMatching()` before any write — **unreachable** |
+  | `=all` | `expected` is `undefined`, so the baseline is never compared; the write is gated on `compareBuffersOrStrings` | **rewritten** |
+
+  So an accept now means *this scene is defined by the current render*. The
+  two-consecutive-identical-captures settle loop still runs, so determinism is
+  not relaxed. And `=all` **does not churn** — the byte compare means an
+  unchanged scene is not rewritten and never enters the bot's commit.
+
+  Measured on this Playwright, a scene with a deliberate `maxDiffPixels` window
+  and the render moved inside it: plain run PASSES; `=changed` PASSES and leaves
+  the baseline byte-identical (`e71e5ab0…` → `e71e5ab0…`); `=all` rewrites
+  (`e71e5ab0…` → `4d29cb9b…`); `=all` re-run changes nothing.
+
+  ⚠ **Still true:** treat a green dispatch that committed nothing as a RED FLAG,
+  never as "nothing to do", and COUNT the files the bot commits against what you
+  predicted. Under `=all` zero means *every scene in scope is byte-identical*,
+  which is a stronger claim — so an unexplained zero points at the SCOPE.
 
   ⚠ **TWO BASELINES CHANGED BY THE SAME EDIT CAN LAND ON OPPOSITE SIDES OF THE
   BUDGET**, so "did my change move a baseline" has no single answer even for one
@@ -144,10 +169,19 @@ it. If you find a reference to `EXEMPT_BASELINE_PAIRS`, `darwinOnly`,
   baseline** — including read-only "did it still render?" runs you did not think
   of as captures. Measured on vca (#1429) before the collapse; the mechanism is
   unchanged, only the path is.
-- ⚠ **Bare `--update-snapshots` is `=all` in Playwright 1.59** and had already
-  rewritten 22 unrelated baselines once. `task vrt:update` passes `=changed`.
+- ⚠ **`=all` IS SAFE BECAUSE THE DISPATCH IS SCOPED. Never widen the scope, and
+  never restore `=changed` to get the old safety back.** `=all` once rewrote 22
+  unrelated baselines — but that was `=all` against a LOOSE tolerance (threshold
+  0.2 / ratio 0.05), where most baselines differed by bytes while passing, so
+  "rewrite everything that differs" meant everything. Two things changed: the
+  tolerance is **zero**, so "differs by bytes" and "fails the gate" are all but
+  the same set; and `task vrt:commit` derives a `--grep` and prints it before
+  dispatching, with a full sweep as the deliberate `ALL=1`.
+  ⚠ Checked rather than repeated: in **1.59.1** a BARE `--update-snapshots` is
+  `=changed`, not `=all` — the CLI declares `preset: "changed"`. Pass the mode
+  explicitly and do not rely on the default in either direction.
   The flag lives in the **Taskfile**, not in `e2e/package.json` — that file is a
-  `TOOLCHAIN_PIN_FILE` in the WebGL attest basis.
+  `TOOLCHAIN_PIN_FILE` in the WebGL attest basis, hashed whole.
 
 **Two things the capture job can still get wrong, both worth knowing:**
 

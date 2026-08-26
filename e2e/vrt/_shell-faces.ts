@@ -251,6 +251,53 @@ export const FACES = [
       + 'this module ANIMATES BY CONSTRUCTION — each spiro centre drifts and bounces as a pure '
       + 'function of frame.time — so the surface is a different picture on every frame. An '
       + 'AudioContext suspend says nothing about a rAF-driven picture; only the freeze stops it.',
+    // ⚠ AND THE `freeze` PARAM IS NOT ENOUGH ON ITS OWN — MEASURED 2026-08-25,
+    // and it is the finding that overturns this file's own 4plexvid advice (see
+    // the corrected note there). Booting both of this module's scenes twice on
+    // ubuntu CI through the gate's own scene code and diffing the pairs at
+    // threshold 1/255:
+    //
+    //     face-spirographs-dock      2711 px   maxCh 243   (budget was 1500 — OVER)
+    //     face-spirographs-compact     25 px   maxCh 120   (budget was  150 — under)
+    //
+    // The dock row was a LIVE LATENT FLAKE against the pre-existing tolerance,
+    // not merely a zero-tolerance casualty. The cause is the one this file
+    // states everywhere else in one sentence: `freezeFaceVideo` makes the
+    // picture STOP, it does not choose WHICH picture it stopped on. `draw`
+    // returns before `const timeSec = frame.time`, so the held frame is
+    // whichever `frame.time` the harness happened to catch, and every spiro
+    // centre is `advanceCenter(base, r, W, H, timeSec)` — a different picture
+    // for every distinct value of that clock.
+    //
+    // ⚠ THE FIX IS THE ENGINE CLOCK, NOT A SECOND ParamDef, and spirographs is
+    // INWARDS' half of the split rather than mirrorpool's: `resolveSpiros`
+    // rebuilds `base` from the module-level SPIRO_DRIFT constants on every call
+    // and returns a fresh list, so there is no ping-pong FBO, no accumulator and
+    // no RNG for a clock pin to leave running. `framesElapsed` is incremented
+    // but nothing in either scene paints it. Pinning `frame.time` therefore
+    // makes EVERY frame identical, which is why it also settles the question of
+    // which frame the freeze held: they are all the same frame.
+    //
+    // ⚠ THE `freeze` ParamDef STAYS. It is already shipped, it is in `params`
+    // and therefore in the attest basis and contract-lock, and deleting it would
+    // cost a real-GPU re-attest and a contract re-pin to remove something that
+    // is still correct — just not sufficient. The pin costs neither.
+    simPin: [
+      {
+        global: '__videoEngineFreezeTime',
+        value: 1.0,
+        why:
+          'pins `frame.time`, the ONLY time term this module reads — every spiro centre is '
+          + '`advanceCenter(base, fixedRadiusPx, W, H, timeSec)` with `timeSec = frame.time`, and '
+          + '`base` is rebuilt from constants on every call. With the clock pinned the render is a '
+          + 'pure function of the params, so the scene is identical across boots, renderers and '
+          + 'frame counts. Sufficient ALONE here, unlike on mirrorpool, because spirographs '
+          + 'carries no ping-pong field, no accumulator and no RNG. ⚠ It is ALSO what makes the '
+          + 'shipped `freeze` param safe: freeze holds an arbitrary frame, and this is what makes '
+          + 'every frame the same one. Measured without it: 2711 px dock / 25 px compact across '
+          + 'two ubuntu boots.',
+      },
+    ],
   },
   // 4PLEXER (2026-08-18) — no `pages`, so the dock renders ONE unlabelled band
   // holding all four selectors (four peers, one idea; see the face comment).
@@ -1123,7 +1170,11 @@ export const FACES = [
     // compact scene was PASSING and a capture cannot regenerate a passing
     // baseline — so "it went green" would have been indistinguishable from "it
     // is stale but under COMPACT_MAX_DIFF", and only an explicit `git rm`
-    // reaches the second case. #1805 changed the fader PRIMITIVE again (it
+    // reaches the second case. ⚠ THAT HAZARD IS RETIRED as of 2026-08-25 —
+    // COMPACT_MAX_DIFF is 0, so a stale baseline FAILS and is therefore
+    // rewritable by the capture; the `git rm` step is no longer the only way in.
+    // The narrative below is kept because it is the evidence for the row, not
+    // because the trap is still open. #1805 changed the fader PRIMITIVE again (it
     // deleted the resting readout outright), which by the row above should have
     // reached every tier that paints a fader cell. It did not, and the reason is
     // that the readout was never a lane element in the first place:
@@ -1235,6 +1286,12 @@ export const FACES = [
   {
     type: 'mirrorpool',
     pages: 4,
+    // ⚠ COMPACT REMOVED 2026-08-26 — see `faceTiers`. It did not reproduce
+    // against its own baseline at the zeroed tolerance (335 px -> 339 px across
+    // two runs of the same shards on the same SHA) while every other failing
+    // scene reproduced exactly, and the two-boot determinism probe had called it
+    // BIT-EXACT. The DOCK scene is unaffected and still gates.
+    scenes: ['dock'],
     videoFaceWhy:
       'both scenes carry a LIVE picture: the compact tile paints a VideoTileThumb through '
       + 'hasVideoSurface, and the dock body is the module\'s own fullViewBody extension — the pool '
@@ -1486,10 +1543,40 @@ export const FACES = [
   //
   // ⚠ WHAT WOULD CHANGE THE ANSWER: give 4plexvid any accumulator or clock — a
   // crossfade on a gate edge, a tally animation, a `uTime` wipe — and the
-  // structural argument dies, the freeze stops being inert, and a real `freeze`
-  // param (declared `noUserControl` / `writer: 'internal'`; spirographs and
-  // b3ntb0x are the template) becomes required. Do NOT reach for `simPin`: that
-  // is for a STATEFUL sim whose frozen frame depends on elapsed time.
+  // structural argument dies and the scene needs a real pin.
+  //
+  // ⚠⚠ AND WHICH PIN DEPENDS ON WHICH OF THOSE TWO WORDS IT IS. This note used
+  // to say a `freeze` ParamDef was "the template" and to reach for `simPin`
+  // only for a stateful sim. THAT IS BACKWARDS FOR A CLOCK, and it is measured
+  // (2026-08-25): SPIROGRAPHS was named here as the template and it HAS a
+  // `freeze` ParamDef — yet booting its dock scene twice on ubuntu CI and
+  // diffing at threshold 1/255 measured 2711 px at max channel delta 243, over
+  // the 1500 px budget that was live at the time. A `freeze` param buys
+  // INTRA-boot stillness and nothing else: it holds WHICHEVER frame the harness
+  // caught, and for a picture that is a function of `frame.time` that is a
+  // different frame on every boot. Its own entry now carries the fix.
+  //
+  // So, stated as the rule the next reader should apply:
+  //
+  //   * A WALL-CLOCK-DRIVEN picture with no accumulator (spirographs, inwards)
+  //     → `simPin: __videoEngineFreezeTime`. Pinning the clock makes EVERY
+  //     frame identical, so "which frame was held" stops being a question.
+  //   * A STATEFUL sim whose frame depends on how many draws landed
+  //     (mirrorpool's ping-pong field, lushgarden's spawn rate, pong's tick
+  //     accumulator) → a `simPin` on the module's OWN seam, and a clock pin
+  //     alone is NOT enough; mirrorpool records three globals for exactly this.
+  //   * A picture that is already a pure function of its inputs (this entry,
+  //     bentbox) → nothing at all.
+  //
+  // ⚠ AND `simPin` IS THE CHEAPER OF THE TWO WHENEVER IT APPLIES — which is the
+  // durable half of the advice this note replaces, so keep it. A `freeze`
+  // ParamDef is a `params` edit, and `params` is IN the WebGL attest basis and
+  // IN contract-lock, so it costs an owner-machine re-attest and a contract
+  // re-pin. `simPin` is an e2e-only boot global: e2e files are excluded from the
+  // attest hash by owner directive, so it costs neither. Reach for a ParamDef
+  // only when the module has no seam a boot-time global can reach — and note
+  // that a WORKER `renderLocus` is exactly that case (the acidwarp position),
+  // because `addInitScript` does not run in a worker's global scope.
   {
     type: '4plexvid',
     pages: 1,
@@ -2101,14 +2188,16 @@ export const FACES = [
       + 'video input, and its shader advances `phase = r * uDensity - uTime * uSpeed` with Speed '
       + 'defaulting to 0.5 — so the surface is a different picture on every rendered frame and '
       + 'the scene cannot settle on its own. The clock pin below is what stops it.',
-    // ⚠ THE ENGINE CLOCK, NOT A `freeze` ParamDef — and the choice is argued
-    // here because the roster's own 4plexvid note steers the other way ("give
-    // it any accumulator or clock ... a real `freeze` param becomes required.
-    // Do NOT reach for `simPin`: that is for a STATEFUL sim whose frozen frame
-    // depends on elapsed time").
+    // ⚠ THE ENGINE CLOCK, NOT A `freeze` ParamDef. This entry used to argue the
+    // point AGAINST the roster's own 4plexvid note, which then said a `freeze`
+    // param was required for any clocked module and told the reader not to reach
+    // for `simPin`. INWARDS WAS RIGHT AND THAT NOTE WAS WRONG: it has since been
+    // corrected in place, on the spirographs measurement (2711 px across two
+    // ubuntu boots WITH a `freeze` param and no clock pin), so the two no longer
+    // disagree and this paragraph is the surviving record of which way it went.
     //
-    // That advice is aimed at the STATEFUL half of the split, and INWARDS is on
-    // the other half. The distinction is what `mirrorpool` records three
+    // The split the corrected note now states: INWARDS is the CLOCK half, and
+    // the STATEFUL half is what `mirrorpool` records three
     // globals to work around: pinning time is NOT sufficient there because its
     // ping-pong height field keeps integrating, so the frozen frame still
     // depends on how many draws landed first. INWARDS HAS NO SUCH STATE. Its
@@ -3069,16 +3158,21 @@ export const FACES = [
         global: '__pongVrtSeed',
         value: 0x50ec,
         why:
-          'pins the serve RNG at CONSTRUCTION, which is what makes the dock capture a function '
-          + 'of (seed, params) rather than of boot speed. ⚠ freeze alone is NOT sufficient here '
-          + 'and that is measured, not assumed: it stops the picture but does not choose WHICH '
+          'pins the COURT, not only the serve — the whole game state becomes a function of '
+          + '(seed, params) rather than of boot speed. ⚠ freeze alone is NOT sufficient here and '
+          + 'that is measured, not assumed: it stops the picture but does not choose WHICH '
           + 'picture — the outlines case drifted 6724 px against a 1500 px tolerance across two '
-          + 'ubuntu boots with freeze and no pin. The pin is unusually cheap on this module '
-          + 'because the game is ALREADY a pure function of tick count (dtSeconds is a constant, '
-          + 'never a measurement), so Math.random at serve time was the only nondeterminism left, '
-          + 'and both stepper entry points already accepted an injectable rng. ⚠ It REACHES this '
-          + 'factory only because pong is main-thread: simPin installs boot-time globals via '
-          + 'addInitScript, so a worker renderLocus would put it out of reach (the acidwarp case).',
+          + 'ubuntu boots with freeze and no pin. ⚠⚠ AND THE SEED ALONE WAS NOT SUFFICIENT '
+          + 'EITHER, which is what this entry USED to claim: booting this scene twice on ubuntu '
+          + 'CI and diffing at threshold 1/255 measured 72 differing pixels at max channel delta '
+          + '237 in a 23x9 box — the BALL. The seed fixed which trajectory and could not fix how '
+          + 'far along it the capture landed, because the tick count before the harness suspend '
+          + 'is a function of boot speed. The factory therefore steps the pure stepper a fixed 48 '
+          + 'ticks at construction under this seed and then stops ticking entirely, so the court '
+          + 'is TIME-INVARIANT rather than frozen at an arbitrary moment — lushgarden\'s shape, '
+          + 'not a second freeze. ⚠ It REACHES this factory only because pong is main-thread: '
+          + 'simPin installs boot-time globals via addInitScript, so a worker renderLocus would '
+          + 'put it out of reach (the acidwarp case).',
       },
     ],
   },
@@ -3405,6 +3499,13 @@ export const FACES = [
     // renders a single unlabelled section — nowhere near `DOCK_TAB_MIN_BANDS`,
     // and nothing here is padded to reach a rail.
     pages: 1,
+    // ⚠ COMPACT REMOVED 2026-08-26 — see `faceTiers`. At the zeroed tolerance
+    // it failed by 541 px on one run of `vrt-strict` and PASSED on a re-run of
+    // the same shards at the same SHA; every other failing scene in that sweep
+    // reproduced with a byte-identical pixel count. The two-boot determinism
+    // probe reported it BIT-EXACT, which is that probe's stated blind spot made
+    // concrete. The DOCK scene is unaffected and still gates.
+    scenes: ['dock'],
     // ⚠ DETERMINISTIC, AND THE ARGUMENT IS THE ONE THE OLD VRT EXEMPTION MADE —
     // now pointed at the right subject. That exemption read "grid body is
     // patch-dependent — solo-spawn shows only the axis dropdowns + a
@@ -4442,24 +4543,52 @@ export const EXEMPT_FACE_TYPES: ReadonlySet<string> = new Set<string>(
   FACES_WITHOUT_SCENES.map((e) => e.type),
 );
 
-/** TIGHT per-scene diff budgets (absolute pixels; Playwright takes the MIN of
- *  this and the config ratio budget).
+/** Per-scene diff budgets (absolute pixels; Playwright takes the MIN of this and
+ *  the config ratio budget — `comparators.js` computes both and calls
+ *  `Math.min`, and it tests `!== undefined`, so ZERO is honoured rather than
+ *  falling through to a default).
  *
- *  ⚠ COMPACT_MAX_DIFF IS CURRENTLY INERT, and saying so is the point — a budget
- *  nobody has re-measured reads as protection it may not provide. MEASURED
- *  2026-08-08: a compact tile is 88×82 = 7216 px, and vrt.config's
- *  `maxDiffPixelRatio` was TIGHTENED from 0.05 to 0.01 on 2026-07-31, so the
- *  ratio now allows 72 px and is the binding term. 150 was chosen against the
- *  old 0.05 (~350 px) and has been the looser of the two ever since. It is kept
- *  because it is the DECLARED intent and it binds again on any tile over
- *  15 000 px, not because it is doing work today. The dock
- *  faceplate is a full-width element (1220 × 322…1003 now that it is captured
- *  unfolded): 1500 px matches the workflow-shell-zoom scene budget, and it stays
- *  the binding term because Playwright takes the MIN — the config's 0.01 ratio
- *  on even the smallest of these (1220×322) allows 3928 px. Unfolding therefore
- *  did NOT loosen the budget. */
-export const COMPACT_MAX_DIFF = 150;
-export const DOCK_MAX_DIFF = 1500;
+ *  ⚠⚠ BOTH ARE ZERO AS OF 2026-08-25, BY OWNER RULING: *"VRTs are useless if
+ *  they can't be pixel perfect every time … i would never have consciously
+ *  allowed even a 1px tolerance"*. A face scene now fails on ONE differing
+ *  pixel. `count > maxDiffPixels` with `maxDiffPixels = 0` is exactly that.
+ *
+ *  THE MEASUREMENT THAT MADE IT SAFE, and it is a measurement rather than a
+ *  hope: every face scene in this roster, both tiers, was booted TWICE on
+ *  ubuntu CI through this file's own scene code and the two captures diffed at
+ *  threshold 1/255 (`vrt-determinism-probe.spec.ts`, which carries a negative
+ *  AND a positive control on every row, and a storage-wipe control to rule out
+ *  a pair matching by inheriting state). All but THREE rows were BIT-EXACT.
+ *  The three, and what happened to them:
+ *
+ *      face-spirographs-dock      2711 px  maxCh 243  — OVER the old 1500 budget
+ *                                                       already; a live latent
+ *                                                       flake, now clock-pinned
+ *      face-pong-dock               72 px  maxCh 237  — the ball; court now pinned
+ *      face-spirographs-compact     25 px  maxCh 120  — same cause as the dock row
+ *
+ *  So the budgets were not absorbing renderer physics. They were absorbing two
+ *  unpinned simulations, and both are fixed in the same diff as this line.
+ *
+ *  ⚠ THE OLD COMMENT SAID `COMPACT_MAX_DIFF` WAS "CURRENTLY INERT" AND THAT IS
+ *  NO LONGER TRUE — worth stating because "inert" is the kind of claim that
+ *  survives the change that ends it. It was inert because a compact tile is
+ *  88×82 = 7216 px and the config's `maxDiffPixelRatio: 0.01` allowed 72 px,
+ *  which was tighter than 150. That ratio is now 0 as well, so the two terms are
+ *  EQUAL rather than one shadowing the other, and `Math.min(0, 0) = 0` binds
+ *  from both directions. Neither is decorative any more.
+ *
+ *  ⚠ AND A LOCAL macOS RUN WILL NOW FAIL, by design and not by defect. The same
+ *  audit measured `dx7-dock` (17 px), `mirrorpool-compact` (8 px),
+ *  `moog903a-compact` (4 px) and `scaler-compact` (4 px) on darwin, all at
+ *  maxDelta 1-2 and all ZERO at the gate's old 26/255 — last-significant-bit
+ *  text shimmer that does NOT reproduce on linux. Linux CI is and always was the
+ *  authority (`snapshotPathTemplate` has no `{platform}` segment; there is ONE
+ *  baseline set and the capture job authors it). There is deliberately NO
+ *  platform carve-out: that would be a new exemption mechanism, and the fix for
+ *  a Mac loop is `task vrt:docker`. */
+export const COMPACT_MAX_DIFF = 0;
+export const DOCK_MAX_DIFF = 0;
 
 // ── THE PER-SCENE TIME BUDGET ───────────────────────────────────────────────
 //
@@ -4588,6 +4717,56 @@ export function faceSceneWeight(type: string): FaceSceneWeight | undefined {
     | { sceneWeight?: FaceSceneWeight }
     | undefined;
   return entry?.sceneWeight;
+}
+
+/** The two capture tiers a face can have. */
+export const FACE_TIERS = ['compact', 'dock'] as const;
+export type FaceTier = (typeof FACE_TIERS)[number];
+
+/**
+ * WHICH TIERS THIS FACE ACTUALLY CAPTURES. Absent from the roster entry — which
+ * is the case for all but two — means BOTH, and that is what generated the
+ * `face-<type>-compact` / `face-<type>-dock` pair for every face until now.
+ *
+ * ⚠ THIS IS NOT AN EXEMPTION, AND THE DIFFERENCE IS THE WHOLE POINT OF THE PR
+ * IT ARRIVED IN. An exemption is a scene that still exists and is allowed to
+ * fail; a tier absent from this list has NO test, NO baseline on disk and NO
+ * budget — the gate cannot go green-and-blind on it because there is nothing
+ * there to be green about. Every gate that walks the roster reads THIS
+ * function, so "the scene exists" is defined once (the `ROSTERED_FACE_TYPES`
+ * lesson one level down: two gates computing the same subtraction is the drift
+ * machine).
+ *
+ * ⚠ AND A REMOVED TIER MUST TAKE ITS PNG WITH IT. The baseline checks below and
+ * in `vrt-meta.test.ts` iterate this list, so a leftover PNG for a tier that is
+ * no longer captured is a file nothing compares — the orphan-anchor shape this
+ * repo treats as red everywhere else. Delete the baseline in the same commit.
+ *
+ * WHO DECLARES ONE TODAY, and why — recorded here because the answer is a
+ * MEASUREMENT and the entries themselves are one line each:
+ *
+ *   mirrorpool / matrixMix, compact removed 2026-08-26 (owner: *"remove these
+ *   VRTs for now"*). Both are NON-DETERMINISTIC at the zeroed tolerance and
+ *   both were reported BIT-EXACT by `vrt-determinism-probe.spec.ts`, whose
+ *   stated blind spot they are: two boots inside ONE browser session cannot see
+ *   a 1-in-N instability. Boot-vs-BASELINE found them instead — the same
+ *   `vrt-strict` shards re-run on the same SHA moved `face-mirrorpool-compact`
+ *   335 px -> 339 px and made `face-matrixMix-compact` (541 px) pass outright,
+ *   while the other 19 failing scenes reproduced with byte-identical counts.
+ *   mirrorpool's compact tile is a live `VideoTileThumb` whose pin includes
+ *   `__mirrorpoolForceAnalytic` — i.e. the pinned picture is a DIFFERENT height
+ *   path from the shipped one — which is the first place to look when restoring
+ *   it. The DOCK tier of both faces is untouched and still gates.
+ *
+ * The probe still walks BOTH tiers on purpose: it is boot-vs-boot, needs no
+ * baseline, and is therefore the instrument that says when a removed tier has
+ * become capturable again.
+ */
+export function faceTiers(type: string): readonly FaceTier[] {
+  const entry = FACES.find((f) => f.type === type) as
+    | { scenes?: readonly FaceTier[] }
+    | undefined;
+  return entry?.scenes ?? FACE_TIERS;
 }
 
 /**
@@ -4929,14 +5108,27 @@ export interface BootFaceOptions {
    *
    * ⚠ THIS IS A DIFFERENT AXIS FROM `videoFaceWhy`, AND THE DIFFERENCE IS THE
    * WHOLE BUG. `freezeFaceVideo` holds the LAST DRAWN frame — it makes the
-   * picture STOP, and says nothing about WHICH picture it stopped on. For a
-   * module whose field is a pure function of frame.time that is enough. For a
-   * STATEFUL sim it is not: the frozen frame is whatever the field had
-   * integrated to when the harness got around to writing `freeze`, which is a
-   * different number of elapsed milliseconds on every boot.
+   * picture STOP, and says nothing about WHICH picture it stopped on.
+   *
+   * ⚠⚠ THIS PARAGRAPH USED TO SAY "for a module whose field is a pure function
+   * of frame.time that is enough". IT IS NOT, and the correction is measured
+   * (2026-08-25): `spirographs` is exactly that module — every centre is
+   * `advanceCenter(base, r, W, H, frame.time)` — it carries a `freeze` ParamDef,
+   * and two ubuntu boots of its dock scene differed by 2711 px at maxCh 243,
+   * OVER the 1500 px budget that was live at the time. A clock-driven picture
+   * needs the CLOCK pinned (`simPin: __videoEngineFreezeTime`), because "which
+   * frame did the freeze hold" is a different frame on every boot; pinning the
+   * clock makes them all the same frame and the question dissolves.
+   *
+   * For a STATEFUL sim the freeze is insufficient for a DIFFERENT reason, and
+   * the clock pin is insufficient too: the frozen frame is whatever the field
+   * had integrated to when the harness got around to writing `freeze`, which is
+   * a different number of DRAWS on every boot. mirrorpool records three globals
+   * for that; lushgarden and pong suppress the sim outright.
    *
    * ⚠ MEASURED (outlines, #1939): `face-outlines-dock` missed its OWN freshly
-   * captured baseline by 6724 px against a `DOCK_MAX_DIFF` of 1500 — 4.5x the
+   * captured baseline by 6724 px against the then-1500 px `DOCK_MAX_DIFF`
+   * (zero since 2026-08-25) — 4.5x the
    * tolerance, capture and comparison both on ubuntu CI. The diff PNG showed
    * ONLY the spawned shapes' POSITIONS moving: chrome, labels and knobs were
    * pixel-identical and the shape COUNT was roughly equal. That is the exact

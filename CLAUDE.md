@@ -144,15 +144,31 @@ reddens on the next CI run and names the file.
 
 Three hazards, none of them about platforms:
 
-- ⚠ **`--update-snapshots` CANNOT regenerate a PASSING-but-stale baseline** — it
-  only rewrites on a FAILING comparison. **`git rm` the stale baseline first.**
-  Treat a green dispatch that committed nothing as a RED FLAG, and **count the files
-  the bot commits against what you predicted.**
+- ✅ **"`--update-snapshots` cannot regenerate a PASSING-but-stale baseline" is
+  FIXED (2026-08-26) — read it as history, not as a rule to work around, and do
+  NOT `git rm` a baseline to re-pin it.** The capture ran `=changed`, which only
+  rewrites on a FAILING comparison, so a baseline that was wrong but inside
+  tolerance was unreachable by the only tool that could fix it. It ran `=all`
+  since: Playwright then does not consult the baseline at all and rewrites iff
+  the BYTES differ, so an accept means *this scene is now defined by the current
+  render*. Measured both ways on 1.59.1 — `=changed` left a stale baseline
+  untouched where `=all` rewrote it, and `=all` re-run on an unchanged scene
+  wrote nothing. Cost of the old behaviour: `face-outlines-dock` was captured
+  ALL-BLACK during a broken window and passed every run afterwards.
+- ⚠ **Still true, and now the whole of it: treat a green dispatch that committed
+  nothing as a RED FLAG, and count the files the bot commits against what you
+  predicted.** Under `=all` zero means *every scene in scope is byte-identical*,
+  which is a stronger claim than it used to be — so an unexplained zero is more
+  suspicious, not less. Usually the scope is wrong.
 - ⚠ **A `git rm`-ed baseline is SILENTLY RECREATED by the next plain VRT run** — as
   an untracked PNG no gate reads. **`git status` for untracked PNGs after every VRT
   run** in a window where you deleted a baseline.
-- ⚠ **Bare `--update-snapshots` is `=all`** in Playwright 1.59 and once rewrote 22
-  unrelated baselines. `task vrt:update` passes `=changed`.
+- ⚠ **`=all` is safe BECAUSE THE DISPATCH IS SCOPED — never widen the scope to
+  compensate for something else.** The 22-unrelated-baselines incident was `=all`
+  against a LOOSE tolerance (threshold 0.2 / ratio 0.05), where most baselines
+  differed by bytes while passing. The tolerance is zero now and `task vrt:commit`
+  prints its derived `--grep` before dispatching, with a full sweep as the
+  deliberate `ALL=1`. Those two are the safety argument.
 
 Also: **chrome that is not in frame can still move a baseline — through layout, not
 pixels.** Before adding to the topbar or footer, measure the row's free space and
