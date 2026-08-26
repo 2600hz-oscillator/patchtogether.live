@@ -88,8 +88,9 @@
 //
 //   gh workflow run vrt-update.yml -f ref=<branch> -f grep=zdet-g1-compact
 //
-// It writes no snapshot, so `--update-snapshots=changed` has nothing to
-// regenerate and the capture job's commit step finds an empty diff.
+// It writes no snapshot AT ALL — it diffs boot 1 against boot 2 in memory and
+// never calls `toHaveScreenshot` — so no `--update-snapshots` mode has anything
+// to regenerate here and the capture job's commit step finds an empty diff.
 //
 // ⚠ DOOM is not in this roster and is not reachable from it — `FACES` has no
 // doom entry (it is in EXEMPT_FROM_VRT), so no DOOM spec, wait or budget is

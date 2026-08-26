@@ -696,22 +696,67 @@ tasks:
       # here, because this one WRITES: an isolated worktree that regenerated
       # against 5173 would commit baselines captured from another branch.
       #
-      # ⚠ `--update-snapshots=changed` lives HERE, not in e2e/package.json's
-      # `vrt:update` script, and that is not a style choice: `e2e/package.json`
-      # is a TOOLCHAIN_PIN_FILE in the WebGL attest basis
-      # (scripts/webgl-attest-lib.ts — it pins @playwright/test, the renderer
-      # version) and the basis hashes the file WHOLE. Editing one unrelated
-      # script string moved the hash 620fa1b3… → ad300c3e… and turned
-      # `webgl-attest` red, needing a trusted-machine GPU re-attest for a
-      # one-word CLI flag. Keep behaviour changes to the npm scripts out of that
-      # file. Bare `--update-snapshots` means `=all` in Playwright 1.59 and has
-      # already rewritten 22 unrelated baselines once; `=changed` is what we
-      # actually want, so it is passed BEFORE {{.CLI_ARGS}} and a caller can
-      # still override it explicitly.
+      # ⚠ THE UPDATE MODE LIVES HERE, not in e2e/package.json's `vrt:update`
+      # script, and that is not a style choice: `e2e/package.json` is a
+      # TOOLCHAIN_PIN_FILE in the WebGL attest basis (scripts/webgl-attest-lib.ts
+      # — it pins @playwright/test, the renderer version) and the basis hashes
+      # the file WHOLE. Editing one unrelated script string moved the hash
+      # 620fa1b3… → ad300c3e… and turned `webgl-attest` red, needing a
+      # trusted-machine GPU re-attest for a one-word CLI flag. Keep behaviour
+      # changes to the npm scripts out of that file.
+      #
+      # ── `=changed` -> `=all` (2026-08-26). THE MODE WAS A WORKFLOW DEFECT ───
+      #
+      # Owner: *"this is a workflow problem and we need to fix it"*. Under
+      # `=changed` a capture CANNOT REFRESH A BASELINE THAT CURRENTLY PASSES, so
+      # a baseline that is wrong but inside tolerance is unreachable by the only
+      # tool we have for fixing it. That is not a hazard to remember; it is the
+      # accept path being unable to accept.
+      #
+      # ⚠ IT ALREADY COST US ONE. `face-outlines-dock`'s baseline was captured at
+      # 740bac121 while the preview was rendering SOLID BLACK, and then passed
+      # every run since — black baseline vs black render. Nothing could re-pin it
+      # until the render changed, and nobody could see that it needed re-pinning.
+      #
+      # READ AT THE SOURCE, not from the flag's name
+      # (node_modules/playwright/lib/matchers/toMatchSnapshot.js, 1.59.1):
+      #
+      #   =changed  `expectScreenshotOptions.expected = expected`, so the
+      #             TOLERANCE COMPARATOR decides. `if (!errorMessage) return
+      #             handleMatching()` — a passing comparison returns before any
+      #             write can happen. The stale baseline survives.
+      #   =all      `expectScreenshotOptions.expected = undefined`, so the
+      #             baseline is NOT consulted at all. The capture stabilises the
+      #             render (the two-consecutive-identical-captures loop still
+      #             runs — determinism is NOT relaxed), then rewrites iff
+      #             `compareBuffersOrStrings(actual, expected)` says the BYTES
+      #             differ. So it means what an accept should mean: *this scene
+      #             is now defined by the current render*.
+      #
+      # ⚠ AND `=all` DOES NOT CHURN, which is the fact that makes it usable on a
+      # sweep: the write is gated on that byte compare, so a scene whose bytes
+      # already match is left alone and never enters the bot's commit.
+      #
+      # MEASURED, both directions, on this exact Playwright (a scene with a
+      # deliberate `maxDiffPixels` window, render moved inside it):
+      #     plain run     PASSES                     (the tolerance window)
+      #     =changed      PASSES, baseline UNCHANGED (sha e71e5ab0… -> e71e5ab0…)
+      #     =all          rewrites                   (sha e71e5ab0… -> 4d29cb9b…)
+      #     =all again    no change                  (sha 4d29cb9b… -> 4d29cb9b…)
+      #
+      # ⚠ WHAT MAKES `=all` SAFE IS THE SCOPE, AND THAT HALF ALREADY EXISTED.
+      # The 22-unrelated-baselines incident was `=all` run against a LOOSE
+      # tolerance (threshold 0.2 / ratio 0.05), where most baselines differed by
+      # bytes while passing — so "rewrite everything that differs" meant
+      # everything. Two things have changed since: `task vrt:commit` derives a
+      # `--grep` scope and prints it before dispatching (a full sweep is now the
+      # deliberate `ALL=1`), and the tolerance is ZERO, so "differs by bytes" and
+      # "fails the gate" are all but the same set. Do NOT restore `=changed` to
+      # get that safety back — widen nothing, scope instead.
       - task: vrt:run
         vars:
           SCRIPT: vrt
-          ARGS: '--update-snapshots=changed {{.CLI_ARGS}}'
+          ARGS: '--update-snapshots=all {{.CLI_ARGS}}'
 
   vrt:commit:
     desc: |

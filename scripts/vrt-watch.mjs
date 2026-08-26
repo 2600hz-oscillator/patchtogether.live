@@ -53,11 +53,19 @@
 //
 // ── What it reports: the COMMITTED FILES, not the conclusion ──────────────
 //
-// The highest-value half, and the one everyone forgets. `--update-snapshots`
-// only rewrites a comparison that FAILED, so a baseline that is wrong but
-// inside tolerance passes and the capture commits NOTHING. A green dispatch
-// that committed zero files is therefore a RED FLAG, not a pass — and a watcher
-// that printed only `completed / success` would report that as a win.
+// The highest-value half, and the one everyone forgets. A green dispatch that
+// committed zero files is a RED FLAG, not a pass — and a watcher that printed
+// only `completed / success` would report that as a win.
+//
+// ⚠ WHAT ZERO MEANS CHANGED ON 2026-08-26, and the message says the new thing.
+// The capture used to run `--update-snapshots=changed`, which only rewrites a
+// comparison that FAILED — so a baseline that was wrong but inside tolerance
+// passed and committed nothing, and zero was ambiguous between "nothing moved"
+// and "the thing that moved was invisible to the gate". The capture now runs
+// `=all`, which does not consult the baseline for the decision and rewrites on
+// a BYTE difference, so zero now means every scene in scope is byte-identical.
+// That is a much stronger claim, which makes an unexplained zero more
+// suspicious rather than less.
 //
 // So on completion it diffs the branch's baseline directory across the run and
 // prints the files. ⚠ DERIVED FROM GIT, never a typed count: the answer is read
@@ -158,11 +166,12 @@ export function summarize({ conclusion, files, predicted }) {
     verdict = 'RED FLAG';
     lines.push('');
     lines.push('⚠ ZERO BASELINES COMMITTED — THIS IS A RED FLAG, NOT A PASS.');
-    lines.push('  `--update-snapshots` only rewrites a comparison that FAILED, so a');
-    lines.push('  baseline that is wrong but inside tolerance passes and commits nothing.');
-    lines.push('  Either the capture never reached the scenes (a harness/boot failure');
-    lines.push('  upstream of `toHaveScreenshot`), or the scope missed them, or the');
-    lines.push('  change genuinely moved no pixels. Establish WHICH before believing it.');
+    lines.push('  The capture runs `--update-snapshots=all`, which rewrites on a BYTE');
+    lines.push('  difference and never consults the tolerance, so zero files means every');
+    lines.push('  scene IN SCOPE is byte-identical to its baseline. Either the capture');
+    lines.push('  never reached the scenes (a harness/boot failure upstream of');
+    lines.push('  `toHaveScreenshot`), or the scope missed them, or the change genuinely');
+    lines.push('  moved no pixels. Establish WHICH before believing it.');
   } else {
     verdict = 'committed';
     if (typeof predicted === 'number' && predicted !== n) {

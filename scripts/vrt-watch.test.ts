@@ -6,10 +6,12 @@
 //
 // Three legs matter, and they are the three ways a watcher lies:
 //
-//   1. ZERO COMMITS reported as a pass. `--update-snapshots` only rewrites a
-//      comparison that FAILED, so a wrong-but-in-tolerance baseline commits
-//      nothing and the run still concludes `success`. This is the leg that has
-//      to go LOUD, and it is asserted on the words, not just a boolean.
+//   1. ZERO COMMITS reported as a pass. A capture that rewrites nothing still
+//      concludes `success`, so this is the leg that has to go LOUD, and it is
+//      asserted on the WORDS, not just a boolean — including the words that say
+//      what zero MEANS, since those changed when the capture moved from
+//      `--update-snapshots=changed` to `=all` (2026-08-26) and a stale
+//      explanation is worse here than none.
 //   2. A 403 / empty body read as a run RESULT. An exhausted quota answers 403;
 //      a watcher that maps that to "no failures" reports success on no data.
 //   3. Polling forever. The cap is what makes the watch END.
@@ -159,7 +161,17 @@ describe('⚠ ZERO COMMITS IS RED — the leg this whole file exists for', () =>
     expect(text).toContain('ZERO BASELINES COMMITTED');
     expect(text).toContain('RED FLAG, NOT A PASS');
     // And it must say WHY zero can happen, or the reader cannot act on it.
-    expect(text).toContain('only rewrites a comparison that FAILED');
+    //
+    // ⚠ THE REASON CHANGED WITH THE CAPTURE MODE (2026-08-26) and this
+    // assertion changed with it rather than being deleted. It used to require
+    // the words "only rewrites a comparison that FAILED", which described
+    // `--update-snapshots=changed`. The capture now runs `=all`, which does not
+    // consult the baseline for the decision, so that sentence would be a
+    // FALSE explanation printed at the loudest moment this tool has. What zero
+    // means now is stronger — byte-identical in scope — and that is what the
+    // reader has to be told.
+    expect(text).toContain('byte-identical to its baseline');
+    expect(text).toContain('never consults the tolerance');
   });
 
   it('NEGATIVE CONTROL: a run that committed files is NOT flagged', () => {
