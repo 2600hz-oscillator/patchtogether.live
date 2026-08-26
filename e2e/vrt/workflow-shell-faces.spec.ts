@@ -300,6 +300,46 @@ const FACE_WIDTH_EXEMPTIONS: Readonly<Record<string, string>> = {
   // width ceiling — so the face stays and this entry names the cost.
   moog912:
     'the module NAME ROW (.tile-rule + .tile-name = 148 CSS px) is wider than either of its two remaining controls (hero rail 128, band cell 40). Measured driver of .faceplate-body; not reclaimable without ellipsising the module name. See the table above.',
+  clockedRunner:
+    'the CODE BUFFER (`CODE_BUFFER_FACE_MIN_W` = 336 CSS px) is the plate. MEASURED on this branch, dock full view, CSS px: content 201, face body 402 — so the reported slack is 201 and every pixel of it is the buffer. It is DRAWN edge to edge (a CodeMirror editor with a border and a background) and contributes ZERO to `contentW`, because the ink measure takes BOXES only for `[data-cell-key]`/glyph/canvas/svg/img and RANGES over text nodes, and a freshly spawned runner has an EMPTY document with no text nodes at all — verified by a DOM probe reading bufferChars 0. The 201 px of content is the 168 px DIV selector plus the name row. Remove the floor and `.faceplate-body`\'s max-content collapses onto those, rendering the module\'s only working surface ~200 px wide. Not reclaimable: the buffer IS the module. See the block comment above.',
+  livecode:
+    'the CODE BUFFER (`CODE_BUFFER_FACE_MIN_W` = 336 CSS px) is the plate, for the reason its child\'s entry above gives in full — and one step further, because the only ranked cell here is a 58 px `action` rather than a 168 px selector. MEASURED on this branch, dock full view, CSS px: content 121, face body 402 — the same 402 px plate as the runner (same buffer, same padding) against 80 px LESS ink, which is exactly the cell-width difference. Remove the floor and the script buffer renders narrower than the module\'s own name row. The buffer is DRAWN edge to edge and invisible to `contentW` (no box for a div tree, no text nodes in an empty document). The output log WOULD be ink, but it does not exist at rest: `node.data.lastRun` is unset until a run happens, which is also what keeps the dock baseline deterministic. Not reclaimable: the buffer IS the module. See the block comment above.',
+
+  // ── THE CODE-BUFFER PAIR — THE PLATE IS THE BUFFER, AND THE BUFFER IS NOT
+  //    "INK" BY THIS GATE'S DEFINITION ───────────────────────────────────────
+  //
+  // These two entries are the moog912 shape with the cause inverted, and both
+  // halves of that are worth stating because the ceiling exists to catch the
+  // OTHER thing.
+  //
+  // THE INK MEASURE'S OWN BLIND SPOT. `readFoldGeometry` takes BOXES for
+  // `[data-cell-key], .tile-glyph, canvas, svg, img, .hero-vis` and TEXT RANGES
+  // over every other node's text children. A CodeMirror buffer is neither: it is
+  // a `div` tree of styled spans, and in the capture state it is EMPTY — a scene
+  // spawns one node and writes no data, so `node.data.source` / `node.data.text`
+  // is absent and there are no text nodes to Range. So the widest DRAWN thing on
+  // each of these plates contributes ZERO to `contentW`. This is the same
+  // sentence moog912's entry already carries about `.tile-rule` ("drawn, but not
+  // 'ink' by this gate's definition"), on a much larger element.
+  //
+  // WHY THE FLOOR IS NOT RECLAIMABLE. `.faceplate-body` is `width: max-content`,
+  // `.dock-ext-body` is `width: 100%` (which contributes nothing to an intrinsic
+  // size), and CodeMirror's own `.cm-scroller` is `overflow-x: auto` (so a long
+  // line does not push either). Remove `CODE_BUFFER_FACE_MIN_W` and the plate
+  // collapses onto the widest thing left: the ~148 px module-name row against a
+  // 168 px `selector` on the runner and a 58 px `action` on LIVECODE. That is a
+  // code editor rendered about 170 px wide, i.e. the module's entire working
+  // surface inside the defect moog912's entry describes.
+  //
+  // ⚠ SO THIS IS THE INVERSE OF THE tidyVco DEFECT THE CEILING WAS WRITTEN FOR.
+  // There, a `min-width` floor RESERVED space nothing drew. Here the floor is
+  // occupied edge to edge by the surface the module is operated from — the gate
+  // simply cannot see a text buffer, and it says so in its own comment. The
+  // number is one constant shared by both bodies
+  // ($lib/ui/modules/code-buffer-face.ts), argued from the value both LEGACY
+  // CARDS already carried (`MIN_WIDTH: 360` less 24 px of card chrome), and
+  // asserted at source in `codebuffer-face-model.test.ts` — so it cannot drift
+  // between the two faces or grow quietly.
 };
 
 test.describe('VRT: P1 curated faces (?shell=1) — compact lane tile + dock full-view', () => {
