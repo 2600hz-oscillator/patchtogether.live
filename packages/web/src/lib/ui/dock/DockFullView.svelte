@@ -98,12 +98,40 @@
   /** Badge initials from the type id (curated def.badge reads better; P1). */
   let badge = $derived(node.type.replace(/[^a-zA-Z0-9]/g, '').slice(0, 2).toUpperCase() || '??');
 
-  /** Mono sub: "<def label> · lane N" (mock "FM synthesizer · lane 3"). */
+  /**
+   * Mono sub: "<def label> · lane N" (mock "FM synthesizer · lane 3").
+   *
+   * ⚠ THE TYPE CHECK IS LOAD-BEARING — THIS IS THE THIRD SITE OF ONE CRASH, and
+   * the two that were already repaired name it in full: see `laneFlowLabel`
+   * (`$lib/ui/workflow/module-shell-model`) and `ModuleShellPlaceholder`. Short
+   * form: `node.data` is an open `Record<string, unknown>` that every module owns
+   * its own shape of, so `{ channel?: number }` was a claim about a key, not a
+   * fact about it. `tvLibrarian` writes `data.channel` as a `TvChannelMeta`
+   * OBJECT, and the value read back through the Y-backed `patch` proxy is a
+   * Y.Map proxy with no usable `toString` / `valueOf` / `Symbol.toPrimitive` — so
+   * interpolating it raises `TypeError: Cannot convert object to primitive value`
+   * INSIDE the `$derived` and takes the whole dock view down. A plain object
+   * would have printed `· lane [object Object]`; this one throws.
+   *
+   * Found by `tv-librarian-face.spec.ts` as an unexpected `pageerror`: a tuned
+   * tvLibrarian could not have its faceplate re-opened after the pane was closed.
+   * ⚠ It is PRE-EXISTING and independent of that promotion — `DockFullView`
+   * mounts for a legacy occupant too, so a tuned tvLibrarian docked under
+   * `?shell=legacy` hits the same line on `main`.
+   *
+   * The fix is the TYPE CHECK, not a try/catch: the label means "mixer lane N",
+   * and a value that is not a number is not that. Deny by default — an unknown
+   * shape falls through to the plain label rather than being coerced.
+   */
   let sub = $derived.by(() => {
     const label = def?.label ?? node.type;
-    const d = node.data as { channel?: number; sendSlot?: number } | undefined;
-    if (d?.channel != null) return `${label} · lane ${d.channel}`;
-    if (d?.sendSlot != null) return `${label} · send ${d.sendSlot}`;
+    const d = node.data as Readonly<Record<string, unknown>> | undefined;
+    if (typeof d?.channel === 'number' && Number.isFinite(d.channel)) {
+      return `${label} · lane ${d.channel}`;
+    }
+    if (typeof d?.sendSlot === 'number' && Number.isFinite(d.sendSlot)) {
+      return `${label} · send ${d.sendSlot}`;
+    }
     return label;
   });
 

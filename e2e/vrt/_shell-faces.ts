@@ -4310,6 +4310,63 @@ export const FACES = [
   // `bootWithFace` already freezes.
   { type: 'vstInstrument', pages: 1 },
   { type: 'vstFx', pages: 1 },
+  // ── TV LIBRARIAN — a LIVE THIRD-PARTY STREAM that is nevertheless capturable
+  {
+    type: 'tvLibrarian',
+    // No `face.pages`, so the dock renders one unlabelled section holding the
+    // single ranked cell (`gain`) above the tuner body. Nothing is padded to
+    // reach a rail — one control is the honest count for this module.
+    pages: 1,
+    videoFaceWhy:
+      'a VIDEO module, so it must boot into the video zone rather than a mixer channel column — '
+      + 'without this field bootWithFace waits out the full 90 s test timeout for a column '
+      + 'membership a video node never acquires. ⚠ AND IT IS CAPTURABLE DESPITE SITTING IN '
+      + '`EXEMPT_FROM_VRT` FOR A LIVE HLS STREAM, which is the interesting part and is why this '
+      + 'is a real baseline rather than a FACES_WITHOUT_SCENES entry — see below.',
+    // ⚠ WHY THIS FACE GETS REAL BASELINES WHILE THE MODULE STAYS EXEMPT.
+    //
+    // `tvLibrarian` sits in `EXEMPT_FROM_VRT` and in `ALLOWED_PERMANENT_EXEMPT`:
+    // "live external HLS <video> + runtime-fetched, ever-changing channel list
+    // defeat deterministic capture". That stays TRUE OF THE CARD SCENE, which is
+    // a different surface with a different baseline — the same distinction the
+    // `loopback`, `cameraInput` and `scoreboard` entries draw. It is not true of
+    // a FACE scene, and BOTH halves of the exemption were re-checked rather than
+    // inherited:
+    //
+    // (1) THE PICTURE NEEDS NO PIN, AND THAT IS MEASURED AT THE SHADER. A scene
+    //     spawns the node and tunes nothing, so `uHasInput` is 0 and the idle
+    //     branch runs: `vec4(0.05, 0.05, 0.09 + vUv.y * 0.05, 1.0)`. No clock, no
+    //     accumulator, no uniform that is not a param — the output is a pure
+    //     function of position, identical across boots, renderers and frame
+    //     counts. ⚠ The build spec prescribed a `__tvlibrarianTestFrame` pin as
+    //     well; reading the shader is what showed it would pin something already
+    //     still. It is deliberately NOT declared, so this entry stays anchored to
+    //     what the module actually does.
+    //
+    // (2) THE ROSTER DOES, AND THE REASON IS NOT THE OBVIOUS ONE. With no
+    //     network a runner's country fetch REJECTS, and the picker's catch paints
+    //     `Could not load channel list: <message>` — where the message is the
+    //     ENVIRONMENT's, not ours. Without the pin the dock baseline would be a
+    //     function of which browser build refused the request, which is the
+    //     per-machine baseline this suite cannot have. The CHANNEL roster needs
+    //     nothing: it is the node-owned controller's and stays empty until a
+    //     country is chosen, so a fresh spawn shows the map and no list.
+    simPin: [
+      {
+        global: '__tvLibrarianTestCountries',
+        value: 1,
+        why:
+          'makes the picker use its own fixed two-country dataset instead of fetching famelack, so '
+          + "the world map's markers, the dropdown's options and the ABSENCE of an error line are "
+          + 'all fixed. Read as truthy, so 1 is the value. ⚠ It removes the network dependency '
+          + 'entirely rather than making it fast: an unreachable third-party host does not fail '
+          + 'identically twice, and the string it produces is the browser\'s. The seam is a page '
+          + 'global read at mount by a main-thread Svelte component — the `__loopbackTestFrame` '
+          + 'shape — and it costs no attest window, because neither the picker nor any e2e file is '
+          + 'in the WebGL attest basis.',
+      },
+    ],
+  },
 ] as const;
 
 /**

@@ -4941,6 +4941,68 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // and those are what this promotion turns into cells and a body.
   'vstFx',
   'vstInstrument',
+
+  // ── TV LIBRARIAN — one ranked control, one picture, and a browse surface
+  //    that is a body BY NECESSITY rather than by preference ──────────────────
+  //
+  // A television in the video graph: pick a country off an equirectangular world
+  // map (or a dropdown), pick a station from that country's roster, and the node
+  // tunes its HLS stream. `video` is a real downstream texture, the stream's
+  // audio splits to `audio_l`/`audio_r`, and two gate inputs channel-surf
+  // hands-free.
+  //
+  // ⚠ THE FACE IS ONE KEY (`gain`) AND THAT IS THE HONEST COUNT, not a thin
+  // face. The module has exactly one control a player turns; everything else it
+  // does is a BROWSE, and compact-is-the-default means a face with one control
+  // should look like a face with one control.
+  //
+  // ⚠ THE SPEC'S PRECURSOR HAD ALREADY LANDED, AND CHECKING THAT IS THE ONLY
+  // REASON THIS PR IS CHEAP. `.myrobots/2026-08-24-bespoke-wave6/tvLibrarian/`
+  // is a PROMOTE-WITH-PRECURSOR: face completeness is unconditional, so a face
+  // must rank `gain`, and `gain` was declared, exposed nowhere and read by
+  // nothing — the def's own docs said so. #2189 wired the `uGain` uniform for
+  // four modules in one attest window. So the ranked cell is honest on arrival
+  // and this promotion moves no attest hash at all (`face` is stripped from the
+  // attest basis by `attest-code-basis.ts`).
+  //
+  // ⚠ AND THREE OF THAT SPEC'S LOAD-BEARING CLAIMS HAD EXPIRED, all in the same
+  // direction and all because LEG-02 P3 (#2209) landed after it was written:
+  //   * it says tvLibrarian is in `DOM_SOURCE_LANE_TYPES` and "pays the
+  //     headless-host tax". It LEFT that set — its stream is node-owned now — so
+  //     there is no headless host, and under the shell NO CARD IS MOUNTED
+  //     ANYWHERE. That makes the body load-bearing rather than a nicety: without
+  //     it a promoted tvLibrarian could not be tuned at all.
+  //   * it treats adopting the node-owned `<video>` into the body as the design,
+  //     with a double-mount hazard to be verified. The body blits the module's
+  //     OUTPUT texture instead (the loopback shape), so the hazard cannot arise
+  //     — and the picture then shows what `gain` actually does, which the card's
+  //     raw-element preview structurally cannot.
+  //   * its "correction to the brief" says `EXTENSION_BODY_ROLES` has two roles.
+  //     It has three; `control-grid` arrived with matrixMix. The role here is
+  //     `picture` either way.
+  //
+  // ⚠ THE GLYPH IS A REAL DECISION, NOT A FORCED ONE — the one place this module
+  // differs from every other video face. `glyphBinding()` short-circuits on the
+  // first `type: 'audio'` OUTPUT and this def HAS two, so a glyph literal would
+  // resolve to a LIVE binding and the dead-glyph clause would NOT catch it. It
+  // is `'none'` because for a video module the picture IS the module's identity
+  // in a rack (#1785) and a meter would compete with it for the tile.
+  //
+  // ⚠ THE ROSTER CANNOT BE A `selector` CELL, and the reason is the cell's own
+  // signature rather than taste: `ShellSelectorCell.options` is a pure
+  // synchronous `(node) => SelectorOption[]`, and both rosters here are runtime
+  // network fetches against a third-party dataset with their own loading, error
+  // and empty states. Persisting that payload into `node.data` to make it
+  // expressible would sync a volatile third-party blob into every saved rack.
+  //
+  // ⚠ ONE THING IN THE BODY HAS NO DECLARED RESTING-TEXT ROLE AND STAYS ANYWAY:
+  // the legal disclaimer and the famelack / iptv-org attribution. It is the only
+  // text in the fleet whose justification is licensing rather than design, and
+  // body text is `face-resting-text-source.test.ts`'s stated blind spot, so it
+  // would ship green either way. Named here and in the roster `why` so a future
+  // literal reading of the ruling does not quietly delete it. peertube carries
+  // the same shape — routed to the owner as a cohort question.
+  'tvLibrarian',
 ]);
 
 /**
