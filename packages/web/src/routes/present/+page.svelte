@@ -29,6 +29,7 @@
   import { onMount, onDestroy } from 'svelte';
 
   let canvasEl = $state<HTMLCanvasElement | null>(null);
+  let pullRaf: number | null = null;
   // True once the popup is actual-fullscreen (no OS titlebar / browser strip).
   let isFs = $state(false);
 
@@ -123,9 +124,44 @@
     reportToOpener(`fullscreen NOT entered after 40 attempts; last error = ${last ?? 'none (request resolved but no fullscreenElement)'}`);
   }
 
+  /**
+   * THE PROJECTOR'S OWN FRAME CLOCK (#2235).
+   *
+   * The opener installs `window.__presentFrame` and this pulls it. It used to
+   * be the other way round — the opener ran the rAF and pushed pixels in — and
+   * that made the projector a hostage of the patcher window's focus: Chrome
+   * throttles rAF in an unfocused window, so the recorder's directory picker,
+   * a permission prompt or any OS dialog froze every output instantly.
+   *
+   * This window is the one on the projector and is always visible, so its clock
+   * keeps running regardless. The frame function still executes in the OPENER's
+   * realm (same-origin) — the engine work did not move, only the timing.
+   */
+  function pullFrames(): void {
+    pullRaf = requestAnimationFrame(pullFrames);
+    const opener = window as Window & { __presentFrame?: () => void };
+    try {
+      opener.__presentFrame?.();
+    } catch {
+      /* the opener is mid-teardown — skip this frame, keep the loop alive */
+    }
+  }
+
   function onFsChange(): void {
     isFs = !!document.fullscreenElement;
     sizeCanvas(); // entering/leaving fullscreen resizes the viewport
+    // ⚠ RECOVER FROM A MODAL THAT TOOK OUR FULLSCREEN (#2235). Chrome resolves
+    // any modal browser surface by EXITING fullscreen, and the recorder's
+    // directory picker is one — so a projector silently dropped to a windowed
+    // popup mid-set with nothing to re-enter it.
+    //
+    // `document.hasFocus()` is the discriminator, and it is an honest one: an
+    // Esc can only be pressed in a window that HAS focus, while a modal in the
+    // patcher takes ours away. So an unfocused exit was done TO us and we undo
+    // it; a focused exit was the operator and we respect it.
+    if (!document.fullscreenElement && !document.hasFocus()) {
+      void goFullscreenPersistently();
+    }
   }
   function onUserGesture(): void {
     void goFullscreen();
@@ -152,6 +188,7 @@
     // Best-effort immediate attempt, then keep trying briefly — see
     // goFullscreenPersistently for why one shot is not enough.
     void goFullscreenPersistently();
+    pullFrames();
     // Tell the opener we're ready to be drawn into (and to delegate fullscreen).
     if (window.opener) {
       try {
@@ -164,6 +201,7 @@
 
   onDestroy(() => {
     if (typeof window === 'undefined') return;
+    if (pullRaf !== null) cancelAnimationFrame(pullRaf);
     window.removeEventListener('resize', onResize);
     document.removeEventListener('fullscreenchange', onFsChange);
     window.removeEventListener('pointerdown', onUserGesture);
