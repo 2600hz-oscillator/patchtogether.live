@@ -5,8 +5,8 @@
 // ⚠ WHY THIS FILE EXISTS ALONGSIDE `score.spec.ts`, WHICH DID NOT NEED TO
 // CHANGE. `score.spec.ts` reaches the rack through the shared `rack` fixture,
 // which navigates `/rack?shell=legacy&seed=none`. `laneRenderKind` returns
-// `'legacy'` whenever `shellFaces` is false, so every one of its seventeen
-// tests renders the verbatim `ScoreCard.svelte` — promoted or not. It therefore
+// `'legacy'` whenever `shellFaces` is false, so EVERY one of its tests renders
+// the verbatim `ScoreCard.svelte` — promoted or not. It therefore
 // stays GREEN through this promotion, which is the good outcome and the
 // dangerous one at once: green on a surface no default user reaches any more.
 // It is the module's LEGACY-CARD regression suite now, and it is still worth
@@ -42,6 +42,13 @@
 
 import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
+// ⚠ IMPORTED, NEVER RE-TYPED — the same rule `score-data.ts`'s own scheduler-grid
+// note states, applied to a test. A hand-typed 48 here would let this spec and
+// the engine disagree about what a bar IS, which is precisely how the placement
+// grid and the playback grid drifted apart for three months without anything
+// going red. The module is pure (zero imports), so it loads in the Playwright
+// runtime the same way `band-focus-model` does for the VRT harness.
+import { TICKS_PER_BAR } from '../../packages/web/src/lib/audio/modules/score-data';
 
 test.describe.configure({ mode: 'parallel' });
 
@@ -524,8 +531,8 @@ test('score face: with NOTHING selected the mark cells ARM the next note, and le
     .toBe('sharp');
   const first = (await readData(page)).notes![0];
 
-  // ── LEGATO. Arm the tie with the note still selected? No: placing selects
-  // nothing, so this is still the armed path.
+  // ── LEGATO. Placing a note does NOT select it, so nothing is selected here
+  // either and this is still the armed path.
   const tie = pane.locator('[data-cell-key="score-tie-{n}"] [role="switch"]').first();
   await tie.click();
   await expect
@@ -550,7 +557,8 @@ test('score face: with NOTHING selected the mark cells ARM the next note, and le
   // SCORE ORDER, or "whichever note was written last". Those differ on exactly
   // this sequence, and only on it — so the pair ids are the assertion.
   const data = await readData(page);
-  const byPos = [...(data.notes ?? [])].sort((a, b) => a.bar * 48 + a.tick - (b.bar * 48 + b.tick));
+  const pos = (n: ScoreNoteRow) => n.bar * TICKS_PER_BAR + n.tick;
+  const byPos = [...(data.notes ?? [])].sort((a, b) => pos(a) - pos(b));
   const [left, middle, right] = byPos;
   expect(left.id, 'the first note placed is still leftmost').toBe(first.id);
 
