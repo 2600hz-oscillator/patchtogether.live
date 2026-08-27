@@ -233,6 +233,17 @@
   import { nodeVarispeed } from '$lib/ui/media/node-varispeed.svelte';
   import { nodeHlsSource } from '$lib/ui/media/node-hls-source.svelte';
   import { nodePresent } from '$lib/ui/modules/node-present-registry.svelte';
+  import { createFullscreen } from '$lib/ui/modules/use-fullscreen.svelte';
+  import { resolveVideoEngine } from '$lib/ui/modules/use-present.svelte';
+  import {
+    bindingsFromPairs,
+    mayPersist,
+    planRestore,
+    readPresentBindings,
+    rigMatchesSaved,
+    writePresentBindings,
+    type LiveScreen,
+  } from '$lib/ui/modules/present-bindings';
   import { nodeRecorder } from '$lib/ui/modules/node-recorder-registry.svelte';
   import { nodeSamsloop } from '$lib/ui/modules/node-samsloop-registry.svelte';
   import { nodeAudioInput } from '$lib/ui/modules/node-audio-input-registry.svelte';
@@ -1269,6 +1280,79 @@
       // belt-and-suspenders no-op if the bus already fired.
       await reconciler?.reconcile();
     })();
+  });
+
+  // PRESENT RESTORE (#2230). A patch saved with outputs on external displays
+  // reopens them, when those displays are still attached.
+  //
+  // Automatic, but gated on rigMatchesSaved: the bindings ride the SHARED doc,
+  // so a rack-mate opening the same patch must not get projector windows thrown
+  // onto their monitors. A partial or foreign rig resolves nothing and simply
+  // does not fire.
+  //
+  // Ordering is load-bearing. The write effect below fires the instant the
+  // registry changes, and on load the registry is EMPTY because restore has not
+  // run — writing then would erase the bindings we are about to read. So the
+  // write stays disarmed until this pass resolves (mayPersist).
+  const presentScreens = createFullscreen();
+  let presentWriteArmed = $state(false);
+  let presentRestoreRan = false;
+  let lastWrittenBindings = '';
+
+  function liveScreens(): LiveScreen[] {
+    return presentScreens.availableScreens.map((s) => ({ id: s.id, descriptor: s.descriptor }));
+  }
+
+  $effect(() => {
+    const loaded = scratchSeeded === true || (provider != null && providerHasSynced);
+    const nodeCount = snapshot.nodes.length;
+    if (presentRestoreRan || !loaded || engine == null || nodeCount === 0) return;
+    presentRestoreRan = true;
+    void (async () => {
+      const saved = readPresentBindings(ydoc);
+      if (saved.length === 0) {
+        presentWriteArmed = true;
+        return;
+      }
+      // Resolves without a prompt once window-management is granted for the
+      // origin; on a browser without the API it yields [] and nothing fires.
+      await presentScreens.loadScreens();
+      const live = liveScreens();
+      if (!rigMatchesSaved(saved, live)) {
+        trace(`present restore: saved rig (${saved.length} displays) not attached — leaving bindings intact`);
+        return;
+      }
+      const video = resolveVideoEngine(engine);
+      if (!video) return;
+      const targets = planRestore(saved, live, snapshot.nodes.map((n) => n.id));
+      const byNode = new Map<string, string[]>();
+      for (const t of targets) {
+        const ids = byNode.get(t.nodeId);
+        if (ids) ids.push(t.screenId);
+        else byNode.set(t.nodeId, [t.screenId]);
+      }
+      let opened = 0;
+      for (const [nodeId, screenIds] of byNode) {
+        opened += nodePresent.presentAll(nodeId, screenIds, {
+          engine: video,
+          rectFor: (id) => presentScreens.getScreenRect(id),
+        });
+      }
+      trace(`present restore: ${opened}/${targets.length} projector(s) reopened`);
+      if (mayPersist({ attempted: true, expected: targets.length, opened })) {
+        presentWriteArmed = true;
+      }
+    })();
+  });
+
+  $effect(() => {
+    const pairs = nodePresent.presentingPairs();
+    if (!presentWriteArmed) return;
+    const next = bindingsFromPairs(pairs, liveScreens());
+    const serialized = JSON.stringify(next);
+    if (serialized === lastWrittenBindings) return;
+    lastWrittenBindings = serialized;
+    writePresentBindings(ydoc, next, LOCAL_ORIGIN);
   });
 
   // Pre-effect marker: written once at module-script eval time. The
