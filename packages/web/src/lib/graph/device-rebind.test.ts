@@ -1,0 +1,185 @@
+// packages/web/src/lib/graph/device-rebind.test.ts
+//
+// The rebind resolver, driven in both directions.
+//
+// Everything here is pure, which is the point: camera and gamepad rebinding
+// cannot be exercised on CI (no camera, no pad, and `getGamepads` reports
+// nothing until a pad is physically TOUCHED), so the decision has to live in a
+// function a test can drive and the wiring has to be thin enough to read.
+
+import { describe, expect, it } from 'vitest';
+import {
+  resolveDevice,
+  resolveDeviceSet,
+  shouldRewriteSavedId,
+  type ConnectedDevice,
+} from './device-rebind';
+
+const dev = (id: string, name: string): ConnectedDevice => ({ id, name });
+
+describe('resolveDevice — the four rules, in order', () => {
+  const connected = [dev('id-a', 'USB Camera'), dev('id-b', 'Built-in Webcam')];
+
+  it('1. an exact id still connected wins', () => {
+    const r = resolveDevice({ id: 'id-b', name: 'Built-in Webcam' }, connected);
+    expect(r).toEqual({ id: 'id-b', matchedBy: 'exact-id', candidates: [] });
+  });
+
+  it('1b. …and it wins even when the NAME points somewhere else', () => {
+    // A saved name that has drifted (the device was renamed by the OS) must not
+    // beat an id that still resolves. Confidence order, asserted rather than
+    // assumed, because the opposite order is a plausible reading of "fall back".
+    const r = resolveDevice({ id: 'id-a', name: 'Built-in Webcam' }, connected);
+    expect(r.id).toBe('id-a');
+    expect(r.matchedBy).toBe('exact-id');
+  });
+
+  it('2. a stale id falls back to a UNIQUE name — the whole point of the module', () => {
+    const r = resolveDevice({ id: 'id-from-last-boot', name: 'USB Camera' }, connected);
+    expect(r).toEqual({ id: 'id-a', matchedBy: 'name-unique', candidates: [] });
+  });
+
+  it('4. nothing matches → none, and the caller leaves the module unbound', () => {
+    const r = resolveDevice({ id: 'gone', name: 'Unplugged Thing' }, connected);
+    expect(r).toEqual({ id: null, matchedBy: 'none', candidates: [] });
+  });
+
+  it('⚠ an OLD patch (id only, no name) behaves EXACTLY as it does today', () => {
+    // The backward-compatibility contract. A patch saved before names were
+    // persisted must not start binding to something new — it resolves by id or
+    // not at all, which is the current behaviour verbatim.
+    expect(resolveDevice({ id: 'id-a' }, connected).matchedBy).toBe('exact-id');
+    expect(resolveDevice({ id: 'gone' }, connected).matchedBy).toBe('none');
+  });
+
+  it('⚠ an EMPTY name never matches — the unlabelled-camera trap', () => {
+    // `enumerateDevices()` redacts labels to '' until camera permission is
+    // granted. Without this guard a saved '' would match the first unlabelled
+    // device, i.e. bind an arbitrary camera with maximum confidence.
+    const blank = [dev('x', ''), dev('y', '')];
+    expect(resolveDevice({ id: 'gone', name: '' }, blank).matchedBy).toBe('none');
+    expect(resolveDevice({ id: 'gone', name: null }, blank).matchedBy).toBe('none');
+  });
+});
+
+describe('3. an AMBIGUOUS name binds, deterministically, and says so', () => {
+  // Two identical webcams, or the WinMM case `launchpad-device` documents:
+  // several interfaces of one device under one name.
+  const twins = [dev('cam-1', 'USB Camera'), dev('cam-2', 'USB Camera')];
+
+  it('picks the first in enumeration order and reports EVERY candidate', () => {
+    const r = resolveDevice({ id: 'gone', name: 'USB Camera' }, twins);
+    expect(r.matchedBy).toBe('name-ambiguous');
+    expect(r.id).toBe('cam-1');
+    expect(r.candidates).toEqual(['cam-1', 'cam-2']);
+  });
+
+  it('is DETERMINISTIC — the same rack rebinds the same way twice', () => {
+    const a = resolveDevice({ id: 'gone', name: 'USB Camera' }, twins);
+    const b = resolveDevice({ id: 'gone', name: 'USB Camera' }, twins);
+    expect(a).toEqual(b);
+  });
+
+  it('prefers a device no other node has CLAIMED', () => {
+    const r = resolveDevice({ id: 'gone', name: 'USB Camera' }, twins, new Set(['cam-1']));
+    expect(r.id).toBe('cam-2');
+    // Still reported as ambiguous: a tie-break was applied, and the player is
+    // entitled to know a choice was made on their behalf.
+    expect(r.matchedBy).toBe('name-ambiguous');
+    expect(r.candidates).toEqual(['cam-1', 'cam-2']);
+  });
+
+  it('falls back to the first when EVERY candidate is claimed', () => {
+    // Refusing here would strand the second of two identical cameras. Binding a
+    // shared device is recoverable; an unbindable rack is not.
+    const r = resolveDevice({ id: 'gone', name: 'USB Camera' }, twins, new Set(['cam-1', 'cam-2']));
+    expect(r.id).toBe('cam-1');
+    expect(r.matchedBy).toBe('name-ambiguous');
+  });
+});
+
+describe('resolveDeviceSet — ⚠ the two-pass order is what prevents a COLLISION', () => {
+  // A saved its id from a machine where the ids have since been regenerated;
+  // B's id survived. Both are the same MODEL, so both carry one name.
+  const saved = [
+    { key: 'nodeA', id: 'stale-id', name: 'USB Camera' },
+    { key: 'nodeB', id: 'live-id', name: 'USB Camera' },
+  ];
+  const connected = [dev('live-id', 'USB Camera'), dev('other-id', 'USB Camera')];
+
+  it('settles the EXACT id first, so the name fallback cannot steal it', () => {
+    const out = resolveDeviceSet(saved, connected);
+    expect(out.get('nodeB')).toEqual({ id: 'live-id', matchedBy: 'exact-id', candidates: [] });
+    expect(out.get('nodeA')!.id).toBe('other-id');
+    expect(out.get('nodeA')!.matchedBy).toBe('name-ambiguous');
+  });
+
+  it('⚠ NEGATIVE CONTROL: resolving one-at-a-time DOES produce the swap', () => {
+    // The bug the two-pass exists to prevent, demonstrated on the same fixture
+    // with the same resolver — so this file proves the ORDER is load-bearing
+    // rather than merely asserting that the good path is good.
+    const claimed = new Set<string>();
+    const naive = saved.map((s) => {
+      const r = resolveDevice(s, connected, claimed);
+      if (r.id) claimed.add(r.id);
+      return r;
+    });
+    // nodeA's NAME grabs the device nodeB owns by exact id…
+    expect(naive[0]!.id).toBe('live-id');
+    // …and nodeB then binds it TOO, because an exact-id match deliberately
+    // ignores `claimed` (two nodes sharing one device is a legal patch). So the
+    // failure is a COLLISION, not a swap: both modules land on one camera and
+    // `other-id` — which nodeA could have had — is left connected and unused.
+    expect(naive[1]!.id).toBe('live-id');
+    expect(new Set(naive.map((r) => r.id)).size).toBe(1);
+
+    // The two-pass result puts them on DIFFERENT devices, which is the
+    // assertion that matters and the reason the pass order exists.
+    const good = resolveDeviceSet(saved, connected);
+    expect(good.get('nodeA')!.id).toBe('other-id');
+    expect(good.get('nodeB')!.id).toBe('live-id');
+    expect(new Set([good.get('nodeA')!.id, good.get('nodeB')!.id]).size).toBe(2);
+  });
+
+  it('is order-independent: shuffling the saved list changes nothing', () => {
+    const forward = resolveDeviceSet(saved, connected);
+    const reversed = resolveDeviceSet([...saved].reverse(), connected);
+    expect(reversed.get('nodeA')).toEqual(forward.get('nodeA'));
+    expect(reversed.get('nodeB')).toEqual(forward.get('nodeB'));
+  });
+
+  it('two nodes deliberately sharing ONE device both keep it', () => {
+    // A legal patch: two modules pointed at the same camera. `claimed` must not
+    // break that — it only ever guards the ambiguous-NAME tie-break.
+    const shared = [
+      { key: 'n1', id: 'live-id', name: 'USB Camera' },
+      { key: 'n2', id: 'live-id', name: 'USB Camera' },
+    ];
+    const out = resolveDeviceSet(shared, connected);
+    expect(out.get('n1')!.id).toBe('live-id');
+    expect(out.get('n2')!.id).toBe('live-id');
+    expect(out.get('n2')!.matchedBy).toBe('exact-id');
+  });
+
+  it('an unmatched entry is still present in the map, as none', () => {
+    // The caller iterates the map to report; a missing key would read as
+    // "not considered" rather than "considered and absent".
+    const out = resolveDeviceSet([{ key: 'lonely', id: 'gone', name: 'Nothing' }], connected);
+    expect(out.get('lonely')).toEqual({ id: null, matchedBy: 'none', candidates: [] });
+  });
+});
+
+describe('shouldRewriteSavedId — the fallback heals itself', () => {
+  it('rewrites after a NAME match, so the next load is an exact hit', () => {
+    expect(shouldRewriteSavedId({ id: 'x', matchedBy: 'name-unique', candidates: [] })).toBe(true);
+    expect(shouldRewriteSavedId({ id: 'x', matchedBy: 'name-ambiguous', candidates: ['x'] })).toBe(true);
+  });
+
+  it('does NOT rewrite on an exact hit (nothing changed) or on none', () => {
+    expect(shouldRewriteSavedId({ id: 'x', matchedBy: 'exact-id', candidates: [] })).toBe(false);
+    // ⚠ Especially not on `none`: clearing the saved id would destroy the only
+    // record of which device the patch wanted, so a later reconnect of that
+    // exact device could never match it again.
+    expect(shouldRewriteSavedId({ id: null, matchedBy: 'none', candidates: [] })).toBe(false);
+  });
+});

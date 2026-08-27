@@ -169,6 +169,7 @@
 
   /** The card's own recovery text, verbatim — the instructions live there. */
   let errorMsg = $derived<string | null>(live?.errorMsg ?? null);
+  let rebindNotice = $derived<string | null>(live?.rebindNotice ?? null);
 
   /**
    * ⚠ THE ONLY ROUTE TO getUserMedia IN THE DEFAULT SHELL. The card's button is
@@ -296,6 +297,20 @@
          absent whenever nothing is wrong. Paraphrasing it would drop the part
          that acts — the site-settings path, the named capture apps. -->
     <p class="error" role="alert" data-testid="cameraInput-face-error">{errorMsg}</p>
+  {/if}
+
+  {#if rebindNotice}
+    <!-- ⚠ A NAME REBIND IS AN OUTCOME, NOT AN ERROR, and it is said out loud
+         rather than absorbed. The saved camera's `deviceId` had been
+         regenerated (a reboot, a different USB port, cleared site data) and the
+         module re-found the camera by its remembered NAME instead. That is
+         almost always the same physical camera — and "almost always" is exactly
+         the case a player must be able to see, because the alternative is
+         discovering months later that a patch has been quietly pointed at the
+         other webcam. Same permitted shape as the recovery text above: an
+         outcome with guidance, absent whenever nothing happened, and cleared
+         the moment the player picks a camera explicitly. -->
+    <p class="rebind" role="status" data-testid="cameraInput-face-rebind">{rebindNotice}</p>
   {/if}
 
   <div class="picker-row">
@@ -428,6 +443,14 @@
     text-align: center;
     line-height: 1.2;
     max-width: 480px;
+  }
+  .rebind {
+    margin: 4px 0 0;
+    font-size: 0.6rem;
+    line-height: 1.35;
+    color: var(--text-dim);
+    border-left: 2px solid var(--cable-video);
+    padding-left: 6px;
   }
   .error {
     margin: 0;
