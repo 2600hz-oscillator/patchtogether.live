@@ -40,6 +40,14 @@ shared shell cell/panel, shell extension, then bespoke surface. Thin modules
 still need faces. Do not promote when any load-bearing legacy affordance has no
 reachable replacement.
 
+A control's range comes from one place — the def — and the surface imports it.
+Never re-type a bound in a card or a face; a def-reading gate cannot see a card
+that widens what the contract allows, so the pads write values the model then
+silently clamps. On a card whose def is in the WebGL attest basis, bind with
+`paramSpec(def, id)` rather than exporting a `*_RANGE` constant: the export moves
+the attest hash and the accessor does not. `card-range-source.test.ts` and
+`card-control-ranges.test.ts` hold this at the source, per card.
+
 Keep resting surfaces minimal: no descriptive/sidebar/readout text outside a
 control. A video module keeps its live preview and SCREEN on/off behavior through
 both legacy and v2 paths; persist that state on the node and do not stop the
