@@ -138,6 +138,15 @@ export function startPresent(args: StartPresentArgs): PresentSession | null {
     // Same-origin only: ignore anything not from our own popup window.
     if (ev.source !== popup) return;
     const data = ev.data as { type?: string } | null;
+    if (data?.type === 'present:fs-report') {
+      // The sink cannot practically show its own console on a projector, so it
+      // reports fullscreen outcomes here.
+      const detail = (ev.data as { detail?: string }).detail ?? '';
+      // A recovered retry is information; a give-up is a problem.
+      if (detail.startsWith('fullscreen entered')) console.info('[present] sink:', detail);
+      else console.warn('[present] sink:', detail);
+      return;
+    }
     if (data?.type === 'present:ready') {
       beginBlit();
       // Try to put the popup into TRUE fullscreen WITHOUT a click by delegating

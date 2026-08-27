@@ -99,6 +99,9 @@ export interface NodePresentRegistry {
   /** Every node with at least one live popup — the e2e probe + the reactive
    *  read that lets a REMOUNTED card show "Stop presenting". */
   presentingNodeIds(): string[];
+  /** Every (node, display) pair currently lit. The persistence side needs the
+   *  screen dimension too, which `presentingNodeIds` flattens away. */
+  presentingPairs(): { nodeId: string; screenId: string }[];
   /**
    * GRAPH-LIFETIME teardown. Closes every projector whose node is no longer in
    * the patch. This is the ONLY route by which a present session dies without
@@ -286,6 +289,16 @@ export function createNodePresentRegistry(
     presentingNodeIds() {
       void version;
       return [...nodes.keys()].sort();
+    },
+    presentingPairs() {
+      void version;
+      const pairs: { nodeId: string; screenId: string }[] = [];
+      for (const [nodeId, entry] of nodes) {
+        for (const screenId of entry.sessions.keys()) pairs.push({ nodeId, screenId });
+      }
+      return pairs.sort(
+        (a, b) => a.nodeId.localeCompare(b.nodeId) || a.screenId.localeCompare(b.screenId),
+      );
     },
     sweep(liveNodeIds) {
       const live = new Set(liveNodeIds);

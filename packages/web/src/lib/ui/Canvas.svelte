@@ -233,6 +233,20 @@
   import { nodeVarispeed } from '$lib/ui/media/node-varispeed.svelte';
   import { nodeHlsSource } from '$lib/ui/media/node-hls-source.svelte';
   import { nodePresent } from '$lib/ui/modules/node-present-registry.svelte';
+  import { createFullscreen } from '$lib/ui/modules/use-fullscreen.svelte';
+  import { resolveVideoEngine } from '$lib/ui/modules/use-present.svelte';
+  import {
+    bindingsFromPairs,
+    mayPersist,
+    planRestore,
+    readPresentBindings,
+    rigMatchesSaved,
+    writePresentBindings,
+    type LiveScreen,
+    canDescribeBindings,
+    readPresentBindingsFromUpdate,
+    type PresentBinding,
+  } from '$lib/ui/modules/present-bindings';
   import { nodeRecorder } from '$lib/ui/modules/node-recorder-registry.svelte';
   import { nodeSamsloop } from '$lib/ui/modules/node-samsloop-registry.svelte';
   import { nodeAudioInput } from '$lib/ui/modules/node-audio-input-registry.svelte';
@@ -1269,6 +1283,112 @@
       // belt-and-suspenders no-op if the bus already fired.
       await reconciler?.reconcile();
     })();
+  });
+
+  // PRESENT RESTORE (#2230). A patch saved with outputs on external displays
+  // reopens them, when those displays are still attached.
+  //
+  // Automatic, but gated on rigMatchesSaved: the bindings ride the SHARED doc,
+  // so a rack-mate opening the same patch must not get projector windows thrown
+  // onto their monitors. A partial or foreign rig resolves nothing.
+  //
+  // ⚠ RUNS PER LOAD, NOT PER MOUNT. A once-per-Canvas-mount latch is wrong:
+  // "new rack, then load a performance" fires the mount pass against the EMPTY
+  // default rack, latches, and the loaded patch's bindings are never read —
+  // while the now-armed write clobbers them with []. Measured on the owner's
+  // videoout.ptperf.zip, whose settings map came back {presentBindings: []}.
+  // So every load path calls this explicitly, and the write disarms first.
+  const presentScreens = createFullscreen();
+  let presentWriteArmed = $state(false);
+  let presentMountRestoreRan = false;
+  let lastWrittenBindings = '';
+
+  function liveScreens(): LiveScreen[] {
+    return presentScreens.availableScreens.map((s) => ({ id: s.id, descriptor: s.descriptor }));
+  }
+
+  /**
+   * Disarm BEFORE an envelope is applied, not after.
+   *
+   * runPresentRestore() runs at the END of a load, past several awaits. In that
+   * window Svelte flushes effects, and the write effect — still armed from the
+   * previous graph — sees an empty registry and writes [] over the bindings the
+   * envelope just delivered. Measured on sc3ptperf.zip, which carried a correct
+   * binding that load then erased before restore could read it.
+   */
+  function beginPatchLoad(): void {
+    presentWriteArmed = false;
+  }
+
+  /** `fromEnvelope` is REQUIRED on an envelope/zip load: the live doc's settings
+   *  map still holds the PREVIOUS patch's bindings (loadEnvelopeIntoStore copies
+   *  only nodes + edges across). The mount path passes nothing and reads the
+   *  live doc, which is correct there — that doc IS the patch. */
+  async function runPresentRestore(fromEnvelope?: PresentBinding[]): Promise<void> {
+    presentWriteArmed = false;
+    // ⚠ UNCONDITIONALLY, BEFORE THE EARLY RETURN. bindingsFromPairs resolves
+    // screenIds through this controller's list, so skipping it on a patch with
+    // nothing saved leaves the list empty and makes the FIRST save of every rig
+    // write []. That was the bug the owner's zip caught.
+    await presentScreens.loadScreens();
+    const saved = fromEnvelope ?? readPresentBindings(ydoc);
+    const live = liveScreens();
+    // ALWAYS trace, including the do-nothing paths. A silent early return makes
+    // "no line in the console" mean both "old build" and "new build, nothing to
+    // do", which is precisely the distinction anyone debugging this needs.
+    if (saved.length === 0) {
+      presentWriteArmed = true;
+      trace(`present restore: nothing saved — write armed (${live.length} display(s) known)`);
+      return;
+    }
+    if (live.length === 0) {
+      trace('present restore: no display list — window-management not granted for this origin; bindings kept');
+      return;
+    }
+    if (!rigMatchesSaved(saved, live)) {
+      trace(`present restore: saved rig (${saved.length} display(s)) not attached — bindings kept`);
+      return;
+    }
+    const video = resolveVideoEngine(engine);
+    if (!video) return;
+    const targets = planRestore(saved, live, snapshot.nodes.map((n) => n.id));
+    const byNode = new Map<string, string[]>();
+    for (const t of targets) {
+      const ids = byNode.get(t.nodeId);
+      if (ids) ids.push(t.screenId);
+      else byNode.set(t.nodeId, [t.screenId]);
+    }
+    let opened = 0;
+    for (const [nodeId, screenIds] of byNode) {
+      opened += nodePresent.presentAll(nodeId, screenIds, {
+        engine: video,
+        rectFor: (id) => presentScreens.getScreenRect(id),
+      });
+    }
+    trace(`present restore: ${opened}/${targets.length} projector(s) reopened`);
+    if (mayPersist({ attempted: true, expected: targets.length, opened })) {
+      presentWriteArmed = true;
+    }
+  }
+
+  $effect(() => {
+    const loaded = scratchSeeded === true || (provider != null && providerHasSynced);
+    if (presentMountRestoreRan || !loaded || engine == null || snapshot.nodes.length === 0) return;
+    presentMountRestoreRan = true;
+    void runPresentRestore();
+  });
+
+  $effect(() => {
+    const pairs = nodePresent.presentingPairs();
+    if (!presentWriteArmed) return;
+    const live = liveScreens();
+    if (!canDescribeBindings(pairs, live)) return;
+    const next = bindingsFromPairs(pairs, live);
+    const serialized = JSON.stringify(next);
+    if (serialized === lastWrittenBindings) return;
+    lastWrittenBindings = serialized;
+    writePresentBindings(ydoc, next, LOCAL_ORIGIN);
+    trace(`present bindings: wrote ${next.length} from ${pairs.length} live session(s), ${live.length} display(s) known`);
   });
 
   // Pre-effect marker: written once at module-script eval time. The
@@ -3441,9 +3561,11 @@
       await ensureEngine();
       // Routed through persistenceLoad (not loadEnvelopeIntoStore directly) so
       // this path gets the same non-blocking diagnostic notice as every other.
+      beginPatchLoad();
       const result = persistenceLoad(env, ydoc, patch);
       await reconciler?.reconcile();
       trace(`imported patch JSON (${result.nodesLoaded} nodes, ${result.edgesLoaded} edges)`);
+      await runPresentRestore(readPresentBindingsFromUpdate(env.update));
       if (result.diagnostics.length > 0) {
         for (const d of result.diagnostics) {
           console.warn(`[import-json] ${d.nodeId} (${d.type}): ${d.reason}`);
@@ -3681,6 +3803,7 @@
   /** Restore a parsed performance .zip into the live rack. Shared by the file
    *  picker + the e2e hook (which passes captured bytes). */
   async function loadPerformanceZipBytes(zipBytes: Uint8Array): Promise<void> {
+    beginPatchLoad();
     const parsed = parsePerformanceZip(zipBytes);
     const bundle = validateBundle(parsed.bundle);
 
@@ -3727,6 +3850,10 @@
     // auto-bind every saved MIDI module to its device (by saved id, falling back
     // to NAME for cross-machine). No mappings → no prompt.
     await autoBindMidiDevices(bundle.midiDevices);
+
+    // The loaded envelope brought its own presentBindings; the mount pass (if
+    // it ran at all) resolved the PREVIOUS graph. #2230.
+    await runPresentRestore(readPresentBindingsFromUpdate(bundle.patch.update));
   }
 
   /** Restore each TWOTRACKS reel tape from the perf-zip's out-of-band 'audio'
