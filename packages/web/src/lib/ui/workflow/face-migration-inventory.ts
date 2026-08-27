@@ -1134,10 +1134,28 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
   },
   {
     type: 'numpadPlus',
-    disposition: 'bespoke-surface',
-    why:
-      'a KEYPAD PERFORMANCE SURFACE: four layers of a key-map roster with its own editing menu, a ' +
-      'transport and an octave nudge. The pad map is the interaction, not a ranked control list.',
+    disposition: 'generic-face',
+    note:
+      'PROMOTED (2026-08-26). ⚠ THIS ENTRY\'S OWN `why` WAS TRUE IN ITS PARTS AND DREW THE WRONG ' +
+      'CONCLUSION, which is now the eleventh consecutive face where that was the difference. ' +
+      '"The pad map is the interaction" is exactly right — and so is the step grid, and BOTH fit ' +
+      'a PF-14 PANEL (one picture-you-edit) rather than needing a shell extension, which is the ' +
+      'call kria made one wave earlier for the identical cohort. "Not a ranked control list" was ' +
+      'read as "cannot be faced"; what it actually meant is that the two things a player MAKES ' +
+      'live in `node.data` and have no ParamDef, which is the gap the shell-cell registry exists ' +
+      'to close. And "an octave nudge" undersold the defect: the card painted the octave as a ' +
+      'bare NUMBER between two arrows, so the resting-text ruling deletes it and the states ' +
+      'needed NAMES — `c0..c8`, derived from `midiForKey`\'s own arithmetic, which is what makes ' +
+      'the octave selectable rather than an anonymous nine-position dial. ' +
+      'Nine ranked keys over four bands: the sixteen steps as `face.hero.cell`, the fourteen key ' +
+      'caps ranked last (dock-only by arithmetic, not by a rule), and all seven params as ' +
+      'ordinary cells. No `face.extension`, no lazy chunk, no platform seam, zero attest. ' +
+      '⚠ THE OBVIOUS WORRY WAS FREE AND THE REAL WORK WAS UNDERNEATH. Promotion does not unplug ' +
+      'the keypad — the capture listener is in the FACTORY, not on the card, so numpadPlus is in ' +
+      'none of the headless-mount sets. What it DID need was a write seam: arming REC and ' +
+      'pressing PLAY erased sixteen steps through a bare SyncedStore proxy write that Cmd-Z could ' +
+      'not reach, every step edit and remap went through a `ydoc.transact` with NO origin, and ' +
+      'one cell click rewrote all four layers. All three are fixed in the promotion PR.',
   },
   {
     type: 'outToLaunch',

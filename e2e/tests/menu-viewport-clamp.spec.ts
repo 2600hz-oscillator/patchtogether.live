@@ -193,6 +193,14 @@ test('control (MIDI) context menu opens fully in view from a fader at the bottom
 // Remap menu family — NUMPAD+ key remap menu at the corner
 // ============================================================================
 
+// ⚠ THIS ONE STAYS ON `?shell=legacy`, AND THE REASON MATTERS AFTER THE FACE
+// PROMOTION. Its subject is a `position: fixed` menu escaping SvelteFlow's
+// TRANSFORMED node — a property only the CARD has, because the faceplate's
+// keymap panel is dock-only and the dock is not inside that transform. So this
+// is not a gate pinning an old host as correct: the card is still a shipped
+// surface (`?shell=legacy` must keep working) and it is the only surface where
+// this failure mode exists. The FACE's own menu — portal plus viewport clamp,
+// out of the dock — is driven in `numpad-plus-face.spec.ts`.
 test('numpad key remap menu opens fully in view at the bottom-right corner', async ({ page }) => {
   await gotoClassic(page);
   await spawnPatch(page, [{ id: 'n1', type: 'numpadPlus', position: { x: 200, y: 120 } }]);

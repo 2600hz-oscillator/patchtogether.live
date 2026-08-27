@@ -934,6 +934,39 @@ describe('the AUTHORED push cards', () => {
     expect(generic[1]).toBe('t2');
   });
 
+  it('numpadPlus: promotion moved the card GENERIC → FACE, and the two ROSTERS took encoders 1-2', () => {
+    // Promoted 2026-08-26. No `PUSH_CARD_CONTROLS` entry, so the FACE tier
+    // resolves this card the moment `numpadPlus` enters STRICT_FACES. Accepted
+    // deliberately here rather than left silent, for the featurecv reason:
+    // nothing else in this file covers a module with no override, so a card
+    // that changed under a promotion would be discovered by a player.
+    //
+    // Stated as a DIFFERENCE, never as a copy of `face.order`.
+    const def = defByType('numpadPlus');
+    const spec = resolvePushCardControls(def, {});
+    const faced = pushCardParams(spec).map((p) => p.id);
+    const generic = pushCardParams(
+      resolvePushCardControls({ ...def, face: undefined }, {}),
+    ).map((p) => p.id);
+    expect(spec.source).toBe('face');
+    // A re-ORDER, not a re-pick — seven params, inside the eight encoders.
+    expect([...faced].sort()).toEqual([...generic].sort());
+    expect(faced, 'the face must actually move the card, or this promotion is decoration')
+      .not.toEqual(generic);
+    // ⚠ BOTH FAMILIES ARE SKIPPED, not just the hero. The walk breaks only at
+    // PUSH_CARD_SLOTS = 8 and this face yields seven params, so it reaches the
+    // ninth ranked key and skips that too — a one-entry expectation here would
+    // read as a missing key rather than as a full walk.
+    expect(spec.skipped).toEqual(['numpad-cell-{n}', 'numpad-key-{n}']);
+    // The face's own rank-1 and rank-2 arguments, which are what moved: the two
+    // things that decide WHAT A KEYPRESS DOES — which layer it drives and which
+    // octave it plays. The GENERIC tier is declaration order, which puts the
+    // internal tempo first on a module whose tempo is ignored entirely while an
+    // external clock is patched.
+    expect(faced.slice(0, 2)).toEqual(['activeLayer', 'octave']);
+    expect(generic[0]).toBe('bpm');
+  });
+
   it('moog911a: promotion moved the card GENERIC → FACE, and MODE took encoder 2', () => {
     // THE FACEPLATE QUEUE · Q35. No `PUSH_CARD_CONTROLS` entry, so the FACE tier
     // resolves this card from the moment `moog911a` enters STRICT_FACES.

@@ -4497,6 +4497,37 @@ export const FACES = [
       },
     ],
   },
+  // ── NUMPAD+ — the KEYPAD PERFORMANCE SEQUENCER ────────────────────────────
+  //
+  // `pages: 4` is the POST-hero band count. The declared pages are also four —
+  // `numpad-cell-{n}` is the ONLY control `heroFacePlan` lifts out of a band and
+  // its band (`pattern`) keeps `activeLayer`, so no band is emptied and the
+  // declared count and the painted count happen to agree here. Stated rather
+  // than assumed, because on cartesian they do not.
+  //
+  // ⚠ DETERMINISTIC FOR FREE, AND FOR EXACTLY THE REASON kria's entry gives:
+  // `isPlaying` defaults to 0 (numpad-plus.ts), so a fresh spawn is STOPPED.
+  // The playhead — the one live thing on this face, an engine read per frame —
+  // is gated on the transport in `NumpadStepGrid.svelte` and returns -1 while
+  // stopped, so it never starts and no freeze seam is needed. The REC ARM
+  // indicator is gated on `armedRecording`, which the engine sets only at a
+  // play-from-start edge with `recArm` already high; both default to 0.
+  //
+  // ⚠ AND THE KEYMAP PANEL'S ONE ANIMATION CANNOT REACH A CAPTURE. The listening
+  // outline paints only while a remap is armed, which needs a click the scene
+  // never performs, and the panel drops it on any pointerdown outside itself.
+  //
+  // ⚠ WHAT THESE BASELINES DO **NOT** COVER, stated rather than implied: grid
+  // CONTENT. A fresh spawn has an empty pattern, so the 4x4 is uniformly dark
+  // and a lit cell in the wrong column would not move the PNG. Seeding it would
+  // need either a module special-case inside this sweep (which the sweep refuses
+  // by design — that generic property is what makes every future face auto-enrol)
+  // or a product-side test global, i.e. shipping code whose only reader is a
+  // picture. The content is covered more precisely than a PNG could:
+  // `numpadPlus-face-model.test.ts` pins the ranked plate and both probes,
+  // `numpad-plus-writes.test.ts` pins what every gesture writes, and
+  // `numpad-plus-face.spec.ts` drives the real grid and reads the graph back.
+  { type: 'numpadPlus', pages: 4 },
 ] as const;
 
 /**

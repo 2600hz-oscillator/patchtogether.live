@@ -1,6 +1,9 @@
 # FACEPLATE BUILD SPEC — `numpadPlus` (audio, the KEYPAD PERFORMANCE SEQUENCER)
 
-**SPEC ONLY. Nothing here is implemented.** Mockups: [`dock.html`](dock.html) ·
+**SHIPPED 2026-08-26 in PR #2226.** ⚠ Read §0.7 FIRST: five load-bearing claims
+below were checked against the tree during the build and came back DIFFERENT, and
+the build found two defects this spec does not mention — one of which made the
+module's headline workflow unusable. Mockups: [`dock.html`](dock.html) ·
 [`dock-remap.html`](dock-remap.html) · [`lane-tile.html`](lane-tile.html).
 
 Method, per the owner's directive: analyse what the module is FOR, then author the
@@ -275,6 +278,103 @@ name.** `round(cv * 4)` clamped to `0..3` looked like four equal quarters. Worke
 through: L1 gets cv `[0, 0.125)` and L4 gets `[0.625, 1.0]` — **a 3× asymmetry**
 (D6). *The lesson is the cheapest one here: a clamp on the outside of a rounding
 function silently merges two buckets, and the merged one is always an endpoint.*
+
+### 0.7 ⚠ BUILD CORRECTIONS — what the BUILD found that this spec has wrong
+
+§0.6 recorded five claims that were checked before the spec was written and came
+back different. Building it produced five more, recorded here in the same spirit:
+**the way each was wrong is more useful than the corrected value.**
+
+**1. ⚠ THE BUILD FOUND A DEFECT THIS SPEC DOES NOT MENTION, AND IT IS THE WORST
+ONE ON THE MODULE: PRESSING PLAY PEGGED THE MAIN THREAD.** `tick()`'s
+internal-clock branch scheduled into a 200 ms lookahead and "bumped"
+`nextStepCtxTime` from `stepStartCtxTime` — which `advanceStep` had just
+re-anchored to `ctx.currentTime`, so the bump recomputed the same value instead
+of advancing the boundary. At 120 BPM `stepSec` is 0.125 against a 0.2 horizon,
+so the loop was true on entry and stayed true until `ctx.currentTime` itself had
+crept forward 75 ms: **it spun for 75 ms of wall clock on every ~25 ms scheduler
+tick.** Measured in the browser, instrument negative-controlled in both
+directions on one page: **7.9 fps running against 120.5 stopped**, and the
+internal tempo ran **13% slow** (6.98 steps/s against the 8.0 that 120 BPM in
+16ths demands). Both fixed in #2226.
+*The lesson is about the DEFECT LEDGER's own method.* §13 was assembled by
+READING — eleven items, every one found by reading source or comparing prose to
+code. This one is invisible to reading: the loop looks like an ordinary
+lookahead scheduler and its comment asserts the property it does not have
+(*"so the while-loop terminates on a single tick"*). It needed the module to be
+RUN. And nothing had ever run it: `isPlaying` defaults to 0 and the whole
+committed e2e suite drove KEYS, never the transport — which is also why §11's
+determinism argument is correct. **A ledger built by reading is blind to
+everything that only appears under execution, and the way to notice is that the
+test which finally does it takes 43 s while its siblings take 1.2 s.**
+
+**2. §13/D5's MECHANISM IS WRONG, AND THE REAL DEFECT IS WORSE.** D5 says that
+at octave 8 eleven keys record a step "the UI cannot name" and blames
+`cellLabel`'s `|| '?'` fallback. **That fallback is unreachable.** `coerceLayers`
+runs `coerceToNoteStep` first, which NULLS any MIDI outside `[MIN_MIDI, MAX_MIDI]`
+— so the cell reads `step.midi === null` and paints `·`, never `?`. The actual
+consequence is not a naming failure at all: **the recorded step is lit and
+SILENT**, because `stepVoices` returns no voices for a null `midi`. So the fix
+D5 proposes (one shared `numpadNoteName`) would have addressed a symptom that
+does not exist and left the real one. PINNED by a unit test in #2226 and NOT
+fixed: every available repair moves the pitch of an already-saved patch, so it is
+an owner decision. *The lesson: a defect traced through only ONE of the two
+functions between the write and the paint gets the mechanism wrong even when the
+symptom is real.*
+
+**3. §6.4's RANK HALVES THE LANE'S `full` TIER, and it is geometry rather than
+prose.** A roster param earns a name readout, so its lane cell is
+`LANE_KNOB_READOUT_H = 57` px against `PLATE_ROW_H = 42`, and the plate charges
+the MAX of each row. §6.4 splits `activeLayer` (rank 2) and `octave` (rank 6)
+across the two plate rows: `57 + 4 + 57 = 118` against `LANE_BODY_H = 116`, the
+second row is dropped, and **'full' selects THREE cells — the same three as
+'compact'**. Both readout cells in row ONE costs `57 + 4 + 42 = 103` and both
+rows fit, so 'full' paints SIX. Measured both ways with the real `faceTierCap`.
+The shipped order ranks `octave` SECOND, which is also the better argument on its
+own merits: on a module whose instrument is the keypad, *what the keys play*
+outranks *how it is being recorded*. ⚠ **This is not a threshold that was moved.**
+Two defensible rankings existed; one of them paints twice as much, and that was
+only discoverable by running the resolver. *The lesson: adding `options` to a
+param has a LANE GEOMETRY cost that no amount of ranking argument reveals.*
+
+**4. §10.2's `menu-viewport-clamp` RE-POINT IS REFUSED, with a reason.** §10 says
+to re-point that test at the panel's menu "opened from the dock faceplate, panned
+to the corner", on the grounds that leaving it on `?shell=legacy` would pin the
+old host as correct. Its subject is a `position: fixed` menu escaping
+**SvelteFlow's transformed node** — a property only the CARD has, because the
+keymap panel is dock-only and the dock is not inside that transform. *Panning does
+not move a dock.* So it is not a gate pinning a dead host: the card is still a
+shipped surface and the only surface where that failure mode exists. The FACE's
+own menu (portal + viewport clamp, out of the dock) is driven in
+`numpad-plus-face.spec.ts` instead — coverage ADDED rather than moved.
+
+**5. §9's M5 CAME BACK DIFFERENT FROM KRIA, exactly as M5 said to check.**
+numpadPlus stores an array of OBJECTS and a step is its own Y.Map, so
+`layers[l][s].on = true` works and the transaction's `changed` set has size **1**
+— one Y type per recorded note, no `splice` needed. (kria stores parallel scalar
+lanes, so its granular write must splice.) Measured against the real store.
+⚠ **And making the write granular EXPOSED A SECOND DEFECT the spec does not
+anticipate**: both of the legacy card's `node.data` derivations read through the
+live Yjs proxy, whose identity never changes, and they only worked because every
+write REPLACED the whole object. Granular writes froze the card — the graph was
+right and the cap went on painting the old binding. *The lesson: the whole-object
+rewrite D3 calls a defect was also load-bearing for a surface nobody had
+identified as depending on it, and the fix has to carry that surface with it.*
+
+⚠ **Also stale by the time of the build:** §16's gate list names
+`.claude/skills/module-faceplates.md` and a sprawling `CLAUDE.md`; #2222 replaced
+both with `AGENTS.md` + `.claude/skills/module-surfaces`. And §12.5's two Push-2
+predictions both moved, because they are derived from `face.order` and the rank
+changed (correction 3) — the FACE tier now yields
+`activeLayer · octave · recArm · isPlaying · overdub · bpm · poly`, so encoders
+1–2 are the two multi-state rosters rather than three two-position switches. The
+`skipped: ['numpad-cell-{n}', 'numpad-key-{n}']` prediction held exactly.
+
+**What held, and is worth saying because most of it did:** the constraint map in
+§0, the contract prediction (§12.4 — **one line**, exactly), the VRT exemption
+being false (§11), the ZERO attest (§12.1), the refusal arguments (§4, §5), the
+resting-text rulings including the hard key-cap case (§7), the STOP-1 and STOP-2
+inventories (§2, §3), and the three-baselines-added / none-moved prediction (§11).
 
 ---
 
@@ -1497,7 +1597,7 @@ inside that work's PR. The `routing` column is the instruction to the build agen
 | **D2** | ⚠ **EVERY STEP EDIT AND EVERY REMAP IS OUTSIDE Cmd-Z — via a `transact` WITH NO ORIGIN.** `setStep` and `writeKeymap` both open a transaction and both omit the origin argument, so the UndoManager never captures them. Three lines away, `setNodeParam` is correctly tagged — so the BPM knob is undoable and the sequence is not. **This is the `kria` defect verbatim**, on a module `kria-writes.ts` does not cover. | `NumpadPlusCard.svelte:76-87` (`:79`), `:140-147` (`:143`), vs `:49`; `kria-writes.ts:16-27` | **fix in this PR** — §9 |
 | **D3** | ⚠ **ONE CELL CLICK REWRITES ALL FOUR LAYERS — AND SO DOES EVERY RECORDED KEYPRESS.** Three sites deep-clone and reassign the whole `4 × 16` structure. In a multiplayer rack, two collaborators recording into DIFFERENT layers of the same node overwrite each other by last-writer-wins. During OVERDUB this fires at performance rate. **kria's second named defect, verbatim.** | `NumpadPlusCard.svelte:85`; `numpad-plus.ts:460`, `:470`; `kria-writes.ts:28-36` | **fix in this PR** — §9, M5 |
 | **D4** | ⚠ **A DOCUMENTED AFFORDANCE THAT DOES NOT EXIST.** The def's own `docs.controls['numpad-cell-{n}']` says *"click-and-dragging up/down on the cell changes its note by hand"*, and the card's header comment says *"click toggles step on/off; click+drag changes the note"*. **The cell has `onclick` and nothing else** — no pointer, drag or wheel handler anywhere. So the ONLY way to set a step's pitch is to record it from the keypad, and `toggleStep` gives a freshly-lit step the octave's C regardless. `module-docs-lint` reads the DEF, so it is structurally blind to a card that does not implement what the def promises. | `numpad-plus.ts:341-342`; `NumpadPlusCard.svelte:13-14`, `:277-289` (`:284` is the only handler), `:88-92` | **fix in this PR** — the panel implements drag-to-change-note, which is what makes the grid a *picture-you-edit* rather than a picture-you-toggle. ⚠ The PR body must say the affordance was **added, not restored** |
-| **D5** | ⚠ **AT OCTAVE 8, ELEVEN OF THE TWELVE KEYS RECORD A STEP THE UI CANNOT NAME.** `midiForKey` returns `(octave+1)*12 + semitone`, so octave 8 spans MIDI 108–119; `noteNameForMidi` returns `''` above `MAX_MIDI = 108`, and `cellLabel`'s `|| '?'` fallback paints **`?`**. The pitch output is correct — only the name fails. | `numpad-plus.ts:186`; `note-entry.ts:23-24`, `:109-116`; `NumpadPlusCard.svelte:121` | **fix in this PR** — export ONE `numpadNoteName(midi)` from the def (the backdraft one-place rule), used by the card AND both panels AND the accessible names; unit-test at 12 / 60 / 108 / 119. **Do not change the octave range** — that is a behaviour change to saved patches |
+| **D5** | ⚠ **CORRECTED AT BUILD TIME — SEE §0.7/2. The mechanism below is WRONG and the real defect is WORSE.** ~~At octave 8, eleven of the twelve keys record a step the UI cannot name: `noteNameForMidi` returns `''` above `MAX_MIDI = 108` and `cellLabel`'s `\|\| '?'` fallback paints `?`.~~ That fallback is UNREACHABLE: `coerceLayers` runs `coerceToNoteStep` FIRST, which nulls any MIDI outside `[12, 108]`, so the cell reads `midi === null` and paints `·`. The real consequence is that **the recorded step is lit and SILENT** — `stepVoices` returns no voices for a null `midi`. The LIVE keypress still sounds (the manual path never round-trips through a `NoteStep`); only the recording is lost. | `numpad-plus.ts:186`; `note-entry.ts:23-24`, `:153-170`; `stepVoices` | ⚠ **PINNED, NOT FIXED, in #2226** — a unit test asserts the current behaviour so it cannot change silently. Every available repair moves the pitch of an already-saved patch (clamp the octave range; clamp the recorded MIDI onto one note; widen `coerceToNoteStep` for every note-step consumer in the fleet), so it is an OWNER decision. The `numpadNoteName` helper this row proposed is NOT needed — `noteNameForMidi` always succeeds on a coerced step |
 | **D6** | **THE CV LAYER SELECTOR'S BUCKETS ARE UNEQUAL BY 3×.** `resolveActiveLayer` is `round(cv * 4)` clamped to `0..3`, so L1 occupies cv `[0, 0.125)` (width 0.125) while L4 occupies `[0.625, 1.0]` (width 0.375). A player sweeping an LFO through the layer input spends three times as long on L4 as on L1. | `numpad-plus.ts:264-273`; e2e at `numpad-plus.spec.ts:299` pins `round(0.75×4)=3` | ⚠ **NOT this PR.** Fixing it changes which layer every saved patch's CV selects — an owner-preview behaviour change. Recorded so it is not lost |
 | **D7** | **A BIPOLAR PORT WHOSE NEGATIVE HALF IS DEAD, AND THE FILE CONTRADICTS ITSELF ABOUT IT.** `numpad-plus.ts:53` says *"layer (cv): **bipolar** CV selecting the active layer"*; `:22-23` and `docs.inputs.layer` (`:316-317`) both say `0..1`; `cv-scale-registry.test.ts:165-166` says `0..1`. The implementation is `0..1` — any negative value rounds ≤ 0 and clamps to L1. | `numpad-plus.ts:53` vs `:22-23`, `:316-317`; `cv-scale-registry.test.ts:165-166` | **fix in this PR** — correct the one wrong comment. Free: comments are stripped from every attest basis by `attest-code-basis.ts` |
 | **D8** | **A SHIPPED COMMENT BLAMES THE CARD FOR SOMETHING THE FACTORY DOES.** `interactive-doc-modules.ts:154-156` excludes numpadPlus from the live doc-card allowlist because *"NUMPAD+'s card installs a document-level capturing keydown listener"*, echoed at `strict-docs.ts:193-195` and `docs-virtual-module.spec.ts:411`. **The card does not.** The listener is in the FACTORY (`numpad-plus.ts:604-683`), which the *engine-less* doc sandbox never runs; the card's only document listener is the conditional remap capture. By the allowlist's own stated criteria (*"a playhead-polling requestAnimationFrame is fine — the engine-less doc sandbox just no-ops the read"*), numpadPlus's 33 ms engine poll qualifies. | `interactive-doc-modules.ts:151-156`; `strict-docs.ts:193-195`; `NumpadPlusCard.svelte:57-68`, `:186-198`; `numpad-plus.ts:677-678` | **CORRECT THE COMMENTS in this PR** (prose, next to a claim about this module, and hash-transparent). ⚠ **Do NOT add numpadPlus to `INTERACTIVE_DOC_MODULES`** — that needs a `PROBES` row in `docs-virtual-module.spec.ts` and a verified live run, which is its own work |

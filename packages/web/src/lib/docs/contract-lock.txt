@@ -2357,6 +2357,7 @@ numpadPlus param overdub 0..1 discrete default=0
 numpadPlus param poly 0..1 discrete default=0
 numpadPlus param recArm 0..1 discrete default=0
 numpadPlus family numpad-cell kind=cell prefix=numpad-cell
+numpadPlus family numpad-key kind=other prefix=numpad-key
 onetonine meta domain=video
 onetonine in in video
 onetonine out out1 video

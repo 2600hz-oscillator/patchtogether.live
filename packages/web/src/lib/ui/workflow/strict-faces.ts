@@ -5084,6 +5084,66 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // literal reading of the ruling does not quietly delete it. peertube carries
   // the same shape — routed to the owner as a cohort question.
   'tvLibrarian',
+  // ── NUMPAD+ (2026-08-26) — the KEYPAD PERFORMANCE SEQUENCER ───────────────
+  //
+  // The only module in the fleet where PLAYING it and WRITING it are the same
+  // gesture: the twelve keys of a numeric keypad are its keyboard, and with ARM
+  // or OVERDUB lit the same press also lands on the nearest step of one of four
+  // layers. Its siblings (`sequencer`, `kria`, `drumseqz`, `cartesian`) give
+  // you a grid and ask you to place events in it; this one records what you
+  // PLAY.
+  //
+  // ⚠ THE OBVIOUS WORRY ABOUT THIS MODULE TURNS OUT TO BE FREE, and it is worth
+  // stating so nobody spends a review round on it. Promotion stops rendering
+  // the legacy card, and for a module whose headline feature is STEALING THE
+  // KEYBOARD the fear is that promotion silently unplugs the keys. It does not,
+  // for a structural reason rather than a lucky one: the `keydown`/`keyup`
+  // capture listener is installed inside the FACTORY and torn down in
+  // `dispose()`, never on the card — confirmed against the derived sets, where
+  // numpadPlus is absent from `DOM_SOURCE_LANE_TYPES`, from
+  // `CARD_PRODUCER_LANE_TYPES` and therefore from their union
+  // `HEADLESS_MOUNT_LANE_TYPES`. The card was a pure view plus four editors.
+  //
+  // ⚠ AND THE PARITY WORK WAS NOT ON THE FACE — IT WAS UNDER IT. The two things
+  // a player MAKES on this module both live in `node.data` and neither had a
+  // ParamDef, a rank or a docs key: the 4 x 16 recorded steps and the player's
+  // own `code → semitone` keyboard layout. Both become PF-14 panels (the steps
+  // as `face.hero.cell`), which is the kria shape exactly and needs no
+  // `face.extension`, no lazy chunk and no platform seam.
+  //
+  // ⚠ THREE LIVE DEFECTS FIXED UNDER THE PROMOTION, all in `node.data` where no
+  // gate could see them (`mutate.guard.test.ts` anchors its regex on the
+  // literal token `.params`):
+  //   * arming REC and pressing PLAY called `clearLayer`, which erased sixteen
+  //     steps through a BARE SyncedStore proxy write — data loss on the
+  //     module's headline workflow, and Cmd-Z could not bring it back;
+  //   * every step edit and every remap went through `ydoc.transact(fn)` with
+  //     NO ORIGIN argument, which the UndoManager does not track. ⚠ A bare
+  //     proxy write reads as sloppy; a `transact` reads as careful. They are
+  //     equally un-undoable and only one survives a review;
+  //   * one cell click — and every recorded keypress, i.e. several times a
+  //     second during OVERDUB — rewrote ALL FOUR LAYERS as one whole-structure
+  //     assignment, so two collaborators recording into different layers
+  //     overwrote each other by last-writer-wins.
+  // All three route `numpad-plus-writes.ts` now, and the recorded write and the
+  // clicked write take the same path by construction.
+  //
+  // ⚠ AND ONE DOCUMENTED AFFORDANCE THAT DID NOT EXIST. The def's own
+  // `docs.controls['numpad-cell-{n}']` promised "click-and-dragging up/down on
+  // the cell changes its note by hand"; the cell had `onclick` and nothing else,
+  // so the only way to set a step's pitch was to record it. `module-docs-lint`
+  // reads the DEF, which is structurally blind in exactly that direction. The
+  // hero panel implements the drag — ADDED, not restored.
+  //
+  // TWO ROSTERS, for the two questions that look like one. `activeLayer` is
+  // `0..3 discrete` and was FOUR reachable positions across a whole dial (the
+  // moog962 shape `faces-parity` failed twice), and its names already existed
+  // in card markup; `octave` is `0..8` and the card painted its value as a bare
+  // NUMBER, which the resting-text ruling deletes — so without names the dock
+  // would show an anonymous nine-position dial and the player could no longer
+  // tell what octave they were in. `c0..c8` is DERIVED from `midiForKey`'s own
+  // arithmetic, so it costs zero NUMERIC_LABEL_EXEMPTIONS entries.
+  'numpadPlus',
 ]);
 
 /**
