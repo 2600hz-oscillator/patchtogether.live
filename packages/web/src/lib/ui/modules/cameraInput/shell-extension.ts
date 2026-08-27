@@ -47,7 +47,12 @@
 
 import type { ShellExtension } from '$lib/ui/workflow/shell-extensions';
 import CameraInputOutputBody from './CameraInputOutputBody.svelte';
+import CameraInputTileBody from './CameraInputTileBody.svelte';
 
 export default {
   fullViewBody: CameraInputOutputBody,
+  // The LANE TILE's counterpart. Same controls, compact — the tile is where a
+  // player most often meets this module, and until now it could do nothing
+  // there but look at an empty thumbnail.
+  tileBody: CameraInputTileBody,
 } satisfies ShellExtension;

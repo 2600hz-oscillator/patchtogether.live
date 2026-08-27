@@ -78,6 +78,26 @@ export interface ShellExtension {
    *  face. UNWIRED — see the interface note. */
   editorSurface?: Component<{ nodeId: string }>;
   /**
+   * THE MODULE'S OWN CONTROLS ON THE LANE TILE — WIRED.
+   *
+   * For the things a module needs that are not `ParamDef`s and therefore cannot
+   * be face cells, but which a player must reach WITHOUT expanding the module.
+   * `fullViewBody` is the dock's surface; this is the tile's, and the two are
+   * not interchangeable: a module whose only non-param control lives in the
+   * full view is unusable from the lane, which is where it is normally met.
+   *
+   * ⚠ IT IS A COMPLEMENT TO THE FACE, NOT A REPLACEMENT — the same rule
+   * `fullViewBody` carries. The tile still paints every param cell above it and
+   * the glyph thumbnail beside it; this appends the module's own affordances.
+   * Keep it SMALL: the tile is ~192px wide and the shell budgets its height.
+   *
+   * FIRST ADOPTER: cameraInput. Its device picker, capture lamp and acquire
+   * gesture were reachable only in the dock full view, so the lane tile could
+   * neither choose a camera nor start one — the thumbnail was honest, there was
+   * simply no stream behind it.
+   */
+  tileBody?: Component<{ nodeId: string }>;
+  /**
    * THE MODULE'S OWN FULL-WIDTH SURFACE at the head of the DOCK FULL VIEW —
    * WIRED (#1726, the video-face platform). It paints above the faceplate's
    * control bands and TAKES THE PLACE OF the generic hero glyph, because a
@@ -115,13 +135,13 @@ export interface ShellExtension {
 
 /** Every slot key the contract defines. A loaded extension exporting any OTHER
  *  key is refused by shell-extensions.test.ts (deny by default). */
-export const SHELL_EXTENSION_SLOTS = ['glyph', 'editorSurface', 'fullViewBody'] as const;
+export const SHELL_EXTENSION_SLOTS = ['glyph', 'editorSurface', 'fullViewBody', 'tileBody'] as const;
 
 /** The slots ModuleShell actually RENDERS today. shell-extensions.test.ts
  *  anchors this list to ModuleShell's source in BOTH directions (a wired slot
  *  must be read as `ext?.<slot>`; an unwired one must not appear), so it
  *  cannot drift from the render reality it names. */
-export const WIRED_SHELL_EXTENSION_SLOTS = ['glyph', 'fullViewBody'] as const;
+export const WIRED_SHELL_EXTENSION_SLOTS = ['glyph', 'fullViewBody', 'tileBody'] as const;
 
 /** Slot keys a loaded extension exports that the contract does not define. */
 export function unknownSlotKeys(ext: object): string[] {

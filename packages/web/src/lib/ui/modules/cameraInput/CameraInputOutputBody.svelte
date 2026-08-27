@@ -1,8 +1,12 @@
 <script lang="ts">
   // packages/web/src/lib/ui/modules/cameraInput/CameraInputOutputBody.svelte
   //
-  // The CAMERA dock full-view body: the live picture, the SCREEN switch, the
-  // DEVICE PICKER, and a capture lamp.
+  // The CAMERA dock full-view body: the live picture and the SCREEN switch.
+  //
+  // The DEVICE PICKER, the capture LAMP and the ACQUIRE gesture moved to
+  // `CameraSourceControls`, which this mounts and so does the LANE TILE. They
+  // used to live here and ONLY here, so a player had to expand the module to
+  // choose a camera or to start one at all — see that file's header.
   //
   // ⚠ THE PICTURE IS BLITTED FROM THE ENGINE AND THE `<video>` IS NEVER ADOPTED,
   // and that is the single most important line in this file. CAMERA's `<video>`
@@ -40,6 +44,7 @@
   import type { VideoEngine } from '$lib/video/engine';
   import { VIDEO_RES } from '$lib/video/engine';
   import { drawPreviewDownscaled } from '../preview-downscale';
+  import CameraSourceControls from './CameraSourceControls.svelte';
 
   interface Props {
     /** The graph node this faceplate is showing — the ONLY prop the slot gets. */
@@ -66,136 +71,18 @@
     });
   }
 
-  // ── The DEVICE PICKER ─────────────────────────────────────────────────────
-  //
-  // ⚠ NOT A ParamDef, WHICH IS WHY IT IS HERE AND NOT A FACE CELL. The device
-  // list is enumerated at RUNTIME from the browser, so it cannot be an `options`
-  // roster on the def — a roster is a fixed set known at authoring time, and
-  // this one is different on every machine and changes when hardware is plugged
-  // in. `node.data.deviceId` is the persisted pick (in Yjs, per the def's own
-  // note: each browser tries to match it to a local camera).
-  //
-  // ⚠ ENUMERATION ONLY — this body never calls `getUserMedia`. Acquisition
-  // belongs to the card, which owns the stream; two callers would be two owners.
-  // Without permission the browser returns device ids with EMPTY labels, which
-  // is why the fallback name below is the id prefix rather than a blank row.
-  let devices = $state<{ deviceId: string; label: string }[]>([]);
-  let enumerateFailed = $state(false);
-
-  let savedDeviceId = $derived<string | null>(
-    (patch.nodes[nodeId]?.data?.deviceId as string | undefined) ?? null,
-  );
-
-  async function refreshDevices(): Promise<void> {
-    try {
-      const all = await navigator.mediaDevices.enumerateDevices();
-      devices = all
-        .filter((d) => d.kind === 'videoinput')
-        .map((d) => ({ deviceId: d.deviceId, label: d.label }));
-      enumerateFailed = false;
-    } catch {
-      devices = [];
-      enumerateFailed = true;
-    }
-  }
-
-  function pickDevice(deviceId: string): void {
-    if (!deviceId) return;
-    // ⚠ WRITES THE SHARED KEY THE CARD ALREADY READS. The card re-acquires from
-    // it (see its `$effect` on the saved id), so the pick reaches the stream
-    // without this body touching `getUserMedia`.
-    mutateNode(nodeId, (live) => {
-      if (!live.data) live.data = {};
-      live.data.deviceId = deviceId;
-    });
-  }
-
-  // ── The capture LAMP, the ERROR TEXT and the ACQUIRE gesture ──────────────
-  //
-  // ⚠ THE LAMP READS THE CARD'S REAL STATE, NOT A GUESS ASSEMBLED FROM THE
-  // GRAPH. An earlier draft derived it from `deviceId` + `enabled` alone,
-  // because the card's `camState` is browser-local `$state` and deliberately NOT
-  // in Yjs (a permission grant is a property of ONE person's browser; syncing it
-  // would assert something false about everyone else's machine — the def says
-  // so, and that part is unchanged and correct).
-  //
-  // But a graph-derived lamp can only say "a device is chosen and capture is
-  // enabled". It cannot tell that apart from `permission-denied`, and it would
-  // read ARMED while the browser refuses every frame — worse than no lamp,
-  // because it actively points away from the problem. The registry solves the
-  // ownership objection without the transport one: the status is published
-  // in-process, per tab, and never leaves the browser it describes.
-  //
-  // ⚠ A NULL STATUS IS A REAL STATE AND IS RENDERED AS ONE. `null` means no card
-  // has published — the node exists but nothing is mounted for it yet. It is not
-  // an error and it is not `idle`; the lamp goes dim and the acquire button is
-  // disabled, because there is nobody to deliver the command to.
+  // ⚠ THE BODY STILL SUBSCRIBES, for its own LOCAL-ONLY hint below. The picker
+  // component subscribes independently — `camera-status-registry` is pub/sub and
+  // a second reader costs nothing, where threading one subscription through a
+  // prop would couple two surfaces that are otherwise unrelated.
   let live = $state<CameraStatus | null>(null);
-  let commandable = $state(false);
 
   $effect(() => {
     const id = nodeId;
-    const sync = (): void => {
-      live = cameraStatus.read(id);
-      commandable = cameraStatus.hasCommands(id);
-    };
+    const sync = (): void => { live = cameraStatus.read(id); };
     sync();
     return cameraStatus.subscribe(id, sync);
   });
-
-  let enabled = $derived<boolean>(
-    ((patch.nodes[nodeId]?.params?.enabled as number | undefined) ?? 1) > 0.5,
-  );
-
-  type Lamp = 'no-card' | 'no-device' | 'paused' | 'requesting' | 'error' | 'armed' | 'streaming';
-  let lamp = $derived<Lamp>(
-    !live ? 'no-card'
-      : live.state === 'streaming' ? 'streaming'
-      : live.state === 'requesting' ? 'requesting'
-      : live.state === 'paused' || !enabled ? 'paused'
-      : live.state === 'idle' ? (savedDeviceId ? 'armed' : 'no-device')
-      : 'error',
-  );
-
-  const LAMP_TITLE: Record<Lamp, string> = {
-    'no-card': 'No CAMERA surface is mounted for this node yet — nothing has reported a capture state.',
-    'no-device': 'No camera chosen yet — pick one from the list.',
-    paused: 'Capture is paused (the ON control is off). The device stays selected and the hardware is released.',
-    requesting: 'Asking the browser for the camera…',
-    error: 'Capture is not running — see the message below.',
-    armed: 'A camera is selected and capture is on, but no frames are arriving yet. Use REQUEST ACCESS to grant permission.',
-    streaming: 'Capture is running: frames are arriving and feeding OUT.',
-  };
-
-  /** The card's own recovery text, verbatim — the instructions live there. */
-  let errorMsg = $derived<string | null>(live?.errorMsg ?? null);
-  let rebindNotice = $derived<string | null>(live?.rebindNotice ?? null);
-
-  /**
-   * ⚠ THE ONLY ROUTE TO getUserMedia IN THE DEFAULT SHELL. The card's button is
-   * off-screen and `pointer-events: none`; this is the gesture that reaches it.
-   *
-   * It must stay a real click handler on a real `<button>`: `getUserMedia`
-   * requires a user gesture for a first grant, and the browser judges that by
-   * the call's activation context. A programmatic call from an effect would be
-   * refused, which is exactly why the card's auto-acquire only fires when
-   * permission was ALREADY granted in this origin.
-   */
-  function requestAccess(): void {
-    const res = cameraStatus.request(nodeId);
-    // ⚠ DELIVERY IS REPORTED, NEVER DROPPED. An acquire writes nothing to the
-    // graph, so no readParam/readData probe can see whether it landed — this log
-    // is the only thing separating "the card acted" from "no card was listening".
-    if (!res.delivered) {
-      console.warn('[cameraInput] REQUEST ACCESS reached no card for node', nodeId);
-    }
-  }
-
-  /** Offerable only when a card is listening AND the browser found a camera —
-   *  the same two conditions the card's own button is disabled on. */
-  let canRequest = $derived<boolean>(
-    commandable && (live?.deviceCount ?? 0) > 0 && live?.state !== 'requesting',
-  );
 
   // ── SCREEN OFF stops the COPY and keeps the WATCH MARK (#2015) ────────────
   //
@@ -247,13 +134,6 @@
       if (rafId !== null) { cancelAnimationFrame(rafId); rafId = null; }
     };
   });
-
-  $effect(() => {
-    void refreshDevices();
-    const onChange = () => { void refreshDevices(); };
-    navigator.mediaDevices?.addEventListener?.('devicechange', onChange);
-    return () => navigator.mediaDevices?.removeEventListener?.('devicechange', onChange);
-  });
 </script>
 
 <div class="camera-output" data-testid="cameraInput-output-body">
@@ -290,84 +170,7 @@
     </p>
   {/if}
 
-  {#if errorMsg}
-    <!-- ⚠ THE CARD'S RECOVERY TEXT, VERBATIM AND UNSUMMARISED. This is the
-         exception the resting-text rule is built to allow: it is not derived
-         state restating a control, it is an ERROR with instructions, and it is
-         absent whenever nothing is wrong. Paraphrasing it would drop the part
-         that acts — the site-settings path, the named capture apps. -->
-    <p class="error" role="alert" data-testid="cameraInput-face-error">{errorMsg}</p>
-  {/if}
-
-  {#if rebindNotice}
-    <!-- ⚠ A NAME REBIND IS AN OUTCOME, NOT AN ERROR, and it is said out loud
-         rather than absorbed. The saved camera's `deviceId` had been
-         regenerated (a reboot, a different USB port, cleared site data) and the
-         module re-found the camera by its remembered NAME instead. That is
-         almost always the same physical camera — and "almost always" is exactly
-         the case a player must be able to see, because the alternative is
-         discovering months later that a patch has been quietly pointed at the
-         other webcam. Same permitted shape as the recovery text above: an
-         outcome with guidance, absent whenever nothing happened, and cleared
-         the moment the player picks a camera explicitly. -->
-    <p class="rebind" role="status" data-testid="cameraInput-face-rebind">{rebindNotice}</p>
-  {/if}
-
-  <div class="picker-row">
-    <!-- ⚠ The lamp carries its state in `aria-label`/`title`, not as a resting
-         readout: the only TEXT here is the device NAME, which is a name rather
-         than a measurement (the cvBuddy precedent for this slot). -->
-    <span
-      class="lamp"
-      data-testid="cameraInput-face-lamp"
-      data-lamp={lamp}
-      role="img"
-      aria-label={LAMP_TITLE[lamp]}
-      title={LAMP_TITLE[lamp]}
-    ></span>
-    <select
-      class="device-select nodrag"
-      data-testid="cameraInput-face-device-select"
-      value={savedDeviceId ?? ''}
-      onchange={(e) => pickDevice((e.currentTarget as HTMLSelectElement).value)}
-      disabled={devices.length === 0}
-      aria-label="Camera device"
-    >
-      {#if enumerateFailed}
-        <option value="">cameras unavailable</option>
-      {:else if devices.length === 0}
-        <option value="">no cameras</option>
-      {:else}
-        {#if !savedDeviceId}
-          <option value="" disabled selected>pick a camera</option>
-        {/if}
-        {#each devices as d (d.deviceId)}
-          <option value={d.deviceId} selected={d.deviceId === savedDeviceId}>
-            {d.label || `Camera ${d.deviceId.slice(0, 6)}`}
-          </option>
-        {/each}
-      {/if}
-    </select>
-
-    <!-- ⚠ THE ACQUIRE GESTURE. Under the default shell this is the ONLY
-         clickable route to getUserMedia: the card's own button is parked
-         off-screen with `pointer-events: none`. A first-time visitor has no
-         other path, so this button is the difference between a promoted module
-         and a first-run dead end. It must stay a real click on a real
-         <button> — the browser grants a first permission only from a genuine
-         activation context. -->
-    <button
-      type="button"
-      class="acquire nodrag"
-      onclick={requestAccess}
-      disabled={!canRequest}
-      data-testid="cameraInput-face-request-access"
-      data-can-request={canRequest ? 'true' : 'false'}
-      title={canRequest
-        ? 'Ask the browser for this camera. Grants permission on first use, and retries after a failure.'
-        : 'Unavailable: no camera surface is mounted for this node, no camera was found, or a request is already in flight.'}
-    >{live?.state === 'permission-denied' ? 'RETRY IN SETTINGS' : live?.state === 'streaming' ? 'RE-ACQUIRE' : 'REQUEST ACCESS'}</button>
-  </div>
+  <CameraSourceControls {nodeId} testidPrefix="cameraInput-face" />
 </div>
 
 <style>
@@ -412,28 +215,6 @@
   .screen-btn.on { color: var(--text); border-color: var(--accent-dim); }
   .screen-btn:focus-visible { outline: 1px solid var(--accent); outline-offset: -1px; }
 
-  .picker-row {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    width: 100%;
-    max-width: 480px;
-  }
-  .lamp {
-    width: 8px;
-    height: 8px;
-    flex: 0 0 auto;
-    border-radius: 50%;
-    background: var(--text-dim);
-    opacity: 0.5;
-  }
-  .lamp[data-lamp='streaming'] { background: var(--accent); opacity: 1; box-shadow: 0 0 4px var(--accent); }
-  .lamp[data-lamp='armed'] { background: var(--accent); opacity: 0.75; }
-  .lamp[data-lamp='requesting'],
-  .lamp[data-lamp='paused'] { background: var(--warn, #c9a227); opacity: 1; }
-  .lamp[data-lamp='error'] { background: #dc2626; opacity: 1; }
-  /* `no-card` / `no-device` keep the dim default — nothing is wrong, nothing is
-     running. A red lamp for "you have not picked a camera yet" would cry wolf. */
 
   .local-only {
     margin: 0;
@@ -443,50 +224,5 @@
     text-align: center;
     line-height: 1.2;
     max-width: 480px;
-  }
-  .rebind {
-    margin: 4px 0 0;
-    font-size: 0.6rem;
-    line-height: 1.35;
-    color: var(--text-dim);
-    border-left: 2px solid var(--cable-video);
-    padding-left: 6px;
-  }
-  .error {
-    margin: 0;
-    width: 100%;
-    max-width: 480px;
-    font-size: 0.65rem;
-    color: #fca5a5;
-    background: rgba(220, 38, 38, 0.08);
-    border: 1px solid rgba(220, 38, 38, 0.3);
-    padding: 4px 6px;
-    border-radius: 2px;
-    line-height: 1.3;
-  }
-  .acquire {
-    flex: 0 0 auto;
-    font-size: 0.55rem;
-    letter-spacing: 0.06em;
-    padding: 2px 8px;
-    border: 1px solid var(--cable-video, var(--border));
-    border-radius: 2px;
-    background: rgba(244, 114, 182, 0.12);
-    color: var(--text);
-    cursor: pointer;
-    white-space: nowrap;
-  }
-  .acquire:hover:not(:disabled) { background: rgba(244, 114, 182, 0.2); }
-  .acquire:disabled { opacity: 0.4; cursor: not-allowed; }
-  .acquire:focus-visible { outline: 1px solid var(--accent); outline-offset: -1px; }
-  .device-select {
-    flex: 1 1 auto;
-    min-width: 0;
-    font-size: 0.6rem;
-    padding: 2px 4px;
-    background: var(--module-bg);
-    color: var(--text);
-    border: 1px solid var(--border);
-    border-radius: 2px;
   }
 </style>
