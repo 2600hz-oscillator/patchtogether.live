@@ -75,6 +75,8 @@ import ClapHeroPanel from '$lib/ui/modules/ClapHeroPanel.svelte';
 import CubeHeroPanel from '$lib/ui/modules/cube/CubeHeroPanel.svelte';
 import CubeTableStackPanel from '$lib/ui/modules/cube/CubeTableStackPanel.svelte';
 import KriaGridPanel from '$lib/ui/modules/kria/KriaGridPanel.svelte';
+import ScoreStaffPanel from '$lib/ui/modules/score/ScoreStaffPanel.svelte';
+import ScoreSlotsPanel from '$lib/ui/modules/score/ScoreSlotsPanel.svelte';
 import CloudsRingPanel from '$lib/ui/modules/CloudsRingPanel.svelte';
 import CofefveEchoTrainPanel from '$lib/ui/modules/CofefveEchoTrainPanel.svelte';
 import KickdrumHeroPanel from '$lib/ui/modules/KickdrumHeroPanel.svelte';
@@ -159,6 +161,30 @@ import {
   kriaTimeDivisionOptions,
   kriaTimeDivisionValue,
 } from '$lib/ui/modules/kria-cell-actions';
+import {
+  scoreAccidentalOptions,
+  scoreAccidentalValue,
+  scoreDynOptions,
+  scoreDynValue,
+  scoreKeyOptions,
+  scoreKeyValue,
+  scoreLoopValue,
+  scorePagesOptions,
+  scorePagesValue,
+  scoreSetAccidental,
+  scoreSetDyn,
+  scoreSetKey,
+  scoreSetLoop,
+  scoreSetPages,
+  scoreSetStop,
+  scoreSetTie,
+  scoreSetValue,
+  scoreStopOptions,
+  scoreStopValue,
+  scoreTieValue,
+  scoreValueOptions,
+  scoreValueValue,
+} from '$lib/ui/modules/score-cell-actions';
 import {
   matrixmixSetXAxis,
   matrixmixSetYAxis,
@@ -2140,6 +2166,190 @@ const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
       options: () => kriaRootOptions(),
       value: (node) => kriaRootValue(node),
       onchange: (nodeId, v) => kriaSetRoot(nodeId, v),
+    },
+  },
+
+  // ── SCORE — a NOTATION EDITOR: two pictures-you-edit and seven rosters ─────
+  //
+  // The instrument is a DOCUMENT. Every note, tie, dynamic, the key signature,
+  // the page count, the loop flag and the stop bar live in `node.data`; the six
+  // params are a built-in ADSR plus a transport switch, so NOT ONE PARAM IS THE
+  // MUSIC. That is the gap this registry exists to close, in its purest form.
+  //
+  // ⚠ THE CARD IS MODAL AND THIS IS NOT, AND THAT IS THE DESIGN CALL THE WHOLE
+  // FACE RESTS ON. `ScoreCard.svelte` arms one of fifteen tools and the staff
+  // then interprets a click. Fifteen mutually-exclusive arming controls cannot
+  // be cells: drawn as three selectors and two toggles they would be five
+  // controls claiming ONE single-valued state, and whatever they showed, four of
+  // the five would be lying — which is the argument `declaredParamCells` makes
+  // about its own shape one file over. So the face SELECTS: the staff panel
+  // writes `data.selectedNoteId`, and ACC / DYN / TIE / END all read and write
+  // THAT note. No cell changes what a click on the staff MEANS, which is the
+  // property a toolbar of modes cannot have.
+  //
+  // ⚠ AND WITH NOTHING SELECTED THOSE FOUR ARM WHAT YOU WRITE NEXT, WHICH IS NOT
+  // A SECOND MODE — it is one control with one value, applied to the note you
+  // have or the note you are about to make, exactly as every notation editor
+  // behaves. It is also what keeps them LIVE: a cell that acted only on a
+  // selection is inert on a fresh score, because `notes: []` means there is
+  // nothing to select. `faces-parity` drives every cell on a fresh spawn and
+  // caught precisely that.
+  //
+  // ⚠ THE SELECTION SYNCS, AND THAT COST IS UNAVOIDABLE RATHER THAN CHOSEN. A
+  // cell's `value(node)` receives the node and nothing else, so state the mark
+  // cells must READ has literally nowhere else to live; a component-local
+  // selection would make every one of them inert. `node.data` rides the Y.Doc,
+  // so two collaborators editing one score share a selection cursor. kria ships
+  // the identical construct with the identical property.
+  //
+  // ⚠ AND IT FIXES THREE LIVE DEFECTS AS A CONSEQUENCE RATHER THAN AS THREE
+  // PATCHES: a note becomes deletable by pointer at all, a tie becomes
+  // removable at all, and the def's own `docs.controls` stops promising a
+  // select/remove the module did not have. See `score-writes.ts`.
+  score: {
+    // THE STAFF. Ranked FIRST via `face.hero.cell`, which costs zero lane ranks
+    // (PF-22 drops the hero from `laneOrder`) and keeps the 46 px
+    // panel-in-a-knob-column protection intact.
+    //
+    // ⚠ A `data` PROBE, NOT `data-rev`, AND IT IS AIMED AT THE SHIPPED DEFAULT
+    // STATE — no seeding, no mode to arm. A fresh score has `notes: []` and an
+    // absent `data.noteValue`, which reads as `'quarter'`, so ONE click at the
+    // staff's centre writes a quarter note and `notes` changes. That is what
+    // makes it a real probe rather than a ceremony: a revision-only probe passes
+    // on a dead surface that bumps a counter without editing anything.
+    'score-note-{n}': {
+      kind: 'panel',
+      label: 'staff',
+      component: ScoreStaffPanel,
+      // ⚠ DERIVED, NOT CHOSEN. 720 = 60 px clef/key gutter + 4 bars × 162 + 12,
+      // which puts TICK_PX at 3.375 — and a sixteenth is 3 ticks, i.e. 10.1 px
+      // between noteheads against an 18 px notehead GLYPH. The staff is already
+      // at its collision floor for the finest value the module can place; take
+      // 20 % off and a sixteenth run is 8.1 px apart, which is not tight, it is
+      // unreadable. The narrower alternative (2 bars/row × 8 rows) is 694 px
+      // TALL and overflows the dock's own min(60vh, 680px) fold. Width EARNED by
+      // a picture-you-edit, and the number is arithmetic.
+      minWidth: 720,
+      probe: {
+        testid: 'score-staff-panel',
+        action: 'click',
+        effect: { kind: 'data', key: 'notes', expect: 'changed' },
+      },
+    },
+
+    // ── THE ONE SETTING THAT IS NOT ABOUT THE SELECTION ──────────────────────
+    // What the NEXT click writes. The single survivor of the card's fifteen-way
+    // `activeTool`, because it is the only one of them that was genuinely a
+    // persistent setting rather than a mode.
+    'score-value-{n}': {
+      kind: 'selector',
+      tag: 'VALUE',
+      options: () => scoreValueOptions(),
+      value: (node) => scoreValueValue(node),
+      onchange: (nodeId, v) => scoreSetValue(nodeId, v),
+    },
+
+    // ── THE MARK CELLS. With a note selected they read and write THAT note;
+    // with nothing selected they ARM what the next click writes. One control,
+    // one value, applied to the note you have or the note you are about to
+    // make — see `score-cell-actions.ts` for why that is the design rather than
+    // a workaround for the parity sweep that found the first version inert.
+    'score-accidental-{n}': {
+      kind: 'selector',
+      tag: 'ACC',
+      options: () => scoreAccidentalOptions(),
+      value: (node) => scoreAccidentalValue(node),
+      onchange: (nodeId, v) => scoreSetAccidental(nodeId, v),
+    },
+    'score-dyn-{n}': {
+      kind: 'selector',
+      tag: 'DYN',
+      options: () => scoreDynOptions(),
+      value: (node) => scoreDynValue(node),
+      onchange: (nodeId, v) => scoreSetDyn(nodeId, v),
+    },
+    // ⚠ A TOGGLE, WHICH IS THE WHOLE FIX. `addTie` was the only writer of
+    // `data.ties` in the repo and the only deletion was collateral inside
+    // `deleteNote` — so a tie, once made, could not be removed. This can turn
+    // one off.
+    'score-tie-{n}': {
+      kind: 'toggle',
+      label: 'tie',
+      value: (node) => scoreTieValue(node),
+      onchange: (nodeId, on) => scoreSetTie(nodeId, on),
+    },
+    'score-stop-{n}': {
+      kind: 'selector',
+      tag: 'END',
+      options: () => scoreStopOptions(),
+      value: (node) => scoreStopValue(node),
+      onchange: (nodeId, v) => scoreSetStop(nodeId, v),
+    },
+    'score-loop-{n}': {
+      kind: 'toggle',
+      label: 'loop',
+      value: (node) => scoreLoopValue(node),
+      onchange: (nodeId, on) => scoreSetLoop(nodeId, on),
+    },
+
+    // ── PIECE-LEVEL ─────────────────────────────────────────────────────────
+    // ⚠ NAMES, NOT SIGNED INTEGERS. The stored value is the cycle-of-fifths
+    // count the engine and `staffStepToMidi` already use and it stays that; a
+    // face that made a player pick `+2` would print a restatement of the
+    // control's own roster position, where `D major` is what the state IS.
+    'score-key-{n}': {
+      kind: 'selector',
+      tag: 'KEY',
+      options: () => scoreKeyOptions(),
+      value: (node) => scoreKeyValue(node),
+      onchange: (nodeId, v) => scoreSetKey(nodeId, v),
+    },
+    // ⚠ THE CONTROL THE CARD SHOULD HAVE HAD. `addPage` only ever incremented
+    // and nothing anywhere decremented, so one stray click made the piece
+    // sixteen bars longer with no way back and the playhead walked 768 extra
+    // grid ticks of silence on every pass. A roster over 1..4 fixes it for the
+    // price of the cell, and shrinking is non-destructive by construction —
+    // `setPages` writes `pages` and nothing else.
+    'score-pages-{n}': {
+      kind: 'selector',
+      tag: 'PAGES',
+      options: () => scorePagesOptions(),
+      value: (node) => scorePagesValue(node),
+      onchange: (nodeId, v) => scoreSetPages(nodeId, v),
+    },
+
+    // ── QUICKSAVE — the SECOND panel, and four INPUT PORTS depend on it ──────
+    //
+    // `queue1_cv … queue4_cv` bottom out at `data.slots[queued]`, and
+    // `data.slots` is written by exactly one thing in the repo:
+    // `handleSlotClick`, driven by `QuicksaveControls.svelte`. Promoting SCORE
+    // without this cell would leave four declared, documented input ports firing
+    // into an empty map forever.
+    //
+    // ⚠ THE PROBE CLICKS THE *MODE* BUTTON, NOT A SLOT, AND THE REASON IS
+    // MEASURED. `coercePendingMode` returns null for anything that is not
+    // save/load/queue, so a fresh node has NO pending mode and
+    // `resolveSlotClick(null, slot)` returns `{ kind: 'noop' }` BY DESIGN — a
+    // single-click probe on a slot would be red on a perfectly live widget. The
+    // mode button writes `data.pendingMode` on its first click.
+    //
+    // ⚠ SCOPE, STATED INSIDE THE PROBE: it proves the widget reaches
+    // `node.data`. It does NOT prove that SAVE saves. That half is
+    // `transport-card.test.ts` + `transport-helpers.test.ts` in the pure lane,
+    // and `score-face.spec.ts` drives SAVE→queue_cv end to end on the FACE.
+    'score-slots-{n}': {
+      kind: 'panel',
+      label: 'quicksave',
+      component: ScoreSlotsPanel,
+      // Measured off the rendered row: four 22 px slots + three ~44 px mode
+      // buttons + RESET + the gaps. Below this the row wraps to three lines and
+      // the mode/target relationship stops reading as one gesture.
+      minWidth: 300,
+      probe: {
+        testid: 'score-slots-mode-save',
+        action: 'click',
+        effect: { kind: 'data', key: 'pendingMode', expect: 'changed' },
+      },
     },
   },
 

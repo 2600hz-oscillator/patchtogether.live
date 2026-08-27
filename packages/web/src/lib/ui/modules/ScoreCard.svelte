@@ -6,10 +6,12 @@
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import QuicksaveControls from '$lib/ui/QuicksaveControls.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
-  import { patch, ydoc } from '$lib/graph/store';
+  import { patch } from '$lib/graph/store';
   import { nodeVersion } from '$lib/graph/node-versions.svelte';
   import { setNodeParam } from '$lib/graph/mutate';
   import { useEngine } from '$lib/audio/engine-context';
+  import { paramSpec } from '$lib/ui/modules/card-kit';
+  import { scoreDef } from '$lib/audio/modules/score';
   import {
     handleSlotClick,
     readSlots,
@@ -18,9 +20,31 @@
     readLastLoadedSlot,
     setPendingMode,
     setQueuedSlot,
-    type TransportCardDeps,
   } from '$lib/audio/modules/transport-card';
-  import type { PendingMode, SlotKey, Snapshot } from '$lib/audio/modules/transport-helpers';
+  import type { PendingMode, SlotKey } from '$lib/audio/modules/transport-helpers';
+  import { createScoreTransportDeps } from '$lib/audio/modules/score-transport-deps';
+  // ⚠ THE MUSIC IS EDITED THROUGH THE SHARED SEAM, NOT IN THIS FILE. Every one
+  // of these used to be a local closure over an untagged `ydoc.transact(fn)`,
+  // which the UndoManager's `trackedOrigins: new Set([LOCAL_ORIGIN])` silently
+  // does not capture — so every note, tie, dynamic, key change, page, loop flag
+  // and stop bar was outside Cmd-Z while the BPM fader three lines away was
+  // inside it. `score-writes.ts` routes `mutateNode`, which tags them, and the
+  // faceplate's staff panel calls the SAME functions, so the two surfaces cannot
+  // drift about what a gesture does.
+  import {
+    addNote,
+    addTie,
+    cycleKey,
+    deleteNote,
+    moveNote,
+    placeDynamic,
+    resetKey,
+    setStopBar,
+    toggleAccidental,
+    toggleLoop,
+    transposeNote,
+    addPage as addScorePage,
+  } from '$lib/audio/modules/score-writes';
 
   const SCORE_INPUTS: PortDescriptor[] = [
     { id: 'clock',   label: 'CLOCK IN', cable: 'gate' },
@@ -42,31 +66,44 @@
     { id: 'clock', label: 'CLOCK OUT', cable: 'gate' },
   ];
   import {
-    BARS_PER_PAGE,
     BARS_PER_ROW,
-    DEFAULT_PAGES,
     DYNAMIC_SCALE,
     MAX_PAGES,
     ROWS_PER_PAGE,
-    SCORE_MAX_MIDI,
-    SCORE_MIN_MIDI,
     SMUFL,
     TICKS_PER_BAR,
-    canPlace,
-    keySignatureLetters,
-    quantizeTick,
-    staffStepToMidi,
+    coerceScoreData,
     tickWidth,
-    totalBars,
-    type Accidental,
     type DynamicLevel,
-    type DynamicMarker,
     type NoteDuration,
     type ScoreData,
     type ScoreNote,
     type StopBar,
-    type Tie,
   } from '$lib/audio/modules/score-data';
+  // ⚠ THE PIXELS COME FROM ONE PLACE TOO. This card and the faceplate's staff
+  // panel draw the same document; a re-typed `BAR_W` in the second renderer
+  // would let a click land one bar away from where the notehead paints, on one
+  // surface only.
+  import {
+    BAR_W,
+    ROW_INNER_W,
+    ROW_LEFT_PAD,
+    SCORE_HEIGHT,
+    SCORE_WIDTH,
+    STAFF_LINES,
+    STAFF_LINE_GAP,
+    STAFF_STEP_PX,
+    TICK_PX,
+    barLeftX,
+    cellFromClient,
+    dynamicYForBar,
+    noteX,
+    noteY,
+    pageOf,
+    rowTopLineY,
+    topLineY,
+    type ScoreCell,
+  } from '$lib/audio/modules/score-layout';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
 
@@ -89,24 +126,7 @@
 
   let scoreData = $derived.by<ScoreData>(() => {
     void cardVersion;
-    const raw = (node?.data as Record<string, unknown> | undefined) ?? {};
-    return {
-      notes: Array.isArray(raw.notes) ? (raw.notes as ScoreNote[]) : [],
-      dynamics: Array.isArray(raw.dynamics) ? (raw.dynamics as DynamicMarker[]) : [],
-      ties: Array.isArray(raw.ties) ? (raw.ties as Tie[]) : [],
-      keySignature: typeof raw.keySignature === 'number' ? (raw.keySignature as number) : 0,
-      pages:
-        typeof raw.pages === 'number'
-          ? Math.max(1, Math.min(MAX_PAGES, raw.pages as number))
-          : DEFAULT_PAGES,
-      loop: typeof raw.loop === 'boolean' ? (raw.loop as boolean) : false,
-      stopBar: (() => {
-        const sb = raw.stopBar as { bar?: number; tick?: number } | undefined;
-        return sb && typeof sb === 'object' && typeof sb.bar === 'number' && typeof sb.tick === 'number'
-          ? { bar: sb.bar, tick: sb.tick }
-          : undefined;
-      })(),
-    };
+    return coerceScoreData(node?.data);
   });
 
   let totalPages = $derived(scoreData.pages);
@@ -115,6 +135,13 @@
   $effect(() => {
     if (currentPage >= totalPages) currentPage = Math.max(0, totalPages - 1);
   });
+
+  /** ⚠ VIEWPORT, NOT DOCUMENT. Which page you are reading is component state;
+   *  `data.pages` (how long the piece is) is the node's. */
+  function gotoPage(idx: number) {
+    if (idx < 0 || idx >= totalPages) return;
+    currentPage = idx;
+  }
 
   const set = (k: string) => (v: number) => {
     setNodeParam(id, k, v);
@@ -125,6 +152,16 @@
   };
 
   function togglePlay() { set('isPlaying')(isPlaying ? 0 : 1); }
+
+  /** The five continuous params, in the card's own row order. Each fader's
+   *  RANGE is read off the def at render; only the live value is local. */
+  const FADERS: Array<{ id: string; value: () => number }> = [
+    { id: 'bpm', value: () => bpm },
+    { id: 'attack', value: () => attack },
+    { id: 'decay', value: () => decay },
+    { id: 'sustain', value: () => sustain },
+    { id: 'release', value: () => release },
+  ];
 
   // ----- rAF poll for currently-playing note id -----
   let currentNoteId = $state<string | null>(null);
@@ -143,84 +180,19 @@
   });
   onDestroy(() => { if (raf !== null) cancelAnimationFrame(raf); });
 
-  // ---------------- Layout constants ----------------
-  // 4 rows × 4 bars per page. Each page renders 4 staff rows; only the active
-  // page is visible at a time.
-  const CARD_WIDTH = 720;
-  const ROW_LEFT_PAD = 60;
-  const ROW_RIGHT_PAD = 12;
-  const ROW_INNER_W = CARD_WIDTH - ROW_LEFT_PAD - ROW_RIGHT_PAD;
-  const BAR_W = ROW_INNER_W / BARS_PER_ROW;
-  const TICK_PX = BAR_W / TICKS_PER_BAR;
-  const STAFF_LINE_GAP = 8;        // px between adjacent lines
-  const STAFF_STEP_PX = STAFF_LINE_GAP / 2; // 4px per staff step
-  const ROW_HEIGHT = 80;           // tighter than v1 to fit 4 rows
-  const ROW_TOP_PAD = 18;
-  const STAFF_LINES = 5;
-  // Y of the top staff line for the i-th row on the visible page.
-  function rowTopLineY(rowIdx: number): number {
-    return ROW_TOP_PAD + rowIdx * ROW_HEIGHT;
-  }
-  const TOTAL_HEIGHT = ROW_TOP_PAD + ROWS_PER_PAGE * ROW_HEIGHT + 36;
+  // ---------------- Layout ----------------
+  // ⚠ IMPORTED FROM `score-layout.ts`, NOT DECLARED HERE. See the import note.
+  const TOTAL_HEIGHT = SCORE_HEIGHT;
 
-  /** Page index for an absolute bar. */
-  function pageOf(bar: number): number {
-    return Math.floor(bar / BARS_PER_PAGE);
-  }
-  /** Row index (0..ROWS_PER_PAGE-1) within the bar's page. */
-  function rowOf(bar: number): number {
-    const local = bar - pageOf(bar) * BARS_PER_PAGE;
-    return Math.floor(local / BARS_PER_ROW);
-  }
-  /** Local bar within its row (0..BARS_PER_ROW-1). */
-  function rowLocalBar(bar: number): number {
-    const local = bar - pageOf(bar) * BARS_PER_PAGE;
-    return local % BARS_PER_ROW;
-  }
-  function topLineY(bar: number): number {
-    return rowTopLineY(rowOf(bar));
-  }
-  function barLeftX(bar: number): number {
-    return ROW_LEFT_PAD + rowLocalBar(bar) * BAR_W;
-  }
-  function noteX(bar: number, tick: number): number {
-    return barLeftX(bar) + tick * TICK_PX + 6;
-  }
-  function noteY(bar: number, staffStep: number): number {
-    return topLineY(bar) + staffStep * STAFF_STEP_PX;
-  }
   /** Bar is currently visible on the active page. */
   function isBarOnPage(bar: number): boolean {
     return pageOf(bar) === currentPage;
   }
 
-  /** Convert pixel y to a row index on the current page. */
-  function yToRowIdx(py: number): number {
-    const r = Math.floor((py - ROW_TOP_PAD + ROW_HEIGHT * 0.6) / ROW_HEIGHT);
-    return Math.max(0, Math.min(ROWS_PER_PAGE - 1, r));
-  }
-  function yToStep(rowIdx: number, py: number): number {
-    const top = rowTopLineY(rowIdx);
-    return Math.round((py - top) / STAFF_STEP_PX);
-  }
-
   /** Convert (clientX, clientY) to (bar, tick, step) in score-space — using
    *  the active page index. */
-  function pointerToCell(svgEl: SVGSVGElement, clientX: number, clientY: number): {
-    bar: number; tick: number; step: number;
-  } | null {
-    const rect = svgEl.getBoundingClientRect();
-    const px = ((clientX - rect.left) / rect.width) * CARD_WIDTH;
-    const py = ((clientY - rect.top) / rect.height) * TOTAL_HEIGHT;
-    const rowIdx = yToRowIdx(py);
-    const step = yToStep(rowIdx, py);
-    if (px < ROW_LEFT_PAD || px > ROW_LEFT_PAD + ROW_INNER_W + 4) return null;
-    const localBar = Math.min(BARS_PER_ROW - 1, Math.max(0, Math.floor((px - ROW_LEFT_PAD) / BAR_W)));
-    const bar = currentPage * BARS_PER_PAGE + rowIdx * BARS_PER_ROW + localBar;
-    if (bar >= totalPages * BARS_PER_PAGE) return null;
-    const xInBar = px - barLeftX(bar) - 6;
-    const rawTick = Math.max(0, Math.min(TICKS_PER_BAR - 1, Math.round(xInBar / TICK_PX)));
-    return { bar, tick: rawTick, step };
+  function pointerToCell(svgEl: SVGSVGElement, clientX: number, clientY: number): ScoreCell | null {
+    return cellFromClient(svgEl, clientX, clientY, currentPage, totalPages);
   }
 
   // ---------------- Toolbar state ----------------
@@ -255,142 +227,18 @@
   }
 
   // ---------------- Mutations ----------------
-  function genId(prefix: string): string {
-    return `${prefix}-${Math.random().toString(36).slice(2, 9)}`;
-  }
+  //
+  // ⚠ EVERY ONE OF THESE IS NOW A CALL INTO `score-writes.ts`, AND THE LOCAL
+  // `writeData` IS GONE. It wrapped `ydoc.transact(fn)` with NO origin, which
+  // the UndoManager does not track — so the whole instrument was outside Cmd-Z
+  // while `set()` two lines up was correctly tagged. Routing through the shared
+  // seam fixes that AND makes this card and the faceplate's staff panel
+  // literally the same code path for a note, a tie, a dynamic and a page.
 
-  function writeData(mut: (d: ScoreData) => void) {
-    const t = patch.nodes[id];
-    if (!t) return;
-    ydoc.transact(() => {
-      if (!t.data) t.data = {};
-      const cur = scoreData;
-      const next: ScoreData = {
-        notes: cur.notes.map((n) => ({ ...n })),
-        dynamics: cur.dynamics.map((d) => ({ ...d })),
-        ties: cur.ties.map((t) => ({ ...t })),
-        keySignature: cur.keySignature,
-        pages: cur.pages,
-        loop: cur.loop,
-        stopBar: cur.stopBar ? { ...cur.stopBar } : undefined,
-      };
-      mut(next);
-      const td = t.data as Record<string, unknown>;
-      td.notes = next.notes;
-      td.dynamics = next.dynamics;
-      td.ties = next.ties;
-      td.keySignature = next.keySignature;
-      td.pages = next.pages;
-      td.loop = next.loop;
-      // Use null-sentinel to remove the marker (Yjs map shape).
-      if (next.stopBar) td.stopBar = next.stopBar;
-      else td.stopBar = undefined;
-    });
-  }
-
-  function addNote(bar: number, tick: number, step: number, duration: NoteDuration) {
-    const ks = scoreData.keySignature;
-    const midi = staffStepToMidi(step, ks, null);
-    if (midi < SCORE_MIN_MIDI || midi > SCORE_MAX_MIDI) return;
-    const snapTick = quantizeTick(tick, duration);
-    const maxBar = totalBars(scoreData);
-    if (!canPlace(bar, snapTick, duration, midi, scoreData.notes, undefined, maxBar)) {
-      flashShake(bar);
-      return;
-    }
-    writeData((d) => {
-      d.notes.push({
-        id: genId('n'),
-        bar,
-        tick: snapTick,
-        duration,
-        midi,
-        staffStep: step,
-        accidental: null,
-      });
-    });
-  }
-
-  function placeDynamic(bar: number, tick: number, level: DynamicLevel) {
-    writeData((d) => {
-      d.dynamics = d.dynamics.filter((m) => !(m.bar === bar && m.tick === tick));
-      d.dynamics.push({ id: genId('d'), bar, tick, level });
-    });
-  }
-
-  function setStopBar(bar: number, tick: number) {
-    writeData((d) => {
-      // Snap tick to 16th boundaries (multiples of 3).
-      const snap = Math.max(0, Math.min(TICKS_PER_BAR, Math.round(tick / 3) * 3));
-      d.stopBar = { bar, tick: snap };
-    });
-  }
-
-  function clearStopBar() {
-    writeData((d) => {
-      d.stopBar = undefined;
-    });
-  }
-
-  function toggleLoop() {
-    writeData((d) => { d.loop = !d.loop; });
-  }
-
-  function addPage() {
-    if (totalPages >= MAX_PAGES) return;
-    writeData((d) => { d.pages = Math.min(MAX_PAGES, d.pages + 1); });
-    // Don't auto-jump — the user explicitly navigates to the new page via
-    // the → arrow. Auto-jumping fights the clamp $effect (totalPages is
-    // $derived from scoreData and lags by one tick after writeData).
-  }
-
-  function gotoPage(idx: number) {
-    if (idx < 0 || idx >= totalPages) return;
-    currentPage = idx;
-  }
-
-  function toggleAccidentalOnNote(noteId: string, kind: 'sharp' | 'flat') {
-    writeData((d) => {
-      const idx = d.notes.findIndex((n) => n.id === noteId);
-      if (idx < 0) return;
-      const n = { ...d.notes[idx] };
-      const wanted: Accidental = kind === 'sharp' ? 'sharp' : 'flat';
-      n.accidental = n.accidental === wanted ? null : wanted;
-      n.midi = staffStepToMidi(n.staffStep, d.keySignature, n.accidental);
-      d.notes[idx] = n;
-    });
-  }
-
-  function cycleKey(delta: 1 | -1) {
-    writeData((d) => {
-      const next = Math.max(-7, Math.min(7, d.keySignature + delta));
-      d.keySignature = next;
-      d.notes = d.notes.map((n) =>
-        n.accidental === null ? { ...n, midi: staffStepToMidi(n.staffStep, next, null) } : n,
-      );
-    });
-  }
-  function resetKey() {
-    writeData((d) => {
-      d.keySignature = 0;
-      d.notes = d.notes.map((n) =>
-        n.accidental === null ? { ...n, midi: staffStepToMidi(n.staffStep, 0, null) } : n,
-      );
-    });
-  }
-
-  function addTie(fromId: string, toId: string) {
-    if (fromId === toId) return;
-    writeData((d) => {
-      d.ties.push({ id: genId('t'), fromNoteId: fromId, toNoteId: toId });
-    });
-  }
-
-  function deleteNote(noteId: string) {
-    writeData((d) => {
-      d.notes = d.notes.filter((n) => n.id !== noteId);
-      d.ties = d.ties.filter((t) => t.fromNoteId !== noteId && t.toNoteId !== noteId);
-    });
+  /** Place a note, flashing the bar when the seam refuses it (bar full,
+   *  overlap, or a pitch outside C4..C6). */
+  function placeNote(bar: number, tick: number, step: number, duration: NoteDuration) {
+    if (addNote(id, bar, tick, step, duration) === null) flashShake(bar);
   }
 
   // ---------------- Pointer handlers ----------------
@@ -422,7 +270,7 @@
       if (tiePickFirst === null) {
         tiePickFirst = noteId;
       } else {
-        addTie(tiePickFirst, noteId);
+        addTie(id, tiePickFirst, noteId);
         tiePickFirst = null;
       }
       return;
@@ -432,7 +280,7 @@
     if ((activeTool.kind === 'sharp' || activeTool.kind === 'flat') && noteId) {
       ev.preventDefault();
       ev.stopPropagation();
-      toggleAccidentalOnNote(noteId, activeTool.kind);
+      toggleAccidental(id, noteId, activeTool.kind);
       return;
     }
 
@@ -440,13 +288,13 @@
     if (activeTool.kind === 'sharp' && !noteId) {
       ev.preventDefault();
       ev.stopPropagation();
-      cycleKey(1);
+      cycleKey(id, 1);
       return;
     }
     if (activeTool.kind === 'flat' && !noteId) {
       ev.preventDefault();
       ev.stopPropagation();
-      cycleKey(-1);
+      cycleKey(id, -1);
       return;
     }
 
@@ -465,7 +313,7 @@
       ev.preventDefault();
       ev.stopPropagation();
       const cell = pointerToCell(svgEl, ev.clientX, ev.clientY);
-      if (cell) placeDynamic(cell.bar, cell.tick, activeTool.level);
+      if (cell) placeDynamic(id, cell.bar, cell.tick, activeTool.level);
       return;
     }
 
@@ -474,7 +322,7 @@
       ev.preventDefault();
       ev.stopPropagation();
       const cell = pointerToCell(svgEl, ev.clientX, ev.clientY);
-      if (cell) setStopBar(cell.bar, cell.tick);
+      if (cell) setStopBar(id, cell.bar, cell.tick);
       return;
     }
 
@@ -483,7 +331,7 @@
       ev.preventDefault();
       ev.stopPropagation();
       const cell = pointerToCell(svgEl, ev.clientX, ev.clientY);
-      if (cell) addNote(cell.bar, cell.tick, cell.step, activeTool.duration);
+      if (cell) placeNote(cell.bar, cell.tick, cell.step, activeTool.duration);
       return;
     }
   }
@@ -492,28 +340,13 @@
     if (!svgEl) return;
     if (dragStopBar) {
       const cell = pointerToCell(svgEl, ev.clientX, ev.clientY);
-      if (cell) setStopBar(cell.bar, cell.tick);
+      if (cell) setStopBar(id, cell.bar, cell.tick);
       return;
     }
     if (!dragNoteId) return;
     const cell = pointerToCell(svgEl, ev.clientX, ev.clientY);
     if (!cell) return;
-    const id = dragNoteId;
-    const maxBar = totalBars(scoreData);
-    writeData((d) => {
-      const idx = d.notes.findIndex((n) => n.id === id);
-      if (idx < 0) return;
-      const n = { ...d.notes[idx] };
-      const snapTick = quantizeTick(cell.tick, n.duration);
-      const newMidi = staffStepToMidi(cell.step, d.keySignature, n.accidental);
-      if (newMidi < SCORE_MIN_MIDI || newMidi > SCORE_MAX_MIDI) return;
-      if (!canPlace(cell.bar, snapTick, n.duration, newMidi, d.notes, n.id, maxBar)) return;
-      n.bar = cell.bar;
-      n.tick = snapTick;
-      n.staffStep = cell.step;
-      n.midi = newMidi;
-      d.notes[idx] = n;
-    });
+    moveNote(id, dragNoteId, cell.bar, cell.tick, cell.step);
   }
 
   function onSvgPointerUp(ev: PointerEvent) {
@@ -537,49 +370,28 @@
     if (!noteId) return;
     if (ev.key === 'Backspace' || ev.key === 'Delete') {
       ev.preventDefault();
-      deleteNote(noteId);
+      deleteNote(id, noteId);
       return;
     }
     if (ev.key === 'ArrowUp' || ev.key === 'ArrowDown') {
       ev.preventDefault();
-      const delta = ev.key === 'ArrowUp' ? -1 : 1;
-      writeData((d) => {
-        const idx = d.notes.findIndex((n) => n.id === noteId);
-        if (idx < 0) return;
-        const n = { ...d.notes[idx] };
-        const newStep = n.staffStep + delta;
-        const newMidi = staffStepToMidi(newStep, d.keySignature, n.accidental);
-        if (newMidi < SCORE_MIN_MIDI || newMidi > SCORE_MAX_MIDI) return;
-        n.staffStep = newStep;
-        n.midi = newMidi;
-        d.notes[idx] = n;
-      });
+      transposeNote(id, noteId, ev.key === 'ArrowUp' ? -1 : 1);
       return;
     }
     if (ev.key === '#') {
       ev.preventDefault();
-      toggleAccidentalOnNote(noteId, 'sharp');
+      toggleAccidental(id, noteId, 'sharp');
       return;
     }
     if (ev.key === 'b') {
       ev.preventDefault();
-      toggleAccidentalOnNote(noteId, 'flat');
+      toggleAccidental(id, noteId, 'flat');
       return;
     }
   }
 
   // ---------------- Derived render data ----------------
   let activeKey = $derived(scoreData.keySignature);
-  let keyAccidentals = $derived.by(() => {
-    const res = keySignatureLetters(activeKey);
-    return { sharps: [...res.sharps], flats: [...res.flats] };
-  });
-
-  function dynamicYForBar(bar: number): number {
-    const baseTop = topLineY(bar);
-    const bottomLine = baseTop + (STAFF_LINES - 1) * STAFF_LINE_GAP;
-    return bottomLine + 18;
-  }
 
   function noteGlyph(d: NoteDuration): string {
     if (d === 'whole') return SMUFL.noteWhole;
@@ -621,7 +433,7 @@
   function onContextMenu(ev: MouseEvent) {
     if (activeTool.kind === 'sharp' || activeTool.kind === 'flat') {
       ev.preventDefault();
-      resetKey();
+      resetKey(id);
     }
   }
 
@@ -655,84 +467,13 @@
 
   // ---------------- Quicksave + transport ----------------
 
-  // Read directly from patch.nodes[id] inside each snapshot/apply call so
-  // we capture LIVE state (Svelte 5 closures over $derived/$props snapshot
-  // their initial value otherwise — see svelte.dev/e/state_referenced_locally).
-  const transportDeps: TransportCardDeps = {
-    // A GETTER, not `nodeId: id`: every other field of this object re-reads
-    // `patch.nodes[id]` live, and a plain `nodeId: id` would freeze the id at
-    // init. XYFlow may reuse a card instance for a different node, and a stale
-    // nodeId would write this sequencer's quicksave slots into ANOTHER node.
-    get nodeId() {
-      return id;
-    },
-    patch,
-    transact: (fn) => ydoc.transact(fn),
-    snapshot: (): Snapshot => {
-      const t = patch.nodes[id];
-      const raw = (t?.data as Record<string, unknown> | undefined) ?? {};
-      const notes = (Array.isArray(raw.notes) ? (raw.notes as ScoreNote[]) : []).map((n) => ({ ...n }));
-      const dynamics = (Array.isArray(raw.dynamics) ? (raw.dynamics as DynamicMarker[]) : []).map((d) => ({ ...d }));
-      const ties = (Array.isArray(raw.ties) ? (raw.ties as Tie[]) : []).map((tt) => ({ ...tt }));
-      const keySignature = typeof raw.keySignature === 'number' ? (raw.keySignature as number) : 0;
-      const pages =
-        typeof raw.pages === 'number' ? Math.max(1, Math.min(MAX_PAGES, raw.pages as number)) : DEFAULT_PAGES;
-      const loop = typeof raw.loop === 'boolean' ? (raw.loop as boolean) : false;
-      const sb = raw.stopBar as { bar?: number; tick?: number } | undefined;
-      const stopBar =
-        sb && typeof sb === 'object' && typeof sb.bar === 'number' && typeof sb.tick === 'number'
-          ? { bar: sb.bar, tick: sb.tick }
-          : undefined;
-      return {
-        notes,
-        dynamics,
-        ties,
-        keySignature,
-        pages,
-        loop,
-        stopBar,
-        bpm: t?.params.bpm ?? 120,
-        attack: t?.params.attack ?? 0.005,
-        decay: t?.params.decay ?? 0.1,
-        sustain: t?.params.sustain ?? 0.7,
-        release: t?.params.release ?? 0.3,
-      };
-    },
-    applySnapshot: (snap: Snapshot) => {
-      const t = patch.nodes[id];
-      if (!t) return;
-      // Deep-clone array/object fields so we don't reassign Y-tree references
-      // (the snapshot may itself live inside slots[N], and Yjs forbids the
-      // same Y.Map appearing at two places — "Not supported: reassigning
-      // object that already occurs in the tree.").
-      ydoc.transact(() => {
-        if (!t.data) t.data = {};
-        const td = t.data as Record<string, unknown>;
-        if (Array.isArray(snap.notes)) {
-          td.notes = (snap.notes as ScoreNote[]).map((n) => ({ ...n }));
-        }
-        if (Array.isArray(snap.dynamics)) {
-          td.dynamics = (snap.dynamics as DynamicMarker[]).map((d) => ({ ...d }));
-        }
-        if (Array.isArray(snap.ties)) {
-          td.ties = (snap.ties as Tie[]).map((tt) => ({ ...tt }));
-        }
-        if (typeof snap.keySignature === 'number') td.keySignature = snap.keySignature;
-        if (typeof snap.pages === 'number') td.pages = snap.pages;
-        if (typeof snap.loop === 'boolean') td.loop = snap.loop;
-        if (snap.stopBar && typeof snap.stopBar === 'object') {
-          const sb = snap.stopBar as { bar: number; tick: number };
-          td.stopBar = { bar: sb.bar, tick: sb.tick };
-        } else if ('stopBar' in snap) {
-          td.stopBar = undefined;
-        }
-        for (const k of ['bpm', 'attack', 'decay', 'sustain', 'release'] as const) {
-          const v = snap[k];
-          if (typeof v === 'number') t.params[k] = v; // guard:allow-raw-write
-        }
-      });
-    },
-  };
+  // ⚠ EXTRACTED TO `score-transport-deps.ts` AND SHARED WITH THE FACEPLATE'S
+  // SLOTS PANEL. It is 70 lines of live-read discipline whose `nodeId` getter
+  // records a real bug — XYFlow may reuse a card instance for a different node,
+  // and a captured id would write this sequencer's quicksave slots into another
+  // module — so a second copy in the panel would be that bug waiting to come
+  // back in a file nobody associates with it.
+  const transportDeps = createScoreTransportDeps(() => id);
 
   let slotsState = $derived((void cardVersion, readSlots(node)));
   let pendingMode = $derived<PendingMode>((void cardVersion, readPendingMode(node)));
@@ -839,7 +580,7 @@
       class:active={scoreData.loop}
       data-testid={`score-tool-loop-${id}`}
       title={scoreData.loop ? 'Loop ON — wraps to start at end of sequence' : 'Loop OFF — stops at end of sequence'}
-      onclick={toggleLoop}
+      onclick={() => toggleLoop(id)}
     >loop</button>
   </div>
 
@@ -852,9 +593,9 @@
   <svg
     bind:this={svgEl}
     class="staff"
-    width={CARD_WIDTH}
+    width={SCORE_WIDTH}
     height={TOTAL_HEIGHT}
-    viewBox={`0 0 ${CARD_WIDTH} ${TOTAL_HEIGHT}`}
+    viewBox={`0 0 ${SCORE_WIDTH} ${TOTAL_HEIGHT}`}
     role="application"
     tabindex="0"
     data-testid={`score-staff-${id}`}
@@ -889,9 +630,11 @@
       {/each}
       <!-- Clef + key sig (and time sig on first row of page) -->
       <text class="smufl clef" x={6} y={rowTopLineY(rowIdx) + 25}>{SMUFL.gClef}</text>
-      {#each keySigGlyphs(rowIdx) as g (g.x + g.glyph + rowIdx)}
-        <text class="smufl key-acc" x={g.x} y={g.y}>{g.glyph}</text>
-      {/each}
+      <g class="key-sig" data-testid={`score-key-sig-${id}-${rowIdx}`}>
+        {#each keySigGlyphs(rowIdx) as g (g.x + g.glyph + rowIdx)}
+          <text class="smufl key-acc" x={g.x} y={g.y}>{g.glyph}</text>
+        {/each}
+      </g>
       {#if rowIdx === 0}
         <text class="smufl ts" x={48} y={rowTopLineY(0) + 10}>{SMUFL.timeSig4}</text>
         <text class="smufl ts" x={48} y={rowTopLineY(0) + 26}>{SMUFL.timeSig4}</text>
@@ -1020,13 +763,29 @@
     {/if}
   </svg>
 
-  <!-- ADSR + BPM faders -->
+  <!-- ADSR + BPM faders.
+       ⚠ EVERY RANGE COMES FROM THE DEF (`paramSpec(scoreDef, id)`), NOT FROM A
+       LITERAL RE-TYPED HERE. They agreed before this change and nothing held
+       them there: a def-reading gate cannot see a card, which is exactly the
+       class where a control silently wrote values its own contract forbids.
+       `ScoreCard.svelte` is enrolled in `RANGE_BOUND_CARDS` so the source gate
+       now holds the line. -->
   <div class="fader-row">
-    <NeonFader value={bpm}     min={30}    max={300} defaultValue={120}   label="BPM" curve="linear" onchange={set('bpm')} moduleId={id} paramId="bpm"     readLive={live('bpm')} />
-    <NeonFader value={attack}  min={0.001} max={10}  defaultValue={0.005} label="A"   curve="log"    onchange={set('attack')} moduleId={id} paramId="attack"  readLive={live('attack')} />
-    <NeonFader value={decay}   min={0.001} max={10}  defaultValue={0.1}   label="D"   curve="log"    onchange={set('decay')} moduleId={id} paramId="decay"   readLive={live('decay')} />
-    <NeonFader value={sustain} min={0}     max={1}   defaultValue={0.7}   label="S"   curve="linear" onchange={set('sustain')} moduleId={id} paramId="sustain" readLive={live('sustain')} />
-    <NeonFader value={release} min={0.001} max={10}  defaultValue={0.3}   label="R"   curve="log"    onchange={set('release')} moduleId={id} paramId="release" readLive={live('release')} />
+    {#each FADERS as f (f.id)}
+      {@const spec = paramSpec(scoreDef, f.id)}
+      <NeonFader
+        value={f.value()}
+        min={spec.min}
+        max={spec.max}
+        defaultValue={spec.defaultValue}
+        label={spec.label ?? f.id}
+        curve={spec.curve}
+        onchange={set(f.id)}
+        moduleId={id}
+        paramId={f.id}
+        readLive={live(f.id)}
+      />
+    {/each}
   </div>
 
   <QuicksaveControls
@@ -1069,7 +828,7 @@
       data-testid={`score-page-add-${id}`}
       title="Add page"
       disabled={totalPages >= MAX_PAGES}
-      onclick={addPage}
+      onclick={() => addScorePage(id)}
     >+</button>
   </div>
   </PatchPanel>

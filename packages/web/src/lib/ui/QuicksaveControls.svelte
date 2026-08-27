@@ -25,6 +25,38 @@
     /** Slot that was most recently loaded (subtle outline). */
     lastLoadedSlot: SlotKey | null;
     isPlaying: boolean;
+    /**
+     * Paint the "QUICKSAVE" caption. Default true — the legacy cards want it.
+     *
+     * ⚠ FALSE ON A FACEPLATE, and it is the one-control-one-place rule rather
+     * than a style knob: the panel CELL already prints `quicksave` as its own
+     * control caption, so the component's own caption would be the same word
+     * twice, stacked.
+     */
+    showLabel?: boolean;
+    /**
+     * Paint the PLAY button. Default true — the legacy cards want it.
+     *
+     * ⚠ FALSE ON A FACEPLATE, for the same rule: `isPlaying` is a ranked cell
+     * there, so this would be the same control twice on one plate. RESET has no
+     * such twin and always paints — it is not merely `isPlaying = 0` (it clears
+     * a queued slot and re-arms a running transport), so hiding it would lose an
+     * affordance rather than de-duplicate one.
+     */
+    showPlay?: boolean;
+    /**
+     * A NODE-AGNOSTIC testid base for the slot + mode buttons, used ALONGSIDE
+     * the node-scoped ones rather than instead of them.
+     *
+     * ⚠ IT EXISTS FOR THE FACE PROBE, WHICH CANNOT BE NODE-SCOPED. A
+     * `ShellPanelCell.probe.testid` is a plain string in a static registry, so
+     * it cannot interpolate a node id — and faces-parity locates it INSIDE the
+     * cell host, where exactly one instance of this widget is mounted, so a
+     * stable name is unambiguous there by construction. (kria's grid panel has
+     * the same property and simply never had node-scoped testids to preserve.)
+     * Omitted = the legacy cards' markup is byte-identical.
+     */
+    faceTestidBase?: string;
     onSetMode: (mode: PendingMode) => void;
     onSlotClick: (slot: SlotKey) => void;
     onPlayToggle: () => void;
@@ -38,6 +70,9 @@
     queuedSlot,
     lastLoadedSlot,
     isPlaying,
+    showLabel = true,
+    showPlay = true,
+    faceTestidBase,
     onSetMode,
     onSlotClick,
     onPlayToggle,
@@ -58,7 +93,7 @@
 </script>
 
 <div class="qs-row" data-testid={`quicksave-${nodeId}`}>
-  <span class="qs-label">QUICKSAVE</span>
+  {#if showLabel}<span class="qs-label">QUICKSAVE</span>{/if}
 
   {#each SLOT_KEYS as k (k)}
     <button
@@ -67,7 +102,7 @@
       class:has-data={slotHasData(k)}
       class:queued={queuedSlot === k}
       class:last-loaded={lastLoadedSlot === k}
-      data-testid={`quicksave-slot-${nodeId}-${k}`}
+      data-testid={faceTestidBase ? `${faceTestidBase}-slot-${k}` : `quicksave-slot-${nodeId}-${k}`}
       data-slot={k}
       data-has-data={slotHasData(k) ? 'true' : 'false'}
       data-queued={queuedSlot === k ? 'true' : 'false'}
@@ -81,7 +116,7 @@
       type="button"
       class="qs-mode"
       class:active={isModeActive('save')}
-      data-testid={`quicksave-mode-save-${nodeId}`}
+      data-testid={faceTestidBase ? `${faceTestidBase}-mode-save` : `quicksave-mode-save-${nodeId}`}
       title="Arm SAVE — next 1-4 click writes the current pattern into that slot"
       onclick={() => toggleMode('save')}
     >SAVE</button>
@@ -89,7 +124,7 @@
       type="button"
       class="qs-mode"
       class:active={isModeActive('load')}
-      data-testid={`quicksave-mode-load-${nodeId}`}
+      data-testid={faceTestidBase ? `${faceTestidBase}-mode-load` : `quicksave-mode-load-${nodeId}`}
       title="Arm LOAD — next 1-4 click instantly switches to that pattern"
       onclick={() => toggleMode('load')}
     >LOAD</button>
@@ -97,25 +132,27 @@
       type="button"
       class="qs-mode"
       class:active={isModeActive('queue')}
-      data-testid={`quicksave-mode-queue-${nodeId}`}
+      data-testid={faceTestidBase ? `${faceTestidBase}-mode-queue` : `quicksave-mode-queue-${nodeId}`}
       title="Arm QUEUE — next 1-4 click queues that pattern to play at end of current sequence"
       onclick={() => toggleMode('queue')}
     >QUEUE</button>
   </div>
 
   <div class="qs-transport">
+    {#if showPlay}
+      <button
+        type="button"
+        class="qs-transport-btn"
+        class:playing={isPlaying}
+        data-testid={`quicksave-play-${nodeId}`}
+        title={isPlaying ? 'Stop' : 'Play'}
+        onclick={onPlayToggle}
+      >{isPlaying ? '■ STOP' : '▶ PLAY'}</button>
+    {/if}
     <button
       type="button"
       class="qs-transport-btn"
-      class:playing={isPlaying}
-      data-testid={`quicksave-play-${nodeId}`}
-      title={isPlaying ? 'Stop' : 'Play'}
-      onclick={onPlayToggle}
-    >{isPlaying ? '■ STOP' : '▶ PLAY'}</button>
-    <button
-      type="button"
-      class="qs-transport-btn"
-      data-testid={`quicksave-reset-${nodeId}`}
+      data-testid={faceTestidBase ? `${faceTestidBase}-reset` : `quicksave-reset-${nodeId}`}
       title="Reset playhead to step 0"
       onclick={onReset}
     >⟲ RESET</button>
