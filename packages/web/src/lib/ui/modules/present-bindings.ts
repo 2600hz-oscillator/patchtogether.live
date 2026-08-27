@@ -1,0 +1,99 @@
+import * as Y from 'yjs';
+import { SETTINGS_MAP_KEY } from '$lib/graph/persistence';
+import { resolveScreens, type ScreenDescriptor } from './screen-identity';
+
+export const SETTINGS_PRESENT_BINDINGS = 'presentBindings';
+
+export interface PresentBinding {
+  nodeId: string;
+  screen: ScreenDescriptor;
+}
+
+export interface LiveScreen {
+  id: string;
+  descriptor: ScreenDescriptor;
+}
+
+function isDescriptor(v: unknown): v is ScreenDescriptor {
+  if (!v || typeof v !== 'object') return false;
+  const d = v as Record<string, unknown>;
+  return (
+    typeof d.label === 'string' &&
+    typeof d.isInternal === 'boolean' &&
+    typeof d.width === 'number' &&
+    typeof d.height === 'number' &&
+    typeof d.dpr === 'number' &&
+    typeof d.left === 'number' &&
+    typeof d.top === 'number'
+  );
+}
+
+/** Bindings ride the shared doc, so they can arrive from a peer on a different
+ *  rig or from a patch saved months ago — validate rather than trust. */
+export function readPresentBindings(ydoc: Y.Doc): PresentBinding[] {
+  const raw = ydoc.getMap(SETTINGS_MAP_KEY).get(SETTINGS_PRESENT_BINDINGS);
+  if (!Array.isArray(raw)) return [];
+  return raw.filter(
+    (b): b is PresentBinding =>
+      !!b && typeof b === 'object' &&
+      typeof (b as PresentBinding).nodeId === 'string' &&
+      isDescriptor((b as PresentBinding).screen),
+  );
+}
+
+export function writePresentBindings(
+  ydoc: Y.Doc,
+  bindings: PresentBinding[],
+  origin?: unknown,
+): void {
+  ydoc.transact(() => {
+    ydoc.getMap(SETTINGS_MAP_KEY).set(SETTINGS_PRESENT_BINDINGS, bindings);
+  }, origin);
+}
+
+export interface RestoreTarget {
+  nodeId: string;
+  screenId: string;
+}
+
+/**
+ * Resolve saved bindings against the displays attached right now.
+ *
+ * Bindings whose node is gone are dropped BEFORE matching, so a deleted
+ * module cannot consume the display its replacement wants.
+ */
+export function planRestore(
+  saved: PresentBinding[],
+  live: LiveScreen[],
+  liveNodeIds: Iterable<string>,
+): RestoreTarget[] {
+  const nodes = new Set(liveNodeIds);
+  const wanted = saved.filter((b) => nodes.has(b.nodeId));
+  const matched = resolveScreens(
+    wanted.map((b) => b.screen),
+    live.map((s) => s.descriptor),
+  );
+  const targets: RestoreTarget[] = [];
+  for (let i = 0; i < wanted.length; i++) {
+    if (matched[i] === -1) continue;
+    targets.push({ nodeId: wanted[i].nodeId, screenId: live[matched[i]].id });
+  }
+  return targets;
+}
+
+/**
+ * True when every display this patch was saved against is present now.
+ *
+ * Gates AUTOMATIC restore. The bindings live in the shared doc, so a rack-mate
+ * opening the same patch would otherwise get projector windows thrown onto
+ * their monitors; requiring the whole saved set to resolve means a partial or
+ * foreign rig falls back to the explicit affordance instead.
+ */
+export function rigMatchesSaved(saved: PresentBinding[], live: LiveScreen[]): boolean {
+  if (saved.length === 0) return false;
+  const matched = resolveScreens(
+    saved.map((b) => b.screen),
+    live.map((s) => s.descriptor),
+  );
+  return matched.every((m) => m !== -1);
+}
