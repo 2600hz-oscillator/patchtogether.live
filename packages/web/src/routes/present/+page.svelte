@@ -62,6 +62,27 @@
       /* gesture-gated / unsupported — the click hint covers it */
     }
   }
+  /** Keep asking for a short window rather than accepting the first refusal.
+   *
+   *  With the Automatic Fullscreen content setting granted (Chrome 126 / Edge
+   *  132) a request needs no gesture — but a request issued while window.open
+   *  is still sizing and placing this popup can still be refused, and nothing
+   *  retried it. Measured on the owner's rig: "load performance" and a fresh
+   *  browser load both came up fullscreen first try, a plain F5 did not, with
+   *  the permission reporting `granted` in all three. The operator then has to
+   *  walk to the projector and click it, which is the whole complaint.
+   *
+   *  Stops the moment we are fullscreen, so a user who presses Esc inside the
+   *  window keeps their exit — the loop is already finished by then. */
+  async function goFullscreenPersistently(): Promise<void> {
+    for (let attempt = 0; attempt < 12; attempt++) {
+      if (document.fullscreenElement) return;
+      await goFullscreen();
+      if (document.fullscreenElement) return;
+      await new Promise((r) => setTimeout(r, 150));
+    }
+  }
+
   function onFsChange(): void {
     isFs = !!document.fullscreenElement;
     sizeCanvas(); // entering/leaving fullscreen resizes the viewport
@@ -74,7 +95,7 @@
   function onOpenerMessage(ev: MessageEvent): void {
     if (ev.origin !== window.location.origin) return;
     const d = ev.data as { type?: string } | null;
-    if (d?.type === 'present:go-fullscreen') void goFullscreen();
+    if (d?.type === 'present:go-fullscreen') void goFullscreenPersistently();
   }
 
   onMount(() => {
@@ -88,9 +109,9 @@
     window.addEventListener('keydown', onUserGesture);
     // The opener delegates fullscreen activation to us once it sees us ready.
     window.addEventListener('message', onOpenerMessage);
-    // Best-effort immediate attempt (popups opened from a click often still hold
-    // transient activation for a beat).
-    void goFullscreen();
+    // Best-effort immediate attempt, then keep trying briefly — see
+    // goFullscreenPersistently for why one shot is not enough.
+    void goFullscreenPersistently();
     // Tell the opener we're ready to be drawn into (and to delegate fullscreen).
     if (window.opener) {
       try {
