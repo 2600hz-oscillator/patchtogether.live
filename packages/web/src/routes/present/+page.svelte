@@ -51,15 +51,32 @@
   /** Go true-fullscreen so the popup loses the titlebar + the thin browser strip
    *  at the top. Best-effort: requestFullscreen is gesture-gated, so a rejection
    *  is fine — the click hint covers it. */
-  async function goFullscreen(): Promise<void> {
-    if (typeof document === 'undefined' || document.fullscreenElement) return;
+  async function goFullscreen(): Promise<string | null> {
+    if (typeof document === 'undefined' || document.fullscreenElement) return null;
     const root = document.documentElement as HTMLElement & {
       requestFullscreen?: (o?: FullscreenOptions) => Promise<void>;
     };
     try {
       await root.requestFullscreen?.({ navigationUI: 'hide' });
+      return null;
+    } catch (e) {
+      // Report rather than swallow. A silent catch here cost two wrong
+      // diagnoses of why an F5 lands windowed while a fresh load does not.
+      const err = e as { name?: string; message?: string };
+      return `${err?.name ?? 'Error'}: ${err?.message ?? String(e)}`;
+    }
+  }
+
+  /** Surface a sink-side failure in the OPENER's console — the popup's own
+   *  devtools are impractical to reach on a projector. */
+  function reportToOpener(detail: string): void {
+    try {
+      window.opener?.postMessage(
+        { type: 'present:fs-report', detail },
+        window.location.origin,
+      );
     } catch {
-      /* gesture-gated / unsupported — the click hint covers it */
+      /* opener gone */
     }
   }
   /** Keep asking for a short window rather than accepting the first refusal.
@@ -75,12 +92,26 @@
    *  Stops the moment we are fullscreen, so a user who presses Esc inside the
    *  window keeps their exit — the loop is already finished by then. */
   async function goFullscreenPersistently(): Promise<void> {
-    for (let attempt = 0; attempt < 12; attempt++) {
-      if (document.fullscreenElement) return;
-      await goFullscreen();
-      if (document.fullscreenElement) return;
+    let last: string | null = null;
+    // ~6s. An F5 closes the PREVIOUS projector, and on macOS leaving a
+    // fullscreen Space is animated; a new request landing inside that animation
+    // is refused. 1.8s was not enough to outlast it.
+    for (let attempt = 0; attempt < 40; attempt++) {
+      if (document.fullscreenElement) {
+        if (attempt > 0) reportToOpener(`fullscreen entered on attempt ${attempt + 1}`);
+        return;
+      }
+      // A request from an unfocused window is one documented refusal path, and
+      // an F5 leaves focus on the patcher window.
+      try { window.focus(); } catch { /* focus is best-effort */ }
+      last = await goFullscreen();
+      if (document.fullscreenElement) {
+        if (attempt > 0) reportToOpener(`fullscreen entered on attempt ${attempt + 1}`);
+        return;
+      }
       await new Promise((r) => setTimeout(r, 150));
     }
+    reportToOpener(`fullscreen NOT entered after 40 attempts; last error = ${last ?? 'none (request resolved but no fullscreenElement)'}`);
   }
 
   function onFsChange(): void {
