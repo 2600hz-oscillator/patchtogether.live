@@ -74,6 +74,10 @@ export interface PresentSession {
 /** Minimal structural typing of a same-origin popup Window we touch. */
 type PresentPopup = Window;
 
+/** The sink pulls frames through this, installed by the opener. Same-origin, so
+ *  the call executes in the OPENER's realm on the SINK's frame clock. */
+type PresentPopupWithPull = Window & { __presentFrame?: () => void };
+
 /** Anything the blit loop can read a frame out of: an HTMLCanvasElement, or the
  *  VideoEngine's OffscreenCanvas. Both are CanvasImageSource with real dims. */
 export type PresentSource = CanvasImageSource & { readonly width: number; readonly height: number };
@@ -130,6 +134,10 @@ export function startPresent(args: StartPresentArgs): PresentSession | null {
 
   let closed = false;
   let started = false;
+  // ⚠ WHOSE FRAME CLOCK DRIVES THE PROJECTOR (#2235). Set once the SINK starts
+  // pulling; the opener's own loop then stops drawing and only supervises.
+  let popupDriving = false;
+  let lastPullAt = 0;
   let rafId: number | null = null;
   let watchdog: ReturnType<typeof setInterval> | null = null;
   let findTimer: ReturnType<typeof setInterval> | null = null;
@@ -214,9 +222,29 @@ export function startPresent(args: StartPresentArgs): PresentSession | null {
   }
 
   /** The per-frame blit: black-fill the popup canvas, then letterbox-fit
-   *  (object-fit: contain) the source OUTPUT canvas into it. */
+   *  (object-fit: contain) the source OUTPUT canvas into it.
+   *
+   * ⚠ THE SINK OWNS THE CLOCK, AND THAT IS THE WHOLE POINT (#2235). This loop
+   * used to run on the OPENER's requestAnimationFrame. Chrome throttles rAF in
+   * an unfocused window, so ANY modal that takes focus from the patcher — the
+   * recorder's directory picker, a permission prompt, an OS dialog — starved
+   * this loop and every projector froze on its last frame. Measured by the
+   * owner: picking a record folder froze all outputs instantly, recoverable
+   * only by re-selecting the display, and with no way to avoid it because a
+   * restored patch (#2230) brings its projectors up before a folder is chosen.
+   *
+   * So the frame is installed ON THE POPUP and called from the POPUP's rAF.
+   * The popup is the window that is actually on the projector and always
+   * visible, so its clock keeps running whatever the opener is doing. The
+   * engine work still happens here — same-origin, so the sink calling this
+   * executes in the opener's realm — only the TIMING moved.
+   *
+   * The opener's loop stays as a FALLBACK for a sink that never pulls (a
+   * cached older /present), and the watchdog reclaims the clock if the sink
+   * stops. A projector that goes black because two clocks disagreed would be
+   * worse than the bug this fixes. */
   function runLoop(dst: HTMLCanvasElement, ctx: CanvasRenderingContext2D) {
-    const frame = () => {
+    const drawFrame = () => {
       if (closed) return;
       try {
         // Let the caller render what it wants into the source first (the
@@ -241,6 +269,21 @@ export function startPresent(args: StartPresentArgs): PresentSession | null {
         // A transient draw error (e.g. popup mid-teardown) must not kill the
         // loop's ability to be cancelled — just skip this frame.
       }
+    };
+
+    try {
+      (popup as PresentPopupWithPull).__presentFrame = () => {
+        popupDriving = true;
+        lastPullAt = Date.now();
+        drawFrame();
+      };
+    } catch {
+      /* popup navigated away mid-install — the opener fallback below covers it */
+    }
+
+    const frame = () => {
+      if (closed) return;
+      if (!popupDriving) drawFrame();
       rafId = raf(frame);
     };
     rafId = raf(frame);
@@ -255,6 +298,11 @@ export function startPresent(args: StartPresentArgs): PresentSession | null {
     if (rafId != null) {
       caf(rafId);
       rafId = null;
+    }
+    try {
+      delete (popup as PresentPopupWithPull).__presentFrame;
+    } catch {
+      /* popup already gone */
     }
     if (findTimer) {
       clearInterval(findTimer);
@@ -279,7 +327,14 @@ export function startPresent(args: StartPresentArgs): PresentSession | null {
     } catch {
       isClosed = true;
     }
-    if (isClosed) cleanup();
+    if (isClosed) {
+      cleanup();
+      return;
+    }
+    // RECLAIM THE CLOCK if the sink stopped pulling — a reload of the popup, or
+    // a build whose loop died. The opener's rAF is still scheduled, so handing
+    // it back is enough to keep the picture alive.
+    if (popupDriving && Date.now() - lastPullAt > 1000) popupDriving = false;
   }, 500);
 
   return {
