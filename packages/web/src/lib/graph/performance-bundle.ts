@@ -31,6 +31,7 @@
 
 import type { PatchEnvelope } from './persistence';
 import { dedupeBindingsByAddress } from '$lib/midi/note-binding';
+import { resolveDevice } from './device-rebind';
 
 /** Bumped when the bundle wire format itself changes. */
 export const BUNDLE_VERSION = 1 as const;
@@ -336,15 +337,20 @@ export function resolveMidiDeviceId(
   binding: Pick<MidiDeviceBinding, 'deviceId' | 'deviceName'>,
   connected: ConnectedMidiInput[],
 ): string | null {
-  if (binding.deviceId) {
-    const byId = connected.find((c) => c.id === binding.deviceId);
-    if (byId) return byId.id;
-  }
-  if (binding.deviceName) {
-    const byName = connected.find((c) => c.name === binding.deviceName);
-    if (byName) return byName.id;
-  }
-  return null;
+  // ⚠ DELEGATED rather than reimplemented. This function had the right IDEA —
+  // saved id, else saved name — and two holes the shared resolver closes:
+  //
+  //   * `find(name === …)` takes the FIRST match silently. On Windows, WinMM
+  //     exposes several interfaces of one device under the SAME name
+  //     (`launchpad-device.svelte.ts` documents this at length), and two
+  //     identical controllers collide the same way. `resolveDevice` still binds
+  //     — refusing would strand a legitimate rig — but reports the ambiguity
+  //     instead of hiding it.
+  //   * an EMPTY saved name matched any device with an empty name.
+  //
+  // The behaviour for the cases this already handled is unchanged, which is what
+  // `performance-bundle.test.ts` pins.
+  return resolveDevice({ id: binding.deviceId, name: binding.deviceName }, connected).id;
 }
 
 // ---------------- MIDI binding merge (load side, pure) ----------------

@@ -88,7 +88,13 @@ test.describe('TV LIBRARIAN — network-mocked source chain', () => {
     // the stub manifest). Because the stub has no playable media, the card
     // resolves to "unavailable" (never hangs) — that's the graceful path.
     await page.getByTestId('tv-channel').first().click();
-    await expect(page.getByTestId('tv-now-playing')).toContainText('Mock News USA');
+    // ⚠ THE STATION NAME IS READ OFF THE PICTURE'S ACCESSIBLE NAME, NOT A PAINTED
+    // LABEL. The card's `tv-now-playing` readout is DELETED under the 2026-08-17
+    // resting-text ruling (the data is removed, not hidden) — on the CARD as well
+    // as the faceplate, so the two surfaces cannot disagree about what this module
+    // paints. The assertion did not have to be weakened: aria-valuetext/aria-label
+    // is where every face spec proving a module tracks state already reads.
+    await expect(page.getByTestId('tv-preview')).toHaveAttribute('aria-label', /Mock News USA/);
 
     // The disclaimer + attribution are present (legal mitigation requirement).
     await expect(page.getByTestId('tv-disclaimer')).toBeVisible();

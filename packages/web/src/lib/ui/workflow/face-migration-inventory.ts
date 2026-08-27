@@ -327,6 +327,39 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
       'so `sync_mode` stopped rendering as an anonymous three-state rotary.',
   },
   { type: 'freezeframe', disposition: 'generic-face' },
+  // ⚠ MOVED HERE FROM `bespoke-surface` (2026-08-26), AND ITS OLD `why` WAS
+  // FACTUALLY FALSE — it described a module that does not exist. It read "a
+  // GAME viewport driven by the keyboard — one knob beside it does not make it
+  // a face." `FroggerCard.svelte` has NO keyboard handler of any kind, and the
+  // def never had one: frogger is driven ENTIRELY by gate CV through five
+  // rising-edge inputs, which is the whole point of the port and is stated at
+  // length in the def's own header AND in the public module manifest ("FULL
+  // CV-gate control with NO keyboard exposure on the module"). The `why` was
+  // refusing an affordance the module never had, and nothing gated the claim.
+  //
+  // ⚠ AND THE PREMISE UNDER IT WAS WRONG TOO. "One knob beside it" compares the
+  // face against a working card — but frogger is not in NON_SHELL_LANE_TYPES,
+  // is not a CARD_PRODUCER and is not in HEADLESS_MOUNT_LANE_TYPES, so the
+  // shipping shell already rendered a BLANK PLACEHOLDER for it while the game
+  // ran and pulsed gates underneath. The comparison was never face-vs-card; it
+  // was face-vs-grey.
+  {
+    type: 'frogger',
+    disposition: 'generic-face',
+    note:
+      'DONE. One ranked param (TIME) plus the BOARD as a `fullViewBody` extension — the ' +
+      '`rasterize` shape, an audio-domain module whose picture the shell has no generic route ' +
+      'to (`hasVideoSurface` is `domain === "video"`). The promotion also DISCHARGED THE ' +
+      "MODULE'S OWN NAMED RATCHET: its EXEMPT_FROM_VRT entry stated its exit condition " +
+      'verbatim ("promote to a real VRT baseline once a deterministic-time test hook is added ' +
+      'so the scene can freeze the game at a known tick"), the hook is a boot-time tick pin — ' +
+      'cheap here because frogger has NO RNG at all, so the board is already a pure function of ' +
+      'tick count — and frogger left EXEMPT_FROM_VRT and ALLOWED_PERMANENT_EXEMPT in the same ' +
+      'commit. ⚠ THE LANE TILE STILL HAS NO PICTURE and that is not fixed here: all three ' +
+      'outputs are `gate`, so `primaryAudioOutPortId` is null and every glyph but `none` ' +
+      'resolves static, while `ShellExtensionGlyphProps` carries no `nodeId` so a glyph ' +
+      'component could not reach the game snapshot even if a kind fitted.',
+  },
   // ⚠ MOVED HERE FROM `bespoke-surface` (2026-08-24), AND ITS OLD `why` WAS
   // FALSE ON TWO COUNTS — measured against the card and the def rather than
   // re-read. It said "a live device roster", of which there is NONE: the card
@@ -923,11 +956,6 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
       'while still needing a real PF-14 panel component.',
   },
   {
-    type: 'frogger',
-    disposition: 'bespoke-surface',
-    why: 'a GAME viewport driven by the keyboard — one knob beside it does not make it a face.',
-  },
-  {
     type: 'gibribbon',
     disposition: 'bespoke-surface',
     why:
@@ -1233,10 +1261,20 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
   },
   {
     type: 'score',
-    disposition: 'bespoke-surface',
-    why:
-      'a NOTATION EDITOR: note / tie / dynamic rosters placed on a staff. Editing a score is not ' +
-      'a ranked control list, and the staff is the interaction.',
+    disposition: 'generic-face',
+    note:
+      'PROMOTED. ⚠ THE OLD `why` — "editing a score is not a ranked control list, and the staff ' +
+      'IS the interaction" — was true and was not disqualifying, which is the same mistake kria\'s ' +
+      'entry made. A staff is ONE PICTURE-YOU-EDIT, which is a PF-14 panel\'s own description, and ' +
+      'PF-22 lets that panel rank first as the dock hero instead of being pushed past a lane cap ' +
+      'this module could never clear. Everything the staff is NOT — note value, accidental, key ' +
+      'signature, dynamic, tie, stop bar, loop, page count — is a generic selector or toggle over a ' +
+      'roster the module already had. What made it look bespoke was that the CARD expressed all of ' +
+      'them as fifteen MODAL toolbar buttons; the face expresses them as cells acting on a ' +
+      'SELECTED note — or, with nothing selected, arming what you write next — which is what ' +
+      'makes them cell-shaped at all. Quicksave is a second panel, ' +
+      'and it had to be: four declared CV inputs (queue1..4) bottom out in `data.slots`, which ' +
+      'until this PR only the legacy card could write.',
   },
   {
     type: 'skifree',
@@ -1261,13 +1299,22 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
   },
   {
     type: 'tvLibrarian',
-    disposition: 'bespoke-surface',
-    blockers: ['needs-media-controller'],
-    why:
-      'a CHANNEL BROWSER: a world map plus a station roster with tuning gestures over a player. ' +
-      'The browse-and-tune flow is the interaction. ⚠ ITS SOURCE IS NO LONGER CARD-OWNED ' +
-      '(LEG-02 P3, #1511) — same registry and same reason as peertube; the CARD keeps only the ' +
-      'country dataset, which is picker data nothing engine-visible depends on.',
+    disposition: 'generic-face',
+    note:
+      'DONE (2026-08-26). The refusal above named the interaction correctly and drew the wrong ' +
+      'conclusion from it. "The browse-and-tune flow is the interaction" is true, and it is a ' +
+      'BODY, not a blocker: `face.extension` mounts the module\'s own browse surface in the dock ' +
+      'full view while the one control that IS param-shaped (`gain`) stays an ordinary ranked ' +
+      'cell reachable from the lane. ⚠ AND THE `needs-media-controller` BLOCKER WAS ALREADY ' +
+      'DISCHARGED when this entry still carried it — LEG-02 P3 (#2209) moved the stream to ' +
+      '`node-hls-source-registry`, which is what the note beneath it says. The consequence the ' +
+      'note did not draw: leaving `DOM_SOURCE_LANE_TYPES` also means there is no ' +
+      '`<HeadlessSourceHost>`, so under the shell NO card is mounted anywhere and the body is ' +
+      'the ONLY surface a station can be picked from. That is what makes it load-bearing rather ' +
+      'than a second copy of the card. ⚠ The real precursor was never the media controller: it ' +
+      'was `gain`, declared and read by nothing, which a face MUST rank. #2189 wired the uGain ' +
+      'uniform for four modules in one attest window, so the ranked cell is honest and this ' +
+      'promotion moves no attest hash.',
   },
   {
     type: 'twotracks',

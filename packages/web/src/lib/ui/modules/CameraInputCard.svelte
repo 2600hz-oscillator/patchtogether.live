@@ -34,6 +34,7 @@
   } from '$lib/multiplayer/camera-presence';
   import type { PresenceUser } from '$lib/multiplayer/presence';
   import { setNodeParam, mutateNode } from '$lib/graph/mutate';
+  import { resolveDevice, shouldRewriteSavedId } from '$lib/graph/device-rebind';
   import { cameraInputDef } from '$lib/video/modules/camera-input';
   import { shouldReacquireOnPick, savedDeviceMissing } from '$lib/video/camera-device';
   import type { VideoEngine } from '$lib/video/engine';
@@ -98,6 +99,11 @@
   // been granted in this origin. Before that, deviceIds are redacted to '' so we
   // can't tell whether the saved camera is actually present.
   let hasDeviceLabels = $state(false);
+  /** Set when the saved camera was re-found by NAME rather than by its saved
+   *  id. Transient and absent whenever nothing happened — the shape the
+   *  resting-text ruling permits (an outcome with guidance, not a readout), the
+   *  same one `LoopbackOutputBody` renders for its recovery text. */
+  let rebindNotice = $state<string | null>(null);
   // The saved camera no longer resolves to an available device (loaded a patch
   // on a different machine / camera unplugged). Drives the dropdown placeholder.
   let savedMissing = $derived(savedDeviceMissing(selectedDeviceId, devices, hasDeviceLabels));
@@ -115,6 +121,30 @@
     return null;
   }
 
+  /** The NAME the patch remembered for its camera, or null.
+   *
+   *  ⚠ THIS IS THE HALF THAT DID NOT EXIST, and without it no fallback is
+   *  possible: `MediaDeviceInfo.deviceId` is a per-ORIGIN hash over a browser
+   *  salt plus an OS device identifier, so it does not survive clearing site
+   *  data, a different profile, or the OS enumerating the camera differently
+   *  (a different USB port, a hub, a driver reinstall) — and the card had
+   *  nothing else written down to fall back TO. */
+  function readSavedDeviceLabel(): string | null {
+    const d = node?.data;
+    if (d && typeof d['deviceLabel'] === 'string' && d['deviceLabel'] !== '') {
+      return d['deviceLabel'] as string;
+    }
+    return null;
+  }
+
+  /** This session's label for a device id, or null when it is not enumerable
+   *  or its label is still redacted. */
+  function labelForDeviceId(deviceId: string | null): string | null {
+    if (!deviceId) return null;
+    const found = devices.find((x) => x.deviceId === deviceId);
+    return found && found.label !== '' ? found.label : null;
+  }
+
   function p(name: string): number {
     const def = cameraInputDef.params.find((x) => x.id === name);
     return node?.params[name] ?? def?.defaultValue ?? 0;
@@ -126,10 +156,22 @@
     setNodeParam(id, paramId, v ? 1 : 0);
   }
   function setSavedDeviceId(deviceId: string | null): void {
+    const label = labelForDeviceId(deviceId);
     mutateNode(id, (live) => {
       if (!live.data) live.data = {};
-      if (deviceId === null) delete live.data['deviceId'];
-      else live.data['deviceId'] = deviceId;
+      if (deviceId === null) {
+        delete live.data['deviceId'];
+        delete live.data['deviceLabel'];
+        return;
+      }
+      live.data['deviceId'] = deviceId;
+      // ⚠ ONLY EVER WRITE A REAL LABEL, and never clear a good one. Before
+      // camera permission is granted `enumerateDevices()` redacts every label
+      // to '', so persisting whatever is on hand would save a name that matches
+      // EVERY unlabelled device on the next machine — a fallback with maximum
+      // confidence and no information. A null here means "nothing better to say
+      // right now"; the label already on the node stays.
+      if (label) live.data['deviceLabel'] = label;
     });
   }
 
@@ -298,6 +340,9 @@
   function onPickDevice(deviceId: string): void {
     selectedDeviceId = deviceId;
     setSavedDeviceId(deviceId);
+    // The player has said which camera they want, so any "I reconnected this by
+    // name" notice has been answered and must not linger.
+    rebindNotice = null;
     // An explicit pick is a user gesture + a clear intent to use THAT camera —
     // (re)acquire from any state except where a request can't/shouldn't fire
     // (requesting / unsupported). Critically this now includes
@@ -409,6 +454,7 @@
       state: camState,
       errorMsg,
       deviceCount: devices.length,
+      rebindNotice,
     });
   });
 
@@ -515,10 +561,47 @@
         // a camera" directly so the (now working) device dropdown is the path
         // forward. A null saved id falls through to an unconstrained request
         // (the browser's default camera).
-        if (savedDeviceMissing(selectedDeviceId, devices, res.hasLabels)) {
+        // ⚠ ID FIRST, THEN NAME — and the NAME half is why a reload after a
+        // reboot / re-plug used to strand the module. The saved id is the
+        // fast, exact, same-machine path; when it has been regenerated the
+        // remembered label is the only thing left that still names the
+        // hardware. `resolveDevice` owns the order and the ambiguity
+        // tie-break (two identical webcams report identical labels).
+        const savedLabel = readSavedDeviceLabel();
+        // ⚠ "NOTHING SAVED" IS NOT "NOT FOUND", and collapsing the two is a
+        // regression I shipped and CI caught. `savedDeviceMissing` returned
+        // FALSE for a null saved id — so a camera with no saved device fell
+        // through to an UNCONSTRAINED request and got the browser's default,
+        // which is what a freshly-spawned camera has always done. Routing that
+        // case into the failure branch left every fresh camera stuck at
+        // 'no-cameras-found' without ever calling getUserMedia.
+        const hadSavedDevice = Boolean(selectedDeviceId || savedLabel);
+        const rebind = resolveDevice(
+          { id: selectedDeviceId, name: savedLabel },
+          devices.map((d) => ({ id: d.deviceId, name: d.label })),
+        );
+        if (hadSavedDevice && rebind.id === null) {
           camState = 'no-cameras-found';
           errorMsg = 'Saved camera not found — pick another from the list.';
         } else {
+          // `rebind.id` is null here only when nothing was saved — the
+          // unconstrained default-camera path, which takes no notice and
+          // rewrites nothing.
+          if (rebind.id !== null && rebind.matchedBy !== 'exact-id') {
+            // ⚠ NEVER RE-POINT A PATCH SILENTLY. The player's saved camera id
+            // is gone and we have bound a DIFFERENT id by name; that is almost
+            // always the same physical camera, but "almost always" is exactly
+            // the case that needs saying out loud rather than being discovered
+            // later as "why is this the wrong camera".
+            rebindNotice =
+              rebind.matchedBy === 'name-ambiguous'
+                ? `Reconnected to "${savedLabel}" by name — ${rebind.candidates.length} cameras share that name, so this may not be the same one.`
+                : `Reconnected to "${savedLabel}" by name (its saved id changed).`;
+            selectedDeviceId = rebind.id;
+            // Self-healing: persist THIS session's id so the next load is an
+            // exact hit and the fallback is not paid twice.
+            if (shouldRewriteSavedId(rebind)) setSavedDeviceId(rebind.id);
+          }
           requestStream();
         }
       }

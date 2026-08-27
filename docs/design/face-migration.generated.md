@@ -12,8 +12,8 @@ Every registered module carries exactly one **disposition**: what kind of work i
 |  | count |
 |---|---|
 | registered modules | 193 |
-| done (faced + promoted) | 165 |
-| remaining (excludes organizational-native) | 25 |
+| done (faced + promoted) | 168 |
+| remaining (excludes organizational-native) | 22 |
 | registered with NO disposition (must be zero) | 0 |
 | inventory entries naming a dead def (must be zero) | 0 |
 
@@ -21,16 +21,16 @@ Every registered module carries exactly one **disposition**: what kind of work i
 
 | disposition | what it means | modules | done |
 |---|---|---|---|
-| `generic-face` | author a `face` and rank the controls — no new platform capability | 166 | 165 |
+| `generic-face` | author a `face` and rank the controls — no new platform capability | 169 | 168 |
 | `blocked` | would be a face today but for the named capability, and nothing else | 0 | — |
-| `bespoke-surface` | the primary interaction is not param-shaped — needs a purpose-built surface | 24 | — |
+| `bespoke-surface` | the primary interaction is not param-shaped — needs a purpose-built surface | 21 | — |
 | `organizational-native` | rack furniture; not a migration at all | 3 | — |
 
 ## What each blocker buys
 
 | blocker | issue | modules waiting |
 |---|---|---|
-| `needs-media-controller` | #1511 | 8 |
+| `needs-media-controller` | #1511 | 7 |
 
 ## `generic-face`
 
@@ -85,6 +85,7 @@ author a `face` and rank the controls — no new platform capability.
 | `foxy` | audio | done | — |
 | `frametable` | video | done | — |
 | `freezeframe` | video | done | — |
+| `frogger` | audio | done | — |
 | `gamepad` | audio | done | — |
 | `gatemaiden` | audio | done | — |
 | `grainsOfVision` | video | done | — |
@@ -168,6 +169,7 @@ author a `face` and rank the controls — no new platform capability.
 | `samsloop` | audio | done | — |
 | `scaler` | audio | done | — |
 | `scope` | audio | done | — |
+| `score` | audio | done | — |
 | `scoreboard` | video | done | — |
 | `shapedramps` | video | done | — |
 | `shapegen` | video | done | — |
@@ -189,6 +191,7 @@ author a `face` and rank the controls — no new platform capability.
 | `timelorde` | audio | done | — |
 | `tomtom` | audio | done | — |
 | `treeohvox` | audio | done | — |
+| `tvLibrarian` | video | done | — |
 | `twotracks` | audio | done | — |
 | `unityscalemathematik` | audio | done | — |
 | `vca` | audio | done | — |
@@ -224,7 +227,6 @@ the primary interaction is not param-shaped — needs a purpose-built surface.
 | `clipplayer` | audio | — | — |
 | `controlSurface` | meta | — | — |
 | `doom` | video | — | — |
-| `frogger` | audio | — | — |
 | `gibribbon` | video | — | — |
 | `mappy` | video | — | — |
 | `modtris` | audio | — | — |
@@ -234,11 +236,9 @@ the primary interaction is not param-shaped — needs a purpose-built surface.
 | `painter` | video | — | — |
 | `peertube` | video | — | `needs-media-controller` |
 | `recorderbox` | video | — | `needs-media-controller` |
-| `score` | audio | — | — |
 | `skifree` | audio | — | — |
 | `textmarquee` | video | — | — |
 | `toybox` | video | — | `needs-media-controller` |
-| `tvLibrarian` | video | — | `needs-media-controller` |
 | `videobox` | video | — | `needs-media-controller` |
 | `videovarispeed` | video | — | `needs-media-controller` |
 

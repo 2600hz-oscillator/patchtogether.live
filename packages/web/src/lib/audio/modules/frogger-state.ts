@@ -145,9 +145,23 @@ export interface FroggerState {
   level: number;
   /** Seconds remaining on the level timer. */
   time: number;
-  /** Default time-per-level for the current difficulty (decreases by 5 s per
-   *  level, floored at LOWEST_TIME=10). Mirrors upstream Game.defaultTime. */
+  /** The LIVE per-life timer ceiling: the TIME knob's value less the level
+   *  decay, floored at LOWEST_TIME. Mirrors upstream Game.defaultTime, but it
+   *  is RESOLVED FROM `params` ON EVERY STEP rather than snapshotted at start —
+   *  see `levelDecayS` and `resolveDefaultTime`. */
   defaultTime: number;
+  /** Seconds of ceiling the player has BURNED OFF by clearing levels (+5 per
+   *  level, never reset except by a fresh game).
+   *
+   *  ⚠ THIS FIELD IS THE FIX FOR "the only control does nothing". `defaultTime`
+   *  used to BE the state — seeded from `params.initialTime` at
+   *  `initFroggerState`/`startGame` and then decremented in place — so a knob
+   *  move could not reach it and TIME was inert until the next START pulse.
+   *  Storing the DECAY instead of the RESULT makes the ceiling a pure function
+   *  of (live knob, levels cleared): the knob applies immediately, and the
+   *  -5 s/level difficulty ramp still applies, now measured from the NEW
+   *  ceiling rather than from the one that happened to be live at start. */
+  levelDecayS: number;
   /** Internal sprite-tick counter (upstream "iteration"). Wraps at 100. The
    *  upstream uses iteration % sprite.speed === 0 to gate sprite advances —
    *  we preserve that behavior. */
@@ -318,6 +332,7 @@ export function initFroggerState(params: FroggerParams = { initialTime: DEFAULT_
     level: 1,
     time,
     defaultTime: time,
+    levelDecayS: 0,
     iteration: 1,
     spriteAccumS: 0,
     timerAccumS: 0,
@@ -331,6 +346,23 @@ function clampTime(seconds: number): number {
   return Math.max(10, Math.min(120, seconds));
 }
 
+/**
+ * The LIVE per-life timer ceiling — the one place the TIME knob and the
+ * per-level difficulty ramp are combined.
+ *
+ * ⚠ IT IS A FUNCTION, NOT A STORED NUMBER, AND THAT IS THE WHOLE POINT. The
+ * ceiling used to be seeded from `params.initialTime` at `initFroggerState` /
+ * `startGame` and then decremented in place by `handleLevelComplete`, so a
+ * later knob move had nothing to write to: FROGGER's ONLY CONTROL DID NOTHING
+ * UNTIL THE NEXT START PULSE, while `readParam` cheerfully reported the new
+ * value. Recomputing from (live knob - levels cleared) makes the knob apply on
+ * the very next step AND keeps the -5 s/level ramp, now measured from the new
+ * ceiling rather than from whichever one was live when the game started.
+ */
+export function resolveDefaultTime(params: FroggerParams, levelDecayS: number): number {
+  return Math.max(LOWEST_TIME, clampTime(params.initialTime) - Math.max(0, levelDecayS));
+}
+
 /** Mirror upstream Game.startGame — spawn a fresh world + start the loop. */
 export function startGame(prev: FroggerState, params: FroggerParams): FroggerState {
   const time = clampTime(params.initialTime);
@@ -341,6 +373,8 @@ export function startGame(prev: FroggerState, params: FroggerParams): FroggerSta
     level: 1,
     time,
     defaultTime: time,
+    // A fresh game re-earns the difficulty ramp from scratch.
+    levelDecayS: 0,
     iteration: 1,
     spriteAccumS: 0,
     timerAccumS: 0,
@@ -379,7 +413,7 @@ const LOWEST_TIME = 10;
 
 /** Mutates `state` in place to apply a single player move attempt. Mirrors
  *  upstream Game.move + Player.move. */
-function tryMove(state: FroggerState, direction: Direction): void {
+function tryMove(state: FroggerState, direction: Direction, params: FroggerParams): void {
   if (!state.isGameInPlay) return;
   const player = state.player;
   player.direction = direction;
@@ -402,7 +436,7 @@ function tryMove(state: FroggerState, direction: Direction): void {
     handlePlayerHome(state, home);
     if (player.frogsHomeCount >= 5) {
       player.score += SCORE_LEVEL_COMPLETE;
-      handleLevelComplete(state);
+      handleLevelComplete(state, params);
     }
     return;
   }
@@ -476,10 +510,18 @@ function handleDie(state: FroggerState): void {
   state.isGameInPlay = state.player.isAlive;
 }
 
-function handleLevelComplete(state: FroggerState): void {
+/** Seconds of per-life ceiling a cleared level costs (upstream's difficulty
+ *  ramp). BANKED into `levelDecayS`, never subtracted from a snapshot — see
+ *  `resolveDefaultTime`. */
+const LEVEL_TIME_DECAY_S = 5;
+
+function handleLevelComplete(state: FroggerState, params: FroggerParams): void {
   state.events.levelComplete = true;
   state.level += 1;
-  state.defaultTime = Math.max(LOWEST_TIME, state.defaultTime - 5);
+  // BANK the decay, then re-resolve from the LIVE knob. Decrementing
+  // `defaultTime` in place is what made the knob unreachable.
+  state.levelDecayS += LEVEL_TIME_DECAY_S;
+  state.defaultTime = resolveDefaultTime(params, state.levelDecayS);
   state.time = state.defaultTime;
   state.timerAccumS = 0;
   // Reset homes for the new level.
@@ -528,18 +570,18 @@ function checkClash(sprite: SpriteState, playerX: number, playerY: number): Play
 }
 
 /** Apply a sprite clash result back onto the player. */
-function applyClash(state: FroggerState, result: PlayerResult): void {
+function applyClash(state: FroggerState, result: PlayerResult, params: FroggerParams): void {
   if (result === PlayerResult.DEAD) {
     handleDie(state);
     return;
   }
-  if (result === PlayerResult.ARROW_LEFT)  tryMove(state, Direction.LEFT);
-  if (result === PlayerResult.ARROW_RIGHT) tryMove(state, Direction.RIGHT);
+  if (result === PlayerResult.ARROW_LEFT)  tryMove(state, Direction.LEFT, params);
+  if (result === PlayerResult.ARROW_RIGHT) tryMove(state, Direction.RIGHT, params);
 }
 
 /** Sprite tick — runs at ~100 Hz of game-time (upstream cadence). Per sprite,
  *  if iteration % sprite.speed === 0, advance it one cell. */
-function spriteTick(state: FroggerState): void {
+function spriteTick(state: FroggerState, params: FroggerParams): void {
   state.iteration += 1;
   if (state.iteration > 100) state.iteration = 1;
   for (const s of state.sprites) {
@@ -547,7 +589,7 @@ function spriteTick(state: FroggerState): void {
     if (state.iteration % s.speed !== 0) continue;
     const result = moveSpriteOnce(s, state.player.x, state.player.y);
     if (result !== PlayerResult.SAFE && result !== PlayerResult.NO_MOVE) {
-      applyClash(state, result);
+      applyClash(state, result, params);
     }
   }
   // Post-sprite-tick water check — if the player is sitting in the water row
@@ -578,12 +620,31 @@ export function stepFroggerState(
     level: prev.level,
     time: prev.time,
     defaultTime: prev.defaultTime,
+    levelDecayS: prev.levelDecayS ?? 0,
     iteration: prev.iteration,
     spriteAccumS: prev.spriteAccumS + Math.max(0, dtSeconds),
     timerAccumS: prev.timerAccumS,
     events: emptyEvents(),
     tick: prev.tick + 1,
   };
+
+  // 0. ⚠ THE TIME KNOB IS LIVE, AND THIS IS THE LINE THAT MAKES IT SO.
+  //
+  // `params.initialTime` used to be read at exactly two sites, both
+  // CONSTRUCTORS (`initFroggerState` and `startGame`), so turning FROGGER's ONE
+  // control did nothing at all until the next START pulse — while `readParam`
+  // reported the new value immediately, so every surface agreed the knob had
+  // worked and the game did not. Re-resolving the ceiling here, every step,
+  // from (live knob - banked level decay) is what closes that.
+  //
+  // THE CEILING IS A CEILING, so LOWERING it takes effect on the life in
+  // progress and RAISING it takes effect on the next one. That asymmetry is
+  // deliberate rather than incidental: the musically useful direction is DOWN
+  // (a shorter life is a faster `dead_gate`), and silently EXTENDING a
+  // countdown already in flight would make the timer jump upward under the
+  // player, which no arcade timer does.
+  state.defaultTime = resolveDefaultTime(params, state.levelDecayS);
+  if (state.time > state.defaultTime) state.time = state.defaultTime;
 
   // 1. start_gate rising edge → fresh game.
   if (inputs.start) {
@@ -606,14 +667,14 @@ export function stepFroggerState(
   if (ticksToRun > 20) ticksToRun = 20;
   state.spriteAccumS -= ticksToRun * SPRITE_TICK_S;
   for (let i = 0; i < ticksToRun && state.isGameInPlay; i++) {
-    spriteTick(state);
+    spriteTick(state, params);
   }
 
   // 3. Movement gates (rising-edge, ignored if !isGameInPlay).
-  if (state.isGameInPlay && inputs.up)    tryMove(state, Direction.UP);
-  if (state.isGameInPlay && inputs.down)  tryMove(state, Direction.DOWN);
-  if (state.isGameInPlay && inputs.left)  tryMove(state, Direction.LEFT);
-  if (state.isGameInPlay && inputs.right) tryMove(state, Direction.RIGHT);
+  if (state.isGameInPlay && inputs.up)    tryMove(state, Direction.UP, params);
+  if (state.isGameInPlay && inputs.down)  tryMove(state, Direction.DOWN, params);
+  if (state.isGameInPlay && inputs.left)  tryMove(state, Direction.LEFT, params);
+  if (state.isGameInPlay && inputs.right) tryMove(state, Direction.RIGHT, params);
 
   // 4. Level-timer countdown (1 s per real second). When it hits 0 the player
   // loses a life.

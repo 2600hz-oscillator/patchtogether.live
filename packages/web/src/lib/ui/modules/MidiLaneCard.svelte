@@ -28,6 +28,7 @@
   } from '$lib/audio/modules/midi-lane';
   import type { VoicePriority } from '$lib/audio/modules/midi-cv-buddy';
   import { noteNameForMidi } from '$lib/audio/note-entry';
+  import { nameOfDevice } from '$lib/graph/device-rebind';
   import ModuleTitle from './ModuleTitle.svelte';
 
   let { id, data }: NodeProps = $props();
@@ -102,7 +103,15 @@
   function onChangeDevice(ev: Event): void {
     const sel = (ev.currentTarget as HTMLSelectElement).value || null;
     getApi()?.selectDevice(sel);
-    writeData({ lastDeviceId: sel });
+    // ⚠ THE NAME IS WRITTEN AT PICK TIME because it is the only moment it is
+    // knowable. `lastDeviceId` is the MIDIPort.id, which the spec leaves
+    // implementation-defined — this file's own bundle exporter calls it
+    // "unstable" — so on a later load the id may name nothing, and the
+    // remembered name is what still identifies the hardware.
+    writeData({
+      lastDeviceId: sel,
+      lastDeviceName: nameOfDevice(sel, cardState.devices) ?? undefined,
+    });
   }
 
   // Channel selector: a single-select dropdown of ALL / 1..16 for the

@@ -15,7 +15,7 @@
   import { froggerDef, drawFrogger, type FroggerState } from '$lib/audio/modules/frogger';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
-  import { portsFromDef } from './card-kit';
+  import { paramSpec, portsFromDef } from './card-kit';
 
   const inputs = portsFromDef(froggerDef.inputs, {
     up_gate: 'UP (GATE)', down_gate: 'DOWN (GATE)', left_gate: 'LEFT (GATE)',
@@ -29,9 +29,16 @@
   let node = $derived(data?.node as ModuleNode);
   const engineCtx = useEngine();
 
-  let initialTime = $derived(
-    node?.params.initialTime ?? froggerDef.params[0]!.defaultValue,
-  );
+  // ⚠ THE RANGE COMES FROM THE DEF, ONCE. This card used to pass literal
+  // `min={10} max={120} defaultValue={60}` three lines below a line that
+  // already read `froggerDef.params[0]!.defaultValue` — the backdraft class
+  // verbatim (a card silently disagreeing with its def, invisible to every
+  // def-reading gate). They happened to agree; nothing held them there, because
+  // frogger sat outside `RANGE_BOUND_CARDS` and that set's own stated scope is
+  // that every card NOT in it is unchecked. Bound through `paramSpec` and the
+  // card enrolled in the set, so a divergence is now unrepresentable.
+  const TIME = paramSpec(froggerDef, 'initialTime');
+  let initialTime = $derived(node?.params.initialTime ?? TIME.defaultValue);
 
   const setParam = (paramId: string) => (v: number) => setNodeParam(id, paramId, v);
   const readLive = (paramId: string) => () => {
@@ -59,7 +66,17 @@
         if (snap) {
           const ctx2d = canvasEl.getContext('2d');
           if (ctx2d) {
-            drawFrogger(ctx2d, snap, canvasEl.width, canvasEl.height);
+            // ⚠ CSS PX IN, DPR ON THE CONTEXT. This used to pass
+            // `canvasEl.width/height` — the BACKING STORE, i.e. 400x452 at
+            // DPR 2. `drawFrogger` derives every GRID dimension from the w/h
+            // it is handed, so the board scaled correctly and the bug hid; but
+            // `HUD_H = 22` and the two HUD fonts are ABSOLUTE, so the strip
+            // rendered 11 CSS px tall with ~4.5 CSS px text. The grid geometry
+            // is unchanged by this fix (cellPx was and is 14 CSS px) — only the
+            // HUD becomes legible. The dock faceplate body calls the painter
+            // exactly this way, so there is one board at one HUD scale.
+            ctx2d.setTransform(DPR, 0, 0, DPR, 0, 0);
+            drawFrogger(ctx2d, snap, CSS_W, CSS_H);
           }
         }
       }
@@ -95,8 +112,8 @@
     <div class="knob-row">
       <Knob
         value={initialTime}
-        min={10} max={120} defaultValue={60}
-        label="TIME" curve="linear"
+        min={TIME.min} max={TIME.max} defaultValue={TIME.defaultValue}
+        label="TIME" curve={TIME.curve}
         onchange={setParam('initialTime')}
         moduleId={id} paramId="initialTime"
         readLive={readLive('initialTime')}

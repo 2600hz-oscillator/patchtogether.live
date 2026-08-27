@@ -203,9 +203,6 @@ e2e/tests/present-second-display.spec.ts :: setup :: waitForTimeout(500) #1
 e2e/tests/rear-view-patching.spec.ts :: enterRearView :: waitForTimeout(420) #1
 e2e/tests/recorderbox.spec.ts :: RECORDERBOX records a real VCO + ACIDWARP into a crash-recoverable MP4 :: waitForTimeout(2500) #1
 e2e/tests/reshaper-shapedramps.spec.ts :: linear (h_lin/v_lin) wiring acts like a clean raster passthrough :: waitForTimeout(800) #1
-e2e/tests/reshaper-shapedramps.spec.ts :: onboard mix1 crossfades two LINES into RESHAPER.x and reacts to mix1 knob :: waitForTimeout(400) #1
-e2e/tests/reshaper-shapedramps.spec.ts :: onboard mix1 crossfades two LINES into RESHAPER.x and reacts to mix1 knob :: waitForTimeout(800) #1
-e2e/tests/reshaper-shapedramps.spec.ts :: shaped wiring renders a non-uniform deformed coordinate field :: waitForTimeout(800) #1
 e2e/tests/ringback.spec.ts :: RINGBACK: mix=0 passes the input through; sweeping the crush params stays error-free :: waitForTimeout(120) #1
 e2e/tests/ringback.spec.ts :: RINGBACK: mix=0 passes the input through; sweeping the crush params stays error-free :: waitForTimeout(400) #1
 e2e/tests/samsloop-download.spec.ts :: record → DOWNLOAD → WAV file lands with valid RIFF/WAVE header :: waitForTimeout(500) #1

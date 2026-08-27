@@ -28,6 +28,7 @@ import {
   exportBindings,
   setElectraDisplayBindings,
   clearElectraDisplayBindings,
+  _adoptLegacyBindingForTest,
   repairBindingCollisions,
   isCcBinding,
   isNoteBinding,
@@ -859,5 +860,86 @@ describe('regression: Electra display-only bindings (audit 2026-07-20)', () => {
     expect(getBinding('cube-1', 'morph')).toBeDefined();
     clearElectraDisplayBindings();
     expect(getBinding('cube-1', 'morph')).toBeUndefined();
+  });
+});
+
+// ── LEGACY BINDING IDS (a promoted card's synthetic action id) ──────────────
+//
+// ⚠ THE DEFECT: `bindingKey` is `${moduleId}:${paramId}` and bindings persist to
+// localStorage, so a control that changes the id it binds under ORPHANS every
+// saved binding — the record is still there, under a key nothing reads, and the
+// pad just stops working with nothing to see. `score`'s PLAY is the first
+// member: the legacy card's `MidiAssignButton` used the SYNTHETIC action id
+// `'play'` (a card button has no backing param), and its faceplate replaced that
+// with a `<Toggle>` over the real `isPlaying` param.
+//
+// ⚠ IT IS INVISIBLE TO EVERY EXISTING GATE, which is why it needs its own. The
+// affordance survives promotion perfectly — `Toggle` calls the SAME
+// `makeMidiAssignable({ kind:'note', controlType:'button' })` factory with the
+// same press-edge semantics — so a test that binds a pad and watches the param
+// toggle passes on both surfaces. Only a PRE-EXISTING record can see it.
+describe('legacy binding aliases — a promoted control adopts its old key', () => {
+  const NODE = 'score-1';
+
+  beforeEach(() => {
+    clearBinding(NODE, 'play');
+    clearBinding(NODE, 'isPlaying');
+  });
+
+  it('adopts a saved `:play` record onto `:isPlaying` and RE-KEYS it', () => {
+    importBindings([
+      { kind: 'note', key: bindingKey(NODE, 'play'), channel: 0, note: 60, learnedAt: 1 },
+    ]);
+    expect(getBinding(NODE, 'play'), 'the saved record is under the OLD key').toBeDefined();
+    expect(getBinding(NODE, 'isPlaying'), 'and the face would find nothing').toBeUndefined();
+
+    _adoptLegacyBindingForTest(NODE, 'isPlaying');
+
+    const adopted = getBinding(NODE, 'isPlaying');
+    expect(adopted, 'the face now finds the pad the player already bound').toBeDefined();
+    expect(isNoteBinding(adopted!) && adopted!.note).toBe(60);
+    expect(adopted!.key, 'and the record is RE-KEYED, not duplicated').toBe(
+      bindingKey(NODE, 'isPlaying'),
+    );
+    expect(
+      getBinding(NODE, 'play'),
+      'one physical pad must not end up with two owners',
+    ).toBeUndefined();
+  });
+
+  // ⚠ NEGATIVE CONTROL 1 — it must not STEAL a binding the target already has.
+  it('does NOTHING when the target key is already bound', () => {
+    importBindings([
+      { kind: 'note', key: bindingKey(NODE, 'play'), channel: 0, note: 60, learnedAt: 1 },
+      { kind: 'note', key: bindingKey(NODE, 'isPlaying'), channel: 0, note: 72, learnedAt: 2 },
+    ]);
+    _adoptLegacyBindingForTest(NODE, 'isPlaying');
+    const kept = getBinding(NODE, 'isPlaying');
+    expect(isNoteBinding(kept!) && kept!.note, 'the existing binding wins').toBe(72);
+    expect(getBinding(NODE, 'play'), 'and the legacy record is left alone').toBeDefined();
+  });
+
+  // ⚠ NEGATIVE CONTROL 2 — an UNDECLARED param must not adopt anything, or the
+  // table would be decoration and every control would inherit its neighbours'.
+  it('does NOTHING for a param with no declared alias', () => {
+    importBindings([
+      { kind: 'note', key: bindingKey(NODE, 'play'), channel: 0, note: 60, learnedAt: 1 },
+    ]);
+    _adoptLegacyBindingForTest(NODE, 'bpm');
+    expect(getBinding(NODE, 'bpm')).toBeUndefined();
+    expect(getBinding(NODE, 'play'), 'and it did not consume the legacy record').toBeDefined();
+    clearBinding(NODE, 'play');
+  });
+
+  // ⚠ NEGATIVE CONTROL 3 — it is scoped to ONE NODE. A different score in the
+  // same rack must not inherit this one's pad.
+  it('does NOT reach across nodes', () => {
+    importBindings([
+      { kind: 'note', key: bindingKey(NODE, 'play'), channel: 0, note: 60, learnedAt: 1 },
+    ]);
+    _adoptLegacyBindingForTest('score-2', 'isPlaying');
+    expect(getBinding('score-2', 'isPlaying')).toBeUndefined();
+    expect(getBinding(NODE, 'play')).toBeDefined();
+    clearBinding(NODE, 'play');
   });
 });

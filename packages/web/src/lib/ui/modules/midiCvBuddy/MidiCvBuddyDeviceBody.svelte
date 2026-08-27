@@ -50,6 +50,7 @@
   import { StatusLed } from '$lib/ui/controls';
   import type { ModuleNode } from '$lib/graph/types';
   import type { MidiCvBuddyCardState } from '$lib/audio/modules/midi-cv-buddy';
+  import { nameOfDevice } from '$lib/graph/device-rebind';
   import { midiCvBuddyApi } from '../midi-cv-buddy-cell-actions';
   import {
     midiCvBuddyDeviceDetail,
@@ -99,7 +100,15 @@
     // silently outside Cmd-Z. `mutateNode` is the sanctioned seam.
     mutateNode(nodeId, (live) => {
       if (!live.data) live.data = {};
+      // ⚠ THE NAME IS WRITTEN AT PICK TIME because it is the only moment it is
+      // knowable. `lastDeviceId` is the MIDIPort.id, which the spec leaves
+      // implementation-defined — this file's own bundle exporter calls it
+      // "unstable" — so on a later load the id may name nothing, and the
+      // remembered name is what still identifies the hardware.
       live.data.lastDeviceId = sel;
+      const nm = nameOfDevice(sel, cardState.devices);
+      if (nm) live.data.lastDeviceName = nm;
+      else delete live.data.lastDeviceName;
     });
   }
 

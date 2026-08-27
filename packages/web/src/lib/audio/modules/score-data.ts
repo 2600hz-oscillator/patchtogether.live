@@ -216,6 +216,108 @@ export function placeableTicksInBar(duration: NoteDuration): number[] {
   return out;
 }
 
+/**
+ * COERCE a node's raw `data` bag into a `ScoreData`.
+ *
+ * ⚠ ONE READER, THREE CONSUMERS, AND IT USED TO BE THREE COPIES. `score.ts`'s
+ * engine reader, `ScoreCard.svelte`'s `$derived` and the quicksave snapshot each
+ * re-typed this same twelve-line coercion — including the `pages` clamp and the
+ * `stopBar` shape test. The faceplate's staff panel would have been the FOURTH,
+ * and a placement surface that disagreed with the playback surface about how
+ * many pages exist is the same class of drift the scheduler-grid note above is
+ * about: nothing goes red, the picture and the audio simply stop agreeing.
+ *
+ * Pure and defensive: it accepts `undefined`, a live Y proxy, or a plain object,
+ * and never mutates its input.
+ */
+export function coerceScoreData(raw: unknown): ScoreData {
+  const r = (raw ?? {}) as Record<string, unknown>;
+  const notes = Array.isArray(r.notes) ? (r.notes as ScoreNote[]) : [];
+  const dynamics = Array.isArray(r.dynamics) ? (r.dynamics as DynamicMarker[]) : [];
+  const ties = Array.isArray(r.ties) ? (r.ties as Tie[]) : [];
+  const keySignature =
+    typeof r.keySignature === 'number' ? clampKeySignature(r.keySignature) : 0;
+  const pages =
+    typeof r.pages === 'number' ? Math.max(1, Math.min(MAX_PAGES, r.pages)) : DEFAULT_PAGES;
+  const loop = typeof r.loop === 'boolean' ? r.loop : false;
+  const sb = r.stopBar as { bar?: number; tick?: number } | undefined;
+  const stopBar =
+    sb && typeof sb === 'object' && typeof sb.bar === 'number' && typeof sb.tick === 'number'
+      ? { bar: sb.bar, tick: sb.tick }
+      : undefined;
+  return { notes, dynamics, ties, keySignature, pages, loop, stopBar };
+}
+
+/** The key-signature span the cycle-of-fifths tables cover. */
+export const MIN_KEY_SIGNATURE = -7;
+export const MAX_KEY_SIGNATURE = 7;
+
+export function clampKeySignature(ks: number): number {
+  return Math.max(MIN_KEY_SIGNATURE, Math.min(MAX_KEY_SIGNATURE, Math.round(ks)));
+}
+
+/**
+ * The KEY SIGNATURE's own name, for a face selector's option label and for the
+ * accessible name of anything that reports it.
+ *
+ * ⚠ A NAME, NOT A NUMBER, and that is the resting-text ruling rather than
+ * taste: `+2` restates the control's position on its own roster, while
+ * `D major` is what the state IS. The stored value stays the signed
+ * cycle-of-fifths integer the engine and `staffStepToMidi` already use.
+ */
+const MAJOR_KEY_NAMES: Record<number, string> = {
+  [-7]: 'C flat major', [-6]: 'G flat major', [-5]: 'D flat major',
+  [-4]: 'A flat major', [-3]: 'E flat major', [-2]: 'B flat major',
+  [-1]: 'F major', 0: 'C major', 1: 'G major', 2: 'D major', 3: 'A major',
+  4: 'E major', 5: 'B major', 6: 'F sharp major', 7: 'C sharp major',
+};
+
+export function keySignatureName(ks: number): string {
+  return MAJOR_KEY_NAMES[clampKeySignature(ks)] ?? 'C major';
+}
+
+/** Human name of a note VALUE, for an option label / accessible name. */
+export const NOTE_DURATION_NAMES: Record<NoteDuration, string> = {
+  whole: 'whole',
+  half: 'half',
+  quarter: 'quarter',
+  eighth: 'eighth',
+  '16th': 'sixteenth',
+  triplet8th: 'triplet',
+};
+
+/** Human name of a DYNAMIC level, for an accessible name. */
+export const DYNAMIC_NAMES: Record<DynamicLevel, string> = {
+  pp: 'pianissimo',
+  p: 'piano',
+  mf: 'mezzo-forte',
+  f: 'forte',
+  ff: 'fortissimo',
+};
+
+/**
+ * Score order — the sequence a reader's eye walks, and the order every
+ * "the NEXT note" operation means. Absolute position, ties broken by id so the
+ * sort is TOTAL (two notes can share a position only across different pitches,
+ * and a non-total comparator makes `nextNoteAfter` engine-dependent).
+ */
+export function sortedNotes(notes: readonly ScoreNote[]): ScoreNote[] {
+  return [...notes].sort((a, b) => {
+    const ap = a.bar * TICKS_PER_BAR + a.tick;
+    const bp = b.bar * TICKS_PER_BAR + b.tick;
+    if (ap !== bp) return ap - bp;
+    return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+  });
+}
+
+/** The note immediately after `noteId` in score order, or null at the end. */
+export function nextNoteAfter(noteId: string, notes: readonly ScoreNote[]): ScoreNote | null {
+  const sorted = sortedNotes(notes);
+  const i = sorted.findIndex((n) => n.id === noteId);
+  if (i < 0 || i + 1 >= sorted.length) return null;
+  return sorted[i + 1];
+}
+
 export function emptyScoreData(): ScoreData {
   return {
     notes: [],

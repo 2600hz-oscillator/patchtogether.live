@@ -95,6 +95,7 @@
     DOCK_HERO_GLYPH_W,
     PLATE_ROW_H,
     laneGlyphFor,
+    laneFlowLabel,
     type ShellDefLike,
     type ShellView,
   } from '$lib/ui/workflow/module-shell-model';
@@ -844,13 +845,24 @@
 
   let ports = $derived(def ? { inputs: portsFromDef(def.inputs ?? []), outputs: portsFromDef(def.outputs ?? []) } : { inputs: [], outputs: [] });
 
-  /** Signal-flow label (mock `.flow` "▶ ch1"): the module's lane membership. */
-  let flowLabel = $derived.by(() => {
-    const d = node.data as { channel?: number; sendSlot?: number } | undefined;
-    if (d?.channel != null) return `▶ ch${d.channel}`;
-    if (d?.sendSlot != null) return `▶ s${d.sendSlot}`;
-    return '▶ out';
-  });
+  /** Signal-flow label (mock `.flow` "▶ ch1"): the module's lane membership.
+   *
+   *  ⚠ THIS WAS THE UNREPAIRED COPY, AND WHERE IT LIVES IS THE LESSON. The
+   *  identical derivation threw in `ModuleShellPlaceholder` — `node.data` is an
+   *  open record each module owns its own shape of, so the `{ channel?: number }`
+   *  cast was a claim rather than a fact, and `tvLibrarian` writes `data.channel`
+   *  as a `TvChannelMeta` OBJECT whose Y-backed proxy has no `Symbol.toPrimitive`.
+   *  The fix extracted `laneFlowLabel`… and pointed the PLACEHOLDER at it, which
+   *  is the tile an UN-MIGRATED module gets. This file is the tile a PROMOTED one
+   *  gets, so the repair covered the surface that had been looked at and left the
+   *  post-promotion twin throwing — invisible until a module carrying that data
+   *  shape was actually promoted.
+   *
+   *  ⚠ AND THE FAILURE IS NOT LOCAL. A throw inside a `$derived` takes the whole
+   *  xyflow node render down, which stops the subtree updating: the symptom was a
+   *  dock body whose DOM froze after a tune while the graph write had landed
+   *  correctly — i.e. it read as a broken TOGGLE two components away. */
+  let flowLabel = $derived(laneFlowLabel(node.data as Readonly<Record<string, unknown>> | undefined));
 
   /** TRUE while THIS module occupies a dock full-view pane — the rail pill
    *  flips to "✕ CLOSE" (reactive on dockStore.fullViewNodeIds; per-module

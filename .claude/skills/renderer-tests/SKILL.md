@@ -18,7 +18,19 @@ sweep could include it, exclude DOOM by name and record the reason.
   wall-clock timeout may bound failure but must not define readiness.
 - Use the shared frame helper or engine stepping seam; do not hand-roll another
   polling loop.
-- Diagnose slow versus different under SwiftShader before changing a budget.
+- Never sample a page-side quantity with a Playwright-side poll loop. Each sample
+  is a round trip that runs on the same main thread as the subject, so a loaded
+  runner starves both — and a frozen subject and a test that never looked print
+  the same result. Move the accumulator into the page, make a zero-sample run
+  throw, and report the sample count and elapsed time in the assertion message.
+  `scripts/e2e-observation-window.test.ts` enforces this at the source.
+- Diagnose slow versus different under SwiftShader before changing a budget, and
+  scale a budget by the thing that actually drives its cost — input count,
+  capture count, frames — never by raising a flat number. A flat bump buys one
+  green run and hides the next regression behind the same wait.
+- A passing negative control proves the probe can move, not that it measures the
+  right thing. Where the outcome matters, prefer a positive control: reintroduce
+  the defect and confirm the test fails.
 - Run every new or materially changed focused test locally with `REPEAT=3`.
 - Before changing waits, resolution, or capture behavior, read
   [silent failures](references/silent-failures.md).

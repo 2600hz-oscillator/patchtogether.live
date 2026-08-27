@@ -1,5 +1,59 @@
 # FACEPLATE BUILD SPEC — `frogger` (audio, a gate-steered arcade game)
 
+> ## ⚠ CONSUMED AND SUPERSEDED — shipped as PR #2225 (2026-08-26).
+>
+> **This document is EVIDENCE, not instruction, and parts of it are WRONG.** The
+> build re-verified every load-bearing claim against the tree. Most held. These
+> did not — recorded here so the next reader does not re-derive them:
+>
+> 1. **§5.1's new `freeze` param was REFUSED, and nothing like it shipped.**
+>    `_shell-faces.ts` carries a MEASURED rule (2026-08-25) that a `freeze`
+>    ParamDef is the *expensive weaker* answer for a stateful main-thread sim: a
+>    `params` edit is in the WebGL attest basis AND contract-lock (an
+>    owner-machine re-attest plus a contract re-pin), and it buys only INTRA-boot
+>    stillness — it holds whichever frame the harness caught, a different frame
+>    per boot. frogger ships `simPin: __froggerVrtTicks` ALONE. Dropping the param
+>    also removed §5.1's `noUserControl` block, §12's contract-lock row, §12's
+>    `docs.controls.freeze` requirement and §15.8 entirely.
+>    **`contract-lock.txt` did not move.**
+> 2. **§11's reason for refusing `videoFaceWhy` is BACKWARDS.** It claims an
+>    audio module declaring it "hangs in `bootWithFace`'s channel-column wait".
+>    `videoFaceWhy` is what *avoids* that wait, and **pong — an audio def —
+>    declares it**. The real reason frogger must not: it ALSO turns on
+>    `freezeFaceVideo`, which writes `params.freeze`, a key frogger does not
+>    declare (the `timelorde` hazard). Column membership is by DROP POSITION, not
+>    port shape; eight gate/CV-only faces already join fine.
+> 3. **§0/§11: "every glyph literal except `'none'` resolves `{kind:'static'}`"
+>    is not quite true.** scope / meter / envelope / waveform do. **`algorithm`
+>    RESOLVES** (`{layoutSource:'frogger', paramId:null}`) since #2160. It is
+>    refused on its own merits — null `paramId` and no `nodeId` on
+>    `ShellExtensionGlyphProps` make it a constant picture — and the
+>    counterfactual is now pinned in `frogger-face-model.test.ts`.
+> 4. **§6's `rear.groups` shape does not compile or lint.** `ModuleFaceRear.groups`
+>    requires `label`, which the spec omits; and an INPUT group id must claim
+>    `'voice'`/`'signal'` or name a declared page, or it appends as a stray band
+>    (`module-face-lint` catches it). Shipped as `signal` (the four steering
+>    triggers) + `run` (START, beside the TIME knob it shares a band with).
+> 5. **§0's `_face-fixtures.ts` claim ("AUDIO_PLACEHOLDER pool, index 9 of 26")
+>    describes a list that does not exist.** The pool is DERIVED
+>    (`deriveFixture`); `frogger` appears nowhere in that file. No edit was needed
+>    — the conclusion (promotion is invisible to it) was right for the wrong
+>    reason.
+> 6. **§10.1/§15.11's "the body contains NO text node outside the canvas" is not
+>    literally achievable** — the SCREEN switch has a caption. Shipped sharper:
+>    the body's entire literal DOM text is exactly `SCREEN`, extracted and
+>    negative-controlled by injecting a `<span>LIVES 5</span>`.
+>
+> **What the spec got RIGHT and was worth having**: the ratchet-discharge framing;
+> that frogger has no RNG so the pin needs no seed; §13.1 (the only control was
+> inert until the next START); §13.2 (the HUD at ~4.5 CSS px from the
+> backing-store call); §13.3 (three re-typed range literals); §13.7 (the inventory
+> `why` describes a keyboard the module has never had); the `rasterize` precedent;
+> and the SCREEN-OFF-is-safe-here-but-not-on-skifree warning.
+>
+> ⚠ **The predicted THREE PNGs were exactly right** — the bot committed
+> `frogger.png`, `face-frogger-compact.png`, `face-frogger-dock.png`.
+
 > **SPEC + MOCKS. Nothing here is implemented.** Group analysis: [`../GAMES.md`](../GAMES.md).
 > Direct precedent: `.myrobots/2026-08-23-bespoke-wave1/pong/spec.md` — where its argument
 > transfers it is CITED, not re-derived, and where it does not the divergence is named.

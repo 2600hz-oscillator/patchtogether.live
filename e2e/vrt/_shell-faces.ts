@@ -3332,6 +3332,51 @@ export const FACES = [
     // the lit-cell sets for the trig / note / octave states plus the
     // track-switch negative control.
   },
+  // ── SCORE — the third faced SEQUENCER, and the only NOTATION one ──────────
+  {
+    type: 'score',
+    // FIVE bands: score / marks / transport / envelope / slots. The staff is
+    // `face.hero.cell`, so `heroFacePlan` promotes it out of the `score` band —
+    // but that band still holds VALUE, ACC and KEY, so unlike cartesian's it
+    // does NOT disappear. Count the POST-hero bands, not the declared pages;
+    // here the two numbers happen to agree, and that is a coincidence worth
+    // saying out loud rather than a rule.
+    pages: 5,
+    // ⚠ DETERMINISTIC FOR FREE, LIKE KRIA AND FOR THE SAME REASON: `isPlaying`
+    // defaults to 0, so a fresh spawn is STOPPED. The one live thing on this
+    // face is the sounding-note highlight, an engine read per frame through the
+    // shared meter pump, and it never starts. There is no `Math.random()`
+    // anywhere in score's emit path at all. No freeze seam is needed and none
+    // is declared.
+    //
+    // ⚠ THE BRAVURA FONT IS ALREADY HANDLED, and this is the scene that most
+    // depends on it. `_fonts.ts` says so in its own words: `document.fonts.ready`
+    // "only tracks @font-face faces the document declares (just Bravura, for
+    // SCORE)". The SMuFL face is the one self-hosted font the app ships, so the
+    // clef, the time signature and every notehead are deterministic where the UI
+    // stack's fallbacks were not. ⚠ It is declared globally, and this scene now
+    // mounts the staff through a DIFFERENT component tree than the card
+    // baseline does — same @font-face, new consumer.
+    //
+    // ⚠ WHAT THIS BASELINE DOES **NOT** COVER, stated rather than assumed. A
+    // fresh score has `notes: []`, so the staff is four empty rows and the PNG
+    // is blind to note CONTENT — a notehead drawn at the wrong x would not move
+    // it. It is also nearly blind to the BANDS: `DockFullView` caps the pane at
+    // `min(60vh, 680px)` and the staff panel alone is ~374 px before its page
+    // nav, so most of the capture box is staff and the five section bands sit at
+    // or below the fold. That is the same blindness that left sixstrum's, dx7's
+    // and kickdrum's dock baselines pixel-identical through a complete band
+    // re-grouping. ⚠ A GREEN DOCK SCENE IS THEREFORE NOT EVIDENCE THAT A BAND
+    // CHANGE HERE IS A NO-OP — the band gate is `faceplate-platform.spec.ts`
+    // plus the pure `dock-row-plan` / `module-face-lint` units, and the `pages`
+    // number above, which fails BEFORE the pixel pin if a band is dropped.
+    //
+    // What it IS covered by instead: `score-face-model.test.ts` pins the ranked
+    // order, the hero, the band membership, every cell's read/write pair and the
+    // aria strings the removed numbers moved into; `score-face.spec.ts` drives
+    // the selection model, the tie removal, the non-destructive page shrink and
+    // the quicksave → queue_cv chain on the DEFAULT shell.
+  },
   // ── CARTESIAN — the second faced SEQUENCER, and the TYPED one ─────────────
   {
     type: 'cartesian',
@@ -4310,6 +4355,148 @@ export const FACES = [
   // `bootWithFace` already freezes.
   { type: 'vstInstrument', pages: 1 },
   { type: 'vstFx', pages: 1 },
+
+  // ── FROGGER — the first ARCADE BOARD baselined, and the promotion that
+  //    DISCHARGED ITS OWN NAMED RATCHET ────────────────────────────────────
+  //
+  // ⚠ THE TWO SCENES ON THIS MODULE HAVE COMPLETELY DIFFERENT DETERMINISM
+  // ARGUMENTS, exactly as pong's do, and conflating them is how a scene ends up
+  // pinned by nothing.
+  //
+  //   COMPACT has NO PICTURE AT ALL and is deterministic for free. All three
+  //     outputs are `type: 'gate'`, so `primaryAudioOutPortId` is null, every
+  //     glyph literal but `'none'` resolves `{kind:'static'}` and the face
+  //     declares `glyph: 'none'`. `hasVideoSurface` is `domain === 'video'` and
+  //     this is an AUDIO def, so there is no `VideoTileThumb` either. The tile
+  //     is ONE KNOB. ⚠ If `ShellExtensionGlyphProps` ever gains a `nodeId`,
+  //     THIS SCENE NEEDS THE DOCK SCENE'S TREATMENT and not this paragraph —
+  //     the same conditional pong's compact entry carries, and for the same
+  //     mechanical reason (a glyph component today cannot resolve a graph node,
+  //     so it cannot reach `eng.read(node, 'snapshot')`).
+  //
+  //   DOCK carries the LIVE BOARD — the module's `fullViewBody` extension
+  //     painting `drawFrogger` every rAF off the game snapshot — and is not
+  //     deterministic by any amount of settling. It needs the pin below.
+  //
+  // ⚠ NO `videoFaceWhy`, AND THE REASON IS NOT THE ONE THE BUILD SPEC GAVE.
+  // That field does two things: it boots into the VIDEO ZONE instead of a
+  // channel column, and it turns on `freezeFaceVideo`, which WRITES
+  // `params.freeze`. frogger declares no `freeze` param, so that write would
+  // invent an undeclared key and the assertion after it would be measuring a
+  // freeze that never happened — the `timelorde` hazard, verbatim. The channel
+  // column is reachable on the ordinary path regardless of port shape (column
+  // membership is decided by DROP POSITION, and eight gate/CV-only faces
+  // already join fine), and the tick pin makes the board time-invariant, so
+  // there is nothing left for a video freeze to do.
+  //
+  // ⚠ AND NO `freeze` ParamDef EITHER, on this file's own measured rule
+  // (2026-08-25): a `params` edit is in the WebGL attest basis AND in
+  // contract-lock, so it costs an owner-machine re-attest plus a contract
+  // re-pin, and it buys only INTRA-boot stillness — it holds whichever frame
+  // the harness caught, which is a different frame per boot. frogger is a
+  // STATEFUL SIM on the MAIN THREAD, which is precisely the case this file
+  // says takes a `simPin` on the module's OWN seam.
+  {
+    type: 'frogger',
+    // ONE band, ONE control. `order` and `pages` agree; there is no second idea
+    // to page and a rail needs DOCK_TAB_MIN_BANDS = 7.
+    pages: 1,
+    simPin: [
+      {
+        global: '__froggerVrtTicks',
+        value: 96,
+        why:
+          'pins WHICH BOARD, not merely a still one — the whole game state becomes a function '
+          + 'of (ticks, params) rather than of boot speed. ⚠ AND FROGGER NEEDS NO SEED, which is '
+          + 'what makes this the cheapest pin in the roster and is a property no sibling game '
+          + 'module shares: there is no `Math.random` anywhere in `frogger-state.ts` — a fixed '
+          + 'sprite clone, deterministic traffic, a constant `dtSeconds` — so the board was '
+          + 'ALREADY a pure function of TICK COUNT and the only nondeterminism was how many '
+          + 'ticks landed before the capture. ⚠ A freeze alone would NOT have been sufficient '
+          + 'and that is measured on the sibling with the same topology: pong drifted 72 pixels '
+          + 'at max channel delta 237 across two ubuntu boots WITH a seed, because the seed '
+          + 'fixes which trajectory and cannot fix how far along it the capture landed. So the '
+          + 'factory rebuilds the state, steps it exactly 96 ticks (96 x 25 ms = 2.4 s of play) '
+          + 'and then STOPS TICKING ALTOGETHER — lushgarden\'s and pong\'s shape, which makes '
+          + 'the board TIME-INVARIANT rather than frozen at an arbitrary moment. That matters '
+          + 'more here than anywhere: the game clock is a Web Worker `setInterval` that is NOT '
+          + 'gated on the AudioContext, so the harness audio suspend could never have stopped '
+          + 'this game. ⚠ 96 IS A POSITION ON THE GAME\'S TIMELINE, NOT A POPULATION COUNT: it '
+          + 'is past the synthetic auto-start, ~240 sprite ticks into the traffic\'s travel (the '
+          + 'sprite clock runs at ~100 Hz of game time inside the 40 Hz real tick) and two '
+          + 'seconds off the 60 s HUD timer, so the pinned frame differs from the boot frame in '
+          + 'the traffic layout AND in the HUD and cannot be reached by a stepper that never '
+          + 'ran. Nothing is patched into the steering inputs, so the frog sits at its spawn '
+          + 'cell and no gate has fired. ⚠ It REACHES this factory only because frogger is '
+          + 'main-thread: simPin installs boot-time globals via addInitScript, so a worker '
+          + 'renderLocus would put it out of reach (the acidwarp case). ⚠ THE SAME GLOBAL PINS '
+          + 'THE LEGACY CARD SCENE in vrt-scenes.ts, which is what let frogger leave '
+          + 'EXEMPT_FROM_VRT and ALLOWED_PERMANENT_EXEMPT in this same commit — one hook, three '
+          + 'baselines, and the exemption\'s own stated exit condition met rather than argued '
+          + 'around. ⚠ DOOM IS EXCLUDED FROM THIS MECHANISM BY NAME: its runTic() runs inside '
+          + 'surface.draw, so its game clock IS its frame clock and a tick pin would '
+          + 're-specify the game. No DOOM file was opened.',
+      },
+    ],
+  },
+
+  // ── TV LIBRARIAN — a LIVE THIRD-PARTY STREAM that is nevertheless capturable
+  {
+    type: 'tvLibrarian',
+    // No `face.pages`, so the dock renders one unlabelled section holding the
+    // single ranked cell (`gain`) above the tuner body. Nothing is padded to
+    // reach a rail — one control is the honest count for this module.
+    pages: 1,
+    videoFaceWhy:
+      'a VIDEO module, so it must boot into the video zone rather than a mixer channel column — '
+      + 'without this field bootWithFace waits out the full 90 s test timeout for a column '
+      + 'membership a video node never acquires. ⚠ AND IT IS CAPTURABLE DESPITE SITTING IN '
+      + '`EXEMPT_FROM_VRT` FOR A LIVE HLS STREAM, which is the interesting part and is why this '
+      + 'is a real baseline rather than a FACES_WITHOUT_SCENES entry — see below.',
+    // ⚠ WHY THIS FACE GETS REAL BASELINES WHILE THE MODULE STAYS EXEMPT.
+    //
+    // `tvLibrarian` sits in `EXEMPT_FROM_VRT` and in `ALLOWED_PERMANENT_EXEMPT`:
+    // "live external HLS <video> + runtime-fetched, ever-changing channel list
+    // defeat deterministic capture". That stays TRUE OF THE CARD SCENE, which is
+    // a different surface with a different baseline — the same distinction the
+    // `loopback`, `cameraInput` and `scoreboard` entries draw. It is not true of
+    // a FACE scene, and BOTH halves of the exemption were re-checked rather than
+    // inherited:
+    //
+    // (1) THE PICTURE NEEDS NO PIN, AND THAT IS MEASURED AT THE SHADER. A scene
+    //     spawns the node and tunes nothing, so `uHasInput` is 0 and the idle
+    //     branch runs: `vec4(0.05, 0.05, 0.09 + vUv.y * 0.05, 1.0)`. No clock, no
+    //     accumulator, no uniform that is not a param — the output is a pure
+    //     function of position, identical across boots, renderers and frame
+    //     counts. ⚠ The build spec prescribed a `__tvlibrarianTestFrame` pin as
+    //     well; reading the shader is what showed it would pin something already
+    //     still. It is deliberately NOT declared, so this entry stays anchored to
+    //     what the module actually does.
+    //
+    // (2) THE ROSTER DOES, AND THE REASON IS NOT THE OBVIOUS ONE. With no
+    //     network a runner's country fetch REJECTS, and the picker's catch paints
+    //     `Could not load channel list: <message>` — where the message is the
+    //     ENVIRONMENT's, not ours. Without the pin the dock baseline would be a
+    //     function of which browser build refused the request, which is the
+    //     per-machine baseline this suite cannot have. The CHANNEL roster needs
+    //     nothing: it is the node-owned controller's and stays empty until a
+    //     country is chosen, so a fresh spawn shows the map and no list.
+    simPin: [
+      {
+        global: '__tvLibrarianTestCountries',
+        value: 1,
+        why:
+          'makes the picker use its own fixed two-country dataset instead of fetching famelack, so '
+          + "the world map's markers, the dropdown's options and the ABSENCE of an error line are "
+          + 'all fixed. Read as truthy, so 1 is the value. ⚠ It removes the network dependency '
+          + 'entirely rather than making it fast: an unreachable third-party host does not fail '
+          + 'identically twice, and the string it produces is the browser\'s. The seam is a page '
+          + 'global read at mount by a main-thread Svelte component — the `__loopbackTestFrame` '
+          + 'shape — and it costs no attest window, because neither the picker nor any e2e file is '
+          + 'in the WebGL attest basis.',
+      },
+    ],
+  },
 ] as const;
 
 /**
