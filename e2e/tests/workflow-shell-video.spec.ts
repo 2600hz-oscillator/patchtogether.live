@@ -1415,17 +1415,26 @@ test.describe('?shell=1 video CHAIN parity', () => {
     // (`tv-librarian-card`) — so P3's additions would have looked for a selector
     // that matches nothing and the `toHaveCount(0)` leg would have passed
     // vacuously, certifying exactly the state it exists to refuse.
+    //
+    // ⚠ THE LANE TILE IS ALSO CARRIED PER ROW, for the same reason the card
+    // testid is. "Node-owned source" and "un-migrated" are two INDEPENDENT
+    // properties that happened to coincide for the first three rows, and reading
+    // one off the other is what breaks the moment either moves. `tvLibrarian` is
+    // now PROMOTED, so its lane tile is a real faceplate (`module-shell`) rather
+    // than the RACKLINE placeholder — which changes nothing about the two legs
+    // this test actually owns (no headless host, no card mounted anywhere), and
+    // those still run unchanged for every row.
     const converted = [
-      ['vb1', 'videobox', 'videobox-card'],
-      ['vv1', 'videovarispeed', 'videovarispeed-card'],
-      ['pt1', 'peertube', 'peertube-card'],
-      ['tv1', 'tvLibrarian', 'tv-librarian-card'],
+      ['vb1', 'videobox', 'videobox-card', 'module-shell-placeholder'],
+      ['vv1', 'videovarispeed', 'videovarispeed-card', 'module-shell-placeholder'],
+      ['pt1', 'peertube', 'peertube-card', 'module-shell-placeholder'],
+      ['tv1', 'tvLibrarian', 'tv-librarian-card', 'module-shell'],
     ] as const;
-    for (const [nodeId, type, cardTestId] of converted) {
+    for (const [nodeId, type, cardTestId, laneTile] of converted) {
       await injectPatch(page, [{ id: nodeId, type, position: { x: -1600, y: 5100 } }]);
       await expect(
-        page.locator(`.svelte-flow__node[data-id="${nodeId}"] [data-testid="module-shell-placeholder"]`),
-        `${type} still renders the uniform RACKLINE tile in its lane`,
+        page.locator(`.svelte-flow__node[data-id="${nodeId}"] [data-testid="${laneTile}"]`),
+        `${type} does not render the ${laneTile} tile its migration state calls for`,
       ).toHaveCount(1);
       await expect(
         page.locator(`[data-testid="headless-source-host"][data-node-id="${nodeId}"]`),
