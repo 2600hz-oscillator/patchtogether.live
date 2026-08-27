@@ -416,10 +416,11 @@ test.describe('VIDEOVARISPEED 7-slot switch path (multi-slot stall regression)',
     await assertFramesAdvance(page, 'after A→B');
     await page.waitForTimeout(600); // let B's playhead + A's VIRTUAL playhead advance
 
-    // Read slot A's tracked VIRTUAL playhead while B is still active — i.e. the
-    // free-running inactive-slot value, on the engine's frame-time clock, that
-    // the imminent switch-back will jump the element to. Captured BEFORE the
-    // switch so it's not yet re-synced to the element's currentTime.
+    // PRECONDITION ONLY — the tracked playhead VALUE now comes from the in-page
+    // sampler below, not from here. This checks two things a round trip can
+    // still answer honestly because neither is time-sensitive: the E2E hook is
+    // reachable at all (VITE_E2E_HOOKS), and slot B really is on air before the
+    // switch-back is fired.
     const beforeVp = await readVirtualPlayhead(page);
     expect(beforeVp, 'virtual-playhead hook readable (VITE_E2E_HOOKS)').not.toBeNull();
     expect(beforeVp!.activeSlot, 'slot B (1) active before switch-back').toBe(1);
