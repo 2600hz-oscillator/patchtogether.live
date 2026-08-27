@@ -134,3 +134,19 @@ export function mayPersist(outcome: RestoreOutcome): boolean {
   if (!outcome.attempted) return false;
   return outcome.expected === 0 || outcome.opened > 0;
 }
+
+/**
+ * Whether the live present set can be faithfully described right now.
+ *
+ * `bindingsFromPairs` resolves each screenId through the caller's screen list,
+ * so an unpopulated list silently turns every live projector into no binding at
+ * all — and writing THAT is indistinguishable from the user having stopped
+ * presenting. Refuse instead: a save that records nothing is recoverable, a
+ * save that erases the rig is not.
+ */
+export function canDescribeBindings(
+  pairs: { nodeId: string; screenId: string }[],
+  live: LiveScreen[],
+): boolean {
+  return pairs.length === 0 || live.length > 0;
+}

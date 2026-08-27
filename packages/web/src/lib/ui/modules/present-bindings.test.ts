@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import * as Y from 'yjs';
 import {
   bindingsFromPairs,
+  canDescribeBindings,
   mayPersist,
   planRestore,
   readPresentBindings,
@@ -200,5 +201,21 @@ describe('mayPersist', () => {
 
   it('arms on a partial open — one blocked display must not veto the rest', () => {
     expect(mayPersist({ attempted: true, expected: 2, opened: 1 })).toBe(true);
+  });
+});
+
+describe('canDescribeBindings', () => {
+  it('refuses while projectors are live but the screen list is unpopulated', () => {
+    // The defect this exists for: Canvas armed the write without ever calling
+    // loadScreens(), so every first save wrote [] over a real rig.
+    expect(canDescribeBindings([{ nodeId: 'out-a', screenId: 'display-1' }], [])).toBe(false);
+  });
+
+  it('allows an empty write, which is the user stopping the last projector', () => {
+    expect(canDescribeBindings([], [])).toBe(true);
+  });
+
+  it('allows a normal write', () => {
+    expect(canDescribeBindings([{ nodeId: 'out-a', screenId: 'display-1' }], RIG)).toBe(true);
   });
 });

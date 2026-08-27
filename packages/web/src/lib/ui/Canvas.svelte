@@ -243,6 +243,7 @@
     rigMatchesSaved,
     writePresentBindings,
     type LiveScreen,
+    canDescribeBindings,
   } from '$lib/ui/modules/present-bindings';
   import { nodeRecorder } from '$lib/ui/modules/node-recorder-registry.svelte';
   import { nodeSamsloop } from '$lib/ui/modules/node-samsloop-registry.svelte';
@@ -1287,68 +1288,75 @@
   //
   // Automatic, but gated on rigMatchesSaved: the bindings ride the SHARED doc,
   // so a rack-mate opening the same patch must not get projector windows thrown
-  // onto their monitors. A partial or foreign rig resolves nothing and simply
-  // does not fire.
+  // onto their monitors. A partial or foreign rig resolves nothing.
   //
-  // Ordering is load-bearing. The write effect below fires the instant the
-  // registry changes, and on load the registry is EMPTY because restore has not
-  // run — writing then would erase the bindings we are about to read. So the
-  // write stays disarmed until this pass resolves (mayPersist).
+  // ⚠ RUNS PER LOAD, NOT PER MOUNT. A once-per-Canvas-mount latch is wrong:
+  // "new rack, then load a performance" fires the mount pass against the EMPTY
+  // default rack, latches, and the loaded patch's bindings are never read —
+  // while the now-armed write clobbers them with []. Measured on the owner's
+  // videoout.ptperf.zip, whose settings map came back {presentBindings: []}.
+  // So every load path calls this explicitly, and the write disarms first.
   const presentScreens = createFullscreen();
   let presentWriteArmed = $state(false);
-  let presentRestoreRan = false;
+  let presentMountRestoreRan = false;
   let lastWrittenBindings = '';
 
   function liveScreens(): LiveScreen[] {
     return presentScreens.availableScreens.map((s) => ({ id: s.id, descriptor: s.descriptor }));
   }
 
+  async function runPresentRestore(): Promise<void> {
+    presentWriteArmed = false;
+    // ⚠ UNCONDITIONALLY, BEFORE THE EARLY RETURN. bindingsFromPairs resolves
+    // screenIds through this controller's list, so skipping it on a patch with
+    // nothing saved leaves the list empty and makes the FIRST save of every rig
+    // write []. That was the bug the owner's zip caught.
+    await presentScreens.loadScreens();
+    const saved = readPresentBindings(ydoc);
+    if (saved.length === 0) {
+      presentWriteArmed = true;
+      return;
+    }
+    const live = liveScreens();
+    if (!rigMatchesSaved(saved, live)) {
+      trace(`present restore: saved rig (${saved.length} display(s)) not attached — bindings kept`);
+      return;
+    }
+    const video = resolveVideoEngine(engine);
+    if (!video) return;
+    const targets = planRestore(saved, live, snapshot.nodes.map((n) => n.id));
+    const byNode = new Map<string, string[]>();
+    for (const t of targets) {
+      const ids = byNode.get(t.nodeId);
+      if (ids) ids.push(t.screenId);
+      else byNode.set(t.nodeId, [t.screenId]);
+    }
+    let opened = 0;
+    for (const [nodeId, screenIds] of byNode) {
+      opened += nodePresent.presentAll(nodeId, screenIds, {
+        engine: video,
+        rectFor: (id) => presentScreens.getScreenRect(id),
+      });
+    }
+    trace(`present restore: ${opened}/${targets.length} projector(s) reopened`);
+    if (mayPersist({ attempted: true, expected: targets.length, opened })) {
+      presentWriteArmed = true;
+    }
+  }
+
   $effect(() => {
     const loaded = scratchSeeded === true || (provider != null && providerHasSynced);
-    const nodeCount = snapshot.nodes.length;
-    if (presentRestoreRan || !loaded || engine == null || nodeCount === 0) return;
-    presentRestoreRan = true;
-    void (async () => {
-      const saved = readPresentBindings(ydoc);
-      if (saved.length === 0) {
-        presentWriteArmed = true;
-        return;
-      }
-      // Resolves without a prompt once window-management is granted for the
-      // origin; on a browser without the API it yields [] and nothing fires.
-      await presentScreens.loadScreens();
-      const live = liveScreens();
-      if (!rigMatchesSaved(saved, live)) {
-        trace(`present restore: saved rig (${saved.length} displays) not attached — leaving bindings intact`);
-        return;
-      }
-      const video = resolveVideoEngine(engine);
-      if (!video) return;
-      const targets = planRestore(saved, live, snapshot.nodes.map((n) => n.id));
-      const byNode = new Map<string, string[]>();
-      for (const t of targets) {
-        const ids = byNode.get(t.nodeId);
-        if (ids) ids.push(t.screenId);
-        else byNode.set(t.nodeId, [t.screenId]);
-      }
-      let opened = 0;
-      for (const [nodeId, screenIds] of byNode) {
-        opened += nodePresent.presentAll(nodeId, screenIds, {
-          engine: video,
-          rectFor: (id) => presentScreens.getScreenRect(id),
-        });
-      }
-      trace(`present restore: ${opened}/${targets.length} projector(s) reopened`);
-      if (mayPersist({ attempted: true, expected: targets.length, opened })) {
-        presentWriteArmed = true;
-      }
-    })();
+    if (presentMountRestoreRan || !loaded || engine == null || snapshot.nodes.length === 0) return;
+    presentMountRestoreRan = true;
+    void runPresentRestore();
   });
 
   $effect(() => {
     const pairs = nodePresent.presentingPairs();
     if (!presentWriteArmed) return;
-    const next = bindingsFromPairs(pairs, liveScreens());
+    const live = liveScreens();
+    if (!canDescribeBindings(pairs, live)) return;
+    const next = bindingsFromPairs(pairs, live);
     const serialized = JSON.stringify(next);
     if (serialized === lastWrittenBindings) return;
     lastWrittenBindings = serialized;
@@ -3528,6 +3536,7 @@
       const result = persistenceLoad(env, ydoc, patch);
       await reconciler?.reconcile();
       trace(`imported patch JSON (${result.nodesLoaded} nodes, ${result.edgesLoaded} edges)`);
+      await runPresentRestore();
       if (result.diagnostics.length > 0) {
         for (const d of result.diagnostics) {
           console.warn(`[import-json] ${d.nodeId} (${d.type}): ${d.reason}`);
@@ -3811,6 +3820,10 @@
     // auto-bind every saved MIDI module to its device (by saved id, falling back
     // to NAME for cross-machine). No mappings → no prompt.
     await autoBindMidiDevices(bundle.midiDevices);
+
+    // The loaded envelope brought its own presentBindings; the mount pass (if
+    // it ran at all) resolved the PREVIOUS graph. #2230.
+    await runPresentRestore();
   }
 
   /** Restore each TWOTRACKS reel tape from the perf-zip's out-of-band 'audio'
