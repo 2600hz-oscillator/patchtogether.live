@@ -1305,6 +1305,19 @@
     return presentScreens.availableScreens.map((s) => ({ id: s.id, descriptor: s.descriptor }));
   }
 
+  /**
+   * Disarm BEFORE an envelope is applied, not after.
+   *
+   * runPresentRestore() runs at the END of a load, past several awaits. In that
+   * window Svelte flushes effects, and the write effect — still armed from the
+   * previous graph — sees an empty registry and writes [] over the bindings the
+   * envelope just delivered. Measured on sc3ptperf.zip, which carried a correct
+   * binding that load then erased before restore could read it.
+   */
+  function beginPatchLoad(): void {
+    presentWriteArmed = false;
+  }
+
   async function runPresentRestore(): Promise<void> {
     presentWriteArmed = false;
     // ⚠ UNCONDITIONALLY, BEFORE THE EARLY RETURN. bindingsFromPairs resolves
@@ -1369,6 +1382,7 @@
     if (serialized === lastWrittenBindings) return;
     lastWrittenBindings = serialized;
     writePresentBindings(ydoc, next, LOCAL_ORIGIN);
+    trace(`present bindings: wrote ${next.length} from ${pairs.length} live session(s), ${live.length} display(s) known`);
   });
 
   // Pre-effect marker: written once at module-script eval time. The
@@ -3541,6 +3555,7 @@
       await ensureEngine();
       // Routed through persistenceLoad (not loadEnvelopeIntoStore directly) so
       // this path gets the same non-blocking diagnostic notice as every other.
+      beginPatchLoad();
       const result = persistenceLoad(env, ydoc, patch);
       await reconciler?.reconcile();
       trace(`imported patch JSON (${result.nodesLoaded} nodes, ${result.edgesLoaded} edges)`);
@@ -3782,6 +3797,7 @@
   /** Restore a parsed performance .zip into the live rack. Shared by the file
    *  picker + the e2e hook (which passes captured bytes). */
   async function loadPerformanceZipBytes(zipBytes: Uint8Array): Promise<void> {
+    beginPatchLoad();
     const parsed = parsePerformanceZip(zipBytes);
     const bundle = validateBundle(parsed.bundle);
 
