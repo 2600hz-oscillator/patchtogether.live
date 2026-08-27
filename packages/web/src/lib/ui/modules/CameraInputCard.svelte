@@ -567,15 +567,27 @@
         // remembered label is the only thing left that still names the
         // hardware. `resolveDevice` owns the order and the ambiguity
         // tie-break (two identical webcams report identical labels).
+        const savedLabel = readSavedDeviceLabel();
+        // ⚠ "NOTHING SAVED" IS NOT "NOT FOUND", and collapsing the two is a
+        // regression I shipped and CI caught. `savedDeviceMissing` returned
+        // FALSE for a null saved id — so a camera with no saved device fell
+        // through to an UNCONSTRAINED request and got the browser's default,
+        // which is what a freshly-spawned camera has always done. Routing that
+        // case into the failure branch left every fresh camera stuck at
+        // 'no-cameras-found' without ever calling getUserMedia.
+        const hadSavedDevice = Boolean(selectedDeviceId || savedLabel);
         const rebind = resolveDevice(
-          { id: selectedDeviceId, name: readSavedDeviceLabel() },
+          { id: selectedDeviceId, name: savedLabel },
           devices.map((d) => ({ id: d.deviceId, name: d.label })),
         );
-        if (rebind.id === null) {
+        if (hadSavedDevice && rebind.id === null) {
           camState = 'no-cameras-found';
           errorMsg = 'Saved camera not found — pick another from the list.';
         } else {
-          if (rebind.matchedBy !== 'exact-id') {
+          // `rebind.id` is null here only when nothing was saved — the
+          // unconstrained default-camera path, which takes no notice and
+          // rewrites nothing.
+          if (rebind.id !== null && rebind.matchedBy !== 'exact-id') {
             // ⚠ NEVER RE-POINT A PATCH SILENTLY. The player's saved camera id
             // is gone and we have bound a DIFFERENT id by name; that is almost
             // always the same physical camera, but "almost always" is exactly
@@ -583,8 +595,8 @@
             // later as "why is this the wrong camera".
             rebindNotice =
               rebind.matchedBy === 'name-ambiguous'
-                ? `Reconnected to "${readSavedDeviceLabel()}" by name — ${rebind.candidates.length} cameras share that name, so this may not be the same one.`
-                : `Reconnected to "${readSavedDeviceLabel()}" by name (its saved id changed).`;
+                ? `Reconnected to "${savedLabel}" by name — ${rebind.candidates.length} cameras share that name, so this may not be the same one.`
+                : `Reconnected to "${savedLabel}" by name (its saved id changed).`;
             selectedDeviceId = rebind.id;
             // Self-healing: persist THIS session's id so the next load is an
             // exact hit and the fallback is not paid twice.
