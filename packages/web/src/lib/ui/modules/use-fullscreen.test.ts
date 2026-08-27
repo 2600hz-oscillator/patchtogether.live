@@ -22,6 +22,12 @@ import { createFullscreen } from './use-fullscreen.svelte';
 interface FakeScreen {
   label: string;
   isPrimary: boolean;
+  isInternal?: boolean;
+  width?: number;
+  height?: number;
+  devicePixelRatio?: number;
+  left?: number;
+  top?: number;
   // Optional working-area geometry — present on real ScreenDetailed objects,
   // used by getScreenRect() for present-popup placement.
   availLeft?: number;
@@ -99,20 +105,68 @@ describe('createFullscreen — multi-monitor (Window Management API)', () => {
     expect(fs.availableScreens).toHaveLength(2);
     const prim = fs.availableScreens.find((s) => s.isPrimary);
     const sec = fs.availableScreens.find((s) => !s.isPrimary);
-    expect(prim?.id).toBe('primary');
+    // `primary` is the DOM SLOT (what e2e selects on), not the identity.
+    expect(prim?.slot).toBe('primary');
+    expect(prim?.id).not.toBe('primary');
+    expect(sec?.slot).toBe('display-1');
     expect(sec?.label).toBe('DELL U2720Q');
 
     // enter(secondaryId) -> requestFullscreen({ screen: <secondary> }).
     await fs.enter(sec!.id);
     expect(calls.at(-1)).toEqual({ screen: secondary });
 
-    // enter('primary') -> plain fullscreen (no screen option).
-    await fs.enter('primary');
+    // enter(<the primary's real id>) -> plain fullscreen, no screen option.
+    // Asserted through the id the MENU would actually pass; the old literal
+    // 'primary' now resolves to nothing and would pass for the wrong reason.
+    await fs.enter(prim!.id);
+    expect(calls.at(-1)).toBeUndefined();
+
+    // An id naming no live display -> plain fullscreen rather than a throw.
+    await fs.enter('no-such-display');
     expect(calls.at(-1)).toBeUndefined();
 
     // enter() with no arg -> plain fullscreen.
     await fs.enter();
     expect(calls.at(-1)).toBeUndefined();
+  });
+
+  it('keeps a display id across a screenschange that REORDERS the array (#2231)', async () => {
+    const laptop: FakeScreen = { label: 'Built-in', isPrimary: true, isInternal: true, width: 1512, height: 982, devicePixelRatio: 2, left: 0, top: 0 };
+    const projector: FakeScreen = { label: 'EPSON', isPrimary: false, width: 1920, height: 1080, devicePixelRatio: 1, left: 1512, top: 0 };
+    const details = fakeScreenDetails([laptop, projector]);
+    installWindow(() => Promise.resolve(details));
+    const fs = createFullscreen();
+    fs.setTarget(fakeTarget().el as unknown as HTMLElement);
+    await fs.loadScreens();
+
+    const before = fs.availableScreens.find((s) => !s.isPrimary)!;
+
+    // Replug: the projector now arrives FIRST in ScreenDetails.screens. Under
+    // position-derived ids it was `display-1` and is now `display-0`, so every
+    // live session key and every recorded binding named the wrong monitor.
+    details.screens = [projector, laptop];
+    details.fire('screenschange');
+
+    const after = fs.availableScreens.find((s) => !s.isPrimary)!;
+    expect(after.id).toBe(before.id);
+    // The SLOT does move with position — that is what it is for.
+    expect(after.slot).not.toBe(before.slot);
+  });
+
+  it('two independent controllers agree on ids with no shared state', async () => {
+    // Nine cards plus Canvas each build their own controller. Identity derived
+    // from the DISPLAY makes them agree by construction, which is what lets a
+    // card present on an id that Canvas can later resolve to a descriptor.
+    const screens: FakeScreen[] = [
+      { label: 'Built-in', isPrimary: true, isInternal: true, width: 1512, height: 982, devicePixelRatio: 2 },
+      { label: '', isPrimary: false, width: 1920, height: 1080, devicePixelRatio: 1, left: 1512 },
+    ];
+    installWindow(() => Promise.resolve(fakeScreenDetails(screens)));
+    const a = createFullscreen();
+    const b = createFullscreen();
+    await a.loadScreens();
+    await b.loadScreens();
+    expect(a.availableScreens.map((s) => s.id)).toEqual(b.availableScreens.map((s) => s.id));
   });
 
   it('labels an unnamed display "Display N"', async () => {

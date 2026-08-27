@@ -244,7 +244,7 @@
             class="ctx-item"
             onclick={() => pickFullscreen(screen.id)}
             role="menuitem"
-            data-testid="ctx-fullscreen-{screen.id}"
+            data-testid="ctx-fullscreen-{screen.slot}"
           >
             {screen.isPrimary
               ? 'Fullscreen on THIS DISPLAY'
@@ -289,7 +289,7 @@
             class="ctx-item"
             onclick={() => pickPresent(screen.id)}
             role="menuitem"
-            data-testid="ctx-present-{screen.id}"
+            data-testid="ctx-present-{screen.slot}"
           >
             Present on {screen.label}
           </button>
