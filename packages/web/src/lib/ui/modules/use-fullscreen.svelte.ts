@@ -32,7 +32,7 @@
 // exactly as before: plain element.requestFullscreen() on the current
 // display, byte-identical to the prior implementation.
 
-import { describeScreen, type ScreenDescriptor } from './screen-identity';
+import { assignScreenIds, describeScreen, type ScreenDescriptor } from './screen-identity';
 
 /** Vendored shape of the prefixed fullscreen API (older WebKit). The
  *  standard API covers modern browsers; these are defensive fallbacks. */
@@ -86,11 +86,18 @@ interface WindowWithScreenDetails extends Window {
  *  handle the card passes back to enter(); we map it to the live
  *  ScreenDetailed internally so callers never hold the platform object. */
 export interface AvailableScreen {
+  /** Identity: derived from the DISPLAY (label, size, dpr, internal-ness, and
+   *  arrangement order among identical monitors), never from array position.
+   *  Two controllers that never share state therefore agree on what `id` names,
+   *  and a `screenschange` cannot re-point it at a different monitor. */
   readonly id: string;
+  /** DOM slot, for `data-testid` only — never identity. Position-derived on
+   *  purpose: e2e selects `ctx-fullscreen-display-1` / `ctx-present-display-1`,
+   *  which must stay stable and readable, and a fingerprint id contains `|`,
+   *  `@` and spaces. Splitting the two is what lets identity change safely. */
+  readonly slot: string;
   readonly label: string;
   readonly isPrimary: boolean;
-  /** Fingerprint used to re-find this display in a later session. `id` is
-   *  derived from array position and cannot survive a reload (#2231). */
   readonly descriptor: ScreenDescriptor;
 }
 interface FullscreenDocumentExt extends Document {
@@ -194,13 +201,20 @@ export function createFullscreen(): FullscreenController {
   function refreshScreenList(): void {
     const list = screenDetails?.screens ?? [];
     idToScreen = new Map();
+    const descriptors = list.map(describeScreen);
+    const ids = assignScreenIds(descriptors);
     const next: AvailableScreen[] = [];
     list.forEach((s, i) => {
       const isPrimary = s.isPrimary === true;
-      const id = isPrimary ? 'primary' : `display-${i}`;
       const label = s.label && s.label.length > 0 ? s.label : `Display ${i + 1}`;
-      idToScreen.set(id, s);
-      next.push({ id, label, isPrimary, descriptor: describeScreen(s) });
+      idToScreen.set(ids[i], s);
+      next.push({
+        id: ids[i],
+        slot: isPrimary ? 'primary' : `display-${i}`,
+        label,
+        isPrimary,
+        descriptor: descriptors[i],
+      });
     });
     // Only surface a multi-display choice when there's genuinely more than
     // one screen; a lone screen keeps the single-item menu (byte-identical
@@ -259,10 +273,14 @@ export function createFullscreen(): FullscreenController {
     async enter(screenId?: string) {
       if (!target) return;
       enterCount++;
-      // Resolve the chosen display (if any). "primary"/current and unknown
-      // ids both fall through to plain fullscreen on the current display.
-      const screen =
-        screenId && screenId !== 'primary' ? idToScreen.get(screenId) : undefined;
+      // Resolve the chosen display. The PRIMARY display and any unknown id both
+      // fall through to plain fullscreen on the current display — byte-identical
+      // to the no-API path, which is the behaviour the single-display case has
+      // always had. Primary-ness is read off the resolved screen rather than
+      // matched against a magic id string, because the id is now a fingerprint
+      // and which monitor is primary can change without the monitor changing.
+      const resolved = screenId ? idToScreen.get(screenId) : undefined;
+      const screen = resolved?.isPrimary === true ? undefined : resolved;
       await requestFs(target, screen);
       // fullscreenchange will flip the flag; sync defensively too in case
       // the event is delayed (and so the state machine is observable even
