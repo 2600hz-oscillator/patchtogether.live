@@ -134,6 +134,21 @@ describe('shell-extensions registry lint (#1512)', () => {
     expect(bad).toEqual([]);
   });
 
+  it('the tileBody site is gated OFF the dock full view, so it never doubles fullViewBody', () => {
+    // A faced module's LANE TILE and its DOCK FULL VIEW can be on screen at the
+    // same time. `fullViewBody` and `tileBody` are counterparts carrying the
+    // same controls at two sizes — cameraInput's picker, lamp and acquire — so
+    // rendering both would put two live pickers on one node AND two elements
+    // behind every testid that surface emits, which turns every Playwright
+    // strict locator over them into a throw.
+    const site = MODULE_SHELL_SRC.slice(
+      MODULE_SHELL_SRC.indexOf('ext?.tileBody') - 200,
+      MODULE_SHELL_SRC.indexOf('ext?.tileBody') + 40,
+    );
+    expect(site, "tileBody's render site must be gated on view !== 'dock-full'")
+      .toMatch(/view\s*!==\s*'dock-full'\s*&&\s*ext\?\.tileBody/);
+  });
+
   it('WIRED_SHELL_EXTENSION_SLOTS is anchored to ModuleShell source, both directions', () => {
     expect(MODULE_SHELL_SRC, 'the raw glob must find ModuleShell').toBeTruthy();
     for (const slot of WIRED_SHELL_EXTENSION_SLOTS) {

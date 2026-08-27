@@ -1823,6 +1823,26 @@
        grouping — and the fix is not `sections={…}` on a whim, because in
        sectioned mode PatchPanel derives the HANDLE STACK from the sections, so
        a section list that drops a port drops its cables. -->
+  <!-- THE MODULE'S OWN TILE CONTROLS (`ShellExtension.tileBody`) — the things
+       that are not ParamDefs and so cannot be face cells, but which a player
+       must reach WITHOUT expanding: cameraInput's device picker, capture lamp
+       and acquire gesture.
+
+       ⚠ `view !== 'dock-full'` because the DOCK already has `fullViewBody`,
+       which carries the same controls at full width. Rendering both would put
+       two live pickers on screen for one node — and, since a faced module's
+       lane tile and its dock full view can be open AT THE SAME TIME, two
+       elements behind every one of that surface's testids. The two slots are
+       counterparts, never siblings.
+
+       It sits BELOW the param bands and ABOVE the jack rail deliberately: it is
+       module state, not patching, and the rail must stay the last thing in the
+       tile so the cable surface is always in the same place. -->
+  {#if view !== 'dock-full' && ext?.tileBody}
+    {@const ExtTileBody = ext.tileBody}
+    <ExtTileBody nodeId={id} />
+  {/if}
+
   {#if jackRail}
     <!-- ⚠ NO EXPAND PILL IN THE DRAWER. `expand()` calls
          `dockStore.openFullView(id)`, and the store keeps the bottom drawer and
