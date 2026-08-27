@@ -2454,9 +2454,17 @@ jobs:
         # assume a third repeat. Both prior incidents were diagnosed by a wide
         # SPREAD (1.65x on the stale table); here the split was 1.002x and the
         # previous run's eight shards landed 12m06s-12m51s against a predicted
-        # 12.00 min. The cost table is accurate; the lane simply grew into its
-        # own ceiling, so `timings:accept` had nothing to give and only capacity
-        # does.
+        # 12.00 min. The cost table was accurate IN AGGREGATE; the lane simply
+        # grew into its own ceiling, so `timings:accept` had no meaningful
+        # rebalancing to give and only capacity did.
+        #
+        # ⚠ It was NOT fully covering, though, and "spread 1.002x" cannot tell
+        # you that — the spread is computed over the entries the table HAS. It
+        # held 360 of a 376-test roster; the 18 scenes from the clockedRunner /
+        # livecode / es9 / electraControl / vst* promotions were being scheduled
+        # at the MEDIAN. Refreshed from this run, total CPU moved 4333.9 →
+        # 4366.3 s (+0.7%), which is why the aggregate conclusion above still
+        # stands. Read BOTH numbers: a table can be well-balanced and blind.
         #
         # MEASURED, `node scripts/vrt-shard-plan.mjs --report N` (360 tests,
         # 4333.9 CPU-s), against the 600 s `--global-timeout` below:
