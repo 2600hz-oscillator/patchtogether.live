@@ -97,3 +97,40 @@ export function rigMatchesSaved(saved: PresentBinding[], live: LiveScreen[]): bo
   );
   return matched.every((m) => m !== -1);
 }
+
+export function bindingsFromPairs(
+  pairs: { nodeId: string; screenId: string }[],
+  live: LiveScreen[],
+): PresentBinding[] {
+  const byId = new Map(live.map((s) => [s.id, s.descriptor]));
+  const out: PresentBinding[] = [];
+  for (const p of pairs) {
+    const descriptor = byId.get(p.screenId);
+    if (descriptor) out.push({ nodeId: p.nodeId, screen: descriptor });
+  }
+  return out;
+}
+
+export interface RestoreOutcome {
+  /** A restore pass ran to completion (as opposed to: not yet, or declined). */
+  attempted: boolean;
+  /** Bindings that resolved to an attached display. */
+  expected: number;
+  /** Popups that actually opened. */
+  opened: number;
+}
+
+/**
+ * Whether the live present set may be written back over the saved one.
+ *
+ * The write effect fires the moment the registry is empty — which on load is
+ * BEFORE restore has opened anything. Writing then would erase the very
+ * bindings we are about to read. So persistence stays disarmed until a restore
+ * pass has resolved, and stays disarmed if that pass resolved displays but
+ * opened nothing: that is the popup blocker, not the user stopping a
+ * projector, and the saved set must survive it.
+ */
+export function mayPersist(outcome: RestoreOutcome): boolean {
+  if (!outcome.attempted) return false;
+  return outcome.expected === 0 || outcome.opened > 0;
+}

@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import * as Y from 'yjs';
 import {
+  bindingsFromPairs,
+  mayPersist,
   planRestore,
   readPresentBindings,
   rigMatchesSaved,
@@ -156,5 +158,47 @@ describe('describeScreen feeds the ladder from a real ScreenDetailed shape', () 
       devicePixelRatio: 1, left: 1512, top: 0,
     });
     expect(d).toEqual(UNLABELLED);
+  });
+});
+
+describe('bindingsFromPairs', () => {
+  it('records the descriptor of each lit display', () => {
+    const pairs = [
+      { nodeId: 'out-a', screenId: 'display-1' },
+      { nodeId: 'out-b', screenId: 'display-2' },
+    ];
+    expect(bindingsFromPairs(pairs, RIG)).toEqual([
+      { nodeId: 'out-a', screen: UNLABELLED },
+      { nodeId: 'out-b', screen: WISE_LUCK },
+    ]);
+  });
+
+  it('drops a pair whose display vanished between the present and the write', () => {
+    const pairs = [{ nodeId: 'out-a', screenId: 'display-9' }];
+    expect(bindingsFromPairs(pairs, RIG)).toEqual([]);
+  });
+});
+
+describe('mayPersist', () => {
+  it('stays disarmed before a restore pass has run', () => {
+    expect(mayPersist({ attempted: false, expected: 0, opened: 0 })).toBe(false);
+  });
+
+  it('arms for a patch that had nothing saved', () => {
+    expect(mayPersist({ attempted: true, expected: 0, opened: 0 })).toBe(true);
+  });
+
+  it('arms once a restore actually opened a projector', () => {
+    expect(mayPersist({ attempted: true, expected: 2, opened: 2 })).toBe(true);
+  });
+
+  it('REFUSES to arm when the popup blocker ate every window', () => {
+    // Arming here would write an empty set over the saved bindings and lose
+    // the rig on the next save.
+    expect(mayPersist({ attempted: true, expected: 2, opened: 0 })).toBe(false);
+  });
+
+  it('arms on a partial open — one blocked display must not veto the rest', () => {
+    expect(mayPersist({ attempted: true, expected: 2, opened: 1 })).toBe(true);
   });
 });
