@@ -170,7 +170,9 @@ test.describe('TV LIBRARIAN — tuned-stream audio reaches the destination @vide
     await page.getByTestId('tv-country-select').selectOption('US');
     await expect(page.getByTestId('tv-channel')).toHaveCount(1);
     await page.getByTestId('tv-channel').first().click();
-    await expect(page.getByTestId('tv-now-playing')).toContainText('Tone Channel');
+    // The station name lives on the picture's accessible name — see the note in
+    // tv-librarian.spec.ts; the painted readout is deleted on both surfaces.
+    await expect(page.getByTestId('tv-preview')).toHaveAttribute('aria-label', /Tone Channel/);
 
     // The committed clip is a short (~1.6s) VOD, whereas a real TV stream never
     // ends. Loop it so there's CONTINUOUS audio across the measurement window

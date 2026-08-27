@@ -89,6 +89,17 @@ export interface CameraStatus {
   /** How many video inputs `enumerateDevices()` returned. Zero disables the
    *  acquire affordance, exactly as it does on the card. */
   readonly deviceCount: number;
+  /**
+   * Set when the saved camera was re-found by NAME because its saved id had
+   * been regenerated, else null.
+   *
+   * ⚠ IT IS DELIBERATELY NOT `errorMsg`. A successful name rebind is an
+   * OUTCOME, not a failure — folding it into the error channel would paint a
+   * working camera as broken. It is separate so the surface can say "this
+   * reconnected, and here is how" without either lying about the state or
+   * re-pointing the patch silently.
+   */
+  readonly rebindNotice: string | null;
 }
 
 /** The commands a status consumer may invoke on the owning card. */

@@ -2762,9 +2762,16 @@ score param isPlaying 0..1 discrete default=0
 score param release 0.001..10 log default=0.3 unit=s
 score param sustain 0..1 linear default=0.7
 score expose playStop param=isPlaying kind=button
+score family score-accidental kind=cell prefix=score-tool-sharp
 score family score-dyn kind=cell prefix=score-dyn
+score family score-key kind=cell prefix=score-key-sig
+score family score-loop kind=cell prefix=score-tool-loop
 score family score-note kind=cell prefix=score-note
+score family score-pages kind=cell prefix=score-page
+score family score-slots kind=cell prefix=quicksave
+score family score-stop kind=cell prefix=score-stop-bar
 score family score-tie kind=cell prefix=score-tie
+score family score-value kind=cell prefix=score-tool
 scoreboard meta domain=video
 scoreboard in reset cv param=resetTrig
 scoreboard in score cv param=scoreTrig

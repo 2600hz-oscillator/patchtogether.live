@@ -1176,6 +1176,19 @@ describe('module-face lint — MOMENTARY pads (face.momentary)', () => {
     // timelorde's it rests at 0, so a fresh kria spawns STOPPED — which is
     // also what makes its VRT scenes deterministic for free.
     'kria:running',
+    // SCORE's `isPlaying` is the same TRANSPORT shape as the two above, and it
+    // is classified AT THE READ SITE rather than from the name.
+    // `pollTransportCv` reads it as a LEVEL every scheduler tick
+    // (`readParam('isPlaying', 0) >= 0.5`) and `shouldSequencerRun` gates the
+    // whole lookahead loop on it staying there, so a momentary pad would walk
+    // the playhead only while the mouse was held down. ⚠ The only EDGE anywhere
+    // near it is the 0→1 transition the engine watches to reset `tickIndex` —
+    // which is a consequence of the level changing, not an edge the control
+    // emits, and reading it the other way round is exactly the misclassification
+    // this list exists to force a decision about. It rests at 0, so a fresh
+    // score spawns STOPPED, which is also what makes its VRT scenes
+    // deterministic without a freeze seam.
+    'score:isPlaying',
     // WAVESCULPT `unison` and `chord_mode`, 2026-08-24. The two 0/1 switches in
     // the VOICING band: stack the four voices onto one pitch, and read every
     // voice's pitch from voice 1 to build a chord.

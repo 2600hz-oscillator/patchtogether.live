@@ -22,7 +22,7 @@ const DEVICE_PATH = fileURLToPath(
 );
 
 function status(over: Partial<CameraStatus> = {}): CameraStatus {
-  return { state: 'idle', errorMsg: null, deviceCount: 1, ...over };
+  return { state: 'idle', errorMsg: null, deviceCount: 1, rebindNotice: null, ...over };
 }
 
 describe('camera-status-registry — publish / read', () => {
