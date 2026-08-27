@@ -1828,17 +1828,23 @@
        must reach WITHOUT expanding: cameraInput's device picker, capture lamp
        and acquire gesture.
 
-       ⚠ `view !== 'dock-full'` because the DOCK already has `fullViewBody`,
-       which carries the same controls at full width. Rendering both would put
-       two live pickers on screen for one node — and, since a faced module's
-       lane tile and its dock full view can be open AT THE SAME TIME, two
-       elements behind every one of that surface's testids. The two slots are
-       counterparts, never siblings.
+       ⚠ GATED ON `!extBody`, NOT on the view. The DOCK already paints
+       `fullViewBody`, which carries the same controls at full width; rendering
+       both would put two live pickers on screen for one node — and, since a
+       faced module's lane tile and its dock full view can be open AT THE SAME
+       TIME, two elements behind every one of that surface's testids. The two
+       slots are counterparts, never siblings.
+
+       Saying it as "wherever the full-view body is NOT painting" is the honest
+       form of that invariant, and it follows `dockFullViewHeadPlan` if the dock
+       gating ever moves. A raw `view !== 'dock-full'` here would ALSO be a
+       drawer falling into the lane branch — the exact class
+       `module-shell-drawer-view` refuses (#1739), and it caught this.
 
        It sits BELOW the param bands and ABOVE the jack rail deliberately: it is
        module state, not patching, and the rail must stay the last thing in the
        tile so the cable surface is always in the same place. -->
-  {#if view !== 'dock-full' && ext?.tileBody}
+  {#if !extBody && ext?.tileBody}
     {@const ExtTileBody = ext.tileBody}
     <ExtTileBody nodeId={id} />
   {/if}

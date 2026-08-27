@@ -116,7 +116,14 @@ describe('shell-extensions registry lint (#1512)', () => {
     expect(missing).toEqual([]);
   });
 
-  it('every loaded extension exports only known, WIRED slots', async () => {
+  // ⚠ EXPLICIT BUDGET, AND IT IS ABOUT COMPILE COST, NOT THE ASSERTION. This is
+  // the only test here that dynamically imports EVERY extension module, so it
+  // pays for compiling each one's Svelte component graph — a cost that grows
+  // with the roster, not with what is being checked. Measured 2026-08-27: 2.2s
+  // warm before cameraInput's tileBody, and a 5007ms COLD-CACHE timeout against
+  // the 5s default right after adding it. That is a slow test, not a flaky one,
+  // and CI is colder than a dev box.
+  it('every loaded extension exports only known, WIRED slots', { timeout: 30_000 }, async () => {
     const bad: string[] = [];
     for (const id of shellExtensionIds()) {
       const ext = await loadShellExtension(id);
@@ -134,7 +141,7 @@ describe('shell-extensions registry lint (#1512)', () => {
     expect(bad).toEqual([]);
   });
 
-  it('the tileBody site is gated OFF the dock full view, so it never doubles fullViewBody', () => {
+  it('the tileBody site is gated on !extBody, so it never doubles fullViewBody', () => {
     // A faced module's LANE TILE and its DOCK FULL VIEW can be on screen at the
     // same time. `fullViewBody` and `tileBody` are counterparts carrying the
     // same controls at two sizes — cameraInput's picker, lamp and acquire — so
@@ -145,8 +152,11 @@ describe('shell-extensions registry lint (#1512)', () => {
       MODULE_SHELL_SRC.indexOf('ext?.tileBody') - 200,
       MODULE_SHELL_SRC.indexOf('ext?.tileBody') + 40,
     );
-    expect(site, "tileBody's render site must be gated on view !== 'dock-full'")
-      .toMatch(/view\s*!==\s*'dock-full'\s*&&\s*ext\?\.tileBody/);
+    // Stated as "wherever the full-view body is NOT painting" rather than as a
+    // view comparison: a raw `view !== 'dock-full'` is a drawer falling into the
+    // lane branch, which `module-shell-drawer-view` refuses (#1739).
+    expect(site, "tileBody's render site must be gated on !extBody")
+      .toMatch(/!extBody\s*&&\s*ext\?\.tileBody/);
   });
 
   it('WIRED_SHELL_EXTENSION_SLOTS is anchored to ModuleShell source, both directions', () => {
