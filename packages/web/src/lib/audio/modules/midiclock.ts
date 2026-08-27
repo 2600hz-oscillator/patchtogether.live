@@ -216,6 +216,18 @@ export interface MidiclockData {
   divisor?: ClockDivisor;
   /** Restored on reconnect so the user doesn't have to re-pick. */
   lastDeviceId: string | null;
+  /**
+   * The NAME of that device, remembered so a load can still find the hardware
+   * when the id no longer names anything.
+   *
+   * ⚠ `lastDeviceId` is the `MIDIInput`/`MIDIOutput.id`, which the Web MIDI spec
+   * leaves implementation-defined — `performance-bundle.ts` calls it "unstable"
+   * in as many words. It is the fast, exact path on the same machine and the
+   * session it was saved in; the name is what survives everything else. Absent
+   * on patches written before this existed, which resolve by id alone exactly as
+   * they did.
+   */
+  lastDeviceName?: string;
 }
 
 export const DEFAULT_DATA: MidiclockData = {
