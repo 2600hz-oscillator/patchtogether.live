@@ -156,6 +156,23 @@ export function resolveDevice(
   return NO_MATCH;
 }
 
+/**
+ * This session's NAME for a device id, or null when it is unknown or blank.
+ *
+ * The half every surface has to write down at PICK time. A blank name is
+ * returned as null rather than '' so it can never be persisted: an empty name
+ * matches nothing by design (see `resolveDevice`), and storing one would be a
+ * fallback that looks present and does nothing.
+ */
+export function nameOfDevice(
+  id: string | null | undefined,
+  devices: readonly ConnectedDevice[],
+): string | null {
+  if (!id) return null;
+  const found = devices.find((d) => d.id === id);
+  return found && found.name !== '' ? found.name : null;
+}
+
 /** One saved binding in a set resolution — the caller's key plus what it saved. */
 export interface SavedDeviceEntry extends SavedDevice {
   /** Caller-chosen key (a node id). Returned as the map key. */
