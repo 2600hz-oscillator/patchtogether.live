@@ -434,7 +434,21 @@
   role="presentation"
 >
   <!-- NEARLY BORDERLESS: a 1 px domain rule and a slim header that is the drag
-       handle. Everything else is picture. -->
+       handle. Everything else is picture.
+
+       ⚠ EVERY CONTROL IN THIS BAR MUST STOP `pointerdown`, NOT JUST `click`
+       (#2237). The bar IS the drag handle, and `onDragStart` calls
+       `preventDefault()` — which per the Pointer Events spec suppresses the
+       COMPATIBILITY MOUSE EVENTS that follow, `click` among them. A button that
+       only stopped propagation on `click` therefore never received one: the
+       re-attach button did nothing at all, and the panel could not be dismissed
+       from itself. Stopping `pointerdown` at the button keeps the gesture from
+       ever reaching the bar, so the click survives.
+
+       It is invisible from the code: the handler, the prop and the mutation
+       were all wired correctly and none of them ran. The context-menu route to
+       the same function worked, which is what makes this look like a write bug
+       and is why only clicking the button can catch it. -->
   <div
     class="dd-bar"
     data-testid="detached-display-bar"
@@ -447,6 +461,7 @@
       class="dd-btn"
       data-testid="detached-display-reattach"
       title="re-attach this display to its card"
+      onpointerdown={(e) => e.stopPropagation()}
       onclick={(e) => { e.stopPropagation(); onreattach(); }}
     >re-attach</button>
   </div>
