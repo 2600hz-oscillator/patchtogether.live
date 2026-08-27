@@ -247,3 +247,33 @@ describe('createFullscreen — permission denied', () => {
     expect(calls.at(-1)).toBeUndefined();
   });
 });
+
+describe('createFullscreen — persistable descriptor', () => {
+  it('carries a fingerprint per screen, so a save can re-find it later', async () => {
+    installWindow(() =>
+      Promise.resolve(
+        fakeScreenDetails([
+          {
+            label: 'Built-in Retina Display', isPrimary: true, isInternal: true,
+            width: 1512, height: 982, devicePixelRatio: 2, left: 0, top: 0,
+          },
+          {
+            // The owner's real second display reports NO label — the descriptor
+            // must record that faithfully rather than substituting the menu's
+            // "Display 2" placeholder, which would match nothing on reload.
+            label: '', isPrimary: false, isInternal: false,
+            width: 1920, height: 1080, devicePixelRatio: 1, left: 1512, top: 0,
+          },
+        ] as unknown as FakeScreen[],
+      ),
+      ),
+    );
+    const fs = createFullscreen();
+    await fs.loadScreens();
+    expect(fs.availableScreens.map((s) => s.descriptor)).toEqual([
+      { label: 'Built-in Retina Display', isInternal: true, width: 1512, height: 982, dpr: 2, left: 0, top: 0 },
+      { label: '', isInternal: false, width: 1920, height: 1080, dpr: 1, left: 1512, top: 0 },
+    ]);
+    expect(fs.availableScreens[1].label).toBe('Display 2');
+  });
+});

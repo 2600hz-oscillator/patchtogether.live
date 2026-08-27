@@ -32,6 +32,8 @@
 // exactly as before: plain element.requestFullscreen() on the current
 // display, byte-identical to the prior implementation.
 
+import { describeScreen, type ScreenDescriptor } from './screen-identity';
+
 /** Vendored shape of the prefixed fullscreen API (older WebKit). The
  *  standard API covers modern browsers; these are defensive fallbacks. */
 interface FullscreenElementExt extends HTMLElement {
@@ -49,6 +51,12 @@ interface FullscreenElementExt extends HTMLElement {
 interface ScreenDetailedLike {
   readonly label?: string;
   readonly isPrimary?: boolean;
+  readonly isInternal?: boolean;
+  readonly width?: number;
+  readonly height?: number;
+  readonly devicePixelRatio?: number;
+  readonly left?: number;
+  readonly top?: number;
   // Working-area geometry (the screen minus OS chrome/taskbar). Present on
   // real ScreenDetailed objects; used to POSITION a present popup onto the
   // target display. Optional so a stale / partial stub never throws.
@@ -81,6 +89,9 @@ export interface AvailableScreen {
   readonly id: string;
   readonly label: string;
   readonly isPrimary: boolean;
+  /** Fingerprint used to re-find this display in a later session. `id` is
+   *  derived from array position and cannot survive a reload (#2231). */
+  readonly descriptor: ScreenDescriptor;
 }
 interface FullscreenDocumentExt extends Document {
   webkitExitFullscreen?: () => Promise<void> | void;
@@ -189,7 +200,7 @@ export function createFullscreen(): FullscreenController {
       const id = isPrimary ? 'primary' : `display-${i}`;
       const label = s.label && s.label.length > 0 ? s.label : `Display ${i + 1}`;
       idToScreen.set(id, s);
-      next.push({ id, label, isPrimary });
+      next.push({ id, label, isPrimary, descriptor: describeScreen(s) });
     });
     // Only surface a multi-display choice when there's genuinely more than
     // one screen; a lone screen keeps the single-item menu (byte-identical
