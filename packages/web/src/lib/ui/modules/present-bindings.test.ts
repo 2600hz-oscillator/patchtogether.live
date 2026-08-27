@@ -6,6 +6,7 @@ import {
   mayPersist,
   planRestore,
   readPresentBindings,
+  readPresentBindingsFromUpdate,
   rigMatchesSaved,
   writePresentBindings,
   type LiveScreen,
@@ -217,5 +218,34 @@ describe('canDescribeBindings', () => {
 
   it('allows a normal write', () => {
     expect(canDescribeBindings([{ nodeId: 'out-a', screenId: 'display-1' }], RIG)).toBe(true);
+  });
+});
+
+describe('readPresentBindingsFromUpdate', () => {
+  const saved: PresentBinding[] = [{ nodeId: 'workflow-videoOut', screen: UNLABELLED }];
+
+  function envelopeUpdate(bindings: PresentBinding[]): string {
+    const doc = new Y.Doc();
+    writePresentBindings(doc, bindings);
+    return Buffer.from(Y.encodeStateAsUpdate(doc)).toString('base64');
+  }
+
+  it('reads bindings the live doc will never see', () => {
+    // loadEnvelopeIntoStore applies the envelope to a THROWAWAY doc and copies
+    // only nodes + edges across, so the live doc's settings map still belongs
+    // to the previous patch. This is the owner's sc3ptperf.zip case: a correct
+    // binding in the file, and "nothing saved" on load.
+    expect(readPresentBindingsFromUpdate(envelopeUpdate(saved))).toEqual(saved);
+  });
+
+  it('returns [] for an envelope saved before the feature existed', () => {
+    const doc = new Y.Doc();
+    doc.getMap('nodes').set('n1', 'x');
+    const update = Buffer.from(Y.encodeStateAsUpdate(doc)).toString('base64');
+    expect(readPresentBindingsFromUpdate(update)).toEqual([]);
+  });
+
+  it('returns [] rather than throwing on a corrupt update', () => {
+    expect(readPresentBindingsFromUpdate('bm90LWEteWpzLXVwZGF0ZQ==')).toEqual([]);
   });
 });

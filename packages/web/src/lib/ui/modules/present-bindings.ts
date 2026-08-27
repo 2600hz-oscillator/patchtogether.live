@@ -150,3 +150,26 @@ export function canDescribeBindings(
 ): boolean {
   return pairs.length === 0 || live.length > 0;
 }
+
+/**
+ * Read bindings out of a saved envelope rather than the live doc.
+ *
+ * `loadEnvelopeIntoStore` materialises the envelope in a THROWAWAY doc, lifts
+ * `nodes`, `edges` and `videoAspect` off it, and writes only nodes and edges
+ * into the live doc — the settings map never lands. `videoAspect` survives only
+ * because it is hand-carried on LoadResult. So a load path has to read its
+ * bindings from the envelope it is holding; reading the live doc finds the
+ * PREVIOUS patch's settings, which for a fresh rack is nothing at all.
+ */
+export function readPresentBindingsFromUpdate(base64Update: string): PresentBinding[] {
+  const binary = atob(base64Update);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  const doc = new Y.Doc();
+  try {
+    Y.applyUpdate(doc, bytes);
+  } catch {
+    return [];
+  }
+  return readPresentBindings(doc);
+}

@@ -244,6 +244,8 @@
     writePresentBindings,
     type LiveScreen,
     canDescribeBindings,
+    readPresentBindingsFromUpdate,
+    type PresentBinding,
   } from '$lib/ui/modules/present-bindings';
   import { nodeRecorder } from '$lib/ui/modules/node-recorder-registry.svelte';
   import { nodeSamsloop } from '$lib/ui/modules/node-samsloop-registry.svelte';
@@ -1318,14 +1320,18 @@
     presentWriteArmed = false;
   }
 
-  async function runPresentRestore(): Promise<void> {
+  /** `fromEnvelope` is REQUIRED on an envelope/zip load: the live doc's settings
+   *  map still holds the PREVIOUS patch's bindings (loadEnvelopeIntoStore copies
+   *  only nodes + edges across). The mount path passes nothing and reads the
+   *  live doc, which is correct there — that doc IS the patch. */
+  async function runPresentRestore(fromEnvelope?: PresentBinding[]): Promise<void> {
     presentWriteArmed = false;
     // ⚠ UNCONDITIONALLY, BEFORE THE EARLY RETURN. bindingsFromPairs resolves
     // screenIds through this controller's list, so skipping it on a patch with
     // nothing saved leaves the list empty and makes the FIRST save of every rig
     // write []. That was the bug the owner's zip caught.
     await presentScreens.loadScreens();
-    const saved = readPresentBindings(ydoc);
+    const saved = fromEnvelope ?? readPresentBindings(ydoc);
     const live = liveScreens();
     // ALWAYS trace, including the do-nothing paths. A silent early return makes
     // "no line in the console" mean both "old build" and "new build, nothing to
@@ -3559,7 +3565,7 @@
       const result = persistenceLoad(env, ydoc, patch);
       await reconciler?.reconcile();
       trace(`imported patch JSON (${result.nodesLoaded} nodes, ${result.edgesLoaded} edges)`);
-      await runPresentRestore();
+      await runPresentRestore(readPresentBindingsFromUpdate(env.update));
       if (result.diagnostics.length > 0) {
         for (const d of result.diagnostics) {
           console.warn(`[import-json] ${d.nodeId} (${d.type}): ${d.reason}`);
@@ -3847,7 +3853,7 @@
 
     // The loaded envelope brought its own presentBindings; the mount pass (if
     // it ran at all) resolved the PREVIOUS graph. #2230.
-    await runPresentRestore();
+    await runPresentRestore(readPresentBindingsFromUpdate(bundle.patch.update));
   }
 
   /** Restore each TWOTRACKS reel tape from the perf-zip's out-of-band 'audio'
