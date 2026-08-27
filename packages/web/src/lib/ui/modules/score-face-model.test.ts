@@ -8,11 +8,13 @@
 // face makes that nothing else in the repo can see:
 //
 //   1. THE SELECTION COUPLING. Four cells (ACC, DYN, TIE, END) read and write
-//      "…of the selected note". That is this design's one real hazard: a cell
-//      and the staff disagreeing about which note is on screen would be silent,
-//      plausible and wrong. Asserted in BOTH directions — selecting moves every
-//      one of them, and deselecting returns every one of them to its empty
-//      state.
+//      "…of the selected note" — and, with nothing selected, their own ARMED
+//      value. That is this design's one real hazard: a cell and the staff
+//      disagreeing about which note is on screen would be silent, plausible and
+//      wrong, and a cell that preferred its armed value over the selection would
+//      show the wrong thing for the note you are looking at. Asserted in BOTH
+//      directions — selecting moves every one of them, and deselecting returns
+//      every one of them to what it holds.
 //
 //   2. A DANGLING SELECTION IS NOT A SELECTION. `selectedNoteId` can name a note
 //      a collaborator just deleted. Every cell must read that as "nothing

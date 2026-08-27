@@ -63,8 +63,9 @@
 // ⚠ THE SELECTION AND THE NOTE VALUE LIVE ON THE NODE, AND THAT IS FORCED
 // ==========================================================================
 // A face cell's `value(node)` receives the node and nothing else
-// (`shell-cells.ts`), so state the mark cells must READ has literally nowhere
-// else to live: a component-local selection would make every one of them inert.
+// (`shell-cells.ts`), so state the mark cells must READ — the selection AND the
+// armed marks below — has literally nowhere else to live: component-local, a
+// selection would make every one of them inert.
 // The cost is real and is not hidden — `node.data` rides the Y.Doc, so two
 // collaborators editing one score share a selection cursor. kria ships the
 // identical construct with the identical property for its track/lane selection.

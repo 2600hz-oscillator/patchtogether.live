@@ -1271,7 +1271,8 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
       'signature, dynamic, tie, stop bar, loop, page count — is a generic selector or toggle over a ' +
       'roster the module already had. What made it look bespoke was that the CARD expressed all of ' +
       'them as fifteen MODAL toolbar buttons; the face expresses them as cells acting on a ' +
-      'SELECTED note, which is what makes them cell-shaped at all. Quicksave is a second panel, ' +
+      'SELECTED note — or, with nothing selected, arming what you write next — which is what ' +
+      'makes them cell-shaped at all. Quicksave is a second panel, ' +
       'and it had to be: four declared CV inputs (queue1..4) bottom out in `data.slots`, which ' +
       'until this PR only the legacy card could write.',
   },

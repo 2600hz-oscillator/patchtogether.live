@@ -26,8 +26,10 @@
   // face cell without four of five cells lying about a single-valued state. Here
   // a click on empty staff PLACES `data.noteValue`, a click on a note SELECTS
   // it, and a click on the SELECTED note DELETES it. The mark cells in the bands
-  // act on that selection. See `score-cell-actions.ts` for the full argument and
-  // `score-writes.ts` for the three live defects it closes as a consequence.
+  // act on that selection — and, with nothing selected, arm what the next click
+  // writes, which is what keeps them live on a score that has no notes yet. See
+  // `score-cell-actions.ts` for the full argument and `score-writes.ts` for the
+  // three live defects it closes as a consequence.
   //
   // ⚠ NO RESTING DERIVED TEXT. Everything this panel paints is the DOCUMENT —
   // the clef, the time signature, the key-signature glyphs, the noteheads, the
