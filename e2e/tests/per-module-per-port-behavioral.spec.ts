@@ -1818,6 +1818,90 @@ const BEHAVIORAL_PORT_TEST_SOURCE: Record<string, InputSource> = {
     outPort: 'phase180',
     sourceType: 'cv',
   },
+  // analogVco.pitch — UN-PARKED from FLAKE_PARK_1847 (#1847). The recorded CI
+  // first-attempt failure, verbatim (behavioral smoke, run 32136080530):
+  //
+  //   analogVco.pitch (type=pitch) -> sine (type=audio): NO observable delta
+  //   C(rms=0.706+/-0.008 zc=22+/-1 cent=263+/-2Hz  crest=1.42+/-0.02)
+  //   P(rms=0.707+/-0.006 zc=23+/-4 cent=259+/-25Hz crest=1.42+/-0.01)
+  //   Dmu(rms=0.000 peak=0.000 zc=1 cent=4Hz crest=0.00) | z=0.0sigma
+  //
+  // READ THE SPREADS, NOT THE MEANS. The patched arm's centroid scatter is
+  // +/-25 Hz against the control's +/-2 Hz — the pitch input was WORKING, it
+  // was moving the oscillator around. What it was NOT doing is moving the
+  // MEAN, and the mean is what the detector compares. That is the exact
+  // BUGGLES.smooth failure already written up on 'adsr.release' above: the
+  // generic cv/pitch source is a setTimeout-scheduled correlated random walk,
+  // so the perturbation's size and SIGN are a timing lottery. Here it is worse
+  // than for a scaler, because analogVco's pitch is V/OCT around 261.626 Hz
+  // (`261.626 * 2^(v/oct + tune/12 + ...)`, the def's own pitch-page hint): a
+  // zero-mean walk about 0 V is a zero-mean walk about the CONTROL's operating
+  // point, so Dmu(centroid) averages to nothing BY CONSTRUCTION and the row's
+  // verdict is decided by where the walk happened to sit during the 9 captures.
+  //
+  // Same remedy as every other entry here: a DETERMINISTIC full-scale DC. A
+  // square LFO at the 0.01 Hz rate floor is a 100 s period, so its first half
+  // cycle is a steady DC for the whole ~5 s observation — no PRNG, no phase
+  // lottery. `phase0` is the POSITIVE half (measured +1 V at t=0 in the
+  // adsr.release calibration), and +1 V on a V/oct input is exactly one octave:
+  // 261.6 Hz -> 523.3 Hz, i.e. the centroid DOUBLES and the zero-crossing count
+  // doubles with it. One-directional, so nothing cancels in the mean.
+  'analogVco.pitch': {
+    node: {
+      id: 'up-pitch-lfosq',
+      type: 'lfo',
+      position: { x: 60, y: 60 },
+      domain: 'audio',
+      params: { rate: 0.01, shape: 2, depth: 0.5 },
+    },
+    outPort: 'phase0',
+    sourceType: 'cv',
+  },
+  // lfo.depth_cv — UN-PARKED from FLAKE_PARK_1847 (#1847). The recorded CI
+  // first-attempt failure, verbatim (behavioral smoke, runs 32136080530 and
+  // 32083832713):
+  //
+  //   lfo.depth_cv (type=cv) -> phase0 (type=cv): NO observable delta
+  //   C(rms=0.212+/-0.107 zc=0+/-0 cent=89+/-20Hz crest=1.73+/-0.72)
+  //   P(rms=0.208+/-0.112 zc=0+/-0 cent=94+/-38Hz crest=1.73+/-0.75)
+  //   Dmu(rms=0.004 peak=0.005 zc=0 cent=5Hz crest=0.01) | z=0.0sigma
+  //
+  // TWO independent defects, and BOTH sides of the comparison carry one:
+  //
+  //  1. THE STIMULUS is the same BUGGLES.smooth random walk as above. Over the
+  //     observation it wanders only about +/-0.15 V (the figure measured on
+  //     'adsr.release'), and depth_cv is documented as "+/-1 sweeps depth across
+  //     HALF its 0-1 range" — so the walk moves depth by at most +/-0.075 around
+  //     the 0.5 unity default, in a random direction. A sub-8 % amplitude nudge.
+  //
+  //  2. THE OBSERVABLE's own null is enormous, which no stimulus can fix. The
+  //     SUT is an LFO at its default rate of 1 Hz and the scope sink reads a
+  //     50 ms window: that is 1/20 of a cycle, so each capture is a near-DC
+  //     sample of a slow wave at whatever phase it lands on. The control arm's
+  //     OWN scatter is +/-0.107 rms on a mean of 0.212 — FIFTY PERCENT relative
+  //     — and the row passes only when its delta clears that scatter. This half
+  //     is why lfo is the most-observed park in the census (14 hits): a wide
+  //     null makes every verdict a coin flip regardless of the input.
+  //
+  // Fixing only (1) would leave a ~2 sigma row. Both are fixed:
+  //   * the stimulus becomes the deterministic 0.01 Hz square DC used
+  //     throughout this map, on `phase180` = the NEGATIVE half (-1 V), which
+  //     drives depth 0.5 -> 0.0 = "still (flat)" per the def's own depth doc.
+  //     The patched tap goes to a FLAT LINE. One-directional and total.
+  //   * BEHAVIORAL_PORT_PARAMS['lfo.depth_cv'] pins the SUT's own rate high so
+  //     the 50 ms window contains whole cycles instead of a phase sample, which
+  //     collapses the control arm's scatter. See that entry.
+  'lfo.depth_cv': {
+    node: {
+      id: 'up-depth-lfosq',
+      type: 'lfo',
+      position: { x: 60, y: 60 },
+      domain: 'audio',
+      params: { rate: 0.01, shape: 2, depth: 0.5 },
+    },
+    outPort: 'phase180',
+    sourceType: 'cv',
+  },
   // ANALOGLOGICMATHS a / b / attA_cv / attB_cv — all four for the same reason,
   // and the reason is the one already written up on 'adsr.release' above: the
   // generic cv test source is BUGGLES.smooth, a setTimeout-scheduled random
@@ -2298,6 +2382,18 @@ const BEHAVIORAL_PORT_PARAMS: Record<string, Record<string, number>> = {
   // 5× stable). Keeping fold=0 module-wide leaves the weak pitch/cutoff_cv
   // centroid deltas undiluted by the folder's harmonic thicket.
   'tidyVco.sym_cv': { fold: 0.5 },
+  // lfo.depth_cv — STABILISE THE NULL, not the signal. At the shipped default
+  // rate of 1 Hz the scope's 50 ms window is 1/20 of a cycle, so every capture
+  // is a phase sample of a slow wave and the CONTROL arm's own rms scatter was
+  // +/-0.107 on a mean of 0.212 (see the measured row on the
+  // BEHAVIORAL_PORT_TEST_SOURCE entry). 40 Hz puts TWO whole cycles inside the
+  // same window, so each capture measures the wave's amplitude rather than its
+  // phase. This changes what the MEASUREMENT sees, never what the port does:
+  // depth_cv still scales the same amplitude axis, and both arms get the same
+  // rate, so it cannot manufacture a delta — it only stops the null from
+  // swallowing one. `shape: 0` (sine) keeps the tap a clean single-frequency
+  // wave so rms is a pure amplitude readout.
+  'lfo.depth_cv': { rate: 40, shape: 0 },
   // tomtom.tune_cv — the module-wide baseline is tone/noise 0.2 (broadband
   // breath dilutes the pitch centroid) + bend_amt 0. tune_cv sweeps the TUNE
   // knob (2 oct/V, 60–400 Hz). Strip TONE + NOISE for THIS row so the voice is
@@ -3844,26 +3940,34 @@ test.describe.configure({ mode: 'parallel' });
 // analysis further down this file: a race against the async wavetable load in the
 // TEST SETUP, not a budget). That note is the shape a root cause should take here.
 //
-// ⚠⚠ TWO OF THESE ARE IN THE REQUIRED behavioral-smoke SUBSET: `analogVco` and
-// `lfo`. That job's grep in ci.yml is `\b(adsr|analogVco|filter|lfo|noise|
-// stereovca|vca): each declared`, and `noise` is a known-dead alternative, so
-// the subset resolves to SIX modules — parking these two leaves it running
-// FOUR. behavioral-smoke is a REQUIRED pre-merge check with NO JSON audit step,
-// so the two skips surface NOWHERE: the lane stays green and nothing says a
-// third of the core signal-path behavioral coverage stopped running.
-// packages/web/src/lib/dev/behavioral-smoke-subset.test.ts cannot catch it
-// either — it pins which rows the grep SELECTS, never whether they EXECUTE, and
-// a parked row still contributes its title. That blind spot is now stated in
-// that file's scope note.
-// ⚠ So these two are the highest-priority un-parks in this map: every other
-// entry costs coverage the full lane already lost when it was deleted, but
-// these two cost coverage a REQUIRED lane still claims to provide.
+// ⚠⚠ NOTHING IN THIS MAP IS IN THE REQUIRED behavioral-smoke SUBSET ANY MORE,
+// and keeping it that way is the one hard constraint on adding to it. That
+// job's grep in ci.yml is `\b(adsr|analogVco|filter|lfo|noise|stereovca|vca):
+// each declared`, and `noise` is a known-dead alternative, so the subset
+// resolves to SIX modules. `analogVco` and `lfo` were TWO of those six and were
+// parked here, which left a REQUIRED pre-merge check silently executing FOUR:
+// a recovered flake and a skipped row look identical from a green lane, and
+// packages/web/src/lib/dev/behavioral-smoke-subset.test.ts cannot see the
+// difference either — it pins which rows the grep SELECTS, never whether they
+// EXECUTE, and a parked row still contributes its title.
+// Both are now root-caused and running (see the note at the head of the map).
+// ⚠ So: parking a module that the ci.yml grep selects means a required lane
+// claims coverage it does not provide. Root-cause it instead.
 //
 // The value is the report-row reason string; keep the `FLAKE-PARK #1847` prefix,
 // which is what scripts/e2e-skip-budget.mjs names.
 const FLAKE_PARK_1847: Record<string, string> = {
-  analogVco:
-    'FLAKE-PARK #1847 — nondeterministic on CI: 1 recovered-on-retry observation in the 96 h census to 2026-08-18; parked until root-caused',
+  // ⚠ `analogVco` and `lfo` ARE NO LONGER HERE — they were the two entries in
+  // the REQUIRED behavioral-smoke subset, and both are now ROOT-CAUSED AND
+  // RUNNING. Both were the SAME defect wearing two coats: the sweep's generic
+  // cv/pitch stimulus is BUGGLES.smooth, a setTimeout-scheduled random walk, so
+  // the perturbation's size and sign were a lottery — and for `lfo` the
+  // OBSERVABLE was a 1 Hz wave read through a 50 ms scope window, whose own
+  // null scatter was 50 % of its mean. Each now has a deterministic full-scale
+  // DC stimulus (BEHAVIORAL_PORT_TEST_SOURCE) and, for lfo, a stabilised
+  // observation window (BEHAVIORAL_PORT_PARAMS) — the verbatim CI failure rows
+  // and the arithmetic are on those entries. Neither was a timing race in the
+  // module.
   clap: 'FLAKE-PARK #1847 — nondeterministic on CI: 2 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused',
   cloudseed:
     'FLAKE-PARK #1847 — nondeterministic on CI: 2 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused',
@@ -3872,7 +3976,6 @@ const FLAKE_PARK_1847: Record<string, string> = {
   cube: 'FLAKE-PARK #1847 — nondeterministic on CI: 2 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused',
   flipper:
     'FLAKE-PARK #1847 — nondeterministic on CI: 5 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused',
-  lfo: 'FLAKE-PARK #1847 — nondeterministic on CI: 14 recovered-on-retry observations across 13 SHAs / 7 branches in the 96 h census to 2026-08-18; parked until root-caused',
   lines:
     'FLAKE-PARK #1847 — nondeterministic on CI: 5 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused',
   moog911:
