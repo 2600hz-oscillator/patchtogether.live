@@ -319,17 +319,19 @@ export const scoreDef: AudioModuleDef = {
         label: 'score',
         hint:
           'click an empty staff position to write a note of the current VALUE, click a note to ' +
-          'select it, click the selected note again to delete it. ACC and KEY spell what you ' +
-          'wrote: KEY is the bulk default and ACC overrides it on the one note you selected.',
+          'select it, click the selected note again to delete it. KEY spells every note that has ' +
+          'no accidental of its own; ACC overrides it — on the selected note, or, with nothing ' +
+          'selected, on the notes you write next.',
         controls: ['score-note-{n}', 'score-value-{n}', 'score-accidental-{n}', 'score-key-{n}'],
       },
       {
         id: 'marks',
         label: 'marks',
         hint:
-          'everything here acts on the SELECTED note, so there is no tool to arm and no mode to ' +
-          'be in. END says where the piece stops and LOOP says what happens there — one decision ' +
-          'in two controls, which is why they are clustered.',
+          'these act on the SELECTED note — and with nothing selected they arm what you write ' +
+          'next, so a mark is one control either way rather than a mode you have to remember ' +
+          'being in. END says where the piece stops and LOOP says what happens there — one ' +
+          'decision in two controls, which is why they are clustered.',
         controls: ['score-dyn-{n}', 'score-tie-{n}', 'score-stop-{n}', 'score-loop-{n}'],
         clusters: [{ label: 'ending', controls: ['score-stop-{n}', 'score-loop-{n}'] }],
       },

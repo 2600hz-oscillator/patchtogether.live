@@ -4993,14 +4993,22 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // two pictures.
   //
   // ⚠ THE FACE IS NOT THE CARD WITH A NEW SKIN. The card is MODAL: fifteen
-  // toolbar buttons arm fifteen tools and the staff interprets a click. The
-  // face SELECTS instead, and that is forced rather than chosen — fifteen
-  // mutually-exclusive arming controls drawn as cells would be five controls
-  // claiming one single-valued state. Three live defects close as a
+  // toolbar buttons arm fifteen TOOLS and the staff then interprets a click
+  // differently in each. The face SELECTS instead, and that is forced rather
+  // than chosen — fifteen mutually-exclusive arming controls drawn as cells
+  // would be five controls claiming one single-valued state, so four of the
+  // five would be lying whatever they showed. Three live defects close as a
   // CONSEQUENCE: a note becomes deletable by pointer at all, a tie becomes
   // removable at all, and the def's own `docs.controls` stops promising a
   // select/remove the module did not have. `?shell=legacy` still renders the
   // modal card verbatim and `score.spec.ts` still gates it.
+  //
+  // ⚠ AND WITH NOTHING SELECTED THE MARK CELLS ARM THE NEXT NOTE, which is one
+  // control with one value rather than a second mode — the shape every notation
+  // editor has. It is also what keeps them LIVE: cells that acted ONLY on a
+  // selection are inert on a fresh score, because `notes: []` means there is
+  // nothing to select, and `faces-parity` drives every cell on a fresh spawn and
+  // caught exactly that. The fix belonged in the design, not in an exemption.
   //
   // ⚠ FOUR DECLARED INPUT PORTS GATED THIS PROMOTION. `queue1_cv … queue4_cv`
   // resolve through `data.slots`, which is written by exactly one widget in the
