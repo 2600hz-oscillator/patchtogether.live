@@ -18,6 +18,7 @@
 
 import { test, expect } from './_fixtures';
 import { spawnPatch } from './_helpers';
+import { waitFrames } from '../_helpers/frames';
 
 interface PixelStats {
   mean: number;
@@ -53,6 +54,26 @@ async function readCanvasStats(
 
 test.describe('RESHAPER + SHAPEDRAMPS integration', () => {
   test('shaped wiring renders a non-uniform deformed coordinate field', async ({ page, rack, errorWatch }) => {
+    // ─── BUDGET ──────────────────────────────────────────────────────────
+    // This spec spawns three-to-four REAL WebGL video modules and samples their
+    // on-card canvases, in the parallel software-rendered shard matrix. Its
+    // committed CI cost is 38.4 s for the file's TWO live tests
+    // (e2e/e2e-timings.generated.json) — ~19 s each against a 30 s default, one
+    // of the thinnest margins in the suite — and it declared no budget of its
+    // own while its sibling video specs do (videovarispeed-switch.spec.ts
+    // scales its ceiling; unpatch-patch-point.spec.ts uses `test.slow()`).
+    // MEASURED: `Test timeout of 32501ms exceeded` (CI run 33015637717) and
+    // `32133ms` (run 33018824511), both at this file — the whole test burning
+    // its budget, not an assertion failing. 32501 = the 30 000 ms default plus
+    // the rack fixture's measured setup credit (e2e/tests/_setup-credit.ts).
+    //
+    // `test.slow()` (×3 → 90 s) rather than a hand-picked constant: it scales
+    // with the suite default instead of pinning a second magic number, and a
+    // ceiling costs ZERO wall time on the happy path — a green run still
+    // finishes in ~19 s. It is NOT a fix for a slow test; it is the correct
+    // ceiling for a test whose measured cost is 64 % of the default one.
+    test.slow();
+
     await spawnPatch(
       page,
       [
@@ -73,8 +94,12 @@ test.describe('RESHAPER + SHAPEDRAMPS integration', () => {
 
     // Allow several rAF ticks before sampling. The shapedramps draw runs
     // first (no upstream deps) followed by RESHAPER in topo order, so a
-    // single frame is enough; we wait longer than that for CI stability.
-    await page.waitForTimeout(800);
+    // single frame is enough; six is margin. FRAMES, not ms: the video engine
+    // renders from ONE main-thread rAF loop (video/engine.ts `tick`), which is
+    // the same clock `waitFrames` counts, so this is six engine renders on a
+    // 60 fps GPU and six on CI's ~8 fps SwiftShader — `waitForTimeout(800)` was
+    // ~48 renders locally and ~6 on CI, i.e. two different assertions.
+    await waitFrames(page, 6);
 
     const stats = await readCanvasStats('canvas[data-testid="reshaper-canvas"]', page);
     expect(stats, 'RESHAPER canvas stats sample').not.toBeNull();
@@ -147,6 +172,11 @@ test.describe('RESHAPER + SHAPEDRAMPS integration', () => {
   });
 
   test('onboard mix1 crossfades two LINES into RESHAPER.x and reacts to mix1 knob', async ({ page, rack, errorWatch }) => {
+    // BUDGET: see the note on the shaped-wiring test above — same measured
+    // basis (38.4 s committed for two live tests against a 30 s default), and
+    // THIS is the test that tripped it on CI runs 33015637717 / 33018824511.
+    test.slow();
+
     // Two distinct LINES sources → SHAPEDRAMPS.mix1_a / mix1_b.
     // SHAPEDRAMPS.mix1_out → RESHAPER.x. Linear v_lin → RESHAPER.y so the
     // vertical axis is well-defined. LINES1 also drives RESHAPER.z (the
@@ -171,7 +201,8 @@ test.describe('RESHAPER + SHAPEDRAMPS integration', () => {
     await expect(page.locator('.svelte-flow__node-shapedramps'), 'SHAPEDRAMPS visible').toBeVisible();
     await expect(page.locator('.svelte-flow__node-reshaper'),    'RESHAPER visible').toBeVisible();
 
-    await page.waitForTimeout(800);
+    // Six engine renders — see the note in the shaped-wiring test above.
+    await waitFrames(page, 6);
 
     // RESHAPER renders something visible (non-flat).
     const stats0 = await readCanvasStats('canvas[data-testid="reshaper-canvas"]', page);
@@ -194,7 +225,10 @@ test.describe('RESHAPER + SHAPEDRAMPS integration', () => {
         if (target) target.params['mix1'] = 1.0;
       });
     });
-    await page.waitForTimeout(400);
+    // Four engine renders for the new mix1 to reach the shader and be drawn:
+    // the Y.Doc write lands in a microtask, the engine reads params at the top
+    // of its next `tick`, and RESHAPER draws after SHAPEDRAMPS in topo order.
+    await waitFrames(page, 4);
 
     const stats1 = await readCanvasStats('canvas[data-testid="reshaper-canvas"]', page);
     expect(stats1, 'RESHAPER stats at mix1=1').not.toBeNull();
