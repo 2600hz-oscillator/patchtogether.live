@@ -3332,6 +3332,51 @@ export const FACES = [
     // the lit-cell sets for the trig / note / octave states plus the
     // track-switch negative control.
   },
+  // ── SCORE — the third faced SEQUENCER, and the only NOTATION one ──────────
+  {
+    type: 'score',
+    // FIVE bands: score / marks / transport / envelope / slots. The staff is
+    // `face.hero.cell`, so `heroFacePlan` promotes it out of the `score` band —
+    // but that band still holds VALUE, ACC and KEY, so unlike cartesian's it
+    // does NOT disappear. Count the POST-hero bands, not the declared pages;
+    // here the two numbers happen to agree, and that is a coincidence worth
+    // saying out loud rather than a rule.
+    pages: 5,
+    // ⚠ DETERMINISTIC FOR FREE, LIKE KRIA AND FOR THE SAME REASON: `isPlaying`
+    // defaults to 0, so a fresh spawn is STOPPED. The one live thing on this
+    // face is the sounding-note highlight, an engine read per frame through the
+    // shared meter pump, and it never starts. There is no `Math.random()`
+    // anywhere in score's emit path at all. No freeze seam is needed and none
+    // is declared.
+    //
+    // ⚠ THE BRAVURA FONT IS ALREADY HANDLED, and this is the scene that most
+    // depends on it. `_fonts.ts` says so in its own words: `document.fonts.ready`
+    // "only tracks @font-face faces the document declares (just Bravura, for
+    // SCORE)". The SMuFL face is the one self-hosted font the app ships, so the
+    // clef, the time signature and every notehead are deterministic where the UI
+    // stack's fallbacks were not. ⚠ It is declared globally, and this scene now
+    // mounts the staff through a DIFFERENT component tree than the card
+    // baseline does — same @font-face, new consumer.
+    //
+    // ⚠ WHAT THIS BASELINE DOES **NOT** COVER, stated rather than assumed. A
+    // fresh score has `notes: []`, so the staff is four empty rows and the PNG
+    // is blind to note CONTENT — a notehead drawn at the wrong x would not move
+    // it. It is also nearly blind to the BANDS: `DockFullView` caps the pane at
+    // `min(60vh, 680px)` and the staff panel alone is ~374 px before its page
+    // nav, so most of the capture box is staff and the five section bands sit at
+    // or below the fold. That is the same blindness that left sixstrum's, dx7's
+    // and kickdrum's dock baselines pixel-identical through a complete band
+    // re-grouping. ⚠ A GREEN DOCK SCENE IS THEREFORE NOT EVIDENCE THAT A BAND
+    // CHANGE HERE IS A NO-OP — the band gate is `faceplate-platform.spec.ts`
+    // plus the pure `dock-row-plan` / `module-face-lint` units, and the `pages`
+    // number above, which fails BEFORE the pixel pin if a band is dropped.
+    //
+    // What it IS covered by instead: `score-face-model.test.ts` pins the ranked
+    // order, the hero, the band membership, every cell's read/write pair and the
+    // aria strings the removed numbers moved into; `score-face.spec.ts` drives
+    // the selection model, the tie removal, the non-destructive page shrink and
+    // the quicksave → queue_cv chain on the DEFAULT shell.
+  },
   // ── CARTESIAN — the second faced SEQUENCER, and the TYPED one ─────────────
   {
     type: 'cartesian',

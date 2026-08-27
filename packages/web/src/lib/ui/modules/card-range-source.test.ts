@@ -81,6 +81,7 @@ import { analogLogicMathsDef } from '$lib/audio/modules/analog-logic-maths';
 import { backdraftDef } from '$lib/video/modules/backdraft';
 import { bugglesDef } from '$lib/audio/modules/buggles';
 import { froggerDef } from '$lib/audio/modules/frogger';
+import { scoreDef } from '$lib/audio/modules/score';
 import { chromaconsoleDef } from '$lib/audio/modules/chromaconsole';
 import { cubeDef } from '$lib/audio/modules/cube';
 import { cloudsDef } from '$lib/audio/modules/clouds';
@@ -297,6 +298,15 @@ const RANGE_BOUND_CARDS: Readonly<Record<string, { params: readonly ParamDef[] }
   // module — and frogger sat outside this set, whose own stated scope is that
   // every card NOT in it is unchecked.
   'FroggerCard.svelte': froggerDef,
+  // Converted with its FACEPLATE (2026-08-26). UNBOUND-BUT-AGREEING, the
+  // ordinary case: five NeonFaders passing `min={30} max={300}` and three
+  // copies of `min={0.001} max={10}` as literals that happened to match
+  // `scoreDef`. Nothing held them there, and `score` is a module whose card
+  // stays a LIVE surface after promotion (`?shell=legacy`, which is where its
+  // whole 17-test e2e suite runs and where `midi-learn-note.spec.ts` binds its
+  // pad), so "the face is the real surface now" is not an argument for leaving
+  // it unchecked. Bound with `paramSpec` per id inside the fader loop.
+  'ScoreCard.svelte': scoreDef,
   // Converted with its FACEPLATE (2026-08-23). ⚠ ENROLLED WHILE NOTHING WAS
   // WRONG: all four of its knobs re-typed ranges that AGREED with the def, so
   // no value was ever clamped. The reason to convert is that the disagreement
@@ -700,6 +710,16 @@ const MAPPING_BOUND_CARDS: readonly string[] = [
   // it off the def removed the last unverifiable claim on the module's only
   // control. Value-identical: the def already declared `linear`.
   'FroggerCard.svelte',
+  // Enrolled with its FACEPLATE (2026-08-26), in ONE step: the five faders moved
+  // into an `{#each}` over the def's own param ids, so `label`, `curve` and the
+  // three range props all resolve through `paramSpec(scoreDef, id)` at once and
+  // there was never an intermediate state with numbers bound and `curve="log"`
+  // still typed. ⚠ THE CURVE CLAUSE IS NOT DECORATION HERE: four of these five
+  // params are `log`, and a card that re-typed `curve="linear"` on one of them
+  // would draw an ADSR time knob on the wrong law with every def-reading gate
+  // green — the same shape as the `discrete`-declared-but-`linear`-drawn cards
+  // CLAUDE.md names, in the direction that actually moves the pointer.
+  'ScoreCard.svelte',
   // Enrolled with its FACEPLATE (2026-08-20), and the anchor walked it here in
   // two steps rather than one — which is the ratchet being stricter than the
   // author, not a detour. Facing `colourofmagic` made the card read the preview
