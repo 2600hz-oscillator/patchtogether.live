@@ -12,6 +12,7 @@ import {
   resolveDevice,
   resolveDeviceSet,
   shouldRewriteSavedId,
+  resolveGamepadSlot,
   type ConnectedDevice,
 } from './device-rebind';
 
@@ -181,5 +182,68 @@ describe('shouldRewriteSavedId — the fallback heals itself', () => {
     // record of which device the patch wanted, so a later reconnect of that
     // exact device could never match it again.
     expect(shouldRewriteSavedId({ id: null, matchedBy: 'none', candidates: [] })).toBe(false);
+  });
+});
+
+describe('resolveGamepadSlot — ⚠ the rules are INVERTED, and that is the fix', () => {
+  const pad = (slot: number, id: string) => ({ slot, id });
+  const PS = '054c-05c4-Wireless Controller';
+  const XB = '045e-02fd-Xbox Wireless Controller';
+
+  it('1. the same model at the remembered slot — the quiet common case', () => {
+    const r = resolveGamepadSlot({ slot: 1, id: PS }, [pad(0, XB), pad(1, PS)]);
+    expect(r).toEqual({ slot: 1, matchedBy: 'id-at-slot' });
+  });
+
+  it('2. ⚠ THE BUG THIS FIXES: the pads came up in a different order', () => {
+    // The player pressed the Xbox pad first this time, so IT took slot 0 and the
+    // PlayStation pad landed in slot 1... except the node remembered slot 0.
+    // Keying off the slot alone silently hands this node the WRONG controller;
+    // following the id moves it.
+    const r = resolveGamepadSlot({ slot: 0, id: PS }, [pad(0, XB), pad(1, PS)]);
+    expect(r).toEqual({ slot: 1, matchedBy: 'id-elsewhere' });
+  });
+
+  it('2b. …and picks the LOWEST matching slot, independent of array order', () => {
+    const forward = resolveGamepadSlot({ slot: 3, id: PS }, [pad(1, PS), pad(2, PS)]);
+    const shuffled = resolveGamepadSlot({ slot: 3, id: PS }, [pad(2, PS), pad(1, PS)]);
+    expect(forward).toEqual({ slot: 1, matchedBy: 'id-elsewhere' });
+    expect(shuffled).toEqual(forward);
+  });
+
+  it('3. ⚠ an OLD patch with no saved id behaves EXACTLY as it does today', () => {
+    // The backward-compatibility contract: bind whatever is in the slot.
+    const r = resolveGamepadSlot({ slot: 1 }, [pad(0, XB), pad(1, PS)]);
+    expect(r).toEqual({ slot: 1, matchedBy: 'slot-only' });
+  });
+
+  it('3b. a DIFFERENT controller in the remembered slot is still bound', () => {
+    // The player swapped hardware. Refusing would leave the module dead with a
+    // pad plugged in, which is worse than binding the pad that is actually there.
+    const r = resolveGamepadSlot({ slot: 0, id: PS }, [pad(0, XB)]);
+    expect(r).toEqual({ slot: 0, matchedBy: 'slot-only' });
+  });
+
+  it('4. nothing connected at all → none', () => {
+    expect(resolveGamepadSlot({ slot: 0, id: PS }, [])).toEqual({ slot: null, matchedBy: 'none' });
+  });
+
+  it('⚠ TWO IDENTICAL PADS STAY PUT — `gamepad.id` is a MODEL string', () => {
+    // Two of the same controller are indistinguishable by id, so the ONLY thing
+    // keeping a two-pad rig stable is rule 1 preferring the remembered slot.
+    // Assert both nodes keep their own pad rather than both resolving to slot 0.
+    const pads = [pad(0, PS), pad(1, PS)];
+    expect(resolveGamepadSlot({ slot: 0, id: PS }, pads).slot).toBe(0);
+    expect(resolveGamepadSlot({ slot: 1, id: PS }, pads).slot).toBe(1);
+  });
+
+  it('⚠ NEGATIVE CONTROL: slot-only keying DOES pick the wrong pad', () => {
+    // The pre-fix behaviour, on the rule-2 fixture: reading `pads[slot]` blindly
+    // hands slot 0 to a node that wanted the PlayStation pad.
+    const pads = [pad(0, XB), pad(1, PS)];
+    const naive = pads.find((p) => p.slot === 0)!;
+    expect(naive.id).toBe(XB);
+    // …and the resolver disagrees, which is the whole assertion.
+    expect(resolveGamepadSlot({ slot: 0, id: PS }, pads).slot).toBe(1);
   });
 });

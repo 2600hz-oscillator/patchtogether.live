@@ -54,6 +54,8 @@ import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
 import type { ModuleFace, ParamDef, ParamOption } from '$lib/graph/types';
 import { patch as livePatch } from '$lib/graph/store';
+import { mutateNode } from '$lib/graph/mutate';
+import { resolveGamepadSlot, type ConnectedPad } from '$lib/graph/device-rebind';
 
 /** Stick deadzone. Xbox sticks (especially older ones) have notable
  *  drift; 0.08 swallows that without losing much usable range. After
@@ -1275,6 +1277,41 @@ export const gamepadDef: AudioModuleDef = {
       return undefined;
     }
 
+    /** The `gamepad.id` this node last successfully bound, off node.data.
+     *  Absent on a patch written before ids were persisted — those resolve by
+     *  slot alone, which is the behaviour they already had. */
+    function readSavedPadId(): string | null {
+      const data = livePatch.nodes[node.id]?.data as { gamepadId?: unknown } | undefined;
+      const v = data?.gamepadId;
+      return typeof v === 'string' && v !== '' ? v : null;
+    }
+
+    /**
+     * Persist the model string of the pad we are actually reading.
+     *
+     * ⚠ THIS IS A WRITE FROM THE POLL, WHICH THIS MODULE OTHERWISE REFUSES, so
+     * it is gated to the shape the header already permits ("on complete
+     * calibration — NEVER written per poll"). `persistedPadId` is a plain local,
+     * so the common case costs ONE string compare per poll and touches neither
+     * the proxy nor the Y.Doc. A write happens only when the bound controller's
+     * model actually changes — i.e. once per physical connect, not per frame.
+     *
+     * ⚠ AND IT HAS TO BE HERE RATHER THAN ON THE CARD. `gamepad` is promoted, so
+     * under the default shell no card is mounted: if this lived on the card, the
+     * id would never be written for exactly the players who never open the
+     * faceplate, and their fallback would have nothing to fall back to.
+     */
+    let persistedPadId: string | null = null;
+    function rememberPadId(padId: string): void {
+      if (padId === '' || padId === persistedPadId) return;
+      persistedPadId = padId;
+      if (readSavedPadId() === padId) return;
+      mutateNode(node.id, (live) => {
+        if (!live.data) live.data = {};
+        (live.data as Record<string, unknown>).gamepadId = padId;
+      });
+    }
+
     /** Read the live (synced) per-output remap overrides off node.data. Returns
      *  an empty record when none committed (all outputs default). */
     function readBindings(): RemapBindings {
@@ -1309,8 +1346,30 @@ export const gamepadDef: AudioModuleDef = {
         return;
       }
       const pads = navigator.getGamepads();
-      const slot = readPadIndex();
+
+      // ⚠ FOLLOW THE CONTROLLER, NOT THE SLOT. `padIndex` is a POSITION in
+      // `navigator.getGamepads()`, and that position is assigned by connection
+      // order — a pad does not even appear in the array until it is physically
+      // TOUCHED. So on a reload the slot a controller lands in is decided by
+      // which one the player pressed first, and reading `pads[padIndex]` blindly
+      // is how a two-pad rig silently swaps its controllers between sessions.
+      //
+      // `resolveGamepadSlot` prefers the remembered `gamepad.id` AT the
+      // remembered slot, then that id anywhere, and only then falls back to the
+      // raw slot — which is the pre-existing behaviour, and is what a patch with
+      // no saved id still gets.
+      const connected: ConnectedPad[] = [];
+      if (pads) {
+        for (let i = 0; i < pads.length; i++) {
+          const p = pads[i];
+          if (p) connected.push({ slot: i, id: p.id });
+        }
+      }
+      const savedSlot = readPadIndex();
+      const bound = resolveGamepadSlot({ slot: savedSlot, id: readSavedPadId() }, connected);
+      const slot = bound.slot ?? savedSlot;
       const pad = pads ? pads[slot] : null;
+      if (pad) rememberPadId(pad.id);
       if (!pad) {
         if (snapshot.connected) {
           // Just disconnected — zero all outputs so a downstream VCA

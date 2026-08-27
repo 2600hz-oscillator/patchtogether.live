@@ -221,3 +221,74 @@ export function resolveDeviceSet(
 export function shouldRewriteSavedId(r: DeviceRebind): boolean {
   return r.matchedBy === 'name-unique' || r.matchedBy === 'name-ambiguous';
 }
+
+// ── GAMEPADS — THE SAME IDEA WITH THE RULES THE OTHER WAY UP ────────────────
+//
+// ⚠ A GAMEPAD DOES NOT FIT `resolveDevice`, AND FORCING IT WOULD REPRODUCE THE
+// BUG. Cameras and MIDI ports save a genuine IDENTIFIER that is merely
+// regenerated sometimes, so "trust the id, fall back to the name" is right. A
+// gamepad node saves `padIndex` — a SLOT, 0..3 — which is not an identifier at
+// all: `navigator.getGamepads()` assigns it by connection order, and a pad does
+// not even appear in the array until it is physically TOUCHED. So the slot is
+// decided by which controller the player happened to press first, and trusting
+// it "exactly" is the whole defect.
+//
+// So the order INVERTS: identity first, position only as a tie-break.
+//
+//   1. ID AT THE REMEMBERED SLOT — the same model is where it was. The common
+//      case, and the one that must stay fast and silent.
+//   2. ID ELSEWHERE — the pads came up in a different order. Take the lowest
+//      slot carrying that id: deterministic, so a rack rebinds identically twice.
+//   3. SLOT ONLY — nothing carries the saved id (a different controller, or a
+//      patch saved before ids were persisted). Fall back to whatever is in the
+//      remembered slot, which is TODAY'S BEHAVIOUR verbatim.
+//   4. NONE — the slot is empty too.
+//
+// ⚠ `gamepad.id` IS A MODEL STRING, NOT AN INSTANCE ID —
+// "054c-05c4-Wireless Controller (STANDARD GAMEPAD Vendor: 054c Product: 05c4)".
+// Two identical controllers are INDISTINGUISHABLE by it. That is exactly why
+// rule 1 exists and comes first: with two identical pads, each node keeps the
+// slot it had, so the pair is stable even though neither can be told apart.
+
+/** One `navigator.getGamepads()` entry, flattened. `null` slots are omitted. */
+export interface ConnectedPad {
+  /** Its index in `navigator.getGamepads()`. */
+  readonly slot: number;
+  /** `gamepad.id` — a MODEL string, not an instance id. */
+  readonly id: string;
+}
+
+export type GamepadMatch = 'id-at-slot' | 'id-elsewhere' | 'slot-only' | 'none';
+
+export interface GamepadRebind {
+  /** The slot to read, or null when nothing is connected to bind. */
+  readonly slot: number | null;
+  readonly matchedBy: GamepadMatch;
+}
+
+/**
+ * Resolve which `navigator.getGamepads()` slot a saved gamepad node should read.
+ *
+ * `savedId` is the `gamepad.id` the node last saw (absent on patches written
+ * before it was persisted — those resolve by slot, exactly as they do today).
+ */
+export function resolveGamepadSlot(
+  saved: { readonly slot: number; readonly id?: string | null },
+  pads: readonly ConnectedPad[],
+): GamepadRebind {
+  if (saved.id) {
+    const atSlot = pads.find((p) => p.slot === saved.slot && p.id === saved.id);
+    if (atSlot) return { slot: atSlot.slot, matchedBy: 'id-at-slot' };
+
+    // Lowest slot wins, so the answer does not depend on array order.
+    const elsewhere = pads
+      .filter((p) => p.id === saved.id)
+      .sort((a, b) => a.slot - b.slot)[0];
+    if (elsewhere) return { slot: elsewhere.slot, matchedBy: 'id-elsewhere' };
+  }
+
+  const occupied = pads.find((p) => p.slot === saved.slot);
+  if (occupied) return { slot: occupied.slot, matchedBy: 'slot-only' };
+
+  return { slot: null, matchedBy: 'none' };
+}
