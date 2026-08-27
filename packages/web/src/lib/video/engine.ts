@@ -37,7 +37,7 @@ import type { Edge, ModuleNode } from '$lib/graph/types';
 import type { DomainEngine } from '$lib/audio/engine';
 import { getVideoModuleDef, type VideoModuleDef } from './module-registry';
 import { createWaveformRenderer, type WaveformRenderer } from './waveform-video';
-import { buildCvBridgeMapping, mapCvBridgeValue, type CvBridgeMapping } from './cv-bridge-map';
+import { buildCvBridgeMapping, cvBridgeKnobTracksBase, mapCvBridgeValue, type CvBridgeMapping } from './cv-bridge-map';
 import {
   followEnvelope,
   makeEnvelopeFollower,
@@ -1919,6 +1919,20 @@ void main() {
     for (const bridge of this.cvBridges.values()) {
       const handle = this.nodes.get(bridge.targetNodeId);
       if (!handle) continue;
+      // ⚠ RE-CENTRE ON THE LIVE MANUAL BASE (#2236). The mapping is built ONCE
+      // in addCvBridge, so its `knob` froze at whatever the fader read when the
+      // CABLE was made. Every tick then wrote `staleKnob + cv·halfSpan`, which
+      // overwrote the user's drag within a frame: a CV-driven fader could not be
+      // repositioned AT ALL, and snapped back to a spot unrelated to the stick.
+      // `baseParams` is the manual base by construction — `setParam` records it
+      // on every manual write — so it is the honest source for the centre, and a
+      // fresher one than the `meta.params` snapshot the mapping was built from.
+      if (bridge.mapping.scale && cvBridgeKnobTracksBase(bridge.mapping)) {
+        const base = this.baseParams.get(
+          this.paramKey(bridge.targetNodeId, bridge.mapping.targetParamId),
+        );
+        if (base !== undefined) bridge.mapping.scale.knob = base;
+      }
       bridge.analyser.getFloatTimeDomainData(bridge.buf);
       if (bridge.env) {
         // AUDIO source: envelope-follow the whole window (RMS → fast-attack /

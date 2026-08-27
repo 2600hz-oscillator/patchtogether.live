@@ -48,7 +48,14 @@ export interface CvBridgeMapping {
     /** The modulation centre (value cv=0 maps to), mirroring the audio path's
      *  knob. Normally the param's current stored value; for a `center: 'default'`
      *  hint (absolute-position params) it's the param's defaultValue so a cabled
-     *  input tracks the source directly regardless of any stale saved base. */
+     *  input tracks the source directly regardless of any stale saved base.
+     *
+     *  ⚠ MUTABLE, AND REFRESHED PER TICK BY THE ENGINE (#2236). Captured once at
+     *  addCvBridge, this froze the centre at whatever the fader read when the
+     *  CABLE was made: every later tick then wrote `staleKnob + cv·halfSpan`
+     *  over the user's drag, so a CV-driven fader could not be repositioned at
+     *  all — it snapped back to a position that bore no relation to the stick.
+     *  See `cvBridgeKnobTracksBase`. */
     knob: number;
   };
 }
@@ -104,4 +111,21 @@ export function mapCvBridgeValue(mapping: CvBridgeMapping, sample: number): numb
   if (!mapping.scale) return sample;
   const { hint, min, max, knob } = mapping.scale;
   return scaleCv(sample, knob, min, max, hint);
+}
+
+/**
+ * Does this mapping's centre track the param's live manual base?
+ *
+ * TRUE for the ordinary bias-knob metaphor (base + wobble): the centre is
+ * wherever the user last put the fader, so the engine refreshes it each tick
+ * from `baseParams`.
+ *
+ * FALSE for a `center: 'default'` hint. Those are ABSOLUTE-POSITION params — a
+ * joystick's X/Y — where a cabled input must track the source directly and a
+ * stored value must never offset it. Refreshing those would reintroduce exactly
+ * the stale-base bug that hint exists to prevent, so the distinction is load
+ * bearing in both directions.
+ */
+export function cvBridgeKnobTracksBase(mapping: CvBridgeMapping): boolean {
+  return !!mapping.scale && mapping.scale.hint.center !== 'default';
 }
