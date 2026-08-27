@@ -141,7 +141,10 @@ export function startPresent(args: StartPresentArgs): PresentSession | null {
     if (data?.type === 'present:fs-report') {
       // The sink cannot practically show its own console on a projector, so it
       // reports fullscreen outcomes here.
-      console.warn('[present] sink:', (ev.data as { detail?: string }).detail);
+      const detail = (ev.data as { detail?: string }).detail ?? '';
+      // A recovered retry is information; a give-up is a problem.
+      if (detail.startsWith('fullscreen entered')) console.info('[present] sink:', detail);
+      else console.warn('[present] sink:', detail);
       return;
     }
     if (data?.type === 'present:ready') {

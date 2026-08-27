@@ -93,16 +93,25 @@
    *  window keeps their exit — the loop is already finished by then. */
   async function goFullscreenPersistently(): Promise<void> {
     let last: string | null = null;
-    // ~6s. An F5 closes the PREVIOUS projector, and on macOS leaving a
-    // fullscreen Space is animated; a new request landing inside that animation
-    // is refused. 1.8s was not enough to outlast it.
+    // MEASURED on the owner's rig (Edge 151 / macOS, F5 with a projector
+    // attached): entered on attempt 10, ~1.35s in.
+    //
+    // ⚠ THE focus() CALL IS THE LOAD-BEARING PART, not the retry count. A
+    // 12-attempt (~1.65s) loop WITHOUT focus() had already been tried and still
+    // landed windowed — it reached that same point in time and was refused. So
+    // what unblocks this is the window being focused, not more waiting: an F5
+    // leaves focus on the patcher, and Chromium refuses fullscreen from an
+    // unfocused window even with Automatic Fullscreen granted.
+    //
+    // The retry is still required (10 attempts, so one shot cannot work —
+    // focus() does not take effect synchronously). 40 is ~4x the observed need,
+    // as headroom for a slower machine or a longer Space animation; it costs
+    // nothing when the first attempt succeeds, which is every non-F5 path.
     for (let attempt = 0; attempt < 40; attempt++) {
       if (document.fullscreenElement) {
         if (attempt > 0) reportToOpener(`fullscreen entered on attempt ${attempt + 1}`);
         return;
       }
-      // A request from an unfocused window is one documented refusal path, and
-      // an F5 leaves focus on the patcher window.
       try { window.focus(); } catch { /* focus is best-effort */ }
       last = await goFullscreen();
       if (document.fullscreenElement) {
