@@ -22,11 +22,16 @@
 //      fires (the smoking gun of the re-create-on-switch throw),
 //   3. play/pause works AFTER a switch (toggle → isPlaying + frames advance/halt),
 //   4. switch-BACK-to-A lands on A's PRESERVED virtual playhead, NOT reset to 0.
-//      This compares two reads of the SAME engine-internal frame-time clock —
-//      slot A's tracked virtual playhead (slotPos) just BEFORE the switch vs the
-//      element's currentTime just AFTER — with a mid-clip play window confining
-//      both, so it is load-INDEPENDENT (no wall-clock projection to lag under CI
-//      SwiftShader). See the assertion block for the geometry.
+//      This compares slot A's tracked virtual playhead (slotPos) on the last
+//      frame BEFORE the switch against the element's currentTime on the first
+//      frame AFTER, with a mid-clip play window confining both. See the
+//      assertion block for the geometry.
+//      ⚠ BOTH HALVES ARE SAMPLED INSIDE THE PAGE, one rAF frame apart. They
+//      used to be read over a Playwright poll, and that round trip — not the
+//      module — is what made this the repo's longest-running e2e flake: the
+//      <video> element's own media clock free-runs between transport ticks, so
+//      every millisecond of CDP latency on a saturated shard landed in the
+//      comparison. See armSwitchBackCapture for the measured failure.
 //
 // CAPABILITY GATE: CI runs the SwiftShader software renderer + has no OS H.264
 // encoder, so a flat downstream-PIXEL/brightness assert that passes on a real
@@ -162,24 +167,119 @@ async function readVirtualPlayhead(
   }, VVS_ID);
 }
 
-/** Combined SINGLE-evaluate read of the active slot AND the active element's
- *  currentTime, so the switch-back landing is sampled with minimal drift (one
- *  round-trip, no gap between "is the switch done" and "where did it land"). */
-async function readSwitchState(
-  page: Page,
-): Promise<{ activeSlot: number; time: number }> {
-  return await page.evaluate((id) => {
+/** What the IN-PAGE switch-back sampler records. */
+interface SwitchBackCapture {
+  /** rAF frames the sampler ran for, total. */
+  frames: number;
+  /** The on-air slot read SYNCHRONOUSLY at arm time. The non-vacuity leg: it
+   *  proves the sampler saw the BEFORE state, and it does so without depending
+   *  on a frame happening in the arm→switch gap (which under an 8 fps software
+   *  renderer is not guaranteed — one 125 ms frame is longer than the card's
+   *  33 ms gate poll, so the switch can land between two frames). */
+  armedActiveSlot: number;
+  /** rAF frames it saw with a slot OTHER than 0 on air (the pre-switch arm).
+   *  Diagnostics only — a capture with 0 of these is still exact, because
+   *  `trackedBefore` was seeded at arm time and only a frame can move it. */
+  preFrames: number;
+  /** slotPos[0] as of the last moment before the switch — seeded at arm time
+   *  and refreshed on every pre-switch frame. Only `advanceVirtual`, which
+   *  runs inside the transport's rAF tick, can move it, and this sampler runs
+   *  AFTER that tick in the same frame — so this is exactly the value
+   *  `selectSlot` then clamps and seeks the element to. */
+  trackedBefore: number;
+  /** The slot-0 element's currentTime on the FIRST frame slot 0 is on air. */
+  observedAfter: number;
+  /** The frame index the capture landed on, and that frame's own gap. A long
+   *  gap is the only remaining source of drift, so it is printed, not hidden. */
+  captureFrame: number;
+  captureDtMs: number;
+  elapsedMs: number;
+  done: boolean;
+}
+
+/** ⚠ ARM AN IN-PAGE rAF SAMPLER — do NOT sample this from a Playwright poll.
+ *
+ *  MEASURED (CI run 33023870837, functional shard 5/12):
+ *    `tracked=0.98s observed=1.81s window=[0.98,1.57]s dur=1.97s tol=0.79s`
+ *  The element read 0.24 s PAST `endSec`, i.e. it had free-run well beyond the
+ *  play window, and `observed` was 0.83 s of media time ahead of the position
+ *  the switch had just seeked it to. Nothing about the module was wrong: the
+ *  window is enforced once per rAF TRANSPORT TICK (node-varispeed-registry
+ *  `transportTick` → `decideEdgeAction`), and BETWEEN ticks the <video>
+ *  element's own media clock runs unchecked. The old sampler asked the page
+ *  "has activeSlot flipped yet, and where is the element" over a Playwright
+ *  round trip — one CDP hop per sample, ON THE SAME saturated main thread as
+ *  the subject — so the gap between the seek and the read was unbounded by
+ *  anything the test controlled, and the whole of it landed in `diff`.
+ *
+ *  This sampler moves the accumulator INTO the page (CLAUDE.md's instrument
+ *  rule, and the same argument `e2e/_helpers/frames.ts` makes for waitFrames):
+ *  it walks rAF alongside the transport, records slotPos[0] on the last frame
+ *  BEFORE the switch and the element's currentTime on the FIRST frame after,
+ *  and Playwright only reads the finished record. The residual error is ONE
+ *  frame gap instead of a chain of round trips — and `captureDtMs` reports it,
+ *  so a failure says which it was.
+ *
+ *  ⚠ Registration order matters and is load-bearing: the registry's own rAF
+ *  loop re-arms at the TOP of its callback (`frames.start`), this one re-arms
+ *  at the BOTTOM, and this one is added later — so within any frame the
+ *  transport tick has already run when this reads. `trackedBefore` is
+ *  therefore the post-tick value `selectSlot` will actually use, not a stale
+ *  one. */
+async function armSwitchBackCapture(page: Page): Promise<void> {
+  await page.evaluate((id) => {
     const w = globalThis as unknown as {
       __vvsVirtualPlayhead?: (
         nodeId: string,
       ) => { activeSlot: number; slotPos: number[] } | null;
+      __vvsSwitchBackCapture?: SwitchBackCapture;
     };
-    const vp = w.__vvsVirtualPlayhead?.(id) ?? null;
-    const vid = document.querySelector(
-      '[data-testid="videovarispeed-video"]',
-    ) as HTMLVideoElement | null;
-    return { activeSlot: vp?.activeSlot ?? -1, time: vid?.currentTime ?? NaN };
+    const startMs = performance.now();
+    let lastMs = startMs;
+    // SEED SYNCHRONOUSLY, before the first frame. The switch is fired from the
+    // card's 33 ms gate-poll interval, which on a software renderer can land
+    // between two 125 ms frames — so requiring a pre-switch FRAME would make
+    // the sampler miss the arm entirely, on a renderer, for a benign reason.
+    const armed = w.__vvsVirtualPlayhead?.(id) ?? null;
+    const cap: SwitchBackCapture = {
+      frames: 0, armedActiveSlot: armed?.activeSlot ?? -1, preFrames: 0,
+      trackedBefore: armed?.slotPos[0] ?? NaN, observedAfter: NaN,
+      captureFrame: -1, captureDtMs: NaN, elapsedMs: NaN, done: false,
+    };
+    w.__vvsSwitchBackCapture = cap;
+    const tick = (nowMs: number): void => {
+      const dt = nowMs - lastMs;
+      lastMs = nowMs;
+      cap.frames += 1;
+      const vp = w.__vvsVirtualPlayhead?.(id) ?? null;
+      if (vp) {
+        if (vp.activeSlot !== 0) {
+          cap.preFrames += 1;
+          cap.trackedBefore = vp.slotPos[0] ?? NaN;
+        } else if (cap.armedActiveSlot > 0) {
+          const vid = document.querySelector(
+            '[data-testid="videovarispeed-video"]',
+          ) as HTMLVideoElement | null;
+          cap.observedAfter = vid ? vid.currentTime : NaN;
+          cap.captureFrame = cap.frames;
+          cap.captureDtMs = dt;
+          cap.elapsedMs = nowMs - startMs;
+          cap.done = true;
+        }
+      }
+      if (!cap.done) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
   }, VVS_ID);
+}
+
+/** Read the in-page record. Cheap + side-effect free; safe to poll. */
+async function readSwitchBackCapture(page: Page): Promise<SwitchBackCapture | null> {
+  return await page.evaluate(() => {
+    const w = globalThis as unknown as { __vvsSwitchBackCapture?: SwitchBackCapture };
+    const c = w.__vvsSwitchBackCapture;
+    return c ? { ...c } : null;
+  });
 }
 
 /** Set the transport play WINDOW (START/END as fractions of duration 0..1)
@@ -316,32 +416,52 @@ test.describe('VIDEOVARISPEED 7-slot switch path (multi-slot stall regression)',
     await assertFramesAdvance(page, 'after A→B');
     await page.waitForTimeout(600); // let B's playhead + A's VIRTUAL playhead advance
 
-    // Read slot A's tracked VIRTUAL playhead while B is still active — i.e. the
-    // free-running inactive-slot value, on the engine's frame-time clock, that
-    // the imminent switch-back will jump the element to. Captured BEFORE the
-    // switch so it's not yet re-synced to the element's currentTime.
+    // PRECONDITION ONLY — the tracked playhead VALUE now comes from the in-page
+    // sampler below, not from here. This checks two things a round trip can
+    // still answer honestly because neither is time-sensitive: the E2E hook is
+    // reachable at all (VITE_E2E_HOOKS), and slot B really is on air before the
+    // switch-back is fired.
     const beforeVp = await readVirtualPlayhead(page);
     expect(beforeVp, 'virtual-playhead hook readable (VITE_E2E_HOOKS)').not.toBeNull();
     expect(beforeVp!.activeSlot, 'slot B (1) active before switch-back').toBe(1);
-    const trackedA = beforeVp!.slotPos[0];
 
     // --- SWITCH B → BACK to A (slot 1 → slot 0) ---
-    // Capture the landing PROMPTLY: sample currentTime on the SAME poll that sees
-    // the switch land (activeSlot→0), BEFORE anything slow (the frame-advance
-    // check runs after). A healthy switch-back JUMPS the element to A's tracked
-    // virtual playhead (selectAssetSlot: `next.currentTime = clamp(slotPos[A])`),
-    // which stays inside the play window; the Build-B reset instead sets
-    // `next.currentTime = 0` and then plays forward, so it must be read before it
-    // drifts up out of the "below the window floor" zone.
+    // ARM THE IN-PAGE SAMPLER FIRST, then fire the switch. Both halves of the
+    // comparison are now taken inside the page, one rAF frame apart, instead of
+    // across a Playwright round trip whose latency was the whole error term —
+    // see armSwitchBackCapture for the measured failure this replaces. A
+    // healthy switch-back JUMPS the element to A's tracked virtual playhead
+    // (selectSlot: `seek(next, clamp(slotPos[A]))`), which stays inside the
+    // play window; the Build-B reset instead sets `currentTime = 0` and then
+    // plays forward, so the landing must be read before it drifts up out of the
+    // "below the window floor" zone — which is exactly what an in-page capture
+    // guarantees and a round-trip poll could not.
+    await armSwitchBackCapture(page);
     await switchToSlot(page, SLOT0_VOCT);
-    let observedA = NaN;
     await expect
-      .poll(async () => {
-        const s = await readSwitchState(page);
-        if (s.activeSlot === 0) observedA = s.time;
-        return s.activeSlot;
-      }, { timeout: T(4000) })
-      .toBe(0);
+      .poll(async () => (await readSwitchBackCapture(page))?.done ?? false, {
+        timeout: T(8000),
+        message: 'the in-page sampler must observe slot 0 come back on air',
+      })
+      .toBe(true);
+    const cap = await readSwitchBackCapture(page);
+    expect(cap, 'in-page switch-back capture readable').not.toBeNull();
+    // ANTI-VACUITY: the record is only meaningful if the sampler saw the BEFORE
+    // arm. Asserted, not assumed — a sampler armed while slot 0 was ALREADY on
+    // air would carry a NaN `trackedBefore` and the two assertions below would
+    // compare against nothing.
+    expect(
+      cap!.armedActiveSlot,
+      `sampler must have been armed while slot B (1) was on air: ${JSON.stringify(cap)}`,
+    ).toBe(1);
+    const trackedA = cap!.trackedBefore;
+    const observedA = cap!.observedAfter;
+    const capInfo =
+      `capture: frame ${cap!.captureFrame}/${cap!.frames} ` +
+      `(armed on slot ${cap!.armedActiveSlot}, pre ${cap!.preFrames}), ` +
+      `frame gap ${cap!.captureDtMs.toFixed(0)}ms, armed for ${cap!.elapsedMs.toFixed(0)}ms`;
+    expect(Number.isFinite(trackedA), `trackedBefore is a number — ${capInfo}`).toBe(true);
+    expect(Number.isFinite(observedA), `observedAfter is a number — ${capInfo}`).toBe(true);
 
     const { duration } = await page
       .locator('[data-testid="videovarispeed-video"]')
@@ -372,19 +492,33 @@ test.describe('VIDEOVARISPEED 7-slot switch path (multi-slot stall regression)',
     expect(
       observedA,
       `switch-back landed inside the play window, not reset to ~0 (below the floor): ` +
-        `observed=${observedA.toFixed(2)}s window=[${startSec.toFixed(2)},${endSec.toFixed(2)}]s dur=${duration.toFixed(2)}s`,
+        `observed=${observedA.toFixed(2)}s window=[${startSec.toFixed(2)},${endSec.toFixed(2)}]s ` +
+        `dur=${duration.toFixed(2)}s — ${capInfo}`,
     ).toBeGreaterThan(0.35 * duration);
 
     // Preservation (same-clock match): both values are confined to the 0.3·dur
     // band, so a healthy |diff| <= 0.3·dur; tol 0.4·dur sits above the band max
     // and below the reset gap (a reset gives |0 - trackedA| = trackedA >= 0.5·dur).
+    //
+    // ⚠ `tol` IS UNCHANGED AT 0.4·dur AND MUST STAY THERE. It is not a noise
+    // budget to be tuned — it is the geometric midpoint between the widest
+    // HEALTHY outcome (a loop wrap: `decideEdgeAction` returns `seekTo:
+    // startSec` exactly, so the wrap costs at most the full 0.3·dur band and
+    // carries no phase over) and the narrowest RESET outcome (0.5·dur).
+    // Widening it is how this assertion stops being able to fail on the bug it
+    // exists for. The two earlier attempts at this flake both left the sampling
+    // path alone — 8c67aa7f8 swapped the wall-clock projection for the
+    // frame-time clock (a different error term), 717c387f3 scaled the TIMEOUTS
+    // (which a tolerance never reads) — so the round-trip drift survived both.
+    // The fix is the sampler above, not this number.
     const tol = 0.4 * duration;
     const diff = Math.abs(observedA - trackedA);
     expect(
       diff,
       `switch-back preserved A's virtual playhead (same-clock match, not a reset to 0): ` +
         `tracked=${trackedA.toFixed(2)}s observed=${observedA.toFixed(2)}s ` +
-        `window=[${startSec.toFixed(2)},${endSec.toFixed(2)}]s dur=${duration.toFixed(2)}s tol=${tol.toFixed(2)}s`,
+        `window=[${startSec.toFixed(2)},${endSec.toFixed(2)}]s dur=${duration.toFixed(2)}s ` +
+        `tol=${tol.toFixed(2)}s — ${capInfo}`,
     ).toBeLessThan(tol);
 
     // Frames keep advancing after B→A (re-select must NOT throw + freeze). Run
