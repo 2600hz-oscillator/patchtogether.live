@@ -1313,11 +1313,19 @@
     // write []. That was the bug the owner's zip caught.
     await presentScreens.loadScreens();
     const saved = readPresentBindings(ydoc);
+    const live = liveScreens();
+    // ALWAYS trace, including the do-nothing paths. A silent early return makes
+    // "no line in the console" mean both "old build" and "new build, nothing to
+    // do", which is precisely the distinction anyone debugging this needs.
     if (saved.length === 0) {
       presentWriteArmed = true;
+      trace(`present restore: nothing saved — write armed (${live.length} display(s) known)`);
       return;
     }
-    const live = liveScreens();
+    if (live.length === 0) {
+      trace('present restore: no display list — window-management not granted for this origin; bindings kept');
+      return;
+    }
     if (!rigMatchesSaved(saved, live)) {
       trace(`present restore: saved rig (${saved.length} display(s)) not attached — bindings kept`);
       return;
