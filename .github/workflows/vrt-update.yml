@@ -349,11 +349,33 @@ jobs:
       # UPLOAD, don't commit. Six shards pushing to one branch would race and
       # the losers' baselines would vanish silently, so the shards PRODUCE and
       # exactly one job COMMITS.
+      # ⚠ STAGE ONLY WHAT THIS SHARD CHANGED. Uploading the whole checked-out
+      # __screenshots__ tree meant six artifacts each carrying all ~580 files,
+      # ~579 of them identical LFS checkouts — and the collector's
+      # merge-multiple extraction over six fully-OVERLAPPING trees is where
+      # corrupt PNGs were born: run 33193474728 delivered 1 corrupt file of
+      # 59, run 33211181271 delivered 10 of 98 (all caught by the collector's
+      # decode-verify, #2255, which is why they never landed). Disjoint(ish)
+      # uploads shrink the artifacts ~100x and remove the collision surface:
+      # only a scene rendered by TWO shards could still overlap, and the
+      # planner's union assertion guarantees that set is empty.
+      - name: Stage ONLY this shard's changed baselines
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/vrt-shard-out
+          mkdir -p /tmp/vrt-shard-out
+          git status --porcelain -- e2e/vrt/__screenshots__ | awk '{print $2}' | while read -r f; do
+            [ -f "$f" ] || continue
+            mkdir -p "/tmp/vrt-shard-out/$(dirname "$f")"
+            cp "$f" "/tmp/vrt-shard-out/$f"
+          done
+          echo "staged $(find /tmp/vrt-shard-out -name '*.png' | wc -l) changed baseline(s)"
+
       - name: Upload this shard's baselines
         uses: actions/upload-artifact@v4
         with:
           name: vrt-baselines-shard-${{ matrix.shard }}
-          path: e2e/vrt/__screenshots__
+          path: /tmp/vrt-shard-out/e2e/vrt/__screenshots__
           retention-days: 1
           if-no-files-found: ignore
 
