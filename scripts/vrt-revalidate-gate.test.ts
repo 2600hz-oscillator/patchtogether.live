@@ -967,9 +967,45 @@ describe('vrt-update.yml actually runs the verifier', () => {
     );
   });
 
-  it('the capture job exports the SHA it pushed, and the shell emits it', () => {
+  // ── THE SHARDED CAPTURE'S SAFETY PROPERTIES (#2249) ─────────────────────
+  //
+  // The capture became a 6-way matrix because a single ceiling could not
+  // survive the corpus growing: 40 -> 75 -> 125 minutes, each re-derived from
+  // the same formula, each overtaken. Two full sweeps died on 125 having
+  // committed nothing. Sharding is only SAFE, though, if three things hold, and
+  // each of them is invisible in a green run — hence these.
+  it('the capture shards do not commit — exactly one job pushes', () => {
+    // Six jobs pushing to one branch would race and the losers' baselines would
+    // vanish with no error anywhere. The shards upload; `collect` commits.
+    const commitCalls = [...WORKFLOW.matchAll(/vrt-commit-baselines\.sh/g)];
+    expect(commitCalls.length, 'exactly one job runs the commit script').toBe(1);
+    expect(WORKFLOW).toMatch(/name: commit VRT baselines/);
+  });
+
+  it('a dead shard cannot discard the other shards\' work', () => {
+    // The behaviour being replaced: one slow scene threw away an hour of
+    // correct rendering. `fail-fast: false` keeps the survivors running and
+    // `if: always()` lets the collector land whatever arrived.
+    expect(WORKFLOW).toMatch(/fail-fast:\s*false/);
+    expect(WORKFLOW).toMatch(/needs:\s*capture\n\s*if:\s*\$\{\{\s*always\(\)\s*\}\}/);
+  });
+
+  it('the shard budget is per-shard, not the old whole-corpus ceiling', () => {
+    // A per-shard ceiling does not need re-deriving when the corpus grows. If
+    // this ever reads 125 again, the treadmill has been re-introduced.
+    const cap = /timeout-minutes:\s*(\d+)/.exec(WORKFLOW.slice(WORKFLOW.indexOf('capture:')));
+    expect(cap, 'the capture job declares a timeout').not.toBeNull();
+    expect(Number(cap![1]), 'a per-shard ceiling, not the whole-sweep one').toBeLessThan(125);
+  });
+
+  it('the COMMITTING job exports the SHA it pushed, and the shell emits it', () => {
+    // ⚠ THE COMMITTING JOB IS `collect`, NOT `capture` (#2249). The capture is
+    // a 6-way matrix now — six jobs cannot each push to one branch without
+    // racing, so they upload and exactly one job commits. This assertion is
+    // anchored to the job that actually produces the SHA; it caught the rename
+    // when the matrix landed, which is precisely what it is for.
     expect(WORKFLOW).toMatch(/sha:\s*\$\{\{\s*steps\.commit\.outputs\.sha\s*\}\}/);
-    expect(WORKFLOW).toMatch(/PUSHED_SHA:\s*\$\{\{\s*needs\.capture\.outputs\.sha\s*\}\}/);
+    expect(WORKFLOW).toMatch(/PUSHED_SHA:\s*\$\{\{\s*needs\.collect\.outputs\.sha\s*\}\}/);
     expect(COMMIT_SH).toContain('emit_sha "$(git rev-parse HEAD)"');
     expect(COMMIT_SH).toContain('echo "sha=$1" >>"$GITHUB_OUTPUT"');
   });
