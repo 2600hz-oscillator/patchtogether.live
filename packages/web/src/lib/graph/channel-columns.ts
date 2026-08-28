@@ -205,9 +205,21 @@ export function sendBoxForFlowX(x: number, pitch: number = COLUMN_W): 1 | 2 {
  * stack (laneTopYForHeight / computeLaneHeightPx) — never a constant, so the
  * caller must pass the current one. Below the baseline is the VIDEO ZONE; above
  * the top is free canvas.
+ *
+ * `topGraceY` (default 0) is the REACH-UP for a membership gesture: a point up
+ * to that many px ABOVE the painted top still counts as in-band. The band is a
+ * STACK the user drops things ON TOP OF, and the painted top hugs the current
+ * tallest stack — so the natural "add to the top" release often lands a few px
+ * above the line, which without grace reads as an arbitrary refusal (#2247: a
+ * fader released 6px above the top "would not snap in" while a videoOut
+ * released lower did — the SAME gate, read as type filtering). Callers pass one
+ * SLOT (the dropped card's own flush height): accept the drop, and the lane
+ * then grows underneath it. The grace is a GESTURE affordance only — the
+ * painted rect, and everything else keyed to the band, still starts at
+ * `laneTopY`.
  */
-export function laneBandContainsY(y: number, laneTopY: number): boolean {
-  return y >= laneTopY && y < COLUMN_BASELINE_Y;
+export function laneBandContainsY(y: number, laneTopY: number, topGraceY: number = 0): boolean {
+  return y >= laneTopY - topGraceY && y < COLUMN_BASELINE_Y;
 }
 
 /**
@@ -221,13 +233,19 @@ export function laneBandContainsY(y: number, laneTopY: number): boolean {
  * lanes infinitely tall: everything spawned above the lanes and everything
  * dropped below the baseline (the video zone) that merely SHARED a column's X
  * joined that channel and was teleported into its stack.
+ *
+ * `topGraceY` — see laneBandContainsY: the membership sites pass the dropped
+ * card's own slot height so a drop released just above the painted top still
+ * joins (the lane grows to meet it). Type-uniform by construction — the grace
+ * derives from the card's slot geometry, never from its domain or type.
  */
 export function laneTargetForFlowPoint(
   point: { x: number; y: number },
   laneTopY: number,
   pitch: number = COLUMN_W,
+  topGraceY: number = 0,
 ): number | 'send' | null {
-  if (!laneBandContainsY(point.y, laneTopY)) return null;
+  if (!laneBandContainsY(point.y, laneTopY, topGraceY)) return null;
   return columnForFlowX(point.x, pitch);
 }
 

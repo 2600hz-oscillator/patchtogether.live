@@ -164,6 +164,40 @@ describe('column geometry', () => {
       expect(laneTargetForFlowPoint({ x: sendRailXBand()[1] + 50, y: inLaneY }, laneTopY)).toBeNull();
     });
 
+    // THE REACH-UP GRACE (#2247). The band is a STACK the user drops cards ON
+    // TOP OF, and the painted top hugs the tallest stack — so the natural "add
+    // to the top" release lands a few px above the line, and a zero-grace gate
+    // reads as an arbitrary (worse: type-looking) refusal. The membership
+    // sites pass the dropped card's own slot height as `topGraceY`.
+    describe('topGraceY — a drop just ABOVE the painted top still lands in the lane', () => {
+      const SLOT = RACK_UNIT; // one shell tile slot — what the drag site passes
+
+      it('within one slot above the top → the lane (the lane then grows to meet it)', () => {
+        // The user's exact geometry: the probe ~half a slot above the line.
+        expect(laneTargetForFlowPoint({ x: colX(1), y: laneTopY - SLOT / 2 }, laneTopY, undefined, SLOT)).toBe(1);
+        // The grace edge is inclusive at (top − grace), like the top itself.
+        expect(laneTargetForFlowPoint({ x: colX(4), y: laneTopY - SLOT }, laneTopY, undefined, SLOT)).toBe(4);
+        // …and the sends rail reaches up the same way (no special rail rule).
+        expect(laneTargetForFlowPoint({ x: sendRailXBand()[0] + 5, y: laneTopY - SLOT / 2 }, laneTopY, undefined, SLOT)).toBe('send');
+      });
+
+      it('beyond the grace → still free canvas (the owner "spawn on the grid" rule holds)', () => {
+        expect(laneTargetForFlowPoint({ x: colX(1), y: laneTopY - SLOT - 1 }, laneTopY, undefined, SLOT)).toBeNull();
+        // The reported-bug-verbatim point stays refused even WITH the grace.
+        expect(laneTargetForFlowPoint({ x: colX(1) + 25, y: 40 }, laneTopY, undefined, SLOT)).toBeNull();
+      });
+
+      it('the DEFAULT grace is zero — every pre-#2247 call reads the painted band verbatim', () => {
+        expect(laneTargetForFlowPoint({ x: colX(1), y: laneTopY - 1 }, laneTopY)).toBeNull();
+        expect(laneBandContainsY(laneTopY - 0.5, laneTopY)).toBe(false);
+      });
+
+      it('the grace never reaches DOWN: the baseline stays exclusive under any grace', () => {
+        expect(laneBandContainsY(COLUMN_BASELINE_Y, laneTopY, SLOT)).toBe(false);
+        expect(laneTargetForFlowPoint({ x: colX(3), y: COLUMN_BASELINE_Y }, laneTopY, undefined, SLOT)).toBeNull();
+      });
+    });
+
     it('honours the narrow ?shell=1 pitch on the X axis', () => {
       const shellX = columnXBand(4, SHELL_COLUMN_W)[0] + 5;
       expect(laneTargetForFlowPoint({ x: shellX, y: inLaneY }, laneTopY, SHELL_COLUMN_W)).toBe(4);

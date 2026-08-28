@@ -2333,8 +2333,9 @@
   // even LOCKED ones (we write committed graph position, not a drag). A
   // deterministic one-shot on the lane-top change: planLanePushUps returns an
   // EMPTY plan once everything clears, so this is idempotent (no write storm).
-  // Lane members (data.channel/sendSlot), pinned singletons, video-domain cards
-  // and the video area's contents are excluded.
+  // Lane members (data.channel/sendSlot), pinned singletons and the video
+  // area's contents are excluded. (Video-domain cards are NOT — #2240: they may
+  // be lane members now, so free ones clear the lanes like anything else.)
   $effect(() => {
     const laneTopY = wcolLaneTopY; // dependency: re-run when lanes grow/shrink
     if ((provider && !providerHasSynced) || scratchSeeded === false) return;
@@ -4974,6 +4975,17 @@
     if (origin.x === n.position.x && origin.y === n.position.y) return null;
     if (!flowApi) return null;
 
+    // A release inside a lane/send band is a MEMBERSHIP gesture, never a
+    // drop-to-patch: "add to the top of the stack" means dropping straight onto
+    // the stack's top card, and any compatible pair (an FX onto an FX, a fader
+    // onto a videoOut) would otherwise claim the gesture, snap the card back
+    // and open the modal — which reads as "this type won't join" (#2247). The
+    // SAME laneGestureTarget the membership writer resolves through decides, so
+    // the two paths cannot disagree about who owns the drop. Drop-to-patch
+    // keeps the whole free canvas and the video zone.
+    const draggedNode = patch.nodes[n.id];
+    if (draggedNode && laneGestureTarget(draggedNode.type, n.position) !== null) return null;
+
     const size = nodeFootprintPx(n.id);
     if (size.w <= 0 || size.h <= 0) return null;
     const dragged: DropRect = { id: n.id, x: n.position.x, y: n.position.y, width: size.w, height: size.h };
@@ -5281,11 +5293,7 @@
           // (X stays the top-left, unchanged — the columns are wider than the
           // cards, and re-anchoring X would re-target existing side-of-band
           // drops.)
-          const band = laneTargetForFlowPoint(
-            { x: n.position.x, y: dropCenterY },
-            wcolLaneTopY,
-            wcolPitch,
-          );
+          const band = laneGestureTarget(node.type, n.position);
           if (typeof band === 'number') {
             if (oldCh === band) {
               // Reorder within the same column: index from the drop Y, against
@@ -6006,16 +6014,44 @@
    */
   function wcolDropTarget(
     flowPos: { x: number; y: number },
+    topGraceY: number = 0,
   ): { channel?: number; sendSlot?: number } | null {
     if (!patch.nodes[WCOL_MIXER_ID]) return null;
     // Resolve against the ACTIVE pitch (narrow under `?shell=1`) and the LIVE
     // lane top: the spawn flow-pos comes from the cursor's screen→flow
     // projection over the RENDERED (narrowed, grown-upward) lanes, so the band
-    // it lands in is a pitch- AND height-relative hit-test.
-    const band = laneTargetForFlowPoint(flowPos, wcolLaneTopY, wcolPitch);
+    // it lands in is a pitch- AND height-relative hit-test. `topGraceY` is the
+    // reach-up (laneBandContainsY): a palette click one slot above the painted
+    // top still spawns INTO the lane, which then grows to hold the new card.
+    const band = laneTargetForFlowPoint(flowPos, wcolLaneTopY, wcolPitch, topGraceY);
     if (typeof band === 'number') return { channel: band };
     if (band === 'send') return { sendSlot: sendBoxForFlowX(flowPos.x, wcolPitch) };
     return null;
+  }
+
+  /**
+   * THE one definition of "this drop is a lane gesture" — the band a dragged
+   * card's release resolves to, or null. Probes the card's CENTER (its top-left
+   * plus half its flush slot height) with a one-slot reach-up above the painted
+   * band top, so releasing a card ON TOP of a lane's stack — even hovering just
+   * above the current painted line — joins the lane, and the lane grows under
+   * it. Shared by the drag-stop membership writer AND resolveCardDrop's claim
+   * gate, so "joins the lane" and "opens drop-to-patch" can never both claim
+   * one gesture. Type-uniform: geometry only — no domain, type, or category
+   * test (#2247 owner rule: audio, video, voice or utility all bind alike).
+   */
+  function laneGestureTarget(
+    nodeType: string,
+    pos: { x: number; y: number },
+  ): number | 'send' | null {
+    if (!patch.nodes[WCOL_MIXER_ID]) return null;
+    const slotH = wcolCardHeightPx(nodeType);
+    return laneTargetForFlowPoint(
+      { x: pos.x, y: pos.y + slotH / 2 },
+      wcolLaneTopY,
+      wcolPitch,
+      slotH,
+    );
   }
 
   function onNodeContextMenu({ event, node }: { event: MouseEvent | TouchEvent; node: FlowNode }) {
@@ -8302,14 +8338,13 @@
     // at the deterministic column slot, and SUPPRESS the cable-splice (in-band
     // drops order by the column array, never by proximity-splice — the two
     // splice paths must not both fire on one drop).
-    // Video cards live in the video zone, not an audio channel — refused here
-    // whatever the cursor is over (the video zone's own band sits BELOW the
-    // baseline, which wcolDropTarget already excludes, but a video card spawned
-    // with the cursor inside a lane must still stay out of the chain).
     // CADILLAC is a roaming overlay sprite, not a lane citizen. VIDEO used to be
     // excluded here too (#2240) — spawning one over a lane silently dropped it
     // outside, which is the same refusal as the drag path and just as invisible.
-    const wcolDrop = type === 'cadillac' ? null : wcolDropTarget(spawnFlowPos);
+    // The grace (the type's own slot height) matches the drag path: a palette
+    // click just above the painted top still spawns into the lane (#2247).
+    const wcolDrop =
+      type === 'cadillac' ? null : wcolDropTarget(spawnFlowPos, wcolCardHeightPx(type));
     // Was the target send box empty BEFORE this drop? (First-FX auto-raise.)
     const wcolSendWasEmpty = wcolDrop?.sendSlot != null && wcolOrder('sends', wcolDrop.sendSlot).length === 0;
     if (wcolDrop?.channel != null) {
