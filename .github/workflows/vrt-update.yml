@@ -217,6 +217,11 @@ jobs:
           # token surfaces as a RED run and not as a deadlocked PR.
           token: ${{ secrets.VRT_BASELINE_PUSH_TOKEN || github.token }}
 
+      # Same forensic line the vrt-strict shards carry — the capture AUTHORS
+      # baselines, so "which CPU drew this" matters twice over here.
+      - name: Name the runner CPU
+        run: grep -m1 'model name' /proc/cpuinfo || true
+
       - name: Install Flox
         uses: flox/install-flox-action@v2
 
