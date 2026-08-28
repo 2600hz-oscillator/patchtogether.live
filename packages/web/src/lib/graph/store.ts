@@ -17,6 +17,7 @@
 
 import { syncedStore, getYjsDoc } from '@syncedstore/core';
 import * as Y from 'yjs';
+import { attachUndoCap } from './undo-cap';
 import type { ModuleNode, Edge } from './types';
 
 /** Shape of the synced patch graph. Type alias (not interface) so the
@@ -63,13 +64,20 @@ export function createPatch() {
  * ydoc.transact still collapse to one entry regardless of timeout.
  */
 export function createUndoManager(ydoc: Y.Doc): Y.UndoManager {
-  return new Y.UndoManager(
+  const um = new Y.UndoManager(
     [ydoc.getMap('nodes'), ydoc.getMap('edges')],
     {
       captureTimeout: 500,
       trackedOrigins: new Set<unknown>([LOCAL_ORIGIN]),
     },
   );
+  // Depth cap (undo-cap.ts): without it the stack is an unbounded retainer —
+  // every captured step pins its tombstones (`keep = true`) forever, and a
+  // long session's live doc, default save and F5 reload grow with SESSION
+  // LENGTH instead of patch size (measured 18x on 20k edits). The cap ages
+  // steps out AND releases what they pinned, so Yjs GC can finally take it.
+  attachUndoCap(ydoc, um);
+  return um;
 }
 
 // --- Rebindable singleton ------------------------------------------------
