@@ -31,7 +31,8 @@
 // LINES pattern differ, no absolute pixel values are pinned).
 
 import { test, expect, type Page } from '@playwright/test';
-import { VIDEO_THUMB_FPS } from '../../packages/web/src/lib/ui/workflow/module-shell-model';
+import { VIDEO_THUMB_FPS, SHELL_TILE_W } from '../../packages/web/src/lib/ui/workflow/module-shell-model';
+import { SHELL_COLUMN_W } from '../../packages/web/src/lib/graph/channel-columns';
 import {
   VIDEO_SINK_FIXTURE,
   fixtureProblems,
@@ -129,7 +130,11 @@ const VIDEO_OUT = 'workflow-videoOut';
 const RECORDERBOX = 'workflow-recorderbox';
 const SYNESTHESIA = 'workflow-synesthesia';
 
-const VIDEO_ZONE_GAP = 24; // shell pitch 216 − tile 192 (videoZonePackedXs)
+// DERIVED, never re-typed (#2239): the gap is whatever the shell pitch leaves
+// over a uniform tile. It was hardcoded 24 for the old 216 pitch, so the pitch
+// change to 225 (an exact 10 HP) silently falsified it — a literal that names
+// its own derivation in a comment is a literal that goes stale.
+const VIDEO_ZONE_GAP = SHELL_COLUMN_W - SHELL_TILE_W;
 
 async function gotoShell(page: Page): Promise<void> {
   await page.goto('/rack');
@@ -686,7 +691,7 @@ test.describe('?shell=1 video visibility', () => {
         const rb = await nodeRect(page, RECORDERBOX);
         if (!vo || !rb || vo.w === 0) return NaN;
         return rb.x - (vo.x + vo.w);
-      }, { message: 'recorderbox sits one 24px gutter right of the videoOut tile', timeout: 10_000 })
+      }, { message: `recorderbox sits one ${VIDEO_ZONE_GAP}px gutter right of the videoOut tile`, timeout: 10_000 })
       .toBe(VIDEO_ZONE_GAP);
 
     // 3) THE RESIZABLE DISPLAY, where it lives now: right-click the tile →

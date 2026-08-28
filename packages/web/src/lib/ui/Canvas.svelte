@@ -1396,9 +1396,17 @@
   // synced, the trio may not exist yet (or may exist without their saved
   // positions), and placing them then would fight the incoming state.
   $effect(() => {
-    const loaded = scratchSeeded === true || (provider != null && providerHasSynced);
+    // ⚠ "NOTHING TO WAIT FOR" IS ALSO LOADED, and leaving it out was a real
+    // regression (#2239). The zone inset used to be applied unconditionally by
+    // the render override; making it depend on this effect meant that wherever
+    // the effect did NOT run, the trio sat exactly ON the zone's dashed
+    // baseline. An EPHEMERAL rack — no collab provider AND no IndexedDB replica
+    // seed, which is every e2e rack — has neither signal, so it waited forever
+    // for a load that was already complete. CI caught it: "workflow-videoOut
+    // tile top is below the video-zone baseline".
+    const waiting = scratchSeeded === false || (provider != null && !providerHasSynced);
     void snapshot.nodes.length; // re-run as the trio materialises
-    if (!loaded || !shellFaces) return;
+    if (waiting || !shellFaces) return;
     untrack(() => placeVideoZoneDefaults());
   });
 

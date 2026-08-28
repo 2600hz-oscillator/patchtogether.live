@@ -13,6 +13,8 @@
 // Runs on /rack?shell=legacy (no DB/relay) — the normal e2e lane, same as
 // workflow-dock.spec.ts. Shell state is transient/local (never in the Y.Doc).
 
+import { SHELL_COLUMN_W } from '../../packages/web/src/lib/graph/channel-columns';
+import { SHELL_VIDEO_ZONE_TILE_INSET_Y } from '../../packages/web/src/lib/ui/workflow/module-shell-model';
 import { test, expect, type Page } from '@playwright/test';
 import { LANE_TILES, MAIN_CANVAS, spawnPatch, waitForLaneTier } from './_helpers';
 import { REGISTRY } from './_registry';
@@ -74,7 +76,11 @@ const NODE = 'v1';
 // ── RACKLINE tile-geometry re-spec helpers ──────────────────────────────────
 // channel-columns.ts geometry (kept in sync with the pure module).
 const COLUMN_W = 765; // 34 * HP_UNIT(22.5)
-const SHELL_COLUMN_W = 216; // channel-columns.ts SHELL_COLUMN_W (tight ?shell=1 pitch)
+// ⚠ IMPORTED, NEVER RE-TYPED (#2239). This was `const SHELL_COLUMN_W = 216`
+// with a comment naming `channel-columns.ts SHELL_COLUMN_W` as its source — a
+// literal that cites its own derivation is a literal that goes stale, and this
+// one did the moment the pitch became 225. The app rendered the new pitch
+// correctly and only the TEST disagreed, which reads as a product regression.
 const SHELL_TILE_W = 192; // module-shell-model.ts SHELL_TILE_W / tokens --shell-tile-w
 // The ONE fixed lane-slot height at EVERY LOD tier (zoom-reposition fix option
 // (c)): module-shell-model.ts SHELL_TILE_H_SLOT / tokens --shell-tile-h. Zoom
@@ -614,14 +620,13 @@ test.describe('P0.3b workflow-shell legacy-fallback bridge', () => {
     }
   });
 
-  test('lanes are the TIGHT ~216px shell pitch: drops land in the narrowed column + tiles fill the lane with no overlap', async ({ page }) => {
+  test('lanes are the TIGHT shell pitch: drops land in the narrowed column + tiles fill the lane with no overlap', async ({ page }) => {
     // The RACKLINE narrowing: under ?shell=1 the app-scale 765px band collapses to
     // the mock's tight 216px lane pitch, so the uniform 192px tiles FILL their
     // lanes (24px gutter) instead of floating in huge gutters. Prove (a) a real
     // palette drop lands in the correct NARROWED column via the pitch-aware
     // hit-test, (b) the rendered column pitch is ~216px, and (c) tiles don't
     // overlap (clean gutter).
-    const SHELL_COLUMN_W = 216;
     await gotoWorkflow(page, { shell: true });
     await waitForHooks(page);
 
@@ -681,7 +686,7 @@ test.describe('P0.3b workflow-shell legacy-fallback bridge', () => {
     });
     expect(tiles.length).toBe(3);
 
-    // (b) Consecutive column heads are ~SHELL_COLUMN_W (216px) apart — the tight
+    // (b) Consecutive column heads are ~SHELL_COLUMN_W apart — the tight
     //     pitch (NOT the old 765px). ±1px for sub-pixel rounding.
     for (let i = 1; i < tiles.length; i++) {
       const delta = tiles[i].x - tiles[i - 1].x;
@@ -1234,9 +1239,21 @@ test.describe('P0.3b workflow-shell ?shell=1 bug fixes', () => {
         Math.abs(row.memberBottomToVideoTop - SHELL_BADGE_CLEARANCE_Y),
         `ch1 stack bottom floats the ${SHELL_BADGE_CLEARANCE_Y}px badge clearance above the video line @z${row.zoom}`,
       ).toBeLessThanOrEqual(2);
-      expect(row.videoOutTopToVideoTop, `video tile INSIDE the zone @z${row.zoom}`).toBeGreaterThanOrEqual(46);
-      expect(row.videoOutTopToVideoTop, `video tile inset ≈48 @z${row.zoom}`).toBeLessThanOrEqual(50);
-      expect(Math.abs(row.memberLeftToBand1Left - 12), `12px lane gutter @z${row.zoom}`).toBeLessThanOrEqual(2);
+      // The inset is DERIVED (#2239). It was a hardcoded 46..50 window around
+      // the old magic 48; it is now one RACK_UNIT, because 48 is not a grid
+      // multiple and a tile placed with it could never be locked without
+      // moving. Asserting the constant keeps this a statement about the tile
+      // being INSIDE the zone rather than about a number.
+      expect(row.videoOutTopToVideoTop, `video tile INSIDE the zone @z${row.zoom}`).toBeGreaterThan(0);
+      expect(
+        Math.abs(row.videoOutTopToVideoTop - SHELL_VIDEO_ZONE_TILE_INSET_Y),
+        `video tile inset == SHELL_VIDEO_ZONE_TILE_INSET_Y (${SHELL_VIDEO_ZONE_TILE_INSET_Y}) @z${row.zoom}`,
+      ).toBeLessThanOrEqual(2);
+      // The lane gutter follows the pitch: (pitch − tile) / 2.
+      expect(
+        Math.abs(row.memberLeftToBand1Left - (SHELL_COLUMN_W - SHELL_TILE_W) / 2),
+        `lane gutter == (pitch − tile)/2 @z${row.zoom}`,
+      ).toBeLessThanOrEqual(2);
       expect(Math.abs(row.memberCenterToBadge1Center), `tile centre == badge centre @z${row.zoom}`).toBeLessThanOrEqual(2);
     }
   });
