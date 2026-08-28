@@ -361,14 +361,24 @@ const FAILED: RunSpec = { result: 'failure' };
 describe('vrt-update revalidate fires when — and only when — a baseline was pushed', () => {
   it('the scan is not vacuous — it found the jobs and their wiring', () => {
     // ⚠ A BARE GREEN BELOW WOULD BE INDISTINGUISHABLE FROM A BROKEN SCANNER.
-    expect(JOBS.map((j) => j.name)).toEqual(['capture', 'revalidate']);
+    // ⚠ THREE JOBS SINCE #2249. The capture is a 6-way matrix now, and six
+    // jobs cannot each push to one branch without racing — so the shards
+    // upload and `collect` makes the single commit. `revalidate` therefore
+    // hangs off `collect`, which is the job that knows whether anything was
+    // actually pushed.
+    expect(JOBS.map((j) => j.name)).toEqual(['capture', 'collect', 'revalidate']);
     expect(
       byName('capture')!.ifExpr,
       'the capture job grew an `if:`. If a platform/scope guard is coming back, the ' +
         'skip-propagation hazard comes back with it — restore the matrix cases below ' +
         'and re-read the header before shipping it.',
     ).toBeNull();
-    expect(byName('revalidate')!.needs).toEqual(['capture']);
+    expect(byName('revalidate')!.needs).toEqual(['collect']);
+    // The collector runs on `always()` ON PURPOSE: five good shards must still
+    // land their baselines when a sixth dies. That is the whole point of
+    // sharding a capture, so it is asserted rather than left to read as a slip.
+    expect(byName('collect')!.needs).toEqual(['capture']);
+    expect(byName('collect')!.ifExpr, 'collect must run even if a shard failed').toContain('always()');
     expect(
       byName('revalidate')!.ifExpr,
       'revalidate has NO `if:` — with `needs: capture` that defaults to success(), which ' +
@@ -377,13 +387,13 @@ describe('vrt-update revalidate fires when — and only when — a baseline was 
     ).not.toBeNull();
     // The `pushed` clause is only meaningful if the capture job actually
     // exposes that output; a missing wiring would make revalidate unreachable.
-    expect(byName('capture')!.outputs, 'capture must expose `pushed`').toContain('pushed');
+    expect(byName('collect')!.outputs, 'the COMMITTING job must expose `pushed`').toContain('pushed');
   });
 
   it.each([
-    ['baselines captured and pushed', { capture: CAPTURED }, true],
-    ['capture FAILED', { capture: FAILED }, false],
-    ['capture ran and rewrote NOTHING', { capture: NOTHING }, false],
+    ['baselines captured and pushed', { collect: CAPTURED }, true],
+    ['the commit job FAILED', { collect: FAILED }, false],
+    ['capture ran and rewrote NOTHING', { collect: NOTHING }, false],
   ] as [string, Record<string, RunSpec>, boolean][])(
     'case: %s → revalidate runs = %s',
     (_label, runs, expected) => {
@@ -396,12 +406,12 @@ describe('vrt-update revalidate fires when — and only when — a baseline was 
     // exists to prevent. Strip it and a zero-file capture — which is a SUCCESS
     // as far as the job is concerned — still close+reopens the PR.
     const broken = JOBS.map((j) => (j.name === 'revalidate' ? { ...j, ifExpr: null } : j));
-    expect(revalidateRuns({}, { capture: NOTHING }, broken)).toBe(true);
+    expect(revalidateRuns({}, { collect: NOTHING }, broken)).toBe(true);
     // The shipped condition rejects it.
-    expect(revalidateRuns({}, { capture: NOTHING })).toBe(false);
+    expect(revalidateRuns({}, { collect: NOTHING })).toBe(false);
     // …and both agree that a FAILED capture never re-validates, because
     // `success()` already covers that half. The `if:` is doing the OTHER half.
-    expect(revalidateRuns({}, { capture: FAILED }, broken)).toBe(false);
+    expect(revalidateRuns({}, { collect: FAILED }, broken)).toBe(false);
   });
 
   it('NEGATIVE CONTROL: a bare `always()` would re-validate a FAILED capture', () => {
@@ -409,11 +419,11 @@ describe('vrt-update revalidate fires when — and only when — a baseline was 
     const naive = JOBS.map((j) =>
       j.name === 'revalidate' ? { ...j, ifExpr: 'always()' } : j,
     );
-    expect(revalidateRuns({}, { capture: FAILED }, naive)).toBe(true);
-    expect(revalidateRuns({}, { capture: NOTHING }, naive)).toBe(true);
+    expect(revalidateRuns({}, { collect: FAILED }, naive)).toBe(true);
+    expect(revalidateRuns({}, { collect: NOTHING }, naive)).toBe(true);
     // The shipped condition rejects both.
-    expect(revalidateRuns({}, { capture: FAILED })).toBe(false);
-    expect(revalidateRuns({}, { capture: NOTHING })).toBe(false);
+    expect(revalidateRuns({}, { collect: FAILED })).toBe(false);
+    expect(revalidateRuns({}, { collect: NOTHING })).toBe(false);
   });
 
   it('SKIP PROPAGATION is still modelled, though this workflow no longer exercises it', () => {
@@ -428,7 +438,7 @@ describe('vrt-update revalidate fires when — and only when — a baseline was 
       { name: 'other', needs: [], ifExpr: "inputs.platform != 'linux'", outputs: ['pushed'] },
       { name: 'revalidate', needs: ['capture', 'other'], ifExpr: null, outputs: [] },
     ];
-    const linuxOnly = simulate(matrix, { platform: 'linux' }, { capture: CAPTURED });
+    const linuxOnly = simulate(matrix, { platform: 'linux' }, { collect: CAPTURED });
     expect(linuxOnly.other.result, 'the guarded sibling must skip').toBe('skipped');
     expect(
       linuxOnly.revalidate.result,

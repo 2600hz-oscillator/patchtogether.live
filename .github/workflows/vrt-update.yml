@@ -70,8 +70,15 @@ jobs:
   # here that nothing ever read — see the NO DATABASE note below (#1828).
   # ---------------------------------------------------------------------------
   capture:
-    name: regenerate VRT baselines
+    name: regenerate VRT baselines (shard ${{ matrix.shard }}/6)
     runs-on: ubuntu-latest
+    strategy:
+      # ⚠ fail-fast MUST stay false. A shard that dies still leaves the other
+      # five shards' baselines, and discarding an hour of correct rendering
+      # because one scene was slow is the exact behaviour this replaces.
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6]
     # 40 -> 75 (2026-08-10). MEASURED, not padded: with the platform dimension
     # collapsed every scene runs on linux, so the sweep went from ~151 executed
     # tests to 297. The first capture at 40 min was KILLED at test 241 of 297
@@ -127,16 +134,25 @@ jobs:
     # coordinating, is the strongest evidence available that the number is
     # computed rather than picked — and it is why the consolidation kept ONE
     # comment instead of both.
-    timeout-minutes: 125
-    outputs:
-      # 'true' only when a baseline commit was actually pushed. A capture that
-      # rewrote nothing still SUCCEEDS, so `revalidate` needs this to tell
-      # "captured" from "ran and changed nothing" — see the revalidate `if:`.
-      pushed: ${{ steps.commit.outputs.pushed }}
-      # The SHA the bot pushed. Reported in the revalidate log and in the
-      # deadlock notice, so a stuck PR names the exact commit that never got a
-      # run instead of leaving someone to reconstruct it from timestamps.
-      sha: ${{ steps.commit.outputs.sha }}
+    # ── THE CEILING IS NOW PER SHARD, WHICH ENDS THE TREADMILL (#2249) ─────
+    #
+    # This number has been re-derived three times — 40 -> 75 -> 125 — always by
+    # the same formula against a population that keeps growing (297 -> 467 ->
+    # 479, sized to 520). Each bump was correct and each was overtaken. The
+    # comment above already recorded that the third occurrence "asked for
+    # automation over repeated bumps".
+    #
+    # 125 has now been overtaken too. `task vrt:commit` reports 584 tests, so
+    # ((584 x 9.2)/60 + 3.5) x 1.5 = 139.7 min against a 125 ceiling — and two
+    # full sweeps died on it on 2026-08-27/28 (runs 33129822198 at 2 h 05 m and
+    # 33164753035 at 79+ min), committing ZERO baselines each time. A timeout
+    # kill is reported as `cancelled`, so neither looked like what it was.
+    #
+    # A per-shard ceiling does not have to be re-derived when the corpus grows:
+    # 584 / 6 ~= 97 tests x 9.2 s ~= 15 min + 3.5 min setup ~= 19 min, and 45 is
+    # ~2.4x that. When the corpus outgrows THAT, the answer is another shard —
+    # a matrix entry — not another archaeology session over one number.
+    timeout-minutes: 45
     # ── NO DATABASE. THE CAPTURE NEVER TOUCHED ONE (#1828) ────────────────────
     #
     # This job used to declare `services: postgres:17` — bare Docker Hub, not
@@ -253,15 +269,107 @@ jobs:
           GREP: ${{ inputs.grep }}
         run: flox activate -- node scripts/vrt-scope.mjs check --grep "$GREP"
 
-      - name: Regenerate VRT baselines
+      # ── PLAN ────────────────────────────────────────────────────────────
+      #
+      # The dispatcher's `grep` narrows the CORPUS; the planner then PARTITIONS
+      # whatever that leaves. Composing them in that order is what keeps a
+      # scoped capture scoped — every shard grep is derived from the
+      # already-filtered list, so no shard can reach outside the request.
+      #
+      # `scripts/vrt-shard-plan.mjs` is the planner the REQUIRED
+      # `vrt-strict-shard` lane already uses. Its timings artifact covers only
+      # the strict subset, so most of THIS corpus is unmeasured and takes the
+      # median cost: balance is approximate. Correctness is not — the planner
+      # THROWS if its output is not a partition of what was discovered, so a bad
+      # plan is slow, never incomplete. That distinction is the whole reason a
+      # capture may be sharded at all.
+      - name: Plan this shard's scenes (cost-based, union-asserted)
         env:
           GREP: ${{ inputs.grep }}
         run: |
+          set -euo pipefail
           if [ -n "$GREP" ]; then
-            flox activate -- task vrt:update -- --grep "$GREP"
+            flox activate -- npx --workspace e2e playwright test \
+              --config=vrt/vrt.config.ts --list --reporter=json --grep "$GREP" > vrt-capture-list.json
           else
-            flox activate -- task vrt:update
+            flox activate -- npx --workspace e2e playwright test \
+              --config=vrt/vrt.config.ts --list --reporter=json > vrt-capture-list.json
           fi
+          flox activate -- node scripts/vrt-shard-plan.mjs ${{ matrix.shard }} 6 \
+            --list vrt-capture-list.json --out vrt-capture-planned.txt > vrt-capture-grep.txt
+          echo "shard ${{ matrix.shard }}/6 plans $(wc -l < vrt-capture-planned.txt) scenes"
+
+      # ⚠ Playwright DIRECTLY, not `task vrt:update`. The Taskfile joins
+      # {{.CLI_ARGS}} unquoted and this grep is an alternation full of spaces,
+      # `|`, `(`, `)` and `$` — word-splitting it yields a grep matching FEWER
+      # tests, i.e. a green shard that rendered nothing. Same reasoning the
+      # vrt-strict-shard lane records for the identical call.
+      #
+      # `--update-snapshots=changed` is spelled here, never bare (bare means
+      # `=all` in Playwright 1.59 and has rewritten 22 unrelated baselines once)
+      # and never in e2e/package.json, which is a TOOLCHAIN_PIN_FILE in the
+      # WebGL attest basis and is hashed WHOLE.
+      - name: Regenerate VRT baselines (shard ${{ matrix.shard }}/6)
+        run: |
+          set -euo pipefail
+          GREP="$(cat vrt-capture-grep.txt)"
+          flox activate -- npx --workspace e2e playwright test \
+            --config=vrt/vrt.config.ts --update-snapshots=changed --grep "$GREP"
+
+      # UPLOAD, don't commit. Six shards pushing to one branch would race and
+      # the losers' baselines would vanish silently, so the shards PRODUCE and
+      # exactly one job COMMITS.
+      - name: Upload this shard's baselines
+        uses: actions/upload-artifact@v4
+        with:
+          name: vrt-baselines-shard-${{ matrix.shard }}
+          path: e2e/vrt/__screenshots__
+          retention-days: 1
+          if-no-files-found: ignore
+
+  # ---------------------------------------------------------------------------
+  # The collector — ONE commit, from whatever the shards produced.
+  #
+  # `if: always()` beside `fail-fast: false` is deliberate: a capture where five
+  # of six shards succeeded should land those five shards' work. The
+  # all-or-nothing alternative is what threw away an hour of correct rendering
+  # every time one scene ran long, and a missing shard is not silent — its
+  # baselines simply stay stale and `vrt-strict` keeps naming them.
+  # ---------------------------------------------------------------------------
+  collect:
+    name: commit VRT baselines
+    needs: capture
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      pushed: ${{ steps.commit.outputs.pushed }}
+      sha: ${{ steps.commit.outputs.sha }}
+    steps:
+      - name: Checkout ${{ inputs.ref }} (LFS for VRT baseline PNGs)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+          lfs: true
+          persist-credentials: true
+
+      - name: Install Flox
+        uses: flox/install-flox-action@v2
+
+      # `merge-multiple` is safe BECAUSE the planner asserts a partition: two
+      # shards can never have rendered the same scene, so no download can
+      # clobber another shard's PNG.
+      - name: Download every shard's baselines
+        uses: actions/download-artifact@v4
+        with:
+          pattern: vrt-baselines-shard-*
+          merge-multiple: true
+          path: e2e/vrt/__screenshots__
+
+      - name: Report what arrived
+        run: |
+          echo "changed baseline files: $(git status --porcelain e2e/vrt/__screenshots__ | wc -l | tr -d ' ')"
+          git status --short e2e/vrt/__screenshots__ | head -40
 
       - name: Commit + push baselines
         id: commit
@@ -358,8 +466,8 @@ jobs:
   revalidate:
     name: re-validate CI on ${{ inputs.ref }} (re-fire + VERIFY)
     runs-on: ubuntu-latest
-    needs: capture
-    if: ${{ needs.capture.outputs.pushed == 'true' }}
+    needs: collect
+    if: ${{ needs.collect.outputs.pushed == 'true' }}
     # Bounds the failure; the gate is the verdict, never the clock. The loop's
     # own budget (MAX_REFIRES × POLLS_PER_ACTION × POLL_INTERVAL_MS, plus
     # MAX_APPROVALS; defaults in scripts/vrt-revalidate-gate.mjs) is well inside
@@ -408,5 +516,5 @@ jobs:
           GH_TOKEN: ${{ secrets.VRT_BASELINE_PUSH_TOKEN || github.token }}
           REF: ${{ inputs.ref }}
           REPO: ${{ github.repository }}
-          PUSHED_SHA: ${{ needs.capture.outputs.sha }}
+          PUSHED_SHA: ${{ needs.collect.outputs.sha }}
         run: node scripts/vrt-revalidate-gate.mjs verify
