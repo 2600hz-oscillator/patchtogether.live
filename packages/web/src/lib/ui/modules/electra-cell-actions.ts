@@ -180,18 +180,28 @@ export function clearElectraBadges(): void {
  *
  * Returns whether the press reached the seam, and records that. Mirrors
  * `ElectraConnectButton.svelte:31-74` branch for branch.
+ *
+ * `opts.recordPress: false` is the AUTO-RECONNECT arm (#2248): the same flash,
+ * fired by the load/hot-plug machine instead of a finger. The audition ledger
+ * records what a PRESS did — an automatic flash presses nothing, so writing a
+ * `delivered` record for it would make "the button reached the seam" assertable
+ * from a run where no button was ever touched. Everything else (the outcome
+ * store, the crosstalk `stopPrevious`, the binding badges) is deliberately
+ * identical, so the two entry points can never disagree about the hardware.
  */
 export function electraSendToDevice(
   nodeId: string,
   seam: ElectraFlashSeam = LIVE_SEAM,
+  opts: { recordPress?: boolean } = {},
 ): boolean {
+  const recordPress = opts.recordPress !== false;
   if (outcome.status === 'connecting') return false;
   if (!seam.midiAvailable()) {
-    recordAudition({ nodeId, seam: 'engine-message', delivered: false });
+    if (recordPress) recordAudition({ nodeId, seam: 'engine-message', delivered: false });
     setOutcome('no-device', 'no-midi-access');
     return false;
   }
-  recordAudition({ nodeId, seam: 'engine-message', delivered: true });
+  if (recordPress) recordAudition({ nodeId, seam: 'engine-message', delivered: true });
   setOutcome('connecting', '');
   // The crosstalk guard, in the same place the button had it.
   seam.stopPrevious();
