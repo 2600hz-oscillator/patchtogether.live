@@ -1,0 +1,297 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>FACE SPEC — gibribbon</title>
+<style>
+  /* House tokens — the same set the wave-1..7 mocks use (dark-only, per wave-5+ convention). */
+  :root{
+    --bg:#0e1013; --dock:#12161c; --plate:#262a31; --pbody:#1c1f24; --well:#0a0c0f;
+    --line:#2c3037; --tile:#33383f; --ink:#eef1f5; --dim:#9aa2ad; --faint:#646c77;
+    --accent:#6cf; --vid:#4ade80; --cv:#7dd3fc; --warn:#f2c14e; --good:#8fe6b0;
+    --bad:#f87171; --meta:#c084fc;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{background:var(--bg);color:var(--ink);font-family:var(--sans);margin:0;padding:24px 16px 80px;line-height:1.5}
+  main{max-width:1080px;margin:0 auto}
+  header.top{border-bottom:1px solid var(--line);padding-bottom:12px;margin-bottom:20px}
+  header.top h1{font-family:var(--mono);font-size:1.35rem;margin:0 0 4px}
+  header.top .sub{color:var(--dim);font-size:.9rem}
+  .crumbs{font-family:var(--mono);font-size:.75rem;margin-bottom:10px}
+  .crumbs a{color:var(--cv);text-decoration:none}
+  .crumbs a:hover{text-decoration:underline}
+  .badge{display:inline-block;font-family:var(--mono);font-size:.7rem;padding:2px 8px;border-radius:3px;border:1px solid var(--line);color:var(--dim);margin-left:6px;vertical-align:middle}
+  .badge.video{color:var(--vid);border-color:var(--vid)}
+  .verdict{font-family:var(--mono);font-size:.95rem;padding:10px 14px;border-radius:6px;margin:14px 0;border:1px solid}
+  .verdict.promote{border-color:var(--good);color:var(--good);background:rgba(143,230,176,.06)}
+  h2{font-family:var(--mono);font-size:1.02rem;color:var(--ink);border-bottom:1px solid var(--line);padding-bottom:6px;margin:34px 0 12px}
+  h3{font-family:var(--mono);font-size:.9rem;color:var(--dim);margin:20px 0 8px}
+  p{margin:8px 0;color:var(--ink)}
+  table{border-collapse:collapse;width:100%;margin:10px 0;font-size:.85rem}
+  th{font-family:var(--mono);font-size:.72rem;text-transform:uppercase;letter-spacing:.04em;color:var(--faint);text-align:left;padding:6px 10px;border-bottom:1px solid var(--line)}
+  td{padding:6px 10px;border-bottom:1px solid rgba(44,48,55,.55);vertical-align:top}
+  code,.mono{font-family:var(--mono);font-size:.83em;color:var(--cv)}
+  pre.code{background:var(--well);border:1px solid var(--line);border-radius:6px;padding:12px 14px;overflow-x:auto;font-family:var(--mono);font-size:.78rem;line-height:1.55;color:var(--ink)}
+  pre.code .c{color:var(--faint)}
+  .callout{border-left:3px solid var(--line);background:rgba(28,31,36,.6);padding:10px 14px;border-radius:0 6px 6px 0;margin:12px 0;font-size:.88rem}
+  .callout.warn{border-color:var(--warn)}
+  .callout.ok{border-color:var(--good)}
+  .callout .t{font-family:var(--mono);font-size:.72rem;text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:4px}
+  .callout.warn .t{color:var(--warn)} .callout.ok .t{color:var(--good)}
+  .aria{font-family:var(--mono);font-size:.78rem;color:var(--good)}
+  .kept{color:var(--good);font-family:var(--mono);font-size:.78rem}
+  .rm{color:var(--bad);font-family:var(--mono);font-size:.78rem}
+  .mockrow{display:flex;gap:28px;flex-wrap:wrap;align-items:flex-start;margin:16px 0}
+  .mocklab{font-family:var(--mono);font-size:.7rem;color:var(--faint);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px}
+  .lane{width:192px;height:180px;background:var(--pbody);border:1px solid var(--line);border-radius:8px;display:flex;flex-direction:column;overflow:hidden;flex:none}
+  .lane .lchrome{font-family:var(--mono);font-size:.62rem;color:var(--dim);padding:4px 8px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between}
+  .lane .lbody{flex:1;display:flex;gap:9px;padding:8px;align-items:flex-start}
+  .kcol{width:46px;display:flex;flex-direction:column;align-items:center;gap:3px;flex:none}
+  .kcap{font-family:var(--mono);font-size:.6rem;color:var(--dim)}
+  .tgl{width:30px;height:16px;border-radius:9px;background:var(--well);border:1px solid var(--line);position:relative;display:inline-block;vertical-align:middle}
+  .tgl i{position:absolute;top:2px;left:3px;width:10px;height:10px;border-radius:50%;background:var(--faint)}
+  .tgl.on{border-color:var(--vid)} .tgl.on i{left:15px;background:var(--vid)}
+  .dock{background:var(--dock);border:1px solid var(--line);border-radius:10px;overflow:hidden;flex:none}
+  .chromebar{display:flex;justify-content:space-between;align-items:center;font-family:var(--mono);font-size:.7rem;color:var(--dim);padding:6px 12px;border-bottom:1px solid var(--line)}
+  .plate{padding:14px;width:max-content;max-width:100%}
+  .extbody{background:var(--pbody);border:1px solid var(--line);border-radius:8px;padding:12px;margin-bottom:12px}
+  .bands{display:flex;flex-direction:column;gap:10px}
+  .band{border:1px solid var(--line);border-radius:8px;padding:8px 12px 10px;background:rgba(28,31,36,.4)}
+  .blab{font-family:var(--mono);font-size:.62rem;color:var(--faint);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px}
+  .brow{display:flex;gap:16px;align-items:flex-end}
+  .btn{font-family:var(--mono);font-size:.66rem;color:var(--ink);background:var(--tile);border:1px solid var(--line);border-radius:4px;padding:3px 8px;display:inline-block}
+  .scrbtn{position:absolute;right:6px;bottom:6px;background:rgba(10,12,15,.72);border:1px solid var(--line);border-radius:4px;font-family:var(--mono);font-size:.6rem;color:var(--dim);padding:2px 6px}
+  footer{margin-top:48px;border-top:1px solid var(--line);padding-top:10px;font-family:var(--mono);font-size:.7rem;color:var(--faint)}
+</style>
+</head>
+<body>
+<main>
+<header class="top">
+  <div class="crumbs"><a href="INDEX.html">← face-specs INDEX</a></div>
+  <h1>FACEPLATE BUILD SPEC — <code>gibribbon</code> <span class="badge video">video</span> <span class="badge">bespoke-surface</span></h1>
+  <div class="sub">GibRibbon — the Vib-Ribbon rhythm side-scroller with DOOM-WAD sprites, as a patchable video source. SPEC ONLY — nothing here is implemented. Authored 2026-08-28 against <code>origin/main</code> @ <code>f340ab43a</code>.</div>
+</header>
+
+<div class="verdict promote">VERDICT: PROMOTE, on the game canon (frogger #1928 / pong #2160 / the wave-5 GAMES.md rulings). One true user control (<code>autoplay</code>); the other 12 params are CV-port targets → <code>noUserControl</code>, every one with a real <code>cv-port</code> writer. The card’s DOM score/health/combo row is the FORBIDDEN chrome shape and dies with promotion; the numbers move to the playfield’s accessible name. Typed-entry CLEAN. The only genuinely open engineering question is the VRT determinism story (M2) — the honest fallback (<code>FACES_WITHOUT_SCENES</code>) exists and its bar is stated.</div>
+
+<h2>§0 — THE CONSTRAINT MAP, READ FIRST</h2>
+<table>
+  <tr><th>registry / gate</th><th>state for gibribbon</th><th>evidence</th></tr>
+  <tr><td><code>STRICT_FACES</code></td><td>NOT a member — unfaced</td><td><code>strict-faces.ts</code></td></tr>
+  <tr><td>migration disposition</td><td><code>bespoke-surface</code>, no blocker</td><td><code>face-migration-inventory.ts</code>: “a rhythm GAME: score / health / combo HUD over a viewport, played on the keyboard, with a game-over restart. Its def params are CV taps, not the surface.”</td></tr>
+  <tr><td>typed-entry leg</td><td><b>CLEAN</b> — verified 2026-08-28</td><td><code>mountsTypedEntry(GibribbonCard.svelte)</code></td></tr>
+  <tr><td>DOOM adjacency</td><td>⚠ gibribbon READS DOOM1.WAD via <code>$lib/doom/doom-runtime.loadWad</code> + <code>wad-sprites.ts</code> and edge-detects via <code>$lib/doom/cv-gate-edge</code> — it is NOT DOOM and is not covered by the carve-out, but the face PR must not touch anything under <code>$lib/doom/</code> or any DOOM spec. If a sweep’s scope brushes DOOM, exclude it BY NAME in the PR body</td><td>imports at <code>gibribbon.ts:63-65</code>; owner ruling 2026-08-17</td></tr>
+  <tr><td>VRT today</td><td>exempt: “animated scrolling ribbon + sprites defeat deterministic single-frame capture” — and the exemption block notes modtris/gibribbon/skifree exemptions “ARE DELIBERATELY LEFT STANDING”</td><td><code>e2e/vrt/vrt-exemptions.ts:971,990</code></td></tr>
+  <tr><td>WebGL attest</td><td>M4 — the wave-5 GAMES.md measured <code>nibbles.ts</code> IN the basis; gibribbon is the same CPU-rasterise-to-texture shape, so assume in-basis until the listing says otherwise. The face block is stripped by design; the <code>noUserControl</code> additions are def CODE (⚠ NOT in the stripped set — verify cost before scoping)</td><td>GAMES.md §7 precedent; <code>attest-code-basis.ts</code></td></tr>
+  <tr><td>cross-domain outputs</td><td>publishes AudioNode gate outs via <code>audioSources</code> (video→audio bridge) — evt_hit/miss/fire/kill/gameover + health_cv; the per-port sweep already drives them</td><td><code>gibribbon.ts</code> header</td></tr>
+</table>
+
+<h2>§1 — WHAT THE MODULE IS FOR</h2>
+<p>The verb is <b>PLAY</b> (and be played by the rack). A white vector ribbon scrolls on black; events deform it (loop=pit-V, jump=hump) or ride it in as DOOM imp/zombie sprites; a marine at the judgement point clears each event with its mapped ABXY button inside a timing window; hits score combo-multiplied, misses walk the marine down the DOOM health ladder to GAME OVER. Three drive modes: AUTOPLAY (internal ~0.42 s beat, default ON, self-plays with rotating synthesized CV), external musical mode (CLOCK edge = beat; GATE + CV1-4 shape spawns; suppresses autoplay ~1.5 s), and keyboard (focus, F/D/J/K or arrows = A/B/X/Y, R restart). Every gameplay event pulses a gate output for the audio domain — the game is a sequencer wearing a game’s clothes.</p>
+
+<h2>§2 — STOP 1: LEGACY-CARD PARITY CENSUS</h2>
+<table>
+  <tr><th>affordance</th><th>card site</th><th>face home</th><th>survives?</th></tr>
+  <tr><td>Game screen (30 Hz snapshot poll → canvas blit; 1024×576 internal)</td><td><code>gibribbon-screen</code>, <code>pollTimer</code></td><td><code>fullViewBody</code> screen — same <code>read('snapshot')</code> poll (the frogger board pattern: the picture lives wherever something paints it; the FACTORY keeps the game running regardless)</td><td>YES</td></tr>
+  <tr><td>Keyboard play while focused (F/D/J/K / arrows / R)</td><td>card focus + key handlers → extras <code>press()</code></td><td>body screen takes focus and the same key map (GAMES.md keyboard-capture canon: capture only while the playfield has focus)</td><td>YES</td></tr>
+  <tr><td>SCORE / health-word / xCOMBO header row</td><td><code>gibribbon-score/-health/-combo</code> (DOM chrome)</td><td class="rm">FORBIDDEN — “a score or lives row rendered as CHROME BESIDE the playfield” (GAMES.md §1, the ruling’s exact shape). Numbers move to the playfield’s accessible name (§7)</td><td>values survive, chrome does not</td></tr>
+  <tr><td>GAME OVER overlay + RESTART button</td><td><code>gibribbon-gameover/-restart</code></td><td>the RESTART control survives as a body action (static caption “RESET”); the “GAME OVER … press R” prose row does not — dead-state signalling belongs to the game frame or the accessible name. If the owner wants a painted GAME OVER, it is an in-canvas edit to the rasteriser (attest cost — the nibbles lesson: do NOT fold it into the face PR)</td><td>control yes; prose no</td></tr>
+  <tr><td>RESET button (any time)</td><td><code>gibribbon-reset</code></td><td>body action button (extras <code>reset()</code>)</td><td>YES</td></tr>
+  <tr><td>“line-art (no WAD)” badge</td><td><code>gibribbon-loaderr</code></td><td class="rm">as text at rest — REMOVED; the fallback is VISIBLE in the picture itself (wireframe sprites). A warn-tone lamp with static caption “WAD” carries the degraded state; prose in title/aria</td><td>state survives as a lamp</td></tr>
+  <tr><td>Keyboard-hint tip line (“Click to focus → F/D/J/K …”)</td><td><code>.tip</code></td><td class="rm">REMOVED at rest — instructional prose is the annotate layer’s job</td><td>docs</td></tr>
+  <tr><td>AUTOPLAY (param, default ON)</td><td>no card control today (set via param path only) — ⚠ a card-vs-def gap: the def documents it, the card never surfaces it</td><td>ranked toggle cell — the face FIXES this reachability gap</td><td>YES, improved</td></tr>
+</table>
+
+<h2>§3 — STOP 2: EVERY WAY DATA GETS IN</h2>
+<table>
+  <tr><th>path</th><th>mechanism</th><th>after promotion</th></tr>
+  <tr><td>ABXY / clock / gate / cv1-4 / x / y jacks</td><td>12 input ports, each with <code>paramTarget</code> + the worklet/state-machine consuming edges or levels</td><td>unchanged — cables never touch the UI. Rear curation names them (§5.2)</td></tr>
+  <tr><td>keyboard</td><td>extras <code>press(btn)</code> while focused</td><td>body screen focus, same extras seam</td></tr>
+  <tr><td>autoplay toggle</td><td><code>setParam('autoplay')</code></td><td>ranked cell</td></tr>
+  <tr><td>reload / peers</td><td>game state is engine-local (not persisted — a game in progress is not patch state); params persist</td><td>unchanged</td></tr>
+</table>
+
+<h2>§4 — THE LANE PICTURE</h2>
+<p><code>domain === 'video'</code> → free <code>VideoTileThumb</code> of the live game — the ribbon scrolling in a rack tile is the module’s identity and it is real output, not a static glyph. Picture cap: <code>autoplay</code> + one more cell fit beside it; only one is ranked.</p>
+
+<h2>§5 — THE FACE</h2>
+<pre class="code">face: {
+  <span class="c">// ONE ranked control. Everything else a player does is the game surface</span>
+  <span class="c">// (keyboard/body) or a cable (the 12 CV-target params below).</span>
+  order: ['autoplay'],
+  glyph: 'none',          <span class="c">// video def, no audio-typed out (gates are not 'audio') — thumb is the picture.</span>
+  extension: 'gibribbon', <span class="c">// §6.</span>
+  monitor: { why: 'the game IS the video output a rack projects; watching the ribbon ' +
+                  'without the toggle is the performance use.' },
+  rear: {
+    groups: [
+      <span class="c">// The frogger rear lesson applied: the four player buttons ARE the signal</span>
+      <span class="c">// inputs — they claim the leading 'signal' slot. Everything else falls to</span>
+      <span class="c">// the derived default (cv/aim/transport land in the derived input section;</span>
+      <span class="c">// M3 pins the exact derived layout before the PR writes prose about it).</span>
+      { id: 'signal', label: 'play', ports: ['a', 'b', 'x_btn', 'y_btn'] },
+      { id: 'events', label: 'events', direction: 'output',
+        ports: ['evt_hit', 'evt_miss', 'evt_fire', 'evt_kill', 'evt_gameover'] },
+    ],
+  },
+},
+<span class="c">// AND on the def (not in face) — the #1726 declaration, one entry per CV-target</span>
+<span class="c">// param, each with its real cv-port writer (all 12 verified against inputs[]):</span>
+noUserControl: [
+  { param: 'cv1',    writer: 'cv-port', why: 'loop-channel spawn CV; written by the cv1 jack, read per beat' },
+  { param: 'cv2',    writer: 'cv-port', why: 'jump-channel spawn CV; written by the cv2 jack, read per beat' },
+  { param: 'cv3',    writer: 'cv-port', why: 'imp-channel spawn CV; written by the cv3 jack, read per beat' },
+  { param: 'cv4',    writer: 'cv-port', why: 'zombie-channel spawn CV; written by the cv4 jack, read per beat' },
+  { param: 'clock',  writer: 'cv-port', why: 'transport tick target; the clock jack edge-advances the beat' },
+  { param: 'gate',   writer: 'cv-port', why: 'beat-gate level; the gate jack biases per-beat spawn choice' },
+  { param: 'axis_x', writer: 'cv-port', why: 'aim axis; written by the x jack, shifts the judgement point' },
+  { param: 'axis_y', writer: 'cv-port', why: 'marine vertical; written by the y jack' },
+  { param: 'btn_a',  writer: 'cv-port', why: 'A button target; the a jack (or keyboard) pulses it' },
+  { param: 'btn_b',  writer: 'cv-port', why: 'B button target; the b jack (or keyboard) pulses it' },
+  { param: 'btn_x',  writer: 'cv-port', why: 'X button target; the x_btn jack (or keyboard) pulses it' },
+  { param: 'btn_y',  writer: 'cv-port', why: 'Y button target; the y_btn jack (or keyboard) pulses it' },
+],</pre>
+<div class="callout ok"><span class="t">why noUserControl and not 12 ranked knobs</span>The backdraft precedent exactly: synthetic params a <code>paramTarget</code> bridge pushes raw swings into. Completeness then requires them ABSENT from <code>order</code> (in both = red), the dock render-parity inverts (exactly ZERO cells each), and group-controls stops auto-exposing them on a collapsed rack’s instrument bar — which today would offer all 12 as knobs, a live mini-defect this declaration also fixes. The keyboard path pulses <code>btn_*</code> too, so the <code>why</code> strings name both writers where true.</div>
+
+<h3>§5.1 Cells, tier by tier</h3>
+<table>
+  <tr><th>control</th><th>declaration</th><th>cell kind</th><th>compact lane</th><th>dock</th></tr>
+  <tr><td><code>autoplay</code></td><td>0..1 linear, default 1, label ‘AUTOPLAY’</td><td>toggle — ⚠ needs <code>curve:'discrete'</code> for <code>looksLikeToggle</code> (the mappy §5.1 class); default 1 means <code>looksLikeSwitch</code> (default-0) never fires, so NO momentary/latching classification is demanded — the cameraInput arrives-ON argument verbatim</td><td>slot 1 beside the thumb</td><td>one unlabelled band</td></tr>
+</table>
+
+<h3>§5.2 Width — earned by the picture</h3>
+<p>The body screen (16:9, ~480×270 at dock scale) is the earner. One band below. No exemption.</p>
+
+<h2>§6 — THE BODY: <code>face.extension: 'gibribbon'</code>, slot <code>fullViewBody</code></h2>
+<h3>§6.1 Why not a cell</h3>
+<p>The frogger argument verbatim: the board was on the card, nothing engine-side depends on the card (the game runs on the shared scheduler clock inside the factory, keeps pulsing gates with no UI), but the PICTURE lives only where something paints it — promotion without the slot replaces a live arcade board with one toggle. No cell mounts a canvas; <code>fullViewBody</code> is the wired slot for exactly this.</p>
+
+<h3>§6.2 The component</h3>
+<p><code>$lib/ui/modules/gibribbon/shell-extension.ts</code> → <code>{ fullViewBody: GibribbonBoardBody }</code>. Contents: the screen (snapshot poll → canvas, 16:9, focusable, keyboard map, SCREEN switch overlay) · a control row: RESET action + the WAD warn lamp. Role model: frogger’s <code>FroggerBoardBody</code>, including its stated limitation — <code>ShellExtensionGlyphProps</code> has no <code>nodeId</code>, so no extension glyph can show the live board in the LANE; the video thumb does that here anyway (gibribbon is better off than frogger: video domain gets the thumb frogger cannot have).</p>
+
+<h3>§6.3 <code>EXTENSION_BODY_ROLES</code> — the third gate</h3>
+<pre class="code">gibribbon: {
+  role: 'picture',
+  why: 'the body mounts the game screen canvas — the ribbon, sprites and judgement ' +
+       'lane the player watches and plays by keyboard; the reset action and WAD lamp ' +
+       'are incidental controls beside it.',
+},</pre>
+
+<h3>§6.4 Screen switch — required (video ∩ STRICT_FACES)</h3>
+<p>Over <code>node.data.previewCollapsed</code>, corner overlay. OFF skips the blit AND releases keyboard capture (a hidden game must not eat keys); the factory keeps running — autoplay keeps generating gates, which is the module’s sequencer half working as designed. State that explicitly in the body code: collapsing the screen is “stop watching”, never “stop the game”. Also decide <code>isPullExempt</code> per the #2015 watch-mark corollary and call <code>markWatched(nodeId)</code> belt-and-braces (the archivist §6.4.1 pattern).</p>
+
+<h2>§MOCKS</h2>
+<div class="mockrow">
+  <div>
+    <div class="mocklab">compact lane tile — thumb + autoplay</div>
+    <div class="lane">
+      <div class="lchrome"><span>gibribbon</span><span>▣</span></div>
+      <div class="lbody">
+        <div style="width:104px;height:60px;background:#000;border:1px solid var(--line);border-radius:4px;flex:none">
+          <svg width="102" height="58" viewBox="0 0 102 58"><rect width="102" height="58" fill="#000"/><path d="M0 40 L30 40 L38 50 L46 40 L70 40 L78 28 L86 40 L102 40" stroke="#fff" stroke-width="2" fill="none"/><rect x="24" y="26" width="8" height="14" fill="#3a5"/><text x="6" y="12" font-family="monospace" font-size="8" fill="#888">A B X Y</text></svg>
+        </div>
+        <div class="kcol"><div class="tgl on"><i></i></div><div class="kcap">AUTOPLAY</div></div>
+      </div>
+    </div>
+  </div>
+  <div>
+    <div class="mocklab">dock full view — board body + one band</div>
+    <div class="dock" style="width:540px">
+      <div class="chromebar"><span>gibribbon</span><span>dock full view · ✕</span></div>
+      <div class="plate">
+        <div class="extbody">
+          <div style="width:480px;height:270px;background:#000;border:1px solid var(--line);border-radius:4px;position:relative;margin-bottom:8px">
+            <svg width="478" height="268" viewBox="0 0 478 268">
+              <rect width="478" height="268" fill="#000"/>
+              <text x="16" y="24" font-family="monospace" font-size="13" fill="#666">A  B  Y  X</text>
+              <path d="M0 190 L120 190 L150 230 L180 190 L260 190 L285 140 L310 190 L478 190" stroke="#fff" stroke-width="3" fill="none"/>
+              <rect x="132" y="150" width="22" height="40" fill="#3a5"/>
+              <rect x="300" y="160" width="20" height="30" fill="#a33"/>
+              <text x="360" y="176" font-family="monospace" font-size="11" fill="#a33">▲imp</text>
+            </svg>
+            <div class="scrbtn">SCREEN ◱</div>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <span class="btn">RESET</span>
+            <span style="display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);font-size:.62rem;color:var(--dim)"><span style="width:9px;height:9px;border-radius:50%;background:#3a3f46;border:1px solid var(--line)"></span>WAD</span>
+          </div>
+        </div>
+        <div class="bands">
+          <div class="band">
+            <div class="brow">
+              <div class="kcol"><div class="tgl on"><i></i></div><div class="kcap">AUTOPLAY</div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<h2>§7 — RESTING TEXT CENSUS — and the chrome-row refusal, by name</h2>
+<p>Per GAMES.md §1.3, this spec REFUSES THE CHROME ROW EXPLICITLY: no SCORE row, no health word, no xCOMBO, no GAME OVER prose, no tip line — beside the playfield, ever. And it states the enforcement honestly: <code>face-resting-text-source</code> CANNOT see either shape (canvas text and body markup are both outside its subject); the dock VRT baseline plus human review enforce this, plus a <code>gibribbon-face-model.test.ts</code> source-shaped check asserting the body DOM contains no score-class element (negative-controlled by temporarily re-adding one — the GAMES.md §1 mitigation set, all three legs).</p>
+<table>
+  <tr><th>string</th><th>verdict</th><th>replacement</th></tr>
+  <tr><td>SCORE / health / combo chrome row</td><td class="rm">REMOVED (forbidden shape)</td><td><span class="aria">aria-label</span> on the playfield (<code>role="img"</code>): “gibribbon — score 1240, healthy, combo x4” — read from the same extras the card polls; speakable, assertable, unpainted (the §1.1 mechanism, <code>aria-label</code> not <code>aria-valuetext</code> because a picture is not a range role)</td></tr>
+  <tr><td>in-canvas lookahead lane (ABXY prompt strip)</td><td class="kept">ALLOWED — the game’s artwork, drawn by the rasteriser into its own frame</td><td>—</td></tr>
+  <tr><td>GAME OVER overlay prose + “press R”</td><td class="rm">REMOVED as DOM chrome; the dead state is visible in the frame (marine death animation) and named in the aria-label (“game over”)</td><td>RESET stays as the restart affordance; an in-canvas GAME OVER banner is a separate owner question with attest cost (§2)</td></tr>
+  <tr><td>“line-art (no WAD)” badge</td><td class="rm">REMOVED as text</td><td>warn-tone lamp, static caption “WAD”, prose in <span class="aria">title/aria</span></td></tr>
+  <tr><td>tip line</td><td class="rm">REMOVED</td><td>annotate docs</td></tr>
+</table>
+
+<h2>§8 — TYPED-ENTRY GATE</h2>
+<p><b>CLEAN.</b> Verified 2026-08-28. The leg will not fire.</p>
+
+<h2>§9 — STATE / .data CENSUS</h2>
+<table>
+  <tr><th>key</th><th>home</th><th>writer</th></tr>
+  <tr><td><code>params.autoplay</code> (+ the 12 CV targets)</td><td>Yjs</td><td>cell / cv bridge / keyboard-extras</td></tr>
+  <tr><td><code>node.data.previewCollapsed</code></td><td>Yjs (new)</td><td>screen switch</td></tr>
+  <tr><td>game state (score, health, events, RNG)</td><td>engine-local, per peer, NOT persisted — by design (a rhythm game is not patch state)</td><td>factory + pure <code>gibribbon-events.ts</code></td></tr>
+</table>
+
+<h2>§10 — GATES, TESTS, VRT</h2>
+<table>
+  <tr><th>gate</th><th>verdict for this PR</th></tr>
+  <tr><td>1 · <code>module-face-lint</code> / identity</td><td>face + promotion + the 12 <code>noUserControl</code> entries + autoplay’s discrete correction, one diff</td></tr>
+  <tr><td>2 · VRT</td><td><code>GREP=gibribbon flox activate -- task vrt:commit</code> IF M2 lands a determinism seam; otherwise a <code>FACES_WITHOUT_SCENES</code> entry — which must satisfy the 4-way anchor and the bar “it’s animated is explicitly NOT sufficient”: the entry must MEASURE why neither <code>freezeFaceVideo</code> nor <code>simPin</code> reaches this renderer, or the seam must be built. Candidate natural seam: <code>autoplay=0</code> + no clock = no beats — but scroll may still advance per frame; measure, don’t assert (M2)</td></tr>
+  <tr><td>3 · <code>EXTENSION_BODY_ROLES</code></td><td>role <code>picture</code> per §6.3</td></tr>
+  <tr><td>4 · docs family↔card</td><td>no families — inert</td></tr>
+  <tr><td>5 · <code>optionsExhaustive</code></td><td>none — inert</td></tr>
+  <tr><td>6 · typed-entry leg</td><td>clean</td></tr>
+</table>
+<p>e2e: <code>gibribbon.spec.ts</code> keeps its legacy rows (its PACING wait mirrors the card’s 30 Hz poll — the body reuses the same cadence so the ledger subject survives; the two 8 ms STATE-verdict pulse waits are pre-classified debt, not this PR’s). Add shipping-shell legs: body focus + key press → <code>evt_hit</code> pulse at the output (the real chain through the extras seam); screen-off → keys pass through (the capture-release claim, asserted).</p>
+
+<h2>§11 — DIVERGENCE / DEFECT LEDGER</h2>
+<table>
+  <tr><th>#</th><th>finding</th><th>routing</th></tr>
+  <tr><td>1</td><td><code>autoplay</code> documented as a control but unreachable from any UI today (param path only)</td><td>the ranked cell closes it; note in PR body</td></tr>
+  <tr><td>2</td><td>Score/health/combo live only as DOM chrome — no in-canvas HUD exists (the nibbles shape, not the frogger shape)</td><td>face removes the chrome + aria carries values; a painted HUD is a rasteriser edit with attest cost — separate owner question, NOT folded in (GAMES.md §1.2 verbatim)</td></tr>
+  <tr><td>3</td><td><code>autoplay</code> declared <code>curve:'linear'</code>; consumers (shell resolvers) need <code>discrete</code> to paint a toggle — the consumer-first check passes (the resolvers read curve; the card never did)</td><td>def correction rides the PR; contract-lock moves one line; attest check first (M4)</td></tr>
+  <tr><td>4</td><td>Group-controls auto-expose currently offers the 12 CV targets as knobs on a collapsed rack</td><td>fixed by the <code>noUserControl</code> declarations (consumer 1 of the seam)</td></tr>
+</table>
+
+<h2>§12 — MUST-VERIFY</h2>
+<table>
+  <tr><th>id</th><th>experiment</th><th>pass shape</th></tr>
+  <tr><td>M1</td><td>Draft lint run: 12 <code>noUserControl</code> entries accepted (writers anchor to the ports both directions), autoplay toggle renders</td><td>green as predicted</td></tr>
+  <tr><td>M2</td><td>Determinism probe: <code>autoplay=0</code>, no clock, fixed frame count — is the frame bit-stable across two boots? Does scroll advance without beats?</td><td>stable → baseline; else a measured FACES_WITHOUT_SCENES entry (the acidwarp/milkdrop bar: numbers, both mechanisms, in the entry)</td></tr>
+  <tr><td>M3</td><td>Rear derivation output for the ungrouped inputs (cv1-4, clock, gate, x, y) with the ‘signal’ group claimed</td><td>the derived sections are legible; if not, extend authored groups — but only page-id/signal slots exist, so the answer may be “derived default is fine” and the spec prose adjusts</td></tr>
+  <tr><td>M4</td><td>Attest basis membership of <code>gibribbon.ts</code>; cost of the noUserControl + curve edits (def CODE, not stripped)</td><td>known before scoping; if in-basis, the PR body carries the re-attest plan</td></tr>
+  <tr><td>M5</td><td>Keyboard capture in the dock host: focus ring visible, ESC still closes the pane (key-eat scoped to the mapped keys only)</td><td>no dock-chrome key regressions</td></tr>
+</table>
+
+<h2>§13 — OPEN QUESTIONS (owner)</h2>
+<table>
+  <tr><th>q</th><th>question</th><th>recommendation</th></tr>
+  <tr><td>Q1</td><td>In-canvas score HUD (rasteriser edit, attest cost) — wanted?</td><td>defer; the aria path costs nothing and the frame already tells the story visually (health = marine sprite state)</td></tr>
+  <tr><td>Q2</td><td>Should GAME OVER pause the thumb (a dead ribbon in the rack)?</td><td>no — the dead frame IS the honest thumbnail; RESET is one expand away</td></tr>
+</table>
+
+<footer>face-specs/gibribbon.html · authored from gibribbon.ts (ports/params/docs in full) + GibribbonCard.svelte read in full · standards: wave-5 GAMES.md canon + frogger/pong landed faces</footer>
+</main>
+</body>
+</html>
