@@ -1,0 +1,185 @@
+# VRT: accept reviewed actuals (promote, no re-render)
+#
+# THE 90-SECOND HALF OF THE BASELINE-AUTHORING STORY. vrt-update.yml re-RENDERS
+# (3–57 min of browser + DSP build + dice re-roll); this workflow re-USES: it
+# takes a red vrt-strict run's own `<scene>-actual.png` bytes and commits them
+# over the committed baselines, verbatim. That is sound because Playwright's
+# gate and capture share ONE stabilization loop and ONE output buffer
+# (toMatchSnapshot.js writeFiles — the same buffer goes to the baseline path
+# and to test-results/<scene>-actual.png, no re-encode), so under zero
+# tolerance the failure artifact IS what a capture would have written. Validated
+# by hand as commit 4600f6ed8 (65 scenes from run 33217755378); this workflow is
+# that procedure as CI rules, per the owner: "this should all be tasks and CI
+# rules with no need for hand magic."
+#
+# Dispatch it with `task vrt:accept -- <run-id> [scene…]` after REVIEWING the
+# accept gallery a red strict run publishes (the per-card command there is
+# copy-paste ready). Every verification lives in scripts/vrt-accept.mjs and is
+# a hard refusal naming the scene: producer-recorded sha256 must match the
+# downloaded bytes (artifact transport corrupted 10/98 PNGs on run
+# 33211181271), every PNG must fully decode (scripts/vrt-png-verify.mjs),
+# a scene whose render NEVER SETTLED (-previous.png present) is never
+# promoted, cross-shard byte disagreement is never merged, and >40 scenes
+# without the deliberate ACCEPT_ALL waiver is a capture, not an accept.
+#
+# ⚠ NO close/reopen here — DO NOT copy vrt-update.yml's `revalidate` job. The
+# push below is made with VRT_BASELINE_PUSH_TOKEN (a real account, not
+# GITHUB_TOKEN), so it fires `pull_request` natively and the PR's required
+# checks re-run against the promoted baselines on their own. The close+reopen
+# dance exists ONLY to compensate for a GITHUB_TOKEN push (#1694), and it is
+# documented as unreliable (#1694: a reopen that produced NO run; #1815: a
+# parked action_required run counted as success). Re-introducing it here would
+# re-import that whole failure class for nothing.
+#
+# The next vrt-strict run is the SECOND WITNESS, deliberately: it re-renders
+# the accepted scenes on a different VM and reddens, by name, any accept that
+# laundered a per-VM coin-flip. Never short-circuit it.
+name: VRT accept (promote reviewed actuals)
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Branch whose baselines the accepted actuals belong to
+        required: true
+        type: string
+      source_run_id:
+        description: The red ci.yml run whose vrt-strict artifacts hold the reviewed actuals
+        required: true
+        type: string
+      scenes:
+        description: >-
+          Scene list, space-separated ('' = all settled candidates; leading
+          token ALL = waive the 40-scene ceiling; qualify a duplicate name as
+          <spec>/<name>)
+        required: false
+        default: ''
+        type: string
+
+permissions:
+  contents: write   # push the promoted baselines back to the branch
+
+# Two operators accepting different scene sets on one branch must serialize,
+# never cancel — same policy as vrt-update.yml. Different refs never contend.
+concurrency:
+  group: vrt-accept-${{ inputs.ref }}
+  cancel-in-progress: false
+
+jobs:
+  accept:
+    name: promote actuals from run ${{ inputs.source_run_id }} onto ${{ inputs.ref }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # lfs:true, persist-credentials:true, PAT-first token — identical to the
+      # vrt-update.yml collect job this replaces on the accept path. The PAT is
+      # what makes the push fire `pull_request` (see the header).
+      - name: Checkout ${{ inputs.ref }} (LFS for VRT baseline PNGs)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+          lfs: true
+          persist-credentials: true
+          token: ${{ secrets.VRT_BASELINE_PUSH_TOKEN || github.token }}
+
+      - name: Install Flox
+        uses: flox/install-flox-action@v2
+
+      # ── FRESHNESS GATE — a hard refusal, not a warning (report §4.2). An
+      # actual is only valid for the commit it rendered; if the branch moved
+      # since the source run, these bytes describe a tree that no longer
+      # exists and promoting them would bake a stale render over new code.
+      - name: Refuse a stale source run (head_sha must equal the ref tip)
+        id: fresh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ inputs.source_run_id }}
+          REF: ${{ inputs.ref }}
+        run: |
+          set -euo pipefail
+          RUN_JSON="$(flox activate -- gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}")"
+          RUN_HEAD="$(printf '%s' "$RUN_JSON" | flox activate -- jq -r .head_sha)"
+          RUN_ATTEMPT="$(printf '%s' "$RUN_JSON" | flox activate -- jq -r .run_attempt)"
+          TIP="$(flox activate -- git rev-parse HEAD)"
+          echo "source run ${RUN_ID} (attempt ${RUN_ATTEMPT}) rendered ${RUN_HEAD}; '${REF}' tip is ${TIP}"
+          if [ "$RUN_HEAD" != "$TIP" ]; then
+            echo "::error::STALE RUN — run ${RUN_ID} rendered head_sha ${RUN_HEAD} but '${REF}' now points at ${TIP}. Its actuals describe a tree that no longer exists. Push nothing; wait for (or re-run) CI on the new tip and accept from THAT run."
+            exit 1
+          fi
+          echo "attempt=${RUN_ATTEMPT}" >> "$GITHUB_OUTPUT"
+
+      # `gh run download` exits non-zero when nothing matches a pattern; turn
+      # that into plain English (report §4.2: retention-days is 14 on the
+      # test-results artifacts — an expired run must not surface as a stack
+      # trace).
+      - name: Download the run's candidates manifests + test-results
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ inputs.source_run_id }}
+        run: |
+          set -euo pipefail
+          mkdir -p accept-dl/candidates accept-dl/results
+          if ! flox activate -- gh run download "$RUN_ID" --pattern 'vrt-accept-candidates-*' --dir accept-dl/candidates; then
+            echo "::error::run ${RUN_ID} published no vrt-accept-candidates-* artifacts. Either its artifacts EXPIRED (14-day retention — re-run the strict lane and accept from the fresh run), the run predates the candidates step, or it was red for non-screenshot reasons (no promotable actuals). \`task vrt:commit\` remains the re-capture path."
+            exit 1
+          fi
+          if ! flox activate -- gh run download "$RUN_ID" --pattern 'vrt-strict-test-results-*' --dir accept-dl/results; then
+            echo "::error::run ${RUN_ID} published no vrt-strict-test-results-* artifacts — the actual bytes are gone (14-day retention). Re-run the strict lane, or use \`task vrt:commit\` to re-capture."
+            exit 1
+          fi
+
+      # ── EVERY PIXEL-SAFETY GATE LIVES IN THE SCRIPT (sha256 == manifest,
+      # full decode via scripts/vrt-png-verify.mjs, -previous.png refusal,
+      # cross-shard conflict refusal, ceiling). ANY problem fails the WHOLE
+      # accept — a 90-second job re-runs for free; a partial accept is a
+      # confusing audit record (deliberately the OPPOSITE of the capture
+      # collector's land-the-good-files policy).
+      - name: Verify (sha256 + decode + settled) and copy the requested scenes
+        env:
+          SCENES: ${{ inputs.scenes }}
+          RUN_ID: ${{ inputs.source_run_id }}
+          ACTOR: ${{ github.actor }}
+          VRT_SOURCE_RUN_ATTEMPT: ${{ steps.fresh.outputs.attempt }}
+        run: |
+          set -euo pipefail
+          flox activate -- node scripts/vrt-accept.mjs \
+            --candidates accept-dl/candidates \
+            --results accept-dl/results \
+            --run-id "$RUN_ID" \
+            --scenes "$SCENES" \
+            --head "$(flox activate -- git rev-parse HEAD)" \
+            --actor "$ACTOR" \
+            --message-out accept-dl/commit-msg.txt \
+            --accepted-out accept-dl/accepted.txt
+
+      # Stage EXACTLY what the script verified — never `git add` the whole
+      # baseline tree. Provenance (run id, per-scene sha256s, runner CPUs,
+      # the never-settled reject list) is the commit message the script wrote.
+      - name: Commit the promoted baselines with provenance, and push
+        env:
+          REF: ${{ inputs.ref }}
+          # Expression, not secret-in-if: the secrets context is evaluated
+          # here into a boolean the shell can read.
+          HAS_PUSH_TOKEN: ${{ secrets.VRT_BASELINE_PUSH_TOKEN != '' }}
+        run: |
+          set -euo pipefail
+          flox activate -- git config user.name "vrt-baseline-bot"
+          flox activate -- git config user.email "vrt-baseline-bot@users.noreply.github.com"
+          while IFS= read -r p; do
+            [ -n "$p" ] || continue
+            flox activate -- git add -- "$p"
+          done < accept-dl/accepted.txt
+          if flox activate -- git diff --cached --quiet; then
+            echo "Every requested scene is already byte-identical to its committed baseline — nothing to push."
+            echo "::notice::vrt-accept: zero files staged (all requested scenes already identical). If the lane is still red, the failures are NOT these scenes."
+            exit 0
+          fi
+          if [ "$HAS_PUSH_TOKEN" != "true" ]; then
+            echo "::warning::VRT_BASELINE_PUSH_TOKEN is unset — pushing with GITHUB_TOKEN, which fires NO pull_request run (#1694). The PR will sit un-revalidated until a human re-fires CI. Set the secret; this workflow deliberately has no close/reopen fallback."
+          fi
+          # A human (or a second accept) can push mid-flight; replay on top.
+          flox activate -- git commit -F accept-dl/commit-msg.txt
+          flox activate -- git fetch origin "$REF"
+          flox activate -- git rebase "origin/$REF"
+          flox activate -- git push origin "HEAD:$REF"
+          echo "Pushed promoted baselines to $REF as $(flox activate -- git rev-parse HEAD)."

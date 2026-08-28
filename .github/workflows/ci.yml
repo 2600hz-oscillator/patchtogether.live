@@ -2668,6 +2668,16 @@ jobs:
           # Names this lane in the wrapper's one-line budget report, so the
           # percentage in the log says WHICH shard it belongs to.
           E2E_SHARD_BUDGET_LABEL: vrt-strict shard ${{ matrix.shard }}/${{ strategy.job-total }}
+          # Adds the `json` reporter (vrt.config.ts appends it when this is
+          # set) so each failed screenshot assertion's attachments — including
+          # the `-expected` attachment whose `path` IS the absolute committed-
+          # baseline path — are machine-readable. That is what lets the
+          # accept-candidates step below derive `actual → baseline` mappings
+          # from Playwright's own metadata instead of parsing the TRUNCATED
+          # test-results folder names (lossy: `moog907a` becomes
+          # `…--3cb78-g907a-…`). Absolute path on purpose: a relative
+          # outputFile would resolve against the config dir, not the workspace.
+          VRT_JSON_REPORT: ${{ github.workspace }}/vrt-json-report-shard-${{ matrix.shard }}.json
         run: |
           set -uo pipefail
           GREP="$(cat vrt-shard-grep.txt)"
@@ -2740,6 +2750,52 @@ jobs:
           path: e2e/vrt/report
           retention-days: 14
 
+      # ── ACCEPT-CANDIDATES MANIFEST (vrt-accept.yml's input) ──────────────
+      # A failed comparison's `<scene>-actual.png` is byte-for-byte what a
+      # `--update-snapshots=all` capture would have committed (one loop, one
+      # buffer, two writeFileSync destinations — toMatchSnapshot.js), so a red
+      # shard already CONTAINS its own fix. This step records, AT THE SOURCE,
+      # everything the promote path must verify later: the baseline repo path
+      # each actual maps to (derived from Playwright's JSON-report attachment
+      # metadata + cross-checked against snapshotPathTemplate — NEVER from the
+      # truncated folder names), the actual's sha256 (artifact transport
+      # corrupted 10/98 PNGs on run 33211181271; only a producer-recorded hash
+      # turns that into a loud TRANSPORT MISMATCH at the sink), and whether a
+      # `-previous.png` exists (the render never settled → vrt-accept.yml
+      # refuses the scene). The runner CPU goes in because per-VM raster
+      # variance is THE way a promoted baseline goes wrong — a baseline that
+      # ping-pongs between two CPU families is then diagnosable from git log.
+      #
+      # `if: failure()` like the test-results upload: only a failing shard has
+      # candidates. The manifest builder REFUSES (red step) on any ambiguity
+      # rather than emitting a doubtful mapping — a promote step must not
+      # guess. Runs on a red suite, so its own failure cannot mask a green run.
+      - name: Emit accept-candidates manifest (failing scenes → promotable actuals)
+        if: failure()
+        env:
+          # The PR HEAD sha, not the merge sha — it is what vrt-accept.yml
+          # compares against the branch tip for its freshness gate.
+          VRT_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          VRT_CPU_MODEL="$(grep -m1 'model name' /proc/cpuinfo | cut -d: -f2- | sed 's/^ *//')" || VRT_CPU_MODEL=unknown
+          export VRT_CPU_MODEL
+          flox activate -- node scripts/vrt-accept-manifest.mjs \
+            --report vrt-json-report-shard-${{ matrix.shard }}.json \
+            --results e2e/vrt/test-results \
+            --shard ${{ matrix.shard }} \
+            --out vrt-accept-candidates-${{ matrix.shard }}.json
+
+      - name: Upload accept-candidates manifest (shard ${{ matrix.shard }})
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vrt-accept-candidates-${{ matrix.shard }}
+          path: vrt-accept-candidates-${{ matrix.shard }}.json
+          # Same retention as the test-results the manifest describes — a
+          # manifest that outlives its actual bytes could only mislead.
+          retention-days: 14
+
   # -----------------------------------------------------------------------
   # vrt-strict — THE REQUIRED CONTEXT. Carries the exact name ruleset 16042163
   # matches (`vrt-strict (visual regression — strict subset)`, em-dash
@@ -2777,3 +2833,145 @@ jobs:
             exit 1
           fi
           echo "All vrt-strict shards green."
+
+  # -----------------------------------------------------------------------
+  # vrt-accept-gallery — THE REVIEWING SURFACE for a red strict run. Builds
+  # the OLD/NEW/DIFF triptych of exactly the accept-candidate scenes (from the
+  # manifests the failing shards just uploaded) and publishes it to the same
+  # CF Pages project the changeset gallery uses, under the distinct alias
+  # `vrt-accept-pr-<N>` (the changeset gallery owns `vrt-pr-<N>` — no
+  # collision, no new secret). Each card shows THAT scene's copy-paste
+  # `task vrt:accept` command; the full-set command sits at the bottom as
+  # plain text — deliberately NO accept-all button or link styling, because
+  # batch-accept without looking is how an all-black baseline shipped and
+  # passed for months (face-outlines-dock). The decision stays with the
+  # operator; this page only makes LOOKING cheap.
+  #
+  # INFORMATIONAL — never gates merge, costs a runner only when the strict
+  # lane is already red on a PR. `always() && … == 'failure'` because the
+  # default success() gate can never be true on the path this job exists for.
+  vrt-accept-gallery:
+    name: VRT accept gallery (review a red strict run)
+    needs: vrt-strict-shard
+    if: always() && github.event_name == 'pull_request' && needs.vrt-strict-shard.result == 'failure'
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    permissions:
+      contents: read
+      pull-requests: write   # upsert the gallery-link comment
+    steps:
+      - name: Checkout (scripts + root deps only — the OLD side comes from the artifacts)
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # sharp + pixelmatch at the root, same as vrt-changeset-gallery.yml —
+      # no workspace build, no browser, no flox needed for a pure-node job.
+      - name: Install root deps (sharp + pixelmatch)
+        run: npm install --no-audit --no-fund
+
+      - name: Download this run's accept candidates
+        uses: actions/download-artifact@v4
+        with:
+          pattern: vrt-accept-candidates-*
+          path: vrt-accept-dl/candidates
+
+      - name: Download this run's strict test-results (actual + expected PNGs)
+        uses: actions/download-artifact@v4
+        with:
+          pattern: vrt-strict-test-results-*
+          path: vrt-accept-dl/results
+
+      # A strict shard can fail with NO screenshot mismatch (timeout, infra) —
+      # then there are no manifests and no gallery to build. Say so instead of
+      # deploying an empty page.
+      - name: Build the accept gallery from the candidates
+        id: build
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          MANIFESTS=$(find vrt-accept-dl/candidates -name 'vrt-accept-candidates-*.json' | wc -l | tr -d ' ')
+          if [ "$MANIFESTS" = "0" ]; then
+            echo "count=0" >> "$GITHUB_OUTPUT"
+            echo "::notice::strict lane is red but published no accept candidates — the failures are not screenshot mismatches (nothing to review here)."
+            exit 0
+          fi
+          COUNT=$(node scripts/vrt-changeset-gallery.mjs \
+            --from-results vrt-accept-dl/results \
+            --candidates vrt-accept-dl/candidates \
+            --run-id "${{ github.run_id }}" \
+            --pr "${PR_NUMBER}" \
+            --out docs/vrt-accept-gallery \
+            --json /tmp/vrt-accept-gallery.json)
+          echo "count=$COUNT" >> "$GITHUB_OUTPUT"
+          echo "Candidate scenes: $COUNT"
+
+      - name: Deploy gallery to Cloudflare Pages
+        id: deploy
+        if: steps.build.outputs.count != '0'
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: >-
+            pages deploy docs/vrt-accept-gallery
+            --project-name=patchtogether-live-autotest
+            --branch=vrt-accept-pr-${{ github.event.pull_request.number }}
+            --commit-message=vrt-accept-gallery-${{ github.sha }}
+
+      - name: Compute gallery URL
+        id: url
+        if: steps.build.outputs.count != '0'
+        run: |
+          URL="${{ steps.deploy.outputs.deployment-url }}"
+          if [ -z "$URL" ]; then
+            URL="https://vrt-accept-pr-${{ github.event.pull_request.number }}.patchtogether-live-autotest.pages.dev"
+          fi
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+          echo "Gallery URL: $URL"
+
+      # Same upsert pattern (marker → update-or-create) as the changeset
+      # gallery, under a DIFFERENT marker: both comments can coexist — one
+      # reviews committed baseline changes, this one reviews a red run.
+      - name: Upsert PR comment with accept-gallery link
+        if: steps.build.outputs.count != '0'
+        uses: actions/github-script@v7
+        env:
+          GALLERY_URL: ${{ steps.url.outputs.url }}
+          COUNT: ${{ steps.build.outputs.count }}
+          RUN_ID: ${{ github.run_id }}
+        with:
+          script: |
+            const marker = '<!-- vrt-accept-gallery -->';
+            const url = process.env.GALLERY_URL;
+            const count = process.env.COUNT;
+            const runId = process.env.RUN_ID;
+            const body = [
+              marker,
+              `### 🔴 vrt-strict failed — ${count} candidate scene${count === '1' ? '' : 's'} to review`,
+              ``,
+              `**[▶ Review each failing scene (OLD / NEW / DIFF) →](${url})**`,
+              ``,
+              `Every card shows its own copy-paste accept command. Accepting promotes that scene's`,
+              `rendered bytes as the new baseline — **no re-capture** — and the next CI run re-verifies`,
+              `them on a fresh VM. Scenes you do NOT accept stay red until the underlying fix lands.`,
+              ``,
+              `<sub>Source run \`${runId}\` · candidates manifest per failing shard · \`task vrt:accept -- ${runId} <scene>\` · a scene that never settled (\`-previous.png\`) cannot be accepted. Artifacts expire after 14 days.</sub>`,
+            ].join('\n');
+            const { owner, repo } = context.repo;
+            const issue_number = context.payload.pull_request.number;
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner, repo, issue_number, per_page: 100,
+            });
+            const existing = comments.find((c) => c.body && c.body.includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+              core.info(`Updated existing comment ${existing.id}`);
+            } else {
+              await github.rest.issues.createComment({ owner, repo, issue_number, body });
+              core.info('Created new accept-gallery comment');
+            }

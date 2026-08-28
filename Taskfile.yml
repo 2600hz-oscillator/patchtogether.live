@@ -871,6 +871,82 @@ tasks:
         echo "   agent, and three 45s loops drained it to 0/5000 on 2026-08-18. vrt:watch"
         echo "   backs off, waits out a rate limit, and reports what the run COMMITTED.)"
 
+  vrt:accept:
+    desc: |
+      [accept a RED vrt-strict run's reviewed scenes — NO re-render] Dispatch
+      vrt-accept.yml: it promotes the run's own `<scene>-actual.png` bytes over
+      the committed baselines, verbatim. Sound because Playwright's gate and
+      capture share one stabilization loop and one output buffer — under zero
+      tolerance the failure artifact IS what a capture would have written
+      (validated by hand as commit 4600f6ed8; ~90 s against 3-57 min for a
+      re-capture, and it re-rolls ZERO rasterization dice).
+
+      REVIEW FIRST. A red strict run posts the accept gallery on the PR; every
+      card there shows this command pre-filled for its scene. The workflow
+      hard-refuses: a stale run (head_sha != branch tip), a sha256 that does
+      not match what the producing shard recorded, a PNG that does not decode,
+      any scene whose render NEVER SETTLED (-previous.png), and cross-shard
+      byte conflicts. Rejected scenes stay red until the underlying fix — that
+      is the point, not a failure of this tool.
+      Examples:
+        task vrt:accept -- 33217755378                      # all settled candidates (ceiling applies)
+        task vrt:accept -- 33217755378 moog914 face-lfo-dock
+        ACCEPT_ALL=1 task vrt:accept -- 33217755378         # waive the ceiling — every scene REVIEWED
+    cmds:
+      - |
+        set -eu
+        ARGS="{{.CLI_ARGS}}"
+        # One safe charset for the whole arg string BEFORE any word-splitting —
+        # same reasoning as vrt:commit's GREP guard: go-task interpolates
+        # CLI_ARGS into this script textually, so anything outside
+        # [A-Za-z0-9_./ -] must be refused, never forwarded.
+        case "$ARGS" in
+          *[!A-Za-z0-9_./\ -]*)
+            echo "vrt:accept: arguments may only contain [A-Za-z0-9_./-] and spaces: '$ARGS'" >&2
+            exit 1
+            ;;
+        esac
+        set -- $ARGS
+        if [ "$#" -lt 1 ]; then
+          echo "usage: task vrt:accept -- <run-id> [scene...]   (no scenes = all settled candidates)" >&2
+          exit 1
+        fi
+        RUN_ID="$1"; shift
+        case "$RUN_ID" in
+          *[!0-9]*|'')
+            echo "vrt:accept: '$RUN_ID' is not a run id — pass the RED ci.yml run's numeric id first." >&2
+            exit 1
+            ;;
+        esac
+        ACCEPT_ALL="${ACCEPT_ALL:-}"
+        # The ceiling is DERIVED from the accept script, never re-typed here —
+        # one number, one owner (scripts/vrt-accept.mjs VRT_ACCEPT_CEILING).
+        CEILING="$(node -e 'import("./scripts/vrt-accept.mjs").then((m) => console.log(m.VRT_ACCEPT_CEILING))')"
+        if [ "$#" -gt "$CEILING" ] && [ -z "$ACCEPT_ALL" ]; then
+          echo "vrt:accept: $# scenes exceeds the $CEILING-scene accept ceiling." >&2
+          echo "A change that size is a CAPTURE, not an accept — use \`ALL=1 task vrt:commit\` for a" >&2
+          echo "deliberate re-render, or re-run with ACCEPT_ALL=1 only if every scene was genuinely reviewed." >&2
+          exit 1
+        fi
+        SCENES="$*"
+        if [ -n "$ACCEPT_ALL" ]; then SCENES="ALL${SCENES:+ $SCENES}"; fi
+        BRANCH="$(git rev-parse --abbrev-ref HEAD)"
+        if [ "$BRANCH" = "main" ] || [ "$BRANCH" = "HEAD" ]; then
+          # Accept is a REVIEW tool for a PR branch. Auto-accepting on main is
+          # the most-regretted affordance in this product category — refuse.
+          echo "vrt:accept: refusing to accept baselines onto '$BRANCH' — check out the PR branch first." >&2
+          exit 1
+        fi
+        echo "Dispatching vrt-accept.yml for branch '$BRANCH', source run $RUN_ID, scenes: ${SCENES:-<all settled candidates>} …"
+        # --ref "$BRANCH" runs the BRANCH'S OWN copy of the workflow — same
+        # two-versions hazard vrt:commit documents on its dispatch.
+        gh workflow run vrt-accept.yml --ref "$BRANCH" \
+          -f ref="$BRANCH" \
+          -f source_run_id="$RUN_ID" \
+          -f scenes="$SCENES"
+        echo "Dispatched (~90 s). On success the bot's push fires a FRESH pull_request CI run —"
+        echo "that re-render is the second witness on a different VM, and it is deliberate."
+
   vrt:watch:
     desc: |
       [watch a dispatched VRT capture] Poll the vrt-update run for THIS branch
