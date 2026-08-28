@@ -1,0 +1,303 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>FACE SPEC — textmarquee</title>
+<style>
+  /* House tokens — the same set the wave-1..7 mocks use (dark-only, per wave-5+ convention). */
+  :root{
+    --bg:#0e1013; --dock:#12161c; --plate:#262a31; --pbody:#1c1f24; --well:#0a0c0f;
+    --line:#2c3037; --tile:#33383f; --ink:#eef1f5; --dim:#9aa2ad; --faint:#646c77;
+    --accent:#6cf; --vid:#4ade80; --cv:#7dd3fc; --warn:#f2c14e; --good:#8fe6b0;
+    --bad:#f87171; --meta:#c084fc;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{background:var(--bg);color:var(--ink);font-family:var(--sans);margin:0;padding:24px 16px 80px;line-height:1.5}
+  main{max-width:1080px;margin:0 auto}
+  header.top{border-bottom:1px solid var(--line);padding-bottom:12px;margin-bottom:20px}
+  header.top h1{font-family:var(--mono);font-size:1.35rem;margin:0 0 4px}
+  header.top .sub{color:var(--dim);font-size:.9rem}
+  .crumbs{font-family:var(--mono);font-size:.75rem;margin-bottom:10px}
+  .crumbs a{color:var(--cv);text-decoration:none}
+  .crumbs a:hover{text-decoration:underline}
+  .badge{display:inline-block;font-family:var(--mono);font-size:.7rem;padding:2px 8px;border-radius:3px;border:1px solid var(--line);color:var(--dim);margin-left:6px;vertical-align:middle}
+  .badge.video{color:var(--vid);border-color:var(--vid)}
+  .verdict{font-family:var(--mono);font-size:.95rem;padding:10px 14px;border-radius:6px;margin:14px 0;border:1px solid}
+  .verdict.blocked{border-color:var(--warn);color:var(--warn);background:rgba(242,193,78,.06)}
+  h2{font-family:var(--mono);font-size:1.02rem;color:var(--ink);border-bottom:1px solid var(--line);padding-bottom:6px;margin:34px 0 12px}
+  h3{font-family:var(--mono);font-size:.9rem;color:var(--dim);margin:20px 0 8px}
+  p{margin:8px 0;color:var(--ink)}
+  table{border-collapse:collapse;width:100%;margin:10px 0;font-size:.85rem}
+  th{font-family:var(--mono);font-size:.72rem;text-transform:uppercase;letter-spacing:.04em;color:var(--faint);text-align:left;padding:6px 10px;border-bottom:1px solid var(--line)}
+  td{padding:6px 10px;border-bottom:1px solid rgba(44,48,55,.55);vertical-align:top}
+  code,.mono{font-family:var(--mono);font-size:.83em;color:var(--cv)}
+  pre.code{background:var(--well);border:1px solid var(--line);border-radius:6px;padding:12px 14px;overflow-x:auto;font-family:var(--mono);font-size:.78rem;line-height:1.55;color:var(--ink)}
+  pre.code .c{color:var(--faint)}
+  .callout{border-left:3px solid var(--line);background:rgba(28,31,36,.6);padding:10px 14px;border-radius:0 6px 6px 0;margin:12px 0;font-size:.88rem}
+  .callout.warn{border-color:var(--warn)}
+  .callout.ok{border-color:var(--good)}
+  .callout.bad{border-color:var(--bad)}
+  .callout .t{font-family:var(--mono);font-size:.72rem;text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:4px}
+  .callout.warn .t{color:var(--warn)} .callout.ok .t{color:var(--good)} .callout.bad .t{color:var(--bad)}
+  .aria{font-family:var(--mono);font-size:.78rem;color:var(--good)}
+  .kept{color:var(--good);font-family:var(--mono);font-size:.78rem}
+  .rm{color:var(--bad);font-family:var(--mono);font-size:.78rem}
+  .mockrow{display:flex;gap:28px;flex-wrap:wrap;align-items:flex-start;margin:16px 0}
+  .mocklab{font-family:var(--mono);font-size:.7rem;color:var(--faint);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px}
+  .lane{width:192px;height:180px;background:var(--pbody);border:1px solid var(--line);border-radius:8px;display:flex;flex-direction:column;overflow:hidden;flex:none}
+  .lane .lchrome{font-family:var(--mono);font-size:.62rem;color:var(--dim);padding:4px 8px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between}
+  .lane .lbody{flex:1;display:flex;gap:9px;padding:8px;align-items:flex-start}
+  .kcol{width:46px;display:flex;flex-direction:column;align-items:center;gap:3px;flex:none}
+  .dial{width:36px;height:36px;border-radius:50%;background:var(--tile);border:1px solid var(--line);position:relative}
+  .dial::after{content:"";position:absolute;left:50%;top:3px;width:2px;height:12px;background:var(--vid);transform-origin:50% 15px}
+  .kcap{font-family:var(--mono);font-size:.6rem;color:var(--dim)}
+  .thumb{width:160px;height:120px;background:#000;border:1px solid var(--line);border-radius:4px;position:relative;overflow:hidden}
+  .dock{background:var(--dock);border:1px solid var(--line);border-radius:10px;overflow:hidden;flex:none}
+  .chromebar{display:flex;justify-content:space-between;align-items:center;font-family:var(--mono);font-size:.7rem;color:var(--dim);padding:6px 12px;border-bottom:1px solid var(--line)}
+  .plate{padding:14px;width:max-content;max-width:100%}
+  .extbody{background:var(--pbody);border:1px solid var(--line);border-radius:8px;padding:12px;margin-bottom:12px}
+  .bands{display:flex;flex-direction:column;gap:10px}
+  .band{border:1px solid var(--line);border-radius:8px;padding:8px 12px 10px;background:rgba(28,31,36,.4)}
+  .blab{font-family:var(--mono);font-size:.62rem;color:var(--faint);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px}
+  .brow{display:flex;gap:16px;align-items:flex-end}
+  .btn{font-family:var(--mono);font-size:.66rem;color:var(--ink);background:var(--tile);border:1px solid var(--line);border-radius:4px;padding:3px 8px;display:inline-block}
+  .btn.on{border-color:var(--vid);color:var(--vid)}
+  .toolrow{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:8px;align-items:center}
+  .editor{background:#101014;border:1px dashed var(--faint);border-radius:4px;padding:10px;font-family:var(--sans)}
+  .scrbtn{position:absolute;right:6px;bottom:6px;background:rgba(10,12,15,.72);border:1px solid var(--line);border-radius:4px;font-family:var(--mono);font-size:.6rem;color:var(--dim);padding:2px 6px}
+  footer{margin-top:48px;border-top:1px solid var(--line);padding-top:10px;font-family:var(--mono);font-size:.7rem;color:var(--faint)}
+</style>
+</head>
+<body>
+<main>
+<header class="top">
+  <div class="crumbs"><a href="INDEX.html">← face-specs INDEX</a></div>
+  <h1>FACEPLATE BUILD SPEC — <code>textmarquee</code> <span class="badge video">video</span> <span class="badge">bespoke-surface</span></h1>
+  <div class="sub">TEXTMARQUEE — the rich-text 90s-screensaver marquee SOURCE: typed styled text rasterized to a scrolling ribbon; four motion knobs with CV. SPEC ONLY — nothing here is implemented. Authored 2026-08-28 against <code>origin/main</code> @ <code>f340ab43a</code>.</div>
+</header>
+
+<div class="verdict blocked">VERDICT: SURFACE FULLY SPECIFIED; PROMOTION BLOCKED ON THE TYPED-ENTRY OWNER DECISION. textmarquee is the fleet’s standing GENUINE typed-entry case — “the blocker keeps meaning what it says, for modules that genuinely need free typed text” (wave-7, midiLane §5.4, naming textmarquee). Its contenteditable IS the module; there is no query-vs-results split to hide behind, and no shipped precedent for a text-EDITING fullViewBody. The face below is ready to build the moment the owner picks a route (§8) — and everything else about this module is unusually promotion-friendly: the render-and-push half is ALREADY node-lifetime (#1720).</div>
+
+<h2>§0 — THE CONSTRAINT MAP, READ FIRST</h2>
+<table>
+  <tr><th>registry / gate</th><th>state for textmarquee</th><th>evidence</th></tr>
+  <tr><td><code>STRICT_FACES</code></td><td>NOT a member — unfaced</td><td><code>strict-faces.ts</code></td></tr>
+  <tr><td>migration disposition</td><td><code>bespoke-surface</code>, no blocker recorded — ⚠ but it is a NAMED positive control of the typed-entry instrument itself (<code>['cartesian','sticky','textmarquee']</code>)</td><td><code>face-migration-inventory.ts</code>: “a RICH TEXT EDITOR: a contenteditable marquee with per-run colour and formatting. Typing the text IS the module, and it is beyond a short-text field.”</td></tr>
+  <tr><td>typed-entry leg</td><td><b>TRIPS</b> — <code>contenteditable</code> (verified 2026-08-28; it is a positive control, so this can never quietly drift green)</td><td>§8</td></tr>
+  <tr><td>render-and-push lifetime</td><td><b>node-owned ALREADY</b> (#1720): the model→canvas→<code>setTextCanvas</code> loop lives in <code>$lib/ui/media/extras-producers</code>, “so the node shows your text with no card mounted.” The card writes the MODEL and nothing else</td><td><code>TextmarqueeCard.svelte</code> header</td></tr>
+  <tr><td>VRT today</td><td>has an entry block at <code>vrt-exemptions.ts:198</code> (scene-scoped) — the marquee is static at default (scroll knobs = 0.5 → no crawl), so the cold face should be capturable; M3</td><td><code>e2e/vrt/vrt-exemptions.ts</code></td></tr>
+  <tr><td>WebGL attest</td><td>⚠ textmarquee IS NAMED in the attest-coverage lineage (“mandelbulb, nibbles, vfpga-runner, spirographs, textmarquee: 43 → 50”) — treat <code>textmarquee.ts</code> as basis-resident until M4 disproves it; the face block is stripped by design, but ANY behavioural edit to the def file costs a re-attest</td><td><code>webgl-attest-coverage.test.ts:80</code></td></tr>
+  <tr><td>e2e waits</td><td><code>textmarquee.spec.ts</code> carries a PACING ledger wait mirroring the card’s 250 ms <code>persistModelDebounced</code> — the body must keep that debounce (same seam), or the ledger entry’s subject vanishes and the ledger gate reddens</td><td><code>waitfortimeout-ledger</code> verdicts tsv</td></tr>
+</table>
+
+<h2>§1 — WHAT THE MODULE IS FOR</h2>
+<p>The verb is <b>TYPE</b> (then fly it around). A styled paragraph (system fonts, per-run colour, B/I/U, align, font family + size, one layer background) is serialized to a rich-text MODEL in <code>node.data.richText</code>, rasterized offscreen to real system glyphs, uploaded as a texture, and drawn as ONE ribbon whose position (PosX/PosY) and crawl (ScrlX/ScrlY, 0.5 = static) are the four params — each with a matching bipolar CV input calibrated so a ±1 LFO sweeps fully off one edge, across, and back. Everything outside the ribbon’s block is layer black. A fresh node shows the built-in “textmarquee” placeholder.</p>
+
+<h2>§2 — STOP 1: LEGACY-CARD PARITY CENSUS</h2>
+<table>
+  <tr><th>affordance</th><th>card site</th><th>face home</th><th>survives?</th></tr>
+  <tr><td>contenteditable editor (the DOM is serialized to the model; model is the single source for editor AND texture)</td><td><code>textmarquee-editor</code></td><td>body editor — same serialize/coerce helpers (<code>textmarquee-layout.ts</code>), same 250 ms debounce</td><td>YES (pending §8 route)</td></tr>
+  <tr><td>toolbar: align L/C/R, B, I, U (selection-preserving <code>onmousedown</code>)</td><td><code>textmarquee-align-*</code>, <code>-bold/-italic/-underline</code></td><td>body toolbar, logic verbatim</td><td>YES</td></tr>
+  <tr><td>per-selection text colour (<code>input type="color"</code>)</td><td><code>textmarquee-run-color</code></td><td>body (colour inputs do not trip the typed-entry predicate)</td><td>YES</td></tr>
+  <tr><td>font family select + SIZE slider (range)</td><td><code>textmarquee-font</code> / <code>-size</code></td><td>body select + slider</td><td>YES</td></tr>
+  <tr><td>layer background colour</td><td><code>textmarquee-bg</code></td><td>body colour input</td><td>YES</td></tr>
+  <tr><td>“TYPE TEXT…” empty badge</td><td><code>textmarquee-empty</code></td><td>body empty-state affordance — an INVITATION to act on an empty editor, not derived state; kept (see §7)</td><td>YES</td></tr>
+  <tr><td>live preview canvas of the OUT layer</td><td><code>textmarquee-screen</code> (<code>drawPreviewDownscaled</code>)</td><td>the body’s preview + the free lane thumb; SCREEN switch collapses the preview only, never the editor (§6.4)</td><td>YES</td></tr>
+  <tr><td>4 knobs SCRLX/SCRLY/POSX/POSY</td><td>card <code>&lt;Knob&gt;</code> row (literal 0..1 ranges)</td><td>ranked knob cells, one ‘motion’ band</td><td>YES</td></tr>
+</table>
+
+<h2>§3 — STOP 2: EVERY WAY DATA GETS IN</h2>
+<table>
+  <tr><th>path</th><th>mechanism</th><th>after promotion</th></tr>
+  <tr><td>typing</td><td>DOM → serialize → <code>persistModel</code> sets <code>node.data.richText</code> IN PLACE (never reassign <code>live.data</code> — the yjs trap, named in the card), debounced 250 ms</td><td>body editor, same helper + debounce (the e2e PACING ledger names it)</td></tr>
+  <tr><td>knob edits</td><td><code>setNodeParam</code></td><td>ranked cells</td></tr>
+  <tr><td>CV: scrollX/scrollY/posX/posY jacks</td><td>per-param cv ports (<code>paramTarget</code>, linear <code>cvScale</code> — bipolar around the knob)</td><td>unchanged; rear groups name them (§5.2)</td></tr>
+  <tr><td>remote peer typing</td><td>Y.Doc model sync → producer re-rasterizes (node lifetime — works with NO surface mounted, already)</td><td>unchanged — the archivist-D1 class is structurally closed here</td></tr>
+  <tr><td>reload</td><td>model + params persist; producer re-renders on boot</td><td>unchanged</td></tr>
+</table>
+
+<h2>§4 — THE LANE PICTURE</h2>
+<p><code>domain === 'video'</code> → free <code>VideoTileThumb</code>: the live marquee (or the placeholder word), honest in every state. The picture outranks ranked cells (#1785): compact cap with glyph = 2, so the lane shows the thumb + 2 knobs.</p>
+
+<h2>§5 — THE FACE</h2>
+<pre class="code">face: {
+  <span class="c">// RANK by what a rack player reaches for mid-set: position first (where IS the</span>
+  <span class="c">// banner), then crawl. X before Y in each pair (the horizontal marquee is the</span>
+  <span class="c">// 90s default this module exists for).</span>
+  order: ['posX', 'posY', 'scrollX', 'scrollY'],
+  <span class="c">// ONE page so the band has a name a rear group can claim (§5.2); 4 controls</span>
+  <span class="c">// over one ribbon is one idea — no clusters, no rail (4 &lt;&lt; DOCK_TAB_MIN_BANDS).</span>
+  pages: [{ id: 'motion', label: 'motion', controls: ['posX', 'posY', 'scrollX', 'scrollY'] }],
+  glyph: 'none',            <span class="c">// video def, no audio out — the thumb is the picture.</span>
+  extension: 'textmarquee', <span class="c">// §6 — editor + preview body.</span>
+  monitor: { why: 'the marquee is a performance visual steered by CV; watching the ribbon ' +
+                  'without the editor chrome is the projection use.' },
+  rear: {
+    groups: [
+      <span class="c">// The four CV jacks ARE the motion page's inputs — claiming the page slot</span>
+      <span class="c">// names the rail in the module's own vocabulary instead of four anonymous</span>
+      <span class="c">// cv jacks (the frogger rear lesson: ids are not free; name a page or 'signal').</span>
+      { id: 'motion', label: 'motion cv', ports: ['posX', 'posY', 'scrollX', 'scrollY'] },
+    ],
+  },
+},</pre>
+
+<h3>§5.1 Cells, tier by tier</h3>
+<table>
+  <tr><th>param</th><th>def declaration</th><th>cell kind</th><th>compact lane (cap 2 + thumb)</th><th>dock</th></tr>
+  <tr><td><code>posX</code></td><td>0..1 linear, default 0.5, label ‘PosX’</td><td>knob</td><td>slot 1</td><td>motion band</td></tr>
+  <tr><td><code>posY</code></td><td>0..1 linear, default 0.5, label ‘PosY’</td><td>knob</td><td>slot 2</td><td>motion band</td></tr>
+  <tr><td><code>scrollX</code></td><td>0..1 linear, default 0.5 (static), label ‘ScrlX’</td><td>knob</td><td>— (rank 3)</td><td>motion band</td></tr>
+  <tr><td><code>scrollY</code></td><td>0..1 linear, default 0.5, label ‘ScrlY’</td><td>knob</td><td>— (rank 4)</td><td>motion band</td></tr>
+</table>
+<p>All four captions stay (POSX/POSY/SCRLX/SCRLY disambiguate four identical knobs — the tidyVco side of the bareCells test; no <code>bareCells</code>). The “0.5 = static, bipolar around the knob” semantics belong in <span class="aria">aria-valuetext</span> (“static” / “crawl left 40%”) — a name for the state, never a painted number. M5 checks whether that wants a <code>format</code>/landmark declaration; note the <code>face-readout-source</code> blind spot it would create (a <code>format</code> defeats <code>paintsReadout</code>) and prefer landmarks naming only the centre (“static”).</p>
+
+<h3>§5.2 Width — earned by the picture</h3>
+<p>The preview + editor body is the width earner (a live picture). Bands sit under it at <code>max-content</code>; no exemption.</p>
+
+<h2>§6 — THE BODY: <code>face.extension: 'textmarquee'</code>, slot <code>fullViewBody</code></h2>
+<h3>§6.1 Why not a cell — the ladder, walked</h3>
+<table>
+  <tr><th>rung</th><th>refusal</th></tr>
+  <tr><td><code>entry</code> cell (the ONE cell permitted to paint text at rest, ‘authored-entry’)</td><td>it is a TYPED-ENTRY FIELD for a short string — a name, a URL. A multi-paragraph rich-text model with per-run styling and selection-scoped formatting is “beyond a short-text field” (the inventory’s own words). Squeezing the model through an entry cell loses runs, alignment and selection semantics — a parity loss, refused</td></tr>
+  <tr><td><code>panel</code> cell</td><td>the editor needs the toolbar + font controls + bg colour AROUND the editable region — an editor suite, not one picture-you-edit</td></tr>
+  <tr><td><code>editorSurface</code> slot</td><td>UNWIRED; <code>fullViewBody</code> gives the same real estate wired today (the painter argument, verbatim)</td></tr>
+  <tr><td><code>fullViewBody</code></td><td class="kept">TAKEN — preview on top, editor + toolbar below, one component</td></tr>
+</table>
+
+<h3>§6.2 The component</h3>
+<p><code>$lib/ui/modules/textmarquee/shell-extension.ts</code> → <code>{ fullViewBody: TextmarqueeEditorBody }</code>. Contents: the live preview (downscaled OUT layer, SCREEN switch overlaid) · the toolbar (align/B/I/U/colour/font/size/bg) · the contenteditable region (same serialize seam + <code>MAX_CHARS</code> truncation + selection preservation) · the “TYPE TEXT…” empty badge. The producer (#1720) keeps owning rasterize-and-push; the body only edits the MODEL — exactly the card’s split, so the body is small and the split is already proven.</p>
+
+<h3>§6.3 <code>EXTENSION_BODY_ROLES</code> — the third gate</h3>
+<pre class="code">textmarquee: {
+  role: 'picture',
+  why: 'the body mounts the live marquee preview canvas above the text editor that ' +
+       'authors it — the picture is the module output, and the editor beneath it is ' +
+       'the authoring surface for the same model.',
+},</pre>
+<p>Predicate: mounts a canvas → <code>picture</code> (the role predicate is ordered by the canvas test; the editor does not demote it).</p>
+
+<h3>§6.4 Screen switch — required (video ∩ STRICT_FACES)</h3>
+<p>Over <code>node.data.previewCollapsed</code>, overlaid on the preview’s corner. OFF collapses the PREVIEW only — the editor stays usable (typing with the picture hidden is legitimate; the ribbon is often on a projector). The producer never stops: OFF skips the paint, never the engine read.</p>
+
+<h2>§MOCKS</h2>
+<div class="mockrow">
+  <div>
+    <div class="mocklab">compact lane tile — thumb + 2 knobs (cap 2 with picture)</div>
+    <div class="lane">
+      <div class="lchrome"><span>textmarquee</span><span>▣</span></div>
+      <div class="lbody">
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <div class="thumb" style="width:104px;height:78px">
+            <svg width="102" height="76" viewBox="0 0 102 76"><rect width="102" height="76" fill="#000"/><rect x="8" y="26" width="86" height="24" fill="#202"/><text x="12" y="43" font-family="monospace" font-size="13" fill="#f6c">HELLO</text></svg>
+          </div>
+        </div>
+        <div class="kcol"><div class="dial"></div><div class="kcap">POSX</div></div>
+        <div class="kcol"><div class="dial"></div><div class="kcap">POSY</div></div>
+      </div>
+    </div>
+  </div>
+  <div>
+    <div class="mocklab">dock full view — body (preview + editor) + motion band</div>
+    <div class="dock" style="width:520px">
+      <div class="chromebar"><span>textmarquee</span><span>dock full view · ✕</span></div>
+      <div class="plate">
+        <div class="extbody">
+          <div class="thumb" style="width:460px;height:150px;margin-bottom:10px">
+            <svg width="458" height="148" viewBox="0 0 458 148"><rect width="458" height="148" fill="#000"/><rect x="60" y="52" width="300" height="46" fill="#202"/><text x="74" y="86" font-family="monospace" font-size="30" fill="#f6c">HELLO RACK</text></svg>
+            <div class="scrbtn">SCREEN ◱</div>
+          </div>
+          <div class="toolrow">
+            <span class="btn">⯇</span><span class="btn on">≡</span><span class="btn">⯈</span>
+            <span class="btn" style="font-weight:700">B</span><span class="btn" style="font-style:italic">I</span><span class="btn" style="text-decoration:underline">U</span>
+            <span class="btn">▩ text</span><span class="btn">Font ▾</span><span class="btn">SIZE ▬●▬▬</span><span class="btn">▩ bg</span>
+          </div>
+          <div class="editor" style="width:460px;min-height:56px;font-size:1.05rem"><span style="color:#f6c;font-weight:700">HELLO RACK</span></div>
+        </div>
+        <div class="bands">
+          <div class="band">
+            <div class="blab">motion</div>
+            <div class="brow">
+              <div class="kcol"><div class="dial"></div><div class="kcap">POSX</div></div>
+              <div class="kcol"><div class="dial"></div><div class="kcap">POSY</div></div>
+              <div class="kcol"><div class="dial"></div><div class="kcap">SCRLX</div></div>
+              <div class="kcol"><div class="dial"></div><div class="kcap">SCRLY</div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<h2>§7 — RESTING TEXT CENSUS</h2>
+<table>
+  <tr><th>string</th><th>verdict</th><th>replacement</th></tr>
+  <tr><td>the USER’S typed text (in editor and preview)</td><td class="kept">ALLOWED — the module’s artwork AND its editable content; the GAMES.md in-canvas ruling plus the settled “a user-typed name is a caption, regardless of authorship” corollary (role and position, never authorship)</td><td>—</td></tr>
+  <tr><td>“TYPE TEXT…” empty badge</td><td class="kept">KEPT — an affordance label on an empty control (the placeholder class), not derived state</td><td>—</td></tr>
+  <tr><td>toolbar captions (B/I/U, Font)</td><td class="kept">KEPT — control captions</td><td>—</td></tr>
+  <tr><td>a hypothetical char-count / “synced” row</td><td class="rm">REFUSED pre-emptively by name — no counter, no sync word</td><td><span class="aria">aria-label</span> on the editor: “marquee text — 10 characters”</td></tr>
+</table>
+
+<h2>§8 — TYPED-ENTRY GATE — the genuine case, and the routes</h2>
+<p><b>TRIPS, and is SUPPOSED to.</b> textmarquee is a named positive control of the instrument, and the standing wave-7 ruling preserves exactly this module’s right to stay blocked: “the blocker keeps meaning what it says, for modules that genuinely need free typed text in a lane.” The routes:</p>
+<table>
+  <tr><th>route</th><th>cost</th><th>verdict</th></tr>
+  <tr><td>(a) strip typed entry from the legacy card</td><td>absurd here — the editor IS the module; there is nothing to strip to</td><td>refused</td></tr>
+  <tr><td>(b) narrow the gate’s subject to the FACE’s own template</td><td>a CI-gate edit — owner-routed (no-CI-changes ruling). NOTE: unlike painter, this route is textmarquee’s only promotion path that keeps the editor, and the gate’s own positive-control list would need re-anchoring (it names textmarquee)</td><td>report to owner; the honest framing is “extend the gate to distinguish a bespoke-surface BODY editor from a lane cell” — the blocker was always about lane cells</td></tr>
+  <tr><td>(c) do not promote yet</td><td>textmarquee stays a placeholder tile; its four CV-driven knobs stay unreachable in the shipping shell — a real cost, since motion is CV-performable today only via cables</td><td>the default until the owner rules; this spec makes (b)’s case concrete</td></tr>
+</table>
+<div class="callout warn"><span class="t">owner decision required</span>Whether a text-EDITING <code>fullViewBody</code> is an acceptable escape from the typed-entry blocker is precedent-setting (only file-input and read-only-text bodies ship today). This spec designs the surface so the decision is about the RULE, not about missing design work.</div>
+
+<h2>§9 — STATE / .data CENSUS</h2>
+<table>
+  <tr><th>key</th><th>home</th><th>writer</th></tr>
+  <tr><td><code>node.data.richText</code> (model)</td><td>Yjs, single key set in place (never reassign live.data)</td><td>body editor via <code>persistModel</code> (debounced 250 ms)</td></tr>
+  <tr><td><code>params.posX/posY/scrollX/scrollY</code></td><td>Yjs</td><td>cells + CV bridge</td></tr>
+  <tr><td><code>node.data.previewCollapsed</code></td><td>Yjs (new)</td><td>screen switch</td></tr>
+  <tr><td>selection / caret</td><td>DOM-local, per collaborator, by design</td><td>body</td></tr>
+</table>
+
+<h2>§10 — GATES, TESTS, VRT</h2>
+<table>
+  <tr><th>gate</th><th>verdict for this PR</th></tr>
+  <tr><td>1 · <code>module-face-lint</code> / identity</td><td>face + promotion in one diff (once §8 resolves)</td></tr>
+  <tr><td>2 · VRT</td><td><code>GREP=textmarquee flox activate -- task vrt:commit</code>. Default state is STATIC (scroll 0.5) and the placeholder text is deterministic — predict 2 capturable scenes; M3 confirms font rasterization is stable on the Linux CI runner (system-font glyphs are the risk — one font substitution moves pixels)</td></tr>
+  <tr><td>3 · <code>EXTENSION_BODY_ROLES</code></td><td>role <code>picture</code> per §6.3</td></tr>
+  <tr><td>4 · docs family↔card</td><td>no families — inert</td></tr>
+  <tr><td>5 · <code>optionsExhaustive</code></td><td>no option rosters; do not add one for the font list (it is model data, not a ParamDef)</td></tr>
+  <tr><td>6 · typed-entry leg</td><td><b>the blocker</b> — §8; also re-anchor the positive-control list if route (b) lands</td></tr>
+</table>
+<p>e2e: <code>textmarquee.spec.ts</code> stays for legacy parity (its PACING ledger wait keeps its subject: the body reuses the 250 ms debounce). Add a shipping-shell leg: type in the BODY, assert the model AND that the output texture is non-black in the ribbon’s block (real chain: body → model → producer → texture). CV leg already exists per-port; keep.</p>
+
+<h2>§11 — DIVERGENCE / DEFECT LEDGER</h2>
+<table>
+  <tr><th>#</th><th>finding</th><th>routing</th></tr>
+  <tr><td>1</td><td>Card knobs re-type 0..1 ranges as literals (backdraft class; values agree)</td><td><code>paramSpec(textmarqueeDef, id)</code> + <code>RANGE_BOUND_CARDS</code>, boy-scout — ⚠ but <code>textmarquee.ts</code> is treated as attest-resident (§0): bind with the ACCESSOR, never a new exported <code>*_RANGE</code> const (the accessor is hash-transparent, the export is not — the skill’s own rule)</td></tr>
+  <tr><td>2</td><td>Card caption case (SCRLX) differs from def label (‘ScrlX’) — cosmetic, but the face cell will paint the DEF label; screenshot diffs will show it</td><td>accept the def label on the face; note in PR body</td></tr>
+</table>
+
+<h2>§12 — MUST-VERIFY</h2>
+<table>
+  <tr><th>id</th><th>experiment</th><th>pass shape</th></tr>
+  <tr><td>M1</td><td>Confirm the producer renders with no card mounted TODAY (spawn, never open the dock, read output)</td><td>ribbon present — the #1720 claim re-proven on this tree</td></tr>
+  <tr><td>M2</td><td>Body editor + legacy card mounted at once (legacy shell + dock): two contenteditables over one model — last-writer semantics acceptable? focus fights?</td><td>no data loss; document the arbitration</td></tr>
+  <tr><td>M3</td><td>Two-boot pixel identity of the cold dock scene on Linux (system-font rasterization)</td><td>bit-identical → baseline; else FACES_WITHOUT_SCENES with the measured font-substitution reason</td></tr>
+  <tr><td>M4</td><td>Attest basis membership of <code>textmarquee.ts</code> (re-run the basis listing; the §0 citation is lineage, not proof)</td><td>known either way before the PR is scoped</td></tr>
+  <tr><td>M5</td><td>Landmark declaration for the 0.5-centre (“static”) on scroll knobs: does <code>paintsReadout</code> then paint the landmark name at rest, and is that wanted?</td><td>a NAME disambiguating the special position is the permitted class; confirm it reads “static” only at centre</td></tr>
+</table>
+
+<h2>§13 — OPEN QUESTIONS (owner)</h2>
+<table>
+  <tr><th>q</th><th>question</th><th>recommendation</th></tr>
+  <tr><td>Q1</td><td>The §8 route — is a text-editing <code>fullViewBody</code> an acceptable typed-entry escape?</td><td>yes, narrowly: the blocker’s subject was always the LANE cell roster; a dock body editor is the module’s own surface. But it re-anchors a gate, so it is the owner’s call, made once for the fleet (archivist/peertube/recorderbox/controlSurface all wait on the same ruling)</td></tr>
+  <tr><td>Q2</td><td>Should the lane thumb pause its crawl when scrolling is active (a moving thumbnail in a rack of tiles)?</td><td>no — the thumb is the live output and the fleet’s other video thumbs animate; consistency wins</td></tr>
+</table>
+
+<footer>face-specs/textmarquee.html · authored from textmarquee.ts + TextmarqueeCard.svelte read in full · standards: wave-5/6/7 bespoke spec canon (typed-entry analysis per wave-7 SURFACES.md)</footer>
+</main>
+</body>
+</html>
