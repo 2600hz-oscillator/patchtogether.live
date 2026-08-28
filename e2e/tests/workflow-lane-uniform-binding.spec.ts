@@ -44,6 +44,7 @@ import {
 } from '../../packages/web/src/lib/graph/channel-columns';
 import { RACK_UNIT } from '../../packages/web/src/lib/ui/rack-grid';
 import { test, expect, type Page } from '@playwright/test';
+import { setFlowViewport } from './_helpers';
 
 // ---------------- channel-columns.ts geometry (imported, never re-typed) ----
 
@@ -271,7 +272,11 @@ test.describe('workflow lanes: every module type binds identically', () => {
     await dragTo(page, vout, { x: colX(1), y: dragTopFor(Y_IN_LANE) });
     expect(await orderOf(page, 1)).toEqual([vco, vout]);
     const fader = await spawnAt(page, 'fader', { x: colX(5) + 60, y: Y_IN_LANE - 900 });
-    await page.locator('.svelte-flow__controls-fitview').click();
+    // Deterministic framing: setViewport is INSTANT (no fitView transition to
+    // race on a slow CI renderer — the settle poll could pass before the
+    // animation even started, and the drag then read pre-move coordinates).
+    // z=0.5 anchored to show the fader spawn AND the lane band bottom.
+    await setFlowViewport(page, { x: 60, y: 40 - (Y_IN_LANE - 1000) * 0.5, zoom: 0.5 });
     await viewportSettled(page);
     // Release the fader with its probe 30px ABOVE the live painted top — the
     // owner's screenshot geometry (their fader's bottom edge was 6px shy of
@@ -302,7 +307,8 @@ test.describe('workflow lanes: every module type binds identically', () => {
     const vout = await spawnAt(page, 'videoOut', { x: colX(6) + 700, y: Y_ABOVE_LANES });
     await dragTo(page, vout, { x: colX(2), y: dragTopFor(Y_IN_LANE) });
     const fader = await spawnAt(page, 'fader', { x: colX(5) + 60, y: Y_IN_LANE - 900 });
-    await page.locator('.svelte-flow__controls-fitview').click();
+    // Deterministic framing — see the REACH-UP leg's note.
+    await setFlowViewport(page, { x: 60, y: 40 - (Y_IN_LANE - 1000) * 0.5, zoom: 0.5 });
     await viewportSettled(page);
     // Dead-centre onto the videoOut tile: top-left = the tile's own flush
     // slot (the stack anchors one badge clearance above the baseline).
