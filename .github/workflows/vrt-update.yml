@@ -310,7 +310,13 @@ jobs:
             flox activate -- npx --workspace e2e playwright test \
               --config=vrt/vrt.config.ts --list --reporter=json > vrt-capture-list.json
           fi
-          flox activate -- node scripts/vrt-shard-plan.mjs ${{ matrix.shard }} 6 \
+          # --allow-empty: a scoped dispatch can select fewer scenes than the
+          # matrix has shards (run 33198943725: grep=mirrorpool → 4 tests ÷ 6
+          # shards killed every shard on the planner's no-empty-shard throw).
+          # Here an empty shard is an idle worker, not dropped coverage — the
+          # run step below skips Playwright entirely on an empty grep. The
+          # REQUIRED vrt-strict lane does NOT pass this flag.
+          flox activate -- node scripts/vrt-shard-plan.mjs ${{ matrix.shard }} 6 --allow-empty \
             --list vrt-capture-list.json --out vrt-capture-planned.txt > vrt-capture-grep.txt
           echo "shard ${{ matrix.shard }}/6 plans $(wc -l < vrt-capture-planned.txt) scenes"
 
@@ -328,6 +334,10 @@ jobs:
         run: |
           set -euo pipefail
           GREP="$(cat vrt-capture-grep.txt)"
+          if [ -z "$GREP" ]; then
+            echo "shard ${{ matrix.shard }}/6: no scenes in scope — idle worker, skipping capture."
+            exit 0
+          fi
           flox activate -- npx --workspace e2e playwright test \
             --config=vrt/vrt.config.ts --update-snapshots=changed --grep "$GREP"
 

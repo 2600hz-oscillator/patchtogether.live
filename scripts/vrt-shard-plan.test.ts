@@ -231,6 +231,39 @@ describe('the planner refuses a plan it cannot select or cover', () => {
   });
 });
 
+// ── THE SCOPED-CAPTURE MODE (allowEmpty — vrt-update.yml only) ──────────────
+//
+// A dispatch grep can select fewer scenes than the capture matrix has shards:
+// run 33198943725 asked 6 shards to split 4 mirrorpool tests and every shard
+// died on the no-empty-shard throw. With `allowEmpty` an empty shard is an
+// IDLE WORKER — the workflow skips Playwright on an empty grep — while the
+// union assertion still holds, so a scene can be idle-shard'd but never
+// dropped. The default stays the throw: the REQUIRED vrt-strict lane never
+// passes the flag, and for it an empty shard remains a dropped-coverage bug.
+describe('allowEmpty: fewer tests than shards is a valid SCOPED capture', () => {
+  it('splits 4 tests across 6 shards: every test lands exactly once, extras are empty', () => {
+    const four = roster.slice(0, 4);
+    const { groups } = planVrtShards(four, timings, 6, { allowEmpty: true });
+    expect(groups).toHaveLength(6);
+    const flat = groups.flat();
+    expect(flat).toHaveLength(4);
+    expect(new Set(flat.map((t) => `${t.file} :: ${t.title}`)).size).toBe(4);
+    expect(groups.filter((g) => g.length === 0)).toHaveLength(2);
+  });
+
+  it('a full-size roster plans IDENTICALLY with and without the flag', () => {
+    const a = planVrtShards(roster, timings, SHARDS);
+    const b = planVrtShards(roster, timings, SHARDS, { allowEmpty: true });
+    expect(b.groups).toEqual(a.groups);
+    expect(b.loads).toEqual(a.loads);
+  });
+
+  it('the DEFAULT still throws — the required lane cannot inherit idle shards by accident', () => {
+    expect(() => planVrtShards(roster.slice(0, 2), timings, SHARDS)).toThrow(/without an empty shard/);
+    expect(() => planVrtShards(roster.slice(0, 2), timings, SHARDS, {})).toThrow(/without an empty shard/);
+  });
+});
+
 describe('the list-JSON parser', () => {
   it('flattens nested suites into file+title+titlePath', () => {
     const report = {
