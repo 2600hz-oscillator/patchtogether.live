@@ -82,10 +82,26 @@ const FONT_CSS = `
 @font-face { font-family:'${SANS}'; font-weight:500; font-style:normal; font-display:block; src:${INTER_600}; }
 @font-face { font-family:'${SANS}'; font-weight:600; font-style:normal; font-display:block; src:${INTER_600}; }
 @font-face { font-family:'${SANS}'; font-weight:700; font-style:normal; font-display:block; src:${INTER_700}; }
+/* ⚠ 800/900 MUST have a declared face even though no heavier file is bundled.
+ * The shell tile title is weight 800 (ModuleShell: font-weight: 800) and an
+ * 800 request that exceeds every declared face leaves "is 700 bold enough?"
+ * to the UA's SYNTHETIC-BOLD heuristic — which measured BISTABLE per page on
+ * the CI runners (2026-08-28): the same commit drew a thin title on one page
+ * and a smeared synthetic-bold one on the next, byte-stable per draw. The
+ * full-sweep capture baked the bold mode into 56 face baselines and
+ * vrt-strict then coin-flipped per scene against them (9-12/12 shards red,
+ * shifting scene set; main flipped face-noise-compact the same day with no
+ * code change). Declaring 800/900 → the 700 file makes the match EXACT, so
+ * the synthesis heuristic is never consulted and the title rasterises the
+ * same way every draw. */
+@font-face { font-family:'${SANS}'; font-weight:800; font-style:normal; font-display:block; src:${INTER_700}; }
+@font-face { font-family:'${SANS}'; font-weight:900; font-style:normal; font-display:block; src:${INTER_700}; }
 @font-face { font-family:'${MONO}'; font-weight:400; font-style:normal; font-display:block; src:${MONO_400}; }
 @font-face { font-family:'${MONO}'; font-weight:500; font-style:normal; font-display:block; src:${MONO_400}; }
 @font-face { font-family:'${MONO}'; font-weight:600; font-style:normal; font-display:block; src:${MONO_700}; }
 @font-face { font-family:'${MONO}'; font-weight:700; font-style:normal; font-display:block; src:${MONO_700}; }
+@font-face { font-family:'${MONO}'; font-weight:800; font-style:normal; font-display:block; src:${MONO_700}; }
+@font-face { font-family:'${MONO}'; font-weight:900; font-style:normal; font-display:block; src:${MONO_700}; }
 
 /* Repoint the design CSS-vars at the bundled sans so anything reading
  * --font-ui / --font-display (card titles, chrome) is deterministic. The
@@ -138,8 +154,8 @@ const FONT_CSS = `
 // as a string so addInitScript runs it in the page context before paint.
 const LOAD_FONTS_FN = `() => {
   const faces = [
-    ['400','${SANS}'], ['500','${SANS}'], ['600','${SANS}'], ['700','${SANS}'],
-    ['400','${MONO}'], ['600','${MONO}'], ['700','${MONO}'],
+    ['400','${SANS}'], ['500','${SANS}'], ['600','${SANS}'], ['700','${SANS}'], ['800','${SANS}'],
+    ['400','${MONO}'], ['600','${MONO}'], ['700','${MONO}'], ['800','${MONO}'],
   ];
   return Promise.all(
     faces.map(([w, f]) => document.fonts.load(w + " 16px '" + f + "'"))
