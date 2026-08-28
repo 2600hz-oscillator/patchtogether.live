@@ -35,9 +35,22 @@
      *  auto-numbered default (e.g. "WAVESCULPT1"). When omitted we fall
      *  back to `nextDefaultName` — the historical behavior. */
     defaultLabel?: string;
+    /**
+     * TYPOGRAPHY OWNERSHIP.
+     *
+     *   'card'    — this component sizes the text (the legacy card title,
+     *               which has no type of its own to inherit).
+     *   'inherit' — the HOST sizes it and this contributes none of its own.
+     *
+     * The shell tile's name is a 14.5px/800 row; the card's is 0.7rem
+     * monospace. A single hardcoded size cannot serve both, and the shell
+     * must keep looking exactly as it does — a rename affordance that
+     * restyled every faceplate would be a redesign, not a repair.
+     */
+    variant?: 'card' | 'inherit';
   }
 
-  let { node, testIdSuffix = 'name-label', defaultLabel }: Props = $props();
+  let { node, testIdSuffix = 'name-label', defaultLabel, variant = 'card' }: Props = $props();
 
   // Read the current displayed name (see resolveDisplayName for the
   // precedence rules: node.data.name → defaultLabel → computed default).
@@ -100,7 +113,7 @@
   }
 </script>
 
-<span class="name-label" data-testid={testIdSuffix}>
+<span class="name-label" class:inherit={variant === 'inherit'} data-testid={testIdSuffix}>
   {#if editing}
     <input
       bind:this={inputEl}
@@ -108,6 +121,7 @@
       onkeydown={onKey}
       onblur={commit}
       class="name-input nodrag"
+      class:inherit={variant === 'inherit'}
       data-testid="{testIdSuffix}-input"
       maxlength="32"
       autocomplete="off"
@@ -128,6 +142,7 @@
     <button
       type="button"
       class="name-button nodrag"
+      class:inherit={variant === 'inherit'}
       data-testid="{testIdSuffix}-button"
       title="Click to rename"
       onclick={startEdit}
@@ -137,6 +152,33 @@
 </span>
 
 <style>
+  /* ── variant: inherit ──────────────────────────────────────────────────
+     The host owns the type. Everything here is a RESET plus the ellipsis
+     behaviour a one-line name row needs, so the button reads as the text it
+     replaced rather than as a control sitting inside it. */
+  .name-label.inherit {
+    display: block;
+    flex: 1 1 auto;
+    min-width: 0;
+    max-width: 100%;
+  }
+  .name-button.inherit,
+  .name-input.inherit {
+    font: inherit;
+    letter-spacing: inherit;
+    color: inherit;
+    text-align: inherit;
+    padding: 0;
+    width: 100%;
+    min-width: 0;
+  }
+  .name-button.inherit {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    cursor: text;
+  }
+
   .name-label {
     /* Hosted inside the card .title — tight inline display, no extra box.
      * The card already centers + sizes the title; we just style the

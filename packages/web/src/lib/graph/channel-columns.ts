@@ -58,7 +58,13 @@ export const COLUMN_W = COLUMN_HP * HP_UNIT;
  *  RENDER-derived positions / drop hit-tests / overlay bands / viewport nav —
  *  never into a PERSISTED write (spawn x/y + grow-up push-ups keep COLUMN_W), so
  *  narrowing is a pure render derivation: collab-safe, no Y.Doc change. */
-export const SHELL_COLUMN_W = 216;
+// ⚠ 225 IS 10 HP, AND THE INTEGER IS THE POINT (#2239). The rack lock grid is
+// 22.5px (HP_UNIT), so a 216px pitch — 9.6 HP — put every column on a different
+// sub-HP offset and nothing in a lane could be locked to the grid without
+// visibly shifting. `COLUMN_W` (the non-shell pitch) has always been an exact
+// HP multiple by construction; this makes the shell pitch one too, so lane and
+// zone geometry are finally commensurate with the grid modules lock onto.
+export const SHELL_COLUMN_W = 225;
 
 /** Resolve the active column pitch for the current view: the tight shell pitch
  *  under the `?shell=1` preview, else the app-scale COLUMN_W (34hp / 765px). The

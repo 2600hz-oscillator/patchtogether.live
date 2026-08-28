@@ -1391,6 +1391,17 @@
     trace(`present bindings: wrote ${next.length} from ${pairs.length} live session(s), ${live.length} display(s) known`);
   });
 
+  // #2239 — place + lock the video-zone trio once the persisted graph is up.
+  // Gated on the same load signal the restore paths use: before the doc has
+  // synced, the trio may not exist yet (or may exist without their saved
+  // positions), and placing them then would fight the incoming state.
+  $effect(() => {
+    const loaded = scratchSeeded === true || (provider != null && providerHasSynced);
+    void snapshot.nodes.length; // re-run as the trio materialises
+    if (!loaded || !shellFaces) return;
+    untrack(() => placeVideoZoneDefaults());
+  });
+
   // Pre-effect marker: written once at module-script eval time. The
   // e2e auto-spawn spec polls for this object as the "Canvas script
   // actually ran" signal — under parallel-worker stress an HMR
@@ -2323,7 +2334,11 @@
     for (const n of snapshot.nodes) {
       if (n.type === 'cadillac') continue;
       if (isCanvasHiddenNode(n)) continue; // pinned singletons + hidden cameras
-      if (n.domain === 'video') continue; // the video zone owns these
+      // ⚠ NO DOMAIN EXCLUSION (#2240). Video modules may be lane members now, so
+      // they take part in push-up like anything else. The video ZONE's own
+      // contents are still excluded — by POSITION, on the `pos.y >=
+      // COLUMN_BASELINE_Y` line below, which is the honest test for "in the
+      // zone" and does not also catch a video module the user put in a lane.
       const d = n.data as { channel?: number; sendSlot?: number } | undefined;
       if (typeof d?.channel === 'number' || typeof d?.sendSlot === 'number') continue; // lane member
       const pos = currentNodePosition(n.id) ?? n.position;
@@ -3059,40 +3074,13 @@
       const positions = sendFlushPositions(s, heightsFor(order), widthsFor(order), wcolPitch, wcolStackAnchorY);
       order.forEach((id, i) => wcolPosByNode.set(id, positions[i]!));
     }
-    // SHELL PREVIEW: the video-zone default trio (videoOut / recorderbox /
-    // synesthesia) is NOT a channel member, so it renders at its PERSISTED
-    // spawn X — the wide 765px video-zone pitch. Under the narrowed lanes that
-    // strands them far right of the tight columns, so RE-DERIVE their RENDER
-    // position to the shell pitch, PACKED left-to-right (videoZonePackedXs):
-    // a tile-swapped default reserves one uniform SHELL_TILE_W slot (an
-    // all-tile zone packs to EXACTLY the historic fixed 216px slots), while a
-    // LEGACY-rendered default — videoOut, the video-surface snowflake whose
-    // real card stays in the lane — reserves its ACTUAL live width
-    // (node.data.width, the freely-resizable card), so it never overlaps its
-    // tile neighbours and a corner-drag resize simply pushes them right. The
-    // override anchors POSITION only; the card sizes itself. Also nudge each
-    // TOP DOWN by SHELL_VIDEO_ZONE_TILE_INSET_Y so the whole tile sits INSIDE
-    // the darker video area — un-inset, the tile top lands on the zone's
-    // dashed border (drawn at COLUMN_BASELINE_Y == the slot's un-inset top)
-    // and its jack rail collides with the lane-number badges just above it.
-    // Pure render OVERRIDE (like the channel members) — the persisted x/y is
-    // untouched, so preview OFF is byte-identical and no Y.Doc write / collab
-    // divergence.
-    if (shellFaces) {
-      const present = VIDEO_ZONE_DEFAULTS.filter((spec) => typeOf.has(spec.id));
-      const widths = present.map((spec) => {
-        if (!NON_SHELL_LANE_TYPES.has(spec.type)) return SHELL_TILE_W;
-        // Legacy in-lane card (videoOut): its live resizable width.
-        const n = snap.nodes.find((m) => m.id === spec.id);
-        const w = (n?.data as { width?: number } | undefined)?.width;
-        return typeof w === 'number' && w > 0 ? w : spec.nominalWidth;
-      });
-      const origin = videoZoneSlotPos(0, wcolPitch);
-      const xs = videoZonePackedXs(origin.x, widths, wcolPitch);
-      present.forEach((spec, i) => {
-        wcolPosByNode.set(spec.id, { x: xs[i]!, y: origin.y + SHELL_VIDEO_ZONE_TILE_INSET_Y });
-      });
-    }
+    // ⚠ THE VIDEO-ZONE TRIO IS NO LONGER RENDER-OVERRIDDEN (#2239). It used to
+    // have its x/y re-derived here every frame, packed left-to-right, with the
+    // persisted position ignored — which is exactly why those modules could not
+    // be moved: a drag wrote a position this block discarded on the next frame.
+    // They are now PLACED ONCE and LOCKED (see placeVideoZoneDefaults), so the
+    // position is real, the rack lock owns it, and unlocking makes them drag
+    // like anything else.
     for (const n of snap.nodes) {
       // Skip children belonging to a collapsed group — the group card
       // stands in for them visually. Phase 2 will flip to inline-rendering
@@ -5257,11 +5245,14 @@
         for (const n of moved) {
           const node = patch.nodes[n.id];
           if (!node || isPinnedNode(node) || n.id === WCOL_MIXER_ID || n.id === WCOL_CLIP_ID) continue;
-          // VIDEO cards belong to the video zone, never an audio channel. The
-          // Y gate below already excludes the video zone (it sits BELOW the
-          // baseline), but a video card dragged up INTO a lane band must still
-          // be refused — the video zone owns it wherever it is parked.
-          if (node.domain === 'video') continue;
+          // ⚠ VIDEO CARDS MAY JOIN A LANE (#2240). This used to refuse them
+          // outright — "the video zone owns it wherever it is parked" — which
+          // is what made a video source impossible to associate with the clip
+          // lane driving it. Channel membership is what binds a module to that
+          // lane's automation (column-reconcile → assignAutomationLane), and
+          // the video engine has implemented `scheduleParam`/`holdParam` for
+          // clip-automation playback all along, so the binding half needed
+          // nothing. The Y gate below still keeps the zone's own contents out.
           const d = node.data as { channel?: number; sendSlot?: number } | undefined;
           const oldCh = typeof d?.channel === 'number' ? d.channel : null;
           const oldSlot = typeof d?.sendSlot === 'number' ? d.sendSlot : null;
@@ -5399,6 +5390,61 @@
         if (target) target.position = { x: pos.x, y: pos.y };
       }, LOCAL_ORIGIN);
     }
+  }
+
+  /**
+   * PLACE THE VIDEO-ZONE TRIO ONCE, THEN LOCK IT (#2239).
+   *
+   * These three (videoOut / recorderbox / synesthesia) used to be positioned by
+   * a per-frame RENDER OVERRIDE in the flowNodes derivation: their persisted
+   * x/y was ignored and re-derived every frame. That is why they could not be
+   * moved — a drag wrote a position the next frame discarded — and it is the
+   * "special logic about their positioning" this replaces.
+   *
+   * Now they are given a real position and screwed down. `lockNode` already
+   * does precisely what is wanted: snap to the rack grid, nudge to the nearest
+   * FREE slot, persist `rackLocked`. So this computes the packed slot, writes
+   * it, and hands over — no second copy of the geometry, and unlocking makes
+   * them ordinary draggable modules.
+   *
+   * ONE-SHOT, latched on `data.videoZonePlaced`, because it must not fight the
+   * user: once placed, a module they unlocked and moved stays where they put
+   * it. The flag rides the doc, so it converges across collaborators and a
+   * reload does not re-place.
+   */
+  function placeVideoZoneDefaults(): void {
+    if (!shellFaces) return;
+    const present = VIDEO_ZONE_DEFAULTS.filter((spec) => !!patch.nodes[spec.id]);
+    if (present.length === 0) return;
+    const pending = present.filter((spec) => {
+      const d = patch.nodes[spec.id]?.data as { videoZonePlaced?: boolean } | undefined;
+      return d?.videoZonePlaced !== true;
+    });
+    if (pending.length === 0) return;
+
+    // Widths as the old override measured them: a tile-swapped default reserves
+    // one uniform SHELL_TILE_W, a legacy in-lane card (videoOut) reserves its
+    // live resizable width so it never overlaps its neighbours.
+    const widths = present.map((spec) => {
+      if (!NON_SHELL_LANE_TYPES.has(spec.type)) return SHELL_TILE_W;
+      const w = (patch.nodes[spec.id]?.data as { width?: number } | undefined)?.width;
+      return typeof w === 'number' && w > 0 ? w : spec.nominalWidth;
+    });
+    const origin = videoZoneSlotPos(0, wcolPitch);
+    const xs = videoZonePackedXs(origin.x, widths, wcolPitch);
+
+    present.forEach((spec, i) => {
+      const d = patch.nodes[spec.id]?.data as { videoZonePlaced?: boolean } | undefined;
+      if (d?.videoZonePlaced === true) return;
+      writeNodePosition(spec.id, { x: xs[i]!, y: origin.y + SHELL_VIDEO_ZONE_TILE_INSET_Y });
+      mutateNode(spec.id, (live) => {
+        if (!live.data) live.data = {};
+        live.data.videoZonePlaced = true;
+      });
+      // Snap + free-slot + rackLocked, through the same path the menu uses.
+      lockNode(spec.id);
+    });
+    trace(`video zone: placed + locked ${pending.length} default(s)`);
   }
 
   /** Virtual-rack Phase 2 — "screw down" a module to its rack slot:
@@ -8252,7 +8298,10 @@
     // whatever the cursor is over (the video zone's own band sits BELOW the
     // baseline, which wcolDropTarget already excludes, but a video card spawned
     // with the cursor inside a lane must still stay out of the chain).
-    const wcolDrop = type === 'cadillac' || domain === 'video' ? null : wcolDropTarget(spawnFlowPos);
+    // CADILLAC is a roaming overlay sprite, not a lane citizen. VIDEO used to be
+    // excluded here too (#2240) — spawning one over a lane silently dropped it
+    // outside, which is the same refusal as the drag path and just as invisible.
+    const wcolDrop = type === 'cadillac' ? null : wcolDropTarget(spawnFlowPos);
     // Was the target send box empty BEFORE this drop? (First-FX auto-raise.)
     const wcolSendWasEmpty = wcolDrop?.sendSlot != null && wcolOrder('sends', wcolDrop.sendSlot).length === 0;
     if (wcolDrop?.channel != null) {
