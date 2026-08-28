@@ -323,11 +323,20 @@ export function makeStateOnlyEnvelope(
     { nodes: {}, edges: {} },
   );
   const freshDoc = getYjsDoc(freshStore);
+  // CANONICAL WRITE ORDER: sorted keys, always. Y.Map carries no order
+  // semantics, but the ENCODED BYTES depend on insertion order — object key
+  // order in the source doc drifts as a session deletes and re-adds entries,
+  // so an unsorted rebuild of the SAME state could differ by tens of bytes
+  // run-to-run (the size-invariance test measured 52B on a 1.1KB doc and
+  // flaked CI). Sorting makes the rebuild a pure function of the state:
+  // identical state → identical bytes, on any peer, after any history.
+  const sortedEntries = <T>(o: Record<string, T>): [string, T][] =>
+    Object.entries(o).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
   freshDoc.transact(() => {
-    for (const [id, node] of Object.entries(nodes)) freshStore.nodes[id] = node;
-    for (const [id, edge] of Object.entries(edges)) freshStore.edges[id] = edge;
+    for (const [id, node] of sortedEntries(nodes)) freshStore.nodes[id] = node;
+    for (const [id, edge] of sortedEntries(edges)) freshStore.edges[id] = edge;
     const freshSettings = freshDoc.getMap(SETTINGS_MAP_KEY);
-    for (const [key, value] of Object.entries(settings)) freshSettings.set(key, value);
+    for (const [key, value] of sortedEntries(settings)) freshSettings.set(key, value);
   });
 
   return {
