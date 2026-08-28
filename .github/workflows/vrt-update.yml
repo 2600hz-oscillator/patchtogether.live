@@ -246,6 +246,21 @@ jobs:
         if: steps.cache-doom-wasm.outputs.cache-hit != 'true'
         run: flox activate -- bash packages/web/native/build-doom-wasm.sh
 
+      # ── THE vrt:update DEPS THE DIRECT PLAYWRIGHT CALL NO LONGER PULLS IN ──
+      #
+      # #2250 switched the capture from `task vrt:update` to invoking Playwright
+      # directly (the Taskfile's unquoted CLI_ARGS join mangles the planner's
+      # alternation grep — see the run step below). That reasoning was right and
+      # is kept; what it silently dropped was the task's dependency chain,
+      # `deps: [dsp:build, test:emit-manifest]`. Without dsp:build there is no
+      # packages/dsp/dist, the web app's SSR module graph fails on
+      # `@patchtogether.live/dsp/dist/*.js?url`, the dev server 500s every
+      # request, and ALL SIX shards die in Playwright's 120s webServer wait —
+      # run 33193474728, first sharded capture, zero baselines. `status:` in
+      # dsp:build makes this a no-op when a matching dist is already on disk.
+      - name: Build DSP worklets + emit test manifest (vrt:update's deps)
+        run: flox activate -- task dsp:build test:emit-manifest
+
       # ── SAY WHAT THIS RUN WILL COST, BEFORE IT COSTS IT (#1795) ───────────
       #
       # Three jobs in one cheap step (~1 min: one registry-manifest emit plus a
