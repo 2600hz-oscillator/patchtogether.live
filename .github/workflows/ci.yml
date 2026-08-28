@@ -2547,6 +2547,13 @@ jobs:
       - name: Fetch VRT LFS objects (no-op on cache hit)
         run: flox activate -- git lfs pull --include "e2e/vrt/__screenshots__/**"
 
+      # The cached .git/lfs store trusts whatever a previous job saved — a
+      # timeout-killed save serves truncated objects forever, and `git lfs
+      # pull` smudges them without a checksum look. Decode-verify + heal
+      # before comparing pixels against them. See scripts/vrt-lfs-heal.sh.
+      - name: Verify + heal checked-out baselines
+        run: flox activate -- bash scripts/vrt-lfs-heal.sh
+
       # node_modules itself, not just npm's download cache. `~/.npm` above
       # saves re-DOWNLOADING; this saves re-LINKING, which is where the time
       # goes: `task install` measured 104-114s in every one of 29 jobs with

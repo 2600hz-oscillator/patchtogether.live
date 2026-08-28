@@ -222,6 +222,15 @@ jobs:
       - name: Name the runner CPU
         run: grep -m1 'model name' /proc/cpuinfo || true
 
+      # Corrupt-at-checkout is a MEASURED failure mode on both lanes even
+      # though LFS storage verifies clean (run 33213636041 shard 1 died on
+      # "unrecognised content at end of stream" reading an EXPECTED file).
+      # Heal before rendering: decode-verify every baseline, re-fetch any liar
+      # directly from the LFS server, refuse the run only if the server copy
+      # itself is bad. See scripts/vrt-lfs-heal.sh.
+      - name: Verify + heal checked-out baselines
+        run: bash scripts/vrt-lfs-heal.sh
+
       - name: Install Flox
         uses: flox/install-flox-action@v2
 
