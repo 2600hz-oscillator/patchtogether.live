@@ -156,9 +156,17 @@ export function selects(pattern, tests) {
  * @param {number} shards
  * @returns {{groups: object[][], loads: number[], unknown: string[]}}
  */
-export function planVrtShards(tests, timings, shards) {
+export function planVrtShards(tests, timings, shards, opts = {}) {
+  // `allowEmpty` is the SCOPED-CAPTURE mode (vrt-update.yml): a dispatch
+  // grep can select fewer scenes than the matrix has shards — run 33198943725
+  // asked 6 shards to split 4 mirrorpool tests and every shard died on this
+  // throw. There an empty shard is not dropped coverage, it is an idle worker:
+  // the workflow skips the Playwright invocation when its planned file is
+  // empty. The REQUIRED vrt-strict lane never passes the flag, so for it an
+  // empty shard remains what it always was — a dropped-coverage bug.
+  const allowEmpty = opts.allowEmpty === true;
   if (shards < 1) throw new Error(`shards must be >= 1, got ${shards}`);
-  if (tests.length < shards) {
+  if (tests.length < shards && !allowEmpty) {
     throw new Error(`cannot split ${tests.length} tests across ${shards} shards without an empty shard`);
   }
 
@@ -209,6 +217,7 @@ export function planVrtShards(tests, timings, shards) {
   // Each shard's regex must select exactly its own group — see the probe note
   // at the top of this file for why the anchoring is load-bearing.
   for (let i = 0; i < shards; i++) {
+    if (groups[i].length === 0) continue; // allowEmpty idle worker: selects nothing, trivially exact
     const hit = selects(grepFor(groups[i]), tests).map(keyOf).sort();
     const want = groups[i].map(keyOf).sort();
     if (hit.join('\u0000') !== want.join('\u0000')) {
@@ -281,14 +290,18 @@ if (isMain) {
   if (!flag('--list')) throw new Error('need --list <playwright --list --reporter=json output>');
 
   const tests = roster();
-  const { groups, unknown } = planVrtShards(tests, timings, count);
+  const allowEmpty = args.includes('--allow-empty');
+  const { groups, unknown } = planVrtShards(tests, timings, count, { allowEmpty });
   if (unknown.length) {
     // Not dropped — scheduled at the median cost, and named so the artifact can
     // be refreshed deliberately rather than drifting.
     console.error(`::warning::${unknown.length} vrt-strict test(s) have no measured cost (using median): ${unknown.join(', ')}`);
   }
+  const group = groups[idx - 1];
   const out = flag('--out');
-  if (out) writeFileSync(out, groups[idx - 1].map(keyOf).join('\n') + '\n');
-  // stdout is consumed by CI as the --grep pattern for this shard.
-  console.log(grepFor(groups[idx - 1]));
+  if (out) writeFileSync(out, group.length ? group.map(keyOf).join('\n') + '\n' : '');
+  // stdout is consumed by CI as the --grep pattern for this shard. An idle
+  // worker (allowEmpty, no scenes) prints NOTHING — the workflow skips the
+  // Playwright invocation on an empty grep rather than running with one.
+  console.log(group.length ? grepFor(group) : '');
 }

@@ -104,6 +104,7 @@
   import {
     makeEnvelope,
     makePortableEnvelope,
+    makeStateOnlyEnvelope,
     parseEnvelope,
     loadEnvelopeIntoStore,
     downloadEnvelope,
@@ -247,6 +248,8 @@
     readPresentBindingsFromUpdate,
     type PresentBinding,
   } from '$lib/ui/modules/present-bindings';
+  import { getElectraAutoReconnect } from '$lib/ui/modules/electra-auto-reconnect';
+  import { ELECTRA_CONTROL_TYPE } from '$lib/graph/electra-control';
   import { nodeRecorder } from '$lib/ui/modules/node-recorder-registry.svelte';
   import { nodeSamsloop } from '$lib/ui/modules/node-samsloop-registry.svelte';
   import { nodeAudioInput } from '$lib/ui/modules/node-audio-input-registry.svelte';
@@ -1003,6 +1006,7 @@
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (globalThis as any).__perfZip = {
         export: async (): Promise<Uint8Array> => buildPerformanceZipBytes(),
+        exportStateOnly: async (): Promise<Uint8Array> => buildPerformanceZipBytes(true),
         load: async (bytes: Uint8Array): Promise<void> => loadPerformanceZipBytes(bytes),
       };
       // Preset-slot bar + `.set` round-trip hook (e2e): store/read/clear slots
@@ -1318,6 +1322,12 @@
    */
   function beginPatchLoad(): void {
     presentWriteArmed = false;
+    // Latch the Electra auto-flash MOUNT arm (#2248): an explicit load calls
+    // notifyPatchLoaded() itself when the graph is fully materialized, and
+    // without this latch a first-load-with-electra into an electra-free rack
+    // would ALSO trip the mount effect mid-load — flashing a half-built graph
+    // and then flashing again at load end.
+    electraReconnectArmed = true;
   }
 
   /** `fromEnvelope` is REQUIRED on an envelope/zip load: the live doc's settings
@@ -1376,6 +1386,36 @@
     if (presentMountRestoreRan || !loaded || engine == null || snapshot.nodes.length === 0) return;
     presentMountRestoreRan = true;
     void runPresentRestore();
+  });
+
+  // ELECTRA AUTO-RECONNECT (#2248) — the same "state that is really the
+  // PATCH's, held only in page-lifetime memory" class as the present restore
+  // above: `ElectraAutoconfig.run()` was only ever invoked by the manual "Send
+  // to Electra" press, so an F5 dropped the whole browser half of the wiring
+  // (inbound dispatch, FeedbackPump, allocation table) and the owner had to
+  // re-press after every reload. This arms ONE automatic flash per load edge;
+  // the machine (`$lib/electra/auto-reconnect.ts`) only acts when the patch
+  // holds an electraControl node, the sysex-MIDI permission is ALREADY granted
+  // (it can never cause a prompt), and an Electra-named port is — or via
+  // hot-plug becomes — connected. It fires the exact `electraSendToDevice`
+  // seam the button uses, writes nothing to the shared doc, and is
+  // edge-triggered so graph churn can never re-flash.
+  //
+  // Latch: once per Canvas mount, when the settled patch FIRST contains an
+  // electraControl. Gating the latch on the node (not on `nodes.length`) keeps
+  // electra-free racks fully dormant — not even a permission query — which is
+  // what preserves the "page load never requests Web-MIDI access" contract
+  // (midi.spec.ts) for every rack without the module. Unlike the present
+  // restore this does NOT wait for the engine: the flash is null-engine safe
+  // (host reads return undefined) and the FeedbackPump back-fills live values
+  // once the engine boots.
+  let electraReconnectArmed = false;
+  $effect(() => {
+    const settled = provider != null ? providerHasSynced : scratchSeeded !== false;
+    if (electraReconnectArmed || !settled) return;
+    if (!snapshot.nodes.some((n) => n.type === ELECTRA_CONTROL_TYPE)) return;
+    electraReconnectArmed = true;
+    getElectraAutoReconnect().notifyPatchLoaded();
   });
 
   $effect(() => {
@@ -3563,6 +3603,10 @@
       await reconciler?.reconcile();
       trace(`imported patch JSON (${result.nodesLoaded} nodes, ${result.edgesLoaded} edges)`);
       await runPresentRestore(readPresentBindingsFromUpdate(env.update));
+      // Re-arm the Electra auto-flash for the LOADED patch (#2248) — per load,
+      // not per mount, for the same reason as runPresentRestore above. A no-op
+      // (fully dormant) when the imported patch has no electraControl.
+      getElectraAutoReconnect().notifyPatchLoaded();
       if (result.diagnostics.length > 0) {
         for (const d of result.diagnostics) {
           console.warn(`[import-json] ${d.nodeId} (${d.type}): ${d.reason}`);
@@ -3673,8 +3717,10 @@
 
   /** Build the portable performance .zip bytes for the current rack. Pure-ish:
    *  reads the live store + resolves loaded video bytes. Exposed for the e2e
-   *  hook so the round-trip test can capture the bytes without a download. */
-  async function buildPerformanceZipBytes(): Promise<Uint8Array> {
+   *  hook so the round-trip test can capture the bytes without a download.
+   *  `stateOnly` swaps the envelope for the history-free rebuild
+   *  (makeStateOnlyEnvelope) — same materialized state, no Yjs edit history. */
+  async function buildPerformanceZipBytes(stateOnly = false): Promise<Uint8Array> {
     // A zip export mid-twist must capture the settled knob values (the CC
     // coalescer defers store commits) — flush before snapshotting.
     flushAllCcCommits();
@@ -3738,7 +3784,9 @@
       }
     });
 
-    const envelope = makePortableEnvelope(ydoc, currentUserId);
+    const envelope = stateOnly
+      ? makeStateOnlyEnvelope(ydoc, currentUserId)
+      : makePortableEnvelope(ydoc, currentUserId);
     const nodes: Record<string, { id: string; type: string; data?: Record<string, unknown> | null; params?: Record<string, unknown> | null }> = {};
     for (const [nid, n] of Object.entries(patch.nodes)) {
       if (n) nodes[nid] = { id: nid, type: n.type, data: n.data as Record<string, unknown> | null, params: n.params as Record<string, unknown> | null };
@@ -3776,19 +3824,32 @@
   }
 
   async function exportPerformanceZip(): Promise<void> {
+    return exportPerformanceZipAs(false);
+  }
+
+  /** File → Export patch (current state only): the same .ptperf.zip with the
+   *  Yjs edit history dropped (see makeStateOnlyEnvelope). */
+  async function exportPerformanceZipStateOnly(): Promise<void> {
+    return exportPerformanceZipAs(true);
+  }
+
+  async function exportPerformanceZipAs(stateOnly: boolean): Promise<void> {
     error = null;
     if (perfZipBusy) return;
     perfZipBusy = true;
     try {
-      const bytes = await buildPerformanceZipBytes();
+      const bytes = await buildPerformanceZipBytes(stateOnly);
       // Let the user NAME the file (Chromium: native Save dialog; elsewhere: a
       // name prompt + download) instead of force-saving a fixed name.
-      const outcome = await savePerformanceZip(bytes);
+      const outcome = await savePerformanceZip(
+        bytes,
+        stateOnly ? { suggestedName: 'performance-state.ptperf.zip' } : {},
+      );
       if (outcome === 'cancelled') {
         trace('export performance cancelled by user');
         return;
       }
-      trace(`exported performance .zip (${(bytes.length / 1024).toFixed(0)} KB)`);
+      trace(`exported performance .zip (${(bytes.length / 1024).toFixed(0)} KB${stateOnly ? ', state-only' : ''})`);
     } catch (e) {
       error = `Export performance failed: ${e instanceof Error ? e.message : String(e)}`;
       trace(`export performance failed: ${String(e)}`);
@@ -3851,6 +3912,12 @@
     // The loaded envelope brought its own presentBindings; the mount pass (if
     // it ran at all) resolved the PREVIOUS graph. #2230.
     await runPresentRestore(readPresentBindingsFromUpdate(bundle.patch.update));
+
+    // Re-arm the Electra auto-flash for the LOADED patch (#2248) — per load,
+    // not per mount (mirrors runPresentRestore). Dormant when the zip's rack
+    // has no electraControl, so the "no MIDI mappings → no prompt" contract of
+    // autoBindMidiDevices above is preserved for electra-free racks.
+    getElectraAutoReconnect().notifyPatchLoaded();
   }
 
   /** Restore each TWOTRACKS reel tape from the perf-zip's out-of-band 'audio'
@@ -9313,6 +9380,7 @@
     onQuicksave={quicksaveSlot}
     onQuickload={loadSlot}
     onSavePerformance={exportPerformanceZip}
+    onSavePerformanceStateOnly={exportPerformanceZipStateOnly}
     onLoadPerformance={loadPerformanceZip}
     onExportJson={exportPatchJson}
     onImportJson={importPatchJson}

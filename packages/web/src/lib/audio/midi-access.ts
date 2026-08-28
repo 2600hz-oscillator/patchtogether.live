@@ -119,6 +119,38 @@ export async function requestMidiAccess(
   return Promise.race([request, timeout]);
 }
 
+/** What `queryMidiPermission` can report. 'unknown' = the Permissions API is
+ *  absent or refuses the 'midi' name (Firefox) — treat it as NOT granted. */
+export type MidiPermissionState = 'granted' | 'denied' | 'prompt' | 'unknown';
+
+/**
+ * Read the CURRENT Web MIDI permission state WITHOUT asking for access.
+ *
+ * This is the silent sibling of `requestMidiAccess` above: it can never cause
+ * a prompt, so it is safe to call with no user gesture. Chromium persists a
+ * midi(+sysex) grant per origin, so 'granted' here means a later
+ * `requestMIDIAccess` resolves silently — which is exactly the check the
+ * Electra auto-reconnect (#2248) needs on page load. Anything other than a
+ * confirmed 'granted' (including a throwing / absent Permissions API) reports
+ * conservatively, so callers stay quiet rather than risk an ungestured prompt.
+ */
+export async function queryMidiPermission(
+  opts: { sysex?: boolean } = {},
+): Promise<MidiPermissionState> {
+  if (typeof navigator === 'undefined') return 'unknown';
+  const perms = (navigator as unknown as {
+    permissions?: { query?: (desc: unknown) => Promise<{ state?: string }> };
+  }).permissions;
+  if (!perms || typeof perms.query !== 'function') return 'unknown';
+  try {
+    const status = await perms.query({ name: 'midi', sysex: opts.sysex === true });
+    const state = status?.state;
+    return state === 'granted' || state === 'denied' || state === 'prompt' ? state : 'unknown';
+  } catch {
+    return 'unknown'; // e.g. Firefox: TypeError on the 'midi' permission name
+  }
+}
+
 /** User-facing explanation for a non-granted outcome. Written to be ACTIONABLE
  *  — the failing case that prompted all this was a user staring at a button
  *  with nothing to do next. */

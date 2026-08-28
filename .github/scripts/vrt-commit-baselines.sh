@@ -49,6 +49,37 @@ git config user.name "vrt-baseline-bot"
 git config user.email "vrt-baseline-bot@users.noreply.github.com"
 
 git add e2e/vrt/__screenshots__
+
+# ── REFUSE A CORRUPT PNG (run 33198943725). The first sharded capture landed
+# one baseline of 59 whose zlib stream failed its Adler-32 check — valid PNG
+# signature, valid chunk walk, corrupt pixels — and the cable-stripe gate then
+# reddened EVERY CI run on the branch while this workflow reported success.
+# So the collector decode-verifies exactly what it staged: a corrupt file is
+# UN-staged and restored (its baseline stays stale → vrt-strict names it, a
+# scoped re-dispatch replaces it) and the good files still land — the same
+# five-of-six-shards philosophy as the fan-in itself. A corrupt file makes the
+# JOB red (exit 1 at the end) so the run page says what happened; the push of
+# the good files has already gone through by then.
+CORRUPT_PNGS="$(git diff --cached --name-only -- 'e2e/vrt/__screenshots__' \
+  | node scripts/vrt-png-verify.mjs)"
+if [ -n "${CORRUPT_PNGS}" ]; then
+  while IFS= read -r f; do
+    [ -n "$f" ] || continue
+    echo "::warning::vrt-update: REFUSING corrupt baseline ${f} — left stale for a scoped re-capture."
+    git restore --staged -- "$f"
+    git checkout -- "$f" 2>/dev/null || rm -f "$f"
+  done <<<"${CORRUPT_PNGS}"
+  summarize \
+    "" \
+    "### ⚠ Corrupt baseline(s) REFUSED" \
+    "" \
+    '```' \
+    "${CORRUPT_PNGS}" \
+    '```' \
+    "" \
+    "Their committed baselines stay STALE (vrt-strict will name them). Re-dispatch a scoped capture for each."
+fi
+
 if git diff --cached --quiet; then
   echo "No VRT baseline changes — nothing to commit."
   echo "::warning::vrt-update captured ZERO baselines. The capture runs --update-snapshots=all, which rewrites on a BYTE difference, so zero means every scene IN SCOPE is byte-identical — investigate the scope rather than assuming there was nothing to do."
@@ -68,6 +99,12 @@ if git diff --cached --quiet; then
     "" \
     "**Count what you predicted against what landed before reading this as success.**"
   emit_pushed false
+  # A zero-commit that REFUSED corrupt files is a failure, not a quiet no-op —
+  # without this, an all-corrupt capture would exit green and mask the refusal.
+  if [ -n "${CORRUPT_PNGS}" ]; then
+    echo "::error::vrt-update: every staged baseline was corrupt and was refused — nothing landed."
+    exit 1
+  fi
   exit 0
 fi
 
@@ -108,3 +145,10 @@ summarize \
   "Pushed to \`${REF}\` as \`$(git rev-parse HEAD)\`. Count this against what you predicted —" \
   "a capture rewrites only what FAILED its comparison, so a short count is a finding, not a formality."
 echo "Pushed VRT baselines to ${REF} as $(git rev-parse HEAD)."
+
+# The good files are pushed; NOW fail the job if anything was refused, so the
+# run page is red and says why rather than reporting a clean capture.
+if [ -n "${CORRUPT_PNGS}" ]; then
+  echo "::error::vrt-update: corrupt baseline(s) were refused and left stale — re-dispatch a scoped capture (see summary)."
+  exit 1
+fi

@@ -76,6 +76,9 @@
     onQuicksave: (index: number) => void | Promise<void>;
     onQuickload: (index: number) => void | Promise<void>;
     onSavePerformance: () => void | Promise<void>;
+    /** File → Export patch (current state only): the .ptperf.zip with the Yjs
+     *  edit history dropped — same state, much smaller file. */
+    onSavePerformanceStateOnly: () => void | Promise<void>;
     onLoadPerformance: () => void | Promise<void>;
     onExportJson: () => void;
     onImportJson: () => void | Promise<void>;
@@ -143,6 +146,7 @@
     onQuicksave,
     onQuickload,
     onSavePerformance,
+    onSavePerformanceStateOnly,
     onLoadPerformance,
     onExportJson,
     onImportJson,
@@ -414,6 +418,14 @@
           onclick={() => fire(onSavePerformance)}
           title="Export the whole rack (patch + embedded media + mappings) as a portable performance file"
         >Save performance</button>
+        <button
+          class="row"
+          role="menuitem"
+          data-testid="workflow-file-save-performance-state-only"
+          disabled={perfBusy || !hasNodes}
+          onclick={() => fire(onSavePerformanceStateOnly)}
+          title="Same export with the edit history dropped — everything needed to reproduce the current state, in a much smaller file"
+        >Export patch (current state only)</button>
         <button
           class="row"
           role="menuitem"
