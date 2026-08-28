@@ -104,6 +104,7 @@
   import {
     makeEnvelope,
     makePortableEnvelope,
+    makeStateOnlyEnvelope,
     parseEnvelope,
     loadEnvelopeIntoStore,
     downloadEnvelope,
@@ -1003,6 +1004,7 @@
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (globalThis as any).__perfZip = {
         export: async (): Promise<Uint8Array> => buildPerformanceZipBytes(),
+        exportStateOnly: async (): Promise<Uint8Array> => buildPerformanceZipBytes(true),
         load: async (bytes: Uint8Array): Promise<void> => loadPerformanceZipBytes(bytes),
       };
       // Preset-slot bar + `.set` round-trip hook (e2e): store/read/clear slots
@@ -3676,8 +3678,10 @@
 
   /** Build the portable performance .zip bytes for the current rack. Pure-ish:
    *  reads the live store + resolves loaded video bytes. Exposed for the e2e
-   *  hook so the round-trip test can capture the bytes without a download. */
-  async function buildPerformanceZipBytes(): Promise<Uint8Array> {
+   *  hook so the round-trip test can capture the bytes without a download.
+   *  `stateOnly` swaps the envelope for the history-free rebuild
+   *  (makeStateOnlyEnvelope) — same materialized state, no Yjs edit history. */
+  async function buildPerformanceZipBytes(stateOnly = false): Promise<Uint8Array> {
     // A zip export mid-twist must capture the settled knob values (the CC
     // coalescer defers store commits) — flush before snapshotting.
     flushAllCcCommits();
@@ -3741,7 +3745,9 @@
       }
     });
 
-    const envelope = makePortableEnvelope(ydoc, currentUserId);
+    const envelope = stateOnly
+      ? makeStateOnlyEnvelope(ydoc, currentUserId)
+      : makePortableEnvelope(ydoc, currentUserId);
     const nodes: Record<string, { id: string; type: string; data?: Record<string, unknown> | null; params?: Record<string, unknown> | null }> = {};
     for (const [nid, n] of Object.entries(patch.nodes)) {
       if (n) nodes[nid] = { id: nid, type: n.type, data: n.data as Record<string, unknown> | null, params: n.params as Record<string, unknown> | null };
@@ -3779,19 +3785,32 @@
   }
 
   async function exportPerformanceZip(): Promise<void> {
+    return exportPerformanceZipAs(false);
+  }
+
+  /** File → Export patch (current state only): the same .ptperf.zip with the
+   *  Yjs edit history dropped (see makeStateOnlyEnvelope). */
+  async function exportPerformanceZipStateOnly(): Promise<void> {
+    return exportPerformanceZipAs(true);
+  }
+
+  async function exportPerformanceZipAs(stateOnly: boolean): Promise<void> {
     error = null;
     if (perfZipBusy) return;
     perfZipBusy = true;
     try {
-      const bytes = await buildPerformanceZipBytes();
+      const bytes = await buildPerformanceZipBytes(stateOnly);
       // Let the user NAME the file (Chromium: native Save dialog; elsewhere: a
       // name prompt + download) instead of force-saving a fixed name.
-      const outcome = await savePerformanceZip(bytes);
+      const outcome = await savePerformanceZip(
+        bytes,
+        stateOnly ? { suggestedName: 'performance-state.ptperf.zip' } : {},
+      );
       if (outcome === 'cancelled') {
         trace('export performance cancelled by user');
         return;
       }
-      trace(`exported performance .zip (${(bytes.length / 1024).toFixed(0)} KB)`);
+      trace(`exported performance .zip (${(bytes.length / 1024).toFixed(0)} KB${stateOnly ? ', state-only' : ''})`);
     } catch (e) {
       error = `Export performance failed: ${e instanceof Error ? e.message : String(e)}`;
       trace(`export performance failed: ${String(e)}`);
@@ -9221,6 +9240,7 @@
     onQuicksave={quicksaveSlot}
     onQuickload={loadSlot}
     onSavePerformance={exportPerformanceZip}
+    onSavePerformanceStateOnly={exportPerformanceZipStateOnly}
     onLoadPerformance={loadPerformanceZip}
     onExportJson={exportPatchJson}
     onImportJson={importPatchJson}
