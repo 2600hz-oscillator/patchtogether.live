@@ -161,6 +161,7 @@ export class ElectraBroker {
   private sysexListeners = new Set<(data: Uint8Array) => void>();
   private ccListeners = new Set<(ev: CcEvent) => void>();
   private noteListeners = new Set<(ev: NoteEvent) => void>();
+  private stateListeners = new Set<() => void>();
 
   /** Lazy, idempotent sysex-capable MIDIAccess request. Returns true on
    *  success. NO eager prompt — only called from the explicit user action. */
@@ -185,7 +186,10 @@ export class ElectraBroker {
       const a = await (navigator as any).requestMIDIAccess({ sysex: true });
       this.access = a as MidiFullAccessLike;
       this.attachInputs();
-      this.access.onstatechange = () => this.attachInputs();
+      this.access.onstatechange = () => {
+        this.attachInputs();
+        this.notifyStateChange();
+      };
       return true;
     } catch {
       this.connectFailed = true;
@@ -224,6 +228,31 @@ export class ElectraBroker {
   private attachInputs(): void {
     if (!this.access) return;
     this.claim.attachOnly(this.electraInputs(), this.inbound);
+  }
+
+  private notifyStateChange(): void {
+    for (const fn of this.stateListeners) fn();
+  }
+
+  /**
+   * Is a port NAMED for an Electra currently connected (input or output)?
+   *
+   * Deliberately name-STRICT, with no all-ports fallback — the opposite choice
+   * from `electraInputs()` / `resolvePorts()`, and on purpose: this predicate
+   * gates the AUTO-flash path (#2248), where "some MIDI interface exists"
+   * must never read as "an Electra is here" (auto-uploading a preset at an
+   * arbitrary device would be hostile). An oddly-named Electra still works
+   * through the manual button, whose flash keeps the fallback pools.
+   */
+  hasElectraDevice(): boolean {
+    if (!this.access) return false;
+    const ports: Array<{ name?: string | null; state?: string }> = [
+      ...this.access.inputs.values(),
+      ...this.access.outputs.values(),
+    ];
+    return ports.some(
+      (p) => /electra/i.test(p.name ?? '') && (p.state ?? 'connected') === 'connected',
+    );
   }
 
   /** ONE stable function reference for the whole broker lifetime, so the claim
@@ -380,6 +409,13 @@ export class ElectraBroker {
     this.noteListeners.add(fn);
     return () => this.noteListeners.delete(fn);
   }
+  /** Subscribe to MIDI port statechange (fan-out over the single
+   *  `access.onstatechange` slot this broker owns). Fired AFTER the broker has
+   *  re-attached its own inputs, so a listener sees the post-change port set. */
+  onStateChange(fn: () => void): () => void {
+    this.stateListeners.add(fn);
+    return () => this.stateListeners.delete(fn);
+  }
 
   get connected(): boolean { return !!this.access; }
 
@@ -392,6 +428,12 @@ export class ElectraBroker {
     if (fake) {
       this.attachInputs();
       this.resolvePorts();
+      // Wire the statechange slot the same way connect() does, so an injected
+      // fake exercises the same re-attach + fan-out path as real access.
+      fake.onstatechange = () => {
+        this.attachInputs();
+        this.notifyStateChange();
+      };
     } else {
       // Release only the slots THIS broker installed — never a sweep.
       this.claim.detach();

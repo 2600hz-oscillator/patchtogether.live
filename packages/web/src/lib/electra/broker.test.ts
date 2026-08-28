@@ -266,6 +266,62 @@ describe('ElectraBroker with a fake device', () => {
     expect(onSysex).toHaveBeenCalledOnce();
   });
 
+  it('hasElectraDevice: name-STRICT — a foreign interface never reads as an Electra', () => {
+    const b = new ElectraBroker();
+    expect(b.hasElectraDevice(), 'no access yet').toBe(false);
+
+    // Only a generic interface present: electraInputs() would fall back to it
+    // for LISTENING, but the auto-flash presence predicate must say NO.
+    const generic: MidiOutputLike = {
+      id: 'g1', name: 'USB MIDI Interface', state: 'connected', send: () => {},
+    };
+    const access: MidiFullAccessLike = {
+      inputs: new Map(),
+      outputs: new Map([[generic.id, generic]]),
+      onstatechange: null,
+    };
+    b.__test_setAccess(access);
+    expect(b.hasElectraDevice(), 'generic port is not an Electra').toBe(false);
+
+    // An Electra-named port flips it — and a 'disconnected' one flips it back
+    // (Chromium keeps unplugged ports enumerated with state: 'disconnected').
+    const electra: MidiOutputLike = {
+      id: 'e1', name: 'Electra Controller CTRL', state: 'connected', send: () => {},
+    };
+    access.outputs.set(electra.id, electra);
+    expect(b.hasElectraDevice()).toBe(true);
+    electra.state = 'disconnected';
+    expect(b.hasElectraDevice()).toBe(false);
+  });
+
+  it('onStateChange fans out the single access.onstatechange slot (after re-attach)', () => {
+    const fake = makeFakeAccess();
+    const b = new ElectraBroker();
+    b.__test_setAccess(fake.access);
+    const seen = vi.fn();
+    const off = b.onStateChange(seen);
+    // __test_setAccess wired the slot exactly like connect() does.
+    fake.access.onstatechange?.({ port: [...fake.access.inputs.values()][0]! });
+    expect(seen).toHaveBeenCalledTimes(1);
+    // A port added between events is claimed by the broker's re-attach BEFORE
+    // listeners run — a listener that reads the port map sees the new world.
+    let attachedAtNotify = false;
+    let extraHandler: ((ev: MidiEventLike) => void) | null = null;
+    const extra: MidiInputLike = {
+      id: 'electra-in-2', name: 'Electra Controller Port 1', state: 'connected',
+      get onmidimessage() { return extraHandler; },
+      set onmidimessage(h) { extraHandler = h; },
+    };
+    b.onStateChange(() => { attachedAtNotify = typeof extraHandler === 'function'; });
+    fake.access.inputs.set(extra.id, extra);
+    fake.access.onstatechange?.({ port: extra });
+    expect(attachedAtNotify, 'inputs re-attached before fan-out').toBe(true);
+    // Unsubscribe releases the listener.
+    off();
+    fake.access.onstatechange?.({ port: extra });
+    expect(seen).toHaveBeenCalledTimes(2);
+  });
+
   it('identify() resolves true when the device replies with its mfr id', async () => {
     const fake = makeFakeAccess();
     const b = new ElectraBroker();
