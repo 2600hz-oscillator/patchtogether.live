@@ -23,11 +23,13 @@
 // columnFlushPositions slot → the spawn-reveal seam), same as
 // workflow-channel-columns.spec.ts. Normal e2e lane (no DB/relay).
 
+import { SHELL_COLUMN_W } from '../../packages/web/src/lib/graph/channel-columns';
 import { test, expect, type Page } from '@playwright/test';
 
 // channel-columns.ts geometry (kept in sync with the pure module).
 const COLUMN_W = 765; // legacy pitch: 34 × HP_UNIT(22.5)
-const SHELL_COLUMN_W = 216; // tight ?shell=1 pitch
+// ⚠ IMPORTED, NEVER RE-TYPED (#2239). A local copy of the shell column pitch
+// silently mis-aims every column coordinate the moment the real pitch moves.
 const COLUMN_BASELINE_Y = 4320; // COLUMN_SLOT_H(720) × COLUMN_MAX_SLOTS(6)
 // `?shell=1` badge-clearance lift (channel-columns.ts SHELL_LANE_BADGE_CLEARANCE_Y):
 // stack bottoms anchor 90 flow px ABOVE the baseline so the lane-number badge

@@ -28,6 +28,7 @@
 // — the actual wcolDropTarget → membership → reconcile pipeline, not raw
 // graph writes.
 
+import { SHELL_COLUMN_W } from '../../packages/web/src/lib/graph/channel-columns';
 import { test, expect, type Page } from '@playwright/test';
 import { waitFrames } from '../_helpers/frames';
 
@@ -56,8 +57,8 @@ function probeTimeoutMs(videoEngines: number): number {
   return SLOW_RENDER ? 5_000 + videoEngines * 10_000 : 5_000;
 }
 
-/** channel-columns.ts geometry under `?shell=1` (SHELL_COLUMN_W). */
-const SHELL_COLUMN_W = 216;
+// ⚠ IMPORTED, NEVER RE-TYPED (#2239). A local copy of the shell column pitch
+// silently mis-aims every column coordinate the moment the real pitch moves.
 /** COLUMN_BASELINE_Y — the lane band's BOTTOM edge. The drop hit-test is 2-D
  *  (laneTargetForFlowPoint): a spawn anchor must be inside `[laneTopY,
  *  COLUMN_BASELINE_Y)` in Y as well as inside a column in X, or it is free

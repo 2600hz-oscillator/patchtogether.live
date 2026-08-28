@@ -98,7 +98,7 @@ const VIDEO_AREA_HEIGHT = 540; // RACK_UNIT(180) * 3
 const SHELL_LANE_HEADROOM_Y = 90; // channel-columns.ts SHELL_LANE_HEADROOM_Y
 const SHELL_BADGE_CLEARANCE_Y = 90; // channel-columns.ts SHELL_LANE_BADGE_CLEARANCE_Y
 /** Flow-space top-left X that CENTERS the uniform 192px tile in column `ch`'s tight
- *  216px band (columnCardX at the shell pitch) — the value the drop must persist. */
+ *  band (columnCardX at the shell pitch) — the value the drop must persist. */
 const shellColCardX = (ch: number) => (ch - 1) * SHELL_COLUMN_W + (SHELL_COLUMN_W - SHELL_TILE_W) / 2;
 
 /** A flow-space spawn anchor inside channel column `ch`'s painted band. X selects
@@ -622,10 +622,10 @@ test.describe('P0.3b workflow-shell legacy-fallback bridge', () => {
 
   test('lanes are the TIGHT shell pitch: drops land in the narrowed column + tiles fill the lane with no overlap', async ({ page }) => {
     // The RACKLINE narrowing: under ?shell=1 the app-scale 765px band collapses to
-    // the mock's tight 216px lane pitch, so the uniform 192px tiles FILL their
+    // the tight shell lane pitch, so the uniform 192px tiles FILL their
     // lanes (24px gutter) instead of floating in huge gutters. Prove (a) a real
     // palette drop lands in the correct NARROWED column via the pitch-aware
-    // hit-test, (b) the rendered column pitch is ~216px, and (c) tiles don't
+    // hit-test, (b) the rendered column pitch is ~SHELL_COLUMN_W, and (c) tiles don't
     // overlap (clean gutter).
     await gotoWorkflow(page, { shell: true });
     await waitForHooks(page);
