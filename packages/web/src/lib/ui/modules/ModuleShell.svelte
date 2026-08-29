@@ -2014,6 +2014,11 @@
      cap (the no-clip rule — the chip ellipsizes and its dropdown is portaled);
      the dock faceplate lets them take their natural width. */
   .ms-cell-sel,
+  .ms-cell-act {
+    justify-content: center;
+    min-width: 0;
+  }
+
   /* LIVE-OVERRIDE state (param-override-badges.ts): the engine is ignoring
    * this control right now, so the throw dims — the legacy card's
    * `.delay-cell.clk-driven` treatment, ported. The control stays interactive
@@ -2032,11 +2037,6 @@
     padding: 1px 2px;
     font-family: ui-monospace, monospace;
     pointer-events: none;
-  }
-
-  .ms-cell-act {
-    justify-content: center;
-    min-width: 0;
   }
   .rl-tile.dock-full .ms-cell-sel,
   .rl-tile.dock-full .ms-cell-act {
