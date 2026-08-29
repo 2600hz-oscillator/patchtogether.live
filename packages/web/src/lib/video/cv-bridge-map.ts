@@ -129,3 +129,77 @@ export function mapCvBridgeValue(mapping: CvBridgeMapping, sample: number): numb
 export function cvBridgeKnobTracksBase(mapping: CvBridgeMapping): boolean {
   return !!mapping.scale && mapping.scale.hint.center !== 'default';
 }
+
+// ─────────────────────── CV ACTIVITY (idle / active) ───────────────────────
+//
+// "Is the stick moving?" — the explicit seam the record-CV-automation model
+// (owner report, 2026-08: record the movement, loop it while the source is
+// parked, live movement overrides) hangs off. The detector watches the RAW
+// source sample the bridge reads from its analyser — NEVER the target param's
+// uniform — so clip-automation playback writing the param can never look like
+// live movement (the two channels stay distinguishable at this seam by
+// construction; a feedback loop is structurally impossible).
+//
+// Semantics (value-change threshold + hold time, mirroring the MIDI CC-idle
+// release in cc-commit.ts — a stream with no pointer-up needs a settle window
+// to mean "hand off the control"):
+//   - a sample moving ≥ `moveEps` from the last movement anchor ⇒ ACTIVE, and
+//     the anchor re-seats (so a slow drift ACCUMULATES against the anchor and
+//     still trips the threshold, instead of hiding under it per-tick);
+//   - ACTIVE decays to IDLE after `idleHoldMs` with no such movement.
+//
+// Time is INJECTED (`nowMs`) so the state machine is pure and unit-testable
+// with a fake clock; the engine feeds performance.now().
+
+/** Raw-sample movement threshold (source units — cv is bipolar ±1, so this is
+ *  0.5% of the span; the gamepad module's deadzone already zeroes a parked
+ *  stick, and 7-bit CC steps ≈ 0.016 clear it comfortably). */
+export const CV_ACTIVITY_MOVE_EPS = 0.01;
+
+/** How long the source must sit still before it counts as IDLE. Longer than
+ *  the MIDI CC settle (200 ms, cc-commit.ts) on purpose: an analyser-sampled
+ *  stream has no discrete message cadence, and the window must cover a gentle
+ *  stick turn-around plus ≥2 bridge ticks under SwiftShader (~127 ms/tick at
+ *  7.9 fps) so a slow renderer can't flap the state per frame. */
+export const CV_ACTIVITY_IDLE_MS = 300;
+
+/**
+ * Idle/active state machine for ONE cv bridge's source stream. Feed it the
+ * raw sample (cv/gate tail sample, or the envelope value for an `audio`
+ * source) once per bridge tick; read back whether the source is live.
+ */
+export class CvActivityDetector {
+  private readonly moveEps: number;
+  private readonly idleHoldMs: number;
+  private anchor: number | null = null; // value at the last detected movement
+  private lastMoveAt = -Infinity;
+  private isActive = false;
+
+  constructor(opts: { moveEps?: number; idleHoldMs?: number } = {}) {
+    this.moveEps = opts.moveEps ?? CV_ACTIVITY_MOVE_EPS;
+    this.idleHoldMs = opts.idleHoldMs ?? CV_ACTIVITY_IDLE_MS;
+  }
+
+  /** Feed one sample at `nowMs`. Returns the (possibly updated) active state.
+   *  The FIRST sample seats the anchor without counting as movement — a cable
+   *  patched to a parked source starts IDLE rather than announcing a phantom
+   *  gesture. */
+  update(value: number, nowMs: number): boolean {
+    if (this.anchor === null) {
+      this.anchor = value;
+      return this.isActive;
+    }
+    if (Math.abs(value - this.anchor) >= this.moveEps) {
+      this.anchor = value;
+      this.lastMoveAt = nowMs;
+      this.isActive = true;
+    } else if (this.isActive && nowMs - this.lastMoveAt >= this.idleHoldMs) {
+      this.isActive = false;
+    }
+    return this.isActive;
+  }
+
+  get active(): boolean {
+    return this.isActive;
+  }
+}

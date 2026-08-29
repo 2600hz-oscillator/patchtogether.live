@@ -10,7 +10,7 @@
 //      quadrant" bug for params whose range isn't ±1 (e.g. zoom 0.3..3).
 
 import { describe, it, expect } from 'vitest';
-import { buildCvBridgeMapping, cvBridgeKnobTracksBase, mapCvBridgeValue } from './cv-bridge-map';
+import { buildCvBridgeMapping, cvBridgeKnobTracksBase, mapCvBridgeValue, CvActivityDetector, CV_ACTIVITY_MOVE_EPS, CV_ACTIVITY_IDLE_MS } from './cv-bridge-map';
 import { destructorDef } from './modules/destructor';
 import { cameraInputDef } from './modules/camera-input';
 import { quadralogicalDef } from './modules/quadralogical';
@@ -273,5 +273,73 @@ describe('cvBridgeKnobTracksBase (#2236 — a CV-driven fader must be movable)',
     m.scale!.knob = 1.0;
     expect(mapCvBridgeValue(m, -1)).toBeCloseTo(0.4, 3);
     expect(mapCvBridgeValue(m, 1)).toBeCloseTo(1.6, 3);
+  });
+});
+
+describe('CvActivityDetector — the "is the stick moving?" seam', () => {
+  const mk = (opts?: { moveEps?: number; idleHoldMs?: number }) =>
+    new CvActivityDetector({ moveEps: 0.01, idleHoldMs: 300, ...opts });
+
+  it('starts IDLE, and the first sample only seats the anchor (a cable patched to a parked source announces no phantom gesture)', () => {
+    const d = mk();
+    expect(d.active).toBe(false);
+    // First sample is a big value — but there is no PRIOR anchor to move from.
+    expect(d.update(0.8, 0)).toBe(false);
+    // Holding that value stays idle.
+    expect(d.update(0.8, 100)).toBe(false);
+    expect(d.active).toBe(false);
+  });
+
+  it('movement ≥ moveEps activates; sub-eps jitter never does', () => {
+    const d = mk();
+    d.update(0, 0);
+    expect(d.update(0.005, 16)).toBe(false); // below eps — noise
+    expect(d.update(0.009, 32)).toBe(false); // still below eps vs anchor 0
+    expect(d.update(0.02, 48)).toBe(true); // crossed eps → active
+  });
+
+  it('slow drift ACCUMULATES against the movement anchor instead of hiding under the per-tick delta', () => {
+    const d = mk();
+    d.update(0, 0);
+    // +0.004/tick — every per-tick delta is under eps, but the drift crosses
+    // eps vs the anchor on the third sample.
+    expect(d.update(0.004, 16)).toBe(false);
+    expect(d.update(0.008, 32)).toBe(false);
+    expect(d.update(0.012, 48)).toBe(true);
+  });
+
+  it('stays ACTIVE while movements keep arriving inside idleHoldMs, then decays to IDLE after idleHoldMs of stillness', () => {
+    const d = mk();
+    d.update(0, 0);
+    expect(d.update(0.5, 100)).toBe(true);
+    expect(d.update(0.3, 350)).toBe(true); // moved again → hold refreshed
+    expect(d.update(0.3, 500)).toBe(true); // still (150ms < 300ms) → active
+    expect(d.update(0.3, 649)).toBe(true); // 299ms — still inside the hold
+    expect(d.update(0.3, 651)).toBe(false); // 301ms of stillness → idle
+    expect(d.active).toBe(false);
+  });
+
+  it('re-activates from IDLE on the next real movement', () => {
+    const d = mk();
+    d.update(0, 0);
+    d.update(0.5, 10);
+    d.update(0.5, 400); // idle again
+    expect(d.active).toBe(false);
+    expect(d.update(0.6, 410)).toBe(true);
+  });
+
+  it('respects custom thresholds', () => {
+    const d = mk({ moveEps: 0.2, idleHoldMs: 50 });
+    d.update(0, 0);
+    expect(d.update(0.1, 10)).toBe(false); // under the wider eps
+    expect(d.update(0.3, 20)).toBe(true);
+    expect(d.update(0.3, 71)).toBe(false); // 51ms > 50ms hold → idle
+  });
+
+  it('defaults are the exported constants', () => {
+    const d = new CvActivityDetector();
+    d.update(0, 0);
+    expect(d.update(CV_ACTIVITY_MOVE_EPS, 10)).toBe(true);
+    expect(d.update(CV_ACTIVITY_MOVE_EPS, 10 + CV_ACTIVITY_IDLE_MS + 1)).toBe(false);
   });
 });
