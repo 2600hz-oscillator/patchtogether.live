@@ -16,15 +16,24 @@
 // lock THROUGH that extra onset, which is exactly why this fixture is
 // checked in rather than only the synthetic one.
 //
-// ⚠ THE FILE PLAYS 4% SLOW: the train's true grid is 103.68 BPM = 108 ×
-// 24/25 exactly — a fps-family rate conversion on the mp4, not a property of
-// the music. The `measuredFold` of 107.72 recorded below came from an
-// absolute-grid regression whose residuals (σ ≈ 40 ms on a 139 ms grid)
-// invalidate its own integer assignment; the full instrument-validation
-// argument, with the two clean local instruments that agree on 103.68, lives
-// on fixture 8 in tempolock-tracker.test.ts. Both numbers are kept here as
-// PROVENANCE — the test asserts the true grid AND that × 25/24 recovers the
-// owner's stated 108.
+// ⚠ THE SOURCE RAN 4% SLOW — NOT THE FILE (corrected 2026-08-29 by a
+// controlled experiment): the train's true grid is 103.68 BPM, and that IS
+// the tempo the audio played at. The "108" label came from the owner's
+// Mandala hardware module's internal clock. A reference recording made
+// through the SAME capture chain with the rack's own software clock
+// (timelorde pinned to 108, kick 4-to-the-floor: 108BPM-001-20260829-
+// 144140.mp4) measured 108.17 BPM with beat-grid residual σ = 0.08 ms —
+// the recorder is quartz-honest, so the hardware clock is what runs slow.
+// The near-exact 108 × 24/25 ratio, first read as an fps-family rate
+// conversion on the mp4, is therefore a property of the Mandala's clock
+// (or coincidence), not of the capture pipeline. The `measuredFold` of
+// 107.72 recorded below came from an absolute-grid regression whose
+// residuals (σ ≈ 40 ms on a 139 ms grid) invalidate its own integer
+// assignment; the full instrument-validation argument, with the two clean
+// local instruments that agree on 103.68, lives on fixture 8 in
+// tempolock-tracker.test.ts. All numbers are kept here as PROVENANCE — the
+// test asserts the true grid AND that × 25/24 recovers the owner's stated
+// (label) 108.
 //
 // A last-two-edges follower over this train swings 104..480 BPM (4.6x) — the
 // documented reason this module exists, pinned as the negative control.
