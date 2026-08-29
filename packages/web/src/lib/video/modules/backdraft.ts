@@ -238,6 +238,7 @@
 import type { VideoModuleDef } from '$lib/video/module-registry';
 import type { VideoNodeHandle, VideoNodeSurface } from '$lib/video/engine';
 import { detectEdge, makeEdgeState, type EdgeState } from '$lib/doom/cv-gate-edge';
+import { requestVideoPanic } from '$lib/video/panic-hook';
 // The bridge's own write cadence — the DELAY CLOCK freshness window is
 // expressed in ticks rather than re-deriving a millisecond figure.
 import { SCHEDULER_TICK_MS } from '$lib/audio/scheduler-clock';
@@ -1484,6 +1485,9 @@ export interface BackdraftParams {
   camPosY: number;   // -1..1
   camDist: number;   // 0..1 -> camera distance (perspective strength)
   freeze: number;    // 0/1 (VRT determinism)
+  // Synthetic raw-gate param the panic CV bridge writes (0..1 swing). Hidden —
+  // no card knob; a rising edge fires the settings reset (see panic-hook).
+  panicGate: number; // 0..1 raw gate sample
 }
 
 const DEFAULTS: BackdraftParams = {
@@ -1541,6 +1545,7 @@ const DEFAULTS: BackdraftParams = {
   camPosY: 0,
   camDist: 0.5,
   freeze: 0,
+  panicGate: 0, // gate idles low; only written while a PANIC cable is patched
 };
 
 /**
@@ -3115,6 +3120,14 @@ export const backdraftDef: VideoModuleDef = {
     { id: 'cam_pos_x',     type: 'cv', paramTarget: 'camPosX',  cvScale: { mode: 'linear' } },
     { id: 'cam_pos_y',     type: 'cv', paramTarget: 'camPosY',  cvScale: { mode: 'linear' } },
     { id: 'cam_dist',      type: 'cv', paramTarget: 'camDist',  cvScale: { mode: 'linear' } },
+    // PANIC — gate/clock input (NO cvScale => raw passthrough). A RISING edge
+    // fires the SAME settings reset as the faceplate's PANIC button (one
+    // implementation, two triggers — see $lib/ui/modules/backdraft/panic.ts):
+    // every user-settable param back to its def default, in one undoable
+    // LOCAL_ORIGIN transaction, touching no cables and no layout. `edge:
+    // 'trigger'`: it fires once per rising edge and never reads the held
+    // level, so the detection runs on the bridge's setParam clock.
+    { id: 'panic',         type: 'cv', edge: 'trigger', paramTarget: 'panicGate' },
   ],
   outputs: [
     { id: 'out', type: 'video' },
@@ -3221,9 +3234,13 @@ export const backdraftDef: VideoModuleDef = {
     { id: 'camDist',  label: 'Dist',     defaultValue: DEFAULTS.camDist,  min: 0,  max: 1,                     curve: 'linear' },
     // freeze is a hidden VRT/determinism toggle — no card control.
     { id: 'freeze',   label: 'Freeze',   defaultValue: DEFAULTS.freeze,   min: 0,  max: 1,                     curve: 'linear' },
+    // Synthetic gate param the panic CV bridge writes — hidden (no card
+    // knob); the module edge-detects a rising edge and fires the settings
+    // reset (same implementation as the PANIC button).
+    { id: 'panicGate', label: 'Panic Gate', defaultValue: DEFAULTS.panicGate, min: 0, max: 1, curve: 'linear' },
   ],
 
-  // #1726 — THE SEVEN PARAMS A PLAYER NEVER SETS, said in a form a gate can
+  // #1726 — THE PARAMS A PLAYER NEVER SETS, said in a form a gate can
   // read. Every one of them was already documented as "hidden — no card knob"
   // in a comment four lines above its ParamDef; a comment is invisible to the
   // face rules, the group-bar auto-expose and the Push card ranking, all three
@@ -3233,7 +3250,7 @@ export const backdraftDef: VideoModuleDef = {
   // of the real ones.
   //
   // `writer` is checked against THIS def's own `inputs` in both directions
-  // (no-user-control.test.ts): the six gate params must have the matching
+  // (no-user-control.test.ts): the gate params must have the matching
   // `paramTarget` port, and `freeze` must have none.
   noUserControl: [
     { param: 'delayClock',  writer: 'cv-port',  why: 'written by the delay_clock bridge as a raw 0..1 swing; the module edge-detects it to measure the pulse period that overrides the DELAY fader' },
@@ -3242,6 +3259,7 @@ export const backdraftDef: VideoModuleDef = {
     { param: 'shapeGate',   writer: 'cv-port',  why: 'written by the shape_gate bridge; a rising edge CYCLES shape, which is the param the player actually sets' },
     { param: 'pureGeoGate', writer: 'cv-port',  why: 'written by the pure_geo_gate bridge; a rising edge TOGGLES pureGeo, which is the param the player actually sets' },
     { param: 'tvGate',      writer: 'cv-port',  why: 'written by the tv_gate bridge; a rising edge CYCLES tvMode, which is the param the player actually sets' },
+    { param: 'panicGate',   writer: 'cv-port',  why: 'written by the panic bridge; a rising edge fires the settings reset the PANIC button also fires — the params the player actually sets are the ones it restores' },
     { param: 'freeze',      writer: 'internal', why: 'determinism toggle for VRT capture: at >=0.5 draw() is a no-op so the ring and output hold their last frame. No port targets it and no card control sets it' },
   ],
 
@@ -3463,6 +3481,7 @@ export const backdraftDef: VideoModuleDef = {
       cam_pos_y: "CV (linear, bipolar) that modulates Cam Y — slides the virtual camera up/down in its own plane. No effect while TV MODE is off.",
       cam_dist: "CV (linear) that modulates Dist — how far the virtual camera stands off, i.e. how violently a given tilt keystones. No effect while TV MODE is off, or while the camera is dead-on.",
       drive: "CV (linear) that modulates the Drive control — CRITICAL's auto-exposure servo rate, i.e. how hard the mode sits on the edge of white-out. Below the midpoint the picture is a still nest; above it, it breathes. No effect outside CRITICAL.",
+      panic: "Gate/clock input (raw passthrough, edge-detected). A RISING edge fires PANIC — the same reset as the faceplate's PANIC button: every user-settable control returns to its default in one undoable step. Patching is untouched: no cable is added or removed, so a CV source modulating a control keeps modulating it, now around the restored default base. Edge-triggered, not a held level: the rising edge is detected as the value arrives from the patch bridge rather than sampled once per rendered frame, so a short 5ms trigger fires it exactly as reliably as a sustained gate, and holding the gate high fires it once and then leaves it alone.",
     },
     outputs: {
       out: "The feedback-rendered video output: the crossfaded source composited with the processed, delayed, spatially-warped, mask-scaled copy of the previous output.",
@@ -3505,6 +3524,7 @@ export const backdraftDef: VideoModuleDef = {
       camPosY: "Cam Y (-0.5..+0.5, default 0 = centred): slides the camera up or down in its own plane, from dead centre to above or below the screen. Pairs with Tilt Y.",
       camDist: "Dist (0..1, default 0.5): how far the virtual camera stands off the screen, and therefore how hard a given TILT keystones. Short (wide-angle) throws violent perspective and makes the nest curl hard; long (telephoto) barely skews it. The fader is geometric — equal steps are equal FACTORS — because perspective strength is a ratio, not an offset. It does NOTHING while the camera is dead-on, since a square-on view has no perspective to strengthen.",
       freeze: "Freeze (0/1, default 0): hidden determinism toggle. At ≥0.5 draw() is a no-op so the ring + output hold their last frame for deterministic VRT capture. No card control.",
+      panicGate: "Panic Gate (0..1, default 0): hidden synthetic param the panic CV bridge writes (raw gate swing). No card knob; a rising edge fires the settings reset the PANIC button also fires.",
     },
   },
   factory(ctx, node): VideoNodeHandle {
@@ -3716,6 +3736,14 @@ export const backdraftDef: VideoModuleDef = {
     const pureGeoGate = makeEdgeState();
     // TV MODE gate: a rising edge CYCLES OFF -> PURE TV -> CRITICAL -> OFF.
     const tvGate = makeEdgeState();
+    // PANIC gate: a rising edge fires the graph-side settings reset via the
+    // panic hook (registered at engine boot; a bare factory in a unit test has
+    // no handler and the request is a safe no-op). `panicRises` is the
+    // monotonic acted-on count — the clockRises/regenCount convention: the
+    // render output cannot reveal a dropped edge, so the count is the only
+    // observable that can.
+    const panicGate = makeEdgeState();
+    let panicRises = 0;
 
     const surface: VideoNodeSurface = {
       fbo: ring[0]!.fbo,
@@ -4053,6 +4081,17 @@ export const backdraftDef: VideoModuleDef = {
               params.tvMode = backdraftNextTvMode(params.tvMode);
             }
             break;
+          // PANIC gate: a rising edge fires the settings reset. The reset is
+          // NOT applied here — it is a Y.Doc edit (undoable, synced), and this
+          // factory never touches the graph; the registered hook routes it to
+          // the same implementation the PANIC button calls, and the resulting
+          // doc writes flow back in through the ordinary reconciler setParam.
+          case 'panicGate':
+            if (detectEdge(panicGate, value)?.pressed) {
+              panicRises++;
+              requestVideoPanic(node.id);
+            }
+            break;
           default:
             break;
         }
@@ -4069,6 +4108,9 @@ export const backdraftDef: VideoModuleDef = {
         // How many DELAY CLOCK rising edges we have acted on (monotonic). The
         // dropped-edge probe — see `clockRises`.
         if (key === 'clockRiseCount') return clockRises;
+        // How many PANIC rising edges we have acted on (monotonic) — same
+        // dropped-edge probe, for the same reason.
+        if (key === 'panicCount') return panicRises;
         return undefined;
       },
       dispose() { surface.dispose(); },

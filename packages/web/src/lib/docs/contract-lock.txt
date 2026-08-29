@@ -189,6 +189,7 @@ backdraft in mirror_y_gate cv param=mirrorYGate edge=trigger
 backdraft in mix cv param=mix cvScale=linear
 backdraft in offsetx cv param=offsetX cvScale=linear
 backdraft in offsety cv param=offsetY cvScale=linear
+backdraft in panic cv param=panicGate edge=trigger
 backdraft in phosphor cv param=phosphor cvScale=linear
 backdraft in pixelate cv param=pixelate cvScale=linear
 backdraft in pure_geo_gate cv param=pureGeoGate edge=trigger
@@ -224,6 +225,7 @@ backdraft param mirrorYGate 0..1 linear default=0
 backdraft param mix 0..1 linear default=0.5
 backdraft param offsetX -0.1..0.1 linear default=0
 backdraft param offsetY -0.1..0.1 linear default=0
+backdraft param panicGate 0..1 linear default=0
 backdraft param phosphor 0..1 linear default=0
 backdraft param pixelate 0..1 linear default=0
 backdraft param pureGeo 0..1 discrete default=0
