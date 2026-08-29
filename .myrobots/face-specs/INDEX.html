@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>face-specs INDEX — the remaining unfaced modules</title>
+<style>
+  /* House tokens — the same set the wave-1..7 mocks use (dark-only, per wave-5+ convention). */
+  :root{
+    --bg:#0e1013; --dock:#12161c; --plate:#262a31; --pbody:#1c1f24; --well:#0a0c0f;
+    --line:#2c3037; --tile:#33383f; --ink:#eef1f5; --dim:#9aa2ad; --faint:#646c77;
+    --accent:#6cf; --vid:#4ade80; --cv:#7dd3fc; --warn:#f2c14e; --good:#8fe6b0;
+    --bad:#f87171; --meta:#c084fc;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{background:var(--bg);color:var(--ink);font-family:var(--sans);margin:0;padding:24px 16px 80px;line-height:1.5}
+  main{max-width:1080px;margin:0 auto}
+  header.top{border-bottom:1px solid var(--line);padding-bottom:12px;margin-bottom:20px}
+  header.top h1{font-family:var(--mono);font-size:1.35rem;margin:0 0 4px}
+  header.top .sub{color:var(--dim);font-size:.9rem}
+  h2{font-family:var(--mono);font-size:1.02rem;color:var(--ink);border-bottom:1px solid var(--line);padding-bottom:6px;margin:34px 0 12px}
+  h3{font-family:var(--mono);font-size:.9rem;color:var(--dim);margin:20px 0 8px}
+  p{margin:8px 0;color:var(--ink)}
+  a{color:var(--cv);text-decoration:none}
+  a:hover{text-decoration:underline}
+  table{border-collapse:collapse;width:100%;margin:10px 0;font-size:.85rem}
+  th{font-family:var(--mono);font-size:.72rem;text-transform:uppercase;letter-spacing:.04em;color:var(--faint);text-align:left;padding:6px 10px;border-bottom:1px solid var(--line)}
+  td{padding:6px 10px;border-bottom:1px solid rgba(44,48,55,.55);vertical-align:top}
+  code,.mono{font-family:var(--mono);font-size:.83em;color:var(--cv)}
+  pre.code{background:var(--well);border:1px solid var(--line);border-radius:6px;padding:12px 14px;overflow-x:auto;font-family:var(--mono);font-size:.78rem;line-height:1.55;color:var(--ink)}
+  pre.code .c{color:var(--faint)}
+  .callout{border-left:3px solid var(--line);background:rgba(28,31,36,.6);padding:10px 14px;border-radius:0 6px 6px 0;margin:12px 0;font-size:.88rem}
+  .callout.warn{border-color:var(--warn)}
+  .callout.ok{border-color:var(--good)}
+  .callout.bad{border-color:var(--bad)}
+  .callout .t{font-family:var(--mono);font-size:.72rem;text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:4px}
+  .callout.warn .t{color:var(--warn)} .callout.ok .t{color:var(--good)} .callout.bad .t{color:var(--bad)}
+  .pill{display:inline-block;font-family:var(--mono);font-size:.68rem;padding:1px 8px;border-radius:9px;border:1px solid var(--line)}
+  .pill.here{color:var(--good);border-color:var(--good)}
+  .pill.pre{color:var(--cv);border-color:var(--cv)}
+  .pill.carve{color:var(--bad);border-color:var(--bad)}
+  .pill.gen{color:var(--warn);border-color:var(--warn)}
+  .pill.org{color:var(--meta);border-color:var(--meta)}
+  .count{font-family:var(--mono);font-size:1.5rem;color:var(--ink)}
+  .countrow{display:flex;gap:26px;flex-wrap:wrap;margin:14px 0}
+  .countrow .cell{background:var(--pbody);border:1px solid var(--line);border-radius:8px;padding:10px 18px;text-align:center}
+  .countrow .cap{font-family:var(--mono);font-size:.66rem;color:var(--faint);text-transform:uppercase;letter-spacing:.05em}
+  footer{margin-top:48px;border-top:1px solid var(--line);padding-top:10px;font-family:var(--mono);font-size:.7rem;color:var(--faint)}
+</style>
+</head>
+<body>
+<main>
+<header class="top">
+  <h1>face-specs INDEX — every remaining unfaced module, derived and classified</h1>
+  <div class="sub">The comprehensive list behind the seven specs in this directory. Derivation re-run 2026-08-28 against <code>origin/main</code> @ <code>f340ab43a</code> — never trusted from an older doc’s counts (the 08-18 plan said 189/51/138; today’s tree says otherwise, below).</div>
+</header>
+
+<h2>§1 — THE DERIVATION, RE-RUN (and how to re-run it again)</h2>
+<p>The canonical population is the LIVE REGISTRY, not a grep: <code>listModuleDefs() + listVideoModuleDefs() + listMetaModuleDefs()</code>. Two pinned artifacts make the derivation a pair of green test runs rather than a hand count:</p>
+<pre class="code"><span class="c"># 1. The generated inventory IS the derivation — pinned to the live registry by its test.</span>
+<span class="c">#    A stale inventory cannot pass; a green run certifies the counts in the .md.</span>
+flox activate -- task test:one -- face-migration-inventory   <span class="c"># 32 tests, green on this tree</span>
+<span class="c"># 2. STRICT_FACES set identity: the faced set EQUALS the set of defs declaring `face`,</span>
+<span class="c">#    both directions — no stale entries, no unlisted faces possible while green.</span>
+flox activate -- task test:one -- module-face-lint            <span class="c"># 65 tests, green on this tree</span>
+<span class="c"># The counts then read off the pinned artifact:</span>
+docs/design/face-migration.generated.md</pre>
+<div class="countrow">
+  <div class="cell"><div class="count">193</div><div class="cap">registered defs</div></div>
+  <div class="cell"><div class="count">169</div><div class="cap">faced + promoted</div></div>
+  <div class="cell"><div class="count">24</div><div class="cap">unfaced total</div></div>
+  <div class="cell"><div class="count">21</div><div class="cap">in migration scope</div></div>
+  <div class="cell"><div class="count">3</div><div class="cap">organizational-native</div></div>
+</div>
+<h3>§1.1 Instrument checks (the 08-18 doc’s checks, reproduced)</h3>
+<table>
+  <tr><th>check</th><th>result 2026-08-28</th></tr>
+  <tr><td>No stale STRICT_FACES entries / no faced def missing from the set</td><td>green — the set-identity leg of <code>module-face-lint</code> (asserted both directions; the old ≥18 floor was deleted 2026-08-12 and the identity carries what it protected)</td></tr>
+  <tr><td>No defs minted by factories / no def-looking files that yield no type</td><td>accounted: an independent file-scan of <code>lib/{audio,video,meta}/modules/*.ts</code> for exported <code>*Def</code> consts carrying <code>type</code> + <code>factory|computeStateAt</code> found 184; the 9-def difference reconciles exactly to the 8 meta-domain defs (hyphenated filenames / meta def shapes) + <code>lfo</code> (the <code>computeStateAt</code> synced-LFO base shape) = 193 ✓. Helper files (painter-draw, gibribbon-events, textmarquee-layout…) export no def and are skipped by <code>looksLikeAudioDef</code> — by design</td></tr>
+  <tr><td>Registered with NO disposition</td><td>0 (asserted by the inventory test — “must be zero”)</td></tr>
+  <tr><td>Inventory entries naming a dead def</td><td>0 (same test)</td></tr>
+  <tr><td>Unbaselinable-face exemption cross-check</td><td><code>FACES_WITHOUT_SCENES</code> (e2e/vrt/_shell-faces.ts) holds only <code>acidwarp</code> and <code>milkdrop</code> — both FACED. No unfaced module hides there; the exemption list and this index are disjoint populations, as they should be</td></tr>
+</table>
+
+<h2>§2 — THE 24, CLASSIFIED</h2>
+<h3>§2.1 <span class="pill here">SPEC AUTHORED HERE</span> — 7 bespoke-surface modules, one file each</h3>
+<table>
+  <tr><th>module</th><th>domain</th><th>spec</th><th>verdict in one line</th></tr>
+  <tr><td><code>moog956</code></td><td>audio</td><td><a href="moog956.html">moog956.html</a></td><td>PROMOTE — fader+momentary cover the ribbon’s params today; ribbon body is additive</td></tr>
+  <tr><td><code>audioIn</code></td><td>audio</td><td><a href="audioIn.html">audioIn.html</a></td><td>PROMOTE — the cameraInput pattern with the #1590 registry tax already paid; honest meter glyph</td></tr>
+  <tr><td><code>painter</code></td><td>video</td><td><a href="painter.html">painter.html</a></td><td>PROMOTE-ready; typed-entry route (a) recommended; precondition: port replay-and-push to extras-producers (#1720 class)</td></tr>
+  <tr><td><code>textmarquee</code></td><td>video</td><td><a href="textmarquee.html">textmarquee.html</a></td><td>the fleet’s GENUINE typed-entry case — surface fully designed so the owner decision is about the rule</td></tr>
+  <tr><td><code>mappy</code></td><td>video</td><td><a href="mappy.html">mappy.html</a></td><td>PROMOTE — clean on all six gates; carries two cloudseed-class def corrections</td></tr>
+  <tr><td><code>gibribbon</code> <span class="pill" style="color:var(--meta);border-color:var(--meta)">REWRITE-CLASS</span></td><td>video</td><td><a href="gibribbon.html">gibribbon.html</a></td><td>rev 3, OWNER-RULED (2026-08-28) FULL REWRITE — product work, a different effort category from every face spec here: “gibribbon has never really worked.” History reconstructed from git (#620…#701 burst, #698 silently killed half the game, #1421 deleted the only shipped play mode, #2183 deleted its sequencer); rewrite = adaptive course-from-CV extraction (no absolute-threshold DSP coupling), one scheduler-tick clock, attract mode, in-canvas HUD, seed+freeze determinism designed in, DOOM marine/monster assets per the owner’s fair-use-parody ruling with the DOOM module itself untouched</td></tr>
+  <tr><td><code>toybox</code></td><td>video</td><td><a href="toybox.html">toybox.html</a></td><td>rev 2, dock design OWNER-RULED (2026-08-28): screen with on/off → persistent layer band → three tabs (CV-MOD · COMBINE GRAPH · PRESETS), today’s capabilities kept incl. the editable 17-op combine node graph and both lock tiers; precondition: #1589 media ownership → node registry; typed-entry rides the fleet ruling</td></tr>
+</table>
+
+<h3>§2.2 <span class="pill pre">SPEC EXISTS, FACE NOT BUILT</span> — 10 modules with wave-5/6/7 packages (not re-specced; do not delete or mark consumed until the surface ships)</h3>
+<table>
+  <tr><th>module</th><th>domain</th><th>pre-existing package</th></tr>
+  <tr><td><code>chromaconsole</code></td><td>audio</td><td><code>.myrobots/2026-08-24-bespoke-wave5/chromaconsole/</code> (spec.md + dock.html + dock-assign.html)</td></tr>
+  <tr><td><code>modtris</code></td><td>audio</td><td><code>.myrobots/2026-08-24-bespoke-wave5/modtris/</code></td></tr>
+  <tr><td><code>nibbles</code></td><td>video</td><td><code>.myrobots/2026-08-24-bespoke-wave5/nibbles/</code> (+ dock-screen-off.html)</td></tr>
+  <tr><td><code>skifree</code></td><td>audio</td><td><code>.myrobots/2026-08-24-bespoke-wave5/skifree/</code> (+ the shipping-shell lifetime bug routed in the 08-24 face-plan)</td></tr>
+  <tr><td><code>archivist</code></td><td>video</td><td><code>.myrobots/2026-08-24-bespoke-wave6/archivist/</code> (+ dock-loaded.html)</td></tr>
+  <tr><td><code>peertube</code></td><td>video</td><td><code>.myrobots/2026-08-24-bespoke-wave6/peertube/</code> (+ dock-results.html)</td></tr>
+  <tr><td><code>recorderbox</code></td><td>video</td><td><code>.myrobots/2026-08-24-bespoke-wave6/recorderbox/</code> (+ dock-recording.html)</td></tr>
+  <tr><td><code>videobox</code></td><td>video</td><td><code>.myrobots/2026-08-24-bespoke-wave6/videobox/</code> (+ dock-screens.html)</td></tr>
+  <tr><td><code>videovarispeed</code></td><td>video</td><td><code>.myrobots/2026-08-24-bespoke-wave6/videovarispeed/</code> (+ dock-loaded.html; the known-hard one)</td></tr>
+  <tr><td><code>controlSurface</code></td><td>meta</td><td><code>.myrobots/2026-08-24-bespoke-wave7/controlSurface/</code> (a REFUSE spec — lane-tile arithmetic; + lane-tile.html)</td></tr>
+</table>
+<p>These are current-generation (2026-08-23/24) packages in the refined house format; re-speccing them would be churn, not quality. Each was verified present on this tree. Their shared open item is the typed-entry owner ruling (archivist, peertube, recorderbox, controlSurface are four of the five modules the gate’s third leg currently catches — this directory’s painter/textmarquee/toybox make it eight candidates for one fleet ruling).</p>
+
+<h3>§2.3 <span class="pill carve">CARVED OUT</span> — 3 modules, each with a named owner ruling</h3>
+<table>
+  <tr><th>module</th><th>ruling</th><th>verified on this tree</th></tr>
+  <tr><td><code>doom</code></td><td>Owner, 2026-08-17: “do not fuck with doom in any way without specific approval.” EXCLUDED by name from this programme — no spec, no face work, no DOOM spec/wait/ledger touches. The mechanical reason is standing: DOOM’s game clock IS the frame clock (one rendered frame = one game tic)</td><td>CLAUDE.md carries the ruling verbatim; <code>doom</code> remains bespoke-surface in the inventory</td></tr>
+  <tr><td><code>blood</code></td><td>The second flagged entry, VERIFIED still carved out: the 08-24 face-plan wave-6 derivation lists “<code>doom</code> + blood (NEVER touch)” among the untouchables. blood is the NBlood/Build-engine port — “the DOOM module’s analogue” by its own header, reusing the DOOM engine chain — so it sits under the same family ruling</td><td><code>.myrobots/2026-08-18-face-plan.md:48</code>; <code>video/modules/blood.ts</code> header read</td></tr>
+  <tr><td><code>clipplayer</code></td><td>Owner chose option (a): “the card stays, no face” (recorded in the 08-24 face-plan wave-6 derivation). Already carved out of the shell swap (<code>NON_SHELL_LANE_TYPES</code>) and is the canonical bespoke surface the extension seam (#1512) was built for — the carve-out is the shipped design, not deferred work</td><td><code>.myrobots/2026-08-18-face-plan.md:49</code>; inventory entry cites NON_SHELL_LANE_TYPES</td></tr>
+</table>
+
+<h3>§2.4 <span class="pill gen">GENERIC-FACE CANDIDATE</span> — 1 module, NOT bespoke (the owner’s “all remaining are bespoke” has exactly one exception)</h3>
+<table>
+  <tr><th>module</th><th>why it is not bespoke</th><th>why it is still unfaced</th></tr>
+  <tr><td><code>joystick</code> (audio)</td><td>The inventory’s own disposition is <code>generic-face</code>: “its 2-D pad is a HAND-CLONE — migrate onto the shared <code>xy</code> cell (#1509 §3), never two knobs.” The shared pad cell exists (<code>face.xyPads</code>); no bespoke surface is needed, so no bespoke spec is written here — writing one would misclassify it</td><td>The #1974 refusal, recorded in the <code>FaceXyPad</code> type’s own docs: a pad is joystick’s ONLY control, <code>laneOrder</code> makes the pad anchor dock-only, so every lane tier resolves to ZERO controls — and the lane-paints-something lint refuses exactly that shape (its negative control IS a joystick-shaped fixture). “A module adopting ‘body’ must still have something else to show in the lane; if it does not, the answer is to not promote it.” Promotion waits on a platform answer (a lane-capable pad, a glyph binding for CV pads, or an EMPTY_LANE_OK ruling) — an owner/platform decision, not a spec gap</td></tr>
+</table>
+
+<h3>§2.5 <span class="pill org">ORGANIZATIONAL-NATIVE</span> — 3 meta modules, out of scope by disposition</h3>
+<p>Meta-domain modules ARE in the registry enumeration (the 193 includes them, and faced meta modules exist — electraControl, controlSurface’s cohort-mates, matrixMix…). But <code>cadillac</code>, <code>group</code>, and <code>sticky</code> carry the <code>organizational-native</code> disposition: “rack furniture; not a migration at all.” They are not modules-with-faces and are excluded from the unfaced-work list — stated here so the 169+21+3=193 arithmetic is visible rather than implied.</p>
+
+<h2>§3 — THE STANDARDS THESE SPECS CODIFY</h2>
+<p>Every spec in this directory follows the wave-5/6/7 canon; the recurring rulings applied (each named in-file where it bites):</p>
+<table>
+  <tr><th>standard</th><th>source</th><th>where it shows up here</th></tr>
+  <tr><td>The SIX gates a face PR satisfies: module-face-lint/STRICT_FACES identity · scoped VRT (<code>GREP=&lt;m&gt; task vrt:commit</code>, never bare) · <code>EXTENSION_BODY_ROLES</code> · docs family↔card leg · <code>optionsExhaustive</code> snap (sparse-only!) · the typed-entry inventory leg</td><td>wave-6 §3 + wave-7 §5 (wave-4 listed two; midiclock found the third the hard way)</td><td>§10 of every spec, with per-module verdicts</td></tr>
+  <tr><td>No resting derived text — the permitted set is exhaustively: module NAME, tab/section labels, control captions, option/landmark names. StatusLed with STATIC captions + tone; values live in <code>aria-valuetext</code>/<code>aria-label</code></td><td>#1957 + the four-rulings history; <code>face-resting-text-source</code></td><td>§7 of every spec (kept/removed censuses)</td></tr>
+  <tr><td>Game score/HUD: in-canvas ALLOWED (artwork), chrome row FORBIDDEN — and the gate structurally cannot see either, so VRT + human review + a module-owned no-score-element check enforce it; each spec refuses the row BY NAME</td><td>GAMES.md §1/§1.3</td><td>gibribbon §7 (rewrite: HUD in-canvas by design); painter/textmarquee pre-emptive refusals</td></tr>
+  <tr><td>Width is earned (picture/scope/pad); <code>max-content</code> plates; scroll-inside-component, never plate clamps; zero new width exemptions</td><td>owner 2026-08-17; <code>face-width-source</code></td><td>§5.2 of every spec</td></tr>
+  <tr><td>Meters never lie: a glyph literal must have real backing data (<code>marbles</code>’ dead VuMeter) — audio-out check before ‘meter’, video thumb for video domains, ‘none’ otherwise</td><td>strict-faces lineage; <code>glyphBinding</code></td><td>moog956 §4 (refuses meter), audioIn §4 (earns it), video five (thumb)</td></tr>
+  <tr><td>noUserControl for CV-target params — declared with writer anchors, not skip-listed; completeness inverts (zero cells, both directions falsifiable)</td><td>#1726, backdraft precedent</td><td>gibribbon §3 (13 entries incl. the new restart port); moog956 considers-and-rejects it for pos/gate (they get cells instead)</td></tr>
+  <tr><td>Momentary vs latching is DECLARED (shape-identical); ACKNOWLEDGED_LATCHING carries read-site citations</td><td>module-face-lint §4</td><td>moog956 (gate momentary), mappy (showGrid latching)</td></tr>
+  <tr><td>fader is an owner-ruled declaration (“a level is a THROW”), never inferred</td><td>2026-08-10 ruling; cameraInput face comment</td><td>moog956 pos, audioIn gain</td></tr>
+  <tr><td>Card-vs-def divergences go in a ledger, never silently reconciled; ranges bind through <code>paramSpec</code> (attest-transparent), cards enrol in <code>RANGE_BOUND_CARDS</code> boy-scout; curve corrections pass the consumer-first check (#1223: a green gate can certify a live bug) and carry their contract-lock/attest cost visibly</td><td>backdraft class; CLAUDE.md; module-surfaces skill</td><td>§11 of every spec</td></tr>
+  <tr><td>Media lifetime: node-owned, never card-owned — the tax is a REGISTRY (audioIn #1590, toybox §6.5) or a headless host (cameraInput), chosen by the discriminator “is the state in the graph?”; the blocker never blocks a face</td><td>wave-6 headline finding; #1531/#1574/#1583/#1589 family</td><td>audioIn §0.1, painter §2.3, toybox §6.5</td></tr>
+  <tr><td>Screen switch on every video face (shared <code>previewCollapsed</code>, corner overlay, paint-only skip, <code>markWatched</code>); NO_SCREEN_SWITCH stays videoOut-only</td><td><code>video-face-screen-source</code>; #2015</td><td>§6.4 of the five video specs (painter argues and refuses its own exemption candidacy)</td></tr>
+  <tr><td>Typed-entry gate: re-run the <code>mountsTypedEntry</code> predicate per card (a naive grep returns a clean, plausible, wrong answer); routes presented, owner decides; “re-disposition to dodge” refused by name</td><td>wave-7 SURFACES.md §2/§10.5</td><td>§8 of every spec — scan results dated, three TRIPS routed</td></tr>
+  <tr><td>Rear curation: input groups claim ‘voice’/‘signal’ or a page id or they stray; authored output groups; drafts flagged for lint measurement rather than asserted</td><td>frogger face comment (#1800 semantics)</td><td>textmarquee, mappy, toybox §5; gibribbon §6</td></tr>
+  <tr><td>Inventory <code>why</code> strings are read as claims, not truth — “read the card, never the why” (a fourth stale why found: audioIn’s stream-lifetime clause)</td><td>wave-7 standing instruction</td><td>audioIn §0.1, mappy §11.3</td></tr>
+  <tr><td>Determinism before baselining: “it’s animated” is not sufficient for an exemption; FACES_WITHOUT_SCENES entries carry measurements and 4-way anchors</td><td>acidwarp/milkdrop entries; zero-tolerance ruling 2026-08-25</td><td>gibribbon §8 (seam designed in; FACES_WITHOUT_SCENES explicitly not claimable), toybox M3, audioIn M4, textmarquee M3</td></tr>
+  <tr><td>Specs state what they could NOT measure — MUST-VERIFY ladders (M1…) with pass shapes, instead of confident guesses</td><td>wave-6/7 spec format</td><td>§12 of every spec</td></tr>
+  <tr><td><b>A testid census is an INVENTORY, not an affordance census</b> — one <code>data-testid</code> can carry an entire editor (toybox’s <code>toybox-graph-svg</code>: nodes, ports, wiring, locks, a contextual menu, a persisted resize), so weight census rows by interaction surface and verify every MOCK against the RENDERED card, not against the census’s row-weight. Corollary: “read the card, never the why” extends to def-file header prose — read the MODEL file a subsystem imports (toybox’s header was three phases stale on both its op and kind rosters and misled rev 1 of its own spec)</td><td>owner review of toybox rev 1, 2026-08-28 (“the editable node tree appears entirely absent?”)</td><td>toybox §2.0 (the miss recorded), toybox §11.4-5</td></tr>
+</table>
+
+<h2>§4 — THE SHARED OPEN ITEM, STATED ONCE</h2>
+<div class="callout warn"><span class="t">the typed-entry fleet ruling</span>
+<p>Three of the seven specs here (painter, textmarquee, toybox) plus four of the ten pre-existing-spec modules (archivist, peertube, recorderbox, controlSurface) wait on ONE owner decision: whether a bespoke-surface BODY that mounts typed entry is inside or outside the typed-entry blocker’s subject (which was always the LANE cell roster). The specs are written so that decision is about the rule, not about missing design work — and painter additionally gets a cheap unilateral route (strip one input, cost stated) if the fleet ruling stalls.</p></div>
+
+<h2>§5 — FILES IN THIS DIRECTORY</h2>
+<table>
+  <tr><th>file</th><th>what</th></tr>
+  <tr><td><code>INDEX.html</code></td><td>this file — the derived list, classification, standards, and the re-run commands</td></tr>
+  <tr><td><a href="moog956.html">moog956.html</a> · <a href="audioIn.html">audioIn.html</a> · <a href="painter.html">painter.html</a> · <a href="textmarquee.html">textmarquee.html</a> · <a href="mappy.html">mappy.html</a> · <a href="gibribbon.html">gibribbon.html</a> · <a href="toybox.html">toybox.html</a></td><td>one self-contained spec per module (inline CSS, house tokens, lane + dock mocks to scale, no external assets). gibribbon.html is REWRITE-CLASS (product work); the other six are face/surface specs</td></tr>
+</table>
+
+<footer>.myrobots/face-specs/ · authored 2026-08-28 on branch docs/face-specs-remaining · derivation pinned by face-migration-inventory.test.ts + module-face-lint.test.ts, both green on f340ab43a · this package is part of the active face-program work queue: do not delete, move, or rename until its modules have shipped and the package has been explicitly consumed</footer>
+</main>
+</body>
+</html>

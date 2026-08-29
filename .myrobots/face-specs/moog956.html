@@ -1,0 +1,282 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>FACE SPEC — moog956</title>
+<style>
+  /* House tokens — the same set the wave-1..7 mocks use (dark-only, per wave-5+ convention). */
+  :root{
+    --bg:#0e1013; --dock:#12161c; --plate:#262a31; --pbody:#1c1f24; --well:#0a0c0f;
+    --line:#2c3037; --tile:#33383f; --ink:#eef1f5; --dim:#9aa2ad; --faint:#646c77;
+    --accent:#6cf; --vid:#4ade80; --cv:#7dd3fc; --warn:#f2c14e; --good:#8fe6b0;
+    --bad:#f87171; --meta:#c084fc;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{background:var(--bg);color:var(--ink);font-family:var(--sans);margin:0;padding:24px 16px 80px;line-height:1.5}
+  main{max-width:1080px;margin:0 auto}
+  header.top{border-bottom:1px solid var(--line);padding-bottom:12px;margin-bottom:20px}
+  header.top h1{font-family:var(--mono);font-size:1.35rem;margin:0 0 4px}
+  header.top .sub{color:var(--dim);font-size:.9rem}
+  .crumbs{font-family:var(--mono);font-size:.75rem;margin-bottom:10px}
+  .crumbs a{color:var(--cv);text-decoration:none}
+  .crumbs a:hover{text-decoration:underline}
+  .badge{display:inline-block;font-family:var(--mono);font-size:.7rem;padding:2px 8px;border-radius:3px;border:1px solid var(--line);color:var(--dim);margin-left:6px;vertical-align:middle}
+  .badge.audio{color:var(--accent);border-color:var(--accent)}
+  .badge.video{color:var(--vid);border-color:var(--vid)}
+  .verdict{font-family:var(--mono);font-size:.95rem;padding:10px 14px;border-radius:6px;margin:14px 0;border:1px solid}
+  .verdict.promote{border-color:var(--good);color:var(--good);background:rgba(143,230,176,.06)}
+  .verdict.blocked{border-color:var(--warn);color:var(--warn);background:rgba(242,193,78,.06)}
+  h2{font-family:var(--mono);font-size:1.02rem;color:var(--ink);border-bottom:1px solid var(--line);padding-bottom:6px;margin:34px 0 12px}
+  h3{font-family:var(--mono);font-size:.9rem;color:var(--dim);margin:20px 0 8px}
+  p{margin:8px 0;color:var(--ink)}
+  table{border-collapse:collapse;width:100%;margin:10px 0;font-size:.85rem}
+  th{font-family:var(--mono);font-size:.72rem;text-transform:uppercase;letter-spacing:.04em;color:var(--faint);text-align:left;padding:6px 10px;border-bottom:1px solid var(--line)}
+  td{padding:6px 10px;border-bottom:1px solid rgba(44,48,55,.55);vertical-align:top}
+  code,.mono{font-family:var(--mono);font-size:.83em;color:var(--cv)}
+  pre.code{background:var(--well);border:1px solid var(--line);border-radius:6px;padding:12px 14px;overflow-x:auto;font-family:var(--mono);font-size:.78rem;line-height:1.55;color:var(--ink)}
+  pre.code .c{color:var(--faint)}
+  .callout{border-left:3px solid var(--line);background:rgba(28,31,36,.6);padding:10px 14px;border-radius:0 6px 6px 0;margin:12px 0;font-size:.88rem}
+  .callout.warn{border-color:var(--warn)}
+  .callout.ok{border-color:var(--good)}
+  .callout.bad{border-color:var(--bad)}
+  .callout .t{font-family:var(--mono);font-size:.72rem;text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:4px}
+  .callout.warn .t{color:var(--warn)} .callout.ok .t{color:var(--good)} .callout.bad .t{color:var(--bad)}
+  .gone{text-decoration:line-through;color:var(--faint)}
+  .aria{font-family:var(--mono);font-size:.78rem;color:var(--good)}
+  .kept{color:var(--good);font-family:var(--mono);font-size:.78rem}
+  .rm{color:var(--bad);font-family:var(--mono);font-size:.78rem}
+  /* ── mock chrome ─────────────────────────────────────────────── */
+  .mockrow{display:flex;gap:28px;flex-wrap:wrap;align-items:flex-start;margin:16px 0}
+  .mocklab{font-family:var(--mono);font-size:.7rem;color:var(--faint);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px}
+  .lane{width:192px;height:180px;background:var(--pbody);border:1px solid var(--line);border-radius:8px;display:flex;flex-direction:column;overflow:hidden;flex:none}
+  .lane .lchrome{font-family:var(--mono);font-size:.62rem;color:var(--dim);padding:4px 8px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between}
+  .lane .lbody{flex:1;display:flex;gap:9px;padding:8px;align-items:flex-start}
+  .kcol{width:46px;display:flex;flex-direction:column;align-items:center;gap:3px;flex:none}
+  .dial{width:36px;height:36px;border-radius:50%;background:var(--tile);border:1px solid var(--line);position:relative}
+  .dial::after{content:"";position:absolute;left:50%;top:3px;width:2px;height:12px;background:var(--accent);transform-origin:50% 15px}
+  .kcap{font-family:var(--mono);font-size:.6rem;color:var(--dim)}
+  .fcell{width:46px;display:flex;flex-direction:column;align-items:center;gap:3px;flex:none}
+  .ftrack{width:16px;height:96px;background:var(--well);border:1px solid var(--line);border-radius:8px;position:relative}
+  .fthumb{position:absolute;left:-4px;width:22px;height:10px;border-radius:3px;background:var(--accent);box-shadow:0 0 6px rgba(102,204,255,.5)}
+  .dock{background:var(--dock);border:1px solid var(--line);border-radius:10px;overflow:hidden;flex:none}
+  .chromebar{display:flex;justify-content:space-between;align-items:center;font-family:var(--mono);font-size:.7rem;color:var(--dim);padding:6px 12px;border-bottom:1px solid var(--line)}
+  .plate{padding:14px;width:max-content;max-width:100%}
+  .extbody{background:var(--pbody);border:1px solid var(--line);border-radius:8px;padding:12px;margin-bottom:12px}
+  .bands{display:flex;flex-direction:column;gap:10px}
+  .band{border:1px solid var(--line);border-radius:8px;padding:8px 12px 10px;background:rgba(28,31,36,.4)}
+  .blab{font-family:var(--mono);font-size:.62rem;color:var(--faint);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px}
+  .brow{display:flex;gap:16px;align-items:flex-end}
+  .padbtn{width:46px;height:36px;border-radius:6px;background:var(--tile);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:.6rem;color:var(--dim)}
+  /* ribbon mock */
+  .ribbon{height:30px;background:linear-gradient(180deg,#20242b 0%,#0c0e12 100%);border:1px solid var(--cv);border-radius:5px;position:relative;margin:4px 0}
+  .wiper{position:absolute;top:-3px;bottom:-3px;width:4px;border-radius:2px;background:var(--cv);box-shadow:0 0 8px rgba(125,211,252,.7)}
+  footer{margin-top:48px;border-top:1px solid var(--line);padding-top:10px;font-family:var(--mono);font-size:.7rem;color:var(--faint)}
+</style>
+</head>
+<body>
+<main>
+<header class="top">
+  <div class="crumbs"><a href="INDEX.html">← face-specs INDEX</a></div>
+  <h1>FACEPLATE BUILD SPEC — <code>moog956</code> <span class="badge audio">audio</span> <span class="badge">bespoke-surface</span></h1>
+  <div class="sub">The 956 RIBBON CONTROLLER — a 1-D touch strip whose press position and gate ARE the module. SPEC ONLY — nothing here is implemented. Authored 2026-08-28 against <code>origin/main</code> @ <code>f340ab43a</code>.</div>
+</header>
+
+<div class="verdict promote">VERDICT: PROMOTE. All four params are cell-expressible today (fader + momentary + two knobs) with zero new platform capability; the ribbon body is an additive extension surface, not a precondition. No blocker, no typed-entry hit, no media lifetime.</div>
+
+<h2>§0 — THE CONSTRAINT MAP, READ FIRST</h2>
+<table>
+  <tr><th>registry / gate</th><th>state for moog956</th><th>evidence</th></tr>
+  <tr><td><code>STRICT_FACES</code></td><td>NOT a member — unfaced</td><td><code>packages/web/src/lib/ui/workflow/strict-faces.ts</code>; set identity asserted by <code>module-face-lint.test.ts</code></td></tr>
+  <tr><td>migration disposition</td><td><code>bespoke-surface</code>, no blocker</td><td><code>face-migration-inventory.ts</code>: “a RIBBON CONTROLLER: the playable strip — press position and gate — IS the module, and a 1-D touch surface is not a knob. Scale and offset are params around it.”</td></tr>
+  <tr><td><code>NON_SHELL_LANE_TYPES</code> / <code>DOM_SOURCE_LANE_TYPES</code> / <code>HEADLESS_MOUNT_LANE_TYPES</code></td><td>none — ordinary shell placeholder today</td><td><code>dom-source-modules.ts</code> roster (archivist / cameraInput / loopback only)</td></tr>
+  <tr><td>typed-entry leg (<code>face-migration-inventory.test.ts</code>)</td><td><b>CLEAN</b> — card mounts no text/number input, no textarea, no contenteditable</td><td><code>mountsTypedEntry</code> predicate re-run against <code>Moog956Card.svelte</code>, 2026-08-28</td></tr>
+  <tr><td>media lifecycle (#1511 family)</td><td>n/a — no stream, no file, no DOM media element</td><td>def factory: two ConstantSourceNodes, nothing else</td></tr>
+  <tr><td>VRT today</td><td>legacy card baselined via the normal card roster; also a member of the <code>LEGACY_DOCK_CANDIDATES</code> e2e fixture list (<code>['moog956','moog960','cartesian']</code>) — promotion changes what that fixture exercises</td><td>wave-3/4 READMEs name the list; re-grep at build time</td></tr>
+  <tr><td>WebGL attest</td><td>n/a (audio module, no GL)</td><td>—</td></tr>
+  <tr><td>ART</td><td>no ART scenario expected to move: face PR changes no DSP</td><td>fingerprints must show an EMPTY diff</td></tr>
+</table>
+
+<h2>§1 — WHAT THE MODULE IS FOR</h2>
+<p>The verb is <b>PLAY</b>. A horizontal resistive-ribbon clone (moogafakkin System 55): slide a finger → continuous V/oct pitch CV; a gate holds HIGH while touched; lifting off <b>holds the last pitch</b> (only the gate falls — the hardware wiper keeps its voltage). <code>pitch = offset + pos × scale</code>, the one formula, exported as <code>ribbonToVOct()</code> and shared by factory and card. Same UI-driven-CV-source family as <code>joystick</code> / <code>gamepad</code>.</p>
+
+<h2>§2 — STOP 1: LEGACY-CARD PARITY CENSUS</h2>
+<p>Every affordance <code>Moog956Card.svelte</code> offers, and where it lands. Functional parity is a hard requirement, not a trade.</p>
+<table>
+  <tr><th>affordance</th><th>card site</th><th>face home</th><th>survives?</th></tr>
+  <tr><td>Ribbon strip — pointer press/drag writes <code>pos</code>, press/release writes <code>gate</code>; capture via <code>setPointerCapture</code>; release drops gate only, pos held</td><td><code>Moog956Card.svelte</code> ribbon div (<code>data-testid="moog956-ribbon"</code>), <code>onPointerDown/Move/Up</code></td><td>PRIMARY: the <code>fullViewBody</code> ribbon (§6). SECONDARY: the ranked <code>pos</code> fader cell + <code>gate</code> momentary pad (§5) — playable from the lane with zero platform work</td><td>YES, twice over</td></tr>
+  <tr><td>Wiper position + touch glow (state made visible)</td><td><code>.wiper</code> / <code>.wiper.active</code></td><td>body ribbon paints the same wiper; the fader thumb IS the wiper in the band tier</td><td>YES</td></tr>
+  <tr><td>Gate LED (lit while touched)</td><td><code>.gate-led.on</code></td><td>body: the wiper’s glow carries it (a lit/unlit mark, not text). No separate LED needed; if one is drawn it is a colour mark, never a state word</td><td>YES (folded)</td></tr>
+  <tr><td>Pitch readout <code>“{(v×12).toFixed(1)} st”</code></td><td><code>fmtSemis()</code>, <code>data-testid="moog956-readout"</code></td><td class="rm">REMOVED — resting derived text. The value lives in <code>aria-valuetext</code> on the <code>pos</code> control (“+7.2 st”), which is what specs read anyway</td><td>value survives, paint does not</td></tr>
+  <tr><td>SCALE knob (0..5 oct)</td><td><code>&lt;Knob min={0} max={5}&gt;</code></td><td>ranked knob cell</td><td>YES</td></tr>
+  <tr><td>OFFSET knob (−2..+2 oct)</td><td><code>&lt;Knob min={-2} max={2}&gt;</code></td><td>ranked knob cell</td><td>YES</td></tr>
+  <tr><td>Moog-era beige chrome (<code>MoogPanel</code>)</td><td><code>MoogPanel.svelte</code> wrapper</td><td class="rm">does not carry over — faceplates use the uniform shell chrome. The Moog look is the legacy card’s identity; the face’s identity is the ribbon itself</td><td>NO — deliberate</td></tr>
+</table>
+
+<h2>§3 — STOP 2: EVERY WAY DATA GETS IN</h2>
+<table>
+  <tr><th>path</th><th>mechanism</th><th>after promotion</th></tr>
+  <tr><td>pointer on ribbon</td><td>card writes <code>patch.nodes[id].params.pos/gate</code> directly (store write, not <code>setNodeParam</code>)</td><td>body ribbon + fader/momentary cells write through the SAME param path; engine <code>setParam</code> mirrors into ConstantSources. ⚠ M1 verifies the store-write vs <code>setNodeParam</code> difference is not load-bearing (undo granularity / LOCAL_ORIGIN tagging)</td></tr>
+  <tr><td>knob edits</td><td><code>setNodeParam(id,'scale'|'offset')</code></td><td>identical via ranked cells</td></tr>
+  <tr><td>remote peer edits</td><td>params ride Y.Doc; factory re-reads on <code>setParam</code></td><td>unchanged — no card lifecycle involved</td></tr>
+  <tr><td>patch reload</td><td>params persisted; “the last-played pitch survives reload” is a def-stated promise</td><td>unchanged; <code>pos</code> holds, <code>gate</code> re-arrives as its persisted value (default 0)</td></tr>
+  <tr><td>CV inputs</td><td>none — def declares <code>inputs: []</code></td><td>n/a</td></tr>
+</table>
+
+<h2>§4 — THE LANE PICTURE</h2>
+<p>No free picture: <code>domain === 'audio'</code> so no <code>VideoTileThumb</code>, and both outputs are <code>pitch</code>/<code>gate</code> — <code>primaryAudioOutPortId</code> is <b>null</b>. Any meter/scope glyph literal resolves to a dead <code>{kind:'static'}</code> and reddens the dead-glyph clause — the <code>marbles</code> lesson verbatim (twelve segments that could never light). <b><code>glyph: 'none'</code> is the only honest value.</b> The lane tile is carried by ranked cells instead: the <code>pos</code> fader IS a playable 1-D ribbon at 96 px, which is a better lane identity than any static picture.</p>
+
+<h2>§5 — THE FACE</h2>
+<pre class="code">face: {
+  <span class="c">// RANK. `pos` first: it IS the instrument — the thing you play. The fader cell</span>
+  <span class="c">// is declared because nothing in a ParamDef separates “a position you throw”</span>
+  <span class="c">// from any other 0..1 scalar (the `noise`/`cameraInput` fader ruling, 2026-08-10).</span>
+  <span class="c">// `scale` before `offset`: span changes what a gesture MEANS mid-performance;</span>
+  <span class="c">// offset is set-and-forget tuning. `gate` last: normally played, not dialed.</span>
+  order: ['pos', 'scale', 'offset', 'gate'],
+  paramCells: { pos: 'fader' },
+  <span class="c">// `gate` is a press-and-hold, released-on-lift — the press-param pattern.</span>
+  <span class="c">// The factory reads it as a LEVEL (`value &gt; 0.5`), and the surface must</span>
+  <span class="c">// PRESS and RELEASE, never latch: a latched gate would hold a note forever.</span>
+  momentary: ['gate'],
+  <span class="c">// ONE band; four controls over one strip is a single idea. Far below</span>
+  <span class="c">// DOCK_TAB_MIN_BANDS (7) — no rail, and padding pages to reach one is refused.</span>
+  <span class="c">// No `pages`: the 4plexvid/rasterize unlabelled-band shape. A header would</span>
+  <span class="c">// restate the module name.</span>
+  glyph: 'none',          <span class="c">// §4 — no audio-typed output; anything else lies.</span>
+  extension: 'moog956',   <span class="c">// §6 — the ribbon body.</span>
+},</pre>
+
+<h3>§5.1 Cells, tier by tier</h3>
+<table>
+  <tr><th>param</th><th>def declaration</th><th>cell kind</th><th>compact lane (cap 3, no glyph)</th><th>dock</th></tr>
+  <tr><td><code>pos</code></td><td>0..1 linear, default 0</td><td><code>fader</code> (declared; 96 px cell)</td><td>slot 1 — the playable ribbon-as-throw</td><td>band cell; body ribbon is the primary surface</td></tr>
+  <tr><td><code>scale</code></td><td>0..5 linear, default 2, label “Scale”</td><td>knob</td><td>slot 2</td><td>band cell</td></tr>
+  <tr><td><code>offset</code></td><td>−2..+2 linear, default 0, label “Offset”</td><td>knob</td><td>slot 3</td><td>band cell</td></tr>
+  <tr><td><code>gate</code></td><td>0..1 linear, default 0</td><td><code>momentary</code> pad</td><td>dropped at compact (rank 4 of cap 3); present at <code>full</code> (cap 6)</td><td>band cell (press-to-sound beside the ribbon)</td></tr>
+</table>
+<div class="callout warn"><span class="t">divergence to fix in the same PR</span><code>pos</code> and <code>gate</code> declare <code>curve: 'linear'</code> and that is fine (both are genuinely continuous/level reads), but <code>gate</code>’s 0/1 semantics rely on the factory’s own <code>&gt; 0.5</code> threshold. Do NOT redeclare it <code>discrete</code> to satisfy a shape heuristic — <code>face.momentary</code> is the declared intent, and module-face-lint checks the pad shape via <code>looksLikeSwitch</code>. M2 verifies the momentary classification passes the lint’s shape check with <code>curve:'linear'</code>; if the lint demands the discrete shape, the def edit rides this PR and <code>contract-lock</code> moves (a curve IS projected — run <code>docs:accept</code> and review).</div>
+
+<h3>§5.2 Width — NOT earned</h3>
+<p>No picture, no scope, no XY pad. Four cells, one band, <code>width: max-content</code>. The plate should measure ≈ 4 columns + gaps; expect ZERO entry in <code>FACE_WIDTH_EXEMPTIONS</code> and near-zero slack in <code>workflow-shell-faces.spec.ts</code>’s content-vs-plate measurement.</p>
+
+<h2>§6 — THE BODY: <code>face.extension: 'moog956'</code>, slot <code>fullViewBody</code></h2>
+<h3>§6.1 Why not a cell — the ladder, walked</h3>
+<table>
+  <tr><th>rung</th><th>refusal</th></tr>
+  <tr><td><code>selector</code>/<code>toggle</code>/<code>file</code></td><td>nothing here is a roster, a latch, or a file</td></tr>
+  <tr><td>the ranked <code>fader</code> itself</td><td>it survives and is the LANE answer — but a 16 px-wide vertical throw inverts the gesture (the hardware ribbon is horizontal, shoulder-width) and cannot express press-vs-slide: a fader drag cannot drop the gate on release. Parity of the two-param gesture (pos+gate in ONE pointer stroke) needs one surface that writes both</td></tr>
+  <tr><td><code>xyPads</code></td><td>arity is wrong: a pad binds TWO continuous params; <code>gate</code> is a momentary, not an axis. Declaring <code>xyPads:[{x:'pos', y:'gate'}]</code> would fail the lint’s continuous-axes check — correctly</td></tr>
+  <tr><td>PF-14 <code>panel</code> cell</td><td>a panel is a picture-you-edit INSIDE the band grid; the ribbon wants full plate width (a wide strip is the instrument’s ergonomics, cf. “a genuine earner is … a control that appears in one mode only” — this is a control whose PRECISION is its width)</td></tr>
+  <tr><td><code>fullViewBody</code></td><td class="kept">TAKEN — the module’s own playable strip at the head of the dock view, frogger/pong’s slot with a control instead of a game</td></tr>
+</table>
+
+<h3>§6.2 The component</h3>
+<p><code>$lib/ui/modules/moog956/shell-extension.ts</code> default-exporting <code>{ fullViewBody: Moog956RibbonBody }</code>. The body: a full-width ribbon strip (the card’s pointer logic, verbatim — capture, hold-on-release, clamp via the def’s exported <code>clampRibbon</code>), <code>role="slider"</code>, <code>aria-label="Ribbon"</code>, <code>aria-valuemin/max/now</code> + <code>aria-valuetext</code> carrying “<span class="aria">+7.2 st</span>”. Writes <code>pos</code>/<code>gate</code> through the engine param path (same seam the cells use). It does NOT paint the bands’ cells — they render below, untouched (the seam’s own rule: a body is a complement, never a replacement — the <code>warrensspectrum</code> failure).</p>
+
+<h3>§6.3 <code>EXTENSION_BODY_ROLES</code> — the third gate</h3>
+<pre class="code">moog956: {
+  role: 'control-grid',
+  why: 'the body IS the playable ribbon: a pointer surface writing pos+gate whose whole ' +
+       'value lives in the gesture and in its accessible name (aria-valuetext in ' +
+       'semitones); it mounts no canvas and paints no derived text.',
+},</pre>
+<p>Predicate check: <code>control-grid</code> requires <code>aria-label</code> on what it paints and NO canvas mount — both true of a DOM-strip ribbon. (Do not draw the ribbon on a <code>&lt;canvas&gt;</code>; that flips the required role to <code>picture</code> for zero benefit and loses free a11y.)</p>
+
+<h3>§6.4 Screen switch</h3>
+<p>Not required: the <code>video-face-screen-source</code> gate ranges over <code>STRICT_FACES ∩ video defs</code> only. moog956 is audio-domain. No <code>previewCollapsed</code> key, no switch.</p>
+
+<h2>§MOCKS</h2>
+<div class="mockrow">
+  <div>
+    <div class="mocklab">compact lane tile — 192×180, cap 3, no glyph</div>
+    <div class="lane">
+      <div class="lchrome"><span>956 ribbon</span><span>▣</span></div>
+      <div class="lbody">
+        <div class="fcell"><div class="ftrack"><div class="fthumb" style="top:58px"></div></div><div class="kcap">POS</div></div>
+        <div class="kcol"><div class="dial" style="--r:40deg"></div><div class="kcap">SCALE</div></div>
+        <div class="kcol"><div class="dial"></div><div class="kcap">OFFSET</div></div>
+      </div>
+    </div>
+  </div>
+  <div>
+    <div class="mocklab">dock full view — body ribbon + one unlabelled band</div>
+    <div class="dock" style="width:430px">
+      <div class="chromebar"><span>956 ribbon</span><span>dock full view · ✕</span></div>
+      <div class="plate">
+        <div class="extbody">
+          <div class="mocklab" style="margin-bottom:2px">fullViewBody — Moog956RibbonBody</div>
+          <div class="ribbon" style="width:370px"><div class="wiper" style="left:38%"></div></div>
+        </div>
+        <div class="bands">
+          <div class="band">
+            <div class="brow">
+              <div class="fcell"><div class="ftrack" style="height:72px"><div class="fthumb" style="top:40px"></div></div><div class="kcap">POS</div></div>
+              <div class="kcol"><div class="dial"></div><div class="kcap">SCALE</div></div>
+              <div class="kcol"><div class="dial"></div><div class="kcap">OFFSET</div></div>
+              <div class="kcol"><div class="padbtn padbtn"></div><div class="padbtn">GATE</div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<h2>§7 — RESTING TEXT CENSUS</h2>
+<table>
+  <tr><th>string on the legacy card</th><th>verdict</th><th>replacement</th></tr>
+  <tr><td><code>“{n} st”</code> pitch readout</td><td class="rm">REMOVED — a labelled derived value at rest (#1957 shape)</td><td><span class="aria">aria-valuetext="+7.2 st"</span> on pos (body and cells)</td></tr>
+  <tr><td>gate LED</td><td class="kept">KEPT as a colour mark (wiper glow) — “the ACTIVITY DOT is not a readout”</td><td>—</td></tr>
+  <tr><td>“956 Ribbon” title</td><td class="kept">KEPT — the module NAME is permitted resting text</td><td>shell title bar</td></tr>
+  <tr><td>“Scale” / “Offset” captions</td><td class="kept">KEPT — control captions; they disambiguate two otherwise-identical knobs (the tidyVco A/D/S/R test). No <code>bareCells</code></td><td>—</td></tr>
+</table>
+
+<h2>§8 — TYPED-ENTRY GATE</h2>
+<p><b>CLEAN.</b> <code>mountsTypedEntry(Moog956Card.svelte)</code> re-run 2026-08-28: no NoteEntry/TextEntry/textarea/contenteditable/text-input. The face-migration-inventory typed-entry leg will not fire on promotion.</p>
+
+<h2>§9 — STATE / .data CENSUS</h2>
+<p>No <code>node.data</code> at all. All state is the four params. The card’s direct store writes (<code>t.params.pos = …</code> inside pointer handlers) bypass <code>setNodeParam</code> — presumably to avoid per-move undo entries. The body must preserve whatever that choice bought: M1.</p>
+
+<h2>§10 — GATES, TESTS, VRT</h2>
+<table>
+  <tr><th>gate</th><th>verdict for this PR</th></tr>
+  <tr><td>1 · <code>module-face-lint</code> / STRICT_FACES identity</td><td>author face + add <code>'moog956'</code> to the set in one diff; momentary classification per §5</td></tr>
+  <tr><td>2 · VRT</td><td><code>GREP=moog956 flox activate -- task vrt:commit</code> (scoped, never bare). Predict 2 new files (compact + dock). Deterministic: nothing animates at rest</td></tr>
+  <tr><td>3 · <code>EXTENSION_BODY_ROLES</code></td><td>entry per §6.3, role <code>control-grid</code></td></tr>
+  <tr><td>4 · <code>module-docs-lint</code> family↔card</td><td>no control families declared — inert</td></tr>
+  <tr><td>5 · <code>optionsExhaustive</code> snap</td><td>no options rosters — inert. Do NOT add one</td></tr>
+  <tr><td>6 · typed-entry leg</td><td>clean (§8)</td></tr>
+</table>
+<p>e2e: <code>LEGACY_DOCK_CANDIDATES</code> fixtures pick moog956 as a legacy-dock representative — promotion removes it from that pool’s premise; re-point the fixture at a still-unfaced type in the same PR and say so in the body. Any existing moog956 spec rows that boot <code>?shell=legacy</code> stay green-and-blind; add a shipping-shell leg that plays the BODY ribbon and asserts <code>pitch</code> output moves (the real source chain, not a synthetic setParam).</p>
+
+<h2>§11 — DIVERGENCE / DEFECT LEDGER</h2>
+<table>
+  <tr><th>#</th><th>finding</th><th>routing</th></tr>
+  <tr><td>1</td><td>Card re-types all four ranges as literals (<code>min={0} max={5}</code>…) instead of importing from the def — the backdraft class. Values agree today; nothing guards it</td><td>boy-scout: bind card knobs via <code>paramSpec(moog956Def, id)</code> and enrol in <code>RANGE_BOUND_CARDS</code> in the face PR</td></tr>
+  <tr><td>2</td><td>Card readout paints resting derived text (“st”)</td><td>dies with promotion (legacy card untouched; the FACE never has it)</td></tr>
+  <tr><td>3</td><td><code>gate</code> written by store mutation, not <code>setNodeParam</code> — undo/origin semantics unverified</td><td>M1</td></tr>
+</table>
+
+<h2>§12 — MUST-VERIFY (before writing the surface)</h2>
+<table>
+  <tr><th>id</th><th>experiment</th><th>pass shape</th></tr>
+  <tr><td>M1</td><td>Write <code>pos</code> via the store (card path) and via <code>setNodeParam</code>; diff undo-stack growth and Y-origin tagging</td><td>know which path the body uses and why; a drag must not spam undo</td></tr>
+  <tr><td>M2</td><td>Run <code>module-face-lint</code> against a draft face with <code>momentary:['gate']</code> on the linear-curve param</td><td>lint green, or the exact shape it demands (then def edit + <code>docs:accept</code> diff reviewed)</td></tr>
+  <tr><td>M3</td><td>Fader cell over <code>pos</code>: confirm live readback (motorized path) reflects body writes while dragging</td><td>fader thumb tracks the ribbon within one frame</td></tr>
+  <tr><td>M4</td><td>Momentary pad release semantics: pointer-cancel / capture-loss must drop the gate (never a stuck note)</td><td>gate falls on every release path</td></tr>
+</table>
+
+<h2>§13 — OPEN QUESTIONS (owner)</h2>
+<table>
+  <tr><th>q</th><th>question</th><th>recommendation</th></tr>
+  <tr><td>Q1</td><td>Does the ribbon body earn plate width beyond the band grid’s natural width (a wider strip = finer pitch resolution)?</td><td>let it fill the band grid’s width (<code>max-content</code> of the 4 cells); do not widen the plate for it — width is earned by pictures, and a 370 px strip over a 2-octave default span is ≈ 8 px/semitone, playable</td></tr>
+  <tr><td>Q2</td><td>Should a 1-D “ribbon” declared cell kind exist platform-wide (the xyPads <code>surface:'body'</code> pattern, arity 1)?</td><td>not for one module — the fader + body pair covers it; revisit only if a second ribbon-shaped module appears</td></tr>
+</table>
+
+<footer>face-specs/moog956.html · authored from moog956.ts + Moog956Card.svelte read in full · standards: wave-5/6/7 bespoke spec canon</footer>
+</main>
+</body>
+</html>
