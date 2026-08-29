@@ -10,7 +10,7 @@
 //      quadrant" bug for params whose range isn't ±1 (e.g. zoom 0.3..3).
 
 import { describe, it, expect } from 'vitest';
-import { buildCvBridgeMapping, cvBridgeKnobTracksBase, mapCvBridgeValue, CvActivityDetector, CV_ACTIVITY_MOVE_EPS, CV_ACTIVITY_IDLE_MS } from './cv-bridge-map';
+import { buildCvBridgeMapping, cvBridgeKnobTracksBase, mapCvBridgeValue, CvActivityDetector, CV_ACTIVITY_MOVE_EPS, CV_ACTIVITY_IDLE_MS, CV_ACTIVITY_IDLE_TICKS } from './cv-bridge-map';
 import { destructorDef } from './modules/destructor';
 import { cameraInputDef } from './modules/camera-input';
 import { quadralogicalDef } from './modules/quadralogical';
@@ -277,7 +277,7 @@ describe('cvBridgeKnobTracksBase (#2236 — a CV-driven fader must be movable)',
 });
 
 describe('CvActivityDetector — the "is the stick moving?" seam', () => {
-  const mk = (opts?: { moveEps?: number; idleHoldMs?: number }) =>
+  const mk = (opts?: { moveEps?: number; idleHoldMs?: number; idleHoldTicks?: number }) =>
     new CvActivityDetector({ moveEps: 0.01, idleHoldMs: 300, ...opts });
 
   it('starts IDLE, and the first sample only seats the anchor (a cable patched to a parked source announces no phantom gesture)', () => {
@@ -308,14 +308,14 @@ describe('CvActivityDetector — the "is the stick moving?" seam', () => {
     expect(d.update(0.012, 48)).toBe(true);
   });
 
-  it('stays ACTIVE while movements keep arriving inside idleHoldMs, then decays to IDLE after idleHoldMs of stillness', () => {
+  it('stays ACTIVE while movements keep arriving inside the hold, then decays to IDLE once BOTH legs pass (ticks AND ms)', () => {
     const d = mk();
     d.update(0, 0);
     expect(d.update(0.5, 100)).toBe(true);
-    expect(d.update(0.3, 350)).toBe(true); // moved again → hold refreshed
-    expect(d.update(0.3, 500)).toBe(true); // still (150ms < 300ms) → active
-    expect(d.update(0.3, 649)).toBe(true); // 299ms — still inside the hold
-    expect(d.update(0.3, 651)).toBe(false); // 301ms of stillness → idle
+    expect(d.update(0.3, 350)).toBe(true); // moved again → both hold legs refreshed
+    expect(d.update(0.3, 500)).toBe(true); // still tick 1, 150 ms < 300 ms → active
+    expect(d.update(0.3, 649)).toBe(true); // still tick 2, 299 ms — ms leg unmet
+    expect(d.update(0.3, 651)).toBe(false); // still tick 3 AND 301 ms → idle
     expect(d.active).toBe(false);
   });
 
@@ -323,23 +323,60 @@ describe('CvActivityDetector — the "is the stick moving?" seam', () => {
     const d = mk();
     d.update(0, 0);
     d.update(0.5, 10);
-    d.update(0.5, 400); // idle again
+    d.update(0.5, 400); // still ticks 1..3 past the ms hold → idle
+    d.update(0.5, 420);
+    d.update(0.5, 440);
     expect(d.active).toBe(false);
-    expect(d.update(0.6, 410)).toBe(true);
+    expect(d.update(0.6, 450)).toBe(true);
+  });
+
+  it('NEGATIVE CONTROL (stalled bridge): wall-clock passing with NO ticks must not decay — the tick leg gates it', () => {
+    const d = new CvActivityDetector();
+    d.update(0, 0);
+    expect(d.update(0.5, 16)).toBe(true);
+    // The bridge stalls (throttled tab / contended shard): zero ticks for 10 s.
+    // On resume the source has been OBSERVED still for only 1 tick — however
+    // much wall-clock passed, the grab must hold until the tick floor is met.
+    let t = 10_000;
+    for (let tick = 1; tick < CV_ACTIVITY_IDLE_TICKS; tick++) {
+      expect(d.update(0.5, (t += 16)), `still tick ${tick}/${CV_ACTIVITY_IDLE_TICKS} (wall-clock ${t} ms, far past the ${CV_ACTIVITY_IDLE_MS} ms leg)`).toBe(true);
+    }
+    expect(d.update(0.5, (t += 16)), 'tick floor reached with the ms leg long past → idle').toBe(false);
+  });
+
+  it('NEGATIVE CONTROL (fast renderer): ticks passing inside the wall-clock hold must not decay — the ms leg gates it', () => {
+    const d = new CvActivityDetector();
+    d.update(0, 0);
+    expect(d.update(0.5, 16)).toBe(true); // movement at 16 ms → hold ends at 316 ms
+    // 60 fps: a still tick every 16 ms — far more ticks than the floor, all
+    // inside the 300 ms hold. Every one must stay ACTIVE.
+    let stillTicks = 0;
+    for (let t = 32; t <= 300; t += 16) {
+      stillTicks += 1;
+      expect(d.update(0.5, t), `still tick ${stillTicks} at ${t} ms (ms leg unmet: ${t - 16} ms < ${CV_ACTIVITY_IDLE_MS} ms)`).toBe(true);
+    }
+    // Validate the control itself: the tick floor really was exceeded.
+    expect(stillTicks).toBeGreaterThan(CV_ACTIVITY_IDLE_TICKS);
+    expect(d.update(0.5, 16 + CV_ACTIVITY_IDLE_MS + 1), 'ms leg now met too → idle').toBe(false);
   });
 
   it('respects custom thresholds', () => {
-    const d = mk({ moveEps: 0.2, idleHoldMs: 50 });
+    const d = mk({ moveEps: 0.2, idleHoldMs: 50, idleHoldTicks: 2 });
     d.update(0, 0);
     expect(d.update(0.1, 10)).toBe(false); // under the wider eps
     expect(d.update(0.3, 20)).toBe(true);
-    expect(d.update(0.3, 71)).toBe(false); // 51ms > 50ms hold → idle
+    expect(d.update(0.3, 71)).toBe(true); // still tick 1 < 2 — tick leg unmet despite 51 ms > 50 ms
+    expect(d.update(0.3, 72)).toBe(false); // still tick 2 AND 52 ms > 50 ms hold → idle
   });
 
   it('defaults are the exported constants', () => {
     const d = new CvActivityDetector();
     d.update(0, 0);
     expect(d.update(CV_ACTIVITY_MOVE_EPS, 10)).toBe(true);
-    expect(d.update(CV_ACTIVITY_MOVE_EPS, 10 + CV_ACTIVITY_IDLE_MS + 1)).toBe(false);
+    let t = 10 + CV_ACTIVITY_IDLE_MS;
+    for (let tick = 1; tick < CV_ACTIVITY_IDLE_TICKS; tick++) {
+      expect(d.update(CV_ACTIVITY_MOVE_EPS, (t += 1)), `still tick ${tick} past the ms hold`).toBe(true);
+    }
+    expect(d.update(CV_ACTIVITY_MOVE_EPS, (t += 1))).toBe(false);
   });
 });

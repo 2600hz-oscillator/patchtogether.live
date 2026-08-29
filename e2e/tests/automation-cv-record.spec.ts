@@ -21,9 +21,11 @@
 // Named `automation-*` (NOT `video-*`) deliberately: it runs in the normal
 // sharded e2e lane — it is LIGHT (engine param reads, never pixels; BACKDRAFT
 // itself is not in e2e/webgl-heavy-globs.ts), and renderer-independent: all
-// pad updates are frame-gated (`waitFrames`) and every wait is an
-// `expect.poll` on the real subject, so SwiftShader's ~7.9 fps only stretches
-// the same assertions.
+// pad updates are frame-gated (`waitFrames`), waits on MONOTONIC state (a
+// recorded-events count, a one-sided envelope) are `expect.poll` on the real
+// subject, and the PERIODIC loop-playback observation runs in-page per frame
+// (observeMixSweep — a Playwright-side poll phase-locks with the loop
+// period). SwiftShader's ~7.9 fps only stretches the same assertions.
 //
 // The AUDIO-cable CV-exclusion case (clip-automation.spec.ts case 10 — an LFO
 // cv CABLE into an audio param records nothing) is UNCHANGED: audio-domain cv
@@ -89,6 +91,108 @@ async function engineMix(page: Page): Promise<number | null> {
     const v = eng.readParam(node, 'mix');
     return typeof v === 'number' ? v : null;
   });
+}
+
+/** IN-PAGE observation window over the ENGINE-EFFECTIVE mix uniform: sample
+ *  once per animation frame, reduce to min/max, early-exit the moment BOTH
+ *  thresholds have been seen. ONE `page.evaluate` for the whole window — the
+ *  repo's instrument rule (CLAUDE.md, scope-poll.ts): a Playwright-side
+ *  `expect.poll` is one CDP round trip per sample on the SAME main thread as
+ *  the subject, and its backoff settles at ~1 s — the EXACT period of this
+ *  spec's clip loop (CLIP_LEN=8 at 120 bpm 1/16). A 1 s sampler over a 1 s
+ *  periodic envelope PHASE-LOCKS: measured under E2E_SWIFTSHADER=1, it read
+ *  the same top-of-sweep 0.918 on every sample for 15 s while playback looped
+ *  underneath. The rAF reduction sees every rendered value instead, and the
+ *  wall-clock bound only BOUNDS FAILURE (a healthy run exits on the
+ *  threshold); `samples`/`elapsedMs` make a zero-sample window legible. */
+async function observeMixSweep(
+  page: Page,
+  opts: { above: number; below: number; discardFrames: number; maxFrames: number; boundMs: number },
+): Promise<{ min: number; max: number; samples: number; elapsedMs: number; state: string }> {
+  return page.evaluate(
+    ({ above, below, discardFrames, maxFrames, boundMs }) =>
+      new Promise<{ min: number; max: number; samples: number; elapsedMs: number; state: string }>((resolve) => {
+        const w = globalThis as unknown as {
+          __engine?: () => { readParam: (n: unknown, p: string) => number | undefined } | null;
+          __patch: { nodes: Record<string, unknown> };
+        };
+        const t0 = performance.now();
+        let min = Infinity;
+        let max = -Infinity;
+        let samples = 0;
+        let frames = 0;
+        let done = false;
+        /** Which side of the idle-yield seam is live at window end — makes a
+         *  failed window legible (bridge never yielded vs playback never
+         *  drove). Reads the engine's runtime internals defensively: a shape
+         *  it cannot find is NAMED in the output rather than thrown or
+         *  silently blanked, so the probe cannot masquerade as a finding. */
+        const endState = (): string => {
+          try {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const eng = w.__engine?.() as any;
+            const playing =
+              (w.__patch?.nodes?.['cp'] as { data?: { playing?: unknown[] } } | undefined)?.data
+                ?.playing?.[0] ?? null;
+            if (!eng) return `engine-absent lanePlaying=${String(playing)}`;
+            let cvHeld: unknown = 'no-bridge-matched';
+            let detActive: unknown = 'no-bridge-matched';
+            const bridges = eng.cvBridges instanceof Map ? (eng.cvBridges as Map<string, unknown>) : null;
+            for (const b of (bridges?.values() ?? []) as Iterable<{
+              targetNodeId?: string;
+              mapping?: { targetParamId?: string };
+              cvHeld?: boolean;
+              detector?: { active: boolean } | null;
+            }>) {
+              if (b?.targetNodeId === 'bd' && b?.mapping?.targetParamId === 'mix') {
+                cvHeld = b.cvHeld;
+                detActive = b.detector ? b.detector.active : null;
+              }
+            }
+            const transient =
+              eng.transientMods instanceof Map || eng.transientMods instanceof Set
+                ? eng.transientMods.has('bd\u0000mix')
+                : 'transientMods-not-found';
+            return `bridges=${String(bridges ? bridges.size : 'not-a-map')} cvHeld=${String(cvHeld)} detectorActive=${String(detActive)} transientDriver=${String(transient)} lanePlaying=${String(playing)}`;
+          } catch (e) {
+            return `state-probe-failed: ${String(e)}`;
+          }
+        };
+        const finish = (): void => {
+          if (done) return;
+          done = true;
+          clearTimeout(bound);
+          resolve({ min, max, samples, elapsedMs: Math.round(performance.now() - t0), state: endState() });
+        };
+        // The bound must fire even if rAF stalls outright — a frozen renderer
+        // should fail with "0 samples over N ms", not a mute test timeout.
+        const bound = setTimeout(finish, boundMs);
+        const tick = (): void => {
+          if (done) return;
+          frames += 1;
+          // Warmup discard: the first frames may still carry the pre-park
+          // uniform (the pad→bridge pipeline flushes the parked stick over a
+          // frame or two) — a stale extremity must not fake a threshold.
+          if (frames > discardFrames) {
+            const eng = w.__engine?.();
+            const node = w.__patch?.nodes?.['bd'];
+            const v = eng && node ? eng.readParam(node, 'mix') : undefined;
+            if (typeof v === 'number') {
+              samples += 1;
+              if (v < min) min = v;
+              if (v > max) max = v;
+            }
+          }
+          if ((max > above && min < below) || frames >= maxFrames) {
+            finish();
+            return;
+          }
+          requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+      }),
+    opts,
+  );
 }
 
 /** The STORE (Y.Doc) value of BACKDRAFT.mix — must never move under CV. */
@@ -267,42 +371,99 @@ test('OWNER CASE: gamepad CV movement on a lane-assigned BACKDRAFT records into 
   await armLane0(page);
   expect(await isLane0Armed(page)).toBe(true);
 
-  // RECORD: wiggle the stick (full sweeps) until the recorder has punched in
-  // at the clip's wrap and committed a pass with the movement. The poll body
-  // keeps the source ACTIVE while it waits — recording continues for exactly
-  // as long as the assertion needs, on any renderer.
+  // RECORD: wiggle the stick (graded sweeps) until the COMMITTED take itself
+  // holds real movement. The condition is the take's SPREAD, not an event
+  // count: continuous overdub means every wrap re-commits, so the loop that
+  // finally plays back is a mosaic of the LAST passes over each step window —
+  // on a slow renderer one sweep spans several 1 s passes, and a pass that
+  // caught only one flat fragment can satisfy a count while holding no
+  // movement at all (measured under E2E_SWIFTSHADER=1: a take of
+  // `0.08×3, 0.31×5`). 0.15 ≈ ¾ of one graded sub-step delta (adjacent
+  // sub-steps map ~0.21 apart), so any committed pass carrying ≥2 sub-step
+  // levels clears it and a flat take cannot.
   const wiggle = makeWiggler(page, -0.85, 0.85);
   await expect
     .poll(
       async () => {
         await wiggle();
-        return (await recordedEvents(page)).length;
+        const evs = await recordedEvents(page);
+        if (evs.length < 2) return -1;
+        const vals = evs.map((e) => e.value);
+        return Math.max(...vals) - Math.min(...vals);
       },
       { timeout: 60_000 },
     )
-    .toBeGreaterThan(1);
+    .toBeGreaterThan(0.15);
 
-  // Park the stick, disarm (take done).
-  await setStickX(page, 0);
+  // DISARM FIRST, park SECOND — order is load-bearing: disarm commits the
+  // in-flight partial pass (disarmLane → commitLanePass), so parking while
+  // still armed would record the stick's 0.5 park-hold OVER the take just
+  // asserted. Disarming now bounds the contamination to the one segment
+  // between the poll's last read and the click; the park then writes nothing.
   await armLane0(page);
   expect(await isLane0Armed(page)).toBe(false);
+  await setStickX(page, 0);
 
-  // The take holds the MOVEMENT: a ±0.85 sweep across mix's 0..1 range spans
-  // most of it — not a flat line at the store base.
+  // THE DISARM IS A SYNCED FLAG THE AUDIO SCHEDULER APPLIES ON ITS OWN TICK —
+  // and the recorder's final partial-pass commit lands THERE, not at the
+  // click. Reading the take too early derives the loop marks from a STALE
+  // mosaic while playback loops the settled one (measured under
+  // E2E_SWIFTSHADER=1: observed playback max 0.918 against a stale-read
+  // takeMax 0.313 — 9 of 12 repeats under load). Wait for a wrap to pass
+  // (step 5 then step 2 can only happen across one: the scheduler reads the
+  // arm flag every tick, so the final commit is in by then), then require the
+  // committed take to read byte-identical across two polls — the direct
+  // observable of "settled". Nothing legitimately writes it after disarm.
+  await waitForSoundingStep(page, CP, 5, { key: 'currentStep:0', timeoutMs: 8000 });
+  await waitForSoundingStep(page, CP, 2, { key: 'currentStep:0', timeoutMs: 8000 });
+  let prevTake = '';
+  await expect
+    .poll(
+      async () => {
+        const cur = JSON.stringify(await recordedEvents(page));
+        const settled = cur !== '[]' && cur === prevTake;
+        prevTake = cur;
+        return settled;
+      },
+      { timeout: 10_000 },
+    )
+    .toBe(true);
+
+  // The FINAL take (nothing can change it now) still holds genuine movement.
+  // Floor 0.1 = 20× the recorder's MOVE_EPS: the loop-phase marks below are
+  // DERIVED from this take, so the semantic weight sits there — this floor
+  // only rejects a take flattened to noise.
   const events = await recordedEvents(page);
   const values = events.map((e) => e.value);
-  const spread = Math.max(...values) - Math.min(...values);
-  expect(spread, `recorded values should sweep, got ${values.map((v) => v.toFixed(2)).join(',')}`).toBeGreaterThan(0.3);
+  const takeMin = Math.min(...values);
+  const takeMax = Math.max(...values);
+  const spread = takeMax - takeMin;
+  expect(spread, `final take should hold movement, got ${values.map((v) => v.toFixed(2)).join(',')}`).toBeGreaterThan(0.1);
 
-  // LOOP-WHEN-IDLE: with the stick parked, clip playback drives the recorded
-  // movement through the engine — the param passes BOTH halves of the sweep
-  // every ~1s loop. Polling the engine value IS the wait (no wall-clock).
-  await expect
-    .poll(async () => (await engineMix(page)) ?? -1, { timeout: 15_000 })
-    .toBeGreaterThan(0.6);
-  await expect
-    .poll(async () => (await engineMix(page)) ?? 99, { timeout: 15_000 })
-    .toBeLessThan(0.4);
+  // LOOP-WHEN-IDLE: with the stick parked, clip playback must drive the
+  // engine through BOTH ends of the take's OWN envelope — thresholds derived
+  // from the take, so the assertion is renderer-independent by construction
+  // (whatever fragment a slow renderer recorded, playback must reproduce IT).
+  // Observed IN-PAGE (observeMixSweep): a Playwright-side `expect.poll`
+  // phase-locks with the 1 s loop period once its backoff reaches ~1 s and
+  // can read the same envelope point forever (measured under
+  // E2E_SWIFTSHADER=1: pinned at 0.92 for 15 s while playback looped
+  // underneath). The parked bridge writes ONE constant (~the 0.5 base) until
+  // the idle hold decays and it yields — a constant can cross at most one of
+  // the two marks, so satisfying BOTH inside one window proves playback drove.
+  const above = takeMax - 0.3 * spread;
+  const below = takeMin + 0.3 * spread;
+  const sweep = await observeMixSweep(page, {
+    above,
+    below,
+    discardFrames: 6, // pad→bridge park-flush; a stale extremity must not count
+    maxFrames: 3600, // ≥4 loops even at 60 fps before the frame belt fires
+    boundMs: 20_000, // bounds FAILURE only; a healthy run exits on threshold
+  });
+  const seen = `take [${takeMin.toFixed(3)}, ${takeMax.toFixed(3)}] → marks <${below.toFixed(3)} / >${above.toFixed(3)}; saw min ${sweep.min.toFixed(3)} / max ${sweep.max.toFixed(3)} over ${sweep.samples} samples in ${sweep.elapsedMs} ms; end state: ${sweep.state}`;
+  expect(sweep.samples, `engine never sampled — renderer stalled? (${seen})`).toBeGreaterThan(0);
+  expect(sweep.max, `looped playback should reach the take's HIGH end (${seen})`).toBeGreaterThan(above);
+  expect(sweep.min, `looped playback should reach the take's LOW end (${seen})`).toBeLessThan(below);
 
   // CV never reached the shared doc: the store base and the NOTE clip are
   // byte-identical to before the take.
