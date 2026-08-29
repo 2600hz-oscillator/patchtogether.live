@@ -957,10 +957,21 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
   },
   {
     type: 'gibribbon',
-    disposition: 'bespoke-surface',
-    why:
-      'a rhythm GAME: score / health / combo HUD over a viewport, played on the keyboard, with a ' +
-      'game-over restart. Its def params are CV taps, not the surface.',
+    disposition: 'generic-face',
+    note:
+      'PROMOTED AS PART OF THE OWNER-RULED FULL REWRITE (face-specs/gibribbon.html rev 3): the ' +
+      'module never really worked — its playability was an analog calibration smeared across ' +
+      "synesthesia's DSP (#624/#698/#701), its only shipped play experience was deleted (#1421/" +
+      '#2183), and its autoplay fallback played itself (#626). The rewrite makes the course a ' +
+      'DERIVED, ADAPTIVE function of the incoming signal (relative-prominence extraction, rank ' +
+      'competition), runs on ONE scheduler-tick clock (the #635 class unrepresentable), and ' +
+      'replaces autoplay with an honestly-labelled in-canvas ATTRACT mode. The old `why` said ' +
+      '"score / health / combo HUD over a viewport" — that DOM HUD was the GAMES.md ' +
+      'forbidden-chrome shape and is deleted: the HUD is painted INTO the frame by the ' +
+      "module's own rasteriser, the speakable copy rides aria-label on the playfield, and the " +
+      'face is three ranked controls (difficulty / tempo / attract) + 13 noUserControl CV ' +
+      'targets + a fullViewBody game screen. The lane tile takes the free video-domain ' +
+      'VideoTileThumb — the LIVE GAME — where the un-migrated module showed a bare placeholder.',
   },
   {
     type: 'kria',

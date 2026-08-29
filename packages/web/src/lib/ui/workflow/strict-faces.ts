@@ -4969,6 +4969,22 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // route to, since `hasVideoSurface` is `domain === 'video'`).
   'frogger',
 
+  // ── GIBRIBBON — the REWRITE-CLASS promotion (owner ruling 2026-08-28) ─────
+  //
+  // Not a face over a working module: the module itself was rewritten to the
+  // face-specs/gibribbon.html rev-3 spec ("gibribbon has never really worked
+  // so that one should be done as a full rewrite ... a cv-controlled fair-use
+  // approximation of the game vib ribbon"). The rewrite ships WITH its
+  // surface: the game screen is a `fullViewBody` extension, the lane tile is
+  // the free `hasVideoSurface` VideoTileThumb (video domain — the LIVE GAME
+  // is the tile picture), and determinism is designed in (__gibribbonVrtSeed
+  // + __gibribbonVrtTicks + the module-side __videoEngineFreezeTime early
+  // return), so gibribbon leaves EXEMPT_FROM_VRT and ALLOWED_PERMANENT_EXEMPT
+  // in the same commit — FACES_WITHOUT_SCENES is explicitly NOT claimable for
+  // it (its bar is "simPin AND freeze cannot reach this renderer", and here
+  // both can BY CONSTRUCTION).
+  'gibribbon',
+
   // ── score ─────────────────────────────────────────────────────────────────
   //
   // THE SHEET-MUSIC SEQUENCER. Every other sequencer in this repo asks you to

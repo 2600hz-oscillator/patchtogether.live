@@ -459,7 +459,7 @@ export const EXEMPT_OUTPUT_EMIT: Record<string, string> = {
   // floor is an AC-peak check that AC-couples a steady DC offset away (same
   // shape as nibbles.length_cv / moogCp3 reference rails). Pinned by the pure
   // healthToCv() unit test + the bespoke spec asserts it MOVES on a miss.
-  'gibribbon.health_cv':    'idle DC (healthy=0.75) is constant + AC-coupled below the scope floor; covered by gibribbon-events.test.ts (healthToCv) + gibribbon.spec.ts',
+  'gibribbon.health_cv':    'idle DC (healthy=0.75) is constant + AC-coupled below the scope floor; covered by gibribbon-engine.test.ts (healthToCv) + gibribbon.spec.ts',
 };
 
 // ─── DENY BY DEFAULT — the output-emit exemption lists are pinned KEY BY KEY ──

@@ -680,6 +680,64 @@ export const VRT_SCENES: Record<string, VrtScene> = {
     freezeAudio: true,
   },
 
+  // ── GIBRIBBON — the CARD scene the rewrite's designed-in seams unlock ─────
+  //
+  // The retired exemption said "animated scrolling ribbon + sprites defeat
+  // deterministic single-frame capture"; the rewritten engine is a pure
+  // function of (seed, scheduler tick count, inputs), so this scene pins all
+  // three time terms and the picture is TIME-INVARIANT:
+  //
+  //   __gibribbonVrtSeed   pins the xorshift stream (course tie-breaks + the
+  //                        per-run reseed chain);
+  //   __gibribbonVrtTicks  rebuilds the run and steps it EXACTLY this many
+  //                        scheduler ticks with idle inputs, then SUPPRESSES
+  //                        all further stepping (the frogger/pong shape —
+  //                        stronger than a freeze, which holds whichever frame
+  //                        the harness caught);
+  //   __videoEngineFreezeTime is deliberately NOT needed here: with the tick
+  //                        pin suppressing the stepper the render phase is
+  //                        constant too (paint is a pure function of engine
+  //                        state; there is no wall-clock term in the frame).
+  //
+  // ⚠ SET FROM `afterSpawn`, i.e. AFTER construction — the factory handles
+  // it, reading both globals at construction (the face harness's addInitScript
+  // path) AND once more in the tick (this path).
+  //
+  // 168 ticks × 25 ms = 4.2 s of ATTRACT self-play: past the count-in, into a
+  // populated course with the bot scoring — so the frame shows the ribbon,
+  // sprites/line-art, the lookahead lane, a non-zero SCORE and the ATTRACT
+  // label (the honest-self-play claim, in pixels).
+  gibribbon: {
+    nodes: [
+      { id: 'vrt-1', type: 'gibribbon', position: { x: 80, y: 80 }, domain: 'video' },
+    ],
+    edges: [],
+    afterSpawn: async (page) => {
+      await page.evaluate(() => {
+        const w = globalThis as unknown as {
+          __gibribbonVrtSeed?: number; __gibribbonVrtTicks?: number; __gibribbonVrtNoWad?: boolean;
+        };
+        w.__gibribbonVrtSeed = 0xc0de;
+        w.__gibribbonVrtTicks = 168;
+        // Pin the ART PATH too: the WAD decode is async and the file's
+        // presence varies by environment (gitignored, setup-fetched), so the
+        // capture pins to the line-art fallback — a real shipped path.
+        w.__gibribbonVrtNoWad = true;
+      });
+      // A few rAFs so the pinned board paints before the capture settles.
+      for (let i = 0; i < 3; i++) {
+        await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => r())));
+      }
+    },
+    settleMs: 300,
+    freezeAudio: false,
+    freezeAudioWhy:
+      '__gibribbonVrtTicks suppresses the stepper after exactly 168 scheduler ticks and the '
+      + 'paint is a pure function of the engine state (no wall-clock term), so the surface is '
+      + 'time-invariant with no suspend — and an audio suspend could not have stopped it anyway '
+      + '(the game clock is a Web Worker interval).',
+  },
+
   // NIBBLES (snake game module): the game state is RNG-seeded and
   // tick-driven, so the on-card framebuffer evolves frame-to-frame.
   // We set globalThis.__nibblesVrtSeed BEFORE spawning so the factory

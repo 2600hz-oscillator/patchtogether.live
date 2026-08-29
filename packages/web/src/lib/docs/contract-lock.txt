@@ -1260,6 +1260,7 @@ gibribbon in cv2 modsignal param=cv2 cvScale=linear
 gibribbon in cv3 modsignal param=cv3 cvScale=linear
 gibribbon in cv4 modsignal param=cv4 cvScale=linear
 gibribbon in gate gate param=gate edge=gate
+gibribbon in restart gate param=restart_btn edge=trigger
 gibribbon in x modsignal param=axis_x cvScale=linear
 gibribbon in x_btn gate param=btn_x edge=trigger
 gibribbon in y modsignal param=axis_y cvScale=linear
@@ -1271,7 +1272,7 @@ gibribbon out evt_kill gate edge=trigger
 gibribbon out evt_miss gate edge=trigger
 gibribbon out health_cv cv
 gibribbon out out video
-gibribbon param autoplay 0..1 linear default=1
+gibribbon param autoplay 0..1 discrete default=1
 gibribbon param axis_x -1..1 linear default=0
 gibribbon param axis_y -1..1 linear default=0
 gibribbon param btn_a 0..1 linear default=0
@@ -1283,7 +1284,10 @@ gibribbon param cv1 0..1 linear default=0
 gibribbon param cv2 0..1 linear default=0
 gibribbon param cv3 0..1 linear default=0
 gibribbon param cv4 0..1 linear default=0
+gibribbon param difficulty 0..1 linear default=0.5
 gibribbon param gate 0..1 linear default=0
+gibribbon param restart_btn 0..1 linear default=0
+gibribbon param tempo 60..180 log default=143
 grainsOfVision meta domain=video
 grainsOfVision in comp_amount cv param=comp_amount cvScale=linear
 grainsOfVision in composite cv param=composite cvScale=discrete
