@@ -445,16 +445,17 @@ export const EXEMPT_OUTPUT_EMIT: Record<string, string> = {
   'skifree.out':  'animated game canvas (rAF self-driven, no still frame); covered by e2e/tests/skifree.spec.ts + skifree.test.ts (CV→cursor + gate hook)',
   // ── GIBRIBBON gameplay-conditional gates: evt_hit/miss/fire/kill/gameover
   // fire only on an in-game judgement (a correct ABXY press clears an event /
-  // a missed event degrades the marine), which the generic sweep doesn't
-  // orchestrate (it needs the clock+CV+button rising-edge dance). The video
-  // `out` port renders the white-ribbon line-art immediately and IS driven by
-  // the sweep. The bespoke gibribbon.spec.ts drives the full path AND uses
+  // an uncleared event HITS the marine), which the generic sweep doesn't
+  // orchestrate (it needs an ANALYSED AUDIO course plus button edges). The
+  // video `out` port renders the white-ribbon line-art immediately and IS
+  // driven by the sweep. The bespoke gibribbon.spec.ts drives the full path —
+  // a real audio cable, the band-seam course, the death run — AND uses
   // forcePulse() to assert each gate reaches a downstream SCOPE deterministically.
-  'gibribbon.evt_hit':      'fires only on an in-game clear; covered by gibribbon.spec.ts (forcePulse → SCOPE + full clock/CV/button play)',
-  'gibribbon.evt_miss':     'fires only on an in-game miss; covered by gibribbon.spec.ts (forcePulse → SCOPE)',
+  'gibribbon.evt_hit':      'fires only on an in-game clear; covered by gibribbon.spec.ts (forcePulse → SCOPE + full audio-course/button play)',
+  'gibribbon.evt_miss':     'fires only when an uncleared event hits the marine; covered by gibribbon.spec.ts (forcePulse → SCOPE + the death-path run)',
   'gibribbon.evt_fire':     'fires only when the marine fires on an enemy clear; covered by gibribbon.spec.ts (forcePulse → SCOPE)',
   'gibribbon.evt_kill':     'fires only on an enemy death; covered by gibribbon.spec.ts (forcePulse → SCOPE)',
-  'gibribbon.evt_gameover': 'fires only on GAME OVER; covered by gibribbon.spec.ts (forcePulse → SCOPE)',
+  'gibribbon.evt_gameover': 'fires only on GAME OVER; covered by gibribbon.spec.ts (forcePulse → SCOPE + the death-path run reaching dead)',
   // health_cv idles at a constant DC (healthy = 0.75); the SCOPE.ch1 emit
   // floor is an AC-peak check that AC-couples a steady DC offset away (same
   // shape as nibbles.length_cv / moogCp3 reference rails). Pinned by the pure

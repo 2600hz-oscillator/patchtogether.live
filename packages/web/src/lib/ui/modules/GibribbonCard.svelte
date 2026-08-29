@@ -4,6 +4,9 @@
   // the dock faceplate body mounts (GibribbonScreen). One renderer-consumer,
   // one keyboard map — the card cannot diverge from the face.
   //
+  // The module is AUDIO-DRIVEN: the course derives from the `audio_in` port
+  // (the module's own analyser — see gibribbon.ts).
+  //
   // ⚠ THE DOM HUD IS GONE ON PURPOSE. The old card's score/health/combo row,
   // GAME OVER overlay and tip line were the GAMES.md forbidden-chrome shape;
   // the rewrite paints score, combo, ATTRACT, count-in and GAME OVER INSIDE
@@ -18,15 +21,10 @@
 
   let { id, data }: NodeProps = $props();
 
-  // Ports — ids byte-identical to gibribbonDef so the CV bridge + persisted
-  // edges route unchanged. `restart` is the rewrite's one NEW input.
+  // Ports — ids byte-identical to gibribbonDef (the audio-in design: ONE
+  // source, aim, buttons, restart).
   const inputs: PortDescriptor[] = [
-    { id: 'cv1', label: 'CV1', cable: 'cv' },
-    { id: 'cv2', label: 'CV2', cable: 'cv' },
-    { id: 'cv3', label: 'CV3', cable: 'cv' },
-    { id: 'cv4', label: 'CV4', cable: 'cv' },
-    { id: 'clock', label: 'CLOCK', cable: 'gate' },
-    { id: 'gate', label: 'GATE', cable: 'gate' },
+    { id: 'audio_in', label: 'AUDIO IN', cable: 'audio' },
     { id: 'x', label: 'X', cable: 'cv' },
     { id: 'y', label: 'Y', cable: 'cv' },
     { id: 'a', label: 'A', cable: 'gate' },

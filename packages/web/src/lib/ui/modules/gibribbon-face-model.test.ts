@@ -17,8 +17,11 @@
 //      draw() renders. A second stepping site is the #635 class returning.
 //   4. "The determinism pins can actually pin." A dead pin produces a
 //      perfectly plausible picture — a different one per boot.
-//   5. "Persistence survives the rewrite." Every pre-rewrite port and param
-//      id still exists (the M5 bar), and `autoplay` keeps its id under
+//   5. "The port surface is EXACTLY the audio-in design." The 2026-08-29
+//      owner redirect replaced the CV-era event inputs with ONE audio input
+//      (id surgery, owner-approved on an unmerged PR over a module that
+//      never worked) — this block pins the exact new surface so a stray
+//      leftover port or param is red, and `autoplay` keeps its id under
 //      attract semantics (Q3).
 //
 // The GAME FEEL itself is pinned in gibribbon-engine.test.ts and the F1
@@ -80,8 +83,8 @@ describe('gibribbon — promoted and complete', () => {
       expect(ranked || declared, `param '${id}' must be ranked OR noUserControl`).toBe(true);
       expect(ranked && declared, `param '${id}' must not be BOTH`).toBe(false);
     }
-    // 13 jack-written params, every one anchored to a cv-port writer.
-    expect(noControl.size).toBe(13);
+    // 7 jack-written params, every one anchored to a cv-port writer.
+    expect(noControl.size).toBe(7);
     for (const e of gibribbonDef.noUserControl ?? []) expect(e.writer).toBe('cv-port');
   });
 
@@ -178,12 +181,25 @@ describe('gibribbon — CLAIM 3: ONE clock — the scheduler tick steps, draw re
   });
 
   it('setParam is a sampling seam, not a second clock — edges are QUEUED', () => {
-    expect(DEF_SRC).toMatch(/pendingClockEdges \+= 1/);
     expect(DEF_SRC).toMatch(/pendingButtons\.push/);
+    expect(DEF_SRC).toMatch(/pendingRestartEdges/);
     // The old design's defect shape: judging or ticking inside setParam.
     const setParamBlock = DEF_SRC.slice(DEF_SRC.indexOf('setParam(paramId, value)'));
     expect(setParamBlock).not.toMatch(/judgePress\(/);
     expect(setParamBlock).not.toMatch(/courseTick\(/);
+  });
+
+  it('the EAR is module-owned: analyser published on audioInputs, pure fold, no gain', () => {
+    // The owner redirect's core claim: the analysis lives IN-MODULE (no
+    // upstream DSP calibration can exist), the fold is the shared pure code,
+    // and the engine consumes LEVELS — never an AudioNode or an FFT bin.
+    expect(DEF_SRC).toMatch(/createAnalyser\(\)/);
+    expect(DEF_SRC).toMatch(/audioInputs = new Map\(\[\[ 'audio_in'/);
+    expect(DEF_SRC).toMatch(/gibFoldBands\(freqBuf, bandRanges\)/);
+    // Comments stripped: the engine header SAYS "never sees an AudioNode"
+    // precisely because the code doesn't — a raw grep would read the prose
+    // as the violation.
+    expect(stripSourceComments(ENGINE)).not.toMatch(/AnalyserNode|getByteFrequencyData|AudioNode/);
   });
 
   it('the ENGINE has no wall clock and no ambient randomness (the determinism floor)', () => {
@@ -246,42 +262,50 @@ describe('gibribbon — CLAIM 4: the determinism pins can actually pin', () => {
   });
 });
 
-describe('gibribbon — CLAIM 5: persistence survives the rewrite (M5)', () => {
-  const LEGACY_INPUTS = [
-    'cv1', 'cv2', 'cv3', 'cv4', 'clock', 'gate', 'x', 'y', 'a', 'b', 'x_btn', 'y_btn',
-  ];
-  const LEGACY_OUTPUTS = [
+describe('gibribbon — CLAIM 5: the port surface IS the audio-in design (id surgery pinned)', () => {
+  // ⚠ THE 2026-08-29 OWNER REDIRECT, verbatim core: "events should only
+  // happen based on audio ... i think this should be audio in". The CV-era
+  // event inputs (cv1..cv4), the external clock and the beat gate were
+  // REMOVED — not deprecated, removed: the PR was unmerged and the module
+  // never worked historically, so there was no persistence to serve and
+  // carrying dead ports would have been the lie. This block pins the EXACT
+  // surface so a leftover or a stray addition is red.
+  const INPUTS = ['audio_in', 'x', 'y', 'a', 'b', 'x_btn', 'y_btn', 'restart'];
+  const OUTPUTS = [
     'out', 'evt_hit', 'evt_miss', 'evt_fire', 'evt_kill', 'evt_gameover', 'health_cv',
   ];
-  const LEGACY_PARAMS = [
-    'cv1', 'cv2', 'cv3', 'cv4', 'clock', 'gate', 'autoplay', 'axis_x', 'axis_y',
-    'btn_a', 'btn_b', 'btn_x', 'btn_y',
+  const PARAMS = [
+    'axis_x', 'axis_y', 'btn_a', 'btn_b', 'btn_x', 'btn_y', 'restart_btn',
+    'autoplay', 'difficulty', 'tempo',
   ];
 
-  it('every pre-rewrite port id survives — saved racks keep their cables', () => {
-    const ins = new Set(gibribbonDef.inputs.map((p) => p.id));
-    const outs = new Set(gibribbonDef.outputs.map((p) => p.id));
-    for (const id of LEGACY_INPUTS) expect(ins.has(id), `input '${id}'`).toBe(true);
-    for (const id of LEGACY_OUTPUTS) expect(outs.has(id), `output '${id}'`).toBe(true);
+  it('inputs are exactly the audio-in set — ONE source, aim, buttons, restart', () => {
+    expect(gibribbonDef.inputs.map((p) => p.id)).toEqual(INPUTS);
+    const audioIn = gibribbonDef.inputs.find((p) => p.id === 'audio_in');
+    expect(audioIn).toMatchObject({ type: 'audio' });
+    // The removed CV-era ids must be GONE, by name (deny the zombie ports).
+    const ids = new Set(gibribbonDef.inputs.map((p) => p.id));
+    for (const dead of ['cv1', 'cv2', 'cv3', 'cv4', 'clock', 'gate']) {
+      expect(ids.has(dead), `dead port '${dead}' must not survive`).toBe(false);
+    }
   });
 
-  it('every pre-rewrite param id survives — saved settings keep their values', () => {
-    const params = new Set(DECLARED);
-    for (const id of LEGACY_PARAMS) expect(params.has(id), `param '${id}'`).toBe(true);
+  it('outputs are unchanged in both directions (Q4: no score_cv in v1)', () => {
+    expect(gibribbonDef.outputs.map((p) => p.id).sort()).toEqual([...OUTPUTS].sort());
   });
 
-  it('the additions are exactly: the restart input + difficulty/tempo/restart_btn params', () => {
-    const newInputs = gibribbonDef.inputs.map((p) => p.id).filter((id) => !LEGACY_INPUTS.includes(id));
-    expect(newInputs).toEqual(['restart']);
-    const newParams = DECLARED.filter((id) => !LEGACY_PARAMS.includes(id));
-    expect(newParams.sort()).toEqual(['difficulty', 'restart_btn', 'tempo']);
-    // Outputs unchanged in both directions (Q4: no score_cv in v1).
-    expect(gibribbonDef.outputs.map((p) => p.id).sort()).toEqual([...LEGACY_OUTPUTS].sort());
+  it('params are exactly the new set; `autoplay` keeps its id under attract semantics (Q3)', () => {
+    expect([...DECLARED].sort()).toEqual([...PARAMS].sort());
   });
 
   it('the restart port routes through a paramTarget like every other gate input', () => {
     const restart = gibribbonDef.inputs.find((p) => p.id === 'restart');
     expect(restart).toMatchObject({ type: 'gate', edge: 'trigger', paramTarget: 'restart_btn' });
+  });
+
+  it('the test-bands seam exists for harnesses and is never set by app code', () => {
+    expect(DEF_SRC).toContain('__gibribbonTestBands');
+    expect(DEF_SRC).not.toMatch(/__gibribbonTestBands\s*=[^=]/);
   });
 });
 

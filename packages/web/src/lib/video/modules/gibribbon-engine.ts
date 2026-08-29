@@ -30,23 +30,49 @@
 //      of events physically un-hittable at certain phases. Here EVERYTHING is
 //      a function of the scheduler tick count: `step()` is called once per
 //      scheduler tick (25 ms, the shared Web-Worker clock), course ticks
-//      derive from it (internal tempo accumulator OR external clock edges —
-//      one code path, two tick sources, never two clocks), and judgement is
-//      anchored to the tick-derived sub-beat PHASE. Render interpolation
-//      reads the same phase, so the picture can never disagree with the
-//      judgement and a frame rate cannot move the window. The zero-un-hittable
-//      phase sweep is kept as a permanent invariant test over this stepper.
+//      derive from it through the internal TEMPO accumulator — like the
+//      original game, the transport is the module's own (Vib-Ribbon has no
+//      external clock; the music decides WHAT spawns, the tempo decides how
+//      fast the ribbon moves) — and judgement is anchored to the tick-derived
+//      sub-beat PHASE. Render interpolation reads the same phase, so the
+//      picture can never disagree with the judgement and a frame rate cannot
+//      move the window. The zero-un-hittable phase sweep is kept as a
+//      permanent invariant test over this stepper.
 //
 // DETERMINISM IS DESIGNED IN: no Math.random, no Date.now, no
 // performance.now. All randomness flows from the xorshift32 seed; all timing
 // flows from the scheduler tick count. Two runs with the same seed and the
 // same per-tick input stream are byte-identical.
 //
+// THE SOURCE IS AUDIO (owner redirect, 2026-08-29: "events should only
+// happen based on audio ... i think this should be audio in"). The stepper
+// consumes four per-tick BAND LEVELS + an ONSET flag; the shell derives them
+// from its own AnalyserNode over the `audio_in` port (gibribbon-spectral.ts,
+// the pure fold), which is faithful to the original game: Vib-Ribbon
+// analyzes the music (any CD the player inserts), looks ~8 seconds ahead,
+// and "generates obstacles based on 'interesting' frequency changes" — our
+// lookahead buffer, our relative-prominence extraction over each band's own
+// baseline, and our spectral-flux onset bias are exactly that mechanism.
+// The extractor itself is SOURCE-AGNOSTIC: it never sees Hz or FFT bins,
+// only four channels of levels, which is what made this port from CV
+// channels to spectral bands a data change rather than a redesign.
+//
 // ATTRACT MODE (F3, replaces the #626 autoplay crutch): a bare, idle module
-// self-plays — course from a synthesized rotating CV, a deterministic bot
-// clearing events — and the renderer labels the state ATTRACT in-canvas, so a
-// self-playing module can never again mask a dead CV path. Any real input
-// (a button, a clock edge, a moving CV) exits attract into a fresh PLAY run.
+// self-plays — course from a synthesized rotating band pattern through the
+// SAME extractor, a deterministic bot clearing MOST events (it deliberately
+// fumbles some, so the damage ladder is VISIBLE in attract — the original's
+// demo shows Vibri degrading too) — and the renderer labels the state
+// ATTRACT in-canvas. Any real input (a button, a restart, MOVING audio)
+// exits attract into a fresh PLAY run.
+//
+// THE DAMAGE MODEL IS VIB-RIBBON'S, DOOM-CAST (owner bug 2026-08-29, "marine
+// doesn't die when hit"): an uncleared event reaching the marine is a HIT ON
+// THE MARINE — it degrades him one visible FORM down the ladder
+// (super → healthy → wounded → critical → dead ≙ gold Vibri → rabbit →
+// frog → insect → game over), `painTicks` holds the pain form on screen long
+// enough to READ, clean streaks recover forms, and the floor is DEATH. The
+// old build had the ladder but no persistent visible form and a perfect
+// attract bot — mechanically present, invisible in practice.
 
 // ── Event taxonomy (KEPT from the original build — the game feel worth
 //    carrying; none of it was the broken part) ──────────────────────────────
@@ -156,16 +182,16 @@ export interface GibTuning {
   healStreak: number;
   scorePerHit: number;
   maxComboMult: number;
-  /** Which cv channel index (0..3) maps to which event kind. */
-  cvEventMap: GibEventKind[];
+  /** Which SPECTRAL BAND index maps to which event kind — the band→monster
+   *  mapping (documented at the def): 0 bass→LOOP (the road dips with the
+   *  low end), 1 low-mid→JUMP (the road humps), 2 high-mid→IMP,
+   *  3 treble→ZOMBIE (the monsters ride the transient-y highs). */
+  bandEventMap: GibEventKind[];
   /** Opening course ticks of a fresh run during which nothing spawns. */
   countInTicks: number;
   /** Scheduler-side: idle ms (no real input) before an autoplay-enabled
    *  module re-enters ATTRACT self-play. */
   attractIdleMs: number;
-  /** External clock ownership window: after a clock edge the internal tempo
-   *  accumulator is suppressed this long (one tick path, two tick sources). */
-  externalClockHoldMs: number;
   /** ms the GAME OVER banner holds in ATTRACT before the bot restarts. */
   attractGameOverHoldMs: number;
 }
@@ -195,25 +221,28 @@ export const GIB_TUNING: GibTuning = {
   healStreak: 4,
   scorePerHit: 100,
   maxComboMult: 8,
-  cvEventMap: ['loop', 'jump', 'imp', 'zombie'],
+  bandEventMap: ['loop', 'jump', 'imp', 'zombie'],
   countInTicks: 2,
   attractIdleMs: 10_000,
-  externalClockHoldMs: 1500,
   attractGameOverHoldMs: 2000,
 };
 
 // ── Per-scheduler-tick inputs + params ─────────────────────────────────────
 
 /** Everything the stepper consumes for ONE scheduler tick. The factory
- *  samples its params + drains its edge queues into this; tests hand-build
- *  it. Pure data — the stepper never reaches past it. */
+ *  derives it from its AnalyserNode + edge queues; tests hand-build it.
+ *  Pure data — the stepper never sees an AudioNode or an FFT bin. */
 export interface GibStepInputs {
-  /** The four course-channel levels, sampled this tick (0..1). */
-  cv: readonly number[];
-  /** The beat-gate level, sampled this tick. */
-  gate: number;
-  /** External clock rising edges since the last step (usually 0 or 1). */
-  clockEdges: number;
+  /** The four spectral BAND levels for this tick (0..1) — bass / low-mid /
+   *  high-mid / treble, folded by gibribbon-spectral.ts from the module's
+   *  own analyser over `audio_in`. The band IDENTITY is the event identity
+   *  (bandEventMap): the low end shapes the ROAD, the high end sends the
+   *  MONSTERS. */
+  bands: readonly number[];
+  /** Spectral-flux ONSET flag for this tick — the "interesting frequency
+   *  change" moment. Extraction prefers spawning on it (a bias, never a
+   *  hard gate). */
+  onset: boolean;
   /** ABXY press edges since the last step, in arrival order. */
   buttons: readonly GibButton[];
   /** `restart` port / R key / RESET action edges since the last step. */
@@ -221,8 +250,8 @@ export interface GibStepInputs {
   /** Joystick aim axes, sampled this tick (−1..1). */
   axisX: number;
   axisY: number;
-  /** TRUE when any REAL input arrived since the last step (a button, a clock
-   *  edge, a restart, a moving CV/gate/axis). Drives attract entry/exit —
+  /** TRUE when any REAL input arrived since the last step (a button, a
+   *  restart, MOVING audio, a moving axis). Drives attract entry/exit —
    *  the honest proxy for "idle-and-unpatched". */
   activity: boolean;
 }
@@ -248,9 +277,8 @@ export const DEFAULT_STEP_PARAMS: GibStepParams = {
 
 /** An all-quiet input tick (what a bare unpatched module feeds itself). */
 export const IDLE_INPUTS: GibStepInputs = {
-  cv: [0, 0, 0, 0],
-  gate: 0,
-  clockEdges: 0,
+  bands: [0, 0, 0, 0],
+  onset: false,
   buttons: [],
   restartEdges: 0,
   axisX: 0,
@@ -286,15 +314,10 @@ export interface GibState {
   tick: number;
   /** SCHEDULER ticks since run start (the one clock everything derives from). */
   schedTick: number;
-  /** Internal-tempo phase accumulator, ms (only advances while no external
-   *  clock owns the transport). */
+  /** Internal-tempo phase accumulator, ms — THE transport (one clock; the
+   *  audio decides WHAT spawns, the tempo decides the ribbon rate). */
   beatAccMs: number;
-  /** External-clock ownership countdown, ms (>0 = external owns). */
-  extHoldMs: number;
-  /** EMA of the external clock period, ms (judge/render phase under an
-   *  external clock). Seeded from the internal tempo. */
-  extPeriodMs: number;
-  /** Scheduler tick at which the last COURSE tick landed (phase anchor). */
+  /** Scheduler tick at which the last COURSE tick landed (render anchor). */
   lastCourseSchedTick: number;
   events: GibEvent[];
   health: GibHealth;
@@ -322,6 +345,11 @@ export interface GibState {
   /** Render feedback: scheduler ticks of hit-flash remaining (deterministic —
    *  decays per scheduler tick, never per wall-clock frame). */
   flashTicks: number;
+  /** Scheduler ticks of PAIN display remaining after a hit ON the marine (a
+   *  missed event reaching him). Long enough to READ — the visible half of
+   *  the Vib-Ribbon damage model the first build lacked. Deterministic:
+   *  decays per scheduler tick. */
+  painTicks: number;
 }
 
 function newChannelStats(): GibChannelStats {
@@ -335,8 +363,6 @@ export function newRun(seed: number, mode: 'attract' | 'play'): GibState {
     tick: 0,
     schedTick: 0,
     beatAccMs: 0,
-    extHoldMs: 0,
-    extPeriodMs: 0,
     lastCourseSchedTick: 0,
     events: [],
     health: 'healthy',
@@ -356,6 +382,7 @@ export function newRun(seed: number, mode: 'attract' | 'play'): GibState {
     attractPressedId: 0,
     diedAtSchedTick: -1,
     flashTicks: 0,
+    painTicks: 0,
   };
 }
 
@@ -414,16 +441,10 @@ function heal(s: GibState): void {
 // ── Phase: the sub-beat position of the CURRENT scheduler tick ─────────────
 
 /** Sub-course-tick phase 0..1 — how far between course ticks this scheduler
- *  tick sits. It is a pure function of tick counts (internal mode: the ms
- *  accumulator; external mode: scheduler ticks since the last course tick
- *  over the measured clock period), so judgement and render read the SAME
+ *  tick sits. A pure function of the tempo accumulator (itself a pure
+ *  function of scheduler tick count), so judgement and render read the SAME
  *  number and a frame clock can never move either. */
 export function judgePhase(s: GibState, params: GibStepParams): number {
-  if (s.extHoldMs > 0) {
-    const period = s.extPeriodMs > 0 ? s.extPeriodMs : beatMsOf(params);
-    const elapsed = (s.schedTick - s.lastCourseSchedTick) * params.tickMs;
-    return Math.max(0, Math.min(1, elapsed / period));
-  }
   const beatMs = beatMsOf(params);
   return Math.max(0, Math.min(1, s.beatAccMs / beatMs));
 }
@@ -488,8 +509,8 @@ function readStats(c: GibChannelStats): ChannelRead {
  *     source by any gain leaves prominence unchanged, which is the property
  *     that closes the #698/#701 class structurally;
  *   - eligibility = prominence ≥ bar, where the bar comes from DIFFICULTY
- *     and drops by `gateBias` while the beat gate is high (bias, never a
- *     hard gate);
+ *     and drops by `gateBias` on a spectral-flux ONSET (musical placement is
+ *     a bias, never a hard gate);
  *   - eligible channels COMPETE BY RANK: prominence plus a starvation boost
  *     that grows the longer a channel has gone unspawned, so no channel can
  *     be silently starved by its neighbours; ties break on the seeded rng;
@@ -499,8 +520,8 @@ function readStats(c: GibChannelStats): ChannelRead {
  */
 export function extractSpawn(
   s: GibState,
-  cv: readonly number[],
-  gateHigh: boolean,
+  bands: readonly number[],
+  onsetHigh: boolean,
   params: GibStepParams,
   tuning: GibTuning = GIB_TUNING,
 ): GibEventKind | null {
@@ -515,16 +536,16 @@ export function extractSpawn(
 
   let bar = tuning.prominenceBarEasy
     + (tuning.prominenceBarHard - tuning.prominenceBarEasy) * difficulty;
-  if (gateHigh) bar -= tuning.gateBias;
+  if (onsetHigh) bar -= tuning.gateBias;
 
   let bestIdx = -1;
   let bestScore = -Infinity;
-  for (let i = 0; i < tuning.cvEventMap.length; i++) {
+  for (let i = 0; i < tuning.bandEventMap.length; i++) {
     const c = s.chans[i]!;
     const stats = readStats(c);
     // Resting-floor guard: a flat channel is DEAD regardless of level.
     if (stats.range < tuning.flatRangeEps) continue;
-    let level = cv[i] ?? 0;
+    let level = bands[i] ?? 0;
     // Peak hold: a peak that landed on a rate-limited tick still competes on
     // the next allowed one (unless this channel itself just spawned).
     if (
@@ -547,7 +568,7 @@ export function extractSpawn(
   }
   if (bestIdx < 0) return null;
   s.chans[bestIdx]!.lastSpawnTick = s.tick;
-  return tuning.cvEventMap[bestIdx]!;
+  return tuning.bandEventMap[bestIdx]!;
 }
 
 function spawnEvent(s: GibState, kind: GibEventKind, tuning: GibTuning): GibEvent {
@@ -572,17 +593,21 @@ function registerMiss(s: GibState, ev: GibEvent): void {
   ev.resolvedTick = s.tick;
   s.combo = 0;
   s.misses += 1;
+  // The visible half of the damage model: hold the pain form on screen for
+  // ~1 s of scheduler ticks so a hit READS as a hit (the owner's "marine
+  // doesn't die when hit" was this — the ladder moved, the picture didn't).
+  s.painTicks = 40;
   s.outQueue.push({ type: 'miss', kind: ev.kind });
   degrade(s);
 }
 
-/** ONE course tick: advance the ribbon, judge misses, prune, feed the
- *  extractor. Called only from step() — internal tempo and external clock
- *  edges share this single path. Exported for the property tests. */
+/** ONE course tick: advance the ribbon, judge collisions, prune, feed the
+ *  extractor with this tick's band levels. Called only from step().
+ *  Exported for the property tests. */
 export function courseTick(
   s: GibState,
-  cv: readonly number[],
-  gateHigh: boolean,
+  bands: readonly number[],
+  onsetHigh: boolean,
   params: GibStepParams,
   tuning: GibTuning = GIB_TUNING,
 ): void {
@@ -594,11 +619,11 @@ export function courseTick(
     if (!ev.resolved && ev.pos <= tuning.missPos) registerMiss(s, ev);
   }
   s.events = s.events.filter((ev) => ev.pos > -0.4);
-  for (let i = 0; i < 4; i++) pushLevel(s.chans[i]!, cv[i] ?? 0, tuning.baselineWindowTicks);
-  // A scroll-induced miss may have ended the run. isGameOver reads the LIVE
-  // state, so TS does not wrongly narrow s.health from the entry guard.
+  for (let i = 0; i < 4; i++) pushLevel(s.chans[i]!, bands[i] ?? 0, tuning.baselineWindowTicks);
+  // A collision may have ended the run. isGameOver reads the LIVE state, so
+  // TS does not wrongly narrow s.health from the entry guard.
   if (isGameOver(s)) return;
-  const kind = extractSpawn(s, cv, gateHigh, params, tuning);
+  const kind = extractSpawn(s, bands, onsetHigh, params, tuning);
   if (kind) spawnEvent(s, kind, tuning);
 }
 
@@ -661,21 +686,24 @@ function registerHit(s: GibState, ev: GibEvent, tuning: GibTuning): void {
 // ── ATTRACT source (the honest self-play feed) ─────────────────────────────
 
 /**
- * The synthesized 4-channel CV the attract transport feeds the SAME
- * extraction path a patched source uses (never a parallel spawn path). Each
- * non-rest beat raises one channel, rotating across the four kinds; ~1 in 3
- * beats rests so the course breathes. PURE in `tick` (a hash, not the rng)
- * so it is identical across collaborators and pinnable boots.
+ * The synthesized 4-band pattern the attract transport feeds the SAME
+ * extraction path the analysed audio uses (never a parallel spawn path) —
+ * a stand-in "demo track": each non-rest beat raises one band, rotating
+ * across the four kinds; ~1 in 3 beats rests so the course breathes. PURE
+ * in `tick` (a hash, not the rng) so it is identical across collaborators
+ * and pinnable boots. (The FFT→band fold itself is separately unit-tested
+ * pure code in gibribbon-spectral.ts — attract exercises the extractor and
+ * the judge, which are the parts the #698 lesson is about.)
  */
-export function attractCv(tick: number): number[] {
-  const cv = [0, 0, 0, 0];
+export function attractBands(tick: number): number[] {
+  const bands = [0, 0, 0, 0];
   const h = Math.imul(tick >>> 0, 2654435761) >>> 0;
-  if (h % 3 !== 0) cv[tick % 4] = 0.85;
-  return cv;
+  if (h % 3 !== 0) bands[tick % 4] = 0.85;
+  return bands;
 }
 
-/** Attract's beat gate: high on non-rest beats (musical placement bias). */
-export function attractGate(tick: number): boolean {
+/** Attract's onset flag: high on non-rest beats (musical placement bias). */
+export function attractOnset(tick: number): boolean {
   const h = Math.imul(tick >>> 0, 2654435761) >>> 0;
   return h % 3 !== 0;
 }
@@ -697,6 +725,7 @@ export function step(
 ): void {
   s.schedTick += 1;
   if (s.flashTicks > 0) s.flashTicks -= 1;
+  if (s.painTicks > 0) s.painTicks -= 1;
 
   // 1. ATTRACT bookkeeping. Real input zeroes the idle timer; in attract it
   //    is the arcade "insert coin": the input starts a fresh PLAY run and is
@@ -752,25 +781,12 @@ export function step(
   if (s.mode === 'play') setAim(s, inputs.axisX, inputs.axisY);
   else setAim(s, 0, 0);
 
-  // 7. TRANSPORT — one code path, two tick sources, never two clocks.
+  // 7. TRANSPORT — the ONE clock: the internal TEMPO accumulator, a pure
+  //    function of scheduler ticks. Like the original game, there is no
+  //    external transport: the AUDIO decides what spawns, the tempo decides
+  //    how fast the ribbon moves under it.
   let courseTicksDue = 0;
-  if (s.mode === 'play' && inputs.clockEdges > 0) {
-    // External clock takes over instantly and owns the transport while its
-    // edges keep arriving inside the hold window.
-    const elapsedMs = (s.schedTick - s.lastCourseSchedTick) * params.tickMs;
-    if (s.tick > 0 && elapsedMs > 0 && elapsedMs < 10_000) {
-      s.extPeriodMs = s.extPeriodMs > 0
-        ? s.extPeriodMs * 0.7 + elapsedMs * 0.3
-        : elapsedMs;
-    }
-    s.extHoldMs = tuning.externalClockHoldMs;
-    s.beatAccMs = 0;
-    courseTicksDue = Math.min(8, inputs.clockEdges);
-  } else if (s.mode === 'play' && s.extHoldMs > 0) {
-    // External owns but no edge this tick: wait (phase keeps sweeping).
-    s.extHoldMs = Math.max(0, s.extHoldMs - params.tickMs);
-  } else {
-    // Internal tempo — the SAME course path, clocked by the TEMPO param.
+  {
     const beatMs = beatMsOf(params);
     s.beatAccMs += params.tickMs;
     let guard = 4;
@@ -780,13 +796,13 @@ export function step(
     }
   }
 
-  // 8. Course ticks: feed = the patched CV in play mode, the synthesized
-  //    rotation in attract. Same extractor either way.
+  // 8. Course ticks: feed = the analysed AUDIO BANDS in play mode, the
+  //    synthesized rotation in attract. Same extractor either way.
   for (let i = 0; i < courseTicksDue; i++) {
     const feedTick = s.tick + 1;
-    const cv = s.mode === 'attract' ? attractCv(feedTick) : inputs.cv;
-    const gateHigh = s.mode === 'attract' ? attractGate(feedTick) : inputs.gate > 0.5;
-    courseTick(s, cv, gateHigh, params, tuning);
+    const bands = s.mode === 'attract' ? attractBands(feedTick) : inputs.bands;
+    const onsetHigh = s.mode === 'attract' ? attractOnset(feedTick) : inputs.onset;
+    courseTick(s, bands, onsetHigh, params, tuning);
   }
 
   // 9. Judgement — player presses in play mode, phase-anchored.
@@ -798,9 +814,14 @@ export function step(
     }
   }
 
-  // 10. The attract bot: clears each event once as it reaches the window —
-  //    honest self-play through the REAL judge (the sequencer half keeps
-  //    generating evt_* gates while idle, as designed).
+  // 10. The attract bot: clears events as they reach the window — honest
+  //    self-play through the REAL judge (the sequencer half keeps generating
+  //    evt_* gates while idle, as designed). ⚠ IT DELIBERATELY FUMBLES:
+  //    roughly one event in four is left uncleared so the DAMAGE LADDER is
+  //    visible in attract (pain form, degradation, streak recovery — the
+  //    original's demo shows Vibri degrading too), EXCEPT while the marine
+  //    is one hit from death, where the bot plays clean and heals back up —
+  //    attract displays the whole ladder and never sits on the corpse.
   if (s.mode === 'attract' && s.health !== 'dead') {
     let nearest: GibEvent | null = null;
     let nearestDist = Infinity;
@@ -811,7 +832,10 @@ export function step(
     }
     if (nearest && nearestDist <= tuning.hitWindow * 0.6) {
       s.attractPressedId = nearest.id;
-      judgePress(s, EVENT_BUTTON[nearest.kind], phase, tuning);
+      const fumble =
+        s.health !== 'critical'
+        && (Math.imul(nearest.id >>> 0, 2654435761) >>> 0) % 4 === 0;
+      if (!fumble) judgePress(s, EVENT_BUTTON[nearest.kind], phase, tuning);
     }
   }
 }

@@ -1,68 +1,105 @@
 // packages/web/src/lib/video/modules/gibribbon.ts
 //
-// GIBRIBBON — a CV-controlled, Vib-Ribbon-spirit line-runner, REWRITTEN.
+// GIBRIBBON — an AUDIO-DRIVEN, fair-use Vib-Ribbon-spirit line-runner.
 //
-// ── THE OWNER RULING THIS REWRITE IMPLEMENTS (2026-08-28, verbatim) ─────────
-// "gibribbon has never really worked so that one should be done as a full
-// rewrite, based on looking at the history of the module and understanding it
-// was intended to be a cv-controlled fair-use approximation of the game vib
-// ribbon, and function as a playable game in that respect. it also will use
-// doom marine and monster assets, but this is fair use artistic parody area"
+// ── THE OWNER RULINGS THIS FILE IMPLEMENTS (verbatim) ───────────────────────
+// 2026-08-28 (the rewrite): "gibribbon has never really worked so that one
+// should be done as a full rewrite, based on looking at the history of the
+// module and understanding it was intended to be a cv-controlled fair-use
+// approximation of the game vib ribbon, and function as a playable game in
+// that respect. it also will use doom marine and monster assets, but this is
+// fair use artistic parody area"
+// 2026-08-29 (the audio redirect): "marine doesn't die when hit in gibribbon,
+// also it should be audio responsive, events should only happen based on
+// audio? i see it has 4 cv ins, unsure if that's helpful vs just having an
+// audio in and doing what synesthesia does and extract spectral events to
+// spawn monsters and changes in the road. should investigate what vibribbon
+// actually does, but i think this should be audio in"
 //
-// The DOOM shareware sprites (marine PLAY*, imp TROO*, former-human POSS*)
-// are used under that fair-use artistic-parody ruling: the cold white vector
-// ribbon of a Vib-Ribbon-style rhythm game crossed with the gory FPS cast is
-// the parody. The WAD itself is the setup-fetched shareware DOOM1.WAD
+// ── WHAT THE ORIGINAL ACTUALLY DOES → WHAT THIS MODULE DOES ────────────────
+// (Vib-Ribbon, NanaOn-Sha/SCE 1999; verified against the game's published
+// descriptions — en.wikipedia.org/wiki/Vib-Ribbon:)
+//
+//   ORIGINAL                                THIS MODULE
+//   the course is generated FROM MUSIC —    the course is derived from the
+//   the game analyzes the soundtrack or     `audio_in` port by the module's
+//   ANY music CD the player inserts         OWN analyser (no upstream DSP
+//                                           calibration — the #698/#701
+//                                           killer — can exist)
+//   it "looks eight seconds ahead" and      a ~2-bar lookahead buffer, spawns
+//   spawns obstacles from "'interesting'    picked by RELATIVE-prominence
+//   frequency changes"                      peaks over each band's own rolling
+//                                           baseline + a spectral-flux ONSET
+//                                           bias (gibribbon-spectral.ts +
+//                                           gibribbon-engine.ts)
+//   four obstacles (block/loop/wave/pit)    four events on ABXY: bass→LOOP
+//   each on one button (L1/R1/X/Down),      (road pit-V), low-mid→JUMP (road
+//   merged forms need chords                hump), high-mid→IMP, treble→
+//                                           ZOMBIE — the low end shapes the
+//                                           ROAD, the highs send MONSTERS
+//   hits DEGRADE Vibri through visible      hits (uncleared events reaching
+//   forms rabbit→frog→insect; hits as an    the marine) degrade a VISIBLE
+//   insect END THE GAME; streaks recover    DOOM ladder — the status-bar face
+//   forms; a rabbit streak goes gold        grades + pain hold — down to
+//   (Super Vibri)                           GAME OVER; streaks heal; a long
+//                                           streak reaches SUPER
+//
+// The DOOM shareware sprites (marine PLAY*, imp TROO*, former-human POSS*,
+// and the status-bar face STF*) are used under the owner's fair-use
+// artistic-parody ruling. The WAD is the setup-fetched shareware DOOM1.WAD
 // (gitignored, never committed — the same file the DOOM module runs), decoded
-// at load by the PURE lib/doom/wad-sprites.ts reader, with a line-art
-// wireframe fallback when absent so the game still plays (and so CI is
-// honest). ⚠ THE STANDING DOOM CARVE-OUT HOLDS: this module consumes the
-// shared WAD file and the pure decoders READ-ONLY; no file under lib/doom/ is
-// modified by the rewrite, and none may be without specific approval.
+// at load by the PURE lib/doom/wad-sprites.ts primitives, with a line-art
+// fallback when absent. ⚠ THE STANDING DOOM CARVE-OUT HOLDS: this module
+// consumes the shared WAD file and the pure decoders READ-ONLY (the STF face
+// decode COMPOSES the exported primitives rather than editing the decoder);
+// no file under lib/doom/ is modified, and none may be without approval.
 //
-// ── WHAT THE REWRITE IS (see gibribbon-engine.ts for the mechanisms) ───────
-// The game core is the pure one-clock stepper in gibribbon-engine.ts:
-//   - ADAPTIVE prominence-based course extraction — any varying source at any
-//     gain is playable; no absolute threshold against upstream DSP survives
-//     (closes the #624/#698/#701 class);
-//   - ONE scheduler-tick clock driving `step()`; judgement is tick-anchored
-//     phase, render reads the same phase (closes the #635 class);
-//   - honest ATTRACT mode: an idle, unpatched module self-plays AND labels
-//     itself ATTRACT in-canvas (replaces the #626 autoplay crutch);
-//   - seed + freeze pins designed in (__gibribbonVrtSeed, __gibribbonVrtTicks,
-//     and the engine-wide __videoEngineFreezeTime honoured module-side), so
-//     the face scenes are baselinable.
-// This file is the thin GL/audio/input shell: GL letterbox quad, CPU
-// rasteriser (in-canvas HUD per the GAMES.md ruling — score/combo/ATTRACT/
-// GAME OVER painted INTO the playfield, never DOM chrome), audio gate
-// outputs, scheduler subscription, and the param/edge plumbing.
+// This file is the thin GL/audio/input shell around the pure one-clock
+// engine (gibribbon-engine.ts) and the pure spectral fold
+// (gibribbon-spectral.ts): analyser → bands/onset → adaptive extractor →
+// course; scheduler tick drives everything; draw() renders.
 //
-// Inputs (ids stable for patch persistence; restart is NEW):
-//   cv1..cv4 (modsignal) — the four COURSE channels → loop/jump/imp/zombie.
-//   clock (gate, trigger) — external transport: one rising edge = one course
-//        tick. Unpatched, the TEMPO param clocks the same path.
-//   gate (gate, level)    — beat emphasis: biases extraction toward on-beat
-//        placement (never a hard gate on spawning).
+// Inputs (⚠ ID SURGERY 2026-08-29, owner-approved: the PR was unmerged and
+// the module never worked historically, so the CV-era ports were REMOVED
+// rather than carried dead — cv1..cv4/clock/gate are gone):
+//   audio_in (audio)      — THE source. The module's own AnalyserNode folds
+//        it into four musical bands (20-200/200-1k/1k-4k/4k-16k) that DRIVE
+//        the course. Tap-only/inaudible (route the signal to AUDIO OUT
+//        separately to hear it).
 //   x, y (modsignal ±1)   — aim: x shifts the judgement point ±1 window,
 //        y raises/crouches the marine.
 //   a, b, x_btn, y_btn (gate, trigger) — the four play buttons.
-//   restart (gate, trigger) — NEW: restart from game over / hard reset
-//        mid-run (frogger's start_gate precedent) so a rack can loop the game.
+//   restart (gate, trigger) — restart from game over / hard reset mid-run.
 //
 // Outputs (ids stable):
 //   out (video), evt_hit / evt_miss / evt_fire / evt_kill / evt_gameover
 //   (10 ms gate pulses), health_cv (0..1 vitality).
 //
-// Params: the 13 CV-target params (noUserControl, writer 'cv-port') plus the
-// three player-facing controls — difficulty, tempo, and `autoplay` (the id is
-// KEPT for persistence; the SEMANTICS are attract mode and the label says
-// ATTRACT — see the face note).
+// Params: 7 CV-target params (noUserControl, writer 'cv-port') + the three
+// player controls — difficulty, tempo, and `autoplay` (ATTRACT semantics,
+// label Attract).
 
 import type { VideoModuleDef } from '$lib/video/module-registry';
 import type { VideoEngineContext, VideoNodeHandle, VideoNodeSurface } from '$lib/video/engine';
 import { detectEdge, makeEdgeState, type EdgeState } from '$lib/doom/cv-gate-edge';
 import { loadWad } from '$lib/doom/doom-runtime';
-import { extractGibSprites, type GibSprites, type SpriteFrame } from '$lib/doom/wad-sprites';
+import {
+  extractGibSprites,
+  parseWadDirectory,
+  readPlaypal,
+  decodePicture,
+  type GibSprites,
+  type SpriteFrame,
+} from '$lib/doom/wad-sprites';
+import {
+  GIB_FFT_SIZE,
+  gibBandBinRanges,
+  gibFoldBands,
+  gibSpectralFlux,
+  newOnsetState,
+  pushFluxIsOnset,
+  type GibOnsetState,
+} from './gibribbon-spectral';
 import { getSchedulerClock, SCHEDULER_TICK_MS } from '$lib/audio/scheduler-clock';
 import {
   GIB_TUNING,
@@ -114,8 +151,6 @@ void main() {
 
 interface GibParams {
   // Synthetic CV-target params (the input ports' paramTargets — noUserControl).
-  cv1: number; cv2: number; cv3: number; cv4: number;
-  clock: number; gate: number;
   axis_x: number; axis_y: number;
   btn_a: number; btn_b: number; btn_x: number; btn_y: number;
   restart_btn: number;
@@ -126,8 +161,6 @@ interface GibParams {
 }
 
 const DEFAULTS: GibParams = {
-  cv1: 0, cv2: 0, cv3: 0, cv4: 0,
-  clock: 0, gate: 0,
   axis_x: 0, axis_y: 0,
   btn_a: 0, btn_b: 0, btn_x: 0, btn_y: 0,
   restart_btn: 0,
@@ -221,15 +254,12 @@ export const gibribbonDef: VideoModuleDef = {
   label: 'gibribbon',
   category: 'sources',
   inputs: [
-    // The four COURSE channels (cv OR gate OR audio via modsignal — the
-    // bridge envelope-follows audio, unchanged wiring).
-    { id: 'cv1', type: 'modsignal' as const, paramTarget: 'cv1', cvScale: { mode: 'linear' as const } },
-    { id: 'cv2', type: 'modsignal' as const, paramTarget: 'cv2', cvScale: { mode: 'linear' as const } },
-    { id: 'cv3', type: 'modsignal' as const, paramTarget: 'cv3', cvScale: { mode: 'linear' as const } },
-    { id: 'cv4', type: 'modsignal' as const, paramTarget: 'cv4', cvScale: { mode: 'linear' as const } },
-    // Transport (a clock IS a gate train — repo convention).
-    { id: 'clock', type: 'gate' as const, edge: 'trigger' as const, paramTarget: 'clock' },
-    { id: 'gate', type: 'gate' as const, edge: 'gate' as const, paramTarget: 'gate' },
+    // THE SOURCE. An `audio`-typed input on a VIDEO module (the graphicEq
+    // precedent): the cross-domain bridge connects the upstream signal
+    // straight into the AnalyserNode this handle publishes via
+    // `audioInputs`. The module folds it into four MUSICAL bands that drive
+    // the whole course — "events only happen based on audio".
+    { id: 'audio_in', type: 'audio' as const },
     // Aim axes.
     { id: 'x', type: 'modsignal' as const, paramTarget: 'axis_x', cvScale: { mode: 'linear' as const } },
     { id: 'y', type: 'modsignal' as const, paramTarget: 'axis_y', cvScale: { mode: 'linear' as const } },
@@ -238,7 +268,7 @@ export const gibribbonDef: VideoModuleDef = {
     { id: 'b',     type: 'gate' as const, edge: 'trigger' as const, paramTarget: 'btn_b' },
     { id: 'x_btn', type: 'gate' as const, edge: 'trigger' as const, paramTarget: 'btn_x' },
     { id: 'y_btn', type: 'gate' as const, edge: 'trigger' as const, paramTarget: 'btn_y' },
-    // NEW (the rewrite's one port addition — frogger's start_gate precedent).
+    // Restart (frogger's start_gate precedent) — game-over restart + hard reset.
     { id: 'restart', type: 'gate' as const, edge: 'trigger' as const, paramTarget: 'restart_btn' },
   ],
   outputs: [
@@ -251,13 +281,7 @@ export const gibribbonDef: VideoModuleDef = {
     { id: 'health_cv',    type: 'cv' },
   ],
   params: [
-    // The 13 CV-target params (all noUserControl — the jacks write them).
-    { id: 'cv1', label: 'CV1', defaultValue: 0, min: 0, max: 1, curve: 'linear' as const },
-    { id: 'cv2', label: 'CV2', defaultValue: 0, min: 0, max: 1, curve: 'linear' as const },
-    { id: 'cv3', label: 'CV3', defaultValue: 0, min: 0, max: 1, curve: 'linear' as const },
-    { id: 'cv4', label: 'CV4', defaultValue: 0, min: 0, max: 1, curve: 'linear' as const },
-    { id: 'clock', label: 'CLOCK', defaultValue: 0, min: 0, max: 1, curve: 'linear' as const },
-    { id: 'gate', label: 'GATE', defaultValue: 0, min: 0, max: 1, curve: 'linear' as const },
+    // The 7 CV-target params (all noUserControl — the jacks write them).
     { id: 'axis_x', label: 'X', defaultValue: 0, min: -1, max: 1, curve: 'linear' as const },
     { id: 'axis_y', label: 'Y', defaultValue: 0, min: -1, max: 1, curve: 'linear' as const },
     { id: 'btn_a', label: 'A', defaultValue: 0, min: 0, max: 1, curve: 'linear' as const },
@@ -300,6 +324,8 @@ export const gibribbonDef: VideoModuleDef = {
     },
     rear: {
       groups: [
+        // The music IS the voice of this module — the leading slot says so.
+        { id: 'voice', label: 'music', ports: ['audio_in'] },
         { id: 'signal', label: 'play', ports: ['a', 'b', 'x_btn', 'y_btn', 'restart'] },
         {
           id: 'events', label: 'events', direction: 'output',
@@ -312,12 +338,6 @@ export const gibribbonDef: VideoModuleDef = {
   // #1726 — the params a player never sets: every CV-target param is written
   // by its input jack (writer 'cv-port', anchored to the port declarations).
   noUserControl: [
-    { param: 'cv1', writer: 'cv-port', why: 'course channel 1 level — written by the cv1 jack, read by the adaptive extractor each course tick' },
-    { param: 'cv2', writer: 'cv-port', why: 'course channel 2 level — written by the cv2 jack, read by the adaptive extractor each course tick' },
-    { param: 'cv3', writer: 'cv-port', why: 'course channel 3 level — written by the cv3 jack, read by the adaptive extractor each course tick' },
-    { param: 'cv4', writer: 'cv-port', why: 'course channel 4 level — written by the cv4 jack, read by the adaptive extractor each course tick' },
-    { param: 'clock', writer: 'cv-port', why: 'external transport level — the clock jack writes it, the module edge-detects one course tick per rise' },
-    { param: 'gate', writer: 'cv-port', why: 'beat-emphasis level — the gate jack writes it, extraction samples it as an on-beat bias' },
     { param: 'axis_x', writer: 'cv-port', why: 'aim X — the x jack writes it, the judge re-centres the window from it each tick' },
     { param: 'axis_y', writer: 'cv-port', why: 'aim Y — the y jack writes it, the renderer raises/crouches the marine from it' },
     { param: 'btn_a', writer: 'cv-port', why: 'A button level — the a jack writes it, the module edge-detects one judged press per rise' },
@@ -328,14 +348,9 @@ export const gibribbonDef: VideoModuleDef = {
   ],
 
   docs: {
-    explanation: `A CV-controlled rhythm line-runner in the spirit of Vib-Ribbon, cast with DOOM shareware sprites as fair-use artistic parody: a white vector ribbon scrolls right-to-left on black, the course DERIVED from whatever you patch into its four channel inputs, while the DOOM marine runs the line and imps/former-humans ride it in as obstacles. The course extractor is ADAPTIVE: each channel is measured against its own recent range (a relative-prominence peak picker with rank competition), so ANY varying source at ANY level yields a playable stream of events — slow synesthesia band envelopes remain the flagship musical source, but a quiet field recording or a hot drum bus both play, and a silent or stuck-flat channel spawns nothing. Four event kinds map to the four ABXY buttons (loop=A pit-V, jump=B hump, imp=X, zombie=Y); clear each inside the timing window as it reaches the marine. Hits score with a combo multiplier (cap x8) and heal the marine up a DOOM-style health ladder to SUPER; misses degrade it down to GAME OVER. One clock drives everything: patch a CLOCK for musical transport (one rising edge = one course tick) or leave it unpatched and the TEMPO knob clocks the same path. A ~2-bar lookahead lane across the top names the next buttons so the course is readable. An idle unpatched module self-plays in ATTRACT mode — honestly labelled IN the picture — and any input (a button, a clock edge, the keyboard) starts a real run; the ATTRACT toggle disables self-play entirely. Play it three ways: patch the button gates (a gamepad module's a/b/x/y cable straight in, lx/ly to the aim axes), click the screen and use the keyboard (F/D/J/K or arrows = A/B/X/Y, R = restart), or sequence it from the rack — the event gate outputs feed the video-to-audio bridge, so the game is half a sequencer. Sprites decode at load from the setup-fetched shareware DOOM1.WAD (the same file the DOOM module runs, read-only); without it the game plays in wireframe line-art and the WAD lamp says so.`,
+    explanation: `An audio-driven rhythm line-runner in the spirit of Vib-Ribbon, cast with DOOM shareware sprites as fair-use artistic parody. Like the original game — which analyses the music (any CD the player inserts), looks ahead, and builds its obstacle course from interesting frequency changes — GIBRIBBON derives its course FROM THE SIGNAL you patch into AUDIO IN: the module's own analyser folds the input into four musical bands (bass 20-200 Hz, low-mid 200-1k, high-mid 1k-4k, treble 4k-16k), and an ADAPTIVE extractor spawns events on relative peaks against each band's own recent baseline, preferring spectral-flux onsets (the beat). Because prominence is relative, ANY source at ANY level plays — a quiet field recording and a hot drum bus alike — and silence or a stuck-flat signal spawns nothing. THE BAND IS THE EVENT: the low end shapes the ROAD (bass = LOOP pit-V dips, low-mid = JUMP humps) and the highs send the MONSTERS (high-mid = imps, treble = zombies/former-humans, rendered as real DOOM sprites when DOOM1.WAD is present, wireframe line-art otherwise). Clear each event with its ABXY button (loop=A, jump=B, imp=X, zombie=Y) inside the timing window as it reaches the marine; a ~2-bar lookahead lane names the next buttons. THE DAMAGE MODEL IS VIB-RIBBON'S: an event you fail to clear HITS the marine and degrades him one visible form down a DOOM ladder (the status-bar face grades from grinning to bloodied), like Vibri degrading rabbit-to-frog-to-insect; hits at the floor are GAME OVER; clean streaks heal forms back and a long streak reaches gold SUPER. Restart from the restart gate, the R key, or the RESET action — wire evt_gameover back to restart for an endless arcade loop. TEMPO sets the ribbon's course rate (the audio decides WHAT spawns, tempo decides how fast it approaches); DIFFICULTY scales density and speed together. An idle, unpatched module self-plays in ATTRACT mode — honestly labelled IN the picture, and its demo bot fumbles now and then so you can see the damage ladder work; any input (a button, the keyboard, or MOVING audio arriving at AUDIO IN) starts a real run. Play it three ways: patch a gamepad module's a/b/x/y gates + lx/ly axes straight in, click the screen and use the keyboard (F/D/J/K or arrows, R = restart), or sequence the rack from the event gate outputs — the game is half a sequencer.`,
     inputs: {
-      cv1: "Course channel 1 → LOOP events (button A). The adaptive extractor keeps a rolling window of this channel's own recent level and spawns on relative prominence — a peak against its own baseline — so any varying source at any gain plays; a silent or stuck-flat signal spawns nothing. Modulates the CV1 control.",
-      cv2: "Course channel 2 → JUMP events (button B). Same adaptive relative-prominence extraction as cv1 — channels compete by rank with a starvation boost, so no channel can be silently starved by hotter neighbours. Modulates the CV2 control.",
-      cv3: "Course channel 3 → IMP events (button X) — imps render as DOOM imp sprites the marine fires on when cleared. Same adaptive extraction. Modulates the CV3 control.",
-      cv4: "Course channel 4 → ZOMBIE events (button Y) — former-human sprites killed on a successful clear. Same adaptive extraction. Modulates the CV4 control.",
-      clock: "External transport (a 1x clock train, rising-edge detected): each edge advances the course exactly one tick and takes ownership of the transport (the internal TEMPO clock pauses while edges keep arriving). Unpatched, the TEMPO param clocks the SAME course path — one code path, two tick sources. Modulates the CLOCK control.",
-      gate: "Beat emphasis, read as a sampled level (high above 0.5): while high, extraction lowers its prominence bar so events prefer landing on the beat. A bias only — it never hard-gates spawning. Modulates the GATE control.",
+      audio_in: "THE SOURCE. Patch any audio here — the whole course derives from it, like Vib-Ribbon generating stages from a music CD. The module's own AnalyserNode folds the signal into four musical bands (bass/low-mid/high-mid/treble) and spawns events on relative peaks against each band's own rolling baseline, biased toward spectral-flux onsets. Tap-only and inaudible: route the signal to AUDIO OUT separately to hear it. Moving audio also counts as player presence — it wakes the module out of ATTRACT into a live run.",
       x: "Aim X (bipolar -1..1): re-centres the judgement point by up to one hit-window (stick left = clear events slightly early, right = slightly late). Shifts the window, never widens it. Modulates the X control.",
       y: "Aim Y (bipolar -1..1): raises the marine off the ribbon (up) or crouches it (down) — a visible aim aid consumed by the renderer. Modulates the Y control.",
       a: "The A play button (rising edge): judges the nearest in-window LOOP event at the tick-anchored phase of the press. Spare presses with no matching event are ignored (no penalty). Modulates the A control.",
@@ -345,24 +360,18 @@ export const gibribbonDef: VideoModuleDef = {
       restart: "Restart gate (rising edge): starts a fresh run — from GAME OVER or as a hard reset mid-run — so a rack can loop the game (wire evt_gameover back here through a delay for an endless arcade). Same path as the R key and the RESET action. Modulates the RESTART control.",
     },
     outputs: {
-      out: "The rendered game frame (video): the 16:9 ribbon scene — course, sprites, and the in-canvas HUD (score, combo, ATTRACT label, count-in, GAME OVER banner) — letterboxed into the engine's 4:3 output.",
+      out: "The rendered game frame (video): the 16:9 ribbon scene — course, sprites, the DOOM status-bar face showing the marine's current form, and the in-canvas HUD (score, combo, ATTRACT label, count-in, GAME OVER banner) — letterboxed into the engine's 4:3 output.",
       evt_hit: "A ~10 ms gate pulse on every successful clear (any in-window button match). In ATTRACT mode the self-player keeps firing these — the sequencer half of the module stays alive while idle.",
-      evt_miss: "A ~10 ms gate pulse on every missed event (one that passed the marine uncleared), as the marine degrades a health rung.",
+      evt_miss: "A ~10 ms gate pulse every time an uncleared event HITS the marine (it reached him without the right press), as he degrades a visible form down the ladder.",
       evt_fire: "A ~10 ms gate pulse when the marine FIRES — emitted on a successful enemy (imp/zombie) clear.",
       evt_kill: "A ~10 ms gate pulse when an enemy DIES (its death animation), emitted alongside evt_fire on an enemy clear.",
-      evt_gameover: "A ~10 ms gate pulse fired once when the marine reaches GAME OVER (health hits dead).",
-      health_cv: "The marine's vitality as a 0..1 CV (super=1, healthy=0.75, wounded=0.5, critical=0.25, dead=0), ramped smoothly on each health change.",
+      evt_gameover: "A ~10 ms gate pulse fired once when the marine's form degrades past the floor — GAME OVER (Vibri hit once too often as an insect).",
+      health_cv: "The marine's vitality as a 0..1 CV (super=1, healthy=0.75, wounded=0.5, critical=0.25, dead=0), ramped smoothly on each form change.",
     },
     controls: {
-      cv1: "Holds the course-channel-1 level the extractor samples each course tick (0..1); written by the CV1 jack, not by hand.",
-      cv2: "Holds the course-channel-2 level sampled each course tick (0..1); written by the CV2 jack.",
-      cv3: "Holds the course-channel-3 level sampled each course tick (0..1); written by the CV3 jack.",
-      cv4: "Holds the course-channel-4 level sampled each course tick (0..1); written by the CV4 jack.",
-      clock: "The external-clock level (0..1); a rising edge advances one course tick and takes transport ownership. Written by the CLOCK jack.",
-      gate: "The beat-emphasis level (0..1, high above 0.5) biasing extraction toward on-beat spawns. Written by the GATE jack.",
-      autoplay: "ATTRACT toggle (0/1, default 1 = ON). ⚠ The id says autoplay for patch persistence; the behaviour is ATTRACT MODE: when ON, an IDLE and unpatched module self-plays a labelled attract run (course from a synthesized rotation, cleared by a deterministic bot through the real judge) and any real input starts a fresh live run. Set 0 and the module never self-plays — an idle ribbon stays honestly empty.",
-      difficulty: "The one game knob (0..1, default 0.5): scales course density (extraction bar + spawn-rate cap) and the internal course rate together. Low = sparse and readable; high = dense and fast.",
-      tempo: "Internal transport rate (60..180 BPM-equivalent, default ~143 = the classic 0.42 s beat): clocks the course while no external CLOCK is patched. Irrelevant while an external clock owns the transport.",
+      autoplay: "ATTRACT toggle (0/1, default 1 = ON). The id says autoplay for historical continuity; the behaviour is ATTRACT MODE: when ON, an IDLE and unpatched module self-plays a labelled attract run through the real extractor and judge (its demo bot deliberately fumbles some events so the damage ladder shows), and any real input — a button, the keyboard, or moving audio at AUDIO IN — starts a fresh live run. Set 0 and the module never self-plays; an idle ribbon stays honestly empty.",
+      difficulty: "The one game knob (0..1, default 0.5): scales course density (extraction bar + spawn-rate cap) and the course rate together. Low = sparse and readable; high = dense and fast.",
+      tempo: "The ribbon's course rate (60..180 BPM-equivalent, default ~143 = the classic 0.42 s beat). The audio decides WHAT spawns; TEMPO decides how fast the course approaches. One clock: judgement is anchored to this transport's tick phase.",
       axis_x: "The aim-X value (-1..1, default 0) re-centring the judgement window; written by the X axis jack.",
       axis_y: "The aim-Y value (-1..1, default 0) raising/crouching the marine; written by the Y axis jack.",
       btn_a: "The A-button level (0..1); a rising edge judges the nearest in-window loop event. Written by the A jack (or keyboard F / left-arrow).",
@@ -466,12 +475,21 @@ export const gibribbonDef: VideoModuleDef = {
     // construction AND re-checked on the late tick-pin path (the card scene
     // installs it from afterSpawn, after this factory ran).
     let sprites: GibSprites | null = null;
+    /** DOOM status-bar face pictures by damage grade 0..4 (grinning → most
+     *  bloodied) + the dead face — the parody-perfect VISIBLE FORM ladder
+     *  (Vibri's rabbit→frog→insect, cast as the marine's own mugshot).
+     *  Decoded by COMPOSING the exported pure primitives (parseWadDirectory /
+     *  readPlaypal / decodePicture) — no lib/doom file is edited. */
+    let stfFaces: (SpriteFrame | null)[] = [null, null, null, null, null];
+    let stfDead: SpriteFrame | null = null;
     let loadErr = '';
     function wadDisabled(): boolean {
       return (globalThis as unknown as { __gibribbonVrtNoWad?: boolean }).__gibribbonVrtNoWad === true;
     }
     function applyWadArtPin(): void {
       sprites = null;
+      stfFaces = [null, null, null, null, null];
+      stfDead = null;
       loadErr = 'DOOM1.WAD disabled by VRT pin — line-art fallback';
     }
     if (wadDisabled()) {
@@ -481,7 +499,21 @@ export const gibribbonDef: VideoModuleDef = {
         try {
           const { bytes, error } = await loadWad();
           if (!bytes) { loadErr = error ?? 'DOOM1.WAD missing — using line-art fallback'; return; }
-          if (!wadDisabled()) sprites = extractGibSprites(bytes);
+          if (!wadDisabled()) {
+            sprites = extractGibSprites(bytes);
+            // Status-bar face grades via the exported primitives (read-only).
+            const lumps = parseWadDirectory(bytes);
+            const byName = new Map<string, { filepos: number; size: number }>();
+            for (const l of lumps) byName.set(l.name, l);
+            const palette = readPlaypal(bytes, lumps);
+            const pic = (name: string): SpriteFrame | null => {
+              const l = byName.get(name);
+              if (!l || l.size <= 0) return null;
+              try { return decodePicture(bytes, l.filepos, l.size, palette); } catch { return null; }
+            };
+            stfFaces = [0, 1, 2, 3, 4].map((g) => pic(`STFST${g}1`) ?? pic(`STFST${g}0`));
+            stfDead = pic('STFDEAD0');
+          }
         } catch (e) {
           loadErr = e instanceof Error ? e.message : String(e);
         }
@@ -585,18 +617,77 @@ export const gibribbonDef: VideoModuleDef = {
     // by the next tick, so none is ever lost to sampling. Edge DETECTION uses
     // the same pure detector the original build used (read-only reuse from
     // the doom lib — within the carve-out line).
-    const clockEdge: EdgeState = makeEdgeState();
     const restartEdge: EdgeState = makeEdgeState();
     const buttonEdges: Record<GibButton, EdgeState> = {
       a: makeEdgeState(), b: makeEdgeState(), x: makeEdgeState(), y: makeEdgeState(),
     };
-    let pendingClockEdges = 0;
     let pendingRestartEdges = 0;
     let pendingButtons: GibButton[] = [];
     let pendingActivity = false;
     const ACTIVITY_EPS = 0.01;
 
     function noteActivity(): void { pendingActivity = true; }
+
+    // ── THE EAR — the module's own analyser over `audio_in` ────────────────
+    //
+    // The graphicEq shape: an `audio`-typed input on a video module, the
+    // upstream source bridged straight into an AnalyserNode this handle
+    // publishes via `audioInputs`. Each scheduler tick reads the byte
+    // spectrum ONCE and folds it into the four musical bands + the flux
+    // onset (gibribbon-spectral.ts, pure) — the engine never sees a bin.
+    //
+    // ⚠ __gibribbonTestBands (test-only, like the VRT pins — nothing in app
+    // code sets it): when it holds a 4-array, the fold is bypassed and those
+    // levels feed the extractor instead. The deterministic seam the e2e uses
+    // to script exact courses without owning an audio graph; the real
+    // analyser path is covered by the live-cable e2e leg.
+    let analyser: AnalyserNode | null = null;
+    let audioInputs: Map<string, { node: AudioNode; input: number }> | undefined;
+    let freqBuf: Uint8Array<ArrayBuffer> | null = null;
+    let bandRanges: Array<[number, number]> | null = null;
+    if (ctx.audioCtx) {
+      const ac = ctx.audioCtx;
+      analyser = ac.createAnalyser();
+      analyser.fftSize = GIB_FFT_SIZE;
+      // Modest smoothing: enough to steady the fold at the 25 ms tick, low
+      // enough that onsets keep their edge.
+      analyser.smoothingTimeConstant = 0.5;
+      freqBuf = new Uint8Array(analyser.frequencyBinCount);
+      bandRanges = gibBandBinRanges(ac.sampleRate, GIB_FFT_SIZE);
+      audioInputs = new Map([[ 'audio_in', { node: analyser, input: 0 } ]]);
+    }
+    const onsetState: GibOnsetState = newOnsetState();
+    let lastBands: number[] = [0, 0, 0, 0];
+
+    function readTestBands(): number[] | null {
+      const v = (globalThis as unknown as { __gibribbonTestBands?: unknown }).__gibribbonTestBands;
+      if (Array.isArray(v) && v.length === 4 && v.every((x) => typeof x === 'number')) {
+        return v as number[];
+      }
+      return null;
+    }
+
+    /** One tick's worth of hearing: bands + onset + did-the-audio-move. */
+    function hearBands(): { bands: number[]; onset: boolean; moved: boolean } {
+      let bands: number[];
+      const forced = readTestBands();
+      if (forced) {
+        bands = forced;
+      } else if (analyser && freqBuf && bandRanges) {
+        analyser.getByteFrequencyData(freqBuf);
+        bands = gibFoldBands(freqBuf, bandRanges);
+      } else {
+        bands = [0, 0, 0, 0];
+      }
+      const flux = gibSpectralFlux(lastBands, bands);
+      const onset = pushFluxIsOnset(onsetState, flux);
+      let moved = false;
+      for (let i = 0; i < 4; i++) {
+        if (Math.abs(bands[i]! - lastBands[i]!) > ACTIVITY_EPS) { moved = true; break; }
+      }
+      lastBands = bands;
+      return { bands, onset, moved };
+    }
 
     // ── THE ONE CLOCK — the scheduler tick drives the pure stepper ─────────
     const tick = (): void => {
@@ -608,22 +699,19 @@ export const gibribbonDef: VideoModuleDef = {
       // game (the worker interval ignores audio suspends and rAF).
       if (engineFrozen()) return;
 
-      // Drain AT MOST the stepper's per-tick course budget of clock edges and
-      // CARRY the remainder — a burst of pulses (an e2e hammer, a ratcheting
-      // clock divider) must advance the course by every edge, just spread
-      // across ticks, never silently dropped at the cap.
-      const clockTake = Math.min(8, pendingClockEdges);
+      // Hear this tick: the analyser fold (or the test seam) → bands/onset.
+      // MOVING audio is player presence — it wakes attract into a live run,
+      // the way inserting a CD is the point of the original game.
+      const heard = hearBands();
       const inputs: GibStepInputs = {
-        cv: [params.cv1, params.cv2, params.cv3, params.cv4],
-        gate: params.gate,
-        clockEdges: clockTake,
+        bands: heard.bands,
+        onset: heard.onset,
         buttons: pendingButtons.length ? pendingButtons : IDLE_INPUTS.buttons,
         restartEdges: pendingRestartEdges,
         axisX: params.axis_x,
         axisY: params.axis_y,
-        activity: pendingActivity,
+        activity: pendingActivity || heard.moved,
       };
-      pendingClockEdges -= clockTake;
       pendingRestartEdges = 0;
       if (pendingButtons.length) pendingButtons = [];
       pendingActivity = false;
@@ -795,8 +883,26 @@ export const gibribbonDef: VideoModuleDef = {
       paintLookaheadLane(phase);
 
       // 6. In-canvas HUD (the GAMES.md-permitted shape: the game's own
-      //    artwork, inside the playfield).
+      //    artwork, inside the playfield) — including the VISIBLE FORM: the
+      //    DOOM status-bar face at the marine's current damage grade.
       paintHud();
+
+      // 6b. DAMAGE VIGNETTE: while painTicks holds, the frame edges flash
+      //     red — the unmistakable "you were HIT" (the owner's bug was this
+      //     moment being invisible).
+      if (state.painTicks > 0 && state.health !== 'dead') {
+        const strength = state.painTicks / 40;
+        const border = Math.round(10 + 14 * strength);
+        const red = [Math.round(140 + 100 * strength), 24, 24];
+        for (let d = 0; d < border; d++) {
+          for (let x = 0; x < INTERNAL_W; x += 1) {
+            setPx(x, d, red); setPx(x, INTERNAL_H - 1 - d, red);
+          }
+          for (let y = 0; y < INTERNAL_H; y += 1) {
+            setPx(d, y, red); setPx(INTERNAL_W - 1 - d, y, red);
+          }
+        }
+      }
 
       // 7. Overlays: count-in / ATTRACT / GAME OVER.
       if (state.health === 'dead') paintGameOver();
@@ -824,6 +930,17 @@ export const gibribbonDef: VideoModuleDef = {
       }
     }
 
+    /** Damage grade 0..4 for the face (0 = untouched, 4 = at the floor). */
+    function faceGrade(): number {
+      switch (state.health) {
+        case 'super': return 0;
+        case 'healthy': return 1;
+        case 'wounded': return 2;
+        case 'critical': return 3;
+        case 'dead': return 4;
+      }
+    }
+
     function paintHud(): void {
       // SCORE + combo, top-right of the lane (inside the playfield, painted
       // by the game — the frogger shape, reached by design).
@@ -835,6 +952,38 @@ export const gibribbonDef: VideoModuleDef = {
       }
       if (state.health === 'super') {
         drawText('SUPER', INTERNAL_W - textWidth('SUPER', 3) - 16, 66, 3, BTN_COLORS.y);
+      }
+
+      // THE VISIBLE FORM — the DOOM status-bar mugshot at the current damage
+      // grade (super/healthy grin → wounded → critical → dead), bottom-left
+      // of the playfield like the original status bar. This is the Vibri
+      // form ladder, cast: the OWNER'S BUG ("marine doesn't die when hit")
+      // was the ladder moving with no picture of it anywhere.
+      const grade = faceGrade();
+      const face = state.health === 'dead' ? stfDead : stfFaces[grade] ?? null;
+      const fx = 26;
+      const fy = INTERNAL_H - 12;
+      if (face) {
+        blitSprite(face, fx + Math.round(face.width), fy, 2.2);
+      } else {
+        // Line-art fallback face: a diamond head whose damage reads at a
+        // glance — the mouth droops and the frame reddens per grade.
+        const col = grade >= 3 ? BTN_COLORS.b : grade === 2 ? BTN_COLORS.y : COL_HUD;
+        const cx = fx + 28;
+        const cy = fy - 34;
+        drawDiamond(cx, cy, 26, col);
+        // eyes
+        setPx(cx - 9, cy - 6, col); setPx(cx - 8, cy - 6, col);
+        setPx(cx + 8, cy - 6, col); setPx(cx + 9, cy - 6, col);
+        // mouth: flat → frown per grade; an X on death.
+        if (state.health === 'dead') {
+          drawLine(cx - 8, cy + 6, cx + 8, cy + 14, col);
+          drawLine(cx - 8, cy + 14, cx + 8, cy + 6, col);
+        } else {
+          const droop = grade * 3;
+          drawLine(cx - 9, cy + 8, cx, cy + 8 + droop, col);
+          drawLine(cx, cy + 8 + droop, cx + 9, cy + 8, col);
+        }
       }
     }
 
@@ -879,9 +1028,9 @@ export const gibribbonDef: VideoModuleDef = {
         (e) => e.resolved && e.outcome === 'hit' && (e.kind === 'imp' || e.kind === 'zombie')
           && e.resolvedTick !== null && state.tick - e.resolvedTick <= 1,
       );
-      const recentMiss = state.events.some(
-        (e) => e.resolved && e.outcome === 'miss' && e.resolvedTick !== null && state.tick - e.resolvedTick <= 1,
-      );
+      // Sustained pain form: held by the engine's painTicks (~1 s), not a
+      // one-course-tick blink — the visible half of "he got HIT".
+      const inPain = state.painTicks > 0;
       const recentHop = state.events.some(
         (e) => e.resolved && e.outcome === 'hit' && (e.kind === 'loop' || e.kind === 'jump')
           && e.resolvedTick !== null && state.tick - e.resolvedTick <= 1,
@@ -893,7 +1042,7 @@ export const gibribbonDef: VideoModuleDef = {
           f = sprites.marineDie[sprites.marineDie.length - 1]!;
         } else if (recentFire && sprites.marineFire.length) {
           f = sprites.marineFire[Math.floor(animTick() / 4) % sprites.marineFire.length]!;
-        } else if (recentMiss && sprites.marinePain.length) {
+        } else if (inPain && sprites.marinePain.length) {
           f = sprites.marinePain[0]!;
         } else if (sprites.marineRun.length) {
           f = sprites.marineRun[Math.floor(animTick() / 6) % sprites.marineRun.length]!;
@@ -907,7 +1056,7 @@ export const gibribbonDef: VideoModuleDef = {
         const col = state.health === 'dead' ? BTN_COLORS.b
           : recentFire ? BTN_COLORS.x
           : recentHop ? BTN_COLORS.a
-          : recentMiss ? BTN_COLORS.b
+          : inPain ? BTN_COLORS.b
           : COL_RIBBON;
         drawStickFigure(MARINE_X, my, col);
         if (recentFire) drawLine(MARINE_X + 9, my - 28, MARINE_X + 34, my - 28, COL_PROMPT_HOT);
@@ -921,14 +1070,35 @@ export const gibribbonDef: VideoModuleDef = {
       drawLine(cx - r, cy, cx, cy - r, rgb);
     }
     function drawStickFigure(cx: number, baseY: number, rgb: number[]): void {
+      // The LINE-ART FORM LADDER (no WAD): the figure itself degrades with
+      // the marine's health — the stick-cast of Vibri's rabbit→frog→insect.
+      //   super/healthy: full figure · wounded: arms gone (frog) ·
+      //   critical: a crawling worm · dead: collapsed.
+      const h = state.health;
+      if (h === 'dead') {
+        drawLine(cx - 16, baseY, cx + 16, baseY, rgb);
+        drawDiamond(cx + 20, baseY - 4, 5, rgb);
+        return;
+      }
+      if (h === 'critical') {
+        // The worm: a low zig-zag crawl with a small head.
+        drawLine(cx - 14, baseY, cx - 5, baseY - 8, rgb);
+        drawLine(cx - 5, baseY - 8, cx + 4, baseY, rgb);
+        drawLine(cx + 4, baseY, cx + 12, baseY - 6, rgb);
+        drawDiamond(cx + 16, baseY - 8, 4, rgb);
+        return;
+      }
       const headR = 6;
-      const top = baseY - 40;
+      const top = baseY - (h === 'wounded' ? 30 : 40);
       drawDiamond(cx, top, headR, rgb);
       drawLine(cx, top + headR, cx, baseY - 14, rgb);
       drawLine(cx, baseY - 14, cx - 7, baseY, rgb);
       drawLine(cx, baseY - 14, cx + 7, baseY, rgb);
-      drawLine(cx, top + 14, cx - 9, top + 22, rgb);
-      drawLine(cx, top + 14, cx + 9, top + 22, rgb);
+      if (h !== 'wounded') {
+        // Arms only above wounded — the frog stage loses them.
+        drawLine(cx, top + 14, cx - 9, top + 22, rgb);
+        drawLine(cx, top + 14, cx + 9, top + 22, rgb);
+      }
     }
     function drawButtonGlyph(btn: GibButton, cx: number, cy: number, hot: boolean, filled = false): void {
       const col = hot ? COL_PROMPT_HOT : COL_PROMPT;
@@ -1033,6 +1203,7 @@ export const gibribbonDef: VideoModuleDef = {
       domain: 'video',
       surface,
       audioSources,
+      audioInputs,
       setParam(paramId, value) {
         const prev = (params as Record<string, number>)[paramId];
         if (paramId in params) (params as Record<string, number>)[paramId] = value;
@@ -1040,11 +1211,6 @@ export const gibribbonDef: VideoModuleDef = {
         // Edge-detected discrete inputs → the pending queues the ONE stepper
         // drains. No state mutation happens here (the #635 lesson: setParam
         // is a sampling seam, not a second clock).
-        if (paramId === 'clock') {
-          const ev = detectEdge(clockEdge, value);
-          if (ev && ev.pressed) { pendingClockEdges += 1; noteActivity(); }
-          return;
-        }
         if (paramId === 'restart_btn') {
           const ev = detectEdge(restartEdge, value);
           if (ev && ev.pressed) pushRestart();
@@ -1059,11 +1225,11 @@ export const gibribbonDef: VideoModuleDef = {
           }
           return;
         }
-        // Sampled continuous inputs: a MOVING signal is player/patch activity
-        // (the attract-mode idle proxy); a still one is not.
+        // Sampled continuous inputs: a MOVING axis is player activity
+        // (the attract-mode idle proxy); a still one is not. (Moving AUDIO
+        // is detected at the analyser fold, in hearBands.)
         if (
-          (paramId === 'cv1' || paramId === 'cv2' || paramId === 'cv3' || paramId === 'cv4'
-            || paramId === 'gate' || paramId === 'axis_x' || paramId === 'axis_y')
+          (paramId === 'axis_x' || paramId === 'axis_y')
           && typeof prev === 'number'
           && Math.abs(value - prev) > ACTIVITY_EPS
         ) {

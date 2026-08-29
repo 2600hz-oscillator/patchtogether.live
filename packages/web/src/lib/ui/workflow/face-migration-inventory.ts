@@ -969,9 +969,15 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
       '"score / health / combo HUD over a viewport" — that DOM HUD was the GAMES.md ' +
       'forbidden-chrome shape and is deleted: the HUD is painted INTO the frame by the ' +
       "module's own rasteriser, the speakable copy rides aria-label on the playfield, and the " +
-      'face is three ranked controls (difficulty / tempo / attract) + 13 noUserControl CV ' +
-      'targets + a fullViewBody game screen. The lane tile takes the free video-domain ' +
-      'VideoTileThumb — the LIVE GAME — where the un-migrated module showed a bare placeholder.',
+      'face is three ranked controls (difficulty / tempo / attract) + a fullViewBody game ' +
+      'screen. The lane tile takes the free video-domain VideoTileThumb — the LIVE GAME — ' +
+      'where the un-migrated module showed a bare placeholder. ⚠ AUDIO REDIRECT 2026-08-29 ' +
+      '(owner, on playing the build): the CV-era event inputs were replaced with ONE ' +
+      'audio_in — the module analyses the signal itself (own AnalyserNode, musical band ' +
+      'fold, spectral-flux onsets) and the extractor consumes bands, which is what the ' +
+      'original game actually does ("generates obstacles based on interesting frequency ' +
+      'changes"). The id surgery was clean (unmerged PR, never-worked module): cv1..cv4 / ' +
+      'clock / gate are gone, 7 noUserControl CV targets remain (aim, buttons, restart).',
   },
   {
     type: 'kria',
