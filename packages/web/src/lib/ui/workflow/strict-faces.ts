@@ -5144,6 +5144,30 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // tell what octave they were in. `c0..c8` is DERIVED from `midiForKey`'s own
   // arithmetic, so it costs zero NUMERIC_LABEL_EXEMPTIONS entries.
   'numpadPlus',
+
+  // ── TEMPOLOCK (2026-08-29) — the beat-tracking clock, BORN FACED ─────────
+  //
+  // A new module, so there is no legacy card to reach parity with: the face
+  // IS the surface. One ranked control (the BAND selector — three named
+  // options, total by construction over its 0..2 discrete range, so
+  // `paramCellKind` resolves segmented at the dock and a named knob in the
+  // lane) over a `status-primitive` extension body carrying the LOCK and
+  // BEAT lamps (EXTENSION_BODY_ROLES in face-rack-status-source.test.ts has
+  // the full text-role argument).
+  //
+  // ⚠ THE TRACKED BPM IS DELIBERATELY NOT PAINTED. It is derived state — the
+  // exact shape the resting-text rulings deleted fleet-wide, and TIMELORDE's
+  // own face dropped its BPM footer under the same rulings — so the value
+  // lives on the LOCK lamp's detail (aria-label/title), decided in the pure
+  // tempolock-status-model and unit-tested there.
+  //
+  // `glyph: 'none'` is FORCED (the gatemaiden situation port for port):
+  // outputs are gate/cv/gate, `primaryAudioOutPortId` matches only
+  // `type === 'audio'`, so every other literal is a dead static binding.
+  //
+  // ZERO ATTEST: an audio def — `face`, `docs` and `options` never enter the
+  // WebGL basis, and no video module moves.
+  'tempolock',
 ]);
 
 /**

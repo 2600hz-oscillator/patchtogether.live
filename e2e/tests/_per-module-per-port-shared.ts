@@ -167,6 +167,17 @@ export const EXEMPT_OUTPUT_EMIT_MODULES: Record<string, string> = {
   cvBuddyMini: 'passthrough note outputs (silent until inputs driven) + owner-only run/clock that need a running TIMELORDE transport; no output emits from a bare spawn. Shares createCvBuddyHandle with cvBuddy; covered by the same slot-alloc/clock-math/es9-reconcile unit tests plus the mini slot-layout cases',
   // ── Clock / divider / sequencer-like modules that need an upstream clock ──
   timelorde: 'clock divider; needs upstream clock; covered by timelorde-related specs',
+  // TEMPOLOCK — every output is input-conditional BY DESIGN: from cold the
+  // tracker emits nothing at all (no clock, bpm rail at 0, locked low) until
+  // ~4 consistent inter-onset intervals declare the first lock — pinned by
+  // tempolock-tracker.test.ts fixture 7 — and even DRIVEN, `clock` is a 10 ms
+  // pulse every ~500 ms (the midiclock scope-window class) while `bpm` and
+  // `locked` are DC levels (the moogCp3 DC class). The real signal flow is
+  // covered end-to-end by tempolock.spec.ts (deterministic pulse train →
+  // tempolock → SCOPE pulse capture + TIMELORDE CLOCK IN follow) plus the
+  // pure tracker suite. Handle-presence + input-drive still run here, and the
+  // BEHAVIORAL sweep drives `in` and asserts the bpm rail moves.
+  tempolock: 'all outputs input-conditional by design (silent until first lock; then sparse 10 ms clock pulses + DC bpm/locked levels); covered by tempolock.spec.ts + tempolock-tracker.test.ts',
   marbles:   'requires UI-enabled internal clock; covered by marbles-related specs',
   // ── CV/gate utility modules with no self-running source ──
   illogic:    'boolean logic on inputs; no upstream → no output; covered by illogic.spec.ts',
@@ -539,7 +550,7 @@ export const PINNED_MODULE_EXEMPT_KEYS: readonly string[] = Object.freeze([
   'marbles', 'midiCvBuddy', 'midiOutBuddy', 'midiclock', 'milkdrop', 'modtris',
   'moog911a', 'moog956', 'moog962', 'moog992', 'moog993', 'numpadPlus',
   'peertube', 'pong', 'samsloop', 'score',
-  'slewSwitch', 'synesthesia', 'timelorde', 'tvLibrarian', 'twotracks',
+  'slewSwitch', 'synesthesia', 'tempolock', 'timelorde', 'tvLibrarian', 'twotracks',
   'videobox', 'videocube', 'videovarispeed', 'vstFx', 'vstInstrument',
 ]);
 
