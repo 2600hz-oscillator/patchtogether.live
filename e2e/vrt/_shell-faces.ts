@@ -40,7 +40,23 @@ export const FACES = [
   { type: 'lfo', pages: 1 },
   { type: 'cloudseed', pages: 8 },
   // batch 2 — the two pitched voices, the two drums, the two processors
-  { type: 'dx7', pages: 4 },
+  {
+    type: 'dx7',
+    pages: 4,
+    // ⚠ DOCK REMOVED 2026-08-28 — CPU-FLEET NONDETERMINISM (see faceTiers).
+    // The hosted-runner fleet now mixes THREE CPU models (EPYC 7763 / EPYC
+    // 9V74 / Xeon Platinum 8573C — the 'Name the runner CPU' log line), and
+    // SwiftShader's LLVM JIT rasterizes this face's GL/canvas dock content
+    // differently per microarchitecture: with EVERY AA pin active
+    // (lcd-text off, srgb profile, hinting none, skia-runtime-opts) the dock
+    // scene flapped between runs 33217755378 and its successor purely by
+    // which CPU the shard drew — actuals byte-stable per draw, three stable
+    // states, unconvergeable by any promotion. The COMPACT tile has no such
+    // content and still gates. RESTORE the dock scene when the fleet is
+    // homogeneous again (arm runners or self-hosted) — the fleet memo owns
+    // that decision.
+    scenes: ['compact'],
+  },
   { type: 'sixstrum', pages: 5 },
   { type: 'snaredrum', pages: 5 },
   { type: 'tomtom', pages: 4 },
@@ -459,7 +475,23 @@ export const FACES = [
   // `audio + sc·(…)` over two silent inputs, and the meter tap reads bit-zero
   // whether the graph is frozen or running. It therefore neither exercises nor
   // depends on #1420's pre-frame freeze — the mixer / reverb / clouds property.
-  { type: 'sidecar', pages: 3 },
+  {
+    type: 'sidecar',
+    pages: 3,
+    // ⚠ DOCK REMOVED 2026-08-28 — CPU-FLEET NONDETERMINISM (see faceTiers).
+    // The hosted-runner fleet now mixes THREE CPU models (EPYC 7763 / EPYC
+    // 9V74 / Xeon Platinum 8573C — the 'Name the runner CPU' log line), and
+    // SwiftShader's LLVM JIT rasterizes this face's GL/canvas dock content
+    // differently per microarchitecture: with EVERY AA pin active
+    // (lcd-text off, srgb profile, hinting none, skia-runtime-opts) the dock
+    // scene flapped between runs 33217755378 and its successor purely by
+    // which CPU the shard drew — actuals byte-stable per draw, three stable
+    // states, unconvergeable by any promotion. The COMPACT tile has no such
+    // content and still gates. RESTORE the dock scene when the fleet is
+    // homogeneous again (arm runners or self-hosted) — the fleet memo owns
+    // that decision.
+    scenes: ['compact'],
+  },
   // FACE BATCH 6 · the two-engine spectral resynthesizer. `pages: 5` is the
   // POST-hero split count: five declared pages, and promoting `spectralPartials`
   // into the hero leaves `engine` with MODE + BANDS rather than emptying it, so
@@ -708,7 +740,24 @@ export const FACES = [
   // 2048 (425 px of headroom) and leaves every other scene's viewport — and
   // therefore every other committed baseline — untouched. See the measurement
   // on `foldViewportFor` for why raising the shared constant is NOT a no-op.
-  { type: 'mixmstrs', pages: 4, foldHeight: 2048 },
+  {
+    type: 'mixmstrs',
+    pages: 4,
+    foldHeight: 2048,
+    // ⚠ DOCK REMOVED 2026-08-28 — CPU-FLEET NONDETERMINISM (see faceTiers).
+    // The hosted-runner fleet now mixes THREE CPU models (EPYC 7763 / EPYC
+    // 9V74 / Xeon Platinum 8573C — the 'Name the runner CPU' log line), and
+    // SwiftShader's LLVM JIT rasterizes this face's GL/canvas dock content
+    // differently per microarchitecture: with EVERY AA pin active
+    // (lcd-text off, srgb profile, hinting none, skia-runtime-opts) the dock
+    // scene flapped between runs 33217755378 and its successor purely by
+    // which CPU the shard drew — actuals byte-stable per draw, three stable
+    // states, unconvergeable by any promotion. The COMPACT tile has no such
+    // content and still gates. RESTORE the dock scene when the fleet is
+    // homogeneous again (arm runners or self-hosted) — the fleet memo owns
+    // that decision.
+    scenes: ['compact'],
+  },
   // THE FACEPLATE QUEUE · Q14 — quad slew + 4→1 sequential switch. `pages: 2`
   // is the declared count AND the post-hero count, because this face promotes
   // NO control into the hero: its hero is readouts only (the attenumix /
@@ -1291,7 +1340,15 @@ export const FACES = [
     // two runs of the same shards on the same SHA) while every other failing
     // scene reproduced exactly, and the two-boot determinism probe had called it
     // BIT-EXACT. The DOCK scene is unaffected and still gates.
-    scenes: ['dock'],
+// ⚠ AND DOCK REMOVED 2026-08-28 — CPU-FLEET NONDETERMINISM (see the note
+    // this style of entry carries on its dock-only siblings, e.g. foxy): the
+    // dock's live CRT preview is GL content, and SwiftShader's per-CPU LLVM
+    // JIT renders it three stable ways across the mixed hosted fleet (EPYC
+    // 7763 / EPYC 9V74 / Xeon 8573C, runs 33217755378 ff.). With compact
+    // already removed 2026-08-26, this face is now SCENELESS-BY-MEASUREMENT
+    // while keeping its roster entry and rationale; restore scenes when the
+    // fleet is homogeneous.
+    scenes: [],
     videoFaceWhy:
       'both scenes carry a LIVE picture: the compact tile paints a VideoTileThumb through '
       + 'hasVideoSurface, and the dock body is the module\'s own fullViewBody extension — the pool '
@@ -1779,6 +1836,19 @@ export const FACES = [
   // NOT the `outlines` story where the only setter was a render-smoke spec.
   {
     type: 'foxy',
+    // ⚠ DOCK REMOVED 2026-08-28 — CPU-FLEET NONDETERMINISM (see faceTiers).
+    // The hosted-runner fleet now mixes THREE CPU models (EPYC 7763 / EPYC
+    // 9V74 / Xeon Platinum 8573C — the 'Name the runner CPU' log line), and
+    // SwiftShader's LLVM JIT rasterizes this face's GL/canvas dock content
+    // differently per microarchitecture: with EVERY AA pin active
+    // (lcd-text off, srgb profile, hinting none, skia-runtime-opts) the dock
+    // scene flapped between runs 33217755378 and its successor purely by
+    // which CPU the shard drew — actuals byte-stable per draw, three stable
+    // states, unconvergeable by any promotion. The COMPACT tile has no such
+    // content and still gates. RESTORE the dock scene when the fleet is
+    // homogeneous again (arm runners or self-hosted) — the fleet memo owns
+    // that decision.
+    scenes: ['compact'],
     pages: 7,
     simPin: [
       {
@@ -1875,7 +1945,23 @@ export const FACES = [
   // no free-running oscillator and no analyser tap that needs to converge.
   { type: 'moog903a', pages: 1 },
   { type: 'moog962', pages: 1 },
-  { type: 'sampleHold', pages: 1 },
+  {
+    type: 'sampleHold',
+    pages: 1,
+    // ⚠ DOCK REMOVED 2026-08-28 — CPU-FLEET NONDETERMINISM (see faceTiers).
+    // The hosted-runner fleet now mixes THREE CPU models (EPYC 7763 / EPYC
+    // 9V74 / Xeon Platinum 8573C — the 'Name the runner CPU' log line), and
+    // SwiftShader's LLVM JIT rasterizes this face's GL/canvas dock content
+    // differently per microarchitecture: with EVERY AA pin active
+    // (lcd-text off, srgb profile, hinting none, skia-runtime-opts) the dock
+    // scene flapped between runs 33217755378 and its successor purely by
+    // which CPU the shard drew — actuals byte-stable per draw, three stable
+    // states, unconvergeable by any promotion. The COMPACT tile has no such
+    // content and still gates. RESTORE the dock scene when the fleet is
+    // homogeneous again (arm runners or self-hosted) — the fleet memo owns
+    // that decision.
+    scenes: ['compact'],
+  },
   { type: 'scaler', pages: 1 },
   // Utilities whose whole control surface is one knob or nothing at all. These
   // are the NARROWEST plates in the fleet and that is the correct result, not a
@@ -2417,6 +2503,19 @@ export const FACES = [
   },
   {
     type: 'tiler',
+    // ⚠ DOCK REMOVED 2026-08-28 — CPU-FLEET NONDETERMINISM (see faceTiers).
+    // The hosted-runner fleet now mixes THREE CPU models (EPYC 7763 / EPYC
+    // 9V74 / Xeon Platinum 8573C — the 'Name the runner CPU' log line), and
+    // SwiftShader's LLVM JIT rasterizes this face's GL/canvas dock content
+    // differently per microarchitecture: with EVERY AA pin active
+    // (lcd-text off, srgb profile, hinting none, skia-runtime-opts) the dock
+    // scene flapped between runs 33217755378 and its successor purely by
+    // which CPU the shard drew — actuals byte-stable per draw, three stable
+    // states, unconvergeable by any promotion. The COMPACT tile has no such
+    // content and still gates. RESTORE the dock scene when the fleet is
+    // homogeneous again (arm runners or self-hosted) — the fleet memo owns
+    // that decision.
+    scenes: ['compact'],
     pages: 1,
     videoFaceWhy:
       'a VIDEO module, so it must boot into the video zone rather than a mixer channel column — '
@@ -2733,6 +2832,19 @@ export const FACES = [
   },
   {
     type: 'graphicEq',
+    // ⚠ DOCK REMOVED 2026-08-28 — CPU-FLEET NONDETERMINISM (see faceTiers).
+    // The hosted-runner fleet now mixes THREE CPU models (EPYC 7763 / EPYC
+    // 9V74 / Xeon Platinum 8573C — the 'Name the runner CPU' log line), and
+    // SwiftShader's LLVM JIT rasterizes this face's GL/canvas dock content
+    // differently per microarchitecture: with EVERY AA pin active
+    // (lcd-text off, srgb profile, hinting none, skia-runtime-opts) the dock
+    // scene flapped between runs 33217755378 and its successor purely by
+    // which CPU the shard drew — actuals byte-stable per draw, three stable
+    // states, unconvergeable by any promotion. The COMPACT tile has no such
+    // content and still gates. RESTORE the dock scene when the fleet is
+    // homogeneous again (arm runners or self-hosted) — the fleet memo owns
+    // that decision.
+    scenes: ['compact'],
     pages: 1,
     videoFaceWhy:
       'a VIDEO module, so it must boot into the video zone rather than a mixer channel column — '
@@ -3032,6 +3144,19 @@ export const FACES = [
   },
   {
     type: 'frametable',
+    // ⚠ DOCK REMOVED 2026-08-28 — CPU-FLEET NONDETERMINISM (see faceTiers).
+    // The hosted-runner fleet now mixes THREE CPU models (EPYC 7763 / EPYC
+    // 9V74 / Xeon Platinum 8573C — the 'Name the runner CPU' log line), and
+    // SwiftShader's LLVM JIT rasterizes this face's GL/canvas dock content
+    // differently per microarchitecture: with EVERY AA pin active
+    // (lcd-text off, srgb profile, hinting none, skia-runtime-opts) the dock
+    // scene flapped between runs 33217755378 and its successor purely by
+    // which CPU the shard drew — actuals byte-stable per draw, three stable
+    // states, unconvergeable by any promotion. The COMPACT tile has no such
+    // content and still gates. RESTORE the dock scene when the fleet is
+    // homogeneous again (arm runners or self-hosted) — the fleet memo owns
+    // that decision.
+    scenes: ['compact'],
     pages: 4,
     videoFaceWhy:
       'a VIDEO module, so it must boot into the video zone rather than a mixer channel column — '
@@ -3179,6 +3304,19 @@ export const FACES = [
   // ── SCOPE (2026-08-23) ────────────────────────────────────────────────────
   {
     type: 'scope',
+    // ⚠ DOCK REMOVED 2026-08-28 — CPU-FLEET NONDETERMINISM (see faceTiers).
+    // The hosted-runner fleet now mixes THREE CPU models (EPYC 7763 / EPYC
+    // 9V74 / Xeon Platinum 8573C — the 'Name the runner CPU' log line), and
+    // SwiftShader's LLVM JIT rasterizes this face's GL/canvas dock content
+    // differently per microarchitecture: with EVERY AA pin active
+    // (lcd-text off, srgb profile, hinting none, skia-runtime-opts) the dock
+    // scene flapped between runs 33217755378 and its successor purely by
+    // which CPU the shard drew — actuals byte-stable per draw, three stable
+    // states, unconvergeable by any promotion. The COMPACT tile has no such
+    // content and still gates. RESTORE the dock scene when the fleet is
+    // homogeneous again (arm runners or self-hosted) — the fleet memo owns
+    // that decision.
+    scenes: ['compact'],
     pages: 3,
     simPin: [
       {

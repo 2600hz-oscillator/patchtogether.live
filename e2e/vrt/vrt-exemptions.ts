@@ -1621,7 +1621,17 @@ export const STRICT_VRT_MODULES = new Set<string>([
   'filter',               // filter knob card
   'illogic',              // logic-gate knob card
   'meowbox',              // meow-themed card
-  'mixer',                // 4-channel mixer fader card
+  // ⚠ SIX CARDS DEMOTED 2026-08-28 — CPU-FLEET NONDETERMINISM, owner-approved:
+  // mixer, shimmershine, moog903a, moog904c, moog914, moog984. The hosted
+  // fleet now mixes THREE CPU models (EPYC 7763 / EPYC 9V74 / Xeon Platinum
+  // 8573C — the 'Name the runner CPU' log line), and these cards' raster
+  // (canvas curves, meters, dense label text) renders a stable-per-CPU way
+  // under Skia/SwiftShader's per-uarch code paths: with EVERY AA pin active
+  // they flapped between runs 33217755378 ff. purely by which CPU the shard
+  // drew — actuals byte-stable per draw, unconvergeable by promotion.
+  // Baselines deleted with the demotion (the committed set mirrors this
+  // roster). RESTORE when the fleet is homogeneous again (arm runners or
+  // self-hosted) — the fleet memo owns that decision.
   'mixmstrs',             // master mixer fader card
   'noise',                // noise-source FADER card (like mixer/mixmstrs above,
                           //   not a knob card — the distinction is the whole
@@ -1629,7 +1639,6 @@ export const STRICT_VRT_MODULES = new Set<string>([
   'qbrt',                 // q-bit/quantizer knob card
   'reverb',               // reverb knob card
   'score',                // score/note display card
-  'shimmershine',         // shimmer-reverb knob card
   'stereovca',            // stereo VCA fader card
   'sticky',               // sticky-note widget (static)
   // timelorde: TEMPORARILY demoted from the strict lane. The card big display
@@ -1654,14 +1663,11 @@ export const STRICT_VRT_MODULES = new Set<string>([
   // MOOG cluster — promoted to the strict gate after Track-2 batch 2 (#953)
   // captured + validated their linux baselines (both platforms; deterministic
   // beige-faceplate knob/fader/seq cards, no canvas/animation). 20 cards.
-  'moog903a',             // random-source card
   'moog904b',             // band-pass filter
-  'moog904c',             // hi/lo coupler
   'moog905',              // spring reverb
   'moog907a',             // fixed filter bank (System 35)
   'moog911a',             // dual trigger delay
   'moog912',              // envelope follower
-  'moog914',              // extended fixed filter bank (1/3-oct band column)
   'moog921a',             // oscillator driver
   'moog921b',             // oscillator
   'moog923',              // noise/filter
@@ -1669,7 +1675,6 @@ export const STRICT_VRT_MODULES = new Set<string>([
   'moog960',              // sequential controller (8×3 step grid)
   'moog961',              // interface
   'moog962',              // sequential switch
-  'moog984',              // 4×4 matrix mixer
   'moog992',              // control voltages
   'moog993',              // trigger/envelope
   'moog994',              // multiples
