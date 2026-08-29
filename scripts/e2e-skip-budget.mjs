@@ -542,17 +542,6 @@ export const SKIP_BUDGET = [
       + 'after the 2026-08-30 performance alongside the tempolock park.',
   },
   {
-    specs: ['tempolock.spec.ts'],
-    reason: /FLAKE-PARK #1847/,
-    lanes: ['e2e'],
-    homeLane: 'e2e',
-    why:
-      'PARKED (2026-08-30, owner order: "any tests that failed disable / skip") — the follows-tracked-tempo '
-      + 'leg only: toBeLessThan settle failure on PR #2274 e2e shard 10 (run 33290095701) under shard load. '
-      + 'While parked, the tracked-clock→TIMELORDE follow path has no e2e coverage — un-park and root-cause '
-      + 'after the 2026-08-30 performance; the unit-lane tracker tests still cover the fold/PLL math.',
-  },
-  {
     specs: ['per-module-per-port-inputs.spec.ts'],
     reason: /FLAKE-PARK #1847/,
     lanes: ['e2e'],

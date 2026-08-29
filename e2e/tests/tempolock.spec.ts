@@ -127,8 +127,14 @@ async function timelordeBpmEnvelope(
 }
 
 test.describe('TEMPOLOCK — tracked clock through the real patch seams', () => {
-  // ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; the body and its assertions are UNCHANGED.
-  test.fixme('folds a 216-edge/min onset train to 108 and TIMELORDE follows the tracked tempo', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — owner order 2026-08-30 ("any tests that failed disable / skip"): toBeLessThan settle failure under shard load on PR #2274 run 33290095701 after CI-budget bumps on other branches; parked until root-caused' } }, async ({ page }) => {
+  test('folds a 216-edge/min onset train to 108 and TIMELORDE follows the tracked tempo', async ({ page }) => {
+    // ⚠ Without this, the CI-aware poll caps below are DEAD CODE: the config
+    // sets no per-test timeout, so Playwright's default 30s cap fires first.
+    // Measured (run 33277723925 shard 4): both attempts died at 30.4s/29.9s —
+    // the default cap racing the old flat 25s poll — while the tracker was
+    // locked and converging (see the poll comment). Budget = spawn + the two
+    // load-scaled polls + the 6-beat envelope, with margin.
+    test.setTimeout(process.env.CI ? 240_000 : 90_000);
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
 
@@ -157,6 +163,14 @@ test.describe('TEMPOLOCK — tracked clock through the real patch seams', () => 
     //    as a momentary 163), and the tempo follow then converges onto the
     //    real train within a bar or two. Confidence + convergence together
     //    are the settled state this leg claims.
+    //    ⚠ The cap is CI-aware: how long the wash-out takes is a function of
+    //    shard load, not of the subject. Measured (run 33277723925 shard 4,
+    //    both attempts, from the traces): under a starved main thread (39ms
+    //    scheduler tick vs ~25 nominal) the jank-distorted seed read 160.7 /
+    //    164.6, locked=true throughout, bpm decaying monotonically toward
+    //    108 — and the flat 25s cap expired mid-convergence at 119.3 / 135.
+    //    Same signature as workflow-mode's pinned-trio wait (5db0dd8): a
+    //    budget, not a subject fix. Locally 25s stays the bound.
     await expect
       .poll(
         async () => {
@@ -169,7 +183,7 @@ test.describe('TEMPOLOCK — tracked clock through the real patch seams', () => 
           );
         },
         {
-          timeout: 25000,
+          timeout: process.env.CI ? 90_000 : 25000,
           message: `tempolock locks and settles at the folded ${TRACKED_BPM} (not the raw ${RAW_FOLLOWER_BPM})`,
         },
       )
@@ -182,10 +196,13 @@ test.describe('TEMPOLOCK — tracked clock through the real patch seams', () => 
 
     // 3. TIMELORDE's CLOCK-IN follower measures the GENERATED clock and its
     //    bpm settles at the tracked tempo (its worklet needs a few quarter
-    //    notes on the wire; the poll owns the wait).
+    //    notes on the wire; the poll owns the wait). CI-aware cap for the
+    //    same shard-load reason as the lock poll above — the follower needs
+    //    quarter notes ON THE WIRE, and how fast they accumulate is paced by
+    //    the same starved scheduler.
     await expect
       .poll(() => readTimelordeBpm(page, TL), {
-        timeout: 25000,
+        timeout: process.env.CI ? 90_000 : 25000,
         message: `timelorde bpm settles at the tracked ${TRACKED_BPM} (555.6 ms quarters on the wire)`,
       })
       .toBeGreaterThan(TRACKED_BPM - 3);
