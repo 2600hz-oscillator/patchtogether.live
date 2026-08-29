@@ -1964,13 +1964,18 @@ void main() {
     if (!bridge.detector) return true;
     const active = bridge.detector.update(sample, nowMs);
     if (active) {
-      if (!bridge.cvHeld) {
-        bridge.cvHeld = true;
-        notifyAutomationTouch(
-          { nodeId: bridge.targetNodeId, paramId: bridge.mapping.targetParamId },
-          cvHolder(edgeId),
-        );
-      }
+      // Notify EVERY active tick, not just the idle→active transition —
+      // mirroring the MIDI path (which notifies per CC message). notifyTouch is
+      // an idempotent set-add, and the registry early-returns when no clip
+      // player exists, so this is ~2 Map ops/frame. Per-tick delivery is what
+      // lets a controller that registered (or was re-enabled) MID-MOTION pick
+      // the grab up on the next frame instead of waiting for the source to
+      // idle once. `cvHeld` still tracks the transition for the release side.
+      bridge.cvHeld = true;
+      notifyAutomationTouch(
+        { nodeId: bridge.targetNodeId, paramId: bridge.mapping.targetParamId },
+        cvHolder(edgeId),
+      );
       return true;
     }
     if (bridge.cvHeld) {
