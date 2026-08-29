@@ -20,12 +20,15 @@
 //
 // Named `automation-*` (NOT `video-*`) deliberately: it runs in the normal
 // sharded e2e lane — it is LIGHT (engine param reads, never pixels; BACKDRAFT
-// itself is not in e2e/webgl-heavy-globs.ts), and renderer-independent: all
-// pad updates are frame-gated (`waitFrames`), waits on MONOTONIC state (a
-// recorded-events count, a one-sided envelope) are `expect.poll` on the real
-// subject, and the PERIODIC loop-playback observation runs in-page per frame
-// (observeMixSweep — a Playwright-side poll phase-locks with the loop
-// period). SwiftShader's ~7.9 fps only stretches the same assertions.
+// itself is not in e2e/webgl-heavy-globs.ts), and renderer-independent: pad
+// updates are frame-paced (in-page, one graded sub-step per rAF), waits on
+// MONOTONIC state (a one-sided envelope, an overdub maximum) are
+// `expect.poll` on the real subject, and both the RECORD stimulus+wait
+// (driveStickUntilTakeMeets) and the PERIODIC loop-playback observation
+// (observeMixSweep) run in-page per frame in one evaluate — a Playwright-side
+// poll holds the stimulus for a round trip per level and phase-locks with the
+// loop period. The clip length is sized in FRAMES (see CLIP_LEN). A slow
+// renderer only stretches the same assertions.
 //
 // The AUDIO-cable CV-exclusion case (clip-automation.spec.ts case 10 — an LFO
 // cv CABLE into an audio param records nothing) is UNCHANGED: audio-domain cv
@@ -35,7 +38,6 @@
 import { test, expect } from './_fixtures';
 import { spawnPatch } from './_helpers';
 import { waitForSoundingStep } from './_scheduler-control';
-import { waitFrames } from '../_helpers/frames';
 import type { Page } from '@playwright/test';
 
 test.describe.configure({ mode: 'serial' });
@@ -43,7 +45,16 @@ test.describe.configure({ mode: 'serial' });
 const CP = 'cp';
 const BD = 'bd';
 const IDX = 0; // lane 0, slot 0 → flat stride-64 clip key 0
-const CLIP_LEN = 8; // ~1s loops at 120bpm free-run 1/16 — fast, deterministic
+/** 32 steps ≈ 4 s loops at 120 bpm free-run 1/16. LENGTH IS LOAD-BEARING, in
+ *  FRAMES: the pad→cv chain can express at most ONE stick level per rendered
+ *  frame (the gamepad module polls per rAF), so a record pass can only hold
+ *  movement if the loop spans SEVERAL frames. The old 8-step (~1 s) loop was
+ *  0-1 frames on a starved CI shard (measured: scheduler tick 651 ms, run
+ *  33279139157) — every pass sampled one flat level and the recorder's
+ *  MOVE_EPS gate rightly dropped it, so 60 s of wiggling committed NOTHING.
+ *  4 s spans ≥2 frames down to ~0.5 fps while costing a 60 fps run only a
+ *  few extra seconds. */
+const CLIP_LEN = 32;
 
 // ── fake gamepad (same seam as gamepad.spec.ts: navigator.getGamepads stub) ──
 
@@ -98,10 +109,10 @@ async function engineMix(page: Page): Promise<number | null> {
  *  thresholds have been seen. ONE `page.evaluate` for the whole window — the
  *  repo's instrument rule (CLAUDE.md, scope-poll.ts): a Playwright-side
  *  `expect.poll` is one CDP round trip per sample on the SAME main thread as
- *  the subject, and its backoff settles at ~1 s — the EXACT period of this
- *  spec's clip loop (CLIP_LEN=8 at 120 bpm 1/16). A 1 s sampler over a 1 s
- *  periodic envelope PHASE-LOCKS: measured under E2E_SWIFTSHADER=1, it read
- *  the same top-of-sweep 0.918 on every sample for 15 s while playback looped
+ *  the subject, and its backoff settles at ~1 s — the same range as this
+ *  spec's clip-loop period. A sampler near the loop period PHASE-LOCKS:
+ *  measured under E2E_SWIFTSHADER=1 on the original ~1 s loop, it read the
+ *  same top-of-sweep 0.918 on every sample for 15 s while playback looped
  *  underneath. The rAF reduction sees every rendered value instead, and the
  *  wall-clock bound only BOUNDS FAILURE (a healthy run exits on the
  *  threshold); `samples`/`elapsedMs` make a zero-sample window legible. */
@@ -335,27 +346,167 @@ async function spawnOwnerPatch(page: Page): Promise<void> {
   await expect(page.getByTestId('clipplayer-card')).toBeVisible();
 }
 
-/** One wiggle beat: sweep the stick across [lo, hi] in graded sub-steps, each
- *  gated on 2 frames (1 for the pad poll to observe it, 1 for the bridge tick)
- *  — the SAME frame-gated cadence gamepad.spec.ts uses. GRADED, not a single
- *  flip, deliberately: `expect.poll` backs off to ≥1s between predicate calls,
- *  longer than the product's CV_ACTIVITY_IDLE_MS (300 ms), so a one-flip
- *  wiggler degenerates into flat step-functions — each re-grab segment holds
- *  ONE value and the record gate correctly drops it as unmoved (a real stick
- *  varies continuously; the scripted stand-in must too). Alternates direction
- *  per call so consecutive calls also differ. */
-function makeWiggler(page: Page, lo: number, hi: number) {
-  let flip = false;
-  const SUB_STEPS = 5;
-  return async (): Promise<void> => {
-    flip = !flip;
-    for (let i = 0; i < SUB_STEPS; i++) {
-      const t = i / (SUB_STEPS - 1);
-      const frac = flip ? t : 1 - t;
-      await setStickX(page, lo + frac * (hi - lo));
-      await waitFrames(page, 2);
-    }
-  };
+/** IN-PAGE record driver: sweep the fake stick across [lo, hi] in graded
+ *  sub-steps, ONE SUB-STEP PER ANIMATION FRAME — the gamepad module adopts pad
+ *  state per rAF, so one level per frame is the most ANY renderer can express;
+ *  pacing from the test side instead parks the stick for a full CDP round trip
+ *  per level, longer than a whole loop on a starved shard (and longer than the
+ *  idle hold, so the grab decays between iterations). Each frame also reads
+ *  the COMMITTED take and finishes the moment `until` is met — `spread` for a
+ *  fresh take that must hold movement, `max` for an overdub that must reach a
+ *  band — stimulus and observation in ONE evaluate (the instrument rule).
+ *  Direction alternates per sweep so consecutive frames always differ. The
+ *  wall-clock bound only bounds failure; `frames`/`elapsedMs`/`count` make a
+ *  dead run legible. */
+async function driveStickUntilTakeMeets(
+  page: Page,
+  opts: {
+    lo: number;
+    hi: number;
+    subSteps: number;
+    until: { metric: 'spread' | 'max'; threshold: number };
+    maxFrames: number;
+    boundMs: number;
+  },
+): Promise<{ spread: number; max: number; count: number; frames: number; elapsedMs: number }> {
+  return page.evaluate(
+    ({ lo, hi, subSteps, until, maxFrames, boundMs }) =>
+      new Promise<{ spread: number; max: number; count: number; frames: number; elapsedMs: number }>((resolve) => {
+        const w = globalThis as unknown as {
+          __fakePad?: { axes: number[]; timestamp: number };
+          __patch: {
+            nodes: Record<
+              string,
+              { data?: { auto?: Record<string, { tracks?: Record<string, { events?: Array<{ value?: number }> }> }> } }
+            >;
+          };
+        };
+        const t0 = performance.now();
+        let frames = 0;
+        let sub = 0;
+        let dirUp = true;
+        let spread = 0;
+        let takeMax = -Infinity;
+        let count = 0;
+        let done = false;
+        const finish = (): void => {
+          if (done) return;
+          done = true;
+          clearTimeout(bound);
+          resolve({ spread, max: takeMax, count, frames, elapsedMs: Math.round(performance.now() - t0) });
+        };
+        const bound = setTimeout(finish, boundMs);
+        const tick = (): void => {
+          if (done) return;
+          frames += 1;
+          sub += 1;
+          if (sub >= subSteps) {
+            sub = 0;
+            dirUp = !dirUp;
+          }
+          const t = sub / (subSteps - 1);
+          const frac = dirUp ? t : 1 - t;
+          if (w.__fakePad) {
+            w.__fakePad.axes = [lo + frac * (hi - lo), 0, 0, 0];
+            w.__fakePad.timestamp = performance.now();
+          }
+          const evs = w.__patch?.nodes?.['cp']?.data?.auto?.['0']?.tracks?.['bd::mix']?.events;
+          if (Array.isArray(evs) && evs.length >= 2) {
+            let mn = Infinity;
+            let mx = -Infinity;
+            for (const e of evs) {
+              const v = Number(e?.value);
+              if (Number.isFinite(v)) {
+                if (v < mn) mn = v;
+                if (v > mx) mx = v;
+              }
+            }
+            count = evs.length;
+            spread = mx > mn ? mx - mn : 0;
+            takeMax = mx;
+            const met = until.metric === 'spread' ? spread > until.threshold : takeMax > until.threshold;
+            if (met) {
+              finish();
+              return;
+            }
+          }
+          if (frames >= maxFrames) {
+            finish();
+            return;
+          }
+          requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+      }),
+    opts,
+  );
+}
+
+/** IN-PAGE override driver: wiggle the stick across [lo, hi] one graded
+ *  sub-step per frame while reading the ENGINE-EFFECTIVE mix each frame;
+ *  finishes the moment a sample crosses `above` (live CV winning the uniform).
+ *  Same instrument shape as driveStickUntilTakeMeets, for the same reason: a
+ *  test-side wiggle parks the stick for a CDP round trip per level, and on a
+ *  starved renderer that pause outlives the idle hold — the cv grab decays
+ *  BETWEEN poll iterations and the read catches playback instead of the live
+ *  write (measured at 20× CPU throttle over SwiftShader: 0.35 after 30 s). */
+async function wiggleUntilEngineAbove(
+  page: Page,
+  opts: { lo: number; hi: number; subSteps: number; above: number; maxFrames: number; boundMs: number },
+): Promise<{ max: number; samples: number; frames: number; elapsedMs: number }> {
+  return page.evaluate(
+    ({ lo, hi, subSteps, above, maxFrames, boundMs }) =>
+      new Promise<{ max: number; samples: number; frames: number; elapsedMs: number }>((resolve) => {
+        const w = globalThis as unknown as {
+          __fakePad?: { axes: number[]; timestamp: number };
+          __engine?: () => { readParam: (n: unknown, p: string) => number | undefined } | null;
+          __patch: { nodes: Record<string, unknown> };
+        };
+        const t0 = performance.now();
+        let frames = 0;
+        let sub = 0;
+        let dirUp = true;
+        let max = -Infinity;
+        let samples = 0;
+        let done = false;
+        const finish = (): void => {
+          if (done) return;
+          done = true;
+          clearTimeout(bound);
+          resolve({ max, samples, frames, elapsedMs: Math.round(performance.now() - t0) });
+        };
+        const bound = setTimeout(finish, boundMs);
+        const tick = (): void => {
+          if (done) return;
+          frames += 1;
+          sub += 1;
+          if (sub >= subSteps) {
+            sub = 0;
+            dirUp = !dirUp;
+          }
+          const t = sub / (subSteps - 1);
+          const frac = dirUp ? t : 1 - t;
+          if (w.__fakePad) {
+            w.__fakePad.axes = [lo + frac * (hi - lo), 0, 0, 0];
+            w.__fakePad.timestamp = performance.now();
+          }
+          const eng = w.__engine?.();
+          const node = w.__patch?.nodes?.['bd'];
+          const v = eng && node ? eng.readParam(node, 'mix') : undefined;
+          if (typeof v === 'number') {
+            samples += 1;
+            if (v > max) max = v;
+          }
+          if (max > above || frames >= maxFrames) {
+            finish();
+            return;
+          }
+          requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+      }),
+    opts,
+  );
 }
 
 test('OWNER CASE: gamepad CV movement on a lane-assigned BACKDRAFT records into the clip; the parked stick loops it back; the store and note clip never move', async ({ page, rack }) => {
@@ -380,20 +531,21 @@ test('OWNER CASE: gamepad CV movement on a lane-assigned BACKDRAFT records into 
   // movement at all (measured under E2E_SWIFTSHADER=1: a take of
   // `0.08×3, 0.31×5`). 0.15 ≈ ¾ of one graded sub-step delta (adjacent
   // sub-steps map ~0.21 apart), so any committed pass carrying ≥2 sub-step
-  // levels clears it and a flat take cannot.
-  const wiggle = makeWiggler(page, -0.85, 0.85);
-  await expect
-    .poll(
-      async () => {
-        await wiggle();
-        const evs = await recordedEvents(page);
-        if (evs.length < 2) return -1;
-        const vals = evs.map((e) => e.value);
-        return Math.max(...vals) - Math.min(...vals);
-      },
-      { timeout: 60_000 },
-    )
-    .toBeGreaterThan(0.15);
+  // levels clears it and a flat take cannot. Driven IN-PAGE, one sub-step per
+  // frame: a Playwright-side wiggle holds each level for a full CDP round
+  // trip — longer than a whole loop on a starved shard, so every pass reads
+  // one flat level (measured: CI run 33279139157, 60 s → zero events).
+  const rec = await driveStickUntilTakeMeets(page, {
+    lo: -0.85,
+    hi: 0.85,
+    subSteps: 5,
+    until: { metric: 'spread', threshold: 0.15 },
+    maxFrames: 3600,
+    boundMs: 60_000, // bounds FAILURE only; finishes the moment spread crosses
+  });
+  const recSeen = `committed ${rec.count} events, spread ${rec.spread.toFixed(3)} after ${rec.frames} frames / ${rec.elapsedMs} ms`;
+  expect(rec.frames, `record driver never ticked — renderer stalled? (${recSeen})`).toBeGreaterThan(0);
+  expect(rec.spread, `recorder should commit a take with movement (${recSeen})`).toBeGreaterThan(0.15);
 
   // DISARM FIRST, park SECOND — order is load-bearing: disarm commits the
   // in-flight partial pass (disarmLane → commitLanePass), so parking while
@@ -414,8 +566,8 @@ test('OWNER CASE: gamepad CV movement on a lane-assigned BACKDRAFT records into 
   // arm flag every tick, so the final commit is in by then), then require the
   // committed take to read byte-identical across two polls — the direct
   // observable of "settled". Nothing legitimately writes it after disarm.
-  await waitForSoundingStep(page, CP, 5, { key: 'currentStep:0', timeoutMs: 8000 });
-  await waitForSoundingStep(page, CP, 2, { key: 'currentStep:0', timeoutMs: 8000 });
+  await waitForSoundingStep(page, CP, 5, { key: 'currentStep:0', timeoutMs: 20_000 });
+  await waitForSoundingStep(page, CP, 2, { key: 'currentStep:0', timeoutMs: 20_000 });
   let prevTake = '';
   await expect
     .poll(
@@ -445,20 +597,20 @@ test('OWNER CASE: gamepad CV movement on a lane-assigned BACKDRAFT records into 
   // from the take, so the assertion is renderer-independent by construction
   // (whatever fragment a slow renderer recorded, playback must reproduce IT).
   // Observed IN-PAGE (observeMixSweep): a Playwright-side `expect.poll`
-  // phase-locks with the 1 s loop period once its backoff reaches ~1 s and
-  // can read the same envelope point forever (measured under
-  // E2E_SWIFTSHADER=1: pinned at 0.92 for 15 s while playback looped
-  // underneath). The parked bridge writes ONE constant (~the 0.5 base) until
-  // the idle hold decays and it yields — a constant can cross at most one of
-  // the two marks, so satisfying BOTH inside one window proves playback drove.
+  // phase-locks with the loop period once its backoff reaches the same range
+  // (measured under E2E_SWIFTSHADER=1 on the original ~1 s loop: pinned at
+  // 0.92 for 15 s while playback looped underneath). The parked bridge
+  // writes ONE constant (~the 0.5 base) until the idle hold decays and it
+  // yields — a constant can cross at most one of the two marks, so
+  // satisfying BOTH inside one window proves playback drove.
   const above = takeMax - 0.3 * spread;
   const below = takeMin + 0.3 * spread;
   const sweep = await observeMixSweep(page, {
     above,
     below,
-    discardFrames: 6, // pad→bridge park-flush; a stale extremity must not count
-    maxFrames: 3600, // ≥4 loops even at 60 fps before the frame belt fires
-    boundMs: 20_000, // bounds FAILURE only; a healthy run exits on threshold
+    discardFrames: 3, // pad→bridge park-flush (pad poll + bridge tick + margin)
+    maxFrames: 3600, // 60 s of 60 fps — the belt when the clock is unreliable
+    boundMs: 30_000, // bounds FAILURE only (≥7 loops); healthy runs exit on threshold
   });
   const seen = `take [${takeMin.toFixed(3)}, ${takeMax.toFixed(3)}] → marks <${below.toFixed(3)} / >${above.toFixed(3)}; saw min ${sweep.min.toFixed(3)} / max ${sweep.max.toFixed(3)} over ${sweep.samples} samples in ${sweep.elapsedMs} ms; end state: ${sweep.state}`;
   expect(sweep.samples, `engine never sampled — renderer stalled? (${seen})`).toBeGreaterThan(0);
@@ -492,17 +644,22 @@ test('live stick movement OVERRIDES the recorded playback; parking hands the par
     .toBeLessThan(0.45);
 
   // LIVE-OVERRIDES-PLAYBACK: while the stick moves in the HIGH band
-  // (0.7↔0.95 → mix 0.85↔0.975 around the 0.5 base), live CV wins.
-  const wiggleHigh = makeWiggler(page, 0.7, 0.95);
-  await expect
-    .poll(
-      async () => {
-        await wiggleHigh();
-        return (await engineMix(page)) ?? -1;
-      },
-      { timeout: 30_000 },
-    )
-    .toBeGreaterThan(0.62);
+  // (0.7↔0.95 → mix 0.85↔0.975 around the 0.5 base), live CV wins. Driven and
+  // observed IN-PAGE per frame — see wiggleUntilEngineAbove for why a
+  // test-side wiggle+poll decays the grab between iterations on a starved
+  // renderer. 0.62 is unreachable by the seeded envelope (≤0.35) and by the
+  // parked bridge (~0.5): only a live high-band write crosses it.
+  const ov = await wiggleUntilEngineAbove(page, {
+    lo: 0.7,
+    hi: 0.95,
+    subSteps: 5,
+    above: 0.62,
+    maxFrames: 3600,
+    boundMs: 30_000, // bounds FAILURE only; exits on the first live crossing
+  });
+  const ovSeen = `saw max ${ov.max.toFixed(3)} over ${ov.samples} samples / ${ov.frames} frames in ${ov.elapsedMs} ms`;
+  expect(ov.samples, `engine never sampled — renderer stalled? (${ovSeen})`).toBeGreaterThan(0);
+  expect(ov.max, `live high-band CV should win the uniform over playback (${ovSeen})`).toBeGreaterThan(0.62);
 
   // Park → the activity hold decays and playback repossesses the param (the
   // recorded LOW envelope drives again).
@@ -511,20 +668,24 @@ test('live stick movement OVERRIDES the recorded playback; parking hands the par
     .poll(async () => (await engineMix(page)) ?? 99, { timeout: 15_000 })
     .toBeLessThan(0.45);
 
-  // OVERDUB: arm and wiggle HIGH until the committed take contains the new
-  // movement (values in the high band replace the covered window).
+  // OVERDUB: arm and wiggle HIGH until the COMMITTED take contains the new
+  // movement (values in the high band replace the covered window) — the same
+  // in-page driver as the owner-case record phase, finishing on the take's
+  // MAX: 0.6 is unreachable by the seeded envelope (≤0.35), so only a
+  // re-recorded live value crosses it.
   await armLane0(page);
   expect(await isLane0Armed(page)).toBe(true);
-  await expect
-    .poll(
-      async () => {
-        await wiggleHigh();
-        const evs = await recordedEvents(page);
-        return evs.length ? Math.max(...evs.map((e) => e.value)) : -1;
-      },
-      { timeout: 60_000 },
-    )
-    .toBeGreaterThan(0.6);
+  const od = await driveStickUntilTakeMeets(page, {
+    lo: 0.7,
+    hi: 0.95,
+    subSteps: 5,
+    until: { metric: 'max', threshold: 0.6 },
+    maxFrames: 3600,
+    boundMs: 60_000, // bounds FAILURE only; finishes on the first high commit
+  });
+  const odSeen = `committed ${od.count} events, max ${od.max.toFixed(3)} after ${od.frames} frames / ${od.elapsedMs} ms`;
+  expect(od.frames, `overdub driver never ticked — renderer stalled? (${odSeen})`).toBeGreaterThan(0);
+  expect(od.max, `overdub should re-record the live high band into the take (${odSeen})`).toBeGreaterThan(0.6);
   await setStickX(page, 0);
   await armLane0(page); // tidy: disarm
   expect(await isLane0Armed(page)).toBe(false);
