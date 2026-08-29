@@ -788,6 +788,40 @@ const EXTENSION_BODY_ROLES: Readonly<Record<string, BodyRule>> = {
       + 'nothing is wrong.',
   },
 
+  // ── TEMPOLOCK — the lamp-only status body (the es9 shape, smaller) ───────
+  //
+  // Two `StatusLed`s and NOTHING else: no picker, no button, no empty-state
+  // copy. Like es9's entry, "no picker" is not a constraint being worked
+  // around — the module binds no hardware and enumerates no roster; its one
+  // setting (BAND) is a real ranked cell on the face. The body exists because
+  // the module's product is a JUDGEMENT no ParamDef can carry.
+  tempolock: {
+    role: 'status-primitive',
+    why:
+      'the LOCK + BEAT lamps for the beat-tracking clock. LOCK is lit while the tracker is '
+      + 'confidently locked to the incoming onset train; BEAT blinks on each emitted quarter-note '
+      + 'pulse. ⚠ THE LAMPS ARE WHERE THE ONE REFUSED READOUT WENT: the tracked BPM is derived '
+      + 'state — the exact shape the resting-text rulings deleted fleet-wide, and TIMELORDE\'s own '
+      + 'face dropped its BPM footer under the same rulings — so the value lives on the LOCK '
+      + 'lamp\'s detail (aria-label/title), built in the pure tempolock-status-model beside the '
+      + 'body and unit-tested there. The three tracker modes produce three DIFFERENT detail '
+      + 'sentences, because a dark LOCK lamp is ambiguous between "never had input" and "input '
+      + 'went away mid-set" and those need different player responses (the cvBuddy ROUTED-lamp '
+      + 'collapse argument, run in reverse). The late-tick skip COUNT rides the BEAT lamp\'s '
+      + 'detail — countable, never painted (the cvBuddy LATE discipline). ⚠ IT POLLS '
+      + '`read("state")` at 150 ms — the engine node owns the tracker on the scheduler clock, so '
+      + 'no status registry is needed: tempolock is in neither DOM_SOURCE_LANE_TYPES nor '
+      + 'CARD_PRODUCER_LANE_TYPES, promotion parks no live card off-screen, and the tracking '
+      + 'survives every unmount by construction. ⚠ It mounts no canvas element and must not grow '
+      + 'one (the role predicates GREP RAW SOURCE and cannot tell code from a comment, so this '
+      + 'sentence spells the tag out in words). ⚠ NO SCREEN SWITCH and NO WATCH MARK: the '
+      + 'video-screen ruling runs over STRICT_FACES intersect video defs and this is '
+      + '`domain: audio`, and markWatched is a VideoEngine pull-set concept this module has no '
+      + 'part in. At rest (fresh spawn, nothing patched) the tracker is cold and both lamps are '
+      + 'dark, which is what makes the dock VRT scene deterministic. Every text node is a lamp '
+      + 'CAPTION; there are exactly two.',
+  },
+
   // ── MIDI-CV-BUDDY — the FIFTH binder body, and the one whose deleted readout
   //    needed a NEW ENGINE FIELD to survive ──────────────────────────────────
   //

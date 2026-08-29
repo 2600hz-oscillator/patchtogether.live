@@ -1912,6 +1912,25 @@ export const FACES = [
   // unpinned fontconfig fallback in these two new baselines.
   { type: 'gatemaiden', pages: 1 },
 
+  // TEMPOLOCK (2026-08-29) — the beat-tracking clock, born faced. One
+  // declared page (`tempo band`, one segmented cell) and no hero, so
+  // `pages: 1` is both the declared and the rendered count; the dock scene
+  // additionally frames the LOCK + BEAT status body at the full-view head.
+  //
+  // PIXEL-DETERMINISTIC for the gatemaiden reason, one notch stronger: the
+  // module has no generator AND no picture — the body is two DOM `StatusLed`s
+  // and the scene patches nothing in, so the tracker sits in its COLD state
+  // (both lamps dark, static aria strings) on every boot regardless of how
+  // far the clock ran. No canvas, no worklet, no analyser-driven glyph; the
+  // AudioContext freeze is a belt on a brace here.
+  //
+  // ⚠ `glyph: 'none'` IS FORCED (the gatemaiden trap, port for port):
+  // `primaryAudioOutPortId` matches `type === 'audio'` and this def's outputs
+  // are gate/cv/gate, so this face renders `.faceplate.gate`, NOT
+  // `.faceplate.audio`. All three option labels are ASCII by construction
+  // ('60-120' etc.) — the pinned VRT fonts are ~230-codepoint Latin subsets.
+  { type: 'tempolock', pages: 1 },
+
   // ── BATCH 18 — THE THIN AUDIO TAIL (attenuator pair) ────────────────────
   //
   // Three and four identical knobs respectively, one band each (`pages: 1`):
