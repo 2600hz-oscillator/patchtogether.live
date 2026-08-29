@@ -16,6 +16,7 @@
 
 import { test, expect, type Page } from '@playwright/test';
 import { waitFrames } from '../_helpers/frames';
+import { freezeVideoRender } from './_per-module-per-port-shared';
 
 const NODE = 'bd';
 const SRC = 'src-lines';
@@ -171,6 +172,13 @@ function readNode(page: Page) {
 
 test.describe('backdraft PANIC', () => {
   test.beforeEach(async ({ page }) => {
+    // Render-suppression hook (the per-module-sweep seam): nothing in this
+    // spec reads a pixel — it asserts CHROME (buttons, tabs, geometry) and
+    // DOC state — and under SwiftShader every un-frozen frame carries a full
+    // software-rasterized feedback pass. Measured on CI shard 3: the
+    // seven-tab loop blew its 120s budget behind those frames; frozen, the
+    // clicks are plain DOM work on every renderer.
+    await freezeVideoRender(page);
     await gotoShell(page);
     await injectPatch(
       page,
