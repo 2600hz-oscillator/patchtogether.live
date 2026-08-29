@@ -15,6 +15,7 @@
   // the winner on the next tick.
 
   import { patch, ydoc, LOCAL_ORIGIN } from '$lib/graph/store';
+  import { nodeVersion } from '$lib/graph/node-versions.svelte';
   import {
     validateRename,
     readName,
@@ -35,14 +36,41 @@
      *  auto-numbered default (e.g. "WAVESCULPT1"). When omitted we fall
      *  back to `nextDefaultName` — the historical behavior. */
     defaultLabel?: string;
+    /**
+     * TYPOGRAPHY OWNERSHIP.
+     *
+     *   'card'    — this component sizes the text (the legacy card title,
+     *               which has no type of its own to inherit).
+     *   'inherit' — the HOST sizes it and this contributes none of its own.
+     *
+     * The shell tile's name is a 14.5px/800 row; the card's is 0.7rem
+     * monospace. A single hardcoded size cannot serve both, and the shell
+     * must keep looking exactly as it does — a rename affordance that
+     * restyled every faceplate would be a redesign, not a repair.
+     */
+    variant?: 'card' | 'inherit';
   }
 
-  let { node, testIdSuffix = 'name-label', defaultLabel }: Props = $props();
+  let { node, testIdSuffix = 'name-label', defaultLabel, variant = 'card' }: Props = $props();
 
   // Read the current displayed name (see resolveDisplayName for the
   // precedence rules: node.data.name → defaultLabel → computed default).
-  // Kept in $derived so a remote rename re-evaluates the title in place.
-  let displayName = $derived(resolveDisplayName(node, patch.nodes, defaultLabel));
+  //
+  // ⚠ THE READ MUST GO THROUGH nodeVersion(id) AND THE LIVE DOC ENTRY. The
+  // syncedstore proxy is not runes-reactive, and the `node` prop keeps its
+  // object identity across a rename (hosts hand us the live entry, or a
+  // flowNodes entry that identity-reuse keeps stable) — so a plain
+  // `$derived(resolveDisplayName(node, …))` re-runs NEVER: commit() wrote the
+  // new name into the Y.Doc and the label re-rendered the stale one (#2247,
+  // "when I hit enter I am not shown the string"). nodeVersion(id) is the
+  // repo's per-node invalidation signal for exactly this; reading the live
+  // patch entry (not the prop) is what makes the re-run see the new value —
+  // and it is also what makes a PEER's rename re-render here.
+  let displayName = $derived.by(() => {
+    void nodeVersion(node.id);
+    const live = (patch.nodes[node.id] as ModuleNode | undefined) ?? node;
+    return resolveDisplayName(live, patch.nodes, defaultLabel);
+  });
 
   let editing = $state(false);
   let draft = $state('');
@@ -72,7 +100,9 @@
       return;
     }
     // Same value → no-op write (Y.Doc dedupes anyway, but skip cleanly).
-    if (result.name !== readName(node)) {
+    // Compare against the LIVE entry, not the prop — the prop can be a stale
+    // snapshot, and a stale compare would skip a write the doc needs.
+    if (result.name !== readName((patch.nodes[node.id] as ModuleNode | undefined) ?? node)) {
       ydoc.transact(() => {
         const target = patch.nodes[node.id];
         if (!target) return;
@@ -100,7 +130,7 @@
   }
 </script>
 
-<span class="name-label" data-testid={testIdSuffix}>
+<span class="name-label" class:inherit={variant === 'inherit'} data-testid={testIdSuffix}>
   {#if editing}
     <input
       bind:this={inputEl}
@@ -108,6 +138,7 @@
       onkeydown={onKey}
       onblur={commit}
       class="name-input nodrag"
+      class:inherit={variant === 'inherit'}
       data-testid="{testIdSuffix}-input"
       maxlength="32"
       autocomplete="off"
@@ -128,6 +159,7 @@
     <button
       type="button"
       class="name-button nodrag"
+      class:inherit={variant === 'inherit'}
       data-testid="{testIdSuffix}-button"
       title="Click to rename"
       onclick={startEdit}
@@ -137,6 +169,33 @@
 </span>
 
 <style>
+  /* ── variant: inherit ──────────────────────────────────────────────────
+     The host owns the type. Everything here is a RESET plus the ellipsis
+     behaviour a one-line name row needs, so the button reads as the text it
+     replaced rather than as a control sitting inside it. */
+  .name-label.inherit {
+    display: block;
+    flex: 1 1 auto;
+    min-width: 0;
+    max-width: 100%;
+  }
+  .name-button.inherit,
+  .name-input.inherit {
+    font: inherit;
+    letter-spacing: inherit;
+    color: inherit;
+    text-align: inherit;
+    padding: 0;
+    width: 100%;
+    min-width: 0;
+  }
+  .name-button.inherit {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    cursor: text;
+  }
+
   .name-label {
     /* Hosted inside the card .title — tight inline display, no extra box.
      * The card already centers + sizes the title; we just style the

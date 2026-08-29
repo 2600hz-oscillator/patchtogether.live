@@ -17,6 +17,7 @@
 //      the bottom dock. So in the lane the richest LOD band ('dock', z≥0.95)
 //      renders the 'full' (full-in-lane) face; only the dock-full VIEW uses 'dock'.
 
+import { RACK_UNIT } from '$lib/ui/rack-grid';
 import type { Tier } from '$lib/ui/canvas/lod';
 import type { FaceTier } from './curated-face';
 import type { ParamCellKind } from './shell-control-kind';
@@ -69,7 +70,13 @@ export const SHELL_TILE_H = SHELL_TILE_H_SLOT;
  * the Canvas render override under the preview — the pure `videoZoneSlotPos`
  * default (used by the persisted spawn geometry) is UNCHANGED, so preview-OFF is
  * byte-identical and no Y.Doc position moves. */
-export const SHELL_VIDEO_ZONE_TILE_INSET_Y = 48;
+// ⚠ ONE RACK UNIT, NOT 48 (#2239). The inset exists so a zone tile does not
+// land on the zone's own dashed border with its jack rail in the lane badges
+// above — but 48 is not a multiple of RACK_UNIT, so a tile placed with it could
+// never be locked without moving. A full 1u is grid-aligned by construction AND
+// gives MORE clearance than the number it replaces; the zone is 3u tall, so a
+// 1u tile still sits with a full 1u of room below it.
+export const SHELL_VIDEO_ZONE_TILE_INSET_Y = RACK_UNIT;
 
 /** The minimal def shape the shell/placeholder model reads. */
 export interface ShellDefLike {

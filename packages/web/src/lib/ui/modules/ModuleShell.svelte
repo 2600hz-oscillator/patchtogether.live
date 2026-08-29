@@ -107,6 +107,7 @@
     type ShellGlyphTap,
   } from '$lib/ui/workflow/shell-glyph-live';
   import { loadShellExtension, type ShellExtension } from '$lib/ui/workflow/shell-extensions';
+  import ModuleNameLabel from '$lib/ui/ModuleNameLabel.svelte';
   import {
     sineWaveSamples,
     burstWaveSamples,
@@ -195,6 +196,14 @@
     void nodeVersion(id);
     const live = patch.nodes[id] as ModuleNode | undefined;
     return resolveDisplayName(live ?? node, patch.nodes as Record<string, ModuleNode | undefined>);
+  });
+
+  /** The node the rename label edits. Same resolution `displayName` uses — the
+   *  LIVE Y.Doc entry when it exists, so an edit writes through to the doc and
+   *  a peer's rename re-renders here. */
+  let liveNode = $derived.by(() => {
+    void nodeVersion(id);
+    return (patch.nodes[id] as ModuleNode | undefined) ?? node;
   });
 
   let spine = $derived(spineCableVar(def));
@@ -907,7 +916,19 @@
        concise category — the type would just repeat the name row). -->
   <div class="tile-top">
     <span class="tile-rule" aria-hidden="true"></span>
-    <span class="tile-name" title={displayName}>{displayName}</span>
+    <!-- ⚠ EDITABLE, NOT A LABEL (#2241). Renaming lives on `node.data.name`
+         and is how the LIVECODE DSL addresses a module, so it is not chrome —
+         and every module lost it the moment it was promoted, because the face
+         painted the name as a plain <span> while the affordance stayed behind
+         in the legacy card's ModuleTitle.
+
+         `variant="inherit"` keeps the tile's own type (14.5px/800): the label
+         hardcodes 0.7rem monospace for the card, which has no type of its own
+         to inherit. A rename affordance that restyled 45 faceplates would be a
+         redesign, not a repair. -->
+    <span class="tile-name" title={displayName}>
+      <ModuleNameLabel node={liveNode} testIdSuffix="tile-name-label" variant="inherit" />
+    </span>
   </div>
   <div class="tile-kind">
     <span class="tile-badge">{roleLine}</span>

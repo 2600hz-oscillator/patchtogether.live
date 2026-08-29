@@ -1000,7 +1000,21 @@ export const FACES = [
   // This is the mirror image of the `analogVco` non-determinism class — that one
   // was a FREE-RUNNING voice whose glyph drew a moving saw — and it does not
   // exercise #1420's pre-frame audio freeze, because there is nothing to freeze.
-  { type: 'moog902', pages: 2 },
+  {
+    type: 'moog902',
+    pages: 2,
+    // ⚠ COMPACT REMOVED 2026-08-28 — CPU-FLEET NONDETERMINISM (see the
+    // identical note on foxy/scope/etc. and the six demoted cards in
+    // vrt-exemptions.ts): the compact tile's beige-faceplate raster renders a
+    // stable-per-CPU way across the mixed hosted fleet (EPYC 7763 / EPYC 9V74
+    // / Xeon 8573C). Measured by PING-PONG, the strongest form: the baseline
+    // was re-authored twice from two different runs' verified actuals (runs
+    // 33217755378 and 33229159480) and each time the NEXT strict draw on a
+    // different CPU flipped it back red. The DOCK scene held green through
+    // both rounds and still gates. RESTORE compact when the fleet is
+    // homogeneous (arm runners or self-hosted).
+    scenes: ['dock'],
+  },
   // THE 904A LADDER FILTER — two pages (`filter` = the corner + RANGE,
   // `resonance` = regeneration).
   //

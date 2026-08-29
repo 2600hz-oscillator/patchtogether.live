@@ -164,6 +164,40 @@ describe('column geometry', () => {
       expect(laneTargetForFlowPoint({ x: sendRailXBand()[1] + 50, y: inLaneY }, laneTopY)).toBeNull();
     });
 
+    // THE REACH-UP GRACE (#2247). The band is a STACK the user drops cards ON
+    // TOP OF, and the painted top hugs the tallest stack — so the natural "add
+    // to the top" release lands a few px above the line, and a zero-grace gate
+    // reads as an arbitrary (worse: type-looking) refusal. The membership
+    // sites pass the dropped card's own slot height as `topGraceY`.
+    describe('topGraceY — a drop just ABOVE the painted top still lands in the lane', () => {
+      const SLOT = RACK_UNIT; // one shell tile slot — what the drag site passes
+
+      it('within one slot above the top → the lane (the lane then grows to meet it)', () => {
+        // The user's exact geometry: the probe ~half a slot above the line.
+        expect(laneTargetForFlowPoint({ x: colX(1), y: laneTopY - SLOT / 2 }, laneTopY, undefined, SLOT)).toBe(1);
+        // The grace edge is inclusive at (top − grace), like the top itself.
+        expect(laneTargetForFlowPoint({ x: colX(4), y: laneTopY - SLOT }, laneTopY, undefined, SLOT)).toBe(4);
+        // …and the sends rail reaches up the same way (no special rail rule).
+        expect(laneTargetForFlowPoint({ x: sendRailXBand()[0] + 5, y: laneTopY - SLOT / 2 }, laneTopY, undefined, SLOT)).toBe('send');
+      });
+
+      it('beyond the grace → still free canvas (the owner "spawn on the grid" rule holds)', () => {
+        expect(laneTargetForFlowPoint({ x: colX(1), y: laneTopY - SLOT - 1 }, laneTopY, undefined, SLOT)).toBeNull();
+        // The reported-bug-verbatim point stays refused even WITH the grace.
+        expect(laneTargetForFlowPoint({ x: colX(1) + 25, y: 40 }, laneTopY, undefined, SLOT)).toBeNull();
+      });
+
+      it('the DEFAULT grace is zero — every pre-#2247 call reads the painted band verbatim', () => {
+        expect(laneTargetForFlowPoint({ x: colX(1), y: laneTopY - 1 }, laneTopY)).toBeNull();
+        expect(laneBandContainsY(laneTopY - 0.5, laneTopY)).toBe(false);
+      });
+
+      it('the grace never reaches DOWN: the baseline stays exclusive under any grace', () => {
+        expect(laneBandContainsY(COLUMN_BASELINE_Y, laneTopY, SLOT)).toBe(false);
+        expect(laneTargetForFlowPoint({ x: colX(3), y: COLUMN_BASELINE_Y }, laneTopY, undefined, SLOT)).toBeNull();
+      });
+    });
+
     it('honours the narrow ?shell=1 pitch on the X axis', () => {
       const shellX = columnXBand(4, SHELL_COLUMN_W)[0] + 5;
       expect(laneTargetForFlowPoint({ x: shellX, y: inLaneY }, laneTopY, SHELL_COLUMN_W)).toBe(4);
@@ -624,19 +658,29 @@ describe('column geometry', () => {
 
 // ---------------- Shell-preview column pitch (RACKLINE tight 8-lane rack) ----------------
 
-describe('SHELL_COLUMN_W — the ?shell=1 tight column pitch (192 tile + 24 gutter)', () => {
+describe('SHELL_COLUMN_W — the ?shell=1 tight column pitch (192 tile, 10 HP)', () => {
   const SHELL_TILE_W = 192; // module-shell-model.ts SHELL_TILE_W (the uniform tile)
 
-  it('SHELL_COLUMN_W is the mock 216px pitch = a 192px tile + a 24px gutter', () => {
-    expect(SHELL_COLUMN_W).toBe(216);
-    expect(SHELL_COLUMN_W).toBe(SHELL_TILE_W + 24);
-    // Narrower than the app-scale 765px band it replaces under the preview.
+  it('SHELL_COLUMN_W is an EXACT 10 HP — the property the mock 216 could not hold', () => {
+    // ⚠ THIS DELIBERATELY DEVIATES FROM THE DESIGN MOCK BY 9px (#2239). The
+    // mock's 216 = 192 tile + 24 gutter is 9.6 HP, so every column landed on a
+    // different sub-HP offset and NOTHING in a lane could be screwed to the
+    // rack grid without visibly moving — which is what made the video zone's
+    // trio un-lockable and forced the per-frame render override.
+    //
+    // `COLUMN_W`, the non-shell pitch, has always been an exact HP multiple by
+    // construction. This makes the shell pitch one too. The cost is the gutter:
+    // 16.5px a side rather than the mock's 12.
+    expect(SHELL_COLUMN_W).toBe(225);
+    expect(SHELL_COLUMN_W % HP_UNIT, 'the pitch must be a whole number of HP').toBe(0);
+    expect(SHELL_COLUMN_W / HP_UNIT).toBe(10);
+    // Still narrower than the app-scale 765px band it replaces under the preview.
     expect(SHELL_COLUMN_W).toBeLessThan(COLUMN_W);
   });
 
   it('columnPitch resolves the active pitch by the preview flag', () => {
     expect(columnPitch(false)).toBe(COLUMN_W); // preview OFF → 765 (unchanged)
-    expect(columnPitch(true)).toBe(SHELL_COLUMN_W); // preview ON → 216 (tight)
+    expect(columnPitch(true)).toBe(SHELL_COLUMN_W); // preview ON → 225 (tight, 10 HP)
   });
 
   it('PREVIEW-OFF BYTE-IDENTICAL: every default-arg call equals the explicit COLUMN_W call', () => {
@@ -676,12 +720,12 @@ describe('SHELL_COLUMN_W — the ?shell=1 tight column pitch (192 tile + 24 gutt
     expect(videoAreaBand(SHELL_COLUMN_W).x1).toBe(COLUMN_COUNT * SHELL_COLUMN_W);
   });
 
-  it('a 192px tile centers in the 216px band with a clean 12px gutter each side', () => {
+  it('a 192px tile centers in the 225px band, 16.5px a side', () => {
     for (let ch = 1; ch <= COLUMN_COUNT; ch++) {
       const [x0] = columnXBand(ch, SHELL_COLUMN_W);
       const cardX = columnCardX(ch, SHELL_TILE_W, SHELL_COLUMN_W);
-      expect(cardX - x0).toBe(12); // left gutter
-      expect(x0 + SHELL_COLUMN_W - (cardX + SHELL_TILE_W)).toBe(12); // right gutter
+      expect(cardX - x0).toBe(16.5); // left gutter
+      expect(x0 + SHELL_COLUMN_W - (cardX + SHELL_TILE_W)).toBe(16.5); // right gutter
     }
   });
 

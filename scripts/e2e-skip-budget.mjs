@@ -519,6 +519,17 @@ export const SKIP_BUDGET = [
       + 'cancel, an irreversible Clear or a leaking patch load all ship green.',
   },
   {
+    specs: ['landing-new-rack-is-fresh.spec.ts'],
+    reason: /FLAKE-PARK #1847/,
+    lanes: ['e2e'],
+    homeLane: 'e2e',
+    why:
+      'PARKED (2026-08-29) — the landing tile-new-rack freshness guard: 1 recovered-on-retry observation '
+      + 'on PR #2247 e2e shard 3 under the live fail-on-flaky gate. While parked, a landing tile that '
+      + 'serves the CACHED rack instead of a fresh one ships green — this is the only coverage of that '
+      + 'path, so root-causing it is not optional debt.',
+  },
+  {
     specs: ['perf-tempo-under-modulation.spec.ts'],
     reason: /FLAKE-PARK/,
     lanes: ['e2e'],
