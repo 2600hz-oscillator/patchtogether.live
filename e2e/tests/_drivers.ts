@@ -123,6 +123,13 @@ const OVERRIDES: Record<string, ModuleDriver> = {
   },
   // ────────── Drum voices — gate-only triggered. ──────────
   drummergirl:  { outputPort: 'audio', gatePort: 'gate' },
+  // TEMPOLOCK — the beat-tracking clock: silent from cold BY DESIGN (no lock,
+  // no clock — pinned by tempolock-tracker.test.ts fixture 7), so the driver
+  // feeds the KRIA gate train into `in` (the sweep's 240 BPM 16th grid reads
+  // as a 120 lock inside a second) and observes `bpm`, the DC telemetry level
+  // that moves 0 → 0.4 on lock. The clock/locked jacks are sparse-pulse /
+  // level outputs covered by tempolock.spec.ts (see EXEMPT_OUTPUT_EMIT_MODULES).
+  tempolock:    { outputPort: 'bpm', gatePort: 'in' },
   meowbox:      { outputPort: 'L',     gatePort: 'gate', pitchPort: 'pitch' },
   // KICK DRUM — layered stereo kick voice; trigger_in (edge:'trigger') strikes
   // it. Gate-only (accent/pitch/choke are optional CV). Silent with no strike,
