@@ -211,9 +211,10 @@ async function stepLumaSeries(
 }
 
 const FIXED_STEPS = 6;
-// Enough unfrozen frames to fill the feedback ring + let the tunnel transform
-// compound into a deep, structured frame before we pin it. (The ring is
-// BACKDRAFT_BUFFER_FRAMES = 31 deep; 30 settles it well past cold-start.)
+// Enough unfrozen frames to let the tunnel transform compound into a deep,
+// structured frame before we pin it. (The LAZY ring holds only what this
+// spec's short delay needs — a handful of slots, capped at
+// BACKDRAFT_BUFFER_FRAMES — so 30 settles it well past cold-start.)
 const SETTLE_STEPS = 30;
 
 test.describe('BACKDRAFT — deterministic render smoke', () => {

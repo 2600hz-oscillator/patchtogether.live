@@ -41,7 +41,8 @@
   import { getVideoModuleDef } from '$lib/video/module-registry';
   import { getMetaModuleDef } from '$lib/meta/module-registry';
   import { patch } from '$lib/graph/store';
-  import { nodeVersion, nodesStructuralVersion } from '$lib/graph/node-versions.svelte';
+  import { edgesVersion, nodeVersion, nodesStructuralVersion } from '$lib/graph/node-versions.svelte';
+  import { paramOverrideBadge } from '$lib/ui/workflow/param-override-badges';
   import { canonicalClipPlayerId, canonicalLaneColors } from '$lib/graph/lane-colors';
   import { resolveDisplayName } from '$lib/multiplayer/module-naming';
   import { getLodTier } from '$lib/ui/canvas/workflow-zoom';
@@ -1188,7 +1189,17 @@
                (owner, 2026-08-17: *"i want the data gone, not there but hidden
                or something"*). The value reaches `aria-valuetext` and the
                drag/hover tag; nothing paints it at rest. -->
-          <div class="kcol ms-cell-fader" data-cell-kind="param" data-cell-control="fader" data-cell-key={ctl.key} style:--ka={ka}>
+          <!-- LIVE-OVERRIDE BADGE (param-override-badges.ts): while the
+               registered predicate is true the engine is IGNORING this fader
+               (backdraft.delay under a patched DELAY CLOCK), so the cell dims
+               and badges — the faceplate half of the legacy card's CLK badge,
+               driven by the same shared predicate. Dimmed, not disabled: the
+               control stays draggable/MIDI-learnable per the dim ruling; the
+               ENGINE is what ignores the writes. `edgesVersion()` makes the
+               patch/unpatch reactive. -->
+          {@const ovr = paramOverrideBadge(node.type, pd.id)}
+          {@const ovrActive = !!ovr && edgesVersion() >= 0 && ovr.isActive(id)}
+          <div class="kcol ms-cell-fader" class:ms-cell-overridden={ovrActive} data-cell-kind="param" data-cell-control="fader" data-cell-key={ctl.key} style:--ka={ka}>
             <NeonFader
               value={params.paramVal(pd.id)}
               min={pd.min}
@@ -1204,6 +1215,13 @@
               formatValue={pd.format}
               hideCaption={bareCaptions.has(pd.id)}
             />
+            {#if ovrActive && ovr}
+              <span
+                class="ms-ovr-badge"
+                data-testid="face-override-badge-{pd.id}"
+                title={ovr.title}
+              >{ovr.badge}</span>
+            {/if}
           </div>
         {:else if cellKind === 'selector'}
           <!-- The SAME roster past the button-row budget (≥7 states): a
@@ -1996,6 +2014,26 @@
      cap (the no-clip rule — the chip ellipsizes and its dropdown is portaled);
      the dock faceplate lets them take their natural width. */
   .ms-cell-sel,
+  /* LIVE-OVERRIDE state (param-override-badges.ts): the engine is ignoring
+   * this control right now, so the throw dims — the legacy card's
+   * `.delay-cell.clk-driven` treatment, ported. The control stays interactive
+   * (dim ruling: draggable, resettable, MIDI-learnable). */
+  .ms-cell-overridden :global(.thumb) {
+    opacity: 0.45;
+  }
+  .ms-ovr-badge {
+    margin-top: 2px;
+    font-size: 0.5rem;
+    line-height: 1;
+    letter-spacing: 0.05em;
+    color: var(--cable-cv, #6cf);
+    border: 1px solid var(--cable-cv, #6cf);
+    border-radius: 2px;
+    padding: 1px 2px;
+    font-family: ui-monospace, monospace;
+    pointer-events: none;
+  }
+
   .ms-cell-act {
     justify-content: center;
     min-width: 0;
