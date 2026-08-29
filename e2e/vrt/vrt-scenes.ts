@@ -42,6 +42,15 @@ interface VrtSceneBase {
    *  settle pause. Used by the videoOut/VIDEOBOX scene to drive a
    *  deterministic decoded frame into the output canvas. */
   afterSpawn?: (page: Page) => Promise<void>;
+  /** Optional setup BEFORE spawnPatch — for a boot-time global the module's
+   *  FACTORY reads at construction, where `afterSpawn` is structurally too
+   *  late. First user: gibribbon's `__gibribbonVrtNoWad`, which must be
+   *  visible before the factory decides whether to fetch DOOM1.WAD (the
+   *  fetch 404s on a clean runner and its console error fails the scene
+   *  before the capture is even taken). The face harness's `simPin` gets
+   *  this ordering for free via addInitScript; this is the card scene's
+   *  equivalent. */
+  beforeSpawn?: (page: Page) => Promise<void>;
 }
 
 /**
@@ -712,7 +721,14 @@ export const VRT_SCENES: Record<string, VrtScene> = {
       { id: 'vrt-1', type: 'gibribbon', position: { x: 80, y: 80 }, domain: 'video' },
     ],
     edges: [],
-    afterSpawn: async (page) => {
+    // ⚠ BEFORE spawn, not after: the factory reads all three globals at
+    // construction, and the noWad pin in particular must land before the
+    // factory decides whether to FETCH the WAD at all — the fetch 404s on a
+    // clean runner and its console error fails this scene's no-errors
+    // assertion (measured on the first capture attempt, run 33249946558).
+    // The late in-tick reads still exist for harnesses that can only install
+    // afterwards, but this scene does not need them.
+    beforeSpawn: async (page) => {
       await page.evaluate(() => {
         const w = globalThis as unknown as {
           __gibribbonVrtSeed?: number; __gibribbonVrtTicks?: number; __gibribbonVrtNoWad?: boolean;
@@ -724,6 +740,8 @@ export const VRT_SCENES: Record<string, VrtScene> = {
         // capture pins to the line-art fallback — a real shipped path.
         w.__gibribbonVrtNoWad = true;
       });
+    },
+    afterSpawn: async (page) => {
       // A few rAFs so the pinned board paints before the capture settles.
       for (let i = 0; i < 3; i++) {
         await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => r())));
@@ -821,6 +839,7 @@ export const VRT_SCENES: Record<string, VrtScene> = {
 export async function applyVrtScene(page: Page, type: string): Promise<boolean> {
   const scene = VRT_SCENES[type];
   if (!scene) return false;
+  if (scene.beforeSpawn) await scene.beforeSpawn(page);
   await spawnPatch(page, scene.nodes, scene.edges);
   if (scene.afterSpawn) await scene.afterSpawn(page);
   await page.waitForTimeout(scene.settleMs ?? 300);
