@@ -438,6 +438,10 @@ export const STRICT_DOCS: ReadonlySet<string> = new Set<string>([
   // trace re-drawn at live pixel size (crisp under the dock 50–150% ladder),
   // ch1-only terminal visualiser. Ships documented.
   'dockscope',
+  // TEMPOLOCK (2026-08-29): born strict — the beat-tracking clock (onset
+  // train in → tracked steady quarter-note clock out). Every port + the band
+  // param documented from day one.
+  'tempolock',
   // KARPLUS (2026-07-11): the extended Karplus-Strong string/harp voice on
   // the cofefve delay-line core (Jaffe–Smith ρ-compensated decay, tracked
   // brightness damping, pick-position comb, dispersion allpasses, curated

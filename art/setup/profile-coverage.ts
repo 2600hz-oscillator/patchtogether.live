@@ -35,6 +35,7 @@ export const ART_EXCLUDED: Readonly<Record<string, string>> = {
   midiCvBuddy: 'live MIDIAccess device stream — no deterministic offline source',
   midiOutBuddy: 'terminal MIDI sink — no audio-family OUTPUT port to capture',
   midiclock: 'live MIDIAccess device stream — no deterministic offline source',
+  tempolock: 'beat-tracking clock utility — its OUTPUT ports are gate/cv (a generated clock pulse train, a DC bpm level, a DC lock level), not audio-family, and the tracker runs on the main-thread scheduler clock (getSchedulerClock + createEdgeCounter over an AnalyserNode tap), which does not exist in the offline ART render path. The tracking math is pure and exhaustively pinned by tempolock-tracker.test.ts (owner pattern verbatim + the real recorded onset train + ramp/jitter/dropout/octave fixtures); the wire path is pinned by tempolock.spec.ts (pulse source → tempolock → TIMELORDE CLOCK IN follow)',
   livecode: 'user-authored code evaluated at runtime — no fixed output to pin',
   pong: 'free-running game audio driven by RNG + gameplay state',
   modtris: 'free-running game audio driven by RNG + gameplay state',

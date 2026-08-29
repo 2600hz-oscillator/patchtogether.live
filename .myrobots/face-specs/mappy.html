@@ -1,0 +1,296 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>FACE SPEC — mappy</title>
+<style>
+  /* House tokens — the same set the wave-1..7 mocks use (dark-only, per wave-5+ convention). */
+  :root{
+    --bg:#0e1013; --dock:#12161c; --plate:#262a31; --pbody:#1c1f24; --well:#0a0c0f;
+    --line:#2c3037; --tile:#33383f; --ink:#eef1f5; --dim:#9aa2ad; --faint:#646c77;
+    --accent:#6cf; --vid:#4ade80; --cv:#7dd3fc; --warn:#f2c14e; --good:#8fe6b0;
+    --bad:#f87171; --meta:#c084fc;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{background:var(--bg);color:var(--ink);font-family:var(--sans);margin:0;padding:24px 16px 80px;line-height:1.5}
+  main{max-width:1080px;margin:0 auto}
+  header.top{border-bottom:1px solid var(--line);padding-bottom:12px;margin-bottom:20px}
+  header.top h1{font-family:var(--mono);font-size:1.35rem;margin:0 0 4px}
+  header.top .sub{color:var(--dim);font-size:.9rem}
+  .crumbs{font-family:var(--mono);font-size:.75rem;margin-bottom:10px}
+  .crumbs a{color:var(--cv);text-decoration:none}
+  .crumbs a:hover{text-decoration:underline}
+  .badge{display:inline-block;font-family:var(--mono);font-size:.7rem;padding:2px 8px;border-radius:3px;border:1px solid var(--line);color:var(--dim);margin-left:6px;vertical-align:middle}
+  .badge.video{color:var(--vid);border-color:var(--vid)}
+  .verdict{font-family:var(--mono);font-size:.95rem;padding:10px 14px;border-radius:6px;margin:14px 0;border:1px solid}
+  .verdict.promote{border-color:var(--good);color:var(--good);background:rgba(143,230,176,.06)}
+  h2{font-family:var(--mono);font-size:1.02rem;color:var(--ink);border-bottom:1px solid var(--line);padding-bottom:6px;margin:34px 0 12px}
+  h3{font-family:var(--mono);font-size:.9rem;color:var(--dim);margin:20px 0 8px}
+  p{margin:8px 0;color:var(--ink)}
+  table{border-collapse:collapse;width:100%;margin:10px 0;font-size:.85rem}
+  th{font-family:var(--mono);font-size:.72rem;text-transform:uppercase;letter-spacing:.04em;color:var(--faint);text-align:left;padding:6px 10px;border-bottom:1px solid var(--line)}
+  td{padding:6px 10px;border-bottom:1px solid rgba(44,48,55,.55);vertical-align:top}
+  code,.mono{font-family:var(--mono);font-size:.83em;color:var(--cv)}
+  pre.code{background:var(--well);border:1px solid var(--line);border-radius:6px;padding:12px 14px;overflow-x:auto;font-family:var(--mono);font-size:.78rem;line-height:1.55;color:var(--ink)}
+  pre.code .c{color:var(--faint)}
+  .callout{border-left:3px solid var(--line);background:rgba(28,31,36,.6);padding:10px 14px;border-radius:0 6px 6px 0;margin:12px 0;font-size:.88rem}
+  .callout.warn{border-color:var(--warn)}
+  .callout.ok{border-color:var(--good)}
+  .callout .t{font-family:var(--mono);font-size:.72rem;text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:4px}
+  .callout.warn .t{color:var(--warn)} .callout.ok .t{color:var(--good)}
+  .aria{font-family:var(--mono);font-size:.78rem;color:var(--good)}
+  .kept{color:var(--good);font-family:var(--mono);font-size:.78rem}
+  .rm{color:var(--bad);font-family:var(--mono);font-size:.78rem}
+  .mockrow{display:flex;gap:28px;flex-wrap:wrap;align-items:flex-start;margin:16px 0}
+  .mocklab{font-family:var(--mono);font-size:.7rem;color:var(--faint);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px}
+  .lane{width:192px;height:180px;background:var(--pbody);border:1px solid var(--line);border-radius:8px;display:flex;flex-direction:column;overflow:hidden;flex:none}
+  .lane .lchrome{font-family:var(--mono);font-size:.62rem;color:var(--dim);padding:4px 8px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between}
+  .lane .lbody{flex:1;display:flex;gap:9px;padding:8px;align-items:flex-start}
+  .kcol{width:46px;display:flex;flex-direction:column;align-items:center;gap:3px;flex:none}
+  .dial{width:36px;height:36px;border-radius:50%;background:var(--tile);border:1px solid var(--line);position:relative}
+  .dial::after{content:"";position:absolute;left:50%;top:3px;width:2px;height:12px;background:var(--vid);transform-origin:50% 15px}
+  .kcap{font-family:var(--mono);font-size:.6rem;color:var(--dim)}
+  .tgl{width:30px;height:16px;border-radius:9px;background:var(--well);border:1px solid var(--line);position:relative;display:inline-block;vertical-align:middle}
+  .tgl i{position:absolute;top:2px;left:3px;width:10px;height:10px;border-radius:50%;background:var(--faint)}
+  .tgl.on{border-color:var(--vid)} .tgl.on i{left:15px;background:var(--vid)}
+  .dock{background:var(--dock);border:1px solid var(--line);border-radius:10px;overflow:hidden;flex:none}
+  .chromebar{display:flex;justify-content:space-between;align-items:center;font-family:var(--mono);font-size:.7rem;color:var(--dim);padding:6px 12px;border-bottom:1px solid var(--line)}
+  .plate{padding:14px;width:max-content;max-width:100%}
+  .extbody{background:var(--pbody);border:1px solid var(--line);border-radius:8px;padding:12px;margin-bottom:12px}
+  .bands{display:flex;flex-direction:column;gap:10px}
+  .band{border:1px solid var(--line);border-radius:8px;padding:8px 12px 10px;background:rgba(28,31,36,.4)}
+  .blab{font-family:var(--mono);font-size:.62rem;color:var(--faint);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px}
+  .brow{display:flex;gap:16px;align-items:flex-end}
+  .btn{font-family:var(--mono);font-size:.66rem;color:var(--ink);background:var(--tile);border:1px solid var(--line);border-radius:4px;padding:3px 8px;display:inline-block}
+  .legendrow{display:flex;align-items:center;gap:6px;font-family:var(--mono);font-size:.64rem;color:var(--dim);padding:2px 0}
+  .swdot{width:9px;height:9px;border-radius:2px;flex:none}
+  .scrbtn{position:absolute;right:6px;bottom:6px;background:rgba(10,12,15,.72);border:1px solid var(--line);border-radius:4px;font-family:var(--mono);font-size:.6rem;color:var(--dim);padding:2px 6px}
+  footer{margin-top:48px;border-top:1px solid var(--line);padding-top:10px;font-family:var(--mono);font-size:.7rem;color:var(--faint)}
+</style>
+</head>
+<body>
+<main>
+<header class="top">
+  <div class="crumbs"><a href="INDEX.html">← face-specs INDEX</a></div>
+  <h1>FACEPLATE BUILD SPEC — <code>mappy</code> <span class="badge video">video</span> <span class="badge">bespoke-surface</span></h1>
+  <div class="sub">MAPPY — the multi-surface MANUAL projection mapper: six draggable corner-pin quads composited to one projector output. SPEC ONLY — nothing here is implemented. Authored 2026-08-28 against <code>origin/main</code> @ <code>f340ab43a</code>.</div>
+</header>
+
+<div class="verdict promote">VERDICT: PROMOTE. Clean on every gate (typed-entry CLEAN — the import path is a file input). Two ranked params + a picture body carrying the drag-overlay, legend, map I/O and the full-window MAP editor entry. The one def-side correction (two params declared <code>linear</code> that the code hard-thresholds/rounds) is the known cloudseed class and rides the PR with a reviewed <code>docs:accept</code> diff.</div>
+
+<h2>§0 — THE CONSTRAINT MAP, READ FIRST</h2>
+<table>
+  <tr><th>registry / gate</th><th>state for mappy</th><th>evidence</th></tr>
+  <tr><td><code>STRICT_FACES</code></td><td>NOT a member — unfaced</td><td><code>strict-faces.ts</code></td></tr>
+  <tr><td>migration disposition</td><td><code>bespoke-surface</code>, no blocker</td><td><code>face-migration-inventory.ts</code>: “a PROJECTION MAPPER: quad corners dragged on a canvas, with mapping import/export. Direct geometry manipulation is the entire module.”</td></tr>
+  <tr><td>typed-entry leg</td><td><b>CLEAN</b> — verified 2026-08-28 on <code>MappyCard.svelte</code> AND <code>MappyEditor.svelte</code> (import is <code>type="file"</code>, outside the predicate)</td><td><code>mountsTypedEntry</code> re-run</td></tr>
+  <tr><td>media lifecycle</td><td>none — inputs are patched video cables; no files, no streams, no DOM media elements owned</td><td><code>mappy.ts</code></td></tr>
+  <tr><td>VRT today</td><td>“SOLO-spawn VRT exempt (live composite preview canvas + connected-only corner overlay; nothing patched is non-deterministic chrome over a black preview) … Capture deterministic darwin/linux composite baselines in a follow-up PR.” ⚠ The exemption reasons about the CARD; the FACE’s cold dock scene must re-argue it (§10)</td><td><code>e2e/vrt/vrt-exemptions.ts:1220</code></td></tr>
+  <tr><td>WebGL attest</td><td>M4 — re-run the basis listing; the warp shader lives in <code>mappy.ts</code>, so any def-file edit beyond the stripped <code>face:</code>/<code>docs:</code> blocks (the curve corrections!) must be attest-checked before scoping</td><td><code>scripts/attest-code-basis.ts</code></td></tr>
+  <tr><td>e2e</td><td><code>mappy-output.spec.ts</code> (real source → mappy → output; warp/drive deltas) + <code>mappy.test.ts</code> + <code>mappy-homography.test.ts</code></td><td>named in the exemption text</td></tr>
+</table>
+
+<h2>§1 — WHAT THE MODULE IS FOR</h2>
+<p>The verb is <b>ALIGN</b>. Up to six SURFACES, each a draggable quad (corners TL,TR,BR,BL in normalized [0,1] output space); surface i is fed by <code>in(i+1)</code>; composited painter’s-order OVER into one output → a projector. GRIDS-FIRST: a fresh mappy shows ONE surface, and any live surface with no input renders its NUMBERED calibration grid — set geometry on the physical faces first, then patch video and the grid swaps to the warped feed in the quad you mapped. Per-surface FIT (zoom-fit) vs CROP (native window) toggle; per-surface reset; export/import of the venue layout as JSON. Camera-assisted auto-align is a later phase BY DESIGN — no camera input, no CV.</p>
+
+<h2>§2 — STOP 1: LEGACY-CARD PARITY CENSUS</h2>
+<table>
+  <tr><th>affordance</th><th>card site</th><th>face home</th><th>survives?</th></tr>
+  <tr><td>Composite preview canvas</td><td><code>mappy-canvas</code></td><td>body picture (and the free lane thumb)</td><td>YES</td></tr>
+  <tr><td>Drag overlay: corner handles (pin one corner) + quad-interior drag (move whole quad); connected/live-only visibility</td><td><code>mappy-overlay</code>, <code>mappy-quad-N</code>, <code>mappy-handle-N-i</code></td><td>body overlay, logic verbatim (<code>mappy-hit.ts</code>)</td><td>YES</td></tr>
+  <tr><td>Surface count stepper (− n +, 1..6)</td><td><code>mappy-remove/-count-n/-add</code></td><td>the ranked <code>surfaceCount</code> cell (§5.1) — the stepper look becomes a knob/segmented per shape; the body legend’s add/remove stays as the geometric gesture’s home</td><td>YES</td></tr>
+  <tr><td>MAP ⤢ full-window editor (big canvas, surface tabs, snap-to-grid, drag-to-move)</td><td><code>mappy-open-editor</code> → <code>MappyEditor.svelte</code></td><td>body button, opening the SAME editor overlay — module-owned code launched from module-owned body (the backdraft ⛶ OUTPUT precedent: body-owned entry points to full-window surfaces)</td><td>YES</td></tr>
+  <tr><td>Grid toggle</td><td><code>mappy-grid-toggle</code> (drives param <code>showGrid</code>)</td><td>ranked toggle cell</td><td>YES</td></tr>
+  <tr><td>Export map / Import map (JSON: count + corners + FIT)</td><td><code>mappy-export-map</code> / <code>-import-map</code> / <code>-import-file</code></td><td>body actions (export = a download the module composes; import = a <code>file</code>-shaped action). Status line: §7</td><td>YES</td></tr>
+  <tr><td>Per-surface legend: select/focus, FIT/CROP toggle, reset</td><td><code>mappy-legend-N</code>, <code>mappy-select-N</code>, fit + reset buttons</td><td>body legend rows, colour-keyed by <code>MAPPY_SURFACE_COLORS</code></td><td>YES</td></tr>
+  <tr><td>“drag the grid corners to map · then connect IN1…IN6” empty hint</td><td><code>mappy-empty-hint</code></td><td class="rm">REMOVED at rest — instructional prose is the annotate layer’s job (the batch-3 annotation ruling); the numbered grids already teach the workflow visually</td><td>guidance survives in docs</td></tr>
+</table>
+
+<h2>§3 — STOP 2: EVERY WAY DATA GETS IN</h2>
+<table>
+  <tr><th>path</th><th>mechanism</th><th>after promotion</th></tr>
+  <tr><td>corner/quad drags</td><td>card overlay writes <code>node.data.surfaces[i].corners</code> (Yjs, in place)</td><td>body overlay + MAP editor — same write seam</td></tr>
+  <tr><td>param edits</td><td><code>setNodeParam('showGrid'|'surfaceCount')</code></td><td>ranked cells; body legend add/remove also writes <code>surfaceCount</code> (two writers, one param — fine, both go through the param path)</td></tr>
+  <tr><td>map import (JSON file)</td><td>file input → validate → write surfaces + count + fit</td><td>body action, same validator (<code>mappy-map-io.ts</code>)</td></tr>
+  <tr><td>remote peers</td><td>surfaces ride Y.Doc; factory reads live node each frame</td><td>unchanged — no card lifecycle involved</td></tr>
+  <tr><td>video in1..in6</td><td>patched cables; connecting inN auto-activates surface N beyond the count</td><td>unchanged; rear groups name them (§5.2)</td></tr>
+</table>
+
+<h2>§4 — THE LANE PICTURE</h2>
+<p><code>domain === 'video'</code> → free <code>VideoTileThumb</code> of the composite: with nothing patched that is the numbered calibration grid(s) — an honest and genuinely useful tile (you can SEE which venue layout this node holds). Picture cap: 2 ranked cells beside it.</p>
+
+<h2>§5 — THE FACE</h2>
+<pre class="code">face: {
+  <span class="c">// RANK. surfaceCount changes WHAT the module is hosting; showGrid is the</span>
+  <span class="c">// calibration lamp you toggle during alignment. Both are set-up controls;</span>
+  <span class="c">// there are no play controls — geometry is the body's job.</span>
+  order: ['surfaceCount', 'showGrid'],
+  <span class="c">// ONE unlabelled band (2 cells — a header would restate the module name).</span>
+  glyph: 'none',        <span class="c">// video def, no audio out — the thumb is the picture.</span>
+  extension: 'mappy',   <span class="c">// §6 — mapper body.</span>
+  monitor: { why: 'the composite is the projector feed; watching it without the legend ' +
+                  'chrome is the front-of-house use during a show.' },
+  rear: {
+    groups: [
+      <span class="c">// Six video ins ARE the module's signal inputs — claim the leading slot and</span>
+      <span class="c">// name them as surfaces (the frogger 'signal' precedent; ids are not free).</span>
+      { id: 'signal', label: 'surfaces', ports: ['in1','in2','in3','in4','in5','in6'] },
+    ],
+  },
+},</pre>
+
+<h3>§5.1 Cells — and the two def corrections this PR carries</h3>
+<table>
+  <tr><th>param</th><th>def today</th><th>the code’s truth</th><th>cell after correction</th></tr>
+  <tr><td><code>surfaceCount</code></td><td>1..6, <code>curve:'linear'</code>, default 1, label ‘Surfaces’</td><td><code>clampSurfaceCount</code> ROUNDS — six integer states</td><td>declare <code>curve:'discrete'</code> + <code>options</code> naming the six states → dock <code>segmented</code> (6 ≤ SEGMENTED_MAX_OPTIONS), lane knob-with-readout</td></tr>
+  <tr><td><code>showGrid</code></td><td>0..1, <code>curve:'linear'</code>, default 0, label ‘Grid’ (“hidden 0/1 param — the card drives it as a toggle”)</td><td>factory reads it as a boolean</td><td>declare <code>curve:'discrete'</code> → <code>looksLikeToggle</code> resolves a Toggle; default 0 → <code>looksLikeSwitch</code> fires the momentary/latching ratchet: this is a LATCHING switch (level-read every frame, never edge) → <code>ACKNOWLEDGED_LATCHING 'mappy:showGrid'</code> with the read-site citation</td></tr>
+</table>
+<div class="callout warn"><span class="t">the consumer-first check, applied</span>Before writing <code>discrete</code>, verify the CONSUMERS read it (the CLAUDE.md #1223 warning: four cards pass <code>curve="linear"</code> where the def says discrete and Knob.svelte has no discrete branch — a green gate certifying a live bug). Here the consumers are the SHELL cell resolvers (<code>looksLikeToggle</code> / options→segmented), which DO read curve/options — that is the entire point of the correction. The card’s own stepper/toggle never read curve and are unaffected. <code>curve</code> IS projected into contract-lock: run <code>docs:accept</code>, expect exactly these two lines to move, review them as intended.</div>
+<p>The six <code>options</code> labels are the numerals ‘1’..‘6’ — numeric labels, which the <code>face-readout-source</code> numeric-roster leg tracks with a derived exemption; expect to enrol <code>mappy:surfaceCount</code> there with the “a count of surfaces is the state’s NAME” argument (the PPQN precedent).</p>
+
+<h3>§5.2 Width — earned by the picture</h3>
+<p>The body composite at an alignable size (~480 px) is the earner. Bands under it, <code>max-content</code>, no exemption.</p>
+
+<h2>§6 — THE BODY: <code>face.extension: 'mappy'</code>, slot <code>fullViewBody</code></h2>
+<h3>§6.1 Why not a cell — the ladder, walked</h3>
+<table>
+  <tr><th>rung</th><th>refusal</th></tr>
+  <tr><td>toggle/segmented cells</td><td>taken — for the two params that ARE cells (§5.1)</td></tr>
+  <tr><td><code>xyPads</code></td><td>24 corner coordinates are not params, and a pad binds params; the geometry lives in <code>node.data.surfaces</code> where multi-quad structure belongs</td></tr>
+  <tr><td>PF-14 <code>panel</code></td><td>the mapper needs picture + overlay + legend + I/O actions — an editor suite around the picture, not one cell</td></tr>
+  <tr><td><code>editorSurface</code></td><td>UNWIRED; the MAP full-window editor already exists as module-owned overlay code reachable from the body — no new slot needed</td></tr>
+  <tr><td><code>fullViewBody</code></td><td class="kept">TAKEN</td></tr>
+</table>
+
+<h3>§6.2 The component</h3>
+<p><code>$lib/ui/modules/mappy/shell-extension.ts</code> → <code>{ fullViewBody: MappyMapperBody }</code>. Top to bottom: the composite canvas with the drag overlay (handles + interiors, per-surface colours, connected/live-only) and the SCREEN switch in the corner · a control row: MAP ⤢ (opens <code>MappyEditor</code>) · EXPORT MAP / IMPORT MAP · the per-surface legend (select, FIT/CROP, reset — colour-keyed). The legend’s add/remove writes <code>surfaceCount</code> through the param path so the segmented cell and the legend can never disagree.</p>
+
+<h3>§6.3 <code>EXTENSION_BODY_ROLES</code> — the third gate</h3>
+<pre class="code">mappy: {
+  role: 'picture',
+  why: 'the body mounts the live composite canvas with the corner-pin drag overlay on ' +
+       'it — the projector feed being aligned is the surface, and the legend and map ' +
+       'I/O are its incidental controls.',
+},</pre>
+
+<h3>§6.4 Screen switch — required (video ∩ STRICT_FACES)</h3>
+<p>Over <code>node.data.previewCollapsed</code>, corner overlay. OFF skips the paint AND hides the drag overlay (you cannot align what you cannot see — a collapsed mapper is a mapper you are done aligning); the engine keeps compositing. The legend and I/O row stay reachable.</p>
+
+<h2>§MOCKS</h2>
+<div class="mockrow">
+  <div>
+    <div class="mocklab">compact lane tile — thumb + 2 cells</div>
+    <div class="lane">
+      <div class="lchrome"><span>mappy</span><span>▣</span></div>
+      <div class="lbody">
+        <div style="width:96px;height:72px;background:#000;border:1px solid var(--line);border-radius:4px;position:relative;flex:none">
+          <svg width="94" height="70" viewBox="0 0 94 70"><rect width="94" height="70" fill="#000"/><polygon points="10,8 56,14 50,52 8,44" fill="none" stroke="#ff5a5a" stroke-width="2"/><text x="26" y="36" font-family="monospace" font-size="14" fill="#ff5a5a">1</text><polygon points="60,20 88,24 86,60 58,54" fill="none" stroke="#5aff7a" stroke-width="2"/><text x="68" y="44" font-family="monospace" font-size="12" fill="#5aff7a">2</text></svg>
+        </div>
+        <div class="kcol"><div class="dial"></div><div class="kcap">SURFACES</div></div>
+        <div class="kcol"><div class="tgl"><i></i></div><div class="kcap">GRID</div></div>
+      </div>
+    </div>
+  </div>
+  <div>
+    <div class="mocklab">dock full view — mapper body + one band</div>
+    <div class="dock" style="width:540px">
+      <div class="chromebar"><span>mappy</span><span>dock full view · ✕</span></div>
+      <div class="plate">
+        <div class="extbody">
+          <div style="width:480px;height:270px;background:#000;border:1px solid var(--line);border-radius:4px;position:relative;margin-bottom:8px">
+            <svg width="478" height="268" viewBox="0 0 478 268">
+              <rect width="478" height="268" fill="#000"/>
+              <polygon points="50,30 260,52 240,210 40,180" fill="rgba(255,90,90,.08)" stroke="#ff5a5a" stroke-width="2"/>
+              <g fill="#ff5a5a"><circle cx="50" cy="30" r="5"/><circle cx="260" cy="52" r="5"/><circle cx="240" cy="210" r="5"/><circle cx="40" cy="180" r="5"/></g>
+              <text x="130" y="130" font-family="monospace" font-size="40" fill="#ff5a5a">1</text>
+              <polygon points="290,60 430,80 420,220 280,200" fill="rgba(90,155,255,.08)" stroke="#5a9bff" stroke-width="2"/>
+              <g fill="#5a9bff"><circle cx="290" cy="60" r="5"/><circle cx="430" cy="80" r="5"/><circle cx="420" cy="220" r="5"/><circle cx="280" cy="200" r="5"/></g>
+              <text x="340" y="150" font-family="monospace" font-size="34" fill="#5a9bff">2</text>
+            </svg>
+            <div class="scrbtn">SCREEN ◱</div>
+          </div>
+          <div style="display:flex;gap:6px;margin-bottom:8px">
+            <span class="btn">MAP ⤢</span><span class="btn">EXPORT MAP</span><span class="btn">IMPORT MAP</span>
+          </div>
+          <div class="legendrow"><span class="swdot" style="background:#ff5a5a"></span><span>1</span><span class="btn">FIT</span><span class="btn">RESET</span></div>
+          <div class="legendrow"><span class="swdot" style="background:#5a9bff"></span><span>3</span><span class="btn">CROP</span><span class="btn">RESET</span></div>
+        </div>
+        <div class="bands">
+          <div class="band">
+            <div class="brow">
+              <div style="display:flex;flex-direction:column;gap:3px;align-items:center"><div style="display:flex;gap:2px"><span class="btn">1</span><span class="btn" style="border-color:var(--vid);color:var(--vid)">2</span><span class="btn">3</span><span class="btn">4</span><span class="btn">5</span><span class="btn">6</span></div><div class="kcap">SURFACES</div></div>
+              <div class="kcol"><div class="tgl on"><i></i></div><div class="kcap">GRID</div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<h2>§7 — RESTING TEXT CENSUS</h2>
+<table>
+  <tr><th>string</th><th>verdict</th><th>replacement</th></tr>
+  <tr><td>numbered grid digits + checker (in the composite)</td><td class="kept">ALLOWED — the module’s artwork, rendered by the warp shader into its own output (the GAMES.md in-canvas ruling; here the text IS the calibration aid)</td><td>—</td></tr>
+  <tr><td>surface numerals in the legend</td><td class="kept">KEPT — option/landmark NAMES disambiguating rows</td><td>—</td></tr>
+  <tr><td>map import/export status line (“Imported ✓” / error prose)</td><td class="rm">REMOVED at rest — a transient result is not resting chrome; failure surfaces as a warn-tone lamp on the IMPORT action</td><td><span class="aria">aria-label/title</span> carries the prose; full text in annotate docs</td></tr>
+  <tr><td>“drag the grid corners to map …” hint</td><td class="rm">REMOVED (§2 last row)</td><td>annotate layer</td></tr>
+  <tr><td>count numeral between −/+ on the card</td><td class="kept">becomes the segmented cell’s selected option NAME — the permitted numeric-roster class with its derived exemption (§5.1)</td><td>—</td></tr>
+</table>
+
+<h2>§8 — TYPED-ENTRY GATE</h2>
+<p><b>CLEAN.</b> Both card and editor re-scanned 2026-08-28: buttons, file input, canvas. The leg will not fire.</p>
+
+<h2>§9 — STATE / .data CENSUS</h2>
+<table>
+  <tr><th>key</th><th>home</th><th>writer</th></tr>
+  <tr><td><code>node.data.surfaces[]</code> ({corners, fit?})</td><td>Yjs, in-place mutation; missing <code>fit</code> reads ON (<code>surfaceFitOn</code> — shared by factory, card, editor “so all three agree”; the body makes it four — import the same helper)</td><td>body overlay, MAP editor, import</td></tr>
+  <tr><td><code>params.showGrid/surfaceCount</code></td><td>Yjs</td><td>cells + legend</td></tr>
+  <tr><td><code>node.data.previewCollapsed</code></td><td>Yjs (new)</td><td>screen switch</td></tr>
+  <tr><td>selected surface / editor-open</td><td>LOCAL per collaborator</td><td>body</td></tr>
+</table>
+
+<h2>§10 — GATES, TESTS, VRT</h2>
+<table>
+  <tr><th>gate</th><th>verdict for this PR</th></tr>
+  <tr><td>1 · <code>module-face-lint</code> / identity</td><td>face + promotion in one diff; ACKNOWLEDGED_LATCHING entry for showGrid (§5.1)</td></tr>
+  <tr><td>2 · VRT</td><td><code>GREP=mappy flox activate -- task vrt:commit</code>. The cold face (one surface, nothing patched, grid ON default? — no: showGrid defaults 0 but an UNPATCHED live surface always renders its grid) is a static numbered grid — deterministic by construction. Predict 2 files; the SOLO-spawn card exemption’s “follow-up baselines” promise is partially redeemed by the face scenes</td></tr>
+  <tr><td>3 · <code>EXTENSION_BODY_ROLES</code></td><td>role <code>picture</code> per §6.3</td></tr>
+  <tr><td>4 · docs family↔card</td><td>no families — inert</td></tr>
+  <tr><td>5 · <code>optionsExhaustive</code></td><td>⚠ the new surfaceCount roster is DENSE (6 options over 6 steps) — declaring <code>optionsExhaustive</code> is itself RED (“roster covers every step … redundant — delete it”). Declare options only</td></tr>
+  <tr><td>6 · typed-entry leg</td><td>clean (§8)</td></tr>
+</table>
+<p>e2e: <code>mappy-output.spec.ts</code> keeps its real-chain rows. Add shipping-shell legs: drag a corner in the BODY → output delta (the drive-one-input invariant already proven card-side); segmented cell → surfaceCount → new grid appears.</p>
+
+<h2>§11 — DIVERGENCE / DEFECT LEDGER</h2>
+<table>
+  <tr><th>#</th><th>finding</th><th>routing</th></tr>
+  <tr><td>1</td><td><code>surfaceCount</code>/<code>showGrid</code> declared linear; code rounds/thresholds — the cloudseed declare-what-the-DSP-does class</td><td>def correction in this PR + <code>docs:accept</code> reviewed (§5.1); attest check first (M4)</td></tr>
+  <tr><td>2</td><td>The card hides overlay quads for unconnected surfaces but the ENGINE draws grids for all live surfaces — overlay and output can disagree about what is “there” (grid visible, no handles)</td><td>body renders handles for every LIVE surface (count-governed), not only connected ones — parity with the output’s own truth; flag in PR body as a deliberate divergence from the card</td></tr>
+  <tr><td>3</td><td>Inventory <code>why</code> says “quad corners dragged on a canvas, with mapping import/export” — accurate; no stale claims found (read the card anyway, per standing instruction — done)</td><td>—</td></tr>
+</table>
+
+<h2>§12 — MUST-VERIFY</h2>
+<table>
+  <tr><th>id</th><th>experiment</th><th>pass shape</th></tr>
+  <tr><td>M1</td><td>Draft-face lint run: segmented cell renders for the corrected surfaceCount; showGrid resolves Toggle; ACKNOWLEDGED_LATCHING accepted</td><td>green, with the exact entries predicted here</td></tr>
+  <tr><td>M2</td><td>MAP editor overlay opened from the dock body (not a card): focus trap, close path, z-order over the dock chrome</td><td>editor fully usable and closable from the shell context</td></tr>
+  <tr><td>M3</td><td>Two-boot pixel identity of the cold dock scene (one grid, surface colours)</td><td>bit-identical → baseline both scenes</td></tr>
+  <tr><td>M4</td><td>Attest basis: is <code>mappy.ts</code> in the code basis? The curve corrections edit the def’s <code>params</code> array (CODE, not docs — NOT stripped)</td><td>if in-basis, the correction costs an owner-machine re-attest: split it out or schedule it, and say so in the PR body — never fold a silent hash move</td></tr>
+  <tr><td>M5</td><td>Import validation failure path in the body (malformed JSON)</td><td>warn lamp lights; no throw; no resting error prose</td></tr>
+</table>
+
+<h2>§13 — OPEN QUESTIONS (owner)</h2>
+<table>
+  <tr><th>q</th><th>question</th><th>recommendation</th></tr>
+  <tr><td>Q1</td><td>Does the MAP full-window editor stay reachable ONLY from the dock body, or also from the lane tile (a tileBody button)?</td><td>dock-only — aligning a projection is a seated task; the lane thumb tells you which node to expand</td></tr>
+  <tr><td>Q2</td><td>Ledger #2 (handles for live-but-unconnected surfaces) — accept the divergence from the card?</td><td>yes — grids-first is the module’s own workflow; handles on a grid you are aligning is the point</td></tr>
+</table>
+
+<footer>face-specs/mappy.html · authored from mappy.ts + MappyCard.svelte + MappyEditor.svelte read (def in full; cards: control surface + overlay) · standards: wave-5/6/7 bespoke spec canon</footer>
+</main>
+</body>
+</html>

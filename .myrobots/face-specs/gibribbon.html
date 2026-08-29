@@ -1,0 +1,318 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>REWRITE SPEC — gibribbon</title>
+<style>
+  /* House tokens — the same set the wave-1..7 mocks use (dark-only, per wave-5+ convention). */
+  :root{
+    --bg:#0e1013; --dock:#12161c; --plate:#262a31; --pbody:#1c1f24; --well:#0a0c0f;
+    --line:#2c3037; --tile:#33383f; --ink:#eef1f5; --dim:#9aa2ad; --faint:#646c77;
+    --accent:#6cf; --vid:#4ade80; --cv:#7dd3fc; --warn:#f2c14e; --good:#8fe6b0;
+    --bad:#f87171; --meta:#c084fc;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{background:var(--bg);color:var(--ink);font-family:var(--sans);margin:0;padding:24px 16px 80px;line-height:1.5}
+  main{max-width:1080px;margin:0 auto}
+  header.top{border-bottom:1px solid var(--line);padding-bottom:12px;margin-bottom:20px}
+  header.top h1{font-family:var(--mono);font-size:1.35rem;margin:0 0 4px}
+  header.top .sub{color:var(--dim);font-size:.9rem}
+  .crumbs{font-family:var(--mono);font-size:.75rem;margin-bottom:10px}
+  .crumbs a{color:var(--cv);text-decoration:none}
+  .crumbs a:hover{text-decoration:underline}
+  .badge{display:inline-block;font-family:var(--mono);font-size:.7rem;padding:2px 8px;border-radius:3px;border:1px solid var(--line);color:var(--dim);margin-left:6px;vertical-align:middle}
+  .badge.video{color:var(--vid);border-color:var(--vid)}
+  .badge.rw{color:var(--meta);border-color:var(--meta)}
+  .verdict{font-family:var(--mono);font-size:.95rem;padding:10px 14px;border-radius:6px;margin:14px 0;border:1px solid}
+  .verdict.rewrite{border-color:var(--meta);color:var(--meta);background:rgba(192,132,252,.06)}
+  h2{font-family:var(--mono);font-size:1.02rem;color:var(--ink);border-bottom:1px solid var(--line);padding-bottom:6px;margin:34px 0 12px}
+  h3{font-family:var(--mono);font-size:.9rem;color:var(--dim);margin:20px 0 8px}
+  p{margin:8px 0;color:var(--ink)}
+  table{border-collapse:collapse;width:100%;margin:10px 0;font-size:.85rem}
+  th{font-family:var(--mono);font-size:.72rem;text-transform:uppercase;letter-spacing:.04em;color:var(--faint);text-align:left;padding:6px 10px;border-bottom:1px solid var(--line)}
+  td{padding:6px 10px;border-bottom:1px solid rgba(44,48,55,.55);vertical-align:top}
+  code,.mono{font-family:var(--mono);font-size:.83em;color:var(--cv)}
+  pre.code{background:var(--well);border:1px solid var(--line);border-radius:6px;padding:12px 14px;overflow-x:auto;font-family:var(--mono);font-size:.78rem;line-height:1.55;color:var(--ink)}
+  pre.code .c{color:var(--faint)}
+  .callout{border-left:3px solid var(--line);background:rgba(28,31,36,.6);padding:10px 14px;border-radius:0 6px 6px 0;margin:12px 0;font-size:.88rem}
+  .callout.warn{border-color:var(--warn)}
+  .callout.ok{border-color:var(--good)}
+  .callout.bad{border-color:var(--bad)}
+  .callout.rw{border-color:var(--meta)}
+  .callout .t{font-family:var(--mono);font-size:.72rem;text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:4px}
+  .callout.warn .t{color:var(--warn)} .callout.ok .t{color:var(--good)} .callout.bad .t{color:var(--bad)} .callout.rw .t{color:var(--meta)}
+  .aria{font-family:var(--mono);font-size:.78rem;color:var(--good)}
+  .kept{color:var(--good);font-family:var(--mono);font-size:.78rem}
+  .rm{color:var(--bad);font-family:var(--mono);font-size:.78rem}
+  .mockrow{display:flex;gap:28px;flex-wrap:wrap;align-items:flex-start;margin:16px 0}
+  .mocklab{font-family:var(--mono);font-size:.7rem;color:var(--faint);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px}
+  .lane{width:192px;height:180px;background:var(--pbody);border:1px solid var(--line);border-radius:8px;display:flex;flex-direction:column;overflow:hidden;flex:none}
+  .lane .lchrome{font-family:var(--mono);font-size:.62rem;color:var(--dim);padding:4px 8px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between}
+  .lane .lbody{flex:1;display:flex;gap:9px;padding:8px;align-items:flex-start}
+  .kcol{width:46px;display:flex;flex-direction:column;align-items:center;gap:3px;flex:none}
+  .dial{width:36px;height:36px;border-radius:50%;background:var(--tile);border:1px solid var(--line);position:relative}
+  .dial::after{content:"";position:absolute;left:50%;top:3px;width:2px;height:12px;background:var(--vid)}
+  .kcap{font-family:var(--mono);font-size:.6rem;color:var(--dim)}
+  .tgl{width:30px;height:16px;border-radius:9px;background:var(--well);border:1px solid var(--line);position:relative;display:inline-block;vertical-align:middle}
+  .tgl i{position:absolute;top:2px;left:3px;width:10px;height:10px;border-radius:50%;background:var(--faint)}
+  .tgl.on{border-color:var(--vid)} .tgl.on i{left:15px;background:var(--vid)}
+  .dock{background:var(--dock);border:1px solid var(--line);border-radius:10px;overflow:hidden;flex:none}
+  .chromebar{display:flex;justify-content:space-between;align-items:center;font-family:var(--mono);font-size:.7rem;color:var(--dim);padding:6px 12px;border-bottom:1px solid var(--line)}
+  .plate{padding:14px;width:max-content;max-width:100%}
+  .extbody{background:var(--pbody);border:1px solid var(--line);border-radius:8px;padding:12px;margin-bottom:12px}
+  .bands{display:flex;flex-direction:column;gap:10px}
+  .band{border:1px solid var(--line);border-radius:8px;padding:8px 12px 10px;background:rgba(28,31,36,.4)}
+  .brow{display:flex;gap:16px;align-items:flex-end}
+  .btn{font-family:var(--mono);font-size:.66rem;color:var(--ink);background:var(--tile);border:1px solid var(--line);border-radius:4px;padding:3px 8px;display:inline-block}
+  .scrbtn{position:absolute;right:6px;bottom:6px;background:rgba(10,12,15,.72);border:1px solid var(--line);border-radius:4px;font-family:var(--mono);font-size:.6rem;color:var(--dim);padding:2px 6px}
+  footer{margin-top:48px;border-top:1px solid var(--line);padding-top:10px;font-family:var(--mono);font-size:.7rem;color:var(--faint)}
+</style>
+</head>
+<body>
+<main>
+<header class="top">
+  <div class="crumbs"><a href="INDEX.html">← face-specs INDEX</a></div>
+  <h1>REWRITE SPEC — <code>gibribbon</code> <span class="badge video">video</span> <span class="badge rw">REWRITE-CLASS — product work, not a faceplate</span></h1>
+  <div class="sub">GibRibbon rebuilt: a CV-controlled, fair-use Vib-Ribbon-spirit line-runner that is actually playable. Rev 3 — supersedes rev 1/2's face-migration framing per the owner's ruling. SPEC ONLY — nothing here is implemented. Authored 2026-08-28 against <code>origin/main</code> @ <code>f340ab43a</code>; history reconstructed from the module's own commits (§1).</div>
+</header>
+
+<div class="callout ok"><span class="t">owner ruling, 2026-08-28 — verbatim, and it is this spec's brief</span>
+<p>“gibribbon has never really worked so that one should be done as a full rewrite, based on looking at the history of the module and understanding it was intended to be a cv-controlled fair-use approximation of the game vib ribbon, and function as a playable game in that respect. it also will use doom marine and monster assets, but this is fair use artistic parody area”</p></div>
+
+<div class="verdict rewrite">VERDICT: FULL REWRITE (rewrite-class product work — engine + surface + tests; a different effort category from every other spec in this directory). The history (§1) shows a module whose playability was an analog calibration smeared across another module's DSP, whose only shipped play experience was later deleted, and whose fallback plays itself. The rewrite (§2) makes the course a DERIVED, ADAPTIVE function of the incoming signal — so any source is playable and no upstream DSP change can silently kill the game again — with determinism designed in, the DOOM-parody art kept per the owner's fair-use ruling, and the DOOM module itself untouched.</div>
+
+<h2>§1 — THE HISTORY, RECONSTRUCTED FROM THE TREE (not guessed)</h2>
+<p>Method: <code>git log --follow</code> on <code>gibribbon.ts</code> / <code>gibribbon-events.ts</code> / <code>GibribbonCard.svelte</code> / <code>doom/wad-sprites.ts</code> / <code>e2e/tests/gibribbon.spec.ts</code>, full commit bodies read; plus <code>git log -S gibribbon-demo</code> for the deletion arc and the calibration guard's own PROVENANCE block. Every claim below carries its commit.</p>
+<table>
+  <tr><th>date · PR</th><th>event</th><th>what it tells us</th></tr>
+  <tr><td>06-05 · #620 <code>b3deb1b3a</code></td><td>BIRTH: “Vib-Ribbon-style ribbon side-scroller rendered with DOOM WAD sprites.” Pure event machine (<code>gibribbon-events.ts</code>), pure WAD decoder (<code>wad-sprites.ts</code>), thin GL shell, DOM HUD card. Events spawn from clock/gate/CV with “all CV→event thresholds … in one tunable GIB_TUNING block for the parent's Phase-2 Synesthesia tuning”</td><td>the ORIGINAL INTENT is the owner's brief already: CV-driven Vib-Ribbon parody. The fragility is also present at birth: playability = hand-tuned absolute thresholds against a specific upstream chain</td></tr>
+  <tr><td>06-05 · #624 <code>7a0a1b6cb</code></td><td>Phase 2: the bundled demo patch (TIMELORDE → MACSEQ → MACROOSCILLATOR → SYNESTHESIA → gibribbon cv1..4) + first recalibration on DAY ONE (<code>cvSpawnThreshold</code> 0.5→0.42 because “the quieter mid/high bands rarely crossed 0.5 so imp/zombie barely spawned”; synesthesia gains lifted)</td><td>the game was only game-shaped through ONE calibrated 5-node patch; the thresholds had to move the day the first real source arrived</td></tr>
+  <tr><td>06-06 · #626 <code>a43078784</code></td><td>DEFECT: “a bare card was inert — marine running in place, ZERO events.” Patch: the AUTOPLAY internal clock + synthesized rotating CV</td><td>designed as a reaction game to signals it did not have. Autoplay is a crutch: it makes an unpatched module LOOK alive while masking whether the CV path plays at all</td></tr>
+  <tr><td>06-06 · #631 <code>92ccaf780</code></td><td>“playable-complete”: lookahead lane, x/y axes finally consumed (“previously stored but read nowhere”), game-over/restart, count-in, hit feedback</td><td>the polish burst — including the admission that two declared inputs were dead I/O for the first two days</td></tr>
+  <tr><td>06-06 · #635 <code>69f2e7baf</code></td><td>PHYSICS DEFECT: scroll step per clock tick (0.18) EQUALLED the full hit window (2×0.09) — ~3.2% of events were “physically un-hittable forced misses” under the real hybrid frame loop (clock-tick jump + dt-smooth scroll). Fixed by widening the window to 0.11</td><td>the DUAL-CLOCK design (discrete tick jumps + continuous dt scroll) is structurally capable of skipping the judgement window; the fix widened a constant rather than unifying the clock</td></tr>
+  <tr><td>06-07 · #654 <code>f3204ff4b</code></td><td>the marine ran facing BACKWARDS (DOOM rotation-3 profile unflipped)</td><td>—</td></tr>
+  <tr><td>06-08 · #701 <code>03ffc6011</code></td><td>THE SMOKING GUN: synesthesia #698 changed band edges → the demo's spectral energy redistributed → jump + imp went DEAD (0 spawns over a 64-tick bar) while EVERY TEST STAYED GREEN — the synthetic calibration test “stayed green THROUGH the #698 refactor that killed jump+imp AND through the fix that revived them. It cannot guard the gains.” Fix: retune synesthesia's per-band gains again + add the real-chain guard (<code>gibribbon-synesthesia-calibration.test.ts</code>)</td><td>HALF THE GAME died silently from a change in ANOTHER module. The game's playability is a constraint smeared across synesthesia's DSP — later synesthesia work (#792, the fast-CV sharpening) had to hand-preserve “gibribbon's slow-env game feel” each time (<code>synesthesia-dsp.ts:30,36,66,194</code>)</td></tr>
+  <tr><td>06-08 → today</td><td>ZERO feature commits. Only sweeps touch the files (#923 docs, #975 jack sweep, #1029 schema, #1442 attest, #1624 typecheck)</td><td>abandonment point: two and a half months idle after a four-day burst</td></tr>
+  <tr><td>08-08 · #1421 <code>e07bfa688</code></td><td>the “Load example…” dropdown and ALL example patches DELETED — including <code>gibribbon-demo.imp.json</code> and its generator. The calibration guard re-pointed at an INLINE fixture (its PROVENANCE block records the byte-for-byte reconstruction)</td><td>the ONLY shipped way to play the game as designed became unreachable. The guard is now a green gate whose PRODUCT subject is gone — it protects a calibration for a patch no user can load</td></tr>
+  <tr><td>08-2x · #2183</td><td>MACSEQ deleted (with sequencer/drumseqz/polyseqz/writeseq)</td><td>the documented demo chain is no longer even hand-buildable as specced — its sequencer does not exist</td></tr>
+  <tr><td>today</td><td>under the shipping faceplate shell, un-migrated gibribbon renders a bare placeholder lane tile (same as every un-migrated bespoke; DOOM's tile behaves identically today); the game exists only inside the dock card; VRT permanently exempt (“animated scrolling ribbon + sprites defeat deterministic single-frame capture”); score/health/combo are DOM chrome (the GAMES.md forbidden shape); <code>autoplay</code> has no UI control anywhere</td><td>the module is invisible in the product's default view and its designed play mode is unreachable</td></tr>
+</table>
+
+<h3>§1.1 Why it “never really worked” — the synthesis the rewrite must answer</h3>
+<table>
+  <tr><th>#</th><th>failure thread (evidence above)</th><th>rewrite answer (§2)</th></tr>
+  <tr><td>F1</td><td><b>Absolute-threshold coupling to upstream DSP.</b> Playability = f(one calibrated patch × synesthesia's exact band gains). Recalibrated on day one (#624), killed silently by #698, retuned by #701, tiptoed around ever since</td><td>ADAPTIVE course extraction: per-channel rolling normalization + rank/peak-based event selection — any source at any level yields a playable density; a DIFFICULTY control scales it. No absolute threshold against foreign DSP survives into the rewrite</td></tr>
+  <tr><td>F2</td><td><b>The only play experience shipped as a deletable asset.</b> #1421 removed the demo patch; #2183 removed its sequencer. Nothing gates “the game is reachable”</td><td>the module must be playable BARE (attract mode + keyboard) and playable MUSICALLY with ANY patched source — no bundled patch is load-bearing. The e2e plays the real chain (gamepad → gibribbon → evt gates)</td></tr>
+  <tr><td>F3</td><td><b>The autoplay crutch conflates demo and game.</b> Self-play masks CV-path death (that is HOW #698's kill went unnoticed by eyes)</td><td>ATTRACT mode is honest and separate: it self-plays ONLY when idle-and-unpatched (arcade convention), visibly labelled in-canvas, and the liveness property test asserts the CV path spawns events for a standard signal corpus — a gate on the GAME, not on one patch's gains</td></tr>
+  <tr><td>F4</td><td><b>Dual clock authority.</b> Tick-jump + dt-smooth scroll made events skippable (#635's ~3.2%); the internal clock lives in <code>draw()</code>, frame-coupled</td><td>ONE authority: the shared scheduler clock drives a pure state machine (the frogger canon — “the board is a pure function of TICK COUNT”); dt is render-side interpolation only, structurally unable to move the judgement window</td></tr>
+  <tr><td>F5</td><td><b>Green gates, dead game.</b> The synthetic calibration test was blind by construction; the real-chain guard now guards a vanished product subject; per-port sweeps prove edges, not play</td><td>gates that watch the GAME: the adaptive-extraction property test (F1), the played-chain e2e (F2), the zero-un-hittable simulation KEPT from #635, and the GAMES.md enforcement-honesty set for the surface</td></tr>
+  <tr><td>F6</td><td><b>Invisible in the shipping shell.</b> Placeholder tile; DOM-chrome HUD; keyboard-only restart</td><td>the rewrite ships WITH its surface: face + fullViewBody game screen, in-canvas HUD, video thumb on the lane tile, and a <code>start_gate</code>-class restart PORT so the rack can restart it (frogger precedent)</td></tr>
+</table>
+
+<h2>§2 — THE TARGET: a CV-controlled playable line-runner in the spirit of Vib-Ribbon</h2>
+<p>The owner's words are the design brief. Vib-Ribbon's defining idea: <b>the music generates the course</b> — a line whose obstacles ARE the signal, traversed by a character who degrades with failure and evolves with excellence. The parody casting stays from the original build: the DOOM marine runs the ribbon; imps and former-humans are the enemy obstacle types; the health ladder is the DOOM face ladder in spirit (super → healthy → wounded → critical → dead).</p>
+
+<h3>§2.1 The gameplay loop</h3>
+<table>
+  <tr><th>beat</th><th>mechanic</th></tr>
+  <tr><td>COURSE</td><td>a rolling LOOKAHEAD BUFFER (~2 bars of ticks) of typed events laid on the ribbon ahead, extracted from the four course channels (§2.2). The ribbon's geometry IS the course: LOOP = pit-V, JUMP = hump (deformations, per the original's Vib-Ribbon grammar), IMP/ZOMBIE = sprite obstacles riding in. The buffer is what makes it Vib-Ribbon rather than whack-a-mole: the player READS the approaching line, and the lookahead prompt lane (#631's, kept) names the buttons</td></tr>
+  <tr><td>TRAVERSE</td><td>the marine runs right at a fixed judgement point; the course scrolls left at the transport rate. Each event is cleared by its mapped button inside the hit window (loop=A, jump=B, imp=X, zombie=Y — unchanged); enemies cleared = fire + death animation (kept)</td></tr>
+  <tr><td>JUDGE</td><td>pure, tick-anchored judgement (§2.3): press edges are timestamped against tick phase; the #635 zero-un-hittable invariant is a DESIGN constraint now (window strictly &gt; per-tick advance, asserted by the kept simulation test)</td></tr>
+  <tr><td>FEEDBACK</td><td>hit: flash + hop/muzzle streak (kept from #631); combo multiplies score (cap ×8); streaks heal rungs and reach SUPER. Miss: the event passes uncleared, the marine degrades one rung with the pain sprite. All of it painted IN-CANVAS (§7)</td></tr>
+  <tr><td>FAIL / RESTART</td><td>dead ⇒ GAME OVER painted in-frame + <code>evt_gameover</code> pulse; restart via the RESET body action, the R key, or the NEW <code>restart</code> gate input (F6) — a rack can loop the game</td></tr>
+</table>
+
+<h3>§2.2 The CV mapping — what drives what</h3>
+<table>
+  <tr><th>input</th><th>drives</th><th>the F1 fix in the mechanism</th></tr>
+  <tr><td><code>cv1..cv4</code> (modsignal: cv, gate, OR audio — the bridge envelope-follows audio, unchanged from the original wiring)</td><td>the four COURSE CHANNELS → loop / jump / imp / zombie density and placement</td><td>each channel keeps a rolling window (≈4 bars) of its own recent level; extraction picks per-tick winners by RELATIVE prominence (local peak vs own baseline), not absolute level. A quiet source and a hot source both play; a dead-flat channel spawns nothing (the resting-floor guard survives); channels compete by rank so no gain drift can silently kill one — the #698/#701 class is structurally closed</td></tr>
+  <tr><td><code>clock</code> (gate, trigger)</td><td>the transport: one rising edge = one course tick (course marches, buffer extends)</td><td>unpatched ⇒ the internal TEMPO param clocks the same tick path (one code path, two tick sources — never two clocks)</td></tr>
+  <tr><td><code>gate</code> (gate, level)</td><td>beat emphasis: high = on-beat, extraction prefers spawning on it (musical placement)</td><td>bias only — never a hard gate on spawning</td></tr>
+  <tr><td><code>x</code>/<code>y</code> (modsignal ±1)</td><td>aim: x shifts the judgement point ±1 window (lead/lag), y raises/crouches the marine (kept from #631, both genuinely consumed)</td><td>—</td></tr>
+  <tr><td><code>a</code>/<code>b</code>/<code>x_btn</code>/<code>y_btn</code> (gate, trigger)</td><td>the four play buttons</td><td>—</td></tr>
+  <tr><td><code>restart</code> (gate, trigger) <b>— NEW</b></td><td>restart from game-over (and hard-reset mid-run)</td><td>F6; frogger's <code>start_gate</code> precedent</td></tr>
+  <tr><td>params <code>difficulty</code>, <code>tempo</code>, <code>attract</code></td><td>density/speed scaling · internal-clock rate · idle self-play</td><td>§3</td></tr>
+</table>
+<p><b>Player input paths, all real today:</b> the <code>gamepad</code> module (faced) outputs <code>a/b/x/y</code> gates + <code>lx/ly</code> cv — it cables straight into the four buttons and the aim axes; any pad-shaped module (numpadPlus, launchpad via midiLane) can drive the buttons; the keyboard maps on body focus (F/D/J/K or arrows, R) exactly as the GAMES.md keyboard-capture canon prescribes; and the four channels take ANY cv/gate/audio source — synesthesia band envelopes remain the flagship musical source, now without a calibration contract.</p>
+
+<h3>§2.3 One clock, pure state, seeded — the engine contract</h3>
+<pre class="code"><span class="c">// The frogger/nibbles canon, designed in rather than retrofitted:</span>
+state' = step(state, tick, inputs)     <span class="c">// PURE: a function of tick count + sampled inputs + seed.</span>
+                                       <span class="c">// The scheduler clock (Web Worker interval — runs regardless of</span>
+                                       <span class="c">// AudioContext state, measured in GAMES.md §4.1) drives step();</span>
+                                       <span class="c">// draw() only interpolates BETWEEN ticks for smooth scroll.</span>
+seed                                    <span class="c">// course extraction ties break by xorshift(seed); seed is</span>
+                                       <span class="c">// re-rolled per run and PINNABLE (__gibribbonVrtSeed).</span>
+freeze                                  <span class="c">// module-side early-return in the subscribed tick — the ONLY</span>
+                                       <span class="c">// mechanism that can hold a scheduler-clocked game (§8).</span></pre>
+<p>The dt-smooth scroll cannot move the judgement window because judgement is tick-anchored — #635's whole defect class is unrepresentable. The zero-un-hittable phase-sweep simulation (400 offsets × 7 frame rates) is KEPT as a permanent invariant test over the new stepper.</p>
+
+<h3>§2.4 The picture path — verified, unchanged in kind</h3>
+<p>Video-domain source (confirmed: <code>domain:'video'</code>, out <code>video</code>): CPU-rasterised frame (16:9 internal, 1024×576) → uploaded texture → fullscreen-quad shader letterboxed into the engine FBO — the nibbles/qbert pattern the original used and the rewrite keeps. <code>audioSources</code> gate outputs (<code>evt_hit/miss/fire/kill/gameover</code>, <code>health_cv</code>) keep feeding the video→audio bridge — the game remains half a sequencer, which is its rack value.</p>
+
+<h2>§3 — THE I/O CONTRACT (rewrite): keep / change / add</h2>
+<table>
+  <tr><th>element</th><th>disposition</th><th>notes</th></tr>
+  <tr><td>inputs <code>cv1..cv4, clock, gate, x, y, a, b, x_btn, y_btn</code></td><td class="kept">KEPT, ids stable</td><td>saved racks keep their cables — persistence compatibility is a design constraint, not luck</td></tr>
+  <tr><td>input <code>restart</code></td><td><b>ADDED</b> (gate, trigger, <code>paramTarget:'restart_btn'</code>)</td><td>F6; contract-lock + docs move — reviewed via <code>docs:accept</code></td></tr>
+  <tr><td>outputs <code>out, evt_hit, evt_miss, evt_fire, evt_kill, evt_gameover, health_cv</code></td><td class="kept">KEPT, ids stable</td><td>—</td></tr>
+  <tr><td>params <code>cv1..cv4, clock, gate, axis_x, axis_y, btn_a, btn_b, btn_x, btn_y</code></td><td class="kept">KEPT as CV-target params, all <code>noUserControl</code> (writer 'cv-port', 12 entries + the new <code>restart_btn</code> = 13)</td><td>the rev-1 declaration table carries over verbatim</td></tr>
+  <tr><td>param <code>autoplay</code></td><td><b>RENAMED IN MEANING, id kept: <code>attract</code>-semantics under the <code>autoplay</code> id</b> (0/1 discrete, default 1)</td><td>keeps persisted patches loading with their setting intact; the LABEL becomes “ATTRACT”. ⚠ If the owner prefers a clean <code>attract</code> id, a persisted <code>autoplay</code> value silently drops on load — that trade is Q3, not a silent call</td></tr>
+  <tr><td>param <code>difficulty</code></td><td><b>ADDED</b> (0..1 linear, default 0.5)</td><td>scales extraction density + scroll rate together (one knob, game-legible)</td></tr>
+  <tr><td>param <code>tempo</code></td><td><b>ADDED</b> (internal-clock rate, log range ≈ 60..180 BPM-equivalent, default ≈ the original's ~0.42 s beat)</td><td>replaces the hard-coded autoplay interval; irrelevant while an external clock is patched</td></tr>
+</table>
+
+<h2>§4 — ASSETS: the owner's fair-use ruling, and the DOOM carve-out</h2>
+<div class="callout ok"><span class="t">owner ruling (verbatim, the asset half)</span>“it also will use doom marine and monster assets, but this is fair use artistic parody area” — the provenance/licensing positioning is the OWNER'S CALL, recorded here as ruled. The rewrite keeps the original casting: marine (PLAY*), imps (TROO*), former-humans (POSS*), decoded from the shareware DOOM1.WAD.</div>
+<table>
+  <tr><th>pipeline fact (verified)</th><th>detail</th></tr>
+  <tr><td>where the WAD comes from</td><td><code>task setup</code> fetches shareware <code>DOOM1.WAD</code> (4.2 MB, ibiblio) into <code>packages/web/static/doom/</code> if absent — the SAME file the DOOM module runs; gitignored, never committed</td></tr>
+  <tr><td>how sprites become pixels</td><td><code>lib/doom/wad-sprites.ts</code> — the PURE decoder gibribbon itself introduced in #620 (directory + picture/patch + PLAYPAL + mirrored dual-lump frames), run at load against the WAD bytes; WAD absent → line-art fallback figures so the game still plays (kept: it is also the honest CI story)</td></tr>
+  <tr><td>⚠ THE STANDING DOOM CARVE-OUT HOLDS</td><td>“do not fuck with doom in any way without specific approval.” The rewrite must not modify the DOOM module, its build (<code>build-doom-wasm.sh</code>), its runtime, its specs/waits/ledger entries, or its attest surface. Consuming the shared WAD file and the existing pure decoders (<code>wad-sprites.ts</code>, <code>cv-gate-edge.ts</code>) READ-ONLY is exactly what the original did and stays within the line. ⚠ If the rewrite needs decoder CHANGES, it copies the pure decoder into its own module space rather than editing files under <code>lib/doom/</code> — stated as a hard constraint, with the file-move question routed to Q2</td></tr>
+</table>
+
+<h2>§5 — SALVAGE MAP: what the rewrite keeps, replaces, deletes</h2>
+<table>
+  <tr><th>artifact</th><th>disposition</th><th>why</th></tr>
+  <tr><td><code>wad-sprites.ts</code> + its unit suite (incl. the #654 facing test)</td><td class="kept">KEEP (read-only reuse)</td><td>pure, tested, and the fair-use art path the owner just ruled on</td></tr>
+  <tr><td><code>gibribbon-events.ts</code>: judgement geometry, health ladder, score/combo, <code>upcomingLane</code>, <code>setAim</code>, the event grammar + <code>EVENT_BUTTON</code> map</td><td class="kept">KEEP the shapes, port into the new tick-pure stepper</td><td>heavily unit-tested game feel worth carrying; none of it is the broken part</td></tr>
+  <tr><td>the #635 zero-un-hittable simulation + its negative control</td><td class="kept">KEEP as a permanent invariant over the new engine</td><td>the best test the module ever got</td></tr>
+  <tr><td>spawn model: <code>cvSpawnThreshold</code> + strongest-channel contest (absolute levels)</td><td class="rm">REPLACE with adaptive prominence extraction over the lookahead buffer (F1)</td><td>the root cause of #624/#698/#701</td></tr>
+  <tr><td>dual clock (tick-jump + dt scroll authority)</td><td class="rm">REPLACE with the single scheduler-tick authority + render interpolation (F4)</td><td>—</td></tr>
+  <tr><td>autoplay-as-liveness</td><td class="rm">REPLACE with attract mode + the liveness property test (F3)</td><td>—</td></tr>
+  <tr><td><code>gibribbon-synesthesia-calibration.test.ts</code></td><td class="rm">RETIRE with its subject — superseded by the source-corpus property test (any source, incl. a synesthesia-rendered corpus, must produce playable density). Its inline fixture's voice is the natural first corpus entry, preserving the #701 lesson as data</td><td>a guard for a deleted product asset's calibration; the rewrite removes the calibration contract it guards</td></tr>
+  <tr><td>DOM HUD row, GAME OVER DOM overlay, tip line, WAD badge-as-text</td><td class="rm">DELETE — the HUD is painted IN-CANVAS by the rasteriser (§7)</td><td>GAMES.md forbidden-chrome shape</td></tr>
+  <tr><td><code>GibribbonCard.svelte</code></td><td class="rm">REWRITE as the thin display/focus bridge both surfaces share (legacy card + face body mount one component)</td><td>—</td></tr>
+</table>
+
+<h2>§6 — THE SURFACE (ships WITH the rewrite, not after it)</h2>
+<pre class="code">face: {
+  order: ['difficulty', 'tempo', 'autoplay'],   <span class="c">// difficulty is rank 1: the one knob a player reaches for.</span>
+  <span class="c">// tempo second (matters only unclocked), attract-toggle last.</span>
+  <span class="c">// 13 noUserControl entries cover every CV-target param (writers anchored).</span>
+  glyph: 'none',           <span class="c">// video def, no audio-typed out; the lane paints the free VideoTileThumb —</span>
+                           <span class="c">// the live game. (DOOM's tile today is a bare placeholder because DOOM is</span>
+                           <span class="c">// un-migrated and carved out; that is the fate this surface avoids.)</span>
+  extension: 'gibribbon',  <span class="c">// fullViewBody: the game screen (role 'picture'), focusable, keyboard map,</span>
+                           <span class="c">// RESET action + WAD warn lamp beside it; screen switch per convention.</span>
+  monitor: { why: 'the game IS the video output a rack projects; watching the ribbon ' +
+                  'without the controls is the performance use.' },
+  rear: {
+    groups: [
+      { id: 'signal', label: 'play', ports: ['a', 'b', 'x_btn', 'y_btn', 'restart'] },
+      { id: 'events', label: 'events', direction: 'output',
+        ports: ['evt_hit', 'evt_miss', 'evt_fire', 'evt_kill', 'evt_gameover'] },
+    ],
+  },
+},</pre>
+<p>Screen switch: over <code>node.data.previewCollapsed</code>, corner overlay; OFF skips the blit AND releases keyboard capture; the engine keeps ticking (attract keeps generating gates — the sequencer half working as designed, stated in code). Lane tile: thumb + <code>difficulty</code> (glyph-bearing cap 2). Width: earned by the 16:9 screen at ~480×270; no exemption.</p>
+
+<h2>§7 — GAMES.md AS THE PRIMARY LENS (with the enforcement-honesty clause)</h2>
+<table>
+  <tr><th>rule</th><th>the rewrite's answer</th></tr>
+  <tr><td>score/lives IN THE PLAYFIELD CANVAS are ALLOWED; a chrome row beside it is FORBIDDEN</td><td>the rewrite's rasteriser paints its own HUD — score, combo, the health rung as the marine's own sprite state, ATTRACT label, count-in, GAME OVER banner — all in-frame (the frogger shape, reached by design instead of nibbles' expensive retrofit). NO DOM score row exists anywhere; the values ride <span class="aria">aria-label</span> on the playfield (<code>role="img"</code>, the §1.1 mechanism)</td></tr>
+  <tr><td>⚠ enforcement honesty</td><td><code>face-resting-text-source</code> CANNOT SEE either shape (canvas text and body markup are both outside its subject — its own stated blind spot). Enforcement is: the dock VRT baseline + human review, plus <code>gibribbon-face-model.test.ts</code> asserting the body DOM contains no score-class element, negative-controlled by temporarily re-adding one. No spec claim that a gate holds this line, because none can</td></tr>
+  <tr><td>keyboard capture</td><td>only while the playfield has focus; ESC and dock chrome keys pass through; screen-off releases capture</td></tr>
+  <tr><td>the WAD state</td><td>a warn-tone lamp with static caption “WAD” (fallback art is also VISIBLE in-frame — wireframe figures); prose in title/aria</td></tr>
+</table>
+
+<h2>§8 — DETERMINISM & VRT: designed in, claimed honestly</h2>
+<table>
+  <tr><th>fact</th><th>consequence</th></tr>
+  <tr><td>the scheduler clock runs regardless of AudioContext state and rAF (GAMES.md §4.1, measured at <code>scheduler-clock.ts</code>)</td><td>the ONLY freeze mechanism is module-side: the <code>freeze</code> early-return in the subscribed tick — the rewrite ships it from day one instead of retrofitting</td></tr>
+  <tr><td>the nibbles precedent: seed + clock pins, BOTH required, seed BEFORE spawn (proven byte-level in the 08-23 nondeterminism record)</td><td>the rewrite exposes <code>__gibribbonVrtSeed</code> + honours <code>__videoEngineFreezeTime</code>; both declared via the face roster's <code>simPin</code>, installed by <code>addInitScript</code> before boot. <code>videoFaceWhy</code> is MANDATORY (video domain — the §4.4 boot-selector rule; omitting it hangs the audio boot path)</td></tr>
+  <tr><td>free-RUN gameplay is not pixel-deterministic (the standing exemption's reason is true)</td><td>baselines capture PINNED states only: cold attract frame 0 (seeded), and a mid-course tick-N state. <code>FACES_WITHOUT_SCENES</code> is NOT claimable — its bar is “evidence that simPin AND freeze cannot reach this renderer”, and here both can BY CONSTRUCTION. The old blanket exemption text retires with the rewrite</td></tr>
+</table>
+
+<h2>§9 — GATES, TESTS (rewrite-class scope)</h2>
+<table>
+  <tr><th>gate / test</th><th>verdict</th></tr>
+  <tr><td>contract-lock + docs</td><td>MOVES (new <code>restart</code> port, new params) — <code>docs:accept</code> diff reviewed line by line; co-located <code>docs:</code> authored for every port/param/control; enters <code>STRICT_DOCS</code></td></tr>
+  <tr><td>the six face gates</td><td>as rev 1 predicted: identity + promotion in the same PR wave; role 'picture'; typed-entry CLEAN (re-verified — no typed entry in any planned surface); options/families inert</td></tr>
+  <tr><td>engine unit</td><td>ported judgement/ladder/lane suites + the #635 simulation + NEW: adaptive-extraction properties (playable density across a source corpus: quiet/hot/flat/synesthesia-rendered; no channel starves under gain scaling — the F1/F5 gate)</td></tr>
+  <tr><td>e2e (real chain, per the poly/MIDI rule's spirit)</td><td>gamepad-shaped gate source → buttons → <code>evt_hit</code> RMS at the bridge; body focus + keys → clear; restart port → fresh run; screen-off → keys pass through; frames counted, never ms (except DOOM, which this suite does not touch)</td></tr>
+  <tr><td>per-module-per-port sweep</td><td>auto-enrolled; the new port needs its row; gameplay gates keep forcePulse coverage</td></tr>
+  <tr><td>attest</td><td>M-item: <code>gibribbon.ts</code> basis membership decides re-attest cost of the engine rewrite; the WAD/doom surfaces are untouched by constraint (§4)</td></tr>
+</table>
+
+<h2>§MOCKS</h2>
+<div class="mockrow">
+  <div>
+    <div class="mocklab">compact lane tile — thumb + difficulty</div>
+    <div class="lane">
+      <div class="lchrome"><span>gibribbon</span><span>▣</span></div>
+      <div class="lbody">
+        <div style="width:104px;height:60px;background:#000;border:1px solid var(--line);border-radius:4px;flex:none">
+          <svg width="102" height="58" viewBox="0 0 102 58"><rect width="102" height="58" fill="#000"/><path d="M0 40 L26 40 L34 50 L42 40 L60 40 L68 28 L76 40 L102 40" stroke="#fff" stroke-width="2" fill="none"/><rect x="20" y="26" width="8" height="14" fill="#3a5"/><text x="64" y="12" font-family="monospace" font-size="7" fill="#666">SCORE 1240</text></svg>
+        </div>
+        <div class="kcol"><div class="dial"></div><div class="kcap">DIFFICULTY</div></div>
+      </div>
+    </div>
+    <div class="mocklab" style="margin-top:6px">score painted IN the frame — no tile chrome</div>
+  </div>
+  <div>
+    <div class="mocklab">dock full view — board body + one band (in-canvas HUD)</div>
+    <div class="dock" style="width:540px">
+      <div class="chromebar"><span>gibribbon</span><span>dock full view · ✕</span></div>
+      <div class="plate">
+        <div class="extbody">
+          <div style="width:480px;height:270px;background:#000;border:1px solid var(--line);border-radius:4px;position:relative;margin-bottom:8px">
+            <svg width="478" height="268" viewBox="0 0 478 268">
+              <rect width="478" height="268" fill="#000"/>
+              <text x="14" y="20" font-family="monospace" font-size="12" fill="#9aa">SCORE 1240   x4</text>
+              <text x="400" y="20" font-family="monospace" font-size="12" fill="#6d6">SUPER</text>
+              <text x="150" y="44" font-family="monospace" font-size="13" fill="#666">A  B  Y  X</text>
+              <path d="M0 190 L110 190 L140 230 L170 190 L250 190 L275 140 L300 190 L478 190" stroke="#fff" stroke-width="3" fill="none"/>
+              <rect x="128" y="150" width="22" height="40" fill="#3a5"/>
+              <rect x="296" y="160" width="20" height="30" fill="#a33"/>
+              <text x="340" y="176" font-family="monospace" font-size="11" fill="#a33">▲imp</text>
+            </svg>
+            <div class="scrbtn">SCREEN ◱</div>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <span class="btn">RESET</span>
+            <span style="display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);font-size:.62rem;color:var(--dim)"><span style="width:9px;height:9px;border-radius:50%;background:#3a3f46;border:1px solid var(--line)"></span>WAD</span>
+          </div>
+        </div>
+        <div class="bands">
+          <div class="band">
+            <div class="brow">
+              <div class="kcol"><div class="dial"></div><div class="kcap">DIFFICULTY</div></div>
+              <div class="kcol"><div class="dial"></div><div class="kcap">TEMPO</div></div>
+              <div class="kcol"><div class="tgl on"><i></i></div><div class="kcap">ATTRACT</div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<h2>§10 — MUST-VERIFY (before the rewrite is scoped)</h2>
+<table>
+  <tr><th>id</th><th>experiment</th><th>pass shape</th></tr>
+  <tr><td>M1</td><td>Prototype the adaptive extractor against the #701 inline-fixture voice AND a deliberately mis-gained variant (×0.3, ×3)</td><td>all four channels alive at playable density in all three — the F1 claim measured before any engine code lands</td></tr>
+  <tr><td>M2</td><td>Scheduler-tick stepper at 24–144 fps: re-run the #635 phase sweep over the new engine</td><td>zero un-hittable, by construction not by margin</td></tr>
+  <tr><td>M3</td><td>Seed + freeze pins: two boots of the pinned attract frame 0 and tick-N state</td><td>byte-identical (the nibbles bar)</td></tr>
+  <tr><td>M4</td><td>Attest basis membership of <code>gibribbon.ts</code>; enumerate the re-attest cost of the engine rewrite; confirm zero <code>lib/doom/</code> file changes in the diff</td><td>cost known and stated in the PR body; doom surface untouched</td></tr>
+  <tr><td>M5</td><td>Persistence compat: load a pre-rewrite rack (cables on every old port, autoplay=0) into the rewrite</td><td>every cable lands; the setting survives under the kept id</td></tr>
+  <tr><td>M6</td><td>Keyboard capture in the dock host: focus ring, ESC passes, screen-off releases</td><td>no dock-chrome regressions</td></tr>
+</table>
+
+<h2>§11 — OPEN QUESTIONS (owner)</h2>
+<table>
+  <tr><th>q</th><th>question</th><th>recommendation</th></tr>
+  <tr><td>Q1</td><td>Sprites at RUNTIME from the shared WAD (today's path: setup-fetched <code>static/doom/DOOM1.WAD</code>, decoded on load, line-art fallback when absent) vs RE-BAKED into a gibribbon-owned sprite sheet at build time?</td><td>runtime decode, unchanged — zero new asset pipeline, the fallback stays honest on CI, and the fair-use posture (shareware WAD, fetched not committed) is the one already shipped. Re-baking creates a committed derivative asset — a bigger provenance statement than the ruling requires</td></tr>
+  <tr><td>Q2</td><td>If the rewrite needs decoder changes: copy <code>wad-sprites.ts</code> into the gibribbon module space (leaving <code>lib/doom/</code> untouched), or seek specific approval to edit it in place?</td><td>copy-on-write — the carve-out stays absolute and the decoder is pure/self-contained; only if it needs no changes does it stay shared read-only</td></tr>
+  <tr><td>Q3</td><td>Keep the <code>autoplay</code> param id carrying ATTRACT semantics (persistence-compatible) or take the clean <code>attract</code> id (persisted values drop)?</td><td>keep the id, relabel — compat is worth one slightly stale id</td></tr>
+  <tr><td>Q4</td><td>Should a played run's SCORE reach the rack (a <code>score_cv</code> output)?</td><td>tempting but no for v1 — the contract churn isn't paid for by a use case yet; the five event gates + health_cv already sequence</td></tr>
+  <tr><td>Q5</td><td>Does the rewrite land as one PR or staged (engine+tests, then surface)?</td><td>staged, engine first behind the existing module id — the surface PR then rides the face-programme rails this directory documents</td></tr>
+</table>
+
+<footer>face-specs/gibribbon.html · rev 3 — REWRITE-CLASS per owner ruling 2026-08-28 · history from git (#620 #624 #626 #631 #635 #654 #701 #1421 #2183 read in full) + gibribbon-synesthesia-calibration.test.ts PROVENANCE + synesthesia-dsp.ts margins + GAMES.md §1/§4 canon · the DOOM module is untouched by this spec and must remain so</footer>
+</main>
+</body>
+</html>

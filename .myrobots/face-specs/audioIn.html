@@ -1,0 +1,307 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>FACE SPEC — audioIn</title>
+<style>
+  /* House tokens — the same set the wave-1..7 mocks use (dark-only, per wave-5+ convention). */
+  :root{
+    --bg:#0e1013; --dock:#12161c; --plate:#262a31; --pbody:#1c1f24; --well:#0a0c0f;
+    --line:#2c3037; --tile:#33383f; --ink:#eef1f5; --dim:#9aa2ad; --faint:#646c77;
+    --accent:#6cf; --vid:#4ade80; --cv:#7dd3fc; --warn:#f2c14e; --good:#8fe6b0;
+    --bad:#f87171; --meta:#c084fc;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{background:var(--bg);color:var(--ink);font-family:var(--sans);margin:0;padding:24px 16px 80px;line-height:1.5}
+  main{max-width:1080px;margin:0 auto}
+  header.top{border-bottom:1px solid var(--line);padding-bottom:12px;margin-bottom:20px}
+  header.top h1{font-family:var(--mono);font-size:1.35rem;margin:0 0 4px}
+  header.top .sub{color:var(--dim);font-size:.9rem}
+  .crumbs{font-family:var(--mono);font-size:.75rem;margin-bottom:10px}
+  .crumbs a{color:var(--cv);text-decoration:none}
+  .crumbs a:hover{text-decoration:underline}
+  .badge{display:inline-block;font-family:var(--mono);font-size:.7rem;padding:2px 8px;border-radius:3px;border:1px solid var(--line);color:var(--dim);margin-left:6px;vertical-align:middle}
+  .badge.audio{color:var(--accent);border-color:var(--accent)}
+  .badge.video{color:var(--vid);border-color:var(--vid)}
+  .verdict{font-family:var(--mono);font-size:.95rem;padding:10px 14px;border-radius:6px;margin:14px 0;border:1px solid}
+  .verdict.promote{border-color:var(--good);color:var(--good);background:rgba(143,230,176,.06)}
+  .verdict.blocked{border-color:var(--warn);color:var(--warn);background:rgba(242,193,78,.06)}
+  h2{font-family:var(--mono);font-size:1.02rem;color:var(--ink);border-bottom:1px solid var(--line);padding-bottom:6px;margin:34px 0 12px}
+  h3{font-family:var(--mono);font-size:.9rem;color:var(--dim);margin:20px 0 8px}
+  p{margin:8px 0;color:var(--ink)}
+  table{border-collapse:collapse;width:100%;margin:10px 0;font-size:.85rem}
+  th{font-family:var(--mono);font-size:.72rem;text-transform:uppercase;letter-spacing:.04em;color:var(--faint);text-align:left;padding:6px 10px;border-bottom:1px solid var(--line)}
+  td{padding:6px 10px;border-bottom:1px solid rgba(44,48,55,.55);vertical-align:top}
+  code,.mono{font-family:var(--mono);font-size:.83em;color:var(--cv)}
+  pre.code{background:var(--well);border:1px solid var(--line);border-radius:6px;padding:12px 14px;overflow-x:auto;font-family:var(--mono);font-size:.78rem;line-height:1.55;color:var(--ink)}
+  pre.code .c{color:var(--faint)}
+  .callout{border-left:3px solid var(--line);background:rgba(28,31,36,.6);padding:10px 14px;border-radius:0 6px 6px 0;margin:12px 0;font-size:.88rem}
+  .callout.warn{border-color:var(--warn)}
+  .callout.ok{border-color:var(--good)}
+  .callout.bad{border-color:var(--bad)}
+  .callout .t{font-family:var(--mono);font-size:.72rem;text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:4px}
+  .callout.warn .t{color:var(--warn)} .callout.ok .t{color:var(--good)} .callout.bad .t{color:var(--bad)}
+  .gone{text-decoration:line-through;color:var(--faint)}
+  .aria{font-family:var(--mono);font-size:.78rem;color:var(--good)}
+  .kept{color:var(--good);font-family:var(--mono);font-size:.78rem}
+  .rm{color:var(--bad);font-family:var(--mono);font-size:.78rem}
+  .mockrow{display:flex;gap:28px;flex-wrap:wrap;align-items:flex-start;margin:16px 0}
+  .mocklab{font-family:var(--mono);font-size:.7rem;color:var(--faint);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px}
+  .lane{width:192px;height:180px;background:var(--pbody);border:1px solid var(--line);border-radius:8px;display:flex;flex-direction:column;overflow:hidden;flex:none}
+  .lane .lchrome{font-family:var(--mono);font-size:.62rem;color:var(--dim);padding:4px 8px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between}
+  .lane .lbody{flex:1;display:flex;gap:9px;padding:8px;align-items:flex-start}
+  .kcol{width:46px;display:flex;flex-direction:column;align-items:center;gap:3px;flex:none}
+  .dial{width:36px;height:36px;border-radius:50%;background:var(--tile);border:1px solid var(--line);position:relative}
+  .dial::after{content:"";position:absolute;left:50%;top:3px;width:2px;height:12px;background:var(--accent);transform-origin:50% 15px}
+  .kcap{font-family:var(--mono);font-size:.6rem;color:var(--dim)}
+  .fcell{width:46px;display:flex;flex-direction:column;align-items:center;gap:3px;flex:none}
+  .ftrack{width:16px;height:96px;background:var(--well);border:1px solid var(--line);border-radius:8px;position:relative}
+  .fthumb{position:absolute;left:-4px;width:22px;height:10px;border-radius:3px;background:var(--accent);box-shadow:0 0 6px rgba(102,204,255,.5)}
+  .dock{background:var(--dock);border:1px solid var(--line);border-radius:10px;overflow:hidden;flex:none}
+  .chromebar{display:flex;justify-content:space-between;align-items:center;font-family:var(--mono);font-size:.7rem;color:var(--dim);padding:6px 12px;border-bottom:1px solid var(--line)}
+  .plate{padding:14px;width:max-content;max-width:100%}
+  .extbody{background:var(--pbody);border:1px solid var(--line);border-radius:8px;padding:12px;margin-bottom:12px}
+  .bands{display:flex;flex-direction:column;gap:10px}
+  .band{border:1px solid var(--line);border-radius:8px;padding:8px 12px 10px;background:rgba(28,31,36,.4)}
+  .blab{font-family:var(--mono);font-size:.62rem;color:var(--faint);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px}
+  .brow{display:flex;gap:16px;align-items:flex-end}
+  /* binder idioms */
+  .devsel{font-family:var(--mono);font-size:.68rem;color:var(--ink);background:var(--well);border:1px solid var(--line);border-radius:4px;padding:4px 8px;display:flex;justify-content:space-between;gap:8px}
+  .btn{font-family:var(--mono);font-size:.66rem;color:var(--ink);background:var(--tile);border:1px solid var(--line);border-radius:4px;padding:4px 10px;display:inline-block}
+  .lamprow{display:flex;align-items:center;gap:6px;font-family:var(--mono);font-size:.64rem;color:var(--dim);margin-top:6px}
+  .lamp{width:9px;height:9px;border-radius:50%;background:#3a3f46;border:1px solid var(--line)}
+  .lamp.good{background:var(--good);box-shadow:0 0 6px rgba(143,230,176,.6)}
+  .lamp.warnl{background:var(--warn);box-shadow:0 0 6px rgba(242,193,78,.6)}
+  .tgl{width:30px;height:16px;border-radius:9px;background:var(--well);border:1px solid var(--line);position:relative;display:inline-block;vertical-align:middle}
+  .tgl i{position:absolute;top:2px;left:3px;width:10px;height:10px;border-radius:50%;background:var(--faint)}
+  .tgl.on{border-color:var(--accent)} .tgl.on i{left:15px;background:var(--accent)}
+  .meter{width:10px;height:96px;background:var(--well);border:1px solid var(--line);border-radius:2px;position:relative;overflow:hidden}
+  .meter i{position:absolute;bottom:0;left:0;right:0;background:linear-gradient(180deg,var(--warn),var(--good));}
+  footer{margin-top:48px;border-top:1px solid var(--line);padding-top:10px;font-family:var(--mono);font-size:.7rem;color:var(--faint)}
+</style>
+</head>
+<body>
+<main>
+<header class="top">
+  <div class="crumbs"><a href="INDEX.html">← face-specs INDEX</a></div>
+  <h1>FACEPLATE BUILD SPEC — <code>audioIn</code> <span class="badge audio">audio</span> <span class="badge">bespoke-surface</span> <span class="badge">blocker: needs-media-controller</span></h1>
+  <div class="sub">AUDIO IN — the hardware CAPTURE BINDER: getUserMedia device roster, permission machine, node-owned stream, stereo L/R outputs. SPEC ONLY — nothing here is implemented. Authored 2026-08-28 against <code>origin/main</code> @ <code>f340ab43a</code>.</div>
+</header>
+
+<div class="verdict promote">VERDICT: PROMOTE, on the <code>cameraInput</code> pattern — and the tax cameraInput paid is ALREADY PAID here: #1590 moved the stream, the status machine and the late-engine reconciler into the node-keyed <code>nodeAudioInput</code> registry with graph-lifetime sweep. The card already only ADOPTS and READS. The face body binds to the same registry. The <code>needs-media-controller</code> blocker is a lifecycle tax, not a face blocker, and for this module the invoice is settled.</div>
+
+<h2>§0 — THE CONSTRAINT MAP, READ FIRST</h2>
+<table>
+  <tr><th>registry / gate</th><th>state for audioIn</th><th>evidence</th></tr>
+  <tr><td><code>STRICT_FACES</code></td><td>NOT a member — unfaced</td><td><code>strict-faces.ts</code></td></tr>
+  <tr><td>migration disposition</td><td><code>bespoke-surface</code>, blockers <code>['needs-media-controller']</code></td><td><code>face-migration-inventory.ts:~640</code>: “a hardware CAPTURE BINDER: a live enumerateDevices roster (service state, not node state, so no selector cell projects it), a permission/status flow with five failure states, and a getUserMedia stream the card starts and stops with its own lifetime.” ⚠ The last clause is STALE — see §0.1</td></tr>
+  <tr><td><code>DOM_SOURCE_LANE_TYPES</code></td><td>NOT a member (roster is archivist/cameraInput/loopback). audioIn attaches an AUDIO stream via the engine handle, not a DOM media element — no headless-host tax</td><td><code>dom-source-modules.ts:137-141</code></td></tr>
+  <tr><td>stream lifetime</td><td><b>node-owned already</b> — <code>node-audio-input-registry.svelte.ts</code> (#1590): card adopts/reads, no create/destroy; teardown by <code>sweep(liveNodeIds)</code> from Canvas; “the structural guard is the ABSENCE of a card-lifecycle method”</td><td>registry header, read in full</td></tr>
+  <tr><td>typed-entry leg</td><td><b>CLEAN</b> — device <code>&lt;select&gt;</code> + buttons + checkbox only</td><td><code>mountsTypedEntry(AudioinCard.svelte)</code> re-run 2026-08-28</td></tr>
+  <tr><td>VRT today</td><td>PERMANENT-shaped exemption: “card state depends on getUserMedia permission + audioinput presence (varies across CI runners)” — the same environmental nondeterminism binds the FACE; expect the cold face scenes to be capturable (idle state is deterministic) but verify M4</td><td><code>e2e/vrt/vrt-exemptions.ts:693</code></td></tr>
+  <tr><td>drawer coupling</td><td>audioIn is hosted in the <code>AudioIoSurface</code> / topbar pinned drawer beside <code>audioOut</code> (already faced). Promotion must not break the pinned-drawer mount — the drawer is a ‘drawer’-view face host (never tabbed)</td><td>wave-3 audioOut spec; <code>AudioIoSurface.svelte</code></td></tr>
+  <tr><td>WebGL attest / ART</td><td>no GL; no DSP change → ART fingerprint diff must be EMPTY</td><td>—</td></tr>
+</table>
+
+<h3>§0.1 The inventory <code>why</code> is stale — read the card, never the why</h3>
+<p>The inventory says “a getUserMedia stream the card starts and stops with its own lifetime.” That was true when written and is FALSE on this tree: #1590 (from the #1583 audit) moved stream + status + reconciler into <code>nodeAudioInput</code>, keyed by NODE id, swept on graph lifetime. <code>AudioinCard</code>’s own header: “inState / errorMsg / liveChannels are DERIVED from the node-keyed registry, not card-local $state (#1590) … The registry is the one home for both the resource and the status that describes it.” This is the standing wave-7 instruction (“3 confirmed-false whys in wave 7 alone”) landing a fourth time. The spec below builds on the registry, and the PR body should note the stale <code>why</code> for the owner (the inventory file edit rides the face PR: disposition flips to <code>generic-face</code>, blockers empty — forced by the inventory test the moment a face is authored).</p>
+
+<h2>§1 — WHAT THE MODULE IS FOR</h2>
+<p>The verb is <b>BIND</b>. Bring system audio into the patch: pick an <code>audioinput</code> device, grant permission, and the module exposes the live capture as a stereo pair (<code>audio_l_out</code>/<code>audio_r_out</code>; mono sources fan out L=R, stereo devices split through a ChannelSplitter). One knob: post-source <code>gain</code>. Permission is requested only on an explicit user gesture — loading a patch never pops a mic prompt. The interesting state (idle / requesting / streaming / permission-denied / no-inputs-found / device-in-use / unsupported / error) is SERVICE state, browser-instance-local, deliberately not in the graph.</p>
+
+<h2>§2 — STOP 1: LEGACY-CARD PARITY CENSUS</h2>
+<table>
+  <tr><th>affordance</th><th>card site</th><th>face home</th><th>survives?</th></tr>
+  <tr><td>Device dropdown (enumerateDevices roster, labels via <code>formatDeviceLabel</code>, “(saved device not found)” fallback)</td><td><code>data-testid="audioin-device-select"</code></td><td>body device selector, reading the roster through the registry/service — NOT a shell <code>selector</code> cell (§6.1). Also on the TILE body: the lane must be able to choose an input (the cameraInput tileBody precedent, verbatim)</td><td>YES</td></tr>
+  <tr><td>Enable / Disable capture (the permission gesture)</td><td><code>audioin-enable</code> / <code>audioin-disable</code></td><td>body + tile action buttons calling the registry’s acquire/stop — user-intent methods (<code>stop(id)</code> is “named for the user’s intent, not the component’s lifecycle”)</td><td>YES</td></tr>
+  <tr><td>Status LED + 8-state machine</td><td><code>audioin-status</code>, states from <code>nodeAudioInput.view(id)</code></td><td>body <code>StatusLed</code> lamps — static captions, tone carries fault-vs-good; state word never painted as free text (§7)</td><td>YES, re-shaped</td></tr>
+  <tr><td>Error line (<code>role="alert"</code>)</td><td><code>audioin-error</code></td><td class="rm">not painted at rest — the failure STATE is a lamp; the prose goes to the lamp’s <code>detail</code>/<code>aria-label</code> and the annotate docs</td><td>value survives, paint does not</td></tr>
+  <tr><td>Stereo/mono channel badge</td><td><code>audioin-channels</code></td><td class="rm">REMOVED as text — derived state at rest. Carried in the playfield-side accessible name (<span class="aria">aria-label="AUDIO IN — streaming, stereo"</span>) and audible in the meter pair itself (R dead ≠ R mirrored)</td><td>value survives</td></tr>
+  <tr><td>Music mode checkbox (capture DSP off: echo-cancel/noise-suppress/AGC), persisted <code>node.data.musicMode</code></td><td><code>audioin-music-mode</code></td><td>toggle cell in the band (graph-backed <code>ShellToggleCell</code> over node.data — it IS in the graph, so the discriminator says: no registry needed for this one)</td><td>YES</td></tr>
+  <tr><td>GAIN (NeonFader, 0..2)</td><td><code>NeonFader</code></td><td>ranked <code>fader</code> cell — the cameraInput declaration verbatim: the card draws it as a throw, so it is declared</td><td>YES</td></tr>
+  <tr><td><code>devicechange</code> subscription (hot-plug re-enumeration)</td><td>card <code>onMount</code></td><td>⚠ must move to the REGISTRY (node lifetime), not the body — a hot-plug while the dock pane is collapsed must still re-resolve the saved device. M2</td><td>YES, after M2</td></tr>
+</table>
+
+<h2>§3 — STOP 2: EVERY WAY DATA GETS IN</h2>
+<table>
+  <tr><th>path</th><th>mechanism</th><th>after promotion</th></tr>
+  <tr><td>gain edits</td><td><code>setNodeParam</code>; Yjs-shared (“a remote user adjusting your gain knob … matches how every other audio module works”)</td><td>identical via the fader cell</td></tr>
+  <tr><td>device choice</td><td><code>node.data.deviceId</code> in Yjs; each browser re-resolves it locally</td><td>unchanged; body/tile selector writes the same key</td></tr>
+  <tr><td>music mode</td><td><code>node.data.musicMode</code> in Yjs</td><td>unchanged via toggle cell</td></tr>
+  <tr><td>the stream itself</td><td>registry acquire → <code>engine.read('attach', {stream, channelCount})</code>; late-engine reconciler in the registry</td><td>unchanged — no UI in the loop</td></tr>
+  <tr><td>reload / collapse / pane eviction</td><td>registry survives card unmount (#1590’s whole point — <code>MediaStreamTrack.stop()</code> is irreversible)</td><td>unchanged; the face swap is exactly the unmount class the registry already absorbs</td></tr>
+</table>
+
+<h2>§4 — THE LANE PICTURE</h2>
+<p><code>domain === 'audio'</code> → no free video thumb. But audioIn HAS a real <code>type:'audio'</code> output pair, so <code>primaryAudioOutPortId</code> resolves and <b><code>glyph: 'meter'</code> binds <code>live-audio</code> honestly</b> — a VU of the actual captured signal. This is the one glyph that answers the module’s only performance question (“is my mic live and how hot?”) with data that cannot lie: silence reads empty, clipping reads full. The <code>bluebox</code> ruling applies (the meter is a genuine hazard signal — a hot line-in at gain 2 can clip). Declaring the meter moves the lane to the glyph-bearing cap column (compact cap 3→2): gain + music-mode fit; the tile’s device/enable affordances live in <code>tileBody</code>, which appends BELOW the ranked cells by design.</p>
+
+<h2>§5 — THE FACE</h2>
+<pre class="code">face: {
+  <span class="c">// RANK. `gain` is the only continuous control and the only per-performance one.</span>
+  <span class="c">// `musicMode` is a graph-backed static key (node.data), ranked second — it is a</span>
+  <span class="c">// set-and-forget capture-DSP switch, not a play control.</span>
+  order: ['gain', 'musicMode'],
+  paramCells: { gain: 'fader' },   <span class="c">// the card draws a NeonFader; a level is a THROW (owner ruling 2026-08-10)</span>
+  glyph: 'meter',                  <span class="c">// live-audio binding — real audio outs, §4. The marbles trap does NOT apply.</span>
+  extension: 'audioIn',            <span class="c">// §6 — binder body + tile body.</span>
+  <span class="c">// ONE band, no pages, no rail (2 cells &lt;&lt; DOCK_TAB_MIN_BANDS 7).</span>
+  <span class="c">// NOTE: `musicMode` is NOT a ParamDef — it is a static face key resolved by</span>
+  <span class="c">// shell-cells to a graph-backed ShellToggleCell over node.data.musicMode.</span>
+  <span class="c">// Only `order` can rank a non-param control; module-face-lint then requires the</span>
+  <span class="c">// key to resolve to a real ShellCell (no dead labels).</span>
+},</pre>
+
+<h3>§5.1 Cells, tier by tier</h3>
+<table>
+  <tr><th>control</th><th>declaration</th><th>cell kind</th><th>compact lane (cap 2 with glyph)</th><th>dock</th></tr>
+  <tr><td><code>gain</code></td><td>param: 0..2 linear, default 1.0, units 'gain'</td><td><code>fader</code> (declared)</td><td>slot 1 (96 px)</td><td>band cell</td></tr>
+  <tr><td><code>musicMode</code></td><td>static key → node.data.musicMode, default OFF</td><td>toggle</td><td>slot 2</td><td>band cell</td></tr>
+  <tr><td>device / enable / status</td><td>not cells — service+gesture surface</td><td>—</td><td><code>tileBody</code> (appended below cells)</td><td><code>fullViewBody</code></td></tr>
+</table>
+
+<h3>§5.2 Width — NOT earned</h3>
+<p>Two cells + a device row. No picture. <code>width: max-content</code>, zero exemptions expected. The device selector’s own max-width lives INSIDE the body component (a long device label ellipsizes; “a clamp CLIPS a wide face where a scroll REVEALS it” cuts the other way here — one row, so ellipsis, not scroll).</p>
+
+<h2>§6 — THE BODY: <code>face.extension: 'audioIn'</code>, slots <code>fullViewBody</code> + <code>tileBody</code></h2>
+<h3>§6.1 Why not a shell <code>selector</code> cell — the settled argument, cited not re-litigated</h3>
+<p>The device roster is SERVICE state (a live <code>enumerateDevices</code> answer), not node state — no selector cell projects it (the inventory’s own words, and the one clause of its <code>why</code> that is still true). The wave-4 “give <code>env</code> a read seam” ask is a <b>disproven blocker, refuted on three independent axes</b> (BINDERS.md §1/§9: <code>ShellCellEnv.engine</code> has no <code>read</code>; reach; ownership). The body resolves the roster itself — module-owned code may import what it needs (<code>getActiveEngine()</code> where an engine read is wanted, <code>navigator.mediaDevices</code> + the registry here). Do not re-propose the env change.</p>
+
+<h3>§6.2 The components</h3>
+<table>
+  <tr><th>slot</th><th>component</th><th>contents</th></tr>
+  <tr><td><code>fullViewBody</code></td><td><code>$lib/ui/modules/audioIn/AudioInBinderBody.svelte</code></td><td>device selector (registry-resolved roster, saved-device fallback row) · ENABLE/DISABLE actions (registry acquire/stop) · <code>StatusLed</code> row (§6.3) · the L/R meter pair is NOT duplicated here — the shell glyph already carries level (painting both is the empty-black-rectangle class)</td></tr>
+  <tr><td><code>tileBody</code></td><td><code>AudioInTileBody.svelte</code></td><td>device select (compact) + ENABLE/DISABLE + one capture lamp — the cameraInput first-adopter rationale verbatim: “a module whose only non-param control lives in the full view is unusable from the lane, which is where it is normally met.” Keep it SMALL (~2 rows); the tile budgets height</td></tr>
+</table>
+
+<h3>§6.3 Status without state-words — the five failure states as lamps</h3>
+<p>Eight states collapse to three lamps with STATIC captions (a caption that changes with state is refused — the Connect/Re-connect discriminator):</p>
+<table>
+  <tr><th>lamp (static caption)</th><th>lit when</th><th>tone</th><th>detail → aria-label/title (never painted)</th></tr>
+  <tr><td><code>CAPTURE</code></td><td>streaming</td><td>accent</td><td>“streaming, stereo, ES-9” / “streaming, mono (L=R)”</td></tr>
+  <tr><td><code>PERMISSION</code></td><td>permission-denied / unsupported</td><td>warn</td><td>the exact failure prose the card’s error line carried</td></tr>
+  <tr><td><code>DEVICE</code></td><td>no-inputs-found / device-in-use / error</td><td>warn</td><td>per-state prose (“another tab holds the microphone”)</td></tr>
+</table>
+<p><code>requesting</code> is transient and paints as the CAPTURE lamp unlit + the ENABLE button disabled — not a fourth lamp. There is deliberately NO green “connected to hardware” promise beyond what the meter proves: the chromaconsole open-loop ruling (“a reassuring indicator would be a lie”) — here the meter closes the loop honestly, so CAPTURE lit + meter moving is the truth, and CAPTURE lit + meter flat is itself diagnostic (device muted at the OS).</p>
+
+<h3>§6.4 <code>EXTENSION_BODY_ROLES</code> — the third gate</h3>
+<pre class="code">audioIn: {
+  role: 'control-grid',
+  why: 'the binder surface: a device roster, an acquire/release gesture pair and status ' +
+       'lamps; it is operated as controls whose state lives in the accessible name, ' +
+       'mounts no canvas, and the lamps are incidental cells on it (the gamepad ruling).',
+},</pre>
+<p>Predicate check: sets <code>aria-label</code>, mounts no canvas, and — per the gamepad/electraControl ruling — a body that also imports <code>StatusLed</code> still declares the role naming what it is operated FROM.</p>
+
+<h3>§6.5 Screen switch</h3>
+<p>Not required — audio domain. No <code>previewCollapsed</code>.</p>
+
+<h2>§MOCKS</h2>
+<div class="mockrow">
+  <div>
+    <div class="mocklab">compact lane tile — 192×180, glyph cap 2 + tileBody</div>
+    <div class="lane" style="height:auto;min-height:180px">
+      <div class="lchrome"><span>audio in</span><span>▣</span></div>
+      <div class="lbody" style="align-items:stretch">
+        <div class="fcell"><div class="ftrack" style="height:72px"><div class="fthumb" style="top:30px"></div></div><div class="kcap">GAIN</div></div>
+        <div class="kcol"><div class="tgl"><i></i></div><div class="kcap">MUSIC</div></div>
+        <div class="meter" style="height:72px"><i style="height:38%"></i></div>
+      </div>
+      <div style="padding:6px 8px;border-top:1px solid var(--line)">
+        <div class="devsel"><span>MacBook Pro Mic</span><span>▾</span></div>
+        <div class="lamprow"><span class="lamp good"></span><span>CAPTURE</span><span class="btn" style="margin-left:auto">DISABLE</span></div>
+      </div>
+    </div>
+    <div class="mocklab" style="margin-top:6px">tileBody appends below the ranked cells; meter = live-audio glyph</div>
+  </div>
+  <div>
+    <div class="mocklab">dock full view — binder body + one band</div>
+    <div class="dock" style="width:420px">
+      <div class="chromebar"><span>audio in</span><span>dock full view · ✕</span></div>
+      <div class="plate">
+        <div class="extbody">
+          <div class="mocklab" style="margin-bottom:4px">fullViewBody — AudioInBinderBody</div>
+          <div class="devsel" style="margin-bottom:8px"><span>Expert Sleepers ES-9 (inputs 1/2)</span><span>▾</span></div>
+          <div style="display:flex;gap:8px;margin-bottom:8px"><span class="btn">ENABLE</span><span class="btn" style="opacity:.55">DISABLE</span></div>
+          <div class="lamprow"><span class="lamp good"></span><span>CAPTURE</span></div>
+          <div class="lamprow"><span class="lamp"></span><span>PERMISSION</span></div>
+          <div class="lamprow"><span class="lamp"></span><span>DEVICE</span></div>
+        </div>
+        <div class="bands">
+          <div class="band">
+            <div class="brow">
+              <div class="fcell"><div class="ftrack" style="height:72px"><div class="fthumb" style="top:30px"></div></div><div class="kcap">GAIN</div></div>
+              <div class="kcol"><div class="tgl on"><i></i></div><div class="kcap">MUSIC</div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<h2>§7 — RESTING TEXT CENSUS</h2>
+<table>
+  <tr><th>string on the legacy card</th><th>verdict</th><th>replacement</th></tr>
+  <tr><td>state word beside the LED (“streaming”, “requesting…”)</td><td class="rm">REMOVED — a state word is derived text at rest</td><td>lamps with static captions; prose in <span class="aria">detail/aria-label</span></td></tr>
+  <tr><td>“stereo” / “mono” channel badge</td><td class="rm">REMOVED (same shape)</td><td><span class="aria">aria-label</span> on the body; the meter pair carries it audibly/visibly</td></tr>
+  <tr><td>error prose line</td><td class="rm">REMOVED at rest</td><td>warn-tone lamp + <span class="aria">title/aria-label</span>; full prose in annotate docs</td></tr>
+  <tr><td>device labels in the selector</td><td class="kept">KEPT — option NAMES that disambiguate a control’s own position (the cameraInput device-name precedent, permitted class)</td><td>—</td></tr>
+  <tr><td>“Music mode” caption</td><td class="kept">KEPT — control caption</td><td>—</td></tr>
+</table>
+
+<h2>§8 — TYPED-ENTRY GATE</h2>
+<p><b>CLEAN.</b> <code>mountsTypedEntry(AudioinCard.svelte)</code> re-run 2026-08-28: select/buttons/checkbox only. The leg will not fire.</p>
+
+<h2>§9 — STATE / .data CENSUS</h2>
+<table>
+  <tr><th>key</th><th>home</th><th>writer</th></tr>
+  <tr><td><code>params.gain</code></td><td>Yjs (shared)</td><td>fader cell via setNodeParam</td></tr>
+  <tr><td><code>node.data.deviceId</code></td><td>Yjs (shared; per-browser re-resolve)</td><td>body/tile selector</td></tr>
+  <tr><td><code>node.data.musicMode</code></td><td>Yjs (shared)</td><td>toggle cell</td></tr>
+  <tr><td>stream / state machine / reconciler</td><td><code>nodeAudioInput</code> registry — browser-instance-local BY DESIGN (permission grants don’t sync)</td><td>registry acquire/stop only; no card-lifecycle method EXISTS (the tsc-level guard)</td></tr>
+</table>
+
+<h2>§10 — GATES, TESTS, VRT</h2>
+<table>
+  <tr><th>gate</th><th>verdict for this PR</th></tr>
+  <tr><td>1 · <code>module-face-lint</code> / identity</td><td>face + <code>'audioIn'</code> into STRICT_FACES in one diff; <code>musicMode</code> static key must resolve to a real ShellCell</td></tr>
+  <tr><td>2 · VRT</td><td><code>GREP=audioIn flox activate -- task vrt:commit</code>. Predict 2 files IF the idle face is deterministic on CI (no devices, permission never granted → idle state) — M4 decides; otherwise a <code>FACES_WITHOUT_SCENES</code> entry with the 4-way anchor and <code>coveredBy</code> naming audio-in.spec.ts + devices.test.ts</td></tr>
+  <tr><td>3 · <code>EXTENSION_BODY_ROLES</code></td><td>entry per §6.4, role <code>control-grid</code></td></tr>
+  <tr><td>4 · docs family↔card</td><td>no families — inert</td></tr>
+  <tr><td>5 · <code>optionsExhaustive</code></td><td>no option rosters — inert (the device roster is a body surface, not a ParamDef)</td></tr>
+  <tr><td>6 · typed-entry leg</td><td>clean (§8)</td></tr>
+</table>
+<p>e2e: the poly/MIDI real-chain rule’s analogue applies — a face e2e must drive the REAL chain (fake getUserMedia via Playwright’s <code>--use-fake-device-for-media-stream</code>, enable via the BODY, assert RMS at <code>audio_l_out</code>), not a synthetic attach. Existing <code>audio-in.spec.ts</code> rows that boot <code>?shell=legacy</code> stay for legacy parity; add the shipping-shell leg.</p>
+
+<h2>§11 — DIVERGENCE / DEFECT LEDGER</h2>
+<table>
+  <tr><th>#</th><th>finding</th><th>routing</th></tr>
+  <tr><td>1</td><td>Inventory <code>why</code> stale on stream ownership (§0.1) — the module satisfies what the blocker describes while the tree already fixed what it measures</td><td>PR body notes it; inventory entry flips with the face (forced by the inventory test)</td></tr>
+  <tr><td>2</td><td>Card gain fader passes literal range props (the backdraft class; values agree today)</td><td>bind via <code>paramSpec(audioInDef,'gain')</code> + enrol in <code>RANGE_BOUND_CARDS</code>, boy-scout in the face PR</td></tr>
+  <tr><td>3</td><td><code>devicechange</code> subscription is card-mounted (§2 last row) — hot-plug with no surface mounted re-resolves nothing</td><td>M2; move to registry if confirmed</td></tr>
+</table>
+
+<h2>§12 — MUST-VERIFY</h2>
+<table>
+  <tr><th>id</th><th>experiment</th><th>pass shape</th></tr>
+  <tr><td>M1</td><td>Confirm the registry exposes acquire/stop/roster in a form a non-card component can consume (body + tile both bind it)</td><td>both surfaces drive one seam; no second permission flow appears</td></tr>
+  <tr><td>M2</td><td>Hot-plug a device with the dock pane collapsed (no card, no body): does the saved-device reconciliation run?</td><td>if not, the subscription moves into the registry in this PR</td></tr>
+  <tr><td>M3</td><td>Pinned-drawer host (<code>AudioIoSurface</code>): mount the promoted face in the drawer view; confirm the drawer’s no-tab-rail invariant and that the body fits the drawer width</td><td>no layout regression beside audioOut’s shipped face</td></tr>
+  <tr><td>M4</td><td>Boot the face on a runner with zero audioinput devices and no permission: is the idle plate pixel-stable across two boots?</td><td>deterministic → baseline it; else FACES_WITHOUT_SCENES with the measured reason</td></tr>
+  <tr><td>M5</td><td>Meter glyph on a silent-but-streaming device vs no device: the two must be visually distinct only via the lamps (the meter honestly reads 0 in both)</td><td>no lamp lies; meter never invents level</td></tr>
+</table>
+
+<h2>§13 — OPEN QUESTIONS (owner)</h2>
+<table>
+  <tr><th>q</th><th>question</th><th>recommendation</th></tr>
+  <tr><td>Q1</td><td>Does ENABLE belong on the TILE (a permission prompt reachable from the lane) or dock-only?</td><td>tile — the cameraInput precedent shipped exactly this and the module is unusable otherwise; the prompt is user-gesture-gated either way</td></tr>
+  <tr><td>Q2</td><td>Should the <code>needs-media-controller</code> blocker be retired for audioIn specifically in the inventory before the face lands?</td><td>no — let the face PR flip the entry; a standalone inventory edit is ceremony</td></tr>
+</table>
+
+<footer>face-specs/audioIn.html · authored from audioin.ts + AudioinCard.svelte + node-audio-input-registry.svelte.ts read in full · standards: wave-5/6/7 bespoke spec canon (BINDERS.md applied)</footer>
+</main>
+</body>
+</html>
