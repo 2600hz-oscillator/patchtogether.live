@@ -613,6 +613,9 @@
     { id: 'cam_pos_x',   label: 'CAM X',     cable: 'cv' },
     { id: 'cam_pos_y',   label: 'CAM Y',     cable: 'cv' },
     { id: 'cam_dist',    label: 'DIST',      cable: 'cv' },
+    // PANIC — rising edge fires the same settings reset as the face's PANIC
+    // button (one implementation, two triggers; see ./backdraft/panic.ts).
+    { id: 'panic',       label: 'PANIC',     cable: 'gate' },
   ];
   const outputs = portsFromDef(backdraftDef.outputs);
 </script>
