@@ -45,6 +45,7 @@
 //   node scripts/vrt-changeset-gallery.mjs --pr 759 --title "rack sizing"
 //   node scripts/vrt-changeset-gallery.mjs --json out.json       # also emit a machine summary
 
+import { createHash } from 'node:crypto';
 import {
   readFileSync,
   writeFileSync,
@@ -78,6 +79,17 @@ function parseArgs(argv) {
     // render fails the VRT job with the diff in the run output, but commits no
     // PNGs, so the git-diff mode finds nothing. fromResults surfaces it.
     fromResults: null,
+    // --candidates <dir>: drive the run-driven mode from the accept-candidates
+    // MANIFESTS (vrt-accept-candidates-*.json) rather than by walking the
+    // results tree. The manifests carry the AUTHORITATIVE baseline path per
+    // actual (derived from Playwright's attachment metadata at the source),
+    // the producer-recorded sha256, and the settled flag — so each card can
+    // show its exact `task vrt:accept` command and refuse-to-invite the
+    // scenes the accept workflow would refuse anyway (never settled, cross-
+    // shard conflict, transport mismatch). Requires --from-results to name
+    // the downloaded test-results root; --run-id fills the commands in.
+    candidates: null,
+    runId: null,
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -87,9 +99,11 @@ function parseArgs(argv) {
     else if (a === '--title') args.title = argv[++i];
     else if (a === '--json') args.json = argv[++i];
     else if (a === '--from-results') args.fromResults = argv[++i];
+    else if (a === '--candidates') args.candidates = argv[++i];
+    else if (a === '--run-id') args.runId = argv[++i];
     else if (a === '--help' || a === '-h') {
       console.log(
-        'Usage: node scripts/vrt-changeset-gallery.mjs [--base <ref>] [--from-results <dir>] [--out <dir>] [--pr <n>] [--title <s>] [--json <file>]',
+        'Usage: node scripts/vrt-changeset-gallery.mjs [--base <ref>] [--from-results <dir> [--candidates <dir>] [--run-id <id>]] [--out <dir>] [--pr <n>] [--title <s>] [--json <file>]',
       );
       process.exit(0);
     }
@@ -235,6 +249,81 @@ function collectFromResults(dir) {
   return entries;
 }
 
+// Manifest-driven collection for the ACCEPT gallery (ci.yml
+// vrt-accept-gallery job). Differs from collectFromResults in the one way
+// that matters for a promote path: the baseline path per card comes from the
+// shard's manifest — i.e. from Playwright's own attachment metadata recorded
+// at the source — never from the (truncated, lossy) results folder name. The
+// folder-name derivation above is fine for a review LABEL; these paths are
+// what the accept command will write real bytes to, so they must be the real
+// ones. Also carries the per-scene state the accept workflow will enforce, so
+// the page never invites a command that would be refused:
+//   settled:false      → "never settled — fix the motion", no command
+//   conflict           → two shards rendered different bytes, no command
+//   transportMismatch  → downloaded bytes != producer sha256, no command
+function collectFromCandidates(candidatesDir, resultsRoot) {
+  const absCand = isAbsolute(candidatesDir) ? candidatesDir : join(ROOT, candidatesDir);
+  const absResults = isAbsolute(resultsRoot) ? resultsRoot : join(ROOT, resultsRoot);
+  const files = walk(absCand).filter((f) =>
+    /vrt-accept-candidates-.*\.json$/.test(f.split('/').pop() ?? ''),
+  );
+  const merged = new Map(); // baseline_path → candidate (+shard, conflict flag)
+  let runId = null;
+  for (const f of files.sort()) {
+    const m = JSON.parse(readFileSync(f, 'utf8'));
+    runId = runId ?? m.run_id;
+    for (const c of m.candidates ?? []) {
+      const prior = merged.get(c.baseline_path);
+      if (prior) {
+        // Two shards offering one scene: byte-agreement is a duplicate render
+        // (fine, keep one); disagreement is the per-VM-coin-flip signature and
+        // the card must SAY so instead of showing whichever arrived first.
+        if (prior.actual_sha256 !== c.actual_sha256) prior.conflict = true;
+        continue;
+      }
+      merged.set(c.baseline_path, { ...c, shard: m.shard, conflict: false });
+    }
+  }
+  // A snapshot name that exists under two specs needs the qualified
+  // `<spec>/<name>` form in its command — the accept script refuses the
+  // ambiguous short form.
+  const nameCount = new Map();
+  for (const c of merged.values()) nameCount.set(c.name, (nameCount.get(c.name) ?? 0) + 1);
+  const entries = [];
+  for (const c of merged.values()) {
+    const actualAbs = join(absResults, `vrt-strict-test-results-${c.shard}`, c.actual_path);
+    const newBuf = existsSync(actualAbs) ? readFileSync(actualAbs) : null;
+    // Playwright also copies the baseline it compared against next to the
+    // actual (legacyExpectedPath) — that copy is the OLD side, so the gallery
+    // needs no git/LFS at all.
+    const expectedAbs = `${actualAbs.slice(0, -'-actual.png'.length)}-expected.png`;
+    const oldBuf = newBuf && existsSync(expectedAbs) ? readFileSync(expectedAbs) : null;
+    const transportMismatch = newBuf
+      ? createHash('sha256').update(newBuf).digest('hex') !== c.actual_sha256
+      : true;
+    entries.push({
+      status: oldBuf ? 'M' : 'A',
+      path: c.baseline_path,
+      oldPath: c.baseline_path,
+      oldBuf,
+      newBuf,
+      candidate: {
+        scene: (nameCount.get(c.name) ?? 0) > 1 ? `${c.spec_file}/${c.name}` : c.name,
+        settled: Boolean(c.settled) && !c.previous_png_present,
+        conflict: c.conflict,
+        transportMismatch,
+        sha: c.actual_sha256,
+        shard: c.shard,
+      },
+    });
+  }
+  entries.sort((a, b) => a.path.localeCompare(b.path));
+  console.error(
+    `[vrt-changeset] candidates=${files.length} manifest(s), run ${runId ?? '?'} — ${entries.length} scene(s)`,
+  );
+  return { entries, runId };
+}
+
 // ---- LFS-aware blob reads -------------------------------------------------
 
 function isPointer(buf) {
@@ -364,6 +453,23 @@ function renderHtml({ cards, meta }) {
       const diffNote = c.diffPixels != null
         ? `<span class="diffstat">${c.diffPixels.toLocaleString()} px (${(c.diffRatio * 100).toFixed(2)}%)</span>`
         : `<span class="diffstat na">${esc(c.diffNote || 'no pixel diff')}</span>`;
+      // Accept affordance — ONE scene, ONE command, and only for a scene the
+      // accept workflow would not refuse anyway. Scenes it WOULD refuse get
+      // the refusal stated in place of a command, so the review page and the
+      // enforcement can never disagree about what is promotable.
+      let acceptHtml = '';
+      if (c.accept && meta.runId != null) {
+        if (c.accept.conflict) {
+          acceptHtml = `<div class="accept refused"><span class="badge del">CROSS-SHARD CONFLICT</span> two shards rendered different bytes for this scene — per-VM nondeterminism; accepting either side would launder it. Not promotable.</div>`;
+        } else if (c.accept.transportMismatch) {
+          acceptHtml = `<div class="accept refused"><span class="badge del">TRANSPORT MISMATCH</span> downloaded bytes do not match the sha256 the shard recorded — the artifact pipeline corrupted this file. Not promotable.</div>`;
+        } else if (!c.accept.settled) {
+          acceptHtml = `<div class="accept refused"><span class="badge del">NEVER SETTLED</span> the render never produced two identical consecutive frames (-previous.png present) — this actual is a moving frame. Fix the motion; accepting is refused.</div>`;
+        } else {
+          const cmd = `flox activate -- task vrt:accept -- ${meta.runId} ${c.accept.scene}`;
+          acceptHtml = `<div class="accept"><code>${esc(cmd)}</code><button class="copycmd" data-cmd="${esc(cmd)}">copy</button><span class="sha">sha256 ${esc(c.accept.sha.slice(0, 12))} · shard ${esc(String(c.accept.shard))}</span></div>`;
+        }
+      }
       const cell = (label, src, cls = '') =>
         src
           ? `<figure class="${cls}"><figcaption>${label}</figcaption><a href="${esc(src)}" target="_blank"><img loading="lazy" src="${esc(src)}" alt="${esc(label)} ${esc(c.card)}"></a></figure>`
@@ -397,14 +503,31 @@ function renderHtml({ cards, meta }) {
             </div>
           </details>`
               : ''
-          }
+          }${acceptHtml}
         </section>`;
     })
     .join('\n');
 
-  const title = meta.pr
-    ? `VRT changeset — PR #${esc(meta.pr)}`
-    : 'VRT changeset gallery';
+  const title = meta.runId
+    ? `VRT accept review — run ${esc(meta.runId)}${meta.pr ? ` (PR #${esc(meta.pr)})` : ''}`
+    : meta.pr
+      ? `VRT changeset — PR #${esc(meta.pr)}`
+      : 'VRT changeset gallery';
+
+  // The full-set command, at the BOTTOM and as plain text on purpose: the one
+  // affordance this page must NOT offer is a one-click accept-all (§4.5 of the
+  // promote-on-accept report — batch accept is how an all-black baseline
+  // shipped and passed for months). Reaching this line means having scrolled
+  // past every card; the command still excludes never-settled scenes
+  // server-side.
+  const acceptFooter = meta.runId
+    ? `
+<footer class="acceptall">
+  <p>Full reviewed set — only after every card above has actually been looked at:</p>
+  <code>flox activate -- task vrt:accept -- ${esc(meta.runId)}</code>
+  <p class="small">Accepts every settled candidate (never-settled, conflicted and corrupt scenes are refused server-side; anything you leave out stays red until its underlying fix). More than 40 scenes needs a deliberate <code>ACCEPT_ALL=1</code>.</p>
+</footer>`
+    : '';
 
   return `<!doctype html>
 <html lang="en">
@@ -449,6 +572,17 @@ function renderHtml({ cards, meta }) {
   .cmp-divider { position:absolute; top:0; bottom:0; left:var(--split); width:2px; margin-left:-1px; background:#8ab4f8; box-shadow:0 0 0 1px #000; pointer-events:none; }
   .cmp-ctl { display:flex; gap:20px; margin-top:8px; font-size:11px; color:#9aa0a6; align-items:center; }
   .cmp-ctl input[type=range] { vertical-align:middle; width:120px; }
+  /* per-card accept command — a code line + copy, deliberately NOT a big
+     inviting button; the refused variants carry the reason inline. */
+  .accept { margin-top:12px; display:flex; align-items:center; gap:10px; flex-wrap:wrap; font-size:12px; }
+  .accept code { background:#111114; border:1px solid #2a2a2e; border-radius:6px; padding:5px 9px; color:#c8e1ff; user-select:all; }
+  .accept .copycmd { background:#26262b; color:#c9ccd3; border:1px solid #3a3a40; border-radius:6px; padding:4px 10px; font:inherit; cursor:pointer; }
+  .accept .copycmd:hover { background:#30303a; }
+  .accept .sha { color:#7a8089; font-size:11px; }
+  .accept.refused { color:#d7a3a3; font-size:12px; line-height:1.6; }
+  footer.acceptall { max-width:1500px; margin:40px auto 0; padding:18px 24px 48px; border-top:1px solid #2a2a2e; color:#9aa0a6; font-size:12.5px; }
+  footer.acceptall code { display:inline-block; background:#111114; border:1px solid #2a2a2e; border-radius:6px; padding:6px 10px; color:#c8e1ff; user-select:all; margin:6px 0; }
+  footer.acceptall .small { font-size:11.5px; color:#7a8089; }
 </style>
 </head>
 <body>
@@ -458,7 +592,27 @@ function renderHtml({ cards, meta }) {
 </header>
 <main>
 ${cards.length ? cardHtml : '<p style="color:#9aa0a6;padding:40px 0">No VRT baseline changes vs base. (Nothing to review.)</p>'}
-</main>
+</main>${acceptFooter}
+<script>
+// Copy-command buttons for the accept cards (clipboard write; falls back to
+// selecting the code text where the API is unavailable).
+for (const btn of document.querySelectorAll('.copycmd')) {
+  btn.addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(btn.dataset.cmd);
+      btn.textContent = 'copied';
+      setTimeout(() => { btn.textContent = 'copy'; }, 1200);
+    } catch {
+      const code = btn.parentElement.querySelector('code');
+      const r = document.createRange();
+      r.selectNodeContents(code);
+      const sel = getSelection();
+      sel.removeAllRanges();
+      sel.addRange(r);
+    }
+  });
+}
+</script>
 <script>
 // Wire each compare widget: range "swipe" + pointer-drag move the clip divider
 // (OLD under, NEW clipped over); "onion" sets NEW opacity for an overlay blink.
@@ -495,7 +649,25 @@ async function main() {
   const args = parseArgs(process.argv.slice(2));
 
   let baseRef, baseSha, headSha, entries;
-  if (args.fromResults) {
+  let runId = args.runId;
+  if (args.candidates) {
+    // Manifest-driven (the ACCEPT gallery): authoritative baseline paths +
+    // per-scene promotability, with the actual/expected bytes pulled out of
+    // the downloaded test-results artifacts.
+    if (!args.fromResults) {
+      throw new Error('--candidates requires --from-results <downloaded test-results root>');
+    }
+    baseRef = 'strict-run';
+    baseSha = null;
+    try {
+      headSha = git(['rev-parse', 'HEAD']);
+    } catch {
+      headSha = 'unknown';
+    }
+    const collected = collectFromCandidates(args.candidates, args.fromResults);
+    entries = collected.entries;
+    runId = runId ?? collected.runId;
+  } else if (args.fromResults) {
     // Run-driven: diff = expected (OLD) vs actual (NEW) from the Playwright run.
     baseRef = 'playwright-run';
     baseSha = null;
@@ -607,6 +779,9 @@ async function main() {
       diffPixels,
       diffRatio,
       diffNote,
+      // Candidate metadata (accept-gallery mode only) — drives the per-card
+      // accept command / refusal treatment in renderHtml.
+      accept: e.candidate ?? null,
     });
   }
 
@@ -621,6 +796,7 @@ async function main() {
     meta: {
       ...meta,
       pr: args.pr,
+      runId: runId ?? null,
       baseRef,
       baseShaShort: baseSha ? baseSha.slice(0, 8) : '—',
       headShaShort: headSha ? headSha.slice(0, 8) : '—',

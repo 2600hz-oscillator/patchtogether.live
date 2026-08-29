@@ -243,10 +243,15 @@ const PENDING_PALETTE_REGEN: readonly string[] = [];
 // promote, drain, capture, THEN declare — is why a face PR must re-run the full
 // unit lane AFTER the baseline bot commits, not only before the push.
 const NOT_TOKEN_PINNED_SCENES: readonly string[] = [
-  'audioOut', 'chromaconsole', 'electraControl', 'launchpadControlLeft', 'matrixMix', 'mixer',
-  'moog903a', 'moog904b', 'moog904c', 'moog905', 'moog907a', 'moog911a', 'moog912',
-  'moog914', 'moog921a', 'moog921b', 'moog923', 'moog956', 'moog960', 'moog961',
-  'moog962', 'moog984', 'moog992', 'moog993', 'moog994', 'moog995',
+  // mixer / moog903a / moog904c / moog914 / moog984 left this census
+  // 2026-08-28: their baselines were DELETED with the owner-approved CPU-fleet
+  // demotion from STRICT_VRT_MODULES (see vrt-exemptions.ts) — the walk covers
+  // committed baselines only, so they leave here with them. They rejoin when
+  // the fleet is homogeneous and the cards are re-promoted + re-captured.
+  'audioOut', 'chromaconsole', 'electraControl', 'launchpadControlLeft', 'matrixMix',
+  'moog904b', 'moog905', 'moog907a', 'moog911a', 'moog912',
+  'moog921a', 'moog921b', 'moog923', 'moog956', 'moog960', 'moog961',
+  'moog962', 'moog992', 'moog993', 'moog994', 'moog995',
   'push2Control', 'sticky', 'wavesculpt',
 ];
 

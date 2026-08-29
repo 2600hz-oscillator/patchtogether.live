@@ -218,9 +218,25 @@ export default defineConfig({
   // Zero retries: a VRT either passes deterministically or the
   // baseline is wrong. Retrying just delays surfacing the truth.
   retries: 0,
-  reporter: process.env.CI
-    ? [['github'], ['html', { open: 'never', outputFolder: './report' }], ['list']]
-    : [['list'], ['html', { open: 'never', outputFolder: './report' }]],
+  // VRT_JSON_REPORT appends the `json` reporter writing to that file. It is
+  // how the strict shards make each failed screenshot assertion's attachment
+  // metadata machine-readable — the `-expected` attachment's `path` is
+  // Playwright's own absolute baseline path (SnapshotHelper.expectedPath), the
+  // ONE authoritative `actual → baseline` mapping. The accept-candidates step
+  // (ci.yml) depends on it because the test-results FOLDER names are
+  // truncated (`moog907a` → `…--3cb78-g907a-…`) and must never be parsed for
+  // a path that real bytes get written to. Env-gated and additive so the
+  // `list` reporter's stdout — which scripts/vrt-shard-coverage.mjs diffs the
+  // executed set out of — is untouched. Pass an ABSOLUTE path: a relative
+  // outputFile resolves against this config's directory, not the caller's cwd.
+  reporter: [
+    ...(process.env.CI
+      ? ([['github'], ['html', { open: 'never', outputFolder: './report' }], ['list']] as const)
+      : ([['list'], ['html', { open: 'never', outputFolder: './report' }]] as const)),
+    ...(process.env.VRT_JSON_REPORT
+      ? ([['json', { outputFile: process.env.VRT_JSON_REPORT }]] as const)
+      : []),
+  ],
   outputDir: './test-results',
 
   // ── PER-TEST TIMEOUT ─────────────────────────────────────────────────────
@@ -523,6 +539,24 @@ export default defineConfig({
             // most of it out.
             '--font-render-hinting=none',
             '--disable-skia-runtime-opts',
+            // ── PIN THE AA MODE ITSELF (2026-08-28) ─────────────────────────
+            // LCD-vs-grayscale text antialiasing is decided by Chromium per
+            // ENVIRONMENT (compositing/surface state), not per build — and on
+            // the hosted-runner fleet that decision measured BISTABLE PER VM:
+            // whole strict-shard jobs rendered EVERY text-bearing tile with
+            // grayscale AA against baselines authored with LCD fringes
+            // (expected pixels like rgb(163,172,153)/(99,153,183) — strong
+            // per-channel spread = subpixel fringes; actuals grayscale with
+            // shifted metrics). Same commit, same runner image 20260823.283.1,
+            // ~28 of 32 scenes per affected job, byte-stable within a job,
+            // set shifting between jobs. Forcing grayscale removes the
+            // decision. ⚠ A DELIBERATE ONE-TIME FULL RECAPTURE accompanies
+            // this flag — every committed text baseline carried the fringes.
+            '--disable-lcd-text',
+            // Same family: pin colour management, so a VM's detected display
+            // profile can never tint every gradient/AA edge by 1-2 units
+            // (the residual delta band under the fringe diffs).
+            '--force-color-profile=srgb',
             // Disable the smoothScrolling animation that fires on the
             // first .svelte-flow viewport mount.
             '--disable-smooth-scrolling',

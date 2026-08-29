@@ -214,9 +214,17 @@ describe('makeStateOnlyEnvelope', () => {
     expect(portable, `portable=${portable}B stateOnly=${after}B (base64 chars)`).toBeGreaterThan(
       after * 2,
     );
-    // The state-only envelope is invariant to that history. The slack covers
-    // varint width of the rebuilt doc's random clientID, nothing else.
-    expect(Math.abs(after - before), `before=${before}B after=${after}B`).toBeLessThanOrEqual(16);
+    // The state-only envelope is invariant to that history. The rebuild
+    // writes keys in SORTED order (persistence.ts), so identical state means
+    // identical struct layout — but each rebuild's Y.Doc draws a fresh random
+    // uint32 clientID, and that id's VARINT WIDTH (4B below 2^28, 5B at or
+    // above) is written once per struct reference. MEASURED: this doc has 52
+    // struct references, so two rebuilds differ by exactly 0B or exactly 52B
+    // depending on the two draws — ±16 flaked CI on the 52B draw (PR #2257's
+    // unit lane). 64 covers the full width swing for this fixture with room
+    // for a handful of added structs; the NEGATIVE CONTROL above (portable
+    // > 2x state-only) is what carries the actual size claim.
+    expect(Math.abs(after - before), `before=${before}B after=${after}B`).toBeLessThanOrEqual(64);
 
     // No hidden pending state: applying the update to a fresh doc and
     // re-encoding reproduces it byte for byte.
