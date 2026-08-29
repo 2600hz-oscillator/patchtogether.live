@@ -200,8 +200,13 @@ export function resolveVerboseLabel(port: PortDescriptor): string {
 /**
  * THE hover/aria text naming what a patched jack is connected to.
  *
- * `← FROM a, b` for an input, `→ TO a, b` for an output. Returns undefined for
+ * `← a, b` for an input, `→ a, b` for an output. Returns undefined for
  * an unpatched jack (no remotes), which every caller renders as "no title".
+ *
+ * ARROW ONLY — no FROM/TO word (owner, #2264: "we don't need to see the
+ * 'from'"). The glyph alone carries the direction, the same way the rear
+ * card's chips and hole glyphs already do, and the label width it frees goes
+ * to the remote names — which are now the user's own renames when set.
  *
  * ⚠ BOTH DIRECTIONS JOIN THE FULL LIST. The input side used to print
  * `remotes[0]` and silently drop the rest, on the premise — stated in its own
@@ -226,7 +231,7 @@ export function remoteEndpointsTitle(
   remotes: readonly string[],
 ): string | undefined {
   if (remotes.length === 0) return undefined;
-  return `${direction === 'input' ? '← FROM' : '→ TO'} ${remotes.join(', ')}`;
+  return `${direction === 'input' ? '←' : '→'} ${remotes.join(', ')}`;
 }
 
 /**

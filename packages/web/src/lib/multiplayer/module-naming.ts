@@ -129,6 +129,33 @@ export function resolveDisplayName(
 }
 
 /**
+ * True when `name` is the RESERVED auto-namer shape for a node of `type` —
+ * the bare uppercased type or `<TYPE><N>` (`CAMERA`, `CAMERA2`, …).
+ *
+ * WHY THIS EXISTS: `migrateAssignNames` runs on every rack load (Canvas
+ * first-paint effect), so in a live rack essentially EVERY node carries a
+ * `data.name`. A surface that wants to show "the name the USER chose" (the
+ * peer labels on patch surfaces — rear-card chips, jack tooltips, the
+ * patch-to picker) therefore cannot use "is `data.name` set" as the signal;
+ * it has to ask whether the stored name is a genuine RENAME or just the
+ * auto-namer's default. This predicate is that question, and it is the
+ * mirror of the naming contract above: "the default name format is
+ * reserved: only the auto-namer (or a deliberate user edit to a
+ * `<TYPE>` / `<TYPE>N` form) can write one" — so a name in the reserved
+ * shape is BY CONTRACT not information the user added.
+ *
+ * Case-insensitive, matching `validateRename`'s uniqueness rule: `camera2`
+ * occupies the same slot as `CAMERA2`, so it is the same non-name.
+ */
+export function isReservedDefaultName(name: string, type: ModuleType): boolean {
+  const prefix = String(type).toUpperCase();
+  const upper = name.toUpperCase();
+  if (upper === prefix) return true;
+  if (!upper.startsWith(prefix)) return false;
+  return /^\d+$/.test(upper.slice(prefix.length));
+}
+
+/**
  * Result of a rename attempt. `ok: true` => caller should write
  * `node.data.name = trimmed` inside a Y.Doc transact. `ok: false` =>
  * caller should display `error` (inline, e.g. red text under the input).

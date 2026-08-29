@@ -154,7 +154,8 @@ export interface DropEndpoint {
    * override — and MUST when two instances of the same type are involved, or
    * the modal header reads "backdraft ▶ backdraft" and the direction it is
    * trying to show becomes unreadable. The shipped `moduleDisplayName` does
-   * exactly this with a " #N" suffix; a real implementation would call it.
+   * exactly this — the user's rename verbatim when one exists, else a " #N"
+   * suffix (#2264); a real implementation would call it.
    */
   label: string;
 }
