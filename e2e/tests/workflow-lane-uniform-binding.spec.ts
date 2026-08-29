@@ -222,8 +222,12 @@ async function dragCardToFlow(page: Page, id: string, toTopLeft: { x: number; y:
   const ty = target.y + 14;
   await page.mouse.move(gx, gy);
   await page.mouse.down();
-  for (let i = 1; i <= 16; i++) {
-    await page.mouse.move(gx + ((tx - gx) * i) / 16, gy + ((ty - gy) * i) / 16);
+  // 5 interpolation steps, not 16: every move fires drag-over work + a frame,
+  // and CI's software renderer runs ~8 fps — 16 heavy frames blew a 30 s test
+  // budget INSIDE mouse.move (e2e shard 9, twice). Five is still enough for
+  // xyflow's drag threshold and the membership hit-test only reads the RELEASE.
+  for (let i = 1; i <= 5; i++) {
+    await page.mouse.move(gx + ((tx - gx) * i) / 5, gy + ((ty - gy) * i) / 5);
   }
   await page.mouse.up();
 }
@@ -264,6 +268,10 @@ test.describe('workflow lanes: every module type binds identically', () => {
   });
 
   test('REACH-UP: a REAL drop released just ABOVE the painted band top still joins, and the lane grows to meet it', async ({ page }) => {
+    // Pointer-drag legs pay the CI software renderer's frame rate (~8 fps
+    // measured) across spawn + fitless framing + a real drag — a bound, not a
+    // gate: every assertion below is on graph state.
+    test.setTimeout(120_000);
     await gotoShellWorkflow(page);
     // The owner's exact state: an audio source in the lane with a videoOut on
     // top of it — the stack whose top the next card is dropped onto.
@@ -299,6 +307,10 @@ test.describe('workflow lanes: every module type binds identically', () => {
   });
 
   test('STACK DROP: releasing a card dead-ON the stack top card JOINS — never drop-to-patch, even for a compatible pair', async ({ page }) => {
+    // Pointer-drag legs pay the CI software renderer's frame rate (~8 fps
+    // measured) across spawn + fitless framing + a real drag — a bound, not a
+    // gate: every assertion below is on graph state.
+    test.setTimeout(120_000);
     await gotoShellWorkflow(page);
     // videoOut tops the stack; fader.out(video) → videoOut.in(video) is a
     // compatible pair, so before the claim gate this drop snapped back into
