@@ -137,12 +137,11 @@
 </script>
 
 <div class="gibribbon-screen" data-testid="gibribbon-screen-wrap">
-  <!-- role="application" is exactly right: the playfield OWNS its key
-       handling (F/D/J/K + arrows play ABXY, R restarts), so it MUST be
-       focusable and MUST take a keydown — svelte-check treats the role as
-       interactive, so no a11y suppression is needed. The accessible name
-       carries the live score/health/mode as an ATTRIBUTE — never as
-       rendered text. -->
+  <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions
+       — `role="application"` is exactly right here: the playfield OWNS its key handling (F/D/J/K and
+       arrows play ABXY, R restarts), so it MUST be focusable and MUST take a keydown. Svelte's rules do
+       not model `application` as interactive. Same shape as the DOOM / BLOOD / CLIPPLAYER canvases. The
+       accessible name carries the live score/health/mode as an ATTRIBUTE — never as rendered text. -->
   <div
     class="playfield"
     class:has-focus={hasFocus}
