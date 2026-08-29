@@ -43,7 +43,14 @@ async function waitForDefaultWires(page: Page): Promise<void> {
   );
 }
 
-/** Wait until the workflow ensure effect has written the pinned trio. */
+/** Wait until the workflow ensure effect has written the pinned trio.
+ *
+ *  ⚠ The inner cap is CI-aware: this is STATE readiness (a doc write by the
+ *  ensure effect), and how long boot takes is a function of shard load, not
+ *  of the subject. Measured (run 33268032993, shard 7): the flat 10s cap
+ *  expired once under CI load and the identical attempt passed on retry —
+ *  the flake gate's definition of "slower on CI", which takes a budget, not
+ *  a fix to the subject. */
 async function waitForPinnedTrio(page: Page): Promise<void> {
   await page.waitForFunction(
     (ids) => {
@@ -54,7 +61,7 @@ async function waitForPinnedTrio(page: Page): Promise<void> {
       return ids.every((id) => w.__patch!.nodes[id]?.data?.pinned === true);
     },
     PINNED_IDS as unknown as string[],
-    { timeout: 10_000 },
+    { timeout: process.env.CI ? 45_000 : 10_000 },
   );
 }
 
