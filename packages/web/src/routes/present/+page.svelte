@@ -32,6 +32,8 @@
   let pullRaf: number | null = null;
   // True once the popup is actual-fullscreen (no OS titlebar / browser strip).
   let isFs = $state(false);
+  // A fullscreen retry loop is in flight (plain state — nothing renders it).
+  let fsLoopActive = false;
 
   /** Size the canvas backing store to the viewport (× DPR for crisp output).
    *  The opener reads canvas.width/height to compute the letterbox fit, so this
@@ -80,6 +82,37 @@
       /* opener gone */
     }
   }
+  /** Machine-readable fullscreen state for the opener (fs-report above is the
+   *  human console line). `entered:false` ARMS the opener's next-gesture
+   *  delegation; `entered:true` disarms it. Sent from the retry loop's
+   *  failures and from an actual fullscreen ENTRY — deliberately NOT from an
+   *  operator's focused Esc, which must stay respected (see onFsChange). */
+  function reportFsState(entered: boolean, permission?: string): void {
+    try {
+      window.opener?.postMessage(
+        { type: 'present:fs-state', entered, permission },
+        window.location.origin,
+      );
+    } catch {
+      /* opener gone */
+    }
+  }
+  /** What the browser says about the Automatic Fullscreen content setting.
+   *  'granted' is what made the gesture-less loop below work on Edge ≤151 with
+   *  the AutomaticFullscreenAllowedForUrls policy applied; 'denied' means the
+   *  loop cannot ever succeed on its own and only a gesture (delegated or in
+   *  this window) will. Best-effort: the descriptor is Chromium-only. */
+  async function automaticFullscreenPermission(): Promise<string> {
+    try {
+      const status = await navigator.permissions.query({
+        name: 'fullscreen',
+        allowWithoutGesture: true,
+      } as unknown as PermissionDescriptor);
+      return status.state;
+    } catch {
+      return 'unavailable';
+    }
+  }
   /** Keep asking for a short window rather than accepting the first refusal.
    *
    *  With the Automatic Fullscreen content setting granted (Chrome 126 / Edge
@@ -93,6 +126,18 @@
    *  Stops the moment we are fullscreen, so a user who presses Esc inside the
    *  window keeps their exit — the loop is already finished by then. */
   async function goFullscreenPersistently(): Promise<void> {
+    // ONE loop at a time. Both onMount and the opener's delegated
+    // go-fullscreen call this; stacking a second 40-attempt loop is what
+    // printed the owner's failure line TWICE per toggle.
+    if (fsLoopActive) return;
+    fsLoopActive = true;
+    try {
+      await runFullscreenLoop();
+    } finally {
+      fsLoopActive = false;
+    }
+  }
+  async function runFullscreenLoop(): Promise<void> {
     let last: string | null = null;
     // MEASURED on the owner's rig (Edge 151 / macOS, F5 with a projector
     // attached): entered on attempt 10, ~1.35s in.
@@ -119,9 +164,33 @@
         if (attempt > 0) reportToOpener(`fullscreen entered on attempt ${attempt + 1}`);
         return;
       }
+      if (attempt === 0 && last) {
+        // The FIRST refusal, reported separately from the retries: without an
+        // automatic-fullscreen grant every gesture-less attempt fails the same
+        // way, and burying that behind the 40-attempt summary cost a day of
+        // diagnosis. The fs-state post is also what ARMS the opener's
+        // next-gesture delegation, so the fix starts here, not at attempt 40.
+        reportToOpener(`fullscreen blocked on first attempt: ${last}`);
+        const permission = await automaticFullscreenPermission();
+        reportFsState(false, permission);
+        if (permission === 'denied') {
+          // DETERMINISTIC refusal: with the automatic-fullscreen permission
+          // denied and no gesture, the remaining 39 attempts produce 39
+          // identical rejections (measured on the owner's rig — Edge 152,
+          // AutomaticFullscreenAllowedForUrls wiped: two full loops of
+          // "TypeError: Permissions check failed"). The retry loop below is
+          // for the GRANTED-but-refused-while-sizing/focusing case only.
+          // Stop; the opener prints the one actionable advisory and arms the
+          // next patcher gesture, and a click/key here still works.
+          return;
+        }
+      }
       await new Promise((r) => setTimeout(r, 150));
     }
-    reportToOpener(`fullscreen NOT entered after 40 attempts; last error = ${last ?? 'none (request resolved but no fullscreenElement)'}`);
+    reportToOpener(
+      `fullscreen NOT entered after 40 attempts; last error = ${last ?? 'none (request resolved but no fullscreenElement)'}; automatic-fullscreen permission = ${await automaticFullscreenPermission()}`,
+    );
+    reportFsState(false);
   }
 
   /**
@@ -150,6 +219,12 @@
   function onFsChange(): void {
     isFs = !!document.fullscreenElement;
     sizeCanvas(); // entering/leaving fullscreen resizes the viewport
+    // Entering fullscreen stands the opener's next-gesture delegation down.
+    // An EXIT deliberately posts nothing here: a focused Esc is the operator's
+    // and must not be undone by their next patcher click — the unfocused
+    // (modal-stolen) exit below re-arms via the retry loop's own failure
+    // reports instead.
+    if (document.fullscreenElement) reportFsState(true);
     // ⚠ RECOVER FROM A MODAL THAT TOOK OUR FULLSCREEN (#2235). Chrome resolves
     // any modal browser surface by EXITING fullscreen, and the recorder's
     // directory picker is one — so a projector silently dropped to a windowed
@@ -171,7 +246,14 @@
   function onOpenerMessage(ev: MessageEvent): void {
     if (ev.origin !== window.location.origin) return;
     const d = ev.data as { type?: string } | null;
-    if (d?.type === 'present:go-fullscreen') void goFullscreenPersistently();
+    if (d?.type === 'present:go-fullscreen') {
+      // The delegated activation token is short-lived and single-use: spend it
+      // NOW on a direct attempt — a loop already in flight would spend it too
+      // (≤150ms later), but only if it survives that long. Then make sure a
+      // loop is running to mop up if the token was refused (no-op if active).
+      void goFullscreen();
+      void goFullscreenPersistently();
+    }
   }
 
   onMount(() => {
