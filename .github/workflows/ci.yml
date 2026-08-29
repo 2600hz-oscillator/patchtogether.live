@@ -2494,6 +2494,13 @@ jobs:
       VRT_STRICT: '1'
 
     steps:
+      # One log line naming the VM's CPU. The 2026-08-28 AA-mode hunt had to
+      # infer per-job hardware from pixel forensics because nothing recorded
+      # it; a hosted-runner pool mixes CPU generations under ONE image version,
+      # and renderer behaviour can key off exactly that.
+      - name: Name the runner CPU
+        run: grep -m1 'model name' /proc/cpuinfo || true
+
       # VRT baselines are LFS-tracked under e2e/vrt/__screenshots__/. Check out
       # WITHOUT LFS, then restore the LFS object store from cache + `git lfs
       # pull` (HIT → no-op, MISS → fetch only changed objects) — a ~95%
@@ -2539,6 +2546,13 @@ jobs:
 
       - name: Fetch VRT LFS objects (no-op on cache hit)
         run: flox activate -- git lfs pull --include "e2e/vrt/__screenshots__/**"
+
+      # The cached .git/lfs store trusts whatever a previous job saved — a
+      # timeout-killed save serves truncated objects forever, and `git lfs
+      # pull` smudges them without a checksum look. Decode-verify + heal
+      # before comparing pixels against them. See scripts/vrt-lfs-heal.sh.
+      - name: Verify + heal checked-out baselines
+        run: flox activate -- bash scripts/vrt-lfs-heal.sh
 
       # node_modules itself, not just npm's download cache. `~/.npm` above
       # saves re-DOWNLOADING; this saves re-LINKING, which is where the time

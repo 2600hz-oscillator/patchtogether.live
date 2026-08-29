@@ -539,6 +539,24 @@ export default defineConfig({
             // most of it out.
             '--font-render-hinting=none',
             '--disable-skia-runtime-opts',
+            // ── PIN THE AA MODE ITSELF (2026-08-28) ─────────────────────────
+            // LCD-vs-grayscale text antialiasing is decided by Chromium per
+            // ENVIRONMENT (compositing/surface state), not per build — and on
+            // the hosted-runner fleet that decision measured BISTABLE PER VM:
+            // whole strict-shard jobs rendered EVERY text-bearing tile with
+            // grayscale AA against baselines authored with LCD fringes
+            // (expected pixels like rgb(163,172,153)/(99,153,183) — strong
+            // per-channel spread = subpixel fringes; actuals grayscale with
+            // shifted metrics). Same commit, same runner image 20260823.283.1,
+            // ~28 of 32 scenes per affected job, byte-stable within a job,
+            // set shifting between jobs. Forcing grayscale removes the
+            // decision. ⚠ A DELIBERATE ONE-TIME FULL RECAPTURE accompanies
+            // this flag — every committed text baseline carried the fringes.
+            '--disable-lcd-text',
+            // Same family: pin colour management, so a VM's detected display
+            // profile can never tint every gradient/AA edge by 1-2 units
+            // (the residual delta band under the fringe diffs).
+            '--force-color-profile=srgb',
             // Disable the smoothScrolling animation that fires on the
             // first .svelte-flow viewport mount.
             '--disable-smooth-scrolling',
