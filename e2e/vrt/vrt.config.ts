@@ -218,9 +218,25 @@ export default defineConfig({
   // Zero retries: a VRT either passes deterministically or the
   // baseline is wrong. Retrying just delays surfacing the truth.
   retries: 0,
-  reporter: process.env.CI
-    ? [['github'], ['html', { open: 'never', outputFolder: './report' }], ['list']]
-    : [['list'], ['html', { open: 'never', outputFolder: './report' }]],
+  // VRT_JSON_REPORT appends the `json` reporter writing to that file. It is
+  // how the strict shards make each failed screenshot assertion's attachment
+  // metadata machine-readable — the `-expected` attachment's `path` is
+  // Playwright's own absolute baseline path (SnapshotHelper.expectedPath), the
+  // ONE authoritative `actual → baseline` mapping. The accept-candidates step
+  // (ci.yml) depends on it because the test-results FOLDER names are
+  // truncated (`moog907a` → `…--3cb78-g907a-…`) and must never be parsed for
+  // a path that real bytes get written to. Env-gated and additive so the
+  // `list` reporter's stdout — which scripts/vrt-shard-coverage.mjs diffs the
+  // executed set out of — is untouched. Pass an ABSOLUTE path: a relative
+  // outputFile resolves against this config's directory, not the caller's cwd.
+  reporter: [
+    ...(process.env.CI
+      ? ([['github'], ['html', { open: 'never', outputFolder: './report' }], ['list']] as const)
+      : ([['list'], ['html', { open: 'never', outputFolder: './report' }]] as const)),
+    ...(process.env.VRT_JSON_REPORT
+      ? ([['json', { outputFile: process.env.VRT_JSON_REPORT }]] as const)
+      : []),
+  ],
   outputDir: './test-results',
 
   // ── PER-TEST TIMEOUT ─────────────────────────────────────────────────────
