@@ -56,11 +56,20 @@
   .extbody{background:var(--pbody);border:1px solid var(--line);border-radius:8px;padding:12px;margin-bottom:0}
   .btn{font-family:var(--mono);font-size:.66rem;color:var(--ink);background:var(--tile);border:1px solid var(--line);border-radius:4px;padding:3px 8px;display:inline-block}
   .btn.on{border-color:var(--vid);color:var(--vid)}
+  .btn.tiny{font-size:.58rem;padding:2px 5px}
   .sel{font-family:var(--mono);font-size:.66rem;color:var(--ink);background:var(--well);border:1px solid var(--line);border-radius:4px;padding:3px 8px;display:inline-flex;gap:6px}
   .frow{display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:.64rem;color:var(--dim);margin:3px 0}
   .ftrackh{flex:1;height:8px;background:var(--well);border:1px solid var(--line);border-radius:4px;position:relative}
   .fthumbh{position:absolute;top:-4px;width:10px;height:14px;border-radius:3px;background:var(--vid)}
   .scrbtn{position:absolute;right:6px;bottom:6px;background:rgba(10,12,15,.72);border:1px solid var(--line);border-radius:4px;font-family:var(--mono);font-size:.6rem;color:var(--dim);padding:2px 6px}
+  .dialS{width:26px;height:26px;border-radius:50%;background:var(--tile);border:1px solid var(--line);position:relative;flex:none}
+  .dialS::after{content:"";position:absolute;left:50%;top:2px;width:2px;height:9px;background:var(--vid)}
+  /* tab rail (body-internal, shell-styled) */
+  .tabrail{display:flex;gap:2px;border-bottom:1px solid var(--line);margin:10px 0 0}
+  .tab{font-family:var(--mono);font-size:.66rem;letter-spacing:.04em;color:var(--dim);background:none;border:1px solid transparent;border-bottom:none;border-radius:6px 6px 0 0;padding:5px 12px}
+  .tab.active{color:var(--vid);background:rgba(28,31,36,.7);border-color:var(--line)}
+  .tabpane{border:1px solid var(--line);border-top:none;border-radius:0 0 8px 8px;background:rgba(28,31,36,.4);padding:10px}
+  .layerband{border:1px solid var(--line);border-radius:8px;background:rgba(28,31,36,.4);padding:8px 10px;margin-top:10px}
   footer{margin-top:48px;border-top:1px solid var(--line);padding-top:10px;font-family:var(--mono);font-size:.7rem;color:var(--faint)}
 </style>
 </head>
@@ -68,67 +77,75 @@
 <main>
 <header class="top">
   <div class="crumbs"><a href="INDEX.html">← face-specs INDEX</a></div>
-  <h1>FACEPLATE BUILD SPEC — <code>toybox</code> <span class="badge video">video</span> <span class="badge">bespoke-surface</span> <span class="badge">blockers: needs-media-controller · needs-note-entry-cell</span></h1>
-  <div class="sub">TOYBOX — the four-layer video compositor: shader/gen/OBJ/video layers, a combine DAG, six routed CV inputs, presets, camera and file imports. “A whole SUB-RACK in a card.” SPEC ONLY — nothing here is implemented. Authored 2026-08-28 against <code>origin/main</code> @ <code>f340ab43a</code>.</div>
+  <h1>FACEPLATE BUILD SPEC — <code>toybox</code> <span class="badge video">video</span> <span class="badge">bespoke-surface</span> <span class="badge">blockers: needs-media-controller · needs-note-entry-cell</span> <span class="badge">rev 2 — owner-ruled dock design</span></h1>
+  <div class="sub">TOYBOX — the four-layer video compositor: GEN/FRAG/OBJ/IMAGE/VIDEO layers, an EDITABLE combine node graph (17 op kinds), six routed CV inputs, presets with randomize-locks, camera and file imports. “A whole SUB-RACK in a card.” SPEC ONLY — nothing here is implemented. Rev 2 authored 2026-08-28 against <code>origin/main</code> @ <code>f340ab43a</code>, after owner review of rev 1.</div>
 </header>
 
-<div class="verdict blocked">VERDICT: PROMOTE IN TWO STAGES, BLOCKED ON THE SAME TYPED-ENTRY OWNER ROUTE AS ITS COHORT. Stage 1 (this spec): the face (order [], picture body hosting the console), the node-lifetime media ownership port (the #1589 class re-closed for the shell world), and the preset-NAME input routed per §8. Stage 2 (explicitly out of scope here): any decomposition of the console into finer platform cells — refused now, because a sub-rack’s controls are LAYER-scoped and content-manifest-driven, which no ranked cell list expresses (the inventory’s own why). The console moves whole, or not at all.</div>
+<div class="callout ok"><span class="t">owner ruling, 2026-08-28 — the dock design is now specified by the owner</span>
+<p>“this misses a lot, the editable node tree appears entirely absent? I am generally happy with toybox ui, i think i'd want to generally keep what we have while migrating to our new look&amp;feel. and putting cv-mod, combine graph, preset controls on 3 tabs, all below a screen that turns on and off.”</p>
+<p>So the body is: SCREEN (with on/off) on top → the layer strip + active-layer editor as a persistent band (argued §6.2.1) → THREE TABS: <b>CV-MOD</b> · <b>COMBINE GRAPH</b> · <b>PRESETS</b>, each hosting today’s capability restyled to the shell look&amp;feel — capability parity, nothing dropped, the editable node graph front and centre. Rev 1’s mock flattened that graph to one line; §2.0 records the miss and what the process learns from it.</p></div>
+
+<div class="verdict blocked">VERDICT: PROMOTE — dock design owner-specified (screen + three tabs, §6) — STILL BLOCKED ON THE TYPED-ENTRY FLEET RULING (§8: the preset-name input, now living on the PRESETS tab, trips the inventory leg via the LEGACY card either way). Precondition unchanged: close the #1589 media-ownership class with a node-keyed registry (§6.5). The console keeps everything it has today; the migration is a restyle plus three tabs, not a redesign.</div>
 
 <h2>§0 — THE CONSTRAINT MAP, READ FIRST</h2>
 <table>
   <tr><th>registry / gate</th><th>state for toybox</th><th>evidence</th></tr>
   <tr><td><code>STRICT_FACES</code></td><td>NOT a member — unfaced</td><td><code>strict-faces.ts</code></td></tr>
   <tr><td>migration disposition</td><td><code>bespoke-surface</code>, blockers <code>['needs-media-controller']</code> (+ the note-entry blocker in its lineage)</td><td><code>face-migration-inventory.ts:~1310</code>: “a whole SUB-RACK in a card: a node menu, many source pickers and file imports, a named preset store, its own camera capture and an interactive canvas. It declares no params — everything it does is its own surface.”</td></tr>
+  <tr><td>dock design</td><td><b>OWNER-SPECIFIED</b> (ruling above): screen + on/off, three tabs (cv-mod / combine graph / presets), keep today’s capabilities restyled</td><td>owner review of rev 1, 2026-08-28</td></tr>
   <tr><td>typed-entry leg</td><td><b>TRIPS</b> — <code>toybox-preset-name-input</code> is <code>&lt;input type="text"&gt;</code> (verified 2026-08-28)</td><td>§8</td></tr>
   <tr><td>media lifetime</td><td>⚠ THE LIVE HAZARD. #1589 (P0) is the module’s own history: card-created <code>&lt;video&gt;</code> elements + camera tracks died on unmount (“TOYBOX is un-migrated, so under the faceplate shell its card exists ONLY inside the dock full-view — collapsing it … produced that unmount. Every video layer went dark … Export then wrote a preset with ZERO video bytes and said ‘Exported’.”). The current card mitigates with per-layer retry timers; promotion re-runs the whole class unless ownership moves to NODE lifetime (§6.5)</td><td><code>ToyboxCard.svelte:695-712</code> comment, read on this tree</td></tr>
-  <tr><td>frame-present timing</td><td>#1836 precedent named against TOYBOX (“2 of 12 rendered frames were presented”; fix pattern <code>{ immediate:true }</code> on first present) — the archivist spec cites it as a check-don’t-assume for VRT determinism</td><td>wave-6 archivist §9.2</td></tr>
-  <tr><td>VRT today</td><td>toybox spec rows are heavily managed in the webgl-heavy lanes (<code>WEBGL_HEAVY_EXCLUDE</code> history; <code>toybox-new-content</code> reclassified real-gpu-only). Face scenes must define their own determinism story: <code>window.__toyboxFreeze(time)</code> EXISTS (VRT hook pinning engine iTime + pausing the preview pull)</td><td><code>webgl-attest-coverage.test.ts</code> lineage; <code>ToyboxCard</code> header</td></tr>
-  <tr><td>WebGL attest</td><td>toybox e2e specs are IN the attest coverage roster; <code>toybox.ts</code> basis membership is M4. The face block is stripped; ANY behavioural def edit is not</td><td><code>webgl-attest-coverage.test.ts:96-133</code></td></tr>
-  <tr><td>inputs</td><td>cv1..cv6 <code>modsignal</code> (cv OR gate OR audio — envelope-followed), routed via <code>node.data.cvRoutes</code> with per-input SCALE/OFFSET; inA/inB video feeds; unpatched-inA is a correct no-op (<code>EXEMPT_INPUT_DRIVE</code>)</td><td><code>toybox.ts:355-380</code></td></tr>
+  <tr><td>the graph editor is a first-class app seam</td><td><code>Canvas.svelte</code> special-cases right-clicks inside <code>[data-testid="toybox-graph-svg"]</code> at TWO sites (its node context-menu handler and a second capture-phase guard) so the graph’s own contextual menu (<code>ToyboxNodeMenu</code>) wins over the generic module menu — the editor is wired into the app canvas, not a card decoration</td><td><code>Canvas.svelte:6041, 7104</code></td></tr>
+  <tr><td>card sizing precedent</td><td>the card is a wide 3-column layout, width rounded to a whole-u rack tile (#759, 5u = 900 px), DYNAMIC_SIZED (the combine panel is user-resizable). ⚠ The 900 px figure is the LEGACY CARD’s grid rounding, not a face width claim — the face plate is <code>max-content</code> of the §6 stack and must re-measure</td><td><code>ToyboxCard.svelte</code> style header</td></tr>
+  <tr><td>frame-present timing</td><td>#1836 precedent named against TOYBOX (“2 of 12 rendered frames were presented”; fix pattern <code>{ immediate:true }</code> on first present)</td><td>wave-6 archivist §9.2</td></tr>
+  <tr><td>VRT / attest</td><td>toybox e2e specs are managed in the webgl-heavy lanes; <code>window.__toyboxFreeze(time)</code> exists (pins engine iTime + pauses the preview pull); <code>toybox.ts</code> basis membership is M4</td><td><code>webgl-attest-coverage.test.ts</code> lineage; <code>ToyboxCard</code> header</td></tr>
+  <tr><td>inputs</td><td>cv1..cv6 <code>modsignal</code> (cv OR gate OR audio — envelope-followed), routed via <code>node.data.cvRoutes</code>; inA/inB video feeds; unpatched-inA is a correct no-op (<code>EXEMPT_INPUT_DRIVE</code>)</td><td><code>toybox.ts:355-380</code></td></tr>
 </table>
 
 <h2>§1 — WHAT THE MODULE IS FOR</h2>
-<p>The verb is <b>COMPOSE</b>. Four layers, each its own FBO: <code>shader</code>/<code>gen</code> (MIT GLSL bank, lazily fetched, per-content float params), <code>obj</code> (bundled CC0 OBJ or procedural primitive, matcap-shaded, depth-tested), <code>video</code> (inA/inB cable, local file, or camera), or <code>off</code>. A combine DAG blends them (fade/lumakey/chromakey/map) into one output. Six modsignal inputs are ROUTED — each addressed to a layer/combine/obj param with a bipolar attenuverter + offset, with always-on inline scopes showing the live values. A named preset store (save/select/export/import) captures the whole console. Persistence: <code>node.data.layers</code> + <code>node.data.combine</code> + <code>node.data.cvRoutes</code> (+ image bytes) ride the Y.Doc; the factory reads the live node each frame.</p>
+<p>The verb is <b>COMPOSE</b>. Four layers, each its own FBO, of kind <code>gen</code> / <code>frag</code> / <code>obj</code> / <code>image</code> / <code>video</code> / <code>off</code>: shader bank content with per-content float params, matcap-shaded OBJ meshes, synced images, and video from a patched feed (inA/inB), a local file, or the camera. An <b>editable combine GRAPH</b> (Phase 4, <code>toybox-combine-graph.ts</code>) reduces them: one SOURCE node per layer, user-added OP nodes from a <b>17-kind roster</b> — <code>fade lumakey chromakey map over tile mirror displace bitbend biocells feedback exquisite framedelay channeldesync flowsmear dreammelt datamosh</code> (<code>OP_KINDS</code>) — wired by click-to-patch bezier cables into one OUT sink; the engine topo-sorts and evaluates, a disconnected OUT renders black, cycles are refused at edit AND eval time. Six modsignal inputs are ROUTED: each addressed to a layer/op-node param (targets use the graph’s unique display names — “L1”, “LUMA 1”, “DSYNC 2”) with a bipolar SCALE attenuverter + OFFSET and an always-on inline scope. A preset store (bundled + saved-★) captures the whole console; RANDOM rolls a new patch honouring per-layer and per-node LOCKS (#1576 ws3) with REVERT back to the pre-roll patch. Persistence: <code>node.data.layers/.combine/.cvRoutes/.combineView</code> (+ image bytes) ride the Y.Doc; the factory reads the live node each frame.</p>
 
-<h2>§2 — STOP 1: LEGACY-CARD PARITY CENSUS</h2>
-<p>ToyboxCard is 3,883 lines; the census below is keyed to its testid inventory (63 testids, enumerated 2026-08-28) grouped by section. Every group must survive; none is a cell.</p>
+<h2>§2 — STOP 1: LEGACY-CARD PARITY CENSUS (rev 2 — corrected)</h2>
+
+<h3 id="miss">§2.0 ⚠ WHAT REV 1 MISSED, AND WHY THE PROCESS LET IT SLIP</h3>
+<div class="callout bad"><span class="t">the miss, recorded as a learning (also promoted to INDEX §3)</span>
+<p>Rev 1’s census keyed one row to one <code>data-testid</code> — and <code>toybox-graph-svg</code> is ONE testid carrying an ENTIRE EDITOR: node boxes, port dots, click-to-patch wiring, click-to-delete edge hit-paths, lock badges, a contextual menu, and a user-resizable canvas whose height persists in <code>node.data.combineView</code>. The census text even said “DAG graph SVG editor”, but the MOCK was drawn from the census’s row-weight rather than from the rendered card, so the module’s deepest surface flattened into a one-line “COMBINE [L1 —fade→ L2]” strip. Compounding it, §1 echoed the def header’s Phase 1-3 comment (“fade / lumakey / chromakey / map”) instead of reading the Phase-4 model file, so the op roster was 4 where the truth is 17; and the KIND roster was transcribed from the same stale header (“shader/gen/obj/off”) where the card ships <code>GEN/FRAG/OBJ/IMAGE/VIDEO/OFF</code>.</p>
+<p><b>The rules that fall out:</b> (1) a testid census is an INVENTORY, not an affordance census — weight by interaction surface and verify every mock against the RENDERED card (screenshot or live boot), because one testid can carry an editor; (2) “read the card, never the why” extends to def-file header prose — read the MODEL file a subsystem actually imports (<code>toybox-combine-graph.ts</code>), not the module header’s phase-N summary.</p></div>
+
 <table>
-  <tr><th>affordance group</th><th>card testids</th><th>face home</th><th>survives?</th></tr>
-  <tr><td>Live output preview + freeze hook</td><td><code>toybox-canvas</code>, <code>__toyboxFreeze</code></td><td>body picture (top) + free lane thumb; the freeze hook moves with the preview pull</td><td>YES</td></tr>
-  <tr><td>Layer tabs (4, populated-dot) + kind select + content select</td><td><code>toybox-layer-tabs/-kind-select/-content-select</code>, <code>-layer-empty</code></td><td>body layer strip, logic verbatim (all mutations via <code>graph/toybox-layers.ts</code>, Yjs in place)</td><td>YES</td></tr>
-  <tr><td>Per-content param faders (manifest-driven)</td><td><code>toybox-controls</code></td><td>body fader rows — ⚠ NOT ranked cells: the roster changes with the selected content, and a face’s <code>order</code> is static by design. This is the warrensspectrum shape: a bank PANEL inside the module’s own surface</td><td>YES</td></tr>
-  <tr><td>OBJ: model select, matcap select, custom OBJ import/clear, projective controls, use-camera</td><td><code>toybox-model-select/-matcap-select/-obj-*</code>, <code>-proj-controls/-proj-usecamera</code></td><td>body OBJ section (per-layer, shown when kind=obj)</td><td>YES</td></tr>
-  <tr><td>VIDEO: source select (inA/inB/file/camera), file input, relink, camera hint, patched badge</td><td><code>toybox-video-*</code></td><td>body VIDEO section — with ownership moved per §6.5</td><td>YES</td></tr>
-  <tr><td>IMAGE: picker, synced badge</td><td><code>toybox-image-*</code></td><td>body (image bytes ride the Y.Doc — reconstructable on any mount, the path #1589 deliberately left alone)</td><td>YES</td></tr>
-  <tr><td>Custom shader import (+ error surface)</td><td><code>toybox-shader-*</code>, <code>-frag-hint</code>, <code>-input-error</code></td><td>body (size-capped source rides the graph; error surfaces as a warn lamp + title, §7)</td><td>YES</td></tr>
-  <tr><td>Combine section: DAG graph SVG, add-row, feedback mode select, combine params</td><td><code>toybox-combine-*</code>, <code>-graph-svg/-graph-wrap</code>, <code>-add-row</code>, <code>-feedback-mode*</code></td><td>body combine section, verbatim</td><td>YES</td></tr>
-  <tr><td>CV section: route rows, inline scopes (live per-input values via handle-extras)</td><td><code>toybox-cv-*</code></td><td>body CV section; the scopes read the same <code>inputs</code> extras bridge</td><td>YES</td></tr>
-  <tr><td>Preset store: select, save (name input + confirm/cancel), saved list, export, import (+ error/notice)</td><td><code>toybox-preset-*</code></td><td>body preset section — the NAME input is the §8 typed-entry hit</td><td>YES, pending §8</td></tr>
-  <tr><td>Randomize / revert</td><td><code>toybox-randomize/-randomize-revert</code></td><td>body actions</td><td>YES</td></tr>
-  <tr><td>Node menu (extra canvas-menu entries)</td><td><code>ToyboxNodeMenu.svelte</code></td><td>UNCHANGED — the node menu is canvas chrome, not card chrome; promotion does not touch it (verify M5)</td><td>YES</td></tr>
-  <tr><td>“connect a source” message</td><td><code>toybox-connect-msg</code></td><td class="rm">REMOVED at rest — instructional prose; the idle pattern in the picture already signals it</td><td>docs</td></tr>
+  <tr><th>affordance group</th><th>card source (verified rev 2)</th><th>face home (§6 layout)</th><th>survives?</th></tr>
+  <tr><td>Live output preview + freeze hook</td><td><code>toybox-canvas</code>, <code>__toyboxFreeze</code></td><td>the SCREEN, top of the body, with the house on/off switch; + free lane thumb</td><td>YES</td></tr>
+  <tr><td>PRESET: “— load preset… —” select with ★ Saved / Bundled optgroups; 🎲 RANDOM; REVERT (appears after a roll, restores the pre-roll patch, locked parts kept); SAVE → name input + OK/✕; EXPORT; IMPORT; saved list with per-preset ✕</td><td><code>toybox-preset-select/-actions/-save-row/-name-input/-export/-import*</code>; <code>toybox-randomize/-randomize-revert</code> (lines 2420-2540)</td><td><b>PRESETS tab</b>, verbatim capability</td><td>YES</td></tr>
+  <tr><td>Layer strip: L1–L4 chips (role=tablist), populated dot, per-layer 🔒/🔓 LOCK (“locks the DICE only — manual edits and cv modulation stay allowed”)</td><td><code>toybox-layer-tab-N/-layer-dot-N/-layer-lock-N</code> (lines 2549-2583)</td><td><b>persistent LAYER band</b> under the screen (§6.2.1)</td><td>YES — rev 1 missed the locks</td></tr>
+  <tr><td>Active-layer KIND select: <code>GEN / FRAG / OBJ / IMAGE / VIDEO / OFF</code>; empty-layer prompt “LAYER N is empty — pick a KIND above”</td><td><code>toybox-kind-select</code>, <code>toybox-layer-empty</code></td><td>LAYER band</td><td>YES — rev 1 had the roster wrong</td></tr>
+  <tr><td>Per-kind editors: content select + manifest-driven param faders (gen/frag) · model + matcap + transform/spin/tint + custom OBJ import/clear + projective/use-camera (obj) · image picker + synced badge (image) · SOURCE select (In A / In B / file / camera) + “patched feed — wire a video source into VID A/B” hint + relink (video) · custom shader import + frag hint + error surface</td><td><code>toybox-content-select/-controls/-model-select/-matcap-select/-obj-*/-image-*/-video-*/-shader-*</code>; hint at line 2922</td><td>LAYER band (the active layer’s section, exactly as today)</td><td>YES</td></tr>
+  <tr><td><b>COMBINE GRAPH editor</b>: ADD row of all 17 <code>OP_KINDS</code> buttons; the resizable SVG node canvas (height persists in <code>node.data.combineView</code> — survives reload AND preset round-trip); L1–L4 source nodes, op nodes named uniquely (“LUMA 1”, “DSYNC 2” — <code>combineDisplayNames</code>, #56/#58), OUT sink; output→input click-to-patch with an “armed: … → click an input dot” affordance; bezier cables with wide hit-paths (click deletes an edge); per-node 🔒 lock badges; right-click → <code>ToyboxNodeMenu</code> (structural actions: patch-to-output / reset history-feedback / disconnect / duplicate / delete; canvas: add/clear/reset); pointer-only by construction, keyboard model tracked as #1550</td><td><code>toybox-add-row/-add-&lt;kind&gt;/-graph-wrap/-graph-svg/-gnode-*/-gnode-lock-*/-edge-*/-inport-*/-pending/-connect-msg</code> (lines 2940-3190); <code>ToyboxNodeMenu.svelte</code>; <code>Canvas.svelte:6041,7104</code></td><td><b>COMBINE GRAPH tab</b>, the editor whole — nothing summarised away</td><td>YES — <b>rev 1’s miss, now the tab’s centrepiece</b></td></tr>
+  <tr><td>Selected-node param pane: select any graph node → its knobs show in the always-visible control pane (the old per-op right-click popovers were REMOVED in favour of this one consistent surface — <code>ToyboxNodeMenu</code>’s own header records the design)</td><td><code>onNodeClick → selectedNodeId</code>; combine params pane (<code>toybox-combine-params</code>)</td><td>COMBINE GRAPH tab, under the canvas</td><td>YES — rev 1 under-stated it</td></tr>
+  <tr><td>CV/MOD rail: SIX rows IN1–IN6 (all of <code>CV_PORT_IDS</code> — a screenshot showing IN1–IN4 is a crop, the source loops all six), each: auto-detected source-kind badge · TARGET select (graph display names) + PARAM select pair · SCALE knob (−1..+1 attenuverter) · OFFSET knob (0..1) · always-on inline scope canvas; section collapse ▸/▾ (one per section, not per row)</td><td><code>toybox-cv-row-&lt;id&gt;/-cv-badge/-cv-target/-cv-param/-cv-scale/-cv-offset/-cv-scope</code>, <code>toybox-cv-toggle</code> (lines 3195-3300)</td><td><b>CV-MOD tab</b>, verbatim capability (the tab replaces the collapse toggle)</td><td>YES</td></tr>
+  <tr><td>Section collapses (▸ COMBINE GRAPH, ▸ CV / MOD)</td><td><code>toybox-combine-toggle/-cv-toggle</code></td><td>SUBSUMED by the tab rail — a tab is the collapse, restyled; no capability lost</td><td>YES (re-shaped)</td></tr>
 </table>
 
 <h2>§3 — STOP 2: EVERY WAY DATA GETS IN</h2>
 <table>
   <tr><th>path</th><th>mechanism</th><th>after promotion</th></tr>
-  <tr><td>console edits (layers/combine/routes/presets)</td><td>Yjs in-place via <code>graph/toybox-layers.ts</code> (“never spread-reassign a live Y type”)</td><td>body uses the same helpers — one write seam, two mounts while legacy lives</td></tr>
+  <tr><td>console edits (layers/combine/routes/presets)</td><td>Yjs in-place via <code>graph/toybox-layers.ts</code> + <code>graph/toybox-combine.ts</code> (“never spread-reassign a live Y type”)</td><td>body uses the same mutator seams — one write path, two mounts while legacy lives</td></tr>
+  <tr><td>graph editor gestures</td><td>click-port-to-port wiring, edge click-delete, node drag, right-click menu, canvas resize → <code>node.data.combineView</code></td><td>identical in the COMBINE GRAPH tab; the resize persistence key is already graph state, so tab-switching costs nothing</td></tr>
   <tr><td>cv1..cv6 jacks</td><td>raw passthrough bridge → <code>setParam</code> → <code>effectiveCvValue(signal, scale, offset, min, max)</code> per route</td><td>unchanged; rear groups name them (§5)</td></tr>
   <tr><td>inA/inB video cables</td><td><code>frame.getInputTexture</code> per layer <code>videoSource</code></td><td>unchanged</td></tr>
-  <tr><td>local video file / camera</td><td>card-created elements + tracks (the #1589 scar; retry timers per layer)</td><td>MOVED to node-lifetime ownership — §6.5. The one STOP-2 row that does not survive as-is</td></tr>
+  <tr><td>local video file / camera</td><td>card-created elements + tracks (the #1589 scar; per-layer retry timers)</td><td>MOVED to node-lifetime ownership — §6.5. The one STOP-2 row that does not survive as-is</td></tr>
   <tr><td>image bytes</td><td>ride the Y.Doc (<code>imageBytes</code>) — reconstructed on any remount</td><td>unchanged</td></tr>
-  <tr><td>preset import/export (JSON)</td><td>file input / download</td><td>body actions; export must read from the NODE-owned media truth so “Exported” can never again write zero video bytes</td></tr>
-  <tr><td>remote peers</td><td>everything above that rides the Y.Doc</td><td>unchanged; media re-resolution per peer stays local (a peer without the local file sees the relink affordance)</td></tr>
+  <tr><td>preset import/export (JSON)</td><td>file input / download</td><td>PRESETS tab; export reads the NODE-owned media truth so “Exported” can never again write zero video bytes</td></tr>
+  <tr><td>remote peers</td><td>everything that rides the Y.Doc, incl. the combine graph and the graph-canvas height</td><td>unchanged; media re-resolution per peer stays local (relink affordance)</td></tr>
 </table>
 
 <h2>§4 — THE LANE PICTURE</h2>
-<p><code>domain === 'video'</code> → free <code>VideoTileThumb</code> of the composite — the honest identity of a compositor. <code>order: []</code> (the flipper/videoOut ranks-nothing shape): the lane is the picture, and everything operable needs the dock. No <code>tileBody</code>: no single control earns lane reach on a module whose every control is layer-scoped (choosing WHICH layer is already a dock task).</p>
+<p><code>domain === 'video'</code> → free <code>VideoTileThumb</code> of the composite — the honest identity of a compositor. <code>order: []</code> (the flipper/videoOut ranks-nothing shape): the lane is the picture, and everything operable needs the dock. No <code>tileBody</code>: no single control earns lane reach on a module whose every control is layer- or node-scoped (choosing WHICH layer/node is already a dock task).</p>
 
 <h2>§5 — THE FACE</h2>
 <pre class="code">face: {
   order: [],            <span class="c">// zero ParamDefs — the def's own truth ("it declares no params at all").</span>
   glyph: 'none',        <span class="c">// video def, no audio out; the thumb is the picture.</span>
-  extension: 'toybox',  <span class="c">// §6 — the console body.</span>
+  extension: 'toybox',  <span class="c">// §6 — screen + layer band + three tabs (owner-ruled layout).</span>
   monitor: { why: 'the composite is the performance output; watching it without the ' +
                   'console is the projection use, and the console is deep enough that ' +
                   'hiding it is a real gain.' },
@@ -142,39 +159,46 @@
   },
 },</pre>
 <div class="callout warn"><span class="t">rear group ids — the frogger constraint, applied honestly</span>With no pages, only the <code>'voice'</code>/<code>'signal'</code> leading slot is claimable by an input group; <code>'feeds'</code> is NOT a page id and appends as a stray band the rear totality gate treats specially. M1 runs the lint against this draft: if the stray-band path reds or renders badly, the fallback is one <code>'signal'</code> group of all eight inputs with the label carrying the split (“mod cv · vid a/b”) — decided by measurement, not preference.</div>
-<h3>§5.1 Width — earned twice over</h3>
-<p>The composite preview + the console (layer strip, combine graph, CV scopes) is the fleet’s deepest body; the plate is <code>max-content</code> of the console at its own internal <code>max-width</code> with internal <code>overflow:auto</code> where sections outgrow it (“a clamp CLIPS a wide face where a scroll REVEALS it” — the scroll box is INSIDE the component, never a plate-level clamp). Expect zero <code>FACE_WIDTH_EXEMPTIONS</code> entries.</p>
+<h3>§5.1 Width — earned, and re-measured, not inherited</h3>
+<p>The screen + the widest tab (COMBINE GRAPH at a usable editing width) is the earner. The legacy card’s 900 px is the RACK-GRID rounding of a 3-column layout (#759) — the face is a single-column stack (screen → band → tab), so its natural <code>max-content</code> is set by the graph canvas and should land well under 900. Internal <code>overflow:auto</code> where a tab outgrows it (scroll-inside-component, never a plate clamp). Expect zero <code>FACE_WIDTH_EXEMPTIONS</code> entries; M7 measures the stack.</p>
 
-<h2>§6 — THE BODY: <code>face.extension: 'toybox'</code>, slot <code>fullViewBody</code></h2>
-<h3>§6.1 Why not cells — the ladder, walked once for the whole console</h3>
+<h2>§6 — THE BODY: <code>face.extension: 'toybox'</code>, slot <code>fullViewBody</code> — the owner-ruled layout</h2>
+<h3>§6.1 Why not cells — unchanged from rev 1, one sentence</h3>
+<p>Zero ParamDefs; every control is (layer × content) - or (graph-node) - scoped, a roster that changes under the player’s hands — no static <code>order</code> names it; <code>fullViewBody</code> is the wired slot for a module that brings its own whole surface. (The full ladder walk is in rev 1’s git history; the conclusion is unchanged and now owner-confirmed.)</p>
+
+<h3>§6.2 The layout, top to bottom</h3>
 <table>
-  <tr><th>rung</th><th>refusal</th></tr>
-  <tr><td>ranked param cells</td><td>there are NO ParamDefs; the console’s controls are keyed to (layer × selected content), a roster that changes under the player’s hands — a static <code>order</code> cannot name them</td></tr>
-  <tr><td><code>selector</code>/<code>file</code>/<code>toggle</code>/<code>action</code> static keys</td><td>each exists PER LAYER (4×) and per content-kind; family templates (<code>&lt;familyId&gt;-{n}</code>) express numbered instances of ONE control, not a tree of sections</td></tr>
-  <tr><td>PF-14 <code>panel</code></td><td>one picture-you-edit; the console is six sections around a picture</td></tr>
-  <tr><td><code>editorSurface</code></td><td>UNWIRED; and <code>fullViewBody</code> is precisely “the module’s own full-width surface at the head of the dock full view” — with zero bands below, the body is the plate (the painter/videoOut shape at 10× depth)</td></tr>
-  <tr><td><code>fullViewBody</code></td><td class="kept">TAKEN — the console moves whole</td></tr>
+  <tr><th>zone</th><th>contents</th><th>why here</th></tr>
+  <tr><td>1 · SCREEN</td><td>the live composite (preview pull, <code>__toyboxFreeze</code>-aware) with the house screen switch (§6.4) overlaid in its corner</td><td>owner ruling: “all below a screen that turns on and off”</td></tr>
+  <tr><td>2 · LAYER band (persistent)</td><td>L1–L4 chips + dots + 🔒 locks · active layer’s KIND select (GEN/FRAG/OBJ/IMAGE/VIDEO/OFF) · the active layer’s per-kind editor (content+faders / model+matcap+obj / image / video source+hint / custom imports) · empty-layer prompt</td><td>§6.2.1 — argued, not waved at</td></tr>
+  <tr><td>3 · TAB RAIL + pane</td><td><b>CV-MOD</b> · <b>COMBINE GRAPH</b> · <b>PRESETS</b> (§6.3.x). Active tab is LOCAL per collaborator (like the active layer today); shell tab styling per <code>dock-tabs-model</code>’s look, module-owned markup</td><td>owner ruling: the three sections tabbed</td></tr>
+</table>
+<div class="callout ok"><span class="t">§6.2.1 where the layer strip lives — the argument</span>
+<p><b>Persistent band under the screen, not a fourth tab and not inside the graph tab.</b> Three reasons. (1) Every tab REFERENCES layers but none OWNS them: the graph’s L1–L4 source nodes emit what the layer band configures; the CV tab’s targets address layers and their params; presets capture and lock them. Putting the strip inside any one tab makes the other two dangle references to something off-screen. (2) Parity with the card as the owner asked (“generally keep what we have”): today the layer editor is always visible in the left column while COMBINE and CV/MOD are the two collapsible sections — the tab rail is those two collapses plus presets, restyled; the always-visible part stays always visible. (3) The workflow is layer-first (pick a kind, give it content, THEN wire and modulate) — the band is the module’s spine and the first thing a fresh node needs (“LAYER 1 is empty — pick a KIND above” must not hide behind a tab).</p></div>
+<div class="callout warn"><span class="t">the tab rail is BODY-INTERNAL chrome — state the arithmetic it does NOT invoke</span>The shell’s dock tab rail is for param BANDS and is gated by <code>DOCK_TAB_MIN_BANDS</code> (7) via <code>dockTabPlan</code>; this face has ZERO bands, so that machinery is untouched. These three tabs are module-owned markup inside <code>fullViewBody</code> — adopt the shell rail’s look (type, spacing, active accent) for the owner’s “new look&amp;feel”, but no shell tab model is imported and no lint reads them. The VRT baseline + <code>toybox-face-model.test.ts</code> are what pin the rail’s existence and default tab.</div>
+
+<h3>§6.3 The three tabs — capability parity, itemised</h3>
+<table>
+  <tr><th>tab</th><th>contents (all verified against the card, §2)</th><th>notes</th></tr>
+  <tr><td>1 · CV-MOD (default tab)</td><td>six IN1–IN6 rows: kind badge · target+param select pair (labels = the graph’s unique display names) · SCALE (−1..+1) + OFFSET (0..1) knobs · always-on inline scope</td><td>default because it is the PERFORMANCE tab — the one you live on after the patch is built. Scopes keep painting on the active tab only (an inactive tab’s scopes pause their rAF — cheaper, and invisible by definition)</td></tr>
+  <tr><td>2 · COMBINE GRAPH</td><td>the ADD row (all 17 op-kind buttons, <code>OP_KINDS</code> order) · the armed/connect message line · the resizable SVG node editor VERBATIM (source/op/OUT nodes, unique names, 🔒 badges, port dots, bezier cables with hit-paths, right-click <code>ToyboxNodeMenu</code>, height → <code>node.data.combineView</code>) · the selected-node param pane beneath</td><td>the Canvas.svelte right-click guards (<code>:6041,:7104</code>) key on <code>[data-testid="toybox-graph-svg"]</code> — the body KEEPS that testid so the existing seam covers the new mount unchanged. #1550 (keyboard model) stays tracked, not half-fixed</td></tr>
+  <tr><td>3 · PRESETS</td><td>“— load preset… —” select (★ Saved / Bundled) · 🎲 RANDOM · REVERT (post-roll) · SAVE → name input + OK/✕ · EXPORT · IMPORT · saved list with ✕ per preset</td><td>the name input keeps §8 wired: the FACE may mount it only under whichever typed-entry route the owner picks; the LEGACY card trips the leg regardless</td></tr>
 </table>
 
-<h3>§6.2 The component</h3>
-<p><code>$lib/ui/modules/toybox/shell-extension.ts</code> → <code>{ fullViewBody: ToyboxConsoleBody }</code>. The card’s console sections move under one component with their write seams intact (<code>toybox-layers.ts</code>, the extras bridges, <code>__toyboxFreeze</code>). Layout order: preview (SCREEN switch overlay) → layer strip → per-kind section → combine → CV routes → presets → randomize. This is a large component by necessity; the refactor discipline is that it IMPORTS the card’s section components rather than forking them — one source for both surfaces while <code>?shell=legacy</code> lives (the DX7 shared-write-seam standing pattern).</p>
-
-<h3>§6.3 <code>EXTENSION_BODY_ROLES</code> — the third gate</h3>
+<h3>§6.4 <code>EXTENSION_BODY_ROLES</code> — the third gate</h3>
 <pre class="code">toybox: {
   role: 'picture',
-  why: 'the body mounts the live composite canvas at the head of the console that ' +
-       'authors it — four layer sections, a combine graph and the routed-CV scopes ' +
-       'all edit what that picture shows.',
+  why: 'the body mounts the live composite screen above the console that authors it — ' +
+       'a persistent layer band and three tabs (cv routing, the editable combine node ' +
+       'graph, presets) all edit what that picture shows.',
 },</pre>
+<p>Screen switch — required (video ∩ STRICT_FACES): over <code>node.data.previewCollapsed</code>, corner overlay on the screen. OFF skips the preview pull only; the band and tabs stay fully operable (patch-building blind on a projector is the normal show posture — and the graph editor must keep working with the screen off). The engine render continues; <code>isPullExempt</code>/<code>markWatched</code> per #2015.</p>
 
-<h3>§6.4 Screen switch — required (video ∩ STRICT_FACES)</h3>
-<p>Over <code>node.data.previewCollapsed</code>, corner overlay on the preview. OFF skips the preview pull only; the console below stays fully operable (mixing blind on a projector is the normal show posture). The engine render continues; <code>isPullExempt</code>/<code>markWatched</code> per #2015.</p>
-
-<h3>§6.5 The media-controller tax — what toybox actually pays</h3>
+<h3>§6.5 The media-controller tax — what toybox actually pays (unchanged from rev 1, owner design does not touch it)</h3>
 <div class="callout bad"><span class="t">the one precondition — #1589, closed for the shell world</span>
-<p>The discriminator (“is the thing the body needs to show and drive IN THE GRAPH?”) splits toybox’s media three ways: image bytes YES (Y.Doc — no tax); video-file elements and camera tracks NO (browser-local resources named by graph state). Today the CARD owns them with retry timers — so the LRU-evict/collapse unmount kills live layers, the exact #1589 P0, mitigated but not closed. The face PR ports ownership to a node-keyed registry (<code>node-extras-registry</code> / <code>node-video-source-registry</code> family — the repo already ships the pattern and its behavioural proof, <code>extras-producer-lifetime.spec.ts</code>): elements and tracks live for the NODE, swept with the graph, the body adopts-and-reads. Export reads the registry’s truth, closing the “Exported … zero video bytes” lie a second way. This is the entire content of <code>needs-media-controller</code> for toybox — a tax already invented, twice, by cameraInput (headless host) and audioIn (#1590 registry); toybox takes the registry form because its media is per-LAYER, not per-card.</p></div>
+<p>The discriminator (“is the thing the body needs to show and drive IN THE GRAPH?”) splits toybox’s media three ways: image bytes YES (Y.Doc — no tax); video-file elements and camera tracks NO (browser-local resources named by graph state). Today the CARD owns them with retry timers — so the LRU-evict/collapse unmount kills live layers, the exact #1589 P0, mitigated but not closed. The face PR ports ownership to a node-keyed registry (<code>node-extras-registry</code> / <code>node-video-source-registry</code> family — the repo ships the pattern and its behavioural proof, <code>extras-producer-lifetime.spec.ts</code>): elements and tracks live for the NODE, swept with the graph, the body adopts-and-reads. Export reads the registry’s truth, closing the “Exported … zero video bytes” lie a second way. This is the entire content of <code>needs-media-controller</code> for toybox — a tax already invented twice (cameraInput’s headless host, audioIn’s #1590 registry); toybox takes the registry form because its media is per-LAYER, not per-card.</p></div>
 
-<h2>§MOCKS</h2>
+<h2>§MOCKS — rev 2: screen + layer band + all three tabs, to scale</h2>
 <div class="mockrow">
   <div>
     <div class="mocklab">compact lane tile — picture only (order [])</div>
@@ -188,33 +212,96 @@
     </div>
   </div>
   <div>
-    <div class="mocklab">dock full view — the console body (zero bands)</div>
-    <div class="dock" style="width:560px">
+    <div class="mocklab">dock — TAB 2 ACTIVE: the combine graph editor (the rev-1 miss, now the centrepiece)</div>
+    <div class="dock" style="width:600px">
       <div class="chromebar"><span>toybox</span><span>dock full view · ✕</span></div>
       <div class="plate">
-        <div class="extbody" style="width:520px">
-          <div style="width:496px;height:180px;background:#000;border:1px solid var(--line);border-radius:4px;position:relative;margin-bottom:10px">
-            <svg width="494" height="178" viewBox="0 0 494 178"><rect width="494" height="178" fill="#000"/><circle cx="150" cy="90" r="60" fill="#173" opacity=".8"/><rect x="220" y="40" width="180" height="100" fill="#316" opacity=".7"/><path d="M40 150 Q250 70 460 140" stroke="#4ade80" stroke-width="4" fill="none"/></svg>
+        <div class="extbody" style="width:560px">
+          <div style="width:536px;height:150px;background:#000;border:1px solid var(--line);border-radius:4px;position:relative;margin-bottom:0">
+            <svg width="534" height="148" viewBox="0 0 534 148"><rect width="534" height="148" fill="#000"/><circle cx="150" cy="74" r="52" fill="#173" opacity=".8"/><rect x="230" y="26" width="200" height="96" fill="#316" opacity=".7"/><path d="M40 128 Q267 40 494 118" stroke="#4ade80" stroke-width="4" fill="none"/></svg>
             <div class="scrbtn">SCREEN ◱</div>
           </div>
-          <div style="display:flex;gap:4px;margin-bottom:8px">
-            <span class="btn on">1 ●</span><span class="btn">2 ●</span><span class="btn">3</span><span class="btn">4</span>
-            <span class="sel" style="margin-left:10px">kind: shader ▾</span>
-            <span class="sel">plasma-warp ▾</span>
+          <div class="layerband">
+            <div style="display:flex;gap:3px;align-items:center;flex-wrap:wrap">
+              <span class="btn on">L1 ●</span><span class="btn tiny">🔓</span>
+              <span class="btn">L2 ●</span><span class="btn tiny">🔒</span>
+              <span class="btn">L3</span><span class="btn tiny">🔓</span>
+              <span class="btn">L4</span><span class="btn tiny">🔓</span>
+              <span class="sel" style="margin-left:10px">KIND: VIDEO ▾</span>
+              <span class="sel">SOURCE: In A ▾</span>
+            </div>
+            <div class="frow" style="margin-top:5px;color:var(--faint)">patched feed — wire a video source into VID A</div>
           </div>
-          <div class="frow"><span style="width:64px">speed</span><div class="ftrackh"><div class="fthumbh" style="left:60%"></div></div></div>
-          <div class="frow"><span style="width:64px">density</span><div class="ftrackh"><div class="fthumbh" style="left:25%"></div></div></div>
-          <div style="border-top:1px solid var(--line);margin:8px 0;padding-top:8px;display:flex;gap:4px;align-items:center">
-            <span class="mocklab" style="margin:0">combine</span>
-            <span class="sel">L1 —fade→ L2 ▾</span><span class="btn">+ row</span><span class="sel">feedback: off ▾</span>
+          <div class="tabrail">
+            <button class="tab">CV-MOD</button>
+            <button class="tab active">COMBINE GRAPH</button>
+            <button class="tab">PRESETS</button>
           </div>
-          <div style="border-top:1px solid var(--line);margin:8px 0;padding-top:8px">
-            <div class="frow"><span style="width:34px">cv1 →</span><span class="sel">L1.speed ▾</span><span>scale</span><div class="ftrackh" style="max-width:80px"><div class="fthumbh" style="left:70%"></div></div><span style="width:40px;height:12px;background:var(--well);border:1px solid var(--line);border-radius:2px;display:inline-block"></span></div>
-            <div class="frow"><span style="width:34px">cv2 →</span><span class="sel">combine.mix ▾</span><span>scale</span><div class="ftrackh" style="max-width:80px"><div class="fthumbh" style="left:40%"></div></div><span style="width:40px;height:12px;background:var(--well);border:1px solid var(--line);border-radius:2px;display:inline-block"></span></div>
+          <div class="tabpane">
+            <div style="display:flex;gap:3px;flex-wrap:wrap;margin-bottom:6px;align-items:center">
+              <span class="mocklab" style="margin:0 4px 0 0">ADD</span>
+              <span class="btn tiny">FADE</span><span class="btn tiny">LUMAKEY</span><span class="btn tiny">CHROMAKEY</span><span class="btn tiny">MAP</span><span class="btn tiny">OVER</span><span class="btn tiny">TILE</span><span class="btn tiny">MIRROR</span><span class="btn tiny">DISPLACE</span><span class="btn tiny">BITBEND</span><span class="btn tiny">BIOCELLS</span><span class="btn tiny">FEEDBACK</span><span class="btn tiny">EXQUISITE</span><span class="btn tiny">FRAMEDELAY</span><span class="btn tiny">CHANNELDESYNC</span><span class="btn tiny">FLOWSMEAR</span><span class="btn tiny">DREAMMELT</span><span class="btn tiny">DATAMOSH</span>
+            </div>
+            <div style="width:536px;height:210px;background:var(--well);border:1px solid var(--line);border-radius:4px;position:relative">
+              <svg width="534" height="208" viewBox="0 0 534 208">
+                <g font-family="monospace" font-size="10">
+                  <path d="M96 40 C150 40, 160 60, 210 60" stroke="#4a5560" stroke-width="2" fill="none"/>
+                  <path d="M96 88 C150 88, 160 72, 210 72" stroke="#4a5560" stroke-width="2" fill="none"/>
+                  <path d="M282 66 C330 66, 340 96, 388 96" stroke="#4a5560" stroke-width="2" fill="none"/>
+                  <path d="M96 136 C330 136, 340 108, 388 108" stroke="#4a5560" stroke-width="2" fill="none"/>
+                  <path d="M460 102 C480 102, 484 102, 496 102" stroke="#4ade80" stroke-width="2" fill="none"/>
+                  <g><rect x="24" y="28" width="72" height="24" rx="4" fill="#1c1f24" stroke="#3a4750"/><text x="60" y="44" fill="#9aa2ad" text-anchor="middle">L1</text><circle cx="96" cy="40" r="4" fill="#4ade80"/></g>
+                  <g><rect x="24" y="76" width="72" height="24" rx="4" fill="#1c1f24" stroke="#3a4750"/><text x="60" y="92" fill="#9aa2ad" text-anchor="middle">L2</text><circle cx="96" cy="88" r="4" fill="#4ade80"/></g>
+                  <g><rect x="24" y="124" width="72" height="24" rx="4" fill="#1c1f24" stroke="#3a4750"/><text x="60" y="140" fill="#9aa2ad" text-anchor="middle">L3</text><circle cx="96" cy="136" r="4" fill="#4ade80"/></g>
+                  <g><rect x="24" y="172" width="72" height="24" rx="4" fill="#1c1f24" stroke="#3a4750"/><text x="60" y="188" fill="#646c77" text-anchor="middle">L4</text><circle cx="96" cy="184" r="4" fill="#33383f"/></g>
+                  <g><rect x="210" y="48" width="72" height="36" rx="4" fill="#20242b" stroke="#4ade80"/><text x="246" y="64" fill="#eef1f5" text-anchor="middle">OVER 1</text><text x="274" y="58" fill="#646c77">×</text><circle cx="210" cy="60" r="4" fill="#7dd3fc"/><circle cx="210" cy="72" r="4" fill="#7dd3fc"/><circle cx="282" cy="66" r="4" fill="#4ade80"/></g>
+                  <g><rect x="388" y="84" width="72" height="36" rx="4" fill="#20242b" stroke="#3a4750"/><text x="424" y="100" fill="#eef1f5" text-anchor="middle">DSYNC 1</text><text x="452" y="94" fill="#646c77">×</text><text x="452" y="116" font-size="9">🔒</text><circle cx="388" cy="96" r="4" fill="#7dd3fc"/><circle cx="388" cy="108" r="4" fill="#7dd3fc"/><circle cx="460" cy="102" r="4" fill="#4ade80"/></g>
+                  <g><rect x="496" y="90" width="30" height="24" rx="4" fill="#1c1f24" stroke="#c084fc"/><text x="511" y="106" fill="#c084fc" text-anchor="middle">OUT</text></g>
+                </g>
+              </svg>
+              <div style="position:absolute;right:4px;bottom:2px;font-family:var(--mono);font-size:.58rem;color:var(--faint)">⇕ resizable — height rides node.data.combineView</div>
+            </div>
+            <div class="frow" style="margin-top:6px"><span style="width:70px;color:var(--ink)">DSYNC 1</span><span>delay</span><div class="ftrackh" style="max-width:110px"><div class="fthumbh" style="left:45%"></div></div><span>offset</span><div class="ftrackh" style="max-width:110px"><div class="fthumbh" style="left:20%"></div></div><span class="mocklab" style="margin:0">selected-node params</span></div>
           </div>
-          <div style="border-top:1px solid var(--line);margin:8px 0;padding-top:8px;display:flex;gap:4px">
-            <span class="sel">preset: ravecube ▾</span><span class="btn">SAVE</span><span class="btn">EXPORT</span><span class="btn">IMPORT</span>
-            <span class="btn" style="margin-left:auto">RANDOMIZE</span><span class="btn">REVERT</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="mockrow">
+  <div>
+    <div class="mocklab">dock — TAB 1 ACTIVE: cv-mod (six rows; two shown, rail scrolls)</div>
+    <div class="dock" style="width:600px">
+      <div class="chromebar"><span>toybox</span><span>dock full view · ✕</span></div>
+      <div class="plate">
+        <div class="extbody" style="width:560px">
+          <div style="width:536px;height:110px;background:#000;border:1px solid var(--line);border-radius:4px;position:relative"><div class="scrbtn">SCREEN ◱</div></div>
+          <div class="layerband"><div style="display:flex;gap:3px;align-items:center"><span class="btn on">L1 ●</span><span class="btn tiny">🔓</span><span class="btn">L2 ●</span><span class="btn tiny">🔒</span><span class="btn">L3</span><span class="btn tiny">🔓</span><span class="btn">L4</span><span class="btn tiny">🔓</span><span class="sel" style="margin-left:10px">KIND: GEN ▾</span><span class="sel">plasma ▾</span></div></div>
+          <div class="tabrail"><button class="tab active">CV-MOD</button><button class="tab">COMBINE GRAPH</button><button class="tab">PRESETS</button></div>
+          <div class="tabpane">
+            <div class="frow"><span style="width:30px;color:var(--ink)">IN1</span><span class="btn tiny" style="color:var(--cv);border-color:var(--cv)">cv</span><span class="sel">L1 ▾</span><span class="sel">speed ▾</span><div class="dialS"></div><span>SCALE</span><div class="dialS"></div><span>OFFSET</span><svg width="64" height="18"><rect width="64" height="18" fill="#0a0c0f" stroke="#2c3037"/><path d="M0 12 Q16 2 32 10 T64 8" stroke="#7dd3fc" fill="none"/></svg></div>
+            <div class="frow"><span style="width:30px;color:var(--ink)">IN2</span><span class="btn tiny" style="color:var(--warn);border-color:var(--warn)">audio</span><span class="sel">DSYNC 1 ▾</span><span class="sel">offset ▾</span><div class="dialS"></div><span>SCALE</span><div class="dialS"></div><span>OFFSET</span><svg width="64" height="18"><rect width="64" height="18" fill="#0a0c0f" stroke="#2c3037"/><path d="M0 14 L8 6 L16 13 L24 4 L32 12 L40 7 L48 14 L56 5 L64 11" stroke="#f2c14e" fill="none"/></svg></div>
+            <div class="frow" style="color:var(--faint)">… IN3–IN6 (six rows total — CV_PORT_IDS)</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div>
+    <div class="mocklab">dock — TAB 3 ACTIVE: presets</div>
+    <div class="dock" style="width:600px">
+      <div class="chromebar"><span>toybox</span><span>dock full view · ✕</span></div>
+      <div class="plate">
+        <div class="extbody" style="width:560px">
+          <div style="width:536px;height:110px;background:#000;border:1px solid var(--line);border-radius:4px;position:relative"><div class="scrbtn">SCREEN ◱</div></div>
+          <div class="layerband"><div style="display:flex;gap:3px;align-items:center"><span class="btn on">L1 ●</span><span class="btn tiny">🔓</span><span class="btn">L2 ●</span><span class="btn tiny">🔒</span><span class="btn">L3</span><span class="btn tiny">🔓</span><span class="btn">L4</span><span class="btn tiny">🔓</span><span class="sel" style="margin-left:10px">KIND: GEN ▾</span><span class="sel">plasma ▾</span></div></div>
+          <div class="tabrail"><button class="tab">CV-MOD</button><button class="tab">COMBINE GRAPH</button><button class="tab active">PRESETS</button></div>
+          <div class="tabpane">
+            <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px"><span class="mocklab" style="margin:0">PRESET</span><span class="sel" style="min-width:200px">— load preset… — ▾</span></div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap">
+              <span class="btn">🎲 RANDOM</span><span class="btn">REVERT</span><span class="btn">SAVE</span><span class="btn">EXPORT</span><span class="btn">IMPORT</span>
+            </div>
+            <div class="frow" style="margin-top:8px"><span style="color:var(--ink)">★ ravecube</span><span class="btn tiny">✕</span><span style="margin-left:14px;color:var(--ink)">★ meltdown</span><span class="btn tiny">✕</span><span class="mocklab" style="margin:0 0 0 auto">saved list</span></div>
           </div>
         </div>
       </div>
@@ -222,53 +309,50 @@
   </div>
 </div>
 
-<h2>§7 — RESTING TEXT CENSUS</h2>
+<h2>§7 — RESTING TEXT CENSUS (rev 2 — under the “keep what we have” ruling)</h2>
+<p>The owner’s toybox ruling (“generally keep what we have while migrating to our new look&amp;feel”) sets this module’s bar: affordance text and names stay; the fleet’s resting-text rule still governs DERIVED-VALUE chrome, where the older, four-times-given rulings are explicit and unrevoked.</p>
 <table>
-  <tr><th>string</th><th>verdict</th><th>replacement</th></tr>
-  <tr><td>layer tab numerals + populated dots</td><td class="kept">KEPT — landmark names + a lit/unlit mark (not a readout)</td><td>—</td></tr>
-  <tr><td>content/model/matcap/preset names in selects</td><td class="kept">KEPT — option NAMES; and a user-typed preset name is a caption regardless of authorship (the settled corollary)</td><td>—</td></tr>
-  <tr><td>“synced” badges (image/shader), “Exported”/preset notices, input-error prose, camera hint, connect-msg</td><td class="rm">REMOVED at rest — state words and transient results; failures become warn-tone lamps with static captions, prose in <span class="aria">title/aria-label</span></td><td>lamps + aria; docs</td></tr>
-  <tr><td>filename rows (<code>toybox-*-filename</code>)</td><td class="kept">KEPT — a loaded file’s NAME disambiguates the control’s own position (which source this layer holds), the device-name/archivist-title class. ⚠ flagged to the owner as the same open call archivist §7.1 escalated (name vs value for third-party strings) — one ruling should cover both</td><td>—</td></tr>
-  <tr><td>the combine graph’s node labels (L1/L2…)</td><td class="kept">KEPT — control captions inside an editor surface</td><td>—</td></tr>
+  <tr><th>string</th><th>verdict</th><th>notes</th></tr>
+  <tr><td>layer chips L1–L4, dots, 🔒 badges; node names (“LUMA 1”, “OUT”); tab labels; ADD-row op names</td><td class="kept">KEPT — landmark/option names, control captions, lit/unlit marks</td><td>—</td></tr>
+  <tr><td>content/model/matcap/preset names; user-typed preset names</td><td class="kept">KEPT — option names regardless of authorship</td><td>—</td></tr>
+  <tr><td>“patched feed — wire a video source into VID A/B” hint · “LAYER N is empty — pick a KIND above” · “armed: … → click an input dot”</td><td class="kept">KEPT — invitations/instructions bound to an actionable empty or armed state (the TYPE TEXT… class), and part of today’s UI the owner wants kept</td><td>restyle only</td></tr>
+  <tr><td>CV source-kind badges (cv/gate/audio/idle)</td><td class="kept">KEPT — names what the jack is receiving (the port-annotation class, and today’s UI)</td><td>—</td></tr>
+  <tr><td>filename rows</td><td class="kept">KEPT — the loaded file’s NAME disambiguates which source a layer holds; same open owner call as archivist §7.1 (name vs value), rule once</td><td>—</td></tr>
+  <tr><td>transient result prose (“Exported”, preset notices, import/shader error text) sitting at rest</td><td class="rm">still REMOVED at rest — the #1957 shape; a warn/good-tone lamp with static caption carries it, prose in <span class="aria">title/aria-label</span></td><td>the one place rev 2 deliberately diverges from the card, per the standing fleet rulings; flagged in the PR body for the owner’s look&amp;feel pass</td></tr>
 </table>
 
-<h2>§8 — TYPED-ENTRY GATE — the routes</h2>
-<p><b>TRIPS</b> on <code>toybox-preset-name-input</code> (<code>type="text"</code>). Unlike textmarquee, typing is NOT the module — it is one field naming a preset. Routes:</p>
-<table>
-  <tr><th>route</th><th>cost</th><th>verdict</th></tr>
-  <tr><td>(a) strip the free-text input from the LEGACY card — name presets automatically (“preset 3”, timestamp) with rename available through a non-typed mechanism, or keep typed rename only in the face BODY once route (b) settles fleet-wide</td><td>legacy loses typed preset names; auto-names still round-trip export/import</td><td>workable but lossy — the preset NAME is genuinely user-meaningful (“ravecube” beats “preset 3”)</td></tr>
-  <tr><td>(b) the fleet-wide gate ruling (a bespoke-surface BODY editor/field is not a lane cell)</td><td>owner decision, made once — the same ruling textmarquee/archivist/peertube/recorderbox/controlSurface wait on</td><td><b>RECOMMENDED</b> — toybox should ride that ruling, not fork its own</td></tr>
-  <tr><td>(c) do not promote</td><td>the #1589 class stays mitigated-not-closed and the compositor stays a placeholder tile</td><td>the default until ruled; §6.5’s registry port is worth landing even so (it is an ordinary bug-class PR, no face required)</td></tr>
-</table>
+<h2>§8 — TYPED-ENTRY GATE — unchanged by the redesign, and kept wired into it</h2>
+<p><b>TRIPS</b> on <code>toybox-preset-name-input</code> (<code>type="text"</code>), which now lives on the PRESETS tab. The gate reads the LEGACY card’s template, so the tab design changes nothing for the leg — it reddens on promotion regardless of where the face puts the field. Routes (unchanged from rev 1): (a) strip free-text naming from the legacy card (auto-names + rename via the face once ruled) — workable but lossy; (b) <b>recommended</b>: the fleet-wide ruling that a bespoke-surface BODY field is not a lane cell — toybox rides it, no module-local carve-out; (c) do not promote yet — then §6.5’s registry port still lands as a standalone bug PR.</p>
 
 <h2>§9 — STATE / .data CENSUS</h2>
 <table>
   <tr><th>key</th><th>home</th><th>writer</th></tr>
-  <tr><td><code>node.data.layers[4]</code> / <code>.combine</code> / <code>.cvRoutes</code> / image+shader bytes / presets</td><td>Yjs, in-place via <code>toybox-layers.ts</code> only</td><td>body sections (and legacy card while it lives) — one seam</td></tr>
+  <tr><td><code>node.data.layers[4]</code> (incl. per-layer <code>locked</code>) / <code>.combine</code> (nodes incl. per-node <code>locked</code>, edges) / <code>.cvRoutes</code> / <code>.combineView</code> (graph height) / image+shader bytes / presets</td><td>Yjs, in-place via <code>toybox-layers.ts</code> + <code>toybox-combine.ts</code> only</td><td>body zones (and legacy card while it lives) — one seam</td></tr>
   <tr><td><code>node.data.previewCollapsed</code></td><td>Yjs (new)</td><td>screen switch</td></tr>
   <tr><td>video elements / camera tracks / decoders</td><td>TODAY: card-local (+ per-layer retry timers). AFTER: node-keyed registry (§6.5)</td><td>registry; body adopts-and-reads</td></tr>
-  <tr><td>active layer tab, pending pickers</td><td>LOCAL per collaborator</td><td>body</td></tr>
+  <tr><td>active layer chip, ACTIVE TAB, selected graph node, pending wire, pending pickers</td><td>LOCAL per collaborator</td><td>body</td></tr>
 </table>
 
 <h2>§10 — GATES, TESTS, VRT</h2>
 <table>
   <tr><th>gate</th><th>verdict for this PR</th></tr>
   <tr><td>1 · <code>module-face-lint</code> / identity</td><td>face + promotion in one diff; order [] is the blessed shape; rear draft per §5/M1</td></tr>
-  <tr><td>2 · VRT</td><td><code>GREP=toybox flox activate -- task vrt:commit</code>. The determinism seam EXISTS (<code>__toyboxFreeze</code>) and the cold default (DEFAULT_CONTENT_ID on layer 1) is content-pinned; #1836’s present-timing precedent says CHECK the first-present path, not assume (M3). Predict 2 files if M3 is green; else FACES_WITHOUT_SCENES with measurements</td></tr>
-  <tr><td>3 · <code>EXTENSION_BODY_ROLES</code></td><td>role <code>picture</code> per §6.3</td></tr>
+  <tr><td>2 · VRT</td><td><code>GREP=toybox flox activate -- task vrt:commit</code>. Scenes: cold dock (default tab CV-MOD) + the COMBINE GRAPH tab (the owner-reviewed surface — bake a deterministic default graph). <code>__toyboxFreeze</code> pins the screen; #1836 says CHECK first-present (M3). The default graph shape is data (default <code>combine</code>) — deterministic by construction</td></tr>
+  <tr><td>3 · <code>EXTENSION_BODY_ROLES</code></td><td>role <code>picture</code> per §6.4</td></tr>
   <tr><td>4 · docs family↔card</td><td>no families — inert</td></tr>
-  <tr><td>5 · <code>optionsExhaustive</code></td><td>no ParamDef rosters — inert (content/matcap rosters are data, not params)</td></tr>
+  <tr><td>5 · <code>optionsExhaustive</code></td><td>no ParamDef rosters — inert (op/content/matcap rosters are data, not params)</td></tr>
   <tr><td>6 · typed-entry leg</td><td><b>blocked</b> — §8 route (b) recommended, owner-ruled</td></tr>
 </table>
-<p>e2e: the toybox suite is the deepest of any unfaced module (control-surface, disk-loading, video-projection, layer-input, presets, node-menu…). Wave-6’s §8 lesson applies: enumerate which rows boot <code>?shell=legacy</code> and would go green-and-blind after promotion, and re-subject the load-bearing ones at the BODY (a testid-by-testid disposition table is a build-time deliverable — the census in §2 is its input). The §6.5 registry earns the <code>collapse-keeps-playing</code>-shaped spec: collapse the pane mid-video-layer, assert the output keeps moving.</p>
+<p>e2e: the toybox suite is the deepest of any unfaced module. Wave-6’s §8 lesson applies: enumerate which rows boot <code>?shell=legacy</code> and go green-and-blind after promotion, and re-subject the load-bearing ones at the BODY — the §2 census (now affordance-weighted) is that table’s input. The graph editor’s rows (<code>toybox-node-*</code>, <code>toybox-shadertoy</code>, batch specs) are the priority re-subjects since the editor keeps its testids (§6.3). The §6.5 registry earns the collapse-keeps-playing-shaped spec. Tab-rail behaviour gets its own face-model rows: default tab, per-peer locality, scopes pausing on inactive tabs.</p>
 
-<h2>§11 — DIVERGENCE / DEFECT LEDGER</h2>
+<h2>§11 — DIVERGENCE / DEFECT LEDGER (rev 2)</h2>
 <table>
   <tr><th>#</th><th>finding</th><th>routing</th></tr>
-  <tr><td>1</td><td>#1589 class mitigated-not-closed: card unmount still owns media teardown; LRU-evict of the dock pane is a normal shell event</td><td>§6.5 registry port — the face PR’s precondition (or a standalone bug PR if promotion stalls on §8)</td></tr>
-  <tr><td>2</td><td>Export can lie when media is card-dead (“Exported” with zero video bytes — the module’s own comment)</td><td>closed by reading the registry’s truth at export; add the negative-control leg (export while collapsed)</td></tr>
-  <tr><td>3</td><td>Camera capture races the dedicated CAMERA module (“a browser allows one consumer … surfaced as inputError”)</td><td>keep the error surface as the warn lamp; no new mechanism — but note it beside cameraInput in the PR body</td></tr>
-  <tr><td>4</td><td>Inventory blocker list vs lineage disagree on <code>needs-note-entry-cell</code> for toybox (the current entry carries media-controller only; the wave-6/7 lineage names both)</td><td>re-read the entry at build time; the typed-entry LEG fires either way (it reads the card, not the blocker list) — which is the whole lesson of that gate</td></tr>
+  <tr><td>1</td><td>#1589 class mitigated-not-closed: card unmount still owns media teardown; LRU-evict of the dock pane is a normal shell event</td><td>§6.5 registry port — the face PR’s precondition (or a standalone bug PR if §8 stalls)</td></tr>
+  <tr><td>2</td><td>Export can lie when media is card-dead (“Exported” with zero video bytes — the module’s own comment)</td><td>closed by reading the registry’s truth at export; negative-control leg (export while collapsed)</td></tr>
+  <tr><td>3</td><td>Camera capture races the dedicated CAMERA module (one consumer per device; surfaced as inputError)</td><td>keep the error surface as the warn lamp; note beside cameraInput in the PR body</td></tr>
+  <tr><td>4</td><td><code>toybox.ts</code> header prose is Phase 1-3 (“combine … fade/lumakey/chromakey/map”, “shader/gen … video/off: render nothing (reserved)”) — three phases stale against <code>toybox-combine-graph.ts</code> (17 ops) and the shipped kind roster (GEN/FRAG/OBJ/IMAGE/VIDEO/OFF). It misled rev 1 of this very spec (§2.0)</td><td>docs-shaped header fix can ride the face PR (comments are attest-stripped by design); the LEARNING (read the model file, not the header) is promoted to INDEX §3</td></tr>
+  <tr><td>5</td><td>Rev 1 of this spec: census under-weighted the graph editor, missed both lock tiers, the selected-node pane, REVERT, <code>combineView</code> persistence, and mislabelled <code>ToyboxNodeMenu</code> as canvas chrome (it is the GRAPH’s contextual menu, first-class at <code>Canvas.svelte:6041,7104</code>)</td><td>corrected throughout rev 2; process learning recorded in §2.0 + INDEX §3</td></tr>
 </table>
 
 <h2>§12 — MUST-VERIFY</h2>
@@ -276,21 +360,24 @@
   <tr><th>id</th><th>experiment</th><th>pass shape</th></tr>
   <tr><td>M1</td><td>Draft lint run: order [] + the two rear groups (does the ‘feeds’ non-page group render acceptably / pass rear totality?)</td><td>green with legible rear; else collapse to one ‘signal’ group</td></tr>
   <tr><td>M2</td><td>Registry port (§6.5): collapse/expand/evict cycles across all four source kinds (file, camera, inA, image)</td><td>no layer ever goes dark; camera track survives; timers die with the node, not the card</td></tr>
-  <tr><td>M3</td><td>Two-boot pixel identity of the frozen cold scene (<code>__toyboxFreeze</code> + default content), first-present included (#1836)</td><td>bit-identical → baseline; else measured exemption</td></tr>
-  <tr><td>M4</td><td>Attest basis membership of <code>toybox.ts</code>; confirm the face PR needs zero behavioural def edits (the face block is stripped; §6.5 lives outside the def)</td><td>attest diff empty</td></tr>
-  <tr><td>M5</td><td>Node menu (<code>ToyboxNodeMenu</code>) reachability under the shell (menu is canvas-owned, not card-owned)</td><td>unchanged by promotion</td></tr>
-  <tr><td>M6</td><td>Body section components: confirm the card’s sections extract cleanly enough to be imported by both surfaces (no fork)</td><td>one component tree, two mounts</td></tr>
+  <tr><td>M3</td><td>Two-boot pixel identity of the frozen cold scene AND the graph-tab scene (<code>__toyboxFreeze</code> + default content + default graph), first-present included (#1836)</td><td>bit-identical → baseline; else measured exemption</td></tr>
+  <tr><td>M4</td><td>Attest basis membership of <code>toybox.ts</code>; confirm the face PR needs zero behavioural def edits (face block stripped; §6.5 lives outside the def; ledger #4 is comment-only)</td><td>attest diff empty</td></tr>
+  <tr><td>M5</td><td>Graph editor re-mounted inside the tab pane: the <code>Canvas.svelte</code> right-click guards still catch it (same testid, new DOM ancestry); ToyboxNodeMenu overlay z-order over dock chrome; resize handle vs tab-pane scroll</td><td>right-click opens the graph menu, never the module menu; resize works in the dock host</td></tr>
+  <tr><td>M6</td><td>Body zone components: confirm the card’s sections extract to shared components imported by BOTH surfaces (no fork), including the graph editor</td><td>one component tree, two mounts</td></tr>
+  <tr><td>M7</td><td>Measure the single-column stack’s natural width (graph canvas at its default <code>G_W</code> aspect) vs the legacy 900 px 3-column card</td><td>a number, not a guess — feeds the §5.1 width claim and the VRT scene size</td></tr>
+  <tr><td>M8</td><td>Inactive-tab behaviour: CV scopes pause their rAF; the graph’s pending-wire state survives a tab switch (or is deliberately cleared — decide and test)</td><td>no hidden work, no lost gesture surprise</td></tr>
 </table>
 
 <h2>§13 — OPEN QUESTIONS (owner)</h2>
 <table>
   <tr><th>q</th><th>question</th><th>recommendation</th></tr>
-  <tr><td>Q1</td><td>The typed-entry fleet ruling (§8 route b) — toybox rides it?</td><td>yes; do not invent a toybox-only carve-out</td></tr>
-  <tr><td>Q2</td><td>Filename resting text (§7) — name or value?</td><td>name (disambiguates the layer’s source); rule it once with archivist’s §7.1</td></tr>
-  <tr><td>Q3</td><td>Should §6.5 land as its own bug PR ahead of the face (it fixes a live P0-class hazard independent of promotion)?</td><td>yes if §8 stalls; the registry port needs no face and no owner ruling</td></tr>
+  <tr><td>Q1</td><td>The typed-entry fleet ruling (§8 route b) — toybox rides it?</td><td>yes; no module-local carve-out</td></tr>
+  <tr><td>Q2</td><td>Default tab: CV-MOD (performance posture) or COMBINE GRAPH (the surface just ruled central)?</td><td>CV-MOD once a patch exists; a FRESH node could open on COMBINE GRAPH where the empty patch’s work is — if that per-state default is too clever, plain CV-MOD</td></tr>
+  <tr><td>Q3</td><td>Transient notices as lamps (§7 last row) — the one look&amp;feel divergence from “keep what we have”</td><td>lamps, per the standing #1957 rulings; shown in the build’s first screenshot pass for the owner’s call</td></tr>
+  <tr><td>Q4</td><td>Should §6.5 land as its own bug PR ahead of the face (it fixes a live P0-class hazard independent of promotion)?</td><td>yes if §8 stalls; the registry port needs no face and no owner ruling</td></tr>
 </table>
 
-<footer>face-specs/toybox.html · authored from toybox.ts (ports/persistence/header in full) + ToyboxCard.svelte (header, §695 comment, full testid census) + ToyboxNodeMenu presence · standards: wave-5/6/7 bespoke spec canon (#1589/#1590/#1836 lineage applied)</footer>
+<footer>face-specs/toybox.html · rev 2 (owner-ruled dock design) · authored from toybox.ts + toybox-combine-graph.ts + toybox-history.ts + ToyboxCard.svelte (preset/layer/graph/CV markup read at source, lines cited) + ToyboxNodeMenu.svelte + Canvas.svelte seam sites · standards: wave-5/6/7 bespoke spec canon (#1589/#1590/#1836/#1576/#1550 lineage applied)</footer>
 </main>
 </body>
 </html>
