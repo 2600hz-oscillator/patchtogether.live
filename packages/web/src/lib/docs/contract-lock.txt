@@ -3186,6 +3186,12 @@ tempest in rim cv param=rim cvScale=linear
 tempest out out video
 tempest param rim 0..1 linear default=0
 tempest param shape 0..2 discrete default=0
+tempolock meta domain=audio
+tempolock in in gate accepts=cv,pitch edge=trigger
+tempolock out bpm cv
+tempolock out clock gate edge=trigger
+tempolock out locked gate edge=gate
+tempolock param range 0..2 discrete default=1
 textmarquee meta domain=video
 textmarquee in posX cv param=posX cvScale=linear
 textmarquee in posY cv param=posY cvScale=linear

@@ -9,6 +9,7 @@ import {
   migrateAssignNames,
   readName,
   resolveDisplayName,
+  isReservedDefaultName,
 } from './module-naming';
 
 function n(id: string, type: string, name?: string): ModuleNode {
@@ -234,5 +235,34 @@ describe('module-naming.resolveDisplayName', () => {
   it('does not consult defaultLabel when name is set, even if name is unusual', () => {
     const node = n('a', 'analogVco', 'lowercase_name_ok');
     expect(resolveDisplayName(node, { a: node }, 'IGNORED')).toBe('lowercase_name_ok');
+  });
+});
+
+describe('module-naming.isReservedDefaultName', () => {
+  it('matches the bare type and <TYPE>N — what the auto-namer writes', () => {
+    expect(isReservedDefaultName('ANALOGVCO', 'analogVco')).toBe(true);
+    expect(isReservedDefaultName('ANALOGVCO2', 'analogVco')).toBe(true);
+    expect(isReservedDefaultName('ANALOGVCO17', 'analogVco')).toBe(true);
+  });
+
+  it('is case-insensitive, mirroring validateRename uniqueness', () => {
+    // "a deliberate user edit to a <TYPE>/<TYPE>N form" is the auto-namer's
+    // reserved shape by contract, whatever its case.
+    expect(isReservedDefaultName('analogvco2', 'analogVco')).toBe(true);
+    expect(isReservedDefaultName('AnalogVco', 'analogVco')).toBe(true);
+  });
+
+  it('a genuine rename is NOT reserved', () => {
+    expect(isReservedDefaultName('feedback', 'camera')).toBe(false);
+    expect(isReservedDefaultName('MY_WOBBLER', 'analogVco')).toBe(false);
+    // Prefix alone is not enough: a non-numeric tail is a real name.
+    expect(isReservedDefaultName('ANALOGVCO_LEAD', 'analogVco')).toBe(false);
+    expect(isReservedDefaultName('ANALOGVCO2B', 'analogVco')).toBe(false);
+  });
+
+  it("another TYPE's default is a real name for THIS type", () => {
+    // Only the node's own type prefix is reserved — a camera renamed
+    // 'ANALOGVCO' is odd but it is the user's choice.
+    expect(isReservedDefaultName('ANALOGVCO', 'camera')).toBe(false);
   });
 });

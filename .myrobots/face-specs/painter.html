@@ -1,0 +1,274 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>FACE SPEC — painter</title>
+<style>
+  /* House tokens — the same set the wave-1..7 mocks use (dark-only, per wave-5+ convention). */
+  :root{
+    --bg:#0e1013; --dock:#12161c; --plate:#262a31; --pbody:#1c1f24; --well:#0a0c0f;
+    --line:#2c3037; --tile:#33383f; --ink:#eef1f5; --dim:#9aa2ad; --faint:#646c77;
+    --accent:#6cf; --vid:#4ade80; --cv:#7dd3fc; --warn:#f2c14e; --good:#8fe6b0;
+    --bad:#f87171; --meta:#c084fc;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{background:var(--bg);color:var(--ink);font-family:var(--sans);margin:0;padding:24px 16px 80px;line-height:1.5}
+  main{max-width:1080px;margin:0 auto}
+  header.top{border-bottom:1px solid var(--line);padding-bottom:12px;margin-bottom:20px}
+  header.top h1{font-family:var(--mono);font-size:1.35rem;margin:0 0 4px}
+  header.top .sub{color:var(--dim);font-size:.9rem}
+  .crumbs{font-family:var(--mono);font-size:.75rem;margin-bottom:10px}
+  .crumbs a{color:var(--cv);text-decoration:none}
+  .crumbs a:hover{text-decoration:underline}
+  .badge{display:inline-block;font-family:var(--mono);font-size:.7rem;padding:2px 8px;border-radius:3px;border:1px solid var(--line);color:var(--dim);margin-left:6px;vertical-align:middle}
+  .badge.audio{color:var(--accent);border-color:var(--accent)}
+  .badge.video{color:var(--vid);border-color:var(--vid)}
+  .verdict{font-family:var(--mono);font-size:.95rem;padding:10px 14px;border-radius:6px;margin:14px 0;border:1px solid}
+  .verdict.promote{border-color:var(--good);color:var(--good);background:rgba(143,230,176,.06)}
+  .verdict.blocked{border-color:var(--warn);color:var(--warn);background:rgba(242,193,78,.06)}
+  h2{font-family:var(--mono);font-size:1.02rem;color:var(--ink);border-bottom:1px solid var(--line);padding-bottom:6px;margin:34px 0 12px}
+  h3{font-family:var(--mono);font-size:.9rem;color:var(--dim);margin:20px 0 8px}
+  p{margin:8px 0;color:var(--ink)}
+  table{border-collapse:collapse;width:100%;margin:10px 0;font-size:.85rem}
+  th{font-family:var(--mono);font-size:.72rem;text-transform:uppercase;letter-spacing:.04em;color:var(--faint);text-align:left;padding:6px 10px;border-bottom:1px solid var(--line)}
+  td{padding:6px 10px;border-bottom:1px solid rgba(44,48,55,.55);vertical-align:top}
+  code,.mono{font-family:var(--mono);font-size:.83em;color:var(--cv)}
+  pre.code{background:var(--well);border:1px solid var(--line);border-radius:6px;padding:12px 14px;overflow-x:auto;font-family:var(--mono);font-size:.78rem;line-height:1.55;color:var(--ink)}
+  pre.code .c{color:var(--faint)}
+  .callout{border-left:3px solid var(--line);background:rgba(28,31,36,.6);padding:10px 14px;border-radius:0 6px 6px 0;margin:12px 0;font-size:.88rem}
+  .callout.warn{border-color:var(--warn)}
+  .callout.ok{border-color:var(--good)}
+  .callout.bad{border-color:var(--bad)}
+  .callout .t{font-family:var(--mono);font-size:.72rem;text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:4px}
+  .callout.warn .t{color:var(--warn)} .callout.ok .t{color:var(--good)} .callout.bad .t{color:var(--bad)}
+  .gone{text-decoration:line-through;color:var(--faint)}
+  .aria{font-family:var(--mono);font-size:.78rem;color:var(--good)}
+  .kept{color:var(--good);font-family:var(--mono);font-size:.78rem}
+  .rm{color:var(--bad);font-family:var(--mono);font-size:.78rem}
+  .mockrow{display:flex;gap:28px;flex-wrap:wrap;align-items:flex-start;margin:16px 0}
+  .mocklab{font-family:var(--mono);font-size:.7rem;color:var(--faint);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px}
+  .lane{width:192px;height:180px;background:var(--pbody);border:1px solid var(--line);border-radius:8px;display:flex;flex-direction:column;overflow:hidden;flex:none}
+  .lane .lchrome{font-family:var(--mono);font-size:.62rem;color:var(--dim);padding:4px 8px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between}
+  .lane .lbody{flex:1;display:flex;gap:9px;padding:8px;align-items:flex-start}
+  .thumb{width:160px;height:120px;background:#fff;border:1px solid var(--line);border-radius:4px;position:relative;overflow:hidden}
+  .dock{background:var(--dock);border:1px solid var(--line);border-radius:10px;overflow:hidden;flex:none}
+  .chromebar{display:flex;justify-content:space-between;align-items:center;font-family:var(--mono);font-size:.7rem;color:var(--dim);padding:6px 12px;border-bottom:1px solid var(--line)}
+  .plate{padding:14px;width:max-content;max-width:100%}
+  .extbody{background:var(--pbody);border:1px solid var(--line);border-radius:8px;padding:12px;margin-bottom:12px}
+  .btn{font-family:var(--mono);font-size:.66rem;color:var(--ink);background:var(--tile);border:1px solid var(--line);border-radius:4px;padding:3px 8px;display:inline-block}
+  .btn.on{border-color:var(--vid);color:var(--vid)}
+  .toolrow{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:8px}
+  .swatches{display:grid;grid-template-columns:repeat(14,14px);gap:2px;margin-top:8px}
+  .sw{width:14px;height:14px;border:1px solid var(--line);border-radius:2px}
+  .canvasmock{background:#fff;border:1px solid var(--line);border-radius:4px;position:relative}
+  .scrbtn{position:absolute;right:6px;bottom:6px;background:rgba(10,12,15,.72);border:1px solid var(--line);border-radius:4px;font-family:var(--mono);font-size:.6rem;color:var(--dim);padding:2px 6px}
+  footer{margin-top:48px;border-top:1px solid var(--line);padding-top:10px;font-family:var(--mono);font-size:.7rem;color:var(--faint)}
+</style>
+</head>
+<body>
+<main>
+<header class="top">
+  <div class="crumbs"><a href="INDEX.html">← face-specs INDEX</a></div>
+  <h1>FACEPLATE BUILD SPEC — <code>painter</code> <span class="badge video">video</span> <span class="badge">bespoke-surface</span></h1>
+  <div class="sub">PAINTER — the MS-Paint drawing surface as a pure video SOURCE. Zero params; the pointer IS the module. SPEC ONLY — nothing here is implemented. Authored 2026-08-28 against <code>origin/main</code> @ <code>f340ab43a</code>.</div>
+</header>
+
+<div class="verdict blocked">VERDICT: PROMOTE-READY, BLOCKED ON ONE OWNER ROUTE. The surface design is complete and unexceptional (order [], picture body — the flipper/videoOut shape), but <code>PainterCard.svelte</code> mounts <code>&lt;input type="text"&gt;</code> (the TEXT tool’s stamp string), so the face-migration inventory’s typed-entry leg reddens on promotion. Three routes exist (§8); the recommended one costs a small legacy-card edit. Everything else in this spec is unconditional.</div>
+
+<h2>§0 — THE CONSTRAINT MAP, READ FIRST</h2>
+<table>
+  <tr><th>registry / gate</th><th>state for painter</th><th>evidence</th></tr>
+  <tr><td><code>STRICT_FACES</code></td><td>NOT a member — unfaced</td><td><code>strict-faces.ts</code></td></tr>
+  <tr><td>migration disposition</td><td><code>bespoke-surface</code>, no blocker</td><td><code>face-migration-inventory.ts</code>: “a DRAWING SURFACE: freehand strokes on a canvas plus a typed text stamp. Direct pointer painting is the module and it declares no params at all.”</td></tr>
+  <tr><td>typed-entry leg</td><td><b>TRIPS</b> — <code>painter-text-input</code> is <code>&lt;input type="text"&gt;</code> (verified via <code>mountsTypedEntry</code> re-run 2026-08-28)</td><td>§8</td></tr>
+  <tr><td><code>DOM_SOURCE_LANE_TYPES</code> / producer registries</td><td>NOT a member. The card binds its canvas ONCE via <code>read('extras').setPaintCanvas</code>; the factory paints a WHITE placeholder until then — a fresh node is never a dead black frame</td><td><code>painter.ts</code> header + factory</td></tr>
+  <tr><td>card-owned-source pattern</td><td>same family as TEXTMARQUEE/PICTUREBOX. ⚠ Unlike textmarquee (#1720 moved render-and-push to node-lifetime <code>extras-producers</code>), painter’s replay-and-push loop still lives on the CARD — with no card mounted, the output is the white placeholder, not the drawing. This is the §2.3 finding</td><td><code>PainterCard.svelte</code> header vs <code>TextmarqueeCard.svelte</code> header</td></tr>
+  <tr><td>VRT today</td><td>exempt: “VRT baseline pending — interactive MS-Paint canvas (op-driven, non-deterministic first paint) … Promote into MODULES with a canvas mask once darwin + linux baselines land”</td><td><code>e2e/vrt/vrt-exemptions.ts:1334</code></td></tr>
+  <tr><td>WebGL attest</td><td>M3 — re-run the basis check; the face PR should need NO <code>painter.ts</code> edit except the face block itself (docs-shaped, stripped by design)</td><td><code>scripts/attest-code-basis.ts</code></td></tr>
+</table>
+
+<h2>§1 — WHAT THE MODULE IS FOR</h2>
+<p>The verb is <b>DRAW</b>. A tiny Windows-95 Paint whose canvas IS the output frame, 1:1 at engine resolution: 9 tools (pencil/brush/eraser/fill/pick/line/rect/ellipse/text), the 28-colour Win95 swatch grid (2×14, left-click FG / right-click BG), SIZE slider, FILL toggle, UNDO/CLEAR. The drawing is a Y.Doc-synced ordered op log (<code>node.data.ops</code>, <code>PaintOp[]</code>) replayed deterministically on mount/remote-edit (<code>painter-draw.ts</code>, pure + unit-tested), so every collaborator paints the same picture. Tool/colour/size are LOCAL per collaborator — only the drawing syncs.</p>
+
+<h2>§2 — STOP 1: LEGACY-CARD PARITY CENSUS</h2>
+<table>
+  <tr><th>affordance</th><th>card site</th><th>face home</th><th>survives?</th></tr>
+  <tr><td>Drawing canvas (pointer strokes → ops; engine-resolution, shown scaled)</td><td><code>painter-canvas</code></td><td><code>fullViewBody</code> — the editor canvas, verbatim logic (replay + commit via <code>appendOp</code>)</td><td>YES</td></tr>
+  <tr><td>9-tool toolbar</td><td><code>painter-tool-*</code></td><td>body toolbar (local state)</td><td>YES</td></tr>
+  <tr><td>28-colour palette, FG/BG via left/right click</td><td><code>painter-swatch-*</code>, <code>painter-palette</code></td><td>body palette (local state)</td><td>YES</td></tr>
+  <tr><td>SIZE slider (range input, MIN_BRUSH..MAX_BRUSH)</td><td><code>painter-size</code></td><td>body slider — <code>type="range"</code> does NOT trip the typed-entry predicate; stays as-is</td><td>YES</td></tr>
+  <tr><td>FILL-shapes checkbox</td><td><code>painter-fill-shapes</code></td><td>body toggle</td><td>YES</td></tr>
+  <tr><td>TEXT tool + stamp-string input</td><td><code>painter-text-input</code> (<code>type="text"</code>)</td><td>body — but the LEGACY card’s input is the typed-entry hit; §8 carries the routing</td><td>YES on the face; owner route for the card</td></tr>
+  <tr><td>UNDO / CLEAR</td><td><code>painter-undo</code> / <code>painter-clear</code></td><td>body action buttons (op-log <code>popOp</code>/<code>clearOps</code> via <code>mutateNode</code>)</td><td>YES</td></tr>
+  <tr><td>Live output = the canvas itself (1:1)</td><td>canvas bound once via extras</td><td>the body canvas IS the picture; the lane gets the free <code>VideoTileThumb</code></td><td>YES</td></tr>
+</table>
+
+<h3>§2.3 The one mechanism that does NOT survive as-is: card-mounted replay-and-push</h3>
+<div class="callout warn"><span class="t">the #1720 gap, painter edition</span>
+<p>The card owns: (a) the 2D canvas the op log is replayed onto, and (b) the one-time <code>setPaintCanvas</code> bind. Under the shipping shell an un-promoted painter renders a placeholder tile and the card mounts only in the dock — so a SAVED rack with a painting shows the WHITE PLACEHOLDER on load until someone expands the pane. Textmarquee already fixed exactly this class by moving render-and-push to node-lifetime <code>$lib/ui/media/extras-producers</code> (#1720: “the node shows your text with no card mounted”). <b>The face PR must port painter’s replay-and-push onto the same extras-producers seam</b> — a node-lifetime producer that replays <code>node.data.ops</code> into an offscreen canvas and binds it, with the body’s interactive canvas becoming a second consumer of the same op log, not the producer of the frame. This is the skifree/#1531 registry pattern the 08-24 face-plan already prescribes: use the existing seam, do not invent a mechanism.</p></div>
+
+<h2>§3 — STOP 2: EVERY WAY DATA GETS IN</h2>
+<table>
+  <tr><th>path</th><th>mechanism</th><th>after promotion</th></tr>
+  <tr><td>pointer strokes</td><td>local draw + <code>commitOp</code> → <code>mutateNode(id, live => appendOp(live.data, op))</code> — in-place, never reassign (the <code>[[yjs-save-load-real-ydoc]]</code> trap is named in the card: slicing+reassigning silently dropped every paint after the first)</td><td>body commits through the identical helper; the producer replays</td></tr>
+  <tr><td>remote peer ops</td><td>Y.Doc sync → replay effect</td><td>producer replays on node lifetime — peer edits land with NO surface mounted (STOP-2’s archivist-D1 class, closed by §2.3)</td></tr>
+  <tr><td>UNDO/CLEAR</td><td><code>popOp</code>/<code>clearOps</code> via mutateNode</td><td>body buttons, same helpers</td></tr>
+  <tr><td>reload</td><td>ops persist; replay is deterministic (unit-tested)</td><td>unchanged</td></tr>
+  <tr><td>CV / params</td><td>none — <code>params: []</code>, <code>inputs: []</code></td><td>n/a</td></tr>
+</table>
+
+<h2>§4 — THE LANE PICTURE</h2>
+<p><code>domain === 'video'</code> → <code>hasVideoSurface</code> is true and the lane tile gets the free per-node <code>VideoTileThumb</code> (160×120, throttled) — a live thumbnail of the actual painting (white page until someone draws; honest in every state). With <code>order: []</code> the face “promises the lane nothing” — the flipper/videoOut shape the lane-paints-something lint explicitly blesses — and the picture outranks nothing because there is nothing ranked. The tile is the painting, which is the correct identity in a rack.</p>
+
+<h2>§5 — THE FACE</h2>
+<pre class="code">face: {
+  <span class="c">// Nothing to rank: painter declares no params, and every affordance is</span>
+  <span class="c">// tool-shaped local UI state or an op-log action — none of it is a cell.</span>
+  <span class="c">// The videoOut/flipper shape: order [], picture carries the lane.</span>
+  order: [],
+  glyph: 'none',        <span class="c">// mandatory for a video def — no audio out; the thumb is the picture.</span>
+  extension: 'painter', <span class="c">// §6 — the paint editor body.</span>
+  monitor: { why: 'the painting is a live video source a performer steers by; watching ' +
+                  'it without the toolbar is the projection use, not a preview.' },
+},</pre>
+<h3>§5.1 Bands / width</h3>
+<p>Zero bands (no ranked keys → no band at all, not even an unlabelled one). Width IS earned — by the picture: the body canvas at a legible editing size (~480 px wide at 4:3) is a “live picture” earner in the compact ruling’s own list. Slack ≈ 0 by construction (the widest element is the canvas). No width exemption.</p>
+
+<h2>§6 — THE BODY: <code>face.extension: 'painter'</code>, slot <code>fullViewBody</code></h2>
+<h3>§6.1 Why not a cell — the ladder, walked</h3>
+<table>
+  <tr><th>rung</th><th>refusal</th></tr>
+  <tr><td><code>selector</code>/<code>toggle</code>/<code>file</code>/<code>action</code> cells</td><td>tools/colours are per-collaborator LOCAL state — a cell writes shared graph state; painting another peer’s active tool out from under them is a multiplayer regression, not a promotion</td></tr>
+  <tr><td>PF-14 <code>panel</code> cell</td><td>a panel is one picture-you-edit INSIDE a band grid; painter needs the picture PLUS a toolbar PLUS a palette PLUS actions — a whole editor, which is the extension seam’s stated purpose</td></tr>
+  <tr><td><code>editorSurface</code> slot</td><td>declared but UNWIRED (<code>WIRED_SHELL_EXTENSION_SLOTS</code>); the first adopter must wire the render site in the same diff, and <code>fullViewBody</code> already renders at the head of the dock view — same real estate, zero platform work. Do not wire a new slot for a job the wired one does</td></tr>
+  <tr><td><code>fullViewBody</code></td><td class="kept">TAKEN — the editor at the head of the dock full view; with zero bands below it, the body IS the plate</td></tr>
+</table>
+
+<h3>§6.2 The component</h3>
+<p><code>$lib/ui/modules/painter/shell-extension.ts</code> → <code>{ fullViewBody: PainterEditorBody }</code>. Contents, top to bottom: toolbar (9 tools + size + fill + text stamp + UNDO/CLEAR) · the drawing canvas (interactive, replaying the shared op log; commits through the same <code>painter-draw.ts</code> helpers the card uses — one write seam, two mounts, the livecode/DX7 shared-action pattern) · FG/BG chip + the 28-swatch palette. The engine frame keeps coming from the node-lifetime producer (§2.3); the body canvas is a synchronized VIEW that also accepts input, so closing the pane never blanks the output.</p>
+
+<h3>§6.3 <code>EXTENSION_BODY_ROLES</code> — the third gate</h3>
+<pre class="code">painter: {
+  role: 'picture',
+  why: 'the body mounts the drawing canvas itself — the module output at editing size ' +
+       'with the tool chrome around it; the picture is the surface being edited, ' +
+       'not a preview beside controls.',
+},</pre>
+
+<h3>§6.4 Screen switch — required (video ∩ STRICT_FACES), with a wrinkle</h3>
+<p>The <code>video-face-screen-source</code> gate will demand a screen switch over <code>node.data.previewCollapsed</code>. For painter the “preview” IS the editor: collapsing it removes the ability to draw until re-expanded. That is acceptable — OFF skips the PAINT, never the producer (the op log and output keep living), and a collapsed painter is exactly “I am projecting this, stop spending dock pixels on it.” The switch overlays the canvas corner on a translucent backplate (the anti-pattern is a stacked chrome row). Do NOT add painter to <code>NO_SCREEN_SWITCH</code>: that list’s one entry is videoOut (“videoOut IS the screen”), and painter’s canvas is an EDITOR first — the switch has a real meaning here, so the exemption argument fails.</p>
+
+<h2>§MOCKS</h2>
+<div class="mockrow">
+  <div>
+    <div class="mocklab">compact lane tile — 192×180, picture only (order [])</div>
+    <div class="lane">
+      <div class="lchrome"><span>painter</span><span>▣</span></div>
+      <div class="lbody" style="justify-content:center;align-items:center">
+        <div class="thumb">
+          <svg width="158" height="118" viewBox="0 0 158 118"><rect width="158" height="118" fill="#fff"/><path d="M18 84 C40 30, 70 30, 84 62 S128 96, 140 48" stroke="#c00" stroke-width="4" fill="none"/><rect x="96" y="20" width="34" height="24" fill="none" stroke="#00c" stroke-width="3"/></svg>
+        </div>
+      </div>
+    </div>
+    <div class="mocklab" style="margin-top:6px">VideoTileThumb — the live painting; white page when blank</div>
+  </div>
+  <div>
+    <div class="mocklab">dock full view — the editor body, zero bands</div>
+    <div class="dock" style="width:540px">
+      <div class="chromebar"><span>painter</span><span>dock full view · ✕</span></div>
+      <div class="plate">
+        <div class="extbody">
+          <div class="toolrow">
+            <span class="btn on">✏️</span><span class="btn">🖌️</span><span class="btn">🧽</span><span class="btn">🪣</span><span class="btn">💧</span><span class="btn">╱</span><span class="btn">▭</span><span class="btn">◯</span><span class="btn">A</span>
+            <span class="btn" style="margin-left:8px">SIZE ▬▬●▬</span><span class="btn">FILL ☐</span>
+            <span class="btn" style="margin-left:auto">↶ UNDO</span><span class="btn">CLEAR</span>
+          </div>
+          <div class="canvasmock" style="width:480px;height:360px">
+            <svg width="480" height="360" viewBox="0 0 480 360"><rect width="480" height="360" fill="#fff"/><path d="M60 260 C120 90, 210 90, 250 190 S390 300, 430 150" stroke="#c00" stroke-width="8" fill="none"/><rect x="300" y="60" width="100" height="70" fill="none" stroke="#00c" stroke-width="6"/><text x="70" y="70" font-family="monospace" font-size="28" fill="#080">TEXT</text></svg>
+            <div class="scrbtn">SCREEN ◱</div>
+          </div>
+          <div style="display:flex;gap:10px;align-items:center;margin-top:8px">
+            <div style="width:26px;height:26px;background:#c00;border:1px solid var(--line)"></div>
+            <div class="swatches">
+              <div class="sw" style="background:#000"></div><div class="sw" style="background:#808080"></div><div class="sw" style="background:#800000"></div><div class="sw" style="background:#808000"></div><div class="sw" style="background:#008000"></div><div class="sw" style="background:#008080"></div><div class="sw" style="background:#000080"></div><div class="sw" style="background:#800080"></div><div class="sw" style="background:#808040"></div><div class="sw" style="background:#004040"></div><div class="sw" style="background:#0080ff"></div><div class="sw" style="background:#004080"></div><div class="sw" style="background:#8000ff"></div><div class="sw" style="background:#804000"></div>
+              <div class="sw" style="background:#fff"></div><div class="sw" style="background:#c0c0c0"></div><div class="sw" style="background:#f00"></div><div class="sw" style="background:#ff0"></div><div class="sw" style="background:#0f0"></div><div class="sw" style="background:#0ff"></div><div class="sw" style="background:#00f"></div><div class="sw" style="background:#f0f"></div><div class="sw" style="background:#ffff80"></div><div class="sw" style="background:#00ff80"></div><div class="sw" style="background:#80ffff"></div><div class="sw" style="background:#8080ff"></div><div class="sw" style="background:#ff0080"></div><div class="sw" style="background:#ff8040"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<h2>§7 — RESTING TEXT CENSUS</h2>
+<table>
+  <tr><th>string</th><th>verdict</th><th>replacement</th></tr>
+  <tr><td>tool tooltips (<code>title="Pencil"</code>…)</td><td class="kept">KEPT — control captions/names on hover, not resting paint</td><td>—</td></tr>
+  <tr><td>“text to stamp” placeholder</td><td class="kept">KEPT — a control’s own affordance label inside a field, not derived state</td><td>—</td></tr>
+  <tr><td>swatch <code>aria-label="colour #rrggbb"</code></td><td class="kept">KEPT (accessible names, unpainted)</td><td>—</td></tr>
+  <tr><td>anything the USER paints on the canvas, including stamped text</td><td class="kept">ALLOWED — the module’s ARTWORK, the GAMES.md in-canvas ruling verbatim; the face paints no text, the user does</td><td>—</td></tr>
+  <tr><td>a hypothetical “N ops / synced” status row</td><td class="rm">REFUSED pre-emptively (§1.3 of GAMES.md: refuse the chrome row by name) — no op-count, no sync word, ever</td><td><span class="aria">aria-label</span> on the canvas: “painter canvas — 12 strokes”</td></tr>
+</table>
+
+<h2>§8 — TYPED-ENTRY GATE — the blocker, and the routes</h2>
+<p><b>TRIPS.</b> The inventory test’s third leg reddens on <code>generic-face</code> disposition (forced the moment a face is authored) + the LEGACY card mounting typed entry, and <code>painter-text-input</code> is <code>&lt;input type="text"&gt;</code>. It <code>continue</code>s before reading blockers — no blocker declaration escapes it. The routes, per the standing wave-7 analysis:</p>
+<table>
+  <tr><th>route</th><th>cost</th><th>verdict</th></tr>
+  <tr><td>(a) strip the input from the LEGACY card</td><td>legacy TEXT tool loses its typed string — UNLESS the stamp string moves to a click-through mechanism shared with the body (e.g. the text op prompts at stamp time via the body’s field only, legacy keeps stamping the last-committed string). Real parity cost, small and honest</td><td><b>RECOMMENDED</b> — painter’s text tool is its 9th tool, not its identity (contrast textmarquee, where typing IS the module)</td></tr>
+  <tr><td>(b) narrow the gate’s subject to what the FACE renders</td><td>a CI-gate edit — the no-CI-changes ruling routes this to the owner, and it weakens the gate for every module at once</td><td>report, do not take</td></tr>
+  <tr><td>(c) do not promote</td><td>painter stays a placeholder tile in the shipping shell, and the §2.3 producer gap stays open</td><td>refused — the surface is otherwise free of blockers</td></tr>
+</table>
+<div class="callout warn"><span class="t">owner decision required</span>Route (a) edits <code>PainterCard.svelte</code> behaviourally (legacy parity cost stated above). This spec recommends it and the PR must say so in the body; it is not an agent’s call to make silently.</div>
+
+<h2>§9 — STATE / .data CENSUS</h2>
+<table>
+  <tr><th>key</th><th>home</th><th>writer</th></tr>
+  <tr><td><code>node.data.ops</code> (PaintOp log)</td><td>Yjs, in-place mutations only (<code>appendOp</code>/<code>popOp</code>/<code>clearOps</code> via <code>mutateNode</code>)</td><td>body (and legacy card while it exists) through the one <code>painter-draw.ts</code> seam</td></tr>
+  <tr><td><code>node.data.previewCollapsed</code></td><td>Yjs (new, the screen switch)</td><td>body switch</td></tr>
+  <tr><td>tool / fg / bg / size / fillShapes / stamp string</td><td>LOCAL component state, per collaborator, BY DESIGN — never moves to the graph</td><td>body</td></tr>
+</table>
+
+<h2>§10 — GATES, TESTS, VRT</h2>
+<table>
+  <tr><th>gate</th><th>verdict for this PR</th></tr>
+  <tr><td>1 · <code>module-face-lint</code> / identity</td><td>face + promotion in one diff; order [] is the blessed ranks-nothing shape</td></tr>
+  <tr><td>2 · VRT</td><td><code>GREP=painter flox activate -- task vrt:commit</code>. The COLD face is deterministic (white page + static chrome) — predict 2 files and the draining of the “baseline pending” exemption text; a canvas-mask follow-up per the exemption’s own plan</td></tr>
+  <tr><td>3 · <code>EXTENSION_BODY_ROLES</code></td><td>role <code>picture</code> per §6.3 (mounts a canvas — predicate satisfied)</td></tr>
+  <tr><td>4 · docs family↔card</td><td>no families — inert</td></tr>
+  <tr><td>5 · <code>optionsExhaustive</code></td><td>no params at all — inert</td></tr>
+  <tr><td>6 · typed-entry leg</td><td><b>the blocker</b> — §8 route (a) inside the same PR, with the parity cost in the body</td></tr>
+</table>
+<p>e2e: <code>painter.spec.ts</code> (draw/fill/clear) presumably boots the legacy card — keep for legacy parity, add a shipping-shell leg: draw via the BODY, assert ops length AND that the engine output texture is non-white where drawn (the real chain: body → op log → producer → texture). The §2.3 producer earns its own spec leg: collapse the pane, assert the output STILL shows the drawing (the extras-producer-lifetime pattern).</p>
+
+<h2>§11 — DIVERGENCE / DEFECT LEDGER</h2>
+<table>
+  <tr><th>#</th><th>finding</th><th>routing</th></tr>
+  <tr><td>1</td><td>Card-mounted replay-and-push (§2.3): saved racks render the placeholder until the pane opens — live today under the shipping shell, independent of promotion</td><td>port to <code>extras-producers</code> IN the face PR (textmarquee #1720 is the template); it is the promotion’s precondition, not a side quest</td></tr>
+  <tr><td>2</td><td><code>painter.ts</code> docs claim “The card’s drawing/preview canvas is resizable” — re-verify against the card before echoing it anywhere; the archivist-D8 class (docs describing a card the promoted module won’t have)</td><td>M2; docs edit rides the PR + <code>docs:accept</code></td></tr>
+  <tr><td>3</td><td>16:9 engine resolution: the card sizes its canvas to the 4:3 default and calls 16:9 “a follow-up” — the body inherits the same limitation</td><td>state it in the body’s code comment; do not silently fix DSP-adjacent behaviour in a face PR</td></tr>
+</table>
+
+<h2>§12 — MUST-VERIFY</h2>
+<table>
+  <tr><th>id</th><th>experiment</th><th>pass shape</th></tr>
+  <tr><td>M1</td><td>Port the producer (§2.3): with NO surface mounted, mutate <code>node.data.ops</code> from a second peer and read the output texture</td><td>the drawing appears; collapse/expand cycles never blank it</td></tr>
+  <tr><td>M2</td><td>Re-read the resizable-canvas docs claim against the card as shipped</td><td>docs match tree, or the edit rides the PR</td></tr>
+  <tr><td>M3</td><td>Attest basis: confirm the face block + extension file are hash-transparent (a def’s top-level <code>face:</code> is stripped by design; the extension is a NEW file outside the basis)</td><td>attest diff empty</td></tr>
+  <tr><td>M4</td><td>Two-boot pixel identity of the cold dock scene (white canvas + chrome)</td><td>bit-identical → baseline; else name the source of drift before exempting</td></tr>
+  <tr><td>M5</td><td>Flood-fill (<code>getImageData</code>) inside the body on a WebGL-composited page: confirm the 2D canvas stays untainted and fill still works in the dock host</td><td>fill ops commit and replay</td></tr>
+</table>
+
+<h2>§13 — OPEN QUESTIONS (owner)</h2>
+<table>
+  <tr><th>q</th><th>question</th><th>recommendation</th></tr>
+  <tr><td>Q1</td><td>Typed-entry route (a) parity cost — acceptable?</td><td>yes; stamp-at-click via the body field, legacy stamps last-committed string. Stated in the PR body either way</td></tr>
+  <tr><td>Q2</td><td>Editing from the LANE (a 160×120 thumb is too small to draw on) — does painter want a <code>tileBody</code> “open dock” affordance?</td><td>no — expanding a module to edit it is the normal dock gesture; a tile-sized paint surface is a toy</td></tr>
+</table>
+
+<footer>face-specs/painter.html · authored from painter.ts + PainterCard.svelte read in full · standards: wave-5/6/7 bespoke spec canon (GAMES.md in-canvas ruling + #1720 producer pattern applied)</footer>
+</main>
+</body>
+</html>

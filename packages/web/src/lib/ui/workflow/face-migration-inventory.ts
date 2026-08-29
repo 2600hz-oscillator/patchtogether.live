@@ -590,6 +590,7 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
   { type: 'swolevco', disposition: 'generic-face' },
   { type: 'synesthesia', disposition: 'generic-face', note: 'FACED 2026-08-24 as `glyph: none` + a `fullViewBody` VU wall — the mode/polarity buttons became named two-state cells (an `options` roster each), and the read-only band displays moved to the extension because a glyph would resolve LIVE here and paint copy A\'s bass band as though it were the analysis' },
   { type: 'tempest', disposition: 'generic-face' },
+  { type: 'tempolock', disposition: 'generic-face', note: 'born faced 2026-08-29 — the beat-tracking clock; one ranked band selector + a status-primitive body (LOCK/BEAT lamps)' },
   { type: 'tidyVco', disposition: 'generic-face' },
   { type: 'tiler', disposition: 'generic-face' },
   { type: 'timelorde', disposition: 'generic-face', note: 'transport + mute write params; TAP TEMPO is an action cell writing the same bpm param' },

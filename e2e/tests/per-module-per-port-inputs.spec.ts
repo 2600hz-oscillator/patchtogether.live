@@ -68,6 +68,32 @@ test.describe('per-module per-port: inputs accept signal (wire-up)', () => {
       continue;
     }
 
+    // ⏸ FLAKE-PARK #1847 — the SYNESTHESIA row ONLY. The live body below is
+    // UNCHANGED and still runs for every other module; un-parking is deleting
+    // this block. Evidence: PR #2265 (a label-string-composition change), run
+    // 33258138560 e2e shard 3/12, 2026-08-29 14:54Z — attempt 1 died on
+    // `pageerror: Cannot read properties of undefined (reading '0')` during
+    // input wire-up, attempt 2 passed at the same SHA. Synesthesia's own
+    // source has no literal `[0]`, so the throw is downstream app code racing
+    // under shard load — nondeterministic measurement of a real contract,
+    // which is the park class, not the exempt class. NOT triaged as related
+    // to #2265: that diff composes label strings deterministically — a bug
+    // there would fail BOTH attempts, and indexes nothing.
+    if (mod.type === 'synesthesia') {
+      test.fixme(
+        title,
+        {
+          annotation: {
+            type: 'fixme',
+            description:
+              'FLAKE-PARK #1847 — nondeterministic on CI: 1 recovered-on-retry observation (PR #2265 run 33258138560, e2e shard 3/12, 2026-08-29): attempt 1 pageerror Cannot read properties of undefined (reading 0) during input wire-up, attempt 2 green at the same SHA; parked until root-caused',
+          },
+        },
+        () => {},
+      );
+      continue;
+    }
+
     test(title, async ({ rack }) => {
       // Per-iteration: spawnPatch (~1s under-load) + 100ms wait + edge-read
       // (~50ms). The default 30s test budget is ALWAYS too tight under shard
