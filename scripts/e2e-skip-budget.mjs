@@ -530,6 +530,21 @@ export const SKIP_BUDGET = [
       + 'path, so root-causing it is not optional debt.',
   },
   {
+    specs: ['per-module-per-port-inputs.spec.ts'],
+    reason: /FLAKE-PARK #1847/,
+    lanes: ['e2e'],
+    homeLane: 'e2e',
+    why:
+      'PARKED (2026-08-29) — the SYNESTHESIA row only of the registry-driven inputs-accept wire-up sweep: '
+      + '1 recovered-on-retry observation on PR #2265 e2e shard 3 under the live fail-on-flaky gate '
+      + '(attempt 1: pageerror "Cannot read properties of undefined (reading 0)" during input wire-up; '
+      + 'attempt 2 green at the same SHA; the PR under test composes label strings deterministically, so a '
+      + 'bug there would fail both attempts). While parked, a synesthesia input that throws on wire-up '
+      + 'ships green — its outputs/behavioral dims and every other module\'s inputs row still run. '
+      + 'Scope caveat (the section note above): this entry admits any FLAKE-PARK row in this spec; the '
+      + 'per-module anchor lives in the spec source (`mod.type === \'synesthesia\'`), not here.',
+  },
+  {
     specs: ['perf-tempo-under-modulation.spec.ts'],
     reason: /FLAKE-PARK/,
     lanes: ['e2e'],
