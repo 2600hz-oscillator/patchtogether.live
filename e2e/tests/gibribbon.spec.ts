@@ -97,10 +97,11 @@ async function readStr(page: Page, nodeId: string, key: string): Promise<string 
 async function warmUpPastCountIn(page: Page, nodeId: string): Promise<void> {
   for (const cv of ['cv1', 'cv2', 'cv3', 'cv4']) await setParam(page, nodeId, cv, 0);
   for (let i = 0; i < 4; i++) await pulse(page, nodeId, 'clock');
-  // Readiness: the queued edges land on the next scheduler tick (25 ms).
+  // Readiness: ALL queued edges consumed → the course is past the count-in
+  // (countInTicks = 2), so the next controlled spawn is eligible.
   await expect
     .poll(async () => readNum(page, nodeId, 'tick'), { timeout: 5000 })
-    .not.toBeNull();
+    .toBeGreaterThanOrEqual(3);
 }
 
 /** Put the module into deterministic PLAY mode: attract off (self-play stops
