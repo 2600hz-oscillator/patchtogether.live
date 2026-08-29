@@ -1264,6 +1264,14 @@ export const FACES = [
   {
     type: 'b3ntb0x',
     pages: 6,
+    // ⚠ DOCK REMOVED 2026-08-28 — CPU-FLEET NONDETERMINISM (see faceTiers and
+    // the identical note on foxy/scope/etc.): the dock's live CRT preview is
+    // GL content, and SwiftShader's per-CPU LLVM JIT renders it a stable-per-
+    // CPU way across the mixed hosted fleet (EPYC 7763 / EPYC 9V74 / Xeon
+    // 8573C, runs 33217755378 ff.) — with every AA pin active, unconvergeable
+    // by promotion. The COMPACT tile still gates. RESTORE the dock scene when
+    // the fleet is homogeneous (arm runners or self-hosted).
+    scenes: ['compact'],
     videoFaceWhy:
       'both scenes carry a LIVE picture: the compact tile paints a VideoTileThumb through '
       + 'hasVideoSurface, and the dock body is the module\'s own fullViewBody extension — the '
@@ -1340,15 +1348,7 @@ export const FACES = [
     // two runs of the same shards on the same SHA) while every other failing
     // scene reproduced exactly, and the two-boot determinism probe had called it
     // BIT-EXACT. The DOCK scene is unaffected and still gates.
-// ⚠ AND DOCK REMOVED 2026-08-28 — CPU-FLEET NONDETERMINISM (see the note
-    // this style of entry carries on its dock-only siblings, e.g. foxy): the
-    // dock's live CRT preview is GL content, and SwiftShader's per-CPU LLVM
-    // JIT renders it three stable ways across the mixed hosted fleet (EPYC
-    // 7763 / EPYC 9V74 / Xeon 8573C, runs 33217755378 ff.). With compact
-    // already removed 2026-08-26, this face is now SCENELESS-BY-MEASUREMENT
-    // while keeping its roster entry and rationale; restore scenes when the
-    // fleet is homogeneous.
-    scenes: [],
+    scenes: ['dock'],
     videoFaceWhy:
       'both scenes carry a LIVE picture: the compact tile paints a VideoTileThumb through '
       + 'hasVideoSurface, and the dock body is the module\'s own fullViewBody extension — the pool '

@@ -381,6 +381,22 @@ export const VRT_MODULE_MASKS: Record<string, MaskRect[]> = {
 /** Modules intentionally skipped from VRT entirely. Each entry needs a
  *  ≥10-char reason — the vrt-meta self-test enforces this. */
 export const EXEMPT_FROM_VRT: Record<string, string> = {
+  // ── CPU-FLEET DEMOTIONS 2026-08-28 (owner-approved) ────────────────────────
+  // The hosted-runner fleet mixes THREE CPU models (EPYC 7763 / EPYC 9V74 /
+  // Xeon Platinum 8573C), and these six cards' raster (canvas curves, meters,
+  // dense label text) renders a stable-per-CPU way under Skia/SwiftShader's
+  // per-uarch code paths — with every AA pin active they flapped between runs
+  // 33217755378 ff. purely by which CPU the shard drew. Demoted from
+  // STRICT_VRT_MODULES with their baselines; exempt here so vrt-meta's
+  // every-module-covered census stays honest. RESTORE (delete these six
+  // entries, re-promote, re-capture) when the fleet is homogeneous again (arm
+  // runners or self-hosted) — the fleet memo owns that decision.
+  mixer: 'CPU-fleet nondeterminism (2026-08-28): per-uarch raster flap across the mixed EPYC/Xeon hosted fleet; demoted from STRICT_VRT_MODULES with its baseline — restore on a homogeneous fleet',
+  shimmershine: 'CPU-fleet nondeterminism (2026-08-28): per-uarch raster flap across the mixed EPYC/Xeon hosted fleet; demoted from STRICT_VRT_MODULES with its baseline — restore on a homogeneous fleet',
+  moog903a: 'CPU-fleet nondeterminism (2026-08-28): per-uarch raster flap across the mixed EPYC/Xeon hosted fleet; demoted from STRICT_VRT_MODULES with its baseline — restore on a homogeneous fleet',
+  moog904c: 'CPU-fleet nondeterminism (2026-08-28): per-uarch raster flap across the mixed EPYC/Xeon hosted fleet; demoted from STRICT_VRT_MODULES with its baseline — restore on a homogeneous fleet',
+  moog914: 'CPU-fleet nondeterminism (2026-08-28): per-uarch raster flap across the mixed EPYC/Xeon hosted fleet; demoted from STRICT_VRT_MODULES with its baseline — restore on a homogeneous fleet',
+  moog984: 'CPU-fleet nondeterminism (2026-08-28): per-uarch raster flap across the mixed EPYC/Xeon hosted fleet; demoted from STRICT_VRT_MODULES with its baseline — restore on a homogeneous fleet',
   // MILKDROP — butterchurn (Winamp Milkdrop) visualizer. The live preview is a
   // continuously-animating multi-pass warp-mesh render driven off the engine
   // clock + an async-loaded preset; pixel-exact VRT would flake on every frame
@@ -1427,6 +1443,11 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
  *  re-exempt itself lying around. */
 export const ALLOWED_PERMANENT_EXEMPT: ReadonlySet<string> = new Set([
   'milkdrop', 'graphicEq', 'archivist', '4plexvid',
+  // ⚠ SIX ADDED 2026-08-28 — the owner-approved CPU-fleet demotion (see the
+  // EXEMPT_FROM_VRT block above). NOT permanent by intent: these entries carry
+  // an explicit restoration condition (homogeneous runner fleet) and leave
+  // through the same anchored drain as cvBuddy/outToLaunch below.
+  'mixer', 'shimmershine', 'moog903a', 'moog904c', 'moog914', 'moog984',
   // ⚠ `cvBuddy` REMOVED 2026-08-20 — it is no longer in EXEMPT_FROM_VRT, and
   // this list is ANCHORED: an entry naming a module that is not exempt is RED,
   // so a drained module cannot leave a stale licence to re-exempt itself.
