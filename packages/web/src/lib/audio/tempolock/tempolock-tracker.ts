@@ -152,10 +152,11 @@ export const TEMPOLOCK_COAST_RELOCK_ONSETS = 2;
  *  ~half-beat of tempo-error drift. */
 export const TEMPOLOCK_REANCHOR_OFFGRID_ONSETS = 3;
 
-/** Maximum relative tempo change applied per accepted onset. At the owner's
- *  onset densities (~1.5 onsets per beat) this follows a 108→120 ramp in
- *  well under two bars while bounding the output jitter a noisy interval can
- *  cause to ±1.5% of a beat. */
+/** Maximum relative tempo change applied per accepted onset — the estimator
+ *  is slew-chased, never adopted in one step. At the owner's onset densities
+ *  (~1.5 onsets per beat) this rate-limit still follows the 108→120 ramp
+ *  fixture comfortably (the agile estimator window leads it there), while
+ *  bounding what one noisy interval can do to the clock to ±0.8% of a beat. */
 export const TEMPOLOCK_TEMPO_SLEW = 0.008;
 
 /** Octave-fold hysteresis: while locked, a re-estimated tempo may stay in the
