@@ -115,6 +115,13 @@ export const tempolockDef: AudioModuleDef = {
   domain: 'audio',
   label: 'tempolock',
   category: 'utility',
+  // Declared on the def (the rack-sizes.ts stated preference for NEW modules,
+  // the stereovca/dockscope shape): the legacy card is the SampleHoldCard
+  // layout at 220 px wide — one knob group over the PatchPanel — so it sits on
+  // the 1u tile at 2 hp (sampleHold itself is 1u/2 at 260 px; 220 px rounds to
+  // 1 hp but the 4-port PatchPanel row wants the second tile's width).
+  size: '1u',
+  hp: 2,
   inputs: [
     // The onset train. edge: 'trigger' — rising edges only, the level is
     // never read. `accepts` widens the jack to cv/pitch cables the same way

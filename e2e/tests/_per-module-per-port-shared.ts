@@ -550,7 +550,7 @@ export const PINNED_MODULE_EXEMPT_KEYS: readonly string[] = Object.freeze([
   'marbles', 'midiCvBuddy', 'midiOutBuddy', 'midiclock', 'milkdrop', 'modtris',
   'moog911a', 'moog956', 'moog962', 'moog992', 'moog993', 'numpadPlus',
   'peertube', 'pong', 'samsloop', 'score',
-  'slewSwitch', 'synesthesia', 'timelorde', 'tvLibrarian', 'twotracks',
+  'slewSwitch', 'synesthesia', 'tempolock', 'timelorde', 'tvLibrarian', 'twotracks',
   'videobox', 'videocube', 'videovarispeed', 'vstFx', 'vstInstrument',
 ]);
 
