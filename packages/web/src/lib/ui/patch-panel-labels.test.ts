@@ -231,14 +231,23 @@ describe('remoteEndpointsTitle', () => {
   // CANNOT fail on the old code. This is the case that can.
   it('an INPUT fed by TWO sources names BOTH', () => {
     expect(remoteEndpointsTitle('input', ['es-9.IN14', 'es-9.IN13'])).toBe(
-      '← FROM es-9.IN14, es-9.IN13',
+      '← es-9.IN14, es-9.IN13',
     );
   });
 
   it('an OUTPUT feeding TWO targets names BOTH', () => {
     expect(remoteEndpointsTitle('output', ['es-9.OUT3', 'es-9.OUT4'])).toBe(
-      '→ TO es-9.OUT3, es-9.OUT4',
+      '→ es-9.OUT3, es-9.OUT4',
     );
+  });
+
+  it('ARROW ONLY — no FROM/TO word (owner, #2264)', () => {
+    // "we don't need to see the 'from'" — the glyph carries the direction and
+    // the freed width goes to the remote names. Pinned as an absence so the
+    // words cannot creep back in as "clarification".
+    expect(remoteEndpointsTitle('input', ['feedback.OUT'])).toBe('← feedback.OUT');
+    expect(remoteEndpointsTitle('input', ['feedback.OUT'])).not.toContain('FROM');
+    expect(remoteEndpointsTitle('output', ['vca.AUDIO'])).not.toContain('TO ');
   });
 
   it('the ARROW is the only thing that differs between the two directions', () => {
@@ -247,19 +256,19 @@ describe('remoteEndpointsTitle', () => {
     const remotes = ['a.X', 'b.Y', 'c.Z'];
     const input = remoteEndpointsTitle('input', remotes)!;
     const output = remoteEndpointsTitle('output', remotes)!;
-    expect(input.replace('← FROM', '')).toBe(output.replace('→ TO', ''));
+    expect(input.replace('←', '')).toBe(output.replace('→', ''));
   });
 
   it('reads naturally with ONE remote — a half-patched collapsed jack', () => {
     // Normal state on this branch: per-leg patching means a stereo jack often
     // has one leg patched and one empty. No trailing comma, no "1 of 2".
-    expect(remoteEndpointsTitle('input', ['es-9.IN14'])).toBe('← FROM es-9.IN14');
-    expect(remoteEndpointsTitle('output', ['es-9.OUT3'])).toBe('→ TO es-9.OUT3');
+    expect(remoteEndpointsTitle('input', ['es-9.IN14'])).toBe('← es-9.IN14');
+    expect(remoteEndpointsTitle('output', ['es-9.OUT3'])).toBe('→ es-9.OUT3');
   });
 
   it('an UNPATCHED jack has NO title (undefined, not an empty arrow)', () => {
     // Callers render undefined as "no title attribute at all"; an empty string
-    // would put a bare "← FROM" tooltip on every hollow jack.
+    // would put a bare "←" tooltip on every hollow jack.
     expect(remoteEndpointsTitle('input', [])).toBeUndefined();
     expect(remoteEndpointsTitle('output', [])).toBeUndefined();
   });

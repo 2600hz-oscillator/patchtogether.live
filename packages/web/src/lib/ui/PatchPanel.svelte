@@ -446,7 +446,7 @@
     return remotesFor(portId, direction, siblingId).length > 0;
   }
 
-  /** Hover/aria text for a patched jack — `← FROM a, b` / `→ TO a, b`, or
+  /** Hover/aria text for a patched jack — `← a, b` / `→ a, b` (arrow-only, #2264), or
    *  undefined when unpatched. Both directions name EVERY remote: a collapsed
    *  stereo jack is one jack over two ports and can be fed by two different
    *  sources (the owner's `RET1` takes `es9.in14` on L and `es9.in13` on R).

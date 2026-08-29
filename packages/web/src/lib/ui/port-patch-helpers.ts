@@ -12,6 +12,7 @@
 
 import type { Edge, ModuleNode, PortDef } from '$lib/graph/types';
 import { canConnect, canConnectToPort } from '$lib/graph/types';
+import { isReservedDefaultName, readName } from '$lib/multiplayer/module-naming';
 import { collapseStereoPorts } from '$lib/ui/stereo-jack-collapse';
 import type { StereoPairDefLike } from '$lib/graph/stereo-pairs';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
@@ -26,9 +27,13 @@ export type AnyDef = AudioModuleDef | VideoModuleDef | MetaModuleDef;
 
 export interface ModuleEntry {
   nodeId: string;
-  /** Display name shown in the menu — e.g. "ANALOG VCO #1". */
+  /** Display name shown in the menu — the user's rename verbatim when one
+   *  exists (e.g. "feedback"), else the type label with a " #N" for
+   *  multi-instance types (e.g. "ANALOG VCO #1"). */
   displayName: string;
-  /** Module type label (e.g. "Analog VCO") shown beside the name. */
+  /** Module type label (e.g. "Analog VCO") shown beside the name whenever it
+   *  differs from `displayName` — which is how a renamed entry keeps its
+   *  type visible in the picker. */
   typeLabel: string;
 }
 
@@ -81,9 +86,32 @@ export interface CandidatePort {
 }
 
 /**
- * Compute display names for every module in the patch. When a type has more
- * than one instance, suffix with " #N" using insertion order. Single
- * instances use the bare type label.
+ * THE user-chosen name for a node, or undefined when the node has none.
+ *
+ * `data.name` alone is NOT that signal: `migrateAssignNames` runs on every
+ * rack load, so a live node virtually always carries a name — usually the
+ * auto-namer's reserved `<TYPE>`/`<TYPE>N` default (`CAMERA`, `CAMERA2`).
+ * Only a name OUTSIDE the reserved shape is information the user added, and
+ * that is the one worth preferring over the type-label composition below
+ * (owner, #2264: a rear-card tooltip read "← FROM camera #1.OUT" while the
+ * camera's tile said "feedback"). A rename is unique per rack by
+ * construction (`validateRename` is case-insensitive-unique), so it never
+ * needs a disambiguating " #N".
+ */
+function userRename(n: ModuleNode): string | undefined {
+  const name = readName(n);
+  if (!name) return undefined;
+  return isReservedDefaultName(name, n.type) ? undefined : name;
+}
+
+/**
+ * Compute display names for every module in the patch. A module the user
+ * RENAMED shows that name verbatim (see `userRename`). Otherwise: when a
+ * type has more than one instance, suffix with " #N" using insertion order;
+ * single instances use the bare type label. Un-renamed output is
+ * byte-identical to what this produced before renames were honoured —
+ * that invariant is what keeps every VRT baseline still (fixtures never
+ * rename).
  */
 export function buildModuleEntries(
   nodes: Partial<Record<string, ModuleNode>> | Record<string, ModuleNode>,
@@ -104,14 +132,18 @@ export function buildModuleEntries(
     const def = defLookup(n.type);
     const typeLabel = def?.label ?? n.type;
     const total = counts.get(n.type) ?? 1;
-    const displayName = total > 1 ? `${typeLabel} #${idx}` : typeLabel;
+    // A renamed sibling still counts toward `total`, so the un-renamed
+    // instances keep exactly the numbering they had before the rename.
+    const displayName = userRename(n) ?? (total > 1 ? `${typeLabel} #${idx}` : typeLabel);
     out.push({ nodeId: id, displayName, typeLabel });
   }
   return out;
 }
 
-/** Module display name for a single node — same numbering rule as
- *  buildModuleEntries. Used to label the source side of an occupied input. */
+/** Module display name for a single node — same rename-then-numbering rule
+ *  as buildModuleEntries. Used to label the source side of an occupied input,
+ *  every remote endpoint in portConnections (rear-card chips + jack titles),
+ *  the unpatch-menu rows and the drop-modal header. */
 export function moduleDisplayName(
   nodeId: string,
   nodes: Partial<Record<string, ModuleNode>> | Record<string, ModuleNode>,
@@ -119,6 +151,8 @@ export function moduleDisplayName(
 ): string {
   const n = nodes[nodeId];
   if (!n) return nodeId;
+  const renamed = userRename(n);
+  if (renamed) return renamed;
   const def = defLookup(n.type);
   const typeLabel = def?.label ?? n.type;
   const sameType = Object.values(nodes).filter(
