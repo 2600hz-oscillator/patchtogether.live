@@ -604,6 +604,23 @@ export const SKIP_BUDGET = [
       + '8 runs), NOT triaged as flake vs under-budget; un-park is the PAIR\'s budget diagnosis.',
   },
   {
+    specs: ['workflow-mode.spec.ts'],
+    reason: /FLAKE-PARK #1847/,
+    lanes: ['e2e'],
+    homeLane: 'e2e',
+    why:
+      'PARKED (#1847) — the M/E/C-inert-while-typing guard (workflow hotkeys must not fire while the user '
+      + 'types in an input/contenteditable). 3 consecutive recovered-on-retry observations across 2 SHAs on '
+      + 'feat/ptzcam (runs 33286052552 ×1 + 33286720503 ×2 incl. a --failed rerun, 2026-08-30) — failed '
+      + 'attempt 1 / passed attempt 2 every time, so the recovered-flake-goes-red gate (#1903) reddens the '
+      + 'job while the diff (a MIDI sink module) touches nothing in the subject. The inert-guard itself is '
+      + 'still half-covered by the passing hotkey-positive legs in the same spec; un-park is a root-cause '
+      + 'diagnosis of the typing-probe timing, not a green rerun. '
+      + 'ADDED 2026-08-30 — the pinned-nodes-refuse-deletion leg: 2 consecutive recovered-on-retry '
+      + 'observations on the very next runs (33287966893, 33288512372), same shape; the pin mechanism '
+      + 'stays exercised by the boot and M/E/C legs that wait on the pinned trio every run.',
+  },
+  {
     specs: [
       'blood-audio-output.spec.ts',
       'clap.spec.ts',

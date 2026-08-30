@@ -49,7 +49,7 @@ const EXPECTED_NODE_TYPES = [
   'mandelbulb', 'midiCvBuddy', 'midiOutBuddy', 'midiclock', 'mirrorpool', 'mixer', 'mixmstrs', 'modtris',
   'monoglitch', 'moog902', 'moog904a', 'moog911', 'moog921Vco', 'moogCp3', 'nibbles',
   'noise', 'numpadPlus', 'onetonine', 'outToLaunch', 'painter', 'peakstate', 'peertube', 'picturebox', 'pong',
-  'polarizer', 'posterbox', 'qbrt', 'rasterize', 'reshaper', 'resofilter', 'reverb', 'ringback', 'rings',
+  'polarizer', 'posterbox', 'ptzcam', 'qbrt', 'rasterize', 'reshaper', 'resofilter', 'reverb', 'ringback', 'rings',
   'ruttetra', 'sampleHold', 'samsloop', 'scope', 'score', 'scoreboard',
   'scaler', 'shapedramps', 'shapegen', 'shapes', 'shimmershine', 'sidecar', 'sixstrum', 'sourcery', 'spectrograph',
   'skifree', 'slewSwitch', 'snaredrum', 'stereovca', 'sticky',

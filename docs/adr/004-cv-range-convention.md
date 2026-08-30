@@ -102,6 +102,18 @@ note-entry sequencers using `midiToHz()`
   `e2e/tests/cv-range-uniformity.spec.ts` catches the bulk class of
   oversights.
 
+## Main-thread consumers (passthrough-by-design), 2026-08-29 addendum
+
+Some modules consume CV in JavaScript (AnalyserNode tap sampled on the
+scheduler tick) rather than through an AudioParam, because the CV *is* the
+controlled quantity — a paddle position, a mouse cursor, an outgoing MIDI
+value. Those ports carry no `cvScale` and are enrolled per-port in
+`PASSTHROUGH_BY_DESIGN` (`cv-scale-registry.test.ts`) with the justification
+in a comment. `ptzcam`'s `pan_cv`/`tilt_cv`/`zoom_cv` are this class: the ±1
+CV is summed with the trim knob in JS and mapped into the camera's
+handshake-reported mechanical range before leaving as sysex; an AudioParam
+landing pad would make the summed value unreadable with no card mounted.
+
 ## References
 
 - `packages/web/src/lib/graph/types.ts:498-540` — `CvScaleHint`
