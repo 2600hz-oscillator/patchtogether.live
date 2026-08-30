@@ -93,6 +93,14 @@
   .ptzcam-card {
     width: 260px;
   }
+  .stripe {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 2px;
+    border-radius: 2px 2px 0 0;
+  }
   .bind-row {
     display: flex;
     align-items: center;
