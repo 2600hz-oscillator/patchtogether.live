@@ -183,8 +183,11 @@ const FULL_MATCH = [
 //     BOOT 1 against BOOT 2 at threshold 1/255 (any difference at all) as well
 //     as at 26/255 — the threshold the gate applied when this probe was written,
 //     kept as a second column because it separates a real render change from
-//     last-significant-bit shimmer. The gate's own threshold is now 0, so the
-//     1/255 column is the one that matches it. Also prints the max channel delta
+//     last-significant-bit shimmer. The gate's own bar is now the ±2-LSB band
+//     (threshold 0.01 — the tolerance block below), which sits BETWEEN the two
+//     columns: read 1/255 for "does it reproduce at all", and remember that a
+//     nonzero row whose max channel delta is ≤2 passes the gate anyway (that
+//     band is the fleet's own per-CPU noise). Also prints the max channel delta
 //     and the bounding box. The baseline is out of the loop entirely, so a
 //     non-zero row cannot mean "the baseline is stale" — it can only mean the
 //     scene does not reproduce. Negative AND positive control on every row.
@@ -395,76 +398,102 @@ export default defineConfig({
     //     pacing, and it is what all of the 2026-08-11 failures were.
     timeout: 30_000,
     toHaveScreenshot: {
-      // Tolerance budget. Browsers + GPU drivers emit sub-pixel
-      // anti-aliasing differences that aren't semantically meaningful
-      // even on the same machine across runs. The GATE only ever compares
-      // linux-against-linux (one baseline set, authored by CI), so this
-      // does not have to absorb cross-platform AA drift — but small
-      // same-platform drift on text-heavy cards still does occur.
+      // ── ZERO DIFFERING PIXELS, ±2-LSB BAND (2026-08-29, owner-approved) ──
       //
-      // ⚠ A LOCAL macOS RUN *IS* A CROSS-PLATFORM COMPARISON and this budget
-      // will not absorb it. That is the intended reading, not a defect: the
-      // green a Mac dev used to get came from comparing against a darwin set
-      // CI never read. Use `task vrt:docker` for a pixel-exact local loop.
+      // The pixel COUNT budget is still zero: `maxDiffPixelRatio: 0` here and
+      // `_shell-faces.ts`'s COMPACT_MAX_DIFF / DOCK_MAX_DIFF (per-scene
+      // `maxDiffPixels`, both 0) allow NO differing pixel at all. What
+      // `threshold: 0.01` changes is the DEFINITION of "differing": from
+      // any-nonzero-delta to beyond-the-±2-LSB-band. ONE pixel beyond the
+      // band still fails the gate.
       //
-      // ⚠⚠ BOTH ARE NOW ZERO — 2026-08-25, OWNER RULING: *"VRTs are useless if
+      // THE HISTORY, both rulings quoted so neither is lost:
+      //
+      // 2026-08-25, OWNER RULING (zero tolerance): *"VRTs are useless if
       // they can't be pixel perfect every time … i would never have consciously
-      // allowed even a 1px tolerance"*. A baseline comparison fails on ONE
-      // differing pixel of ONE channel level. This is the whole tolerance
-      // surface: `_shell-faces.ts`'s COMPACT_MAX_DIFF / DOCK_MAX_DIFF went to 0
-      // in the same commit, and those two are per-scene `maxDiffPixels` on top
-      // of these.
+      // allowed even a 1px tolerance"*. threshold and maxDiffPixelRatio both
+      // went to 0; a comparison failed on ONE differing pixel of ONE channel
+      // level. Zeroing was RIGHT about everything it found: a preview that had
+      // STOPPED DRAWING (#2220), two unpinned simulations (spirographs' engine
+      // clock, pong's tick accumulator), synthetic-bold text (#2257), and the
+      // per-VM LCD-vs-grayscale AA coin-flip (#2260) — none visible at the
+      // old 26/255 bar. Every one of those sat ABOVE the band this absorbs.
       //
-      // WHAT EACH ZERO DOES, mechanically (playwright-core
-      // `server/utils/comparators.js`): `threshold` is passed straight to
-      // pixelmatch, whose per-pixel bar is `35215 * threshold^2`, so 0 means any
-      // non-zero colour delta counts. `maxDiffPixelRatio` becomes
+      // WHAT FALSIFIED "pixel perfect every time" ON THIS FLEET, measured:
+      // the hosted-runner pool mixes 4+ CPU models (three named so far —
+      // EPYC 7763 / EPYC 9V74 / Xeon Platinum 8573C; ci.yml's 'Name the
+      // runner CPU' log line exists because of this hunt), and with EVERY AA
+      // pin active (font pinned, hinting none, skia-runtime-opts off,
+      // lcd-text off, srgb profile) SwiftShader/Skia's per-uarch code paths
+      // still rasterize anti-aliased edges 1-2 LSB apart PER CPU MODEL.
+      // Identical code, byte-stable per draw, different bytes per
+      // microarchitecture. Seven incidents in two days: the six
+      // owner-approved 2026-08-28 card demotions (runs 33217755378 ff.),
+      // then face-moog904a-compact red three more times on 2026-08-29 (e.g.
+      // run 33282588837: 7 px of 88x82, every channel delta ±1-2) — each
+      // incident 3-7 px per scene, max channel delta 2. moog902's baseline
+      // was re-authored TWICE from verified actuals and the next draw on a
+      // different CPU flipped it back red: unconvergeable by promotion,
+      // because an AA edge has no single byte-truth on a heterogeneous
+      // fleet. "Pixel-perfect every time" and "runs on whatever CPU the pool
+      // hands out" cannot both hold; the owner chose the band (2026-08-29),
+      // superseding the 2026-08-25 ruling, and the demoted scenes return to
+      // coverage in the same change.
+      //
+      // THE BAR, mechanically (playwright-core `server/utils/comparators.js`):
+      // `threshold` is passed straight to pixelmatch, whose per-pixel bar is
+      // `35215 * threshold²` on the YIQ colour delta — t=0.01 → bar ≈ 3.52.
+      // A gray/AA shift of ±2 LSB on all channels scores ≈ 2.02 → PASSES;
+      // ±3 LSB scores ≈ 4.55 → FAILS. `maxDiffPixelRatio` becomes
       // `w * h * 0` = 0 differing pixels allowed, and the check is
-      // `count > maxDiffPixels` — note the file tests `!== undefined`, not
-      // truthiness, so a ZERO is honoured rather than falling back to a default.
+      // `count > maxDiffPixels` — the file tests `!== undefined`, not
+      // truthiness, so the zero is honoured rather than falling back to a
+      // default.
       //
-      // ⚠ THE RATIO GOES TO ZERO TOO, and it has to. `vrt.spec.ts` — the CARD
-      // baselines, the other half of what `vrt-strict` compares — passes NO
-      // per-assertion `maxDiffPixels`, so this ratio is the ONLY budget it has.
-      // Leaving it at 0.01 would have shipped pixel-perfect FACES and 1%-of-
-      // pixels CARDS out of a change whose whole premise is that a tolerance
-      // hides a bug. On a 320x240 card 1% is 768 px — a 27x27 block.
+      // ⚠ THE BLIND SPOT, stated rather than implied: a REAL change confined
+      // everywhere to the band — every pixel within ±2 LSB/channel of its
+      // baseline (the YIQ bar honestly admits up to ±4 on a SINGLE channel)
+      // — is now invisible to this gate, permanently. That band is exactly
+      // where identical code already renders differently by CPU, so no
+      // comparison on this fleet could attribute such a delta anyway. A
+      // gray/AA delta of 3+ LSB, or ONE extra differing pixel, still fails.
       //
-      // WHAT MADE IT SAFE, measured rather than assumed: every face scene in the
-      // roster, both tiers, booted TWICE on ubuntu CI and diffed at threshold
-      // 1/255 (`vrt-determinism-probe.spec.ts`). All but three rows were
-      // BIT-EXACT across cold boots; the three were two unpinned simulations
-      // (spirographs' engine clock, pong's tick accumulator) and both are fixed
-      // in this same diff. One of them — face-spirographs-dock at 2711 px — was
-      // already OVER the 1500 px budget it lived under, i.e. a latent flake the
-      // tolerance was not even absorbing.
+      // ⚠ THE BAND IS PINNED BY A PERMANENT INSTRUMENT LEG (the CLAUDE.md
+      // negative-control-the-instrument rule):
+      // `packages/web/src/lib/ui/vrt-comparator-band.test.ts` drives THE SAME
+      // playwright-core comparator function this gate calls, both directions,
+      // on every unit run — identical pass; one-pixel ±2 pass; one-pixel ±3
+      // FAIL; the measured 7-px moog904a scatter (run 33282588837, exact
+      // deltas) pass; and the same ±2 pixel FAIL at threshold 0, proving the
+      // threshold is what does the work. Changing `threshold` here reddens
+      // that test until the band is re-derived — by design.
       //
-      // ⚠ A LOCAL macOS RUN WILL NOW FAIL and that is the intended reading, not
-      // a defect: the audit measured dx7-dock 17 px, mirrorpool-compact 8 px,
-      // moog903a-compact 4 px, scaler-compact 4 px on darwin — all maxDelta 1-2,
-      // all ZERO at the old 26/255, none reproducing on linux. There is ONE
-      // baseline set, linux CI authors it, and there is deliberately no platform
-      // carve-out. Use `task vrt:docker` for a pixel-exact local loop.
+      // ⚠ A LOCAL macOS RUN IS STILL NOT A VERIFICATION. The darwin audit
+      // measured dx7-dock 17 px, mirrorpool-compact 8 px, moog903a-compact
+      // 4 px, scaler-compact 4 px — all maxDelta 1-2, so Metal-vs-linux
+      // shimmer now mostly sits INSIDE the band instead of failing on it,
+      // which makes a local green MORE seductive and exactly as meaningless
+      // as before: linux CI authors the one baseline set, and a local run
+      // can still fail on over-band font metrics. Use `task vrt:docker` for
+      // a pixel-exact local loop.
       //
-      // (History: TIGHTENED 2026-07-31 from threshold 0.2 / ratio 0.05, whose
-      // own comment said it "can be tightened toward 0.01 once baselines settle
-      // on each platform". There is one platform, the baselines have settled,
-      // and this is the end of that road rather than another step along it.)
-      //
-      // WHY IT MATTERS, measured, not theorised: at 5% a 320x240 card could
-      // change 3,840 pixels — a ~62x62 block, a whole knob — and stay green.
-      // The documented case is A2/#1213: swapping filter's MODE from a bare
-      // detented knob to a LABELLED SEGMENTED control, an entire primitive
-      // swap, moved the dock face by 865 px. Under the old budget the gate
-      // passed AND `--update-snapshots` refused to regenerate (Playwright only
-      // rewrites a snapshot when the comparison FAILS), so the change was both
-      // invisible and unfixable. `workflow-dock-patch` likewise sat inside its
-      // budget for months while still rendering v1.2.0-era chrome.
-      //
-      // The per-channel `threshold` compounds it: a pixel shifting up to 20%
-      // per channel was not counted as different AT ALL, so a colour or
-      // contrast change under that bar was invisible at ANY ratio.
-      threshold: 0,
+      // (Older history, kept: TIGHTENED 2026-07-31 from threshold 0.2 /
+      // ratio 0.05, whose own comment said it "can be tightened toward 0.01
+      // once baselines settle on each platform". At ratio 5% a 320x240 card
+      // could change 3,840 pixels — a ~62x62 block, a whole knob — and stay
+      // green. The documented case is A2/#1213: swapping filter's MODE from
+      // a bare detented knob to a LABELLED SEGMENTED control, an entire
+      // primitive swap, moved the dock face by 865 px; under that budget the
+      // gate passed AND `--update-snapshots` refused to regenerate
+      // (Playwright only rewrites a snapshot when the comparison FAILS), so
+      // the change was both invisible and unfixable. `workflow-dock-patch`
+      // likewise sat inside its budget for months while still rendering
+      // v1.2.0-era chrome. The old per-channel threshold 0.1-0.2 compounded
+      // it: a pixel shifting up to 10-20% per channel was not counted as
+      // different AT ALL. Nothing about t=0.01 revives that class — its bar
+      // sits at ~3.5 of the 35215 YIQ scale, between the fleet's own ±2
+      // noise and the smallest deliberate edit ever measured here.)
+      threshold: 0.01,
       maxDiffPixelRatio: 0,
       // Per-screenshot settle/capture timeout. Playwright's default is
       // 5000ms, which the heavy WebGL/animated cards (MANDLEBLOT,

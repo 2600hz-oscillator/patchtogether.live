@@ -39,7 +39,12 @@ async function waitForDefaultWires(page: Page): Promise<void> {
       return ids.every((id) => !!w.__patch!.edges[id]);
     },
     DEFAULT_WIRE_IDS as unknown as string[],
-    { timeout: 10_000 },
+    // BOOT bound, not an assertion — the hand-typed 10 s here was a flat
+    // wall-clock lottery ticket below the one export site's number and lost
+    // on a loaded shard (waitForPinnedTrio timed out at boot, passed on
+    // retry, flake-gate red — the exact #1906 class its sweep missed
+    // because these are waitForFunction sites, not bare toBeVisible ones).
+    { timeout: BOOT_MS },
   );
 }
 
@@ -54,7 +59,9 @@ async function waitForPinnedTrio(page: Page): Promise<void> {
       return ids.every((id) => w.__patch!.nodes[id]?.data?.pinned === true);
     },
     PINNED_IDS as unknown as string[],
-    { timeout: 10_000 },
+    // Same BOOT bound as above — this is the site that actually lost the
+    // lottery (run 33277673075, e2e shard 7/12).
+    { timeout: BOOT_MS },
   );
 }
 
@@ -258,7 +265,8 @@ test.describe('workflow shell', () => {
     await waitForPinnedTrio(page); // the ensure effect re-spawns the trio
   });
 
-  test('default wiring: pinned MIXMSTRS master L/R auto-wires to pinned AUDIO OUT (one-shot, user delete respected)', async ({ page }) => {
+  // ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; the body and its assertions are UNCHANGED.
+  test.fixme('default wiring: pinned MIXMSTRS master L/R auto-wires to pinned AUDIO OUT (one-shot, user delete respected)', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — owner order 2026-08-30 ("any tests that failed disable / skip"): waitForFunction 10s timeout, recovered-on-retry on PR #2274 run 33291594537 e2e shard 7; parked until root-caused' } }, async ({ page }) => {
     // Owner directive: "the audio out in the rack should be default wired to
     // the master L/R outs from the in rack mixmstrs in workflow mode."
     await page.goto('/rack?shell=legacy');
@@ -322,7 +330,8 @@ test.describe('workflow shell', () => {
     expect(after).toEqual([false, true]);
   });
 
-  test('default wiring carries REAL audio: source → mixmstrs ch1 → auto-wired AUDIO OUT is audible', async ({ page }) => {
+  // ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; the body and its assertions are UNCHANGED.
+  test.fixme('default wiring carries REAL audio: source → mixmstrs ch1 → auto-wired AUDIO OUT is audible', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — owner order 2026-08-30 ("any tests that failed disable / skip"): recovered-on-retry on PR #2274 run 33292812684 e2e shard 7; same default-wiring load family as the :246 park; parked until root-caused' } }, async ({ page }) => {
     // Real-chain proof (not just edge materialization): a free-running VCO
     // into the pinned mixer's channel 1 must register energy on the pinned
     // AUDIO OUT's terminal tap (the limiter feeding ctx.destination) with
@@ -456,7 +465,8 @@ test.describe('workflow shell', () => {
     ).toBeLessThanOrEqual(loudest * 1.02);
   });
 
-  test('File.. menu: quicksave slot 1 round-trips through quickload', async ({ page }) => {
+  // ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; the body and its assertions are UNCHANGED.
+  test.fixme('File.. menu: quicksave slot 1 round-trips through quickload', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — owner order 2026-08-30 ("any tests that failed disable / skip"): recovered-on-retry on PR #2274 run 33293449487 e2e shard 7 — fourth distinct workflow-mode flake tonight; BOOT_MS fix cherry-picked alongside; parked until root-caused' } }, async ({ page }) => {
     await page.goto('/rack?shell=legacy');
     await waitForPinnedTrio(page);
 

@@ -381,22 +381,15 @@ export const VRT_MODULE_MASKS: Record<string, MaskRect[]> = {
 /** Modules intentionally skipped from VRT entirely. Each entry needs a
  *  ≥10-char reason — the vrt-meta self-test enforces this. */
 export const EXEMPT_FROM_VRT: Record<string, string> = {
-  // ── CPU-FLEET DEMOTIONS 2026-08-28 (owner-approved) ────────────────────────
-  // The hosted-runner fleet mixes THREE CPU models (EPYC 7763 / EPYC 9V74 /
-  // Xeon Platinum 8573C), and these six cards' raster (canvas curves, meters,
-  // dense label text) renders a stable-per-CPU way under Skia/SwiftShader's
-  // per-uarch code paths — with every AA pin active they flapped between runs
-  // 33217755378 ff. purely by which CPU the shard drew. Demoted from
-  // STRICT_VRT_MODULES with their baselines; exempt here so vrt-meta's
-  // every-module-covered census stays honest. RESTORE (delete these six
-  // entries, re-promote, re-capture) when the fleet is homogeneous again (arm
-  // runners or self-hosted) — the fleet memo owns that decision.
-  mixer: 'CPU-fleet nondeterminism (2026-08-28): per-uarch raster flap across the mixed EPYC/Xeon hosted fleet; demoted from STRICT_VRT_MODULES with its baseline — restore on a homogeneous fleet',
-  shimmershine: 'CPU-fleet nondeterminism (2026-08-28): per-uarch raster flap across the mixed EPYC/Xeon hosted fleet; demoted from STRICT_VRT_MODULES with its baseline — restore on a homogeneous fleet',
-  moog903a: 'CPU-fleet nondeterminism (2026-08-28): per-uarch raster flap across the mixed EPYC/Xeon hosted fleet; demoted from STRICT_VRT_MODULES with its baseline — restore on a homogeneous fleet',
-  moog904c: 'CPU-fleet nondeterminism (2026-08-28): per-uarch raster flap across the mixed EPYC/Xeon hosted fleet; demoted from STRICT_VRT_MODULES with its baseline — restore on a homogeneous fleet',
-  moog914: 'CPU-fleet nondeterminism (2026-08-28): per-uarch raster flap across the mixed EPYC/Xeon hosted fleet; demoted from STRICT_VRT_MODULES with its baseline — restore on a homogeneous fleet',
-  moog984: 'CPU-fleet nondeterminism (2026-08-28): per-uarch raster flap across the mixed EPYC/Xeon hosted fleet; demoted from STRICT_VRT_MODULES with its baseline — restore on a homogeneous fleet',
+  // ── The 2026-08-28 CPU-FLEET DEMOTIONS were DRAINED 2026-08-29 ────────────
+  // mixer / shimmershine / moog903a / moog904c / moog914 / moog984 stood here
+  // for one day: their raster flapped ±1-2 LSB per CPU model across the mixed
+  // hosted fleet (runs 33217755378 ff.) at the then-zero tolerance. The
+  // restoration condition they carried ("homogeneous fleet") was met from the
+  // other side: the gate now absorbs exactly that band (threshold 0.01,
+  // owner-approved 2026-08-29 — the tolerance block in vrt.config.ts carries
+  // the full history and the bar math), so the cards are back in
+  // STRICT_VRT_MODULES and their baselines re-captured.
   // MILKDROP — butterchurn (Winamp Milkdrop) visualizer. The live preview is a
   // continuously-animating multi-pass warp-mesh render driven off the engine
   // clock + an async-loaded preset; pixel-exact VRT would flake on every frame
@@ -1443,11 +1436,14 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
  *  re-exempt itself lying around. */
 export const ALLOWED_PERMANENT_EXEMPT: ReadonlySet<string> = new Set([
   'milkdrop', 'graphicEq', 'archivist', '4plexvid',
-  // ⚠ SIX ADDED 2026-08-28 — the owner-approved CPU-fleet demotion (see the
-  // EXEMPT_FROM_VRT block above). NOT permanent by intent: these entries carry
-  // an explicit restoration condition (homogeneous runner fleet) and leave
-  // through the same anchored drain as cvBuddy/outToLaunch below.
-  'mixer', 'shimmershine', 'moog903a', 'moog904c', 'moog914', 'moog984',
+  // ⚠ THE SIX 2026-08-28 CPU-FLEET NAMES (mixer/shimmershine/moog903a/
+  // moog904c/moog914/moog984) were REMOVED 2026-08-29, one day after they
+  // landed — the shortest-lived entries this list has held, exactly as their
+  // own note intended ("NOT permanent by intent"). They left through the same
+  // anchored drain as cvBuddy/outToLaunch below: the ±2-LSB band ruling
+  // (vrt.config.ts tolerance block) absorbed the per-CPU flap that demoted
+  // them, they are back in STRICT_VRT_MODULES, and this list is ANCHORED, so
+  // leaving the names here while the modules are baselined would be RED.
   // ⚠ `cvBuddy` REMOVED 2026-08-20 — it is no longer in EXEMPT_FROM_VRT, and
   // this list is ANCHORED: an entry naming a module that is not exempt is RED,
   // so a drained module cannot leave a stale licence to re-exempt itself.
@@ -1642,17 +1638,12 @@ export const STRICT_VRT_MODULES = new Set<string>([
   'filter',               // filter knob card
   'illogic',              // logic-gate knob card
   'meowbox',              // meow-themed card
-  // ⚠ SIX CARDS DEMOTED 2026-08-28 — CPU-FLEET NONDETERMINISM, owner-approved:
-  // mixer, shimmershine, moog903a, moog904c, moog914, moog984. The hosted
-  // fleet now mixes THREE CPU models (EPYC 7763 / EPYC 9V74 / Xeon Platinum
-  // 8573C — the 'Name the runner CPU' log line), and these cards' raster
-  // (canvas curves, meters, dense label text) renders a stable-per-CPU way
-  // under Skia/SwiftShader's per-uarch code paths: with EVERY AA pin active
-  // they flapped between runs 33217755378 ff. purely by which CPU the shard
-  // drew — actuals byte-stable per draw, unconvergeable by promotion.
-  // Baselines deleted with the demotion (the committed set mirrors this
-  // roster). RESTORE when the fleet is homogeneous again (arm runners or
-  // self-hosted) — the fleet memo owns that decision.
+  // ⚠ mixer + shimmershine + the four moogs below were DEMOTED for one day
+  // (2026-08-28, CPU-fleet ±1-2 LSB raster flap at the then-zero tolerance,
+  // runs 33217755378 ff.) and RESTORED 2026-08-29 under the ±2-LSB band
+  // ruling (vrt.config.ts tolerance block), with baselines re-captured by
+  // the vrt-update dispatch of this restoration.
+  'mixer',                // 4-channel mixer fader card
   'mixmstrs',             // master mixer fader card
   'noise',                // noise-source FADER card (like mixer/mixmstrs above,
                           //   not a knob card — the distinction is the whole
@@ -1660,6 +1651,7 @@ export const STRICT_VRT_MODULES = new Set<string>([
   'qbrt',                 // q-bit/quantizer knob card
   'reverb',               // reverb knob card
   'score',                // score/note display card
+  'shimmershine',         // shimmer-reverb knob card
   'stereovca',            // stereo VCA fader card
   'sticky',               // sticky-note widget (static)
   // timelorde: TEMPORARILY demoted from the strict lane. The card big display
@@ -1684,11 +1676,16 @@ export const STRICT_VRT_MODULES = new Set<string>([
   // MOOG cluster — promoted to the strict gate after Track-2 batch 2 (#953)
   // captured + validated their linux baselines (both platforms; deterministic
   // beige-faceplate knob/fader/seq cards, no canvas/animation). 20 cards.
+  // (moog903a / moog904c / moog914 / moog984 spent 2026-08-28→29 demoted —
+  // same one-day CPU-fleet demotion-and-restore as mixer/shimmershine above.)
+  'moog903a',             // random-source card
   'moog904b',             // band-pass filter
+  'moog904c',             // hi/lo coupler
   'moog905',              // spring reverb
   'moog907a',             // fixed filter bank (System 35)
   'moog911a',             // dual trigger delay
   'moog912',              // envelope follower
+  'moog914',              // extended fixed filter bank (1/3-oct band column)
   'moog921a',             // oscillator driver
   'moog921b',             // oscillator
   'moog923',              // noise/filter
@@ -1696,6 +1693,7 @@ export const STRICT_VRT_MODULES = new Set<string>([
   'moog960',              // sequential controller (8×3 step grid)
   'moog961',              // interface
   'moog962',              // sequential switch
+  'moog984',              // 4×4 matrix mixer
   'moog992',              // control voltages
   'moog993',              // trigger/envelope
   'moog994',              // multiples
