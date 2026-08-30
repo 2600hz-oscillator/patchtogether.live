@@ -467,7 +467,12 @@ test.describe('workflow shell', () => {
     ).toBeLessThanOrEqual(loudest * 1.02);
   });
 
-  test('File.. menu: quicksave slot 1 round-trips through quickload', async ({ page }) => {
+  // ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; body and assertions UNCHANGED. OWNER-AUTHORIZED
+  // (2026-08-30 pre-show green directive). FIFTH distinct leg of this spec to flake tonight — 2
+  // recovered-on-retry observations on run 33291739984 (attempts 2 and 3, both failed-then-passed).
+  // LOST WHILE PARKED: the quicksave/quickload round-trip proof; the File.. menu itself stays
+  // exercised by the boot leg. Re-enable on a root cause (#1847).
+  test.fixme('File.. menu: quicksave slot 1 round-trips through quickload', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 2 recovered-on-retry observations on feat/ptzcam-multicam run 33291739984; owner-authorized pre-show park' } }, async ({ page }) => {
     await page.goto('/rack?shell=legacy');
     await waitForPinnedTrio(page);
 

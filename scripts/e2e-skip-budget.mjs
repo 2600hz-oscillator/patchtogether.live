@@ -623,7 +623,10 @@ export const SKIP_BUDGET = [
       + 'recovered-on-retry observation (33289422851 shard 7), the fourth distinct flake of the same '
       + 'fleet-load storm; the wiring itself stays exercised by waitForDefaultWires in the boot leg. '
       + 'ADDED 2026-08-30 — the M/E-toggle leg (33290699375 shard 7), the fourth leg of this one spec '
-      + 'to flake tonight; the dock keymap stays exercised by workflow-dock-occupancy.spec.ts.',
+      + 'to flake tonight; the dock keymap stays exercised by workflow-dock-occupancy.spec.ts. '
+      + 'ADDED 2026-08-30 — the quicksave round-trip leg, the FIFTH: 2 recovered-on-retry observations '
+      + 'on run 33291739984 attempts 2+3. Shard 7 flaked a different leg of this spec on five '
+      + 'consecutive runs tonight; root-causing the spec-wide load sensitivity is the un-park unit.',
   },
   {
     specs: ['tempolock.spec.ts'],
