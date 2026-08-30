@@ -143,6 +143,12 @@ const PASSTHROUGH_BY_DESIGN: Record<string, string[]> = {
   // AudioParam fast path — the CV doesn't modulate a knob, it IS the outgoing
   // MIDI note/velocity. Same shape as PONG's stepper CVs above.
   midiOutBuddy: ['pitch', 'velocity'],
+  // PTZCAM pan_cv / tilt_cv / zoom_cv: CV sampled per scheduler-tick from an
+  // AnalyserNode tap, summed with the trim knob in JS, then sent as sysex to
+  // the PT-PTZ camera helper. No AudioParam fast path — the CV doesn't
+  // modulate a knob, it IS the camera position. Same shape as MIDI-OUT-BUDDY
+  // above; justified in docs/adr/004-cv-range-convention.md.
+  ptzcam: ['pan_cv', 'tilt_cv', 'zoom_cv'],
   // CV BUDDY — pitch / velocity are UNITY PASSTHROUGHS to the ES-9 note jacks,
   // not knob modulation: the CV is the note pitch/velocity itself, scaled to
   // volts by the ES-9 jack's class (pitch → 1 V/oct), not by a cvScale knob.

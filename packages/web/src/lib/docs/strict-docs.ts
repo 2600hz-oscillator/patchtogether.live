@@ -259,6 +259,9 @@ export const STRICT_DOCS: ReadonlySet<string> = new Set<string>([
   'qbrt',
   'rasterize',
   'chromaconsole',
+  // PTZCAM (2026-08-29): CV → physical PTZ camera via the PT-PTZ MIDI helper.
+  // New module — ships with co-located docs.
+  'ptzcam',
   'clockedRunner',
   'livecode',
   // Batch 13 — heavy synth voices, effects & utilities (near the end of the
