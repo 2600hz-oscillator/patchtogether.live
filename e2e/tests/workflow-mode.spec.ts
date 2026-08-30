@@ -39,7 +39,12 @@ async function waitForDefaultWires(page: Page): Promise<void> {
       return ids.every((id) => !!w.__patch!.edges[id]);
     },
     DEFAULT_WIRE_IDS as unknown as string[],
-    { timeout: 10_000 },
+    // BOOT bound, not an assertion — the hand-typed 10 s here was a flat
+    // wall-clock lottery ticket below the one export site's number and lost
+    // on a loaded shard (waitForPinnedTrio timed out at boot, passed on
+    // retry, flake-gate red — the exact #1906 class its sweep missed
+    // because these are waitForFunction sites, not bare toBeVisible ones).
+    { timeout: BOOT_MS },
   );
 }
 
@@ -54,7 +59,9 @@ async function waitForPinnedTrio(page: Page): Promise<void> {
       return ids.every((id) => w.__patch!.nodes[id]?.data?.pinned === true);
     },
     PINNED_IDS as unknown as string[],
-    { timeout: 10_000 },
+    // Same BOOT bound as above — this is the site that actually lost the
+    // lottery (run 33277673075, e2e shard 7/12).
+    { timeout: BOOT_MS },
   );
 }
 

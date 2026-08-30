@@ -131,7 +131,7 @@ test.describe('TEMPOLOCK — tracked clock through the real patch seams', () => 
   // (2026-08-30, pre-show): green-for-merge directive. 1 recovered-on-retry observation (run
   // 33289422851 shard 9) in the same fleet-load storm as the workflow-mode legs. LOST WHILE PARKED:
   // the octave-fold + TIMELORDE-follow wire proof; the tracker math stays exhaustively pinned by
-  // tempolock-tracker.test.ts. Re-enable on a root cause (#1847).
+  // tempolock-tracker.test.ts. Re-enable on a root cause (#1847) — PR #2276 carries the un-park.
   test.fixme('folds a 216-edge/min onset train to 108 and TIMELORDE follows the tracked tempo', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 1 recovered-on-retry observation on feat/ptzcam runs to 2026-08-30; owner-authorized pre-show park' } }, async ({ page }) => {
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
