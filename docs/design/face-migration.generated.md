@@ -11,9 +11,9 @@ Every registered module carries exactly one **disposition**: what kind of work i
 
 |  | count |
 |---|---|
-| registered modules | 196 |
+| registered modules | 197 |
 | done (faced + promoted) | 59 |
-| remaining (excludes organizational-native) | 134 |
+| remaining (excludes organizational-native) | 135 |
 | registered with NO disposition (must be zero) | 0 |
 | inventory entries naming a dead def (must be zero) | 0 |
 
@@ -23,7 +23,7 @@ Every registered module carries exactly one **disposition**: what kind of work i
 |---|---|---|---|
 | `generic-face` | author a `face` and rank the controls — no new platform capability | 141 | 59 |
 | `blocked` | would be a face today but for the named capability, and nothing else | 3 | — |
-| `bespoke-surface` | the primary interaction is not param-shaped — needs a purpose-built surface | 49 | — |
+| `bespoke-surface` | the primary interaction is not param-shaped — needs a purpose-built surface | 50 | — |
 | `organizational-native` | rack furniture; not a migration at all | 3 | — |
 
 ## What each blocker buys
@@ -234,6 +234,7 @@ the primary interaction is not param-shaped — needs a purpose-built surface.
 | `picturebox` | video | — | — |
 | `polyseqz` | audio | — | `needs-note-entry-cell` |
 | `pong` | audio | — | — |
+| `ptzcam` | audio | — | — |
 | `push2Control` | meta | — | — |
 | `recorderbox` | video | — | `needs-media-controller` `needs-note-entry-cell` |
 | `score` | audio | — | — |

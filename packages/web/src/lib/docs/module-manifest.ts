@@ -359,6 +359,8 @@ const DESCRIPTIONS: Record<string, string> = {
     'JS-runtime live-coding module — CodeMirror editor with port-aware autocomplete and red-underline diagnostics, hit Run, the rack reshapes itself. Exposes spawn / patch / unpatch / set / read / clock.* / clocked() / log. Every clocked() call spawns a CLOCKED runner that owns the subscription. No audio I/O — the card is a side-tool. Full API + examples at /docs/modules/livecode.',
   chromaconsole:
     'Control surface for the Hologram Chroma Console pedal — sends MIDI CC to the hardware, carries no audio. All 34 documented CCs are available; eight assignable SLOTS back them with real parameters, so those eight are what clip automation, MIDI learn, Electra and the Push 2 card can drive. The pedal is receive-only, so the card shows what was sent, never what the pedal holds — PUSH ALL re-asserts every slot.',
+  ptzcam:
+    'CV control of a physical PTZ camera (NexiGo P610) — pan/tilt/zoom knobs plus matching CV inputs, sent as MIDI sysex to the native PT-PTZ helper (tools/pt-ptz), which drives the camera over USB. Positions are normalized to the mechanical range the camera reports in the bind handshake; sends are slew-limited and coalesced to ~10 Hz. Carries no audio or video — the camera picture arrives through a normal camera input.',
   clockedRunner:
     'Self-contained mini-LIVECODE owning a single clocked() callback. Spawned by the parent LIVECODE card when you invoke clocked(division, fn); deleting the runner cancels the schedule. Body is editable inline; the audio-domain factory re-evaluates it on every division boundary derived from TIMELORDE.bpm.',
   midiCvBuddy:

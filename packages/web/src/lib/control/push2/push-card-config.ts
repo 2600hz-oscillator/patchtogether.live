@@ -62,6 +62,10 @@ export const PUSH_CARD_CONTROLS: Readonly<Record<string, readonly string[]>> = {
   // stronger property than a pinned override: correct by construction
   // rather than correct because somebody remembered to pin it.
   chromaconsole: ['slot1', 'slot2', 'slot3', 'slot4', 'slot5', 'slot6', 'slot7', 'slot8'],
+  // ── ptzcam ───────────────────────────────────────────────────────────────
+  // Four params, four encoders, pinned so a future param addition cannot
+  // silently re-rank a card that may be driven live on stage.
+  ptzcam: ['pan', 'tilt', 'zoom', 'slew'],
   // ── dx7 ──────────────────────────────────────────────────────────────────
   // The face ranks the PRESET SELECTOR first, but that is a control FAMILY
   // (node.data-backed picker), not a turnable param, so it can never be an
