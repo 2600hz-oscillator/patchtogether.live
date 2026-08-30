@@ -858,6 +858,14 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
       'state, and the slot list is the interaction.',
   },
   {
+    type: 'ptzcam',
+    disposition: 'bespoke-surface',
+    why:
+      'a MIDI DEVICE BINDER like chromaconsole: the connect gesture and the live bound/unbound/' +
+      'camera-absent state are WebMIDI service state, not params — the four trim knobs are the ' +
+      'only generic-face material and the binding surface is the module.',
+  },
+  {
     type: 'clipplayer',
     disposition: 'bespoke-surface',
     why:

@@ -83,6 +83,7 @@ import { bugglesDef } from '$lib/audio/modules/buggles';
 import { froggerDef } from '$lib/audio/modules/frogger';
 import { scoreDef } from '$lib/audio/modules/score';
 import { chromaconsoleDef } from '$lib/audio/modules/chromaconsole';
+import { ptzcamDef } from '$lib/audio/modules/ptzcam';
 import { cubeDef } from '$lib/audio/modules/cube';
 import { cloudsDef } from '$lib/audio/modules/clouds';
 import { cofefveDelayDef } from '$lib/audio/modules/cofefve';
@@ -401,6 +402,7 @@ const RANGE_BOUND_CARDS: Readonly<Record<string, { params: readonly ParamDef[] }
   'WarrensvisionsCard.svelte': warrensvisionsDef,
   'BackdraftCard.svelte': backdraftDef,
   'ChromaconsoleCard.svelte': chromaconsoleDef,
+  'PtzcamCard.svelte': ptzcamDef,
   'CubeCard.svelte': cubeDef,
   'CloudsCard.svelte': cloudsDef,
   'CofefveCard.svelte': cofefveDelayDef,
@@ -747,6 +749,7 @@ const MAPPING_BOUND_CARDS: readonly string[] = [
   // here — the Fader's own ladder is the whole law, and both surfaces use it.)
   'PictureboxCard.svelte',
   'ChromaconsoleCard.svelte',
+  'PtzcamCard.svelte',
   'CubeCard.svelte',
   'CloudsCard.svelte',
   'CofefveCard.svelte',

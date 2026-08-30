@@ -337,9 +337,12 @@ describe('fixture 7 — cold silence', () => {
 // one lock through it. Onsets are delivered at 25 ms tick resolution, the
 // worst case the module ever sees.
 //
-// ⚠ THE GROUND TRUTH IS 103.68 BPM = 108 × 24/25 — THE FILE PLAYS 4% SLOW,
-// and this was established by validating the instrument, not by trusting
-// either label (CLAUDE.md: a wrong metric reads exactly like a finding):
+// ⚠ THE GROUND TRUTH IS 103.68 BPM — THE SOURCE'S HARDWARE CLOCK RAN 4%
+// SLOW, not the file (corrected 2026-08-29: a timelorde-pinned 108 reference
+// recorded through the same chain measured 108.17 BPM, σ = 0.08 ms — see the
+// fixture header). Established by validating the instrument, not by
+// trusting either label (CLAUDE.md: a wrong metric reads exactly like a
+// finding):
 //
 //   * The extraction's own blind fold said 107.72, from an absolute-grid
 //     regression. On this train that instrument is INVALID: at its own best
@@ -354,8 +357,10 @@ describe('fixture 7 — cold silence', () => {
 //     residual against the 108 grid, which a true grid cannot produce); (2)
 //     the recurring 3-1-2-2 cycle's own period, read off the >0.5 s marker
 //     gaps, is 1.157 s = 8 sixteenths of 0.14466 s. Both fold to 103.6–103.7.
-//   * 103.68 = 108 × 24/25 EXACTLY — the signature of a 25→24 fps-family
-//     rate conversion on the mp4, not of a mis-tracking tracker. A tracker
+//   * 103.68 = 108 × 24/25 near-exactly — first read as a 25→24 fps-family
+//     rate conversion on the mp4; the reference experiment falsified that
+//     (the capture chain is honest) and attributed the ratio to the source
+//     hardware's clock. Either way it is not a mis-tracking tracker: one
 //     that answered "108" to this file would be 4% off the audio actually
 //     playing, and would drift a quarter-beat every ~6 beats against it.
 //
@@ -375,8 +380,8 @@ describe('fixture 8 — real owner recording (179 onsets, 54 s)', () => {
       expect(row.bpm!, `bpm at t=${row.t.toFixed(2)}`).toBeGreaterThan(102.7);
       expect(row.bpm!, `bpm at t=${row.t.toFixed(2)}`).toBeLessThan(104.7);
     }
-    // The session-tempo provenance: undo the 24/25 playback-rate shift and
-    // the owner's stated 108 comes back within a third of a BPM.
+    // The label provenance: scale by 25/24 (the measured source-clock error)
+    // and the owner's stated 108 comes back within a third of a BPM.
     const tail = run.timeline.filter((r) => r.t > 10).map((r) => r.bpm!);
     const meanBpm = tail.reduce((a, b) => a + b, 0) / tail.length;
     expect(meanBpm * (25 / 24)).toBeGreaterThan(107.6);

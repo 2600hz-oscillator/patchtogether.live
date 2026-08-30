@@ -45,6 +45,7 @@ export const ART_EXCLUDED: Readonly<Record<string, string>> = {
   audioOut: 'terminal sink — no audio-family OUTPUT port to capture',
   clockedRunner: 'utility with no audio-family OUTPUT port to capture',
   chromaconsole: 'control surface for an EXTERNAL MIDI device (Hologram Chroma Console) — its only output is CC on a MIDI wire, and it has no audio-family OUTPUT port to capture; the pedal\'s audio never enters the graph (patched through the ES-9 by hand). Transmission is pinned by the midi/cc-out + cc-ramp unit suites and the bytes-on-the-wire e2e',
+  ptzcam: 'control surface for an EXTERNAL PTZ camera (NexiGo P610 via the PT-PTZ MIDI→UVC helper) — its only output is sysex on a MIDI wire, and it has no audio-family OUTPUT port to capture; the camera\'s picture enters the rack through a normal camera input, never audio. The protocol is pinned by ptz-sysex.test.ts (hardware-captured caps-reply fixture) + ptz-control.test.ts, and the wire path by the bytes-on-the-wire e2e (ptzcam.spec.ts)',
   spectrograph: 'video-only outputs (analysis sink) — video belongs to VRT/WebGL-attest',
   dockscope: 'terminal visualiser (analysis sink) — no OUTPUT ports at all; nothing to capture',
 };
