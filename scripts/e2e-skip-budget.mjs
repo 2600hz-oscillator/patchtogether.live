@@ -626,7 +626,11 @@ export const SKIP_BUDGET = [
       + 'to flake tonight; the dock keymap stays exercised by workflow-dock-occupancy.spec.ts. '
       + 'ADDED 2026-08-30 — the quicksave round-trip leg, the FIFTH: 2 recovered-on-retry observations '
       + 'on run 33291739984 attempts 2+3. Shard 7 flaked a different leg of this spec on five '
-      + 'consecutive runs tonight; root-causing the spec-wide load sensitivity is the un-park unit.',
+      + 'consecutive runs tonight; root-causing the spec-wide load sensitivity is the un-park unit. '
+      + 'ESCALATED 2026-08-30 to a SPEC-WIDE park after the SIXTH distinct leg (Clear-rack) flaked on '
+      + 'the sixth consecutive run: every leg shares the /rack boot + pinned-trio wait, so the failing '
+      + 'unit is the boot path under a degraded runner, and per-leg parks were whack-a-mole. All nine '
+      + 'legs are fixme; the shell boot itself stays exercised by every other workflow spec.',
   },
   {
     specs: ['tempolock.spec.ts'],

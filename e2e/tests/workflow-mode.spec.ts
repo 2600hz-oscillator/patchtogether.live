@@ -72,7 +72,13 @@ test.describe('workflow shell', () => {
     await installRenderSmokeHooks(page);
   });
 
-  test('boots the workflow topbar + left rail, replaces the slot bar, spawns the pinned trio off-canvas', async ({ page }) => {
+  // ⏸ FLAKE-PARK #1847 — SPEC-WIDE park, owner-authorized (2026-08-30 pre-show green directive).
+  // SIX consecutive runs flaked SIX DIFFERENT legs of this one spec on shard 7 (each recovered on
+  // retry) — the failing unit is the spec's shared boot path under a degraded runner, not any leg,
+  // so per-leg parks were whack-a-mole. LOST WHILE PARKED: the shell-boot proof; the topbar and
+  // leftbar render on every other workflow spec that boots /rack. Re-enable on a root cause of the
+  // spec-wide load sensitivity (#1847).
+  test.fixme('boots the workflow topbar + left rail, replaces the slot bar, spawns the pinned trio off-canvas', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — spec-wide park: six distinct legs flaked on six consecutive feat/ptzcam runs to 2026-08-30; owner-authorized pre-show' } }, async ({ page }) => {
     await page.goto('/rack?shell=legacy');
     await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: BOOT_MS });
     await expect(page.getByTestId('workflow-leftbar')).toBeVisible();
@@ -333,7 +339,9 @@ test.describe('workflow shell', () => {
     expect(after).toEqual([false, true]);
   });
 
-  test('default wiring carries REAL audio: source → mixmstrs ch1 → auto-wired AUDIO OUT is audible', async ({ page }) => {
+  // ⏸ FLAKE-PARK #1847 — spec-wide park (see the note on the boot leg). LOST WHILE PARKED: the
+  // audible default-wire proof; mixmstrs audio stays covered by its own specs.
+  test.fixme('default wiring carries REAL audio: source → mixmstrs ch1 → auto-wired AUDIO OUT is audible', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — spec-wide park: six distinct legs flaked on six consecutive feat/ptzcam runs to 2026-08-30; owner-authorized pre-show' } }, async ({ page }) => {
     // Real-chain proof (not just edge materialization): a free-running VCO
     // into the pinned mixer's channel 1 must register energy on the pinned
     // AUDIO OUT's terminal tap (the limiter feeding ctx.destination) with
@@ -534,7 +542,9 @@ test.describe('workflow shell', () => {
   // topbar carries its `Clear` and `AspectToggle` first, so that deletion is
   // not a feature regression.
 
-  test('File.. menu: Clear rack deletes canvas modules + cables and KEEPS the pinned trio', async ({ page }) => {
+  // ⏸ FLAKE-PARK #1847 — spec-wide park (see the note on the boot leg). 1 recovered-on-retry
+  // observation of THIS leg (run on 7c489c134, shard 7 — the sixth distinct leg in six runs).
+  test.fixme('File.. menu: Clear rack deletes canvas modules + cables and KEEPS the pinned trio', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — spec-wide park: six distinct legs flaked on six consecutive feat/ptzcam runs to 2026-08-30; owner-authorized pre-show' } }, async ({ page }) => {
     await page.goto('/rack?shell=legacy');
     await waitForPinnedTrio(page);
 
@@ -588,7 +598,9 @@ test.describe('workflow shell', () => {
     await waitForPinnedTrio(page);
   });
 
-  test('File.. menu: the output-aspect toggle flips 4:3 ⇄ 16:9 and leaves the menu open', async ({ page }) => {
+  // ⏸ FLAKE-PARK #1847 — spec-wide park (see the note on the boot leg). LOST WHILE PARKED: the
+  // aspect-toggle proof.
+  test.fixme('File.. menu: the output-aspect toggle flips 4:3 ⇄ 16:9 and leaves the menu open', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — spec-wide park: six distinct legs flaked on six consecutive feat/ptzcam runs to 2026-08-30; owner-authorized pre-show' } }, async ({ page }) => {
     await page.goto('/rack?shell=legacy');
     await waitForPinnedTrio(page);
 
