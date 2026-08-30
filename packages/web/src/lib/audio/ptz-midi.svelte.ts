@@ -16,6 +16,8 @@ import {
   midiOutcomeMessage,
   type MidiAccessOutcome,
 } from '$lib/audio/midi-access';
+import { createMidiInputClaim } from '$lib/midi/input-attach';
+import type { MidiInputLike } from '$lib/audio/modules/midi-cv-buddy';
 import { buildCapsRequest, parsePtzFrame, type PtzCaps } from '$lib/audio/ptz-sysex';
 
 export const PTZ_PORT_NAME = 'PT-PTZ';
@@ -39,9 +41,6 @@ interface MidiPortLike {
 interface MidiOutputLike extends MidiPortLike {
   send(data: number[] | Uint8Array): void;
 }
-interface MidiInputLike extends MidiPortLike {
-  onmidimessage: ((e: { data: Uint8Array | null }) => void) | null;
-}
 export interface PtzMidiAccessLike {
   readonly inputs: ReadonlyMap<string, MidiInputLike>;
   readonly outputs: ReadonlyMap<string, MidiOutputLike>;
@@ -59,11 +58,11 @@ function bump(): void {
 
 let access: PtzMidiAccessLike | null = null;
 let output: MidiOutputLike | null = null;
-let input: MidiInputLike | null = null;
 let caps: PtzCaps | null = null;
 let kind: PtzBindKind = 'idle';
 let capsTimer: ReturnType<typeof setTimeout> | null = null;
 let connectInFlight = false;
+const inputClaim = createMidiInputClaim('pt-ptz');
 
 function setKind(next: PtzBindKind): void {
   if (kind === next) return;
@@ -98,16 +97,15 @@ function resolvePorts(): void {
   if (!access) return;
   const out = [...access.outputs.values()].find(isPtzPort) ?? null;
   const inp = [...access.inputs.values()].find(isPtzPort) ?? null;
-  if (input && input !== inp) input.onmidimessage = null;
   output = out;
-  input = inp;
   if (!out || !inp) {
+    inputClaim.detach();
     caps = null;
     setKind('no-port');
     bump();
     return;
   }
-  inp.onmidimessage = (e) => onFrame(e.data);
+  inputClaim.attachOnly([inp], (e) => onFrame(e.data));
   requestCaps();
 }
 
@@ -214,11 +212,10 @@ export function ptzStatus(): PtzStatus {
 
 export function __resetPtzMidiForTest(): void {
   clearCapsTimer();
-  if (input) input.onmidimessage = null;
+  inputClaim.detach();
   if (access) access.onstatechange = null;
   access = null;
   output = null;
-  input = null;
   caps = null;
   kind = 'idle';
   connectInFlight = false;

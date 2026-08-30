@@ -231,6 +231,13 @@ const SUBSCRIBER_LEDGER: Record<string, SubscriberRow> = {
     messages: 'CC (0xB0) and note on/off (0x90/0x80)',
     why: 'EVERY-PORT BY DESIGN — learn binds whatever the user physically touches. ⚠ Control surfaces are NOT excluded: arming a learn and touching a Push encoder captures THAT control. Whether learn should skip bound surfaces is an OWNER DECISION, deliberately not taken here.',
   },
+  'audio/ptz-midi.svelte.ts': {
+    ports: 'named-device',
+    device: 'name-match',
+    channel: 'none',
+    messages: 'sysex (0xF0) only — 0x7D "PTZ"-tagged caps/error replies; everything else is ignored by the frame parser',
+    why: 'scoped to the ONE input named PT-PTZ (the native helper\'s virtual source); parsePtzFrame() drops any frame without the 7D-"PTZ" header, so foreign sysex on a same-named port cannot reach the state machine',
+  },
   'electra/broker.ts': {
     ports: 'named-device',
     device: 'name-match',

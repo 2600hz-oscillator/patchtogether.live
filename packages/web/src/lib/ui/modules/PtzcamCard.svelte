@@ -45,6 +45,7 @@
 </script>
 
 <div class="mod-card ptzcam-card" data-testid={`ptzcam-card-${id}`}>
+  <div class="stripe" style="background: var(--cable-cv);"></div>
   <ModuleTitle {id} {data} defaultLabel="PTZ CAM" />
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
