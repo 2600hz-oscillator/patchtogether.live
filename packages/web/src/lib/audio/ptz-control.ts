@@ -1,11 +1,22 @@
-// PTZ send planner — pure. Takes normalized targets (knob + CV already summed),
-// slew-limits them, maps into the device ranges a caps handshake reported, and
-// suppresses no-change writes so the MIDI wire only carries movement. The
-// factory calls this on a decimated scheduler tick; the helper coalesces again
-// at its own 30 Hz, so nothing here needs to be exact about timing — only
-// monotone and clamped.
+// PTZ send planner — pure. Takes normalized targets (knob + CV already summed)
+// and per-axis caps from the v2 handshake, and plans the frames for this tick.
+//
+// ABSOLUTE axes: slew-limit, map into the device range, quantize, suppress
+// no-change writes (the NexiGo path — unchanged from v1).
+//
+// VELOCITY axes: the bipolar value IS a velocity — sign is direction, the
+// magnitude maps into the device speed range past a deadzone, and zero is an
+// explicit STOP. Two properties are load-bearing for stage safety:
+//   - a nonzero velocity is RE-SENT every plan even when unchanged — the
+//     stream is the helper watchdog's keepalive (helper stops motion after
+//     ~250 ms without it, so a 10 Hz plan rate keeps a healthy app alive and
+//     a dead one halts);
+//   - the transition to zero is always emitted (an explicit stop, never
+//     suppressed).
+// Slew does not apply to a velocity axis: the value is already a rate, and
+// delaying a commanded STOP would be exactly backwards.
 
-import type { PtzCaps, PtzControl } from './ptz-sysex';
+import type { PtzAxisCaps, PtzCaps, PtzControl } from './ptz-sysex';
 
 export interface PtzTargets {
   readonly pan: number;
@@ -16,17 +27,21 @@ export interface PtzTargets {
 export interface PtzPlan {
   readonly pos: PtzTargets;
   readonly sent: PtzTargets;
+  readonly sentVel: PtzTargets;
 }
 
 export interface PtzSend {
   readonly control: PtzControl;
+  readonly kind: 'abs' | 'vel';
   readonly value: number;
 }
 
+/** |normalized| at or below this is a STOP on a velocity axis — a resting CV
+ *  or knob must never leave a head creeping. */
+export const PTZ_VEL_DEADZONE = 0.05;
+
 /** slew 1 = instant; below that, max normalized units/sec on a square curve so
- *  the low half of the knob is fine motion. The camera's motors are slower
- *  than the top of this range for pan/tilt — the planner's slew mostly shapes
- *  zoom and keeps a CV step from commanding a slam. */
+ *  the low half of the knob is fine motion. Absolute axes only. */
 export function ptzSlewRate(slew: number): number {
   if (!Number.isFinite(slew) || slew >= 1) return Infinity;
   return Math.max(0.02, 8 * slew * slew);
@@ -42,6 +57,23 @@ function toDevice(norm: number, min: number, max: number, res: number, unipolar:
   return Math.min(max, Math.max(min, min + Math.round((raw - min) / step) * step));
 }
 
+/** Bipolar normalized → signed device speed. Exported for the unit tests:
+ *  the Logitech's degenerate 1..1 range must collapse to exactly {-1, 0, +1}. */
+export function velFromNorm(
+  norm: number,
+  caps: { speedMin: number; speedMax: number; speedRes: number },
+): number {
+  const n = clamp(norm, -1, 1);
+  if (Math.abs(n) <= PTZ_VEL_DEADZONE) return 0;
+  const t = (Math.abs(n) - PTZ_VEL_DEADZONE) / (1 - PTZ_VEL_DEADZONE);
+  const lo = Math.max(1, caps.speedMin);
+  const hi = Math.max(lo, caps.speedMax);
+  const step = caps.speedRes > 0 ? caps.speedRes : 1;
+  const raw = lo + t * (hi - lo);
+  const mag = Math.min(hi, Math.max(lo, lo + Math.round((raw - lo) / step) * step));
+  return n > 0 ? mag : -mag;
+}
+
 export function planPtzSend(
   prev: PtzPlan | null,
   targets: PtzTargets,
@@ -49,38 +81,42 @@ export function planPtzSend(
   dtMs: number,
   slew: number,
 ): { plan: PtzPlan; sends: readonly PtzSend[] } {
-  const goal: PtzTargets = {
-    pan: clamp(targets.pan, -1, 1),
-    tilt: clamp(targets.tilt, -1, 1),
-    zoom: clamp(targets.zoom, 0, 1),
-  };
+  const axes: readonly [PtzControl, PtzAxisCaps, boolean][] = [
+    ['pan', caps.pan, false],
+    ['tilt', caps.tilt, false],
+    ['zoom', caps.zoom, true],
+  ];
 
-  let pos: PtzTargets;
-  if (prev === null) {
-    pos = goal;
-  } else {
-    const maxStep = ptzSlewRate(slew) * (Math.max(0, dtMs) / 1000);
-    const toward = (from: number, to: number): number =>
-      Math.abs(to - from) <= maxStep ? to : from + Math.sign(to - from) * maxStep;
-    pos = {
-      pan: toward(prev.pos.pan, goal.pan),
-      tilt: toward(prev.pos.tilt, goal.tilt),
-      zoom: toward(prev.pos.zoom, goal.zoom),
-    };
-  }
-
-  const dev: PtzTargets = {
-    pan: toDevice(pos.pan, caps.pan.min, caps.pan.max, caps.pan.res, false),
-    tilt: toDevice(pos.tilt, caps.tilt.min, caps.tilt.max, caps.tilt.res, false),
-    zoom: toDevice(pos.zoom, caps.zoom.min, caps.zoom.max, caps.zoom.res, true),
-  };
-
+  const pos = { pan: 0, tilt: 0, zoom: 0 };
+  const sent = { pan: 0, tilt: 0, zoom: 0 };
+  const sentVel = { pan: 0, tilt: 0, zoom: 0 };
   const sends: PtzSend[] = [];
-  for (const control of ['pan', 'tilt', 'zoom'] as const) {
-    if (prev === null || dev[control] !== prev.sent[control]) {
-      sends.push({ control, value: dev[control] });
+  const maxStep = ptzSlewRate(slew) * (Math.max(0, dtMs) / 1000);
+
+  for (const [control, axis, unipolar] of axes) {
+    const goal = clamp(targets[control], unipolar && axis.mode === 'abs' ? 0 : -1, 1);
+
+    if (axis.mode === 'abs') {
+      let p = goal;
+      if (prev !== null) {
+        const from = prev.pos[control];
+        p = Math.abs(goal - from) <= maxStep ? goal : from + Math.sign(goal - from) * maxStep;
+      }
+      pos[control] = p;
+      const dev = toDevice(p, axis.min, axis.max, axis.res, unipolar);
+      sent[control] = dev;
+      if (prev === null || dev !== prev.sent[control]) {
+        sends.push({ control, kind: 'abs', value: dev });
+      }
+    } else if (axis.mode === 'vel') {
+      pos[control] = goal;
+      const v = velFromNorm(goal, axis);
+      sentVel[control] = v;
+      if (prev === null || v !== 0 || prev.sentVel[control] !== 0) {
+        sends.push({ control, kind: 'vel', value: v });
+      }
     }
   }
 
-  return { plan: { pos, sent: dev }, sends };
+  return { plan: { pos, sent, sentVel }, sends };
 }

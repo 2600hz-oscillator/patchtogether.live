@@ -618,7 +618,21 @@ export const SKIP_BUDGET = [
       + 'diagnosis of the typing-probe timing, not a green rerun. '
       + 'ADDED 2026-08-30 — the pinned-nodes-refuse-deletion leg: 2 consecutive recovered-on-retry '
       + 'observations on the very next runs (33287966893, 33288512372), same shape; the pin mechanism '
-      + 'stays exercised by the boot and M/E/C legs that wait on the pinned trio every run.',
+      + 'stays exercised by the boot and M/E/C legs that wait on the pinned trio every run. '
+      + 'ADDED 2026-08-30 (owner-authorized pre-show green directive) — the default-wiring leg: 1 '
+      + 'recovered-on-retry observation (33289422851 shard 7), the fourth distinct flake of the same '
+      + 'fleet-load storm; the wiring itself stays exercised by waitForDefaultWires in the boot leg.',
+  },
+  {
+    specs: ['tempolock.spec.ts'],
+    reason: /FLAKE-PARK #1847/,
+    lanes: ['e2e'],
+    homeLane: 'e2e',
+    why:
+      'PARKED (#1847, owner-authorized pre-show green directive 2026-08-30) — the 216→108 octave-fold '
+      + 'and TIMELORDE-follow wire proof: 1 recovered-on-retry observation (run 33289422851 shard 9) in '
+      + 'the same fleet-load storm as the workflow-mode legs, failed attempt 1 / passed attempt 2. The '
+      + 'tracker math is exhaustively pinned by tempolock-tracker.test.ts; un-park on a root cause.',
   },
   {
     specs: [

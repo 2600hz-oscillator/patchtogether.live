@@ -258,7 +258,13 @@ test.describe('workflow shell', () => {
     await waitForPinnedTrio(page); // the ensure effect re-spawns the trio
   });
 
-  test('default wiring: pinned MIXMSTRS master L/R auto-wires to pinned AUDIO OUT (one-shot, user delete respected)', async ({ page }) => {
+  // ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; body and assertions UNCHANGED. OWNER-AUTHORIZED
+  // (2026-08-30, pre-show): "we need to get stuff green and stable so we can merge, i do not care if
+  // you have to fixme/skip tests". 1 recovered-on-retry observation (run 33289422851 shard 7) in the
+  // same fleet-load storm that took this spec's two other parked legs. LOST WHILE PARKED: the
+  // one-shot default-wire proof; waitForDefaultWires in the boot path still exercises the wiring
+  // itself. Re-enable on a root cause (#1847).
+  test.fixme('default wiring: pinned MIXMSTRS master L/R auto-wires to pinned AUDIO OUT (one-shot, user delete respected)', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 1 recovered-on-retry observation on feat/ptzcam runs to 2026-08-30; owner-authorized pre-show park' } }, async ({ page }) => {
     // Owner directive: "the audio out in the rack should be default wired to
     // the master L/R outs from the in rack mixmstrs in workflow mode."
     await page.goto('/rack?shell=legacy');
