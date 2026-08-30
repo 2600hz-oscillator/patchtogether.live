@@ -44,6 +44,9 @@ export interface PtzcamCardApi {
 export interface PtzcamState {
   readonly status: PtzStatus['kind'];
   readonly targets: PtzTargets;
+  /** Scheduler ticks seen — lets a test wait on "the send loop ran N times"
+   *  instead of a wall-clock sleep. */
+  readonly ticks: number;
   readonly sentFrames: number;
   readonly lastSent: PtzTargets | null;
 }
@@ -195,6 +198,7 @@ export const ptzcamDef: AudioModuleDef = {
               tilt: knobs.tilt! + latestSample(taps.tilt),
               zoom: knobs.zoom! + latestSample(taps.zoom),
             },
+            ticks: tickN,
             sentFrames,
             lastSent,
           };

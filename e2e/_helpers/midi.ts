@@ -423,3 +423,120 @@ export function replayDerivedBpm(sentAtMs: number[]): number | null {
   }
   return bpm;
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Sysex I/O harness (ptzcam): outputs that CAPTURE + inputs that can INJECT.
+//
+// `installMidiOutCapture` above exposes outputs only and `sysexEnabled: false`,
+// which is right for the CC modules but structurally cannot exercise a module
+// whose bind is a sysex HANDSHAKE — the app must also RECEIVE a reply on an
+// input port. This harness is additive: same capture globals (so
+// `readMidiOutCaptured` / `clearMidiOutCaptured` work unchanged), plus named
+// inputs whose `onmidimessage` a test can drive via `injectMidiIn`.
+//
+// ⚠ Known instrument limit, here as everywhere: the fake's `send()` accepts any
+// bytes, so it cannot reproduce Chrome's InvalidAccessError for sysex on a
+// non-sysex access. The permission REQUEST path is a unit concern.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** A fake input port to expose on the mocked MIDIAccess. */
+export interface FakeMidiInPort {
+  id: string;
+  name: string;
+}
+
+export function midiIoCaptureScript(
+  outputs: readonly FakeMidiOutPort[],
+  inputs: readonly FakeMidiInPort[],
+): string {
+  return `
+(() => {
+  if (window.__fakeMidiOutInstalled) return;
+  window.__fakeMidiOutInstalled = true;
+  window.__midiOutSent = [];
+  window.__midiOutSentDetailed = [];
+
+  const outSpecs = ${JSON.stringify(outputs)};
+  const outs = new Map();
+  for (const spec of outSpecs) {
+    outs.set(spec.id, {
+      id: spec.id,
+      name: spec.name,
+      manufacturer: 'PatchTogether',
+      state: 'connected',
+      connection: 'open',
+      type: 'output',
+      version: '1.0',
+      send(data, timestamp) {
+        const bytes = Array.from(data);
+        window.__midiOutSent.push(bytes);
+        window.__midiOutSentDetailed.push({
+          portId: spec.id,
+          bytes,
+          at: performance.now(),
+          scheduledAt: typeof timestamp === 'number' ? timestamp : undefined,
+        });
+      },
+      clear() {},
+    });
+  }
+
+  const inSpecs = ${JSON.stringify(inputs)};
+  const ins = new Map();
+  for (const spec of inSpecs) {
+    ins.set(spec.id, {
+      id: spec.id,
+      name: spec.name,
+      manufacturer: 'PatchTogether',
+      state: 'connected',
+      connection: 'open',
+      type: 'input',
+      version: '1.0',
+      onmidimessage: null,
+    });
+  }
+  window.__midiInInject = (portId, bytes) => {
+    const inp = ins.get(portId);
+    if (!inp || typeof inp.onmidimessage !== 'function') return false;
+    inp.onmidimessage({ data: Uint8Array.from(bytes) });
+    return true;
+  };
+
+  const access = {
+    sysexEnabled: true,
+    inputs: ins,
+    outputs: outs,
+    onstatechange: null,
+  };
+  navigator.requestMIDIAccess = async () => access;
+})();
+`;
+}
+
+/** Install the sysex I/O mock. MUST be called BEFORE `page.goto(...)`. */
+export async function installMidiIoCapture(
+  page: Page,
+  outputs: readonly FakeMidiOutPort[],
+  inputs: readonly FakeMidiInPort[],
+): Promise<void> {
+  await page.addInitScript({ content: midiIoCaptureScript(outputs, inputs) });
+}
+
+/** Deliver bytes to a fake input's `onmidimessage`. Resolves false when the
+ *  app has not (yet) attached a handler — poll on the true condition instead
+ *  of sleeping. */
+export async function injectMidiIn(
+  page: Page,
+  portId: string,
+  bytes: readonly number[],
+): Promise<boolean> {
+  return page.evaluate(
+    ({ portId, bytes }) => {
+      const w = window as unknown as {
+        __midiInInject?: (portId: string, bytes: number[]) => boolean;
+      };
+      return w.__midiInInject?.(portId, [...bytes]) ?? false;
+    },
+    { portId, bytes: [...bytes] },
+  );
+}
