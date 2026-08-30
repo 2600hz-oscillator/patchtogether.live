@@ -54,7 +54,11 @@ async function waitForPinnedTrio(page: Page): Promise<void> {
       return ids.every((id) => w.__patch!.nodes[id]?.data?.pinned === true);
     },
     PINNED_IDS as unknown as string[],
-    { timeout: 10_000 },
+    // BOOT bound, not a claim: the ensure effect runs at boot, and a flat
+    // 10 s here was the #1875 class — recovered-on-retry on CI shard 7 in
+    // runs 33279139157 and 33281413825 while the topbar wait one screen up
+    // already used BOOT_MS.
+    { timeout: BOOT_MS },
   );
 }
 
