@@ -449,7 +449,8 @@ test.describe('workflow shell', () => {
     ).toBeLessThanOrEqual(loudest * 1.02);
   });
 
-  test('File.. menu: quicksave slot 1 round-trips through quickload', async ({ page }) => {
+  // ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; the body and its assertions are UNCHANGED.
+  test.fixme('File.. menu: quicksave slot 1 round-trips through quickload', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — owner order 2026-08-30 ("any tests that failed disable / skip"): recovered-on-retry on PR #2274 run 33293449487 e2e shard 7 — fourth distinct workflow-mode flake tonight; BOOT_MS fix cherry-picked alongside; parked until root-caused' } }, async ({ page }) => {
     await page.goto('/rack?shell=legacy');
     await waitForPinnedTrio(page);
 
