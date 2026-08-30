@@ -17,7 +17,7 @@
   import { cardParams, paramSpec, portsFromDef } from './card-kit';
   import type { ModuleNode } from '$lib/graph/types';
   import { ptzcamDef } from '$lib/audio/modules/ptzcam';
-  import { connectPtzMidi, ptzStatus, ptzStatusRune } from '$lib/audio/ptz-midi.svelte';
+  import { connectPtzMidi, ptzStatus, ptzBindVersion } from '$lib/audio/ptz-midi';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode | undefined);
@@ -29,7 +29,10 @@
 
   const KNOBS = ['pan', 'tilt', 'zoom', 'slew'] as const;
 
-  let status = $derived((ptzStatusRune(), ptzStatus()));
+  let status = $derived.by(() => {
+    void $ptzBindVersion;
+    return ptzStatus();
+  });
   let problem = $derived(
     status.kind !== 'bound' && status.kind !== 'idle' && status.kind !== 'binding',
   );

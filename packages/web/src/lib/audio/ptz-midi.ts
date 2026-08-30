@@ -10,7 +10,14 @@
 // requests Web-MIDI access". `connect()` is called synchronously from the
 // card's click handler (an await above it would spend the user activation and
 // Chromium refuses to prompt).
+//
+// Plain .ts, not .svelte.ts, ON PURPOSE: the ptzcam DEF imports this module,
+// and the art workspace's node vitest imports every audio def with no svelte
+// compiler in the loop — a rune here throws `$state is not defined` at
+// collection (measured on the cv-terminal scenarios). The card's reactivity
+// signal is a svelte/store writable instead, which is plain runtime JS.
 
+import { writable } from 'svelte/store';
 import {
   MIDI_PROMPT_TIMEOUT_MS,
   midiOutcomeMessage,
@@ -48,12 +55,11 @@ export interface PtzMidiAccessLike {
 }
 type PtzRequestFn = () => Promise<PtzMidiAccessLike>;
 
-let statusVersion = $state(0);
-export function ptzStatusRune(): number {
-  return statusVersion;
-}
+/** Bumped on every binding-state change — subscribe (or `$ptzBindVersion` in
+ *  a component) and re-read `ptzStatus()`. */
+export const ptzBindVersion = writable(0);
 function bump(): void {
-  statusVersion++;
+  ptzBindVersion.update((n) => n + 1);
 }
 
 let access: PtzMidiAccessLike | null = null;

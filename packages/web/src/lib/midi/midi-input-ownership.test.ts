@@ -231,7 +231,7 @@ const SUBSCRIBER_LEDGER: Record<string, SubscriberRow> = {
     messages: 'CC (0xB0) and note on/off (0x90/0x80)',
     why: 'EVERY-PORT BY DESIGN — learn binds whatever the user physically touches. ⚠ Control surfaces are NOT excluded: arming a learn and touching a Push encoder captures THAT control. Whether learn should skip bound surfaces is an OWNER DECISION, deliberately not taken here.',
   },
-  'audio/ptz-midi.svelte.ts': {
+  'audio/ptz-midi.ts': {
     ports: 'named-device',
     device: 'name-match',
     channel: 'none',

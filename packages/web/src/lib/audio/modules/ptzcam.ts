@@ -29,7 +29,7 @@ import {
   ptzStatus,
   sendPtzFrame,
   type PtzStatus,
-} from '$lib/audio/ptz-midi.svelte';
+} from '$lib/audio/ptz-midi';
 
 /** Ticks between sends: 40 Hz scheduler / 4 = 10 Hz on the wire (≤12 Hz by
  *  design; the helper coalesces again at 30 Hz and the camera's motors are the
