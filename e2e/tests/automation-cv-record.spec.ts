@@ -37,7 +37,6 @@
 
 import { test, expect } from './_fixtures';
 import { spawnPatch } from './_helpers';
-import { waitForSoundingStep } from './_scheduler-control';
 import type { Page } from '@playwright/test';
 
 test.describe.configure({ mode: 'serial' });
@@ -295,7 +294,31 @@ async function launchClip(page: Page): Promise<void> {
     undefined,
     { timeout: 6000 },
   );
-  await waitForSoundingStep(page, CP, 3, { key: 'currentStep:0', timeoutMs: 8000 });
+  await waitForStepAtLeast(page, 3, 20_000);
+}
+
+/** Wait until lane 0's sounding step has REACHED `n` — `>=`, never `===`: the
+ *  sounding step is a MOVING counter sampled by a poller, and under CI
+ *  starvation the scheduler advances it in multi-step batches while poll
+ *  evaluations arrive late — an equality wait can simply never observe its
+ *  125 ms window (measured: run 33281413825, both waits that timed out were
+ *  `=== n` step waits). A monotone `>=` cannot miss within the first loop. */
+async function waitForStepAtLeast(page: Page, n: number, timeoutMs: number): Promise<void> {
+  await page.waitForFunction(
+    ({ id, t }) => {
+      const w = globalThis as unknown as {
+        __engine?: () => { read: (n: unknown, k: string) => number | undefined } | null;
+        __patch: { nodes: Record<string, unknown> };
+      };
+      const eng = w.__engine?.();
+      const node = w.__patch?.nodes?.[id];
+      if (!eng || !node) return false;
+      const v = eng.read(node, 'currentStep:0');
+      return typeof v === 'number' && v >= t;
+    },
+    { id: CP, t: n },
+    { timeout: timeoutMs, polling: 25 },
+  );
 }
 
 async function armLane0(page: Page): Promise<void> {
@@ -442,6 +465,50 @@ async function driveStickUntilTakeMeets(
   );
 }
 
+/** IN-PAGE settle watcher: resolve once the committed take has read
+ *  byte-identical (and non-empty) for `quietSamples` consecutive timer
+ *  samples. Timer-paced ON PURPOSE — see the call site: the writer is the
+ *  audio scheduler, itself a main-thread timer, so a serviced quiet run
+ *  brackets any pending commit. The bound only bounds failure and the result
+ *  carries the diagnostics either way. */
+async function waitTakeSettled(
+  page: Page,
+  opts: { quietSamples: number; sampleMs: number; boundMs: number },
+): Promise<{ settled: boolean; quietRun: number; checks: number; elapsedMs: number }> {
+  return page.evaluate(
+    ({ quietSamples, sampleMs, boundMs }) =>
+      new Promise<{ settled: boolean; quietRun: number; checks: number; elapsedMs: number }>((resolve) => {
+        const w = globalThis as unknown as {
+          __patch: {
+            nodes: Record<
+              string,
+              { data?: { auto?: Record<string, { tracks?: Record<string, { events?: unknown[] }> }> } }
+            >;
+          };
+        };
+        const t0 = performance.now();
+        let prev = '';
+        let quietRun = 0;
+        let checks = 0;
+        const finish = (settled: boolean): void => {
+          clearInterval(timer);
+          clearTimeout(bound);
+          resolve({ settled, quietRun, checks, elapsedMs: Math.round(performance.now() - t0) });
+        };
+        const bound = setTimeout(() => finish(false), boundMs);
+        const timer = setInterval(() => {
+          checks += 1;
+          const evs = w.__patch?.nodes?.['cp']?.data?.auto?.['0']?.tracks?.['bd::mix']?.events;
+          const cur = JSON.stringify(evs ?? null);
+          quietRun = cur !== 'null' && cur !== '[]' && cur === prev ? quietRun + 1 : 0;
+          prev = cur;
+          if (quietRun >= quietSamples) finish(true);
+        }, sampleMs);
+      }),
+    opts,
+  );
+}
+
 /** IN-PAGE override driver: wiggle the stick across [lo, hi] one graded
  *  sub-step per frame while reading the ENGINE-EFFECTIVE mix each frame;
  *  finishes the moment a sample crosses `above` (live CV winning the uniform).
@@ -561,25 +628,19 @@ test('OWNER CASE: gamepad CV movement on a lane-assigned BACKDRAFT records into 
   // click. Reading the take too early derives the loop marks from a STALE
   // mosaic while playback loops the settled one (measured under
   // E2E_SWIFTSHADER=1: observed playback max 0.918 against a stale-read
-  // takeMax 0.313 — 9 of 12 repeats under load). Wait for a wrap to pass
-  // (step 5 then step 2 can only happen across one: the scheduler reads the
-  // arm flag every tick, so the final commit is in by then), then require the
-  // committed take to read byte-identical across two polls — the direct
-  // observable of "settled". Nothing legitimately writes it after disarm.
-  await waitForSoundingStep(page, CP, 5, { key: 'currentStep:0', timeoutMs: 20_000 });
-  await waitForSoundingStep(page, CP, 2, { key: 'currentStep:0', timeoutMs: 20_000 });
-  let prevTake = '';
-  await expect
-    .poll(
-      async () => {
-        const cur = JSON.stringify(await recordedEvents(page));
-        const settled = cur !== '[]' && cur === prevTake;
-        prevTake = cur;
-        return settled;
-      },
-      { timeout: 10_000 },
-    )
-    .toBe(true);
+  // takeMax 0.313 — 9 of 12 repeats under load). Wait until the committed
+  // take has been QUIET for a run of timer samples — an in-page setInterval
+  // watcher, deliberately timer-paced, not rAF-paced: the writer (the audio
+  // scheduler) is itself a main-thread timer, so if the watcher's interval
+  // fired N times the scheduler's expired intervals were serviced in between
+  // — the quiet run genuinely brackets the commit. (An earlier wrap-passage
+  // wait here used `=== step` equality and could never observe its window on
+  // a starved shard — run 33281413825.)
+  const settle = await waitTakeSettled(page, { quietSamples: 10, sampleMs: 150, boundMs: 20_000 });
+  expect(
+    settle.settled,
+    `take should settle after disarm (quiet run ${settle.quietRun}/${10} across ${settle.checks} checks in ${settle.elapsedMs} ms)`,
+  ).toBe(true);
 
   // The FINAL take (nothing can change it now) still holds genuine movement.
   // Floor 0.1 = 20× the recorder's MOVE_EPS: the loop-phase marks below are
