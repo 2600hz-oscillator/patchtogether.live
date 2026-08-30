@@ -530,6 +530,18 @@ export const SKIP_BUDGET = [
       + 'path, so root-causing it is not optional debt.',
   },
   {
+    specs: ['workflow-mode.spec.ts'],
+    reason: /FLAKE-PARK #1847/,
+    lanes: ['e2e'],
+    homeLane: 'e2e',
+    why:
+      'PARKED (2026-08-30, owner order: "any tests that failed disable / skip") — the pinned-MIXMSTRS '
+      + 'auto-wire leg: waitForFunction 10s timeout, recovered-on-retry on PR #2274 e2e shard 7 (run '
+      + '33291594537); same load-sensitivity family as the branch-side boot-budget fixes on #2263/#2266. '
+      + 'While parked, the one-shot default-wiring contract has no e2e coverage in this leg — un-park '
+      + 'after the 2026-08-30 performance alongside the tempolock park.',
+  },
+  {
     specs: ['tempolock.spec.ts'],
     reason: /FLAKE-PARK #1847/,
     lanes: ['e2e'],

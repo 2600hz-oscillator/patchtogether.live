@@ -242,7 +242,8 @@ test.describe('workflow shell', () => {
     await waitForPinnedTrio(page); // the ensure effect re-spawns the trio
   });
 
-  test('default wiring: pinned MIXMSTRS master L/R auto-wires to pinned AUDIO OUT (one-shot, user delete respected)', async ({ page }) => {
+  // ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; the body and its assertions are UNCHANGED.
+  test.fixme('default wiring: pinned MIXMSTRS master L/R auto-wires to pinned AUDIO OUT (one-shot, user delete respected)', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — owner order 2026-08-30 ("any tests that failed disable / skip"): waitForFunction 10s timeout, recovered-on-retry on PR #2274 run 33291594537 e2e shard 7; parked until root-caused' } }, async ({ page }) => {
     // Owner directive: "the audio out in the rack should be default wired to
     // the master L/R outs from the in rack mixmstrs in workflow mode."
     await page.goto('/rack?shell=legacy');
