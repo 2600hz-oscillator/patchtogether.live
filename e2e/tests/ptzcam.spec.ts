@@ -317,9 +317,38 @@ test('ptzcam: REAL CHAIN (velocity axis) — the LFO drives direction, keepalive
     undefined,
     { timeout: 30_000 },
   );
-  // Kill the swing → the summed target falls inside the deadzone → the module
-  // must emit the EXPLICIT stop (value 0), never just fall silent.
+  // KEEPALIVE, load-independently: hold a CONSTANT nonzero velocity (kill the
+  // LFO, pin the knob) and wait for the +1 frame count to GROW by 3 — proving
+  // the unchanged value is re-sent every plan tick. Counting repeats inside
+  // one LFO half-cycle instead assumed a healthy tick rate and failed both
+  // attempts under CI load (measured, shard 1).
   await writeParam(page, 'depth', 0, 'lfo');
+  await writeParam(page, 'pan', 1);
+  const before = await page.evaluate(
+    () => {
+      const sent =
+        (window as unknown as { __midiOutSentDetailed?: { portId: string; bytes: number[] }[] })
+          .__midiOutSentDetailed ?? [];
+      return sent.filter((m) => m.portId === 'ptz-b' && m.bytes[6] === 0x03 && m.bytes[7] === 0x01)
+        .length;
+    },
+  );
+  await page.waitForFunction(
+    (want) => {
+      const sent =
+        (window as unknown as { __midiOutSentDetailed?: { portId: string; bytes: number[] }[] })
+          .__midiOutSentDetailed ?? [];
+      return (
+        sent.filter((m) => m.portId === 'ptz-b' && m.bytes[6] === 0x03 && m.bytes[7] === 0x01)
+          .length >= want
+      );
+    },
+    before + 3,
+    { timeout: 30_000 },
+  );
+  // Release the knob → the target falls inside the deadzone → the module must
+  // emit the EXPLICIT stop (value 0), never just fall silent.
+  await writeParam(page, 'pan', 0);
   await page.waitForFunction(
     () => {
       const sent =
@@ -343,9 +372,7 @@ test('ptzcam: REAL CHAIN (velocity axis) — the LFO drives direction, keepalive
   // the commanded stop above guarantees all three appear.
   expect(new Set(vels.map((v) => Math.sign(v))).size).toBe(3);
   for (const v of vels) expect([-1, 0, 1]).toContain(v);
-  // Watchdog keepalive: a sustained direction repeats on the wire.
-  const runs = vels.filter((v) => v === 1).length;
-  expect(runs, 'nonzero velocity streams (the helper watchdog keepalive)').toBeGreaterThanOrEqual(3);
+  // Keepalive already proven by the held-velocity growth wait above.
   // Nothing velocity-shaped may reach the absolute-mode camera's port.
   expect(ctlValues(await readMidiOutCaptured(page, NEXIGO_OUT.id), CMD_SET_VEL, 0x01)).toEqual([]);
 });

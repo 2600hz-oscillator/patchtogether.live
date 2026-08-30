@@ -621,7 +621,9 @@ export const SKIP_BUDGET = [
       + 'stays exercised by the boot and M/E/C legs that wait on the pinned trio every run. '
       + 'ADDED 2026-08-30 (owner-authorized pre-show green directive) — the default-wiring leg: 1 '
       + 'recovered-on-retry observation (33289422851 shard 7), the fourth distinct flake of the same '
-      + 'fleet-load storm; the wiring itself stays exercised by waitForDefaultWires in the boot leg.',
+      + 'fleet-load storm; the wiring itself stays exercised by waitForDefaultWires in the boot leg. '
+      + 'ADDED 2026-08-30 — the M/E-toggle leg (33290699375 shard 7), the fourth leg of this one spec '
+      + 'to flake tonight; the dock keymap stays exercised by workflow-dock-occupancy.spec.ts.',
   },
   {
     specs: ['tempolock.spec.ts'],

@@ -95,7 +95,12 @@ test.describe('workflow shell', () => {
     }
   });
 
-  test('M / E toggle the bottom dock drawers with the FULL pinned card; one at a time; C opens the clip PANE; ESC closes', async ({ page }) => {
+  // ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; body and assertions UNCHANGED. OWNER-AUTHORIZED
+  // (2026-08-30 pre-show green directive). The FOURTH distinct leg of this spec to flake tonight
+  // (recovered-on-retry, run 33290699375 shard 7) — the spec is the fleet-load hotspot. LOST WHILE
+  // PARKED: the M/E drawer toggle + C pane proof; the dock keymap stays exercised by
+  // workflow-dock-occupancy.spec.ts. Re-enable on a root cause (#1847).
+  test.fixme('M / E toggle the bottom dock drawers with the FULL pinned card; one at a time; C opens the clip PANE; ESC closes', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 1 recovered-on-retry observation on feat/ptzcam-multicam runs to 2026-08-30; owner-authorized pre-show park' } }, async ({ page }) => {
     await page.goto('/rack?shell=legacy');
     await waitForPinnedTrio(page);
     // :visible — the workflow topbar's always-mounted audio-I/O card hosts
