@@ -307,7 +307,8 @@ test.describe('workflow shell', () => {
     expect(after).toEqual([false, true]);
   });
 
-  test('default wiring carries REAL audio: source → mixmstrs ch1 → auto-wired AUDIO OUT is audible', async ({ page }) => {
+  // ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; the body and its assertions are UNCHANGED.
+  test.fixme('default wiring carries REAL audio: source → mixmstrs ch1 → auto-wired AUDIO OUT is audible', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — owner order 2026-08-30 ("any tests that failed disable / skip"): recovered-on-retry on PR #2274 run 33292812684 e2e shard 7; same default-wiring load family as the :246 park; parked until root-caused' } }, async ({ page }) => {
     // Real-chain proof (not just edge materialization): a free-running VCO
     // into the pinned mixer's channel 1 must register energy on the pinned
     // AUDIO OUT's terminal tap (the limiter feeding ctx.destination) with
