@@ -1,59 +1,63 @@
 <script lang="ts">
-  // PeerTubeCard — federated-video SOURCE.
+  // PeerTubeCard — the SURFACE for a federated-video source whose lifecycle
+  // belongs to the NODE.
   //
-  // FLOW: a debounced search box → Sepia Search (the PeerTube fediverse meta-
-  // index, CORS-open + anonymous) → a results list (title, channel@host,
-  // duration, thumbnail) → click a result → its per-instance video-details API
-  // resolves the HLS master playlist (.m3u8) → hls.js attaches it to a card-owned
-  // <video crossorigin="anonymous"> → the engine module (peertube.ts) samples it
-  // into the FBO (CLEAN `video` texture, since PeerTube sends ACAO:*) + extracts
-  // stereo audio (audio_l / audio_r).
+  // ⚠ THIS CARD CREATES NOTHING AND DISPOSES NOTHING (LEG-02 P3, #1511). The
+  // <video>, its hls.js demuxer, the engine attach, the audio wire + un-mute,
+  // the search catalogue, the selection→stream application, the play/next
+  // trigger poll and the playhead loop are ALL owned by
+  // `$lib/ui/media/node-hls-source-registry` on GRAPH lifetime, created and
+  // swept from Canvas's own effects. This file adopts the node's element for
+  // display, renders the browser, and forwards user GESTURES through
+  // `nodeHlsSource.request(...)`.
   //
-  // CRITICAL AUDIO TRAP (bit tv-librarian): the <video> is created `muted` so
-  // autoplay is allowed; we MUST set `videoEl.muted = false` AFTER
-  // createMediaElementSource succeeds — the tap redirects audio into WebAudio, so
-  // un-muting un-gates it WITHOUT native speaker output. We re-mute before each
-  // new stream's autoplay attempt. Otherwise audio_l/audio_r are silent.
+  // ⚠ NO `attachExternalSource` ANYWHERE IN THIS FILE, and that is the
+  // mechanical fact that takes `peertube` out of `DOM_SOURCE_LANE_TYPES`: the
+  // grep gate (`dom-source-modules.test.ts`) derives that set by walking each
+  // card's component subtree for exactly this call, so the declaration and the
+  // code cannot drift — the type leaves the set in the same diff the call leaves
+  // the card.
   //
-  // Multiplayer: only { instanceHost, uuid, name, selectedHost } live on
-  // node.data (synced). Transient playback state (results, hls instance, loading,
-  // playhead) stays render-local — NEVER per-frame written to the synced store
-  // (the per-frame-write storm lesson).
+  // ⚠ NO `read(id, 'extras')` EITHER, and that deletion is load-bearing rather
+  // than tidiness: a card that cannot reach the handle cannot tear it down, so
+  // the class of defect `card-media-lifetime.test.ts` exists for becomes
+  // unspellable here rather than merely absent. Its EXTRAS_OWNERS entry went
+  // with it.
   //
-  // Graceful CORS: ~1/6 instances misconfigure CORS (raw S3, no ACAO) → on a
-  // SecurityError / taint / fatal hls error the card degrades to "display
-  // unavailable" + auto-skips to the next result (never crashes / hangs).
+  // FLOW (unchanged for the player): a debounced search box → Sepia Search (the
+  // PeerTube fediverse meta-index, CORS-open + anonymous) → a results list →
+  // click a result → the controller resolves its HLS master playlist and hands
+  // it to hls.js → the engine module (peertube.ts) samples the element into the
+  // FBO (a CLEAN `video` texture, since PeerTube sends ACAO:*) and taps stereo
+  // audio (audio_l / audio_r).
+  //
+  // THE AUDIO TRAP, for the reader who comes here looking for it: the element is
+  // created `muted` so the programmatic play() is allowed without a user
+  // gesture, and MUST be un-muted after createMediaElementSource succeeds or
+  // audio_l/audio_r carry silence. That step now lives in the controller's
+  // `ensureAudioWired`, on node lifetime — which is what stops a card unmount
+  // mid-retry from stranding the element muted forever.
+  //
+  // Multiplayer: only { searchTerm, instanceHost, selectedHost, uuid, name } live
+  // on node.data (synced). Transient playback state is published by the
+  // controller and read here — NEVER per-frame written to the synced store (the
+  // per-frame-write storm lesson).
 
   import { onMount, onDestroy } from 'svelte';
   import { nodeMedia, type NodeMediaLease } from '$lib/ui/media/node-media-registry';
-  import { setNodeHls, getNodeHls, destroyNodeHls } from '$lib/ui/media/node-hls';
+  import { nodeHlsSource, HLS_SOURCE_SLOT } from '$lib/ui/media/node-hls-source.svelte';
   import { type NodeProps } from '@xyflow/svelte';
   import { captureFlowStore } from './card-kit';
-  import Hls from 'hls.js';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
-  import { useEngine } from '$lib/audio/engine-context';
   import { patch, ydoc, LOCAL_ORIGIN } from '$lib/graph/store';
   import { startCornerResize } from './card-resize';
   import ModuleTitle from './ModuleTitle.svelte';
-  import type { VideoEngine } from '$lib/video/engine';
   import type { ModuleNode } from '$lib/graph/types';
-  import { type PeerTubeHandleExtras } from '$lib/video/modules/peertube';
-  import {
-    buildSearchUrl,
-    parseSearchResponse,
-    videoDetailsUrl,
-    watchUrl,
-    resolveStream,
-    formatDuration,
-    type PeerTubeData,
-    type PeerTubeVideo,
-    type ResolvedStream,
-  } from '$lib/video/modules/peertube-query';
+  import { watchUrl, type PeerTubeData } from '$lib/video/modules/peertube-query';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
-  const engineCtx = useEngine();
   // Guarded: the dock full-view plain-mounts this card OUTSIDE the
   // SvelteFlow provider, where a bare useStore() throws and killed the
   // card at init (no video in the expanded faceplate). Inside the
@@ -95,47 +99,29 @@
     (node?.data as Partial<PeerTubeData> | undefined)?.name ?? null,
   );
 
-  // ---- Render-local (transient) state ----
-  // The <video> is owned by the NODE, not by this card (see
-  // $lib/ui/media/node-media-registry): expand/collapse moves the card between
-  // two different MOUNTS, and the pre-fix card destroyed its element, detached
-  // the engine and tore down hls on every such move.
+  // ---- Card-local UI state ----
   let videoHost: HTMLDivElement | null = $state(null);
-  let videoEl: HTMLVideoElement | null = $state(null);
   let mediaLease: NodeMediaLease<HTMLElement> | null = null;
-  const MEDIA_SLOT = 'main';
-  /** Mirror of the NODE-owned hls.js instance ($lib/ui/media/node-hls).
-   *  Rehydrated on adopt so a remounted card knows an instance is already
-   *  attached and never builds a second one for the same element. */
-  let hls: Hls | null = null;
-  function setHls(next: Hls | null): void {
-    hls = next;
-    setNodeHls(id, next);
-  }
   let searchTerm = $state('');
   let instanceHost = $state('');
-  let results = $state<PeerTubeVideo[]>([]);
-  let resultIndex = $state(-1); // index of the currently-loaded result (for "next")
-  let loading = $state(false);
-  let statusMsg = $state<string | null>(null);
-  let errorMsg = $state<string | null>(null);
-  let streamState = $state<'idle' | 'loading' | 'playing' | 'unavailable'>('idle');
-  let isPlaying = $state(false);
-  let displayFrac = $state(0);
+  let rateMsg = $state<string | null>(null);
 
-  // ---- Engine helpers ----
-  function videoEngine(): VideoEngine | null {
-    const e = engineCtx.get();
-    if (!e) return null;
-    try { return e.getDomain<VideoEngine>('video'); } catch { return null; }
-  }
-  function getExtras(): PeerTubeHandleExtras | null {
-    const ve = videoEngine();
-    if (!ve) return null;
-    try { return (ve.read(id, 'extras') as PeerTubeHandleExtras | undefined) ?? null; } catch { return null; }
-  }
+  // ---- The controller's published status ----
+  //
+  // Read THROUGH the registry rather than mirrored into card `$state`. There is
+  // therefore no moment at which this surface's answer and the node's answer can
+  // differ — the stale-mirror bug the pre-#1511 cards all had.
+  let src = $derived(nodeHlsSource.view(id));
+  let streamState = $derived(src.streamState);
+  let catalogue = $derived(src.catalogue);
+  let isPlaying = $derived(src.isPlaying);
+  let displayFrac = $derived(src.playheadFrac);
+  let loading = $derived(src.loadingCatalogue || src.loadingStream);
+  let statusMsg = $derived(src.statusMsg);
+  /** The controller's error, or this card's own rate-limit refusal. */
+  let errorMsg = $derived(rateMsg ?? src.error);
 
-  // ---- Synced writes (single transact each; only the small persisted set) ----
+  // ---- Synced writes (single transact; only the small persisted set) ----
   function writeSearchTerm(): void {
     ydoc.transact(() => {
       const t = patch.nodes[id];
@@ -146,58 +132,24 @@
       d.instanceHost = instanceHost;
     }, LOCAL_ORIGIN);
   }
-  function writeSelection(v: PeerTubeVideo | null): void {
-    ydoc.transact(() => {
-      const t = patch.nodes[id];
-      if (!t) return;
-      if (!t.data) t.data = {};
-      const d = t.data as Partial<PeerTubeData>;
-      d.selectedHost = v?.host ?? null;
-      d.uuid = v?.uuid ?? null;
-      d.name = v?.name ?? null;
-    }, LOCAL_ORIGIN);
-  }
 
   // ---- Adopt the NODE-owned <video> into this card ----
+  //
+  // The element is created once per node by the controller and parked
+  // off-screen; every card mount adopts it and every unmount releases it.
+  // Adoption is a TRANSFER and release is owner-checked in the registry, so the
+  // two mounts a collapse straddles cannot fight over it in either order.
+  //
+  // ⚠ NO ATTACH CALL AND NO DISPOSER. The element arrives already attached and
+  // already carrying its hls teardown: the controller `ensure`s it, attaches it
+  // and registers the disposer at NODE creation, long before any card exists.
+  // Adoption here is a DOM re-parent for display only.
   $effect(() => {
     const host = videoHost;
     if (!host) return;
-    const lease = nodeMedia.adopt(id, MEDIA_SLOT, host, {
-      kind: 'video',
-      init: (el) => {
-        const v = el as HTMLVideoElement;
-        v.crossOrigin = 'anonymous';
-        // THE AUDIO TRAP the card header documents: created muted so the
-        // programmatic play() is allowed to start without a user gesture.
-        v.muted = true;
-        v.playsInline = true;
-        v.setAttribute('data-testid', 'peertube-video');
-      },
-    });
+    const lease = nodeMedia.adopt(id, HLS_SOURCE_SLOT, host, { kind: 'video' });
     mediaLease = lease;
-    videoEl = lease.el as HTMLVideoElement;
-    // Rehydrate the hls mirror: an instance may already be feeding this
-    // element from a previous mount.
-    hls = getNodeHls(id) as Hls | null;
-    // Teardown belongs to the NODE, not to this card.
-    nodeMedia.setDisposer(id, MEDIA_SLOT, () => destroyNodeHls(id));
-
-    // These were `onplay=` / `onpause=` / `onended=` attributes in the markup.
-    // The element is no longer declared by this component, so they attach
-    // imperatively for exactly as long as this card is mounted.
-    const v = lease.el as HTMLVideoElement;
-    v.addEventListener('play', onVideoPlay);
-    v.addEventListener('pause', onVideoPause);
-    v.addEventListener('ended', onVideoEnded);
-    // Rehydrate the play mirror from the ELEMENT rather than assuming a fresh
-    // card starts paused — it may well have been playing all along, which is
-    // the whole point of the node-owned lifetime.
-    isPlaying = !v.paused;
-
     return () => {
-      v.removeEventListener('play', onVideoPlay);
-      v.removeEventListener('pause', onVideoPause);
-      v.removeEventListener('ended', onVideoEnded);
       lease.release();
       if (mediaLease === lease) mediaLease = null;
     };
@@ -212,6 +164,11 @@
   });
 
   // ---- Search (debounced + rate-limited: ~50 calls / 10 s) ----
+  //
+  // The RATE LIMIT stays here on purpose: it exists to protect Sepia Search from
+  // a human holding a key down, which is a fact about this input box and not
+  // about the node. The FETCH itself is the controller's — this only decides
+  // whether to ask for one.
   const RATE_WINDOW_MS = 10_000;
   const RATE_MAX = 50;
   let callTimestamps: number[] = [];
@@ -227,281 +184,47 @@
   function onSearchInput(): void {
     writeSearchTerm();
     if (searchDebounce) clearTimeout(searchDebounce);
-    searchDebounce = setTimeout(() => { void runSearch(); }, 350);
+    searchDebounce = setTimeout(() => { runSearch(); }, 350);
   }
   function onSearchKeydown(ev: KeyboardEvent): void {
     if (ev.key === 'Enter') {
       ev.preventDefault();
       if (searchDebounce) { clearTimeout(searchDebounce); searchDebounce = null; }
-      void runSearch();
+      runSearch();
     }
   }
 
-  async function runSearch(): Promise<void> {
+  function runSearch(): void {
     if (!rateOk()) {
-      errorMsg = 'Slow down — too many searches; try again in a moment.';
+      rateMsg = 'Slow down — too many searches; try again in a moment.';
       return;
     }
-    errorMsg = null;
-    loading = true;
-    statusMsg = 'Searching the fediverse…';
+    rateMsg = null;
     writeSearchTerm();
-    try {
-      const url = buildSearchUrl(searchTerm, { count: 24 });
-      const resp = await fetch(url);
-      if (!resp.ok) throw new Error(`search HTTP ${resp.status}`);
-      const json = await resp.json();
-      results = parseSearchResponse(json);
-      resultIndex = -1;
-      statusMsg = null;
-      if (results.length === 0) errorMsg = 'No results — try another term.';
-    } catch (e) {
-      statusMsg = null;
-      errorMsg = `Search failed: ${(e as Error)?.message ?? 'unknown error'}`;
-    } finally {
-      loading = false;
-    }
+    nodeHlsSource.request(id, { kind: 'catalogue', key: searchTerm });
   }
 
-  // ---- Resolve + attach a selected video ----
-  async function selectResult(v: PeerTubeVideo, index: number): Promise<void> {
-    resultIndex = index;
-    writeSelection(v);
-    await resolveAndAttach(v.host, v.uuid);
+  // ---- Gestures ----
+  //
+  // Each of these is a USER ACTION that cannot originate anywhere else, handed
+  // to the controller through the one seam that can reach it whether or not this
+  // card is the surface the user is looking at.
+  function selectResult(key: string): void {
+    nodeHlsSource.request(id, { kind: 'select', candidateKey: key });
   }
-
-  /** Advance to the next result in the list (wraps); used by the next_trigger
-   *  input + the "↻ next" button. */
   function nextResult(): void {
-    if (results.length === 0) { void runSearch(); return; }
-    const next = (resultIndex + 1 + results.length) % results.length;
-    void selectResult(results[next], next);
+    nodeHlsSource.request(id, { kind: 'next' });
   }
-
-  async function resolveAndAttach(host: string, vid: string): Promise<void> {
-    loading = true;
-    errorMsg = null;
-    statusMsg = 'Resolving stream…';
-    streamState = 'loading';
-    try {
-      const resp = await fetch(videoDetailsUrl(host, vid));
-      if (!resp.ok) throw new Error(`details HTTP ${resp.status}`);
-      const stream = resolveStream(await resp.json());
-      if (!stream) {
-        statusMsg = null;
-        markUnavailable('No playable stream for this video.');
-        return;
-      }
-      statusMsg = null;
-      attachStream(stream);
-    } catch (e) {
-      statusMsg = null;
-      markUnavailable(`Could not resolve: ${(e as Error)?.message ?? 'network error'}`);
-    } finally {
-      loading = false;
-    }
-  }
-
-  // ---- HLS / direct attach (robust: timeout + error/taint → unavailable + skip) ----
-  let loadTimeout: ReturnType<typeof setTimeout> | null = null;
-  let skipTimer: ReturnType<typeof setTimeout> | null = null;
-
-  function teardownHls(): void {
-    if (loadTimeout) { clearTimeout(loadTimeout); loadTimeout = null; }
-    destroyNodeHls(id);
-    hls = null;
-  }
-
-  function markUnavailable(msg?: string): void {
-    streamState = 'unavailable';
-    if (msg) errorMsg = msg;
-    getExtras()?.setPlaying(false);
-    isPlaying = false;
-    teardownHls();
-    // Auto-skip to the next result after a short beat (never hang on a dead /
-    // CORS-misconfigured stream). Learned from the archivist/tv-librarian hang.
-    if (skipTimer) clearTimeout(skipTimer);
-    skipTimer = setTimeout(() => {
-      skipTimer = null;
-      if (results.length > 1 && streamState === 'unavailable') nextResult();
-    }, 1800);
-  }
-
-  function attachStream(stream: ResolvedStream): void {
-    if (!videoEl) return;
-    teardownHls();
-    getExtras()?.unwireAudio();
-    streamState = 'loading';
-    isPlaying = false;
-    // Re-mute before each new autoplay attempt (the audio trap): a muted <video>
-    // is always allowed to autoplay; we un-mute AFTER the audio tap is wired.
-    videoEl.muted = true;
-    videoEl.crossOrigin = 'anonymous'; // PeerTube sends ACAO:* → untainted texture
-
-    const onPlaying = (): void => {
-      streamState = 'playing';
-      isPlaying = true;
-      getExtras()?.setPlaying(true);
-      ensureAudioWired();
-      if (loadTimeout) { clearTimeout(loadTimeout); loadTimeout = null; }
-    };
-
-    // 14s hard timeout: a stream that never produces a frame is "unavailable".
-    loadTimeout = setTimeout(() => {
-      if (streamState !== 'playing') markUnavailable('Stream timed out.');
-    }, 14_000);
-
-    if (stream.kind === 'mp4') {
-      // Direct progressive file — a plain <video src> (no hls.js needed).
-      videoEl.src = stream.url;
-      void videoEl.play().catch(() => { /* autoplay blocked → user gesture */ });
-    } else if (Hls.isSupported()) {
-      const inst = new Hls({ enableWorker: true, lowLatencyMode: false });
-      setHls(inst);
-      inst.on(Hls.Events.MANIFEST_PARSED, () => { void videoEl?.play().catch(() => {}); });
-      inst.on(Hls.Events.ERROR, (_e, d) => {
-        // Fatal errors (incl. COEP/CORS blocks on a misconfigured instance) →
-        // unavailable + auto-skip. Non-fatal errors inst.js recovers from itself.
-        if (d?.fatal) markUnavailable('Stream blocked (CORS) or unavailable.');
-      });
-      inst.loadSource(stream.url);
-      inst.attachMedia(videoEl);
-    } else if (videoEl.canPlayType('application/vnd.apple.mpegurl')) {
-      // Safari native HLS.
-      videoEl.src = stream.url;
-      void videoEl.play().catch(() => {});
-    } else {
-      markUnavailable('HLS not supported in this browser.');
-      return;
-    }
-    videoEl.addEventListener('playing', onPlaying, { once: true });
-    videoEl.addEventListener('loadeddata', () => {
-      if (videoEl && videoEl.readyState >= 2) onPlaying();
-    }, { once: true });
-  }
-
-  // ---- Audio wiring retry (mirror VIDEOBOX.ensureAudioWired) ----
-  let audioWireTimer: ReturnType<typeof setTimeout> | null = null;
-  function ensureAudioWired(attempt = 0): void {
-    if (audioWireTimer) { clearTimeout(audioWireTimer); audioWireTimer = null; }
-    const extras = getExtras();
-    extras?.wireAudio();
-    if (extras?.isAudioWired()) {
-      // THE AUDIO TRAP FIX: the MediaElementSource tap now owns the element's
-      // audio, so un-muting routes it into WebAudio (audio_l/audio_r) WITHOUT
-      // native speaker output. Mandatory or audio_l/audio_r stay silent.
-      if (videoEl) videoEl.muted = false;
-      getExtras()?.fireLoaded();
-      return;
-    }
-    if (attempt >= 50) return;
-    audioWireTimer = setTimeout(() => ensureAudioWired(attempt + 1), 100);
-  }
-
-  // ---- Transport ----
   function togglePlay(): void {
-    if (!videoEl) return;
-    if (videoEl.paused) {
-      void videoEl.play().catch(() => { /* autoplay blocked */ });
-    } else {
-      try { videoEl.pause(); } catch { /* */ }
-    }
+    nodeHlsSource.request(id, { kind: 'togglePlay' });
   }
-  function onVideoPlay(): void { isPlaying = true; getExtras()?.setPlaying(true); }
-  function onVideoPause(): void { isPlaying = false; getExtras()?.setPlaying(false); }
-  function onVideoEnded(): void {
-    isPlaying = false;
-    getExtras()?.setPlaying(false);
-    getExtras()?.fireEnded();
-  }
-
-  // ---- play_trigger / next_trigger input edge detection ----
-  // The CV bridge writes the gate level into the synthetic cv_play_trigger /
-  // cv_next_trigger params on a rising edge; we read the instantaneous value +
-  // detect the edge (a single bridge-written param read can't double-count —
-  // that's the AnalyserNode-whole-buffer-rescan bug, NOT this; this is the
-  // established video-module convention, same as VIDEOBOX / TV-LIBRARIAN).
-  let lastPlay = 0;
-  let lastNext = 0;
-  let triggerTimer: ReturnType<typeof setInterval> | null = null;
-  function startTriggerLoop(): void {
-    if (triggerTimer !== null) return;
-    triggerTimer = setInterval(() => {
-      const e = engineCtx.get();
-      if (!e || !node) return;
-      const vp = e.readParam(node, 'cv_play_trigger');
-      const vn = e.readParam(node, 'cv_next_trigger');
-      if (typeof vp === 'number') {
-        if (lastPlay < 0.5 && vp >= 0.5) togglePlay();
-        lastPlay = vp;
-      }
-      if (typeof vn === 'number') {
-        if (lastNext < 0.5 && vn >= 0.5) nextResult();
-        lastNext = vn;
-      }
-    }, 33);
-  }
-  function stopTriggerLoop(): void {
-    if (triggerTimer !== null) { clearInterval(triggerTimer); triggerTimer = null; }
-  }
-
-  // ---- Per-frame display + playhead CV (render-local; never a synced write) ----
-  let displayTimer: ReturnType<typeof setInterval> | null = null;
-  function refreshDisplay(): void {
-    const extras = getExtras();
-    if (videoEl && videoEl.duration > 0 && Number.isFinite(videoEl.duration)) {
-      displayFrac = Math.min(1, Math.max(0, videoEl.currentTime / videoEl.duration));
-      extras?.setPlayhead(displayFrac);
-      extras?.setPlaying(!videoEl.paused && !videoEl.ended);
-    } else {
-      extras?.setPlaying(false);
-    }
-  }
-
-  // ---- Attach <video> element to the engine module (poll until ready) ----
-  onMount(() => {
-    let attempts = 0;
-    const attach = setInterval(() => {
-      attempts++;
-      const ve = videoEngine();
-      if (ve && videoEl) {
-        try {
-          ve.attachExternalSource(id, 'video', videoEl);
-          if (ve.read(id, 'hasVideoElement') === true) clearInterval(attach);
-        } catch { /* not ready */ }
-      }
-      if (attempts > 50) clearInterval(attach);
-    }, 100);
-    startTriggerLoop();
-    displayTimer = setInterval(refreshDisplay, 100);
-  });
-
-  // When a selection is persisted (local pick OR remote peer / reload), resolve +
-  // attach its stream locally. Tracks last-attached so we don't re-attach per tick.
-  let lastAttached: string | null = null;
-  $effect(() => {
-    const host = selectedHost;
-    const vid = uuid;
-    void videoEl; // re-run once the element exists
-    if (!host || !vid || !videoEl) return;
-    const key = `${host}::${vid}`;
-    if (key === lastAttached) return;
-    lastAttached = key;
-    void resolveAndAttach(host, vid);
-  });
 
   onDestroy(() => {
-    stopTriggerLoop();
     if (searchDebounce) clearTimeout(searchDebounce);
-    if (audioWireTimer) clearTimeout(audioWireTimer);
-    if (skipTimer) clearTimeout(skipTimer);
-    if (displayTimer !== null) clearInterval(displayTimer);
     // NOTE what is deliberately ABSENT: no teardownHls, no detach, no
-    // unwireAudio, no setPlaying(false). The element, its hls.js demuxer and
-    // its audio wiring belong to the NODE and must survive this card being
-    // unmounted — expand/collapse MOVES the card between the headless host and
-    // the dock full-view. It really is still playing; saying otherwise here is
-    // what stopped it. Teardown runs from nodeMedia's disposer on node death.
+    // unwireAudio, no setPlaying(false), no trigger-loop stop, no display-timer
+    // stop. NONE of those exist here any more — they are the controller's, on
+    // node lifetime. Everything released here is THIS CARD'S OWN.
     mediaLease?.release();
     mediaLease = null;
   });
@@ -576,7 +299,7 @@
             type="button"
             class="next-btn nodrag"
             onclick={nextResult}
-            disabled={results.length === 0}
+            disabled={catalogue.length === 0}
             data-testid="peertube-next"
             title="Load the next result"
           >↻ next</button>
@@ -623,23 +346,23 @@
 
       <!-- Results -->
       <div class="results" data-testid="peertube-results">
-        {#each results as v, i (v.host + ':' + v.uuid)}
+        {#each catalogue as c (c.key)}
           <button
             type="button"
             class="result nodrag"
-            class:sel={i === resultIndex}
-            onclick={() => void selectResult(v, i)}
+            class:sel={c.key === src.selectionKey}
+            onclick={() => selectResult(c.key)}
             data-testid="peertube-result"
-            data-uuid={v.uuid}
+            data-key={c.key}
           >
-            {#if v.thumbnailUrl}
-              <img class="thumb" src={v.thumbnailUrl} alt="" loading="lazy" />
+            {#if c.thumbnailUrl}
+              <img class="thumb" src={c.thumbnailUrl} alt="" loading="lazy" />
             {:else}
               <span class="thumb thumb-empty">▶</span>
             {/if}
             <span class="r-meta">
-              <span class="r-title">{v.name}</span>
-              <span class="r-sub">{v.channel ? v.channel + ' · ' : ''}{v.host}{v.isLive ? ' · LIVE' : ''} · {formatDuration(v.duration)}</span>
+              <span class="r-title">{c.label}</span>
+              <span class="r-sub">{c.sublabel}</span>
             </span>
           </button>
         {/each}

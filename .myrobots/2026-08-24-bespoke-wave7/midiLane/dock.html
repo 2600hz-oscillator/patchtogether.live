@@ -1,0 +1,415 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>MIDI LANE face — the dock faceplate, PRE-CONNECT</title>
+<style>
+/* ─────────────────────────────────────────────────────────────────────────
+   MIDI LANE FACEPLATE — MOCKUP, state 1 of 2 (PRE-CONNECT).
+   SPEC AND MOCKUP ONLY. Nothing here is implemented. See spec.md.
+
+   House tokens, the wave-1..6 set.
+
+   ⚠ THIS IS THE STATE THE VRT SCENE CAPTURES, AND IT IS THE WHOLE DRAIN
+   ARGUMENT. midi-lane.ts:67-69 — "like MIDI-CV-BUDDY, we DON'T request Web MIDI
+   on mount. The card calls connect() once" — and the scene presses nothing. So
+   `access` is null, the device roster does not merely happen to be empty, IT
+   DOES NOT EXIST, and every pixel is a function of the code. That is the
+   argument _shell-faces.ts:3352-3372 used to drain `midiclock` FROM THE SAME
+   FOUR-ENTRY BLOCK, hours ago, and it transfers here verbatim.
+
+   ⚠ WHAT IS DELIBERATELY ABSENT, and why — this is the review:
+     * NO "NOTE  C5" / "VEL  100" readout box (card :274-283). The deleted hero
+       readout strip's exact shape; wave 5 BINDERS.md §2 row 1 verbatim.
+     * NO "WIGGLE…" caption flip on LEARN (card :248, :256). A caption that
+       changes with state is the shape StatusLed's contract denies at the call
+       site; the armed state becomes the .learning highlight the card ALREADY has.
+     * NO bare CC number chip (card :246, :254) — it IS the selector's own
+       displayed option now.
+     * NO "36" beside the note name (card :263-271). A MIDI note number under a
+       control is the value of the control; the note NAME is the permitted form.
+     * NO decimal anywhere. NO tab rail (4 bands < DOCK_TAB_MIN_BANDS = 7).
+
+   WHAT IS PRESENT, and which permitted role each string plays:
+     * "midi lane"                → the module NAME (dock title bar)
+     * "bind" / "voice" / "mono" /
+       "cc taps" / "note gate"    → TAB/SECTION labels
+     * "CONNECT MIDI" / "LEARN"   → CONTROL CAPTIONS (static, never flipping)
+     * "MIDI" / "NOTE"            → StatusLed captions, STATIC BY CONTRACT
+     * "CH" "MODE" "PRIO" "RETRIG"
+       "CC A" "CC B" "NOTE"       → CONTROL CAPTIONS
+     * ALL / MONO / POLY / LAST /
+       NONE / C1 / 1..16          → OPTION NAMES inside the control that selects
+                                    them  ⚠ the numerals 1..16 need a DERIVED
+                                    NUMERIC_LABEL_EXEMPTIONS entry — see spec §5.1
+     * the pre-connect hint        → instructional copy in an EMPTY state
+   Nothing else is text.
+   ───────────────────────────────────────────────────────────────────────── */
+:root{
+  --bg:#0e1013; --dock:#12161c; --pbody:#1c1f24; --line:#2c3037; --tile:#33383f;
+  --ink:#eef1f5; --dim:#9aa2ad; --faint:#646c77;
+  --accent:#6cf; --ch1:#fbbf24; --warn:#e6b800; --good:#8fe6b0; --bad:#e08b8b;
+  --c-audio:#f0a868; --c-cv:#7dd3fc; --c-gate:#e8c66a; --c-pitch:#c084fc;
+  --c-poly:#a78bfa;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+  font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1200px;margin:0 auto;padding:26px 20px 90px}
+h1{font-size:21px;font-weight:800;margin:0 0 6px;letter-spacing:.01em}
+h2{font-size:13px;font-weight:800;margin:26px 0 8px;letter-spacing:.05em;
+  text-transform:uppercase;color:var(--dim);font-family:var(--mono)}
+.sub{color:var(--dim);font-size:12.5px;margin:0 0 14px;max-width:108ch}
+.sub b{color:var(--ink)}
+code{font-family:var(--mono);font-size:11.5px;color:var(--ch1)}
+.nav{display:flex;gap:8px;margin:0 0 20px;font-size:11px;flex-wrap:wrap}
+.nav a{color:var(--ink);text-decoration:none;border:1px solid var(--line);border-radius:6px;
+  padding:6px 12px;background:#12161c;font-family:var(--mono);letter-spacing:.06em;text-transform:uppercase}
+.nav a.on{border-color:var(--c-cv);color:var(--c-cv)}
+.warn{border:1px solid #6a5330;background:#1c1811;border-radius:8px;padding:11px 14px;
+  margin:12px 0;font-size:12.5px;color:#e8cf9a;max-width:118ch}
+.warn b{color:var(--warn)}
+.bad{border:1px solid #6a3a3a;background:#1c1213;border-radius:8px;padding:11px 14px;
+  margin:12px 0;font-size:12.5px;color:#e6b3b3;max-width:118ch}
+.bad b{color:#f0a0a0}
+.ok{border:1px solid #3b5a48;background:#111a15;border-radius:8px;padding:11px 14px;
+  margin:12px 0;font-size:12.5px;color:#a9d8bd;max-width:118ch}
+.ok b{color:var(--good)}
+.cols{display:grid;grid-template-columns:minmax(0,1fr) 400px;gap:22px;align-items:start}
+@media (max-width:1120px){.cols{grid-template-columns:minmax(0,1fr)}}
+.pane{background:#0b0e12;border:1px dashed #2a2f38;border-radius:12px;padding:16px;position:relative}
+.pane::after{content:'DOCK PANE — 1220 px in the real shell';position:absolute;
+  right:12px;bottom:7px;font-family:var(--mono);font-size:8.6px;letter-spacing:.09em;color:#3d444e}
+.dock{background:var(--dock);border:1px solid var(--line);border-radius:11px;overflow:hidden;
+  padding:11px;width:max-content}
+.chromebar{display:flex;align-items:baseline;gap:9px;padding:0 2px 8px}
+.chromebar .nm{font-size:13px;font-weight:800;letter-spacing:.03em}
+.chromebar .x{margin-left:auto;color:var(--faint);font-family:var(--mono);font-size:12px}
+.plate{background:var(--pbody);border:1px solid var(--tile);border-left:4px solid var(--c-cv);
+  border-radius:10px;padding:0 0 6px;width:max-content;max-width:100%}
+
+/* ── the fullViewBody (role: status-primitive) ─────────────────────────── */
+.extbody{margin:11px 12px 4px;padding:8px 11px;display:flex;align-items:center;gap:14px;
+  border:1px solid #2b3038;border-radius:4px;background:#171b21;min-width:352px}
+.hint{margin:0;font-size:10px;line-height:1.35;color:var(--dim);max-width:34ch}
+.lamps{display:inline-flex;align-items:center;gap:14px;margin-left:auto}
+.led{display:inline-flex;align-items:center;gap:5px;font-size:9px;font-weight:600;
+  letter-spacing:.6px;color:var(--faint);text-transform:uppercase}
+.led .lamp{width:7px;height:7px;border-radius:50%;background:#33383f;
+  box-shadow:inset 0 0 2px rgba(0,0,0,.8);flex:0 0 auto}
+.led.lit .lamp{background:var(--c-cv);box-shadow:0 0 6px var(--c-cv)}
+.led.lit{color:var(--ink)}
+
+/* ── bands ─────────────────────────────────────────────────────────────── */
+.band{padding:9px 12px 4px;border-top:1px solid #23272e;margin-top:6px}
+.band:first-of-type{border-top:0;margin-top:0}
+.bh{font-family:var(--mono);font-size:9px;letter-spacing:.11em;text-transform:uppercase;
+  color:var(--faint);margin:0 0 2px}
+.bhint{font-size:10px;color:#59616b;margin:0 0 8px;max-width:56ch;line-height:1.35}
+.cells{display:flex;flex-wrap:wrap;gap:8px 10px;align-items:flex-end}
+.act{display:flex;flex-direction:column;align-items:center;gap:4px;width:100px}
+.act .btn{width:100%;text-align:center;padding:6px 0;border:1px solid #33404d;border-radius:4px;
+  background:#152029;color:var(--c-cv);font-family:var(--mono);font-size:9.4px;letter-spacing:.08em}
+.act.sm{width:70px}
+.cell{display:flex;flex-direction:column;gap:4px;width:110px}
+.cell.wide{width:132px}
+.cap{font-family:var(--mono);font-size:8.6px;letter-spacing:.1em;color:var(--faint);
+  text-transform:uppercase;text-align:center}
+.sel{background:#0d1116;border:1px solid #2a3038;border-radius:4px;color:var(--ink);
+  font-size:10px;padding:4px 7px;display:flex;align-items:center;gap:6px;font-family:var(--sans)}
+.sel .caret{margin-left:auto;color:var(--faint);font-size:8px}
+.sel .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.seg{display:flex;border:1px solid #2a3038;border-radius:4px;overflow:hidden;background:#0d1116}
+.seg span{flex:1;text-align:center;font-family:var(--mono);font-size:8.6px;letter-spacing:.06em;
+  padding:4px 0;color:#5a626c;border-right:1px solid #1e242b}
+.seg span:last-child{border-right:0}
+.seg span.on{background:#0f2733;color:var(--c-cv)}
+.tog{width:34px;height:18px;border-radius:9px;background:#17303c;border:1px solid #2a3038;
+  position:relative;margin:0 auto}
+.tog::after{content:'';position:absolute;width:12px;height:12px;border-radius:50%;
+  background:var(--c-cv);top:2px;right:3px}
+
+/* jacks rail */
+.jacks{display:flex;gap:8px;padding:10px 12px 4px;border-top:1px solid #23272e;margin-top:6px}
+.jack{display:flex;flex-direction:column;align-items:center;gap:4px}
+.jack .hole{width:18px;height:18px;border-radius:50%;background:#0b0e12;
+  border:2px solid var(--c-cv);position:relative}
+.jack.gate .hole{border-color:var(--c-gate)}
+.jack.poly .hole{border-color:var(--c-poly)}
+.jack .hole::after{content:'';position:absolute;inset:5px;border-radius:50%;background:#05070a}
+.jack .lb{font-family:var(--mono);font-size:7.6px;letter-spacing:.07em;color:var(--faint)}
+
+/* lane tile */
+.lanewrap{display:flex;gap:18px;align-items:flex-start;margin-top:14px}
+.lane{width:192px;background:var(--pbody);border:1px solid var(--tile);
+  border-left:3px solid var(--c-cv);border-radius:8px;padding:7px 8px}
+.lane .nm{font-size:11px;font-weight:800;letter-spacing:.02em;margin-bottom:6px}
+.lane .lc{display:flex;flex-direction:column;gap:5px}
+.lanenote{font-size:11.6px;color:var(--dim);max-width:38ch}
+.lanenote b{color:var(--ink)}
+
+.side{font-size:12.3px;color:var(--dim)}
+.side h3{font-size:10.4px;font-family:var(--mono);letter-spacing:.09em;text-transform:uppercase;
+  color:var(--faint);margin:16px 0 6px;font-weight:600}
+.side h3:first-child{margin-top:0}
+.side p{margin:0 0 9px}
+.side b{color:var(--ink)}
+.kill{color:#c98d8d}
+table{border-collapse:collapse;width:100%;font-size:11.6px;margin:6px 0 12px}
+th,td{border:1px solid #23272e;padding:5px 8px;text-align:left;vertical-align:top}
+th{background:#12161c;color:var(--faint);font-family:var(--mono);font-size:9.2px;
+  letter-spacing:.07em;text-transform:uppercase;font-weight:600}
+td code{font-size:10.6px}
+.aria{font-family:var(--mono);font-size:10.4px;color:#8fbfe0;background:#0d1218;
+  border:1px solid #1c2530;border-radius:5px;padding:7px 9px;margin:5px 0 11px;
+  white-space:pre-wrap;word-break:break-word}
+.measure{font-family:var(--mono);font-size:10.6px;color:var(--good)}
+.dimband{opacity:.42}
+</style>
+
+<div class="wrap">
+
+<h1>midi lane — the dock faceplate, PRE-CONNECT</h1>
+<p class="sub">Wave 7, cohort B. State 1 of 2. <b>Mockup only; nothing here is implemented.</b>
+This is the state the VRT scene captures and the state every first-run user meets: Web MIDI is
+never requested on mount, so <code>access</code> is null and the device roster does not exist.
+⚠ Bands other than <b>bind</b> are drawn <span class="dimband">dimmed</span> only to show that
+they are present and at their defaults — nothing is hidden pre-connect.</p>
+
+<div class="nav">
+  <a class="on" href="dock.html">dock · pre-connect</a>
+  <a href="dock-bound.html">dock · bound</a>
+  <a href="spec.md">spec.md</a>
+  <a href="../es9/spec.md">es9/spec.md</a>
+</div>
+
+<div class="cols">
+<div>
+
+<div class="pane">
+  <div class="dock">
+    <div class="chromebar"><span class="nm">midi lane</span><span class="x">✕</span></div>
+
+    <div class="plate">
+
+      <div class="extbody">
+        <p class="hint">Class-compliant USB-MIDI (Reliq / Programm / ZOIA) appears here.
+          One-time grant per origin.</p>
+        <span class="lamps">
+          <span class="led" title="aria-label: MIDI — access not granted; no device selected">
+            <span class="lamp"></span>MIDI</span>
+          <span class="led" title="aria-label: NOTE — no key held on this lane">
+            <span class="lamp"></span>NOTE</span>
+        </span>
+      </div>
+
+      <div class="band">
+        <p class="bh">bind</p>
+        <p class="bhint">Web MIDI needs the browser's consent before any device is even visible.
+          Until it is granted this lane has no stream to demux and every jack sits at rest.</p>
+        <div class="cells">
+          <div class="act"><span class="btn">CONNECT MIDI</span></div>
+        </div>
+      </div>
+
+      <div class="band dimband">
+        <p class="bh">voice</p>
+        <p class="bhint">One MIDI channel = one instrument. MONO collapses a held chord to a single
+          winner on PITCH/GATE; POLY leaves those quiet and the chord goes out POLY, which carries
+          it in both modes.</p>
+        <div class="cells">
+          <div class="cell"><span class="cap">Ch</span><span class="sel"><span class="nm">ALL</span><span class="caret">▾</span></span></div>
+          <div class="cell"><span class="cap">Mode</span><span class="seg"><span class="on">MONO</span><span>POLY</span></span></div>
+        </div>
+      </div>
+
+      <div class="band dimband">
+        <p class="bh">mono</p>
+        <p class="bhint">Only the MONO outputs use these. In POLY mode this whole band is not
+          rendered — <code>face.bandFocus</code> on the MODE param.</p>
+        <div class="cells">
+          <div class="cell wide"><span class="cap">Prio</span><span class="seg"><span class="on">LAST</span><span>LOW</span><span>HIGH</span></span></div>
+          <div class="cell" style="width:66px"><span class="cap">Retrig</span><span class="tog"></span></div>
+        </div>
+      </div>
+
+      <div class="band dimband">
+        <p class="bh">cc taps</p>
+        <p class="bhint">Two independent 0..1 CV taps. Pick a controller number, or press LEARN and
+          wiggle one. NONE unassigns — which is why the card's ✕ button does not survive as a cell.</p>
+        <div class="cells">
+          <div class="cell"><span class="cap">CC A</span><span class="sel"><span class="nm">CC 1</span><span class="caret">▾</span></span></div>
+          <div class="act sm"><span class="btn">LEARN</span></div>
+          <div class="cell"><span class="cap">CC B</span><span class="sel"><span class="nm">NONE</span><span class="caret">▾</span></span></div>
+          <div class="act sm"><span class="btn">LEARN</span></div>
+        </div>
+      </div>
+
+      <div class="band dimband">
+        <p class="bh">note gate</p>
+        <p class="bhint">Fires a one-shot pulse when this specific note arrives on the lane's
+          channel(s) — the drum-router pattern through one configurable port.</p>
+        <div class="cells">
+          <div class="cell"><span class="cap">Note</span><span class="sel"
+            title="aria-valuetext: C1 — MIDI note 36, the General MIDI kick"><span class="nm">C1</span><span class="caret">▾</span></span></div>
+        </div>
+      </div>
+
+      <div class="jacks">
+        <div class="jack"><span class="hole"></span><span class="lb">PITCH</span></div>
+        <div class="jack gate"><span class="hole"></span><span class="lb">GATE</span></div>
+        <div class="jack"><span class="hole"></span><span class="lb">VEL</span></div>
+        <div class="jack"><span class="hole"></span><span class="lb">CC A</span></div>
+        <div class="jack"><span class="hole"></span><span class="lb">CC B</span></div>
+        <div class="jack gate"><span class="hole"></span><span class="lb">NOTE</span></div>
+        <div class="jack poly"><span class="hole"></span><span class="lb">POLY</span></div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<div class="lanewrap">
+  <div class="lane">
+    <div class="nm">midi lane</div>
+    <div class="lc">
+      <div class="act" style="width:auto"><span class="btn" style="font-size:8.4px">CONNECT MIDI</span></div>
+      <div class="cell" style="width:auto"><span class="cap">Ch</span><span class="sel" style="font-size:9px"><span class="nm">ALL</span><span class="caret">▾</span></span></div>
+    </div>
+  </div>
+  <p class="lanenote"><b>The compact lane tile at 1/8. No glyph</b> — every output is
+    cv/gate/polyPitchGate and <code>primaryAudioOutPortId</code> matches
+    <code>type === 'audio'</code> exactly, so <code>'none'</code> is mechanically forced
+    (wave 5 <code>BINDERS.md §5</code>, fifth instance). Today this module renders a
+    <code>moduleShellPlaceholder</code> with <b>no ranked controls at all</b>, so the CONNECT
+    gesture is DOCK-ONLY on a module that does nothing until it is pressed —
+    <b>#2187's headline verbatim</b>, and the single biggest thing promotion changes here.</p>
+</div>
+
+<h2>What the plate does NOT paint</h2>
+<table>
+  <tr><th>on the card today</th><th>where</th><th>on the face</th></tr>
+  <tr><td><code>NOTE&nbsp;&nbsp;C5</code> / <code>VEL&nbsp;&nbsp;100</code></td>
+      <td><code>MidiLaneCard.svelte:274-283</code></td>
+      <td class="kill">REMOVED — labelled derived values at rest beside the controls they describe.
+        The deleted hero readout strip's exact shape; wave 5 <code>BINDERS.md §2</code> row 1
+        verbatim. Both reach <code>aria-label</code> through the NOTE lamp's <code>detail</code></td></tr>
+  <tr><td><code>WIGGLE…</code> ↔ <code>LEARN</code></td><td><code>:248</code>, <code>:256</code></td>
+      <td class="kill">caption FIXED to <code>LEARN</code>. A caption that changes with state is the
+        shape <code>StatusLed</code>'s contract denies at the call site; the armed state becomes the
+        <code>class:learning</code> highlight the card <b>already has</b> (<code>:367-371</code>)</td></tr>
+  <tr><td><code>{ccA === null ? '—' : ccA}</code></td><td><code>:246</code>, <code>:254</code></td>
+      <td class="kill">removes ITSELF — it becomes the selector's own displayed option
+        (<code>NONE</code> / <code>CC 1</code>), which is an option NAME inside the control that
+        selects it</td></tr>
+  <tr><td><code>36</code> in <code>&lt;input type="number"&gt;</code></td><td><code>:263-270</code></td>
+      <td class="kill">REMOVED as a painted number → a <b>128-entry named roster</b>
+        (<code>C1</code>, <code>F#3</code>, …). ⚠ The <code>&lt;input&gt;</code> itself is
+        <code>spec.md §0.3</code>'s subject and is a GATE problem, not a design one</td></tr>
+  <tr><td>the <code>✕</code> clear buttons</td><td><code>:250</code>, <code>:258</code></td>
+      <td class="kill">collapse into <code>NONE</code> in the same selector that sets the tap.
+        Two affordances become one; every value the ✕ reached is still reachable</td></tr>
+  <tr><td><code>Permission denied or browser unsupported.</code></td><td><code>:195</code></td>
+      <td><b>KEPT</b> — an ERROR, absent whenever nothing is wrong. ⚠ And <b>FIXED</b>: it conflates
+        two conditions and misses the suppressed-prompt case, which the shared
+        <code>midiOutcomeMessage</code> seam already names (<code>spec.md §6.2</code>)</td></tr>
+  <tr><td>the pre-connect hint</td><td><code>:197</code></td>
+      <td><b>KEPT</b> — instructional copy in an EMPTY state, permitted by name in
+        <code>MidiclockDeviceBody.svelte</code>'s own header</td></tr>
+</table>
+
+<div class="bad">
+  <b>⚠ AND THIS FACE IS BLOCKED — on a gate, not on its design.</b>
+  <code>face-migration-inventory.test.ts</code> interlocks three legs: <code>:229</code> forces a
+  <code>face</code>-declaring def to <code>generic-face</code>; <code>:268</code> forbids a
+  <code>generic-face</code> entry from naming any blocker; and <code>:509-528</code> refuses
+  <code>generic-face</code> for any module whose <b>LEGACY CARD</b> mounts typed entry — and the
+  <code>generic-face</code> branch <code>continue</code>s <b>before</b> it ever reads the blockers.
+  So dropping <code>needs-note-entry-cell</code> is necessary and <b>not sufficient</b>, which
+  overturns wave 6 §5.2's remedy (its reasoning was right). ⚠ The legacy card SURVIVES promotion —
+  it is what <code>?shell=legacy</code> renders — so authoring a face does not remove it from the
+  scan. <b>Nothing in this mock changes whichever way the owner rules</b>; only the PR's file list
+  does. See <code>spec.md §0.3</code>.
+</div>
+
+</div>
+
+<div class="side">
+
+<h3>Width — nothing is earned, and nothing is asked for</h3>
+<p>The card is <span class="measure">230 px</span> (<code>:290</code>) with a
+<span class="measure">42 px</span> caption column (<code>:321-327</code>). The face is the same
+controls in five bands; no live picture, no scope trace, no video preview, no XY pad.
+<code>face.hero</code> is not declared and <b><code>face-width-source.test.ts</code> gets no
+entry</b> — which is the point.</p>
+<p>⚠ One measured caution: the DEVICE <code>&lt;select&gt;</code> in the body needs a
+<code>max-width</code> the way the shipped one does
+(<code>MidiclockDeviceBody.svelte</code>'s <code>190px</code>), because a Windows WinMM roster
+duplicates its device names. <b>A body that lets one option set the plate width is a face whose
+width is decided by someone else's driver.</b></p>
+
+<h3>Five bands. No tab rail.</h3>
+<p><code>DOCK_TAB_MIN_BANDS</code> is 7 and <code>face.tabbed</code> is owner-instruction-only.
+Five honest bands render as a column, <i>and that is correct</i>. Nothing is padded to reach a
+rail. ⚠ The fifth band exists only because <code>bandFocus</code> splits <b>mono</b> off
+<b>voice</b> — and <code>bandFocus</code> reads a PARAM, which is the second independent reason
+<code>mode</code> must migrate out of <code>node.data</code>.</p>
+
+<h3>The permitted text roles, and every string on the plate</h3>
+<table>
+  <tr><th>string</th><th>role</th></tr>
+  <tr><td><code>midi lane</code></td><td>module NAME</td></tr>
+  <tr><td><code>bind voice mono cc taps note gate</code></td><td>SECTION labels</td></tr>
+  <tr><td><code>CONNECT MIDI · LEARN</code></td><td>CONTROL CAPTIONS — static, never flipping</td></tr>
+  <tr><td><code>MIDI · NOTE</code></td><td><code>StatusLed</code> captions, static by contract</td></tr>
+  <tr><td><code>Ch Mode Prio Retrig CC&nbsp;A CC&nbsp;B Note</code></td><td>CONTROL CAPTIONS.
+      ⚠ <b><code>face.bareCells</code> is NOT declared</b> — <code>CC A</code>/<code>CC B</code>
+      under a <code>CC TAPS</code> heading are the tidyVco A/D/S/R case, the only thing separating
+      two identical controls</td></tr>
+  <tr><td><code>ALL MONO POLY LAST LOW HIGH NONE CC&nbsp;1 C1</code></td>
+      <td>OPTION NAMES inside the control that selects them. <code>looksNumeric</code> matches
+      <b>none</b> of these</td></tr>
+  <tr><td><code>1</code>…<code>16</code> (channel roster)</td>
+      <td>OPTION NAMES — ⚠ but they <b>DO</b> match <code>looksNumeric</code>, so they need
+      <b>sixteen DERIVED <code>NUMERIC_LABEL_EXEMPTIONS</code> entries</b>, the
+      <code>cvBuddy/ppqn</code> and <code>timelorde/swingSource</code> shape. The number IS the
+      name: a player says "the bass is on channel 3"</td></tr>
+  <tr><td>the pre-connect hint</td><td>instructional copy in an empty state</td></tr>
+</table>
+
+<h3>Where the values went</h3>
+<div class="aria">MIDI lamp
+  aria-label = "MIDI — access not granted;
+    no device selected"
+  (bound:) "MIDI — Reliq, channel 3"</div>
+<div class="aria">NOTE lamp
+  aria-label = "NOTE — C5 held,
+    velocity 100"
+  (idle:)  "NOTE — no key held on this lane"</div>
+<div class="aria">Note cell
+  aria-valuetext = "C1"
+  title          = "MIDI note 36 —
+    the General MIDI kick"</div>
+<p>⚠ <b>The MIDI note NUMBER is a real narrowing</b>: drum programmers think in numbers, and the
+def itself defaults to "GM kick = 36". It survives in each option's <code>title</code> and in
+<code>aria-valuetext</code>, and the family's <code>docs.controls</code> prose names the GM
+mapping. Stated rather than allowed to lapse.</p>
+
+<h3>The activity lamp is a LAMP, and it must not be wired to <code>lastNote</code></h3>
+<p><code>MidiLaneCardState.lastNote</code> is documented as <i>"Last note received on the lane
+(MIDI int) <b>for the readout</b>"</i> (<code>midi-lane.ts:198-199</code>) — i.e. possibly a
+LATCHED value. A lamp bound to it would latch ON after the first note and never go dark, which is
+a lamp that says nothing. <b>Bind it to the HELD-KEY STACK</b>, the way
+<code>midiOutBuddy</code>'s dot uses <code>activeNote !== null</code>. Flagged in
+<code>spec.md §6.1</code> as a real instrument hazard rather than assumed away.</p>
+
+<h3>The drain, in one line</h3>
+<p><b>Nothing is needed — it is already drainable, and its own exemption text says so.</b>
+<code>vrt-exemptions.ts:769-774</code>: <i>"the rich card UI … only appears AFTER Connect …
+<b>the pre-Connect state is just the "Connect MIDI…" button + hint</b>."</i> That second clause
+is the exit condition and the harness only ever sees the second clause. Same argument, same
+four-entry block, as the <code>midiclock</code> drain.</p>
+
+</div>
+</div>
+</div>

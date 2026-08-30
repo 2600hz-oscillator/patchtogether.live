@@ -16,6 +16,8 @@
 // rendered cell and asserts an observable effect.
 
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 
 import '$lib/audio/modules';
 import '$lib/video/modules';
@@ -31,10 +33,12 @@ import {
   panelCellKeys,
   shellCellFor,
   shellCellKeys,
+  paramShapedCellKind,
   shellPanelProbes,
   typesWithShellCells,
   type ShellActionCell,
   type ShellActionProbe,
+  type ShellEntryCell,
   type ShellPanelProbe,
 } from './shell-cells';
 
@@ -75,14 +79,112 @@ describe('shell cells — COVERAGE (no inert cell can render on a promoted face)
     expect(inert.join('\n'), 'INERT shell cell(s) — a curated control the user cannot touch').toBe('');
   });
 
-  it('a param control never routes to the family/static registry', () => {
+  // ⚠ THIS PAIR REPLACES A SINGLE TEST THAT PINNED A BUG AS A RULE. It read
+  // "a param control never routes to the family/static registry" and swept
+  // EVERY param, asserting `shellCellFor` returned null. That was true — and
+  // correct — until #2144 introduced `warped-fader`, the first cell kind that
+  // BINDS A PARAM. #2144 added the type, the ModuleShell render branch and a
+  // source gate, but not the resolver arm, so its branch was unreachable from
+  // the day it merged and this test was what held the door shut.
+  //
+  // Nothing went red, because a warped-fader param still resolved a perfectly
+  // valid GENERIC cell — it just drew the param LINEARLY, which is the exact
+  // geometry the cell exists to prevent. The two halves of the real rule are
+  // now asserted separately, in both directions.
+
+  it('a param control cannot borrow a FAMILY/STATIC cell', () => {
+    const borrowed: string[] = [];
     for (const def of allDefs()) {
       if (!STRICT_FACES.has(def.type)) continue;
       for (const ctl of dockPlanControls(dockFacePlan(def) ?? [])) {
         if (ctl.kind !== 'param') continue;
-        expect(shellCellFor(def.type, ctl), `${def.type}: ${ctl.key}`).toBeNull();
+        const cell = shellCellFor(def.type, ctl);
+        // A param may resolve ONLY a param-shaped cell. Every other kind edits
+        // node.data and carries no paramId, so rendering one over a param would
+        // write somewhere the control does not point.
+        if (cell && cell.kind !== 'warped-fader') {
+          borrowed.push(`${def.type}: param '${ctl.key}' resolved a '${cell.kind}' cell`);
+        }
       }
     }
+    expect(borrowed.join('\n'), 'a param control borrowed a non-param cell').toBe('');
+  });
+
+  it('every DECLARED param cell is REACHABLE through the real resolver', () => {
+    // The leg that would have caught #2144's dead branch. A module can declare a
+    // `warped-fader` and rank its param, and every other gate stays green while
+    // the shell silently renders the generic control — so the declaration itself
+    // has to be checked against the resolution path the shell actually uses.
+    const unreachable: string[] = [];
+    for (const def of allDefs()) {
+      if (!STRICT_FACES.has(def.type)) continue;
+      const declared = shellCellKeys(def.type).filter(
+        (k) => paramShapedCellKind(def.type, k),
+      );
+      if (declared.length === 0) continue;
+      const reached = new Set(
+        dockPlanControls(dockFacePlan(def) ?? [])
+          .filter((ctl) => shellCellFor(def.type, ctl)?.kind === 'warped-fader')
+          .map((ctl) => ctl.key),
+      );
+      for (const key of declared) {
+        if (!reached.has(key)) {
+          unreachable.push(
+            `${def.type}: declares a param-shaped cell for '${key}' that the dock plan ` +
+              `never resolves — the shell would render the GENERIC control instead, ` +
+              `silently discarding the cell's geometry.`,
+          );
+        }
+      }
+    }
+    expect(unreachable.join('\n'), 'a declared param cell is unreachable').toBe('');
+  });
+
+  it('the warped-fader has exactly ONE render site, in the PARAM arm', () => {
+    // ⚠ THE GATE FOR THE HALF THE RESOLVER SWEEP CANNOT SEE, and it exists
+    // because fixing the resolver alone left the bug live. `shellCellFor`
+    // returning the cell is necessary and NOT sufficient: `ModuleShell` renders
+    // `ctl.kind === 'param'` in its own arm and consults the cell registry only
+    // in that arm's `{:else}`, so a param never reached the registry AT RENDER
+    // TIME no matter what the resolver returned. Every unit assertion passed —
+    // the cell resolved, the reachability sweep was green — while the dock still
+    // painted a KNOB, and the VRT capture came back "0 baselines committed".
+    //
+    // ⚠ SOURCE, and it is the honest tier for this: no unit test can see a
+    // rendered pixel, and the DOCK BASELINE is the real owner of "what it
+    // paints". This asserts the STRUCTURAL fact that made the pixels wrong —
+    // one render site, on the param side — which is cheap, non-brittle, and
+    // fails in milliseconds instead of a 3-minute capture round trip.
+    const shell = readFileSync(
+      resolve(__dirname, '..', 'modules', 'ModuleShell.svelte'),
+      'utf8',
+    );
+    const sites = [...shell.matchAll(/data-cell-control="warped-fader"/g)];
+    expect(sites.length, 'exactly one warped-fader render site').toBe(1);
+
+    // And it must sit INSIDE the param arm — before the family/static chain,
+    // which is what `{@const cell = shellCellFor(` opens.
+    const paramArm = shell.indexOf("{#if ctl.kind === 'param'}");
+    const familyChain = shell.indexOf('{@const cell = shellCellFor(');
+    const site = shell.indexOf('data-cell-control="warped-fader"');
+    expect(paramArm, 'the param arm exists').toBeGreaterThan(-1);
+    expect(familyChain, 'the family/static chain exists').toBeGreaterThan(-1);
+    expect(
+      site > paramArm && site < familyChain,
+      'the warped-fader renders in the PARAM arm, not the family/static chain — ' +
+        'an arm in the latter is unreachable, which is how #2144 shipped inert',
+    ).toBe(true);
+  });
+
+  it('NEGATIVE CONTROL: the reachability sweep is not vacuous', () => {
+    // It only means something if some module really declares one today.
+    const declaring = allDefs()
+      .filter((d) => STRICT_FACES.has(d.type))
+      .filter((d) => shellCellKeys(d.type).some((k) => paramShapedCellKind(d.type, k)));
+    expect(
+      declaring.length,
+      'no promoted module declares a param-shaped cell — the sweep above proves nothing',
+    ).toBeGreaterThan(0);
   });
 });
 
@@ -241,7 +343,15 @@ describe('shell cells — ACTION cells declare the handler their MODE needs', ()
       // here is what makes that a loud "unknown audition seam" rather than a
       // silently-accepted mis-wiring; the pad's own coverage is the `momentary`
       // branch of faces-parity + audition-ledger.test.ts.
-      const SEAMS = ['manual-strike', 'manual-gate', 'engine-message'];
+      //
+      // ⚠ `file-export` IS PRESENT, and it is a ONE-SHOT seam like the first and
+      // third. It exists because samsloop's sample EXPORT reaches no engine and
+      // no worklet — its whole effect leaves the app — so labelling it
+      // `engine-message` would make the ledger describe something that did not
+      // happen, AND would let a probe watching this node be satisfied by a REC
+      // press instead. That is the same aliasing `manual-press` was split out to
+      // prevent, one seam over.
+      const SEAMS = ['manual-strike', 'manual-gate', 'engine-message', 'file-export'];
       if (!SEAMS.includes(probe.effect.seam)) {
         problems.push(`${where}: unknown audition seam '${probe.effect.seam}'`);
       } else if (mode === 'gate' && probe.effect.seam !== 'manual-gate') {
@@ -255,8 +365,22 @@ describe('shell cells — ACTION cells declare the handler their MODE needs', ()
       } else if (mode === 'trigger' && probe.effect.seam === 'manual-gate') {
         problems.push(`${where}: mode 'trigger' but the probe watches the HELD seam`);
       }
+    } else if (probe.effect.kind === 'param') {
+      if (!probe.effect.paramId.trim()) {
+        problems.push(`${where}: param-probe names no paramId`);
+      }
     } else if (!probe.effect.key.trim()) {
       problems.push(`${where}: probe effect names no node.data key`);
+    }
+    // ⚠ `presses` IS DECLARED ONLY WHERE IT IS LOAD-BEARING. Omitted means one,
+    // which is every action shipped before the field existed; declaring `1` is
+    // noise that reads like a decision, and declaring `0` would make the sweep
+    // assert an effect from no press at all — a probe that can only fail, which
+    // is how a gate gets deleted.
+    if (probe?.presses !== undefined && (!Number.isInteger(probe.presses) || probe.presses < 2)) {
+      problems.push(
+        `${where}: presses must be an integer >= 2 (omit it for the ordinary one-press action)`,
+      );
     }
     return problems;
   }
@@ -300,6 +424,49 @@ describe('shell cells — ACTION cells declare the handler their MODE needs', ()
     expect(
       actionProblems('x:y', { kind: 'action', label: 'a', onFire: fire, probe: gateProbe }),
     ).toHaveLength(1);
+
+    // ── the PARAM oracle + multi-press (added for TIMELORDE's TAP) ──────────
+    const paramProbe: ShellActionProbe = {
+      presses: 2,
+      effect: { kind: 'param', paramId: 'bpm', expect: 'changed' },
+    };
+    expect(actionProblems('x:y', { kind: 'action', label: 'a', onFire: fire, probe: paramProbe })).toEqual([]);
+    // A param probe naming nothing is a probe that cannot address anything.
+    expect(
+      actionProblems('x:y', {
+        kind: 'action', label: 'a', onFire: fire,
+        probe: { effect: { kind: 'param', paramId: '  ', expect: 'changed' } },
+      }),
+    ).toHaveLength(1);
+    // `presses: 1` is the default spelled out — refused as noise that reads
+    // like a decision; `presses: 0` would assert an effect from no press.
+    for (const presses of [1, 0, -1, 2.5]) {
+      expect(
+        actionProblems('x:y', {
+          kind: 'action', label: 'a', onFire: fire, probe: { ...paramProbe, presses },
+        }),
+        `presses: ${presses}`,
+      ).toHaveLength(1);
+    }
+  });
+
+  it('the PARAM-probe and MULTI-PRESS shapes are REACHED by a real module (not vacuous)', () => {
+    // Same argument as the gate-mode leg below: a clause swept over a registry
+    // that contains no instance of the shape stays green on a `return []`.
+    // TIMELORDE's TAP is the first of both; if it is ever removed, this says so
+    // rather than letting the coverage evaporate silently.
+    const paramProbes: string[] = [];
+    const multiPress: string[] = [];
+    for (const type of typesWithShellCells()) {
+      for (const key of shellCellKeys(type)) {
+        const cell = shellCellFor(type, { key, kind: 'family', label: key });
+        if (cell?.kind !== 'action') continue;
+        if (cell.probe.effect.kind === 'param') paramProbes.push(`${type}:${key}`);
+        if ((cell.probe.presses ?? 1) > 1) multiPress.push(`${type}:${key}`);
+      }
+    }
+    expect(paramProbes, 'at least one registered action cell probes a PARAM').not.toEqual([]);
+    expect(multiPress, 'at least one registered action cell needs MORE THAN ONE press').not.toEqual([]);
   });
 
   it('the gate-mode shape is REACHED by a real module (the clause is not vacuous)', () => {
@@ -335,5 +502,90 @@ describe('shell cells — NO ORPHANS (a renamed face key cannot leave a dead hoo
       }
     }
     expect(orphans.join('\n'), 'orphaned shell-cell spec(s) — fix the key or delete the hook').toBe('');
+  });
+});
+
+// ── ENTRY CELLS (#1509) ─────────────────────────────────────────────────────
+//
+// ⚠ THE PROBE'S TWO STRINGS ARE CHECKED HERE, IN THE PURE LANE, BEFORE ANY E2E.
+// `ShellEntryProbe` declares an `accepts` and a `rejects` string per cell,
+// because only the module knows what its own domain excludes. Those strings are
+// the entire negative leg of the faces-parity drive — and a probe whose strings
+// are the wrong way round, or whose `rejects` is quietly legal, would make that
+// leg pass while proving nothing. Running the module's OWN `parse` over its own
+// declared strings costs microseconds and fails in milliseconds instead of 25
+// minutes later on a CI shard.
+describe('shell-cells — an ENTRY cell probe: its strings really are accepted and refused', () => {
+  const entries: [string, string, ShellEntryCell][] = [];
+  for (const type of typesWithShellCells()) {
+    for (const key of shellCellKeys(type)) {
+      const cell = shellCellFor(type, { key, kind: 'family', label: key } as never);
+      if (cell?.kind === 'entry') entries.push([type, key, cell as ShellEntryCell]);
+    }
+  }
+
+  it('every declared `accepts` string PARSES', () => {
+    const bad = entries
+      .filter(([, , c]) => !c.parse(c.probe.accepts).ok)
+      .map(([t, k, c]) => `${t}:${k} — accepts '${c.probe.accepts}' is REFUSED by its own parse`);
+    expect(bad, 'the positive leg of the faces-parity drive would fail on a live cell').toEqual([]);
+  });
+
+  it('every declared `rejects` string is REFUSED', () => {
+    const bad = entries
+      .filter(([, , c]) => c.parse(c.probe.rejects).ok)
+      .map(([t, k, c]) => `${t}:${k} — rejects '${c.probe.rejects}' is ACCEPTED by its own parse`);
+    expect(
+      bad,
+      'the no-silent-clamp leg would be VACUOUS: the sweep would type a legal string and ' +
+        'assert nothing changed, which is a gate that cannot fail on the defect it names',
+    ).toEqual([]);
+  });
+
+  // ⚠ THE POPULATION IS EMPTY TODAY, AND SAYING SO IS THE POINT. cartesian —
+  // #1509's first adopter — reaches `TextEntry` through a PANEL, so no module
+  // registers an `entry` CELL yet and both assertions above are `[] === []`.
+  // A vacuous gate that looks green is exactly the class this repo keeps
+  // finding, so the MECHANISM is exercised here against synthetic cells
+  // instead: the same two predicates, driven both ways, so they still fail when
+  // they should on the day the first real adopter lands (recorderbox's filename,
+  // once #1511 deletes `needs-media-controller`).
+  //
+  // ⚠ A POPULATION FLOOR WOULD BE THE WRONG FIX — it would be a hand-typed count
+  // that goes stale the moment the roster grows, and it would fail TODAY on a
+  // tree that is correct. A permanent negative control calling the SAME
+  // predicate is the shape that survives both states.
+  it('NEGATIVE CONTROL: the probe check FIRES on a mis-declared cell, both ways', () => {
+    const parse = (t: string) =>
+      /^[a-g]#?[0-8]$/.test(t.trim()) ? { ok: true as const, value: t } : { ok: false as const };
+
+    // A correct declaration passes both legs.
+    expect(parse('c#3').ok, 'a good `accepts` parses').toBe(true);
+    expect(parse('c9').ok, 'a good `rejects` is refused').toBe(false);
+
+    // The two ways a probe can be wrong, each caught by exactly one leg:
+    //   swapped strings  -> `accepts` fails to parse;
+    //   a legal `rejects` -> the negative e2e leg would type a VALID string and
+    //                        assert nothing changed, which can never fail.
+    const swapped = { accepts: 'c9', rejects: 'c#3' };
+    expect(parse(swapped.accepts).ok, 'leg 1 must reject a swapped probe').toBe(false);
+    expect(parse(swapped.rejects).ok, 'leg 2 must reject a swapped probe').toBe(true);
+
+    const toothless = { accepts: 'c#3', rejects: 'd4' };
+    expect(parse(toothless.accepts).ok).toBe(true);
+    expect(
+      parse(toothless.rejects).ok,
+      'leg 2 must reject a `rejects` string the parser actually ACCEPTS — that is the ' +
+        'no-silent-clamp leg going vacuous',
+    ).toBe(true);
+  });
+
+  it('SCOPE: this checks the DECLARED strings, not that the domain is right', () => {
+    // Stated inside the gate. A module could declare a needlessly narrow domain
+    // and this would happily agree with it — what is checked is that the probe
+    // and the parser AGREE, which is what makes the e2e's negative leg real.
+    // Whether the domain matches the module's contract is the module's own
+    // model test (cartesian: note-entry.test.ts pins c0..c8).
+    expect(entries.every(([, , c]) => typeof c.parse === 'function')).toBe(true);
   });
 });

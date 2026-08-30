@@ -8,66 +8,16 @@
 // jitter under headless CI.
 
 import { test, expect } from './_fixtures';
-import { type Page } from '@playwright/test';
-import { spawnPatch } from './_helpers';
+import { spawnPatch, seedKriaWith, buildKriaMidiData } from './_helpers';
+import { pollScopePeak, scopePollMsg } from '../_helpers/scope-poll';
 
 test.describe.configure({ mode: 'parallel' });
 
-interface ScopeStats { peak: number; rms: number; nonzeroSamples: number; total: number; }
-
-async function readScopeStats(page: Page, scopeNodeId: string): Promise<ScopeStats> {
-  return await page.evaluate((id) => {
-    const w = globalThis as unknown as {
-      __engine?: () => {
-        read: (node: { id: string; type: string; domain: string }, key: string) => unknown;
-      } | null;
-      __patch: { nodes: Record<string, { id: string; type: string; domain: string }> };
-    };
-    const eng = w.__engine?.();
-    if (!eng) return { peak: 0, rms: 0, nonzeroSamples: 0, total: 0 };
-    const node = w.__patch.nodes[id];
-    if (!node) return { peak: 0, rms: 0, nonzeroSamples: 0, total: 0 };
-    const snap = eng.read(node, 'snapshot') as { ch1: Float32Array } | undefined;
-    if (!snap) return { peak: 0, rms: 0, nonzeroSamples: 0, total: 0 };
-    let peak = 0, energy = 0, nonzero = 0;
-    for (let i = 0; i < snap.ch1.length; i++) {
-      const v = snap.ch1[i];
-      const a = Math.abs(v);
-      if (a > peak) peak = a;
-      energy += v * v;
-      if (a > 1e-6) nonzero++;
-    }
-    return { peak, rms: Math.sqrt(energy / snap.ch1.length), nonzeroSamples: nonzero, total: snap.ch1.length };
-  }, scopeNodeId);
-}
-
-async function pollScopePeak(
-  page: Page,
-  scopeNodeId: string,
-  threshold: number,
-  timeoutMs: number,
-): Promise<ScopeStats> {
-  const deadline = Date.now() + timeoutMs;
-  let best: ScopeStats = { peak: 0, rms: 0, nonzeroSamples: 0, total: 0 };
-  while (Date.now() < deadline) {
-    let s: ScopeStats;
-    try {
-      s = await readScopeStats(page, scopeNodeId);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      if (msg.includes('Execution context was destroyed')) {
-        await page.waitForLoadState('domcontentloaded').catch(() => {});
-        await page.waitForTimeout(50);
-        continue;
-      }
-      throw err;
-    }
-    if (s.peak > best.peak) best = s;
-    if (best.peak > threshold) return best;
-    await page.waitForTimeout(50);
-  }
-  return best;
-}
+// The scope poller lives at ONE export site and runs its whole sampling loop
+// INSIDE the page. The local copy this replaces did one CDP round trip per
+// sample, on the same main thread as the audio graph it was measuring — the
+// shape CLAUDE.md names, where a loaded runner starves both and "frozen" and
+// "never looked" are indistinguishable from the output.
 
 test('rings: drop module → card mounts with no console errors', async ({ page, rack, errorWatch }) => {
   await spawnPatch(page, [{ id: 'r', type: 'rings', position: { x: 200, y: 200 } }]);
@@ -110,7 +60,7 @@ test('rings: NOISE exciter into RINGS produces audio at ODD output (sympathetic 
     ],
   );
   const stats = await pollScopePeak(page, 'scp', 0.01, 4000);
-  expect(stats.peak, `rings.odd peak ${stats.peak} (after noise→rings.in)`).toBeGreaterThan(0.01);
+  expect(stats.peak, scopePollMsg(`rings.odd peak ${stats.peak} (after noise->rings.in)`, stats)).toBeGreaterThan(0.01);
   // Sanity: output is bounded (tanh limiter).
   expect(stats.peak).toBeLessThanOrEqual(1.0);
 });
@@ -122,8 +72,8 @@ test('rings: STRUM with no external exciter + MODAL produces audio (self-excite)
   await spawnPatch(
     page,
     [
-      { id: 'seq', type: 'sequencer', position: { x:  50, y: 100 },
-        params: { bpm: 240, length: 4, isPlaying: 1, gateLength: 0.5 } },
+      { id: 'seq', type: 'kria', position: { x:  50, y: 100 },
+        params: { bpm: 240, running: 1 } },
       { id: 'r',   type: 'rings',  position: { x: 350, y: 100 },
         params: {
           model: 0,           // MODAL
@@ -140,28 +90,19 @@ test('rings: STRUM with no external exciter + MODAL produces audio (self-excite)
         params: { master: 0 } },
     ],
     [
-      { id: 'e1', from: { nodeId: 'seq', portId: 'gate' }, to: { nodeId: 'r',   portId: 'strum' },
+      { id: 'e1', from: { nodeId: 'seq', portId: 'gate1' }, to: { nodeId: 'r',   portId: 'strum' },
         sourceType: 'gate', targetType: 'gate' },
       { id: 'e2', from: { nodeId: 'r',   portId: 'odd'   }, to: { nodeId: 'scp', portId: 'ch1' } },
       { id: 'e3', from: { nodeId: 'scp', portId: 'ch1_out' }, to: { nodeId: 'out', portId: 'L' } },
     ],
   );
 
-  // Enable every sequencer step so the gate actually fires (default steps
-  // are all `on: false`).
-  await page.evaluate(() => {
-    const w = globalThis as unknown as {
-      __patch: { nodes: Record<string, { data?: { steps?: unknown[] } }> };
-    };
-    const seq = w.__patch.nodes['seq'];
-    if (seq) {
-      if (!seq.data) seq.data = {};
-      seq.data.steps = Array.from({ length: 32 }, () => ({ on: true, midi: 60, chord: 'mono' }));
-    }
-  });
+  // Seed an all-on C4 pattern so the gate actually fires (an unseeded kria
+  // has no active pattern and emits nothing).
+  await seedKriaWith(page, 'seq', buildKriaMidiData([60, 60, 60, 60], { duration: 0.5 }));
 
   const stats = await pollScopePeak(page, 'scp', 0.001, 6000);
-  expect(stats.peak, `MODAL self-excite peak ${stats.peak}`).toBeGreaterThan(0.001);
+  expect(stats.peak, scopePollMsg(`MODAL self-excite peak ${stats.peak}`, stats)).toBeGreaterThan(0.001);
   expect(stats.peak).toBeLessThanOrEqual(1.0);
 });
 
@@ -210,7 +151,7 @@ test('rings: model switch (MODAL ↔ SYMPATHETIC) — both produce audio', async
   );
   // MODAL output.
   const modalStats = await pollScopePeak(page, 'scp', 0.001, 3000);
-  expect(modalStats.peak, `MODAL peak=${modalStats.peak}`).toBeGreaterThan(0.001);
+  expect(modalStats.peak, scopePollMsg(`MODAL peak=${modalStats.peak}`, modalStats)).toBeGreaterThan(0.001);
 
   // Switch model param to SYMPATHETIC via the shared patch store.
   await page.evaluate(() => {
@@ -223,8 +164,44 @@ test('rings: model switch (MODAL ↔ SYMPATHETIC) — both produce audio', async
       node.params.damping = 0.1;
     }
   });
-  // Give the engine a beat to apply the param change.
+  // THE SWITCH ITSELF IS NOW ASSERTED. `peak > 0.01` below is a property BOTH
+  // models share, so on its own it cannot fail on a `model` param that never
+  // reached the engine — the test would have gone green against a dead
+  // selector, measuring MODAL twice. Poll the engine's own value for `model`
+  // so the switch is a checked step rather than an assumption.
+  //
+  // ⚠ SCOPE OF THIS ASSERTION, stated so it is not read as more than it is:
+  // AudioEngine.readParam returns its knobValues cache (engine.ts:803), seeded
+  // by setParam. So this proves STORE → ENGINE — the link that was entirely
+  // unchecked — and NOT engine → worklet AudioParam. Proving the DSP actually
+  // renders a different resonator needs a spectral statistic, which the scope
+  // exposes no read key for; that half is raised with the owner rather than
+  // bodged in here with a threshold nobody has measured.
+  await expect
+    .poll(
+      () =>
+        page.evaluate(() => {
+          const w = globalThis as unknown as {
+            __engine?: () => {
+              readParam: (n: { id: string; type: string; domain: string }, k: string) => number | undefined;
+            } | null;
+            __patch: { nodes: Record<string, { id: string; type: string; domain: string }> };
+          };
+          const eng = w.__engine?.();
+          const node = w.__patch.nodes['r'];
+          if (!eng || !node) return null;
+          return eng.readParam(node, 'model');
+        }),
+      { message: 'the engine takes up model = 1 (SYMPATHETIC), so the switch really happened' },
+    )
+    .toBe(1);
+
+  // pacing: this wait SEPARATES TWO MEASUREMENTS and must survive as timed
+  // semantics. RINGS is still ringing from MODAL when `model` flips, and the
+  // resonator's decay is a product-side tail (`damping`, set to 0.1 just above).
+  // Without this window `pollScopePeak` below can converge on the MODAL TAIL,
+  // so the SYMPATHETIC reading would not be SYMPATHETIC's.
   await page.waitForTimeout(300);
   const sympStats = await pollScopePeak(page, 'scp', 0.01, 3000);
-  expect(sympStats.peak, `SYMPATHETIC peak=${sympStats.peak}`).toBeGreaterThan(0.01);
+  expect(sympStats.peak, scopePollMsg(`SYMPATHETIC peak=${sympStats.peak}`, sympStats)).toBeGreaterThan(0.01);
 });

@@ -33,6 +33,7 @@ import type {
   VideoNodeHandle,
 } from '$lib/video/engine';
 import type { VideoModuleFactory } from '$lib/video/engine';
+import type { WorkerNodeTrace } from './protocol';
 
 /** A factory the worker is allowed to instantiate, keyed by module type. The
  *  render-worker registers exactly the worker-eligible factories (Phase 1 =
@@ -59,9 +60,43 @@ out vec4 outColor;
 uniform sampler2D uTex;
 void main() { outColor = texture(uTex, vUv); }`;
 
+/**
+ * #1905 — the OPTIONAL content-readiness seam a worker-resident handle may
+ * implement.
+ *
+ * ⚠ THE DEFAULT IS READY, and that is what keeps this behavior-preserving for
+ * every synchronous module: acidwarp compiles its shader inside its factory, so
+ * its first frame IS its picture and it implements neither method.
+ *
+ * A handle implements it when its picture depends on something it cannot have
+ * at construction — TOYBOX fetches its manifest AND its gen-layer GLSL over
+ * HTTP from inside the worker realm, so its FBO is a cleared opaque black for
+ * however long those two round-trips take. Before #1905 those frames were
+ * posted anyway, and the main thread — which cannot see inside a bitmap — took
+ * the FIRST of them as proof the worker was producing and dropped the
+ * main-thread fallback that was drawing the real picture.
+ *
+ * `contentNote` is the diagnostic half: WITHHELD-because-in-flight and
+ * WITHHELD-because-the-fetch-failed are opposite facts (wait vs. give up) and
+ * a boolean reports them identically.
+ */
+export interface WorkerContentGate {
+  /** False while this node has nothing but a cleared buffer to show. */
+  contentReady?: () => boolean;
+  /** Why, in the node's own words, when it is not ready. */
+  contentNote?: () => string;
+}
+
 interface WorkerNode {
   id: string;
   handle: VideoNodeHandle;
+  /** ---- #1905 handshake trace (see protocol.WorkerNodeTrace) ---- */
+  addedAt: number;
+  drawn: number;
+  posted: number;
+  withheld: number;
+  firstContentAt: number | null;
+  drawErrors: number;
 }
 
 /**
@@ -135,7 +170,16 @@ export class WorkerRenderEngine {
     } finally {
       this.currentFactoryNodeId = null;
     }
-    this.nodes.set(node.id, { id: node.id, handle });
+    this.nodes.set(node.id, {
+      id: node.id,
+      handle,
+      addedAt: performance.now(),
+      drawn: 0,
+      posted: 0,
+      withheld: 0,
+      firstContentAt: null,
+      drawErrors: 0,
+    });
     return true;
   }
 
@@ -221,10 +265,63 @@ export class WorkerRenderEngine {
     for (const n of this.nodes.values()) {
       try {
         n.handle.surface.draw(ctx);
-        if (n.handle.surface.texture) ready.push(n.id);
-      } catch { /* a throwing module shouldn't kill the whole worker frame */ }
+        n.drawn++;
+        if (!n.handle.surface.texture) continue;
+        // #1905 — A TEXTURE IS NOT A PICTURE.
+        //
+        // `surface.texture` is non-null from the moment the factory creates the
+        // node's FBO, so this condition was true on frame 1 for every module,
+        // including one whose content is still being fetched. Posting that
+        // frame is what let the main thread retire its fallback and present an
+        // opaque black buffer — measured as `nonZeroFrac=0.000` with a live
+        // worker and a fully-painted card (#1905, #1981-adjacent).
+        //
+        // A node that declares no gate is READY (acidwarp: synchronous factory,
+        // first frame is its picture) — so this is a no-op for every module but
+        // the one that needed it.
+        const gate = n.handle as VideoNodeHandle & WorkerContentGate;
+        if (gate.contentReady && !gate.contentReady()) {
+          n.withheld++;
+          continue;
+        }
+        if (n.firstContentAt === null) n.firstContentAt = now;
+        n.posted++;
+        ready.push(n.id);
+      } catch {
+        // A throwing module shouldn't kill the whole worker frame — but it must
+        // not be INVISIBLE either: a node that throws on every draw produced a
+        // permanently black OUTPUT and an empty log.
+        n.drawErrors++;
+      }
     }
     return ready;
+  }
+
+  /** #1905 — per-node production state for the handshake trace. */
+  traceNodes(): WorkerNodeTrace[] {
+    const out: WorkerNodeTrace[] = [];
+    for (const n of this.nodes.values()) {
+      const gate = n.handle as VideoNodeHandle & WorkerContentGate;
+      let note: string | null = null;
+      try { note = gate.contentNote ? gate.contentNote() : null; } catch { note = null; }
+      out.push({
+        id: n.id,
+        addedAt: n.addedAt,
+        drawn: n.drawn,
+        posted: n.posted,
+        withheld: n.withheld,
+        firstContentAt: n.firstContentAt,
+        contentNote: note,
+        drawErrors: n.drawErrors,
+      });
+    }
+    return out;
+  }
+
+  /** #1905 — the pinned clock, for the trace (a frozen worker posts identical
+   *  frames BY DESIGN; without this that reads as a stuck render). */
+  get frozenTime(): number | null {
+    return this.frozenTimeSec;
   }
 
   /** Blit a node's FBO texture into the OffscreenCanvas drawing buffer, then

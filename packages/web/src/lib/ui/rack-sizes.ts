@@ -45,7 +45,6 @@ export const RACK_SIZE_DEFAULTS: Record<string, { size: RackSize; hp: number }> 
   depolarizer: { size: '1u', hp: 1 }, // 160×150px (tiny 1-in/1-out bipolar→unipolar CV util)
   destroy: { size: '1u', hp: 2 }, // 152×220px
   drummergirl: { size: '1u', hp: 2 }, // 152×320px  [LOCKED]
-  drumseqz: { size: '4u', hp: 5 }, // 604×820px
   dx7: { size: '2u', hp: 2 }, // 326×320px
   featurecv: { size: '2u', hp: 2 }, // ~260 wide — 3 feature meters + ONSET led + 6 knobs/toggle over a 5-port PatchPanel (≈ spectrograph)
   fader: { size: '2u', hp: 2 }, // ~360 wide — 2 long faders + 2 transition dropdowns (A/B + dry/wet) over a 5-port PatchPanel
@@ -61,7 +60,16 @@ export const RACK_SIZE_DEFAULTS: Record<string, { size: RackSize; hp: number }> 
   // rack-sizing.test.ts DYNAMIC_SIZED. Their DEFAULT/MIN constants are rounded
   // to 180-multiples so they still land on-grid out of the box.
   frogger: { size: '2u', hp: 2 }, // 380×260px
-  gamepad: { size: '2u', hp: 2 }, // 267×280px
+  // GAMEPAD — bumped 2u→3u when the AUX stick's `ax`/`ay` jacks landed. The card
+  // packs two stick pads, their remap/invert/set-centre rows, the calibration and
+  // mapping rows, two trigger bars, twelve button LEDs and the slot picker over a
+  // PatchPanel that now carries TWENTY ports, and it was already sitting on the
+  // 2u tile's 360px ceiling: adding the two jacks put `div.body` 28.9 CSS px past
+  // the card's BOTTOM edge (measured by the card-overflow sweep; horizontal
+  // overflow stayed 0, so the 2hp width is still right). Same remedy the `adsr`
+  // entry above took when its glyph outgrew the 1u tile — the content genuinely
+  // grew, so the tile does.
+  gamepad: { size: '3u', hp: 2 }, // ~389×360px natural → 360×540 tile
   gatemaiden: { size: '1u', hp: 1 }, // 199×200px
   grainsOfVision: { size: '3u', hp: 4 }, // 720×540px — 2-col: OUT preview left, GRAIN/FEEDBACK/REVERB/COMP single-row fader sections right (widened 2hp→4hp so ~19 controls fit; was 2hp/3u where the 967px fader stack overflowed the 540px tier)
   graphicEq: { size: '2u', hp: 2 }, // 360×360px — Winamp-style VU-meter video output
@@ -70,7 +78,6 @@ export const RACK_SIZE_DEFAULTS: Record<string, { size: RackSize; hp: number }> 
   karplus: { size: '2u', hp: 2 }, // ~310×450px — STRING/EXCITER fader bands + PLUCK button
   lfo: { size: '1u', hp: 2 }, // 180×360px — Rate/Shape faders + Depth knob in one row
   macrooscillator: { size: '1u', hp: 2 }, // 187×320px
-  macseq: { size: '2u', hp: 5 }, // 282×880px
   marbles: { size: '1u', hp: 3 }, // 199×420px
   meowbox: { size: '1u', hp: 2 }, // 127×240px
   midiclock: { size: '1u', hp: 1 }, // 136×200px
@@ -110,7 +117,6 @@ export const RACK_SIZE_DEFAULTS: Record<string, { size: RackSize; hp: number }> 
   numpadPlus: { size: '4u', hp: 4 }, // 714×722px
   pentemelodica: { size: '3u', hp: 7 }, // 462×1180px
   polarizer: { size: '1u', hp: 1 }, // 160×150px (tiny 1-in/1-out unipolar→bipolar CV util)
-  polyseqz: { size: '2u', hp: 3 }, // 321×540px
   pong: { size: '2u', hp: 2 }, // 304×240px
   qbrt: { size: '1u', hp: 2 }, // 152×280px
   rasterize: { size: '2u', hp: 2 }, // 330×320px
@@ -123,7 +129,6 @@ export const RACK_SIZE_DEFAULTS: Record<string, { size: RackSize; hp: number }> 
   scaler: { size: '1u', hp: 1 }, // 160×150px (tiny 1-in/1-out 1-knob multiplier)
   scope: { size: '3u', hp: 2 }, // 500×320px  [LOCKED]
   score: { size: '4u', hp: 4 }, // 597×720px
-  sequencer: { size: '3u', hp: 3 }, // 307×540px  [LOCKED]
   shimmershine: { size: '1u', hp: 2 }, // 152×280px
   sidecar: { size: '2u', hp: 2 }, // 299×380px
   sixstrum: { size: '2u', hp: 4 }, // 620×~380px — 4 fader bands + per-string rear PatchPanel
@@ -149,7 +154,6 @@ export const RACK_SIZE_DEFAULTS: Record<string, { size: RackSize; hp: number }> 
   warrensspectrum: { size: '3u', hp: 2 },
   wavecel: { size: '3u', hp: 2 }, // 398×320px
   wavetableVco: { size: '1u', hp: 2 }, // 152×240px
-  writeseq: { size: '2u', hp: 5 }, // 261×880px
 
   // ── meta domain ──
   electraControl: { size: '3u', hp: 2 }, // 519×360px
@@ -203,7 +207,7 @@ export const RACK_SIZE_DEFAULTS: Record<string, { size: RackSize; hp: number }> 
   spectrograph: { size: '2u', hp: 2 }, // 320×220px — sonogram preview + gain (≈ cellshade/recorderbox)
   scoreboard: { size: '1u', hp: 2 }, // 240×260px  [LOCKED]
   shapedramps: { size: '4u', hp: 2 }, // 641×240px
-  lushgarden: { size: '2u', hp: 2 }, // 300×322px — preview + 3 knobs (mirrors shapegen)
+  lushgarden: { size: '2u', hp: 2 }, // 300×322px — preview + 4 knobs (mirrors shapegen)
   shapegen: { size: '2u', hp: 2 }, // 304×300px
   shapes: { size: '2u', hp: 2 }, // 320×220px
   sourcery: { size: '2u', hp: 2 }, // 300×304px — 2 video ins + preview + 4 knobs (mirrors shapegen)

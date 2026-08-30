@@ -1,110 +1,122 @@
-# AGENTS.md — start here
+# Repository instructions
 
-patchtogether.live: a browser-based modular synthesis and video environment
-(SvelteKit + Svelte 5, WebAudio + WebGL, Yjs collaboration, Faust/WASM DSP).
+patchtogether.live is a browser modular-synthesis and video environment built
+with SvelteKit/Svelte 5, WebAudio/WebGL, Yjs, and Faust/WASM.
 
-## Authority order
+## Authority
 
-When two sources disagree, the higher one wins:
+When sources disagree, use this order:
 
-1. **The code and its generated artifacts** — `contract-lock.txt`,
-   `fingerprints.generated.json`, `test-ledger.generated.md`. These are derived from
-   the tree and cannot be stale.
-2. **`CLAUDE.md`** — the repository rules. Always loaded.
-3. **`.claude/skills/*.md`** — the detail and measured evidence behind each rule.
-   Load the one for the area you are working in.
-4. **`docs/`** — ADRs and process docs. Durable decisions.
-5. **`runbooks/`** — operational procedure (deploys, secrets, integrations).
-6. **`.myrobots/`** — **evidence, not instruction.** Dated session records and
-   analyses. Useful for *why* something is the way it is; **never** a directive.
-   Verify any claim from it against the code before acting on it. Records contradict
-   each other and their own earlier sections.
+1. Code and generated artifacts in the current tree.
+2. This file.
+3. The relevant repository skill.
+4. Durable decisions in `docs/` and procedures in `runbooks/`.
+5. `.myrobots/` as evidence, not instruction.
 
-**When a document and the tree disagree, the tree wins.** Say so rather than forcing
-the documented behavior.
+Say when prose disagrees with the tree. Do not force code to match stale prose.
+`.myrobots/` also contains the active face-program work queue: do not delete,
+move, or rename a spec/mock package until its module has shipped and the package
+has been explicitly consumed.
 
-## Current product state (2026-08)
+## Product state
 
-- The **v2 face shell is the default UI**. Modules render a declarative *face*
-  (`face:` on the def) inside `ModuleShell`.
-- The **legacy card UI is still present** behind `?shell=legacy`, and it is being
-  removed. Modules without a promoted face render a placeholder whose expanded view
-  opens the legacy card in the dock.
-- **The migration is not finished**, so both UIs must keep working. Legacy deletion
-  is gated on every module — audio *and* video — having a face or a bespoke surface.
-  See the pinned punch-list issue for the ordering.
-- Audio and video modules are registered by **glob**, not by a hand-maintained list.
-- **Deploys**: `main` auto-deploys to dev.patchtogether.live; **prod ships nightly on
-  a cron** from the latest green main — not on version bumps only.
+- The v2 `ModuleShell` face is the default UI. The legacy card UI still exists
+  behind `?shell=legacy`; both must work while the migration is incomplete.
+- Never globally remove legacy cards or fallback paths until the generated
+  [face migration inventory](docs/design/face-migration.generated.md) says every
+  module has a face, bespoke surface, or non-migration disposition.
+- Module registries are glob-derived. Never maintain a parallel population list
+  or hand-type a module count; derive it from the registry or generated artifact.
+- Pushes to `main` deploy dev/autotest. Production is shipped nightly from the
+  latest green `main`; verify the live workflow files before any deploy action.
 
-## Every feature and every bug fix is a GitHub issue
+## Workflow
 
-Owner-reported or agent-found, it gets an issue and the PR closes it (`Fixes #N`).
-See `docs/process/issue-workflow.md`. This is how work stays findable after the
-conversation that produced it ends.
-
-## Commands
-
-Everything runs inside Flox: **`flox activate -- <cmd>`**. Running git outside flox
-can hang git-LFS.
+Run every command through Flox: `flox activate -- <cmd>`. In particular, never
+run git outside Flox; git-LFS can hang.
 
 ```sh
-flox activate -- task typecheck          # svelte-check — stricter than vitest
-flox activate -- task test               # unit (vitest)
-flox activate -- task e2e                # Playwright functional
-flox activate -- task vrt                # visual regression (local smoke only)
-flox activate -- task art                # audio regression
+flox activate -- task setup
+flox activate -- task build
+flox activate -- task typecheck
+flox activate -- task test
+flox activate -- task e2e
+flox activate -- task vrt
+flox activate -- task art
 ```
 
-Single-test loops — the fast path, prefix any with `REPEAT=3` to flake-check:
+Use focused loops first:
 
 ```sh
-flox activate -- task test:one -- organize -t "deterministic"   # unit (PKG=dsp|server|art)
-flox activate -- task e2e:serve                                 # boot server once…
-flox activate -- task e2e:one  -- tests/ai-smoke.spec.ts        # …then iterate
+flox activate -- task test:one -- <filter>
+flox activate -- task e2e:serve
+flox activate -- task e2e:one -- tests/<spec>.spec.ts
 flox activate -- task e2e:stop
-flox activate -- task vrt:one  -- adsr                          # one card
-flox activate -- task art:one  -- moog911                       # one scenario
+flox activate -- task vrt:one -- <module>
+flox activate -- task art:one -- <scenario>
 ```
 
-Accept loops (regenerate a golden, then **review the diff**):
+For new or materially changed tests, run the focused test locally and then
+flake-check it with `REPEAT=3`. Run `task typecheck` for Svelte/TypeScript
+changes; Vitest is less strict.
+
+Golden updates are explicit accept loops. Review every generated diff:
 
 ```sh
-flox activate -- task docs:accept        # contract-lock.txt
-flox activate -- task art:update         # ART baselines + fingerprint manifest
-flox activate -- task vrt:commit         # dispatch baseline capture on LINUX CI (SCOPED from the branch diff; ALL=1 for the full sweep)
+flox activate -- task docs:accept
+flox activate -- task art:update
+flox activate -- task face:inventory:accept
+flox activate -- task vrt:commit
 ```
 
-Housekeeping: `task worktree:guard` (before creating a worktree — hard cap 10),
-`task pr:conflict-sweep` (after any merge to main).
+For `art:update`, attribute every fingerprint entry before re-pinning: a
+peak/RMS-only move is a level change, a spectrum/feature move is timbral. An
+entry you cannot attribute to an intended change is an audio regression — stop
+and report it instead of re-pinning, because re-pinning is what turns it green.
 
-## The rules that catch people most often
+Before creating a worktree, run `task worktree:guard`; preserve dirty work and
+remember that git stash is shared by all worktrees. After a merge to `main`,
+run `task pr:conflict-sweep`.
 
-Full text in `CLAUDE.md`; these are the ones worth knowing before you start.
+## Issues and pull requests
 
-1. **Run new tests locally before CI**, and flake-check new/changed tests **3×**.
-2. **Never express a renderer-dependent wait in milliseconds — count frames.**
-3. **You never commit a VRT baseline** — linux CI authors the one set.
-4. **Never hand-type a population count.** No ceilings, floors, or "frozen at N".
-5. **Ask of any gate: what is it structurally unable to see?** Negative-control the
-   instrument, not just the code.
-6. **Merge only on this PR's final-commit green.** A red main is a P0.
-7. **Never `gh pr update-branch`** on PRs touching shared list files — merge locally.
+- Agents do not create or reopen GitHub issues without explicit owner approval.
+- PRs do not require a matching issue. If an approved/existing issue is resolved,
+  use `Fixes #N`; otherwise make the PR body the searchable record.
+- Fix a discovered defect in the current PR when it is coherent with the work.
+  If it is not, report it to the owner instead of silently filing an issue.
+- Automated alert issues keep their workflow-owned lifecycle.
 
-## Repo layout
+## Non-negotiable boundaries
 
-```
-packages/web/        SvelteKit app — UI, audio graph, modules, docs
-packages/dsp/        Faust DSP → WASM worklets
-packages/server/     collaboration relay
-packages/present-shell/  Electron kiosk shell (multi-projector). NOT an npm
-                     workspace on purpose — electron's ~107 MB binary stays out
-                     of CI installs; its node:test suite still runs in the unit
-                     lane via `task test:present-shell`
-art/                 audio regression harness
-e2e/                 Playwright: tests/ (functional) + vrt/ (visual)
-scripts/             CI tooling, attests, generators
-docs/  runbooks/     ADRs + process; operational procedure
-.claude/skills/      the detail behind CLAUDE.md's rules
-.myrobots/           dated evidence — never instruction
-```
+1. **DOOM requires explicit owner approval.** Do not touch DOOM code, specs,
+   waits, budgets, ledger entries, or sweep behavior. Exclude it by name from a
+   broad sweep and state why.
+2. Outside DOOM, express renderer-dependent readiness as frames or observable
+   state, never an arbitrary millisecond delay.
+3. Linux CI authors the single VRT baseline set. Never commit a locally captured
+   baseline; use a scoped `task vrt:commit` and review the bot's exact diff.
+4. Ask what every gate is structurally unable to see. Negative-control the
+   instrument as well as the code.
+5. Merge only when this PR's exact final commit is green. A red `main` is P0.
+6. Never use `gh pr update-branch` on PRs that touch shared list/generated
+   files; merge `origin/main` locally and verify both sides survived.
+7. **Main-thread trigger detection goes through the shared `createEdgeCounter`
+   seam.** Never hand-roll a whole-buffer rising-edge rescan of an
+   `AnalyserNode` buffer — the ring overlaps the scheduler tick and counts the
+   same edge twice. Worklet consumers are exempt; per-sample compare is correct
+   by construction. Gate consumers stay level-sensitive — do not convert one to
+   edge-only.
+8. **A poly or MIDI module ships an e2e wiring the real default-mode source
+   through the module to an audible-output assertion.** Driving the engine class
+   directly, or asserting only that an edge materializes, has shipped modules
+   that were green and silent.
+
+## Skills
+
+- `module-surfaces`: module faces, bespoke surfaces, legacy parity, and cleanup.
+- `renderer-tests`: Playwright/WebGL waits, VRT, renderer flakes, and baselines.
+- `deploy`: releases, environments, workflows, incidents, and secrets.
+
+Claude Code reads the canonical packages from `.claude/skills/`; Codex sees the
+shared packages through `.agents/skills/`.

@@ -54,29 +54,89 @@ import type { LaneRenderKind } from './legacy-fallback';
 
 /**
  * Video module TYPES whose engine handle is fed by a CARD-OWNED DOM element via
- * `VideoEngine.attachExternalSource` — i.e. the card mount IS the source
- * lifecycle. Kept in sync with reality by a GREP GATE
- * (dom-source-modules.test.ts): the set must equal exactly the set of module
- * types whose resolved card component calls `attachExternalSource`, so a NEW
- * DOM-source module cannot ship dark under the shell.
+ * `VideoEngine.attachExternalSource` AND whose ENGINE KEEPS that element — i.e.
+ * the card mount IS the source lifecycle. Kept in sync with reality by a GREP
+ * GATE (dom-source-modules.test.ts), which reads BOTH halves off the tree, so a
+ * NEW DOM-source module cannot ship dark under the shell.
  *
- * Note `cameraInput` is listed here even though it is ALSO a
- * NON_SHELL_LANE_TYPE (its real card always renders in the lane, so it is never
- * swapped and never needs the headless host — see `needsHeadlessSourceMount`,
- * which returns false for the 'legacy' kind). It stays in the set because the
- * set documents "this module's source lives on its card", which is true of
- * cameraInput and is exactly WHY it earned the carve-out.
+ * ⚠ THE SECOND HALF IS NOT DECORATION, and leaving it out is how `frametable`
+ * and `videocube` sat here wrongly. "The card calls attachExternalSource" says a
+ * card HANDS an element over; it cannot say whether the engine keeps it, and
+ * those are different files with different answers. Both of those modules stage
+ * a decoded `.frametable.png` atlas into a `pendingAtlas` slot at FILE LOAD; the
+ * next draw detiles it into GL and nulls the reference. Their live pictures come
+ * from GRAPH CABLES (`video_in`; `video_a|b|c`), so no card mount is load-
+ * bearing and neither ever needed the headless host. The gate now derives
+ * retention from the engine-side attach body (a rVFC subscription, the texture
+ * uploader, an element keep-alive, or a retained `mediaEl`).
+ *
+ * Deny-by-default runs in the direction that costs: the DEFAULT is that a module
+ * retains. Excluding one takes a NAMED `ONE_SHOT_INGEST` entry carrying its
+ * `why`, anchored so it reddens the day that module starts keeping its element.
+ *
+ * ⚠ `cameraInput` USED TO BE THE EXCEPTION IN THIS SET AND IS NOT ANY MORE. The
+ * note here said it "is never swapped and never needs the headless host",
+ * because it was ALSO in `NON_SHELL_LANE_TYPES` and its real card therefore
+ * always rendered in the lane. That carve-out was removed when the module was
+ * promoted (see ./legacy-fallback, which carries the full lineage), so
+ * cameraInput is now an ORDINARY member: the shell swaps its lane card for a
+ * faceplate, `needsHeadlessSourceMount` returns true for the resulting 'shell'
+ * kind, and `<HeadlessSourceHost>` keeps the real card — and therefore
+ * getUserMedia, the stream and the permission machine — alive off-screen. It is
+ * the FIRST member of this set to be promoted, so it is also the first to
+ * exercise that path for real.
+ */
+/**
+ * ⚠ VIDEOBOX (P1), VIDEOVARISPEED (P2) AND THE HLS PAIR — PEERTUBE +
+ * TVLIBRARIAN (P3) — HAVE LEFT THIS SET (LEG-02, #1511). Four departures, one
+ * shape, and every remaining member follows it.
+ *
+ * ⚠ P3 IS THE PHASE WHERE THE SET STOPS BEING ABOUT FILE PLAYERS. peertube and
+ * tvLibrarian own a NETWORK stream — an hls.js demuxer feeding a `<video>` —
+ * and both were card-owned in exactly the way videobox was, with the same three
+ * classes of consequence. The one worth reading before touching either module:
+ * with NO card anywhere (a collapsed group, a canvas-hidden node) the modules
+ * were not degraded, they were DEAD — no attach, so `video` is black; no CV
+ * poll, so `play_trigger`/`next_trigger` and `next`/`random` do nothing; no
+ * selection effect, so a SAVED rack came back on nothing and a peer's tune never
+ * landed; no audio wire, so both audio outs were silent AND the element stayed
+ * `muted`. Their new owner is `$lib/ui/media/node-hls-source-registry`, which is
+ * ONE registry with two profiles rather than a sibling per module — see its
+ * header for why the P2 "do not generalise on a population of two" argument
+ * points the other way here.
+ *
+ * ⚠ VARISPEED'S DEPARTURE FIXED THREE LIVE DEFECTS RATHER THAN JUST MOVING A
+ * LIFETIME, and they are worth naming because they are what card-ownership
+ * actually costs: a varispeed inside a COLLAPSED GROUP had no card anywhere
+ * (`needsHeadlessSourceMount` returns false on the `laneOmitsNode` arm for a
+ * non-producer), so its transport and all five CV triggers — including the
+ * ASSET slot select a clip player drives — were dead with the jacks still
+ * visibly patched; `activeSlot` and its seven virtual playheads reset on every
+ * expand/collapse; and a rack saved WITH a crop applied none on load. The
+ * headless host was MASKING those in the common case, which is worse than the
+ * per-rack tax it was introduced to pay.
+ *
+ * Nothing about videobox's PICTURE changed. What changed is who owns the
+ * lifecycle: `$lib/ui/media/node-video-source-registry` now owns the element's
+ * attach, its audio wiring, the multiplayer drift loop, the `play_trigger` gate
+ * loop, the sync→element application and the saved-handle restore, on GRAPH
+ * lifetime via Canvas's sync/sweep effects. `VideoboxCard.svelte` creates
+ * nothing and disposes nothing, so its subtree no longer calls
+ * `attachExternalSource(` at all — which is what the grep gate below reads, and
+ * why this deletion and that card edit are ONE atomic change.
+ *
+ * ⚠ ITS ABSENCE IS NOW A GATE-ANCHORED STATEMENT, exactly like picturebox's
+ * absence from `CARD_PRODUCER_LANE_TYPES`: the set is DERIVED, so videobox being
+ * missing here is not a list someone forgot to update — it is the tree asserting
+ * that no card mount is load-bearing for that module. The new owner is anchored
+ * in the other direction by `NODE_VIDEO_SOURCE_TYPES`, which the registry's own
+ * test asserts is DISJOINT from this set: a module in both would mean two owners
+ * for one element.
  */
 export const DOM_SOURCE_LANE_TYPES: ReadonlySet<string> = new Set<string>([
   'archivist',
   'cameraInput',
-  'frametable',
   'loopback',
-  'peertube',
-  'tvLibrarian',
-  'videobox',
-  'videocube',
-  'videovarispeed',
 ]);
 
 /**
@@ -212,8 +272,25 @@ export interface HeadlessSourceInput {
   type: string;
   /**
    * TRUE when the lane emits NO xyflow node at all for this node, so `kind`
-   * describes a card that is never reached — today, a child of a COLLAPSED
-   * GROUP (#1721).
+   * describes a card that is never reached. TWO producers of it, and they are
+   * the same fact by different routes:
+   *   * a child of a COLLAPSED GROUP (#1721), and
+   *   * a CANVAS-HIDDEN node — a pinned singleton or a `hiddenCard` camera
+   *     (`$lib/graph/hidden-card`), which the same `flowNodes` derivation skips
+   *     (#1754).
+   *
+   * ⚠ THE SECOND ONE WAS A `continue` IN THE CALLER FOR A YEAR, AND THAT IS
+   * WHY IT WENT UNFIXED. The skip's premise — "some other surface mounts the
+   * real card" — is true for the M/E/C drawer trio and FALSE for a pinned
+   * TOPBAR-SURFACE module, which has no drawer and no rail at all. MEASURED on
+   * this tree, both shells: a fresh `/rack` auto-spawns `pinned-timelorde` and
+   * `.mod-card.timelorde-card` has ZERO mounts anywhere, so its
+   * `write(node,'displayFrame')` never runs and `video_out` is the idle field
+   * forever (`nonBlack 0/3072, maxLuma 8, 1 distinct signature over 30 frames`
+   * — recorded in card-producer-lifetime.spec.ts, which names this exclusion as
+   * the half it does not cover). Routing it through THIS arm rather than a
+   * second `CARD_PRODUCER` test in the caller is what keeps the hidden CAMERAS'
+   * answer (no host — they are DOM_SOURCE) coming from one place.
    *
    * ⚠ THE ONE ARM THAT IS NOT SHELL-SPECIFIC. Every other input here is a
    * consequence of the faceplate shell, and the whole decision is a strict
@@ -254,8 +331,8 @@ export interface HeadlessSourceInput {
  *       * `laneOmitsNode` — the lane emits no node AT ALL (a collapsed group's
  *         child) → YES, but only for the PRODUCER half; see below,
  *       * 'shell' / 'placeholder' — the shell swapped it out  → YES,
- *       * 'legacy' — the card IS in the lane (?shell=legacy, or a
- *         NON_SHELL carve-out like cameraInput/videoOut) → no,
+ *       * 'legacy' — the card IS in the lane (?shell=legacy, or a NON_SHELL
+ *         carve-out) → no,
  *       * 'stub'   — the user DOCKED it, so the real card is mounted in the
  *         dock rail (DockCardHost) → no. Double-mounting would run TWO
  *         getUserMedia / two <video> elements for one node, and whichever
@@ -282,6 +359,44 @@ export interface HeadlessSourceInput {
  * 'legacy'/'stub' under `?shell=legacy`, so every arm EXCEPT `laneOmitsNode` is
  * still a strict no-op there.
  */
+/**
+ * CARD_PRODUCER types whose FACEPLATE mounts the producing surface ITSELF, so a
+ * dock full view showing that faceplate really is "some other surface already
+ * mounts this node's real card" and hosting it too would be a SECOND mount.
+ *
+ * ⚠ DENY BY DEFAULT, AND THE DEFAULT WAS THE OTHER WAY ROUND UNTIL 2026-08-23.
+ * `Canvas.svelte`'s `fullViewShowsFaceInstead` was scoped to
+ * `DOM_SOURCE_LANE_TYPES` only, on the stated grounds that the producer half
+ * "is left EXACTLY as it was… because it would be UNMEASURED" — and that was
+ * right at the time, because the only two promoted producers (cube, rasterize)
+ * DO mount their renderer from the face: `CubeVizSurface` IS cube's renderer,
+ * and rasterize's body advances the painter inside `read('imageData')`.
+ *
+ * ⚠ TIMELORDE IS THE FIRST PROMOTED PRODUCER WHOSE FACE ONLY *BLITS*, and it
+ * turns that premise false. Its `fullViewBody` pulls `video_out`'s own
+ * `drawFrame`; the thing that FILLS `drawFrame` is `TimelordeCard`'s rAF, which
+ * lives nowhere else. MEASURED with the dock full view open on a promoted
+ * timelorde, before this set existed: `.mod-card.timelorde-card` count 0, no
+ * headless host, and the face canvas painting `nonBlack 47034/48400` — a
+ * perfectly bright picture that was a STALE bitmap the unmounted card had
+ * pushed before it went away, frozen for as long as the dock stayed open. On a
+ * cold open, where no frame had been pushed yet, the same state paints the
+ * module's `#07090d` idle field instead: black, and a VRT baseline captured
+ * then would have pinned a black square forever.
+ *
+ * So the default is now "a faced producer KEEPS its headless host while its dock
+ * full view is open", and a module leaves that default by NAME, with the reason
+ * it can. A new promotion inherits the safe answer instead of the silent one.
+ */
+export const FACE_MOUNTS_PRODUCER: ReadonlySet<string> = new Set<string>([
+  // The hero cell IS the renderer — `CubeVizSurface`, the same component the
+  // legacy card mounts. Two mounts of it is what this exemption prevents.
+  'cube',
+  // The body ADVANCES the painter (`read('imageData')` runs it), so it is not
+  // merely a viewer of the producer: while the dock is open it IS the producer.
+  'rasterize',
+]);
+
 export function needsHeadlessSourceMount(i: HeadlessSourceInput): boolean {
   if (!HEADLESS_MOUNT_LANE_TYPES.has(i.type)) return false;
   if (i.hostedElsewhere) return false;

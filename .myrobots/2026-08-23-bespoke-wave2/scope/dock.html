@@ -1,0 +1,308 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>SCOPE face — STATE 1: SPLIT, both channels patched, SCREEN ON</title>
+<style>
+/* ─────────────────────────────────────────────────────────────────────────
+   SCOPE FACEPLATE — MOCKUP, state 1 of 2.
+   SPEC AND MOCKUP ONLY. Nothing here is implemented. See spec.md.
+
+   House tokens, the same set the wave-1 mocks use. The TRACE is a CSS/SVG
+   stand-in; the real one is `drawScope(ctx2d, snap, params, w, h)` from
+   $lib/audio/modules/scope-draw, called by the face body's own 2D canvas —
+   the SAME function the legacy card and the mono-video bridge call.
+   ───────────────────────────────────────────────────────────────────────── */
+:root{
+  --bg:#0e1013; --dock:#12161c; --plate:#262a31; --pbody:#1c1f24; --well:#0a0c0f;
+  --line:#2c3037; --tile:#33383f; --ink:#eef1f5; --dim:#9aa2ad; --faint:#646c77;
+  --cv:#7dd3fc; --accent:#6cf; --ch1:#fbbf24; --ch2:#60a5fa; --warn:#f2c14e; --good:#8fe6b0;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+  font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1200px;margin:0 auto;padding:26px 20px 90px}
+h1{font-size:21px;font-weight:800;margin:0 0 6px;letter-spacing:.01em}
+.sub{color:var(--dim);font-size:12.5px;margin:0 0 14px;max-width:106ch}
+.sub b{color:var(--ink)} code{font-family:var(--mono);font-size:11.5px;color:var(--ch1)}
+.nav{display:flex;gap:8px;margin:0 0 20px;font-size:11px;flex-wrap:wrap}
+.nav a{color:var(--ink);text-decoration:none;border:1px solid var(--line);border-radius:6px;
+  padding:6px 12px;background:#12161c;font-family:var(--mono);letter-spacing:.06em;text-transform:uppercase}
+.nav a.on{border-color:var(--ch1);color:var(--ch1)}
+.warn{border:1px solid #6a5330;background:#1c1811;border-radius:8px;padding:11px 14px;
+  margin:12px 0;font-size:12.5px;color:#e8cf9a;max-width:118ch}
+.warn b{color:var(--warn)}
+.ok{border:1px solid #3b5a48;background:#111a15;border-radius:8px;padding:11px 14px;
+  margin:12px 0;font-size:12.5px;color:#a9d8bd;max-width:118ch}
+.ok b{color:var(--good)}
+
+.cols{display:grid;grid-template-columns:minmax(0,1fr) 390px;gap:18px;align-items:start}
+@media (max-width:1080px){.cols{grid-template-columns:minmax(0,1fr)}}
+
+.dock{background:var(--dock);border:1px solid var(--line);border-radius:11px;overflow:hidden;padding:11px}
+.chromebar{display:flex;align-items:baseline;gap:9px;padding:0 2px 8px}
+.chromebar .nm{font-size:13px;font-weight:800;letter-spacing:.03em}
+.chromebar .rl{font-size:9.4px;letter-spacing:.09em;text-transform:uppercase;color:var(--faint);font-family:var(--mono)}
+.chromebar .x{margin-left:auto;color:var(--faint);font-family:var(--mono);font-size:12px}
+.plate{background:var(--pbody);border:1px solid var(--tile);border-left:4px solid var(--cv);
+  border-radius:10px;padding:0 0 12px;width:max-content;max-width:100%}
+
+/* ── the fullViewBody ─────────────────────────────────────────────────── */
+.extbody{padding:12px 14px 4px;display:flex;justify-content:center}
+.screenwrap{position:relative;min-height:18px}
+.crt{position:relative;width:480px;max-width:100%;height:360px;border-radius:4px;
+  border:1px solid #1a1f2a;background:#0a0c10;overflow:hidden}
+.crt svg{display:block;width:100%;height:100%}
+/* the corner scale label drawScope already paints (scope-draw.ts:160) */
+.scalelab{position:absolute;left:6px;top:5px;font-family:var(--mono);font-size:8.4px;
+  letter-spacing:.05em;color:#5d6774}
+.screenbtn{position:absolute;right:4px;bottom:4px;font-family:var(--mono);font-size:8.6px;
+  letter-spacing:.06em;padding:3px 9px;border:1px solid #3a4a5a;border-radius:2px;
+  background:rgba(5,6,8,.72);color:var(--ink);cursor:pointer;z-index:2}
+
+/* ── bands ────────────────────────────────────────────────────────────── */
+.bands{padding:6px 14px 0}
+.band{border-top:1px solid var(--line);padding-top:8px;margin-top:10px}
+.band:first-child{border-top:0;margin-top:4px}
+.blab{margin:0 0 2px;font-size:9.4px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--dim)}
+.bhint{margin:0 0 7px;font-size:9.6px;color:var(--faint);font-style:italic}
+.row{display:flex;flex-wrap:wrap;align-items:flex-start;gap:10px 18px}
+.cluster{display:flex;flex-direction:column;gap:5px}
+.clab{font-family:var(--mono);font-size:7.6px;letter-spacing:.13em;text-transform:uppercase;color:var(--faint)}
+.crow{display:flex;gap:10px;align-items:flex-start}
+.seg{display:flex;flex-direction:column;gap:4px}
+.seg .cap{font-size:7.8px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--dim);font-family:var(--mono)}
+.segbtns{display:flex;border:1px solid #3a4048;border-radius:6px;overflow:hidden}
+.segbtns b{font-family:var(--mono);font-size:9px;font-weight:400;letter-spacing:.06em;
+  padding:6px 10px;background:#1b2027;color:var(--faint)}
+.segbtns b.on{background:#2a3340;color:var(--accent)}
+.segbtns.c1 b.on{background:#332c18;color:var(--ch1)}
+.segbtns.c2 b.on{background:#182533;color:var(--ch2)}
+/* NeonFader stand-in — a throw, not a dial (face.paramCells: 'fader') */
+.f{width:52px;display:flex;flex-direction:column;align-items:center;gap:5px}
+.f i{--v:.5;--fc:#7dd3fc;display:block;width:16px;height:74px;border-radius:8px;position:relative;
+  background:linear-gradient(#171b21,#12161c);border:1px solid #333a43}
+.f i::before{content:"";position:absolute;left:50%;transform:translateX(-50%);width:2px;top:6px;bottom:6px;
+  background:#262c34;border-radius:1px}
+.f i::after{content:"";position:absolute;left:50%;width:22px;height:9px;border-radius:2px;
+  background:var(--fc);box-shadow:0 0 7px color-mix(in srgb,var(--fc) 60%,transparent);
+  transform:translate(-50%,-50%);top:calc(6px + (1 - var(--v)) * (100% - 12px))}
+.f b{font-size:7.8px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--dim);
+  font-family:var(--mono);text-align:center}
+.f.c1 i{--fc:#fbbf24} .f.c2 i{--fc:#60a5fa}
+
+/* ── the notes column ─────────────────────────────────────────────────── */
+.zones{background:#12161c;border:1px solid var(--line);border-radius:9px;padding:12px 13px}
+.zones h4{margin:0 0 8px;font-size:9px;font-weight:800;letter-spacing:.13em;text-transform:uppercase;
+  color:var(--dim)}
+.zones+.zones{margin-top:14px}
+.zt{width:100%;border-collapse:collapse;font-size:10.5px}
+.zt th{text-align:left;font-family:var(--mono);font-size:7.8px;letter-spacing:.11em;
+  text-transform:uppercase;color:var(--faint);font-weight:400;padding:0 0 5px;border-bottom:1px solid var(--line)}
+.zt td{padding:5px 0;border-bottom:1px solid #1c2027;vertical-align:top;color:var(--dim);line-height:1.42}
+.zt td:first-child{color:var(--ink);font-family:var(--mono);font-size:9.5px;padding-right:10px;white-space:nowrap}
+.aria{font-family:var(--mono);font-size:10px;color:var(--good);background:#101a14;
+  border:1px solid #2c4636;border-radius:4px;padding:2px 6px;display:inline-block;margin-top:3px}
+.lane{margin-top:16px;display:flex;gap:14px;align-items:flex-start}
+.tile{background:var(--pbody);border:1px solid var(--tile);border-left:3px solid var(--cv);
+  border-radius:8px;padding:8px 9px;width:192px}
+.tile .tn{font-size:10px;font-weight:800;letter-spacing:.03em;margin-bottom:6px}
+.tile .trow{display:flex;gap:8px}
+</style>
+
+<div class="wrap">
+<h1>SCOPE — dock faceplate · STATE 1: SPLIT, both channels patched, SCREEN ON</h1>
+<p class="sub">
+  <b>Mockup only. Nothing here is implemented.</b> The plate is <code>face.order</code> rendered by
+  <code>ModuleShell</code>; the screen at the top is the module&rsquo;s own
+  <code>fullViewBody</code> (<code>face.extension: 'scope'</code>). Every number visible on this
+  page is a <b>graticule annotation drawn INTO the canvas</b> &mdash; the same class as the
+  &plusmn;1.0 corner label <code>drawScope</code> already paints. <b>No control has a resting
+  readout</b>, and the plate carries no derived-state text of any kind.
+</p>
+
+<div class="nav">
+  <a class="on" href="dock.html">STATE 1 &middot; SPLIT / SCREEN ON</a>
+  <a href="dock-xy.html">STATE 2 &middot; XY / SCREEN OFF</a>
+</div>
+
+<div class="warn">
+  <b>&#9888; THE GLYPH IS DELIBERATELY ABSENT.</b> <code>scope</code> declares
+  <code>ch1_out</code> as a <code>type:'audio'</code> output, so any glyph literal resolves
+  <code>{kind:'live-audio', portId:'ch1_out'}</code> &mdash; <b>live, and green on every gate.</b>
+  But <code>ch1_out</code> IS <code>gain1</code>, the untouched passthrough, so that trace would
+  be invariant to all nine of this module&rsquo;s controls while looking exactly like the thing the
+  module exists to draw. <code>glyph:'none'</code>; the trace lives here instead. See spec.md &sect;0.2.
+</div>
+
+<div class="cols">
+<div>
+
+<div class="dock">
+  <div class="chromebar">
+    <span class="nm">scope</span>
+    <span class="rl">utilities &middot; probe</span>
+    <span class="x">&#10005;</span>
+  </div>
+
+  <div class="plate">
+
+    <!-- ── fullViewBody: the trace + the tuning strip + SCREEN ─────────── -->
+    <div class="extbody">
+      <div class="screenwrap">
+        <div class="crt">
+          <svg viewBox="0 0 480 360" preserveAspectRatio="none" aria-hidden="true">
+            <!-- graticule -->
+            <g stroke="#161b22" stroke-width="1">
+              <path d="M0 45H480M0 90H480M0 135H480M0 225H480M0 270H480M0 315H480"/>
+              <path d="M60 0V360M120 0V360M180 0V360M240 0V360M300 0V360M360 0V360M420 0V360"/>
+            </g>
+            <g stroke="#232a33" stroke-width="1">
+              <path d="M0 90H480M0 270H480M240 0V360"/>
+            </g>
+            <!-- CH1 trace, upper half, ~3 cycles at 20 ms -->
+            <path fill="none" stroke="#fbbf24" stroke-width="1.6"
+              d="M0 90 C 14 32, 26 32, 40 90 S 66 148, 80 90 S 106 32, 120 90 S 146 148, 160 90
+                 S 186 32, 200 90 S 226 148, 240 90 S 266 32, 280 90 S 306 148, 320 90
+                 S 346 32, 360 90 S 386 148, 400 90 S 426 32, 440 90 S 466 148, 480 90"/>
+            <!-- CH2 trace, lower half, slower + offset down -->
+            <path fill="none" stroke="#60a5fa" stroke-width="1.6"
+              d="M0 270 C 26 218, 54 218, 80 270 S 134 322, 160 270 S 214 218, 240 270
+                 S 294 322, 320 270 S 374 218, 400 270 S 454 322, 480 270"/>
+            <!-- ── the TUNING STRIP: a graticule annotation, not a readout row ── -->
+            <g>
+              <rect x="0" y="336" width="480" height="24" fill="#080a0d" opacity=".9"/>
+              <path d="M0 336H480" stroke="#1d232b" stroke-width="1"/>
+              <text x="10" y="352" fill="#5d6774" font-family="ui-monospace,monospace"
+                    font-size="9" letter-spacing="1.2">TUNE</text>
+              <!-- the ±50 cent rule -->
+              <path d="M180 348H340" stroke="#2b333d" stroke-width="2" stroke-linecap="round"/>
+              <path d="M260 342V354" stroke="#6f7a86" stroke-width="1"/>
+              <!-- the marker, ~+4 cents: inside ±5, so the in-tune colour -->
+              <rect x="272" y="341" width="3" height="14" rx="1.5" fill="#4ade80"/>
+              <text x="352" y="352" fill="#8b95a2" font-family="ui-monospace,monospace"
+                    font-size="11" letter-spacing="1">A4</text>
+            </g>
+          </svg>
+          <span class="scalelab">CH1 &plusmn;1.0 &middot; CH2 &plusmn;1.0</span>
+          <button class="screenbtn" aria-pressed="true">SCREEN ON</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── bands ──────────────────────────────────────────────────────── -->
+    <div class="bands">
+
+      <div class="band">
+        <p class="blab">timebase</p>
+        <p class="bhint">the window the screen shows</p>
+        <div class="row">
+          <div class="f"><i style="--v:.42"></i><b>Time</b></div>
+          <div class="seg">
+            <span class="cap">Mode</span>
+            <div class="segbtns"><b class="on">SPLIT</b><b>XY</b></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="band">
+        <p class="blab">channels</p>
+        <p class="bhint">fit each trace and pick its volts-per-division</p>
+        <div class="row">
+          <div class="cluster">
+            <span class="clab">ch 1</span>
+            <div class="crow">
+              <div class="f c1"><i style="--v:.5"></i><b>1 Sc</b></div>
+              <div class="f c1"><i style="--v:.5"></i><b>1 Y</b></div>
+              <div class="seg">
+                <span class="cap">1 R</span>
+                <div class="segbtns c1"><b class="on">AUDIO</b><b>CV</b></div>
+              </div>
+            </div>
+          </div>
+          <div class="cluster">
+            <span class="clab">ch 2</span>
+            <div class="crow">
+              <div class="f c2"><i style="--v:.5"></i><b>2 Sc</b></div>
+              <div class="f c2"><i style="--v:.36"></i><b>2 Y</b></div>
+              <div class="seg">
+                <span class="cap">2 R</span>
+                <div class="segbtns c2"><b class="on">AUDIO</b><b>CV</b></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="band">
+        <p class="blab">beam</p>
+        <p class="bhint">phosphor persistence &mdash; display feel only</p>
+        <div class="row">
+          <div class="f"><i style="--v:.5"></i><b>Inten</b></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<div class="lane">
+  <div class="tile">
+    <div class="tn">scope</div>
+    <div class="trow">
+      <div class="f"><i style="--v:.42"></i><b>Time</b></div>
+      <div class="f c1"><i style="--v:.5"></i><b>1 Sc</b></div>
+      <div class="f c2"><i style="--v:.5"></i><b>2 Sc</b></div>
+    </div>
+  </div>
+  <div class="ok" style="margin:0;flex:1">
+    <b>THE LANE TILE, TO SCALE.</b> Controls only &mdash; no picture, and none is available:
+    a layout-source glyph is a <b>constant SVG</b> (<code>topologyValue</code> is hardcoded
+    <code>0</code>, <code>ShellExtensionGlyphProps</code> has no <code>nodeId</code>), and
+    <code>laneGlyphFor</code> would rank it <code>'trace'</code>, which yields to these three
+    cells anyway. Three cells is <b>strictly more than the placeholder shows today</b>.
+  </div>
+</div>
+
+</div>
+
+<div>
+  <div class="zones">
+    <h4>where every card affordance went</h4>
+    <table class="zt">
+      <tr><th>on the card</th><th>after promotion</th></tr>
+      <tr><td>320&times;300 canvas</td><td>the <code>fullViewBody</code> at 480&times;360, drawn by the same <code>drawScope</code></td></tr>
+      <tr><td>PITCH / NOTE text row</td><td><b>deleted as a readout</b>; the meter becomes the graticule TUNE strip, the value moves to <span class="aria">aria-label</span>.
+        <br>&#9888; The fleet&rsquo;s only pitch-VALUE assertion is <code>test.fixme</code>&rsquo;d under flake park #1847, so a deterministic <code>aria-label</code> check is <b>strictly better tested</b> than the DOM row it replaces &mdash; write that leg</td></tr>
+      <tr><td>CH1/CH2 AUDIO&harr;CV buttons</td><td><code>options</code> roster &rarr; <code>segmented</code>; the words are PROMOTED from card markup</td></tr>
+      <tr><td>XY / &#8646; button</td><td><code>options</code> roster &rarr; <code>SPLIT</code> / <code>XY</code></td></tr>
+      <tr><td>six NeonFaders</td><td><code>paramCells: 'fader'</code> &times; 6</td></tr>
+      <tr><td><code>data-viz-passthrough</code></td><td><b>untouched</b> &mdash; GroupCard imports ScopeCard directly</td></tr>
+    </table>
+  </div>
+
+  <div class="zones">
+    <h4>the ARIA contract &mdash; where the deleted text lives</h4>
+    <table class="zt">
+      <tr><th>element</th><th>accessible name</th></tr>
+      <tr><td>TUNE strip</td><td><span class="aria">tuning: A4, 440.1 Hz, +4 cents</span></td></tr>
+      <tr><td>Time</td><td><span class="aria">Time 20 ms</span> (aria-valuetext)</td></tr>
+      <tr><td>1 R</td><td><span class="aria">Ch1 range: AUDIO</span></td></tr>
+      <tr><td>Mode</td><td><span class="aria">Mode: SPLIT</span></td></tr>
+      <tr><td>SCREEN</td><td><span class="aria">aria-pressed=true</span></td></tr>
+    </table>
+  </div>
+
+  <div class="zones">
+    <h4>what this state proves</h4>
+    <table class="zt">
+      <tr><td>&sect;9 row 3</td><td>both patched, SPLIT &mdash; two independently scaled traces; moving <code>2 Y</code> moves only the lower one</td></tr>
+      <tr><td>&sect;9 row 6</td><td><code>intensity</code> at its 12:00 default &rarr; the legacy render, pixel-identical</td></tr>
+      <tr><td>&sect;9 row 8</td><td>a pitched signal on ch1 &rarr; the marker leaves centre and goes green inside &plusmn;5 cents</td></tr>
+    </table>
+  </div>
+</div>
+</div>
+</div>

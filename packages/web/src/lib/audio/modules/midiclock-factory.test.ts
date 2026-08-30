@@ -77,13 +77,13 @@ function makeMockCtx(): FakeAudioCtx {
   };
 }
 
-function makeNode(data?: Record<string, unknown>): ModuleNode {
+function makeNode(data?: Record<string, unknown>, params?: Record<string, number>): ModuleNode {
   return {
     id: 'midiclock-test',
     type: 'midiclock',
     domain: 'audio',
     position: { x: 0, y: 0 },
-    params: {},
+    params: params ?? {},
     data: data ?? {},
   };
 }
@@ -318,5 +318,99 @@ describe('midiclockDef.factory — MIDI System Real-Time → ConstantSourceNode 
     } finally {
       restoreMidi();
     }
+  });
+
+  // ── THE DIVISION'S MIGRATION (2026-08-24) ─────────────────────────────────
+  //
+  // `divisor` moved from `node.data` to `node.params`, and that is THE ONE WAY
+  // A SAVED PATCH COULD REGRESS in this promotion. These four tests are the
+  // guard, and they are here rather than in `midiclock.test.ts` because the
+  // read order lives in the FACTORY — a pure test of `snapDivisor` cannot see
+  // which key the factory reached for first.
+  //
+  // The observable throughout is `readParam('divisor')`, which returns the
+  // engine's live `divisor` closure variable — i.e. the number the divider
+  // actually counts to, not a re-read of the node.
+
+  async function bootWith(
+    data: Record<string, unknown>,
+    params: Record<string, number>,
+  ): Promise<{ handle: Awaited<ReturnType<typeof midiclockDef.factory>>; node: ModuleNode }> {
+    const node = makeNode(data, params);
+    const handle = await midiclockDef.factory(makeMockCtx() as unknown as AudioContext, node);
+    return { handle, node };
+  }
+
+  it('MIGRATION: a v-old rack with only `data.divisor` keeps clocking at ITS division', async () => {
+    // The regression this whole ordering exists to prevent. Before the param
+    // existed, `data.divisor = 6` was the only place a sixteenth-note division
+    // could live. If the factory read params first and then STOPPED, every rack
+    // saved before today would silently snap back to 1/4 on load — a change to
+    // what the user hears, on open, with nothing said.
+    const { handle } = await bootWith({ divisor: 6 }, {});
+    expect(handle.readParam?.('divisor'), 'legacy data.divisor honoured').toBe(6);
+  });
+
+  it('MIGRATION: `params.divisor` WINS over a stale `data.divisor`', async () => {
+    // The other direction, and the reason the order is params-first rather
+    // than data-first. Once the player moves the control, `params` is the
+    // truth; the legacy key is left behind untouched (see below) and must
+    // never be able to overrule it.
+    const { handle } = await bootWith({ divisor: 6 }, { divisor: 3 });
+    expect(handle.readParam?.('divisor'), 'params outrank the legacy key').toBe(3);
+  });
+
+  it('MIGRATION: the legacy `data.divisor` is READ AND LEFT ALONE — never repaired', async () => {
+    // ⚠ THE HALF THAT IS EASY TO GET WRONG BY BEING HELPFUL. Writing the
+    // migrated value back would "tidy" the node from inside the engine — an
+    // untagged Y.Doc write, outside undo, invisible to collaborators' history,
+    // and `types.ts` states the rule: a silent engine-side repair of a
+    // data-integrity bug is indistinguishable from no bug. The stored key is
+    // normalized by the first ordinary tagged write the player makes, and by
+    // nothing else.
+    const { handle, node } = await bootWith({ divisor: 6 }, {});
+    expect(handle.readParam?.('divisor')).toBe(6);
+    expect(node.data?.divisor, 'legacy key not rewritten').toBe(6);
+    expect(node.params.divisor, 'no param written behind the user\'s back').toBeUndefined();
+  });
+
+  it('MIGRATION: an OFF-ROSTER stored value clocks at its nearest LEGAL division', async () => {
+    // A rack can hold anything — an IndexedDB replica restore, a peer's Y
+    // update, an undo — and none of those paths goes through a loader. Snapping
+    // at the point of use covers all of them. 7 has no meaning here (it does
+    // not divide 24), and 6 is its neighbour.
+    const { handle, node } = await bootWith({}, { divisor: 7 });
+    expect(handle.readParam?.('divisor'), 'snapped to a named member').toBe(6);
+    // And STILL not repaired in the graph, for the same reason as above.
+    expect(node.params.divisor, 'stored value untouched').toBe(7);
+  });
+
+  it('setParam SNAPS rather than dropping — a lane knob cannot leave a dead control', async () => {
+    // ⚠ THE ALTERNATIVE IMPLEMENTATION IS THE DEFECT. `if (isValidDivisor(v))
+    // setDivisor(v)` looks like careful validation and is a dead control: at
+    // every LANE tier `paramCellKind` returns 'knob' for an options param, so a
+    // drag walks 1..24 and 19 of those 24 positions would move the dial on
+    // screen and change nothing audible.
+    const { handle } = await bootWith({}, {});
+    handle.setParam?.('divisor', 17);
+    // NEAREST BY VALUE, which is the shared `snapToOptions` every exhaustive
+    // roster uses: |17−12| = 5 beats |17−24| = 7. Spelled out because the
+    // first draft of this line asserted 24 by eye and the arithmetic caught it
+    // — the snap is a measurement, not an intuition.
+    expect(handle.readParam?.('divisor'), '17 landed on a legal division').toBe(12);
+    handle.setParam?.('divisor', 3);
+    expect(handle.readParam?.('divisor'), 'a legal value passes through exact').toBe(3);
+  });
+
+  it('NEGATIVE CONTROL: readParam answers ONLY for divisor', async () => {
+    // Without this, a `readParam` that returned the divisor for every key would
+    // satisfy every assertion above — and would hand the wrong number to any
+    // future param, silently.
+    const { handle } = await bootWith({}, { divisor: 12 });
+    expect(handle.readParam?.('divisor')).toBe(12);
+    expect(handle.readParam?.('nonsense')).toBeUndefined();
+    // …and setParam ignores a key it does not own rather than clobbering.
+    handle.setParam?.('nonsense', 1);
+    expect(handle.readParam?.('divisor'), 'unrelated write did not move it').toBe(12);
   });
 });

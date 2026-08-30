@@ -199,6 +199,88 @@ describe('startPresent', () => {
     expect(y).toBe(0);
   });
 
+  it('installs the frame on the POPUP so the SINK owns the clock (#2235)', () => {
+    const env = installWindow();
+    const canvas = fakeSourceCanvas();
+    const { popup, ctx } = fakePopup();
+    const openWindow = vi.fn(() => popup as unknown as Window);
+    const sched = fakeRaf();
+
+    startPresent({ source: () => canvas, rect: null, openWindow, raf: sched.raf, caf: sched.caf });
+    env.fireMessage({ source: popup, data: { type: 'present:ready' } });
+    vi.advanceTimersByTime(100);
+
+    const pull = (popup as unknown as { __presentFrame?: () => void }).__presentFrame;
+    expect(pull, 'the opener must install a frame the sink can pull').toBeTypeOf('function');
+
+    // The sink pulling draws a frame WITHOUT the opener's rAF running at all —
+    // which is the whole point: the projector keeps painting while the opener
+    // is unfocused and its rAF is throttled to nothing.
+    pull!();
+    expect(ctx.drawImage).toHaveBeenCalledTimes(1);
+  });
+
+  it('the opener STOPS drawing once the sink pulls, so one frame is never blitted twice', () => {
+    const env = installWindow();
+    const canvas = fakeSourceCanvas();
+    const { popup, ctx } = fakePopup();
+    const openWindow = vi.fn(() => popup as unknown as Window);
+    const sched = fakeRaf();
+
+    startPresent({ source: () => canvas, rect: null, openWindow, raf: sched.raf, caf: sched.caf });
+    env.fireMessage({ source: popup, data: { type: 'present:ready' } });
+    vi.advanceTimersByTime(100);
+
+    const pull = (popup as unknown as { __presentFrame?: () => void }).__presentFrame!;
+    pull();
+    expect(ctx.drawImage).toHaveBeenCalledTimes(1);
+
+    // Opener frames now supervise only.
+    sched.tick();
+    sched.tick();
+    expect(ctx.drawImage).toHaveBeenCalledTimes(1);
+  });
+
+  it('the OPENER keeps drawing for a sink that never pulls (cached older /present)', () => {
+    // The fallback is not decoration: a projector that went black because the
+    // two clocks disagreed would be worse than the freeze this change fixes.
+    const env = installWindow();
+    const canvas = fakeSourceCanvas();
+    const { popup, ctx } = fakePopup();
+    const openWindow = vi.fn(() => popup as unknown as Window);
+    const sched = fakeRaf();
+
+    startPresent({ source: () => canvas, rect: null, openWindow, raf: sched.raf, caf: sched.caf });
+    env.fireMessage({ source: popup, data: { type: 'present:ready' } });
+    vi.advanceTimersByTime(100);
+
+    sched.tick();
+    sched.tick();
+    expect(ctx.drawImage).toHaveBeenCalledTimes(2);
+  });
+
+  it('RECLAIMS the clock when a sink that was pulling stops', () => {
+    const env = installWindow();
+    const canvas = fakeSourceCanvas();
+    const { popup, ctx } = fakePopup();
+    const openWindow = vi.fn(() => popup as unknown as Window);
+    const sched = fakeRaf();
+
+    startPresent({ source: () => canvas, rect: null, openWindow, raf: sched.raf, caf: sched.caf });
+    env.fireMessage({ source: popup, data: { type: 'present:ready' } });
+    vi.advanceTimersByTime(100);
+
+    (popup as unknown as { __presentFrame?: () => void }).__presentFrame!();
+    expect(ctx.drawImage).toHaveBeenCalledTimes(1);
+    sched.tick();
+    expect(ctx.drawImage).toHaveBeenCalledTimes(1); // opener stood down
+
+    // The sink goes quiet (a popup reload). The watchdog hands the clock back.
+    vi.advanceTimersByTime(2000);
+    sched.tick();
+    expect(ctx.drawImage).toHaveBeenCalledTimes(2);
+  });
+
   it('delegates fullscreen to the popup on ready (Capability Delegation) so it can go true-fullscreen with no click', () => {
     const env = installWindow();
     const canvas = fakeSourceCanvas();

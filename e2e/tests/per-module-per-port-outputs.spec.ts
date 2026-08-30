@@ -17,9 +17,14 @@ import {
   SKIP_SPAWN,
   collectPageErrors,
   driverFor,
-  freezeVideoRender,
-  heavyVideoTimeout,
+  // NB: `freezeVideoRender` and `heavyVideoTimeout` were imported here and never
+  // called — leftovers from the #1538 split. Removed with #1984 because the first
+  // one is actively misleading: this sweep is the one that does NOT freeze the GL
+  // draw (it reads real pixels), and that is exactly what makes its per-output
+  // cost what it is. See the budget derivation in _per-module-per-port-shared.ts.
   observeScopePeak,
+  readEmitDiagnostics,
+  formatEmitDiagnostics,
   perPortDriverFor,
   pickOutputSink,
   spawnPatch,
@@ -27,6 +32,7 @@ import {
   emitSkipReason,
   emitBudgetMs,
 } from './_per-module-per-port-shared';
+import { buildKriaData } from './_helpers';
 import type {
   RegistryModule,
   SpawnEdge,
@@ -175,14 +181,15 @@ test.describe('per-module per-port: outputs emit signal', () => {
         if (driver.gatePort || driver.pitchPort) {
           nodes.unshift({
             id: 'driver-seq',
-            type: 'sequencer',
+            type: 'kria',
             position: { x: 60, y: 280 },
-            params: { bpm: 240, length: 4, isPlaying: 1, gateLength: 0.5 },
+            // Same 16th grid + bpm as the deleted SEQUENCER driver.
+            params: { bpm: 240, running: 1 },
           });
           if (driver.gatePort) {
             edges.unshift({
               id: 'e-seq-g',
-              from: { nodeId: 'driver-seq', portId: 'gate' },
+              from: { nodeId: 'driver-seq', portId: 'gate1' },
               to:   { nodeId: 'sut',        portId: driver.gatePort },
               sourceType: 'gate',
               targetType: 'gate',
@@ -191,7 +198,7 @@ test.describe('per-module per-port: outputs emit signal', () => {
           if (driver.pitchPort) {
             edges.unshift({
               id: 'e-seq-p',
-              from: { nodeId: 'driver-seq', portId: 'pitch' },
+              from: { nodeId: 'driver-seq', portId: 'pitch1' },
               to:   { nodeId: 'sut',        portId: driver.pitchPort },
               sourceType: 'pitch',
               targetType: 'cv',
@@ -224,7 +231,9 @@ test.describe('per-module per-port: outputs emit signal', () => {
         if (ppDriver?.postSpawn) await ppDriver.postSpawn(page, 'sut');
 
         if (driver.gatePort || driver.pitchPort) {
-          await page.evaluate(() => {
+          // KRIA is data-driven — an unseeded node has no active pattern and
+          // emits nothing, so the driver MUST be seeded (C4/E4/G4/C5 arp).
+          await page.evaluate((data) => {
             const w = globalThis as unknown as {
               __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
               __ydoc: { transact: (fn: () => void) => void };
@@ -233,14 +242,14 @@ test.describe('per-module per-port: outputs emit signal', () => {
               const seq = w.__patch.nodes['driver-seq'];
               if (!seq) return;
               if (!seq.data) seq.data = {};
-              seq.data.steps = [
-                { on: true, midi: 60 },
-                { on: true, midi: 64 },
-                { on: true, midi: 67 },
-                { on: true, midi: 72 },
-              ];
+              for (const [k, v] of Object.entries(data)) seq.data[k] = v;
             });
-          });
+          }, buildKriaData([
+            { note: 0, octave: 1 }, // C4 (60)
+            { note: 2, octave: 1 }, // E4 (64)
+            { note: 4, octave: 1 }, // G4 (67)
+            { note: 0, octave: 2 }, // C5 (72)
+          ]));
         }
 
         // ── THE OBSERVATION WINDOW IS A BOUND, NOT A GATE ──────────────────
@@ -306,12 +315,33 @@ test.describe('per-module per-port: outputs emit signal', () => {
             + `never resolved, so this run says NOTHING about whether the port emits. `
             + `This is an instrument failure, not a dead port.`,
           ).toBeGreaterThan(0);
+          // CAUSE, NOT JUST LEVEL. The peak/rms/samples triple says HOW MUCH
+          // signal arrived and nothing about WHY it did not — which is how a
+          // moog904a.audio flake supported two incompatible explanations
+          // through a full log read. Read the discriminating state only on the
+          // failing branch, so a green port pays no extra round trip.
+          // See readEmitDiagnostics for the measurement that motivated it.
+          // ⚠ The probe must never COST us the finding. It runs on a page that
+          // has already misbehaved once, so a throw here would replace a real
+          // measurement with a stack trace about the instrument. Degrade to a
+          // note instead and let the peak/rms/samples triple stand on its own.
+          let diagLine = '';
+          if (obs.maxPeak <= 0.005) {
+            try {
+              diagLine = formatEmitDiagnostics(
+                await readEmitDiagnostics(page, 'sut', Object.keys(sutParams), 'e-sut-sink'),
+              );
+            } catch (err) {
+              diagLine = `unavailable (${(err as Error)?.message ?? 'unknown'})`;
+            }
+          }
           expect(
             obs.maxPeak,
             `${mod.type}.${port.id} (type=${port.type}): scope.ch1 peak above floor `
             + `(maxPeak=${obs.maxPeak.toFixed(4)}, lastRms=${obs.lastRms.toFixed(4)}, `
             + `samples=${obs.samples} over ${Math.round(obs.elapsedMs)} ms of a ${boundMs} ms `
-            + `bound, unpatched ch2 peak=${obs.maxPeakCh2.toFixed(4)})`,
+            + `bound, unpatched ch2 peak=${obs.maxPeakCh2.toFixed(4)})`
+            + (diagLine ? `\n  SUT state at failure: ${diagLine}` : ''),
           ).toBeGreaterThan(0.005);
         } else {
           // Video output → VIDEOOUT canvas stats. We assert TWO floors:

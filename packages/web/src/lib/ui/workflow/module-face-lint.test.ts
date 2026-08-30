@@ -46,25 +46,25 @@ import { STRICT_FACES } from './strict-faces';
 import { curatedFace, dockFacePlan, dockPlanControls, type FaceDefLike } from './curated-face';
 import { DOCK_TAB_MIN_BANDS, dockTabPlan } from './dock-tabs-model';
 import { glyphBinding } from './shell-glyph-live';
-import {
-  bandHeaderPlan,
-  faceAnnotations,
-  facePageHeader,
-  heroFacePlan,
-  heroFacePlanIsTotal,
-  isUsableReadout,
-  sidebarPlan,
-  type FaceplateDefLike,
-} from './dock-faceplate-model';
-import { sidebarPanelIds } from './sidebar-panels';
+import { bandHeaderPlan, faceAnnotations, facePageHeader, heroFacePlan, heroFacePlanIsTotal, type FaceplateDefLike } from './dock-faceplate-model';
 import { paintsReadout } from '$lib/ui/controls/knob-vocabulary-model';
 // The channel list mixmstrs' ACKNOWLEDGED_LATCHING entries are DERIVED from —
 // see the entry itself for why eight identical enables are generated rather
 // than typed.
 import { MIXMSTRS_CHANNELS } from '$lib/audio/modules/mixmstrs';
-import { faceReadoutValueIds } from './face-readout-values';
+// The spiro count spirographs' ACKNOWLEDGED_LATCHING entries are DERIVED from,
+// for the same reason as the mixmstrs channels — see the entry itself.
+import { SPIRO_COUNT_MAX, spiroParamId } from '$lib/video/modules/spirographs';
+// The fifteen OVER/CLAMP channel switches colourofmagic's ACKNOWLEDGED_LATCHING
+// entries are DERIVED from — see the entry itself for why they are generated
+// rather than typed.
+import { COLOUROFMAGIC_OVER_PARAMS } from '$lib/video/modules/colourofmagic';
+// BAND FOCUS — the pure totality checker, so the lint and the model cannot
+// disagree about what "total" means.
+import { bandFocusIsInert, bandFocusIsTotal } from './band-focus-model';
+import type { FaceBandFocus } from '$lib/graph/types';
 import { laneBodyPlan, laneGlyphFor } from './module-shell-model';
-import { looksLikeSwitch } from './shell-control-kind';
+import { bodyPaintedParamIds, looksLikeSwitch, type DeclaringDefLike } from './shell-control-kind';
 import { panelCellKeys, shellCellFor } from './shell-cells';
 import { GRID_MAX_CELLS } from '$lib/ui/controls/param-grid-model';
 import {
@@ -75,6 +75,11 @@ import {
 
 interface FaceDef {
   type: string;
+  /** The def's registry DOMAIN. Read by the meta-precursor control at the foot
+   *  of this file, which has to be able to ask "did a META def reach `allDefs()`
+   *  carrying a face" — the question the promotion anchor was structurally
+   *  unable to ask for the whole life of the face system. */
+  domain?: string;
   inputs?: readonly { id: string }[];
   outputs?: readonly { id: string }[];
   params?: readonly ParamDef[];
@@ -415,13 +420,33 @@ describe('module-face lint — DOCK RENDER-PLAN parity (STRICT_FACES set)', () =
       // renderer in BOTH directions, so a declaration that failed to suppress
       // (or suppressed the wrong param) is red, not quietly satisfied.
       const noControl = noUserControlIds(def as NoUserControlDefLike);
+      // ⚠ THE SECOND ZERO-CELL DECLARATION, AND IT INVERTS THE SAME WAY.
+      // `face.xyPads[].surface === 'body'` says the module's OWN `fullViewBody`
+      // paints that pad, so its two axes must render EXACTLY ZERO dock band
+      // cells. The claim is falsifiable in both directions exactly like
+      // `noUserControl`: a declaration that failed to suppress is red here, and
+      // a body that does not actually paint the pad is red in
+      // `face-xy-body-source.test.ts` (which reads the component source) and in
+      // `faces-parity` (which reads the rendered `data-control-params`).
+      //
+      // ⚠ IT IS **NOT** THE SAME CLAIM AS `noUserControl`, and conflating them
+      // would be a real error: `noUserControl` says NOBODY sets this param,
+      // `surface: 'body'` says the player sets it SOMEWHERE ELSE ON THIS PLATE.
+      // The completeness sweep above therefore still REQUIRES a body pad's axes
+      // in `face.order` — dropping them would be the un-ranked control it
+      // exists to catch — while `noUserControl` forbids the rank.
+      const inBody = bodyPaintedParamIds(def as DeclaringDefLike);
       for (const p of def.params ?? []) {
         const n = paramCounts.get(p.id) ?? 0;
-        const want = noControl.has(p.id) ? 0 : 1;
+        const want = noControl.has(p.id) || inBody.has(p.id) ? 0 : 1;
         if (n !== want) {
           problems.push(
             `${def.type}: param '${p.id}' renders ${n}× in the dock plan (must be exactly ${want}` +
-              `${want === 0 ? ' — it is declared noUserControl' : ''})`,
+              `${want === 0
+                ? noControl.has(p.id)
+                  ? ' — it is declared noUserControl'
+                  : " — its pad declares surface:'body', so the module's fullViewBody paints it"
+                : ''})`,
           );
         }
         paramCounts.delete(p.id);
@@ -477,6 +502,170 @@ describe('module-face lint — MOMENTARY pads (face.momentary)', () => {
    *  an id here ONLY after confirming against the module's DSP/card that the
    *  control latches; a press-pad goes on `face.momentary` instead. */
   const ACKNOWLEDGED_LATCHING = new Set<string>([
+    // SAMSLOOP `poly`, 2026-08-23. MONO (0) vs POLY (1) — whether a trigger
+    // arriving while the module is already sounding RESTARTS the single voice or
+    // takes another one.
+    //
+    // LATCHING, classified AT THE READ SITE. The worklet reads it once per
+    // block as a plain level (`Math.round(polyArr[0] ?? 0) === 1`) and hands the
+    // boolean to `startVoice`; there is no edge detector on it anywhere in the
+    // processor. It is a MODE the player sets and leaves — the whole point is
+    // that the NEXT several triggers layer — so a momentary render would drop
+    // the rack back to mono the instant they released the pad, which is the one
+    // behaviour nobody could use it for.
+    'samsloop:poly',
+    // SPECTROGRAPH, 2026-08-23 (cut B). `view` picks which COLORMAP the
+    // on-surface preview pulls: COLOR (heat ramp) or B/W (inverted grayscale).
+    //
+    // LATCHING, classified AT THE READ SITE — and the read site is unusually
+    // plain here, which is worth saying because this param is NEW in the same
+    // diff. Both consumers are a bare level test evaluated fresh every frame
+    // inside a rAF loop: `const port = viewBw ? 'bw' : 'color'` in
+    // `SpectrographCard.svelte` and the identical line in
+    // `SpectrographOutputBody.svelte`, each deriving `viewBw` as
+    // `(node.params.view ?? 0) >= 0.5`. There is no edge detector anywhere in
+    // the module, its draw core or either surface, and the def declares no gate
+    // input that could deliver one. A momentary render would snap the preview
+    // back to COLOR the instant the player released, which is not a control
+    // anyone could use to compare two colormaps.
+    //
+    // ⚠ It is also DISPLAY-ONLY: both video outputs render both colormaps
+    // continuously regardless of this value, so nothing downstream observes it.
+    // That is what let a piece of component state become a param without
+    // changing a single rendered frame.
+    'spectrograph:view',
+    // DOCKSCOPE, 2026-08-23 (cut A · batch 2). `range` picks the trace's
+    // volts-per-division: AUDIO (±1.0) or CV (±5V, the Eurorack convention).
+    //
+    // LATCHING, classified AT THE READ SITE rather than from the shape. The
+    // consumer is `dockscope-draw.ts`, which opens every redraw with
+    // `const isCv = params.range >= 0.5` and picks `rangeMax` from it — a LEVEL
+    // compared on EVERY FRAME, for as long as the value stands. There is no
+    // edge detector anywhere in the chain: the card's own button writes it as a
+    // persisted flip (`setNodeParam(id, 'range', range >= 0.5 ? 0 : 1)`) and
+    // reads it back off `node.params`, and the module declares no gate input at
+    // all. A momentary render would snap the display back to ±1.0 the instant
+    // the player let go, which is not a control anyone could use to look at a
+    // 5V pitch sweep.
+    //
+    // ⚠ It is also the one param in this batch that carries an `options`
+    // roster, so the two positions announce AUDIO and CV rather than
+    // pressed/unpressed. The classification and the roster are the same
+    // argument from two directions: this is a MODE switch, not an enable.
+    'dockscope:range',
+    // SCOPE, 2026-08-23. Three switches, all LATCHING, all classified AT THE
+    // READ SITE rather than from their shape — `scope-draw.ts` is the consumer
+    // for all three and it compares every one as a LEVEL on EVERY FRAME:
+    // `drawScope` dispatches `drawSplit`/`drawXY` on `(params.mode ?? 0) >= 0.5`
+    // and picks each channel's `rangeMax` from `(params.ch{1,2}Range ?? 0) >=
+    // 0.5`, which `pixelFromSample` then reads as `isCv`. There is no edge
+    // detector anywhere in the chain — no `createEdgeCounter`, no `lastTrig` —
+    // and the module declares no gate input at all, only `cv` ports.
+    //
+    // A momentary render would snap the display back the instant the player let
+    // go: the range switches are the difference between a pitch-CV trace being
+    // a readable curve and a flat line at the top of the screen, and XY is a
+    // view you set up and then WATCH. Neither is a thing anyone could hold.
+    //
+    // ⚠ ALL THREE ALSO CARRY AN `options` ROSTER, and the classification and
+    // the roster are the same argument from two directions: these are MODE
+    // switches, not enables. `AUDIO`/`CV` are the words the card's own button
+    // has always painted and the words `dockscope.range` already ships; `SPLIT`
+    // is the word this def's own comment and `scope-draw.ts`'s `drawSplit` use,
+    // against a card that paints a bare `⇆`. "Off" is not a state any of the
+    // three has.
+    'scope:ch1Range',
+    'scope:ch2Range',
+    'scope:mode',
+    // B3NTB0X, 2026-08-19. The two kaleidoscope FOLDS, and they became visible
+    // to this gate the same way cloudseed's enables did: their `curve` was
+    // corrected `linear` → `discrete` when the face landed, because the shader
+    // hard-thresholds both (`if (uMirrorX > 0.5)`) so `linear` was always a
+    // lie and the faceplate would have painted a two-state fold as a
+    // continuous rotary. Pixel-neutral by construction — every value the card
+    // or the face can write already sat on the same side of that threshold.
+    //
+    // LATCHING, not momentary: the card's MIRROR X / MIRROR Y buttons flip a
+    // persisted state you leave engaged, and the `mirror_*_gate` CV inputs
+    // TOGGLE it on a rising edge rather than holding it. A momentary render
+    // would un-fold the picture the instant you let go, which is the opposite
+    // of the control.
+    'b3ntb0x:mirrorX',
+    'b3ntb0x:mirrorY',
+    // MANDELBULB, 2026-08-20. Three params share the press-pad SHAPE
+    // (`0..1 discrete`) by coincidence of arity, and all three are states you
+    // set and leave — the card renders all three as latching BUTTONS
+    // (SPIN / SCRN / SLICE). None is edge-detected: every one is read as a
+    // LEVEL, verified line by line rather than inferred from the shape.
+    //
+    // SLICE (`params.slice >= 0.5`, :759) arms the whole audio half — it stands
+    // the oscillator chain up and keeps it running. A momentary render would
+    // tear the audio down on release, i.e. the module's headline feature could
+    // never be held: the `clouds:freeze` case reached by a simpler mechanism.
+    //
+    // AUTOSPIN (`:771`) is a level the draw path re-reads every frame to decide
+    // whether to advance `spinPhase`; releasing a pad would stop the rotation.
+    //
+    // SCREEN (`:778`) is the raymarch PERF gate — off means "do not compute a
+    // picture nobody is looking at", guarded by `frame.isOutputConnected` so it
+    // can never starve a patched consumer. It is a setting you leave, exactly
+    // like `cube:screen_on` above, and for the same reason.
+    'mandelbulb:slice',
+    'mandelbulb:autospin',
+    'mandelbulb:screen_on',
+    // BENTBOX, 2026-08-20 — the SIBLING pair, and they became visible to this
+    // gate by the identical route: `curve` corrected `linear` → `discrete` when
+    // this face landed, because `mirrorUv` hard-thresholds both
+    // (`mirrorX ? … : …` over a `>= 0.5` reduction at :659-660) so `linear` was
+    // always a lie about a two-state value. Pixel-neutral by construction — the
+    // READ is a threshold either way, so every value a card, a face, automation
+    // or a persisted patch could already hold lands on the same side of it.
+    //
+    // LATCHING, not momentary, for the same reason b3ntb0x's are: the card's
+    // MIRROR X / MIRROR Y buttons flip a persisted state you leave engaged, and
+    // the `mirror_*_gate` CV inputs TOGGLE it on a RISING EDGE rather than
+    // holding it. A momentary render would un-fold the picture the instant you
+    // let go, which is the opposite of the control.
+    'bentbox:mirrorX',
+    'bentbox:mirrorY',
+    // GRAINS OF VISION, 2026-08-20. The two block BYPASSES, visible to this
+    // gate for the same reason as b3ntb0x's folds and cloudseed's enables:
+    // their `curve` was corrected `linear` → `discrete` when the face landed,
+    // because both are consumed as `>= 0.5` (`fbDry >= 0.5`, `revDry >= 0.5`)
+    // so `linear` was always a lie and the faceplate would have painted a
+    // two-state bypass as a continuous rotary.
+    //
+    // ⚠ THE CARD ALREADY CLAIMED THIS WAS THE BEHAVIOUR AND IT WAS NOT — its
+    // comment reads "fb_dry / rev_dry render as 2-step DRY toggles" while it
+    // passed `curve={pcurve(k.id)}`, which returns the def's `linear`, and
+    // `NeonFader.fracToValue` rounds only for `discrete`. So everything in
+    // [0, 0.5) looked set and did nothing. The prose was right and the
+    // declaration was wrong; this makes them agree.
+    //
+    // LATCHING, not momentary: each one is a hard bypass you switch the block
+    // out with and LEAVE out — a momentary render would re-engage the feedback
+    // or reverb block the instant you let go, which is the opposite of a
+    // bypass. Neither has a CV port, so nothing pulses them either.
+    'grainsOfVision:fb_dry',
+    'grainsOfVision:rev_dry',
+    // NUMPAD+, 2026-08-26. FOUR switch-shaped params, every one LATCHING, and
+    // each classification made AT THE READ SITE:
+    //   * `isPlaying` — `tick()` reads it as a LEVEL every scheduler tick and
+    //     compares it against `prevIsPlaying` for the play-from-start edge. A
+    //     momentary render would stop the transport on release.
+    //   * `recArm` — read as a level at the play-from-start edge, and the module
+    //     WRITES IT BACK TO 0 itself after sixteen steps. A press-pad would make
+    //     arming impossible, since arming MEANS "be on when PLAY is next
+    //     pressed".
+    //   * `overdub` — read as a level inside the keydown handler on every press.
+    //     It is the mode you leave on while you play.
+    //   * `poly` — read as a level per press; the same shape as `samsloop:poly`
+    //     above and for the same reason.
+    // The module has no press-pad of any kind, so it declares no `face.momentary`.
+    'numpadPlus:isPlaying',
+    'numpadPlus:recArm',
+    'numpadPlus:overdub',
+    'numpadPlus:poly',
     'kickdrum:hard',   // hard-clip mode switch — a bus state you leave engaged
     'snaredrum:hard',  // same clipper switch, the KICK sibling's precedent
     // CLOUDSEED, 2026-08-01. The five stage ENABLES that rest at 0. They only
@@ -557,6 +746,22 @@ describe('module-face lint — MOMENTARY pads (face.momentary)', () => {
     // the module's headline feature could never be held — the `clouds:freeze`
     // case, reached by the simpler mechanism.
     'warrensspectrum:engineFreeze',
+    // WARREN'S VISIONS, 2026-08-20 — the VISUAL analogue of the entry directly
+    // above, and it reaches the same answer by the same mechanism rather than
+    // by inheriting it. `params.engineFreeze >= 0.5` is read as a LEVEL once
+    // per drawn frame (`warrensvisions.ts:647` sets the engine's frozen state,
+    // `:667` re-reads it in the draw path), and the def declares its `gate`
+    // input `edge: 'gate'` with `paramTarget: 'engineFreeze'` — level-sensitive
+    // on purpose, per CLAUDE.md's rule against converting a gate consumer to
+    // edge-only. A momentary render would thaw the ANALYSIS the instant the pad
+    // was released, so the freeze could never be held.
+    //
+    // ⚠ AND IT IS NOT A DETERMINISM TOGGLE, which is the trap next door: this
+    // FREEZE stops the analysis while the bank goes on slewing, drifting and
+    // rendering (the def's own docs say so). It declares `options`, so the dock
+    // paints a captioned LIVE/FREEZE pair rather than an anonymous switch — a
+    // different question from this classification, per the cofefve precedent.
+    'warrensvisions:engineFreeze',
     // MIXMSTRS, 2026-08-15. Ten params share the press-pad SHAPE
     // (`0..1 discrete resting at 0`) and every one is a console state you set
     // and leave. None is read on an edge: the Faust DSP takes all ten through
@@ -574,6 +779,24 @@ describe('module-face lint — MOMENTARY pads (face.momentary)', () => {
     // level read; the compressor is a stage you switch into the channel and
     // leave there.
     ...MIXMSTRS_CHANNELS.map((c) => `mixmstrs:ch${c}_compEnable`),
+    // SPIROGRAPHS, 2026-08-18. `s{N}_inside` picks which CURVE a spiro traces:
+    // HYPOTROCHOID (rolling circle inside the fixed one) against EPITROCHOID
+    // (outside). `0..1 discrete` is the press-pad shape by coincidence of arity
+    // — it is the most consequential single choice on a spiro and you make it
+    // once and leave it. The draw path reads its LEVEL every frame
+    // (`insideV >= 0.5` selects which of the two point functions is sampled),
+    // never an edge, so a momentary render would flip the figure back the
+    // instant you released the pad. It also declares `options`, so the dock
+    // paints a captioned pair rather than an anonymous switch — a different
+    // question from this classification, per the cofefve precedent above.
+    //
+    // DERIVED from the spiro count, like the mixmstrs channels above: three
+    // identical instances of ONE control, so a fourth spiro cannot arrive
+    // carrying an unacknowledged switch.
+    ...Array.from(
+      { length: SPIRO_COUNT_MAX },
+      (_, i) => `spirographs:${spiroParamId(i + 1, 'inside')}`,
+    ),
     // The two SEND-BUS tap-point switches, spelled out because they are two
     // DIFFERENT buses rather than eight instances of one control. POST (0) is
     // the default; PRE re-taps the whole bus ahead of the fader so a return
@@ -603,10 +826,456 @@ describe('module-face lint — MOMENTARY pads (face.momentary)', () => {
     'backdraft:mirrorX',
     'backdraft:mirrorY',
     'backdraft:pureGeo',
+    // FREEZEFRAME, 2026-08-19. Both switches are LEVELS read every frame, and
+    // the module's own gate machinery is what makes the distinction sharp
+    // rather than a judgement call.
+    //
+    // ⚠ THE MODULE DOES HAVE AN EDGE CONSUMER, AND IT IS NEITHER OF THESE. The
+    // one thing on freezeframe that fires on a rising edge is the GATE — a
+    // trigger at `gate_in` updates exactly one frame — and that arrives through
+    // `gateLevel`, which is declared `noUserControl` and carries no cell at
+    // all. So the params a player can actually switch are precisely the ones
+    // that do NOT edge-detect, which is the opposite of the tomtom `strike`
+    // mistake this ratchet exists for.
+    //
+    // `decay` gates the phosphor persistence: the draw loop computes a
+    // surviving fraction from ELAPSED TIME and pushes it as the `uDecayK`
+    // uniform every frame, so the switch is sampled continuously and a
+    // momentary render would end the fade on pointer-release — the trail is
+    // the effect, and it is exactly what you leave switched on.
+    // `decay_invert` only chooses that fade's TARGET (black or white) and is
+    // read the same way, through `uDecayTarget`. Neither has any edge
+    // behaviour anywhere in the module.
+    'freezeframe:decay',
+    'freezeframe:decay_invert',
     // pointerup, the worklet ORs it into the mono gate like tomtom's `strike`,
     // and the def's own doc says "released = note-off (no latch)". It is now
     // declared on `face.momentary`. The cross-check below is what stops that
     // mistake from being made silently again.
+    //
+    // MOOG 902, 2026-08-19. The RESPONSE switch — LINEAR / EXPONENTIAL — and it
+    // is latching on all three available authorities rather than on its shape:
+    //   * THE DSP. `mode` is declared `automationRate: 'k-rate'` and read ONCE
+    //     PER BLOCK as `modeArr[0] >= 0.5` (`packages/dsp/src/moog902.ts`). It
+    //     selects which of two gain LAWS runs for that block. There is no edge
+    //     detector anywhere in the processor, so a momentary render would
+    //     select the exponential law only while a finger was down — i.e. the
+    //     control would be unusable rather than merely wrong.
+    //   * THE CARD IT REPLACES. `Moog902VcaCard.svelte` drew it as a
+    //     `role="radiogroup"` of two `role="radio"` buttons with
+    //     `aria-checked` — a latching 2-position selector by construction, and
+    //     the shape this face reproduces through `options[]`.
+    //   * THE HARDWARE. A 902's RESPONSE is a panel toggle you set for the
+    //     patch, not a gesture you perform.
+    // A stuck momentary value here would also be audible rather than cosmetic:
+    // the two laws differ by up to 5.45 dB between their anchors.
+    'moog902:mode',
+    // RASTERIZE, 2026-08-20. WRAP chooses what happens when the scan cursor
+    // runs off the end of the frame: 0 wraps and keeps accumulating (toroidal
+    // drift), 1 clears on wrap for a clean top-to-bottom repaint sweep.
+    //
+    // ⚠ THE LEVEL READ IS ONE HOP AND IT IS WORTH NAMING, because this module
+    // DOES contain an edge detector and it is not this param. `RasterPainter.
+    // paint` calls `wrapModeFromParam(params.wrap)` on EVERY frame and hands
+    // the result to `mapRasterFrame`, which branches on it when the run passes
+    // `total` — a continuous per-frame level read, no edge anywhere. The thing
+    // that IS a change detector on this module is `cursor`, which re-seats only
+    // when its FLOORED value differs from the last one seen (#2000) — so the
+    // one param with edge-ish behaviour is a continuous knob, and the one with
+    // the press-pad shape is a pure level. That is the freezeframe inversion
+    // again, and it is why the shape alone could not have answered this.
+    //
+    // The card it replaces drew it as a single latching WRAP/CLAMP button whose
+    // caption IS the current state, so a momentary render would snap the frame
+    // back to accumulate-mode the instant the pad was released — the repaint
+    // sweep could never be left running, which is one of the module's two
+    // looks.
+    'rasterize:wrap',
+    // FOXY, 2026-08-20. FIVE params share the press-pad SHAPE and every one of
+    // them LATCHES. The four FREEZEs are the module's state pins: each holds a
+    // raster (or the whole wavetable) at its current frame so that axis stops
+    // evolving while the others keep moving. A momentary render would un-freeze
+    // the instant the pad was released, which is not a weaker version of the
+    // control — it is the control deleted, since the entire point is to walk
+    // away and leave one axis pinned while you dial the others.
+    //
+    // ⚠ AND THE FACTORY READS THEM AS LEVELS, WHICH IS THE HALF THE SHAPE
+    // CANNOT TELL YOU. `bridgeTick` gates on the mirrored booleans every tick
+    // (`if (!freezeA) { … }`, `if (!freezeT) { … }`), and `setParam` mirrors
+    // each with `value >= 0.5` — a per-tick LEVEL read, never an edge. There is
+    // no rising-edge consumer anywhere in this module.
+    'foxy:freezeRasterA',
+    'foxy:freezeRasterB',
+    'foxy:freezeRasterC',
+    'foxy:freezeTable',
+    // `gen_mode` is switch-SHAPED only by arity: it picks which of two
+    // raster→wavetable ALGORITHMS runs (the continuous XYZ heightfield, or the
+    // discrete 3D Shape Gen path), which is a mode you choose and leave. The
+    // bridge reads its level every tick (`if (genMode >= 0.5)`), so a momentary
+    // render would switch the generator back on release and the second path
+    // would be unreachable. ⚠ It now declares an `options[]` roster (#2007), so
+    // the dock paints it as a named `segmented` rather than any kind of pad —
+    // but this gate reads the param SHAPE, not the resolved cell, which is
+    // correct: the roster is cosmetic and could be removed without changing
+    // what the DSP does with the value.
+    'foxy:gen_mode',
+    // GATEMAIDEN, 2026-08-20. The TRIG output's waveform, and it reaches this
+    // gate by a different route from every entry above it: no `curve` needed
+    // correcting. `trigShape` has been `discrete 0..1 default 0` since the
+    // module shipped — it is switch-shaped, correctly declared, and simply had
+    // no promoted module around it until now.
+    //
+    // LATCHING, and the card is unambiguous about it: the control is a CYCLE
+    // BUTTON whose caption IS the current state (it read `△ TRI` / `▭ SQR`),
+    // so each click SETS a mode that is then left alone. There is no CV port
+    // and nothing pulses it. A momentary render would snap the pulse back to
+    // TRI the instant the pad was released, which would make SQR unreachable
+    // in practice — and SQR is not a flourish: it carries twice TRI's area and
+    // clears the 0.5 threshold for twice as long (measured on the pure core in
+    // `gatemaiden-dsp.test.ts`), so it is the setting a player leaves engaged
+    // when a downstream trigger input is missing edges.
+    //
+    // ⚠ THE DOCS CROSS-CHECK BELOW IS LOAD-BEARING HERE RATHER THAN
+    // CEREMONIAL. This param's authored prose was WRONG until this same diff —
+    // it claimed the two shapes were "display/feel only", which is exactly the
+    // kind of sentence that makes a reviewer wave a classification through
+    // without asking what the control does. The prose now states the measured
+    // difference, and the acknowledgement rests on the cycle-button gesture.
+    'gatemaiden:trigShape',
+    // COLOUROFMAGIC, 2026-08-20 — eighteen switch-shaped params on one module,
+    // and the repetitive fifteen are GENERATED rather than typed (the mixmstrs
+    // channels / spirographs spiro-count precedent). `COLOUROFMAGIC_OVER_PARAMS`
+    // is derived from the def's own `params`, so a renamed or deleted channel
+    // changes this list instead of leaving a dead exemption behind.
+    //
+    // LATCHING, all fifteen: each is that channel's OVER/CLAMP mode — CLAMP
+    // clips to the legal range, OVER wraps it through `fract()` (the LZX
+    // chroma-wrap look). It is a mode you set for a picture and LEAVE; a
+    // momentary render would snap the channel back to CLAMP the instant you let
+    // go, which would put the wrap look out of reach. None has a CV port, so
+    // nothing pulses them either.
+    ...COLOUROFMAGIC_OVER_PARAMS.map((id) => `colourofmagic:${id}`),
+    // The three that are NOT channel switches, written out because each latches
+    // for its own reason:
+    //   `replace` — the RGB palette REPLACE mode. Persisted state you leave
+    //   engaged, and the card auto-enables it when a swatch is picked, which
+    //   only makes sense for a latch.
+    'colourofmagic:replace',
+    //   `mode_hsl` — picks HSV or HSL for that whole block. A colorspace
+    //   choice, not a gesture.
+    'colourofmagic:mode_hsl',
+    //   ⚠ `freeze` — and this entry records a GAP rather than a decision. The
+    //   param is declared `noUserControl` (`writer: 'internal'`), so the player
+    //   has no control over it at all and "does releasing this pad write REST
+    //   back" — the question this ratchet exists to answer — does not apply.
+    //   THIS GATE DOES NOT READ `noUserControl`: it walks every param through
+    //   `looksLikeSwitch` and nothing else.
+    //   ⚠ AND WHETHER IT FIRES IS AN ACCIDENT OF AN UNRELATED FIELD. backdraft
+    //   declares the same VRT `freeze` in its own `noUserControl` and is NOT
+    //   listed here — only because its param says `curve: 'linear'`, so
+    //   `looksLikeToggle` returns false and the gate never asks. Same role,
+    //   same invisibility to the player, opposite treatment, decided by a curve
+    //   declaration that has nothing to do with latching. Filed rather than
+    //   patched, because narrowing a platform ratchet does not belong in a face
+    //   PR. It does latch, so the classification is at least true.
+    'colourofmagic:freeze',
+    // BATCH 22 · GROUP 2a, 2026-08-21. Two switch-shaped params, one per
+    // module, and both were VERIFIED AT THE READ SITE rather than inferred from
+    // the `0..1 discrete` shape — which is the whole point of this roster, and
+    // the standard the mandelbulb entry above sets.
+    //
+    //   `lumakey.invert`  — `g.uniform1f(uInvert, params.invert)`: the raw
+    //     value is pushed to the fragment shader as a uniform EVERY FRAME, so
+    //     it is read as a LEVEL and never edge-detected. The def's own docs
+    //     describe a state you leave set ("off (0) keeps bright foreground
+    //     opaque; on (1) keeps dark foreground opaque"), and its `invert` CV
+    //     input is documented as level-sensitive too ("a high value flips the
+    //     key"), not as a trigger.
+    //   `shapegen.solids` — `mode: params.solids >= 0.5 ? 'solids' : 'wireframe'`:
+    //     a threshold on the CURRENT value, evaluated per draw. Again a level.
+    //
+    // LATCHING, not momentary, on both: each is a look you switch on and LEAVE
+    // on. A momentary render would un-invert the key, or drop back to
+    // wireframe, the instant the player let go — the opposite of the control
+    // both cards draw as a plain `<button>`.
+    //
+    // ⚠ Neither needed a `curve` correction, unlike b3ntb0x and colourofmagic
+    // above: both defs already declare `discrete`, so the card and the def
+    // agreed before this face existed. Worth recording as the case where the
+    // declaration was ALREADY right — the failures in this roster are loud, and
+    // the quiet agreements are what make them legible as exceptions.
+    'lumakey:invert',
+    'shapegen:solids',
+    // SHAPES, 2026-08-23 (batch 23b) — the TILE switch, here for the same reason
+    // b3ntb0x's folds are: its `curve` was corrected `linear` -> `discrete` when
+    // the face landed, because the shader hard-thresholds it
+    // (`uTile >= 0.5 ? ... : 1.0`) so `linear` was always a lie and the faceplate
+    // would have painted a two-state switch as a continuous rotary — which is
+    // INERT, not merely ugly. Pixel-neutral: every value the card could write
+    // already sat on the same side of that threshold.
+    //
+    // LATCHING, not momentary, read off the shader rather than assumed: it
+    // compares a LEVEL every frame, and the card's TILE ON/OFF button flips a
+    // persisted state you leave engaged. A momentary render would un-tile the
+    // frame the instant you let go, which is the opposite of the control.
+    'shapes:tile',
+    // QUADRALOGICAL, 2026-08-22 — the GLOBAL key inversion, and it is the entry
+    // whose `curve` correction fixed a control that the player could not reach
+    // AT ALL rather than one they could reach awkwardly.
+    //
+    // VERIFIED AT THE READ SITE, per this roster's standard: the shader tests
+    // `if (invert >= 0.5)` in BOTH keyed arms of `blend()` — the CHROMA arm and
+    // the LUMA arm — and the TS reference `blend2()` does the same in both. So
+    // every value in (0, 0.5) is bit-identically OFF and every value in
+    // [0.5, 1] bit-identically ON: the declared `linear` was always a lie about
+    // a two-state value, and the correction is pixel-neutral by construction
+    // (every value any surface could already write stays on its own side of the
+    // threshold). Read as a LEVEL every frame via `g.uniform1f(mixU.invert,
+    // params.invert)`; never edge-detected, and no CV input targets it.
+    //
+    // LATCHING, not momentary: it is a look you switch on and LEAVE on — "keep
+    // the other side of the key". A momentary render would un-invert the key
+    // the instant the player let go, which is the opposite of the control.
+    //
+    // ⚠ AND IT BECAME VISIBLE TO THIS GATE BY A ROUTE NO OTHER ENTRY TOOK. The
+    // others were card buttons whose def merely mis-declared `curve`;
+    // `QuadralogicalCard.svelte` renders NO control for this param at all, and
+    // there is no `invert` CV input either, so it has been unreachable since it
+    // shipped. This roster's job is to tell "deliberately latching" from
+    // "nobody looked at it yet", and here the honest answer was the second one.
+    'quadralogical:invert',
+    // ACIDWARP, 2026-08-22 (#2111) — and this is the entry where the NAME is
+    // the trap. On every other def in this repo `freeze` is a DETERMINISM HOOK:
+    // a hidden param the VRT harness writes to stop the picture, declared
+    // `noUserControl` and given no cell. On acidwarp `freeze` is a REAL,
+    // DOCUMENTED USER CONTROL with a completely different meaning — it halts
+    // ONLY the automatic scene cycler, and the palette goes on rotating, so the
+    // picture keeps moving. Reading the name and assuming the usual thing would
+    // have produced a `noUserControl` entry that deleted a shipped control.
+    //
+    // VERIFIED AT THE READ SITE, per this roster's standard: the factory tests
+    // `params.freeze < 0.5` as a LEVEL each draw to decide whether to advance
+    // the auto-cycler; it is never edge-detected (the edge-detected param on
+    // this module is `sceneTrig`, which is a different thing and IS declared
+    // noUserControl). So it is read as a level, every frame.
+    //
+    // LATCHING, not momentary: it is a state you switch on and leave on while
+    // you sit on a scene. A momentary render would resume the cycler the
+    // instant the player let go — the exact opposite of the control, whose card
+    // caption is the latched pair FREEZE / FROZEN.
+    //
+    // ⚠ Its `curve` needed NO correction — the def already declares
+    // `discrete 0..1`, so card and def agreed before this face existed. Worth
+    // recording as the quiet case, since most entries in this roster arrived
+    // through a `linear` -> `discrete` fix.
+    'acidwarp:freeze',
+    // FRAMETABLE, 2026-08-23. `live` forces the REAL-TIME / no-lag read in any
+    // mode; `freeze` stops the 60-frame ring advancing.
+    //
+    // LATCHING BOTH, classified at the READ SITE and at the WRITE site, which
+    // agree. Reads: `draw()` evaluates `liveActive = params.live >= 0.5 ||
+    // params.liveGate >= 0.5` and `frozen = params.freeze >= 0.5 ||
+    // params.freezeGate >= 0.5` fresh on EVERY frame, as bare level tests. There
+    // is no edge detector on either — the only one in this module is
+    // `frametableSaveWrite`, which is on `saveTrig` and is on `face.momentary`
+    // for exactly that reason. Writes: `FrametableCard.svelte` binds both to
+    // `onclick` handlers that FLIP the stored value (`toggleLive`,
+    // `toggleFreeze`), where the same card binds `chaos` to
+    // `onpointerdown`/`onpointerup` with pointer capture.
+    //
+    // ⚠ AND THE MOMENTARY BEHAVIOUR ALREADY EXISTS SEPARATELY, which is what
+    // makes the latching reading certain rather than merely defensible. Each of
+    // these is OR-combined with a synthetic gate param — `liveGate` / `freezeGate`
+    // — written per frame by its own jack, so the module ALREADY offers "hold it
+    // while the gate is high" through the cable. The def's header calls this the
+    // FREEZE-pattern and the whole point of the split is that the button latches
+    // where the gate does not. A momentary render would delete the latching half
+    // of a pair whose two halves are the design.
+    //
+    // What a momentary render would cost, concretely: releasing LIVE would drop
+    // the picture back into its ~2-second lag mid-performance, and releasing
+    // FREEZE would resume capture and wash away the held window a player froze
+    // in order to scrub it — including a table just loaded from a file, since
+    // `loadFrametableFile` sets `freeze = 1` precisely to stop live frames
+    // overwriting it.
+    'frametable:live',
+    'frametable:freeze',
+    // VIDEOCUBE, 2026-08-23. Five switch-shaped params, ALL LATCHING, and all
+    // five classified at the READ SITE — which on this module is unusually
+    // uniform: every one of them is a bare level test evaluated fresh inside
+    // `draw()` on every frame, and there is NO edge detector anywhere in
+    // videocube.ts. The card agrees at the WRITE site: all five are `onclick`
+    // handlers that FLIP the stored value (`toggleWrap`, `toggleMaterial`,
+    // `toggleFreeze`, `toggleLive`, `toggleHueMode`), and this card has no
+    // pointer-capture press-pad at all.
+    //
+    // `freeze` — `const frozen = params.freeze >= 0.5` stops the LIVE rings
+    // advancing so the held surfaces can be scrubbed. A momentary render would
+    // resume capture on release and wash away the very window a player froze in
+    // order to scan it, which is the same loss FRAMETABLE's entry describes.
+    //
+    // `live` — forces the real-time / no-lag ring read. A state you switch on
+    // and leave on for as long as you want the solid tracking its inputs;
+    // releasing back into the lag mid-performance is not a control anyone could
+    // use.
+    //
+    // `wrap` and `material` — both are LOOKS. WRAP mirror-folds the sampling
+    // domain so the videos kaleidoscopically tile through the volume; MATERIAL
+    // switches the solid between a translucent blend and a hard one-surface-wins
+    // mosaic. Each is a property of the render you choose and keep, and a
+    // momentary render would snap the solid back to the other look the instant
+    // the pointer lifted — the b3ntb0x / colourofmagic shape.
+    //
+    // `hue_mode` — picks which colour-to-timbre CHARACTER BANK drives the chroma
+    // morph. Audio-only, and the def's own doc calls it "a front-panel toggle".
+    // ⚠ It is additionally CV-GATED (a gate high selects INSTRUMENT), which is
+    // the FREEZE-pattern seam, not a press: the level is read every frame, so a
+    // momentary render would fight the cable rather than complement it.
+    //
+    // ⚠ `screen_on` IS DELIBERATELY ABSENT from this list, and its absence is
+    // correct rather than an oversight: it rests at 1, so `looksLikeSwitch`
+    // (which requires `defaultValue === 0`) does not flag it and no
+    // classification is owed. It is latching too.
+    'videocube:freeze',
+    'videocube:live',
+    'videocube:wrap',
+    'videocube:material',
+    'videocube:hue_mode',
+    // TIMELORDE, 2026-08-23. Three switch-shaped params, all LATCHING, and each
+    // one classified at its own read site rather than by family resemblance.
+    //
+    // `muteOutputs` — the worklet reads its LEVEL every block and zeroes the
+    // gate WRITES while it is high (the internal clock keeps turning so
+    // LIVECODE's subscribers stay alive). A momentary render would un-mute the
+    // rack the instant the player let go, which is the opposite of a mute.
+    //
+    // `running` — the TRANSPORT, and the one where the press-pad shape is most
+    // tempting because the module DOES have gate inputs. It is still latching,
+    // and the reason is the SPLIT: `start_in` / `stop_in` are declared
+    // `edge: 'trigger'` and are drained through `transportEventsToRunState`,
+    // which sets the level; the param holds it. A momentary render would resume
+    // a deliberately stopped rack on release — and worse, it would fight a
+    // hardware MIDICLOCK stop, which is the exact case the legacy card hid its
+    // own RUN button to avoid.
+    //
+    // ⚠ `running` also RESTS AT 1, which is the rarer half of this shape: a
+    // press-pad that rests high would be held-down-forever at spawn.
+    //
+    // `wizardOn` — display show/hide, and the clearest of the three: the `gate`
+    // input that also drives it is declared `edge: 'gate'` (LEVEL-sensitive, the
+    // def says so twice), and `pollWizardGate` writes the level, never an edge.
+    // Holding the gate high keeps the owl on; the button is the manual override
+    // that converges on the same state.
+    'timelorde:muteOutputs',
+    'timelorde:running',
+    'timelorde:wizardOn',
+    // kria's `running` is a TRANSPORT, exactly like timelorde's above: the
+    // card's RUN button prints ▶ / ■ and the engine gates playback on
+    // `running >= 0.5` for as long as it stays there. A momentary pad would
+    // run the sequencer only while the mouse was held down. ⚠ Unlike
+    // timelorde's it rests at 0, so a fresh kria spawns STOPPED — which is
+    // also what makes its VRT scenes deterministic for free.
+    'kria:running',
+    // SCORE's `isPlaying` is the same TRANSPORT shape as the two above, and it
+    // is classified AT THE READ SITE rather than from the name.
+    // `pollTransportCv` reads it as a LEVEL every scheduler tick
+    // (`readParam('isPlaying', 0) >= 0.5`) and `shouldSequencerRun` gates the
+    // whole lookahead loop on it staying there, so a momentary pad would walk
+    // the playhead only while the mouse was held down. ⚠ The only EDGE anywhere
+    // near it is the 0→1 transition the engine watches to reset `tickIndex` —
+    // which is a consequence of the level changing, not an edge the control
+    // emits, and reading it the other way round is exactly the misclassification
+    // this list exists to force a decision about. It rests at 0, so a fresh
+    // score spawns STOPPED, which is also what makes its VRT scenes
+    // deterministic without a freeze seam.
+    'score:isPlaying',
+    // WAVESCULPT `unison` and `chord_mode`, 2026-08-24. The two 0/1 switches in
+    // the VOICING band: stack the four voices onto one pitch, and read every
+    // voice's pitch from voice 1 to build a chord.
+    //
+    // LATCHING, classified AT THE READ SITE — and the read site is unusually
+    // unambiguous here. Both are sampled as plain LEVELS once per audio frame
+    // in the factory's scheduler tick (`(live.unison ?? 0) >= 0.5`,
+    // `(live.chord_mode ?? 0) >= 0.5`) and again per rendered frame by the
+    // renderer, and there is no edge detector anywhere in either chain. They
+    // are MODES a player sets and leaves: a momentary render would unstack the
+    // voices — or collapse the chord back to four independent pitches — the
+    // instant the pointer came up, which is the one behaviour neither control
+    // could be used for.
+    //
+    // ⚠ `chord_quality` IS HERE TOO, and the first draft of this comment said
+    // it would not need to be — wrongly, which is worth leaving written down.
+    // The reasoning was that its new MAJ/MIN `options` roster makes it a
+    // two-MODE picker rather than a press-pad. That is a true statement about
+    // how it RENDERS and an irrelevant one to this clause: the check keys on
+    // the 0..1 discrete SHAPE, not on whether a roster names the states. A
+    // roster changes the affordance; it does not answer "does this fire on an
+    // edge or hold a level", which is the only question being asked here. It
+    // holds a level — the factory reads it per frame through
+    // `chordQualityFromKnob(live.chord_quality ?? 0)` with no edge detector —
+    // so it latches, exactly like its two neighbours.
+    'wavesculpt:unison',
+    'wavesculpt:chord_mode',
+    'wavesculpt:chord_quality',
+    // TWOTRACKS, 2026-08-24. Three params share the press-pad SHAPE
+    // (`0..1 discrete resting at 0`) and all three are tape-machine states a
+    // player sets and leaves. Classified AT THE READ SITE, not from the shape.
+    //
+    // OVERDUB (per reel) is the persisted on/off of sound-on-sound. Its read
+    // site is the module's param poll, which turns a CHANGE in the flag into ONE
+    // pulsed `overdub_toggle` for the worklet — so the level is the state and
+    // the pulse is derived from it. A momentary render would fire that pulse
+    // TWICE per press (on the way down and again on release) and land the reel
+    // exactly where it started, i.e. the control could never be used at all.
+    // Layering a take is also the slowest gesture on the module: you engage it
+    // and then play for a minute.
+    'twotracks:overdub_flag_a',
+    'twotracks:overdub_flag_b',
+    // MONITOR passes the live input through so you can hear what you are about
+    // to record. The worklet reads it as a plain LEVEL once per block
+    // (`Math.round(kv('monitor', 0)) === 1`, twotracks.ts in packages/dsp) and
+    // there is no edge detector on it anywhere in the processor. A momentary
+    // render would cut the input the instant the player let go — which is the
+    // one thing input monitoring exists to prevent, since the whole point is to
+    // audition the source with both hands free.
+    'twotracks:monitor',
+    // SYNESTHESIA, 2026-08-24. FOUR params share the press-pad SHAPE
+    // (`0..1 discrete resting at 0`) — a MODE and a POLARITY on each of the two
+    // independent copies — and all four latch. Classified AT THE READ SITE, and
+    // the read site here is as plain as it gets: the worklet opens every
+    // `process()` call with four bare level compares,
+    //
+    //   const aVideo   = this.kval(parameters, 'a_mode',    0) >= 0.5;
+    //   const bVideo   = this.kval(parameters, 'b_mode',    0) >= 0.5;
+    //   const aBipolar = this.kval(parameters, 'a_bipolar', 0) >= 0.5;
+    //   const bBipolar = this.kval(parameters, 'b_bipolar', 0) >= 0.5;
+    //
+    // (packages/dsp/src/synesthesia.ts:269-273) and hands the four booleans to
+    // the per-copy step. There is NO edge detector anywhere in the processor,
+    // its `lib/synesthesia-dsp.ts` core or either surface, and the def declares
+    // no gate input that could deliver one — every one of these is a level
+    // compared afresh on each block, for as long as the value stands.
+    //
+    // MODE picks whether the four lanes are SPECTRAL BANDS or the R/G/B/Luma of
+    // a patched frame. A momentary render would snap the copy back to AUDIO the
+    // instant the player released, so the VIDEO half of this module could never
+    // be reached at all — and the card-side frame pump that feeds it only runs
+    // while the flag STANDS (`if (isVideo('a'))` inside the rAF, so a value
+    // that falls back to 0 on release stops the pump between frames).
+    //
+    // POLARITY picks the env CV convention, UNI (0..1) or BI (−1..+1). It is set
+    // once for the KIND of destination you are driving and then left alone — the
+    // `ch1Range` shape on scope, and the same argument: a momentary render would
+    // return every patched destination to unipolar the moment the hand came off.
+    //
+    // ⚠ ALL FOUR DECLARE AN `options` ROSTER, AND THAT IS NOT WHY THEY ARE HERE.
+    // The ratchet keys on the 0..1 discrete SHAPE, not on whether a roster names
+    // the states; a roster changes the AFFORDANCE and says nothing about edge
+    // versus level. They hold a level.
+    'synesthesia:a_mode',
+    'synesthesia:b_mode',
+    'synesthesia:a_bipolar',
+    'synesthesia:b_bipolar',
   ]);
 
   it('no ACKNOWLEDGED_LATCHING param is DOCUMENTED as momentary (the cross-check)', () => {
@@ -841,6 +1510,88 @@ describe('module-face lint — MOMENTARY pads (face.momentary)', () => {
 // at runtime can tell a WRONG id from a right one — a stale id simply paints
 // nothing and a duplicated id silently picks whichever channel came last — so
 // the shape is linted here, roster-wide and deny-by-default.
+// ── BAND FOCUS (face.bandFocus) ─────────────────────────────────────────────
+//
+// The declaration buys the right to HIDE controls, so it pays for it here.
+// ⚠ `visibleBandIds` FAILS OPEN — a value nobody claimed shows every band —
+// which is the correct runtime behaviour (it can never lose a control) and
+// exactly why a gap is invisible on screen. Totality is therefore the whole
+// safety argument, and it has to be asserted rather than reviewed.
+describe('module-face lint — BAND FOCUS (face.bandFocus)', () => {
+  const adopters = () =>
+    allDefs().filter((d) => (d.face as { bandFocus?: FaceBandFocus } | undefined)?.bandFocus);
+
+  it('every declaration is TOTAL over its param, and names real pages', () => {
+    const problems: string[] = [];
+    for (const def of adopters()) {
+      const focus = (def.face as { bandFocus?: FaceBandFocus }).bandFocus!;
+      const p = (def.params ?? []).find((q) => q.id === focus.param);
+      if (!p) {
+        problems.push(`${def.type}: face.bandFocus.param '${focus.param}' is not a declared param`);
+        continue;
+      }
+      // The values the param can actually hold: its roster if it declares one,
+      // else every integer step of its range.
+      const legal = p.options?.length
+        ? p.options.map((o) => o.value)
+        : Array.from({ length: Math.round(p.max - p.min) + 1 }, (_, i) => Math.round(p.min) + i);
+      const pageIds = (def.face?.pages ?? []).map((pg) => pg.id);
+
+      if (bandFocusIsInert(focus)) {
+        problems.push(`${def.type}: declares bandFocus but hides nothing (no bands)`);
+      }
+      if (!focus.showAllOn.length) {
+        problems.push(
+          `${def.type}: showAllOn is EMPTY — there is no state in which a player can reach every control`,
+        );
+      }
+      if (focus.why.trim().split(/\s+/).length < 8) {
+        problems.push(`${def.type}: bandFocus.why is a placeholder — say why hiding the others is right HERE`);
+      }
+
+      const t = bandFocusIsTotal(focus, legal, pageIds);
+      if (t.unclaimed.length) {
+        problems.push(
+          `${def.type}: ${focus.param} values [${t.unclaimed.join(', ')}] are claimed by NO band and ` +
+            `no showAllOn entry. visibleBandIds fails OPEN, so they would silently show every band — ` +
+            `the feature would just stop applying, and nothing on screen would say so.`,
+        );
+      }
+      if (t.duplicated.length) {
+        problems.push(`${def.type}: values [${t.duplicated.join(', ')}] are claimed twice`);
+      }
+      if (t.unknownBands.length) {
+        problems.push(
+          `${def.type}: bandFocus.bands names [${t.unknownBands.join(', ')}], which are not declared page ids — ` +
+            `a band id that matches no page focuses nothing`,
+        );
+      }
+      if (t.outOfRange.length) {
+        problems.push(`${def.type}: values [${t.outOfRange.join(', ')}] are outside ${focus.param}'s legal set`);
+      }
+    }
+    expect(problems.join('\n')).toBe('');
+  });
+
+  it('NEGATIVE CONTROL — the totality clause fires on a def built to violate it', () => {
+    // ⚠ Without this the sweep above is green whenever NOBODY adopts, and green
+    // in exactly the same way if `bandFocusIsTotal` regressed to returning
+    // nothing. Both are closed here.
+    const focus: FaceBandFocus = {
+      param: 'sel',
+      why: 'a synthetic declaration used only to prove this clause can fail',
+      showAllOn: [0],
+      bands: { a: [1], b: [2] },
+    };
+    // 0..3 legal, but 3 is claimed by nobody.
+    const t = bandFocusIsTotal(focus, [0, 1, 2, 3], ['a', 'b']);
+    expect(t.unclaimed).toEqual([3]);
+    expect(bandFocusIsTotal(focus, [0, 1, 2], ['a']).unknownBands).toEqual(['b']);
+    // …and the real adopters are non-zero, or the sweep above probed nothing.
+    expect(adopters().length, 'no def declares bandFocus — the sweep is vacuous').toBeGreaterThan(0);
+  });
+});
+
 describe('module-face lint — CHANNEL ACCENT (face.channelAccent)', () => {
   it('every declared id is a real, RANKED param, claimed by exactly one channel', () => {
     const problems: string[] = [];
@@ -1020,6 +1771,24 @@ describe('module-face lint — DECLARED param cells (face.paramCells) + PANEL ti
           }
           break;
         }
+        case 'hue': {
+          // ⚠ THE MIRROR OF THE `color` CLAUSE, AND DELIBERATELY NOT SHARED
+          // WITH IT. A hue is CONTINUOUS over exactly one turn (0..1); a packed
+          // RGB is DISCRETE over 0..0xffffff. Each clause rejects the other's
+          // shape, so a `paramCells` typo between two colour-ish kinds is RED
+          // rather than a picker that writes values outside anything the module
+          // can render.
+          const isHue = p.curve !== 'discrete' && p.min === 0 && p.max === 1;
+          if (!isHue) {
+            problems.push(
+              `${def.type}: face.paramCells['${key}'] = 'hue' but the param is ${shape} — a hue ` +
+                `wheel needs a CONTINUOUS param spanning EXACTLY one turn (0..1). The wheel maps ` +
+                `the full ring onto the declared span, so any other range makes one revolution ` +
+                `write values the module never asked for, and no def-reading gate can see that.`,
+            );
+          }
+          break;
+        }
         case 'color': {
           if (!isPackedRgbParam(p)) {
             problems.push(
@@ -1126,6 +1895,22 @@ describe('module-face lint — DECLARED param cells (face.paramCells) + PANEL ti
               `stepper wearing a joystick. A 2-D drag needs a continuous scale under both axes.`,
           );
         }
+      }
+      // ⚠ `surface: 'body'` WITHOUT A BODY IS A CONTROL DELETION, not a no-op.
+      // The dock drops both axes from the band plan on the strength of this
+      // declaration; if no `face.extension` resolves a `fullViewBody` there is
+      // nothing to paint them, and the dock faceplate of a pad-driven module
+      // silently loses its pad. The declaration must therefore name the thing
+      // it is handing the pad to. (That the resolved body ACTUALLY emits the
+      // pad is a source-level question — `face-xy-body-source.test.ts`; this
+      // clause is the cheap structural half that runs in the pure lane.)
+      if (pad.surface === 'body' && !def.face?.extension) {
+        problems.push(
+          `${def.type}: face.xyPads pad '${pad.x}'/'${pad.y}' declares surface:'body' but the ` +
+            `face declares no \`extension\` — the dock drops BOTH axes from the band plan on ` +
+            `the strength of that declaration, so with no fullViewBody to paint them the pad ` +
+            `is simply deleted from the faceplate.`,
+        );
       }
     }
     return problems;
@@ -1852,107 +2637,9 @@ describe('module-face lint — FACEPLATE STRUCTURE (PF-20: hero / sidebar / hint
         }
       }
     }
-    problems.push(...readoutProblems(def, hero.readouts ?? [], 'face.hero.readouts'));
     return problems;
   }
 
-  /** Shared readout clause — used by the hero AND by every `readouts` sidebar
-   *  block, because "exactly one source, and it resolves" is the same rule
-   *  wherever a labelled value is declared. */
-  function readoutProblems(
-    def: StructFaceDef,
-    readouts: readonly { label: string; paramId?: string; valueId?: string; text?: string }[],
-    where: string,
-  ): string[] {
-    const problems: string[] = [];
-    const paramIds = new Set((def.params ?? []).map((p) => p.id));
-    const values = new Set(faceReadoutValueIds());
-    for (const r of readouts) {
-      if (!isUsableReadout(r)) {
-        problems.push(
-          `${def.type}: ${where}['${r.label}'] must name EXACTLY ONE source — a paramId, a ` +
-            `valueId or a text, never two and never none (it renders as '—')`,
-        );
-        continue;
-      }
-      if (r.paramId && !paramIds.has(r.paramId)) {
-        problems.push(
-          `${def.type}: ${where}['${r.label}'].paramId = '${r.paramId}' is not a declared param — ` +
-            `it prints '—' forever`,
-        );
-      }
-      if (r.valueId && !values.has(r.valueId)) {
-        problems.push(
-          `${def.type}: ${where}['${r.label}'].valueId = '${r.valueId}' is not registered in ` +
-            `face-readout-values.ts (have: ${[...values].join(', ') || 'none'}) — it prints ` +
-            `'—' forever`,
-        );
-      }
-    }
-    return problems;
-  }
-
-  /**
-   * Every problem with one def's SIDEBAR:
-   *   (a) a `presets` entry's every value key is a declared param, and the
-   *       value is INSIDE that param's declared range. Out-of-range is the
-   *       "the control lied about its own range" class: `presetWrites` clamps
-   *       at render time, so an out-of-range preset would silently apply a
-   *       DIFFERENT setting than the one it names;
-   *   (b) a `custom` block's `panelId` is REGISTERED (sidebar-panels.ts) — an
-   *       unregistered id renders nothing, i.e. a labelled blank column;
-   *   (c) `readouts` entries obey the shared readout clause;
-   *   (d) no block would render EMPTY (sidebarPlan drops it, so declaring it
-   *       is a no-op the author should know about).
-   */
-  function sidebarProblems(def: StructFaceDef, registered: ReadonlySet<string>): string[] {
-    const blocks = def.face?.sidebar;
-    if (!blocks) return [];
-    const problems: string[] = [];
-    const byId = new Map((def.params ?? []).map((p) => [p.id, p]));
-    const kept = new Set(sidebarPlan(def as FaceplateDefLike) ?? []);
-
-    for (const b of blocks) {
-      if (!kept.has(b)) {
-        problems.push(
-          `${def.type}: face.sidebar '${b.label}' (${b.kind}) renders EMPTY and is dropped — ` +
-            `a labelled void is worse than no block`,
-        );
-      }
-      if (b.kind === 'presets') {
-        for (const e of b.entries) {
-          for (const [pid, v] of Object.entries(e.values)) {
-            const p = byId.get(pid);
-            if (!p) {
-              problems.push(
-                `${def.type}: preset '${e.id}' writes '${pid}', which is not a declared param — ` +
-                  `presetWrites DROPS it, so the preset silently applies a different sound`,
-              );
-              continue;
-            }
-            if (!Number.isFinite(v) || v < p.min || v > p.max) {
-              problems.push(
-                `${def.type}: preset '${e.id}' sets ${pid} = ${v}, outside its declared ` +
-                  `${p.min}..${p.max} — presetWrites CLAMPS it, so the preset applies a value ` +
-                  `it does not name`,
-              );
-            }
-          }
-        }
-      } else if (b.kind === 'custom') {
-        if (!registered.has(b.panelId)) {
-          problems.push(
-            `${def.type}: face.sidebar custom panelId '${b.panelId}' is not registered in ` +
-              `sidebar-panels.ts (have: ${[...registered].join(', ') || 'none'}) — it paints a ` +
-              `labelled blank column`,
-          );
-        }
-      } else if (b.kind === 'readouts') {
-        problems.push(...readoutProblems(def, b.entries, `face.sidebar['${b.label}']`));
-      }
-    }
-    return problems;
-  }
 
   /**
    * EVERY DECLARED ANNOTATION MUST BE PAINTABLE with the switch on — the
@@ -2034,13 +2721,26 @@ describe('module-face lint — FACEPLATE STRUCTURE (PF-20: hero / sidebar / hint
     expect(problems.join('\n'), 'hero split totality').toBe('');
   });
 
-  it('every face.sidebar block paints: real params, in-range presets, registered panels', () => {
-    const registered = new Set(sidebarPanelIds());
-    const problems: string[] = [];
+  it('NO def declares a sidebar or a hero readout strip — the shapes are deleted', () => {
+    // ⚠ THIS REPLACED THE `face.sidebar` PAINT CLAUSE, WHICH HAD A SUBJECT
+    // UNTIL 2026-08-19. Both mechanisms are gone (owner ruling; see
+    // ModuleFaceHero in graph/types.ts), so the honest lint is no longer "does
+    // every declared block paint?" but "is anything declared at all?" — asserted
+    // over the LIVE registry rather than over the type, because a cast is how
+    // one would come back.
+    const offenders: string[] = [];
     for (const def of allDefs()) {
-      problems.push(...sidebarProblems(def as unknown as StructFaceDef, registered));
+      const face = def.face as Record<string, unknown> | undefined;
+      if (!face) continue;
+      if (face.sidebar) offenders.push(`${def.type}: declares face.sidebar`);
+      const hero = face.hero as Record<string, unknown> | undefined;
+      if (hero?.readouts) offenders.push(`${def.type}: declares face.hero.readouts`);
     }
-    expect(problems.join('\n'), 'face.sidebar drift').toBe('');
+    expect(
+      offenders,
+      'a deleted resting-text shape is declared again. The value belongs in aria-valuetext on ' +
+        'the control it describes; face-resting-text-source.test.ts is the gate that owns this rule.',
+    ).toEqual([]);
   });
 
   it('every declared ANNOTATION is reachable — title, page hint and band hints all paint', () => {
@@ -2184,27 +2884,11 @@ describe('module-face lint — FACEPLATE STRUCTURE (PF-20: hero / sidebar / hint
     };
   }
 
-  it('NEGATIVE CONTROL: a well-formed hero + sidebar passes every clause', () => {
+  it('NEGATIVE CONTROL: a well-formed hero passes every clause', () => {
     const def = structSynthetic({
-      face: {
-        order: ['tune'],
-        hero: {
-          control: 'tune',
-          readouts: [
-            { label: 'pitch', paramId: 'tune' },
-            { label: 'derived', valueId: 'kickdrum-tail' },
-            { label: 'fixed', text: 'x' },
-          ],
-        },
-        sidebar: [
-          { kind: 'presets', label: 'p', entries: [{ id: 'a', label: 'A', values: { tune: 60 } }] },
-          { kind: 'readouts', label: 'r', entries: [{ label: 'pitch', paramId: 'tune' }] },
-          { kind: 'custom', label: 'c', panelId: 'stereo-crossover' },
-        ],
-      },
+      face: { order: ['tune'], hero: { control: 'tune' } },
     });
     expect(heroProblems(def)).toEqual([]);
-    expect(sidebarProblems(def, new Set(sidebarPanelIds()))).toEqual([]);
   });
 
   it('NEGATIVE CONTROL (hero a): an UNRANKED hero key FAILS', () => {
@@ -2242,99 +2926,29 @@ describe('module-face lint — FACEPLATE STRUCTURE (PF-20: hero / sidebar / hint
     expect(problems[0]).toContain('is a PARAM control, not a panel');
   });
 
-  it('NEGATIVE CONTROL (hero d): an UNREGISTERED readout valueId FAILS', () => {
-    // The derived-readout registry is the mechanism that stops `tail` being a
-    // `sub_decay` readback; a typo'd id would silently print '—' and the
-    // faceplate would look almost right.
-    const problems = heroProblems(
-      structSynthetic({
-        face: {
-          order: ['tune'],
-          hero: { control: 'tune', readouts: [{ label: 'tail', valueId: 'no-such-derivation' }] },
-        },
-      }),
-    );
-    expect(problems).toHaveLength(1);
-    expect(problems[0]).toContain('is not registered in face-readout-values.ts');
-
-    // …and the registered one passes, which is what makes the clause a check
-    // rather than a blanket rejection of `valueId`.
+  it('NEGATIVE CONTROL: the deleted-shape sweep can actually FAIL', () => {
+    // The clause above is an ABSENCE over the live registry, so it would stay
+    // green if the sweep looked at nothing. Drive the same predicate with defs
+    // that DO declare each deleted shape and confirm both legs fire, then with
+    // a clean one to confirm it does not fire on everything.
+    const sweep = (defs: { type: string; face?: Record<string, unknown> }[]): string[] => {
+      const out: string[] = [];
+      for (const def of defs) {
+        const face = def.face;
+        if (!face) continue;
+        if (face.sidebar) out.push(`${def.type}: declares face.sidebar`);
+        const hero = face.hero as Record<string, unknown> | undefined;
+        if (hero?.readouts) out.push(`${def.type}: declares face.hero.readouts`);
+      }
+      return out;
+    };
     expect(
-      heroProblems(
-        structSynthetic({
-          face: {
-            order: ['tune'],
-            hero: { control: 'tune', readouts: [{ label: 'tail', valueId: 'kickdrum-tail' }] },
-          },
-        }),
-      ),
-    ).toEqual([]);
-  });
-
-  it('NEGATIVE CONTROL (hero e): a readout with two sources, or an unknown param, FAILS', () => {
-    const both = heroProblems(
-      structSynthetic({
-        face: { order: ['tune'], hero: { control: 'tune', readouts: [{ label: 'x', paramId: 'tune', text: 'y' }] } },
-      }),
-    );
-    expect(both).toHaveLength(1);
-    expect(both[0]).toContain('EXACTLY ONE source');
-
-    const ghost = heroProblems(
-      structSynthetic({
-        face: { order: ['tune'], hero: { control: 'tune', readouts: [{ label: 'x', paramId: 'ghost' }] } },
-      }),
-    );
-    expect(ghost).toHaveLength(1);
-    expect(ghost[0]).toContain('is not a declared param');
-  });
-
-  it('NEGATIVE CONTROL (sidebar a): a preset naming an unknown param, or out of range, FAILS', () => {
-    const ghost = sidebarProblems(
-      structSynthetic({
-        face: {
-          order: ['tune'],
-          sidebar: [{ kind: 'presets', label: 'p', entries: [{ id: 'a', label: 'A', values: { ghost: 1 } }] }],
-        },
-      }),
-      new Set(sidebarPanelIds()),
-    );
-    expect(ghost).toHaveLength(1);
-    expect(ghost[0]).toContain('is not a declared param');
-
-    const oor = sidebarProblems(
-      structSynthetic({
-        face: {
-          order: ['tune'],
-          sidebar: [{ kind: 'presets', label: 'p', entries: [{ id: 'a', label: 'A', values: { tune: 999 } }] }],
-        },
-      }),
-      new Set(sidebarPanelIds()),
-    );
-    expect(oor).toHaveLength(1);
-    expect(oor[0]).toContain('outside its declared');
-  });
-
-  it('NEGATIVE CONTROL (sidebar b): an UNREGISTERED custom panelId FAILS', () => {
-    const problems = sidebarProblems(
-      structSynthetic({
-        face: { order: ['tune'], sidebar: [{ kind: 'custom', label: 'c', panelId: 'no-such-panel' }] },
-      }),
-      new Set(sidebarPanelIds()),
-    );
-    expect(problems).toHaveLength(1);
-    expect(problems[0]).toContain('is not registered in sidebar-panels.ts');
-  });
-
-  it('NEGATIVE CONTROL (sidebar d): an EMPTY block FAILS', () => {
-    const problems = sidebarProblems(
-      structSynthetic({
-        face: { order: ['tune'], sidebar: [{ kind: 'presets', label: 'p', entries: [] }] },
-      }),
-      new Set(sidebarPanelIds()),
-    );
-    expect(problems).toHaveLength(1);
-    expect(problems[0]).toContain('renders EMPTY');
+      sweep([{ type: 'x', face: { sidebar: [{ kind: 'readouts', label: 'r', entries: [] }] } }]),
+    ).toHaveLength(1);
+    expect(
+      sweep([{ type: 'y', face: { hero: { control: 'tune', readouts: [{ label: 'tail' }] } } }]),
+    ).toHaveLength(1);
+    expect(sweep([{ type: 'clean', face: { order: [] } }])).toEqual([]);
   });
 
   /** A TABBED face (DOCK_TAB_MIN_BANDS pages, so `dockTabPlan` returns a rail)
@@ -2431,6 +3045,193 @@ describe('module-face lint — FACEPLATE STRUCTURE (PF-20: hero / sidebar / hint
   });
 });
 
+// ── THE LANE TILE PAINTS SOMETHING (2026-08-23, cut A · batch 2) ────────────
+//
+// ⚠ THIS CONVERTS A REFUSAL FROM LORE INTO ENFORCEMENT, and it was written
+// because the refusal turned out to be enforced by NOTHING.
+//
+// The `joystick` refusal is recorded in three separate live comments —
+// `strict-faces.ts` (the quadralogical entry), `types.ts` (on
+// `FaceXyPad.surface`) and `quadralogical.ts` — all saying the same thing: a
+// pad is joystick's ONLY control, `laneOrder` makes every declared pad's anchor
+// dock-only, so its lane resolves to ZERO. Every one of those is prose. Swept
+// for a gate that fails on it, the answer was that there is no registry-wide
+// one: the cap-vs-fit-plan clause asserts `rendered === face.controls.length`,
+// which for a pad-only face is `0 === 0` and green; the panel-tier clause fires
+// only when a panel is SELECTED; `param-cell-coverage` counts primitive kinds;
+// no e2e asserts a minimum occupancy. The only executable assertion was
+// `quadralogical-face-model.test.ts`, scoped to one def. So a joystick face
+// would have shipped GREEN THROUGH THE WHOLE GATE SET with a blank lane tile —
+// the exact "green and blind" shape CLAUDE.md warns about, and worse than the
+// placeholder it would have replaced.
+//
+// ⚠ THE RULE IS ABOUT A SILENT DROP, NOT ABOUT EMPTINESS — and the first draft
+// of this gate got that wrong, which is worth recording because the tree
+// corrected it on the first run. Written as "the tile must paint something", it
+// immediately failed `flipper`: a promoted, deliberate, thoroughly documented
+// face that declares `params: []` and `order: []` because the module HAS no
+// controls (a gate flip-flop whose alternation lives entirely in the worklet).
+// Its own def says it: *"ONE BAND WOULD BE ONE BAND TOO MANY … the faceplate IS
+// the jack field."* An empty tile is the honest rendering of a module with
+// nothing to render, and `videoOut` is the same shape from the other end —
+// `order: []` with a picture.
+//
+// So emptiness is not the defect. THE DEFECT IS A LANE THAT PROMISES CONTROLS
+// AND PAINTS NONE: a face that RANKS something, and then resolves to zero cells
+// at the tier the player is looking at. joystick is exactly that — two ranked
+// params, both axes of one declared pad, and `laneOrder` makes the anchor
+// dock-only while `foldedOrder` removes the partner, so both vanish with no
+// glyph to take their place (four `cv` outputs and no audio, so every glyph
+// literal resolves `{ kind: 'static' }`, which the dead-glyph clause above
+// refuses by name). flipper drops nothing; joystick drops everything it has.
+//
+// Framing it as the drop also removes the exemption `flipper` would otherwise
+// have needed — a strictly better shape than carving out the honest case.
+//
+// DERIVED, not listed: the subject is `STRICT_FACES`, the predicate reads the
+// same `curatedFace` / `laneGlyphFor` the shell reads, and there is no count
+// anywhere. An exemption needs a `why` in the TYPE, so `tsc` refuses the bare
+// form before this test runs.
+describe('module-face lint — every promoted LANE TILE paints something', () => {
+  /** A promoted face whose lane tile is legitimately empty. Deny-by-default:
+   *  the `why` is required, so an undeclared exemption cannot compile. */
+  interface EmptyLaneExemption {
+    type: string;
+    why: string;
+  }
+  const EMPTY_LANE_OK: readonly EmptyLaneExemption[] = [];
+
+  /** The lane tiers a player actually sees — `curatedFace`'s non-dock tiers. */
+  const LANE_TIERS = ['mini', 'compact', 'full'] as const;
+
+  it('no promoted face RANKS controls the lane then drops entirely', () => {
+    const exempt = new Map(EMPTY_LANE_OK.map((e) => [e.type, e.why]));
+    const offenders: string[] = [];
+    for (const def of allDefs()) {
+      if (!STRICT_FACES.has(def.type)) continue;
+      if (exempt.has(def.type)) continue;
+      // ⚠ A face that ranks NOTHING is not in scope: it promises the lane
+      // nothing, so an empty tile is the honest rendering of it. `flipper`
+      // (params: []) and `videoOut` (order: [], picture) are both this shape,
+      // and both are deliberate. The subject is a face that ranks controls.
+      if ((def.face?.order?.length ?? 0) === 0) continue;
+      // A glyph fills the tile on its own — the videoOut shape.
+      if (laneGlyphFor(def as Parameters<typeof laneGlyphFor>[0]) !== 'none') continue;
+      const empty = LANE_TIERS.filter(
+        (tier) => (curatedFace(def as FaceDefLike, tier)?.controls.length ?? 0) === 0,
+      );
+      if (empty.length > 0) {
+        offenders.push(
+          `${def.type}: face.order ranks ${def.face!.order!.length} control(s), but lane tier(s) `
+            + `${empty.join(', ')} resolve to ZERO of them and the module paints no lane glyph — `
+            + 'so its tile body is EMPTY while its face claims otherwise. This is the #1974 '
+            + 'joystick shape: a face whose only ranked controls are an `xyPads` pair has no lane '
+            + 'presence at all, because `laneOrder` makes the pad anchor dock-only and '
+            + '`foldedOrder` removes its partner. Either rank a control the lane can paint, give '
+            + 'the module a live glyph binding, or do not promote it — a blank tile is worse than '
+            + 'the placeholder it replaces.',
+        );
+      }
+    }
+    expect(offenders.join('\n'), 'promoted face(s) whose lane drops every ranked control').toBe('');
+  });
+
+  // ⚠ ANCHORED: an exemption naming a module that is not promoted is a licence
+  // nobody is watching — the module was renamed, un-promoted or deleted and the
+  // carve-out silently stopped carving anything out.
+  it('ANCHOR: every empty-lane exemption names a promoted module, with a reason', () => {
+    for (const e of EMPTY_LANE_OK) {
+      expect(STRICT_FACES.has(e.type), `EMPTY_LANE_OK names '${e.type}', which is not promoted`).toBe(true);
+      expect(e.why.length, `EMPTY_LANE_OK.${e.type}: an exemption without an argument is a shrug`)
+        .toBeGreaterThan(40);
+    }
+  });
+
+  it('has a subject at all (vacuity control)', () => {
+    // Three ways this could be green while measuring nothing: the registry does
+    // not load, nothing is promoted, or `curatedFace` returns null for
+    // everything. All three fail HERE rather than letting the sweep pass over
+    // an empty set.
+    const promoted = allDefs().filter((d) => STRICT_FACES.has(d.type));
+    expect(promoted.length, 'no promoted def resolved — the registry did not load').toBeGreaterThan(0);
+    expect(
+      promoted.filter((d) => (curatedFace(d as FaceDefLike, 'full')?.controls.length ?? 0) > 0).length,
+      'not one promoted face resolved a single lane control — the derivation is broken, and a '
+        + 'broken derivation makes the sweep above vacuously green',
+    ).toBeGreaterThan(0);
+  });
+
+  // ⚠ NEGATIVE CONTROL, BOTH DIRECTIONS, over the SAME predicate the sweep
+  // calls. The positive leg above can only prove "nothing in the tree is
+  // empty"; without this, a `curatedFace` that returned a non-empty list for
+  // every input would satisfy it while measuring nothing.
+  it('NEGATIVE CONTROL: the pad-only (#1974 joystick) shape IS caught', () => {
+    // joystick's exact shape: two params, both axes of one declared pad, no
+    // audio output and not a video domain — so no glyph either.
+    const padOnly = {
+      type: 'joystick-shaped-fixture',
+      domain: 'audio',
+      outputs: [{ id: 'x', type: 'cv' }, { id: 'y', type: 'cv' }],
+      params: [{ id: 'pos_x', label: 'X' }, { id: 'pos_y', label: 'Y' }],
+      face: { order: ['pos_x', 'pos_y'], glyph: 'none', xyPads: [{ x: 'pos_x', y: 'pos_y' }] },
+    } as unknown as FaceDefLike;
+    expect(
+      laneGlyphFor(padOnly as Parameters<typeof laneGlyphFor>[0]),
+      'the fixture must paint no lane glyph, else the sweep would skip it before measuring',
+    ).toBe('none');
+    for (const tier of LANE_TIERS) {
+      expect(
+        curatedFace(padOnly, tier)?.controls.length ?? 0,
+        `lane tier '${tier}': a pad-only face must resolve to ZERO controls`,
+      ).toBe(0);
+    }
+    // …and the DOCK still has it, which is what makes this a LANE problem
+    // rather than a dead control: the pad is reachable, just not at 192 px.
+    expect(
+      curatedFace(padOnly, 'dock')?.controls.map((c) => c.key),
+      'the pad anchor is dock-only, not absent',
+    ).toEqual(['pos_x']);
+  });
+
+  // ⚠ THE EXCLUSION IS NARROW, AND THIS PROVES IT. "Ranks nothing" is skipped
+  // above, so it must be shown that the skip is the flipper shape and not a
+  // blanket escape any face could reach by emptying `order` — which would be a
+  // gate you can satisfy by deleting the thing it measures.
+  it('NEGATIVE CONTROL: "ranks nothing" is the flipper shape, and it is genuinely empty', () => {
+    const flipper = allDefs().find((d) => d.type === 'flipper');
+    expect(flipper, 'flipper must still exist — this control is anchored to it').toBeTruthy();
+    expect(flipper!.face?.order ?? [], 'flipper ranks nothing because it HAS nothing').toEqual([]);
+    expect((flipper!.params ?? []).length, 'flipper declares no params at all').toBe(0);
+    // …and it really does resolve to an empty lane, which is what makes the
+    // skip a judgement about the MODULE rather than a hole in the predicate.
+    for (const tier of LANE_TIERS) {
+      expect(
+        curatedFace(flipper as unknown as FaceDefLike, tier)?.controls.length ?? 0,
+        `flipper lane tier '${tier}'`,
+      ).toBe(0);
+    }
+  });
+
+  it('NEGATIVE CONTROL: adding ONE lane-paintable control clears it', () => {
+    // The same fixture with a third ranked param — the difference between
+    // refused and promotable, and the reason `quadralogical` (eighteen other
+    // ranked params) is not this shape.
+    const padPlusOne = {
+      type: 'joystick-shaped-fixture-plus',
+      domain: 'audio',
+      outputs: [{ id: 'x', type: 'cv' }],
+      params: [{ id: 'pos_x', label: 'X' }, { id: 'pos_y', label: 'Y' }, { id: 'gain', label: 'G' }],
+      face: { order: ['pos_x', 'pos_y', 'gain'], glyph: 'none', xyPads: [{ x: 'pos_x', y: 'pos_y' }] },
+    } as unknown as FaceDefLike;
+    for (const tier of LANE_TIERS) {
+      expect(
+        curatedFace(padPlusOne, tier)?.controls.length ?? 0,
+        `lane tier '${tier}': one non-pad ranked control must reach the lane`,
+      ).toBeGreaterThan(0);
+    }
+  });
+});
+
 describe('module-face lint — STRICT_FACES is DERIVED FROM THE ARTIFACT, not floored', () => {
   // ⚠ `STRICT_FACES.size >= 18` IS GONE (2026-08-12, the no-ratchets sweep).
   //
@@ -2458,9 +3259,15 @@ describe('module-face lint — STRICT_FACES is DERIVED FROM THE ARTIFACT, not fl
   // the ratchet rolls out' — measured 2026-08-12, that population is EMPTY: 32
   // defs declare a face and all 32 are in STRICT_FACES. This pins the live
   // state rather than raising the bar.
+  /** THE ANCHOR'S PREDICATE, extracted so the negative control below calls the
+   *  SAME function rather than a second copy of the same expression. A restated
+   *  predicate is how a control ends up proving something adjacent to the check
+   *  it is meant to protect. */
+  const isUnpromotedFace = (def: FaceDef): boolean => !!def.face && !STRICT_FACES.has(def.type);
+
   it('every module that declares a `face` is in STRICT_FACES (deny-by-default)', () => {
     const unpromoted = allDefs()
-      .filter((def) => def.face && !STRICT_FACES.has(def.type))
+      .filter(isUnpromotedFace)
       .map((def) => def.type)
       .sort();
     expect(
@@ -2481,5 +3288,117 @@ describe('module-face lint — STRICT_FACES is DERIVED FROM THE ARTIFACT, not fl
       [...STRICT_FACES].filter((t) => !faced.has(t)).sort(),
       'STRICT_FACES name(s) with no co-located `face` on a live def — delete them',
     ).toEqual([]);
+  });
+
+  // ── THE META-DOMAIN PRECURSOR'S NEGATIVE CONTROL ────────────────────────────
+  //
+  // ⚠ THIS IS THE ONE PLACE THE `face?` FIELD ON `MetaModuleDef` CAN BE PROVEN
+  // TO BE READ, AND THE REASON IT NEEDS PROVING IS THAT ITS ABSENCE WAS
+  // INVISIBLE FOR THE WHOLE LIFE OF THE FACE SYSTEM.
+  //
+  // Until `meta/module-registry.ts` grew `face?` (and `controlFamilies?`
+  // alongside it — see that file's note), NO meta def could carry a face at
+  // all: `svelte-check` refused the property outright. And the anchor two tests
+  // up could not notice, because its predicate is `def.face && …` and for a
+  // meta def that first term is PERMANENTLY `undefined`. Every meta module was
+  // outside the face system, and the deny-by-default gate whose entire job is
+  // to catch an un-anchored face read green about all of them — the "would its
+  // green run look any different if the answer were 'everything'?" shape,
+  // answered "no" for a whole DOMAIN.
+  //
+  // So a type-only precursor is exactly the failure mode this repo keeps
+  // finding: a field nothing reads, certifying nothing. The two legs below are
+  // the two halves of "something reads it", driven in BOTH directions off a
+  // fixture rather than off the shipped def, so they keep working if matrixMix
+  // is ever un-promoted and stay honest if it is not.
+  describe('meta domain: the `face?` precursor is READ, not merely declarable', () => {
+    /** A meta def shaped exactly like a real one: no ports, no params, and its
+     *  only rankable keys are one-member control families — which is the ONLY
+     *  shape a meta face can have (see MetaModuleDef.controlFamilies). */
+    const metaFixture = {
+      type: 'meta-face-fixture',
+      domain: 'meta',
+      label: 'meta face fixture',
+      category: 'tools',
+      inputs: [],
+      outputs: [],
+      params: [],
+      controlFamilies: [
+        { id: 'fixture-pick', label: 'Fixture pick', kind: 'other', testidPrefix: 'fixture-pick' },
+      ],
+      face: { order: ['fixture-pick-{n}'], glyph: 'none' },
+    } as unknown as FaceDef;
+
+    it('a meta def declaring a `face` REACHES the promotion anchor (it is not filtered out by domain)', () => {
+      // The anchor reads `allDefs()`, which concatenates all three registries.
+      // The claim is that a META member with a face is VISIBLE there with its
+      // face intact — if the concat ever loses the meta registry, or the field
+      // is stripped on the way through, this is what says so.
+      //
+      // ⚠ THIS USED TO BE `toEqual(['matrixMix'])` — a HAND-TYPED ROSTER of
+      // which meta defs carry a face, i.e. a population written down by name.
+      // It went stale the moment a second meta module was promoted, and it is
+      // the construct that AUTO-MERGES CLEANLY AND WRONGLY: two branches each
+      // promoting one meta module would each have written a correct two-name
+      // list and the merged truth would be three. The claim the leg is really
+      // making has two halves, and both are expressible without naming anybody:
+      // the meta registry must REACH `allDefs()` with `face` intact (the
+      // vacuity legs), and the set that arrives must BE the promoted meta set
+      // (derived membership, both directions).
+      const metaDefs = allDefs().filter((d) => d.domain === 'meta');
+      const metaWithFace = metaDefs.filter((d) => d.face);
+      expect(
+        metaDefs.length,
+        'the LIVE meta registry must reach allDefs() at all — an empty meta slice here makes ' +
+          'every leg below vacuous',
+      ).toBeGreaterThan(0);
+      expect(
+        metaWithFace.length,
+        'the LIVE meta registry must reach allDefs() CARRYING `face` — if this is empty while a ' +
+          'meta def declares a face, the anchor above is blind to the whole domain again',
+      ).toBeGreaterThan(0);
+      expect(
+        metaWithFace.map((d) => d.type).sort(),
+        'the meta defs arriving with a `face` must BE the meta defs in STRICT_FACES — a name in ' +
+          'one and not the other means the field was stripped on the way through the concat, or ' +
+          'promoted without one',
+      ).toEqual(metaDefs.filter((d) => STRICT_FACES.has(d.type)).map((d) => d.type).sort());
+      for (const d of metaWithFace) {
+        expect(d.face?.order.length, `${d.type}: a promoted meta face must rank something`).toBeGreaterThan(0);
+      }
+    });
+
+    it('NEGATIVE CONTROL, BOTH DIRECTIONS: the anchor PREDICATE fires on an unpromoted meta face and clears on a promoted one', () => {
+      // Direction 1 — a meta def with a face and no STRICT_FACES entry is
+      // caught. Before the precursor this could not even be expressed: the
+      // fixture would not have compiled with `face:` on a meta def, and the
+      // predicate's first term would have been undefined for it forever.
+      expect(
+        isUnpromotedFace(metaFixture),
+        'a meta def declaring a `face` but absent from STRICT_FACES MUST be caught by the ' +
+          'anchor predicate — if this is false, the anchor is structurally blind to the meta ' +
+          'domain and a meta module could ship an un-anchored face',
+      ).toBe(true);
+
+      // Direction 2 — the same predicate CLEARS for a meta def that IS
+      // promoted, so leg 1 is measuring promotion rather than domain. A control
+      // that can only ever return true proves the probe moves, not that it
+      // reads the right thing.
+      const promoted = { ...metaFixture, type: 'matrixMix' } as unknown as FaceDef;
+      expect(
+        isUnpromotedFace(promoted),
+        'the anchor predicate must CLEAR for a promoted meta def — otherwise leg 1 is ' +
+          'reporting "is meta", not "is unpromoted"',
+      ).toBe(false);
+
+      // Direction 3 — and it clears for a meta def with NO face, which is every
+      // other meta module today. This is the leg that would go red if the
+      // precursor were ever implemented as "meta defs are always promoted".
+      const faceless = { ...metaFixture, face: undefined } as unknown as FaceDef;
+      expect(
+        isUnpromotedFace(faceless),
+        'a meta def with no `face` is not an unpromoted face — it is an unfaced module',
+      ).toBe(false);
+    });
   });
 });

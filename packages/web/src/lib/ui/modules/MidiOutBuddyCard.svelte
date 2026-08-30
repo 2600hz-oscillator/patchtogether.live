@@ -37,9 +37,11 @@
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
   import {
+    channelForChoice,
     effectiveMidiOutChannel,
     isMidiOutChannelOverridden,
     laneChannelOf,
+    midiOutBuddyChannelChoices,
     midiOutBuddyDef,
     type MidiOutBuddyApi,
     type MidiOutBuddyCardState,
@@ -47,6 +49,7 @@
   } from '$lib/audio/modules/midi-out-buddy';
   import { portsFromDef } from './card-kit';
   import { noteNameForMidi } from '$lib/audio/note-entry';
+  import { nameOfDevice } from '$lib/graph/device-rebind';
   import ModuleTitle from './ModuleTitle.svelte';
 
   let { id, data }: NodeProps = $props();
@@ -145,11 +148,19 @@
   function onChangeDevice(ev: Event): void {
     const sel = (ev.currentTarget as HTMLSelectElement).value || null;
     getApi()?.selectDevice(sel);
-    writeData({ lastDeviceId: sel });
+    // ⚠ THE NAME IS WRITTEN AT PICK TIME because it is the only moment it is
+    // knowable. `lastDeviceId` is the MIDIPort.id, which the spec leaves
+    // implementation-defined — this file's own bundle exporter calls it
+    // "unstable" — so on a later load the id may name nothing, and the
+    // remembered name is what still identifies the hardware.
+    writeData({
+      lastDeviceId: sel,
+      lastDeviceName: nameOfDevice(sel, cardState.devices) ?? undefined,
+    });
   }
 
   function onChangeChannel(ev: Event): void {
-    const ch = Number.parseInt((ev.currentTarget as HTMLSelectElement).value, 10);
+    const ch = channelForChoice((ev.currentTarget as HTMLSelectElement).value);
     getApi()?.setChannel(ch);
     // ONLY `midiOutChannel` — writing `channel` would hand the value to the
     // channel-column reconciler as a LANE REASSIGNMENT (#1168).
@@ -195,7 +206,17 @@
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <div class="body">
       {#if !cardState.connected}
-        <button class="connect-btn" type="button" onclick={onClickConnect}>
+        <!-- ⚠ CARRIES THE CONTROL FAMILY'S `testidPrefix`. `midi-out-buddy-connect`
+             is declared on the def as a `controlFamilies` entry so the faceplate
+             can rank the permission gesture as an `action` cell, and
+             `module-docs-lint`'s card-drift leg requires every declared prefix
+             to appear in real card markup. -->
+        <button
+          class="connect-btn"
+          type="button"
+          data-testid="midi-out-buddy-connect-{id}"
+          onclick={onClickConnect}
+        >
           Connect MIDI…
         </button>
         {#if cardState.accessMessage}
@@ -220,9 +241,16 @@
 
         <label class="row ch">
           <span class="lbl">CH</span>
-          <select onchange={onChangeChannel} value={String(channel)}>
-            {#each Array(16) as _, i (i)}
-              <option value={String(i + 1)}>{i + 1}</option>
+          <!-- The roster is IMPORTED, never re-typed: this used to spell
+               `{#each Array(16)}` with an inline `i + 1`, and the faceplate's
+               selector cell now reads the same function off the def. -->
+          <select
+            data-testid="midi-out-buddy-channel-{id}"
+            onchange={onChangeChannel}
+            value={String(channel)}
+          >
+            {#each midiOutBuddyChannelChoices() as c (c.value)}
+              <option value={c.value}>{c.label}</option>
             {/each}
           </select>
         </label>

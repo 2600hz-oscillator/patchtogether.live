@@ -1,0 +1,320 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>CHROMA CONSOLE face — the dock faceplate, and the blocker</title>
+<style>
+/* ─────────────────────────────────────────────────────────────────────────
+   CHROMA CONSOLE FACEPLATE — MOCKUP, state 1 of 2 (RESTING / PERFORM).
+   SPEC AND MOCKUP ONLY. Nothing here is implemented. See spec.md.
+
+   ⚠ THIS MODULE IS **BLOCKED**. The left plate below is what a face CAN
+   render today; the right plate is what it SHOULD render. The difference
+   is one optional field on ParamDef — spec.md §0.2 sizes it.
+
+     A face cell's caption is ParamDef.label and nothing else. Verified:
+     ModuleShell.svelte :959 :977 :999 :1022 :1055 :1083 :1164 :1183 :1203
+     are all `label={pd.label}`; :943's `paramCell.label` is a def-derived
+     warped-fader plan. There is NO node-derived caption in the shell.
+
+     chromaconsole's eight params are slot1..slot8, labelled "slot 1".."slot 8"
+     (device-module.ts:91), and WHAT EACH ONE CONTROLS is per-node
+     node.data.assign. The card solves this (ChromaconsoleCard.svelte:165-169
+     knobLabel() reads the live assignment); a face cannot.
+
+   ⚠ DELIBERATELY ABSENT from BOTH plates:
+     * NO per-slot value readout (card :284). It removes ITSELF: `format`
+       lives on the DEVICE CONTROL, not the ParamDef, and deviceSlotParams
+       emits neither `format` nor `options` — so paintsReadout is false and
+       a bare 0..127 linear knob has no readout to paint. ZERO work.
+     * NO "pedal-snapped" marker (card :291). ⚠ THE COHORT'S ONE GENUINE
+       LOSS — BINDERS.md §2.4. quantize.note reaches aria-valuetext; a
+       sighted player gets nothing.
+     * NO stale-slot COUNT sentence (card :221). The signal survives as a
+       per-cell mark, which is strictly better: the card says how many, the
+       face says WHICH.
+     * NO open-loop sentence (card :228). ⚠ OWNER DECISION — BINDERS §2.3.
+     * NO ACTIVITY BLINK. Permitted for the siblings (BINDERS §2.1) and
+       REFUSED here: the card holds a deliberate determinism property
+       ("no polling timer: nothing on this card changes on its own",
+       :60-63) and a face must not break it.
+   ───────────────────────────────────────────────────────────────────────── */
+:root{
+  --bg:#0e1013; --dock:#12161c; --pbody:#1c1f24; --line:#2c3037; --tile:#33383f;
+  --ink:#eef1f5; --dim:#9aa2ad; --faint:#646c77;
+  --ch1:#fbbf24; --warn:#f2c14e; --good:#8fe6b0; --bad:#e08b8b;
+  --dev:#e0b98f; --c-violet:#b57bff;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+  font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1240px;margin:0 auto;padding:26px 20px 90px}
+h1{font-size:21px;font-weight:800;margin:0 0 6px}
+h2{font-size:13px;font-weight:800;margin:26px 0 8px;letter-spacing:.05em;
+  text-transform:uppercase;color:var(--dim);font-family:var(--mono)}
+.sub{color:var(--dim);font-size:12.5px;margin:0 0 14px;max-width:106ch}
+.sub b{color:var(--ink)}
+code{font-family:var(--mono);font-size:11.5px;color:var(--ch1)}
+.nav{display:flex;gap:8px;margin:0 0 20px;font-size:11px;flex-wrap:wrap}
+.nav a{color:var(--ink);text-decoration:none;border:1px solid var(--line);border-radius:6px;
+  padding:6px 12px;background:#12161c;font-family:var(--mono);letter-spacing:.06em;text-transform:uppercase}
+.nav a.on{border-color:var(--dev);color:var(--dev)}
+.warn{border:1px solid #6a5330;background:#1c1811;border-radius:8px;padding:11px 14px;
+  margin:12px 0;font-size:12.5px;color:#e8cf9a;max-width:120ch}
+.warn b{color:var(--warn)}
+.ok{border:1px solid #3b5a48;background:#111a15;border-radius:8px;padding:11px 14px;
+  margin:12px 0;font-size:12.5px;color:#a9d8bd;max-width:120ch}
+.ok b{color:var(--good)}
+.stop{border:1px solid #6a3838;background:#1c1112;border-radius:8px;padding:12px 15px;
+  margin:12px 0;font-size:12.8px;color:#e6bcbc;max-width:120ch}
+.stop b{color:var(--bad)}
+.cols{display:grid;grid-template-columns:minmax(0,1fr) 400px;gap:22px;align-items:start}
+@media (max-width:1160px){.cols{grid-template-columns:minmax(0,1fr)}}
+.two{display:flex;gap:18px;flex-wrap:wrap;align-items:flex-start}
+
+.pane{background:#0b0e12;border:1px dashed #2a2f38;border-radius:12px;padding:16px 16px 26px;
+  position:relative}
+.pane.no{border-color:#5a3238}
+.pane.yes{border-color:#3b5a48}
+.pane::after{content:attr(data-cap);position:absolute;left:16px;bottom:7px;
+  font-family:var(--mono);font-size:8.6px;letter-spacing:.09em;color:#3d444e}
+.pane.no::after{color:#8a5560} .pane.yes::after{color:#5d8a70}
+.dock{background:var(--dock);border:1px solid var(--line);border-radius:11px;overflow:hidden;
+  padding:11px;width:max-content}
+.chromebar{display:flex;align-items:baseline;gap:9px;padding:0 2px 8px}
+.chromebar .nm{font-size:13px;font-weight:800;letter-spacing:.03em}
+.chromebar .x{margin-left:auto;color:var(--faint);font-family:var(--mono);font-size:12px}
+.plate{background:var(--pbody);border:1px solid var(--tile);border-left:4px solid var(--dev);
+  border-radius:10px;padding:0 0 4px;width:340px}
+
+/* the ONE band: eight knobs, 4x2 */
+.band{padding:12px 14px 10px}
+.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px 8px}
+.k{display:flex;flex-direction:column;align-items:center;gap:5px}
+.dial{width:44px;height:44px;border-radius:50%;background:
+  conic-gradient(from 220deg, #3a6c86 0deg, #3a6c86 var(--a,150deg), #232830 var(--a,150deg), #232830 280deg, transparent 280deg);
+  position:relative;display:grid;place-items:center}
+.dial::before{content:'';position:absolute;inset:6px;border-radius:50%;background:#14181e;
+  border:1px solid #262c34}
+.dial::after{content:'';position:absolute;width:2px;height:12px;background:#8fbfe0;
+  border-radius:1px;top:7px;transform-origin:50% 15px;transform:rotate(var(--r,-30deg))}
+.kl{font-family:var(--mono);font-size:8.4px;letter-spacing:.06em;color:var(--dim);
+  text-align:center;max-width:66px;line-height:1.25}
+.kl.dead{color:#6b5057}
+/* a STALE slot — a per-cell mark, no sentence, no count */
+.k.stale .dial{outline:1px solid var(--c-violet);outline-offset:2px}
+.k.stale .kl{color:var(--c-violet)}
+/* an ENUM-assigned slot rendered as a smooth dial — the §5.1 defect, marked
+   here so the owner can see it, NOT because the face would mark it */
+.k.enumbad .dial{box-shadow:0 0 0 1px #6a3838}
+
+/* the fullViewBody */
+.extbody{border-top:1px solid #23272e;padding:11px 14px 12px;display:flex;
+  flex-direction:column;gap:8px}
+.row{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+.sel{flex:1;min-width:0;background:#0d1116;border:1px solid #2a3038;border-radius:5px;
+  color:var(--ink);font-size:11px;padding:4px 7px;display:flex;align-items:center;gap:6px}
+.sel.sm{flex:none;width:74px}
+.sel .caret{margin-left:auto;color:var(--faint);font-size:9px}
+.sel .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.btn{background:#0f1620;border:1px solid #2a3038;color:var(--dim);border-radius:5px;
+  padding:4px 9px;font-size:10.5px;font-family:var(--mono);letter-spacing:.05em}
+.btn.pri{background:#241d12;border-color:#5a4326;color:var(--dev)}
+.btn.mode{background:#1a1424;border-color:#4a3566;color:var(--c-violet)}
+
+.side{font-size:12.3px;color:var(--dim)}
+.side h3{font-size:10.4px;font-family:var(--mono);letter-spacing:.09em;text-transform:uppercase;
+  color:var(--faint);margin:16px 0 6px;font-weight:600}
+.side h3:first-child{margin-top:0}
+.side p{margin:0 0 9px}
+.side b{color:var(--ink)}
+table{border-collapse:collapse;width:100%;font-size:11.4px;margin:6px 0 12px}
+th,td{border:1px solid #23272e;padding:5px 8px;text-align:left;vertical-align:top}
+th{background:#12161c;color:var(--faint);font-family:var(--mono);font-size:9.2px;
+  letter-spacing:.07em;text-transform:uppercase;font-weight:600}
+td code{font-size:10.4px}
+.kill{color:#c98d8d} .keep{color:#a9d8bd}
+.measure{font-family:var(--mono);font-size:10.6px;color:var(--good)}
+</style>
+
+<div class="wrap">
+
+<h1>chroma console — the dock faceplate</h1>
+<p class="sub">Wave 5, the BINDER cohort. State 1 of 2: <b>PERFORM</b>. <b>Mockup only;
+nothing here is implemented.</b> ⚠ This module is <b>BLOCKED</b> — the two plates below are
+the same face with and without one optional field on <code>ParamDef</code>.</p>
+
+<div class="nav">
+  <a class="on" href="dock.html">dock · perform</a>
+  <a href="dock-assign.html">dock · ASSIGN mode</a>
+  <a href="spec.md">spec.md</a>
+  <a href="../BINDERS.md">BINDERS.md</a>
+</div>
+
+<div class="cols">
+<div>
+
+<div class="two">
+
+  <div class="pane no" data-cap="WHAT A FACE CAN RENDER TODAY">
+    <div class="dock">
+      <div class="chromebar"><span class="nm">chroma console</span><span class="x">✕</span></div>
+      <div class="plate">
+        <div class="band">
+          <div class="grid">
+            <div class="k"><span class="dial" style="--a:150deg;--r:-30deg"></span><span class="kl dead">slot 1</span></div>
+            <div class="k"><span class="dial" style="--a:90deg;--r:-80deg"></span><span class="kl dead">slot 2</span></div>
+            <div class="k"><span class="dial" style="--a:200deg;--r:10deg"></span><span class="kl dead">slot 3</span></div>
+            <div class="k"><span class="dial" style="--a:240deg;--r:45deg"></span><span class="kl dead">slot 4</span></div>
+            <div class="k"><span class="dial" style="--a:120deg;--r:-55deg"></span><span class="kl dead">slot 5</span></div>
+            <div class="k"><span class="dial" style="--a:170deg;--r:-12deg"></span><span class="kl dead">slot 6</span></div>
+            <div class="k"><span class="dial" style="--a:60deg;--r:-100deg"></span><span class="kl dead">slot 7</span></div>
+            <div class="k"><span class="dial" style="--a:210deg;--r:20deg"></span><span class="kl dead">slot 8</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="pane yes" data-cap="WHAT IT SHOULD RENDER — needs ParamDef.labelFor">
+    <div class="dock">
+      <div class="chromebar"><span class="nm">chroma console</span><span class="x">✕</span></div>
+      <div class="plate">
+        <div class="band">
+          <div class="grid">
+            <div class="k"><span class="dial" style="--a:150deg;--r:-30deg"
+              title="aria-valuetext: tilt, 64 of 127"></span><span class="kl">tilt</span></div>
+            <div class="k"><span class="dial" style="--a:90deg;--r:-80deg"
+              title="aria-valuetext: rate, 42 of 127. The pedal snaps this to tempo subdivisions."></span><span class="kl">rate</span></div>
+            <div class="k"><span class="dial" style="--a:200deg;--r:10deg"
+              title="aria-valuetext: time, 88 of 127. The pedal snaps this to tempo subdivisions."></span><span class="kl">time</span></div>
+            <div class="k"><span class="dial" style="--a:240deg;--r:45deg"
+              title="aria-valuetext: mix, 104 of 127"></span><span class="kl">mix</span></div>
+            <div class="k"><span class="dial" style="--a:120deg;--r:-55deg"></span><span class="kl">character</span></div>
+            <div class="k"><span class="dial" style="--a:170deg;--r:-12deg"></span><span class="kl">movement</span></div>
+            <div class="k stale"><span class="dial" style="--a:60deg;--r:-100deg"></span><span class="kl">diffusion</span></div>
+            <div class="k enumbad"><span class="dial" style="--a:210deg;--r:20deg"></span><span class="kl">bypass</span></div>
+          </div>
+        </div>
+
+        <div class="extbody">
+          <div class="row">
+            <span class="sel"><span class="nm">HOLOGRAM Chroma Console MIDI</span><span class="caret">▾</span></span>
+            <span class="sel sm"><span class="nm">ch 1</span><span class="caret">▾</span></span>
+          </div>
+          <div class="row">
+            <span class="btn mode">⇄ ASSIGN</span>
+            <span class="btn pri">Push all</span>
+            <span class="btn">tap</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div class="stop">
+  <b>⚠ STOP 1 FAILS TODAY.</b> <code>knobLabel()</code>
+  (<code>ChromaconsoleCard.svelte:165-169</code>) is an affordance the card has and the face
+  cannot reproduce. That is a <b>functional-parity loss</b>, which is never surfaced as an
+  owner choice — it is a thing to solve. But the gap is <b>one optional field</b>, so the
+  verdict is <b>BLOCKED, not REFUSED</b>. <code>spec.md §0.2</code> sizes the ask, names what
+  it unblocks beyond this module, and gives the smallest version.
+</div>
+
+<h2>The two marks on the right plate, and why only one is real</h2>
+<table>
+  <tr><th>mark</th><th>what it is</th></tr>
+  <tr>
+    <td><span style="color:var(--c-violet)">diffusion</span>, violet ring</td>
+    <td><b>Real, and part of the design.</b> A STALE slot — a saved assignment that no longer
+      resolves. The card prints <i>“N slot(s) point at controls this device no longer has”</i>
+      (<code>:221-223</code>); the face marks the offending CELLS. <b>Strictly better</b>: the
+      card says how many, the face says which. <code>status.staleSlots</code> already names
+      them.</td>
+  </tr>
+  <tr>
+    <td><code>bypass</code>, red ring</td>
+    <td><b>Not part of the design — it is a DEFECT drawn so you can see it.</b> Ten of the
+      pedal’s controls are <code>role: 'enum'</code>; the card renders those as a
+      <code>Segmented</code> over named ranges (<code>:259-267</code>). A face cannot:
+      <code>face.paramCells</code> has no segmented kind, and these params cannot carry an
+      <code>options</code> roster because a roster must be TOTAL over 0..127. <b>So a slot
+      assigned to BYPASS becomes a smooth dial over a 2-state control</b> — the
+      <code>moog962</code> inertness class from the opposite direction.
+      <code>spec.md §5.1</code>.</td>
+  </tr>
+</table>
+
+<div class="warn">
+  <b>⚠ Size the two blockers TOGETHER.</b> A per-node CAPTION and a per-node cell KIND are one
+  capability wearing two hats. Solving only the caption ships eight correctly-labelled knobs,
+  <b>ten of which are the wrong primitive</b>.
+</div>
+
+</div>
+
+<div class="side">
+
+<h3>Width — 340 px, and the mode is what keeps it there</h3>
+<p>Card: <span class="measure">360 px</span> (<code>:320</code>), and its comment says why —
+<i>“2 × the 180px rack tile, so the card lands on the grid”</i>. That is a rack-geometry
+constant, <b>not a content measurement</b>.</p>
+<p>Content is eight knob columns. Measured off the live dock (20 faces, 104 cells, a 1220 px
+pane) knob columns are <span class="measure">40–68.8 px</span>. Eight in a row is ~600 px;
+<b>4×2 is ~300</b>, which is the grid the card’s own <code>knobLabel()</code> doc already
+assumes (<i>“short enough for a 4-across grid cell”</i>).</p>
+
+<h3>Why ASSIGN is a MODE and not eight resting dropdowns</h3>
+<p>The card renders eight <code>&lt;select&gt;</code>s permanently, one above each knob
+(<code>:238-252</code>) — eight dropdowns of chrome for a setting changed rarely, doubling
+the plate’s height.</p>
+<p>Three independent reasons for the mode, and it matters that they are independent:</p>
+<table>
+  <tr><td><b>1</b></td><td>Compact. Owner: <i>“screen real estate is expensive!”</i> Resting
+    height roughly halves.</td></tr>
+  <tr><td><b>2</b></td><td><b>“A control that appears in one mode only” is one of the four
+    NAMED genuine width earners.</b> Pickers need ~200 px each for a grouped roster of 27;
+    knobs need ~68. The mode is what lets the resting plate be narrow and the editing view be
+    wide — <b>the earner is spent only while earning.</b></td></tr>
+  <tr><td><b>3</b></td><td>It matches the module’s own model:
+    <code>docs.explanation</code> treats assignment as a setup act and slot-turning as the
+    performance act.</td></tr>
+</table>
+<div class="warn" style="margin-top:8px">
+  <b>⚠ The mode’s state is COMPONENT state, not <code>node.data</code></b> — deliberately
+  against the SCREEN-toggle pattern. <code>previewCollapsed</code> persists because it is a
+  VIEW PREFERENCE; an assign mode is a transient EDITING state, and persisting it would
+  reopen the editor on every load and sync one collaborator’s editing into another’s
+  performance view. The #1531/#1574/#1583 unmount class makes component state the wrong
+  default, so <b>choosing it needs the argument written down</b>.
+</div>
+
+<h3>Eight identical instances — and #2181 resolves the OTHER way here</h3>
+<p>CLAUDE.md: <i>“A family key is ONE cell for ALL instances.”</i> That is right when the
+instances are <b>interchangeable</b> — <code>mixmstrs</code> drops its <code>1LO…8LO</code>
+captions because a <code>LOW</code> heading already conveys them.</p>
+<p><b>These eight are not interchangeable, and that is the whole module.</b> Slot 3 is TIME
+today and MIX tomorrow. The caption is the <b>only</b> thing separating eight identical
+knobs — the tidyVco <code>A/D/S/R</code> case, which CLAUDE.md rules STAYS.
+<code>face.bareCells</code> must NOT be declared here.</p>
+<p>⚠ Which is exactly why the blocker blocks: <b>the one thing the ruling says must stay is
+the one thing a face cell cannot render.</b></p>
+
+<h3>No rail — and the control-heavy ruling does not apply</h3>
+<p>That ruling is about <i>“lots of controls of DIFFERENT types”</i> — backdraft’s eight
+semantic pages. This is <b>eight controls of ONE type</b>. Splitting them would be padding
+pages to force a rail, named as an anti-pattern in the same ruling. One band is correct: the
+owner ruled <code>ruttetra</code> untabbed at twelve params in the same breath as ruling
+<code>spirographs</code> tabbed at three.</p>
+
+<h3>⚠ No gate sees any of this</h3>
+<p><code>face-resting-text-source.test.ts</code> denies <code>ModuleFace</code> FIELDS with no
+permitted text role — <b>it reads the TYPE</b>. Everything on this page lives in a band or a
+<code>fullViewBody</code>’s markup, invisible to it exactly as text drawn into a canvas is.
+<b>The enforcement is the dock VRT baseline and a human reading it, and nothing else.</b></p>
+
+</div>
+</div>
+</div>

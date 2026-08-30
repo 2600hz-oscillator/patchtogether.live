@@ -166,10 +166,18 @@ export const VOCABULARY_DEBT: Readonly<Record<string, readonly string[]>> = {
   'PentemelodicaCard.svelte': ['cutoff.label', 'mode.label', 'resonance.label', 'wetdry.label'],
   'QbrtCard.svelte': ['pingDecay.label', 'resonance.label'],
   'QuadralogicalCard.svelte': ['keyB.label', 'keyG.label', 'keyR.label'],
-  'RuttetraCard.svelte': ['intensity.label', 'tintB.label', 'tintG.label', 'tintR.label', 'xDisp.label', 'xFreq.label', 'xPhase.label', 'xShape.label', 'yDisp.label', 'yFreq.label', 'yPhase.label', 'yShape.label'],
+  // ⚠ THREE ENTRIES DRAINED BY THE FACE PR (#2009), and the ledger is what
+  // noticed. The def said `Tint R` / `Tint G` / `Tint B` while the card has
+  // always passed `label="R"` / `"G"` / `"B"` — a real divergence, recorded
+  // here. Shortening the DEF labels for the faceplate (the redundancy the
+  // caption ruling targets is the word "Tint" under a page already called
+  // BEAM, not the letter) made the two agree, so these three stopped being
+  // debt and this anchored roster went RED until they were deleted. The nine
+  // remaining are genuine short-form card labels (`XS`, `YD`, `I`, …) against
+  // the def's full names, untouched by that change.
+  'RuttetraCard.svelte': ['intensity.label', 'xDisp.label', 'xFreq.label', 'xPhase.label', 'xShape.label', 'yDisp.label', 'yFreq.label', 'yPhase.label', 'yShape.label'],
   'ScopeCard.svelte': ['ch1Offset.label', 'ch1Scale.label', 'ch2Offset.label', 'ch2Scale.label'],
   'ScoreboardCard.svelte': ['color.label'],
-  'SequencerCard.svelte': ['swing.label'],
   'ShapegenCard.svelte': ['rotate.label', 'size.label'],
   'SidecarCard.svelte': ['attack.label', 'envMag.label', 'inputLevel.label', 'release.label', 'threshold.label'],
   'SixstrumCard.svelte': ['attack.label', 'envDecay.label', 'level.label', 'material.label', 'pickGrain.label', 'pickPos.label', 'pickTone.label', 'register.label', 'release.label', 'spread.label', 'stiffness.label', 'strumSpread.label', 'sustain.label', 'tuning.label'],

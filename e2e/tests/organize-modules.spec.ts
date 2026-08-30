@@ -24,7 +24,7 @@
 //     per-node menu, not the palette — that behavior is exercised separately).
 
 import { test, expect, type Page } from '@playwright/test';
-import { spawnPatch, openModulePalette } from './_helpers';
+import { spawnPatch, openModulePalette, canvasPane} from './_helpers';
 import { SYNC_BUDGET_MS, SYNC_POLL_INTERVALS } from './_collab-helpers';
 
 test.describe.configure({ mode: 'parallel' });
@@ -75,7 +75,7 @@ async function getInternalSize(page: Page, id: string): Promise<{ w: number; h: 
 }
 
 async function paneBox(page: Page) {
-  const pane = page.locator('.svelte-flow__pane');
+  const pane = canvasPane(page);
   const box = await pane.boundingBox();
   if (!box) throw new Error('no pane bounding box');
   return box;
@@ -479,7 +479,7 @@ test('organize on a realistic example patch leaves no overlapping cards', async 
   // Force overlap by stacking the example modules at the same coord, then run
   // organize. After organize we expect every pairwise rect to be disjoint.
   await spawnPatch(page, [
-    { id: 'seq', type: 'sequencer', position: { x: 100, y: 100 } },
+    { id: 'seq', type: 'kria', position: { x: 100, y: 100 } },
     { id: 'vco', type: 'analogVco', position: { x: 100, y: 100 } },
     { id: 'env', type: 'adsr', position: { x: 100, y: 100 } },
     { id: 'vca', type: 'vca', position: { x: 100, y: 100 } },

@@ -46,7 +46,7 @@
 // sample rate whether the buffer was filled with real audio or with silence, so
 // `currentTime` advances at wall-clock rate straight THROUGH a dropout. It
 // returns a clean, confident, always-zero number. Same failure shape as the
-// Pearson-correlation blind gate in `.claude/skills/blind-gates.md` §1.
+// Pearson-correlation blind gate covered by AGENTS.md's instrument rule.
 //
 // PURE + framework-free on purpose: every function here is unit-testable with a
 // plain object, no browser and no AudioContext. The reactive 1 Hz poller lives

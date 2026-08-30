@@ -16,6 +16,10 @@ import {
   pitchProbMenuLevels,
   pitchProbMenuCheckedLevel,
   applyPitchProbMenuPick,
+  clipPitchProbMenuCheckedLevel,
+  applyClipPitchProbPick,
+  clipPlayEveryMenuCheckedLevel,
+  applyClipPlayEveryPick,
 } from './clipplayer-prob-menu';
 import {
   noteProbCellFill,
@@ -28,6 +32,7 @@ import {
   probLevelToValue,
   PROB_LEVELS,
   setNotePlayEvery,
+  PLAY_EVERY_MAX,
   clipHasPitchProb,
   coerceClipRecord,
   type NoteClipRecord,
@@ -266,5 +271,82 @@ describe('clipplayer PITCH probability cell marker (NOT a third colour axis)', (
       expect(noteCellFill(unstable, 0, 60)).toBe(noteCellFill(plain, 0, 60));
       expect(noteProbCellFill(unstable, 0, 60)).toBe(noteProbCellFill(plain, 0, 60));
     }
+  });
+});
+
+// ===========================================================================
+// THE CLIP-LEVEL PICKS for the other two categories (2026-08-24). Only
+// `defaultProb` has a clip-level DATA field; pitch probability and skip every
+// are per-note keys, so the clip-level pick is a BULK WRITE over the notes the
+// clip already holds. These tests pin both halves of that decision: the write
+// reaches EVERY note, and the CHECK is honest about a clip whose notes disagree.
+// ===========================================================================
+describe('clipplayer CLIP-level pitch probability / skip every (the launcher-pad menu)', () => {
+  // Derived from the model, never typed: the menu's skip-every domain IS
+  // 1..PLAY_EVERY_MAX, so a change to the model changes this test's coverage.
+  const skipCounts = Array.from({ length: PLAY_EVERY_MAX }, (_v, i) => i + 1);
+  const two = (a: Partial<NoteEvent> = {}, b: Partial<NoteEvent> = {}) =>
+    clipWith([
+      { step: 0, midi: 60, ...a },
+      { step: 4, midi: 64, ...b },
+    ]);
+
+  it('a pitch pick writes EVERY note, and level 0 removes the key from every note', () => {
+    const set = applyClipPitchProbPick(two(), 20);
+    expect(set.steps.map((s) => s.pitchProb)).toEqual([0.5, 0.5]);
+    // Back to OFF must DELETE the key, not store 0 — a clip reset to off has to
+    // round-trip byte-identical to one that never had instability.
+    const off = applyClipPitchProbPick(set, 0);
+    for (const s of off.steps) expect(s).not.toHaveProperty('pitchProb');
+    expect(off.steps.map((s) => s.step)).toEqual([0, 4]); // notes themselves untouched
+  });
+
+  it('a skip pick writes EVERY note, and 1 removes the key from every note', () => {
+    const set = applyClipPlayEveryPick(two(), 3);
+    expect(set.steps.map((s) => s.playEvery)).toEqual([3, 3]);
+    const back = applyClipPlayEveryPick(set, 1);
+    for (const s of back.steps) expect(s).not.toHaveProperty('playEvery');
+  });
+
+  it('the CHECK is the value the notes AGREE on — and NOTHING when they disagree', () => {
+    // Agreeing (including the vacuous default on a fresh clip).
+    expect(clipPitchProbMenuCheckedLevel(two())).toBe(0);
+    expect(clipPlayEveryMenuCheckedLevel(two())).toBe(1);
+    expect(clipPitchProbMenuCheckedLevel(applyClipPitchProbPick(two(), 20))).toBe(20);
+    expect(clipPlayEveryMenuCheckedLevel(applyClipPlayEveryPick(two(), 4))).toBe(4);
+
+    // DISAGREEING → null. Showing the first note's value would be a lie about
+    // the second, and a lie is worse than an unchecked list.
+    expect(clipPitchProbMenuCheckedLevel(two({ pitchProb: 0.5 }, {}))).toBeNull();
+    expect(clipPlayEveryMenuCheckedLevel(two({ playEvery: 3 }, { playEvery: 5 }))).toBeNull();
+
+    // A clip with no notes agrees vacuously on the default; no clip at all is
+    // null (there is nothing to check).
+    expect(clipPitchProbMenuCheckedLevel(clipWith([]))).toBe(0);
+    expect(clipPlayEveryMenuCheckedLevel(clipWith([]))).toBe(1);
+    expect(clipPitchProbMenuCheckedLevel(null)).toBeNull();
+    expect(clipPlayEveryMenuCheckedLevel(undefined)).toBeNull();
+  });
+
+  it('ROUND-TRIP: a pick then its CHECK agree at every level, both categories', () => {
+    // The property that makes the menu honest: whatever you pick is what shows
+    // checked next time you open it. Asserted across the whole domain rather
+    // than at one sampled level.
+    for (const lv of pitchProbMenuLevels()) {
+      expect(clipPitchProbMenuCheckedLevel(applyClipPitchProbPick(two(), lv))).toBe(lv);
+    }
+    for (const n of skipCounts) {
+      expect(clipPlayEveryMenuCheckedLevel(applyClipPlayEveryPick(two(), n))).toBe(n);
+    }
+  });
+
+  it('the clip-level pick does NOT touch the clip DEFAULT probability, and vice versa', () => {
+    // The three categories are orthogonal at clip scope exactly as they are at
+    // note scope — a "skip every" pick that quietly reset the clip's firing
+    // default would be the same class of bug as the copy that dropped it.
+    const withDefault = applyClipProbMenuPick(two(), 20);
+    expect(applyClipPitchProbPick(withDefault, 8).defaultProb).toBe(0.5);
+    expect(applyClipPlayEveryPick(withDefault, 3).defaultProb).toBe(0.5);
+    expect(clipProbMenuCheckedLevel(applyClipPlayEveryPick(withDefault, 3))).toBe(20);
   });
 });

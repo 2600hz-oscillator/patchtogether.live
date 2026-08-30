@@ -136,7 +136,6 @@ export const SKIP_BUDGET = [
       'doom-launch.spec.ts',
       'doom-multiplayer.spec.ts',
       'in-card-title.spec.ts',
-      'sequencer-transport.spec.ts',
     ],
     reason: /COLLAB_JOB lane/,
     lanes: [],
@@ -182,6 +181,43 @@ export const SKIP_BUDGET = [
       'WebGL2 capability probes. CI SwiftShader provides WebGL2, so a row on an audited lane means the '
       + 'software renderer regressed and every WebGL2 assertion silently stopped asserting.',
   },
+
+  // ── #1905 render-worker producer-init race: the REAL-GPU control ──────────
+  // Two guards in ONE test, deliberately separate entries: they fire in
+  // different places for opposite reasons, and one shared entry would let
+  // either go dark behind the other.
+  {
+    specs: ['render-worker-toybox.spec.ts'],
+    reason: /REAL-GPU control: under SwiftShader/,
+    lanes: [],
+    homeLane: 'local',
+    why:
+      'The #1905 two-directional control arms the producer-init race (a worker frame posted before the node '
+      + 'had a picture) and needs the worker to be the LIVE render path to hold that window open. Under '
+      + 'SwiftShader the TOYBOX worker context dies mid-run — a separate, pre-existing gap, which is why '
+      + 'toybox is renderLocus:worker-experimental — so the window cannot be held and the control would be a '
+      + 'slow unstable red saying nothing about the defect. It is deliberately NOT tagged @webgl-smoke '
+      + '(that tag would enrol it in the one CI lane where it cannot speak), and render-worker-*.spec.ts is '
+      + 'in WEBGL_HEAVY_GLOBS so it is testIgnored out of the sharded matrix: lanes:[] because this guard '
+      + 'cannot reach an audited lane at all. It resolves on a developer SwiftShader flake-check; the test '
+      + 'itself RUNS on the real-GPU attest pass (E2E_WEBGL_HEAVY=only + E2E_REAL_GPU=1), which is the lane '
+      + 'every #1905 sighting came from and the one this control exists to protect.',
+  },
+  {
+    specs: ['render-worker-toybox.spec.ts'],
+    reason: /worker-WebGL2 did not initialize on this renderer/,
+    lanes: [],
+    homeLane: 'webgl-attest',
+    why:
+      'Dynamic capability guard inside the same #1905 control: if worker-WebGL2 never initializes there is no '
+      + 'race window to arm, so it skips LOUDLY (carrying the full handshake diagnosis in the reason) rather '
+      + 'than passing vacuously against a main-thread fallback — the exact "green and blind to the whole thing '
+      + 'it covers" failure this spec family already hit once. homeLane webgl-attest because that is the pass '
+      + 'where the test actually runs on CI infrastructure and where a worker that stops initializing on a real '
+      + 'GPU would surface; a row there means the worker path went dark and the control silently stopped '
+      + 'exercising it. Not audited (scope note 3), so this is a resolution record, not a checked claim.',
+  },
+
   {
     specs: ['picturebox-gif.spec.ts'],
     reason: /ImageDecoder\(image\/gif\) unavailable/,
@@ -253,6 +289,26 @@ export const SKIP_BUDGET = [
       + 'quarantined it.',
   },
   {
+    specs: ['dx7.spec.ts'],
+    reason: /SUSPECTED LIVE REGRESSION/,
+    lanes: ['e2e'],
+    homeLane: 'e2e',
+    why:
+      'PARKED WHILE CORRECTLY FAILING — this is NOT flake debt, and the reason regex deliberately quotes '
+      + 'the annotation so it cannot be mistaken for one. The algorithm-switch leg used to assert that two '
+      + 'scope captures differ by a normalised per-sample L2 > 0.1; measured with the switch made a NO-OP, '
+      + 'that distance is 1.2636, so the assertion could not fail on the very regression its header names '
+      + '(setParam early-out short-circuiting a postMessage-only param). Repaired to compare a '
+      + 'phase/envelope-robust TIMBRE FINGERPRINT (captureScopeTimbre, e2e/_helpers/scope-poll.ts), and it '
+      + 'now fails: algorithm 1->32 reads 0.0489 against a 0.0456 noise floor, 16->32 reads 0.0359, while '
+      + 'the POSITIVE CONTROL — a preset change through the identical metric — reads 1.1579. The host path '
+      + 'traces intact (engine has no early-out; the handle posts {type:"algorithm"} before its early-out '
+      + 'and is unit-tested; the worklet handles the message and process() re-reads patch.algorithm), so '
+      + 'resolving it needs worklet instrumentation rather than test work. Un-park it by fixing the product '
+      + 'or by disproving the measurement — never by widening the threshold, which is how it went blind the '
+      + 'first time. Full write-up: #1787 batch 5 (PR #2142).',
+  },
+  {
     specs: ['recording-survives-card-collapse.spec.ts'],
     reason: /no real H\.264 encoder/,
     lanes: ['e2e'],
@@ -281,7 +337,12 @@ export const SKIP_BUDGET = [
       + 'collapse, and the skip names the type so a producer regressing to black is at least visible here.',
   },
   {
-    specs: ['blood-audio-output.spec.ts', 'blood-ingame.spec.ts', 'blood-keyboard.spec.ts'],
+    // ⚠ `blood-keyboard.spec.ts` WAS HERE AND IS GONE — the spec was DELETED by
+    // owner ruling (2026-08-23, verbatim: "delete the blood keyboard spec"), so
+    // the name had to leave this list with it: this budget is anchored
+    // budget→tree, and "an entry naming a spec that no longer exists is RED".
+    // The other two BLOOD specs are untouched and keep this entry alive.
+    specs: ['blood-audio-output.spec.ts', 'blood-ingame.spec.ts'],
     reason: /BLOOD (engine|runtime)|engine not ready|extras unavailable|runtime\/extras unavailable/,
     lanes: ['e2e'],
     homeLane: 'e2e',
@@ -316,14 +377,46 @@ export const SKIP_BUDGET = [
       'The scale-run leg is deliberately CI-skipped; the 4-source case is the CI guard. Every run skips it '
       + 'on the audited lane, and the budget keeps that decision named rather than ambient.',
   },
+  // ⚠ THIS ENTRY WAS RE-AIMED, AND THE REASON IS WORTH READING BEFORE EDITING
+  // IT. It used to be:
+  //
+  //   specs: ['workflow-shell-video.spec.ts'], reason: /no videoinput device/
+  //   why: 'Device-list assertion needs a videoinput; headless CI runners
+  //         expose none, so the leg is not applicable there and says so.'
+  //
+  // That skip is GONE — not moved, not renamed. The CAMERA picker case that
+  // owned it was reworked when cameraInput was promoted: its capability-
+  // dependent half became an `if (cameraCount > 0) … else …` BRANCH, so the
+  // zero-device state is now ASSERTED (the control renders, is correctly
+  // disabled, and says why) rather than skipped. The rest of that test is
+  // capability-independent and now reports a real pass on CI, which a mid-test
+  // `test.skip` had been hiding behind a whole-case "skipped".
+  //
+  // ⚠ BUT DELETING THE ENTRY OUTRIGHT ORPHANED A SECOND SITE, and that is the
+  // finding. `workflow-shell-video.spec.ts:737` is a DYNAMIC guard
+  // (`test.skip(VIDEO_SINK_FIXTURE.kind !== 'ok' || …, VIDEO_SINK_FIXTURE.why)`)
+  // about an exhausted video-sink pool — nothing to do with cameras. A dynamic
+  // site is claimed at SPEC granularity by testing the entry's regex against the
+  // spec's whole SOURCE TEXT, so `/no videoinput device/` was claiming it purely
+  // because that unrelated string happened to appear somewhere in the file.
+  // An incidental claim looks identical to a deliberate one right up until the
+  // string it depended on is deleted — which is exactly what happened here, and
+  // direction B caught it in the same cycle.
+  //
+  // So the regex now names the dynamic reason EXPRESSION itself. It cannot be
+  // satisfied by an unrelated edit elsewhere in the file, and if that guard is
+  // ever removed this entry goes stale loudly instead of drifting onto whatever
+  // string is nearest.
   {
     specs: ['workflow-shell-video.spec.ts'],
-    reason: /no videoinput device/,
+    reason: /VIDEO_SINK_FIXTURE\.why/,
     lanes: ['e2e'],
     homeLane: 'e2e',
     why:
-      'Device-list assertion needs a videoinput; headless CI runners expose none, so the leg is not '
-      + 'applicable there and says so. Tolerated but surfaced.',
+      'A DYNAMIC guard: the video-SINK fixture is resolved from the registry, and an exhausted pool '
+      + 'is a MIGRATION state rather than a failure. The named fixture-health test in the same file '
+      + 'is what goes red for it, so this case skips to keep one failure in one place instead of two. '
+      + 'Tolerated but surfaced.',
   },
   {
     specs: ['auth-routes.spec.ts'],
@@ -342,6 +435,21 @@ export const SKIP_BUDGET = [
     why:
       'Real Clerk sign-in needs the dev-instance test credentials, which are not wired into the sharded '
       + 'lane today. The skip names both env vars so arming the guard is a secrets change, not a code hunt.',
+  },
+  {
+    specs: ['cv-buddy-face.spec.ts'],
+    reason: /multichannel output device|E2E_ES9_HARDWARE=1/,
+    lanes: ['e2e'],
+    homeLane: 'local',
+    why:
+      'Hardware-in-the-loop, #2024: the CV BUDDY face\'s last leg needs a physical ES-9, and the probe is '
+      + 'real rather than an env check — it reads `destination.maxChannelCount` and requires >= 8. CI can '
+      + 'never satisfy it twice over (no device, and Chrome caps the destination at 2 channels), so the '
+      + 'reason NAMES the measured number it saw. ⚠ Unlike its es9-hardware sibling this guard INVERTS on '
+      + 'the opt-in flag: with E2E_ES9_HARDWARE=1 a missing rig THROWS instead of skipping, so in the lane '
+      + 'that promises hardware "the rig is unplugged" cannot green the same way "the code is fine" does. '
+      + 'Everything about the face that a browser can prove is covered unskipped by the six other tests in '
+      + 'this spec; only voltage at a physical jack is deferred to the owner recipe in the PR body.',
   },
   {
     specs: ['es9-hardware.spec.ts'],
@@ -411,6 +519,58 @@ export const SKIP_BUDGET = [
       + 'cancel, an irreversible Clear or a leaking patch load all ship green.',
   },
   {
+    specs: ['landing-new-rack-is-fresh.spec.ts'],
+    reason: /FLAKE-PARK #1847/,
+    lanes: ['e2e'],
+    homeLane: 'e2e',
+    why:
+      'PARKED (2026-08-29) — the landing tile-new-rack freshness guard: 1 recovered-on-retry observation '
+      + 'on PR #2247 e2e shard 3 under the live fail-on-flaky gate. While parked, a landing tile that '
+      + 'serves the CACHED rack instead of a fresh one ships green — this is the only coverage of that '
+      + 'path, so root-causing it is not optional debt.',
+  },
+  {
+    specs: ['per-module-per-port-inputs.spec.ts'],
+    reason: /FLAKE-PARK #1847/,
+    lanes: ['e2e'],
+    homeLane: 'e2e',
+    why:
+      'PARKED (2026-08-29) — the SYNESTHESIA row only of the registry-driven inputs-accept wire-up sweep: '
+      + '1 recovered-on-retry observation on PR #2265 e2e shard 3 under the live fail-on-flaky gate '
+      + '(attempt 1: pageerror "Cannot read properties of undefined (reading 0)" during input wire-up; '
+      + 'attempt 2 green at the same SHA; the PR under test composes label strings deterministically, so a '
+      + 'bug there would fail both attempts). While parked, a synesthesia input that throws on wire-up '
+      + 'ships green — its outputs/behavioral dims and every other module\'s inputs row still run. '
+      + 'Scope caveat (the section note above): this entry admits any FLAKE-PARK row in this spec; the '
+      + 'per-module anchor lives in the spec source (`mod.type === \'synesthesia\'`), not here.',
+  },
+  {
+    specs: ['perf-tempo-under-modulation.spec.ts'],
+    reason: /FLAKE-PARK/,
+    lanes: ['e2e'],
+    homeLane: 'e2e',
+    why:
+      'PARKED 2026-08-25 — BOTH tests in the file: the hand-drag commit-coalescing assertion (:274) and its '
+      + 'no-drag CONTROL (:414). Census: 2 observations across 2 SHAs / 2 branches on one day — ONE HARD '
+      + 'failure (#2200 shard 3 at :274, failed both attempts) and ONE RECOVERED FLAKE (#2202 shard 3, '
+      + '`1 flaky · 189 passed`, red only via --fail-on-flaky), measuring `delta=92 … expected~102.40 '
+      + 'band=[94,111]` — short of the floor by exactly TEMPO_SLOP_STEPS. ⚠ The MIX matters: it is not '
+      + 'deterministically broken, so do not hunt a determinism bug the runs do not evidence. '
+      + 'THIS IS THE THIRD ATTEMPT: 182e905fc root-caused the original chronic shard-7 flake (Playwright IPC '
+      + 'overhead spilling into a RUN_MS-based count) and anchored the window inside the page — correct, still '
+      + 'in place; 311a82ac6 then widened TEMPO_SLOP_STEPS to 2, and it still misses by 2 on a loaded '
+      + 'ten-shard runner. A fourth widening would fix the THRESHOLD, not the subject: the band is already '
+      + '±8%, and at ±10% it stops measuring "the clock keeps tempo" at all. '
+      + 'UN-PARK LEAD: both tests count advances against a WALL-CLOCK window, so a CPU-starved runner is '
+      + 'indistinguishable from a slipping scheduler. Re-anchor the count to AUDIO time (ctx.currentTime), '
+      + 'which does not stretch under CPU load — the same "count the right clock" move this repo already '
+      + 'applies to renderer-dependent waits. '
+      + 'COVERAGE LOST, STATED: this file is the ONLY proof that a hand-drag coalesces patch-store commits to '
+      + '<= rAF rate — the owner-reported "unstable tempo when dragging stuff around" case. Both parked '
+      + 'together deliberately, because :414 is :274\'s control and parking one leaves the half-open pair '
+      + 'this budget calls out as half-coverage.',
+  },
+  {
     specs: [
       'clip-automation.spec.ts',
       'clip-prob-default.spec.ts',
@@ -434,7 +594,14 @@ export const SKIP_BUDGET = [
       + 'automation (record/arm/suspend), clip-default probability, song mode, per-lane rate + RST, the note '
       + 'editor, and the #1165 guard that the card transport works with NO controller attached. Several of '
       + 'these are the ONLY real-source-chain proof for their feature; #1646 was a declared fix for the '
-      + 'clip-automation flakiness and the census shows it did NOT hold.',
+      + 'clip-automation flakiness and the census shows it did NOT hold. '
+      + 'ADDED 2026-08-24 — launchpad-perf-controls\' RESET NEGATIVE CONTROL (:286), which was left running '
+      + 'when its POSITIVE at :190 was parked. The two are co-nondeterministic by construction: both ride the '
+      + 'same free-running 128-step clip whose 8 s wrap is precisely what the control distinguishes from a '
+      + 'real reset. A control with no positive is half-coverage — it can only show the probe staying silent '
+      + '— so this closes a half-open pair rather than widening the debt. Recovered-on-retry, FIRST '
+      + 'observation of that leg (run 32725328269 shard 2/10, 2026-08-24 12:31Z, absent from main\'s previous '
+      + '8 runs), NOT triaged as flake vs under-budget; un-park is the PAIR\'s budget diagnosis.',
   },
   {
     specs: [
@@ -442,7 +609,6 @@ export const SKIP_BUDGET = [
       'clap.spec.ts',
       'coverage-groups-3-4-5.spec.ts',
       'cv-range-uniformity.spec.ts',
-      'drumseqz.spec.ts',
       'illogic-face.spec.ts',
       'nibbles.spec.ts',
       'scope-tuner.spec.ts',
@@ -456,10 +622,55 @@ export const SKIP_BUDGET = [
     homeLane: 'e2e',
     why:
       'PARKED (#1847) — REAL-SOURCE-CHAIN audio proofs and the CV conventions they rest on: default-tuning '
-      + 'pitch accuracy, CLAP and DRUMSEQZ through their real trigger chains, triplet playback, the mono-normal '
+      + 'pitch accuracy, CLAP through its real trigger chain, triplet playback, the mono-normal '
       + 'contract, ADR-004 CV range travel, and SHAPEGEN gate edge semantics. This is precisely the class the '
       + 'poly/MIDI discipline exists for — an engine-direct substitute is what shipped POLYHELM green-but-'
       + 'silent — so while these are parked a silent or mistuned chain has no CI gate at all.',
+  },
+  {
+    specs: [
+      'timelorde-pinned-source.spec.ts',
+    ],
+    reason: /FLAKE-PARK #1847/,
+    lanes: ['e2e'],
+    homeLane: 'e2e',
+    why:
+      'PARKED (#1847) — the SOLE regression guard for the FACE_MOUNTS_PRODUCER producer-unmount class '
+      + '(#2163): a promoted face that merely BLITS kills the card rAF that fills `video_out`, and the '
+      + 'pre-fix failure painted a bright STALE bitmap, so only a CHANGING picture catches it. That class '
+      + 'was a live product bug TWICE this week (camera + timelorde), which is why this entry says SOLE '
+      + 'rather than "covered elsewhere" — while it is parked, nothing in CI watches it. Parked on the '
+      + 'FIRST recovered-flake observation, deliberately, to unblock the board rather than hold a PR for an '
+      + 'owner round-trip; OWNER NOTIFIED via the orchestrator as the coverage-loss exception, which is the '
+      + 'half of the ruling a park alone does not satisfy. '
+      + 'TRIAGE (the rule says a test with no flake-fix history is more likely under-budgeted than flaky, '
+      + 'and the two need opposite responses): `git log` on this spec has exactly ONE commit — its birth '
+      + 'commit b22850e09 — so there is no failed-fix history. `sampleVideoOut` is NOT the poll-starvation '
+      + 'class: it accumulates all 12 rAF frames inside ONE page.evaluate. The suspect is the `expect.poll` '
+      + 'around it, bounded by BOOT_MS — a WALL-CLOCK budget gating a renderer-dependent movement '
+      + 'assertion, the house rule\'s named anti-pattern. UN-PARK: re-express that window in FRAMES '
+      + '(e2e/_helpers/frames.ts), keeping a wall-clock cap only to BOUND the failure, and reproduce under '
+      + 'E2E_SWIFTSHADER=1 first — "slower here" and "genuinely different here" need opposite fixes.',
+  },
+  {
+    specs: [
+      'cv-buddy-face.spec.ts',
+    ],
+    reason: /FLAKE-PARK #1847/,
+    lanes: ['e2e'],
+    homeLane: 'e2e',
+    why:
+      'PARKED (#1847) — the LATE lamp\'s static caption + its count riding the accessible name. '
+      + 'Recovered-on-retry, FIRST observation (PR e2e shard 6/10), NOT yet triaged as flake vs '
+      + 'under-budget. TRIAGE POINTS THE OTHER WAY and the entry says so rather than claiming "flaky": '
+      + 'the rule is that a test with no flake-fix history is more likely UNDER-BUDGETED than flaky, and '
+      + '`git log` on this spec has exactly ONE commit — the feature that created it (#2082) — so there '
+      + 'is no failed-fix history to argue the other side. The two classes need OPPOSITE responses, so '
+      + 'UN-PARK is a reproduce-and-measure budget diagnosis, never a re-run until green. '
+      + 'SIBLINGS RETAIN COVERAGE, named: the ES-9-sentences leg and the ROUTED-lamp positive control in '
+      + 'this same file both exercise the lamp — what is parked is narrower than the lamp itself. '
+      + 'Parked on the first observation to unblock the board (it reddens every PR on this commit range, '
+      + 'not just the one that found it) rather than hold a PR for a diagnosis lane the cap does not allow.',
   },
   {
     specs: [
@@ -480,7 +691,14 @@ export const SKIP_BUDGET = [
       + 'not tear down its producer, drop its layers or freeze a live projector. This is the #1720/#1574/#1589 '
       + 'family, a class that has shipped repeatedly, and extras-producer-lifetime is its unique regression net '
       + '— #1757 was a declared fix for that spec and the census shows most of its flakiness landed AFTER it. '
-      + 'The alternation admits the loop-parked sites, whose description is the per-subject map value.',
+      + 'The alternation admits the loop-parked sites, whose description is the per-subject map value. '
+      + 'ADDED 2026-08-24 — backdraft-preview-toggle\'s THIRD leg (:303, the collapse/reclaim geometry). Its '
+      + 'two same-file siblings were already parked (:362 with 21 recovered-on-retry observations, :425 with '
+      + '11) and they document the shared preview-collapse mechanism this leg runs on, so it flakes by the '
+      + 'family\'s cause rather than one of its own. Recovered-on-retry, FIRST observation of THIS leg (run '
+      + '32725328269 shard 2/10, 2026-08-24 12:31Z, absent from main\'s previous 8 runs), NOT triaged as '
+      + 'flake vs under-budget; un-park is the FAMILY\'s budget diagnosis — repairing one of three siblings '
+      + 'that share a mechanism would leave the other two parked and prove nothing.',
   },
   {
     specs: [
@@ -541,6 +759,53 @@ export const SKIP_BUDGET = [
       + 'JSON audit step: lanes:[] means a row here in an audited lane is a partition leak. Lost meanwhile: '
       + 'PEAKSTATE\'s per-port render gate (unconsumed outputs stay dark) and WAVECEL.scope_out producing a '
       + 'structured, frame-stable trace independent of the on-card preview toggle.',
+  },
+  {
+    specs: ['quadralogical-face-screen.spec.ts'],
+    reason: /FLAKE-PARK #1847/,
+    lanes: ['e2e'],
+    homeLane: 'e2e',
+    why:
+      'PARKED (#1847) — both legs of the QUADRALOGICAL screen spec. ⚠ THIS ENTRY IS NOT THE '
+      + 'RECOVERED-ON-RETRY SHAPE THE REST OF THIS LIST RECORDS, and the distinction matters to whoever '
+      + 'un-parks it: both legs failed BOTH attempts at the FULL 90 s SLOW_BOOT_TEST_TIMEOUT_MS, inside '
+      + 'page.evaluate in sampleQuadrants. That is UNDER-BUDGETING, not nondeterminism. The in-page loop is '
+      + 'already correct by construction — it counts 240 FRAMES via rAF rather than wall-clock, which is what '
+      + 'the standard asks for; what does not scale is the per-test BOUND, a flat 90 s sized for BOOT while '
+      + 'this spec spends a boot AND a 240-frame sample. At the measured 7.9 fps under SwiftShader the sample '
+      + 'alone is ~30 s. '
+      + 'It surfaced on batch-22 G3 (#2120) because four new scenes re-packed the shards and these legs landed '
+      + 'on a hot one — the load-sensitivity class of #2096/#2114 — so it is a defect in neither the faces nor '
+      + 'these tests\' logic. ROOT CAUSE IS THE FLEET TIMEOUT DEFAULT and the fix is the owner\'s option-B '
+      + 'call, not a one-spec bound raise, which would only move the lottery onto the next-hottest spec. '
+      + 'Lost meanwhile: the bespoke proof that each quadrant carries ITS OWN input under its own corner label '
+      + '— quadrant-to-input MAPPING, which no fleet sweep covers. The generic screen coverage '
+      + '(reachable / collapse / reclaim) is superseded by the fleet SUBJECTS table.',
+  },
+  {
+    specs: ['acidwarp-face-screen.spec.ts'],
+    reason: /FLAKE-PARK #1847/,
+    lanes: ['e2e'],
+    homeLane: 'e2e',
+    why:
+      'PARKED (#1847) — ONE leg of the ACIDWARP screen spec ("freeze does NOT stop the picture"), and it is '
+      + 'the THIRD MODULE IN THE *-face-screen CLASS the entry directly above already records. That is the '
+      + 'whole justification for parking rather than investigating: quadralogical\'s two legs are already here '
+      + 'with the cause written down, and a third instance of a triaged class is not new coverage loss — it is '
+      + 'evidence for the pending decision. The shape is the same one that entry describes: a *-face-screen '
+      + 'spec spends a BOOT *and* a multi-hundred-frame rAF sample against a flat, boot-sized per-test bound, '
+      + 'so it loses the shard lottery whenever re-packing lands it on a hot one (the load-sensitivity class of '
+      + '#2096/#2114). The in-page loop is already correct by construction — it counts FRAMES via rAF, not '
+      + 'wall-clock. ⚠ ROOT CAUSE IS THE FLEET TIMEOUT DEFAULT and the fix is the owner\'s option-B call; a '
+      + 'one-spec bound raise would only move the lottery onto the next-hottest spec, which is why nobody '
+      + 'should "fix" this entry by raising a number. ⚠ ONE DIFFERENCE FROM THE QUADRALOGICAL ENTRY, recorded '
+      + 'so the two are not read as identical: that one failed BOTH attempts (under-budgeting, flat out), '
+      + 'while this one RECOVERED ON RETRY — so this is the same cause caught one notch earlier. '
+      + 'Lost meanwhile: the bespoke runtime evidence for acidwarp\'s FACES_WITHOUT_SCENES entry — that its '
+      + '`freeze` param does not still the picture. The CLAIM survives at the entry itself, which argues it '
+      + 'from the read site (the freeze test guards only the scene advance; the palette accumulator sits '
+      + 'outside it) and is anchored four ways, so a face that became capturable still reddens. What lapses is '
+      + 'the re-proof, not the record.',
   },
 ];
 

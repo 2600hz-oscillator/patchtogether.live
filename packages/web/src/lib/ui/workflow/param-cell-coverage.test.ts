@@ -69,6 +69,7 @@ const ALL_KINDS = [
   'selector',
   'grid',
   'color',
+  'hue',
   'fader',
   'xy',
 ] as const satisfies readonly ParamCellKind[];
@@ -89,12 +90,20 @@ void _EXHAUSTIVE;
  * means adding a row; landing its first face means deleting one.
  */
 const UNEXERCISED_BY_FACES_PARITY: Readonly<Record<string, { why: string; coveredBy: string }>> = {
-  color: {
-    why:
-      'ColorField lands one PR before its first consumer (wavesculpt has no `face` yet), so no ' +
-      'STRICT_FACES dock renders a colour cell and faces-parity never enters its driveCell arm.',
-    coveredBy: 'e2e/tests/color-field.spec.ts',
-  },
+  // ⚠ THE `color` ROW IS GONE TOO (2026-08-20), drained by the same mechanism
+  // that took `xy`. It read: *"ColorField lands one PR before its first consumer
+  // (wavesculpt has no `face` yet), so no STRICT_FACES dock renders a colour
+  // cell and faces-parity never enters its driveCell arm."* True for exactly as
+  // long as the kind had no adopter — `colourofmagic` declares three
+  // (`pal_r`/`pal_g`/`pal_b`, packed `0xRRGGBB`), so faces-parity now DOES enter
+  // that arm and a listed-and-exercised row is the stale entry this ratchet's
+  // second direction exists to fail on. It failed on it, which is the machinery
+  // working rather than an inconvenience.
+  //   ⚠ AND THE ROSTER IS NOW EMPTY, which is the GOAL and not a hole: "declare
+  // your gaps" has nothing to declare because every kind has a live adopter.
+  // Emptiness is why the vacuity control at the bottom of this file had to be
+  // re-pointed — see the note there. A NEW primitive still gets a row here on
+  // the day it lands and loses it on the day its first face ships.
   // ⚠ THE `xy` ROW IS GONE, and its deletion is the point of the ratchet's
   // second direction. It said "No shipped def declares `face.xyPads`" — true
   // until backdraft's face, which declares two (camTiltX/Y and camPosX/Y). The
@@ -109,7 +118,7 @@ interface FaceDefLike {
   params?: readonly ParamDef[];
   face?: {
     momentary?: readonly string[];
-    paramCells?: Readonly<Record<string, 'grid' | 'color' | 'fader'>>;
+    paramCells?: Readonly<Record<string, 'grid' | 'color' | 'hue' | 'fader'>>;
     xyPads?: readonly { x: string; y: string; label?: string }[];
   };
 }
@@ -125,7 +134,19 @@ function allDefs(): FaceDefLike[] {
 const repoFile = (rel: string) =>
   fileURLToPath(new URL(`../../../../../../${rel}`, import.meta.url));
 
-const PARITY_SPEC = repoFile('e2e/tests/faces-parity.spec.ts');
+// ⚠ RE-POINTED WHEN faces-parity WAS SPLIT (#2141). The sweep is now FOUR spec
+// files over a stable name-hash partition, and the thing this gate reads — the
+// `CellControl` union and `driveCell` — lives in the shared suite module they
+// all call, not in any one of them. The four `.spec.ts` files declare only which
+// partition they run.
+//
+// ⚠ THIS PATH IS LOAD-BEARING AND THE GATE CANNOT TELL A WRONG ONE FROM A
+// PASSING ONE ON ITS OWN: every predicate below is `regex.test(source)`, so a
+// path pointing at a file that does not contain the union would report "the
+// union does not admit this kind" — a plausible, actionable-looking failure
+// with an entirely wrong cause. The existence assertion below is what makes a
+// bad path say so in those words instead.
+const PARITY_SPEC = repoFile('e2e/tests/support/faces-parity-suite.ts');
 const SHELL = fileURLToPath(new URL('../modules/ModuleShell.svelte', import.meta.url));
 
 /** Strip HTML + `//` line comments so a kind merely NAMED in prose does not
@@ -142,6 +163,30 @@ function stripComments(src: string): string {
 const shellSrc = stripComments(readFileSync(SHELL, 'utf8'));
 const paritySrc = stripComments(readFileSync(PARITY_SPEC, 'utf8'));
 
+// ⚠ ANCHOR BOTH SOURCES TO A LANDMARK THEY MUST CONTAIN. Every predicate in this
+// file is `regex.test(source)`, which means a source that moved, was renamed or
+// was split reports as "the union does not admit this kind" — a specific,
+// plausible, entirely wrong diagnosis that sends the reader to the cell
+// registry instead of to the path two lines above. This is not hypothetical:
+// splitting faces-parity into four partition files (#2141) moved the union and
+// `driveCell` into the shared suite module, and without these two lines the
+// three failures said the knob/toggle/momentary primitives had become unwired.
+if (!/cell\.control === '/.test(paritySrc)) {
+  throw new Error(
+    `param-cell-coverage: ${PARITY_SPEC} contains no \`cell.control === '…'\` arms, so every ` +
+      'parity predicate in this file would report a FALSE "unwired primitive". The parity ' +
+      'sweep has moved or been split — re-point PARITY_SPEC at the module that now owns the ' +
+      '`CellControl` union and `driveCell`.',
+  );
+}
+if (!/data-cell-control="/.test(shellSrc)) {
+  throw new Error(
+    `param-cell-coverage: ${SHELL} paints no \`data-cell-control\` attribute, so every shell ` +
+      'predicate would report a FALSE "unpainted primitive". ModuleShell has moved or the ' +
+      'attribute was renamed.',
+  );
+}
+
 /** ModuleShell paints this kind (`data-cell-control="<kind>"` on a real cell). */
 const shellRenders = (kind: string) =>
   new RegExp(`data-cell-control="${kind}"`).test(shellSrc);
@@ -155,10 +200,9 @@ const parityDrives = (kind: string) =>
  * How many STRICT_FACES modules render at least one cell of each kind, at the
  * DOCK — which is what faces-parity opens and sweeps.
  */
-function liveDockCoverage(): Map<ParamCellKind, string[]> {
+function dockCoverage(defs: readonly FaceDefLike[]): Map<ParamCellKind, string[]> {
   const out = new Map<ParamCellKind, string[]>(ALL_KINDS.map((k) => [k, []]));
-  for (const def of allDefs()) {
-    if (!STRICT_FACES.has(def.type)) continue;
+  for (const def of defs) {
     const momentary = momentaryParamIds(def);
     const declared = declaredParamCells(def);
     const seen = new Set<ParamCellKind>();
@@ -166,6 +210,11 @@ function liveDockCoverage(): Map<ParamCellKind, string[]> {
     for (const k of seen) out.get(k)!.push(def.type);
   }
   return out;
+}
+
+/** The same sweep over the LIVE promoted set — what faces-parity actually opens. */
+function liveDockCoverage(): Map<ParamCellKind, string[]> {
+  return dockCoverage(allDefs().filter((d) => STRICT_FACES.has(d.type)));
 }
 
 describe('param cell coverage — every primitive is WIRED end to end', () => {
@@ -265,15 +314,47 @@ describe('param cell coverage — NEGATIVE CONTROLS on the source greps', () => 
   });
 
   it('the coverage sweep can report a kind as UNEXERCISED (it is not always non-empty)', () => {
-    // The clause that would rot first: if `liveDockCoverage` ever returned a
+    // The clause that would rot first: if the coverage sweep ever returned a
     // non-empty list for everything — a resolver bug, a widened default — the
     // "declare your gaps" test would pass forever with nothing to declare.
-    const coverage = liveDockCoverage();
+    //
+    // ⚠ THIS CONTROL USED TO RUN ON THE LIVE REGISTRY, AND THAT SUBJECT
+    // EXPIRED ON 2026-08-20. It asserted that SOME live kind had no adopter —
+    // which was true only while coverage was incomplete. `colourofmagic`
+    // adopted the last unexercised kind (`color`), so every kind now has an
+    // adopter and the control went RED for reaching its own goal: the
+    // precondition it measured was the GAP, not the property.
+    //
+    // That is the "fix the SUBJECT, never the threshold" repair. Deleting the
+    // control would drop real protection (a resolver that reports everything
+    // as covered is exactly the failure it guards); loosening it to `>= 0`
+    // would assert nothing. So it now runs the SAME function over a SYNTHETIC
+    // def set that produces the condition on its own merits — one module with
+    // one plain knob — and that subject cannot expire, because it does not
+    // depend on what the registry happens to contain.
+    const synthetic: FaceDefLike[] = [
+      {
+        type: 'synthetic-one-knob',
+        params: [{ id: 'plain', label: 'Plain', defaultValue: 0, min: 0, max: 1, curve: 'linear' }],
+      },
+    ];
+    const coverage = dockCoverage(synthetic);
+
+    // DIRECTION 1 — it CAN report an adopter. Without this, a function that
+    // returned every list empty would satisfy direction 2 and mean nothing.
+    expect(
+      coverage.get('knob'),
+      'the sweep must see the one kind this synthetic def actually renders',
+    ).toEqual(['synthetic-one-knob']);
+
+    // DIRECTION 2 — and it CAN report emptiness, which is the property the
+    // "declare your gaps" test depends on being possible at all.
     const empties = ALL_KINDS.filter((k) => coverage.get(k)!.length === 0);
     expect(
       empties.length,
-      'the sweep found an adopter for EVERY kind, including the ones this file declares as ' +
-        'unexercised — the coverage function is not measuring what it claims',
+      'the sweep found an adopter for EVERY kind of a def that declares ONE knob — the coverage ' +
+        'function is not measuring what it claims',
     ).toBeGreaterThan(0);
+    expect(empties, 'a kind this def cannot possibly render must come back empty').toContain('color');
   });
 });

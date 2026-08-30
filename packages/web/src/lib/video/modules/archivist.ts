@@ -52,7 +52,8 @@
 //   playhead (cv): 0..1 normalized playhead position of time-media.
 //
 // Params:
-//   gain (linear 0..2): reserved output gain (not consumed in v1).
+//   gain (linear 0..2): output gain — a post-multiplier on the sampled RGB
+//       (uGain in FRAG_SRC). 1.0 (the default) is the identity.
 //   cv_play_trigger (linear 0..1): synthetic edge-detector param mirroring
 //       the play_trigger gate input (card edge-detects, like VIDEOBOX).
 
@@ -73,6 +74,7 @@ out vec4 outColor;
 
 uniform sampler2D uTex;
 uniform float uHasInput;
+uniform float uGain;       // post-multiplier on RGB
 
 void main() {
   if (uHasInput < 0.5) {
@@ -80,7 +82,7 @@ void main() {
     outColor = vec4(0.04, 0.05, 0.09 + v, 1.0);
     return;
   }
-  outColor = vec4(texture(uTex, vUv).rgb, 1.0);
+  outColor = vec4(texture(uTex, vUv).rgb * uGain, 1.0);
 }`;
 
 /** Metadata about the currently-loaded item, mirrored on node.data so peers
@@ -196,7 +198,7 @@ export const archivistDef: VideoModuleDef = {
       playhead: "CV out: the normalized 0..1 playback position of the loaded time-media item, updated each frame while playing/seeking.",
     },
     controls: {
-      gain: "Output gain, linear 0..2 (default 1). Reserved in v1 — declared on the module but not yet consumed in the signal path.",
+      gain: "Output gain, linear 0..2 (default 1). A post-multiplier applied to the sampled RGB in the passthrough shader (the uGain uniform), so 0 blacks the output, 1.0 is the identity and 2 doubles it (clipped at full scale by the 8-bit framebuffer). Only affects the picture, not the audio outs.",
       cv_play_trigger: "Synthetic edge-detector param (linear 0..1, default 0) mirroring the play_trigger gate input; the card polls it and edge-detects a rising crossing of mid-scale (0.5) to toggle play/pause. Normally driven through the play_trigger jack rather than directly.",
     },
   },
@@ -205,6 +207,7 @@ export const archivistDef: VideoModuleDef = {
     const program = ctx.compileFragment(FRAG_SRC);
     const uTex = gl.getUniformLocation(program, 'uTex');
     const uHasInput = gl.getUniformLocation(program, 'uHasInput');
+    const uGain = gl.getUniformLocation(program, 'uGain');
 
     const { fbo, texture: outTexture } = ctx.createFbo();
 
@@ -370,6 +373,7 @@ export const archivistDef: VideoModuleDef = {
         }
 
         g.uniform1f(uHasInput, haveTex ? 1.0 : 0.0);
+        g.uniform1f(uGain, params.gain);
         g.activeTexture(g.TEXTURE0);
         if (haveTex && texToBind) {
           g.bindTexture(g.TEXTURE_2D, texToBind);

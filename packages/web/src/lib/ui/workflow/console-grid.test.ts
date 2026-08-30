@@ -131,7 +131,45 @@ describe('console grid — which SHIPPED bands it claims (derived membership)', 
 
   it('claims EXACTLY these bands — a new one is a baseline dispatch, not a diff to accept', () => {
     expect(claimed()).toEqual([
+      // ⚠ THE SECOND BAND CLUSTERED PURELY TO FIT THE CAPTURE BOX, and it is
+      // the moog960 argument one entry down applied to a WIDER cell. es9's
+      // eight OUT-JACK class switches are SEGMENTED cells painting FOUR option
+      // labels each (audio / cv / pitch / gate) — one more option than
+      // moog960's NORM/SKIP/STOP, which already measured 1336 CSS px for eight
+      // in one row against a 1220 px box. Splitting into halves is what makes
+      // the plate fit, without a width exemption a routing switch has not
+      // earned.
+      //
+      // The correspondence is the moog960 one rather than the moog984 one:
+      // column j is "the j-th jack of this half", not the same control twice.
+      // On eight identical physical jacks that is exactly how a player reads
+      // them, so the aligned columns are right for the same musical reason.
+      //
+      // ⚠ ITS SIBLING BAND IS DELIBERATELY *NOT* HERE. es9's `in` band holds
+      // FOURTEEN of the same cell and is clustered 4/4/4/2 — RAGGED, so
+      // `consoleGridCols` refuses it, which is correct: fourteen does not
+      // divide into rows that both fit the box and align. That refusal is what
+      // keeps es9 a ONE-console-band face and therefore off the face-wide
+      // ruler below.
+      //
+      // NO EXISTING BASELINE MOVES — the face is new in this PR, so its first
+      // captured baseline has the aligned columns from the start.
+      'es9/out=4',
       'kickdrum/dynamics=3',
+      // ⚠ THE NARROWEST CONSOLE BAND THAT CAN EXIST — two columns — and it
+      // arrived with kria's face. Its `track` band holds two equal clusters,
+      // LOOP (start + length) and TIME (division + direction), and column j
+      // means the same thing in both: "the first of this pair, then the
+      // second". Aligning them is what makes the band read as one statement
+      // about how the selected track walks the grid rather than four unrelated
+      // dropdowns. (MUTE sits in the same band outside either cluster, which
+      // the rule ignores — it looks only at the clusters.)
+      //
+      // ⚠ NO EXISTING BASELINE MOVES. The usual cost of joining this list is a
+      // dispatch, because the claimed band's layout changes; here the face is
+      // NEW in the same PR, so its first captured baseline simply has the
+      // aligned columns from the start.
+      'kria/track=2',
       'mixmstrs/channels=8',
       'mixmstrs/dynamics=8',
       // ⚠ `mixmstrs/returns` IS DELIBERATELY ABSENT and used to be here. It
@@ -143,8 +181,82 @@ describe('console grid — which SHIPPED bands it claims (derived membership)', 
       // there is nothing to align, and handing ModuleShell a column ruler for a
       // flex row is two layout systems disagreeing about one element.
       'mixmstrs/sends=9',
+      // ⚠ THE FIRST MEMBER WHOSE CLUSTERS ARE A **WRAP**, NOT A CORRESPONDENCE —
+      // and it is listed with that difference stated rather than blended in,
+      // because the rule's stated property is "column j means the same thing in
+      // every cluster" and this is a weaker claim than moog984's.
+      //
+      // moog960's eight columns are one LINEAR sequence, and the two clusters
+      // are its halves (cols 1-4, cols 5-8). So column j is step j in the first
+      // cluster and step j+4 in the second — not the same control, the way
+      // OUTPUT j genuinely is the same output in every one of moog984's input
+      // rows. What makes the alignment correct anyway is musical rather than
+      // structural: on a step sequencer, steps j and j+4 are the SAME POSITION
+      // in each half of the run, so a column ruler stacks the two halves the
+      // way a player already reads them.
+      //
+      // ⚠ AND THE BAND IS CLUSTERED FOR A MEASURED REASON, not for looks. These
+      // are SEGMENTED cells painting three option labels each (NORM/SKIP/STOP),
+      // which makes a mode cell far wider than a knob: eight in one row put the
+      // dock faceplate at 1336 CSS px of content against a 1220 px capture box,
+      // and `workflow-shell-faces.spec.ts` correctly refused it. Clustering into
+      // halves is what makes the plate fit, and it fits WITHOUT claiming a width
+      // exemption a knob grid has not earned.
+      'moog960/stepmode=4',
+      // ⚠ THE FIRST BAND WHOSE COLUMNS ARE NOT CHANNELS. moog984 is a 4×4
+      // MATRIX: its four clusters are the four INPUT rows and column j is
+      // OUTPUT j, so the property this rule tests for — "column j means the
+      // same thing in every cluster" — is here the definition of the module
+      // rather than a mixer convention it happens to satisfy. It arrived with
+      // its face (#1942) and its baseline was dispatched with it.
+      //
+      // It is a ONE-console-band face, so `faceConsoleGridCols` correctly does
+      // not engage (below `FACE_CONSOLE_MIN_BANDS`) and it is absent from the
+      // face-wide list below — a lone console band has nothing to align to.
+      'moog984/crosspoints=4',
       'pentemelodica/mix=5',
+      // ⚠ THE SECOND BAND WHOSE COLUMNS ARE NOT CHANNELS, and the first that
+      // arrived by REVERSING a `clusterFlow: 'row'` rather than by declaring a
+      // grid. quadralogical's four clusters are the four EDGES of its joystick
+      // cycle (1-2, 2-3, 3-4, 4-1) and column j is the same control on each:
+      // [FX selector][AMT][PRM]. The edges are bit-identically symmetric slots
+      // over the same eight effects, so "column j means the same thing in every
+      // cluster" is exact here rather than approximate.
+      //
+      // ⚠ IT WAS AUTHORED SIDE-BY-SIDE AND CI OVERRULED IT — the mirror image
+      // of the `mixmstrs/returns` note above, and worth reading against it. The
+      // owner's layout note asked for the edge boxes in "a row under the
+      // frame", which is `clusterFlow: 'row'`; four boxes of
+      // [selector + two knob columns] measured 1260 CSS px against a 1220 px
+      // pane ("40 CSS px of faceplate right of the capture box"), and
+      // `workflow-shell-faces` budgets hiddenX === 0. Stacking was the fix, and
+      // gaining the ruler is why it is a better outcome and not merely a
+      // narrower one: on four identical strips the aligned columns are the
+      // point. So `returns` left this list to sit side by side, and `edges`
+      // joined it for the opposite reason.
+      //
+      // It is a ONE-console-band face, so `faceConsoleGridCols` correctly does
+      // not engage and it is absent from the face-wide list below.
+      'quadralogical/edges=3',
       'tidyVco/envelopes=4',
+      // ⚠ TWO BANDS FROM ONE FACE, WHICH IS WHY WAVESCULPT ALSO REACHES THE
+      // FACE-WIDE RULER BELOW — the first new face to do so since mixmstrs.
+      //
+      // `walls=2` — six clusters, one per face of the room, each [alpha,
+      // distort]. Column j means the same thing in all six by construction: how
+      // transparent this wall is, then how far it bulges. That is the property
+      // this rule tests for, on the most literally symmetric band in the fleet.
+      //
+      // `wavetables=3` — four clusters, one per oscillator, each [preset,
+      // factory table, load]. Column j is the same ACQUISITION ROUTE for every
+      // voice, so the aligned columns are what let you read "all four are on
+      // factory tables except GREEN" down a column instead of hunting per
+      // strip. It is also the band the platform forced into existence (a family
+      // key is one cell for all instances, so the strips could not live in the
+      // oscillator bands), and the alignment is the compensation: they read as
+      // four comparable strips rather than twelve loose pickers.
+      'wavesculpt/walls=2',
+      'wavesculpt/wavetables=3',
     ]);
   });
 
@@ -171,7 +283,16 @@ describe('console grid — which SHIPPED bands it claims (derived membership)', 
       const cols = faceConsoleGridCols(plan);
       if (cols != null) out.push(`${def.type}=${cols}`);
     }
-    expect(out.sort()).toEqual(['mixmstrs=9']);
+    // ⚠ WAVESCULPT IS THE SECOND FACE EVER TO REACH THIS RULER, and at 3 rather
+    // than mixmstrs' 9. It qualifies because it has TWO console bands (`walls`
+    // and `wavetables`) — the threshold — and the width is the WIDEST of them,
+    // `wavetables` at 3, not the six-cluster `walls` at 2. That is the rule
+    // working as the mixmstrs note above describes it: the ruler takes the
+    // widest claimed band, so the band with MORE clusters does not win, the
+    // band with more COLUMNS does. The face is new in this PR, so its first
+    // captured baselines carry the aligned columns from the start and no
+    // existing baseline moves.
+    expect(out.sort()).toEqual(['mixmstrs=9', 'wavesculpt=3']);
   });
 
   it('NEGATIVE CONTROL: faces WITH a console band but only one keep their own ruler', () => {
@@ -186,8 +307,38 @@ describe('console grid — which SHIPPED bands it claims (derived membership)', 
       if (consoleBands.length === 1) singles.push(def.type);
     }
     expect(singles.sort(), 'the roster must still contain single-console-band faces').toEqual([
+      // es9's `out` band is its only console band. The `in` band holds the
+      // SAME cell fourteen times and is clustered 4/4/4/2 — ragged, so the
+      // rule refuses it — and `bridge` carries no clusters at all. So the
+      // face-wide ruler must not engage, and a lone console band has nothing
+      // to align against.
+      'es9',
       'kickdrum',
+      // kria's `track` is its only console band — `transport` and `scale` carry
+      // no clusters at all — so the FACE-WIDE ruler must not engage. Same
+      // statement moog984 and quadralogical make below: a lone console band has
+      // nothing to align to.
+      'kria',
+      // moog960's `stepmode` is its only console band — the three row banks
+      // carry no clusters (their eight knobs are one flat row) and `clock` /
+      // `ranges` carry none either. So the FACE-WIDE ruler must not engage:
+      // there is nothing for a lone console band to align against, and the
+      // three knob rows are deliberately NOT clustered, since a knob cell is
+      // narrow enough that eight fit without help.
+      'moog960',
+      // moog984 is the STRONGEST member of this control: it is the only face
+      // whose console band is the module's entire surface, so if the face-wide
+      // ruler ever engaged below its declared minimum it would engage here
+      // first and most visibly.
+      'moog984',
       'pentemelodica',
+      // quadralogical's `edges` band is its only console band — the other two
+      // (`field`, `key`) carry no clusters at all. So the face-wide ruler must
+      // NOT engage, which is the same statement `moog984` makes above and the
+      // reason a face joining this list is a smaller event than one joining the
+      // face-wide list: nothing is re-parented, and only that band's own
+      // columns change layout mode.
+      'quadralogical',
       'tidyVco',
     ]);
     for (const t of singles) {

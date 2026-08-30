@@ -194,6 +194,60 @@ async function seedAndRun(page: Page, lanes: number[]): Promise<void> {
   }, lanes);
 }
 
+/**
+ * Resolve once the pinned clip player's engine step has ADVANCED — proof the
+ * transport really ran, for a chain (CV out) that offers no RMS to read.
+ *
+ * The accumulator lives IN THE PAGE: a Playwright-side loop would sample a
+ * page-side quantity one CDP round trip at a time, on the same main thread it
+ * is measuring, and "frozen" and "never looked" are indistinguishable from its
+ * output. `boundMs` BOUNDS THE FAILURE and is not the gate — this settles the
+ * moment two distinct steps are seen — and everything it saw comes back so the
+ * assertion message can print how the reading was taken.
+ */
+async function stepsAdvanced(
+  page: Page,
+  boundMs: number,
+): Promise<{ distinct: number; samples: number; elapsedMs: number; values: number[] }> {
+  return page.evaluate(
+    ([cpId, ms]) =>
+      new Promise<{ distinct: number; samples: number; elapsedMs: number; values: number[] }>(
+        (resolve) => {
+          const w = globalThis as unknown as {
+            __engine?: () => { read: (n: unknown, k: string) => unknown } | null;
+            __patch: { nodes: Record<string, unknown> };
+          };
+          const seen = new Set<number>();
+          let samples = 0;
+          const t0 = performance.now();
+          const done = (): void => {
+            clearInterval(timer);
+            resolve({
+              distinct: seen.size,
+              samples,
+              elapsedMs: performance.now() - t0,
+              values: [...seen],
+            });
+          };
+          const read = (): void => {
+            const e = typeof w.__engine === 'function' ? w.__engine() : null;
+            const cp = w.__patch?.nodes?.[cpId as string];
+            const v = e && cp ? e.read(cp, 'currentStep:0') : null;
+            if (typeof v === 'number' && v >= 0) {
+              seen.add(v);
+              samples++;
+            }
+            if (seen.size >= 2 || performance.now() - t0 >= (ms as number)) done();
+          };
+          // 20 ms < the ~25 ms scheduler tick, so no step can slip past unseen.
+          const timer = setInterval(read, 20);
+          read();
+        },
+      ),
+    [PINNED_CLIP, boundMs] as const,
+  );
+}
+
 /** Accumulate, IN THE PAGE, the per-channel MAX mixmstrs meter RMS
  *  (read('levels') → number[8]) and the MAX pinned AUDIO OUT RMS over
  *  `durationMs`, sampling on a 25 ms in-page timer.
@@ -681,7 +735,17 @@ test.describe('workflow channel columns', () => {
 
     // Drive the real transport: the clip lane feeds the CV Buddy inputs live.
     await seedAndRun(page, [0]);
-    await page.waitForTimeout(1500); // let the chain run (CV out has no in-app RMS)
+    // A CV chain has no in-app RMS to read, so the old form waited 1500 ms and
+    // ASSUMED the transport ran — it would have passed just as green on a dead
+    // clock. Wait on the run itself instead: the clip player's own step counter,
+    // scanned IN THE PAGE (a Playwright-side poll would sample the subject
+    // across the CDP round trip, on the same main thread it is measuring).
+    const scan = await stepsAdvanced(page, 8_000);
+    expect(
+      scan.distinct,
+      `the clip lane really ran before the edges were re-read — ${scan.samples} in-page reads over ` +
+        `${Math.round(scan.elapsedMs)} ms, distinct currentStep values: [${scan.values.join(', ')}]`,
+    ).toBeGreaterThanOrEqual(2);
     // The tap edges persist through a live run (no reconcile churn removes them).
     expect(await wcolEdges(page)).toContain(`${PINNED_CLIP}.pitch1->${cvbId}.pitch`);
   });

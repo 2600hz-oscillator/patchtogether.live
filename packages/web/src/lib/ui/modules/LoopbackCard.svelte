@@ -21,18 +21,34 @@
   import NeonFader from '$lib/ui/controls/NeonFader.svelte';
   import { useEngine } from '$lib/audio/engine-context';
   import { setNodeParam } from '$lib/graph/mutate';
+  import { patch } from '$lib/graph/store';
   import { loopbackDef } from '$lib/video/modules/loopback';
   import {
     acquireViewportStream,
     isViewportCaptureSupported,
+    type LoopbackCaptureState,
   } from '$lib/ui/viewport-acquire';
-  import { computeCropUv, FULL_FRAME_CROP } from '$lib/video/loopback-crop';
+  import {
+    loopbackStatus,
+    type LoopbackCommandLease,
+  } from '$lib/ui/media/loopback-status-registry';
+  import { loopbackCropPump } from '$lib/ui/media/loopback-crop-pump';
+  // ⚠ NO `computeCropUv` / `FULL_FRAME_CROP` IMPORT ANY MORE — the crop math is
+  // reached through the pump now, and re-importing it here would be the first
+  // step back towards a second measurement site.
   import type { VideoEngine } from '$lib/video/engine';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
   import { portsFromDef } from './card-kit';
 
-  type State = 'idle' | 'requesting' | 'capturing' | 'ended' | 'unsupported' | 'error';
+  // ⚠ IMPORTED, NEVER RE-DECLARED. This used to be a local
+  // `type State = 'idle' | …` union. It is now the ONE declaration in
+  // `$lib/ui/viewport-acquire`, because the faceplate publishes this value
+  // across a surface boundary and a state this card knows about but the
+  // published union does not is a string the face's lamp cannot render — with
+  // every runtime assertion still green. CAMERA has that defect shape gated;
+  // this module does not have the defect. See the type's own header.
+  type State = LoopbackCaptureState;
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -107,6 +123,7 @@
     // The registry owns it from here: it stops the PREVIOUS stream (a re-share
     // legitimately replaces it) and never stops this one on a card unmount.
     nodeMedia.setStream(id, MEDIA_SLOT, stream);
+    startCropPump();
 
     if (videoEl) {
       videoEl.srcObject = stream;
@@ -142,6 +159,10 @@
     stream = null;
     if (videoEl) videoEl.srcObject = null;
     videoEngine()?.attachExternalSource(id, 'video', null);
+    // The pump is NODE-keyed and deliberately outlives this card, so the thing
+    // that ends it is an end of CONTENT — never a view teardown. This is the
+    // same line `stopStream` already draws for the stream itself.
+    loopbackCropPump.stop(id);
   }
 
   function onStopCapture(): void {
@@ -149,47 +170,84 @@
     capState = 'idle';
   }
 
-  function onToggleCrop(): void {
-    setNodeParam(id, 'crop', p('crop') < 0.5 ? 1 : 0);
-  }
-
-  // The app viewport element whose on-screen rectangle defines "what the user
-  // sees". The SvelteFlow pane is the canvas the user pans/zooms; fall back to
-  // the document element (whole layout viewport) if it isn't mounted.
-  function viewportElement(): Element | null {
-    if (typeof document === 'undefined') return null;
-    return document.querySelector('.svelte-flow') ?? document.documentElement;
-  }
-
-  // Push the measured crop rectangle to the engine every animation frame while
-  // capturing. Crop ON → the viewport element's rect; OFF → the whole tab.
-  $effect(() => {
-    if (capState !== 'capturing') return;
-    let raf = 0;
-    const tick = (): void => {
-      const ve = videoEngine();
-      if (ve) {
-        let crop = FULL_FRAME_CROP;
-        if (p('crop') >= 0.5) {
-          const el = viewportElement();
-          if (el && typeof window !== 'undefined') {
-            const r = el.getBoundingClientRect();
-            crop = computeCropUv(
-              { x: r.left, y: r.top, width: r.width, height: r.height },
-              window.innerWidth,
-              window.innerHeight,
-            );
-          }
-        }
+  /**
+   * Start the NODE-keyed crop pump (see $lib/ui/media/loopback-crop-pump).
+   *
+   * ⚠ EVERY DEPENDENCY IS A FUNCTION READ FRESH EACH FRAME, and `cropEnabled`
+   * reads the GRAPH STORE rather than this component's `p('crop')`. The pump
+   * outlives this card by design; a captured component-scoped value would
+   * freeze at the last mounted frame, which is exactly the stuck-value bug the
+   * move was made to remove.
+   */
+  function startCropPump(): void {
+    loopbackCropPump.start(id, {
+      cropEnabled: () => {
+        const raw = patch.nodes[id]?.params?.crop;
+        const def = loopbackDef.params.find((x) => x.id === 'crop')?.defaultValue ?? 1;
+        return (typeof raw === 'number' ? raw : def) >= 0.5;
+      },
+      push: (crop) => {
+        const ve = videoEngine();
+        if (!ve) return;
         ve.setParam(id, '_cropU0', crop.u0);
         ve.setParam(id, '_cropU1', crop.u1);
         ve.setParam(id, '_cropV0', crop.v0);
         ve.setParam(id, '_cropV1', crop.v1);
-      }
-      raf = requestAnimationFrame(tick);
+      },
+    });
+  }
+
+  function onToggleCrop(): void {
+    setNodeParam(id, 'crop', p('crop') < 0.5 ? 1 : 0);
+  }
+
+  // ⚠ THE CROP PUMP USED TO LIVE HERE, as an `$effect` that started a rAF loop
+  // while `capState === 'capturing'` and cancelled it on teardown. It moved to
+  // `$lib/ui/media/loopback-crop-pump` (NODE-keyed) for two measured reasons —
+  // a collapse froze `_crop*` at the last mounted frame while the capture kept
+  // running, and the promotion put this card inside a SECOND `.svelte-flow`
+  // (the headless host's), which made the old
+  // `document.querySelector('.svelte-flow')` reader ambiguous. The full
+  // argument is in that file's header; what belongs here is only the START and
+  // the STOP, and both are content events rather than view events.
+  //
+  // Rehydrate the pump whenever this card finds a capture already running —
+  // a remount after a collapse, or the first mount inside the headless host.
+  // `start` is idempotent while running, so this cannot stack a second loop.
+  $effect(() => {
+    if (capState === 'capturing') startCropPump();
+  });
+
+  // ── Publish status + register the commands the FACEPLATE drives ───────────
+  //
+  // ⚠ THIS IS WHAT MAKES A PROMOTED LOOPBACK USABLE AT ALL. Under the default
+  // shell this card runs inside `<HeadlessSourceHost>` — mounted (so the stream
+  // survives) but `pointer-events: none`, so every button below is unreachable.
+  // The faceplate reads this status and invokes these commands; ownership of
+  // getDisplayMedia, the MediaStream and this state machine never leaves here.
+  // See $lib/ui/media/loopback-status-registry.
+  let commandLease: LoopbackCommandLease | null = null;
+
+  $effect(() => {
+    // Re-published on every state/error change — the face's lamp, its error
+    // text and whether its buttons are offerable all derive from this.
+    loopbackStatus.publish(id, {
+      state: capState,
+      errorMsg,
+      supported: isViewportCaptureSupported(),
+    });
+  });
+
+  $effect(() => {
+    const lease = loopbackStatus.registerCommands(id, {
+      acquire: () => void requestCapture(),
+      stop: onStopCapture,
+    });
+    commandLease = lease;
+    return () => {
+      lease.release();
+      if (commandLease === lease) commandLease = null;
     };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
   });
 
   // ---- Adopt the NODE-owned <video> into this card ----

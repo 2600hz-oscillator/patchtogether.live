@@ -967,6 +967,27 @@ export function createToyboxWorkerHandle(
   let stateLayers: ToyboxLayer[] = makeDefaultLayers();
   let stateCombine: ToyboxCombineGraph | ToyboxCombine = makeDefaultCombineGraph();
 
+  /**
+   * #1905 — CONTENT READINESS.
+   *
+   * True once a draw actually composited something. TOYBOX fetches its manifest
+   * and its gen-layer GLSL over HTTP **from inside the worker realm**, so
+   * between the factory returning and those two round-trips landing, every
+   * `draw()` clears the output FBO to opaque black and composites nothing
+   * (`accTex === null`). Those frames used to be posted, and the main thread —
+   * which cannot see inside an ImageBitmap — read the first of them as "the
+   * worker is producing" and retired the main-thread fallback that was drawing
+   * the real picture. Measured result: `nonZeroFrac=0.000` with a live worker.
+   *
+   * ⚠ This is deliberately "did the last draw produce anything", not "have the
+   * fetches resolved": a layer set that legitimately composites to nothing
+   * (every layer `off`) never becomes ready, so the fallback keeps the node
+   * painting — the SAME picture the main thread would have drawn. Withholding
+   * costs a fallback render; posting a black frame costs the picture.
+   */
+  let producedContent = false;
+  let lastContentNote = 'no draw yet';
+
   /** Apply a serialized ToyboxNodeData snapshot received from the main thread. */
   function syncState(data: unknown): void {
     const d = data as ToyboxNodeData | null;
@@ -1410,6 +1431,19 @@ export function createToyboxWorkerHandle(
         combineStep(accTex, accTex, outFbo, 0, 0);
       }
       g.bindFramebuffer(g.FRAMEBUFFER, null);
+      // #1905 — record whether this frame is a PICTURE or a cleared buffer, and
+      // (when it is not) why, so the handshake trace can say which asset the
+      // worker is waiting on rather than reporting a bare zero.
+      producedContent = accTex !== null;
+      if (!producedContent) {
+        const pending = [...inflightShader];
+        const failed = [...failedShader];
+        lastContentNote = failed.length
+          ? `content fetch/compile FAILED for [${failed.join(', ')}] — this node will never paint in the worker`
+          : pending.length
+            ? `waiting on content [${pending.join(', ')}] (worker-realm fetch + compile)`
+            : 'no layer composited (all layers off/ineligible, or the catalog has not resolved yet)';
+      }
     },
     resize(w: number, h: number) {
       const W = Math.max(2, Math.round(w));
@@ -1459,10 +1493,28 @@ export function createToyboxWorkerHandle(
     },
   };
 
-  const handle: VideoNodeHandle & { syncState: (data: unknown) => void } = {
+  // #1905 — SEED FROM THE NODE'S OWN DATA. `addNode` already carries a snapshot
+  // of `node.data`, and this factory used to ignore it entirely, leaving the
+  // card-driven `toybox-sync` as the SOLE source of layer state. That sync
+  // fires once per `node.data` change and is dropped silently by both of its
+  // consumers when they are not ready, so a lost one is permanent. Seeding here
+  // makes the sync a refresher rather than a single point of failure — and a
+  // rack loaded with no card mounted now renders the user's layers, not the
+  // defaults.
+  if (node.data) {
+    try { syncState(node.data); } catch { /* a malformed snapshot keeps the defaults */ }
+  }
+
+  const handle: VideoNodeHandle & {
+    syncState: (data: unknown) => void;
+    contentReady: () => boolean;
+    contentNote: () => string;
+  } = {
     domain: 'video' as const,
     surface,
     syncState,
+    contentReady: () => producedContent,
+    contentNote: () => (producedContent ? '' : lastContentNote),
     setParam(_paramId: string, _value: number) {
       // CV values for TOYBOX are resolved on the main thread via applyCvRoute
       // and applied there. The worker path doesn't need per-param state because

@@ -1,0 +1,208 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>PONG face — STATE 2: the lane tiers, and the platform gap</title>
+<style>
+/* ─────────────────────────────────────────────────────────────────────────
+   PONG FACEPLATE — MOCKUP, state 2 of 2 (the lane tiers).
+   SPEC AND MOCKUP ONLY. Nothing here is implemented. See spec.md.
+
+   This page exists to make ONE uncomfortable thing visible: the lane tile
+   gains three faders and NO COURT, because `hasVideoSurface` is
+   domain === 'video' and every glyph literal but 'none' resolves to a dead
+   static glyph on a def with no `audio` output. That is a platform gap two
+   modules in this wave hit, and it is drawn here rather than described.
+   ───────────────────────────────────────────────────────────────────────── */
+:root{
+  --bg:#0e1013; --dock:#12161c; --pbody:#1c1f24; --line:#2c3037; --tile:#33383f;
+  --ink:#eef1f5; --dim:#9aa2ad; --faint:#646c77;
+  --gate:#ffd23f; --warn:#f2c14e; --good:#8fe6b0; --bad:#ff9b9b;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+  font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1240px;margin:0 auto;padding:26px 20px 90px}
+h1{font-size:21px;font-weight:800;margin:0 0 6px}
+.sub{color:var(--dim);font-size:12.5px;margin:0 0 14px;max-width:108ch}
+.sub b{color:var(--ink)} code{font-family:var(--mono);font-size:11.5px;color:var(--gate)}
+.nav{display:flex;gap:8px;margin:0 0 20px;font-size:11px;flex-wrap:wrap}
+.nav a{color:var(--ink);text-decoration:none;border:1px solid var(--line);border-radius:6px;
+  padding:6px 12px;background:#12161c;font-family:var(--mono);letter-spacing:.06em;text-transform:uppercase}
+.nav a.on{border-color:var(--gate);color:var(--gate)}
+.warn{border:1px solid #6a5330;background:#1c1811;border-radius:8px;padding:11px 14px;margin:12px 0;
+  font-size:12.5px;color:#e8cf9a;max-width:120ch} .warn b{color:var(--warn)}
+.bad{border:1px solid #6a3838;background:#1c1212;border-radius:8px;padding:11px 14px;margin:12px 0;
+  font-size:12.5px;color:#e8b0b0;max-width:120ch} .bad b{color:var(--bad)}
+.ok{border:1px solid #3b5a48;background:#111a15;border-radius:8px;padding:11px 14px;margin:12px 0;
+  font-size:12.5px;color:#a9d8bd;max-width:120ch} .ok b{color:var(--good)}
+
+.tiers{display:flex;gap:22px;flex-wrap:wrap;align-items:flex-start;margin:18px 0 6px}
+.tier{display:flex;flex-direction:column;gap:8px}
+.tier > h5{margin:0;font-family:var(--mono);font-size:8.6px;letter-spacing:.13em;text-transform:uppercase;
+  color:var(--faint)}
+.tile{background:var(--pbody);border:1px solid var(--tile);border-left:3px solid var(--gate);
+  border-radius:8px;padding:8px 9px 10px}
+.tile .nm{font-size:9.4px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;color:var(--ink);
+  margin-bottom:7px}
+.tile.mini{width:96px} .tile.compact{width:150px} .tile.plate{width:210px}
+.frow{display:flex;gap:12px;justify-content:center;align-items:flex-end}
+.fad{display:flex;flex-direction:column;align-items:center;gap:5px}
+.fad .track{position:relative;width:13px;height:62px;border-radius:7px;background:#151a21;border:1px solid #303740}
+.fad .fill{position:absolute;left:0;right:0;bottom:0;border-radius:0 0 6px 6px;
+  background:linear-gradient(#ffd23f55,#ffd23f22)}
+.fad .cap{position:absolute;left:-3px;right:-3px;height:7px;border-radius:3px;background:#e8edf3}
+.fad b{font-size:7px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--dim);
+  font-family:var(--mono)}
+.jacks{display:flex;gap:5px;justify-content:center;margin-top:9px}
+.jacks i{width:9px;height:9px;border-radius:50%;background:#232a33;border:1px solid #3a4450}
+.jacks i.g{border-color:var(--gate)} .jacks i.c{border-color:#5ad1ff}
+.nopic{margin-top:8px;border:1px dashed #5a4040;border-radius:5px;padding:12px 6px;text-align:center;
+  font-family:var(--mono);font-size:7.6px;letter-spacing:.09em;color:#a06a6a;line-height:1.5}
+.zones{background:#12161c;border:1px solid var(--line);border-radius:9px;padding:12px 13px;margin-top:18px}
+.zones h4{margin:0 0 8px;font-size:9px;font-weight:800;letter-spacing:.13em;text-transform:uppercase;color:var(--dim)}
+.zt{width:100%;border-collapse:collapse;font-size:10.5px}
+.zt th{text-align:left;font-family:var(--mono);font-size:7.8px;letter-spacing:.11em;text-transform:uppercase;
+  color:var(--faint);font-weight:400;padding:0 0 5px;border-bottom:1px solid var(--line)}
+.zt td{padding:5px 0;border-bottom:1px solid #1c2027;vertical-align:top;color:var(--dim);line-height:1.42}
+.zt td:first-child{color:var(--ink);font-family:var(--mono);font-size:9.5px;padding-right:10px;white-space:nowrap}
+</style>
+
+<div class="wrap">
+<h1>PONG — the lane tiers · and the platform gap two modules in this wave hit</h1>
+<p class="sub">Spec and mockup only; nothing here is implemented. The tier ladder <b>must be
+derived through <code>curatedFace</code>, never read off the cap constants</b> — four sibling
+faces got it wrong that way. What is drawn here is the prediction the build has to check.</p>
+
+<div class="nav">
+  <a href="dock.html">state 1 · the dock court</a>
+  <a class="on" href="lane-tiers.html">state 2 · the lane tiers</a>
+</div>
+
+<div class="bad"><b>&#9888; THE LANE TILE HAS NO COURT, AND IT IS STRUCTURAL.</b>
+<code>hasVideoSurface(def)</code> is <code>domain === 'video'</code>; pong is
+<code>domain:'audio'</code>, so no <code>VideoTileThumb</code>. And both outputs are
+<code>type:'gate'</code>, so <code>primaryAudioOutPortId</code> returns <b>null</b> and every
+glyph literal except <code>'none'</code> resolves <code>{kind:'static'}</code> and reddens the
+dead-glyph clause. <code>ShellExtension.glyph</code> exists but renders <b>only</b> under
+<code>binding.kind === 'algorithm'</code>, whose branch requires an <code>algorithm</code> param.
+<b>The widening is already prescribed by the file's own comment</b>
+(<i>&ldquo;do NOT add a third glyph literal: widen THIS branch to carry a layout-source
+id&rdquo;</i>) and it is unbuilt.</div>
+
+<div class="warn"><b>&#9888; This is a WAVE-level finding, not a per-module footnote.</b> Five
+modules are affected — <code>timelorde</code>, <code>pong</code>, <code>scope</code>,
+<code>rasterize</code>, <code>wavesculpt</code>: every card-drawn picture on an audio-domain
+def. Two of them are in this wave. <b>Report it as one platform PR</b>, not as two module
+notes.</div>
+
+<div class="tiers">
+  <div class="tier">
+    <h5>mini · cap 1</h5>
+    <div class="tile mini">
+      <div class="nm">pong</div>
+      <div class="frow">
+        <div class="fad"><div class="track"><div class="fill" style="height:50%"></div>
+          <div class="cap" style="bottom:calc(50% - 3.5px)"></div></div><b>Speed</b></div>
+      </div>
+      <div class="nopic">no picture<br>at any lane tier</div>
+      <div class="jacks"><i class="c"></i><i class="c"></i><i class="g"></i><i class="g"></i></div>
+    </div>
+  </div>
+
+  <div class="tier">
+    <h5>compact · cap 3 (glyph-less)</h5>
+    <div class="tile compact">
+      <div class="nm">pong</div>
+      <div class="frow">
+        <div class="fad"><div class="track"><div class="fill" style="height:50%"></div>
+          <div class="cap" style="bottom:calc(50% - 3.5px)"></div></div><b>Speed</b></div>
+        <div class="fad"><div class="track"><div class="fill" style="height:33%"></div>
+          <div class="cap" style="bottom:calc(33% - 3.5px)"></div></div><b>Paddle</b></div>
+      </div>
+      <div class="nopic">no picture</div>
+      <div class="jacks"><i class="c"></i><i class="c"></i><i class="g"></i><i class="g"></i></div>
+    </div>
+  </div>
+
+  <div class="tier">
+    <h5>plate · cap 6</h5>
+    <div class="tile plate">
+      <div class="nm">pong</div>
+      <div class="frow">
+        <div class="fad"><div class="track"><div class="fill" style="height:50%"></div>
+          <div class="cap" style="bottom:calc(50% - 3.5px)"></div></div><b>Speed</b></div>
+        <div class="fad"><div class="track"><div class="fill" style="height:33%"></div>
+          <div class="cap" style="bottom:calc(33% - 3.5px)"></div></div><b>Paddle</b></div>
+        <div class="fad"><div class="track"><div class="fill" style="height:30%"></div>
+          <div class="cap" style="bottom:calc(30% - 3.5px)"></div></div><b>Serve</b></div>
+      </div>
+      <div class="nopic">no picture &mdash; the court is DOCK-ONLY,<br>
+        because a <code>fullViewBody</code> is dock-gated</div>
+      <div class="jacks"><i class="c"></i><i class="c"></i><i class="g"></i><i class="g"></i></div>
+    </div>
+  </div>
+
+  <div class="tier">
+    <h5>today, on <code>main</code></h5>
+    <div class="tile mini" style="border-left-color:#5a4040">
+      <div class="nm" style="color:#8b96a4">pong</div>
+      <div class="nopic" style="padding:26px 6px">placeholder<br>tile<br><br>no court<br>no faders</div>
+    </div>
+  </div>
+</div>
+
+<div class="ok"><b>So the promotion is measured against GREY, not against a court.</b> That is the
+whole reason this module is a PROMOTE rather than the <code>spectrograph</code> refusal it
+otherwise resembles: spectrograph's refusal compared a face against a <i>working card in the
+lane</i>. Pong has no card in the lane today, so a face is three real controls where there were
+none — and a real court at the dock where there was nothing at all.</div>
+
+<div class="zones"><h4>the tier ladder, and what LOST</h4>
+  <table class="zt">
+    <tr><th>tier</th><th>keeps</th><th>the argument</th></tr>
+    <tr><td>mini</td><td><code>speed</code></td>
+      <td>the module's tempo. On a def whose outputs are gates, everything downstream is clocked
+        by how long a rally takes.</td></tr>
+    <tr><td>compact</td><td>+ <code>paddleH</code></td>
+      <td><b>the loser, named.</b> <code>paddleH</code> lost mini to <code>speed</code> on
+        rate-vs-difficulty. It nearly won on a measurement: it is the only param read every step,
+        so it is the only one that acts on the rally in progress.</td></tr>
+    <tr><td>plate</td><td>+ <code>serveAngle</code></td>
+      <td>a control you must watch three serves to evaluate is not a control a 46&nbsp;px lane
+        column can serve.</td></tr>
+    <tr><td>dock</td><td>+ the court</td>
+      <td><code>fullViewBody</code> is dock-only by <code>dockFullViewHeadPlan</code>: a 192&nbsp;px
+        lane tile cannot carry a module surface.</td></tr>
+  </table>
+</div>
+
+<div class="zones"><h4>the defect ledger this audit produced</h4>
+  <table class="zt">
+    <tr><th>id</th><th>one line</th></tr>
+    <tr><td>13.1</td><td><code>vizPassthrough: true</code> <b>is a lie for pong</b> and two
+      surfaces advertise it. <code>GROUP_VIZ_HOST_TYPES</code> is <code>{'scope'}</code>, so the
+      portal finds nothing. Measured in-tree: <code>canvasInSlot 0</code> for
+      frogger/modtris/pong against SCOPE's 1 (#1755). A class, not a module.</td></tr>
+    <tr><td>13.2</td><td><b>a rank-1 control that does nothing until the ball goes out.</b>
+      <code>speed</code> is read at exactly one site, inside <code>resetState</code>. With
+      tracking paddles the rally is infinite (measured: zero scores over 5&nbsp;s), so it can be
+      <b>permanently inert</b>. Fold into the face PR.</td></tr>
+    <tr><td>13.3</td><td><b>unbounded velocity.</b> The english kick is
+      <code>vy += offset * BASE_SPEED * 0.4</code> — it ignores <code>params.speed</code> (so the
+      control's felt effect varies 16:1 across its range) and it is a pure addition with
+      <b>no renormalisation and no clamp anywhere</b>.</td></tr>
+    <tr><td>13.4</td><td>the card re-types six range literals while importing <code>pongDef</code>
+      three lines earlier, and is not in <code>RANGE_BOUND_CARDS</code>. The backdraft class.</td></tr>
+    <tr><td>13.5</td><td><b>the court renders at half its intended size.</b>
+      <code>drawPong</code> documents its opts in CSS px; the card passes backing-store px at
+      DPR&nbsp;2 with no scale. The score font is 7&nbsp;CSS&nbsp;px. No pixel test exists —
+      because the module is <code>EXEMPT_FROM_VRT</code>.</td></tr>
+    <tr><td>13.7</td><td>the ART gate-pulse test <b>re-types</b> the schedule by hand into a fresh
+      context. Change <code>GATE_PULSE_S</code> and it stays green while the shipped gate width
+      moves — a fixture asserting a property of itself.</td></tr>
+    <tr><td>13.8</td><td>the lane tile is a dead placeholder and no test has ever looked, because
+      every pong e2e drives <code>?shell=legacy</code>.</td></tr>
+  </table>
+</div>
+</div>

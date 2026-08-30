@@ -133,7 +133,7 @@ test.describe('@collab B3 reconciler determinism', () => {
         w.__ydoc.transact(() => {
           // The five-node example chain (mirrors loadExample() in Canvas.svelte).
           const nodes: Record<string, { type: string; params: Record<string, number> }> = {
-            'b3-seq': { type: 'sequencer', params: { bpm: 180, length: 8, isPlaying: 1, gateLength: 0.4 } },
+            'b3-seq': { type: 'kria', params: { bpm: 180, running: 1} },
             'b3-vco': { type: 'analogVco', params: {} },
             'b3-adsr': { type: 'adsr', params: { attack: 0.005, decay: 0.08, sustain: 0.3, release: 0.15 } },
             'b3-vca': { type: 'vca', params: { base: 0, cvAmount: 1 } },

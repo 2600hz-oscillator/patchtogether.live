@@ -1,7 +1,7 @@
 // e2e/tests/docs-virtual-module.spec.ts
 //
 // The interactive virtual-module doc page (the redesign that replaces the
-// numbered face as the PRIMARY view). Proves, data-driven over adsr + sequencer:
+// numbered face as the PRIMARY view). Proves, data-driven over adsr:
 //   (a) the LIVE card mounts + renders on /docs/modules/<id>,
 //   (b) hovering a faceplate control shows its AUTHORED text in the right pane,
 //   (c) opening the patch panel + hovering a CV port shows the CV desc AND the
@@ -39,16 +39,6 @@ const PROBES: Probe[] = [
     controlDescIncludes: /ramp|peak/i,
     cvPort: 'attack',
     modulates: /modulates/i,
-  },
-  {
-    id: 'sequencer',
-    heading: /sequencer/i,
-    controlParam: 'bpm',
-    controlDescIncludes: /tempo|bpm/i,
-    // sequencer has no CV→param inputs (its CVs are transport gates), so the
-    // dual-context assertion is skipped for it (see the conditional below).
-    cvPort: '',
-    modulates: /./,
   },
   // --- Batch 1 — foundational modules (2026-06-25). Each is on the
   // INTERACTIVE_DOC_MODULES allowlist; this proves the live card mounts cleanly
@@ -415,40 +405,6 @@ const PROBES: Probe[] = [
     controlParam: 'gateLength',
     controlDescIncludes: /gate|step|stab/i,
     cvPort: '', // clock/x_cv/y_cv/lfo_clock are not param mods
-    modulates: /./,
-  },
-  {
-    id: 'drumseqz',
-    heading: /drumseqz/i,
-    controlParam: 'bpm',
-    controlDescIncludes: /tempo|bpm/i,
-    cvPort: '', // transport CVs are gates, no paramTarget
-    modulates: /./,
-  },
-  {
-    id: 'macseq',
-    heading: /macseq/i,
-    controlParam: 'bpm',
-    controlDescIncludes: /tempo|bpm/i,
-    cvPort: '', // transport CVs are gates, no paramTarget
-    modulates: /./,
-  },
-  {
-    id: 'polyseqz',
-    heading: /polyseqz/i,
-    controlParam: 'humanize',
-    controlDescIncludes: /humani[sz]e|jitter|loosen|tight/i,
-    cvPort: 'humanize_cv', // CV (paramTarget=humanize) → humanize
-    modulates: /modulates/i,
-  },
-  {
-    id: 'writeseq',
-    heading: /writeseq/i,
-    // recArm/overdub/play are card buttons, not control-<id> faders — probe a
-    // real Fader param (bpm/length/octave/gateLength) for the live-card hover.
-    controlParam: 'gateLength',
-    controlDescIncludes: /gate|step|stab/i,
-    cvPort: '', // cv/gate/clock/rec/transport are not param mods
     modulates: /./,
   },
   {

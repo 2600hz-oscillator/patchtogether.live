@@ -31,7 +31,7 @@
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import VideoTileThumb from './VideoTileThumb.svelte';
   import { portsFromDef } from './card-kit';
-  import { spineCableVar, laneFaceTier, hasVideoSurface, type ShellDefLike } from '$lib/ui/workflow/module-shell-model';
+  import { spineCableVar, laneFaceTier, hasVideoSurface, laneFlowLabel, type ShellDefLike } from '$lib/ui/workflow/module-shell-model';
   import type { ModuleNode, PortDef } from '$lib/graph/types';
 
   interface Props {
@@ -83,13 +83,17 @@
    *  the mock "osc"/"filter" once modules migrate). */
   let badge = $derived(node.type);
 
-  /** Signal-flow label (mock `.flow` "▶ ch1"): the module's lane membership. */
-  let flowLabel = $derived.by(() => {
-    const d = node.data as { channel?: number; sendSlot?: number } | undefined;
-    if (d?.channel != null) return `▶ ch${d.channel}`;
-    if (d?.sendSlot != null) return `▶ s${d.sendSlot}`;
-    return '▶ out';
-  });
+  /** Signal-flow label (mock `.flow` "▶ ch1"): the module's lane membership.
+   *
+   *  ⚠ THE DERIVATION MOVED TO `laneFlowLabel` BECAUSE IT THREW HERE. It read
+   *  `data.channel != null` and interpolated it, on a `{ channel?: number }`
+   *  cast that was a claim rather than a fact — `node.data` is an open record
+   *  each module owns its own shape of, and `tvLibrarian` writes `data.channel`
+   *  as a `TvChannelMeta` OBJECT. `Cannot convert object to primitive value`
+   *  inside a `$derived` takes the whole xyflow node down, so a TUNED
+   *  tvLibrarian had a broken lane tile on load. The model function type-checks
+   *  instead of coercing, and its unit test pins both shapes. */
+  let flowLabel = $derived(laneFlowLabel(node.data as Readonly<Record<string, unknown>> | undefined));
 
   /** TRUE while THIS module occupies a dock full-view pane — the rail pill
    *  flips to "✕ CLOSE" (reactive on dockStore.fullViewNodeIds; per-module

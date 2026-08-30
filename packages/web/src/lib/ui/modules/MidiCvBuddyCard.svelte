@@ -31,9 +31,23 @@
     MidiCvBuddyApi,
     MidiCvBuddyCardState,
     MidiCvBuddyData,
-    VoicePriority,
+  } from '$lib/audio/modules/midi-cv-buddy';
+  // ⚠ THE ROSTERS AND THE CHANNEL READ ARE IMPORTED, NEVER RE-TYPED. This card
+  // used to spell `{#each Array(16)}` with an inline `i + 1`, and the three
+  // priority `<option>`s as literals — two encodings of one convention, which is
+  // the same one-place rule the range gates apply to numbers. Both surfaces
+  // (this card under `?shell=legacy`, and the faceplate) now read the same
+  // functions off the def.
+  import {
+    channelForChoice,
+    choiceForChannel,
+    midiCvBuddyChannelChoices,
+    midiCvBuddyPriorityOptions,
+    midiInChannelOf,
+    priorityForChoice,
   } from '$lib/audio/modules/midi-cv-buddy';
   import { noteNameForMidi } from '$lib/audio/note-entry';
+  import { nameOfDevice } from '$lib/graph/device-rebind';
   import ModuleTitle from './ModuleTitle.svelte';
 
   let { id, data }: NodeProps = $props();
@@ -49,12 +63,16 @@
     selectedDeviceId: null,
     lastNote: null,
     lastVelocity: 0,
+    heldCount: 0,
   });
 
   // Saved data (with defaults).
   let savedData = $derived(((node?.data ?? {}) as Partial<MidiCvBuddyData>));
-  let channel = $derived<number | null>(savedData.channel ?? null);
-  let priority = $derived<VoicePriority>(savedData.priority ?? 'last');
+  // ⚠ `midiInChannelOf`, NEVER `savedData.channel` — `data.channel` is the
+  // workflow channel-column reconciler's MEMBERSHIP key, not ours. See that
+  // function's header in the def for the measurement.
+  let channel = $derived<number | null>(midiInChannelOf(savedData));
+  let priority = $derived<string>(savedData.priority ?? 'last');
   let retrig = $derived<boolean>(savedData.retrig ?? true);
 
   function getApi(): MidiCvBuddyApi | null {
@@ -99,18 +117,31 @@
   function onChangeDevice(ev: Event): void {
     const sel = (ev.currentTarget as HTMLSelectElement).value || null;
     getApi()?.selectDevice(sel);
-    writeData({ lastDeviceId: sel });
+    // ⚠ THE NAME IS WRITTEN AT PICK TIME because it is the only moment it is
+    // knowable. `lastDeviceId` is the MIDIPort.id, which the spec leaves
+    // implementation-defined — this file's own bundle exporter calls it
+    // "unstable" — so on a later load the id may name nothing, and the
+    // remembered name is what still identifies the hardware.
+    writeData({
+      lastDeviceId: sel,
+      lastDeviceName: nameOfDevice(sel, cardState.devices) ?? undefined,
+    });
   }
 
   function onChangeChannel(ev: Event): void {
-    const raw = (ev.currentTarget as HTMLSelectElement).value;
-    const ch = raw === 'all' ? null : Number.parseInt(raw, 10);
+    const ch = channelForChoice((ev.currentTarget as HTMLSelectElement).value);
     getApi()?.setChannel(ch);
-    writeData({ channel: ch });
+    // ⚠ ONLY `midiInChannel`. Writing `channel` would hand the value to the
+    // workflow channel-column reconciler as a LANE REASSIGNMENT — it prunes any
+    // node whose `data.channel !== ch` out of column `ch` and adopts it into
+    // the column matching the new value, so a MIDI channel of 0..15 either
+    // ejected this module from its lane or teleported it into another's. That
+    // is #1168, which was fixed on `MidiOutBuddyCard` and never checked here.
+    writeData({ midiInChannel: ch });
   }
 
   function onChangePriority(ev: Event): void {
-    const p = (ev.currentTarget as HTMLSelectElement).value as VoicePriority;
+    const p = priorityForChoice((ev.currentTarget as HTMLSelectElement).value);
     getApi()?.setPriority(p);
     writeData({ priority: p });
   }
@@ -141,7 +172,17 @@
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <div class="body">
       {#if !cardState.connected}
-        <button class="connect-btn" type="button" onclick={onClickConnect}>
+        <!-- ⚠ CARRIES THE CONTROL FAMILY'S `testidPrefix`. `midi-cv-buddy-connect`
+             is declared on the def as a `controlFamilies` entry so the faceplate
+             can rank the permission gesture as an `action` cell, and
+             `module-docs-lint`'s card-drift leg requires every declared prefix
+             to appear in real card markup. -->
+        <button
+          class="connect-btn"
+          type="button"
+          data-testid="midi-cv-buddy-connect-{id}"
+          onclick={onClickConnect}
+        >
           Connect MIDI…
         </button>
         {#if cardState.permissionDenied}
@@ -162,25 +203,37 @@
 
         <label class="row">
           <span class="lbl">CH</span>
-          <select onchange={onChangeChannel} value={channel === null ? 'all' : String(channel)}>
-            <option value="all">ALL</option>
-            {#each Array(16) as _, i (i)}
-              <option value={String(i)}>{i + 1}</option>
+          <select
+            data-testid="midi-cv-buddy-channel-{id}"
+            onchange={onChangeChannel}
+            value={choiceForChannel(channel)}
+          >
+            {#each midiCvBuddyChannelChoices() as c (c.value)}
+              <option value={c.value}>{c.label}</option>
             {/each}
           </select>
         </label>
 
         <label class="row">
           <span class="lbl">PRIO</span>
-          <select onchange={onChangePriority} value={priority}>
-            <option value="last">LAST</option>
-            <option value="low">LOW</option>
-            <option value="high">HIGH</option>
+          <select
+            data-testid="midi-cv-buddy-priority-{id}"
+            onchange={onChangePriority}
+            value={priority}
+          >
+            {#each midiCvBuddyPriorityOptions() as p (p.value)}
+              <option value={p.value}>{p.label}</option>
+            {/each}
           </select>
         </label>
 
         <label class="row retrig">
-          <input type="checkbox" checked={retrig} onchange={onToggleRetrig} />
+          <input
+            type="checkbox"
+            data-testid="midi-cv-buddy-retrig-{id}"
+            checked={retrig}
+            onchange={onToggleRetrig}
+          />
           <span>RETRIG</span>
         </label>
 

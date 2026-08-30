@@ -150,6 +150,20 @@ export function setCombineNodeParam(
   });
 }
 
+/** LOCK/UNLOCK a combine op node against RANDOMIZE (#1576 ws3). The flag
+ *  rides the node object (syncs + round-trips presets/zip); the dice keep a
+ *  locked node byte-identical WITH its upstream feeds, and REVERT keeps it
+ *  too. `false` DELETES the key. No-op for source/output nodes (they are
+ *  structural — layers lock via setLayerLocked instead). */
+export function setCombineNodeLocked(nodeId: string, targetNodeId: string, locked: boolean): void {
+  mutateCombine(nodeId, (g) => {
+    const n = findNode(g, targetNodeId);
+    if (!n || n.kind === 'source' || n.kind === 'output') return;
+    if (locked) n.locked = true;
+    else delete n.locked;
+  });
+}
+
 /**
  * Reset a STATEFUL op node's history buffer: bump its `_reset` token param (in
  * place) so the engine clears its per-node ring / ping-pong float buffers to

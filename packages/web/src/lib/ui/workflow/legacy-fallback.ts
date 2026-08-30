@@ -37,10 +37,15 @@ export type LaneRenderKind = 'legacy' | 'shell' | 'placeholder' | 'stub';
  * preview — they keep rendering their real in-lane card:
  *   - organizational chrome with no "module card" to dock (group / sticky),
  *   - the CADILLAC roaming sprite (already filtered from flowNodes upstream),
- *   - clipplayer + the MIDI control surfaces — SNOWFLAKES whose lane face is a
- *     grid / launcher / mapper, not a ranked-knob skeleton (plan §6): they get
- *     bespoke faces in a later spike, and stay on the verbatim legacy card until
- *     then rather than a lossy placeholder,
+ *   - clipplayer + the remaining MIDI control surfaces — SNOWFLAKES whose lane
+ *     face is a grid / launcher / mapper, not a ranked-knob skeleton (plan §6):
+ *     they get bespoke faces in a later spike, and stay on the verbatim legacy
+ *     card until then rather than a lossy placeholder,
+ *     ⚠ READ THAT CLAUSE AS A CLAIM ABOUT EACH CARD, NOT AS A LABEL FOR THE
+ *     GROUP. It is true of `clipplayer`, whose card IS a launcher grid. It was
+ *     NOT true of `launchpadControlLeft` (below), whose card is four buttons
+ *     and a status line — and reasoning from the group label rather than from
+ *     the card is how that entry outlived its reason by a whole consolidation.
  *   ⚠ videoOut USED TO BE IN THIS SET and is not any more (#1821). Its entry
  *     read: "the VIDEO SURFACE snowflake: its legacy card BODY IS the live,
  *     freely-resizable output screen … swapping it for a placeholder tile
@@ -60,20 +65,114 @@ export type LaneRenderKind = 'legacy' | 'shell' | 'placeholder' | 'stub';
  *     this def would walk it toward that branch; `videoout-face-model.test.ts`
  *     asserts the tile keeps its picture at every tier so the day that happens
  *     is a red test rather than a silent regression.
- *   - cameraInput — the CAPTURE-SOURCE snowflake, at the other end of the
- *     chain. Two things live ONLY on its card:
+ *   ⚠ cameraInput USED TO BE IN THIS SET and is not any more. Its entry named
+ *     two things that lived ONLY on its card:
  *       (a) the live SOURCE — the card owns getUserMedia + the `<video>` element
  *           and hands it to the engine via `attachExternalSource` (see
- *           ./dom-source-modules). Swapped for a tile, camera → OUTPUT is
+ *           ./dom-source-modules). "Swapped for a tile, camera → OUTPUT is
  *           patched-but-black, and switching an already-running rack INTO the
- *           shell actively DETACHES the live camera on the card's onDestroy;
+ *           shell actively DETACHES the live camera on the card's onDestroy";
  *       (b) the DEVICE PICKER — a `<select>` populated from
  *           `enumerateDevices()`, persisted to `node.data.deviceId`. It is NOT
- *           a ParamDef, so no shell face can render it (a `static` face cell is
- *           a dead dashed label by design — ModuleShell's controlCell), and the
- *           owner must be able to pick + switch cameras in the new view.
- *     The carve-out fixes both with the mechanism already proven for videoOut,
- *     instead of inventing an interactive-static face seam.
+ *           a ParamDef, so no shell face CELL can render it (a `static` face
+ *           cell is a dead dashed label by design — ModuleShell's controlCell).
+ *           ⚠ THIS CLAUSE USED TO READ "no shell FACE can render it", AND THAT
+ *           IS FALSE AS A GENERAL STATEMENT — the one word does real damage.
+ *           A face is not only its cells: the `fullViewBody` extension slot is
+ *           a plain Svelte component that can call `getActiveEngine()` and
+ *           `enumerateDevices()` and render whatever it likes, which is exactly
+ *           where cameraInput's picker went and where `midiclock`'s MIDI-input
+ *           picker went after it. The true constraint is narrower and worth
+ *           stating precisely: a runtime roster cannot be a `ParamDef`'s
+ *           `options` (a roster is a fixed set known when the def is authored,
+ *           and this one differs per machine), so it needs a SURFACE rather
+ *           than a cell. Two agents in a row read the old sentence and
+ *           concluded a platform change was required before a binder could be
+ *           promoted; neither was.
+ *     ⚠ (a) IS NO LONGER TRUE AT ALL, and it was already not true when this
+ *     entry was last read. The claim describes the world BEFORE
+ *     `<HeadlessSourceHost>` existed: cameraInput is in
+ *     `DOM_SOURCE_LANE_TYPES` ⊂ `HEADLESS_MOUNT_LANE_TYPES`, and
+ *     `needsHeadlessSourceMount` returns true for kind 'shell', so the shell
+ *     keeps the real card mounted off-screen and the source is never orphaned.
+ *     The onDestroy detach it feared was removed for the same reason (the
+ *     `<video>` and its stream are NODE-owned — $lib/ui/media/node-media-registry).
+ *     ⚠ (b) IS STILL TRUE and is answered rather than dodged: the picker moved
+ *     into the faceplate's EXTENSION BODY
+ *     ($lib/ui/modules/cameraInput/CameraInputOutputBody.svelte), which is the
+ *     one slot that can hold a control no `ParamDef` can express.
+ *     ⚠ AND THE REST OF THE CARD IS REACHED BY A NAMED SEAM, which is the part
+ *     that had to be BUILT rather than merely re-argued. An off-screen host is
+ *     `pointer-events: none`, so the card's "Request access" gesture — the only
+ *     path to `getUserMedia` for a first-time visitor — and its recovery text
+ *     become unclickable. `$lib/ui/media/camera-status-registry` publishes the
+ *     card's capture state and registers its acquire command so the faceplate
+ *     can show and drive them, WITHOUT a second getUserMedia owner existing.
+ *     Parity was preserved first; the promotion followed.
+ *   ⚠ launchpadControlLeft USED TO BE IN THIS SET and is not any more. Its
+ *     entry was the #1579 anchor case — the list once named the unsuffixed
+ *     `launchpadControl`, which resolves to NO def, so the carve-out silently
+ *     never fired — and the id-drift half of that lesson is unchanged and still
+ *     gated (`legacy-fallback.test.ts`: every member must resolve to a
+ *     registered def, and the unregistered id must stay GONE).
+ *     ⚠ WHAT DID NOT SURVIVE IS THE CARVE-OUT'S STATED REASON. It sat under the
+ *     "grid / launcher / mapper" clause above, and that has not described this
+ *     module since the LEFT + RIGHT cards were consolidated into one: the card
+ *     is a title, four buttons, a status line and a docs hint — no canvas, no
+ *     pad matrix, not even the colour legend the VRT exemption credited it with
+ *     (that moved to LaunchpadDocs.svelte). The 8×8 matrix this module drives
+ *     is on the HARDWARE, which is why nothing in the app ever painted it.
+ *     ⚠ THE OTHER HALF OF THE CLAUSE WAS TRUE AND IS DISCHARGED, WHICH IS WHAT
+ *     RETIRES THE ENTRY. "A placeholder tile would be LOSSY" is exactly right —
+ *     `ModuleShellPlaceholder` offers no route to Pair, Connect single, Bind or
+ *     the view segment, and those four gestures are the whole module. The face
+ *     carries them: SINGLE and PAIR are ranked `action` cells and therefore
+ *     reach the lane tile (only `panel` cells are dock-restricted), and BIND +
+ *     the view segment are in the extension body
+ *     ($lib/ui/modules/launchpadControl/LaunchpadBinderBody.svelte) because a
+ *     `ShellActionCell.label` is a plain string and cannot flip between two
+ *     opposite actions. Same shape as cameraInput's (b): the clause was true,
+ *     and it was answered by building the surface rather than by re-arguing it.
+ *     ⚠ AND THIS ONE NEEDED NO STATUS REGISTRY, because it is in NEITHER half
+ *     of HEADLESS_MOUNT_LANE_TYPES — it owns no media element and pushes
+ *     nothing into an engine handle — so its card is simply not mounted after
+ *     promotion and there is no `pointer-events: none` host to reach through.
+ *   ⚠ electraControl USED TO BE IN THIS SET and is not any more, and it was the
+ *     LAST meta module in it. Its removal is not optional paperwork attached to
+ *     the promotion — it is a PRECONDITION of it, for the reason
+ *     launchpadControlLeft's inventory note already records: this set
+ *     short-circuits `laneRenderKind` BEFORE `migrated` is read, so a carved-out
+ *     type's lane can never become a shell. Two further mechanisms make it
+ *     load-bearing rather than tidy: `FACES` (e2e/vrt/_shell-faces.ts) is
+ *     asserted EQUAL to `STRICT_FACES` in both directions, so a promoted module
+ *     MUST have VRT scenes; and `bootWithFace` waits on
+ *     `.svelte-flow__node[data-id=…] [data-testid="module-shell"]`, which a
+ *     carved-out type never renders. Membership and promotion are therefore
+ *     mutually exclusive by construction, not by preference.
+ *     ⚠ WHAT THE STATED REASON WAS, AND WHICH HALF SURVIVED. The "grid /
+ *     launcher / mapper" clause above is TRUE of this card — it really is a 6×6
+ *     mapper — and that half is not the operative one. The operative half is
+ *     "…and stay on the verbatim legacy card UNTIL THEN rather than a lossy
+ *     placeholder": the alternative was never a placeholder once the face
+ *     existed, exactly as for videoOut and launchpadControlLeft, and this PR is
+ *     the "later spike" the clause defers to.
+ *     ⚠ THE ARITHMETIC IS REAL AND IS ANSWERED RATHER THAN WAVED AWAY. The
+ *     board's narrowest honest width is six 48 px columns plus bank gutters
+ *     (`min-width: 360px` on the card) against SHELL_TILE_W = 192, so it cannot
+ *     be a lane tile and `fullViewBody` is not painted at the lane. That is the
+ *     same measurement on which controlSurface was refused — and it does not
+ *     refuse this module, because THIS ONE'S DESIGN HOME IS NOT A LANE TILE.
+ *     electraControl is the `E` of the M/E/C pin trio with `surface: 'drawer'`
+ *     and `data.pinned`, so its always-on instance is canvas-hidden and has no
+ *     lane tile at all; `dockRailRendersFace` flips its drawer to
+ *     `<ModuleShell view='drawer'>`, and `dockFullViewHeadPlan` gates the body
+ *     on `isFaceplateView(view)` (`view !== 'lane'`), so the board paints there
+ *     at full faceplate width. For the instance every workflow rack has, the
+ *     192 px number never applies. A SECOND, user-spawned canvas instance is
+ *     reachable (graph/cap.ts excludes the pin from `maxInstances`), and for
+ *     that one the board moves from inline-on-the-tile to one click away in the
+ *     dock full view — the ordinary semantic-zoom contract every promoted module
+ *     accepts, with no affordance lost.
  * Everything else with a resolvable card swaps.
  */
 export const NON_SHELL_LANE_TYPES: ReadonlySet<string> = new Set<string>([
@@ -82,17 +181,6 @@ export const NON_SHELL_LANE_TYPES: ReadonlySet<string> = new Set<string>([
   'cadillac',
   'clipplayer',
   'controlSurface',
-  'electraControl',
-  // ⚠ The REGISTERED id — `launchpadControlLeft`, not `launchpadControl`
-  // (#1579). The def keeps the Left-suffixed type so saved LEFT nodes load
-  // (launchpad-control.ts LAUNCHPAD_CONTROL_TYPE); this list once named the
-  // unsuffixed id, which resolves to NO def, so the carve-out silently never
-  // fired and the pad-mapping surface rendered as a placeholder tile. This
-  // file is deliberately registry-free, so the string is anchored in
-  // legacy-fallback.test.ts: every member of this set must resolve to a
-  // registered def, and this entry must equal the def's own exported type.
-  'launchpadControlLeft',
-  'cameraInput',
 ]);
 
 /** Inputs to the pure lane-render decision. */
@@ -186,6 +274,27 @@ export function isShellSwappable(type: string, hasResolvableCard: boolean): bool
 // `/rack?shell=legacy`, so they exercise the `false` arm forever. New coverage
 // for the `true` arm must drive the DEFAULT shell; see
 // `e2e/tests/workflow-drawer-face.spec.ts`.
+//
+// ⚠ THE RULE HAS A THIRD CALLER, AND IT HAD TO BE ADDED RATHER THAN FOUND.
+// `AudioIoSurface.svelte` — the 🎧 topbar panel — hosts the pinned AUDIO IN and
+// AUDIO OUT through this same `DockCardHost`, and it did not call this function
+// at all: both mounts passed six props and no `face`, so the host's
+// `face = false` default won and it mounted `nodeTypes[type]` unconditionally.
+// Those two are canvas-hidden pinned singletons, so by the argument above THAT
+// PANEL IS THE ONLY PLACE THEIR FACE CAN APPEAR — promoting either module
+// without the prop would have merged green and left the instance every user
+// has in every session on the legacy card.
+//
+// The blind spot repeated too: the panel's own dedicated VRT scene
+// (`e2e/vrt/workflow-audio-io-composite.spec.ts`) drives `/rack?shell=legacy`,
+// so it is the `false` arm forever exactly like the three drawer specs. The
+// prescription above is the fix in both places — the audio-I/O panel's
+// default-shell coverage is `e2e/tests/workflow-audio-io-face.spec.ts`.
+//
+// GENERAL FORM, for whoever adds a FOURTH host: a pure rule with an injected
+// input is only as good as its call sites, and nothing here can tell you a
+// caller is missing. When you mount `DockCardHost`, decide `face` — the default
+// is a decision too, and it is the wrong one for a pinned occupant.
 
 /** Inputs to the pure dock-rail render decision. */
 export interface DockRailRenderInput {

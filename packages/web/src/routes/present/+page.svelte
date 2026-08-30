@@ -29,6 +29,7 @@
   import { onMount, onDestroy } from 'svelte';
 
   let canvasEl = $state<HTMLCanvasElement | null>(null);
+  let pullRaf: number | null = null;
   // True once the popup is actual-fullscreen (no OS titlebar / browser strip).
   let isFs = $state(false);
 
@@ -51,20 +52,116 @@
   /** Go true-fullscreen so the popup loses the titlebar + the thin browser strip
    *  at the top. Best-effort: requestFullscreen is gesture-gated, so a rejection
    *  is fine — the click hint covers it. */
-  async function goFullscreen(): Promise<void> {
-    if (typeof document === 'undefined' || document.fullscreenElement) return;
+  async function goFullscreen(): Promise<string | null> {
+    if (typeof document === 'undefined' || document.fullscreenElement) return null;
     const root = document.documentElement as HTMLElement & {
       requestFullscreen?: (o?: FullscreenOptions) => Promise<void>;
     };
     try {
       await root.requestFullscreen?.({ navigationUI: 'hide' });
-    } catch {
-      /* gesture-gated / unsupported — the click hint covers it */
+      return null;
+    } catch (e) {
+      // Report rather than swallow. A silent catch here cost two wrong
+      // diagnoses of why an F5 lands windowed while a fresh load does not.
+      const err = e as { name?: string; message?: string };
+      return `${err?.name ?? 'Error'}: ${err?.message ?? String(e)}`;
     }
   }
+
+  /** Surface a sink-side failure in the OPENER's console — the popup's own
+   *  devtools are impractical to reach on a projector. */
+  function reportToOpener(detail: string): void {
+    try {
+      window.opener?.postMessage(
+        { type: 'present:fs-report', detail },
+        window.location.origin,
+      );
+    } catch {
+      /* opener gone */
+    }
+  }
+  /** Keep asking for a short window rather than accepting the first refusal.
+   *
+   *  With the Automatic Fullscreen content setting granted (Chrome 126 / Edge
+   *  132) a request needs no gesture — but a request issued while window.open
+   *  is still sizing and placing this popup can still be refused, and nothing
+   *  retried it. Measured on the owner's rig: "load performance" and a fresh
+   *  browser load both came up fullscreen first try, a plain F5 did not, with
+   *  the permission reporting `granted` in all three. The operator then has to
+   *  walk to the projector and click it, which is the whole complaint.
+   *
+   *  Stops the moment we are fullscreen, so a user who presses Esc inside the
+   *  window keeps their exit — the loop is already finished by then. */
+  async function goFullscreenPersistently(): Promise<void> {
+    let last: string | null = null;
+    // MEASURED on the owner's rig (Edge 151 / macOS, F5 with a projector
+    // attached): entered on attempt 10, ~1.35s in.
+    //
+    // ⚠ THE focus() CALL IS THE LOAD-BEARING PART, not the retry count. A
+    // 12-attempt (~1.65s) loop WITHOUT focus() had already been tried and still
+    // landed windowed — it reached that same point in time and was refused. So
+    // what unblocks this is the window being focused, not more waiting: an F5
+    // leaves focus on the patcher, and Chromium refuses fullscreen from an
+    // unfocused window even with Automatic Fullscreen granted.
+    //
+    // The retry is still required (10 attempts, so one shot cannot work —
+    // focus() does not take effect synchronously). 40 is ~4x the observed need,
+    // as headroom for a slower machine or a longer Space animation; it costs
+    // nothing when the first attempt succeeds, which is every non-F5 path.
+    for (let attempt = 0; attempt < 40; attempt++) {
+      if (document.fullscreenElement) {
+        if (attempt > 0) reportToOpener(`fullscreen entered on attempt ${attempt + 1}`);
+        return;
+      }
+      try { window.focus(); } catch { /* focus is best-effort */ }
+      last = await goFullscreen();
+      if (document.fullscreenElement) {
+        if (attempt > 0) reportToOpener(`fullscreen entered on attempt ${attempt + 1}`);
+        return;
+      }
+      await new Promise((r) => setTimeout(r, 150));
+    }
+    reportToOpener(`fullscreen NOT entered after 40 attempts; last error = ${last ?? 'none (request resolved but no fullscreenElement)'}`);
+  }
+
+  /**
+   * THE PROJECTOR'S OWN FRAME CLOCK (#2235).
+   *
+   * The opener installs `window.__presentFrame` and this pulls it. It used to
+   * be the other way round — the opener ran the rAF and pushed pixels in — and
+   * that made the projector a hostage of the patcher window's focus: Chrome
+   * throttles rAF in an unfocused window, so the recorder's directory picker,
+   * a permission prompt or any OS dialog froze every output instantly.
+   *
+   * This window is the one on the projector and is always visible, so its clock
+   * keeps running regardless. The frame function still executes in the OPENER's
+   * realm (same-origin) — the engine work did not move, only the timing.
+   */
+  function pullFrames(): void {
+    pullRaf = requestAnimationFrame(pullFrames);
+    const opener = window as Window & { __presentFrame?: () => void };
+    try {
+      opener.__presentFrame?.();
+    } catch {
+      /* the opener is mid-teardown — skip this frame, keep the loop alive */
+    }
+  }
+
   function onFsChange(): void {
     isFs = !!document.fullscreenElement;
     sizeCanvas(); // entering/leaving fullscreen resizes the viewport
+    // ⚠ RECOVER FROM A MODAL THAT TOOK OUR FULLSCREEN (#2235). Chrome resolves
+    // any modal browser surface by EXITING fullscreen, and the recorder's
+    // directory picker is one — so a projector silently dropped to a windowed
+    // popup mid-set with nothing to re-enter it.
+    //
+    // `document.hasFocus()` is the discriminator, and it is an honest one: an
+    // Esc can only be pressed in a window that HAS focus, while a modal in the
+    // patcher takes ours away. So an unfocused exit was done TO us and we undo
+    // it; a focused exit was the operator and we respect it.
+    if (!document.fullscreenElement && !document.hasFocus()) {
+      void goFullscreenPersistently();
+    }
   }
   function onUserGesture(): void {
     void goFullscreen();
@@ -74,7 +171,7 @@
   function onOpenerMessage(ev: MessageEvent): void {
     if (ev.origin !== window.location.origin) return;
     const d = ev.data as { type?: string } | null;
-    if (d?.type === 'present:go-fullscreen') void goFullscreen();
+    if (d?.type === 'present:go-fullscreen') void goFullscreenPersistently();
   }
 
   onMount(() => {
@@ -88,9 +185,10 @@
     window.addEventListener('keydown', onUserGesture);
     // The opener delegates fullscreen activation to us once it sees us ready.
     window.addEventListener('message', onOpenerMessage);
-    // Best-effort immediate attempt (popups opened from a click often still hold
-    // transient activation for a beat).
-    void goFullscreen();
+    // Best-effort immediate attempt, then keep trying briefly — see
+    // goFullscreenPersistently for why one shot is not enough.
+    void goFullscreenPersistently();
+    pullFrames();
     // Tell the opener we're ready to be drawn into (and to delegate fullscreen).
     if (window.opener) {
       try {
@@ -103,6 +201,7 @@
 
   onDestroy(() => {
     if (typeof window === 'undefined') return;
+    if (pullRaf !== null) cancelAnimationFrame(pullRaf);
     window.removeEventListener('resize', onResize);
     document.removeEventListener('fullscreenchange', onFsChange);
     window.removeEventListener('pointerdown', onUserGesture);

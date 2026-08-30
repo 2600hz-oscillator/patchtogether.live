@@ -17,6 +17,7 @@
 //      the bottom dock. So in the lane the richest LOD band ('dock', z≥0.95)
 //      renders the 'full' (full-in-lane) face; only the dock-full VIEW uses 'dock'.
 
+import { RACK_UNIT } from '$lib/ui/rack-grid';
 import type { Tier } from '$lib/ui/canvas/lod';
 import type { FaceTier } from './curated-face';
 import type { ParamCellKind } from './shell-control-kind';
@@ -69,7 +70,13 @@ export const SHELL_TILE_H = SHELL_TILE_H_SLOT;
  * the Canvas render override under the preview — the pure `videoZoneSlotPos`
  * default (used by the persisted spawn geometry) is UNCHANGED, so preview-OFF is
  * byte-identical and no Y.Doc position moves. */
-export const SHELL_VIDEO_ZONE_TILE_INSET_Y = 48;
+// ⚠ ONE RACK UNIT, NOT 48 (#2239). The inset exists so a zone tile does not
+// land on the zone's own dashed border with its jack rail in the lane badges
+// above — but 48 is not a multiple of RACK_UNIT, so a tile placed with it could
+// never be locked without moving. A full 1u is grid-aligned by construction AND
+// gives MORE clearance than the number it replaces; the zone is 3u tall, so a
+// 1u tile still sits with a full 1u of room below it.
+export const SHELL_VIDEO_ZONE_TILE_INSET_Y = RACK_UNIT;
 
 /** The minimal def shape the shell/placeholder model reads. */
 export interface ShellDefLike {
@@ -410,6 +417,10 @@ export const LANE_CELL_H: Record<ParamCellKind, number> = {
   selector: PLATE_ROW_H,
   grid: PLATE_ROW_H,
   color: PLATE_ROW_H,
+  // The 44px ring plus its caption sits inside one plate row, exactly like the
+  // colour swatch above it — the wheel is drawn in the knob column, not beside
+  // it, so it reserves no more height than a dial.
+  hue: PLATE_ROW_H,
   // The throw plus its 9px persistent readout line at the dock tier. The
   // readout occupies the hover tag's space rather than adding to it, which is
   // why one budget covers both tiers. (#1794 folded the transitional
@@ -875,4 +886,109 @@ export function dockFullViewHeadPlan(args: {
     extBody,
     heroGlyph: args.hasGlyph && !(dock && (args.heroCell || args.hasExtensionBody)),
   };
+}
+
+// ── MONITOR MODE (#2009) ────────────────────────────────────────────────────
+//
+// "Hide the controls and watch the picture" is a `node.data.hideControls`
+// affordance that five legacy cards mount (`ruttetra`, `monoglitch`,
+// `milkdrop`, `reshaper`, `graphicEq`) and that promotion DELETES from both
+// surfaces at once, because `migrated(type)` stops the card rendering. #2009
+// filed the gap: `fullViewBody` paints ABOVE the bands and cannot suppress
+// them, and `editorSurface` — the slot the issue nominated — is a static
+// surface for controls that are not cell-shaped, not a toggle over bands that
+// are. So the suppression is the SHELL's, declared per face.
+//
+// ⚠ THE PRECONDITION IS THE WHOLE SAFETY ARGUMENT, and it is checked here
+// rather than trusted. Hiding the bands is only ever an improvement while
+// SOMETHING ELSE is still painting; hide them on a faceplate with no extension
+// body and the player is left with an empty rectangle and no way back, since
+// the toggle lives ON that body. `bandsHidden` therefore cannot be true unless
+// `extBody` is — a single expression, asserted in both directions by
+// module-shell-model.test.ts, so no adopter can reproduce the blank plate by
+// declaring `monitor` without a surface.
+
+/** What MONITOR MODE does to a faceplate this frame. */
+export interface FaceMonitorPlan {
+  /** The hero band and every control band are suppressed; only the module's
+   *  own `fullViewBody` surface paints. */
+  bandsHidden: boolean;
+  /** Monitor mode is REACHABLE on this surface — the face declares it and the
+   *  body that carries its toggle is painting. False on the lane, where there
+   *  is no extension body and therefore nothing to watch. */
+  available: boolean;
+}
+
+/**
+ * Resolve MONITOR MODE. Pure — no def, no engine, no DOM.
+ *
+ * `available` answers "could the player turn this on here?" and `bandsHidden`
+ * answers "is it on?". They are separate because the toggle's own visibility
+ * keys off the first: a body that painted a monitor button on the lane, where
+ * `dockFullViewHeadPlan` never mounts it, would be a button nobody can see.
+ *
+ * ⚠ `hidden` alone is NOT enough and must never be. `node.data.hideControls`
+ * is a persisted key that a rack saved from the LEGACY card already carries, so
+ * a face that has not declared `monitor` can be handed `hidden: true` by an old
+ * patch on its very first render. Reading the flag without the declaration
+ * would blank that faceplate on load. Undeclared ⇒ inert, always.
+ */
+export function faceMonitorPlan(args: {
+  view: ShellView;
+  /** The face declares `face.monitor`. */
+  declared: boolean;
+  /** `dockFullViewHeadPlan().extBody` — the module's own surface IS painting. */
+  extBody: boolean;
+  /** `node.data.hideControls` — the persisted, collab-synced player choice. */
+  hidden: boolean;
+}): FaceMonitorPlan {
+  // `isFaceplateView`, not `=== 'dock-full'`: the pinned drawer paints the same
+  // full faceplate and owes the same affordance (#1739), the same reason
+  // `dockFullViewHeadPlan` collapses the union here.
+  const available = isFaceplateView(args.view) && args.declared && args.extBody;
+  return { available, bandsHidden: available && args.hidden };
+}
+
+/**
+ * The lane tile's SIGNAL-FLOW label — "▶ ch3" / "▶ s1" / "▶ out".
+ *
+ * ⚠ EXTRACTED FROM `ModuleShellPlaceholder.svelte` BECAUSE IT WAS A LIVE CRASH
+ * THERE, and the crash is worth reading before editing this.
+ *
+ * The placeholder read `node.data.channel` and interpolated it, typed as
+ * `{ channel?: number }` — the MIXER-LANE membership a midi-out-buddy column
+ * writes. `node.data` is an open `Record<string, unknown>` that every module
+ * owns its own shape of, so that type was a claim about a key, not a fact about
+ * it: `tvLibrarian` writes `data.channel` as a `TvChannelMeta` OBJECT (nanoid,
+ * name, streamUrl, country, languages).
+ *
+ * ⚠ AND IT THREW RATHER THAN MERELY PRINTING GARBAGE, which is what makes it a
+ * crash instead of a cosmetic bug. The value read back is not the object the
+ * card assigned: assigning into the Y-backed `patch` proxy converts it to a
+ * Y.Map, and reading it yields a PROXY with no usable `toString` / `valueOf` /
+ * `Symbol.toPrimitive`. Interpolating THAT raises `TypeError: Cannot convert
+ * object to primitive value` inside the `$derived`, which takes the whole xyflow
+ * node render down — so a tvLibrarian that had been tuned to any channel had a
+ * BROKEN LANE TILE under the default shell, on a saved rack, before the user
+ * touched anything. A plain object would have printed `▶ ch[object Object]`
+ * instead; the unit test pins BOTH halves, because one fix covers both and a
+ * fixture built from a plain object would have missed the crash entirely.
+ *
+ * Found by `e2e/tests/node-source-hls.spec.ts` (LEG-02 P3) as an unexpected
+ * `pageerror`, not by looking for it. It is pre-existing and orthogonal to that
+ * conversion — the same throw happens on a rack whose tvLibrarian card is
+ * headless-hosted, because the LANE still renders this tile either way.
+ *
+ * The fix is the TYPE CHECK, not a try/catch: the label means "mixer channel N",
+ * and a value that is not a number is not that. Deny by default — an unknown
+ * shape falls through to `▶ out` rather than being coerced.
+ */
+export function laneFlowLabel(data: Readonly<Record<string, unknown>> | undefined): string {
+  if (typeof data?.channel === 'number' && Number.isFinite(data.channel)) {
+    return `▶ ch${data.channel}`;
+  }
+  if (typeof data?.sendSlot === 'number' && Number.isFinite(data.sendSlot)) {
+    return `▶ s${data.sendSlot}`;
+  }
+  return '▶ out';
 }

@@ -57,6 +57,7 @@
 //     comp (linear 0..1 macro) / send1 / send2 (linear 0..1).
 
 import { instantiateFaustModule } from '$lib/audio/faust-runtime';
+import { markJsConsumedParam } from '$lib/audio/cv-shadow';
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
 import type { ParamDef, PortDef } from '$lib/graph/types';
@@ -725,7 +726,16 @@ export const mixmstrsDef: AudioModuleDef = {
       if (def.id.startsWith('comp')) {
         // Macro: store JS-side, then apply via the same code path setParam uses.
         compMacro[def.id] = v;
-        applyCompMacro(def.id, v);
+        // ⚠ #1737: apply the macro at build ONLY when the rack actually SAVED a
+        // value for it. `buildParams()` emits comp{N} AFTER the manual triple,
+        // so applying the DEFAULT here ran `mapCompMacro(0)` over whatever
+        // ch{N}_{thresh,ratio,compEnable} the rack had just restored — a rack
+        // saved before the macro existed came back +29.17 dB louder,
+        // uncompressed, on every load (measured on the shipped wasm, #1737).
+        // A fresh spawn changes NOTHING audible by skipping this: compEnable's
+        // default is 0 (bypassed) either way — but thresh/ratio now genuinely
+        // hold their DECLARED defaults, so the card and readLive agree.
+        if (node.params != null && def.id in node.params) applyCompMacro(def.id, v);
         continue;
       }
       params.get(`${PARAM_PREFIX}/${def.id}`)?.setValueAtTime(v, ctx.currentTime);
@@ -779,34 +789,110 @@ export const mixmstrsDef: AudioModuleDef = {
     // CV-target per param — Faust-backed except the comp macros, which are
     // published on a shadow GainNode instead.
     //
-    // ⚠ #1662: a cable on one of those shadow params is a DEAD END — the
-    // GainNode's output goes nowhere and nothing reads `g.gain` back, so CV and
-    // clip automation of `comp{N}` are bit-exactly inert while the motorized
-    // knob still animates off the engine's param tap. Measured in
-    // art/scenarios/mixmstrs/cv-path.test.ts. `wavesculpt.ts:1501` is the fix
-    // template (an AnalyserNode on the shadow + a main-thread pump).
+    // #1662/#1737: the shadow is no longer a dead end. Its DC-1 input makes
+    // its output the EFFECTIVE (knob + CV) macro value, a passive AnalyserNode
+    // observes it, and `pumpCompMacros` re-applies the macro mapping whenever
+    // the combined value moves — so a CV cable and clip automation (which the
+    // engine writes onto `inputs[id].param`, i.e. g.gain) are both audible.
+    // The wavesculpt CamShadow rig is the template; cv-path.test.ts asserts
+    // the LIVE behaviour where it used to characterize the dead end.
     //
-    // For comp macros we still need a backing AudioParam so the engine's
-    // CV → AudioParam tap analyser works (motorized fader feedback). We
-    // route to a hidden GainNode whose .gain is the macro's "shadow" param;
-    // setParam reads the shadow's `.value` and applies the macro mapping
-    // each time. This mirrors how wavviz handles its foldAmount macro.
+    // The backing AudioParam also keeps the engine's CV → AudioParam tap
+    // analyser working (motorized fader feedback), as before.
     const compShadow: Record<string, GainNode> = {};
+    // #1737: the shadow is now READ BACK. Its input is DC 1, so its OUTPUT is
+    // the EFFECTIVE gain — knob base (g.gain.value) PLUS any audio-rate CV the
+    // engine connected onto g.gain — and a passive AnalyserNode on that output
+    // is where the combined value can actually be observed (the wavesculpt
+    // CamShadow template). `pumpCompMacros()` reads each analyser tail and
+    // re-applies the macro mapping when the value moved, which is what makes a
+    // CV cable (and clip automation via inputs[id].param) AUDIBLE instead of a
+    // dead end. The analysers are passive sinks — nothing connects onward, so
+    // they cannot alter the mix.
+    const compShadowAna: Record<string, { ana: AnalyserNode; buf: Float32Array<ArrayBuffer> }> = {};
     for (const macroId of COMP_MACRO_IDS) {
       const g = ctx.createGain();
       g.gain.setValueAtTime(compMacro[macroId] ?? 0, ctx.currentTime);
-      // Connect to a sink ConstantSource(0) so the shadow stays in the
-      // active processing graph. We connect g's output to silence (a
-      // no-op merger input) so it doesn't actually contribute to audio.
       const sink = ctx.createConstantSource();
-      sink.offset.value = 0;
+      sink.offset.value = 1; // DC 1 → g's output IS the effective (knob+CV) gain
       sink.start();
-      sink.connect(g); // sink → g (silent input, keeps g alive)
-      // We DON'T connect g downstream — the cv tap analyser reads g.gain,
-      // we periodically read it back from setParam to apply the macro mapping.
+      sink.connect(g);
+      const ana = ctx.createAnalyser();
+      ana.fftSize = 32;
+      g.connect(ana); // passive observation tap; g still feeds no audible path
+      // DECLARE the consumer at the construction site. `g.gain` reaches no
+      // declared output and never will — the pump above IS its consumer — which
+      // is the CORRECT shape for a JS-consumed pad and indistinguishable by
+      // reachability alone from the #1661 dead terminal it used to be. Marking
+      // it makes `art/scenarios/cv-terminal` read the declaration instead of
+      // guessing, and makes membership DERIVED: the eight hand-named
+      // `known-defect` entries this module carried there are deleted with this
+      // change, exactly as that gate's own message instructs. The claim is
+      // checked in both directions — a marked param that DOES reach an output
+      // reddens the LYING leg — so this is not an escape hatch.
+      markJsConsumedParam(g.gain);
       silenceSources.push(sink);
       compShadow[macroId] = g;
+      compShadowAna[macroId] = { ana, buf: new Float32Array(ana.fftSize) };
     }
+
+    // ⚠ READINESS IS A PROPERTY OF THE CLOCK, NEVER OF THE VALUE.
+    //
+    // The analyser holds zeros until the graph has actually rendered a quantum
+    // with the shadow branch in place, so a read before then is NO DATA — not
+    // "the macro is 0". wavesculpt's `readCamShadow` distinguishes the two by
+    // the value (`tail !== 0 || gain.value === 0 ? tail : gain.value`) and that
+    // form CANNOT: a CV cable that cancels the knob to exactly 0 produces the
+    // same bit pattern as an unrendered analyser. For this macro 0 is BYPASS —
+    // the single most likely place a cable puts it — so the value-based form
+    // reinstates the very dead end #1737 is about. Measured with knob 0.5 and
+    // CV −0.5 (effective 0): it returned 0.5, and all eight comp CV cables read
+    // a bit-exact 0.0000e+0 peak |Δsample| in cv-path.test.ts.
+    //
+    // The clock cannot be spoofed by a value: `ctx.currentTime` advances only
+    // when quanta render, so a suspended context (autoplay policy) still holds
+    // the pump off, which is the case the wavesculpt fallback existed to cover.
+    // One RENDER QUANTUM is 128 frames by spec — a physical constant of the
+    // rendering model, not a population — and the shadow's own connection is
+    // applied on a quantum boundary, so two of them is the first read that is
+    // certainly backed by rendered samples (fftSize 32 < 128, so the whole tap
+    // window is real by then).
+    const RENDER_QUANTUM_FRAMES = 128;
+    const compShadowsBuiltAt = ctx.currentTime;
+    const COMP_SHADOW_READY_S = (2 * RENDER_QUANTUM_FRAMES) / ctx.sampleRate;
+    // Last COMBINED (knob + CV) value actually APPLIED to the Faust triple, per
+    // macro — the pump's change detector, seeded from the build-time knob so an
+    // unmoved shadow never re-applies (and never clobbers a manual triple).
+    //
+    // ⚠ SEPARATE FROM `compMacro`, WHICH STAYS THE KNOB INTRINSIC. The pump must
+    // not write the combined value back into what `readParam` reports:
+    // `AudioEngine.readParam` adds the modulator tap ON TOP of the handle's
+    // intrinsic for the motorized fader, so a combined intrinsic counts the
+    // cable twice. `cv-shadow`'s `knob()` states the same contract for every
+    // other JS-consumed pad, and this is one of those now.
+    const compApplied: Record<string, number> = { ...compMacro };
+    function pumpCompMacros() {
+      if (ctx.currentTime - compShadowsBuiltAt < COMP_SHADOW_READY_S) return;
+      for (const macroId of COMP_MACRO_IDS) {
+        const s = compShadowAna[macroId];
+        if (!s) continue;
+        s.ana.getFloatTimeDomainData(s.buf);
+        // DC 1 in → the tap's newest sample IS the effective (knob + CV) macro
+        // value, in the macro's own 0..1 units.
+        const combined = Math.max(0, Math.min(1, s.buf[s.buf.length - 1] ?? 0));
+        if (Math.abs(combined - (compApplied[macroId] ?? 0)) > 1e-6) {
+          compApplied[macroId] = combined;
+          applyCompMacro(macroId, combined);
+        }
+      }
+    }
+    // Live path: one slow main-thread tick. 48 ms is control-rate for a macro
+    // that fans out to setTargetAtTime'd Faust params — audio-rate fidelity is
+    // neither possible (the mapping is a JS piecewise) nor needed. Offline
+    // (ART) renders call the pump deterministically via read('pumpCompMacros')
+    // at suspend points instead of racing this wall-clock timer.
+    const COMP_PUMP_MS = 48;
+    const compPumpTimer = setInterval(pumpCompMacros, COMP_PUMP_MS);
 
     const inputsMap = new Map<string, { node: AudioNode; input: number; param?: AudioParam }>();
     AUDIO_IN_PORTS.forEach((id, i) => {
@@ -837,6 +923,9 @@ export const mixmstrsDef: AudioModuleDef = {
       setParam(paramId, value) {
         if (paramId.startsWith('comp')) {
           compMacro[paramId] = value;
+          // The knob write applies immediately; sync the pump's change
+          // detector so the next tick doesn't re-apply the same value (#1737).
+          compApplied[paramId] = value;
           // Update the shadow AudioParam so readParam returns the live value.
           compShadow[paramId]?.gain.setValueAtTime(value, ctx.currentTime);
           applyCompMacro(paramId, value);
@@ -845,6 +934,10 @@ export const mixmstrsDef: AudioModuleDef = {
         params.get(`${PARAM_PREFIX}/${paramId}`)?.setValueAtTime(value, ctx.currentTime);
       },
       readParam(paramId) {
+        // comp{N}: the KNOB INTRINSIC, deliberately not the pumped combined
+        // value — `AudioEngine.readParam` folds the modulator tap in on top of
+        // whatever this returns, so reporting the combined value here would
+        // double-count a patched cable on the motorized fader (#1737).
         if (paramId.startsWith('comp')) return compMacro[paramId];
         return params.get(`${PARAM_PREFIX}/${paramId}`)?.value;
       },
@@ -854,14 +947,25 @@ export const mixmstrsDef: AudioModuleDef = {
         // per channel, read off the DSP's post-fader taps. See
         // readChannelLevels() above.
         if (key === 'levels') return readChannelLevels();
+        // #1737: deterministic pump seam for OFFLINE renders — the ART harness
+        // calls this at OfflineAudioContext suspend points, where the
+        // wall-clock interval above cannot be relied on to tick. Returns a bare
+        // acknowledgement so a caller can tell the seam from an unknown key;
+        // never audio data, and never anything worth asserting on.
+        if (key === 'pumpCompMacros') {
+          pumpCompMacros();
+          return true;
+        }
         return undefined;
       },
       dispose() {
+        clearInterval(compPumpTimer);
         for (const s of silenceSources) {
           try { s.stop(); } catch { /* */ }
           s.disconnect();
         }
         for (const g of Object.values(compShadow)) g.disconnect();
+        for (const { ana } of Object.values(compShadowAna)) ana.disconnect();
         for (const ana of meterAnalysers) ana.disconnect();
         merger.disconnect();
         splitter.disconnect();

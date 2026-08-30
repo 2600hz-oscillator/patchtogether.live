@@ -18,6 +18,11 @@ export { default as VuMeter } from './VuMeter.svelte';
 export { default as ScopeScreen } from './ScopeScreen.svelte';
 export { default as MidiAssignButton } from './MidiAssignButton.svelte';
 export { default as NoteEntry } from './NoteEntry.svelte';
+// The GENERIC typed-entry field — one writable <input>, no gate button and no
+// grid navigation. `NoteEntry` above stays the sequencer-step COMPOSITE it has
+// always been; this is what a faceplate cell mounts. See TextEntry.svelte for
+// why the two are separate rather than one parameterised component.
+export { default as TextEntry } from './TextEntry.svelte';
 export { default as WaveformGlyph } from './WaveformGlyph.svelte';
 
 // ── P0.3a primitives ──
@@ -26,9 +31,15 @@ export { default as Selector } from './Selector.svelte';
 export { default as Segmented } from './Segmented.svelte';
 export { default as ParamGrid } from './ParamGrid.svelte';
 export { default as ColorField } from './ColorField.svelte';
+export { default as HueWheel } from './HueWheel.svelte';
 export { default as Toggle } from './Toggle.svelte';
 export { default as Button } from './Button.svelte';
 export { default as Readout } from './Readout.svelte';
+// ── the FACEPLATE STATUS surface (2026-08-21) ──
+// A dark/lit lamp with a STATIC caption; the measurement it indicates reaches
+// `aria-label`/`title` and never a text node. It is the shape `Readout` above
+// is NOT: no `value`, no formatter, no text node. See status-led-model.ts.
+export { default as StatusLed } from './StatusLed.svelte';
 
 // ── pure model helpers + shared option types (node-env testable) ──
 export {
@@ -68,3 +79,4 @@ export {
 export { looksLikeToggle, isToggleOn, toggledValue } from './toggle-model';
 export { buttonPointerFire, buttonGateFire, type ButtonFire } from './button-model';
 export { formatReadout, type ReadoutFormatOptions } from './readout-model';
+export { statusLedLabel, statusLedTitle, type StatusLedState } from './status-led-model';

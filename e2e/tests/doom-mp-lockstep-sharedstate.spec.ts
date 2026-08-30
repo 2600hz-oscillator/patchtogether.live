@@ -1,7 +1,7 @@
 // e2e/tests/doom-mp-lockstep-sharedstate.spec.ts
 //
 // ⚠ DOOM SPECS ARE NORMALLY OFF-LIMITS — the standing owner ruling is
-//   "do not fuck with doom in any way without specific approval". The
+//   "do not [touch] doom in any way without specific approval". The
 //   tic-count assertions in this file were re-expressed under a SPECIFIC
 //   approval given by the owner on 2026-08-18, verbatim:
 //     "okay see if you can go make the doom tests blurrier and less flakey,

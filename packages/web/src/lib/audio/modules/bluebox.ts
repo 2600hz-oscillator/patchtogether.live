@@ -294,27 +294,6 @@ export const blueboxDef: AudioModuleDef = {
       cell: 'bluebox-tonebank-{n}',
     },
 
-    sidebar: [
-      {
-        kind: 'readouts',
-        // THREE FIXED FACTS — every one a CONSTANT of the design, which is
-        // exactly what a `text` readout is for and what a context column should
-        // carry. The five LIVE numbers are in the hero panel instead, for the
-        // reason spelled out on `hero` above; publishing a live one here would
-        // print `silent` forever.
-        //
-        // All three measured against the shipping processor at 48 kHz:
-        // 10 slots / 12 keys / 23 tone activations; the coherent peak bound
-        // reaches 1.0 at 16 activations = eight digits; release is 707 samples.
-        label: 'the bank',
-        entries: [
-          { label: 'oscillators', text: '10 for 12 keys' },
-          { label: 'full scale at', text: '8 digits' },
-          { label: 'release', text: '≈ 15 ms' },
-        ],
-      },
-    ],
-
     // REAR CARD. Twelve gate jacks is a wall, so the two clusters give the back
     // the same shape the front has — the pad, then the two tones no receiver
     // decodes. Every one is an AUDIO-RATE worklet node input (no port on this

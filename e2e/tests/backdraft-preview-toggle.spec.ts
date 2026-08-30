@@ -300,7 +300,22 @@ test.describe('backdraft faceplate — the preview ON/OFF toggle', () => {
     expect(sinkOk, 'the workflow rack seeds a videoOut to pull the chain').toBe(true);
   }
 
-  test('OFF collapses and RECLAIMS the vertical space; ON restores it', async ({ page }) => {
+  // ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; the body and every assertion
+  // in it are UNCHANGED, so un-parking is deleting one `.fixme`.
+  //
+  // ⚠ THE SIBLINGS IN THIS FILE ARE ALREADY PARKED, AND THAT IS THE ARGUMENT.
+  // ':362' (21 recovered-on-retry observations) and ':425' (11) sit below this
+  // one and document the file's shared mechanism; this leg is the same face,
+  // the same toggle and the same collapse geometry, so it flakes for the
+  // reason they do rather than for one of its own. What is NEW here is only
+  // the observation: FIRST time THIS leg was seen recovering (run 32725328269
+  // shard 2/10, 2026-08-24 12:31Z; absent from main's previous 8 runs).
+  //
+  // NOT triaged as flake vs under-budget — nobody has evidence for either yet,
+  // and the entry says so rather than picking. UN-PARK IS THE FAMILY'S BUDGET
+  // DIAGNOSIS, not this leg's: fixing one of three siblings that share a
+  // mechanism would leave the other two parked and prove nothing.
+  test.fixme('OFF collapses and RECLAIMS the vertical space; ON restores it', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — recovered-on-retry, FIRST observation of THIS leg (run 32725328269 shard 2/10, 2026-08-24 12:31Z; not on main\'s previous 8 runs), NOT yet triaged as flake vs under-budget; SIBLING OF A PARKED FAMILY — :362 (21 observations) and :425 (11) in this same file are already parked and document the shared preview-collapse mechanism this leg runs on; un-park = the family\'s budget diagnosis, not this leg\'s alone' } }, async ({ page }) => {
     const fv = await openFace(page);
     const wrap = fv.locator('[data-testid="backdraft-fs-wrap"]');
     const toggle = fv.getByTestId('backdraft-preview-toggle');

@@ -9,11 +9,12 @@
 //
 //   Each video frame, take a fixed run of audio samples (samplesPerFrame,
 //   ~800 at 48k/60fps) and write them as voltage-per-pixel into the
-//   640×480 video frame in raster order (left→right, top→bottom). A scan
-//   cursor names the pixel index where this frame's run starts; it
-//   advances by samplesPerFrame each frame and WRAPS through the frame
-//   across successive frames (~1.25 scanlines painted per frame at the
-//   default). The audio sample value (roughly -1..+1 after gain) maps to
+//   VIDEO_RES (1024×768) video frame in raster order (left→right,
+//   top→bottom). A scan cursor names the pixel index where this frame's run
+//   starts; it advances by samplesPerFrame each frame and WRAPS through the
+//   frame across successive frames (~0.78 scanlines painted per frame at the
+//   default — 800 samples over a 1024 px line, #2001). The audio sample
+//   value (roughly -1..+1 after gain) maps to
 //   pixel luminance.
 //
 //   This is what produces the classic look: a steady tone paints
@@ -176,8 +177,14 @@ export function mapRasterFrame(
 
 /**
  * Convenience: how many scanlines a single frame's run spans, at the
- * given samplesPerFrame + width. Used by the card's readout + by tests
- * documenting the "~1.25 scanlines/frame at default" behaviour.
+ * given samplesPerFrame + width.
+ *
+ * ⚠ Its only consumer is `rasterize-map.test.ts`. The previous sentence here
+ * claimed "used by the card's readout", and no card has ever had one — so the
+ * comment was documenting a caller that does not exist, next to a figure
+ * ("~1.25 scanlines/frame") that belonged to a 640 px frame the engine stopped
+ * using. Both corrected under #2001; the test now derives the default case
+ * from `VIDEO_RES` so it cannot go stale the same way twice.
  */
 export function scanlinesPerFrame(samplesPerFrame: number, width: number): number {
   if (width <= 0) return 0;

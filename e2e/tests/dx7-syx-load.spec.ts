@@ -20,27 +20,17 @@
 
 import { test, expect } from './_fixtures';
 import { type Page } from '@playwright/test';
-import { spawnPatch } from './_helpers';
+import { spawnPatch, seedKriaWith, buildKriaMidiData, seedKriaGate } from './_helpers';
 
 test.describe.configure({ mode: 'serial' });
 
-/** Read scope channel-1 RMS via the dev __engine global. */
-async function readScopeRms(page: Page, scopeId: string): Promise<number> {
-  return await page.evaluate((id) => {
-    const w = globalThis as unknown as {
-      __engine?: () => { read: (n: { id: string; type: string; domain: string }, k: string) => unknown } | null;
-      __patch: { nodes: Record<string, { id: string; type: string; domain: string }> };
-    };
-    const eng = w.__engine?.();
-    if (!eng) return 0;
-    const node = w.__patch.nodes[id];
-    if (!node) return 0;
-    const snap = eng.read(node, 'snapshot') as { ch1?: Float32Array } | undefined;
-    if (!snap || !snap.ch1) return 0;
-    let s = 0;
-    for (let i = 0; i < snap.ch1.length; i++) s += snap.ch1[i]! * snap.ch1[i]!;
-    return Math.sqrt(s / snap.ch1.length);
-  }, scopeId);
+/** RMS of a captured frame. Pure — no page round-trip, so it measures the
+ *  SAME samples the caller already holds. */
+function frameRms(frame: readonly number[]): number {
+  if (!frame.length) return 0;
+  let e = 0;
+  for (const v of frame) e += v * v;
+  return Math.sqrt(e / frame.length);
 }
 
 /** Read full scope channel-1 frame as number[]. */
@@ -64,13 +54,15 @@ test('dx7: uploading a 32-voice SYX populates the dropdown + selecting different
   await spawnPatch(
     page,
     [
-      { id: 'seq', type: 'sequencer', params: { bpm: 240, isPlaying: 1, length: 4 } },
+      { id: 'clk', type: 'kria', params: { bpm: 240, running: 1 } },
+      { id: 'seq', type: 'cartesian' },
       { id: 'dx',  type: 'dx7',       params: { voiceCount: 5, level: 1.0 } },
       { id: 'scp', type: 'scope' },
       { id: 'out', type: 'audioOut' },
     ],
     [
-      { id: 'poly-edge', from: { nodeId: 'seq', portId: 'pitch' },   to: { nodeId: 'dx',  portId: 'poly' }, sourceType: 'polyPitchGate', targetType: 'polyPitchGate' },
+      { id: 'clk-edge',  from: { nodeId: 'clk', portId: 'gate1' },    to: { nodeId: 'seq', portId: 'clock' }, sourceType: 'gate', targetType: 'gate' },
+      { id: 'poly-edge', from: { nodeId: 'seq', portId: 'pitch' },    to: { nodeId: 'dx',  portId: 'poly' }, sourceType: 'polyPitchGate', targetType: 'polyPitchGate' },
       { id: 'audio-tap', from: { nodeId: 'dx',  portId: 'out' },     to: { nodeId: 'scp', portId: 'ch1'  }, sourceType: 'audio',         targetType: 'audio'         },
       { id: 'audio-out', from: { nodeId: 'scp', portId: 'ch1_out' }, to: { nodeId: 'out', portId: 'L'    }, sourceType: 'audio',         targetType: 'audio'         },
     ],
@@ -86,10 +78,10 @@ test('dx7: uploading a 32-voice SYX populates the dropdown + selecting different
       const t = w.__patch.nodes['seq'];
       if (!t) return;
       if (!t.data) t.data = {};
-      const steps = Array.from({ length: 32 }, () => ({ on: true, midi: 60, chord: 'mono' }));
-      (t.data as Record<string, unknown>).steps = steps;
+      (t.data as Record<string, unknown>).cells = Array.from({ length: 16 }, () => ({ on: true, midi: 60, chord: 'mono' }));
     });
   });
+  await seedKriaGate(page, 'clk');
 
   // Build a synthetic 32-voice SYX cartridge in-page (avoids filesystem
   // dependency). Each voice gets a distinct algorithm + distinct operator
@@ -171,8 +163,21 @@ test('dx7: uploading a 32-voice SYX populates the dropdown + selecting different
     await page.waitForTimeout(100);
   }
   expect(frameUser00.length, 'USER_00 scope frame is non-empty').toBeGreaterThan(0);
-  const rmsUser00 = await readScopeRms(page, 'scp');
-  expect(rmsUser00, 'USER_00 audible RMS').toBeGreaterThan(0.005);
+  // ⚠ MEASURE THE FRAME THE LOOP ACTUALLY VALIDATED — do not fetch a new one.
+  // This used to call `readScopeRms()` here, which reads a FRESH scope frame:
+  // the loop above proved that ONE frame was loud, and then the assertion
+  // measured a DIFFERENT one. The signal is GATED (kria clocks cartesian at
+  // 240 bpm, a 62 ms 16th grid) and a scope frame is ~42 ms, so a fresh read
+  // lands between notes often enough that main went red with `Received: 0`
+  // while the very next line's non-empty check passed. Nothing was wrong with
+  // the audio chain; the instrument sampled twice and asserted on the wrong
+  // sample.
+  const rmsUser00 = frameRms(frameUser00);
+  expect(
+    rmsUser00,
+    `USER_00 audible RMS (units: RMS over ${frameUser00.length} samples, `
+      + `measured on the validated frame)`,
+  ).toBeGreaterThan(0.005);
 
   // Switch to USER_15 — a deliberately-different patch (different algorithm,
   // different operator ratios per the synthetic generator above).

@@ -149,20 +149,28 @@ test.describe('SAMSLOOP module', () => {
         if (n) n.params.rate = -1.5;
       });
     });
-    await page.waitForTimeout(200);
-
-    // Engine should have accepted the value (no clamp below −2).
-    const live = await page.evaluate(() => {
-      const w = globalThis as unknown as {
-        __engine?: () => { readParam: (n: { id: string; type: string; domain: string }, k: string) => number | undefined } | null;
-        __patch: { nodes: Record<string, { id: string; type: string; domain: string }> };
-      };
-      const eng = w.__engine?.();
-      const node = w.__patch.nodes['s'];
-      if (!eng || !node) return null;
-      return eng.readParam(node, 'rate');
-    });
-    expect(live, `live rate: ${live}`).toBeCloseTo(-1.5, 3);
+    // Engine should have accepted the value (no clamp below −2). The store→engine
+    // hop is genuinely async, so poll the ENGINE read — the real subject — rather
+    // than budget 200 ms for it. The poll returns the instant the engine adopts
+    // the value and still fails, printing what it last saw, if it never does.
+    await expect
+      .poll(
+        () =>
+          page.evaluate(() => {
+            const w = globalThis as unknown as {
+              __engine?: () => {
+                readParam: (n: { id: string; type: string; domain: string }, k: string) => number | undefined;
+              } | null;
+              __patch: { nodes: Record<string, { id: string; type: string; domain: string }> };
+            };
+            const eng = w.__engine?.();
+            const node = w.__patch.nodes['s'];
+            if (!eng || !node) return null;
+            return eng.readParam(node, 'rate');
+          }),
+        { message: 'the engine adopts rate = -1.5 (no clamp below -2)' },
+      )
+      .toBeCloseTo(-1.5, 3);
 
     expect(errors, errors.join('; ')).toEqual([]);
   });

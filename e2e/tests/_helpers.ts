@@ -102,8 +102,14 @@ async function revealWorkflowNodes(page: Page, ids: string[]): Promise<void> {
       }
       if (!any) return;
 
+      // ⚠ SCOPED TO THE MAIN CANVAS — see MAIN_CANVAS below. A bare
+      // `querySelector('.svelte-flow__pane')` returns whichever comes FIRST in
+      // the DOM, and a workflow rack now has up to three (the canvas plus one
+      // per `HeadlessSourceHost`). It happens to be the canvas today only
+      // because the host wrappers are later siblings inside `.flow`.
       const pane =
-        document.querySelector('.svelte-flow__pane') ?? document.querySelector('.svelte-flow');
+        document.querySelector('.flow > .svelte-flow .svelte-flow__pane')
+        ?? document.querySelector('.flow > .svelte-flow');
       if (!pane) return;
       const rect = pane.getBoundingClientRect();
       const vp = flow.getViewport();
@@ -560,6 +566,128 @@ export async function spawnPatch(
   throw lastErr ?? new Error('spawnPatch: exhausted retries with no error captured');
 }
 
+// ---------------- THE MAIN CANVAS, scoped away from the headless hosts -------
+
+/**
+ * The MAIN rack canvas's SvelteFlow — the one a player looks at.
+ *
+ * ⚠ `.svelte-flow__pane` AND `.svelte-flow__node` ARE AMBIGUOUS ON A WORKFLOW
+ * RACK, AND THE AMBIGUITY GREW, WHICH IS WHY THIS EXISTS. `HeadlessSourceHost`
+ * mounts each hosted module's REAL card inside its OWN single-node SvelteFlow —
+ * parked at `left:-9999px`, `aria-hidden`, `pointer-events:none` — so every one
+ * of them contributes a second `.svelte-flow__pane` and its own
+ * `.svelte-flow__node[data-id=…]`. MEASURED on this tree: `/rack` has THREE
+ * panes (the canvas + the timelorde and synesthesia hosts) and
+ * `/rack?shell=legacy` has TWO; this selector resolves to exactly ONE in both.
+ *
+ * ⚠ THE HOSTS LIVE *INSIDE* `.flow`, so `.flow …` does NOT scope them out — and
+ * that was the premise several specs were written on. The distinguishing fact is
+ * the CHILD combinator: the canvas's own SvelteFlow is a DIRECT child of
+ * `.flow`, while a host's is a grandchild through the `.headless-source-host`
+ * wrapper. (Moving the host out of `.flow` would read better and is refused for
+ * a measured reason: `.flow :global(.svelte-flow) { position: absolute; inset: 0 }`
+ * is what gives a SvelteFlow its height, and its own comment records that
+ * without it the flow "renders with zero height … and the canvas appears empty
+ * even though nodes exist in the DOM".)
+ *
+ * ⚠ AND `.first()` IS NOT A SUBSTITUTE. It happens to pick the canvas today
+ * because the DOM order puts it first, which is a coincidence of markup order
+ * rather than a property of what is being addressed — the shape that "resolves
+ * to an arbitrary one" is exactly what a strict-mode violation is protecting
+ * against.
+ */
+export const MAIN_CANVAS = '.flow > .svelte-flow';
+
+/** The main canvas's pane — the click/drag target for lasso, spawn and palette. */
+export function canvasPane(page: Page) {
+  return page.locator(`${MAIN_CANVAS} .svelte-flow__pane`);
+}
+
+/** One node AS THE MAIN CANVAS RENDERS IT — never a headless host's copy. */
+export function canvasNode(page: Page, id: string) {
+  return page.locator(`${MAIN_CANVAS} .svelte-flow__node[data-id="${id}"]`);
+}
+
+/**
+ * Every LANE TILE's LOD tier attribute, **scoped to the main canvas**.
+ *
+ * ⚠ THIS EXISTS BECAUSE A BARE `document.querySelectorAll('[data-shell-tier]')`
+ * STOPPED MEANING "THE LANE TILES", AND IT DID SO WITHOUT ANY SPEC CHANGING.
+ * `[data-shell-tier]` is stamped by `ModuleShell`, and until 2026-08-24 a
+ * `ModuleShell` only ever existed in a lane tile or in a dock full view that a
+ * test had deliberately opened. Promoting `audioOut` broke that premise
+ * PASSIVELY: one instance of it is PINNED, its only surface is the topbar 🎧
+ * panel, and **that panel is always MOUNTED** — it stays in the DOM whether the
+ * menu is open or shut, because `AudioinCard` owns the live input stream and
+ * closing the menu must not kill the rack's audio input. So on the DEFAULT
+ * shell a `<ModuleShell view="drawer" tier="dock">` is now in the DOM of every
+ * page, at all times, and it is not a lane tile.
+ *
+ * MEASURED, four shards on one push, two distinct mechanisms:
+ *   * `tiles.every(el => tier === t)` NEVER became true — the panel's tier is
+ *     permanently `dock` while the lane walks its LOD ladder — so four copies of
+ *     the same `setLaneTier`/`setZoomTier` helper hit their 10 s timeout
+ *     (`workflow-shell`, `ringback-face`, `delay-face`, `vca-face`);
+ *   * `measureTiles` counted the panel's faceplate as a tile and reported two
+ *     distinct widths where the assertion wants one.
+ *
+ * ⚠ THE DUPLICATION IS THE REASON ONE PRODUCT CHANGE COST FOUR SHARDS. That
+ * helper had been copy-pasted into four specs, so there was no single place to
+ * fix. It has one now, for the same reason `canvasPane`/`canvasNode` above have
+ * one: the discriminator is subtle (a CHILD combinator), and a subtle
+ * discriminator re-derived per spec is a defect waiting for its next occupant.
+ *
+ * ⚠ AND `:not([data-shell-view="drawer"])` IS NOT THE FIX, though it would go
+ * green today. It names the panel's *rendering mode* rather than *where the
+ * thing is*, so it would also exclude a genuine drawer-tray tile a future spec
+ * wants to measure, and it says nothing about the next surface that mounts a
+ * shell outside the canvas. Scoping to the canvas states the actual subject.
+ */
+export const LANE_SHELL_TIER = `${MAIN_CANVAS} [data-shell-tier]`;
+
+/**
+ * EVERY LANE TILE — a migrated `module-shell` or an un-migrated
+ * `module-shell-placeholder` — **scoped to the main canvas**, for the same
+ * reason as `LANE_SHELL_TIER` above.
+ *
+ * ⚠ THE UNSCOPED FORM FAILS TWO DIFFERENT WAYS, and only one of them is loud.
+ * A COUNT taken as a DELTA (`before` … `toHaveCount(before + 1)`) survives the
+ * extra element, because the constant cancels — but the pinned singletons are
+ * ensured ASYNCHRONOUSLY, so a `before` read before the 🎧 panel's faceplate
+ * mounts is satisfied by that mount rather than by the drop under test, and the
+ * geometry read that follows races a tile that is not there yet. A COUNT taken
+ * as a FLOOR (`not.toHaveCount(0)`) simply stops being able to fail.
+ */
+export const LANE_TILES =
+  `${MAIN_CANVAS} [data-testid="module-shell-placeholder"], ` +
+  `${MAIN_CANVAS} [data-testid="module-shell"]`;
+
+/**
+ * Wait until every LANE tile reports LOD tier `tier`.
+ *
+ * Page-side by construction (one `waitForFunction`, not a Playwright poll loop),
+ * and it reports what it SAW on timeout rather than only that it timed out —
+ * the failure this replaces said nothing about which tile was holding out.
+ */
+export async function waitForLaneTier(
+  page: Page,
+  tier: string,
+  timeout = 10_000,
+): Promise<void> {
+  await page.waitForFunction(
+    ({ sel, t }) => {
+      const tiles = Array.from(document.querySelectorAll(sel));
+      if (tiles.length === 0) return false;
+      const seen = tiles.map((el) => el.getAttribute('data-shell-tier'));
+      const w = globalThis as unknown as { __laneTierSeen?: (string | null)[] };
+      w.__laneTierSeen = seen; // readable from a failing test's trace
+      return seen.every((s) => s === t);
+    },
+    { sel: LANE_SHELL_TIER, t: tier },
+    { timeout },
+  );
+}
+
 // ---------------- Module palette (right-click) helper ----------------
 
 /**
@@ -588,7 +716,7 @@ export async function openModulePalette(
   page: Page,
   opts: { position?: { x: number; y: number } } = {},
 ): Promise<{ x: number; y: number }> {
-  const pane = page.locator('.svelte-flow__pane');
+  const pane = canvasPane(page);
   await pane.waitFor({ state: 'visible', timeout: 10_000 });
 
   let point = opts.position ?? null;
@@ -814,4 +942,160 @@ export async function claimKeyboard(page: Page, id: string, timeout = 5000): Pro
       { timeout },
     )
     .catch(() => {});
+}
+
+/** Seed a KRIA node (post-spawn) so track 1 fires: all-16 trigs, a C-major
+ *  degree contour, running transport assumed set via params. The ONE idiom
+ *  every spec uses since the deprecated sequencers were deleted (2026-08-24)
+ *  — was per-file `data.steps` seeds against the old SEQUENCER shape. */
+/** Build a plain KriaData object (track 1 armed, tracks 2-4 empty) for
+ *  seeding via page.evaluate — JSON-serializable, so it can cross the
+ *  boundary as an argument. `steps` are (scale-degree, octave) pairs against
+ *  the major scale on root 48: degree 0 / octave 1 = MIDI 60 (C4); degree 2 /
+ *  octave 1 = 64 (E4); degree 4 / octave 1 = 67 (G4); degree 0 / octave 2 =
+ *  72 (C5). Loop length = steps.length, so the pattern cycles exactly the
+ *  steps given. */
+export function buildKriaData(
+  steps: Array<{ note: number; octave: number; trig?: boolean }>,
+  opts?: { timeDivision?: number; duration?: number; scale?: string },
+): Record<string, unknown> {
+  const len = Math.max(1, steps.length);
+  const track = (arm: boolean) => ({
+    trig: Array.from({ length: 16 }, (_, i) => arm && i < len && (steps[i]?.trig ?? true)),
+    ratchet: Array.from({ length: 16 }, () => 1),
+    note: Array.from({ length: 16 }, (_, i) => steps[i % len]?.note ?? 0),
+    octave: Array.from({ length: 16 }, (_, i) => steps[i % len]?.octave ?? 0),
+    duration: Array.from({ length: 16 }, () => opts?.duration ?? 0.5),
+    probability: Array.from({ length: 16 }, () => 1),
+    glide: Array.from({ length: 16 }, () => 0),
+    loopStart: 0,
+    loopLength: len,
+    timeDivision: opts?.timeDivision ?? 1,
+    direction: 'forward',
+    muted: false,
+  });
+  return {
+    patterns: { '0': { tracks: [track(true), track(false), track(false), track(false)], scale: opts?.scale ?? 'major', root: 48 } },
+    active: 0,
+    cued: null,
+    cueSteps: 0,
+  };
+}
+
+/** Write a built KriaData object onto a node inside one Y.Doc transaction. */
+export async function seedKriaWith(page: Page, nodeId: string, data: Record<string, unknown>): Promise<void> {
+  await page.evaluate(({ id, d }) => {
+    const w = globalThis as unknown as {
+      __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
+      __ydoc: { transact: (fn: () => void) => void };
+    };
+    w.__ydoc.transact(() => {
+      const n = w.__patch.nodes[id];
+      if (!n) return;
+      if (!n.data) n.data = {};
+      for (const [k, v] of Object.entries(d)) n.data[k] = v;
+    });
+  }, { id: nodeId, d: data });
+}
+
+/** buildKriaData from RAW MIDI notes (null = rest), on the CHROMATIC scale
+ *  (root 48) so ANY midi is representable exactly: note = (m-48) % 12,
+ *  octave = floor((m-48) / 12).
+ *
+ *  Timing note for specs converted off the deleted SEQUENCER: that module
+ *  stepped QUARTER notes at its bpm, while kria's base grid is 16ths — so
+ *  keeping the node's ORIGINAL bpm and passing `timeDivision: 4` reproduces
+ *  the old step rate exactly (rate = bpm·4/(60·div)). */
+export function buildKriaMidiData(
+  midis: Array<number | null>,
+  opts?: { timeDivision?: number; duration?: number },
+): Record<string, unknown> {
+  // Kria's lanes are CLAMPED (note 0..35, octave 0..5), so a fixed root
+  // cannot express notes below it — derive the root from the LOWEST note
+  // instead (octave-aligned), then express every note as a non-negative
+  // chromatic degree + octave above it.
+  const present = midis.filter((m): m is number => m !== null);
+  const root = present.length ? 12 * Math.floor(Math.min(...present) / 12) : 48;
+  const steps = midis.map((m) => (
+    m === null
+      ? { note: 0, octave: 0, trig: false }
+      : { note: (m - root) % 12, octave: Math.floor((m - root) / 12), trig: true }
+  ));
+  const data = buildKriaData(steps, { ...opts, scale: 'chromatic' });
+  (data.patterns as Record<string, Record<string, unknown>>)['0']!.root = root;
+  return data;
+}
+
+
+export async function seedKriaGate(page: Page, nodeId: string, opts?: { steps?: number; note?: number; octave?: number }): Promise<void> {
+  const steps = opts?.steps ?? 16;
+  const note = opts?.note ?? null;
+  const octave = opts?.octave ?? null;
+  await page.evaluate(({ id, steps, note, octave }) => {
+    const w = globalThis as unknown as {
+      __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
+      __ydoc: { transact: (fn: () => void) => void };
+    };
+    w.__ydoc.transact(() => {
+      const n = w.__patch.nodes[id];
+      if (!n) return;
+      if (!n.data) n.data = {};
+      const track = (trig: boolean) => ({
+        trig: Array.from({ length: 16 }, (_, i) => trig && i < steps),
+        ratchet: Array.from({ length: 16 }, () => 1),
+        note: note === null ? [0, 2, 4, 7, 0, 2, 4, 7, 0, 2, 4, 7, 0, 2, 4, 7] : Array.from({ length: 16 }, () => note),
+        octave: Array.from({ length: 16 }, () => octave ?? 0),
+        duration: Array.from({ length: 16 }, () => 0.5),
+        probability: Array.from({ length: 16 }, () => 1),
+        glide: Array.from({ length: 16 }, () => 0),
+        loopStart: 0,
+        loopLength: steps,
+        timeDivision: 1,
+        direction: 'forward',
+        muted: false,
+      });
+      Object.assign(n.data, {
+        patterns: { '0': { tracks: [track(true), track(false), track(false), track(false)], scale: 'major', root: 48 } },
+        active: 0,
+        cued: null,
+        cueSteps: 0,
+      });
+    });
+  }, { id: nodeId, steps, note, octave });
+}
+
+/** A self-running POLY chord source: KRIA (clock, track-1 trigs via
+ *  seedPolySource) → CARTESIAN (all 16 pads maj chords, clocked walk), whose
+ *  `pitch` out is the polyPitchGate bus. Replaces the deleted POLYSEQZ
+ *  (2026-08-24). Spawn POLY_SOURCE_NODES + POLY_SOURCE_EDGES, then call
+ *  seedPolySource(page) post-spawn; wire `poly-cart`.pitch → your consumer. */
+export const POLY_SOURCE_NODES: SpawnNode[] = [
+  { id: 'poly-clk', type: 'kria', position: { x: 40, y: 40 }, domain: 'audio', params: { bpm: 240, running: 1 } },
+  { id: 'poly-cart', type: 'cartesian', position: { x: 40, y: 220 }, domain: 'audio' },
+];
+export const POLY_SOURCE_EDGES: SpawnEdge[] = [
+  {
+    id: 'e-poly-clk',
+    from: { nodeId: 'poly-clk', portId: 'gate1' },
+    to: { nodeId: 'poly-cart', portId: 'clock' },
+    sourceType: 'gate',
+    targetType: 'gate',
+  },
+];
+export async function seedPolySource(page: Page): Promise<void> {
+  await seedKriaGate(page, 'poly-clk');
+  await page.evaluate(() => {
+    const w = globalThis as unknown as {
+      __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
+      __ydoc: { transact: (fn: () => void) => void };
+    };
+    w.__ydoc.transact(() => {
+      const n = w.__patch.nodes['poly-cart'];
+      if (!n) return;
+      if (!n.data) n.data = {};
+      n.data.cells = Array.from({ length: 16 }, (_, i) => (
+        { on: true, midi: [60, 65, 67, 72][i % 4], chord: 'maj' }
+      ));
+    });
+  });
 }

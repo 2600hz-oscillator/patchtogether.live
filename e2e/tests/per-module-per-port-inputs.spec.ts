@@ -8,7 +8,7 @@
 //
 // Measured cost of this dimension: 1652.6 s / 173 tests (+ heavy-GL budget)
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './support/rack-session';
 import {
   EXEMPT_INPUT_DRIVE,
   HEAVY_GL_MOUNT_MS,
@@ -33,6 +33,8 @@ import {
   liveEmitOutputs,
   PER_OUTPUT_MS,
   emitBudgetMs,
+  HEAVY_GL_RENAV_MS,
+  MEASURED_HEAVY_EMIT_NAV_MS,
 } from './_per-module-per-port-shared';
 import type {
   SpawnEdge,
@@ -66,7 +68,33 @@ test.describe('per-module per-port: inputs accept signal (wire-up)', () => {
       continue;
     }
 
-    test(title, async ({ page }) => {
+    // ⏸ FLAKE-PARK #1847 — the SYNESTHESIA row ONLY. The live body below is
+    // UNCHANGED and still runs for every other module; un-parking is deleting
+    // this block. Evidence: PR #2265 (a label-string-composition change), run
+    // 33258138560 e2e shard 3/12, 2026-08-29 14:54Z — attempt 1 died on
+    // `pageerror: Cannot read properties of undefined (reading '0')` during
+    // input wire-up, attempt 2 passed at the same SHA. Synesthesia's own
+    // source has no literal `[0]`, so the throw is downstream app code racing
+    // under shard load — nondeterministic measurement of a real contract,
+    // which is the park class, not the exempt class. NOT triaged as related
+    // to #2265: that diff composes label strings deterministically — a bug
+    // there would fail BOTH attempts, and indexes nothing.
+    if (mod.type === 'synesthesia') {
+      test.fixme(
+        title,
+        {
+          annotation: {
+            type: 'fixme',
+            description:
+              'FLAKE-PARK #1847 — nondeterministic on CI: 1 recovered-on-retry observation (PR #2265 run 33258138560, e2e shard 3/12, 2026-08-29): attempt 1 pageerror Cannot read properties of undefined (reading 0) during input wire-up, attempt 2 green at the same SHA; parked until root-caused',
+          },
+        },
+        () => {},
+      );
+      continue;
+    }
+
+    test(title, async ({ rack }) => {
       // Per-iteration: spawnPatch (~1s under-load) + 100ms wait + edge-read
       // (~50ms). The default 30s test budget is ALWAYS too tight under shard
       // CPU contention — even at the previous "> 20 inputs" gate, modules
@@ -90,7 +118,6 @@ test.describe('per-module per-port: inputs accept signal (wire-up)', () => {
       // GL cards (WAVESCULPT: wall1..6 video ins + video_out) also freeze the
       // render + get the heavy budget instead of timing out wiring inputs.
       if (touchesVideo(mod)) {
-        await freezeVideoRender(page);
         // The inner `Math.max(45_000, …)` that used to sit here is GONE. It was
         // a second floor stacked under the first — binding below 8 inputs, and
         // then swallowed whole by the 90 000 above it, so it could never change
@@ -99,16 +126,36 @@ test.describe('per-module per-port: inputs accept signal (wire-up)', () => {
         test.setTimeout(wireUpBudgetMs(mod.inputs.length));
       }
 
-      const errors = collectPageErrors(page);
-
-      await page.goto('/rack?shell=legacy&seed=none');
+      // ⚠ DOOM RUNS ON ITS OWN FRESHLY-NAVIGATED PAGE, EXCLUDED BY NAME.
+      //
+      // Not a performance carve-out — a correctness one, and the owner's
+      // standing ruling that DOOM is not to be touched without specific
+      // approval is the reason it is stated rather than quietly folded in.
+      // `doomAssetsPresent` + `test.skip` decide whether this row runs AT ALL,
+      // and that decision is made against a page this row must own: skipping
+      // mid-row on a SHARED page would abandon the session half-reset for
+      // whatever module runs next. Its shape is therefore byte-identical to
+      // what it was before this file was amortised — one navigation, one page,
+      // one row — so nothing about DOOM's behaviour, timing or game clock
+      // moves. Every other module in the sweep shares the worker's rack.
+      const isDoom = mod.type === 'doom';
+      const page = isDoom
+        ? await rack.freshPage({
+            // Byte-identical to the pre-amortisation order: the freeze is an
+            // `addInitScript`, so it must be installed BEFORE the navigation.
+            beforeBoot: touchesVideo(mod) ? freezeVideoRender : undefined,
+          })
+        : rack.page;
+      const errors = isDoom
+        ? collectPageErrors(page)
+        : await rack.reset({ videoFreeze: touchesVideo(mod) });
 
       // DOOM-asset skip — when the WASM blob isn't present the module
       // can't materialise its input handles, breaking the edge assertion.
       // The handle-presence dim STILL runs (it reads the def-side handles
       // off the rendered card, which the SvelteKit dev server renders
       // regardless of WASM presence).
-      if (mod.type === 'doom') {
+      if (isDoom) {
         const { wasm, wad } = await doomAssetsPresent(page);
         test.skip(!wasm || !wad, 'DOOM WASM/WAD not built — see static/doom/DOWNLOAD_INSTRUCTIONS.md');
       }
@@ -409,6 +456,87 @@ test.describe('per-port heavy-GL budget: DERIVED, not floored', () => {
         `${JOB_TIMEOUT_MS / 60_000}-minute shard job, for ONE test. If this trips, the fix is a ` +
         `CHEAPER PLAN — fewer spawns per port — not a bigger job timeout.`,
     ).toBeLessThan(CEILING);
+    // ── THE PER-NAVIGATION FLOOR (#1984) ──────────────────────────────────
+    //
+    // The gate above prices the worst plan against the SHARD. It is structurally
+    // blind to the defect #1984 found, which is the opposite end: a plan priced
+    // below its OWN cost. `emitBudgetMs` is a whole-test budget, but the emit
+    // sweep spends it on `liveEmitOutputs(mod)` SEPARATE navigations, so the
+    // quantity that has to clear the measured cost is the budget PER NAVIGATION
+    // — and that number FALLS as the output count rises. Under the pre-#1984
+    // model freezeframe's five navigations were budgeted 23 s each against a
+    // measured 20.6–24.7 s, and the test expired ~1 s short on its fifth.
+    //
+    // Deny by default over every heavy-GL emit plan, and name the offenders
+    // rather than counting them. This is the assertion that goes RED on the
+    // pre-fix model, which is the only reason to believe it can see anything.
+    const MIN_NAV_MARGIN = 1.5;
+    const thinPlans = REGISTRY
+      .filter((m) => emitBudgetMs(m) > 0 && touchesVideo(m))
+      .map((m) => ({ type: m.type, live: liveEmitOutputs(m), perNav: emitBudgetMs(m) / liveEmitOutputs(m) }))
+      .filter((r) => r.perNav < MEASURED_HEAVY_EMIT_NAV_MS * MIN_NAV_MARGIN)
+      .map((r) => `${r.type} (${r.live} live outputs → ${Math.round(r.perNav / 1000)} s per navigation)`);
+    expect(
+      thinPlans,
+      `every heavy-GL emit plan must budget at least ${MIN_NAV_MARGIN}× the measured worst ` +
+        `navigation (${MEASURED_HEAVY_EMIT_NAV_MS / 1000} s, #1984) for EACH of the navigations it ` +
+        `makes — the emit sweep re-navigates once per visited output, so a whole-test budget that ` +
+        `does not scale with the output count prices the widest modules below their own cost. ` +
+        `⚠ SCOPE: this checks heavy-GL plans only. Non-heavy plans re-navigate too, but their ` +
+        `measured per-navigation cost is ~10× smaller (see PER_OUTPUT_MS) and no CI failure has ` +
+        `been observed for one, so there is no measured floor to hold them to.`,
+    ).toEqual([]);
+
+    // The equality invariant that keeps the #1984 change from being a silent
+    // loosening of the case HEAVY_GL_MOUNT_MS was actually calibrated on: a
+    // heavy-GL module with ONE live output makes ONE navigation, so it pays the
+    // cold mount and no re-navigation tax, and its budget is UNCHANGED.
+    const oneOutputHeavy = REGISTRY.find(
+      (m) => touchesVideo(m) && emitBudgetMs(m) > 0 && liveEmitOutputs(m) === 1,
+    );
+    expect(
+      oneOutputHeavy,
+      'no heavy-GL module with exactly ONE live emit output exists, so the equality invariant ' +
+        'below would be vacuous — re-point it at a case that still exercises the cold-mount path.',
+    ).toBeDefined();
+    expect(
+      emitBudgetMs(oneOutputHeavy!),
+      `a heavy-GL module with ONE live output (${oneOutputHeavy?.type}) makes ONE navigation, so ` +
+        `the per-navigation tax must not apply and its budget must equal the historical ` +
+        `${PER_PORT_BASE_MS + PER_OUTPUT_MS + HEAVY_GL_MOUNT_MS} ms exactly. If this moved, the ` +
+        `#1984 change stopped being purely additive.`,
+    ).toBe(PER_PORT_BASE_MS + PER_OUTPUT_MS + HEAVY_GL_MOUNT_MS);
+
+    // …and that the tax is additive, so no module's budget SHRANK. A flake fix
+    // that tightens a currently-passing budget trades one flake for others.
+    const shrunk = REGISTRY
+      .filter((m) => emitBudgetMs(m) > 0)
+      .filter((m) => {
+        const live = liveEmitOutputs(m);
+        const legacy = touchesVideo(m)
+          ? heavyVideoTimeout(live * PER_OUTPUT_MS + PER_PORT_BASE_MS)
+          : live * PER_OUTPUT_MS + PER_PORT_BASE_MS;
+        return emitBudgetMs(m) < legacy;
+      })
+      .map((m) => m.type);
+    expect(
+      shrunk,
+      'the #1984 re-navigation tax is ADDITIVE and non-negative, so every module\'s emit budget ' +
+        'must be >= what the pre-#1984 model gave it. A module listed here got a SMALLER budget ' +
+        'than before, which is how a flake fix creates new flakes elsewhere.',
+    ).toEqual([]);
+
+    // The tax has to actually BIND somewhere, or it is decoration that would
+    // pass just as green if HEAVY_GL_RENAV_MS were 0.
+    const taxed = REGISTRY.filter(
+      (m) => emitBudgetMs(m) > 0 && touchesVideo(m) && liveEmitOutputs(m) > 1,
+    ).map((m) => m.type);
+    expect(
+      taxed.length,
+      `no heavy-GL module makes more than one emit navigation, so HEAVY_GL_RENAV_MS ` +
+        `(${HEAVY_GL_RENAV_MS} ms) is never charged and this whole mechanism is inert.`,
+    ).toBeGreaterThan(0);
+
     // …and the headroom, expressed as the port count the envelope carries, which
     // is the number a future author actually needs.
     const capacityPorts = Math.floor(

@@ -1,0 +1,335 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>SCORE face — the staff panel</title>
+<style>
+/* ─────────────────────────────────────────────────────────────────────────
+   SCORE FACEPLATE — MOCKUP, state 2 of 3: THE STAFF PANEL, close up.
+   SPEC AND MOCKUP ONLY. Nothing here is implemented. See spec.md §5.1, §7.
+
+   This page exists for ONE reason: score is the module in the wave where
+   "what is a PICTURE" and "what is resting CHROME" are hardest to tell
+   apart, and the source gate is structurally blind to the difference
+   (face-resting-text-source.test.ts states it: text drawn INTO a canvas or
+   an SVG is invisible to it; only the dock VRT baseline and a human can see
+   it). So the two are colour-coded below and listed exhaustively.
+
+   ⚠ Real SMuFL glyphs come from the bundled Bravura face — the ONE
+   @font-face the app ships (e2e/vrt/_fonts.ts:31 names it, "just Bravura,
+   for SCORE"). This static mock draws ellipses and lines instead. The
+   GEOMETRY is exact (ScoreCard.svelte:149-164, score-data.ts:18-32).
+   ───────────────────────────────────────────────────────────────────────── */
+:root{
+  --bg:#0e1013; --dock:#12161c; --pbody:#1c1f24; --line:#2c3037; --tile:#33383f;
+  --ink:#eef1f5; --dim:#9aa2ad; --faint:#646c77;
+  --accent:#6cf; --seq:#c3a3e0; --ch1:#fbbf24; --warn:#f2c14e; --good:#8fe6b0;
+  --doc:#8fe6b0; --chrome:#7dd3fc; --bad:#c0605e;
+  --staff:#5e6573; --paper:#0c0e12;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+  font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1320px;margin:0 auto;padding:26px 20px 90px}
+h1{font-size:21px;font-weight:800;margin:0 0 6px;letter-spacing:.01em}
+h2{font-size:12px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--dim);margin:26px 0 10px;font-family:var(--mono)}
+.sub{color:var(--dim);font-size:12.5px;margin:0 0 14px;max-width:106ch}
+.sub b{color:var(--ink)} code{font-family:var(--mono);font-size:11.5px;color:var(--ch1)}
+em{color:var(--dim)}
+.nav{display:flex;gap:8px;margin:0 0 20px;font-size:11px;flex-wrap:wrap}
+.nav a{color:var(--ink);text-decoration:none;border:1px solid var(--line);border-radius:6px;
+  padding:6px 12px;background:#12161c;font-family:var(--mono);letter-spacing:.06em;text-transform:uppercase}
+.nav a.on{border-color:var(--seq);color:var(--seq)}
+.warn{border:1px solid #6a5330;background:#1c1811;border-radius:8px;padding:11px 14px;
+  margin:12px 0;font-size:12.5px;color:#e8cf9a;max-width:120ch}
+.warn b{color:var(--warn)}
+.ok{border:1px solid #3b5a48;background:#111a15;border-radius:8px;padding:11px 14px;
+  margin:12px 0;font-size:12.5px;color:#a9d8bd;max-width:120ch}
+.ok b{color:var(--good)}
+.bad{border:1px solid #5e3232;background:#1a1112;border-radius:8px;padding:11px 14px;
+  margin:12px 0;font-size:12.5px;color:#e3b0ae;max-width:120ch}
+.bad b{color:var(--bad)}
+.cols{display:grid;grid-template-columns:minmax(0,1fr) 370px;gap:18px;align-items:start}
+@media (max-width:1180px){.cols{grid-template-columns:minmax(0,1fr)}}
+
+.paperbox{background:var(--pbody);border:1px solid var(--tile);border-radius:9px;padding:12px}
+.paper{background:var(--paper);border:1px solid #1a1f2a;border-radius:5px;overflow:hidden}
+.toolstrip{display:flex;gap:4px;align-items:center;padding:6px 8px;border-bottom:1px solid #1a1f2a}
+.tool{width:26px;height:24px;border:1px solid #333a44;border-radius:3px;background:#14171c;
+  color:var(--ink);display:flex;align-items:center;justify-content:center;font-size:11px}
+.tool.on{border-color:var(--seq);background:rgba(195,163,224,.14);color:var(--seq)}
+.pagenav{margin-left:auto;display:flex;gap:4px}
+.pagenav .pg{width:22px;height:22px;border:1px solid #333a44;border-radius:3px;background:#14171c;
+  color:var(--faint);font-family:var(--mono);font-size:10px;display:flex;align-items:center;justify-content:center}
+svg.staff{display:block;width:720px;max-width:100%;height:auto;background:var(--paper)}
+.st-line,.st-bar{stroke:var(--staff);stroke-width:.75}
+.st-bar.end{stroke-width:1.5}
+.nh{fill:var(--ink)} .nh.sel{fill:var(--seq)}
+.stem{stroke:var(--ink);stroke-width:1.2}
+.tie{fill:none;stroke:var(--c-pitch,#c084fc);stroke-width:1.5;stroke-linecap:round}
+.dyn{fill:var(--ink);font-family:ui-serif,serif;font-style:italic;font-weight:700;font-size:14px}
+.clef{fill:var(--ink);font-family:ui-serif,serif;font-size:30px}
+.ts{fill:var(--ink);font-family:ui-serif,serif;font-weight:700;font-size:15px}
+.ksig{fill:var(--ink);font-family:ui-serif,serif;font-size:16px}
+.selring{fill:none;stroke:var(--seq);stroke-width:1;stroke-dasharray:2 2}
+.play{fill:var(--c-pitch,#c084fc);fill-opacity:.18;stroke:var(--c-pitch,#c084fc);stroke-opacity:.9;stroke-width:1}
+.callout{stroke:var(--doc);stroke-width:.7;stroke-dasharray:2 3;fill:none}
+.callout.c2{stroke:var(--chrome)}
+.tag-doc{fill:var(--doc);font-family:var(--mono);font-size:8px;letter-spacing:.06em}
+.tag-chr{fill:var(--chrome);font-family:var(--mono);font-size:8px;letter-spacing:.06em}
+
+.legend{display:flex;gap:16px;flex-wrap:wrap;margin:10px 0 0;font-family:var(--mono);font-size:9px;color:var(--faint)}
+.legend span{display:flex;align-items:center;gap:6px}
+.sw{width:10px;height:10px;border-radius:2px;display:inline-block}
+
+table.g{border-collapse:collapse;width:100%;font-size:12px;margin:8px 0 0}
+table.g th,table.g td{text-align:left;padding:6px 10px 6px 0;border-bottom:1px solid #1e242c;vertical-align:top;color:var(--dim)}
+table.g th{color:var(--faint);font-family:var(--mono);font-size:8.6px;letter-spacing:.09em;text-transform:uppercase;font-weight:400}
+table.g td b{color:var(--ink)}
+table.g td.y{color:var(--doc)} table.g td.n{color:var(--bad)}
+
+.notes{display:flex;flex-direction:column;gap:12px}
+.card{border:1px solid var(--line);background:#101419;border-radius:9px;padding:12px 14px}
+.card h3{margin:0 0 7px;font-size:10px;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--accent);font-family:var(--mono);font-weight:700}
+.card p{margin:0 0 8px;font-size:12px;color:var(--dim)}
+.card p:last-child{margin-bottom:0}
+.card b{color:var(--ink)}
+.card pre{margin:6px 0 0;font-family:var(--mono);font-size:9.4px;color:#bcd3e8;
+  background:#0b0e12;border:1px solid #1c222a;border-radius:5px;padding:8px 9px;overflow:auto}
+table.k{border-collapse:collapse;width:100%;font-size:11px;margin:2px 0 0}
+table.k th,table.k td{text-align:left;padding:4px 7px 4px 0;border-bottom:1px solid #1e242c;vertical-align:top;color:var(--dim)}
+table.k th{color:var(--faint);font-family:var(--mono);font-size:8.6px;letter-spacing:.09em;text-transform:uppercase;font-weight:400}
+table.k td b{color:var(--ink)}
+ul{margin:6px 0 0;padding-left:18px;color:var(--dim);font-size:12px}
+li{margin:3px 0}
+li b{color:var(--ink)}
+</style>
+<div class="wrap">
+
+<h1>SCORE — the staff panel, and where the ruling's line falls</h1>
+<p class="sub">
+  <b>SPEC AND MOCKUP ONLY. Nothing here is implemented.</b> score is the module where
+  <em>"is this a picture or is this resting chrome?"</em> is hardest, and where the source gate is
+  <b>structurally blind</b> to the answer. This page draws the line, in three exhaustive lists.
+</p>
+
+<div class="nav">
+  <a href="dock.html">1 · the dock face</a>
+  <a class="on" href="editor.html">2 · the staff panel — picture vs chrome</a>
+  <a href="lane-tile.html">3 · the lane tiers — the refusal</a>
+  <a href="spec.md">spec.md</a>
+</div>
+
+<div class="warn">
+  <b>THE GATE STATES ITS OWN BLIND SPOT.</b> <code>face-resting-text-source.test.ts</code> denies
+  the SHAPE of resting derived text on the declaration surface — but its header says outright that
+  <b>text drawn INTO a canvas or an SVG is invisible to it</b>, and that <em>"only the dock VRT
+  baselines and a human reviewing them can see that."</em> Everything below the tool strip on this
+  page is inside that blind spot. <b>This page is the review artifact for it.</b>
+</div>
+
+<div class="cols">
+<div>
+
+  <div class="paperbox">
+    <div class="paper">
+      <div class="toolstrip">
+        <span class="tool" title="whole">&#9675;</span>
+        <span class="tool" title="half">&#9677;</span>
+        <span class="tool on" title="quarter — the current note value">&#9679;</span>
+        <span class="tool" title="eighth">&#9834;</span>
+        <span class="tool" title="eighth triplet">3</span>
+        <span class="tool" title="sixteenth">&#9836;</span>
+        <span class="pagenav">
+          <span class="pg" title="previous page">&#8249;</span>
+          <span class="pg" title="next page">&#8250;</span>
+        </span>
+      </div>
+
+      <svg class="staff" viewBox="0 0 720 200" role="img"
+           aria-label="staff row 1 of 4; 8 notes; playing bar 2 beat 1">
+        <line class="st-line" x1="56" x2="712" y1="40" y2="40"/>
+        <line class="st-line" x1="56" x2="712" y1="48" y2="48"/>
+        <line class="st-line" x1="56" x2="712" y1="56" y2="56"/>
+        <line class="st-line" x1="56" x2="712" y1="64" y2="64"/>
+        <line class="st-line" x1="56" x2="712" y1="72" y2="72"/>
+        <line class="st-bar" x1="60"  x2="60"  y1="40" y2="72"/>
+        <line class="st-bar" x1="222" x2="222" y1="40" y2="72"/>
+        <line class="st-bar" x1="384" x2="384" y1="40" y2="72"/>
+        <line class="st-bar" x1="546" x2="546" y1="40" y2="72"/>
+        <line class="st-bar end" x1="708" x2="708" y1="40" y2="72"/>
+
+        <text class="clef" x="8"  y="68">&#119070;</text>
+        <text class="ksig" x="34" y="44">&#9839;</text>
+        <text class="ts"   x="46" y="52">4</text>
+        <text class="ts"   x="46" y="68">4</text>
+
+        <!-- the SOUNDING note highlight — a rectangle, not text -->
+        <rect class="play" x="222" y="40" width="41" height="16" rx="3"/>
+
+        <ellipse class="nh" cx="66"    cy="64" rx="5" ry="3.6"/><line class="stem" x1="71"    x2="71"    y1="63" y2="42"/>
+        <ellipse class="nh" cx="106.5" cy="60" rx="5" ry="3.6"/><line class="stem" x1="111.5" x2="111.5" y1="59" y2="38"/>
+        <ellipse class="nh" cx="147"   cy="56" rx="5" ry="3.6"/><line class="stem" x1="152"   x2="152"   y1="55" y2="34"/>
+        <ellipse class="nh" cx="187.5" cy="52" rx="5" ry="3.6"/><line class="stem" x1="192.5" x2="192.5" y1="51" y2="30"/>
+        <text class="dyn" x="66" y="90">mf</text>
+
+        <ellipse class="nh sel" cx="228" cy="48" rx="5" ry="3.6"/><line class="stem" x1="233" x2="233" y1="47" y2="26"/>
+        <ellipse class="selring" cx="228" cy="48" rx="9.5" ry="8"/>
+        <ellipse class="nh" cx="309" cy="48" rx="5" ry="3.6" fill="none" stroke="#eef1f5" stroke-width="1.4"/>
+        <line class="stem" x1="314" x2="314" y1="47" y2="26"/>
+        <path class="tie" d="M 236 48 Q 272 36 309 48"/>
+
+        <ellipse class="nh" cx="390"    cy="68" rx="5" ry="3.6"/><line class="stem" x1="395"    x2="395"    y1="67" y2="46"/>
+        <ellipse class="nh" cx="410.25" cy="72" rx="5" ry="3.6"/><line class="stem" x1="415.25" x2="415.25" y1="71" y2="50"/>
+        <ellipse class="nh" cx="430.5"  cy="76" rx="5" ry="3.6"/><line class="stem" x1="435.5"  x2="435.5"  y1="75" y2="54"/>
+        <line class="stem" x1="395" x2="435.5" y1="46" y2="54"/>
+        <text class="dyn" x="390" y="90">f</text>
+
+        <!-- CALLOUTS: what is DOCUMENT (green) and what is PICTURE CHROME (blue) -->
+        <path class="callout" d="M 66 96 L 66 118 L 150 118"/>
+        <text class="tag-doc" x="155" y="121">DOCUMENT — a mark the player placed</text>
+        <path class="callout" d="M 228 32 L 228 14 L 300 14"/>
+        <text class="tag-doc" x="305" y="17">DOCUMENT — the notes, the tie, the selection</text>
+        <path class="callout c2" d="M 46 76 L 46 138 L 150 138"/>
+        <text class="tag-chr" x="155" y="141">NOTATION FRAME — clef, key signature, time signature, bar lines</text>
+        <path class="callout c2" d="M 243 40 L 243 160 L 300 160"/>
+        <text class="tag-chr" x="305" y="163">FEEDBACK — the sounding-note highlight (a rect, not text)</text>
+      </svg>
+    </div>
+
+    <div class="legend">
+      <span><i class="sw" style="background:var(--doc)"></i> the player's DOCUMENT — content, never a readout</span>
+      <span><i class="sw" style="background:var(--chrome)"></i> the picture's own frame and feedback</span>
+      <span><i class="sw" style="background:var(--seq)"></i> the SELECTION — <code>node.data.selectedNoteId</code></span>
+    </div>
+  </div>
+
+  <h2>1 · what PAINTS on the plate, and under which permitted role</h2>
+  <table class="g">
+    <tr><th>painted string</th><th>role</th><th>why it is permitted</th></tr>
+    <tr><td><b>SCORE</b> (title bar)</td><td>module NAME</td><td>the shell paints it; not a face field</td></tr>
+    <tr><td><b>score · marks · transport · envelope · slots</b></td><td>section label</td><td>band labels</td></tr>
+    <tr><td><b>BPM A D S R PLAY</b></td><td>control caption</td><td><code>ParamDef.label</code>, verbatim</td></tr>
+    <tr><td><b>staff</b> · <b>quicksave</b></td><td>control caption</td><td>the two panels' <code>label</code> — and they disambiguate each other</td></tr>
+    <tr><td><b>VAL ACC KEY DYN TIE END LOOP PGS</b></td><td>control caption</td><td>each cell's <code>tag</code></td></tr>
+    <tr><td><b>quarter</b> · <b>mf</b> · <b>G major</b> · <b>1</b> · <b>here</b></td><td>option name</td><td>the NAME of the state the control is in — and <code>kria</code> ships exactly this (<code>FROM 0</code>, <code>LEN 16</code>, <code>SCALE major</code>) with the gate green over it</td></tr>
+  </table>
+
+  <h2>2 · what is FORBIDDEN — the list a builder must be able to recite</h2>
+  <div class="bad">
+    Every one of these is a thing somebody would plausibly add to a <em>score</em> face, and every
+    one is refused.
+    <ul>
+      <li><b>a playhead position readout</b> — <code>bar 3 · beat 2</code>, <code>12 / 64</code>, <code>0:14</code></li>
+      <li><b>a note count</b> — <code>47 notes</code></li>
+      <li><b>the tempo as a decimal</b> under the BPM knob — the mechanism deleted 2026-08-17</li>
+      <li><b>a transport word</b> — <code>PLAYING</code> / <code>STOPPED</code> beside the toggle</li>
+      <li><b>a dynamic percentage</b> — the card's <code>title</code> renders <code>55&nbsp;%</code>; a <code>title</code> is unpainted and may stay, a painted one may not</li>
+      <li><b>a standalone page counter</b> — the card's <code>.page-counter</code> span</li>
+      <li><b>a "score is empty" hint</b> on the plate — instructional copy belongs in the empty PICTURE</li>
+      <li><b>any hover-reveal of the above</b> — <em>"i want the data gone, not there but hidden"</em>, refused by name</li>
+    </ul>
+  </div>
+
+  <h2>3 · the one genuinely hard case: the page indicator</h2>
+  <table class="g">
+    <tr><th>where</th><th>verdict</th><th>because</th></tr>
+    <tr><td>the <b>PAGES selector</b> in the transport band</td><td class="y">PERMITTED</td>
+        <td>the roster is <code>1..4</code> and the painted glyph is the selected option's own name. Role: <b>option name</b>. Identical to kria's <code>LEN 16</code></td></tr>
+    <tr><td>the panel's <b>page nav</b> (<code>&#8249; 2/4 &#8250;</code>)</td><td class="n">DROPPED</td>
+        <td>it is the picture's own scrollbar and the staff already says which page you are on. <b>Two indicators would be one derived restatement of the other</b>, whichever one is "allowed"</td></tr>
+  </table>
+
+  <h2>4 · what may NOT be added to the picture, even though it looks like notation</h2>
+  <div class="warn">
+    The blind spot cuts both ways: a derived readout <b>wearing notation's clothes</b> is invisible
+    to the gate too. <b>Bar numbers, a tick ruler, beat subdivision marks, a "page 2 of 4"
+    watermark, or a tempo marking derived from <code>bpm</code></b> would all be derived chrome.
+    A real engraver draws bar numbers; <b>this module does not, and must not start</b>.
+    <br><br>Say so in the PR body, so the person reviewing <code>face-score-dock.png</code> knows
+    what they are looking for.
+  </div>
+
+</div>
+
+<div class="notes">
+
+  <div class="card">
+    <h3>the selection replaces fifteen modes</h3>
+    <table class="k">
+      <tr><th>card (modal)</th><th>face (selection)</th></tr>
+      <tr><td>6 duration tools</td><td><code>VAL</code> selector — sets what the NEXT click writes</td></tr>
+      <tr><td>&#9839; / &#9837; on a note</td><td><code>ACC</code> selector on the selection</td></tr>
+      <tr><td>&#9839; / &#9837; on EMPTY staff &rarr; key &plusmn;1</td><td><code>KEY</code> selector — a control, not a hidden gesture</td></tr>
+      <tr><td>right-click the tool &rarr; reset key</td><td><code>KEY</code> &rarr; <code>C major</code></td></tr>
+      <tr><td>tie tool, two-click pick</td><td><code>TIE</code> toggle — and OFF <b>removes</b> it</td></tr>
+      <tr><td>5 dynamics tools</td><td><code>DYN</code> selector, first option <code>&mdash;</code></td></tr>
+      <tr><td>stop-bar tool + drag</td><td><code>END</code> selector</td></tr>
+    </table>
+  </div>
+
+  <div class="card">
+    <h3>⚠ three things the card advertises and does not have</h3>
+    <p><b>(a)</b> <code>deleteNote</code> has <b>exactly one call site</b> —
+      <code>ScoreCard.svelte:540</code>, a keystroke on the FOCUSED note. Tab is consumed by the
+      rack flip (<code>workflow-pins.ts:306-312</code>, bare <code>Tab</code>), and pointerdown
+      <code>preventDefault</code>s. <b>No e2e test anywhere exercises note deletion.</b></p>
+    <p><b>(b)</b> <code>docs.controls['score-note-{n}']</code> says <em>"click a note to
+      select/remove it"</em>. There is no select and no remove — and <code>score</code> is in
+      <code>STRICT_DOCS</code>.</p>
+    <p><b>(c)</b> <code>addTie</code> is the only writer of <code>d.ties</code>. <b>A tie can
+      never be removed</b> except by deleting one of its notes, which per (a) is itself
+      unreachable.</p>
+    <p><b>These are one bug, not three:</b> score has no selection model, so every per-note
+      operation was hung off browser focus — and browser focus was taken away by an owner ruling
+      in a different file.</p>
+  </div>
+
+  <div class="card">
+    <h3>the panel's probe</h3>
+    <pre>probe: {
+  testid: 'score-staff',
+  action: 'click',
+  effect: { kind: 'data',
+            key: 'notes',
+            expect: 'changed' },
+}</pre>
+    <p style="margin-top:8px"><b><code>data</code>, not <code>data-rev</code></b> — the registry's
+      own warning is that <em>"a revision-only probe passes on a DEAD button that bumps the
+      counter"</em>.</p>
+    <p>And it works <b>in the shipped default state with no setup</b>: a fresh score has
+      <code>notes: []</code> and <code>noteValue</code> absent &rArr; <code>'quarter'</code>, so ONE
+      click on empty staff writes a note and <code>notes</code> changes.</p>
+  </div>
+
+  <div class="card">
+    <h3>the grid is IMPORTED, never re-derived</h3>
+    <p><code>score-data.ts:148-151</code>, in its own words:</p>
+    <p style="color:#a9d8bd;font-size:11.5px"><em>"A re-typed copy of 'which ticks does the
+      scheduler visit' in a test is precisely how a placement grid and a playback grid drift apart
+      without anything going red — which is the bug above, stated as a process."</em></p>
+    <p>That bug silenced <b>the 2nd and 3rd note of every triplet group, in every bar, in both
+      clock modes, from the module's first commit</b> — four of twelve positions sounded, and
+      nothing looked wrong. The panel is the <b>THIRD</b> renderer of that grid. Zero re-typed
+      constants; the layout constants move to <code>score-layout.ts</code> so the card and the
+      panel cannot disagree about where a note is drawn.</p>
+  </div>
+
+  <div class="card">
+    <h3>what stays component-local</h3>
+    <table class="k">
+      <tr><th>state</th><th>where</th></tr>
+      <tr><td><code>selectedNoteId</code></td><td><b><code>node.data</code></b> — cells receive only the node</td></tr>
+      <tr><td><code>noteValue</code></td><td><b><code>node.data</code></b></td></tr>
+      <tr><td><code>currentPage</code></td><td><b>component</b> — a VIEWPORT position; one player scrolling must not scroll everyone</td></tr>
+      <tr><td><code>dragNoteId</code> / <code>shakeBar</code></td><td><b>component</b> — per-frame; the Y.Doc must not see a pointermove</td></tr>
+    </table>
+    <p style="margin-top:8px">⚠ And <b>nothing is seeded eagerly</b>: a face that writes its
+      defaults into <code>node.data</code> on mount dirties every saved patch on open.</p>
+  </div>
+
+</div>
+</div>
+</div>

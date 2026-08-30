@@ -1,12 +1,11 @@
 <script lang="ts">
-  import { onDestroy } from 'svelte';
-  import type { NodeProps } from '@xyflow/svelte';
+    import type { NodeProps } from '@xyflow/svelte';
   import NeonFader from '$lib/ui/controls/NeonFader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
-  import { patch } from '$lib/graph/store';
   import { setNodeParam } from '$lib/graph/mutate';
   import { rasterizeDef } from '$lib/audio/modules/rasterize';
   import { useEngine } from '$lib/audio/engine-context';
+  import { onMeterFrame } from '$lib/ui/meter-frame';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
   import { portsFromDef } from './card-kit';
@@ -19,6 +18,20 @@
     gain: 'GAIN (CV)', wrap: 'WRAP (CV)',
   });
   const outputs = portsFromDef(rasterizeDef.outputs, { thru: 'AUDIO THRU', out: 'VIDEO OUT' });
+
+  // ⚠ ONE SOURCE FOR EVERY RANGE (`RANGE_BOUND_CARDS`). This card used to be
+  // half-and-half: SCAN read `rasterizeDef.params[0]!.max` while SAMP/F and
+  // GAIN hand-typed `16..8000` and `0..8`. They AGREED with the def, so
+  // `card-def-agreement` was green and nothing was broken — but the def is the
+  // one that just moved (the `wrap` roster landed with the faceplate), and a
+  // restated number is only ever one edit away from the backdraft class.
+  //
+  // Looked up BY ID rather than by index, which is the other half of the
+  // fragility: `params[0]` silently re-points if a param is ever reordered.
+  const P = Object.fromEntries(rasterizeDef.params.map((p) => [p.id, p]));
+  const CURSOR = P.cursor!;
+  const SAMPLES = P.samplesPerFrame!;
+  const GAIN = P.gain!;
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -36,17 +49,62 @@
   function setParam(paramId: string) {
     return (v: number) => setNodeParam(id, paramId, v);
   }
+  // ⚠ WAS A BARE PROXY WRITE — `patch.nodes[id].params.wrap = …` — and that is
+  // the whole of the debt `raw-write-ledger` carried against this file ("card
+  // button write — user gesture, should be undoable + synced"). A bare
+  // assignment transacts with origin `null`, and `store.ts` tracks only
+  // `LOCAL_ORIGIN`, so the flip was neither undoable nor origin-tagged for
+  // collaborators — while the three FADERS beside it, which already went
+  // through `setNodeParam`, were both. One param, one module, two different
+  // answers depending on which control you touched.
+  //
+  // ⚠ THE FACE DID NOT PAY THIS. Promotion does not delete the card — the
+  // per-card VRT sweep still renders it under `?shell=legacy` — so the faced
+  // `wrap` cell was correct and this button was not, at the same time. A face
+  // does not pay a card's debt; editing the card does, which is this line.
   function toggleWrap() {
-    const target = patch.nodes[id];
-    if (target) target.params.wrap = wrap ? 0 : 1;
+    setNodeParam(id, 'wrap', wrap ? 0 : 1);
   }
 
   let canvasEl: HTMLCanvasElement | null = $state(null);
-  let raf: number | null = null;
+
+  // ⚠ IS THE CANVAS ON SCREEN? Tracked here rather than taken from
+  // `onMeterFrame`'s own gate, and the distinction is the whole fix. That gate
+  // SKIPS THE CALLBACK ENTIRELY when its element is off-screen, which is right
+  // for an ordinary meter and wrong for this module: the painter is advanced
+  // INSIDE `read('imageData')` (`advanceOncePerFrame`), so with nothing
+  // downstream patched THIS LOOP IS THE ONLY THING ADVANCING THE RASTER, and
+  // skipping it would freeze the module rather than merely stop drawing it —
+  // the #1720/#1721 class the "it KEEPS RENDERING while OFF" floor exists to
+  // prevent. `RasterizeOutputBody` makes exactly this split for the SCREEN
+  // toggle; this is the same split for the viewport.
+  //
+  // `rootMargin` matches meter-frame's own 100px so the two surfaces agree
+  // about what "off-screen" means.
+  let onScreen = $state(true);
+  $effect(() => {
+    const el = canvasEl;
+    if (!el || typeof IntersectionObserver === 'undefined') return;
+    const io = new IntersectionObserver(
+      (entries) => {
+        for (const e of entries) onScreen = e.isIntersecting;
+      },
+      { rootMargin: '100px' },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  });
 
   $effect(() => {
     if (!canvasEl) return;
-    function tick() {
+    // ⚠ SUBSCRIBED WITH `null`, NOT WITH THE CANVAS. That is the documented way
+    // to take the SHARED, COALESCED rAF without taking its visibility skip —
+    // which is precisely what this module needs (see `onScreen` above). The
+    // win it does collect is the one meter-frame exists for: this card used to
+    // run its OWN `requestAnimationFrame` chain, one more independent callback
+    // and paint flush per mounted rasterize, on the same main thread as the
+    // audio render.
+    const handle = onMeterFrame(null, () => {
       const eng = engineCtx.get();
       if (eng && node && canvasEl) {
         // PUSH then READ. `eng.readParam` returns the knob PLUS the engine's
@@ -60,20 +118,15 @@
           if (typeof v === 'number' && Number.isFinite(v)) combined[p.id] = v;
         }
         eng.write(node, 'cvCombined', combined);
+        // ⚠ READ UNCONDITIONALLY — this is what ADVANCES the painter, and the
+        // advance is the cheap half (it writes ~800 pixels). The costly half is
+        // the 1024x768 -> 480x360 scale-draw below, and THAT is what the
+        // viewport gate skips. Same shape as the dock body's SCREEN split.
         const img = eng.read(node, 'imageData') as ImageData | undefined;
-        if (img) blit(canvasEl, img);
+        if (img && onScreen) blit(canvasEl, img);
       }
-      raf = requestAnimationFrame(tick);
-    }
-    raf = requestAnimationFrame(tick);
-    return () => {
-      if (raf !== null) cancelAnimationFrame(raf);
-      raf = null;
-    };
-  });
-
-  onDestroy(() => {
-    if (raf !== null) cancelAnimationFrame(raf);
+    });
+    return () => handle.stop();
   });
 
   // Stage the native engine-res ImageData (VIDEO_RES), then drawImage-scale
@@ -122,9 +175,9 @@
     </div>
 
     <div class="fader-row">
-      <NeonFader value={cursor}          min={0}  max={rasterizeDef.params[0]!.max} defaultValue={0}   label="Scan"   curve="linear" onchange={setParam('cursor')}          moduleId={id} paramId="cursor" />
-      <NeonFader value={samplesPerFrame} min={16} max={8000}   defaultValue={800} label="Samp/F" curve="log"    onchange={setParam('samplesPerFrame')} moduleId={id} paramId="samplesPerFrame" />
-      <NeonFader value={gain}            min={0}  max={8}       defaultValue={1}   label="Gain"   curve="log"    onchange={setParam('gain')}            moduleId={id} paramId="gain" />
+      <NeonFader value={cursor}          min={CURSOR.min}  max={CURSOR.max}   defaultValue={CURSOR.defaultValue}  label="Scan"   curve={CURSOR.curve}  onchange={setParam('cursor')}          moduleId={id} paramId="cursor" />
+      <NeonFader value={samplesPerFrame} min={SAMPLES.min} max={SAMPLES.max}  defaultValue={SAMPLES.defaultValue} label="Samp/F" curve={SAMPLES.curve} onchange={setParam('samplesPerFrame')} moduleId={id} paramId="samplesPerFrame" />
+      <NeonFader value={gain}            min={GAIN.min}    max={GAIN.max}     defaultValue={GAIN.defaultValue}    label="Gain"   curve={GAIN.curve}    onchange={setParam('gain')}            moduleId={id} paramId="gain" />
     </div>
   </PatchPanel>
 </div>

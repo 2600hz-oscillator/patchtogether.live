@@ -92,6 +92,21 @@ export const moog961Def: AudioModuleDef = {
     },
   },
 
+  // TWO PARAMS, TWO RANKS, ONE BAND. SENSITIVITY first — it decides whether the
+  // interface triggers at all — then the pulse width it fires.
+  //
+  // `glyph: 'none'` is RUN, not argued, and this module is the clearest case in
+  // the batch for why the resolver has to be run rather than reasoned from the
+  // module's description. It HAS an audio INPUT (`audio_in`) and it is an audio
+  // module by domain, so "it deals with audio, give it a meter" is the exact
+  // wrong inference: `primaryAudioOutPortId` matches audio OUTPUTS, and all
+  // four of this module's outputs are `gate`. A meter here resolves to the DEAD
+  // `static` binding — the marbles shape, which shipped through three passes.
+  face: {
+    order: ['sensitivity', 'switchOnTime'],
+    glyph: 'none',
+  },
+
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     if (!loadedContexts.has(ctx)) {
       await ctx.audioWorklet.addModule(workletUrl);

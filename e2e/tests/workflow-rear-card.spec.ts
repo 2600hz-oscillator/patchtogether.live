@@ -38,14 +38,15 @@
 // same recipe as workflow-shell-faces.spec.ts.
 
 import { test, expect, type Page } from '@playwright/test';
+import { REGISTRY } from './_registry';
 import { spawnPatch } from './_helpers';
 import { pressFlipKey } from './_flip-key';
-// The sequencer/polyseqz page width, imported from the APP SOURCE for the same
+// The cartesian grid size, imported from the APP SOURCE for the same
 // reason `_flip-key.ts` imports RACK_FLIP_KEY: section (6) needs the LAST cell
-// of the visible page (the one where nav declines and the flip must still
-// fire), and re-typing it here would leave the control pointing at the wrong
-// cell — silently passing — the day the page width changes.
-import { PAGE_SIZE } from '../../packages/web/src/lib/audio/modules/sequencer-pages';
+// of the grid (the one where nav declines and the flip must still fire), and
+// re-typing it here would leave the control pointing at the wrong cell —
+// silently passing — the day the grid size changes.
+import { CELL_COUNT } from '../../packages/web/src/lib/audio/modules/cartesian';
 
 // Serial: these tests drive the shared connect-drag singleton through real
 // pointer clicks (the rear-view-patching.spec precedent).
@@ -669,8 +670,27 @@ test('canvas rear view left ON: a docked LEGACY pane still shows its FRONT, and 
   page,
 }) => {
   await gotoWorkflow(page);
-  // scope: NOT in STRICT_FACES ⇒ the un-migrated/legacy dock path under test.
-  await spawnPatch(page, [{ id: 'sc', type: 'scope', position: { x: 460, y: 240 } }]);
+  // ⚠ THE SUBJECT IS DERIVED, AND IT USED TO BE THE HARD-CODED `scope`.
+  //
+  // This test's subject is A DOCKED LEGACY PANE — `DockFullView.svelte` renders
+  // `.fp-card-mount` only in its `{:else}` (un-migrated) branch — so the whole
+  // assertion is CONDITIONAL ON THE OCCUPANT NOT BEING FACED. `scope` was named
+  // here with the comment "NOT in STRICT_FACES", and promoting it (2026-08-23)
+  // made that comment false and `.fp-card-mount` count 0: the test went red on a
+  // change that broke nothing it was written to protect.
+  //
+  // Fixed at the SUBJECT rather than the threshold, and DERIVED rather than
+  // re-typed, because re-typing another module's name only moves the same trap
+  // to whoever promotes THAT one next. `LEGACY_DOCK_CANDIDATES` is a small
+  // ordered set of plain panel cards; the first one still un-faced wins, so this
+  // self-heals through the next several promotions and fails LOUDLY (naming the
+  // condition) rather than mysteriously if the fleet ever finishes them all.
+  //
+  // ⚠ The candidates are NAMED rather than "first un-faced module in the
+  // registry" on purpose: a bare registry scan would happily wander onto a
+  // device module needing hardware, or onto DOOM.
+  const legacyType = pickLegacyDockType();
+  await spawnPatch(page, [{ id: 'sc', type: legacyType, position: { x: 460, y: 240 } }]);
 
   // Arm the trap: flip the CANVAS to rear view BEFORE docking.
   await resetFocus(page);
@@ -705,6 +725,34 @@ test('canvas rear view left ON: a docked LEGACY pane still shows its FRONT, and 
   await expect(canvasFlow(page)).toHaveClass(/rear-view/);
 });
 
+/**
+ * Plain audio panel cards that make good stand-ins for "an un-faced module with
+ * an ordinary legacy card", in preference order. Each must render one of the
+ * front-card classes the test selects on (`.mod-card` / `.card` /
+ * `.moog-panel`) and must need no hardware, no ROM and no file load.
+ *
+ * ⚠ NOT a registry scan. "The first module with `strictFace !== true`" would
+ * also match device modules that want hardware and, worse, DOOM — which is
+ * untouchable by owner ruling. A named set cannot wander.
+ */
+const LEGACY_DOCK_CANDIDATES = ['moog956', 'moog960', 'cartesian'] as const;
+
+/** The first candidate this checkout has NOT yet promoted. */
+function pickLegacyDockType(): string {
+  const faced = new Set(REGISTRY.filter((m) => m.strictFace === true).map((m) => m.type));
+  const known = new Set(REGISTRY.map((m) => m.type));
+  for (const t of LEGACY_DOCK_CANDIDATES) {
+    if (known.has(t) && !faced.has(t)) return t;
+  }
+  throw new Error(
+    `workflow-rear-card: every LEGACY_DOCK_CANDIDATES entry ` +
+      `(${LEGACY_DOCK_CANDIDATES.join(', ')}) is now in STRICT_FACES or no longer registered, ` +
+      `so there is no un-faced occupant left to prove the LEGACY dock pane with. This test's ` +
+      `subject is the un-migrated branch of DockFullView (\`.fp-card-mount\`); add another ` +
+      `un-faced plain-panel module above, or retire the test with the branch it covers.`,
+  );
+}
+
 // ── (6) A CARD THAT CONSUMED THE FLIP KEY MUST NOT ALSO FLIP (#1790) ───────
 //
 // The flip key is BARE TAB (#1629), claimed on `window`. A sequencer's GATE
@@ -731,27 +779,36 @@ test('canvas rear view left ON: a docked LEGACY pane still shows its FRONT, and 
 // Without (b) this file would pass if someone simply swallowed Tab in the
 // grid outright: a green gate certifying a dead gesture.
 //
-// SCOPE — what these two tests CANNOT see. They pin the two distinct ROUTES,
-// not all four cards: `sequencer` stands for the SHARED seam
-// (NoteEntry.onGateKeydown), which the drumseqz + cartesian gate cells reach
-// through the identical line, and polyseqz's badge has no shared seam at all
-// (its own onBadgeKeydown), so it is asserted directly. A regression in the
-// shared line reddens the first test; a regression in the badge copy reddens
-// the second. A card that grows a THIRD bespoke keydown route is invisible
-// here.
+// SCOPE — what this test CANNOT see. It pins the SHARED seam
+// (NoteEntry.onGateKeydown) through `cartesian`, whose gate cells reach it
+// via the identical line every NoteEntry consumer uses. LINEAGE: the seam's
+// original vehicles were `sequencer` (shared route) and `polyseqz` (a bespoke
+// onBadgeKeydown copy with no shared seam) — both modules were DELETED
+// 2026-08-24 (deprecated by CLIP PLAYER), and the bespoke badge route's code
+// died with polyseqz, so only the shared-seam leg has a live subject. The
+// standing caveat is unchanged and now sharper for it: a card that grows a
+// NEW bespoke keydown route (the polyseqz shape) is invisible here.
 
-test('#1790 sequencer GATE: the flip key advances the step and does NOT flip — but still flips at the page bound', async ({
+test('#1790 cartesian GATE: the flip key advances the cell and does NOT flip — but still flips at the grid bound', async ({
   page,
 }) => {
   await gotoWorkflow(page);
   await spawnPatch(page, [
-    { id: 'seq', type: 'sequencer', params: { bpm: 120, length: PAGE_SIZE, isPlaying: 0 }, position: { x: 460, y: 240 } },
+    { id: 'seq', type: 'cartesian', params: {}, position: { x: 460, y: 240 } },
   ]);
   const drawer = page.getByTestId('dock-fullview-drawer');
   await openFullView(page, 'seq');
   await expect(drawer).toHaveAttribute('data-fullview-flipped', 'false');
 
-  const gateAt = (i: number) => page.getByTestId(`seq-gate-seq-${i}`);
+  // ⚠ THE SUBJECT MOVED TO THE FACE (#1509), AND THAT IS THE POINT OF THE TEST.
+  // `cartesian` is now in STRICT_FACES, so `migrated()` makes the dock render
+  // `ModuleShell` INSTEAD of `CartesianCard` — the card testids this used to
+  // drive are not on this surface any more. Re-POINTED rather than relaxed: the
+  // face grid (`CartesianPadGrid`) re-implements the same gate <button>, so it
+  // inherits the same #1790 exposure, and the guard has to be proven where the
+  // player actually is. A version of this test left on the card would have gone
+  // GREEN AND BLIND — passing against a surface promotion had already removed.
+  const gateAt = (i: number) => page.getByTestId(`cart-face-gate-${i}`);
 
   // (a) HANDLED — mid-grid. Focus a gate cell (a <button>: NOT a typing
   //     target, which is the whole defect) and press the flip key.
@@ -782,17 +839,17 @@ test('#1790 sequencer GATE: the flip key advances the step and does NOT flip —
   await expect(rearCard(page)).toHaveCount(0);
   await expect(canvasFlow(page)).not.toHaveClass(/rear-view/);
 
-  // (b) POSITIVE CONTROL — the LAST step of the visible page. handleNav
-  //     declines (no next cell), the event propagates, and the dock flip owner
+  // (b) POSITIVE CONTROL — the LAST cell of the grid. handleNav declines
+  //     (no next cell), the event propagates, and the dock flip owner
   //     does its job. This leg is what stops (a) from being satisfied by
   //     breaking Tab handling altogether.
-  const lastOnPage = PAGE_SIZE - 1;
+  const lastOnPage = CELL_COUNT - 1;
   await gateAt(lastOnPage).focus();
   await expect(gateAt(lastOnPage)).toBeFocused();
 
   await pressFlipKey(page);
 
-  await expect(drawer, 'at the page bound the flip gesture must still fire').toHaveAttribute(
+  await expect(drawer, 'at the grid bound the flip gesture must still fire').toHaveAttribute(
     'data-fullview-flipped',
     'true',
   );
@@ -800,51 +857,4 @@ test('#1790 sequencer GATE: the flip key advances the step and does NOT flip —
   // Single-owner intact throughout: the canvas never moved.
   await expect(canvasFlow(page)).not.toHaveClass(/rear-view/);
   await expect(flipRackBtn(page)).toHaveAttribute('aria-pressed', 'false');
-});
-
-test("#1790 polyseqz CHORD BADGE: same two legs through the card's OWN keydown route (no shared seam)", async ({
-  page,
-}) => {
-  await gotoWorkflow(page);
-  await spawnPatch(page, [
-    { id: 'p', type: 'polyseqz', params: { isPlaying: 0 }, position: { x: 460, y: 240 } },
-  ]);
-  const drawer = page.getByTestId('dock-fullview-drawer');
-  await openFullView(page, 'p');
-  await expect(drawer).toHaveAttribute('data-fullview-flipped', 'false');
-
-  // The quality badge is a plain <button> on PolyseqzCard's own
-  // `onBadgeKeydown` — it does NOT pass through NoteEntry, so fixing the
-  // shared seam leaves this route leaking on its own.
-  const badgeAt = (i: number) => page.getByTestId(`polyseqz-quality-p-${i}`);
-
-  // (a) HANDLED.
-  await badgeAt(0).focus();
-  await expect(badgeAt(0)).toBeFocused();
-
-  await pressFlipKey(page);
-
-  // Settle the dispatch on the synchronous subject first (see the sequencer
-  // test). A badge keeps focus through a leaked flip, so here it is the
-  // drawer assertion below that reddens — measured on the negative control.
-  await expect(badgeAt(1), 'the badge route must still navigate').toBeFocused();
-  await expect(drawer, 'a handled key must not reach the flip owner').toHaveAttribute(
-    'data-fullview-flipped',
-    'false',
-  );
-  await expect(rearCard(page)).toHaveCount(0);
-
-  // (b) POSITIVE CONTROL at the page bound — the pane flips.
-  const lastOnPage = PAGE_SIZE - 1;
-  await badgeAt(lastOnPage).focus();
-  await expect(badgeAt(lastOnPage)).toBeFocused();
-
-  await pressFlipKey(page);
-
-  await expect(drawer, 'at the page bound the flip gesture must still fire').toHaveAttribute(
-    'data-fullview-flipped',
-    'true',
-  );
-  await expect(rearCard(page)).toBeVisible();
-  await expect(canvasFlow(page)).not.toHaveClass(/rear-view/);
 });

@@ -1,0 +1,265 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>NUMPAD+ face — the lane tile at three tiers</title>
+<style>
+/* ─────────────────────────────────────────────────────────────────────────
+   NUMPAD+ FACEPLATE — MOCKUP, state 3 of 3: THE LANE TILE.
+   SPEC AND MOCKUP ONLY. Nothing here is implemented. See spec.md.
+
+   The tile is a fixed 192x180 box. `laneOrder` (curated-face.ts:131-143)
+   drops exactly `face.hero.cell` and each xyPads[].x — numpadPlus declares a
+   hero cell and no pads, so the lane roster is the eight remaining keys and
+   BOTH panels are dock-only.
+
+   `laneGlyphFor` returns 'none' (module-shell-model.ts:237-240): the module
+   is domain 'audio' with no `audio`-typed output, so no live glyph binding is
+   reachable and every non-'none' literal would be a DEAD static picture the
+   face lint reddens unconditionally. hasGlyph is therefore FALSE, which is
+   what gives compact LANE_ROW_MAX_CELLS = 3 rather than the with-glyph 2.
+
+   THE TILE IS ITS CONTROLS. That is the design consequence a reviewer should
+   look at, and it is the one thing in this spec that is a LOOK question
+   rather than a mechanical one (spec.md §8 / M7).
+   ───────────────────────────────────────────────────────────────────────── */
+:root{
+  --bg:#0e1013; --dock:#12161c; --pbody:#1c1f24; --line:#2c3037; --tile:#33383f;
+  --ink:#eef1f5; --dim:#9aa2ad; --faint:#646c77;
+  --accent:#6cf; --gate:#e8c66a; --cv:#7dd3fc; --pitch:#c4b5fd; --poly:#f0abfc; --ch1:#fbbf24;
+  --warn:#f2c14e; --good:#8fe6b0; --bad:#e08a8a;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+  font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1200px;margin:0 auto;padding:26px 20px 90px}
+h1{font-size:21px;font-weight:800;margin:0 0 6px;letter-spacing:.01em}
+.sub{color:var(--dim);font-size:12.5px;margin:0 0 14px;max-width:106ch}
+.sub b{color:var(--ink)} code{font-family:var(--mono);font-size:11.5px;color:var(--ch1)}
+.nav{display:flex;gap:8px;margin:0 0 20px;font-size:11px;flex-wrap:wrap}
+.nav a{color:var(--ink);text-decoration:none;border:1px solid var(--line);border-radius:6px;
+  padding:6px 12px;background:#12161c;font-family:var(--mono);letter-spacing:.06em;text-transform:uppercase}
+.nav a.on{border-color:var(--gate);color:var(--gate)}
+.warn{border:1px solid #6a5330;background:#1c1811;border-radius:8px;padding:11px 14px;
+  margin:12px 0;font-size:12.5px;color:#e8cf9a;max-width:118ch}
+.warn b{color:var(--warn)}
+.ok{border:1px solid #3b5a48;background:#111a15;border-radius:8px;padding:11px 14px;
+  margin:12px 0;font-size:12.5px;color:#a9d8bd;max-width:118ch}
+.ok b{color:var(--good)}
+.cols{display:grid;grid-template-columns:minmax(0,1fr) 390px;gap:18px;align-items:start}
+@media (max-width:1080px){.cols{grid-template-columns:minmax(0,1fr)}}
+
+.tiles{display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start}
+.tw{display:flex;flex-direction:column;gap:6px}
+.tw .tag{font-family:var(--mono);font-size:8.6px;letter-spacing:.09em;text-transform:uppercase;color:var(--faint)}
+.tile{width:192px;height:180px;background:var(--pbody);border:1px solid var(--tile);
+  border-left:4px solid var(--gate);border-radius:8px;padding:8px 9px;display:flex;
+  flex-direction:column;gap:7px;overflow:hidden}
+.tile .tname{display:flex;align-items:center;gap:6px}
+.tile .tname i{display:block;width:12px;height:2px;background:var(--gate);border-radius:1px;font-style:normal}
+.tile .tname b{font-size:9.6px;font-weight:800;letter-spacing:.05em}
+.tile .plate{flex:1 1 auto;display:grid;gap:6px;align-content:start}
+.tile.mini .plate{grid-template-columns:repeat(1,1fr)}
+.tile.compact .plate{grid-template-columns:repeat(3,1fr)}
+.tile.full .plate{grid-template-columns:repeat(3,1fr)}
+.kc{display:flex;flex-direction:column;align-items:center;gap:4px}
+.kc span{font-family:var(--mono);font-size:6.8px;letter-spacing:.05em;text-transform:uppercase;color:var(--dim)}
+.dial{width:34px;height:34px;border-radius:50%;background:#151a21;border:1px solid #3a4048;position:relative}
+.dial::after{content:"";position:absolute;left:50%;top:4px;width:2px;height:11px;background:var(--accent);
+  transform-origin:50% 13px;transform:translateX(-50%) rotate(-52deg);border-radius:1px}
+.dial.r2::after{transform:translateX(-50%) rotate(38deg)}
+.dial.r3::after{transform:translateX(-50%) rotate(0deg)}
+.sw{width:30px;height:16px;border-radius:8px;background:#151a21;border:1px solid #3a4048;position:relative}
+.sw::after{content:"";position:absolute;top:2px;left:2px;width:10px;height:10px;border-radius:50%;background:#4d545e}
+.sw.on{background:#2a2013;border-color:var(--gate)}
+.sw.on::after{left:auto;right:2px;background:var(--gate)}
+.sw.acc.on{background:#10222b;border-color:var(--accent)}
+.sw.acc.on::after{background:var(--accent)}
+.pp{margin-top:auto;border-top:1px solid var(--line);padding-top:6px;display:flex;gap:4px;flex-wrap:wrap}
+.pp u{display:block;width:9px;height:9px;border-radius:50%;background:#0a0d11;border:1.5px solid var(--gate);text-decoration:none}
+.pp u.cv{border-color:var(--cv)} .pp u.pi{border-color:var(--pitch)} .pp u.po{border-color:var(--poly)}
+
+.notes{display:flex;flex-direction:column;gap:12px}
+.card{border:1px solid var(--line);background:#101419;border-radius:9px;padding:12px 14px}
+.card h3{margin:0 0 7px;font-size:10px;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--accent);font-family:var(--mono);font-weight:700}
+.card p{margin:0 0 8px;font-size:12px;color:var(--dim)}
+.card p:last-child{margin-bottom:0}
+.card b{color:var(--ink)}
+.card pre{margin:6px 0 0;font-family:var(--mono);font-size:9.2px;color:#bcd3e8;
+  background:#0b0e12;border:1px solid #1c222a;border-radius:5px;padding:8px 9px;overflow:auto}
+table.k{border-collapse:collapse;width:100%;font-size:11px;margin:2px 0 0}
+table.k th,table.k td{text-align:left;padding:4px 7px 4px 0;border-bottom:1px solid #1e242c;vertical-align:top;color:var(--dim)}
+table.k th{color:var(--faint);font-family:var(--mono);font-size:8.6px;letter-spacing:.09em;text-transform:uppercase;font-weight:400}
+table.k td b{color:var(--ink)}
+.no{color:var(--bad)}
+</style>
+<div class="wrap">
+
+<h1>NUMPAD+ — the lane tile at three tiers</h1>
+<p class="sub">
+  <b>SPEC AND MOCKUP ONLY. Nothing here is implemented.</b> A fixed 192 × 180 box, three times.
+  <b>There is no picture</b> — and the refusal is mechanical, not a design choice (see the right
+  column). The tile IS its controls, which is the one LOOK question this spec raises.
+</p>
+
+<div class="nav">
+  <a href="dock.html">1 · dock</a>
+  <a href="dock-remap.html">2 · remapping a key</a>
+  <a class="on" href="lane-tile.html">3 · lane tile</a>
+  <a href="spec.md">spec.md</a>
+</div>
+
+<div class="cols">
+<div>
+
+  <div class="tiles">
+
+    <div class="tw">
+      <span class="tag">mini · cap 1</span>
+      <div class="tile mini">
+        <div class="tname"><i></i><b>NUMPAD+</b></div>
+        <div class="plate">
+          <div class="kc"><div class="dial"></div><span>Lyr</span></div>
+        </div>
+        <div class="pp">
+          <u></u><u class="cv"></u><u class="pi"></u><u></u><u class="pi"></u><u></u>
+          <u class="pi"></u><u></u><u class="pi"></u><u></u><u class="po"></u>
+        </div>
+      </div>
+    </div>
+
+    <div class="tw">
+      <span class="tag">compact · cap 3</span>
+      <div class="tile compact">
+        <div class="tname"><i></i><b>NUMPAD+</b></div>
+        <div class="plate">
+          <div class="kc"><div class="dial"></div><span>Lyr</span></div>
+          <div class="kc"><div class="sw on"></div><span>Rec</span></div>
+          <div class="kc"><div class="sw acc on"></div><span>Play</span></div>
+        </div>
+        <div class="pp">
+          <u></u><u class="cv"></u><u class="pi"></u><u></u><u class="pi"></u><u></u>
+          <u class="pi"></u><u></u><u class="pi"></u><u></u><u class="po"></u>
+        </div>
+      </div>
+    </div>
+
+    <div class="tw">
+      <span class="tag">full · cap 6 (3 × 2 plate)</span>
+      <div class="tile full">
+        <div class="tname"><i></i><b>NUMPAD+</b></div>
+        <div class="plate">
+          <div class="kc"><div class="dial"></div><span>Lyr</span></div>
+          <div class="kc"><div class="sw on"></div><span>Rec</span></div>
+          <div class="kc"><div class="sw acc on"></div><span>Play</span></div>
+          <div class="kc"><div class="sw"></div><span>Ovd</span></div>
+          <div class="kc"><div class="dial r3"></div><span>Oct</span></div>
+          <div class="kc"><div class="dial r2"></div><span>BPM</span></div>
+        </div>
+        <div class="pp">
+          <u></u><u class="cv"></u><u class="pi"></u><u></u><u class="pi"></u><u></u>
+          <u class="pi"></u><u></u><u class="pi"></u><u></u><u class="po"></u>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="warn" style="margin-top:18px">
+    <b>⚠ THE MINI TILE IS ONE KNOB, AND THAT IS WORTH THE OWNER SEEING BEFORE MERGE.</b>
+    On a module called "numpad+", a 192 px tile showing a single four-position dial is thin. The
+    obvious remedy — a lane picture of the sixteen steps — is <b>refused for platform reasons, not
+    design ones</b> (right column), so this is what the geometry gives. <b>M7 in the spec routes it
+    to owner preview</b> rather than letting it be discovered after promotion.
+  </div>
+
+  <div class="ok">
+    <b>Why <code>activeLayer</code> and not <code>isPlaying</code> at rank 1.</b> numpadPlus
+    <em>sounds while stopped</em> — <code>tick()</code> returns early on <code>!isPlaying</code>
+    but still calls <code>applyOutputs</code>, and the def's own docs say <em>"When stopped the
+    playhead holds at step 1 but live keys still sound"</em>. So the transport is not the gate on
+    making a sound, and the layer is: it decides which pitch/gate pair the keys drive, which layer
+    records, which layer the grid edits and which layer feeds <code>POLY</code>. It is also the
+    module's <b>only CV-addressable control</b>, and the disambiguator when a rack holds the
+    several instances the def explicitly supports (<em>"chord-stack style"</em>).
+  </div>
+
+</div>
+
+<div class="notes">
+
+  <div class="card">
+    <h3>the lane roster, derived</h3>
+    <pre>laneOrder(face) drops:
+  face.hero.cell   → numpad-cell-{n}
+  each xyPads[].x  → (none declared)
+
+lane roster (8):
+  1 activeLayer     ← mini
+  2 recArm          ← compact
+  3 isPlaying
+  4 overdub         ← full
+  5 octave
+  6 bpm
+  ─────────────── cap 6
+  7 poly            dock only
+  8 numpad-key-{n}  dock only</pre>
+    <p style="margin-top:8px">The keymap panel sits at index 8, past
+      <code>LANE_PLATE_MAX_CELLS = 6</code> — <b>which is what satisfies
+      <code>panelTierProblems</code> without a second hero</b>.</p>
+  </div>
+
+  <div class="card">
+    <h3>the picture: refused, by a third mechanism</h3>
+    <table class="k">
+      <tr><td><b>outputs</b></td><td>pitch ×4, gate ×4, polyPitchGate ×1 — <b class="no">not one is <code>audio</code></b></td></tr>
+      <tr><td><b>so</b></td><td><code>primaryAudioOutPortId</code> → <code>null</code>; no <code>live-audio</code> binding is reachable</td></tr>
+      <tr><td><b>and</b></td><td><code>hasVideoSurface</code> is <code>domain === 'video'</code>; this is <code>audio</code></td></tr>
+      <tr><td><b>result</b></td><td>every non-<code>none</code> glyph literal falls to a DEAD static, which the lint reddens <b>unconditionally</b></td></tr>
+    </table>
+    <p style="margin-top:8px"><b><code>glyph: 'none'</code> is the only literal that compiles into
+      a green run.</b> An author who never thinks about it ships the right thing.</p>
+  </div>
+
+  <div class="card">
+    <h3>and the picture it WOULD want needs more than a <code>nodeId</code></h3>
+    <p>The useful glance is <em>"what is on the active layer, and where is the playhead"</em>. That
+      is not a picture of a SIGNAL — it is a picture of <code>node.data</code>, needing the node's
+      <code>layers</code>, its <code>activeLayer</code> <b>and</b> a per-frame engine read of
+      <code>stepIndex</code>.</p>
+    <p><code>ShellExtensionGlyphProps</code> carries <code>num</code>, <code>numbers</code> and
+      <code>testid</code> — no <code>nodeId</code> — so waves 2 and 3's escalation would not be
+      enough here either. <b>kria's face reaches the identical refusal by the identical
+      arithmetic</b> (<code>kria.ts:199-208</code>). Two independent sequencer faces agreeing is
+      the strongest form of that argument, and still not a reason to build the seam on a module
+      PR.</p>
+  </div>
+
+  <div class="card">
+    <h3>⚠ check the four-position dial, do not reason about it</h3>
+    <p>At every lane tier <code>paramCellKind</code> returns <code>'knob'</code> for an optioned
+      param, so <code>activeLayer</code> is a <b>four-detent dial</b> and <code>octave</code> a
+      nine-detent one.</p>
+    <p><code>moog962</code> shipped a <b>two</b>-detent dial and <code>faces-parity</code> failed it
+      on both attempts — <em>"dragging the knob commits a param change into the graph"</em>. Four
+      should clear it. <b>M2 drives the control instead of trusting that sentence.</b></p>
+  </div>
+
+  <div class="card">
+    <h3>what the tile does NOT paint</h3>
+    <table class="k">
+      <tr><td>a step index</td><td class="no">a count</td></tr>
+      <tr><td>the octave number</td><td class="no">a quantity — the dial's name readout says <code>c4</code></td></tr>
+      <tr><td>a tick / bar / beat readout</td><td class="no">a measurement</td></tr>
+      <tr><td>PLAY / STOP / REC words</td><td class="no">restates the control's own position</td></tr>
+      <tr><td>a section heading</td><td class="no">a lane tile has no bands</td></tr>
+    </table>
+    <p style="margin-top:8px">⚠ <b><code>face.bareCells</code> is NOT declared.</b> It is dock-only
+      by design — a lane tile has no section headings, so the thing that would make a caption
+      redundant is not on screen. Every caption here is load-bearing.</p>
+  </div>
+
+</div>
+</div>
+</div>

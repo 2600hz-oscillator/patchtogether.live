@@ -1,0 +1,259 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>RECORDERBOX face — recording, the recover block, and the lane tile</title>
+<style>
+/* ─────────────────────────────────────────────────────────────────────────
+   RECORDERBOX FACEPLATE — MOCKUP, state 2 of 2.
+   SPEC AND MOCKUP ONLY. Nothing here is implemented. See spec.md.
+
+   Same house tokens as dock.html. THE POINT OF THIS PAGE: the running
+   timecode that the card paints, and that this face refuses.
+   ───────────────────────────────────────────────────────────────────────── */
+:root{
+  --bg:#0e1013; --dock:#12161c; --plate:#262a31; --pbody:#1c1f24; --well:#0a0c0f;
+  --line:#2c3037; --tile:#33383f; --ink:#eef1f5; --dim:#9aa2ad; --faint:#646c77;
+  --cv:#7dd3fc; --accent:#6cf; --img:#c084fc; --ch1:#fbbf24; --warn:#f2c14e; --good:#8fe6b0;
+  --rec:#ff3b30;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+  font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1200px;margin:0 auto;padding:26px 20px 90px}
+h1{font-size:21px;font-weight:800;margin:0 0 6px;letter-spacing:.01em}
+.sub{color:var(--dim);font-size:12.5px;margin:0 0 14px;max-width:106ch}
+.sub b{color:var(--ink)} code{font-family:var(--mono);font-size:11.5px;color:var(--ch1)}
+.nav{display:flex;gap:8px;margin:0 0 20px;font-size:11px;flex-wrap:wrap}
+.nav a{color:var(--ink);text-decoration:none;border:1px solid var(--line);border-radius:6px;
+  padding:6px 12px;background:#12161c;font-family:var(--mono);letter-spacing:.06em;text-transform:uppercase}
+.nav a.on{border-color:var(--rec);color:#ff8a82}
+.warn{border:1px solid #6a5330;background:#1c1811;border-radius:8px;padding:11px 14px;
+  margin:12px 0;font-size:12.5px;color:#e8cf9a;max-width:118ch}
+.warn b{color:var(--warn)}
+.ok{border:1px solid #3b5a48;background:#111a15;border-radius:8px;padding:11px 14px;
+  margin:12px 0;font-size:12.5px;color:#a9d8bd;max-width:118ch}
+.ok b{color:var(--good)}
+.cols{display:grid;grid-template-columns:minmax(0,1fr) 400px;gap:18px;align-items:start}
+@media (max-width:1080px){.cols{grid-template-columns:minmax(0,1fr)}}
+
+.dock{background:var(--dock);border:1px solid var(--line);border-radius:11px;overflow:hidden;padding:11px}
+.chromebar{display:flex;align-items:baseline;gap:9px;padding:0 2px 8px}
+.chromebar .nm{font-size:13px;font-weight:800;letter-spacing:.03em}
+.chromebar .rl{font-size:9.4px;letter-spacing:.09em;text-transform:uppercase;color:var(--faint);font-family:var(--mono)}
+.chromebar .x{margin-left:auto;color:var(--faint);font-family:var(--mono);font-size:12px}
+.plate{background:var(--pbody);border:1px solid var(--tile);border-left:4px solid var(--rec);
+  border-radius:10px;padding:0 0 12px;width:max-content;max-width:100%}
+.extbody{padding:12px 14px 6px;width:300px;max-width:100%}
+
+.recover{border:1px solid #6a5330;background:#191510;border-radius:5px;padding:8px 9px;margin:0 0 12px}
+.recover .rt{margin:0 0 6px;font-size:9px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--warn)}
+.rrow{display:flex;align-items:center;gap:6px;padding:3px 0;border-bottom:1px solid #241d13}
+.rrow:last-child{border-bottom:0}
+.rrow .rn{flex:1;min-width:0;font-family:var(--mono);font-size:8.8px;color:var(--dim);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rrow .rb{font-size:8.2px;font-family:var(--mono);letter-spacing:.05em;text-transform:uppercase;
+  color:#0b0d11;background:var(--good);border-radius:2px;padding:1px 6px;font-weight:700}
+.rrow .rb.dis{background:#4a5260;color:#c8cdd5}
+
+.lamps{display:flex;gap:14px;padding:2px 0 11px;border-bottom:1px solid var(--line)}
+.led{display:inline-flex;align-items:center;gap:5px;font-size:9px;font-weight:600;
+  letter-spacing:.6px;color:var(--faint);text-transform:uppercase}
+.led .lamp{width:8px;height:8px;border-radius:50%;background:#252a31;border:1px solid #333a43}
+.led.lit{color:var(--ink)}
+.led.lit .lamp{background:var(--rec);border-color:var(--rec);box-shadow:0 0 8px rgba(255,59,48,.7);
+  animation:pulse 1s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+
+.row{display:flex;align-items:center;gap:8px;margin:10px 0 0}
+.row .lbl{font-size:8.6px;font-family:var(--mono);letter-spacing:.09em;text-transform:uppercase;
+  color:var(--faint);width:26px;flex:0 0 26px}
+.field{flex:1;min-width:0;background:var(--well);border:1px solid #333a43;border-radius:3px;
+  padding:4px 7px;font-family:var(--mono);font-size:10.5px;color:var(--ink)}
+.field.dis{color:#5a616c}
+.suffix{font-family:var(--mono);font-size:9.4px;color:var(--faint)}
+.btn{display:inline-block;padding:4px 11px;background:#3a424e;color:var(--ink);border-radius:3px;
+  font-size:9px;font-family:var(--mono);letter-spacing:.06em;text-transform:uppercase;font-weight:700}
+.btn.dis{background:#23282f;color:#5a616c}
+.sel{flex:1;min-width:0;background:var(--well);border:1px solid #2b3038;border-radius:3px;
+  padding:4px 7px;font-family:var(--mono);font-size:10.5px;color:#5a616c;
+  display:flex;justify-content:space-between;align-items:center}
+.recbtn{display:block;width:100%;margin-top:12px;padding:8px 0;text-align:center;
+  background:var(--rec);border:1px solid var(--rec);border-radius:4px;color:#160203;
+  font-family:var(--mono);font-size:11px;font-weight:800;letter-spacing:.09em}
+
+.notes{display:flex;flex-direction:column;gap:12px}
+.card{border:1px solid var(--line);background:#101419;border-radius:9px;padding:12px 14px}
+.card h3{margin:0 0 7px;font-size:10px;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--accent);font-family:var(--mono);font-weight:700}
+.card p{margin:0 0 8px;font-size:12px;color:var(--dim)}
+.card p:last-child{margin-bottom:0}
+.card b{color:var(--ink)}
+table{border-collapse:collapse;width:100%;font-size:11px;margin:2px 0 0}
+th,td{text-align:left;padding:4px 7px 4px 0;border-bottom:1px solid #1e242c;vertical-align:top;color:var(--dim)}
+th{color:var(--faint);font-family:var(--mono);font-size:8.6px;letter-spacing:.09em;text-transform:uppercase;font-weight:400}
+td b{color:var(--ink)}
+.aria{font-family:var(--mono);font-size:10px;color:#8fe6b0}
+
+/* the lane tile */
+.lanewrap{display:flex;gap:14px;align-items:flex-start;margin-top:18px;flex-wrap:wrap}
+.tile{width:172px;border:1px solid var(--tile);border-radius:8px;background:#15181d;padding:8px;flex:0 0 auto}
+.tile .tnm{font-size:8.4px;font-family:var(--mono);letter-spacing:.08em;text-transform:uppercase;
+  color:var(--faint);margin-bottom:6px}
+.thumb{width:100%;aspect-ratio:4/3;border-radius:3px;border:1px solid #1a1f2a;position:relative;overflow:hidden;
+  background:
+    radial-gradient(circle at 26% 30%, #ffe1a8 0 9%, transparent 10%),
+    linear-gradient(150deg,#0d2230 0%,#2b6f7a 38%,#d4a24c 70%,#7a2f4f 100%)}
+.tilecap{margin-top:7px;font-size:8.2px;font-family:var(--mono);color:var(--faint);line-height:1.5}
+</style>
+<div class="wrap">
+
+<h1>RECORDERBOX — RECORDING, with a take to recover</h1>
+<p class="sub">
+  <b>SPEC AND MOCKUP ONLY. Nothing here is implemented.</b> The page that exists to show the
+  <b>one thing this face refuses</b>: a running timecode. The card paints
+  <code>REC 04:12</code>; the face paints a pulsing lamp with a static caption and puts the
+  clock on <code>aria-label</code>.
+</p>
+
+<div class="nav">
+  <a href="dock.html">1 · idle</a>
+  <a class="on" href="dock-recording.html">2 · recording + the lane tile</a>
+  <a href="spec.md">spec.md</a>
+</div>
+
+<div class="warn">
+  <b>recorderbox is the module in this whole wave most likely to want a running timecode, and it
+  must not have one.</b> <code>RecorderboxCard.svelte:556-560</code> paints
+  <code>REC {fmtElapsed(elapsed)}</code> as a DOM span. A duration is the purest form of the
+  refused shape. <b>What loses its surface</b> is a performance affordance rather than an
+  arithmetic finding: knowing you are two minutes from the ~10-minute chunk roll.
+</div>
+
+<div class="cols">
+<div>
+
+  <div class="dock">
+    <div class="chromebar">
+      <span class="nm">RECORDERBOX</span>
+      <span class="rl">dock · full view</span>
+      <span class="x">✕</span>
+    </div>
+
+    <div class="plate">
+      <div class="extbody">
+
+        <div class="recover">
+          <p class="rt">Recover unsaved recording?</p>
+          <div class="rrow">
+            <span class="rn">RECORDING-003-20260823-2214.mp4</span>
+            <span class="rb">Save</span><span class="rb dis">Discard</span>
+          </div>
+        </div>
+
+        <div class="lamps">
+          <span class="led lit"
+            title="recording, 04:12 elapsed, chunk 2, BALANCED, saving to Takes"><span class="lamp"></span>REC</span>
+          <span class="led" title="idle"><span class="lamp"></span>SAVING</span>
+        </div>
+
+        <div class="row">
+          <span class="lbl">File</span>
+          <span class="field dis">tuesday-set</span>
+          <span class="suffix">.mp4</span>
+        </div>
+
+        <div class="row">
+          <span class="lbl">Dir</span>
+          <span class="btn dis" title="Saving to: Takes">Change</span>
+        </div>
+
+        <div class="row">
+          <span class="lbl">Size</span>
+          <span class="sel">BALANCED <span>▾</span></span>
+        </div>
+
+        <div class="recbtn">■ STOP</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="lanewrap">
+    <div class="tile">
+      <div class="tnm">lane tile · compact</div>
+      <div class="thumb"></div>
+      <div class="tilecap">
+        <b style="color:var(--ink)">VideoTileThumb</b>, 160×120, 15 fps, per-node, free.<br>
+        It blits <b style="color:var(--ink)">the same output FBO the encoder reads</b>.
+      </div>
+    </div>
+    <div class="ok" style="margin:0;flex:1;min-width:280px">
+      <b>This is why the dock body has no preview.</b> recorderbox is a passthrough sink —
+      <code>in</code> → per-instance FBO → <code>out</code> — so the lane thumb is a live
+      confirmation of <em>what is being recorded</em>, at all times, whether or not any dock is
+      open. A body preview would be a 40×30 px smaller second copy of it.
+      <b>Parity is preserved and upgraded</b>, which is the only reason this is a design choice
+      rather than a defect.
+    </div>
+  </div>
+
+</div>
+
+<div class="notes">
+
+  <div class="card">
+    <h3>the REC lamp, exactly</h3>
+    <p><code>&lt;StatusLed caption="REC" lit={recState === 'recording'} tone="warn"
+      detail={…} /&gt;</code></p>
+    <p><b>StatusLed has no <code>value</code> prop</b>, by design
+      (<code>StatusLed.svelte:14-16</code>) — <em>"Adding one here is an edit to a gated file,
+      not a call-site choice."</em> And the caption is static by contract, so a caller cannot
+      pass <code>lit ? 'REC 04:12' : 'IDLE'</code>.</p>
+    <p class="aria">detail = "recording, 04:12 elapsed, chunk 2, BALANCED, saving to Takes"</p>
+  </div>
+
+  <div class="card">
+    <h3>it is a RECOVER list, not a take list</h3>
+    <p>The brief called <code>:646-658</code> a "take list". It is the <b>crash-recovery</b>
+      list, populated by <code>scanRecoverable()</code> from OPFS manifests left by a take that
+      never finalized.</p>
+    <p><b>At rest, after a clean session, it is empty and renders nothing</b> — which is exactly
+      what makes the idle dock baseline deterministic. recorderbox keeps no history of completed
+      takes; a finished chunk is a file on disk and the module forgets it.</p>
+    <p>It sits at the TOP of the body because it is the only thing here with unsaved user data
+      behind it.</p>
+  </div>
+
+  <div class="card">
+    <h3>⚠ the PRECURSOR, in one paragraph</h3>
+    <p>The registry owns the recording <b>once started</b>. The thing that <b>starts</b> it —
+      <code>$effect</code> on <code>node.data.recording</code> → <code>startRecording()</code>,
+      ~120 lines of folder / presentation-policy / audio-tap / encode-profile resolution — lives
+      on the card (<code>:264-272</code>, <code>:277-…</code>).</p>
+    <p><b>recorderbox is NOT in <code>HEADLESS_MOUNT_LANE_TYPES</code></b>, so a face has no card
+      anywhere. Pressing RECORD would flip <code>node.data.recording</code> and
+      <b>nothing would observe it</b>. The encoder-support probe and the crash-recovery scan die
+      with it too (<code>onMount</code>, <code>:503-513</code>).</p>
+    <p><b>Fix:</b> extract to
+      <code>lib/ui/modules/recorderbox-transport.ts</code> — ⚠ <b>not</b> <code>lib/video/</code>,
+      which is the attest basis, following the precedent
+      <code>recorderbox-present-policy.ts:14-17</code> already sets in as many words.</p>
+  </div>
+
+  <div class="card">
+    <h3>⚠ the gate that could not have told us</h3>
+    <p><code>dom-source-modules.test.ts</code> derives both sets from three seams:
+      <code>attachExternalSource(</code>, <code>write(node|id,…)</code>,
+      <code>install*FrameDrawer(</code>. All three describe a card that <b>hands the engine a
+      source or pushes pixels in</b>.</p>
+    <p><b>recorderbox is a SINK.</b> It could never match any of them. So its absence from both
+      sets is <b>a tautology about a regex, not evidence about its lifetime</b> — and if #1574
+      were reverted tomorrow the gate would stay green.</p>
+    <p>The gate is honest about it (its own stated scope, <code>:33-35</code>). <b>No fix is
+      proposed</b> — nothing is broken and the no-new-gates ruling stands. Fixing the stale
+      <code>why</code> is what actually prevents the confusion.</p>
+  </div>
+
+</div>
+</div>
+</div>

@@ -1,0 +1,353 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>PUSH 2 CONTROL face — the dock faceplate (spawn)</title>
+<style>
+/* ─────────────────────────────────────────────────────────────────────────
+   PUSH 2 CONTROL FACEPLATE — MOCKUP, state 1 of 2.
+   SPEC AND MOCKUP ONLY. Nothing here is implemented. See spec.md.
+
+   House tokens, the same set the wave-1..6 mocks use. The REPLICA is a CSS
+   stand-in for the body's 960x160 <canvas> painted by
+   `paintPushOps(ctx, pushDisplayOps())` — the SAME op list already on its way
+   to the hardware OLED over WebUSB (Push2ControlCard.svelte:88-97).
+
+   ⚠ THE FACE RANKS ONE THING. `params: []` (push2-control.ts:58), so
+   "a face must rank every param" is vacuous. The single ranked cell is the
+   CONNECT ACTION, and putting it on the lane tile IS the promotion —
+   midiclock #2187's headline, on a module with no jacks at all (spec.md §0).
+   ───────────────────────────────────────────────────────────────────────── */
+:root{
+  --bg:#0e1013; --dock:#12161c; --plate:#262a31; --pbody:#1c1f24; --well:#0a0c0f;
+  --line:#2c3037; --tile:#33383f; --ink:#eef1f5; --dim:#9aa2ad; --faint:#646c77;
+  --cv:#7dd3fc; --accent:#6cf; --img:#c084fc; --ch1:#fbbf24; --warn:#f2c14e; --good:#8fe6b0;
+  --meta:#a78bfa;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+  font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1240px;margin:0 auto;padding:26px 20px 90px}
+h1{font-size:21px;font-weight:800;margin:0 0 6px;letter-spacing:.01em}
+.sub{color:var(--dim);font-size:12.5px;margin:0 0 14px;max-width:106ch}
+.sub b{color:var(--ink)} code{font-family:var(--mono);font-size:11.5px;color:var(--ch1)}
+.nav{display:flex;gap:8px;margin:0 0 20px;font-size:11px;flex-wrap:wrap}
+.nav a{color:var(--ink);text-decoration:none;border:1px solid var(--line);border-radius:6px;
+  padding:6px 12px;background:#12161c;font-family:var(--mono);letter-spacing:.06em;text-transform:uppercase}
+.nav a.on{border-color:var(--meta);color:var(--meta)}
+.warn{border:1px solid #6a5330;background:#1c1811;border-radius:8px;padding:11px 14px;
+  margin:12px 0;font-size:12.5px;color:#e8cf9a;max-width:118ch}
+.warn b{color:var(--warn)}
+.ok{border:1px solid #3b5a48;background:#111a15;border-radius:8px;padding:11px 14px;
+  margin:12px 0;font-size:12.5px;color:#a9d8bd;max-width:118ch}
+.ok b{color:var(--good)}
+.bad{border:1px solid #6b3a3a;background:#1c1214;border-radius:8px;padding:11px 14px;
+  margin:12px 0;font-size:12.5px;color:#f0b8b8;max-width:118ch}
+.bad b{color:#ff8a8a}
+.cols{display:grid;grid-template-columns:minmax(0,1fr) 400px;gap:18px;align-items:start}
+@media (max-width:1120px){.cols{grid-template-columns:minmax(0,1fr)}}
+
+.dock{background:var(--dock);border:1px solid var(--line);border-radius:11px;overflow:hidden;padding:11px}
+.chromebar{display:flex;align-items:baseline;gap:9px;padding:0 2px 8px}
+.chromebar .nm{font-size:13px;font-weight:800;letter-spacing:.03em}
+.chromebar .rl{font-size:9.4px;letter-spacing:.09em;text-transform:uppercase;color:var(--faint);font-family:var(--mono)}
+.chromebar .x{margin-left:auto;color:var(--faint);font-family:var(--mono);font-size:12px}
+.plate{background:var(--pbody);border:1px solid var(--tile);border-left:4px solid var(--meta);
+  border-radius:10px;padding:0 0 12px;width:max-content;max-width:100%}
+
+.extbody{padding:12px 14px 10px;width:504px;max-width:100%;position:relative}
+
+/* ── the 960x160 REPLICA at 480 CSS px = 0.50x (spec.md §5) ────────────── */
+.oled{width:480px;max-width:100%;aspect-ratio:6/1;background:#000;border:1px solid #333a48;
+  border-radius:3px;overflow:hidden;display:flex;position:relative}
+.oled .hdr{position:absolute;left:0;right:0;top:0;height:12px;border-bottom:1px solid #1b1b1b;
+  font-family:var(--mono);font-size:7.4px;letter-spacing:.08em;color:#7a7a7a;padding:1px 5px}
+.oled .strips{display:flex;width:100%;padding-top:12px}
+.oled .st{flex:1 1 0;min-width:0;border-right:1px solid #131313;padding:4px;
+  display:flex;flex-direction:column;gap:2px}
+.oled .st:last-child{border-right:0}
+.oled .st .nm{font-family:var(--mono);font-size:7px;letter-spacing:.04em;color:#8c8c8c;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.oled .st .bar{height:19px;background:#141414;border:1px solid #232323;position:relative}
+.oled .st .bar i{position:absolute;left:1px;bottom:1px;top:1px;background:#c0c0c0}
+.oled .st .val{font-family:var(--mono);font-size:7px;color:#b8b8b8}
+.oled.empty{align-items:center;justify-content:center;padding-top:12px}
+.oled.empty .msg{font-family:var(--mono);font-size:9px;letter-spacing:.12em;color:#4a4a4a;text-transform:uppercase}
+
+.row{display:flex;align-items:center;gap:7px;margin:9px 0 0;flex-wrap:wrap}
+.btn{display:inline-block;padding:3px 10px;border-radius:2px;font-size:9.2px;
+  font-family:var(--mono);letter-spacing:.06em;text-transform:uppercase;font-weight:700;
+  border:1px solid #404652;background:#1a1f2a;color:var(--dim)}
+.btn.pri{background:var(--meta);border-color:var(--meta);color:#0b0d11}
+.btn.on{border-color:#6f9bd6;color:#9cc0f0;background:rgba(80,120,200,.18)}
+.btn.dead{opacity:.42}
+.seg{display:flex;gap:3px;width:100%}
+.seg .btn{flex:1 1 0;text-align:center;padding:3px 0}
+.flip{display:flex;align-items:center;gap:5px;width:100%}
+.flip .btn{padding:1px 9px}
+.flip .gap{flex:1 1 auto;height:1px;border-bottom:1px dashed #2a2f38}
+
+/* ── the lamps: StatusLed, caption + dot, NEVER a value ────────────────── */
+.lamps{display:flex;gap:14px;align-items:center;margin-left:auto}
+.led{display:inline-flex;align-items:center;gap:5px}
+.led .dot{width:7px;height:7px;border-radius:50%;background:#2b3038;border:1px solid #3a4049}
+.led.lit .dot{background:var(--good);border-color:var(--good);box-shadow:0 0 6px rgba(143,230,176,.6)}
+.led.warn .dot{background:var(--warn);border-color:var(--warn);box-shadow:0 0 6px rgba(242,193,78,.5)}
+.led .cap{font-family:var(--mono);font-size:8.2px;letter-spacing:.09em;color:var(--faint)}
+
+.hint{margin:9px 0 0;font-size:9.6px;color:var(--dim);max-width:44ch;line-height:1.45}
+
+.bands{padding:10px 14px 0;border-top:1px solid var(--line);margin:9px 14px 0}
+.band{display:flex;align-items:center;gap:10px}
+.band .lbl{font-size:8.6px;font-family:var(--mono);letter-spacing:.09em;text-transform:uppercase;color:var(--faint)}
+.cell{border:1px solid var(--meta);border-radius:3px;padding:5px 13px;font-family:var(--mono);
+  font-size:9.4px;letter-spacing:.07em;text-transform:uppercase;color:var(--meta);font-weight:700}
+
+/* ── the LANE tile ────────────────────────────────────────────────────── */
+.lanes{display:flex;gap:24px;align-items:flex-start;flex-wrap:wrap;margin-top:6px}
+.lane{width:192px;background:var(--pbody);border:1px solid var(--tile);border-left:3px solid var(--meta);
+  border-radius:7px;padding:7px 8px 9px}
+.lane .t{font-size:8.6px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--dim);font-family:var(--mono);margin:0 0 6px}
+.lane .badge{font-family:var(--mono);font-size:7.6px;letter-spacing:.09em;color:var(--faint);
+  text-transform:uppercase;margin:0 0 8px}
+.lane .cellrow{display:flex;justify-content:center;padding:6px 0 4px}
+.lane .rail{margin-top:9px;border-top:1px solid #23272e;padding-top:6px;
+  font-family:var(--mono);font-size:7.4px;color:#464c55;letter-spacing:.08em;text-align:center}
+.lane .cap{font-size:8.4px;color:var(--faint);font-family:var(--mono);text-align:center;margin:8px 0 0}
+.lane.old .body{height:46px;display:flex;align-items:center;justify-content:center;
+  font-family:var(--mono);font-size:7.6px;color:#3d434c;letter-spacing:.1em}
+
+.notes{display:flex;flex-direction:column;gap:12px}
+.card{border:1px solid var(--line);background:#101419;border-radius:9px;padding:12px 14px}
+.card h3{margin:0 0 7px;font-size:10px;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--accent);font-family:var(--mono);font-weight:700}
+.card p{margin:0 0 8px;font-size:12px;color:var(--dim)}
+.card p:last-child{margin-bottom:0}
+.card b{color:var(--ink)}
+table{border-collapse:collapse;width:100%;font-size:11px;margin:2px 0 0}
+th,td{text-align:left;padding:4px 7px 4px 0;border-bottom:1px solid #1e242c;vertical-align:top;color:var(--dim)}
+th{color:var(--faint);font-family:var(--mono);font-size:8.6px;letter-spacing:.09em;text-transform:uppercase;font-weight:400}
+td b{color:var(--ink)}
+.aria{font-family:var(--mono);font-size:10.5px;color:#8fe6b0}
+.gone{text-decoration:line-through;color:#5a616c}
+.no{color:#ff8a8a;font-weight:700}
+.yes{color:var(--good);font-weight:700}
+</style>
+<div class="wrap">
+
+<h1>PUSH 2 CONTROL — the dock faceplate (spawn, pre-Connect)</h1>
+<p class="sub">
+  <b>SPEC AND MOCKUP ONLY. Nothing here is implemented.</b> This is the fresh-spawn
+  state, which is also exactly what the dock VRT baseline captures — no MIDI grant,
+  no WebUSB grant, no clipplayer in the patch, and therefore an <b>empty</b> push
+  card on the replica. Every derived string the legacy card painted is gone; the
+  three lamps and <code>aria-*</code> carry what survives.
+</p>
+
+<div class="nav">
+  <a class="on" href="dock.html">1 · the dock face (spawn)</a>
+  <a href="dock-connected.html">2 · connected + bound, and the lane</a>
+  <a href="spec.md">spec.md</a>
+</div>
+
+<div class="bad">
+  <b>⚠ THE DEFECT THE FACE FIXES IS LIVE ON <code>main</code> TODAY.</b>
+  <code>push2Control</code> is <b>not</b> in <code>NON_SHELL_LANE_TYPES</code>
+  (<code>legacy-fallback.ts:110-129</code>) while both modules its own header names
+  as its models — <code>electraControl</code> and <code>launchpadControlLeft</code> —
+  <b>are</b>. So <code>laneRenderKind</code> (<code>:156-160</code>) returns
+  <code>'placeholder'</code>: at plain <code>/rack</code> this module is a name, a
+  badge and an empty jack rail, and its entire surface — including the one gesture
+  without which it does nothing at all — is <b>dock-only</b>. That is
+  <code>midiclock</code> #2187's headline, on a module with <b>no jacks</b>.
+</div>
+
+<div class="cols">
+<div>
+
+  <div class="dock">
+    <div class="chromebar">
+      <span class="nm">PUSH 2 CONTROL</span>
+      <span class="rl">dock · full view</span>
+      <span class="x">✕</span>
+    </div>
+
+    <div class="plate">
+      <div class="extbody">
+
+        <!-- THE REPLICA. 960x160 backing px at 480 CSS px = 0.50x.
+             Empty because no clipplayer exists yet, which is the deterministic
+             fresh-spawn picture the VRT scene must capture (spec.md §7.2). -->
+        <div class="oled empty">
+          <div class="hdr">LANE 1</div>
+          <span class="msg">no module</span>
+        </div>
+
+        <!-- the card flip. ⚠ NO TITLE LABEL and NO i/N COUNT between the arrows —
+             the title is a duplicate of what the canvas already paints, and the
+             count is a measurement. Both go to aria (spec.md §2.2). -->
+        <div class="row flip">
+          <span class="btn">‹</span>
+          <span class="gap"></span>
+          <span class="btn">›</span>
+        </div>
+
+        <!-- LANE SELECT. ⚠ ONE control with eight positions, not eight controls
+             (#2181) — and a BODY control, not a family cell, because
+             `selectedChannel` is localStorage (spec.md §3.1). -->
+        <div class="row seg">
+          <span class="btn on">1</span><span class="btn">2</span><span class="btn">3</span>
+          <span class="btn">4</span><span class="btn">5</span><span class="btn">6</span>
+          <span class="btn">7</span><span class="btn">8</span>
+        </div>
+
+        <!-- the view roster is `{#if connected}` on the card, so it is absent here. -->
+
+        <div class="row">
+          <span class="btn pri">Connect display</span>
+          <span class="lamps">
+            <span class="led"><span class="dot"></span><span class="cap">PUSH</span></span>
+            <span class="led"><span class="dot"></span><span class="cap">SCREEN</span></span>
+            <span class="led"><span class="dot"></span><span class="cap">BOUND</span></span>
+          </span>
+        </div>
+
+        <p class="hint">
+          Press Connect Push 2 to grant MIDI access. One-time per origin.
+        </p>
+
+      </div>
+
+      <div class="bands">
+        <div class="band">
+          <span class="lbl">band 1</span>
+          <span class="cell">Connect Push 2</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <h1 style="font-size:15px;margin:26px 0 6px">the LANE tile — before and after</h1>
+  <p class="sub" style="margin-bottom:10px">
+    The tile gains exactly one thing, and it is the entire user-visible change in
+    the lane. An <code>action</code> cell is not dock-restricted — only
+    <code>panel</code> is (<code>panelCellKeys</code>) — and <code>laneOrder</code>
+    drops only a declared <code>hero.cell</code> and each <code>xyPads</code> entry's
+    <code>x</code> key, neither of which this face declares.
+  </p>
+
+  <div class="lanes">
+    <div class="lane old">
+      <p class="t">push 2 control</p>
+      <p class="badge">push2Control</p>
+      <div class="body">un-migrated placeholder</div>
+      <div class="rail">no jacks</div>
+      <p class="cap">TODAY — ModuleShellPlaceholder</p>
+    </div>
+    <div class="lane">
+      <p class="t">push 2 control</p>
+      <p class="badge">push2Control</p>
+      <div class="cellrow"><span class="cell">Connect Push 2</span></div>
+      <div class="rail">no jacks</div>
+      <p class="cap">AFTER — ModuleShell, one ranked action</p>
+    </div>
+  </div>
+
+  <div class="ok" style="margin-top:16px">
+    <b>The body is DOCK-ONLY, and that is correct rather than a limitation.</b>
+    At a 192 px lane tile the replica would scale to 0.20x — eight coloured bars
+    with no legible text, i.e. a picture that <i>misrepresents</i> the hardware.
+    <code>midiclock</code>'s extension states the same disposition for the same
+    reason: <i>"a 192 px lane tile cannot carry a module surface"</i>
+    (<code>shell-extension.ts:33-35</code>).
+  </div>
+
+</div>
+
+<div class="notes">
+
+  <div class="card">
+    <h3>the three lamps</h3>
+    <p>
+      <code>StatusLed</code> — <b>no <code>value</code> prop exists</b>, the caption
+      is a string literal by contract, and the derived quantity goes to
+      <code>detail</code> → <code>aria-label</code>/<code>title</code>.
+    </p>
+    <table>
+      <tr><th>caption</th><th>lit when</th><th>detail carries</th></tr>
+      <tr><td><b>PUSH</b></td><td><code>isConnected()</code></td><td>the device name, or the failure outcome</td></tr>
+      <tr><td><b>SCREEN</b></td><td><code>isDisplayConnected()</code></td><td><code>displayStatus()</code>; <code>tone:'warn'</code> only on a <i>decline</i></td></tr>
+      <tr><td><b>BOUND</b></td><td><code>boundClipNode() !== null</code></td><td>the bound node's name + the active view</td></tr>
+    </table>
+    <p style="margin-top:8px">
+      <b>⚠ SCREEN unlit is not a fault.</b> The def is explicit that WebUSB
+      <i>"degrades to nothing"</i> (<code>push2-control.ts:38-41</code>) — a
+      warn-toned lamp on the default path would be a lie in the opposite direction
+      from the one the ruling usually guards against.
+    </p>
+  </div>
+
+  <div class="card">
+    <h3>what was removed</h3>
+    <table>
+      <tr><th>was</th><th>now</th></tr>
+      <tr><td class="gone">Not connected.</td><td>the <b>PUSH</b> lamp</td></tr>
+      <tr><td class="gone">Driving clip-player <code>n7</code> — <b>CLIP</b> view.</td><td><b>BOUND</b> lamp + <span class="aria">detail</span></td></tr>
+      <tr><td class="gone">Push 2 ✓ — hit Bind to drive your clip-player.</td><td>the live <b>Bind</b> button itself</td></tr>
+      <tr><td class="gone">Screen not connected (<code>idle</code>) — hit Connect display.</td><td><b>SCREEN</b> lamp + <span class="aria">detail</span></td></tr>
+      <tr><td class="gone">MIXER 3/6</td><td><span class="aria">aria-valuetext</span> on the flip</td></tr>
+      <tr><td class="gone">Colour guide + control map → right-click → View docs.</td><td>— (relocation; the route already exists)</td></tr>
+      <tr><td class="gone">Re-connect Push 2</td><td>pinned to the literal <b>Connect Push 2</b></td></tr>
+    </table>
+    <p style="margin-top:8px">
+      <b>⚠ Only one of those loses a finding.</b> The <code>i/N</code> count is the
+      only thing on the plate that says the ‹ › arrows have anywhere to go — a lane
+      with one module and a lane with six are otherwise the same picture. It goes to
+      <span class="aria">aria-valuetext</span>, which is unpainted by construction, and
+      a sighted player operating the flip gets nothing. That is the ruling's intended
+      trade, stated rather than smoothed over.
+    </p>
+  </div>
+
+  <div class="card">
+    <h3>what survives, and why each is allowed</h3>
+    <p>
+      <b>Lane numbers 1–8</b> and <b>GRID / CLIP / ARR / CTRL</b> — option NAMES
+      inside the controls that select them, with <code>aria-pressed</code> already
+      correct on the card (<code>:218</code>, <code>:239</code>).
+      <b>Connect Push 2 / Connect display / Bind</b> — control captions on their own
+      buttons. <b>The two error messages</b> — absent whenever nothing is wrong.
+      <b>The pre-Connect hint</b> — instructional copy in an empty state, replaced by
+      the surface the moment the surface exists.
+    </p>
+    <p>
+      <b>⚠ And the whole 960×160 canvas.</b> Wave 5 <code>GAMES.md:59-65</code>:
+      <i>"The face is not painting the number; the game is."</i> Here it is stronger
+      than anywhere else in the fleet — deleting those readouts would not remove a
+      readout from the <i>product</i>, because the hardware still paints it. It would
+      only make the on-screen copy disagree with the panel, which is the single
+      property the shared-seam design exists to make impossible.
+    </p>
+  </div>
+
+  <div class="card">
+    <h3>width, in arithmetic</h3>
+    <table>
+      <tr><th>css</th><th>scale</th><th>strip content</th><th></th></tr>
+      <tr><td>960</td><td>1.00×</td><td>104 px</td><td>exact; too wide</td></tr>
+      <tr><td><b>480</b></td><td><b>0.50×</b></td><td><b>52 px</b></td><td class="yes">proposed</td></tr>
+      <tr><td>340</td><td>0.354×</td><td>36.8 px</td><td class="no">a 32 px readout at 11 px</td></tr>
+      <tr><td>192</td><td>0.20×</td><td>21 px</td><td class="no">no legible text at all</td></tr>
+    </table>
+    <p style="margin-top:8px">
+      From <code>push-screen-layout.ts:39-64</code>. <b>The def already made this
+      call once</b>, on the height axis: <i>"the def is the ONE place that height is
+      declared, so it moves here rather than the preview being shrunk to fit"</i>
+      (<code>push2-control.ts:60-65</code>).
+    </p>
+  </div>
+
+</div>
+</div>
+</div>

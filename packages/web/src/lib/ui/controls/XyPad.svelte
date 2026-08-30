@@ -46,7 +46,9 @@
     xMax: number;
     yMin: number;
     yMax: number;
-    /** Short label shown for each axis in the readout. */
+    /** Short name for each axis. ⚠ It is NOT painted (#2038 deleted the readout
+     *  row) — it names the axis inside the pad's `aria-label`, which is where a
+     *  `role="application"` control's value lives. */
     xLabel: string;
     yLabel: string;
     /** Default values for the double-click reset (fall back to min if absent). */
@@ -59,7 +61,9 @@
     size?: number;
     /** Group caption drawn above the pad. */
     title?: string;
-    /** data-testid base: `<testid>-pad` / `-dot` / `-readout` / `-assign-x` / `-assign-y`. */
+    /** data-testid base: `<testid>-pad` / `-dot` / `-assign-x` / `-assign-y`.
+     *  ⚠ `-readout` is GONE (#2038) — the row it named is deleted, and a spec
+     *  that wants the values reads the pad's `aria-label`. */
     testid?: string;
     /** Patch-graph node id. When set together with xParamId + yParamId, the pad
      *  renders per-axis MIDI/Electra ASSIGN buttons (the axes become learnable). */
@@ -310,10 +314,20 @@
       data-testid={testid ? `${testid}-dot` : undefined}
     ></div>
   </div>
-  <div class="xy-readout" data-testid={testid ? `${testid}-readout` : undefined}>
-    <span>{xLabel} <strong>{fmt(dispX)}</strong></span>
-    <span>{yLabel} <strong>{fmt(dispY)}</strong></span>
-  </div>
+  <!-- ⚠ THE AXIS READOUT ROW IS DELETED, NOT HIDDEN (#2038). It painted
+       `Orbit 0.00 / Elev 0.55` under every pad — a resting decimal restating
+       the dot's own position, which is the class the owner has now ruled
+       against four times ("i want the data gone, not there but hidden or
+       something"). There is deliberately NO prop to bring it back: a
+       `showReadout` flag would be the `persistentReadout` mistake repeated, and
+       that prop was deleted by name rather than defaulted to false.
+
+       THE VALUES DID NOT GO ANYWHERE — `aria-label` above already carries the
+       full `"<title>: <xLabel> <x>, <yLabel> <y>"` rendering, and that is what
+       every spec proving a pad tracks the graph now reads. ⚠ A pad is
+       `role="application"`, NOT a slider, so its accessible value lives in
+       `aria-label`; there is no `aria-valuetext` on this role to move it to.
+       `fmt` therefore survives — it formats the accessible name. -->
 
   {#if assignable}
     <!-- Per-axis MIDI/Electra ASSIGN handles. They do NOT change the value —
@@ -417,16 +431,6 @@
     background: var(--accent, #8aa2ef);
     box-shadow: 0 0 6px rgba(138, 162, 239, 0.9);
   }
-  .xy-readout {
-    display: flex;
-    gap: 6px;
-    font-size: 0.5rem;
-    font-family: ui-monospace, monospace;
-    letter-spacing: 0.02em;
-    color: var(--text-dim);
-  }
-  .xy-readout strong { color: var(--text); font-weight: 600; }
-
   /* Per-axis MIDI/Electra assign handles — tiny so they stay within the card
      control-overflow bounds. They are pure assign handles (no value change). */
   .xy-assign {

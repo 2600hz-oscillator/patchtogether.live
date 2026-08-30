@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Real-GPU WebGL attestation runner + writer. Thin wrapper around
 # scripts/webgl-attest.ts (run via tsx). See that file's header for the
-# multi-pass design (fix V5), and .claude/skills/webgl-attest.md.
+# multi-pass design (fix V5), and .claude/skills/renderer-tests/SKILL.md.
 #
 # Usage (normally via `task webgl:attest`):
 #   bash scripts/webgl-attest.sh             # full real-GPU run + write attestation

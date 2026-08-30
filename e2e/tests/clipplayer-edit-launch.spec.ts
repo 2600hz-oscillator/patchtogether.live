@@ -33,7 +33,7 @@ import { SLOW_BOOT_TEST_TIMEOUT_MS } from '../_helpers/boot-budget';
 //
 // Scaling it is a bound change, not an assertion change: nothing here claims
 // how long the editor takes to open, and the wait exits the instant it does.
-// Cost regressions stay gated by scripts/e2e-shard-budget.sh, which is a
+// Cost regressions are no longer gated (the budget wrapper was deleted); a
 // measurement of the lane rather than of one test.
 test.describe.configure({ mode: 'parallel', timeout: SLOW_BOOT_TEST_TIMEOUT_MS });
 

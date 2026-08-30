@@ -58,9 +58,23 @@ export const SMOOTH_MIN_HZ = 1; // most smoothing (smoothing = 1.0)
 export const SMOOTH_MAX_HZ = 50; // least smoothing (smoothing = 0.0)
 
 /** Map the 0..1 SMOOTHING knob to a lowpass cutoff in Hz (log scale).
- *  smoothing=1 → SMOOTH_MIN_HZ (slow); smoothing=0 → SMOOTH_MAX_HZ (fast). */
+ *  smoothing=1 → SMOOTH_MIN_HZ (slow); smoothing=0 → SMOOTH_MAX_HZ (fast).
+ *
+ *  ⚠ TOTAL BY CONSTRUCTION (#1914). The clamp used to be written as
+ *  `smoothing < 0 ? 0 : smoothing > 1 ? 1 : smoothing`, and BOTH comparisons
+ *  are false for NaN — so NaN fell through untouched, `Math.exp` of it is NaN,
+ *  and that NaN reached `envFilter.frequency`, after which ENV and GATE were
+ *  BOTH DEAD until something wrote a finite value. Out-of-range FINITE values
+ *  clamped correctly the whole time; only NaN escaped, which is exactly why it
+ *  survived the range tests.
+ *
+ *  A non-finite input is treated as the same out-of-domain case the lower clamp
+ *  already handles (no smoothing), so every FINITE input maps exactly as
+ *  before — this is behaviour-preserving, not a re-tuning. The real fix is at
+ *  the write boundary in `setParam` below; this arm guarantees no other caller
+ *  can reconstruct the dead state by a different route. */
 export function smoothingToCutoffHz(smoothing: number): number {
-  const s = smoothing < 0 ? 0 : smoothing > 1 ? 1 : smoothing;
+  const s = !Number.isFinite(smoothing) ? 0 : smoothing < 0 ? 0 : smoothing > 1 ? 1 : smoothing;
   // t=0 at smoothing=1 (min Hz), t=1 at smoothing=0 (max Hz).
   const t = 1 - s;
   const lnMin = Math.log(SMOOTH_MIN_HZ);
@@ -132,6 +146,81 @@ export const moog912Def: AudioModuleDef = {
     { id: 'smoothing',   label: 'Smooth', defaultValue: 0.5, min: 0, max: 1, curve: 'linear' },
   ],
 
+  // ── THE FACE ────────────────────────────────────────────────────────────────
+  //
+  // ⚠ STOP 1 IS THE CLOSEST CALL IN THIS COHORT, AND IT IS WORKED EXPLICITLY
+  // RATHER THAN WAVED THROUGH. The refuse rule fires when ALL of these hold:
+  // ≤2 params · no control families · no `node.data` affordances · no derived
+  // quantity worth a readout. moog912 has TWO params, no families and no
+  // `node.data` — THREE OF FOUR. It survives on the fourth clause alone, and it
+  // survives it decisively: the SMOOTH knob's real unit is invisible, and the
+  // GATE's threshold in input dBFS is a number nothing on the module prints.
+  // This is the moogCp3 precedent — the merit is the READOUT, not the ranking.
+  // ⚠ IF THE READOUTS ARE CUT IN REVIEW THE ANSWER FLIPS TO "NO FACE ON MERIT".
+  // It does not degrade to a thin face.
+  //
+  // WHAT IT IS FOR, MUSICALLY: it is the rack's only ANALYSIS module — it turns
+  // "how loud is this right now" into a CV, plus an "is it playing" gate. The
+  // verb is MAKING ONE SOUND PLAY ANOTHER: a drum loop opening a filter, a vocal
+  // firing an envelope.
+  //
+  // THE RANKING ARGUMENT, FROM THE DSP:
+  //
+  //   sensitivity  rank 1 because it is THE ONLY CONTROL THAT CAN SILENCE AN
+  //                OUTPUT. `GATE_THRESHOLD` is a bare constant that does NOT
+  //                scale with SENS, so holding the gate open needs an input
+  //                amplitude of π·0.1/(2·sens) — which exceeds FULL SCALE below
+  //                sens = 0.157080. The bottom 15.71 % of a dial whose whole job
+  //                is to open this output cannot open it, on any signal (#1914).
+  //                ⚠ THIS ARGUMENT WOULD BE WRONG for a follower whose threshold
+  //                scales with sensitivity, which is the usual design; it is
+  //                defended by that constant being bare, and CONFIRMED on a real
+  //                rendered graph (art/scenarios/moog912/face-audit.test.ts)
+  //                rather than derived and hoped for.
+  //   smoothing    rank 2: it shapes the contour and never gates it. Not inert —
+  //                every position changes the ENV — just strictly less
+  //                consequential.
+  //
+  // Tier ladder, in one line because there is no hierarchy to unfold: the glyph
+  // must be 'none' (below), so the compact cap is LANE_ROW_MAX_CELLS = 3 and
+  // BOTH controls fit from compact upward; the ladder only bites at mini, which
+  // shows SENS.
+  //
+  // ⚠ NO `pages`, DELIBERATELY. Both knobs are the same idea — how the follower
+  // listens — so the dock is single-page. A second page would cost a ~81 px band
+  // on a dock that folds at 720p and would exist only to get a header, which the
+  // skill refuses by name.
+  face: {
+    order: ['sensitivity', 'smoothing'],
+
+    // ⚠ 'none' IS FORCED, NOT CHOSEN. This module's outputs are `env` (cv) and
+    // `gate` (gate) — there is no `type: 'audio'` output at all — so
+    // `primaryAudioOutPortId` returns NULL and 'meter', 'waveform', 'envelope'
+    // and 'algorithm' ALL resolve to `{kind:'static'}`, the dead-glyph state
+    // the lint refuses. ⚠ AND 'envelope' DOES NOT RESCUE IT despite this being
+    // visibly an envelope module: that resolver keys on four params literally
+    // named attack/decay/sustain/release, and this module has sensitivity and
+    // smoothing. Same mechanism as #1888, of which this is the second witness
+    // (moog911 was the first) — an arm with two modules it exists to serve and
+    // cannot reach either.
+    glyph: 'none',
+
+    // THE HERO: the sensitivity dial, plus the two numbers that ARE this face's
+    // reason to exist. Their reach is DISJOINT, so each is the other's control:
+    //
+    //   response  ← smoothing ONLY. The detector's cutoff in Hz. The dial is a
+    //              bare 0..1 and the mapping is INVERTED and logarithmic —
+    //              1 Hz at SMOOTH 1, 50 Hz at SMOOTH 0, a 5.64-octave span in
+    //              which turning the knob UP makes the number go DOWN. At the
+    //              shipped 0.5 it is 7.07 Hz.
+    //   gate      ← sensitivity ONLY. How loud the input must be, in dBFS, to
+    //              HOLD the gate open — and `—` when that exceeds full scale,
+    //              which is the only place #1914's dead zone is visible.
+    hero: {
+      control: 'sensitivity',
+    },
+  },
+
   docs: {
     explanation:
       "A clean-room recreation of the Moog 912 Envelope Follower — a passive ANALYSIS utility that listens to an incoming audio signal's loudness and turns it into a smooth control voltage (an 'envelope') plus a gate that's high while the input is sounding. Internally the audio is full-wave rectified (|x|, turning the bipolar waveform into a magnitude) and lowpass-filtered into a slowly-varying level; a steep threshold on that level produces the gate. Patch a drum loop, vocal, or any live source in, and use ENV to open a VCA/filter that tracks the input's dynamics, or GATE to fire an envelope generator from an external sound. Mental model: 'how loud is this right now?' as a CV, plus a 'is it playing?' on/off gate. The two knobs trade off how hard the signal is measured (SENS) and how lazily the envelope reacts (SMOOTH).",
@@ -147,9 +236,9 @@ export const moog912Def: AudioModuleDef = {
     },
     controls: {
       sensitivity:
-        "Input gain into the follower — how hard the incoming signal hits the detector. Higher SENS makes quiet material produce a bigger envelope (and opens the gate more readily); lower SENS only responds to loud peaks.",
+        "Input gain into the follower — how hard the incoming signal hits the detector. Higher SENS makes quiet material produce a bigger envelope (and opens the gate more readily); lower SENS only responds to loud peaks. ⚠ The GATE's detection level is a FIXED constant that does not scale with this knob, so SENS alone decides how loud the input must be to open it — and below about 0.157 nothing can: the level required passes full scale, so the bottom sixth of this dial cannot open the GATE output on any signal at all, however loud (#1914). The ENV output keeps working there; it is only the gate that goes unreachable. The faceplate prints the required input level in dBFS, and a dash once it becomes impossible.",
       smoothing:
-        "How lazily the envelope reacts: more SMOOTH lowers the detector's lowpass cutoff so the CV glides slowly and ignores fast transients (a smooth contour); less SMOOTH speeds it up so the envelope snaps to each peak (a punchy, percussive follow).",
+        "How lazily the envelope reacts: more SMOOTH lowers the detector's lowpass cutoff so the CV glides slowly and ignores fast transients (a smooth contour); less SMOOTH speeds it up so the envelope snaps to each peak (a punchy, percussive follow). ⚠ The dial is a bare 0..1 but the thing it sets is a frequency, and the mapping is INVERTED and logarithmic: 50 Hz at 0, 1 Hz at 1 — a 5.6-octave span in which turning the knob UP makes the number go DOWN. The factory setting of 0.5 is 7.07 Hz, which neither the knob nor its label can tell you, so the faceplate prints it.",
     },
   },
 
@@ -197,6 +286,15 @@ export const moog912Def: AudioModuleDef = {
         ['gate', { node: gateShaper, output: 0 }],
       ]),
       setParam(paramId, value) {
+        // ⚠ REFUSE A NON-FINITE WRITE (#1914). An AudioParam that receives NaN
+        // is poisoned for good: every sample downstream of it is NaN, so this
+        // module's ENV and GATE both went dead and STAYED dead until something
+        // happened to write a finite value again — one bad write bricking the
+        // node. Dropping the write leaves the node at its last good value,
+        // which is the only recovery a passive graph has. Finite values,
+        // including out-of-range ones, are unaffected: they clamp downstream
+        // exactly as before.
+        if (!Number.isFinite(value)) return;
         if (paramId === 'sensitivity') {
           inputGain.gain.setValueAtTime(value, ctx.currentTime);
         } else if (paramId === 'smoothing') {

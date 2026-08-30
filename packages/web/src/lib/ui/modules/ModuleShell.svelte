@@ -49,7 +49,7 @@
   import { cardParams, portsFromDef } from './card-kit';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import VideoTileThumb from './VideoTileThumb.svelte';
-  import { Button, ColorField, KnobConic, NeonFader, ParamGrid, ScopeScreen, Segmented, Selector, Toggle, VuMeter, XyPad } from '$lib/ui/controls';
+  import { Button, ColorField, HueWheel, KnobConic, NeonFader, ParamGrid, ScopeScreen, Segmented, Selector, TextEntry, Toggle, VuMeter, XyPad } from '$lib/ui/controls';
   import {
     curatedFace,
     dockFacePlan,
@@ -61,7 +61,6 @@
     bandHeaderPlan,
     facePageHeader,
     heroFacePlan,
-    readoutText,
     type FaceplateDefLike,
   } from '$lib/ui/workflow/dock-faceplate-model';
   import { isAnnotating } from '$lib/ui/annotate-mode.svelte';
@@ -70,6 +69,9 @@
   import { dockBandVisible, dockTabPlan } from '$lib/ui/workflow/dock-tabs-model';
   import { consoleGridCols, faceConsoleGridCols } from '$lib/ui/workflow/console-grid';
   import { dockRowPlan, type RowPlanDefLike } from '$lib/ui/workflow/dock-row-plan';
+  // BAND FOCUS — the pure predicate; the shell never re-derives it.
+  import { visibleBandIds } from '$lib/ui/workflow/band-focus-model';
+  import { rackStatusPlan } from '$lib/ui/workflow/rack-status-model';
   import {
     declaredParamCells,
     momentaryParamIds,
@@ -87,11 +89,13 @@
     laneFaceTier,
     laneBodyPlan,
     dockFullViewHeadPlan,
+    faceMonitorPlan,
     isFaceplateView,
     roleLineForDef,
     DOCK_HERO_GLYPH_W,
     PLATE_ROW_H,
     laneGlyphFor,
+    laneFlowLabel,
     type ShellDefLike,
     type ShellView,
   } from '$lib/ui/workflow/module-shell-model';
@@ -103,6 +107,7 @@
     type ShellGlyphTap,
   } from '$lib/ui/workflow/shell-glyph-live';
   import { loadShellExtension, type ShellExtension } from '$lib/ui/workflow/shell-extensions';
+  import ModuleNameLabel from '$lib/ui/ModuleNameLabel.svelte';
   import {
     sineWaveSamples,
     burstWaveSamples,
@@ -191,6 +196,14 @@
     void nodeVersion(id);
     const live = patch.nodes[id] as ModuleNode | undefined;
     return resolveDisplayName(live ?? node, patch.nodes as Record<string, ModuleNode | undefined>);
+  });
+
+  /** The node the rename label edits. Same resolution `displayName` uses — the
+   *  LIVE Y.Doc entry when it exists, so an edit writes through to the doc and
+   *  a peer's rename re-renders here. */
+  let liveNode = $derived.by(() => {
+    void nodeVersion(id);
+    return (patch.nodes[id] as ModuleNode | undefined) ?? node;
   });
 
   let spine = $derived(spineCableVar(def));
@@ -453,6 +466,10 @@
   let topologyValue = $derived.by(() => {
     const b = binding;
     if (b.kind !== 'algorithm') return 0;
+    // ⚠ NULLABLE SINCE THE LAYOUT-SOURCE WIDENING: an extension-fed topology has
+    // no param behind it, so there is no value to read and 0 is the honest
+    // answer rather than a lookup of undefined.
+    if (b.paramId === null) return 0;
     void nodeVersion(id);
     return params.paramVal(b.paramId);
   });
@@ -460,6 +477,10 @@
   let topologyLabel = $derived.by(() => {
     const b = binding;
     if (b.kind !== 'algorithm') return '';
+    // ⚠ NO PARAM, NO CAPTION. The caption exists because an FM patch is named
+    // by its algorithm NUMBER; a layout-fed glyph has no such number, and
+    // printing one would be inventing a value. The diagram is the whole glyph.
+    if (b.paramId === null) return '';
     void nodeVersion(id);
     const pd = paramDef(b.paramId);
     const v = topologyValue;
@@ -487,7 +508,36 @@
   // hero + bands === the plan that went in, exactly once each — is asserted on
   // every faced module by module-face-lint, not discovered in a browser.
   let heroSplit = $derived(heroFacePlan(def as FaceplateDefLike | undefined, allDockBands));
-  let dockBands = $derived(allDockBands ? heroSplit.bands : null);
+  // ── BAND FOCUS (owner ruling, 2026-08-20) ────────────────────────────────
+  //
+  // A param's VALUE decides which control bands render, so the picture and the
+  // controls steering it share the plate instead of the plate carrying every
+  // block's knobs at once. Read as a PREDICATE — never `why`, which is a
+  // reviewer-facing argument and is asserted unreachable from this file.
+  //
+  // ⚠ FILTERED HERE, BEFORE `dockRowPlan`, NOT AFTER IT. The row plan PACKS
+  // bands into rows; filtering its output would leave rows sized for bands that
+  // are no longer there (a packed pair rendering as a lone band inside a
+  // `.dock-row` wrapper). Filtering the input means the visible set is packed on
+  // its own merits, and a face showing one band gets the plain solo layout.
+  //
+  // ⚠ AND IT UNMOUNTS, like MONITOR MODE and unlike a TAB RAIL. A rail hides
+  // with CSS because faces-parity matches hidden elements and would read an
+  // unmount as a face that lost its controls; the point HERE is to reclaim the
+  // space, which only unmounting does. That is safe for the parity sweep for a
+  // different reason than monitor mode's: monitor mode is a per-node runtime
+  // state no gate ever observes, whereas band focus reads a PARAM whose DEFAULT
+  // is focused — so the sweep explicitly drives the face to a declared
+  // `showAllOn` value first (`showAllBands`), and a companion leg proves the
+  // hiding is real.
+  let bandFocusDecl = $derived((def as FaceplateDefLike | undefined)?.face?.bandFocus);
+  let focusedBandIds = $derived(
+    visibleBandIds(bandFocusDecl, bandFocusDecl ? params.paramVal(bandFocusDecl.param) : undefined),
+  );
+  // `dockBands` — the band set after BOTH filters — is declared further down,
+  // beside `rackStatus`: the rack-global filter needs `headPlan.extBody` (the
+  // never-a-blank-plate precondition), and that plan is resolved after the hero
+  // split it depends on.
   let hero = $derived(heroSplit.hero);
 
   /**
@@ -552,23 +602,86 @@
    *  the "dock only" half of the policy cannot be forgotten at the call site. */
   let extBody = $derived(headPlan.extBody ? (ext?.fullViewBody ?? null) : null);
 
+  // ── RACK-GLOBAL STATUS (#2024) ───────────────────────────────────────────
+  //
+  // A THIRD axis, and the only one whose input is not this node: which OTHER
+  // nodes exist. `cvBuddy`'s RUN + CLOCK are single-source — the id-smallest
+  // instance of either kind drives ES-9 jacks 7/8 — so on every other instance
+  // the clock band is dials wired to nothing, and the legacy card has always
+  // hidden it. Read as a PREDICATE, never `why`, which is a reviewer-facing
+  // argument asserted unreachable from this file.
+  //
+  // ⚠ IT SITS HERE, AFTER `headPlan`, BECAUSE THE PRECONDITION IS THE POINT.
+  // `rackStatusPlan` may only suppress a band while the module's own body is
+  // painting (`headPlan.extBody`) — the `faceMonitorPlan` never-a-blank-plate
+  // rule, and sharper here, since cvBuddy's suppressed band holds BOTH of its
+  // params. Declaring it above the plan it depends on is not merely a TDZ
+  // error, it is the wrong reading order.
+  //
+  // ⚠ `nodesStructuralVersion()` IS THE DEPENDENCY, not `patch.nodes` alone.
+  // The answer changes when a SIBLING is added or deleted, which is a
+  // structural edit to a map this component otherwise only reads by key — the
+  // same subscription `CvBuddyBody` has always used for the identical read.
+  let rackStatus = $derived(
+    rackStatusPlan({
+      view,
+      declared: (def as FaceplateDefLike | undefined)?.face?.rackStatus,
+      extBody: headPlan.extBody,
+      nodeId: id,
+      nodes: (void nodesStructuralVersion(), patch.nodes) as Record<
+        string,
+        { type?: string } | undefined
+      >,
+    }),
+  );
+
   /**
-   * The value a hero/sidebar READOUT prints.
+   * The bands the dock actually renders, after BOTH visibility filters.
    *
-   * ⚠ READS THE DURABLE PARAM, deliberately — the same call the topology
-   * caption makes and for the same reason. `params.live` asks the ENGINE, and
-   * an engine reader polled from MARKUP is not reactive: Svelte tracks the
-   * signals read during render, and `readParam` is a plain function call, so
-   * the readout would freeze at whatever the first render happened to see.
-   * Worse, with no audio engine booted it hands back a construction-time shadow
-   * that is a NUMBER, so the `??` fallback never fires and the panel prints a
-   * value the patch abandoned. The durable param re-derives on `nodeVersion`,
-   * which is what a local edit, a remote edit and MIDI-learn all bump.
+   * ⚠ FILTERED HERE, BEFORE `dockRowPlan`, NOT AFTER IT — the reason band focus
+   * states at its own declaration: the row plan PACKS bands into rows, so
+   * filtering its OUTPUT leaves rows sized for bands that are no longer there.
+   * Both filters therefore operate on the same input, in one place.
    */
-  function readoutValue(pid: string): number | undefined {
-    void nodeVersion(id);
-    return params.paramVal(pid);
-  }
+  let dockBands = $derived(
+    allDockBands
+      ? (focusedBandIds
+          ? heroSplit.bands.filter((b) => focusedBandIds!.has(b.id))
+          : heroSplit.bands
+        ).filter((b) => !rackStatus.hiddenBands.has(b.id))
+      : null,
+  );
+
+  /**
+   * MONITOR MODE (#2009) — "hide the controls and watch the picture", the
+   * `node.data.hideControls` affordance five legacy cards mount and promotion
+   * would otherwise DELETE from both surfaces at once.
+   *
+   * ⚠ THE FLAG IS READ, NEVER TRUSTED ALONE. `hideControls` is persisted and
+   * collab-synced, so a rack saved from the legacy card hands it to this
+   * faceplate on the very first render of a module that may not have declared
+   * `monitor` at all. `faceMonitorPlan` requires the DECLARATION and a painting
+   * `extBody` alongside it, which is what stops an old patch blanking a face
+   * that has no picture to fall back on. The whole policy is in that one pure
+   * function, unit-tested both ways; nothing here re-decides it.
+   *
+   * ⚠ THE TOGGLE ITSELF IS NOT HERE. It lives on the module's own
+   * `fullViewBody`, beside SCREEN ON/OFF — the same seam, the same
+   * `mutateNode` idiom, and the same reason (`ModuleShell` may not import
+   * module-owned code). Keeping it there is also what removes the LEGACY
+   * CARD'S POINTER TRAP: on the card the `–` button was inside the region it
+   * hid, so the only way back was an undiscoverable double-click on the body.
+   * Here the body always paints, so the button that turned monitor mode on is
+   * the button that turns it off.
+   */
+  let monitorPlan = $derived(
+    faceMonitorPlan({
+      view,
+      declared: !!(def as FaceplateDefLike | undefined)?.face?.monitor,
+      extBody: headPlan.extBody,
+      hidden: !!node?.data?.hideControls,
+    }),
+  );
 
   /** PF-16 — the tab roster (null for a face that renders as one column), and
    *  the SAME pure answer DockFullView's rail computes. A rail without the
@@ -578,7 +691,7 @@
    *  `'drawer'` face is never tabbed — the plan answers that, this file does not
    *  re-test it. Passing the view rather than `null`-ing the result here is what
    *  keeps ONE authority for "is this face tabbed". */
-  let dockTabs = $derived(dockTabPlan(dockBands, view));
+  let dockTabs = $derived(dockTabPlan(dockBands, view, def as FaceplateDefLike | undefined));
 
   /**
    * PF-21 — the ROW PLAN: which section bands share a horizontal row.
@@ -741,13 +854,24 @@
 
   let ports = $derived(def ? { inputs: portsFromDef(def.inputs ?? []), outputs: portsFromDef(def.outputs ?? []) } : { inputs: [], outputs: [] });
 
-  /** Signal-flow label (mock `.flow` "▶ ch1"): the module's lane membership. */
-  let flowLabel = $derived.by(() => {
-    const d = node.data as { channel?: number; sendSlot?: number } | undefined;
-    if (d?.channel != null) return `▶ ch${d.channel}`;
-    if (d?.sendSlot != null) return `▶ s${d.sendSlot}`;
-    return '▶ out';
-  });
+  /** Signal-flow label (mock `.flow` "▶ ch1"): the module's lane membership.
+   *
+   *  ⚠ THIS WAS THE UNREPAIRED COPY, AND WHERE IT LIVES IS THE LESSON. The
+   *  identical derivation threw in `ModuleShellPlaceholder` — `node.data` is an
+   *  open record each module owns its own shape of, so the `{ channel?: number }`
+   *  cast was a claim rather than a fact, and `tvLibrarian` writes `data.channel`
+   *  as a `TvChannelMeta` OBJECT whose Y-backed proxy has no `Symbol.toPrimitive`.
+   *  The fix extracted `laneFlowLabel`… and pointed the PLACEHOLDER at it, which
+   *  is the tile an UN-MIGRATED module gets. This file is the tile a PROMOTED one
+   *  gets, so the repair covered the surface that had been looked at and left the
+   *  post-promotion twin throwing — invisible until a module carrying that data
+   *  shape was actually promoted.
+   *
+   *  ⚠ AND THE FAILURE IS NOT LOCAL. A throw inside a `$derived` takes the whole
+   *  xyflow node render down, which stops the subtree updating: the symptom was a
+   *  dock body whose DOM froze after a tune while the graph write had landed
+   *  correctly — i.e. it read as a broken TOGGLE two components away. */
+  let flowLabel = $derived(laneFlowLabel(node.data as Readonly<Record<string, unknown>> | undefined));
 
   /** TRUE while THIS module occupies a dock full-view pane — the rail pill
    *  flips to "✕ CLOSE" (reactive on dockStore.fullViewNodeIds; per-module
@@ -766,7 +890,14 @@
      dock surfaces (#1739) — its CSS is about "this is the full faceplate, not a
      192×180 tile", which is equally true in the pinned tray. `data-shell-view`
      is what distinguishes the two HOSTS, for the gates and for any rule that
-     genuinely needs one and not the other. -->
+     genuinely needs one and not the other.
+
+     `data-face-monitor` is MONITOR MODE's observable ('on' / 'off'), and it is
+     ABSENT on a face that does not declare one — an `undefined` attribute is
+     not emitted, so every existing faceplate's DOM (and therefore every dock
+     VRT baseline) is byte-identical here. Absent vs 'off' is a real
+     distinction and the gates read it: absent means "this face has no monitor
+     mode", 'off' means "it has one and the controls are showing". -->
 <div
   class="module-shell rl-tile"
   class:dock-full={faceplateView}
@@ -775,6 +906,7 @@
   data-shell-type={node.type}
   data-shell-tier={effTier}
   data-shell-view={view}
+  data-face-monitor={monitorPlan.available ? (monitorPlan.bandsHidden ? 'on' : 'off') : undefined}
   style={`--spine:${spine};--domain:${spine}`}
 >
   <span class="rl-spine" aria-hidden="true"></span>
@@ -784,7 +916,19 @@
        concise category — the type would just repeat the name row). -->
   <div class="tile-top">
     <span class="tile-rule" aria-hidden="true"></span>
-    <span class="tile-name" title={displayName}>{displayName}</span>
+    <!-- ⚠ EDITABLE, NOT A LABEL (#2241). Renaming lives on `node.data.name`
+         and is how the LIVECODE DSL addresses a module, so it is not chrome —
+         and every module lost it the moment it was promoted, because the face
+         painted the name as a plain <span> while the affordance stayed behind
+         in the legacy card's ModuleTitle.
+
+         `variant="inherit"` keeps the tile's own type (14.5px/800): the label
+         hardcodes 0.7rem monospace for the card, which has no type of its own
+         to inherit. A rename affordance that restyled 45 faceplates would be a
+         redesign, not a repair. -->
+    <span class="tile-name" title={displayName}>
+      <ModuleNameLabel node={liveNode} testIdSuffix="tile-name-label" variant="inherit" />
+    </span>
   </div>
   <div class="tile-kind">
     <span class="tile-badge">{roleLine}</span>
@@ -808,8 +952,37 @@
     {#if ctl.kind === 'param'}
       {@const pd = paramDef(ctl.paramId ?? ctl.key)}
       {#if pd}
+        {@const paramCell = shellCellFor(node.type, ctl)}
         {@const cellKind = paramCellKind(pd, momentary, faceplateView ? 'dock' : 'lane', declaredCells)}
-        {#if cellKind === 'momentary'}
+        <!-- ⚠ A PARAM-SHAPED SHELL CELL WINS OVER THE GENERIC LADDER, and this
+             branch is why #2144's warped fader shipped inert. `shellCellFor`
+             refusing param controls was only HALF the reason it was unreachable:
+             the other half is right here — this `{#if ctl.kind === 'param'}` arm
+             renders the generic control and the shell-cell block below sits in
+             its `{:else}`, so a param never reached the registry at RENDER time
+             no matter what the resolver returned.
+             ⚠ AND ONLY THE VRT BASELINE COULD SEE IT. Fixing the resolver alone
+             made every unit assertion pass — the cell resolved, the reachability
+             sweep was green — while the dock still painted a KNOB. The capture
+             came back "0 baselines committed", which is the red flag that says
+             the pixels never moved. -->
+        {#if paramCell?.kind === 'warped-fader'}
+          <div class="kcol ms-cell-fader" data-cell-kind={ctl.kind} data-cell-control="warped-fader" data-cell-key={ctl.key} style:--ka={ka}>
+            <NeonFader
+              value={paramCell.toKnob(params.paramVal(paramCell.paramId))}
+              min={0}
+              max={1}
+              defaultValue={paramCell.toKnob(pd.defaultValue)}
+              label={paramCell.label}
+              curve="linear"
+              ticks={paramCell.landmarks.map((lm) => ({ frac: paramCell.toKnob(lm.value), label: lm.label }))}
+              onchange={(k: number) => paramWrite(paramCell.paramId)(paramCell.fromKnob(k))}
+              moduleId={id}
+              paramId={paramCell.paramId}
+              formatValue={(k: number) => (paramCell.format ?? String)(paramCell.fromKnob(k))}
+            />
+          </div>
+        {:else if cellKind === 'momentary'}
           <!-- MOMENTARY press-pad (declared on face.momentary): fires on the
                press edge and RETURNS TO REST on release. It must never be a
                rotary — dragging a latching knob to 1 held the pad down, masked
@@ -917,6 +1090,34 @@
               paramId={pd.id}
               hero={faceplateView}
               compact={!faceplateView}
+            />
+          </div>
+        {:else if cellKind === 'hue'}
+          <!-- DECLARED HUE ANGLE (`face.paramCells['x'] = 'hue'`): the colour
+               WHEEL. Separate from `color` beside it because the param shapes
+               are different — `color` is DISCRETE packed RGB, this is a
+               CONTINUOUS 0..1 angle — and because a hue WRAPS, which is the one
+               scalar a KnobConic cannot present: its end stops would fall in the
+               middle of a continuous space, so travelling between two adjacent
+               reds means dragging back through every other colour.
+
+               The RANGE comes from the DEF (`pd.min`/`pd.max`), never re-typed
+               in the primitive, and module-face-lint separately asserts the span
+               is the 0..1 turn — so the two cannot drift (the backdraft class).
+
+               ⚠ IT PAINTS NO VALUE. The angle lives in `aria-valuetext` and the
+               ring marker is the visual readout, which is what the resting-text
+               ruling requires of every faceplate control. -->
+          <div class="kcol ms-cell-hue" data-cell-kind="param" data-cell-control="hue" data-cell-key={ctl.key} style:--ka={ka}>
+            <HueWheel
+              value={params.paramVal(pd.id)}
+              min={pd.min}
+              max={pd.max}
+              label={pd.label}
+              onchange={paramWrite(pd.id)}
+              readLive={params.live(pd.id)}
+              paramId={pd.id}
+              hero={faceplateView}
             />
           </div>
         {:else if cellKind === 'xy' && xyPads.get(pd.id) && paramDef(xyPads.get(pd.id)!.y)}
@@ -1067,6 +1268,12 @@
           />
           {#if faceplateView}<span class="cell-cap">{ctl.label}</span>{/if}
         </div>
+      <!-- ⚠ NO `warped-fader` ARM HERE, DELIBERATELY. This chain renders FAMILY /
+           STATIC cells, and a warped fader binds a PARAM by definition — so its
+           render lives in the `ctl.kind === 'param'` arm above. An arm here is
+           exactly what shipped in #2144: unreachable, because a param control
+           never enters this block. `shell-cells.test.ts` asserts there is ONE
+           warped-fader render site and that it is the param one. -->
       {:else if cell?.kind === 'toggle'}
         <div class="kcol ms-cell-act" data-cell-kind={ctl.kind} data-cell-control="toggle" data-cell-key={ctl.key} style:--ka={ka}>
           <Toggle
@@ -1114,6 +1321,32 @@
               data-testid={`${cellTestId(ctl)}-status`}
             >{cellStatus[ctl.key]?.error ?? cellStatus[ctl.key]?.status}</span>
           {/if}
+        </div>
+      {:else if cell?.kind === 'entry'}
+        <!-- TYPED ENTRY (#1509) — the ONE cell whose CONTENT is the control.
+             Every other cell paints a control and keeps its value in
+             `aria-valuetext`; this one has no non-text form, so the string it
+             shows IS the thing being operated rather than a readout of it.
+             That is the whole of the `'authored-entry'` licence in
+             `face-resting-text-source.test.ts`, and it is held STRUCTURALLY:
+             the value reaches the DOM only as `value=` on a writable <input>
+             (a readout would need a text node, and there is none), and the
+             field is never `readonly` or `disabled` — an inert box painting a
+             computed string is the "there but hidden" shape refused by name.
+             The module never sees raw text: `parse` decides validity and a
+             rejection writes NOTHING, so no silent clamp is expressible. -->
+        <div class="kcol ms-cell-entry" data-cell-kind={ctl.kind} data-cell-control="entry" data-cell-key={ctl.key} style:--ka={ka}>
+          <TextEntry
+            stored={cell.text(liveCell.n)}
+            parse={cell.parse}
+            onCommit={(v) => cell.onCommit(id, v)}
+            ariaLabel={cell.label}
+            placeholder={cell.placeholder}
+            maxLength={cell.maxLength}
+            title={cell.title ?? cell.label}
+            testid={cellTestId(ctl)}
+          />
+          {#if faceplateView}<span class="cell-cap">{cell.label}</span>{/if}
         </div>
       {:else if cell?.kind === 'panel'}
         <!-- BESPOKE PANEL (PF-14): the module's own component — a live SVG
@@ -1327,21 +1560,38 @@
     {/if}
 
     <!-- PF-20 — the HERO RAIL: the module's own PICTURE + the promoted control
-         beside it (a big dial with a big readout) and its audition, then the
-         labelled readouts UNDER them as a full-width strip. Every piece is
-         optional and the rail only renders when at least one is present — a
-         face that declares no hero keeps the bare capped glyph band it has
-         today.
+         beside it and its audition. Every piece is optional and the rail only
+         renders when at least one is present — a face that declares no hero
+         keeps the bare capped glyph band it has today.
 
-         ⚠ THE READOUTS ARE A ROW BELOW THE STAGE, NOT A COLUMN BESIDE IT
-         (owner, 2026-08-02: "generally this row of controls should be below
-         the graphic"). They were the tail of `.hero-side`, so a face's derived
-         values competed with its own picture for horizontal room and dropped
-         to a second line at exactly the widths where the graph mattered most.
-         Below, they get the full faceplate width — which is also the reading
-         order the numbers want: the graphic states what the voice IS, the
-         strip states what it MEASURES. -->
-    {#if heroGlyph || hero}
+         ⚠ THERE IS NO READOUT STRIP HERE ANY MORE, and re-adding one — under
+         this name or another — is the mistake this note exists to prevent. A
+         full-width row of labelled derived values used to sit under the stage
+         on fifty of the faces. The owner removed the shape outright (2026-08-19,
+         on moog984: "you don't need to have the out-silent text at all … we
+         absolutely have to stop doing [things] like that. i said minimal, and good
+         use of screen real estate"). The value belongs on the control it
+         describes, in `aria-valuetext`. See `ModuleFaceHero` in graph/types.ts
+         for the full ruling set and `face-resting-text-source.test.ts` for the
+         gate that denies the SHAPE rather than this one mechanism. -->
+    <!-- ⚠ MONITOR MODE (#2009) SUPPRESSES EVERYTHING BELOW THE EXTENSION BODY
+         — the hero band here and the `.dock-pages` bands after it, which is
+         the whole affordance: "hide the controls and it becomes a monitor".
+         `monitorPlan.bandsHidden` can only be true when `extBody` is painting
+         (faceMonitorPlan), so this can never leave the plate empty.
+
+         ⚠ IT UNMOUNTS RATHER THAN HIDES, and that is the opposite of the
+         TABBED face two blocks down, deliberately. A tab rail hides its
+         inactive bands with CSS because `faces-parity` asserts one cell per
+         param across the WHOLE faceplate and would read an unmount as a face
+         that lost forty controls. Monitor mode is a per-NODE runtime state
+         that no parity gate ever observes — those gates evaluate a freshly
+         opened faceplate, where `hideControls` is absent ⇒ false — and the
+         point of the mode is to RECLAIM the space, which `display:none` on a
+         scrolling plate would do but a hidden-but-mounted band would not. The
+         controls' values live in the graph, not in the cells, so nothing is
+         lost across a flip. -->
+    {#if (heroGlyph || hero) && !monitorPlan.bandsHidden}
       <div
         class="tile-body dock-hero"
         class:has-hero={!!hero}
@@ -1377,16 +1627,6 @@
                 {/if}
               </div>
             {/if}
-            {#if hero.readouts.length}
-              <dl class="hero-readouts" data-testid="face-hero-readouts">
-                {#each hero.readouts as r (r.label)}
-                  <div class="hero-ro" data-hero-readout={r.paramId ?? r.valueId ?? r.label}>
-                    <dt>{r.label}</dt>
-                    <dd>{readoutText(r, (def?.params ?? []), readoutValue)}</dd>
-                  </div>
-                {/each}
-              </dl>
-            {/if}
           </div>
         {/if}
       </div>
@@ -1396,6 +1636,7 @@
          compressor switch and send all share one x. Absent (and the DOM
          byte-identical to before) on every face with fewer than two console
          bands. -->
+    {#if !monitorPlan.bandsHidden}
     <div
       class="dock-pages"
       class:face-console={faceConsoleCols != null}
@@ -1428,6 +1669,7 @@
         {/if}
       {/each}
     </div>
+    {/if}
     <!-- `solo` = this band is a DIRECT child of `.dock-pages` (a row of one),
          which is exactly the condition under which it can subgrid onto the
          face-wide ruler. A band inside a `.dock-row` flex wrapper cannot, and
@@ -1602,6 +1844,32 @@
        grouping — and the fix is not `sections={…}` on a whim, because in
        sectioned mode PatchPanel derives the HANDLE STACK from the sections, so
        a section list that drops a port drops its cables. -->
+  <!-- THE MODULE'S OWN TILE CONTROLS (`ShellExtension.tileBody`) — the things
+       that are not ParamDefs and so cannot be face cells, but which a player
+       must reach WITHOUT expanding: cameraInput's device picker, capture lamp
+       and acquire gesture.
+
+       ⚠ GATED ON `!extBody`, NOT on the view. The DOCK already paints
+       `fullViewBody`, which carries the same controls at full width; rendering
+       both would put two live pickers on screen for one node — and, since a
+       faced module's lane tile and its dock full view can be open AT THE SAME
+       TIME, two elements behind every one of that surface's testids. The two
+       slots are counterparts, never siblings.
+
+       Saying it as "wherever the full-view body is NOT painting" is the honest
+       form of that invariant, and it follows `dockFullViewHeadPlan` if the dock
+       gating ever moves. A raw `view !== 'dock-full'` here would ALSO be a
+       drawer falling into the lane branch — the exact class
+       `module-shell-drawer-view` refuses (#1739), and it caught this.
+
+       It sits BELOW the param bands and ABOVE the jack rail deliberately: it is
+       module state, not patching, and the rail must stay the last thing in the
+       tile so the cable surface is always in the same place. -->
+  {#if !extBody && ext?.tileBody}
+    {@const ExtTileBody = ext.tileBody}
+    <ExtTileBody nodeId={id} />
+  {/if}
+
   {#if jackRail}
     <!-- ⚠ NO EXPAND PILL IN THE DRAWER. `expand()` calls
          `dockStore.openFullView(id)`, and the store keeps the bottom drawer and
@@ -1737,6 +2005,24 @@
     max-width: none;
     align-items: flex-start;
     gap: 4px;
+  }
+
+  /* TYPED-ENTRY cell. Sized like a knob COLUMN rather than like a selector:
+     the field is a short token (a note name, a filename stem), not a roster,
+     so it has not earned a roster's width. The floor is what a 4-character
+     monospace value plus the focus ring needs; the ceiling keeps a long
+     placeholder from stretching a band. */
+  .ms-cell-entry {
+    justify-content: center;
+    min-width: 52px;
+    /* A note name is at most four glyphs ('g#-1'); a filename stem is longer
+       but ellipsises rather than earning a roster's width. Measured: at 96 px
+       four of these cost 384 px of a band, at 72 px they cost 288. */
+    max-width: 72px;
+  }
+  .rl-tile.dock-full .ms-cell-entry {
+    align-items: center;
+    gap: 3px;
   }
 
   /* The cell's own caption under a dock-tier selector/import (the DECLARED
@@ -1939,57 +2225,6 @@
   }
   .hero-ctl :global(.label) {
     font-size: 10px;
-  }
-  /* Labelled hero values. A <dl> because that is what a label→value list is;
-     the visual is a row of caption-over-number pairs, at the same typographic
-     weight as the hero dial's own readout.
-     A FULL-WIDTH STRIP under the stage: it starts at the faceplate's left edge
-     and gets the whole width, so a three-value strip reads as one line of
-     instrumentation rather than as the overflow of the row above it. The
-     hairline is the same 1px `--border` rule `.dock-page` uses to separate a
-     band — this strip is the hero's own footer in that same vocabulary. */
-  .hero-readouts {
-    display: flex;
-    align-items: flex-end;
-    gap: 22px;
-    margin: 0;
-    width: 100%;
-    min-width: 0;
-    flex-wrap: wrap;
-  }
-  /* ⚠ THE HAIRLINE IS CONDITIONAL, and it has to be: a hero may be READOUTS
-     ONLY (no picture, no promoted control — a bare measurement strip, which
-     `heroFacePlan` explicitly supports and the batch-3 mocks propose). Then the
-     strip IS the whole hero and a rule above it would separate it from the page
-     header — i.e. draw a line under the title. The adjacent-sibling combinator
-     says exactly what is meant: the hairline belongs BETWEEN the stage and the
-     strip, so no stage means no hairline. */
-  .hero-stage + .hero-readouts {
-    padding-top: 8px;
-    border-top: 1px solid var(--border, #2c3037);
-  }
-  .hero-ro {
-    display: flex;
-    flex-direction: column;
-    gap: 3px;
-    min-width: 0;
-  }
-  .hero-ro dt {
-    font-family: var(--mono, ui-monospace, monospace);
-    font-size: 9px;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-    color: var(--text-dim, #9aa3ad);
-  }
-  .hero-ro dd {
-    margin: 0;
-    font-family: var(--mono, ui-monospace, monospace);
-    font-size: 17px;
-    line-height: 1.05;
-    font-weight: 700;
-    letter-spacing: 0.01em;
-    color: var(--domain, var(--accent));
-    white-space: nowrap;
   }
   .dock-pages {
     display: flex;

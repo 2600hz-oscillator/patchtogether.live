@@ -19,6 +19,7 @@
 
   import { onMount, onDestroy, untrack } from 'svelte';
   import { nodeMedia, type NodeMediaLease } from '$lib/ui/media/node-media-registry';
+  import { cameraStatus } from '$lib/ui/media/camera-status-registry';
   import { acquireCameraStream } from '$lib/ui/camera-acquire';
   import { type NodeProps } from '@xyflow/svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
@@ -33,6 +34,7 @@
   } from '$lib/multiplayer/camera-presence';
   import type { PresenceUser } from '$lib/multiplayer/presence';
   import { setNodeParam, mutateNode } from '$lib/graph/mutate';
+  import { resolveDevice, shouldRewriteSavedId } from '$lib/graph/device-rebind';
   import { cameraInputDef } from '$lib/video/modules/camera-input';
   import { shouldReacquireOnPick, savedDeviceMissing } from '$lib/video/camera-device';
   import type { VideoEngine } from '$lib/video/engine';
@@ -66,11 +68,23 @@
   const outputs = portsFromDef(cameraInputDef.outputs);
 
   // The <video> and the camera STREAM are owned by the NODE, not by this card
-  // (see $lib/ui/media/node-media-registry). cameraInput keeps its real card
-  // in the lane (a NON_SHELL carve-out) so it dodges the expand/collapse move,
-  // but it is unmounted by every OTHER card move — docking to the rail, a
-  // collapsed group — and `onDestroy` stopped the tracks, which needs a fresh
-  // permission gesture to undo.
+  // (see $lib/ui/media/node-media-registry).
+  //
+  // ⚠ THIS CARD IS NO LONGER GUARANTEED TO BE ON SCREEN, and the note that used
+  // to sit here said the opposite. `cameraInput` WAS in `NON_SHELL_LANE_TYPES`
+  // — "keeps its real card in the lane, so it dodges the expand/collapse move" —
+  // and it is not any more: the module is promoted, so under the default shell
+  // the lane paints its faceplate and this card runs inside
+  // <HeadlessSourceHost>, parked off-screen. The stream is unaffected (that is
+  // the whole point of the node-owned element), but every BUTTON below is
+  // unclickable in that window, which is why the card now publishes its state
+  // and registers its acquire command on $lib/ui/media/camera-status-registry
+  // for the dock faceplate to drive. Under `?shell=legacy` this card is still
+  // the lane surface and nothing about it changes.
+  //
+  // It is unmounted by every card move — the headless host, docking to the
+  // rail, a collapsed group — and `onDestroy` once stopped the tracks, which
+  // needs a fresh permission gesture to undo.
   let videoHost: HTMLDivElement | null = $state(null);
   let videoEl: HTMLVideoElement | null = $state(null);
   let mediaLease: NodeMediaLease<HTMLElement> | null = null;
@@ -85,6 +99,11 @@
   // been granted in this origin. Before that, deviceIds are redacted to '' so we
   // can't tell whether the saved camera is actually present.
   let hasDeviceLabels = $state(false);
+  /** Set when the saved camera was re-found by NAME rather than by its saved
+   *  id. Transient and absent whenever nothing happened — the shape the
+   *  resting-text ruling permits (an outcome with guidance, not a readout), the
+   *  same one `LoopbackOutputBody` renders for its recovery text. */
+  let rebindNotice = $state<string | null>(null);
   // The saved camera no longer resolves to an available device (loaded a patch
   // on a different machine / camera unplugged). Drives the dropdown placeholder.
   let savedMissing = $derived(savedDeviceMissing(selectedDeviceId, devices, hasDeviceLabels));
@@ -102,6 +121,30 @@
     return null;
   }
 
+  /** The NAME the patch remembered for its camera, or null.
+   *
+   *  ⚠ THIS IS THE HALF THAT DID NOT EXIST, and without it no fallback is
+   *  possible: `MediaDeviceInfo.deviceId` is a per-ORIGIN hash over a browser
+   *  salt plus an OS device identifier, so it does not survive clearing site
+   *  data, a different profile, or the OS enumerating the camera differently
+   *  (a different USB port, a hub, a driver reinstall) — and the card had
+   *  nothing else written down to fall back TO. */
+  function readSavedDeviceLabel(): string | null {
+    const d = node?.data;
+    if (d && typeof d['deviceLabel'] === 'string' && d['deviceLabel'] !== '') {
+      return d['deviceLabel'] as string;
+    }
+    return null;
+  }
+
+  /** This session's label for a device id, or null when it is not enumerable
+   *  or its label is still redacted. */
+  function labelForDeviceId(deviceId: string | null): string | null {
+    if (!deviceId) return null;
+    const found = devices.find((x) => x.deviceId === deviceId);
+    return found && found.label !== '' ? found.label : null;
+  }
+
   function p(name: string): number {
     const def = cameraInputDef.params.find((x) => x.id === name);
     return node?.params[name] ?? def?.defaultValue ?? 0;
@@ -113,10 +156,22 @@
     setNodeParam(id, paramId, v ? 1 : 0);
   }
   function setSavedDeviceId(deviceId: string | null): void {
+    const label = labelForDeviceId(deviceId);
     mutateNode(id, (live) => {
       if (!live.data) live.data = {};
-      if (deviceId === null) delete live.data['deviceId'];
-      else live.data['deviceId'] = deviceId;
+      if (deviceId === null) {
+        delete live.data['deviceId'];
+        delete live.data['deviceLabel'];
+        return;
+      }
+      live.data['deviceId'] = deviceId;
+      // ⚠ ONLY EVER WRITE A REAL LABEL, and never clear a good one. Before
+      // camera permission is granted `enumerateDevices()` redacts every label
+      // to '', so persisting whatever is on hand would save a name that matches
+      // EVERY unlabelled device on the next machine — a fallback with maximum
+      // confidence and no information. A null here means "nothing better to say
+      // right now"; the label already on the node stays.
+      if (label) live.data['deviceLabel'] = label;
     });
   }
 
@@ -285,6 +340,9 @@
   function onPickDevice(deviceId: string): void {
     selectedDeviceId = deviceId;
     setSavedDeviceId(deviceId);
+    // The player has said which camera they want, so any "I reconnected this by
+    // name" notice has been answered and must not linger.
+    rebindNotice = null;
     // An explicit pick is a user gesture + a clear intent to use THAT camera —
     // (re)acquire from any state except where a request can't/shouldn't fire
     // (requesting / unsupported). Critically this now includes
@@ -296,19 +354,119 @@
     }
   }
 
+  // ⚠ TRACK EXTERNAL PICKS — the card used to hydrate `node.data.deviceId` ONCE
+  // on mount and never look again, so a device chosen anywhere OTHER than this
+  // card's own `<select>` was saved and never acted on until a remount.
+  //
+  // The live case today is COLLABORATION: `node.data.deviceId` is in Yjs, so a
+  // rack-mate's pick already arrives here — and used to arrive as a value that
+  // sat in the document doing nothing. It was also found while prototyping a
+  // second picker surface for this module, parked on the branch
+  // `parked/camerainput-face-option-a` (which carries its own handoff note),
+  // where the same defect is not a latent one: any second picker writes the
+  // shared key and appears to do nothing at all.
+  //
+  // ⚠ IT IS ALSO WHAT THE DEF ALREADY CLAIMED. This card's own header says
+  // `node.data.deviceId` is "in Yjs. Each user's browser tries to match it to a
+  // local camera" — a promise hydrate-once could not keep for any change after
+  // mount, including a collaborator's.
+  //
+  // Guarded three ways so this cannot loop or fight the user: it fires only when
+  // the saved id DIFFERS from what this card already has, only when the id is
+  // non-null, and it reuses `shouldReacquireOnPick` so the same states that
+  // refuse a re-acquire on a local pick refuse it here too.
+  $effect(() => {
+    const saved = readSavedDeviceId();
+    if (!saved) return;
+    if (saved === untrack(() => selectedDeviceId)) return;
+    untrack(() => {
+      selectedDeviceId = saved;
+      if (shouldReacquireOnPick(camState)) requestStream();
+    });
+  });
+
+  // ⚠ THE `enabled` PARAM OWNS THE HARDWARE — THIS BUTTON ONLY WRITES IT.
+  //
+  // It used to do both: write the param AND stop/start the track beside it. That
+  // made the BUTTON the authority, and the param's documented behaviour was
+  // therefore only true when the button was the writer. The def's own `docs`
+  // says otherwise, in the param's voice: "off (Pause) stops the camera track to
+  // release the hardware … on (Resume) re-requests the stream". Every other
+  // writer got the param without the hardware:
+  //   * a COLLABORATOR's toggle — `enabled` is in Yjs, so a rack-mate's write
+  //     already arrived here and did nothing but change the shader branch,
+  //     leaving the camera light on for a camera the patch says is off;
+  //   * and now the dock FACEPLATE's ON cell, which is the surface most people
+  //     will reach for once this module is promoted.
+  // Same shape as the hydrate-once `deviceId` defect fixed above: a documented
+  // claim kept by one call site instead of by the state it describes.
   function onToggleEnabled(): void {
-    const next = p('enabled') < 0.5;
-    setBoolParam('enabled', next);
-    if (!next) {
-      // Pause: stop the track to release the camera (matches the spec
-      // §6 — paused means hardware is freed; resume re-requests).
-      stopStream();
-      camState = 'paused';
-    } else {
-      // Resume.
-      requestStream();
-    }
+    setBoolParam('enabled', p('enabled') < 0.5);
   }
+
+  /** Last `enabled` this card ACTED on. `null` until the first effect run — see
+   *  the SKIP-FIRST note below. */
+  let actedEnabled: boolean | null = null;
+
+  $effect(() => {
+    const on = p('enabled') > 0.5;
+    // ⚠ SKIP-FIRST IS LOAD-BEARING, NOT AN OPTIMISATION. `enabled` defaults to
+    // 1, so without this the effect's first run would call requestStream() on
+    // every mount of every camera node — firing getUserMedia with none of
+    // onMount's guards (it checks `hasLabels` precisely so a rack load does not
+    // raise a permission PROMPT, and skips a doomed exact-deviceId request when
+    // the saved camera is gone). onMount owns the initial acquire; this effect
+    // owns every CHANGE after it.
+    if (actedEnabled === null) { actedEnabled = on; return; }
+    if (on === actedEnabled) return;
+    actedEnabled = on;
+    untrack(() => {
+      if (!on) {
+        // Pause: stop the track to release the camera (matches the spec §6 —
+        // paused means hardware is freed; resume re-requests).
+        stopStream();
+        camState = 'paused';
+      } else if (shouldReacquireOnPick(camState)) {
+        // Reusing the pick guard is deliberate: the states that refuse a
+        // re-acquire on a device pick ('requesting' — one is already in flight;
+        // 'unsupported' — there is no getUserMedia) refuse it here for the same
+        // reasons.
+        requestStream();
+      }
+    });
+  });
+
+  // ── THE CAPTURE-STATUS SEAM ($lib/ui/media/camera-status-registry) ─────────
+  //
+  // ⚠ WHY A CARD THAT MAY BE OFF-SCREEN STILL HAS TO SPEAK. Promotion moves this
+  // card into <HeadlessSourceHost> under the default shell — off-screen, with
+  // `pointer-events: none`. The stream survives; the BUTTONS do not. Publishing
+  // the state and registering the acquire command is what lets the dock
+  // faceplate show the real lamp, print the recovery text, and offer a working
+  // "Request access" without a second getUserMedia owner existing anywhere.
+  //
+  // ⚠ PUBLISH IS A TRACKED READ OF ALL THREE FIELDS, deliberately. `camState`
+  // alone is not the status a consumer paints: `errorMsg` carries the recovery
+  // instructions, and `devices.length` is what decides whether acquire is even
+  // offerable (the button below is disabled on zero for the same reason).
+  $effect(() => {
+    cameraStatus.publish(id, {
+      state: camState,
+      errorMsg,
+      deviceCount: devices.length,
+      rebindNotice,
+    });
+  });
+
+  $effect(() => {
+    // The lease is OWNER-CHECKED, so the remount churn this card sees (lane →
+    // headless host → dock rail) cannot let a stale teardown unregister the live
+    // mount's command. See the registry header.
+    const lease = cameraStatus.registerCommands(id, {
+      acquire: () => { void requestStream(); },
+    });
+    return () => lease.release();
+  });
 
   function onToggleMirror(): void {
     const next = p('mirror') < 0.5;
@@ -403,10 +561,47 @@
         // a camera" directly so the (now working) device dropdown is the path
         // forward. A null saved id falls through to an unconstrained request
         // (the browser's default camera).
-        if (savedDeviceMissing(selectedDeviceId, devices, res.hasLabels)) {
+        // ⚠ ID FIRST, THEN NAME — and the NAME half is why a reload after a
+        // reboot / re-plug used to strand the module. The saved id is the
+        // fast, exact, same-machine path; when it has been regenerated the
+        // remembered label is the only thing left that still names the
+        // hardware. `resolveDevice` owns the order and the ambiguity
+        // tie-break (two identical webcams report identical labels).
+        const savedLabel = readSavedDeviceLabel();
+        // ⚠ "NOTHING SAVED" IS NOT "NOT FOUND", and collapsing the two is a
+        // regression I shipped and CI caught. `savedDeviceMissing` returned
+        // FALSE for a null saved id — so a camera with no saved device fell
+        // through to an UNCONSTRAINED request and got the browser's default,
+        // which is what a freshly-spawned camera has always done. Routing that
+        // case into the failure branch left every fresh camera stuck at
+        // 'no-cameras-found' without ever calling getUserMedia.
+        const hadSavedDevice = Boolean(selectedDeviceId || savedLabel);
+        const rebind = resolveDevice(
+          { id: selectedDeviceId, name: savedLabel },
+          devices.map((d) => ({ id: d.deviceId, name: d.label })),
+        );
+        if (hadSavedDevice && rebind.id === null) {
           camState = 'no-cameras-found';
           errorMsg = 'Saved camera not found — pick another from the list.';
         } else {
+          // `rebind.id` is null here only when nothing was saved — the
+          // unconstrained default-camera path, which takes no notice and
+          // rewrites nothing.
+          if (rebind.id !== null && rebind.matchedBy !== 'exact-id') {
+            // ⚠ NEVER RE-POINT A PATCH SILENTLY. The player's saved camera id
+            // is gone and we have bound a DIFFERENT id by name; that is almost
+            // always the same physical camera, but "almost always" is exactly
+            // the case that needs saying out loud rather than being discovered
+            // later as "why is this the wrong camera".
+            rebindNotice =
+              rebind.matchedBy === 'name-ambiguous'
+                ? `Reconnected to "${savedLabel}" by name — ${rebind.candidates.length} cameras share that name, so this may not be the same one.`
+                : `Reconnected to "${savedLabel}" by name (its saved id changed).`;
+            selectedDeviceId = rebind.id;
+            // Self-healing: persist THIS session's id so the next load is an
+            // exact hit and the fallback is not paid twice.
+            if (shouldRewriteSavedId(rebind)) setSavedDeviceId(rebind.id);
+          }
           requestStream();
         }
       }
@@ -514,10 +709,16 @@
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
   <div class="body">
+    <!-- ⚠ THE `device` CAPTION IS GONE, THE ACCESSIBLE NAME IS NOT (owner
+         directive 2026-08-23). A single select whose every option is a camera
+         name does not need a word telling you it is the camera; the caption was
+         the section-heading-restated class. `aria-label` keeps the name for
+         anything that is not looking at the pixels — hiding the TEXT is allowed,
+         dropping the NAME never is. -->
     <label class="row">
-      <span class="row-label">device</span>
       <select
         class="device-select"
+        aria-label="Camera device"
         data-testid="camera-device-select"
         value={selectedDeviceId ?? ''}
         onchange={(e) => onPickDevice((e.currentTarget as HTMLSelectElement).value)}
@@ -613,7 +814,16 @@
         onclick={onToggleMirror}
         aria-pressed={p('mirror') > 0.5}
       >
-        Mirror{p('mirror') > 0.5 ? ': on' : ': off'}
+        <!-- ⚠ THE `: on` / `: off` SUFFIX IS GONE (owner directive 2026-08-23,
+             "authored minimalist card"): it was resting text restating the
+             control's own state, which `aria-pressed` already carries.
+             ⚠ BUT THE STATE IS NOT MERELY HIDDEN — this card had NO
+             `[aria-pressed]` styling at all, so the suffix was the only thing
+             making MIRROR's state perceivable. Deleting the text alone would
+             have been a functional regression dressed as tidying. The state
+             moved INTO the button's appearance (see `.ghost[aria-pressed]`),
+             which is how every other toggle in the fleet shows it. -->
+        Mirror
       </button>
       <NativeFillToggle
         fillMode={p('fillMode')}
@@ -640,7 +850,23 @@
 <style>
   .card {
     width: 280px;
-    min-height: 360px;
+    /* ⚠ `min-height: 360px` REMOVED (owner directive 2026-08-23: compact is the
+       default, and useless grey space is never earned). The card's real content
+       is the 200 px preview plus four short rows; the floor padded every state
+       that is SHORTER than that — idle, permission-denied, no-cameras-found —
+       into a tall grey box whose bottom third was empty by construction.
+       ⚠ Removing it is safe for baselines because `cameraInput` is in
+       EXEMPT_FROM_VRT for its CARD scene, so no committed PNG measures this
+       card. The height now follows the content, and the preview is what earns
+       the space. */
+  }
+  /* ⚠ THE PRESSED STATE MIRROR'S TEXT SUFFIX USED TO CARRY. This card had no
+     [aria-pressed] rule, so removing ": on"/": off" without this would have
+     made the toggle's state invisible rather than merely quieter. */
+  .ghost[aria-pressed='true'] {
+    border-color: var(--accent, #16a34a);
+    color: var(--text, #e6e6e6);
+    background: color-mix(in srgb, var(--accent, #16a34a) 18%, transparent);
   }
   .body {
     /* Clear the PatchPanel's top-left/right trigger affordances (18px tall,
@@ -659,7 +885,9 @@
     font-size: 0.7rem;
     color: var(--text-dim);
   }
-  .row-label { min-width: 44px; text-transform: uppercase; letter-spacing: 0.05em; }
+  /* `.row-label` deleted with the `device` caption it styled — an unused
+     selector is a svelte-check warning and, worse, an invitation to re-add the
+     caption it implies is still wanted. */
   .device-select {
     flex: 1 1 auto;
     background: #0c0e13;

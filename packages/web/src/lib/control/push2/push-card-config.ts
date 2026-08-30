@@ -94,6 +94,29 @@ export const PUSH_CARD_CONTROLS: Readonly<Record<string, readonly string[]>> = {
   // how much.
   lfo: ['rate', 'shape', 'depth'],
 
+  // ── foxy ─────────────────────────────────────────────────────────────────
+  // PINNED RATHER THAN INHERITED, and the distinction is the whole point of
+  // this entry. Authoring foxy's face moved it GENERIC → FACE tier, which
+  // silently rewrote its Push card: from declaration order
+  // (`tune, fine, morph, spread, fold, src_tune, src_fine, src_timbre` — the
+  // WAVECEL surface plus three of source A's knobs, which is an accident of
+  // where the params happen to sit in the file) to the face's first eight
+  // turnable ranks. The new card IS better — it trades src A's FINE and TIMBRE
+  // for the three highest-reach world controls — but nothing pinned it: foxy
+  // has no golden in `push-card-schema.test.ts`, so the change shipped green
+  // and unobserved. An override REPLACES, so writing it down converts an
+  // accident into a decision and stops the next param rename or re-rank from
+  // moving the hardware surface behind everyone's back.
+  //
+  // The eight ARE the face's ranks 1-8, deliberately — this is not a
+  // divergence from the face, it is a LOCK on it. Encoders 1-5 are the surface
+  // you PLAY (the internal WAVECEL: its read position through the live table
+  // first, then the folder, then pitch/width/fine); encoders 6-8 are the three
+  // controls that most change the table being built underneath — ZOOM (how
+  // many peaks the field has), SMOOTH (jagged spikes against a continuous
+  // mesh) and WARP (raster C twisting raster A laterally).
+  foxy: ['morph', 'fold', 'tune', 'spread', 'fine', 'xyz_zoom', 'xyz_smooth', 'xyz_warp'],
+
   // ── tidyVco ──────────────────────────────────────────────────────────────
   // A whole voice with 25 params, so the window is a real curation. Grouped by
   // SECTION so the encoder row reads as a signal path: encoders 1-3 are the two

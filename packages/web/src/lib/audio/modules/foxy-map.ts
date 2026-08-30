@@ -95,9 +95,52 @@ export function lumaAt(
 export interface FoxyFieldRow {
   /** Per-column displaced Y in [0,1] (y-down, like the GL NDC pre-flip). */
   y: Float32Array;
+  /** Per-column BASE ramp — the scanline's own resting position, before any
+   *  luma displacement. This is the RULER, not the data: in the XYZ window it
+   *  is just "which scanline am I", so the eye reads it as depth and compares
+   *  each polyline's wiggle against it.
+   *
+   *  ⚠ IT IS CARRIED SEPARATELY BECAUSE `y` ALONE CANNOT BE UNSCRAMBLED, and a
+   *  consumer that guesses the ruler gets the data wrong. `fieldToWavetable`
+   *  guessed `0.5` — a constant, where the true ruler is a full 0→1 ramp — and
+   *  so shipped a wavetable whose value was ~97% ruler and ~3% field (measured:
+   *  across-frame DC spread 0.41 against a typical in-frame AC of 0.12, with
+   *  2.6% of samples hard-clipped by the ramp alone). The two on-card pictures
+   *  disagreed for exactly that reason: the XYZ window subtracts the ruler by
+   *  DRAWING it, the wavetable could not.
+   *
+   *  REQUIRED, deliberately. An optional field with a `?? 0.5` fallback would
+   *  reinstate the same silent-wrong-default seam one `boxToField*` variant at
+   *  a time; making it required means `tsc` refuses a producer that has not
+   *  said what its ruler is. */
+  base: Float32Array;
   /** Per-column luma in [0,1] (for the stroke brightness / color). */
   lum: Float32Array;
 }
+
+/**
+ * Scales the field's RELIEF (`y - base`) into the wavetable's [-1, 1].
+ *
+ * WHY IT IS 6, and it is a measurement rather than a taste: it is the ratio of
+ * the two on-card pictures' VERTICAL SCALES, so one unit of field relief paints
+ * the same number of pixels in both. The XYZ window (`drawFoxyXyz`, 160×84)
+ * maps the field's whole [0,1] span onto its draw height — 78 px per field
+ * unit. The LIVE WAVETABLE (`drawWave3D`, 280×110) gives each frame an
+ * amplitude budget of `drawH * 0.16 * (0.6 + 0.4t)` — a mean of ~13.1 px for
+ * the full [-1,1]. 78 / 13.1 = 5.97.
+ *
+ * Measured against the live default patch, that lands the two panels' rendered
+ * wiggle-to-line-spacing ratio at 3.15 (XYZ) vs 3.27 (wavetable) — against
+ * 3.15 vs 1.56 before — while clipping 0.2% of samples on the existing clamp.
+ *
+ * ⚠ IT IS A PLAIN CONSTANT, NOT A READ OF THE CANVASES. The correspondence is
+ * the justification for the number; it is not a live coupling, because an audio
+ * table that changed shape when a preview canvas was resized would be a far
+ * worse bug than a slightly stale visual match. `foxy-xyz-parity.test.ts` drives
+ * BOTH real renderers and pins the agreement, so a change to either one's scale
+ * reddens rather than drifting silently.
+ */
+export const FOXY_RELIEF_GAIN = 6;
 
 // ── The "Box" 3D heightfield ──────────────────────────────────────────────
 //
@@ -132,9 +175,10 @@ export interface FoxyBox {
  * Either buffer may be empty/short; lumaAt clamps + defaults missing channels
  * to 0, so a cold raster reads as 0 luma (flat / no lift) rather than NaN.
  *
- * @deprecated v3 (3-axis distribution wavetable) replaced the Box heightfield
- *   path. Kept for back-compat + reference; `threeAxisWavetable` is now the
- *   realtime path FOXY's bridge calls.
+ * @deprecated Superseded by `boxHeightfield3d` (which adds raster C). The live
+ *   bridge calls the 3d variant; this two-raster form is kept for the legacy
+ *   unit tests. (The old tag credited v3's `threeAxisWavetable` — v4 abandoned
+ *   that model, so the successor is the 3d BOX, not the distribution path.)
  */
 export function boxHeightfield(
   rgbaA: Uint8ClampedArray | readonly number[],
@@ -185,6 +229,7 @@ export function simplifiedRuttetraField(
   for (let r = 0; r < rows; r++) {
     const v0 = rows > 1 ? r / (rows - 1) : 0;
     const yArr = new Float32Array(cols);
+    const bArr = new Float32Array(cols);
     const lArr = new Float32Array(cols);
     for (let c = 0; c < cols; c++) {
       const h0 = cols > 1 ? c / (cols - 1) : 0;
@@ -201,9 +246,10 @@ export function simplifiedRuttetraField(
       const hShade = shapedRamp(h0, h0, v0, params.xShape);
       const y = v + (lum - 0.5) * params.yDisp;
       yArr[c] = y;
+      bArr[c] = v;
       lArr[c] = Math.max(0, Math.min(1, lum * (0.6 + 0.4 * hShade)));
     }
-    out.push({ y: yArr, lum: lArr });
+    out.push({ y: yArr, base: bArr, lum: lArr });
   }
   return out;
 }
@@ -223,8 +269,9 @@ export function simplifiedRuttetraField(
  * tracks the pattern — the surface gets REAL 3D relief (bright B → tall, dark
  * B → low) over A's terrain. Pure + deterministic.
  *
- * @deprecated v3 routes the realtime path through `threeAxisWavetable` +
- *   `threeAxisFieldForDisplay`. Kept for back-compat + the legacy test suite.
+ * @deprecated Superseded by `boxToField3d` (which adds raster C's lateral warp
+ *   + secondary Z, plus v4.1's zoom/smooth). Kept for the legacy test suite.
+ *   (The old tag credited v3's distribution path — v4 abandoned that model.)
  */
 export function boxToField(
   box: FoxyBox,
@@ -238,6 +285,7 @@ export function boxToField(
     const v0 = rows > 1 ? r / (rows - 1) : 0;
     const br = size > 1 ? Math.round(v0 * (size - 1)) : 0;
     const yArr = new Float32Array(cols);
+    const bArr = new Float32Array(cols);
     const lArr = new Float32Array(cols);
     for (let c = 0; c < cols; c++) {
       const h0 = cols > 1 ? c / (cols - 1) : 0;
@@ -250,9 +298,10 @@ export function boxToField(
       // B's luminosity drives the vertical height of A's surface.
       const y = v + (heightB - 0.5) * params.yDisp;
       yArr[c] = y;
+      bArr[c] = v;
       lArr[c] = Math.max(0, Math.min(1, baseA * (0.6 + 0.4 * hShade)));
     }
-    out.push({ y: yArr, lum: lArr });
+    out.push({ y: yArr, base: bArr, lum: lArr });
   }
   return out;
 }
@@ -263,9 +312,26 @@ export function boxToField(
  * Reads the simplified field as `frames × samples`. Each output FRAME is one
  * (row-averaged) scanline of the field; each SAMPLE in the frame is one
  * column. The wavetable sample value is the field's BIPOLAR vertical
- * DISPLACEMENT: we take the displaced Y minus its base ramp center (0.5) and
- * scale into [-1, 1]. Bright raster pixels (which pushed the scanline up via
- * yDisp) become positive wavetable excursions; dark pixels negative.
+ * DISPLACEMENT: the displaced Y minus THAT ROW'S OWN BASE RAMP, scaled into
+ * [-1, 1] by FOXY_RELIEF_GAIN. Bright raster pixels (which pushed the scanline
+ * up via yDisp) become positive wavetable excursions; dark pixels negative.
+ *
+ * ⚠ IT SUBTRACTS `row.base`, NOT `0.5`, AND THAT IS THE WHOLE POINT OF THIS
+ * FUNCTION. Until 2026-08-23 this line read `(yv - 0.5) * 2` — which removes
+ * the ramp's MIDPOINT but leaves the ramp, and the ramp sweeps a full 0→1
+ * across the rows. So the value the WAVECEL worklet played was dominated by a
+ * per-frame DC offset that is a DISPLAY COORDINATE ("which scanline am I"),
+ * not data. Measured on the live default patch: across-frame DC spread 0.41
+ * against a typical in-frame AC of 0.12 — a 3.3:1 ruler-to-signal ratio, with
+ * 2.6% of samples hard-clipped by the ramp before the field's own relief was
+ * even added, and the audible waveform confined to ~12% of full scale.
+ *
+ * That is why the module's two on-card pictures disagreed, and the disagreement
+ * was HONEST rather than cosmetic: the XYZ window subtracts the ramp by DRAWING
+ * it (the ramp positions the polyline, so the eye only ever sees the relief),
+ * while the wavetable had no way to. The owner saw a rich field and a flat
+ * table because the table really was flat. Fixing the readout without fixing
+ * this would have made the picture lie about the sound.
  *
  * Frame count `frames` (default 64) is ≤ the field's row count, so we
  * AVERAGE every `rowsPerFrame` source rows into one frame (box downsample —
@@ -278,9 +344,16 @@ export function boxToField(
  *
  * Pure + deterministic: same field + dims → same frames.
  *
- * @deprecated v3 replaced this with `threeAxisWavetable` (X = raster A's
- *   column distribution, Y = raster B's row distribution, Z = raster C as a
- *   1-D amplitude LUT). Kept exported for back-compat + the legacy unit tests.
+ * ⚠ THIS IS THE LIVE REALTIME PATH — it is NOT deprecated, whatever the tag
+ * that sat here until 2026-08-23 said. v3 did briefly route the bridge through
+ * `threeAxisWavetable`, and this function was tagged then; v4 ABANDONED v3 (a
+ * rank-1 separable model cannot carry 3D relief — see the v4 header above) and
+ * pointed the bridge back here, without clearing the tag. So `foxy.ts` has
+ * called this on every bridge tick since v4, in BOTH the seeded and the live
+ * branch (`foxy.ts` `paintSeeded` / `bridgeTick`), while the file said it was
+ * kept "for back-compat + the legacy unit tests". A stale @deprecated on the
+ * function that builds the audio is worth flagging on its own: it tells the
+ * next reader that nothing they do here can be heard.
  */
 export function fieldToWavetable(
   field: FoxyFieldRow[],
@@ -306,10 +379,13 @@ export function fieldToWavetable(
       let acc = 0;
       let n = 0;
       for (let r = r0; r < r1 && r < srcRows; r++) {
-        const yv = field[r]!.y[col] ?? 0.5;
-        // Displacement about the 0.5 base center → bipolar; ×2 so a full
-        // 0..1 swing reaches ±1. Clamp to WAVECEL's [-1,1] expectation.
-        const samp = (yv - 0.5) * 2;
+        const row = field[r]!;
+        const yv = row.y[col] ?? 0.5;
+        const base = row.base[col] ?? 0.5;
+        // The RELIEF — this row's displacement from its own ruler — scaled so
+        // the field's own excursion fills the table. Clamped to WAVECEL's
+        // [-1,1] expectation, which is unchanged.
+        const samp = (yv - base) * FOXY_RELIEF_GAIN;
         acc += samp;
         n++;
       }
@@ -479,6 +555,10 @@ export function threeAxisFieldForDisplay(
     const xi = xn > 1 ? Math.round((s / Math.max(1, samples - 1)) * (xn - 1)) : 0;
     lumShared[s] = xDist[xi] ?? 0.5;
   }
+  // v3 re-packs an ALREADY-bipolar table into field space about a CONSTANT
+  // 0.5 — there is no shaped ramp in this path — so 0.5 IS this field's ruler,
+  // and `y - base` round-trips back to the table it came from.
+  const flatBase = new Float32Array(samples).fill(0.5);
   for (let f = 0; f < wavetable.length; f++) {
     const src = wavetable[f]!;
     const y = new Float32Array(samples);
@@ -486,7 +566,7 @@ export function threeAxisFieldForDisplay(
       const v = (src[s] ?? 0) * 0.5 + 0.5;
       y[s] = v < 0 ? 0 : v > 1 ? 1 : v;
     }
-    out.push({ y, lum: lumShared });
+    out.push({ y, base: flatBase, lum: lumShared });
   }
   return out;
 }
@@ -785,6 +865,7 @@ export function boxToField3d(
     if (srcBoxRow < 0) srcBoxRow = 0;
     else if (srcBoxRow > size - 1) srcBoxRow = size - 1;
     const yArr = new Float32Array(cols);
+    const bArr = new Float32Array(cols);
     const lArr = new Float32Array(cols);
     for (let c = 0; c < cols; c++) {
       const h0 = cols > 1 ? c / (cols - 1) : 0;
@@ -813,9 +894,14 @@ export function boxToField3d(
       const y =
         v + (heightB - 0.5) * params.yDisp + heightC_disp * params.yDisp;
       yArr[c] = y;
+      // The ruler this row is drawn against. `y - base` is therefore exactly
+      // the RELIEF — the two luma displacements and nothing else — which is
+      // both what the XYZ window's polyline shows and what the wavetable now
+      // carries. See FOXY_RELIEF_GAIN.
+      bArr[c] = v;
       lArr[c] = Math.max(0, Math.min(1, baseA * (0.6 + 0.4 * hShade)));
     }
-    out.push({ y: yArr, lum: lArr });
+    out.push({ y: yArr, base: bArr, lum: lArr });
   }
   return out;
 }

@@ -20,7 +20,7 @@
 
 import { test, expect } from './_fixtures';
 import { type Page } from '@playwright/test';
-import { spawnPatch } from './_helpers';
+import { spawnPatch, canvasPane} from './_helpers';
 
 test.describe.configure({ mode: 'parallel' });
 
@@ -62,7 +62,7 @@ test('left-drag empty pane pans the SvelteFlow viewport (default behavior restor
 
   const before = await readTransform();
 
-  const pane = page.locator('.svelte-flow__pane');
+  const pane = canvasPane(page);
   const box = await pane.boundingBox();
   if (!box) throw new Error('no pane');
   // Start far from the centered single node to ensure we're over empty pane.
@@ -79,7 +79,7 @@ test('left-drag empty pane pans the SvelteFlow viewport (default behavior restor
 });
 
 test('right-click pane → palette shows "Create group" tool entry', async ({ page, rack }) => {
-  const pane = page.locator('.svelte-flow__pane');
+  const pane = canvasPane(page);
   const box = await pane.boundingBox();
   if (!box) throw new Error('no pane');
   await page.mouse.click(box.x + 200, box.y + 200, { button: 'right' });
@@ -91,7 +91,7 @@ test('right-click pane → palette shows "Create group" tool entry', async ({ pa
 
 test('clicking "Create group" closes palette and enters lasso mode', async ({ page }) => {
   await setupChain(page);
-  const pane = page.locator('.svelte-flow__pane');
+  const pane = canvasPane(page);
   const box = await pane.boundingBox();
   if (!box) throw new Error('no pane');
   // Right-click EMPTY pane to open the palette. The chain nodes sit in a

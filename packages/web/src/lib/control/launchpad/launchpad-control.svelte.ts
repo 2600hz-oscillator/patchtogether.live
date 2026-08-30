@@ -194,6 +194,19 @@ import {
   type CopyBufferKind,
   type NoteRecState,
 } from '$lib/audio/modules/clip-types';
+// The clipboard is SHARED with the card's note menu (and so with Push 2, which
+// runs through this singleton) — see clip-clipboard.ts for why it is one
+// buffer and not one per surface. This file still owns the READ and the WRITE.
+import {
+  clipboardBuffer,
+  setClipboardBuffer,
+  clearClipboard,
+  clipboardSourceIndex,
+  clipboardClip,
+  clipboardClipAuto,
+  clipboardLoaded,
+  clipboardKind,
+} from '$lib/audio/modules/clip-clipboard';
 import {
   setSceneRepeat,
   sceneRepeatCount,
@@ -450,9 +463,13 @@ let keysOctaveShift = 0; // KEYS octave ± (semitones, multiples of 12) added to
 
 // Per-machine copy buffer (NOT synced) — a TYPED clipboard: one CLIP or a whole
 // SCENE (all 8 lanes' clips at a slot). Held as PLAIN deep-clones (never a live Y
-// child). LOCAL to this surface, exactly like the old single-clip buffer.
-let copyBuffer: CopyBuffer | null = null;
-let bufferSourceIndex: number | null = null; // clip-kind source index (L turquoise glow); null for a scene buffer
+// child).
+//
+// ⚠ The buffer itself now lives in $lib/audio/modules/clip-clipboard.ts,
+// because the CARD's note right-click menu copies and pastes into the SAME
+// clipboard (owner, 2026-08-24: card copy/paste must "work the same as when we
+// copy/paste on the push or launchpad"). It is still per-machine and still
+// survives a re-bind; it is no longer local to THIS surface.
 
 // ── SINGLE-mode SHIFT (MOMENTARY HOLD-only) + tap-to-ARM (Grid-shift). ──
 // Effective shift = shiftHeldSingle (CC 98 physically held: s=1 → true, s=0 →
@@ -557,8 +574,7 @@ const DOUBLE_TAP_TICKS = 11;
  *  COPY-INDICATOR. (Tapping the COPY-INDICATOR pad clears it; the buffer also
  *  survives a re-bind otherwise, so this is the way to dismiss the glow.) */
 function clearBuffer(): void {
-  copyBuffer = null;
-  bufferSourceIndex = null;
+  clearClipboard();
 }
 
 /** The buffered CLIP (buffer kind === 'clip'), else null. The single-clip paste
@@ -566,23 +582,23 @@ function clearBuffer(): void {
  *  so a SCENE buffer NEVER pastes onto a single clip (clip→scene / scene→clip are
  *  no-ops — the type gate). */
 function bufferClip(): NoteClipRecord | null {
-  return copyBuffer?.kind === 'clip' ? copyBuffer.clip : null;
+  return clipboardClip();
 }
 /** The buffered clip's SIBLING AUTOMATION (or null when the source carried
  *  none / the buffer isn't a clip) — pasted WITH the clip (envelope-belongs-
  *  to-the-clip). */
 function bufferClipAuto(): AutoClipRecord | null {
-  return copyBuffer?.kind === 'clip' ? copyBuffer.auto : null;
+  return clipboardClipAuto();
 }
 /** True when ANY buffer (clip OR scene) is loaded — lights the COPY-INDICATOR /
  *  the Paste button's pulse. */
 function bufferLoaded(): boolean {
-  return copyBuffer !== null;
+  return clipboardLoaded();
 }
 /** The buffer kind ('clip' | 'scene'), or null when empty — drives the distinct
  *  paste colour + the paste-arm target dimming. */
 function bufferKindOf(): CopyBufferKind | null {
-  return copyBuffer?.kind ?? null;
+  return clipboardKind();
 }
 
 /** Reactive version — bump on bind/unbind so card UI re-derives. */
@@ -1071,9 +1087,34 @@ export function restoreLaunchpadSingle(): boolean {
   return true;
 }
 
-/** Restore the persisted deployment + view (call once on load, before binding,
- *  so a re-load resumes single mode in the right view). Pair is the default. */
+/**
+ * Restore the persisted deployment + view (call on load, so a re-load resumes
+ * single mode in the right view). Pair is the default.
+ *
+ * ⚠ IT REFUSES TO RUN OVER A LIVE BINDING, AND THAT GUARD IS A BUG FIX RATHER
+ * THAN A PRECAUTION. The doc used to say "call once on load, BEFORE binding"
+ * and left the precondition to the caller — which was fine while the only
+ * caller was a card mounted at rack load, and stopped being fine the moment a
+ * caller could mount later. Both surfaces can:
+ *
+ *   * the LEGACY CARD is destroyed and re-created by a dock COLLAPSE / LRU
+ *     evict (#1531 / #1574 / #1583, the node-lifetime class), and
+ *   * the FACEPLATE's binder body mounts when the DOCK IS OPENED, which is
+ *     routinely after a handshake.
+ *
+ * In either case an unguarded restore reads a `localStorage` that the live
+ * session has not written yet and silently flips `deployment` back to 'pair'
+ * and `singleView` back to 'grid' — on a BOUND single unit, which re-routes
+ * every pad and repaints every LED. It is not merely a UI reset: `handleL`,
+ * `renderLeds` and the arp all branch on `deployment`.
+ *
+ * The persisted keys are only ever written by the gestures themselves
+ * (`persistDeployment`), and every gesture sets `deployment` directly, so
+ * skipping the restore while a unit is bound cannot lose anything: the live
+ * values ARE the restored ones, or newer.
+ */
 export function restoreLaunchpadDeployment(): void {
+  if (isUnitBound('L') || isUnitBound('R')) return;
   try {
     const d = localStorage.getItem(STORAGE_KEY_DEPLOYMENT);
     deployment = d === 'single' ? 'single' : 'pair';
@@ -2447,8 +2488,10 @@ function consumeGridArm(nodeId: string, clipIdx: number, data: ClipPlayerData | 
       // sibling automation rides along (the envelope belongs to the clip).
       const c = clipAtIndex(data, clipIdx);
       if (c) {
-        copyBuffer = { kind: 'clip', clip: copyClip(c), auto: readAutoClip(data, clipIdx) };
-        bufferSourceIndex = clipIdx;
+        setClipboardBuffer(
+          { kind: 'clip', clip: copyClip(c), auto: readAutoClip(data, clipIdx) },
+          clipIdx,
+        );
       }
       disarmGridArm(nodeId);
       break;
@@ -2459,7 +2502,8 @@ function consumeGridArm(nodeId: string, clipIdx: number, data: ClipPlayerData | 
       // clips stay untouched on a no-op. The paste carries the buffer's
       // automation and clears the destination's stale record (one transaction).
       const bc = bufferClip();
-      if (bc && copyBuffer && pasteApplies(copyBuffer.kind, 'clip')) {
+      const kind = clipboardKind();
+      if (bc && kind && pasteApplies(kind, 'clip')) {
         writeClipWithAuto(nodeId, copyClip(bc), bufferClipAuto(), clipIdx);
       }
       disarmGridArm(nodeId);
@@ -2520,18 +2564,21 @@ function consumeSceneArm(
     // (envelope-belongs-to-the-clip — a scene duplicate is a perform gesture)
     // AND the scene's REPEAT COUNT (counts are content — they travel with the
     // scene; 0 = infinite/none).
-    copyBuffer = {
-      kind: 'scene',
-      clips: readScene(data, slot),
-      autos: readSceneAutos(data, slot),
-      repeats: sceneRepeatCount(data, slot),
-    };
-    bufferSourceIndex = null; // a scene has no single source pad
-  } else if (copyBuffer && pasteApplies(copyBuffer.kind, 'scene')) {
+    setClipboardBuffer(
+      {
+        kind: 'scene',
+        clips: readScene(data, slot),
+        autos: readSceneAutos(data, slot),
+        repeats: sceneRepeatCount(data, slot),
+      },
+      null, // a scene has no single source pad
+    );
+  } else {
+    const buf = clipboardBuffer();
     // pasteApplies(kind, 'scene') is true ONLY for a scene buffer — the `.kind`
     // check narrows the union for TS; a clip buffer here is the clip→scene NO-OP.
-    if (copyBuffer.kind === 'scene') {
-      pasteSceneInto(nodeId, slot, copyBuffer.clips, copyBuffer.autos, copyBuffer.repeats ?? 0);
+    if (buf && pasteApplies(buf.kind, 'scene') && buf.kind === 'scene') {
+      pasteSceneInto(nodeId, slot, buf.clips, buf.autos, buf.repeats ?? 0);
     }
   }
   disarmGridArm(nodeId);
@@ -3060,8 +3107,10 @@ function handleL(nodeId: string, e: LaunchpadKeyEvent): void {
     if (copyHeld) {
       const c = clipAtIndex(data, clipIdx);
       if (c) {
-        copyBuffer = { kind: 'clip', clip: copyClip(c), auto: readAutoClip(data, clipIdx) };
-        bufferSourceIndex = clipIdx;
+        setClipboardBuffer(
+          { kind: 'clip', clip: copyClip(c), auto: readAutoClip(data, clipIdx) },
+          clipIdx,
+        );
       }
       return;
     }
@@ -3795,8 +3844,7 @@ export function __test_resetBinding(): void {
   lastTapTick = 0;
   lastTapPrevQueued = null;
   lastTapWasPlaying = false;
-  copyBuffer = null;
-  bufferSourceIndex = null;
+  clearClipboard();
   keysSounding.clear();
   keysOrphanFlushes = 0;
   resetKeysState();
@@ -3878,7 +3926,7 @@ export function __test_mode(): {
     followOn,
     bufferArmed: bufferLoaded(),
     bufferKind: bufferKindOf(),
-    bufferSourceIndex,
+    bufferSourceIndex: clipboardSourceIndex(),
     armedRightAction,
     divPreview,
     swingMeterDir,
@@ -3929,5 +3977,5 @@ export function __test_setDeployment(d: 'pair' | 'single', view: SingleView = 'g
 /** Test seam: the current typed copy buffer (clip | scene | null) — so a test can
  *  assert what a scene COPY captured without going through a paste. */
 export function __test_copyBuffer(): CopyBuffer | null {
-  return copyBuffer;
+  return clipboardBuffer();
 }

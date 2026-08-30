@@ -3,7 +3,7 @@
   //
   // Live preview shows the CLEAN output (the canonical surface) via
   // blitOutputToDrawingBuffer + drawImage(engine.canvas) — the MILKDROP /
-  // RUTTETRA preview path. Knobs: RATE (log) / HORIZON / VIEW (all
+  // RUTTETRA preview path. Knobs: RATE (log) / HORIZON / VIEW / FOV (all
   // MIDI-assignable via the standard Knob). A [GATED] badge appears while
   // a cable is patched into the `grow` trigger (SHAPEGEN [CLOCKED]
   // pattern) — spawning is then one-plant-per-rising-edge. All jacks live
@@ -31,6 +31,7 @@
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
   import { drawPreviewDownscaled } from './preview-downscale';
+  import { paramSpec } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -46,6 +47,22 @@
   const set = (k: string) => (v: number) => {
     setNodeParam(id, k, v);
   };
+
+  // ⚠ RANGES COME FROM THE DEF, NOT FROM LITERALS RE-TYPED HERE. Each of the four
+  // knobs below used to pass its own `min`/`max`. They AGREED with the def, so
+  // nothing was ever clamped — but this card is the backdraft class exactly: no
+  // runtime gate reads a numeric literal in a `.svelte` file, and
+  // `card-range-source`'s own stated scope is that every card NOT in
+  // `RANGE_BOUND_CARDS` is unchecked. A divergence here would have been invisible
+  // to every gate in the tree. `rate` is the one that mattered most: 0.5..10 on a
+  // log curve, the only non-0..1 range on the module.
+  //
+  // `paramSpec` throws on an unknown id, so a renamed param fails loudly at mount
+  // rather than silently clamping to a stale range.
+  const pRate    = paramSpec(lushgardenDef, 'rate');
+  const pHorizon = paramSpec(lushgardenDef, 'horizon');
+  const pView    = paramSpec(lushgardenDef, 'view');
+  const pFov     = paramSpec(lushgardenDef, 'fov');
 
   function getVideoEngine(): VideoEngine | null {
     const e = engineCtx.get();
@@ -145,25 +162,25 @@
       <div class="row">
         <Knob
           value={paramVal('rate')}
-          min={0.5} max={10} defaultValue={defaultFor('rate')}
+          min={pRate.min} max={pRate.max} defaultValue={pRate.defaultValue}
           label="RATE" curve="log"
           onchange={set('rate')} moduleId={id} paramId="rate"
         />
         <Knob
           value={paramVal('horizon')}
-          min={0} max={1} defaultValue={defaultFor('horizon')}
+          min={pHorizon.min} max={pHorizon.max} defaultValue={pHorizon.defaultValue}
           label="HORIZON" curve="linear"
           onchange={set('horizon')} moduleId={id} paramId="horizon"
         />
         <Knob
           value={paramVal('view')}
-          min={0} max={1} defaultValue={defaultFor('view')}
+          min={pView.min} max={pView.max} defaultValue={pView.defaultValue}
           label="VIEW" curve="linear"
           onchange={set('view')} moduleId={id} paramId="view"
         />
         <Knob
           value={paramVal('fov')}
-          min={0} max={1} defaultValue={defaultFor('fov')}
+          min={pFov.min} max={pFov.max} defaultValue={pFov.defaultValue}
           label="FOV" curve="linear"
           onchange={set('fov')} moduleId={id} paramId="fov"
         />

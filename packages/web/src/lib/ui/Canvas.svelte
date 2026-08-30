@@ -104,6 +104,7 @@
   import {
     makeEnvelope,
     makePortableEnvelope,
+    makeStateOnlyEnvelope,
     parseEnvelope,
     loadEnvelopeIntoStore,
     downloadEnvelope,
@@ -222,11 +223,33 @@
   import { migrated } from '$lib/ui/workflow/strict-faces';
   // DOM-SOURCE seam: a video module whose source lives on its CARD stays alive
   // in an off-screen host when the shell swaps its lane card away.
-  import { HEADLESS_MOUNT_LANE_TYPES, needsHeadlessSourceMount } from '$lib/ui/workflow/dom-source-modules';
+  import { HEADLESS_MOUNT_LANE_TYPES, DOM_SOURCE_LANE_TYPES, CARD_PRODUCER_LANE_TYPES, FACE_MOUNTS_PRODUCER, needsHeadlessSourceMount } from '$lib/ui/workflow/dom-source-modules';
+  import { cameraStatus } from '$lib/ui/media/camera-status-registry';
+  import { loopbackStatus } from '$lib/ui/media/loopback-status-registry';
+  import { loopbackCropPump } from '$lib/ui/media/loopback-crop-pump';
   import { groupCardHostsChildCard } from '$lib/ui/modules/group-viz-hosts';
   import { nodeMedia } from '$lib/ui/media/node-media-registry';
   import { nodeExtras } from '$lib/ui/media/node-extras';
+  import { nodeVideoSource } from '$lib/ui/media/node-video-source.svelte';
+  import { nodeVarispeed } from '$lib/ui/media/node-varispeed.svelte';
+  import { nodeHlsSource } from '$lib/ui/media/node-hls-source.svelte';
   import { nodePresent } from '$lib/ui/modules/node-present-registry.svelte';
+  import { createFullscreen } from '$lib/ui/modules/use-fullscreen.svelte';
+  import { resolveVideoEngine } from '$lib/ui/modules/use-present.svelte';
+  import {
+    bindingsFromPairs,
+    mayPersist,
+    planRestore,
+    readPresentBindings,
+    rigMatchesSaved,
+    writePresentBindings,
+    type LiveScreen,
+    canDescribeBindings,
+    readPresentBindingsFromUpdate,
+    type PresentBinding,
+  } from '$lib/ui/modules/present-bindings';
+  import { getElectraAutoReconnect } from '$lib/ui/modules/electra-auto-reconnect';
+  import { ELECTRA_CONTROL_TYPE } from '$lib/graph/electra-control';
   import { nodeRecorder } from '$lib/ui/modules/node-recorder-registry.svelte';
   import { nodeSamsloop } from '$lib/ui/modules/node-samsloop-registry.svelte';
   import { nodeAudioInput } from '$lib/ui/modules/node-audio-input-registry.svelte';
@@ -983,6 +1006,7 @@
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (globalThis as any).__perfZip = {
         export: async (): Promise<Uint8Array> => buildPerformanceZipBytes(),
+        exportStateOnly: async (): Promise<Uint8Array> => buildPerformanceZipBytes(true),
         load: async (bytes: Uint8Array): Promise<void> => loadPerformanceZipBytes(bytes),
       };
       // Preset-slot bar + `.set` round-trip hook (e2e): store/read/clear slots
@@ -1263,6 +1287,167 @@
       // belt-and-suspenders no-op if the bus already fired.
       await reconciler?.reconcile();
     })();
+  });
+
+  // PRESENT RESTORE (#2230). A patch saved with outputs on external displays
+  // reopens them, when those displays are still attached.
+  //
+  // Automatic, but gated on rigMatchesSaved: the bindings ride the SHARED doc,
+  // so a rack-mate opening the same patch must not get projector windows thrown
+  // onto their monitors. A partial or foreign rig resolves nothing.
+  //
+  // ⚠ RUNS PER LOAD, NOT PER MOUNT. A once-per-Canvas-mount latch is wrong:
+  // "new rack, then load a performance" fires the mount pass against the EMPTY
+  // default rack, latches, and the loaded patch's bindings are never read —
+  // while the now-armed write clobbers them with []. Measured on the owner's
+  // videoout.ptperf.zip, whose settings map came back {presentBindings: []}.
+  // So every load path calls this explicitly, and the write disarms first.
+  const presentScreens = createFullscreen();
+  let presentWriteArmed = $state(false);
+  let presentMountRestoreRan = false;
+  let lastWrittenBindings = '';
+
+  function liveScreens(): LiveScreen[] {
+    return presentScreens.availableScreens.map((s) => ({ id: s.id, descriptor: s.descriptor }));
+  }
+
+  /**
+   * Disarm BEFORE an envelope is applied, not after.
+   *
+   * runPresentRestore() runs at the END of a load, past several awaits. In that
+   * window Svelte flushes effects, and the write effect — still armed from the
+   * previous graph — sees an empty registry and writes [] over the bindings the
+   * envelope just delivered. Measured on sc3ptperf.zip, which carried a correct
+   * binding that load then erased before restore could read it.
+   */
+  function beginPatchLoad(): void {
+    presentWriteArmed = false;
+    // Latch the Electra auto-flash MOUNT arm (#2248): an explicit load calls
+    // notifyPatchLoaded() itself when the graph is fully materialized, and
+    // without this latch a first-load-with-electra into an electra-free rack
+    // would ALSO trip the mount effect mid-load — flashing a half-built graph
+    // and then flashing again at load end.
+    electraReconnectArmed = true;
+  }
+
+  /** `fromEnvelope` is REQUIRED on an envelope/zip load: the live doc's settings
+   *  map still holds the PREVIOUS patch's bindings (loadEnvelopeIntoStore copies
+   *  only nodes + edges across). The mount path passes nothing and reads the
+   *  live doc, which is correct there — that doc IS the patch. */
+  async function runPresentRestore(fromEnvelope?: PresentBinding[]): Promise<void> {
+    presentWriteArmed = false;
+    // ⚠ UNCONDITIONALLY, BEFORE THE EARLY RETURN. bindingsFromPairs resolves
+    // screenIds through this controller's list, so skipping it on a patch with
+    // nothing saved leaves the list empty and makes the FIRST save of every rig
+    // write []. That was the bug the owner's zip caught.
+    await presentScreens.loadScreens();
+    const saved = fromEnvelope ?? readPresentBindings(ydoc);
+    const live = liveScreens();
+    // ALWAYS trace, including the do-nothing paths. A silent early return makes
+    // "no line in the console" mean both "old build" and "new build, nothing to
+    // do", which is precisely the distinction anyone debugging this needs.
+    if (saved.length === 0) {
+      presentWriteArmed = true;
+      trace(`present restore: nothing saved — write armed (${live.length} display(s) known)`);
+      return;
+    }
+    if (live.length === 0) {
+      trace('present restore: no display list — window-management not granted for this origin; bindings kept');
+      return;
+    }
+    if (!rigMatchesSaved(saved, live)) {
+      trace(`present restore: saved rig (${saved.length} display(s)) not attached — bindings kept`);
+      return;
+    }
+    const video = resolveVideoEngine(engine);
+    if (!video) return;
+    const targets = planRestore(saved, live, snapshot.nodes.map((n) => n.id));
+    const byNode = new Map<string, string[]>();
+    for (const t of targets) {
+      const ids = byNode.get(t.nodeId);
+      if (ids) ids.push(t.screenId);
+      else byNode.set(t.nodeId, [t.screenId]);
+    }
+    let opened = 0;
+    for (const [nodeId, screenIds] of byNode) {
+      opened += nodePresent.presentAll(nodeId, screenIds, {
+        engine: video,
+        rectFor: (id) => presentScreens.getScreenRect(id),
+      });
+    }
+    trace(`present restore: ${opened}/${targets.length} projector(s) reopened`);
+    if (mayPersist({ attempted: true, expected: targets.length, opened })) {
+      presentWriteArmed = true;
+    }
+  }
+
+  $effect(() => {
+    const loaded = scratchSeeded === true || (provider != null && providerHasSynced);
+    if (presentMountRestoreRan || !loaded || engine == null || snapshot.nodes.length === 0) return;
+    presentMountRestoreRan = true;
+    void runPresentRestore();
+  });
+
+  // ELECTRA AUTO-RECONNECT (#2248) — the same "state that is really the
+  // PATCH's, held only in page-lifetime memory" class as the present restore
+  // above: `ElectraAutoconfig.run()` was only ever invoked by the manual "Send
+  // to Electra" press, so an F5 dropped the whole browser half of the wiring
+  // (inbound dispatch, FeedbackPump, allocation table) and the owner had to
+  // re-press after every reload. This arms ONE automatic flash per load edge;
+  // the machine (`$lib/electra/auto-reconnect.ts`) only acts when the patch
+  // holds an electraControl node, the sysex-MIDI permission is ALREADY granted
+  // (it can never cause a prompt), and an Electra-named port is — or via
+  // hot-plug becomes — connected. It fires the exact `electraSendToDevice`
+  // seam the button uses, writes nothing to the shared doc, and is
+  // edge-triggered so graph churn can never re-flash.
+  //
+  // Latch: once per Canvas mount, when the settled patch FIRST contains an
+  // electraControl. Gating the latch on the node (not on `nodes.length`) keeps
+  // electra-free racks fully dormant — not even a permission query — which is
+  // what preserves the "page load never requests Web-MIDI access" contract
+  // (midi.spec.ts) for every rack without the module. Unlike the present
+  // restore this does NOT wait for the engine: the flash is null-engine safe
+  // (host reads return undefined) and the FeedbackPump back-fills live values
+  // once the engine boots.
+  let electraReconnectArmed = false;
+  $effect(() => {
+    const settled = provider != null ? providerHasSynced : scratchSeeded !== false;
+    if (electraReconnectArmed || !settled) return;
+    if (!snapshot.nodes.some((n) => n.type === ELECTRA_CONTROL_TYPE)) return;
+    electraReconnectArmed = true;
+    getElectraAutoReconnect().notifyPatchLoaded();
+  });
+
+  $effect(() => {
+    const pairs = nodePresent.presentingPairs();
+    if (!presentWriteArmed) return;
+    const live = liveScreens();
+    if (!canDescribeBindings(pairs, live)) return;
+    const next = bindingsFromPairs(pairs, live);
+    const serialized = JSON.stringify(next);
+    if (serialized === lastWrittenBindings) return;
+    lastWrittenBindings = serialized;
+    writePresentBindings(ydoc, next, LOCAL_ORIGIN);
+    trace(`present bindings: wrote ${next.length} from ${pairs.length} live session(s), ${live.length} display(s) known`);
+  });
+
+  // #2239 — place + lock the video-zone trio once the persisted graph is up.
+  // Gated on the same load signal the restore paths use: before the doc has
+  // synced, the trio may not exist yet (or may exist without their saved
+  // positions), and placing them then would fight the incoming state.
+  $effect(() => {
+    // ⚠ "NOTHING TO WAIT FOR" IS ALSO LOADED, and leaving it out was a real
+    // regression (#2239). The zone inset used to be applied unconditionally by
+    // the render override; making it depend on this effect meant that wherever
+    // the effect did NOT run, the trio sat exactly ON the zone's dashed
+    // baseline. An EPHEMERAL rack — no collab provider AND no IndexedDB replica
+    // seed, which is every e2e rack — has neither signal, so it waited forever
+    // for a load that was already complete. CI caught it: "workflow-videoOut
+    // tile top is below the video-zone baseline".
+    const waiting = scratchSeeded === false || (provider != null && !providerHasSynced);
+    void snapshot.nodes.length; // re-run as the trio materialises
+    if (waiting || !shellFaces) return;
+    untrack(() => placeVideoZoneDefaults());
   });
 
   // Pre-effect marker: written once at module-script eval time. The
@@ -2188,8 +2373,9 @@
   // even LOCKED ones (we write committed graph position, not a drag). A
   // deterministic one-shot on the lane-top change: planLanePushUps returns an
   // EMPTY plan once everything clears, so this is idempotent (no write storm).
-  // Lane members (data.channel/sendSlot), pinned singletons, video-domain cards
-  // and the video area's contents are excluded.
+  // Lane members (data.channel/sendSlot), pinned singletons and the video
+  // area's contents are excluded. (Video-domain cards are NOT — #2240: they may
+  // be lane members now, so free ones clear the lanes like anything else.)
   $effect(() => {
     const laneTopY = wcolLaneTopY; // dependency: re-run when lanes grow/shrink
     if ((provider && !providerHasSynced) || scratchSeeded === false) return;
@@ -2197,7 +2383,11 @@
     for (const n of snapshot.nodes) {
       if (n.type === 'cadillac') continue;
       if (isCanvasHiddenNode(n)) continue; // pinned singletons + hidden cameras
-      if (n.domain === 'video') continue; // the video zone owns these
+      // ⚠ NO DOMAIN EXCLUSION (#2240). Video modules may be lane members now, so
+      // they take part in push-up like anything else. The video ZONE's own
+      // contents are still excluded — by POSITION, on the `pos.y >=
+      // COLUMN_BASELINE_Y` line below, which is the honest test for "in the
+      // zone" and does not also catch a video module the user put in a lane.
       const d = n.data as { channel?: number; sendSlot?: number } | undefined;
       if (typeof d?.channel === 'number' || typeof d?.sendSlot === 'number') continue; // lane member
       const pos = currentNodePosition(n.id) ?? n.position;
@@ -2252,9 +2442,16 @@
    *  like cameraInput/videoOut) and 'stub' (real card in the dock rail) both
    *  render the card SOMEWHERE and are excluded — only 'shell'/'placeholder'
    *  qualify. Additionally excluded:
-   *    - a node whose full faceplate is OPEN in the dock (DockFullView already
-   *      mounts its real card — a second mount would run two media elements for
-   *      one node and the first to unmount would detach the survivor's source),
+   *    - a node whose full faceplate is OPEN in the dock, BECAUSE DockFullView
+   *      mounts its real card there — a second mount would run two media
+   *      elements for one node and the first to unmount would detach the
+   *      survivor's source.
+   *      ⚠ AND THAT IS A CONDITION, NOT A CONSTANT. `DockFullView` mounts the
+   *      real card only for an UN-MIGRATED module; a promoted one gets
+   *      `<ModuleShell>` and no card at all. So a promoted DOM-source module
+   *      (cameraInput) still needs its host WHILE its faceplate is open — see
+   *      `fullViewShowsFaceInstead` at the site, which is where the argument and
+   *      its deliberate scope live,
    *    - canvas-hidden nodes (pinned drawer / hiddenCard cameras): those render
    *      no lane card in preview-off EITHER, so hosting them would ADD engine
    *      state the shell-off rack doesn't have — the opposite of the parity
@@ -2340,6 +2537,56 @@
     nodeDoomSession.sweep(liveIds);
     nodeLaunchpadMonitor.sweep(liveIds);
     nodeExtras.sweep(liveIds);
+    // ...and the CAMERA CAPTURE STATUS
+    // ($lib/ui/media/camera-status-registry): the published state and the
+    // acquire command a promoted CAMERA's dock faceplate drives. Its card is
+    // off-screen in <HeadlessSourceHost> under the default shell, so the
+    // registry is the only thing joining the two surfaces — and like every row
+    // above it is keyed to the NODE, so the graph is what retires it.
+    cameraStatus.sweep(liveIds);
+    // ...and the same pair for LOOPBACK, for the same reason and with one
+    // addition. `loopbackStatus` is the status/command seam its promoted
+    // faceplate drives ($lib/ui/media/loopback-status-registry).
+    // `loopbackCropPump` is a running rAF LOOP, so this row is the only thing
+    // that ever ends one for a DELETED node: the pump is deliberately
+    // node-keyed and deliberately survives a card unmount (a collapse must not
+    // freeze the crop under a live capture), which means a card teardown
+    // cannot be what stops it. Without this sweep a deleted loopback would
+    // leave a pump measuring the viewport forever.
+    loopbackStatus.sweep(liveIds);
+    loopbackCropPump.sweep(liveIds);
+    // ...and the NODE-OWNED VIDEO SOURCE (LEG-02, #1511:
+    // $lib/ui/media/node-video-source-registry) — the row that lets a
+    // file-backed video module leave `DOM_SOURCE_LANE_TYPES` altogether. Before
+    // it, VIDEOBOX's attach, its audio wiring, its multiplayer drift loop, its
+    // play_trigger gate loop and its saved-handle restore all lived in
+    // `VideoboxCard.svelte`'s own component lifetime, so the source existed only
+    // because `<HeadlessSourceHost>` parked the real card off-screen. The
+    // controller owns all six on GRAPH lifetime, and this sweep is the only
+    // thing that ever ends one — a card teardown must not, which is the whole
+    // point.
+    nodeVideoSource.sweep(liveIds);
+    // ...and the NODE-OWNED VARISPEED TRANSPORT (LEG-02 P2, #1511:
+    // $lib/ui/media/node-varispeed-registry). Two live defects made this one
+    // more than a lifetime move: a varispeed inside a COLLAPSED GROUP had no
+    // card anywhere, so its transport and all five CV triggers — including the
+    // ASSET slot select a clip player drives — were simply dead; and every
+    // expand/collapse reset `activeSlot` to 0 and wiped all seven virtual
+    // playheads, because both were card `$state` with no persistence path.
+    nodeVarispeed.sweep(liveIds);
+    // ...and the NODE-OWNED HLS TUNER (LEG-02 P3, #1511:
+    // $lib/ui/media/node-hls-source-registry), which is where the epic stops
+    // being about FILE players. PEERTUBE and TV LIBRARIAN own a NETWORK stream,
+    // and with no card anywhere they were not degraded but DEAD: no attach so
+    // `video` was black, no CV poll so play/next/random did nothing, no
+    // selection effect so a SAVED rack came back on nothing and a peer's tune
+    // never landed, and no audio wire so both audio outs were silent with the
+    // element left `muted`. Two further defects hit an ORDINARY rack: every
+    // expand/collapse tore down and rebuilt a LIVE hls.js demuxer (dropping
+    // `stream_online` to 0 on the way), and a card unmounted inside the ~5 s
+    // audio-wire retry stranded the element muted forever with nothing running
+    // to un-mute it.
+    nodeHlsSource.sweep(liveIds);
   });
 
   /** THE EXTRAS-CHANNEL PRODUCER SEAM (#1720). The sixth instance of the #1583
@@ -2368,18 +2615,108 @@
     nodeExtras.sync(snapshot.nodes, engine);
   });
 
+  /** THE NODE-OWNED VIDEO SOURCE SEAM (LEG-02, #1511). Same shape and same
+   *  snapshot as the extras sync above, and for a strictly stronger reason: the
+   *  extras producers push state a card could recompute from `node.data`,
+   *  whereas a file-backed video source cannot be recomputed at all — the bytes
+   *  live behind an object URL that only a user gesture can mint.
+   *
+   *  So the controller does not reproduce a card's push; it REPLACES the card as
+   *  the owner. It `ensure`s the node's `<video>` (created PARKED, so it exists
+   *  and decodes before any card mounts), attaches it to the engine, wires its
+   *  audio, and runs the drift + gate loops. `VideoboxCard` now adopts that
+   *  element for display and forwards gestures — it creates nothing and
+   *  disposes nothing.
+   *
+   *  ⚠ The engine reference is passed rather than imported for the same reason
+   *  `nodeExtras` takes it: the registry lives under `$lib/ui/**` and must stay
+   *  hash-transparent to the WebGL attest, which walks `$lib/video/**`
+   *  wholesale. It reaches the engine only through existing public calls. */
+  $effect(() => {
+    nodeVideoSource.sync(snapshot.nodes, engine);
+  });
+
+  /** THE NODE-OWNED VARISPEED TRANSPORT (LEG-02 P2, #1511). Same snapshot and
+   *  same reasoning as the source sync above; a SIBLING controller rather than a
+   *  parameterisation of it, because the two transports are different models
+   *  rather than one model with a flag — videobox corrects a WALL CLOCK, while
+   *  varispeed advances seven VIRTUAL playheads, six of them for clips that are
+   *  not on air. See the registry header. */
+  $effect(() => {
+    nodeVarispeed.sync(snapshot.nodes, engine);
+  });
+
+  /** THE NODE-OWNED HLS TUNER (LEG-02 P3, #1511). Same snapshot and same
+   *  reasoning as the two syncs above, and ONE registry for BOTH streaming
+   *  modules rather than a sibling each: peertube and tvLibrarian are the same
+   *  model (a catalogue, a pick, an .m3u8, an audio tap, an advance trigger),
+   *  and they are the same model because peertube was written by cloning
+   *  tv-librarian. See the registry header — the hand-copy that produced them is
+   *  also what shipped tvLibrarian silent for a month.
+   *
+   *  ⚠ Running on the graph snapshot is what makes a PEER's tune land at all.
+   *  The card's `$effect` on `node.data` used to be the only thing that turned a
+   *  persisted selection into a playing stream, so with no card mounted the
+   *  module ignored both a rack load and every remote change. */
+  $effect(() => {
+    nodeHlsSource.sync(snapshot.nodes, engine);
+  });
+
   let headlessSourceNodes = $derived.by<ModuleNode[]>(() => {
     const collapsed = collapsedGroupIds;
     const out: ModuleNode[] = [];
     for (const n of snapshot.nodes) {
       if (!HEADLESS_MOUNT_LANE_TYPES.has(n.type)) continue;
-      if (isCanvasHiddenNode(n)) continue;
-      if (dockStore.isFullView(n.id)) continue;
+      // ⚠ THE CANVAS-HIDDEN ARM OF #1721 — #1754. A canvas-hidden node is
+      // skipped on the premise that SOME OTHER surface mounts its real card.
+      // For the M/E/C drawer trio that premise is true (the dock rail mounts
+      // it). For a CARD PRODUCER it is FALSE, and the measurement is flat:
+      //
+      //   A fresh `/rack` auto-spawns `pinned-timelorde` (`data.pinned: true`,
+      //   `presence: 'type'` — see graph/workflow-pins). MEASURED on this tree,
+      //   BOTH shells: `.mod-card.timelorde-card` = 0 mounts, headless hosts for
+      //   timelorde = 0. Its producer card has never been mounted anywhere, so
+      //   `write(node,'displayFrame')` never runs and `video_out` is the idle
+      //   field forever — `nonBlack 0/3072, maxLuma 8, 1 distinct signature over
+      //   30 frames`, recorded in card-producer-lifetime.spec.ts, which names
+      //   this exclusion as the half it does not cover.
+      //
+      // ⚠ AND IT IS NOT THE PINNED-DRAWER STORY AN EARLIER DRAFT OF THIS COMMENT
+      // TOLD. timelorde is a WORKFLOW_PINNED_SURFACES module, not one of the
+      // M/E/C drawer occupants: it has NO drawer and NO rail, so
+      // `dockRailRendersFace` never fires for it and the defect has nothing to
+      // do with promotion. Gating this on `shellFaces && migrated` would have
+      // fixed exactly half of it — the default shell after the face lands —
+      // and left `?shell=legacy` dark, which is the opposite of the parity the
+      // skip exists to protect. Both shells are equally broken today; both are
+      // fixed here, so they still agree.
+      //
+      // Scoped on CARD_PRODUCER membership, exactly as #2148 scoped its sibling:
+      // hidden CAMERAS are the other kind of canvas-hidden node and are
+      // DOM_SOURCE, so they are untouched, and the trio are not producers.
+      // canvas-hidden ∩ CARD_PRODUCER is {timelorde} today.
+      //
+      // ⚠ AND THE DECISION IS NOT DUPLICATED HERE. The `continue` this replaces
+      // encoded "is this a producer?" in the caller, beside a pure function that
+      // already answers exactly that question for exactly this case:
+      // `needsHeadlessSourceMount`'s `laneOmitsNode` arm returns
+      // `CARD_PRODUCER_LANE_TYPES.has(type)`. So canvas-hidden is folded INTO
+      // `laneOmitsNode` below — it is the same fact ("the lane emits no node at
+      // all for this one") — and the hidden CAMERAS keep their old answer from
+      // the one place that decides it, rather than from a second copy here.
+      // ⚠ THE DOCK FULL VIEW ONLY MOUNTS THE REAL CARD FOR AN UN-MIGRATED
+      // MODULE, and this used to be an unconditional `continue`. See the
+      // `dockFullViewMountsCard` note below — the exclusion moved into
+      // `hostedElsewhere`, which is the input that already means exactly this.
       const parentGroupId = (n.data as { parentGroupId?: string } | undefined)?.parentGroupId;
       // The lane emits NO node for a collapsed group's child (see the flowNodes
       // derivation below), in EITHER shell — so `kind` describes a card that is
       // never reached, and the decision needs to know that rather than infer it.
-      const laneOmitsNode = !!parentGroupId && collapsed.has(parentGroupId);
+      // A CANVAS-HIDDEN node (pinned singleton / `hiddenCard` camera) is the
+      // same fact by a different route: the flowNodes derivation skips it, so
+      // no lane node is emitted for it either, in either shell.
+      const laneOmitsNode =
+        (!!parentGroupId && collapsed.has(parentGroupId)) || isCanvasHiddenNode(n);
       const kind = laneRenderKind({
         shellFaces,
         userDocked: !!dockStore.entryFor(n.id),
@@ -2387,15 +2724,63 @@
         hasCard: isShellSwappable(n.type, cardTypeSet.has(n.type)),
         migrated: migrated(n.type),
       });
+      // ⚠ A DOCK FULL VIEW DOES NOT ALWAYS MOUNT THE REAL CARD, and this used
+      // to be an unconditional `continue` that assumed it always does.
+      // `DockFullView.svelte` is `{#if migrated} <ModuleShell/> {:else}
+      // <CardComponent/>`: for a PROMOTED module the tray paints the FACEPLATE,
+      // and the card is nowhere in it.
+      //
+      // The old premise held for every member of this set on the day it was
+      // written, because NO card-owned-source module was promoted yet — a gate
+      // whose precondition was the ABSENCE of the feature. Promoting one turns
+      // it false: expanding the faceplate would unmount the card from every
+      // surface at once, and on a CAPTURE source that is the acquire command's
+      // owner vanishing exactly while the user looks at the surface offering it.
+      //
+      // ⚠ SCOPED TO THE DOM-SOURCE HALF ON PURPOSE. The producer half (cube,
+      // rasterize — the two promoted members today) is left EXACTLY as it was,
+      // and not because hosting them would be wrong: because it would be
+      // UNMEASURED. Their faces mount the producing surface through the hero
+      // cell (`CubeVizSurface` IS cube's renderer, per dom-source-modules.ts),
+      // so they are not dark in the tray, and adding a second mount of a card
+      // that installs a frame drawer is a change that needs its own measurement
+      // rather than a ride-along. This decision is already channel-aware for the
+      // same kind of reason — `needsHeadlessSourceMount`'s `laneOmitsNode` arm
+      // returns `CARD_PRODUCER_LANE_TYPES.has(type)`.
+      //
+      // ⚠ AND ON THE DOM-SOURCE HALF IT CANNOT DOUBLE-MOUNT, which is the exact
+      // hazard the original exclusion existed for: `nodeMedia` adoption is a
+      // TRANSFER with an owner-checked release, so there is one element per
+      // (node, slot), two hosts cannot own two elements, and a stale teardown
+      // cannot strand the live one.
+      // ⚠ THE PRODUCER HALF IS NO LONGER LEFT ALONE, and the paragraph above now
+      // records why it USED to be rather than why it still is. The premise was
+      // that a promoted producer's face mounts its renderer (true of cube and
+      // rasterize, the only two at the time). timelorde is the first whose face
+      // only BLITS what the card produces — so with the dock open the card was
+      // unmounted from every surface and the picture froze on the last pushed
+      // bitmap, or on the idle field if none had been pushed yet. Deny by
+      // default now: a faced producer KEEPS its host, and the two that must not
+      // are named in `FACE_MOUNTS_PRODUCER` with the reason they can.
+      const fullViewShowsFaceInstead =
+        dockStore.isFullView(n.id) &&
+        migrated(n.type) &&
+        (DOM_SOURCE_LANE_TYPES.has(n.type) ||
+          (CARD_PRODUCER_LANE_TYPES.has(n.type) && !FACE_MOUNTS_PRODUCER.has(n.type)));
       if (
         needsHeadlessSourceMount({
           kind,
           type: n.type,
           laneOmitsNode,
-          // GroupCard hidden-mounts a viz-passthrough child's REAL card for
-          // exactly as long as the group is collapsed, so that node already has
-          // a live host and a second one would be a double mount.
-          hostedElsewhere: laneOmitsNode && groupCardHostsChildCard(n.type),
+          // Two producers of "some other live surface already mounts this
+          // node's REAL card":
+          //   * the DOCK FULL VIEW — unless it is showing a faceplate instead
+          //     (see above), and
+          //   * GroupCard, which hidden-mounts a viz-passthrough child's real
+          //     card for exactly as long as the group is collapsed.
+          hostedElsewhere:
+            (dockStore.isFullView(n.id) && !fullViewShowsFaceInstead) ||
+            (laneOmitsNode && groupCardHostsChildCard(n.type)),
         })
       ) {
         out.push(n);
@@ -2476,6 +2861,48 @@
   );
   let workflowAudioOutNode = $derived(
     snapshot.nodes.find((n) => n.id === 'pinned-audioOut') ?? null,
+  );
+  // ── THE 🎧 PANEL IS A DOCK RAIL TOO, AND IT NEVER ASKED (#1739's third
+  //    caller) ──────────────────────────────────────────────────────────────
+  //
+  // `dockRailRendersFace`'s header states the argument for the pinned occupant
+  // exactly: *"a PINNED occupant is canvas-hidden (`isCanvasHiddenNode`), so it
+  // has NO lane tile, NO EXPAND pill and no route to `DockFullView`. The tray is
+  // its ONLY surface, and it is therefore the only place its face can appear."*
+  //
+  // `pinned-audioIn` / `pinned-audioOut` are exactly that shape — canvas-hidden
+  // singletons whose one surface is `AudioIoSurface`'s two `DockCardHost`
+  // mounts — and that component passed six props and no `face`, so the host's
+  // `face = false` default won and it mounted `nodeTypes[type]` unconditionally.
+  // The rule existed, was correct, and had a caller that did not call it.
+  //
+  // ⚠ EVALUATED HERE, INJECTED, NEVER RE-DERIVED IN THE PANEL. `shellFaces` and
+  // `migrated()` are read in ONE place on purpose (see `DockCardHost`'s `face`
+  // prop doc); a second reader inside `AudioIoSurface` is the
+  // two-derivations-of-one-fact class this file's own patch rows were rewritten
+  // to remove. `pinned: true` is a literal because that is what these two nodes
+  // ARE — `workflow-pins.ts` spawns them as the always-on pair.
+  //
+  // ⚠ BOTH ARMS ARE FALSE TODAY (neither type is migrated), and that is the
+  // point rather than a caveat: this is the leg that MOVES the day either module
+  // is promoted. The panel's existing VRT scene drives `?shell=legacy`, so
+  // `shellFaces` is false there and it can never see this arm — the same blind
+  // spot `legacy-fallback.ts` already records for the three drawer specs.
+  let workflowAudioInFace = $derived(
+    !!workflowAudioInNode &&
+      dockRailRendersFace({
+        shellFaces,
+        pinned: true,
+        migrated: migrated(workflowAudioInNode.type),
+      }),
+  );
+  let workflowAudioOutFace = $derived(
+    !!workflowAudioOutNode &&
+      dockRailRendersFace({
+        shellFaces,
+        pinned: true,
+        migrated: migrated(workflowAudioOutNode.type),
+      }),
   );
   /** A cable feeds TIMELORDE's clock input (DIN assignment or hand-patch)
    *  → tap tempo + tempo knob flip to the externally-clocked state. */
@@ -2696,40 +3123,13 @@
       const positions = sendFlushPositions(s, heightsFor(order), widthsFor(order), wcolPitch, wcolStackAnchorY);
       order.forEach((id, i) => wcolPosByNode.set(id, positions[i]!));
     }
-    // SHELL PREVIEW: the video-zone default trio (videoOut / recorderbox /
-    // synesthesia) is NOT a channel member, so it renders at its PERSISTED
-    // spawn X — the wide 765px video-zone pitch. Under the narrowed lanes that
-    // strands them far right of the tight columns, so RE-DERIVE their RENDER
-    // position to the shell pitch, PACKED left-to-right (videoZonePackedXs):
-    // a tile-swapped default reserves one uniform SHELL_TILE_W slot (an
-    // all-tile zone packs to EXACTLY the historic fixed 216px slots), while a
-    // LEGACY-rendered default — videoOut, the video-surface snowflake whose
-    // real card stays in the lane — reserves its ACTUAL live width
-    // (node.data.width, the freely-resizable card), so it never overlaps its
-    // tile neighbours and a corner-drag resize simply pushes them right. The
-    // override anchors POSITION only; the card sizes itself. Also nudge each
-    // TOP DOWN by SHELL_VIDEO_ZONE_TILE_INSET_Y so the whole tile sits INSIDE
-    // the darker video area — un-inset, the tile top lands on the zone's
-    // dashed border (drawn at COLUMN_BASELINE_Y == the slot's un-inset top)
-    // and its jack rail collides with the lane-number badges just above it.
-    // Pure render OVERRIDE (like the channel members) — the persisted x/y is
-    // untouched, so preview OFF is byte-identical and no Y.Doc write / collab
-    // divergence.
-    if (shellFaces) {
-      const present = VIDEO_ZONE_DEFAULTS.filter((spec) => typeOf.has(spec.id));
-      const widths = present.map((spec) => {
-        if (!NON_SHELL_LANE_TYPES.has(spec.type)) return SHELL_TILE_W;
-        // Legacy in-lane card (videoOut): its live resizable width.
-        const n = snap.nodes.find((m) => m.id === spec.id);
-        const w = (n?.data as { width?: number } | undefined)?.width;
-        return typeof w === 'number' && w > 0 ? w : spec.nominalWidth;
-      });
-      const origin = videoZoneSlotPos(0, wcolPitch);
-      const xs = videoZonePackedXs(origin.x, widths, wcolPitch);
-      present.forEach((spec, i) => {
-        wcolPosByNode.set(spec.id, { x: xs[i]!, y: origin.y + SHELL_VIDEO_ZONE_TILE_INSET_Y });
-      });
-    }
+    // ⚠ THE VIDEO-ZONE TRIO IS NO LONGER RENDER-OVERRIDDEN (#2239). It used to
+    // have its x/y re-derived here every frame, packed left-to-right, with the
+    // persisted position ignored — which is exactly why those modules could not
+    // be moved: a drag wrote a position this block discarded on the next frame.
+    // They are now PLACED ONCE and LOCKED (see placeVideoZoneDefaults), so the
+    // position is real, the rack lock owns it, and unlocking makes them drag
+    // like anything else.
     for (const n of snap.nodes) {
       // Skip children belonging to a collapsed group — the group card
       // stands in for them visually. Phase 2 will flip to inline-rendering
@@ -3198,9 +3598,15 @@
       await ensureEngine();
       // Routed through persistenceLoad (not loadEnvelopeIntoStore directly) so
       // this path gets the same non-blocking diagnostic notice as every other.
+      beginPatchLoad();
       const result = persistenceLoad(env, ydoc, patch);
       await reconciler?.reconcile();
       trace(`imported patch JSON (${result.nodesLoaded} nodes, ${result.edgesLoaded} edges)`);
+      await runPresentRestore(readPresentBindingsFromUpdate(env.update));
+      // Re-arm the Electra auto-flash for the LOADED patch (#2248) — per load,
+      // not per mount, for the same reason as runPresentRestore above. A no-op
+      // (fully dormant) when the imported patch has no electraControl.
+      getElectraAutoReconnect().notifyPatchLoaded();
       if (result.diagnostics.length > 0) {
         for (const d of result.diagnostics) {
           console.warn(`[import-json] ${d.nodeId} (${d.type}): ${d.reason}`);
@@ -3311,8 +3717,10 @@
 
   /** Build the portable performance .zip bytes for the current rack. Pure-ish:
    *  reads the live store + resolves loaded video bytes. Exposed for the e2e
-   *  hook so the round-trip test can capture the bytes without a download. */
-  async function buildPerformanceZipBytes(): Promise<Uint8Array> {
+   *  hook so the round-trip test can capture the bytes without a download.
+   *  `stateOnly` swaps the envelope for the history-free rebuild
+   *  (makeStateOnlyEnvelope) — same materialized state, no Yjs edit history. */
+  async function buildPerformanceZipBytes(stateOnly = false): Promise<Uint8Array> {
     // A zip export mid-twist must capture the settled knob values (the CC
     // coalescer defers store commits) — flush before snapshotting.
     flushAllCcCommits();
@@ -3376,7 +3784,9 @@
       }
     });
 
-    const envelope = makePortableEnvelope(ydoc, currentUserId);
+    const envelope = stateOnly
+      ? makeStateOnlyEnvelope(ydoc, currentUserId)
+      : makePortableEnvelope(ydoc, currentUserId);
     const nodes: Record<string, { id: string; type: string; data?: Record<string, unknown> | null; params?: Record<string, unknown> | null }> = {};
     for (const [nid, n] of Object.entries(patch.nodes)) {
       if (n) nodes[nid] = { id: nid, type: n.type, data: n.data as Record<string, unknown> | null, params: n.params as Record<string, unknown> | null };
@@ -3414,19 +3824,32 @@
   }
 
   async function exportPerformanceZip(): Promise<void> {
+    return exportPerformanceZipAs(false);
+  }
+
+  /** File → Export patch (current state only): the same .ptperf.zip with the
+   *  Yjs edit history dropped (see makeStateOnlyEnvelope). */
+  async function exportPerformanceZipStateOnly(): Promise<void> {
+    return exportPerformanceZipAs(true);
+  }
+
+  async function exportPerformanceZipAs(stateOnly: boolean): Promise<void> {
     error = null;
     if (perfZipBusy) return;
     perfZipBusy = true;
     try {
-      const bytes = await buildPerformanceZipBytes();
+      const bytes = await buildPerformanceZipBytes(stateOnly);
       // Let the user NAME the file (Chromium: native Save dialog; elsewhere: a
       // name prompt + download) instead of force-saving a fixed name.
-      const outcome = await savePerformanceZip(bytes);
+      const outcome = await savePerformanceZip(
+        bytes,
+        stateOnly ? { suggestedName: 'performance-state.ptperf.zip' } : {},
+      );
       if (outcome === 'cancelled') {
         trace('export performance cancelled by user');
         return;
       }
-      trace(`exported performance .zip (${(bytes.length / 1024).toFixed(0)} KB)`);
+      trace(`exported performance .zip (${(bytes.length / 1024).toFixed(0)} KB${stateOnly ? ', state-only' : ''})`);
     } catch (e) {
       error = `Export performance failed: ${e instanceof Error ? e.message : String(e)}`;
       trace(`export performance failed: ${String(e)}`);
@@ -3438,6 +3861,7 @@
   /** Restore a parsed performance .zip into the live rack. Shared by the file
    *  picker + the e2e hook (which passes captured bytes). */
   async function loadPerformanceZipBytes(zipBytes: Uint8Array): Promise<void> {
+    beginPatchLoad();
     const parsed = parsePerformanceZip(zipBytes);
     const bundle = validateBundle(parsed.bundle);
 
@@ -3484,6 +3908,16 @@
     // auto-bind every saved MIDI module to its device (by saved id, falling back
     // to NAME for cross-machine). No mappings → no prompt.
     await autoBindMidiDevices(bundle.midiDevices);
+
+    // The loaded envelope brought its own presentBindings; the mount pass (if
+    // it ran at all) resolved the PREVIOUS graph. #2230.
+    await runPresentRestore(readPresentBindingsFromUpdate(bundle.patch.update));
+
+    // Re-arm the Electra auto-flash for the LOADED patch (#2248) — per load,
+    // not per mount (mirrors runPresentRestore). Dormant when the zip's rack
+    // has no electraControl, so the "no MIDI mappings → no prompt" contract of
+    // autoBindMidiDevices above is preserved for electra-free racks.
+    getElectraAutoReconnect().notifyPatchLoaded();
   }
 
   /** Restore each TWOTRACKS reel tape from the perf-zip's out-of-band 'audio'
@@ -4608,6 +5042,17 @@
     if (origin.x === n.position.x && origin.y === n.position.y) return null;
     if (!flowApi) return null;
 
+    // A release inside a lane/send band is a MEMBERSHIP gesture, never a
+    // drop-to-patch: "add to the top of the stack" means dropping straight onto
+    // the stack's top card, and any compatible pair (an FX onto an FX, a fader
+    // onto a videoOut) would otherwise claim the gesture, snap the card back
+    // and open the modal — which reads as "this type won't join" (#2247). The
+    // SAME laneGestureTarget the membership writer resolves through decides, so
+    // the two paths cannot disagree about who owns the drop. Drop-to-patch
+    // keeps the whole free canvas and the video zone.
+    const draggedNode = patch.nodes[n.id];
+    if (draggedNode && laneGestureTarget(draggedNode.type, n.position) !== null) return null;
+
     const size = nodeFootprintPx(n.id);
     if (size.w <= 0 || size.h <= 0) return null;
     const dragged: DropRect = { id: n.id, x: n.position.x, y: n.position.y, width: size.w, height: size.h };
@@ -4887,11 +5332,14 @@
         for (const n of moved) {
           const node = patch.nodes[n.id];
           if (!node || isPinnedNode(node) || n.id === WCOL_MIXER_ID || n.id === WCOL_CLIP_ID) continue;
-          // VIDEO cards belong to the video zone, never an audio channel. The
-          // Y gate below already excludes the video zone (it sits BELOW the
-          // baseline), but a video card dragged up INTO a lane band must still
-          // be refused — the video zone owns it wherever it is parked.
-          if (node.domain === 'video') continue;
+          // ⚠ VIDEO CARDS MAY JOIN A LANE (#2240). This used to refuse them
+          // outright — "the video zone owns it wherever it is parked" — which
+          // is what made a video source impossible to associate with the clip
+          // lane driving it. Channel membership is what binds a module to that
+          // lane's automation (column-reconcile → assignAutomationLane), and
+          // the video engine has implemented `scheduleParam`/`holdParam` for
+          // clip-automation playback all along, so the binding half needed
+          // nothing. The Y gate below still keeps the zone's own contents out.
           const d = node.data as { channel?: number; sendSlot?: number } | undefined;
           const oldCh = typeof d?.channel === 'number' ? d.channel : null;
           const oldSlot = typeof d?.sendSlot === 'number' ? d.sendSlot : null;
@@ -4912,11 +5360,7 @@
           // (X stays the top-left, unchanged — the columns are wider than the
           // cards, and re-anchoring X would re-target existing side-of-band
           // drops.)
-          const band = laneTargetForFlowPoint(
-            { x: n.position.x, y: dropCenterY },
-            wcolLaneTopY,
-            wcolPitch,
-          );
+          const band = laneGestureTarget(node.type, n.position);
           if (typeof band === 'number') {
             if (oldCh === band) {
               // Reorder within the same column: index from the drop Y, against
@@ -5029,6 +5473,61 @@
         if (target) target.position = { x: pos.x, y: pos.y };
       }, LOCAL_ORIGIN);
     }
+  }
+
+  /**
+   * PLACE THE VIDEO-ZONE TRIO ONCE, THEN LOCK IT (#2239).
+   *
+   * These three (videoOut / recorderbox / synesthesia) used to be positioned by
+   * a per-frame RENDER OVERRIDE in the flowNodes derivation: their persisted
+   * x/y was ignored and re-derived every frame. That is why they could not be
+   * moved — a drag wrote a position the next frame discarded — and it is the
+   * "special logic about their positioning" this replaces.
+   *
+   * Now they are given a real position and screwed down. `lockNode` already
+   * does precisely what is wanted: snap to the rack grid, nudge to the nearest
+   * FREE slot, persist `rackLocked`. So this computes the packed slot, writes
+   * it, and hands over — no second copy of the geometry, and unlocking makes
+   * them ordinary draggable modules.
+   *
+   * ONE-SHOT, latched on `data.videoZonePlaced`, because it must not fight the
+   * user: once placed, a module they unlocked and moved stays where they put
+   * it. The flag rides the doc, so it converges across collaborators and a
+   * reload does not re-place.
+   */
+  function placeVideoZoneDefaults(): void {
+    if (!shellFaces) return;
+    const present = VIDEO_ZONE_DEFAULTS.filter((spec) => !!patch.nodes[spec.id]);
+    if (present.length === 0) return;
+    const pending = present.filter((spec) => {
+      const d = patch.nodes[spec.id]?.data as { videoZonePlaced?: boolean } | undefined;
+      return d?.videoZonePlaced !== true;
+    });
+    if (pending.length === 0) return;
+
+    // Widths as the old override measured them: a tile-swapped default reserves
+    // one uniform SHELL_TILE_W, a legacy in-lane card (videoOut) reserves its
+    // live resizable width so it never overlaps its neighbours.
+    const widths = present.map((spec) => {
+      if (!NON_SHELL_LANE_TYPES.has(spec.type)) return SHELL_TILE_W;
+      const w = (patch.nodes[spec.id]?.data as { width?: number } | undefined)?.width;
+      return typeof w === 'number' && w > 0 ? w : spec.nominalWidth;
+    });
+    const origin = videoZoneSlotPos(0, wcolPitch);
+    const xs = videoZonePackedXs(origin.x, widths, wcolPitch);
+
+    present.forEach((spec, i) => {
+      const d = patch.nodes[spec.id]?.data as { videoZonePlaced?: boolean } | undefined;
+      if (d?.videoZonePlaced === true) return;
+      writeNodePosition(spec.id, { x: xs[i]!, y: origin.y + SHELL_VIDEO_ZONE_TILE_INSET_Y });
+      mutateNode(spec.id, (live) => {
+        if (!live.data) live.data = {};
+        live.data.videoZonePlaced = true;
+      });
+      // Snap + free-slot + rackLocked, through the same path the menu uses.
+      lockNode(spec.id);
+    });
+    trace(`video zone: placed + locked ${pending.length} default(s)`);
   }
 
   /** Virtual-rack Phase 2 — "screw down" a module to its rack slot:
@@ -5582,16 +6081,44 @@
    */
   function wcolDropTarget(
     flowPos: { x: number; y: number },
+    topGraceY: number = 0,
   ): { channel?: number; sendSlot?: number } | null {
     if (!patch.nodes[WCOL_MIXER_ID]) return null;
     // Resolve against the ACTIVE pitch (narrow under `?shell=1`) and the LIVE
     // lane top: the spawn flow-pos comes from the cursor's screen→flow
     // projection over the RENDERED (narrowed, grown-upward) lanes, so the band
-    // it lands in is a pitch- AND height-relative hit-test.
-    const band = laneTargetForFlowPoint(flowPos, wcolLaneTopY, wcolPitch);
+    // it lands in is a pitch- AND height-relative hit-test. `topGraceY` is the
+    // reach-up (laneBandContainsY): a palette click one slot above the painted
+    // top still spawns INTO the lane, which then grows to hold the new card.
+    const band = laneTargetForFlowPoint(flowPos, wcolLaneTopY, wcolPitch, topGraceY);
     if (typeof band === 'number') return { channel: band };
     if (band === 'send') return { sendSlot: sendBoxForFlowX(flowPos.x, wcolPitch) };
     return null;
+  }
+
+  /**
+   * THE one definition of "this drop is a lane gesture" — the band a dragged
+   * card's release resolves to, or null. Probes the card's CENTER (its top-left
+   * plus half its flush slot height) with a one-slot reach-up above the painted
+   * band top, so releasing a card ON TOP of a lane's stack — even hovering just
+   * above the current painted line — joins the lane, and the lane grows under
+   * it. Shared by the drag-stop membership writer AND resolveCardDrop's claim
+   * gate, so "joins the lane" and "opens drop-to-patch" can never both claim
+   * one gesture. Type-uniform: geometry only — no domain, type, or category
+   * test (#2247 owner rule: audio, video, voice or utility all bind alike).
+   */
+  function laneGestureTarget(
+    nodeType: string,
+    pos: { x: number; y: number },
+  ): number | 'send' | null {
+    if (!patch.nodes[WCOL_MIXER_ID]) return null;
+    const slotH = wcolCardHeightPx(nodeType);
+    return laneTargetForFlowPoint(
+      { x: pos.x, y: pos.y + slotH / 2 },
+      wcolLaneTopY,
+      wcolPitch,
+      slotH,
+    );
   }
 
   function onNodeContextMenu({ event, node }: { event: MouseEvent | TouchEvent; node: FlowNode }) {
@@ -7878,11 +8405,13 @@
     // at the deterministic column slot, and SUPPRESS the cable-splice (in-band
     // drops order by the column array, never by proximity-splice — the two
     // splice paths must not both fire on one drop).
-    // Video cards live in the video zone, not an audio channel — refused here
-    // whatever the cursor is over (the video zone's own band sits BELOW the
-    // baseline, which wcolDropTarget already excludes, but a video card spawned
-    // with the cursor inside a lane must still stay out of the chain).
-    const wcolDrop = type === 'cadillac' || domain === 'video' ? null : wcolDropTarget(spawnFlowPos);
+    // CADILLAC is a roaming overlay sprite, not a lane citizen. VIDEO used to be
+    // excluded here too (#2240) — spawning one over a lane silently dropped it
+    // outside, which is the same refusal as the drag path and just as invisible.
+    // The grace (the type's own slot height) matches the drag path: a palette
+    // click just above the painted top still spawns into the lane (#2247).
+    const wcolDrop =
+      type === 'cadillac' ? null : wcolDropTarget(spawnFlowPos, wcolCardHeightPx(type));
     // Was the target send box empty BEFORE this drop? (First-FX auto-raise.)
     const wcolSendWasEmpty = wcolDrop?.sendSlot != null && wcolOrder('sends', wcolDrop.sendSlot).length === 0;
     if (wcolDrop?.channel != null) {
@@ -8851,6 +9380,7 @@
     onQuicksave={quicksaveSlot}
     onQuickload={loadSlot}
     onSavePerformance={exportPerformanceZip}
+    onSavePerformanceStateOnly={exportPerformanceZipStateOnly}
     onLoadPerformance={loadPerformanceZip}
     onExportJson={exportPatchJson}
     onImportJson={importPatchJson}
@@ -8865,6 +9395,8 @@
     midiclockNode={workflowMidiclockNode}
     audioInNode={workflowAudioInNode}
     audioOutNode={workflowAudioOutNode}
+    audioInFace={workflowAudioInFace}
+    audioOutFace={workflowAudioOutFace}
     externallyClocked={workflowExternallyClocked}
     dinAssigned={workflowDinAssigned}
     nodeTypes={nodeTypes as unknown as Record<string, unknown>}

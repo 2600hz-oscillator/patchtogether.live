@@ -10,7 +10,7 @@
 //      quadrant" bug for params whose range isn't ±1 (e.g. zoom 0.3..3).
 
 import { describe, it, expect } from 'vitest';
-import { buildCvBridgeMapping, mapCvBridgeValue } from './cv-bridge-map';
+import { buildCvBridgeMapping, cvBridgeKnobTracksBase, mapCvBridgeValue } from './cv-bridge-map';
 import { destructorDef } from './modules/destructor';
 import { cameraInputDef } from './modules/camera-input';
 import { quadralogicalDef } from './modules/quadralogical';
@@ -222,5 +222,56 @@ describe('CAMERA mirror GATE input (real def) — level-sensitive raw passthroug
     expect(m.scale).toBeUndefined();
     expect(mapCvBridgeValue(m, 1)).toBe(1); // held high → mirror param 1 → shader uMirror>0.5
     expect(mapCvBridgeValue(m, 0)).toBe(0); // low → 0 → not mirrored
+  });
+});
+
+describe('cvBridgeKnobTracksBase (#2236 — a CV-driven fader must be movable)', () => {
+  const zoom: ParamDef = {
+    id: 'zoom', label: 'Zoom', defaultValue: 1, min: 0.4, max: 1.6, curve: 'linear',
+  };
+
+  it('tracks the base for an ordinary bias-knob param', () => {
+    const m = buildCvBridgeMapping(
+      { id: 'zoom', type: 'cv', paramTarget: 'zoom', cvScale: { mode: 'linear' } } as PortDef,
+      'zoom', [zoom], { zoom: 1 },
+    );
+    expect(cvBridgeKnobTracksBase(m)).toBe(true);
+  });
+
+  it('does NOT track the base for an absolute-position param', () => {
+    // `center: 'default'` exists so a cabled joystick tracks its SOURCE and a
+    // stale stored position cannot offset it. Refreshing the centre for these
+    // would reintroduce the exact bug that hint prevents.
+    const m = buildCvBridgeMapping(
+      { id: 'zoom', type: 'cv', paramTarget: 'zoom', cvScale: { mode: 'linear', center: 'default' } } as PortDef,
+      'zoom', [zoom], { zoom: 0.4 },
+    );
+    expect(cvBridgeKnobTracksBase(m)).toBe(false);
+  });
+
+  it('is false for a gate target, which has no centre at all', () => {
+    const m = buildCvBridgeMapping(
+      { id: 'cv_fire', type: 'cv' } as PortDef, 'cv_fire', [zoom], {},
+    );
+    expect(m.scale).toBeUndefined();
+    expect(cvBridgeKnobTracksBase(m)).toBe(false);
+  });
+
+  it('re-centring moves the whole sweep with the fader', () => {
+    // The owner's case: zoom cabled from a stick, fader dragged from the bottom
+    // of its range to the middle. Before the fix the centre stayed where the
+    // CABLE was made, so the drag was overwritten within a frame.
+    const m = buildCvBridgeMapping(
+      { id: 'zoom', type: 'cv', paramTarget: 'zoom', cvScale: { mode: 'linear' } } as PortDef,
+      'zoom', [zoom], { zoom: 0.406 },
+    );
+    // Parked at the bottom: downward CV pins, upward reaches ~half the fader.
+    expect(mapCvBridgeValue(m, -1)).toBeCloseTo(0.4, 3);
+    expect(mapCvBridgeValue(m, 1)).toBeCloseTo(1.006, 3);
+
+    // The engine re-centres on the live manual base each tick.
+    m.scale!.knob = 1.0;
+    expect(mapCvBridgeValue(m, -1)).toBeCloseTo(0.4, 3);
+    expect(mapCvBridgeValue(m, 1)).toBeCloseTo(1.6, 3);
   });
 });

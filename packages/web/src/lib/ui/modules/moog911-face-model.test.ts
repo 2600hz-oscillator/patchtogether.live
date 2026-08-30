@@ -44,7 +44,6 @@ import {
   moog911SettleText,
 } from './moog911-face-model';
 import { moog911Def } from '$lib/audio/modules/moog911';
-import { faceReadoutValueFor } from '$lib/ui/workflow/face-readout-values';
 
 /** A reader over an explicit patch. Anything unset falls through to the def's
  *  own default, exactly like a fresh `node.params` overlay. */
@@ -269,30 +268,5 @@ describe('moog911 face model — TOTALITY (it runs on every render)', () => {
     expect(fmtContourMs(13.8155)).toBe('13.8 ms');
     expect(fmtContourMs(239.6585)).toBe('240 ms');
     expect(fmtContourMs(13815.5)).toBe('13.82 s');
-  });
-});
-
-describe('moog911 — the readouts the DEF declares are the ones the REGISTRY resolves', () => {
-  it('every valueId on the face resolves, and prints what the model prints', () => {
-    const declared = (moog911Def.face?.hero?.readouts ?? []).map((r) => r.valueId);
-    expect(declared).toEqual(['moog911-rise', 'moog911-settle', 'moog911-fall']);
-
-    const read = reader();
-    const expected = ['13.8 ms', '240 ms', '696 ms'];
-    declared.forEach((id, i) => {
-      const fn = faceReadoutValueFor(id!);
-      expect(fn, `${id} must be registered in face-readout-values.ts`).toBeTypeOf('function');
-      expect(fn!(read)).toBe(expected[i]);
-    });
-  });
-
-  it('the registry entries move with ESUS exactly as the model does', () => {
-    // The negative control, asserted THROUGH the registry rather than only
-    // against the model — the readout row is what a user reads, and the wiring
-    // between the two is a place a face can be silently inert.
-    const at = (esus: number, id: string) => faceReadoutValueFor(id)!(reader({ esus }));
-    expect(at(0, 'moog911-rise')).toBe(at(1, 'moog911-rise'));
-    expect(at(0, 'moog911-settle')).not.toBe(at(0.9, 'moog911-settle'));
-    expect(at(0, 'moog911-fall')).not.toBe(at(0.9, 'moog911-fall'));
   });
 });

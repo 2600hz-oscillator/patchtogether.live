@@ -1,0 +1,371 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>MIDI LANE face — the dock faceplate, BOUND</title>
+<style>
+/* ─────────────────────────────────────────────────────────────────────────
+   MIDI LANE FACEPLATE — MOCKUP, state 2 of 2 (BOUND).
+   SPEC AND MOCKUP ONLY. Nothing here is implemented. See spec.md.
+
+   The DISTINGUISHING state: permission granted, a device picked, channel 3
+   selected, a key held, CC A learned, CC B ARMING. It exists to show four
+   things the resting mock cannot:
+
+     1. THE DEVICE PICKER — the one affordance on this module that cannot be a
+        cell, because its roster lives behind requestMIDIAccess() and differs on
+        every machine (a roster is a fixed set known when the def is authored).
+        Its painted text is a DEVICE NAME, which is a NAME — the cameraInput
+        precedent, made for exactly this problem.
+     2. BOTH LAMPS DOING WORK — MIDI lit, NOTE lit. Neither carries a number.
+     3. THE LEARN-ARMED STATE AS A NON-TEXT MARK — the .learning highlight the
+        card already has (:367-371) rather than a "WIGGLE…" caption flip.
+     4. bandFocus: MODE is still MONO here, so the `mono` band renders. Flip it
+        to POLY and that band is not drawn at all — structure, not text, and
+        therefore free under the resting-text rulings.
+
+   ⚠ STILL NO NUMBERS. Not the held note, not the velocity, not the MIDI note
+   number under NOTE. Every one is on aria-label / aria-valuetext.
+
+   ⚠ AND NO CI RUNNER REACHES THIS STATE — reaching it needs a CONNECT press the
+   VRT scene never makes, which is precisely what makes the OTHER mock's capture
+   deterministic (spec.md §10.3).
+   ───────────────────────────────────────────────────────────────────────── */
+:root{
+  --bg:#0e1013; --dock:#12161c; --pbody:#1c1f24; --line:#2c3037; --tile:#33383f;
+  --ink:#eef1f5; --dim:#9aa2ad; --faint:#646c77;
+  --accent:#6cf; --ch1:#fbbf24; --warn:#e6b800; --good:#8fe6b0; --bad:#e08b8b;
+  --c-audio:#f0a868; --c-cv:#7dd3fc; --c-gate:#e8c66a; --c-pitch:#c084fc;
+  --c-poly:#a78bfa;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+  font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1200px;margin:0 auto;padding:26px 20px 90px}
+h1{font-size:21px;font-weight:800;margin:0 0 6px;letter-spacing:.01em}
+h2{font-size:13px;font-weight:800;margin:26px 0 8px;letter-spacing:.05em;
+  text-transform:uppercase;color:var(--dim);font-family:var(--mono)}
+.sub{color:var(--dim);font-size:12.5px;margin:0 0 14px;max-width:108ch}
+.sub b{color:var(--ink)}
+code{font-family:var(--mono);font-size:11.5px;color:var(--ch1)}
+.nav{display:flex;gap:8px;margin:0 0 20px;font-size:11px;flex-wrap:wrap}
+.nav a{color:var(--ink);text-decoration:none;border:1px solid var(--line);border-radius:6px;
+  padding:6px 12px;background:#12161c;font-family:var(--mono);letter-spacing:.06em;text-transform:uppercase}
+.nav a.on{border-color:var(--c-cv);color:var(--c-cv)}
+.warn{border:1px solid #6a5330;background:#1c1811;border-radius:8px;padding:11px 14px;
+  margin:12px 0;font-size:12.5px;color:#e8cf9a;max-width:118ch}
+.warn b{color:var(--warn)}
+.ok{border:1px solid #3b5a48;background:#111a15;border-radius:8px;padding:11px 14px;
+  margin:12px 0;font-size:12.5px;color:#a9d8bd;max-width:118ch}
+.ok b{color:var(--good)}
+.cols{display:grid;grid-template-columns:minmax(0,1fr) 400px;gap:22px;align-items:start}
+@media (max-width:1120px){.cols{grid-template-columns:minmax(0,1fr)}}
+.pane{background:#0b0e12;border:1px dashed #2a2f38;border-radius:12px;padding:16px;position:relative}
+.pane::after{content:'DOCK PANE — a rack with a real USB-MIDI sequencer attached';position:absolute;
+  right:12px;bottom:7px;font-family:var(--mono);font-size:8.6px;letter-spacing:.09em;color:#3d444e}
+.dock{background:var(--dock);border:1px solid var(--line);border-radius:11px;overflow:hidden;
+  padding:11px;width:max-content}
+.chromebar{display:flex;align-items:baseline;gap:9px;padding:0 2px 8px}
+.chromebar .nm{font-size:13px;font-weight:800;letter-spacing:.03em}
+.chromebar .x{margin-left:auto;color:var(--faint);font-family:var(--mono);font-size:12px}
+.plate{background:var(--pbody);border:1px solid var(--tile);border-left:4px solid var(--c-cv);
+  border-radius:10px;padding:0 0 6px;width:max-content;max-width:100%}
+.extbody{margin:11px 12px 4px;padding:8px 11px;display:flex;align-items:center;gap:12px;
+  border:1px solid #2b3038;border-radius:4px;background:#171b21;min-width:352px}
+.row{display:flex;align-items:center;gap:7px}
+.row .cap{font-family:var(--mono);font-size:9px;letter-spacing:.09em;color:#aaa;
+  text-transform:uppercase;font-weight:600}
+.row .sel{max-width:190px}
+.lamps{display:inline-flex;align-items:center;gap:14px;margin-left:auto}
+.led{display:inline-flex;align-items:center;gap:5px;font-size:9px;font-weight:600;
+  letter-spacing:.6px;color:var(--faint);text-transform:uppercase}
+.led .lamp{width:7px;height:7px;border-radius:50%;background:#33383f;
+  box-shadow:inset 0 0 2px rgba(0,0,0,.8);flex:0 0 auto}
+.led.lit .lamp{background:var(--c-cv);box-shadow:0 0 6px var(--c-cv)}
+.led.lit{color:var(--ink)}
+.band{padding:9px 12px 4px;border-top:1px solid #23272e;margin-top:6px}
+.band:first-of-type{border-top:0;margin-top:0}
+.bh{font-family:var(--mono);font-size:9px;letter-spacing:.11em;text-transform:uppercase;
+  color:var(--faint);margin:0 0 2px}
+.bhint{font-size:10px;color:#59616b;margin:0 0 8px;max-width:56ch;line-height:1.35}
+.cells{display:flex;flex-wrap:wrap;gap:8px 10px;align-items:flex-end}
+.act{display:flex;flex-direction:column;align-items:center;gap:4px;width:100px}
+.act .btn{width:100%;text-align:center;padding:6px 0;border:1px solid #33404d;border-radius:4px;
+  background:#152029;color:var(--c-cv);font-family:var(--mono);font-size:9.4px;letter-spacing:.08em}
+.act.sm{width:70px}
+/* THE LEARN-ARMED STATE — a non-text mark, the highlight the card already has. */
+.act .btn.armed{background:var(--c-cv);color:#04121a;border-color:var(--c-cv);font-weight:700;
+  box-shadow:0 0 9px rgba(125,211,252,.45)}
+.cell{display:flex;flex-direction:column;gap:4px;width:110px}
+.cell.wide{width:132px}
+.cap{font-family:var(--mono);font-size:8.6px;letter-spacing:.1em;color:var(--faint);
+  text-transform:uppercase;text-align:center}
+.sel{background:#0d1116;border:1px solid #2a3038;border-radius:4px;color:var(--ink);
+  font-size:10px;padding:4px 7px;display:flex;align-items:center;gap:6px;font-family:var(--sans)}
+.sel .caret{margin-left:auto;color:var(--faint);font-size:8px}
+.sel .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.seg{display:flex;border:1px solid #2a3038;border-radius:4px;overflow:hidden;background:#0d1116}
+.seg span{flex:1;text-align:center;font-family:var(--mono);font-size:8.6px;letter-spacing:.06em;
+  padding:4px 0;color:#5a626c;border-right:1px solid #1e242b}
+.seg span:last-child{border-right:0}
+.seg span.on{background:#0f2733;color:var(--c-cv)}
+.tog{width:34px;height:18px;border-radius:9px;background:#17303c;border:1px solid #2a3038;
+  position:relative;margin:0 auto}
+.tog::after{content:'';position:absolute;width:12px;height:12px;border-radius:50%;
+  background:var(--c-cv);top:2px;right:3px}
+.jacks{display:flex;gap:8px;padding:10px 12px 4px;border-top:1px solid #23272e;margin-top:6px}
+.jack{display:flex;flex-direction:column;align-items:center;gap:4px}
+.jack .hole{width:18px;height:18px;border-radius:50%;background:#0b0e12;
+  border:2px solid var(--c-cv);position:relative}
+.jack.gate .hole{border-color:var(--c-gate)}
+.jack.poly .hole{border-color:var(--c-poly)}
+.jack .hole::after{content:'';position:absolute;inset:5px;border-radius:50%;background:#05070a}
+.jack .lb{font-family:var(--mono);font-size:7.6px;letter-spacing:.07em;color:var(--faint)}
+.side{font-size:12.3px;color:var(--dim)}
+.side h3{font-size:10.4px;font-family:var(--mono);letter-spacing:.09em;text-transform:uppercase;
+  color:var(--faint);margin:16px 0 6px;font-weight:600}
+.side h3:first-child{margin-top:0}
+.side p{margin:0 0 9px}
+.side b{color:var(--ink)}
+.kill{color:#c98d8d}
+table{border-collapse:collapse;width:100%;font-size:11.6px;margin:6px 0 12px}
+th,td{border:1px solid #23272e;padding:5px 8px;text-align:left;vertical-align:top}
+th{background:#12161c;color:var(--faint);font-family:var(--mono);font-size:9.2px;
+  letter-spacing:.07em;text-transform:uppercase;font-weight:600}
+td code{font-size:10.6px}
+.aria{font-family:var(--mono);font-size:10.4px;color:#8fbfe0;background:#0d1218;
+  border:1px solid #1c2530;border-radius:5px;padding:7px 9px;margin:5px 0 11px;
+  white-space:pre-wrap;word-break:break-word}
+.measure{font-family:var(--mono);font-size:10.6px;color:var(--good)}
+</style>
+
+<div class="wrap">
+
+<h1>midi lane — the dock faceplate, BOUND</h1>
+<p class="sub">Wave 7, cohort B. State 2 of 2: granted, a device picked, <b>channel 3</b>, a key
+held, <b>CC A</b> learned and <b>CC B arming</b>. <b>Mockup only; nothing here is implemented.</b>
+⚠ No CI runner can reach this state — it needs a CONNECT press the VRT scene never makes — which
+is exactly what makes the pre-connect capture deterministic.</p>
+
+<div class="nav">
+  <a href="dock.html">dock · pre-connect</a>
+  <a class="on" href="dock-bound.html">dock · bound</a>
+  <a href="spec.md">spec.md</a>
+  <a href="../es9/spec.md">es9/spec.md</a>
+</div>
+
+<div class="cols">
+<div>
+
+<div class="pane">
+  <div class="dock">
+    <div class="chromebar"><span class="nm">midi lane</span><span class="x">✕</span></div>
+
+    <div class="plate">
+
+      <div class="extbody">
+        <span class="row">
+          <span class="cap">Device</span>
+          <span class="sel" style="width:190px"
+            title="aria-label: MIDI — Reliq, channel 3"><span class="nm">Reliq</span><span class="caret">▾</span></span>
+        </span>
+        <span class="lamps">
+          <span class="led lit" title="aria-label: MIDI — Reliq, channel 3"><span class="lamp"></span>MIDI</span>
+          <span class="led lit" title="aria-label: NOTE — C5 held, velocity 100"><span class="lamp"></span>NOTE</span>
+        </span>
+      </div>
+
+      <div class="band">
+        <p class="bh">bind</p>
+        <p class="bhint">Web MIDI needs the browser's consent before any device is even visible.
+          The grant is remembered per origin; the chosen device is remembered with the patch.</p>
+        <div class="cells">
+          <div class="act"><span class="btn">CONNECT MIDI</span></div>
+        </div>
+      </div>
+
+      <div class="band">
+        <p class="bh">voice</p>
+        <p class="bhint">One MIDI channel = one instrument. MONO collapses a held chord to a single
+          winner on PITCH/GATE; POLY leaves those quiet and the chord goes out POLY, which carries
+          it in both modes.</p>
+        <div class="cells">
+          <div class="cell"><span class="cap">Ch</span><span class="sel"
+            title="aria-valuetext: channel 3"><span class="nm">3</span><span class="caret">▾</span></span></div>
+          <div class="cell"><span class="cap">Mode</span><span class="seg"><span class="on">MONO</span><span>POLY</span></span></div>
+        </div>
+      </div>
+
+      <div class="band">
+        <p class="bh">mono</p>
+        <p class="bhint">Only the MONO outputs use these. Switch MODE to POLY and this band is not
+          rendered at all — <code>face.bandFocus</code>, which is STRUCTURE rather than text.</p>
+        <div class="cells">
+          <div class="cell wide"><span class="cap">Prio</span><span class="seg"><span class="on">LAST</span><span>LOW</span><span>HIGH</span></span></div>
+          <div class="cell" style="width:66px"><span class="cap">Retrig</span><span class="tog"></span></div>
+        </div>
+      </div>
+
+      <div class="band">
+        <p class="bh">cc taps</p>
+        <p class="bhint">Two independent 0..1 CV taps. Pick a controller number, or press LEARN and
+          wiggle one. NONE unassigns.</p>
+        <div class="cells">
+          <div class="cell"><span class="cap">CC A</span><span class="sel"
+            title="aria-valuetext: CC 1 — mod wheel"><span class="nm">CC 1</span><span class="caret">▾</span></span></div>
+          <div class="act sm"><span class="btn">LEARN</span></div>
+          <div class="cell"><span class="cap">CC B</span><span class="sel"><span class="nm">NONE</span><span class="caret">▾</span></span></div>
+          <div class="act sm"><span class="btn armed"
+            title="aria-label: Learn CC B — armed; the next controller message binds">LEARN</span></div>
+        </div>
+      </div>
+
+      <div class="band">
+        <p class="bh">note gate</p>
+        <p class="bhint">Fires a one-shot pulse when this specific note arrives on the lane's
+          channel(s) — the drum-router pattern through one configurable port.</p>
+        <div class="cells">
+          <div class="cell"><span class="cap">Note</span><span class="sel"
+            title="aria-valuetext: C1 — MIDI note 36, the General MIDI kick"><span class="nm">C1</span><span class="caret">▾</span></span></div>
+        </div>
+      </div>
+
+      <div class="jacks">
+        <div class="jack"><span class="hole"></span><span class="lb">PITCH</span></div>
+        <div class="jack gate"><span class="hole"></span><span class="lb">GATE</span></div>
+        <div class="jack"><span class="hole"></span><span class="lb">VEL</span></div>
+        <div class="jack"><span class="hole"></span><span class="lb">CC A</span></div>
+        <div class="jack"><span class="hole"></span><span class="lb">CC B</span></div>
+        <div class="jack gate"><span class="hole"></span><span class="lb">NOTE</span></div>
+        <div class="jack poly"><span class="hole"></span><span class="lb">POLY</span></div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<div class="warn">
+  <b>⚠ The NOTE lamp is strictly weaker than the two rows it replaces, and that narrowing is wave
+  5's, verbatim.</b> Its <code>midiCvBuddy</code> mock states it: <i>"It answers 'is anything
+  arriving?' and not 'what?'. A wrong-channel keyboard is still diagnosable (dot dark); a
+  wrong-OCTAVE keyboard is not."</i> One mitigation this module has that <code>midiCvBuddy</code>
+  did not: <b>the usual failure here is the CHANNEL, and the CHANNEL is a ranked cell whose option
+  name is right there</b> — <code>3</code>, two rows up.
+</div>
+
+<h2>The three things this state shows that the resting plate cannot</h2>
+<table>
+  <tr><th>what</th><th>why it is here rather than in a cell</th></tr>
+  <tr>
+    <td><b>the DEVICE picker</b></td>
+    <td>its roster lives behind <code>requestMIDIAccess()</code> and differs on every machine,
+        so it is neither a <code>ParamDef</code> nor an <code>options</code> roster — <i>a roster is
+        a fixed set known when the def is authored</i>. That is the constraint
+        <code>CameraInputOutputBody</code> was built for and the slot is the shipped answer.
+        ⚠ Its painted text is a DEVICE NAME, which is a NAME</td>
+  </tr>
+  <tr>
+    <td><b>the LEARN-armed mark</b></td>
+    <td>the card flips its caption to <code>WIGGLE…</code> (<code>:248</code>); a caption that
+        changes with state is the shape <code>StatusLed</code>'s contract denies at the call site.
+        The card <b>already has</b> the non-text version — <code>class:learning</code>
+        (<code>:367-371</code>) — so the face keeps the mark and drops the word.
+        ⚠ <b>What narrows:</b> <code>WIGGLE…</code> told a first-timer what to DO. That sentence
+        moves to the family's <code>docs.controls</code> prose and the cell's
+        <code>aria-label</code>. Real reduction, named</td>
+  </tr>
+  <tr>
+    <td><b>the <code>mono</code> band existing at all</b></td>
+    <td><code>face.bandFocus</code> on the MODE param. In POLY mode <code>priority</code> and
+        <code>retrig</code> do nothing — measured: <code>buildPolyLanes</code>
+        (<code>midi-lane.ts:170-176</code>) takes PRESS ORDER and never reads
+        <code>priority</code>, and <code>retrig</code> only dips the MONO gate. A face that
+        rendered two live-looking dials wired to nothing would be worse than the card, which
+        hides them (<code>:228-242</code>)</td>
+  </tr>
+</table>
+
+<div class="ok">
+  <b>And the note field is a NAMED ROSTER, which is how this module clears
+  <code>needs-note-entry-cell</code> by a third and stronger route.</b> Wave 5's
+  <code>score</code> cleared it by typing nothing; wave 6 cleared it on the slot boundary (an
+  <code>&lt;input&gt;</code> inside a <code>fullViewBody</code>). <b>MIDI LANE needs no typed entry
+  anywhere on the face, in any tier</b> — a 128-entry note roster is a fixed set known when the def
+  is authored, and a <code>selector</code> cell is not dock-restricted, so it reaches the LANE too.
+  That is exactly the case the blocker was written to cover, answered rather than dodged.
+</div>
+
+</div>
+
+<div class="side">
+
+<h3>Every derived value, and where it went</h3>
+<div class="aria">MIDI lamp
+  aria-label = "MIDI — Reliq, channel 3"
+
+NOTE lamp
+  aria-label = "NOTE — C5 held,
+    velocity 100"
+
+CH cell
+  aria-valuetext = "channel 3"
+
+CC A cell
+  aria-valuetext = "CC 1 — mod wheel"
+
+Note cell
+  aria-valuetext = "C1"
+  title = "MIDI note 36 — the
+    General MIDI kick"
+
+LEARN B (armed)
+  aria-label = "Learn CC B — armed;
+    the next controller message binds"</div>
+<p>Six derived quantities, <b>zero text nodes</b>. <code>StatusLed</code> has no
+<code>value</code> prop and its caption is static by contract, so a caller cannot smuggle a
+measurement through <code>lit ? 'NOTE C5' : 'NOTE'</code>.</p>
+
+<h3>⚠ The lamp must not be wired to <code>lastNote</code></h3>
+<p><code>MidiLaneCardState.lastNote</code> is <i>"Last note received on the lane (MIDI int)
+<b>for the readout</b>"</i>. If it is a latched last value, <code>lit={lastNote !== null}</code>
+latches ON after the first note and never goes dark — a lamp that says nothing. <b>Bind it to the
+HELD-KEY STACK</b> (<code>midiOutBuddy</code>'s <code>activeNote !== null</code>). If the held
+stack is not on the card state, adding it to <code>snapshotState()</code> is one line and is part
+of the face PR.</p>
+
+<h3>The channel number needs sixteen exemptions, and keeping the number is correct</h3>
+<p><code>looksNumeric</code> matches <code>1</code>…<code>16</code>, so
+<code>face-readout-source.test.ts</code>'s Leg 2 fires. <b>Take the exemption; do not invent a
+word.</b> The shipped precedents both chose the number over an invented name —
+<code>cvBuddy/ppqn</code> (<i>"there is no name for the state that is not the integer"</i>) and
+<code>timelorde/swingSource</code>. Derive the sixteen entries from the exported roster constant,
+never type them: an entry added and forgotten reddens, an entry removed is caught by the anchor
+leg, and deriving makes both impossible.</p>
+
+<h3>Seven params where there were zero</h3>
+<p>The precursor migrates <code>channels · priority · retrig · mode · ccA · ccB · noteGateNote</code>
+from <code>node.data</code> to params, keeping only <code>lastDeviceId</code> in
+<code>node.data</code> (written through <code>mutateNode</code>). <b><code>midiclock</code>'s face
+PR did exactly this to <code>divisor</code></b>, and stated the rule that partitions them:
+<i>"the DIVISION is a param, so it can be automated, MIDI-learned, exposed on a group and undone
+like any other value; the DEVICE is not, because its roster lives behind the browser's own MIDI
+permission."</i></p>
+<p>⚠ Two consequences to predict rather than discover: <b>+10 contract-lock lines</b> (7 params +
+3 families; <code>options</code> and <code>face</code> are both unprojected), and a <b>Push 2 card
+appears where there was none</b> — <code>params: []</code> gives zero encoder strips today, and
+seven turnable params give seven. <b>Do not pin an override</b>: seven against eight encoders is
+no competition for slots, so the FACE tier already derives the right answer and an override
+REPLACES.</p>
+
+<h3>Ten bare <code>node.data</code> writes go away with it</h3>
+<p><code>writeData</code> (<code>:91-99</code>) is the <b>third verbatim copy</b> of the helper
+wave 5 found pasted between <code>MidiCvBuddyCard</code> and <code>MidiOutBuddyCard</code> — no
+<code>transact</code>, no <code>LOCAL_ORIGIN</code>, so Cmd-Z undoes none of it and
+<code>mutate.guard</code> cannot see any of it. ⚠ <b>Two of the ten are reactive
+<code>$effect</code>s</b> (<code>:154-159</code>) that mirror engine state into the Y.Doc, so a
+LEARN performed by one collaborator writes the document from every peer with the card open. A
+state the census has not recorded before.</p>
+
+</div>
+</div>
+</div>

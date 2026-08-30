@@ -70,6 +70,14 @@ const EXPECTED_AUDITIONS: Record<string, string[]> = {
   // this seam; the shell registry did not, so `?shell=1` offered twenty
   // controls over an instrument that could not be sounded.
   'sixstrum:sixstrum-strum-{n}': [MANUAL_STRIKE_KEY],
+  // samsloop's TRIGGER, 2026-08-23. ⚠ THE SEAM WAS ALREADY THE CANONICAL ONE
+  // and that is why this entry is one line rather than a migration: the legacy
+  // card's ▶ TRIGGER resolved `manualTrigger` off the engine handle, which IS
+  // `MANUAL_STRIKE_KEY`. The face cell calls `fireManualStrike` and reaches the
+  // same door. It matters more here than on most modules — samsloop is
+  // IDLE-BY-DEFAULT with no autoplay, so with nothing patched into TRIG this
+  // button is the ONLY way to hear a sample you have just loaded or recorded.
+  'samsloop:samsloop-trigger-{n}': [MANUAL_STRIKE_KEY],
   // face batch 3 — the fourteen-engine macro voice. FIVE of its engines
   // (FM 6OP, STRING, KICK, SNARE, HIHAT) initialise their excitation or
   // envelopes to zero and are SILENT with nothing patched into TRIG, so this
@@ -96,6 +104,17 @@ const EXPECTED_AUDITIONS: Record<string, string[]> = {
   // not read. The factory answers `manualTrigger` and deliberately not
   // `manualGate`.
   'rings:rings-strum-{n}': [MANUAL_STRIKE_KEY],
+  // TREE.oh.VOX (#1944) — a HELD pad, so two resolutions like meowbox's and
+  // snaredrum's ROLL. The 303 voice has no internal exciter: measured 0.000e+0
+  // on `audio_out` over 145 frames with nothing patched and every card
+  // pressable clicked, against 3.390e-1 with a gate on `gate_in` (#1658).
+  // ⚠ THE SHAPE IS THE DEF'S. `gate_in` declares edge:'gate' and the processor
+  // acts on BOTH edges — rising starts the note, FALLING ends it, so gate
+  // length IS note length. The shared one-shot is a 5 ms pulse, which would end
+  // every auditioned note 5 ms after it began; the factory answers `manualGate`
+  // and deliberately NOT `manualTrigger`, so a caller reaching for the wrong
+  // shape gets a recorded non-delivery instead of a blip.
+  'treeohvox:treeohvox-gate-{n}': [MANUAL_GATE_KEY, MANUAL_GATE_KEY],
 };
 
 interface Drive {

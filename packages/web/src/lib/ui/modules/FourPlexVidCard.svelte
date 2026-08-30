@@ -20,7 +20,8 @@
   import NeonFader from '$lib/ui/controls/NeonFader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import { useEngine } from '$lib/audio/engine-context';
-  import { setNodeParam } from '$lib/graph/mutate';
+  import { patch } from '$lib/graph/store';
+  import { setNodeParam, mutateNode } from '$lib/graph/mutate';
   import { fourPlexVidDef } from '$lib/video/modules/4plexvid';
   import type { VideoEngine } from '$lib/video/engine';
   import { VIDEO_RES } from '$lib/video/engine';
@@ -62,14 +63,54 @@
   let canvasEl: HTMLCanvasElement | null = $state(null);
   let rafId: number | null = null;
 
+  // ── SCREEN ON/OFF (owner ruling, 2026-08-18) ─────────────────────────────
+  //
+  // ⚠ THIS CARD IS NOT DEAD DESPITE THE PROMOTION, which is the only reason
+  // this control belongs here as well as on the faceplate. `migrated()` swaps
+  // the DOCK unconditionally in workflow mode, but the LANE swap is gated by
+  // `shellPreview` — so under `?shell=legacy`, and outside workflow mode
+  // entirely, this component still renders and is still the player's 4plexvid.
+  // The faceplate half lives in `4plexvid/FourPlexVidOutputBody.svelte`.
+  //
+  // ⚠ SAME `previewCollapsed` KEY ON `node.data`, AND THAT IS LOAD-BEARING. Two
+  // spellings would let a rack collapsed on one surface come back open on the
+  // other, and `node.data` (not component state) is what survives the unmount
+  // that dock collapse / LRU eviction causes (#1531 / #1574 / #1583).
+  let previewCollapsed = $derived<boolean>(
+    (patch.nodes[id]?.data?.previewCollapsed as boolean | undefined) ?? false,
+  );
+  function togglePreview(): void {
+    const next = !previewCollapsed;
+    mutateNode(id, (live) => {
+      if (!live.data) live.data = {};
+      live.data.previewCollapsed = next;
+    });
+  }
+
   function draw() {
     rafId = null;
     const e = engineCtx.get();
-    if (!e || !canvasEl) { rafId = requestAnimationFrame(draw); return; }
+    if (!e) { rafId = requestAnimationFrame(draw); return; }
     let videoEngine: VideoEngine | undefined;
     try { videoEngine = e.getDomain<VideoEngine>('video'); }
     catch { rafId = requestAnimationFrame(draw); return; }
     if (!videoEngine) { rafId = requestAnimationFrame(draw); return; }
+
+    // ⚠ SCREEN OFF STOPS THE COPY AND KEEPS THE WATCH MARK (#1937).
+    // `blitOutputForPreview` IS the engine's "someone is watching" signal, so a
+    // collapsed state that merely stopped blitting would drop this node out of
+    // the pull set once `WATCH_TTL_MS` expired — turning the switch into a
+    // PRODUCER KILL SWITCH and showing a stale frame on the way back. That
+    // matters more here than on most video modules: 4PLEXVID renders ALL FOUR
+    // outputs every frame, so stalling it would starve three outputs this
+    // preview does not even show.
+    if (previewCollapsed) {
+      try { videoEngine.markWatched(id); } catch { /* never nuke the rAF loop */ }
+      rafId = requestAnimationFrame(draw);
+      return;
+    }
+
+    if (!canvasEl) { rafId = requestAnimationFrame(draw); return; }
     const ctx2d = canvasEl.getContext('2d', { alpha: false });
     if (ctx2d) {
       // #1802 — gated preview blit (see VideoEngine.blitOutputForPreview).
@@ -102,16 +143,29 @@
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <div class="body">
-      <!-- OUT 1 live preview -->
-      <div class="preview-wrap">
-        <canvas
-          bind:this={canvasEl}
-          width={160}
-          height={90}
-          data-testid="fourplexvid-preview"
-          data-node-id={id}
-        ></canvas>
-        <span class="preview-label">OUT 1</span>
+      <!-- OUT 1 live preview + its SCREEN switch -->
+      <div class="preview-wrap" data-preview-collapsed={previewCollapsed ? 'true' : 'false'}>
+        {#if !previewCollapsed}
+          <canvas
+            bind:this={canvasEl}
+            width={160}
+            height={90}
+            data-testid="fourplexvid-preview"
+            data-node-id={id}
+          ></canvas>
+          <span class="preview-label">OUT 1</span>
+        {/if}
+        <button
+          type="button"
+          class="screen-btn nodrag"
+          class:on={!previewCollapsed}
+          onclick={togglePreview}
+          data-testid="fourplexvid-screen-toggle"
+          aria-pressed={!previewCollapsed}
+          title={previewCollapsed
+            ? 'SCREEN is OFF — the OUT 1 preview is collapsed and its space reclaimed. 4PLEXVID keeps routing and keeps rendering all four outputs: switching it back on shows the LIVE picture, not a stale frame.'
+            : 'SCREEN — turn the OUT 1 preview off to collapse it and reclaim the vertical space. All four outputs go on rendering either way.'}
+        >{previewCollapsed ? 'SCREEN OFF' : 'SCREEN ON'}</button>
       </div>
 
       <div class="fader-grid">
@@ -140,7 +194,32 @@
     flex-direction: column;
     align-items: center;
     gap: 3px;
+    /* ⚠ THE SWITCH COSTS ZERO LAYOUT HEIGHT — a fix, not a style choice. See
+       the OVERLAY paragraph in module-faceplates.md: a STACKED row cost
+       ~18.8 px on a card with ~11 px of slack and reddened the card sweep, so
+       the button OVERLAYS the picture's bottom-right corner instead. */
+    position: relative;
+    /* Only load-bearing with SCREEN OFF: the canvas and its label are gone, and
+       without a floor the wrap would collapse to zero and take the
+       absolutely-positioned button with it. Inert whenever the picture shows. */
+    min-height: 18px;
   }
+  .screen-btn {
+    position: absolute;
+    right: 2px;
+    bottom: 2px;
+    font-size: 0.5rem;
+    letter-spacing: 0.06em;
+    padding: 1px 6px;
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    /* Legible over a live picture — a transparent button was not. */
+    background: rgba(5, 6, 8, 0.72);
+    color: var(--text-dim);
+    cursor: pointer;
+  }
+  .screen-btn.on { color: var(--text); border-color: var(--accent-dim); }
+  .screen-btn:focus-visible { outline: 1px solid var(--accent); outline-offset: -1px; }
   .preview-wrap canvas {
     width: 160px;
     height: 90px;

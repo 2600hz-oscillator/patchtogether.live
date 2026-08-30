@@ -127,16 +127,44 @@ describe('isShellSwappable — eligibility', () => {
     expect(NON_SHELL_LANE_TYPES.has('backdraft')).toBe(false);
   });
 
-  it('cameraInput is a CAPTURE-SOURCE snowflake: its legacy card (the live source + the device picker) stays in the lane', () => {
-    // The owner ?shell=1 P0: the card owns getUserMedia + the <video> it hands
-    // to the engine (attachExternalSource), AND the device <select> — neither is
-    // a ParamDef, so a tile made camera → OUTPUT patched-but-black with no way
-    // to pick a source. See ./dom-source-modules for the full rationale + gate.
-    expect(NON_SHELL_LANE_TYPES.has('cameraInput')).toBe(true);
-    expect(isShellSwappable('cameraInput', true)).toBe(false);
+  it('cameraInput SWAPS now that it has a face — the two things that kept it out were answered, not waived', () => {
+    // HISTORY, because the reversal is the point (the `videoOut` and `es9`
+    // shapes above). This used to assert the opposite, on the owner ?shell=1
+    // P0: the card owns getUserMedia + the <video> it hands to the engine
+    // (attachExternalSource), AND the device <select> — neither is a ParamDef,
+    // so a tile made camera → OUTPUT patched-but-black with no way to pick a
+    // source.
+    //
+    // Both halves are now answered, and neither by waiving the requirement:
+    //   * the SOURCE — <HeadlessSourceHost> keeps the real card mounted
+    //     off-screen (cameraInput ∈ DOM_SOURCE_LANE_TYPES, and
+    //     `needsHeadlessSourceMount` is true for kind 'shell'), and the <video>
+    //     plus its MediaStream are node-owned, so the swap re-parents rather
+    //     than tears down. That mechanism did not exist when the carve-out was
+    //     written — which is precisely why it was written;
+    //   * the PICKER — rebuilt in the faceplate's extension body, the one slot
+    //     that can hold a control no ParamDef can express;
+    //   * and the card's remaining GESTURES — "Request access" above all, the
+    //     only route to getUserMedia for a first-time visitor — reached through
+    //     $lib/ui/media/camera-status-registry, because an off-screen host is
+    //     `pointer-events: none`. Keeping the source alive is NOT the same as
+    //     keeping the acquire alive.
+    //
+    // ⚠ NONE OF THAT IS ASSERTED HERE and cannot be: this module is
+    // deliberately registry-free. Those legs live in dom-source-modules.test.ts
+    // (the host decision), camera-status-registry.test.ts (the seam) and
+    // e2e/tests/camerainput-shell-source.spec.ts (that a frame actually
+    // arrives through the whole chain).
+    expect(NON_SHELL_LANE_TYPES.has('cameraInput')).toBe(false);
+    expect(isShellSwappable('cameraInput', true)).toBe(true);
     expect(
-      laneRenderKind({ ...base, type: 'cameraInput', hasCard: isShellSwappable('cameraInput', true) }),
-    ).toBe('legacy');
+      laneRenderKind({
+        ...base,
+        type: 'cameraInput',
+        hasCard: isShellSwappable('cameraInput', true),
+        migrated: true,
+      }),
+    ).toBe('shell');
   });
 
   it('es9 SWAPS like any other module — its connection no longer lives on the card', () => {
@@ -158,8 +186,24 @@ describe('isShellSwappable — eligibility', () => {
     // there is exactly ONE client per node and views merely subscribe.
     expect(NON_SHELL_LANE_TYPES.has('es9')).toBe(false);
     expect(isShellSwappable('es9', true)).toBe(true);
-    // Un-migrated (no curated face yet) ⇒ the uniform placeholder tile, whose
-    // EXPAND opens the dock full view. That is the owner's requested shape.
+    // ⚠ THIS CLAUSE IS ABOUT THE PURE FUNCTION, NOT ABOUT es9 ANY MORE, and the
+    // distinction had to be written down the day es9 was PROMOTED. The comment
+    // here used to read "Un-migrated (no curated face yet) ⇒ the uniform
+    // placeholder tile … That is the owner's requested shape" — and both halves
+    // have expired. es9 declares a `face` and is in `STRICT_FACES`, so a real
+    // rack renders `<ModuleShell>` with ranked cells (CONNECT first), and the
+    // placeholder is what the promotion REPLACED rather than what the owner
+    // asked for. The assertion survives only because `base` hard-codes
+    // `migrated: false`: it says "given an un-migrated module with a card, the
+    // lane is a placeholder", which is a statement about `laneRenderKind` and
+    // stays true for every module that is genuinely un-migrated.
+    //
+    // Kept rather than deleted, because the OTHER two clauses in this test are
+    // the ones with es9's name on them (`NON_SHELL_LANE_TYPES` membership and
+    // the legacy render), and both are still exactly about es9. The live
+    // promotion is asserted where it can actually be observed —
+    // `es9-face-model.test.ts` runs the real tier selector, and
+    // `es9-shell-lifetime.spec.ts` reads `moduleShell` off a rendered tile.
     expect(laneRenderKind({ ...base, type: 'es9', hasCard: isShellSwappable('es9', true) })).toBe(
       'placeholder',
     );
@@ -198,7 +242,24 @@ describe('NON_SHELL_LANE_TYPES is ANCHORED to the registry (#1579)', () => {
     // this pins the carve-out to that exported constant rather than to anyone's
     // memory of it.
     expect(LAUNCHPAD_CONTROL_TYPE).toBe('launchpadControlLeft');
-    expect(NON_SHELL_LANE_TYPES.has(LAUNCHPAD_CONTROL_TYPE)).toBe(true);
+    // ⚠ THIS USED TO BE `toBe(true)` — the module was carved out, and this leg
+    // pinned the carve-out to the def's own exported constant so a re-typing
+    // could not drift it again. It is now PROMOTED: it carries a `face`, it is
+    // in STRICT_FACES, and the carve-out entry was deleted in the same commit
+    // (see the lineage note in legacy-fallback.ts — the "grid / launcher /
+    // mapper" clause was never true of this card, and the half that WAS true —
+    // that a placeholder would be lossy — is discharged by the face carrying
+    // all four gestures). Flipped rather than deleted, and flipped rather than
+    // RE-POINTED AT ANOTHER MEMBER: this block exists because THIS id drifted,
+    // so the honest form is the cameraInput lineage note
+    // (dom-source-modules.test.ts, `expect(NON_SHELL_LANE_TYPES.has(
+    // 'cameraInput')).toBe(false)` with the old assertion kept as a comment),
+    // not a substitute subject.
+    expect(NON_SHELL_LANE_TYPES.has(LAUNCHPAD_CONTROL_TYPE)).toBe(false);
+    // ⚠ THIS LINE STAYS, AND IT IS THE HALF THAT GUARDS #1579's ACTUAL DEFECT
+    // (a misspelled id that resolves to no def). It is independent of
+    // membership: the unregistered spelling must be absent whether the real one
+    // is present or not.
     expect(NON_SHELL_LANE_TYPES.has('launchpadControl'), 'the unregistered id must be GONE').toBe(false);
   });
 

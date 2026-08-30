@@ -41,7 +41,7 @@
 // locally, so a ms budget would be a different assertion on every machine.
 
 import { test, expect, type Page } from '@playwright/test';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { spawnPatch } from './_helpers';
 
@@ -52,23 +52,119 @@ import { spawnPatch } from './_helpers';
 // against this file's own wait constants, not trusted.
 const FIXTURE = fileURLToPath(new URL('../fixtures/lobby-clip-long.webm', import.meta.url));
 
-/** Derive the DOM-source module types from the shared registry SOURCE, so this
- *  sweep auto-enrols a new module rather than needing a list here. */
-function domSourceTypes(): string[] {
-  const src = readFileSync(
-    fileURLToPath(
-      new URL('../../packages/web/src/lib/ui/workflow/dom-source-modules.ts', import.meta.url),
-    ),
-    'utf8',
-  );
-  const block = /DOM_SOURCE_LANE_TYPES[^[]*\[([\s\S]*?)\]/.exec(src);
-  if (!block) throw new Error('could not parse DOM_SOURCE_LANE_TYPES — has the shape changed?');
-  const types = [...block[1]!.matchAll(/'([^']+)'/g)].map((m) => m[1]!);
-  if (types.length === 0) throw new Error('DOM_SOURCE_LANE_TYPES parsed EMPTY — refusing to pass vacuously');
-  return types;
+/** Parse a declared type set out of a registry SOURCE file, so this sweep
+ *  auto-enrols a new module rather than needing a list here. */
+function parseTypeSet(file: string, symbol: string): string[] {
+  const src = readFileSync(fileURLToPath(new URL(file, import.meta.url)), 'utf8');
+  const block = new RegExp(`${symbol}[^[]*\\[([\\s\\S]*?)\\]`).exec(src);
+  if (!block) throw new Error(`could not parse ${symbol} — has the shape changed?`);
+  return [...block[1]!.matchAll(/'([^']+)'/g)].map((m) => m[1]!);
 }
 
-const TYPES = domSourceTypes();
+/**
+ * The HLS tuner owner set (P3), which has NO literal array to parse.
+ *
+ * ⚠ AND THAT IS THE REGISTRY BEING RIGHT, NOT AWKWARD. `NODE_HLS_SOURCE_TYPES`
+ * is DERIVED from the profile objects (`HLS_TUNER_PROFILES.map(p => p.type)`),
+ * so a profile added without an entry — or an entry with no profile — is
+ * impossible rather than merely discouraged. What that costs is this parser,
+ * which reads the same truth one level down: the `type:` field of each exported
+ * profile. It throws when it finds NOTHING, so a rename cannot silently shrink
+ * this sweep, which is the failure mode the whole union exists to prevent.
+ */
+function parseHlsProfileTypes(file: string): string[] {
+  const src = readFileSync(fileURLToPath(new URL(file, import.meta.url)), 'utf8');
+  const out = [
+    ...src.matchAll(/export const \w+_PROFILE: HlsTunerProfile = \{\s*\n\s*type: '([^']+)'/g),
+  ].map((m) => m[1]!);
+  if (out.length === 0) {
+    throw new Error('could not parse any HlsTunerProfile `type:` — has the profile shape changed?');
+  }
+  return out;
+}
+
+/**
+ * EVERY module that owns a video source, WHOEVER owns its lifecycle.
+ *
+ * ⚠ THIS USED TO BE `DOM_SOURCE_LANE_TYPES` ALONE, AND THAT SUBJECT IS
+ * DISSOLVING UNDER THIS SWEEP (LEG-02, #1511). That set means one specific
+ * thing — "the CARD attaches and the engine keeps it" — and every phase of the
+ * media-lifecycle epic moves a module OUT of it into
+ * `NODE_VIDEO_SOURCE_TYPES`. Read from the old set alone, this sweep silently
+ * loses a subject per phase: videobox left in P1, and it is a FILE PLAYER, i.e.
+ * one of the only members whose "is it still playing?" question is even well
+ * posed.
+ *
+ * ⚠ AND THE EXISTING EMPTY-PARSE GUARD FIRES FAR TOO LATE TO CATCH THAT. It
+ * only throws when the set reaches ZERO, which does not happen until the last
+ * DOM-source module converts — while the set can sit at five NETWORK/CAPTURE
+ * modules that every run skips, leaving a green sweep that exercises nothing.
+ * "Not empty" and "not vacuous" are different properties and only the first was
+ * being checked.
+ *
+ * The union is the durable subject: this sweep is about MEDIA SURVIVING A CARD
+ * MOVE, and that question is identical whether the card or a node controller
+ * owns the lifecycle. Converting a module must not remove it from a sweep that
+ * tests the very property the conversion claims to improve.
+ */
+function videoSourceTypes(): string[] {
+  const cardOwned = parseTypeSet(
+    '../../packages/web/src/lib/ui/workflow/dom-source-modules.ts',
+    'DOM_SOURCE_LANE_TYPES',
+  );
+  const nodeOwned = parseTypeSet(
+    '../../packages/web/src/lib/ui/media/node-video-source-registry.ts',
+    'NODE_VIDEO_SOURCE_TYPES',
+  );
+  // ⚠ AND THE VARISPEED OWNER SET (P2). Each conversion mints a new owner
+  // declaration, and every one of them has to be added HERE or the module it
+  // owns silently leaves this sweep — which is the exact failure the union was
+  // introduced to stop, re-appearing one phase later by a different route.
+  const varispeedOwned = parseTypeSet(
+    '../../packages/web/src/lib/ui/media/node-varispeed-registry.ts',
+    'NODE_VARISPEED_TYPES',
+  );
+  // ⚠ ...AND THE HLS TUNER OWNER SET (P3), for exactly the reason the paragraph
+  // above predicted. peertube and tvLibrarian left `DOM_SOURCE_LANE_TYPES` in
+  // that phase, so without this line they would have vanished from this sweep
+  // the moment the conversion landed — and the sweep would have gone GREEN on
+  // its way out, because both are network sources that every run skips anyway.
+  // A subject that leaves silently and a subject that was never there look the
+  // same from a green run; the union is what stops that.
+  const hlsOwned = parseHlsProfileTypes(
+    '../../packages/web/src/lib/ui/media/node-hls-source-registry.ts',
+  );
+  const all = [...new Set([...cardOwned, ...nodeOwned, ...varispeedOwned, ...hlsOwned])].sort();
+  if (all.length === 0) throw new Error('EVERY source-owner set parsed EMPTY — refusing to pass vacuously');
+  return all;
+}
+
+const TYPES = videoSourceTypes();
+
+/** A subject is a REAL PLAYER iff its card offers both a local-file input and a
+ *  transport play button — the same pair the per-test enrolment checks at
+ *  runtime, read here from the card SOURCE so the population is knowable
+ *  without spawning anything. */
+function realPlayerTypes(): string[] {
+  const cardDir = fileURLToPath(new URL('../../packages/web/src/lib/ui/modules/', import.meta.url));
+  // ⚠ RESOLVED BY A CASE-INSENSITIVE DIRECTORY SCAN, NOT BY REBUILDING THE
+  // FILENAME. `PascalCase(type) + 'Card.svelte'` gets `videovarispeed` wrong —
+  // the file is `VideoVarispeedCard.svelte`, with an inner capital the type id
+  // does not carry. macOS resolves that anyway because its filesystem is
+  // case-INsensitive, so a hand-built name passes locally and returns "not a
+  // player" on LINUX CI — where this sweep's population would then silently
+  // shrink, which is the exact failure this whole guard exists to prevent.
+  const entries = readdirSync(cardDir).filter((f) => f.endsWith('Card.svelte'));
+  return TYPES.filter((type) => {
+    const want = `${type}card.svelte`.toLowerCase();
+    const file = entries.find((f) => f.toLowerCase() === want);
+    if (!file) return false;
+    const src = readFileSync(new URL(file, `file://${cardDir}`), 'utf8');
+    return (
+      /data-testid="[\w-]*-file-input"/.test(src) && /data-testid="[\w-]*-play-btn"/.test(src)
+    );
+  });
+}
 
 /** Non-perturbing engine probe. NOT `VideoEngine.read()` — that calls
  *  markWatched() internally, which would pin the node as a pull root and mask
@@ -402,6 +498,34 @@ async function assertCreditRuleIsSound(page: Page): Promise<void> {
     .toBeLessThanOrEqual(stallBudgetSec + 1e-9);
 }
 
+test('the sweep is NOT VACUOUS: it still exercises real file players', () => {
+  // ⚠ THE GUARD THIS SWEEP WAS MISSING, and the reason it needed one is that
+  // its subject population is actively being drained by LEG-02 (#1511). The
+  // pre-existing check threw only when the type set parsed EMPTY — but the set
+  // can sit at five NETWORK/CAPTURE modules (archivist, cameraInput, loopback,
+  // peertube, tvLibrarian) that EVERY run skips, because no CI fixture can drive
+  // a camera or a tab capture. That state is green, non-empty, and exercises
+  // nothing. "Not empty" and "not vacuous" are different properties.
+  //
+  // ⚠ DELIBERATELY NOT A TYPED FLOOR (`>= 2`), and the distinction is the repo
+  // standard rather than taste. The real player population is videobox +
+  // videovarispeed and is expected to STAY that pair across this whole epic —
+  // so a literal `2` would sit EXACTLY ON the population, which is a ratchet in
+  // behaviour whatever it is in intent: the next legitimate change to that set
+  // breaks a gate that was never measuring the thing it names. Membership is
+  // the shape that survives, and it is strictly stronger here — it fails if a
+  // player silently drops out, whatever the count happens to be.
+  const players = realPlayerTypes();
+  expect(
+    players,
+    'this sweep enrols NO file player, so every one of its tests skips and it proves nothing. ' +
+      `Subjects derived from EVERY ownership set: ${TYPES.join(', ')}. A conversion that moved a ` +
+      'player out of `DOM_SOURCE_LANE_TYPES` without adding its new owner set to `videoSourceTypes()` ' +
+      'is the likely cause — re-point that derivation at whatever owns it now rather than lowering ' +
+      'anything here.',
+  ).not.toEqual([]);
+});
+
 for (const type of TYPES) {
   test(`${type}: media survives the expanded tray being dismissed`, async ({ page }) => {
     test.setTimeout(180_000);
@@ -423,17 +547,36 @@ for (const type of TYPES) {
     // full behavioural scenario iff its expanded card exposes BOTH a local-file
     // input and a transport play button — i.e. it is a local-file PLAYER, the
     // only shape whose "is it still playing?" question is even well posed.
-    // Two groups fall out, and neither can opt out silently:
+    // One group falls out, and it cannot opt out silently:
     //   * network / capture sources (peertube, tvLibrarian, archivist,
-    //     cameraInput, loopback) — no fixture can drive them in CI;
-    //   * one-shot loaders (frametable, videocube) — they upload a file into an
-    //     atlas/texture and have no transport, so there is no playback to lose.
-    // BOTH groups are still covered, by the SOURCE-level gate
+    //     cameraInput, loopback) — no fixture can drive them in CI.
+    // It is still covered by the SOURCE-level gate
     // (packages/web/src/lib/ui/media/card-media-lifetime.test.ts), which reads
     // every DOM-source card's unmount path and needs no browser.
+    //
+    // ⚠ THERE USED TO BE A SECOND GROUP HERE — "one-shot loaders (frametable,
+    // videocube) … there is no playback to lose" — and that sentence was RIGHT
+    // while the set it described was WRONG. Those two are no longer DOM-source
+    // modules at all: `DOM_SOURCE_LANE_TYPES` now requires the ENGINE to keep
+    // the attached element, and theirs is a one-shot atlas import the next draw
+    // detiles and drops. So they are not enrolled here to be skipped; they are
+    // simply not in this sweep's population. This spec's own prose had the
+    // right observation two levels below where the classification lived.
     const fileInput = pane.locator('input[type="file"][data-testid$="-file-input"]').first();
     const playBtn = pane.locator('button[data-testid$="-play-btn"]').first();
     const isPlayer = (await fileInput.count()) > 0 && (await playBtn.count()) > 0;
+    // ⚠ ANCHOR THE STATIC PREDICATE TO THE RUNTIME ONE, per subject and in both
+    // directions. `realPlayerTypes()` reads the card SOURCE so the population is
+    // knowable without spawning; this is the only place that can prove the two
+    // agree. Without it the source-derived floor below could drift away from
+    // what the sweep actually enrols and go on reporting a healthy population
+    // while every run skipped.
+    expect(
+      realPlayerTypes().includes(type),
+      `${type}: the card SOURCE and the EXPANDED CARD disagree about whether this is a file player ` +
+        `(source says ${realPlayerTypes().includes(type)}, runtime says ${isPlayer}) — the derived ` +
+        'population this sweep reports would then be describing a different set than it exercises',
+    ).toBe(isPlayer);
     test.skip(
       !isPlayer,
       `${type} is not a local-file player (no file input and/or no transport) — its unmount path is gated by card-media-lifetime.test.ts`,

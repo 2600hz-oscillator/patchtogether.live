@@ -244,6 +244,62 @@ export const mandleblotDef: VideoModuleDef = {
     { id: 'center_y',    label: 'Y',     defaultValue: DEFAULTS.center_y,    min: -2,   max: 2,    curve: 'linear' },
   ],
 
+  // ── FACE (PF-20) ──────────────────────────────────────────────────────────
+  //
+  // MANDLEBLOT is a Mandelbrot EXPLORER. The verb is TRAVEL: pan to a point, dive
+  // in, and colour what you find. Every control is a coordinate on that journey
+  // or a decision about how it is drawn.
+  //
+  // THE RANK, read back as a sentence: dive (ZOOM), steer (X and Y), spend detail
+  // where you landed (ITERATIONS), then decide how it looks (COLOUR, ROTATION).
+  //
+  // ⚠ THE TWO CENTRE COORDINATES RANK SECOND AND THIRD, ADJACENT, and ahead of
+  // everything except zoom — an argument that is specific to a deep-zoom fractal
+  // and would be wrong for a generator. They are one gesture in two axes, useless
+  // apart, and at any real magnification they are THE ONLY CONTROLS THAT FIND
+  // ANYTHING: the visible window at 1000× is a rounding error of the parameter
+  // plane, so without steering, zoom lands on empty colour.
+  //
+  // ⚠ ITERATIONS RANKS FOURTH BECAUSE IT IS INVISIBLE UNTIL YOU ARE DEEP. It is
+  // the detail budget — the docs call it maximum escape iterations, resolving
+  // finer filament detail in deep zooms at higher GPU cost — so at the shallow
+  // default view raising it changes almost nothing. It earns its place above the
+  // look controls, and not one place higher.
+  //
+  // ⚠ `order` AND A `pages` SPLIT WOULD DISAGREE HERE, which is exactly why there
+  // is no `pages`. The honest grouping is TRAVEL (zoom, x, y) against RENDER
+  // (iterations, colour, rotation), but the second band is a leftover rather than
+  // an idea — "the three that are not travel" — and a header saying so is chrome.
+  face: {
+    order: ['zoom', 'center_x', 'center_y', 'iterations', 'color_cycle', 'rotation'],
+
+    // ⚠ NO `paramCells` AT ALL, and that is a positive decision rather than an
+    // omission. `MandleblotCard.svelte` draws all six controls as `<Knob>`s — no
+    // fader anywhere on the card — and the shell's default for a continuous param
+    // is already a knob. Declaring `fader` for any of them would invent a
+    // primitive this module has never had, on the batch's own rule that
+    // `paramCells` is declared where the CARD draws faders.
+
+    // ⚠ NO `options` ROSTER EITHER, and both discrete-looking params were
+    // checked rather than assumed. `color_cycle` is `0..4 LINEAR` — a continuous
+    // palette sweep, not five states — so a roster would fabricate semantics the
+    // module does not have. `iterations` IS `discrete`, but it spans 50..500, so
+    // a drag reaches hundreds of positions: this is not the `moog962` two-state
+    // trap where a discrete knob quantises back to where it started.
+
+    // ⚠ MANDATORY FOR A VIDEO DEF — this def's outputs are `mono-video` and
+    // `video`, so `primaryAudioOutPortId` finds nothing and any other glyph
+    // literal resolves to a dead `{kind:'static'}` that reddens module-face-lint.
+    glyph: 'none',
+
+    // SCREEN ON/OFF arrives through this slot (#1928). A PORT rather than an
+    // addition: `MandleblotCard.svelte` already draws this fractal — but with no
+    // toggle, so promotion would have handed the player the heaviest renderer in
+    // its batch and no way to collapse it.
+    // See `$lib/ui/modules/mandleblot/shell-extension.ts`.
+    extension: 'mandleblot',
+  },
+
   docs: {
     explanation: "MANDLEBLOT is a 2D Mandelbrot fractal generator rendered on the GPU. A WebGL2 fragment shader runs the escape-time loop (z = z² + c, bailout radius 16) per pixel, then smooth-colours it with the standard fractional-iteration trick (mu = i + 1 - log(log|z|)/log2) so colour bands don't stairstep. The same program renders twice per frame: a greyscale escape-time field to mono_out and an RGB-cycling palette to color_out, where hue is driven by iteration band (mu), time, and log(zoom) so each zoom depth feels like its own palette. It is a pure generator with no video input — it synthesizes the fractal from scratch. Frame it with X/Y, drive Zoom by hand or via zoom_cv (LFO/envelope) for an automatic dive into the seahorse valleys, raise Iter for filament detail in deep zooms, and use Color/Rot to animate the look. Single-precision highp-float caps usable zoom near 1e6×, past which the image goes block-y.",
     inputs: {
@@ -254,7 +310,7 @@ export const mandleblotDef: VideoModuleDef = {
       color_out: "Colour (video) output: the RGB palette pass, full-saturation hue cycled by iteration band (mu), time, and zoom depth; in-set points are forced black to preserve the set's silhouette. This is the surface texture — the card's live preview and the default/canonical output handle.",
     },
     controls: {
-      zoom: "Zoom (ZOOM knob, log curve, 0..1). Mapped exponentially to a real zoom factor via 10^(6·knob) — 0→1× (whole set), 0.5→~1000×, 0.8→~63k×, 1.0→1e6× (the highp-float ceiling, past which the image goes block-y); default 0.2 (~16×). The card shows the live factor as a ×N / Nk× / NM× readout beneath the knob.",
+      zoom: "Zoom (ZOOM knob, log curve, 0..1). Mapped exponentially to a real zoom factor via 10^(6·knob) — 0→1× (whole set), 0.5→~1000×, 0.8→~63k×, 1.0→1e6× (the highp-float ceiling, past which the image goes block-y); default 0.2 (~16×). ⚠ KNOB POSITION IS NOT MAGNIFICATION and the two are not linearly related — half a turn is already ~1000×. The legacy card painted the live factor as a ×N / Nk× / NM× readout beneath the knob; the FACEPLATE does not, because the resting faceplate paints no derived-state text. This sentence and the mapping above it are that finding's home now, together with the value on the control's own aria-valuetext.",
       rotation: "Rot (ROT knob, linear, 0..1) — rotates the view about its current centre, linearly mapped to 0..2π radians (0 = upright, 1 = a full turn). Knob-only, no CV.",
       iterations: "Iter (ITER knob, discrete, 50..500, default 150) — maximum escape iterations. Higher values resolve finer filament detail in deep zooms at higher GPU cost; the shader's loop is hard-capped at 500 and the value is rounded/clamped to [50,500].",
       color_cycle: "Color (COLOR knob, linear, 0..4, default 1) — scales the time and log(zoom) hue terms together. 0 freezes both drifts (hue still varies by iteration band via mu·0.05); higher values speed the continuous time cycle and the per-zoom palette shift. Affects color_out only.",

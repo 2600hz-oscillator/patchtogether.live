@@ -138,9 +138,43 @@ export function buildAudioInConstraints(
 }
 
 /**
+ * The NOUN a positional fallback uses, taken from the device's own `kind`.
+ *
+ * ⚠ THIS EXISTS BECAUSE THE FALLBACK USED TO SAY "Input" FOR EVERYTHING, AND
+ * THE AUDIO OUT PICKER IS A CALLER. `formatDeviceLabel` hardcoded
+ * `` `Input #${n}` ``, and `AudioOutCard` calls it for `audiooutput` entries —
+ * so on a fresh rack, before any permission has been granted, EVERY ENTRY IN
+ * THE OUTPUT PICKER READ `Input #1`, `Input #2`, … That is not a rare corner:
+ * this file's own header records that audiooutput labels stay empty until
+ * MICROPHONE permission is granted, so it is the DEFAULT state of the output
+ * dropdown for anyone who has not yet allowed a mic.
+ *
+ * The noun is derived from the DEVICE rather than passed by the caller on
+ * purpose: a direction flag at the call site is a second source of truth for a
+ * fact the entry already carries, and it can disagree with the filter that
+ * produced the list. `kind` cannot.
+ */
+function positionalNoun(kind: MediaDeviceKind | undefined): string {
+  switch (kind) {
+    case 'audiooutput':
+      return 'Output';
+    case 'audioinput':
+      return 'Input';
+    case 'videoinput':
+      return 'Camera';
+    default:
+      // `kind` is optional on MinimalDevice (the helpers are testable with
+      // plain objects), and a real MediaDeviceInfo always carries it. A
+      // direction-NEUTRAL noun is the only honest answer here: guessing
+      // "Input" is what produced the defect above.
+      return 'Device';
+  }
+}
+
+/**
  * Render-time label for a device entry. When the browser's privacy gate
  * is in effect, `device.label` is the empty string — we fall back to a
- * positional label ("Input #2") so the dropdown still shows distinct
+ * positional label ("Output #2") so the dropdown still shows distinct
  * entries the user can pick between.
  *
  * `index` is the device's 0-based position in the filtered list (the
@@ -149,7 +183,7 @@ export function buildAudioInConstraints(
 export function formatDeviceLabel(device: MinimalDevice, index: number): string {
   if (device.label && device.label.length > 0) return device.label;
   // Empty label = pre-permission privacy gate. Show a positional fallback
-  // so the user can at least distinguish "the first input" from "the
-  // second" before they grant access.
-  return `Input #${index + 1}`;
+  // so the user can at least distinguish "the first output" from "the
+  // second" before they grant access — named for what it actually is.
+  return `${positionalNoun(device.kind)} #${index + 1}`;
 }

@@ -10,9 +10,20 @@
   // is in the graph. This card only SUBSCRIBES; unsubscribing on unmount
   // touches nothing but the listener set.
   //
-  // Class selectors are ordinary discrete params (Yjs-synced); the factory
-  // forwards them to the worklet and this card pushes the derived hold/fade
-  // modes to the live connection via updateEs9Config.
+  // Class selectors are ordinary discrete params (Yjs-synced); the ENGINE
+  // FACTORY forwards them to the worklet AND pushes the derived hold/fade
+  // modes to the live connection.
+  //
+  // ⚠ THIS CARD USED TO OWN THE SECOND HALF OF THAT, AND IT WAS A LIVE DEFECT.
+  // `setClass` called `updateEs9Config` itself, and it was the only caller in
+  // the tree — on a card the default shell has not mounted in a lane since
+  // ownership moved to the engine node, so on the renderer every user actually
+  // gets, the native app's per-jack UNDERRUN POLICY never followed the class
+  // param. Worse, the CV-Buddy janitor writes `out{N}_class` straight through
+  // the store and touches no card at all, so its writes could never reach it.
+  // The push is now in `es9Def`'s `setParam`, which is the one place that sees
+  // a class change with no view involved. This card sets the param and nothing
+  // else, so the two surfaces cannot disagree about the policy.
   import type { NodeProps } from '@xyflow/svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
@@ -21,14 +32,13 @@
   import { cardParams } from './card-kit';
   import {
     es9Def,
-    es9OutputModes,
+    es9BridgeConfig,
     ES9_CLASS_NAMES,
   } from '$lib/audio/modules/es9';
   import type { Es9ConnectionState } from '$lib/audio/es9/bridge-client';
   import {
     es9Snapshot,
     subscribeEs9,
-    updateEs9Config,
     stopEs9Bridge,
     restartEs9Bridge,
     type Es9OwnerSnapshot,
@@ -43,12 +53,19 @@
   const { set, engineCtx } = cardParams(es9Def, () => id, () => node);
 
   // ---- per-tab transient state (never in Yjs) — MIRRORED from the owner ----
+  //
+  // ⚠ `snap.detail` IS NOT DERIVED HERE ANY MORE, AND ITS ABSENCE IS THE POINT.
+  // This file used to compute `stateDetail = snap.detail` and then never read
+  // it in any template branch — the bridge worker sends a real detail string on
+  // every status message and the card threw the most specific thing it knew
+  // straight away. It has a consumer now, on the FACEPLATE: `es9BridgeDetail`
+  // composes it into the BRIDGE lamp's `aria-label`, which is where the
+  // resting-text ruling sends a measurement.
   // svelte-ignore state_referenced_locally -- SEED only. The $effect below re-reads
   // es9Snapshot(nodeId) from the live id and subscribes, so this initial value is
   // replaced before the first paint that could show a stale one.
   let snap = $state<Es9OwnerSnapshot>(es9Snapshot(id));
   let connState = $derived<Es9ConnectionState>(snap.state);
-  let stateDetail = $derived<string | undefined>(snap.detail);
   let device = $derived<Es9DeviceInfo | null>(snap.device);
   let meters = $derived<Es9Meters | null>(snap.meters);
   let rtt = $derived<number | null>(snap.rtt);
@@ -61,15 +78,13 @@
     return typeof v === 'number' ? v : fallback;
   }
 
+  // ⚠ IMPORTED FROM THE DEF, NOT REBUILT HERE. This used to be a second
+  // hand-written copy of the config shape beside the factory's, which is
+  // exactly how the two ended up meaning different things; `es9BridgeConfig`
+  // is the one builder and its TODO about deriving masks from patched edges
+  // lives with it rather than in two places.
   function currentConfig() {
-    return {
-      // v1 subscribes/drives all channels — loopback bandwidth is trivial
-      // (~3 MB/s) and it keeps masks decoupled from patch-edge churn.
-      // TODO(follow-up): derive masks from patched edges.
-      inputChannels: Array.from({ length: 16 }, (_, c) => c),
-      outputChannels: Array.from({ length: 16 }, (_, c) => c),
-      outputModes: es9OutputModes(node?.params),
-    };
+    return es9BridgeConfig(node?.params);
   }
 
   /** The engine's AudioContext rate — the bridge must be restarted at the SAME
@@ -83,10 +98,10 @@
   function setClass(paramId: string) {
     return (e: Event) => {
       const v = Number((e.currentTarget as HTMLSelectElement).value);
+      // The param write is the WHOLE gesture. The engine handle's `setParam`
+      // pushes both the worklet's class array and the bridge's hold/fade
+      // policy — see the header.
       set(paramId)(v);
-      // Bridge-side hold/fade policy follows the out-jack classes. Pushed to
-      // the node's LIVE connection — a no-op when there isn't one yet.
-      updateEs9Config(id, currentConfig());
     };
   }
 
@@ -176,10 +191,15 @@
       <div class="status-row" data-testid="es9-status-{id}">
         <span class="led" class:on={connState === 'connected'} class:err={connState === 'busy' || connState === 'device_lost'}></span>
         <span class="state">{stateLabel}</span>
+        <!-- The testids are what `module-docs-lint`'s card-drift leg reads for
+             the `es9-connect` / `es9-disconnect` controlFamilies the face
+             declares — and they also repair a live weakness in
+             es9-card-shows-state.spec.ts, which found these buttons by their
+             VISIBLE TEXT and so was one caption edit away from unfindable. -->
         {#if connState === 'connected'}
-          <button class="linkish" onclick={() => stopEs9Bridge(id)}>disconnect</button>
+          <button class="linkish" data-testid="es9-disconnect-{id}" onclick={() => stopEs9Bridge(id)}>disconnect</button>
         {:else if connState !== 'connecting' && connState !== 'unsupported'}
-          <button class="linkish" onclick={() => restartEs9Bridge(id, sampleRate(), currentConfig())}>connect</button>
+          <button class="linkish" data-testid="es9-connect-{id}" onclick={() => restartEs9Bridge(id, sampleRate(), currentConfig())}>connect</button>
         {/if}
       </div>
       {#if connState === 'connected' && device}

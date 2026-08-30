@@ -161,6 +161,13 @@ function parseLaneSet(name: string): string[] {
   return types;
 }
 
+/** The producers whose FACE mounts the producing surface itself, so their
+ *  headless host stands down while the dock full view is open. Parsed from the
+ *  same shared source as the lane sets — a hand-typed copy here would be the
+ *  second source of truth for a rule whose whole point is that a module leaves
+ *  the default BY NAME. */
+const FACE_MOUNTS_PRODUCER = new Set(parseLaneSet('FACE_MOUNTS_PRODUCER'));
+
 /** The producer subjects, derived from the shared source. */
 function cardProducerTypes(): string[] {
   const producers = parseLaneSet('CARD_PRODUCER_LANE_TYPES');
@@ -200,6 +207,35 @@ const SUBJECTS = cardProducerTypes().map((type) => {
     videoOuts: mod.outputs
       .filter((p) => p.type === 'video' || p.type === 'mono-video')
       .map((p) => p.id),
+    /**
+     * Does this subject KEEP its headless host while its dock full view is
+     * open? DERIVED, never declared here — from the manifest's own
+     * `strictFace` plus `FACE_MOUNTS_PRODUCER` parsed out of the same shared
+     * source every other set on this page comes from.
+     *
+     * ⚠ THE DEFAULT INVERTED ON 2026-08-23 AND THIS PAGE STILL ASSERTED THE
+     * OLD ONE. `FACE_MOUNTS_PRODUCER`'s own prose records why: TIMELORDE was
+     * the first promoted producer whose face only BLITS, so unmounting its
+     * card left the face painting a STALE bitmap (measured `nonBlack
+     * 47034/48400` from a card that was already gone) or a cold black field.
+     * The default is now "a faced producer KEEPS its headless host while its
+     * dock full view is open", and a module leaves that default BY NAME.
+     *
+     * So the constant `headless: 0` this test used to assert is now true for
+     * exactly three reasons and false for a fourth:
+     *   * NOT migrated (wavesculpt, synesthesia) — the dock shows the real
+     *     legacy card, which MOVED there out of the headless host  -> 0
+     *   * migrated AND in FACE_MOUNTS_PRODUCER (cube, rasterize) — the face
+     *     mounts the producing surface itself, so hosting it too would be the
+     *     second mount this whole page exists to forbid                -> 0
+     *   * migrated and NOT in that set (scope, timelorde) — the face only
+     *     blits, so the host is what keeps the pump running            -> 1
+     * The claim is unchanged in substance: EXACTLY ONE surface runs the
+     * producer. Only the place it lives now depends on the module.
+     */
+    migrated: mod.strictFace === true,
+    keepsHeadlessWhileDocked:
+      mod.strictFace === true && !FACE_MOUNTS_PRODUCER.has(type),
   };
 });
 
@@ -631,7 +667,7 @@ async function boot(page: Page, shell: Shell = 'default'): Promise<void> {
 type Shell = 'default' | 'legacy';
 
 for (const subject of SUBJECTS) {
-  const { type, domain, videoOuts, laneTestId } = subject;
+  const { type, domain, videoOuts, laneTestId, migrated, keepsHeadlessWhileDocked } = subject;
   const nodeId = `producer-${type}`;
 
   test(`${type}: its card is kept alive off-screen when the shell swaps the lane card away`, async ({ page }) => {
@@ -712,12 +748,24 @@ for (const subject of SUBJECTS) {
       (globalThis as unknown as { __openDockFullView: (i: string) => void }).__openDockFullView(id);
     }, nodeId);
     await expect(page.locator('[data-testid="dock-full-view"]')).toHaveCount(1, { timeout: 30_000 });
-    // Exactly ONE mount at a time: the headless host stands down while the dock
-    // holds the card, so two GL contexts / two producers never race.
+    // Exactly ONE surface runs the producer while the dock holds this node, so
+    // two GL contexts / two producers never race. WHERE that surface lives is a
+    // property of the module (see `keepsHeadlessWhileDocked`), so the expected
+    // headless count is DERIVED rather than the constant 0 this asserted before
+    // the 2026-08-23 default inversion — a constant that was RIGHT for the two
+    // producers promoted at the time and silently wrong for every one promoted
+    // after, which is how it came to fail for scope and timelorde.
+    const expectedHeadless = keepsHeadlessWhileDocked ? 1 : 0;
     expect(
       await cardMounts(page, nodeId),
-      `${type} must be mounted in the dock and NOT also in the headless host`,
-    ).toEqual({ headless: 0, dock: 1 });
+      `${type} must have EXACTLY ONE surface running its producer while its dock full view is ` +
+        `open. It is ${keepsHeadlessWhileDocked ? '' : 'NOT '}a module that keeps its headless ` +
+        `host while docked (migrated=${migrated}` +
+        `, faceMountsProducer=${FACE_MOUNTS_PRODUCER.has(type)}), so the headless host must be ` +
+        `${expectedHeadless}: ${keepsHeadlessWhileDocked
+          ? 'its face only BLITS, so unmounting the card would leave a stale or black picture'
+          : 'either the dock holds the real card, or the face mounts the producing surface itself'}`,
+    ).toEqual({ headless: expectedHeadless, dock: 1 });
     // The SAME port list in both states — the set comparison below is only
     // meaningful if the probe looked at the same thing twice.
     // Same readiness gate as phase 1 — both phases stay the same instrument.
@@ -925,13 +973,18 @@ for (const subject of SUBJECTS) {
   // RASTERIZE's `cvCombined` writes are covered by the mount-count assertion and
   // by dom-source-modules.test.ts, never by these pixels. And it covers only the
   // COLLAPSED-GROUP arm of the exclusion it fixes: the CANVAS-HIDDEN arm
-  // (`isCanvasHiddenNode` — pinned singletons + `hiddenCard` cameras) is still
-  // skipped by `headlessSourceNodes`, and the pinned TIMELORDE that every rack
-  // auto-spawns is a CARD_PRODUCER sitting in it. Measured on a default rack
-  // with `pinned-timelorde.video_out → VIDEO OUT`: `nonBlack 0/3072, maxLuma 8
-  // (its idle #07090d field), 1 distinct signature over 30 frames`, with zero
-  // card mounts anywhere. That is a separate defect with a whole-rack blast
-  // radius — filed as #1754, and this leg does not cover it.
+  // (`isCanvasHiddenNode` — pinned singletons + `hiddenCard` cameras) is a
+  // different subject.
+  //
+  // ⚠ THAT ARM IS NOW FIXED AND COVERED ELSEWHERE — #1754, 2026-08-23. The
+  // pinned TIMELORDE every rack auto-spawns is a CARD_PRODUCER that was sitting
+  // in it: measured on a default rack, `nonBlack 0/3072, maxLuma 8` (its idle
+  // #07090d field), `1 distinct signature over 30 frames`, with zero card mounts
+  // ANYWHERE, in both shells. `headlessSourceNodes` now routes canvas-hidden
+  // nodes through `needsHeadlessSourceMount`'s `laneOmitsNode` arm — which
+  // returns `CARD_PRODUCER_LANE_TYPES.has(type)`, so hidden cameras are
+  // unchanged — and `e2e/tests/timelorde-pinned-source.spec.ts` is the leg that
+  // proves it, with the same in-page drawFrame probe this file uses.
   for (const shell of ['default', 'legacy'] as const) {
     test(`${type} [${shell} shell]: its card survives its GROUP being COLLAPSED (#1721)`, async ({ page }) => {
       test.setTimeout(SLOW_RENDER ? 240_000 : 120_000);

@@ -24,7 +24,15 @@ import { spawnPatch } from './_helpers';
 import { readScopePeakOverWindow } from './_module-coverage-helpers';
 // THE SAME reset instrument the CARD's RST test uses. Shared deliberately —
 // see the header of _clip-reset-trace.ts.
-import { startStepTrace, stopStepTrace, waitForResetSnap } from './_clip-reset-trace';
+import {
+  CLIP_STEPS,
+  NOMINAL_STEPS_PER_S,
+  WRAP_PERIOD_MS,
+  startStepTrace,
+  stopStepTrace,
+  waitForResetSnap,
+  waitForWrap,
+} from './_clip-reset-trace';
 
 test.describe.configure({ mode: 'parallel' });
 
@@ -275,7 +283,24 @@ test.fixme('@launchpad RESET pad snaps every active lane back to step 1 (control
   expect(resumed.ok, `lane 0 kept advancing after reset (saw ${resumed.last})`).toBe(true);
 });
 
-test('@launchpad RESET negative control: without the pad press, neither observable fires', async ({ page, rack }) => {
+// ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; body and assertions UNCHANGED.
+//
+// ⚠ THIS IS THE NEGATIVE CONTROL OF AN ALREADY-PARKED POSITIVE, and parking it
+// is closing a half-open pair rather than widening the debt. The positive leg
+// at :190 is parked; this is the control that keeps it honest, and the two are
+// co-nondeterministic BY CONSTRUCTION — both ride the same free-running
+// 128-step clip whose 8 s wrap is what the control exists to distinguish from a
+// real reset. Leaving the control running while its positive sits parked is
+// the "a passing negative control is not enough" problem from the other side:
+// a control with no positive proves only that the probe can stay silent, which
+// is half-coverage at best and misleading at worst.
+//
+// FIRST observation of THIS leg recovering (run 32725328269 shard 2/10,
+// 2026-08-24 12:31Z; absent from main's previous 8 runs). NOT triaged as flake
+// vs under-budget. UN-PARK IS THE PAIR'S BUDGET DIAGNOSIS — un-parking this one
+// alone would restore a control whose positive is still parked, i.e. exactly
+// the half-pair this park exists to end.
+test.fixme('@launchpad RESET negative control: without the pad press, neither observable fires', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — recovered-on-retry, FIRST observation of THIS leg (run 32725328269 shard 2/10, 2026-08-24 12:31Z; not on main\'s previous 8 runs), NOT yet triaged as flake vs under-budget; NEGATIVE CONTROL of the already-parked positive at :190 — the pair is co-nondeterministic by construction (same free-running 128-step clip whose 8 s wrap is what this control distinguishes from a real reset), and a control without its positive is half-coverage; un-park = the PAIR\'s budget diagnosis' } }, async ({ page, rack }) => {
   // ⚠ THE LEG THAT KEEPS THE ONE ABOVE HONEST, and the one the old absolute
   // band could not have had: a free-running 128-step clip WRAPS every 8 s, and
   // a wrap reads `step <= 6` exactly like a reset does. Under the old
@@ -302,10 +327,37 @@ test('@launchpad RESET negative control: without the pad press, neither observab
   const nonceBefore = ((await nodeData(page, 'cp'))?.resetNonce as number | undefined) ?? 0;
   await startStepTrace(page, 'cp', ['currentStep:0', 'currentStep:1']);
   await selectControl(page);
-  // NO press. 9 s > the 8 s / 128-step wrap horizon, so at least one genuine
-  // wrap is expected INSIDE this window — which is precisely what must not be
-  // mistaken for a reset.
-  const falsePositive = await waitForResetSnap(page, 9000);
+
+  // NO press — and the window must CONTAIN a genuine wrap, which is precisely
+  // what must not be mistaken for a reset.
+  //
+  // ⚠ THIS USED TO BE `waitForResetSnap(page, 9000)`, AND THE 9000 WAS THE BUG
+  // (#1847 recovered-flake on #2150's run). 9000 ms is 1.125× the NOMINAL wrap
+  // horizon, so the entire margin was 1 s of a runner being at nominal speed. It
+  // is not: the failing run measured 9588 ms elapsed with 0 wraps, i.e. a lane
+  // clock of ~13.3 steps/s against a nominal 16 — a perfectly healthy rack whose
+  // wrap simply fell outside the window. Under-budgeted, not nondeterministic;
+  // "the result is different here" and "the instrument is different here" need
+  // opposite fixes, and this is the second.
+  //
+  // A BIGGER NUMBER IS NOT THE FIX EITHER — it is the same bug with more slack,
+  // and it re-breaks on the next slower runner. A wrap is CLIP_STEPS of STEP
+  // advance; its wall-clock duration is a property of the runner. So the gate is
+  // now the WRAP EVENT and the clock only BOUNDS the failure, which is the lane
+  // -clock form of "count frames, never milliseconds".
+  //
+  // The cap is DERIVED (`WRAP_PERIOD_MS` = CLIP_STEPS / NOMINAL_STEPS_PER_S) and
+  // deliberately several periods wide: it is a bound on a hang, not an
+  // acceptance window, so widening it cannot buy a pass the way widening the old
+  // window did. A run that needs it has a lane clock under a quarter of nominal.
+  const WRAP_CAP_MS = WRAP_PERIOD_MS * 4;
+  const wraps = await waitForWrap(page, WRAP_CAP_MS);
+
+  // The false-positive predicate scans EVERY drop recorded since
+  // `startStepTrace`, including the wrap just observed — so this needs no window
+  // of its own to be sound. The short derived slice is only so a jump landing
+  // between the two calls is still seen.
+  const falsePositive = await waitForResetSnap(page, WRAP_PERIOD_MS / 8);
   const trace = await stopStepTrace(page);
   const nonceAfter = ((await nodeData(page, 'cp'))?.resetNonce as number | undefined) ?? 0;
 
@@ -322,10 +374,33 @@ test('@launchpad RESET negative control: without the pad press, neither observab
   ).toBe(false);
   // NON-VACUITY: the window must actually have contained the thing being
   // excluded, or "no false positive" is a statement about an idle rack.
+  //
+  // Units, because half the bugs in this area were unit confusions: `wraps` and
+  // `drops` are a COUNT of backward jumps; `spanMs` / `WRAP_CAP_MS` /
+  // `WRAP_PERIOD_MS` are wall clock; `rate` is STEPS PER SECOND. Reaching the
+  // cap with 0 wraps now means the lane clock is under a quarter of nominal (or
+  // stopped) — a real finding — rather than the old "your runner was 1.2x slow".
+  //
+  // ⚠ `trace.rate` IS A FLOOR, NOT A MEASUREMENT, and the message says so
+  // because the draft of it quietly did the opposite. `startStepTrace` only ever
+  // RAISES rate above nominal (`Math.max(rate, dS / dT)`) — deliberately, since
+  // a faster assumed clock shrinks `wrapMs` and makes the wrap exclusion
+  // stricter. The consequence is that rate CANNOT report a SLOW lane clock,
+  // which is precisely the condition that produces this failure. Verified by
+  // running this leg against a deliberately halved lane clock: the real rate was
+  // 8 steps/s and the trace still reported 16. A diagnostic that misreports the
+  // one quantity you would diagnose with is worse than no diagnostic, so it is
+  // labelled rather than printed as if it were observed.
   expect(
     trace.drops.length,
-    `no backward jump at all in ${trace.spanMs} ms — the clip never wrapped, so this control ` +
-      `never exercised the wrap exclusion it exists to test. Is the transport running?`,
+    `no backward jump at all: ${wraps} wrap(s) in ${trace.spanMs} ms wall clock (cap ` +
+      `${WRAP_CAP_MS} ms = 4 x WRAP_PERIOD_MS ${WRAP_PERIOD_MS} ms, itself CLIP_STEPS ` +
+      `${CLIP_STEPS} / NOMINAL_STEPS_PER_S ${NOMINAL_STEPS_PER_S} steps/s). The clip never ` +
+      `wrapped, so this control never exercised the wrap exclusion it exists to test. ` +
+      `trace.rate ${trace.rate} steps/s is the wrap-exclusion clock FLOOR (never lowered below ` +
+      `nominal by design), so it cannot show a slow lane clock — compare spanMs against ` +
+      `WRAP_PERIOD_MS instead. Sampler: ${trace.samples} samples, max gap ${trace.maxGapMs} ms. ` +
+      `Is the transport running?`,
   ).toBeGreaterThan(0);
 });
 

@@ -37,7 +37,7 @@ import type { Edge, ModuleNode } from '$lib/graph/types';
 import type { DomainEngine } from '$lib/audio/engine';
 import { getVideoModuleDef, type VideoModuleDef } from './module-registry';
 import { createWaveformRenderer, type WaveformRenderer } from './waveform-video';
-import { buildCvBridgeMapping, mapCvBridgeValue, type CvBridgeMapping } from './cv-bridge-map';
+import { buildCvBridgeMapping, cvBridgeKnobTracksBase, mapCvBridgeValue, type CvBridgeMapping } from './cv-bridge-map';
 import {
   followEnvelope,
   makeEnvelopeFollower,
@@ -45,6 +45,8 @@ import {
 } from './toybox-cv-math';
 import { VIDEO_RES } from './video-res';
 import { RenderWorkerBridge, workerFlagState, workerLocusEligible } from './worker/worker-bridge';
+import type { BridgeTrace } from './worker/worker-bridge';
+import type { WorkerTraceSnapshot } from './worker/protocol';
 import { WorkerProxyHandle } from './worker/worker-proxy-handle';
 import { computeActiveSet, isPullEvalOn } from './pull-eval';
 import {
@@ -970,6 +972,51 @@ export class VideoEngine implements DomainEngine {
   }
 
   /**
+   * #1905 — THE RENDER-WORKER HANDSHAKE, AS STATE.
+   *
+   * The producer-init race family (toybox ×2 specs, acidwarp locus) always
+   * presented as ONE number: zero pixels. That number is the same for four
+   * different situations, which need four different responses:
+   *
+   *   | reading                                   | what actually happened      |
+   *   |-------------------------------------------|-----------------------------|
+   *   | `main.readyAt === null`                    | worker never confirmed GL   |
+   *   | `workerReplied === false`                  | worker message loop wedged  |
+   *   | `worker.loopTicks` unchanged across 2 reads| RENDER LOOP DEAD (see       |
+   *   |                                            | `worker.lastError`)         |
+   *   | node `drawn > 0, posted === 0`             | withheld — `contentNote`    |
+   *   |                                            | names the asset            |
+   *   | node `posted > 0` and still black          | a real RENDER bug          |
+   *
+   * Await it twice to read the heartbeat; one call is enough for the rest.
+   * Returns nulls when no worker bridge was ever constructed (flag off, no
+   * worker-locus node in the rack, or an unsupported runtime).
+   */
+  async workerHandshakeTrace(): Promise<{
+    main: BridgeTrace | null;
+    worker: WorkerTraceSnapshot | null;
+    /** FALSE is a reading, not an error — see RenderWorkerBridge.workerTrace. */
+    workerReplied: boolean;
+  }> {
+    const b = this.workerBridge;
+    if (!b) return { main: null, worker: null, workerReplied: false };
+    const worker = await b.workerTrace();
+    const main = b.bridgeTrace();
+    // Enrich each bridge node with the PROXY-side counters, so one trace covers
+    // the whole chain: worker draw → post → bridge receive → main-GL upload.
+    // The upload is the last silent drop, and `framesReceived` ≫
+    // `framesDelivered` is its only signature.
+    for (const n of main.nodes) {
+      const h = this.nodes.get(n.id);
+      if (!h?.read) continue;
+      n.framesDelivered = (h.read('workerFramesDelivered') as number) ?? 0;
+      n.framesDroppedUpload = (h.read('workerUploadErrors') as number) ?? 0;
+      n.lastUploadError = (h.read('workerLastUploadError') as string | null) ?? null;
+    }
+    return { main, worker, workerReplied: worker !== null };
+  }
+
+  /**
    * Push the latest iMouse vec4 for a node (Shadertoy semantics, ENGINE pixel
    * space — bottom-origin y). The card's preview-canvas pointer handlers compute
    * this (client px → engine px via the letterbox inverse + the .z/.w press
@@ -1872,6 +1919,20 @@ void main() {
     for (const bridge of this.cvBridges.values()) {
       const handle = this.nodes.get(bridge.targetNodeId);
       if (!handle) continue;
+      // ⚠ RE-CENTRE ON THE LIVE MANUAL BASE (#2236). The mapping is built ONCE
+      // in addCvBridge, so its `knob` froze at whatever the fader read when the
+      // CABLE was made. Every tick then wrote `staleKnob + cv·halfSpan`, which
+      // overwrote the user's drag within a frame: a CV-driven fader could not be
+      // repositioned AT ALL, and snapped back to a spot unrelated to the stick.
+      // `baseParams` is the manual base by construction — `setParam` records it
+      // on every manual write — so it is the honest source for the centre, and a
+      // fresher one than the `meta.params` snapshot the mapping was built from.
+      if (bridge.mapping.scale && cvBridgeKnobTracksBase(bridge.mapping)) {
+        const base = this.baseParams.get(
+          this.paramKey(bridge.targetNodeId, bridge.mapping.targetParamId),
+        );
+        if (base !== undefined) bridge.mapping.scale.knob = base;
+      }
       bridge.analyser.getFloatTimeDomainData(bridge.buf);
       if (bridge.env) {
         // AUDIO source: envelope-follow the whole window (RMS → fast-attack /

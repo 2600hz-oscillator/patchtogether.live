@@ -31,7 +31,16 @@
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
-import { createCvBuddyHandle, CV_BUDDY_DEFAULT_PPQN } from './cv-buddy';
+// ⚠ The PPQN param is IMPORTED, not re-declared. Both kinds render one shared
+// body and share one ES-9 jack pool; two copies of the roster would be two menus
+// free to drift, and the drift would be invisible until a user noticed one card
+// offering a division the other refused.
+// ⚠ The FACE is imported too, and it is the SAME OBJECT rather than a copy —
+// `cv-buddy-face-model.test.ts` asserts that by IDENTITY. Two face literals
+// would be two rosters free to drift exactly as two PPQN rosters would be, and
+// the drift would be invisible until a player noticed one plate carrying a band
+// the other had lost.
+import { createCvBuddyHandle, CV_BUDDY_FACE, CV_BUDDY_PPQN_PARAM } from './cv-buddy';
 
 export const cvBuddyMiniDef: AudioModuleDef = {
   type: 'cvBuddyMini',
@@ -58,7 +67,7 @@ export const cvBuddyMiniDef: AudioModuleDef = {
     { id: 'clock', type: 'gate', edge: 'trigger' },
   ],
   params: [
-    { id: 'ppqn', label: 'PPQN', defaultValue: CV_BUDDY_DEFAULT_PPQN, min: 1, max: 48, curve: 'discrete' },
+    CV_BUDDY_PPQN_PARAM,
     { id: 'clockOffsetMs', label: 'Clock offset', defaultValue: 0, min: -20, max: 20, curve: 'linear', units: 'ms' },
   ],
 
@@ -68,6 +77,10 @@ export const cvBuddyMiniDef: AudioModuleDef = {
     laneTap: { pitchIn: 'pitch', gateIn: 'gate' },
     returnsAudio: true,
   },
+
+  // ⚠ THE SAME OBJECT cvBuddy declares — legal here because the two defs differ
+  // only in PORTS, and `face.order` names params. See CV_BUDDY_FACE.
+  face: CV_BUDDY_FACE,
 
   docs: {
     explanation:

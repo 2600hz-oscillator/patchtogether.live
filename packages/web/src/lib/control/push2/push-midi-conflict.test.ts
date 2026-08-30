@@ -489,12 +489,52 @@ describe('4 — no Push e2e spec re-types a CC the map already owns', () => {
     expect(specs.map((s) => s.file)).toContain('push2-clip-launch.spec.ts');
   });
 
-  it('every Push spec IMPORTS its CC numbers from push2-map', () => {
-    for (const { file, src } of specs) {
+  // ⚠ THE SUBJECT IS "A SPEC THAT USES A CC", NOT "A SPEC WHOSE FILENAME STARTS
+  // WITH push2-", AND THE DIFFERENCE IS NOT PEDANTIC. This leg used to require
+  // the import from EVERY `push2-*.spec.ts`, which is a STATIC PROXY for the
+  // dynamic thing the gate is actually about — the same "a proxy standing in
+  // for the subject" shape this repo has been bitten by elsewhere. It held only
+  // while every Push spec happened to drive MIDI.
+  //
+  // `push2-face.spec.ts` (the faceplate promotion, 2026-08-25) is the
+  // counter-example: it drives the DOM — a ranked action cell, the lane
+  // buttons, the view segment, BIND — and reads the control singleton's own
+  // state. It contains no CC number of any kind, so there is nothing for it to
+  // import and nothing it could re-type. Under the old predicate the only ways
+  // to green it were to add an unused import or to RENAME THE FILE out of the
+  // sweep, and both make the gate weaker: an unused import is noise a later
+  // cleanup deletes, and a rename removes the file from leg 3 as well — the leg
+  // that is the real gate.
+  //
+  // So the requirement is now conditional on the spec REFERENCING the Push CC
+  // vocabulary at all, and the vacuity guard below is what stops that condition
+  // from quietly emptying the sweep.
+  const usesCc = (src: string) => /\bCC_|\bPUSH_CC_/.test(src);
+  const ccSpecs = specs.filter((s) => usesCc(s.src));
+
+  it('the CC-using subset is NOT EMPTY — the condition cannot silently skip everything', () => {
+    // Without this, a refactor that stopped every spec naming a CC would empty
+    // the leg below and it would pass against nothing.
+    expect(
+      ccSpecs.map((s) => s.file),
+      'no push2-*.spec.ts references a Push CC — the import leg would be vacuous',
+    ).toContain('push2-clip-launch.spec.ts');
+  });
+
+  it('every Push spec THAT USES A CC imports its numbers from push2-map', () => {
+    for (const { file, src } of ccSpecs) {
       expect(src, `${file} must import the Push CC constants, not re-type them`).toMatch(
         /from '.*control\/push2\/push2-map'/,
       );
     }
+  });
+
+  it('NEGATIVE CONTROL for the condition — a CC-free spec is exempt, a CC-using one is not', () => {
+    // The instrument, perturbed in BOTH directions, so "every spec passed" and
+    // "no spec was checked" cannot look alike.
+    expect(usesCc('await page.getByTestId("push2-face-lane-4-px").click();'), 'DOM-only').toBe(false);
+    expect(usesCc('const CC_PLAY = PUSH_CC_PLAY;'), 'names a CC').toBe(true);
+    expect(usesCc('await cc(CC_ENCODER_BASE, 3);'), 'uses an imported CC').toBe(true);
   });
 
   it('DENY BY DEFAULT — no `const CC_… = <a Push CC>` literal in a Push spec', () => {

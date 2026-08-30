@@ -25,7 +25,7 @@
 // multi-user dock spec is P2.5b's, per the owner's attest answer).
 
 import { test, expect, type Page } from '@playwright/test';
-import { spawnPatch } from './_helpers';
+import { spawnPatch, canvasPane} from './_helpers';
 import { pressFlipKey } from './_flip-key';
 import { readScopePeakOverWindow, runFor } from './_module-coverage-helpers';
 import { BOOT_MS } from '../_helpers/boot-budget';
@@ -366,7 +366,7 @@ test.describe('canvas cards keep their full PatchPanel handle stack', () => {
     const errors = collectErrors(page);
     await page.goto('/rack?shell=legacy');
     await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: BOOT_MS });
-    await page.locator('.svelte-flow__pane').waitFor({ state: 'visible' });
+    await canvasPane(page).waitFor({ state: 'visible' });
 
     await spawnPatch(page, [{ id: 'mx', type: 'mixer', position: { x: 300, y: 200 } }]);
     const node = page.locator('.svelte-flow__node[data-id="mx"]');
@@ -518,7 +518,13 @@ test.describe('dock drawer patch menu + rear-view patching (owner fixes 2026-07-
     await pressFlipKey(page);
     const outJack = card.locator('[data-testid="back-jack"][data-port-id="masterL"][data-direction="output"]');
     await expect(outJack).toBeVisible({ timeout: 5_000 });
-    await page.waitForTimeout(450); // flip-in keyframe settles
+    // pacing: the jack is VISIBLE but still rotating — the card-back-flip-in
+    // keyframe is running, so its box is moving and a click can land off it.
+    // The keyframe's duration is a product constant: `FLIP_MS = 360` in
+    // packages/web/src/lib/ui/Canvas.svelte:8764, which that file documents as
+    // mirroring card-front/back-flip-in in _module-card.css. 450 ms is that
+    // interval with margin.
+    await page.waitForTimeout(450);
 
     // Click the docked OUTPUT jack → a pickup begins from the drawer card.
     await outJack.click();
@@ -577,6 +583,9 @@ test.describe('dock drawer patch menu + rear-view patching (owner fixes 2026-07-
     await pressFlipKey(page);
     const inJack = card.locator('[data-testid="back-jack"][data-port-id="ch1L"][data-direction="input"]');
     await expect(inJack).toBeVisible({ timeout: 5_000 });
+    // pacing: the same card-back-flip-in keyframe as the OUT-jack test above —
+    // `FLIP_MS = 360` in packages/web/src/lib/ui/Canvas.svelte:8764, mirroring
+    // _module-card.css. Visible is not yet STILL, and the click needs still.
     await page.waitForTimeout(450);
 
     await inJack.click();

@@ -193,6 +193,14 @@ test('control (MIDI) context menu opens fully in view from a fader at the bottom
 // Remap menu family — NUMPAD+ key remap menu at the corner
 // ============================================================================
 
+// ⚠ THIS ONE STAYS ON `?shell=legacy`, AND THE REASON MATTERS AFTER THE FACE
+// PROMOTION. Its subject is a `position: fixed` menu escaping SvelteFlow's
+// TRANSFORMED node — a property only the CARD has, because the faceplate's
+// keymap panel is dock-only and the dock is not inside that transform. So this
+// is not a gate pinning an old host as correct: the card is still a shipped
+// surface (`?shell=legacy` must keep working) and it is the only surface where
+// this failure mode exists. The FACE's own menu — portal plus viewport clamp,
+// out of the dock — is driven in `numpad-plus-face.spec.ts`.
 test('numpad key remap menu opens fully in view at the bottom-right corner', async ({ page }) => {
   await gotoClassic(page);
   await spawnPatch(page, [{ id: 'n1', type: 'numpadPlus', position: { x: 200, y: 120 } }]);
@@ -259,10 +267,37 @@ test('clip editor note-probability + clip-probability menus stay in view with th
     x: cellBox.x + cellBox.width / 2,
     y: cellBox.y + cellBox.height / 2,
   });
+
+  // ⚠ THE SUBMENU FLYOUT IS NOW THE THING THAT CAN OVERFLOW, and it needs its
+  // own assertion — otherwise this test would keep passing while measuring
+  // nothing that matters. Until 2026-08-24 the note menu was ONE ~90-row column,
+  // so "the prob menu is fully in viewport" was a real constraint. The owner's
+  // restructure moved the option lists into flyouts, leaving the parent menu
+  // seven short rows that fit almost anywhere — the parent assertion above went
+  // from hard to nearly free, and the long column it used to cover moved into a
+  // box no assertion here saw. The flyout also opens to the RIGHT of a menu
+  // already at the window's right edge, which is the worst case for it.
+  await page.getByTestId('clipplayer-sub-note-cp1').click();
+  const flyout = page.getByTestId('clipplayer-submenu-note-cp1');
+  await expect(flyout).toBeVisible();
+  await expectFullyInViewport(page, flyout);
+  // …and it must not paint ON TOP of the parent it flew out of (the failure a
+  // pure in-viewport clamp allows: slide it back inside by covering its own
+  // menu). `flip: false` is what keeps it sliding along the edge instead.
+  const parentBox = (await probMenu.boundingBox())!;
+  const flyBox = (await flyout.boundingBox())!;
+  const overlapX = Math.min(parentBox.x + parentBox.width, flyBox.x + flyBox.width) - Math.max(parentBox.x, flyBox.x);
+  const overlapY = Math.min(parentBox.y + parentBox.height, flyBox.y + flyBox.height) - Math.max(parentBox.y, flyBox.y);
+  expect(
+    overlapX <= 0 || overlapY <= 0,
+    `flyout must not cover its parent menu (overlap ${Math.round(overlapX)}x${Math.round(overlapY)} CSS px)`,
+  ).toBe(true);
+
   // The prob menus dismiss via their backdrop (they have no Esc handler —
   // and Esc would close a dock full-view out from under the dock variant).
-  await page.getByRole('button', { name: 'close probability menu' }).click();
+  await page.getByRole('button', { name: 'close clip menu' }).click();
   await expect(probMenu).toBeHidden();
+  await expect(flyout).toBeHidden();
 
   // Back to the session grid; right-click the (now clip-carrying) pad with
   // the card's right edge hugging the window's right edge.
@@ -334,7 +369,7 @@ test('clip editor menus inside the dock full-view pane stay fully in view (owner
     y: cellBox.y + cellBox.height / 2,
   });
   // Dismiss via the backdrop — Esc would close the dock full-view itself.
-  await page.getByRole('button', { name: 'close probability menu' }).click();
+  await page.getByRole('button', { name: 'close clip menu' }).click();
   await expect(probMenu).toBeHidden();
 
   // Clip-probability menu from the clip-carrying pad, back on the session

@@ -48,6 +48,8 @@
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
+import type { ModuleFace } from '$lib/graph/types';
+import { MIDI_CHANNEL_COUNT } from './midi-cv-buddy';
 import { vOctToMidi, MIN_MIDI, MAX_MIDI } from '$lib/audio/note-entry';
 import { getSchedulerClock } from '$lib/audio/scheduler-clock';
 import { createPolyReceiver, POLY_CHANNEL_PAIRS } from '$lib/audio/poly';
@@ -225,6 +227,18 @@ export interface MidiOutBuddyData {
   /** Last-used OUTPUT device id (unstable MIDIOutput.id). Restored on
    *  reconnect; the performance bundle keys the stable name off this id. */
   lastDeviceId: string | null;
+  /**
+   * The NAME of that device, remembered so a load can still find the hardware
+   * when the id no longer names anything.
+   *
+   * ⚠ `lastDeviceId` is the `MIDIInput`/`MIDIOutput.id`, which the Web MIDI spec
+   * leaves implementation-defined — `performance-bundle.ts` calls it "unstable"
+   * in as many words. It is the fast, exact path on the same machine and the
+   * session it was saved in; the name is what survives everything else. Absent
+   * on patches written before this existed, which resolve by id alone exactly as
+   * they did.
+   */
+  lastDeviceName?: string;
 }
 
 /** MIDI channel used when the module is neither in a lane nor overridden. */
@@ -278,6 +292,32 @@ export function isMidiOutChannelOverridden(
   return effectiveMidiOutChannel(data) !== lane;
 }
 
+// ---------------- The CHANNEL roster ----------------
+//
+// Both the legacy card's `<select>` and the faceplate's selector cell offer the
+// SAME sixteen choices, built here once so neither surface re-derives them. The
+// card used to spell `{#each Array(16)}` and the `i + 1` inline.
+//
+// ⚠ 1-BASED ON BOTH SIDES HERE, unlike MIDI-CV-BUDDY, and the asymmetry is real
+// rather than an inconsistency to tidy. This module's stored `midiOutChannel`
+// IS 1..16 — `clampMidiChannel` says so and `effectiveMidiOutChannel` compares
+// it directly against a lane number, which is also 1-based — whereas the input
+// side stores the 0..15 wire nibble it matches a status byte against. Making
+// them agree would mean changing one module's saved shape for symmetry.
+
+/** 1..16, `value` and `label` both the number every piece of gear prints. */
+export function midiOutBuddyChannelChoices(): Array<{ value: string; label: string }> {
+  return Array.from({ length: MIDI_CHANNEL_COUNT }, (_, i) => ({
+    value: String(i + 1),
+    label: String(i + 1),
+  }));
+}
+
+/** The stored channel for a picker value, clamped into 1..16. */
+export function channelForChoice(choice: string): number {
+  return clampMidiChannel(Number.parseInt(choice, 10));
+}
+
 /** Card-callable API surface (engine.read(node, 'card-api')). */
 export interface MidiOutBuddyApi {
   /** navigator.requestMIDIAccess() + wire the output picker. Idempotent.
@@ -296,6 +336,71 @@ export function webMidiAvailable(): boolean {
     typeof (navigator as { requestMIDIAccess?: unknown }).requestMIDIAccess === 'function'
   );
 }
+
+// ---------------- The FACEPLATE ----------------
+//
+// WHAT THIS MODULE IS FOR, MUSICALLY. It is the one module that points the
+// rack OUTWARDS: a gate and a pitch from anywhere inside — a sequencer, a clip
+// lane, an envelope — become MIDI notes on a hardware synth in the room. Every
+// other note-sink in the fleet makes sound in the browser; this one makes
+// something else make sound. The verb is "play the gear on the desk from the
+// patch on the screen".
+//
+// ⚠ IT IS A ZERO-PARAM FACE. `params: []`, so both controls arrive as
+// `controlFamilies` + `SHELL_CELLS` entries over `node.data`. `order: []` would
+// have been legal and would have painted a blank tile, which is worse than the
+// placeholder it replaces (the matrixMix lesson).
+//
+// THE TIER LADDER, read back as a sentence: the mini tile shows CONNECT,
+// because without the browser's Web MIDI grant there is no output port to send
+// to and every note this module computes goes nowhere; the compact tile adds
+// CHANNEL, because a synth listening on channel 1 while the rack sends on 10 is
+// the single most common way for this module to look broken while working
+// perfectly. There is nothing below those two — the device picker is the only
+// other affordance and it cannot be a cell.
+//
+// ⚠ ONE PAGE, AND IT IS NOT PADDED TOWARD MORE. Two cells is one idea — put
+// these notes on that instrument — and `DOCK_TAB_MIN_BANDS` is 7, so the rail
+// never enters the question. A second page here would be a header hunting for
+// content, which this module does not have.
+export const MIDI_OUT_BUDDY_FACE: ModuleFace = {
+  // ⚠ MECHANICALLY FORCED, and by the strongest form of the argument in the
+  // fleet: `glyphBinding` reaches a live trace through `primaryAudioOutPortId`,
+  // which matches `type === 'audio'` EXACTLY, and this module declares
+  // `outputs: []` — it is a TERMINAL MIDI SINK, so there is not merely no audio
+  // port, there is no port at all. Any other glyph value falls through to
+  // `{kind:'static'}`, the dead binding module-face-lint reddens. Same
+  // situation as push2Control, for the same reason.
+  glyph: 'none',
+  // The OUTPUT-PORT ROSTER is the one affordance here that cannot be a cell: it
+  // lives on the engine handle behind `requestMIDIAccess()` and differs on
+  // every machine, so it is neither a `ParamDef` nor an `options` roster (a
+  // roster is a fixed set known when the def is authored). See the extension.
+  extension: 'midiOutBuddy',
+  order: [
+    'midi-out-buddy-connect-{n}',
+    'midi-out-buddy-channel-{n}',
+  ],
+  pages: [
+    {
+      // ⚠ `send`, NOT `voice` or `signal` — the dx7 double-band scar.
+      // `rearFieldPlan` derives a LEADING `voice`/`signal` section for a module
+      // whose ports carry gate/poly/pitch drive, and all four of this module's
+      // inputs do; a page with that id renders a SECOND band with the same
+      // name.
+      id: 'send',
+      label: 'send',
+      hint:
+        'Web MIDI needs the browser\'s consent before any output port is even visible, and until '
+        + 'it is granted every note this module computes goes nowhere. Then pick the channel the '
+        + 'synth on the other end is listening on: a mismatch here is silent rather than wrong, '
+        + 'which is the hardest kind of fault to spot. Dropped into a workflow lane the channel '
+        + 'DEFAULTS to that lane\'s number and changing it re-routes the MIDI only — the module '
+        + 'stays in its lane with its clip assignment intact.',
+      controls: ['midi-out-buddy-connect-{n}', 'midi-out-buddy-channel-{n}'],
+    },
+  ],
+};
 
 // ---------------- Module def ----------------
 
@@ -325,6 +430,19 @@ export const midiOutBuddyDef: AudioModuleDef = {
   // No AudioParam knobs — channel + device are discrete and live in node.data.
   params: [],
 
+  face: MIDI_OUT_BUDDY_FACE,
+
+  // ⚠ TWO FAMILIES FOR TWO CELLS, AND THE COUNT IS FORCED BY THE RESOLVER.
+  // `resolveFaceControl` resolves a face key to a PARAM id, a family TEMPLATE
+  // (`<id>-{n}`) or a legend STATIC — and this module declares `params: []`, so
+  // both of its controls have to arrive as families. Each has a real control on
+  // the legacy card carrying the same `testidPrefix`, which is what
+  // `module-docs-lint`'s card-drift leg checks.
+  controlFamilies: [
+    { id: 'midi-out-buddy-connect', label: 'Connect MIDI', kind: 'other', testidPrefix: 'midi-out-buddy-connect' },
+    { id: 'midi-out-buddy-channel', label: 'Channel',      kind: 'other', testidPrefix: 'midi-out-buddy-channel' },
+  ],
+
   // Declarative lane-tap marker (INERT in Part A — consumed by the Part-B tap
   // planner). MIDI-OUT-BUDDY is a lane note-sink like CV Buddy: a dropped clip
   // lane can tap its pitch/gate/velocity into these inputs. See ChainWiring.
@@ -349,7 +467,12 @@ export const midiOutBuddyDef: AudioModuleDef = {
         "How hard to strike the outgoing note, as 0..1 CV mapped to MIDI velocity 1..127 (the floor is clamped to 1 because a Note On with velocity 0 is, by spec, a Note Off). Sampled at the rising edge alongside pitch; leave it unpatched for a default level.",
     },
     outputs: {},
-    controls: {},
+    controls: {
+      'midi-out-buddy-connect-{n}':
+        "The one-time-per-origin permission gesture. Web MIDI needs the browser's consent before any output port is even visible, so until it is granted this module still watches its inputs and computes notes but has nowhere to send them — it is inert in the way that looks exactly like broken. It reaches the same request every MIDI module in the rack shares, which always yields a nameable outcome: granted, refused, unsupported, or the quiet case where the browser suppressed its own prompt without telling anyone. Once access is granted the dock's device body lists the OUTPUT ports it found and remembers the one you pick, so a reloaded patch re-attaches to the same synth without another click.",
+      'midi-out-buddy-channel-{n}':
+        "Which MIDI channel the notes are SENT on, 1..16 as every synth prints it on its own front panel. Set it to whatever the instrument on the other end is listening to; a mismatch produces perfect silence with everything else working, which is this module's most common apparent fault. Dropped into a workflow channel lane it DEFAULTS to that lane's number, so the usual case needs no setting at all — and it is an INDEPENDENT key from lane membership, so changing it re-routes the MIDI only and leaves the module in its lane with its clip assignment intact. While the two differ the module says so, and setting it back to the lane's number makes it follow the lane again.",
+    },
   },
 
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {

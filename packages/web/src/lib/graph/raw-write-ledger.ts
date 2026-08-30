@@ -71,35 +71,10 @@ export const RAW_WRITE_LEDGER: Readonly<Record<string, RawWriteEntry>> = {
   // telling the store what it already did. Routing it through the undoable seam
   // would put a playhead tick on the undo stack and storm ydoc.update — the
   // #719 class this guard's opt-out was created for.
-  'audio/modules/drumseqz.ts': {
-    keys: ['isPlaying'],
-    kind: 'sanctioned',
-    why: 'transport → store reflect; an undoable play/stop tick would storm ydoc + pollute undo',
-  },
-  'audio/modules/macseq.ts': {
-    keys: ['isPlaying'],
-    kind: 'sanctioned',
-    why: 'transport → store reflect (see drumseqz)',
-  },
-  'audio/modules/polyseqz.ts': {
-    keys: ['isPlaying'],
-    kind: 'sanctioned',
-    why: 'transport → store reflect (see drumseqz)',
-  },
   'audio/modules/score.ts': {
     keys: ['isPlaying'],
     kind: 'sanctioned',
-    why: 'transport → store reflect (see drumseqz)',
-  },
-  'audio/modules/sequencer.ts': {
-    keys: ['isPlaying'],
-    kind: 'sanctioned',
-    why: 'transport → store reflect (see drumseqz)',
-  },
-  'audio/modules/writeseq.ts': {
-    keys: ['isPlaying', 'recArm'],
-    kind: 'sanctioned',
-    why: 'transport + record-arm → store reflect (see drumseqz)',
+    why: 'transport → store reflect; an undoable play/stop tick would storm ydoc + pollute undo',
   },
   'audio/modules/timelorde.ts': {
     keys: ['bpm', 'running', 'wizardOn'],
@@ -187,21 +162,48 @@ export const RAW_WRITE_LEDGER: Readonly<Record<string, RawWriteEntry>> = {
     kind: 'debt',
     why: 'card control writes — user gesture, should be undoable + synced',
   },
-  'ui/modules/GamepadCard.svelte': {
-    keys: ['padIndex'],
-    kind: 'debt',
-    why: 'pad-slot picker write — user gesture, should be undoable + synced',
-  },
-  'ui/modules/GatemaidenCard.svelte': {
-    keys: ['trigShape'],
-    kind: 'debt',
-    why: 'card button write — user gesture, should be undoable + synced',
-  },
-  'ui/modules/JoystickCard.svelte': {
-    keys: ['pos_x', 'pos_y'],
-    kind: 'debt',
-    why: 'joystick drag — per-frame-ish, but it persists; needs the transient-first treatment (midi-cc-write-storm)',
-  },
+  // ⚠ `ui/modules/GamepadCard.svelte` WAS HERE AND IS PAID (2026-08-24, with
+  // the gamepad face). Its entry read *"pad-slot picker write — user gesture,
+  // should be undoable + synced"*, and the payment is one line: `setPadIndex`
+  // now calls `setNodeParam`, so the slot change rides the Y.Doc transaction
+  // with `LOCAL_ORIGIN` and reaches the UndoManager. Cmd-Z could not undo a slot
+  // change before this.
+  //   ⚠ AND IT IS THE GATEMAIDEN LESSON APPLIED RATHER THAN RE-LEARNED. That
+  //   entry's note (below) records #2025 arguing a debt was "paid by
+  //   construction" because the module got a FACE. It is not: this ledger is
+  //   keyed by CARD PATH and anchored to the source, promotion does not delete
+  //   the card, and the per-card VRT sweep still renders it under
+  //   `?shell=legacy`. So the face PR paid this one EXPLICITLY, by editing the
+  //   card — and only then deleted the row. A face does not pay a card's debt.
+  // ⚠ `ui/modules/GatemaidenCard.svelte` WAS HERE AND IS PAID (queue Q53,
+  // 2026-08-20). Its entry read *"card button write — user gesture, should be
+  // undoable + synced"*, and the payment is the plainest form of it: the shape
+  // button now calls the tracked `set('trigShape')` seam instead of poking
+  // `patch.nodes[id].params` directly, so the gesture is undoable and reaches
+  // collaborators. The raw write is gone from the ARTIFACT and this entry had
+  // to go with it.
+  //   ⚠ WORTH RECORDING BECAUSE THE ISSUE THAT FILED IT GOT THIS WRONG. #2025
+  //   argued the debt was "paid by construction" by FACING the module, on the
+  //   reasoning that a faceplate routes the param through the normal path.
+  //   That is not what this ledger measures. It is keyed by CARD PATH and
+  //   anchored to the source, and promotion does not delete the card — the
+  //   per-card VRT sweep still renders it under `?shell=legacy`. The raw write
+  //   would have survived the promotion untouched and deleting this entry
+  //   without touching the card would have gone RED as a stale exemption.
+  //   A face does not pay a card's debt; editing the card does.
+  // ⚠ `ui/modules/JoystickCard.svelte` WAS HERE AND IS PAID (queue Q43,
+  // 2026-08-19). Its entry read *"joystick drag — per-frame-ish, but it
+  // persists; needs the transient-first treatment (midi-cc-write-storm)"*, and
+  // that treatment is `createDragCommit` — the same rAF-coalescing pump
+  // Fader/Knob/XyPad use. The card now writes through the tracked param path,
+  // so the raw write is gone from the ARTIFACT and this entry had to go with it
+  // (an entry naming a write that no longer exists is RED).
+  //
+  // ⚠ `ui/modules/QuadralogicalCard.svelte` BELOW IS THE IDENTICAL PATTERN and
+  // is DELIBERATELY LEFT ALONE — `quadralogical` is face-queue Q27 and gated,
+  // so its card is not being touched in this wave. Its `why` used to point here
+  // ("see JoystickCard"); it now carries the mechanism itself, because a
+  // cross-reference to a deleted entry is worse than no cross-reference.
   'ui/modules/LumakeyCard.svelte': {
     keys: ['invert'],
     kind: 'debt',
@@ -255,22 +257,12 @@ export const RAW_WRITE_LEDGER: Readonly<Record<string, RawWriteEntry>> = {
   'ui/modules/QuadralogicalCard.svelte': {
     keys: ['pos_x', 'pos_y'],
     kind: 'debt',
-    why: 'joystick drag — see JoystickCard',
-  },
-  'ui/modules/RasterizeCard.svelte': {
-    keys: ['wrap'],
-    kind: 'debt',
-    why: 'card button write — user gesture, should be undoable + synced',
+    why: 'XY pad drag — per-frame-ish, but it persists; needs the transient-first treatment (createDragCommit, as JoystickCard now does). Held: quadralogical is face-queue Q27 and gated.',
   },
   'ui/modules/SamsloopCard.svelte': {
     keys: ['start', 'end', 'mode'],
     kind: 'debt',
     why: 'start/end are load-derived (sanctionable); `mode` is a card button — triage as one when drained',
-  },
-  'ui/modules/ScopeCard.svelte': {
-    keys: ['mode'],
-    kind: 'debt',
-    why: 'XY-mode toggle — user gesture, should be undoable + synced',
   },
   'ui/modules/ShapegenCard.svelte': {
     keys: ['solids'],

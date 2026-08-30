@@ -61,6 +61,8 @@ export class RasterPainter {
    *  cursor when the operator actually moves the knob (vs. the automatic
    *  per-frame advance). */
   private lastStartOffset = 0;
+  /** The one ImageData view over `rgba` — see `imageData()`. */
+  private imageDataCache: ImageData | null = null;
 
   constructor(width: number, height: number) {
     this.width = width;
@@ -81,7 +83,23 @@ export class RasterPainter {
     this.lastStartOffset = 0;
   }
 
-  /** Current running cursor (pixel index). Exposed for the card readout. */
+  /**
+   * Current running cursor (pixel index).
+   *
+   * ⚠ THE STATED CONSUMER NO LONGER EXISTS, AND THE SEAM IS KEPT ANYWAY. This
+   * said "Exposed for the card readout"; that readout was the resting decimal
+   * deleted by the 2026-08-17 faceplate ruling, and a sweep now finds exactly
+   * two references to this getter — its own definition and the one call inside
+   * `rasterize.ts`'s `read('cursor')`. No card, no body, no test, no e2e.
+   *
+   * It is NOT dead code to delete on sight: it is the only external read of the
+   * RUNNING cursor, which is precisely the observable a fix for the SCAN
+   * change-detector defect has to assert against ("the knob says 1000, the
+   * cursor says 49,800" — the knob and the drifting position diverge
+   * permanently, because re-selecting a value the knob already shows is a
+   * no-op). A dead seam carrying a stale reason is how a future sweep deletes
+   * the thing a fix needs; the reason is now the real one.
+   */
   get currentCursor(): number {
     return this.cursor;
   }
@@ -124,16 +142,35 @@ export class RasterPainter {
     this.cursor = nextCursor;
   }
 
-  /** The persistent framebuffer as an ImageData (sized to the painter). */
+  /**
+   * The persistent framebuffer as an ImageData (sized to the painter).
+   *
+   * ⚠ THE WRAPPER IS CACHED, AND THAT IS NOT A BEHAVIOUR CHANGE. `new
+   * ImageData(buf, w, h)` ALIASES its typed array rather than copying it, so
+   * every call has always handed back a live view of the SAME `rgba` buffer —
+   * two successive calls could never disagree. What was new each time was only
+   * the wrapper object.
+   *
+   * It was allocated per call, and this is a per-FRAME path with up to three
+   * callers (the card, the dock body, the cross-domain bridge). At
+   * `VIDEO_RES` that is a fresh 1024x768 ImageData — 786,432 pixels of
+   * descriptor churn — for an object whose contents are identical to the last
+   * one. `width`/`height` are `readonly` and `rgba` is never reallocated
+   * (`reset()` fills in place), so one instance is valid for the painter's
+   * whole lifetime.
+   */
   imageData(): ImageData {
-    return new ImageData(this.rgba, this.width, this.height);
+    if (!this.imageDataCache) {
+      this.imageDataCache = new ImageData(this.rgba, this.width, this.height);
+    }
+    return this.imageDataCache;
   }
 
   /**
    * Blit the persistent framebuffer to a canvas. If the canvas size
    * matches the painter, `putImageData` is used directly; otherwise we
    * stage the buffer in a temp canvas + `drawImage`-scale into the target
-   * (the on-card canvas is smaller than the 640×480 video resolution).
+   * (a card / dock canvas is smaller than the VIDEO_RES video resolution).
    */
   blitTo(canvas: OffscreenCanvas | HTMLCanvasElement): void {
     const ctx2d = canvas.getContext('2d') as

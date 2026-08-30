@@ -58,7 +58,13 @@ export const COLUMN_W = COLUMN_HP * HP_UNIT;
  *  RENDER-derived positions / drop hit-tests / overlay bands / viewport nav —
  *  never into a PERSISTED write (spawn x/y + grow-up push-ups keep COLUMN_W), so
  *  narrowing is a pure render derivation: collab-safe, no Y.Doc change. */
-export const SHELL_COLUMN_W = 216;
+// ⚠ 225 IS 10 HP, AND THE INTEGER IS THE POINT (#2239). The rack lock grid is
+// 22.5px (HP_UNIT), so a 216px pitch — 9.6 HP — put every column on a different
+// sub-HP offset and nothing in a lane could be locked to the grid without
+// visibly shifting. `COLUMN_W` (the non-shell pitch) has always been an exact
+// HP multiple by construction; this makes the shell pitch one too, so lane and
+// zone geometry are finally commensurate with the grid modules lock onto.
+export const SHELL_COLUMN_W = 225;
 
 /** Resolve the active column pitch for the current view: the tight shell pitch
  *  under the `?shell=1` preview, else the app-scale COLUMN_W (34hp / 765px). The
@@ -199,9 +205,21 @@ export function sendBoxForFlowX(x: number, pitch: number = COLUMN_W): 1 | 2 {
  * stack (laneTopYForHeight / computeLaneHeightPx) — never a constant, so the
  * caller must pass the current one. Below the baseline is the VIDEO ZONE; above
  * the top is free canvas.
+ *
+ * `topGraceY` (default 0) is the REACH-UP for a membership gesture: a point up
+ * to that many px ABOVE the painted top still counts as in-band. The band is a
+ * STACK the user drops things ON TOP OF, and the painted top hugs the current
+ * tallest stack — so the natural "add to the top" release often lands a few px
+ * above the line, which without grace reads as an arbitrary refusal (#2247: a
+ * fader released 6px above the top "would not snap in" while a videoOut
+ * released lower did — the SAME gate, read as type filtering). Callers pass one
+ * SLOT (the dropped card's own flush height): accept the drop, and the lane
+ * then grows underneath it. The grace is a GESTURE affordance only — the
+ * painted rect, and everything else keyed to the band, still starts at
+ * `laneTopY`.
  */
-export function laneBandContainsY(y: number, laneTopY: number): boolean {
-  return y >= laneTopY && y < COLUMN_BASELINE_Y;
+export function laneBandContainsY(y: number, laneTopY: number, topGraceY: number = 0): boolean {
+  return y >= laneTopY - topGraceY && y < COLUMN_BASELINE_Y;
 }
 
 /**
@@ -215,13 +233,19 @@ export function laneBandContainsY(y: number, laneTopY: number): boolean {
  * lanes infinitely tall: everything spawned above the lanes and everything
  * dropped below the baseline (the video zone) that merely SHARED a column's X
  * joined that channel and was teleported into its stack.
+ *
+ * `topGraceY` — see laneBandContainsY: the membership sites pass the dropped
+ * card's own slot height so a drop released just above the painted top still
+ * joins (the lane grows to meet it). Type-uniform by construction — the grace
+ * derives from the card's slot geometry, never from its domain or type.
  */
 export function laneTargetForFlowPoint(
   point: { x: number; y: number },
   laneTopY: number,
   pitch: number = COLUMN_W,
+  topGraceY: number = 0,
 ): number | 'send' | null {
-  if (!laneBandContainsY(point.y, laneTopY)) return null;
+  if (!laneBandContainsY(point.y, laneTopY, topGraceY)) return null;
   return columnForFlowX(point.x, pitch);
 }
 

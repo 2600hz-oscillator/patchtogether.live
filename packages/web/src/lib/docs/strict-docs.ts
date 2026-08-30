@@ -27,6 +27,11 @@ export const STRICT_DOCS: ReadonlySet<string> = new Set<string>([
   // ES-9 native-bridge I/O module (2026-07-10): born strict — every jack and
   // class selector documented from day one (46 ports, 22 controls).
   'es9',
+  // VST BRIDGE cards (2026-08-19): born strict — the vst-bridge helper's
+  // in-graph faces (instrument voice + stereo FX insert), every port
+  // documented from day one.
+  'vstInstrument',
+  'vstFx',
   // CV BUDDY (2026-07-21): born strict — the ES-9 note-lane sink. Every port
   // (gate/pitch/velocity in; pitchCv/gate/velCv/run/clock out) + both clock
   // params documented from day one.
@@ -36,7 +41,6 @@ export const STRICT_DOCS: ReadonlySet<string> = new Set<string>([
   // dynamic-control sequencer, a video mixer, and a stereo effect.
   'adsr',
   'lfo',
-  'sequencer',
   'fader',
   // COFEFVE DELAY — own-code analog delay (replaced the retired COCOA DELAY,
   // whose STRICT slot it inherits). Convention card (CofefveCard); kept OFF
@@ -185,18 +189,27 @@ export const STRICT_DOCS: ReadonlySet<string> = new Set<string>([
   // does it and is interactive; the engine-less doc sandbox just no-ops the
   // read) are on INTERACTIVE_DOC_MODULES: cartesian / drumseqz / macseq /
   // polyseqz / writeseq / marbles. Two stay STATIC:
-  // KRIA's card touches the WebSerial monome-grid API at init, and NUMPAD+'s
-  // card installs a document-level capturing keydown listener to own the Numpad
-  // keys — both side effects we keep out of the shared doc sandbox (face
-  // fallback). POLYSEQZ and NUMPAD+ are POLY: their poly output must feed a real
+  // KRIA's card touches the WebSerial monome-grid API at init, so it stays out
+  // of the shared doc sandbox (face fallback).
+  //
+  // ⚠ NUMPAD+ IS ALSO STATIC, AND THIS COMMENT USED TO GIVE THE WRONG REASON —
+  // corrected here rather than quietly, because a wrong reason for a decision
+  // outlives the decision. It read "NUMPAD+'s card installs a document-level
+  // capturing keydown listener to own the Numpad keys". THE CARD DOES NOT: the
+  // capture is installed by the FACTORY (`numpad-plus.ts`, torn down in
+  // `dispose()`), which the ENGINE-LESS doc sandbox never runs — and the card's
+  // only document listener is the conditional remap capture, alive only between
+  // "Remap…" and the next keystroke. By this allowlist's own stated criteria
+  // (a playhead-polling rAF is fine because the sandbox no-ops the read) the
+  // module would qualify. ⚠ THE CORRECTION DOES NOT LICENSE PROMOTING IT: that
+  // needs a `PROBES` row in `docs-virtual-module.spec.ts` and a verified live
+  // run, which is its own work.
+  //
+  // POLYSEQZ and NUMPAD+ are POLY: their poly output must feed a real
   // poly-aware voice (DX7 / a module with a poly input),
   // noted in their prose.
   'cartesian',
-  'drumseqz',
   'kria',
-  'macseq',
-  'polyseqz',
-  'writeseq',
   'marbles',
   'numpadPlus',
   // Batch 11 — MIDI, external control & audio I/O (2026-06-26): the cluster that
@@ -294,9 +307,31 @@ export const STRICT_DOCS: ReadonlySet<string> = new Set<string>([
   // samsloop adds a waveform canvas + file-upload + mic record, and wavesculpt
   // renders WebGL2 (rendersWebGL — authoring its docs + controlFamilies is
   // attest-neutral by construction, like cube)
-  // plus a per-osc .wav file picker. WAVESCULPT declares the per-osc
-  // wavetable-source strip family (wavesculpt-osc). (matrixMix stays
-  // undocumented on purpose — it is the e2e "undocumented module" fixture.)
+  // plus a per-osc .wav file picker. WAVESCULPT declares the wavetable strip as
+  // THREE families — wavesculpt-preset / -table / -load — one per control kind
+  // rather than one opaque cell per oscillator.
+  //
+  // ⚠ matrixMix. THIS NOTE USED TO READ "matrixMix stays undocumented on
+  // purpose — it is the e2e 'undocumented module' fixture", AND THAT STATED A
+  // POLICY REASON FOR A MECHANICAL FACT. matrixMix is not undocumented by
+  // restraint, it is UNDOCUMENTABLE: `MetaModuleDef` has no `docs` field, and
+  // `module-manifest.ts` globs `../audio/modules/*.ts` + `../video/modules/*.ts`
+  // with NO meta glob, so there is nowhere for co-located docs to be written and
+  // nowhere for them to be read. The boy-scout ratchet therefore does not apply
+  // to it, and `e2e/tests/module-annotate.spec.ts` (which asserts NO Annotate
+  // entry for it, gated on `hasDocs`) is safe.
+  //
+  // ⚠ WHY THAT DISTINCTION IS LOAD-BEARING RATHER THAN PEDANTIC. Read as a
+  // policy choice, the old sentence invites a future reader to simply change
+  // their mind. Read as the mechanical fact it is, it names the exact event that
+  // ends the protection: the day `MetaModuleDef` gains a `docs?` field — a
+  // plausible follow-on now that it has `face?` — the only thing standing
+  // between a routine boy-scout edit and a red `module-annotate` run is a
+  // sentence in a comment, and comments do not gate. WHOEVER ADDS `docs?` TO
+  // `MetaModuleDef` MUST RE-POINT `module-annotate.spec.ts` AT ANOTHER
+  // UNDOCUMENTED LIGHTWEIGHT MODULE IN THE SAME DIFF. (Promotion to a FACE does
+  // NOT trigger this: a `face` is not `docs`, the Annotate entry is gated on
+  // `hasDocs` specifically, and matrixMix is now faced with that spec untouched.)
   'frogger',
   'modtris',
   'pong',
@@ -406,6 +441,10 @@ export const STRICT_DOCS: ReadonlySet<string> = new Set<string>([
   // trace re-drawn at live pixel size (crisp under the dock 50–150% ladder),
   // ch1-only terminal visualiser. Ships documented.
   'dockscope',
+  // TEMPOLOCK (2026-08-29): born strict — the beat-tracking clock (onset
+  // train in → tracked steady quarter-note clock out). Every port + the band
+  // param documented from day one.
+  'tempolock',
   // KARPLUS (2026-07-11): the extended Karplus-Strong string/harp voice on
   // the cofefve delay-line core (Jaffe–Smith ρ-compensated decay, tracked
   // brightness damping, pick-position comb, dispersion allpasses, curated
@@ -449,4 +488,10 @@ export const STRICT_DOCS: ReadonlySet<string> = new Set<string>([
   // morphed video_out AND a derived cube-slice audio_out. Born strict — docs
   // authored + verified against the source..
   'videocube',
+  // TEMPEST (2026-08-21): BOY-SCOUTED IN, not born strict. It shipped (#935)
+  // with no `docs` block at all and no entry here, which is exactly the debt
+  // the living-docs ratchet says to pay when you next touch a module — so it
+  // was paid alongside its face rather than re-noticed a fourth time. The prose
+  // is written from this def's own header and factory, not from its plan doc.
+  'tempest',
 ]);

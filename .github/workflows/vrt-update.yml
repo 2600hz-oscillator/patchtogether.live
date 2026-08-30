@@ -57,16 +57,28 @@ concurrency:
 
 jobs:
   # ---------------------------------------------------------------------------
-  # The capture. Runs the FULL_MATCH sweep with --update-snapshots=changed and
-  # commits the regenerated e2e/vrt/__screenshots__/ PNGs.
+  # The capture. Runs the FULL_MATCH sweep with --update-snapshots=all (see the
+  # long note on `vrt:update` in Taskfile.yml — `=changed` could not refresh a
+  # baseline that PASSES, which is how an all-black `face-outlines-dock` stayed
+  # pinned from 740bac121 onward) and commits the regenerated
+  # e2e/vrt/__screenshots__/ PNGs. `=all` skips the baseline comparison entirely
+  # and rewrites on a BYTE difference, so an unchanged scene is still not
+  # rewritten and the bot's commit stays the set of scenes that actually moved.
   #
   # It used to say "mirrors the ci.yml `vrt` job (postgres service container)".
   # That job was deleted 2026-08-17, and the mirroring is what put a database in
   # here that nothing ever read — see the NO DATABASE note below (#1828).
   # ---------------------------------------------------------------------------
   capture:
-    name: regenerate VRT baselines
+    name: regenerate VRT baselines (shard ${{ matrix.shard }}/6)
     runs-on: ubuntu-latest
+    strategy:
+      # ⚠ fail-fast MUST stay false. A shard that dies still leaves the other
+      # five shards' baselines, and discarding an hour of correct rendering
+      # because one scene was slow is the exact behaviour this replaces.
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6]
     # 40 -> 75 (2026-08-10). MEASURED, not padded: with the platform dimension
     # collapsed every scene runs on linux, so the sweep went from ~151 executed
     # tests to 297. The first capture at 40 min was KILLED at test 241 of 297
@@ -76,16 +88,71 @@ jobs:
     # Playwright = 9.2 s/test, so 297 tests ~= 45.5 min + ~3.5 min of
     # checkout/npm/DSP setup ~= 49 min. 75 leaves ~50 % headroom for a slow
     # runner. On-demand workflow: this costs zero per-PR wall time.
-    timeout-minutes: 75
-    outputs:
-      # 'true' only when a baseline commit was actually pushed. A capture that
-      # rewrote nothing still SUCCEEDS, so `revalidate` needs this to tell
-      # "captured" from "ran and changed nothing" — see the revalidate `if:`.
-      pushed: ${{ steps.commit.outputs.pushed }}
-      # The SHA the bot pushed. Reported in the revalidate log and in the
-      # deadlock notice, so a stuck PR names the exact commit that never got a
-      # run instead of leaving someone to reconstruct it from timestamps.
-      sha: ${{ steps.commit.outputs.sha }}
+    #
+    # ⚠ 75 -> 115 (2026-08-22, #2108), AND THE SAME ARITHMETIC AS ABOVE SAYS SO.
+    # The rate never changed; the population did. At 9.2 s/test the sweep grew
+    # from 297 tests (~49 min, which 75 covered with ~50 % headroom) to 467
+    # committed baselines: 467 x 9.2 s = 71.6 min + ~3.5 min setup = 75.1 min of
+    # WORK against a 75 min ceiling. batch-22 G3's capture was killed at exactly
+    # 75:00 twice, and — as the note above already warned — both kills reported
+    # as `cancelled`, so neither looked like a timeout.
+    #
+    # 115 restores the SAME 1.5x headroom the 40 -> 75 bump chose, computed
+    # rather than picked: 75.1 x 1.5 = 112.7, rounded up.
+    #
+    # ⚠ AND THE NUMBER IS NO LONGER ALONE. This is the THIRD time a fixed budget
+    # has been outgrown by the faceplate programme (#2039 shard count, #2103
+    # cost artifact + 6 -> 8 shards, now this), and #2103's matrix comment
+    # records the trigger: on a third occurrence, AUTOMATE rather than bump. So
+    # this requirement is no longer gated by a committed forecast (deleted 2026-08-23) —
+    # COMMITTED BASELINE COUNT and reddens in the fast unit lane the moment a
+    # face batch outgrows the ceiling — minutes after the face lands, instead of
+    # an hour into a capture that dies without evidence.
+    #
+    # ⚠ 115 -> 125 (2026-08-22, batch-22 G3), AND THE DERIVED GATE IS WHAT SAID SO
+    # — which is the point of having built it. G3's eight baselines took the
+    # committed population to 479, and 479 x 9.2 s = 73.5 min + 3.5 min setup =
+    # 76.9 min of work, x1.5 = 115.4 against a 115 ceiling. It reddened in the
+    # fast unit lane on the PR that caused it, minutes after the baselines
+    # landed, instead of cancelling a capture an hour in. Nothing was measured
+    # again: the rate, the setup cost and the 1.5x are unchanged and the
+    # population moved.
+    #
+    # 125 is sized to the SAME formula against a population of ~520 rather than
+    # to today's 479 — ((520 x 9.2)/60 + 3.5) x 1.5 = 124.9, rounded up. Sizing
+    # to 116 (the minimum that clears 115.4) would satisfy the gate and be eaten
+    # by the very next batch: at 1.5x, each baseline costs 0.23 min of ceiling,
+    # so a four-face batch is ~1.8 min. The third-occurrence trigger asked for
+    # automation over repeated bumps; the automation exists now, so the honest
+    # companion to it is a ceiling with real room rather than one that re-reddens
+    # every fortnight.
+    #
+    # ⚠ A SECOND LANE DERIVED THE SAME 125 INDEPENDENTLY. batch-22 G4 hit this
+    # same gate on its own eight baselines, ran the same formula, and rejected
+    # the minimum bump for the same reason (116 holds ZERO further batches).
+    # Two lanes reaching an identical ceiling from the same derivation, without
+    # coordinating, is the strongest evidence available that the number is
+    # computed rather than picked — and it is why the consolidation kept ONE
+    # comment instead of both.
+    # ── THE CEILING IS NOW PER SHARD, WHICH ENDS THE TREADMILL (#2249) ─────
+    #
+    # This number has been re-derived three times — 40 -> 75 -> 125 — always by
+    # the same formula against a population that keeps growing (297 -> 467 ->
+    # 479, sized to 520). Each bump was correct and each was overtaken. The
+    # comment above already recorded that the third occurrence "asked for
+    # automation over repeated bumps".
+    #
+    # 125 has now been overtaken too. `task vrt:commit` reports 584 tests, so
+    # ((584 x 9.2)/60 + 3.5) x 1.5 = 139.7 min against a 125 ceiling — and two
+    # full sweeps died on it on 2026-08-27/28 (runs 33129822198 at 2 h 05 m and
+    # 33164753035 at 79+ min), committing ZERO baselines each time. A timeout
+    # kill is reported as `cancelled`, so neither looked like what it was.
+    #
+    # A per-shard ceiling does not have to be re-derived when the corpus grows:
+    # 584 / 6 ~= 97 tests x 9.2 s ~= 15 min + 3.5 min setup ~= 19 min, and 45 is
+    # ~2.4x that. When the corpus outgrows THAT, the answer is another shard —
+    # a matrix entry — not another archaeology session over one number.
+    timeout-minutes: 45
     # ── NO DATABASE. THE CAPTURE NEVER TOUCHED ONE (#1828) ────────────────────
     #
     # This job used to declare `services: postgres:17` — bare Docker Hub, not
@@ -150,6 +217,20 @@ jobs:
           # token surfaces as a RED run and not as a deadlocked PR.
           token: ${{ secrets.VRT_BASELINE_PUSH_TOKEN || github.token }}
 
+      # Same forensic line the vrt-strict shards carry — the capture AUTHORS
+      # baselines, so "which CPU drew this" matters twice over here.
+      - name: Name the runner CPU
+        run: grep -m1 'model name' /proc/cpuinfo || true
+
+      # Corrupt-at-checkout is a MEASURED failure mode on both lanes even
+      # though LFS storage verifies clean (run 33213636041 shard 1 died on
+      # "unrecognised content at end of stream" reading an EXPECTED file).
+      # Heal before rendering: decode-verify every baseline, re-fetch any liar
+      # directly from the LFS server, refuse the run only if the server copy
+      # itself is bad. See scripts/vrt-lfs-heal.sh.
+      - name: Verify + heal checked-out baselines
+        run: bash scripts/vrt-lfs-heal.sh
+
       - name: Install Flox
         uses: flox/install-flox-action@v2
 
@@ -179,6 +260,21 @@ jobs:
         if: steps.cache-doom-wasm.outputs.cache-hit != 'true'
         run: flox activate -- bash packages/web/native/build-doom-wasm.sh
 
+      # ── THE vrt:update DEPS THE DIRECT PLAYWRIGHT CALL NO LONGER PULLS IN ──
+      #
+      # #2250 switched the capture from `task vrt:update` to invoking Playwright
+      # directly (the Taskfile's unquoted CLI_ARGS join mangles the planner's
+      # alternation grep — see the run step below). That reasoning was right and
+      # is kept; what it silently dropped was the task's dependency chain,
+      # `deps: [dsp:build, test:emit-manifest]`. Without dsp:build there is no
+      # packages/dsp/dist, the web app's SSR module graph fails on
+      # `@patchtogether.live/dsp/dist/*.js?url`, the dev server 500s every
+      # request, and ALL SIX shards die in Playwright's 120s webServer wait —
+      # run 33193474728, first sharded capture, zero baselines. `status:` in
+      # dsp:build makes this a no-op when a matching dist is already on disk.
+      - name: Build DSP worklets + emit test manifest (vrt:update's deps)
+        run: flox activate -- task dsp:build test:emit-manifest
+
       # ── SAY WHAT THIS RUN WILL COST, BEFORE IT COSTS IT (#1795) ───────────
       #
       # Three jobs in one cheap step (~1 min: one registry-manifest emit plus a
@@ -202,15 +298,139 @@ jobs:
           GREP: ${{ inputs.grep }}
         run: flox activate -- node scripts/vrt-scope.mjs check --grep "$GREP"
 
-      - name: Regenerate VRT baselines
+      # ── PLAN ────────────────────────────────────────────────────────────
+      #
+      # The dispatcher's `grep` narrows the CORPUS; the planner then PARTITIONS
+      # whatever that leaves. Composing them in that order is what keeps a
+      # scoped capture scoped — every shard grep is derived from the
+      # already-filtered list, so no shard can reach outside the request.
+      #
+      # `scripts/vrt-shard-plan.mjs` is the planner the REQUIRED
+      # `vrt-strict-shard` lane already uses. Its timings artifact covers only
+      # the strict subset, so most of THIS corpus is unmeasured and takes the
+      # median cost: balance is approximate. Correctness is not — the planner
+      # THROWS if its output is not a partition of what was discovered, so a bad
+      # plan is slow, never incomplete. That distinction is the whole reason a
+      # capture may be sharded at all.
+      - name: Plan this shard's scenes (cost-based, union-asserted)
         env:
           GREP: ${{ inputs.grep }}
         run: |
+          set -euo pipefail
           if [ -n "$GREP" ]; then
-            flox activate -- task vrt:update -- --grep "$GREP"
+            flox activate -- npx --workspace e2e playwright test \
+              --config=vrt/vrt.config.ts --list --reporter=json --grep "$GREP" > vrt-capture-list.json
           else
-            flox activate -- task vrt:update
+            flox activate -- npx --workspace e2e playwright test \
+              --config=vrt/vrt.config.ts --list --reporter=json > vrt-capture-list.json
           fi
+          # --allow-empty: a scoped dispatch can select fewer scenes than the
+          # matrix has shards (run 33198943725: grep=mirrorpool → 4 tests ÷ 6
+          # shards killed every shard on the planner's no-empty-shard throw).
+          # Here an empty shard is an idle worker, not dropped coverage — the
+          # run step below skips Playwright entirely on an empty grep. The
+          # REQUIRED vrt-strict lane does NOT pass this flag.
+          flox activate -- node scripts/vrt-shard-plan.mjs ${{ matrix.shard }} 6 --allow-empty \
+            --list vrt-capture-list.json --out vrt-capture-planned.txt > vrt-capture-grep.txt
+          echo "shard ${{ matrix.shard }}/6 plans $(wc -l < vrt-capture-planned.txt) scenes"
+
+      # ⚠ Playwright DIRECTLY, not `task vrt:update`. The Taskfile joins
+      # {{.CLI_ARGS}} unquoted and this grep is an alternation full of spaces,
+      # `|`, `(`, `)` and `$` — word-splitting it yields a grep matching FEWER
+      # tests, i.e. a green shard that rendered nothing. Same reasoning the
+      # vrt-strict-shard lane records for the identical call.
+      #
+      # `--update-snapshots=changed` is spelled here, never bare (bare means
+      # `=all` in Playwright 1.59 and has rewritten 22 unrelated baselines once)
+      # and never in e2e/package.json, which is a TOOLCHAIN_PIN_FILE in the
+      # WebGL attest basis and is hashed WHOLE.
+      - name: Regenerate VRT baselines (shard ${{ matrix.shard }}/6)
+        run: |
+          set -euo pipefail
+          GREP="$(cat vrt-capture-grep.txt)"
+          if [ -z "$GREP" ]; then
+            echo "shard ${{ matrix.shard }}/6: no scenes in scope — idle worker, skipping capture."
+            exit 0
+          fi
+          flox activate -- npx --workspace e2e playwright test \
+            --config=vrt/vrt.config.ts --update-snapshots=changed --grep "$GREP"
+
+      # UPLOAD, don't commit. Six shards pushing to one branch would race and
+      # the losers' baselines would vanish silently, so the shards PRODUCE and
+      # exactly one job COMMITS.
+      # ⚠ STAGE ONLY WHAT THIS SHARD CHANGED. Uploading the whole checked-out
+      # __screenshots__ tree meant six artifacts each carrying all ~580 files,
+      # ~579 of them identical LFS checkouts — and the collector's
+      # merge-multiple extraction over six fully-OVERLAPPING trees is where
+      # corrupt PNGs were born: run 33193474728 delivered 1 corrupt file of
+      # 59, run 33211181271 delivered 10 of 98 (all caught by the collector's
+      # decode-verify, #2255, which is why they never landed). Disjoint(ish)
+      # uploads shrink the artifacts ~100x and remove the collision surface:
+      # only a scene rendered by TWO shards could still overlap, and the
+      # planner's union assertion guarantees that set is empty.
+      - name: Stage ONLY this shard's changed baselines
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/vrt-shard-out
+          mkdir -p /tmp/vrt-shard-out
+          git status --porcelain -- e2e/vrt/__screenshots__ | awk '{print $2}' | while read -r f; do
+            [ -f "$f" ] || continue
+            mkdir -p "/tmp/vrt-shard-out/$(dirname "$f")"
+            cp "$f" "/tmp/vrt-shard-out/$f"
+          done
+          echo "staged $(find /tmp/vrt-shard-out -name '*.png' | wc -l) changed baseline(s)"
+
+      - name: Upload this shard's baselines
+        uses: actions/upload-artifact@v4
+        with:
+          name: vrt-baselines-shard-${{ matrix.shard }}
+          path: /tmp/vrt-shard-out/e2e/vrt/__screenshots__
+          retention-days: 1
+          if-no-files-found: ignore
+
+  # ---------------------------------------------------------------------------
+  # The collector — ONE commit, from whatever the shards produced.
+  #
+  # `if: always()` beside `fail-fast: false` is deliberate: a capture where five
+  # of six shards succeeded should land those five shards' work. The
+  # all-or-nothing alternative is what threw away an hour of correct rendering
+  # every time one scene ran long, and a missing shard is not silent — its
+  # baselines simply stay stale and `vrt-strict` keeps naming them.
+  # ---------------------------------------------------------------------------
+  collect:
+    name: commit VRT baselines
+    needs: capture
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      pushed: ${{ steps.commit.outputs.pushed }}
+      sha: ${{ steps.commit.outputs.sha }}
+    steps:
+      - name: Checkout ${{ inputs.ref }} (LFS for VRT baseline PNGs)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+          lfs: true
+          persist-credentials: true
+
+      - name: Install Flox
+        uses: flox/install-flox-action@v2
+
+      # `merge-multiple` is safe BECAUSE the planner asserts a partition: two
+      # shards can never have rendered the same scene, so no download can
+      # clobber another shard's PNG.
+      - name: Download every shard's baselines
+        uses: actions/download-artifact@v4
+        with:
+          pattern: vrt-baselines-shard-*
+          merge-multiple: true
+          path: e2e/vrt/__screenshots__
+
+      - name: Report what arrived
+        run: |
+          echo "changed baseline files: $(git status --porcelain e2e/vrt/__screenshots__ | wc -l | tr -d ' ')"
+          git status --short e2e/vrt/__screenshots__ | head -40
 
       - name: Commit + push baselines
         id: commit
@@ -251,9 +471,9 @@ jobs:
   # on top. The step below reported SUCCESS for that run, because it never
   # looked at whether the run it asked for exists.
   #
-  # So the step is now SELF-VERIFYING: after each re-fire it polls the same
-  # oracle docs-only-gate.yml's guard G2 uses — "did GitHub start a ci.yml run
-  # for this head SHA?" — retries the re-fire while the budget lasts, and FAILS
+  # So the step is now SELF-VERIFYING: after each re-fire it polls the runs API
+  # — "did GitHub start a ci.yml run for this head SHA?" — retries the re-fire
+  # while the budget lasts, and FAILS
   # LOUDLY (red run + a PR comment naming the remedy) when the run never
   # appears. It never posts a status and never marks anything green: the only
   # thing that can satisfy a required context here is a real `pull_request` CI
@@ -307,8 +527,8 @@ jobs:
   revalidate:
     name: re-validate CI on ${{ inputs.ref }} (re-fire + VERIFY)
     runs-on: ubuntu-latest
-    needs: capture
-    if: ${{ needs.capture.outputs.pushed == 'true' }}
+    needs: collect
+    if: ${{ needs.collect.outputs.pushed == 'true' }}
     # Bounds the failure; the gate is the verdict, never the clock. The loop's
     # own budget (MAX_REFIRES × POLLS_PER_ACTION × POLL_INTERVAL_MS, plus
     # MAX_APPROVALS; defaults in scripts/vrt-revalidate-gate.mjs) is well inside
@@ -357,5 +577,5 @@ jobs:
           GH_TOKEN: ${{ secrets.VRT_BASELINE_PUSH_TOKEN || github.token }}
           REF: ${{ inputs.ref }}
           REPO: ${{ github.repository }}
-          PUSHED_SHA: ${{ needs.capture.outputs.sha }}
+          PUSHED_SHA: ${{ needs.collect.outputs.sha }}
         run: node scripts/vrt-revalidate-gate.mjs verify

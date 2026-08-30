@@ -6,28 +6,45 @@
   import type { NodeProps } from '@xyflow/svelte';
   import NeonFader from '$lib/ui/controls/NeonFader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
-  import { patch } from '$lib/graph/store';
   import { gatemaidenDef } from '$lib/audio/modules/gatemaiden';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
-  import { cardParams, portsFromDef } from './card-kit';
+  import { cardParams, paramSpec, portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
-  const { defaultFor, paramVal, set, live } = cardParams(gatemaidenDef, () => id, () => node);
+  const { paramVal, set, live } = cardParams(gatemaidenDef, () => id, () => node);
 
+  /** THE ONE COPY of every number this card paints — bound, never re-typed.
+   *  Paid when the module was faced: from that point the dock renders LEN
+   *  straight off the `ParamDef`, so a literal here would give one control two
+   *  travels depending on which surface you reached it through. */
+  const P = { gateLen: paramSpec(gatemaidenDef, 'gateLen') };
 
   // ▷ = trigger (short pulse), ▭ = gate (held level) — the trigger/gate glyphs.
   const inputs = portsFromDef(gatemaidenDef.inputs);
   const outputs = portsFromDef(gatemaidenDef.outputs, { gate: '▭ GATE', trig: '▷ TRIG' });
 
-  const shapeLabels = ['△ TRI', '▭ SQR'] as const;
+  // ⚠ THE NAMES COME FROM THE DEF (`trigShape.options`), NOT FROM A LITERAL
+  // HERE. They used to be `const shapeLabels = ['△ TRI', '▭ SQR']`, which made
+  // this card the ONLY place the two states were named — so the faceplate
+  // painted an anonymous switch (#2025). The leading shape glyph stays as
+  // card-local decoration, in the same visual language as the ▭/▷ port labels
+  // above; the def's roster is deliberately ASCII so the faceplate does not
+  // depend on a glyph the pinned VRT font subsets do not carry.
+  const shapeOptions = paramSpec(gatemaidenDef, 'trigShape').options ?? [];
+  const SHAPE_GLYPHS = ['△', '▭'] as const;
+
+  let shapeIndex = $derived((paramVal('trigShape') | 0) % shapeOptions.length);
+  let shapeLabel = $derived(`${SHAPE_GLYPHS[shapeIndex]} ${shapeOptions[shapeIndex]?.label ?? ''}`);
+
+  // Writes through the TRACKED param path (undoable + synced to collaborators).
+  // This was a raw `t.params.trigShape = …` store poke and carried a `debt`
+  // entry in `raw-write-ledger.ts`; the entry is deleted with the write, since
+  // the ledger is anchored to the artifact rather than to the module's status.
   function cycleShape() {
-    const t = patch.nodes[id]; if (!t) return;
-    const cur = (t.params.trigShape ?? 0) | 0;
-    t.params.trigShape = cur >= 1 ? 0 : 1;
+    set('trigShape')(shapeIndex >= 1 ? 0 : 1);
   }
-  let shapeLabel = $derived(shapeLabels[((paramVal('trigShape') | 0) % 2)]);
 </script>
 
 <div class="mod-card gatemaiden-card">
@@ -39,8 +56,8 @@
       <div class="len">
         <NeonFader
           value={paramVal('gateLen')}
-          min={0.005} max={2} defaultValue={defaultFor('gateLen')}
-          label="Len"
+          min={P.gateLen.min} max={P.gateLen.max} defaultValue={P.gateLen.defaultValue}
+          label={P.gateLen.label}
           curve="log"
           onchange={set('gateLen')} moduleId={id} paramId="gateLen"
           readLive={live('gateLen')}

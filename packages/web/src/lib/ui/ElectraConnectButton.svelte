@@ -13,69 +13,40 @@
   // No eager prompt: the singleton broker only calls navigator.requestMIDIAccess
   // when run() is invoked here.
 
+  // ⚠ THE FLASH ITSELF NO LONGER LIVES HERE. It moved to
+  // `$lib/ui/modules/electra-cell-actions.ts` when electraControl was promoted,
+  // because a ranked ACTION cell is rendered by the SHARED shell and its
+  // `onFire` is a plain function — so the gesture needed a home outside any
+  // component. This button is now a THIN RENDERER over that seam, which is what
+  // keeps the legacy card (still live under `?shell=legacy`) and the faceplate
+  // running ONE flash rather than two implementations that can disagree about a
+  // hardware pipeline.
+  //
+  // What did NOT change: the testid, the caption vocabulary, the disabled rule,
+  // the pointer guard, and the crosstalk guard (`stop()` before every run) —
+  // that one just runs inside the seam now, on the run that needs it, instead of
+  // on whichever component happened to unmount last.
+
   import { onDestroy } from 'svelte';
-  import { getActiveEngine } from '$lib/audio/engine-ref';
-  import { ElectraAutoconfig } from '$lib/electra/autoconfig';
-  import { buildLiveHost } from '$lib/electra/host';
   import {
-    setElectraDisplayBindings,
-    clearElectraDisplayBindings,
-  } from '$lib/midi/midi-learn.svelte';
-  // The Lua layer is bundled as a raw string and uploaded to the device.
-  import luaSource from '$lib/electra/lua-bundle';
+    electraSendToDevice,
+    electraFlashOutcome,
+    onElectraFlash,
+    clearElectraBadges,
+  } from '$lib/ui/modules/electra-cell-actions';
 
-  let status = $state<'idle' | 'connecting' | 'ready' | 'no-device' | 'error'>('idle');
-  let detail = $state('');
-  let auto: ElectraAutoconfig | null = null;
+  let { nodeId = 'electra' }: { nodeId?: string } = $props();
 
-  async function onClick(): Promise<void> {
-    if (status === 'connecting') return;
-    status = 'connecting';
-    detail = '';
-    try {
-      // A re-Send after a slot edit must tear down the previous orchestrator
-      // FIRST: its inbound listeners + feedback pump hold the OLD allocation
-      // table, and leaving them live makes one hardware twist write two params
-      // (the row-2↔row-3 ElectraControl crosstalk). run() also guards this
-      // cross-instance (liveAutoconfig), but stopping here keeps the button's
-      // own reference lifecycle honest.
-      auto?.stop();
-      const host = buildLiveHost({ getEngine: () => getActiveEngine(), luaSource });
-      auto = new ElectraAutoconfig(host);
-      const res = await auto.run();
-      if (!res.ok) {
-        status = res.reason === 'no-midi-access' ? 'no-device' : 'error';
-        detail = res.reason ?? 'failed';
-        return;
-      }
-      // Register the generated CC map for the bound-BADGE only (display-only),
-      // NOT into the dispatched/persisted midi-learn namespace. The physical
-      // Electra CC is dispatched by the Electra broker/autoconfig (host.writeParam),
-      // so importing it into `bindings` double-dispatched every param AND its
-      // newest-wins collision repair silently evicted the user's manual MIDI-learn
-      // mappings that shared a channel-0 address (persisted, surviving unplug).
-      // Display-only + device-lifetime: our writable controls still show as bound,
-      // manual bindings survive, and inbound Electra CC dispatches exactly once.
-      const learnable = auto.allocations
-        .filter((a) => a.role === 'rw')
-        .map((a) => ({
-          key: a.key,
-          channel: 0,
-          cc: a.number,
-          learnedAt: Date.now(),
-        }));
-      setElectraDisplayBindings(learnable);
-      status = res.isElectra ? 'ready' : 'ready'; // uploaded either way
-      detail = res.isElectra ? 'Electra configured' : 'configured (device unconfirmed)';
-    } catch (e) {
-      status = 'error';
-      detail = e instanceof Error ? e.message : String(e);
-    }
+  let outcome = $state(electraFlashOutcome());
+  const off = onElectraFlash(() => { outcome = electraFlashOutcome(); });
+
+  function onClick(): void {
+    electraSendToDevice(nodeId);
   }
 
   onDestroy(() => {
-    auto?.stop();
-    clearElectraDisplayBindings();
+    off();
+    clearElectraBadges();
   });
 </script>
 
@@ -85,14 +56,17 @@
   data-testid="electra-connect-button"
   onclick={onClick}
   onpointerdown={(e) => e.stopPropagation()}
-  disabled={status === 'connecting'}
+  disabled={outcome.status === 'connecting'}
+  aria-label={outcome.detail
+    ? `Send this board to the Electra One — ${outcome.detail}`
+    : 'Send this board to the Electra One'}
   title="Generate a 3-page Electra One preset (Control Surface / MixMaster / System) from this rack and push it to a connected Electra. Asks for MIDI access on first click."
 >
-  {#if status === 'connecting'}
+  {#if outcome.status === 'connecting'}
     Configuring…
-  {:else if status === 'ready'}
+  {:else if outcome.status === 'ready'}
     Electra ✓
-  {:else if status === 'no-device'}
+  {:else if outcome.status === 'no-device'}
     No MIDI
   {:else}
     Send to Electra

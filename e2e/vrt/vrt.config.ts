@@ -178,7 +178,18 @@ const FULL_MATCH = [
 //     FROZEN. `moving > 0` is the free-running condition measured at its cause;
 //     the paired capture diffs are the pixel consequence. `PROBE_FACES=<types>`
 //     points it at modules outside the FACES roster.
+//   * vrt-determinism-probe.spec.ts — does this face SCENE REPRODUCE? Boots the
+//     same face TWICE through the gate's own scene code and prints the diff of
+//     BOOT 1 against BOOT 2 at threshold 1/255 (any difference at all) as well
+//     as at 26/255 — the threshold the gate applied when this probe was written,
+//     kept as a second column because it separates a real render change from
+//     last-significant-bit shimmer. The gate's own threshold is now 0, so the
+//     1/255 column is the one that matches it. Also prints the max channel delta
+//     and the bounding box. The baseline is out of the loop entirely, so a
+//     non-zero row cannot mean "the baseline is stale" — it can only mean the
+//     scene does not reproduce. Negative AND positive control on every row.
 const PROBE_MATCH = [
+  'vrt-determinism-probe.spec.ts',
   'vrt-lane-tier-probe.spec.ts',
   'vrt-surface-probe.spec.ts',
   'vrt-face-audio-probe.spec.ts',
@@ -207,9 +218,25 @@ export default defineConfig({
   // Zero retries: a VRT either passes deterministically or the
   // baseline is wrong. Retrying just delays surfacing the truth.
   retries: 0,
-  reporter: process.env.CI
-    ? [['github'], ['html', { open: 'never', outputFolder: './report' }], ['list']]
-    : [['list'], ['html', { open: 'never', outputFolder: './report' }]],
+  // VRT_JSON_REPORT appends the `json` reporter writing to that file. It is
+  // how the strict shards make each failed screenshot assertion's attachment
+  // metadata machine-readable — the `-expected` attachment's `path` is
+  // Playwright's own absolute baseline path (SnapshotHelper.expectedPath), the
+  // ONE authoritative `actual → baseline` mapping. The accept-candidates step
+  // (ci.yml) depends on it because the test-results FOLDER names are
+  // truncated (`moog907a` → `…--3cb78-g907a-…`) and must never be parsed for
+  // a path that real bytes get written to. Env-gated and additive so the
+  // `list` reporter's stdout — which scripts/vrt-shard-coverage.mjs diffs the
+  // executed set out of — is untouched. Pass an ABSOLUTE path: a relative
+  // outputFile resolves against this config's directory, not the caller's cwd.
+  reporter: [
+    ...(process.env.CI
+      ? ([['github'], ['html', { open: 'never', outputFolder: './report' }], ['list']] as const)
+      : ([['list'], ['html', { open: 'never', outputFolder: './report' }]] as const)),
+    ...(process.env.VRT_JSON_REPORT
+      ? ([['json', { outputFile: process.env.VRT_JSON_REPORT }]] as const)
+      : []),
+  ],
   outputDir: './test-results',
 
   // ── PER-TEST TIMEOUT ─────────────────────────────────────────────────────
@@ -252,10 +279,38 @@ export default defineConfig({
   // 30 s. The required lane (`VRT_STRICT=1`) is the deterministic pure-DOM
   // subset whose median is 5.6 s, so it never approaches either number.
   //
-  // ⚠ Do NOT "fix" a slow scene by raising this further. Past ~90 s the answer
-  // is that the scene is not converging, which is a determinism finding — see
-  // the frame-count convergence loop in vrt-toybox.spec.ts for what that fix
-  // looks like when it is real.
+  // ⚠ Do NOT "fix" a slow scene by raising THIS number. It is the bound for
+  // every test in the lane, and moving it moves the bound for scenes nobody
+  // measured.
+  //
+  // ⚠ AND THE SENTENCE THAT USED TO FOLLOW WAS WRONG, so it is corrected rather
+  // than repeated (#1949). It read: "Past ~90 s the answer is that the scene is
+  // not converging, which is a determinism finding." That conflates two
+  // different budgets:
+  //
+  //   * CONVERGENCE is bounded by `expect.timeout` (30_000, below) — the
+  //     screenshot-until-two-consecutive-captures-agree retry loop. A scene that
+  //     never settles fails THERE, with the px ladder, at 30 s, regardless of
+  //     what this number says.
+  //   * THIS number bounds everything else: page load, font decode, spawnPatch,
+  //     the freeze retries, the height-settle loop, the companion diffs. That is
+  //     SCENE WEIGHT.
+  //
+  // MEASURED, capture run 32288252788: b3ntb0x's two face scenes both CONVERGED
+  // and both wrote their actual PNG (55.6 s and ~88.6 s), and the dock one was
+  // then killed by this cap 1.4 s after its snapshot write. Neither tripped
+  // `expect.timeout`. "It is not converging" was falsified by the scene's own
+  // output, and raising this number would not have made a non-converging scene
+  // pass anyway — the determinism gate is the other budget.
+  //
+  // So a genuinely heavy scene gets a PER-SCENE bound instead, declared with the
+  // measurement that justifies it and derived from it: see `faceSceneTimeout` /
+  // `FaceSceneWeight` in `e2e/vrt/_shell-faces.ts`. Deny-by-default, `why` in
+  // the type, and this number stays the floor for everything that does not
+  // declare one.
+  //
+  // For what a REAL determinism fix looks like, see the frame-count convergence
+  // loop in vrt-toybox.spec.ts.
   timeout: 90_000,
 
   // Snapshot path template. Default would scatter PNGs under
@@ -352,14 +407,49 @@ export default defineConfig({
       // green a Mac dev used to get came from comparing against a darwin set
       // CI never read. Use `task vrt:docker` for a pixel-exact local loop.
       //
-      // 0.1 = a pixel must differ by >10% per channel before it counts.
-      // maxDiffPixelRatio = 0.01 = up to 1% of pixels may differ under that
-      // per-channel threshold.
+      // ⚠⚠ BOTH ARE NOW ZERO — 2026-08-25, OWNER RULING: *"VRTs are useless if
+      // they can't be pixel perfect every time … i would never have consciously
+      // allowed even a 1px tolerance"*. A baseline comparison fails on ONE
+      // differing pixel of ONE channel level. This is the whole tolerance
+      // surface: `_shell-faces.ts`'s COMPACT_MAX_DIFF / DOCK_MAX_DIFF went to 0
+      // in the same commit, and those two are per-scene `maxDiffPixels` on top
+      // of these.
       //
-      // TIGHTENED 2026-07-31 from threshold 0.2 / ratio 0.05. The old comment
-      // said this "can be tightened toward 0.01 once baselines settle on each
-      // platform"; the tightening never followed the settling. There is one
-      // platform now, so the caveat is retired along with it.
+      // WHAT EACH ZERO DOES, mechanically (playwright-core
+      // `server/utils/comparators.js`): `threshold` is passed straight to
+      // pixelmatch, whose per-pixel bar is `35215 * threshold^2`, so 0 means any
+      // non-zero colour delta counts. `maxDiffPixelRatio` becomes
+      // `w * h * 0` = 0 differing pixels allowed, and the check is
+      // `count > maxDiffPixels` — note the file tests `!== undefined`, not
+      // truthiness, so a ZERO is honoured rather than falling back to a default.
+      //
+      // ⚠ THE RATIO GOES TO ZERO TOO, and it has to. `vrt.spec.ts` — the CARD
+      // baselines, the other half of what `vrt-strict` compares — passes NO
+      // per-assertion `maxDiffPixels`, so this ratio is the ONLY budget it has.
+      // Leaving it at 0.01 would have shipped pixel-perfect FACES and 1%-of-
+      // pixels CARDS out of a change whose whole premise is that a tolerance
+      // hides a bug. On a 320x240 card 1% is 768 px — a 27x27 block.
+      //
+      // WHAT MADE IT SAFE, measured rather than assumed: every face scene in the
+      // roster, both tiers, booted TWICE on ubuntu CI and diffed at threshold
+      // 1/255 (`vrt-determinism-probe.spec.ts`). All but three rows were
+      // BIT-EXACT across cold boots; the three were two unpinned simulations
+      // (spirographs' engine clock, pong's tick accumulator) and both are fixed
+      // in this same diff. One of them — face-spirographs-dock at 2711 px — was
+      // already OVER the 1500 px budget it lived under, i.e. a latent flake the
+      // tolerance was not even absorbing.
+      //
+      // ⚠ A LOCAL macOS RUN WILL NOW FAIL and that is the intended reading, not
+      // a defect: the audit measured dx7-dock 17 px, mirrorpool-compact 8 px,
+      // moog903a-compact 4 px, scaler-compact 4 px on darwin — all maxDelta 1-2,
+      // all ZERO at the old 26/255, none reproducing on linux. There is ONE
+      // baseline set, linux CI authors it, and there is deliberately no platform
+      // carve-out. Use `task vrt:docker` for a pixel-exact local loop.
+      //
+      // (History: TIGHTENED 2026-07-31 from threshold 0.2 / ratio 0.05, whose
+      // own comment said it "can be tightened toward 0.01 once baselines settle
+      // on each platform". There is one platform, the baselines have settled,
+      // and this is the end of that road rather than another step along it.)
       //
       // WHY IT MATTERS, measured, not theorised: at 5% a 320x240 card could
       // change 3,840 pixels — a ~62x62 block, a whole knob — and stay green.
@@ -374,8 +464,8 @@ export default defineConfig({
       // The per-channel `threshold` compounds it: a pixel shifting up to 20%
       // per channel was not counted as different AT ALL, so a colour or
       // contrast change under that bar was invisible at ANY ratio.
-      threshold: 0.1,
-      maxDiffPixelRatio: 0.01,
+      threshold: 0,
+      maxDiffPixelRatio: 0,
       // Per-screenshot settle/capture timeout. Playwright's default is
       // 5000ms, which the heavy WebGL/animated cards (MANDLEBLOT,
       // MANDELBULB, WAVESCULPT-BLINK, …) intermittently blow on the CI
@@ -449,6 +539,24 @@ export default defineConfig({
             // most of it out.
             '--font-render-hinting=none',
             '--disable-skia-runtime-opts',
+            // ── PIN THE AA MODE ITSELF (2026-08-28) ─────────────────────────
+            // LCD-vs-grayscale text antialiasing is decided by Chromium per
+            // ENVIRONMENT (compositing/surface state), not per build — and on
+            // the hosted-runner fleet that decision measured BISTABLE PER VM:
+            // whole strict-shard jobs rendered EVERY text-bearing tile with
+            // grayscale AA against baselines authored with LCD fringes
+            // (expected pixels like rgb(163,172,153)/(99,153,183) — strong
+            // per-channel spread = subpixel fringes; actuals grayscale with
+            // shifted metrics). Same commit, same runner image 20260823.283.1,
+            // ~28 of 32 scenes per affected job, byte-stable within a job,
+            // set shifting between jobs. Forcing grayscale removes the
+            // decision. ⚠ A DELIBERATE ONE-TIME FULL RECAPTURE accompanies
+            // this flag — every committed text baseline carried the fringes.
+            '--disable-lcd-text',
+            // Same family: pin colour management, so a VM's detected display
+            // profile can never tint every gradient/AA edge by 1-2 units
+            // (the residual delta band under the fringe diffs).
+            '--force-color-profile=srgb',
             // Disable the smoothScrolling animation that fires on the
             // first .svelte-flow viewport mount.
             '--disable-smooth-scrolling',

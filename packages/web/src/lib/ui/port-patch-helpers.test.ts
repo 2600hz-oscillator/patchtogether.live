@@ -84,8 +84,18 @@ function defs(map: Record<string, AnyDef>): (t: string) => AnyDef | undefined {
   return (t) => map[t];
 }
 
-function makeNode(id: string, type: string): ModuleNode {
-  return { id, type, domain: 'audio', position: { x: 0, y: 0 }, params: {} };
+function makeNode(id: string, type: string, name?: string): ModuleNode {
+  // `name` mirrors the live app: `migrateAssignNames` runs on every rack
+  // load, so a real node virtually always carries `data.name` — either the
+  // auto-namer's reserved `<TYPE>`/`<TYPE>N` default or a user rename.
+  return {
+    id,
+    type,
+    domain: 'audio',
+    position: { x: 0, y: 0 },
+    params: {},
+    ...(name !== undefined ? { data: { name } } : {}),
+  };
 }
 
 describe('buildModuleEntries', () => {
@@ -105,6 +115,38 @@ describe('buildModuleEntries', () => {
       lfo1: makeNode('lfo1', 'lfo'),
       lfo2: makeNode('lfo2', 'lfo'),
       filter1: makeNode('filter1', 'filter'),
+    };
+    const out = buildModuleEntries(nodes, defs({ lfo: lfoDef, filter: filterDef }), 'filter1');
+    expect(out.map((e) => e.displayName)).toEqual(['LFO #1', 'LFO #2']);
+  });
+
+  // ---- rename-aware display names (#2264) ----------------------------------
+
+  it('prefers a RENAMED node\'s name VERBATIM — no #N (renames are unique by construction)', () => {
+    // The owner\'s case: among several instances, one is renamed. The renamed
+    // one shows its name; its un-renamed sibling keeps EXACTLY the numbering
+    // it had before the rename (the renamed node still counts toward the
+    // type\'s total).
+    const nodes: Record<string, ModuleNode> = {
+      lfo1: makeNode('lfo1', 'lfo', 'feedback'),
+      lfo2: makeNode('lfo2', 'lfo'),
+      filter1: makeNode('filter1', 'filter'),
+    };
+    const out = buildModuleEntries(nodes, defs({ lfo: lfoDef, filter: filterDef }), 'filter1');
+    expect(out.map((e) => e.displayName)).toEqual(['feedback', 'LFO #2']);
+    // typeLabel survives beside the rename — the picker renders it as
+    // secondary text whenever it differs from displayName.
+    expect(out[0]).toEqual({ nodeId: 'lfo1', displayName: 'feedback', typeLabel: 'LFO' });
+  });
+
+  it('treats the auto-namer\'s reserved default (any case) as NO rename — byte-identical fallback', () => {
+    // `migrateAssignNames` gives every node a `<TYPE>`/`<TYPE>N` name on
+    // load, so "data.name is set" is NOT the rename signal. A rack where
+    // every node carries its auto default must label exactly as before.
+    const nodes: Record<string, ModuleNode> = {
+      lfo1: makeNode('lfo1', 'lfo', 'LFO'),
+      lfo2: makeNode('lfo2', 'lfo', 'lfo2'), // case-insensitive, like validateRename
+      filter1: makeNode('filter1', 'filter', 'FILTER'),
     };
     const out = buildModuleEntries(nodes, defs({ lfo: lfoDef, filter: filterDef }), 'filter1');
     expect(out.map((e) => e.displayName)).toEqual(['LFO #1', 'LFO #2']);
@@ -314,7 +356,7 @@ describe('compatibleTargetPorts (input → ?)', () => {
 // ----------------------------------------------------------------------------
 
 const sequencerDef: AudioModuleDef = {
-  type: 'sequencer',
+  type: 'kria',
   domain: 'audio',
   label: 'Sequencer',
   category: 'sources',
@@ -426,7 +468,7 @@ describe('compatibleTargetPorts — cv-family interchange (input → output)', (
     // Right-clicking ADSR.attack and choosing SEQUENCER: every output
     // whose type lands in cv (gate / pitch / cv) should be listed —
     // SEQUENCER ships clock + gate (gate) + pitch (pitch).
-    const nodes = { seq1: makeNode('seq1', 'sequencer') };
+    const nodes = { seq1: makeNode('seq1', 'kria') };
     const out = compatibleTargetPorts(
       'cv', // source = ADSR.attack
       'input',
@@ -489,6 +531,25 @@ describe('moduleDisplayName', () => {
     expect(moduleDisplayName('lfo1', nodes, defs({ lfo: lfoDef }))).toBe('LFO #1');
     expect(moduleDisplayName('lfo2', nodes, defs({ lfo: lfoDef }))).toBe('LFO #2');
   });
+
+  it('prefers a RENAME verbatim over label + #N (#2264)', () => {
+    const nodes = {
+      lfo1: makeNode('lfo1', 'lfo', 'feedback'),
+      lfo2: makeNode('lfo2', 'lfo'),
+    };
+    expect(moduleDisplayName('lfo1', nodes, defs({ lfo: lfoDef }))).toBe('feedback');
+    // The un-renamed sibling keeps its pre-rename numbering.
+    expect(moduleDisplayName('lfo2', nodes, defs({ lfo: lfoDef }))).toBe('LFO #2');
+  });
+
+  it('a reserved auto-default name is NOT a rename — falls back to label + #N', () => {
+    const nodes = {
+      lfo1: makeNode('lfo1', 'lfo', 'LFO'),
+      lfo2: makeNode('lfo2', 'lfo', 'LFO2'),
+    };
+    expect(moduleDisplayName('lfo1', nodes, defs({ lfo: lfoDef }))).toBe('LFO #1');
+    expect(moduleDisplayName('lfo2', nodes, defs({ lfo: lfoDef }))).toBe('LFO #2');
+  });
 });
 
 // ----------------------------------------------------------------------------
@@ -547,6 +608,28 @@ describe('portConnections', () => {
     expect(outputs.get('phase0')?.sort()).toEqual(['Filter #1.CUTOFF', 'Filter #2.RES']);
     // lfo1 receives nothing.
     expect(inputs.size).toBe(0);
+  });
+
+  it('names a RENAMED remote by its rename — the owner\'s exact case (#2264)', () => {
+    // "← FROM camera #1.OUT" while the module\'s tile said "feedback". The
+    // remote endpoint string must carry the rename (the FROM word is the
+    // title builder\'s half of the fix — remoteEndpointsTitle\'s own test).
+    const nodes = {
+      lfo1: makeNode('lfo1', 'lfo', 'feedback'),
+      filter1: makeNode('filter1', 'filter'),
+    };
+    const edges = {
+      e1: edge('e1', { nodeId: 'lfo1', portId: 'phase0' }, { nodeId: 'filter1', portId: 'cutoff' }),
+    };
+    const { inputs } = portConnections(
+      edges,
+      'filter1',
+      nodes,
+      defs({ lfo: lfoDef, filter: filterDef }),
+    );
+    // The rename stays VERBATIM (not uppercased) — it is the user\'s string;
+    // only the port half keeps the panel\'s uppercase convention.
+    expect(inputs.get('cutoff')).toEqual(['feedback.PHASE0']);
   });
 
   it('leaves an unpatched module with empty maps', () => {

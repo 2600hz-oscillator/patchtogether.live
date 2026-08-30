@@ -96,9 +96,17 @@
 //      Deliberately NOT bundled with the fold fix: it is a separate coverage
 //      change that adds 42 baselines across platforms, and this PR already moves
 //      nine while two other baseline-touching PRs are in flight.
-//   4. Anything inside the per-scene budget (COMPACT_MAX_DIFF / DOCK_MAX_DIFF).
-//      A sub-tolerance render change is invisible to the gate AND unfixable by
-//      `--update-snapshots`; see the A2/#1213 note in CLAUDE.md.
+//   4. ~~Anything inside the per-scene budget (COMPACT_MAX_DIFF /
+//      DOCK_MAX_DIFF).~~ CLOSED 2026-08-25. It used to read: "a sub-tolerance
+//      render change is invisible to the gate AND unfixable by
+//      `--update-snapshots`; see the A2/#1213 note in CLAUDE.md." Both budgets
+//      are now ZERO, as are vrt.config's `threshold` and `maxDiffPixelRatio`,
+//      so there is no longer a band of change this gate cannot see — and the
+//      `--update-snapshots` half goes with it, since a stale baseline now
+//      FAILS and is therefore rewritable. What made that safe is measured, not
+//      hoped: every face scene in the roster but three was bit-exact across two
+//      cold ubuntu boots (vrt-determinism-probe), and the three were two
+//      unpinned simulations, fixed in the same diff.
 //   5. The capture is `.dock-faceplate`, whose 4 px `padding-bottom` is
 //      TRANSPARENT — so the bottom four rows of every dock baseline pin whatever
 //      canvas sits behind the drawer, not the faceplate. Measured at 15 px of
@@ -130,8 +138,8 @@
 // spec.ts` (the PF-21 row sweep + the annotation/sidebar sweeps) and the pure
 // `dock-row-plan` / `module-face-lint` units, which read the whole faceplate.
 
-import { test, expect } from '@playwright/test';
-import { existsSync } from 'node:fs';
+import { test, expect, type Page } from '@playwright/test';
+import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { diffRegion } from './vrt-surface-stats';
 import { DOCK_TAB_MIN_BANDS } from '../../packages/web/src/lib/ui/workflow/dock-tabs-model';
@@ -140,13 +148,19 @@ import {
   COMPACT_MAX_DIFF,
   DOCK_MAX_DIFF,
   FACES,
+  FACES_WITHOUT_SCENES,
+  FACE_TIERS,
+  faceTiers,
+  type FaceTier,
   FOLD_VIEWPORT,
+  ROSTERED_FACE_TYPES,
   foldViewportFor,
   LEGACY_FOLD_CLAMP_PX,
   LEGACY_FOLD_PX,
   LEGACY_FOLD_VIEWPORT,
   assertFaceAudioFrozen,
   bootWithFace,
+  faceSceneTimeout,
   frameMember,
   freezeFaceAudio,
   freezeFaceVideo,
@@ -159,15 +173,30 @@ import {
   refoldDockPane,
   settle,
   unfoldDockPane,
+  FREEZE_RACE_FRAMES,
+  type BootFaceOptions,
 } from './_shell-faces';
-import { readAudioClock, resumeAudioContext } from './vrt-audio-freeze';
+import {
+  armOneShotResume,
+  oneShotResumeFired,
+  readAudioClock,
+  resumeAudioContext,
+} from './vrt-audio-freeze';
 
 test.describe.configure({ mode: 'default' });
 
 /** The per-channel delta (0-255) at which `diffRegion` counts a pixel as
- *  different. 26 ≈ Playwright's own `threshold: 0.1` in vrt.config, so the
- *  negative control's pixel counts are directly comparable to the budget the
- *  real gate applies. */
+ *  different, for the NEGATIVE CONTROLS in this file only — never for the gate.
+ *
+ *  ⚠ IT NO LONGER MIRRORS THE GATE. This used to read "26 ≈ Playwright's own
+ *  `threshold: 0.1` in vrt.config, so the negative control's pixel counts are
+ *  directly comparable to the budget the real gate applies", and as of
+ *  2026-08-25 that budget is ZERO on all four knobs. Kept at 26 on purpose: the
+ *  controls below exist to prove the capture SEES a deliberate perturbation (an
+ *  8 px band shift, a live analyser trace), and a coarse delta makes that claim
+ *  about a real visual change rather than about shimmer. The gate's own bar is
+ *  proved on every run by the baseline comparisons themselves, which are now
+ *  byte-exact — a strictly stronger permanent control than this constant. */
 const NC_CHANNEL_DELTA = 26;
 /** The negative control's perturbation: shift one band sideways. CSS px. */
 const NC_SHIFT_PX = 8;
@@ -251,22 +280,144 @@ const FACE_WIDTH_SLACK_MAX_PX = 40;
  * the entries are DELETED, not narrowed, and the pending strip removal that was
  * supposed to fix them would in fact have left all three red.
  */
-const FACE_WIDTH_EXEMPTIONS: Readonly<Record<string, string>> = {};
+const FACE_WIDTH_EXEMPTIONS: Readonly<Record<string, string>> = {
+  // ── moog912 — THE NAME ROW IS WIDER THAN THE MODULE'S TWO CONTROLS ────────
+  //
+  // MEASURED on this branch (dock full view, CSS px, by walking every
+  // descendant of `.faceplate-body`):
+  //
+  //   .faceplate-body   194   ← the face's own max-content box
+  //     .editor         194   = .module-shell 150 + the editor's 22px L/R padding
+  //       .module-shell 150
+  //         .tile-top   148   ← THE DRIVER: .tile-rule 14 + gap + .tile-name 117
+  //         .dock-hero  148   (stretched; its rail asks for 128)
+  //         .dock-pages 148   (stretched; its one knob cell asks for 40)
+  //   contentW          120   ← the gate's ink measure
+  //
+  // So the plate is sized by THE MODULE'S OWN NAME ROW, not by empty reserve:
+  // every one of the control-bearing children asks for LESS than the name does.
+  // The 74 px of slack is the name row's decorative `.tile-rule` plus its gaps
+  // (drawn, but not "ink" by this gate's definition) and the editor's right
+  // padding. Nothing here can be reclaimed without ellipsising the module's
+  // name, which is not a width decision.
+  //
+  // ⚠ WHY IT APPEARED NOW, AND WHY THAT IS NOT A REGRESSION. moog912 used to
+  // carry a two-value hero READOUT STRIP; the strip was the widest thing on the
+  // face, so `contentW` cleared the name row and the slack fell under the
+  // ceiling. The owner deleted every readout strip (2026-08-19), and what is
+  // left is a face with exactly TWO params — one promoted to the hero, one in a
+  // band. The face did not get wider; its CONTENT got narrower than its own
+  // title. This is the inverse of the tidyVco defect the ceiling was written
+  // for: there, a `min-width` floor reserved space nothing drew; here, every
+  // pixel is drawn and the widest drawn thing is the name.
+  //
+  // ⚠ THE REAL QUESTION THIS RAISES IS NOT WIDTH, and it is recorded rather
+  // than silently exempted: with its readouts gone moog912 is a TWO-PARAM face,
+  // which is at the "NO FACE ON MERIT" line in module-faceplates.md (≤2 params,
+  // no families, no derived quantity left to state). Whether it should still be
+  // in STRICT_FACES at all is an owner call, not a thing to decide inside a
+  // width ceiling — so the face stays and this entry names the cost.
+  moog912:
+    'the module NAME ROW (.tile-rule + .tile-name = 148 CSS px) is wider than either of its two remaining controls (hero rail 128, band cell 40). Measured driver of .faceplate-body; not reclaimable without ellipsising the module name. See the table above.',
+  clockedRunner:
+    'the CODE BUFFER (`CODE_BUFFER_FACE_MIN_W` = 336 CSS px) is the plate. MEASURED on this branch, dock full view, CSS px: content 201, face body 402 — so the reported slack is 201 and every pixel of it is the buffer. It is DRAWN edge to edge (a CodeMirror editor with a border and a background) and contributes ZERO to `contentW`, because the ink measure takes BOXES only for `[data-cell-key]`/glyph/canvas/svg/img and RANGES over text nodes, and a freshly spawned runner has an EMPTY document with no text nodes at all — verified by a DOM probe reading bufferChars 0. The 201 px of content is the 168 px DIV selector plus the name row. Remove the floor and `.faceplate-body`\'s max-content collapses onto those, rendering the module\'s only working surface ~200 px wide. Not reclaimable: the buffer IS the module. See the block comment above.',
+  livecode:
+    'the CODE BUFFER (`CODE_BUFFER_FACE_MIN_W` = 336 CSS px) is the plate, for the reason its child\'s entry above gives in full — and one step further, because the only ranked cell here is a 58 px `action` rather than a 168 px selector. MEASURED on this branch, dock full view, CSS px: content 121, face body 402 — the same 402 px plate as the runner (same buffer, same padding) against 80 px LESS ink, which is exactly the cell-width difference. Remove the floor and the script buffer renders narrower than the module\'s own name row. The buffer is DRAWN edge to edge and invisible to `contentW` (no box for a div tree, no text nodes in an empty document). The output log WOULD be ink, but it does not exist at rest: `node.data.lastRun` is unset until a run happens, which is also what keeps the dock baseline deterministic. Not reclaimable: the buffer IS the module. See the block comment above.',
+
+  // ── THE CODE-BUFFER PAIR — THE PLATE IS THE BUFFER, AND THE BUFFER IS NOT
+  //    "INK" BY THIS GATE'S DEFINITION ───────────────────────────────────────
+  //
+  // These two entries are the moog912 shape with the cause inverted, and both
+  // halves of that are worth stating because the ceiling exists to catch the
+  // OTHER thing.
+  //
+  // THE INK MEASURE'S OWN BLIND SPOT. `readFoldGeometry` takes BOXES for
+  // `[data-cell-key], .tile-glyph, canvas, svg, img, .hero-vis` and TEXT RANGES
+  // over every other node's text children. A CodeMirror buffer is neither: it is
+  // a `div` tree of styled spans, and in the capture state it is EMPTY — a scene
+  // spawns one node and writes no data, so `node.data.source` / `node.data.text`
+  // is absent and there are no text nodes to Range. So the widest DRAWN thing on
+  // each of these plates contributes ZERO to `contentW`. This is the same
+  // sentence moog912's entry already carries about `.tile-rule` ("drawn, but not
+  // 'ink' by this gate's definition"), on a much larger element.
+  //
+  // WHY THE FLOOR IS NOT RECLAIMABLE. `.faceplate-body` is `width: max-content`,
+  // `.dock-ext-body` is `width: 100%` (which contributes nothing to an intrinsic
+  // size), and CodeMirror's own `.cm-scroller` is `overflow-x: auto` (so a long
+  // line does not push either). Remove `CODE_BUFFER_FACE_MIN_W` and the plate
+  // collapses onto the widest thing left: the ~148 px module-name row against a
+  // 168 px `selector` on the runner and a 58 px `action` on LIVECODE. That is a
+  // code editor rendered about 170 px wide, i.e. the module's entire working
+  // surface inside the defect moog912's entry describes.
+  //
+  // ⚠ SO THIS IS THE INVERSE OF THE tidyVco DEFECT THE CEILING WAS WRITTEN FOR.
+  // There, a `min-width` floor RESERVED space nothing drew. Here the floor is
+  // occupied edge to edge by the surface the module is operated from — the gate
+  // simply cannot see a text buffer, and it says so in its own comment. The
+  // number is one constant shared by both bodies
+  // ($lib/ui/modules/code-buffer-face.ts), argued from the value both LEGACY
+  // CARDS already carried (`MIN_WIDTH: 360` less 24 px of card chrome), and
+  // asserted at source in `codebuffer-face-model.test.ts` — so it cannot drift
+  // between the two faces or grow quietly.
+};
 
 test.describe('VRT: P1 curated faces (?shell=1) — compact lane tile + dock full-view', () => {
-  for (const { type, pages, videoFaceWhy } of FACES as readonly {
+  for (const { type, pages, videoFaceWhy, singletonAdoptWhy, simPin, tabbedOptIn } of FACES as readonly {
     type: string;
     pages: number;
     videoFaceWhy?: string;
+    singletonAdoptWhy?: string;
+    simPin?: BootFaceOptions['simPin'];
+    tabbedOptIn?: true;
   }[]) {
-    test(`face-${type}-compact: the compact lane tile matches baseline`, async ({ page }) => {
+    // ONE opts object for BOTH tiers, deliberately. The compact tile and the
+    // dock faceplate are two captures of the SAME module, so a determinism
+    // declaration that reached only one of them would leave the other
+    // non-deterministic — the "isolation mechanism only half the entry points
+    // honour" shape. Building it once here makes that structural rather than a
+    // thing each call site has to remember.
+    const bootOpts: BootFaceOptions = {
+      ...(videoFaceWhy ? { videoFaceWhy } : {}),
+      ...(singletonAdoptWhy ? { singletonAdoptWhy } : {}),
+      ...(simPin ? { simPin } : {}),
+    };
+    // WHICH TIERS THIS FACE CAPTURES — `['compact', 'dock']` unless the roster
+    // entry says otherwise. Read through `faceTiers` rather than tested inline,
+    // because the baseline-existence check below and `vrt-meta.test.ts` ask the
+    // same question and a second copy of the subtraction is how the two drift.
+    //
+    // ⚠ A REMOVED TIER IS NOT REGISTERED AT ALL — not registered-and-skipped.
+    // `test.skip` would leave the scene in the shard plan, in the `list`
+    // reporter output and in every "did this lane run what it planned" check as
+    // a thing that exists, which is the green-and-blind shape. `faceTiers` says
+    // the scene does not exist; this makes that true of the runner too.
+    const tiers = faceTiers(type);
+    // ⚠ THE BODY IS TYPED EXPLICITLY, not as `Parameters<typeof test>[1]`.
+    // `test` is OVERLOADED, so that index resolves to the LAST overload's second
+    // parameter — `TestDetails`, an options bag — and every scene body below
+    // would have been checked against it, which silently makes `page` an `any`.
+    const tierTest = (
+      tier: FaceTier,
+      title: string,
+      body: (args: { page: Page }) => Promise<void>,
+    ): void => {
+      if (tiers.includes(tier)) test(title, body);
+    };
+    tierTest('compact', `face-${type}-compact: the compact lane tile matches baseline`, async ({ page }) => {
+      // PER-SCENE, never the config's flat cap — the `foldViewportFor` shape
+      // applied to TIME instead of height (#1949). Returns the shared 90 s
+      // unless the roster entry declares a measured `sceneWeight`. This is a
+      // BOUND: it moves no assertion, and convergence is still gated at
+      // `expect.timeout` (30 s), which is where a scene that never settles
+      // fails. See the note on `faceSceneTimeout`.
+      test.setTimeout(faceSceneTimeout(type, 'compact'));
       const errors: string[] = [];
       page.on('pageerror', (e) => errors.push(e.message));
 
       // The compact tile is pinned at the config viewport — the dock scene's
       // taller one would be a baseline move for no reason.
       await page.setViewportSize(LEGACY_FOLD_VIEWPORT);
-      const memberId = await bootWithFace(page, type, videoFaceWhy ? { videoFaceWhy } : {});
+      const memberId = await bootWithFace(page, type, bootOpts);
       // zoom 0.45 = the LOD 'compact' band [0.30, 0.52) — the design-point tile.
       await frameMember(page, memberId, 0.45, 'compact');
 
@@ -299,7 +450,13 @@ test.describe('VRT: P1 curated faces (?shell=1) — compact lane tile + dock ful
       ).toEqual([]);
     });
 
-    test(`face-${type}-dock: the dock full-view faceplate matches baseline`, async ({ page }) => {
+    tierTest('dock', `face-${type}-dock: the dock full-view faceplate matches baseline`, async ({ page }) => {
+      // PER-SCENE — see the compact scene above. The dock scene is the more
+      // expensive of the two for every face measured (it mounts the whole
+      // faceplate, and for a video face the `fullViewBody` extension too), so
+      // `sceneWeight` carries the two durations separately rather than one
+      // number scaled by a guess.
+      test.setTimeout(faceSceneTimeout(type, 'dock'));
       const errors: string[] = [];
       page.on('pageerror', (e) => errors.push(e.message));
 
@@ -308,7 +465,7 @@ test.describe('VRT: P1 curated faces (?shell=1) — compact lane tile + dock ful
       // was MEASURED to move every other dock scene's pixels (see
       // `foldViewportFor`). `mixmstrs` is the case that found it.
       await page.setViewportSize(foldViewportFor(type));
-      const memberId = await bootWithFace(page, type, videoFaceWhy ? { videoFaceWhy } : {});
+      const memberId = await bootWithFace(page, type, bootOpts);
       // Frame at the 'full' tier so the jack-rail EXPAND affordance is
       // comfortably clickable, then open the dock full-view.
       await frameMember(page, memberId, 0.7, 'full');
@@ -386,13 +543,32 @@ test.describe('VRT: P1 curated faces (?shell=1) — compact lane tile + dock ful
 
       // ── RESIDUAL SCOPE #1, ASSERTED: the tab rail ───────────────────────
       // A railed face renders ONE band; every other face renders all of them.
-      // Derived from the SAME threshold DockFullView and ModuleShell branch on,
-      // so a new railed face auto-enrols and cannot drift.
-      const railed = pages >= DOCK_TAB_MIN_BANDS;
+      // Derived from the SAME answer DockFullView and ModuleShell branch on, so
+      // a new railed face auto-enrols and cannot drift.
+      //
+      // ⚠ THE THRESHOLD IS NO LONGER THE WHOLE QUESTION. This read
+      // `pages >= DOCK_TAB_MIN_BANDS` until `face.tabbed` landed — an
+      // owner-instruction-only opt-in that rails a face BELOW the threshold
+      // (spirographs: 3 bands, railed by declaration). A threshold-only
+      // derivation here would call that face unrailed and fail on the rail it
+      // was asked for, which is the same two-answer split this whole file warns
+      // about, one layer out. Both routes, joined.
+      //
+      // ⚠ THE OPT-IN IS A ROSTER FLAG, NOT A LIVE DEF READ, AND THAT IS A
+      // RUNTIME CONSTRAINT RATHER THAN A CHOICE. Importing the module registry
+      // here pulls in `import.meta.glob`, which does not exist in Playwright's
+      // runtime (measured: "TypeError: (intermediate value).glob is not a
+      // function"). So the flag is declared beside `pages` — and, exactly like
+      // `pages`, it is a copy that could drift. `shell-faces-roster.test.ts`
+      // is what stops it: it runs in the UNIT lane, where the live defs ARE
+      // importable, and joins the two in BOTH directions.
+      const optedIn = tabbedOptIn === true;
+      const railed = pages >= DOCK_TAB_MIN_BANDS || optedIn;
       expect(
         g.tabs > 0,
         `face-${type}-dock: ${pages} declared bands vs DOCK_TAB_MIN_BANDS=${DOCK_TAB_MIN_BANDS} ` +
-          `says railed=${railed}, but the faceplate rendered ${g.tabs} tab chips.`,
+          `(opt-in: ${optedIn}) says railed=${railed}, but the faceplate rendered ${g.tabs} ` +
+          `tab chips.`,
       ).toBe(railed);
       expect(
         g.renderedBands,
@@ -539,7 +715,15 @@ test.describe('VRT: P1 curated faces (?shell=1) — compact lane tile + dock ful
     // Widened to Set<string> so `.has()` accepts entries read from
     // STRICT_FACES (ReadonlySet<string>) — the comparison is the point.
     const rostered = new Set<string>(FACES.map((f) => f.type));
-    const missingScene = [...STRICT_FACES].filter((t) => !rostered.has(t)).sort();
+    // ⚠ ONE SOURCE FOR "ACCOUNTED FOR" — a captured scene OR a named
+    // `FACES_WITHOUT_SCENES` exemption. Read from `ROSTERED_FACE_TYPES` rather
+    // than re-derived here, because `vrt-meta.test.ts` asserts the SAME
+    // relationship and the first version of this exemption taught only THIS
+    // gate about it, leaving that one red on a correctly exempted face. Two
+    // gates computing one subtraction is the drift machine.
+    const missingScene = [...STRICT_FACES]
+      .filter((t) => !ROSTERED_FACE_TYPES.has(t))
+      .sort();
     const orphanScene = [...rostered].filter((t) => !STRICT_FACES.has(t)).sort();
 
     expect(
@@ -548,7 +732,11 @@ test.describe('VRT: P1 curated faces (?shell=1) — compact lane tile + dock ful
         `users — but have NO entry in the FACES roster, so this spec generates no ` +
         `scene for them and no pixel gate covers them at any tier. Add ` +
         `{ type, pages } to FACES in _shell-faces.ts and capture the baselines ` +
-        `(\`task vrt:commit\`).`,
+        `(\`task vrt:commit\`). If the module's RENDERER genuinely cannot be ` +
+        `baselined, add a NAMED entry to FACES_WITHOUT_SCENES with the ` +
+        `measurement in its \`why\` — "it animates" is not sufficient, since ` +
+        `mirrorpool/outlines/warrensvisions/freezeframe all animate and are all ` +
+        `captured via simPin or a freeze param.`,
     ).toEqual([]);
     expect(
       orphanScene,
@@ -562,9 +750,13 @@ test.describe('VRT: P1 curated faces (?shell=1) — compact lane tile + dock ful
     expect(rostered.size, 'the FACES roster is empty — did the import resolve?').toBeGreaterThan(0);
     expect(STRICT_FACES.size, 'STRICT_FACES is empty — did the import resolve?').toBeGreaterThan(0);
 
+    // ⚠ PER DECLARED TIER, not per (face x 2). A face that captures one tier is
+    // not missing the other — it does not HAVE the other — and the same
+    // `faceTiers` call that decides whether the scene is registered above
+    // decides what must exist on disk here, so the two cannot disagree.
     const missingBaseline: string[] = [];
     for (const { type } of FACES) {
-      for (const variant of ['compact', 'dock'] as const) {
+      for (const variant of faceTiers(type)) {
         const rel = `./__screenshots__/workflow-shell-faces.spec.ts/face-${type}-${variant}.png`;
         if (!existsSync(fileURLToPath(new URL(rel, import.meta.url)))) {
           missingBaseline.push(`face-${type}-${variant}.png`);
@@ -578,6 +770,200 @@ test.describe('VRT: P1 curated faces (?shell=1) — compact lane tile + dock ful
         `worse, a plain VRT run recreates a deleted one as an UNTRACKED file that ` +
         `no gate reads. Capture with \`task vrt:commit\` and commit the result.`,
     ).toEqual([]);
+
+    // ⚠ AND THE OTHER DIRECTION, because removing a tier moves the failure mode
+    // rather than deleting it: a PNG left behind for a tier no longer captured
+    // is a file NOTHING compares, sitting in the snapshot directory looking
+    // exactly like coverage. Anchored to the artifact, which is the rule this
+    // repo applies to every ledger.
+    const orphanBaseline: string[] = [];
+    for (const { type } of FACES) {
+      const captured = faceTiers(type);
+      for (const variant of FACE_TIERS) {
+        if (captured.includes(variant)) continue;
+        const rel = `./__screenshots__/workflow-shell-faces.spec.ts/face-${type}-${variant}.png`;
+        if (existsSync(fileURLToPath(new URL(rel, import.meta.url)))) {
+          orphanBaseline.push(`face-${type}-${variant}.png`);
+        }
+      }
+    }
+    expect(
+      orphanBaseline,
+      `a baseline is committed for a tier the roster no longer captures, so no ` +
+        `test compares it and nothing can make it fail. Either delete the PNG, or ` +
+        `— if the scene became capturable again — drop the \`scenes\` narrowing ` +
+        `from the roster entry so the test is generated for it.`,
+    ).toEqual([]);
+  });
+
+  // ── THE UNBASELINABLE-FACE EXEMPTION, ANCHORED FOUR WAYS ─────────────────
+  //
+  // ⚠ STATE THE GATE'S SCOPE INSIDE THE GATE. What an exempt face COSTS is that
+  // its PIXELS ARE NEVER COMPARED — not at the compact tier, not at the dock
+  // tier, on any platform. A layout regression on one of these faces is
+  // invisible to every VRT lane and reaches a human's eyes first. This block
+  // cannot change that; what it can do is make sure the permission is still
+  // earned, and that the non-pixel gates it leans on actually exist.
+  //
+  // The four anchors, each of which is a DIFFERENT way for the claim to expire:
+  //   1. the module is still FACED          — else it needs no exemption at all
+  //   2. it is still ABSENT from FACES      — else it HAS scenes; contradiction
+  //   3. no baseline exists on disk         — else it was captured after all
+  //   4. its def declares no freeze seam    — else somebody built determinism
+  //
+  // Anchored to the ARTIFACTS (STRICT_FACES, FACES, the filesystem, the live
+  // def), never to a count, so nothing here goes stale silently.
+  test('ANCHOR: every unbaselinable-face exemption is still earned', () => {
+    const rostered = new Set<string>(FACES.map((f) => f.type));
+
+    // 1 — still faced.
+    const notFaced = FACES_WITHOUT_SCENES
+      .filter((e) => !STRICT_FACES.has(e.type))
+      .map((e) => e.type);
+    expect(
+      notFaced,
+      'an exemption names a module that is NOT in STRICT_FACES. An unpromoted module needs no ' +
+        'scene and therefore no exemption — delete the entry, or it silently pre-approves ' +
+        'whatever takes that name next.',
+    ).toEqual([]);
+
+    // 2 — still absent from the roster.
+    const alsoRostered = FACES_WITHOUT_SCENES
+      .filter((e) => rostered.has(e.type))
+      .map((e) => e.type);
+    expect(
+      alsoRostered,
+      'an exemption names a module that ALSO has a FACES entry. It cannot both have scenes and ' +
+        'be exempt from having them — one of the two is wrong.',
+    ).toEqual([]);
+
+    // 3 — nothing was captured behind the exemption's back. ⚠ THE ARTIFACT LEG:
+    // if a baseline exists on disk, the claim "this cannot be captured" is
+    // false no matter how good the argument reads.
+    const capturedAnyway: string[] = [];
+    for (const e of FACES_WITHOUT_SCENES) {
+      for (const variant of e.scenes) {
+        const rel = `./__screenshots__/workflow-shell-faces.spec.ts/face-${e.type}-${variant}.png`;
+        if (existsSync(fileURLToPath(new URL(rel, import.meta.url)))) {
+          capturedAnyway.push(`face-${e.type}-${variant}.png`);
+        }
+      }
+    }
+    expect(
+      capturedAnyway,
+      'a baseline EXISTS for a face declared unbaselinable. Either someone made the renderer ' +
+        'deterministic — in which case delete the exemption and add the FACES entry — or a ' +
+        'local run wrote an untracked PNG that should not have been committed.',
+    ).toEqual([]);
+
+    // 4 — no determinism seam appeared on the def. If one has, the exemption's
+    // central claim (that simPin/freeze cannot reach this renderer) is due a
+    // re-argument rather than an automatic renewal.
+    //
+    // ⚠ READ FROM SOURCE, NOT FROM THE REGISTRY. The video module index is
+    // registered through `import.meta.glob`, a Vite feature the Playwright
+    // runner does not provide — importing it here throws
+    // "(intermediate value).glob is not a function" and the whole spec collects
+    // zero tests, which reads as "no tests found" rather than as a broken gate.
+    // The def's SOURCE is what can be read in this runtime, and it is the same
+    // technique `face-monitor-source.test.ts` uses to resolve cards.
+    //
+    // ⚠ AND THE LEG'S OWN PREMISE NEEDED CORRECTING (#2111). It read a `freeze`
+    // param as PROOF of a determinism seam, which held for every def that had
+    // one until `acidwarp` — whose `freeze` is a real, documented USER CONTROL
+    // that halts only the scene cycler while the palette keeps rotating, so
+    // writing it does not stop the picture at all. Under the blanket rule that
+    // module could never hold an exemption however true its argument was.
+    //
+    // So the claim became SAYABLE (`freezeIsNotASeam`) and is now checked in
+    // BOTH directions. Deny-by-default is intact: `freeze` with no declaration
+    // is still red, exactly as before.
+    const declaresFreeze = (type: string): boolean => {
+      const src = fileURLToPath(
+        new URL(`../../packages/web/src/lib/video/modules/${type}.ts`, import.meta.url),
+      );
+      if (!existsSync(src)) return false;
+      return /\bid:\s*'freeze'/.test(readFileSync(src, 'utf8'));
+    };
+    const gainedSeam = FACES_WITHOUT_SCENES
+      .filter((e) => declaresFreeze(e.type) && !e.freezeIsNotASeam)
+      .map((e) => e.type);
+    expect(
+      gainedSeam,
+      "an exempt module's def declares a `freeze` param — normally a determinism seam, and the " +
+        'mechanism the exemption says cannot reach this renderer. Either capture the face, or ' +
+        'declare `freezeIsNotASeam` saying what that param actually does and citing the read ' +
+        'site. Silently keeping the exemption is the one option this refuses.',
+    ).toEqual([]);
+
+    // The INVERSE, so the declaration cannot outlive the thing it describes: a
+    // face claiming its `freeze` is not a seam, on a def that no longer has one.
+    const staleNotASeam = FACES_WITHOUT_SCENES
+      .filter((e) => e.freezeIsNotASeam && !declaresFreeze(e.type))
+      .map((e) => e.type);
+    expect(
+      staleNotASeam,
+      'a `freezeIsNotASeam` declaration names a def with NO `freeze` param. The argument it ' +
+        'makes is about a param that no longer exists — delete it, or it silently pre-approves ' +
+        'the next `freeze` to appear on that def, which is exactly the seam this leg watches for.',
+    ).toEqual([]);
+
+    // …and the declaration has to be an ARGUMENT, on the same bar as `why`.
+    const thinNotASeam = FACES_WITHOUT_SCENES
+      .filter((e) => e.freezeIsNotASeam && e.freezeIsNotASeam.trim().length < 120)
+      .map((e) => e.type);
+    expect(
+      thinNotASeam,
+      '`freezeIsNotASeam` must say what the param DOES and where it is read, not assert that it ' +
+        'is harmless. "It is not a seam" with no mechanism is a suppression.',
+    ).toEqual([]);
+
+    // The argument itself, and the coverage it promises.
+    const thin = FACES_WITHOUT_SCENES
+      .filter((e) => e.why.trim().length < 200)
+      .map((e) => e.type);
+    expect(
+      thin,
+      'an unbaselinable-face exemption needs the MEASUREMENT in its `why`, not a label — the bar ' +
+        'is evidence that simPin and freeze cannot reach the renderer, since several animated ' +
+        'faces are captured with exactly those.',
+    ).toEqual([]);
+
+    const emptyCoverage = FACES_WITHOUT_SCENES
+      .filter((e) => e.coveredBy.length === 0 || e.scenes.length === 0)
+      .map((e) => e.type);
+    expect(
+      emptyCoverage,
+      'an exemption must name the gates that DO cover the face (and the scenes it is exempt ' +
+        'from). VRT is not covering it; something has to be.',
+    ).toEqual([]);
+
+    // ⚠ AND THE COVERAGE CLAIM IS ANCHORED TO THE FILESYSTEM. A `coveredBy`
+    // naming a spec that has since been deleted or renamed is the exemption
+    // quietly becoming uncovered while still reading as covered — the exact
+    // shape of a stale claim this repo keeps meeting.
+    const repoRoot = fileURLToPath(new URL('../../', import.meta.url));
+    const missingCoverage: string[] = [];
+    for (const e of FACES_WITHOUT_SCENES) {
+      for (const rel of e.coveredBy) {
+        if (!existsSync(`${repoRoot}${rel}`)) missingCoverage.push(`${e.type}: ${rel}`);
+      }
+    }
+    expect(
+      missingCoverage,
+      'a `coveredBy` entry names a file that does not exist. The exemption is leaning on ' +
+        'coverage that is gone.',
+    ).toEqual([]);
+
+    // NON-VACUITY: this whole block is green over an empty list too. Today the
+    // list has exactly one member and it is milkdrop (#2083); if it empties,
+    // that is a real event — the face became capturable, or was un-promoted —
+    // and this line is what makes it visible rather than silently permissive.
+    expect(
+      FACES_WITHOUT_SCENES.length > 0,
+      'FACES_WITHOUT_SCENES is empty — if that is intentional (every face is now baselined), ' +
+        'delete this control along with the mechanism rather than leaving a gate over nothing.',
+    ).toBe(true);
   });
 
   // ── THE PERMANENT NEGATIVE CONTROL FOR THE AUDIO FREEZE ───────────────────
@@ -612,6 +998,62 @@ test.describe('VRT: P1 curated faces (?shell=1) — compact lane tile + dock ful
   //
   // The source is asserted to still be free-running rather than assumed, so a
   // module change cannot leave the control quietly measuring silence.
+  test('face audio freeze RECOVERY control: a one-shot resume inside the VERIFY window is absorbed', async ({
+    page,
+  }) => {
+    // ⚠ THE POSITIVE CONTROL FOR #1931, and the leg the negative control below
+    // structurally cannot provide. That one proves the freeze assertion can
+    // REJECT a running graph. This one proves the freeze LOOP can SURVIVE a
+    // resume — a different claim, and the one that was false: the loop read
+    // back 'suspended', then called an assertion that re-reads the clock, and a
+    // resume landing between those two reads threw out of the loop with five of
+    // six attempts unused. One losing face aborts the entire capture (#1810).
+    //
+    // The window is aimed at, not hoped for: the resume is armed to fire
+    // FREEZE_RACE_FRAMES + 1 frames out, i.e. one frame AFTER the settle the
+    // loop waits before reading state — so it lands while the clock check is in
+    // flight. Derived from the harness constant, so it cannot drift from the
+    // code it targets.
+    //
+    // ⚠ AND IT IS ANCHORED TO THE ARTIFACT: a control whose injection silently
+    // failed to arm would pass while proving nothing, so the resume must be
+    // observed to have REACHED the context before any conclusion is drawn.
+    test.setTimeout(90_000);
+    const subject = FACES[0]!;
+    await page.setViewportSize(LEGACY_FOLD_VIEWPORT);
+    const memberId = await bootWithFace(page, subject.type);
+    await frameMember(page, memberId, 0.45, 'compact');
+
+    const clean = await readAudioClock(page);
+    expect(
+      clean.state,
+      `${subject.type}: the graph must be SUSPENDED before the resume is injected, or ` +
+        `"the loop recovered" below is measuring a context that was never frozen.`,
+    ).toBe('suspended');
+
+    await armOneShotResume(page, FREEZE_RACE_FRAMES + 1);
+
+    // THE CLAIM: this call must RECOVER rather than throw. Before the fix it
+    // threw `assertFaceAudioFrozen`'s "not 'suspended', at CAPTURE time" —
+    // under bootWithFace's label, which is how the abort read as a capture-time
+    // failure when it was a boot-time one.
+    await freezeFaceAudio(page, `${subject.type} (recovery control)`);
+
+    expect(
+      await oneShotResumeFired(page),
+      `the injected resume never reached the AudioContext, so this control did not exercise ` +
+        `the race at all — it would pass identically against the unfixed loop.`,
+    ).toBe(true);
+
+    const after = await readAudioClock(page);
+    expect(
+      after.state,
+      `${subject.type}: the freeze loop returned but the graph is '${after.state}' — recovering ` +
+        `must mean SUSPENDED, not merely "stopped throwing".`,
+    ).toBe('suspended');
+    await assertFaceAudioFrozen(page, `${subject.type} (recovery control, effect)`);
+  });
+
   test('face audio freeze negative control: a sounding face is unstable RUNNING, identical FROZEN', async ({
     page,
   }) => {
@@ -644,12 +1086,45 @@ test.describe('VRT: P1 curated faces (?shell=1) — compact lane tile + dock ful
     await frameMember(page, runId, 0.45, 'compact');
 
     // LEG 0 — ANCHORED TO THE ARTIFACT.
-    const live = await readFaceAudio(page, runId);
-    expect(
-      live.tapped,
-      `${NC_AUDIO_FACE}: no analyser could attach to its '${live.portId}' output — the control ` +
-        `cannot see the signal it is about to reason about.`,
-    ).toBe(true);
+    //
+    // ⚠ THE ATTACH IS POLLED, NOT SAMPLED ONCE (#2114). This read used to fire
+    // immediately after `bootWithFace` + `frameMember`, and analyser attach is
+    // ASYNCHRONOUS READINESS — so a single sample races it. On vrt-strict shard
+    // 5/8 it lost that race and the control died on its own precondition
+    // ("no analyser could attach"), before either of the two assertions it
+    // exists to make had run. The shard was at 64 % of budget, so this was
+    // never a capacity problem; it is the documented state-readiness pattern
+    // being missing.
+    //
+    // ⚠ THIS CANNOT WEAKEN THE GATE, which is the property that makes polling
+    // the right answer rather than a bigger budget. If the analyser never
+    // attaches, the poll still fails with the same message and the same
+    // meaning; all that changes is that "sampled before ready" becomes "waited
+    // for ready, then asserted". The peak / moving legs below are untouched and
+    // still read the SAME reading this loop settles on.
+    //
+    // ⚠ AND IT IS A READINESS BOOLEAN, NOT AN ACCUMULATOR — which is why an
+    // `expect.poll` is legitimate here and is NOT the "Playwright-side poll
+    // starves its own subject" defect. That rule is about sampling a
+    // page-side quantity that ADVANCES (a frame counter), where each
+    // round-trip competes with the thing being measured. `tapped` latches once
+    // and stops changing, so re-reading it neither perturbs nor races anything.
+    let live = await readFaceAudio(page, runId);
+    await expect
+      .poll(
+        async () => {
+          live = await readFaceAudio(page, runId);
+          return live.tapped;
+        },
+        {
+          message:
+            `${NC_AUDIO_FACE}: no analyser could attach to its '${live.portId}' output — the ` +
+            `control cannot see the signal it is about to reason about. Polled to let the ` +
+            `attach settle; still false, so this is a real wiring failure rather than a race.`,
+          timeout: 15_000,
+        },
+      )
+      .toBe(true);
     expect(
       live.peak,
       `${NC_AUDIO_FACE} downstream of ${NC_SOURCE}: peak amplitude is ${live.peak} — the chain is ` +

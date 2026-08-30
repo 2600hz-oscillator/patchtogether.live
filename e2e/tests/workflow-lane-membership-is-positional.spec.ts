@@ -33,12 +33,15 @@
 // Runs on /rack (the shell surface the owner reported against) in the normal
 // e2e lane — no DB, no relay, no audio assertions.
 
+import { SHELL_COLUMN_W } from '../../packages/web/src/lib/graph/channel-columns';
 import { test, expect, type Page } from '@playwright/test';
 
 // ---------------- channel-columns.ts geometry (mirrored, as siblings do) ----
 
-/** SHELL_COLUMN_W — the tight `?shell=1` column pitch. */
-const SHELL_COLUMN_W = 216;
+// ⚠ IMPORTED, NEVER RE-TYPED (#2239). A local copy of the pitch silently
+// mis-aims every `colX(n)` the moment the real pitch changes — spawning at
+// "column 5" landed in column 4, which reads as a lane-membership bug rather
+// than a stale constant.
 /** COLUMN_BASELINE_Y — COLUMN_SLOT_H(720) × COLUMN_MAX_SLOTS(6). The lane band's
  *  BOTTOM edge (the row the channel-number badges sit on); the video zone starts
  *  here. */

@@ -21,8 +21,8 @@ what actually gates a PR, and the plan to drive Bucket 1 to zero.
 ## What actually gates a PR (the load-bearing answer)
 
 Source of truth: `.github/workflows/ci.yml`. Branch ruleset **16042163** requires
-exactly **2 status-check contexts** (verified against the live ruleset — see
-`.claude/skills/pr-workflow.md`):
+exactly **2 status-check contexts** (verify the live ruleset before changing
+them):
 
 1. **`typecheck + unit + ART + E2E`** — the `ci` umbrella job (an aggregator).
 2. **`vrt-strict (visual regression — strict subset)`** — the deterministic

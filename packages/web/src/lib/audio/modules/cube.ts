@@ -410,30 +410,6 @@ export const cubeDef: AudioModuleDef = {
     hero: {
       cell: 'cube-view-{n}',
       control: 'slice_ry',
-      // No `action`: cube has no audition seam. Its handle exposes only
-      // `snapshot`/`live`/`tableLabels`/`frames`, so a hero button would be a
-      // `toBeEnabled()`-passing dead control — exactly the class
-      // `ShellActionCell.probe` is required for.
-      //
-      // ⚠ ALL FOUR READOUTS ARE DERIVED, and each because the nearest knob is
-      // BLIND to something that changes the answer:
-      //   cut    — no knob shows the plane's TILT; it is all three rotations at
-      //            once, and it is the quantity `Y` depends on.
-      //   Y      — the module's single most important fact. `slice_y` is a real
-      //            control that is inert in exactly ONE state: the state it
-      //            spawns in. A `paramId: 'slice_y'` readout prints 0.50 in
-      //            both, which is the whole problem.
-      //   levels — CRUSH's top 0.8 % is a flat detent; the knob keeps climbing
-      //            while the quantiser has stopped moving.
-      //   width  — SPREAD's real depth, from the DSP constant. Five doc strings
-      //            said ±5 % against a shipped 0.18 because the number was
-      //            re-typed; this one imports it.
-      readouts: [
-        { label: 'cut', valueId: 'cube-cut-tilt' },
-        { label: 'Y', valueId: 'cube-y-live' },
-        { label: 'levels', valueId: 'cube-crush-levels' },
-        { label: 'width', valueId: 'cube-spread-depth' },
-      ],
     },
 
     pages: [
@@ -503,39 +479,6 @@ export const cubeDef: AudioModuleDef = {
     // inputs wearing an audio-rate cable, and an audio-rate LFO into `morph_fc`
     // will alias rather than FM. This tick is the only place that is visible.
     rear: { audioRate: ['pitch'] },
-
-    sidebar: [
-      {
-        // ⚠ THIS BLOCK IS THE FACE'S BEST WORK, and it is four param writes.
-        // cube's default state HIDES ITS OWN STRONGEST INTERACTION: at spawn
-        // the plane is flat, so Y slides along its own normal and does almost
-        // nothing (0.115), and one nudge of ROT X makes it a 0.759 control.
-        // `FacePreset.note` paints unconditionally, so this is where that fact
-        // can live — one click, and the readout above flips `asleep` → `live`.
-        kind: 'presets',
-        label: 'set the plane',
-        entries: [
-          { id: 'flat', label: 'flat scan', note: 'Y asleep', values: { slice_rx: 0, slice_ry: 0, slice_rz: 0, slice_y: 0.5, wrap: 0 } },
-          { id: 'tilted', label: 'tilted', note: 'Y × 6.6', values: { slice_rx: 0.8, slice_ry: 0, slice_rz: 0, slice_y: 0.5 } },
-          { id: 'quarter', label: 'quarter turn', note: '⚠ flattens', values: { slice_rx: 0, slice_ry: 1.5708, slice_rz: 0 } },
-          { id: 'mirror', label: 'mirror', note: 'DC 1.06→0.07×', values: { wrap: 1, slice_rx: 0, slice_ry: 0, slice_rz: 0 } },
-        ],
-      },
-      {
-        kind: 'readouts',
-        label: 'this plane',
-        // ⚠ EVERY VALUE STAYS SHORT. The sidebar content column is 258 px and a
-        // longer value pushes the dock past its right edge; the formatter's
-        // width is asserted across the whole param space in the model test.
-        entries: [
-          { label: 'f0 (knobs)', valueId: 'cube-f0-knobs' },
-          { label: 'harmonics', valueId: 'cube-harmonics' },
-          { label: 'fold drive', valueId: 'cube-fold-drive' },
-          { label: 'CV rate', text: '≈375 Hz · 1/512' },
-          { label: 'band-limiting', text: 'none — it aliases' },
-        ],
-      },
-    ],
   },
 
   docs: {

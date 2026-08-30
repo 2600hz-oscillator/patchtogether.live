@@ -205,40 +205,7 @@ export const featurecvDef: AudioModuleDef = {
     // right-click away.
     hero: {
       control: 'bipolar',
-      readouts: [
-        // THE RESTING LEVEL of all three feature CVs with nothing patched.
-        // GAIN-invariant (a trim on silence is silence) and the only readout
-        // that is; the probe below is its negative control on every render.
-        { label: 'idle', valueId: 'featurecv-idle' },
-        // WHAT A −12 dBFS SOURCE LEAVES AS LOUD, at the live GAIN and
-        // POLARITY. A join no single dial can perform: `0.00` at the shipped
-        // defaults, `+1.00` at GAIN 4 (clamped), `−0.75` at GAIN 0.25.
-        { label: '−12 dB', valueId: 'featurecv-probe' },
-        // THE ONSET THRESHOLD MULTIPLIER — the number SENS maps onto, and the
-        // DIRECTION the dial cannot show: 4.00× at SENS 0, 1.20× at SENS 1.
-        { label: 'fires at', valueId: 'featurecv-thresh' },
-        // THE TRIGGER RATE CEILING the debounce lockout imposes.
-        { label: 'max rate', valueId: 'featurecv-max-rate' },
-      ],
     },
-
-    sidebar: [
-      // THE THREE MAPS — where each feature's window statistic lands on its
-      // jack, with the rack's own generators marked. DRAWN, never traced.
-      { kind: 'custom', label: 'maps', panelId: 'featurecv-maps' },
-      // The three conversions the dials are structurally unable to print: two
-      // one-pole time constants as the 10→90 % moves they deliver, and the
-      // input level at which LOUD stops moving.
-      {
-        kind: 'readouts',
-        label: 'delivered',
-        entries: [
-          { label: 'atk rise', valueId: 'featurecv-atk-rise' },
-          { label: 'rel fall', valueId: 'featurecv-rel-fall' },
-          { label: 'loud clip', valueId: 'featurecv-loud-clip' },
-        ],
-      },
-    ],
   },
 
   docs: {

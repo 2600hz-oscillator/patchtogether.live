@@ -124,7 +124,7 @@ describe('button routing (WORKSTREAM B)', () => {
     const host: AutoconfigHost = {
       buildGenInput: () => ({
         surfaceBindings: [
-          { moduleId: 'drumseqz', paramId: 'play', controlType: 'button', momentary: true },
+          { moduleId: 'kria', paramId: 'play', controlType: 'button', momentary: true },
           { moduleId: 'score', paramId: 'play', controlType: 'button', momentary: false },
         ],
         moduleLabel: (id) => id,
@@ -149,13 +149,13 @@ describe('button routing (WORKSTREAM B)', () => {
     const auto = new ElectraAutoconfig(host, fake.broker, { identifyTimeoutMs: 20 });
     await auto.run();
     const a = auto.allocations.find((x) => x.role === 'button-momentary')!;
-    expect(a.key).toBe('drumseqz:play');
+    expect(a.key).toBe('kria:play');
     fake.emit([0x90, a.number, 100]); // NOTE-on
     fake.emit([0x80, a.number, 0]);   // NOTE-off
     auto.stop();
     expect(triggers).toEqual([
-      ['drumseqz', 'play', true],
-      ['drumseqz', 'play', false],
+      ['kria', 'play', true],
+      ['kria', 'play', false],
     ]);
   });
 

@@ -28,6 +28,7 @@
 // cold-load scenario the two reporting users hit in the wild.
 
 import { test, expect, type Page } from '@playwright/test';
+import { pollScopeRms, scopePollMsg } from '../_helpers/scope-poll';
 import { fileMenuClick } from './_fixtures';
 import { readFile, writeFile, access } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
@@ -186,19 +187,19 @@ test('@load cold-load: clicking Load as the first user action produces audio', a
 
     // Wait for audio to flow. The Faust worklet takes a tick or two to start
     // emitting samples after instantiation.
-    let rms = 0;
-    const deadline = Date.now() + 4_000;
-    while (Date.now() < deadline) {
-      rms = await readScopeRms(page);
-      if (rms > 0.001) break;
-      await page.waitForTimeout(100);
-    }
+    // The sampling loop runs IN THE PAGE (one export site) rather than one CDP
+    // round trip per sample against the audio thread it is measuring.
+    const probe = await pollScopeRms(page, 'scp', 0.001, 4_000);
+    const rms = probe.rms;
 
     expect(
       rms,
-      `expected audio after cold load (rms=${rms.toFixed(6)}); ` +
-        `bug fix: the zip-load handler must call ensureEngine() before applying ` +
-        `the envelope and await reconciler.reconcile() after`
+      scopePollMsg(
+        `expected audio after cold load (rms=${rms.toFixed(6)}); ` +
+          `bug fix: the zip-load handler must call ensureEngine() before applying ` +
+          `the envelope and await reconciler.reconcile() after`,
+        probe,
+      )
     ).toBeGreaterThan(0.001);
 
     // No surprise console errors during the load path.
@@ -216,31 +217,3 @@ test('@load cold-load: clicking Load as the first user action produces audio', a
   }
 });
 
-async function readScopeRms(page: Page): Promise<number> {
-  return await page.evaluate(() => {
-    const w = globalThis as unknown as {
-      __engine?: () => {
-        read: (
-          node: { id: string; type: string; domain: string },
-          key: string
-        ) => unknown;
-      } | null;
-      __patch: {
-        nodes: Record<string, { id: string; type: string; domain: string }>;
-      };
-    };
-    const eng = w.__engine?.();
-    if (!eng) return 0;
-    const node = w.__patch.nodes['scp'];
-    if (!node) return 0;
-    const snap = eng.read(node, 'snapshot') as
-      | { ch1: Float32Array }
-      | undefined;
-    if (!snap) return 0;
-    let energy = 0;
-    for (let i = 0; i < snap.ch1.length; i++) {
-      energy += snap.ch1[i] * snap.ch1[i];
-    }
-    return Math.sqrt(energy / snap.ch1.length);
-  });
-}

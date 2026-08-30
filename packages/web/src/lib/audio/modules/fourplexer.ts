@@ -173,13 +173,6 @@ export const fourplexerDef: AudioModuleDef = {
     // Forced, not chosen — see the glyph paragraph above.
     glyph: 'none',
 
-    hero: {
-      readouts: [
-        { label: 'map', valueId: 'fourplexer-map' },
-        { label: 'fan', valueId: 'fourplexer-fan' },
-        { label: 'idle', valueId: 'fourplexer-idle' },
-      ],
-    },
   },
 
   docs: {

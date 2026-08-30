@@ -20,10 +20,10 @@
 //
 //   electraPosOf(row, knob):
 //     controlSetId = ceil(row / 2)        // rows 1-2 → set 1 (TOP), 3-4 → set 2
-//                                         //   (MIDDLE), 5-6 → set 3 (BOTTOM)
+//                                         //   (MID), 5-6 → set 3 (BOT)
 //     potId        = (row odd ? 0 : 6) + knob   // odd row = a band's TOP sub-row
 //                                               //   (pots 1-6); even row = its
-//                                               //   BOTTOM sub-row (pots 7-12)
+//                                               //   BOT sub-row (pots 7-12)
 //
 //   NOTE: the storage ordering (slotIndex = row-major) is NOT the same as the
 //   firmware's control-set-then-pot walk. Do NOT derive (controlSetId, potId)
@@ -52,8 +52,16 @@ export const ELECTRA_KNOBS = 6;
 export const ELECTRA_SLOT_COUNT = ELECTRA_ROWS * ELECTRA_KNOBS; // 36
 
 /** The three 2-row banks, top to bottom, mirroring the Electra's control sets.
- *  `controlSetId` 1 = TOP, 2 = MIDDLE, 3 = BOTTOM. `rows` are the 1-based task
- *  rows that belong to the bank. */
+ *  `controlSetId` 1 = TOP, 2 = MID, 3 = BOT. `rows` are the 1-based task
+ *  rows that belong to the bank.
+ *
+ *  ⚠ THE LABELS BELOW ARE THE ONLY NAMES THAT EXIST. Four headers across three
+ *  files used to say `MIDDLE` / `BOTTOM`, which is what the banks are CALLED
+ *  nowhere: the shipped `label` values are `TOP` / `MID` / `BOT`, they are what
+ *  the card and the faceplate body paint, and `electra-control.spec.ts` asserts
+ *  them by those exact strings (`electra-control-bank-MID`). A spec or a face
+ *  comment quoting the long forms is wrong wherever it lands, so the prose is
+ *  brought to the data rather than the other way round. */
 export const ELECTRA_BANKS: ReadonlyArray<{
   label: string;
   controlSetId: number;
@@ -91,7 +99,7 @@ export function rowKnobOf(slot: number): { row: number; knob: number } {
 /** The (controlSetId, potId) on the Electra page for a 1-based (row, knob).
  *  See the file header for the derivation; this is the §2 bijection. */
 export function electraPosOf(row: number, knob: number): { controlSetId: number; potId: number } {
-  const controlSetId = Math.ceil(row / 2); // 1=TOP, 2=MIDDLE, 3=BOTTOM
+  const controlSetId = Math.ceil(row / 2); // 1=TOP, 2=MID, 3=BOT
   const bandTopRow = row % 2 === 1; // odd row = band's top sub-row (pots 1-6)
   const potId = (bandTopRow ? 0 : 6) + knob; // 1-6 (top) or 7-12 (bottom)
   return { controlSetId, potId };
@@ -104,7 +112,7 @@ export function electraPosOfSlot(slot: number): { controlSetId: number; potId: n
   return electraPosOf(row, knob);
 }
 
-/** The bank (TOP/MIDDLE/BOTTOM) a 1-based row belongs to. */
+/** The bank (TOP/MID/BOT) a 1-based row belongs to. */
 export function bankForRow(row: number): { label: string; controlSetId: number } {
   const controlSetId = Math.ceil(row / 2);
   return { label: ELECTRA_BANKS[controlSetId - 1]?.label ?? '', controlSetId };

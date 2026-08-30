@@ -1,9 +1,9 @@
 name: Chaos 24/7
 
-# Continuously fuzz autotest.patchtogether.live with Chaos Carl. Every hour
-# a fresh job joins a fixed rackspace (CHAOS_RACKSPACE_URL secret) as an anon
-# participant via invite link, runs a 1000-iteration chaos loop, and uploads
-# the findings/ bundle as a workflow artifact so we can triage offline.
+# Fuzz autotest.patchtogether.live with Chaos Carl. A fresh job joins a fixed
+# rackspace (CHAOS_RACKSPACE_URL secret) as an anon participant via invite link,
+# runs a 1000-iteration chaos loop, and uploads the findings/ bundle as a
+# workflow artifact so we can triage offline.
 #
 # Required repo secrets:
 #   AUTOTEST_BETA_GATE_PASS  — autotest beta-gate password (reuses the secret
@@ -11,19 +11,29 @@ name: Chaos 24/7
 #   CHAOS_RACKSPACE_URL      — invite-link URL the bot joins; e.g.
 #                              https://autotest.patchtogether.live/r/<id>?invite=<code>
 #
-# Why hourly instead of always-on:
-#   - GH Actions billed by the minute; an always-on runner burns the quota.
-#   - 1000 iters at autotest's pace is ~3 min wall, so each fire stays well
-#     inside the free-tier per-job cap.
-#   - Findings persist to artifacts (90-day retention), so gaps between runs
-#     aren't observability gaps — they're just sampling cadence.
+# ⚠ HOURLY -> NIGHTLY (2026-08-23, CI simplification audit). The name is kept
+# because it is the workflow's identity, not a promise about the cadence.
+#
+# MEASURED: this was the ONLY hourly cron in the tree — 24 fires a day at ~3 min
+# wall each, against a scheduled-workflow surface that otherwise consists of one
+# nightly collab run, one nightly PROD deploy and the 10-minute live-smoke probe.
+# The audit asked for at most one nightly hunter; this is it. The other three
+# workflows people call "the flake hunters" (`e2e-flake-purge`,
+# `behavioral-flake-purge`, `flake-check-3x`) turned out to have NO schedule at
+# all — they are dispatch/branch-push tools and cost zero runner minutes idle, so
+# they are kept unchanged.
+#
+# The cadence argument is the file's own, and it still holds at 1/day: findings
+# persist to artifacts (90-day retention), so gaps between runs are not
+# observability gaps — they are sampling cadence. 04:00 and 09:00 UTC are taken
+# by the PROD deploy and the collab nightly; 02:00 keeps this off both.
 #
 # Log-only invariants mode is implied: CHAOS_RACKSPACE_URL flips the runner
 # into "findings, not failures" (see runner.spec.ts LOG_ONLY_INVARIANTS).
 
 on:
   schedule:
-    - cron: '0 * * * *'
+    - cron: '0 2 * * *'
   workflow_dispatch:
     inputs:
       iterations:

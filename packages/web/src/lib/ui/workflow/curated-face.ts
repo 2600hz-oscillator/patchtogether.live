@@ -36,6 +36,11 @@ import {
   laneGlyphFor,
   type LaneGlyph,
 } from './module-shell-model';
+import { bodyPaintedParamIds } from './shell-control-kind';
+
+/** Shared empty set so the common (no `surface: 'body'` pad) case allocates
+ *  nothing and the lane branch has something to read. */
+const EMPTY_KEYS: ReadonlySet<string> = new Set<string>();
 
 /** The curation LADDER — the tiers a face is sliced into. Distinct from the
  *  LOD zoom tiers (mini/compact/full/native in lod.ts): 'dock' is the sectioned
@@ -201,6 +206,25 @@ function earnsReadout(p: FaceParamLike): boolean {
  * a fader parked at rank 9 is dock-only and must not shrink the lane plate.
  * `laneOrder` for the same reason one step further out: a hero picture never
  * reaches the lane either, so it must not displace a cell that does.
+ *
+ * ⚠ `foldedOrder` ON TOP OF `laneOrder`, AND THE OMISSION WAS A LATENT BUG.
+ * This used to call `laneOrder` alone, which is a THIRD answer to "which keys
+ * reach the lane" beside `curatedFace`'s — and `curatedFace` composes BOTH
+ * (`foldedOrder({...face, order: laneOrder(face)})`). A pad's PARTNER axis
+ * renders no cell of its own by `foldedOrder`'s own contract, so reserving a
+ * cell height for it was never right; the paragraph above already said this
+ * function is scanned over "the ranked prefix that can REACH the lane", and a
+ * folded partner cannot.
+ *
+ * It went unnoticed because the TIER CAP masked it: the discrepancy is one
+ * entry per declared pad, and on a face with enough controls the `slice` and
+ * the per-tier cap take the same prefix either way. Measured over the live
+ * registry at the time of the fix: `backdraft` is the only shipped pad-bearing
+ * face, its partners (`camTiltY`, `camPosY`) rank outside the first six, and
+ * its height list is byte-identical before and after — so this moves no pixel
+ * on anything that ships today. It is `joystick` (a pad and nothing else) that
+ * unmasks it, because there the cap cannot hide a one-entry difference from
+ * ZERO, and `module-face-lint`'s cap-vs-fit-plan gate says so by name.
  */
 export function faceLaneCellHeights(def: FaceDefLike): number[] {
   const face = def.face;
@@ -208,7 +232,7 @@ export function faceLaneCellHeights(def: FaceDefLike): number[] {
   const declared = face.paramCells ?? {};
   const momentary = new Set(face.momentary ?? []);
   const byId = new Map((def.params ?? []).map((p) => [p.id, p]));
-  return laneOrder(face)
+  return foldedOrder({ ...face, order: laneOrder(face) })
     .slice(0, LANE_PLATE_MAX_CELLS)
     .map((key) => {
       const kind = declared[key as keyof typeof declared];
@@ -442,9 +466,20 @@ function resolvePage(page: ModuleFacePage, def: FaceDefLike): ResolvedFacePage {
   // lint REQUIRES in `face.order`, and which reads natural to write in a page —
   // painted the partner twice: once inside the pad, once as a stray dial. One
   // fold seam, applied at every place a control roster is resolved.
+  //
+  // ⚠ AND THE SAME SEAM CARRIES THE `surface: 'body'` DROP, for the same
+  // reason one fold up. A pad the module's own `fullViewBody` paints must not
+  // ALSO paint in a band, and a page that lists its axes is the natural
+  // authoring (they have to be ranked, and a ranked-but-unpaged key falls into
+  // the defensive '__unpaged' band — a different and wrong faceplate). So the
+  // page declares its full membership and the drop is the platform's job, not
+  // the author's — exactly the correction `resolvePage` already records about
+  // partner axes. `resolvePage` is only ever reached from the DOCK branch of
+  // `curatedFace`, which is what keeps this dock-only without a tier argument.
   const partners = new Set((def.face?.xyPads ?? []).map((p) => p.y));
+  const inBody = bodyPaintedParamIds(def);
   const all = page.controls
-    .filter((k) => !partners.has(k))
+    .filter((k) => !partners.has(k) && !inBody.has(k))
     .map((k) => resolveFaceControl(k, def));
   const hint = page.hint?.trim() ?? '';
   const declared = page.clusters ?? [];
@@ -506,7 +541,20 @@ export function curatedFace(def: FaceDefLike, tier: FaceTier): CuratedFace | nul
     ...face,
     order: tier === 'dock' ? face.order : laneOrder(face),
   });
-  const ranked = order.map((k) => resolveFaceControl(k, def));
+  // ⚠ THE BODY DROP IS DOCK-ONLY. A pad declaring `surface: 'body'` is painted
+  // by the module's own `fullViewBody`, which `dockFullViewHeadPlan` renders at
+  // the DOCK and nowhere else, so the dock must not paint a second copy in a
+  // band. It sits inside the `tier === 'dock'` test rather than in
+  // `foldedOrder` because it is a statement about ONE tier's surfaces, while
+  // `foldedOrder`'s partner fold is true at every tier.
+  //
+  // ⚠ IT IS NOT LOAD-BEARING FOR THE LANE, and the first draft of this comment
+  // claimed it was. `laneOrder` a few lines up ALREADY drops every declared
+  // pad's anchor at every lane tier, so the lane branch would get the same
+  // answer with or without this guard. The tier test is about where the
+  // question belongs, not about protecting the lane from it.
+  const inBody = tier === 'dock' ? bodyPaintedParamIds(def) : EMPTY_KEYS;
+  const ranked = order.filter((k) => !inBody.has(k)).map((k) => resolveFaceControl(k, def));
   const controls = Number.isFinite(cap) ? ranked.slice(0, cap) : ranked;
 
   const out: CuratedFace = {
@@ -577,6 +625,29 @@ export function dockFacePlan(def: FaceDefLike): DockFaceBand[] | null {
 
   const pages = dock.pages ?? [];
   if (!pages.length) {
+    // A FACE THAT RANKS NOTHING GETS NO BAND — an empty `__all` is a SECTION
+    // WITH NOTHING IN IT, and `.dock-page` is `border-top: 1px solid` +
+    // `padding-top: 6px`, so it paints as a bare divider rule under the title
+    // with no content beneath it. That is resting chrome which says nothing,
+    // and it is the same "labelled void" `heroFacePlan` already refuses when a
+    // hero promotion empties a band ("a labelled void where they were").
+    //
+    // ⚠ THIS IS THE `__unpaged` GUARD'S MISSING TWIN, not a new policy. The
+    // paged branch below has ALWAYS refused to append an empty tail band
+    // (`if (unpaged.length)`); the page-less branch simply never got the same
+    // check, because until a zero-control face existed it could not be reached.
+    //
+    // Measured before changing it: of the faced roster, exactly ONE module
+    // (`videoOut`) hit this branch with an empty band — its plate is a
+    // `fullViewBody` extension, so the stray rule sat under the real surface.
+    // The zero-param audio utilities (a gate flip-flop, a passive multiple)
+    // have no extension body, so the rule would be the ONLY thing on the plate.
+    //
+    // Returning `[]` rather than `null` is load-bearing: `null` means UN-FACED
+    // and sends the caller to the legacy card. An empty array is truthy, so
+    // `ModuleShell`'s `allDockBands ? …` guard and `dockTabPlan` both keep
+    // treating the module as faced and simply render no sections.
+    if (!dock.controls.length) return [];
     return [
       {
         id: DOCK_ALL_BAND_ID,

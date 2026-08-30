@@ -1,0 +1,303 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>TWOTRACKS face — reel B · TONE, and SCREEN OFF</title>
+<style>
+/* ─────────────────────────────────────────────────────────────────────────
+   TWOTRACKS FACEPLATE — MOCKUP, state 2 of 2: the B·TONE tab on an EMPTY
+   reel, and the same plate with SCREEN OFF.
+   SPEC AND MOCKUP ONLY. Nothing here is implemented. See spec.md.
+   ───────────────────────────────────────────────────────────────────────── */
+:root{
+  --bg:#0e1013; --dock:#12161c; --plate:#262a31; --pbody:#1c1f24; --well:#0a0c0f;
+  --line:#2c3037; --tile:#33383f; --ink:#eef1f5; --dim:#9aa2ad; --faint:#646c77;
+  --cv:#7dd3fc; --accent:#6cf; --ch1:#fbbf24; --ch2:#60a5fa; --warn:#f2c14e; --good:#8fe6b0;
+  --bad:#e8918a; --loop:#e0b453;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+  font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1240px;margin:0 auto;padding:26px 20px 90px}
+h1{font-size:21px;font-weight:800;margin:0 0 6px;letter-spacing:.01em}
+.sub{color:var(--dim);font-size:12.5px;margin:0 0 14px;max-width:108ch}
+.sub b{color:var(--ink)} code{font-family:var(--mono);font-size:11.5px;color:var(--ch1)}
+.nav{display:flex;gap:8px;margin:0 0 20px;font-size:11px;flex-wrap:wrap}
+.nav a{color:var(--ink);text-decoration:none;border:1px solid var(--line);border-radius:6px;
+  padding:6px 12px;background:#12161c;font-family:var(--mono);letter-spacing:.06em;text-transform:uppercase}
+.nav a.on{border-color:var(--ch1);color:var(--ch1)}
+.warn{border:1px solid #6a5330;background:#1c1811;border-radius:8px;padding:11px 14px;
+  margin:12px 0;font-size:12.5px;color:#e8cf9a;max-width:120ch}
+.warn b{color:var(--warn)}
+.ok{border:1px solid #3b5a48;background:#111a15;border-radius:8px;padding:11px 14px;
+  margin:12px 0;font-size:12.5px;color:#a9d8bd;max-width:120ch}
+.ok b{color:var(--good)}
+.bad{border:1px solid #6d3b38;background:#1d1312;border-radius:8px;padding:11px 14px;
+  margin:12px 0;font-size:12.5px;color:#e6b8b3;max-width:120ch}
+.bad b{color:var(--bad)}
+
+.side{display:grid;grid-template-columns:1fr 1fr;gap:18px;align-items:start}
+@media (max-width:1040px){.side{grid-template-columns:1fr}}
+h2{font-size:12px;letter-spacing:.09em;text-transform:uppercase;color:var(--faint);
+  font-family:var(--mono);font-weight:400;margin:0 0 9px}
+
+.dock{background:var(--dock);border:1px solid var(--line);border-radius:11px;overflow:hidden;padding:11px}
+.chromebar{display:flex;align-items:baseline;gap:9px;padding:0 2px 8px}
+.chromebar .nm{font-size:13px;font-weight:800;letter-spacing:.03em}
+.chromebar .rl{font-size:9.4px;letter-spacing:.09em;text-transform:uppercase;color:var(--faint);font-family:var(--mono)}
+.chromebar .x{margin-left:auto;color:var(--faint);font-family:var(--mono);font-size:12px}
+.plate{background:var(--pbody);border:1px solid var(--tile);border-left:4px solid var(--cv);
+  border-radius:10px;padding:0 0 12px}
+
+.extbody{padding:12px 14px 4px}
+.reel{position:relative}
+.wave{position:relative;height:82px;border-radius:4px;border:1px solid #1a1f2a;background:#0a0c10;overflow:hidden}
+/* the EMPTY-tape state is DRAWN, not blank — "no tape yet" and "the body
+   failed to mount" must be different pictures */
+.emptyline{position:absolute;left:0;right:0;top:50%;height:1px;background:#232b34}
+.emptyticks{position:absolute;left:0;right:0;top:50%;transform:translateY(-50%);height:9px;
+  background:repeating-linear-gradient(90deg,#1c232b 0 1px,transparent 1px 22px)}
+.loopwin{position:absolute;top:0;bottom:0;left:0;right:0;
+  border-left:2px solid var(--loop);border-right:2px solid var(--loop)}
+.mk{position:absolute;top:2px;width:9px;height:9px;background:var(--loop);border-radius:1px}
+.mk.s{left:-5px} .mk.e{right:-5px}
+.ph{position:absolute;top:0;bottom:0;left:0;width:1px;background:#5b6673}
+.screenbtn{position:absolute;right:4px;bottom:4px;font-family:var(--mono);font-size:8.6px;
+  letter-spacing:.06em;padding:3px 9px;border:1px solid #3a4a5a;border-radius:2px;
+  background:rgba(5,6,8,.72);color:var(--ink);z-index:2}
+.collapsed{position:relative;min-height:0;display:flex;justify-content:flex-end;padding-bottom:2px}
+.collapsed .screenbtn{position:static;background:#151b22}
+.reelcap{display:flex;align-items:center;gap:9px;padding:6px 2px 0}
+.reelcap .rn{font-family:var(--mono);font-size:8.2px;letter-spacing:.13em;text-transform:uppercase;color:var(--faint)}
+.leds{display:flex;gap:5px;margin-left:auto}
+.led{width:8px;height:8px;border-radius:50%;background:#1d232b;border:1px solid #2f3843}
+
+.rail{display:flex;gap:4px;padding:10px 14px 0;flex-wrap:wrap;border-top:1px solid var(--line);margin-top:10px}
+.tab{font-family:var(--mono);font-size:8.2px;letter-spacing:.07em;text-transform:uppercase;
+  padding:5px 9px;border:1px solid #2a3038;border-bottom-color:transparent;border-radius:5px 5px 0 0;
+  background:#161b21;color:var(--faint)}
+.tab.on{background:var(--pbody);border-color:#3f4a57;color:var(--accent)}
+.tab.mix{margin-left:6px}
+.bands{padding:10px 14px 0;border-top:1px solid #3f4a57;margin-top:-1px}
+.row{display:flex;flex-wrap:wrap;align-items:flex-start;gap:12px 18px}
+.cluster{display:flex;flex-direction:column;gap:5px}
+.clab{font-family:var(--mono);font-size:7.6px;letter-spacing:.13em;text-transform:uppercase;color:var(--faint)}
+.crow{display:flex;gap:12px;align-items:flex-start}
+.k{width:50px;display:flex;flex-direction:column;align-items:center;gap:5px}
+.k i{--a:0deg;display:block;width:34px;height:34px;border-radius:50%;position:relative;
+  background:radial-gradient(circle at 38% 32%,#2b323b,#171c22 70%);border:1px solid #3a4048}
+.k i::after{content:"";position:absolute;left:50%;top:50%;width:2px;height:13px;background:var(--cv);
+  border-radius:1px;transform-origin:50% 100%;transform:translate(-50%,-100%) rotate(var(--a));
+  box-shadow:0 0 5px rgba(125,211,252,.55)}
+.k b{font-size:7.8px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--dim);
+  font-family:var(--mono);text-align:center}
+.seg{display:flex;flex-direction:column;gap:4px}
+.seg .cap{font-size:7.8px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--dim);font-family:var(--mono)}
+.segbtns{display:flex;border:1px solid #3a4048;border-radius:6px;overflow:hidden}
+.segbtns b{font-family:var(--mono);font-size:8.6px;font-weight:400;letter-spacing:.06em;
+  padding:6px 9px;background:#1b2027;color:var(--faint);border-right:1px solid #2a3038}
+.segbtns b:last-child{border-right:0}
+.segbtns b.on{background:#2a3340;color:var(--accent)}
+
+.card{border:1px solid var(--line);background:#101419;border-radius:9px;padding:12px 14px;margin-top:14px}
+.card h3{margin:0 0 7px;font-size:10px;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--accent);font-family:var(--mono);font-weight:700}
+.card p{margin:0 0 8px;font-size:12px;color:var(--dim)} .card p:last-child{margin-bottom:0}
+.card b{color:var(--ink)}
+table{border-collapse:collapse;width:100%;font-size:11px;margin:2px 0 0}
+th,td{text-align:left;padding:4px 7px 4px 0;border-bottom:1px solid #1e242c;vertical-align:top;color:var(--dim)}
+th{color:var(--faint);font-family:var(--mono);font-size:8.6px;letter-spacing:.09em;text-transform:uppercase;font-weight:400}
+td b{color:var(--ink)}
+.no{color:var(--bad)}
+</style>
+<div class="wrap">
+
+<h1>TWOTRACKS — reel B · TONE, and SCREEN OFF</h1>
+<p class="sub">
+  <b>SPEC AND MOCKUP ONLY. Nothing here is implemented.</b> Reel B is empty, and its empty state is
+  <b>drawn rather than blank</b> — "no tape yet" and "the body failed to mount" must be different
+  pictures. Beside it, the same plate with the SCREEN toggled off.
+</p>
+
+<div class="nav">
+  <a href="dock-tabs.html">1 · reel A · TAPE</a>
+  <a class="on" href="dock-reel-b.html">2 · reel B · TONE</a>
+  <a href="spec.md">spec.md</a>
+</div>
+
+<div class="side">
+
+<div>
+  <h2>SCREEN ON — the empty reel, drawn</h2>
+  <div class="dock">
+    <div class="chromebar">
+      <span class="nm">twotracks</span><span class="rl">dock · full view</span><span class="x">✕</span>
+    </div>
+    <div class="plate">
+      <div class="extbody">
+        <div class="reel">
+          <div class="wave">
+            <span class="emptyticks"></span>
+            <span class="emptyline"></span>
+            <span class="loopwin"><i class="mk s"></i><i class="mk e"></i></span>
+            <span class="ph"></span>
+            <span class="screenbtn">SCREEN ON</span>
+          </div>
+          <div class="reelcap">
+            <span class="rn">reel b</span>
+            <span class="leds"><i class="led"></i><i class="led"></i><i class="led"></i><i class="led"></i></span>
+          </div>
+        </div>
+      </div>
+
+      <div class="rail">
+        <span class="tab">A·TRANS</span><span class="tab">A·TAPE</span><span class="tab">A·TONE</span>
+        <span class="tab">B·TRANS</span><span class="tab">B·TAPE</span><span class="tab on">B·TONE</span>
+        <span class="tab mix">MIX</span>
+      </div>
+
+      <div class="bands">
+        <div class="row">
+          <span class="cluster">
+            <span class="clab">eq</span>
+            <span class="crow">
+              <span class="k"><i style="--a:0deg"></i><b>Low</b></span>
+              <span class="k"><i style="--a:0deg"></i><b>Mid</b></span>
+              <span class="k"><i style="--a:0deg"></i><b>Hi</b></span>
+            </span>
+          </span>
+          <span class="cluster">
+            <span class="clab">filter</span>
+            <span class="crow">
+              <span class="seg">
+                <span class="cap">Mode</span>
+                <span class="segbtns"><b class="on">OFF</b><b>LP</b><b>HP</b><b>BP</b></span>
+              </span>
+              <span class="k"><i style="--a:135deg"></i><b>Cutoff</b></span>
+              <span class="k"><i style="--a:-135deg"></i><b>Reso</b></span>
+            </span>
+          </span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div>
+  <h2>SCREEN OFF — the vertical space reclaimed</h2>
+  <div class="dock">
+    <div class="chromebar">
+      <span class="nm">twotracks</span><span class="rl">dock · full view</span><span class="x">✕</span>
+    </div>
+    <div class="plate">
+      <div class="extbody">
+        <div class="collapsed"><span class="screenbtn">SCREEN OFF</span></div>
+      </div>
+
+      <div class="rail">
+        <span class="tab">A·TRANS</span><span class="tab">A·TAPE</span><span class="tab">A·TONE</span>
+        <span class="tab">B·TRANS</span><span class="tab">B·TAPE</span><span class="tab on">B·TONE</span>
+        <span class="tab mix">MIX</span>
+      </div>
+
+      <div class="bands">
+        <div class="row">
+          <span class="cluster">
+            <span class="clab">eq</span>
+            <span class="crow">
+              <span class="k"><i style="--a:0deg"></i><b>Low</b></span>
+              <span class="k"><i style="--a:0deg"></i><b>Mid</b></span>
+              <span class="k"><i style="--a:0deg"></i><b>Hi</b></span>
+            </span>
+          </span>
+          <span class="cluster">
+            <span class="clab">filter</span>
+            <span class="crow">
+              <span class="seg">
+                <span class="cap">Mode</span>
+                <span class="segbtns"><b class="on">OFF</b><b>LP</b><b>HP</b><b>BP</b></span>
+              </span>
+              <span class="k"><i style="--a:135deg"></i><b>Cutoff</b></span>
+              <span class="k"><i style="--a:-135deg"></i><b>Reso</b></span>
+            </span>
+          </span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="ok">
+    <b>The module KEEPS RENDERING while OFF.</b> Never tear the producer down — the #1720 / #1721
+    bug class. And the state lives on <code>node.data</code> under the fleet-standard
+    <code>previewCollapsed</code> key, <b>reused verbatim</b> so racks saved before the promotion
+    do not silently re-open, and never in component <code>$state</code> (the #1531 / #1574 / #1583
+    unmount class). On a seven-tab face, <b>persisting across tab switches is the whole point.</b>
+  </div>
+</div>
+
+</div>
+
+<div class="warn">
+  <b>twotracks is on the "yes" side of the SCREEN ruling, and audioOut and kria are not.</b>
+  <code>dockscope</code> / <code>spectrograph</code> / <code>samsloop</code> refuse a toggle because
+  the picture IS the module. Here the picture is a <b>preview beside a large control set</b>: with
+  it collapsed you still have transport, rate, echoes, EQ, filter and the mix — a complete, usable
+  tape machine. On the wave's tallest face that reclaimed space is worth real screen.
+  ⚠ <b>And no gate sees the switch</b> — <code>video-face-screen-source.test.ts</code> sweeps
+  <code>listVideoModuleDefs() ∩ STRICT_FACES</code> and this is an audio def, so deleting it
+  tomorrow goes green. It is asserted at SOURCE instead, with an ORDER assertion that the collapse
+  skips the PAINT and never the peak read.
+</div>
+
+<div class="card">
+  <h3>the FILTER MODE control is a downgrade the face fixes</h3>
+  <p>The card exposes <code>filterMode_a</code> as a button that increments modulo 4
+    (<code>TwotracksCard.svelte:257</code>). <b>To reach mode 1 from mode 3 you press it twice and
+    watch what happens.</b> The four modes have no names anywhere the user can see.</p>
+  <p>The names exist <b>in prose only</b>: <code>twotracks.ts:317</code> builds
+    <i>"off / low-pass / high-pass / band-pass"</i>, and <code>defaultValue: 0</code> means
+    <b>the filter ships OFF</b> — which is what the segmented control above shows.</p>
+  <p>⚠ <b>Two records of that roster already disagree.</b> The file header at
+    <code>:18-19</code> calls it an <i>"HP/LP/BP filter"</i> — three modes, wrong order, no
+    <code>off</code>. Neither prose record is the source, which is exactly how they drifted.</p>
+  <p>On the face it is a <b>segmented control over a declared roster</b> — one press, direct
+    addressing, mode names visible. ⚠ <b>The def declares no <code>options</code> today</b>
+    (measured: zero occurrences in <code>twotracks.ts</code>), so adding them is part of this PR,
+    and the cell <b>imports the exported symbol</b> rather than re-typing four strings.</p>
+  <p>⚠ And note what that changes: an <code>options</code> roster makes the shell render the param
+    as segmented <b>automatically</b> — no <code>paramCells</code> declaration — and it makes the
+    option NAMES paintable, which is the one derived-text shape the ruling permits (a name
+    disambiguates otherwise-identical positions; a number restates the dial).</p>
+</div>
+
+<div class="card">
+  <h3>the description a user reads is three phases stale</h3>
+  <table>
+    <tr><th></th><th>says</th><th>ships</th></tr>
+    <tr><td><b>reel B</b></td><td class="no">"Phase 2 adds reel B"</td><td>every <code>*_b</code> param</td></tr>
+    <tr><td><b>EQ + filter</b></td><td class="no">"Phase 2 adds EQ, and filter"</td><td><code>eqLow/Mid/High</code>, <code>filterMode</code>, <code>cutoff</code>, <code>reso</code></td></tr>
+    <tr><td><b>lofi</b></td><td class="no">"Phase 3 adds Lofi saturation"</td><td><code>lofi</code>, 0..3 discrete</td></tr>
+    <tr><td><b>CV ins</b></td><td class="no">"Phase 4 adds CV ins"</td><td><code>rate_cv_a</code>, <code>rate_cv_b</code></td></tr>
+    <tr><td><b>DECAY knob</b></td><td class="no">"0.50–0.90× per loop"</td><td class="no">no such param — it is <code>echoes</code>, 1..5</td></tr>
+  </table>
+  <p style="margin-top:9px">Source: <code>module-manifest.ts:429</code> against
+    <code>twotracks.ts:216-288</code>. <b>The card's own header says "Phase 4"</b>
+    (<code>TwotracksCard.svelte:2</code>), and the file header at <code>twotracks.ts:8</code> lists
+    a <code>decay_a</code> param that occurs <b>nowhere else in the tree</b>.</p>
+  <p>The docs gate checks presence and quality, <b>not truth</b> — the same class as wave 2's
+    <code>scope</code> header.</p>
+</div>
+
+<div class="bad">
+  <b>THE LANE PICTURE IS REFUSED, AND NOTHING STOPS AN AUTHOR FROM CHOOSING OTHERWISE.</b>
+  <code>out_l</code> is <code>type: 'audio'</code>, so <code>glyphBinding</code> short-circuits to
+  <code>&#123; kind: 'live-audio', portId: 'out_l' &#125;</code>. The binding is LIVE, the dead-glyph
+  clause is green, and <b>nothing reddens</b> — <code>scope</code>'s trap class.
+  Unlike <code>scope</code>'s, the trace here would not be a <i>lie</i>; it is refused because
+  <b>a stopped tape, an empty tape and a monitored silence are the same flat picture</b>, and the
+  thing a player wants at a glance — is there tape, where is the playhead — is in none of them.
+  <code>twotracks-face-model.test.ts</code> asserts both halves as a <b>permanent negative leg</b>,
+  so a future author who adds a literal fails a test rather than merely disagreeing with a document.
+</div>
+
+</div>

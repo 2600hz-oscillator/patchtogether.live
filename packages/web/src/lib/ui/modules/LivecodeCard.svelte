@@ -20,9 +20,25 @@
   import { type NodeProps } from '@xyflow/svelte';
   import { captureFlowStore } from './card-kit';
   import { createDebouncedCommit } from './debounced-commit';
-  import { patch, ydoc, LOCAL_ORIGIN } from '$lib/graph/store';
-  import { run, type RunResult } from '$lib/livecode/runtime';
-  import { applyMutations } from '$lib/livecode/apply';
+  import { patch } from '$lib/graph/store';
+  import { nodeVersion } from '$lib/graph/node-versions.svelte';
+  // ⚠ THE EVALUATION IS NOT IN THIS FILE ANY MORE, and that is what made the
+  // faceplate promotion possible at all. `livecodeDef.factory` is a no-op handle,
+  // so `runScript()` here used to be everything the module did — and
+  // `migrated(type)` stops BOTH surfaces rendering a promoted module's card. The
+  // run now lives in `./livecode-cell-actions`, which the ranked RUN cell, the
+  // faceplate body and this card all call: three callers, one implementation, so
+  // the two surfaces cannot disagree about what Run does.
+  import {
+    LIVECODE_DEFAULT_WIDTH,
+    commitLivecodeText,
+    livecodeRunDetail,
+    livecodeRunRecord,
+    livecodeStoredText,
+    registerLivecodeEditor,
+    runLivecodeNode,
+    type LivecodeRunRecord,
+  } from './livecode-cell-actions';
   import { makeEditor, type EditorHandle } from '$lib/livecode/editor';
   import { makeCompletionSource } from '$lib/livecode/completions';
   import { makeLinter } from '$lib/livecode/diagnostics';
@@ -32,6 +48,15 @@
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
+
+  // ⚠ EVERY `node.data` DERIVATION BELOW IS KEYED ON THIS, and it is a fix
+  // rather than ceremony. `patch.nodes[id]` is a Yjs proxy whose IDENTITY never
+  // changes, so a `$derived` that reads through it recomputes NEVER: the graph
+  // updates and the view silently shows the value it had at mount. Nothing
+  // throws and nothing logs — and a test that reads `node.data` PASSES on it,
+  // because the write really did land. `nodeVersion(id)` is the node's own Y.Doc
+  // revision, which is a value that actually changes.
+  let dataVersion = $derived(nodeVersion(id));
 
   // Guarded: the dock full-view plain-mounts this card OUTSIDE the
   // SvelteFlow provider, where a bare useStore() throws and killed the
@@ -43,17 +68,24 @@
   // Rounded to whole-u (180px) rack tiles (#759) so default + min land on the
   // grid; this card is user-resizable so the rack CSS doesn't clamp it. Body is
   // responsive (bodyHeight = cardHeight − header − footer) so it stays usable.
-  const DEFAULT_WIDTH = 540;
+  // ⚠ THE DEFAULT WIDTH IS IMPORTED, NEVER RE-TYPED. It is also the SPAWN
+  // GEOMETRY — a script's new modules are laid out `width + 60` to the right of
+  // this one — and that arithmetic now lives beside the run in
+  // `./livecode-cell-actions`. Two copies would mean a saved rack's spawns
+  // landing in different places depending on which surface pressed Run.
+  const DEFAULT_WIDTH = LIVECODE_DEFAULT_WIDTH;
   const DEFAULT_HEIGHT = 360;
   const MIN_WIDTH = 360;
   const MIN_HEIGHT = 360;
 
-  let cardWidth = $derived<number>(
-    (node?.data?.width as number | undefined) ?? DEFAULT_WIDTH,
-  );
-  let cardHeight = $derived<number>(
-    (node?.data?.height as number | undefined) ?? DEFAULT_HEIGHT,
-  );
+  let cardWidth = $derived.by<number>(() => {
+    void dataVersion;
+    return (node?.data?.width as number | undefined) ?? DEFAULT_WIDTH;
+  });
+  let cardHeight = $derived.by<number>(() => {
+    void dataVersion;
+    return (node?.data?.height as number | undefined) ?? DEFAULT_HEIGHT;
+  });
   let resizing = $state(false);
   let resizeAbort: AbortController | null = null;
 
@@ -89,32 +121,36 @@
   }
 
   // ───── Editor state ──────────────────────────────────────────────
-  let storedText = $derived<string>((node?.data?.text as string | undefined) ?? '');
+  let storedText = $derived.by<string>(() => {
+    void dataVersion;
+    return livecodeStoredText(node);
+  });
   let editorEl: HTMLDivElement | null = $state(null);
   let editor: EditorHandle | null = null;
   const COMMIT_DEBOUNCE_MS = 250;
 
-  function commitDraft(value: string) {
-    const target = patch.nodes[id];
-    if (!target) return;
-    if ((target.data?.text as string | undefined) === value) return;
-    ydoc.transact(() => {
-      const t = patch.nodes[id];
-      if (!t) return;
-      if (!t.data) t.data = {};
-      t.data.text = value;
-    }, LOCAL_ORIGIN);
-  }
-
   // #1583: the debounce FLUSHES on unmount instead of dropping its pending value.
-  // `commitDraft` is the only writer of node.data.text, and onDestroy used to
-  // `clearTimeout` the pending commit — so typing and then collapsing (or being
+  // `commitLivecodeText` is the only writer of node.data.text, and onDestroy used
+  // to `clearTimeout` the pending commit — so typing and then collapsing (or being
   // LRU-evicted when a third module is expanded) within COMMIT_DEBOUNCE_ms silently discarded
   // the edit. createDebouncedCommit exposes no `cancel`, so that is now unwritable.
-  const draft = createDebouncedCommit<string>(commitDraft, COMMIT_DEBOUNCE_MS);
+  const draft = createDebouncedCommit<string>(
+    (value) => commitLivecodeText(id, value),
+    COMMIT_DEBOUNCE_MS,
+  );
   function scheduleCommit(value: string) {
     draft.schedule(value);
   }
+
+  /** What RUN reads — flush anything pending, then hand back the live buffer.
+   *  Published node-keyed so the shared action gets the text the player can SEE
+   *  rather than one up to 250 ms old. */
+  function flushToText(): string {
+    draft.flush();
+    return editor ? editor.view.state.doc.toString() : storedText;
+  }
+
+  let releaseEditor: (() => void) | null = null;
 
   onMount(() => {
     if (!editorEl) return;
@@ -132,6 +168,7 @@
         liveEdges: patch.edges,
       })),
     });
+    releaseEditor = registerLivecodeEditor(id, flushToText);
   });
 
   // Sync remote → editor (Yjs update from a collaborator).
@@ -145,35 +182,28 @@
     // FLUSH, never clearTimeout: a card unmount is a VIEW event (collapse / LRU
     // evict), not a signal that the user abandoned the edit (#1583).
     draft.flush();
+    releaseEditor?.();
+    releaseEditor = null;
     editor?.destroy();
     editor = null;
   });
 
   // ───── Run state ─────────────────────────────────────────────────
-  let lastResult = $state<RunResult | null>(null);
+  //
+  // ⚠ IT LIVES ON THE NODE NOW, NOT IN `$state`. The card kept `lastResult` in
+  // component state, so collapsing this card — or being LRU-evicted when a third
+  // module is expanded — silently discarded the log and the error you were
+  // reading, with no user action against them (the #1531 / #1574 / #1583 class).
+  // `runLivecodeNode` writes the outcome to `node.data.lastRun`, so it survives a
+  // remount and a reload, and it is what the ranked RUN cell's `data` probe
+  // watches.
+  let lastResult = $derived.by<LivecodeRunRecord | null>(() => {
+    void dataVersion;
+    return livecodeRunRecord(node);
+  });
 
   function runScript() {
-    // Flush any pending edits (same seam as unmount — see debounced-commit).
-    draft.flush();
-    if (editor) commitDraft(editor.view.state.doc.toString());
-
-    const src = editor ? editor.view.state.doc.toString() : storedText;
-    const result = run({
-      src,
-      liveNodes: patch.nodes,
-      liveEdges: patch.edges,
-      spawnOrigin: {
-        x: (node?.position?.x ?? 0) + cardWidth + 60,
-        y: node?.position?.y ?? 0,
-      },
-      ownerNodeId: id,
-    });
-    lastResult = result;
-    if (result.mutations.length === 0) return;
-    // Apply mutations transactionally — both success + partial-failure
-    // (the runtime may have emitted some mutations before throwing,
-    // and the user may want them applied).
-    ydoc.transact(() => applyMutations(result.mutations), LOCAL_ORIGIN);
+    runLivecodeNode(id);
   }
 
   // ───── Sizing ────────────────────────────────────────────────────
@@ -183,20 +213,14 @@
   let outputHeight = $derived(Math.round(Math.max(80, bodyHeight * 0.28)));
   let editorHeight = $derived(Math.max(80, bodyHeight - outputHeight - 44));
 
-  let statusText = $derived.by(() => {
-    if (!lastResult) return 'Type a script and press Run';
-    if (lastResult.ok) {
-      const m = lastResult.mutations;
-      return `OK — ${m.length} mutation${m.length === 1 ? '' : 's'} applied`;
-    }
-    return `${lastResult.error.line}:${lastResult.error.col}: ${lastResult.error.message}`;
-  });
+  // The card's own status line. It keeps its resting instruction: the 2026-08-19
+  // resting-text rulings are about FACEPLATES, and the legacy cards are untouched.
+  // The FACE says the same things through `StatusLed.detail` instead.
+  let statusText = $derived(
+    lastResult ? livecodeRunDetail(lastResult) : 'Type a script and press Run',
+  );
 
-  let logLines = $derived.by<string[]>(() => {
-    if (!lastResult) return [];
-    const lines = lastResult.ok ? lastResult.log : lastResult.partialLog;
-    return lines.map((l) => l.message);
-  });
+  let logLines = $derived<string[]>(lastResult?.log ?? []);
 
   // Dev-only test hook — same shape as the v1 card so existing E2E
   // tests that drive runScript via __livecode.<id>.run() keep working.

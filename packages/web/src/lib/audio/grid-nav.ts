@@ -1,7 +1,8 @@
 // packages/web/src/lib/audio/grid-nav.ts
 //
 // Pure 2D-grid focus resolver shared by sequencer-family cards
-// (SequencerCard, CartesianCard, DrumseqzCard, PolyseqzCard).
+// (CartesianCard, KriaCard — the surviving grid cards; was also the
+// sequencer family until its deletion 2026-08-24).
 //
 // Each cell has one or more vertically stacked focusable controls ("roles").
 // The roles within a cell form consecutive conceptual rows; cells then stack
@@ -9,7 +10,7 @@
 // with R roles per cell, the conceptual keyboard grid is `cellRows * R` rows
 // by `cols` columns.
 //
-// Sequencer / Cartesian / DRUMSEQZ use the legacy 2-role pair
+// Cartesian uses the legacy 2-role pair
 // ['gate', 'pitch'] (gate on top, pitch below). POLYSEQZ uses 5 roles:
 // ['gate', 'pitch', 'quality', 'inversion', 'voicing'] — matching its
 // per-step vertical layout.

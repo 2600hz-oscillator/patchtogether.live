@@ -31,7 +31,7 @@
 // pitchPort / params) and the test passes automatically.
 
 import { test, expect } from '@playwright/test';
-import { spawnPatch, type SpawnNode, type SpawnEdge } from './_helpers';
+import { spawnPatch, type SpawnNode, type SpawnEdge, seedKriaWith, buildKriaMidiData } from './_helpers';
 import { runFor, readScopePeakOverWindow } from './_module-coverage-helpers';
 import { REGISTRY } from './_registry';
 import { driverFor } from './_drivers';
@@ -58,6 +58,12 @@ const SKIP_OUTPUT_ALIVE: Record<string, string> = {
   // MIDI-CV-BUDDY / MIDICLOCK — depend on connected MIDI device.
   midiCvBuddy: 'requires MIDI device; covered by midi-cv-buddy.spec.ts',
   midiclock: 'requires MIDI device; covered by midiclock.spec.ts',
+  // VST INSTRUMENT — its audio IS a mounted AU plugin's render via the
+  // vst-bridge helper (absent in CI); a bare spawn emits nothing by design.
+  // The REAL chain (POLYSEQZ → card → audible RMS, with the helper mocked at
+  // the WebSocket seam and only the plugin faked) is exercised in
+  // vst-bridge.spec.ts + vst-lane-autowire.spec.ts.
+  vstInstrument: 'audio comes from the vst-bridge helper (absent in CI); covered by vst-bridge.spec.ts + vst-lane-autowire.spec.ts',
   // AUDIO IN — captures live microphone input; no real audio device in CI.
   audioIn: 'requires live mic input; no audio device in CI',
   // SCOPE — itself the canonical receiver. Wiring it into another
@@ -270,14 +276,14 @@ test.describe('per-module: output-alive smoke', () => {
         // 800ms test window so transient envelopes don't fool us.
         nodes.unshift({
           id: 'seq',
-          type: 'sequencer',
+          type: 'kria',
           position: { x: 60, y: 280 },
-          params: { bpm: 240, length: 4, isPlaying: 1, gateLength: 0.5 },
+          params: { bpm: 240, running: 1 },
         });
         if (driver.gatePort) {
           edges.unshift({
             id: 'e_seq_g',
-            from: { nodeId: 'seq', portId: 'gate' },
+            from: { nodeId: 'seq', portId: 'gate1' },
             to: { nodeId: 'sut', portId: driver.gatePort },
             sourceType: 'gate',
             targetType: 'gate',
@@ -286,7 +292,7 @@ test.describe('per-module: output-alive smoke', () => {
         if (driver.pitchPort) {
           edges.unshift({
             id: 'e_seq_p',
-            from: { nodeId: 'seq', portId: 'pitch' },
+            from: { nodeId: 'seq', portId: 'pitch1' },
             to: { nodeId: 'sut', portId: driver.pitchPort },
             sourceType: 'pitch',
             targetType: 'cv',
@@ -297,24 +303,8 @@ test.describe('per-module: output-alive smoke', () => {
       await spawnPatch(page, nodes, edges);
 
       if (driver.gatePort || driver.pitchPort) {
-        // Seed audible sequencer steps so gate/pitch fires repeatedly.
-        await page.evaluate(() => {
-          const w = globalThis as unknown as {
-            __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
-            __ydoc: { transact: (fn: () => void) => void };
-          };
-          w.__ydoc.transact(() => {
-            const seq = w.__patch.nodes['seq'];
-            if (!seq) return;
-            if (!seq.data) seq.data = {};
-            seq.data.steps = [
-              { on: true, midi: 60 },
-              { on: true, midi: 64 },
-              { on: true, midi: 67 },
-              { on: true, midi: 72 },
-            ];
-          });
-        });
+        // Seed an audible kria pattern so gate/pitch fires repeatedly.
+        await seedKriaWith(page, 'seq', buildKriaMidiData([60, 64, 67, 72], { duration: 0.5 }));
       }
 
       // DOOM-specific: click the load overlay to kick the WASM + WAD

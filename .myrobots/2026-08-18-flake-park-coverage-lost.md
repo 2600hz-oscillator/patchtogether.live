@@ -112,6 +112,30 @@ This is the class the poly/MIDI rule exists for. The standing finding is that en
 
 ---
 
+## Later additions
+
+### 2026-08-22 — `quadralogical-face-screen.spec.ts` (both legs), parked on #2120
+
+⚠ **This one is NOT the recovered-on-retry shape the census above records, and the difference is the whole point of the entry.** Both legs failed **both attempts**, at the **full 90 s** `SLOW_BOOT_TEST_TIMEOUT_MS`, inside `page.evaluate` in `sampleQuadrants`. Nothing here is nondeterministic — it is **under-budgeting**, and it has two distinct causes that need two distinct fixes.
+
+**The test is already written correctly.** Its in-page loop counts **240 frames** via rAF rather than wall-clock, which is exactly what the frames-not-milliseconds standard asks for. What does not scale is the per-test **bound**: `SLOW_BOOT_TEST_TIMEOUT_MS` is a flat 90 s sized for **boot**, while this spec spends a boot *and* a 240-frame sample. At the measured 7.9 fps under SwiftShader that sample alone is ~30 s.
+
+**Why it surfaced now:** batch-22 G3 added four scenes, the packer re-packed the shards, and these two legs landed on a hot one — the load-sensitivity class of #2096/#2114, where the neighbours change and the timing changes with them. It is a defect in neither the faces nor these tests' logic.
+
+**Three fixes, none substituting for another:**
+
+| what | treats | status |
+|---|---|---|
+| this park | the **symptom** — unblocks G3 today | done |
+| the `PENDING_FIRST_MEASUREMENT` cost notes | the **packer** — the file rides the ~21 s median while its nearest sibling measures **77 s** on CI | done, in `e2e-shard-plan.mjs` |
+| the fleet timeout default | the **class** — every spec that samples frames against a boot-sized bound | ⏳ owner's option-B call |
+
+⚠ **Merging #2110's timings refresh would NOT fix this**, which is the natural wrong assumption: its source run predates quadralogical entirely.
+
+**What we lose meanwhile.** The generic screen coverage (toggle reachable / collapse / reclaim) is superseded imminently by the fleet `SUBJECTS` table in the consolidation PR, so that part is a short overlap rather than a hole. **The real temporary loss is the bespoke one: that each quadrant carries ITS OWN input, under its own corner label** — quadrant-to-input *mapping*, proven by probing four pixels of the face's own canvas. No fleet sweep covers that; a wiring transposition that fed the top-right quadrant from input 3 would now ship unobserved. It returns when the timeout default lands.
+
+---
+
 ## ⚠ DOOM is excluded by name and untouched
 
 Three DOOM tests appear in the raw flaky data and **none of them was modified**:
@@ -122,7 +146,7 @@ Three DOOM tests appear in the raw flaky data and **none of them was modified**:
 | `doom-late-join.spec.ts` | B joins mid-level → hot-drops into the current map as active player 1 | 1 |
 | `doom-mp-real.spec.ts` | owner hosts + launches MP as P1, guest one-click hot-joins as P2 | 1 |
 
-The reason is the standing owner ruling — *"do not fuck with doom in any way without specific approval"* — and it is mechanical, not preference. `video/modules/doom.ts` calls `runtime.runTic()` inside `surface.draw`, and `runTic` runs exactly one `dgpt_tick`, so **DOOM's game clock IS the frame clock: one rendered frame = one game tic.** Anything that changes DOOM's timing re-specifies how far the marine walks, in a suite that then asserts on where he ended up. The owner has reserved these three for their own decision.
+The reason is the standing owner ruling — *"do not [touch] doom in any way without specific approval"* — and it is mechanical, not preference. `video/modules/doom.ts` calls `runtime.runTic()` inside `surface.draw`, and `runTic` runs exactly one `dgpt_tick`, so **DOOM's game clock IS the frame clock: one rendered frame = one game tic.** Anything that changes DOOM's timing re-specifies how far the marine walks, in a suite that then asserts on where he ended up. The owner has reserved these three for their own decision.
 
 No DOOM file, spec, wait or timing is touched by this campaign.
 
@@ -156,3 +180,24 @@ Two things make that concrete:
 - **`illogic-face.spec.ts` is the one candidate that may already be fixed.** It is in the parked set because it flaked inside the census window, but the temporal analysis used it as the positive control: after #1834 landed on 08-18 it recorded **zero** flaky observations, while the same method showed #1646 and #1757 did not hold for their specs. That control is what makes the "did not hold" verdicts on the other two credible. If a root cause is wanted for a first un-park, #1834 is already written down.
 
 One implementation note for whoever comes back: the loop-generated cases are parked **per subject** through a named map (`FLAKE_PARK_1847`, and the existing `QUARANTINE` map in `modules.spec.ts`). The shared assertion body still runs for every subject NOT in the map, the rendered title is identical to the live one, and un-parking is a one-entry deletion.
+
+---
+
+## Addendum, 2026-08-23 — the first ART park, and it is already PAID
+
+**`art/scenarios/wavetable-vco/cv-path.test.ts :: "ENABLER — …"`** was parked for
+part of one day and is now **UN-PARKED**, because it was never a flake: it was
+correctly detecting a real defect, and the defect is fixed.
+
+The factory shipped the wavetable to the worklet with an un-acked
+`port.postMessage`, and the processor emits `out.fill(0)` — silence — until a
+table arrives. Nothing sequenced that against rendering, so an
+`OfflineAudioContext` could render silence. The table now arrives via
+`processorOptions`, which reaches the processor constructor before its first
+`process()` call.
+
+⚠ **The assertion was never weakened**, which was the entire point of parking
+rather than relaxing it. Left here rather than deleted because the one-day round
+trip is the useful record: *a test that is "correctly detecting a real defect" is
+parked against the FIX, not against itself* — and the fix is the thing that
+retires the entry.

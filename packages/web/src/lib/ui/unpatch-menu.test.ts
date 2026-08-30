@@ -135,6 +135,48 @@ describe('buildUnpatchPlan — the patch-point menu model', () => {
     ]);
   });
 
+  it('a RENAMED remote is listed by its rename; un-renamed siblings keep their #N (#2264)', () => {
+    // Same fan-out as above, with vca-1 renamed. The menu line shows the
+    // user's name verbatim (moduleDisplayName is shared with every other
+    // patch surface); vca-2's numbering is untouched by its sibling's rename.
+    const nodes = {
+      ...NODES,
+      'vca-1': { ...node('vca-1', 'vca'), data: { name: 'feedback' } } as ModuleNode,
+      // A reserved auto-default (what migrateAssignNames writes) is NOT a
+      // rename — mixmstrs keeps its type label.
+      'pinned-mixmstrs': { ...node('pinned-mixmstrs', 'mixmstrs'), data: { name: 'MIXMSTRS' } } as ModuleNode,
+    };
+    const edges = {
+      'e-c': edge('e-c', ['strum-1', 'out'], ['vca-2', 'audio']),
+      'e-a': edge('e-a', ['strum-1', 'out'], ['pinned-mixmstrs', 'ch1']),
+      'e-b': edge('e-b', ['strum-1', 'out'], ['vca-1', 'audio']),
+    };
+    const plan = buildUnpatchPlan(edges, nodes, defLookup, {
+      nodeId: 'strum-1',
+      portId: 'out',
+      direction: 'output',
+    });
+    expect(plan.items.map((i) => i.remote)).toEqual([
+      'MIXMSTRS CH1',
+      'feedback AUDIO',
+      'VCA #2 AUDIO',
+    ]);
+  });
+
+  it('a RENAMED target names the menu TITLE by its rename (#2264)', () => {
+    const nodes = {
+      ...NODES,
+      'strum-1': { ...node('strum-1', 'sixstrum'), data: { name: 'lead_gtr' } } as ModuleNode,
+    };
+    const edges = { e1: edge('e1', ['strum-1', 'out'], ['pinned-mixmstrs', 'ch1']) };
+    const plan = buildUnpatchPlan(edges, nodes, defLookup, {
+      nodeId: 'strum-1',
+      portId: 'out',
+      direction: 'output',
+    });
+    expect(plan.title).toBe('lead_gtr OUT');
+  });
+
   it('a duplicate cable on ONE input is individually removable (no assumed 1:1)', () => {
     const edges = {
       e1: edge('e1', ['pinned-clipplayer', 'pitch1'], ['strum-1', 'poly']),

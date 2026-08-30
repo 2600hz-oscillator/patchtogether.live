@@ -84,7 +84,7 @@ export interface CreatePresentArgs {
 
 /** Resolve the video engine, or null when there is no video domain (audio-only
  *  boot) or it is missing the surface a projector needs. */
-function resolveVideoEngine(host: PresentEngineHost | null | undefined): PresentEngine | null {
+export function resolveVideoEngine(host: PresentEngineHost | null | undefined): PresentEngine | null {
   if (!host) return null;
   let ve: VideoEngine | undefined;
   try {

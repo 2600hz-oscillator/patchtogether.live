@@ -42,12 +42,84 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 /** The shard count ci.yml's `vrt-strict-shard` matrix uses. Read from the
  *  workflow rather than re-typed, so the two cannot disagree — the failure mode
  *  of a hand-copied count is that this file certifies a split CI does not run. */
+const CI_YML_SRC = readFileSync(join(ROOT, '.github/workflows/ci.yml'), 'utf8');
+
 const SHARDS = (() => {
-  const yml = readFileSync(join(ROOT, '.github/workflows/ci.yml'), 'utf8');
-  const m = /vrt-strict-shard:[\s\S]*?shard:\s*\[([0-9,\s]+)\]/.exec(yml);
+  const m = /vrt-strict-shard:[\s\S]*?shard:\s*\[([0-9,\s]+)\]/.exec(CI_YML_SRC);
   if (!m) throw new Error('could not read the vrt-strict-shard matrix out of ci.yml');
   return m[1].split(',').filter((s) => s.trim()).length;
 })();
+
+describe('the shard COUNT ci.yml passes to the planner is DERIVED, not re-typed', () => {
+  // ⚠ THIS FILE READ THE MATRIX AND STILL CERTIFIED A SPLIT CI DID NOT RUN.
+  //
+  // The count reaches the planner TWICE: once as the matrix (which SHARDS above
+  // reads) and once as argv[2] of the `vrt-shard-plan.mjs` invocation. Only the
+  // first was checked. On 2026-08-20 (#2039) the matrix went 4 → 6 and the
+  // invocation kept the literal `4`, so shards 5 and 6 ran
+  // `vrt-shard-plan.mjs 5 4` / `6 4` — out of range — and died on the planner's
+  // usage error. Every assertion in this file was green throughout, because it
+  // planned against the matrix it read while CI planned against a literal it
+  // could not see. That is the two-sided-contract blind spot in CLAUDE.md,
+  // living inside the gate written to prevent exactly this.
+  //
+  // Coverage was never at risk (shards 1-4 still formed a complete partition
+  // and the union assertion held), but two required jobs went red for a reason
+  // unrelated to any baseline.
+  const INVOCATION = /node scripts\/vrt-shard-plan\.mjs\s/;
+
+  /** ci.yml with comment lines removed. `#` is a comment in BOTH the YAML and
+   *  the run-block shell, and prose ABOUT the invocation (this file's own
+   *  `--report <N>` hint, for one) must never be mistaken for the invocation —
+   *  the same reason `ci-playwright-timeout.test.ts` strips them before
+   *  scanning for `--global-timeout`. Caught immediately: the first draft of
+   *  this gate matched a comment and reported the live, correct line as wrong. */
+  const CI_CODE = CI_YML_SRC.split('\n')
+    .filter((l) => !/^\s*#/.test(l))
+    .join('\n');
+
+  it('passes ${{ strategy.job-total }}, never a number', () => {
+    const m = INVOCATION.exec(CI_CODE);
+    expect(m, 'ci.yml no longer invokes scripts/vrt-shard-plan.mjs — this gate is looking at nothing').not.toBeNull();
+    // The count must be the derived expression. A literal here is the defect:
+    // it has to track the matrix by discipline, and it silently stopped.
+    const rest = CI_CODE.slice(m!.index, m!.index + 200);
+    expect(
+      rest,
+      'the shard COUNT argument to vrt-shard-plan.mjs must be ${{ strategy.job-total }} — ' +
+        'a literal has to track the matrix by hand, and in #2039 it did not, taking shards 5 and 6 red',
+    ).toMatch(/vrt-shard-plan\.mjs\s+\$\{\{\s*matrix\.shard\s*\}\}\s+\$\{\{\s*strategy\.job-total\s*\}\}/);
+    expect(
+      rest,
+      'a bare numeric shard count is exactly the drift that broke #2039',
+    ).not.toMatch(/vrt-shard-plan\.mjs\s+\$\{\{\s*matrix\.shard\s*\}\}\s+\d+/);
+  });
+
+  it('NEGATIVE CONTROL: the literal form this gate exists to reject is actually rejected', () => {
+    // Prove the matcher can fail, in both directions — otherwise green says
+    // nothing about whether it is looking.
+    const BAD = 'flox activate -- node scripts/vrt-shard-plan.mjs ${{ matrix.shard }} 4 \\';
+    const GOOD = 'flox activate -- node scripts/vrt-shard-plan.mjs ${{ matrix.shard }} ${{ strategy.job-total }} \\';
+    const derived = /vrt-shard-plan\.mjs\s+\$\{\{\s*matrix\.shard\s*\}\}\s+\$\{\{\s*strategy\.job-total\s*\}\}/;
+    const literal = /vrt-shard-plan\.mjs\s+\$\{\{\s*matrix\.shard\s*\}\}\s+\d+/;
+    expect(derived.test(BAD), 'the pre-#2039 line must NOT read as derived').toBe(false);
+    expect(literal.test(BAD), 'the pre-#2039 line must be caught as a literal').toBe(true);
+    expect(derived.test(GOOD)).toBe(true);
+    expect(literal.test(GOOD)).toBe(false);
+  });
+
+  it('every shard index the matrix declares is in range for that count', () => {
+    // The property the drift violated, stated directly against the matrix.
+    const m = /vrt-strict-shard:[\s\S]*?shard:\s*\[([0-9,\s]+)\]/.exec(CI_YML_SRC)!;
+    const idxs = m[1].split(',').map((s) => Number(s.trim())).filter((n) => Number.isFinite(n));
+    expect(idxs.length, 'the matrix list is empty — the parse broke').toBeGreaterThan(0);
+    const outOfRange = idxs.filter((i) => i < 1 || i > SHARDS);
+    expect(outOfRange, `shard indices outside 1..${SHARDS}; planVrtShards throws its usage error on these`).toEqual([]);
+    expect([...idxs].sort((a, b) => a - b), 'the matrix must be 1..N with no gaps').toEqual(
+      Array.from({ length: SHARDS }, (_, i) => i + 1),
+    );
+  });
+});
 
 type T = { file: string; title: string; titlePath: string[] };
 
@@ -156,6 +228,39 @@ describe('the planner refuses a plan it cannot select or cover', () => {
 
   it('grepFor refuses an empty group', () => {
     expect(() => grepFor([])).toThrow(/empty group/);
+  });
+});
+
+// ── THE SCOPED-CAPTURE MODE (allowEmpty — vrt-update.yml only) ──────────────
+//
+// A dispatch grep can select fewer scenes than the capture matrix has shards:
+// run 33198943725 asked 6 shards to split 4 mirrorpool tests and every shard
+// died on the no-empty-shard throw. With `allowEmpty` an empty shard is an
+// IDLE WORKER — the workflow skips Playwright on an empty grep — while the
+// union assertion still holds, so a scene can be idle-shard'd but never
+// dropped. The default stays the throw: the REQUIRED vrt-strict lane never
+// passes the flag, and for it an empty shard remains a dropped-coverage bug.
+describe('allowEmpty: fewer tests than shards is a valid SCOPED capture', () => {
+  it('splits 4 tests across 6 shards: every test lands exactly once, extras are empty', () => {
+    const four = roster.slice(0, 4);
+    const { groups } = planVrtShards(four, timings, 6, { allowEmpty: true });
+    expect(groups).toHaveLength(6);
+    const flat = groups.flat();
+    expect(flat).toHaveLength(4);
+    expect(new Set(flat.map((t) => `${t.file} :: ${t.title}`)).size).toBe(4);
+    expect(groups.filter((g) => g.length === 0)).toHaveLength(2);
+  });
+
+  it('a full-size roster plans IDENTICALLY with and without the flag', () => {
+    const a = planVrtShards(roster, timings, SHARDS);
+    const b = planVrtShards(roster, timings, SHARDS, { allowEmpty: true });
+    expect(b.groups).toEqual(a.groups);
+    expect(b.loads).toEqual(a.loads);
+  });
+
+  it('the DEFAULT still throws — the required lane cannot inherit idle shards by accident', () => {
+    expect(() => planVrtShards(roster.slice(0, 2), timings, SHARDS)).toThrow(/without an empty shard/);
+    expect(() => planVrtShards(roster.slice(0, 2), timings, SHARDS, {})).toThrow(/without an empty shard/);
   });
 });
 

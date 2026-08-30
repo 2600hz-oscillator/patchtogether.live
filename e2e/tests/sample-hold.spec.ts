@@ -19,7 +19,7 @@
 //      card's mode hint reads QUANTIZER.
 
 import { test, expect } from './_fixtures';
-import { spawnPatch } from './_helpers';
+import { spawnPatch, seedKriaGate } from './_helpers';
 import { readScopePeakOverWindow, setNodeParams } from './_module-coverage-helpers';
 
 test.describe.configure({ mode: 'parallel' });
@@ -29,8 +29,8 @@ test('SAMPLE & HOLD chain: BUGGLES → S&H (clocked) → VCO → SCOPE produces 
     page,
     [
       { id: 's-buggles', type: 'buggles',    position: { x: 40,  y: 60 }, domain: 'audio' },
-      { id: 's-seq',     type: 'sequencer',  position: { x: 40,  y: 300 }, domain: 'audio',
-        params: { bpm: 240, length: 4, isPlaying: 1, gateLength: 0.5 } },
+      { id: 's-seq',     type: 'kria',  position: { x: 40,  y: 300 }, domain: 'audio',
+        params: { bpm: 240, running: 1 } },
       { id: 's-sh',      type: 'sampleHold', position: { x: 340, y: 60 }, domain: 'audio',
         params: { scale: 1 } },
       { id: 's-vco',     type: 'analogVco',  position: { x: 640, y: 60 }, domain: 'audio' },
@@ -39,7 +39,7 @@ test('SAMPLE & HOLD chain: BUGGLES → S&H (clocked) → VCO → SCOPE produces 
     [
       { id: 'e1', from: { nodeId: 's-buggles', portId: 'smooth'   }, to: { nodeId: 's-sh',    portId: 'cv_in'   },
         sourceType: 'cv',   targetType: 'cv' },
-      { id: 'e2', from: { nodeId: 's-seq',     portId: 'gate'     }, to: { nodeId: 's-sh',    portId: 'gate_in' },
+      { id: 'e2', from: { nodeId: 's-seq', portId: 'gate1' }, to: { nodeId: 's-sh',    portId: 'gate_in' },
         sourceType: 'gate', targetType: 'gate' },
       { id: 'e3', from: { nodeId: 's-sh',      portId: 'cv_quant' }, to: { nodeId: 's-vco',   portId: 'pitch'   },
         sourceType: 'cv',   targetType: 'pitch' },
@@ -47,6 +47,7 @@ test('SAMPLE & HOLD chain: BUGGLES → S&H (clocked) → VCO → SCOPE produces 
         sourceType: 'audio', targetType: 'audio' },
     ],
   );
+  await seedKriaGate(page, 's-seq');
 
   const card = page.locator('.svelte-flow__node-sampleHold');
   await expect(card).toHaveCount(1);

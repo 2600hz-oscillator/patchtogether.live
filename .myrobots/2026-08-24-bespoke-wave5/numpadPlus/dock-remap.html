@@ -1,0 +1,266 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>NUMPAD+ face — remapping a key</title>
+<style>
+/* ─────────────────────────────────────────────────────────────────────────
+   NUMPAD+ FACEPLATE — MOCKUP, state 2 of 3: THE KEYMAP PANEL, LISTENING.
+   SPEC AND MOCKUP ONLY. Nothing here is implemented. See spec.md.
+
+   This state exists because of a MECHANICAL constraint, not a design one:
+   ShellPanelProbe.action is 'click' | 'drag' (shell-cells.ts:352) — there is
+   no right-click action — and the card's key cap carries `oncontextmenu` and
+   NO `onclick` (NumpadPlusCard.svelte:296-307), so a plain click on it is
+   inert today. ShellPanelCell.probe is REQUIRED (shell-cells.ts:395).
+
+   The resolution is a UX improvement rather than a workaround: LEFT-CLICK
+   begins the remap (what the right-click menu's first item already does),
+   right-click still offers Remap…/Reset, Esc still cancels.
+
+   RESTING-TEXT AUDIT: the hint line is INSTRUCTIONAL COPY IN A TRANSIENT
+   MODE — the same class as midiclock's pre-connect hint, which wave 4 kept.
+   It is EMPTY at rest (the probe needs the element to exist so
+   `expect: 'changed'` is a comparison rather than an appearance), so the
+   RESTING faceplate paints nothing from it.
+   ───────────────────────────────────────────────────────────────────────── */
+:root{
+  --bg:#0e1013; --dock:#12161c; --pbody:#1c1f24; --line:#2c3037; --tile:#33383f;
+  --ink:#eef1f5; --dim:#9aa2ad; --faint:#646c77;
+  --accent:#6cf; --gate:#e8c66a; --cv:#7dd3fc; --pitch:#c4b5fd; --poly:#f0abfc; --ch1:#fbbf24;
+  --warn:#f2c14e; --good:#8fe6b0; --bad:#e08a8a;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+  font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1200px;margin:0 auto;padding:26px 20px 90px}
+h1{font-size:21px;font-weight:800;margin:0 0 6px;letter-spacing:.01em}
+.sub{color:var(--dim);font-size:12.5px;margin:0 0 14px;max-width:106ch}
+.sub b{color:var(--ink)} code{font-family:var(--mono);font-size:11.5px;color:var(--ch1)}
+.nav{display:flex;gap:8px;margin:0 0 20px;font-size:11px;flex-wrap:wrap}
+.nav a{color:var(--ink);text-decoration:none;border:1px solid var(--line);border-radius:6px;
+  padding:6px 12px;background:#12161c;font-family:var(--mono);letter-spacing:.06em;text-transform:uppercase}
+.nav a.on{border-color:var(--gate);color:var(--gate)}
+.warn{border:1px solid #6a5330;background:#1c1811;border-radius:8px;padding:11px 14px;
+  margin:12px 0;font-size:12.5px;color:#e8cf9a;max-width:118ch}
+.warn b{color:var(--warn)}
+.ok{border:1px solid #3b5a48;background:#111a15;border-radius:8px;padding:11px 14px;
+  margin:12px 0;font-size:12.5px;color:#a9d8bd;max-width:118ch}
+.ok b{color:var(--good)}
+.cols{display:grid;grid-template-columns:minmax(0,1fr) 390px;gap:18px;align-items:start}
+@media (max-width:1080px){.cols{grid-template-columns:minmax(0,1fr)}}
+
+.dock{background:var(--dock);border:1px solid var(--line);border-radius:11px;padding:11px;position:relative}
+.chromebar{display:flex;align-items:baseline;gap:9px;padding:0 2px 8px}
+.chromebar .nm{font-size:13px;font-weight:800;letter-spacing:.03em}
+.chromebar .rl{font-size:9.4px;letter-spacing:.09em;text-transform:uppercase;color:var(--faint);font-family:var(--mono)}
+.chromebar .x{margin-left:auto;color:var(--faint);font-family:var(--mono);font-size:12px}
+.plate{background:var(--pbody);border:1px solid var(--tile);border-left:4px solid var(--gate);
+  border-radius:10px;padding:12px 14px;width:max-content;max-width:100%}
+.blab{margin:0 0 8px;font-size:9.4px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--dim)}
+.row{display:flex;flex-wrap:wrap;align-items:flex-start;gap:14px 18px}
+.panel{display:flex;flex-direction:column;gap:5px}
+.panel .cap,.sel .cap{font-size:7.8px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--dim);font-family:var(--mono)}
+.sel{display:flex;flex-direction:column;gap:5px}
+.selbox{display:flex;align-items:center;gap:8px;border:1px solid #3a4048;border-radius:6px;
+  background:#151a21;padding:5px 9px;min-width:96px}
+.selbox .val{font-family:var(--mono);font-size:10px;color:var(--ink);flex:1 1 auto}
+.selbox .caret{color:var(--faint);font-size:9px}
+
+.caps{display:grid;grid-template-columns:repeat(7,32px);gap:4px;
+  border:1px solid #3a4048;border-radius:6px;background:#151a21;padding:5px;width:max-content}
+.cap2{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
+  height:34px;border-radius:3px;background:#0a0d11;border:1px solid #262c34;position:relative}
+.cap2 em{font-style:normal;font-family:var(--mono);font-size:11.5px;font-weight:700;color:var(--accent);line-height:1}
+.cap2 s{text-decoration:none;font-family:var(--mono);font-size:7px;color:var(--faint);line-height:1}
+.cap2.act em{color:var(--gate)}
+.cap2.listening{border-color:#f5c248;box-shadow:0 0 0 2px rgba(245,194,72,.45)}
+.cap2.listening em{color:#f5c248}
+.hintline{min-height:14px;font-family:var(--mono);font-size:8.4px;color:#f5c248;padding-top:4px;letter-spacing:.02em}
+.hintline.empty{color:transparent}
+.hintline b{color:var(--accent)}
+
+.menu{position:absolute;right:34px;top:150px;background:#14171c;border:1px solid var(--line);
+  border-radius:4px;box-shadow:0 6px 18px rgba(0,0,0,.55);padding:3px;display:flex;
+  flex-direction:column;min-width:150px;z-index:5}
+.menu span{padding:6px 9px;font-size:11px;color:var(--ink);border-radius:2px;font-family:var(--sans)}
+.menu span.hi{background:rgba(255,255,255,.08);color:var(--accent)}
+.pin{position:absolute;right:16px;top:126px;font-family:var(--mono);font-size:8.4px;color:var(--faint)}
+
+.notes{display:flex;flex-direction:column;gap:12px}
+.card{border:1px solid var(--line);background:#101419;border-radius:9px;padding:12px 14px}
+.card h3{margin:0 0 7px;font-size:10px;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--accent);font-family:var(--mono);font-weight:700}
+.card p{margin:0 0 8px;font-size:12px;color:var(--dim)}
+.card p:last-child{margin-bottom:0}
+.card b{color:var(--ink)}
+.card pre{margin:6px 0 0;font-family:var(--mono);font-size:9.2px;color:#bcd3e8;
+  background:#0b0e12;border:1px solid #1c222a;border-radius:5px;padding:8px 9px;overflow:auto}
+table.k{border-collapse:collapse;width:100%;font-size:11px;margin:2px 0 0}
+table.k th,table.k td{text-align:left;padding:4px 7px 4px 0;border-bottom:1px solid #1e242c;vertical-align:top;color:var(--dim)}
+table.k th{color:var(--faint);font-family:var(--mono);font-size:8.6px;letter-spacing:.09em;text-transform:uppercase;font-weight:400}
+table.k td b{color:var(--ink)}
+</style>
+<div class="wrap">
+
+<h1>NUMPAD+ — remapping a key</h1>
+<p class="sub">
+  <b>SPEC AND MOCKUP ONLY. Nothing here is implemented.</b> The <code>keypad</code> band, with
+  <code>c#</code> listening for its new physical key. This state is what makes the keymap panel
+  <em>probe-able</em>, and the probe is why the panel can be a face cell at all.
+</p>
+
+<div class="nav">
+  <a href="dock.html">1 · dock</a>
+  <a class="on" href="dock-remap.html">2 · remapping a key</a>
+  <a href="lane-tile.html">3 · lane tile</a>
+  <a href="spec.md">spec.md</a>
+</div>
+
+<div class="cols">
+<div>
+
+  <div class="dock">
+    <div class="chromebar">
+      <span class="nm">NUMPAD+</span>
+      <span class="rl">dock · full view · keypad band</span>
+      <span class="x">✕</span>
+    </div>
+
+    <div class="plate">
+      <p class="blab">keypad</p>
+      <div class="row">
+        <div class="sel">
+          <span class="cap">Oct</span>
+          <div class="selbox"><span class="val">c4</span><span class="caret">▾</span></div>
+        </div>
+        <div class="panel">
+          <span class="cap">key map</span>
+          <div class="caps">
+            <span class="cap2"><em>1</em><s>c</s></span>
+            <span class="cap2 listening"><em>…</em><s>c#</s></span>
+            <span class="cap2"><em>3</em><s>d</s></span>
+            <span class="cap2"><em>4</em><s>d#</s></span>
+            <span class="cap2"><em>5</em><s>e</s></span>
+            <span class="cap2"><em>6</em><s>f</s></span>
+            <span class="cap2"><em>7</em><s>f#</s></span>
+            <span class="cap2"><em>8</em><s>g</s></span>
+            <span class="cap2"><em>9</em><s>g#</s></span>
+            <span class="cap2"><em>0</em><s>a</s></span>
+            <span class="cap2"><em>/</em><s>a#</s></span>
+            <span class="cap2"><em>*</em><s>b</s></span>
+            <span class="cap2 act"><em>+</em><s>oct↑</s></span>
+            <span class="cap2 act"><em>−</em><s>oct↓</s></span>
+          </div>
+          <div class="hintline">press any key to map it to <b>c#</b> · esc to cancel</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="pin">right-click → the portaled menu</div>
+    <div class="menu">
+      <span class="hi">Remap…</span>
+      <span>Reset to default</span>
+    </div>
+  </div>
+
+  <div class="ok" style="margin-top:16px">
+    <b>The hint line is instructional copy in a TRANSIENT MODE, not resting text.</b> It is the
+    same class as midiclock's pre-connect hint and its access-failure message, both of which wave 4
+    kept. <b>At rest it is present and empty</b> — deliberately, because the probe's
+    <code>expect: 'changed'</code> is a comparison and an element that appears on click is not
+    something to compare against.
+  </div>
+
+  <div class="warn">
+    <b>A left-click on a key cap does NOTHING today, and that is why this state had to be
+    designed.</b> <code>ShellPanelProbe.action</code> is <code>'click' | 'drag'</code> — there is no
+    right-click action — and <code>NumpadPlusCard.svelte:296-307</code> gives the cap
+    <code>oncontextmenu</code> and no <code>onclick</code>. <code>ShellPanelCell.probe</code> is a
+    REQUIRED field (<code>shell-cells.ts:395</code>, non-optional) enforced over every promoted
+    face by <code>shell-cells.test.ts</code>, so an inert cap cannot be a face cell.
+    <b>Left-click begins the remap</b> — one click instead of two for the common action — and
+    right-click keeps the full menu.
+  </div>
+
+  <div class="warn">
+    <b>⚠ The sweep must not be left holding the keyboard.</b> <code>faces-parity</code> clicks and
+    moves on. A panel left listening would capture the sweep's NEXT keystroke and silently rebind a
+    key — <b>a test that mutates the fixture it is measuring</b>, which is the instrument-bug class
+    this repo keeps finding. The panel cancels on pointerdown outside itself, on blur and on Esc,
+    and <b>M4 makes "a faces-parity pass leaves <code>node.data.keymap</code> byte-identical" a
+    permanent leg</b> of <code>numpadPlus-face-model.test.ts</code>.
+  </div>
+
+</div>
+
+<div class="notes">
+
+  <div class="card">
+    <h3>the probe, and why it is <code>text</code></h3>
+    <pre>'numpad-key-{n}': {
+  kind: 'panel',
+  label: 'key map',
+  component: NumpadKeymapPanel,
+  minWidth: 208,
+  probe: {
+    testid: 'numpad-key-0',
+    action: 'click',
+    effect: { kind: 'text',
+              testid: 'numpad-key-hint',
+              expect: 'changed' },
+  },
+}</pre>
+    <p style="margin-top:8px">Beginning a remap writes <b>nothing</b> to the graph —
+      <code>remapSemitone</code> is component state — so a <code>data</code> probe would be RED on
+      a perfectly live cap. <code>shell-cells.ts:373-381</code> says <code>text</code> exists for
+      exactly this, and requires the named element to differ from the clicked one, so a cap that
+      only relabels itself cannot pass.</p>
+  </div>
+
+  <div class="card">
+    <h3>ONE family, not two</h3>
+    <p>The card emits <b>two</b> prefixes for one control kind: <code>numpad-key-{st}</code> for
+      semitones 0–11 and <code>numpad-octkey-{act}</code> for the two octave actions. <b>The DEF
+      does not agree</b> — <code>DEFAULT_KEYMAP</code> is ONE fourteen-entry map and
+      <code>OCTAVE_UP_ACTION = 12</code> / <code>OCTAVE_DOWN_ACTION = 13</code> are described in
+      the def's own comment as remappable keys keyed by sentinel values outside the note range.</p>
+    <p>So the split is a card artefact. <b>One family, members
+      <code>numpad-key-0 … numpad-key-13</code></b> — one contract line instead of two, and the
+      card's prefix is unified in the same PR.</p>
+    <p>⚠ That breaks <code>numpad-plus.spec.ts:134-135</code> and <code>:151</code>, which are
+      fixed alongside.</p>
+  </div>
+
+  <div class="card">
+    <h3>the caps survive verbatim</h3>
+    <table class="k">
+      <tr><th>card</th><th>panel</th></tr>
+      <tr><td>right-click → menu (<code>:300</code>, <code>:316</code>)</td><td>same</td></tr>
+      <tr><td>Remap… / Reset to default (<code>:352-355</code>)</td><td>same</td></tr>
+      <tr><td>portal to <code>&lt;body&gt;</code> + <code>clampMenu</code> (<code>:341-357</code>)</td><td>same, verbatim</td></tr>
+      <tr><td>Esc cancels (<code>:192</code>)</td><td>same</td></tr>
+      <tr><td>capture-phase keydown while listening (<code>:186-198</code>)</td><td>same</td></tr>
+      <tr><td>— (a left click was inert)</td><td><b>begins the remap</b></td></tr>
+    </table>
+    <p style="margin-top:8px"><code>menu-viewport-clamp.spec.ts:196</code> is this menu's gate. It
+      currently opens it from the CANVAS CARD on <code>?shell=legacy</code>, so after promotion it
+      goes <b>green and blind</b> — spec.md §10 re-points it at the panel.</p>
+  </div>
+
+  <div class="card">
+    <h3>⚠ this is NOT keyboard-a11y work</h3>
+    <p>The standing owner ruling forbids keyboard-<em>navigation</em> accessibility: focus rings,
+      tab order, arrow traversal, roving tabindex. <b>None of that appears in this spec and none
+      may be added.</b></p>
+    <p>What IS in scope is the module's own <em>instrument</em>: a document-level capturing
+      keydown listener that turns keypad presses into MIDI notes, installed in the
+      <b>FACTORY</b> (<code>numpad-plus.ts:604-683</code>), not the card — so promotion does not
+      touch it. Separating those two is the difference between preserving a feature and doing
+      forbidden work.</p>
+  </div>
+
+</div>
+</div>
+</div>

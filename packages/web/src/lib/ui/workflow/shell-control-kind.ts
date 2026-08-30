@@ -38,6 +38,7 @@ export type ParamCellKind =
   | 'selector'
   | 'grid'
   | 'color'
+  | 'hue'
   | 'fader'
   // ⚠ `neon-fader` WAS A SECOND NAME FOR THIS KIND AND IS GONE (#1794). It
   // existed only for the transition: #1738 introduced `NeonFader.svelte`
@@ -56,9 +57,26 @@ export type ParamCellKind =
  *   'grid'  — the states are PICTURES (dx7's 32 algorithm topologies).
  *   'color' — the integer is a PACKED 0xRRGGBB, not a position on a scale
  *             (wavesculpt's `red_color`/`grn_color`/`blu_color`).
+ *   'hue'   — the scalar is an ANGLE ON THE COLOUR WHEEL, and it WRAPS
+ *             (spirographs' `chroma`). See the note below: it is a different
+ *             kind from `color`, not a variant of it.
  *   'fader' — the param is a LEVEL the player expects to see as a THROW, not a
  *             dial. Nothing in a ParamDef distinguishes "level" from any other
  *             continuous scalar, so it can only be declared.
+ *
+ * ⚠ 'hue' IS NOT 'color', AND THE DIFFERENCE IS THE PARAM'S SHAPE. `color` is
+ * DISCRETE over the packed-RGB space (0..0xffffff) and picks an arbitrary
+ * sRGB triple; `hue` is CONTINUOUS over 0..1 and picks a position on a ring at
+ * full saturation. Handing a 0..1 hue to `ColorField` would clamp a 16.7-million
+ * state picker onto two values; handing a packed RGB to the wheel would make one
+ * turn sweep the whole 24-bit space. They are declared separately because no
+ * property of the ParamDef distinguishes them from a plain scalar, and
+ * `module-face-lint` refuses each on the other's shape.
+ *
+ * ⚠ AND 'hue' IS NOT A KNOB. A hue is CIRCULAR — 0.99 and 0.01 are adjacent
+ * reds — so a linear dial puts the cut at an arbitrary place in the middle of a
+ * continuous space and makes the player travel the long way round. The wheel is
+ * the affordance the module's own legacy card already used.
  *
  * ⚠ 'grid' AND 'color' ARE INDISTINGUISHABLE TO EVERY RESOLVER IN THE REPO,
  * and that is the argument for declaring rather than sniffing. `1..32 discrete`
@@ -93,7 +111,7 @@ export type ParamCellKind =
  * one gesture"), and `declaredParamCells` folds it in so every consumer of
  * "which kind did the module declare" keeps one answer to read.
  */
-export type DeclaredParamCell = 'grid' | 'color' | 'fader' | 'xy';
+export type DeclaredParamCell = 'grid' | 'color' | 'hue' | 'fader' | 'xy';
 
 /** The subset a module writes in `face.paramCells` — the single-id kinds. `xy`
  *  is absent BY CONSTRUCTION: a pad hand-written here would have no partner,
@@ -154,7 +172,7 @@ const EMPTY_CELLS: ReadonlyMap<string, DeclaredParamCell> = new Map();
 export interface DeclaringDefLike {
   face?: {
     paramCells?: Readonly<Record<string, AuthoredParamCell>>;
-    xyPads?: readonly { x: string; y: string; label?: string }[];
+    xyPads?: readonly { x: string; y: string; label?: string; surface?: 'band' | 'body' }[];
   };
 }
 
@@ -164,6 +182,34 @@ export interface DeclaringDefLike {
  *  inside the pad and once as a stray knob beside it. Pure. */
 export function foldedParamIds(def: DeclaringDefLike | undefined): ReadonlySet<string> {
   return new Set((def?.face?.xyPads ?? []).map((p) => p.y));
+}
+
+/**
+ * The param ids painted by the module's OWN `fullViewBody` instead of by a dock
+ * band — BOTH axes of every pad declaring `surface: 'body'` (`FaceXyPad`).
+ * Empty for every face that declares none, which is all of them but one.
+ *
+ * ⚠ THE CALLER OWNS THE TIER, AND THIS FUNCTION DELIBERATELY DOES NOT. It
+ * answers "which params does the body claim", not "should they be dropped
+ * here". The body is dock-only (`dockFullViewHeadPlan`), so the two call sites
+ * are both inside the dock branch of `curatedFace` and the lane branch never
+ * asks.
+ *
+ * ⚠ THE LANE IS UNAFFECTED EITHER WAY, and for a reason worth stating because
+ * the obvious guess is wrong: `laneOrder` ALREADY drops every declared pad's
+ * anchor at every lane tier (a pad is square; a lane knob column is 46 px). So
+ * a lane tier that DID ask this function would get the same answer it already
+ * has. Keeping the call inside the dock branch is about where the QUESTION
+ * belongs, not about protecting the lane from it. Pure.
+ */
+export function bodyPaintedParamIds(def: DeclaringDefLike | undefined): ReadonlySet<string> {
+  const out = new Set<string>();
+  for (const pad of def?.face?.xyPads ?? []) {
+    if (pad.surface !== 'body') continue;
+    out.add(pad.x);
+    out.add(pad.y);
+  }
+  return out;
 }
 
 /** The declared pad ANCHORED at each x param id (empty when none). Pure. */

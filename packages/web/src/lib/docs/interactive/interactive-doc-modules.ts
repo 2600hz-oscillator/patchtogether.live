@@ -15,7 +15,6 @@ export const INTERACTIVE_DOC_MODULES: ReadonlySet<string> = new Set<string>([
   // Prototype wave (2026-06-25): the CV/control overlap demo + a Y.Doc-backed
   // step grid.
   'adsr',
-  'sequencer',
   // Batch 1 — foundational modules (2026-06-25): each verified to mount cleanly
   // as a live virtual module on its doc page (e2e/tests/docs-virtual-module.spec.ts)
   // — the live card renders with no console/page errors and a control hover
@@ -155,10 +154,6 @@ export const INTERACTIVE_DOC_MODULES: ReadonlySet<string> = new Set<string>([
   // listener — both are doc-sandbox-unsafe side effects, so they use the static
   // face fallback (see strict-docs.ts).
   'cartesian',
-  'drumseqz',
-  'macseq',
-  'polyseqz',
-  'writeseq',
   'marbles',
   // Batch 12 — modulation, function generators, clocks & live-control utilities
   // (2026-06-26): only the CONVENTION-card members whose cards are a pure

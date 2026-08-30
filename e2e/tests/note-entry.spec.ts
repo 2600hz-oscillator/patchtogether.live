@@ -1,28 +1,29 @@
 // e2e/tests/note-entry.spec.ts
 //
-// D5 — Sequencer + Cartesian text-entry note input.
+// D5 — Cartesian text-entry note input (the surviving note-entry surface
+// after the legacy sequencers were deleted 2026-08-24; the same NoteEntry
+// component drives every flow below).
 //
 // Coverage:
-//   - Sequencer: type a note name into a step's pitch input, assert displayed
-//     value normalizes (e.g. 'A4' -> 'a4', 'db5' -> 'c#5'), invalid input
-//     leaves the step's MIDI null, the focus ring is green/red accordingly.
-//   - Cartesian: same flow on the 4x4 grid.
-//   - Audio truth: a Sequencer with one step at 'a4' fires a 440 Hz tone
-//     through the wavetable VCO; we verify the V/oct on the pitch ConstantSource
-//     output equals (69-60)/12 = 0.75 V.
+//   - type a note name into a pad's pitch input, assert displayed value
+//     normalizes (e.g. 'A4' -> 'a4', 'db5' -> 'c#5'), invalid input leaves
+//     the pad's MIDI null, the focus ring is green/red accordingly.
+//   - Audio truth on the ENGINE: an a4 pad on a kria-clocked walk drives the
+//     pitch port to V/oct 0.75; S&H holds across rests; a null-midi pad
+//     suppresses the gate even when on=true.
 
 import { test, expect } from './_fixtures';
-import { spawnPatch } from './_helpers';
+import { spawnPatch, seedKriaGate } from './_helpers';
 
 test.describe.configure({ mode: 'parallel' });
 
-test('note-entry: typing valid notes into Sequencer steps normalizes display + drives V/oct', async ({ page, rack }) => {
+test('note-entry: typing valid notes into Cartesian pads normalizes display + stores MIDI', async ({ page, rack }) => {
   await spawnPatch(page, [
-    { id: 'seq', type: 'sequencer', params: { bpm: 120, length: 4, isPlaying: 0 } },
+    { id: 'seq', type: 'cartesian' },
   ]);
 
-  // Type 'A4' (uppercase) into step 0's pitch input. Expect normalized 'a4' on blur.
-  const step0 = page.locator('[data-testid="seq-pitch-seq-0"]');
+  // Type 'A4' (uppercase) into pad 0's pitch input. Expect normalized 'a4' on blur.
+  const step0 = page.locator('[data-testid="cart-pitch-seq-0"]');
   await step0.focus();
   await step0.fill('A4');
   await step0.blur();
@@ -30,29 +31,28 @@ test('note-entry: typing valid notes into Sequencer steps normalizes display + d
 
   // Verify the underlying patch state shows midi 69.
   const seqData = await page.evaluate(() => {
-    const w = globalThis as unknown as { __patch: { nodes: Record<string, { data?: { steps?: Array<{ on: boolean; midi: number | null }> } }> } };
-    return w.__patch.nodes['seq']?.data?.steps?.[0] ?? null;
+    const w = globalThis as unknown as { __patch: { nodes: Record<string, { data?: { cells?: Array<{ on: boolean; midi: number | null }> } }> } };
+    return w.__patch.nodes['seq']?.data?.cells?.[0] ?? null;
   });
-  // Stage-1 polyphony added an optional `chord` field (default 'mono') to
-  // each step's persisted shape. Use a partial match so this assertion is
-  // robust to that and any future additive fields.
-  expect(seqData).toMatchObject({ on: false, midi: 69 });
+  // Partial match: the persisted cell shape carries an additive `chord`
+  // field (and may grow more), so pin only the fields under test.
+  expect(seqData).toMatchObject({ midi: 69 });
 
   // Flat form maps to sharp: 'db5' -> displayed as 'c#5', stored as MIDI 73.
-  const step1 = page.locator('[data-testid="seq-pitch-seq-1"]');
+  const step1 = page.locator('[data-testid="cart-pitch-seq-1"]');
   await step1.focus();
   await step1.fill('db5');
   await step1.blur();
   await expect(step1).toHaveValue('c#5');
 
   const step1Data = await page.evaluate(() => {
-    const w = globalThis as unknown as { __patch: { nodes: Record<string, { data?: { steps?: Array<{ on: boolean; midi: number | null }> } }> } };
-    return w.__patch.nodes['seq']?.data?.steps?.[1] ?? null;
+    const w = globalThis as unknown as { __patch: { nodes: Record<string, { data?: { cells?: Array<{ on: boolean; midi: number | null }> } }> } };
+    return w.__patch.nodes['seq']?.data?.cells?.[1] ?? null;
   });
   expect(step1Data?.midi).toBe(73);
 
   // Whitespace / case-insensitive: ' c # 3 ' -> 'c#3'.
-  const step2 = page.locator('[data-testid="seq-pitch-seq-2"]');
+  const step2 = page.locator('[data-testid="cart-pitch-seq-2"]');
   await step2.focus();
   await step2.fill(' c # 3 ');
   await step2.blur();
@@ -61,10 +61,10 @@ test('note-entry: typing valid notes into Sequencer steps normalizes display + d
 
 test('note-entry: invalid input keeps midi null + the input ring goes red on focus', async ({ page, rack }) => {
   await spawnPatch(page, [
-    { id: 'seq', type: 'sequencer', params: { bpm: 120, length: 4, isPlaying: 0 } },
+    { id: 'seq', type: 'cartesian' },
   ]);
 
-  const step = page.locator('[data-testid="seq-pitch-seq-0"]');
+  const step = page.locator('[data-testid="cart-pitch-seq-0"]');
   await step.focus();
   await step.fill('q7');
   // While focused with invalid content, the input has the .invalid class.
@@ -72,8 +72,8 @@ test('note-entry: invalid input keeps midi null + the input ring goes red on foc
   await step.blur();
   // Stored midi should be null (parser rejected 'q7').
   const stored = await page.evaluate(() => {
-    const w = globalThis as unknown as { __patch: { nodes: Record<string, { data?: { steps?: Array<{ on: boolean; midi: number | null }> } }> } };
-    return w.__patch.nodes['seq']?.data?.steps?.[0] ?? null;
+    const w = globalThis as unknown as { __patch: { nodes: Record<string, { data?: { cells?: Array<{ on: boolean; midi: number | null }> } }> } };
+    return w.__patch.nodes['seq']?.data?.cells?.[0] ?? null;
   });
   expect(stored?.midi).toBeNull();
 
@@ -82,17 +82,17 @@ test('note-entry: invalid input keeps midi null + the input ring goes red on foc
 });
 
 test('note-entry: out-of-range note (c#8 above c8) becomes null', async ({ page, rack }) => {
-  await spawnPatch(page, [{ id: 'seq', type: 'sequencer', params: { bpm: 120, length: 4 } }]);
+  await spawnPatch(page, [{ id: 'seq', type: 'cartesian' }]);
 
-  const step = page.locator('[data-testid="seq-pitch-seq-0"]');
+  const step = page.locator('[data-testid="cart-pitch-seq-0"]');
   await step.focus();
   // The valid range is c0..c8 (MIDI 12..108); c#8 (MIDI 109) is one
   // semitone above and must round-trip to null.
   await step.fill('c#8');
   await step.blur();
   const stored = await page.evaluate(() => {
-    const w = globalThis as unknown as { __patch: { nodes: Record<string, { data?: { steps?: Array<{ on: boolean; midi: number | null }> } }> } };
-    return w.__patch.nodes['seq']?.data?.steps?.[0] ?? null;
+    const w = globalThis as unknown as { __patch: { nodes: Record<string, { data?: { cells?: Array<{ on: boolean; midi: number | null }> } }> } };
+    return w.__patch.nodes['seq']?.data?.cells?.[0] ?? null;
   });
   expect(stored?.midi).toBeNull();
 });
@@ -123,31 +123,42 @@ test('note-entry: Cartesian cell accepts text-entry note names', async ({ page, 
   expect(cellsData?.[5]?.midi).toBe(108);
 });
 
-test('note-entry: gate button toggles step.on without touching the pitch input', async ({ page, rack }) => {
-  await spawnPatch(page, [{ id: 'seq', type: 'sequencer', params: { bpm: 120, length: 4 } }]);
+test('note-entry: gate button toggles pad.on without touching the pitch input', async ({ page, rack }) => {
+  await spawnPatch(page, [{ id: 'seq', type: 'cartesian' }]);
 
-  const pitchEl = page.locator('[data-testid="seq-pitch-seq-0"]');
+  const pitchEl = page.locator('[data-testid="cart-pitch-seq-0"]');
   await pitchEl.focus();
   await pitchEl.fill('e4');
   await pitchEl.blur();
 
-  const gate = page.locator('[data-testid="seq-gate-seq-0"]');
+  const before = await page.evaluate(() => {
+    const w = globalThis as unknown as { __patch: { nodes: Record<string, { data?: { cells?: Array<{ on: boolean; midi: number | null }> } }> } };
+    return w.__patch.nodes['seq']?.data?.cells?.[0] ?? null;
+  });
+  const gate = page.locator('[data-testid="cart-gate-seq-0"]');
   await gate.click();
   const stepData = await page.evaluate(() => {
-    const w = globalThis as unknown as { __patch: { nodes: Record<string, { data?: { steps?: Array<{ on: boolean; midi: number | null }> } }> } };
-    return w.__patch.nodes['seq']?.data?.steps?.[0] ?? null;
+    const w = globalThis as unknown as { __patch: { nodes: Record<string, { data?: { cells?: Array<{ on: boolean; midi: number | null }> } }> } };
+    return w.__patch.nodes['seq']?.data?.cells?.[0] ?? null;
   });
-  // toMatchObject (not toEqual) for forward-compat: Stage-1 polyphony adds
-  // an optional `chord` field to the persisted step shape.
-  expect(stepData).toMatchObject({ on: true, midi: 64 });
+  // The click flips `on` and leaves the typed pitch alone.
+  expect(stepData).toMatchObject({ on: !(before?.on ?? false), midi: 64 });
 });
 
-test('note-entry: a4 step drives the pitch port to V/oct 0.75 (MIDI 69 - 60 = 9 semis up)', async ({ page, rack }) => {
-  await spawnPatch(page, [
-    { id: 'seq', type: 'sequencer', params: { bpm: 240, length: 4, isPlaying: 1, gateLength: 0.9 } },
-  ]);
+test('note-entry: an a4 pad drives the pitch port to V/oct 0.75 (MIDI 69 - 60 = 9 semis up)', async ({ page, rack }) => {
+  await spawnPatch(
+    page,
+    [
+      { id: 'clk', type: 'kria', params: { bpm: 240, running: 1 } },
+      { id: 'seq', type: 'cartesian' },
+    ],
+    [
+      { id: 'e_clk', from: { nodeId: 'clk', portId: 'gate1' }, to: { nodeId: 'seq', portId: 'clock' }, sourceType: 'gate', targetType: 'gate' },
+    ],
+  );
 
-  // Set step 0 to a4 (MIDI 69), gate on. Other steps off so pitch dwells at 0.75 V.
+  // Every pad a4 (MIDI 69), gate on — the clocked walk emits 0.75 V on
+  // every step, so the read is step-phase-independent.
   await page.evaluate(() => {
     const w = globalThis as unknown as {
       __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
@@ -155,50 +166,49 @@ test('note-entry: a4 step drives the pitch port to V/oct 0.75 (MIDI 69 - 60 = 9 
     };
     w.__ydoc.transact(() => {
       w.__patch.nodes['seq'].data = {
-        steps: [
-          { on: true, midi: 69 },
-          { on: false, midi: null },
-          { on: false, midi: null },
-          { on: false, midi: null },
-        ],
+        cells: Array.from({ length: 16 }, () => ({ on: true, midi: 69, chord: 'mono' })),
       };
     });
   });
+  await seedKriaGate(page, 'clk');
 
-  // Wait for the sequencer to fire step 0 at least once. At 240 BPM 16th-notes
-  // = 16 steps/sec, so within a few hundred ms we'll have hit step 0.
-  await page.waitForTimeout(800);
-
-  // Read the pitch ConstantSource's current offset.value via engine.read().
-  // Expected: 0.75 V (= (MIDI 69 - 60) / 12 = 9/12). This is what the VCO
-  // sees on its pitch input and which drives 261.626 * 2^0.75 = 440 Hz.
-  const vOct = await page.evaluate(() => {
+  // The pitch ConstantSource's V/oct, via engine.read(). Expected: 0.75 V
+  // (= (MIDI 69 - 60) / 12). Auto-retrying poll — state readiness, not a
+  // wall-clock guess.
+  const readVOct = () => page.evaluate(() => {
     const w = globalThis as unknown as {
       __engine?: () => { read: (n: { id: string; type: string; domain: string }, k: string) => unknown } | null;
       __patch: { nodes: Record<string, { id: string; type: string; domain: string }> };
     };
     const eng = w.__engine?.();
     if (!eng) return null;
-    const node = w.__patch.nodes['seq'];
-    const v = eng.read(node, 'pitchVOct');
+    const v = eng.read(w.__patch.nodes['seq'], 'pitchVOct');
     return typeof v === 'number' ? v : null;
   });
-
-  expect(vOct, `pitch port should emit V/oct 0.75 for a4`).not.toBeNull();
-  expect(Math.abs((vOct as number) - 0.75)).toBeLessThan(1e-6);
+  await expect
+    .poll(readVOct, { timeout: 10_000, message: 'pitch port should emit V/oct 0.75 for a4 (units: V/oct)' })
+    .toBeCloseTo(0.75, 6);
 
   // Sanity: 0.75 V/oct -> 261.626 * 2^0.75 = 440 Hz
+  const vOct = await readVOct();
   const reconstructedHz = 261.626 * Math.pow(2, vOct as number);
   expect(Math.abs(reconstructedHz - 440)).toBeLessThan(0.5);
 });
 
-test('hold-cv: pitch port retains last gated V/oct across an off step', async ({ page, rack }) => {
-  // 3 steps: a4 (on), e4 (off), a4-different (gated again later). After the
-  // off step is reached, the pitch port should still emit the V/oct of a4 —
-  // not zero, and not the e4 V/oct.
-  await spawnPatch(page, [
-    { id: 'seq', type: 'sequencer', params: { bpm: 240, length: 3, isPlaying: 1, gateLength: 0.9 } },
-  ]);
+test('hold-cv: pitch port retains last gated V/oct across a rest pad', async ({ page, rack }) => {
+  // Pad 0 is a4 (on). The clocked diagonal walk (pads 0,5,10,15) then hits
+  // three REST pads holding e4 (on=false). The pitch S&H must keep emitting
+  // a4's 0.75 V through the rests — never 0 again, and never e4's 0.333 V.
+  await spawnPatch(
+    page,
+    [
+      { id: 'clk', type: 'kria', params: { bpm: 240, running: 1 } },
+      { id: 'seq', type: 'cartesian' },
+    ],
+    [
+      { id: 'e_clk', from: { nodeId: 'clk', portId: 'gate1' }, to: { nodeId: 'seq', portId: 'clock' }, sourceType: 'gate', targetType: 'gate' },
+    ],
+  );
 
   await page.evaluate(() => {
     const w = globalThis as unknown as {
@@ -207,21 +217,33 @@ test('hold-cv: pitch port retains last gated V/oct across an off step', async ({
     };
     w.__ydoc.transact(() => {
       w.__patch.nodes['seq'].data = {
-        steps: [
-          { on: true,  midi: 69 }, // a4 — gates open, pitch=0.75
-          { on: false, midi: 64 }, // e4 — gate suppressed, pitch must HOLD 0.75
-          { on: false, midi: null },
-        ],
+        cells: Array.from({ length: 16 }, (_, i) => (
+          i === 0
+            ? { on: true, midi: 69, chord: 'mono' } // a4 — gates, pitch=0.75
+            : { on: false, midi: 64, chord: 'mono' } // e4 REST — must NOT leak
+        )),
       };
     });
   });
+  await seedKriaGate(page, 'clk');
 
-  // Wait long enough for the sequencer to advance past step 0 a few times.
-  await page.waitForTimeout(800);
+  const readVOct = () => page.evaluate(() => {
+    const w = globalThis as unknown as {
+      __engine?: () => { read: (n: { id: string; type: string; domain: string }, k: string) => unknown } | null;
+      __patch: { nodes: Record<string, { id: string; type: string; domain: string }> };
+    };
+    const eng = w.__engine?.();
+    if (!eng) return null;
+    const v = eng.read(w.__patch.nodes['seq'], 'pitchVOct');
+    return typeof v === 'number' ? v : null;
+  });
+  // Wait until a4 has actually fired (state readiness, auto-retrying).
+  await expect
+    .poll(readVOct, { timeout: 10_000, message: 'cartesian should fire a4 at least once (units: V/oct)' })
+    .toBeCloseTo(0.75, 6);
 
-  // Sample pitch over many ticks. We're looking for: at no point during the
-  // off-step (or any later off-step before another gated step) does the pitch
-  // port emit the e4 V/oct of (64-60)/12 = 0.333... It must remain at 0.75.
+  // Then sample across several later steps — the walk is deep into rest pads
+  // within this window. The S&H must hold 0.75; the e4 V/oct must never leak.
   const samples = await page.evaluate(() => {
     const w = globalThis as unknown as {
       __engine?: () => { read: (n: { id: string; type: string; domain: string }, k: string) => unknown } | null;
@@ -238,24 +260,25 @@ test('hold-cv: pitch port retains last gated V/oct across an off step', async ({
     return out;
   });
   expect(samples).not.toBeNull();
-  // After the first gate fires, the JS-observed pitchVOct must be 0.75 forever
-  // (no other gated step changes it). Tolerate the very first samples being 0
-  // (before the first step has fired).
-  const seenA4 = samples!.some((s) => Math.abs(s - 0.75) < 1e-6);
-  expect(seenA4, 'sequencer should have fired a4 at least once').toBe(true);
   for (const s of samples!) {
-    // Allow 0 (initial) or 0.75 (held). Forbid the e4 V/oct.
-    expect(s, `pitch must never drop to e4 V/oct on suppressed step`)
-      .not.toBeCloseTo((64 - 60) / 12, 6);
+    expect(s, `pitch must hold a4 (0.75 V/oct) across rest pads, never e4`).toBeCloseTo(0.75, 6);
   }
 });
 
-test('note-entry: invalid step (midi=null) suppresses gate output even when on=true', async ({ page, rack }) => {
-  await spawnPatch(page, [
-    { id: 'seq', type: 'sequencer', params: { bpm: 240, length: 1, isPlaying: 1, gateLength: 0.9 } },
-  ]);
+test('note-entry: invalid pad (midi=null) suppresses gate output even when on=true', async ({ page, rack }) => {
+  await spawnPatch(
+    page,
+    [
+      { id: 'clk', type: 'kria', params: { bpm: 240, running: 1 } },
+      { id: 'seq', type: 'cartesian' },
+    ],
+    [
+      { id: 'e_clk', from: { nodeId: 'clk', portId: 'gate1' }, to: { nodeId: 'seq', portId: 'clock' }, sourceType: 'gate', targetType: 'gate' },
+    ],
+  );
 
-  // Single step with on=true but midi=null. Sequencer should skip the gate.
+  // Every pad on=true but midi=null — the parser-rejected state. The gate
+  // must never fire.
   await page.evaluate(() => {
     const w = globalThis as unknown as {
       __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
@@ -263,14 +286,28 @@ test('note-entry: invalid step (midi=null) suppresses gate output even when on=t
     };
     w.__ydoc.transact(() => {
       w.__patch.nodes['seq'].data = {
-        steps: [{ on: true, midi: null }],
+        cells: Array.from({ length: 16 }, () => ({ on: true, midi: null, chord: 'mono' })),
       };
     });
   });
+  await seedKriaGate(page, 'clk');
 
-  // Sample the gate value over a few hundred ms — if the parser were emitting
-  // anyway, we'd see the gate go high. Expect it to stay 0 the entire time.
-  await page.waitForTimeout(400);
+  // Prove the walk is actually advancing (a silent assertion is only
+  // meaningful over steps that happened), then sample the gate.
+  const readAdvances = () => page.evaluate(() => {
+    const w = globalThis as unknown as {
+      __engine?: () => { read: (n: { id: string; type: string; domain: string }, k: string) => unknown } | null;
+      __patch: { nodes: Record<string, { id: string; type: string; domain: string }> };
+    };
+    const eng = w.__engine?.();
+    if (!eng) return -1;
+    const v = eng.read(w.__patch.nodes['seq'], 'totalAdvances');
+    return typeof v === 'number' ? v : -1;
+  });
+  await expect
+    .poll(readAdvances, { timeout: 10_000, message: 'the clocked walk must be advancing (units: steps)' })
+    .toBeGreaterThan(4);
+
   const samples = await page.evaluate(() => {
     const w = globalThis as unknown as {
       __engine?: () => { read: (n: { id: string; type: string; domain: string }, k: string) => unknown } | null;
@@ -288,6 +325,6 @@ test('note-entry: invalid step (midi=null) suppresses gate output even when on=t
   });
   expect(samples).not.toBeNull();
   for (const s of samples!) {
-    expect(s, `gate must stay low when step.midi is null even if on=true`).toBe(0);
+    expect(s, `gate must stay low when pad.midi is null even if on=true`).toBe(0);
   }
 });

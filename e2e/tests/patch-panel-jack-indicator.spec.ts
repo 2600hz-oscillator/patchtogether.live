@@ -6,8 +6,10 @@
 //
 //   1. A port WITH an edge connected to it shows a FILLED jack
 //      (data-patched="true") whose `title` names the remote endpoint:
-//        - an OUTPUT that feeds a target → "→ TO <Name>.<PORT>"
-//        - an INPUT  fed by a source     → "← FROM <Name>.<PORT>"
+//        - an OUTPUT that feeds a target → "→ <Name>.<PORT>"
+//        - an INPUT  fed by a source     → "← <Name>.<PORT>"
+//      ARROW ONLY — the FROM/TO words were dropped by owner ruling (#2264):
+//      the glyph carries the direction and the width goes to the name.
 //   2. An UNPATCHED sibling port shows a HOLLOW jack (data-patched="false")
 //      with no title.
 //
@@ -40,13 +42,13 @@ async function spawnSeqAdsrWired(page: Page) {
   await spawnPatch(
     page,
     [
-      { id: 'seq', type: 'sequencer', position: { x: 80, y: 120 } },
-      { id: 'adsr', type: 'adsr', position: { x: 760, y: 120 } },
+      { id: 'seq', type: 'kria', position: { x: 80, y: 120 } },
+      { id: 'adsr', type: 'adsr', position: { x: 1560, y: 120 } }, // clear of the (wide) KRIA card
     ],
     [
       {
         id: 'e-gate',
-        from: { nodeId: 'seq', portId: 'gate' },
+        from: { nodeId: 'seq', portId: 'gate1' },
         to: { nodeId: 'adsr', portId: 'gate' },
         sourceType: 'gate',
         targetType: 'gate',
@@ -61,7 +63,7 @@ function jack(page: Page, nodeId: string, portId: string) {
     .locator(`[data-testid="patch-panel-port-row"][data-port-id="${portId}"] [data-testid="port-row-jack"]`);
 }
 
-test('patched OUTPUT shows a filled jack with a "→ TO" remote title; unpatched sibling is hollow', async ({
+test('patched OUTPUT shows a filled jack with an arrow-only "→" remote title; unpatched sibling is hollow', async ({
   page,
 }) => {
   await spawnSeqAdsrWired(page);
@@ -73,23 +75,24 @@ test('patched OUTPUT shows a filled jack with a "→ TO" remote title; unpatched
     .click();
 
   // The patched gate output: filled + title names the remote endpoint.
-  const gateJack = jack(page, 'seq', 'gate');
+  const gateJack = jack(page, 'seq', 'gate1');
   await expect(gateJack).toHaveAttribute('data-patched', 'true');
   const title = await gateJack.getAttribute('title');
   expect(title).toBeTruthy();
-  expect(title!).toContain('→ TO');
+  expect(title!.startsWith('→ '), `arrow-only prefix, got: ${title}`).toBe(true);
+  expect(title!, 'no TO word — arrow only (#2264)').not.toContain('→ TO');
   expect(title!.toUpperCase()).toContain('ADSR');
   expect(title!.toUpperCase()).toContain('GATE');
   // aria-label mirrors the title for AT.
   await expect(gateJack).toHaveAttribute('aria-label', title!);
 
   // An UNPATCHED sibling output (seq.pitch) is hollow with no title.
-  const pitchJack = jack(page, 'seq', 'pitch');
+  const pitchJack = jack(page, 'seq', 'pitch1');
   await expect(pitchJack).toHaveAttribute('data-patched', 'false');
   expect(await pitchJack.getAttribute('title')).toBeNull();
 });
 
-test('patched INPUT shows a filled jack with a "← FROM" remote title; unpatched sibling is hollow', async ({
+test('patched INPUT shows a filled jack with an arrow-only "←" remote title; unpatched sibling is hollow', async ({
   page,
 }) => {
   await spawnSeqAdsrWired(page);
@@ -104,8 +107,9 @@ test('patched INPUT shows a filled jack with a "← FROM" remote title; unpatche
   await expect(gateJack).toHaveAttribute('data-patched', 'true');
   const title = await gateJack.getAttribute('title');
   expect(title).toBeTruthy();
-  expect(title!).toContain('← FROM');
-  expect(title!.toUpperCase()).toContain('SEQUENCER');
+  expect(title!.startsWith('← '), `arrow-only prefix, got: ${title}`).toBe(true);
+  expect(title!, 'no FROM word — arrow only (#2264)').not.toContain('FROM');
+  expect(title!.toUpperCase()).toContain('KRIA');
   expect(title!.toUpperCase()).toContain('GATE');
 
   // ADSR.attack has no incoming cable → hollow, no title.

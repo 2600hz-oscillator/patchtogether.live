@@ -185,13 +185,74 @@ const PENDING_PALETTE_REGEN: readonly string[] = [];
  * reason rather than a styling one: it is a control surface for an EXTERNAL
  * device, so it declares zero ports and there is no cable for a stripe to
  * colour. A card with nothing to patch cannot pin a cable token.
+ *
+ * ⚠ `matrixMix` IS THE SAME STRUCTURAL CASE AS `chromaconsole`, AND IT ARRIVED
+ * BY A ROUTE WORTH RECORDING: it is not a new card, and nothing about it
+ * changed. It became a SCENE because bespoke wave 4 DRAINED its
+ * `EXEMPT_FROM_VRT` entry, which enrolled it in `vrt.spec.ts` for the first
+ * time. So this list grew without any card being edited, which is exactly the
+ * event the exact-set assertion exists to force somebody to look at.
+ *
+ * It belongs here on the merits: matrixMix is a META-domain module declaring
+ * `inputs: []` and `outputs: []` and binding to no engine, so like
+ * `chromaconsole` it has no cable for a stripe to colour — the card genuinely
+ * renders no `.stripe` element (the gate's own probe says so:
+ * "card renders no .stripe element"). It is NOT the hardcoded-hex divergence
+ * this list warns about; there is no hex, and no stripe.
  */
+// ⚠ `launchpadControlLeft` JOINED 2026-08-24, and it joined for the reason this
+// list already documents for `chromaconsole` / `electraControl` / `matrixMix`: a
+// control surface for an EXTERNAL DEVICE, with zero ports both ways, so there is
+// no cable for a stripe to colour and `LaunchpadControlCard.svelte` renders no
+// `.stripe` element at all (`grep -c stripe` → 0). It appears here now only
+// because the module was drained from `EXEMPT_FROM_VRT` in the same PR that gave
+// it a faceplate — before that it had no baseline for `measure()` to walk.
+//
+// ⚠ AND THE REPORTED REASON IS NOT THE ONE ABOVE, WHICH IS WORTH KNOWING. The
+// skip line reads *"no card component (LaunchpadControlLeftCard.svelte)"*, not
+// "no stripe": `cardBasenameByType()` matches `/^\s*type:\s*'([^']+)'/`, and this
+// def writes `type: LAUNCHPAD_CONTROL_TYPE` (a constant, so saved LEFT nodes and
+// the `NON_SHELL_LANE_TYPES` anchor could never re-type it independently). So the
+// def never enters the explicit map and the resolver falls back to the
+// CONVENTIONAL basename, which does not exist. Both facts are true of this module
+// and both put it in the same place, so the entry is right either way — but a def
+// that declared its type as a constant AND whose card DID pin a stripe would be
+// dropped from this gate silently, and that is a blind spot in the resolver
+// rather than in the list. Recorded, not fixed: widening the regex moves
+// `dropped` for the whole tree and belongs in a PR whose subject is this gate.
+// ⚠ `push2Control` JOINED 2026-08-25, for the same documented reason as
+// `chromaconsole` / `electraControl` / `matrixMix` / `launchpadControlLeft`: a
+// control surface for an EXTERNAL DEVICE, with zero ports both ways, so there is
+// no cable for a stripe to colour and `Push2ControlCard.svelte` renders no
+// `.stripe` element at all (`grep -c stripe` → 0). It appears here now only
+// because the module was drained from `EXEMPT_FROM_VRT` in the same PR that gave
+// it a faceplate — before that it had no baseline for `measure()` to walk.
+//
+// ⚠ AND ITS REPORTED REASON IS THE HONEST ONE, unlike the entry above it. The
+// skip line reads *"card renders no .stripe element"*, not "no card component":
+// this def declares `card: 'Push2ControlCard'` explicitly, so it enters the map
+// through the explicit branch and `cardBasenameByType()`'s string-literal `type:`
+// blind spot never applies. The resolver really did find and read the card, and
+// the card really has no stripe. Recorded because the neighbouring entry
+// documents the opposite case, and the difference is the whole reason that
+// warning is worth keeping.
+//
+// ⚠ THIS ENTRY COULD NOT BE WRITTEN BEFORE THE CAPTURE LANDED. The set is
+// derived by WALKING THE COMMITTED BASELINES, so a declared name with no PNG is
+// an extra member and `toEqual` goes red in the other direction. That ordering —
+// promote, drain, capture, THEN declare — is why a face PR must re-run the full
+// unit lane AFTER the baseline bot commits, not only before the push.
 const NOT_TOKEN_PINNED_SCENES: readonly string[] = [
-  'audioOut', 'chromaconsole', 'electraControl', 'mixer',
-  'moog903a', 'moog904b', 'moog904c', 'moog905', 'moog907a', 'moog911a', 'moog912',
-  'moog914', 'moog921a', 'moog921b', 'moog923', 'moog956', 'moog960', 'moog961',
-  'moog962', 'moog984', 'moog992', 'moog993', 'moog994', 'moog995',
-  'sticky', 'wavesculpt',
+  // mixer / moog903a / moog904c / moog914 / moog984 left this census
+  // 2026-08-28: their baselines were DELETED with the owner-approved CPU-fleet
+  // demotion from STRICT_VRT_MODULES (see vrt-exemptions.ts) — the walk covers
+  // committed baselines only, so they leave here with them. They rejoin when
+  // the fleet is homogeneous and the cards are re-promoted + re-captured.
+  'audioOut', 'chromaconsole', 'electraControl', 'launchpadControlLeft', 'matrixMix',
+  'moog904b', 'moog905', 'moog907a', 'moog911a', 'moog912',
+  'moog921a', 'moog921b', 'moog923', 'moog956', 'moog960', 'moog961',
+  'moog962', 'moog992', 'moog993', 'moog994', 'moog995',
+  'push2Control', 'sticky', 'wavesculpt',
 ];
 
 /** module type → card component basename, mirroring modules-card-map.ts. */

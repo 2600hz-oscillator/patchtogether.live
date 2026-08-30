@@ -1,0 +1,344 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>PEERTUBE face — searched, playing, and the lane tile</title>
+<style>
+/* ─────────────────────────────────────────────────────────────────────────
+   PEERTUBE FACEPLATE — MOCKUP, state 2 of 2 (searched + playing).
+   SPEC AND MOCKUP ONLY. Nothing here is implemented. See spec.md.
+
+   ⚠ THE RESULT SUB-LINE IS TRIMMED, and the trim is the resting-text ruling
+   doing real work: the card paints `{channel} · {host}{ · LIVE} · {duration}`
+   and three of those four fields are refused (a channel is attribution, LIVE
+   is a state word, a duration is a measurement). The HOST stays because on a
+   FEDERATED item it is half the identity — two instances can carry videos with
+   the same title. Everything trimmed lands on the row's aria-label.
+   ───────────────────────────────────────────────────────────────────────── */
+:root{
+  --bg:#0e1013; --dock:#12161c; --plate:#262a31; --pbody:#1c1f24; --well:#0a0c0f;
+  --line:#2c3037; --tile:#33383f; --ink:#eef1f5; --dim:#9aa2ad; --faint:#646c77;
+  --cv:#7dd3fc; --accent:#6cf; --vid:#4ade80; --ch1:#fbbf24; --warn:#f2c14e; --good:#8fe6b0;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+  font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1240px;margin:0 auto;padding:26px 20px 90px}
+h1{font-size:21px;font-weight:800;margin:0 0 6px;letter-spacing:.01em}
+.sub{color:var(--dim);font-size:12.5px;margin:0 0 14px;max-width:106ch}
+.sub b{color:var(--ink)} code{font-family:var(--mono);font-size:11.5px;color:var(--ch1)}
+.nav{display:flex;gap:8px;margin:0 0 20px;font-size:11px;flex-wrap:wrap}
+.nav a{color:var(--ink);text-decoration:none;border:1px solid var(--line);border-radius:6px;
+  padding:6px 12px;background:#12161c;font-family:var(--mono);letter-spacing:.06em;text-transform:uppercase}
+.nav a.on{border-color:var(--vid);color:var(--vid)}
+.warn{border:1px solid #6a5330;background:#1c1811;border-radius:8px;padding:11px 14px;
+  margin:12px 0;font-size:12.5px;color:#e8cf9a;max-width:118ch}
+.warn b{color:var(--warn)}
+.ok{border:1px solid #3b5a48;background:#111a15;border-radius:8px;padding:11px 14px;
+  margin:12px 0;font-size:12.5px;color:#a9d8bd;max-width:118ch}
+.ok b{color:var(--good)}
+.cols{display:grid;grid-template-columns:minmax(0,1fr) 400px;gap:18px;align-items:start}
+@media (max-width:1120px){.cols{grid-template-columns:minmax(0,1fr)}}
+
+.dock{background:var(--dock);border:1px solid var(--line);border-radius:11px;overflow:hidden;padding:11px}
+.chromebar{display:flex;align-items:baseline;gap:9px;padding:0 2px 8px}
+.chromebar .nm{font-size:13px;font-weight:800;letter-spacing:.03em}
+.chromebar .rl{font-size:9.4px;letter-spacing:.09em;text-transform:uppercase;color:var(--faint);font-family:var(--mono)}
+.chromebar .x{margin-left:auto;color:var(--faint);font-family:var(--mono);font-size:12px}
+.plate{background:var(--pbody);border:1px solid var(--tile);border-left:4px solid var(--vid);
+  border-radius:10px;padding:0 0 12px;width:max-content;max-width:100%}
+
+.extbody{padding:12px 14px 4px;width:508px;max-width:100%}
+.prevwrap{position:relative;display:flex;justify-content:center;min-height:18px}
+.prev{width:480px;max-width:100%;aspect-ratio:16/9;border-radius:4px;border:1px solid #1a1f2a;
+  overflow:hidden;position:relative;background:#000}
+.prev .frame{position:absolute;inset:0;
+  background:
+    radial-gradient(ellipse at 62% 34%, rgba(255,214,140,.34) 0 14%, transparent 40%),
+    radial-gradient(ellipse at 24% 68%, rgba(90,200,255,.22) 0 18%, transparent 46%),
+    linear-gradient(168deg,#132033 0%,#1d3350 40%,#3a2f4e 72%,#12161f 100%)}
+.screenbtn{position:absolute;right:6px;bottom:6px;font-size:9px;letter-spacing:.06em;
+  padding:2px 8px;border:1px solid var(--vid);border-radius:2px;background:rgba(5,6,8,.72);
+  color:var(--ink);font-family:var(--mono);z-index:3}
+
+.q{margin-top:10px;display:flex;flex-direction:column;gap:5px}
+.qrow{display:flex;gap:5px;align-items:center}
+.inp{flex:1;min-width:0;background:#11151c;border:1px solid #404652;border-radius:2px;
+  color:var(--ink);font-size:10.5px;padding:5px 7px}
+.inp.small{font-size:9.6px;padding:4px 6px}
+.inp.ph{color:#5c6470}
+.btn{padding:4px 11px;background:var(--vid);color:#08120c;border-radius:2px;font-size:9.4px;
+  font-family:var(--mono);letter-spacing:.06em;text-transform:uppercase;font-weight:700;white-space:nowrap}
+.btn.sec{background:#2a3340;color:var(--ink)}
+
+.np{display:flex;align-items:center;gap:7px;margin-top:10px;
+  border-top:1px solid var(--line);padding-top:9px}
+.lamp{width:8px;height:8px;border-radius:50%;flex:0 0 auto;background:var(--good);opacity:1;
+  box-shadow:0 0 5px var(--good)}
+.npname{font-size:11px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.nphost{margin-left:auto;font-family:var(--mono);font-size:8.8px;color:var(--accent);
+  text-decoration:underline;text-underline-offset:3px;white-space:nowrap}
+
+.tr{display:flex;align-items:center;gap:7px;margin-top:8px}
+.tbtn{background:var(--vid);color:#08120c;border-radius:2px;padding:3px 10px;font-size:9.6px;
+  font-family:var(--mono);min-width:52px;text-align:center;font-weight:700}
+.seek{flex:1;height:5px;border-radius:3px;background:#1a1f2a;position:relative}
+.seek .fill{position:absolute;left:0;top:0;bottom:0;width:44%;background:var(--vid);border-radius:3px}
+.seek .knob{position:absolute;left:44%;top:50%;transform:translate(-50%,-50%);
+  width:11px;height:11px;border-radius:50%;background:var(--vid);box-shadow:0 0 6px rgba(74,222,128,.6)}
+
+.list{margin-top:10px;border:1px solid var(--line);border-radius:3px;padding:3px;
+  max-height:172px;overflow:hidden;display:flex;flex-direction:column;gap:1px;position:relative}
+.res{display:flex;align-items:center;gap:7px;padding:3px 4px;border-radius:2px}
+.res.sel{background:rgba(74,222,128,.15)}
+.rt{width:64px;height:36px;border-radius:2px;flex:0 0 auto;background:#000}
+.rt.a{background:linear-gradient(160deg,#1d3350,#3a2f4e)}
+.rt.b{background:linear-gradient(160deg,#3f2f1c,#7a4a22)}
+.rt.c{background:linear-gradient(160deg,#123326,#2b6b4a)}
+.rt.d{background:linear-gradient(160deg,#2c1b3a,#5b2f6b)}
+.rm{display:flex;flex-direction:column;min-width:0;gap:1px}
+.rname{font-size:10.5px;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rhost{font-family:var(--mono);font-size:8.4px;color:var(--faint);overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap}
+.fade{position:absolute;left:0;right:0;bottom:0;height:26px;
+  background:linear-gradient(180deg,rgba(28,31,36,0),rgba(28,31,36,.95))}
+
+.disc{margin-top:10px;border-top:1px solid var(--line);padding-top:6px;
+  font-size:9px;line-height:1.4;color:var(--faint)}
+.disc a{color:var(--accent);text-decoration:none}
+
+.bands{padding:6px 14px 0}
+.band{border-top:1px solid var(--line);padding-top:8px;margin-top:10px}
+.blab{margin:0 0 7px;font-size:9.4px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--dim)}
+.row{display:flex;flex-wrap:wrap;align-items:flex-start;gap:10px 18px}
+.f{width:52px;display:flex;flex-direction:column;align-items:center;gap:5px}
+.f i{--v:.5;--fc:var(--vid);display:block;width:16px;height:74px;border-radius:8px;position:relative;
+  background:linear-gradient(#171b21,#12161c);border:1px solid #333a43}
+.f i::before{content:"";position:absolute;left:50%;transform:translateX(-50%);width:2px;top:6px;bottom:6px;
+  background:#262c34;border-radius:1px}
+.f i::after{content:"";position:absolute;left:50%;width:22px;height:9px;border-radius:2px;
+  background:var(--fc);box-shadow:0 0 7px color-mix(in srgb,var(--fc) 60%,transparent);
+  transform:translate(-50%,-50%);top:calc(6px + (1 - var(--v)) * (100% - 12px))}
+.f b{font-size:7.8px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--dim);
+  font-family:var(--mono);text-align:center}
+
+.lanes{display:flex;gap:14px;flex-wrap:wrap;margin-top:8px}
+.tile{background:var(--pbody);border:1px solid var(--tile);border-left:3px solid var(--vid);
+  border-radius:7px;padding:7px 8px;width:198px}
+.tile .tn{font-family:var(--mono);font-size:8.4px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--dim);margin-bottom:5px}
+.thumb{width:160px;height:120px;border-radius:3px;border:1px solid #1a1f2a;margin-bottom:6px}
+.thumb.live{background:
+  radial-gradient(ellipse at 62% 34%, rgba(255,214,140,.34) 0 14%, transparent 40%),
+  linear-gradient(168deg,#132033 0%,#1d3350 40%,#3a2f4e 72%,#12161f 100%)}
+.thumb.idle{background:linear-gradient(180deg,#0d0a17 0%,#141024 100%)}
+.tilecap{font-family:var(--mono);font-size:8px;color:var(--faint);letter-spacing:.05em}
+.minif{display:flex;gap:5px;align-items:center;margin-top:2px}
+.minif i{--v:.5;display:block;width:12px;height:34px;border-radius:6px;position:relative;
+  background:linear-gradient(#171b21,#12161c);border:1px solid #333a43}
+.minif i::after{content:"";position:absolute;left:50%;width:16px;height:6px;border-radius:2px;
+  background:var(--vid);transform:translate(-50%,-50%);top:calc(4px + (1 - var(--v)) * (100% - 8px))}
+.minif b{font-size:7px;font-family:var(--mono);color:var(--dim);letter-spacing:.05em}
+
+.notes{display:flex;flex-direction:column;gap:12px}
+.card{border:1px solid var(--line);background:#101419;border-radius:9px;padding:12px 14px}
+.card h3{margin:0 0 7px;font-size:10px;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--accent);font-family:var(--mono);font-weight:700}
+.card p{margin:0 0 8px;font-size:12px;color:var(--dim)}
+.card p:last-child{margin-bottom:0}
+.card b{color:var(--ink)}
+table{border-collapse:collapse;width:100%;font-size:11px;margin:2px 0 0}
+th,td{text-align:left;padding:4px 7px 4px 0;border-bottom:1px solid #1e242c;vertical-align:top;color:var(--dim)}
+th{color:var(--faint);font-family:var(--mono);font-size:8.6px;letter-spacing:.09em;text-transform:uppercase;font-weight:400}
+td b{color:var(--ink)}
+.aria{font-family:var(--mono);font-size:10.5px;color:#8fe6b0}
+.gone{text-decoration:line-through;color:#5a616c}
+.meas{font-family:var(--mono);font-size:10.5px;color:var(--ch1)}
+</style>
+<div class="wrap">
+
+<h1>PEERTUBE — searched, playing, and the lane tile</h1>
+<p class="sub">
+  <b>SPEC AND MOCKUP ONLY. Nothing here is implemented.</b> The state a player actually uses.
+  Note what each result row does <b>not</b> say.
+</p>
+
+<div class="nav">
+  <a href="dock.html">1 · cold (what VRT captures)</a>
+  <a class="on" href="dock-results.html">2 · searched, playing, and the lane tile</a>
+  <a href="spec.md">spec.md</a>
+  <a href="../archivist/spec.md">↔ archivist</a>
+</div>
+
+<div class="ok">
+  <b>This picture is an ordinary blit.</b> <code>peertube.ts:341-347</code> calls
+  <code>uploader.attach(videoEl)</code>, because PeerTube sends <code>ACAO:*</code> on the final
+  media hop, so the module's own output texture <b>is</b> the stream and the
+  <code>CameraInputOutputBody</code> rule applies verbatim: blit, never adopt.
+  ⚠ <b>That single line is the entire architectural difference from
+  <a href="../archivist/spec.md">archivist</a></b>, which must adopt because its factory
+  deliberately never calls it. Two modules with identical registry entries, identical blockers and
+  identical card structures, and two different bodies — from one call site. spec.md §2.1.
+</div>
+
+<div class="cols">
+<div>
+
+<div class="dock">
+  <div class="chromebar">
+    <span class="nm">peertube</span>
+    <span class="rl">dock full view</span>
+    <span class="x">✕</span>
+  </div>
+
+  <div class="plate">
+    <div class="extbody">
+
+      <div class="prevwrap">
+        <div class="prev">
+          <div class="frame"></div>
+          <span class="screenbtn">SCREEN ON</span>
+        </div>
+      </div>
+
+      <div class="q">
+        <div class="qrow"><span class="inp">blender open movie</span></div>
+        <div class="qrow">
+          <span class="inp small ph">instance (optional)</span>
+          <span class="btn sec">↻ next</span>
+        </div>
+      </div>
+
+      <!-- NOW PLAYING — a NAME, a HOST link, and a lamp. No state word. -->
+      <div class="np">
+        <span class="lamp" title="Streaming: frames are arriving and feeding the video output; the stereo audio tap is wired."></span>
+        <span class="npname">Big Buck Bunny</span>
+        <span class="nphost">framatube.org</span>
+      </div>
+
+      <!-- TRANSPORT — the bar becomes a REAL seek control (spec.md §5.4.1) -->
+      <div class="tr">
+        <span class="tbtn">Pause</span>
+        <span class="seek"><span class="fill"></span><span class="knob"></span></span>
+      </div>
+
+      <!-- THE RESULT LIST — scrolls inside its own max-height, so the pane
+           scrolls the FACE and this scrolls the RESULTS, never both at once. -->
+      <div class="list">
+        <div class="res sel"
+             title="Big Buck Bunny — Blender Foundation on framatube.org, 9:56">
+          <span class="rt a"></span>
+          <span class="rm"><span class="rname">Big Buck Bunny</span><span class="rhost">framatube.org</span></span>
+        </div>
+        <div class="res" title="Sintel — Blender Foundation on tilvids.com, 14:48">
+          <span class="rt b"></span>
+          <span class="rm"><span class="rname">Sintel</span><span class="rhost">tilvids.com</span></span>
+        </div>
+        <div class="res" title="Cosmos Laundromat — Blender Foundation on video.blender.org, 12:10">
+          <span class="rt c"></span>
+          <span class="rm"><span class="rname">Cosmos Laundromat</span><span class="rhost">video.blender.org</span></span>
+        </div>
+        <div class="res" title="Tears of Steel — Blender Foundation on peertube.cpy.re, 12:14">
+          <span class="rt d"></span>
+          <span class="rm"><span class="rname">Tears of Steel</span><span class="rhost">peertube.cpy.re</span></span>
+        </div>
+        <div class="res" title="Spring — Blender Animation Studio on framatube.org, 7:47">
+          <span class="rt a"></span>
+          <span class="rm"><span class="rname">Spring</span><span class="rhost">framatube.org</span></span>
+        </div>
+        <div class="fade"></div>
+      </div>
+
+      <div class="disc">
+        Federated public videos via the <a href="#">PeerTube</a> fediverse ·
+        search by <a href="#">Sepia Search</a>.
+      </div>
+
+    </div>
+
+    <div class="bands">
+      <div class="band">
+        <p class="blab">level</p>
+        <div class="row">
+          <span class="f"><i style="--v:.5"></i><b>gain</b></span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="lanes">
+  <div class="tile">
+    <div class="tn">peertube · streaming</div>
+    <div class="thumb live"></div>
+    <div class="minif"><i style="--v:.5"></i><b>gain</b></div>
+    <p class="tilecap" style="margin:6px 0 0">the stream, live, per node, free</p>
+  </div>
+  <div class="tile">
+    <div class="tn">peertube · nothing picked</div>
+    <div class="thumb idle"></div>
+    <div class="minif"><i style="--v:.5"></i><b>gain</b></div>
+    <p class="tilecap" style="margin:6px 0 0">the module's own idle gradient</p>
+  </div>
+</div>
+
+<div class="warn">
+  <b>The dock VRT scene sees only the top ~425 px</b>
+  (<code>DockFullView.svelte:371</code>, <code>max-height: min(60vh, 680px)</code>). With the
+  picture at 270 px plus the query rows, <b>the result list is mostly below the fold in the
+  baseline</b> — and in the cold scene it is empty anyway. <b>A green dock baseline is NOT evidence
+  the list renders.</b> <code>faces-parity</code> and the §13 e2e are what see it. spec.md §5.3.
+</div>
+
+</div>
+<div class="notes">
+
+  <div class="card">
+    <h3>what each row does not say</h3>
+    <p>The card paints <code>{channel} · {host}{ · LIVE} · {duration}</code>. Three of those four
+    are refused; the survivor is trimmed to a single line.</p>
+    <table>
+      <tr><th>field</th><th>verdict</th></tr>
+      <tr><td class="gone">Blender Foundation</td><td>attribution — to <span class="aria">aria-label</span>, and in full on the linked watch page</td></tr>
+      <tr><td><b>framatube.org</b></td><td><b>KEPT</b> — on a federated item the host is half the identity; two instances can carry the same title</td></tr>
+      <tr><td class="gone">· LIVE</td><td>a state word</td></tr>
+      <tr><td class="gone">9:56</td><td>a measurement</td></tr>
+      <tr><td><b>Big Buck Bunny</b></td><td><b>KEPT</b> — a NAME, on the cameraInput device-name precedent. ⚠ escalated as an owner call</td></tr>
+    </table>
+    <p style="margin-top:8px">⚠ <b>The rule cuts here, which is the test that it is a rule.</b> Five
+    of the card's thirteen text elements go.</p>
+  </div>
+
+  <div class="card">
+    <h3>the owner decision, and what it costs</h3>
+    <p><b>Is a network-fetched item TITLE permitted resting text — a NAME, or third-party content
+    the app did not author?</b> Shared with archivist, applies to nothing else in the fleet.</p>
+    <p>This spec rules <b>NAME</b>, on the shipped, deny-by-default-rostered
+    <code>cameraInput</code> entry, which classifies a runtime-enumerated <b>device label</b> as
+    <i>"a name, not a measurement"</i>. A camera's label is also content the app did not author,
+    arriving from outside the process, different on every machine.</p>
+    <p>⚠ <b>The stakes are higher here than on the sibling.</b> archivist shows one title.
+    peertube's entire interaction is choosing among twenty-four. Under the other reading the list
+    becomes a column of 64 × 36 thumbnails with a hostname under each — <b>not a smaller feature, a
+    different and much worse one</b>. Neither face is BLOCKED either way.</p>
+  </div>
+
+  <div class="card">
+    <h3>the progress bar becomes a control</h3>
+    <p>The card's <code>:613</code> is a read-only <code>&lt;div class="bar"&gt;</code> — <b>a
+    derived value painted at rest with nothing under it</b>, which is the shape the resting-text
+    ruling refuses. Its sibling has had a real <code>&lt;input type="range"&gt;</code> over the same
+    quantity all along.</p>
+    <p><b>The honest fix and the compliant fix are the same fix</b>, for the third time in this
+    program. The position IS the value; the timecode lives on
+    <span class="aria">aria-valuetext</span>.</p>
+    <p>⚠ <b>HLS seeking is not free</b>, and M4 must answer it before the body is written: a live
+    stream has no meaningful duration and hls.js seeking is bounded by the buffered range. The
+    fallback is honest — keep the bar read-only and the control disabled for
+    <code>isLive</code>, exactly as the sibling disables its seek at
+    <code>durationSec &lt;= 0</code>.</p>
+  </div>
+
+</div>
+</div>
+</div>

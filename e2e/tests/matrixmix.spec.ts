@@ -320,7 +320,7 @@ test.fixme('Sequenced VCO: matrix unpatch + re-patch, then Cmd-Z all the way bac
         params: {},
         data: {},
       };
-      if (w.__patch.nodes['vd-seq']) w.__patch.nodes['vd-seq'].params.isPlaying = 0;
+      if (w.__patch.nodes['vd-seq']) w.__patch.nodes['vd-seq'].params.running = 0;
     });
   });
   const card = page.locator('[data-testid="matrixmix-card"][data-node-id="mm-x"]');
@@ -396,4 +396,137 @@ test.fixme('Sequenced VCO: matrix unpatch + re-patch, then Cmd-Z all the way bac
 
   // Back to the EXACT starting patch — same 6 wires, same endpoints.
   expect(normEdges(await readEdges(page))).toEqual(startEdges);
+});
+
+
+// ── THE FACEPLATE, DRIVEN FOR REAL ──────────────────────────────────────────
+//
+// ⚠ EVERY TEST ABOVE BOOTS `?shell=legacy` AND IS THEREFORE BLIND TO THE FACE.
+// That is not an oversight in them — they were written against the card and the
+// card still ships — but it means promotion could have landed a completely dead
+// faceplate with this entire file green. (The same is true of
+// `workflow-dock.spec.ts`'s matrixmix fixture, which also boots `?shell=legacy`
+// and needed no edit for exactly that reason.) This test is the other half: the
+// DEFAULT renderer, which is what a player actually gets.
+//
+// It asserts the three things promotion is responsible for and nothing else:
+//
+//   1. THE LANE TILE ANSWERS "WHICH TWO MODULES" — the argument for ranking the
+//      axis pickers at all. Before promotion this cost a dock full-view open,
+//      because an un-migrated matrixMix rendered a placeholder tile.
+//   2. THE CELLS WRITE THE GRAPH through the same two functions the card's
+//      `<select>`s call, asserted at `node.data`, not at the DOM. A selector
+//      that only re-labels itself is indistinguishable from a dead one.
+//   3. THE GRID BODY IS ALIVE IN THE DOCK, including the `aria-label` that
+//      carries a cell's entire meaning. The visual is a coloured dot or a ✕;
+//      the SENTENCE is the semantics, and under the resting-text ruling the
+//      sentence must live in the accessible name rather than in painted text —
+//      so the accessible name is what a face spec has to read.
+
+/** Pick an option in a shell SELECTOR cell by its visible label. The face's
+ *  selector is the RACKLINE popup primitive, not a native `<select>`, so
+ *  `selectOption` does not apply: click the chip, then the `role="option"`. */
+async function pickAxis(page: Page, cellTestId: string, label: string): Promise<void> {
+  await page.getByTestId(cellTestId).click();
+  await page.getByRole('option', { name: label, exact: true }).click();
+}
+
+/** The matrix node's persisted axis selections, read off the LIVE graph. */
+async function readAxes(page: Page, nodeId: string): Promise<{ x?: string; y?: string }> {
+  return await page.evaluate((id) => {
+    const w = window as unknown as {
+      __patch: { nodes: Record<string, { data?: { xAxisModuleId?: string; yAxisModuleId?: string } }> };
+    };
+    const d = w.__patch.nodes[id]?.data ?? {};
+    return { x: d.xAxisModuleId, y: d.yAxisModuleId };
+  }, nodeId);
+}
+
+test('FACE: the lane tile ranks both axis pickers, they write the graph, and the dock body patches', async ({ page }) => {
+  // The DEFAULT renderer — no `?shell=legacy`. This is the one test in this file
+  // that sees a ModuleShell instead of MatrixMixCard.
+  await page.goto('/rack?seed=none');
+  // A FAILURE BOUND, not the gate: the first navigation on a cold dev server
+  // compiles the whole route graph on demand.
+  await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: 30_000 });
+  await page.locator('.svelte-flow__pane:visible').first().waitFor({ state: 'visible' });
+
+  await spawnPatch(page, [
+    { id: MM, type: 'matrixMix', position: { x: 520, y: 80 }, domain: 'meta' },
+    { id: ADSR, type: 'adsr', position: { x: 60, y: 80 }, domain: 'audio' },
+    { id: VCA, type: 'vca', position: { x: 60, y: 340 }, domain: 'audio' },
+  ]);
+
+  // ── 1. THE TILE IS A FACEPLATE, NOT THE PLACEHOLDER ──────────────────────
+  const laneNode = page.locator(`.svelte-flow__node[data-id="${MM}"]`);
+  const shell = laneNode.getByTestId('module-shell');
+  await expect(shell, 'a promoted meta module renders its curated face in the lane').toBeVisible();
+  await expect(shell).toHaveAttribute('data-shell-type', 'matrixMix');
+  await expect(
+    laneNode.getByTestId('module-shell-placeholder'),
+    'and NOT the un-migrated placeholder this promotion replaced',
+  ).toHaveCount(0);
+  // The legacy card is not in the lane at all under the default renderer.
+  await expect(laneNode.locator('[data-testid="matrixmix-card"]')).toHaveCount(0);
+
+  // ── 2. BOTH RANKED CELLS PAINT, AND THEY READ THE UNSET STATE ────────────
+  // ⚠ PRESENCE, not "the face resolved": a face that ranks controls and renders
+  // none of them is a real shipped shape (`joystick`), and for this module it
+  // would mean a blank tile — the exact outcome `order: []` would have produced.
+  const xCell = shell.getByTestId('shell-cell-matrixmix-x');
+  const yCell = shell.getByTestId('shell-cell-matrixmix-y');
+  await expect(xCell, 'the X axis cell reaches the lane tile').toBeVisible();
+  await expect(yCell, 'the Y axis cell reaches the lane tile').toBeVisible();
+  // The accessible name carries tag + current value — the resting-text ruling's
+  // "speakable and assertable but unpainted" home for exactly this.
+  await expect(xCell).toHaveAttribute('aria-label', /pick a module/);
+
+  // ── 3. THE CELLS WRITE THE GRAPH ─────────────────────────────────────────
+  // ⚠ ASSERTED AT `node.data`, NOT AT THE DOM. A cell whose `onchange` were
+  // wired to nothing would still re-label itself from its own local state and
+  // look perfectly alive.
+  expect(await readAxes(page, MM), 'a fresh matrix has neither axis').toEqual({ x: undefined, y: undefined });
+  await pickAxis(page, 'shell-cell-matrixmix-x', 'ADSR');
+  await pickAxis(page, 'shell-cell-matrixmix-y', 'VCA');
+  await expect
+    .poll(() => readAxes(page, MM), { message: 'both axis writes land on the node' })
+    .toEqual({ x: ADSR, y: VCA });
+
+  // ── 4. THE DOCK BODY IS THE GRID, AND IT IS LIVE ─────────────────────────
+  await shell.getByTestId('shell-open-dock').click();
+  const faceplate = page.getByTestId('dock-full-view');
+  await expect(faceplate).toBeVisible();
+  const grid = faceplate.getByTestId('matrixmix-grid');
+  await expect(grid, 'the fullViewBody extension mounts the cross-point field').toBeVisible();
+  await expect(
+    faceplate.getByTestId('matrixmix-empty'),
+    'and the empty-state hint is gone now that both axes name a module',
+  ).toHaveCount(0);
+
+  // The legal cell: row = VCA.cv (cv input), col = ADSR.env (cv output). Same
+  // testids the card emits — the body was lifted, not rewritten.
+  const legalCell = faceplate.getByTestId('matrixmix-cell-input-cv-output-env');
+  await expect(legalCell).toHaveAttribute('data-kind', 'legalEmpty');
+  // ⚠ THE ARIA IS THE SEMANTICS. The pixels are a dot or a ✕; this sentence is
+  // the only place the cell says what clicking it would DO, and the ruling puts
+  // it in the accessible name rather than in painted face text.
+  await expect(legalCell).toHaveAttribute('aria-label', /patch ENV out . CV in/);
+  expect(await readEdges(page)).not.toHaveProperty(LEGAL_EDGE_ID);
+
+  // Click it → the edge materialises through the SHARED validateEdge seam, and
+  // the cell re-classifies live.
+  await legalCell.click();
+  await expect.poll(async () => Object.keys(await readEdges(page))).toContain(LEGAL_EDGE_ID);
+  await expect(legalCell).toHaveAttribute('data-kind', 'direct');
+  await expect(legalCell.getByTestId('matrixmix-dot')).toBeVisible();
+  await expect(
+    legalCell,
+    'and the sentence follows the state — a static aria-label would be a dead readout',
+  ).toHaveAttribute('aria-label', /connected \(click to unpatch\)/);
+
+  // Unpatch from the same cell, so the body's WRITE path is proven in both
+  // directions rather than only in the direction that adds.
+  await legalCell.click();
+  await expect.poll(async () => Object.keys(await readEdges(page))).not.toContain(LEGAL_EDGE_ID);
+  await expect(legalCell).toHaveAttribute('data-kind', 'legalEmpty');
 });

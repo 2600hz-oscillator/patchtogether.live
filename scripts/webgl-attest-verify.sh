@@ -18,7 +18,7 @@
 # contribution-locked to the owner (owner-only merge + fork-PR approval), so this
 # is an owner-self-attestation = single-trusted-actor model, which is the basis
 # on which the honor-system is acceptable. See
-# .claude/skills/webgl-attest.md (§-2, §7).
+# .claude/skills/renderer-tests/SKILL.md.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

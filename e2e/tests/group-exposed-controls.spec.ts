@@ -4,7 +4,7 @@
 //
 // Scope: group with DRUMSEQZ + TIMELORDE inside. Exposed-controls
 // configuration writes data.exposedControls; the group's bar renders
-// bounded-box-per-child controls (sequencer play/stop, TIMELORDE knobs).
+// bounded-box-per-child controls (SCORE play/stop, TIMELORDE knobs).
 //
 // We bypass the right-click menu pipeline (covered in NodeContextMenu
 // unit tests) and drive the writes directly via the dev __ydoc + __patch
@@ -37,7 +37,7 @@ async function setupChain(page: Page): Promise<void> {
   await spawnPatch(
     page,
     [
-      { id: 'seq-1', type: 'drumseqz',  position: { x: 100, y: 100 }, domain: 'audio' },
+      { id: 'seq-1', type: 'score',  position: { x: 100, y: 100 }, domain: 'audio' },
       { id: 'tl-1',  type: 'timelorde', position: { x: 400, y: 100 }, domain: 'audio' },
     ],
     [],
@@ -105,8 +105,8 @@ async function setExposedControls(
   );
 }
 
-test.describe('Group exposed controls — sequencer play/stop', () => {
-  test('clicking the exposed play button toggles the sequencer isPlaying', async ({ page }) => {
+test.describe('Group exposed controls — SCORE play/stop', () => {
+  test('clicking the exposed play button toggles SCORE isPlaying', async ({ page }) => {
     await setupChain(page);
     await createGroup(page, {
       groupId: 'g-1',
@@ -114,7 +114,7 @@ test.describe('Group exposed controls — sequencer play/stop', () => {
       exposedControls: [{ childId: 'seq-1', controlId: 'playStop' }],
     });
 
-    // Find the exposed-controls bounded box for the sequencer
+    // Find the exposed-controls bounded box for SCORE
     const btn = page.locator('[data-testid="ctrl-btn-seq-1-playStop"]');
     await expect(btn).toBeVisible();
     await expect(btn).toHaveAttribute('data-playing', 'false');
@@ -147,9 +147,9 @@ test.describe('Group exposed controls — sequencer play/stop', () => {
     const header = page.locator('[data-testid="ctrl-box"][data-child-id="seq-1"] [data-testid="ctrl-box-header"]');
     await expect(header).toBeVisible();
     // Livecode auto-name (PR #81) stamps data.name = "DRUMSEQZ1" on freshly
-    // spawned sequencers; pre-livecode patches without data.name fall back
+    // spawned modules; pre-livecode patches without data.name fall back
     // to the def label "DRUMSEQZ". Accept either.
-    await expect(header).toHaveText(/^DRUMSEQZ\d*$/);
+    await expect(header).toHaveText(/^SCORE\d*$/);
   });
 });
 

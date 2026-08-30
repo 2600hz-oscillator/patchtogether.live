@@ -18,6 +18,29 @@
 // pulse is scheduled via the existing `extras.forcePulse()` test hook (also
 // used by the e2e spec) — exact same pulse-width path on every run.
 //
+// ⚠ THAT PARAGRAPH WAS TRUE AND INCOMPLETE, AND THE GAP MADE A BASELINE
+// NONDETERMINISTIC FOR MONTHS. It covers the CONSUMER (SCOPE's analyser) and
+// says nothing about the SOURCE, whose card is half the framed area. NIBBLES is
+// a running snake game: it seeds from `Date.now()` unless `__nibblesVrtSeed` is
+// set, and it steps whenever `frame.time` advances. Neither was pinned here.
+//
+// MEASURED, by classifying the two PNGs rather than reasoning from the code —
+// the committed baseline against the frame a full sweep captured:
+//   LEN 4 → LEN 5 · pellet moved (495,167) → (374,133) · snake moved
+// i.e. a different RNG draw AND a different number of elapsed game ticks. It is
+// a GAME-STATE difference, not the analyser-phase difference the determinism
+// note above would lead you to suspect.
+//
+// It went unnoticed because the scene usually lands inside the diff tolerance,
+// and because VRT captures are scoped by default — a full sweep, which is what
+// finally compared this baseline, is rare. The sibling spec `vrt-composite.spec.ts`
+// had the same exposure and does NOT have the bug: its scenes go through
+// `vrt-composite-scenes.ts`, which has pinned `__nibblesVrtSeed` all along. Two
+// composite specs, one pinned, one not.
+//
+// Both halves are now pinned for the NIBBLES pairs only — see the per-pair
+// branch in the test body, and ⚠ note the DOOM pairs are deliberately excluded.
+//
 // Baselines are authored by LINUX CI — one set, no {platform} segment (see
 // vrt.config.ts). `task vrt:commit` dispatches the capture; a local macOS run
 // is a smoke test, not a capture.
@@ -185,9 +208,55 @@ test.describe('VRT: video→audio CV/gate composite pairs (#414 regression cover
       // drift that argument was about is no longer in it.
 
       await pinVrtFonts(page);
+
+      // ── NIBBLES DETERMINISM (see the block comment above this describe) ──
+      //
+      // ⚠ SCOPED TO THE NIBBLES PAIRS BY NAME. The DOOM pairs' path below is
+      // byte-for-byte what it was: no clock pin, no seed, nothing. DOOM's game
+      // clock IS its frame clock (`surface.draw` calls `runTic`, one tic per
+      // rendered frame), so pinning time on that module would re-specify how
+      // far the marine walks in a suite that then asserts on where he ended up.
+      // The standing ruling is not to touch DOOM's timing at all, so this
+      // branch is what keeps that promise structurally rather than by comment.
+      const pinsNibbles = pair.source.type === 'nibbles';
+
+      if (pinsNibbles) {
+        // (1) FREEZE THE ENGINE CLOCK, before boot. The game advances off
+        //     `frame.time`: `dt = tNow - lastDrawTimeS` feeds `tickAccumS`,
+        //     and the tick loop runs `advanceGame()` while that exceeds the
+        //     period. Pinning `frame.time` makes `dt` identically 0, so the
+        //     snake never steps and the render stops being a function of how
+        //     long the runner took to get here.
+        await page.addInitScript(() => {
+          (globalThis as unknown as { __videoEngineFreezeTime?: number })
+            .__videoEngineFreezeTime = 2.0;
+        });
+      }
+
       await page.goto('/rack?shell=legacy&seed=none');
       await page.waitForLoadState('networkidle');
       await awaitVrtFonts(page);
+
+      if (pinsNibbles) {
+        // (2) PIN THE RNG — and it MUST land before the module is constructed,
+        //     which is why it is here rather than after `spawnPatch`.
+        //     `initialSeed()` reads this global inside the factory and falls
+        //     back to `Date.now()`; that fallback is what made the pellet and
+        //     the snake spawn somewhere new on every run.
+        //
+        // ⚠ THE POST-SPAWN PATH IS NOT AN ALTERNATIVE, and the difference is
+        //     easy to miss: `maybeApplyVrtSeed()` does re-seed from this same
+        //     global on a later frame, but it only assigns `state` — it does
+        //     NOT repaint. With the clock frozen there is no tick to trigger
+        //     `paintFrame()`, so the framebuffer would keep showing the
+        //     ORIGINAL `Date.now()`-seeded first frame and the scene would
+        //     still be nondeterministic. Setting it before spawn makes the
+        //     constructor's own "paint a first frame" the pinned one.
+        await page.evaluate(() => {
+          (globalThis as unknown as { __nibblesVrtSeed?: number })
+            .__nibblesVrtSeed = 0xC0DE;
+        });
+      }
 
       if (pair.gatedOnDoomWasm) {
         const present = await doomWasmPresent(page);

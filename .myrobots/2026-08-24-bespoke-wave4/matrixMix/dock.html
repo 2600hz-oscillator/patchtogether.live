@@ -1,0 +1,296 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>MATRIXMIX face — the dock faceplate</title>
+<style>
+/* ─────────────────────────────────────────────────────────────────────────
+   MATRIXMIX FACEPLATE — MOCKUP, state 1 of 2.
+   SPEC AND MOCKUP ONLY. Nothing here is implemented. See spec.md.
+
+   ⚠ BLOCKED on a one-field precursor: MetaModuleDef has no `face` field
+   (meta/module-registry.ts:23-56), so this cannot be declared today.
+
+   House tokens, the wave-1/2/3 set. The grid is the card's own <table>
+   (MatrixMixCard.svelte:272-321) lifted into a fullViewBody.
+   ───────────────────────────────────────────────────────────────────────── */
+:root{
+  --bg:#0e1013; --dock:#12161c; --pbody:#1c1f24; --line:#2c3037; --tile:#33383f;
+  --ink:#eef1f5; --dim:#9aa2ad; --faint:#646c77;
+  --accent:#6cf; --meta:#a3b18a; --ch1:#fbbf24; --warn:#f2c14e; --good:#8fe6b0;
+  --c-audio:#f0a868; --c-cv:#7dd3fc; --c-gate:#e8c66a; --c-pitch:#c084fc;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+  font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1200px;margin:0 auto;padding:26px 20px 90px}
+h1{font-size:21px;font-weight:800;margin:0 0 6px;letter-spacing:.01em}
+.sub{color:var(--dim);font-size:12.5px;margin:0 0 14px;max-width:106ch}
+.sub b{color:var(--ink)} code{font-family:var(--mono);font-size:11.5px;color:var(--ch1)}
+.nav{display:flex;gap:8px;margin:0 0 20px;font-size:11px;flex-wrap:wrap}
+.nav a{color:var(--ink);text-decoration:none;border:1px solid var(--line);border-radius:6px;
+  padding:6px 12px;background:#12161c;font-family:var(--mono);letter-spacing:.06em;text-transform:uppercase}
+.nav a.on{border-color:var(--meta);color:var(--meta)}
+.warn{border:1px solid #6a5330;background:#1c1811;border-radius:8px;padding:11px 14px;
+  margin:12px 0;font-size:12.5px;color:#e8cf9a;max-width:118ch}
+.warn b{color:var(--warn)}
+.ok{border:1px solid #3b5a48;background:#111a15;border-radius:8px;padding:11px 14px;
+  margin:12px 0;font-size:12.5px;color:#a9d8bd;max-width:118ch}
+.ok b{color:var(--good)}
+.cols{display:grid;grid-template-columns:minmax(0,1fr) 380px;gap:18px;align-items:start}
+@media (max-width:1120px){.cols{grid-template-columns:minmax(0,1fr)}}
+
+.dock{background:var(--dock);border:1px solid var(--line);border-radius:11px;overflow:hidden;padding:11px}
+.chromebar{display:flex;align-items:baseline;gap:9px;padding:0 2px 8px}
+.chromebar .nm{font-size:13px;font-weight:800;letter-spacing:.03em}
+.chromebar .rl{font-size:9.4px;letter-spacing:.09em;text-transform:uppercase;color:var(--faint);font-family:var(--mono)}
+.chromebar .x{margin-left:auto;color:var(--faint);font-family:var(--mono);font-size:12px}
+.plate{background:var(--pbody);border:1px solid var(--tile);border-left:4px solid var(--meta);
+  border-radius:10px;padding:0 0 12px;width:max-content;max-width:100%}
+
+/* ── the fullViewBody: the cross-point grid ───────────────────────────── */
+.extbody{padding:12px 14px 4px}
+.gridbox{max-width:520px;overflow:auto;border:1px solid #1a1f2a;border-radius:5px;background:#0b0e12}
+table.mm{border-collapse:collapse;font-family:var(--mono);font-size:8.6px}
+table.mm th,table.mm td{border:1px solid #191d24;padding:0;text-align:center}
+table.mm th{color:var(--faint);font-weight:400;letter-spacing:.04em;background:#0e1218;
+  padding:3px 5px;white-space:nowrap;position:sticky;top:0}
+table.mm th.rowh{position:sticky;left:0;top:auto;text-align:right;padding:3px 6px 3px 7px}
+table.mm th .d{opacity:.5;margin-left:3px}
+table.mm th.in{color:#8fbfe0} table.mm th.out{color:#e0b98f}
+table.mm td{width:22px;height:20px;background:#0a0d11}
+.dot{display:inline-block;width:9px;height:9px;border-radius:50%}
+.xr{color:#c0605e;font-size:9px} .xg{color:#5a626d;font-size:9px}
+.corner{color:#4d5560;font-size:7.4px;line-height:1.1;background:#0e1218}
+.legend{display:flex;gap:14px;flex-wrap:wrap;margin:9px 0 2px;font-family:var(--mono);font-size:8.4px;color:var(--faint)}
+.legend span{display:flex;align-items:center;gap:5px}
+
+/* ── bands: the two selector cells ────────────────────────────────────── */
+.bands{padding:6px 14px 0}
+.band{border-top:1px solid var(--line);padding-top:8px;margin-top:10px}
+.band:first-child{border-top:0;margin-top:4px}
+.blab{margin:0 0 7px;font-size:9.4px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--dim)}
+.row{display:flex;flex-wrap:wrap;align-items:flex-start;gap:10px 16px}
+.sel{display:flex;flex-direction:column;gap:4px;min-width:220px}
+.sel .cap{font-size:7.8px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--dim);font-family:var(--mono)}
+.selbox{display:flex;align-items:center;gap:7px;border:1px solid #3a4048;border-radius:6px;
+  background:#151a21;padding:5px 9px}
+.selbox .tag{font-family:var(--mono);font-size:7.6px;letter-spacing:.12em;color:var(--faint)}
+.selbox .val{font-family:var(--mono);font-size:10px;color:var(--ink);flex:1 1 auto;min-width:0;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.selbox .caret{color:var(--faint);font-size:9px}
+
+.notes{display:flex;flex-direction:column;gap:12px}
+.card{border:1px solid var(--line);background:#101419;border-radius:9px;padding:12px 14px}
+.card h3{margin:0 0 7px;font-size:10px;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--accent);font-family:var(--mono);font-weight:700}
+.card p{margin:0 0 8px;font-size:12px;color:var(--dim)}
+.card p:last-child{margin-bottom:0}
+.card b{color:var(--ink)}
+.card pre{margin:6px 0 0;font-family:var(--mono);font-size:9.6px;color:#bcd3e8;
+  background:#0b0e12;border:1px solid #1c222a;border-radius:5px;padding:8px 9px;overflow:auto}
+table.k{border-collapse:collapse;width:100%;font-size:11px;margin:2px 0 0}
+table.k th,table.k td{text-align:left;padding:4px 7px 4px 0;border-bottom:1px solid #1e242c;vertical-align:top;color:var(--dim)}
+table.k th{color:var(--faint);font-family:var(--mono);font-size:8.6px;letter-spacing:.09em;text-transform:uppercase;font-weight:400}
+table.k td b{color:var(--ink)}
+.aria{font-family:var(--mono);font-size:10px;color:#8fe6b0}
+</style>
+<div class="wrap">
+
+<h1>MATRIXMIX — the dock faceplate</h1>
+<p class="sub">
+  <b>SPEC AND MOCKUP ONLY. Nothing here is implemented.</b> A module with no ports, no params and
+  no factory — and it still gets <b>two real ranked cells</b>, because a runtime roster
+  <em>can</em> be a face cell when it lives in the graph.
+</p>
+
+<div class="nav">
+  <a class="on" href="dock.html">1 · the dock face</a>
+  <a href="lane-tile.html">2 · the lane tile — the argument</a>
+  <a href="spec.md">spec.md</a>
+</div>
+
+<div class="warn">
+  <b>BLOCKED on one field.</b> <code>MetaModuleDef</code>
+  (<code>meta/module-registry.ts:23-56</code>) declares <code>noUserControl</code>
+  <em>"so the face lints can read it uniformly across all three registries"</em> — and has
+  <b>no <code>face</code> field</b>. <code>svelte-check</code> refuses this face today, and the
+  promotion anchor cannot see the gap because its predicate is
+  <code>def.face &amp;&amp; …</code>, permanently false for a meta def.
+</div>
+
+<div class="cols">
+<div>
+
+  <div class="dock">
+    <div class="chromebar">
+      <span class="nm">MATRIXMIX</span>
+      <span class="rl">dock · full view</span>
+      <span class="x">✕</span>
+    </div>
+
+    <div class="plate">
+      <div class="extbody">
+        <div class="gridbox">
+          <table class="mm">
+            <thead>
+              <tr>
+                <th class="corner">Y↓<br>X→</th>
+                <th class="in">in<span class="d">◂</span></th>
+                <th class="in">fm<span class="d">◂</span></th>
+                <th class="in">cutoff<span class="d">◂</span></th>
+                <th class="in">res<span class="d">◂</span></th>
+                <th class="out">out<span class="d">▸</span></th>
+                <th class="out">env<span class="d">▸</span></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <th class="rowh out">out<span class="d">▸</span></th>
+                <td><span class="dot" style="background:var(--c-audio)"></span></td>
+                <td></td><td></td><td></td>
+                <td><span class="xr">✕</span></td>
+                <td><span class="xr">✕</span></td>
+              </tr>
+              <tr>
+                <th class="rowh out">sub<span class="d">▸</span></th>
+                <td><span class="xg">✕</span></td>
+                <td></td><td></td><td></td>
+                <td><span class="xr">✕</span></td>
+                <td><span class="xr">✕</span></td>
+              </tr>
+              <tr>
+                <th class="rowh out">gate<span class="d">▸</span></th>
+                <td></td><td></td>
+                <td><span class="dot" style="background:var(--c-gate)"></span></td>
+                <td></td>
+                <td><span class="xr">✕</span></td>
+                <td><span class="xr">✕</span></td>
+              </tr>
+              <tr>
+                <th class="rowh in">sync<span class="d">◂</span></th>
+                <td><span class="xr">✕</span></td>
+                <td><span class="xr">✕</span></td>
+                <td><span class="xr">✕</span></td>
+                <td><span class="xr">✕</span></td>
+                <td></td>
+                <td><span class="dot" style="background:var(--c-cv)"></span></td>
+              </tr>
+              <tr>
+                <th class="rowh in">pitch<span class="d">◂</span></th>
+                <td><span class="xr">✕</span></td>
+                <td><span class="xr">✕</span></td>
+                <td><span class="xr">✕</span></td>
+                <td><span class="xr">✕</span></td>
+                <td></td><td></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="legend">
+          <span><span class="dot" style="background:var(--c-audio);width:8px;height:8px"></span> connected — click to unpatch</span>
+          <span><span class="xr">✕</span> input taken — click replaces</span>
+          <span><span class="xg">✕</span> output fans out — click adds</span>
+          <span style="color:#3c434d">blank — legal, empty</span>
+        </div>
+      </div>
+
+      <div class="bands">
+        <div class="band">
+          <p class="blab">Axes</p>
+          <div class="row">
+            <div class="sel">
+              <span class="cap">X axis</span>
+              <div class="selbox"><span class="tag">X</span><span class="val">RESOFILTER 2</span><span class="caret">▾</span></div>
+            </div>
+            <div class="sel">
+              <span class="cap">Y axis</span>
+              <div class="selbox"><span class="tag">Y</span><span class="val">TIDY VCO</span><span class="caret">▾</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="ok" style="margin-top:16px">
+    <b>Nothing is deleted here, and that is unusual for this program.</b> matrixMix paints no
+    derived-state text: the axis labels become the cells' <code>tag</code>, the jack heads are
+    port ids, and the empty hint is instructional copy. <b>No readout is removed and no finding
+    loses its surface.</b>
+  </div>
+
+</div>
+
+<div class="notes">
+
+  <div class="card">
+    <h3>the whole face, declared</h3>
+    <pre>face: {
+  glyph: 'none',
+  order: ['matrixmix-x',
+          'matrixmix-y'],
+  extension: 'matrixmix',
+}</pre>
+    <p style="margin-top:8px">Completeness passes trivially — <code>params</code> is empty, so
+      the <code>:339</code> loop has nothing to require.</p>
+  </div>
+
+  <div class="card">
+    <h3>a runtime roster CAN be a cell</h3>
+    <p><code>shell-cells.ts:157-165</code> — <em>"A dropdown over a NAMED roster that lives in
+      node.data (not a param)"</em>:</p>
+    <pre>options: (node) =&gt; SelectorOption[]
+value:   (node) =&gt; string
+onchange:(nodeId, value) =&gt; void</pre>
+    <p style="margin-top:8px"><code>options</code> is a <b>function</b>, and a cell-actions
+      module may import the graph directly — <code>kria-cell-actions.ts:29</code> imports
+      <code>patch</code> from <code>$lib/graph/store</code>, which is exactly what
+      <code>MatrixMixCard.svelte:75-87</code> does.</p>
+  </div>
+
+  <div class="card">
+    <h3>⚠ a shipped comment says otherwise</h3>
+    <p><code>legacy-fallback.ts:70-73</code>, about cameraInput's device picker: <em>"It is NOT a
+      ParamDef, so <b>no shell face can render it</b>."</em></p>
+    <p>Read as a general claim that is <b>false</b>. The real constraint is <b>where the roster
+      LIVES</b>: derivable from the graph → reachable; behind a browser API or on an engine
+      handle → not. That distinction is what keeps
+      <a href="../midiclock/spec.md" style="color:var(--meta)">midiclock</a>'s device picker in a
+      body instead.</p>
+  </div>
+
+  <div class="card">
+    <h3>the grid stays dock-only</h3>
+    <table class="k">
+      <tr><th>seam</th><th>verdict</th></tr>
+      <tr><td><code>fullViewBody</code></td><td><b>chosen</b> — wired, takes nodeId, no probe required</td></tr>
+      <tr><td><code>panel</code> cell</td><td>rejected — <code>minWidth</code> would be a fiction and the only expressible probe is a revision counter</td></tr>
+      <tr><td><code>editorSurface</code></td><td>rejected — declared but <b>unwired</b>; wiring it is a second platform change on a PR that already has one</td></tr>
+    </table>
+  </div>
+
+  <div class="card">
+    <h3>the semantics live in the aria</h3>
+    <p>The visual of a cell is a dot or a ✕. The sentence is at
+      <code>MatrixMixCard.svelte:192-206</code> and lands on
+      <code>aria-label</code> (<code>:300</code>):</p>
+    <p class="aria">"input already patched from FILTER.cutoff — clicking replaces it"</p>
+    <p><b>It must not become painted face text</b>, and it does not need to — that is exactly
+      where the resting-text ruling puts this class: speakable and assertable, unpainted.</p>
+  </div>
+
+  <div class="card">
+    <h3>cost</h3>
+    <table class="k">
+      <tr><td><b>WebGL attest</b></td><td>ZERO — nothing under <code>lib/meta/</code> is in the basis</td></tr>
+      <tr><td><b>ART</b></td><td>ZERO — meta domain, the audio gate never sees it</td></tr>
+      <tr><td><b>VRT</b></td><td>two baselines added, <b>none moved</b> — the cheapest position in the wave</td></tr>
+      <tr><td><b>Push 2</b></td><td>unchanged — no params to re-rank</td></tr>
+    </table>
+  </div>
+
+</div>
+</div>
+</div>

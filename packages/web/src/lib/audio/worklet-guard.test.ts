@@ -15,7 +15,7 @@
 // A runtime test can only see nodes the test itself constructs. It is
 // STRUCTURALLY UNABLE to see the 63rd module that goes back to
 // `new AudioWorkletNode`. That is the opt-in-gate pathology from
-// `.claude/skills/blind-gates.md` §5, so the second half of this file is
+// AGENTS.md's instrument rule, so the second half of this file is
 // deny-by-default over the tree, with a NAMED `(file, processor)` exemption per
 // instance — anchored to the artifact, so an exemption that no longer names a
 // real site is RED, and ratcheted in both directions.

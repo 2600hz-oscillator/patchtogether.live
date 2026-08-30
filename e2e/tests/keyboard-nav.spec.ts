@@ -15,13 +15,14 @@ import { spawnPatch } from './_helpers';
 
 test.describe.configure({ mode: 'parallel' });
 
-test('keyboard-nav Sequencer: arrow keys never move caret + jump gate<->pitch', async ({ page, rack }) => {
-  await spawnPatch(page, [
-    { id: 'seq', type: 'sequencer', params: { bpm: 120, length: 8, isPlaying: 0 } },
-  ]);
+test('keyboard-nav Cartesian: arrow keys never move caret + jump gate<->pitch', async ({ page, rack }) => {
+  // Re-subjected from the deleted SEQUENCER card (2026-08-24) to CARTESIAN,
+  // the surviving 2-role ['gate','pitch'] grid card. The behaviour under test
+  // is grid-nav.ts's, which both cards shared verbatim.
+  await spawnPatch(page, [{ id: 'seq', type: 'cartesian' }]);
 
   // Type a note into step 0's pitch input.
-  const step0 = page.locator('[data-testid="seq-pitch-seq-0"]');
+  const step0 = page.locator('[data-testid="cart-pitch-seq-0"]');
   await step0.focus();
   await step0.fill('c3');
 
@@ -29,39 +30,39 @@ test('keyboard-nav Sequencer: arrow keys never move caret + jump gate<->pitch', 
   // Press ArrowLeft; if our preventDefault works, focus stays here, caret
   // does NOT move. We verify by pressing Right immediately after — if Left
   // didn't move the caret, Right also doesn't (still at end), and the
-  // *focus* is now somewhere else if the parent moved it. Sequencer's
-  // ArrowLeft from step 0 clamps (no-op).
+  // *focus* is now somewhere else if the parent moved it. ArrowLeft from
+  // cell 0 (top-left) clamps (no-op).
   await step0.press('ArrowLeft');
   // After clamp, focus stays on step0. Caret still at end. Verify focus.
   await expect(step0).toBeFocused();
 
   // Now ArrowRight should move focus to step 1's pitch.
   await step0.press('ArrowRight');
-  const step1 = page.locator('[data-testid="seq-pitch-seq-1"]');
+  const step1 = page.locator('[data-testid="cart-pitch-seq-1"]');
   await expect(step1).toBeFocused();
 
   // ArrowUp from a pitch input should focus the SAME cell's gate (gate is
   // rendered above the input).
   await step1.press('ArrowUp');
-  const gate1 = page.locator('[data-testid="seq-gate-seq-1"]');
+  const gate1 = page.locator('[data-testid="cart-gate-seq-1"]');
   await expect(gate1).toBeFocused();
 
   // Space toggles the gate.
   await gate1.press(' ');
   const stepData = await page.evaluate(() => {
-    const w = globalThis as unknown as { __patch: { nodes: Record<string, { data?: { steps?: Array<{ on: boolean; midi: number | null }> } }> } };
-    return w.__patch.nodes['seq']?.data?.steps?.[1] ?? null;
+    const w = globalThis as unknown as { __patch: { nodes: Record<string, { data?: { cells?: Array<{ on: boolean; midi: number | null }> } }> } };
+    return w.__patch.nodes['seq']?.data?.cells?.[1] ?? null;
   });
   expect(stepData?.on).toBe(true);
 
   // ArrowRight from gate moves to next gate.
   await gate1.press('ArrowRight');
-  const gate2 = page.locator('[data-testid="seq-gate-seq-2"]');
+  const gate2 = page.locator('[data-testid="cart-gate-seq-2"]');
   await expect(gate2).toBeFocused();
 
   // ArrowDown from gate to pitch of same cell.
   await gate2.press('ArrowDown');
-  const step2 = page.locator('[data-testid="seq-pitch-seq-2"]');
+  const step2 = page.locator('[data-testid="cart-pitch-seq-2"]');
   await expect(step2).toBeFocused();
 
   // ArrowUp from gate clamps (top of grid) — focus must stay on gate2.
@@ -71,17 +72,15 @@ test('keyboard-nav Sequencer: arrow keys never move caret + jump gate<->pitch', 
   await expect(gate2).toBeFocused();
 });
 
-test('keyboard-nav Sequencer: rapid-add scenario (type, right, type, right, ...)', async ({ page, rack }) => {
-  await spawnPatch(page, [
-    { id: 'seq', type: 'sequencer', params: { bpm: 120, length: 4, isPlaying: 0 } },
-  ]);
+test('keyboard-nav Cartesian: rapid-add scenario (type, right, type, right, ...)', async ({ page, rack }) => {
+  await spawnPatch(page, [{ id: 'seq', type: 'cartesian' }]);
 
   const seq = ['c3', 'd3', 'e3', 'f3'];
-  const step0 = page.locator('[data-testid="seq-pitch-seq-0"]');
+  const step0 = page.locator('[data-testid="cart-pitch-seq-0"]');
   await step0.focus();
 
   for (let i = 0; i < seq.length; i++) {
-    const cur = page.locator(`[data-testid="seq-pitch-seq-${i}"]`);
+    const cur = page.locator(`[data-testid="cart-pitch-seq-${i}"]`);
     await expect(cur).toBeFocused();
     await cur.fill(seq[i]!);
     if (i < seq.length - 1) {
@@ -90,11 +89,11 @@ test('keyboard-nav Sequencer: rapid-add scenario (type, right, type, right, ...)
   }
   // Commit the final cell — the in-progress edit only flushes on blur or
   // navigation, so a "last step" without a follow-up arrow stays in the buffer.
-  await page.locator(`[data-testid="seq-pitch-seq-${seq.length - 1}"]`).blur();
+  await page.locator(`[data-testid="cart-pitch-seq-${seq.length - 1}"]`).blur();
 
   const stored = await page.evaluate(() => {
-    const w = globalThis as unknown as { __patch: { nodes: Record<string, { data?: { steps?: Array<{ on: boolean; midi: number | null }> } }> } };
-    return w.__patch.nodes['seq']?.data?.steps?.slice(0, 4).map((s) => s.midi) ?? [];
+    const w = globalThis as unknown as { __patch: { nodes: Record<string, { data?: { cells?: Array<{ on: boolean; midi: number | null }> } }> } };
+    return w.__patch.nodes['seq']?.data?.cells?.slice(0, 4).map((c) => c.midi) ?? [];
   });
   // c3 d3 e3 f3 -> 48 50 52 53
   expect(stored).toEqual([48, 50, 52, 53]);
@@ -125,11 +124,9 @@ test('keyboard-nav Cartesian: ArrowUp from row-1 cell pitch hits gate of cell di
 });
 
 test('keyboard-nav: caret never moves inside the pitch input on arrow keys', async ({ page, rack }) => {
-  await spawnPatch(page, [
-    { id: 'seq', type: 'sequencer', params: { bpm: 120, length: 4, isPlaying: 0 } },
-  ]);
+  await spawnPatch(page, [{ id: 'seq', type: 'cartesian' }]);
 
-  const step0 = page.locator('[data-testid="seq-pitch-seq-0"]');
+  const step0 = page.locator('[data-testid="cart-pitch-seq-0"]');
   await step0.focus();
   await step0.fill('a4');
 
@@ -145,18 +142,12 @@ test('keyboard-nav: caret never moves inside the pitch input on arrow keys', asy
   await expect(step0).toHaveValue('a4');
 });
 
-test('keyboard-nav: default value of new sequencer step is c3', async ({ page, rack }) => {
-  await spawnPatch(page, [
-    { id: 'seq', type: 'sequencer', params: { bpm: 120, length: 4, isPlaying: 0 } },
-  ]);
-
-  // Without injecting any step data, the renderer should default to c3 in
-  // every step's pitch box (driven by defaultSteps()).
-  const step0 = page.locator('[data-testid="seq-pitch-seq-0"]');
-  await expect(step0).toHaveValue('c3');
-  const step3 = page.locator('[data-testid="seq-pitch-seq-3"]');
-  await expect(step3).toHaveValue('c3');
-});
+// ⚠ 'default value of new sequencer step is c3' DELETED 2026-08-24 with the
+// SEQUENCER card. Its subject was that card's own `defaultSteps()`, which no
+// longer exists — and the surviving default is asserted, unchanged, by
+// 'default value of new cartesian cell is c3' immediately below. Deleted
+// rather than re-subjected: re-subjecting would have produced a second
+// identical copy of the test beneath it.
 
 test('keyboard-nav: default value of new cartesian cell is c3', async ({ page, rack }) => {
   await spawnPatch(page, [{ id: 'cart', type: 'cartesian' }]);

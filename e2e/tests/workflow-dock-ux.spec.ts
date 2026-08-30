@@ -37,8 +37,14 @@
 import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 import { pressFlipKey } from './_flip-key';
-import { AUDIO_FIXTURE, VIDEO_FIXTURE, fixtureProblems, fixtureType } from './_face-fixtures';
+import {
+  AUDIO_PLACEHOLDER_FIXTURE,
+  VIDEO_FIXTURE,
+  fixtureProblems,
+  fixtureType,
+} from './_face-fixtures';
 import { BOOT_MS } from '../_helpers/boot-budget';
+import { settle } from '../_helpers/frames';
 
 async function gotoWorkflow(page: Page): Promise<void> {
   await page.goto('/rack');
@@ -72,7 +78,11 @@ async function panTileTo(
     },
     { id, target },
   );
-  await page.waitForTimeout(120);
+  // `duration: 0` makes the pan instant IN THE STORE; the real clicks below
+  // need the new transform PAINTED, which is a frame count, not a duration —
+  // 120 ms was ~7 frames locally and under one on CI's SwiftShader (7.9 fps
+  // measured). Two rAFs is Svelte-flush + paint.
+  await settle(page);
 }
 
 // ── THE VIDEO FIXTURE IS HEALTHY (#1864) ────────────────────────────────────
@@ -100,13 +110,17 @@ test.describe('P1 dock/expand UX fixes (?shell=1)', () => {
   test('EXPAND toggles to CLOSE while expanded, and CLOSE closes the full-view', async ({ page }) => {
     // When every audio module is promoted the un-migrated half of this case has
     // no subject BY DESIGN — a NAMED skip, never a silent pass (#1864).
-    test.skip(AUDIO_FIXTURE.kind === 'migration-complete', AUDIO_FIXTURE.why);
+    // ⚠ THE PLACEHOLDER FIXTURE (#2137): this leg toggles a pill, so it needs a
+    // module that renders a placeholder and nothing more. It used to share the
+    // operability leg's fixture and inherited its fader + audio-class
+    // requirements for no reason of its own.
+    test.skip(AUDIO_PLACEHOLDER_FIXTURE.kind === 'migration-complete', AUDIO_PLACEHOLDER_FIXTURE.why);
     await gotoWorkflow(page);
     await spawnPatch(page, [
       { id: 'm1', type: 'vca', position: { x: 30, y: 40 } }, // migrated
       // DERIVED, not named — a hard-coded un-migrated fixture rots as each P1
       // wave promotes more modules (delay was consumed by batch 3).
-      { id: 'u1', type: fixtureType(AUDIO_FIXTURE), position: { x: 250, y: 40 } }, // un-migrated
+      { id: 'u1', type: fixtureType(AUDIO_PLACEHOLDER_FIXTURE), position: { x: 250, y: 40 } }, // un-migrated
     ]);
     const shellTile = page.locator('.svelte-flow__node[data-id="m1"] [data-testid="module-shell"]');
     const placeholderTile = page.locator('.svelte-flow__node[data-id="u1"] [data-testid="module-shell-placeholder"]');

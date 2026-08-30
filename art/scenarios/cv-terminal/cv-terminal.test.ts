@@ -119,11 +119,16 @@
 //     same boundary `cv-param-reach` had. `cv-bridge-map.ts` and the video
 //     registry's own gates cover that side.
 //
-//  3. ORDERING AND INIT-TIME CLOBBER. #1662 also carries a finding no graph
-//     inspection can reach: mixmstrs' comp macro is applied LAST and
+//  3. ORDERING AND INIT-TIME CLOBBER. #1662 also carried a finding no graph
+//     inspection can reach: mixmstrs' comp macro was applied LAST and
 //     UNCONDITIONALLY at construction, so a rack saved before the macro existed
-//     is re-read at +29.174 dB, louder and uncompressed, on every reload. That
-//     is a value/ordering defect, invisible to every predicate here.
+//     was re-read at +29.174 dB, louder and uncompressed, on every reload. That
+//     is a value/ordering defect, invisible to every predicate here — the
+//     structure was perfect throughout. FIXED in #1737 (the macro applies at
+//     build only when `node.params` carries the key) and gated where it is
+//     observable, on RENDERED AUDIO, in `art/scenarios/mixmstrs/cv-path.test.ts`.
+//     The BLIND SPOT is unchanged and is the point of the entry: nothing here
+//     would have caught it, and nothing here would catch the next one.
 //
 //  4. THE ENGINE'S OWN DELIVERY PATH. `addEdge` inserts an `attachCvScale`
 //     WaveShaper between source and param and tees a per-port tap analyser.
@@ -133,7 +138,10 @@
 //  5. WHETHER A JS-CONSUMED PAD IS ACTUALLY READ. The register says the consumer
 //     is JavaScript; it cannot say the pump fires. For SCOPE and RASTERIZE
 //     `cv-display-param-reach` supplies that observable through
-//     `read('drawParams')`.
+//     `read('drawParams')`. For MIXMSTRS' eight comp macros — marked here since
+//     #1737 — it is `art/scenarios/mixmstrs/cv-path.test.ts`, which drives a real
+//     CV cable onto the pad and asserts the MIX MOVES, so "marked" and "actually
+//     pumped" are two different green lights rather than one.
 
 import { describe, expect, it, beforeAll, afterAll } from 'vitest';
 import { OfflineAudioContext } from 'node-web-audio-api';
@@ -194,6 +202,12 @@ const EXEMPT: readonly Exemption[] = [
   //        named here instead, and the entries carry the same two-sided
   //        re-check the register does. Fold the mark in whenever wavesculpt next
   //        moves that hash for a real reason, and delete these.
+  //        ⚠ THAT TRIGGER FIRED AND WAS DECLINED ONCE, DELIBERATELY. The
+  //        renderer-extraction PR moved the hash for a real reason, but the
+  //        construction site these marks belong on is the readCamShadow rig,
+  //        which is OWNER-LISTED as not-to-be-touched — so folding them in was
+  //        out of that PR's scope by ruling, not by cost. The next basis-moving
+  //        change that is ALLOWED in that rig is the one that should do it.
   ...([
     'morph1_cv', 'morph2_cv', 'morph3_cv', 'morph4_cv',
     'pos_x', 'pos_y', 'pos_z', 'zoom', 'rot', 'scale', 'wiggle',
@@ -206,13 +220,17 @@ const EXEMPT: readonly Exemption[] = [
   })),
 
   // --- 3. LIVE DEFECTS.
-  ...([1, 2, 3, 4, 5, 6, 7, 8] as const).map((n): Exemption => ({
-    kind: 'known-defect',
-    module: 'mixmstrs',
-    port: `comp${n}`,
-    issue: 1737,
-    why: 'The comp macro publishes `compShadow[id].gain` on a GainNode the factory deliberately never connects downstream ("We DON\'T connect g downstream" is in the source, under a comment naming #1662). A cable on this port is bit-exactly audio-inert and so is clip automation of it. #1662 was CLOSED on the gate, not on a fix; #1737 tracks the live defect.',
-  })),
+  //        EMPTY, and that is a result rather than an oversight. mixmstrs'
+  //        eight `comp{N}` macros lived here as `known-defect` / #1737: the
+  //        shadow GainNode reached nothing and nothing read `g.gain` back, so a
+  //        cable on the port was bit-exactly audio-inert. The factory now runs
+  //        the wavesculpt-shaped rig (DC-1 input, AnalyserNode tap, a pump that
+  //        re-applies the macro) and calls `markJsConsumedParam` at the
+  //        construction site, so those ports are DERIVED js-consumed and need no
+  //        entry at all — which is how this leg told us to retire them:
+  //        "If the defect was fixed, delete the entry and close the issue".
+  //        The `known-defect` KIND stays for the next one; `failsReach` keeps
+  //        its permanent negative control below either way.
 ];
 
 // ---------------------------------------------------------------------------

@@ -115,12 +115,78 @@ export const SSR_CARD_COMPONENTS_STUB =
   '// SSR build stub — see vite.config.ts ssrDropCardComponents().\n' +
   'export const componentByName = {};\n';
 
-function ssrDropCardComponents(): Plugin {
+// ---------------------------------------------------------------------------
+// …AND THE SECOND OCCUPANT: `<Canvas>` ITSELF (#2088).
+//
+// Dropping the ~210 card components was never going to be enough, because the
+// thing that IMPORTS them is itself the biggest single input in the Worker:
+// `chunks/Canvas.js`, 5877 KiB raw in the bundle, dragging
+// `milkdrop-preset-converter` (1236 KiB), `module-docs.generated.js` (1106 KiB),
+// `@webamp/butterchurn` (425 KiB), `@grame/faustwasm` (159 KiB) and mediabunny
+// (~470 KiB) behind it. That is what put the deployed Worker 177 KiB over
+// Cloudflare's hard 3 MiB gzipped ceiling and turned every deploy red.
+//
+// ⚠ THE SAFETY ARGUMENT IS STRICTLY STRONGER THAN THE CARD ONE, and it is worth
+// being precise about why. The card stub rests on a claim about CONTENT — that
+// a server render has zero nodes, so the map is never indexed — which needed
+// `prove-ssr-identical.sh` to test. This stub rests on a claim about REACHABILITY:
+// after `src/routes/r/[id]/+page.ts` landed, **no route server-renders
+// `<Canvas>` at all**. `/rack` has been `ssr = false` since it moved off `/`,
+// `/r/[id]` now matches it, and those are the only two route modules that
+// import the component (every other match under `src/routes/**` is a comment or
+// a CSS selector). A component that is never rendered on the server cannot
+// contribute a byte to server HTML, so there is no HTML to diff.
+//
+// ⚠ THE COMPONENT COULD NOT SURVIVE A NODE-HOSTED SSR ANYWAY — see
+// `prove-ssr-identical.sh`: `Canvas.js` imports a named export
+// `@grame/faustwasm` does not provide under Node's ESM resolution, so any
+// Node-hosted SSR of a Canvas route is a 500. Production only ever worked
+// because wrangler esbuild-bundles the Worker. Stubbing it on the server
+// removes a dependency on that accident rather than creating a new risk.
+//
+// ⚠ IF SOMEONE LATER SERVER-RENDERS A CANVAS ROUTE, THIS STUB MUST GO — and the
+// tell is not subtle: the route will render an empty `<div>` where the canvas
+// belongs. `PT_SSR_KEEP_CARDS=1` disables BOTH stubs, which is the negative
+// control for that, not a fallback.
+const CANVAS_MODULE = 'src/lib/ui/Canvas.svelte';
+
+/** The whole SSR replacement for `<Canvas>`. A component that renders nothing.
+ *  Kept as a string so a test can assert on it, exactly like the card stub. */
+export const SSR_CANVAS_STUB =
+  '<!-- SSR build stub — see vite.config.ts ssrDropBrowserOnlyGraph(). -->\n' +
+  '<script lang="ts">\n' +
+  '  // Accept and ignore every prop: no route server-renders <Canvas>, so this\n' +
+  '  // component exists only to keep the server graph type-correct and small.\n' +
+  '  const _props = $props();\n' +
+  '  void _props;\n' +
+  '</script>\n';
+
+// ---------------------------------------------------------------------------
+// …AND THE THIRD OCCUPANT: THE `/dev/**` PLAYGROUND PAGES (#2094).
+//
+// After the two stubs above, the single largest ROUTE input left in the Worker
+// was `entries/pages/dev/video-patch-drop/_page.svelte.js` (222 KiB), dragging
+// `chunks/peakstate.js` behind it — a dev page, in the production Worker.
+//
+// Same REACHABILITY argument as the Canvas stub, resting on ONE flag:
+// `src/routes/dev/+layout.ts` declares `ssr = false` for the whole subtree, so
+// no server render of any /dev page component can occur, and a component that
+// is never rendered on the server cannot contribute a byte to server HTML.
+// ⚠ THAT FLAG IS THIS STUB'S PRECONDITION — `dev-routes-ssr-stub.test.ts` pins
+// the pair, so deleting the layout flag reds the gate naming this coupling
+// before the server ever renders a stub. The tell, if it ever regresses past
+// the gate, is not subtle: every /dev page SSRs as an empty shell.
+// `PT_SSR_KEEP_CARDS=1` disables all three stubs — the shared negative control.
+const DEV_ROUTES_DIR = 'src/routes/dev';
+
+function ssrDropBrowserOnlyGraph(): Plugin {
   const WEB_DIR = fileURLToPath(new URL('.', import.meta.url));
-  const TARGET = path.resolve(WEB_DIR, CARD_COMPONENTS_MODULE);
+  const CARD_TARGET = path.resolve(WEB_DIR, CARD_COMPONENTS_MODULE);
+  const CANVAS_TARGET = path.resolve(WEB_DIR, CANVAS_MODULE);
+  const DEV_ROUTES_TARGET = path.resolve(WEB_DIR, DEV_ROUTES_DIR) + path.sep;
   let isBuild = false;
   return {
-    name: 'patchtogether:ssr-drop-card-components',
+    name: 'patchtogether:ssr-drop-browser-only-graph',
     enforce: 'pre',
     configResolved(config) {
       isBuild = config.command === 'build';
@@ -130,8 +196,14 @@ function ssrDropCardComponents(): Plugin {
       // Vite 6+ exposes the environment; `options.ssr` is the older signal.
       const ssr = this.environment?.name === 'ssr' || options?.ssr === true;
       if (!ssr) return null;
-      if (path.resolve(id.split('?')[0]) !== TARGET) return null;
-      return SSR_CARD_COMPONENTS_STUB;
+      const resolved = path.resolve(id.split('?')[0]);
+      if (resolved === CARD_TARGET) return SSR_CARD_COMPONENTS_STUB;
+      if (resolved === CANVAS_TARGET) return SSR_CANVAS_STUB;
+      // /dev/** pages: never server-rendered (routes/dev/+layout.ts ssr=false),
+      // so the empty component keeps the server graph type-correct and small.
+      // `.svelte` only — the +layout.ts carrying the flag must survive as-is.
+      if (resolved.startsWith(DEV_ROUTES_TARGET) && resolved.endsWith('.svelte')) return SSR_CANVAS_STUB;
+      return null;
     },
   };
 }
@@ -190,8 +262,56 @@ function worktreeIdentity(): Plugin {
 
 // COOP/COEP headers required for SharedArrayBuffer (Faust may want it).
 // Phase 1 dev sets these; Phase 2 sets them in production via _headers.
+
+/**
+ * COEP on `vite preview` WORKER-SCRIPT responses — measured necessity
+ * (#1953/#1976): `preview.headers` below never reaches STATIC ASSETS
+ * (SvelteKit's sirv and the SSR middleware answer first; documents get
+ * their COI headers from hooks.server.ts), so under `vite preview` the
+ * `/_app/immutable/workers/*` scripts were served with NO Cross-Origin-
+ * Embedder-Policy. A crossOriginIsolated page refuses to START a dedicated
+ * worker whose SCRIPT RESPONSE lacks a compatible COEP: the load fails
+ * with a plain error Event — silent without an onerror handler. That
+ * killed BOTH bridge workers (vst + es9) in every preview/CI e2e run,
+ * unnoticed until the vst specs became the first to assert on a live
+ * worker.
+ *
+ * ⚠ SCOPED TO /_app/immutable/workers/ ON PURPOSE. The first version
+ * stamped EVERY preview response and broke the product's route semantics:
+ * only the /rack routes are isolated (hooks.server.ts), the LANDING is
+ * deliberately NOT (third-party media), and landing-routing.spec.ts pins
+ * that a landing→rack click is a full-page nav BETWEEN those two isolation
+ * states — its "landing must be non-isolated" precondition went red on CI.
+ * Worker scripts are the one asset class whose RESPONSE must carry COEP,
+ * and they are only ever loaded from the isolated routes, so this scope
+ * fixes the workers without touching any document's isolation. Dev is fine
+ * (`server.headers` applies to all vite-dev responses) and prod is fine
+ * (CF `_headers`); the DIRECT configurePreviewServer form installs before
+ * the internal middlewares. Keep the value in sync with server.headers /
+ * hooks.server.ts / packages/web/_headers.
+ */
+function coiPreviewWorkerHeaders() {
+  return {
+    name: 'coi-preview-worker-headers',
+    configurePreviewServer(server: {
+      middlewares: {
+        use(fn: (req: { url?: string }, res: {
+          setHeader(n: string, v: string): void;
+        }, next: () => void) => void): void;
+      };
+    }) {
+      server.middlewares.use((req, res, next) => {
+        if (String(req.url ?? '').includes('/_app/immutable/workers/')) {
+          res.setHeader('Cross-Origin-Embedder-Policy', 'credentialless');
+        }
+        next();
+      });
+    },
+  };
+}
+
 export default defineConfig({
-  plugins: [ensureModuleDocs(), ssrDropCardComponents(), worktreeIdentity(), sveltekit()],
+  plugins: [ensureModuleDocs(), ssrDropBrowserOnlyGraph(), worktreeIdentity(), coiPreviewWorkerHeaders(), sveltekit()],
   // Inline the product version as a compile-time constant (see APP_VERSION
   // above). Applies in both `dev` (serve) and `build`, so the topbar heading
   // renders the real X.Y.Z locally, in e2e, and in the deployed bundle.
@@ -213,6 +333,43 @@ export default defineConfig({
     // unset (local dev, CI, every deploy before the token is wired) this is
     // `false`, so the default build output is byte-for-byte unchanged.
     sourcemap: process.env.VITE_SENTRY_SOURCEMAPS === '1' ? 'hidden' : false,
+    // ⚠ MINIFY THE **SSR** BUILD (#2088). The Worker was shipping as
+    // UNMINIFIED SOURCE, and nothing made that visible.
+    //
+    // Two defaults compose into the bug, neither wrong on its own:
+    //   * Vite does not minify SSR builds by default (minification can break
+    //     `Function.prototype.toString` tricks, and a server bundle is
+    //     normally not size-constrained), and
+    //   * `wrangler pages deploy` re-bundles `_worker.js` with esbuild but
+    //     does NOT minify it either.
+    // On Cloudflare the server bundle IS size-constrained — 3 MiB gzipped on
+    // the free tier — so the two defaults meet at a hard ceiling.
+    //
+    // MEASURED, via `node scripts/measure-worker-bundle.mjs` (which reads
+    // wrangler's own "Total Upload / gzip" number, i.e. the figure Cloudflare
+    // actually enforces), same tree, same commit, only this flag moved:
+    //
+    //   | build            | raw KiB  | gzip KiB | vs 3072 KiB ceiling |
+    //   |------------------|----------|----------|---------------------|
+    //   | without (before) | 13163.42 |  3249.34 | −177.34  (OVER)     |
+    //   | with    (after)  | 10557.10 |  2595.39 | +476.61  (under)    |
+    //
+    // −653.95 KiB gzipped, −20.1%. That is what turns a RED deploy green: the
+    // failure in #2088 is `Your Worker exceeded the size limit of 3 MiB`, and
+    // 3249.34 KiB is 177 KiB past it.
+    //
+    // ⚠ THIS IS THE THRESHOLD, NOT THE SUBJECT. It buys headroom; it does not
+    // fix why a browser-only render graph is reachable from the server at all
+    // (Canvas.js alone is 5877 KiB raw in the bundle, pulled in by
+    // `/r/[id]/+page.svelte`). #2088 tracks that structural work; this flag
+    // exists so the ceiling stops blocking every deploy while it happens.
+    //
+    // ⚠ MINIFICATION HAS BITTEN THIS REPO BEFORE — see the note above about
+    // the Faust worklet that broke under minification. That hazard is already
+    // sidestepped by pre-bundling the worklet at DSP build time, and the
+    // prerender pass (which EXECUTES this SSR bundle at build time, over 392
+    // module doc pages) is a real exercise of it on every build.
+    minify: true,
   },
   optimizeDeps: {
     // Pre-bundle deps that Vite's startup dep-scanner can't reach. The

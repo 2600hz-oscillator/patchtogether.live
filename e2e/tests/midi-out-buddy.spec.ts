@@ -18,7 +18,7 @@
 
 import { test, expect } from './_fixtures';
 import { type Page } from '@playwright/test';
-import { spawnPatch } from './_helpers';
+import { spawnPatch, seedKriaWith, buildKriaMidiData } from './_helpers';
 import {
   DEFAULT_FAKE_MIDI_OUT,
   installMidiOutCapture,
@@ -157,33 +157,17 @@ test('midi-out-buddy: SEQUENCER gate/pitch → captured MIDI NoteOn on the fake 
   await spawnPatch(
     page,
     [
-      { id: 'seq', type: 'sequencer', position: { x: 60, y: 60 }, params: { bpm: 240, length: 4, isPlaying: 1, gateLength: 0.5 } },
+      { id: 'seq', type: 'kria', position: { x: 60, y: 60 }, params: { bpm: 240, running: 1} },
       { id: 'm', type: TYPE, position: { x: 400, y: 60 } },
     ],
     [
-      { id: 'e-gate', from: { nodeId: 'seq', portId: 'gate' }, to: { nodeId: 'm', portId: 'gate' }, sourceType: 'gate', targetType: 'gate' },
-      { id: 'e-pitch', from: { nodeId: 'seq', portId: 'pitch' }, to: { nodeId: 'm', portId: 'pitch' }, sourceType: 'cv', targetType: 'cv' },
+      { id: 'e-gate', from: { nodeId: 'seq', portId: 'gate1' }, to: { nodeId: 'm', portId: 'gate' }, sourceType: 'gate', targetType: 'gate' },
+      { id: 'e-pitch', from: { nodeId: 'seq', portId: 'pitch1' }, to: { nodeId: 'm', portId: 'pitch' }, sourceType: 'cv', targetType: 'cv' },
     ],
   );
 
   // Seed sequencer steps (defaults are all off) so it actually pulses gate.
-  await page.evaluate(() => {
-    const w = globalThis as unknown as {
-      __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
-      __ydoc: { transact: (fn: () => void) => void };
-    };
-    w.__ydoc.transact(() => {
-      const n = w.__patch.nodes['seq'];
-      if (!n) return;
-      if (!n.data) n.data = {};
-      n.data.steps = [
-        { on: true, midi: 72 }, // C5 = +1 V/oct
-        { on: true, midi: 67 },
-        { on: true, midi: 64 },
-        { on: true, midi: 60 },
-      ];
-    });
-  });
+  await seedKriaWith(page, 'seq', buildKriaMidiData([72, 67, 64, 60], { duration: 0.5 })); // C5 first = +1 V/oct
 
   // Connect the module's MIDI output + select the fake device.
   await page.evaluate(() => {

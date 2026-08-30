@@ -5,7 +5,7 @@
 // ── THE RULING, AND THE DEFECT BEHIND IT ───────────────────────────────────
 //
 // Owner, 2026-08-17: *"also tidyvco is fully twice as wide as it needs to be,
-// that needs to be fixed and any other new cards we have that are fucked like
+// that needs to be fixed and any other new cards we have that are [broken] like
 // that need to be fixed"*, then generalised: *"we do not want useless gray
 // horizontal space on cards, ever. prefer compact. screen real estate is
 // expensive!"*

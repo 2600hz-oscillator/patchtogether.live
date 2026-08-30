@@ -102,6 +102,49 @@ export const lumakeyDef: VideoModuleDef = {
     { id: 'invert',    label: 'Inv',  defaultValue: DEFAULTS.invert,    min: 0, max: 1,   curve: 'discrete' },
   ],
 
+  // ── FACE (batch-22 · the video thin tail) ─────────────────────────────────
+  face: {
+    order: ['threshold', 'softness', 'invert'],
+
+    // ⚠ NO `pages`. Three controls describing ONE decision — where the key
+    // cuts, how hard the edge is, and which side survives — are a single honest
+    // band. Sectioning them would be headings over three controls.
+
+    // ⚠ TWO FADERS AND A TOGGLE, AND ONLY THE FADERS NEED DECLARING.
+    // `LumakeyCard.svelte` draws `threshold`/`softness` with `NeonFader`, and
+    // nothing in a ParamDef separates "a level" from any other continuous
+    // scalar — so an undeclared face resolves them to KNOBS and silently swaps
+    // a dial in for a throw, invisibly to every def-reading gate.
+    //
+    // ⚠ `invert` IS DELIBERATELY ABSENT FROM THIS MAP, and that is the
+    // interesting half. It is declared `min: 0, max: 1, curve: 'discrete'` —
+    // the genuine 2-state shape — so `looksLikeToggle` resolves it to a TOGGLE
+    // on its own and the card agrees (it draws a `<button>`). Declaring a
+    // primitive here would be redundant at best; getting it wrong would give a
+    // 2-state param a KNOB, which is the moog962 lesson — such a control is
+    // INERT, because a dial cannot reliably land on two values.
+    paramCells: { threshold: 'fader', softness: 'fader' },
+
+    // ⚠ NO `bareCells` — one unlabelled band, so no heading exists to make a
+    // caption redundant, and Thr/Soft/Inv name three different things.
+
+    // ⚠ MANDATORY FOR A VIDEO DEF — no `type: 'audio'` output on this def
+    // (`out` is `video`), so `primaryAudioOutPortId` is null and any other
+    // glyph literal falls through `glyphBinding` to a dead `{kind:'static'}`
+    // that reddens module-face-lint. The live picture arrives from
+    // `hasVideoSurface(def)` at the lane and the `fullViewBody` extension at
+    // the dock — assert THAT, never this declaration.
+    glyph: 'none',
+
+    // SCREEN ON/OFF arrives through this slot (#1928): promotion stops BOTH
+    // surfaces rendering `LumakeyCard.svelte`, and a faced video module has no
+    // other route to the switch. On a KEYER the body's retained watch mark is
+    // the pointed case — this module exists to be composited downstream, so a
+    // lapsed mark would change what the DOWNSTREAM sees. See
+    // `$lib/ui/modules/lumakey/shell-extension.ts`.
+    extension: 'lumakey',
+  },
+
   docs: {
     explanation: "lumakey is a two-input luminance-key compositor: it lays a foreground frame over a background frame and decides, pixel by pixel, which one shows through based on how bright the foreground is. It computes Rec. 601 luma of the foreground, then builds an alpha mask with smoothstep(threshold - softness, threshold + softness, luma) so bright foreground pixels become opaque (alpha 1, foreground shows) and dark ones drop out (alpha 0, background bleeds through), finally mixing background toward foreground by that alpha. Use it to matte out a black or white plate behind a source, drop text/letterbox overlays onto a scene, or composite a bright source over another video; flip invert to key on the dark areas instead. With no foreground patched it passes the background straight through so a half-wired chain is never a black hole.",
     inputs: {

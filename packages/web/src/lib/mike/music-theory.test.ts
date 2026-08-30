@@ -109,7 +109,7 @@ describe('music-theory: findClockSource', () => {
 
   it('prefers TIMELORDE when present', () => {
     const nodes = [
-      { id: 'foo-1', type: 'sequencer' },
+      { id: 'foo-1', type: 'kria' },
       { id: 'lord-1', type: 'timelorde' },
     ];
     const found = findClockSource(nodes, []);
@@ -120,7 +120,7 @@ describe('music-theory: findClockSource', () => {
   it('falls back to an upstream of a sequencer clock when no TIMELORDE', () => {
     const nodes = [
       { id: 'lfo-1', type: 'lfo' },
-      { id: 'seq-1', type: 'sequencer' },
+      { id: 'seq-1', type: 'kria' },
     ];
     const edges = [
       {
@@ -135,9 +135,9 @@ describe('music-theory: findClockSource', () => {
   });
 
   it('isSequencerType identifies known sequencer types', () => {
-    expect(isSequencerType('sequencer')).toBe(true);
-    expect(isSequencerType('polyseqz')).toBe(true);
-    expect(isSequencerType('drumseqz')).toBe(true);
+    expect(isSequencerType('clipplayer')).toBe(true);
+    expect(isSequencerType('kria')).toBe(true);
+    expect(isSequencerType('score')).toBe(true);
     expect(isSequencerType('analogVco')).toBe(false);
     expect(isSequencerType('reverb')).toBe(false);
   });

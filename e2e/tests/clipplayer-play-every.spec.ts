@@ -46,13 +46,20 @@ async function openEditorWithNote(page: import('@playwright/test').Page) {
 test.fixme('@clipplayer card Play Every menu writes playEvery onto the note; "1" clears it', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 2 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page }) => {
   const cell = await openEditorWithNote(page);
 
-  // Right-click the note → the per-note menu → Play Every 3.
+  // Right-click the note → the per-note menu → the `play every` SUBMENU → 3.
+  // (The option lists moved into flyouts on 2026-08-24 per the owner's menu
+  // restructure; the levels and their testids are unchanged. Updated here while
+  // the test is parked so the body still describes the product when #1847 frees
+  // it — a parked test that no longer compiles against the UI is a second bug
+  // waiting at un-park time.)
   await cell.click({ button: 'right' });
+  await page.getByTestId('clipplayer-sub-skip-pe-cp').click();
   await page.getByTestId('clipplayer-play-every-item-3').click();
   await expect.poll(() => step0PlayEvery(page), { timeout: 5000 }).toBe(3);
 
   // Re-open the menu and pick "1" (every loop) → the key is removed (back to default).
   await cell.click({ button: 'right' });
+  await page.getByTestId('clipplayer-sub-skip-pe-cp').click();
   await page.getByTestId('clipplayer-play-every-item-1').click();
   await expect.poll(() => step0PlayEvery(page), { timeout: 5000 }).toBe(1);
 });

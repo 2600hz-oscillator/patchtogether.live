@@ -77,8 +77,25 @@ export const depolarizerDef: AudioModuleDef = {
       out: "The unipolar result, out = 0.5 + depth·(in/2), centered on 0.5. At depth 1: in=-1 gives 0, in=0 gives 0.5, in=+1 gives 1.",
     },
     controls: {
-      depth: "Sets how far the output departs from the 0.5 center, on a linear 0..1 fader — it scales only the slope, never the center. 1 (default) = the full bipolar→unipolar conversion (in=±1 reaches 0/1); 0.5 = a half-strength swing (output only moves 0.25..0.75); 0 = flat 0.5 regardless of input. So it attenuates the modulation depth around the neutral center.",
+      depth: "Sets how far the output departs from the 0.5 center, on a linear 0..1 knob — it scales only the slope, never the center. 1 (default) = the full bipolar→unipolar conversion (in=±1 reaches 0/1); 0.5 = a half-strength swing (output only moves 0.25..0.75); 0 = flat 0.5 regardless of input. So it attenuates the modulation depth around the neutral center.",
     },
+  },
+
+  // ONE PARAM, SO ONE RANK AND ONE BAND. There is nothing to prioritise and
+  // nothing dropped — the honest face for a one-knob utility is one knob.
+  //
+  // NO `paramCells`: `DepolarizerCard` draws DEPTH with `<Knob>`, which is the
+  // shell's default primitive for a ranked param, so the face and the card
+  // already agree. The declaration exists for the primitives the shell CANNOT
+  // infer (a fader, a grid, a colour) — declaring `'fader'` here to match a
+  // knob would be a lie that no gate reads back.
+  //
+  // `glyph: 'none'` is RUN, not argued: `out` is `type: 'cv'` and
+  // `primaryAudioOutPortId` matches only `type === 'audio'`, so every live
+  // binding is unavailable and any glyph would resolve to a dead `static`.
+  face: {
+    order: ['depth'],
+    glyph: 'none',
   },
 
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {

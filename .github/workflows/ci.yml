@@ -13,7 +13,7 @@ name: CI
 # `behavioral-coverage` at 125) had grown into those caps and were reporting
 # `cancelled` on main runs, which poisons the green signal AND disqualifies the
 # run from `daily-prod-deploy.yml`'s `find-green` (it rejects any job not
-# success/skipped/null). Owner ruling: "shit that is not gating, is worthless".
+# success/skipped/null). Owner ruling: "[anything] that is not gating, is worthless".
 #
 # ⚠ MERGE LATENCY IS UNCHANGED. Time-to-merge was, and remains, pinned by the
 # `e2e` shard matrix inside the umbrella. This is not a speedup; it is the
@@ -44,7 +44,7 @@ name: CI
 #                            | preview bundle ONCE (VITE_E2E_HOOKS=1) → the
 #                            | web-preview-dist artifact the e2e shards serve
 #   art             ~60 s  | needs: dsp-build (restores dist, dsp:build no-ops)
-#   e2e (× 10)    ~3-4 min | matrix shards 1..10/10, blob reporter; needs:
+#   e2e (× 12)    ~3-4 min | matrix shards 1..12/12, blob reporter; needs:
 #                            | [dsp-build, build-web]; runs E2E_USE_PREVIEW=1
 #                            | against the prebuilt bundle (`vite preview`,
 #                            | :4173) instead of booting `vite dev` per shard.
@@ -53,9 +53,14 @@ name: CI
 #                            | was deleted 2026-06-20; webgl-smoke + webgl-attest
 #                            | are the blessed heavy-WebGL gates now).
 #   ci (umbrella)   ~0 s   | needs all above; gates branch protection
-#   vrt-strict-shard (× 4) ~6.5 min | matrix 1..4/4, needs: dsp-build; the
-#                            | REQUIRED comparison lane, split by MEASURED
-#                            | per-test cost (scripts/vrt-shard-plan.mjs)
+#   vrt-strict-shard       | matrix under `vrt-strict-shard` below (the count
+#                            | lives THERE, not in this table), needs: dsp-build;
+#                            | the REQUIRED comparison lane, split by MEASURED
+#                            | per-test cost (scripts/vrt-shard-plan.mjs).
+#                            | Duration: `node scripts/vrt-shard-plan.mjs
+#                            | --report <N>` derives it from the committed cost
+#                            | artifact — the "~6.5 min" that used to sit here
+#                            | was 2.3x stale (#2039).
 #   vrt-strict      ~10 s  | needs: vrt-strict-shard — the AGGREGATOR, and the
 #                            | job whose `name:` is the required context
 #
@@ -70,9 +75,14 @@ name: CI
 # Critical path: max(typecheck, unit, art, slowest-e2e-shard) ≈ 4-5 min, vs the
 # previous ~22 min single-runner pipeline. Setup is repeated per-job (npm cache
 # makes it ~70 s each), which is the deliberate trade-off the plan accepted in
-# exchange for parallelism. Free-tier concurrency cap is 20 concurrent jobs;
-# with the informational lanes deleted the pipeline tops out well under it
-# (10 e2e + 4 vrt-strict shards + typecheck/unit/art/build/… ).
+# exchange for parallelism. Free-tier concurrency cap is 20 concurrent jobs.
+# ⚠ MEASURED on run 32408464982 (2026-08-20), reading created_at vs started_at
+# per job: every job started 1-4 s after creation with ~19 running at once, so
+# the pipeline was NOT queueing at that width. The vrt-strict matrix went 4 → 6
+# in #2039, which takes peak concurrency to ~21 — the first change that can
+# actually reach the cap. If a run ever shows a multi-minute gap between a
+# job's created_at and its started_at, THAT is what it will be, and the vrt
+# matrix is the cheapest thing to shrink.
 #
 # Branch ruleset note: the "main: green PRs only" ruleset (id 16042163)
 # requires the status check `typecheck + unit + ART + E2E`. The `ci` umbrella
@@ -80,14 +90,26 @@ name: CI
 # coordinated PUT to /repos/.../rulesets/16042163. Rename it ONLY in a PR
 # that also updates the ruleset.
 
+# ── NO PATH FILTER, DELIBERATELY (2026-08-23) ──────────────────────────────
+#
+# `paths-ignore` used to skip prose-only pushes and PRs. It is GONE, and with it
+# `docs-only-gate.yml` + `scripts/docs-only-gate.mjs` + their test.
+#
+# The reason is the SHAPE, not the cost. A path-skipped workflow reports NOTHING,
+# and the branch ruleset REQUIRES four contexts, so a docs-only PR sat blocked
+# with zero failures — which is why a whole second workflow existed to post those
+# contexts on the EXACT INVERSE filter. Two path lists that must stay exact
+# complements of each other, forever, maintained by hand, is a standing trap: the
+# repo's own standard had to carry a rule ("the path lists move TOGETHER") whose
+# only job was to stop a silent deadlock.
+#
+# Deleting the filter deletes the trap. A docs-only PR now runs CI like any
+# other PR. They are rare; the price is CI minutes on a prose change, and what it
+# buys is a workflow, a script, a test and a hand-maintained complement invariant
+# all going away.
 on:
   push:
     branches: [main, first-mvp]
-    paths-ignore:
-      - '**/*.md'
-      - '!docs/design/face-migration.generated.md'
-      - '.myrobots/**'
-      - 'LICENSE'
   pull_request:
     # `labeled` REMOVED 2026-08-17 with the behavioral lane. It existed for one
     # reason — adding the 'behavioral' label re-fired CI so the otherwise-skipped
@@ -100,17 +122,9 @@ on:
     # exactly what this PR exists to stop main from reporting.
     #
     # These three are the GitHub default set; they stay listed explicitly because
-    # once `types:` is declared the default no longer applies — and because
-    # docs-only-gate.yml declares the SAME three, so the two workflows now fire
-    # on identical event types (their path filters are complements; see the note
-    # on `paths-ignore` below). Path filters are unchanged.
+    # once `types:` is declared the default no longer applies.
     types: [opened, synchronize, reopened]
     branches: [main]
-    paths-ignore:
-      - '**/*.md'
-      - '!docs/design/face-migration.generated.md'
-      - '.myrobots/**'
-      - 'LICENSE'
   # Manual re-trigger on a branch (operator convenience). NOTE: a
   # workflow_dispatch run does NOT count toward a PR's required-status-check
   # gate (confirmed on #524) — so vrt-update.yml no longer dispatches this to
@@ -184,8 +198,8 @@ jobs:
   # It gates: it is in the `ci` umbrella's needs + env + failing condition
   # below, the same three edits every other required job uses. No new required
   # context, so no ruleset change (ruleset 16042163 requires the umbrella and
-  # vrt-strict; naming a job after a required context is the thing the
-  # docs-only-gate comments warn against).
+  # vrt-strict — and ⚠ never satisfy a required context by naming a JOB after
+  # it: a job-level `if:` skip reports as SUCCESS to branch protection).
   # -----------------------------------------------------------------------
   lint:
     name: lint (eslint + shellcheck)
@@ -206,6 +220,24 @@ jobs:
           key: ${{ runner.os }}-deps-${{ hashFiles('package-lock.json') }}
           restore-keys: |
             ${{ runner.os }}-deps-
+
+      # node_modules itself, not just npm's download cache. `~/.npm` above
+      # saves re-DOWNLOADING; this saves re-LINKING, which is where the time
+      # goes: `task install` measured 104-114s in every one of 29 jobs with
+      # ~/.npm already warm, vs ~1s with node_modules present. It is on the
+      # critical path twice (build-web, then again inside each e2e shard).
+      #
+      # EXACT KEY, NO restore-keys — deliberately unlike the ~/.npm block above.
+      # A prefix fallback is safe for a download cache and unsafe here: a
+      # partial hit would restore a tree that does not match package-lock.json.
+      # A lockfile change must be a clean miss and a full install.
+      - name: Cache node_modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            node_modules
+            packages/*/node_modules
+          key: ${{ runner.os }}-nodemodules-${{ hashFiles('package-lock.json') }}
 
       - name: Install workspace deps
         run: flox activate -- task install
@@ -244,6 +276,24 @@ jobs:
         with:
           path: packages/web/.svelte-kit
           key: ${{ runner.os }}-svelte-kit-${{ hashFiles('packages/web/svelte.config.js', 'packages/web/src/routes/**', 'packages/web/package.json') }}
+
+      # node_modules itself, not just npm's download cache. `~/.npm` above
+      # saves re-DOWNLOADING; this saves re-LINKING, which is where the time
+      # goes: `task install` measured 104-114s in every one of 29 jobs with
+      # ~/.npm already warm, vs ~1s with node_modules present. It is on the
+      # critical path twice (build-web, then again inside each e2e shard).
+      #
+      # EXACT KEY, NO restore-keys — deliberately unlike the ~/.npm block above.
+      # A prefix fallback is safe for a download cache and unsafe here: a
+      # partial hit would restore a tree that does not match package-lock.json.
+      # A lockfile change must be a clean miss and a full install.
+      - name: Cache node_modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            node_modules
+            packages/*/node_modules
+          key: ${{ runner.os }}-nodemodules-${{ hashFiles('package-lock.json') }}
 
       - name: Install workspace deps
         run: flox activate -- task install
@@ -354,6 +404,24 @@ jobs:
           path: packages/web/.svelte-kit
           key: ${{ runner.os }}-svelte-kit-${{ hashFiles('packages/web/svelte.config.js', 'packages/web/src/routes/**', 'packages/web/package.json') }}
 
+      # node_modules itself, not just npm's download cache. `~/.npm` above
+      # saves re-DOWNLOADING; this saves re-LINKING, which is where the time
+      # goes: `task install` measured 104-114s in every one of 29 jobs with
+      # ~/.npm already warm, vs ~1s with node_modules present. It is on the
+      # critical path twice (build-web, then again inside each e2e shard).
+      #
+      # EXACT KEY, NO restore-keys — deliberately unlike the ~/.npm block above.
+      # A prefix fallback is safe for a download cache and unsafe here: a
+      # partial hit would restore a tree that does not match package-lock.json.
+      # A lockfile change must be a clean miss and a full install.
+      - name: Cache node_modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            node_modules
+            packages/*/node_modules
+          key: ${{ runner.os }}-nodemodules-${{ hashFiles('package-lock.json') }}
+
       - name: Install workspace deps
         run: flox activate -- task install
 
@@ -428,6 +496,24 @@ jobs:
         with:
           name: dsp-dist
           path: packages/dsp/dist
+
+      # node_modules itself, not just npm's download cache. `~/.npm` above
+      # saves re-DOWNLOADING; this saves re-LINKING, which is where the time
+      # goes: `task install` measured 104-114s in every one of 29 jobs with
+      # ~/.npm already warm, vs ~1s with node_modules present. It is on the
+      # critical path twice (build-web, then again inside each e2e shard).
+      #
+      # EXACT KEY, NO restore-keys — deliberately unlike the ~/.npm block above.
+      # A prefix fallback is safe for a download cache and unsafe here: a
+      # partial hit would restore a tree that does not match package-lock.json.
+      # A lockfile change must be a clean miss and a full install.
+      - name: Cache node_modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            node_modules
+            packages/*/node_modules
+          key: ${{ runner.os }}-nodemodules-${{ hashFiles('package-lock.json') }}
 
       - name: Install workspace deps
         run: flox activate -- task install
@@ -528,6 +614,24 @@ jobs:
           name: dsp-dist
           path: packages/dsp/dist
 
+      # node_modules itself, not just npm's download cache. `~/.npm` above
+      # saves re-DOWNLOADING; this saves re-LINKING, which is where the time
+      # goes: `task install` measured 104-114s in every one of 29 jobs with
+      # ~/.npm already warm, vs ~1s with node_modules present. It is on the
+      # critical path twice (build-web, then again inside each e2e shard).
+      #
+      # EXACT KEY, NO restore-keys — deliberately unlike the ~/.npm block above.
+      # A prefix fallback is safe for a download cache and unsafe here: a
+      # partial hit would restore a tree that does not match package-lock.json.
+      # A lockfile change must be a clean miss and a full install.
+      - name: Cache node_modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            node_modules
+            packages/*/node_modules
+          key: ${{ runner.os }}-nodemodules-${{ hashFiles('package-lock.json') }}
+
       - name: Install workspace deps
         run: flox activate -- task install
 
@@ -536,6 +640,38 @@ jobs:
       # "does the prod bundle compile?" gate.
       - name: Run production build (dsp + web)
         run: flox activate -- task build
+
+      # ---------------------------------------------------------------------
+      # The Cloudflare Worker SIZE RATCHET (#2088).
+      #
+      # WHY IT IS HERE AND NOT IN `build-web`. This gate must measure the
+      # bundle that actually DEPLOYS. `build-web` produces the PREVIEW bundle
+      # with VITE_E2E_HOOKS=1 baked in — a different artifact that never ships
+      # — so gauging it would ratchet a number no deploy is subject to. This
+      # job runs `task build`, the production bundler, which is the same path
+      # `deploy.yml` takes. That is the whole reason the step lives in the
+      # slower job rather than the one that already had artifacts to hand.
+      #
+      # WHY IT IS NEEDED AT ALL. #2088: main went 177 KiB OVER Cloudflare's
+      # 3 MiB gzipped ceiling and NOTHING in CI could see it. The failure
+      # surfaced only in `deploy.yml` — which is NOT a required check — so a
+      # Worker that could not be published merged to main and took
+      # dev.patchtogether.live down with it. The measurement script existed and
+      # its own header recorded that it was not wired up; this is that gap.
+      #
+      # COST: ~1.3 s measured locally on a warm build. It shells out to
+      # `wrangler deploy --dry-run`, which needs NO Cloudflare token (it bundles
+      # locally and prints the size), and wrangler is already on disk as a
+      # transitive dep of @sveltejs/adapter-cloudflare — so there is no network
+      # fetch and no secret in this job. Both properties are load-bearing: this
+      # job is deliberately token-free.
+      #
+      # ⚠ IT FAILS IN BOTH DIRECTIONS. Over budget is the obvious half. The
+      # other half fails when too much slack opens up, forcing the budget DOWN
+      # in the commit that earned it — otherwise a win silently becomes room for
+      # the next regression, and the ratchet stops meaning anything.
+      - name: Check Cloudflare Worker size (gzipped, ratchet)
+        run: flox activate -- task worker:size:check
 
   # -----------------------------------------------------------------------
   # dsp-build — compile the DSP worklets (Faust + esbuild) ONCE per run and
@@ -609,6 +745,24 @@ jobs:
         with:
           path: packages/dsp/dist
           key: ${{ runner.os }}-dsp-dist-${{ hashFiles('packages/dsp/src/**', 'packages/dsp/scripts/**', 'packages/dsp/package.json', '.flox/env/manifest.toml') }}
+
+      # node_modules itself, not just npm's download cache. `~/.npm` above
+      # saves re-DOWNLOADING; this saves re-LINKING, which is where the time
+      # goes: `task install` measured 104-114s in every one of 29 jobs with
+      # ~/.npm already warm, vs ~1s with node_modules present. It is on the
+      # critical path twice (build-web, then again inside each e2e shard).
+      #
+      # EXACT KEY, NO restore-keys — deliberately unlike the ~/.npm block above.
+      # A prefix fallback is safe for a download cache and unsafe here: a
+      # partial hit would restore a tree that does not match package-lock.json.
+      # A lockfile change must be a clean miss and a full install.
+      - name: Cache node_modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            node_modules
+            packages/*/node_modules
+          key: ${{ runner.os }}-nodemodules-${{ hashFiles('package-lock.json') }}
 
       - name: Install workspace deps
         run: flox activate -- task install
@@ -780,6 +934,24 @@ jobs:
           path: packages/dsp/dist
           key: ${{ runner.os }}-dsp-dist-${{ hashFiles('packages/dsp/src/**', 'packages/dsp/scripts/**', 'packages/dsp/package.json', '.flox/env/manifest.toml') }}
 
+      # node_modules itself, not just npm's download cache. `~/.npm` above
+      # saves re-DOWNLOADING; this saves re-LINKING, which is where the time
+      # goes: `task install` measured 104-114s in every one of 29 jobs with
+      # ~/.npm already warm, vs ~1s with node_modules present. It is on the
+      # critical path twice (build-web, then again inside each e2e shard).
+      #
+      # EXACT KEY, NO restore-keys — deliberately unlike the ~/.npm block above.
+      # A prefix fallback is safe for a download cache and unsafe here: a
+      # partial hit would restore a tree that does not match package-lock.json.
+      # A lockfile change must be a clean miss and a full install.
+      - name: Cache node_modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            node_modules
+            packages/*/node_modules
+          key: ${{ runner.os }}-nodemodules-${{ hashFiles('package-lock.json') }}
+
       - name: Install workspace deps
         run: flox activate -- task install
 
@@ -861,7 +1033,7 @@ jobs:
   # DB schema + DOOM assets are needed (same as the previous monolithic job).
   # -----------------------------------------------------------------------
   e2e:
-    name: e2e (shard ${{ matrix.shard }}/10)
+    name: e2e (shard ${{ matrix.shard }}/12)
     needs: [dsp-build, build-web]
     runs-on: ubuntu-latest
     # ⚠ HUNG-JOB SAFETY CAP, NOT A PERFORMANCE GATE — and it has to clear the
@@ -897,7 +1069,7 @@ jobs:
         # long pole shortens. Nothing aggregates across shards any more (the
         # `merge-reports` job was deleted 2026-08-17), so the shard COUNT is a
         # free parameter: each shard reports and audits itself.
-        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
 
     env:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/patchtogether_test
@@ -964,6 +1136,24 @@ jobs:
       # would risk leaving a stale `output/` from a prior build under it; the
       # base scaffolding (tsconfig/ambient/generated) is regenerated by the
       # `svelte-kit sync` prepare hook during `task setup`'s npm install.
+
+      # node_modules itself, not just npm's download cache. `~/.npm` above
+      # saves re-DOWNLOADING; this saves re-LINKING, which is where the time
+      # goes: `task install` measured 104-114s in every one of 29 jobs with
+      # ~/.npm already warm, vs ~1s with node_modules present. It is on the
+      # critical path twice (build-web, then again inside each e2e shard).
+      #
+      # EXACT KEY, NO restore-keys — deliberately unlike the ~/.npm block above.
+      # A prefix fallback is safe for a download cache and unsafe here: a
+      # partial hit would restore a tree that does not match package-lock.json.
+      # A lockfile change must be a clean miss and a full install.
+      - name: Cache node_modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            node_modules
+            packages/*/node_modules
+          key: ${{ runner.os }}-nodemodules-${{ hashFiles('package-lock.json') }}
 
       - name: Install workspace deps + Playwright Chromium
         run: flox activate -- task setup
@@ -1056,18 +1246,14 @@ jobs:
       # and scripts/ci-playwright-timeout.test.ts enforces exactly that.
       #
       # ⚠ THIS ADDS NO CI WALL-TIME. A timeout only decides when a WEDGED run
-      # is killed; a healthy shard still finishes in ~13 min. What it buys is
-      # room for the headroom guard below to be meaningful instead of red on
-      # arrival — #1454's 892 s is still caught (87 % of 1020 s).
+      # is killed; a healthy shard still finishes in ~13 min.
       #
-      # ⚠ AND THE CLIFF IS STILL INVISIBLE FROM CI OUTPUT ALONE, which is what
-      # scripts/e2e-shard-budget.sh is for: it prints every shard's percentage
-      # of budget on EVERY run, warns from 70 %, and fails from 85 % — so a
-      # lane running out of room is a gradual, visible signal rather than the
-      # day main goes red. 2026-08-11: shard 3 finished at 892 s against 900 s
-      # — EIGHT SECONDS of slack — after #1470 consumed the headroom and #1454
-      # landed on top. Two individually-green PRs collided on a budget neither
-      # could see.
+      # ⚠ THE HEADROOM GUARD THAT USED TO WRAP THIS COMMAND IS DELETED (owner
+      # ruling, 2026-08-23). It failed a shard at 85% of this budget even when
+      # EVERY TEST PASSED, which made a forecast about future capacity into a
+      # present-day red — and it fired on stale cost data far more often than
+      # on a real capacity problem. A run now fails when TESTS fail, or when a
+      # shard is genuinely killed by --global-timeout. Nothing else.
       #
       # ⚠ ON THE COMMAND LINE, NOT IN e2e/playwright.config.ts, DELIBERATELY.
       # A `globalTimeout` in the config would be one number shared by all six
@@ -1086,9 +1272,9 @@ jobs:
       # repo keeps getting bitten by. `scripts/ci-playwright-timeout.test.ts`
       # enforces the invariant for whatever IS guarded and PINS the unguarded
       # set, so adding a guard later is cheap and forgetting one is visible.
-      - name: Run E2E (shard ${{ matrix.shard }}/10, blob reporter, no @collab, no @capacity, no behavioral)
+      - name: Run E2E (shard ${{ matrix.shard }}/12, blob reporter, no @collab, no @capacity, no behavioral)
         env:
-          E2E_SHARD_BUDGET_LABEL: shard ${{ matrix.shard }}/10
+          E2E_SHARD_BUDGET_LABEL: shard ${{ matrix.shard }}/12
         run: |
           set -euo pipefail
           # COST-BASED SHARDING (#1538). `--shard=N/10` splits by TEST COUNT,
@@ -1108,14 +1294,38 @@ jobs:
           # That union assertion is the safety argument: assigning files
           # explicitly makes US responsible for covering the suite, and a
           # silently dropped spec would look exactly like a speedup.
+          #
+          # ⚠ REPLACING THIS WITH PLAIN `--shard=N/10` WAS TRIED AND MEASURED,
+          # AND IT DOES NOT WORK (2026-08-23, PR #2150 run 32643416031). The CI
+          # simplification audit recommended exactly that, on the reasoning that
+          # the worst case is "uneven shards costing single-digit minutes of wall
+          # time". The worst case is not wall time — it is a DEAD SHARD:
+          #
+          #     shard  4  8.5 min      shard  9 11.5 min
+          #     shard  6 10.8 min      shard  1 12.9 min
+          #     shard  8 10.4 min      shard 10 15.2 min   ← 1.8 min under budget
+          #     shard  3  KILLED by --global-timeout at 17.0 min:
+          #               75 passed, 160 NEVER RAN
+          #
+          # Native `--shard` assigns CONTIGUOUS, FILE-ORDERED chunks, so shard 3
+          # drew an alphabetical run (fader… featurecv… filter… flip-rack…
+          # four-modules… foxy-face…) whose real cost is ~3x the cheapest shard.
+          # The 160 unrun tests surface as runtime SKIPS, so the skip-budget
+          # audit reddens too — one imbalance, two red gates, and no test failed.
+          # Shard 10's media cluster (camera-input + the videobox/videovarispeed
+          # family, which this planner's PASS 1 deliberately spreads) landed 1.8
+          # min under the same cliff.
+          #
+          # So the cost table stays. If it goes stale the packing degrades; if it
+          # is deleted the lane loses tests silently-then-loudly. Anyone revisiting
+          # this needs a REPLACEMENT for cost-aware packing, not the absence of one.
           SPECS=$(cd e2e && flox activate -- npx playwright test --list --reporter=json 2>/dev/null \
             | flox activate -- node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>{const r=JSON.parse(d),f=new Set();(function w(s){for(const x of s||[]){if(x.file)f.add(x.file);w(x.suites);}})(r.suites);console.log([...f].sort().join(" "));})')
           # shellcheck disable=SC2086 # why: $SPECS is a SPACE-SEPARATED SPEC LIST and word splitting is the mechanism, not an accident — quoting it would hand the planner one argument that is the whole suite concatenated.
-          FILES=$(flox activate -- node scripts/e2e-shard-plan.mjs ${{ matrix.shard }} 10 --files $SPECS)
-          echo "shard ${{ matrix.shard }}/10 -> $(echo "$FILES" | wc -w) spec files"
+          FILES=$(flox activate -- node scripts/e2e-shard-plan.mjs ${{ matrix.shard }} 12 --files $SPECS)
+          echo "shard ${{ matrix.shard }}/12 -> $(echo "$FILES" | wc -w) spec files"
           # shellcheck disable=SC2086 # why: $FILES is this shard's spec list; word splitting is how playwright receives one argument per spec file. Quoting it would pass a single nonexistent filename.
-          flox activate -- bash scripts/e2e-shard-budget.sh -- \
-            npx --workspace e2e playwright test \
+          flox activate -- npx --workspace e2e playwright test \
             --global-timeout 1020000 \
             --grep-invert "@collab|@capacity|BEHAVIORAL input coverage" \
             $FILES \
@@ -1330,6 +1540,24 @@ jobs:
           path: packages/web/.svelte-kit
           key: ${{ runner.os }}-svelte-kit-${{ hashFiles('packages/web/svelte.config.js', 'packages/web/src/routes/**', 'packages/web/package.json') }}
 
+      # node_modules itself, not just npm's download cache. `~/.npm` above
+      # saves re-DOWNLOADING; this saves re-LINKING, which is where the time
+      # goes: `task install` measured 104-114s in every one of 29 jobs with
+      # ~/.npm already warm, vs ~1s with node_modules present. It is on the
+      # critical path twice (build-web, then again inside each e2e shard).
+      #
+      # EXACT KEY, NO restore-keys — deliberately unlike the ~/.npm block above.
+      # A prefix fallback is safe for a download cache and unsafe here: a
+      # partial hit would restore a tree that does not match package-lock.json.
+      # A lockfile change must be a clean miss and a full install.
+      - name: Cache node_modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            node_modules
+            packages/*/node_modules
+          key: ${{ runner.os }}-nodemodules-${{ hashFiles('package-lock.json') }}
+
       - name: Install workspace deps + Playwright Chromium
         run: flox activate -- task setup
 
@@ -1479,7 +1707,12 @@ jobs:
     name: webgl-smoke (SwiftShader WebGL floor)
     needs: [dsp-build, build-web]
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # 20, not 10 (#1854/#1917): the job's typical run is well under 10 min, but
+    # the slow-runner lottery pushed it to 10m07s four times on 2026-08-19 —
+    # and a job-level timeout reports as CANCELLED, which the aggregate treats
+    # as red while every real leg is green. The timeout is a failure BOUND, not
+    # a gate (the #1860 rule); 20 matches build-web's bound.
+    timeout-minutes: 20
 
     env:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/patchtogether_test
@@ -1515,6 +1748,24 @@ jobs:
           key: ${{ runner.os }}-deps-${{ hashFiles('package-lock.json') }}
           restore-keys: |
             ${{ runner.os }}-deps-
+
+      # node_modules itself, not just npm's download cache. `~/.npm` above
+      # saves re-DOWNLOADING; this saves re-LINKING, which is where the time
+      # goes: `task install` measured 104-114s in every one of 29 jobs with
+      # ~/.npm already warm, vs ~1s with node_modules present. It is on the
+      # critical path twice (build-web, then again inside each e2e shard).
+      #
+      # EXACT KEY, NO restore-keys — deliberately unlike the ~/.npm block above.
+      # A prefix fallback is safe for a download cache and unsafe here: a
+      # partial hit would restore a tree that does not match package-lock.json.
+      # A lockfile change must be a clean miss and a full install.
+      - name: Cache node_modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            node_modules
+            packages/*/node_modules
+          key: ${{ runner.os }}-nodemodules-${{ hashFiles('package-lock.json') }}
 
       - name: Install workspace deps + Playwright Chromium
         run: flox activate -- task setup
@@ -1694,6 +1945,24 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-npm-attest-
 
+      # node_modules itself, not just npm's download cache. `~/.npm` above
+      # saves re-DOWNLOADING; this saves re-LINKING, which is where the time
+      # goes: `task install` measured 104-114s in every one of 29 jobs with
+      # ~/.npm already warm, vs ~1s with node_modules present. It is on the
+      # critical path twice (build-web, then again inside each e2e shard).
+      #
+      # EXACT KEY, NO restore-keys — deliberately unlike the ~/.npm block above.
+      # A prefix fallback is safe for a download cache and unsafe here: a
+      # partial hit would restore a tree that does not match package-lock.json.
+      # A lockfile change must be a clean miss and a full install.
+      - name: Cache node_modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            node_modules
+            packages/*/node_modules
+          key: ${{ runner.os }}-nodemodules-${{ hashFiles('package-lock.json') }}
+
       - name: Install workspace deps (tsx + minimatch for the hash script)
         run: flox activate -- task install
 
@@ -1783,6 +2052,24 @@ jobs:
         with:
           path: packages/web/.svelte-kit
           key: ${{ runner.os }}-svelte-kit-${{ hashFiles('packages/web/svelte.config.js', 'packages/web/src/routes/**', 'packages/web/package.json') }}
+      # node_modules itself, not just npm's download cache. `~/.npm` above
+      # saves re-DOWNLOADING; this saves re-LINKING, which is where the time
+      # goes: `task install` measured 104-114s in every one of 29 jobs with
+      # ~/.npm already warm, vs ~1s with node_modules present. It is on the
+      # critical path twice (build-web, then again inside each e2e shard).
+      #
+      # EXACT KEY, NO restore-keys — deliberately unlike the ~/.npm block above.
+      # A prefix fallback is safe for a download cache and unsafe here: a
+      # partial hit would restore a tree that does not match package-lock.json.
+      # A lockfile change must be a clean miss and a full install.
+      - name: Cache node_modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            node_modules
+            packages/*/node_modules
+          key: ${{ runner.os }}-nodemodules-${{ hashFiles('package-lock.json') }}
+
       - name: Install workspace deps + Playwright Chromium
         run: flox activate -- task setup
       - name: Download DSP dist artifact
@@ -2040,9 +2327,11 @@ jobs:
   # GitHub then sees a required check that never reports and every PR sits
   # BLOCKED with zero failures, forever. So the matrix moved to a NEW job key
   # (`vrt-strict-shard`) and `vrt-strict` stayed put as a tiny aggregator that
-  # keeps the byte-identical `name:`. `scripts/docs-only-gate.test.ts` reads
-  # `jobName(CI_YML, 'vrt-strict')` and asserts it against the posted context,
-  # so the identity is gated, not merely intended.
+  # keeps the byte-identical `name:`. ⚠ Nothing in the repo gates that name any
+  # more — `scripts/docs-only-gate.test.ts` used to pin it against the contexts
+  # the bypass posted, and the bypass is deleted (2026-08-23). The name is
+  # matched LITERALLY by ruleset 16042163, so renaming this job still requires
+  # the accompanying ruleset PUT; there is now no local check that will tell you.
   #
   # ⚠ The aggregator is `if: always()`, NOT `if: '!cancelled()'`. A job-level
   # `if:` that SKIPS reports as SUCCESS to branch protection — an aggregator
@@ -2090,15 +2379,19 @@ jobs:
   # 1.02x) and selects via an anchored `--grep`.
   # -----------------------------------------------------------------------
   vrt-strict-shard:
-    name: vrt-strict shard ${{ matrix.shard }}/4
+    name: vrt-strict shard ${{ matrix.shard }}/${{ strategy.job-total }}
     needs: dsp-build
     runs-on: ubuntu-latest
-    # 15, against a 6.59 min prediction — 2.3x headroom, and deliberately not
-    # the old 25. A cap costs nothing on green (only an ALREADY-FAILING job runs
-    # to it), but a cap far above the real duration is also a cap that cannot
-    # notice a lane that has silently doubled. The prior 25 was sized for a
-    # 17.3 min job; carrying it over unchanged would have been a number that
-    # meant nothing.
+    # 15, against a prediction this file does not restate — re-derive it with
+    # `node scripts/vrt-shard-plan.mjs --report <N>`, which reads the committed
+    # cost artifact and prints the per-shard load and predicted job wall. The
+    # number that USED to sit here (6.59 min) was measured against a 115-test /
+    # 860 CPU-s roster and was 2.3x stale by 2026-08-20; a prediction copied
+    # into prose is a number that must track another number by discipline.
+    # A cap costs nothing on green (only an ALREADY-FAILING job runs to it),
+    # but a cap far above the real duration is also a cap that cannot notice a
+    # lane that has silently doubled. The prior 25 was sized for a 17.3 min job;
+    # carrying it over unchanged would have been a number that meant nothing.
     timeout-minutes: 15
 
     strategy:
@@ -2112,7 +2405,86 @@ jobs:
         # matrix out of this file and plans against it — so the planner's
         # coverage assertions always describe the split CI actually runs, and a
         # bump here cannot leave the gate certifying a different partition.
-        shard: [1, 2, 3, 4]
+        #
+        # 4 → 6 on 2026-08-20 (#2039). NOT a re-run lottery and not balance:
+        # the split was already even (spread 1.008x). The cost artifact had
+        # drifted to 115 tests / 860 CPU-s against a real 210 / 1940, so the
+        # planner believed each shard held ~410 s when it really held ~490 s,
+        # and shard 2 died on `--global-timeout` with 49 green, 0 failed and
+        # 4 scenes never reached. With the artifact refreshed, 4 shards model
+        # at ~494 s + ~21 s Playwright boot = 86% of the 600 s budget — over
+        # the wrapper's 85% fail line below. 6 models at ~329 s (~58%), which
+        # is the growth room this lane keeps eating.
+        #
+        # ⚠ 6 → 8 on 2026-08-22 (#2103), AND IT IS THE SAME DEFECT AS #2039 —
+        # READ THAT PARAGRAPH ABOVE FIRST, because this is its second occurrence
+        # and the pattern is the finding.
+        #
+        # Same signature: `vrt-strict shard 2` red at 92% of budget with ALL 45
+        # of its tests PASSING (planned 45 / executed 45 / skipped 0) — the
+        # headroom guard, not a baseline. Same cause: the cost artifact had gone
+        # stale. #2039's refresh left it describing 210 tests; the faceplate
+        # programme then added 61 more (271 tests / 2631 CPU-s), and EVERY
+        # batch-22 face was missing from it. Missing scenes are scheduled at the
+        # MEDIAN, which is right for an audio face and badly wrong for a video
+        # DOCK face — the median face dock is 9.7 s while the video ones run
+        # 20-22 s — so the planner packed six expensive video docks onto one
+        # shard believing they were average.
+        #
+        # MEASURED, `node scripts/vrt-shard-plan.mjs --report N`:
+        #   stale artifact, 6 shards → 335-553 s, spread 1.65x, shard 2 at 92%
+        #   refreshed,      6 shards → 437-441 s, spread 1.009x, max 73% (warn)
+        #   refreshed,      8 shards → 329-330 s, spread 1.005x, max 55% (ok)
+        #
+        # ⚠ SO THE REFRESH ALONE CLEARED THE RED, and the shard bump is for the
+        # GROWTH, not the failure: 6 lands in the warn band today and models 77%
+        # once batch-22 G3 and G4 add their 16 scenes, which is where #2039 was
+        # standing when it thought it had bought room. 8 models 55% / 58%.
+        #
+        # ⚠ AND THE DURABLE FIX IS NEITHER OF THOSE. Both incidents are the
+        # artifact going stale because `task vrt:strict:timings:accept` is
+        # MANUAL and nobody runs it while faces land. Bumping the shard count is
+        # what you do when the population outgrows the split; it is not a
+        # remedy for a cost table that does not know the population. Tracked as
+        # a follow-up on #2103 — if this recurs a third time, automate the
+        # refresh rather than adding two more shards.
+        #
+        # ⚠ 8 → 12 on 2026-08-26 (#2222), AND THIS ONE IS **NOT** THE STALE-
+        # ARTIFACT DEFECT the paragraph above describes — check before you
+        # assume a third repeat. Both prior incidents were diagnosed by a wide
+        # SPREAD (1.65x on the stale table); here the split was 1.002x and the
+        # previous run's eight shards landed 12m06s-12m51s against a predicted
+        # 12.00 min. The cost table was accurate IN AGGREGATE; the lane simply
+        # grew into its own ceiling, so `timings:accept` had no meaningful
+        # rebalancing to give and only capacity did.
+        #
+        # ⚠ It was NOT fully covering, though, and "spread 1.002x" cannot tell
+        # you that — the spread is computed over the entries the table HAS. It
+        # held 360 of a 376-test roster; the 18 scenes from the clockedRunner /
+        # livecode / es9 / electraControl / vst* promotions were being scheduled
+        # at the MEDIAN. Refreshed from this run, total CPU moved 4333.9 →
+        # 4366.3 s (+0.7%), which is why the aggregate conclusion above still
+        # stands. Read BOTH numbers: a table can be well-balanced and blind.
+        #
+        # MEASURED, `node scripts/vrt-shard-plan.mjs --report N` (360 tests,
+        # 4333.9 CPU-s), against the 600 s `--global-timeout` below:
+        #    8 shards → 541.9 s/shard = 90.3% of budget  (two shards timed out)
+        #    9 shards → 480.5 s/shard = 80.1%
+        #   10 shards → 432.3 s/shard = 72.1%
+        #   12 shards → 363.6 s/shard = 60.6%  ← chosen, owner call
+        #
+        # 12 buys growth room rather than just clearing today's red: at 8 the
+        # lane was one slow runner from failing on ANY PR, which is what it did
+        # here on a docs-only commit with zero pixel diffs. Cost is +11.8 runner
+        # job-min (96.0 → 107.8); predicted job WALL drops 12.00 → 9.03 min, so
+        # PR feedback gets faster.
+        #
+        # ⚠ `timeout-minutes: 15` above STAYS. It is not slack to reclaim: the
+        # 600 s Playwright timeout must fire BEFORE the job is killed or the
+        # shard destroys its own evidence, and 178 s overhead + 600 s = 12.97
+        # min already. Lowering the cap to match the new 9.03 min prediction
+        # would put the job timeout INSIDE that window.
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
 
     env:
       # The lane's identity. Narrows testMatch to vrt.spec.ts +
@@ -2122,6 +2494,13 @@ jobs:
       VRT_STRICT: '1'
 
     steps:
+      # One log line naming the VM's CPU. The 2026-08-28 AA-mode hunt had to
+      # infer per-job hardware from pixel forensics because nothing recorded
+      # it; a hosted-runner pool mixes CPU generations under ONE image version,
+      # and renderer behaviour can key off exactly that.
+      - name: Name the runner CPU
+        run: grep -m1 'model name' /proc/cpuinfo || true
+
       # VRT baselines are LFS-tracked under e2e/vrt/__screenshots__/. Check out
       # WITHOUT LFS, then restore the LFS object store from cache + `git lfs
       # pull` (HIT → no-op, MISS → fetch only changed objects) — a ~95%
@@ -2167,6 +2546,31 @@ jobs:
 
       - name: Fetch VRT LFS objects (no-op on cache hit)
         run: flox activate -- git lfs pull --include "e2e/vrt/__screenshots__/**"
+
+      # The cached .git/lfs store trusts whatever a previous job saved — a
+      # timeout-killed save serves truncated objects forever, and `git lfs
+      # pull` smudges them without a checksum look. Decode-verify + heal
+      # before comparing pixels against them. See scripts/vrt-lfs-heal.sh.
+      - name: Verify + heal checked-out baselines
+        run: flox activate -- bash scripts/vrt-lfs-heal.sh
+
+      # node_modules itself, not just npm's download cache. `~/.npm` above
+      # saves re-DOWNLOADING; this saves re-LINKING, which is where the time
+      # goes: `task install` measured 104-114s in every one of 29 jobs with
+      # ~/.npm already warm, vs ~1s with node_modules present. It is on the
+      # critical path twice (build-web, then again inside each e2e shard).
+      #
+      # EXACT KEY, NO restore-keys — deliberately unlike the ~/.npm block above.
+      # A prefix fallback is safe for a download cache and unsafe here: a
+      # partial hit would restore a tree that does not match package-lock.json.
+      # A lockfile change must be a clean miss and a full install.
+      - name: Cache node_modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            node_modules
+            packages/*/node_modules
+          key: ${{ runner.os }}-nodemodules-${{ hashFiles('package-lock.json') }}
 
       - name: Install workspace deps + Playwright Chromium
         run: flox activate -- task setup
@@ -2246,9 +2650,18 @@ jobs:
           set -euo pipefail
           flox activate -- npx --workspace e2e playwright test \
             --config=vrt/vrt.config.ts --list --reporter=json > vrt-strict-list.json
-          flox activate -- node scripts/vrt-shard-plan.mjs ${{ matrix.shard }} 4 \
+          # ⚠ THE COUNT IS DERIVED (`strategy.job-total`), NEVER RE-TYPED.
+          # It was the literal `4` until 2026-08-20, and bumping the matrix to
+          # 6 in #2039 left it behind: shards 5 and 6 called `vrt-shard-plan.mjs
+          # 5 4` / `6 4`, which is out of range, so they died on the planner's
+          # usage error. Coverage was never at risk — shards 1-4 still planned a
+          # complete 4-way partition and the union assertion held — but two jobs
+          # went red for a reason that had nothing to do with any baseline.
+          # `scripts/vrt-shard-plan.test.ts` now DENIES a literal here, so this
+          # cannot drift from the matrix again.
+          flox activate -- node scripts/vrt-shard-plan.mjs ${{ matrix.shard }} ${{ strategy.job-total }} \
             --list vrt-strict-list.json --out vrt-shard-planned.txt > vrt-shard-grep.txt
-          echo "shard ${{ matrix.shard }}/4 plans $(wc -l < vrt-shard-planned.txt) scenes:"
+          echo "shard ${{ matrix.shard }}/${{ strategy.job-total }} plans $(wc -l < vrt-shard-planned.txt) scenes:"
           sed 's/^/  /' vrt-shard-planned.txt
 
       # ⚠ Playwright is invoked DIRECTLY, not through `task vrt:strict`. The
@@ -2264,7 +2677,21 @@ jobs:
       # only record of WHICH tests executed, and that is what the coverage check
       # below diffs against the plan. `PIPESTATUS` preserves Playwright's exit
       # code across the tee.
-      - name: Run VRT (strict subset — shard ${{ matrix.shard }}/4)
+      - name: Run VRT (strict subset — shard ${{ matrix.shard }}/${{ strategy.job-total }})
+        env:
+          # Names this lane in the wrapper's one-line budget report, so the
+          # percentage in the log says WHICH shard it belongs to.
+          E2E_SHARD_BUDGET_LABEL: vrt-strict shard ${{ matrix.shard }}/${{ strategy.job-total }}
+          # Adds the `json` reporter (vrt.config.ts appends it when this is
+          # set) so each failed screenshot assertion's attachments — including
+          # the `-expected` attachment whose `path` IS the absolute committed-
+          # baseline path — are machine-readable. That is what lets the
+          # accept-candidates step below derive `actual → baseline` mappings
+          # from Playwright's own metadata instead of parsing the TRUNCATED
+          # test-results folder names (lossy: `moog907a` becomes
+          # `…--3cb78-g907a-…`). Absolute path on purpose: a relative
+          # outputFile would resolve against the config dir, not the workspace.
+          VRT_JSON_REPORT: ${{ github.workspace }}/vrt-json-report-shard-${{ matrix.shard }}.json
         run: |
           set -uo pipefail
           GREP="$(cat vrt-shard-grep.txt)"
@@ -2275,12 +2702,19 @@ jobs:
           set +e
           # --global-timeout: the repo's die-mute guard (ci-playwright-timeout
           # test) requires every Playwright job to either carry one or be
-          # DECLARED unguarded. This lane's cost is measured (860 CPU-s / 4
-          # shards ≈ 215 s of test time + boot), so 600 s bounds a wedged shard
-          # at ~3x its expected test runtime and fires a full 5 minutes BEFORE
-          # this job's `timeout-minutes: 15` kill — the die-mute guard requires
-          # that ordering, or the runner reaps the job before Playwright can
-          # write its report and the shard dies without evidence.
+          # DECLARED unguarded. 600 s fires a full 5 minutes BEFORE this job's
+          # `timeout-minutes: 15` kill — the die-mute guard requires that
+          # ordering, or the runner reaps the job before Playwright can write
+          # its report and the shard dies without evidence.
+          #
+          # ⚠ THE BUDGET WRAPPER THAT USED TO WRAP THIS COMMAND IS DELETED
+          # (owner ruling, 2026-08-23). It failed this lane at 85% of the 600 s
+          # budget with EVERY TEST PASSING — a forecast about future capacity
+          # reported as a present-day failure. It red-flagged main on
+          # 2026-08-23 for exactly that reason, on stale cost data rather than
+          # a real capacity problem. --global-timeout remains the one real
+          # guard: a shard genuinely killed by it fails, and that is the only
+          # capacity failure left.
           flox activate -- npx --workspace e2e playwright test \
             --config=vrt/vrt.config.ts --grep "$GREP" --global-timeout 600000 2>&1 | tee vrt-shard-run.log
           RC=${PIPESTATUS[0]}
@@ -2330,6 +2764,52 @@ jobs:
           path: e2e/vrt/report
           retention-days: 14
 
+      # ── ACCEPT-CANDIDATES MANIFEST (vrt-accept.yml's input) ──────────────
+      # A failed comparison's `<scene>-actual.png` is byte-for-byte what a
+      # `--update-snapshots=all` capture would have committed (one loop, one
+      # buffer, two writeFileSync destinations — toMatchSnapshot.js), so a red
+      # shard already CONTAINS its own fix. This step records, AT THE SOURCE,
+      # everything the promote path must verify later: the baseline repo path
+      # each actual maps to (derived from Playwright's JSON-report attachment
+      # metadata + cross-checked against snapshotPathTemplate — NEVER from the
+      # truncated folder names), the actual's sha256 (artifact transport
+      # corrupted 10/98 PNGs on run 33211181271; only a producer-recorded hash
+      # turns that into a loud TRANSPORT MISMATCH at the sink), and whether a
+      # `-previous.png` exists (the render never settled → vrt-accept.yml
+      # refuses the scene). The runner CPU goes in because per-VM raster
+      # variance is THE way a promoted baseline goes wrong — a baseline that
+      # ping-pongs between two CPU families is then diagnosable from git log.
+      #
+      # `if: failure()` like the test-results upload: only a failing shard has
+      # candidates. The manifest builder REFUSES (red step) on any ambiguity
+      # rather than emitting a doubtful mapping — a promote step must not
+      # guess. Runs on a red suite, so its own failure cannot mask a green run.
+      - name: Emit accept-candidates manifest (failing scenes → promotable actuals)
+        if: failure()
+        env:
+          # The PR HEAD sha, not the merge sha — it is what vrt-accept.yml
+          # compares against the branch tip for its freshness gate.
+          VRT_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          VRT_CPU_MODEL="$(grep -m1 'model name' /proc/cpuinfo | cut -d: -f2- | sed 's/^ *//')" || VRT_CPU_MODEL=unknown
+          export VRT_CPU_MODEL
+          flox activate -- node scripts/vrt-accept-manifest.mjs \
+            --report vrt-json-report-shard-${{ matrix.shard }}.json \
+            --results e2e/vrt/test-results \
+            --shard ${{ matrix.shard }} \
+            --out vrt-accept-candidates-${{ matrix.shard }}.json
+
+      - name: Upload accept-candidates manifest (shard ${{ matrix.shard }})
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vrt-accept-candidates-${{ matrix.shard }}
+          path: vrt-accept-candidates-${{ matrix.shard }}.json
+          # Same retention as the test-results the manifest describes — a
+          # manifest that outlives its actual bytes could only mislead.
+          retention-days: 14
+
   # -----------------------------------------------------------------------
   # vrt-strict — THE REQUIRED CONTEXT. Carries the exact name ruleset 16042163
   # matches (`vrt-strict (visual regression — strict subset)`, em-dash
@@ -2367,3 +2847,145 @@ jobs:
             exit 1
           fi
           echo "All vrt-strict shards green."
+
+  # -----------------------------------------------------------------------
+  # vrt-accept-gallery — THE REVIEWING SURFACE for a red strict run. Builds
+  # the OLD/NEW/DIFF triptych of exactly the accept-candidate scenes (from the
+  # manifests the failing shards just uploaded) and publishes it to the same
+  # CF Pages project the changeset gallery uses, under the distinct alias
+  # `vrt-accept-pr-<N>` (the changeset gallery owns `vrt-pr-<N>` — no
+  # collision, no new secret). Each card shows THAT scene's copy-paste
+  # `task vrt:accept` command; the full-set command sits at the bottom as
+  # plain text — deliberately NO accept-all button or link styling, because
+  # batch-accept without looking is how an all-black baseline shipped and
+  # passed for months (face-outlines-dock). The decision stays with the
+  # operator; this page only makes LOOKING cheap.
+  #
+  # INFORMATIONAL — never gates merge, costs a runner only when the strict
+  # lane is already red on a PR. `always() && … == 'failure'` because the
+  # default success() gate can never be true on the path this job exists for.
+  vrt-accept-gallery:
+    name: VRT accept gallery (review a red strict run)
+    needs: vrt-strict-shard
+    if: always() && github.event_name == 'pull_request' && needs.vrt-strict-shard.result == 'failure'
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    permissions:
+      contents: read
+      pull-requests: write   # upsert the gallery-link comment
+    steps:
+      - name: Checkout (scripts + root deps only — the OLD side comes from the artifacts)
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # sharp + pixelmatch at the root, same as vrt-changeset-gallery.yml —
+      # no workspace build, no browser, no flox needed for a pure-node job.
+      - name: Install root deps (sharp + pixelmatch)
+        run: npm install --no-audit --no-fund
+
+      - name: Download this run's accept candidates
+        uses: actions/download-artifact@v4
+        with:
+          pattern: vrt-accept-candidates-*
+          path: vrt-accept-dl/candidates
+
+      - name: Download this run's strict test-results (actual + expected PNGs)
+        uses: actions/download-artifact@v4
+        with:
+          pattern: vrt-strict-test-results-*
+          path: vrt-accept-dl/results
+
+      # A strict shard can fail with NO screenshot mismatch (timeout, infra) —
+      # then there are no manifests and no gallery to build. Say so instead of
+      # deploying an empty page.
+      - name: Build the accept gallery from the candidates
+        id: build
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          MANIFESTS=$(find vrt-accept-dl/candidates -name 'vrt-accept-candidates-*.json' | wc -l | tr -d ' ')
+          if [ "$MANIFESTS" = "0" ]; then
+            echo "count=0" >> "$GITHUB_OUTPUT"
+            echo "::notice::strict lane is red but published no accept candidates — the failures are not screenshot mismatches (nothing to review here)."
+            exit 0
+          fi
+          COUNT=$(node scripts/vrt-changeset-gallery.mjs \
+            --from-results vrt-accept-dl/results \
+            --candidates vrt-accept-dl/candidates \
+            --run-id "${{ github.run_id }}" \
+            --pr "${PR_NUMBER}" \
+            --out docs/vrt-accept-gallery \
+            --json /tmp/vrt-accept-gallery.json)
+          echo "count=$COUNT" >> "$GITHUB_OUTPUT"
+          echo "Candidate scenes: $COUNT"
+
+      - name: Deploy gallery to Cloudflare Pages
+        id: deploy
+        if: steps.build.outputs.count != '0'
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: >-
+            pages deploy docs/vrt-accept-gallery
+            --project-name=patchtogether-live-autotest
+            --branch=vrt-accept-pr-${{ github.event.pull_request.number }}
+            --commit-message=vrt-accept-gallery-${{ github.sha }}
+
+      - name: Compute gallery URL
+        id: url
+        if: steps.build.outputs.count != '0'
+        run: |
+          URL="${{ steps.deploy.outputs.deployment-url }}"
+          if [ -z "$URL" ]; then
+            URL="https://vrt-accept-pr-${{ github.event.pull_request.number }}.patchtogether-live-autotest.pages.dev"
+          fi
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+          echo "Gallery URL: $URL"
+
+      # Same upsert pattern (marker → update-or-create) as the changeset
+      # gallery, under a DIFFERENT marker: both comments can coexist — one
+      # reviews committed baseline changes, this one reviews a red run.
+      - name: Upsert PR comment with accept-gallery link
+        if: steps.build.outputs.count != '0'
+        uses: actions/github-script@v7
+        env:
+          GALLERY_URL: ${{ steps.url.outputs.url }}
+          COUNT: ${{ steps.build.outputs.count }}
+          RUN_ID: ${{ github.run_id }}
+        with:
+          script: |
+            const marker = '<!-- vrt-accept-gallery -->';
+            const url = process.env.GALLERY_URL;
+            const count = process.env.COUNT;
+            const runId = process.env.RUN_ID;
+            const body = [
+              marker,
+              `### 🔴 vrt-strict failed — ${count} candidate scene${count === '1' ? '' : 's'} to review`,
+              ``,
+              `**[▶ Review each failing scene (OLD / NEW / DIFF) →](${url})**`,
+              ``,
+              `Every card shows its own copy-paste accept command. Accepting promotes that scene's`,
+              `rendered bytes as the new baseline — **no re-capture** — and the next CI run re-verifies`,
+              `them on a fresh VM. Scenes you do NOT accept stay red until the underlying fix lands.`,
+              ``,
+              `<sub>Source run \`${runId}\` · candidates manifest per failing shard · \`task vrt:accept -- ${runId} <scene>\` · a scene that never settled (\`-previous.png\`) cannot be accepted. Artifacts expire after 14 days.</sub>`,
+            ].join('\n');
+            const { owner, repo } = context.repo;
+            const issue_number = context.payload.pull_request.number;
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner, repo, issue_number, per_page: 100,
+            });
+            const existing = comments.find((c) => c.body && c.body.includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+              core.info(`Updated existing comment ${existing.id}`);
+            } else {
+              await github.rest.issues.createComment({ owner, repo, issue_number, body });
+              core.info('Created new accept-gallery comment');
+            }

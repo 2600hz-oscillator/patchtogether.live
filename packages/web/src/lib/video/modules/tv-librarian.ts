@@ -48,6 +48,7 @@ out vec4 outColor;
 
 uniform sampler2D uTex;
 uniform float uHasInput;
+uniform float uGain;       // post-multiplier on RGB
 
 void main() {
   if (uHasInput < 0.5) {
@@ -55,7 +56,7 @@ void main() {
     outColor = vec4(0.05, 0.05, 0.09 + v, 1.0);
     return;
   }
-  outColor = vec4(texture(uTex, vUv).rgb, 1.0);
+  outColor = vec4(texture(uTex, vUv).rgb * uGain, 1.0);
 }`;
 
 /** Metadata for a tuned channel, persisted so peers without the dataset loaded
@@ -144,7 +145,7 @@ export const tvLibrarianDef: VideoModuleDef = {
   ],
 
   docs: {
-    explanation: "An international live-TV source: pick a country (click the 2D equirectangular world map, which snaps to the nearest country centroid that has channels, or use the country dropdown), pick a channel from that country's list, and the card attaches its HLS (.m3u8) stream via hls.js to an internal crossorigin video element. The engine samples that element into a WebGL framebuffer — the fragment shader is a straight passthrough of the live frame (when no stream is up it draws a dim near-black idle gradient so the card reads as \"alive but empty\"), so the video output is a genuine downstream-usable texture, not play-only. Frames are uploaded at the source's decode cadence (requestVideoFrameCallback, Firefox falls back to a currentTime-advance check) and downscaled to the engine resolution, so a high-bitrate stream doesn't flood GPU texture traffic. The stream's audio track is split into a stereo pair on the audio outs, with a silent gain-0 keep-alive that keeps the element decoding at full rate even when audio isn't patched. Channel metadata (country + channel name + stream URL) is persisted to the node so rack-mates tune to the SAME stream; geo-blocked entries are kept and marked, youtube-only entries are dropped, and a stream that fails to load (no CORS/ACAO under COEP, or 12s with no frame) is marked unavailable and auto-skips to the next channel rather than hanging. The card has a resizable 16:9 preview screen (corner-drag handle, persisted size, default 360x540, min 360x360) with a map/list segmented toggle, a now-playing label, a channel list (geo-blocked entries badged) and \"random\" / \"next ▸\" buttons (DOM-only, not module params), plus a legal disclaimer and Famelack/iptv-org attribution. Usage: drop it as a video source and feed its output into a mixer or any video module; patch a clock into next to channel-surf hands-free, or random to roulette.",
+    explanation: "An international live-TV source: pick a country (click the 2D equirectangular world map, which snaps to the nearest country centroid that has channels, or use the country dropdown), pick a channel from that country's list, and the NODE attaches that channel's HLS (.m3u8) stream via hls.js to an internal crossorigin video element — the stream's lifetime belongs to the node, not to whichever surface is mounted, so it tunes, keeps playing and answers its triggers with no card and no faceplate open. The engine samples that element into a WebGL framebuffer — the fragment shader is a straight passthrough of the live frame (when no stream is up it draws a dim near-black idle gradient so the card reads as \"alive but empty\"), so the video output is a genuine downstream-usable texture, not play-only. Frames are uploaded at the source's decode cadence (requestVideoFrameCallback, Firefox falls back to a currentTime-advance check) and downscaled to the engine resolution, so a high-bitrate stream doesn't flood GPU texture traffic. The stream's audio track is split into a stereo pair on the audio outs, with a silent gain-0 keep-alive that keeps the element decoding at full rate even when audio isn't patched. Channel metadata (country + channel name + stream URL) is persisted to the node so rack-mates tune to the SAME stream; geo-blocked entries are kept and marked, youtube-only entries are dropped, and a stream that fails to load (no CORS/ACAO under COEP, or 12s with no frame) is marked unavailable and auto-skips to the next channel rather than hanging. The faceplate's tuner body carries a 16:9 picture of the module's own video output with a SCREEN on/off switch, a map/list segmented toggle, the country picker, the channel list (geo-blocked entries badged) and \"random\" / \"next ▸\" buttons (DOM-only, not module params), plus a legal disclaimer and Famelack/iptv-org attribution; the legacy card shows the same picker under ?shell=legacy. Usage: drop it as a video source and feed its output into a mixer or any video module; patch a clock into next to channel-surf hands-free, or random to roulette.",
     inputs: {
       next: "Trigger (gate cable, edge:'trigger'): a rising edge advances to the NEXT channel in the current country's list, wrapping to the first. Level-while-high does nothing; it fires once per rising edge. Patch a clock here to channel-surf in time.",
       random: "Trigger (gate cable, edge:'trigger'): a rising edge tunes a RANDOM channel from the current country (picked from the OTHERS when more than one exists, so it reliably changes). Fires once per rising edge, not while held.",
@@ -157,17 +158,88 @@ export const tvLibrarianDef: VideoModuleDef = {
       stream_online: "Gate out (gate cable, edge:'gate'): held high while the stream is actually playing, low while loading, idle, or unavailable.",
     },
     controls: {
-      gain: "Gain — declared output-level param (0 to 2, linear; default 1.0). NOTE: the passthrough shader does not currently read it (no uGain uniform / draw() never applies it), so it is carried on the module but inert in v1 — it does not yet brighten or scale the video output.",
-      cv_next: "Next (hidden synthetic param, 0 to 1, default 0): the CV bridge writes the next input's gate level here; the card polls readParam and edge-detects a rising edge (<0.5 → >=0.5) to advance one channel. Not a user-facing knob.",
-      cv_random: "Random (hidden synthetic param, 0 to 1, default 0): the CV bridge writes the random input's gate level here; the card polls readParam and edge-detects a rising edge to tune a random channel. Not a user-facing knob.",
+      gain: "Gain — output level for the picture (0 to 2, linear; default 1.0). The passthrough shader multiplies the sampled RGB by this (the uGain uniform), so 0 blacks the output, 1.0 is the identity and 2 doubles it (clipped at full scale by the 8-bit framebuffer). It scales the VIDEO only — the audio_l/audio_r outs are unaffected.",
+      cv_next: "Next (hidden synthetic param, 0 to 1, default 0): the CV bridge writes the next input's gate level here; the node-owned HLS controller polls readParam and edge-detects a rising edge (<0.5 → >=0.5) to advance one channel. Not a user-facing knob.",
+      cv_random: "Random (hidden synthetic param, 0 to 1, default 0): the CV bridge writes the random input's gate level here; the node-owned HLS controller polls readParam and edge-detects a rising edge to tune a random channel. Not a user-facing knob.",
     },
   },
+  // ── THE FACE ───────────────────────────────────────────────────────────────
+  //
+  // TV LIBRARIAN is a PICTURE plus a ROSTER plus two navigation gestures, and
+  // exactly one of those is param-shaped. So the face is one ranked control and
+  // a body, which is what an honest face for this module looks like — compact
+  // is the default and width is earned by the picture, not by padding.
+  face: {
+    // ⚠ A REAL CHOICE HERE, NOT A FORCED ONE, which is why it carries a reason.
+    // `glyphBinding()` short-circuits on the first `type: 'audio'` OUTPUT, and
+    // this def HAS two (audio_l / audio_r) — so unlike acidwarp or picturebox a
+    // glyph literal here would resolve to a LIVE binding and the dead-glyph
+    // clause would not catch it. It is 'none' because for a video module the
+    // picture IS the module's identity in a rack and outranks a meter competing
+    // with it for the tile (#1785). The tile picture arrives from
+    // `hasVideoSurface(def)` — `domain === 'video'` and nothing else — so it is
+    // free, per-node, and needs no glyph at all.
+    glyph: 'none',
+
+    // The tuner body — see $lib/ui/modules/tvLibrarian/. Promotion is what stops
+    // BOTH surfaces rendering `TvLibrarianCard.svelte`, and this module's entire
+    // browse-and-tune flow lives there, so without this file the promotion would
+    // delete the only way to choose a station (#1928).
+    extension: 'tvLibrarian',
+
+    // One ranked key, because the module has one control a player turns. `gain`
+    // scales the picture the module hands downstream; the two synthetic params
+    // below are bridge caches and are declared out of the ranking rather than
+    // ranked, which is the difference between a face and a wall of knobs.
+    order: ['gain'],
+
+    // A linear 0..2 output level whose landmark is unity at the MIDDLE of the
+    // throw — the reading a fader gives for free and a rotary does not. There is
+    // no card choice being preserved or overturned: the card never exposed
+    // `gain` at all, so this is a fresh decision.
+    paramCells: { gain: 'fader' },
+  },
+
+  // ⚠ WITHOUT THIS THE FACE PAINTS TWO CONTINUOUS ROTARIES OVER RAW GATE LEVELS.
+  // `cv_next` / `cv_random` are bridge-written caches, not settings, and face
+  // completeness is unconditional for a promoted def — so they are declared out
+  // rather than left to be ranked. `'cv-port'` is the only legal writer for each
+  // (`next` / `random` declare `paramTarget`, so `'internal'` is RED at
+  // no-user-control.ts) and it is also the TRUE one.
+  //
+  // ⚠ IT IS NOT COSMETIC BEYOND THE FACEPLATE, and the PR body says so:
+  // `group-controls.ts` drops a `noUserControl` param from
+  // `listExposableControls` and `push-card-schema.ts` drops it from the Push 2
+  // card. tvLibrarian has no explicit `PUSH_CARD_CONTROLS` entry, so its push
+  // card is resolved from the live def and re-ranks itself from three params to
+  // one. That is an improvement — a raw gate cache should never have been on a
+  // hardware controller — but it is a behaviour change outside the face.
+  noUserControl: [
+    {
+      param: 'cv_next',
+      writer: 'cv-port',
+      why:
+        'written by the `next` gate bridge as a raw level (0..1). It is a CACHE, not a setting: '
+        + 'the node-owned HLS controller polls it and edge-detects a rising edge to advance one '
+        + 'channel, so a player turning a dial here would be overwritten by the next bridge write.',
+    },
+    {
+      param: 'cv_random',
+      writer: 'cv-port',
+      why:
+        'written by the `random` gate bridge as a raw level (0..1). Same cache shape as cv_next: '
+        + 'the node-owned HLS controller edge-detects a rising edge on it to tune a random channel '
+        + 'from the current country, and any value a player set would be replaced on the next edge.',
+    },
+  ],
+
   factory(ctx, node): VideoNodeHandle {
     const gl = ctx.gl;
     const program = ctx.compileFragment(FRAG_SRC);
 
     const uTex      = gl.getUniformLocation(program, 'uTex');
     const uHasInput = gl.getUniformLocation(program, 'uHasInput');
+    const uGain     = gl.getUniformLocation(program, 'uGain');
 
     const { fbo, texture: outTexture } = ctx.createFbo();
 
@@ -281,6 +353,7 @@ export const tvLibrarianDef: VideoModuleDef = {
         g.viewport(0, 0, ctx.res.width, ctx.res.height);
         g.useProgram(program);
         g.uniform1f(uHasInput, uploaded ? 1.0 : 0.0);
+        g.uniform1f(uGain, params.gain);
         if (uploaded && sourceTexture) {
           g.activeTexture(g.TEXTURE0);
           g.bindTexture(g.TEXTURE_2D, sourceTexture);

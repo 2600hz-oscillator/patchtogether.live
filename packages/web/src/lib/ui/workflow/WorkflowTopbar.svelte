@@ -76,6 +76,9 @@
     onQuicksave: (index: number) => void | Promise<void>;
     onQuickload: (index: number) => void | Promise<void>;
     onSavePerformance: () => void | Promise<void>;
+    /** File → Export patch (current state only): the .ptperf.zip with the Yjs
+     *  edit history dropped — same state, much smaller file. */
+    onSavePerformanceStateOnly: () => void | Promise<void>;
     onLoadPerformance: () => void | Promise<void>;
     onExportJson: () => void;
     onImportJson: () => void | Promise<void>;
@@ -103,6 +106,14 @@
     /** The pinned always-on AUDIO IN / AUDIO OUT. */
     audioInNode?: ModuleNode | null;
     audioOutNode?: ModuleNode | null;
+    /** Does each 🎧-panel occupant render its PROMOTED FACEPLATE rather than
+     *  its verbatim legacy card? `dockRailRendersFace`, evaluated by Canvas
+     *  (the one place that reads `?shell=legacy` + `migrated()`) and threaded
+     *  through — this bar re-derives nothing. Both are false while both types
+     *  are un-migrated; see Canvas's derivation for why the pinned pair needs
+     *  this at all. */
+    audioInFace?: boolean;
+    audioOutFace?: boolean;
     /** True while a cable feeds TIMELORDE's `clock` input (any source). */
     externallyClocked?: boolean;
     /** True while the DIN bridge's clock edge into TIMELORDE exists. */
@@ -135,6 +146,7 @@
     onQuicksave,
     onQuickload,
     onSavePerformance,
+    onSavePerformanceStateOnly,
     onLoadPerformance,
     onExportJson,
     onImportJson,
@@ -149,6 +161,8 @@
     midiclockNode = null,
     audioInNode = null,
     audioOutNode = null,
+    audioInFace = false,
+    audioOutFace = false,
     externallyClocked = false,
     dinAssigned = false,
     nodeTypes = {},
@@ -407,6 +421,14 @@
         <button
           class="row"
           role="menuitem"
+          data-testid="workflow-file-save-performance-state-only"
+          disabled={perfBusy || !hasNodes}
+          onclick={() => fire(onSavePerformanceStateOnly)}
+          title="Same export with the edit history dropped — everything needed to reproduce the current state, in a much smaller file"
+        >Export patch (current state only)</button>
+        <button
+          class="row"
+          role="menuitem"
           data-testid="workflow-file-load-performance"
           disabled={perfBusy}
           onclick={() => fire(onLoadPerformance)}
@@ -597,6 +619,8 @@
       <AudioIoSurface
         audioIn={audioInNode}
         audioOut={audioOutNode}
+        {audioInFace}
+        {audioOutFace}
         {nodeTypes}
         {rackSizeByType}
         open={openMenu === 'io'}

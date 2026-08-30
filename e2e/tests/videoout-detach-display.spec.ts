@@ -257,6 +257,39 @@ test.describe('videoOut — detach display', () => {
     await expect(page.getByTestId('ctx-reattach-display')).toBeVisible();
     await page.getByTestId('ctx-reattach-display').click();
     await expect(panel(page), 're-attach from the card').toHaveCount(0);
+
+    // (c) THE PANEL'S OWN BUTTON — the route a user actually reaches for, and
+    // the one that shipped broken (#2237): it did nothing at all, so the panel
+    // could not be dismissed from itself.
+    //
+    // ⚠ (a) AND (b) CANNOT CATCH IT, which is the whole reason this leg exists.
+    // Both go through the context menu, and every layer they exercise — the
+    // handler, the prop, the mutation, the derivation — was already correct.
+    // What was broken is that the button never received a `click`: the bar IS
+    // the drag handle, `onDragStart` calls `preventDefault()` on `pointerdown`,
+    // and that suppresses the compatibility mouse events which follow. Only
+    // pressing the button can see it, and asserting on the FLAG rather than the
+    // panel says which half failed if it regresses.
+    await picture(page, videoOut).click({ button: 'right' });
+    await page.getByTestId('ctx-detach-display').click();
+    await expect(panel(page)).toHaveCount(1);
+    await page.getByTestId('detached-display-reattach').click();
+    await expect(panel(page), 're-attach from the panel BUTTON').toHaveCount(0);
+    // The flag itself, not just the panel: a panel that vanished for any other
+    // reason would pass the line above while leaving the node still detached.
+    await expect
+      .poll(
+        () => page.evaluate(
+          (id) => {
+            const w = window as unknown as { __ydoc?: { getMap(k: string): { get(k: string): unknown } } };
+            const n = w.__ydoc?.getMap('nodes').get(id) as { toJSON?: () => { data?: Record<string, unknown> } } | undefined;
+            return n?.toJSON?.().data?.detached ?? null;
+          },
+          videoOut,
+        ),
+        { message: 'the detached flag must be CLEARED, not merely hidden' },
+      )
+      .toBeFalsy();
   });
 
   test('DELETING THE CARD takes the floating output with it', async ({ page }) => {

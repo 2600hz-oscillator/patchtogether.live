@@ -145,6 +145,19 @@ export function setLayerContent(nodeId: string, index: number, contentId: string
   }, LOCAL_ORIGIN);
 }
 
+/** LOCK/UNLOCK a layer against RANDOMIZE (#1576 ws3). The flag rides the
+ *  layer object (syncs + round-trips presets/zip); the dice byte-copy locked
+ *  layers and REVERT keeps them. `false` DELETES the key (no `locked: false`
+ *  noise on every layer forever after). */
+export function setLayerLocked(nodeId: string, index: number, locked: boolean): void {
+  ydoc.transact(() => {
+    const layer = ensureLayer(nodeId, index);
+    if (!layer) return;
+    if (locked) layer.locked = true;
+    else delete layer.locked;
+  }, LOCAL_ORIGIN);
+}
+
 /** Set one float param on a layer (the content faders). In place on .params. */
 export function setLayerParam(nodeId: string, index: number, pid: string, value: number): void {
   ydoc.transact(() => {

@@ -17,7 +17,8 @@
 // through `drawPreviewDownscaled`, which shrinks in ≤2× steps. Each exception
 // is named by its `(file, receiver, first argument)` triple rather than by
 // filename, so a NEW single-tap downscale in an already-listed file still
-// reddens — WavesculptCard has four exempt calls and a fifth would fail here.
+// reddens — WavesculptVizSurface has four exempt calls and a fifth would fail
+// here.
 //
 // ── ⚠ WHAT THIS GATE STRUCTURALLY CANNOT SEE ───────────────────────────────
 //
@@ -81,6 +82,36 @@ const EXEMPT_CALLS: readonly ExemptCall[] = [
       'RASTERIZE renders a coarse pixel grid on purpose; smoothing it is the bug, not the fix.',
   },
   {
+    file: 'rasterize/RasterizeOutputBody.svelte',
+    receiver: 'ctx2d',
+    firstArg: 'stage',
+    why:
+      'DELIBERATELY CRISP — the RasterizeCard entry above, on the FACE surface. Promotion ' +
+      'moves this module from its card to a fullViewBody extension, and the picture is the ' +
+      'same coarse pixel grid for the same reason, so the same exemption applies: ' +
+      'imageSmoothingEnabled = false two lines above, and smoothing it is the bug. ⚠ It is ' +
+      'also OUT of scope for the #1846 defect on its merits, not merely by preference — that ' +
+      'bug is aliasing when a card resamples the SHARED WebGL DRAWING BUFFER, and these ' +
+      'pixels never come from it: they are a Uint8ClampedArray painted by RasterPainter on ' +
+      'the audio side and handed over as ImageData.',
+  },
+  {
+    file: 'foxy/FoxyOutputBody.svelte',
+    receiver: 'ctx2d',
+    firstArg: 'stage',
+    why:
+      'DELIBERATELY CRISP — the FoxyCard entry above, on the FACE surface, and it is here for ' +
+      'the reason the DELIBERATELY_CRISP header states rather than by analogy: promotion makes ' +
+      "`migrated()` true, so from this PR onward nothing renders FoxyCard on either default " +
+      'surface and an assertion about ITS smoothing stops protecting anything a player can ' +
+      'see. The three rasters are a 256x256 Uint8ClampedArray of hard pixels painted by ' +
+      'RasterPainter, scaled into 72x72 with imageSmoothingEnabled = false two lines above; a ' +
+      'box-filtered downscale would soften exactly the banding the picture exists to show. ' +
+      'It is also OUT of scope for the #1846 defect on its merits: that bug is aliasing when a ' +
+      'card resamples the SHARED WebGL DRAWING BUFFER, and these pixels never touch it — foxy ' +
+      'is an AUDIO def whose rasters are painted on the audio side and handed over as ImageData.',
+  },
+  {
     file: 'SynesthesiaCard.svelte',
     receiver: 'ctx2d',
     firstArg: 'imageSource',
@@ -90,8 +121,15 @@ const EXEMPT_CALLS: readonly ExemptCall[] = [
       'resampling filter changes those NUMBERS, which is a behaviour change wearing a ' +
       'quality fix as a disguise.',
   },
+  // ⚠ THE FOUR WAVESCULPT ENTRIES MOVED FILE, NOT SUBSTANCE. The renderer was
+  // extracted from WavesculptCard.svelte into
+  // wavesculpt/WavesculptVizSurface.svelte, and every one of these calls went
+  // with it — so did the WebGL context, and therefore so did the attest-basis
+  // membership each `why` below rests on. The ANCHOR clause caught all four in
+  // the same run, which is the deny-by-default list behaving correctly: an
+  // exemption naming a call that no longer exists is RED, not quietly ignored.
   {
-    file: 'WavesculptCard.svelte',
+    file: 'wavesculpt/WavesculptVizSurface.svelte',
     receiver: 'ctx2d',
     firstArg: 'src',
     why:
@@ -100,31 +138,31 @@ const EXEMPT_CALLS: readonly ExemptCall[] = [
       'filter is a different measurement.',
   },
   {
-    file: 'WavesculptCard.svelte',
+    file: 'wavesculpt/WavesculptVizSurface.svelte',
     receiver: 'tc2d',
     firstArg: 'renderCanvas as CanvasImageSource',
     why:
-      'A genuine preview downscale that WOULD benefit — but WavesculptCard.svelte is one ' +
-      'of only two card files in the WebGL ATTEST BASIS (it creates a WebGL context), so ' +
+      'A genuine preview downscale that WOULD benefit — but this file is one of only two ' +
+      'card-tree files in the WebGL ATTEST BASIS (it creates the WebGL context), so ' +
       'editing it forces a trusted-GPU re-attest for a change that moves zero GL pixels. ' +
       'Deferred deliberately; it is a separate, owner-scheduled change.',
   },
   {
-    file: 'WavesculptCard.svelte',
+    file: 'wavesculpt/WavesculptVizSurface.svelte',
     receiver: 'ctx2d',
     firstArg: 'spectrographScratch',
     why:
-      'The spectrograph scratch is SPEC_W x SPEC_H and is drawn to the card canvas, which ' +
-      'is normally LARGER — an upscale, where a single tap is already correct. Also in the ' +
-      'WebGL attest basis (see above).',
+      'The spectrograph scratch is SPEC_W x SPEC_H and is drawn to the presentation canvas, ' +
+      'which is normally LARGER — an upscale, where a single tap is already correct. Also in ' +
+      'the WebGL attest basis (see above).',
   },
   {
-    file: 'WavesculptCard.svelte',
+    file: 'wavesculpt/WavesculptVizSurface.svelte',
     receiver: 'dc2',
     firstArg: 'renderCanvas as CanvasImageSource',
     why:
       'The flipped display blit (translate + scale(1,-1)). Same attest-basis cost as the ' +
-      'other WavesculptCard entries, and the transform means any change here needs its own ' +
+      'other wavesculpt entries, and the transform means any change here needs its own ' +
       'visual check rather than a mechanical swap.',
   },
   {
@@ -182,9 +220,22 @@ const REPORTED_IN_1846 = [
   'VideoTileThumb.svelte',
 ] as const;
 
-/** Cards whose whole point is hard pixels. Named here so "foxy and rasterize
- *  are unchanged" is a PERMANENT assertion rather than a claim in a PR body. */
-const DELIBERATELY_CRISP = ['FoxyCard.svelte', 'RasterizeCard.svelte'] as const;
+/** Surfaces whose whole point is hard pixels. Named here so "foxy and rasterize
+ *  are unchanged" is a PERMANENT assertion rather than a claim in a PR body.
+ *
+ *  ⚠ THE FACE BODY IS IN THIS LIST FOR A REASON THAT WOULD OTHERWISE HAVE BEEN
+ *  LOST. Promoting a module makes `migrated()` true, and neither surface renders
+ *  its card after that — so from the promotion onward `RasterizeCard.svelte` is
+ *  code nobody looks at, and an assertion about ITS smoothing stops protecting
+ *  anything a user can see. The face body is where the guarantee has to live to
+ *  keep meaning what it meant. The card stays listed too: it is still the
+ *  `?shell=legacy` surface, and dropping it would quietly narrow the claim. */
+const DELIBERATELY_CRISP = [
+  'FoxyCard.svelte',
+  'foxy/FoxyOutputBody.svelte',
+  'RasterizeCard.svelte',
+  'rasterize/RasterizeOutputBody.svelte',
+] as const;
 
 // ---------------------------------------------------------------------------
 // The scanner. ONE predicate, used by the sweep AND by its negative controls.

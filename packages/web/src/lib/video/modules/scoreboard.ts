@@ -132,6 +132,31 @@ export const scoreboardDef: VideoModuleDef = {
     { id: 'resetTrig', label: 'RESET', defaultValue: 0, min: 0, max: 1, curve: 'linear' },
   ],
 
+  noUserControl: [
+    {
+      param: 'scoreTrig',
+      writer: 'cv-port',
+      why:
+        'written by the `score` bridge (that port declares `paramTarget: scoreTrig`), and the '
+        + 'factory EDGE-DETECTS it with hysteresis (rise above 0.6, fall below 0.4) so each '
+        + 'rising edge is exactly one +1. The level while held is ignored, so there is nothing '
+        + 'for a control to hold: a rendered cell would be a continuous rotary over a gate edge, '
+        + 'inviting a player to park it at 0.8 where it fires once and never again. The card has '
+        + 'never drawn one either — the def\'s own header calls these "synthetic gate params, '
+        + 'hidden from the card".',
+    },
+    {
+      param: 'resetTrig',
+      writer: 'cv-port',
+      why:
+        'written by the `reset` bridge (`paramTarget: resetTrig`), through the same hysteresis '
+        + 'edge detector: each rising edge zeroes the counter. Edge-only, never level-sensitive, '
+        + 'so it is the same shape as `scoreTrig` and unreachable by hand for the same reason. '
+        + 'Declared separately rather than folded in with it because `writer` is checked against '
+        + 'the def\'s OWN ports per entry, and two entries is what makes both ports load-bearing.',
+    },
+  ],
+
   docs: {
     explanation: "A 4-digit neon 7-segment counter widget, rendered as a digital-alarm-clock face: a zero-padded value (0000-9999) drawn as chamfered hexagonal segments in a hue-tinted glow on soft black (#0a0a0a), with off segments fully invisible (no LCD ghost). It is a pure CV-driven generator with NO video input — a 2D OffscreenCanvas rasterizes the digits via the drawScoreboard helper and uploads them as an RGBA texture; a trivial fragment shader letterboxes that 8:3 source into the 4:3 engine frame, width-locked and centered vertically with pure-black bands top and bottom (and a dark fallback fill before the first paint). Each rising edge on SCORE adds 1 to the counter; it wraps from 9999 back to 0 (a periodic counter, handy for sequencing). RESET zeros it. The COLOR knob sets the lit-segment and glow hue. Patch a clock or sequencer gate into SCORE to count beats/events on screen, and a reset gate to zero it on a bar/loop boundary; the counter always starts at 0 on spawn (it is not persisted).",
     inputs: {
@@ -142,11 +167,72 @@ export const scoreboardDef: VideoModuleDef = {
       out: "Video. The rendered 4-digit display: the current counter value drawn as glowing hue-tinted 7-segment digits on soft black, letterboxed (width-locked, vertically centered, black bands top and bottom) into the engine frame. This is the module's only output — there is no audio output.",
     },
     controls: {
-      color: "Hue of the lit segments and their neon glow halo, 0 to 1 mapped onto 0-360 degrees linearly (default ≈0.333 = green); segments render at high saturation (95%) and mid lightness (55%), with a shadow-blur glow scaled to the digit height. Set via the COLOR knob only — there is no CV input jack for color, though the knob remains MIDI-/automation-assignable like any other.",
+      color: "Hue of the lit segments and their neon glow halo, 0 to 1 mapped onto 0-360 degrees linearly (default ≈0.333 = green); segments render at high saturation (95%) and mid lightness (55%), with a shadow-blur glow scaled to the digit height. It WRAPS — 0 and 1 are the same red — so the faceplate gives it a colour wheel rather than a dial with end stops. The only hand-set control on the module: there is no CV input jack for colour, though it stays MIDI-/automation-assignable like any other control.",
       scoreTrig: "Synthetic gate param (hidden from the card, exposed as the SCORE cv jack via paramTarget). The CV bridge writes incoming gate values here via setParam, and the factory's hysteresis edge detector turns each rising edge into a +1 increment, wrapping at 10000 back to 0.",
       resetTrig: "Synthetic gate param (hidden from the card, exposed as the RESET cv jack via paramTarget). The CV bridge writes incoming gate values here via setParam, and the factory's hysteresis edge detector turns each rising edge into a reset of the counter to 0.",
     },
   },
+  // ─────────────────────────────────────────────────────────────────────────
+  // THE FACEPLATE — the thinnest face in the video fleet, and deliberately so.
+  //
+  // WHAT IT IS FOR. SCOREBOARD is a COUNTER YOU CAN SEE. It has no video input
+  // and no audio path: two gates go in, a 4-digit neon display comes out. The
+  // verb a player performs is not "shape" or "steer", it is PATCH A CLOCK AND
+  // WATCH — so the module's whole surface is the display, and the one thing
+  // there is to set by hand is what colour it glows.
+  //
+  // ⚠ ONE RANKED CONTROL IS THE HONEST ANSWER, NOT A SHORTFALL. Thinness never
+  // refuses a face (owner, 2026-08-20: "they still need to be done, <4 params
+  // or not"), and this is the shape that ruling describes: one honest cell,
+  // nothing padded, among the narrowest plates in the fleet — which is the
+  // correct outcome of "compact is the default and width must be earned".
+  //
+  // NO `pages`. A page earns a header at >=2 controls, or at 1 that is the
+  // module's identity — and COLOUR is not this module's identity, the COUNTER
+  // is. So the dock renders one unlabelled band, and declaring a page would be
+  // buying an ~81px header to say "colour" above a colour wheel.
+  //
+  // ⚠ AND THERE IS NOTHING TO DELETE. Unlike the last two faces in this lane,
+  // the card paints NO resting derived text: no readout row, no state word, no
+  // decimal. `ScoreboardCard.svelte` is one <canvas> and one <Knob>, and the
+  // grep for buttons/selects/inputs comes back empty. The digits on the display
+  // are the module's OUTPUT PICTURE, not a readout of a control — they are what
+  // the `out` port emits, so they are not resting text in any sense the ruling
+  // is about. Recorded because "no violations found" is a finding, and the next
+  // author should not go looking for one.
+  face: {
+    // ⚠ MANDATORY for a video def: `primaryAudioOutPortId` matches
+    // `type === 'audio'` and this def has none, so any other glyph literal
+    // resolves to a dead static glyph. The tile picture arrives from
+    // `hasVideoSurface(def)` instead — asserted directly in the face-model
+    // test, because 'none + blank tile' and 'none + live thumb' are
+    // indistinguishable from this declaration.
+    glyph: 'none',
+
+    // The bespoke display — see $lib/ui/modules/scoreboard/. Promotion is what
+    // stops both surfaces rendering `ScoreboardCard.svelte`, and that card owns
+    // the only view of the counter. On a module whose entire product is a
+    // number on a screen, losing it is losing the module (#1928).
+    extension: 'scoreboard',
+
+    order: ['color'],
+
+    // ⚠ A HUE IS ITS OWN PRIMITIVE, AND A KNOB IS THE WRONG ONE. `color` is a
+    // CONTINUOUS 0..1 angle mapped onto 0-360 degrees — it WRAPS, so 0.99 and
+    // 0.01 are adjacent reds. A linear dial puts its end stops in the middle of
+    // a continuous space and makes the player travel the long way round to get
+    // between two neighbouring colours. `HueWheel` is the conic ring that has
+    // no such seam, and it paints NO value: the angle lives in aria-valuetext.
+    //
+    // ⚠ THIS IS A DELIBERATE DIVERGENCE FROM THE CARD, which draws a plain
+    // <Knob>. It is not the card/def RANGE divergence class (the numbers agree
+    // — 0..1 on both sides); it is a PRIMITIVE choice, which is exactly what
+    // `paramCells` exists to declare, and the platform's own contract names the
+    // hue case by name. The card is left alone: it is 1-D and correct where it
+    // lives, and editing it would move pixels for no behaviour.
+    paramCells: { color: 'hue' },
+  },
+
   factory(ctx: VideoEngineContext, node): VideoNodeHandle {
     const gl = ctx.gl;
     const program = ctx.compileFragment(FRAG_SRC);

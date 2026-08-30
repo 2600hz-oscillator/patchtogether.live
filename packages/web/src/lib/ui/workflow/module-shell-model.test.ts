@@ -45,7 +45,9 @@ import {
   VIDEO_THUMB_H,
   VIDEO_THUMB_FPS,
   dockFullViewHeadPlan,
+  faceMonitorPlan,
   isFaceplateView,
+  laneFlowLabel,
   type ShellDefLike,
   type ShellView,
 } from './module-shell-model';
@@ -812,3 +814,179 @@ describe('dockFullViewHeadPlan — the DRAWER answers like the full view (#1739)
     expect(dockFullViewHeadPlan({ ...ext, view: 'drawer' }).extBody).toBe(true);
   });
 });
+
+// ── faceMonitorPlan — MONITOR MODE (#2009) ──────────────────────────────────
+//
+// WHAT THIS GATE CANNOT SEE, stated inside it: this is the PURE policy, not the
+// paint. It cannot see that ModuleShell actually wraps the hero band and
+// `.dock-pages` in the guard (that is `face-monitor-source.test.ts`, at source
+// level), nor that the bands visibly disappear (that is the faced leg of
+// `video-hide-controls.spec.ts`). What it CAN see, and what nothing else can,
+// is the INVARIANT — that no combination of inputs produces a hidden-band
+// faceplate with no surface left on it.
+describe('faceMonitorPlan — hide the controls, keep the picture', () => {
+  const OFF = { view: 'dock-full', declared: false, extBody: false, hidden: false } as const;
+
+  it('engages only with all three: a faceplate view, the declaration, and a surface', () => {
+    const p = faceMonitorPlan({ ...OFF, declared: true, extBody: true, hidden: true });
+    expect(p.available).toBe(true);
+    expect(p.bandsHidden).toBe(true);
+  });
+
+  it('declared and reachable, but OFF until the player asks', () => {
+    const p = faceMonitorPlan({ ...OFF, declared: true, extBody: true });
+    expect(p.available, 'the toggle is reachable').toBe(true);
+    expect(p.bandsHidden, 'and the controls are still showing').toBe(false);
+  });
+
+  it('an UNDECLARED face is inert even when an old patch carries the flag', () => {
+    // ⚠ THE CASE THAT MOTIVATES THE DECLARATION GATE AT ALL. `hideControls` is
+    // persisted and collab-synced, so a rack saved from the LEGACY card hands
+    // this flag to a faceplate that may never have declared monitor mode. If
+    // the flag alone drove the suppression, that patch would open a blank plate
+    // on a face with no picture to fall back on.
+    const p = faceMonitorPlan({ ...OFF, declared: false, extBody: true, hidden: true });
+    expect(p.available).toBe(false);
+    expect(p.bandsHidden).toBe(false);
+  });
+
+  it('the LANE never hides its bands — no extension body is mounted there to watch', () => {
+    const p = faceMonitorPlan({ view: 'lane', declared: true, extBody: true, hidden: true });
+    expect(p.available).toBe(false);
+    expect(p.bandsHidden).toBe(false);
+  });
+
+  it('the DRAWER answers like the full view (#1739)', () => {
+    for (const declared of [false, true]) {
+      for (const extBody of [false, true]) {
+        for (const hidden of [false, true]) {
+          const args = { declared, extBody, hidden };
+          expect(
+            faceMonitorPlan({ ...args, view: 'drawer' }),
+            `drawer vs dock-full @ decl=${declared} ext=${extBody} hidden=${hidden}`,
+          ).toEqual(faceMonitorPlan({ ...args, view: 'dock-full' }));
+        }
+      }
+    }
+  });
+
+  it('⚠ THE INVARIANT: bandsHidden NEVER without a surface — no blank plate, over every input', () => {
+    // The single assertion this whole design rests on. Hiding the bands is only
+    // ever an improvement while SOMETHING is still painting, and the toggle
+    // that turns monitor mode off lives ON that surface — so a hidden-band
+    // plate with no `extBody` would be an empty rectangle with no way back.
+    // Exhaustive rather than argued: 3 views x 2^3 inputs is 24 cases and they
+    // are free, so this is a proof rather than a sample.
+    let sawHidden = 0;
+    for (const view of ['lane', 'dock-full', 'drawer'] as const) {
+      for (const declared of [false, true]) {
+        for (const extBody of [false, true]) {
+          for (const hidden of [false, true]) {
+            const p = faceMonitorPlan({ view, declared, extBody, hidden });
+            if (!p.bandsHidden) continue;
+            sawHidden++;
+            expect(extBody, `bandsHidden with NO surface @ view=${view}`).toBe(true);
+            expect(declared, `bandsHidden while UNDECLARED @ view=${view}`).toBe(true);
+            expect(hidden, `bandsHidden while UNASKED @ view=${view}`).toBe(true);
+            expect(p.available, 'hidden implies available').toBe(true);
+          }
+        }
+      }
+    }
+    // VACUITY CONTROL: an implementation returning `false` everywhere would
+    // satisfy every implication above without doing anything. It must actually
+    // fire — on the two faceplate hosts, and nowhere else.
+    expect(sawHidden, 'the invariant must have had something to check').toBe(2);
+  });
+});
+
+describe('laneFlowLabel — the lane tile CRASHED on a key it did not own', () => {
+  // ⚠ THE REGRESSION THIS PINS IS A CRASH, NOT A WRONG STRING.
+  //
+  // `ModuleShellPlaceholder` typed `node.data` as `{ channel?: number }` and
+  // interpolated `data.channel` whenever it was `!= null`. `node.data` is an
+  // open `Record<string, unknown>` that every module owns its own shape of, so
+  // that cast was a CLAIM ABOUT A KEY rather than a fact about it — and
+  // `tvLibrarian` writes `data.channel` as a `TvChannelMeta` OBJECT. The
+  // template literal threw `Cannot convert object to primitive value` inside a
+  // `$derived`, which takes the whole xyflow node render down: a tvLibrarian
+  // that had ever been tuned had a BROKEN LANE TILE under the default shell, on
+  // a saved rack, before anything was touched.
+  //
+  // Surfaced as an unexpected `pageerror` by `e2e/tests/node-source-hls.spec.ts`
+  // — i.e. by a spec looking for something else entirely, which is the only
+  // reason it was found at all.
+
+  it('renders the MIXER-LANE badge for the numeric shapes it is actually for', () => {
+    expect(laneFlowLabel({ channel: 3 })).toBe('▶ ch3');
+    expect(laneFlowLabel({ sendSlot: 1 })).toBe('▶ s1');
+    // channel 0 is a real lane, and this leg exists so a "fix" that reached for
+    // truthiness instead of a type check is caught.
+    expect(laneFlowLabel({ channel: 0 })).toBe('▶ ch0');
+  });
+
+  /** The pre-fix derivation, verbatim. Kept as a callable POSITIVE CONTROL so
+   *  every claim below is measured against the real old code rather than
+   *  against a description of it. */
+  const preFix = (data: unknown): string => {
+    const d = data as { channel?: number; sendSlot?: number } | undefined;
+    if (d?.channel != null) return `▶ ch${d.channel}`;
+    if (d?.sendSlot != null) return `▶ s${d.sendSlot}`;
+    return '▶ out';
+  };
+
+  const TUNED_CHANNEL = {
+    nanoid: 'usa1',
+    name: 'Mock News USA',
+    streamUrl: 'https://x/y.m3u8',
+    country: 'us',
+    languages: ['eng'],
+  };
+
+  it('THE CRASH: an object with NO primitive conversion took the whole node down', () => {
+    // ⚠ WHY A NULL-PROTOTYPE OBJECT AND NOT A PLAIN ONE. In the browser
+    // `node.data.channel` is not the object the card assigned — assigning into
+    // the Y-backed `patch` proxy converts it to a Y.Map, and reading it back
+    // yields a PROXY with no usable `toString`/`valueOf`/`Symbol.toPrimitive`.
+    // Interpolating THAT is what threw `Cannot convert object to primitive
+    // value`. A plain object would have quietly produced garbage instead (see
+    // the next leg), so a fixture that used one would prove the milder half and
+    // miss the crash entirely.
+    const proxyLike = Object.assign(Object.create(null) as Record<string, unknown>, TUNED_CHANNEL);
+    expect(
+      () => preFix({ countryCode: 'US', channel: proxyLike }),
+      'the old derivation no longer throws — this test has stopped pinning anything',
+    ).toThrow(/convert object to primitive/i);
+    expect(laneFlowLabel({ countryCode: 'US', channel: proxyLike })).toBe('▶ out');
+  });
+
+  it('...and the MILDER half: a plain object produced a garbage label instead', () => {
+    // The same defect one step less severe, and worth pinning separately: a
+    // caller reading `node.data` off a non-synced path gets a plain object, and
+    // the old code printed `▶ ch[object Object]` in the lane tile rather than
+    // throwing. Both are the same root cause — coercing a key this component
+    // does not own — and one fix covers both.
+    expect(preFix({ countryCode: 'US', channel: TUNED_CHANNEL })).toBe('▶ ch[object Object]');
+    expect(laneFlowLabel({ countryCode: 'US', channel: TUNED_CHANNEL })).toBe('▶ out');
+  });
+
+  it('NEGATIVE CONTROL: the fix changes NOTHING for the shapes the badge is for', () => {
+    // The direction that would make this a regression rather than a fix. If the
+    // type check were too strict, the mixer badge would silently disappear.
+    for (const data of [{ channel: 0 }, { channel: 7 }, { sendSlot: 2 }, {}, undefined]) {
+      expect(laneFlowLabel(data), `label for ${JSON.stringify(data)}`).toBe(preFix(data));
+    }
+  });
+
+  it('falls through on every other non-numeric shape, rather than guessing', () => {
+    expect(laneFlowLabel(undefined)).toBe('▶ out');
+    expect(laneFlowLabel({})).toBe('▶ out');
+    expect(laneFlowLabel({ channel: null })).toBe('▶ out');
+    expect(laneFlowLabel({ channel: 'usa1' })).toBe('▶ out');
+    expect(laneFlowLabel({ channel: [] })).toBe('▶ out');
+    // NaN and Infinity ARE numbers, and would print "▶ chNaN" / "▶ chInfinity".
+    expect(laneFlowLabel({ channel: Number.NaN })).toBe('▶ out');
+    expect(laneFlowLabel({ sendSlot: Number.POSITIVE_INFINITY })).toBe('▶ out');
+  });
+});
+

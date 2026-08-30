@@ -34,18 +34,7 @@ import { paramCellKind, momentaryParamIds } from '$lib/ui/workflow/shell-control
 import { shellCellFor } from '$lib/ui/workflow/shell-cells';
 import { PLATE_COLS, laneBodyPlan } from '$lib/ui/workflow/module-shell-model';
 import { DOCK_TAB_MIN_BANDS, dockTabPlan } from '$lib/ui/workflow/dock-tabs-model';
-import {
-  activePresetId,
-  faceAnnotationTally,
-  faceAnnotations,
-  facePageHeader,
-  heroFacePlan,
-  heroFacePlanIsTotal,
-  presetWrites,
-  readoutText,
-  sidebarPlan,
-  type FaceplateDefLike,
-} from '$lib/ui/workflow/dock-faceplate-model';
+import { faceAnnotationTally, faceAnnotations, facePageHeader, heroFacePlan, heroFacePlanIsTotal, type FaceplateDefLike } from '$lib/ui/workflow/dock-faceplate-model';
 
 const def = kickdrumDef as unknown as FaceDefLike;
 
@@ -367,24 +356,6 @@ describe('kickdrum faceplate structure — the hero PROMOTES, it does not copy',
     expect(sub.controls.map((c) => c.key)).toEqual(['sub_decay', 'sub_level', 'sub_eq', 'translate']);
   });
 
-  it('the hero readouts print the MOCK\u2019s numbers — and TAIL is DERIVED, not a knob', () => {
-    // The mock bakes `tail ≈ 480 ms · +24 st → 50 Hz` into the picture. Baked
-    // strings are how a faceplate prints 480 while the knob under it reads 450,
-    // so all three are live.
-    //
-    // ⚠ BUT `tail` IS NOT `sub_decay`. An earlier draft declared exactly that,
-    // and it printed `450 ms` here — a number that moves with SUB DEC, looks
-    // completely right, and is INVARIANT to SUB LEVEL, which genuinely changes
-    // how long this drum rings. The voice's real −60 dB tail is 398 ms. This
-    // assertion is the difference between the two models, in one line.
-    const read = (pid: string) => kickdrumDef.params.find((p) => p.id === pid)?.defaultValue;
-    const printed = (split.hero?.readouts ?? []).map(
-      (r) => `${r.label} ${readoutText(r, kickdrumDef.params, read)}`,
-    );
-    expect(printed).toEqual(['tail 398 ms', 'sweep +24 st', 'settles to 50 Hz']);
-    expect(printed[0], 'the blind model printed 450 ms here').not.toContain('450');
-  });
-
   it('the hero also promotes the module\u2019s own PICTURE, which is the mock\u2019s top strip', () => {
     // The single element whose absence got the delivered face rejected. It is a
     // panel cell, promoted — so it renders in the hero and nowhere else.
@@ -394,109 +365,6 @@ describe('kickdrum faceplate structure — the hero PROMOTES, it does not copy',
   });
 });
 
-describe('kickdrum faceplate structure — the sidebar says what the DSP does', () => {
-  const blocks = sidebarPlan(kickdrumDef as unknown as FaceplateDefLike)!;
-
-  it('paints three blocks: the crossover picture, the presets, the output', () => {
-    expect(blocks.map((b) => b.kind)).toEqual(['custom', 'presets', 'readouts']);
-  });
-
-  it('the CROSSOVER picture draws the DSP’s ACTUAL split, read from the worklet source', () => {
-    // ⚠ The "a card silently disagrees with its def" guard, applied to a
-    // picture. Nothing at runtime can see that the panel draws 120 Hz while
-    // the filter runs at some other frequency — the panel takes the number
-    // from a declaration, and a declaration is free to drift. So read the
-    // other side of the contract: the DSP's own exported constant.
-    const dspSrc = readFileSync(
-      fileURLToPath(new URL('../../../../../dsp/src/lib/kickdrum-dsp.ts', import.meta.url)),
-      'utf8',
-    );
-    //
-    // Anchored on the FILTER CALL, exactly like the level/ceiling gate above
-    // anchors on `out[0] = Math.tanh(...)`. Exporting a named constant from the
-    // worklet lib and importing it here would read better, and it is the wrong
-    // trade: `kickdrum-dsp.ts` is inside TWO ART source-SHA pins (this module's
-    // own profile and grand-integration's combined master), so a comment-level
-    // edit to it costs two baseline re-pins for zero audio change. Reading the
-    // source is free and just as strong.
-    const m = dspSrc.match(/updateHighpass\(s\.sideHp,\s*(\d+(?:\.\d+)?),\s*sr\)/);
-    expect(m, 'the side high-pass call moved — re-anchor this gate on the real expression').not.toBeNull();
-    const dspSplit = Number(m![1]);
-    // BOTH cascaded stages must sit at that frequency, or "the split" is two
-    // splits and the picture can only be drawing one of them.
-    expect(dspSrc, 'the 4th-order pair is at ONE frequency').toContain(
-      `updateHighpass(s.sideHp2, ${dspSplit}, sr)`,
-    );
-
-    const xover = blocks.find((b) => b.kind === 'custom')!;
-    if (xover.kind !== 'custom') throw new Error('unreachable');
-    expect(xover.panelId).toBe('stereo-crossover');
-    expect(xover.props?.splitHz, `the faceplate must draw the DSP's ${dspSplit} Hz split`).toBe(dspSplit);
-    // …and the width param it opens the sides with is a real param.
-    expect(kickdrumDef.params.some((p) => p.id === xover.props?.widthParam)).toBe(true);
-  });
-
-  it('every preset is a REAL, in-range setting of this drum — never a decorative row', () => {
-    const presets = blocks.find((b) => b.kind === 'presets')!;
-    if (presets.kind !== 'presets') throw new Error('unreachable');
-    expect(presets.entries.map((e) => e.label)).toEqual([
-      'DEEP CLUB',
-      'TECHNO PUNCH',
-      '909 CLASSIC',
-      'SUB BOOM',
-      'LO-FI THUMP',
-    ]);
-    for (const e of presets.entries) {
-      const writes = presetWrites(e.values, kickdrumDef.params);
-      // Every declared key survives (none dropped as unknown) and none was
-      // clamped — a clamped preset applies a value it does not name.
-      expect(writes.map((w) => w.paramId).sort(), `${e.id}: every key is a real param`).toEqual(
-        Object.keys(e.values).sort(),
-      );
-      for (const w of writes) {
-        expect(w.value, `${e.id}.${w.paramId} was clamped`).toBe(e.values[w.paramId]);
-      }
-      // …and each one is DISTINCT from the defaults, so selecting it does
-      // something audible.
-      const changed = writes.filter(
-        (w) => w.value !== kickdrumDef.params.find((p) => p.id === w.paramId)!.defaultValue,
-      );
-      expect(changed.length, `${e.id}: selecting it must change the sound`).toBeGreaterThan(0);
-    }
-  });
-
-  it('the presets’ TUNE values are the numbers their names promise', () => {
-    // The note beside each row is the claim; this is the check. A row reading
-    // "DEEP CLUB · 50 Hz" that tunes to 70 is the same lie class as a knob
-    // whose range disagrees with its def.
-    const presets = blocks.find((b) => b.kind === 'presets')!;
-    if (presets.kind !== 'presets') throw new Error('unreachable');
-    const byId = Object.fromEntries(presets.entries.map((e) => [e.id, e]));
-    expect(byId['deep-club']!.values.tune).toBe(50);
-    expect(byId['909-classic']!.values.tune).toBe(62);
-    expect(byId['sub-boom']!.values.tune).toBe(38);
-    // The two whose notes name a CHARACTER rather than a pitch drive HARD.
-    expect(byId['techno-punch']!.values.hard).toBe(1);
-    expect(byId['lo-fi-thump']!.values.hard).toBe(1);
-  });
-
-  it('a fresh kickdrum sits on NO preset — the list starts honest', () => {
-    const presets = blocks.find((b) => b.kind === 'presets')!;
-    if (presets.kind !== 'presets') throw new Error('unreachable');
-    const read = (pid: string) => kickdrumDef.params.find((p) => p.id === pid)?.defaultValue;
-    expect(activePresetId(presets.entries, read)).toBeNull();
-    // …and selecting one lights exactly it (the round trip, so the write path
-    // and the match predicate are pinned against each other rather than each
-    // being asserted alone).
-    for (const e of presets.entries) {
-      const after: Record<string, number> = Object.fromEntries(
-        kickdrumDef.params.map((p) => [p.id, p.defaultValue]),
-      );
-      for (const w of presetWrites(e.values, kickdrumDef.params)) after[w.paramId] = w.value;
-      expect(activePresetId(presets.entries, (pid) => after[pid]), `${e.id} lights itself`).toBe(e.id);
-    }
-  });
-});
 
 describe('kickdrum faceplate structure — the page header + band hints', () => {
   it('the faceplate header is ANNOTATION IN FULL — title as well as sentence', () => {

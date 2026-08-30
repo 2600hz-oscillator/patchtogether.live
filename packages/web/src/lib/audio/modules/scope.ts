@@ -36,8 +36,18 @@
 //   timeMs (log 1..200 ms, default 20): scope time-window per screen width.
 //   ch1Scale / ch2Scale (log 0.1..10, default 1): per-channel vertical scale.
 //   ch1Offset / ch2Offset (linear -1..1, default 0): per-channel Y offset.
-//   ch1Range / ch2Range (discrete 0..1, default 0): per-channel range mode (0 = bipolar ±1, 1 = unipolar 0..1).
-//   mode (discrete 0..1, default 0): 0 = time-domain, 1 = XY (ch1 vs ch2).
+//   ch1Range / ch2Range (discrete 0..1, default 0): per-channel DISPLAY range —
+//     the volts-per-division convention the trace is plotted against.
+//     0 = AUDIO (±1 fills the half-height), 1 = CV (±5 V fills the same
+//     half-height — the Eurorack pitch-CV convention).
+//     ⚠ BOTH STATES ARE BIPOLAR. This line used to read "1 = unipolar 0..1",
+//     which was wrong in both halves and contradicted the param comment eight
+//     lines down as well as the read site: `pixelFromSample` (scope-draw.ts) is
+//     `(sample / cvRange) * halfHeight` with `RANGE_MAX_CV = 5`, so state 1
+//     divides by five and keeps the sign. Corrected with the faceplate, whose
+//     `options` roster names these two states AUDIO and CV on screen.
+//   mode (discrete 0..1, default 0): 0 = SPLIT (two stacked time-domain
+//     traces), 1 = XY (ch1 vs ch2 — Lissajous / stereo phase).
 //   intensity (linear 0..1, default 0.5): phosphor beam persistence. 0.5
 //     (12:00) = today's render (one screen, full brightness, PIXEL-IDENTICAL
 //     to pre-PR); 0 (7:00) = a single moving dot; 1 (5:00) = a ~2-screen
@@ -119,32 +129,272 @@ export const scopeDef: AudioModuleDef = {
     // 0 = audio (±1 fills the canvas), 1 = cv (±5 — Eurorack pitch CV
     // convention so a multi-octave pitch sweep is readable without cranking
     // ch1Scale to 0.2). Per-channel; the scale fader still multiplies on top.
-    { id: 'ch1Range',  label: 'Ch1 R',  defaultValue: 0,  min: 0,    max: 1,   curve: 'discrete' },
+    //
+    // ⚠ THE `options` ROSTER IS WHY THE SWITCH KEEPS ITS WORDS. Without one a
+    // `0..1 discrete` param paints an ANONYMOUS toggle (`paintsReadout` is
+    // `!format && (options || landmarks)`), and the only place the strings
+    // AUDIO and CV exist today is `ScopeCard.svelte`'s own markup — which a
+    // faceplate stops rendering. So promotion without this roster would DELETE
+    // both words, and a toggle with no names announces pressed/unpressed:
+    // enable-and-absence semantics, "the range is on". What this control picks
+    // is one of two DISPLAY CONVENTIONS with different volts-per-division;
+    // "off" is not a state it has. The names are PROMOTED, not invented — they
+    // are the strings the card's button has always painted, the words
+    // `drawScope`'s own corner label draws (`±1.0` / `±5V`), and word-for-word
+    // the roster `dockscope.range` already ships for the identical control.
+    { id: 'ch1Range',  label: 'Ch1 R',  defaultValue: 0,  min: 0,    max: 1,   curve: 'discrete',
+      options: [
+        { value: 0, label: 'AUDIO', title: 'audio range — ±1.0 fills the trace' },
+        { value: 1, label: 'CV', title: 'CV range — ±5V, the Eurorack convention' },
+      ] },
     { id: 'ch2Scale',  label: 'Ch2 Sc', defaultValue: 1,  min: 0.1,  max: 10,  curve: 'log' },
     { id: 'ch2Offset', label: 'Ch2 Y',  defaultValue: 0,  min: -1,   max: 1,   curve: 'linear' },
-    { id: 'ch2Range',  label: 'Ch2 R',  defaultValue: 0,  min: 0,    max: 1,   curve: 'discrete' },
+    { id: 'ch2Range',  label: 'Ch2 R',  defaultValue: 0,  min: 0,    max: 1,   curve: 'discrete',
+      options: [
+        { value: 0, label: 'AUDIO', title: 'audio range — ±1.0 fills the trace' },
+        { value: 1, label: 'CV', title: 'CV range — ±5V, the Eurorack convention' },
+      ] },
     // 0 = split (two stacked traces), 1 = XY (ch1 vs ch2 plot).
-    { id: 'mode',      label: 'XY',    defaultValue: 0,  min: 0,    max: 1,   curve: 'discrete' },
+    //
+    // ⚠ `SPLIT` IS THE WORD THE CODE ALREADY USES, and it is a correction
+    // rather than an invention. The card paints `⇆` for state 0 — a glyph, not
+    // a name, and one that reads as "swap" rather than "two traces". This
+    // param's own comment (the line above) has always called it "split", and
+    // `scope-draw.ts` names the function `drawSplit`. The card is the outlier.
+    //
+    // ⚠ AND THE LABEL MOVED `XY` → `Mode` IN THE SAME EDIT. Leaving it would
+    // paint a cell CAPTIONED `XY` whose two positions read `SPLIT` and `XY` —
+    // the caption colliding with one of the states it selects between. `label`
+    // is UI metadata, out of `contract-signature`, so this is the same class of
+    // edit as the roster beside it.
+    { id: 'mode',      label: 'Mode',  defaultValue: 0,  min: 0,    max: 1,   curve: 'discrete',
+      options: [
+        { value: 0, label: 'SPLIT', title: 'two stacked time-domain traces' },
+        { value: 1, label: 'XY', title: 'channel 1 against channel 2 — Lissajous / stereo phase' },
+      ] },
     // Phosphor beam persistence (display-only). 0.5 (12:00) = legacy render
     // (one screen, full brightness, pixel-identical); 0 (7:00) = a single
     // moving dot; 1 (5:00) = ~2-screen persistence trail with phosphor fade.
     { id: 'intensity', label: 'Inten', defaultValue: 0.5, min: 0,   max: 1,   curve: 'linear' },
   ],
 
+  // ── THE FACEPLATE ─────────────────────────────────────────────────────────
+  //
+  // SCOPE is THE RACK'S PROBE. You patch it INLINE — `ch1_out`/`ch2_out` are
+  // the input gains verbatim, nothing touches the signal — and it draws what is
+  // going past. So the verb a player performs here is FRAME A SIGNAL SO IT CAN
+  // BE READ: choose the window, fit the amplitude, pick the volts-per-division,
+  // and decide whether you are looking at two signals in time or one against
+  // the other. Every rank below descends from that sentence.
+  face: {
+    // RANKED AGAINST THE DSP, then found to agree with declaration order —
+    // stated because an unexamined rank and a derived one that happens to match
+    // look identical in the diff.
+    //
+    // 1. `timeMs` is the only SHARED control and the only one that changes what
+    //    you are looking AT rather than how it sits on screen. Every other
+    //    continuous control is per-channel cosmetics on top of the window this
+    //    one picks.
+    // 2. Then CH1's three, then CH2's three — GROUPED BY CHANNEL, not by
+    //    function, and this is the rank worth defending. The obvious
+    //    alternative (`ch1Scale, ch2Scale, ch1Offset, ch2Offset, …`) reads
+    //    better as a TABLE and worse as an INSTRUMENT: a player working on a
+    //    trace works on ONE trace — they fit it, they move it clear of the
+    //    other one, they set its convention — and interleaving makes every
+    //    adjustment a two-column hunt. (mixmstrs' console grid is the
+    //    counter-example that proves the rule is about the GESTURE, not the
+    //    layout: there the columns ARE the instrument.)
+    // 3. `mode` below both channels, because XY is meaningless until each trace
+    //    is readable on its own — you set the channels up, THEN cross them.
+    // 4. `intensity` LAST, and this one is taste rather than measurement: it is
+    //    display feel, it is the only control here that cannot make a trace
+    //    WRONG, and its shipped default is a special-cased legacy render
+    //    (`isDefaultIntensity`), so it is the control a player is least likely
+    //    to reach for on a fresh spawn.
+    order: [
+      'timeMs',
+      'ch1Scale', 'ch1Offset', 'ch1Range',
+      'ch2Scale', 'ch2Offset', 'ch2Range',
+      'mode',
+      'intensity',
+    ],
+
+    // ⚠ THE LANE TILE IS THE RANK'S PREFIX, AND THERE IS NO SECOND LIST. There
+    // is no per-face "lane subset" field — `laneOrder()` only drops a hero cell
+    // or an xyPad, neither of which this face declares — so what a lane tier
+    // shows is literally the top of `order`. That makes the lane `timeMs`,
+    // `ch1Scale`, `ch1Offset`: "make CHANNEL 1 readable without opening the
+    // dock", which is the common case for a probe (one cable, one trace) and is
+    // coherent on its own merits rather than as a leftover. The channel-grouped
+    // rank and a hypothetical `timeMs`/`ch1Scale`/`ch2Scale` lane cannot both
+    // be had without a new platform field, and inventing one for a lane
+    // preference is not a trade this face is worth.
+    //
+    // ⚠ `ch1Range`/`ch2Range` are deliberately NOT near the top: they are set
+    // once for the KIND of cable you patched and then left alone. dockscope
+    // reached the identical conclusion for the identical control.
+
+    // Three bands. CLUSTERS rather than PAGES for the two channels, and the
+    // price list is the reason: a page costs a ~81 px band, a cluster costs a
+    // ~14 px sub-header (see ModuleFacePage.clusters). The two channels are
+    // *the same idea, twice* — that field's own worked example — so they are
+    // clusters. `clusterFlow: 'row'` sets them side by side, which is the
+    // mixmstrs RETURN-strip case: two peers wide enough to sit together and
+    // narrow enough to fit, saving a whole band of vertical space.
+    //
+    // ⚠ `mode` SITS IN TIMEBASE, NOT IN CHANNELS, and that placement is an
+    // argument rather than a leftover. XY is not a channel setting — it is a
+    // statement about what the HORIZONTAL AXIS IS. In SPLIT the x axis is time
+    // and `timeMs` scales it; in XY the x axis is channel 1 and `timeMs` still
+    // picks the sample window but no longer scales anything visible. Putting
+    // `mode` beside `timeMs` is the only arrangement in which the two controls
+    // that define the horizontal axis are adjacent.
+    pages: [
+      {
+        id: 'timebase',
+        label: 'TIMEBASE',
+        hint: 'the window the screen shows',
+        controls: ['timeMs', 'mode'],
+      },
+      {
+        id: 'channels',
+        label: 'CHANNELS',
+        hint: 'fit each trace and pick its volts-per-division',
+        controls: ['ch1Scale', 'ch1Offset', 'ch1Range', 'ch2Scale', 'ch2Offset', 'ch2Range'],
+        clusters: [
+          { label: 'CH 1', controls: ['ch1Scale', 'ch1Offset', 'ch1Range'] },
+          { label: 'CH 2', controls: ['ch2Scale', 'ch2Offset', 'ch2Range'] },
+        ],
+        clusterFlow: 'row',
+      },
+      {
+        id: 'beam',
+        label: 'BEAM',
+        hint: 'phosphor persistence — display feel only',
+        controls: ['intensity'],
+      },
+    ],
+
+    // ⚠ NO TAB RAIL, and it could not engage even if this face wanted one:
+    // `DOCK_TAB_MIN_BANDS` is 7 and these are three bands. `face.tabbed` is
+    // fenced as DECLARED ONLY ON EXPLICIT OWNER INSTRUCTION, PER MODULE, and
+    // there is no such instruction for scope. It is also the right answer on
+    // the merits — nine params over one display is one honest idea, and the
+    // ruling is *never pad pages to force the rail*.
+
+    // All six CONTINUOUS controls are THROWS on the card (`<NeonFader>` ×6),
+    // and nothing in a `ParamDef` separates "a throw" from any other continuous
+    // scalar — so an undeclared face silently swaps every one for a dial, which
+    // is the `noise` regression this map exists for.
+    //
+    // ⚠ THE DECLARATION HAS A MEASURED LAYOUT COST, ACCEPTED ON PURPOSE.
+    // `LANE_CELL_H.fader` is 96 px against a 42 px plate row, so declaring
+    // `fader` halves a module's lane plate. Scope's lane tier carries three
+    // cells, so the tile stays one row either way — the cost lands on a module
+    // that was never going to show six controls in a lane. Faced modules that
+    // rank card-drawn faders and paint them as knobs have NOT converted; scope
+    // converts because its lane set is small enough that the conversion is
+    // free, not because the fleet has decided.
+    //
+    // The two range switches and `mode` are deliberately ABSENT: `min 0 /
+    // max 1 / discrete` is the genuine two-state shape, `looksLikeToggle`
+    // resolves it, and with a two-entry roster the dock renders a captioned
+    // SEGMENTED pair.
+    paramCells: {
+      timeMs: 'fader',
+      ch1Scale: 'fader',
+      ch1Offset: 'fader',
+      ch2Scale: 'fader',
+      ch2Offset: 'fader',
+      intensity: 'fader',
+    },
+
+    // ⚠ NO `momentary`. All three switches LATCH, and the classification is
+    // made at the READ SITE rather than guessed from the shape: `drawScope`
+    // compares `params.mode` and `params.ch{1,2}Range >= 0.5` on EVERY FRAME
+    // (the `drawSplit`/`drawXY` dispatch and `pixelFromSample`'s `isCv`). There
+    // is no edge detector anywhere in the chain, so these are LEVELS, not
+    // triggers — `ACKNOWLEDGED_LATCHING`, never `face.momentary`. A momentary
+    // render would snap the display back the instant the player let go, which
+    // is not a control anyone could use to look at a 5 V pitch sweep.
+
+    // ⚠ NO `bareCells`. Every caption disambiguates: `Ch1 Sc` / `Ch1 Y` /
+    // `Ch1 R` under a `CH 1` heading are the only thing separating three
+    // otherwise-identical cells, which is the tidyVco side of the ruling and
+    // not the mixmstrs side — there the caption repeated the heading and said
+    // nothing else; here it carries the FUNCTION, which the heading never does.
+
+    // ⚠ NO GLYPH — AND THIS ONE IS REFUSED FOR THE OPPOSITE REASON DOCKSCOPE'S
+    // WAS, WHICH IS THE WHOLE POINT OF THIS COMMENT.
+    //
+    // dockscope declares `outputs: []`, so `primaryAudioOutPortId` returns null,
+    // every glyph literal falls to `{kind:'static'}`, and the dead-glyph clause
+    // catches it. Its refusal is MECHANICAL — a gate makes it for you.
+    //
+    // SCOPE HAS NO SUCH PROTECTION. `ch1_out` is declared `type: 'audio'`, so
+    // `primaryAudioOutPortId(scopeDef)` returns `'ch1_out'` and `glyphBinding`
+    // short-circuits to `{ kind: 'live-audio', portId: 'ch1_out' }`. That
+    // binding is LIVE. The dead-glyph clause is green. `VALID_GLYPHS` is
+    // satisfied. NOTHING ANYWHERE REDDENS — and the picture would still be
+    // wrong, in the one way that matters most on this module.
+    //
+    // Because `ch1_out` IS `gain1`: the factory creates it, connects it to
+    // `analyser1`, publishes it as the output, and NOTHING ever writes
+    // `gain1.gain` (`setParam` writes the nine CV shadows instead). So
+    // `ch1_out` is bit-exactly the module's CH1 INPUT, and a `live-audio` glyph
+    // on it paints a raw 2048-sample analyser dump that is invariant to
+    // `timeMs` (no timebase), to `ch1Scale`/`ch1Offset`/`ch1Range` (no scale,
+    // offset or ±5 V law), to `mode` (never an XY plot), to `intensity` (no
+    // phosphor) and to `ch2*` entirely (channel 2 is not in the picture).
+    // EVERY ONE OF THIS MODULE'S CONTROLS.
+    //
+    // ⚠ And it is worse here than on the recorded siblings, for a reason
+    // specific to what this module IS. On `rasterize` a passthrough trace is
+    // merely uninformative — nobody expects a raster module's tile to be a
+    // waveform. ON SCOPE A WAVEFORM TRACE IS EXACTLY WHAT A PLAYER WILL BELIEVE
+    // IS THE SCOPE'S TRACE. It would not fail to inform; it would actively
+    // MISINFORM, on the one module whose entire contract is "this picture is
+    // your signal, drawn the way you dialled it".
+    //
+    // So: `glyph: 'none'` — not because nothing fits, but because the thing
+    // that fits is FALSE. `scope-face-model.test.ts` asserts that mechanism
+    // directly (the binding really does resolve LIVE), because no gate does.
+    //
+    // ⚠ AND `glyph: 'algorithm'` DOES NOT RESCUE IT EITHER. The #2160 widening
+    // resolves an extension arm BEFORE the audio-out short-circuit, so this def
+    // COULD legally declare a layout-source glyph. Refused, and measured rather
+    // than aesthetic: `ShellExtensionGlyphProps` is `{ num, numbers?, testid? }`
+    // — no `nodeId`, no engine, no store — and `ModuleShell` hardcodes
+    // `topologyValue` to 0 for a null `paramId`. Every instance of scope in the
+    // rack would render a BYTE-IDENTICAL SVG that cannot vary per node or over
+    // time. The widening removed the refusal; it did not add a data path, and
+    // its own doc-comment says so.
+    glyph: 'none',
+
+    // The trace arrives through this slot instead — the engine handle's
+    // `read('snapshot')` key is the only seam that reaches these samples, and
+    // nothing in the glyph path calls `engine.read`. The body draws through
+    // `drawScope`, the module's OWN pure function, which is what stops the
+    // card, the faceplate and the `out` video texture from ever disagreeing
+    // about what the trace looks like.
+    // See `$lib/ui/modules/scope/shell-extension.ts`.
+    extension: 'scope',
+  },
+
   docs: {
     explanation:
-      "A two-channel oscilloscope for SEEING your signals — it passes audio straight through untouched while drawing the waveform on an on-card screen, so you can patch it inline as a probe without altering the sound. Each channel has its own vertical SCALE, Y OFFSET, and RANGE mode (bipolar audio ±1 or unipolar CV), and a shared TIME knob sets how wide a window of the waveform fills the screen. An XY mode plots channel 1 against channel 2 (Lissajous figures, stereo phase) instead of two stacked traces, and an INTENSITY knob adds phosphor-style persistence from a single moving dot up to a glowing trail. Because it visualizes anything, the signal inputs also accept CV, pitch, and gate cables (not just audio). Every knob has a matching CV input, and the whole trace is also exported as a video output you can patch into the video domain. Display-only — none of the controls touch the audio path.",
+      "A two-channel oscilloscope for SEEING your signals — it passes audio straight through untouched while drawing the waveform on its own screen, so you can patch it inline as a probe without altering the sound. Each channel has its own vertical SCALE, Y OFFSET, and RANGE mode (AUDIO plots ±1.0 full-height, CV plots ±5 V full-height — both bipolar; CV just divides by five so a pitch sweep fits), and a shared TIME knob sets how wide a window of the waveform fills the screen. An XY mode plots channel 1 against channel 2 (Lissajous figures, stereo phase) instead of two stacked traces, and an INTENSITY knob adds phosphor-style persistence from a single moving dot up to a glowing trail. Because it visualizes anything, the signal inputs also accept CV, pitch, and gate cables (not just audio). Every knob has a matching CV input, and the whole trace is also exported as a video output you can patch into the video domain. Display-only — none of the controls touch the audio path.",
     inputs: {
       ch1: "Channel-1 probe: the signal drawn on the upper trace (or the X axis in XY mode), and passed through cleanly to CH1 OUT. Typed audio but also accepts CV, pitch, and gate so you can scope LFOs, envelopes, pitch CV, and gates.",
       ch2: "Channel-2 probe: the lower trace (or the Y axis in XY mode), passed through to CH2 OUT. Also accepts CV/pitch/gate.",
       timeMs: "CV that modulates the TIME timebase knob — sweep how much of the waveform fits on screen.",
       ch1Scale: "CV that modulates channel 1's vertical SCALE — zoom the trace's amplitude in or out.",
       ch1Offset: "CV that modulates channel 1's Y OFFSET — slide the trace up or down on screen.",
-      ch1Range: "CV that modulates channel 1's RANGE mode (≥ 0.5 toggles bipolar↔unipolar display scaling).",
+      ch1Range: "CV that modulates channel 1's RANGE mode (≥ 0.5 switches the display convention from AUDIO ±1.0 to CV ±5 V).",
       ch2Scale: "CV that modulates channel 2's vertical SCALE.",
       ch2Offset: "CV that modulates channel 2's Y OFFSET.",
       ch2Range: "CV that modulates channel 2's RANGE mode.",
-      mode: "CV that toggles the display MODE (≥ 0.5 switches into XY plot, below stays time-domain) — e.g. a gate can flip the scope into XY view.",
+      mode: "CV that toggles the display MODE (≥ 0.5 switches from SPLIT into the XY plot) — e.g. a gate can flip the scope into XY view.",
       intensity: "CV that modulates the beam INTENSITY / persistence.",
     },
     outputs: {
@@ -156,11 +406,11 @@ export const scopeDef: AudioModuleDef = {
       timeMs: "The time window drawn across the screen width (1 to 200 ms, log, default 20): smaller values zoom in on a few cycles, larger values show a longer slice. The TIME CV input modulates this.",
       ch1Scale: "Channel-1 vertical zoom (0.1× to 10×, log, default 1): magnifies a quiet signal or shrinks a loud one to fit the screen.",
       ch1Offset: "Channel-1 vertical position (-1 to +1, default 0): nudges the trace up or down so two channels don't overlap.",
-      ch1Range: "Channel-1 display range: 0 = bipolar (±1, audio convention), 1 = unipolar/CV (±5 scaling) so a multi-octave pitch CV sweep is readable without re-zooming.",
+      ch1Range: "Channel-1 display range — the volts-per-division the trace is plotted against. AUDIO (0) fills the channel's half-height at ±1.0, the Web Audio sample convention; CV (1) fills the same half-height at ±5 V, the Eurorack convention, so a multi-octave pitch CV sweep is readable without re-zooming. BOTH settings are bipolar — CV divides by five and keeps the sign, it does not rectify or shift the trace. Display-only; the SCALE fader still multiplies on top.",
       ch2Scale: "Channel-2 vertical zoom (0.1× to 10×, log, default 1).",
       ch2Offset: "Channel-2 vertical position (-1 to +1, default 0).",
-      ch2Range: "Channel-2 display range: 0 = bipolar audio, 1 = unipolar/CV.",
-      mode: "Display mode: 0 = two stacked time-domain traces, 1 = XY (channel 1 vs channel 2 — Lissajous / stereo phase plot).",
+      ch2Range: "Channel-2 display range: AUDIO (0) = ±1.0 fills the half-height, CV (1) = ±5 V does. Both bipolar, same as channel 1.",
+      mode: "Display mode: SPLIT (0) draws two stacked time-domain traces sharing one time axis, XY (1) plots channel 1 against channel 2 — Lissajous figures and stereo phase. In SPLIT the horizontal axis is TIME and the TIME knob scales it; in XY the horizontal axis IS channel 1, and TIME only selects how many samples are plotted.",
       intensity: "Phosphor beam persistence (0 to 1, default 0.5): at 0 the trace is a single moving dot, at 0.5 a full-brightness single-screen trace, toward 1 a ~2-screen glowing persistence trail. Visual feel only.",
     },
   },

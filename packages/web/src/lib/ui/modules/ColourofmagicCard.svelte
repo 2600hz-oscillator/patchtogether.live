@@ -18,9 +18,9 @@
   import { packColor01, unpackColor01 } from '$lib/video/colourofmagic-colorspace';
   import type { VideoEngine } from '$lib/video/engine';
   import { VIDEO_RES } from '$lib/video/engine';
-  import type { ModuleNode } from '$lib/graph/types';
+  import type { ModuleNode, ParamDef } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
-  import { cardParams } from './card-kit';
+  import { cardParams, paramSpec } from './card-kit';
   import { drawPreviewDownscaled } from './preview-downscale';
 
   let { id, data }: NodeProps = $props();
@@ -33,9 +33,19 @@
   function pget(key: string): number {
     return (node?.params?.[key] ?? defaultFor(key)) as number;
   }
-  function paramRange(pid: string): { min: number; max: number } {
+  // ⚠ RETURNS THE CURVE TOO, and that is not tidiness. This card is enrolled in
+  // `RANGE_BOUND_CARDS`, whose curve-agreement clause refuses a HAND-TYPED
+  // `curve` it cannot check — and it cannot check these, because every knob here
+  // is inside an `{#each}` with a DYNAMIC `paramId={ch.bias}`, so a source-level
+  // gate has no literal param id to resolve the def against. Binding the curve
+  // removes the unverifiable claim instead of asserting one: there is no second
+  // copy left to disagree.
+  //   Value-identical by construction — the def declares `linear` for every one
+  // of these biases, which is what the card typed. The point is provenance, not
+  // a behaviour change.
+  function paramRange(pid: string): { min: number; max: number; curve: ParamDef['curve'] } {
     const p = colourofmagicDef.params.find((x) => x.id === pid)!;
-    return { min: p.min, max: p.max };
+    return { min: p.min, max: p.max, curve: p.curve };
   }
   // Motorized live-CV read so a patched LFO / bound CC rotates the tick.
 
@@ -86,7 +96,15 @@
 
   // ── palette colour pickers (ChromaCard idiom: swatch + hidden <input color>) ──
   const PAL_IDS = ['pal_r', 'pal_g', 'pal_b'] as const;
-  const PAL_LABELS: Record<string, string> = { pal_r: 'R', pal_g: 'G', pal_b: 'B' };
+  // ⚠ READ FROM THE DEF, not re-typed. The card has always painted `R`/`G`/`B`
+  // here while the def said `pal r`/`pal g`/`pal b` — so the FACE (which renders
+  // straight off the `ParamDef`) painted `PAL R` and the card painted `R` for
+  // the same control. The owner asked for the short form (2026-08-20), which
+  // makes the def agree with what this card already showed; binding it here is
+  // what stops the two surfaces drifting apart again.
+  const PAL_LABELS: Record<string, string> = Object.fromEntries(
+    PAL_IDS.map((pid) => [pid, paramSpec(colourofmagicDef, pid).label.toUpperCase()]),
+  );
   function colorHex(pid: string): string {
     const [r, g, b] = unpackColor01(pget(pid));
     const h = (v: number) => Math.round(v * 255).toString(16).padStart(2, '0');
@@ -104,12 +122,14 @@
   }
 
   // ── preview select (22 outputs; index === uOutMode === preview value) ──
-  const PREVIEW_LABELS = [
-    'PASS', 'RGB', 'YDbDr', 'HSV', 'R', 'G', 'B', 'LUMA',
-    'dY', 'Db', 'Dr', 'H', 'S', 'V',
-    'YIQ', 'iY', 'I', 'Q',
-    'YCC', 'cY', 'Cb', 'Cr',
-  ];
+  // ⚠ THE TAP NAMES COME FROM THE DEF, NOT FROM A LITERAL HERE. They used to be
+  // a card-local array, which made this card the ONLY place the 22 outputs were
+  // named — so a faceplate resolved `preview` to a 22-position ANONYMOUS dial
+  // (#2022). The roster now lives on the `ParamDef` (`preview.options`, ordered
+  // by `uOutMode`, which IS the param value), and both surfaces read it, so a
+  // rename cannot leave the card and the face disagreeing about which tap is
+  // which. The pill INDEX is still the param value, exactly as before.
+  const PREVIEW_LABELS = (paramSpec(colourofmagicDef, 'preview').options ?? []).map((o) => o.label);
   let previewSel = $derived(Math.round(pget('preview')));
   function selectPreview(n: number): void {
     setNodeParam(id, 'preview', n);
@@ -304,7 +324,7 @@
                 max={r.max}
                 defaultValue={defaultFor(ch.bias)}
                 label={ch.label}
-                curve="linear"
+                curve={r.curve}
                 onchange={set(ch.bias)}
                 readLive={live(ch.bias)}
                 moduleId={id}
@@ -353,7 +373,7 @@
                 max={r.max}
                 defaultValue={defaultFor(ch.bias)}
                 label={ch.label}
-                curve="linear"
+                curve={r.curve}
                 onchange={set(ch.bias)}
                 readLive={live(ch.bias)}
                 moduleId={id}
@@ -394,7 +414,7 @@
                 defaultValue={defaultFor(ch.bias)}
                 label={ch.label}
                 units={ch.deg ? 'deg' : ''}
-                curve="linear"
+                curve={r.curve}
                 onchange={set(ch.bias)}
                 readLive={live(ch.bias)}
                 moduleId={id}
@@ -434,7 +454,7 @@
                 max={r.max}
                 defaultValue={defaultFor(ch.bias)}
                 label={ch.label}
-                curve="linear"
+                curve={r.curve}
                 onchange={set(ch.bias)}
                 readLive={live(ch.bias)}
                 moduleId={id}
@@ -467,7 +487,7 @@
                 max={r.max}
                 defaultValue={defaultFor(ch.bias)}
                 label={ch.label}
-                curve="linear"
+                curve={r.curve}
                 onchange={set(ch.bias)}
                 readLive={live(ch.bias)}
                 moduleId={id}

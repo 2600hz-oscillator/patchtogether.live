@@ -13,16 +13,23 @@
 // Runs on /rack?shell=legacy (no DB/relay) — the normal e2e lane, same as
 // workflow-dock.spec.ts. Shell state is transient/local (never in the Y.Doc).
 
+import { SHELL_COLUMN_W } from '../../packages/web/src/lib/graph/channel-columns';
+import { SHELL_VIDEO_ZONE_TILE_INSET_Y } from '../../packages/web/src/lib/ui/workflow/module-shell-model';
 import { test, expect, type Page } from '@playwright/test';
-import { spawnPatch } from './_helpers';
+import { LANE_TILES, MAIN_CANVAS, spawnPatch, waitForLaneTier } from './_helpers';
+import { REGISTRY } from './_registry';
 import {
-  AUDIO_FIXTURE,
+  AUDIO_OPERABLE_FIXTURE,
+  AUDIO_PLACEHOLDER_FIXTURE,
   CONTRACT_MODULE_TYPES,
   DENIED,
   fixtureProblems,
   fixtureType,
 } from './_face-fixtures';
 import { BOOT_MS, PLACEHOLDER_PAINT_MS } from '../_helpers/boot-budget';
+// Zero-import pure module — see `placeholderSubjectType` for why this is
+// imported rather than transcribed.
+import { NON_SHELL_LANE_TYPES } from '../../packages/web/src/lib/ui/workflow/legacy-fallback';
 
 // Boot and first-paint waits are pure LATENCY BOUNDS, not behavior assertions
 // (#1875 — this spec lost two main push runs in one day to flat ones). The
@@ -53,7 +60,7 @@ async function readParam(page: Page, nodeId: string, paramId: string): Promise<n
 
 /** The node's WHOLE param map. The legacy-fallback test drives the docked
  *  card's first fader and asserts *some* param moved — module-agnostic, since
- *  the fixture module is derived (AUDIO_FIXTURE) rather than named,
+ *  the fixture module is derived (AUDIO_OPERABLE_FIXTURE / AUDIO_PLACEHOLDER_FIXTURE) rather than named,
  *  so no specific param id like delay's 'time' can be assumed. */
 async function readParams(page: Page, nodeId: string): Promise<Record<string, number>> {
   return page.evaluate((nodeId) => {
@@ -69,7 +76,11 @@ const NODE = 'v1';
 // ── RACKLINE tile-geometry re-spec helpers ──────────────────────────────────
 // channel-columns.ts geometry (kept in sync with the pure module).
 const COLUMN_W = 765; // 34 * HP_UNIT(22.5)
-const SHELL_COLUMN_W = 216; // channel-columns.ts SHELL_COLUMN_W (tight ?shell=1 pitch)
+// ⚠ IMPORTED, NEVER RE-TYPED (#2239). This was `const SHELL_COLUMN_W = 216`
+// with a comment naming `channel-columns.ts SHELL_COLUMN_W` as its source — a
+// literal that cites its own derivation is a literal that goes stale, and this
+// one did the moment the pitch became 225. The app rendered the new pitch
+// correctly and only the TEST disagreed, which reads as a product regression.
 const SHELL_TILE_W = 192; // module-shell-model.ts SHELL_TILE_W / tokens --shell-tile-w
 // The ONE fixed lane-slot height at EVERY LOD tier (zoom-reposition fix option
 // (c)): module-shell-model.ts SHELL_TILE_H_SLOT / tokens --shell-tile-h. Zoom
@@ -87,7 +98,7 @@ const VIDEO_AREA_HEIGHT = 540; // RACK_UNIT(180) * 3
 const SHELL_LANE_HEADROOM_Y = 90; // channel-columns.ts SHELL_LANE_HEADROOM_Y
 const SHELL_BADGE_CLEARANCE_Y = 90; // channel-columns.ts SHELL_LANE_BADGE_CLEARANCE_Y
 /** Flow-space top-left X that CENTERS the uniform 192px tile in column `ch`'s tight
- *  216px band (columnCardX at the shell pitch) — the value the drop must persist. */
+ *  band (columnCardX at the shell pitch) — the value the drop must persist. */
 const shellColCardX = (ch: number) => (ch - 1) * SHELL_COLUMN_W + (SHELL_COLUMN_W - SHELL_TILE_W) / 2;
 
 /** A flow-space spawn anchor inside channel column `ch`'s painted band. X selects
@@ -111,18 +122,125 @@ async function waitForHooks(page: Page): Promise<void> {
   );
 }
 
+/** EVERY mounted lane tile — a migrated `module-shell` OR an un-migrated
+ *  `module-shell-placeholder`. This is the population the geometry tests
+ *  measure, so it is also the honest readiness signal for "the drop landed". */
+function laneTiles(page: Page) {
+  // ⚠ SCOPED (LANE_TILES). Unscoped, this counted the PINNED audioOut faceplate
+  // in the always-mounted 🎧 topbar panel as a lane tile. The delta below hid
+  // that — the constant cancels — but the pins are ensured ASYNCHRONOUSLY, so a
+  // `before` read taken before that mount lands is satisfied by the PANEL
+  // instead of by the drop, and the geometry read that follows races a tile
+  // that has not mounted. `measureTiles` was re-scoped in the same pass; a
+  // readiness signal and the measurement it gates must count one population.
+  return page.locator(LANE_TILES);
+}
+
+/**
+ * Run `spawn`, then wait until ONE MORE lane tile is mounted than before.
+ *
+ * Every drop in this spec used to be followed by a flat `waitForTimeout(250)`
+ * — a wall-clock guess for "the spawn reached the DOM", which is a different
+ * number of frames on every renderer (7.9 fps measured under
+ * `E2E_SWIFTSHADER=1` against ~60 fps locally, before CI's ten-shard
+ * contention). The subject was always the tile, so wait on the TILE:
+ * `toHaveCount` auto-retries, returns the instant the drop lands, and still
+ * fails loudly — naming the module and the lane — if it never does.
+ */
+async function dropAndSettle(page: Page, spawn: () => Promise<unknown>, what: string): Promise<void> {
+  const before = await laneTiles(page).count();
+  await spawn();
+  await expect(laneTiles(page), `${what}: the palette drop mounted its lane tile`).toHaveCount(
+    before + 1,
+  );
+}
+
 /** Drive the REAL palette-drop path into channel column `ch`. */
+/**
+ * A module type that renders a `module-shell-placeholder` in a lane — DERIVED
+ * from the live registry, never named.
+ *
+ * ⚠ WHY THIS EXISTS. A placeholder is what an UNPROMOTED module renders, so
+ * every hard-coded placeholder subject in this file was a standing bet that the
+ * module would stay unfaced. `synesthesia` lost that bet (#2194) and took three
+ * tests with it — the failing precondition WAS the promotion. `strictFace` is
+ * the manifest's own projection of STRICT_FACES membership, emitted for exactly
+ * this question, so selecting on it cannot drift from the thing it describes.
+ *
+ * ⚠ ONE SUBJECT, SELECTED BY A PROPERTY — deliberately NOT a registry-wide
+ * render sweep (the banned shape). Nothing here spawns a scene per module.
+ *
+ * `NON_SHELL_LANE_TYPES` are excluded because they render their real card in the
+ * lane and never a placeholder at all — including them would swap a stale
+ * subject for a vacuous one. The second exclusion is narrower and each entry
+ * carries its reason: a module whose SPAWN reaches for hardware or a permission
+ * prompt would make this geometry test depend on the runner's devices.
+ */
+function placeholderSubjectType(): string {
+  /**
+   * Renders its verbatim legacy card in the lane — never a placeholder.
+   *
+   * ⚠ IMPORTED, NOT RE-TYPED, AND THAT IS A REPAIR. This used to be a hand
+   * copy of `NON_SHELL_LANE_TYPES`, and by the time anyone looked it named TWO
+   * modules the live set no longer contains: `launchpadControlLeft` (removed on
+   * its own promotion) and `electraControl` (removed on its). Neither drift was
+   * detectable here, because the copy is only ever used to EXCLUDE candidates —
+   * an over-broad copy silently narrows the subject pool and stays green, which
+   * is the blind-gate shape CLAUDE.md names. `legacy-fallback.ts` has zero
+   * imports, so it loads in the Playwright runtime directly and the set cannot
+   * drift from the rule it names.
+   */
+  const NON_SHELL = NON_SHELL_LANE_TYPES;
+  /** Spawning these reaches for a device or a permission the runner may not
+   *  have, which is not something a TILE-GEOMETRY test should depend on. */
+  const NEEDS_HARDWARE = new Set([
+    'audioIn',        // getUserMedia — a microphone permission prompt
+    'es9',            // an Expert Sleepers interface over a local helper
+    'gamepad',        // the Gamepad API + a physical pad
+    'joystick',       // as gamepad
+    'midiCvBuddy',    // WebMIDI + a device roster
+    'midiLane',       // as midiCvBuddy
+    'midiOutBuddy',   // as midiCvBuddy
+    'numpadPlus',     // a HID keypad
+    'vstFx',          // a plugin host / user-supplied binary
+    'vstInstrument',  // as vstFx
+  ]);
+  const candidates = REGISTRY.filter(
+    (m) => m.strictFace !== true
+      && m.domain === 'audio'
+      && !NON_SHELL.has(m.type)
+      && !NEEDS_HARDWARE.has(m.type),
+  )
+    .map((m) => m.type)
+    // Sorted so the pick is DETERMINISTIC across runs and shards — a test that
+    // measured a different module each run would be unreproducible.
+    .sort();
+  if (candidates.length === 0) {
+    throw new Error(
+      'no un-promoted, shell-eligible audio module is left to use as a PLACEHOLDER subject. '
+      + 'If the migration is genuinely complete, this test has outlived its subject and should '
+      + 'be retired deliberately — do not re-point it at a faced module.',
+    );
+  }
+  return candidates[0]!;
+}
+
 async function dropInColumn(page: Page, type: string, ch: number): Promise<void> {
-  await page.evaluate(
-    ({ type, pos }) => {
-      const w = globalThis as unknown as {
-        __setSpawnFlowPos: (p: { x: number; y: number }) => void;
-        __spawnFromPalette: (t: string) => void;
-      };
-      w.__setSpawnFlowPos(pos);
-      w.__spawnFromPalette(type);
-    },
-    { type, pos: colPos(ch) },
+  await dropAndSettle(
+    page,
+    () =>
+      page.evaluate(
+        ({ type, pos }) => {
+          const w = globalThis as unknown as {
+            __setSpawnFlowPos: (p: { x: number; y: number }) => void;
+            __spawnFromPalette: (t: string) => void;
+          };
+          w.__setSpawnFlowPos(pos);
+          w.__spawnFromPalette(type);
+        },
+        { type, pos: colPos(ch) },
+      ),
+    `${type} → channel ${ch}`,
   );
 }
 
@@ -131,8 +249,17 @@ async function dropInColumn(page: Page, type: string, ch: number): Promise<void>
  *  tile px + data-shell-tier. */
 async function measureTiles(page: Page): Promise<{ node: string | null; tier: string | null; w: number; h: number }[]> {
   return page.evaluate(() => {
+    // ⚠ SCOPED TO THE MAIN CANVAS. A document-wide sweep stopped meaning "the
+    // lane tiles" on 2026-08-24: the always-mounted 🎧 topbar panel now holds a
+    // PINNED audioOut faceplate, which this counted as a tile and which is a
+    // different width — so `new Set(tiles.map(t => t.w)).size` read 2 where the
+    // assertion wants 1. The CHILD combinator is the discriminator (see
+    // `MAIN_CANVAS` in ./_helpers); `.first()` would not be one.
+    const scope = document.querySelector('.flow > .svelte-flow');
     const tiles = Array.from(
-      document.querySelectorAll('[data-testid="module-shell-placeholder"], [data-testid="module-shell"]'),
+      (scope ?? document).querySelectorAll(
+        '[data-testid="module-shell-placeholder"], [data-testid="module-shell"]',
+      ),
     ) as HTMLElement[];
     return tiles.map((t) => ({
       node: t.getAttribute('data-shell-node'),
@@ -152,14 +279,13 @@ async function setZoomTier(page: Page, zoom: number, expectTier: string): Promis
     const vp = f.getViewport();
     f.setViewport({ x: vp.x, y: vp.y, zoom }, { duration: 0 });
   }, zoom);
-  await page.waitForFunction(
-    (tier) => {
-      const tiles = Array.from(document.querySelectorAll('[data-shell-tier]'));
-      return tiles.length > 0 && tiles.every((t) => t.getAttribute('data-shell-tier') === tier);
-    },
-    expectTier,
-    { timeout: 10_000 },
-  );
+  // ⚠ WAS A BARE `document.querySelectorAll('[data-shell-tier]')` + `.every()`.
+  // That stopped meaning "the lane tiles" on 2026-08-24 without this spec
+  // changing: promoting `audioOut` put a PINNED faceplate in the always-mounted
+  // 🎧 topbar panel, whose tier is permanently `dock`, so `.every()` could never
+  // become true and this call sat out its full 10 s timeout. Scoped to the main
+  // canvas through the ONE export site — see `waitForLaneTier`.
+  await waitForLaneTier(page, expectTier);
 }
 
 // ── THE AUDIO FIXTURE IS HEALTHY (#1789, #1864) ─────────────────────────────
@@ -173,8 +299,51 @@ async function setZoomTier(page: Page, zoom: number, expectTier: string): Promis
 //
 // `fixtureProblems` carries the checks (pick ∈ pool, `pool ∪ rejections ===
 // unpromoted`, and slack), so the audio and video gates cannot drift apart.
-test('the derived audio legacy-fallback fixture is healthy', () => {
-  expect(fixtureProblems(AUDIO_FIXTURE), AUDIO_FIXTURE.why).toEqual([]);
+test('the derived audio legacy-fallback fixtures are healthy', () => {
+  expect(fixtureProblems(AUDIO_PLACEHOLDER_FIXTURE), AUDIO_PLACEHOLDER_FIXTURE.why).toEqual([]);
+  expect(fixtureProblems(AUDIO_OPERABLE_FIXTURE), AUDIO_OPERABLE_FIXTURE.why).toEqual([]);
+
+  // ── THE INSTRUMENT'S PERMANENT NEGATIVE CONTROL, BOTH DIRECTIONS (#2137) ──
+  //
+  // This replaced the `pool.length <= 1` slack floor, which was a population
+  // threshold sitting with ZERO slack on the live population (the audio pool
+  // held two members; it tripped at one) — CLAUDE.md's named ratchet hazard.
+  // What the floor protected ("the next promotion is survivable") became
+  // unconditionally true when an emptied pool started degrading to a NAMED SKIP
+  // instead of a red fixture defect, so the mechanism is DELETED rather than
+  // re-tuned and this control replaces it.
+  //
+  // ⚠ IT CALLS THE PREDICATE UNDER TEST, NOT A PARAPHRASE OF IT. `probe` is the
+  // exact closure `deriveFixture` ran; a re-implementation here could agree with
+  // a broken predicate and certify it.
+  for (const [name, f] of [
+    ['AUDIO_PLACEHOLDER', AUDIO_PLACEHOLDER_FIXTURE],
+    ['AUDIO_OPERABLE', AUDIO_OPERABLE_FIXTURE],
+  ] as const) {
+    // POSITIVE — the predicate still ACCEPTS things. A predicate that accepts
+    // nothing anywhere is broken, and it is broken in the direction that LOOKS
+    // like a finished migration: this is the leg that catches the `<Fader>` →
+    // `<NeonFader>` rename class, which once would have rejected every
+    // candidate at once and emptied the pool for a reason that is not the tree.
+    expect(
+      f.eligible.length,
+      `${name}: the fitness predicate accepts NOTHING across the whole audio population — ` +
+        'it went blind, and a blind predicate reports the end of the migration',
+    ).toBeGreaterThan(0);
+
+    // NEGATIVE — and it still REFUSES things, by name and with a reason. A
+    // predicate that accepts everything is equally blind, and it fails green.
+    expect(
+      f.probe('clipplayer'),
+      `${name}: clipplayer is a NON_SHELL_LANE_TYPES snowflake — laneRenderKind returns ` +
+        "'legacy' for it, so it renders no placeholder tile and must be refused",
+    ).not.toBeNull();
+    expect(
+      f.probe('__no_such_module__'),
+      `${name}: a type the golden has never heard of must be refused, not resolved`,
+    ).not.toBeNull();
+  }
+
 
   // ANCHORED TO THE ARTIFACT: a deny entry naming a module the contract golden
   // does not know is a licence nobody is watching — the module was renamed or
@@ -195,14 +364,14 @@ test.describe('P0.3b workflow-shell legacy-fallback bridge', () => {
     // A still-UN-migrated module, DERIVED from STRICT_FACES rather than named:
     // a hard-coded fixture rots as each P1 wave promotes more modules (vca was
     // consumed by batch 1, delay by batch 3 — both turned this red for a
-    // non-bug). See AUDIO_FIXTURE in _face-fixtures.ts.
+    // non-bug). See AUDIO_OPERABLE_FIXTURE in _face-fixtures.ts.
     //
     // When every audio module is promoted this case has no subject BY DESIGN —
     // a NAMED skip carrying the reason, never a silent pass (#1864).
-    test.skip(AUDIO_FIXTURE.kind === 'migration-complete', AUDIO_FIXTURE.why);
+    test.skip(AUDIO_OPERABLE_FIXTURE.kind === 'migration-complete', AUDIO_OPERABLE_FIXTURE.why);
     await gotoWorkflow(page, { shell: true });
     await spawnPatch(page, [
-      { id: NODE, type: fixtureType(AUDIO_FIXTURE), position: { x: 460, y: 240 } },
+      { id: NODE, type: fixtureType(AUDIO_OPERABLE_FIXTURE), position: { x: 460, y: 240 } },
     ]);
 
     const laneNode = page.locator(`.svelte-flow__node[data-id="${NODE}"]`);
@@ -232,7 +401,23 @@ test.describe('P0.3b workflow-shell legacy-fallback bridge', () => {
     await expect(faceplate.getByTestId('faceplate-close')).toBeVisible();
     await expect(faceplate.getByTestId('faceplate-collapse')).toBeVisible();
     await expect(faceplate.getByTestId('faceplate-tab')).toHaveText('MODULE');
-    await expect(faceplate.locator('.faceplate.audio')).toHaveCount(1); // fixture is audio-domain
+    // The plate carries the module's DERIVED domain class.
+    //
+    // ⚠ THIS USED TO BE A HARD-CODED `.faceplate.audio` (#2137), and the
+    // hard-coding was not cosmetic — it was the whole reason the audio fixture
+    // carried a "must be audio-class" predicate that rejected 31 of 38
+    // un-promoted candidates and shrank the pool to two. Deriving the class
+    // instead makes this leg STRICTER, not looser: it now proves the plate
+    // carries the RIGHT class for whatever subject the derivation handed it,
+    // rather than proving one class for a subject filtered to have it. The
+    // widening immediately changed the answer — today's pick is gate-class, so
+    // `.faceplate.audio` would now be simply WRONG.
+    const domainClass = AUDIO_OPERABLE_FIXTURE.kind === 'ok' ? AUDIO_OPERABLE_FIXTURE.domainClass : null;
+    expect(domainClass, 'the operable fixture must resolve a determinate domain class').not.toBeNull();
+    await expect(
+      faceplate.locator(`.faceplate.${domainClass}`),
+      `${fixtureType(AUDIO_OPERABLE_FIXTURE)}: the dock plate carries its derived domain class (.faceplate.${domainClass})`,
+    ).toHaveCount(1);
 
     // …and the REAL, unchanged legacy card mounts verbatim in .editor at native
     //  scale (carrying the data-dock-card anchor so PickupCable/patch-menu work).
@@ -253,6 +438,23 @@ test.describe('P0.3b workflow-shell legacy-fallback bridge', () => {
     //    whole param map rather than naming one id.
     const before = await readParams(page, NODE);
     const track = dockCard.locator('.fader-wrap .track').first();
+    // ⚠ SCROLL IT INTO VIEW BEFORE MEASURING, and this is a REAL FIX rather than
+    // defensive noise (#2137). This leg drives raw `page.mouse` at coordinates
+    // from `boundingBox()`, which reports where an element IS — including when
+    // it is scrolled outside the dock's clipped viewport. The pointer then lands
+    // on whatever actually occupies those screen coordinates, the drag commits
+    // nothing, and the failure reads as "this card is not operable" rather than
+    // "the test never touched it".
+    //
+    // It was latent for as long as the fixture happened to resolve SHORT cards.
+    // The derivation now offers `modtris`, whose card is a game board with its
+    // two faders far below the fold, and the leg failed with an empty param map
+    // — the card mounted correctly and both sliders were present in the
+    // accessibility tree. That is a defect in the LEG, not evidence against the
+    // candidate, so the fix belongs here and not in a `DENIED` entry: denying
+    // the module would have hidden a fragility that the next tall card hits
+    // again.
+    await track.scrollIntoViewIfNeeded();
     const box = await track.boundingBox();
     expect(box, 'a fader track should be present in the docked card').toBeTruthy();
     if (!box) return;
@@ -267,7 +469,7 @@ test.describe('P0.3b workflow-shell legacy-fallback bridge', () => {
     await page.mouse.up();
     await expect
       .poll(async () => JSON.stringify(await readParams(page, NODE)), {
-        message: `${fixtureType(AUDIO_FIXTURE)}: driving the docked card's first fader commits a param change`,
+        message: `${fixtureType(AUDIO_OPERABLE_FIXTURE)}: driving the docked card's first fader commits a param change`,
       })
       .not.toBe(JSON.stringify(before));
 
@@ -279,36 +481,78 @@ test.describe('P0.3b workflow-shell legacy-fallback bridge', () => {
 
   test('placeholder tiles are UNIFORM WIDTH + the FIXED slot height with a consistent badge anchor', async ({ page }) => {
     // The owner "same-size all modules HORIZONTALLY" + "tiles non-uniform / smaller
-    // than the mock" fix: under ?shell=1 the tile-swapped video-zone defaults
-    // (recorderbox 2u, synesthesia 3u — DIFFERENT rack tiers, so different
-    // LEGACY widths) render as the SAME uniform RACKLINE tile — identical WIDTH
-    // (SHELL_TILE_W) and the ONE fixed slot HEIGHT (SHELL_TILE_H_SLOT —
+    // than the mock" fix: under ?shell=1 the tile-swapped defaults render as the
+    // SAME uniform RACKLINE tile whatever their LEGACY card measured — identical
+    // WIDTH (SHELL_TILE_W) and the ONE fixed slot HEIGHT (SHELL_TILE_H_SLOT —
     // tier-invariant, the zoom-reposition fix), so the baseline number badges
-    // cap them flush. (videoOut is EXEMPT since the video-visibility fix — a
-    // NON_SHELL video-surface snowflake whose real resizable card stays in the
-    // lane; covered by workflow-shell-video.spec.ts.)
+    // cap them flush. (A PROMOTED occupant is out of scope here by construction:
+    // it renders `module-shell`, not a placeholder, and its width is covered by
+    // the faces suites.)
+    //
+    // ⚠ THE `data-shell-tier` FIELD THIS USED TO COLLECT WAS NEVER ASSERTED. The
+    // prose here claimed the pair spanned "DIFFERENT rack tiers, so different
+    // LEGACY widths", and the evaluate returned `tier` — but nothing ever
+    // compared it, so the tier spread was narrative, not coverage. Dropped
+    // rather than carried over, and the honest floor (≥2 distinct module types)
+    // is asserted below instead.
+    // ⚠ THE SUBJECTS ARE DERIVED FROM THE RACK, NOT NAMED — and the two names
+    // that used to be here (`workflow-recorderbox`, `workflow-synesthesia`) are
+    // why. A placeholder is what an UNPROMOTED module renders, so every name in
+    // this list was a bet that the module would still be unfaced; promoting
+    // `synesthesia` made the locator match nothing and this test failed on a
+    // change that had nothing to do with tile geometry. The precondition it
+    // depended on WAS the module being unmigrated.
+    //
+    // Asking the DOM which tiles are placeholders keeps the subject true by
+    // construction. It is also STRICTLY STRONGER than the two names: it covers
+    // every placeholder the default rack renders rather than a hand-picked pair,
+    // so a tile that regressed outside that pair can no longer hide.
+    //
+    // ⚠ NOT A REGISTRY-WIDE RENDER SWEEP (the banned shape). Nothing is spawned
+    // per module and no per-module scene is booted — this reads the ONE page the
+    // test already loaded and asserts a geometric invariant over what is on it.
+    //
+    // ⚠ MINIMUM-POPULATION GUARD, because "uniform" is trivially true of a set
+    // of one and vacuously true of a set of none. Two DISTINCT module types is
+    // the floor that makes the comparison mean anything, and if promotions ever
+    // drain the rack below it this fails LOUDLY — asking for a new subject —
+    // rather than passing while measuring nothing.
     await gotoWorkflow(page, { shell: true });
-    const ids = ['workflow-recorderbox', 'workflow-synesthesia'];
-    for (const id of ids) {
-      await expect(
-        page.locator(`.svelte-flow__node[data-id="${id}"] [data-testid="module-shell-placeholder"]`),
-      ).toBeVisible({ timeout: PLACEHOLDER_PAINT_MS });
-    }
+    await waitForHooks(page);
+    // The default rack alone no longer clears the floor — promotions have
+    // drained it to ONE placeholder (measured 2026-08-24: `recorderbox`). So the
+    // second subject is DROPPED, and its type is derived rather than named, by
+    // the same rule that decides what a placeholder IS.
+    await dropInColumn(page, placeholderSubjectType(), 1);
+    const placeholders = page.locator(`${MAIN_CANVAS} [data-testid="module-shell-placeholder"]`);
+    await expect(placeholders.first()).toBeVisible({ timeout: PLACEHOLDER_PAINT_MS });
 
-    const metrics = await page.evaluate((nodeIds) => {
-      return nodeIds.map((id) => {
-        const tile = document.querySelector(
-          `.svelte-flow__node[data-id="${id}"] [data-testid="module-shell-placeholder"]`,
-        ) as HTMLElement | null;
-        const badge = tile?.querySelector('.tile-badge') as HTMLElement | null;
-        if (!tile || !badge) return null;
+    const metrics = await page.evaluate((canvasSel) => {
+      const tiles = Array.from(
+        document.querySelectorAll(`${canvasSel} [data-testid="module-shell-placeholder"]`),
+      ) as HTMLElement[];
+      return tiles.map((tile) => {
+        const badge = tile.querySelector('.tile-badge') as HTMLElement | null;
+        if (!badge) return null;
         // offset* are UNSCALED layout px (immune to the xyflow viewport zoom
         // transform): the TRUE tile W/H + the badge's anchor within the tile.
-        return { w: tile.offsetWidth, h: tile.offsetHeight, tier: tile.getAttribute('data-shell-tier'), badgeTop: badge.offsetTop };
+        return {
+          type: tile.getAttribute('data-shell-type'),
+          w: tile.offsetWidth,
+          h: tile.offsetHeight,
+          badgeTop: badge.offsetTop,
+        };
       });
-    }, ids);
+    }, MAIN_CANVAS);
 
-    expect(metrics.every((m) => m !== null), 'all three placeholders resolved').toBe(true);
+    expect(metrics.every((m) => m !== null), 'every placeholder resolved a badge').toBe(true);
+    const types = new Set(metrics.map((m) => m!.type));
+    expect(
+      types.size,
+      `uniformity needs at least two DISTINCT placeholder module types to mean anything — the `
+        + `default rack rendered ${types.size} ([${[...types].join(', ')}]). If promotions have `
+        + `drained it, give this test a new subject; do not relax the floor.`,
+    ).toBeGreaterThanOrEqual(2);
     // UNIFORM WIDTH — every tile the SAME SHELL_TILE_W across three rack tiers.
     for (const m of metrics) expect(m!.w).toBe(SHELL_TILE_W);
     // FIXED HEIGHT — every tile the ONE slot height regardless of the LOD tier.
@@ -329,12 +573,20 @@ test.describe('P0.3b workflow-shell legacy-fallback bridge', () => {
     const types = ['tidyVco', 'vca', 'delay'];
     for (const t of types) {
       await dropInColumn(page, t, 1);
-      await page.waitForTimeout(250);
     }
     // Tiles mounted (tidyVco/vca render the migrated shell as of P1 batch 1;
     // delay + the video-zone trio stay placeholders).
-    await expect(page.locator('[data-testid="module-shell-placeholder"]')).not.toHaveCount(0);
-    await expect(page.locator('[data-testid="module-shell"]')).not.toHaveCount(0);
+    // ⚠ BOTH SCOPED TO THE CANVAS, and the second one had ALREADY GONE BLIND.
+    // `page.locator('[data-testid="module-shell"]')` matched the pinned audioOut
+    // faceplate in the always-mounted 🎧 topbar panel, so "a migrated tile
+    // mounted in the LANE" became true on every page whether or not anything
+    // dropped — a precondition that can no longer fail, guarding a measurement
+    // that was re-scoped to the canvas in the same pass. It would have gone on
+    // certifying the next lane-mount regression in silence.
+    await expect(
+      page.locator(`${MAIN_CANVAS} [data-testid="module-shell-placeholder"]`),
+    ).not.toHaveCount(0);
+    await expect(page.locator(`${MAIN_CANVAS} [data-testid="module-shell"]`)).not.toHaveCount(0);
 
     // Uniform width + height across every mounted tile.
     const tiles = await measureTiles(page);
@@ -368,14 +620,13 @@ test.describe('P0.3b workflow-shell legacy-fallback bridge', () => {
     }
   });
 
-  test('lanes are the TIGHT ~216px shell pitch: drops land in the narrowed column + tiles fill the lane with no overlap', async ({ page }) => {
+  test('lanes are the TIGHT shell pitch: drops land in the narrowed column + tiles fill the lane with no overlap', async ({ page }) => {
     // The RACKLINE narrowing: under ?shell=1 the app-scale 765px band collapses to
-    // the mock's tight 216px lane pitch, so the uniform 192px tiles FILL their
+    // the tight shell lane pitch, so the uniform 192px tiles FILL their
     // lanes (24px gutter) instead of floating in huge gutters. Prove (a) a real
     // palette drop lands in the correct NARROWED column via the pitch-aware
-    // hit-test, (b) the rendered column pitch is ~216px, and (c) tiles don't
+    // hit-test, (b) the rendered column pitch is ~SHELL_COLUMN_W, and (c) tiles don't
     // overlap (clean gutter).
-    const SHELL_COLUMN_W = 216;
     await gotoWorkflow(page, { shell: true });
     await waitForHooks(page);
 
@@ -384,18 +635,22 @@ test.describe('P0.3b workflow-shell legacy-fallback bridge', () => {
     const shellColPos = (ch: number) => ({ x: (ch - 1) * SHELL_COLUMN_W + 30, y: LANE_ANCHOR_Y });
     const types = ['tidyVco', 'vca', 'delay'];
     for (let i = 0; i < types.length; i++) {
-      await page.evaluate(
-        ({ type, pos }) => {
-          const w = globalThis as unknown as {
-            __setSpawnFlowPos: (p: { x: number; y: number }) => void;
-            __spawnFromPalette: (t: string) => void;
-          };
-          w.__setSpawnFlowPos(pos);
-          w.__spawnFromPalette(type);
-        },
-        { type: types[i], pos: shellColPos(i + 1) },
+      await dropAndSettle(
+        page,
+        () =>
+          page.evaluate(
+            ({ type, pos }) => {
+              const w = globalThis as unknown as {
+                __setSpawnFlowPos: (p: { x: number; y: number }) => void;
+                __spawnFromPalette: (t: string) => void;
+              };
+              w.__setSpawnFlowPos(pos);
+              w.__spawnFromPalette(type);
+            },
+            { type: types[i], pos: shellColPos(i + 1) },
+          ),
+        `${types[i]} → narrowed column ${i + 1}`,
       );
-      await page.waitForTimeout(250);
     }
 
     // (a) Each drop landed in the intended narrowed column: channels 1, 2, 3 each
@@ -431,7 +686,7 @@ test.describe('P0.3b workflow-shell legacy-fallback bridge', () => {
     });
     expect(tiles.length).toBe(3);
 
-    // (b) Consecutive column heads are ~SHELL_COLUMN_W (216px) apart — the tight
+    // (b) Consecutive column heads are ~SHELL_COLUMN_W apart — the tight
     //     pitch (NOT the old 765px). ±1px for sub-pixel rounding.
     for (let i = 1; i < tiles.length; i++) {
       const delta = tiles[i].x - tiles[i - 1].x;
@@ -459,7 +714,6 @@ test.describe('P0.3b workflow-shell legacy-fallback bridge', () => {
     await waitForHooks(page);
     for (const t of ['tidyVco', 'vca']) {
       await dropInColumn(page, t, 1);
-      await page.waitForTimeout(250);
     }
     await expect(page.locator('[data-testid="module-shell-placeholder"]')).not.toHaveCount(0);
 
@@ -503,6 +757,14 @@ test.describe('P0.3b workflow-shell legacy-fallback bridge', () => {
   // 96 h CI census to 2026-08-18 — never a hard failure, so every one of those jobs reported SUCCESS.
   // LOST WHILE PARKED: the tile header composition — domain-colour rule, gap, the FULL long name (not truncated) and the type badge on row 2; the identity a user reads a lane by.
   // Re-enable only on a root cause (#1847); "it passes now" is not one.
+  // ⚠ WHOEVER UN-PARKS THIS: ITS SUBJECT MOVED WHILE IT SLEPT (2026-08-24).
+  // `workflow-synesthesia` is PROMOTED, so it renders `module-shell` and never a
+  // `module-shell-placeholder` — this body's wait will time out for a reason
+  // that has nothing to do with #1847, and reading that as "still flaky" would
+  // be wrong. Give it a placeholder subject first (the live test above derives
+  // one from the rack rather than naming it, which is the pattern to copy).
+  // The BODY IS DELIBERATELY UNTOUCHED, per the park's own terms — this is a
+  // note, not an edit to the assertions.
   test.fixme('tile header: domain-colour rule ── gap ── FULL long name, type badge on row 2', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 2 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page }) => {
     // The owner tile-header redesign: the module NAME no longer shares its row
     // with the type badge (long names truncated as "RECORDE…"/"SYNESTH…"). Row 1
@@ -591,31 +853,50 @@ test.describe('P0.3b workflow-shell legacy-fallback bridge', () => {
 test.describe('P0.3b workflow-shell ?shell=1 bug fixes', () => {
   const VZONE_IDS = ['workflow-videoOut', 'workflow-recorderbox', 'workflow-synesthesia'];
 
-  /** The video-zone default's LANE FACE under the shell.
+  /** The video-zone default's LANE TILE under the shell — EITHER KIND.
    *
-   *  ⚠ videoOut renders a PROMOTED FACE TILE now (#1821). This used to special-
-   *  case it to `[data-testid="video-out-card"]` — its verbatim LEGACY card,
-   *  because it was a NON_SHELL video-surface snowflake — and the special case
-   *  is gone: it is a `module-shell` like any faced module, while
-   *  recorderbox/synesthesia are still un-migrated placeholders. */
+   *  ⚠ THIS USED TO BE A PER-ID TERNARY AND IT HAD ALREADY BEEN EDITED ONCE FOR
+   *  EXACTLY THIS REASON. It first named videoOut's verbatim legacy card
+   *  (`video-out-card`), because videoOut was a NON_SHELL video-surface
+   *  snowflake; #1821 promoted it and the arm was rewritten to `module-shell`,
+   *  leaving `recorderbox`/`synesthesia` on the placeholder arm — and the note
+   *  above it said so, in the present tense. Promoting `synesthesia` then broke
+   *  the two tests below for the third time in the same spot.
+   *
+   *  ⚠ SO THE MIGRATION STATUS WAS NEVER THIS SELECTOR'S SUBJECT. Both callers
+   *  use it as a READINESS WAIT and nothing else: the measurements are
+   *  `flowPos()` (the xyflow internal node, looked up BY ID) and screen bounding
+   *  boxes. Neither reads a testid, and neither assertion — "the tile sits below
+   *  the video baseline", "zoom is a geometric no-op" — has any opinion about
+   *  whether the occupant is a placeholder or a faceplate. Encoding one made a
+   *  POSITION test depend on the promotion queue.
+   *
+   *  Matching either testid is therefore strictly more general than the ternary
+   *  and weakens nothing: the wait still proves a tile PAINTED before anything is
+   *  measured, and it now proves it for whichever tile the module legitimately
+   *  renders. It cannot go stale on the next promotion, or the one after. */
   const vzFaceSelector = (id: string) =>
-    id === 'workflow-videoOut'
-      ? `.svelte-flow__node[data-id="${id}"] [data-testid="module-shell"]`
-      : `.svelte-flow__node[data-id="${id}"] [data-testid="module-shell-placeholder"]`;
+    `.svelte-flow__node[data-id="${id}"] `
+    + ':is([data-testid="module-shell"], [data-testid="module-shell-placeholder"])';
 
   /** Drop `type` at the tight SHELL pitch so the pitch-aware hit-test resolves the
    *  intended narrowed column `ch` (the wide COLUMN_W anchor would land elsewhere). */
   async function dropInShellColumn(page: Page, type: string, ch: number): Promise<void> {
-    await page.evaluate(
-      ({ type, pos }) => {
-        const w = globalThis as unknown as {
-          __setSpawnFlowPos: (p: { x: number; y: number }) => void;
-          __spawnFromPalette: (t: string) => void;
-        };
-        w.__setSpawnFlowPos(pos);
-        w.__spawnFromPalette(type);
-      },
-      { type, pos: { x: (ch - 1) * SHELL_COLUMN_W + 30, y: LANE_ANCHOR_Y } },
+    await dropAndSettle(
+      page,
+      () =>
+        page.evaluate(
+          ({ type, pos }) => {
+            const w = globalThis as unknown as {
+              __setSpawnFlowPos: (p: { x: number; y: number }) => void;
+              __spawnFromPalette: (t: string) => void;
+            };
+            w.__setSpawnFlowPos(pos);
+            w.__spawnFromPalette(type);
+          },
+          { type, pos: { x: (ch - 1) * SHELL_COLUMN_W + 30, y: LANE_ANCHOR_Y } },
+        ),
+      `${type} → shell column ${ch}`,
     );
   }
 
@@ -662,7 +943,6 @@ test.describe('P0.3b workflow-shell ?shell=1 bug fixes', () => {
     await waitForHooks(page);
     for (const t of ['tidyVco', 'vca']) {
       await dropInShellColumn(page, t, 1);
-      await page.waitForTimeout(250);
     }
 
     // No invalid state: both drops joined channel 1's order (the membership truth).
@@ -707,13 +987,19 @@ test.describe('P0.3b workflow-shell ?shell=1 bug fixes', () => {
   // only button (undiscoverable). It is now a clear, LABELLED pill; the wired path
   // (onExpand → dockStore.openFullView → the .dock-faceplate full view) is unchanged.
   test('the EXPAND affordance is a labelled button that opens the dock faceplate + ESC closes', async ({ page }) => {
-    // A still-UN-migrated module (DERIVED — see AUDIO_FIXTURE), so this stays
-    // the PLACEHOLDER's expand path; the migrated shell's expand is covered by
-    // workflow-shell-faces.spec.ts.
-    test.skip(AUDIO_FIXTURE.kind === 'migration-complete', AUDIO_FIXTURE.why);
+    // A still-UN-migrated module (DERIVED — see AUDIO_PLACEHOLDER_FIXTURE), so
+    // this stays the PLACEHOLDER's expand path; the migrated shell's expand is
+    // covered by workflow-shell-faces.spec.ts.
+    //
+    // ⚠ THE **PLACEHOLDER** FIXTURE, NOT THE OPERABLE ONE (#2137). This leg
+    // clicks a pill and presses ESC; it never drives a control and never reads
+    // the plate's domain class, so requiring its subject's legacy card to mount
+    // a fader was a requirement borrowed from a different test. Sharing one
+    // fixture meant the strictest leg's predicates silenced this one too.
+    test.skip(AUDIO_PLACEHOLDER_FIXTURE.kind === 'migration-complete', AUDIO_PLACEHOLDER_FIXTURE.why);
     await gotoWorkflow(page, { shell: true });
     await spawnPatch(page, [
-      { id: NODE, type: fixtureType(AUDIO_FIXTURE), position: { x: 460, y: 240 } },
+      { id: NODE, type: fixtureType(AUDIO_PLACEHOLDER_FIXTURE), position: { x: 460, y: 240 } },
     ]);
 
     const laneNode = page.locator(`.svelte-flow__node[data-id="${NODE}"]`);
@@ -750,6 +1036,15 @@ test.describe('P0.3b workflow-shell ?shell=1 bug fixes', () => {
   // 96 h CI census to 2026-08-18 — never a hard failure, so every one of those jobs reported SUCCESS.
   // LOST WHILE PARKED: that a port-heavy module's rail FITS its fixed tile — EXPAND stays fully visible and surplus ports collapse into a '···' that opens the drill-down instead of overflowing the tile.
   // Re-enable only on a root cause (#1847); "it passes now" is not one.
+  // ⚠ WHOEVER UN-PARKS THIS: ITS SUBJECT MOVED WHILE IT SLEPT (2026-08-24).
+  // `workflow-synesthesia` is PROMOTED, so it renders `module-shell` and never a
+  // `module-shell-placeholder` — this body's wait will time out for a reason
+  // unrelated to #1847. ⚠ AND THE REPLACEMENT IS NOT ANY PLACEHOLDER: this test
+  // needs a PORT-HEAVY one (the whole point is 8 preview dots overflowing a
+  // 192 px rail, and the assertions hard-code `< 8` and a '···'), so a derived
+  // pick that lands on a two-port module would go green while measuring nothing.
+  // Pick an unpromoted subject BY PORT COUNT and re-derive those numbers.
+  // The BODY IS DELIBERATELY UNTOUCHED, per the park's own terms.
   test.fixme('port-heavy rail FITS the tile: EXPAND fully visible, surplus dots collapse into "···" that opens the drill-down', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 2 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page }) => {
     await gotoWorkflow(page, { shell: true });
     const tile = page.locator(
@@ -839,7 +1134,6 @@ test.describe('P0.3b workflow-shell ?shell=1 bug fixes', () => {
       await expect(page.locator(vzFaceSelector(id))).toBeVisible({ timeout: 15_000 });
     }
     await dropInShellColumn(page, 'vca', 1);
-    await page.waitForTimeout(300);
     const memberId = await page.evaluate(() => {
       const w = globalThis as unknown as {
         __patch: { nodes: Record<string, { data?: { columns?: Record<string, string[]> } } | undefined> };
@@ -901,14 +1195,13 @@ test.describe('P0.3b workflow-shell ?shell=1 bug fixes', () => {
         const cy = 4200;
         f.setViewport({ x: pr.width / 2 - cx * z, y: pr.height / 2 - cy * z, zoom: z }, { duration: 0 });
       }, zoom);
-      await page.waitForFunction(
-        (t) => {
-          const tiles = Array.from(document.querySelectorAll('[data-shell-tier]'));
-          return tiles.length > 0 && tiles.every((el) => el.getAttribute('data-shell-tier') === t);
-        },
-        faceTier,
-        { timeout: 10_000 },
-      );
+      // ⚠ WAS A BARE `document.querySelectorAll('[data-shell-tier]')` + `.every()`.
+      // That stopped meaning "the lane tiles" on 2026-08-24 without this spec
+      // changing: promoting `audioOut` put a PINNED faceplate in the always-mounted
+      // 🎧 topbar panel, whose tier is permanently `dock`, so `.every()` could never
+      // become true and this call sat out its full 10 s timeout. Scoped to the main
+      // canvas through the ONE export site — see `waitForLaneTier`.
+      await waitForLaneTier(page, faceTier);
       // Two rAFs so the overlay re-projection + any tier content swap settle.
       await page.evaluate(() => new Promise<void>((res) => requestAnimationFrame(() => requestAnimationFrame(() => res()))));
       const m = await measurePairs();
@@ -946,9 +1239,21 @@ test.describe('P0.3b workflow-shell ?shell=1 bug fixes', () => {
         Math.abs(row.memberBottomToVideoTop - SHELL_BADGE_CLEARANCE_Y),
         `ch1 stack bottom floats the ${SHELL_BADGE_CLEARANCE_Y}px badge clearance above the video line @z${row.zoom}`,
       ).toBeLessThanOrEqual(2);
-      expect(row.videoOutTopToVideoTop, `video tile INSIDE the zone @z${row.zoom}`).toBeGreaterThanOrEqual(46);
-      expect(row.videoOutTopToVideoTop, `video tile inset ≈48 @z${row.zoom}`).toBeLessThanOrEqual(50);
-      expect(Math.abs(row.memberLeftToBand1Left - 12), `12px lane gutter @z${row.zoom}`).toBeLessThanOrEqual(2);
+      // The inset is DERIVED (#2239). It was a hardcoded 46..50 window around
+      // the old magic 48; it is now one RACK_UNIT, because 48 is not a grid
+      // multiple and a tile placed with it could never be locked without
+      // moving. Asserting the constant keeps this a statement about the tile
+      // being INSIDE the zone rather than about a number.
+      expect(row.videoOutTopToVideoTop, `video tile INSIDE the zone @z${row.zoom}`).toBeGreaterThan(0);
+      expect(
+        Math.abs(row.videoOutTopToVideoTop - SHELL_VIDEO_ZONE_TILE_INSET_Y),
+        `video tile inset == SHELL_VIDEO_ZONE_TILE_INSET_Y (${SHELL_VIDEO_ZONE_TILE_INSET_Y}) @z${row.zoom}`,
+      ).toBeLessThanOrEqual(2);
+      // The lane gutter follows the pitch: (pitch − tile) / 2.
+      expect(
+        Math.abs(row.memberLeftToBand1Left - (SHELL_COLUMN_W - SHELL_TILE_W) / 2),
+        `lane gutter == (pitch − tile)/2 @z${row.zoom}`,
+      ).toBeLessThanOrEqual(2);
       expect(Math.abs(row.memberCenterToBadge1Center), `tile centre == badge centre @z${row.zoom}`).toBeLessThanOrEqual(2);
     }
   });

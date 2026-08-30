@@ -47,17 +47,28 @@
 // still gets selected, and this gate stays GREEN while the required job runs a
 // skip in its place.
 //
-// THAT IS THE LIVE STATE, NOT A HYPOTHETICAL. The #1847 flake park disabled
-// `analogVco` and `lfo`, which are TWO OF THE SIX modules this subset resolves
-// to. `behavioral-smoke` is a REQUIRED pre-merge check and has no JSON audit
-// step, so those two skips surface nowhere: the lane is green, this gate is
-// green, and a third of the core signal-path behavioral coverage is not running.
+// THAT WAS THE LIVE STATE FOR EIGHT DAYS, AND IT IS WHY THIS NOTE EXISTS. The
+// #1847 flake park disabled `analogVco` and `lfo` — TWO OF THE SIX modules this
+// subset resolves to — so `behavioral-smoke`, a REQUIRED pre-merge check with no
+// JSON audit step, ran FOUR while every signal available said six: the lane was
+// green, this gate was green, and a third of the core signal-path behavioral
+// coverage was not executing.
 //
-// It is deliberately NOT asserted here. Doing so would redden the required unit
-// lane on a park the owner ordered, which is the gate arguing with the ruling
-// rather than reporting it. The correct fix is to un-park those two with a root
-// cause (#1847); if that stalls, the honest alternative is to widen the subset
-// to modules that DO run, and this note is what should prompt that conversation.
+// ⚠ FIXED, not mitigated: both rows are root-caused and running again (the
+// verbatim CI failure rows and the arithmetic are on their
+// BEHAVIORAL_PORT_TEST_SOURCE entries in the sweep). Neither was a race in the
+// module — both were the sweep's generic BUGGLES.smooth stimulus, a
+// setTimeout-scheduled random walk whose size and sign are a timing lottery,
+// and for `lfo` additionally an observable whose OWN null scatter was 50 % of
+// its mean. So the blind spot described above is real and still unasserted, but
+// nothing is currently hiding in it.
+//
+// It remains deliberately NOT asserted here. The park map is the owner's
+// instrument; a gate that reddens the required unit lane on a park is the gate
+// arguing with the ruling rather than reporting it. What the sweep does instead
+// is state the constraint where the parking happens: nothing the ci.yml grep
+// selects may be parked, because that is a required lane claiming coverage it
+// does not provide.
 
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';

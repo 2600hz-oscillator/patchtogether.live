@@ -1,0 +1,323 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>SCORE face — the lane tiers</title>
+<style>
+/* ─────────────────────────────────────────────────────────────────────────
+   SCORE FACEPLATE — MOCKUP, state 3 of 3: THE LANE TIERS + THE REFUSAL.
+   SPEC AND MOCKUP ONLY. Nothing here is implemented. See spec.md §4, §5.6.
+
+   Two arguments live on this page:
+
+   1. WHY THE LANE GETS NO PICTURE. Waves 2/3 refused a lane glyph because
+      `ShellExtensionGlyphProps` carries no `nodeId`. score never reaches
+      that seam at all — it is refused TWICE over, mechanically, and the
+      picture it would want needs strictly more than a nodeId prop buys.
+      ⚠ It is the SAME mechanism `kria` refused on, and saying so is the
+      point: two independent instruments landing on one structural refusal
+      is stronger evidence than two different ones would be.
+
+   2. WHAT THE LANE SHOWS INSTEAD, at each tier, and that it is STRICTLY
+      MORE than today — where an un-promoted score renders a blank
+      `module-shell-placeholder` that says nothing at all.
+
+   All four tiles below obey the resting-text ruling: nothing derived is
+   painted. Hover a control to read the aria it carries.
+   ───────────────────────────────────────────────────────────────────────── */
+:root{
+  --bg:#0e1013; --dock:#12161c; --pbody:#1c1f24; --line:#2c3037; --tile:#33383f;
+  --ink:#eef1f5; --dim:#9aa2ad; --faint:#646c77;
+  --accent:#6cf; --seq:#c3a3e0; --ch1:#fbbf24; --warn:#f2c14e; --good:#8fe6b0; --bad:#c0605e;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+  font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1320px;margin:0 auto;padding:26px 20px 90px}
+h1{font-size:21px;font-weight:800;margin:0 0 6px;letter-spacing:.01em}
+h2{font-size:12px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--dim);margin:26px 0 10px;font-family:var(--mono)}
+.sub{color:var(--dim);font-size:12.5px;margin:0 0 14px;max-width:106ch}
+.sub b{color:var(--ink)} code{font-family:var(--mono);font-size:11.5px;color:var(--ch1)}
+em{color:var(--dim)}
+.nav{display:flex;gap:8px;margin:0 0 20px;font-size:11px;flex-wrap:wrap}
+.nav a{color:var(--ink);text-decoration:none;border:1px solid var(--line);border-radius:6px;
+  padding:6px 12px;background:#12161c;font-family:var(--mono);letter-spacing:.06em;text-transform:uppercase}
+.nav a.on{border-color:var(--seq);color:var(--seq)}
+.warn{border:1px solid #6a5330;background:#1c1811;border-radius:8px;padding:11px 14px;
+  margin:12px 0;font-size:12.5px;color:#e8cf9a;max-width:120ch}
+.warn b{color:var(--warn)}
+.ok{border:1px solid #3b5a48;background:#111a15;border-radius:8px;padding:11px 14px;
+  margin:12px 0;font-size:12.5px;color:#a9d8bd;max-width:120ch}
+.ok b{color:var(--good)}
+.cols{display:grid;grid-template-columns:minmax(0,1fr) 370px;gap:18px;align-items:start}
+@media (max-width:1180px){.cols{grid-template-columns:minmax(0,1fr)}}
+
+.tiers{display:flex;gap:18px;align-items:flex-start;flex-wrap:wrap}
+.tier{display:flex;flex-direction:column;gap:7px}
+.tname{font-family:var(--mono);font-size:8.6px;letter-spacing:.1em;text-transform:uppercase;color:var(--faint)}
+.tname b{color:var(--seq)}
+.lane{width:192px;background:var(--pbody);border:1px solid var(--tile);border-left:3px solid var(--seq);
+  border-radius:8px;padding:7px 8px 9px;display:flex;flex-direction:column;gap:6px}
+.lane.wide{width:230px}
+.ltitle{font-size:9.6px;font-weight:800;letter-spacing:.05em;color:var(--ink)}
+.lrow{display:flex;gap:8px;flex-wrap:wrap;align-items:flex-start}
+.kc{display:flex;flex-direction:column;align-items:center;gap:3px;width:46px}
+.kc .dial{width:32px;height:32px;border-radius:50%;border:1px solid #3a4048;background:
+  radial-gradient(circle at 50% 38%,#252b34,#161a20);position:relative}
+.kc .dial::after{content:"";position:absolute;left:50%;top:4px;width:1.4px;height:10px;
+  background:var(--seq);transform-origin:50% 12px;transform:translateX(-50%) rotate(28deg)}
+.kc .cap{font-size:7px;letter-spacing:.06em;text-transform:uppercase;color:var(--dim);font-family:var(--mono)}
+.tg{display:flex;flex-direction:column;align-items:center;gap:3px;width:46px}
+.tg .sw{width:24px;height:13px;border-radius:7px;background:#2a2f38;position:relative}
+.tg .sw::after{content:"";position:absolute;top:2px;left:2px;width:9px;height:9px;border-radius:50%;background:#5c6470}
+.tg.on .sw{background:rgba(195,163,224,.4)} .tg.on .sw::after{left:13px;background:var(--seq)}
+.tg .cap{font-size:7px;letter-spacing:.06em;text-transform:uppercase;color:var(--dim);font-family:var(--mono)}
+.sc{display:flex;flex-direction:column;gap:3px;min-width:76px}
+.sc .cap{font-size:7px;letter-spacing:.06em;text-transform:uppercase;color:var(--dim);font-family:var(--mono)}
+.sbox{display:flex;align-items:center;gap:5px;border:1px solid #3a4048;border-radius:5px;
+  background:#151a21;padding:3px 6px}
+.sbox .tag{font-family:var(--mono);font-size:6.6px;letter-spacing:.1em;color:var(--faint)}
+.sbox .val{font-family:var(--mono);font-size:8.6px;color:var(--ink);flex:1 1 auto;white-space:nowrap}
+.sbox .caret{color:var(--faint);font-size:7px}
+.jacks{display:flex;gap:3px;margin-top:2px}
+.jk{width:9px;height:9px;border-radius:50%;border:1px solid #3a4048;background:#0d1015}
+.jk.p{border-color:#c084fc} .jk.g{border-color:#e8c66a} .jk.c{border-color:#7dd3fc}
+
+.ph{width:192px;height:104px;border:1px dashed #3a4048;border-radius:8px;background:#14181e;
+  display:flex;align-items:center;justify-content:center;color:var(--faint);
+  font-family:var(--mono);font-size:8.6px;letter-spacing:.08em;text-align:center;padding:0 12px}
+
+table.g{border-collapse:collapse;width:100%;font-size:12px;margin:8px 0 0}
+table.g th,table.g td{text-align:left;padding:6px 10px 6px 0;border-bottom:1px solid #1e242c;vertical-align:top;color:var(--dim)}
+table.g th{color:var(--faint);font-family:var(--mono);font-size:8.6px;letter-spacing:.09em;text-transform:uppercase;font-weight:400}
+table.g td b{color:var(--ink)}
+table.g td.n{color:var(--bad)}
+
+.notes{display:flex;flex-direction:column;gap:12px}
+.card{border:1px solid var(--line);background:#101419;border-radius:9px;padding:12px 14px}
+.card h3{margin:0 0 7px;font-size:10px;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--accent);font-family:var(--mono);font-weight:700}
+.card p{margin:0 0 8px;font-size:12px;color:var(--dim)}
+.card p:last-child{margin-bottom:0}
+.card b{color:var(--ink)}
+.card pre{margin:6px 0 0;font-family:var(--mono);font-size:9.4px;color:#bcd3e8;
+  background:#0b0e12;border:1px solid #1c222a;border-radius:5px;padding:8px 9px;overflow:auto}
+table.k{border-collapse:collapse;width:100%;font-size:11px;margin:2px 0 0}
+table.k th,table.k td{text-align:left;padding:4px 7px 4px 0;border-bottom:1px solid #1e242c;vertical-align:top;color:var(--dim)}
+table.k th{color:var(--faint);font-family:var(--mono);font-size:8.6px;letter-spacing:.09em;text-transform:uppercase;font-weight:400}
+table.k td b{color:var(--ink)}
+</style>
+<div class="wrap">
+
+<h1>SCORE — the lane tiers, and why there is no picture</h1>
+<p class="sub">
+  <b>SPEC AND MOCKUP ONLY. Nothing here is implemented.</b> The lane refuses a picture for the
+  <b>same structural reason <code>kria</code> did</b>, and gets ranked cells instead — which is
+  strictly more than today, where an un-promoted score paints a blank placeholder.
+</p>
+
+<div class="nav">
+  <a href="dock.html">1 · the dock face</a>
+  <a href="editor.html">2 · the staff panel — picture vs chrome</a>
+  <a class="on" href="lane-tile.html">3 · the lane tiers — the refusal</a>
+  <a href="spec.md">spec.md</a>
+</div>
+
+<div class="cols">
+<div>
+
+  <h2>the four tiers</h2>
+  <div class="tiers">
+
+    <div class="tier">
+      <span class="tname">today — <b>un-promoted</b></span>
+      <div class="ph">module&nbsp;shell<br>placeholder<br><span style="color:#4d5560">(says nothing)</span></div>
+      <span class="tname" style="color:var(--bad)">laneRenderKind &rarr; 'placeholder'</span>
+    </div>
+
+    <div class="tier">
+      <span class="tname">tier <b>mini</b> — cap 1</span>
+      <div class="lane">
+        <span class="ltitle">score</span>
+        <div class="lrow">
+          <div class="tg" title="aria-valuetext: &quot;stopped&quot;"><span class="sw"></span><span class="cap">play</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="tier">
+      <span class="tname">tier <b>compact</b> — cap 3 (no glyph)</span>
+      <div class="lane">
+        <span class="ltitle">score</span>
+        <div class="lrow">
+          <div class="tg on" title="aria-valuetext: &quot;playing&quot;"><span class="sw"></span><span class="cap">play</span></div>
+          <div class="kc" title="aria-valuetext: &quot;120 BPM&quot;"><span class="dial"></span><span class="cap">bpm</span></div>
+          <div class="sc" title="aria-valuetext: &quot;quarter note&quot;">
+            <span class="cap">value</span>
+            <div class="sbox"><span class="tag">VAL</span><span class="val">quarter</span><span class="caret">&#9662;</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="tier">
+      <span class="tname">tier <b>full</b> — cap 6</span>
+      <div class="lane wide">
+        <span class="ltitle">score</span>
+        <div class="lrow">
+          <div class="tg on" title="aria-valuetext: &quot;playing&quot;"><span class="sw"></span><span class="cap">play</span></div>
+          <div class="kc" title="aria-valuetext: &quot;120 BPM&quot;"><span class="dial"></span><span class="cap">bpm</span></div>
+          <div class="sc" title="aria-valuetext: &quot;quarter note&quot;">
+            <span class="cap">value</span>
+            <div class="sbox"><span class="tag">VAL</span><span class="val">quarter</span><span class="caret">&#9662;</span></div>
+          </div>
+        </div>
+        <div class="lrow">
+          <div class="sc" title="aria-valuetext: &quot;natural&quot;">
+            <span class="cap">accidental</span>
+            <div class="sbox"><span class="tag">ACC</span><span class="val">&#9838;</span><span class="caret">&#9662;</span></div>
+          </div>
+          <div class="sc" title="aria-valuetext: &quot;mezzo-forte&quot;">
+            <span class="cap">dynamic</span>
+            <div class="sbox"><span class="tag">DYN</span><span class="val">mf</span><span class="caret">&#9662;</span></div>
+          </div>
+          <div class="tg on" title="aria-valuetext: &quot;tied to the next note&quot;"><span class="sw"></span><span class="cap">tie</span></div>
+        </div>
+        <div class="jacks">
+          <span class="jk p" title="pitch out"></span>
+          <span class="jk g" title="gate out"></span>
+          <span class="jk c" title="env out"></span>
+          <span class="jk g" title="clock out"></span>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="ok">
+    <b>That is the right glance for a sequencer in a rack:</b> is it running, how fast, and what am
+    I about to write. It is <b>strictly more than today</b>, where <code>laneRenderKind</code>
+    returns <code>'placeholder'</code> for an un-promoted score and the tile says nothing at all.
+  </div>
+
+  <div class="warn">
+    <b>⚠ ASSERT THE CELLS ARE PRESENT, NOT MERELY THAT THE FACE RESOLVES.</b> The
+    <code>joystick</code> shape (#1974) is a face that ranks controls and renders <b>zero</b> of
+    them at every lane tier, because <code>laneOrder</code> dropped its anchor and
+    <code>foldedOrder</code> dropped its partner. score declares no <code>xyPads</code>, so
+    <code>foldedOrder</code> is a no-op here — <b>but that is a per-module claim, not an inherited
+    one.</b> It is M7 in the spec's MUST-VERIFY.
+  </div>
+
+  <h2>the refusal, mechanism by mechanism</h2>
+  <table class="g">
+    <tr><th>candidate</th><th>verdict</th><th>the mechanism</th></tr>
+    <tr>
+      <td><code>'picture'</code> — the live video thumb</td>
+      <td class="n">IMPOSSIBLE</td>
+      <td><code>laneGlyphFor</code> returns <code>'picture'</code> only for
+        <code>hasVideoSurface(def)</code>, which is <code>def?.domain === 'video'</code>
+        (<code>module-shell-model.ts:177-179</code>, <code>:237-240</code>). score is
+        <code>domain: 'audio'</code>.</td>
+    </tr>
+    <tr>
+      <td><code>'scope' | 'meter' | 'envelope' | 'waveform'</code></td>
+      <td class="n">DEAD GLYPH</td>
+      <td><code>primaryAudioOutPortId</code> (<code>shell-glyph-live.ts:111-113</code>) matches
+        <code>o.type === 'audio'</code>. score's four outputs are <b>pitch · gate · cv · gate</b> —
+        it has <b>no audio output at all</b>. Every literal falls to
+        <code>{kind:'static'}</code>, which <code>module-face-lint.test.ts:248-308</code> reddens
+        <b>unconditionally</b>.</td>
+    </tr>
+    <tr>
+      <td><code>'algorithm'</code> — a bespoke extension glyph</td>
+      <td class="n">WOULD BE IDENTICAL PER NODE</td>
+      <td><code>ShellExtensionGlyphProps</code> (<code>shell-extensions.ts:39-52</code>) carries
+        <code>num</code>, <code>numbers</code>, <code>testid</code> and <b>no
+        <code>nodeId</code></b>, so every score in the rack would draw the same picture — and on
+        this module <b>the score IS the instrument</b>.</td>
+    </tr>
+    <tr>
+      <td>the picture a player would actually want</td>
+      <td class="n">MORE THAN nodeId BUYS</td>
+      <td>the useful glance is <em>"where is the playhead in the piece?"</em> — which needs
+        <code>data.notes</code> + <code>data.pages</code> <b>plus a per-frame engine read</b>
+        (<code>read('currentNoteId')</code>, <code>score.ts:706-723</code>). That is node data and
+        a live handle, not a discrete param value.</td>
+    </tr>
+  </table>
+
+  <div class="warn">
+    <b>⚠ THIS IS THE SAME MECHANISM <code>kria</code> REFUSED ON, and that is the finding rather
+    than a weakness.</b> kria's own face comment (<code>kria.ts:199-207</code>) reads: <em>"a
+    <code>nodeId</code> prop alone would still not be enough here — the picture a player wants is
+    the playhead over the SELECTED track's SELECTED lane, which is two more pieces of
+    node.data."</em> score is that sentence with <b>"page"</b> substituted for <b>"lane"</b>.
+    <br><br>
+    <b>Two independent instruments landing on one structural refusal is stronger evidence than two
+    different refusals would be</b> — and these are the two modules whose lane picture would be the
+    most valuable in the whole roster. The glyph seam's limit is a SHAPE, not an oversight waiting
+    for a prop.
+  </div>
+
+</div>
+
+<div class="notes">
+
+  <div class="card">
+    <h3>how the lane roster is derived</h3>
+    <pre>laneOrder(face) =
+  face.order
+    minus face.hero.cell
+    minus each xyPads[].x</pre>
+    <p style="margin-top:8px">score declares a <code>hero.cell</code> and no pads, so the staff
+      panel is dropped and everything else survives to every tier. <b>PF-22 is what lets the
+      picture rank FIRST at no lane cost</b> — <code>kria</code> is named in its own comment as
+      the first adopter, and score is the second.</p>
+    <p>Tier caps are GEOMETRY, not an authored ladder
+      (<code>curated-face.ts:75-80</code>, resolving through
+      <code>module-shell-model.ts:366-368</code> and <code>:473</code>): <b>mini 1 ·
+      compact <code>LANE_ROW_MAX_CELLS = 3</code> without a glyph / 2 with · full
+      <code>PLATE_COLS &times; PLATE_MAX_ROWS = 6</code> · dock <code>Infinity</code>.</b>
+      score declares <code>glyph: 'none'</code>, so compact gets three. ⚠ The tier is named
+      <b><code>'full'</code></b>, not <code>'plate'</code> — it is the LANE's biggest tier, not
+      the dock.</p>
+  </div>
+
+  <div class="card">
+    <h3>the lane never paints the staff</h3>
+    <p>A <code>panel</code> cell is <b>DOCK-ONLY by a NAMED rule</b>:
+      <code>panelCellKeys()</code> (<code>shell-cells.ts:2045-2058</code>) filters on
+      <code>kind === 'panel'</code> because <em>"a 280 px SVG has no business being SELECTED into a
+      46 px lane knob column"</em>.</p>
+    <p>score's staff is <b>720 px</b>. The rule was written for a picture a quarter that size.</p>
+  </div>
+
+  <div class="card">
+    <h3>⚠ what the LANE does not fix</h3>
+    <p><code>midi-learn-note.spec.ts</code> boots <code>/rack?shell=legacy&amp;seed=none</code>, and
+      <code>shellFaces = false</code> routes <code>laneRenderKind</code> to <code>'legacy'</code> —
+      <b>the verbatim card, promoted or not.</b></p>
+    <p>So after promotion that spec keeps finding <code>score-play-ds-1</code>, keeps binding NOTE
+      60, and keeps passing — <b>on a surface no default user reaches.</b> It does not go red. It
+      goes <b>green and blind</b>, and it would certify the orphaned-binding bug as fine.</p>
+    <p>The fix is CLAUDE.md's: <b>fix the SUBJECT.</b> Keep the legacy leg, re-titled to say what it
+      now proves, and ADD the leg on the default shell that can actually fail.</p>
+  </div>
+
+  <div class="card">
+    <h3>the four jacks</h3>
+    <table class="k">
+      <tr><td><span class="jk p" style="display:inline-block;vertical-align:middle"></span> <b>pitch</b></td><td>V/oct of the current note</td></tr>
+      <tr><td><span class="jk g" style="display:inline-block;vertical-align:middle"></span> <b>gate</b></td><td>held across a tie — one envelope per tied span</td></tr>
+      <tr><td><span class="jk c" style="display:inline-block;vertical-align:middle"></span> <b>env</b></td><td>the built-in ADSR &times; the dynamic in force</td></tr>
+      <tr><td><span class="jk g" style="display:inline-block;vertical-align:middle"></span> <b>clock</b></td><td>one pulse per 16th — the chained clock-out</td></tr>
+    </table>
+    <p style="margin-top:8px">⚠ <b>None of them is <code>type: 'audio'</code></b>, which is the
+      whole reason the glyph question answers itself.</p>
+  </div>
+
+</div>
+</div>
+</div>

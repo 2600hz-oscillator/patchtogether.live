@@ -106,6 +106,30 @@ describe('lint coverage (#1504)', () => {
     expect(resolved, 'root `lint` no longer reaches the ShellCheck gate').toContain('shellcheck-gate.mjs');
   });
 
+  // ⚠ THE BOUND IS EXPLICIT BECAUSE THE DEFAULT WAS AN INVISIBLE ASSERTION.
+  // This test and the controls below are the only two in this file that ask
+  // ESLint a question, and the FIRST question asked pays for resolving and
+  // loading the entire flat-config chain — typescript-eslint, the Svelte parser,
+  // every plugin. MEASURED in a fresh process: the `new ESLint()` constructor is
+  // lazy and costs ~0 ms, the first `isPathIgnored` costs ~311 ms warm, and
+  // every subsequent one costs ~0 ms.
+  //
+  // On CI that same first question overran the 5 000 ms vitest default and
+  // reddened a PR that had not touched this file since #1649 — a cold module
+  // graph plus a contended shard against a budget nobody chose. That is the
+  // #1875 class: a wall-clock default is a DIFFERENT ASSERTION on every machine,
+  // and it was deciding the result rather than bounding the failure.
+  //
+  // ⚠ SET FROM THE SWING, NOT THE SAMPLE. Picking a number just above the
+  // worst-observed run is how the faces-parity ceiling blew three times in a row
+  // (1800 → 3000 → 5000/cell); the lesson banked there is to allow for the
+  // documented cold/contention factor instead. 30 s matches the bound
+  // `outlines-perf.test.ts` already uses for slow unit work, and it is a FAILURE
+  // bound: only a test that was going to fail ever spends it, so the green path
+  // pays nothing. Both ESLint tests carry it because whichever runs FIRST is the
+  // one that pays, and test order is not something this file should depend on.
+  const ESLINT_CONFIG_LOAD_TIMEOUT_MS = 30_000;
+
   it('ESLint reads every TS-bearing workspace — none is silently ignored', async () => {
     const eslint = new ESLint({ cwd: root });
     const unread: string[] = [];
@@ -119,7 +143,7 @@ describe('lint coverage (#1504)', () => {
       'these workspaces contain TypeScript that ESLint ignores in full — the lint gate is blind ' +
         `to them exactly as \`--if-present\` was: ${unread.join(', ')}`,
     ).toEqual([]);
-  });
+  }, ESLINT_CONFIG_LOAD_TIMEOUT_MS);
 
   it('permanent controls: the ignore resolution and the predicate both move in both directions', async () => {
     const eslint = new ESLint({ cwd: root });
@@ -143,5 +167,5 @@ describe('lint coverage (#1504)', () => {
     expect(fansOutWithIfPresent('npm run lint --workspaces --if-present')).toBe(true);
     expect(fansOutWithIfPresent('node scripts/lint/eslint-gate.mjs')).toBe(false);
     expect(fansOutWithIfPresent(undefined)).toBe(false);
-  });
+  }, ESLINT_CONFIG_LOAD_TIMEOUT_MS);
 });

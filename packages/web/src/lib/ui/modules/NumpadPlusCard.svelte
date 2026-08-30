@@ -10,16 +10,20 @@
   //      step highlight box moves with the playhead.
   //   5. Keymap legend (compact help): "1=C 2=C# 3=D … *=B + ↑oct − ↓oct".
   //
-  // Cell interaction (matches Sequencer's spec):
-  //   click toggles step on/off; click+drag changes the note.
+  // Cell interaction on THIS card: click toggles the step on/off.
+  //   ⚠ This header used to claim "click+drag changes the note" and no handler
+  //   ever implemented it — the cell had `onclick` and nothing else, so the only
+  //   way to set a step's pitch was to record it from the keypad. The drag now
+  //   exists, on the SHIPPED surface: `numpadPlus/NumpadStepGrid.svelte`, the
+  //   faceplate's hero panel. It is an ADDITION, not a restoration.
 
   import { onDestroy, onMount } from 'svelte';
   import type { NodeProps } from '@xyflow/svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import Knob from '$lib/ui/controls/Knob.svelte';
-  import { patch, ydoc } from '$lib/graph/store';
   import { setNodeParam } from '$lib/graph/mutate';
+  import { nodeVersion } from '$lib/graph/node-versions.svelte';
   import { useEngine } from '$lib/audio/engine-context';
   import {
     coerceLayers,
@@ -33,7 +37,18 @@
     remapKeymap,
     OCTAVE_UP_ACTION,
     OCTAVE_DOWN_ACTION,
+    NUMPAD_LAYER_OPTIONS,
   } from '$lib/audio/modules/numpad-plus';
+  // ⚠ THE ONE WRITE SEAM, shared with the faceplate's two panels AND with the
+  // factory's live recording. Before it existed this card opened
+  // `ydoc.transact(fn)` with NO origin argument for both `node.data` writes, so
+  // every step edit and every remap was silently outside Cmd-Z while
+  // `setNodeParam` three lines away was correctly tagged — the BPM knob was
+  // undoable and the sequence was not.
+  import {
+    setNumpadKeymap,
+    toggleNumpadStep,
+  } from '$lib/audio/modules/numpad-plus-writes';
   import { noteNameForMidi } from '$lib/audio/note-entry';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
@@ -68,27 +83,25 @@
   onDestroy(() => { if (pollId !== null) clearInterval(pollId); pollId = null; });
 
   // ─── Layers data (node.data.layers) ──────────────────────────────
+  //
+  // ⚠ KEYED ON `nodeVersion(id)`, AND IT HAS TO BE. `node` is the live Yjs
+  // proxy and its identity NEVER CHANGES, so a `$derived` reading straight
+  // through it recomputes only when something else in the expression moves.
+  // This card got away with it while both `node.data` writes REPLACED the whole
+  // object (`d.layers = […]`, `d.keymap = {…}`), which changed `raw`'s
+  // identity — the write seam makes them GRANULAR, in place, and the same
+  // derivation then never re-ran. The graph was correct and the card was
+  // frozen: reset-to-default rebound the key on the node and the cap went on
+  // painting the old one. Caught by `numpad-plus.spec.ts`'s reset assertion,
+  // which is the one existing test that performs a SECOND `node.data` write.
   let layers = $derived.by(() => {
+    void nodeVersion(id);
     const raw = (node?.data as Record<string, unknown> | undefined)?.layers;
     return raw ? coerceLayers(raw) : defaultLayers();
   });
 
-  function setStep(layerIdx: number, stepIdx: number, on: boolean, midi: number | null) {
-    const t = patch.nodes[id];
-    if (!t) return;
-    ydoc.transact(() => {
-      if (!t.data) t.data = {};
-      const d = t.data as Record<string, unknown>;
-      const cur = coerceLayers(d.layers);
-      const layer = cur[layerIdx]!;
-      layer[stepIdx] = { on, midi };
-      d.layers = cur.map((l) => l.map((s) => ({ ...s })));
-    });
-  }
   function toggleStep(stepIdx: number) {
-    const layer = layers[activeLayerLive];
-    const cur = layer?.[stepIdx] ?? { on: false, midi: null };
-    setStep(activeLayerLive, stepIdx, !cur.on, cur.midi ?? (12 + pget('octave', 4) * 12));
+    toggleNumpadStep(id, activeLayerLive, stepIdx, pget('octave', 4));
   }
 
   function nudgeOctave(delta: number) {
@@ -127,8 +140,9 @@
   // ─── Keymap (node.data.keymap: physical event.code → semitone 0..11) ──
   // Reactive view of the live keymap, falling back to the default layout.
   let keymap = $derived.by(() => {
+    void nodeVersion(id); // see the note on `layers` above
     const raw = (node?.data as { keymap?: Record<string, number> } | undefined)?.keymap;
-    return raw && typeof raw === 'object' ? raw : { ...DEFAULT_KEYMAP };
+    return raw && typeof raw === 'object' ? { ...raw } : { ...DEFAULT_KEYMAP };
   });
 
   // Remap interaction state.
@@ -138,12 +152,7 @@
   let menuY = $state(0);
 
   function writeKeymap(next: Record<string, number>) {
-    const t = patch.nodes[id];
-    if (!t) return;
-    ydoc.transact(() => {
-      if (!t.data) t.data = {};
-      (t.data as Record<string, unknown>).keymap = { ...next };
-    });
+    setNumpadKeymap(id, next);
   }
   function openKeyMenu(e: MouseEvent, semitone: number) {
     e.preventDefault();
@@ -223,15 +232,19 @@
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <div class="body">
       <!-- Layer row -->
+      <!-- The layer names come from the DEF's roster, never re-typed here: the
+           card used to render the literal `L{l + 1}` and the shell had no way to
+           reach those names at all. Now one declaration feeds the card, the
+           faceplate's segmented cell, MIDI learn and clip automation. -->
       <div class="layer-row">
-        {#each [0, 1, 2, 3] as l (l)}
+        {#each NUMPAD_LAYER_OPTIONS as opt (opt.value)}
           <button
             type="button"
             class="layer-btn"
-            class:on={activeLayerLive === l}
-            onclick={() => set('activeLayer')(l)}
-            data-testid={`numpad-layer-${l + 1}`}
-          >L{l + 1}</button>
+            class:on={activeLayerLive === opt.value}
+            onclick={() => set('activeLayer')(opt.value)}
+            data-testid={`numpad-layer-${opt.value + 1}`}
+          >{opt.label}</button>
         {/each}
       </div>
 
@@ -307,14 +320,21 @@
           </button>
         {/each}
         <!-- Octave up/down: remappable keys (default numpad +/−) that nudge the
-             module octave. Same right-click remap flow as the note keys. -->
+             module octave. Same right-click remap flow as the note keys.
+             ⚠ SAME TESTID PREFIX as the note caps, and that is a correction:
+             this card used to emit `numpad-octkey-*` for these two, which the
+             DEF has never agreed with — `DEFAULT_KEYMAP` is ONE fourteen-entry
+             map and every handler above treats all fourteen identically. The
+             split was a card artefact; unifying it lets the def declare ONE
+             `numpad-key` control family instead of two, and removes the
+             standing hazard that the second prefix drifts away from the first. -->
         {#each [OCTAVE_UP_ACTION, OCTAVE_DOWN_ACTION] as act (act)}
           <button
             type="button"
             class="kmap-key oct-key nodrag"
             class:listening={remapSemitone === act}
             oncontextmenu={(e) => openKeyMenu(e, act)}
-            data-testid={`numpad-octkey-${act}`}
+            data-testid={`numpad-key-${act}`}
             aria-label={`${targetLabel(act)} — key ${physLabelFor(act)} (right-click to remap)`}
           >
             <span class="kmap-phys">{physLabelFor(act)}</span>
@@ -329,9 +349,14 @@
         </div>
       {/if}
 
+      <!-- ⚠ "while this card exists" was FALSE and is corrected here. The
+           keydown/keyup capture is installed by the FACTORY and torn down in
+           `dispose()`, so it is alive for as long as the NODE is — with this
+           card, with the v2 faceplate, or with no UI mounted at all. -->
       <div class="hint">
-        Mapped keys captured globally while this card exists (any physical key);
-        recordings need REC ARM + play-from-start OR OVD toggle on.
+        Mapped keys are captured globally while this NUMPAD+ exists in the rack
+        (any physical key); recordings need REC ARM + play-from-start OR OVD
+        toggle on.
         Layers used: {NUMPAD_PLUS_LAYERS} · steps/layer: {NUMPAD_PLUS_STEPS}.
       </div>
     </div>

@@ -13,9 +13,29 @@
 //      keyed nodeId:portId) + the row shows its bound dot. (ADSR's `gate`
 //      input auto-groups to a top-level row and reacts on the injected note;
 //      the param-driving chain is proven on the button below.)
-//   2. Right-click the DRUMSEQZ PLAY BUTTON → "MIDI assign" → inject NOTE-on →
-//      isPlaying TOGGLES on (a REAL, observable param reaction); inject NOTE-on
-//      again → toggles back off. "Forget" drops the binding (notes stop driving).
+//   2. Right-click the LEGACY CARD's SCORE PLAY BUTTON → "MIDI assign" → inject
+//      NOTE-on → isPlaying TOGGLES on (a REAL, observable param reaction);
+//      inject NOTE-on again → toggles back off. "Forget" drops the binding.
+//   3. The SAME binding on the DEFAULT SHELL — see below.
+//
+// ⚠ LEG 2 NAVIGATES `?shell=legacy`, AND AFTER SCORE'S PROMOTION THAT MAKES IT A
+// TEST OF A COMPATIBILITY SURFACE. `laneRenderKind` returns `'legacy'` whenever
+// `shellFaces` is false, so it renders the verbatim `ScoreCard.svelte` — faced or
+// not. It did not go RED on promotion; it went GREEN AND BLIND, which is worse,
+// because it would have certified the orphaned-binding defect below as fine. The
+// legacy leg is KEPT (the escape hatch is a real surface and a real regression
+// class) and RE-TITLED to say what it now proves, and LEG 3 is the one that can
+// fail on the bug.
+//
+// ⚠ WHAT LEG 3 EXISTS FOR — the defect, stated because the affordance itself is
+// FINE and that is the trap. `bindingKey` is `${moduleId}:${paramId}`, and the
+// card binds under the SYNTHETIC action id `play` (a card button has no backing
+// param) while the faceplate's `<Toggle>` binds under the real `isPlaying`. Both
+// call the SAME `makeMidiAssignable({kind:'note', controlType:'button'})` factory
+// with the same press-edge semantics, so binding a pad and watching the param
+// toggle passes on EITHER surface and proves nothing about the migration. Only a
+// PRE-EXISTING `<node>:play` record can see it, and bindings persist to
+// localStorage with stable node ids, so this is not theoretical.
 //
 // SIMULATED MIDI: window.__midiTestInjectNote(ch,note,vel) installs an in-memory
 // fake MIDIAccess + pushes a NOTE on/off (vel 0 = off) through the same dispatch
@@ -25,6 +45,21 @@
 import { test, expect } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 import type { Page } from '@playwright/test';
+import { waitFrames } from '../_helpers/frames';
+
+/**
+ * The window a SUSTAINED-NEGATIVE gets: "this note must NOT bind / must NOT
+ * toggle". Every such check here is preceded by an assertion that is ALREADY
+ * TRUE when the note is injected, so an auto-retrying poll converges instantly
+ * and covers nothing — the window itself is the assertion, and it is the only
+ * thing giving a would-be re-bind time to happen.
+ *
+ * FRAMES, not ms, for the usual reason: the 30-40 ms these sites used to spend
+ * is ~2 frames on a local GPU and about a QUARTER of one under CI's SwiftShader
+ * (7.9 fps measured), so the negative assertion was ~8× weaker on the machine
+ * that actually runs it. Four frames is four Svelte flush boundaries on both.
+ */
+const NO_REBIND_FRAMES = 4;
 
 test.describe.configure({ mode: 'parallel' });
 
@@ -83,16 +118,16 @@ async function injectNote(page: Page, channel: number, note: number, velocity: n
   );
 }
 
-async function bootDrumseqz(page: Page): Promise<void> {
+async function bootScore(page: Page): Promise<void> {
   await page.goto('/rack?shell=legacy&seed=none');
   await page.waitForLoadState('networkidle');
   await page.evaluate(() => window.localStorage.removeItem('pt.midi-bindings.v1'));
   await spawnPatch(
     page,
-    [{ id: 'ds-1', type: 'drumseqz', position: { x: 120, y: 120 }, domain: 'audio', params: { isPlaying: 0 } }],
+    [{ id: 'ds-1', type: 'score', position: { x: 120, y: 120 }, domain: 'audio', params: { isPlaying: 0 } }],
     [],
   );
-  await expect(page.locator('.svelte-flow__node-drumseqz')).toHaveCount(1);
+  await expect(page.locator('.svelte-flow__node-score')).toHaveCount(1);
 }
 
 test('MIDI assign: a gate INPUT row binds a NOTE (binding materializes + bound state)', async ({ page }) => {
@@ -146,29 +181,34 @@ test('MIDI assign: a gate INPUT row binds a NOTE (binding materializes + bound s
   await expect(gateRow).toHaveAttribute('data-gate-midi-bound', 'true');
 
   // A NOTE on a DIFFERENT note must NOT bind / re-capture (binding stays note 48).
+  // ⚠ The poll below is ALREADY TRUE when the note is injected, so it converges
+  // instantly and proves nothing on its own — the WINDOW is the assertion. That
+  // window has to be renderer-independent: 30 ms was ~2 frames locally and about
+  // a QUARTER of one under CI's SwiftShader (7.9 fps measured), i.e. on CI the
+  // re-capture had essentially no chance to happen before the check.
   await injectNote(page, 0, 50, 100);
-  await page.waitForTimeout(30);
+  await waitFrames(page, NO_REBIND_FRAMES);
   await expect.poll(() => readBinding(page, 'ad-1:gate')).toMatchObject({ kind: 'note', note: 48 });
 
   // NOTE-off must not error (the momentary release path is wired even for a
   // paramTarget-less gate, where driving the engine is a documented no-op).
   await injectNote(page, 0, 48, 0);
-  await page.waitForTimeout(30);
+  await waitFrames(page, NO_REBIND_FRAMES);
 
   expect(errors, `page errors: ${errors.join('; ')}`).toEqual([]);
 });
 
-test('MIDI assign: a card BUTTON (DRUMSEQZ PLAY) binds a NOTE that TOGGLES the param', async ({ page }) => {
+test('MIDI assign: the LEGACY CARD\'s button (SCORE PLAY) still binds a NOTE that TOGGLES the param', async ({ page }) => {
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
 
-  await bootDrumseqz(page);
-  const card = page.locator('.svelte-flow__node-drumseqz');
+  await bootScore(page);
+  const card = page.locator('.svelte-flow__node-score');
   await installSimMidi(page);
 
   // The PLAY button is wrapped by MidiAssignButton; the inner button carries
-  // data-testid="drumseqz-play-<nodeId>". Right-click the wrapper (the button surface).
-  const playBtn = card.locator('[data-testid="drumseqz-play-ds-1"]');
+  // data-testid="score-play-<nodeId>". Right-click the wrapper (the button surface).
+  const playBtn = card.locator('[data-testid="score-play-ds-1"]');
   await expect(playBtn).toHaveCount(1);
   expect(await readParam(page, 'ds-1', 'isPlaying')).toBe(0);
 
@@ -182,11 +222,13 @@ test('MIDI assign: a card BUTTON (DRUMSEQZ PLAY) binds a NOTE that TOGGLES the p
   await injectNote(page, 0, 60, 110);
   await expect.poll(() => readParam(page, 'ds-1', 'isPlaying')).toBe(1);
   // The button shows its bound badge.
-  await expect(card.locator('[data-testid="drumseqz-play-ds-1"]').locator('xpath=ancestor::*[contains(@class,"midi-assign-button")]').locator('.midi-badge')).toContainText('NOTE 60');
+  await expect(card.locator('[data-testid="score-play-ds-1"]').locator('xpath=ancestor::*[contains(@class,"midi-assign-button")]').locator('.midi-badge')).toContainText('NOTE 60');
 
   // A NOTE-off does NOT re-toggle (toggle fires on the press edge only).
+  // Same sustained-negative shape as above: the window IS the assertion, so it
+  // is counted in frames rather than milliseconds.
   await injectNote(page, 0, 60, 0);
-  await page.waitForTimeout(30);
+  await waitFrames(page, NO_REBIND_FRAMES);
   expect(await readParam(page, 'ds-1', 'isPlaying')).toBe(1);
 
   // A second NOTE-on toggles back off.
@@ -195,7 +237,7 @@ test('MIDI assign: a card BUTTON (DRUMSEQZ PLAY) binds a NOTE that TOGGLES the p
 
   // A NOTE on a DIFFERENT note must NOT toggle.
   await injectNote(page, 0, 61, 110);
-  await page.waitForTimeout(40);
+  await waitFrames(page, NO_REBIND_FRAMES);
   expect(await readParam(page, 'ds-1', 'isPlaying')).toBe(0);
 
   // Forget the binding → subsequent NOTE-ons no longer drive the toggle.
@@ -204,8 +246,114 @@ test('MIDI assign: a card BUTTON (DRUMSEQZ PLAY) binds a NOTE that TOGGLES the p
   await menu.locator('[data-testid="ctx-midi-forget"]').click();
   await expect(menu).toBeHidden();
   await injectNote(page, 0, 60, 110);
-  await page.waitForTimeout(40);
+  await waitFrames(page, NO_REBIND_FRAMES);
   expect(await readParam(page, 'ds-1', 'isPlaying')).toBe(0);
+
+  expect(errors, `page errors: ${errors.join('; ')}`).toEqual([]);
+});
+
+test('MIDI assign: the FACE\'s isPlaying toggle binds a NOTE, and a saved legacy `:play` record still drives it', async ({ page }) => {
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+
+  // ── THE DEFAULT SHELL. No `?shell=legacy`: this is the surface a user gets.
+  await page.goto('/rack?seed=none');
+  await page.waitForLoadState('networkidle');
+
+  // ⚠ SEED A BINDING UNDER THE **OLD** KEY BEFORE THE FACE EVER MOUNTS. This is
+  // the state of every player who bound a pad to SCORE's PLAY before promotion:
+  // a valid record, under a key the new control does not look up. Written
+  // straight into the persisted store and re-read on boot, exactly as a returning
+  // user's browser would.
+  await page.evaluate(() =>
+    window.localStorage.setItem(
+      'pt.midi-bindings.v1',
+      JSON.stringify([{ kind: 'note', key: 'ds-1:play', channel: 0, note: 60, learnedAt: 1 }]),
+    ),
+  );
+  await page.reload();
+  await page.waitForLoadState('networkidle');
+
+  await spawnPatch(
+    page,
+    [{ id: 'ds-1', type: 'score', position: { x: 120, y: 120 }, domain: 'audio', params: { isPlaying: 0 } }],
+    [],
+  );
+  await installSimMidi(page);
+
+  // Open the dock face — the promoted surface.
+  await page.waitForFunction(
+    () => typeof (globalThis as unknown as { __openDockFullView?: unknown }).__openDockFullView === 'function',
+  );
+  await page.evaluate(() =>
+    (globalThis as unknown as { __openDockFullView: (id: string) => void }).__openDockFullView('ds-1'),
+  );
+  const pane = page.locator('[data-testid="dock-full-view"][data-fullview-node="ds-1"]');
+  await expect(pane).toBeVisible();
+
+  const toggle = pane.locator('[data-testid="control-isPlaying"]');
+  await expect(toggle, 'the face renders isPlaying as a real control').toBeVisible();
+  expect(await readParam(page, 'ds-1', 'isPlaying')).toBe(0);
+
+  // ── THE MIGRATION, END TO END. The Toggle mounted and ADOPTED the record; the
+  // pad the player bound before promotion drives the face with no user action.
+  await expect
+    .poll(() => readBinding(page, 'ds-1:isPlaying'), {
+      message:
+        'a saved `<node>:play` record is re-keyed onto `<node>:isPlaying` when the promoted ' +
+        'control mounts — without this the pad is dead and the record sits in localStorage ' +
+        'under a key nothing reads',
+    })
+    .toMatchObject({ kind: 'note', note: 60 });
+  await expect
+    .poll(() => readBinding(page, 'ds-1:play'), {
+      message: 'and it is RE-KEYED, not duplicated — one physical pad, one owner',
+    })
+    .toBeUndefined();
+
+  await injectNote(page, 0, 60, 110);
+  await expect
+    .poll(() => readParam(page, 'ds-1', 'isPlaying'), {
+      message: 'the adopted binding actually DRIVES the face\'s toggle',
+    })
+    .toBe(1);
+
+  // NOTE-off does not re-toggle (press edge only) — the window IS the assertion,
+  // counted in frames for the reason at the head of this file.
+  await injectNote(page, 0, 60, 0);
+  await waitFrames(page, NO_REBIND_FRAMES);
+  expect(await readParam(page, 'ds-1', 'isPlaying')).toBe(1);
+
+  // A second NOTE-on toggles back off.
+  await injectNote(page, 0, 60, 110);
+  await expect.poll(() => readParam(page, 'ds-1', 'isPlaying')).toBe(0);
+
+  // ── AND THE FORWARD DIRECTION, THROUGH THE SHIPPED AFFORDANCES: FORGET the
+  // adopted binding, then LEARN a new one. The alias must be a one-time
+  // migration, not a permanent indirection that re-files every future learn
+  // under the old id.
+  const menu = page.locator('[data-testid="control-context-menu"]');
+  await toggle.click({ button: 'right' });
+  await expect(menu).toBeVisible();
+  await menu.locator('[data-testid="ctx-midi-forget"]').click();
+  await expect(menu).toBeHidden();
+  await expect.poll(() => readBinding(page, 'ds-1:isPlaying')).toBeUndefined();
+
+  await toggle.click({ button: 'right' });
+  await expect(menu).toBeVisible();
+  await menu.locator('[data-testid="ctx-midi-learn"]').click();
+  await expect(menu).toBeHidden();
+  await injectNote(page, 0, 65, 110);
+  await expect
+    .poll(() => readBinding(page, 'ds-1:isPlaying'), {
+      message: 'a fresh learn on the FACE writes the new key directly',
+    })
+    .toMatchObject({ kind: 'note', note: 65 });
+  await expect
+    .poll(() => readBinding(page, 'ds-1:play'), {
+      message: 'and never back under the legacy id — the alias is a migration, not an indirection',
+    })
+    .toBeUndefined();
 
   expect(errors, `page errors: ${errors.join('; ')}`).toEqual([]);
 });

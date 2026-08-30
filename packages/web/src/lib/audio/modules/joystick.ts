@@ -12,19 +12,24 @@
 //   * Four ConstantSourceNodes — one per output port. Each carries an
 //     offset that we set via setValueAtTime() whenever the card pushes
 //     a new position.
-//   * The pad UI lives on JoystickCard; the audio module exposes a
-//     pair of internal params `pos_x` and `pos_y` (range -1..+1) that
-//     the card writes to via setParam. The factory mirrors those into
+//   * The pad UI lives on the faceplate's shared `xy` cell (and, under
+//     ?shell=legacy, on JoystickCard); the audio module exposes a pair
+//     of internal params `pos_x` and `pos_y` (range -1..+1) that the pad
+//     writes via the normal param path. The factory mirrors those into
 //     the ConstantSource offsets so the engine's per-param tap
 //     analyser sees live activity for the motorized fader path (also
 //     useful for tests that poke setParam directly without UI).
-//   * Pointer-up snap-back to center is a card-level UX detail (the
-//     card sets pos_x/pos_y to 0 on pointer-up). At the audio layer the
-//     module is pure: whatever the params say, that's what comes out.
+//   * THE STICK STAYS WHERE YOU PUT IT. Releasing the pointer does NOT
+//     re-centre it (owner ruling, 2026-08-19 on #1963, verbatim
+//     "1 - persist"): the position is a persisted value, so it survives
+//     a release, a remount and a patch reload. This file used to say the
+//     opposite in three places while ALSO promising the value survives a
+//     reload — with a snap-back, what survived was always centre, so the
+//     two halves could not both be useful and the ruling picked which
+//     one dies. At the audio layer the module is pure either way:
+//     whatever the params say, that is what comes out.
 //
 // Future work (NOT v1):
-//   * Spring-back animation: instead of instant snap, the card could
-//     animate values back to 0 over a few hundred ms. Out of scope here.
 //   * MIDI-mappable: standard MIDI learn applies once the global MIDI
 //     CC routing PR lands.
 //
@@ -75,7 +80,7 @@ export const joystickDef: AudioModuleDef = {
 
   docs: {
     explanation:
-      "A manual XY controller: drag the stick anywhere inside the square pad and its position comes out as four bipolar CV signals. The pad's center is (0, 0) and the four corners reach (±1, ±1); dragging UP gives +Y (screen-y is flipped so 'up' reads positive). Two raw outputs (X, Y) plus two pre-inverted outputs (NX = −X, NY = −Y) let you drive mirrored or quadrature modulation from one hand without wiring an external inverter. Mental model: a hands-on two-axis modulation source — sweep filter cutoff and resonance together, pan a sound while changing its tone, or steer a video param. On pointer-release the stick snaps back to center (both axes to 0); the position is stored in the patch like any knob, so it survives a reload.",
+      "A manual XY controller: drag the stick anywhere inside the square pad and its position comes out as four bipolar CV signals. The pad's center is (0, 0) and the four corners reach (±1, ±1); dragging UP gives +Y (screen-y is flipped so 'up' reads positive). Two raw outputs (X, Y) plus two pre-inverted outputs (NX = −X, NY = −Y) let you drive mirrored or quadrature modulation from one hand without wiring an external inverter. Mental model: a hands-on two-axis modulation source — sweep filter cutoff and resonance together, pan a sound while changing its tone, or steer a video param. The stick STAYS WHERE YOU PUT IT: releasing the pointer leaves the position untouched, and the position is stored in the patch like any knob, so it survives a reload. To re-centre it, double-click the pad. A value that is not a finite number (an automation or MIDI source emitting NaN or Infinity) snaps to CENTER rather than to a rail.",
     inputs: {},
     outputs: {
       x: "The stick's horizontal position as bipolar CV, −1 at the left edge through 0 at center to +1 at the right edge.",
@@ -85,12 +90,84 @@ export const joystickDef: AudioModuleDef = {
     },
     controls: {
       pos_x:
-        "The stick's stored X position in the −1..+1 range, written by dragging the pad (and snapped back to 0 on release). It is the persisted value behind the X / NX outputs; it survives a patch reload.",
+        "The stick's stored X position in the −1..+1 range, written by dragging the pad. Releasing the pointer leaves it where you dropped it. It is the persisted value behind the X / NX outputs; it survives a patch reload. Anything outside the range is clamped to the nearest rail, and a non-finite value (NaN or ±Infinity) resolves to 0 — the CENTER, not a rail.",
       pos_y:
-        "The stick's stored Y position in the −1..+1 range, written by dragging the pad (and snapped back to 0 on release). It is the persisted value behind the Y / NY outputs.",
+        "The stick's stored Y position in the −1..+1 range, written by dragging the pad, with +1 at the top (the axis is flipped so dragging up reads positive). Releasing the pointer leaves it where you dropped it. It is the persisted value behind the Y / NY outputs, with the same clamping and the same snap-to-CENTER on a non-finite value.",
     },
   },
 
+  // ⚠ NO `face` YET — Q43 IS BUILT AND HELD, AND THE BLOCKER IS NOT THIS FILE.
+  // The migration inventory prescribes the shared `xy` cell for this module and
+  // that is still right; what is not ready is the cell. Measured 2026-08-19
+  // while building the promotion:
+  //
+  //   * `XyPad.svelte` painted a `.xy-readout` row — `x <n> / y <n>`, two
+  //     resting decimals — which is exactly the text the 2026-08-17 ruling
+  //     removes, so promoting would MOVE this module's decimal from the card to
+  //     the faceplate rather than delete it (the stated point of the migration);
+  //   * the pad exposed NO value in the accessibility tree that the ruling's
+  //     "the number survives where it is speakable" half could point at; and
+  //   * `face-readout-source.test.ts` lists only `KnobConic` and `NeonFader` in
+  //     its `PRIMITIVES`, so the gate that enforces the ruling was BLIND to the
+  //     pad — which is why none of this was already red.
+  //
+  // ✅ ALL THREE ARE CLEARED BY #2038, and this comment is updated rather than
+  // deleted so the next reader can see WHY the blocker lifted rather than
+  // finding a promotion with no recorded reason. The readout row is DELETED
+  // from the primitive (not hidden, and with no prop to re-enable it); the
+  // values live in the pad's `aria-label`, which is where a `role="application"`
+  // control's value belongs — there is no `aria-valuetext` on that role, so the
+  // middle bullet's original wording was asking for the wrong attribute; and
+  // `xy-pad-readout-source.test.ts` now denies the class at the PRIMITIVE level,
+  // so the gate is no longer blind to it.
+  //
+  // ⚠ THIS DOES NOT PROMOTE THE MODULE — #2038 is a primitive fix and stops at
+  // the primitive.
+  //
+  // Everything else Q43 needs was done and shipped earlier: the #1963 ruling
+  // (no snap-back, the docs corrected), the raw-write debt paid, and a
+  // `faceLaneCellHeights` fold bug that attempting the promotion exposed.
+  //
+  // ── ⚠ AND THERE IS A SECOND, OLDER BLOCKER THIS COMMENT NEVER MENTIONED ────
+  //
+  // Re-derived 2026-08-23 while cut A batch 2 was assigned this module. The
+  // three bullets above are all about the READOUT, and all three really are
+  // cleared — so read on its own this comment says "unblocked", which is what
+  // it said before it was corrected. It is not, and the reason is structural
+  // rather than cosmetic:
+  //
+  //   THIS MODULE'S LANE TILE WOULD BE EMPTY. `joystick` declares exactly two
+  //   params and both are the axes of one pad. `laneOrder` deletes every
+  //   declared `xyPads` anchor from the lane order (a pad is square; a lane
+  //   knob column is 46 px) and `foldedOrder` removes the partner axis at every
+  //   tier, so a face here resolves to ZERO controls at mini, compact AND full.
+  //   Nor is there a glyph to fall back on: `glyphBinding` reaches a live trace
+  //   only through a primary AUDIO output, and this module declares four `cv`
+  //   outputs and no audio, so every glyph literal resolves `{ kind: 'static' }`
+  //   — which `module-face-lint`'s dead-glyph clause refuses by name. The tile
+  //   would be a title bar and a jack rail with nothing between them, which is
+  //   strictly worse than the uniform placeholder it would replace.
+  //
+  // This is the refusal `strict-faces.ts` records in the `quadralogical` entry
+  // and `types.ts` records on `FaceXyPad.surface` — and `quadralogical` is
+  // promotable with the SAME pad only because it has eighteen other ranked
+  // params. `surface: 'body'` does not answer it either: that field changes
+  // WHICH DOCK SURFACE paints the pad, never whether a lane has one.
+  //
+  // ⚠ IT IS NOW ENFORCED, which it was not when the comment above was written.
+  // Nothing in the repo failed on a zero-control lane — the cap-vs-fit-plan
+  // clause reads `rendered === face.controls.length`, which is `0 === 0` and
+  // green — so a face authored here would have SHIPPED with a blank tile
+  // through the whole gate set. `module-face-lint.test.ts` now denies a
+  // promoted face that ranks controls and resolves to none of them at a lane
+  // tier, with this exact shape as its permanent negative control.
+  //
+  // So the honest status is BLOCKED, on a platform capability rather than on
+  // this file: either a glyph binding that can paint a pad's position (which
+  // `types.ts` already prescribes the shape for), or lifting the pad-in-lane
+  // restriction (`LANE_CELL_H.xy` is already carried at its real 96 px against
+  // that day). Both move every pad-bearing face's lane tile and its baselines,
+  // so both are platform work and not a face PR.
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     const initial = node.params ?? {};
     const live = {

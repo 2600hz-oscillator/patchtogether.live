@@ -440,64 +440,8 @@ export const marblesDef: AudioModuleDef = {
     hero: {
       cell: 'marbles-loop-{n}',
       control: 'deja_vu',
-      readouts: [
-        { label: 'clock', valueId: 'marbles-bpm' },
-        { label: 'step', valueId: 'marbles-step' },
-        { label: 'T random', valueId: 'marbles-t-random' },
-        { label: 'X random', valueId: 'marbles-x-random' },
-      ],
     },
 
-    // TWO BLOCKS, one per section, every entry a bare value.
-    //
-    // ⚠ A `signal-flow` BLOCK WAS DRAFTED AND CUT. Its stages would have been
-    // RATE → the two sections → their outputs, which is what the two rows of
-    // the hero picture already show, and its `note` fields were exactly the
-    // editorial captions the owner's directive rules out.
-    sidebar: [
-      {
-        kind: 'readouts',
-        label: 'T',
-        entries: [
-          // `CLUSTERS → COIN` when the stub is selected: the model the DSP is
-          // RUNNING, which is not always the one the selector names.
-          { label: 'model', valueId: 'marbles-model' },
-          // Exact for the two Bernoulli models (P(t1) = 1 − BIAS) and `—` for
-          // the three with no closed form. A blank is honest; a plausible
-          // number would not be.
-          { label: 't1 / t2', valueId: 'marbles-t-split' },
-          // The gate width against `clk`'s fixed 50 %. Two adjacent numbers
-          // that disagree are the whole point of the pair.
-          { label: 'gate', valueId: 'marbles-gate-width' },
-          { label: 'clk', text: '50 %' },
-          { label: 'T loop', valueId: 'marbles-t-loop' },
-        ],
-      },
-      {
-        kind: 'readouts',
-        label: 'X',
-        entries: [
-          { label: 'X loop', valueId: 'marbles-x-loop' },
-          { label: 'shape', valueId: 'marbles-x-shape' },
-          { label: 'glide', valueId: 'marbles-glide' },
-          { label: 'quantiser', valueId: 'marbles-quantiser' },
-          { label: 'scales', valueId: 'marbles-scales' },
-        ],
-      },
-      {
-        // ACTIONS, not prose. Each one puts the module into a state where a
-        // control that is inert at the factory default starts working — which
-        // is the fastest way to learn this module and needs no sentence.
-        kind: 'presets',
-        label: 'presets',
-        entries: [
-          { id: 'locked', label: 'locked', values: { deja_vu: 0.5, x_deja_vu: 0.5 } },
-          { id: 'shuffled', label: 'shuffled', values: { deja_vu: 1, x_deja_vu: 1 } },
-          { id: 'glide', label: 'glide', values: { steps: 0 } },
-          { id: 'pentatonic', label: 'pentatonic', values: { steps: 0.75, scale: 2 } },
-        ],
-      },
-    ],
   },
 
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {

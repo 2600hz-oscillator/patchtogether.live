@@ -360,6 +360,180 @@ export async function readCapturedCcs(
     }));
 }
 
+// ---------------------------------------------------------------------------
+// ELECTRA mock — a sysex-capable Web MIDI fake with hot-plug + permission state
+// ---------------------------------------------------------------------------
+//
+// WHY A THIRD MOCK. The two above cannot exercise the Electra auto-reconnect
+// (#2248): `installMidiMock` is inbound-only with a no-op output and no sysex;
+// `installMidiOutCapture` has no inputs, no statechange dynamics, and neither
+// stubs the Permissions API — and the auto-reconnect's FIRST decision is a
+// silent `permissions.query({ name: 'midi', sysex: true })` (it must never
+// cause a prompt). This mock provides the four things that path needs:
+//   * Electra-NAMED ports (the presence predicate is name-strict),
+//   * sysex capture with command decode (preset upload = 01 01, Lua = 01 0C),
+//   * runtime plug/unplug that fires `access.onstatechange` per port — the
+//     burst shape real hardware produces (one event per USB port),
+//   * a scriptable `permissions.query` answer for the 'midi' name.
+// It also auto-ACKs the identity probe (02 7F) so a flash doesn't sit out the
+// 600 ms identify timeout on every test.
+
+export interface ElectraMockOptions {
+  /** Electra ports exist at boot (default true). false = hot-plug scenario. */
+  devicePresent?: boolean;
+  /** What `permissions.query({name:'midi'})` reports (default 'granted'). */
+  permission?: 'granted' | 'prompt' | 'denied';
+}
+
+export function electraMidiMockScript(opts: Required<ElectraMockOptions>): string {
+  return `
+(() => {
+  if (window.__electraMidiInstalled) return;
+  window.__electraMidiInstalled = true;
+
+  let accessCalls = 0;
+  const sysexSent = []; // { portId, bytes }
+  const inputHandlers = new Map(); // inputId -> handler | null
+
+  function dispatch(bytes) {
+    const ev = { data: new Uint8Array(bytes), timeStamp: performance.now() };
+    for (const h of inputHandlers.values()) if (typeof h === 'function') h(ev);
+  }
+
+  function makeInput(id, name) {
+    let _h = null;
+    const input = {
+      id, name, manufacturer: 'Electra One', state: 'connected',
+      connection: 'open', type: 'input', version: '1.0',
+      get onmidimessage() { return _h; },
+      set onmidimessage(fn) { _h = fn; inputHandlers.set(id, fn); },
+    };
+    inputHandlers.set(id, null);
+    return input;
+  }
+
+  function makeOutput(id, name) {
+    return {
+      id, name, manufacturer: 'Electra One', state: 'connected',
+      connection: 'open', type: 'output', version: '1.0',
+      send(data) {
+        const bytes = Array.from(data);
+        if (bytes[0] !== 0xF0) return; // plain CC/notes: uncounted here
+        sysexSent.push({ portId: id, bytes });
+        // Auto-ACK the identity probe (F0 00 21 45 02 7F F7) like a real
+        // Electra, so identify() resolves instead of timing out.
+        if (bytes[1] === 0x00 && bytes[2] === 0x21 && bytes[3] === 0x45 &&
+            bytes[4] === 0x02 && bytes[5] === 0x7F) {
+          setTimeout(() => dispatch([0xF0, 0x00, 0x21, 0x45, 0x76, 0x33, 0x2E, 0x37, 0xF7]), 0);
+        }
+      },
+      clear() {},
+    };
+  }
+
+  const inputs = new Map();
+  const outputs = new Map();
+  const access = { sysexEnabled: true, inputs, outputs, onstatechange: null };
+
+  const ELECTRA_PORTS = [
+    ['electra-in-p1', 'electra-out-p1', 'Electra Controller Port 1'],
+    ['electra-in-p2', 'electra-out-p2', 'Electra Controller Port 2'],
+    ['electra-in-ctrl', 'electra-out-ctrl', 'Electra Controller CTRL'],
+  ];
+
+  function eachElectraPort(fn) {
+    for (const [inId, outId, name] of ELECTRA_PORTS) {
+      fn(inId, outId, name);
+    }
+  }
+
+  function firePortEvent(port) {
+    if (typeof access.onstatechange === 'function') access.onstatechange({ port });
+  }
+
+  function addElectraPorts(fireEvents) {
+    eachElectraPort((inId, outId, name) => {
+      const inp = makeInput(inId, name);
+      const out = makeOutput(outId, name);
+      inputs.set(inId, inp);
+      outputs.set(outId, out);
+      // Real hardware surfaces ONE statechange per USB port — a burst.
+      if (fireEvents) { firePortEvent(inp); firePortEvent(out); }
+    });
+  }
+
+  function removeElectraPorts() {
+    eachElectraPort((inId, outId) => {
+      const inp = inputs.get(inId);
+      const out = outputs.get(outId);
+      // Chromium keeps unplugged ports enumerated with state 'disconnected'.
+      if (inp) { inp.state = 'disconnected'; firePortEvent(inp); }
+      if (out) { out.state = 'disconnected'; firePortEvent(out); }
+    });
+  }
+
+  if (${opts.devicePresent ? 'true' : 'false'}) addElectraPorts(false);
+
+  navigator.requestMIDIAccess = async () => { accessCalls++; return access; };
+
+  // Permissions stub: answer for 'midi' only, delegate everything else.
+  const perms = navigator.permissions;
+  const realQuery = perms && perms.query ? perms.query.bind(perms) : null;
+  const permState = { value: ${JSON.stringify(opts.permission)} };
+  if (perms) {
+    perms.query = (desc) => {
+      if (desc && desc.name === 'midi') {
+        return Promise.resolve({
+          state: permState.value, onchange: null,
+          addEventListener() {}, removeEventListener() {},
+        });
+      }
+      return realQuery ? realQuery(desc) : Promise.reject(new TypeError('unsupported'));
+    };
+  }
+
+  window.__electraMidi = {
+    accessCallCount: () => accessCalls,
+    sysexCount: () => sysexSent.length,
+    /** Management preset uploads seen (SysEx cmd 01 01). */
+    presetUploads: () =>
+      sysexSent.filter((m) => m.bytes[4] === 0x01 && m.bytes[5] === 0x01).length,
+    /** Lua uploads seen (SysEx cmd 01 0C). */
+    luaUploads: () =>
+      sysexSent.filter((m) => m.bytes[4] === 0x01 && m.bytes[5] === 0x0C).length,
+    /** The port the LAST preset upload was written to (null when none). */
+    lastPresetPort: () => {
+      const ups = sysexSent.filter((m) => m.bytes[4] === 0x01 && m.bytes[5] === 0x01);
+      return ups.length ? ups[ups.length - 1].portId : null;
+    },
+    /** Hot-plug the Electra: adds its 6 ports, one statechange each. */
+    plugIn: () => addElectraPorts(true),
+    /** Unplug: marks ports disconnected, one statechange each. */
+    unplug: () => removeElectraPorts(),
+    /** Statechange churn that is NOT an Electra — a foreign device appearing. */
+    addForeignPort: () => {
+      const out = makeOutput('foreign-out-' + outputs.size, 'Generic USB MIDI Interface');
+      outputs.set(out.id, out);
+      firePortEvent(out);
+    },
+  };
+})();
+`;
+}
+
+/** Install the Electra mock. MUST be called BEFORE \`page.goto(...)\`. */
+export async function installElectraMidiMock(
+  page: Page,
+  opts: ElectraMockOptions = {},
+): Promise<void> {
+  await page.addInitScript({
+    content: electraMidiMockScript({
+      devicePresent: opts.devicePresent ?? true,
+      permission: opts.permission ?? 'granted',
+    }),
+  });
+}
+
 /** Burst N clock pulses spaced `intervalMs` apart. Returns the ACTUAL
  *  `performance.now()` timestamp (ms) of each pulse, recorded in-page
  *  immediately before the synchronous dispatch — so within microseconds of

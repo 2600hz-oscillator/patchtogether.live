@@ -22,6 +22,9 @@
   // handle's read('transportState') so the card and the engine agree by
   // construction rather than by two copies of the same if-chain.
   import { timelordeTransportState } from '$lib/audio/modules/timelorde-transport-state';
+  // The def's own output roster + the derived swing-source names (see the
+  // OUT_LABELS / SRC_LABELS note below — one source, imported, never re-typed).
+  import { timelordeDef, TIMELORDE_SWING_SOURCES } from '$lib/audio/modules/timelorde';
   // TAP TEMPO core — the SAME pure, unit-tested helper the Electra hardware
   // tap path uses (src/lib/electra/tap-tempo.ts). Median-based, 2-tap lock,
   // ~2s timeout reset, BPM clamp. We feed it performance.now() per tap and
@@ -205,13 +208,39 @@
   // garbage. (createImageBitmap is overkill for a single static asset.)
   let owlImg: HTMLImageElement | null = null;
   let owlReady = $state(false);
+  // ⚠ READY MEANS *DECODED*, NOT *LOADED*, AND THE DIFFERENCE IS MEASURED. This
+  // used to flip `owlReady` in `onload`, which fires when the bytes have arrived
+  // — not when the bitmap is rasterised. With `decoding = 'async'` the first
+  // `drawImage` can therefore paint from a partially-rastered source, and under
+  // `prefers-reduced-motion` (the VRT capture) the card paints EXACTLY ONE frame
+  // and stops, so whatever raster state Chromium happened to be in is LATCHED
+  // into the picture forever. That is the nondeterminism `vrt-live-surfaces.ts`
+  // measured on this very module — 13 of 20 separate processes FAILED unmasked —
+  // and it is why the card scene carries a wrap mask.
+  //
+  // ⚠ AND IT STOPPED BEING MASKABLE THE DAY THIS MODULE GREW A FACE. The dock
+  // faceplate BLITS this same pushed frame, and the FACES roster has no mask
+  // mechanism at all, so a face baseline would inherit that flake with nowhere
+  // to put it. `decode()` resolves only when the image is ready to be painted
+  // synchronously, so the one frame is a function of the decoded bitmap rather
+  // than of boot speed. `onload` is kept as the trigger (decode() on an image
+  // with no src rejects) and as the fallback for a runtime without decode().
   $effect(() => {
     if (typeof Image === 'undefined') return;
+    let cancelled = false;
     const img = new Image();
     img.decoding = 'async';
-    img.onload = () => { owlImg = img; owlReady = true; };
+    const ready = () => {
+      if (cancelled) return;
+      owlImg = img;
+      owlReady = true;
+    };
+    img.onload = () => {
+      if (typeof img.decode === 'function') void img.decode().then(ready).catch(ready);
+      else ready();
+    };
     img.src = OWL_SRC;
-    return () => { img.onload = null; owlImg = null; owlReady = false; };
+    return () => { cancelled = true; img.onload = null; owlImg = null; owlReady = false; };
   });
   // Off-screen scratch we composite into, then transfer to the node as an
   // ImageBitmap each frame (createImageBitmap is the cheapest DOM→node handoff,
@@ -397,7 +426,37 @@
     if (prefersReducedMotion()) {
       // One deterministic frame, then idle (VRT / reduced-motion).
       renderDisplay();
-      return;
+      // ⚠ …BUT THE *PUSH* CANNOT BE FIRE-AND-FORGET, AND THAT WAS A LIVE BUG.
+      // `renderDisplay` ends in `pushDisplayFrame`, whose write is the ONLY
+      // thing that ever fills the node's `lastDisplayFrame`. Pushing exactly
+      // once means a write that lands before the engine handle exists — or on a
+      // handle that is then replaced — is lost FOREVER, and `video_out` serves
+      // the #07090d idle field for the rest of the session. MEASURED on a
+      // default rack under `reducedMotion: 'reduce'`, with this card mounted and
+      // its own canvas carrying the owl at `nonBlack 47034/48400`: `video_out`
+      // read `nonBlack 0/3072, maxLuma 9`. Non-reduced-motion racks never saw it
+      // because the ordinary rAF re-pushes every frame and the loss self-heals
+      // invisibly.
+      //
+      // So the push CONVERGES instead: ask the node whether it holds a frame and
+      // re-push only while it does not. One boolean read per frame, no
+      // allocation, no repaint — and it heals a replaced handle too, which a
+      // one-shot retry could not. The picture is byte-identical every time
+      // (`pulse` is pinned to 0 here), so nothing about the VRT determinism this
+      // branch exists for changes.
+      let raf: number | null = null;
+      const ensurePushed = () => {
+        const e = engineCtx.get();
+        if (e && node && e.read?.(node, 'hasDisplayFrame') !== 1) pushDisplayFrame();
+        raf = requestAnimationFrame(ensurePushed);
+      };
+      raf = requestAnimationFrame(ensurePushed);
+      displayRaf = raf;
+      return () => {
+        if (raf !== null) cancelAnimationFrame(raf);
+        raf = null;
+        displayRaf = null;
+      };
     }
     let raf: number | null = null;
     const loop = () => {
@@ -507,8 +566,17 @@
     if (hasExternalClock) tapController.reset();
   });
 
-  const OUT_LABELS = ['1x', '8x', '4x', '2x', '1/2', '1/3', '1/4', '1/8', '1/12', '1/16', '1/32', '1/64', 'swing'];
-  const SRC_LABELS = ['1x', '8x', '4x', '2x', '1/2', '1/3', '1/4', '1/8', '1/12', '1/16', '1/32', '1/64'];
+  // ⚠ DERIVED FROM THE DEF, NOT RE-TYPED — the backdraft one-source rule applied
+  // to a list. These two arrays used to be literals here, and the second one
+  // (`SRC_LABELS`) was a hand-typed copy of the def's own output order that the
+  // `swingSource` param indexes into. That is the `sampleHold` / `moog904b`
+  // shape: the names existed, but only on the card, so a faceplate over the same
+  // param would have printed a bare integer for a state the module already
+  // names. `swingSource` now declares the roster (derived from the outputs) and
+  // this card reads the SAME list, so the two surfaces cannot disagree about
+  // which index is `1/12`.
+  const OUT_LABELS = timelordeDef.outputs.filter((o) => o.type === 'gate').map((o) => o.id);
+  const SRC_LABELS = TIMELORDE_SWING_SOURCES.map((o) => o.label);
 
   const inputs: PortDescriptor[] = [
     { id: 'clock',    label: 'CLOCK IN', cable: 'gate' },

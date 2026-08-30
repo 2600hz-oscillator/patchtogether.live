@@ -305,6 +305,205 @@ describe('resolvePushCardControls — tier 2, the curated face', () => {
     ]);
   });
 
+  it('a FIRST PROMOTION on a TWO-PARAM module still moves the card — stereovca', () => {
+    // stereovca, promoted 2026-08-19 (queue Q42). The smallest possible form of
+    // the drift CLAUDE.md's push-card note warns about, and the reason it is
+    // written down rather than shrugged at: with only two params the whole card
+    // is a SWAP, which is the easiest kind of change to mistake for a no-op.
+    //
+    // What moved: the GENERIC tier is declaration order — `level, offset` — so
+    // LEVEL sat on encoder 1. The face ranks OFFSET first, because with nothing
+    // patched into STRENGTH the multiplier is `0 + offset` and LEVEL is
+    // multiplying a term that is exactly zero: encoder 1 was the one control on
+    // this module that could not make a sound. Accepted deliberately.
+    const spec = resolvePushCardControls(defByType('stereovca'));
+    expect(spec.source).toBe('face');
+    expect(spec.skipped, 'no families and no momentary pads on this module').toEqual([]);
+    expect(pushCardParams(spec).map((q) => q.id)).toEqual(['offset', 'level']);
+    // The negative control: the DEF's own declaration order is genuinely the
+    // other way round, so this cannot pass vacuously.
+    expect((defByType('stereovca').params ?? []).map((q) => q.id)).toEqual(['level', 'offset']);
+  });
+
+  it('a FIRST PROMOTION can put a whole STAGE on the hardware — bentbox', () => {
+    // bentbox, promoted 2026-08-20 (queue Q24). Fourteen ranked controls over
+    // eight encoders, so like warrensvisions the window TRUNCATES rather than
+    // permutes — but here what it drops and gains is a semantic block, which is
+    // the variant worth its own golden.
+    //
+    // ⚠ THE GENERIC TIER NEVER REACHED THE BEND STAGE AT ALL. Declaration order
+    // is timing then chroma then feedback, so the first eight encoders were
+    // `hsync_drift, hsync_loss, vsync_drift, scan_wobble, chroma_phase,
+    // chroma_instability, feedback_gain, feedback_delay` — SOLARIZE and GAIN,
+    // the two controls that abuse the composite voltage this module exists to
+    // abuse, were off the end of the card. The face ranks them 3rd and 4th (the
+    // module's own docs name solarization as a headline outcome, and `wavefold`
+    // carries 0.7 of the luma blend weight against master_gain's 0.1), so both
+    // reach the hardware and `scan_wobble` / `feedback_delay` fall off instead.
+    //
+    // Accepted deliberately rather than pinned by a PUSH_CARD_CONTROLS override:
+    // an override REPLACES, which would freeze a ranking the def argues for.
+    const spec = resolvePushCardControls(defByType('bentbox'));
+    expect(spec.source).toBe('face');
+    expect(pushCardParams(spec).map((q) => q.id)).toEqual([
+      'hsync_loss', 'feedback_gain', 'wavefold', 'master_gain',
+      'chroma_phase', 'chroma_instability', 'hsync_drift', 'vsync_drift',
+    ]);
+    // The negative control, and here it names what the promotion BOUGHT: the
+    // def's own order genuinely reaches neither bend control in eight slots.
+    const declared = (defByType('bentbox').params ?? []).map((q) => q.id);
+    expect(declared.slice(0, 8)).toEqual([
+      'hsync_drift', 'hsync_loss', 'vsync_drift', 'scan_wobble',
+      'chroma_phase', 'chroma_instability', 'feedback_gain', 'feedback_delay',
+    ]);
+    expect(declared.slice(0, 8), 'the GENERIC card could not reach SOLARIZE').not.toContain('wavefold');
+    expect(declared.slice(0, 8), 'nor GAIN').not.toContain('master_gain');
+    // ⚠ AND THE TWO MIRROR TOGGLES ARE NOT ON THE CARD, which is the correct
+    // outcome of this PR's `curve` correction: an encoder cannot turn a switch.
+    // They rank 13th/14th, so the window fills before it reaches them.
+    expect(pushCardParams(spec).map((q) => q.id)).not.toContain('mirrorX');
+    expect(pushCardParams(spec).map((q) => q.id)).not.toContain('mirrorY');
+  });
+
+  it('a FIRST PROMOTION re-ranks a SYMMETRIC def, where declaration order says nothing — ruttetra', () => {
+    // ruttetra, promoted 2026-08-20 (#2009). TWELVE params over EIGHT encoders,
+    // so like warrensvisions the window TRUNCATES — but the variant worth its
+    // own golden is WHY the generic card was wrong here, and it is a different
+    // reason from either sibling above.
+    //
+    // ⚠ THIS DEF IS SYMMETRIC IN X AND Y, AND DECLARATION ORDER PUTS X FIRST
+    // EVERYWHERE. `xShape, yShape, xDisp, yDisp, …` — so the generic card spent
+    // its first two encoders on the two SHAPE morphs and reached `xDisp` third,
+    // `yDisp` fourth. But the module's relief axis is Y: the def spends its ONE
+    // non-neutral default on `yDisp` (-0.3, "the classic raised terrain look")
+    // while every other geometry param ships at its identity value. So the
+    // generic card led with the two controls that do nothing at their defaults
+    // and buried the module's identity knob at rank 4.
+    //
+    // The face inverts every pair (Y before X, because Y is the relief axis)
+    // and demotes the whole BEAM block, which the vertex shader proves is
+    // disjoint from geometry — `gl_Position` consumes h, v, lum, xDisp, yDisp
+    // and nothing else, so intensity and the three tints move COLOUR only.
+    const spec = resolvePushCardControls(defByType('ruttetra'));
+    expect(spec.source).toBe('face');
+    expect(spec.skipped, 'no families and no momentary pads on this module').toEqual([]);
+    expect(pushCardParams(spec).map((q) => q.id)).toEqual([
+      'yDisp', 'xDisp', 'yShape', 'xShape',
+      'yFreq', 'xFreq', 'intensity', 'tintR',
+    ]);
+    // The negative control, and it names what the promotion BOUGHT the
+    // hardware: declaration order genuinely leads with the shapes and puts the
+    // relief hero fourth.
+    const declared = (defByType('ruttetra').params ?? []).map((q) => q.id);
+    expect(declared.slice(0, 4)).toEqual(['xShape', 'yShape', 'xDisp', 'yDisp']);
+    expect(declared[0], 'the GENERIC card led with a param that is inert at its default').toBe('xShape');
+    expect(
+      pushCardParams(spec)[0].id,
+      'the FACE leads with the only param this def ships off-centre',
+      ).toBe('yDisp');
+    // ⚠ AND THE TWO PHASE CONTROLS FALL OFF, which is the correct outcome:
+    // they rank 11th/12th, have no CV input, and slide a pattern that X/Y FREQ
+    // has to be non-default for you to even see.
+    expect(pushCardParams(spec).map((q) => q.id)).not.toContain('xPhase');
+    expect(pushCardParams(spec).map((q) => q.id)).not.toContain('yPhase');
+  });
+
+  it('a FIRST PROMOTION TRUNCATES when the module out-runs the encoders — warrensvisions', () => {
+    // warrensvisions, promoted 2026-08-20 (queue Q45). The variant neither
+    // golden above can show: TWELVE params over EIGHT encoders, so the window
+    // does not merely permute the card — it DROPS FOUR CONTROLS, and which four
+    // is now decided by `face.order` instead of by declaration order.
+    //
+    // ⚠ SO THE INTERESTING ASSERTION IS THE ONE ABOUT WHAT IS *NOT* HERE.
+    // The GENERIC tier is declaration order, which reaches SHAPE at rank 8 and
+    // stops. The face ranks MIX third — it is the only control that can take
+    // the module out of the picture entirely — so MIX takes an encoder and
+    // SHAPE is the control pushed off the end. Both cards are eight wide and
+    // both look complete on the hardware; the difference is invisible unless it
+    // is written down, which is exactly the drift CLAUDE.md's push-card note
+    // warns about. Accepted deliberately: an override would freeze a ranking
+    // this module's own def argues for in a comment ("COHERENCE first: it is
+    // the control that changes the module's identity").
+    const spec = resolvePushCardControls(defByType('warrensvisions'));
+    expect(spec.source).toBe('face');
+    expect(spec.skipped, 'no families and no momentary pads on this module').toEqual([]);
+    expect(pushCardParams(spec).map((q) => q.id)).toEqual([
+      'visionsCoherence', 'visionsComponents', 'visionsMix', 'visionsFloor',
+      'visionsStability', 'visionsSlew', 'visionsSlice', 'visionsResidual',
+    ]);
+    // The negative control, and here it carries more than "the two orders
+    // differ": it names the control the promotion COST the hardware. Declaration
+    // order would have spent encoder 8 on SHAPE and never reached MIX at all.
+    const declared = (defByType('warrensvisions').params ?? []).map((q) => q.id);
+    expect(declared.slice(0, 8)).toEqual([
+      'visionsCoherence', 'visionsComponents', 'visionsFloor', 'visionsStability',
+      'visionsSlew', 'visionsSlice', 'visionsResidual', 'visionsShape',
+    ]);
+    expect(
+      pushCardParams(spec).map((q) => q.id),
+      'MIX reached the encoders and SHAPE fell off — the whole point of this golden',
+    ).not.toContain('visionsShape');
+  });
+
+  it('a FIRST PROMOTION re-orders AND steps over a family — treeohvox', () => {
+    // treeohvox, promoted 2026-08-19 (#1944, queue Q3). The variant that
+    // exercises both behaviours at once on a newly promoted module: the window
+    // must step over the GATE audition family AND land the re-ranked set.
+    //
+    // What moved: the GENERIC tier is declaration order, which leads with TUNE
+    // — a ±12 st offset on a voice that is played from a pitch source, i.e. the
+    // control a 303 player touches least. The face ranks CUTOFF first (where
+    // the filter sweep is centred) and pushes TUNE to last, so the encoders now
+    // lead with the squelch instead of with a transpose.
+    //
+    // Seven turnable params and one family, so nothing falls off the 8-wide
+    // window and the card is a permutation of the same set — the case an
+    // override would be wrong to freeze.
+    const spec = resolvePushCardControls(defByType('treeohvox'));
+    expect(spec.source).toBe('face');
+    expect(spec.skipped, 'the GATE is a family — an encoder cannot hold a pad').toEqual([
+      'treeohvox-gate-{n}',
+    ]);
+    expect(pushCardParams(spec).map((q) => q.id)).toEqual([
+      'cutoff', 'resonance', 'envelope', 'decay', 'waveform', 'accent', 'tune',
+    ]);
+    // The negative control: declaration order genuinely differs, so this cannot
+    // pass vacuously.
+    expect((defByType('treeohvox').params ?? []).map((q) => q.id)).toEqual([
+      'tune', 'cutoff', 'resonance', 'envelope', 'decay', 'accent', 'waveform',
+    ]);
+  });
+
+  it('a FIRST PROMOTION re-orders the encoders into COLUMNS — moog984', () => {
+    // moog984, promoted 2026-08-19 (#1942). The third variant of the same
+    // hazard, and the one where the permutation carries the most meaning.
+    //
+    // The def declares its sixteen cross-points ROW-MAJOR (one generator loop,
+    // `for i { for j { m_ij } }`), so the GENERIC tier put input 1's whole fan
+    // -out plus input 2's on the eight encoders. The face ranks COLUMN-MAJOR,
+    // because on this module a shrinking budget should keep a complete OUTPUT
+    // BUS. So the Push card now carries two ENTIRE buses — encoders 1-4 are
+    // everything reaching OUT 1, encoders 5-8 everything reaching OUT 2 —
+    // instead of two entire input rows.
+    //
+    // Both arrangements are coherent, which is exactly why this is accepted
+    // deliberately here rather than frozen with a PUSH_CARD_CONTROLS override:
+    // the card is a permutation of the same set and should keep following the
+    // face if the face is ever re-ranked.
+    const spec = resolvePushCardControls(defByType('moog984'));
+    expect(spec.source).toBe('face');
+    expect(spec.skipped, 'no families and no momentary pads on this module').toEqual([]);
+    expect(pushCardParams(spec).map((q) => q.id)).toEqual([
+      'm11', 'm21', 'm31', 'm41', 'm12', 'm22', 'm32', 'm42',
+    ]);
+    // The negative control: declaration order is genuinely different, so this
+    // cannot pass vacuously and a future re-rank is distinguishable from a
+    // no-op. (The first eight of the def's own roster are input rows 1 and 2.)
+    expect((defByType('moog984').params ?? []).slice(0, 8).map((q) => q.id)).toEqual([
+      'm11', 'm12', 'm13', 'm14', 'm21', 'm22', 'm23', 'm24',
+    ]);
+  });
+
   it('a FIRST PROMOTION can move the TIER and leave the CARD identical — ninelives', () => {
     // ninelives, promoted 2026-08-15 (faceplate queue Q11). The counterpart to
     // the leg above, and the reason both are worth having: a promotion moves
@@ -444,11 +643,52 @@ describe('resolvePushCardControls — tier 3, the GENERIC card', () => {
   });
 
   it('VIDEO: the SAME rule, carrying its own domain', () => {
-    const def = listVideoModuleDefs().find((d) => (d.params ?? []).length >= 3) as unknown as PushCardDefLike;
+    // ⚠ `!d.face` IS LOAD-BEARING AND IT WAS MISSING HERE WHILE ITS AUDIO TWIN
+    // ABOVE ALREADY HAD IT. The two legs are the same test in two domains, and
+    // only one of them had been hardened against promotion — so this one was
+    // asserting `source === 'generic'` about whichever video def happened to
+    // sort first, with no guarantee that def was still un-faced. Promoting
+    // `4plexvid` (queue Q44) is what collected it: 4plexvid has 8 params, sorted
+    // first, and moved to the FACE tier, so the leg failed with
+    // `expected 'face' to be 'generic'` — a true statement about the module and
+    // a false one about the tier this test exists to cover.
+    //
+    // Fixed at the SUBJECT, not the threshold: the predicate now selects an
+    // un-faced def the way the audio leg does, so the assertion keeps measuring
+    // the GENERIC rule instead of measuring which module was promoted last.
+    //
+    // ⚠ AND THE DEF MUST HAVE NO SWITCH IN IT, which is the second thing this
+    // predicate learned the hard way. The GENERIC ranking is not a plain
+    // declaration-order slice: it PARTITIONS, putting `discrete 0..1` switches
+    // BELOW the continuous params (the 'demotes plain on/off switches' case
+    // below). Re-implementing that partition here would make the assertion a
+    // copy of the implementation and prove nothing, so this leg instead selects
+    // a def where the partition is a NO-OP — every turnable param continuous —
+    // and then declaration order genuinely IS the whole answer, which is what
+    // the leg claims. The first draft skipped this and selected a def carrying a
+    // `freeze` switch; it failed with `freeze` demoted to last, correctly.
+    const isPlainSwitch = (q: ParamDef): boolean =>
+      q.curve === 'discrete' && q.min === 0 && q.max === 1;
+    const def = listVideoModuleDefs().find(
+      (d) =>
+        !d.face
+        && (d.params ?? []).length >= 3
+        && !(d.params ?? []).some((q) => isTurnable(q) && isPlainSwitch(q))
+        && noUserControlIds(d as NoUserControlDefLike).size === 0
+        && momentaryParamIds(d as { face?: { momentary?: readonly string[] } }).size === 0,
+    ) as unknown as PushCardDefLike;
+    expect(
+      def,
+      'expected an un-faced video module whose turnable params are all continuous',
+    ).toBeTruthy();
     const spec = resolvePushCardControls(def, {});
     expect(spec.source).toBe('generic');
     expect(spec.domain).toBe('video');
     // Same selection rule, not a second one: declaration order.
+    //
+    // The def was selected to have no momentary pad, no `noUserControl` and no
+    // plain switch, so eligibility here reduces to `isTurnable` and the ranking
+    // reduces to declaration order.
     const expected = (def.params ?? []).filter((q) => isTurnable(q)).slice(0, 8).map((q) => q.id);
     expect(pushCardParams(spec).map((q) => q.id)).toEqual(expected);
   });
@@ -694,6 +934,39 @@ describe('the AUTHORED push cards', () => {
     expect(generic[1]).toBe('t2');
   });
 
+  it('numpadPlus: promotion moved the card GENERIC → FACE, and the two ROSTERS took encoders 1-2', () => {
+    // Promoted 2026-08-26. No `PUSH_CARD_CONTROLS` entry, so the FACE tier
+    // resolves this card the moment `numpadPlus` enters STRICT_FACES. Accepted
+    // deliberately here rather than left silent, for the featurecv reason:
+    // nothing else in this file covers a module with no override, so a card
+    // that changed under a promotion would be discovered by a player.
+    //
+    // Stated as a DIFFERENCE, never as a copy of `face.order`.
+    const def = defByType('numpadPlus');
+    const spec = resolvePushCardControls(def, {});
+    const faced = pushCardParams(spec).map((p) => p.id);
+    const generic = pushCardParams(
+      resolvePushCardControls({ ...def, face: undefined }, {}),
+    ).map((p) => p.id);
+    expect(spec.source).toBe('face');
+    // A re-ORDER, not a re-pick — seven params, inside the eight encoders.
+    expect([...faced].sort()).toEqual([...generic].sort());
+    expect(faced, 'the face must actually move the card, or this promotion is decoration')
+      .not.toEqual(generic);
+    // ⚠ BOTH FAMILIES ARE SKIPPED, not just the hero. The walk breaks only at
+    // PUSH_CARD_SLOTS = 8 and this face yields seven params, so it reaches the
+    // ninth ranked key and skips that too — a one-entry expectation here would
+    // read as a missing key rather than as a full walk.
+    expect(spec.skipped).toEqual(['numpad-cell-{n}', 'numpad-key-{n}']);
+    // The face's own rank-1 and rank-2 arguments, which are what moved: the two
+    // things that decide WHAT A KEYPRESS DOES — which layer it drives and which
+    // octave it plays. The GENERIC tier is declaration order, which puts the
+    // internal tempo first on a module whose tempo is ignored entirely while an
+    // external clock is patched.
+    expect(faced.slice(0, 2)).toEqual(['activeLayer', 'octave']);
+    expect(generic[0]).toBe('bpm');
+  });
+
   it('moog911a: promotion moved the card GENERIC → FACE, and MODE took encoder 2', () => {
     // THE FACEPLATE QUEUE · Q35. No `PUSH_CARD_CONTROLS` entry, so the FACE tier
     // resolves this card from the moment `moog911a` enters STRICT_FACES.
@@ -737,6 +1010,54 @@ describe('the AUTHORED push cards', () => {
     // IN 1 is also the MULTIPLE source, so channel 1 is the only channel with a
     // second job.
     expect(pushCardParams(faced).map((p) => p.id)[0]).toBe('ch1');
+  });
+
+  it('4plexvid: `noUserControl` REMOVES four params from the encoders, and that is the proof it is consumed', () => {
+    // THE FACEPLATE QUEUE · Q44, and this is the CHEAPEST AVAILABLE PROOF that
+    // the #1958 declaration reaches a real consumer rather than only quieting a
+    // lint. `gate1..4` are the edge detector's cached level — `linear 0..1`, so
+    // `isTurnable` says yes and the GENERIC tier would hand all eight to the
+    // encoders, where turning one past `GATE_RISE = 0.6` rotates the router.
+    //
+    // Both directions, because "the face re-ranked it" and "the declaration
+    // removed them" are different claims and only the second is about #1958:
+    //   * WITHOUT the declaration the four gates are candidates;
+    //   * WITH it they are gone, and the four selectors are untouched.
+    //
+    // ⚠ ASSERTED AS IDENTITIES, NEVER AS A COUNT. "8 became 4" is a population
+    // count and would go stale the day a fifth output is added; the ids are the
+    // property that is actually true.
+    const def = defByType('4plexvid');
+    const faced = resolvePushCardControls(def, {});
+    expect(faced.source, 'a promoted module resolves through the FACE tier').toBe('face');
+    expect(pushCardParams(faced).map((p) => p.id)).toEqual(['sel1', 'sel2', 'sel3', 'sel4']);
+
+    // ⚠ THE ASSERTION ABOVE IS TRUE AND, ON ITS OWN, BLIND — and the negative
+    // control is what established that rather than a review catching it. The
+    // FACE tier ranks `face.order`, which lists only the four selectors, so the
+    // gate params were never candidates THERE and stripping `noUserControl`
+    // with the face still attached changes nothing. A first draft of this test
+    // did exactly that and "passed" while measuring the face, not #1958.
+    //
+    // So the declaration has to be isolated at the tier where it actually binds:
+    // GENERIC, which ranks the def's own `params` in declaration order and is
+    // what an UNPROMOTED 4plexvid resolved through. Face removed in BOTH arms,
+    // so the only difference between them is the declaration.
+    const genericDeclared = resolvePushCardControls({ ...def, face: undefined }, {});
+    const genericUndeclared = resolvePushCardControls(
+      { ...def, face: undefined, noUserControl: undefined },
+      {},
+    );
+    expect(genericDeclared.source).toBe('generic');
+    expect(
+      pushCardParams(genericDeclared).map((p) => p.id),
+      'the GENERIC tier must honour the declaration too — this is the tier the module shipped on',
+    ).toEqual(['sel1', 'sel2', 'sel3', 'sel4']);
+    expect(
+      pushCardParams(genericUndeclared).map((p) => p.id).filter((id) => id.startsWith('gate')),
+      'with the declaration removed the synthetic gate params MUST reappear — if they do not, ' +
+        'something other than `noUserControl` is filtering them and this test proves nothing',
+    ).toEqual(['gate1', 'gate2', 'gate3', 'gate4']);
   });
 
   it('adsr REORDERS the face ranking into ENVELOPE order', () => {

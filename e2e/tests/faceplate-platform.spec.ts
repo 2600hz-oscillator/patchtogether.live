@@ -33,7 +33,9 @@
 //     platform exists to end, reintroduced one layer up.
 
 import { test, expect, type Page } from '@playwright/test';
+import { createPageReset } from './support/rack-session';
 import { spawnPatch } from './_helpers';
+import { showAllBands, type BandFocusDecl } from './_band-focus';
 import { setNodeParams } from './_module-coverage-helpers';
 import {
   LANE_CELL_H,
@@ -43,11 +45,16 @@ import {
 
 const TYPE = 'kickdrum';
 
-interface SidebarSpec {
+/** The slice of the live `__moduleSpecs` projection this file reads. */
+interface FaceSpec {
   type: string;
   strictFace?: boolean;
-  faceSidebar?: { kind: string; label: string }[];
   faceAnnotations?: { title: number; pageHint: number; bandHints: number };
+  /** `face.bandFocus` — the param whose VALUE decides which bands the dock
+   *  renders. Both registry-driven sweeps below measure the WHOLE face against
+   *  what the def declares, so both open it at a declared show-all value first;
+   *  see `./_band-focus.ts` for the class and the measurement that found it. */
+  bandFocus?: BandFocusDecl;
 }
 
 /** Set the viewport ZOOM and wait for the LOD tier to settle on `nodeId` — the
@@ -113,21 +120,12 @@ async function paramValue(page: Page, id: string, paramId: string): Promise<numb
   );
 }
 
-/** Every registered module that DECLARES a dock sidebar — read from the live
- *  registry projection, never from a list in this file. */
-async function sidebarAdopters(page: Page): Promise<SidebarSpec[]> {
-  return page.evaluate(() => {
-    const w = globalThis as unknown as { __moduleSpecs?: SidebarSpec[] };
-    return (w.__moduleSpecs ?? []).filter((s) => (s.faceSidebar?.length ?? 0) > 0);
-  });
-}
-
 /** Every MIGRATED face, with its declared annotation counts — the roster the
  *  annotation sweep walks. Migrated only: the dock renders a curated face (and
  *  therefore any annotation at all) exactly for STRICT_FACES modules. */
-async function migratedFaces(page: Page): Promise<SidebarSpec[]> {
+async function migratedFaces(page: Page): Promise<FaceSpec[]> {
   return page.evaluate(() => {
-    const w = globalThis as unknown as { __moduleSpecs?: SidebarSpec[] };
+    const w = globalThis as unknown as { __moduleSpecs?: FaceSpec[] };
     return (w.__moduleSpecs ?? []).filter((s) => s.strictFace === true);
   });
 }
@@ -268,62 +266,25 @@ test.describe('PF-20 dock faceplate platform (kickdrum)', () => {
       'the audition rides beside it — this voice is silent until something strikes it',
     ).toBeVisible();
 
-    // ⚠ THE TAIL IS 398 ms, NOT 450. 450 is the SUB DEC knob. The voice's real
-    // −60 dB tail is the sum of three layers at their own mix levels, and a
-    // readout that printed the knob would be invariant to SUB LEVEL — the
-    // blind-metric trap this readout's `valueId` source exists to avoid. This
-    // assertion is what makes the difference visible from the DOM.
-    const heroReadouts = shell.getByTestId('face-hero-readouts');
-    await expect(heroReadouts.locator('[data-hero-readout="kickdrum-tail"]')).toHaveText(
-      /tail\s*398 ms/i,
-    );
-    await expect(heroReadouts).toContainText('+24 st');
-    await expect(heroReadouts).toContainText('50 Hz');
-
-    // ⚠ THE READOUT STRIP SITS BELOW THE HERO GRAPHIC (owner, 2026-08-02), and
-    // this is the DOM gate for it — a pure-CSS ordering claim is otherwise
-    // visible only to the VRT baseline, which cannot say WHY it moved.
-    // Measured in CSS px: the dock drawer is outside xyflow's zoom transform,
-    // so `boundingBox()` here is unscaled (unlike the in-canvas card sweeps —
-    // see the getBoundingClientRect-under-zoom note in CLAUDE.md).
-    const picBox = (await hero.getByTestId('kickdrum-hero').boundingBox())!;
-    const stripBox = (await heroReadouts.boundingBox())!;
-    expect(
-      stripBox.y,
-      `the readout strip starts BELOW the hero graphic (CSS px): strip top ${stripBox.y} ` +
-        `vs graphic bottom ${picBox.y + picBox.height}`,
-    ).toBeGreaterThanOrEqual(picBox.y + picBox.height);
-    // …and it is a FULL-WIDTH strip, not a column parked beside the picture:
-    // it starts at the graphic's left edge rather than to its right.
-    expect(
-      stripBox.x,
-      `the strip starts at the hero's left edge (CSS px): strip x ${stripBox.x} vs graphic x ${picBox.x}`,
-    ).toBeLessThanOrEqual(picBox.x + 1);
-
-    // ⚠ "A BIG DIAL GETS A BIG READOUT" WAS MEASURED HERE AND CANNOT BE ANY
-    // MORE. The deleted assertion read `getComputedStyle().fontSize` off the
-    // hero's `readout-tune` and a band's `readout-sub_decay` and required the
-    // hero's to be more than 1.5× the band's — the DOM gate for
-    // `ModuleShell`'s `.hero-ctl :global(.readout) { font-size: 17px }`, which
-    // exists because a 64 px `xl` dial had inherited the 9 px caption every
-    // 46 px lane dial uses.
+    // ⚠ THE HERO READOUT STRIP IS GONE, AND WITH IT THE 398 ms ASSERTION THAT
+    // WAS THIS TEST'S SHARPEST LINE. It read kickdrum's TAIL off
+    // `[data-hero-readout="kickdrum-tail"]` and required 398 ms rather than the
+    // 450 ms SUB DEC knob — the DOM proof that the readout derived the real
+    // −60 dB tail instead of restating the nearest dial. Three more assertions
+    // pinned the strip's GEOMETRY (below the graphic, full width, left-aligned),
+    // which the owner asked for on 2026-08-02.
     //
-    // Both of those elements are gone: `tune` and `sub_decay` are `format`-only,
-    // and the owner removed the resting number from every faceplate on
-    // 2026-08-17. The comparison would resolve two empty locators and the test
-    // would fail on a timeout rather than on a finding — so it is deleted, not
-    // softened, and NOT re-pointed at another face (this test's subject is
-    // kickdrum's faceplate, and borrowing another module's dial to keep a CSS
-    // rule under test would move the subject without saying so).
+    // All of it is deleted rather than softened, because the owner removed the
+    // shape itself on 2026-08-19: "you don't need to have the out-silent text at
+    // all … we absolutely have to stop doing [things] like that. i said minimal, and
+    // good use of screen real estate." There is no element left to measure, and
+    // re-pointing these at another face would move the subject without saying so.
     //
-    // The 17 px rule itself is NOT dead code, and that is the reason to leave
-    // this note rather than delete the rule too: it still applies to any hero
-    // whose promoted control paints a NAME (a bare `options`/`landmarks` roster
-    // — `filter.mode`, `macrooscillator.model`). It is dead for every hero
-    // promoting a `format`-only dial, which today is most of them, kickdrum's
-    // TUNE included. Nothing in the suite measures it any more; if a face is
-    // ever authored that promotes a naming dial into its hero, that face's own
-    // spec is where this belongs.
+    // ⚠ WHAT WAS LOST WITH IT, STATED RATHER THAN QUIETLY DROPPED: nothing in
+    // the suite now proves a derived quantity is derived. That guarantee lived
+    // entirely in the readout, and the readout is the thing that was refused.
+    // `face-resting-text-source.test.ts` owns the replacement rule (the SHAPE
+    // may not come back); it deliberately does not, and cannot, assert arithmetic.
 
     // ── 4. THE VU METER — PEAK / ACCENT / V·OCT, and PEAK is a LEVEL. ──
     const meter = hero.getByTestId('kickdrum-meter');
@@ -409,30 +370,33 @@ test.describe('PF-20 dock faceplate platform (kickdrum)', () => {
     await expect(shell.locator('.page-hint')).toHaveCount(0);
     await expect(shell.getByTestId('face-head')).toHaveCount(0);
 
-    // ── 7. THE SIDEBAR IS A RIGHT RAIL — a real grid column, not a band. ──
-    const side = fp.getByTestId('face-sidebar');
-    await expect(side).toBeVisible();
+    // ── 7. THERE IS NO SIDEBAR, AND THE EDITOR TAKES THE WHOLE PAGE. ──
+    //
+    // This section used to assert the opposite: that a right rail mounted as a
+    // real grid column to the RIGHT of the editor, carrying presets, readouts
+    // and a crossover panel. The owner removed the surface outright on
+    // 2026-08-19 — "I DO NOT WANT THESE RIGHT HAND TEXT AREAS I DO NOT WANT
+    // EXTRA TEXT. i explicitly already dictated that several times" — so the
+    // assertion is INVERTED rather than deleted: the column must not come back,
+    // and the editor must actually be the full width the removal reclaimed.
+    //
+    // ⚠ THE WIDTH LEG IS THE LOAD-BEARING HALF. A missing-element check alone
+    // passes just as happily when the whole faceplate failed to render, which
+    // is the blind-gate shape CLAUDE.md warns about; measuring the editor
+    // against its own page means this can only pass on a faceplate that is
+    // really there.
+    await expect(
+      fp.getByTestId('face-sidebar'),
+      'the dock sidebar column is deleted — see ModuleFaceHero in graph/types.ts',
+    ).toHaveCount(0);
+    await expect(fp.locator('.page.has-sidebar')).toHaveCount(0);
     const editorBox = (await fp.getByTestId('faceplate-editor').boundingBox())!;
-    const sideBox = (await side.boundingBox())!;
+    const pageBox = (await fp.locator('.page').first().boundingBox())!;
     expect(
-      sideBox.x,
-      'the sidebar starts to the RIGHT of the editor column (screen px)',
-    ).toBeGreaterThanOrEqual(editorBox.x + editorBox.width - 2);
-    await expect(
-      side.locator('[data-testid^="control-"]'),
-      'a sidebar block must NEVER emit a control-<paramId> testid (faces-parity multiset)',
-    ).toHaveCount(0);
-    await expect(side.getByTestId('side-presets')).toBeVisible();
-    await expect(side.getByTestId('side-readouts')).toBeVisible();
-    await expect(side.getByTestId('sidebar-panel-stereo-crossover')).toBeVisible();
-    // …and NOTHING draws a signal-flow chain any more. The kind was removed
-    // (hand-authored DSP models nothing verified against the DSP), so this is
-    // the standing negative control: re-adding a renderer for it turns this
-    // red rather than quietly repopulating twelve faceplates.
-    await expect(
-      side.getByTestId('side-flow'),
-      'the signal-flow sidebar kind is gone — see FaceSidebarBlock in graph/types.ts',
-    ).toHaveCount(0);
+      editorBox.width,
+      `the editor spans the whole page now that no column is reserved (CSS px): ` +
+        `editor ${editorBox.width} vs page ${pageBox.width}`,
+    ).toBeGreaterThanOrEqual(pageBox.width - 2);
   });
 
   test('the COMPACT lane tile keeps its live glyph — the dock suppression is DOCK-ONLY', async ({ page }) => {
@@ -452,88 +416,21 @@ test.describe('PF-20 dock faceplate platform (kickdrum)', () => {
     ).toBeVisible();
   });
 
-  test('the crossover panel reads the DEFAULT width, not zero (node.params is SPARSE)', async ({ page }) => {
-    // REGRESSION. The panel read `node.params.width` bare and fell back to 0,
-    // so a freshly spawned kickdrum printed `WIDTH 0%` beside a dial reading
-    // 0.20 — a picture contradicting the control next to it. Nothing else could
-    // see it: the param is genuinely untouched, so the store IS empty, and the
-    // pure model has no opinion about defaults.
-    await gotoShell(page);
-    await spawnPatch(page, [{ id: 'k', type: TYPE, position: { x: 460, y: 240 } }]);
-    const fp = await openFaceplate(page, 'k');
-
-    expect(
-      await paramValue(page, 'k', 'width'),
-      'precondition: width is UNTOUCHED, so node.params has no entry for it',
-    ).toBeUndefined();
-    await expect(
-      fp.getByTestId('sidebar-panel-width'),
-      'the picture shows the def default (0.20 → 20%), not a bare-store zero',
-    ).toHaveText('width 20%');
-  });
-
-  test('a PRESET writes, stays lit, and gains a MODIFIED marker when you edit off it', async ({ page }) => {
-    await gotoShell(page);
-    await spawnPatch(page, [{ id: 'k', type: TYPE, position: { x: 460, y: 240 } }]);
-    const fp = await openFaceplate(page, 'k');
-    const shell = fp.locator('[data-testid="module-shell"]');
-    const side = fp.getByTestId('face-sidebar');
-
-    const boom = side.getByTestId('face-preset-sub-boom');
-    await expect(boom, 'a fresh module sits on NO preset').toHaveAttribute('aria-pressed', 'false');
-
-    await boom.click();
-
-    // (a) it WROTE — the durable graph moved, not just a highlight.
-    await expect
-      .poll(() => paramValue(page, 'k', 'tune'), { message: 'SUB BOOM tunes to 38 Hz' })
-      .toBe(38);
-    expect(await paramValue(page, 'k', 'sub_decay'), 'and stretches the tail to 720 ms').toBe(720);
-
-    // (b) the DIAL followed, so the panel and the control agree. Read off
-    //     `aria-valuetext`: `tune` declares a `format`, so it paints nothing at
-    //     rest and this is where its value lives now. Same string, same
-    //     formatter — the preset claim is untouched.
-    await expect(shell.locator('[data-testid="control-tune"]')).toHaveAttribute(
-      'aria-valuetext',
-      '38 Hz',
-    );
-
-    // (c) it LIGHTS — and only it — with NO modified marker yet.
-    await expect(boom).toHaveAttribute('aria-pressed', 'true');
-    await expect(side.locator('[aria-pressed="true"]'), 'exactly one row is lit').toHaveCount(1);
-    await expect(side.locator('[data-preset-modified="true"]')).toHaveCount(0);
-
-    // (d) …and moving ONE knob off it keeps the row LIT and marks it MODIFIED.
-    //
-    // ⚠ THIS IS THE OWNER'S DECISION, and both alternatives are wrong in one
-    // direction. Un-lighting throws away the only record of which voice this
-    // sound started as. Staying silently lit asserts a voice the patch no
-    // longer is. So the row keeps the provenance AND states that the values
-    // moved. Asserting BOTH halves is what stops a later edit from quietly
-    // collapsing it back to either one.
-    await setNodeParams(page, 'k', { tune: 44 });
-    await expect(shell.locator('[data-testid="control-tune"]')).toHaveAttribute(
-      'aria-valuetext',
-      '44 Hz',
-    );
-    await expect(boom, 'still lit: this is where the sound came from').toHaveAttribute(
-      'aria-pressed',
-      'true',
-    );
-    await expect(
-      side.getByTestId('face-preset-sub-boom-modified'),
-      'and marked MODIFIED: the values have moved off it',
-    ).toBeVisible();
-
-    // (e) re-recalling clears the marker — the marker tracks the VALUES, not a
-    //     one-way "has been touched" flag.
-    await boom.click();
-    await expect
-      .poll(() => paramValue(page, 'k', 'tune'), { message: 're-recall restores 38 Hz' })
-      .toBe(38);
-    await expect(side.locator('[data-preset-modified="true"]')).toHaveCount(0);
-  });
+  // ⚠ TWO TESTS USED TO SIT HERE AND BOTH HAD REAL SUBJECTS. One proved the
+  // crossover sidebar panel read the DEF DEFAULT rather than the sparse store
+  // (the regression where a fresh kickdrum printed "WIDTH 0%" beside a dial
+  // reading 0.20); the other drove a sidebar PRESET and checked it stayed lit
+  // and grew a MODIFIED marker once you edited off it.
+  //
+  // The sidebar is deleted (owner, 2026-08-19), so neither has a surface left.
+  // ⚠ WHAT WENT WITH THEM, STATED PLAINLY RATHER THAN DISCOVERED LATER:
+  //   * the SPARSE-STORE trap — "read node.params bare and a fresh node reads 0
+  //     instead of the def default" — is a live hazard for any future picture
+  //     that reads params. It is no longer exercised anywhere in this file.
+  //   * PRESET RECALL as a user-visible affordance is gone from the faceplate
+  //     entirely, not merely untested: `face.sidebar` was its only surface.
+  // Neither is a gap this PR can close by re-pointing at another module, and
+  // pretending otherwise by keeping a lookalike assertion would be worse.
 });
 
 // ── THE REGISTRY-DRIVEN ANNOTATION SWEEP ────────────────────────────────────
@@ -574,10 +471,38 @@ test.describe('PF-20 annotations — declared prose ⇔ the toggle that reveals 
     // face and is what reddened e2e shard 3/10 when this went 1 -> 5 adopters.
     test.setTimeout(sweepBudgetMs(adopters.length));
 
+    // ⚠ RESET, NOT RE-BOOT. This loop already ran on ONE page and re-navigated
+    // it once per adopter; only the navigation goes away. `resetFace` restores
+    // the viewport the first boot landed on and clears the graph, which is what
+    // the discarded navigation used to do — see support/rack-session.ts.
+    const resetFace = await createPageReset(page);
     for (const spec of adopters) {
-      await gotoShell(page);
-      await spawnPatch(page, [{ id: 'an', type: spec.type, position: { x: 460, y: 240 } }]);
-      const fp = await openFaceplate(page, 'an');
+      await resetFace();
+      // ⚠ A NODE ID PER ADOPTER, AND IT IS LOAD-BEARING. Annotate mode is keyed
+      // by nodeId in a module-level singleton (`annotate-mode.svelte.ts`) that
+      // is deliberately NOT Yjs state, so clearing the patch does not clear it
+      // — only the node-delete path does, and the reset writes the Y.Doc
+      // directly. With the id reused, the `annot.click()` at the END of each
+      // iteration left annotate ON for the next one, and the "OFF is the
+      // default" leg below read 6 band hints where it demanded 0. A unique id
+      // makes the carry-over impossible by construction rather than by
+      // remembering to toggle it back, and it keeps that leg a real assertion
+      // about a fresh node instead of a cleanup check.
+      const anId = `an-${spec.type}`;
+      await spawnPatch(page, [{ id: anId, type: spec.type, position: { x: 460, y: 240 } }]);
+      // ⚠ EVERY COUNT BELOW IS THE DEF'S DECLARED TOTAL, so a BAND-FOCUSED face
+      // has to be opened at its show-all value or this sweep asserts a whole
+      // face's prose against a plate holding one band of it. MEASURED: this is
+      // what reddened `declared 5, received 1` on job 96630258998 the day
+      // `colourofmagic` shipped the feature — a red on a module behaving exactly
+      // as specified, not a vacuous pass. See `./_band-focus.ts` for the class.
+      //
+      // ⚠ And this call CANNOT silently no-op into a green: the counts are the
+      // DECLARED totals, so a pin that failed to land leaves the same red, with
+      // declared-vs-received in the message. (That is not true of every sweep —
+      // PF-21 below carries its own membership leg for exactly that reason.)
+      await showAllBands(page, anId, spec);
+      const fp = await openFaceplate(page, anId);
       const shell = fp.locator('[data-testid="module-shell"]');
       const { title, pageHint, bandHints } = spec.faceAnnotations!;
       const tabbed = await fp.getByTestId('faceplate-tabrail').count();
@@ -625,78 +550,21 @@ test.describe('PF-20 annotations — declared prose ⇔ the toggle that reveals 
     ).toHaveCount(0);
   });
 });
-
-// ── THE REGISTRY-DRIVEN SIDEBAR SWEEP ───────────────────────────────────────
+// ── THE REGISTRY-DRIVEN SIDEBAR SWEEP — DELETED WITH ITS SUBJECT ────────────
 //
-// Answers the hole the sidebar's placement opens: it mounts as a SIBLING of
-// `.editor`, outside `[data-testid="module-shell"]`, which is what lets a
-// preset row be an ordinary button instead of a new cell kind faces-parity has
-// to learn — and which also puts every block beyond that sweep's reach. This
-// closes it WITHOUT moving the sidebar: enumerate the declaration off the live
-// registry (`__moduleSpecs[].faceSidebar`) and require every declared block to
-// have actually painted, with its label, for every adopter.
-test.describe('PF-20 sidebar — every DECLARED block paints, for every adopter', () => {
-  test('declared sidebar blocks render, in order, with their labels', async ({ page }) => {
-    await gotoShell(page);
-    const adopters = await sidebarAdopters(page);
-
-    // The sweep must not be able to go vacuous by everyone dropping their
-    // sidebar — an empty roster passing silently is the whole failure mode a
-    // registry-driven gate is supposed to remove.
-    expect(
-      adopters.map((a) => a.type),
-      'at least one module declares a dock sidebar (an empty sweep proves nothing)',
-    ).not.toHaveLength(0);
-    // Same shape, same growth, same fix as the annotation sweep above.
-    test.setTimeout(sweepBudgetMs(adopters.length));
-
-    for (const spec of adopters) {
-      expect(
-        spec.strictFace,
-        `${spec.type}: declares a sidebar, so it must be a migrated STRICT_FACES module ` +
-          `(the sidebar is dock-only and the dock only renders a migrated face)`,
-      ).toBe(true);
-
-      // A fresh boot per adopter: a dock pane left open on a node the next
-      // `spawnPatch` deletes would leave two `dock-full-view` roots and turn a
-      // real failure into a strict-mode locator error.
-      await gotoShell(page);
-      await spawnPatch(page, [{ id: 'sb', type: spec.type, position: { x: 460, y: 240 } }]);
-      const fp = await openFaceplate(page, 'sb');
-      const side = fp.getByTestId('face-sidebar');
-      await expect(side, `${spec.type}: the sidebar column mounts`).toBeVisible();
-
-      const blocks = side.locator('[data-side-block]');
-      const declared = spec.faceSidebar ?? [];
-      await expect(
-        blocks,
-        `${spec.type}: every declared sidebar block painted (declared ${declared.length})`,
-      ).toHaveCount(declared.length);
-
-      for (let i = 0; i < declared.length; i++) {
-        const b = blocks.nth(i);
-        const want = declared[i]!;
-        await expect(b, `${spec.type} block ${i}: kind '${want.kind}'`).toHaveAttribute(
-          'data-side-block',
-          want.kind,
-        );
-        await expect(b.locator('.side-h'), `${spec.type} block ${i}: its label`).toHaveText(
-          want.label,
-        );
-        // A block that painted a HEADER over nothing is a labelled void — worse
-        // than no block, and exactly what `sidebarPlan`'s empty-drop exists to
-        // prevent. Assert the body has content of its own.
-        const bodyLen = await b.evaluate(
-          (el) => (el.textContent ?? '').replace(el.querySelector('.side-h')?.textContent ?? '', '').trim().length,
-        );
-        expect(
-          bodyLen,
-          `${spec.type} block ${i} ('${want.label}'): renders a BODY, not just a header`,
-        ).toBeGreaterThan(0);
-      }
-    }
-  });
-});
+// This sweep enumerated `__moduleSpecs[].faceSidebar` off the live registry and
+// required every declared block to have painted, with its label, for every
+// adopter. It existed because the sidebar mounted OUTSIDE
+// `[data-testid="module-shell"]` and was therefore invisible to faces-parity's
+// cell sweep — so without it, adopter #2 could ship a sidebar that rendered
+// blank and nothing would notice.
+//
+// `face.sidebar` is deleted platform-wide (owner, 2026-08-19), `faceSidebar` is
+// gone from the module-specs projection, and the ONE test that replaced this
+// whole sweep is the inverted assertion in the kickdrum describe above: no
+// column mounts, and the editor spans the full page. The registry-driven
+// ANNOTATION sweep below is untouched and is the surviving example of this
+// pattern for anyone who needs to write another one.
 
 // ── PF-21: THE ROW PLAN — two labelled sections on one row ───────────────────
 //
@@ -758,7 +626,7 @@ test.describe('PF-21 row plan — sections share a row, legibly and without over
   // negative control instead of a number that happens to pass.
   const WIDTHS = [
     { label: 'wide', size: { width: 1280, height: 900 } },
-    { label: 'narrow', size: { width: 820, height: 900 } },
+    { label: 'narrow', size: { width: 640, height: 900 } },
   ] as const;
 
   for (const { label, size } of WIDTHS) {
@@ -779,9 +647,24 @@ test.describe('PF-21 row plan — sections share a row, legibly and without over
     let scrollAbsorbed = 0;
     const shapes: string[] = [];
 
+    // ⚠ RESET, NOT RE-BOOT — and this is the hottest boot in the file: one
+    // navigation per face across the WHOLE migrated roster, run once per pane
+    // width. Same argument as the PF-20 sweep above.
+    const resetFace = await createPageReset(page);
     for (const spec of faces) {
-      await gotoShell(page);
+      await resetFace();
       await spawnPatch(page, [{ id: 'rp', type: spec.type, position: { x: 460, y: 240 } }]);
+      // The ROW PLAN is a property of the whole band set, so a band-focused face
+      // is measured at its show-all value — otherwise this sweep would price
+      // `colourofmagic`'s plate as the ONE band its default reveals, forever.
+      //
+      // ⚠ AND HERE A MISSING PIN IS SILENT, unlike PF-20 above: every assertion
+      // in this loop sits behind `if (!row.packed) continue`, so a face reduced
+      // to a single unpacked band contributes nothing and the sweep still goes
+      // green. That is the "gate whose precondition is the defect" shape, so the
+      // pin does not stand on its own — the membership leg below asserts every
+      // declared band actually reached the measurement.
+      await showAllBands(page, 'rp', spec);
       const fp = await openFaceplate(page, 'rp');
       const shell = fp.locator('[data-testid="module-shell"]');
 
@@ -815,6 +698,26 @@ test.describe('PF-21 row plan — sections share a row, legibly and without over
       });
 
       shapes.push(`${spec.type}: ${rows.map((r) => r.ids.join('+')).join(' | ')}`);
+
+      // ── DID THE WHOLE FACE REACH THE MEASUREMENT? (derived membership) ──
+      //
+      // The `showAllBands` pin above is the only thing putting a band-focused
+      // face's other bands on the plate, and if it stopped working every
+      // assertion in this loop would go quiet rather than red. So the claim is
+      // made explicitly, and DERIVED — the declaration names the bands, the DOM
+      // says which ones the sweep actually saw. No count is typed: a band added
+      // to or removed from the declaration moves both sides together.
+      if (spec.bandFocus) {
+        const declared = Object.keys(spec.bandFocus.bands).sort();
+        const seen = new Set(rows.flatMap((r) => r.ids));
+        expect(
+          declared.filter((b) => !seen.has(b)),
+          `${spec.type}: declares bandFocus, and ${[...seen].join('+') || '(nothing)'} reached ` +
+            `the row measurement — a band that never rendered is a band this sweep silently ` +
+            `stopped covering`,
+        ).toEqual([]);
+      }
+
       // ⚠ NOT `faceplate-tabrail` — that element ALWAYS renders (it holds the
       // single MODULE chip below the threshold), so probing it answers 'true'
       // for every face and is invariant to the dimension under test. The rail
@@ -892,29 +795,36 @@ test.describe('PF-21 row plan — sections share a row, legibly and without over
     if (label === 'narrow') {
       // ⚠ A PROPORTION OF THE SWEPT ROSTER, NOT A COUNT — and the number was
       // chosen from the measurement rather than guessed, because the obvious
-      // guard (`scrollAbsorbed > 0`) DOES NOT DISCRIMINATE. Measured over the
-      // 50-face roster:
+      // guard (`scrollAbsorbed > 0`) DOES NOT DISCRIMINATE. Two faces are wide
+      // enough to overflow ANY realistic pane (dx7 leads at 1139 px of
+      // content), so `> 0` is satisfied at every width and would have let the
+      // narrow leg silently become a second wide leg — exactly the failure this
+      // guard exists to prevent, reintroduced by its own replacement.
       //
-      //     1600 px →  2 faces scroll   (4%)
-      //     1280 px →  2 faces scroll   (4%)
-      //      820 px → 12 faces scroll  (24%)
+      // ⚠ THE NARROW WIDTH MOVED FROM 820 px TO 640 px, AND THE REASON IS A
+      // FEATURE, NOT A THRESHOLD DODGE. Deleting the dock SIDEBAR (2026-08-19)
+      // gave every faceplate back the 288 px column it used to reserve, so
+      // faces genuinely stopped overflowing at 820 px — re-measured over the
+      // 68-face roster:
       //
-      // Two faces are wide enough to overflow ANY realistic pane (dx7 leads at
-      // 1139 px of content), so `> 0` is satisfied at every width and would
-      // have let the narrow leg silently become a second wide leg — exactly the
-      // failure this guard exists to prevent, reintroduced by its own
-      // replacement. Verified: with the narrow width temporarily set to 1600,
-      // `> 0` still passed and the floor below goes RED.
+      //      820 px →  4 faces scroll   (6%)   ← was 12/50 (24%) WITH the sidebar
+      //      640 px → 13 faces scroll  (19%)
       //
-      // A tenth of the roster sits cleanly between 4% and 24%, and it is
-      // expressed against `faces.length` so a growing roster carries it.
+      // The condition this leg needs is "a pane that constrains materially more
+      // faces than a comfortable one". At 820 px that condition no longer
+      // exists on its own merits, so the SUBJECT is what moved: the pane is
+      // narrower, rather than the floor being lowered to fit a leg that had
+      // stopped measuring anything (CLAUDE.md: fix the subject, never the
+      // threshold). A tenth of the roster still sits cleanly below the measured
+      // 19%, and it is expressed against `faces.length` so a growing roster
+      // carries it.
       const constrainedFloor = Math.ceil(faces.length * 0.1);
       expect(
         scrollAbsorbed,
         `only ${scrollAbsorbed} of ${faces.length} faces needed the pane to SCROLL at ` +
           `${size.width}px (floor ${constrainedFloor} = a tenth of the roster). A narrow pane ` +
-          `must constrain materially more faces than a comfortable one — measured 12/50 here ` +
-          `against 2/50 at 1280px — or this leg is measuring the same situation as the wide ` +
+          `must constrain materially more faces than a comfortable one — measured 13/68 here ` +
+          `against 4/68 at 820px — or this leg is measuring the same situation as the wide ` +
           `one and the column-fit assertion above proves nothing about overflow. ` +
           `shapes:\n${shapes.join('\n')}`,
       ).toBeGreaterThanOrEqual(constrainedFloor);

@@ -283,6 +283,68 @@ export function makePortableEnvelope(
   };
 }
 
+/**
+ * STATE-ONLY portable envelope: the same materialized patch as
+ * `makePortableEnvelope`, re-encoded from a BRAND-NEW Y.Doc so the update
+ * carries zero edit history.
+ *
+ * WHY: `Y.encodeStateAsUpdate` on a long-lived doc ships every historical
+ * struct — every insertion ever made plus a tombstone per deletion — so the
+ * export grows with SESSION LENGTH, not patch size (measured: a 30-node patch
+ * aged by 5,000 edit transactions encodes 102.6 KB vs 35.3 KB state-only, and
+ * 300.9 KB at 20,000; load-side applyUpdate 17.2 ms vs 0.9 ms). Undo history
+ * and CRDT merge ancestry are meaningless in an export that is only ever
+ * loaded via "replace", so a fresh doc holding just the current state is a
+ * strictly smaller equivalent.
+ *
+ * WHAT RIDES ALONG: exactly the top-level shares every load path consumes —
+ * `nodes` + `edges` (loadEnvelopeIntoStore) and the full `settings` map
+ * (readVideoAspectFromDoc + readPresentBindingsFromUpdate). Positions are
+ * baked and `layouts` dropped by the makePortableEnvelope pass this builds
+ * on. Session-scoped shares no loader reads (`meta` clock epoch, bot/carl
+ * session locks) are deliberately absent.
+ *
+ * The rebuild materializes through a fresh SyncedStore, so nested values take
+ * the identical Y shapes the live store produces — `toJSON()` on the loaded
+ * side cannot tell the difference. Pure: never touches `ydoc`.
+ */
+export function makeStateOnlyEnvelope(
+  ydoc: Y.Doc,
+  savingUserId: string | undefined,
+): PatchEnvelope {
+  const portable = makePortableEnvelope(ydoc, savingUserId);
+  const tempDoc = new Y.Doc();
+  Y.applyUpdate(tempDoc, base64ToBytes(portable.update));
+  const nodes = tempDoc.getMap('nodes').toJSON() as Record<string, ModuleNode>;
+  const edges = tempDoc.getMap('edges').toJSON() as Record<string, Edge>;
+  const settings = tempDoc.getMap(SETTINGS_MAP_KEY).toJSON() as Record<string, unknown>;
+
+  const freshStore = syncedStore<{ nodes: Record<string, ModuleNode>; edges: Record<string, Edge> }>(
+    { nodes: {}, edges: {} },
+  );
+  const freshDoc = getYjsDoc(freshStore);
+  // CANONICAL WRITE ORDER: sorted keys, always. Y.Map carries no order
+  // semantics, but the ENCODED BYTES depend on insertion order — object key
+  // order in the source doc drifts as a session deletes and re-adds entries,
+  // so an unsorted rebuild of the SAME state could differ by tens of bytes
+  // run-to-run (the size-invariance test measured 52B on a 1.1KB doc and
+  // flaked CI). Sorting makes the rebuild a pure function of the state:
+  // identical state → identical bytes, on any peer, after any history.
+  const sortedEntries = <T>(o: Record<string, T>): [string, T][] =>
+    Object.entries(o).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+  freshDoc.transact(() => {
+    for (const [id, node] of sortedEntries(nodes)) freshStore.nodes[id] = node;
+    for (const [id, edge] of sortedEntries(edges)) freshStore.edges[id] = edge;
+    const freshSettings = freshDoc.getMap(SETTINGS_MAP_KEY);
+    for (const [key, value] of sortedEntries(settings)) freshSettings.set(key, value);
+  });
+
+  return {
+    ...portable,
+    update: bytesToBase64(Y.encodeStateAsUpdate(freshDoc)),
+  };
+}
+
 /** Convenience: envelope → pretty-printed JSON string. */
 export function serializeEnvelope(env: PatchEnvelope): string {
   return JSON.stringify(env, null, 2);

@@ -1,6 +1,9 @@
 <script lang="ts">
   // GamepadCard — display the live state of a connected gamepad
-  // alongside the 18 patchable CV/gate outputs.
+  // alongside its patchable CV/gate outputs (derived from GAMEPAD_OUTPUTS, so
+  // the jacks follow the def; the AUX stick's ax/ay appear here automatically,
+  // though this legacy surface has no aux REMAP buttons — the faceplate's
+  // mapping board is where the aux stick is bound).
   //
   // Browser security: Gamepad API exposes the controller only after
   // the user has pressed a button on it. Until then,
@@ -25,7 +28,7 @@
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { patch } from '$lib/graph/store';
-  import { mutateNode } from '$lib/graph/mutate';
+  import { mutateNode, setNodeParam } from '$lib/graph/mutate';
   import { useEngine } from '$lib/audio/engine-context';
   import {
     GAMEPAD_OUTPUTS,
@@ -53,6 +56,9 @@
     applyMapping,
     isGamepadMapping,
     GAMEPAD_PRESETS,
+    GAMEPAD_SLOT_MAX,
+    GAMEPAD_SLOT_MIN,
+    GAMEPAD_SLOT_OPTIONS,
     type GamepadMapping,
   } from '$lib/audio/modules/gamepad';
   import type { ModuleNode } from '$lib/graph/types';
@@ -87,9 +93,15 @@
   // ---------------- control REMAP (arm → detect → bind) ----------------
   // The Gamepad API has no events, so an armed "learn" listener must DIFF
   // consecutive polled snapshots (gamepad.ts detectChangedControl) and pick the
-  // single control the user moved/pressed. Two entry points share this FSM:
+  // single control the user moved/pressed. Two entry points share this FSM, and
+  // they now share ONE GESTURE — right-click arms, alt-click resets:
   //   * right-click a button LED / trigger row → arm `only:'button'`,
-  //   * the "Remap X" / "Remap Y" buttons under a stick → arm `only:'axis'`.
+  //   * right-click (or plain click) an X / Y button under a stick → `only:'axis'`.
+  // ⚠ The axis buttons used to be the INVERSE of the other two — they armed on
+  // left-click and RESET on right-click. Right-clicking the axis you wanted to
+  // bind therefore cleared its binding and armed nothing, so the control you then
+  // moved was measured against a listener that was never listening. That is the
+  // whole of the "the twist axis cannot be assigned" report.
   // The committed binding lives on node.data.bindings (single in-place Y.Doc
   // write); the factory reads it each frame so a remap takes effect immediately
   // + survives reload + syncs to rack-mates. Esc or a timeout cancels.
@@ -115,6 +127,12 @@
     const b = bindingForOutput(outputId, bindings);
     return b ? describeControl(b) : '';
   }
+
+  /** Captions for the four stick-axis remap buttons, so the right-click (arm)
+   *  handler names the same output its left-click twin does. */
+  const REMAP_AXIS_LABEL: Record<string, string> = {
+    lx: 'L-X', ly: 'L-Y', rx: 'R-X', ry: 'R-Y',
+  };
 
   function armRemap(outputId: string, only: 'axis' | 'button', label: string) {
     cancelRemap();
@@ -388,12 +406,32 @@
 
   // Pad-slot picker.
   let padIndex = $derived<number>(
-    Math.max(0, Math.min(3, Math.round((node?.params?.padIndex as number | undefined) ?? 0))),
+    Math.max(
+      GAMEPAD_SLOT_MIN,
+      Math.min(
+        GAMEPAD_SLOT_MAX,
+        Math.round((node?.params?.padIndex as number | undefined) ?? GAMEPAD_SLOT_MIN),
+      ),
+    ),
   );
+  /** ⚠ WAS A BARE PROXY WRITE — a direct assignment onto the live params proxy
+   *  with no `ydoc.transact` and no `LOCAL_ORIGIN`, while EVERY `node.data`
+   *  write on this file already went through `mutateNode`. It synced to
+   *  collaborators but never reached the UndoManager, so Cmd-Z could not undo a
+   *  slot change and the local reconciler did not see it as a user edit.
+   *  `setNodeParam` is the sanctioned seam (`mutateNode` with a single in-place
+   *  key set) and is the same one the faceplate's segmented SLOT cell writes
+   *  through, so both surfaces now commit identically.
+   *  ⚠ The old spelling is deliberately NOT quoted here: `gamepad-face-model`
+   *  greps this file's SOURCE for it, and a source gate cannot tell code from a
+   *  comment (the backdraft lesson — a comment that merely spelled a literal out
+   *  reddened that gate too). */
   function setPadIndex(n: number) {
-    const t = patch.nodes[id];
-    if (!t) return;
-    t.params.padIndex = Math.max(0, Math.min(3, Math.round(n)));
+    setNodeParam(
+      id,
+      'padIndex',
+      Math.max(GAMEPAD_SLOT_MIN, Math.min(GAMEPAD_SLOT_MAX, Math.round(n))),
+    );
   }
 
   // PatchPanel ports — every output the engine def declares, plus the
@@ -477,9 +515,9 @@
               class="remap-btn"
               class:armed={remap?.outputId === 'lx'}
               class:bound={isRemapped('lx')}
-              onclick={() => armRemap('lx', 'axis', 'L-X')}
-              title={isRemapped('lx') ? `L-X ← ${bindingLabel('lx')} (right-click to reset)` : 'remap left-stick X axis'}
-              oncontextmenu={(e) => { e.preventDefault(); clearRemap('lx'); }}
+              onclick={(e) => { if (e.altKey) clearRemap('lx'); else armRemap('lx', 'axis', 'L-X'); }}
+              title={isRemapped('lx') ? `L-X ← ${bindingLabel('lx')} (alt-click to reset)` : 'right-click (or click) to remap left-stick X axis'}
+              oncontextmenu={(e) => { e.preventDefault(); armRemap('lx', 'axis', REMAP_AXIS_LABEL['lx']); }}
               data-testid="gamepad-remap-lx"
             >X</button>
             <button
@@ -487,9 +525,9 @@
               class="remap-btn"
               class:armed={remap?.outputId === 'ly'}
               class:bound={isRemapped('ly')}
-              onclick={() => armRemap('ly', 'axis', 'L-Y')}
-              title={isRemapped('ly') ? `L-Y ← ${bindingLabel('ly')} (right-click to reset)` : 'remap left-stick Y axis'}
-              oncontextmenu={(e) => { e.preventDefault(); clearRemap('ly'); }}
+              onclick={(e) => { if (e.altKey) clearRemap('ly'); else armRemap('ly', 'axis', 'L-Y'); }}
+              title={isRemapped('ly') ? `L-Y ← ${bindingLabel('ly')} (alt-click to reset)` : 'right-click (or click) to remap left-stick Y axis'}
+              oncontextmenu={(e) => { e.preventDefault(); armRemap('ly', 'axis', REMAP_AXIS_LABEL['ly']); }}
               data-testid="gamepad-remap-ly"
             >Y</button>
           </div>
@@ -543,9 +581,9 @@
               class="remap-btn"
               class:armed={remap?.outputId === 'rx'}
               class:bound={isRemapped('rx')}
-              onclick={() => armRemap('rx', 'axis', 'R-X')}
-              title={isRemapped('rx') ? `R-X ← ${bindingLabel('rx')} (right-click to reset)` : 'remap right-stick X axis'}
-              oncontextmenu={(e) => { e.preventDefault(); clearRemap('rx'); }}
+              onclick={(e) => { if (e.altKey) clearRemap('rx'); else armRemap('rx', 'axis', 'R-X'); }}
+              title={isRemapped('rx') ? `R-X ← ${bindingLabel('rx')} (alt-click to reset)` : 'right-click (or click) to remap right-stick X axis'}
+              oncontextmenu={(e) => { e.preventDefault(); armRemap('rx', 'axis', REMAP_AXIS_LABEL['rx']); }}
               data-testid="gamepad-remap-rx"
             >X</button>
             <button
@@ -553,9 +591,9 @@
               class="remap-btn"
               class:armed={remap?.outputId === 'ry'}
               class:bound={isRemapped('ry')}
-              onclick={() => armRemap('ry', 'axis', 'R-Y')}
-              title={isRemapped('ry') ? `R-Y ← ${bindingLabel('ry')} (right-click to reset)` : 'remap right-stick Y axis'}
-              oncontextmenu={(e) => { e.preventDefault(); clearRemap('ry'); }}
+              onclick={(e) => { if (e.altKey) clearRemap('ry'); else armRemap('ry', 'axis', 'R-Y'); }}
+              title={isRemapped('ry') ? `R-Y ← ${bindingLabel('ry')} (alt-click to reset)` : 'right-click (or click) to remap right-stick Y axis'}
+              oncontextmenu={(e) => { e.preventDefault(); armRemap('ry', 'axis', REMAP_AXIS_LABEL['ry']); }}
               data-testid="gamepad-remap-ry"
             >Y</button>
           </div>
@@ -753,14 +791,19 @@
 
       <div class="slot-row">
         <span class="slot-label">SLOT</span>
-        {#each [0, 1, 2, 3] as i (i)}
+        <!-- ⚠ THE ROSTER COMES FROM THE DEF, not a literal array here. The same
+             `GAMEPAD_SLOT_OPTIONS` drives the faceplate's segmented cell, so the
+             card and the face cannot disagree about which slots exist — the
+             one-place rule that `card-range-source` exists to protect, applied
+             to a roster rather than a range. -->
+        {#each GAMEPAD_SLOT_OPTIONS as opt (opt.value)}
           <button
             type="button"
             class="slot-btn"
-            class:on={padIndex === i}
-            onclick={() => setPadIndex(i)}
-            data-testid="gamepad-slot-{i}"
-          >{i}</button>
+            class:on={padIndex === opt.value}
+            onclick={() => setPadIndex(opt.value)}
+            data-testid="gamepad-slot-{opt.value}"
+          >{opt.label}</button>
         {/each}
       </div>
     </div>

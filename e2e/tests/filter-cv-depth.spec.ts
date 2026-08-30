@@ -24,6 +24,7 @@
 import { test, expect } from './_fixtures';
 import { type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
+import { sampleScopeRms, scopePollMsg } from '../_helpers/scope-poll';
 
 /** RMS of the live SCOPE snapshot for `scopeNodeId` (null until warm). */
 async function readScopeRms(page: Page, scopeNodeId: string): Promise<number | null> {
@@ -73,17 +74,15 @@ async function setParam(page: Page, nodeId: string, paramId: string, value: numb
  *  ~2× by 16 samples at 70 ms, so the window always spans both extremes
  *  regardless of the phase we start on. */
 async function rmsSpread(page: Page, scopeNodeId: string, n = 16): Promise<number> {
-  let lo = Number.POSITIVE_INFINITY;
-  let hi = 0;
-  for (let i = 0; i < n; i++) {
-    const rms = await readScopeRms(page, scopeNodeId);
-    if (rms !== null) {
-      if (rms < lo) lo = rms;
-      if (rms > hi) hi = rms;
-    }
-    await page.waitForTimeout(70);
-  }
-  return hi / Math.max(1e-6, lo);
+  // The sampling loop runs IN THE PAGE (one export site). The old form did one
+  // CDP round trip per sample against the audio thread it was measuring, which
+  // is also the thread whose filter sweep produces the spread being read.
+  const w = await sampleScopeRms(page, scopeNodeId, n, 70);
+  expect(
+    w.samples,
+    scopePollMsg(`rmsSpread(${scopeNodeId}) resolved NO scope buffer, so its spread is not a measurement`, w),
+  ).toBeGreaterThan(0);
+  return w.hi / Math.max(1e-6, w.lo);
 }
 
 test.describe('filter: CV-depth attenuverters gate the cutoff jack', () => {

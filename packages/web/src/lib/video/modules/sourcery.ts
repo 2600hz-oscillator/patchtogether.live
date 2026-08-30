@@ -266,6 +266,36 @@ export const sourceryDef: VideoModuleDef = {
     { id: 'rotate',     label: 'Rot',  defaultValue: DEFAULTS.rotate,     min: 0, max: 1, curve: 'linear' },
   ],
 
+  // ── FACE (batch-22 · G3, the screens) ─────────────────────────────────────
+  face: {
+    order: ['thresholdA', 'thresholdB', 'colorSkew', 'rotate'],
+
+    // ⚠ NO `pages`. Four controls is one row (far under DOCK_ROW_MAX_CONTROLS),
+    // so paging would add headings and their vertical chrome to a face that
+    // already fits. Width and height must be EARNED.
+
+    // ⚠ NO `paramCells`, AND THAT IS THE DECISION. `SourceryCard.svelte` draws
+    // all four with `Knob`, which is the shell's DEFAULT primitive — so
+    // declaring anything here would either be redundant or would silently give
+    // the player a different control than the card established. This is the
+    // ONLY module in G3 that is knob-drawn; its three batch-mates are faders,
+    // and copying their declaration onto this face would have been a silent
+    // regression in the opposite direction.
+
+    // ⚠ NO `bareCells` — one unlabelled band, so no section heading exists to
+    // make a caption redundant, and ThrA/ThrB are two otherwise-identical knobs
+    // that ONLY their captions tell apart (the tidyVco side of that ruling).
+
+    // ⚠ MANDATORY FOR A VIDEO DEF — no audio output, so `primaryAudioOutPortId`
+    // is null and any other glyph literal falls through to a dead
+    // `{kind:'static'}` that reddens module-face-lint.
+    glyph: 'none',
+
+    // SCREEN ON/OFF arrives through this slot (#1928). See
+    // `$lib/ui/modules/sourcery/shell-extension.ts`.
+    extension: 'sourcery',
+  },
+
   docs: {
     explanation:
       "sourcery is a two-input region-transplant recolorizer: it edge-detects video A (top) and video B (bottom), carves each edge map into bounded regions (the connected non-edge areas walled off by the detected edges), then for every region in A finds the B region most similar in SHAPE (angles + geometry) first and SIZE second, and paints A's region with B's colors placed at the SAME relative position inside the shape (a corner of A samples the matching corner of B). A B shape may be matched by many A regions (reuse is fine) and EVERY part of the A frame maps to some region (tiny/culled regions and the walls are absorbed into their nearest surviving region, so the output never has holes — the whole-screen background becomes one giant region filled by some B shape). Two global controls move all the transferred color: SKEW rotates the hue of every filled pixel, ROT rotates the sampling frame inside each region. The result is a shifting stained-glass / photomosaic where A's edge structure is the cell boundaries and each cell is a warped fragment of B chosen by shape similarity: as B moves the fills shimmer with B's live color, as A moves the boundaries flow with A's structure. Region boundaries are intentionally BLOCKY (segmentation runs at a coarse 128x96 grid, nearest-upscaled) while the colors are full-res sharp (B is sampled at engine resolution). For real-time performance the shape/segmentation stage is amortized (recomputed every few frames) while the color fill sampling live B runs every frame; on live noisy video at low threshold the regions shimmer/boil frame-to-frame (a disclosed v1 limitation). Usage: patch a structural source into A and a colorful source into B, raise ThrA/ThrB until A's cells and B's shapes read cleanly (higher = fewer, bolder regions), then twist SKEW to tint and ROT to swirl the transplanted color; with nothing in B the module passes A through (hue-skewed).",

@@ -194,6 +194,27 @@ tasks:
       - npm run build -w {{.SERVER}}
 
   # ---------------- Build ----------------
+  worker:size:
+    desc: >
+      [read-only] Measure the deployed Cloudflare Pages Worker the way Cloudflare
+      does — shells out to `wrangler deploy --dry-run` for the authoritative
+      "Total Upload / gzip" figure, then attributes the weight to individual
+      source files with esbuild. Requires a production build first
+      (`task build` / `task build:web`). Changes nothing.
+    cmds:
+      - node {{.WEB}}/scripts/measure-worker-bundle.mjs {{.CLI_ARGS}}
+
+  worker:size:check:
+    desc: >
+      [CI gate] The Worker SIZE RATCHET (#2088). Same measurement as
+      `worker:size`, but FAILS the build in BOTH directions: over the gzipped
+      budget, and — deliberately — when there is more unclaimed slack under it
+      than the ratchet allows, so a big win is banked by lowering the budget in
+      the same commit instead of silently absorbing the next regression. Run
+      after a production build; the `build` CI job runs exactly this.
+    cmds:
+      - node {{.WEB}}/scripts/measure-worker-bundle.mjs --check
+
   build:
     desc: Production build (DSP + web)
     cmds:
@@ -675,22 +696,67 @@ tasks:
       # here, because this one WRITES: an isolated worktree that regenerated
       # against 5173 would commit baselines captured from another branch.
       #
-      # ⚠ `--update-snapshots=changed` lives HERE, not in e2e/package.json's
-      # `vrt:update` script, and that is not a style choice: `e2e/package.json`
-      # is a TOOLCHAIN_PIN_FILE in the WebGL attest basis
-      # (scripts/webgl-attest-lib.ts — it pins @playwright/test, the renderer
-      # version) and the basis hashes the file WHOLE. Editing one unrelated
-      # script string moved the hash 620fa1b3… → ad300c3e… and turned
-      # `webgl-attest` red, needing a trusted-machine GPU re-attest for a
-      # one-word CLI flag. Keep behaviour changes to the npm scripts out of that
-      # file. Bare `--update-snapshots` means `=all` in Playwright 1.59 and has
-      # already rewritten 22 unrelated baselines once; `=changed` is what we
-      # actually want, so it is passed BEFORE {{.CLI_ARGS}} and a caller can
-      # still override it explicitly.
+      # ⚠ THE UPDATE MODE LIVES HERE, not in e2e/package.json's `vrt:update`
+      # script, and that is not a style choice: `e2e/package.json` is a
+      # TOOLCHAIN_PIN_FILE in the WebGL attest basis (scripts/webgl-attest-lib.ts
+      # — it pins @playwright/test, the renderer version) and the basis hashes
+      # the file WHOLE. Editing one unrelated script string moved the hash
+      # 620fa1b3… → ad300c3e… and turned `webgl-attest` red, needing a
+      # trusted-machine GPU re-attest for a one-word CLI flag. Keep behaviour
+      # changes to the npm scripts out of that file.
+      #
+      # ── `=changed` -> `=all` (2026-08-26). THE MODE WAS A WORKFLOW DEFECT ───
+      #
+      # Owner: *"this is a workflow problem and we need to fix it"*. Under
+      # `=changed` a capture CANNOT REFRESH A BASELINE THAT CURRENTLY PASSES, so
+      # a baseline that is wrong but inside tolerance is unreachable by the only
+      # tool we have for fixing it. That is not a hazard to remember; it is the
+      # accept path being unable to accept.
+      #
+      # ⚠ IT ALREADY COST US ONE. `face-outlines-dock`'s baseline was captured at
+      # 740bac121 while the preview was rendering SOLID BLACK, and then passed
+      # every run since — black baseline vs black render. Nothing could re-pin it
+      # until the render changed, and nobody could see that it needed re-pinning.
+      #
+      # READ AT THE SOURCE, not from the flag's name
+      # (node_modules/playwright/lib/matchers/toMatchSnapshot.js, 1.59.1):
+      #
+      #   =changed  `expectScreenshotOptions.expected = expected`, so the
+      #             TOLERANCE COMPARATOR decides. `if (!errorMessage) return
+      #             handleMatching()` — a passing comparison returns before any
+      #             write can happen. The stale baseline survives.
+      #   =all      `expectScreenshotOptions.expected = undefined`, so the
+      #             baseline is NOT consulted at all. The capture stabilises the
+      #             render (the two-consecutive-identical-captures loop still
+      #             runs — determinism is NOT relaxed), then rewrites iff
+      #             `compareBuffersOrStrings(actual, expected)` says the BYTES
+      #             differ. So it means what an accept should mean: *this scene
+      #             is now defined by the current render*.
+      #
+      # ⚠ AND `=all` DOES NOT CHURN, which is the fact that makes it usable on a
+      # sweep: the write is gated on that byte compare, so a scene whose bytes
+      # already match is left alone and never enters the bot's commit.
+      #
+      # MEASURED, both directions, on this exact Playwright (a scene with a
+      # deliberate `maxDiffPixels` window, render moved inside it):
+      #     plain run     PASSES                     (the tolerance window)
+      #     =changed      PASSES, baseline UNCHANGED (sha e71e5ab0… -> e71e5ab0…)
+      #     =all          rewrites                   (sha e71e5ab0… -> 4d29cb9b…)
+      #     =all again    no change                  (sha 4d29cb9b… -> 4d29cb9b…)
+      #
+      # ⚠ WHAT MAKES `=all` SAFE IS THE SCOPE, AND THAT HALF ALREADY EXISTED.
+      # The 22-unrelated-baselines incident was `=all` run against a LOOSE
+      # tolerance (threshold 0.2 / ratio 0.05), where most baselines differed by
+      # bytes while passing — so "rewrite everything that differs" meant
+      # everything. Two things have changed since: `task vrt:commit` derives a
+      # `--grep` scope and prints it before dispatching (a full sweep is now the
+      # deliberate `ALL=1`), and the tolerance is ZERO, so "differs by bytes" and
+      # "fails the gate" are all but the same set. Do NOT restore `=changed` to
+      # get that safety back — widen nothing, scope instead.
       - task: vrt:run
         vars:
           SCRIPT: vrt
-          ARGS: '--update-snapshots=changed {{.CLI_ARGS}}'
+          ARGS: '--update-snapshots=all {{.CLI_ARGS}}'
 
   vrt:commit:
     desc: |
@@ -804,6 +870,82 @@ tasks:
         echo "  (do NOT hand-roll a poll loop — the gh core quota is shared across every"
         echo "   agent, and three 45s loops drained it to 0/5000 on 2026-08-18. vrt:watch"
         echo "   backs off, waits out a rate limit, and reports what the run COMMITTED.)"
+
+  vrt:accept:
+    desc: |
+      [accept a RED vrt-strict run's reviewed scenes — NO re-render] Dispatch
+      vrt-accept.yml: it promotes the run's own `<scene>-actual.png` bytes over
+      the committed baselines, verbatim. Sound because Playwright's gate and
+      capture share one stabilization loop and one output buffer — under zero
+      tolerance the failure artifact IS what a capture would have written
+      (validated by hand as commit 4600f6ed8; ~90 s against 3-57 min for a
+      re-capture, and it re-rolls ZERO rasterization dice).
+
+      REVIEW FIRST. A red strict run posts the accept gallery on the PR; every
+      card there shows this command pre-filled for its scene. The workflow
+      hard-refuses: a stale run (head_sha != branch tip), a sha256 that does
+      not match what the producing shard recorded, a PNG that does not decode,
+      any scene whose render NEVER SETTLED (-previous.png), and cross-shard
+      byte conflicts. Rejected scenes stay red until the underlying fix — that
+      is the point, not a failure of this tool.
+      Examples:
+        task vrt:accept -- 33217755378                      # all settled candidates (ceiling applies)
+        task vrt:accept -- 33217755378 moog914 face-lfo-dock
+        ACCEPT_ALL=1 task vrt:accept -- 33217755378         # waive the ceiling — every scene REVIEWED
+    cmds:
+      - |
+        set -eu
+        ARGS="{{.CLI_ARGS}}"
+        # One safe charset for the whole arg string BEFORE any word-splitting —
+        # same reasoning as vrt:commit's GREP guard: go-task interpolates
+        # CLI_ARGS into this script textually, so anything outside
+        # [A-Za-z0-9_./ -] must be refused, never forwarded.
+        case "$ARGS" in
+          *[!A-Za-z0-9_./\ -]*)
+            echo "vrt:accept: arguments may only contain [A-Za-z0-9_./-] and spaces: '$ARGS'" >&2
+            exit 1
+            ;;
+        esac
+        set -- $ARGS
+        if [ "$#" -lt 1 ]; then
+          echo "usage: task vrt:accept -- <run-id> [scene...]   (no scenes = all settled candidates)" >&2
+          exit 1
+        fi
+        RUN_ID="$1"; shift
+        case "$RUN_ID" in
+          *[!0-9]*|'')
+            echo "vrt:accept: '$RUN_ID' is not a run id — pass the RED ci.yml run's numeric id first." >&2
+            exit 1
+            ;;
+        esac
+        ACCEPT_ALL="${ACCEPT_ALL:-}"
+        # The ceiling is DERIVED from the accept script, never re-typed here —
+        # one number, one owner (scripts/vrt-accept.mjs VRT_ACCEPT_CEILING).
+        CEILING="$(node -e 'import("./scripts/vrt-accept.mjs").then((m) => console.log(m.VRT_ACCEPT_CEILING))')"
+        if [ "$#" -gt "$CEILING" ] && [ -z "$ACCEPT_ALL" ]; then
+          echo "vrt:accept: $# scenes exceeds the $CEILING-scene accept ceiling." >&2
+          echo "A change that size is a CAPTURE, not an accept — use \`ALL=1 task vrt:commit\` for a" >&2
+          echo "deliberate re-render, or re-run with ACCEPT_ALL=1 only if every scene was genuinely reviewed." >&2
+          exit 1
+        fi
+        SCENES="$*"
+        if [ -n "$ACCEPT_ALL" ]; then SCENES="ALL${SCENES:+ $SCENES}"; fi
+        BRANCH="$(git rev-parse --abbrev-ref HEAD)"
+        if [ "$BRANCH" = "main" ] || [ "$BRANCH" = "HEAD" ]; then
+          # Accept is a REVIEW tool for a PR branch. Auto-accepting on main is
+          # the most-regretted affordance in this product category — refuse.
+          echo "vrt:accept: refusing to accept baselines onto '$BRANCH' — check out the PR branch first." >&2
+          exit 1
+        fi
+        echo "Dispatching vrt-accept.yml for branch '$BRANCH', source run $RUN_ID, scenes: ${SCENES:-<all settled candidates>} …"
+        # --ref "$BRANCH" runs the BRANCH'S OWN copy of the workflow — same
+        # two-versions hazard vrt:commit documents on its dispatch.
+        gh workflow run vrt-accept.yml --ref "$BRANCH" \
+          -f ref="$BRANCH" \
+          -f source_run_id="$RUN_ID" \
+          -f scenes="$SCENES"
+        echo "Dispatched (~90 s). On success the bot's push fires a FRESH pull_request CI run —"
+        echo "that re-render is the second witness on a different VM, and it is deliberate."
 
   vrt:watch:
     desc: |
@@ -1046,7 +1188,7 @@ tasks:
   # the full WebGL set on THIS machine's REAL GPU and writes a content-hash-named
   # attestation that CI verifies (then skips the heavy lane, trusting the local
   # run). See ci-webgl-attest/README.md +
-  # .claude/skills/webgl-attest.md.
+  # .claude/skills/renderer-tests/SKILL.md.
   webgl:attest:
     desc: |
       [pre-PR, REAL-GPU] Run the FULL WebGL test set on this machine's real GPU

@@ -260,6 +260,12 @@ const PASSTHROUGH_BY_DESIGN: Record<string, string[]> = {
     'fatk_cv', 'fdec_cv', 'fsus_cv', 'frel_cv', 'atk_cv', 'dec_cv', 'sus_cv', 'rel_cv',
     'width_cv', 'level_cv',
   ],
+  // vstInstrument pitch/vel: performance inputs consumed DIRECTLY by the
+  // vst-bridge worklet's CV→MIDI converter (pitch = V/oct fallback quantized
+  // to MIDI notes, vel = 0..1 → MIDI velocity 1..127 sampled at gate rise) —
+  // one worklet node input each, no paramTarget, no knob to modulate. The
+  // `vel` id shape is also what enrols it for the clip's vel{n} auto-wiring.
+  vstInstrument: ['pitch', 'vel'],
   // CUBE pitch: V/oct input consumed directly by the worklet as its own
   // audio-rate node input (freq = C4·2^(pitch + tune/12 + fine/1200), applied
   // per-sample). No paramTarget — same V/oct-fallback shape as dx7.pitch_cv. CUBE's OTHER cv inputs (slice_y/rx/ry/rz, morph_fc,

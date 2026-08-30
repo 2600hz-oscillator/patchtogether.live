@@ -57,6 +57,14 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
+import {
+  FACES,
+  FACE_SCENE_BASE_MS,
+  FACE_SCENE_HEADROOM,
+  faceSceneTimeout,
+  faceSceneWeight,
+  sceneBudgetMs,
+} from '../../../../../e2e/vrt/_shell-faces';
 
 function repoRoot(): string {
   return resolve(import.meta.dirname, '../../../../..');
@@ -252,4 +260,177 @@ describe('VRT config: every knob is one Playwright turns', () => {
       });
     },
   );
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+// THE PER-SCENE FACE BUDGET (#1949)
+//
+// `vrt.config.ts`'s per-test `timeout` is ONE number for the whole lane, and a
+// face scene whose measured cost approaches it has no way to say so. b3ntb0x's
+// dock scene CONVERGED and wrote its actual PNG at ~88.6 s and was killed by the
+// 90 s cap 1.4 s later (capture run 32288252788), so the config's own escape
+// hatch — "past ~90 s the scene is not converging" — was falsified by the
+// scene's own output.
+//
+// ⚠ WHAT THIS GATE IS STRUCTURALLY UNABLE TO SEE, stated inside the gate: it
+// cannot measure a scene. It cannot tell a HONEST declaration from a generous
+// one, it cannot notice that a declared face got cheaper, and it cannot tell
+// whether a scene converges. Those are properties of a capture run, and the only
+// surfaces that can read them are the capture itself (which fails loudly) and
+// `expect.timeout` (which is what actually gates convergence, at 30 s, and is
+// NOT moved by any of this).
+//
+// What it CAN do, and does:
+//   * anchor the floor to the config, so the two numbers cannot drift apart;
+//   * refuse a declaration that buys nothing, so a stale entry is RED rather
+//     than inert;
+//   * refuse a declaration missing its evidence, in the type AND at runtime;
+//   * control the arithmetic in both directions against a synthetic weight.
+// ───────────────────────────────────────────────────────────────────────────
+
+/** The body of `defineConfig({ … })`, for reading its TOP-LEVEL keys. The
+ *  config declares `timeout` three times — top level, `expect.timeout` and
+ *  `webServer.timeout` — so depth matters and a bare regex would find the
+ *  wrong one. */
+function defineConfigBody(src: string): string {
+  const start = src.indexOf('defineConfig({');
+  if (start < 0) throw new Error('vrt.config.ts: no `defineConfig({`');
+  const open = src.indexOf('{', start);
+  let depth = 0;
+  for (let i = open; i < src.length; i++) {
+    if (src[i] === '{') depth++;
+    else if (src[i] === '}') {
+      depth--;
+      if (depth === 0) return src.slice(open + 1, i);
+    }
+  }
+  throw new Error('vrt.config.ts: unbalanced braces in defineConfig');
+}
+
+/** A numeric literal declared at DEPTH 0 of a block. */
+function topLevelNumber(block: string, key: string): number | null {
+  const code = stripComments(block);
+  let depth = 0;
+  for (const rawLine of code.split('\n')) {
+    const line = rawLine.trim();
+    if (depth === 0) {
+      const m = new RegExp(`^${key}:\\s*([\\d_]+)`).exec(line);
+      if (m) return Number(m[1]!.replace(/_/g, ''));
+    }
+    for (const ch of rawLine) {
+      if (ch === '{' || ch === '[') depth++;
+      else if (ch === '}' || ch === ']') depth--;
+    }
+  }
+  return null;
+}
+
+describe('VRT face scenes: the per-scene time budget', () => {
+  const VRT_CONFIG = resolve(repoRoot(), 'e2e/vrt/vrt.config.ts');
+  const declared = FACES.map((f) => f.type).filter((t) => faceSceneWeight(t) !== undefined);
+
+  it('FACE_SCENE_BASE_MS IS the config’s per-test timeout (the anchor)', () => {
+    const configTimeout = topLevelNumber(
+      defineConfigBody(readFileSync(VRT_CONFIG, 'utf8')),
+      'timeout',
+    );
+    // Instrument check first: a parse that returns null would make the
+    // comparison below vacuous in the direction that matters.
+    expect(
+      configTimeout,
+      'could not read a top-level `timeout:` numeric literal out of vrt.config.ts’s ' +
+        'defineConfig body — the anchor below would be vacuous',
+    ).not.toBeNull();
+    expect(
+      FACE_SCENE_BASE_MS,
+      '`FACE_SCENE_BASE_MS` (e2e/vrt/_shell-faces.ts) is the FLOOR every face scene ' +
+        'gets, and it exists to be the same number as vrt.config.ts’s per-test ' +
+        '`timeout`. They have drifted apart: a face with no declared `sceneWeight` ' +
+        'would now be bounded by one number while the rest of the lane uses another. ' +
+        'Move them together or delete the constant.',
+    ).toBe(configTimeout);
+  });
+
+  it('a face with NO declared weight gets exactly the base (negative control)', () => {
+    // Anchored to the roster, not to a hard-coded name: pick a real face that
+    // declares nothing. If EVERY face declared a weight this would have no
+    // subject, which is itself worth failing on.
+    const undeclaredFaces = FACES.map((f) => f.type).filter(
+      (t) => faceSceneWeight(t) === undefined,
+    );
+    expect(
+      undeclaredFaces.length,
+      'every face in the roster declares a `sceneWeight` — the flat base is then ' +
+        'unreachable and this control has no subject. That is a design smell: the ' +
+        'declaration is an exception, not the norm.',
+    ).toBeGreaterThan(0);
+    for (const scene of ['compact', 'dock'] as const) {
+      expect(faceSceneTimeout(undeclaredFaces[0]!, scene)).toBe(FACE_SCENE_BASE_MS);
+      // …and a face that is not in the roster at all resolves the same way,
+      // rather than throwing or returning NaN.
+      expect(faceSceneTimeout('no-such-face-at-all', scene)).toBe(FACE_SCENE_BASE_MS);
+    }
+  });
+
+  it('a declared weight scales the bound by the headroom (positive control)', () => {
+    // POSITIVE control on the ARITHMETIC, against a weight this test builds — so
+    // it holds whether or not any face currently declares one, and it moves when
+    // the computation moves. A negative control alone would pass for a function
+    // that returned the base unconditionally.
+    const heavy = {
+      compactMs: 55_600,
+      dockMs: 88_600,
+      measuredOn: 'synthetic fixture (this test)',
+      why: 'a fixture built by the gate, standing in for a genuinely heavy scene',
+    } as const;
+    expect(sceneBudgetMs(heavy, 'compact')).toBe(55_600 * FACE_SCENE_HEADROOM);
+    expect(sceneBudgetMs(heavy, 'dock')).toBe(88_600 * FACE_SCENE_HEADROOM);
+    // …and the two scenes are read SEPARATELY. A function that used one number
+    // for both would pass every assertion above.
+    expect(sceneBudgetMs(heavy, 'compact')).not.toBe(sceneBudgetMs(heavy, 'dock'));
+    // The base is a FLOOR, never a ceiling and never lowered.
+    const light = { ...heavy, compactMs: 1_000, dockMs: 2_000 };
+    expect(sceneBudgetMs(light, 'compact')).toBe(FACE_SCENE_BASE_MS);
+    expect(sceneBudgetMs(undefined, 'dock')).toBe(FACE_SCENE_BASE_MS);
+  });
+
+  it('every declared weight BUYS something — a no-op declaration is RED', () => {
+    // ANCHORED TO THE ARTIFACT, not to the list: a face whose measured cost has
+    // fallen back under the base no longer needs its declaration, and an entry
+    // that changes nothing is exactly the stale-ledger shape CLAUDE.md says must
+    // fail rather than sit there looking like protection.
+    const inert = declared.filter(
+      (t) =>
+        faceSceneTimeout(t, 'compact') === FACE_SCENE_BASE_MS &&
+        faceSceneTimeout(t, 'dock') === FACE_SCENE_BASE_MS,
+    );
+    expect(
+      inert,
+      'these faces declare a `sceneWeight` whose measured durations no longer clear ' +
+        `the ${FACE_SCENE_BASE_MS} ms base at ${FACE_SCENE_HEADROOM}x headroom, so the ` +
+        'declaration changes nothing. Either the module got cheaper — delete the ' +
+        'declaration — or the numbers were never re-read after a re-measure.',
+    ).toEqual([]);
+  });
+
+  it('every declared weight carries its evidence', () => {
+    const bad: string[] = [];
+    for (const type of declared) {
+      const w = faceSceneWeight(type)!;
+      if (!(w.compactMs > 0) || !(w.dockMs > 0)) bad.push(`${type}: a duration is not positive`);
+      // A prose-quality floor, not a population count: "it is slow" is not a
+      // reason a reviewer can check, and this field is the ONLY thing standing
+      // between a measurement and a guess.
+      if (w.why.trim().length < 40) bad.push(`${type}: \`why\` is too thin to review`);
+      // The run id is what makes the two durations re-checkable by someone who
+      // was not in the conversation.
+      if (!/\d{6,}/.test(w.measuredOn)) bad.push(`${type}: \`measuredOn\` names no capture run`);
+    }
+    expect(
+      bad,
+      'a `sceneWeight` is a claim about a linux capture run. Each entry owes the two ' +
+        'measured durations, the run they came off, and what makes the module ' +
+        'expensive to render.',
+    ).toEqual([]);
+  });
 });

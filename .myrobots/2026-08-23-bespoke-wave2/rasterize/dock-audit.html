@@ -1,0 +1,265 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>RASTERIZE — the SHIPPED dock face, audited against the four rulings</title>
+<style>
+/* ─────────────────────────────────────────────────────────────────────────
+   RASTERIZE DOCK FACEPLATE — this one is NOT a proposal.
+   It is a drawing of WHAT SHIPS TODAY (#2001 / #2018), annotated against the
+   four faceplate rulings and against the gates that have arrived since.
+   Everything in the plate is real; everything in the right-hand column is
+   the audit. See spec.md §3–§5.
+   ───────────────────────────────────────────────────────────────────────── */
+:root{
+  --bg:#0e1013; --dock:#12161c; --pbody:#1c1f24; --line:#2c3037; --tile:#33383f;
+  --ink:#eef1f5; --dim:#9aa2ad; --faint:#646c77; --vid:#b57bff; --aud:#fbbf24;
+  --accent:#6cf; --warn:#f2c14e; --good:#8fe6b0; --bad:#f08c8c;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+  font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1200px;margin:0 auto;padding:26px 20px 90px}
+h1{font-size:21px;font-weight:800;margin:0 0 6px;letter-spacing:.01em}
+.sub{color:var(--dim);font-size:12.5px;margin:0 0 14px;max-width:108ch}
+.sub b{color:var(--ink)} code{font-family:var(--mono);font-size:11.5px;color:var(--aud)}
+.nav{display:flex;gap:8px;margin:0 0 20px;font-size:11px;flex-wrap:wrap}
+.nav a{color:var(--ink);text-decoration:none;border:1px solid var(--line);border-radius:6px;
+  padding:6px 12px;background:#12161c;font-family:var(--mono);letter-spacing:.06em;text-transform:uppercase}
+.nav a.on{border-color:var(--aud);color:var(--aud)}
+.warn{border:1px solid #6a5330;background:#1c1811;border-radius:8px;padding:11px 14px;
+  margin:12px 0;font-size:12.5px;color:#e8cf9a;max-width:120ch}
+.warn b{color:var(--warn)}
+.ok{border:1px solid #3b5a48;background:#111a15;border-radius:8px;padding:11px 14px;
+  margin:12px 0;font-size:12.5px;color:#a9d8bd;max-width:120ch}
+.ok b{color:var(--good)}
+
+.cols{display:grid;grid-template-columns:minmax(0,1fr) 400px;gap:18px;align-items:start}
+@media (max-width:1080px){.cols{grid-template-columns:minmax(0,1fr)}}
+.pair{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start}
+@media (max-width:900px){.pair{grid-template-columns:1fr}}
+.cap2{font-family:var(--mono);font-size:9px;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--faint);margin:0 0 6px}
+
+.dock{background:var(--dock);border:1px solid var(--line);border-radius:11px;overflow:hidden;padding:11px}
+.chromebar{display:flex;align-items:baseline;gap:9px;padding:0 2px 8px}
+.chromebar .nm{font-size:13px;font-weight:800;letter-spacing:.03em}
+.chromebar .rl{font-size:9.4px;letter-spacing:.09em;text-transform:uppercase;color:var(--faint);font-family:var(--mono)}
+.chromebar .x{margin-left:auto;color:var(--faint);font-family:var(--mono);font-size:12px}
+.plate{background:var(--pbody);border:1px solid var(--tile);border-left:4px solid var(--vid);
+  border-radius:10px;padding:0 0 12px;width:max-content;max-width:100%}
+
+.extbody{padding:6px 0 2px;display:flex;justify-content:center}
+.previewwrap{position:relative;display:flex;justify-content:center;min-height:18px}
+.raster{position:relative;width:480px;max-width:100%;height:360px;border-radius:3px;background:#000;
+  overflow:hidden;image-rendering:pixelated}
+/* CSS stand-in for the raster: horizontal bands whose spacing tracks frequency
+   against the line rate, drifting toroidally (WRAP). */
+.raster .bands{position:absolute;inset:0;
+  background:repeating-linear-gradient(to bottom,
+    #f4f4f4 0 2px, #b8b8b8 2px 4px, #4a4a4a 4px 7px, #0c0c0c 7px 13px);
+  opacity:.92}
+.raster .drift{position:absolute;inset:0;
+  background:repeating-linear-gradient(to bottom,
+    rgba(255,255,255,.10) 0 1px, rgba(0,0,0,0) 1px 31px)}
+.raster .cursor{position:absolute;left:0;right:0;top:63%;height:2px;background:#fff;opacity:.5}
+.screenbtn{position:absolute;right:4px;bottom:4px;font-family:var(--mono);font-size:8.6px;
+  letter-spacing:.06em;padding:3px 9px;border:1px solid #4a3f5a;border-radius:2px;
+  background:rgba(5,6,8,.72);color:var(--ink);cursor:pointer;z-index:2}
+.screenbtn.off{color:var(--faint);border-color:#333a43;position:static;align-self:flex-end}
+
+.bands2{padding:6px 14px 0}
+.band{border-top:1px solid var(--line);padding-top:8px;margin-top:10px}
+.band:first-child{border-top:0;margin-top:4px}
+.row{display:flex;flex-wrap:wrap;align-items:flex-start;gap:10px 18px}
+.f{width:52px;display:flex;flex-direction:column;align-items:center;gap:5px}
+.f i{--v:.5;--fc:#b57bff;display:block;width:16px;height:74px;border-radius:8px;position:relative;
+  background:linear-gradient(#171b21,#12161c);border:1px solid #333a43}
+.f i::before{content:"";position:absolute;left:50%;transform:translateX(-50%);width:2px;top:6px;bottom:6px;
+  background:#262c34;border-radius:1px}
+.f i::after{content:"";position:absolute;left:50%;width:22px;height:9px;border-radius:2px;background:var(--fc);
+  box-shadow:0 0 7px color-mix(in srgb,var(--fc) 60%,transparent);
+  transform:translate(-50%,-50%);top:calc(6px + (1 - var(--v)) * (100% - 12px))}
+.f b{font-size:7.8px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--dim);
+  font-family:var(--mono);text-align:center}
+.f.last i{--fc:#6b7280}
+.seg{display:flex;flex-direction:column;gap:4px}
+.seg .cap{font-size:7.8px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--dim);font-family:var(--mono)}
+.segbtns{display:flex;border:1px solid #3a4048;border-radius:6px;overflow:hidden}
+.segbtns b{font-family:var(--mono);font-size:9px;font-weight:400;letter-spacing:.06em;
+  padding:6px 10px;background:#1b2027;color:var(--faint)}
+.segbtns b.on{background:#2b2338;color:var(--vid)}
+
+.zones{background:#12161c;border:1px solid var(--line);border-radius:9px;padding:12px 13px}
+.zones h4{margin:0 0 8px;font-size:9px;font-weight:800;letter-spacing:.13em;text-transform:uppercase;color:var(--dim)}
+.zones+.zones{margin-top:14px}
+.zt{width:100%;border-collapse:collapse;font-size:10.5px}
+.zt th{text-align:left;font-family:var(--mono);font-size:7.8px;letter-spacing:.11em;text-transform:uppercase;
+  color:var(--faint);font-weight:400;padding:0 8px 5px 0;border-bottom:1px solid var(--line)}
+.zt td{padding:6px 8px 6px 0;border-bottom:1px solid #1c2027;vertical-align:top;color:var(--dim);line-height:1.45}
+.zt td:first-child{color:var(--ink);font-family:var(--mono);font-size:9.5px;white-space:nowrap}
+.pass{color:var(--good);font-family:var(--mono);font-size:9px}
+.hole{color:var(--warn);font-family:var(--mono);font-size:9px}
+.aria{font-family:var(--mono);font-size:10px;color:var(--good);background:#101a14;
+  border:1px solid #2c4636;border-radius:4px;padding:2px 6px;display:inline-block;margin-top:3px}
+.meas{font-family:var(--mono);font-size:10px;color:var(--accent)}
+</style>
+
+<div class="wrap">
+<h1>RASTERIZE — the SHIPPED dock face, audited</h1>
+<p class="sub">
+  <b>This plate is not a proposal.</b> It is a drawing of what ships today (#2001, merged as
+  #2018). The right-hand column is the audit: the four faceplate rulings, the gates that have
+  arrived since, and the live defect ledger. The <b>only</b> proposal in this package is the
+  lane-glyph re-decision on the previous page.
+</p>
+
+<div class="nav">
+  <a href="lane-decision.html">THE LANE DECISION</a>
+  <a class="on" href="dock-audit.html">THE DOCK AUDIT</a>
+</div>
+
+<div class="cols">
+<div>
+<div class="pair">
+
+  <!-- SCREEN ON -->
+  <div>
+    <p class="cap2">SCREEN ON &mdash; WRAP mode, the toroidal drift</p>
+    <div class="dock">
+      <div class="chromebar"><span class="nm">rasterize</span>
+        <span class="rl">utilities &middot; hybrid</span><span class="x">&#10005;</span></div>
+      <div class="plate">
+        <div class="extbody"><div class="previewwrap">
+          <div class="raster">
+            <div class="bands"></div><div class="drift"></div><div class="cursor"></div>
+          </div>
+          <button class="screenbtn" aria-pressed="true">SCREEN ON</button>
+        </div></div>
+        <div class="bands2"><div class="band"><div class="row">
+          <div class="f"><i style="--v:.55"></i><b>Samp/F</b></div>
+          <div class="f"><i style="--v:.3"></i><b>Gain</b></div>
+          <div class="seg"><span class="cap">Wrap</span>
+            <div class="segbtns"><b class="on">WRAP</b><b>CLAMP</b></div></div>
+          <div class="f last"><i style="--v:0"></i><b>Scan</b></div>
+        </div></div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SCREEN OFF -->
+  <div>
+    <p class="cap2">SCREEN OFF &mdash; the raster keeps painting</p>
+    <div class="dock">
+      <div class="chromebar"><span class="nm">rasterize</span>
+        <span class="rl">utilities &middot; hybrid</span><span class="x">&#10005;</span></div>
+      <div class="plate">
+        <div class="extbody"><div class="previewwrap">
+          <button class="screenbtn off" aria-pressed="false">SCREEN OFF</button>
+        </div></div>
+        <div class="bands2"><div class="band"><div class="row">
+          <div class="f"><i style="--v:.55"></i><b>Samp/F</b></div>
+          <div class="f"><i style="--v:.3"></i><b>Gain</b></div>
+          <div class="seg"><span class="cap">Wrap</span>
+            <div class="segbtns"><b class="on">WRAP</b><b>CLAMP</b></div></div>
+          <div class="f last"><i style="--v:0"></i><b>Scan</b></div>
+        </div></div></div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div class="ok">
+  <b>SCREEN OFF SKIPS THE BLIT, NEVER THE ADVANCE &mdash; and that inversion is
+  module-specific.</b> This module&rsquo;s painter runs INSIDE <code>read('imageData')</code>
+  (<code>advanceOncePerFrame</code>), so when nothing downstream is patched, this body&rsquo;s
+  loop is <b>the only thing advancing the raster</b>. Stopping it on collapse would freeze the
+  module itself &mdash; the #1720/#1721 class the owner&rsquo;s <i>&ldquo;it KEEPS RENDERING
+  while OFF&rdquo;</i> floor exists to prevent. It is also the cheap half to keep: the advance
+  writes ~800 pixels; the blit is a 1024&times;768 &rarr; 480&times;360 scale-draw.
+  <b>&#9888; A sibling body copying the raw <code>requestAnimationFrame</code> without this
+  inversion ships an ungated full-canvas redraw</b> &mdash; <code>dockscope</code>&rsquo;s
+  body correctly uses <code>onMeterFrame</code> instead.
+</div>
+
+<div class="warn">
+  <b>&#9888; SCAN IS RANKED LAST, AND THE RANK ENCODES AN OPEN DEFECT.</b>
+  <code>RasterPainter.paint()</code> re-seats the running cursor only when
+  <code>Math.floor(params.cursor)</code> <i>differs</i> from the last value it saw
+  (<code>rasterize-draw.ts:98-105</code>). So re-selecting a value the knob already shows is a
+  <b>no-op</b>, and the number diverges permanently from the real scan position. On top of that
+  the range is <code>VIDEO_RES.width &times; VIDEO_RES.height</code> pixels and the finest
+  gesture moves ~39 of them &mdash; <b>a control declared in <code>px</code> that cannot address
+  a pixel</b>. The def leaves a deliberate pointer so the rank is re-decided rather than
+  inherited (<code>rasterize.ts:209-218</code>). #2000, open.
+</div>
+
+</div>
+
+<div>
+  <div class="zones">
+    <h4>the four rulings</h4>
+    <table class="zt">
+      <tr><th>ruling</th><th>verdict</th></tr>
+      <tr><td>no resting derived text</td><td><span class="pass">PASS</span> &mdash; and a correctness win: a SCAN readout would print the diverged number (&#9888; above)</td></tr>
+      <tr><td>captions earn their place</td><td><span class="pass">PASS</span> &mdash; four distinct captions, one unlabelled band, no <code>bareCells</code></td></tr>
+      <tr><td>compact by default</td><td><span class="pass">PASS</span> &mdash; dock baseline <span class="meas">546 &times; 681</span>, compact <span class="meas">88 &times; 82</span>. The earner is the live raster, one of the ruling&rsquo;s own named examples</td></tr>
+      <tr><td>SCREEN ON/OFF</td><td><span class="pass">PASS</span> in substance &mdash; <span class="hole">UNGATED</span> in fact &rarr;</td></tr>
+    </table>
+  </div>
+
+  <div class="zones">
+    <h4>&#9888; the gate hole</h4>
+    <table class="zt">
+      <tr><td colspan="2"><code>video-face-screen-source.test.ts:71-76</code> builds its subject as
+        <code>listVideoModuleDefs().filter(d =&gt; STRICT_FACES.has(d.type))</code>.
+        <b><code>rasterize</code> is <code>domain:'audio'</code> and is out of scope by
+        construction.</b> The switch above is correctly built and <b>nothing certifies it</b> &mdash;
+        deleting <code>rasterize-face-screen-toggle</code> tomorrow goes green.
+        <br><br>The fix already exists as a predicate:
+        <code>face-rack-status-source.test.ts:106-115</code>&rsquo;s
+        <code>extensionsWithBody()</code> reads the DIRECTORY, so it is domain-blind by
+        construction. <b>&#9888; It cannot ride a face PR</b> &mdash; widening reddens audio
+        bodies that legitimately have none (<code>dockscope</code>, <code>samsloop</code>,
+        both with recorded derivations), so each needs a named <code>(type, why)</code>
+        exemption first. Its own PR. spec.md &sect;4.</td></tr>
+    </table>
+  </div>
+
+  <div class="zones">
+    <h4>the ARIA contract</h4>
+    <table class="zt">
+      <tr><td>Samp/F</td><td><span class="aria">Samp/F 800</span> (aria-valuetext)</td></tr>
+      <tr><td>Gain</td><td><span class="aria">Gain 1.00</span></td></tr>
+      <tr><td>Wrap</td><td><span class="aria">Wrap: WRAP</span> &mdash; the ONE place the word exists</td></tr>
+      <tr><td>Scan</td><td><span class="aria">Scan 0 px</span> &mdash; the knob, NOT the running cursor</td></tr>
+      <tr><td>SCREEN</td><td><span class="aria">aria-pressed=true / false</span></td></tr>
+    </table>
+  </div>
+
+  <div class="zones">
+    <h4>outstanding, from the ledger</h4>
+    <table class="zt">
+      <tr><th>#</th><th>what</th></tr>
+      <tr><td>5.1</td><td>the LEGACY card&rsquo;s WRAP button still raw-writes the store
+        (<code>RasterizeCard.svelte:53-56</code>). Ledgered <code>kind:'debt'</code> at
+        <code>raw-write-ledger.ts:279-283</code>. <b>&#9888; The face did NOT pay it</b> &mdash;
+        <i>&ldquo;a face does not pay a card&rsquo;s debt; editing the card does&rdquo;</i>
+        (<code>:202-210</code>, filed against #2025 for claiming otherwise)</td></tr>
+      <tr><td>5.2</td><td>the legacy card&rsquo;s repaint is a bare rAF, not
+        <code>onMeterFrame</code> &mdash; an off-screen card pays a full-frame
+        <code>ImageData</code> allocation plus a scale-draw every frame</td></tr>
+      <tr><td>5.3</td><td>#2000 &mdash; SCAN, open</td></tr>
+      <tr><td>5.4</td><td><code>read('cursor')</code> has <b>zero consumers</b> (measured); its
+        comment still says <i>&ldquo;for the card readout&rdquo;</i>, a readout a ruling deleted.
+        <b>Keep it</b> &mdash; it is the observable a #2000 fix asserts against &mdash; and
+        re-point the comment</td></tr>
+      <tr><td>5.5</td><td>three stale records, including the def&rsquo;s own
+        <i>&ldquo;matches no glyph kind&rdquo;</i></td></tr>
+    </table>
+  </div>
+</div>
+</div>
+</div>

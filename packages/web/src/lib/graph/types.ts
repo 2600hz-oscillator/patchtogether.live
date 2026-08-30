@@ -208,7 +208,6 @@ type CoreModuleType =
   | 'filter'
   | 'vca'
   | 'mixer'
-  | 'sequencer'
   | 'lfo'
   | 'scope'
   | 'timelorde'
@@ -429,6 +428,50 @@ export interface ParamDef {
   units?: string;
   /** PF-1 — named detents of a DISCRETE param. Cosmetic (see ParamOption). */
   options?: readonly ParamOption[];
+  /**
+   * THE ROSTER **IS** THE LEGAL SET — a SPARSE `options` roster, declared.
+   *
+   * ⚠ NOT COSMETIC, unlike `options` itself, and that is the whole reason it is
+   * a separate declaration rather than an inference from "the roster is short".
+   * The ordinary rule is that a discrete param's reachable values are exactly
+   * its integer steps, so `param-vocabulary` requires a roster to name EVERY
+   * one of them — its stated reason being that *"a roster that skips one leaves
+   * a state the dial can reach and the picker cannot name"*.
+   *
+   * A few params invert that premise: the skipped values are precisely the ones
+   * that must NOT be reachable. `cvBuddy.ppqn` is the case this exists for — a
+   * clock divides by 1, 2, 4, 8, 12, 24 or 48 pulses per quarter note, and the
+   * forty-one integers in between are not "unnamed states", they are values the
+   * module has no meaning for. Declaring the roster EXHAUSTIVE says so, and the
+   * gate then enforces the stronger property the ordinary rule was reaching
+   * for: **no reachable state is unnameable** — because the reachable set is
+   * the roster.
+   *
+   * ⚠ DENY BY DEFAULT, AND THE `why` IS THE POINT. Making this a bare boolean
+   * would let any author quietly opt out of the every-step rule the moment it
+   * inconveniences them, which is the rule's whole value. A required `why`
+   * means `tsc` refuses the casually-sparse roster before a test runs, and the
+   * reviewer sees the ARGUMENT next to the exemption. Say why the gaps are
+   * meaningless, not that they are unused.
+   *
+   * WHAT IT DOES NOT DO: it does not make the value safe on its own. A param
+   * declaring this must SNAP — a write of an off-roster value lands on a named
+   * member — and `param-vocabulary` asserts that in both directions (a legal
+   * value passes through EXACT; an illegal one lands on a member). See
+   * `snapToOptions`, which is the one implementation.
+   *
+   * ⚠ A STORED off-roster value from before the declaration is NOT rewritten
+   * behind the user's back. It DISPLAYS as its nearest legal member (the same
+   * `nearestByValue` every readout already uses) and is normalized in the graph
+   * by the first ordinary, tagged, undoable write. A silent engine-side repair
+   * of a data-integrity bug is indistinguishable from no bug — the rule
+   * `momentary-params` states and this follows.
+   */
+  optionsExhaustive?: {
+    /** Why the values BETWEEN the roster entries are meaningless for this
+     *  param — not merely unused. Prose, reviewed, required by the type. */
+    why: string;
+  };
   /** PF-10 — named waypoints of a CONTINUOUS param. Cosmetic (see ParamLandmark). */
   landmarks?: readonly ParamLandmark[];
   /**
@@ -647,16 +690,15 @@ export interface ModuleFacePage {
  * living-docs ratchet (consistency for every faced module, completeness for
  * the STRICT_FACES set).
  *
- * ⚠ `sidebar` IS PROJECTED INTO THE GOLDEN, AND THE REST IS NO LONGER LEFT TO
- * THIS PARAGRAPH. #1468 deleted a whole sidebar block from twelve modules and
- * `task docs:accept` produced an EMPTY DIFF — because "is it I/O?" was the
- * wrong question. The right one is "if this vanished, is there any review
- * surface on which a human would see it?", and for a sidebar the answer was
- * no: module-face-lint's `sidebarProblems()` returns early on absence, the
- * faceplate-platform e2e sweeps only the modules that HAVE one, and the dock
- * VRT baseline is re-pinned by whoever removes it.
+ * ⚠ WHICH FIELDS PROJECT IS DECIDED FIELD BY FIELD, NOT BY THIS PARAGRAPH.
+ * `sidebar` used to be the one projected field, for a reason worth keeping now
+ * that the field itself is gone: #1468 deleted a whole sidebar block from
+ * twelve modules and `task docs:accept` produced an EMPTY DIFF — because "is it
+ * I/O?" was the wrong question. The right one is "if this vanished, is there
+ * any review surface on which a human would see it?" Ask that of every new
+ * field.
  *
- * So the decision is now made field by field and enforced:
+ * So the decision is made field by field and enforced:
  * `FACE_FIELDS_NOT_IN_LOCK` (contract-signature.ts) names every unprojected
  * field with a `why` and the gate that DOES cover it, and contract-lock.test.ts
  * walks the keys live defs actually declare — a key that is neither projected
@@ -700,6 +742,56 @@ export interface FaceXyPad {
   y: string;
   /** Caption under the pad. Omitted = the two params' own labels. */
   label?: string;
+  /**
+   * WHICH SURFACE paints this pad's ONE cell at the DOCK.
+   *
+   *   'band' (default) — the shell's generic `XyPad` renders in a band, at the
+   *                      `x` key's rank. Every pad shipped before this field.
+   *   'body'           — the module's OWN `fullViewBody` paints it, and the
+   *                      dock bands render NO cell for either axis.
+   *
+   * ⚠ IT IS A DOCK-ONLY DISTINCTION, AND THE REASON IS NOT THE ONE THE FIRST
+   * DRAFT OF THIS COMMENT GAVE. It said the lane must keep the generic pad or a
+   * pad-only module would resolve to zero controls; that premise is FALSE, and
+   * `quadralogical-face-model.test.ts` corrected it. `laneOrder`
+   * (`curated-face.ts:131-143`) ALREADY makes every declared pad's anchor
+   * dock-only, for a measured reason that predates this field: a pad is square
+   * and a lane knob column is 46 px, so squeezing it there keeps the gesture
+   * and loses the precision. So NO lane tier has ever painted a pad, and this
+   * field cannot change that.
+   *
+   * What it changes is WHICH DOCK SURFACE paints it — a band cell, or the
+   * module's own body. `extBody` is gated to the dock by
+   * `dockFullViewHeadPlan`, so 'body' is only meaningful there, and the lane is
+   * untouched because the pad was never in it.
+   *
+   * ⚠ THE #1974 REFUSAL IS A SEPARATE QUESTION AND THIS FIELD DOES NOT ANSWER
+   * IT. `joystick` is refused because a pad is its ONLY control, so the lane
+   * resolves to ZERO controls whatever any face declares. A module adopting
+   * `'body'` must still have something else to show in the lane; if it does
+   * not, the answer is to not promote it.
+   *
+   * ⚠ AND IT IS A CLAIM THE GATES CHECK IN BOTH DIRECTIONS, not a hint.
+   * `module-face-lint` INVERTS its render-parity assertion for a `'body'`
+   * pad's two axes — they must render EXACTLY ZERO dock cells where every
+   * other param must render exactly one — the same falsifiable shape
+   * `noUserControl` uses. And `face-xy-body-source.test.ts` requires the
+   * declaring face to own a `fullViewBody` whose source really emits
+   * `data-control-params` naming both axes, so "the body paints it" cannot be
+   * satisfied by a body that does not.
+   *
+   * WHY A PER-PAD ENUM rather than a general "these params live in the body"
+   * list: a 2-D pad is the only control the shell paints that a module could
+   * plausibly need to own — it is the one primitive whose picture and whose
+   * gesture can be the SAME surface as a module's own render (QUADRALOGICAL's
+   * joystick sits over live previews of the four inputs it is mixing). A
+   * general escape hatch would be reached for by the next module that merely
+   * wants a bigger knob.
+   *
+   * UI metadata like the rest of `face`: OUT of contract-signature /
+   * contract-lock (choosing a surface is not an I/O change).
+   */
+  surface?: 'band' | 'body';
 }
 
 export interface ModuleFace {
@@ -799,7 +891,7 @@ export interface ModuleFace {
    * can chart; the exact packed-RGB space for a colour; a CONTINUOUS scale for
    * a fader — the first two are discrete-only, the third discrete-never).
    */
-  paramCells?: Readonly<Record<string, 'grid' | 'color' | 'fader'>>;
+  paramCells?: Readonly<Record<string, 'grid' | 'color' | 'hue' | 'fader'>>;
   /**
    * DECLARED 2-D PADS — the one cell that binds a PAIR of params.
    *
@@ -929,21 +1021,19 @@ export interface ModuleFace {
   //
   // Everything below exists because the shell was STRUCTURALLY INCAPABLE of
   // rendering a designed instrument panel: it painted bands of bare knobs and
-  // a spine, where the mocks are a titled page with a hero, described sections
-  // and a context sidebar. That was reported six times as per-card drift; it
-  // was never per-card. These four fields are the declaration surface that
-  // closes it, and they are GENERIC by construction — no field names a module.
+  // a spine, where the mocks are a titled page with a hero and described
+  // sections. That was reported six times as per-card drift; it was never
+  // per-card. These fields are the declaration surface that closes it, and they
+  // are GENERIC by construction — no field names a module.
   //
-  // ALL FOUR ARE DOCK-ONLY. Ranks 1-6 are the LANE budget (faceTierCap); the
-  // dock shows everything, so the title, the hint, the hero and the sidebar
-  // never reach a 192×180 tile.
+  // ALL ARE DOCK-ONLY. Ranks 1-6 are the LANE budget (faceTierCap); the dock
+  // shows everything, so the title, the hint and the hero never reach a
+  // 192×180 tile.
   //
-  // ⚠ THREE OF THE FOUR are UI metadata out of contract-lock.txt and linted by
-  // module-face-lint.test.ts. `sidebar` IS NOT: it is projected into the
-  // golden, one line per block, because nothing else in the repo could see one
-  // disappear (#1468 removed twelve and every gate stayed green). See
-  // FACE_FIELDS_NOT_IN_LOCK in contract-signature.ts, where title / hint / hero
-  // each name the gate that covers them instead.
+  // ⚠ THE FOURTH FIELD WAS `sidebar`, AND IT IS DELETED — see ModuleFaceHero
+  // for the owner rulings and the gate that replaced it. All three survivors
+  // are UI metadata out of contract-lock.txt; FACE_FIELDS_NOT_IN_LOCK in
+  // contract-signature.ts names the gate that covers each instead.
 
   /** The faceplate's PAGE TITLE — the mock's "Voice". A short category word,
    *  above the hint. Omitted = no title row. */
@@ -951,54 +1041,251 @@ export interface ModuleFace {
   /** The one-line description under the title ("three decoupled generators
    *  through one serial bus"). Omitted = no hint row. */
   hint?: string;
-  /** The HERO SLOT — the module PICTURE, a promoted control, its audition and
-   *  a few live readouts, above the bands. */
+  /** The HERO SLOT — the module PICTURE, a promoted control and its audition,
+   *  above the bands. */
   hero?: ModuleFaceHero;
-  /** The dock SIDEBAR — typed context blocks down the faceplate's right edge.
-   *  DOCK-ONLY and rendered OUTSIDE the ModuleShell (DockFullView owns the
-   *  `.page.has-sidebar` grid), so a sidebar block can never be mistaken for a
-   *  control cell by the parity gates. */
-  sidebar?: readonly FaceSidebarBlock[];
+  /**
+   * Force the DOCK TAB RAIL on, whatever the band count.
+   *
+   * ⚠⚠ OWNER-INSTRUCTION ONLY, PER MODULE. This is NOT a layout preference an
+   * author may reach for, and it does NOT reopen "should my face be tabbed?".
+   * The DEFAULT STANDS: author honest pages and let the rail engage at
+   * `DOCK_TAB_MIN_BANDS` (7). A face with 3-6 honest pages renders as a column,
+   * and that is correct — the owner separately ruled `ruttetra` ships UNTABBED
+   * for exactly that reason.
+   *
+   * Declaring it requires a NAMED entry in `FACE_TAB_OPT_IN`
+   * (`dock-tabs-model.test.ts`) carrying the owner instruction it came from,
+   * VERBATIM. A def that declares this without an entry is RED, and an entry
+   * naming a module that no longer declares it is RED too — so nobody can
+   * quietly opt a face in, and no licence outlives its instruction.
+   *
+   * Today's only adopter is `spirographs` (owner: *"this should just be 3 tabs,
+   * one per spiro"*), where the rail is not a density workaround but the
+   * module's own structure: three INDEPENDENT figures, one editable at a time,
+   * which is exactly what its legacy card's own tablist did.
+   */
+  tabbed?: true;
+  /**
+   * MONITOR MODE — this face's own surface may be watched WITHOUT its control
+   * bands, and `node.data.hideControls` is what does it (#2009).
+   *
+   * ⚠ IT IS THE EXACT INVERSE OF SCREEN ON/OFF, NOT A DUPLICATE OF IT, and
+   * #1865 proposed the opposite. SCREEN OFF hides the PICTURE and keeps the
+   * controls; MONITOR MODE hides the CONTROLS and keeps the picture. Neither
+   * can subsume the other — they are the two directions of one question ("which
+   * half am I looking at right now?"), and a video face wants both.
+   *
+   * ⚠ WHY THIS IS A SHELL CAPABILITY AND NOT A `ShellExtension` SLOT. The gap
+   * #2009 filed is that `fullViewBody` paints ABOVE the bands and CANNOT
+   * suppress them — its own contract says so, deliberately (the
+   * `warrensspectrum` failure, where a body that ate the faceplate would have
+   * deleted every control). `editorSurface` is not the home either: it is
+   * specced for "controls that are not cell-shaped at all" — a clip arranger, a
+   * pad matrix — and it is a STATIC structural choice. Hiding the bands is a
+   * TOGGLE over a face whose controls are perfectly cell-shaped. Different
+   * axis, so wiring `editorSurface` for it would have made ruttetra a fake
+   * first adopter of a slot it does not need, and left the real blocker
+   * standing.
+   *
+   * WHAT PROMOTION WOULD OTHERWISE DELETE: five legacy cards mount
+   * `hideControls` (`ruttetra`, `monoglitch`, `milkdrop`, `reshaper`,
+   * `graphicEq`), and `migrated(type)` stops BOTH surfaces rendering the card.
+   * On ruttetra the def's own `docs` advertise the gesture in the user's words
+   * — "hiding the controls turns it into a resizable monitor" — so promoting
+   * without this makes the shipped documentation describe a control that no
+   * longer exists, and no def-reading gate can see that.
+   *
+   * ⚠ IT CANNOT ENGAGE WITHOUT A SURFACE TO BE A MONITOR OF.
+   * `faceMonitorPlan` requires `dockFullViewHeadPlan().extBody` — the module's
+   * own `fullViewBody` actually painting — because a faceplate with its bands
+   * hidden and no picture is a BLANK PLATE, which is a worse outcome than the
+   * one this fixes. That precondition is asserted directly rather than left to
+   * an author's care.
+   *
+   * Gate: `face-monitor-source.test.ts`, deny-by-default in BOTH directions —
+   * a face declaring this must own a `fullViewBody` that reads and writes
+   * `hideControls` and exposes a button, and a FACED module whose legacy card
+   * still mounts `hideControls` must declare this or carry a named exemption.
+   */
+  monitor?: FaceMonitor;
+  /**
+   * BAND FOCUS — a param's VALUE decides which control bands render.
+   *
+   * Owner ruling, 2026-08-20, on `colourofmagic`: *"we can rgb by default and
+   * only show rgb controls … if i select passthrough manually that's the only
+   * time i see all controls."* That module runs five colorspace blocks in
+   * parallel and `preview` picks which of twenty-two outputs you are looking
+   * at, so the plate carried thirty-five knobs while you steered six of them.
+   * Focusing brings the picture and the controls that drive it together.
+   *
+   * ⚠ IT IS STRUCTURE, NOT TEXT, which is why it is free under the
+   * resting-text rulings — it decides which bands RENDER and paints nothing.
+   * The same shape `monitor` above uses, one step further: a PER-BAND
+   * predicate rather than a whole-plate boolean.
+   *
+   * ⚠ AND UNLIKE `monitor`, ITS DEFAULT STATE IS FOCUSED, which is the whole
+   * reason it needed a gate change. Monitor mode is a per-node runtime state no
+   * parity gate observes (a freshly opened faceplate has `hideControls` absent
+   * ⇒ false). Band focus is read straight off a PARAM, and `colourofmagic`
+   * defaults to `preview: 1` (RGB) — so a freshly opened faceplate renders ONE
+   * band, and `faces-parity`'s "every param renders exactly one cell" would go
+   * RED on a correctly-working module. The sweep therefore drives the face into
+   * a declared `showAllOn` value first; see `showAllBands` in faces-parity.
+   *
+   * Gate: `band-focus-model.test.ts` for the predicate + totality, and the
+   * parity sweep's focused-absence leg for "the declaration is actually wired".
+   */
+  bandFocus?: FaceBandFocus;
+  /**
+   * RACK-GLOBAL STATUS — this face shows state that belongs to THE RACK rather
+   * than to this node (#2024 item 3; owner ruling 2026-08-21, *"close the
+   * gap"*).
+   *
+   * ⚠ IT IS A THIRD AXIS, not a spelling of the two above. `monitor` is a
+   * per-node RUNTIME TOGGLE; `bandFocus` is a per-node PARAM VALUE. This one is
+   * a property of the PATCH — which other nodes exist — and no param-reading
+   * resolver can see it, because there is no `ParamDef` whose value is "am I
+   * the instance that owns the shared hardware", and there cannot be: the
+   * answer changes when a DIFFERENT node is added or deleted.
+   *
+   * The worked case is `cvBuddy`/`cvBuddyMini`. RUN and CLOCK are single-source
+   * — the id-smallest instance of either kind drives ES-9 jacks 7 and 8 — so on
+   * every other instance the PPQN and OFFSET controls are dials wired to
+   * nothing, and the legacy card has always hidden them. `primaryOnlyBands`
+   * carries that forward; without it, promotion turns two hidden controls into
+   * two live-looking ones that change nothing, which is a worse surface than
+   * the card it replaced.
+   *
+   * ⚠ IT IS STRUCTURE, NOT TEXT — free under the resting-text rulings for the
+   * same reason `bandFocus` is: it decides which bands RENDER and paints
+   * nothing at all. The rack-global state a player actually READS (which jacks
+   * this instance owns, whether the clock is dropping pulses) is painted by the
+   * module's own `fullViewBody` through the `StatusLed` primitive, where a
+   * caption is static, a state is a lamp, and the measurement reaches
+   * `aria-label`/`title` and never a text node.
+   *
+   * ⚠ IT CANNOT BLANK A PLATE. `rackStatusPlan` refuses to hide anything unless
+   * the module's own body is painting — the `faceMonitorPlan` precondition, and
+   * sharper here, since `cvBuddy`'s only two params are BOTH in the suppressed
+   * band. The lane tile is the named blind spot: no status body fits there, so
+   * nothing is suppressed there either.
+   *
+   * Gate: `face-rack-status-source.test.ts`, deny-by-default in both
+   * directions — a declaring face must own a `fullViewBody` that reads the
+   * patch and paints through `StatusLed`, its `primaryOnlyBands` must name real
+   * bands and its `peers` real registered types; and every extension body in
+   * the tree must declare what its own canvas paints, which is what converts
+   * `face-resting-text-source`'s largest named blind spot into a
+   * deny-by-default roster.
+   */
+  rackStatus?: FaceRackStatus;
 }
 
 /**
- * A labelled VALUE for the hero slot or a `readouts` sidebar block. EXACTLY
- * ONE of three sources; declaring none, or more than one, is an authoring error
- * the face lint fails and the render skips.
+ * RACK-GLOBAL STATUS's declaration (`face.rackStatus`). Serialisable data like
+ * the rest of `face` — the shell reads it, never a closure.
  *
- *   `paramId` — the param's live value through the same `ParamDef.format` /
- *               `units` ladder the dial under it prints.
- *   `valueId` — a DERIVED number: a pure function of the module's live params,
- *               registered in face-readout-values.ts.
- *   `text`    — a fixed string the def wants to state.
- *
- * ⚠ `valueId` EXISTS BECAUSE `paramId` IS NOT ALWAYS THE ANSWER, and mistaking
- * one for the other is the blind-metric trap in miniature. Kick drum's hero
- * wants to print how long the voice RINGS. The first draft declared
- * `{ label: 'tail', paramId: 'sub_decay' }` — which prints 450 ms, moves when
- * you turn SUB DEC, and reads entirely correct — while being INVARIANT to SUB
- * LEVEL, which genuinely changes the answer (the real −60 dB tail at those
- * defaults is 398 ms, because it is a sum of three layers at their own mix
- * levels). A readout is not a knob relabelled; when the quantity is derived,
- * DERIVE it, and negative-control the derivation on the input the knob
- * readback would be blind to.
+ * ⚠ `peers` IS DECLARED, NOT DERIVED, and the reason is that the platform
+ * cannot know which modules share a resource. `cvBuddy` and `cvBuddyMini` draw
+ * from ONE ES-9 jack pool across both types — that is a fact about the ES-9,
+ * not about either def — and a derivation over "modules with the same category"
+ * or "the same palette group" would be a guess that reads as a rule.
  */
-export interface FaceReadout {
-  /** Caption ("PEAK", "TAIL"). */
-  label: string;
-  /** Print this param's live value. Must be a declared param on the def. */
-  paramId?: string;
-  /** …or print a DERIVED value: an id registered in face-readout-values.ts.
-   *  The def declares a STRING, never a function, so `face` stays serialisable
-   *  data (the sidebar-panels precedent). An unregistered id fails the lint. */
-  valueId?: string;
-  /** …or print this literal ("≈ 480 ms"). */
-  text?: string;
+export interface FaceRackStatus {
+  /**
+   * Why THIS face's controls depend on which OTHER nodes exist — required by
+   * the type so `tsc` refuses the bare form, and an argument rather than a
+   * label. NEVER PAINTED: it is for the reviewer and the gate, and
+   * `face-resting-text-source` asserts the shell cannot reach it.
+   */
+  why: string;
+  /**
+   * The module types sharing the rack-global resource, INCLUDING this one. The
+   * PRIMARY is the lexicographically smallest node id among them — the same
+   * converged tie-break every collab peer computes identically.
+   */
+  peers: readonly string[];
+  /**
+   * Band (page) ids that render ONLY on the primary instance. Anchored by the
+   * gate to the face's own declared pages, so a renamed band cannot leave a
+   * suppression pointing at nothing — which would fail SILENTLY OPEN, painting
+   * the dead controls this field exists to hide.
+   */
+  primaryOnlyBands: readonly string[];
+}
+
+/**
+ * BAND FOCUS's declaration (`face.bandFocus`). Serialisable data like the rest
+ * of `face` — the shell reads it, never a closure.
+ *
+ * ⚠ DECLARED, NOT DERIVED, and the choice is about COUPLING rather than effort.
+ * On the first adopter the map falls out of the output port ids — that is how it
+ * was verified, and every one of the twenty-two `preview` values resolved to
+ * exactly one block. But deriving it would tie band visibility to the REAR
+ * CARD's port grouping, a separate concern a later edit is free to reorganise.
+ * Declared, the coupling is visible and the totality gate can check it.
+ */
+export interface FaceBandFocus {
+  /** The param whose value selects the focused band. */
+  param: string;
+  /**
+   * Why hiding the other bands is right for THIS module — required by the type
+   * so `tsc` refuses the casually-focused face, and an argument rather than a
+   * label. NEVER PAINTED: it is for the reviewer and the gate, and
+   * `face-resting-text-source` asserts the shell cannot reach it.
+   */
+  why: string;
+  /**
+   * Values that show EVERY band — the state a player selects on purpose.
+   *
+   * ⚠ IT MUST BE NON-EMPTY, or the face has no state in which every control is
+   * reachable, and the parity sweep says so by name.
+   */
+  showAllOn: readonly number[];
+  /** band (page) id → the param values that reveal it, and only it. */
+  bands: Readonly<Record<string, readonly number[]>>;
+}
+
+/**
+ * MONITOR MODE's declaration (`face.monitor`). A record with one REQUIRED
+ * field, so `tsc` refuses the bare `monitor: true` form: the burden of proof is
+ * on the face that claims its picture is worth watching alone.
+ *
+ * ⚠ `why` IS NEVER PAINTED. It is documentation for the reviewer and for
+ * `face-monitor-source.test.ts`, which requires it to be an argument rather
+ * than a label — the same shape every exemption roster in this repo uses. The
+ * shell is asserted never to read it (`face-resting-text-source.test.ts`), so
+ * it cannot become a fifth resting-text mechanism.
+ */
+export interface FaceMonitor {
+  /** Why THIS face's surface is worth watching without its controls — the
+   *  picture a player steers by, not merely a preview beside the knobs. */
+  why: string;
 }
 
 /**
  * The HERO SLOT — the top of the faceplate: the module's biggest control, its
- * audition, its own picture and a few live readouts.
+ * audition and its own picture.
+ *
+ * ⚠ THERE IS NO `readouts` FIELD, AND THERE IS NO `sidebar` ON `ModuleFace`.
+ * Both are DELETED, not deprecated, and re-adding either — under any name — is
+ * the mistake this note exists to prevent. The owner ruled four times in one
+ * day that the RESTING faceplate paints no derived-state text: "I DO NOT WANT
+ * THESE RIGHT HAND TEXT AREAS I DO NOT WANT EXTRA TEXT. i explicitly already
+ * dictated that several times" (the spirographs sidebar), then "you don't need
+ * to have the out-silent text at all … we absolutely have to stop doing [things]
+ * like that. i said minimal, and good use of screen real estate" (moog984's
+ * hero readout row, #1957).
+ *
+ * The two mechanisms were structurally different and BOTH passed every gate
+ * that existed, which is why the replacement gate denies the SHAPE rather than
+ * either mechanism: `face-resting-text-source.test.ts`. The permitted resting
+ * text on a faceplate is exhaustively the module NAME, tab/section LABELS,
+ * control CAPTIONS, and option/landmark NAMES that disambiguate a control's own
+ * position. A derived value's home is `aria-valuetext` on the control it
+ * describes — which every spec proving a face tracks the graph already reads,
+ * so nothing had to be weakened to delete these.
  *
  * ⚠ A face that promotes a PICTURE (`cell`) suppresses the shell glyph at the
  * dock — the glyph is a live trace of the OUTPUT and the picture is a picture
@@ -1017,8 +1304,8 @@ export interface ModuleFaceHero {
    * — a PF-14 `panel` cell (an envelope graph, a scale ring, a routing map).
    *
    * ⚠ THE PICTURE IS THE ONE HALF OF A FACEPLATE THAT CANNOT BE PLATFORM. A
-   * title, a hint, a sidebar, a preset roster and a readout are the same shape
-   * on every instrument, so they are DATA declared here. What a kick drum's
+   * title and a hint are the same shape on every instrument, so they are DATA
+   * declared here. What a kick drum's
    * envelope looks like is not — no amount of def introspection synthesises it.
    * Promoting the module's panel into the hero is how the platform makes room
    * for that without any module needing to touch the shell. A face that
@@ -1029,56 +1316,7 @@ export interface ModuleFaceHero {
   control?: string;
   /** A second `face.order` key beside it — typically the audition button. */
   action?: string;
-  /** Labelled live values printed beside the hero picture, at hero size. */
-  readouts?: readonly FaceReadout[];
 }
-
-/**
- * One entry of a `presets` sidebar block. `values` is a param-id → value map
- * applied through the ORDINARY param write path when the entry is selected —
- * so a preset is a real action with real undo/sync, never a decorative list.
- * Every key must be a declared param whose value is in range (face lint).
- */
-export interface FacePreset {
-  id: string;
-  label: string;
-  /** Optional right-aligned annotation ("50 Hz", "hard"). */
-  note?: string;
-  values: Readonly<Record<string, number>>;
-}
-
-/**
- * A typed SIDEBAR block. The kinds are deliberately few and generic: two that
- * cover what a faceplate's context column actually says (the presets, the
- * numbers) plus `custom` for the genuinely bespoke picture, which resolves
- * through a REGISTRY (sidebar-panels.ts) exactly like PF-14's panel cells —
- * the def declares an id, never a component, so `face` stays data.
- *
- * ⚠ THERE IS NO `signal-flow` KIND, and re-adding one is the mistake this note
- * exists to prevent. Twelve modules declared a hand-authored stage list
- * modelling their own DSP chain, and NOTHING verified any of them against the
- * DSP — not contract-lock, not module-face-lint, not ART. They were prose in a
- * diagram's clothes, free to drift the moment a worklet changed, and the owner
- * removed the kind rather than correct twelve snapshots that would start
- * drifting again the same day. A future chain picture must be DERIVED from
- * something the build can check, or it must not exist.
- */
-export type FaceSidebarBlock =
-  | { kind: 'presets'; label: string; entries: readonly FacePreset[] }
-  | { kind: 'readouts'; label: string; entries: readonly FaceReadout[] }
-  | {
-      kind: 'custom';
-      label: string;
-      /** A key registered in sidebar-panels.ts. The def declares a STRING, not
-       *  a component, so `face` stays serialisable data and the shell never
-       *  imports a module. An unregistered id fails module-face-lint. */
-      panelId: string;
-      /** Declared inputs for the panel (a split frequency, a param id to
-       *  read). Keeping them here rather than inside the component is what
-       *  makes a `custom` panel REUSABLE — the picture is generic, the numbers
-       *  are the module's. Values must be primitives so `face` stays data. */
-      props?: Readonly<Record<string, string | number>>;
-    };
 
 /** Rear-card curation block (see ModuleFace.rear). */
 export interface ModuleFaceRear {

@@ -4,7 +4,9 @@
 // frame-morph control. The DSP is a custom JS AudioWorklet
 // (packages/dsp/src/wavetable-vco.ts). The factory generates a synthetic
 // 16-frame "basic" wavetable that morphs saw → square → triangle → sine
-// and loads it into the worklet via port.postMessage on instantiation.
+// and hands it to the worklet through `processorOptions` at CONSTRUCTION — not
+// by a later port message, which used to leave a window in which the processor
+// rendered silence (see the race-fix note on the factory below).
 // The `wavePos` param picks the morph position into the 16-frame table;
 // the wavetable is a fixed sequence shipped with the module, NOT a user-
 // uploaded set (see WAVECEL or WAVVIZ for those).
@@ -213,10 +215,6 @@ export const wavetableVcoDef: AudioModuleDef = {
     //     exponential FM that no symmetric ± dial can express.
     hero: {
       control: 'wavePos',
-      readouts: [
-        { label: 'knob pitch', valueId: 'wavetablevco-knob-hz' },
-        { label: 'fm span', valueId: 'wavetablevco-fm-span' },
-      ],
     },
 
     // No `title`, no `hint`, no band hints, no sidebar — owner ruling
@@ -274,19 +272,40 @@ export const wavetableVcoDef: AudioModuleDef = {
       loadedContexts.add(ctx);
     }
 
+    // ⚠ THE TABLE IS PASSED AT CONSTRUCTION, NOT POSTED AFTERWARDS. This is a
+    // RACE FIX. It used to be `workletNode.port.postMessage({type:'load', …})`
+    // AFTER the node existed, and the processor emits `out.fill(0)` — digital
+    // SILENCE — until a table arrives. Nothing sequenced that message against
+    // rendering, so any block processed before delivery was silent.
+    //
+    // On a realtime context that is a block or two nobody hears. On an
+    // `OfflineAudioContext`, which renders as fast as it can, whole renders came
+    // out silent intermittently — MEASURED on CI (2026-08-23) as an ART inertness
+    // assertion reporting `peak |Δsample| = 1.3953` against an expected 0, on a
+    // signal documented as roughly ±1: silence against signal, not drift.
+    //
+    // ⚠ THE REAL COST WAS THE GREEN RUNS, NOT THE RED ONE. An ART render that
+    // silently measures silence makes every assertion that would PASS on silence
+    // green for the wrong reason. `processorOptions` reaches the processor
+    // constructor synchronously, before its first `process()` call, so the window
+    // does not exist rather than being made small.
+    //
+    // ⚠ COST: `processorOptions` is structured-CLONED, not transferred, so this
+    // copies the table once per node (16 × 2048 × 4 B ≈ 128 KB) where the old
+    // path transferred the buffer. A one-time construction cost, paid to remove a
+    // correctness race.
+    const table = generateBasicTable();
     const workletNode = createWorkletNode(node, ctx, 'wavetable-vco', {
       numberOfInputs: 4,
       numberOfOutputs: 1,
       outputChannelCount: [1],
+      processorOptions: {
+        type: 'load',
+        table: table.buffer,
+        frameSize: FRAME_SIZE,
+        frameCount: FRAME_COUNT,
+      },
     });
-
-    // Build table + ship it to the worklet (transfer the buffer).
-    const table = generateBasicTable();
-    const buf = table.buffer;
-    workletNode.port.postMessage(
-      { type: 'load', table: buf, frameSize: FRAME_SIZE, frameCount: FRAME_COUNT },
-      [buf]
-    );
 
     // Apply initial param values.
     const params = workletNode.parameters as unknown as Map<string, AudioParam>;

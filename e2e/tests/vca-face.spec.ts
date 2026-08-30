@@ -31,7 +31,7 @@
 // Runs on /rack?shell=legacy (no DB, no relay) — the normal e2e lane.
 
 import { test, expect, type Locator, type Page } from '@playwright/test';
-import { spawnPatch } from './_helpers';
+import { spawnPatch, waitForLaneTier } from './_helpers';
 import { formatVcaBase } from '../../packages/web/src/lib/audio/vca-gain-model';
 
 const SLOW_RENDER = process.env.E2E_SWIFTSHADER === '1' || !!process.env.CI;
@@ -104,14 +104,13 @@ async function setLaneTier(page: Page, zoom: number, tier: string): Promise<void
     const vp = f.getViewport();
     f.setViewport({ x: vp.x, y: vp.y, zoom: z }, { duration: 0 });
   }, zoom);
-  await page.waitForFunction(
-    (t) => {
-      const tiles = Array.from(document.querySelectorAll('[data-shell-tier]'));
-      return tiles.length > 0 && tiles.every((el) => el.getAttribute('data-shell-tier') === t);
-    },
-    tier,
-    { timeout: 10_000 },
-  );
+  // ⚠ WAS A BARE `document.querySelectorAll('[data-shell-tier]')` + `.every()`.
+  // That stopped meaning "the lane tiles" on 2026-08-24 without this spec
+  // changing: promoting `audioOut` put a PINNED faceplate in the always-mounted
+  // 🎧 topbar panel, whose tier is permanently `dock`, so `.every()` could never
+  // become true and this call sat out its full 10 s timeout. Scoped to the main
+  // canvas through the ONE export site — see `waitForLaneTier`.
+  await waitForLaneTier(page, tier);
 }
 
 // ⚠ `measureReadoutFit` LIVED HERE AND IS DELETED WITH ITS SUBJECT. It measured
@@ -311,82 +310,57 @@ test.describe('vca face — the knob readouts follow the graph', () => {
 // unit tier only — VCA declares none, and inventing one to make a browser
 // assertion possible would be a contract change written for a test.)
 // ─────────────────────────────────────────────────────────────────────────────
-// PF-20 — THE DERIVED HERO READOUT, ON THE SHIPPED SURFACE.
-//
-// `vca-gain-model.test.ts` carries the permanent negative controls for the
-// FUNCTION. This is the leg the unit lane structurally cannot supply: that the
-// registered `valueId` actually resolves through the dock, paints, and moves
-// when the graph moves. A derived readout has two ways to be dead that a pure
-// test cannot see — an id nothing renders, and a rail wired to a stale local
-// that never re-projects — and both print a plausible string forever.
-//
-// The perturbation is the SAME blindness leg as unit LEG 1: hold `base` and
-// move `cvAmount`. The dials must not move (they are each blind to the other),
-// the strip must. Values are written straight into the graph so the expected
-// strings stay literals — the "readout follows the GRAPH" claim is proved by
-// the drag tests above; this one is about REACHABILITY and re-projection.
-// ─────────────────────────────────────────────────────────────────────────────
-test.describe('vca face — the DERIVED hero readout reaches the dock and moves there', () => {
-  test('`at cv 1` paints the summed gain, and follows cvAmount while both dials sit still', async ({
-    page,
-  }) => {
+test.describe('vca face — the two dials NAME their sense, and neither can see the other', () => {
+  // ⚠ THIS DESCRIBE USED TO PROVE THE DERIVED HERO READOUT (`at cv 1`), AND
+  // THAT READOUT IS DELETED (owner, 2026-08-19 — the resting faceplate paints no
+  // derived-state text). What it asserted is worth naming, because it is gone
+  // rather than moved: vca's real gain is base + cvAmount, so at base 0.5 with
+  // cvAmount 1 the module sits at +3.5 dB PAST UNITY, and a sum below zero
+  // passes PHASE-INVERTED. Nothing on the faceplate states either any more.
+  //
+  // WHAT SURVIVES IS THE HALF THAT WAS ALWAYS THE STRONGER ASSERTION: each dial
+  // NAMES its own state in `aria-valuetext` — which is exactly where the ruling
+  // puts a value — and each is BLIND to the other, which is the fact the
+  // deleted readout existed to compensate for. Keeping this leg means the
+  // blindness is still pinned even though the compensation is gone.
+  test('each dial names its own state, and is invariant to the other', async ({ page }) => {
     await gotoShell(page);
     await spawnPatch(page, [
       { id: 'v', type: 'vca', position: { x: 460, y: 240 }, params: { base: 0.5, cvAmount: 1 } },
     ]);
 
     const dockShell = await openDock(page, 'v');
-    const strip = dockShell.getByTestId('face-hero-readouts');
-    await expect(strip, 'the readouts-only hero paints its strip').toBeVisible();
-
-    const entry = strip.locator('[data-hero-readout="vca-gain-at-full-cv"]');
-    await expect(
-      entry,
-      'the DECLARED valueId must be the one the dock renders — a stale/unregistered id ' +
-        'prints an em dash and every other assertion here would still pass',
-    ).toBeVisible();
-
-    // base 0.5 + cvAmount 1 = 1.5 → +3.5 dB PAST UNITY on an unclamped gain.
-    // This is the number the def's own docs.controls.base advice walks a user
-    // into, and no other surface states it.
-    await expect(entry).toContainText('+3.5 dB');
-
-    // The two dials, BEFORE. Read off `aria-valuetext`: neither paints, and the
-    // strip beside them does — which is the whole shape of the owner's ruling
-    // (a DERIVED, labelled hero value earns its ink; a decimal restating the
-    // dial under it does not).
     const baseRo = dockShell.locator('[data-testid="control-base"]');
     const amtRo = dockShell.locator('[data-testid="control-cvAmount"]');
+
+    // The dials, at the start. Neither PAINTS a number — the value is in the
+    // accessible name, which is the ruling's own home for it.
     await expect(baseRo).toHaveAttribute('aria-valuetext', '-6.0 dB');
     await expect(amtRo).toHaveAttribute('aria-valuetext', 'OPEN');
 
-    // PERTURB the input the dials are blind to.
+    // PERTURB the input the base dial is blind to.
     await setParam(page, 'v', 'cvAmount', 0.5);
-
-    // The strip MOVED: 0.5 + 0.5 = 1.0 exactly.
-    await expect(
-      entry,
-      'the derived readout must re-project when cvAmount moves — if it does not, the rail ' +
-        'is reading a stale local and the whole valueId is decoration',
-    ).toContainText('UNITY');
-
-    // …and the two dials did NOT, which is the entire reason this readout is
-    // derived rather than a `paramId`.
     await expect(baseRo, 'base is blind to cvAmount').toHaveAttribute('aria-valuetext', '-6.0 dB');
     await expect(
       amtRo,
       'cvAmount reads its SENSE, which is OPEN at +0.5 too',
     ).toHaveAttribute('aria-valuetext', 'OPEN');
 
-    // The other direction, and the module's most surprising state: a sum below
-    // zero passes PHASE-INVERTED, and the ` INV` suffix is the face's only
-    // statement of it.
+    // …and the other direction: the sense FLIPS at a negative amount, which is
+    // the one state change either dial can still express on its own.
     await setParam(page, 'v', 'base', 0);
     await setParam(page, 'v', 'cvAmount', -1);
-    await expect(entry, 'a negative summed gain is flagged INV').toContainText('INV');
-    await expect(amtRo, 'and the dial now names the sense').toHaveAttribute(
+    await expect(amtRo, 'the dial names the inverted sense').toHaveAttribute(
       'aria-valuetext',
       'DUCK',
+    );
+    // ⚠ `CLOSED`, NOT `-inf dB` — MEASURED, not assumed. The def's formatter
+    // NAMES the bottom of the range rather than printing an infinity, which is
+    // the whole reason this value lives in `aria-valuetext` and not in a
+    // painted decimal: a name is speakable, `-inf` is not.
+    await expect(baseRo, 'and base names its own new position').toHaveAttribute(
+      'aria-valuetext',
+      'CLOSED',
     );
   });
 });

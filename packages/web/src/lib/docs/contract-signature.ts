@@ -29,7 +29,6 @@ import { listVideoModuleDefs } from '$lib/video/module-registry';
 import { listMetaModuleDefs } from '$lib/meta/module-registry';
 import type {
   ControlFamily,
-  FaceSidebarBlock,
   ModuleDocs,
   ModuleFace,
 } from '$lib/graph/types';
@@ -56,9 +55,8 @@ interface ContractDefLike {
   vizPassthrough?: boolean;
   exposableControls?: readonly { id: string; paramId?: string; kind?: string }[];
   controlFamilies?: readonly ControlFamily[];
-  /** ⚠ ONLY `sidebar` IS PROJECTED — see `serializeFaceSidebar` and the
-   *  `FACE_FIELDS_NOT_IN_LOCK` ledger below for the rest of the face, each
-   *  named with the gate that does cover it. */
+  /** ⚠ NO face field is projected into the golden — `FACE_FIELDS_NOT_IN_LOCK`
+   *  below names every field with the gate that covers it instead. */
   face?: ModuleFace;
 }
 interface ContractPortLike {
@@ -82,84 +80,19 @@ interface ContractParamLike {
 const byId = (a: { id: string }, b: { id: string }) => a.id.localeCompare(b.id);
 const num = (n: number): string => String(n);
 
-// ── face.sidebar — THE FIELD THIS GOLDEN COULD NOT SEE ─────────────────────
-//
-// ⚠ #1468 DELETED AN ENTIRE SIDEBAR BLOCK FROM TWELVE MODULES AND
-// `task docs:accept` PRODUCED AN EMPTY DIFF. Its own body records it: "the
-// golden does not include `face.sidebar` at all, so it is structurally blind
-// to a whole sidebar block appearing or vanishing."
-//
-// The old reasoning — recorded on `ModuleFace` as "declaring a sidebar is not
-// an I/O change" — is true and beside the point. The question a golden answers
-// is not "is this I/O?" but "is there a REVIEW SURFACE on which this
-// disappearing would be visible?", and for a sidebar the honest answer was no.
-// Audited across every gate that mentions `face.sidebar`:
-//
-//   module-face-lint  `sidebarProblems()` opens with `if (!blocks) return []`
-//                     — it validates blocks that EXIST and is exactly as blind
-//                     to deletion as the golden was.
-//   faceplate-platform (e2e) sweeps `__moduleSpecs` filtered to
-//                     `faceSidebar.length > 0`, so a roster of sixteen
-//                     dropping to four passes its only anti-vacuity guard.
-//   dock-faceplate-model  pins `sidebarPlan(...) === null` — a shape assertion,
-//                     re-pinned by whoever removes the sidebar.
-//   VRT face-*-dock   the ONLY gate that saw the twelve, as pixels, on an
-//                     accept loop the same author drives — and on the
-//                     non-blocking lane until this branch moves it.
-//
-// Every one of those is presence-conditional or re-pinned by the deleter. So
-// the sidebar joins the golden: not because it is I/O, but because a
-// name-per-block text diff is the cheapest thing in the repo that a human
-// reviewing a PR cannot fail to see.
-//
-// WHAT IS PROJECTED, and why each field: the block's KIND and LABEL (a
-// disappearing block is one deleted line; a relabelled one is a changed line),
-// the `custom` block's `panelId` (which component the shell resolves — a
-// rebinding is a behaviour change the label would hide), and each entry's
-// IDENTITY. Entries are pinned by name rather than counted, so a preset losing
-// one row is a readable one-line diff, not `entries=5` becoming `entries=4`.
-//
-// ORDER IS MEANINGFUL and therefore NOT sorted: the sidebar renders top to
-// bottom in declaration order, and cofefve/marbles both declare two blocks of
-// the same kind whose order is the whole point. Blocks carry their index.
-
-/** One sidebar ENTRY → its identity, for the golden. `presets` entries have a
- *  stable `id`; `readouts` entries do not, so they are keyed by the source they
- *  print from — which is the thing that changes when a readout is rewired. */
-function sidebarEntryKey(e: unknown): string {
-  const r = e as { id?: string; label?: string; paramId?: string; valueId?: string; text?: string };
-  if (r.id) return r.id;
-  const src = r.paramId
-    ? `param=${r.paramId}`
-    : r.valueId
-      ? `value=${r.valueId}`
-      : r.text !== undefined
-        ? 'text'
-        : '?';
-  return `${r.label ?? '?'}:${src}`;
-}
-
-/** `<type> face sidebar <i> …` lines for one def, in declaration order. */
-function serializeFaceSidebar(t: string, blocks: readonly FaceSidebarBlock[]): string[] {
-  return blocks.map((b, i) => {
-    const parts = [`${t} face sidebar ${i} kind=${b.kind}`, `label=${b.label}`];
-    if (b.kind === 'custom') {
-      parts.push(`panel=${b.panelId}`);
-      const props = b.props ?? {};
-      const keys = Object.keys(props).sort();
-      if (keys.length) parts.push(`props=${keys.map((k) => `${k}:${String(props[k])}`).join(',')}`);
-    } else {
-      parts.push(`entries=${b.entries.map(sidebarEntryKey).join(',')}`);
-    }
-    return parts.join(' ');
-  });
-}
-
 /**
- * THE REST OF `ModuleFace`, EACH NAMED WITH WHAT DOES COVER IT.
+ * EVERY `ModuleFace` FIELD, EACH NAMED WITH WHAT DOES COVER IT.
  *
- * ⚠ THIS IS THE POINT OF THE LEDGER, NOT AN APOLOGY FOR IT. The defect above
- * was not "sidebar was missing" — it was that NOTHING ENUMERATED THE FIELDS, so
+ * ⚠ NOTHING IN `face` IS PROJECTED ANY MORE, and that is a RESULT rather than a
+ * reversal. `sidebar` was the one projected field — it earned the line because
+ * #1468 deleted a sidebar block from twelve modules with every other gate
+ * green. The field itself is now DELETED platform-wide (owner, 2026-08-19; see
+ * `ModuleFaceHero` in graph/types.ts), so there is no block left to pin and
+ * `FACE_FIELDS_IN_LOCK` is legitimately empty. The ledger below is what still
+ * makes that a DECISION rather than an omission.
+ *
+ * ⚠ THIS IS THE POINT OF THE LEDGER, NOT AN APOLOGY FOR IT. The defect it came
+ * from was not "sidebar was missing" — it was that NOTHING ENUMERATED THE FIELDS, so
  * a field could be absent from the golden without anyone ever deciding it
  * should be. `contract-lock.test.ts` walks the keys actually present on every
  * registered def's `face` and requires each to be either PROJECTED or named
@@ -231,6 +164,26 @@ export const FACE_FIELDS_NOT_IN_LOCK: Readonly<
     why: 'Which keys are PROMOTED into the hero slot. A promotion removes the key from its band rather than duplicating it, so the move is already gated by an exact multiset comparison that a text line could not improve on.',
     coveredBy: "faces-parity's exact param multiset (a duplicate/unknown is an unbacked extra) + dock-faceplate-model heroFacePlan pins + VRT face-<type>-dock.",
   },
+  tabbed: {
+    why: 'Forces the dock TAB RAIL on below the band threshold. It changes no I/O and no control — the same params render either way, one band at a time instead of a column — so it is a LAYOUT decision whose failure mode is pixels, not contract. It is also the field with the tightest non-golden gate in the repo, which is why a golden line would add nothing: it is OWNER-INSTRUCTION-ONLY and every adopter is named with the instruction verbatim.',
+    coveredBy:
+      'dock-tabs-model.test.ts FACE_TAB_OPT_IN (deny-by-default per module, anchored both directions, instruction quoted) + the live-registry tabbed roster + VRT face-<type>-dock.',
+  },
+  monitor: {
+    why: 'MONITOR MODE (#2009) — the face may hide its control bands and be watched as a picture, driven by the persisted `node.data.hideControls` key. It changes no I/O and no control: the same params render, and the mode is a per-NODE runtime state that is absent (⇒ off) on every freshly opened faceplate, so a text golden of the DECLARATION would say nothing about the thing that can actually break. What CAN break is the pairing — a declaration with no toggle to reach it, or a promotion that drops the toggle a legacy card was carrying — and that is a two-sided source relationship a one-sided golden line cannot express. ⚠ It is deliberately NOT the same field as the SCREEN switch and must never be folded into one: SCREEN hides the PICTURE and keeps the controls, MONITOR hides the CONTROLS and keeps the picture (#1865 proposed the opposite).',
+    coveredBy:
+      'face-monitor-source.test.ts (deny-by-default BOTH ways: a declaring face must own a fullViewBody that reads+writes `hideControls` and exposes a button, AND a faced module whose legacy card still mounts `hideControls` must declare it — anchored exemptions, with the SCREEN/MONITOR key pair pinned as distinguishable) + module-shell-model.test.ts faceMonitorPlan (the exhaustive "never a blank plate" invariant) + video-hide-controls.spec.ts faced leg (the render: bands gone, picture and toggle still there).',
+  },
+  bandFocus: {
+    why: 'BAND FOCUS (owner ruling, 2026-08-20) — a PARAM VALUE decides which control bands render, so the picture and the controls steering it share the plate. It changes no I/O and no control: every param still resolves the same cell, and the same set is reachable — the declaration only says WHEN each band is drawn. ⚠ A text golden would be actively misleading here, because the thing that breaks is not the declaration but its TOTALITY: `visibleBandIds` deliberately fails OPEN (a value nobody claimed shows every band, so the feature can never LOSE a control), which means a gap is invisible on screen and equally invisible in a golden line listing the same field. What has to be checked is a relationship between the roster of a param and the set of declared pages, and that is not expressible as a signature. ⚠ Distinct from `monitor` next door and must not be folded into it: MONITOR hides ALL bands on a per-node runtime toggle; BAND FOCUS hides all-but-one from a PERSISTED param, and its default state is FOCUSED rather than off — which is why it needed a parity-sweep change where monitor mode did not.',
+    coveredBy:
+      'band-focus-model.test.ts (the predicate + `bandFocusIsTotal`, with negative controls for unclaimed / duplicated / unknown-band / out-of-range / inert) + module-face-lint.test.ts BAND FOCUS (the same totality checker run over every live adopter, plus a non-vacuity floor requiring one) + face-resting-text-source.test.ts (the shell may read the predicate and never the `why`) + faces-parity.spec.ts (`showAllBands` walks at a declared show-all value so no cell is unreachable, and the focused-absence leg proves the other bands are GONE rather than merely declared).',
+  },
+  rackStatus: {
+    why: 'RACK-GLOBAL STATUS (#2024, owner ruling 2026-08-21 "close the gap") — which OTHER nodes exist decides whether a band renders. It changes no I/O and no control: every param still resolves the same cell and the same set is reachable on the instance that owns the resource; the declaration only says WHICH INSTANCE draws the band. ⚠ A text golden is the wrong instrument here for a sharper reason than `bandFocus` next door: what has to hold is a relationship between this declaration and a RUNTIME FACT ABOUT THE PATCH — that `primaryOnlyBands` names the bands whose controls are inert on a non-primary node, and that the platform\'s "who is primary" rule still agrees with the module\'s own allocator. A signature line reading `rackStatus peers=cvBuddy,cvBuddyMini` would be byte-identical on the day those two rules diverged and the face began hiding the clock band on the instance that owns the clock. ⚠ Distinct from BOTH neighbours and must not be folded into either: `monitor` is a per-node RUNTIME TOGGLE and `bandFocus` a per-node PARAM VALUE, while this is a property of the graph that no ParamDef can represent — it changes when a DIFFERENT node is added or deleted, and neither of the others can observe that.',
+    coveredBy:
+      'rack-status-model.test.ts (the predicate + the never-a-blank-plate precondition, exhaustively, with all three "hide nothing" routes asserted separately and negative controls in both directions) + face-rack-status-source.test.ts (deny-by-default BOTH ways: a declaring face must own a `fullViewBody` that reads the patch and paints through `StatusLed`, its `primaryOnlyBands` must name real declared bands and its `peers` real registered types; plus the extension-body TEXT ROLE roster that converts face-resting-text-source\'s canvas blind spot to deny-by-default) + cv-buddy-face-model.test.ts (the platform\'s primary rule vs the module\'s own allocator, exhaustively over every kind-combination up to four instances, so a divergence is named rather than silently mis-hiding) + cv-buddy-face.spec.ts (the render: a real SECOND instance loses the band, the first keeps it, and the status body still paints).',
+  },
 };
 
 /** One INPUT/OUTPUT port → a canonical line body (sans the `<type> in/out`
@@ -286,16 +239,19 @@ export function serializeModuleContract(def: ContractDefLike): string[] {
       `${t} family ${f.id} kind=${f.kind} prefix=${f.testidPrefix}${f.countParam ? ` count=${f.countParam}` : ''}`,
     );
   }
-  // face.sidebar — see the block comment above `serializeFaceSidebar`. NOT
-  // sorted: the column renders in declaration order.
-  if (def.face?.sidebar) lines.push(...serializeFaceSidebar(t, def.face.sidebar));
   return lines;
 }
 
 /** The `ModuleFace` keys `serializeModuleContract` actually projects. Read by
  *  the coverage gate so "projected" is derived from this list rather than
- *  re-typed there. */
-export const FACE_FIELDS_IN_LOCK: readonly string[] = ['sidebar'];
+ *  re-typed there.
+ *
+ *  ⚠ EMPTY IS THE CORRECT VALUE TODAY, and the coverage gate is what makes that
+ *  safe: it walks the keys live defs actually declare and requires each to be
+ *  in this list or in `FACE_FIELDS_NOT_IN_LOCK`. An empty list therefore means
+ *  "every face key is covered by a named non-golden gate", asserted, not
+ *  "nobody checked". */
+export const FACE_FIELDS_IN_LOCK: readonly string[] = [];
 
 /** Every registered def (audio + video + meta), sorted by type. Requires the
  *  module barrels to have been side-effect-imported (the gate test does this). */

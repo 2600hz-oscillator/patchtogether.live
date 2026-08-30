@@ -30,7 +30,7 @@
 // source→voice→audible-output chains.
 
 import { test, expect } from './_fixtures';
-import { spawnPatch } from './_helpers';
+import { spawnPatch, seedKriaGate } from './_helpers';
 import { readScopePeakOverWindow, readScopeSnapshot } from './_module-coverage-helpers';
 
 test.describe.configure({ mode: 'parallel' });
@@ -56,8 +56,8 @@ test('TIDY VCO poly chain: POLYSEQZ chord bus → voices → AUDIOOUT — audibl
     page,
     [
       // The REAL default-mode poly source: POLYSEQZ's own transport.
-      { id: 'p-seq', type: 'polyseqz', position: { x: 40, y: 60 }, domain: 'audio',
-        params: { isPlaying: 1, length: 4, bpm: 240, gateLength: 0.6 } },
+      { id: 'p-seq-clk', type: 'kria', position: { x: 40, y: 440 }, domain: 'audio', params: { bpm: 240, running: 1 } },
+      { id: 'p-seq', type: 'cartesian', position: { x: 40, y: 60 }, domain: 'audio' },
       { id: 'p-tv', type: 'tidyVco', position: { x: 420, y: 60 }, domain: 'audio',
         params: {} }, // shipping defaults — the default card must speak
       { id: 'p-out', type: 'audioOut', position: { x: 1050, y: 60 }, domain: 'audio',
@@ -66,7 +66,8 @@ test('TIDY VCO poly chain: POLYSEQZ chord bus → voices → AUDIOOUT — audibl
         params: { timeMs: 100 } },
     ],
     [
-      { id: 'pe1', from: { nodeId: 'p-seq', portId: 'poly' }, to: { nodeId: 'p-tv', portId: 'poly' },
+      { id: 'e_p-seq_clk', from: { nodeId: 'p-seq-clk', portId: 'gate1' }, to: { nodeId: 'p-seq', portId: 'clock' }, sourceType: 'gate', targetType: 'gate' },
+      { id: 'pe1', from: { nodeId: 'p-seq', portId: 'pitch' }, to: { nodeId: 'p-tv', portId: 'poly' },
         sourceType: 'polyPitchGate', targetType: 'polyPitchGate' },
       { id: 'pe2', from: { nodeId: 'p-tv', portId: 'out_l' }, to: { nodeId: 'p-out', portId: 'L' },
         sourceType: 'audio', targetType: 'audio' },
@@ -91,14 +92,15 @@ test('TIDY VCO poly chain: POLYSEQZ chord bus → voices → AUDIOOUT — audibl
       const seq = w.__patch.nodes['p-seq'];
       if (!seq) return;
       if (!seq.data) seq.data = {};
-      seq.data.steps = [
-        { on: true, root: 60, quality: 'maj', inversion: 0, voicing: 'closed' },
-        { on: true, root: 57, quality: 'min', inversion: 0, voicing: 'closed' },
-        { on: true, root: 65, quality: 'maj', inversion: 0, voicing: 'closed' },
-        { on: true, root: 62, quality: 'min', inversion: 0, voicing: 'closed' },
-      ];
+      seq.data.cells = Array.from({ length: 16 }, (_, i) => [
+          { on: true, midi: 60, chord: 'maj' },
+          { on: true, midi: 57, chord: 'min' },
+          { on: true, midi: 65, chord: 'maj' },
+          { on: true, midi: 62, chord: 'min' },
+        ][i % 4]);
     });
   });
+  await seedKriaGate(page, 'p-seq-clk');
 
   // Audible RMS at the output via windowed MAX-HOLD (chords land every
   // 250 ms at BPM 240 — a 1.5 s capture always observes gated voices).
@@ -119,9 +121,9 @@ test('TIDY VCO mono chain: SEQUENCER gate+pitch → voice → audible RMS + in-t
   await spawnPatch(
     page,
     [
-      // The REAL default-mode mono source: the sequencer's internal clock.
-      { id: 'm-seq', type: 'sequencer', position: { x: 60, y: 60 }, domain: 'audio',
-        params: { bpm: 120, length: 4, isPlaying: 1, gateLength: 0.5 } },
+      // The REAL default-mode mono source: kria's internal clock.
+      { id: 'm-seq', type: 'kria', position: { x: 60, y: 60 }, domain: 'audio',
+        params: { bpm: 120, running: 1 } },
       { id: 'm-tv', type: 'tidyVco', position: { x: 420, y: 60 }, domain: 'audio',
         // detune/sub OFF so the spectral probe set is exact; long-ish
         // sustain so the gate window always carries tone.
@@ -132,11 +134,11 @@ test('TIDY VCO mono chain: SEQUENCER gate+pitch → voice → audible RMS + in-t
         params: { timeMs: 200 } },
     ],
     [
-      { id: 'me1', from: { nodeId: 'm-seq', portId: 'gate' }, to: { nodeId: 'm-tv', portId: 'gate' },
+      { id: 'me1', from: { nodeId: 'm-seq', portId: 'gate1' }, to: { nodeId: 'm-tv', portId: 'gate' },
         sourceType: 'gate', targetType: 'gate' },
       // The melodic 1 V/oct path (polyPitchGate → cv, engine lane-0 split).
-      { id: 'me2', from: { nodeId: 'm-seq', portId: 'pitch' }, to: { nodeId: 'm-tv', portId: 'pitch' },
-        sourceType: 'polyPitchGate', targetType: 'cv' },
+      { id: 'me2', from: { nodeId: 'm-seq', portId: 'pitch1' }, to: { nodeId: 'm-tv', portId: 'pitch' },
+        sourceType: 'pitch', targetType: 'cv' },
       { id: 'me3', from: { nodeId: 'm-tv', portId: 'out_l' }, to: { nodeId: 'm-out', portId: 'L' },
         sourceType: 'audio', targetType: 'audio' },
       { id: 'me4', from: { nodeId: 'm-tv', portId: 'out_r' }, to: { nodeId: 'm-out', portId: 'R' },
@@ -145,26 +147,9 @@ test('TIDY VCO mono chain: SEQUENCER gate+pitch → voice → audible RMS + in-t
     ],
   );
 
-  // Seed ON steps @ MIDI 60 (= 0 V = C4) so the internal clock gates the
-  // voice twice per cycle.
-  await page.evaluate(() => {
-    const w = globalThis as unknown as {
-      __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
-      __ydoc: { transact: (fn: () => void) => void };
-    };
-    w.__ydoc.transact(() => {
-      const seq = w.__patch.nodes['m-seq'];
-      if (!seq) return;
-      if (!seq.data) seq.data = {};
-      seq.data.steps = [
-        { on: true, midi: 60 },
-        { on: false, midi: null },
-        { on: true, midi: 60 },
-        { on: false, midi: null },
-        ...Array.from({ length: 28 }, () => ({ on: false, midi: null })),
-      ];
-    });
-  });
+  // Seed a constant C4 pattern: root 48 (major) + note degree 0 + octave 1
+  // = MIDI 60 = 0 V, so the spectral probe's fundamental is exact.
+  await seedKriaGate(page, 'm-seq', { note: 0, octave: 1 });
 
   // ── 1. AUDIBLE RMS (windowed max-hold: a gate opens every second and
   // holds ~250 ms, so a 2.5 s capture always observes the voice). ──
@@ -214,18 +199,38 @@ test('TIDY VCO no stray drone: patched but never gated stays silent', async ({ p
     page,
     [
       // Transport STOPPED — the chord bus exists but no lane ever gates.
-      { id: 'n-seq', type: 'polyseqz', position: { x: 40, y: 60 }, domain: 'audio',
-        params: { isPlaying: 0 } },
+      { id: 'n-seq-clk', type: 'kria', position: { x: 40, y: 440 }, domain: 'audio', params: { bpm: 240, running: 0 } },
+      { id: 'n-seq', type: 'cartesian', position: { x: 40, y: 60 }, domain: 'audio' },
       { id: 'n-tv', type: 'tidyVco', position: { x: 420, y: 60 }, domain: 'audio', params: {} },
       { id: 'n-scp', type: 'scope', position: { x: 1050, y: 60 }, domain: 'audio',
         params: { timeMs: 100 } },
     ],
     [
-      { id: 'ne1', from: { nodeId: 'n-seq', portId: 'poly' }, to: { nodeId: 'n-tv', portId: 'poly' },
+      { id: 'e_n-seq_clk', from: { nodeId: 'n-seq-clk', portId: 'gate1' }, to: { nodeId: 'n-seq', portId: 'clock' }, sourceType: 'gate', targetType: 'gate' },
+      { id: 'ne1', from: { nodeId: 'n-seq', portId: 'pitch' }, to: { nodeId: 'n-tv', portId: 'poly' },
         sourceType: 'polyPitchGate', targetType: 'polyPitchGate' },
       { id: 'ne2', from: { nodeId: 'n-tv', portId: 'out_l' }, to: { nodeId: 'n-scp', portId: 'ch1' } },
     ],
   );
+  // ⚠ ARM THE SOURCE, then leave the transport stopped. A kria with no
+  // pattern is silent BY ITSELF (advanceBaseTick early-returns with no active
+  // pattern), so an unseeded source would make this silence assertion pass for
+  // a reason that is not its subject — it would stay green even if the
+  // no-stray-drone rule broke. Seeded + stopped, the transport is the ONLY
+  // thing keeping the voice quiet, which is exactly what the test claims.
+  await seedKriaGate(page, 'n-seq-clk');
+  await page.evaluate(() => {
+    const w = globalThis as unknown as {
+      __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
+      __ydoc: { transact: (fn: () => void) => void };
+    };
+    w.__ydoc.transact(() => {
+      const n = w.__patch.nodes['n-seq'];
+      if (!n) return;
+      if (!n.data) n.data = {};
+      (n.data as Record<string, unknown>).cells = Array.from({ length: 16 }, () => ({ on: true, midi: 60, chord: 'maj' }));
+    });
+  });
 
   const hold = await readScopePeakOverWindow(page, 'n-scp', 1200);
   expect(hold.polls).toBeGreaterThan(0);

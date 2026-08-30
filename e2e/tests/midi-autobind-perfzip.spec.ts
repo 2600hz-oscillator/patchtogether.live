@@ -120,7 +120,15 @@ test.describe('MIDI auto-bind on perf-zip load', () => {
     // device <select> change; connect auto-picks but doesn't write data, so we
     // drive the select to mirror a real user pick).
     await laneCard.locator('select').first().selectOption(MOCK_ID);
-    await clkCard.locator('select').first().selectOption(MOCK_ID);
+    // ⚠ BY TESTID, NOT BY POSITION. This line was
+    // `clkCard.locator('select').first()`, which was correct only because
+    // MIDICLOCK's card happened to have exactly two `<select>`s in a known
+    // order (DEVICE, then DIV). A positional selector over a control set that
+    // can grow is a latent wrong-element bug: add or reorder a select and this
+    // silently drives the DIVISION picker instead, then fails four assertions
+    // later with a message about device binding. Named at the source
+    // (`MidiclockCard.svelte`) so the coupling is visible from both ends.
+    await clkCard.getByTestId(`midiclock-card-device-${CLK_ID}`).selectOption(MOCK_ID);
 
     await expect.poll(() => readMidiBinding(page, LANE_ID).then((b) => b?.lastDeviceId), { timeout: 5000 }).toBe(MOCK_ID);
     await expect.poll(() => readMidiBinding(page, CLK_ID).then((b) => b?.lastDeviceId), { timeout: 5000 }).toBe(MOCK_ID);

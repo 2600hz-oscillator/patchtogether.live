@@ -23,11 +23,13 @@
 // columnFlushPositions slot → the spawn-reveal seam), same as
 // workflow-channel-columns.spec.ts. Normal e2e lane (no DB/relay).
 
+import { SHELL_COLUMN_W } from '../../packages/web/src/lib/graph/channel-columns';
 import { test, expect, type Page } from '@playwright/test';
 
 // channel-columns.ts geometry (kept in sync with the pure module).
 const COLUMN_W = 765; // legacy pitch: 34 × HP_UNIT(22.5)
-const SHELL_COLUMN_W = 216; // tight ?shell=1 pitch
+// ⚠ IMPORTED, NEVER RE-TYPED (#2239). A local copy of the shell column pitch
+// silently mis-aims every column coordinate the moment the real pitch moves.
 const COLUMN_BASELINE_Y = 4320; // COLUMN_SLOT_H(720) × COLUMN_MAX_SLOTS(6)
 // `?shell=1` badge-clearance lift (channel-columns.ts SHELL_LANE_BADGE_CLEARANCE_Y):
 // stack bottoms anchor 90 flow px ABOVE the baseline so the lane-number badge
@@ -109,6 +111,12 @@ async function setViewport(page: Page, vp: { x: number; y: number; zoom: number 
 async function settledViewport(page: Page): Promise<{ x: number; y: number; zoom: number }> {
   let prev = await getViewport(page);
   for (let i = 0; i < 25; i++) {
+    // pacing: the SPACING between samples is the product's own pan duration —
+    // Canvas.svelte's `WCOL_PAN_MS = 220`, the value it hands xyflow's
+    // animated setViewport (packages/web/src/lib/ui/Canvas.svelte:1733). Two
+    // reads a full pan-duration apart that agree mean no pan is in flight;
+    // sampling any faster cannot distinguish "finished" from "mid-animation
+    // and momentarily still". The +60 ms clears the tail of the easing curve.
     await page.waitForTimeout(WCOL_PAN_MS + 60);
     const cur = await getViewport(page);
     if (cur.x === prev.x && cur.y === prev.y && cur.zoom === prev.zoom) return cur;
@@ -176,6 +184,12 @@ test.describe('workflow spawn-camera reveal: adds never scroll the viewport wild
 
       // Give any (buggy) pan animation ample time to fire, then compare EXACT
       // transforms: no setViewport must have been issued at all.
+      // pacing: the NEGATIVE case has no subject to poll — the assertion is
+      // that nothing happens — so the wait must outlast the animation whose
+      // absence it proves. That is the product's own `WCOL_PAN_MS = 220`
+      // (packages/web/src/lib/ui/Canvas.svelte:1733), the duration Canvas
+      // hands xyflow's animated setViewport; 3× it is that interval with
+      // margin for a delayed start under load.
       await page.waitForTimeout(WCOL_PAN_MS * 3);
       const after = await getViewport(page);
       expect(after).toEqual(before);
