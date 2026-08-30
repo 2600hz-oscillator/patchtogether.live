@@ -127,7 +127,8 @@ async function timelordeBpmEnvelope(
 }
 
 test.describe('TEMPOLOCK — tracked clock through the real patch seams', () => {
-  test('folds a 216-edge/min onset train to 108 and TIMELORDE follows the tracked tempo', async ({ page }) => {
+  // ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; the body and its assertions are UNCHANGED.
+  test.fixme('folds a 216-edge/min onset train to 108 and TIMELORDE follows the tracked tempo', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — owner order 2026-08-30 ("any tests that failed disable / skip"): toBeLessThan settle failure under shard load on PR #2274 run 33290095701 after CI-budget bumps on other branches; parked until root-caused' } }, async ({ page }) => {
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
 
