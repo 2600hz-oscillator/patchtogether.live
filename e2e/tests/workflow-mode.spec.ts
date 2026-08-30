@@ -191,7 +191,14 @@ test.describe('workflow shell', () => {
     await expect(page.getByTestId('dock-zone-bottom')).toBeVisible();
   });
 
-  test('pinned nodes refuse deletion; Clear keeps the trio', async ({ page }) => {
+  // ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; the body and its assertions are UNCHANGED.
+  // NONDETERMINISM: 2 consecutive recovered-on-retry observations on feat/ptzcam (runs
+  // 33287966893 + 33288512372's shard 7, 2026-08-30), same failed-attempt-1/passed-attempt-2
+  // shape as this spec's already-parked typing-inertness leg — the whole spec is a shard-7
+  // hotspot tonight. LOST WHILE PARKED: the proof that pinned nodes refuse deletion and Clear
+  // keeps the trio (the pin mechanism itself is still exercised by the boot + M/E/C legs that
+  // wait on the pinned trio every run). Re-enable only on a root cause (#1847).
+  test.fixme('pinned nodes refuse deletion; Clear keeps the trio', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 2 recovered-on-retry observations on feat/ptzcam runs to 2026-08-30; parked until root-caused' } }, async ({ page }) => {
     await page.goto('/rack?shell=legacy');
     await waitForPinnedTrio(page);
     // Programmatic delete through the shared primitive path: drive the
