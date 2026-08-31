@@ -452,8 +452,17 @@ export const EXEMPT_OUTPUT_EMIT: Record<string, string> = {
   // are covered by e2e/tests/skifree.spec.ts which drives the skier into a
   // crash (and an eat) via the controller's _forceCrash / _forceEaten hooks
   // and asserts the gate pulse reaches a downstream SCOPE.
-  'skifree.gate': 'fires only on in-game crash/eaten event; covered by e2e/tests/skifree.spec.ts (_forceCrash/_forceEaten → gate → SCOPE)',
-  'skifree.out':  'animated game canvas (rAF self-driven, no still frame); covered by e2e/tests/skifree.spec.ts + skifree.test.ts (CV→cursor + gate hook)',
+  //
+  // ⚠ THAT SENTENCE WAS TRUE AND SAID NOTHING ABOUT THE SHIPPING SURFACE, and
+  // the `why` strings below now say so. `skifree.spec.ts` boots
+  // `/rack?shell=legacy`, so until #2192 moved the game onto the NODE the cited
+  // coverage existed only on a shell no player meets — and the hooks it drives
+  // were the CARD's controller. Both halves are now node-owned, and
+  // `skifree-face.spec.ts` asserts the same gate → SCOPE path on the DEFAULT
+  // shell with the screen switched OFF, which is the state the sweep's own
+  // exemption is really about.
+  'skifree.gate': 'fires only on in-game crash/eaten event; covered by e2e/tests/skifree.spec.ts (_forceCrash/_forceEaten → gate → SCOPE, ?shell=legacy) AND e2e/tests/skifree-face.spec.ts (the same path on the DEFAULT shell, with SCREEN OFF)',
+  'skifree.out':  'animated game canvas (rAF self-driven, no still frame); covered by e2e/tests/skifree.spec.ts + skifree.test.ts (CV→cursor + gate hook) + skifree-face.spec.ts (the surfaces that blit it)',
   // ── GIBRIBBON gameplay-conditional gates: evt_hit/miss/fire/kill/gameover
   // fire only on an in-game judgement (a correct ABXY press clears an event /
   // a missed event degrades the marine), which the generic sweep doesn't

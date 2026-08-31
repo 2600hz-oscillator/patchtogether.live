@@ -308,7 +308,7 @@ const BEHAVIORAL_MODULE_EXEMPT: Record<string, string> = {
   // delta to detect — a structural no-delta, not dead CV.
   blood:    'boot-gated, not data-gated: the bundled shareware is committed + materialized on CI (docs/adr/007-game-asset-distribution.md) but `blood-ready` takes 20–25 s and, until the menu is driven into a level, driven + control arms observe the same idle menu → structural no-delta; real coverage = blood-audio-output.spec.ts (menu→level→fire→SCOPE) + blood-ingame specs + blood-keys.test.ts',
   frogger:  'gameplay-conditional outputs; covered by frogger specs',
-  skifree:  'gate fires only on in-game crash/eaten; out is animated canvas; covered by e2e/tests/skifree.spec.ts',
+  skifree:  'gate fires only on in-game crash/eaten; out is animated canvas; covered by e2e/tests/skifree.spec.ts (?shell=legacy) + e2e/tests/skifree-face.spec.ts (the DEFAULT shell — the cited coverage used to exist only on a shell no player meets)',
   gibribbon: 'gameplay-conditional outputs (evt_hit/miss/fire/kill/gameover fire on in-game judgement; health_cv is idle DC); covered by gibribbon.spec.ts (forcePulse) + gibribbon-events.test.ts',
 
   // ── Pure-passthrough sink with no semantic transformation: VIDEOOUT

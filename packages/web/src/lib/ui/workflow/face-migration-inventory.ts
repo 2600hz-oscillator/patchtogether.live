@@ -581,6 +581,41 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
   { type: 'shimmershine', disposition: 'generic-face' },
   { type: 'sidecar', disposition: 'generic-face' },
   { type: 'sixstrum', disposition: 'generic-face' },
+  {
+    type: 'skifree',
+    disposition: 'generic-face',
+    // ⚠ THE OLD `why` WAS WRONG ON ITS LOAD-BEARING CLAUSE AND RIGHT ON THE
+    // OTHER: "a GAME: a scrolling viewport played on the keyboard, with no
+    // params at all." There is NO keyboard handler in `SkifreeCard.svelte`, in
+    // the vendored `embed.js` or in the upstream `js/` classes — steering is
+    // two bipolar CV inputs plus the MOUSE. "No params at all" is true, and it
+    // is the only thing that ever made this entry look bespoke.
+    //
+    // `params: []` is `flipper`'s shape, not `joystick`'s. #1974's zero-lane
+    // clause refuses a face that RANKS controls and then drops them at the tier
+    // the player is looking at, and it explicitly SKIPS a face that ranks
+    // nothing — naming `flipper` and `videoOut` as the honest case. So
+    // `order: []` is legal here, and the missing picture is answered by the
+    // extension seam rather than by a disposition: `tileBody` for the lane,
+    // `fullViewBody` for the dock.
+    //
+    // ⚠ AND THE STANDING REFUSE-SPEC'S LEAD BLOCKER IS DEAD. `.myrobots/
+    // 2026-08-24-bespoke-wave5/skifree/spec.md` refused this face on "promotion
+    // DELETES THE GAME — the engine lives on the card", which was TRUE WHEN
+    // WRITTEN and was retired by #2192 (868ddb9ee): the bundle load, the
+    // controller and its disposal all moved into the FACTORY, on node lifetime.
+    // The remaining cost is VRT-only and is discharged as a named
+    // `FACES_WITHOUT_SCENES` entry — the game is a committed third-party IIFE
+    // running its own rAF and its own RNG, which `simPin` cannot reach.
+    note:
+      'a GAME with `params: []`, so the face ranks nothing and BOTH extension body slots are '
+      + 'load-bearing: `fullViewBody` is the steerable slope (the mouse is the module\'s only '
+      + 'direct-manipulation instrument) and `tileBody` is the read-only lane picture, without '
+      + 'which the tile would be a title bar and four jacks. The card\'s `{distance}m · lives {n} '
+      + '· CV|MOUSE|IDLE · GAME OVER` chrome row is DELETED by the resting-text ruling, not '
+      + 'relocated: the numbers survive as the bundle\'s own in-canvas InfoBox and on the '
+      + 'picture\'s aria-label, and the control mode as two static-caption StatusLed lamps.',
+  },
   { type: 'slewSwitch', disposition: 'generic-face' },
   { type: 'snaredrum', disposition: 'generic-face' },
   { type: 'sourcery', disposition: 'generic-face' },
@@ -1302,11 +1337,6 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
       'makes them cell-shaped at all. Quicksave is a second panel, ' +
       'and it had to be: four declared CV inputs (queue1..4) bottom out in `data.slots`, which ' +
       'until this PR only the legacy card could write.',
-  },
-  {
-    type: 'skifree',
-    disposition: 'bespoke-surface',
-    why: 'a GAME: a scrolling viewport played on the keyboard, with no params at all.',
   },
   {
     type: 'textmarquee',
