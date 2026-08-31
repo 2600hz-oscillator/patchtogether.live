@@ -204,6 +204,13 @@ const REGISTRY_BOUNDARIES: readonly RegistryBoundary[] = [
     coveredBy:
       'shell-param-writes.test.ts (the settle-commit storm guard + readCurrent seam) + faces-parity (the cell still drives and reads back).',
   },
+  {
+    file: 'workflow/param-override-badges.ts',
+    why:
+      'The per-param LIVE-OVERRIDE badge registry — maps one (module type, param) pair to a live "the engine is ignoring this control right now" predicate + badge (backdraft.delay under a patched DELAY CLOCK). Naming modules is its job; declaring the override here is the sanctioned alternative to branching on module types inside ModuleShell\'s fader arm.',
+    coveredBy:
+      'param-override-badges.test.ts (entries anchored to live defs + params; the shared predicate negative-controlled on the real store in both directions) + backdraft-clocked-delay.spec.ts (the badge, the dim and the inert fader on the live face).',
+  },
 ];
 
 const BOUNDARY_IDS = new Set(REGISTRY_BOUNDARIES.map((b) => b.file));

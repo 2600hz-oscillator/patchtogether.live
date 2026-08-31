@@ -29,6 +29,7 @@
   import { useEngine } from '$lib/audio/engine-context';
   import { patch } from '$lib/graph/store';
   import { mutateNode } from '$lib/graph/mutate';
+  import { backdraftPanic } from './panic';
   import { createFullscreen } from '../use-fullscreen.svelte';
   import { createFullFrame } from '../use-full-frame.svelte';
   import { attachRenderLease } from '../use-render-lease.svelte';
@@ -305,26 +306,43 @@
     ></canvas>
   </div>
 
-  <button
-    type="button"
-    class="bd-out-btn nodrag"
-    class:on={!previewCollapsed}
-    data-testid="backdraft-preview-toggle"
-    aria-pressed={!previewCollapsed}
-    title={previewCollapsed
-      ? 'SCREEN is OFF — the preview is collapsed and its space reclaimed. The module keeps rendering: switching it back on shows the LIVE picture, not a stale frame.'
-      : 'SCREEN — turn the preview off to collapse it and reclaim the vertical space. The module goes on rendering either way.'}
-    onclick={togglePreview}
-  >{previewCollapsed ? 'SCREEN OFF' : 'SCREEN ON'}</button>
+  <!-- PANIC sits ABOVE the SCREEN toggle (owner request), so it is on screen
+       in every view that carries this chrome — the picture and its buttons
+       persist across all dock tabs. One implementation, two triggers: this
+       button and the `panic` gate input both run backdraftPanic (one undoable
+       LOCAL_ORIGIN transaction; patching untouched — see ./panic.ts). -->
+  <div class="bd-btns">
+    <button
+      type="button"
+      class="bd-out-btn bd-panic nodrag"
+      data-testid="backdraft-panic"
+      title="PANIC — reset every control to its default in one undoable step. Nothing patched changes: cables stay, and a CV source keeps modulating its control around the restored default."
+      onclick={() => backdraftPanic(nodeId)}
+    >PANIC</button>
 
-  <button
-    type="button"
-    class="bd-out-btn nodrag"
-    class:on={expanded}
-    data-testid="backdraft-output-menu"
-    title="OUTPUT — show BACKDRAFT's picture larger: Full Frame, Full Screen, or Present on another display. Right-clicking the picture opens the same menu."
-    onclick={openOutputMenu}
-  >⛶ OUTPUT</button>
+    <div class="bd-btn-row">
+      <button
+        type="button"
+        class="bd-out-btn nodrag"
+        class:on={!previewCollapsed}
+        data-testid="backdraft-preview-toggle"
+        aria-pressed={!previewCollapsed}
+        title={previewCollapsed
+          ? 'SCREEN is OFF — the preview is collapsed and its space reclaimed. The module keeps rendering: switching it back on shows the LIVE picture, not a stale frame.'
+          : 'SCREEN — turn the preview off to collapse it and reclaim the vertical space. The module goes on rendering either way.'}
+        onclick={togglePreview}
+      >{previewCollapsed ? 'SCREEN OFF' : 'SCREEN ON'}</button>
+
+      <button
+        type="button"
+        class="bd-out-btn nodrag"
+        class:on={expanded}
+        data-testid="backdraft-output-menu"
+        title="OUTPUT — show BACKDRAFT's picture larger: Full Frame, Full Screen, or Present on another display. Right-clicking the picture opens the same menu."
+        onclick={openOutputMenu}
+      >⛶ OUTPUT</button>
+    </div>
+  </div>
 </div>
 
 <VideoCanvasContextMenu
@@ -412,6 +430,18 @@
     object-fit: contain;
   }
 
+  .bd-btns {
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    align-items: stretch;
+  }
+  .bd-btn-row {
+    display: flex;
+    gap: 10px;
+  }
+
   .bd-out-btn {
     flex: 0 0 auto;
     padding: 3px 8px;
@@ -427,5 +457,15 @@
   .bd-out-btn.on {
     color: var(--vp-accent, #4a90d9);
     border-color: var(--vp-accent, #4a90d9);
+  }
+
+  /* PANIC reads as the warning it is, without shouting at rest. After the
+   * .bd-out-btn rules so its colours win at equal specificity. */
+  .bd-out-btn.bd-panic {
+    color: var(--vp-danger, #e05252);
+    border-color: var(--vp-danger-border, #7a3232);
+  }
+  .bd-out-btn.bd-panic:hover {
+    border-color: var(--vp-danger, #e05252);
   }
 </style>

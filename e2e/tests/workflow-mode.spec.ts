@@ -48,7 +48,15 @@ async function waitForDefaultWires(page: Page): Promise<void> {
   );
 }
 
-/** Wait until the workflow ensure effect has written the pinned trio. */
+/** Wait until the workflow ensure effect has written the pinned trio.
+ *
+ *  ⚠ The inner cap is the shared BOOT_MS export, not a hand-typed number:
+ *  this is STATE readiness (a doc write by the ensure effect), and how long
+ *  boot takes is a function of shard load, not of the subject. Measured
+ *  twice (runs 33268032993 and 33277673075, both shard 7): the flat 10s cap
+ *  expired under CI load and the identical attempt passed on retry — the
+ *  flake gate's definition of "slower on CI", which takes a budget, not a
+ *  fix to the subject. */
 async function waitForPinnedTrio(page: Page): Promise<void> {
   await page.waitForFunction(
     (ids) => {

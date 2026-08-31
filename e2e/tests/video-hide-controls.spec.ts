@@ -420,8 +420,19 @@ async function addNode(page: Page, id: string, type: string): Promise<void> {
         __ydoc: { transact: (fn: () => void) => void };
       };
       w.__ydoc.transact(() => {
+        // ⚠ FREE CANVAS (x < 0), NOT (240, 4500). That spot sits inside the
+        // VIDEO ZONE (slot 0 spans x≈22..382 from COLUMN_BASELINE_Y=4320), and
+        // since #2247 wired the EXTENDED ensure the zone actually populates
+        // with the seeded videoOut/recorderbox/synesthesia tiles — whose
+        // locked cards then sit over the injected tile and intercept every
+        // click on its dock button. Measured: `shell-open-dock` timed out with
+        // "workflow-recorderbox … subtree intercepts pointer events" on a
+        // clean origin/main (936fdcc), so this was a fixture collision
+        // shipped by the zone change, invisible until the next real-GPU
+        // attest ran this file. Same free-canvas convention as
+        // workflow-shell-video.spec.ts / backdraft-panic.spec.ts.
         w.__patch.nodes[id] = {
-          id, type, domain: 'video', position: { x: 240, y: 4500 }, params: {},
+          id, type, domain: 'video', position: { x: -700, y: 4500 }, params: {},
         };
       });
     },

@@ -340,7 +340,9 @@ test.describe('BACKDRAFT — video feedback generator', () => {
 
     // Frames of UNFROZEN feedback per capture. delay=0 taps the most recent
     // frame, so the transform compounds every step; 30 matches the settle the
-    // DRS uses (the ring is BACKDRAFT_BUFFER_FRAMES = 31 deep).
+    // DRS uses (well past cold-start at this near-zero delay — the LAZY ring
+    // holds only the couple of slots that delay needs; its cap is
+    // BACKDRAFT_BUFFER_FRAMES).
     const SETTLE_STEPS = 30;
 
     // Pause the rAF loop + pin the clock BEFORE the app boots.

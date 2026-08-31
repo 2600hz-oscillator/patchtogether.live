@@ -3,7 +3,7 @@
 // THE "NO USER CONTROL" DECLARATION (#1726) — the pure resolver + its lint.
 //
 // A `ParamDef` that exists so the GRAPH has somewhere to write, not so a PLAYER
-// has something to turn. `backdraft` has seven of them: six synthetic gate
+// has something to turn. `backdraft` is the heaviest adopter: synthetic gate
 // params a `paramTarget` CV bridge pushes raw 0..1 swings into (the module
 // edge-detects the rising edge), plus a determinism toggle a VRT capture flips.
 // Before this the fact lived only in `// hidden — no card knob` comments, which

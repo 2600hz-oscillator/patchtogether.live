@@ -54,7 +54,10 @@ const VIDEO_PASSTHROUGH_BY_DESIGN: Record<string, string[]> = {
   // CYCLE TV MODE (off -> PURE TV -> CRITICAL). Raw passthrough by design, same
   // as the mirror/shape gates. The three CONTINUOUS PURE TV inputs (room,
   // phosphor, drive) all correctly carry cvScale.
-  backdraft: ['delay_clock', 'mirror_x_gate', 'mirror_y_gate', 'shape_gate', 'pure_geo_gate', 'tv_gate'],
+  // panic: a GATE onto the synthetic panicGate param the module edge-detects to
+  // FIRE the settings reset (the same reset as the PANIC button, via the panic
+  // hook). Raw passthrough by design, same as the other gates.
+  backdraft: ['delay_clock', 'mirror_x_gate', 'mirror_y_gate', 'shape_gate', 'pure_geo_gate', 'tv_gate', 'panic'],
   // B3NTB0X mirror_x_gate / mirror_y_gate: GATE inputs onto synthetic
   // mirrorXGate/mirrorYGate params; a rising edge toggles the mirror axis. All
   // continuous *_cv inputs already carry cvScale.
