@@ -189,6 +189,7 @@ backdraft in mirror_y_gate cv param=mirrorYGate edge=trigger
 backdraft in mix cv param=mix cvScale=linear
 backdraft in offsetx cv param=offsetX cvScale=linear
 backdraft in offsety cv param=offsetY cvScale=linear
+backdraft in panic cv param=panicGate edge=trigger
 backdraft in phosphor cv param=phosphor cvScale=linear
 backdraft in pixelate cv param=pixelate cvScale=linear
 backdraft in pure_geo_gate cv param=pureGeoGate edge=trigger
@@ -208,7 +209,7 @@ backdraft param camTiltX -0.2..0.2 linear default=0
 backdraft param camTiltY -0.2..0.2 linear default=0
 backdraft param chroma -1..2 linear default=1
 backdraft param darken 0..1 linear default=1
-backdraft param delay 0..500 linear default=16
+backdraft param delay 0..1000 linear default=16
 backdraft param delayClock 0..1 linear default=0
 backdraft param drive 0..1 linear default=0.5
 backdraft param feedback 0..2 linear default=0.85
@@ -224,6 +225,7 @@ backdraft param mirrorYGate 0..1 linear default=0
 backdraft param mix 0..1 linear default=0.5
 backdraft param offsetX -0.1..0.1 linear default=0
 backdraft param offsetY -0.1..0.1 linear default=0
+backdraft param panicGate 0..1 linear default=0
 backdraft param phosphor 0..1 linear default=0
 backdraft param pixelate 0..1 linear default=0
 backdraft param pureGeo 0..1 discrete default=0
@@ -2520,7 +2522,7 @@ posterbox out out video
 posterbox param depth 0..4 discrete default=2
 posterbox param dither 0..1 linear default=0
 posterbox param mix 0..1 linear default=1
-ptzcam meta domain=audio maxInstances=1
+ptzcam meta domain=audio maxInstances=4
 ptzcam in pan_cv cv
 ptzcam in tilt_cv cv
 ptzcam in zoom_cv cv

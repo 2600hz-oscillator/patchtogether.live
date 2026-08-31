@@ -16,7 +16,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 import { installRenderSmokeHooks } from './_render-smoke';
-import { BOOT_MS } from '../_helpers/boot-budget';
+import { BOOT_MS, SLOW_BOOT_TEST_TIMEOUT_MS } from '../_helpers/boot-budget';
 
 /** The pinned trio's deterministic node ids (graph/workflow-pins.ts). */
 const PINNED_IDS = ['pinned-mixmstrs', 'pinned-electraControl', 'pinned-clipplayer'] as const;
@@ -48,7 +48,15 @@ async function waitForDefaultWires(page: Page): Promise<void> {
   );
 }
 
-/** Wait until the workflow ensure effect has written the pinned trio. */
+/** Wait until the workflow ensure effect has written the pinned trio.
+ *
+ *  ⚠ The inner cap is the shared BOOT_MS export, not a hand-typed number:
+ *  this is STATE readiness (a doc write by the ensure effect), and how long
+ *  boot takes is a function of shard load, not of the subject. Measured
+ *  twice (runs 33268032993 and 33277673075, both shard 7): the flat 10s cap
+ *  expired under CI load and the identical attempt passed on retry — the
+ *  flake gate's definition of "slower on CI", which takes a budget, not a
+ *  fix to the subject. */
 async function waitForPinnedTrio(page: Page): Promise<void> {
   await page.waitForFunction(
     (ids) => {
@@ -59,13 +67,49 @@ async function waitForPinnedTrio(page: Page): Promise<void> {
       return ids.every((id) => w.__patch!.nodes[id]?.data?.pinned === true);
     },
     PINNED_IDS as unknown as string[],
-    // Same BOOT bound as above — this is the site that actually lost the
-    // lottery (run 33277673075, e2e shard 7/12).
+    // Same BOOT bound as above. ⚠ This site is the #1847 spec-wide park, and
+    // its cause was NOT the bound — see the describe note below.
     { timeout: BOOT_MS },
   );
 }
 
 test.describe('workflow shell', () => {
+  // ── WHY THIS SPEC WAS PARKED, AND WHAT ACTUALLY FIXED IT ──────────────────
+  //
+  // Seven observations in 34 h (2026-08-30/31 census), six different legs, one
+  // shared helper: `waitForPinnedTrio` timed out at boot, passed on retry. Two
+  // of them reddened `main`. The park (9 `test.fixme`) is lifted here because
+  // the cause is fixed, not because it stopped reproducing.
+  //
+  // TWO defects, both proven from the failing runs' own traces:
+  //
+  //  1. PRODUCT — `/rack` seeded the whole shell TWICE, into two different
+  //     Y.Docs. `routes/rack/+page.svelte` called `bindRackspace` from an
+  //     `$effect`, and Svelte 5 runs a CHILD's effects before its parent's, so
+  //     <Canvas> mounted, published `__patch`, and ran all four seed effects
+  //     against the store's initial doc — which `bindRackspace` then DESTROYED.
+  //     Every failing trace carries the fingerprint: two `[canvas] workflow:
+  //     ensured pinned modules` console lines, 7.7–28.0 s apart, and the wait
+  //     can only be satisfied by the SECOND one (`bindRackspace` correctly
+  //     re-points `__patch` at the surviving doc). Fixed by binding at page
+  //     init, before <Canvas> exists — see the note at that call site.
+  //
+  //  2. INSTRUMENT — this spec had no per-test budget, so the bound was
+  //     Playwright's DEFAULT 30 s test timeout, which on CI is EXACTLY
+  //     `BOOT_MS`. Run 33295180895 reports both "Test timeout of 30000ms
+  //     exceeded" and "waitForFunction: Timeout 30000ms exceeded" — the test
+  //     clock ran out FIRST, having already spent `goto` out of the same
+  //     budget. That is why raising the wait 10 s → 30 s changed nothing, and
+  //     it is exactly what `SLOW_BOOT_TEST_TIMEOUT_MS` exists for (19 sibling
+  //     specs already use it, including shard-7 neighbour
+  //     `workflow-drawer-face.spec.ts`). A BOUND you cannot reach is not a
+  //     bound.
+  //
+  // ⚠ Shard-7 locality carried no information. `scripts/e2e-shard-plan.mjs` is
+  // deterministic and has placed this spec on shard 7 since the 2026-08-27
+  // timings re-pin, so "only ever shard 7" is where it only ever RAN.
+  test.describe.configure({ timeout: SLOW_BOOT_TEST_TIMEOUT_MS });
+
   // A fresh workflow rack now auto-spawns the video-zone defaults (videoOut +
   // recorderbox + synesthesia — PR #1155). These tests exercise the workflow
   // SHELL (dock keymap, pins, File.. menu), NOT video rendering, so idle the
@@ -151,16 +195,7 @@ test.describe('workflow shell', () => {
     await expect(page.getByTestId('dock-fullview-drawer')).toHaveCount(0);
   });
 
-  // ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; the body and its assertions are UNCHANGED.
-  // NONDETERMINISM: 3 consecutive recovered-on-retry observations across 2 SHAs on feat/ptzcam
-  // (runs 33286052552 ×1 + 33286720503 ×2 incl. a --failed rerun, 2026-08-30) — failed attempt 1,
-  // passed attempt 2 every time, so the flake-gate (recovered-flake-goes-red, #1903) reddens the
-  // job. The PR diff is a MIDI sink module that touches nothing in workflow-mode's subject.
-  // LOST WHILE PARKED: the proof that the M/E/C workflow hotkeys stay inert while the user types
-  // in an input/contenteditable (the guard itself is also pinned by the passing sibling
-  // 'hotkeys act on the canvas' legs). Re-enable only on a root cause (#1847); "it passes now"
-  // is not one.
-  test.fixme('M/E/C are inert while typing in an input / contenteditable', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 3 recovered-on-retry observations on feat/ptzcam runs to 2026-08-30; parked until root-caused' } }, async ({ page }) => {
+  test('M/E/C are inert while typing in an input / contenteditable', async ({ page }) => {
     await page.goto('/rack?shell=legacy');
     await waitForPinnedTrio(page);
     // Real text-entry surfaces, appended to the live document so the real
@@ -198,14 +233,7 @@ test.describe('workflow shell', () => {
     await expect(page.getByTestId('dock-zone-bottom')).toBeVisible();
   });
 
-  // ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; the body and its assertions are UNCHANGED.
-  // NONDETERMINISM: 2 consecutive recovered-on-retry observations on feat/ptzcam (runs
-  // 33287966893 + 33288512372's shard 7, 2026-08-30), same failed-attempt-1/passed-attempt-2
-  // shape as this spec's already-parked typing-inertness leg — the whole spec is a shard-7
-  // hotspot tonight. LOST WHILE PARKED: the proof that pinned nodes refuse deletion and Clear
-  // keeps the trio (the pin mechanism itself is still exercised by the boot + M/E/C legs that
-  // wait on the pinned trio every run). Re-enable only on a root cause (#1847).
-  test.fixme('pinned nodes refuse deletion; Clear keeps the trio', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 2 recovered-on-retry observations on feat/ptzcam runs to 2026-08-30; parked until root-caused' } }, async ({ page }) => {
+  test('pinned nodes refuse deletion; Clear keeps the trio', async ({ page }) => {
     await page.goto('/rack?shell=legacy');
     await waitForPinnedTrio(page);
     // Programmatic delete through the shared primitive path: drive the
@@ -265,8 +293,7 @@ test.describe('workflow shell', () => {
     await waitForPinnedTrio(page); // the ensure effect re-spawns the trio
   });
 
-  // ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; the body and its assertions are UNCHANGED.
-  test.fixme('default wiring: pinned MIXMSTRS master L/R auto-wires to pinned AUDIO OUT (one-shot, user delete respected)', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — owner order 2026-08-30 ("any tests that failed disable / skip"): waitForFunction 10s timeout, recovered-on-retry on PR #2274 run 33291594537 e2e shard 7; parked until root-caused' } }, async ({ page }) => {
+  test('default wiring: pinned MIXMSTRS master L/R auto-wires to pinned AUDIO OUT (one-shot, user delete respected)', async ({ page }) => {
     // Owner directive: "the audio out in the rack should be default wired to
     // the master L/R outs from the in rack mixmstrs in workflow mode."
     await page.goto('/rack?shell=legacy');
@@ -330,8 +357,8 @@ test.describe('workflow shell', () => {
     expect(after).toEqual([false, true]);
   });
 
-  // ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; the body and its assertions are UNCHANGED.
-  test.fixme('default wiring carries REAL audio: source → mixmstrs ch1 → auto-wired AUDIO OUT is audible', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — owner order 2026-08-30 ("any tests that failed disable / skip"): recovered-on-retry on PR #2274 run 33292812684 e2e shard 7; same default-wiring load family as the :246 park; parked until root-caused' } }, async ({ page }) => {
+  // audible default-wire proof; mixmstrs audio stays covered by its own specs.
+  test('default wiring carries REAL audio: source → mixmstrs ch1 → auto-wired AUDIO OUT is audible', async ({ page }) => {
     // Real-chain proof (not just edge materialization): a free-running VCO
     // into the pinned mixer's channel 1 must register energy on the pinned
     // AUDIO OUT's terminal tap (the limiter feeding ctx.destination) with
@@ -465,8 +492,7 @@ test.describe('workflow shell', () => {
     ).toBeLessThanOrEqual(loudest * 1.02);
   });
 
-  // ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; the body and its assertions are UNCHANGED.
-  test.fixme('File.. menu: quicksave slot 1 round-trips through quickload', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — owner order 2026-08-30 ("any tests that failed disable / skip"): recovered-on-retry on PR #2274 run 33293449487 e2e shard 7 — fourth distinct workflow-mode flake tonight; BOOT_MS fix cherry-picked alongside; parked until root-caused' } }, async ({ page }) => {
+  test('File.. menu: quicksave slot 1 round-trips through quickload', async ({ page }) => {
     await page.goto('/rack?shell=legacy');
     await waitForPinnedTrio(page);
 
@@ -528,6 +554,7 @@ test.describe('workflow shell', () => {
   // topbar carries its `Clear` and `AspectToggle` first, so that deletion is
   // not a feature regression.
 
+  // observation of THIS leg (run on 7c489c134, shard 7 — the sixth distinct leg in six runs).
   test('File.. menu: Clear rack deletes canvas modules + cables and KEEPS the pinned trio', async ({ page }) => {
     await page.goto('/rack?shell=legacy');
     await waitForPinnedTrio(page);
@@ -582,6 +609,7 @@ test.describe('workflow shell', () => {
     await waitForPinnedTrio(page);
   });
 
+  // aspect-toggle proof.
   test('File.. menu: the output-aspect toggle flips 4:3 ⇄ 16:9 and leaves the menu open', async ({ page }) => {
     await page.goto('/rack?shell=legacy');
     await waitForPinnedTrio(page);

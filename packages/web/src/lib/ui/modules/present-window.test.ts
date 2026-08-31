@@ -12,7 +12,11 @@
 //   3. Graceful no-op when the popup is blocked (returns null).
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { computePopupFeatures, startPresent } from './present-window';
+import {
+  automaticFullscreenBlockedAdvisory,
+  computePopupFeatures,
+  startPresent,
+} from './present-window';
 import type { ScreenRect } from './use-fullscreen.svelte';
 
 describe('computePopupFeatures', () => {
@@ -111,6 +115,12 @@ function installWindow() {
     fireMessage(ev: unknown) {
       for (const fn of listeners['message'] ?? []) fn(ev);
     },
+    /** Dispatch a fake non-message window event (pointerdown / keydown).
+     *  Iterates a copy: a one-shot handler removes itself mid-dispatch. */
+    fire(type: string, ev: unknown = {}) {
+      for (const fn of [...(listeners[type] ?? [])]) fn(ev);
+    },
+    listenerCount: (type: string) => (listeners[type] ?? []).length,
     messageListenerCount: () => (listeners['message'] ?? []).length,
   };
 }
@@ -484,5 +494,160 @@ describe('startPresent', () => {
 
     expect(ctx.fillRect, 'still black-fills the sink').toHaveBeenCalled();
     expect(ctx.drawImage, 'but draws nothing').not.toHaveBeenCalled();
+  });
+
+  // ── FULLSCREEN VIA THE NEXT GESTURE ────────────────────────────────────────
+  // window.open() consumes the click's transient activation, so the on-ready
+  // delegation carries none; and without an automatic-fullscreen grant every
+  // gesture-less sink attempt rejects ("TypeError: Permissions check failed",
+  // Edge 152). The controller therefore re-delegates from the user's NEXT real
+  // gesture in the patcher, armed by the sink's own NOT-fullscreen report.
+
+  /** Count present:go-fullscreen posts to the popup. */
+  function goFullscreenPosts(posted: Array<{ data: unknown; origin: string }>) {
+    return posted.filter(
+      (p) => (p.data as { type?: string })?.type === 'present:go-fullscreen',
+    );
+  }
+
+  it('a sink NOT-fullscreen report arms the NEXT gesture, which delegates ONCE', () => {
+    const env = installWindow();
+    const { popup, posted } = fakePopup();
+    const sched = fakeRaf();
+    startPresent({
+      source: () => fakeSourceCanvas(), rect: null,
+      openWindow: () => popup as unknown as Window, raf: sched.raf, caf: sched.caf,
+    });
+
+    env.fireMessage({ source: popup, data: { type: 'present:fs-state', entered: false } });
+    expect(goFullscreenPosts(posted).length, 'arming alone posts nothing').toBe(0);
+
+    env.fire('pointerdown');
+    const posts = goFullscreenPosts(posted);
+    expect(posts.length, 'the gesture handler delegates synchronously').toBe(1);
+    // The second postMessage arg must carry the Capability-Delegation option.
+    const opts = posts[0].origin as unknown as { delegate?: string; targetOrigin?: string };
+    expect(opts.delegate).toBe('fullscreen');
+    expect(opts.targetOrigin).toBe('http://localhost');
+
+    // ONE-SHOT: the same arming must not fire again — a delegating post
+    // consumes the gesture's activation, so repeating it could only throw.
+    env.fire('pointerdown');
+    env.fire('keydown');
+    expect(goFullscreenPosts(posted).length).toBe(1);
+  });
+
+  it('re-arms on every NOT-fullscreen report, and keydown delegates too', () => {
+    const env = installWindow();
+    const { popup, posted } = fakePopup();
+    const sched = fakeRaf();
+    startPresent({
+      source: () => fakeSourceCanvas(), rect: null,
+      openWindow: () => popup as unknown as Window, raf: sched.raf, caf: sched.caf,
+    });
+
+    env.fireMessage({ source: popup, data: { type: 'present:fs-state', entered: false } });
+    env.fire('keydown');
+    expect(goFullscreenPosts(posted).length).toBe(1);
+
+    // The delegated attempt failed too (e.g. delegation unsupported) — the
+    // sink's next failing loop re-reports and the opener re-arms.
+    env.fireMessage({ source: popup, data: { type: 'present:fs-state', entered: false } });
+    env.fire('pointerdown');
+    expect(goFullscreenPosts(posted).length).toBe(2);
+  });
+
+  it('an entered:true report DISARMS a pending gesture (fullscreen achieved)', () => {
+    const env = installWindow();
+    const { popup, posted } = fakePopup();
+    const sched = fakeRaf();
+    startPresent({
+      source: () => fakeSourceCanvas(), rect: null,
+      openWindow: () => popup as unknown as Window, raf: sched.raf, caf: sched.caf,
+    });
+
+    env.fireMessage({ source: popup, data: { type: 'present:fs-state', entered: false } });
+    env.fireMessage({ source: popup, data: { type: 'present:fs-state', entered: true } });
+    env.fire('pointerdown');
+    expect(goFullscreenPosts(posted).length, 'a later gesture delegates nothing').toBe(0);
+    expect(env.listenerCount('pointerdown'), 'gesture listeners removed').toBe(0);
+    expect(env.listenerCount('keydown')).toBe(0);
+  });
+
+  it('stop() disarms the pending gesture with the rest of the teardown', () => {
+    const env = installWindow();
+    const { popup, posted } = fakePopup();
+    const sched = fakeRaf();
+    const session = startPresent({
+      source: () => fakeSourceCanvas(), rect: null,
+      openWindow: () => popup as unknown as Window, raf: sched.raf, caf: sched.caf,
+    })!;
+
+    env.fireMessage({ source: popup, data: { type: 'present:fs-state', entered: false } });
+    expect(env.listenerCount('pointerdown')).toBe(1);
+    session.stop();
+    expect(env.listenerCount('pointerdown'), 'stop() removes the gesture listener').toBe(0);
+    expect(env.listenerCount('keydown')).toBe(0);
+    env.fire('pointerdown');
+    expect(goFullscreenPosts(posted).length).toBe(0);
+  });
+
+  it('a DENIED automatic-fullscreen permission prints the advisory ONCE and still arms', () => {
+    const env = installWindow();
+    const { popup, posted } = fakePopup();
+    const sched = fakeRaf();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      startPresent({
+        source: () => fakeSourceCanvas(), rect: null,
+        openWindow: () => popup as unknown as Window, raf: sched.raf, caf: sched.caf,
+      });
+
+      env.fireMessage({
+        source: popup,
+        data: { type: 'present:fs-state', entered: false, permission: 'denied' },
+      });
+      const advisories = warn.mock.calls.filter((c) =>
+        String(c[1] ?? c[0]).includes('Automatic fullscreen is blocked'),
+      );
+      expect(advisories.length, 'the one actionable line').toBe(1);
+      // The advisory names both no-setup recovery paths AND the setting/policy.
+      expect(automaticFullscreenBlockedAdvisory()).toContain('next click');
+      expect(automaticFullscreenBlockedAdvisory()).toContain('Automatic full screen');
+      expect(automaticFullscreenBlockedAdvisory()).toContain(
+        'AutomaticFullscreenAllowedForUrls',
+      );
+
+      // Repeat reports do not spam the console…
+      env.fireMessage({
+        source: popup,
+        data: { type: 'present:fs-state', entered: false, permission: 'denied' },
+      });
+      expect(
+        warn.mock.calls.filter((c) =>
+          String(c[1] ?? c[0]).includes('Automatic fullscreen is blocked'),
+        ).length,
+      ).toBe(1);
+
+      // …and the gesture path is still armed alongside the advisory.
+      env.fire('pointerdown');
+      expect(goFullscreenPosts(posted).length).toBe(1);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('ignores fs-state from a window that is not OUR popup (same-origin guard)', () => {
+    const env = installWindow();
+    const { popup, posted } = fakePopup();
+    const sched = fakeRaf();
+    startPresent({
+      source: () => fakeSourceCanvas(), rect: null,
+      openWindow: () => popup as unknown as Window, raf: sched.raf, caf: sched.caf,
+    });
+
+    env.fireMessage({ source: {}, data: { type: 'present:fs-state', entered: false } });
+    env.fire('pointerdown');
+    expect(goFullscreenPosts(posted).length, 'a foreign report must not arm').toBe(0);
   });
 });

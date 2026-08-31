@@ -5,7 +5,7 @@
 // A "source" image is crossfaded between two video inputs (in_a / in_b)
 // by MIX, then composited with a PROCESSED copy of BACKDRAFT's OWN
 // previous output. The fed-back frame is delayed by a frame-ring tap
-// (DELAY, 0..500ms), colour-processed (LUMA / CHROMA / per-channel R/G/B
+// (DELAY, 0..1000ms), colour-processed (LUMA / CHROMA / per-channel R/G/B
 // gain, each -100%..+200%), and scaled per-pixel by two key masks
 // (LIGHTEN boosts the feedback effect where bright, DARKEN reduces it).
 //
@@ -18,14 +18,32 @@
 // tap reads frame N-1..N-30. This is the same 1-frame-lag cycle the
 // engine's topo fallback tolerates (id-order on cycles).
 //
-// ── DELAY as a frame ring ─────────────────────────────────────────────
-// We keep a ring of recent OUTPUT frames (BUFFER_FRAMES). DELAY is
-// a knob in milliseconds (0..500). At ~60fps, 500ms ≈ 30 frames; we size
-// the ring to MAX_DELAY_FRAMES+slop. The tap is NEAREST-frame:
-// frames = round(delayMs / 1000 * 60), clamped to [1, ring-1] (always at
-// least 1 so feedback genuinely lags and we never read the slot we're
-// about to overwrite). No interpolation — nearest is visually
-// indistinguishable at video rate and keeps the shader to one sample.
+// ── DELAY as a LAZY-GROWING frame ring ────────────────────────────────
+// We keep a ring of recent OUTPUT frames. DELAY is a knob in milliseconds
+// (0..1000). At ~60fps, 1000ms ≈ 60 frames; BACKDRAFT_BUFFER_FRAMES (61)
+// is the ring's HARD CAP, not its allocation. The ring is allocated
+// LAZILY (owner condition, 2026-08-29, when the max doubled from 500ms):
+// it holds only what the CURRENT delay's taps need and GROWS on demand
+// when the knob, a CV sweep, or the delay clock asks past the current
+// depth — so a patch sitting at or below the old 500ms max costs the old
+// VRAM (or less), and only a longer delay pays for a deeper ring.
+//   * Freshly-grown slots start BLACK, so a big upward jump briefly reads
+//     an empty tap and the trail restarts — the honest behavior (the
+//     alternative, pre-filling from shallower history, would fabricate
+//     frames that never happened). Growth splices the new slots at the
+//     write head, which provably preserves the age of every frame already
+//     in the ring — only the newly-reachable DEEPER ages read empty.
+//   * The ring NEVER SHRINKS on a delay decrease — hysteresis beats
+//     churn: freeing FBOs per knob wiggle would thrash VRAM mid-gesture,
+//     and warm slots mean returning to a longer delay reuses history
+//     instantly instead of dropping the trail again. The cap bounds the
+//     cost: 61 slots at engine res, reached only by actually asking for
+//     the full 1000ms.
+// The tap is NEAREST-frame: frames = round(delayMs / 1000 * 60), clamped
+// to [1, ring-1] (always at least 1 so feedback genuinely lags and we
+// never read the slot we're about to overwrite). No interpolation —
+// nearest is visually indistinguishable at video rate and keeps the
+// shader to one sample.
 //
 // ── Colour math on the fed-back frame ────────────────────────────────
 //   * Per-channel R/G/B gain: rgb *= vec3(R, G, B). 1.0 = neutral.
@@ -238,6 +256,7 @@
 import type { VideoModuleDef } from '$lib/video/module-registry';
 import type { VideoNodeHandle, VideoNodeSurface } from '$lib/video/engine';
 import { detectEdge, makeEdgeState, type EdgeState } from '$lib/doom/cv-gate-edge';
+import { requestVideoPanic } from '$lib/video/panic-hook';
 // The bridge's own write cadence — the DELAY CLOCK freshness window is
 // expressed in ticks rather than re-deriving a millisecond figure.
 import { SCHEDULER_TICK_MS } from '$lib/audio/scheduler-clock';
@@ -245,27 +264,33 @@ import { SCHEDULER_TICK_MS } from '$lib/audio/scheduler-clock';
 /** Assumed engine frame rate for the ms→frames delay mapping. The engine
  *  drives one step per rAF (~60fps); we document nearest-frame semantics. */
 export const BACKDRAFT_FPS = 60;
-/** Max DELAY knob value in milliseconds. */
-export const BACKDRAFT_MAX_DELAY_MS = 500;
-/** Ring depth: enough frames to cover MAX_DELAY_MS at FPS, plus headroom
+/** Max DELAY knob value in milliseconds. Doubled 500 → 1000 (owner request,
+ *  2026-08-29) together with the ring going LAZY — see the header's "DELAY as
+ *  a LAZY-GROWING frame ring". */
+export const BACKDRAFT_MAX_DELAY_MS = 1000;
+/** Ring depth CAP: enough frames to cover MAX_DELAY_MS at FPS, plus headroom
  *  so the tap (>=1 behind head) never aliases the slot we overwrite.
- *  At 60fps, 500ms = 30 frames; +1 slot so the deepest tap (30) is still
- *  < ringSize and never aliases the head we're writing. = 31. Each slot is
- *  a full-res FBO+texture, so this is the VRAM cap: exactly what 500ms
- *  needs at 60fps, no more (we do not over-allocate beyond 500ms). */
+ *  At 60fps, 1000ms = 60 frames; +1 slot so the deepest tap (60) is still
+ *  < ringSize and never aliases the head we're writing. = 61. Each slot is
+ *  a full-res FBO+texture, so this bounds the VRAM — but it is a CAP, not
+ *  the allocation: the ring grows lazily from what the current delay needs
+ *  (backdraftRingDepthNeeded) and only reaches this depth when the full
+ *  1000ms is actually asked for. */
 export const BACKDRAFT_BUFFER_FRAMES =
-  Math.ceil((BACKDRAFT_MAX_DELAY_MS / 1000) * BACKDRAFT_FPS) + 1; // = 31
+  Math.ceil((BACKDRAFT_MAX_DELAY_MS / 1000) * BACKDRAFT_FPS) + 1; // = 61
 /** Upper bound on the per-pixel feedback effect scale after mask combine.
  *  (Unrelated to the clock; kept where it was.) */
 export const BACKDRAFT_MAX_EFFECT_SCALE = 4;
 
 /** When a DELAY CLOCK is patched, the feedback delay tracks ONE clock-pulse
  *  duration (the interval between the last two rising edges). The max
- *  response is BACKDRAFT_MAX_DELAY_MS = 500ms, which is exactly one beat at
- *  120 BPM (60000/120 = 500). Slower clocks (period > 500ms) cap there;
+ *  response is BACKDRAFT_MAX_DELAY_MS = 1000ms, which is exactly one beat at
+ *  60 BPM (60000/60 = 1000). Slower clocks (period > 1000ms) cap there;
  *  faster clocks shorten the delay proportionally. This is the same cap the
- *  DELAY knob uses, so the ring (sized for 500ms) always holds it. */
-export const BACKDRAFT_CLOCK_BPM_AT_MAX = 120;
+ *  DELAY knob uses, so the ring (which grows to hold whatever the effective
+ *  delay asks, up to that cap) always holds it. The cap FOLLOWED the knob
+ *  when the knob doubled (120 → 60 BPM, 2026-08-29), keeping this identity. */
+export const BACKDRAFT_CLOCK_BPM_AT_MAX = 60;
 /** FEEDBACK knob ceiling (>1 = runaway trails). */
 export const BACKDRAFT_MAX_FEEDBACK = 2.0;
 
@@ -1423,7 +1448,7 @@ void main() {
 export interface BackdraftParams {
   mix: number;       // 0..1
   feedback: number;  // 0..BACKDRAFT_MAX_FEEDBACK
-  delay: number;     // 0..BACKDRAFT_MAX_DELAY_MS (ms, default 500)
+  delay: number;     // 0..BACKDRAFT_MAX_DELAY_MS (ms, default 16)
   delayClock: number; // raw DELAY CLOCK gate sample (0..1). Synthetic param
                       // the gate-style CV bridge writes; the module
                       // edge-detects it. Not a user knob (no card control).
@@ -1484,6 +1509,9 @@ export interface BackdraftParams {
   camPosY: number;   // -1..1
   camDist: number;   // 0..1 -> camera distance (perspective strength)
   freeze: number;    // 0/1 (VRT determinism)
+  // Synthetic raw-gate param the panic CV bridge writes (0..1 swing). Hidden —
+  // no card knob; a rising edge fires the settings reset (see panic-hook).
+  panicGate: number; // 0..1 raw gate sample
 }
 
 const DEFAULTS: BackdraftParams = {
@@ -1541,6 +1569,7 @@ const DEFAULTS: BackdraftParams = {
   camPosY: 0,
   camDist: 0.5,
   freeze: 0,
+  panicGate: 0, // gate idles low; only written while a PANIC cable is patched
 };
 
 /**
@@ -1569,6 +1598,34 @@ export function backdraftTapIndex(head: number, frames: number, size: number): n
   if (size <= 0) throw new Error('backdraftTapIndex: size must be positive');
   const f = Math.max(1, Math.min(size - 1, Math.floor(frames)));
   return ((head - f) % size + size) % size;
+}
+
+/**
+ * Pure LAZY-RING sizing rule: how many slots the ring must hold for the taps
+ * this frame actually uses. Two taps exist:
+ *
+ *   - the MAIN feedback tap, `delayFrames` behind head → needs delayFrames+1
+ *     slots (the +1 is the old fixed ring's own headroom rule, so a knob at
+ *     the old 500ms max allocates the old 31 slots exactly);
+ *   - the VIRTUAL-REFRESH tap (TV mode + FLICKER only), one frame older at
+ *     `delayFrames + 1` → needs one more slot, paid ONLY while that pair of
+ *     modes is on. (The old fixed ring served this tap out of its max-delay
+ *     allocation at every sub-max delay, and silently ALIASED it onto the
+ *     main tap at exactly max — the uniform +1-when-in-use rule keeps the
+ *     refresh tap real everywhere instead, at the cost of one slot beyond
+ *     the old ring in that one corner. Flagged in the PR, not decided
+ *     silently.)
+ *
+ * Clamped to [2, cap]: at least 2 so head and the >=1-frame tap never share
+ * a slot; at most BACKDRAFT_BUFFER_FRAMES, the VRAM cap.
+ */
+export function backdraftRingDepthNeeded(
+  delayFrames: number,
+  refreshTapInUse: boolean,
+  cap: number = BACKDRAFT_BUFFER_FRAMES,
+): number {
+  const needed = Math.floor(delayFrames) + (refreshTapInUse ? 2 : 1);
+  return Math.max(2, Math.min(cap, needed));
 }
 
 /**
@@ -2143,27 +2200,40 @@ export function backdraftClockPatched(
 /**
  * Resolve the effective feedback delay (ms) for this frame.
  *
- *   - clock NOT patched  → the DELAY knob value, unchanged (today's behaviour).
- *   - clock patched      → ONE clock-pulse duration = the last measured
- *                          period (sec → ms), clamped to [0, maxMs]. 500ms
- *                          lines up with one beat at 120 BPM. Until the clock
- *                          has produced two edges (periodSec == 0) we have no
- *                          measurement yet, so we fall back to the knob — the
- *                          delay snaps to the pulse period as soon as the
- *                          second edge lands and then PREDICTS forward (the
- *                          period is reused every frame, no re-measure needed).
+ *   - clock NOT patched  → the DELAY knob value, unchanged.
+ *   - clock patched      → the knob is IGNORED ENTIRELY (owner ruling: "if
+ *                          delay clock is patched this is a case where we
+ *                          should ignore the fader entirely"). With a measured
+ *                          period (two edges landed) the delay is ONE
+ *                          clock-pulse duration (sec → ms, clamped to
+ *                          [0, maxMs]; 1000ms lines up with one beat at
+ *                          60 BPM), PREDICTED forward every frame. Before the
+ *                          first measurement (periodSec == 0) it HOLDS
+ *                          `heldMs` — the last effective delay — so patching a
+ *                          clock never jumps the picture: the delay stays
+ *                          where it was until the second edge lands, then
+ *                          locks to the pulse.
+ *
+ * Unpatching returns control to the knob at its current position (the
+ * !clockPatched arm), and draw() resets the measurement on that transition so
+ * a LATER re-patch holds again instead of jumping to a stale period.
  *
  * Pure; shared by draw() + the unit tests so the mapping has one source of
- * truth.
+ * truth. `heldMs` defaults to the knob so pure-function callers that predate
+ * the hold get the old fall-back shape.
  */
 export function backdraftEffectiveDelayMs(
   knobDelayMs: number,
   clockPatched: boolean,
   periodSec: number,
+  heldMs: number = knobDelayMs,
   maxMs: number = BACKDRAFT_MAX_DELAY_MS,
 ): number {
-  if (!clockPatched || periodSec <= 0) {
+  if (!clockPatched) {
     return Math.max(0, Math.min(maxMs, knobDelayMs));
+  }
+  if (periodSec <= 0) {
+    return Math.max(0, Math.min(maxMs, heldMs));
   }
   const pulseMs = periodSec * 1000;
   return Math.max(0, Math.min(maxMs, pulseMs));
@@ -3069,7 +3139,7 @@ export const backdraftDef: VideoModuleDef = {
     // DELAY CLOCK — gate/clock input. NO cvScale => the bridge passes the
     // RAW swing through (gate semantics) and the module edge-detects rising
     // edges to measure the pulse period. When patched it OVERRIDES the DELAY
-    // knob (feedback delay = one clock-pulse duration, capped at 500ms).
+    // knob (feedback delay = one clock-pulse duration, capped at 1000ms).
     // `edge: 'trigger'` — it FIRES ONCE per rising edge and never reads the
     // held level, so the detection belongs on the bridge's setParam clock
     // (see the factory's setParam + the header note on #1725).
@@ -3115,6 +3185,14 @@ export const backdraftDef: VideoModuleDef = {
     { id: 'cam_pos_x',     type: 'cv', paramTarget: 'camPosX',  cvScale: { mode: 'linear' } },
     { id: 'cam_pos_y',     type: 'cv', paramTarget: 'camPosY',  cvScale: { mode: 'linear' } },
     { id: 'cam_dist',      type: 'cv', paramTarget: 'camDist',  cvScale: { mode: 'linear' } },
+    // PANIC — gate/clock input (NO cvScale => raw passthrough). A RISING edge
+    // fires the SAME settings reset as the faceplate's PANIC button (one
+    // implementation, two triggers — see $lib/ui/modules/backdraft/panic.ts):
+    // every user-settable param back to its def default, in one undoable
+    // LOCAL_ORIGIN transaction, touching no cables and no layout. `edge:
+    // 'trigger'`: it fires once per rising edge and never reads the held
+    // level, so the detection runs on the bridge's setParam clock.
+    { id: 'panic',         type: 'cv', edge: 'trigger', paramTarget: 'panicGate' },
   ],
   outputs: [
     { id: 'out', type: 'video' },
@@ -3221,9 +3299,13 @@ export const backdraftDef: VideoModuleDef = {
     { id: 'camDist',  label: 'Dist',     defaultValue: DEFAULTS.camDist,  min: 0,  max: 1,                     curve: 'linear' },
     // freeze is a hidden VRT/determinism toggle — no card control.
     { id: 'freeze',   label: 'Freeze',   defaultValue: DEFAULTS.freeze,   min: 0,  max: 1,                     curve: 'linear' },
+    // Synthetic gate param the panic CV bridge writes — hidden (no card
+    // knob); the module edge-detects a rising edge and fires the settings
+    // reset (same implementation as the PANIC button).
+    { id: 'panicGate', label: 'Panic Gate', defaultValue: DEFAULTS.panicGate, min: 0, max: 1, curve: 'linear' },
   ],
 
-  // #1726 — THE SEVEN PARAMS A PLAYER NEVER SETS, said in a form a gate can
+  // #1726 — THE PARAMS A PLAYER NEVER SETS, said in a form a gate can
   // read. Every one of them was already documented as "hidden — no card knob"
   // in a comment four lines above its ParamDef; a comment is invisible to the
   // face rules, the group-bar auto-expose and the Push card ranking, all three
@@ -3233,7 +3315,7 @@ export const backdraftDef: VideoModuleDef = {
   // of the real ones.
   //
   // `writer` is checked against THIS def's own `inputs` in both directions
-  // (no-user-control.test.ts): the six gate params must have the matching
+  // (no-user-control.test.ts): the gate params must have the matching
   // `paramTarget` port, and `freeze` must have none.
   noUserControl: [
     { param: 'delayClock',  writer: 'cv-port',  why: 'written by the delay_clock bridge as a raw 0..1 swing; the module edge-detects it to measure the pulse period that overrides the DELAY fader' },
@@ -3242,6 +3324,7 @@ export const backdraftDef: VideoModuleDef = {
     { param: 'shapeGate',   writer: 'cv-port',  why: 'written by the shape_gate bridge; a rising edge CYCLES shape, which is the param the player actually sets' },
     { param: 'pureGeoGate', writer: 'cv-port',  why: 'written by the pure_geo_gate bridge; a rising edge TOGGLES pureGeo, which is the param the player actually sets' },
     { param: 'tvGate',      writer: 'cv-port',  why: 'written by the tv_gate bridge; a rising edge CYCLES tvMode, which is the param the player actually sets' },
+    { param: 'panicGate',   writer: 'cv-port',  why: 'written by the panic bridge; a rising edge fires the settings reset the PANIC button also fires — the params the player actually sets are the ones it restores' },
     { param: 'freeze',      writer: 'internal', why: 'determinism toggle for VRT capture: at >=0.5 draw() is a no-op so the ring and output hold their last frame. No port targets it and no card control sets it' },
   ],
 
@@ -3428,7 +3511,7 @@ export const backdraftDef: VideoModuleDef = {
   },
 
   docs: {
-    explanation: `BACKDRAFT is a video feedback generator. It builds a "source" image by crossfading two video inputs (IN A / IN B) with MIX, then composites that against a processed copy of its OWN previous output, read from an internal ring of past frames so there is no live GL feedback loop (downstream sees frame N while the tap reads N-1..N-30). The fed-back frame is delayed (DELAY, 0-500ms or a clock pulse), colour-processed (per-channel R/G/B gain, then LUMA brightness, then CHROMA saturation), scaled per-pixel by two key masks (KEY+ lightens / KEY- darkens the effect), and geometrically warped a little each pass (ZOOM/ROTATE/OFF X/OFF Y) so the transform COMPOUNDS into tunnels, spirals, and directional trails. Two MIRROR buttons fold the whole composited frame into a kaleidoscope. A SHAPE button cuts the frame to a geometric mask (square = full frame, then circle / pentagon / triangle / octagon), and a PURE GEO button picks the masking SPACE: ON masks the FINAL OUTPUT in screen space (a fixed shape that cuts everything outside it at all zooms), OFF masks the SOURCE in the zoomed feedback space so the shape scales with ZOOM and its content spills out through the feedback tunnel (zoom-in pushes it toward the corners, zoom-out shrinks it). As FEEDBACK approaches its max (and a spatial transform is active) the additive trail-accumulator ramps into a pure recursive hall of mirrors. A FLICKER control (OFF / 6 / 24 / 50 / 60 / 120 Hz) models the display's pulsed emission as the virtual camera actually captures it, and then models what the CAMERA does to it: the emission rate beats against the camera's 60 fps sampling, so the per-frame loop gain oscillates around unity instead of being constant, and light can build up over several frames and then fade away rather than pinning at white — with a rolling-shutter band crawling down the frame at the beat rate. The captured light then passes through the sensor's multi-frame charge storage (a low-pass on the BEAT, so fast beats become soft shimmer while slow ones keep their full swing) and its saturating shoulder (so the modulation stops acting where the image is already hot and reads as contour shimmer rather than a full-field flash). That is what makes the fast positions breathe instead of strobe. Usage: patch a camera or generator into IN A, raise FEEDBACK toward ~1 and nudge ZOOM off 1.0 (with a little ROTATE) for the classic infinite-tunnel look; add OFF X/Y for smear, PIXELATE for blocky lo-fi, a SHAPE for a geometric vignette, and clock DELAY CLK for rhythmic echo. Output is the OUT video jack. The card carries NO in-rack picture. It used to show a 320×240 display, and that display was the single biggest consumer of the card's width and height; taking it out bought the module a narrower rack tier and taller faders, which is the better trade for a panel with this many controls. Feedback is still steered by watching it, so the output is one click away rather than always-on: the ⛶ OUTPUT button opens Full Frame (the card itself becomes a video panel in the rack), Full Screen, and Present-on-another-display, all of which grow the SAME surface — the button is now the only entry point, since there is no picture to right-click. For an arbitrarily-sized monitor, patch OUT into VIDEO OUT. The controls sit in two rows. Down the left of the first row are the discrete switches — MIRROR X / MIRROR Y, SHAPE and PURE GEO — with TV MODE, its fill/band readout and the OUTPUT button to their right and the six-position FLICKER switch beneath them; beside and below them run the labelled fader banks: LOOP (Mix/FB/Delay), COLOUR (Luma/Chroma/R/G/B), KEY (Lighten/Darken), GEOMETRY (Zoom/Rotate/Off X/Off Y/Pixelate), TV SCREEN (Room/Border/Phosphor/Drive — BORDER is the bezel, i.e. the screen frame's thickness) and VIRTUAL CAMERA, whose two 2-D pads steer the camera's TILT and POSITION with a DIST fader beside them. A control that does nothing in the current mode is DIMMED rather than hidden or disabled, so it stays draggable, resettable and MIDI-learnable and the card never changes height with the mode: the TV SCREEN bank dims while TV MODE is OFF (its title becomes a button that turns TV MODE on), and PURE GEO dims in PURE TV / CRITICAL, where SHAPE means only the screen's outline.`,
+    explanation: `BACKDRAFT is a video feedback generator. It builds a "source" image by crossfading two video inputs (IN A / IN B) with MIX, then composites that against a processed copy of its OWN previous output, read from an internal ring of past frames so there is no live GL feedback loop (downstream sees frame N while the tap reads N-1..N-60). The fed-back frame is delayed (DELAY, 0-1000ms or a clock pulse), colour-processed (per-channel R/G/B gain, then LUMA brightness, then CHROMA saturation), scaled per-pixel by two key masks (KEY+ lightens / KEY- darkens the effect), and geometrically warped a little each pass (ZOOM/ROTATE/OFF X/OFF Y) so the transform COMPOUNDS into tunnels, spirals, and directional trails. Two MIRROR buttons fold the whole composited frame into a kaleidoscope. A SHAPE button cuts the frame to a geometric mask (square = full frame, then circle / pentagon / triangle / octagon), and a PURE GEO button picks the masking SPACE: ON masks the FINAL OUTPUT in screen space (a fixed shape that cuts everything outside it at all zooms), OFF masks the SOURCE in the zoomed feedback space so the shape scales with ZOOM and its content spills out through the feedback tunnel (zoom-in pushes it toward the corners, zoom-out shrinks it). As FEEDBACK approaches its max (and a spatial transform is active) the additive trail-accumulator ramps into a pure recursive hall of mirrors. A FLICKER control (OFF / 6 / 24 / 50 / 60 / 120 Hz) models the display's pulsed emission as the virtual camera actually captures it, and then models what the CAMERA does to it: the emission rate beats against the camera's 60 fps sampling, so the per-frame loop gain oscillates around unity instead of being constant, and light can build up over several frames and then fade away rather than pinning at white — with a rolling-shutter band crawling down the frame at the beat rate. The captured light then passes through the sensor's multi-frame charge storage (a low-pass on the BEAT, so fast beats become soft shimmer while slow ones keep their full swing) and its saturating shoulder (so the modulation stops acting where the image is already hot and reads as contour shimmer rather than a full-field flash). That is what makes the fast positions breathe instead of strobe. Usage: patch a camera or generator into IN A, raise FEEDBACK toward ~1 and nudge ZOOM off 1.0 (with a little ROTATE) for the classic infinite-tunnel look; add OFF X/Y for smear, PIXELATE for blocky lo-fi, a SHAPE for a geometric vignette, and clock DELAY CLK for rhythmic echo. Output is the OUT video jack. The card carries NO in-rack picture. It used to show a 320×240 display, and that display was the single biggest consumer of the card's width and height; taking it out bought the module a narrower rack tier and taller faders, which is the better trade for a panel with this many controls. Feedback is still steered by watching it, so the output is one click away rather than always-on: the ⛶ OUTPUT button opens Full Frame (the card itself becomes a video panel in the rack), Full Screen, and Present-on-another-display, all of which grow the SAME surface — the button is now the only entry point, since there is no picture to right-click. For an arbitrarily-sized monitor, patch OUT into VIDEO OUT. The controls sit in two rows. Down the left of the first row are the discrete switches — MIRROR X / MIRROR Y, SHAPE and PURE GEO — with TV MODE, its fill/band readout and the OUTPUT button to their right and the six-position FLICKER switch beneath them; beside and below them run the labelled fader banks: LOOP (Mix/FB/Delay), COLOUR (Luma/Chroma/R/G/B), KEY (Lighten/Darken), GEOMETRY (Zoom/Rotate/Off X/Off Y/Pixelate), TV SCREEN (Room/Border/Phosphor/Drive — BORDER is the bezel, i.e. the screen frame's thickness) and VIRTUAL CAMERA, whose two 2-D pads steer the camera's TILT and POSITION with a DIST fader beside them. A control that does nothing in the current mode is DIMMED rather than hidden or disabled, so it stays draggable, resettable and MIDI-learnable and the card never changes height with the mode: the TV SCREEN bank dims while TV MODE is OFF (its title becomes a button that turns TV MODE on), and PURE GEO dims in PURE TV / CRITICAL, where SHAPE means only the screen's outline.`,
     inputs: {
       in_a: "Video source A. Crossfaded against IN B by MIX to form the live 'source' image that is re-injected each frame; unpatched it reads black.",
       in_b: "Video source B. The other end of the MIX crossfade (MIX=1 selects this input fully); unpatched it reads black.",
@@ -3436,8 +3519,8 @@ export const backdraftDef: VideoModuleDef = {
       darken: "Video KEY- mask. Read as luma per pixel; where bright it scales the feedback effect DOWN (paired with the Darken control). Unpatched = neutral (no cut).",
       mix: "CV (linear) that modulates the Mix crossfade between IN A (0) and IN B (1).",
       feedback: "CV (linear) that modulates the FB (feedback) amount, the per-frame persistence ratio of the fed-back frame.",
-      delay: "CV (linear) that modulates the Delay control, the feedback tap delay in milliseconds (0-500ms).",
-      delay_clock: "Gate/clock input (raw passthrough, edge-detected). Each rising edge times a pulse; once two edges land, the feedback delay locks to one clock-pulse duration (capped at 500ms = one beat at 120 BPM) and OVERRIDES the Delay control. A short TRIGGER works exactly as well as a held gate: the rising edge is detected as the value arrives from the patch bridge rather than sampled once per rendered frame, so a 5ms pulse cannot be missed and the lock does not depend on how fast the renderer is running. The measured period is accurate to about one 25ms bridge tick, which is how often the bridge can deliver an edge at all — well inside the resolution the delay is quantized to anyway (one video frame).",
+      delay: "CV (linear) that modulates the Delay control, the feedback tap delay in milliseconds (0-1000ms). The range was DELIBERATELY doubled from its original 0-500ms (owner request), so a ±1 sweep from an older patch now covers twice the milliseconds it was authored against.",
+      delay_clock: "Gate/clock input (raw passthrough, edge-detected). While a cable is patched here the Delay fader is ignored ENTIRELY: from the moment of patching the effective delay HOLDS its current value (no jump), and once two rising edges land it locks to one clock-pulse duration (capped at 1000ms = one beat at 60 BPM, the same cap as the fader) and tracks the clock from then on. Fader moves while patched change only the stored position; unpatching returns control to the fader at wherever it now sits. The fader shows the override (dimmed, with a CLK badge). A short TRIGGER works exactly as well as a held gate: the rising edge is detected as the value arrives from the patch bridge rather than sampled once per rendered frame, so a 5ms pulse cannot be missed and the lock does not depend on how fast the renderer is running. The measured period is accurate to about one 25ms bridge tick, which is how often the bridge can deliver an edge at all — well inside the resolution the delay is quantized to anyway (one video frame).",
       luma: "CV (linear) that modulates the Luma control, the feedback's overall brightness gain about black.",
       chroma: "CV (linear) that modulates the Chr (chroma/saturation) control of the fed-back frame.",
       r: "CV (linear, bipolar) that modulates the R per-channel red gain of the feedback (range -1..+2).",
@@ -3463,6 +3546,7 @@ export const backdraftDef: VideoModuleDef = {
       cam_pos_y: "CV (linear, bipolar) that modulates Cam Y — slides the virtual camera up/down in its own plane. No effect while TV MODE is off.",
       cam_dist: "CV (linear) that modulates Dist — how far the virtual camera stands off, i.e. how violently a given tilt keystones. No effect while TV MODE is off, or while the camera is dead-on.",
       drive: "CV (linear) that modulates the Drive control — CRITICAL's auto-exposure servo rate, i.e. how hard the mode sits on the edge of white-out. Below the midpoint the picture is a still nest; above it, it breathes. No effect outside CRITICAL.",
+      panic: "Gate/clock input (raw passthrough, edge-detected). A RISING edge fires PANIC — the same reset as the faceplate's PANIC button: every user-settable control returns to its default in one undoable step. Patching is untouched: no cable is added or removed, so a CV source modulating a control keeps modulating it, now around the restored default base. Edge-triggered, not a held level: the rising edge is detected as the value arrives from the patch bridge rather than sampled once per rendered frame, so a short 5ms trigger fires it exactly as reliably as a sustained gate, and holding the gate high fires it once and then leaves it alone.",
     },
     outputs: {
       out: "The feedback-rendered video output: the crossfaded source composited with the processed, delayed, spatially-warped, mask-scaled copy of the previous output.",
@@ -3470,7 +3554,7 @@ export const backdraftDef: VideoModuleDef = {
     controls: {
       mix: "Mix (0..1, default 0.5): crossfade between IN A (0) and IN B (1) to form the live source image.",
       feedback: "FB / Feedback (0..2.0, default 0.85): per-frame feedback persistence. Above 1.0 gives runaway trails; near max (with a spatial transform active) it ramps into a pure recursive hall of mirrors. Each frame is clamped to [0,1] so it cannot blow out.",
-      delay: "Delay (0..500 ms, default 16): feedback tap delay, snapped to the nearest whole frame (~1 frame at default). Overridden + shown as 'Dly·CLK' with a CLK badge while DELAY CLK is patched.",
+      delay: "Delay (0..1000 ms, default 16): feedback tap delay, snapped to the nearest whole frame (~1 frame at default). The delay ring only allocates what the current delay needs and grows as you raise it (never shrinking back), so a big upward jump briefly restarts the trail while the deeper history fills. While DELAY CLK is patched this fader is ignored entirely (dimmed + CLK badge, and the label reads 'Dly·CLK' on the legacy card): the effective delay holds, then tracks the clock; unpatching hands control back to the fader at its current position.",
       luma: "Luma (-1..+2, default 1.0): brightness gain of the fed-back frame about black. 1 = neutral, >1 brightens, <1 darkens, negative inverts.",
       chroma: "Chr / Chroma (-1..+2, default 1.0): saturation gain about the pixel's own luma. 1 = neutral, 0 = greyscale, 2 = double saturation, negative = hue-inverted.",
       r: "R (-1..+2, default 1.0): per-channel red gain on the feedback. 1 = neutral.",
@@ -3505,6 +3589,7 @@ export const backdraftDef: VideoModuleDef = {
       camPosY: "Cam Y (-0.5..+0.5, default 0 = centred): slides the camera up or down in its own plane, from dead centre to above or below the screen. Pairs with Tilt Y.",
       camDist: "Dist (0..1, default 0.5): how far the virtual camera stands off the screen, and therefore how hard a given TILT keystones. Short (wide-angle) throws violent perspective and makes the nest curl hard; long (telephoto) barely skews it. The fader is geometric — equal steps are equal FACTORS — because perspective strength is a ratio, not an offset. It does NOTHING while the camera is dead-on, since a square-on view has no perspective to strengthen.",
       freeze: "Freeze (0/1, default 0): hidden determinism toggle. At ≥0.5 draw() is a no-op so the ring + output hold their last frame for deterministic VRT capture. No card control.",
+      panicGate: "Panic Gate (0..1, default 0): hidden synthetic param the panic CV bridge writes (raw gate swing). No card knob; a rising edge fires the settings reset the PANIC button also fires.",
     },
   },
   factory(ctx, node): VideoNodeHandle {
@@ -3609,8 +3694,30 @@ export const backdraftDef: VideoModuleDef = {
     // and publish ring[head].texture downstream. The feedback tap reads
     // ring[head - delayFrames] — a frame we wrote on a PAST step, so we
     // never sample the texture being written this frame.
+    //
+    // ⚠ LAZY-GROWING (owner condition when the max delay doubled to 1000ms,
+    // 2026-08-29): boot allocates only what the CURRENT delay's taps need
+    // (backdraftRingDepthNeeded), and ensureRingDepth grows on demand — from
+    // the knob, a CV sweep, or the delay clock — up to the
+    // BACKDRAFT_BUFFER_FRAMES cap. Growth SPLICES the new slots at the write
+    // head: every already-written frame keeps its exact age distance from
+    // head (the pre-head indices are untouched and the post-head indices
+    // shift by the same amount the modulus grows), so shallow taps read on
+    // uninterrupted, and only the newly-reachable DEEPER ages read the fresh
+    // slots' black — a brief trail restart on a big upward jump, which is
+    // the honest behavior (pre-filling would fabricate history). The ring
+    // never shrinks on a delay decrease — hysteresis beats VRAM churn, and
+    // warm slots make a return to a longer delay instant (see the header).
+    // ctx.createFbo attributes the slot to this node whenever it is called
+    // (the context closure captured node.id at addNode), so grown slots
+    // resize on an aspect switch exactly like boot-time ones.
     const ring: { fbo: WebGLFramebuffer; texture: WebGLTexture }[] = [];
-    for (let i = 0; i < BACKDRAFT_BUFFER_FRAMES; i++) ring.push(ctx.createFbo());
+    const ensureRingDepth = (needed: number): void => {
+      if (ring.length >= needed) return;
+      const grown: { fbo: WebGLFramebuffer; texture: WebGLTexture }[] = [];
+      for (let i = ring.length; i < needed; i++) grown.push(ctx.createFbo());
+      ring.splice(head, 0, ...grown);
+    };
 
     // 1×1 black sentinel for unbound inputs / cold-start tap. Black =
     // no-effect (zero source, zero feedback, zero mask). Same pattern as
@@ -3628,6 +3735,14 @@ export const backdraftDef: VideoModuleDef = {
     const params: BackdraftParams = { ...DEFAULTS, ...(node.params as Partial<BackdraftParams>) };
     let head = 0;
     let framesElapsed = 0;
+
+    // Boot allocation: exactly what the spawn-time delay needs (the lazy
+    // ring's whole point). TV+FLICKER's refresh tap pays for its extra slot
+    // on the first draw that uses it, not here.
+    ensureRingDepth(backdraftRingDepthNeeded(
+      backdraftDelayFrames(params.delay, BACKDRAFT_BUFFER_FRAMES),
+      false,
+    ));
 
     // ══════════════════════════════════════════════════════════════════
     // CLOCK / GATE INPUTS — EVERY ONE IS EDGE-DETECTED IN `setParam`, ON THE
@@ -3694,6 +3809,10 @@ export const backdraftDef: VideoModuleDef = {
     let lastClockWriteMs = Number.NEGATIVE_INFINITY;
     let lastClockWriteFrame = Number.NEGATIVE_INFINITY;
     let clockPatched = false;
+    // The last EFFECTIVE delay draw() resolved — what a freshly-patched clock
+    // HOLDS until its first measured interval (see backdraftEffectiveDelayMs).
+    // Seeded from the spawn-time knob so the very first frame has a value.
+    let heldEffectiveMs = Math.max(0, Math.min(BACKDRAFT_MAX_DELAY_MS, params.delay));
     // Monotonic count of DELAY CLOCK rising edges this instance has ACTED ON.
     // Nothing in the render output reveals a dropped edge — a clock that lands
     // 1 pulse in 4 just measures a longer period and the picture looks fine —
@@ -3716,6 +3835,14 @@ export const backdraftDef: VideoModuleDef = {
     const pureGeoGate = makeEdgeState();
     // TV MODE gate: a rising edge CYCLES OFF -> PURE TV -> CRITICAL -> OFF.
     const tvGate = makeEdgeState();
+    // PANIC gate: a rising edge fires the graph-side settings reset via the
+    // panic hook (registered at engine boot; a bare factory in a unit test has
+    // no handler and the request is a safe no-op). `panicRises` is the
+    // monotonic acted-on count — the clockRises/regenCount convention: the
+    // render output cannot reveal a dropped edge, so the count is the only
+    // observable that can.
+    const panicGate = makeEdgeState();
+    let panicRises = 0;
 
     const surface: VideoNodeSurface = {
       fbo: ring[0]!.fbo,
@@ -3737,22 +3864,44 @@ export const backdraftDef: VideoModuleDef = {
         // one clock/gate thing that legitimately belongs here. The rising
         // edges themselves are counted in setParam (see the header block
         // above) — a level read here would see 0 -> 0 -> 0.
+        const wasClockPatched = clockPatched;
         clockPatched = backdraftClockPatched(
           backdraftNowMs(), lastClockWriteMs, framesElapsed, lastClockWriteFrame,
         );
+        // UNPATCH transition: forget the measured period (and the dangling
+        // rise timestamp) so a LATER re-patch HOLDS the then-current delay
+        // instead of jumping to a stale measurement — and so the first edge
+        // of the new clock cannot pair with an ancient one into a bogus
+        // period. Control has already returned to the knob this frame (the
+        // !clockPatched arm below).
+        if (wasClockPatched && !clockPatched) {
+          clock.periodSec = 0;
+          clock.lastRiseTime = -1;
+        }
 
         // Effective delay (ms): the DELAY knob, OR — when a DELAY CLOCK is
         // patched and has measured a period — one clock-pulse duration,
-        // capped at 500ms. The measured period is reused every frame (the
+        // capped at 1000ms. The measured period is reused every frame (the
         // one-pulse-ahead prediction on a steady clock), so the feedback
         // refresh stays locked to the pulses without re-measuring.
         const effectiveDelayMs = backdraftEffectiveDelayMs(
           params.delay,
           clockPatched,
           clock.periodSec,
+          heldEffectiveMs,
         );
+        heldEffectiveMs = effectiveDelayMs;
         const delayFrames = backdraftDelayFrames(effectiveDelayMs, BACKDRAFT_BUFFER_FRAMES);
-        const tapIdx = backdraftTapIndex(head, delayFrames, BACKDRAFT_BUFFER_FRAMES);
+        // LAZY RING: grow (never shrink) to what this frame's taps need —
+        // this is the seam through which the knob, a CV sweep on `delay`,
+        // and the delay clock all deepen the ring on demand. The refresh
+        // flag mirrors `tvOn && flick.enabled` below (flick.enabled is
+        // exactly "index > 0" — every non-OFF BACKDRAFT_FLICKER_HZ entry is
+        // > 0), evaluated here because the tap index is needed first.
+        const wantRefreshTap =
+          Math.round(params.tvMode) > 0 && Math.round(params.flicker) > 0;
+        ensureRingDepth(backdraftRingDepthNeeded(delayFrames, wantRefreshTap));
+        const tapIdx = backdraftTapIndex(head, delayFrames, ring.length);
         // Cold start: until we've written at least `delayFrames` frames the
         // tap slot is still its cleared (black) initial state — read the
         // sentinel so the loop starts from zero feedback.
@@ -3859,7 +4008,7 @@ export const backdraftDef: VideoModuleDef = {
         // previous output — so there is no read-write hazard with `dst`.
         let agcTex: WebGLTexture | null = null;
         if (critical && framesElapsed >= 1 && ensureAgc() && agcReduce && agcState) {
-          const prevOut = ring[(head - 1 + BACKDRAFT_BUFFER_FRAMES) % BACKDRAFT_BUFFER_FRAMES]!;
+          const prevOut = ring[(head - 1 + ring.length) % ring.length]!;
           const T = BACKDRAFT_TV_AGC_TILES;
           g.bindFramebuffer(g.FRAMEBUFFER, agcReduce.fbo);
           g.viewport(0, 0, T, T);
@@ -3935,7 +4084,7 @@ export const backdraftDef: VideoModuleDef = {
         // even when tvMode = 0 (the sentinel) so the sampler is never stale.
         g.activeTexture(g.TEXTURE0 + BACKDRAFT_TEXTURE_UNITS.persist);
         const persistTex = tvOn && framesElapsed >= 1
-          ? ring[(head - 1 + BACKDRAFT_BUFFER_FRAMES) % BACKDRAFT_BUFFER_FRAMES]!.texture
+          ? ring[(head - 1 + ring.length) % ring.length]!.texture
           : emptyTex;
         g.bindTexture(g.TEXTURE_2D, persistTex);
         g.uniform1i(uPersist, BACKDRAFT_TEXTURE_UNITS.persist);
@@ -3946,7 +4095,7 @@ export const backdraftDef: VideoModuleDef = {
         // mode with FLICKER on; at FLICKER OFF uTvRefresh is 0 and the shader
         // skips the whole branch, leaving the tap bit-identical.
         const refreshOn = tvOn && flick.enabled;
-        const prevIdx = backdraftTapIndex(head, delayFrames + 1, BACKDRAFT_BUFFER_FRAMES);
+        const prevIdx = backdraftTapIndex(head, delayFrames + 1, ring.length);
         const hasPrev = refreshOn && framesElapsed >= delayFrames + 1;
         g.activeTexture(g.TEXTURE0 + BACKDRAFT_TEXTURE_UNITS.fbPrev);
         g.bindTexture(g.TEXTURE_2D, hasPrev ? ring[prevIdx]!.texture : emptyTex);
@@ -3978,7 +4127,7 @@ export const backdraftDef: VideoModuleDef = {
         // Publish the just-written output, then advance the ring head.
         surface.texture = dst.texture;
         surface.fbo = dst.fbo;
-        head = (head + 1) % BACKDRAFT_BUFFER_FRAMES;
+        head = (head + 1) % ring.length;
         framesElapsed++;
       },
       dispose() {
@@ -4053,6 +4202,17 @@ export const backdraftDef: VideoModuleDef = {
               params.tvMode = backdraftNextTvMode(params.tvMode);
             }
             break;
+          // PANIC gate: a rising edge fires the settings reset. The reset is
+          // NOT applied here — it is a Y.Doc edit (undoable, synced), and this
+          // factory never touches the graph; the registered hook routes it to
+          // the same implementation the PANIC button calls, and the resulting
+          // doc writes flow back in through the ordinary reconciler setParam.
+          case 'panicGate':
+            if (detectEdge(panicGate, value)?.pressed) {
+              panicRises++;
+              requestVideoPanic(node.id);
+            }
+            break;
           default:
             break;
         }
@@ -4069,6 +4229,17 @@ export const backdraftDef: VideoModuleDef = {
         // How many DELAY CLOCK rising edges we have acted on (monotonic). The
         // dropped-edge probe — see `clockRises`.
         if (key === 'clockRiseCount') return clockRises;
+        // The delay draw() actually used last frame (ms) — the observable for
+        // "the fader is ignored while a clock is patched": a fader write moves
+        // the PARAM but this read does not move until the clock unpatches.
+        if (key === 'effectiveDelayMs') return heldEffectiveMs;
+        // How many PANIC rising edges we have acted on (monotonic) — same
+        // dropped-edge probe, for the same reason.
+        if (key === 'panicCount') return panicRises;
+        // The lazy ring's CURRENT slot count. Nothing in the render output
+        // reveals whether the ring grew (a too-shallow ring just clamps the
+        // tap), so lazy growth is only testable through this read.
+        if (key === 'ringDepth') return ring.length;
         return undefined;
       },
       dispose() { surface.dispose(); },

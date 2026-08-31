@@ -530,29 +530,6 @@ export const SKIP_BUDGET = [
       + 'path, so root-causing it is not optional debt.',
   },
   {
-    specs: ['workflow-mode.spec.ts'],
-    reason: /FLAKE-PARK #1847/,
-    lanes: ['e2e'],
-    homeLane: 'e2e',
-    why:
-      'PARKED (2026-08-30, owner order: "any tests that failed disable / skip") — the pinned-MIXMSTRS '
-      + 'auto-wire leg: waitForFunction 10s timeout, recovered-on-retry on PR #2274 e2e shard 7 (run '
-      + '33291594537); same load-sensitivity family as the branch-side boot-budget fixes on #2263/#2266. '
-      + 'While parked, the one-shot default-wiring contract has no e2e coverage in this leg — un-park '
-      + 'after the 2026-08-30 performance alongside the tempolock park.',
-  },
-  {
-    specs: ['tempolock.spec.ts'],
-    reason: /FLAKE-PARK #1847/,
-    lanes: ['e2e'],
-    homeLane: 'e2e',
-    why:
-      'PARKED (2026-08-30, owner order: "any tests that failed disable / skip") — the follows-tracked-tempo '
-      + 'leg only: toBeLessThan settle failure on PR #2274 e2e shard 10 (run 33290095701) under shard load. '
-      + 'While parked, the tracked-clock→TIMELORDE follow path has no e2e coverage — un-park and root-cause '
-      + 'after the 2026-08-30 performance; the unit-lane tracker tests still cover the fold/PLL math.',
-  },
-  {
     specs: ['per-module-per-port-inputs.spec.ts'],
     reason: /FLAKE-PARK #1847/,
     lanes: ['e2e'],
@@ -625,23 +602,6 @@ export const SKIP_BUDGET = [
       + '— so this closes a half-open pair rather than widening the debt. Recovered-on-retry, FIRST '
       + 'observation of that leg (run 32725328269 shard 2/10, 2026-08-24 12:31Z, absent from main\'s previous '
       + '8 runs), NOT triaged as flake vs under-budget; un-park is the PAIR\'s budget diagnosis.',
-  },
-  {
-    specs: ['workflow-mode.spec.ts'],
-    reason: /FLAKE-PARK #1847/,
-    lanes: ['e2e'],
-    homeLane: 'e2e',
-    why:
-      'PARKED (#1847) — the M/E/C-inert-while-typing guard (workflow hotkeys must not fire while the user '
-      + 'types in an input/contenteditable). 3 consecutive recovered-on-retry observations across 2 SHAs on '
-      + 'feat/ptzcam (runs 33286052552 ×1 + 33286720503 ×2 incl. a --failed rerun, 2026-08-30) — failed '
-      + 'attempt 1 / passed attempt 2 every time, so the recovered-flake-goes-red gate (#1903) reddens the '
-      + 'job while the diff (a MIDI sink module) touches nothing in the subject. The inert-guard itself is '
-      + 'still half-covered by the passing hotkey-positive legs in the same spec; un-park is a root-cause '
-      + 'diagnosis of the typing-probe timing, not a green rerun. '
-      + 'ADDED 2026-08-30 — the pinned-nodes-refuse-deletion leg: 2 consecutive recovered-on-retry '
-      + 'observations on the very next runs (33287966893, 33288512372), same shape; the pin mechanism '
-      + 'stays exercised by the boot and M/E/C legs that wait on the pinned trio every run.',
   },
   {
     specs: [

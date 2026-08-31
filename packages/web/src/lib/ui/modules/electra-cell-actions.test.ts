@@ -153,6 +153,19 @@ describe('electraControl SEND cell — the outcome the button used to discard', 
     expect(electraFlashOutcome()).toEqual({ status: 'error', detail: 'upload-rejected' });
   });
 
+  it('the transport gate verdict becomes a visible error carrying the relaunch command', async () => {
+    electraSendToDevice('n1', makeSeam({
+      run: async () => ({ ok: false, isElectra: false, reason: 'browser-sysex-regression' }),
+    }));
+    await flush();
+    const out = electraFlashOutcome();
+    expect(out.status).toBe('error');
+    // The advisory — not the raw reason slug — reaches the operator, with the
+    // owner-verified recovery command in it.
+    expect(out.detail).toContain('--disable-features=MidiMacUmp');
+    expect(out.detail).toContain('Nothing was uploaded');
+  });
+
   it('a THROWN error keeps its message instead of becoming an unhandled rejection', async () => {
     electraSendToDevice('n1', makeSeam({ run: async () => { throw new Error('sysex blocked'); } }));
     await flush();
