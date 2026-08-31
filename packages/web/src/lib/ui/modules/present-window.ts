@@ -40,6 +40,25 @@
 
 import type { ScreenRect } from './use-fullscreen.svelte';
 
+/** The operator-facing advisory for a projector that opened WINDOWED because
+ *  the browser denies gesture-less (automatic) fullscreen. One copyable line
+ *  in the OPENER's console — the place this failure class is actually debugged
+ *  from (the projector's own devtools are impractical on a second display), and
+ *  the same shape as the Electra transport gate's browser advisory. It names
+ *  every working path: the two that need nothing (next gesture in the patcher —
+ *  the armed delegation below — or any click on the projector window) and the
+ *  browser setting that makes fullscreen automatic again. */
+export function automaticFullscreenBlockedAdvisory(): string {
+  return (
+    'Automatic fullscreen is blocked by this browser, so the projector opened ' +
+    'windowed. Your next click or keypress in the patcher will fullscreen it ' +
+    '(any click on the projector window works too). To make it automatic ' +
+    'again, allow this site under Edge: Settings → Cookies and site ' +
+    'permissions → Automatic full screen (chrome://settings/content/automaticFullScreen ' +
+    'on Chrome), or the AutomaticFullscreenAllowedForUrls policy.'
+  );
+}
+
 /** Default popup size when no target-screen rect is known (we still open a
  *  reasonably-large window; the user can move it manually). */
 const DEFAULT_POPUP = { left: 100, top: 100, width: 1280, height: 720 } as const;
@@ -155,6 +174,26 @@ export function startPresent(args: StartPresentArgs): PresentSession | null {
       else console.warn('[present] sink:', detail);
       return;
     }
+    if (data?.type === 'present:fs-state') {
+      // Machine-readable fullscreen state from the sink (the fs-report above
+      // stays the human console line). Not fullscreen → arm the user's NEXT
+      // real gesture in the patcher to delegate activation; fullscreen →
+      // stand down.
+      const st = ev.data as { entered?: boolean; permission?: string };
+      if (st.entered) {
+        disarmGestureDelegation();
+        return;
+      }
+      // A DENIED automatic-fullscreen permission is the one deterministic
+      // refusal (no policy / content-setting grant) — say the actionable thing
+      // exactly once per session instead of letting 40 retries bury it.
+      if (st.permission === 'denied' && !advisoryPrinted) {
+        advisoryPrinted = true;
+        console.warn('[present]', automaticFullscreenBlockedAdvisory());
+      }
+      armGestureDelegation();
+      return;
+    }
     if (data?.type === 'present:ready') {
       beginBlit();
       // Try to put the popup into TRUE fullscreen WITHOUT a click by delegating
@@ -181,6 +220,50 @@ export function startPresent(args: StartPresentArgs): PresentSession | null {
     } catch {
       /* delegation unsupported — the popup's click-to-fullscreen affordance covers it */
     }
+  }
+
+  // ── FULLSCREEN VIA THE **NEXT** GESTURE ──────────────────────────────────
+  // The on-ready delegation above cannot carry activation: window.open()
+  // CONSUMES the click's transient activation (HTML spec), so by the time the
+  // sink posts ready there is nothing left to delegate and the token never
+  // arms. It looked automatic on the owner's rig anyway because Edge ≤151 ran
+  // with an AutomaticFullscreenAllowedForUrls grant that let the sink's
+  // gesture-less requestFullscreen through; with that grant gone (the Edge 152
+  // update / the hand-planted managed-prefs file wiped) every gesture-less
+  // attempt rejects with "TypeError: Permissions check failed" (Blink
+  // fullscreen.cc: no transient activation AND the automatic-fullscreen
+  // permission check denied).
+  //
+  // So when the sink reports it is NOT fullscreen, arm a ONE-SHOT capture
+  // listener and, SYNCHRONOUSLY inside the user's next pointerdown/keydown in
+  // the patcher, post the delegating message — fresh activation at send time
+  // is all Capability Delegation needs. The performer's next interaction with
+  // the patcher fullscreens the projector; nobody walks to the second display.
+  //
+  // One gesture arms ONE delegation (the send consumes the activation; a
+  // sibling session's delegate in the same event throws and is swallowed), so
+  // with N projectors the Nth gesture converges the last one — each
+  // still-windowed sink re-reports NOT-fullscreen and re-arms. The pointerdown
+  // spend is safe for the patcher's own popups: the pointerup of that same
+  // click is itself activation-triggering, so a subsequent click-handler
+  // window.open still has activation.
+  let gestureArmed = false;
+  let advisoryPrinted = false;
+  const delegateOnGesture = () => {
+    disarmGestureDelegation();
+    delegateFullscreen();
+  };
+  function armGestureDelegation() {
+    if (gestureArmed || closed || typeof window === 'undefined') return;
+    gestureArmed = true;
+    window.addEventListener('pointerdown', delegateOnGesture, true);
+    window.addEventListener('keydown', delegateOnGesture, true);
+  }
+  function disarmGestureDelegation() {
+    if (!gestureArmed || typeof window === 'undefined') return;
+    gestureArmed = false;
+    window.removeEventListener('pointerdown', delegateOnGesture, true);
+    window.removeEventListener('keydown', delegateOnGesture, true);
   }
 
   /** Locate the popup's sink canvas + 2D ctx, then start the blit loop. The
@@ -292,6 +375,7 @@ export function startPresent(args: StartPresentArgs): PresentSession | null {
   function cleanup() {
     if (closed) return;
     closed = true;
+    disarmGestureDelegation();
     if (typeof window !== 'undefined') {
       window.removeEventListener('message', handshake);
     }

@@ -88,6 +88,93 @@ describe('ElectraAutoconfig.run', () => {
   });
 });
 
+describe('the transport gate (Chromium-152 macOS SysEx regression)', () => {
+  const SUSPECT_UA =
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 ' +
+    '(KHTML, like Gecko) Chrome/152.0.4191.53 Safari/537.36 Edg/152.0.4191.53';
+
+  /** Wrap the fake so the device answers the identity probe (02 7F) with a
+   *  correctly FRAMED reply — the healthy-transport leg. */
+  function answerIdentity(fake: ReturnType<typeof makeFakeBroker>): void {
+    const origPush = fake.sentCtrl.push.bind(fake.sentCtrl);
+    fake.sentCtrl.push = (...frames: number[][]): number => {
+      const n = origPush(...frames);
+      for (const f of frames) {
+        if (f[0] === 0xf0 && f[4] === 0x02 && f[5] === 0x7f) {
+          const fw = [...'{"versionText":"v4.1.4"}'].map((c) => c.charCodeAt(0));
+          queueMicrotask(() => fake.emit([0xf0, 0x00, 0x21, 0x45, 0x01, 0x7f, ...fw, 0xf7]));
+        }
+      }
+      return n;
+    };
+  }
+
+  it('suspect UA + silent device + Electra ports → refuses BEFORE anything mutating', async () => {
+    const fake = makeFakeBroker();
+    const { host } = makeHost();
+    const auto = new ElectraAutoconfig(host, fake.broker, {
+      identifyTimeoutMs: 20,
+      uaOverride: SUSPECT_UA,
+    });
+    const res = await auto.run();
+    auto.stop();
+    expect(res.ok).toBe(false);
+    expect(res.reason).toBe('browser-sysex-regression');
+    // The ONLY SysEx that went out is the non-mutating identity probe: no
+    // preset (01 01), no Lua (01 0C), no page switch (09 0A), nothing else.
+    const cmds = fake.sentCtrl.filter((m) => m[0] === 0xf0).map((m) => `${m[4]} ${m[5]}`);
+    expect(cmds).toEqual(['2 127']);
+  });
+
+  it('suspect UA + FRAMED identity reply → proceeds normally (the negative control against a UA block)', async () => {
+    const fake = makeFakeBroker();
+    answerIdentity(fake);
+    const { host } = makeHost();
+    const auto = new ElectraAutoconfig(host, fake.broker, {
+      identifyTimeoutMs: 20,
+      uaOverride: SUSPECT_UA,
+    });
+    const res = await auto.run();
+    auto.stop();
+    expect(res.ok).toBe(true);
+    const cmds = fake.sentCtrl.filter((m) => m[0] === 0xf0).map((m) => `${m[4]} ${m[5]}`);
+    expect(cmds).toContain('1 1'); // preset upload went out — Edge 152 with the flag works
+    expect(cmds).toContain('1 12');
+  });
+
+  it('non-suspect UA + silent device → proceeds exactly as before the gate', async () => {
+    const fake = makeFakeBroker();
+    const { host } = makeHost();
+    const auto = new ElectraAutoconfig(host, fake.broker, {
+      identifyTimeoutMs: 20,
+      uaOverride:
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 ' +
+        '(KHTML, like Gecko) Chrome/151.0.4188.90 Safari/537.36',
+    });
+    const res = await auto.run();
+    auto.stop();
+    expect(res.ok).toBe(true);
+    const cmds = fake.sentCtrl.filter((m) => m[0] === 0xf0).map((m) => `${m[4]} ${m[5]}`);
+    expect(cmds).toContain('1 1');
+  });
+
+  it('mangled Electra bytes (mfr id outside F0…F7 framing) → refuses on ANY UA', async () => {
+    const fake = makeFakeBroker();
+    const { host } = makeHost();
+    await fake.broker.connect();
+    // A mid-frame fragment surfaced as its own message — the conclusive
+    // corruption signature. No SysEx start, carries the manufacturer id.
+    fake.emit([0x00, 0x21, 0x45, 0x01, 0x7f, 0x13]);
+    const auto = new ElectraAutoconfig(host, fake.broker, { identifyTimeoutMs: 20 });
+    const res = await auto.run();
+    auto.stop();
+    expect(res.ok).toBe(false);
+    expect(res.reason).toBe('browser-sysex-regression');
+    const cmds = fake.sentCtrl.filter((m) => m[0] === 0xf0).map((m) => `${m[4]} ${m[5]}`);
+    expect(cmds).toEqual(['2 127']); // identity probe only
+  });
+});
+
 describe('inbound dispatch', () => {
   it('a writable control CC writes the right param (curve-aware)', async () => {
     const fake = makeFakeBroker();

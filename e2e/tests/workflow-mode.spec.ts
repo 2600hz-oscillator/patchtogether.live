@@ -39,18 +39,24 @@ async function waitForDefaultWires(page: Page): Promise<void> {
       return ids.every((id) => !!w.__patch!.edges[id]);
     },
     DEFAULT_WIRE_IDS as unknown as string[],
-    { timeout: 10_000 },
+    // BOOT bound, not an assertion — the hand-typed 10 s here was a flat
+    // wall-clock lottery ticket below the one export site's number and lost
+    // on a loaded shard (waitForPinnedTrio timed out at boot, passed on
+    // retry, flake-gate red — the exact #1906 class its sweep missed
+    // because these are waitForFunction sites, not bare toBeVisible ones).
+    { timeout: BOOT_MS },
   );
 }
 
 /** Wait until the workflow ensure effect has written the pinned trio.
  *
- *  ⚠ The inner cap is CI-aware: this is STATE readiness (a doc write by the
- *  ensure effect), and how long boot takes is a function of shard load, not
- *  of the subject. Measured (run 33268032993, shard 7): the flat 10s cap
- *  expired once under CI load and the identical attempt passed on retry —
- *  the flake gate's definition of "slower on CI", which takes a budget, not
- *  a fix to the subject. */
+ *  ⚠ The inner cap is the shared BOOT_MS export, not a hand-typed number:
+ *  this is STATE readiness (a doc write by the ensure effect), and how long
+ *  boot takes is a function of shard load, not of the subject. Measured
+ *  twice (runs 33268032993 and 33277673075, both shard 7): the flat 10s cap
+ *  expired under CI load and the identical attempt passed on retry — the
+ *  flake gate's definition of "slower on CI", which takes a budget, not a
+ *  fix to the subject. */
 async function waitForPinnedTrio(page: Page): Promise<void> {
   await page.waitForFunction(
     (ids) => {
@@ -61,7 +67,9 @@ async function waitForPinnedTrio(page: Page): Promise<void> {
       return ids.every((id) => w.__patch!.nodes[id]?.data?.pinned === true);
     },
     PINNED_IDS as unknown as string[],
-    { timeout: process.env.CI ? 45_000 : 10_000 },
+    // Same BOOT bound as above — this is the site that actually lost the
+    // lottery (run 33277673075, e2e shard 7/12).
+    { timeout: BOOT_MS },
   );
 }
 
@@ -79,7 +87,13 @@ test.describe('workflow shell', () => {
     await installRenderSmokeHooks(page);
   });
 
-  test('boots the workflow topbar + left rail, replaces the slot bar, spawns the pinned trio off-canvas', async ({ page }) => {
+  // ⏸ FLAKE-PARK #1847 — SPEC-WIDE park, owner-authorized (2026-08-30 pre-show green directive).
+  // SIX consecutive runs flaked SIX DIFFERENT legs of this one spec on shard 7 (each recovered on
+  // retry) — the failing unit is the spec's shared boot path under a degraded runner, not any leg,
+  // so per-leg parks were whack-a-mole. LOST WHILE PARKED: the shell-boot proof; the topbar and
+  // leftbar render on every other workflow spec that boots /rack. Re-enable on a root cause of the
+  // spec-wide load sensitivity (#1847).
+  test.fixme('boots the workflow topbar + left rail, replaces the slot bar, spawns the pinned trio off-canvas', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — spec-wide park: six distinct legs flaked on six consecutive feat/ptzcam runs to 2026-08-30; owner-authorized pre-show' } }, async ({ page }) => {
     await page.goto('/rack?shell=legacy');
     await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: BOOT_MS });
     await expect(page.getByTestId('workflow-leftbar')).toBeVisible();
@@ -102,7 +116,12 @@ test.describe('workflow shell', () => {
     }
   });
 
-  test('M / E toggle the bottom dock drawers with the FULL pinned card; one at a time; C opens the clip PANE; ESC closes', async ({ page }) => {
+  // ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; body and assertions UNCHANGED. OWNER-AUTHORIZED
+  // (2026-08-30 pre-show green directive). The FOURTH distinct leg of this spec to flake tonight
+  // (recovered-on-retry, run 33290699375 shard 7) — the spec is the fleet-load hotspot. LOST WHILE
+  // PARKED: the M/E drawer toggle + C pane proof; the dock keymap stays exercised by
+  // workflow-dock-occupancy.spec.ts. Re-enable on a root cause (#1847).
+  test.fixme('M / E toggle the bottom dock drawers with the FULL pinned card; one at a time; C opens the clip PANE; ESC closes', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 1 recovered-on-retry observation on feat/ptzcam-multicam runs to 2026-08-30; owner-authorized pre-show park' } }, async ({ page }) => {
     await page.goto('/rack?shell=legacy');
     await waitForPinnedTrio(page);
     // :visible — the workflow topbar's always-mounted audio-I/O card hosts
@@ -151,7 +170,16 @@ test.describe('workflow shell', () => {
     await expect(page.getByTestId('dock-fullview-drawer')).toHaveCount(0);
   });
 
-  test('M/E/C are inert while typing in an input / contenteditable', async ({ page }) => {
+  // ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; the body and its assertions are UNCHANGED.
+  // NONDETERMINISM: 3 consecutive recovered-on-retry observations across 2 SHAs on feat/ptzcam
+  // (runs 33286052552 ×1 + 33286720503 ×2 incl. a --failed rerun, 2026-08-30) — failed attempt 1,
+  // passed attempt 2 every time, so the flake-gate (recovered-flake-goes-red, #1903) reddens the
+  // job. The PR diff is a MIDI sink module that touches nothing in workflow-mode's subject.
+  // LOST WHILE PARKED: the proof that the M/E/C workflow hotkeys stay inert while the user types
+  // in an input/contenteditable (the guard itself is also pinned by the passing sibling
+  // 'hotkeys act on the canvas' legs). Re-enable only on a root cause (#1847); "it passes now"
+  // is not one.
+  test.fixme('M/E/C are inert while typing in an input / contenteditable', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 3 recovered-on-retry observations on feat/ptzcam runs to 2026-08-30; parked until root-caused' } }, async ({ page }) => {
     await page.goto('/rack?shell=legacy');
     await waitForPinnedTrio(page);
     // Real text-entry surfaces, appended to the live document so the real
@@ -189,7 +217,14 @@ test.describe('workflow shell', () => {
     await expect(page.getByTestId('dock-zone-bottom')).toBeVisible();
   });
 
-  test('pinned nodes refuse deletion; Clear keeps the trio', async ({ page }) => {
+  // ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; the body and its assertions are UNCHANGED.
+  // NONDETERMINISM: 2 consecutive recovered-on-retry observations on feat/ptzcam (runs
+  // 33287966893 + 33288512372's shard 7, 2026-08-30), same failed-attempt-1/passed-attempt-2
+  // shape as this spec's already-parked typing-inertness leg — the whole spec is a shard-7
+  // hotspot tonight. LOST WHILE PARKED: the proof that pinned nodes refuse deletion and Clear
+  // keeps the trio (the pin mechanism itself is still exercised by the boot + M/E/C legs that
+  // wait on the pinned trio every run). Re-enable only on a root cause (#1847).
+  test.fixme('pinned nodes refuse deletion; Clear keeps the trio', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 2 recovered-on-retry observations on feat/ptzcam runs to 2026-08-30; parked until root-caused' } }, async ({ page }) => {
     await page.goto('/rack?shell=legacy');
     await waitForPinnedTrio(page);
     // Programmatic delete through the shared primitive path: drive the
@@ -249,7 +284,13 @@ test.describe('workflow shell', () => {
     await waitForPinnedTrio(page); // the ensure effect re-spawns the trio
   });
 
-  test('default wiring: pinned MIXMSTRS master L/R auto-wires to pinned AUDIO OUT (one-shot, user delete respected)', async ({ page }) => {
+  // ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; body and assertions UNCHANGED. OWNER-AUTHORIZED
+  // (2026-08-30, pre-show): "we need to get stuff green and stable so we can merge, i do not care if
+  // you have to fixme/skip tests". 1 recovered-on-retry observation (run 33289422851 shard 7) in the
+  // same fleet-load storm that took this spec's two other parked legs. LOST WHILE PARKED: the
+  // one-shot default-wire proof; waitForDefaultWires in the boot path still exercises the wiring
+  // itself. Re-enable on a root cause (#1847).
+  test.fixme('default wiring: pinned MIXMSTRS master L/R auto-wires to pinned AUDIO OUT (one-shot, user delete respected)', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 1 recovered-on-retry observation on feat/ptzcam runs to 2026-08-30; owner-authorized pre-show park' } }, async ({ page }) => {
     // Owner directive: "the audio out in the rack should be default wired to
     // the master L/R outs from the in rack mixmstrs in workflow mode."
     await page.goto('/rack?shell=legacy');
@@ -313,7 +354,9 @@ test.describe('workflow shell', () => {
     expect(after).toEqual([false, true]);
   });
 
-  test('default wiring carries REAL audio: source → mixmstrs ch1 → auto-wired AUDIO OUT is audible', async ({ page }) => {
+  // ⏸ FLAKE-PARK #1847 — spec-wide park (see the note on the boot leg). LOST WHILE PARKED: the
+  // audible default-wire proof; mixmstrs audio stays covered by its own specs.
+  test.fixme('default wiring carries REAL audio: source → mixmstrs ch1 → auto-wired AUDIO OUT is audible', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — spec-wide park: six distinct legs flaked on six consecutive feat/ptzcam runs to 2026-08-30; owner-authorized pre-show' } }, async ({ page }) => {
     // Real-chain proof (not just edge materialization): a free-running VCO
     // into the pinned mixer's channel 1 must register energy on the pinned
     // AUDIO OUT's terminal tap (the limiter feeding ctx.destination) with
@@ -447,7 +490,12 @@ test.describe('workflow shell', () => {
     ).toBeLessThanOrEqual(loudest * 1.02);
   });
 
-  test('File.. menu: quicksave slot 1 round-trips through quickload', async ({ page }) => {
+  // ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; body and assertions UNCHANGED. OWNER-AUTHORIZED
+  // (2026-08-30 pre-show green directive). FIFTH distinct leg of this spec to flake tonight — 2
+  // recovered-on-retry observations on run 33291739984 (attempts 2 and 3, both failed-then-passed).
+  // LOST WHILE PARKED: the quicksave/quickload round-trip proof; the File.. menu itself stays
+  // exercised by the boot leg. Re-enable on a root cause (#1847).
+  test.fixme('File.. menu: quicksave slot 1 round-trips through quickload', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 2 recovered-on-retry observations on feat/ptzcam-multicam run 33291739984; owner-authorized pre-show park' } }, async ({ page }) => {
     await page.goto('/rack?shell=legacy');
     await waitForPinnedTrio(page);
 
@@ -509,7 +557,9 @@ test.describe('workflow shell', () => {
   // topbar carries its `Clear` and `AspectToggle` first, so that deletion is
   // not a feature regression.
 
-  test('File.. menu: Clear rack deletes canvas modules + cables and KEEPS the pinned trio', async ({ page }) => {
+  // ⏸ FLAKE-PARK #1847 — spec-wide park (see the note on the boot leg). 1 recovered-on-retry
+  // observation of THIS leg (run on 7c489c134, shard 7 — the sixth distinct leg in six runs).
+  test.fixme('File.. menu: Clear rack deletes canvas modules + cables and KEEPS the pinned trio', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — spec-wide park: six distinct legs flaked on six consecutive feat/ptzcam runs to 2026-08-30; owner-authorized pre-show' } }, async ({ page }) => {
     await page.goto('/rack?shell=legacy');
     await waitForPinnedTrio(page);
 
@@ -563,7 +613,9 @@ test.describe('workflow shell', () => {
     await waitForPinnedTrio(page);
   });
 
-  test('File.. menu: the output-aspect toggle flips 4:3 ⇄ 16:9 and leaves the menu open', async ({ page }) => {
+  // ⏸ FLAKE-PARK #1847 — spec-wide park (see the note on the boot leg). LOST WHILE PARKED: the
+  // aspect-toggle proof.
+  test.fixme('File.. menu: the output-aspect toggle flips 4:3 ⇄ 16:9 and leaves the menu open', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — spec-wide park: six distinct legs flaked on six consecutive feat/ptzcam runs to 2026-08-30; owner-authorized pre-show' } }, async ({ page }) => {
     await page.goto('/rack?shell=legacy');
     await waitForPinnedTrio(page);
 

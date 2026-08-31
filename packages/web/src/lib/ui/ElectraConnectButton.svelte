@@ -60,7 +60,9 @@
   aria-label={outcome.detail
     ? `Send this board to the Electra One — ${outcome.detail}`
     : 'Send this board to the Electra One'}
-  title="Generate a 3-page Electra One preset (Control Surface / MixMaster / System) from this rack and push it to a connected Electra. Asks for MIDI access on first click."
+  title={outcome.status === 'error' && outcome.detail
+    ? outcome.detail
+    : 'Generate a 3-page Electra One preset (Control Surface / MixMaster / System) from this rack and push it to a connected Electra. Asks for MIDI access on first click.'}
 >
   {#if outcome.status === 'connecting'}
     Configuring…
@@ -68,6 +70,8 @@
     Electra ✓
   {:else if outcome.status === 'no-device'}
     No MIDI
+  {:else if outcome.status === 'error'}
+    Electra ✗
   {:else}
     Send to Electra
   {/if}

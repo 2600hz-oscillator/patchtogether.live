@@ -2522,6 +2522,14 @@ posterbox out out video
 posterbox param depth 0..4 discrete default=2
 posterbox param dither 0..1 linear default=0
 posterbox param mix 0..1 linear default=1
+ptzcam meta domain=audio maxInstances=4
+ptzcam in pan_cv cv
+ptzcam in tilt_cv cv
+ptzcam in zoom_cv cv
+ptzcam param pan -1..1 linear default=0
+ptzcam param slew 0..1 linear default=0.3
+ptzcam param tilt -1..1 linear default=0
+ptzcam param zoom 0..1 linear default=0
 push2Control meta domain=meta maxInstances=1
 push2Control family push2-control-connect kind=other prefix=push2-control-connect
 qbrt meta domain=audio

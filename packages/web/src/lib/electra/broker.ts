@@ -114,6 +114,21 @@ export function parseIdentity(data: Uint8Array): ElectraIdentity {
   return { manufacturerId: [...ELECTRA_MFR], firmware, isElectra };
 }
 
+/** Does the buffer contain the 3-byte Electra manufacturer id anywhere?
+ *  Used only on messages that already failed well-formedness checks. */
+export function containsElectraMfr(data: Uint8Array): boolean {
+  for (let i = 0; i + 2 < data.length; i++) {
+    if (
+      data[i] === ELECTRA_MFR[0] &&
+      data[i + 1] === ELECTRA_MFR[1] &&
+      data[i + 2] === ELECTRA_MFR[2]
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
 /** Build a CC message (status 0xB0 | channel, cc, value). channel is 0-based. */
 export function ccMessage(channel: number, cc: number, value: number): number[] {
   return [0xb0 | (channel & 0x0f), cc & 0x7f, value & 0x7f];
@@ -263,6 +278,13 @@ export class ElectraBroker {
     const data = ev.data;
     if (data.length === 0) return;
     if (data[0] === SYSEX_START) {
+      // A SysEx that carries the Electra manufacturer id but never terminates
+      // is the CONCLUSIVE mangled-frame signature of the Chromium-152 macOS
+      // UMP converter (see transport-gate.ts) — latch it, then dispatch
+      // unchanged (listeners key on content, not on this verdict).
+      if (data[data.length - 1] !== SYSEX_END && containsElectraMfr(data)) {
+        this.mangledSysexSeen = true;
+      }
       for (const fn of this.sysexListeners) fn(data);
       return;
     }
@@ -278,7 +300,22 @@ export class ElectraBroker {
       const on = status === 0x90 && velocity > 0;
       const ev: NoteEvent = { channel: data[0]! & 0x0f, note: data[1]!, velocity, on };
       for (const fn of this.noteListeners) fn(ev);
+      return;
     }
+    // The other mangled shape: Electra manufacturer bytes arriving with NO
+    // SysEx start at all (a mid-frame fragment surfaced as its own message).
+    // A well-formed 3-byte channel message can never reach here containing
+    // the 3-byte id, so this cannot fire on healthy traffic.
+    if (containsElectraMfr(data)) this.mangledSysexSeen = true;
+  }
+
+  /** Latched evidence that Electra SysEx arrived MANGLED (manufacturer bytes
+   *  outside a well-formed F0…F7 frame) — the version-independent half of the
+   *  transport gate's verdict. Never cleared: one corrupted frame on a
+   *  connection is disqualifying for uploads until the page reloads. */
+  private mangledSysexSeen = false;
+  sawMangledElectraSysex(): boolean {
+    return this.mangledSysexSeen;
   }
 
   /** Probe + fingerprint the connected Electra. Returns the identity (or a
