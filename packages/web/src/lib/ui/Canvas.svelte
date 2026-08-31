@@ -448,6 +448,7 @@
   import type { HocuspocusProvider } from '@hocuspocus/provider';
   import type { PresenceUser } from '$lib/multiplayer/presence';
   import { installSimulatedMidiDevice, installSimulatedNoteDevice } from '$lib/midi/midi-learn.svelte';
+  import { installSimulatedTrails, type SimulatedTrails } from '$lib/midi/trails-device';
   import {
     installSimulatedLaunchpad,
     installSimulatedLaunchpadSingle,
@@ -8902,6 +8903,32 @@
       (globalThis as any).__midiTestInstall = () => {
         installSimulatedMidiDevice();
         return true;
+      };
+      // Simulated BELA TRAILS for e2e: installs an in-memory MIDI access whose
+      // one input is named like the real device, then runs the REAL
+      // `connectTrails()` against it — so the port match, the input claim, the
+      // fan-out to every `trails` node and each module's own 14-bit assembler
+      // all run exactly as they do on hardware. `touch()` emits the real CC
+      // byte pairs; nothing here reaches past the wire. DEV / VITE_E2E_HOOKS
+      // only — stripped from prod bundles.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (globalThis as any).__trailsTestInstall = async () => {
+        const sim: SimulatedTrails = await installSimulatedTrails();
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (globalThis as any).__trailsSim = {
+          // put channel `ch` (1..4) at pad coordinates x, y (both 0..1).
+          touch: (ch: number, x: number, y: number) =>
+            sim.touch(ch as 1 | 2 | 3 | 4, x, y),
+          gateOn: (ch: number) => sim.gateOn(ch as 1 | 2 | 3 | 4),
+          gateOff: (ch: number) => sim.gateOff(ch as 1 | 2 | 3 | 4),
+          clock: (n?: number) => sim.clock(n),
+          start: () => sim.start(),
+          stop: () => sim.stop(),
+          send: (bytes: number[]) => sim.send(bytes),
+          attached: () => sim.attached(),
+          portName: sim.portName,
+        };
+        return sim.attached();
       };
       // Simulated LAUNCHPAD pair for e2e: installs an in-memory L+R Launchpad
       // (no Web MIDI prompt), binds the pair to a clip-player node, and returns

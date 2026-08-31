@@ -858,6 +858,21 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
       'state, and the slot list is the interaction.',
   },
   {
+    type: 'trails',
+    disposition: 'bespoke-surface',
+    why:
+      'a MIDI DEVICE BINDER whose second surface is a PICTURE. Two of the three things this '
+      + 'module offers are outside the generic-face vocabulary: the CONNECT gesture and the '
+      + 'bound / no-port / denied / prompt-suppressed status are WebMIDI service state rather '
+      + 'than params (the chromaconsole + ptzcam argument), and the pad mirror is a READ-ONLY '
+      + 'view of the physical 85x85mm surface — four coloured dots with fading trails, painted '
+      + 'from transient decode state. It is deliberately NOT an `xyPads` cell: a declared pad '
+      + 'names the two params its axes DRIVE, and these axes drive nothing, they report. Three '
+      + 'knobs (range, smooth, clock div) are the only generic-face material, and a face that '
+      + 'ranked those would move the knobs to the lane and leave behind both of the things that '
+      + 'make the module usable.',
+  },
+  {
     type: 'ptzcam',
     disposition: 'bespoke-surface',
     why:
