@@ -21,6 +21,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import { installRenderSmokeHooks } from './_render-smoke';
 import { startMockVstBridge, type MockVstBridge } from '../_helpers/mock-vst-bridge';
+import { BOOT_MS } from '../_helpers/boot-budget';
 
 /** channel-columns.ts geometry (workflow-channel-columns.spec.ts values). */
 const COLUMN_W = 765;
@@ -43,7 +44,7 @@ async function waitForPinnedTrio(page: Page): Promise<void> {
       );
     },
     undefined,
-    { timeout: 15_000 },
+    { timeout: BOOT_MS },
   );
 }
 
@@ -54,7 +55,7 @@ async function waitForHooks(page: Page): Promise<void> {
       return typeof w.__setSpawnFlowPos === 'function' && typeof w.__spawnFromPalette === 'function';
     },
     undefined,
-    { timeout: 15_000 },
+    { timeout: BOOT_MS },
   );
 }
 

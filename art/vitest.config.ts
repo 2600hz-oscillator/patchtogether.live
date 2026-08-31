@@ -113,6 +113,16 @@ export default defineConfig({
     reporters: ['default'],
     // Browser AudioWorklet globals, so a scenario can drive a REAL module
     // factory (worklet and all) rather than rebuilding its graph by hand.
-    setupFiles: ['./setup/node-audio-globals.ts', './setup/faust-fetch-fs.ts'],
+    // `render-completion.ts` FIRST: it patches
+    // `OfflineAudioContext.prototype.startRendering` so the binding's
+    // null-on-a-lost-race cannot reach a scenario as an unattributed TypeError.
+    // Prototype-level so every render path is covered — `setup/offline.ts` and
+    // the scenario-local `startRendering()` call sites alike — with no list to
+    // keep in step. See that file's header for the defect and the measurement.
+    setupFiles: [
+      './setup/render-completion.ts',
+      './setup/node-audio-globals.ts',
+      './setup/faust-fetch-fs.ts',
+    ],
   },
 });
