@@ -8930,6 +8930,16 @@
             sim.touch(ch as 1 | 2 | 3 | 4, x, y),
           gateOn: (ch: number) => sim.gateOn(ch as 1 | 2 | 3 | 4),
           gateOff: (ch: number) => sim.gateOff(ch as 1 | 2 | 3 | 4),
+          // GESTURE PLAYBACK: `glide` streams axis samples with no gap between
+          // them (what a looping recording looks like on the wire), and
+          // `playLoop` prefixes the device's own per-repetition Start. The two
+          // together are what let an e2e drive the loop-gate behaviour through
+          // the REAL decoder instead of asserting against a stub.
+          glide: (ch: number, steps: number, from?: { x: number; y: number }, to?: { x: number; y: number }) =>
+            sim.glide(ch as 1 | 2 | 3 | 4, steps, from, to),
+          playLoop: (ch: number, steps?: number, from?: { x: number; y: number }, to?: { x: number; y: number }) =>
+            sim.playLoop(ch as 1 | 2 | 3 | 4, steps, from, to),
+          loopRestart: () => sim.loopRestart(),
           clock: (n?: number) => sim.clock(n),
           start: () => sim.start(),
           stop: () => sim.stop(),

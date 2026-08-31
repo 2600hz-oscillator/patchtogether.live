@@ -865,12 +865,16 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
       + 'module offers are outside the generic-face vocabulary: the CONNECT gesture and the '
       + 'bound / no-port / denied / prompt-suppressed status are WebMIDI service state rather '
       + 'than params (the chromaconsole + ptzcam argument), and the pad mirror is a READ-ONLY '
-      + 'view of the physical 85x85mm surface — four coloured dots with fading trails, painted '
-      + 'from transient decode state. It is deliberately NOT an `xyPads` cell: a declared pad '
-      + 'names the two params its axes DRIVE, and these axes drive nothing, they report. Three '
+      + 'view of the physical panel — the 85x85mm pad as four coloured dots with fading trails, '
+      + 'plus the 10x85mm touch bar drawn inert because the device transmits no value for it, '
+      + 'all painted from transient decode state. It is deliberately NOT an `xyPads` cell: a '
+      + 'declared pad names the two params its axes DRIVE, and these axes drive nothing, they '
+      + 'report. A third non-param surface has since joined them: MON, a live readout of the raw '
+      + 'MIDI the device is sending INCLUDING the messages this module does not recognise, which '
+      + 'is the only affordance that can correct the wire constants against real hardware. Three '
       + 'knobs (range, smooth, clock div) are the only generic-face material, and a face that '
-      + 'ranked those would move the knobs to the lane and leave behind both of the things that '
-      + 'make the module usable.',
+      + 'ranked those would move the knobs to the lane and leave behind every one of the things '
+      + 'that make the module usable.',
   },
   {
     type: 'ptzcam',

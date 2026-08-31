@@ -319,6 +319,41 @@ export interface SimulatedTrails {
   gateOn(channel: TrailsChannel): void;
   /** Note-off for a channel's gate. */
   gateOff(channel: TrailsChannel): void;
+  /**
+   * Stream `steps` axis samples along a straight path, with NO GAP between
+   * them — the shape a recorded gesture has while it plays back.
+   *
+   * ⚠ THIS IS THE DOUBLE THAT REPRODUCES THE REPORTED DEFECT. The activity
+   * gate infers contact from the stream stopping, and a gesture playing back
+   * never stops: call `glide` twice in a row and the gate rises exactly once
+   * and stays up forever, which is what "no gate event every time the loop
+   * fires" looks like from inside the decoder. Nothing about it is special-cased
+   * — it is `touch()` in a loop, so it emits the same real CC byte pairs.
+   */
+  glide(
+    channel: TrailsChannel,
+    steps: number,
+    from?: { x: number; y: number },
+    to?: { x: number; y: number },
+  ): void;
+  /**
+   * One full repetition of a looping gesture: the device's own loop-restart
+   * message followed by a gapless run of axis samples.
+   *
+   * The manual: "A Start message is sent every time the playhead restarts from
+   * the beginning of the track." So a repetition on the wire is exactly 0xFA
+   * then the stream — which is what this sends, in that order.
+   */
+  playLoop(
+    channel: TrailsChannel,
+    steps?: number,
+    from?: { x: number; y: number },
+    to?: { x: number; y: number },
+  ): void;
+  /** The device's per-repetition loop-restart message. Byte-identical to
+   *  `start()`; named for what the hardware means by it, because on this device
+   *  a Start is not a once-per-session event. */
+  loopRestart(): void;
   /** `n` MIDI clock ticks (0xF8). 24 of them is one quarter note. */
   clock(n?: number): void;
   /** MIDI Start (0xFA) — running, and re-zero any divider. */
@@ -398,6 +433,27 @@ export async function installSimulatedTrails(
     }
   }
 
+  /** Named rather than an object method so `playLoop` can call it without
+   *  `this` — a destructured `const { playLoop } = sim` would otherwise throw,
+   *  and a test double that breaks on destructuring is a trap. */
+  function glide(
+    channel: TrailsChannel,
+    steps: number,
+    from: { x: number; y: number } = { x: 0, y: 0 },
+    to: { x: number; y: number } = { x: 1, y: 1 },
+  ): void {
+    const n = Math.max(1, Math.floor(steps));
+    for (let i = 0; i < n; i++) {
+      // n === 1 would divide by zero; a single-sample glide sits at `from`,
+      // which is the honest reading of "one sample of this path".
+      const t = n === 1 ? 0 : i / (n - 1);
+      const x = from.x + (to.x - from.x) * t;
+      const y = from.y + (to.y - from.y) * t;
+      for (const frame of encodeTrailsAxis({ channel, axis: 'x' }, x)) send(frame);
+      for (const frame of encodeTrailsAxis({ channel, axis: 'y' }, y)) send(frame);
+    }
+  }
+
   return {
     portName,
     send,
@@ -410,6 +466,14 @@ export async function installSimulatedTrails(
     },
     gateOff(channel) {
       send(encodeTrailsGate(channel, false));
+    },
+    glide,
+    loopRestart() {
+      send([0xfa]);
+    },
+    playLoop(channel, steps = 8, from = { x: 0, y: 0 }, to = { x: 1, y: 1 }) {
+      send([0xfa]);
+      glide(channel, steps, from, to);
     },
     clock(n = 1) {
       for (let i = 0; i < n; i++) send([0xf8]);

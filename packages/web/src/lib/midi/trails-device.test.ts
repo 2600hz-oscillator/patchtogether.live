@@ -138,9 +138,21 @@ describe('trails-device: the simulated device drives the REAL decode path', () =
     sim.gateOff(3);
     stop();
     expect(events.filter((e) => e.kind === 'clock')).toHaveLength(2);
-    expect(events.filter((e) => e.kind === 'gate').map((e) => (e as { high: boolean }).high))
-      .toEqual([true, false]);
+    // The NOTE gates, which is what this test is about: on then off, channel 3.
+    const gates = events.filter((e) => e.kind === 'gate') as Extract<
+      TrailsEvent,
+      { kind: 'gate' }
+    >[];
+    expect(gates.filter((g) => g.source === 'note').map((g) => g.high)).toEqual([true, false]);
     expect(events.filter((e) => e.kind === 'transport')).toHaveLength(1);
+    // ⚠ AND the Start's OTHER meaning. On this device a Start is sent once per
+    // loop repetition, so it can also retrigger a gate — but not here, and the
+    // two reasons are both deliberate: channel 3 is a NOTE channel (its notes
+    // are already the articulation), and no channel has streamed a CC gesture,
+    // so there is no playhead repetition to articulate. Asserting the empty
+    // case pins that a bare transport message never manufactures a gate on an
+    // empty jack.
+    expect(gates.filter((g) => g.source === 'loop')).toEqual([]);
   });
 
   it('every subscribed module sees every frame (one claim, many consumers)', async () => {

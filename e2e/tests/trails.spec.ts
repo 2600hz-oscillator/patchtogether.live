@@ -54,6 +54,7 @@ interface TrailsSim {
   gateOn(ch: number): void;
   gateOff(ch: number): void;
   clock(n?: number): void;
+  send(bytes: number[]): void;
   attached(): boolean;
   portName: string;
 }
@@ -111,11 +112,22 @@ async function trailsState(page: Page, nodeId: string) {
       channels: Array<{ x: number; y: number; gate: boolean; trail: unknown[] }>;
       axisMessages: number;
       clockTicks: number;
+      loopRestarts: number;
+      gateEdges: number[];
+      midiFrames: number;
+      midiFramesUnrecognised: number;
     } | null;
   }, nodeId);
 }
 
-async function buildChain(page: Page): Promise<void> {
+/**
+ * The real source chain. `vcaCvFrom` picks WHICH Trails jack opens the VCA:
+ * `x1` (the position spec above) or `g1` (the loop-gate spec below). One
+ * builder rather than two so the two specs cannot drift into testing different
+ * racks and blaming the module for the difference.
+ */
+async function buildChain(page: Page, opts: { vcaCvFrom?: 'x1' | 'g1' } = {}): Promise<void> {
+  const cvFrom = opts.vcaCvFrom ?? 'x1';
   await spawnPatch(
     page,
     [
@@ -142,10 +154,10 @@ async function buildChain(page: Page): Promise<void> {
         targetType: 'audio',
       },
       {
-        id: 'e-x1',
-        from: { nodeId: 'tr', portId: 'x1' },
+        id: 'e-cv',
+        from: { nodeId: 'tr', portId: cvFrom },
         to: { nodeId: 'vca', portId: 'cv' },
-        sourceType: 'cv',
+        sourceType: cvFrom === 'g1' ? 'gate' : 'cv',
         targetType: 'cv',
       },
       {
@@ -231,6 +243,248 @@ test('@trails a simulated touch reaches x1 and opens a real VCA → audible RMS'
     `x1 back at the pad's left edge must close the VCA `
       + `(lo=${lifted.lo.toFixed(4)} hi=${lifted.hi.toFixed(4)} samples=${lifted.samples})`,
   ).toBeLessThan(AUDIBLE_FLOOR);
+
+  errorWatch.assertClean();
+});
+
+// ═══════════ THE LOOP GATE ═══════════
+//
+// The owner's hardware report: "when the loop fires it doesn't seem like there
+// is a gate event happening every time." This test is that report, made
+// mechanical.
+//
+// The chain is the same real one as above with ONE cable moved: the VCA's CV
+// comes from the GATE rather than from X, so the oscillator is audible exactly
+// when the gate is high. Nothing is stubbed but the USB cable — `glide` streams
+// the real 14-bit CC byte pairs a playing gesture produces, and `loopRestart`
+// sends the real 0xFA the device sends "every time the playhead restarts from
+// the beginning of the track".
+
+/** How many loop repetitions the test announces. Small enough to stay fast,
+ *  more than two so an off-by-one cannot pass. */
+const LOOP_REPS = 4;
+
+/** Gap between the page-side playback bursts, in ms.
+ *
+ *  ⚠ NOT a renderer wait — it is the DEVICE'S OWN STREAM RATE, the thing being
+ *  simulated. It must stay well under the module's 120 ms activity timeout, or
+ *  the gate falls between bursts and the test would be measuring a gap rather
+ *  than the gapless playback it is about. 30 ms is a ~33 Hz gesture stream. */
+const PLAYBACK_BURST_MS = 30;
+
+interface TrailsLoopSim extends TrailsSim {
+  glide(ch: number, steps: number, from?: { x: number; y: number }, to?: { x: number; y: number }): void;
+  loopRestart(): void;
+}
+
+/** Start a gapless gesture playing back, the way the hardware does after a
+ *  finger lifts. Runs in the page so the stream keeps flowing while Playwright
+ *  awaits — a burst issued per Playwright round trip would be paced by the
+ *  protocol instead of by the device. */
+async function startPlayback(page: Page, ch: number): Promise<void> {
+  await page.evaluate(
+    ({ ch, everyMs }) => {
+      const w = globalThis as unknown as {
+        __trailsSim?: TrailsLoopSim;
+        __trailsPlayback?: ReturnType<typeof setInterval>;
+      };
+      if (!w.__trailsSim) throw new Error('__trailsSim missing — install the simulated Trails first');
+      const sim = w.__trailsSim;
+      w.__trailsPlayback = setInterval(() => {
+        sim.glide(ch, 4, { x: 0, y: 0.2 }, { x: 1, y: 0.8 });
+      }, everyMs);
+    },
+    { ch, everyMs: PLAYBACK_BURST_MS },
+  );
+}
+
+async function stopPlayback(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const w = globalThis as unknown as { __trailsPlayback?: ReturnType<typeof setInterval> };
+    if (w.__trailsPlayback !== undefined) clearInterval(w.__trailsPlayback);
+    w.__trailsPlayback = undefined;
+  });
+}
+
+/**
+ * Announce `n` loop repetitions and report the gate-edge counters from
+ * IMMEDIATELY before and after — all inside ONE page call.
+ *
+ * ⚠ THE SINGLE ROUND TRIP IS THE POINT. Issuing the restarts as N separate
+ * `page.evaluate`s put N protocol round trips inside the measured window, and
+ * any main-thread stall longer than the module's 120 ms activity timeout would
+ * let the contact gate fall and re-rise — adding an edge that belongs to the
+ * test rig, not the module, and reddening an exact-delta assertion. Bracketing
+ * the reads around the restarts in one synchronous block makes the delta a
+ * property of the decode path and nothing else.
+ */
+async function announceLoops(
+  page: Page,
+  nodeId: string,
+  n: number,
+): Promise<{ before: number[]; after: number[]; loopsBefore: number; loopsAfter: number }> {
+  return page.evaluate(
+    ({ id, n }) => {
+      const w = globalThis as unknown as {
+        __trailsSim?: TrailsLoopSim;
+        __engine?: () => {
+          read: (nd: { id: string; type: string; domain: string }, k: string) => unknown;
+        } | null;
+        __patch: { nodes: Record<string, { id: string; type: string; domain: string }> };
+      };
+      if (!w.__trailsSim) throw new Error('__trailsSim missing');
+      const eng = w.__engine?.();
+      const node = w.__patch.nodes[id];
+      if (!eng || !node) throw new Error('engine or node missing');
+      const read = () => eng.read(node, 'state') as { gateEdges: number[]; loopRestarts: number };
+
+      const start = read();
+      const before = [...start.gateEdges];
+      const loopsBefore = start.loopRestarts;
+      for (let i = 0; i < n; i++) w.__trailsSim.loopRestart();
+      const end = read();
+      return { before, after: [...end.gateEdges], loopsBefore, loopsAfter: end.loopRestarts };
+    },
+    { id: nodeId, n },
+  );
+}
+
+test('@trails a looping gesture strikes the gate ONCE PER REPETITION → audible', async ({
+  page,
+  rack,
+  errorWatch,
+}) => {
+  void rack;
+  await buildChain(page, { vcaCvFrom: 'g1' });
+
+  // (1) NEGATIVE CONTROL. Gate low, VCA closed, full window, no early exit.
+  const before = await readScopePeakOverWindow(page, 'scp', SILENCE_WINDOW_MS);
+  expect(before.polls, 'the SCOPE was actually sampled').toBeGreaterThan(0);
+  expect(
+    before.rms,
+    `a closed VCA must be silent before the gate rises — ${describeScopeWindow(before)}`,
+  ).toBeLessThan(AUDIBLE_FLOOR);
+
+  const installed = await installSim(page);
+  expect(installed, 'simulated Trails installed + attached (needs VITE_E2E_HOOKS)').toBe(true);
+
+  // (2) A recorded gesture starts playing back: continuous CC, never a gap.
+  await startPlayback(page, 1);
+
+  // (3) THE AUDIBLE ASSERTION. The gate rose, so the oscillator reaches the
+  //     scope. This is also what makes the edge counts below mean something:
+  //     they are counts of edges on a jack that demonstrably carries signal.
+  const open = await readScopePeakOverWindow(page, 'scp', AUDIBLE_CAP_MS, {
+    untilPeak: AUDIBLE_FLOOR,
+  });
+  expect(open.polls, 'the SCOPE was sampled across the audible window').toBeGreaterThan(0);
+  expect(
+    open.rms,
+    `a playing gesture must open the VCA through g1 — ${describeScopeWindow(open)}`,
+  ).toBeGreaterThan(AUDIBLE_FLOOR);
+  expect(open.rms, 'the gate RAISED the output').toBeGreaterThan(before.rms + 0.02);
+
+  // (4) The baseline, taken while the gesture plays and NOTHING has been
+  //     announced. `loopRestarts` is 0 here on the nose — it counts decoded
+  //     0xFA bytes and no timing can change that.
+  //
+  //     ⚠ The gate-edge count is read as a BASELINE rather than asserted to be
+  //     exactly 1, deliberately. It "should" be 1 — that is the defect, and the
+  //     unit suite pins it exactly, driving the same decoder with the same
+  //     device double and no scheduler in the way. Here the number depends on
+  //     whether the browser kept the playback interval under the module's
+  //     120 ms activity timeout, so pinning it would be asserting on the test
+  //     rig's timer rather than on the module. The DELTA below is measured
+  //     inside a single page call, so no round trip can land in it.
+  const streaming = await trailsState(page, 'tr');
+  expect(streaming?.axisMessages, 'the gesture really is streaming').toBeGreaterThan(20);
+  expect(streaming?.loopRestarts, 'no repetition has been announced yet').toBe(0);
+
+  // (5) Now the device announces each repetition, as it does on hardware.
+  const m = await announceLoops(page, 'tr', LOOP_REPS);
+  expect(m.loopsAfter - m.loopsBefore, 'every repetition was decoded').toBe(LOOP_REPS);
+  expect(
+    m.after[0]! - m.before[0]!,
+    `ONE gate edge per repetition and not one more — the 1:1 the fix is for `
+      + `(edges went ${m.before[0]} → ${m.after[0]} across ${LOOP_REPS} restarts)`,
+  ).toBe(LOOP_REPS);
+  // …and the other three channels were not dragged along by a message that
+  // speaks for one playhead.
+  expect(
+    m.after.slice(1).map((v, i) => v - m.before[i + 1]!),
+    'only the playing channel re-struck',
+  ).toEqual([0, 0, 0]);
+
+  // (6) …and the retrigger notch did not cost the signal: the jack is still
+  //     carrying audio after four re-strikes, so the fix articulates rather
+  //     than interrupting.
+  const after = await readScopePeakOverWindow(page, 'scp', AUDIBLE_CAP_MS, {
+    untilPeak: AUDIBLE_FLOOR,
+  });
+  expect(
+    after.rms,
+    `the gate must still be open after ${LOOP_REPS} retriggers — ${describeScopeWindow(after)}`,
+  ).toBeGreaterThan(AUDIBLE_FLOOR);
+
+  // (7) THE OTHER DIRECTION, and the second negative control: the gesture
+  //     stops, the stream goes quiet, the contact gate falls and the VCA closes.
+  //     Measured with `sampleScopeRms` for its LO rather than a max-hold window
+  //     — see the note in the spec above for why a max-hold cannot assert
+  //     silence straight after audio.
+  await stopPlayback(page);
+  const closed = await sampleScopeRms(page, 'scp', 25, 20);
+  expect(closed.samples, 'the SCOPE was sampled while closing').toBeGreaterThan(0);
+  expect(
+    closed.lo,
+    `a stopped gesture must close the VCA `
+      + `(lo=${closed.lo.toFixed(4)} hi=${closed.hi.toFixed(4)} samples=${closed.samples})`,
+  ).toBeLessThan(AUDIBLE_FLOOR);
+
+  errorWatch.assertClean();
+});
+
+test('@trails MON reports the traffic the module does NOT understand', async ({
+  page,
+  errorWatch,
+}) => {
+  // The diagnostic affordance, end to end. Its value is entirely in the
+  // UNRECOGNISED half: every wire constant this module has is a reading of a
+  // manual, and a monitor that only showed traffic the decoder already
+  // understood could not falsify a single one of them.
+  //
+  // Navigated the same way as the two card specs below rather than through the
+  // `rack` fixture, because this one asserts on the CARD'S DOM and TRAILS is a
+  // bespoke surface — the card is the surface, so the spec should name the
+  // shell it is reading instead of inheriting one.
+  await page.goto('/rack?shell=legacy&seed=none');
+  await page.waitForLoadState('networkidle');
+  await spawnPatch(page, [
+    { id: 'tr', type: 'trails', position: { x: 200, y: 200 }, domain: 'audio' },
+  ]);
+  expect(await installSim(page)).toBe(true);
+
+  await page.getByTestId('trails-mon-tr').click();
+
+  await page.evaluate(() => {
+    const w = globalThis as unknown as { __trailsSim?: TrailsLoopSim };
+    const sim = w.__trailsSim!;
+    sim.touch(1, 0.5, 0.5); // four frames the decoder understands
+    // CC47 is the fine partner the MIDI convention would pair with CC15. A
+    // firmware using it would look EXACTLY like this, and the readout has to
+    // name it rather than silently dropping it.
+    for (let i = 0; i < 5; i++) sim.send([0xb0, 47, 0x40]);
+  });
+
+  const log = page.getByTestId('trails-mon-text-tr');
+  await expect(log).toContainText('ch1 CC47', { timeout: 10_000 });
+  // ⚠ THE COUNT, not the words. The header prints "N not decoded" even when N
+  // is zero, so asserting the bare phrase would pass on a monitor that had
+  // silently dropped every unrecognised frame — the one failure this test
+  // exists to catch. Four decoded axis frames + five rejected CC47s.
+  await expect(log).toContainText('5 not decoded');
+  await expect(log).toContainText('trails-decode.ts');
+  // The row the module DOES understand is there too, unflagged.
+  await expect(log).toContainText('ch1 CC15');
 
   errorWatch.assertClean();
 });

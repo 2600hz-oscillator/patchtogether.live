@@ -7,14 +7,43 @@
 // continuously. Over its class-compliant USB-MIDI port that state arrives as
 // 14-bit Control Change per axis, one MIDI channel per axis, plus MIDI clock.
 //
-// EVERYTHING THIS FILE ENCODES ABOUT THE WIRE IS A NAMED CONSTANT, on purpose.
-// The hardware is not in the building yet: the manual is the only source for
-// the CC pair, the channel→axis order and how the gates are emitted, and one of
-// those three (the CC pair) is documented as a NONSTANDARD pairing. So each is
-// a single exported constant with a hardware-verify note beside it, and the
-// unit suite pins the DECODE against golden byte vectors built from those
-// constants — a correction after the first hardware session is a one-line edit
-// here, not a rewrite anywhere.
+// EVERYTHING THIS FILE ENCODES ABOUT THE WIRE IS A NAMED CONSTANT, on purpose:
+// a correction after a hardware session is a one-line edit here, not a rewrite
+// anywhere, and the unit suite pins the decode against golden byte vectors
+// spelled as literals so a moved constant goes RED rather than quietly agreeing
+// with itself.
+//
+// ── WHAT THE DEVICE TRANSMITS, EXHAUSTIVELY (manual + quick reference, read
+//    2026-08-31) ────────────────────────────────────────────────────────────
+//
+//   X and Y, and nothing else.  The manual's MIDI mapping table has exactly
+//   EIGHT rows — 1.X … 4.Y on MIDI channels 1–8, each "Note or CC15 (MSB) +
+//   CC37 (LSB)" — and the quick reference states the transmit set in one
+//   sentence: "Each X and Y output transmits over its own channel, available
+//   via USB-C on the rear of the module for USB MIDI Plug and Play".
+//
+//   NOT the gate.   It is absent from the MIDI section entirely; it exists only
+//                   as the four physical gate-out jacks. Everything this file
+//                   calls a "gate" is therefore INFERRED from the axis stream
+//                   (or from notes) — see TRAILS_ACTIVITY_GATE_TIMEOUT_MS.
+//   NOT the Bar.    The 10 × 85 mm capacitive strip is an assignable modifier of
+//                   INTERNAL functions — quick reference: "In INPUT it can be
+//                   assigned to Step Density, Gate Width, Smoothing, Volume or
+//                   Portamento", waveshaping in ADAPT, "Start/End … Speed …
+//                   Nudge" in METER. It has no MIDI message AND no output jack,
+//                   so there is nothing for this decoder to decode and nothing
+//                   an ES-9 could capture either. Its effect reaches us only
+//                   indirectly, in the shape of the X/Y/gate it modifies.
+//   Notes are the AXES, not an articulation. Quick reference: "When both pitch
+//                   and temporal quantisation are enabled, Trails transmits MIDI
+//                   Notes. Otherwise it sends high-resolution MIDI CC." Same two
+//                   axes, quantised to a scale — so in the ordinary mode NO note
+//                   is ever sent.
+//   Transport.      "MIDI System Realtime Clock and Start messages are sent,
+//                   based on the clock and playhead position of the first
+//                   channel of Trails", and "A Start message is sent every time
+//                   the playhead restarts from the beginning of the track."
+//                   THAT is the loop repetition, once per repetition.
 //
 // ⚠ NO Y.DOC, NO ENGINE, NO WINDOW. This module returns plain events; the
 // module factory is the only thing that turns them into ConstantSource writes,
@@ -85,29 +114,89 @@ export const TRAILS_AXIS_MAP: readonly TrailsAxisRef[] = Array.from(
 /**
  * How long an axis stream may go quiet before the ACTIVITY gate falls.
  *
- * ⚠ HARDWARE-VERIFY ITEM #3 — the ambiguity this number exists to survive. The
- * manual documents Note On/Off as an ALTERNATIVE to CC ("sends Note On/Off
- * instead of CC when pitch and temporal quantisation are both enabled"), and
- * says nothing about what carries the gate when the device is in its ordinary
- * CC mode. Two readings are possible and we cannot tell them apart without the
- * device: notes are always sent alongside CC, or the gate is only inferable
- * from the CC stream starting and stopping.
+ * ── WHAT THE MANUAL ACTUALLY SETTLES (read 2026-08-31) ──────────────────────
  *
- * So BOTH are implemented and notes WIN. A channel that has ever produced a
- * note takes its gate from notes exclusively and this timeout never applies to
- * it. A channel that has only ever produced CC gets an activity gate: high
- * while axis messages keep arriving, low once the stream has been quiet for
- * this long. If the hardware turns out to send notes, the activity path is
- * simply never reached and this constant becomes dead weight worth deleting;
- * if it does not, the module still emits a usable gate.
+ * The ambiguity this constant was written to survive is RESOLVED, and not in
+ * this constant's favour. Two documented facts decide it:
+ *
+ *   1. The manual's MIDI mapping table has exactly EIGHT rows — 1.X … 4.Y on
+ *      MIDI channels 1–8 — and the quick reference states the transmit set as
+ *      "Each X and Y output transmits over its own channel". THE GATE IS NOT A
+ *      MIDI MESSAGE. It exists only as the four physical gate-out jacks.
+ *   2. Notes are not a gate either. The quick reference: "When both pitch and
+ *      temporal quantisation are enabled, Trails transmits MIDI Notes.
+ *      Otherwise it sends high-resolution MIDI CC." Notes are an ALTERNATIVE
+ *      ENCODING OF THE SAME TWO AXES, quantised to a scale — not a separate
+ *      articulation stream. In the device's ordinary mode no note is ever sent,
+ *      so `sawNote` stays false forever and every gate comes from HERE.
+ *
+ * So this timeout is not a fallback any more — in the default mode it is the
+ * only contact signal there is, and it can only ever say one thing: "the axis
+ * stream is flowing" / "the axis stream stopped". That is a faithful model of
+ * exactly one half of the hardware gate, whose documented behaviour is:
+ *
+ *   "The GATE output produces a trigger whenever the gesture returns to the
+ *    start of its loop or after each silent section in the recording."
+ *
+ * The "after each silent section" half IS a gap in the CC stream, and this
+ * timeout catches it. ⚠ THE "RETURNS TO THE START OF ITS LOOP" HALF IS NOT A
+ * GAP — it is a value discontinuity in a stream that never stops — so no
+ * activity timeout, at any value, can ever produce one gate per loop
+ * repetition. That is what `TRAILS_LOOP_PLAYHEAD_CHANNEL` below is for.
+ *
+ * The note path is KEPT because it is still the best available contact signal
+ * when the device IS in note mode (a held note means that axis is sounding),
+ * and it costs nothing when no note ever arrives.
  *
  * 120 ms is chosen to sit well above any plausible inter-message gap in a live
  * stream (even a 20 Hz axis update is 50 ms apart) and well below the point a
- * player would call a held gate "stuck". The real stream rate is the fourth
+ * player would call a held gate "stuck". The real stream rate is still a
  * hardware-verify item; if it turns out to be slower than ~8 Hz this needs to
- * grow.
+ * grow, and the MON readout on the card is how to measure it.
  */
 export const TRAILS_ACTIVITY_GATE_TIMEOUT_MS = 120;
+
+/**
+ * The channel whose playhead the device's MIDI transport reports.
+ *
+ * ⚠ THIS IS THE FIX FOR "THE GATE DOESN'T FIRE EVERY LOOP", and it is a quoted
+ * fact rather than an inference. The manual:
+ *
+ *   "MIDI System Realtime Clock and Start messages are sent, based on the clock
+ *    and playhead position of the FIRST CHANNEL of Trails."
+ *   "A Start message is sent every time the playhead restarts from the
+ *    beginning of the track."
+ *
+ * So the loop repetition IS on the wire, once per repetition, as plain MIDI
+ * Start (0xFA) — the module was decoding it and then spending it on nothing but
+ * re-zeroing the clock divider. A Start is now ALSO a gate retrigger.
+ *
+ * ⚠ AND THE LIMIT, STATED: there is ONE playhead on the wire, channel 1's. A
+ * per-channel loop restart for channels 2–4 is NOT observable over USB-MIDI,
+ * and nothing in this file can invent one. See TRAILS_LOOP_RETRIGGER_SCOPE for
+ * how far the single message is allowed to reach.
+ */
+export const TRAILS_LOOP_PLAYHEAD_CHANNEL: TrailsChannel = 1;
+
+/**
+ * How far one Start message reaches.
+ *
+ *   'first'  — retrigger ONLY channel 1's gate. Strictly what the message
+ *              asserts, and nothing more.
+ *   'active' — retrigger every channel whose gate is currently high (DEFAULT).
+ *
+ * 'active' is the default and it is an INFERENCE, flagged as one. Its warrant is
+ * the quick reference's recording rule: "With a clock, recording begins and ends
+ * on cycle, so loops always remain synchronised." When the loops are
+ * synchronised, channel 1's playhead restarting IS every playing channel's
+ * playhead restarting, so reaching them all is right and reaching only channel 1
+ * would leave a player watching gate 2 with no gate at all. When they are NOT
+ * synchronised — different step counts per channel, the manual's "polyrhythms"
+ * and "polymeters" — this over-fires channels 2–4 at channel 1's rate.
+ *
+ * One word, one line, one edit: a player working in polymeter sets 'first'.
+ */
+export const TRAILS_LOOP_RETRIGGER_SCOPE: 'first' | 'active' = 'active';
 
 // ── MIDI status bytes we care about ─────────────────────────────────────────
 const STATUS_NOTE_OFF = 0x80;
@@ -134,8 +223,20 @@ export type TrailsEvent =
       kind: 'gate';
       channel: TrailsChannel;
       high: boolean;
-      /** Which of the two documented mechanisms produced this edge. */
-      source: 'note' | 'activity';
+      /**
+       * Which mechanism produced this edge.
+       *
+       * `'loop'` is special and a consumer MUST treat it as such: it is always
+       * `high: true`, and it means "the playhead restarted" — which is a fresh
+       * gate event EVEN IF THE GATE WAS ALREADY HIGH. A consumer that only
+       * looks at `high` will see no change and drop it on the floor, which is
+       * precisely the bug this field exists to make impossible: during loop
+       * playback the axis stream never stops, so the level never falls, so a
+       * level-only consumer never sees a new loop. The factory answers a
+       * `'loop'` edge with a RETRIGGER NOTCH — low, then high — so the rising
+       * edge is real on the wire the rack actually reads.
+       */
+      source: 'note' | 'activity' | 'loop';
     }
   /** One MIDI clock tick (0xF8). MIDI is fixed at 24 of these per quarter. */
   | { kind: 'clock' }
@@ -148,6 +249,25 @@ export interface TrailsDecoderOptions {
   ccPair?: TrailsCcPair;
   axisMap?: readonly TrailsAxisRef[];
   activityGateTimeoutMs?: number;
+  loopRetriggerScope?: 'first' | 'active';
+}
+
+/** What `handleFrame` reports about one message. */
+export interface TrailsFrameResult {
+  readonly events: TrailsEvent[];
+  /**
+   * Did this decoder UNDERSTAND the frame — independent of whether it produced
+   * an event?
+   *
+   * ⚠ THE TWO ARE NOT THE SAME, and conflating them is what makes a diagnostic
+   * lie. Several frames are fully understood and deliberately emit nothing: a
+   * second note-on while one is already held (the level did not change), an LSB
+   * that arrives before its axis has ever sent an MSB, an Active Sense byte we
+   * knowingly ignore. Reporting "no event" as "not recognised" would flag all
+   * of those on healthy hardware and print advice to go and change the CC pair —
+   * the exact misdiagnosis the monitor exists to prevent.
+   */
+  readonly recognised: boolean;
 }
 
 export interface TrailsDecoder {
@@ -158,6 +278,8 @@ export interface TrailsDecoder {
    * without waiting for wall-clock time.
    */
   handle(data: ArrayLike<number>, nowMs: number): TrailsEvent[];
+  /** `handle`, plus the recognition verdict the MIDI monitor needs. */
+  handleFrame(data: ArrayLike<number>, nowMs: number): TrailsFrameResult;
   /** Age the activity gates. Returns the falling edges that are now due. */
   tick(nowMs: number): TrailsEvent[];
   /** Forget all assembled halves, held notes and gate levels. */
@@ -222,6 +344,7 @@ export function createTrailsDecoder(opts: TrailsDecoderOptions = {}): TrailsDeco
   const ccPair = opts.ccPair ?? TRAILS_CC_PAIR;
   const axisMap = opts.axisMap ?? TRAILS_AXIS_MAP;
   const activityTimeoutMs = opts.activityGateTimeoutMs ?? TRAILS_ACTIVITY_GATE_TIMEOUT_MS;
+  const loopScope = opts.loopRetriggerScope ?? TRAILS_LOOP_RETRIGGER_SCOPE;
 
   const channels = new Map<TrailsChannel, ChannelState>();
   function stateFor(channel: TrailsChannel): ChannelState {
@@ -256,6 +379,61 @@ export function createTrailsDecoder(opts: TrailsDecoderOptions = {}): TrailsDeco
     out.push({ kind: 'gate', channel, high: true, source: 'activity' });
   }
 
+  /**
+   * THE LOOP RESTART. One MIDI Start = one repetition of the device's playhead,
+   * so this emits one gate edge per repetition per channel in scope.
+   *
+   * ⚠ IT EMITS EVEN WHEN THE GATE IS ALREADY HIGH, and that is the whole point:
+   * during playback the axis stream is continuous, so the level never falls and
+   * a level-change-only emitter would emit nothing at all. The `'loop'` source
+   * is the contract that tells the factory to cut a retrigger notch instead of
+   * comparing levels.
+   *
+   * Note-mode channels are skipped: when the device sends notes, the notes are
+   * already the articulation and a second mechanism would double-trigger.
+   */
+  function emitLoopRestart(nowMs: number, out: TrailsEvent[]): void {
+    const targets: TrailsChannel[] = [];
+    if (loopScope === 'active') {
+      // ⚠ "HAS EVER STREAMED", NOT "IS HIGH RIGHT NOW". Selecting on the live
+      // gate level looks equivalent and is not: the hardware gate also strikes
+      // "after each silent section in the recording", so a recorded gesture
+      // legitimately goes quiet mid-cycle and its activity gate falls. If a
+      // Start landed during one of those silences, a gate-level filter found
+      // NOTHING active, fell through to channel 1, and struck an empty jack
+      // while the channel that actually restarted got nothing at all.
+      //
+      // A channel that has ever sent CC is a channel with a gesture on it,
+      // which is the population a playhead restart is about.
+      for (const [channel, s] of channels) {
+        if (!s.sawNote && s.lastAxisMs > Number.NEGATIVE_INFINITY) targets.push(channel);
+      }
+      targets.sort((a, b) => a - b);
+      // ⚠ AND NO FALLBACK HERE. With nothing recorded on any channel there is
+      // no gesture to repeat, so striking channel 1 anyway would put a pulse
+      // train on an empty jack for as long as the device's transport ran — a
+      // gate that means nothing, which is the same mistake as an output that
+      // can never carry data. Silence is the honest answer.
+    } else {
+      // 'first' — strictly what the message asserts, and the escape hatch for a
+      // player in polymeter. It always speaks, because it always speaks for the
+      // one playhead the device actually reports.
+      targets.push(TRAILS_LOOP_PLAYHEAD_CHANNEL);
+    }
+
+    for (const channel of targets) {
+      const s = stateFor(channel);
+      if (s.sawNote) continue;
+      s.gateHigh = true;
+      // A restart IS activity. Without this the gate the restart just raised
+      // could be dropped by the very next `tick()` — `lastAxisMs` would still
+      // be whenever the CC stream last spoke, or −Infinity on a channel that
+      // has never streamed at all.
+      s.lastAxisMs = nowMs;
+      out.push({ kind: 'gate', channel, high: true, source: 'loop' });
+    }
+  }
+
   function handle(data: ArrayLike<number>, nowMs: number): TrailsEvent[] {
     const out: TrailsEvent[] = [];
     if (data.length < 1) return out;
@@ -264,8 +442,13 @@ export function createTrailsDecoder(opts: TrailsDecoderOptions = {}): TrailsDeco
     // System real-time (0xF8..0xFF) is broadcast — no channel nibble.
     if (status >= 0xf8) {
       if (status === STATUS_CLOCK) out.push({ kind: 'clock' });
-      else if (status === STATUS_START) out.push({ kind: 'transport', running: true, reset: true });
-      else if (status === STATUS_CONTINUE) out.push({ kind: 'transport', running: true, reset: false });
+      else if (status === STATUS_START) {
+        out.push({ kind: 'transport', running: true, reset: true });
+        // ⚠ ORDER MATTERS: the transport event re-zeroes the clock divider, the
+        // loop event retriggers the gates. Both come from this one byte, and
+        // before today only the first of them existed.
+        emitLoopRestart(nowMs, out);
+      } else if (status === STATUS_CONTINUE) out.push({ kind: 'transport', running: true, reset: false });
       else if (status === STATUS_STOP) out.push({ kind: 'transport', running: false, reset: false });
       return out;
     }
@@ -300,19 +483,24 @@ export function createTrailsDecoder(opts: TrailsDecoderOptions = {}): TrailsDeco
       const velocity = data.length >= 3 ? data[2]! & 0x7f : 0;
       // Note-on with velocity 0 is the running-status note-off.
       const isOn = kind === STATUS_NOTE_ON && velocity > 0;
-      const wasNoteChannel = s.sawNote;
+      // ⚠ COMPARE AGAINST THE LEVEL THE CONSUMER CURRENTLY SEES, captured
+      // BEFORE the note path takes ownership of this channel.
+      //
+      // The previous shape zeroed `gateHigh` on the activity→note handover and
+      // then compared the new level against that zero, which silently swallowed
+      // one case: a channel whose gate was already HIGH and whose FIRST note
+      // message is a note-off computed `false !== false` and emitted nothing —
+      // leaving the jack stuck at 1 with no mechanism left to lower it, because
+      // `tick()` skips note channels forever after. Comparing against the real
+      // previous level makes the handover fall out for free: note-on while high
+      // is still no edge, note-off while high is the falling edge that was lost.
+      const wasHigh = s.gateHigh;
       s.sawNote = true;
-      if (!wasNoteChannel && s.gateHigh) {
-        // The channel had an ACTIVITY gate up and has now proven it sends
-        // notes. Hand ownership over without a spurious edge: the note state
-        // below decides the level from here on.
-        s.gateHigh = false;
-      }
       if (isOn) s.held.add(note);
       else s.held.delete(note);
       const high = s.held.size > 0;
-      if (high !== s.gateHigh) {
-        s.gateHigh = high;
+      s.gateHigh = high;
+      if (high !== wasHigh) {
         out.push({ kind: 'gate', channel: ref.channel, high, source: 'note' });
       }
       return out;
@@ -333,8 +521,44 @@ export function createTrailsDecoder(opts: TrailsDecoderOptions = {}): TrailsDeco
     return out;
   }
 
+  /**
+   * Is this a frame this decoder has a story for?
+   *
+   * Deliberately a SEPARATE, purely structural pass rather than a flag threaded
+   * through `handle`'s many early returns — recognition is a property of the
+   * bytes, not of what the channel state happened to do with them, and keeping
+   * it independent is what lets the monitor disagree with the decode.
+   */
+  function recognises(data: ArrayLike<number>): boolean {
+    if (data.length < 1) return false;
+    const status = data[0]! & 0xff;
+    // System REAL-TIME (0xF8..0xFF). We act on clock/start/continue/stop and
+    // knowingly ignore the rest (Active Sense at ~3 Hz is the common one) — all
+    // of them are understood, so none should inflate the "not decoded" tally.
+    if (status >= 0xf8) return true;
+    // System COMMON (0xF0..0xF7) — SysEx, MTC, Song Position. Trails documents
+    // none of these, so if one appears it is genuinely news and should surface.
+    if (status >= 0xf0) return false;
+    const kind = status & 0xf0;
+    const ref = axisFor(status & 0x0f);
+    if (!ref) return false; // a MIDI channel this device does not use
+    if (kind === STATUS_NOTE_ON || kind === STATUS_NOTE_OFF) return data.length >= 2;
+    if (kind === STATUS_CC) {
+      if (data.length < 3) return false;
+      const controller = data[1]! & 0x7f;
+      return controller === ccPair.msb || controller === ccPair.lsb;
+    }
+    return false;
+  }
+
   return {
     handle,
+    handleFrame(data, nowMs) {
+      // `recognises` FIRST: `handle` mutates channel state, and a verdict read
+      // afterwards would be describing the post-state rather than the bytes.
+      const recognised = recognises(data);
+      return { events: handle(data, nowMs), recognised };
+    },
     tick,
     reset() {
       channels.clear();
