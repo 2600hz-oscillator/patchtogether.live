@@ -103,7 +103,39 @@ export async function renderOfflineDef(
     merger.connect(ctx.destination);
   }
 
-  const rendered = await ctx.startRendering();
+  // ⚠ NAME THE MODULE. `startRendering()` is guarded at the prototype in
+  // setup/render-completion.ts, which recovers the binding's late buffer and
+  // otherwise throws with the CAUSE — but it is a prototype-level guard and the
+  // one thing it cannot know is WHICH module was being rendered. This harness
+  // is shared by every `renderOfflineDef` scenario, so an un-attributed failure
+  // here reads as a defect in whichever scenario happened to draw it. The
+  // un-guarded version reported `TypeError: Cannot read properties of null
+  // (reading 'getChannelData')` at this line, naming neither — that is what
+  // reddened the `art` job on CI run 33434390158 against an illogic scenario
+  // whose graph was fine and whose identical diff had already passed.
+  let rendered: Awaited<ReturnType<typeof ctx.startRendering>>;
+  try {
+    rendered = await ctx.startRendering();
+  } catch (err) {
+    throw new Error(
+      `renderOfflineDef(${def.type}): offline render FAILED ` +
+        `[outputs=${outIds.join(',')}, durationS=${opts.durationS}, sampleRate=${sr}, ` +
+        `inputs=${Object.keys(opts.inputs ?? {}).join(',') || 'none'}] — ` +
+        `${err instanceof Error ? err.message : String(err)}`,
+      { cause: err },
+    );
+  }
+  if (!rendered) {
+    // Unreachable while the guard is installed; kept so that running this
+    // helper WITHOUT art/vitest.config.ts still fails by name rather than as a
+    // bare TypeError on the next line.
+    throw new Error(
+      `renderOfflineDef(${def.type}): startRendering() resolved ${String(rendered)} ` +
+        `[outputs=${outIds.join(',')}, durationS=${opts.durationS}, sampleRate=${sr}]. ` +
+        `art/setup/render-completion.ts is not installed — is this running under ` +
+        `art/vitest.config.ts?`,
+    );
+  }
   const record: Record<string, Float32Array> = {};
   outIds.forEach((id, k) => {
     record[id] = rendered.getChannelData(k).slice();
