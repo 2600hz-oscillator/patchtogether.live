@@ -8959,6 +8959,31 @@
         };
         return true;
       };
+      // Simulated Launchpad for SEQTRIS. Installs the SAME single-device sim the
+      // clip launcher uses, but deliberately does NOT set a deployment or bind a
+      // clip node: SEQTRIS claims the L slot itself, through its own CONNECT
+      // gesture, so the spec must exercise that gesture rather than have the
+      // harness pre-wire it. `scene(i)` presses a scene-launch button by its
+      // TOP-ORIGIN index (0 = top), which is the order the game controls are
+      // specified in; `ledAt` reads the host's own belief about a pad so a spec
+      // can assert the BOARD reached the hardware.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (globalThis as any).__seqtrisTestInstall = async () => {
+        const sim = await installSimulatedLaunchpadSingle();
+        const SEQTRIS_SCENE_CCS = [89, 79, 69, 59, 49, 39, 29, 19] as const; // top→bottom
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (globalThis as any).__seqtrisSim = {
+          // A full press: down then up. The module acts on the rising edge only.
+          scene: (index: number) => {
+            const cc = SEQTRIS_SCENE_CCS[index];
+            if (cc === undefined) return;
+            sim.cc('L', cc, 127);
+            sim.cc('L', cc, 0);
+          },
+          ledAt: (index: number) => sim.ledAt('L', index),
+        };
+        return true;
+      };
       // Simulated PUSH 2 for e2e: installs ONE in-memory Push (no Web MIDI
       // prompt), injects it as the Launchpad control surface (single deployment),
       // and binds the clip-player. Pad/CC presses route through the SAME

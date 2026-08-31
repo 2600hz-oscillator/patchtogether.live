@@ -250,6 +250,19 @@ export const EXEMPT_OUTPUT_EMIT_MODULES: Record<string, string> = {
   // specs simulate full games + drive scoring deterministically.
   modtris: 'line_cleared/overfill only fire after ~10 piece drops; covered by modtris-related specs (simulated)',
   pong:    'score_left/score_right only fire on ball-miss after bounces; covered by pong-related specs',
+  // SEQTRIS — a whole-module entry rather than four per-port ones, because ONE
+  // reason covers all four. The two note ports are polyPitchGate: a poly→SCOPE
+  // edge reads lane-0 PITCH, a steady DC the AC scope floor cannot peak (the
+  // midiLane.poly shape), and `board` is additionally a DECLARED STUB that
+  // never gates at all. `line` needs a completed row — the modtris shape,
+  // far past this sweep's window. `spawn` is the only port that would emit
+  // inside the window and only with a clock driven fast enough to fall eight
+  // rows, which is the same gameplay depth. Handle-presence + input-accept
+  // still run here. Real coverage: seqtris.spec.ts drives the SIMULATED
+  // Launchpad's scene buttons and a real clock through PIECE into a voice and
+  // asserts audible SCOPE RMS (plus the tied-drop gate), and the rules are
+  // pinned by seqtris-engine.test.ts / seqtris.test.ts.
+  seqtris: 'poly note ports read as lane-0 DC on a scope (the midiLane.poly shape) and `board` is a declared silent stub; `line`/`spawn` are gameplay-deep like modtris. Real chain covered by seqtris.spec.ts (Launchpad presses + clock → PIECE → voice → SCOPE RMS) and the rules by seqtris-engine.test.ts',
   // BLOOD — ⚠ REASON CORRECTED 2026-08-13 (#1497). The old reason ("data is
   // user-supplied, non-redistributable, gitignored, absent in CI — the engine
   // aborts in its resource loader") was false in every clause: the 1997
@@ -549,7 +562,7 @@ export const PINNED_MODULE_EXEMPT_KEYS: readonly string[] = Object.freeze([
   'fader', 'featurecv', 'flipper', 'gamepad', 'illogic', 'joystick',
   'marbles', 'midiCvBuddy', 'midiOutBuddy', 'midiclock', 'milkdrop', 'modtris',
   'moog911a', 'moog956', 'moog962', 'moog992', 'moog993', 'numpadPlus',
-  'peertube', 'pong', 'samsloop', 'score',
+  'peertube', 'pong', 'samsloop', 'score', 'seqtris',
   'slewSwitch', 'synesthesia', 'tempolock', 'timelorde', 'tvLibrarian', 'twotracks',
   'videobox', 'videocube', 'videovarispeed', 'vstFx', 'vstInstrument',
 ]);

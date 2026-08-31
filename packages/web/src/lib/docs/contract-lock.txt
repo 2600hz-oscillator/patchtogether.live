@@ -2789,6 +2789,14 @@ scoreboard out out video
 scoreboard param color 0..1 linear default=0.3333333333333333
 scoreboard param resetTrig 0..1 linear default=0
 scoreboard param scoreTrig 0..1 linear default=0
+seqtris meta domain=audio
+seqtris in clock gate edge=trigger
+seqtris out board polyPitchGate
+seqtris out line gate edge=trigger
+seqtris out piece polyPitchGate
+seqtris out spawn gate edge=trigger
+seqtris param gravity 1..48 discrete default=8 unit=pulses
+seqtris param quantize 0..1 discrete default=1
 shapedramps meta domain=video
 shapedramps in h_freq cv param=h_freq cvScale=linear
 shapedramps in h_phase cv param=h_phase cvScale=linear
