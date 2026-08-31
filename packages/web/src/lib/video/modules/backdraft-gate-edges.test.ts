@@ -162,6 +162,10 @@ const OBSERVERS: Readonly<Record<string, Observer>> = {
     why: 'a rising edge CYCLES tvMode (OFF -> PURE TV -> CRITICAL -> OFF)',
     read: (h) => h.readParam?.('tvMode') ?? 0,
   },
+  panic: {
+    why: 'a rising edge FIRES the settings reset via the panic hook (a graph-side write this bare factory cannot show); the monotonic panicCount probe is what distinguishes "every edge fired" from "edges were dropped", exactly like clockRiseCount',
+    read: (h) => (h.read?.('panicCount') as number | undefined) ?? 0,
+  },
 };
 
 // ---------------------------------------------------------------------------

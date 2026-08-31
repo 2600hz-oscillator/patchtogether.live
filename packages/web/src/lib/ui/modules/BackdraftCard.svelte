@@ -73,6 +73,7 @@
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { useEngine } from '$lib/audio/engine-context';
   import { patch, ydoc } from '$lib/graph/store';
+  import { backdraftDelayClockPatched } from './backdraft-clocked-delay';
   import { setNodeParam, mutateNode } from '$lib/graph/mutate';
   import { createFullscreen } from './use-fullscreen.svelte';
   import { createFullFrame } from './use-full-frame.svelte';
@@ -284,20 +285,19 @@
   }
 
   // ---- DELAY CLOCK override indicator ----
-  // When a cable is patched into the `delay_clock` input, the clock drives
-  // the feedback delay (one pulse = the delay time) and OVERRIDES the DELAY
-  // knob. We show a small "CLK" badge + dim the Delay fader so it reads as
-  // overridden. patch.edges is a SyncedStore/Yjs proxy (not a Svelte signal),
-  // so we bump a real $state from a Yjs observer to stay reactive on cable
-  // add/remove — same pattern as DoomCard's edgesVersion.
+  // When a cable is patched into the `delay_clock` input, the fader is
+  // IGNORED ENTIRELY (owner ruling — the effective delay holds, then tracks
+  // one clock-pulse duration; see backdraftEffectiveDelayMs). We show a small
+  // "CLK" badge + dim the Delay fader so it reads as overridden. The
+  // predicate is the SHARED one the faceplate's override badge also uses
+  // (backdraft-clocked-delay.ts), so the two surfaces cannot disagree.
+  // patch.edges is a SyncedStore/Yjs proxy (not a Svelte signal), so we bump
+  // a real $state from a Yjs observer to stay reactive on cable add/remove —
+  // same pattern as DoomCard's edgesVersion.
   let edgesVersion = $state(0);
   let clockPatched = $derived.by<boolean>(() => {
     void edgesVersion;
-    for (const edge of Object.values(patch.edges)) {
-      if (!edge) continue;
-      if (edge.target.nodeId === id && edge.target.portId === 'delay_clock') return true;
-    }
-    return false;
+    return backdraftDelayClockPatched(id);
   });
   let edgesUnobserve: (() => void) | null = null;
 
@@ -613,6 +613,9 @@
     { id: 'cam_pos_x',   label: 'CAM X',     cable: 'cv' },
     { id: 'cam_pos_y',   label: 'CAM Y',     cable: 'cv' },
     { id: 'cam_dist',    label: 'DIST',      cable: 'cv' },
+    // PANIC — rising edge fires the same settings reset as the face's PANIC
+    // button (one implementation, two triggers; see ./backdraft/panic.ts).
+    { id: 'panic',       label: 'PANIC',     cable: 'gate' },
   ];
   const outputs = portsFromDef(backdraftDef.outputs);
 </script>
@@ -755,7 +758,7 @@
               <NeonFader value={p('feedback')} min={pmin('feedback')} max={pmax('feedback')} defaultValue={pdef('feedback')} label="FB"  curve="linear" onchange={setParam('feedback')} moduleId={id} paramId="feedback" trackHeight={FADER_H} />
               <div class="delay-cell" class:clk-driven={clockPatched}>
                 <NeonFader value={p('delay')} min={pmin('delay')} max={pmax('delay')} units="ms" defaultValue={pdef('delay')} label={clockPatched ? 'Dly·CLK' : 'Delay'} curve="linear" onchange={setParam('delay')} moduleId={id} paramId="delay" trackHeight={FADER_H} />
-                {#if clockPatched}<span class="clk-badge" data-testid="backdraft-clk-badge" title="DELAY CLOCK is driving the feedback delay (knob overridden)">CLK</span>{/if}
+                {#if clockPatched}<span class="clk-badge" data-testid="backdraft-clk-badge" title="DELAY CLOCK is patched — this fader is ignored entirely: the delay holds, then tracks one clock-pulse duration. Unpatch to hand control back to the fader.">CLK</span>{/if}
               </div>
             </div>
           </section>

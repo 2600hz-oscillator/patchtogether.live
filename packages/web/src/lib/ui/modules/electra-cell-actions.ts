@@ -66,6 +66,7 @@
 import { getActiveEngine } from '$lib/audio/engine-ref';
 import { webMidiSupported } from '$lib/audio/midi-access';
 import { ElectraAutoconfig } from '$lib/electra/autoconfig';
+import { browserSysexRegressionAdvisory } from '$lib/electra/transport-gate';
 import { buildLiveHost } from '$lib/electra/host';
 import luaSource from '$lib/electra/lua-bundle';
 import {
@@ -209,6 +210,20 @@ export function electraSendToDevice(
     .run()
     .then((res) => {
       if (!res.ok) {
+        // The transport gate's verdict (Chromium-152 macOS SysEx regression,
+        // see electra/transport-gate.ts) carries the full actionable advisory
+        // — into the outcome detail (accessible name + button title) AND the
+        // console, which is where this class was debugged from in the field
+        // and the only surface the relaunch command can be COPIED from.
+        if (res.reason === 'browser-sysex-regression') {
+          const advisory = browserSysexRegressionAdvisory();
+          try {
+            // eslint-disable-next-line no-console
+            console.error(`[electra] ${advisory}`);
+          } catch { /* console may be absent in non-DOM test envs */ }
+          setOutcome('error', advisory);
+          return;
+        }
         setOutcome(res.reason === 'no-midi-access' ? 'no-device' : 'error', res.reason ?? 'failed');
         return;
       }

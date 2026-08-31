@@ -10,6 +10,7 @@ import {
   BACKDRAFT_BUFFER_FRAMES,
   BACKDRAFT_FPS,
   BACKDRAFT_MAX_DELAY_MS,
+  BACKDRAFT_CLOCK_BPM_AT_MAX,
   BACKDRAFT_MAX_EFFECT_SCALE,
   BACKDRAFT_MAX_FEEDBACK,
   BACKDRAFT_HALL_LO,
@@ -71,9 +72,9 @@ describe('backdraftDelayFrames — DELAY knob (ms) → nearest ring frame', () =
     expect(f).toBeLessThan(BACKDRAFT_BUFFER_FRAMES); // never aliases the head
   });
 
-  it('max DELAY (500ms) maps to ~30 frames at 60fps and fits the ring', () => {
+  it('max DELAY (1000ms) maps to ~60 frames at 60fps and fits the ring', () => {
     const f = backdraftDelayFrames(BACKDRAFT_MAX_DELAY_MS, BACKDRAFT_BUFFER_FRAMES);
-    expect(f).toBe(30); // round(500/1000*60) = 30
+    expect(f).toBe(60); // round(1000/1000*60) = 60
     // taps the DEEPEST available frame yet stays < ring size (never the head).
     expect(f).toBe(BACKDRAFT_BUFFER_FRAMES - 1);
     expect(f).toBeLessThan(BACKDRAFT_BUFFER_FRAMES);
@@ -316,14 +317,27 @@ describe('backdraftClockTick — rising-edge → pulse-period measurement', () =
 });
 
 describe('backdraftEffectiveDelayMs — DELAY knob vs DELAY CLOCK override', () => {
-  it('unpatched: returns the DELAY knob value (clamped to [0,500])', () => {
+  it('unpatched: returns the DELAY knob value (clamped to [0,1000])', () => {
     expect(backdraftEffectiveDelayMs(120, false, 0.25)).toBe(120);
     expect(backdraftEffectiveDelayMs(9999, false, 0.25)).toBe(BACKDRAFT_MAX_DELAY_MS);
     expect(backdraftEffectiveDelayMs(-5, false, 0)).toBe(0);
   });
 
-  it('patched but no measured period yet: falls back to the knob', () => {
+  it('patched but no measured period yet: HOLDS the last effective delay, not the knob', () => {
+    // The owner ruling: a patched clock makes the fader inert ENTIRELY. Before
+    // the first measured interval the effective delay holds where it was —
+    // draw() passes the previous frame's effective value as `heldMs`.
+    expect(backdraftEffectiveDelayMs(80, true, 0, 250)).toBe(250);
+    // A fader write while patched-and-unmeasured changes NOTHING effective.
+    expect(backdraftEffectiveDelayMs(999, true, 0, 250)).toBe(250);
+    // Default heldMs = the knob (pure callers with no history).
     expect(backdraftEffectiveDelayMs(80, true, 0)).toBe(80);
+  });
+
+  it('patched with a measured period: the knob is ignored entirely', () => {
+    // Same period, wildly different knob positions → same effective delay.
+    expect(backdraftEffectiveDelayMs(0, true, 0.25, 40)).toBeCloseTo(250, 6);
+    expect(backdraftEffectiveDelayMs(1000, true, 0.25, 40)).toBeCloseTo(250, 6);
   });
 
   it('patched: delay = one clock-pulse duration (period sec → ms)', () => {
@@ -333,11 +347,11 @@ describe('backdraftEffectiveDelayMs — DELAY knob vs DELAY CLOCK override', () 
     expect(backdraftEffectiveDelayMs(80, true, 0.125)).toBeCloseTo(125, 6);
   });
 
-  it('caps at 500ms — one beat at 120 BPM — for slow clocks', () => {
-    // 1 Hz clock (period 1s = 60 BPM) would be 1000ms; capped to 500.
-    expect(backdraftEffectiveDelayMs(80, true, 1.0)).toBe(BACKDRAFT_MAX_DELAY_MS);
-    // Exactly 120 BPM (period 0.5s) lands right at the cap, uncapped.
-    expect(backdraftEffectiveDelayMs(80, true, 0.5)).toBeCloseTo(500, 6);
+  it('caps at 1000ms — one beat at 60 BPM — for slow clocks', () => {
+    // 0.5 Hz clock (period 2s = 30 BPM) would be 2000ms; capped to 1000.
+    expect(backdraftEffectiveDelayMs(80, true, 2.0)).toBe(BACKDRAFT_MAX_DELAY_MS);
+    // Exactly 60 BPM (period 1s) lands right at the cap, uncapped.
+    expect(backdraftEffectiveDelayMs(80, true, 1.0)).toBeCloseTo(1000, 6);
   });
 
   it('overrides the knob entirely when the clock is driving', () => {
@@ -523,10 +537,13 @@ describe('backdraft module def — params + ports', () => {
     expect(byId.pureGeoGate).toMatchObject({ min: 0, max: 1, defaultValue: 0 });
   });
 
-  it('ring buffer holds 500ms — one beat at 120 BPM — the clock cap', () => {
-    // 120 BPM beat = 60000/120 = 500ms = BACKDRAFT_MAX_DELAY_MS, and the
-    // ring already covers that (the clock never asks for more than the knob).
-    expect(BACKDRAFT_MAX_DELAY_MS).toBe(500);
+  it('ring cap holds 1000ms — one beat at 60 BPM — the clock cap follows the knob', () => {
+    // One beat at BACKDRAFT_CLOCK_BPM_AT_MAX IS the knob max — the identity
+    // the clock override documents ("the same cap the DELAY knob uses"), so
+    // the ring cap always covers what the clock can ask for. Both halves
+    // doubled together on 2026-08-29 (500ms/120BPM -> 1000ms/60BPM).
+    expect(BACKDRAFT_MAX_DELAY_MS).toBe(1000);
+    expect(60000 / BACKDRAFT_CLOCK_BPM_AT_MAX).toBe(BACKDRAFT_MAX_DELAY_MS);
     const f = backdraftDelayFrames(BACKDRAFT_MAX_DELAY_MS, BACKDRAFT_BUFFER_FRAMES);
     expect(f).toBe(BACKDRAFT_BUFFER_FRAMES - 1);
   });

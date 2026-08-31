@@ -236,6 +236,8 @@
   import { nodePresent } from '$lib/ui/modules/node-present-registry.svelte';
   import { createFullscreen } from '$lib/ui/modules/use-fullscreen.svelte';
   import { resolveVideoEngine } from '$lib/ui/modules/use-present.svelte';
+  import { setVideoPanicHandler } from '$lib/video/panic-hook';
+  import { backdraftPanic } from '$lib/ui/modules/backdraft/panic';
   import {
     bindingsFromPairs,
     mayPersist,
@@ -8700,6 +8702,13 @@
           // teardown — the patched OUTPUT survives the switch). The applier
           // also runs once now to apply the boot res.
           videoAspectStore.setEngineApplier((res) => ve.setResolution(res.width, res.height));
+          // PANIC hook: a rising edge on a module's `panic` gate input is
+          // detected in its factory (engine side, which never touches the
+          // graph) and requests the reset through this seam; the handler runs
+          // the same graph-side implementation the faceplate PANIC button
+          // calls. backdraftPanic type-checks the node, so a panic cable
+          // landing on any other module is a safe no-op.
+          setVideoPanicHandler((nodeId) => { backdraftPanic(nodeId); });
           trace(`video engine registered (res=${ve.res.width}x${ve.res.height})`);
         } catch (videoErr) {
           console.warn('[canvas] video engine unavailable:', videoErr);

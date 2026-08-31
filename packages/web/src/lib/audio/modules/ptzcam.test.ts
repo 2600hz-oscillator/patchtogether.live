@@ -16,8 +16,8 @@ describe('ptzcam def shape', () => {
     expect(ptzcamDef.label).toBe(ptzcamDef.label.toLowerCase());
   });
 
-  it('one instance max — one camera, one helper, one head to fight over', () => {
-    expect(ptzcamDef.maxInstances).toBe(1);
+  it('a small instance cap — one module per camera, two cameras on stage, slack for spares', () => {
+    expect(ptzcamDef.maxInstances).toBe(4);
   });
 
   it('declares size on the def, not in rack-sizes', () => {
