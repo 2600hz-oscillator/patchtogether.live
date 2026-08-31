@@ -246,6 +246,26 @@ export function acquireSeqtrisLaunchpad(
     return { kind, message: seqtrisStatusMessage(kind, portName), ports, portName };
   }
 
+  // ⚠ PREFETCH, so the `await` inside CONNECT is a resolved-promise microtask
+  // rather than a chunk fetch. `requestMIDIAccess` needs the browser's TRANSIENT
+  // USER ACTIVATION to prompt, and a real network round-trip between the click
+  // and the request is exactly how that gets spent (PtzcamCard carries the same
+  // warning about awaiting above the request). Fire-and-forget: a failure here
+  // is not an error, it is "no Svelte runtime in this context", and CONNECT
+  // reports it properly when someone actually asks.
+  //
+  // This does NOT re-open the ART hazard the header describes: an `import()` in
+  // a function body is not evaluated at module load, and the ART harness never
+  // reaches a seqtris factory (the module is ART_EXCLUDED) — the failure there
+  // was at REGISTRY IMPORT time.
+  void loadDevice()
+    .then((mod) => {
+      if (!released) attach(mod);
+    })
+    .catch(() => {
+      /* reported by connect() when the player asks */
+    });
+
   return {
     status,
 
