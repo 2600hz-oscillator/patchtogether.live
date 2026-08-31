@@ -125,8 +125,45 @@ export interface ActivePiece {
 export interface ModtrisParams {
   /** Gravity in "drops per minute" — 60 = 1 cell/second. Range 30..240. */
   gravityBpm: number;
-  /** Lines-per-level threshold (unused in v1 stepper but reserved for future scoring). */
+  /**
+   * Lines-per-level threshold. `level = floor(lines / levelStep)`, and each
+   * level multiplies the seconds-per-drop by `LEVEL_GRAVITY_FACTOR` — so a
+   * LOWER threshold is a STEEPER difficulty curve.
+   *
+   * ⚠ THIS COMMENT USED TO READ "unused in v1 stepper but reserved for future
+   * scoring", AND IT WAS TRUE. The param was declared, faded, contract-locked,
+   * ranked on the Push card and documented as "gravity speeds up each level" —
+   * and read by nothing: `grep "params\." modtris-state.ts` returned exactly
+   * one consumer, `gravitySecondsPerDrop(params.gravityBpm)`. Half the module's
+   * control surface moved a dial and changed nothing, reachable in two seconds
+   * by a player and by no gate in the repo. Wired here rather than deleted
+   * because deleting is the larger contract change (a param row, a docs entry,
+   * a Push slot and an orphan key in every saved patch) and because the docs
+   * already promised this behaviour.
+   */
   levelStep: number;
+}
+
+/**
+ * Seconds-per-drop multiplier applied ONCE PER LEVEL. 0.85 means each level is
+ * ~18 % faster than the one below it, so at the default `levelStep = 10` a run
+ * reaching 50 lines is dropping at ~2.3x its opening rate.
+ *
+ * ⚠ IT IS A RATIO RATHER THAN A SUBTRACTION on purpose: `gravityBpm` spans
+ * 30..240 on a LOG curve, so a fixed seconds-per-level decrement would be
+ * imperceptible at 30 BPM and would hit the floor within two levels at 240.
+ */
+export const LEVEL_GRAVITY_FACTOR = 0.85;
+
+/** Floor on the ramp, so a long run cannot drive the drop interval below one
+ *  scheduler tick and turn gravity into a per-tick free-fall. */
+export const MIN_SECONDS_PER_DROP = 0.05;
+
+/** The difficulty level a given line count reaches at a given threshold. The
+ *  ONE definition; the stepper, the docs and the surfaces all read it. */
+export function levelForLines(lines: number, levelStep: number): number {
+  const step = Math.max(1, Math.floor(levelStep));
+  return Math.max(0, Math.floor(lines / step));
 }
 
 export interface ModtrisState {
@@ -140,6 +177,10 @@ export interface ModtrisState {
   queue: PieceKind[];
   /** Total lines cleared this game. */
   lines: number;
+  /** Difficulty level, `floor(lines / levelStep)` at the moment of the last
+   *  step. Derived rather than accumulated, so it cannot drift out of step
+   *  with `lines` and it re-derives immediately when the LVL fader moves. */
+  level: number;
   /** Internal accumulator for gravity. When it ≥ 1 cell-worth of seconds,
    *  the piece falls one row and the accumulator decrements by that interval. */
   gravityAccumSeconds: number;
@@ -181,6 +222,7 @@ export function initModtrisState(opts: { rng?: Rng } = {}): ModtrisState {
     piece: null,
     queue: refillQueueIfNeeded([], rng),
     lines: 0,
+    level: 0,
     gravityAccumSeconds: 0,
     events: emptyEvents(),
     tick: 0,
@@ -320,11 +362,18 @@ function hardDropAndLock(well: Uint8Array, piece: ActivePiece): {
   return clearLines(lockedWell);
 }
 
-/** Convert gravity (drops per minute) to seconds per drop. */
-function gravitySecondsPerDrop(gravityBpm: number): number {
+/**
+ * Convert gravity (drops per minute) to seconds per drop AT A GIVEN LEVEL.
+ *
+ * ⚠ `level` IS THE HALF THAT USED TO BE MISSING. The function took `gravityBpm`
+ * alone, which is why `levelStep` was a dead control and why `docs.controls`
+ * described a difficulty ramp the module did not have.
+ */
+export function gravitySecondsPerDrop(gravityBpm: number, level = 0): number {
   // Guard against zero / negative (faders clamp but tests can pass arbitrary).
   const bpm = Math.max(1, gravityBpm);
-  return 60 / bpm;
+  const lvl = Math.max(0, Math.floor(level));
+  return Math.max(MIN_SECONDS_PER_DROP, (60 / bpm) * LEVEL_GRAVITY_FACTOR ** lvl);
 }
 
 /** Step the state forward by `dtSeconds`, applying input edges + gravity. */
@@ -395,6 +444,7 @@ export function stepModtrisState(
       piece,
       queue,
       lines,
+      level: levelForLines(lines, params.levelStep),
       gravityAccumSeconds,
       events,
       tick: prev.tick + 1,
@@ -404,7 +454,15 @@ export function stepModtrisState(
   // 4. Gravity. Drop one row per `secondsPerDrop`; if it would collide,
   //    lock the piece + clear lines instead. May drop multiple cells in
   //    a single step if dtSeconds > secondsPerDrop (long gaps, paused tabs).
-  const secondsPerDrop = gravitySecondsPerDrop(params.gravityBpm);
+  //
+  // ⚠ THE LEVEL IS RE-DERIVED FROM THE LINE COUNT ON EVERY STEP, not carried,
+  // so moving the LVL fader mid-game re-prices the ramp on the very next tick
+  // instead of on the next level-up. That is what makes the control LIVE — the
+  // same property `gravityBpm` already had and the reason both rank.
+  const secondsPerDrop = gravitySecondsPerDrop(
+    params.gravityBpm,
+    levelForLines(lines, params.levelStep),
+  );
   while (piece && gravityAccumSeconds >= secondsPerDrop) {
     const moved = tryMove(well, piece, 0, 1);
     gravityAccumSeconds -= secondsPerDrop;
@@ -429,6 +487,7 @@ export function stepModtrisState(
     piece,
     queue,
     lines,
+    level: levelForLines(lines, params.levelStep),
     gravityAccumSeconds,
     events,
     tick: prev.tick + 1,

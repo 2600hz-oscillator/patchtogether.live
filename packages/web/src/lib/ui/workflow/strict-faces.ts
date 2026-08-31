@@ -4969,6 +4969,66 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // route to, since `hasVideoSurface` is `domain === 'video'`).
   'frogger',
 
+  // ── MODTRIS — frogger's topology, one harder pin, and a DEAD CONTROL that
+  //    had to be answered before the rank could be honest ──────────────────
+  //
+  // ⚠ HALF THIS MODULE'S CONTROL SURFACE DID NOTHING, AND THE FACE IS WHAT
+  // FORCED THE ISSUE. `levelStep` was declared, faded, contract-locked, ranked
+  // on the Push card and documented as "how many cleared lines it takes to
+  // advance a level and ramp the difficulty (gravity speeds up each level)" —
+  // and read by NOTHING: `modtris-state.ts`'s own type comment said "unused in
+  // v1 stepper", `grep "params\." modtris-state.ts` returned one consumer
+  // (`gravitySecondsPerDrop(params.gravityBpm)`), and `ModtrisState` had no
+  // `level` field for a threshold to threshold. A face cannot rank a control it
+  // knows is inert without baking the defect into the UI, so this PR WIRES the
+  // ramp (`level = floor(lines / levelStep)`, seconds-per-drop x 0.85 per level,
+  // floored at 50 ms) and the docs become true. Deleting was the other honest
+  // answer and is the LARGER contract change: a param row, a docs entry, a Push
+  // slot and an orphan key in every saved patch.
+  //
+  // ⚠ AND THE THING PROMOTION REPLACES IS A BLANK TILE, NOT A CARD. modtris is
+  // not in `NON_SHELL_LANE_TYPES`, is not a `CARD_PRODUCER` and is not in
+  // `HEADLESS_MOUNT_LANE_TYPES`, so `laneRenderKind` already returned
+  // 'placeholder' and the shipping shell mounted NO modtris surface at all
+  // while the game ran and fired gates underneath. Every modtris e2e drove
+  // `?shell=legacy` (and the shared `rack` fixture is `?shell=legacy` by
+  // construction), so nothing in the suite had ever observed it. That is the
+  // REASON to promote, not a cost of promoting. The inventory `why` that called
+  // it "a falling-block viewport played on the keyboard, with two faders beside
+  // it" was wrong on BOTH clauses — `ModtrisCard.svelte` registers no key
+  // handler of any kind (five gate inputs are the whole input surface) and the
+  // comparison was never face-vs-card but face-vs-grey. Corrected in this diff.
+  //
+  // The well moves to a `fullViewBody` extension (the `rasterize` / `frogger`
+  // shape — an audio-domain module with a JS-painted picture the shell has no
+  // generic route to, since `hasVideoSurface` is `domain === 'video'`).
+  //
+  // ⚠ ITS VRT EXEMPTION STATED NO EXIT CONDITION, unlike frogger's, so leaving
+  // both exemption lists here is a JUDGEMENT rather than a discharge — and it is
+  // made on a seam that is strictly HARDER than frogger's. frogger has no RNG at
+  // all, so a tick count alone made its board a pure function of (ticks,
+  // params); modtris has a 7-bag Fisher-Yates shuffle, so the pin is a SEED
+  // (`__modtrisVrtSeed`) *and* a tick budget (`__modtrisVrtTicks`), stepped at
+  // construction and then never ticked again.
+  //
+  // ⚠ THIS PROMOTION EMPTIES `AUDIO_OPERABLE_FIXTURE`, AND THAT IS THE DESIGNED
+  // END STATE RATHER THAN A COVERAGE GAP. modtris is its only remaining member
+  // (audioIn, the one other candidate, is DENIED for getUserMedia), so
+  // `deriveFixture` now returns `migration-complete` and
+  // `workflow-shell.spec.ts`'s "the verbatim legacy card is OPERABLE in the dock
+  // full view" leg SKIPS BY NAME — green, and no longer running. Named in the PR
+  // body because skips are not passes.
+  //
+  // ⚠ AND IT IS DELIBERATELY NOT REPAIRED. `deriveFixture`'s own
+  // `migration-complete` text offers "re-point it at a purpose-built fixture
+  // module that is deliberately never promoted"; the owner ruled that branch out
+  // on 2026-08-31 — every module gets migrated, `toybox` and DOOM included, and
+  // then the legacy-card path goes away entirely. So this leg is not something to
+  // keep alive with a durable un-migrated subject or a widened `mountsAFader`
+  // predicate: it tests the placeholder/legacy-card machinery, and it is deleted
+  // along with that machinery in LEG-08/09. Nothing is added here to postpone it.
+  'modtris',
+
   // ── score ─────────────────────────────────────────────────────────────────
   //
   // THE SHEET-MUSIC SEQUENCER. Every other sequencer in this repo asks you to

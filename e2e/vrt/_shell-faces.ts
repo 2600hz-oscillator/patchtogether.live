@@ -4484,6 +4484,95 @@ export const FACES = [
     ],
   },
 
+  // ── MODTRIS — frogger's topology with the pin frogger did not need ───────
+  //
+  // ⚠ THE TWO SCENES ON THIS MODULE HAVE COMPLETELY DIFFERENT DETERMINISM
+  // ARGUMENTS, exactly as frogger's and pong's do, and conflating them is how a
+  // scene ends up pinned by nothing.
+  //
+  //   COMPACT has NO PICTURE AT ALL and is deterministic for free. Both outputs
+  //     are `type: 'gate'`, so `primaryAudioOutPortId` is null, every glyph
+  //     literal but `'none'` resolves `{kind:'static'}` and the face declares
+  //     `glyph: 'none'`. `hasVideoSurface` is `domain === 'video'` and this is an
+  //     AUDIO def, so there is no `VideoTileThumb` either. The tile is TWO
+  //     FADERS. ⚠ If `ShellExtensionGlyphProps` ever gains a `nodeId`, THIS
+  //     SCENE NEEDS THE DOCK SCENE'S TREATMENT and not this paragraph — the same
+  //     conditional frogger's and pong's compact entries carry, and for the same
+  //     mechanical reason (a glyph component today cannot resolve a graph node,
+  //     so it cannot reach `eng.read(node, 'snapshot')`).
+  //
+  //   DOCK carries the LIVE WELL — the module's `fullViewBody` extension
+  //     painting `drawModtris` every rAF off the game snapshot — and is not
+  //     deterministic by any amount of settling. It needs the pin below.
+  //
+  // ⚠ NO `videoFaceWhy`. That field does two things: it boots into the VIDEO
+  // ZONE instead of a channel column, and it turns on `freezeFaceVideo`, which
+  // WRITES `params.freeze`. modtris declares no `freeze` param, so that write
+  // would invent an undeclared key and the assertion after it would be measuring
+  // a freeze that never happened — the `timelorde` hazard, verbatim. The channel
+  // column is reachable on the ordinary path regardless of port shape (column
+  // membership is decided by DROP POSITION), and the pin below makes the well
+  // time-invariant, so there is nothing left for a video freeze to do.
+  //
+  // ⚠ AND NO `freeze` ParamDef EITHER, on this file's own measured rule
+  // (2026-08-25): a `params` edit is in contract-lock (and in the WebGL attest
+  // basis for a def that is in it), so it costs a contract re-pin and buys only
+  // INTRA-boot stillness — it holds whichever frame the harness caught, a
+  // different frame per boot. modtris is a STATEFUL SIM on the MAIN THREAD,
+  // which is precisely the case this file says takes a `simPin` on the module's
+  // OWN seam.
+  {
+    type: 'modtris',
+    // ONE band, TWO controls. `order` and `pages` agree; both params answer the
+    // same question (how hard is this game) and a rail needs
+    // DOCK_TAB_MIN_BANDS = 7, so nothing is padded to reach one.
+    pages: 1,
+    simPin: [
+      {
+        global: '__modtrisVrtSeed',
+        value: 0x4d54,
+        why:
+          'pins WHICH 7-BAG, which frogger did not need and modtris cannot do without. '
+          + '`refillQueueIfNeeded` (modtris-state.ts) runs a Fisher-Yates shuffle off '
+          + '`opts.rng ?? Math.random`, so without a seed the piece sequence — and therefore the '
+          + 'stack, the colours and the NEXT preview — differs on every boot no matter how many '
+          + 'ticks are pinned. ⚠ THE SEED ALONE IS NOT SUFFICIENT AND THAT IS MEASURED ON THE '
+          + 'SIBLING WITH THIS TOPOLOGY: pong drifted 72 differing pixels at max channel delta '
+          + '237 across two ubuntu boots WITH a seed, because a seed fixes which trajectory and '
+          + 'cannot fix how far along it the capture landed. See __modtrisVrtTicks below; the '
+          + 'two are ONE pin in two halves and neither works alone. ⚠ It REACHES this factory '
+          + 'only because modtris is main-thread: simPin installs boot-time globals via '
+          + 'addInitScript, so a worker renderLocus would put it out of reach (the acidwarp '
+          + 'case). ⚠ THE SAME PAIR PINS THE LEGACY CARD SCENE in vrt-scenes.ts, which is what '
+          + 'let modtris leave EXEMPT_FROM_VRT and ALLOWED_PERMANENT_EXEMPT in this same commit '
+          + '— one hook, three baselines. ⚠ DOOM IS EXCLUDED FROM THIS MECHANISM BY NAME: its '
+          + 'runTic() runs inside surface.draw, so its game clock IS its frame clock and a tick '
+          + 'pin would re-specify the game. No DOOM file was opened.',
+      },
+      {
+        global: '__modtrisVrtTicks',
+        value: 3200,
+        why:
+          'pins WHICH WELL, not merely a still one — the whole game state becomes a function of '
+          + '(seed, ticks, params) rather than of boot speed. The factory rebuilds the state '
+          + 'under mulberry32(seed), steps it exactly this many ticks and then STOPS TICKING '
+          + "ALTOGETHER — lushgarden's and pong's shape, which makes the well TIME-INVARIANT "
+          + 'rather than frozen at an arbitrary moment. That matters more here than almost '
+          + 'anywhere: the game clock is a Web Worker `setInterval` that is NOT gated on the '
+          + 'AudioContext, so the harness audio suspend could never have stopped this game. '
+          + '⚠ 3200 IS A POSITION ON THE GAME\'S TIMELINE, NOT A POPULATION COUNT: 3200 x 25 ms '
+          + '= 80 s of play at the default 60 BPM gravity, and it was COMPUTED from the stepper '
+          + 'rather than picked. Under seed 0x4d54 with nothing patched into the steering inputs '
+          + '(so every gate edge is false and pieces stack in the spawn columns), tick 3200 '
+          + 'leaves 20 LOCKED cells rising to row 11, an L in the NEXT slot and the active piece '
+          + 'mid-fall at row 5 — so the pinned frame differs from the boot frame in the WELL, in '
+          + 'the NEXT preview AND in the falling piece, and cannot be reached by a stepper that '
+          + 'never ran. It also sits several hundred ticks clear of the overfill-and-reset this '
+          + 'seed reaches later, so the frame is not on a cliff.',
+      },
+    ],
+  },
+
   // ── TV LIBRARIAN — a LIVE THIRD-PARTY STREAM that is nevertheless capturable
   {
     type: 'tvLibrarian',

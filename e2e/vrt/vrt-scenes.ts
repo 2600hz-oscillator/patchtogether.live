@@ -680,6 +680,67 @@ export const VRT_SCENES: Record<string, VrtScene> = {
     freezeAudio: true,
   },
 
+  // ── MODTRIS — the CARD scene that let the module leave EXEMPT_FROM_VRT ────
+  //
+  // ⚠ AND UNLIKE FROGGER'S, THIS EXEMPTION NAMED NO EXIT CONDITION. It read
+  // "animated game state defeats deterministic capture; unit + ART + E2E provide
+  // coverage" and nothing more, so leaving it is a judgement made on a built
+  // seam rather than a condition discharged on its own terms.
+  //
+  // ⚠ MODTRIS NEEDS A SEED *AND* A TICK COUNT, WHICH IS WHY THIS IS NOT
+  // FROGGER'S THREE LINES. `refillQueueIfNeeded` runs a 7-bag Fisher-Yates
+  // shuffle off `opts.rng ?? Math.random`, so the tick count alone fixes HOW FAR
+  // the sim ran and not WHICH pieces it ran with — and the seed alone fixes
+  // WHICH trajectory and not how far along it the capture landed (measured on
+  // pong: 72 differing pixels at max channel delta 237 across two ubuntu boots
+  // with a seed and no tick pin).
+  //
+  // ⚠ AND THE PIN SUPPRESSES THE GAME RATHER THAN FREEZING IT, which is strictly
+  // stronger than the audio suspend this scene also performs. The factory
+  // rebuilds the state under `mulberry32(seed)`, steps it exactly this many
+  // ticks, and then never steps again — so the captured well is TIME-INVARIANT,
+  // not "whichever frame the settle happened to reach". (The scheduler clock is
+  // a Web Worker `setInterval` and is NOT gated on the AudioContext, so
+  // `freezeAudio` alone could never have stopped this game.)
+  //
+  // ⚠ SET FROM `afterSpawn`, I.E. AFTER CONSTRUCTION — which the factory
+  // handles, because it reads both globals at construction (the face harness
+  // installs them via `addInitScript`) and once more in the tick (this path). A
+  // construction-only read would leave this scene silently unpinned.
+  modtris: {
+    nodes: [
+      { id: 'vrt-1', type: 'modtris', position: { x: 80, y: 80 }, domain: 'audio' },
+    ],
+    edges: [],
+    afterSpawn: async (page) => {
+      await page.evaluate(() => {
+        const g = globalThis as unknown as {
+          __modtrisVrtSeed?: number; __modtrisVrtTicks?: number;
+        };
+        // ⚠ NEITHER NUMBER IS A POPULATION COUNT. The SEED chooses which 7-bag
+        // the run draws from; the TICKS are a POSITION on the game's own
+        // timeline — 3200 x 25 ms = 80 s of play at the default 60 BPM gravity.
+        // Computed from the stepper rather than picked: under this seed, with
+        // nothing patched into the steering inputs (so every gate edge is
+        // false and pieces stack in the spawn columns), tick 3200 leaves 20
+        // LOCKED cells rising to row 11, an L in the NEXT slot and the active
+        // piece mid-fall at row 5. So the pinned frame differs from the boot
+        // frame in the WELL, in the NEXT preview and in the falling piece's
+        // position, and cannot be reached by a stepper that never ran. It is
+        // also well clear of the overfill-and-reset that this seed reaches
+        // several hundred ticks later, so the frame does not sit on a cliff.
+        g.__modtrisVrtSeed = 0x4d54;
+        g.__modtrisVrtTicks = 3200;
+      });
+      // A few rAFs so the pinned well is painted before the suspend.
+      for (let i = 0; i < 3; i++) {
+        await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => r())));
+      }
+    },
+    settleMs: 300,
+    freezeAudio: true,
+  },
+
   // NIBBLES (snake game module): the game state is RNG-seeded and
   // tick-driven, so the on-card framebuffer evolves frame-to-frame.
   // We set globalThis.__nibblesVrtSeed BEFORE spawning so the factory
