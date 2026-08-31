@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy } from 'svelte';
+  import { onDestroy, untrack } from 'svelte';
   import Canvas from '$lib/ui/Canvas.svelte';
   import AudioGate from '$lib/ui/AudioGate.svelte';
   import { createAudioGate } from '$lib/audio/audio-gate.svelte';
@@ -161,7 +161,9 @@
   // Canvas's effects first run, so the seed happens ONCE, into the doc that
   // survives. `bindRackspace` is idempotent for an unchanged id, so the
   // `$effect` below re-binding on its first run is a no-op.
-  bindRackspace(scratchId);
+  // untrack: this init-time bind WANTS the initial id only — reactivity for a
+  // later scratchId change belongs to the `$effect` below (state_referenced_locally).
+  bindRackspace(untrack(() => scratchId));
 
   // Attach the local replica (when enabled) and flip `seeded` when the seed
   // resolves; re-binds on a scratchId change (File → New rack mints a fresh
