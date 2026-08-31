@@ -25,6 +25,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import { installRenderSmokeHooks } from './_render-smoke';
 import { installMidiOutCapture } from '../_helpers/midi';
+import { BOOT_MS } from '../_helpers/boot-budget';
 
 /** channel-columns.ts geometry (kept in sync with the pure module). */
 const COLUMN_W = 765; // 34 * HP_UNIT(22.5) — wide enough for a 720px tidyvco/sixstrum
@@ -62,7 +63,7 @@ async function waitForPinnedTrio(page: Page): Promise<void> {
       );
     },
     undefined,
-    { timeout: 15_000 },
+    { timeout: BOOT_MS },
   );
 }
 
@@ -76,7 +77,7 @@ async function waitForHooks(page: Page): Promise<void> {
       return typeof w.__setSpawnFlowPos === 'function' && typeof w.__spawnFromPalette === 'function';
     },
     undefined,
-    { timeout: 15_000 },
+    { timeout: BOOT_MS },
   );
 }
 
