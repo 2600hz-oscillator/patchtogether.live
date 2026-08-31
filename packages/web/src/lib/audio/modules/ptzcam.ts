@@ -1,5 +1,7 @@
-// PTZ CAM — CV control of a physical PTZ camera (NexiGo P610) through the
-// native PT-PTZ helper (tools/pt-ptz), which bridges MIDI sysex to UVC.
+// PTZ CAM — CV control of physical PTZ cameras through the native PT-PTZ
+// helper (tools/pt-ptz), which bridges MIDI sysex to UVC. Multi-camera: the
+// helper exposes one MIDI pair per camera (PT-PTZ-<SHORT>); each ptzcam node
+// picks one (saved in node.data.device; default = first PT-PTZ pair).
 //
 // ─────────────────────────── WHY THE AUDIO DOMAIN ───────────────────────────
 // Same argument as chromaconsole verbatim: `meta` has no factory and the
@@ -8,37 +10,47 @@
 // basis. livecode / clockedRunner / chromaconsole are the precedents.
 //
 // ─────────────────────────── WHY NO paramTarget/cvScale ─────────────────────
-// The CV inputs don't modulate a knob — they ARE the camera position, consumed
+// The CV inputs don't modulate a knob — they ARE the camera motion, consumed
 // on the main thread (tap → scheduler tick → sysex), the MIDI-OUT-BUDDY /
 // SKIFREE / PONG shape. Publishing an AudioParam landing pad instead would
 // make the summed value unreadable headless (an AudioParam's connected input
 // is not observable from JS), and the send must run with no card mounted.
-// The pan/tilt/zoom PARAMS are manual trim summed with the CV by this module:
-// value = knob + cv, clamped — knob at default 0 means a patched cable IS the
-// position, the absolute-position semantic ADR-004 gives `center: 'default'`.
+// The pan/tilt/zoom PARAMS are manual trim summed with the CV by this module.
 // The three ports are justified in PASSTHROUGH_BY_DESIGN (cv-scale-registry)
 // and docs/adr/004-cv-range-convention.md.
+//
+// ─────────────────────────── PER-AXIS MODES ─────────────────────────────────
+// The caps handshake reports each axis as ABSOLUTE (value = position: NexiGo
+// P610, all three axes) or VELOCITY (value = rate: Logitech PTZ Pro 2
+// pan/tilt — sign is direction, zero stops, deadzone at rest). A nonzero
+// velocity is re-sent every plan tick as the helper watchdog's keepalive; the
+// helper stops motion on its own ~250 ms after the stream dies, so a crashed
+// page can never leave a head panning mid-set.
 
 import type { AudioModuleDef } from '$lib/audio/module-registry';
+import { patch as livePatch, ydoc } from '$lib/graph/store';
 import { getSchedulerClock, SCHEDULER_TICK_MS } from '$lib/audio/scheduler-clock';
 import { planPtzSend, type PtzPlan, type PtzTargets } from '$lib/audio/ptz-control';
-import { buildSetAbs } from '$lib/audio/ptz-sysex';
+import { buildSetAbs, buildSetVel } from '$lib/audio/ptz-sysex';
 import {
+  acquirePtzBinding,
   connectPtzMidi,
-  getPtzCaps,
-  ptzStatus,
-  sendPtzFrame,
+  listPtzOutputNames,
+  type PtzBinding,
   type PtzStatus,
 } from '$lib/audio/ptz-midi';
 
 /** Ticks between sends: 40 Hz scheduler / 4 = 10 Hz on the wire (≤12 Hz by
- *  design; the helper coalesces again at 30 Hz and the camera's motors are the
- *  real limiter). */
+ *  design; the helper coalesces again at 30 Hz, and 10 Hz comfortably outruns
+ *  the helper's ~250 ms velocity watchdog). */
 const SEND_DECIMATE = 4;
 
 export interface PtzcamCardApi {
   connect(): Promise<void>;
   status(): PtzStatus;
+  listPorts(): string[];
+  selectedPort(): string | null;
+  selectPort(name: string | null): void;
 }
 
 export interface PtzcamState {
@@ -49,6 +61,7 @@ export interface PtzcamState {
   readonly ticks: number;
   readonly sentFrames: number;
   readonly lastSent: PtzTargets | null;
+  readonly lastVel: PtzTargets | null;
 }
 
 export const ptzcamDef: AudioModuleDef = {
@@ -59,7 +72,7 @@ export const ptzcamDef: AudioModuleDef = {
   domain: 'audio',
   label: 'ptz cam',
   category: 'output',
-  maxInstances: 1,
+  maxInstances: 4,
   size: '2u',
   hp: 2,
   inputs: [
@@ -77,37 +90,40 @@ export const ptzcamDef: AudioModuleDef = {
 
   docs: {
     explanation:
-      'Drives a physical PTZ camera (the NexiGo P610) from the patch. It sends MIDI sysex to ' +
-      'the PT-PTZ helper app running on the same machine, which translates into USB camera ' +
-      'control — the camera physically pans, tilts and zooms. The module carries no audio or ' +
-      "video of its own; the camera's picture reaches the rack through a normal camera input. " +
-      'PAN, TILT and ZOOM knobs set the base position; the matching CV inputs ADD to the knob, ' +
-      'so with knobs at default a patched LFO or joystick IS the position and the knobs become ' +
-      'stage trim. Positions are normalized: ±1 spans the full mechanical range reported by the ' +
-      'camera during the bind handshake (pan ±170°, tilt −30°..+90°, zoom 1×–10× on the P610). ' +
-      'SLEW limits how fast the commanded position may move — at 1 it is instant, low values ' +
-      'glide; the camera motors impose their own speed limit on top. Sends are coalesced to ' +
-      '~10 per second and only fire when the position actually changed. The face shows the ' +
-      'live binding state: CONNECT grants MIDI and finds the helper; if the helper is not ' +
-      'running, or the camera is unplugged, the module says exactly that and recovers by ' +
-      'itself when the missing piece appears.',
+      'Drives a physical PTZ camera from the patch. It sends MIDI sysex to the PT-PTZ helper ' +
+      'app running on the same machine, which translates into USB camera control — the camera ' +
+      'physically pans, tilts and zooms. The helper exposes one MIDI pair per connected camera ' +
+      '(PT-PTZ-…); the card picks which camera this module drives, so two modules can run two ' +
+      "cameras. The module carries no audio or video of its own — the camera's picture reaches " +
+      'the rack through a normal camera input. Each axis follows what the camera itself ' +
+      'reports in the bind handshake: an ABSOLUTE axis (NexiGo P610 pan/tilt/zoom, Logitech ' +
+      'zoom) treats knob+CV as a position, ±1 spanning the full mechanical range; a VELOCITY ' +
+      'axis (Logitech PTZ Pro 2 pan/tilt) treats knob+CV as a rate — sign is direction, zero ' +
+      '(with a small deadzone) stops, and the helper halts motion by itself if the app ever ' +
+      'stops streaming, so a dropped page cannot leave the camera panning. PAN, TILT and ZOOM ' +
+      'knobs are the base value; the matching CV inputs ADD to the knob, so with knobs at ' +
+      'default a patched LFO or joystick IS the position (or rate) and the knobs become stage ' +
+      'trim. SLEW rate-limits absolute-axis motion (1 = instant); velocity axes ignore it — ' +
+      'a commanded stop must never be slewed. Sends are coalesced to ~10 per second.',
     inputs: {
       pan_cv:
-        'Pan position CV, ±1 for the full range, added to the PAN knob. With the knob at 0 the cable is the absolute pan position.',
+        'Pan CV, ±1, added to the PAN knob. On an absolute-axis camera the sum is the pan position; on a velocity-axis camera it is the pan rate (sign = direction, near-zero = stop).',
       tilt_cv:
-        'Tilt position CV, ±1 for the full range, added to the TILT knob. With the knob at 0 the cable is the absolute tilt position.',
+        'Tilt CV, ±1, added to the TILT knob. Position on an absolute axis, rate on a velocity axis.',
       zoom_cv:
         'Zoom CV, added to the ZOOM knob; the summed 0..1 spans wide to full telephoto.',
     },
     controls: {
-      pan: 'Base pan position, ±1 across the full mechanical range. CV on pan_cv adds to it.',
-      tilt: 'Base tilt position, ±1 across the full mechanical range. CV on tilt_cv adds to it.',
+      pan: 'Base pan, ±1. Position on an absolute-axis camera, rate on a velocity-axis one. CV on pan_cv adds to it.',
+      tilt: 'Base tilt, ±1. Position on an absolute axis, rate on a velocity axis. CV on tilt_cv adds to it.',
       zoom: 'Base zoom, 0 wide to 1 full telephoto. CV on zoom_cv adds to it.',
-      slew: 'Rate limit on commanded motion, in fractions of full range per second on a square curve; 1 is instant.',
+      slew: 'Rate limit on absolute-axis motion, fractions of full range per second on a square curve; 1 is instant. Velocity axes ignore it.',
     },
   },
 
   async factory(ctx, node) {
+    const nodeId = node.id;
+
     function makeTap() {
       const gain = ctx.createGain();
       const analyser = ctx.createAnalyser();
@@ -133,19 +149,64 @@ export const ptzcamDef: AudioModuleDef = {
       knobs[p.id] = typeof saved === 'number' ? saved : p.defaultValue;
     }
 
+    function readDeviceSelection(): string | null {
+      const live = livePatch.nodes[nodeId];
+      const data = (live?.data as Record<string, unknown> | undefined) ?? {};
+      return typeof data.device === 'string' && data.device !== '' ? data.device : null;
+    }
+    function writeDeviceSelection(name: string | null): void {
+      ydoc.transact(() => {
+        const live = livePatch.nodes[nodeId];
+        if (!live) return;
+        if (!live.data) live.data = {};
+        (live.data as Record<string, unknown>).device = name ?? '';
+      });
+    }
+
+    let binding: PtzBinding | null = null;
+    let bindingSelector: string | null | undefined;
+    // MUTATES binding state — call only from event/tick contexts (the scheduler
+    // tick, a card click), NEVER from a read path: a card $derived evaluates
+    // status()/listPorts(), and acquiring a binding there can bump the version
+    // store mid-derived → Svelte state_unsafe_mutation (measured).
+    function ensureBinding(): PtzBinding {
+      const want = readDeviceSelection();
+      if (!binding || bindingSelector !== want) {
+        binding?.release();
+        binding = acquirePtzBinding(want);
+        bindingSelector = want;
+      }
+      return binding;
+    }
+
+    const IDLE_STATUS: PtzStatus = {
+      kind: 'idle',
+      message: 'Not connected. Connect grants MIDI and finds the PT-PTZ helper.',
+      caps: null,
+      portName: null,
+    };
+    // PURE read of the current binding — safe from any derived.
+    function currentStatus(): PtzStatus {
+      return binding?.status() ?? IDLE_STATUS;
+    }
+
     let plan: PtzPlan | null = null;
     let sentFrames = 0;
     let lastSent: PtzTargets | null = null;
+    let lastVel: PtzTargets | null = null;
     let tickN = 0;
 
     function tick(): void {
       try {
         if (++tickN % SEND_DECIMATE !== 0) return;
-        const status = ptzStatus();
-        const caps = getPtzCaps();
+        const b = ensureBinding();
+        const status = b.status();
+        const caps = b.caps();
         if (status.kind !== 'bound' || !caps) {
           // Re-assert the whole position on the next bind — a restarted helper
           // or replugged camera starts from wherever the head physically is.
+          // Velocity motion is halted by the helper's own watchdog the moment
+          // this loop stops streaming.
           plan = null;
           return;
         }
@@ -157,12 +218,19 @@ export const ptzcamDef: AudioModuleDef = {
         const dtMs = SCHEDULER_TICK_MS * SEND_DECIMATE;
         const next = planPtzSend(plan, targets, caps, dtMs, knobs.slew!);
         plan = next.plan;
+        let sentAny = false;
         for (const send of next.sends) {
-          if (sendPtzFrame(buildSetAbs(send.control, send.value))) {
+          const frame =
+            send.kind === 'abs' ? buildSetAbs(send.control, send.value) : buildSetVel(send.control, send.value);
+          if (b.send(frame)) {
             sentFrames++;
+            sentAny = true;
           }
         }
-        if (next.sends.length > 0) lastSent = next.plan.sent;
+        if (sentAny) {
+          lastSent = next.plan.sent;
+          lastVel = next.plan.sentVel;
+        }
       } catch (err) {
         console.error('[ptzcam] tick error', err);
       }
@@ -170,8 +238,17 @@ export const ptzcamDef: AudioModuleDef = {
     const unsubscribeTick = getSchedulerClock().subscribe(tick);
 
     const cardApi: PtzcamCardApi = {
-      connect: () => connectPtzMidi(),
-      status: ptzStatus,
+      connect: () => {
+        ensureBinding();
+        return connectPtzMidi();
+      },
+      status: currentStatus,
+      listPorts: () => listPtzOutputNames(),
+      selectedPort: () => readDeviceSelection(),
+      selectPort: (name) => {
+        writeDeviceSelection(name);
+        ensureBinding();
+      },
     };
 
     return {
@@ -192,7 +269,7 @@ export const ptzcamDef: AudioModuleDef = {
         if (key === 'card-api') return cardApi;
         if (key === 'state') {
           const state: PtzcamState = {
-            status: ptzStatus().kind,
+            status: currentStatus().kind,
             targets: {
               pan: knobs.pan! + latestSample(taps.pan),
               tilt: knobs.tilt! + latestSample(taps.tilt),
@@ -201,6 +278,7 @@ export const ptzcamDef: AudioModuleDef = {
             ticks: tickN,
             sentFrames,
             lastSent,
+            lastVel,
           };
           return state;
         }
@@ -208,6 +286,10 @@ export const ptzcamDef: AudioModuleDef = {
       },
       dispose() {
         unsubscribeTick();
+        // release() at refcount zero sends STOP_ALL — no head keeps moving
+        // because its module was deleted.
+        binding?.release();
+        binding = null;
         for (const tap of Object.values(taps)) {
           try {
             tap.silence.stop();

@@ -127,6 +127,11 @@ async function timelordeBpmEnvelope(
 }
 
 test.describe('TEMPOLOCK — tracked clock through the real patch seams', () => {
+  // UN-PARKED (#1847) — this is the un-park `main`'s park note pointed at. The
+  // park's two observations (runs 33289422851 shard 9, 33290095701 shard 10)
+  // were the same load-sensitivity signature root-caused below: a correct,
+  // still-converging tracker truncated by a flat poll cap, and by Playwright's
+  // 30s default test cap racing it.
   test('folds a 216-edge/min onset train to 108 and TIMELORDE follows the tracked tempo', async ({ page }) => {
     // ⚠ Without this, the CI-aware poll caps below are DEAD CODE: the config
     // sets no per-test timeout, so Playwright's default 30s cap fires first.

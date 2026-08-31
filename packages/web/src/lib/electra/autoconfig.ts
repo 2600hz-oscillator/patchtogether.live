@@ -21,6 +21,7 @@
 import type { GeneratedPreset, ElectraAllocation } from './types';
 import { ElectraBroker, electraBroker, type CcEvent, type NoteEvent } from './broker';
 import { generatePreset, emitPresetJson, type PresetGenInput } from './preset';
+import { isSuspectSysexEnv } from './transport-gate';
 import { FeedbackPump, type FeedbackDeps } from './feedback';
 import { cc7ToValue } from './curve';
 import { TapTempo } from './tap-tempo';
@@ -106,6 +107,9 @@ export class ElectraAutoconfig {
       primeDelaysMs?: readonly number[];
       /** Timer impl (injectable for tests); defaults to global setTimeout. */
       scheduler?: (fn: () => void, ms: number) => ReturnType<typeof setTimeout>;
+      /** UA string for the transport gate (injectable for tests); defaults to
+       *  `navigator.userAgent`. */
+      uaOverride?: string;
     } = {},
   ) {
     this.schedule = opts.scheduler ?? ((fn, ms) => setTimeout(fn, ms));
@@ -123,8 +127,28 @@ export class ElectraAutoconfig {
       return { ok: false, isElectra: false, reason: 'no-midi-access' };
     }
     const id = await this.broker.identify(this.opts.identifyTimeoutMs);
-    // Even if identity didn't confirm (some firmwares are slow), proceed with
-    // upload — the user explicitly asked to configure THIS device.
+
+    // THE TRANSPORT GATE (2026-08-29, see transport-gate.ts): the identity
+    // probe is non-mutating, and a FRAMED reply proves the pipe end-to-end —
+    // so a framed reply always proceeds, whatever the UA says. With NO reply,
+    // refuse before anything mutating goes out when either
+    //   (a) the environment is the named broken one (macOS + Chromium-152)
+    //       AND an Electra port is actually present (a suspect browser with
+    //       no device plugged in is just a browser with no device), or
+    //   (b) Electra manufacturer bytes already arrived OUTSIDE a well-formed
+    //       F0…F7 frame — conclusive corruption, any version.
+    // Every other silent case keeps the pre-gate behavior (slow firmwares
+    // exist; the user explicitly asked to configure THIS device) — the gate
+    // must never widen into "silence anywhere refuses the flash".
+    if (!id.isElectra) {
+      const ua =
+        this.opts.uaOverride ??
+        (typeof navigator !== 'undefined' ? navigator.userAgent : '');
+      const suspectEnv = isSuspectSysexEnv(ua) && this.broker.hasElectraDevice();
+      if (suspectEnv || this.broker.sawMangledElectraSysex()) {
+        return { ok: false, isElectra: false, reason: 'browser-sysex-regression' };
+      }
+    }
 
     const gen = generatePreset(this.host.buildGenInput());
     this.generated = gen;

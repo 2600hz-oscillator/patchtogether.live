@@ -2520,7 +2520,7 @@ posterbox out out video
 posterbox param depth 0..4 discrete default=2
 posterbox param dither 0..1 linear default=0
 posterbox param mix 0..1 linear default=1
-ptzcam meta domain=audio maxInstances=1
+ptzcam meta domain=audio maxInstances=4
 ptzcam in pan_cv cv
 ptzcam in tilt_cv cv
 ptzcam in zoom_cv cv

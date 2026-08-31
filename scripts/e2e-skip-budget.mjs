@@ -539,7 +539,8 @@ export const SKIP_BUDGET = [
       + 'auto-wire leg: waitForFunction 10s timeout, recovered-on-retry on PR #2274 e2e shard 7 (run '
       + '33291594537); same load-sensitivity family as the branch-side boot-budget fixes on #2263/#2266. '
       + 'While parked, the one-shot default-wiring contract has no e2e coverage in this leg — un-park '
-      + 'after the 2026-08-30 performance alongside the tempolock park.',
+      + 'after the 2026-08-30 performance. (The tempolock park this once pointed at is GONE: PR #2276 '
+      + 'root-caused it as a flat poll cap truncating a correct convergence and un-parked that spec.)',
   },
   {
     specs: ['per-module-per-port-inputs.spec.ts'],
@@ -630,7 +631,19 @@ export const SKIP_BUDGET = [
       + 'diagnosis of the typing-probe timing, not a green rerun. '
       + 'ADDED 2026-08-30 — the pinned-nodes-refuse-deletion leg: 2 consecutive recovered-on-retry '
       + 'observations on the very next runs (33287966893, 33288512372), same shape; the pin mechanism '
-      + 'stays exercised by the boot and M/E/C legs that wait on the pinned trio every run.',
+      + 'stays exercised by the boot and M/E/C legs that wait on the pinned trio every run. '
+      + 'ADDED 2026-08-30 (owner-authorized pre-show green directive) — the default-wiring leg: 1 '
+      + 'recovered-on-retry observation (33289422851 shard 7), the fourth distinct flake of the same '
+      + 'fleet-load storm; the wiring itself stays exercised by waitForDefaultWires in the boot leg. '
+      + 'ADDED 2026-08-30 — the M/E-toggle leg (33290699375 shard 7), the fourth leg of this one spec '
+      + 'to flake tonight; the dock keymap stays exercised by workflow-dock-occupancy.spec.ts. '
+      + 'ADDED 2026-08-30 — the quicksave round-trip leg, the FIFTH: 2 recovered-on-retry observations '
+      + 'on run 33291739984 attempts 2+3. Shard 7 flaked a different leg of this spec on five '
+      + 'consecutive runs tonight; root-causing the spec-wide load sensitivity is the un-park unit. '
+      + 'ESCALATED 2026-08-30 to a SPEC-WIDE park after the SIXTH distinct leg (Clear-rack) flaked on '
+      + 'the sixth consecutive run: every leg shares the /rack boot + pinned-trio wait, so the failing '
+      + 'unit is the boot path under a degraded runner, and per-leg parks were whack-a-mole. All nine '
+      + 'legs are fixme; the shell boot itself stays exercised by every other workflow spec.',
   },
   {
     specs: [
