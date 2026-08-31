@@ -360,6 +360,43 @@ export interface SeqtrisStep {
   readonly events: readonly SeqtrisEvent[];
 }
 
+/**
+ * Collapse the notes of ONE clock pulse down to the one that is actually heard.
+ *
+ * ⚠ WHY THIS IS NOT COSMETIC. A single pulse can produce several note events —
+ * a queued player move applies, then gravity falls, and both happen at the same
+ * instant on the game clock. Scheduled at the same audio time, the later write
+ * simply replaces the earlier one, so only the last was ever audible. Leaving
+ * the earlier ones in would make the module COUNT notes it never played, which
+ * is the shape of a metric that reads healthy while the instrument is wrong.
+ *
+ * A TIE is a delimiter rather than a note: it occupies a real span of time (a
+ * hard drop's chord is held for a gravity step), so a note before a tie and a
+ * note after it are two genuinely separate sounds and both survive.
+ *
+ * Gate events (`spawn`, `line`, `gameover`) are never collapsed — they are
+ * different ports and they all really happened.
+ */
+export function coalesceSeqtrisNotes(
+  events: readonly SeqtrisEvent[],
+): readonly SeqtrisEvent[] {
+  const out: SeqtrisEvent[] = [];
+  let heldNote: SeqtrisEvent | null = null;
+  for (const ev of events) {
+    if (ev.kind === 'note') {
+      heldNote = ev; // a later note in the same span wins
+      continue;
+    }
+    if (ev.kind === 'tie' && heldNote !== null) {
+      out.push(heldNote);
+      heldNote = null;
+    }
+    out.push(ev);
+  }
+  if (heldNote !== null) out.push(heldNote);
+  return out;
+}
+
 /** The default seed. Fixed rather than random so a fresh SEQTRIS always opens
  *  on the same piece sequence — which is what makes the e2e and the unit suite
  *  able to name a piece, and is friendly rather than surprising in a game. */

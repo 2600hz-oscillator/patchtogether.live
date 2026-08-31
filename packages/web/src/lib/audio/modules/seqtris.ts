@@ -62,6 +62,7 @@ import type { LaunchpadPort } from '$lib/control/launchpad/launchpad-device.svel
 import {
   applyInput,
   clockPulse,
+  coalesceSeqtrisNotes,
   createSeqtrisState,
   divisorLadder,
   renderBoard,
@@ -85,6 +86,11 @@ const GATE_GAP_SEC = 0.002;
 const LOOKAHEAD_SEC = 0.01;
 /** Fallback pulse period before two clock edges have been seen. */
 const DEFAULT_PULSE_SEC = 60 / 90 / 8; // 90 bpm at 8 pulses per beat
+/** Ceiling on latched presses awaiting a clock pulse (QUANT on CLOCK). A clock
+ *  that stops while someone keeps pressing must not grow an unbounded queue
+ *  that then replays a minute of input at once; the OLDEST are dropped, so the
+ *  most recent intent is what survives. */
+const PENDING_MAX = 16;
 
 export interface SeqtrisSnapshot {
   /** Row-major length-64 board INCLUDING the falling piece. */
@@ -373,7 +379,7 @@ export const seqtrisDef: AudioModuleDef = {
     function applyNow(input: SeqtrisInput, at: number): void {
       const step = applyInput(state, input);
       state = step.state;
-      emit(step.events, at);
+      emit(coalesceSeqtrisNotes(step.events), at);
     }
 
     function press(input: SeqtrisInput): void {
@@ -381,6 +387,7 @@ export const seqtrisDef: AudioModuleDef = {
       // that nothing will ever release is a dead module, not a quantized one.
       if (knobs.quantize! >= 0.5 && clockPatched()) {
         pending.push(input);
+        while (pending.length > PENDING_MAX) pending.shift();
         return;
       }
       applyNow(input, ctx.currentTime + LOOKAHEAD_SEC);
@@ -403,11 +410,22 @@ export const seqtrisDef: AudioModuleDef = {
       for (let i = 0; i < edges; i++) {
         const at = now + LOOKAHEAD_SEC + i * spread;
         clockPulses++;
-        // Player input first, then gravity — the ordinary Tetris frame order.
-        while (pending.length > 0) applyNow(pending.shift()!, at);
-        const step = clockPulse(state);
-        state = step.state;
-        emit(step.events, at);
+        // ⚠ ONE BATCH PER PULSE, coalesced. Player input first, then gravity —
+        // the ordinary Tetris frame order — but every one of those movements
+        // lands on the SAME audio instant, so only the piece's FINAL position
+        // is ever heard. `coalesceSeqtrisNotes` drops the notes that were
+        // overwritten rather than scheduling (and counting) sounds nobody can
+        // hear; the gates it leaves alone, because those really did all happen.
+        const batch: SeqtrisEvent[] = [];
+        while (pending.length > 0) {
+          const step = applyInput(state, pending.shift()!);
+          state = step.state;
+          batch.push(...step.events);
+        }
+        const gravity = clockPulse(state);
+        state = gravity.state;
+        batch.push(...gravity.events);
+        emit(coalesceSeqtrisNotes(batch), at);
       }
       changed();
     }

@@ -21,6 +21,7 @@ import {
   applyInput,
   cellIndex,
   clockPulse,
+  coalesceSeqtrisNotes,
   createSeqtrisState,
   divisorForLines,
   divisorLadder,
@@ -709,6 +710,60 @@ describe('determinism', () => {
       seen = state.piece!.id;
     }
     expect(seen).not.toBe(first);
+  });
+});
+
+// ────────────────────────── one pulse, one note ──────────────────────────
+
+describe('coalesceSeqtrisNotes — a clock pulse produces ONE audible note', () => {
+  const note = (midi: number): SeqtrisEvent =>
+    ({ kind: 'note', midi, row: 0, col: 0, cause: 'move' }) as SeqtrisEvent;
+
+  it('keeps only the LAST note of a batch — the earlier ones are overwritten at the same instant', () => {
+    const out = coalesceSeqtrisNotes([note(60), note(72), note(84)]);
+    expect(out).toHaveLength(1);
+    expect((out[0] as { midi: number }).midi).toBe(84);
+  });
+
+  it('never drops a gate — those are different ports and all really happened', () => {
+    const out = coalesceSeqtrisNotes([
+      note(60),
+      { kind: 'line', row: 7 },
+      { kind: 'line', row: 6 },
+      { kind: 'spawn', piece: 'i' },
+      note(72),
+    ]);
+    expect(out.filter((e) => e.kind === 'line')).toHaveLength(2);
+    expect(out.filter((e) => e.kind === 'spawn')).toHaveLength(1);
+    expect(out.filter((e) => e.kind === 'note')).toHaveLength(1);
+  });
+
+  it('a TIE splits the batch — a note before it and a note after it are two real sounds', () => {
+    const out = coalesceSeqtrisNotes([
+      note(60),
+      { kind: 'tie', midis: [59, 57] },
+      note(72),
+    ]);
+    expect(out.map((e) => e.kind)).toEqual(['note', 'tie', 'note']);
+    expect((out[0] as { midi: number }).midi).toBe(60);
+    expect((out[2] as { midi: number }).midi).toBe(72);
+  });
+
+  it('is a no-op on a batch that has nothing to collapse', () => {
+    const batch: SeqtrisEvent[] = [{ kind: 'spawn', piece: 't' }, note(60)];
+    expect(coalesceSeqtrisNotes(batch)).toEqual(batch);
+  });
+
+  it('is total on an empty batch', () => {
+    expect(coalesceSeqtrisNotes([])).toEqual([]);
+  });
+
+  it('a real drop batch keeps its tie AND the following spawn note', () => {
+    const state = createSeqtrisState({ seed: 6, baseDivisor: 8 });
+    const out = coalesceSeqtrisNotes(applyInput(state, 'drop').events);
+    expect(out.filter((e) => e.kind === 'tie')).toHaveLength(1);
+    expect(out.filter((e) => e.kind === 'note')).toHaveLength(1);
+    expect(out.filter((e) => e.kind === 'spawn')).toHaveLength(1);
   });
 });
 
