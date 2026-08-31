@@ -78,6 +78,52 @@ async function injectPatch(
   );
 }
 
+/** Wait until the VIDEO ENGINE has materialized `id`'s live node handle.
+ *
+ *  ⚠ THE DOM NODE IS NOT THE READINESS SIGNAL FOR THE ENGINE SEAM. `injectPatch`
+ *  waits for `.svelte-flow__node[data-id=…]`, which paints as soon as the
+ *  snapshot bus hands the doc write to Svelte. The node HANDLE is minted on a
+ *  different scheduler: the reconciler wakes on `queueMicrotask`, then `await`s
+ *  `engine.addNode` per node, which runs the module's GL factory (shader
+ *  compile + FBO alloc — the expensive half under SwiftShader). Those two
+ *  schedulers are not ordered with respect to each other, so "the card is on
+ *  screen" says nothing about "the handle exists".
+ *
+ *  Measured: CI run 33399746547, e2e shard 3/12, commit 09143ccb5. The DOM wait
+ *  returned at t+6006 ms and this test's `getNodeHandle('bd')` ran at t+6384 ms
+ *  — 378 ms later, still null → `live handle reachable` false, green on retry.
+ *  The trace carries no `[reconciler] skipping node` warning and no console
+ *  error, so the factory did not fail; it simply had not run yet.
+ *
+ *  The other two tests in this file never touch the engine (they assert chrome
+ *  and doc state) and they call `openFace`, whose centre/measure/click sequence
+ *  incidentally spends seconds first — which is exactly why only this one went
+ *  red. Readiness belongs at the seam under test, so this waits on the handle
+ *  itself. The timeout only BOUNDS the failure; the handle's existence defines
+ *  the wait.
+ *
+ *  INSTRUMENT CHECK (so this is not a wait that never waits): probing the handle
+ *  at this exact point, five local runs in a row, reported ABSENT on four of
+ *  them. The pre-fix version passed locally only because the two `page.evaluate`
+ *  round trips it made first (twiddle + readNode) happened to cover the gap. */
+async function waitForVideoHandle(page: Page, id: string): Promise<void> {
+  await page.waitForFunction(
+    (nodeId) => {
+      const w = globalThis as unknown as {
+        __engine?: () => { getDomain: (d: string) => { getNodeHandle: (id: string) => unknown } };
+      };
+      try {
+        return w.__engine?.().getDomain('video').getNodeHandle(nodeId) != null;
+      } catch {
+        // getDomain throws until the video domain is registered at engine boot.
+        return false;
+      }
+    },
+    id,
+    { timeout: SLOW_RENDER ? 60_000 : 15_000 },
+  );
+}
+
 async function gotoShell(page: Page): Promise<void> {
   await page.goto('/rack');
   await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: 30_000 });
@@ -258,6 +304,11 @@ test.describe('backdraft PANIC', () => {
 
   test('the panic GATE fires the same reset (deterministic bridge-replay seam)', async ({ page }) => {
     test.setTimeout(CASE_MS);
+    // The seam this test drives is the LIVE HANDLE, so wait for the handle —
+    // not for the card that paints on a different scheduler. See
+    // waitForVideoHandle for the run that proved the difference.
+    await waitForVideoHandle(page, NODE);
+
     await twiddle(page);
     expect((await readNode(page)).params.zoom, 'fixture twiddled (doc units)').toBe(1.5);
 
