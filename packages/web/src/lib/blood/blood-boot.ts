@@ -6,7 +6,9 @@
 // ⚠ WHY THIS FILE EXISTS, AND IT IS THE SHARPEST CASE OF THE `livecode` SHAPE
 // IN THE FLEET. `extras.ensureLoaded()` is what turns a BLOOD node from a dark
 // red scanline field into a running Build engine, and until this file landed
-// `BloodCard.svelte:94` was THE ONLY CALLER OF IT IN THE WHOLE TREE. Promotion
+// `BloodCard.svelte` held THE ONLY CALL TO IT IN THE WHOLE TREE (no line number
+// on purpose — that file moved in this very diff, and a citation with an offset
+// in it is stale the moment either file is edited). Promotion
 // is precisely what stops that card rendering on the surfaces a player meets,
 // and blood is in NEITHER half of `HEADLESS_MOUNT_LANE_TYPES` — it owns no
 // media element and it is not a `CARD_PRODUCER` — so nothing mounts the card

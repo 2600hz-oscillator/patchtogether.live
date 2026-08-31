@@ -50,7 +50,7 @@
 import { test, expect } from './_fixtures';
 import { type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
-import { SLOW_BOOT_TEST_TIMEOUT_MS } from '../_helpers/boot-budget';
+import { BOOT_MS, SLOW_BOOT_TEST_TIMEOUT_MS } from '../_helpers/boot-budget';
 
 const BLOOD_ID = 'blood-aud';
 const SCOPE_ID = 'scope-aud';
@@ -84,7 +84,27 @@ async function readScopePeak(page: Page, scopeId: string): Promise<{ peak: numbe
 }
 
 test('BLOOD audio_l → SCOPE: the game-audio mixer produces audible signal in-game', async ({ page }) => {
-  test.setTimeout(90_000);
+  // ⚠ THE CEILING IS DERIVED, AND THE RE-POINT IS WHY IT MOVED — measured on a
+  // RED run, not raised on suspicion. CI run 33435725342, e2e shard 5/12: this
+  // test failed BOTH attempts with `Test timeout of 90000ms exceeded`, and its
+  // own log line had ALREADY printed a healthy result on each
+  // (`peak=0.6976` / `peak=0.7599` against a 0.01 floor). So the assertion was
+  // reached and would have passed; the flat 90 s guillotine came down on the way
+  // out.
+  //
+  // ⚠ THE COST IS A SERIALISATION, NOT A SLOWDOWN, and that is the whole reason a
+  // bump is the honest fix rather than a cover-up. On `?shell=legacy` the card
+  // mounted WITH THE PAGE, so BLOOD's 5.9 MB ASYNCIFY cold boot (20-25 s on a
+  // 2-core SwiftShader VM, per blood-mount.spec.ts's header) overlapped
+  // `waitForLoadState('networkidle')` and `spawnPatch`. On the shipping surface
+  // the body mounts in the DOCK, so that boot cannot begin until the dock is
+  // open — the same work, ~20 s of it moved from concurrent to sequential.
+  //
+  // Expressed as "the existing budget PLUS one cold boot", both from the ONE
+  // export site, so it scales with the renderer instead of being a different
+  // assertion on every runner (#1875/#1906): 90 s + 30 s on CI, 30 s + 15 s
+  // locally. It BOUNDS the failure; nothing here asserts it.
+  test.setTimeout(SLOW_BOOT_TEST_TIMEOUT_MS + BOOT_MS);
   page.on('pageerror', (e) => console.error('pageerror:', e.message));
   // ⚠ THE DEFAULT SHELL — see the header. This is the boot path a player takes,
   // and after the promotion it is the ONLY one that exercises the face's engine
@@ -129,12 +149,13 @@ test('BLOOD audio_l → SCOPE: the game-audio mixer produces audible signal in-g
   // shipping surface. The state is on `data-blood-status`, which is assertable
   // without painting anything.
   //
-  // ⚠ 30 s, up from the 25 s this spec used on the card, and the +5 s is the
-  // ONLY budget this re-point moves: the boot now starts after a dock open
-  // rather than on lane mount, so the same WASM cold boot begins a beat later.
-  // The test's own 90 s ceiling is unchanged.
+  // ⚠ `BOOT_MS`, NOT THE HAND-TYPED 25 s THIS SPEC CARRIED ON THE CARD. What is
+  // being waited for is exactly one cold WASM boot, and `BOOT_MS` is the fleet's
+  // name for that (30 s under SLOW_RENDER, 15 s locally) — so the wait scales
+  // with the renderer rather than meaning something different on every machine.
+  // It exits the instant the body reports ready.
   const ready = await expect
-    .poll(() => frame.getAttribute('data-blood-status'), { timeout: 30_000 })
+    .poll(() => frame.getAttribute('data-blood-status'), { timeout: BOOT_MS })
     .toBe('ready')
     .then(() => true)
     .catch(() => false);

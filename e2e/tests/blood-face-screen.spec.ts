@@ -29,10 +29,12 @@
 // of the exception that caused it.
 //
 // ⚠ NO WALL-CLOCK WAITS DECIDE ANYTHING. Every wait is an auto-retrying
-// `expect` / `expect.poll` on the real subject, and the two in-page samplers
-// count FRAMES. The only wall-clock numbers are BUDGETS, taken from the one
-// export site in `boot-budget.ts`, and they bound a failure rather than gating
-// one.
+// `expect` / `expect.poll` on the real subject, and the in-page sampler
+// (`frameSignatures`) counts FRAMES in ONE evaluate rather than round-tripping
+// per sample — two round trips on the same main thread as the subject cannot
+// tell "frozen" from "never looked". The only wall-clock numbers are BUDGETS,
+// taken from the one export site in `boot-budget.ts`, and they bound a failure
+// rather than gating one.
 
 import { test, expect, type Page } from '@playwright/test';
 import { SLOW_BOOT_TEST_TIMEOUT_MS } from '../_helpers/boot-budget';
