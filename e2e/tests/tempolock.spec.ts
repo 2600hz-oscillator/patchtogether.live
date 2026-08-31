@@ -127,20 +127,18 @@ async function timelordeBpmEnvelope(
 }
 
 test.describe('TEMPOLOCK — tracked clock through the real patch seams', () => {
-  // ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; assertions UNCHANGED. OWNER-AUTHORIZED
-  // (2026-08-30, pre-show): green-for-merge directive. 1 recovered-on-retry observation (run
-  // 33289422851 shard 9) in the same fleet-load storm as the workflow-mode legs. LOST WHILE PARKED:
-  // the octave-fold + TIMELORDE-follow wire proof; the tracker math stays exhaustively pinned by
-  // tempolock-tracker.test.ts. Re-enable on a root cause (#1847) — PR #2276 carries the un-park.
-  test.fixme('folds a 216-edge/min onset train to 108 and TIMELORDE follows the tracked tempo', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 1 recovered-on-retry observation on feat/ptzcam runs to 2026-08-30; owner-authorized pre-show park' } }, async ({ page }) => {
-    // ⚠ Inert while the leg is parked above; kept so the un-park (#2276) does
-    // not silently restore the shape that flaked. Without this, the CI-aware
-    // poll caps below are DEAD CODE: the config sets no per-test timeout, so
-    // Playwright's default 30s cap fires first. Measured (run 33277723925
-    // shard 4): both attempts died at 30.4s/29.9s — the default cap racing the
-    // old flat 25s poll — while the tracker was locked and converging (see the
-    // poll comment). Budget = spawn + the two load-scaled polls + the 6-beat
-    // envelope, with margin.
+  // UN-PARKED (#1847) — this is the un-park `main`'s park note pointed at. The
+  // park's two observations (runs 33289422851 shard 9, 33290095701 shard 10)
+  // were the same load-sensitivity signature root-caused below: a correct,
+  // still-converging tracker truncated by a flat poll cap, and by Playwright's
+  // 30s default test cap racing it.
+  test('folds a 216-edge/min onset train to 108 and TIMELORDE follows the tracked tempo', async ({ page }) => {
+    // ⚠ Without this, the CI-aware poll caps below are DEAD CODE: the config
+    // sets no per-test timeout, so Playwright's default 30s cap fires first.
+    // Measured (run 33277723925 shard 4): both attempts died at 30.4s/29.9s —
+    // the default cap racing the old flat 25s poll — while the tracker was
+    // locked and converging (see the poll comment). Budget = spawn + the two
+    // load-scaled polls + the 6-beat envelope, with margin.
     test.setTimeout(process.env.CI ? 240_000 : 90_000);
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
