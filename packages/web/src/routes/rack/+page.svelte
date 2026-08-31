@@ -115,12 +115,59 @@
   // `scratchSeeded={undefined}` (NOT false) so the ensures run immediately.
   let seeded = $state(false);
 
-  // Bind the singleton store to this device's scratch doc, then (when the
-  // replica is enabled) attach it and flip `seeded` when the seed resolves.
-  // Re-runs on a scratchId change (File → New rack mints a fresh id):
-  // idempotent rebind + a fresh replica. Teardown detaches the replica but
-  // KEEPS the stored data. The `{#key scratchId}` wrapper below remounts Canvas
-  // whenever the id changes so its subscriptions reattach.
+  // ── BIND BEFORE <Canvas> EXISTS, not in an $effect ────────────────────────
+  //
+  // ⚠ THE BIND MUST HAPPEN AT COMPONENT INIT. This used to live only in the
+  // `$effect` below, and Svelte 5 runs a CHILD's effects BEFORE its parent's:
+  // <Canvas> mounted, published `__patch`/`__ydoc`, and ran all four of its
+  // workflow seed effects (pinned trio + P2 surfaces, the MIXMSTRS→AUDIO OUT
+  // default wires, the default videoOut, the recorderbox/synesthesia pair)
+  // against the store's INITIAL module-scope doc — and only then did this
+  // component's effect run `bindRackspace`, which DESTROYS that doc and
+  // installs a fresh empty one. Every seed then had to run a SECOND time
+  // against the real doc, so a fresh /rack boot did the entire shell seed
+  // twice, with a full legacy-card mount of ten modules in between.
+  //
+  // Measured on the preview build, probe = console `[canvas] workflow: ensured
+  // pinned modules` lines stamped with the live `__ydoc.guid`. TWO distinct
+  // guids, one full seed cascade each, on every boot; the gap between them
+  // grows with load (CDP `Emulation.setCPUThrottlingRate`):
+  //
+  //     throttle   seed #1    seed #2     gap    pinned trio visible in __patch
+  //        1x       271 ms     306 ms    35 ms      402 ms
+  //       12x      2719 ms    3142 ms   422 ms     3448 ms
+  //       50x     11494 ms   13176 ms   1.7 s     14593 ms
+  //       90x     21776 ms   26341 ms   4.6 s     29326 ms
+  //
+  // That is the #1847 `workflow-mode.spec.ts` boot flake. `waitForPinnedTrio`
+  // watches `__patch`, which `bindRackspace` correctly re-points at the NEW
+  // doc, so the wait CANNOT be satisfied by the first cascade — only by the
+  // second. All seven observations in the 2026-08-31 census carry exactly that
+  // fingerprint in their Playwright traces: two `ensured pinned modules` lines
+  // 7.7–28.0 s apart, the second landing AFTER the wait had already expired.
+  // CI's gap is much larger than CPU throttling alone reproduces because the
+  // work sitting between the two cascades is a full legacy-card + video-engine
+  // build of ten modules on SwiftShader, with three sibling workers competing
+  // for the same 4 vCPUs — and it is then thrown away and done again. Raising
+  // the bound 10 s → 30 s could not help: the cost being waited on is work the
+  // app should never have done at all.
+  //
+  // Real users never saw it because `replicaEnabled` is true for them, which
+  // makes `scratchSeeded` false and defers the seeds past the bind anyway. It
+  // is reachable only where the replica is off — which is every webdriver run.
+  //
+  // Binding here (module init, before the template instantiates <Canvas>) is
+  // the whole fix: the store's singleton is already the scratch doc when
+  // Canvas's effects first run, so the seed happens ONCE, into the doc that
+  // survives. `bindRackspace` is idempotent for an unchanged id, so the
+  // `$effect` below re-binding on its first run is a no-op.
+  bindRackspace(scratchId);
+
+  // Attach the local replica (when enabled) and flip `seeded` when the seed
+  // resolves; re-binds on a scratchId change (File → New rack mints a fresh
+  // id): idempotent rebind + a fresh replica. Teardown detaches the replica
+  // but KEEPS the stored data. The `{#key scratchId}` wrapper below remounts
+  // Canvas whenever the id changes so its subscriptions reattach.
   //
   // The landing's "Return to last rack" card needs no separate stamp: the
   // persisted scratch id is minted HERE, on mount, so its mere existence is the
