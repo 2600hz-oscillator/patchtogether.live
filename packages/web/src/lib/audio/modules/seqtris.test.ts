@@ -3,9 +3,14 @@
 // the live chain in e2e/tests/seqtris.spec.ts.
 
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, resolve } from 'node:path';
 import { seqtrisDef } from './seqtris';
 import { SEQTRIS_DEFAULT_DIVISOR, divisorLadder } from './seqtris-engine';
 import { isNoteSource } from '$lib/graph/patch-convenience';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 describe('seqtris def shape', () => {
   it('is an audio-domain game module with a factory', () => {
@@ -103,6 +108,32 @@ describe('seqtris def shape', () => {
   it('the BOARD stub SAYS it is a stub — a silent jack with no note about it is a bug report', () => {
     expect(seqtrisDef.docs!.outputs!.board.toLowerCase()).toContain('silent');
   });
+
+  // ── THE ART-LANE IMPORT HAZARD, guarded where it bit ─────────────────────
+  //
+  // `launchpad-device.svelte.ts` declares `$state` at module scope. The ART
+  // harness loads the AUDIO REGISTRY under plain vitest with NO Svelte plugin,
+  // so a VALUE import of that file from anything this def reaches throws
+  // `ReferenceError: $state is not defined` — and it does so while loading three
+  // unrelated CV scenarios, which is where it actually surfaced on this PR. The
+  // device layer arrives through `import()` inside CONNECT instead.
+  //
+  // Scoped to SEQTRIS's own two files on purpose: this is a regression test for
+  // the bug that happened here, not a new repo-wide gate.
+  for (const rel of ['./seqtris.ts', '../seqtris-launchpad.ts']) {
+    it(`${rel} imports the Launchpad device layer lazily, never as a static value`, () => {
+      const src = readFileSync(resolve(__dirname, rel), 'utf8');
+      const statics = [...src.matchAll(/^import\s+(?!type\b)[^;]*?from\s+'([^']+)';/gm)]
+        .map((m) => m[1]!)
+        .filter((spec) => spec.includes('launchpad-device') || spec.includes('launchpad-map'));
+      expect(
+        statics,
+        `${rel} must not statically import a rune-bearing Launchpad module — `
+          + 'the ART lane runs this def with no Svelte compiler. Use `import type`, '
+          + 'or the dynamic import() in seqtris-launchpad.ts connect().',
+      ).toEqual([]);
+    });
+  }
 
   it('declares NO face — the bespoke-surface disposition is deliberate', () => {
     // The well and the eight hardware-ordered controls are the module; two

@@ -22,34 +22,34 @@
 // SECOND SeqTris (the `owner` token below) but it cannot refuse LAUNCHPAD
 // CONTROL, so the docs say plainly: unbind the clip launcher before you play.
 //
+// ── ⚠ THE DEVICE MODULE IS LOADED LAZILY, AND THAT IS A HARD CONSTRAINT ──────
+// `launchpad-device.svelte.ts` declares `let statusVersion = $state(0)` at
+// module scope. A rune only exists once the Svelte compiler has been through
+// the file — and the ART harness runs the AUDIO REGISTRY under plain vitest
+// with no Svelte plugin. A static import here therefore reaches SEQTRIS's def,
+// reaches the registry, and throws `ReferenceError: $state is not defined`
+// while loading three unrelated CV scenarios. (Measured on this PR. The other
+// Launchpad-facing modules dodge it by accident: LAUNCHPAD CONTROL is a META
+// def and OUT TO LAUNCH is a VIDEO def, and the ART harness loads neither.)
+//
+// So: `import type` only at the top — type imports are erased — and the real
+// module arrives through `import()` inside `connect()`, which is a user gesture
+// and already async. Everything device-touching no-ops until it lands, which is
+// exactly the behaviour an unbound module should have anyway.
+//
+// The same constraint rules out `launchpad-map`, which imports the rune file
+// for `emptyFrame`. Its `sceneIndexForCc` is a two-line `indexOf` over
+// `SCENE_CCS`, so it is re-derived below against the CC roster in
+// `launchpad-sysex` — a file with ZERO imports of its own.
+//
 // ── THE CONTROLS (the owner's map, top to bottom on the scene column) ────────
 //   0  reset board      4  rotate left
 //   1  (nothing)        5  rotate right
 //   2  (nothing)        6  move left
 //   3  drop piece       7  move right
-//
-// ⚠ THE SCENE COLUMN HAS TWO ROW CONVENTIONS in this codebase and they disagree
-// by construction: `decodeMidiMessage` hands back `ev.row` measured from the
-// BOTTOM, while `SCENE_CCS` is written TOP-first. The owner's list is top to
-// bottom, so this file indexes by the TOP-origin `sceneIndexForCc`, exactly as
-// launchpad-control does, and never by `ev.row`.
 
-import {
-  connect as deviceConnect,
-  bindUnit,
-  unbindUnit,
-  isUnitBound,
-  midiAvailable,
-  hasAccess,
-  enumerateLaunchpadPorts,
-  onKey,
-  setFrame,
-  clearUnit,
-  emptyFrame,
-  type LaunchpadPort,
-} from '$lib/control/launchpad/launchpad-device.svelte';
 import { padNote, SCENE_CCS, LP_HEIGHT } from '$lib/control/launchpad/launchpad-sysex';
-import { sceneIndexForCc } from '$lib/control/launchpad/launchpad-map';
+import type { LaunchpadPort } from '$lib/control/launchpad/launchpad-device.svelte';
 import {
   SEQTRIS_COLS,
   SEQTRIS_ROWS,
@@ -59,13 +59,51 @@ import {
   type SeqtrisPieceId,
 } from '$lib/audio/modules/seqtris-engine';
 
+export type { LaunchpadPort };
+
 /** The unit slot SEQTRIS claims. Single-device deployment, same as `startSingle`. */
 const UNIT = 'L' as const;
+
+type DeviceModule = typeof import('$lib/control/launchpad/launchpad-device.svelte');
+
+/** Module-scope so the dynamic import is paid once per page, not per node. */
+let devicePromise: Promise<DeviceModule> | null = null;
+function loadDevice(): Promise<DeviceModule> {
+  devicePromise ??= import('$lib/control/launchpad/launchpad-device.svelte');
+  return devicePromise;
+}
+
+/**
+ * Web MIDI capability WITHOUT importing the device module — the same predicate
+ * `webMidiAvailable` uses, re-derived here because asking the question must not
+ * drag a rune-bearing module into a non-Svelte runtime (see the header).
+ */
+function webMidiPresent(): boolean {
+  return (
+    typeof navigator !== 'undefined'
+    && typeof (navigator as { requestMIDIAccess?: unknown }).requestMIDIAccess === 'function'
+  );
+}
+
+/**
+ * The scene-launch button index for a CC, TOP-ORIGIN (0 = top).
+ *
+ * ⚠ THE SCENE COLUMN HAS TWO ROW CONVENTIONS in this codebase and they disagree
+ * by construction: `decodeMidiMessage` hands back `ev.row` measured from the
+ * BOTTOM, while `SCENE_CCS` is written TOP-first. The owner's control list is
+ * top to bottom, so this is the index that must be used — reading `ev.row`
+ * instead would invert the whole controller and every button would still
+ * "work".
+ */
+export function seqtrisSceneIndexForCc(cc: number): number | null {
+  const i = SCENE_CCS.indexOf(cc as (typeof SCENE_CCS)[number]);
+  return i >= 0 ? i : null;
+}
 
 /**
  * The owner's control map, TOP to BOTTOM of the scene-launch column. `null` is
  * a deliberately dead button — the spec says "nothing" for rows 1 and 2, and a
- * dead button is lit differently from a live one so the player can see it.
+ * dead button is left DARK on the hardware so the player can see it is dead.
  */
 export const SEQTRIS_SCENE_ACTIONS: readonly (SeqtrisInput | null)[] = [
   'reset',
@@ -88,11 +126,11 @@ export function seqtrisActionForScene(index: number): SeqtrisInput | null {
 const RGB_CONTROL: readonly [number, number, number] = [0, 60, 90]; // dim blue
 const RGB_RESET: readonly [number, number, number] = [90, 20, 0]; // amber-red
 const RGB_DROP: readonly [number, number, number] = [100, 100, 100]; // white
-const RGB_DEAD: readonly [number, number, number] = [0, 0, 0]; // the two "nothing" buttons
 
-function sceneRgb(index: number): readonly [number, number, number] {
+/** `null` = leave the pad dark (an omitted index auto-blanks on the device). */
+function sceneRgb(index: number): readonly [number, number, number] | null {
   const action = seqtrisActionForScene(index);
-  if (action === null) return RGB_DEAD;
+  if (action === null) return null;
   if (action === 'reset') return RGB_RESET;
   if (action === 'drop') return RGB_DROP;
   return RGB_CONTROL;
@@ -148,9 +186,11 @@ let owner: string | null = null;
 
 export interface SeqtrisLaunchpadBinding {
   status(): SeqtrisLaunchpadStatus;
-  /** The CONNECT gesture. Grants Web MIDI, then lists devices. Never throws. */
+  /** The CONNECT gesture. Loads the device layer, grants Web MIDI, then lists
+   *  devices. Never throws. */
   connect(): Promise<void>;
-  /** Claim a listed port. Returns false when refused (already owned / gone). */
+  /** Claim a listed port. Returns false when refused (already owned / gone /
+   *  CONNECT has not run). */
   bind(port: LaunchpadPort): boolean;
   /** USER gesture only — never a component lifecycle hook. */
   unbind(): void;
@@ -169,33 +209,38 @@ export function acquireSeqtrisLaunchpad(
   nodeId: string,
   onInput: (input: SeqtrisInput) => void,
 ): SeqtrisLaunchpadBinding {
-  /**
-   * ⚠ NOT just `midiAvailable()`. That asks whether `navigator.requestMIDIAccess`
-   * EXISTS, which is the right question only before anyone has asked for access.
-   * Once a sysex MIDIAccess is in hand — granted earlier in the session, or
-   * injected by the simulated device the tests and the e2e drive — the module
-   * plainly CAN reach a Launchpad, and reporting "this browser has no Web MIDI"
-   * over a live access object is simply false.
-   */
-  function supported(): boolean {
-    return midiAvailable() || hasAccess();
-  }
-
-  let kind: SeqtrisLaunchpadStatusKind = supported() ? 'idle' : 'unsupported';
+  let dev: DeviceModule | null = null;
+  let unsubscribeKey: (() => void) | null = null;
+  let kind: SeqtrisLaunchpadStatusKind = webMidiPresent() ? 'idle' : 'unsupported';
   let ports: readonly LaunchpadPort[] = [];
   let portName: string | null = null;
   let released = false;
 
-  const unsubscribeKey = onKey((e) => {
-    if (released || owner !== nodeId) return;
-    if (e.unit !== UNIT) return;
-    const ev = e.ev;
-    if (ev.type !== 'scene' || ev.s !== 1) return;
-    const index = sceneIndexForCc(ev.cc);
-    if (index === null) return;
-    const action = seqtrisActionForScene(index);
-    if (action !== null) onInput(action);
-  });
+  /**
+   * ⚠ NOT just "does `requestMIDIAccess` exist". That is the right question only
+   * before anyone has asked for access. Once a sysex MIDIAccess is in hand —
+   * granted earlier in the session, or injected by the simulated device the
+   * tests and the e2e drive — the module plainly CAN reach a Launchpad, and
+   * reporting "this browser has no Web MIDI" over a live access object is false.
+   */
+  function supported(): boolean {
+    if (dev) return dev.midiAvailable() || dev.hasAccess();
+    return webMidiPresent();
+  }
+
+  function attach(mod: DeviceModule): void {
+    dev = mod;
+    unsubscribeKey ??= mod.onKey((e) => {
+      if (released || owner !== nodeId) return;
+      if (e.unit !== UNIT) return;
+      const ev = e.ev;
+      if (ev.type !== 'scene' || ev.s !== 1) return;
+      const index = seqtrisSceneIndexForCc(ev.cc);
+      if (index === null) return;
+      const action = seqtrisActionForScene(index);
+      if (action !== null) onInput(action);
+    });
+  }
 
   function status(): SeqtrisLaunchpadStatus {
     return { kind, message: seqtrisStatusMessage(kind, portName), ports, portName };
@@ -205,29 +250,40 @@ export function acquireSeqtrisLaunchpad(
     status,
 
     async connect(): Promise<void> {
+      kind = 'listing';
+      let mod: DeviceModule;
+      try {
+        mod = await loadDevice();
+      } catch {
+        // No Svelte runtime / chunk unavailable: the hardware is simply out of
+        // reach here. The on-screen controls still play the game.
+        kind = 'unsupported';
+        return;
+      }
+      if (released) return;
+      attach(mod);
       if (!supported()) {
         kind = 'unsupported';
         return;
       }
-      kind = 'listing';
       try {
-        await deviceConnect();
+        await mod.connect();
       } catch {
-        /* deviceConnect never throws, but a seam might */
+        /* mod.connect never throws, but a seam might */
       }
       if (released) return;
-      ports = enumerateLaunchpadPorts();
+      ports = mod.enumerateLaunchpadPorts();
       if (owner === nodeId) kind = 'bound';
       else kind = ports.length > 0 ? 'idle' : 'no-device';
     },
 
     bind(port: LaunchpadPort): boolean {
-      if (released) return false;
+      if (released || !dev) return false;
       if (owner !== null && owner !== nodeId) {
         kind = 'claimed';
         return false;
       }
-      if (!bindUnit(UNIT, port.inputId, port.outputId)) return false;
+      if (!dev.bindUnit(UNIT, port.inputId, port.outputId)) return false;
       owner = nodeId;
       portName = port.name;
       kind = 'bound';
@@ -235,41 +291,44 @@ export function acquireSeqtrisLaunchpad(
     },
 
     unbind(): void {
-      if (owner !== nodeId) return;
-      clearUnit(UNIT);
-      unbindUnit(UNIT);
+      if (!dev || owner !== nodeId) return;
+      dev.clearUnit(UNIT);
+      dev.unbindUnit(UNIT);
       owner = null;
       portName = null;
       kind = supported() ? 'idle' : 'unsupported';
     },
 
     paint(board: readonly (SeqtrisPieceId | null)[]): void {
-      if (released || owner !== nodeId || !isUnitBound(UNIT)) return;
-      const frame = emptyFrame();
+      if (released || !dev || owner !== nodeId || !dev.isUnitBound(UNIT)) return;
+      const frame = dev.emptyFrame();
       for (let row = 0; row < SEQTRIS_ROWS; row++) {
         for (let col = 0; col < SEQTRIS_COLS; col++) {
           const id = board[cellIndex(row, col)] ?? null;
           if (id === null) continue;
           // Board row 0 is the TOP; `padNote`'s y is measured from the BOTTOM.
+          // Getting this backwards renders the game upside down on the hardware
+          // while the card looks perfect.
           const rgb = SEQTRIS_PIECE_RGB[id];
           frame.leds.set(padNote(col, LP_HEIGHT - 1 - row), [rgb[0], rgb[1], rgb[2]]);
         }
       }
       for (let i = 0; i < SCENE_CCS.length; i++) {
         const rgb = sceneRgb(i);
-        if (rgb === RGB_DEAD) continue; // omitted indices auto-blank
+        if (rgb === null) continue; // omitted indices auto-blank
         frame.leds.set(SCENE_CCS[i]!, [rgb[0], rgb[1], rgb[2]]);
       }
-      setFrame(UNIT, frame);
+      dev.setFrame(UNIT, frame);
     },
 
     release(): void {
       if (released) return;
       released = true;
-      unsubscribeKey();
-      if (owner === nodeId) {
-        clearUnit(UNIT);
-        unbindUnit(UNIT);
+      unsubscribeKey?.();
+      unsubscribeKey = null;
+      if (dev && owner === nodeId) {
+        dev.clearUnit(UNIT);
+        dev.unbindUnit(UNIT);
         owner = null;
       }
     },
