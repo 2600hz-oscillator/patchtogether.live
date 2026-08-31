@@ -539,18 +539,8 @@ export const SKIP_BUDGET = [
       + 'auto-wire leg: waitForFunction 10s timeout, recovered-on-retry on PR #2274 e2e shard 7 (run '
       + '33291594537); same load-sensitivity family as the branch-side boot-budget fixes on #2263/#2266. '
       + 'While parked, the one-shot default-wiring contract has no e2e coverage in this leg — un-park '
-      + 'after the 2026-08-30 performance alongside the tempolock park.',
-  },
-  {
-    specs: ['tempolock.spec.ts'],
-    reason: /FLAKE-PARK #1847/,
-    lanes: ['e2e'],
-    homeLane: 'e2e',
-    why:
-      'PARKED (2026-08-30, owner order: "any tests that failed disable / skip") — the follows-tracked-tempo '
-      + 'leg only: toBeLessThan settle failure on PR #2274 e2e shard 10 (run 33290095701) under shard load. '
-      + 'While parked, the tracked-clock→TIMELORDE follow path has no e2e coverage — un-park and root-cause '
-      + 'after the 2026-08-30 performance; the unit-lane tracker tests still cover the fold/PLL math.',
+      + 'after the 2026-08-30 performance. (The tempolock park this once pointed at is GONE: PR #2276 '
+      + 'root-caused it as a flat poll cap truncating a correct convergence and un-parked that spec.)',
   },
   {
     specs: ['per-module-per-port-inputs.spec.ts'],
@@ -654,17 +644,6 @@ export const SKIP_BUDGET = [
       + 'the sixth consecutive run: every leg shares the /rack boot + pinned-trio wait, so the failing '
       + 'unit is the boot path under a degraded runner, and per-leg parks were whack-a-mole. All nine '
       + 'legs are fixme; the shell boot itself stays exercised by every other workflow spec.',
-  },
-  {
-    specs: ['tempolock.spec.ts'],
-    reason: /FLAKE-PARK #1847/,
-    lanes: ['e2e'],
-    homeLane: 'e2e',
-    why:
-      'PARKED (#1847, owner-authorized pre-show green directive 2026-08-30) — the 216→108 octave-fold '
-      + 'and TIMELORDE-follow wire proof: 1 recovered-on-retry observation (run 33289422851 shard 9) in '
-      + 'the same fleet-load storm as the workflow-mode legs, failed attempt 1 / passed attempt 2. The '
-      + 'tracker math is exhaustively pinned by tempolock-tracker.test.ts; un-park on a root cause.',
   },
   {
     specs: [
