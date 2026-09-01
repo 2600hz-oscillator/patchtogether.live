@@ -274,16 +274,27 @@
      renders in a 79 px border box, and `(no inputs)` is one glyph narrower.
      A FLOOR rather than an `auto` basis keeps the determinism: the contribution
      is exactly 88 px whatever the machine is called.
-     ⚠ WHAT IT COSTS, NAMED RATHER THAN HIDDEN: 88 px the face-width gate scores
-     as EMPTY PLATE, because `readFoldGeometry`'s ink measure takes boxes only
-     for `[data-cell-key]`/glyph/canvas/svg/img and text RANGES otherwise — and a
-     closed select's `<option>`s have NO client rects, so this picker is drawn
-     edge to edge and contributes zero ink. That is the `clockedRunner`/`livecode`
-     code-buffer shape exactly, and it is recorded in this face's
-     `FACE_WIDTH_EXEMPTIONS` entry rather than paid for with the control's
-     legibility. Its sibling `AudioOutOutputBody` has the identical blind spot
-     and passes only because its meter CANVAS is boxy ink; this body has no
-     canvas by design (role `status-primitive`).
+     ⚠ WHAT IT COSTS THE FACE-WIDTH GATE: **4 px, NOT 88**, and that was measured
+     rather than assumed — the earlier "42 px of empty plate" reading was a
+     mis-attribution. `readFoldGeometry`'s ink measure takes boxes only for
+     `[data-cell-key]`/glyph/canvas/svg/img and text RANGES otherwise, and a
+     closed select's `<option>`s have NO client rects, so this picker really is
+     drawn edge to edge while contributing zero ink — the `clockedRunner`/
+     `livecode` code-buffer blind spot exactly. But the gate's subject is
+     `bodyW - contentW`, and BOTH ends move together here: widening the plate
+     also stretches `.pick-row`, whose ENABLE button sits flush at the right and
+     whose TEXT is the right-most ink. MEASURED, dock full view, CSS px:
+
+       before  select  0   content 120  body 153  slack 33   (driver: `.lamps`)
+       after   select 88   content 192  body 229  slack 37   (driver: `.pick-row`)
+
+     The whole +4 is the button's own `padding-right: 3px` + `1px` border; the
+     surviving 33 is the module-shell (11) + editor (22) chrome every face pays.
+     So the ceiling (40) is NOT re-opened and this face needs no
+     `FACE_WIDTH_EXEMPTIONS` entry — do not add one. Its sibling
+     `AudioOutOutputBody` shares the select blind spot and clears the gate a
+     different way (its meter CANVAS is boxy ink); this body has no canvas by
+     design (role `status-primitive`).
      ⚠ THE COMPACT TIER KEEPS `min-width: 0` (below). The 192 px lane tile has a
      DEFINITE width, so `flex-grow` already gives the picker the whole leftover
      row and no floor is needed — while an 88 px floor there would overflow a row
