@@ -822,6 +822,44 @@ const DRIVERS: Record<string, PerPortDriver> = {
     note: 'MIDICVBUDDY: mock requestMIDIAccess + send note-on; pitch_cv/gate/velocity_cv emit',
   },
 
+  // ───── TRAILS — install the simulated Bela Trails + hold a touch ─────
+  //
+  // No `pageSetup` mock: the app's own `__trailsTestInstall` hook builds an
+  // in-memory MIDIAccess whose one input is NAMED like the hardware and runs
+  // the REAL `connectTrails()` against it, so the /trails/i port match, the
+  // input claim and each node's 14-bit assembler all execute here. `touch()`
+  // emits real CC byte pairs.
+  //
+  // Every channel is driven off-centre and gated HIGH and LEFT there for the
+  // sample window: the sweep's 0.005 signal floor means a jack resting at the
+  // pad's origin reads as dead, and RANGE defaults to unipolar so 0.8 really is
+  // 0.8 on the wire. `clock` is exempt (a 5 ms one-shot) — see
+  // EXEMPT_OUTPUT_EMIT.
+  trails: {
+    postSpawn: async (page) => {
+      await page.evaluate(async () => {
+        const w = globalThis as unknown as {
+          __trailsTestInstall?: () => Promise<boolean>;
+          __trailsSim?: {
+            touch: (ch: number, x: number, y: number) => void;
+            gateOn: (ch: number) => void;
+          };
+        };
+        if (!w.__trailsTestInstall) return;
+        await w.__trailsTestInstall();
+        const sim = w.__trailsSim;
+        if (!sim) return;
+        for (const ch of [1, 2, 3, 4]) {
+          sim.gateOn(ch);
+          // Distinct per channel so a cross-wired jack reads WRONG rather than
+          // merely non-zero, and all comfortably above the 0.005 floor.
+          sim.touch(ch, 0.8, 0.6);
+        }
+      });
+    },
+    note: 'TRAILS: install the simulated Bela Trails via __trailsTestInstall + hold a gated touch on all four channels; x1..y4 + g1..g4 emit (clock exempt — 5 ms one-shot)',
+  },
+
   // ───── MIDI LANE — mock requestMIDIAccess + send note-on + CCs ─────
   //
   // Drives pitch_cv / gate / velocity_cv (sustained note-on) + cc_a (CC1)

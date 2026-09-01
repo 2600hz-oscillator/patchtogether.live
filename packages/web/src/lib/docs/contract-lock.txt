@@ -3335,6 +3335,23 @@ toybox in cv6 modsignal cvScale=linear
 toybox in inA video
 toybox in inB video
 toybox out out video
+trails meta domain=audio
+trails out clock gate edge=trigger
+trails out g1 gate edge=gate
+trails out g2 gate edge=gate
+trails out g3 gate edge=gate
+trails out g4 gate edge=gate
+trails out x1 cv
+trails out x2 cv
+trails out x3 cv
+trails out x4 cv
+trails out y1 cv
+trails out y2 cv
+trails out y3 cv
+trails out y4 cv
+trails param divisor 1..24 discrete default=24
+trails param range 0..1 discrete default=0
+trails param smooth 0..1 linear default=0
 treeohvox meta domain=audio
 treeohvox in accent_cv cv param=accent cvScale=linear
 treeohvox in accent_in gate edge=gate

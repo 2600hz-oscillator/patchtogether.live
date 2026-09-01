@@ -85,6 +85,7 @@ import { modtrisDef } from '$lib/audio/modules/modtris';
 import { scoreDef } from '$lib/audio/modules/score';
 import { chromaconsoleDef } from '$lib/audio/modules/chromaconsole';
 import { ptzcamDef } from '$lib/audio/modules/ptzcam';
+import { trailsDef } from '$lib/audio/modules/trails';
 import { cubeDef } from '$lib/audio/modules/cube';
 import { cloudsDef } from '$lib/audio/modules/clouds';
 import { cofefveDelayDef } from '$lib/audio/modules/cofefve';
@@ -422,6 +423,7 @@ const RANGE_BOUND_CARDS: Readonly<Record<string, { params: readonly ParamDef[] }
   'BackdraftCard.svelte': backdraftDef,
   'ChromaconsoleCard.svelte': chromaconsoleDef,
   'PtzcamCard.svelte': ptzcamDef,
+  'TrailsCard.svelte': trailsDef,
   'CubeCard.svelte': cubeDef,
   'CloudsCard.svelte': cloudsDef,
   'CofefveCard.svelte': cofefveDelayDef,
@@ -780,6 +782,7 @@ const MAPPING_BOUND_CARDS: readonly string[] = [
   'PictureboxCard.svelte',
   'ChromaconsoleCard.svelte',
   'PtzcamCard.svelte',
+  'TrailsCard.svelte',
   'CubeCard.svelte',
   'CloudsCard.svelte',
   'CofefveCard.svelte',
