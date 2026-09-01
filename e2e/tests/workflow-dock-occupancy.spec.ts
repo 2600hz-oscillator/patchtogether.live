@@ -55,6 +55,7 @@ import { spawnPatch } from './_helpers';
 import { pressFlipKey } from './_flip-key';
 import { installRenderSmokeHooks } from './_render-smoke';
 import { settle } from '../_helpers/frames';
+import { BOOT_MS } from '../_helpers/boot-budget';
 
 /** The pinned trio's deterministic node ids (graph/workflow-pins.ts). */
 const PINNED_IDS = ['pinned-mixmstrs', 'pinned-electraControl', 'pinned-clipplayer'] as const;
@@ -71,16 +72,16 @@ async function waitForPinnedTrio(page: Page): Promise<void> {
       return ids.every((id) => w.__patch!.nodes[id]?.data?.pinned === true);
     },
     PINNED_IDS as unknown as string[],
-    { timeout: 10_000 },
+    { timeout: BOOT_MS },
   );
 }
 
 async function gotoShellWorkflow(page: Page): Promise<void> {
   await page.goto('/rack');
-  // 15s first-load budget (the workflow-shell.spec.ts pattern): on a COLD dev
+  // First-load budget (the workflow-shell.spec.ts pattern): on a COLD dev
   // server the very first /rack?shell=legacy&seed=none compile can exceed the 5s expect default —
   // reproduced locally with a cleared .vite cache; every later load is ~1s.
-  await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: BOOT_MS });
   await page.locator('.svelte-flow__pane:visible').first().waitFor({ state: 'visible' });
   await waitForPinnedTrio(page);
 }
@@ -625,8 +626,8 @@ test.describe('bottom-drawer occupancy: preview-off M/E drawer + the same C pane
 
   test('`c` opens the SAME clip pane flag-off; `m`/`e` still toggle the shipped drawer', async ({ page }) => {
     await page.goto('/rack?shell=legacy');
-    // Same 15s first-load budget as gotoShellWorkflow (cold-compile latency).
-    await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: 15_000 });
+    // Same first-load budget as gotoShellWorkflow (cold-compile latency).
+    await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: BOOT_MS });
     await page.locator('.svelte-flow__pane:visible').first().waitFor({ state: 'visible' });
     await waitForPinnedTrio(page);
 

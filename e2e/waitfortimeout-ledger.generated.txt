@@ -133,9 +133,6 @@ e2e/tests/frogger.spec.ts :: frogger: BUGGLES.clock patched into start_gate rest
 e2e/tests/frogger.spec.ts :: frogger: BUGGLES.clock patched into start_gate restarts the game :: waitForTimeout(300) #1
 e2e/tests/frogger.spec.ts :: frogger: auto-starts on spawn (no user input — isGameInPlay flips + sprites advance) :: waitForTimeout(1500) #1
 e2e/tests/frogger.spec.ts :: frogger: auto-starts on spawn (no user input — isGameInPlay flips + sprites advance) :: waitForTimeout(500) #1
-e2e/tests/gibribbon.spec.ts :: gibribbon: card mounts cleanly + 1024×576 canvas renders the white ribbon :: waitForTimeout(300) #1
-e2e/tests/gibribbon.spec.ts :: pulse :: waitForTimeout(8) #1
-e2e/tests/gibribbon.spec.ts :: pulse :: waitForTimeout(8) #2
 e2e/tests/gl-feedback-loop.spec.ts :: the default workflow rack emits ZERO GL feedback-loop errors :: waitForTimeout(OBSERVE_MS) #1
 e2e/tests/illogic.spec.ts :: illogic: LFO → in1 → att1 (gain=1) produces audible signal at scope :: waitForTimeout(1000) #1
 e2e/tests/illogic.spec.ts :: illogic: att1_amount=-1 still produces audible signal (sign-flipped) :: waitForTimeout(1000) #1

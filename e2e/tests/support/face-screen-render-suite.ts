@@ -422,6 +422,37 @@ const SUBJECTS: readonly Subject[] = [
   // registry, the specs directory, the docs slugs. A computed prefix would match
   // nothing here and pass silently.
   { type: 'vfpgaRunner', prefix: 'vfpga', domain: 'video', why: '⚠ THE ONLY BODY IN THIS TABLE WITH A SECOND VIEW BEHIND THE SAME `{#if}`: FABRIC swaps the live picture for a read-only floorplan of the loaded bitstream, so SCREEN OFF must remove BOTH and the FABRIC button is disabled while it is off. The switch is legitimate here for the `scope` reason rather than the `videoOut` one — the picture is a preview beside a bitstream picker, eight slot knobs and a CV conditioning rack, so with it collapsed you still have a complete, usable host. ⚠ AND THE WATCH MARK IS LOAD-BEARING FOR A REASON UNIQUE TO A HOST: what this module renders is not one effect but whichever `.vfpga` is loaded, and several catalog bitstreams (framestore-howl, macroblock-mosh) are REGISTER-BASED — the P&R fabric ping-pongs an FBO pair every frame, so a lapsed mark does not stall a preview, it stalls a clock the picture is an accumulation of. The body retains `markWatched` in BOTH the collapsed and the fabric branch for exactly that.' },
+
+  // ── BLOOD (2026-08-31) — the table's first GAME ───────────────────────────
+  //
+  // Added in the SAME diff as the promotion, per this file's convention.
+  // Verified before writing rather than assumed: `type == prefix == extension
+  // id`, the body uses the standard `{#if !previewCollapsed}` REMOVES mechanism,
+  // and it declares the conventional `<type>-face-canvas` — so no `canvas`
+  // override is needed.
+  //
+  // ⚠ APPENDED AT THE END OF THE ROSTER, NOT INSERTED BESIDE THE OTHER VIDEO
+  // SOURCES, and the reason is mechanical. Batches are sliced from this array in
+  // DECLARATION ORDER and each test's TITLE is its batch's comma-joined module
+  // list, so an insertion anywhere but the tail renames every batch after it and
+  // orphans that many rows in `e2e-timings.generated.json`. Appending changes
+  // exactly one title. The header's "no batch means anything" note is what makes
+  // that free.
+  //
+  // ⚠ IT IS THE MOST EXPENSIVE ROW IN THIS TABLE AND THE COST IS NOT A RENDER.
+  // `freezeVideoRender` pins the per-frame GL draw off for every subject, which
+  // is what makes per-subject cost near-uniform (see the header). It does NOT
+  // stop this body's mount-time `ensureLoaded()`, which fetches and compiles a
+  // 5.9 MB ASYNCIFY WASM module and runs the whole Build engine init — measured
+  // by the dedicated specs at 20-25 s to reach a ready state on a 2-core
+  // SwiftShader VM. The boot is ASYNCHRONOUS and none of the assertions below
+  // waits on it (they are DOM facts about a canvas that mounts immediately), so
+  // this row does not serialise behind the engine — but it does put a WASM
+  // compile on the same main thread as its batch-mates for a few seconds.
+  // Recorded here because the header's "cost is near-uniform BY CONSTRUCTION"
+  // claim is the one thing this subject makes untrue, and whoever next reads a
+  // jump in this file's cost artifact should know which row moved.
+  { type: 'blood', prefix: 'blood', domain: 'video', why: '⚠ THE FIRST ROW WHOSE BODY IS NOT RESCUING A PICTURE BUT STARTING A MODULE. BloodCard.svelte mounts no canvas at all, so the face ADDS blood\'s first live picture and its first SCREEN switch; what the card owned was the tree\'s ONLY `extras.ensureLoaded()` call, and blood is in neither half of HEADLESS_MOUNT_LANE_TYPES, so a body that mounted this canvas and forgot to boot would pass every leg below while shipping a module that is dark forever. That specific failure is covered by blood-face-screen.spec.ts and by the default-shell leg of blood-audio-output.spec.ts, not here — this row proves the SWITCH. ⚠ SCREEN OFF KEEPS THE GAME RUNNING, but NOT because of this body\'s markWatched call — measured, not assumed: blood is pull-exempt from construction (a non-empty audioSources map, which it always has because PatchEngine.registerDomain injects the AudioContext whenever both domains are registered), and deleting the mark leaves blood-face-screen.spec.ts green. The mark stays as topology-independent insurance, since surface.draw is what calls runtime.runFrame() and a lapsed pull would freeze the SIMULATION rather than a picture. ⚠ It is also the only subject here whose body owns a capture-phase WINDOW keyboard listener, so a body that failed to tear it down would poison later batch-mates with swallowed keys — which this file would report as a mysterious click failure two modules later.' },
 ] as const;
 
 /** The representative module for the PERSISTENCE leg — see that test's comment. */

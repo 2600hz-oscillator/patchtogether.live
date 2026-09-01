@@ -241,10 +241,18 @@ const EXTRAS_OWNERS: Readonly<Record<string, ExtrasOwnerVerdict>> = {
     owner: 'module-renders-itself',
     why: 'the LIVE half (session, netcode, lockstep, pump) is already node-owned by node-doom-session-registry (#1590); what still crosses extras is a user boot gesture and keypresses, and doom.ts paints its own "alive but no signal" idle field',
   },
-  GibribbonCard: {
-    owner: 'module-renders-itself',
-    why: 'gibribbon.ts paints and uploads a frame at construction and every draw, AUTOPLAY defaults on, and the same ABXY presses arrive from the graph as cv params — the card pushes only keyboard intent',
-  },
+  // ⚠ GibribbonCard LEFT THIS ROSTER 2026-08-29 (the rewrite), and the reason
+  // is a scan-boundary fact worth recording: the card became a thin bridge
+  // mounting the SHARED $lib/ui/modules/gibribbon/GibribbonScreen.svelte (one
+  // playfield for the card AND the dock face body), and the `read(…,'extras')`
+  // call moved into that component — which this file's `*Card.svelte`-only
+  // scan cannot see (the same structural boundary dom-source-modules.test.ts
+  // declares for its own `.svelte` subtree). The SUBSTANCE of the old verdict
+  // is unchanged and now stronger: the rewritten module renders itself
+  // unconditionally (the game steps on the shared scheduler clock in the
+  // FACTORY), and the extras channel carries only human input (keyboard
+  // presses, a reset) — there is nothing a registry could reproduce and
+  // nothing an unmount can tear down.
   NibblesCard: {
     owner: 'module-renders-itself',
     why: 'nibbles.ts paints a frame before the first tick and ticks its own clock, with a built-in greedy bot under AUTO; the card pushes only arrow keys and a reset',
