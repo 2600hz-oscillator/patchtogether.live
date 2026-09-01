@@ -31,7 +31,7 @@
 //             SCALER.out      → FILTER.cutoff    [the gesture under test]
 
 import { test, expect, type Page } from './_fixtures';
-import { spawnPatch } from './_helpers';
+import { spawnPatch, type SpawnEdge, type SpawnNode } from './_helpers';
 
 function chrome(page: Page, nodeId: string) {
   return page.locator(`[data-patch-panel-chrome="${nodeId}"]`);
@@ -71,7 +71,7 @@ async function edgeEndpoints(page: Page): Promise<string[]> {
   });
 }
 
-const SEED = [
+const SEED: SpawnNode[] = [
   { id: 'lfo', type: 'lfo', position: { x: 60, y: 80 }, params: { rate: 2, depth: 1 } },
   // The subject: `in` accepts the CV family, `out` adopts `in`.
   { id: 'sc', type: 'scaler', position: { x: 380, y: 80 }, params: { amount: 2 } },
@@ -83,7 +83,7 @@ const SEED = [
   { id: 'flt', type: 'filter', position: { x: 700, y: 80 } },
 ];
 
-const SEED_EDGES = [
+const SEED_EDGES: SpawnEdge[] = [
   {
     id: 'e_lfo_sc',
     from: { nodeId: 'lfo', portId: 'phase0' },
