@@ -48,6 +48,7 @@ author a `face` and rank the controls — no new platform capability.
 | `b3ntb0x` | video | done | — |
 | `backdraft` | video | done | — |
 | `bentbox` | video | done | — |
+| `blood` | video | done | — |
 | `bluebox` | audio | done | — |
 | `buggles` | audio | done | — |
 | `cameraInput` | video | done | — |
@@ -225,7 +226,6 @@ the primary interaction is not param-shaped — needs a purpose-built surface.
 |---|---|---|---|
 | `archivist` | video | — | `needs-media-controller` |
 | `audioIn` | audio | — | `needs-media-controller` |
-| `blood` | video | — | — |
 | `chromaconsole` | audio | — | — |
 | `clipplayer` | audio | — | — |
 | `controlSurface` | meta | — | — |

@@ -192,6 +192,69 @@ export const bloodDef: VideoModuleDef = {
     },
   },
 
+  // ⚠ THE THIRTEEN CV-GATE PARAMS HAVE NO USER CONTROL AND NEVER DID (#1726).
+  // Each is the synthetic target of the identically-named `paramTarget` jack
+  // above — the CV bridge writes a raw 0..1 swing and `setParam` edge-detects it
+  // into a Build scancode — so there is nothing here for a player to turn. The
+  // card never painted one either; the difference is that the fact is now
+  // DECLARED, which is what lets `module-face-lint` demand a rank for every
+  // OTHER param instead of shrugging at fifteen. `writer: 'cv-port'` is anchored
+  // to this def's own `inputs` in both directions by `no-user-control.ts`, so
+  // the claim cannot describe a wiring the engine does not have.
+  //
+  // ZERO ATTEST: `noUserControl` is stripped by the shared normalizer
+  // (`scripts/attest-code-basis.ts`) alongside `face`/`docs`/`controlFamilies`,
+  // so declaring it on a video def costs no GPU re-attest.
+  noUserControl: CV_GATE_PORT_IDS.map((base) => ({
+    param: `cv_${base}`,
+    writer: 'cv-port' as const,
+    why:
+      `synthetic CV-gate target: the \`${base}\` jack writes it and blood.ts edge-detects that `
+      + 'level into a Build scancode. There is no control here — the player patches a gate, or '
+      + 'clicks the picture and uses the keyboard.',
+  })),
+
+  face: {
+    // ⚠ `'none'` AND IT IS THE ONLY HONEST LITERAL, though — unlike modtris or
+    // tempolock — it is not MECHANICALLY forced: blood really does have
+    // `audio_l`, so `primaryAudioOutPortId` resolves and a `'scope'` or
+    // `'meter'` glyph would bind to a live tap rather than a dead static one.
+    // It is still wrong here for two reasons. `laneGlyphFor` short-circuits to
+    // `'picture'` for a video def, so the declared literal would paint NOTHING
+    // at any tier; and it would spin up an AnalyserNode tap on the game mixer
+    // whose output no surface ever reads. A glyph nobody can see, costing a tap.
+    glyph: 'none',
+
+    // The dock body — see $lib/ui/modules/blood/. This is not the #1928 shape:
+    // BloodCard owns no picture, so nothing visual is rescued by it. What it
+    // rescues is the module's BOOT, which had exactly one caller in the tree and
+    // it was that card. See the extension's own header.
+    extension: 'blood',
+
+    order: [
+      // 1. The only continuous control on the module, and the only one that
+      //    changes anything a player can hear: it trims the whole game mixer
+      //    (MultiVoc SFX + the OPL3 music synth) feeding audio_l/audio_r, live,
+      //    on top of the worklet's makeup gain.
+      'audioGain',
+      // 2. LETTERBOX vs FILL. `discrete 0..1`, so `paramCellKind` derives a
+      //    TOGGLE for free — and no `options[]` roster is declared for its two
+      //    captions ON PURPOSE: `params` is NOT hash-transparent on a def inside
+      //    the WebGL attest basis, so two words would cost a real-GPU re-attest
+      //    plus a contract re-pin. It ranks below GAIN because it changes how
+      //    the picture is CROPPED and nothing about what the module does; it is
+      //    also the control the player sets once and leaves, which is exactly
+      //    why it is in ACKNOWLEDGED_LATCHING rather than `face.momentary`.
+      'fillMode',
+    ],
+
+    // ONE band. Two controls is not two ideas, and padding this to a second
+    // page to reach a tab rail is the shape the owner's control-heavy ruling
+    // was written against. The band is where the two controls sit; the module
+    // itself is the body above them.
+    pages: [{ id: 'output', label: 'output', controls: ['audioGain', 'fillMode'] }],
+  },
+
   factory(ctx, node): VideoNodeHandle {
     const gl = ctx.gl;
     const program = ctx.compileFragment(FRAG_SRC);

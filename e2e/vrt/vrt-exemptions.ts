@@ -1146,9 +1146,21 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // the preview bundle, and blood-mount.spec.ts asserts the data-missing prompt
   // does NOT appear on CI. The card boots and the menu ANIMATES by design (the
   // engine-clock fix, PHASE1-STATUS.md §3) — which is the real, and sufficient,
-  // reason a screenshot of it cannot be a baseline. Unit suites cover the TS
-  // shim (blood-runtime) + the CV-gate scancode map (blood-keys).
-  blood: 'live game-loop framebuffer defeats deterministic capture: the bundled shareware boots on CI and the main menu animates by design (engine-clock fix), so successive captures differ by construction — NOT a data-availability exemption (the data is committed; see docs/adr/007-game-asset-distribution.md); unit suites cover blood-runtime shim + blood-keys scancode map',
+  // reason a screenshot of it cannot be a baseline.
+  //
+  // ⚠ NARROWED 2026-08-31 (blood face): this entry now covers ONLY THE LEGACY
+  // CARD, reachable at `?shell=legacy`. blood is in STRICT_FACES, so what a
+  // workflow-mode player operates is the ModuleShell faceplate — the
+  // `warrensspectrum` shape, which is why that entry's wording is echoed here.
+  // ⚠ AND UNLIKE warrensspectrum THE FACE HAS NO BASELINES EITHER: the argument
+  // above is about the RENDERER, not about a card layout, so it transfers
+  // wholesale to the faceplate. That is recorded once, with the measurement, in
+  // `FACES_WITHOUT_SCENES` (e2e/vrt/_shell-faces.ts) — including the two facts
+  // this entry is too short to carry: `freezeFaceVideo` has NO `freeze` param to
+  // write on this def and is a no-op, and `simPin` cannot reach a `totalclock`
+  // that lives inside the WASM module. Do not duplicate that argument here; a
+  // second copy is how the two drift.
+  blood: 'faced (STRICT_FACES): the operated surface is the ModuleShell faceplate, and THIS entry covers only the LEGACY card (?shell=legacy) — a title, a status line, a data picker, one knob and a PatchPanel, with no unique visual surface. The renderer is exempt on its own merits either way: a live game-loop framebuffer defeats deterministic capture, the bundled shareware boots on CI and the main menu animates BY DESIGN (the engine-clock fix), so successive captures differ by construction — NOT a data-availability exemption (the data is committed; see docs/adr/007-game-asset-distribution.md). The FACE carries the same exemption with its full measurement in FACES_WITHOUT_SCENES (_shell-faces.ts); unit suites cover the blood-runtime shim, the blood-keys scancode map and the shared blood-boot seam.',
   // WARREN'S SPECTRUM — ⚠ THE OLD `why` HERE IS SPENT, and rewriting it is
   // part of face batch 6 rather than a tidy-up. It read "VRT baseline pending:
   // the curated dock FACE lands on the faceplate platform (#1301) in a

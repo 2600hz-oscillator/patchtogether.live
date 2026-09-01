@@ -781,12 +781,51 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
     // rule enforced by `tsc` rather than by a test.
     disposition: 'generic-face',
   },
+  // ⚠ MOVED HERE FROM `bespoke-surface` (2026-08-31), AND TWO OF ITS THREE
+  // CLAUSES WERE FACTUALLY FALSE. The old `why` read: "a GAME: the card claims
+  // the keyboard while focused and its body is the viewport. The knobs are
+  // incidental; the interaction is play, which no ranked cell list expresses."
+  //
+  //   * "the card claims the keyboard while focused" — TRUE, and it is the one
+  //     affordance that needed real work to move. It is carried, hand-written,
+  //     by the face's `fullViewBody` (no other shipped body in the tree installs
+  //     a capture-phase keyboard host).
+  //   * "its body is the viewport" — FALSE. `BloodCard.svelte` has NO `<canvas>`
+  //     anywhere in its ~380 lines. That sentence describes DoomCard, whose card
+  //     really does mount the viewport; blood's picture was only ever visible by
+  //     patching `out` into a videoOut. The face ADDS blood's first picture.
+  //   * "the knobs" — FALSE as a plural. The card renders exactly ONE knob
+  //     (GAIN) and paints NO control for `fillMode` at all, so the face does not
+  //     compress this module's controls, it INCREASES them by one.
+  //
+  // ⚠ WHAT THE ENTRY SHOULD HAVE SAID, AND NOW DOES: the card's real content is
+  // the ENGINE BOOT. See the note.
   {
     type: 'blood',
-    disposition: 'bespoke-surface',
-    why:
-      'a GAME: the card claims the keyboard while focused and its body is the viewport. The knobs ' +
-      'are incidental; the interaction is play, which no ranked cell list expresses.',
+    disposition: 'generic-face',
+    note:
+      'DONE (2026-08-31). Two ranked params (GAIN, FILL — the second painted by the card NOT AT ' +
+      'ALL, so the face adds a control) over a `fullViewBody` carrying everything the card owned. ' +
+      '⚠ THE LOAD-BEARING MOVE IS THE ENGINE BOOT, NOT THE KEYBOARD: `BloodCard.svelte` held the ' +
+      "TREE'S ONLY `extras.ensureLoaded()` CALL, and blood is in neither half of " +
+      'HEADLESS_MOUNT_LANE_TYPES, so promotion with a body that did not boot would have shipped a ' +
+      'module dark forever while the def, the registry and every face gate stayed green — the ' +
+      'shader compiles and paints its "alive, no signal" field either way. It is extracted to ' +
+      '$lib/blood/blood-boot.ts and called by BOTH surfaces, and proved through the face by ' +
+      'blood-face-screen.spec.ts plus blood-audio-output.spec.ts, re-pointed off `?shell=legacy` ' +
+      'in the same diff. ⚠ ALSO MOVED: the IndexedDB restore, the `multiple + webkitdirectory` ' +
+      'folder picker with its resetLoad, the BOOT button, the actionable error prose ' +
+      '(BLOOD_REQUIRED_FILES, *.ART/*.DAT, the BLOOD_LINK=1 build command — instructions for a ' +
+      'gesture, which a body may carry) and the capture-phase keyboard host on a focusable ' +
+      'role="application" frame. ⚠ THE FACE ADDS blood\'s first live picture and its first SCREEN ' +
+      'switch. ⚠ ONE RESTING READOUT DELETED: the card\'s "Running — click + use arrows/Ctrl/Space" ' +
+      'state line, whose fact moved onto the frame\'s accessible name and a `data-blood-status` ' +
+      'attribute. ⚠ WHEN IT BOOTS IS UNCHANGED BY THE PROMOTION — the lane was a placeholder and ' +
+      'the card mounted only in the dock, so blood has always started when the dock full view ' +
+      'opened, and the body mounts in the same place. ⚠ ZERO ATTEST: `face` and `noUserControl` ' +
+      'are both hash-transparent and no `params` field is touched — in particular `fillMode` gets ' +
+      'NO `options[]` roster, because two captions on a def inside the WebGL basis would cost a ' +
+      'real-GPU re-attest and `discrete 0..1` derives the toggle for free.',
   },
   {
     type: 'cameraInput',

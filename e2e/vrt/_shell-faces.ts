@@ -4858,6 +4858,72 @@ export const FACES_WITHOUT_SCENES: readonly UnbaselinableFace[] = [
       'packages/web/src/lib/ui/modules/milkdrop-face-model.test.ts',
     ],
   },
+  {
+    type: 'blood',
+    scenes: ['compact', 'dock'],
+    why:
+      'a LIVE BUILD-ENGINE GAME LOOP inside a 5.9 MB ASYNCIFY WASM module, and both of this '
+      + "suite's determinism mechanisms fail on it for reasons that are structural rather than "
+      + 'merely "it animates" — which is not sufficient here any more than it was for acidwarp, '
+      + 'since mirrorpool, outlines, warrensvisions and freezeframe all animate and are all '
+      + 'baselined. '
+      + '(1) `freezeFaceVideo` HAS NOTHING TO WRITE. It freezes a video face by setting '
+      + '`params.freeze = 1`, and `bloodDef.params` is `audioGain`, `fillMode` and thirteen '
+      + '`cv_*` gate targets — there is no `freeze` param on this def and never has been, so the '
+      + 'write lands on a key the factory\'s `if (paramId in params)` guard rejects and is a '
+      + 'NO-OP. (That is also why this entry carries no `freezeIsNotASeam`: the gate forbids the '
+      + 'field on a def with no `freeze` param, and rightly — there is no param to make an '
+      + 'argument about.) '
+      + '(2) `simPin` CANNOT REACH THE CLOCK, and the clock is the whole problem. The picture '
+      + "advances from Build's `totalclock`, which the emscripten shim drives from "
+      + '`clock_gettime(CLOCK_MONOTONIC)` INSIDE THE WASM MODULE — wall-clock, read in C, with no '
+      + 'page-global anywhere on the path. `simPin` installs boot-time globals with '
+      + '`addInitScript` for a JS factory to read at construction; nothing in this module reads a '
+      + 'global, so there is no pin to add short of a new seam through the WASM boundary. '
+      + '⚠ AND THE MENU ANIMATES BY DESIGN, WHICH IS THE MEASUREMENT. That is not incidental — it '
+      + 'is a FIXED BUG, recorded in PHASE1-STATUS.md §3: `CLOCK_MONOTONIC_RAW` is unsupported on '
+      + 'emscripten, `totalclock` never advanced, and the idle menu was FROZEN. '
+      + '`blood-mount.spec.ts` asserts in a real browser that successive framebuffer hashes '
+      + 'DIFFER with no input at all, and its failure message says the engine clock is dead. So '
+      + 'this module has a live, committed, running gate asserting exactly the property that '
+      + 'makes it uncapturable — a face baseline here would be pinning a bug. '
+      + '⚠ THE NATURAL STILL DOES NOT EXIST EITHER, unlike acidwarp (speed = 0) or milkdrop (a '
+      + 'fixed delta): every state the picture could be held in is a function of how many wall-'
+      + 'clock ticks elapsed between boot and capture, on a runner whose WASM cold-boot is '
+      + 'measured at 20-25 s and varies with shard load. '
+      + 'The CARD roster reached the same verdict about this renderer long ago (EXEMPT_FROM_VRT '
+      + 'in vrt-exemptions.ts, whose `why` this PR rewrites to cover the legacy card only).',
+    coveredBy: [
+      // The engine itself, in a real browser: it boots out-of-box from the
+      // bundled shareware, the drip border is lit (the ART alias), and the idle
+      // menu ANIMATES — the clock regression that is also this exemption's
+      // measurement.
+      'e2e/tests/blood-mount.spec.ts',
+      // The whole chain from a menu key to audible PCM at a downstream SCOPE —
+      // re-pointed onto the DEFAULT shell in this PR, so it is the leg that
+      // proves the FACE boots the engine rather than the legacy card.
+      'e2e/tests/blood-audio-output.spec.ts',
+      // Driving the menu into a level and reading the in-game framebuffer.
+      'e2e/tests/blood-ingame.spec.ts',
+      // The SCREEN switch's render legs — that the body mounts and paints, that
+      // OFF unmounts the canvas and the ENGINE KEEPS RUNNING, that the state
+      // persists on node.data, and that the keyboard host reaches the runtime.
+      'e2e/tests/blood-face-screen.spec.ts',
+      // Every cell operates, and the dock's control set equals the def's param
+      // set — the registry-driven sweep this face auto-enrols in.
+      'e2e/tests/faces-parity.spec.ts',
+      // The FACE's structure, none of which needs pixels: the two ranked
+      // controls, the one band, the glyph refusal, the thirteen
+      // no-user-control declarations and the shared boot seam's contract.
+      'packages/web/src/lib/ui/modules/blood-face-model.test.ts',
+      // The boot seam itself, pure: what each surface must call, and in which
+      // order the picker path resets a latched failure.
+      'packages/web/src/lib/blood/blood-boot.test.ts',
+      // The TS shim and the CV-gate scancode map.
+      'packages/web/src/lib/blood/blood-runtime.test.ts',
+      'packages/web/src/lib/blood/blood-keys.test.ts',
+    ],
+  },
 
 ];
 

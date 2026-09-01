@@ -5184,6 +5184,50 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // ZERO ATTEST: an audio def — `face`, `docs` and `options` never enter the
   // WebGL basis, and no video module moves.
   'tempolock',
+
+  // ── BLOOD (2026-08-31) — the first GAME on the faceplate ─────────────────
+  //
+  // ⚠ THE INVENTORY SAID `bespoke-surface` AND BOTH OF ITS CLAUSES WERE FALSE.
+  // It read: "a GAME: the card claims the keyboard while focused and its body is
+  // the viewport. The knobs are incidental; the interaction is play, which no
+  // ranked cell list expresses." The KEYBOARD half is true and is carried below.
+  // The other two are not. `BloodCard.svelte` contains NO `<canvas>` in its
+  // ~380 lines — that sentence describes DoomCard — so "its body is the
+  // viewport" was about a different module; and "the knobs" is a plural for ONE
+  // knob (GAIN), with `fillMode` painted by NOTHING at all. So the face does not
+  // reduce this module's controls, it INCREASES them, and it adds the picture
+  // the card never had. See the inventory entry, rewritten in this diff.
+  //
+  // ⚠ THE PROMOTION'S ONE REAL HAZARD IS THE BOOT, and it is the sharpest
+  // instance of STOP 2 in the program. `extras.ensureLoaded()` — the call that
+  // turns a BLOOD node from a dark scanline field into a running Build engine —
+  // had EXACTLY ONE CALLER IN THE TREE and it was `BloodCard.svelte`. blood is
+  // in neither half of `HEADLESS_MOUNT_LANE_TYPES` (no card-owned media element,
+  // not a CARD_PRODUCER), so nothing keeps that card mounted off-screen after
+  // promotion. A body that forgot to boot would ship a module that is DARK
+  // FOREVER while the def, the registry, the shader and every face gate stayed
+  // green. The boot is therefore extracted to `$lib/blood/blood-boot.ts` and
+  // called by both surfaces, and it is proved THROUGH the face by
+  // `blood-face-screen.spec.ts` and by `blood-audio-output.spec.ts`, which this
+  // PR re-points off `?shell=legacy` so the whole boot → keyboard → PCM → SCOPE
+  // chain runs on the surface a player actually meets.
+  //
+  // ⚠ WHEN IT BOOTS IS UNCHANGED. The lane tile was a `ModuleShellPlaceholder`
+  // and the card mounted only in the DOCK, so BLOOD has always started when the
+  // dock full view opened. The body mounts in the same place.
+  //
+  // ⚠ NO `options[]` FOR `fillMode`, DELIBERATELY. LETTERBOX/FILL captions would
+  // be a `params` edit on a def inside the WebGL attest basis — a real-GPU
+  // re-attest plus a contract re-pin for two words — and `discrete 0..1` already
+  // derives a toggle for free through `paramCellKind`. `face` and
+  // `noUserControl` are both hash-transparent, so this promotion costs NO
+  // attest and NO contract movement.
+  //
+  // ⚠ IT IS UNBASELINABLE, WITH A MEASURED ARGUMENT rather than "it's a game":
+  // `FACES_WITHOUT_SCENES` in e2e/vrt/_shell-faces.ts carries it, and NOT a
+  // `freezeIsNotASeam` — this def has no `freeze` param at all, and the gate
+  // refuses that field when there is none.
+  'blood',
 ]);
 
 /**
