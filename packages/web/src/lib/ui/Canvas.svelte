@@ -8983,6 +8983,13 @@
             sim.touch(ch as 1 | 2 | 3 | 4, x, y),
           gateOn: (ch: number) => sim.gateOn(ch as 1 | 2 | 3 | 4),
           gateOff: (ch: number) => sim.gateOff(ch as 1 | 2 | 3 | 4),
+          // NOTE MODE — what the device sends once both quantisations are on.
+          // The CC helpers above cannot reach it, and it is the mode the frozen
+          // -axis defect lives in.
+          noteTouch: (ch: number, xNote: number, yNote: number, velocity?: number) =>
+            sim.noteTouch(ch as 1 | 2 | 3 | 4, xNote, yNote, velocity),
+          noteRelease: (ch: number, xNote: number, yNote: number) =>
+            sim.noteRelease(ch as 1 | 2 | 3 | 4, xNote, yNote),
           // GESTURE PLAYBACK: `glide` streams axis samples with no gap between
           // them (what a looping recording looks like on the wire), and
           // `playLoop` prefixes the device's own per-repetition Start. The two
