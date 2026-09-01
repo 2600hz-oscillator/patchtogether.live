@@ -163,16 +163,21 @@
     );
   }
 
-  /** The live graph the pass-through walk needs. Rebuilt per call — a cable
-   *  patched a moment ago must count, and it is O(edges) inside a hover-time
-   *  predicate that already walks this card's holes. */
-  function liveAdoption() {
+  /** The live graph the pass-through walk needs, built ONCE per graph version
+   *  rather than once per hole. `compatOf` runs for every hole on the card on
+   *  every render while a cable is carried, so a per-call rebuild made the
+   *  hover cost O(holes x (nodes + edges)) on a rack where both are large —
+   *  for a predicate whose answer is identical across all of them. `edgeVersion`
+   *  is the same pump the connection list uses, so a cable patched a moment ago
+   *  still counts. */
+  let adoption = $derived.by(() => {
+    void edgeVersion;
     return makeAdoptionGraph(
       Object.values(patch.nodes).filter(Boolean) as ModuleNode[],
       Object.values(patch.edges).filter(Boolean) as never,
       defLookup,
     );
-  }
+  });
 
   /** data-compat: absent when idle; 'source' on the picked hole; 'ok' on holes
    *  a commit would accept; 'dim' (≈35% opacity) on holes it would reject. */
@@ -189,7 +194,7 @@
     const outPort =
       hole.direction === 'output' ? def.outputs?.find((p) => p.id === hole.portId) : undefined;
     const holeForCompat = outPort
-      ? { ...hole, cable: effectiveOutputType(nodeId, outPort, liveAdoption()) as string }
+      ? { ...hole, cable: effectiveOutputType(nodeId, outPort, adoption) as string }
       : hole;
     const ok = rearHoleAcceptsCarry(
       holeForCompat,

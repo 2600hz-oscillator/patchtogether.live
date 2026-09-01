@@ -54,6 +54,14 @@ import {
 
 const SLOW_RENDER = process.env.E2E_SWIFTSHADER === '1' || !!process.env.CI;
 
+/**
+ * ONE readiness budget, named once and shared by all three places that wait for
+ * the scope to fill. It used to be the literal `SLOW_RENDER ? 20_000 : 10_000`
+ * written out three times, which is how the negative control below came to
+ * exceed its own test timeout without anyone being able to see the sum.
+ */
+const READY_BUDGET_MS = SLOW_RENDER ? 20_000 : 10_000;
+
 /** A reader over an explicit overlay, in the shape the model reads — the def
  *  defaults fill anything not named. */
 const at = (over: Record<string, number> = {}) => (id: string) => over[id];
@@ -238,7 +246,7 @@ async function readGateWhenPopulated(
   scopeId: string,
   what: string,
 ): Promise<GateStats> {
-  const deadline = Date.now() + (SLOW_RENDER ? 20_000 : 10_000);
+  const deadline = Date.now() + READY_BUDGET_MS;
   let last = await readGate(page, scopeId);
   while (Date.now() < deadline) {
     if (last.total > 0 && last.bothZero === 0 && last.peak > 0.9 && last.peakB > 0.9) return last;
@@ -395,7 +403,7 @@ test.describe('illogic face — four identical dials, and the four numbers they 
     await expect
       .poll(async () => readPeak(page, scope), {
         message: 'with every attenuverter at 0 the SUM bus must go silent',
-        timeout: SLOW_RENDER ? 20_000 : 10_000,
+        timeout: READY_BUDGET_MS,
       })
       .toBeLessThan(0.01);
   });
@@ -418,6 +426,29 @@ test.describe('illogic face — four identical dials, and the four numbers they 
   test('#1823 NEGATIVE CONTROL: an unwired NAND jack is REFUSED, not silently awaited', async ({
     page,
   }) => {
+    // ⚠ THE ONLY TEST IN THIS FILE THAT SPENDS THE READINESS BUDGET **TWICE**,
+    // and on CI that structurally exceeds Playwright's 30 s default — which is
+    // what made it flaky rather than any nondeterminism in the subject. The
+    // arithmetic, on CI (`READY_BUDGET_MS` = 20 s):
+    //
+    //   the AND-is-live poll ......................... up to 20 s
+    //   readGateWhenPopulated, DRIVEN TO EXHAUSTION ... a further 20 s
+    //
+    // Every other caller of `readGateWhenPopulated` expects it to SUCCEED, so
+    // it returns as soon as the window fills and the second budget is never
+    // spent. This leg is the one place the refusal itself is the contract, so
+    // the wait is guaranteed to run to its deadline. ~40 s of declared budget
+    // against a 30 s test timeout is green only while the first poll happens to
+    // return quickly, which is why it passed almost always and then failed on a
+    // loaded shard with `page.evaluate: Test timeout of 30000ms exceeded` — the
+    // TIMEOUT's message, not the refusal's, so the assertion never got to run.
+    //
+    // ⚠ NOT A LONGER WAIT IN THE SENSE THE RENDERER RULE FORBIDS. Nothing here
+    // waits on a frame or sleeps: this is the FAILURE BOUND, and it is DERIVED
+    // from the two budgets this test is already documented to spend rather than
+    // picked. `readGateWhenPopulated`'s own header makes the same distinction:
+    // "the timeout bounds the failure; it is not the mechanism".
+    test.setTimeout(2 * READY_BUDGET_MS + 30_000);
     await gotoShell(page);
     const il = 'il-nc';
     const scope = 'il-nc-scope';
@@ -444,7 +475,7 @@ test.describe('illogic face — four identical dials, and the four numbers they 
     await expect
       .poll(async () => (await readGate(page, scope)).peak, {
         message: 'the AND jack must be live, or this control proves nothing',
-        timeout: SLOW_RENDER ? 20_000 : 10_000,
+        timeout: READY_BUDGET_MS,
       })
       .toBeGreaterThan(0.9);
 
