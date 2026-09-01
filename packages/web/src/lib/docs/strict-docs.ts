@@ -339,6 +339,9 @@ export const STRICT_DOCS: ReadonlySet<string> = new Set<string>([
   'frogger',
   'modtris',
   'pong',
+  // SEQTRIS (2026-08-31): the 8×8 Launchpad Tetris note source. New module —
+  // ships with co-located docs.
+  'seqtris',
   'samsloop',
   'skifree',
   'spectrograph',
