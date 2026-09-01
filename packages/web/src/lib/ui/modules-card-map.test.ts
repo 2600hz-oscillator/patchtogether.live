@@ -50,7 +50,7 @@ const EXPECTED_NODE_TYPES = [
   'monoglitch', 'moog902', 'moog904a', 'moog911', 'moog921Vco', 'moogCp3', 'nibbles',
   'noise', 'numpadPlus', 'onetonine', 'outToLaunch', 'painter', 'peakstate', 'peertube', 'picturebox', 'pong',
   'polarizer', 'posterbox', 'ptzcam', 'qbrt', 'rasterize', 'reshaper', 'resofilter', 'reverb', 'ringback', 'rings',
-  'ruttetra', 'sampleHold', 'samsloop', 'scope', 'score', 'scoreboard',
+  'ruttetra', 'sampleHold', 'samsloop', 'scope', 'score', 'scoreboard', 'seqtris',
   'scaler', 'shapedramps', 'shapegen', 'shapes', 'shimmershine', 'sidecar', 'sixstrum', 'sourcery', 'spectrograph',
   'skifree', 'slewSwitch', 'snaredrum', 'stereovca', 'sticky',
   'tidyVco', 'tomtom',
