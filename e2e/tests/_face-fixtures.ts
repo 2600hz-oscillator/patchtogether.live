@@ -65,8 +65,20 @@ const repoPath = (...segments: string[]): string => resolve(REPO, ...segments);
  * observed. Every entry below names a hard, already-established fact.
  */
 export const DENIED: Readonly<Record<string, string>> = {
-  audioIn:
-    'needs getUserMedia — capability-dependent on CI, where there is no camera or mic to grant',
+  // ⚠ `audioIn` WAS HERE AND IS DELETED, NOT AMENDED — the THIRD instance of the
+  // class the `audioOut` note directly below describes, and the second time this
+  // file has watched it happen to its own neighbour. Its entry read: "needs
+  // getUserMedia — capability-dependent on CI, where there is no camera or mic
+  // to grant."
+  //
+  // Same mechanism, same reason for deleting by hand: promotion moves it out of
+  // `unpromoted` (the population this record filters), so the loop below stops
+  // consulting it and the record goes INVISIBLE rather than RED. ⚠ And it would
+  // have been factually wrong as well as unread: after promotion nothing on
+  // either face surface calls `getUserMedia` on mount at all — the acquire is
+  // claimed once per node and only when `enumerateDevices()` already reports
+  // LABELLED devices, which a fresh CI context never has. The stated reason
+  // stopped describing the module on the day it was promoted.
   // ⚠ `audioOut` WAS HERE AND IS DELETED, NOT AMENDED. Its entry read: "the
   // rack MASTER OUTPUT: `AudioIoSurface.svelte` hosts it (and audioIn) in a
   // dedicated I/O drawer via DockCardHost, so it never renders the lane tile +
