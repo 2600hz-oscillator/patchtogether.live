@@ -116,19 +116,35 @@ describe('MASSPASS — band-count roster', () => {
     expect(wsBandCountForIndex(99)).toBe(99);
   });
 
-  it('every band count produces finite, bounded audio', () => {
-    const input = testSignal(SR / 2);
-    for (const count of WS_MASSPASS_BAND_COUNTS) {
-      const mp = new WsMassPass(SR, count);
-      const out = mp.processBlock(input);
-      expect(mp.getBandCount()).toBe(count);
-      for (let i = 0; i < out.length; i++) {
-        expect(Number.isFinite(out[i]!)).toBe(true);
-        expect(Math.abs(out[i]!)).toBeLessThan(8);
+  // ⚠ Budget note (red main 33561893729, 2026-09-01): this sweep renders 0.5 s
+  // of audio for SIX band counts, and the original shape called expect() TWICE
+  // PER SAMPLE — 288k assertion invocations, which is what actually spent the
+  // clock; on a loaded runner it blew vitest's default 5 s while every other
+  // test here passed. The scan below asserts ONCE per count with the first
+  // offending index in the message (identical failure semantics, ~none of the
+  // cost), and the explicit timeout scales by the roster the loop sweeps.
+  it(
+    'every band count produces finite, bounded audio',
+    () => {
+      const input = testSignal(SR / 2);
+      for (const count of WS_MASSPASS_BAND_COUNTS) {
+        const mp = new WsMassPass(SR, count);
+        const out = mp.processBlock(input);
+        expect(mp.getBandCount()).toBe(count);
+        let bad = -1;
+        for (let i = 0; i < out.length; i++) {
+          const v = out[i]!;
+          if (!Number.isFinite(v) || Math.abs(v) >= 8) { bad = i; break; }
+        }
+        expect(
+          bad,
+          `count=${count}: sample[${bad}]=${bad >= 0 ? out[bad] : 'ok'} not finite/bounded`,
+        ).toBe(-1);
+        expect(rms(out)).toBeGreaterThan(1e-5);
       }
-      expect(rms(out)).toBeGreaterThan(1e-5);
-    }
-  });
+    },
+    WS_MASSPASS_BAND_COUNTS.length * 2_000,
+  );
 
   it('band centres are log-spaced across 50 Hz .. 12 kHz and ascend', () => {
     const mp = new WsMassPass(SR, 48);

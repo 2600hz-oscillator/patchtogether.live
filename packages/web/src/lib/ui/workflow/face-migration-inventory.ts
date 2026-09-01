@@ -1534,12 +1534,51 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
       'ptzcam argument. Two knobs (grav, quant) are the only generic material, and a face that ' +
       'ranked those would move them to the lane and leave the board and the controller behind.',
   },
+  // ⚠ MOVED HERE FROM `bespoke-surface` (2026-08-31). Unusually, EVERY FACT IN
+  // THE OLD `why` WAS TRUE and only the conclusion was stale. It read: "a RICH
+  // TEXT EDITOR: a contenteditable marquee with per-run colour and formatting.
+  // Typing the text IS the module, and it is beyond a short-text field."
+  //
+  //   * "a contenteditable marquee with per-run colour and formatting" — TRUE.
+  //   * "typing the text IS the module" — TRUE, and stronger than it sounds:
+  //     all four params only MOVE the ribbon.
+  //   * "beyond a short-text field" — TRUE, and still true. `ShellEntryCell`
+  //     (#1509) shipped, but it parses ONE SCALAR per cell; a styled
+  //     multi-paragraph document is not that, and this promotion does not
+  //     pretend otherwise.
+  //
+  // What changed is the LADDER, not the module: a `fullViewBody` is a SLOT, not
+  // a cell, so "not cell-shaped" stopped being disqualifying — the
+  // picturebox / painter / score shape.
   {
     type: 'textmarquee',
-    disposition: 'bespoke-surface',
-    why:
-      'a RICH TEXT EDITOR: a contenteditable marquee with per-run colour and formatting. Typing ' +
-      'the text IS the module, and it is beyond a short-text field.',
+    disposition: 'generic-face',
+    note:
+      'DONE (2026-08-31). Four ranked knob cells (PosX, PosY, ScrlX, ScrlY — position first, ' +
+      'because ScrlX/ScrlY default to 0.5 and `scrollOffset` special-cases that to a velocity of ' +
+      'exactly zero, so out of the box the two SCRL knobs do nothing) over a `fullViewBody` ' +
+      'carrying the whole editor. ⚠ THE LOAD-BEARING MOVE IS THE MODEL WRITER: THIRTEEN of the ' +
+      "card's fifteen data-testids are it — align L/C/R, B/I/U, the per-selection TEXT colour, " +
+      'the 12-entry FONT select, the SIZE range, the layer BG swatch and the contenteditable ' +
+      'itself — and ZERO are expressible as a face cell (they act on a live DOM Selection, or are ' +
+      'colour inputs, or are the document). All thirteen move to the body, with the same testids. ' +
+      '⚠ AND RE-HOSTING THEM IS A SEMANTIC CHANGE UNLESS IT IS STOPPED: `serializeEditor` reads ' +
+      "`getComputedStyle`, so the editor's CASCADE is part of the persisted document. The card's " +
+      '`.editor` rule set color:#ffffff and white-space:pre-wrap; `.dock-ext-body` sets neither ' +
+      'and inherits the faceplate var(--text,#eef1f5), so a copy-pasted body would have written ' +
+      '#eef1f5 into every untouched run of every rack anyone opened the dock on, Y.Doc-persisted ' +
+      'and read back by the still-live legacy card. The serializer is extracted to ' +
+      '$lib/graph/textmarquee-editor (outside lib/video/**, so it costs no attest) and both ' +
+      'surfaces stamp EDITOR_BASE_STYLE on the element rather than inheriting it. ⚠ NOT A ' +
+      'PRODUCER: the rasterize-and-push half moved to $lib/ui/media/extras-producers on NODE ' +
+      'lifetime in #1720, so the node shows your text with no UI mounted and textmarquee stays ' +
+      'correctly out of CARD_PRODUCER_LANE_TYPES. ⚠ THE FACE ADDS textmarquee\'s first LANE ' +
+      'picture (the generic VideoTileThumb — the card only ever painted its preview inside ' +
+      'itself) and its first SCREEN switch. ⚠ ZERO RESTING READOUTS WERE DELETED, because the ' +
+      'card painted none: no value, no measurement, not even a number beside the SIZE slider. ' +
+      'The only non-control text carried across is the empty-state TYPE TEXT… badge. ⚠ ZERO ' +
+      'ATTEST AND ZERO CONTRACT MOVEMENT, measured: webgl-attest-hash.sh returns the same hash ' +
+      'with this diff as without it, and no `params` field is touched.',
   },
   {
     type: 'toybox',
