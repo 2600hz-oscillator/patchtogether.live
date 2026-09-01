@@ -453,6 +453,18 @@ const SUBJECTS: readonly Subject[] = [
   // claim is the one thing this subject makes untrue, and whoever next reads a
   // jump in this file's cost artifact should know which row moved.
   { type: 'blood', prefix: 'blood', domain: 'video', why: '⚠ THE FIRST ROW WHOSE BODY IS NOT RESCUING A PICTURE BUT STARTING A MODULE. BloodCard.svelte mounts no canvas at all, so the face ADDS blood\'s first live picture and its first SCREEN switch; what the card owned was the tree\'s ONLY `extras.ensureLoaded()` call, and blood is in neither half of HEADLESS_MOUNT_LANE_TYPES, so a body that mounted this canvas and forgot to boot would pass every leg below while shipping a module that is dark forever. That specific failure is covered by blood-face-screen.spec.ts and by the default-shell leg of blood-audio-output.spec.ts, not here — this row proves the SWITCH. ⚠ SCREEN OFF KEEPS THE GAME RUNNING, but NOT because of this body\'s markWatched call — measured, not assumed: blood is pull-exempt from construction (a non-empty audioSources map, which it always has because PatchEngine.registerDomain injects the AudioContext whenever both domains are registered), and deleting the mark leaves blood-face-screen.spec.ts green. The mark stays as topology-independent insurance, since surface.draw is what calls runtime.runFrame() and a lapsed pull would freeze the SIMULATION rather than a picture. ⚠ It is also the only subject here whose body owns a capture-phase WINDOW keyboard listener, so a body that failed to tear it down would poison later batch-mates with swallowed keys — which this file would report as a mysterious click failure two modules later.' },
+  // ── VIDEOBOX (2026-09-01, wave 3) — the LOCAL-FILE PLAYER ─────────────────
+  //
+  // Added in the SAME diff as the promotion, per this file's convention, and
+  // APPENDED AT THE TAIL for the mechanical reason blood's note gives: batches
+  // slice this array in declaration order and each test's TITLE is its batch's
+  // comma-joined module list, so appending changes exactly one title.
+  //
+  // Verified before writing rather than assumed: `type == prefix == extension
+  // id`, the body uses the standard `{#if !previewCollapsed}` REMOVES
+  // mechanism, and it declares the conventional `<type>-face-canvas` — so no
+  // `canvas` override is needed.
+  { type: 'videobox', prefix: 'videobox', domain: 'video', why: 'the file player\'s live engine-output preview and its SCREEN switch — an ADDITION, since VideoboxCard adopts the raw <video> and has no SCREEN switch at all. ⚠ The watch-mark case is the OUTPUT plus the module\'s whole point: a loaded file feeds video AND audio_l/audio_r downstream, so a lapsed mark would idle the picture every consumer samples while the element kept decoding — the switch must collapse the preview copy and nothing else. The deeper "keeps playing" property (the element itself, on node lifetime) is collapse-keeps-playing.spec.ts\'s and face-videobox.spec.ts\'s subject; this row proves the SWITCH.' },
 ] as const;
 
 /** The representative module for the PERSISTENCE leg — see that test's comment. */

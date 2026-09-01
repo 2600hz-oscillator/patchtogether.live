@@ -44,6 +44,12 @@ import { test, expect, type Page } from '@playwright/test';
 import { readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { spawnPatch } from './_helpers';
+// ⚠ THE PROMOTION SET, imported (the `_face-fixtures.ts` precedent — pure data,
+// no registry read). A FACED member's dock pane mounts a ModuleShell body that
+// BLITS the engine output and never adopts the node-owned <video>, so for it
+// the element stays PARKED while the dock is open — which is why every media
+// query below is document-wide and the placement leg branches on membership.
+import { STRICT_FACES } from '../../packages/web/src/lib/ui/workflow/strict-faces';
 
 // The LONG fixture (#1577): 120 s of low-bitrate synthetic video
 // (generate-lobby-clip-long.mjs), so the clip's end is UNREACHABLE inside this
@@ -588,17 +594,58 @@ for (const type of TYPES) {
 
     // Confirm genuine playback BEFORE touching anything, in-page (never a
     // Playwright poll loop — that samples the very main thread it measures).
+    //
+    // ⚠ DOCUMENT-WIDE, NOT DOCK-SCOPED (wave 3 repair, the videobox/
+    // videovarispeed pairing constraint). For a FACED member the dock pane
+    // mounts a blitting ModuleShell body and the node-owned <video> never
+    // enters the pane — it stays PARKED — so a `[data-testid="dock-full-view"]
+    // video` query would time out here and the sweep would report a green SKIP
+    // while an owner-P0 regression guard silently vanished. The element is
+    // node-owned and unique to this rack's one subject, so the document is the
+    // right scope; the PLACEMENT leg below is what still pins WHERE it lives.
     await page.waitForFunction(
       () => {
-        const vids = [...document.querySelectorAll('[data-testid="dock-full-view"] video')];
+        const vids = [...document.querySelectorAll('video')];
         return vids.some((v) => {
           const el = v as HTMLVideoElement;
-          return !el.paused && el.currentTime > 0.05;
+          return !!(el.currentSrc || el.getAttribute('src')) && !el.paused && el.currentTime > 0.05;
         });
       },
       undefined,
       { timeout: 30_000 },
     );
+
+    // ── THE PLACEMENT LEG — the negative control the re-scope above owes ────
+    //
+    // Re-pointing the queries document-wide is what keeps this sweep ALIVE for
+    // a faced member; this leg is what keeps it HONEST about the two ownership
+    // shapes it now spans, in both directions:
+    //   * FACED (STRICT_FACES): the body blits and must NEVER adopt — the
+    //     element a peer's legacy card may need has ONE parent. Found in the
+    //     dock pane here means a body adopted it after all.
+    //   * UN-FACED: the legacy card in the dock pane adopts it for display —
+    //     found anywhere else means the dock stopped mounting the real card.
+    // Without this, a face PR that quietly adopted the element (or a dock that
+    // dropped the card) would keep every progress assertion green.
+    const placedWhilePlaying = await liveMedia(page);
+    if (STRICT_FACES.has(type)) {
+      expect(
+        placedWhilePlaying.some((m) => m.where === 'dock'),
+        `${type} is FACED: its dock body must BLIT, never adopt — yet the node-owned <video> is ` +
+          `inside the dock pane: ${JSON.stringify(placedWhilePlaying)}`,
+      ).toBe(false);
+      expect(
+        placedWhilePlaying.some((m) => m.where === 'parking'),
+        `${type} is FACED and no surface adopts its element, so it must be PARKED while playing: ` +
+          `${JSON.stringify(placedWhilePlaying)}`,
+      ).toBe(true);
+    } else {
+      expect(
+        placedWhilePlaying.some((m) => m.where === 'dock'),
+        `${type} is UN-FACED: the dock pane mounts its legacy card, which adopts the element — ` +
+          `not found in the pane: ${JSON.stringify(placedWhilePlaying)}`,
+      ).toBe(true);
+    }
 
     // ── THE FIXTURE OUTLASTS THE SPEC — DERIVED, THEN ASSERTED (#1553/#1577) ──
     //
@@ -624,8 +671,10 @@ for (const type of TYPES) {
       PROGRESS_CAP_MS / 1000 + // pre-collapse progress window
       20 + // dock-gone wait after the collapse
       PROGRESS_CAP_MS / 1000; // post-collapse progress window
+    // Document-wide for the same wave-3 reason as the play-confirm above: a
+    // faced member's element is parked, not in the pane.
     const fixtureHeadroom = await page.evaluate(() => {
-      const v = [...document.querySelectorAll('[data-testid="dock-full-view"] video')]
+      const v = [...document.querySelectorAll('video')]
         .map((el) => el as HTMLVideoElement)
         .find((el) => el.currentSrc || el.getAttribute('src'));
       return v ? { duration: v.duration, currentTime: v.currentTime } : null;

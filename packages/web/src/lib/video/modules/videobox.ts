@@ -141,9 +141,9 @@ export const videoboxDef: VideoModuleDef = {
   ],
 
   docs: {
-    explanation: "videobox is a local-file VIDEO PLAYER: you drop (or pick) a video file from disk and it decodes the file each frame into the module's video output, while the file's stereo audio track is split out to the audio_l / audio_r jacks for patching back into the audio domain. The card owns the actual HTMLVideoElement and object-URL; the engine samples that element through a decode-rate frame uploader (only re-uploading when a genuinely new frame lands, downscaled to the engine resolution) so playback stays smooth even at 1080p. Behind the file picker the card uses File System Access handles (Chromium) to remember your pick and one-click-reload it next session; other browsers and other peers fall back to a \"Re-link: drop <name>\" prompt. The playhead is multiplayer-synced: play, pause and seek write a shared (isPlaying / lastSyncTime / lastSyncPosition) triple to the node so every peer's local copy follows, drift-correcting whenever it slips more than ~0.5s off the expected position. The card is drag-resizable from the bottom-right corner (whole-rack-unit tiles, default and minimum 360x360) so several videoboxes can be tiled into a wall of TVs; size persists on the node and syncs to peers, and the 16:9 video preview grows to fill the resized card. Right-click the preview for Fullscreen (a LOCAL per-peer state, NOT multiplayer-synced) or Full Frame (in-app, the video consumes the whole card, hiding the title/picker/transport/seekbar; double-click to exit), where ONLY Full Frame is synced to peers. Usage: drop a clip, hit Play, and patch video into a mixer/output and audio_l/audio_r into your audio chain; pulse the TRIG input from a clock or button to toggle play/pause hands-free. Idle (no file) shows a faint blue gradient so an empty card reads as alive-but-empty.",
+    explanation: "videobox is a local-file VIDEO PLAYER: you drop (or pick) a video file from disk and it decodes the file each frame into the module's video output, while the file's stereo audio track is split out to the audio_l / audio_r jacks for patching back into the audio domain. The NODE owns the actual HTMLVideoElement and object-URL (a node-scoped controller created with the graph — the file keeps playing with no surface mounted at all); the engine samples that element through a decode-rate frame uploader (only re-uploading when a genuinely new frame lands, downscaled to the engine resolution) so playback stays smooth even at 1080p. Behind the file picker the surface uses File System Access handles (Chromium) to remember your pick and one-click-reload it next session; other browsers and other peers fall back to a \"Re-link: drop <name>\" prompt. The playhead is multiplayer-synced: play, pause and seek write a shared (isPlaying / lastSyncTime / lastSyncPosition) triple to the node so every peer's local copy follows, drift-correcting whenever it slips more than ~0.5s off the expected position. The picture well is drag-resizable from the bottom-right corner (default and minimum 360x360) so several videoboxes can be tiled into a wall of TVs; size persists on the node and syncs to peers. Right-click the picture for Fullscreen (a LOCAL per-peer state, NOT multiplayer-synced) or Full Frame (in-app, the video consumes the whole surface, hiding the picker/transport/seekbar; double-click to exit), where ONLY Full Frame is synced to peers. The faceplate also carries a SCREEN ON/OFF switch: OFF collapses the preview and reclaims its space while the file KEEPS PLAYING and keeps feeding the video and audio outs. Usage: drop a clip, hit Play, and patch video into a mixer/output and audio_l/audio_r into your audio chain; pulse the TRIG input from a clock or button to toggle play/pause hands-free. Idle (no file) shows a faint blue gradient so an empty module reads as alive-but-empty.",
     inputs: {
-      play_trigger: "TRIG (gate cable, edge: trigger). A rising edge across the gate threshold toggles play/pause — it does NOT hold; only the moment the level crosses high fires the toggle, so a clock or button pulse flips between Play and Pause. Routed through the CV bridge as the synthetic cv_play_trigger param, which the card edge-detects and writes into the shared multiplayer play state.",
+      play_trigger: "TRIG (gate cable, edge: trigger). A rising edge across the gate threshold toggles play/pause — it does NOT hold; only the moment the level crosses high fires the toggle, so a clock or button pulse flips between Play and Pause. Routed through the CV bridge as the synthetic cv_play_trigger param, which the node's source controller edge-detects and writes into the shared multiplayer play state.",
     },
     outputs: {
       video: "VID (video cable) — the decoded video frames of the loaded file, sampled into the output at the engine resolution. Shows the faint blue idle gradient until a file is loaded and a frame has uploaded.",
@@ -152,9 +152,66 @@ export const videoboxDef: VideoModuleDef = {
     },
     controls: {
       gain: "Gain (linear, 0 to 2, default 1.0). Output level for the picture: the passthrough shader multiplies the sampled RGB by this (the uGain uniform), so 0 blacks the output, 1.0 is the identity and 2 doubles it (clipped at full scale by the 8-bit framebuffer). It scales the VIDEO only — the audio outs are unaffected.",
-      cv_play_trigger: "Play trigger (linear, 0 to 1, default 0). Synthetic hidden param — not a visible control. It is the bridge target for the play_trigger gate input: the CV bridge writes the gate level here and the card polls it for a rising edge across 0.5 to toggle play/pause. Has no on-card UI.",
+      cv_play_trigger: "Play trigger (linear, 0 to 1, default 0). Synthetic hidden param — not a visible control. It is the bridge target for the play_trigger gate input: the CV bridge writes the gate level here and the node's source controller polls it for a rising edge across 0.5 to toggle play/pause. Has no on-screen UI.",
     },
   },
+
+  // ── THE FACE (wave-3 promotion) ───────────────────────────────────────────
+  face: {
+    // ⚠ A REAL CHOICE HERE, NOT A FORCED ONE — the tvLibrarian precedent, on
+    // the def tvLibrarian's own audio plumbing was copied from. `glyphBinding()`
+    // short-circuits on the first `type: 'audio'` OUTPUT and this def HAS two
+    // (audio_l / audio_r) — so a glyph literal would resolve to a LIVE
+    // `live-audio` binding and the dead-glyph clause would NOT catch it. It is
+    // 'none' because it would paint a VU of the film's SOUNDTRACK where the
+    // module's own picture belongs: for a video module the picture IS its
+    // identity in a rack (#1785). The tile picture arrives from
+    // `hasVideoSurface(def)` — `domain === 'video'` and nothing else — so it is
+    // free, per-node, and needs no glyph at all.
+    glyph: 'none',
+
+    // The player body — see $lib/ui/modules/videobox/. Promotion stops BOTH
+    // default surfaces rendering `VideoboxCard.svelte`, and videobox left
+    // `DOM_SOURCE_LANE_TYPES` in LEG-02 P1 (#1511), so under the shell NO card
+    // is mounted anywhere: without this file a promoted videobox could not
+    // pick a file, re-allow a remembered handle, or operate its transport.
+    extension: 'videobox',
+
+    // One ranked key, because the module has one control a player turns.
+    // `gain` scales the picture the module hands downstream; the synthetic
+    // param below is a bridge cache and is declared out of the ranking rather
+    // than ranked.
+    order: ['gain'],
+
+    // A linear 0..2 output level whose landmark is unity at the MIDDLE of the
+    // throw — the reading a fader gives for free and a rotary does not. No
+    // card choice is preserved or overturned: the card never exposed `gain`.
+    paramCells: { gain: 'fader' },
+  },
+
+  // ⚠ WITHOUT THIS THE FACE PAINTS A CONTINUOUS ROTARY OVER A RAW GATE LEVEL.
+  // `cv_play_trigger` is a bridge-written cache, not a setting, and face
+  // completeness is unconditional for a promoted def — so it is declared out
+  // rather than left to be ranked. `'cv-port'` is the only legal writer
+  // (`play_trigger` declares `paramTarget`, so `'internal'` is RED at
+  // no-user-control.ts) and it is also the TRUE one.
+  //
+  // ⚠ NOT COSMETIC BEYOND THE FACEPLATE: `group-controls.ts` drops a
+  // `noUserControl` param from `listExposableControls` and `push-card-schema`
+  // drops it from the Push 2 card, which re-ranks itself from two params to
+  // one — an improvement (a raw gate cache should never have been on a
+  // hardware controller), but a behaviour change outside the face.
+  noUserControl: [
+    {
+      param: 'cv_play_trigger',
+      writer: 'cv-port',
+      why:
+        'written by the `play_trigger` gate bridge as a raw level (0..1). It is a CACHE, not a '
+        + 'setting: the node-owned source controller polls it and edge-detects a rising edge to '
+        + 'toggle play/pause, so a player turning a dial here would be overwritten by the next '
+        + 'bridge write.',
+    },
+  ],
   factory(ctx, node): VideoNodeHandle {
     const gl = ctx.gl;
     const program = ctx.compileFragment(FRAG_SRC);
@@ -340,10 +397,11 @@ export const videoboxDef: VideoModuleDef = {
         if (paramId in params) {
           (params as unknown as Record<string, number>)[paramId] = value;
         }
-        // cv_play_trigger edge detection is owned by the card (it watches
+        // cv_play_trigger edge detection is owned by the node's source
+        // controller ($lib/ui/media/node-video-source-registry — it watches
         // the param via readParam + applies the toggle to data.isPlaying).
         // We accept the value here so the bridge can route it, but the
-        // factory doesn't need to act on it — the card already drives
+        // factory doesn't need to act on it — the controller already drives
         // play/pause through the data write path.
       },
       readParam(paramId) {
