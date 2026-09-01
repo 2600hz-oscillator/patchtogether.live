@@ -15,12 +15,15 @@ import {
   createTrailsDecoder,
   encodeTrailsAxis,
   encodeTrailsGate,
+  encodeTrailsNote,
+  trailsNoteToValue14,
   TRAILS_ACTIVITY_GATE_TIMEOUT_MS,
   TRAILS_AXIS_MAP,
   TRAILS_CC_FULL_SCALE,
   TRAILS_CC_PAIR,
   TRAILS_CHANNEL_COUNT,
   TRAILS_LOOP_PLAYHEAD_CHANNEL,
+  TRAILS_NOTE_AXIS_RANGE,
   type TrailsEvent,
 } from './trails-decode';
 
@@ -384,6 +387,255 @@ describe('trails-decode: the loop gate', () => {
   });
 });
 
+// ── NOTE MODE ──────────────────────────────────────────────────────────────
+//
+// THE DEFECT, in the owner's words: "when i hit scale i am just getting one
+// continuous note output even when i select other notes in the scale."
+//
+// The mechanism, from the quick reference: "When both pitch and temporal
+// quantisation are enabled, Trails transmits MIDI Notes. Otherwise it sends
+// high-resolution MIDI CC." Note mode REPLACES the CC stream — same two axes,
+// same per-axis MIDI channels, quantised to a scale. The note branch used to
+// maintain only `held` and emit a gate, so the instant a player enabled
+// quantisation every X/Y jack froze at its last CC value and every touch
+// produced the same held pitch downstream.
+//
+// ⚠ THE LOAD-BEARING ASSERTION IN THIS SECTION IS THAT THE VALUE CHANGES
+// BETWEEN TWO DIFFERENT NOTES. A test that only checked a gate fired was green
+// throughout the entire life of the bug.
+
+/** The eight wire channels as note-on statuses, spelled as literals so the
+ *  vectors cannot agree with TRAILS_AXIS_MAP by construction. */
+const NOTE_ON_CH1_X = 0x90; // wire channel 0 = channel 1's X
+const NOTE_ON_CH1_Y = 0x91; // wire channel 1 = channel 1's Y
+const NOTE_ON_CH3_X = 0x94; // wire channel 4 = channel 3's X
+
+describe('trails-decode: note mode drives the AXES', () => {
+  it('THE BUG: two different notes produce two DIFFERENT axis values', () => {
+    // The whole defect in four lines. Before the fix both of these produced a
+    // gate and nothing else, so `axes()` was empty and the jack never moved.
+    const d = createTrailsDecoder();
+    const low = axes(d.handle([NOTE_ON_CH1_X, 40, 100], 0));
+    const high = axes(d.handle([NOTE_ON_CH1_X, 100, 100], 1));
+    expect(low, 'a note emits an axis value at all').toHaveLength(1);
+    expect(high).toHaveLength(1);
+    expect(low[0]).toMatchObject({ channel: 1, axis: 'x' });
+    expect(high[0]).toMatchObject({ channel: 1, axis: 'x' });
+    expect(
+      high[0]!.unit,
+      'a HIGHER note must read higher — the jack has to track the scale',
+    ).toBeGreaterThan(low[0]!.unit);
+    // …and it is not merely different, it is the documented mapping.
+    expect(low[0]!.unit).toBeCloseTo(40 / 127, 4);
+    expect(high[0]!.unit).toBeCloseTo(100 / 127, 4);
+  });
+
+  it('THE OWNER\'S OWN CAPTURE: the notes their hardware sent move the jack', () => {
+    // From the 2026-09-01 MON paste, note mode with both quantisations on:
+    // ch1 carried 77, 80, 82, 88, 89 and ch2 carried 81, 83, 89, 93. Those are
+    // channel 1's X and channel 1's Y — the SAME Trails channel, two axes, two
+    // MIDI channels, exactly as in CC mode.
+    const d = createTrailsDecoder();
+    const xUnits = [77, 80, 82, 88, 89].map(
+      (n) => axes(d.handle([NOTE_ON_CH1_X, n, 100], 0))[0]!.unit,
+    );
+    const yUnits = [81, 83, 89, 93].map(
+      (n) => axes(d.handle([NOTE_ON_CH1_Y, n, 100], 0))[0]!.unit,
+    );
+    // Every strike moved the jack, and the order is monotone with the pitch.
+    expect(new Set(xUnits).size, 'five distinct notes, five distinct values').toBe(5);
+    expect([...xUnits].sort((a, b) => a - b)).toEqual(xUnits);
+    expect(new Set(yUnits).size).toBe(4);
+    // The travel that spread buys, stated as a number so a window change is
+    // visible as a change to THIS expectation and not only to a constant.
+    expect(Math.max(...xUnits) - Math.min(...xUnits)).toBeCloseTo(12 / 127, 4);
+    expect(Math.max(...yUnits) - Math.min(...yUnits)).toBeCloseTo(12 / 127, 4);
+  });
+
+  it('each axis keeps its OWN MIDI channel in note mode, as in CC mode', () => {
+    const d = createTrailsDecoder();
+    expect(axes(d.handle([NOTE_ON_CH1_Y, 60, 100], 0))[0]).toMatchObject({
+      channel: 1,
+      axis: 'y',
+    });
+    expect(axes(d.handle([NOTE_ON_CH3_X, 60, 100], 0))[0]).toMatchObject({
+      channel: 3,
+      axis: 'x',
+    });
+    // A wire channel Trails does not use is still not guessed at.
+    expect(axes(d.handle([0x98, 60, 100], 0))).toHaveLength(0);
+  });
+
+  it('note mode works from a COLD START, with no CC ever received', () => {
+    // The realistic case: the player enables quantisation before ever streaming
+    // CC on that channel, so there is no latched coarse half for `emitAxis` to
+    // fall back on. A fix that only updated a fine half would emit nothing here.
+    const d = createTrailsDecoder();
+    const out = axes(d.handle([NOTE_ON_CH1_X, 127, 100], 0));
+    expect(out).toHaveLength(1);
+    expect(out[0]!.unit).toBe(1);
+  });
+
+  it('the gate still behaves EXACTLY as before — the axis is added, not swapped in', () => {
+    const d = createTrailsDecoder();
+    const on = d.handle([NOTE_ON_CH1_X, 60, 100], 0);
+    expect(gates(on)).toEqual([{ kind: 'gate', channel: 1, high: true, source: 'note' }]);
+    // A second held note still does not re-fire the gate…
+    expect(gates(d.handle([NOTE_ON_CH1_X, 64, 100], 1))).toHaveLength(0);
+    // …and the gate still falls only when the last one is released.
+    expect(gates(d.handle([0x80, 60, 0], 2))).toHaveLength(0);
+    expect(gates(d.handle([0x80, 64, 0], 3))[0]!.high).toBe(false);
+  });
+
+  it('AXIS BEFORE GATE — a downstream envelope sees the pitch already set', () => {
+    const d = createTrailsDecoder();
+    const out = d.handle([NOTE_ON_CH1_X, 60, 100], 0);
+    expect(out.map((e) => e.kind)).toEqual(['axis', 'gate']);
+  });
+
+  it('a RELEASE holds the axis rather than dropping it to zero', () => {
+    // The jack behaves the same way it does when a CC stream goes quiet: it
+    // holds. Emitting 0 on release would slam every destination to the bottom
+    // of its range between notes.
+    const d = createTrailsDecoder();
+    d.handle([NOTE_ON_CH1_X, 100, 100], 0);
+    expect(axes(d.handle([NOTE_ON_CH1_X, 100, 0], 1)), 'vel-0 release').toHaveLength(0);
+    expect(axes(d.handle([0x80, 100, 0], 2)), '0x80 note-off').toHaveLength(0);
+  });
+
+  it('LAST-NOTE PRIORITY: releasing a stacked note does not jump the jack back', () => {
+    // One axis carries one coordinate, so stacked notes are not something the
+    // device produces — but if one arrives, the newest wins and a release moves
+    // nothing, which is the standard mono behaviour and the only one that
+    // cannot make a jack lurch backwards on a key lift.
+    const d = createTrailsDecoder();
+    d.handle([NOTE_ON_CH1_X, 40, 100], 0);
+    const second = axes(d.handle([NOTE_ON_CH1_X, 100, 100], 1));
+    expect(second[0]!.unit).toBeCloseTo(100 / 127, 4);
+    expect(axes(d.handle([0x80, 100, 0], 2))).toHaveLength(0);
+  });
+
+  it('a velocity-0 note-on is a RELEASE, not a strike at the bottom of the pad', () => {
+    // The running-status shape the owner's hardware actually sends. Treating it
+    // as a strike would emit an axis value for a note that is being let go.
+    const d = createTrailsDecoder();
+    d.handle([NOTE_ON_CH1_X, 100, 100], 0);
+    const release = d.handle([NOTE_ON_CH1_X, 100, 0], 1);
+    expect(axes(release)).toHaveLength(0);
+    expect(gates(release)).toEqual([{ kind: 'gate', channel: 1, high: false, source: 'note' }]);
+  });
+
+  it('the note WINDOW is one constant, and moving it moves the whole mapping', () => {
+    // The hardware-correction path, exercised: the shipped window is the full
+    // MIDI range because it is the only span the wire guarantees, and a player
+    // who wants more travel narrows it in one line.
+    expect(TRAILS_NOTE_AXIS_RANGE).toEqual({ lo: 0, hi: 127 });
+    const wide = createTrailsDecoder();
+    const narrow = createTrailsDecoder({ noteRange: { lo: 60, hi: 72 } });
+    const w = axes(wide.handle([NOTE_ON_CH1_X, 66, 100], 0))[0]!.unit;
+    const n = axes(narrow.handle([NOTE_ON_CH1_X, 66, 100], 0))[0]!.unit;
+    expect(w).toBeCloseTo(66 / 127, 6);
+    expect(n, 'the midpoint of a one-octave window').toBeCloseTo(0.5, 4);
+    // …and the narrow window clamps rather than running off the end of the jack.
+    expect(axes(narrow.handle([NOTE_ON_CH1_X, 127, 100], 1))[0]!.unit).toBe(1);
+    expect(axes(narrow.handle([NOTE_ON_CH1_X, 0, 100], 2))[0]!.unit).toBe(0);
+  });
+
+  it('the mapping is LINEAR IN SEMITONES — the same shape a V/oct CV has', () => {
+    // Stated as a property rather than as three magic numbers: a MIDI note is
+    // linear in semitones and so is volt-per-octave, so equal pitch intervals
+    // must produce equal jack intervals. That is what makes this mapping
+    // already V/oct-SHAPED; only the constant of proportionality is a choice,
+    // and TRAILS_NOTE_AXIS_RANGE is where it lives.
+    const d = createTrailsDecoder();
+    const at = (n: number) => axes(d.handle([NOTE_ON_CH1_X, n, 100], 0))[0]!.unit;
+    const octave1 = at(72) - at(60);
+    const octave2 = at(96) - at(84);
+    // Precision 4, not more: a note lands on the SAME 14-bit integer scale the
+    // CC path uses, so every value here is quantised to 1/16383 = 6.1e-5 and a
+    // tighter tolerance would be asserting against the rounding rather than
+    // against the mapping.
+    expect(octave2).toBeCloseTo(octave1, 4);
+    // A ten-octave window is exactly 0.1 per octave — the 1 V/oct shape if full
+    // scale is read as 10 V, which is the alternative the constant documents.
+    const voct = createTrailsDecoder({ noteRange: { lo: 0, hi: 120 } });
+    const vAt = (n: number) => axes(voct.handle([NOTE_ON_CH1_X, n, 100], 0))[0]!.unit;
+    expect(vAt(72) - vAt(60)).toBeCloseTo(0.1, 4);
+  });
+
+  it('trailsNoteToValue14 lands on the same 14-bit scale the CC path uses', () => {
+    expect(trailsNoteToValue14(0)).toBe(0);
+    expect(trailsNoteToValue14(127)).toBe(TRAILS_CC_FULL_SCALE);
+    // Out-of-window notes clamp instead of wrapping or going negative.
+    expect(trailsNoteToValue14(-5)).toBe(0);
+    expect(trailsNoteToValue14(999)).toBe(TRAILS_CC_FULL_SCALE);
+    // A degenerate window holds at the bottom rather than dividing by zero.
+    expect(trailsNoteToValue14(60, { lo: 60, hi: 60 })).toBe(0);
+    expect(Number.isFinite(trailsNoteToValue14(60, { lo: 90, hi: 10 }))).toBe(true);
+  });
+
+  it('a mode SWITCH back to CC resumes from a coherent value', () => {
+    // Note mode writes the same latches the CC assembler reads, so a device
+    // that leaves quantisation lands on a real position rather than on whatever
+    // was stale from before the notes.
+    const d = createTrailsDecoder();
+    d.handle([NOTE_ON_CH1_X, 100, 100], 0);
+    const back = axes(d.handle([CC_STATUS_CH1, CC_MSB, 0x10], 1));
+    expect(back).toHaveLength(1);
+    // ⚠ THE DOCUMENTED COST, ASSERTED RATHER THAN HIDDEN. The first coarse half
+    // after the switch combines with the fine half the note left behind, so it
+    // reads up to one full LSB (127/16383 = 0.78 %) high — the same tolerance
+    // the 14-bit assembler's header already states for an MSB-only stream.
+    const coarseOnly = (0x10 << 7) / TRAILS_CC_FULL_SCALE;
+    expect(back[0]!.unit).toBeGreaterThanOrEqual(coarseOnly);
+    expect(back[0]!.unit - coarseOnly).toBeLessThanOrEqual(127 / TRAILS_CC_FULL_SCALE);
+    // …and the very next fine half makes it exact, so the residue lasts one
+    // message rather than until the channel next moves.
+    const exact = axes(d.handle([CC_STATUS_CH1, CC_LSB, 0x00], 2));
+    expect(exact[0]!.unit).toBe(coarseOnly);
+  });
+
+  it('note mode still leaves the loop retrigger and the activity timeout alone', () => {
+    // AGENTS.md rule 7 and the existing loop fix: a note channel is the
+    // articulation, so neither mechanism may double-trigger it. Adding an axis
+    // emit must not have changed that.
+    const d = createTrailsDecoder();
+    d.handle([NOTE_ON_CH1_X, 60, 100], 0);
+    glide(d, 2, 4, 10);
+    expect(gates(d.handle([0xfa], 50)).map((g) => g.channel)).toEqual([2]);
+    // Channel 2 is a CC channel and its activity gate falls on silence, as it
+    // always did. Channel 1 is holding a note, and no timeout may touch it.
+    const fell = gates(d.tick(60_000));
+    expect(fell.map((g) => g.channel), 'only the CC channel timed out').toEqual([2]);
+    expect(d.tick(120_000), 'a held note is never dropped by the timeout').toHaveLength(0);
+  });
+
+  it('encodeTrailsNote produces the golden note-mode bytes', () => {
+    // Literal expectations: channel 1's Y is wire channel 1, channel 3's X is
+    // wire channel 4 — and a release is a note-ON at velocity 0, which is the
+    // shape the owner's capture shows.
+    expect(encodeTrailsNote({ channel: 1, axis: 'y' }, 81, 100)).toEqual([0x91, 81, 100]);
+    expect(encodeTrailsNote({ channel: 3, axis: 'x' }, 60, 0)).toEqual([0x94, 60, 0]);
+  });
+
+  it('the encoder feeds the REAL decoder end to end', () => {
+    const d = createTrailsDecoder();
+    for (const note of [24, 60, 108]) {
+      const out = axes(d.handle(encodeTrailsNote({ channel: 4, axis: 'y' }, note), 0));
+      expect(out[0]).toMatchObject({ channel: 4, axis: 'y' });
+      expect(out[0]!.unit).toBeCloseTo(note / 127, 4);
+    }
+  });
+
+  it('a note frame is RECOGNISED whether or not it moved anything', () => {
+    const d = createTrailsDecoder();
+    expect(d.handleFrame([NOTE_ON_CH1_X, 60, 100], 0).recognised).toBe(true);
+    // A repeat of the SAME note: the gate does not change and the axis lands on
+    // the same value, but the frame was understood completely.
+    expect(d.handleFrame([NOTE_ON_CH1_X, 60, 100], 1).recognised).toBe(true);
+  });
+});
+
 describe('trails-decode: transport', () => {
   it('decodes clock, start, continue and stop', () => {
     const d = createTrailsDecoder();
@@ -417,12 +669,26 @@ describe('trails-decode: RECOGNITION is not the same as emitting an event', () =
 
   it('understood-but-silent frames are RECOGNISED', () => {
     const d = createTrailsDecoder();
-    // A second held note: the level did not change, so no event — but the
-    // frame was understood completely.
+    // A second held note produces no GATE event — the level did not change —
+    // and the frame was understood completely.
+    //
+    // ⚠ IT DOES NOW PRODUCE AN AXIS EVENT, and that is the note-mode fix rather
+    // than a weakening of this test: in note mode the note IS the axis, so a
+    // second note is a new coordinate even when the contact level is unchanged.
+    // This assertion used to read `events` as a whole and was one of the places
+    // the frozen-axis defect looked correct.
     d.handle([0x90, 60, 100], 0);
     const second = d.handleFrame([0x90, 64, 100], 1);
-    expect(second.events).toHaveLength(0);
+    expect(gates(second.events), 'no gate edge — the channel was already held').toHaveLength(0);
+    expect(axes(second.events), 'but the axis moved to the new note').toHaveLength(1);
     expect(second.recognised).toBe(true);
+
+    // A note-OFF for a note that is not held: nothing changes in either
+    // direction, and the frame is still perfectly understood.
+    const quiet = createTrailsDecoder();
+    const stray = quiet.handleFrame([0x80, 60, 0], 0);
+    expect(stray.events).toHaveLength(0);
+    expect(stray.recognised).toBe(true);
 
     // An LSB before its axis has ever sent an MSB: understood, and deliberately
     // emits no AXIS event rather than guessing a coarse half. (It is still real

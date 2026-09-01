@@ -38,7 +38,13 @@
 //                   and temporal quantisation are enabled, Trails transmits MIDI
 //                   Notes. Otherwise it sends high-resolution MIDI CC." Same two
 //                   axes, quantised to a scale — so in the ordinary mode NO note
-//                   is ever sent.
+//                   is ever sent, and in note mode NO CC is.
+//                   ⚠ THE SECOND HALF OF THAT SENTENCE IS LOAD-BEARING and was
+//                   read and then not acted on: because note mode REPLACES the
+//                   CC stream, a note branch that only kept a gate froze every
+//                   X/Y jack at its last CC value the moment a player enabled
+//                   quantisation. The note branch now drives the axes through
+//                   the same `emitAxis` seam — see TRAILS_NOTE_AXIS_RANGE.
 //   Transport.      "MIDI System Realtime Clock and Start messages are sent,
 //                   based on the clock and playhead position of the first
 //                   channel of Trails", and "A Start message is sent every time
@@ -198,6 +204,97 @@ export const TRAILS_LOOP_PLAYHEAD_CHANNEL: TrailsChannel = 1;
  */
 export const TRAILS_LOOP_RETRIGGER_SCOPE: 'first' | 'active' = 'active';
 
+/** The window of MIDI note numbers one axis's 0..1 travel is spread across. */
+export interface TrailsNoteRange {
+  /** The note that reads 0.0 (and everything below it). */
+  readonly lo: number;
+  /** The note that reads 1.0 (and everything above it). */
+  readonly hi: number;
+}
+
+/**
+ * NOTE MODE: which note numbers map onto an axis's 0..1 travel.
+ *
+ * ── THE BUG THIS CONSTANT EXISTS TO FIX ─────────────────────────────────────
+ *
+ * Trails transmits EITHER high-resolution 14-bit CC OR MIDI Notes, never both.
+ * The quick reference: "When both pitch and temporal quantisation are enabled,
+ * Trails transmits MIDI Notes. Otherwise it sends high-resolution MIDI CC." The
+ * notes are the SAME TWO AXES re-encoded and quantised to a scale, on the SAME
+ * per-axis MIDI channels — not a separate articulation stream.
+ *
+ * So the instant a player enables pitch quantisation (hold SCALE, tap a
+ * channel) the CC stream for that channel STOPS. A note branch that only
+ * maintained `held` and emitted a gate therefore left the channel's X and Y
+ * jacks frozen at their last CC value, forever, and every touch produced the
+ * same held pitch downstream. Owner, on hardware: "when i hit scale i am just
+ * getting one continuous note output even when i select other notes in the
+ * scale."
+ *
+ * ── WHY THE MAPPING IS LINEAR IN THE NOTE NUMBER (AND ALREADY V/OCT-SHAPED) ──
+ *
+ * `unit = (note − lo) / (hi − lo)`, clamped. A MIDI note number is linear in
+ * SEMITONES, and so is a volt-per-octave control voltage — so this mapping IS
+ * V/oct-shaped, exponential in frequency; the only thing a "proper" V/oct
+ * treatment would change is the constant of proportionality, which is exactly
+ * what the window below sets.
+ *
+ * And there is no volts-per-octave alternative available to choose in this
+ * rack. `docs/adr/004-cv-range-convention.md` fixes the `cv` cable as a
+ * NORMALISED modulation amount that `cv-scale` sweeps a destination param with;
+ * it is not a pitch bus. This module deliberately declares `cv` rather than
+ * `pitch` outputs so a touch position stays off the note lane (see the module
+ * header's "WHY EVERY OUTPUT IS cv OR gate"). A jack emitting 5.0 for note 60
+ * would be clamped flat by every destination in the tree.
+ *
+ * So the whole decision is the WINDOW, and it is this one line:
+ *
+ *   { lo: 0,  hi: 127 }  DEFAULT — the full MIDI note range. One semitone moves
+ *                        the jack by 1/127 = 0.0079.
+ *   { lo: 0,  hi: 120 }  Exactly ten octaves across full scale = 0.1 per
+ *                        octave: the 1 V/oct shape, if full scale is read as
+ *                        10 V. Pick it to calibrate a destination in octaves.
+ *   { lo: 60, hi: 96 }   Three octaves — 3.5× the default's resolution, at the
+ *                        cost of clamping anything outside the window.
+ *
+ * ⚠ WHAT IS DOCUMENTED AND WHAT IS INFERRED. DOCUMENTED: that note mode
+ * replaces CC mode, and that each axis keeps its own MIDI channel. NOT
+ * DOCUMENTED, anywhere: the note range the pad spans. The manual prints no low
+ * note, no high note and no scale roster. The default above is therefore chosen
+ * to be RANGE-SAFE rather than range-optimal — 0..127 is the only span the wire
+ * itself guarantees, so nothing this decoder emits can ever be clipped by a
+ * guess about the firmware.
+ *
+ * The one MEASUREMENT that exists is a single owner MON capture (2026-09-01,
+ * note mode, both quantisations enabled): notes 77, 80, 82, 88, 89 arriving on
+ * the axis printed ch1 and 81, 83, 89, 93 on ch2 — a ~16-semitone spread. Under
+ * the default window that swings the jack 16/127 ≈ 0.126 of full scale (≈ 0.25
+ * in BI). That is real movement where there was none; it is also the number to
+ * look at if the owner wants more travel, and narrowing `hi − lo` to the span a
+ * scale actually uses is this one edit.
+ */
+export const TRAILS_NOTE_AXIS_RANGE: TrailsNoteRange = { lo: 0, hi: 127 };
+
+/**
+ * One note number as a 14-bit axis value, so note mode and CC mode land in the
+ * SAME units and travel the SAME seam.
+ *
+ * Exported because the simulated device and the golden vectors both need it,
+ * and because a hardware session that wants to re-scale the axis should be able
+ * to see this function's output move with the constant above.
+ */
+export function trailsNoteToValue14(
+  note: number,
+  range: TrailsNoteRange = TRAILS_NOTE_AXIS_RANGE,
+): number {
+  // A degenerate window has no travel to spread anything across; holding at the
+  // bottom of the jack is the honest answer, and it cannot divide by zero.
+  if (!(range.hi > range.lo)) return 0;
+  const clampedNote = Math.max(range.lo, Math.min(range.hi, note));
+  const t = (clampedNote - range.lo) / (range.hi - range.lo);
+  return Math.round(t * TRAILS_CC_FULL_SCALE);
+}
+
 // ── MIDI status bytes we care about ─────────────────────────────────────────
 const STATUS_NOTE_OFF = 0x80;
 const STATUS_NOTE_ON = 0x90;
@@ -250,6 +347,9 @@ export interface TrailsDecoderOptions {
   axisMap?: readonly TrailsAxisRef[];
   activityGateTimeoutMs?: number;
   loopRetriggerScope?: 'first' | 'active';
+  /** See TRAILS_NOTE_AXIS_RANGE. Injected so a test can pin the mapping shape
+   *  without depending on whatever the shipped window happens to be. */
+  noteRange?: TrailsNoteRange;
 }
 
 /** What `handleFrame` reports about one message. */
@@ -345,6 +445,7 @@ export function createTrailsDecoder(opts: TrailsDecoderOptions = {}): TrailsDeco
   const axisMap = opts.axisMap ?? TRAILS_AXIS_MAP;
   const activityTimeoutMs = opts.activityGateTimeoutMs ?? TRAILS_ACTIVITY_GATE_TIMEOUT_MS;
   const loopScope = opts.loopRetriggerScope ?? TRAILS_LOOP_RETRIGGER_SCOPE;
+  const noteRange = opts.noteRange ?? TRAILS_NOTE_AXIS_RANGE;
 
   const channels = new Map<TrailsChannel, ChannelState>();
   function stateFor(channel: TrailsChannel): ChannelState {
@@ -498,6 +599,43 @@ export function createTrailsDecoder(opts: TrailsDecoderOptions = {}): TrailsDeco
       s.sawNote = true;
       if (isOn) s.held.add(note);
       else s.held.delete(note);
+
+      // ⚠ THE NOTE IS THE AXIS. This is the whole fix, and it is deliberately
+      // written as a WRITE INTO THE CC LATCHES followed by the ordinary
+      // `emitAxis` rather than as a second emit path: the range param, the
+      // smoothing, the per-channel axis mapping, the pad-mirror trail and the
+      // `axisMessages` counter are all downstream of that one seam, and a
+      // parallel emitter would have to re-earn every one of them.
+      //
+      // ON NOTE-ON ONLY, which is LAST-NOTE PRIORITY — the standard mono
+      // behaviour. One axis carries one coordinate, so the device has no reason
+      // to stack notes on a single axis channel; if one ever arrives, the newest
+      // wins. A note-OFF deliberately moves nothing: the axis then HOLDS at its
+      // last value, exactly as it does when a CC stream goes quiet (the `x1`
+      // doc: "holds its last value when the channel is idle"), so releasing a
+      // stacked note can never make the jack jump backwards.
+      //
+      // Writing the latches rather than overriding the emit also means a device
+      // that switches BACK to CC mode resumes from a coherent pair. The one cost
+      // is that the first coarse-half CC after such a switch combines with a
+      // note-derived fine half for a single message — at most 127/16383 = 0.8 %
+      // of full scale, once, which is the same tolerance the 14-bit assembler
+      // already documents.
+      if (isOn) {
+        const value14 = trailsNoteToValue14(note, noteRange);
+        s.msb[ref.axis] = (value14 >> 7) & 0x7f;
+        s.lsb[ref.axis] = value14 & 0x7f;
+        // Bookkeeping only while `sawNote` is true (both the activity timeout
+        // and the loop-restart selector skip note channels), but kept honest so
+        // a future change to that rule does not inherit a stale timestamp.
+        s.lastAxisMs = nowMs;
+        // ⚠ AXIS BEFORE GATE. Both land at the same audio time, on independent
+        // ConstantSources, so this cannot race — but pitch-then-gate is the
+        // order a downstream envelope + VCO wants stated, and stating it costs
+        // nothing.
+        emitAxis(ref, s, out);
+      }
+
       const high = s.held.size > 0;
       s.gateHigh = high;
       if (high !== wasHigh) {
@@ -592,6 +730,31 @@ export function encodeTrailsAxis(
     [status, ccPair.msb, (value14 >> 7) & 0x7f],
     [status, ccPair.lsb, value14 & 0x7f],
   ];
+}
+
+/**
+ * The bytes a Trails in NOTE MODE puts on the wire for one axis.
+ *
+ * ⚠ A NOTE-ON WITH VELOCITY 0 IS THE RELEASE, and that is not a stylistic
+ * choice — it is what the hardware does. The owner's MON capture (2026-09-01)
+ * shows rows named `chN NOTE nn on` with `last=0` and NO 0x80 note-off rows at
+ * all, which is the running-status shape. The double sends what the device
+ * sends, so a decoder change that only handled 0x80 would go red here.
+ *
+ * `axis` matters: in note mode each axis still transmits on its own MIDI
+ * channel (the same eight-row map as CC mode), so channel 1's X and channel 1's
+ * Y are two different note streams on two different wire channels — which is
+ * exactly what the capture shows, with distinct note sets on ch1 and ch2.
+ */
+export function encodeTrailsNote(
+  ref: TrailsAxisRef,
+  note: number,
+  velocity = 100,
+  axisMap: readonly TrailsAxisRef[] = TRAILS_AXIS_MAP,
+): number[] {
+  const wireChannel = axisMap.findIndex((a) => a.channel === ref.channel && a.axis === ref.axis);
+  const nibble = (wireChannel < 0 ? 0 : wireChannel) & 0x0f;
+  return [STATUS_NOTE_ON | nibble, note & 0x7f, velocity & 0x7f];
 }
 
 /** The note-on / note-off bytes for a channel's gate, on that channel's X wire

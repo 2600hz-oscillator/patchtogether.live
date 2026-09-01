@@ -37,6 +37,7 @@ import type { MidiEventLike, MidiInputLike } from '$lib/audio/modules/midi-cv-bu
 import {
   encodeTrailsAxis,
   encodeTrailsGate,
+  encodeTrailsNote,
   type TrailsChannel,
 } from '$lib/midi/trails-decode';
 
@@ -320,6 +321,29 @@ export interface SimulatedTrails {
   /** Note-off for a channel's gate. */
   gateOff(channel: TrailsChannel): void;
   /**
+   * NOTE MODE: strike one channel's X and Y as quantised notes.
+   *
+   * ⚠ THIS IS THE MODE THE CC HELPERS ABOVE CANNOT REACH, and the one the
+   * reported defect lives in. With both quantisations enabled the device stops
+   * sending CC entirely and sends these instead — the SAME two axes on the SAME
+   * two per-axis MIDI channels, quantised to a scale. A test that only ever
+   * calls `touch()` is testing the mode the player has just left.
+   *
+   * Emits real `encodeTrailsNote` bytes on both of the channel's wire channels,
+   * so the port match, the claim, the fan-out and the decoder's note branch all
+   * run exactly as they do on hardware.
+   */
+  noteTouch(channel: TrailsChannel, xNote: number, yNote: number, velocity?: number): void;
+  /**
+   * Release a note-mode strike.
+   *
+   * A note-ON with VELOCITY 0, because that is what the hardware sends: the
+   * owner's 2026-09-01 MON capture shows note-on rows with `last=0` and no 0x80
+   * rows at all. A double that sent 0x80 would let a decoder that only handled
+   * 0x80 pass.
+   */
+  noteRelease(channel: TrailsChannel, xNote: number, yNote: number): void;
+  /**
    * Stream `steps` axis samples along a straight path, with NO GAP between
    * them — the shape a recorded gesture has while it plays back.
    *
@@ -466,6 +490,14 @@ export async function installSimulatedTrails(
     },
     gateOff(channel) {
       send(encodeTrailsGate(channel, false));
+    },
+    noteTouch(channel, xNote, yNote, velocity = 100) {
+      send(encodeTrailsNote({ channel, axis: 'x' }, xNote, velocity));
+      send(encodeTrailsNote({ channel, axis: 'y' }, yNote, velocity));
+    },
+    noteRelease(channel, xNote, yNote) {
+      send(encodeTrailsNote({ channel, axis: 'x' }, xNote, 0));
+      send(encodeTrailsNote({ channel, axis: 'y' }, yNote, 0));
     },
     glide,
     loopRestart() {

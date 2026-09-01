@@ -111,6 +111,105 @@ describe('trails-monitor: tallying', () => {
   });
 });
 
+// ── ⚠ THE INSTRUMENT LIED — the two defects the first real capture exposed ──
+//
+// Both were found by pasting a live Trails MON readout (owner, 2026-09-01, note
+// mode with both quantisations enabled) and nearly reporting its contents as a
+// hardware fact:
+//
+//   ch2 NOTE 81 on   x106   last=0
+//
+// A device struck 53 times, reading "velocity 0". Neither half of that line was
+// true: `last=` was the RELEASE'S velocity, and "on" was a label frozen at row
+// creation. A diagnostic that reports a hardware question incorrectly is worse
+// than none, because its answer is believed — so these two are pinned.
+
+/** The running-status shape the owner's hardware actually sends: a strike is a
+ *  note-ON with velocity, its release is a note-ON with velocity 0 — the SAME
+ *  status byte and the SAME note number, so the same row. */
+const NOTE_ON_CH2 = 0x91;
+
+describe('trails-monitor: the readout must not lie about velocity', () => {
+  it('BUG A: a release does NOT overwrite the strike velocity', () => {
+    // The exact sequence in the capture: 53 strike/release pairs on one note.
+    // Before the fix the row's only value field held the release's zero, and
+    // the open hardware question — does this pad transmit touch force? — was
+    // answered "no" by the instrument rather than by the device.
+    const m = createTrailsMonitor();
+    for (let i = 0; i < 53; i++) {
+      m.observe([NOTE_ON_CH2, 81, 97], true);
+      m.observe([NOTE_ON_CH2, 81, 0], true);
+    }
+    const row = m.snapshot().rows.find((r) => r.label === 'ch2 NOTE 81')!;
+    expect(row.count, 'strikes and releases share one row').toBe(106);
+    expect(row.lastValue, 'the raw last byte really was the release').toBe(0);
+    expect(row.lastOnVelocity, 'THE FIX: the last STRIKE velocity survives').toBe(97);
+    // …and it is the strike velocity that reaches the page.
+    expect(m.snapshot().summary).toContain('vel=97');
+    expect(m.snapshot().summary).not.toContain('vel=0');
+  });
+
+  it('a CHANGING velocity is visible — this is how the owner settles touch force', () => {
+    // The whole point of the column: if pressing harder moves this number, the
+    // pad transmits force; if it never moves, it does not. Either answer is a
+    // finding, and neither is reachable while a release can clobber it.
+    const m = createTrailsMonitor();
+    for (const v of [40, 0, 80, 0, 120, 0]) m.observe([NOTE_ON_CH2, 81, v], true);
+    expect(m.snapshot().rows[0]!.lastOnVelocity).toBe(120);
+    // The readout says what the number means, so a reader does not have to
+    // guess whether a constant value is a device fact or an instrument fault.
+    expect(m.snapshot().summary).toContain('last NOTE-ON velocity');
+  });
+
+  it('a note row that has ONLY seen releases says so rather than printing 0', () => {
+    // "No strike has been observed" and "the strike velocity was zero" are
+    // different facts, and the second one is the one that would be believed.
+    const m = createTrailsMonitor();
+    m.observe([NOTE_ON_CH2, 81, 0], true);
+    expect(m.snapshot().rows[0]!.lastOnVelocity).toBeNull();
+    expect(m.snapshot().summary).toContain('vel=?');
+  });
+
+  it('BUG B: the LABEL tracks the stream instead of freezing at row creation', () => {
+    // `observe()` updated count, value, decoded and seq — and never the label.
+    // So a row born from a strike read "… on" for the rest of the session, which
+    // is why the capture showed a label in one state beside a value from the
+    // other. The state has been taken out of the label entirely: a row is a
+    // SHAPE, not a moment.
+    const m = createTrailsMonitor();
+    m.observe([NOTE_ON_CH2, 81, 97], true);
+    m.observe([NOTE_ON_CH2, 81, 0], true);
+    const row = m.snapshot().rows[0]!;
+    expect(row.label).toBe('ch2 NOTE 81');
+    expect(row.label, 'no momentary state smuggled into the name').not.toContain('on');
+    expect(row.label).not.toContain('off');
+  });
+
+  it('the frozen-label class is fixed generally, not just for notes', () => {
+    // The eviction/decoded fields already tracked the stream; the label now
+    // does too, so a shape whose display name depends on the frame cannot
+    // describe only its first message. A row's DECODED verdict has always been
+    // per-message and stays that way.
+    const m = createTrailsMonitor();
+    m.observe([CC_CH1, 15, 10], true);
+    m.observe([CC_CH1, 15, 99], false);
+    const row = m.snapshot().rows[0]!;
+    expect(row.label).toBe('ch1 CC15');
+    expect(row.lastValue).toBe(99);
+    expect(row.decoded).toBe(false);
+  });
+
+  it('a non-note row still prints `last=`, not a velocity it does not have', () => {
+    const m = createTrailsMonitor();
+    m.observe([CC_CH1, 15, 64], true);
+    expect(m.snapshot().rows[0]!.valueLabel).toBe('last');
+    expect(m.snapshot().summary).toContain('last=64');
+    // …and the velocity footnote only appears when there is a note row to
+    // explain, so a CC-mode paste is not cluttered with advice about notes.
+    expect(m.snapshot().summary).not.toContain('NOTE-ON velocity');
+  });
+});
+
 describe('trails-monitor: driven by the REAL decoder', () => {
   it('agrees with the decoder about what was understood — and about what was not', () => {
     // The verdict is the DECODER'S, passed in rather than re-derived, so this
@@ -133,5 +232,21 @@ describe('trails-monitor: driven by the REAL decoder', () => {
     expect(snap.rows.find((r) => r.label === 'ch1 CC47')!.decoded).toBe(false);
     expect(snap.rows.find((r) => r.label === 'ch9 CC15')!.decoded).toBe(false);
     expect(snap.rows.find((r) => r.label === `ch1 CC${TRAILS_CC_PAIR.msb}`)!.decoded).toBe(true);
+  });
+
+  it('NOTE-MODE traffic reads as decoded, and the strike velocity is on the page', () => {
+    // The note-mode capture, reproduced through the real decoder: a strike and
+    // its running-status release on one axis channel. Both frames are
+    // understood, so neither may inflate the "not decoded" tally and make a
+    // healthy device look like a wrong CC pair.
+    const d = createTrailsDecoder();
+    const m = createTrailsMonitor();
+    for (const f of [[0x90, 77, 97], [0x90, 77, 0], [0x91, 81, 88], [0x91, 81, 0]]) {
+      m.observe(f, d.handleFrame(f, 0).recognised);
+    }
+    const snap = m.snapshot();
+    expect(snap.unrecognised).toBe(0);
+    expect(snap.rows.find((r) => r.label === 'ch1 NOTE 77')!.lastOnVelocity).toBe(97);
+    expect(snap.rows.find((r) => r.label === 'ch2 NOTE 81')!.lastOnVelocity).toBe(88);
   });
 });

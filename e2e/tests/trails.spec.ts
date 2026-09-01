@@ -53,6 +53,9 @@ interface TrailsSim {
   touch(ch: number, x: number, y: number): void;
   gateOn(ch: number): void;
   gateOff(ch: number): void;
+  /** NOTE MODE — what the device sends once both quantisations are enabled. */
+  noteTouch(ch: number, xNote: number, yNote: number, velocity?: number): void;
+  noteRelease(ch: number, xNote: number, yNote: number): void;
   clock(n?: number): void;
   send(bytes: number[]): void;
   attached(): boolean;
@@ -443,6 +446,188 @@ test('@trails a looping gesture strikes the gate ONCE PER REPETITION → audible
   errorWatch.assertClean();
 });
 
+// ═══════════ NOTE MODE ═══════════
+//
+// The owner's hardware report: "when i hit scale i am just getting one
+// continuous note output even when i select other notes in the scale."
+//
+// The mechanism: with both pitch and temporal quantisation enabled the device
+// stops sending CC entirely and sends MIDI notes — the SAME two axes on the
+// SAME per-axis MIDI channels, quantised to a scale. The decoder's note branch
+// kept only a gate, so every X/Y jack froze at its last CC value.
+//
+// ⚠ THIS SPEC ASSERTS THE JACK'S VALUE CHANGED BETWEEN TWO DIFFERENT NOTES, not
+// that a gate fired. The loop-gate spec above was green throughout the entire
+// life of this defect, because a gate is exactly what note mode never stopped
+// producing.
+//
+// The chain is the SAME real one as the first spec — the simulated device's
+// bytes, the /trails/i port match, the shared claim, the module's own decoder,
+// x1 into a closed VCA into the scope — with `noteTouch` in place of `touch`.
+
+/** The two notes the chain is driven with. Seven octaves apart so the two VCA
+ *  gains are unmistakable at the scope, and both well inside the MIDI range so
+ *  neither is clamped by the note window. */
+const NOTE_LOW = 24;
+const NOTE_HIGH = 108;
+
+/**
+ * How long each note's LEVEL is measured over — a full window, no early exit.
+ *
+ * ⚠ DERIVED FROM THE SCOPE, not chosen for feel: the `scp` node is spawned with
+ * `timeMs: 200`, so its buffer holds 200 ms of history and the first ~200 ms
+ * after a level change still shows the previous note. 500 ms guarantees the
+ * window contains buffers made entirely of the note under test, and the reader
+ * max-holds, so those are the ones that decide the number.
+ */
+const SETTLE_WINDOW_MS = 500;
+
+/** Put a quantised finger on the pad — the note-mode equivalent of `simTouch`. */
+async function simNote(page: Page, ch: number, xNote: number, yNote: number): Promise<void> {
+  await page.evaluate(
+    ({ ch, xNote, yNote }) => {
+      const w = globalThis as unknown as { __trailsSim?: TrailsSim };
+      if (!w.__trailsSim) throw new Error('__trailsSim missing — install the simulated Trails first');
+      w.__trailsSim.noteTouch(ch, xNote, yNote, 97);
+    },
+    { ch, xNote, yNote },
+  );
+}
+
+test('@trails NOTE MODE steers x1 — a different note is a different level → audible', async ({
+  page,
+  rack,
+  errorWatch,
+}) => {
+  void rack;
+  await buildChain(page);
+
+  // (1) NEGATIVE CONTROL, full window, no early exit: nothing has been played,
+  //     x1 rests at 0, the VCA is closed.
+  const before = await readScopePeakOverWindow(page, 'scp', SILENCE_WINDOW_MS);
+  expect(before.polls, 'the SCOPE was actually sampled').toBeGreaterThan(0);
+  expect(
+    before.rms,
+    `a closed VCA must be silent before any note — ${describeScopeWindow(before)}`,
+  ).toBeLessThan(AUDIBLE_FLOOR);
+
+  const installed = await installSim(page);
+  expect(installed, 'simulated Trails installed + attached (needs VITE_E2E_HOOKS)').toBe(true);
+
+  // (2) The player enables pitch quantisation and plays a LOW note. On the wire
+  //     this is a real note-on per axis, on the axes' own MIDI channels — no CC
+  //     at all, which is the state the defect lived in.
+  await simNote(page, 1, NOTE_LOW, NOTE_LOW);
+
+  const low = await trailsState(page, 'tr');
+  expect(
+    low?.axisMessages,
+    'THE DEFECT: a note must decode as an AXIS, not only as a gate',
+  ).toBeGreaterThan(0);
+  const lowX = low!.channels[0]!.x;
+  expect(lowX, 'the low note landed at its own point on the pad').toBeCloseTo(NOTE_LOW / 127, 2);
+  expect(low?.channels[0]?.gate, 'and the gate still rises').toBe(true);
+
+  // (3) AUDIBLE at the low note: x1 is the VCA's gain, so the oscillator is
+  //     already reaching the scope. This is what makes the level comparison
+  //     below a measurement of a live jack rather than of two silences.
+  const lowWin = await readScopePeakOverWindow(page, 'scp', AUDIBLE_CAP_MS, {
+    untilPeak: AUDIBLE_FLOOR,
+  });
+  expect(lowWin.polls, 'the SCOPE was sampled at the low note').toBeGreaterThan(0);
+  expect(
+    lowWin.rms,
+    `a quantised note must open the VCA through x1 — ${describeScopeWindow(lowWin)}`,
+  ).toBeGreaterThan(AUDIBLE_FLOOR);
+  expect(lowWin.rms, 'the note RAISED the output').toBeGreaterThan(before.rms + 0.02);
+
+  // …and then the SETTLED level at that note, over a FULL window with no early
+  // exit.
+  //
+  // ⚠ THE READ ABOVE CANNOT BE USED AS A LEVEL, and that is a property of the
+  // instrument rather than a threshold to tune. `untilPeak` exits on the FIRST
+  // poll that clears its target — measured here at polls=1, elapsed=0 ms — while
+  // the scope is still showing a buffer that predates the note. It reported
+  // 0.0788 for a note whose settled level is 0.1344, i.e. 40 % low, which is
+  // exactly the size of error that makes a comparison between two levels
+  // meaningless. It is a fine gate for "audio is flowing"; it is not a
+  // measurement.
+  const lowLevel = await readScopePeakOverWindow(page, 'scp', SETTLE_WINDOW_MS);
+  expect(lowLevel.polls, 'the SCOPE was sampled across the low-note window').toBeGreaterThan(0);
+
+  // (4) THE ASSERTION THE BUG IS ABOUT. The player picks a different note in
+  //     the scale, and the jack has to MOVE. Before the fix both of these read
+  //     the same frozen value and the rack heard one held pitch forever.
+  //
+  //     The low note is RELEASED first, which is the monophonic stream the
+  //     device actually produces — and on the way through it exercises the hold
+  //     rule: a release must not move the jack, only the gate.
+  await page.evaluate(
+    ({ n }) => {
+      const w = globalThis as unknown as { __trailsSim?: TrailsSim };
+      w.__trailsSim!.noteRelease(1, n, n);
+    },
+    { n: NOTE_LOW },
+  );
+  const between = await trailsState(page, 'tr');
+  expect(between?.channels[0]?.gate, 'the release lowered the gate').toBe(false);
+  expect(between?.channels[0]?.x, 'a release holds the position').toBeCloseTo(lowX, 4);
+
+  await simNote(page, 1, NOTE_HIGH, NOTE_HIGH);
+  const high = await trailsState(page, 'tr');
+  const highX = high!.channels[0]!.x;
+  expect(highX).toBeCloseTo(NOTE_HIGH / 127, 2);
+  expect(
+    highX - lowX,
+    `a HIGHER note must read higher on the jack (low=${lowX.toFixed(4)} high=${highX.toFixed(4)})`,
+  ).toBeGreaterThan(0.5);
+
+  // (5) …AND THE RACK HEARD THE DIFFERENCE. The same instrument over the same
+  //     window, so the two numbers are comparable by construction.
+  //
+  //     ⚠ MAX-HOLD IS THE RIGHT READER FOR A RISE, and the only one that
+  //     survives the scope's own latency: the window opens on a buffer that
+  //     still holds the previous level, so any reader that takes the window's
+  //     MINIMUM reports the level that was there BEFORE the note (measured:
+  //     high lo=0.1328 against a settled low of 0.1344 — the bands touch, and a
+  //     4.5x change reads as no change at all). Max-hold cannot be dragged down
+  //     by that stale prefix. The direction it is unsafe in — asserting SILENCE
+  //     straight after audio — is not the direction asserted here, and the two
+  //     specs above use `sampleScopeRms` for exactly that other direction.
+  const highLevel = await readScopePeakOverWindow(page, 'scp', SETTLE_WINDOW_MS);
+  expect(highLevel.polls, 'the SCOPE was sampled across the high-note window').toBeGreaterThan(0);
+  const levels = `low ${describeScopeWindow(lowLevel)} · high ${describeScopeWindow(highLevel)}`;
+  expect(
+    highLevel.rms,
+    `the higher note must open the VCA further — ${levels}`,
+  ).toBeGreaterThan(lowLevel.rms);
+  // 2x, against a jack ratio of 108/24 = 4.5: wide enough that no plausible
+  // measurement error crosses it, narrow enough that it is not asserting the
+  // exact gain of a VCA this spec does not own.
+  expect(highLevel.rms, `and by a wide margin, not a hair — ${levels}`).toBeGreaterThan(
+    lowLevel.rms * 2,
+  );
+  expect(highLevel.nonzeroSamples, 'a structured signal, not a single glitch').toBeGreaterThan(50);
+
+  // (6) THE FINAL RELEASE. The hardware's release is a note-ON at velocity 0,
+  //     so this is the real byte shape. The gate falls; the jack HOLDS at the
+  //     pitch it reached, exactly as it does when a CC stream goes quiet —
+  //     dropping it to zero between notes would slam every destination to the
+  //     bottom of its range once per note.
+  await page.evaluate(
+    ({ n }) => {
+      const w = globalThis as unknown as { __trailsSim?: TrailsSim };
+      w.__trailsSim!.noteRelease(1, n, n);
+    },
+    { n: NOTE_HIGH },
+  );
+  const released = await trailsState(page, 'tr');
+  expect(released?.channels[0]?.gate, 'the release lowered the gate').toBe(false);
+  expect(released?.channels[0]?.x, 'the position holds after the release').toBeCloseTo(highX, 4);
+
+  errorWatch.assertClean();
+});
+
 test('@trails MON reports the traffic the module does NOT understand', async ({
   page,
   errorWatch,
@@ -485,6 +670,29 @@ test('@trails MON reports the traffic the module does NOT understand', async ({
   await expect(log).toContainText('trails-decode.ts');
   // The row the module DOES understand is there too, unflagged.
   await expect(log).toContainText('ch1 CC15');
+
+  // ⚠ THE READOUT MUST NOT LIE ABOUT VELOCITY. A strike and its running-status
+  // release share one row — the release is a note-ON at velocity 0 — so the
+  // row's raw last byte is 0 between every pair of strikes. The owner's first
+  // real capture read `ch2 NOTE 81 on x106 last=0` on a device struck 53 times
+  // and was nearly reported as "Trails sends velocity 0". The page has to show
+  // the STRIKE's velocity, because that is the one number in this readout no
+  // document can supply: the Trails manual never uses the word "velocity", so
+  // whether the pad transmits touch force is answerable only by watching this.
+  await page.evaluate(() => {
+    const w = globalThis as unknown as { __trailsSim?: TrailsLoopSim };
+    const sim = w.__trailsSim!;
+    for (let i = 0; i < 3; i++) {
+      sim.noteTouch(1, 81, 81, 97);
+      sim.noteRelease(1, 81, 81);
+    }
+  });
+  await expect(log).toContainText('vel=97', { timeout: 10_000 });
+  await expect(log).not.toContainText('vel=0');
+  // …and the label carries no momentary state that could freeze out of step
+  // with the value beside it.
+  await expect(log).toContainText('ch1 NOTE 81');
+  await expect(log).not.toContainText('NOTE 81 on');
 
   errorWatch.assertClean();
 });

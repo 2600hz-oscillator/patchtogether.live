@@ -619,6 +619,135 @@ describe('trails factory: the state the pad mirror paints', () => {
   });
 });
 
+// ── NOTE MODE, through the whole module ─────────────────────────────────────
+//
+// THE OWNER'S REPORT: "when i hit scale i am just getting one continuous note
+// output even when i select other notes in the scale."
+//
+// Enabling both quantisations makes Trails stop sending CC and send notes
+// instead — the SAME axes, on the SAME per-axis MIDI channels. The note branch
+// used to keep only a gate, so every X/Y jack froze at its last CC value and
+// the rack heard one held pitch forever.
+//
+// ⚠ THESE TESTS ASSERT THE JACK VALUE, NOT THAT AN EDGE FIRED. The gate tests
+// above were green for the entire life of this bug.
+
+describe('trails factory: NOTE MODE steers the jacks', () => {
+  let sim: SimulatedTrails;
+  let handle: AudioDomainNodeHandle | null = null;
+
+  beforeEach(async () => {
+    sim = await installSimulatedTrails();
+  });
+  afterEach(() => {
+    handle?.dispose();
+    handle = null;
+    __resetTrailsForTest();
+    __resetSchedulerClockForTests();
+  });
+
+  it('THE BUG: two different notes write two DIFFERENT values to the jack', async () => {
+    const h = await trailsDef.factory!(makeMockCtx(), makeNode());
+    handle = h;
+    sim.noteTouch(1, 24, 24);
+    const low = lastValue(h, 'x1');
+    sim.noteTouch(1, 108, 108);
+    const high = lastValue(h, 'x1');
+    expect(low, 'a note reaches the jack at all').toBeDefined();
+    expect(low).toBeCloseTo(24 / 127, 3);
+    expect(high).toBeCloseTo(108 / 127, 3);
+    expect(high!, 'the jack MOVED — this is the whole defect').toBeGreaterThan(low! + 0.5);
+  });
+
+  it('the Y axis moves independently, on its own MIDI channel', async () => {
+    const h = await trailsDef.factory!(makeMockCtx(), makeNode());
+    handle = h;
+    sim.noteTouch(1, 30, 100);
+    expect(lastValue(h, 'x1')).toBeCloseTo(30 / 127, 3);
+    expect(lastValue(h, 'y1')).toBeCloseTo(100 / 127, 3);
+    // …and nothing leaked onto another Trails channel.
+    expect(eventsOn(h, 'x2')).toHaveLength(0);
+  });
+
+  it('the gate rises with the strike and falls on the velocity-0 release', async () => {
+    // The existing gate behaviour, unchanged by the axis emit — and driven by
+    // the release shape the hardware actually sends.
+    const h = await trailsDef.factory!(makeMockCtx(), makeNode());
+    handle = h;
+    sim.noteTouch(2, 60, 64);
+    expect(lastValue(h, 'g2')).toBe(1);
+    sim.noteRelease(2, 60, 64);
+    expect(lastValue(h, 'g2')).toBe(0);
+  });
+
+  it('a release HOLDS the jack instead of slamming it to zero', async () => {
+    const h = await trailsDef.factory!(makeMockCtx(), makeNode());
+    handle = h;
+    sim.noteTouch(1, 100, 100);
+    const held = lastValue(h, 'x1');
+    sim.noteRelease(1, 100, 100);
+    expect(lastValue(h, 'x1'), 'the position holds, as it does in CC mode').toBe(held);
+  });
+
+  it('RANGE=BI applies to a note-derived axis exactly as it does to a CC one', async () => {
+    // The whole reason the fix goes through `emitAxis`: nothing downstream had
+    // to learn about notes. Note 127 is the top of the pad, which is +1 in BI.
+    const h = await trailsDef.factory!(makeMockCtx(), makeNode({ range: 1 }));
+    handle = h;
+    sim.noteTouch(1, 127, 0);
+    expect(lastValue(h, 'x1')).toBeCloseTo(1, 4);
+    expect(lastValue(h, 'y1')).toBeCloseTo(-1, 4);
+  });
+
+  it('SMOOTH applies to a note-derived axis too', async () => {
+    const h = await trailsDef.factory!(makeMockCtx(), makeNode({ smooth: 1 }));
+    handle = h;
+    sim.noteTouch(1, 90, 90);
+    const targets = eventsOn(h, 'x1').filter((e) => e.kind === 'target');
+    expect(targets.length).toBeGreaterThan(0);
+    expect(targets.at(-1)!.tau).toBeCloseTo(TRAILS_MAX_SMOOTH_TAU_S, 6);
+  });
+
+  it('the pad mirror follows the quantised position, and counts the messages', async () => {
+    const h = await trailsDef.factory!(makeMockCtx(), makeNode());
+    handle = h;
+    sim.noteTouch(1, 127, 0);
+    const st = h.read!('state') as TrailsState;
+    expect(st.channels[0]!.x).toBeCloseTo(1, 4);
+    expect(st.channels[0]!.y).toBeCloseTo(0, 4);
+    expect(st.channels[0]!.gate).toBe(true);
+    // Two strikes, two axis values — the counter the card shows as RECEIVING
+    // now moves in note mode, where before it sat at zero and the module looked
+    // like it was not hearing the device at all.
+    expect(st.axisMessages).toBe(2);
+  });
+
+  it('a run of quantised notes moves the jack EVERY time, never once', async () => {
+    // The owner's own capture, played back through the real device double: the
+    // notes their hardware sent on channel 1's X. Before the fix this list
+    // produced exactly one jack value — the stale CC one — for all five.
+    const h = await trailsDef.factory!(makeMockCtx(), makeNode());
+    handle = h;
+    const seen: number[] = [];
+    for (const note of [77, 80, 82, 88, 89]) {
+      sim.noteTouch(1, note, 60);
+      seen.push(lastValue(h, 'x1')!);
+    }
+    expect(new Set(seen).size, 'five notes, five distinct jack values').toBe(5);
+    expect([...seen].sort((a, b) => a - b)).toEqual(seen);
+  });
+
+  it('NEGATIVE CONTROL: an unused channel stays at rest through a note run', async () => {
+    const h = await trailsDef.factory!(makeMockCtx(), makeNode());
+    handle = h;
+    for (const note of [40, 60, 80]) sim.noteTouch(3, note, note);
+    for (const port of ['x1', 'y1', 'x2', 'y2', 'x4', 'y4', 'g1', 'g2', 'g4']) {
+      expect(eventsOn(h, port), `port ${port}`).toHaveLength(0);
+    }
+    expect(eventsOn(h, 'x3').length).toBeGreaterThan(0);
+  });
+});
+
 describe('trails: full-scale arithmetic', () => {
   it('the pad\'s far corner is exactly 1.0 on the jack', async () => {
     const sim = await installSimulatedTrails();
