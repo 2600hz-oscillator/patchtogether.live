@@ -21,6 +21,9 @@
 import * as Y from 'yjs';
 import type { CableType, Edge, ModuleNode, PortDef } from './types';
 import { canConnect } from './types';
+// ONE upstream walk, shared with the connect-time validators — see
+// ./adopted-type for why it no longer lives in this file.
+import { resolveEmittedType, type AdoptionGraph } from './adopted-type';
 import {
   patch as defaultPatch,
   ydoc as defaultYdoc,
@@ -120,46 +123,36 @@ function lookupPortsDef(type: string): PortsDef | undefined {
  * instead of mutating in place — snapshot entries may be reused (aliased) by
  * previous snapshots under the SnapshotMemo path, and an in-place write
  * would silently retype an already-emitted snapshot.
+ *
+ * ⚠ THE WALK ITSELF NOW LIVES IN `./adopted-type`. It used to be a closure in
+ * here, which made this function the only thing in the tree that knew what a
+ * pass-through emits — so the CONNECT-time validators judged SCALER's `out` on
+ * its declared `audio`, refused every `cv` target, and the adoption never got
+ * the chance to apply (the owner's "scaler's output wont patch to cv ins").
+ * Both readers share one walk now; a second copy would drift, and a drifted
+ * copy is exactly how "connectable" and "connected" come to disagree.
  */
 function resolveAdoptedSourceTypes(
   edges: Edge[],
   resolveDef: (type: string) => PortsDef | undefined,
   nodeType: (nodeId: string) => string | undefined,
 ): void {
-  // Map "<nodeId>" → its single inbound edge per input port, for upstream walk.
-  const inboundByNodePort = new Map<string, Edge>();
-  for (const e of edges) {
-    inboundByNodePort.set(`${e.target.nodeId}\u0000${e.target.portId}`, e);
-  }
-
-  /** Walk upstream from (nodeId, outputPortId) to the cable type actually
-   *  feeding it, chasing through chained adoptsUpstreamFrom pass-throughs. */
-  function resolveUpstreamType(
-    nodeId: string,
-    outPortId: string,
-    depth: number,
-  ): CableType | undefined {
-    if (depth > 16) return undefined; // cycle / pathological-chain guard
-    const def = resolveDef(nodeType(nodeId) ?? '');
-    const outPort = def?.outputs?.find((p) => p.id === outPortId);
-    if (!outPort?.adoptsUpstreamFrom) return outPort?.type;
-    const feeder = inboundByNodePort.get(`${nodeId}\u0000${outPort.adoptsUpstreamFrom}`);
-    if (!feeder) return undefined; // nothing patched in → caller uses declared type
-    // The feeder's source might itself be a pass-through — recurse.
-    const upstream = resolveUpstreamType(
-      feeder.source.nodeId,
-      feeder.source.portId,
-      depth + 1,
-    );
-    return upstream ?? feeder.sourceType;
-  }
-
+  const graph: AdoptionGraph = {
+    resolveDef,
+    nodeType,
+    inboundEdge: (() => {
+      // Index the single inbound edge per (node, input port), ONCE.
+      const inbound = new Map<string, Edge>();
+      for (const e of edges) inbound.set(`${e.target.nodeId}\u0000${e.target.portId}`, e);
+      return (nodeId: string, portId: string) => inbound.get(`${nodeId}\u0000${portId}`);
+    })(),
+  };
   for (let i = 0; i < edges.length; i++) {
     const e = edges[i]!;
     const srcDef = resolveDef(nodeType(e.source.nodeId) ?? '');
     const outPort = srcDef?.outputs?.find((p) => p.id === e.source.portId);
     if (!outPort?.adoptsUpstreamFrom) continue;
-    const adopted = resolveUpstreamType(e.source.nodeId, e.source.portId, 0);
+    const adopted = resolveEmittedType(e.source.nodeId, e.source.portId, graph);
     // Keep declared type if nothing upstream, or the adopted type can't
     // legally reach THIS edge's target (don't manufacture an illegal cable).
     if (!adopted || adopted === e.sourceType) continue;

@@ -19,12 +19,20 @@
 import type { CableType, Edge, PortDef } from '$lib/graph/types';
 import { canConnectToPort } from '$lib/graph/types';
 import { audioEdgeId } from '$lib/graph/stereo-autowire';
+import { effectiveOutputType, type AdoptionGraph } from '$lib/graph/adopted-type';
+export type { AdoptionGraph };
 
 /** One jack on a matrixed module — an input OR an output port. */
 export interface Jack {
   portId: string;
   direction: 'input' | 'output';
   type: CableType;
+  /** OUTPUT jacks only: this port emits whatever is patched into the named
+   *  input (`PortDef.adoptsUpstreamFrom`), so the cell's legality is decided on
+   *  the RESOLVED type. Without it a SCALER already fed by an LFO showed every
+   *  CV row as 'illegal' while `createMatrixEdge` would have accepted it — the
+   *  grid and the writer disagreeing about the same cable. */
+  adoptsUpstreamFrom?: string;
   /** Source-widening `accepts` list (input ports only — e.g. a SCOPE probe
    *  taking the CV family on an audio input). Honoured by canConnectToPort so
    *  matrix legality matches the drag validator exactly. */
@@ -38,7 +46,14 @@ export function jacksForDef(
   if (!def) return [];
   const out: Jack[] = [];
   for (const p of def.inputs) out.push({ portId: p.id, direction: 'input', type: p.type, accepts: p.accepts });
-  for (const p of def.outputs) out.push({ portId: p.id, direction: 'output', type: p.type });
+  for (const p of def.outputs) {
+    out.push({
+      portId: p.id,
+      direction: 'output',
+      type: p.type,
+      adoptsUpstreamFrom: p.adoptsUpstreamFrom,
+    });
+  }
   return out;
 }
 
@@ -96,14 +111,21 @@ export interface CellClassification {
 export function resolvePatchRoles(
   rowJack: Jack,
   colJack: Jack,
+  /** What the OUTPUT jack actually emits, when the caller can resolve it (see
+   *  `classifyCell`). Omitted → the declared type, which is this function's
+   *  historical behaviour and still correct for every non-adopting jack. */
+  emittedOutputType?: CableType,
 ): { input: Jack; output: Jack } | null {
   // Need exactly one input and one output.
   if (rowJack.direction === colJack.direction) return null;
   const input = rowJack.direction === 'input' ? rowJack : colJack;
   const output = rowJack.direction === 'output' ? rowJack : colJack;
-  // Type compatibility: cable runs output.type → input.type. Honour the input
-  // port's `accepts` widening (canConnectToPort), exactly like the drag path.
-  if (!canConnectToPort(output.type, { type: input.type, accepts: input.accepts })) return null;
+  // Type compatibility: cable runs output → input. The OUTPUT side is judged on
+  // what it EMITS (a type-transparent jack adopts its upstream); the INPUT side
+  // honours its own `accepts` widening (canConnectToPort) — exactly like the
+  // drag path, which is the point of sharing the predicate at all.
+  const emitted = emittedOutputType ?? output.type;
+  if (!canConnectToPort(emitted, { type: input.type, accepts: input.accepts })) return null;
   return { input, output };
 }
 
@@ -207,6 +229,10 @@ export function classifyCell(
   xModuleId: string,
   yModuleId: string,
   nameOf: (nodeId: string) => string,
+  /** The live graph, so a TYPE-TRANSPARENT output cell is classified on what
+   *  the jack emits rather than its declared fallback. Optional: omitted, every
+   *  jack reads as its declaration, which is the pre-existing behaviour. */
+  adoption?: AdoptionGraph,
 ): CellClassification {
   // Re-usable snapshot so multiple passes don't re-consume a one-shot iterator.
   const edgeList = [...edges].filter((e): e is Edge => !!e);
@@ -221,8 +247,20 @@ export function classifyCell(
     return { kind: 'direct', cableType: direct.sourceType, edgeId: direct.id };
   }
 
-  // 2) Legal input/output + compatible-type pair?
-  const roles = resolvePatchRoles(rowJack, colJack);
+  // 2) Legal input/output + compatible-type pair? The OUTPUT jack's emitted
+  //    type is resolved through the SAME walk the drag validator uses, so a
+  //    lit cell and a permitted drag stay the same predicate.
+  const outJack = rowJack.direction === 'output' ? rowJack : colJack;
+  const outJackNodeId = jackNodeId(outJack, rowJack, xModuleId, yModuleId);
+  const roles = resolvePatchRoles(
+    rowJack,
+    colJack,
+    effectiveOutputType(
+      outJackNodeId,
+      { id: outJack.portId, type: outJack.type, adoptsUpstreamFrom: outJack.adoptsUpstreamFrom },
+      adoption,
+    ),
+  );
   if (!roles) return { kind: 'illegal' };
 
   const inputNodeId = jackNodeId(roles.input, rowJack, xModuleId, yModuleId);

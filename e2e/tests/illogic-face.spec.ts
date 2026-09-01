@@ -54,6 +54,14 @@ import {
 
 const SLOW_RENDER = process.env.E2E_SWIFTSHADER === '1' || !!process.env.CI;
 
+/**
+ * ONE readiness budget, named once and shared by all three places that wait for
+ * the scope to fill. It used to be the literal `SLOW_RENDER ? 20_000 : 10_000`
+ * written out three times, which is how the negative control below came to
+ * exceed its own test timeout without anyone being able to see the sum.
+ */
+const READY_BUDGET_MS = SLOW_RENDER ? 20_000 : 10_000;
+
 /** A reader over an explicit overlay, in the shape the model reads — the def
  *  defaults fill anything not named. */
 const at = (over: Record<string, number> = {}) => (id: string) => over[id];
@@ -238,7 +246,7 @@ async function readGateWhenPopulated(
   scopeId: string,
   what: string,
 ): Promise<GateStats> {
-  const deadline = Date.now() + (SLOW_RENDER ? 20_000 : 10_000);
+  const deadline = Date.now() + READY_BUDGET_MS;
   let last = await readGate(page, scopeId);
   while (Date.now() < deadline) {
     if (last.total > 0 && last.bothZero === 0 && last.peak > 0.9 && last.peakB > 0.9) return last;
@@ -286,6 +294,29 @@ test.describe('illogic face — four identical dials, and the four numbers they 
   // 96 h CI census to 2026-08-18 — it also hard-failed 3 time(s) on a branch, but the recovered-on-retry runs stayed green.
   // LOST WHILE PARKED: the two seams no unit or ART gate can reach — that ILLOGIC's DOM prints and redraws the LIVE graph value, and that the knobs cannot contaminate the logic jacks' clean gate output.
   // Re-enable only on a root cause (#1847); "it passes now" is not one.
+  //
+  // ⚠ ONE HYPOTHESIS TESTED AND REFUTED, 2026-09-01 — recorded so it is not
+  // re-run. The sibling negative control below WAS a budget overrun: it spends
+  // `READY_BUDGET_MS` twice (once polling, then again driving
+  // `readGateWhenPopulated` to EXHAUSTION, which is its contract), ~40 s against
+  // Playwright's 30 s default, and it failed with the timeout's message rather
+  // than the refusal's. The obvious guess was that THIS leg shares that cause —
+  // it declares three budgeted waits, 3 x 20 s = 60 s on CI, which is also over
+  // the clock. IT DOES NOT. All three of its waits are expected to SUCCEED, so
+  // each returns as soon as the analyser window fills and none of the three
+  // budgets is actually spent; a wait that genuinely exhausted here would THROW
+  // "never produced a fully-populated window", a hard failure with its own
+  // message, not a timeout. MEASURED, `E2E_SWIFTSHADER=1`, 5 consecutive runs:
+  // 10.8 / 10.6 / 10.8 / 10.7 / 10.6 s — a tight distribution with ~19 s of
+  // headroom. Cross-check that the local clock is not simply faster than CI:
+  // `e2e-timings.generated.json` records 26.8 s for this FILE with this leg
+  // skipped — i.e. essentially the negative control alone — and that same leg
+  // measures 30.3 s locally under the same flag, so local is at least as slow
+  // as CI here. A leg at 10.7 s locally is not the one hitting a 30 s wall.
+  //
+  // So the park STANDS: the 21 recovered-on-retry observations still have no
+  // proven cause, and the double-budget arithmetic is now excluded rather than
+  // merely unexamined. Five local passes say nothing about CI nondeterminism.
   test.fixme('IN A REAL BROWSER: the logic jacks are a clean gate, and the knobs do not reach them', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 21 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({
     page,
   }) => {
@@ -395,7 +426,7 @@ test.describe('illogic face — four identical dials, and the four numbers they 
     await expect
       .poll(async () => readPeak(page, scope), {
         message: 'with every attenuverter at 0 the SUM bus must go silent',
-        timeout: SLOW_RENDER ? 20_000 : 10_000,
+        timeout: READY_BUDGET_MS,
       })
       .toBeLessThan(0.01);
   });
@@ -418,6 +449,29 @@ test.describe('illogic face — four identical dials, and the four numbers they 
   test('#1823 NEGATIVE CONTROL: an unwired NAND jack is REFUSED, not silently awaited', async ({
     page,
   }) => {
+    // ⚠ THE ONLY TEST IN THIS FILE THAT SPENDS THE READINESS BUDGET **TWICE**,
+    // and on CI that structurally exceeds Playwright's 30 s default — which is
+    // what made it flaky rather than any nondeterminism in the subject. The
+    // arithmetic, on CI (`READY_BUDGET_MS` = 20 s):
+    //
+    //   the AND-is-live poll ......................... up to 20 s
+    //   readGateWhenPopulated, DRIVEN TO EXHAUSTION ... a further 20 s
+    //
+    // Every other caller of `readGateWhenPopulated` expects it to SUCCEED, so
+    // it returns as soon as the window fills and the second budget is never
+    // spent. This leg is the one place the refusal itself is the contract, so
+    // the wait is guaranteed to run to its deadline. ~40 s of declared budget
+    // against a 30 s test timeout is green only while the first poll happens to
+    // return quickly, which is why it passed almost always and then failed on a
+    // loaded shard with `page.evaluate: Test timeout of 30000ms exceeded` — the
+    // TIMEOUT's message, not the refusal's, so the assertion never got to run.
+    //
+    // ⚠ NOT A LONGER WAIT IN THE SENSE THE RENDERER RULE FORBIDS. Nothing here
+    // waits on a frame or sleeps: this is the FAILURE BOUND, and it is DERIVED
+    // from the two budgets this test is already documented to spend rather than
+    // picked. `readGateWhenPopulated`'s own header makes the same distinction:
+    // "the timeout bounds the failure; it is not the mechanism".
+    test.setTimeout(2 * READY_BUDGET_MS + 30_000);
     await gotoShell(page);
     const il = 'il-nc';
     const scope = 'il-nc-scope';
@@ -444,7 +498,7 @@ test.describe('illogic face — four identical dials, and the four numbers they 
     await expect
       .poll(async () => (await readGate(page, scope)).peak, {
         message: 'the AND jack must be live, or this control proves nothing',
-        timeout: SLOW_RENDER ? 20_000 : 10_000,
+        timeout: READY_BUDGET_MS,
       })
       .toBeGreaterThan(0.9);
 

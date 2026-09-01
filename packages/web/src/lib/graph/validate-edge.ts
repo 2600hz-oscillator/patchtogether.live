@@ -36,6 +36,10 @@
 import type { Edge, ModuleNode, CableType, PortDef } from './types';
 import { canConnectToPort } from './types';
 import { resolveExposedPort } from './group-projection';
+import { effectiveOutputType, makeAdoptionGraph, type AdoptionGraph } from './adopted-type';
+
+export type { AdoptionGraph };
+export { makeAdoptionGraph };
 
 /**
  * Minimal def shape the validator needs: a module's declared input + output
@@ -82,6 +86,7 @@ function resolveEndpoint(
   portId: string,
   want: 'output' | 'input',
   resolveDef: ResolveDef,
+  adoption?: AdoptionGraph,
 ): { cableType: CableType; accepts?: readonly CableType[] } | null {
   // 1) Group exposed port — resolve BEFORE consulting any module def.
   const exposed = resolveExposedPort(node, portId);
@@ -99,10 +104,19 @@ function resolveEndpoint(
   const port = ports.find((p) => p.id === portId);
   if (!port) return null;
   // `accepts` (per-port source widening, e.g. a SCOPE probe) is honoured on
-  // INPUT ports only — outputs never widen what they emit.
-  return want === 'input'
-    ? { cableType: port.type, accepts: port.accepts }
-    : { cableType: port.type };
+  // INPUT ports only — outputs never widen what they ACCEPT.
+  if (want === 'input') return { cableType: port.type, accepts: port.accepts };
+  // An OUTPUT is judged on what it will actually EMIT. For an ordinary jack
+  // that is its declared type; for a TYPE-TRANSPARENT pass-through
+  // (`adoptsUpstreamFrom`) it is the type of whatever is patched into the named
+  // input, resolved live through the shared walk. Without this the declared
+  // fallback was the only thing the gate could see, so SCALER's `out` — CV in,
+  // CV out — was judged `audio` and refused by every `cv` jack in the rack.
+  // Nothing is widened: `canConnectToPort` still applies, to a truer type.
+  // With nothing upstream `effectiveOutputType` returns the declared type, so
+  // an unfed pass-through stays `audio` and the refusal stands (deliberate —
+  // see the unpatched-case note in ./adopted-type).
+  return { cableType: effectiveOutputType(node.id, port, adoption) };
 }
 
 /**
@@ -120,11 +134,20 @@ function resolveEndpoint(
  * `edge.sourceType` / `edge.targetType` are IGNORED for compatibility — we
  * re-derive the real types from the resolved ports so a stale or spoofed
  * cable-type on the edge can't sneak an incompatible patch past canConnect.
+ *
+ * `adoption` is OPTIONAL and supplies the live graph for TYPE-TRANSPARENT
+ * pass-through outputs (`adoptsUpstreamFrom`): with it, SCALER's `out` is judged
+ * on the type actually feeding SCALER's `in`, so a CV routed through it reaches
+ * a CV jack. WITHOUT it the declared type is used, which is the pre-existing
+ * behaviour — so every caller stays source-compatible, but a caller that omits
+ * it will still refuse the CV patch. Build one with `makeAdoptionGraph(nodes,
+ * edges, resolveDef)`; callers that hold the edge list should always pass it.
  */
 export function validateEdge(
   edge: Edge,
   nodes: readonly ModuleNode[],
   resolveDef: ResolveDef,
+  adoption?: AdoptionGraph,
 ): ValidateResult {
   const srcNode = nodes.find((n) => n.id === edge.source.nodeId);
   if (!srcNode) {
@@ -135,7 +158,7 @@ export function validateEdge(
     return { ok: false, reason: `target node ${edge.target.nodeId} not found` };
   }
 
-  const src = resolveEndpoint(srcNode, edge.source.portId, 'output', resolveDef);
+  const src = resolveEndpoint(srcNode, edge.source.portId, 'output', resolveDef, adoption);
   if (!src) {
     return {
       ok: false,
@@ -188,6 +211,13 @@ export interface FragmentValidation {
  *     SURVIVING node set (after the unregistered-type drop), so an edge whose
  *     endpoint references a node we just dropped fails validateEdge's
  *     "source/target node not found" check and is dropped too.
+ *
+ * The adoption graph is built ONCE over the whole fragment and reused for every
+ * edge — a per-edge rebuild would make loading a patch quadratic in edge count.
+ * It is built from the fragment's OWN edges, which is what makes a saved patch
+ * containing `lfo → scaler.in` + `scaler.out → filter.cutoff` reload intact:
+ * without it the second cable resolved as `audio → cv` and was silently dropped
+ * on load, i.e. the file round-tripped lossily.
  */
 export function validateGraphFragment(
   fragment: GraphFragment,
@@ -212,9 +242,10 @@ export function validateGraphFragment(
 
   const validEdges: Edge[] = [];
   const droppedEdges: { edge: Edge; reason: string }[] = [];
+  const adoption = makeAdoptionGraph(validNodes, fragment.edges, resolveDef);
 
   for (const edge of fragment.edges) {
-    const res = validateEdge(edge, validNodes, resolveDef);
+    const res = validateEdge(edge, validNodes, resolveDef, adoption);
     if (res.ok) {
       validEdges.push(edge);
     } else {

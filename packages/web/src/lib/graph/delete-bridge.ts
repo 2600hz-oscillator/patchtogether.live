@@ -68,7 +68,12 @@
 
 import type { Edge, ModuleNode } from '$lib/graph/types';
 import { videoPortsOf, type DropDefLike, type DropPortLike } from '$lib/ui/patch-drop/drop-plan';
-import { validateEdge, type ResolveDef, type ValidatorDef } from '$lib/graph/validate-edge';
+import {
+  makeAdoptionGraph,
+  validateEdge,
+  type ResolveDef,
+  type ValidatorDef,
+} from '$lib/graph/validate-edge';
 import { audioEdgeId } from '$lib/graph/stereo-autowire';
 
 /**
@@ -241,6 +246,15 @@ export function planDeleteBridge(
   // surviving set — otherwise a candidate could "pass" against a graph the
   // applicator is about to change out from under it.
   const survivors = nodes.filter((n) => n.id !== nodeId);
+  // The bridge candidate's SOURCE may be a TYPE-TRANSPARENT output, so judge it
+  // on what it emits. Built over the SURVIVING edges — every cable of the doomed
+  // node is going away, so an adopter fed only through it correctly falls back
+  // to its declared type and the bridge is refused rather than mistyped.
+  const survivingEdges = edges.filter(
+    (e): e is Edge =>
+      !!e && e.source.nodeId !== nodeId && e.target.nodeId !== nodeId,
+  );
+  const adoption = makeAdoptionGraph(survivors, survivingEdges, resolveDef);
   const seen = new Set<string>();
 
   // ⚠ THE CABLE TYPES ARE RE-DERIVED FROM THE LIVE DEFS, not carried off the
@@ -289,7 +303,7 @@ export function planDeleteBridge(
     if (seen.has(candidate.id)) continue;
     seen.add(candidate.id);
 
-    const verdict = validateEdge(candidate, survivors, resolveDef);
+    const verdict = validateEdge(candidate, survivors, resolveDef, adoption);
     if (verdict.ok) {
       bridgeEdges.push(candidate);
     } else {

@@ -27,7 +27,8 @@
 //     whatever's patched into `in` — a CV source makes `out` emit `cv`, an audio
 //     source makes it emit `audio`. Declared `type: 'audio'` only as the fallback
 //     when nothing is patched upstream (so a bare SCALER still presents an audio
-//     jack). WHY: the audio→video bridge reads an `audio`-typed source through an
+//     jack — and, until its `in` is fed, a strictly-`cv` input refuses it; patch
+//     the source first). WHY: the audio→video bridge reads an `audio`-typed source through an
 //     RMS envelope-follower that CLAMPS to 1.0 — so a hard-`audio` output made
 //     SCALER's scaled CV saturate and the AMOUNT knob had ZERO effect at a video
 //     destination (the "dead knob" bug). Adopting the upstream type keeps a CV
@@ -35,6 +36,18 @@
 //     scales the real ±CV value. (SCOPE is the sibling "visualizer-not-a-bus"
 //     port-type-widening pattern; here we widen the OUTPUT's emitted type instead
 //     of an input's accepted set.)
+//
+//     ⚠ ADOPTION IS ALSO A CONNECT-TIME RULE, and for two releases it was NOT.
+//     It was resolved only in `buildPatchSnapshot`, which re-types an edge that
+//     already exists, while CREATING one went through `canConnect(src, dst)` —
+//     two cable types, no graph — and so saw the declared `audio`. The owner's
+//     report was the exact consequence: *"scaler's output wont patch to cv
+//     ins"*. `out` was transparent for READING and opaque for PATCHING, so the
+//     dead-knob fix only ever reached destinations an `audio` cable could
+//     already legally land on (`modsignal` modulation inputs, audio buses) —
+//     never a plain `cv` jack, which is most of them. Both readers now share
+//     one walk (`$lib/graph/adopted-type`) and the validators judge this jack
+//     on what it emits.
 //
 // Params:
 //   amount (log 0.1..10, default 1.0): the scale factor. LOG curve so unity
@@ -73,12 +86,12 @@ export const scalerDef: AudioModuleDef = {
 
   docs: {
     explanation:
-      "A one-knob signal multiplier — a clean gain trim that can both CUT and BOOST. The single AMOUNT knob multiplies whatever passes through by a factor from ×0.1 (a tenth) up to ×10 (ten times): out = in · amount. Unlike a passive attenuator (which only cuts, 0..1), SCALER can also amplify, and unlike a VCA it has no CV input — it is a fixed, set-and-forget trim. It works on EITHER signal class: the input accepts audio, CV, pitch or gate cables, and the output adopts the cable type of whatever is patched in, so scaling a CV stays CV through the system (this is what makes the knob actually do something at a cross-domain destination). There is no DSP worklet — it is a single Web Audio GainNode, sample-accurate.",
+      "A one-knob signal multiplier — a clean gain trim that can both CUT and BOOST. The single AMOUNT knob multiplies whatever passes through by a factor from ×0.1 (a tenth) up to ×10 (ten times): out = in · amount. Unlike a passive attenuator (which only cuts, 0..1), SCALER can also amplify, and unlike a VCA it has no CV input — it is a fixed, set-and-forget trim. It works on EITHER signal class: the input accepts audio, CV, pitch or gate cables, and the output adopts the cable type of whatever is patched in, so scaling a CV stays CV through the system — it patches into CV inputs, and the knob actually scales what arrives there. Patch the input FIRST: with nothing upstream there is no type to adopt, so the output reads as audio and a CV-only jack will refuse it. There is no DSP worklet — it is a single Web Audio GainNode, sample-accurate.",
     inputs: {
       in: "The signal to scale. Typed audio but widened to accept CV / pitch / gate cables too, so the same multiply works on a control voltage, a pitch line or an audio bus — it is just a gain.",
     },
     outputs: {
-      out: "The scaled signal, out = in · amount. Type-transparent: the emitted cable type adopts whatever is patched into IN (a CV source makes this emit CV, an audio source makes it emit audio); with nothing patched it presents as an audio jack.",
+      out: "The scaled signal, out = in · amount. Type-transparent: the emitted cable type adopts whatever is patched into IN (a CV source makes this emit CV, so it patches straight into a CV input; an audio source makes it emit audio). Patch IN first — with nothing upstream this presents as an audio jack, and a CV-only input will refuse it until the scaler has a signal to take its type from.",
     },
     controls: {
       amount: "The scale factor, on a log-tapered knob so unity (×1.0) sits at the knob CENTER and the taper is symmetric: full left = ×0.1 (attenuate to a tenth), full right = ×10 (boost ten-fold). Defaults to ×1.0, so a freshly spawned SCALER is a transparent direct patch until you move it.",
