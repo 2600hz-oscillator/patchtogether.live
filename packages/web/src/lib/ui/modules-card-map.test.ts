@@ -54,7 +54,7 @@ const EXPECTED_NODE_TYPES = [
   'scaler', 'shapedramps', 'shapegen', 'shapes', 'shimmershine', 'sidecar', 'sixstrum', 'sourcery', 'spectrograph',
   'skifree', 'slewSwitch', 'snaredrum', 'stereovca', 'sticky',
   'tidyVco', 'tomtom',
-  'swolevco', 'synesthesia', 'tempest', 'tempolock', 'timelorde', 'treeohvox', 'tvLibrarian',
+  'swolevco', 'synesthesia', 'tempest', 'tempolock', 'timelorde', 'trails', 'treeohvox', 'tvLibrarian',
   'launchpadControlLeft', 'push2Control',
   'unityscalemathematik', 'vca', 'vdelay', 'vfpgaRunner', 'videoMixer', 'videoOut',
   'videobox', 'videocube', 'videovarispeed', 'warrensspectrum', 'warrensvisions', 'wavecel', 'wavesculpt',
