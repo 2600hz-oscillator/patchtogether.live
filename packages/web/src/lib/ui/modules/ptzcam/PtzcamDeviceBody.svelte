@@ -132,30 +132,36 @@
   }
 </script>
 
+<!-- ⚠ THE PROSE IS ON ITS OWN LINE, AND THAT IS A LAYOUT REQUIREMENT RATHER
+     THAN A LOOK. `.faceplate-body` is `width: max-content`, so this plate's
+     intrinsic width is what the DOCK PANE is sized to — and a single flex ROW
+     holding the picker, a wrapping paragraph and the lamps has a max-content
+     width equal to all three UNWRAPPED, while the paragraph then paints two
+     short lines inside it. MEASURED on the first capture: body 492 px wide,
+     rightmost paint (the LINK caption) at 514 against a plate edge of 558 —
+     44 px of empty plate against the 40 px ceiling `workflow-shell-faces`
+     enforces from the 2026-08-17 ruling ("we do not want useless gray
+     horizontal space on cards, ever").
+     A COLUMN's max-content is the MAX of its rows, not their sum, so the
+     paragraph's width no longer pushes the row out, and the plate stops being
+     the widest thing in the faceplate. -->
 <div class="ptzcam-device" data-testid="ptzcam-device-body-{nodeId}">
-  <label class="row">
-    <span class="cap">Camera</span>
-    <select
-      data-testid="ptzcam-device-select-{nodeId}"
-      value={selected ?? ''}
-      onchange={onChangeCamera}
-    >
-      <option value="">— first camera —</option>
-      {#each options as opt (opt.value)}
-        <option value={opt.value}>{opt.label}</option>
-      {/each}
-    </select>
-  </label>
+  <div class="row-main">
+    <label class="row">
+      <span class="cap">Camera</span>
+      <select
+        data-testid="ptzcam-device-select-{nodeId}"
+        value={selected ?? ''}
+        onchange={onChangeCamera}
+      >
+        <option value="">— first camera —</option>
+        {#each options as opt (opt.value)}
+          <option value={opt.value}>{opt.label}</option>
+        {/each}
+      </select>
+    </label>
 
-  {#if problem}
-    <p class="err" role="alert" data-testid="ptzcam-fault-{nodeId}">{linkDetail}</p>
-  {:else if !bound}
-    <!-- The EMPTY STATE: what to do, and why no camera is listed yet. Replaced
-         by the lamps the moment a binding exists. -->
-    <p class="hint">Press Connect camera to grant MIDI and find the PT-PTZ helper.</p>
-  {/if}
-
-  <span class="lamps">
+    <span class="lamps">
     <StatusLed
       caption="LINK"
       lit={bound}
@@ -176,26 +182,43 @@
         {/each}
       </span>
     {/if}
-  </span>
+    </span>
+  </div>
+
+  {#if problem}
+    <p class="err" role="alert" data-testid="ptzcam-fault-{nodeId}">{linkDetail}</p>
+  {:else if !bound}
+    <!-- The EMPTY STATE: what to do, and why no camera is listed yet. Replaced
+         by the lamps the moment a binding exists. -->
+    <p class="hint">Press Connect camera to grant MIDI and find the PT-PTZ helper.</p>
+  {/if}
 </div>
 
 <style>
+  /* COLUMN, so the plate's max-content width is the WIDEST ROW rather than the
+     sum of a row and a paragraph — see the markup note above. */
   .ptzcam-device {
     display: flex;
-    align-items: center;
-    gap: 12px;
-    flex-wrap: wrap;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 5px;
     padding: 6px 10px;
     border: 1px solid var(--border, #333);
     border-radius: 3px;
     background: var(--panel, #1b1b1b);
+  }
+  .row-main {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
   }
   .hint,
   .err {
     margin: 0;
     font-size: 10px;
     line-height: 1.3;
-    max-width: 40ch;
+    max-width: 34ch;
   }
   .hint { color: var(--muted, #888); }
   .err { color: #d66; }
