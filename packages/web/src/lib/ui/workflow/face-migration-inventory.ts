@@ -896,13 +896,45 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
       'assignment slots that reports stale saved assignments. The roster is WebMIDI service ' +
       'state, and the slot list is the interaction.',
   },
+  // ⚠ THE OLD `why` WAS TRUE IN ITS FACTS AND WRONG IN BOTH OF ITS
+  // CONCLUSIONS, and it is worth naming which was which.
+  //
+  // TRUE and still true: the connect gesture and the live bound / no-port /
+  // no-reply / camera-absent state ARE WebMIDI service state rather than params.
+  // That is exactly why the module gets a `controlFamily` + an extension body
+  // instead of five param cells.
+  //
+  // FALSE (1) — the PRECEDENT. It reasoned "like chromaconsole", pointing at the
+  // one binder in the tree that is still unfaced, while every other device
+  // binder had already shipped this shape: midiclock, midiCvBuddy, midiLane,
+  // midiOutBuddy, launchpadControlLeft, outToLaunch, push2Control, es9,
+  // cameraInput and electraControl are all in STRICT_FACES. ptzcam does not
+  // inherit chromaconsole's blocker either: chromaconsole's real constraint is
+  // that `deviceSlotParams` mints eight identical `slot 1`..`slot 8` params
+  // whose meaning is per-NODE `node.data.assign`, and ptzcam has nothing of the
+  // kind — its four knobs are ordinary named params.
+  //
+  // FALSE (2) — "the four trim knobs are the only generic-face material". The
+  // CONNECT gesture is a fifth ranked control through the family key-space, and
+  // its `testidPrefix` already existed on the legacy card, so no card edit was
+  // needed to satisfy module-docs-lint. It ranks FIRST, not fifth.
   {
     type: 'ptzcam',
-    disposition: 'bespoke-surface',
-    why:
-      'a MIDI DEVICE BINDER like chromaconsole: the connect gesture and the live bound/unbound/' +
-      'camera-absent state are WebMIDI service state, not params — the four trim knobs are the ' +
-      'only generic-face material and the binding surface is the module.',
+    disposition: 'generic-face',
+    note:
+      'face + `fullViewBody`, the midiclock shape. CONNECT is a ranked `action` cell (an action ' +
+      'cell is not dock-restricted, so it reaches the lane tile inside the glyph-less compact cap ' +
+      'of 3) and ranks FIRST, because the module is inert twice over before it — Web MIDI ' +
+      'publishes no port until the browser consents, and the native PT-PTZ helper is what ' +
+      'publishes the virtual camera pair at all. The body carries the three things that cannot be ' +
+      'cells: the live `PT-PTZ-*` roster (read off the app\'s sysex MIDI access, so a ' +
+      '`ShellSelectorCell.options` — a pure fn of the node — would be stale across the async ' +
+      'grant), the nine-kind LINK state, and the per-axis abs/velocity mode the CAMERA reports in ' +
+      'the caps handshake. The mode line is the one deleted readout: three lamps lit on VELOCITY, ' +
+      'rendered only inside `{#if caps}` so pre-handshake "unknown" is the indicator\'s ABSENCE ' +
+      'rather than three dark lamps identical to a bound all-absolute camera. `glyph: \'none\'` is ' +
+      'forced (`outputs: []`). The send loop is in the factory on the scheduler tick and has ' +
+      'always run with no surface mounted, so promotion moves no producer.',
   },
   {
     type: 'clipplayer',

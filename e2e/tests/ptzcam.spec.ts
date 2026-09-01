@@ -16,8 +16,9 @@
 // would make the spec agree with the encoder by construction.
 
 import { test, expect } from './_fixtures';
-import { type Page } from '@playwright/test';
+import { type Locator, type Page } from '@playwright/test';
 import { spawnPatch, type SpawnEdge, type SpawnNode } from './_helpers';
+import { BOOT_MS } from '../_helpers/boot-budget';
 import {
   installMidiIoCapture,
   injectMidiIn,
@@ -99,7 +100,7 @@ function ctlValues(frames: { bytes: number[] }[], cmd: number, control: number):
 
 async function boot(
   page: Page,
-  opts: { ports?: boolean; lfo?: boolean; nodes?: SpawnNode[] } = {},
+  opts: { ports?: boolean; lfo?: boolean; nodes?: SpawnNode[]; shell?: 'legacy' | 'face' } = {},
 ): Promise<void> {
   const withPorts = opts.ports ?? true;
   await installMidiIoCapture(
@@ -107,7 +108,13 @@ async function boot(
     withPorts ? [DECOY_OUT, NEXIGO_OUT, LOGI_OUT] : [DECOY_OUT],
     withPorts ? [DECOY_IN, NEXIGO_IN, LOGI_IN] : [DECOY_IN],
   );
-  await page.goto('/rack?shell=legacy&seed=none');
+  // ⚠ THE SHELL IS A PARAMETER NOW, AND THAT IS THE POINT. Every assertion in
+  // this file booted `?shell=legacy` until the promotion, so every one of them
+  // exercised a surface no player meets under the default shell. The legacy legs
+  // stay (the card still renders under `?shell=legacy` while the migration is
+  // live); the face legs at the bottom of this file are what cover the shipping
+  // surface.
+  await page.goto(opts.shell === 'face' ? '/rack?seed=none' : '/rack?shell=legacy&seed=none');
   await page.waitForLoadState('networkidle');
   const nodes: SpawnNode[] = opts.nodes ?? [{ id: NODE, type: TYPE, position: { x: 400, y: 200 } }];
   const edges: SpawnEdge[] = [];
@@ -477,4 +484,191 @@ test('ptzcam: a camera-absent error frame surfaces on the card and halts sends',
     await readMidiOutCaptured(page, NEXIGO_OUT.id),
     'no sends against an absent camera',
   ).toEqual([]);
+});
+
+// ═══════════════════ THE PROMOTED SURFACE — DEFAULT SHELL ════════════════════
+//
+// ⚠ EVERY ASSERTION ABOVE THIS LINE BOOTS `?shell=legacy`, AND THAT WAS TRUE OF
+// THE WHOLE MODULE BEFORE THIS PR — the VRT scene too, and the `__annotated__`
+// legend directory holds only adsr and lfo. So nothing in the tree could fail on
+// a dropped ptzcam affordance under the shell a player actually meets. These
+// legs are that gap, and they are deliberately not a re-run of the legacy ones:
+// each covers something only the FACE can be wrong about.
+//
+//   1. THE GESTURE IS ON THE LANE TILE. `curatedFace` deciding the CONNECT key
+//      survives the compact tier is a statement about the resolver;
+//      `shell-cell-ptzcam-connect` being in a lane tile's DOM is a statement
+//      about the renderer, and it is the entire practical argument for the
+//      promotion — the module sends nothing until it is pressed.
+//   2. THE WHOLE BINDER WORKS WITH NO CARD ANYWHERE. Connect from the tile, pick
+//      the camera in the dock body, handshake, and a REAL default-mode LFO
+//      reaches the wire as changing sysex. That is the poly/MIDI boundary rule
+//      (AGENTS.md #8) asserted through the shipping surface.
+//   3. THE DELETED READOUT'S REPLACEMENT, at the renderer. The card's
+//      `pan abs · tilt abs · zoom abs` line is three lamps now, and the ONLY
+//      state a unit test cannot reach is the one that matters: lamps ABSENT
+//      before the handshake, then a MIXED camera lighting pan/tilt and leaving
+//      zoom dark. A source gate cannot see a rendered `{#if}`.
+
+/** Open this node's dock faceplate, scoped by `data-shell-node` so a later swap
+ *  of the dock's occupant cannot leave a stale locator on someone else's plate
+ *  (the es9-face pattern). */
+async function openDock(page: Page, nodeId: string): Promise<Locator> {
+  const shell = page.locator(`.svelte-flow__node[data-id="${nodeId}"] [data-testid="module-shell"]`);
+  await expect(shell).toBeVisible({ timeout: BOOT_MS });
+  await shell.getByTestId('shell-open-dock').click();
+  const dockShell = page
+    .getByTestId('dock-full-view')
+    .locator(`[data-testid="module-shell"][data-shell-tier="dock"][data-shell-node="${nodeId}"]`);
+  await expect(dockShell).toBeVisible({ timeout: BOOT_MS });
+  return dockShell;
+}
+
+/** Bind through the PROMOTED surface only: the ranked CONNECT cell on the lane
+ *  tile, then the camera picker in the dock body. No card is mounted anywhere. */
+async function bindThroughFace(
+  page: Page,
+  dock: Locator,
+  cam: { out: { id: string; name: string }; in: { id: string }; reply: number[] },
+  nodeId = NODE,
+): Promise<void> {
+  const lane = page.locator(`.svelte-flow__node[data-id="${nodeId}"]`);
+  await lane.getByTestId('shell-cell-ptzcam-connect').click();
+  const select = dock.getByTestId(`ptzcam-device-select-${nodeId}`);
+  // Auto-retrying: the roster arrives when the async MIDI grant resolves, so
+  // the assertion IS the wait — there is no wall-clock budget to tune.
+  await expect(select.locator(`option[value="${cam.out.name}"]`)).toHaveCount(1);
+  await select.selectOption(cam.out.name);
+  await waitCapsRequest(page, cam.out.id);
+  expect(await injectMidiIn(page, cam.in.id, cam.reply)).toBe(true);
+  await expect(dock.getByTestId(`ptzcam-led-link-${nodeId}`)).toHaveAttribute('data-lit', '1');
+}
+
+test.describe('ptzcam face — the default shell', () => {
+  test('the CONNECT gesture is on the LANE TILE, and the body carries what a cell cannot', async ({
+    page,
+  }) => {
+    await boot(page, { shell: 'face' });
+
+    // ── 1. the lane tile ────────────────────────────────────────────────
+    const lane = page.locator(`.svelte-flow__node[data-id="${NODE}"]`);
+    await expect(lane).toHaveCount(1);
+    await expect(
+      lane.getByTestId('shell-cell-ptzcam-connect'),
+      'the gesture the module sends nothing without must be ON the tile, not behind the dock',
+    ).toHaveCount(1);
+    // NEGATIVE CONTROL for the same read: the tier caps are geometry, so a tile
+    // painting EVERY ranked key would make the assertion above true for any
+    // ranking at all. SLEW is rank 4 — dock-only at the compact tier.
+    await expect(
+      lane.getByTestId('control-slew'),
+      'the ranked-last key is a DOCK control',
+    ).toHaveCount(0);
+
+    // ── 2. the dock body, pre-connect ───────────────────────────────────
+    const dock = await openDock(page, NODE);
+    const body = dock.getByTestId(`ptzcam-device-body-${NODE}`);
+    await expect(body).toBeVisible();
+
+    const link = dock.getByTestId(`ptzcam-led-link-${NODE}`);
+    await expect(link, 'nothing is bound before the gesture').toHaveAttribute('data-lit', '0');
+    await expect(
+      link,
+      'and the nine-kind status sentence is on the lamp, not painted',
+    ).toHaveAttribute('aria-label', /Connect grants MIDI/i);
+
+    // ⚠ THE AXIS LAMPS ARE ABSENT, NOT DARK — the assertion no unit test and no
+    // source gate can make. Three dark lamps here would be pixel-identical to a
+    // bound all-absolute NexiGo P610, i.e. the face asserting "all three axes
+    // are positions" about a module that knows nothing about any camera yet.
+    await expect(dock.getByTestId(`ptzcam-axis-lamps-${NODE}`)).toHaveCount(0);
+    // No fault line either: `idle` is not an error, and an error that is present
+    // at rest is furniture rather than an alert.
+    await expect(dock.getByTestId(`ptzcam-fault-${NODE}`)).toHaveCount(0);
+
+    // ── 3. nothing on the plate is a measurement ────────────────────────
+    const painted = (await dock.innerText()).replace(/\s+/g, ' ');
+    expect(painted, 'the mode line is GONE, not relocated').not.toMatch(/\babs\b|\bvel\b/i);
+    expect(painted, 'no decimal anywhere on the plate').not.toMatch(/\d+\.\d/);
+    // POSITIVE CONTROL for the same read: the plate DID paint what it should, so
+    // the absences above are not an empty element.
+    expect(painted, 'the lamp caption').toMatch(/LINK/);
+    expect(painted, 'the picker caption').toMatch(/Camera/i);
+    expect(painted, 'the empty-state instruction').toMatch(/Press Connect camera/i);
+  });
+
+  test('REAL CHAIN through the FACE — bind with no card, and an LFO reaches the wire', async ({
+    page,
+  }) => {
+    test.setTimeout(60_000);
+    await boot(page, { shell: 'face', lfo: true });
+    // Instant, so the LFO rather than the glide is the subject.
+    await writeParam(page, 'slew', 1);
+
+    // ⚠ THE CARD IS NOT MOUNTED. Asserted rather than assumed: `migrated()`
+    // stops a promoted module rendering its legacy card on normal surfaces, and
+    // the whole claim of this leg is that the binder survived that.
+    await expect(page.locator(`[data-testid="ptzcam-card-${NODE}"]`)).toHaveCount(0);
+
+    const dock = await openDock(page, NODE);
+    await bindThroughFace(page, dock, NEXIGO);
+    await clearMidiOutCaptured(page);
+
+    await page.waitForFunction(
+      countCtlFramesScript(NEXIGO_OUT.id, CMD_SET_ABS, 0x01) + ' >= 6',
+      undefined,
+      { timeout: 30_000 },
+    );
+    const pans = ctlValues(await readMidiOutCaptured(page, NEXIGO_OUT.id), CMD_SET_ABS, 0x01);
+    expect(pans.length).toBeGreaterThanOrEqual(6);
+    expect(
+      new Set(pans).size,
+      'the LFO must MOVE the pan through the promoted surface, not repeat one value',
+    ).toBeGreaterThanOrEqual(3);
+    for (const v of pans) {
+      expect(v, `pan device units within the caps range (got ${v})`).toBeGreaterThanOrEqual(PAN_MIN);
+      expect(v).toBeLessThanOrEqual(PAN_MAX);
+    }
+    expect(await readMidiOutCaptured(page, DECOY_OUT.id), 'nothing may reach the decoy').toEqual([]);
+  });
+
+  test('the axis-mode lamps arrive WITH the caps, and a MIXED camera lights pan/tilt only', async ({
+    page,
+  }) => {
+    test.setTimeout(60_000);
+    // ⚠ THE LOGITECH PTZ PRO 2 IS THE FIXTURE THAT MAKES THE PER-AXIS LAMP WORTH
+    // ANYTHING: pan and tilt are VELOCITY axes and zoom is ABSOLUTE, on one
+    // head, at the same time. A single "this camera is a velocity camera" badge
+    // would be wrong about zoom, and the card's own line said all three
+    // separately for exactly that reason.
+    await boot(page, { shell: 'face' });
+    const dock = await openDock(page, NODE);
+    await expect(dock.getByTestId(`ptzcam-axis-lamps-${NODE}`)).toHaveCount(0);
+
+    await bindThroughFace(page, dock, LOGI);
+
+    await expect(dock.getByTestId(`ptzcam-axis-lamps-${NODE}`)).toHaveCount(1);
+    const pan = dock.getByTestId(`ptzcam-led-pan-${NODE}`);
+    const tilt = dock.getByTestId(`ptzcam-led-tilt-${NODE}`);
+    const zoom = dock.getByTestId(`ptzcam-led-zoom-${NODE}`);
+    await expect(pan, 'lit = velocity').toHaveAttribute('data-lit', '1');
+    await expect(tilt).toHaveAttribute('data-lit', '1');
+    await expect(zoom, 'zoom is absolute on this head').toHaveAttribute('data-lit', '0');
+
+    // The three facts that make a velocity axis behave unlike every other
+    // control in the rack live on the accessible name — the card's mode line
+    // never said any of them.
+    await expect(pan).toHaveAttribute('aria-label', /RATE/);
+    await expect(pan).toHaveAttribute('aria-label', /SLEW is ignored/);
+    await expect(zoom).toHaveAttribute('aria-label', /ABSOLUTE/);
+
+    // ⚠ AND THE WORDS DO NOT PAINT. The lamp is the picture; the sentence is
+    // speakable and unpainted. `abs`/`vel` appearing as text here would be the
+    // deleted readout back under a new spelling.
+    const painted = (await dock.innerText()).replace(/\s+/g, ' ');
+    expect(painted).not.toMatch(/\babs\b|\bvel\b/i);
+    expect(painted, 'the captions ARE painted — the absence above is not an empty element').toMatch(
+      /PAN.*TILT.*ZOOM/s,
+    );
+  });
 });

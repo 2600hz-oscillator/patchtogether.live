@@ -4360,6 +4360,58 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // not belong on a module PR; #2173 repaired one of the three.
   'midiclock',
 
+  // ── PTZ CAM — the SECOND binder, and the first face whose module's whole
+  //    output leaves the browser ───────────────────────────────────────────────
+  //
+  // It drives a physical PTZ camera: CV and knobs in, MIDI sysex out to the
+  // native PT-PTZ helper on the same machine, which turns them into USB camera
+  // control. `outputs: []` — the camera's picture comes back through an ordinary
+  // camera input, not through this module.
+  //
+  // ⚠ IT INHERITS midiclock's PROMOTION ARGUMENT WITH A STRONGER PREMISE. This
+  // module is inert TWICE over before its CONNECT gesture: Web MIDI publishes no
+  // port until the browser consents, and the helper is what publishes the
+  // virtual `PT-PTZ-<CAMERA>` pair at all. Under the default shell an un-migrated
+  // module renders a lane PLACEHOLDER, so reaching that gesture meant first
+  // discovering the dock full view — on a module that until then is four knobs
+  // sending nothing. CONNECT is an `action` cell here and ranks FIRST, so it is
+  // on the lane tile within the glyph-less compact cap of 3.
+  //
+  // ⚠ WHAT PROMOTION DOES NOT TOUCH, and the reason it is safe: the sysex SEND
+  // LOOP is in the FACTORY, subscribed to the scheduler clock, and it has always
+  // run with no card mounted. Collapsing a pane, closing the dock, or scrolling
+  // the lane never stopped the camera before and does not now — and the helper's
+  // own ~250 ms velocity watchdog, not any surface, is what halts a moving head
+  // when the page dies. There is no producer here for a screen switch to kill,
+  // which is why this face has none.
+  //
+  // ⚠ THE ONE READOUT DELETED IS THE AXIS-MODE LINE, and it is deleted into
+  // three lamps rather than into nothing, because it is not decoration: it is
+  // the SEMANTICS OF EVERY OTHER CONTROL. An absolute axis reads knob+CV as a
+  // position and obeys SLEW; a velocity axis reads the same number as a rate,
+  // treats zero as an explicit stop, and ignores SLEW entirely. PAN / TILT /
+  // ZOOM lamps light on VELOCITY, with the sentence on `aria-label` — and the
+  // block renders only inside `{#if caps}`, so pre-handshake "unknown" is the
+  // ABSENCE of the indicator rather than three dark lamps that would be
+  // pixel-identical to a bound all-absolute NexiGo P610.
+  //
+  // ⚠ ZERO GPU ATTEST, and zero risk of acquiring one: `domain: 'audio'`, no
+  // canvas anywhere on the surface, and nothing under `lib/video/**` is touched.
+  // Basis membership is derived from CONTENT, so the device body must stay DOM —
+  // it is a `<select>` and four `StatusLed`s and must not grow a drawing
+  // surface. Zero ART: no audio output, so the audio-profile gate never reaches
+  // it. The contract DOES move — `controlFamilies` is projected into
+  // `serializeModuleContract` as one `family` line — which is a `docs:accept`,
+  // not an attest.
+  //
+  // ⚠ WHAT NO GATE IN THIS TREE CAN SEE, stated rather than implied: no CI
+  // runner has a PT-PTZ camera, a running helper, or a granted sysex MIDI
+  // origin. Everything past `status().kind === 'idle'` — the roster, the nine
+  // status sentences, the caps handshake, the axis lamps — ships on argument
+  // plus the unit model tests plus the mocked-port e2e, and the owner's hardware
+  // is the only instrument that closes it.
+  'ptzcam',
+
   // ── LAUNCHPAD CONTROL — the SECOND meta-domain face, and the first
   //    promotion that is a DELETION ──────────────────────────────────────────
   //

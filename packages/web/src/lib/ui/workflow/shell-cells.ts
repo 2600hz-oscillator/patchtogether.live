@@ -196,6 +196,7 @@ import {
   matrixmixYAxisValue,
 } from '$lib/ui/modules/matrixmix-cell-actions';
 import { midiclockConnect } from '$lib/ui/modules/midiclock-cell-actions';
+import { ptzcamConnect } from '$lib/ui/modules/ptzcam-cell-actions';
 import { es9Connect, es9Disconnect } from '$lib/ui/modules/es9-cell-actions';
 import { vstConnect, vstDisconnect } from '$lib/ui/modules/vst-cell-actions';
 import {
@@ -2628,6 +2629,52 @@ const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
       // — which is exactly the caller→seam gap this ledger exists to close.
       probe: { effect: { kind: 'audition', seam: 'engine-message' } },
       onFire: (nodeId) => { midiclockConnect(nodeId); },
+    },
+  },
+
+  // ── PTZ CAM — the SECOND binder cell, and the one whose module is inert
+  //    TWICE over before it is pressed ────────────────────────────────────────
+  //
+  // midiclock waits on ONE thing: the browser's Web-MIDI consent. This module
+  // waits on that AND on a native helper process (tools/pt-ptz, start_ptz.sh)
+  // publishing the virtual `PT-PTZ-<CAMERA>` pair a camera lives behind. So a
+  // freshly spawned ptzcam is four knobs that send nothing, with no port to
+  // pick from and nothing on the wire — and unlike midiclock it does not even
+  // have one meaningful param before the grant (its DIVISION is real whether or
+  // not a device is attached; PAN/TILT/ZOOM/SLEW are trim on a camera that is
+  // not there).
+  //
+  // ⚠ WHICH IS WHY IT RANKS FIRST IN `face.order`, not merely why it is a cell.
+  // `faceTierCap` caps a glyph-less COMPACT tile at 3 cells, so rank 4 or 5
+  // would put the gesture behind the dock full view — on the module where "open
+  // the dock to discover the button that makes the module work at all" is the
+  // exact defect midiclock's promotion existed to fix.
+  //
+  // ⚠ AN AUDITION, NOT A `connected` READ — midiclock's argument, and here it is
+  // not even close. The observable is `status().kind === 'bound'`, which
+  // requires a granted origin, a running native helper AND a physical PTZ
+  // camera on USB. No CI runner has any of the three, so a state probe would be
+  // permanently RED on a perfectly live control. The audition asks what the
+  // runner CAN answer — did the press resolve a callable off the live engine
+  // handle and call it.
+  //
+  // ⚠ AND THE ACTION DELIBERATELY RECORDS `delivered: false` ON ITS FALLBACK
+  // BRANCH. `ptzcamConnect` falls through to the app-level `connectPtzMidi()`
+  // when this node's engine handle is not built yet (a measured race: dropping
+  // that click left the surface frozen at `idle` forever, because nothing else
+  // ever asks for access). The gesture is not lost, but it did not reach THIS
+  // node's seam, and the ledger says the true thing rather than the convenient
+  // one.
+  ptzcam: {
+    'ptzcam-connect-{n}': {
+      kind: 'action',
+      label: 'Connect camera',
+      title:
+        'Grant this site access to Web MIDI (one-time per origin) and bind the PT-PTZ helper, '
+        + 'then pick a camera in the dock',
+      mode: 'trigger',
+      probe: { effect: { kind: 'audition', seam: 'engine-message' } },
+      onFire: (nodeId) => { ptzcamConnect(nodeId); },
     },
   },
 
