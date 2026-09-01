@@ -374,3 +374,153 @@ describe('the --lane skip-budget exit path (armed PER SHARD in the e2e job)', ()
     expect(out).toContain('--lane must be one of');
   });
 });
+
+// ── the collab lane's skip audit (#2294) ───────────────────────────────────
+//
+// THE DEFECT: the collab job ran `e2e-report-audit.mjs <report> --fail-on-flaky`
+// with NO `--lane`, and `--lane collab` was REJECTED by this very CLI
+// ("--lane must be one of e2e|behavioral"). Violations are only computed when a
+// lane is given, so the deny-by-default skip budget was inert on the one lane
+// that carries the eleven two-peer DOOM multiplayer tests. All eleven are
+// guarded by `test.skip` on DOOM WASM / DOOM1.WAD presence, and the WAD is
+// fetched over the network from a third-party mirror inside that job — so
+// "provisioning broke, everything stood down" and "everything passed" were the
+// same green job.
+//
+// This drives the REAL CLI in a subprocess with the EXACT argv ci.yml now uses,
+// on both sides of the decision. A one-sided "it exits 1" would pass on a script
+// that always exits 1, and — more to the point here — an audit that could not
+// fail is the precise class the issue exists to kill.
+describe('the collab lane skip audit (#2294): the ci.yml argv, both directions', () => {
+  const SCRIPT = resolve(dirname(fileURLToPath(import.meta.url)), 'e2e-report-audit.mjs');
+  const dir = mkdtempSync(join(tmpdir(), 'collab-audit-'));
+
+  const run = (args: string[]): { code: number; out: string } => {
+    try {
+      return { code: 0, out: execFileSync(process.execPath, [SCRIPT, ...args], { encoding: 'utf8' }) };
+    } catch (e) {
+      const err = e as { status?: number; stdout?: string; stderr?: string };
+      return { code: err.status ?? -1, out: `${err.stdout ?? ''}${err.stderr ?? ''}` };
+    }
+  };
+
+  /** A collab-lane report: 2 passes plus the skipped rows described. */
+  const collabReport = (
+    skips: { file: string; title: string; reason: string | null }[],
+  ) => ({
+    suites: [
+      {
+        file: 'awareness.spec.ts',
+        specs: [{ title: 'both contexts converge to memberCount==2', tests: [{ status: 'expected', results: [{}] }] }],
+        suites: skips.map((s) => ({
+          file: s.file,
+          specs: [{
+            title: s.title,
+            tests: [{
+              status: 'skipped',
+              annotations: s.reason ? [{ type: 'skip', description: s.reason }] : [{ type: 'skip' }],
+            }],
+          }],
+        })),
+      },
+    ],
+  });
+
+  const write = (name: string, body: unknown) => {
+    const p = join(dir, name);
+    writeFileSync(p, JSON.stringify(body));
+    return p;
+  };
+
+  // The lane as it actually ran on 2026-09-01: 50 passed / 1 skipped, and the
+  // 1 is in-card-title's task #101 quarantine — a named, budgeted entry.
+  const asMeasured = write(
+    'collab-as-measured.json',
+    collabReport([
+      {
+        file: 'in-card-title.spec.ts',
+        title: 'rename in A appears in B inside the in-card title (peer Yjs sync)',
+        reason:
+          'task #101: quarantined — relay-contention timeout on the @collab lane; '
+          + 'root-cause the A→relay→B propagation stall, add a regression test, then un-fixme',
+      },
+    ]),
+  );
+
+  // THE INDUCED REGRESSION: the DOOM asset guard fires, so the multiplayer
+  // tests stand down. This is the exact shape a broken WAD fetch produces.
+  const doomWentDark = write(
+    'collab-doom-went-dark.json',
+    collabReport([
+      { file: 'doom-mp-real.spec.ts', title: 'owner hosts + launches MP as P1', reason: 'DOOM WASM / WAD missing' },
+      {
+        file: 'doom-mp-lockstep-sharedstate.spec.ts',
+        title: 'two peers in a FRESH coop game share IDENTICAL gamestate',
+        reason: 'DOOM WASM / WAD missing — run build-doom-wasm.sh + fetch DOOM1.WAD',
+      },
+    ]),
+  );
+
+  const anonymous = write(
+    'collab-anonymous.json',
+    collabReport([{ file: 'shared-rack-sync.spec.ts', title: 'full flow', reason: null }]),
+  );
+
+  it('accepts `--lane collab` at all — the flag this issue is named for', () => {
+    const { code, out } = run([asMeasured, '--lane', 'collab', '--fail-on-flaky']);
+    expect(code, `the lane as measured must audit clean. Output:\n${out}`).toBe(0);
+    expect(out).toContain('Skip budget: every runtime skip matches a named');
+  });
+
+  it('⚠ REDS the lane when the DOOM multiplayer tests silently stand down', () => {
+    const { code, out } = run([doomWentDark, '--lane', 'collab', '--fail-on-flaky']);
+    expect(code, `a DOOM asset skip must red the collab lane. Output:\n${out}`).toBe(1);
+    expect(out).toContain('::error::');
+    expect(out).toContain('skip-budget violation');
+    expect(out).toContain('doom-mp-real.spec.ts');
+    expect(out).toContain('doom-mp-lockstep-sharedstate.spec.ts');
+  });
+
+  it('THE BEFORE PICTURE: the identical report is GREEN without --lane, which is what shipped', () => {
+    // Not a hypothetical regression — this is the literal pre-#2294 command
+    // line, reproduced. It prints the skips and exits 0, which is how eleven
+    // multiplayer tests could go dark behind a green job.
+    const { code, out } = run([doomWentDark, '--fail-on-flaky']);
+    expect(code, `the old argv must still be report-only. Output:\n${out}`).toBe(0);
+    expect(out, 'the rows were always PRINTED — nothing consumed them').toContain('doom-mp-real.spec.ts');
+    expect(out).not.toContain('SKIP-BUDGET VIOLATIONS');
+  });
+
+  it('REDS a reasonless collab skip, naming it', () => {
+    const { code, out } = run([anonymous, '--lane', 'collab', '--fail-on-flaky']);
+    expect(code, `an anonymous skip must red the collab lane. Output:\n${out}`).toBe(1);
+    expect(out).toContain('reasonless skip');
+  });
+
+  it('the DOOM *flake* carve-out is untouched and does NOT extend to skips', () => {
+    // Both halves in one place, because the tempting "fix" for a red collab lane
+    // is to reuse the flake exclusion for skips — which would silently restore
+    // the hole. A DOOM flake still passes; a DOOM skip still fails.
+    const doomFlake = write('collab-doom-flake.json', {
+      suites: [{
+        file: 'doom-late-join.spec.ts',
+        specs: [{ title: 'B hot-drops into the current map', tests: [{ status: 'flaky', results: [{}, {}] }] }],
+      }],
+    });
+    expect(run([doomFlake, '--lane', 'collab', '--fail-on-flaky']).code).toBe(0);
+    expect(run([doomWentDark, '--lane', 'collab', '--fail-on-flaky']).code).toBe(1);
+  });
+
+  it('⚠ SCOPE, STATED: an EMPTY report audits clean — the audit is not proof a run happened', () => {
+    // The @collab-vacuous-without-DB trap in reverse. The audit never asks how
+    // many tests ran, so a lane whose Playwright step collapsed (no DB, no
+    // relay) produces no skipped rows and no violations. What keeps that from
+    // being a green job is upstream, not here: the Playwright step itself fails,
+    // and a MISSING report makes this CLI throw rather than pass.
+    const empty = write('collab-empty.json', { suites: [] });
+    expect(run([empty, '--lane', 'collab', '--fail-on-flaky']).code).toBe(0);
+    const { code, out } = run([join(dir, 'no-such-report.json'), '--lane', 'collab', '--fail-on-flaky']);
+    expect(code, `a missing report must throw, never audit nothing. Output:\n${out}`).not.toBe(0);
+    expect(out).toMatch(/ENOENT|no such file/);
+  });
+});

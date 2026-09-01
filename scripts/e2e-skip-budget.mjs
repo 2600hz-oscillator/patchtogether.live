@@ -25,26 +25,42 @@
 //  2. `[SKIPPED: …]` / `[EXEMPT: …]` title-marker placeholder rows are
 //     exemption-map machinery with their own named-entry governance (ledger
 //     buckets 1–2). This budget deliberately does not re-govern them.
-//  3. Lanes with no JSON audit step (collab, webgl-attest) are not audited at
-//     all — `homeLane` records where a guard is EXPECTED to resolve, but
+//  3. Lanes with no JSON audit step (webgl-attest, webgl-smoke) are not audited
+//     at all — `homeLane` records where a guard is EXPECTED to resolve, but
 //     nothing checks those lanes' reports today.
 //  4. The TRUTH of a reason string. A guard that skips for reason A while
 //     printing budgeted reason B matches its entry. The budget pins the
 //     vocabulary, not the diagnosis.
+//  5. ⚠ AN EMPTY REPORT. `budgetViolations([])` is `[]`, so a lane whose tests
+//     never RAN audits clean. That is tolerable only because the lane's
+//     Playwright step fails first (and the audit throws outright on a missing
+//     report file) — the audit is a second opinion on a run that happened, never
+//     evidence that one did. Enrolment truth is scope note 1's problem.
 //
-// Lane names are the AUDIT invocations in ci.yml. Since 2026-08-17 there is
-// exactly ONE: 'e2e', run PER SHARD inside the e2e job (it used to live in the
-// `merge-reports` aggregator, which was deleted with the other non-gating jobs
-// — the audit was migrated first, and it now GATES because `e2e` is in the
-// umbrella). 'behavioral' has no audit site any more: the
+// Lane names are the AUDIT invocations in ci.yml. There are TWO: 'e2e', run PER
+// SHARD inside the e2e job (it used to live in the `merge-reports` aggregator,
+// which was deleted with the other non-gating jobs — the audit was migrated
+// first, and it now GATES because `e2e` is in the umbrella), and 'collab',
+// armed 2026-09-01 for #2294. 'behavioral' has no audit site any more: the
 // `merge-behavioral-reports` job went with `behavioral-coverage`. It stays in
 // AUDITED_LANES because entries still declare it, and because a lane that
 // declares itself audited while nothing audits it is exactly the kind of
 // silent hole this module exists to make loud — see scope note 3.
-// `homeLane` may also name a non-audited resolution context ('collab',
-// 'webgl-attest', 'local' = a developer machine / opt-in local run).
+// `homeLane` may also name a non-audited resolution context ('webgl-attest',
+// 'webgl-smoke', 'local' = a developer machine / opt-in local run).
+//
+// ── ⚠ 'collab' IS AUDITED BUT DOES NOT GATE A MERGE, AND THAT IS DELIBERATE ─
+//
+// The collab job is off the umbrella (informational, task #69), so a budget
+// violation there reddens the collab job and does not block the PR. Arming a
+// lane and requiring it are separate acts; #2294 authorized only the first, and
+// making collab a required context is a separate owner decision. What this buys
+// is DETECTABILITY: before this, `--lane collab` was REJECTED by the audit CLI,
+// the collab step passed no `--lane` at all, and all eleven two-peer DOOM
+// multiplayer tests could have skipped at runtime — the whole DOOM WASM/WAD
+// provisioning could have vanished — while the job printed a serene green.
 
-export const AUDITED_LANES = Object.freeze(['e2e', 'behavioral']);
+export const AUDITED_LANES = Object.freeze(['e2e', 'behavioral', 'collab']);
 // 'webgl-smoke' is the SwiftShader WebGL floor job in ci.yml. It is a real lane
 // with a real job name, and it is where the WEBGL_HEAVY_GLOBS specs resolve —
 // they are in the chromium project's `testIgnore` under E2E_WEBGL_HEAVY=exclude,
@@ -54,7 +70,6 @@ export const AUDITED_LANES = Object.freeze(['e2e', 'behavioral']);
 // of borrowing 'local' and hiding that a CI lane owns it.
 export const KNOWN_LANES = Object.freeze([
   ...AUDITED_LANES,
-  'collab',
   'webgl-attest',
   'webgl-smoke',
   'local',
@@ -113,9 +128,15 @@ export const SKIP_BUDGET = [
     lanes: [],
     homeLane: 'collab',
     why:
-      'Same DOOM asset gate, in the multiplayer specs. These are @collab titles, grep-inverted out of the '
-      + 'audited shards entirely — they produce no row there at all, so one appearing is a lane-partition '
-      + 'leak first and an asset problem second.',
+      'Same DOOM asset gate, in the multiplayer specs. ⚠ THE MEANING OF lanes:[] CHANGED FOR THESE ENTRIES ON '
+      + '2026-09-01 (#2294) AND IT IS THE POINT OF THAT ISSUE. These are @collab titles: they are grep-inverted '
+      + 'out of the sharded shards (no row there at all, so a row in `e2e` is a lane-partition leak) but they '
+      + 'RUN, unskipped, in the now-audited `collab` lane. Keeping lanes:[] therefore says the thing that was '
+      + 'previously unsayable — the collab job provisions the WASM bundle and DOOM1.WAD before it runs, so this '
+      + 'guard firing THERE means the provisioning broke, and the lane reddens instead of reporting eleven '
+      + 'two-peer DOOM tests as a green "50 passed". Deliberately NOT admitted on collab: admitting it would '
+      + 're-create exactly the silent hole #2294 exists to close. This entry does not touch DOOM — it observes '
+      + 'DOOM\'s asset preconditions from outside.',
   },
   {
     specs: ['doom-identity-crossview.spec.ts', 'doom-late-join.spec.ts', 'doom-multiplayer.spec.ts'],
@@ -124,8 +145,15 @@ export const SKIP_BUDGET = [
     homeLane: 'collab',
     why:
       'Bounded-load fallback inside @collab multiplayer specs: rather than time out the whole spec, a DOOM '
-      + 'runtime that never reaches ready skips with the elapsed bound. Inverted out of audited lanes, so a '
-      + 'row here is a lane leak.',
+      + 'runtime that never reaches ready skips with the elapsed bound. ⚠ NOT ADMITTED ON collab, AND THE COST '
+      + 'IS STATED RATHER THAN HIDDEN. This guard CAN fire on a slow collab runner, so leaving it unregistered '
+      + 'means a slow runner can redden the collab job. That is the trade #2294 chose: on the un-audited lane '
+      + 'this skip was indistinguishable from "DOOM stopped loading at all" and produced a green job either '
+      + 'way, which is the failure mode. Because the collab lane is informational (off the umbrella), the cost '
+      + 'of the false direction is a red informational job, while the cost of the other direction is silently '
+      + 'losing the only pre-merge multiplayer signal. If this fires on real runs the answer is to make the '
+      + 'guard fail loudly instead of skipping — an owner-approved change to a DOOM spec, which #2294 does not '
+      + 'cover — never to widen this entry.',
   },
 
   // ── @collab lane routing ─────────────────────────────────────────────────
@@ -141,18 +169,26 @@ export const SKIP_BUDGET = [
     lanes: [],
     homeLane: 'collab',
     why:
-      'The in-body backstop that keeps @collab specs off the sharded matrix (no DB/relay there). The grep '
-      + 'inversion removes these tests from audited lanes BEFORE they run, so the guard should never even '
-      + 'get to fire in one — a row with this reason means the @collab partition leaked.',
+      'The in-body backstop that keeps @collab specs off the sharded matrix (no DB/relay there). Two '
+      + 'directions, and neither admits a row: in `e2e`/`behavioral` the grep inversion removes these tests '
+      + 'BEFORE they run, so a row there means the @collab partition leaked; in the now-audited `collab` lane '
+      + 'the tests DO run but COLLAB_JOB=1 is set in the job env, so the condition is false and the guard '
+      + 'cannot fire. A row on collab therefore means COLLAB_JOB went missing from the job — the entire lane '
+      + 'standing itself down while reporting green, which is the #2294 shape exactly.',
   },
   {
     specs: ['in-card-title.spec.ts'],
     reason: /task #101/,
-    lanes: [],
+    lanes: ['collab'],
     homeLane: 'collab',
     why:
-      'Quarantined @collab rename-sync case (relay-contention timeout); the fixme annotation carries the '
-      + 'task #101 reason. Lives inside the @collab describe, so audited lanes never see the row.',
+      'Quarantined @collab rename-sync case (relay-contention timeout); the declaration-level test.fixme '
+      + 'carries the task #101 reason in a details-object annotation, so the report row is named rather than '
+      + 'anonymous. THIS IS THE COLLAB LANE\'S ONE LEGITIMATE SKIP — the `50 passed / 1 skipped` measured on '
+      + '2026-09-01 is this row and nothing else, which is why it is the only entry that gained '
+      + 'lanes:[\'collab\'] when #2294 armed the lane. It stays out of `e2e`/`behavioral`: the case lives '
+      + 'inside the @collab describe, so those lanes never see it. Un-park it by root-causing the '
+      + 'A→relay→B propagation stall (task #101), which deletes this lane membership with it.',
   },
 
   // ── environment capabilities CI is known to have ─────────────────────────
