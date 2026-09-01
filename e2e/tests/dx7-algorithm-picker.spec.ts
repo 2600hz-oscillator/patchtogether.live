@@ -17,15 +17,53 @@
 
 import { test, expect } from './_fixtures';
 import { type Page } from '@playwright/test';
+import { SLOW_BOOT_TEST_TIMEOUT_MS } from '../_helpers/boot-budget';
 
-test.describe.configure({ mode: 'parallel' });
+// ⚠ THE PER-TEST BUDGET IS A BOUND, AND IT WAS THE FLAT DEFAULT — which is the
+// #1875 defect one level up: not a bare `toBeVisible()`, but the 30 s Playwright
+// default that `e2e/playwright.config.ts` never overrides. Nothing in this file
+// said "30000", so there was nothing to grep for except its absence.
+//
+// MEASURED, run 33472900654 (PR #2280, e2e shard 4/12). The `redraws the face
+// glyph` test recovered `timedOut -> passed` on the SAME SHA:
+//
+//   attempt 1  33 225 ms  timedOut     ("Test timeout of 30000ms exceeded")
+//   attempt 2  31 792 ms  passed       (~30 s of budget — it squeaked past)
+//
+// ⚠ AND THE TRACE SAYS NO ASSERTION EVER FAILED. The last recorded event of the
+// failing attempt is the face-glyph check RESOLVING TRUE:
+//
+//   after call@389  result {"matches":true,"received":{"s":"22"}}
+//
+// The glyph redrew. The param committed. The body finished at ~29.9 s against a
+// 30.0 s bound and the clock won. This is not a glyph defect and not a race —
+// it is a lottery ticket, and #2280 re-pinned `e2e-timings`, which re-binned the
+// shards and sat this spec next to `face-screen-render-suite` batches 3/8 and
+// 4/8 (337 s and 299 s of continuous WebGL on a 2-core runner).
+//
+// Reproduced locally to prove the mechanism rather than assume it: this test
+// costs 2.1 s on an idle box, 19.6 s at load ~20, and prints CI's exact
+// `Test timeout of 30000ms exceeded` at load ~44 — with no assertion error,
+// same as CI. The wall time is a function of the runner, not of the subject.
+//
+// So the budget comes from `boot-budget` (90 s on CI/SwiftShader, 30 s local)
+// instead of the invisible default. A bound only costs wall-clock when it is
+// EXCEEDED, so this adds exactly zero to a green run; lane cost stays gauged by
+// `--global-timeout`, not by this.
+test.describe.configure({ mode: 'parallel', timeout: SLOW_BOOT_TEST_TIMEOUT_MS });
 
 /** Boot `?shell=1` and spawn dx7 into lane 1 via the real palette-drop path
  *  (the same seam workflow-shell-faces.spec.ts uses — `paramCells` only
  *  renders through ModuleShell, so the legacy card route cannot exercise it). */
 async function bootDx7Shell(page: Page): Promise<string> {
   await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+  // ⚠ NO `waitForLoadState('networkidle')` HERE. It is a CORRELATE — "the
+  // network went quiet for 500 ms" — standing in for the thing the next line
+  // actually needs, which is the spawn hooks being bound. On a dev server whose
+  // HMR websocket never closes it is also the wrong shape of wait, and it cost
+  // 1.3 s of a 30 s budget on the shard-4 attempt that then timed out. The
+  // `waitForFunction` below is the CAUSAL wait on the subject's own state and
+  // subsumes it entirely.
   await page.waitForFunction(() => {
     const w = globalThis as unknown as {
       __setSpawnFlowPos?: unknown;
