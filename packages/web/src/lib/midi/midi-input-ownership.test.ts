@@ -231,6 +231,13 @@ const SUBSCRIBER_LEDGER: Record<string, SubscriberRow> = {
     messages: 'CC (0xB0) and note on/off (0x90/0x80)',
     why: 'EVERY-PORT BY DESIGN — learn binds whatever the user physically touches. ⚠ Control surfaces are NOT excluded: arming a learn and touching a Push encoder captures THAT control. Whether learn should skip bound surfaces is an OWNER DECISION, deliberately not taken here.',
   },
+  'midi/trails-device.ts': {
+    ports: 'named-device',
+    device: 'name-match',
+    channel: 'none',
+    messages: '14-bit CC (0xB0), note on/off (0x90/0x80) and MIDI real-time clock/start/stop (0xF8/0xFA/0xFB/0xFC)',
+    why: "scoped to every LIVE input whose name matches /trails/i — a Bela Trails advertises one port per interface and Windows' WinMM driver duplicates the name, so the claim attaches to each matching port object rather than to one id. ONE claim owns them and fans frames out to every `trails` node in the rack, because `onmidimessage` is a single slot and per-module claims would evict each other (the PT-PTZ two-module measurement). The decoder ignores any MIDI channel outside the eight the axis map names, so foreign traffic on a same-named port cannot move a jack.",
+  },
   'audio/ptz-midi.ts': {
     ports: 'named-device',
     device: 'name-match',
