@@ -48,8 +48,29 @@ export function unregisterAutomationController(nodeId: string): void {
 /** The surface gripping a control — per-surface grab ownership, so the same
  *  param grabbed by TWO surfaces at once (a screen drag + a MIDI twist) stays
  *  overridden until the LAST one releases (the first release must not clear the
- *  other's still-live grip). */
-export type AutomationTouchHolder = 'pointer' | 'wheel' | 'midi' | 'electra' | 'default';
+ *  other's still-live grip).
+ *
+ *  `cv:<edgeId>` is the CV-BRIDGE holder: the video engine's per-frame cv tick
+ *  grabs a param while its source stream is ACTIVE (CvActivityDetector,
+ *  cv-bridge-map.ts) and releases it when the stream idles — the "stick
+ *  moving" seam of the record-CV-automation model. Per-EDGE so two cables
+ *  driving the same param release independently, exactly like two hands. */
+export type AutomationTouchHolder =
+  | 'pointer' | 'wheel' | 'midi' | 'electra' | 'default'
+  | `cv:${string}`;
+
+/** The cv-bridge holder id for one edge. */
+export function cvHolder(edgeId: string): AutomationTouchHolder {
+  return `cv:${edgeId}`;
+}
+
+/** Is `holder` a cv-bridge grip (vs a human surface)? The controller's record
+ *  capture uses this to pick its value source: a param held ONLY by cv grips
+ *  records the ENGINE-EFFECTIVE (base + CV) value; any human holder keeps the
+ *  store tap (the hand writes the store, so the store IS its live value). */
+export function isCvHolder(holder: string): boolean {
+  return holder.startsWith('cv:');
+}
 
 /**
  * A live user grab of `target` by `holder` (screen drag / MIDI CC / Electra) —

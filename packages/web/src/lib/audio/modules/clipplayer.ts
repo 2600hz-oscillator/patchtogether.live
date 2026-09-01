@@ -779,11 +779,27 @@ export const clipplayerDef: AudioModuleDef = {
 
     const controller = new AutomationController({
       // STORE tap → normalized 0..1 (curve-aware). NOT engine.readParam — that
-      // double-applies live CV; recording must capture the store/knob value.
+      // double-applies live CV; recording a HAND-held control must capture the
+      // store/knob value.
       readNorm(target: AutomationTarget): number | null {
         const r = resolveTarget(target);
         if (!r) return null;
         return valueToFrac(r.get(), r.def.min, r.def.max, r.def.curve);
+      },
+      // ENGINE-EFFECTIVE tap (base + live CV) → normalized 0..1. Used ONLY for
+      // a param held exclusively by cv-bridge grips (`cv:<edgeId>` — the video
+      // engine's activity detector), so RECORD captures the modulated movement
+      // the user hears/sees (video: the uniform the cv bridge wrote this frame;
+      // audio: intrinsic + modulator tap). Human holders keep readNorm — see
+      // AutomationController.captureRead for the selection rule.
+      readEffectiveNorm(target: AutomationTarget): number | null {
+        const engine = getActiveEngine();
+        const node = targetNode(target);
+        const def = resolveTarget(target)?.def;
+        if (!engine || !node || !def) return null;
+        const v = engine.readParam(node, target.paramId);
+        if (typeof v !== 'number' || !Number.isFinite(v)) return null;
+        return valueToFrac(v, def.min, def.max, def.curve);
       },
       curve(target: AutomationTarget): string | undefined {
         return resolveTarget(target)?.def.curve;
@@ -2224,10 +2240,12 @@ export const clipplayerDef: AudioModuleDef = {
         //    THAT lane's audible fractional playhead — each ARMED lane runs its
         //    own continuous overdub (punch-in at ITS clip's wrap, commit each
         //    wrap into the LATCHED clip, keep going) until ITS disarm. A lane
-        //    records any control the user TOUCHES on a MODULE assigned to it
-        //    (data.autoAssign, module→lane; CV fires no touch → never
-        //    recorded); a lane with assigned modules but no playing clip
-        //    records nothing (punched out below).
+        //    records any control under a LIVE GRAB on a MODULE assigned to it
+        //    (data.autoAssign, module→lane): screen / MIDI / Electra hands, and
+        //    a cv-bridge whose source stream is ACTIVE (the record-CV-automation
+        //    model — an IDLE/parked source fires no grab and records nothing);
+        //    a lane with assigned modules but no playing clip records nothing
+        //    (punched out below).
         //  - COUNTDOWN (EVERY client for each SYNCED-armed lane): publish one
         //    entry per recording lane, each with beats to ITS clip's OWN wrap,
         //    so each lane's pad/cell flashes 🟡🟡🔴🔴 on its own boundary.

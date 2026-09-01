@@ -968,3 +968,100 @@ describe('AutomationController — param-jump policy (Phase 0 seams, re-targeted
     expect(h.holds.length).toBe(1); // grab still truncates the driven param
   });
 });
+
+describe('AutomationController — cv-bridge grips (record-CV-automation model)', () => {
+  const CV_HOLDER = 'cv:edge1';
+
+  it('a param held ONLY by a cv grip records the ENGINE-EFFECTIVE value, not the store base', () => {
+    let eff = 0.1;
+    const h = harness({ readEffectiveNorm: () => eff });
+    const target = tgt('bd', 'mix');
+    h.set(target, 0.2); // store base — flat the whole time (CV never writes it)
+    h.ctrl.armLane(LANE);
+    h.ctrl.notifyTouch(target, CV_HOLDER); // the bridge reports ACTIVE
+    h.ctrl.recordLaneTick(LANE, IDX, modsOf(target), 5, 8);
+    h.ctrl.recordLaneTick(LANE, IDX, modsOf(target), 0, 8); // wrap → punch-in
+    eff = 0.5;
+    h.ctrl.recordLaneTick(LANE, IDX, modsOf(target), 2, 8);
+    eff = 0.9;
+    h.ctrl.recordLaneTick(LANE, IDX, modsOf(target), 4, 8);
+    h.ctrl.recordLaneTick(LANE, IDX, modsOf(target), 0.5, 8); // wrap → commit pass
+    const events = h.eventsOf(IDX, target);
+    expect(events).toBeDefined();
+    const values = events!.map((e) => e.value);
+    // The modulated MOVEMENT landed (effective series), not the flat store base.
+    expect(values).toContain(0.5);
+    expect(values).toContain(0.9);
+    expect(values.every((v) => Math.abs(v - 0.2) > 0.05)).toBe(true);
+  });
+
+  it('any HUMAN holder keeps the store tap even while a cv grip is also live (the hand wins the value source)', () => {
+    const h = harness({ readEffectiveNorm: () => 0.99 });
+    const target = tgt('bd', 'mix');
+    h.ctrl.armLane(LANE);
+    h.ctrl.notifyTouch(target, CV_HOLDER);
+    h.ctrl.notifyTouch(target, 'pointer'); // a screen hand grabs the same param
+    h.set(target, 0.3);
+    h.ctrl.recordLaneTick(LANE, IDX, modsOf(target), 5, 8);
+    h.ctrl.recordLaneTick(LANE, IDX, modsOf(target), 0, 8); // punch-in
+    h.set(target, 0.6);
+    h.ctrl.recordLaneTick(LANE, IDX, modsOf(target), 3, 8);
+    h.ctrl.recordLaneTick(LANE, IDX, modsOf(target), 0.5, 8); // wrap → commit
+    const values = h.eventsOf(IDX, target)!.map((e) => e.value);
+    expect(values).toContain(0.6); // the store (hand) series
+    expect(values).not.toContain(0.99); // never the effective tap
+  });
+
+  it('without a readEffectiveNorm dep a cv grip falls back to the store tap (inert harnesses stay valid)', () => {
+    const h = harness();
+    const target = tgt('bd', 'mix');
+    h.ctrl.armLane(LANE);
+    h.ctrl.notifyTouch(target, CV_HOLDER);
+    h.set(target, 0.25);
+    h.ctrl.recordLaneTick(LANE, IDX, modsOf(target), 5, 8);
+    h.ctrl.recordLaneTick(LANE, IDX, modsOf(target), 0, 8);
+    h.set(target, 0.75);
+    h.ctrl.recordLaneTick(LANE, IDX, modsOf(target), 3, 8);
+    h.ctrl.recordLaneTick(LANE, IDX, modsOf(target), 0.5, 8);
+    const values = h.eventsOf(IDX, target)!.map((e) => e.value);
+    expect(values).toContain(0.75);
+  });
+
+  it('a cv grip suspends playback (live CV wins) and its release resumes it — same seam as a hand', () => {
+    const h = harness({ readEffectiveNorm: () => 0.4 });
+    const target = tgt('bd', 'mix');
+    const track: AutomationTrack = { target, events: [{ step: 0, value: 0.5 }] };
+    h.ctrl.playbackStep(track, 0, 0.5, 100);
+    expect(h.drives.length).toBe(1);
+    h.ctrl.notifyTouch(target, CV_HOLDER);
+    h.ctrl.playbackStep(track, 0, 0.5, 100);
+    expect(h.drives.length).toBe(1); // suspended — the bridge owns the param
+    h.ctrl.notifyRelease(target, CV_HOLDER);
+    h.ctrl.playbackStep(track, 0, 0.5, 100);
+    expect(h.drives.length).toBe(2); // resumed
+  });
+
+  it('a cv release pins the ENGINE-EFFECTIVE value (the last bridge write), not the CV-free store base', () => {
+    const h = harness({ readEffectiveNorm: () => 0.83 });
+    const target = tgt('bd', 'mix');
+    h.set(target, 0.2);
+    const track: AutomationTrack = { target, events: [{ step: 0, value: 0.5 }] };
+    h.ctrl.playbackStep(track, 0, 0.5, 100); // this player drives the key
+    h.ctrl.notifyTouch(target, CV_HOLDER); // truncate hold (toValueNorm null)
+    h.ctrl.notifyRelease(target, CV_HOLDER);
+    const pin = h.holds[h.holds.length - 1]!;
+    expect(pin.toValueNorm).toBe(0.83);
+  });
+
+  it('a HUMAN release still pins the store value when a readEffectiveNorm dep exists', () => {
+    const h = harness({ readEffectiveNorm: () => 0.83 });
+    const target = tgt('bd', 'mix');
+    h.set(target, 0.2);
+    const track: AutomationTrack = { target, events: [{ step: 0, value: 0.5 }] };
+    h.ctrl.playbackStep(track, 0, 0.5, 100);
+    h.ctrl.notifyTouch(target, 'pointer');
+    h.ctrl.notifyRelease(target, 'pointer');
+    const pin = h.holds[h.holds.length - 1]!;
+    expect(pin.toValueNorm).toBe(0.2);
+  });
+});
