@@ -44,6 +44,7 @@ import {
   setInputMusicMode,
 } from '$lib/audio/input-device.svelte';
 import {
+  inputActionDisabled,
   inputActionKind,
   inputActionLabel,
   inputFaultLit,
@@ -333,6 +334,52 @@ describe('audioIn face — the ACTION is reachable in every state that needs one
     expect(inputPickerValueText(v, 0, null)).toMatch(/no audio inputs/i);
     expect(inputPickerValueText(v, 2, null)).toMatch(/pick one/i);
     expect(inputPickerValueText(viewOf('streaming'), 2, 'ES-9')).toMatch(/capturing from ES-9/i);
+  });
+
+  // ── AN EMPTY ROSTER MUST NEVER DISABLE **STOP** ───────────────────────────
+  //
+  // The shipped guard was `action === null || options.length === 0`, and one
+  // button serves ENABLE / RETRY / STOP — so an emptied roster took away the
+  // only control that CLOSES a live microphone. The legacy card never did it:
+  // `AudioinCard` gated `audioin-enable` on the roster and gave
+  // `audioin-disable` no `disabled` attribute at all.
+  //
+  // The e2e arm drives the reachable version of this — a STREAMING node whose
+  // roster is emptied by a `devicechange` whose `enumerateDevices()` rejects —
+  // in `e2e/tests/audio-in.spec.ts`. This is the exhaustive table under it.
+  it('STOP survives an EMPTY roster; ENABLE and RETRY do not', () => {
+    // The half that was always right: nothing to open ⇒ no acquire gesture.
+    expect(inputActionDisabled('enable', 0), 'ENABLE with nothing to open').toBe(true);
+    expect(inputActionDisabled('retry', 0), 'RETRY with nothing to open').toBe(true);
+    expect(inputActionDisabled('retry-permission', 0)).toBe(true);
+    // The half that shipped wrong. A live capture is live whatever the roster
+    // says, and the microphone indicator is lit while it is.
+    expect(
+      inputActionDisabled('stop', 0),
+      'a live microphone with an emptied roster must still be switch-off-able',
+    ).toBe(false);
+    // Nothing to press mid-request or on a browser with no getUserMedia.
+    expect(inputActionDisabled(null, 0)).toBe(true);
+    expect(inputActionDisabled(null, 3)).toBe(true);
+    // With devices present every gesture is live.
+    for (const k of ['enable', 'retry', 'retry-permission', 'stop'] as const) {
+      expect(inputActionDisabled(k, 3), `${k} with a populated roster`).toBe(false);
+    }
+  });
+
+  // POSITIVE CONTROL for the table above: the exact predicate that shipped,
+  // written out here, is what the fix had to stop being. If someone reverts
+  // `inputActionDisabled` to it, the test above goes red — and this asserts
+  // that the two really do differ on the state that matters, so the guard is
+  // not vacuous.
+  it('POSITIVE CONTROL: the SHIPPED predicate disagrees, and only about STOP', () => {
+    const shipped = (a: ReturnType<typeof inputActionKind>, n: number) => a === null || n === 0;
+    const kinds = ['enable', 'retry', 'retry-permission', 'stop', null] as const;
+    const differ = kinds.filter((k) => shipped(k, 0) !== inputActionDisabled(k, 0));
+    expect(differ, 'the fix must change STOP@empty-roster and nothing else').toEqual(['stop']);
+    for (const k of kinds) {
+      expect(shipped(k, 3), `${k} with devices`).toBe(inputActionDisabled(k, 3));
+    }
   });
 });
 

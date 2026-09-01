@@ -881,4 +881,98 @@ test('the TILE carries the gesture that opens the device, and both picks persist
     errors.join(' | '),
   ).toEqual([]);
 });
+
+// ── AN EMPTIED ROSTER MUST NOT DISABLE **STOP** ────────────────────────────
+//
+// The shipped guard on the face's one action button was
+// `action === null || options.length === 0`. That button serves ENABLE / RETRY /
+// STOP, so an empty roster also killed the only control that CLOSES a live
+// microphone. The legacy card never did this: `AudioinCard` gated
+// `audioin-enable` on the roster and gave `audioin-disable` no `disabled`
+// attribute at all.
+//
+// ⚠ THE STATE IS REACHABLE, WHICH IS THE WHOLE POINT OF DRIVING IT HERE.
+// `refreshInputDevices()` empties the roster on ANY `enumerateDevices()`
+// rejection and runs on every `devicechange`, while the registry leaves
+// `streaming` only on a track `'ended'` event. So a hub unplug that makes
+// enumeration throw leaves a node CAPTURING with a roster of zero — the OS
+// microphone indicator lit and no UI route to switch it off. That is the #1590
+// harm class through a new door, and a test that only read the attribute on a
+// happy-path roster would never have seen it.
+//
+// ⚠ WHAT IS AND IS NOT STUBBED. Only `enumerateDevices` is replaced, and only
+// after the capture is already open: the stream, the registry entry, the
+// button's own state machine and the click are all the real thing. The stub
+// stands in for hardware this runner cannot unplug.
+test('an EMPTIED ROSTER must not disable STOP — the live mic you cannot switch off', async ({
+  page,
+}) => {
+  const errors = await faceBootDefaultShell(page);
+  await spawnPatch(page, [{ id: FACE_NODE, type: 'audioIn', position: { x: 160, y: 160 } }], []);
+
+  const tile = faceTileControls(page);
+  await expect(tile).toBeVisible({ timeout: BOOT_MS });
+  const action = tile.getByTestId('audioin-tile-action');
+  const select = tile.getByTestId('audioin-tile-device');
+
+  // The project pre-grants the mic, so the unattended acquire has already run
+  // and the button is offering STOP against a POPULATED roster.
+  await faceWaitForState(page, 'streaming');
+  await expect(action).toHaveAttribute('data-action', 'stop');
+  await expect(select, 'precondition: the roster must start populated').toBeEnabled();
+
+  // ── EMPTY THE ROSTER THE WAY A HUB UNPLUG DOES. ──
+  await page.evaluate(() => {
+    Object.defineProperty(navigator.mediaDevices, 'enumerateDevices', {
+      configurable: true,
+      writable: true,
+      value: () => Promise.reject(new DOMException('enumeration failed', 'NotFoundError')),
+    });
+    navigator.mediaDevices.dispatchEvent(new Event('devicechange'));
+  });
+
+  // The picker is `disabled` exactly when the roster is empty, so this locator
+  // assertion IS the observable for "the refresh landed" — no Playwright-side
+  // sampling loop, and no wall-clock wait standing in for a state.
+  await expect(
+    select,
+    'the devicechange did not empty the roster — the rest of this test would be vacuous',
+  ).toBeDisabled({ timeout: BOOT_MS });
+
+  // ── THE HARM: the capture is STILL OPEN with nothing in the roster. ──
+  const live = await faceProbe(page);
+  expect(
+    live.state,
+    `an emptied roster must not have stopped the capture — it is the state the ` +
+      `player is trapped in: ${JSON.stringify(live)}`,
+  ).toBe('streaming');
+  expect(live.trackLive, JSON.stringify(live)).toBe(true);
+
+  // ── THE REGRESSION: STOP is still offered AND still pressable. ──
+  await expect(action).toHaveAttribute('data-action', 'stop');
+  await expect(
+    action,
+    'STOP is the only route to closing a live microphone; an empty device roster ' +
+      'must never disable it (it still disables ENABLE/RETRY, which is correct)',
+  ).toBeEnabled();
+
+  // ── …AND IT REALLY RELEASES THE DEVICE. An enabled button that does nothing
+  // would satisfy the attribute assertion above and leave the mic open.
+  await action.click();
+  await faceWaitForState(page, 'idle');
+  const stopped = await faceProbe(page);
+  expect(
+    stopped.trackLive,
+    `STOP with an empty roster must actually release the device: ${JSON.stringify(stopped)}`,
+  ).toBe(false);
+  expect(stopped.tracks, JSON.stringify(stopped)).toBe(0);
+
+  // `refreshInputDevices` reports a failed enumeration on console.warn, by
+  // design (an empty roster is a state the picker NAMES rather than a crash), so
+  // nothing here may reach the error channel.
+  expect(
+    errors.filter((e) => !/getUserMedia|mediaDevices|permission/i.test(e)),
+    errors.join(' | '),
+  ).toEqual([]);
+});
 });

@@ -116,6 +116,36 @@ export function inputActionKind(view: AudioInputView): InputActionKind | null {
 }
 
 /**
+ * Is the action button dead? PURE, and it is a function rather than a ternary in
+ * the component because the shape it refuses shipped once and no rendering test
+ * saw it.
+ *
+ * ⚠ AN EMPTY ROSTER MUST NEVER DISABLE **STOP**. One button serves ENABLE /
+ * RETRY / STOP, so the obvious guard — "no devices ⇒ nothing to press" — also
+ * kills the only control that CLOSES a live microphone. The legacy card never
+ * did this: `AudioinCard` gated `audioin-enable` on the roster and gave
+ * `audioin-disable` no `disabled` attribute at all.
+ *
+ * ⚠ AND THE STATE IS REACHABLE, not theoretical. `refreshInputDevices()` empties
+ * the roster on ANY `enumerateDevices()` rejection and runs on every
+ * `devicechange`; the registry leaves `streaming` only on a track `'ended'`
+ * event. So a hub unplug that makes enumeration throw leaves a node STREAMING
+ * with a roster of zero — a live capture, the OS microphone indicator lit, and
+ * no UI route to switch it off. That is the #1590 harm class through a new door.
+ *
+ * An empty roster still disables ENABLE and RETRY, which is the original and
+ * correct half: those call `getUserMedia` for a device that is not there.
+ */
+export function inputActionDisabled(
+  action: InputActionKind | null,
+  deviceCount: number,
+): boolean {
+  if (action === null) return true;
+  if (action === 'stop') return false;
+  return deviceCount === 0;
+}
+
+/**
  * The button's own CAPTION — permitted face text, because it names what
  * pressing it does. `compact` is the 192 px lane tile, where the words are the
  * same gesture with fewer letters (the `cameraInput` precedent, which ships

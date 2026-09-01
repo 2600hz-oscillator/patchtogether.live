@@ -49,6 +49,7 @@
     setAudioInputMusicMode,
   } from './audio-in-actions';
   import {
+    inputActionDisabled,
     inputActionKind,
     inputActionLabel,
     inputFaultLit,
@@ -92,6 +93,11 @@
   let faultLit = $derived(inputFaultLit(view));
   let detail = $derived(inputStatusDetail(view));
   let action = $derived(inputActionKind(view));
+  // ⚠ NOT `action === null || options.length === 0`. One button serves ENABLE /
+  // RETRY / STOP, so that guard also disables the only control that CLOSES a
+  // live microphone — and an emptied roster with a STREAMING node is reachable
+  // (any `enumerateDevices()` rejection on a `devicechange`). See the predicate.
+  let actionDisabled = $derived(inputActionDisabled(action, options.length));
   let pickerText = $derived(inputPickerValueText(view, devices.length, pickedLabel));
 
   function onAction(): void {
@@ -145,7 +151,7 @@
     class:stop={action === 'stop'}
     data-testid="{testidPrefix}-action"
     data-action={action ?? 'none'}
-    disabled={action === null || options.length === 0}
+    disabled={actionDisabled}
     title={detail}
     onclick={onAction}
   >{action ? inputActionLabel(action, compact) : '…'}</button>
@@ -249,26 +255,43 @@
     min-width: 0;
   }
   .src.compact .pick-row { gap: 4px; }
-  /* ⚠ `flex-basis: 0` AND `width: 0`, NOT `flex: 1 1 auto` — and this is a
-     MEASURED fix, not a style preference. The dock's `.faceplate-body` is
+  /* ⚠ `flex-basis: 0` + `width: 0` + A REAL `min-width` FLOOR — all three, and
+     the floor is the half that was missing. The dock's `.faceplate-body` is
      `width: max-content`, and a `<select>`'s intrinsic width is its LONGEST
-     OPTION — here the runner's own hardware names. With an `auto` basis this
-     body asked the plate for 42 px more than anything drew in, which the
-     face-width gate caught as EMPTY PLATE (content 182, body 224, ceiling 40):
-     `readFoldGeometry`'s ink measure takes boxes for cells/pictures and text
-     RANGES otherwise, and a closed select's `<option>`s have no client rects at
-     all, so a picker can inflate the plate while contributing ZERO ink. Its
-     sibling `AudioOutOutputBody` has the identical picker and passes only
-     because its meter CANVAS is boxy ink that fills the plate; this body has no
-     canvas by design (role `status-primitive`), so the picker had to stop
-     sizing the plate instead.
-     ⚠ IT IS ALSO A DETERMINISM FIX. An `auto` basis makes the faceplate's WIDTH
-     a function of the machine's device names, which would put a machine-specific
-     number in a committed VRT baseline. */
+     OPTION — here the runner's own hardware names. An `auto` basis therefore
+     makes the plate a function of the machine's device names, which is both a
+     nondeterministic VRT baseline and 42 px of plate the ink measure cannot see.
+     So the basis stays 0.
+     ⚠ BUT `min-width: 0` WITH IT SHIPPED A BROKEN CONTROL, AND THE BASELINE
+     PROVED IT. With no floor the picker's intrinsic contribution is ZERO, so
+     inside a `max-content` body it renders at whatever the border+padding+
+     chevron happen to be: MEASURED off the committed
+     `face-audioIn-dock.png`, 28 CSS px, painting `(n` with the chevron on top
+     of the glyphs. That surface is `pinned-audioIn`'s ONLY one (the 🎧 tray), so
+     it is every user, every session, and a real device name gets the same box.
+     The floor is 88 px because that is what the sibling picker needs for its own
+     empty-roster string: MEASURED off `face-audioOut-dock.png`, `(no outputs)`
+     renders in a 79 px border box, and `(no inputs)` is one glyph narrower.
+     A FLOOR rather than an `auto` basis keeps the determinism: the contribution
+     is exactly 88 px whatever the machine is called.
+     ⚠ WHAT IT COSTS, NAMED RATHER THAN HIDDEN: 88 px the face-width gate scores
+     as EMPTY PLATE, because `readFoldGeometry`'s ink measure takes boxes only
+     for `[data-cell-key]`/glyph/canvas/svg/img and text RANGES otherwise — and a
+     closed select's `<option>`s have NO client rects, so this picker is drawn
+     edge to edge and contributes zero ink. That is the `clockedRunner`/`livecode`
+     code-buffer shape exactly, and it is recorded in this face's
+     `FACE_WIDTH_EXEMPTIONS` entry rather than paid for with the control's
+     legibility. Its sibling `AudioOutOutputBody` has the identical blind spot
+     and passes only because its meter CANVAS is boxy ink; this body has no
+     canvas by design (role `status-primitive`).
+     ⚠ THE COMPACT TIER KEEPS `min-width: 0` (below). The 192 px lane tile has a
+     DEFINITE width, so `flex-grow` already gives the picker the whole leftover
+     row and no floor is needed — while an 88 px floor there would overflow a row
+     that also carries a lamp and the ENABLE gesture. */
   .device {
     flex: 1 1 0;
     width: 0;
-    min-width: 0;
+    min-width: 88px;
     font-size: 0.65rem;
     font-family: ui-monospace, monospace;
     padding: 2px 4px;
@@ -277,7 +300,7 @@
     border: 1px solid #3a4048;
     border-radius: 3px;
   }
-  .src.compact .device { font-size: 0.55rem; padding: 1px 3px; }
+  .src.compact .device { font-size: 0.55rem; padding: 1px 3px; min-width: 0; }
   .device:disabled { opacity: 0.45; cursor: not-allowed; }
   .act {
     flex: 0 0 auto;
