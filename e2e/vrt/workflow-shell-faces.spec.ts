@@ -324,6 +324,25 @@ const FACE_WIDTH_EXEMPTIONS: Readonly<Record<string, string>> = {
   livecode:
     'the CODE BUFFER (`CODE_BUFFER_FACE_MIN_W` = 336 CSS px) is the plate, for the reason its child\'s entry above gives in full — and one step further, because the only ranked cell here is a 58 px `action` rather than a 168 px selector. MEASURED on this branch, dock full view, CSS px: content 121, face body 402 — the same 402 px plate as the runner (same buffer, same padding) against 80 px LESS ink, which is exactly the cell-width difference. Remove the floor and the script buffer renders narrower than the module\'s own name row. The buffer is DRAWN edge to edge and invisible to `contentW` (no box for a div tree, no text nodes in an empty document). The output log WOULD be ink, but it does not exist at rest: `node.data.lastRun` is unset until a run happens, which is also what keeps the dock baseline deterministic. Not reclaimable: the buffer IS the module. See the block comment above.',
 
+  // ── JOYSTICK — THE XY PAD IS THE PLATE, AND THE PAD IS NOT "INK" BY THIS
+  //    GATE'S DEFINITION — the code-buffer pair's blind spot, third member ────
+  //
+  // MEASURED by the first CI capture of this scene (run 33569312736, linux,
+  // dock full view, CSS px): content 123, face body 286, slack 163. The 123 px
+  // of "ink" is the two ranked knob cells; the widest DRAWN thing on the plate
+  // is the 220 px pad (+ its 1 px borders and the body's centering flex), and
+  // it contributes ZERO to `contentW` because the ink measure takes boxes only
+  // for `[data-cell-key]`/glyph/canvas/svg/img and text ranges — and the pad
+  // is DELIBERATELY none of those: the two-ordinary-cells fallback (owner
+  // decision 2026-08-31) makes the knob cells the parity-credited controls,
+  // so the pad must NOT carry the cell contract (`joystick-face-model.test.ts`
+  // pins the absence), it mounts no canvas (attest basis is derived from
+  // CONTENT), and at rest it holds no text (the x/y decimals are the
+  // promotion's named DELETION — the values are on `aria-label`). Every pixel
+  // of the reported slack is the module's real instrument, drawn edge to edge.
+  joystick:
+    'the XY PAD (220 CSS px + borders) is the plate, and it is structurally invisible to `contentW`: no `[data-cell-key]` (the two-ordinary-cells fallback deliberately keeps the pad OUT of the cell contract — a `control-*` anchor here would double-count both axes in faces-parity), no canvas (attest basis is derived from content), and no text at rest (the x/y readout is the promotion\'s named deletion; the value lives on aria-label). MEASURED on the first CI capture: content 123 (the two knob cells), face body 286, slack 163 — every pixel of it the drawn pad. Not reclaimable: the pad IS the module. See the block comment above.',
+
   // ── THE CODE-BUFFER PAIR — THE PLATE IS THE BUFFER, AND THE BUFFER IS NOT
   //    "INK" BY THIS GATE'S DEFINITION ───────────────────────────────────────
   //
