@@ -129,7 +129,20 @@ async function boot(
     });
   }
   await spawnPatch(page, nodes, edges);
-  await expect(page.locator(`.svelte-flow__node-${TYPE}`).first()).toBeVisible();
+  // ⚠ THE READY SELECTOR IS SHELL-SPECIFIC AND MUST BE. xyflow tags a node with
+  // its NODE TYPE, and the two shells register different ones: the legacy card
+  // is `svelte-flow__node-ptzcam`, the default shell renders every migrated
+  // module through ONE `moduleShell` node type, so that class never appears.
+  // Waiting on it under the face shell fails at the 5 s expect default with
+  // "element(s) not found" — measured here, and it would have read as a broken
+  // promotion rather than a wrong locator. `data-id` is the shell-independent
+  // handle (the es9-face pattern) and is what the face legs below scope on, so
+  // the bound is the shared BOOT_MS rather than a number typed here.
+  const ready =
+    opts.shell === 'face'
+      ? page.locator(`.svelte-flow__node[data-id="${nodes[0]!.id}"] [data-testid="module-shell"]`)
+      : page.locator(`.svelte-flow__node-${TYPE}`).first();
+  await expect(ready).toBeVisible({ timeout: BOOT_MS });
 }
 
 async function waitCapsRequest(page: Page, portId: string): Promise<void> {
@@ -557,12 +570,22 @@ test.describe('ptzcam face — the default shell', () => {
       lane.getByTestId('shell-cell-ptzcam-connect'),
       'the gesture the module sends nothing without must be ON the tile, not behind the dock',
     ).toHaveCount(1);
-    // NEGATIVE CONTROL for the same read: the tier caps are geometry, so a tile
-    // painting EVERY ranked key would make the assertion above true for any
-    // ranking at all. SLEW is rank 4 — dock-only at the compact tier.
+    // NEGATIVE CONTROL for the same read — and it is deliberately NOT "a
+    // low-ranked param is absent". ⚠ MEASURED: at this rack's default zoom the
+    // tile renders the FULL lane tier, whose cap is 6, so all five ranked keys
+    // paint and `control-slew` IS present. Asserting its absence would have been
+    // a test of the ZOOM LEVEL wearing a ranking assertion's clothes — green
+    // today, red on a rack scrolled one notch, and never a statement about the
+    // face. Which tier selects which keys is pinned where it is a pure function:
+    // `ptzcam-face-model.test.ts` calls `curatedFace` at mini/compact/full.
+    //
+    // What IS tier-independent, and what actually separates the two halves of
+    // this promotion, is that the BODY is dock-only (`dockFullViewHeadPlan`) —
+    // a 192 px tile cannot hold a device roster — while the GESTURE is not,
+    // because an `action` cell is unrestricted and only `panel` is filtered.
     await expect(
-      lane.getByTestId('control-slew'),
-      'the ranked-last key is a DOCK control',
+      lane.getByTestId(`ptzcam-device-body-${NODE}`),
+      'the device body is DOCK-ONLY — a 192px tile cannot carry a roster',
     ).toHaveCount(0);
 
     // ── 2. the dock body, pre-connect ───────────────────────────────────
