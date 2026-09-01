@@ -1,103 +1,77 @@
 <script lang="ts">
-  // AudioinCard — UI for the AUDIO IN audio-source module.
+  // AudioinCard — the LEGACY card for the AUDIO IN audio-source module.
   //
-  // Owns the `getUserMedia` permission flow + the device dropdown +
-  // the live MediaStream lifecycle. Hands the stream off to the
-  // engine-side audio graph via the `audioInAttach` helper.
+  // ⚠ IT OWNS NOTHING ANY MORE, AND THAT IS THE WHOLE POINT OF THIS FILE NOW.
+  // It reads a projection and invokes `$lib/ui/modules/audioIn/audio-in-actions`
+  // — the same seam the promoted face's `tileBody` and `fullViewBody` call. Two
+  // moves got it here:
   //
-  // State scopes:
-  //   - `state` (idle | requesting | streaming | permission-denied | …):
-  //     per-tab, lives in local Svelte $state. NOT in Yjs — permission
-  //     grants are browser-instance-local.
-  //   - `node.params.gain`: in Yjs. Shared across collaborators (a
-  //     remote user adjusting your gain knob feels weird but matches
-  //     how every other audio module works; AUDIO IN is no exception).
-  //   - `node.data.deviceId`: in Yjs. Each user's browser tries to
-  //     match it to a local input; if missing, dropdown shows "(saved
-  //     device not found)" and the user picks again.
+  //   * #1590 moved the STREAM to the node (`node-audio-input-registry`),
+  //     because `onDestroy(() => stopStream())` called an IRREVERSIBLE
+  //     `MediaStreamTrack.stop()` on every collapse, dock eviction, ESC, M/E and
+  //     navigation;
+  //   * the FACE moved the ROSTER, the saved keys and the unattended acquire to
+  //     `$lib/audio/input-device.svelte` + the action seam, because after
+  //     promotion this card is no longer mounted on the default shell at all —
+  //     `audioIn` is in neither `DOM_SOURCE_LANE_TYPES` nor
+  //     `CARD_PRODUCER_LANE_TYPES`, so not even `<HeadlessSourceHost>` keeps a
+  //     copy alive.
+  //
+  // ⚠ WHY IT IS MOVED RATHER THAN LEFT ALONE. It is still the lane surface under
+  // `?shell=legacy`, and both surfaces can be mounted at once (a docked AUDIO IN
+  // expanded under that flag). A card that kept its own `onMount` auto-acquire
+  // would race the face's: `request()` calls `#releaseTracks` FIRST, so the two
+  // would tear each other's capture down — the #1590 failure through a new door.
+  // `beginAutoAcquire` is the atomic claim that makes the second caller a no-op,
+  // and it only works if every caller goes through it.
+  //
+  // State scopes (unchanged):
+  //   - the capture state machine: the NODE's, via the registry — per-tab, never
+  //     in Yjs, because a permission grant is browser-instance-local.
+  //   - `node.params.gain`: in Yjs, shared like every other module param.
+  //   - `node.data.deviceId` / `node.data.musicMode`: in Yjs, written through
+  //     `input-device.svelte` on a NON-TRACKED origin (undo must not re-open a
+  //     different physical input).
 
-  import { onMount, onDestroy, untrack } from 'svelte';
   import type { NodeProps } from '@xyflow/svelte';
   import NeonFader from '$lib/ui/controls/NeonFader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import { useEngine } from '$lib/audio/engine-context';
-  import { patch } from '$lib/graph/store';
   import { setNodeParam } from '$lib/graph/mutate';
   import { audioInDef } from '$lib/audio/modules/audioin';
   import {
-    buildAudioInConstraints,
-    findDefaultInputDevice,
-    formatDeviceLabel,
-    type MinimalDevice,
-  } from '$lib/audio/devices';
+    inputDeviceOptions,
+    inputDeviceRoster,
+    inputDeviceValue,
+    inputMusicMode,
+  } from '$lib/audio/input-device.svelte';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
   import { portsFromDef } from './card-kit';
-  import { nodeAudioInput } from './node-audio-input-registry.svelte';
-
-  type State =
-    | 'idle'                 // no stream + no permission attempt yet
-    | 'requesting'           // getUserMedia in flight
-    | 'streaming'            // stream attached
-    | 'permission-denied'    // user blocked / browser-level block
-    | 'no-inputs-found'      // enumerateDevices returned no audioinputs
-    | 'device-in-use'        // NotReadableError — another tab has the mic
-    | 'unsupported'          // browser lacks getUserMedia
-    | 'error';
+  import { nodeAudioInput, type AudioInputState } from './node-audio-input-registry.svelte';
+  import {
+    acquireAudioInput,
+    bindAudioInputSurface,
+    pickAudioInputDevice,
+    releaseAudioInput,
+    setAudioInputMusicMode,
+  } from './audioIn/audio-in-actions';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
 
   const engineCtx = useEngine();
 
-  // ----- local state -----
-  let devices = $state<MinimalDevice[]>([]);
-  let selectedDeviceId = $state<string | null>(null);
-  // ⚠ inState / errorMsg / liveChannels are DERIVED from the node-keyed
-  // registry, not card-local $state (#1590). They used to be card-local, so a
-  // re-mounted card came up 'idle' while the input was still live — and worse,
-  // the unmount that preceded it had already stopped the tracks. The registry
-  // is the one home for both the resource and the status that describes it.
-  let inState: State = $derived(nodeAudioInput.view(id).state as State);
-  let errorMsg = $derived(nodeAudioInput.view(id).errorMsg);
-  // "Music mode" — force the browser capture DSP (echo-cancel / noise-
-  // suppress / auto-gain) OFF for a clean line-level feed. Persisted to
-  // Yjs (node.data.musicMode) so it restores on reload + syncs to peers.
-  // Default OFF (browser-default DSP) — forcing AGC off drops built-in-mic
-  // level, so it's opt-in for users routing line-level gear.
-  let musicMode = $state(false);
-  // The channelCount the live track actually delivered (for the status
-  // display: "stereo" vs "mono"). 0 until a stream attaches.
-  let liveChannels = $derived(nodeAudioInput.view(id).liveChannels);
-  // ⚠ THE CARD NO LONGER HOLDS THE STREAM. It belongs to the NODE — see
-  // node-audio-input-registry.svelte.ts. The card adopts and reads.
-
-  // ----- helpers -----
-
-  function readSavedDeviceId(): string | null {
-    const d = node?.data;
-    if (d && typeof d['deviceId'] === 'string') return d['deviceId'] as string;
-    return null;
-  }
-  function setSavedDeviceId(deviceId: string | null): void {
-    const target = patch.nodes[id];
-    if (!target) return;
-    if (!target.data) target.data = {};
-    if (deviceId === null) delete target.data['deviceId'];
-    else target.data['deviceId'] = deviceId;
-  }
-
-  function readSavedMusicMode(): boolean {
-    const d = node?.data;
-    return !!(d && d['musicMode'] === true);
-  }
-  function setSavedMusicMode(on: boolean): void {
-    const target = patch.nodes[id];
-    if (!target) return;
-    if (!target.data) target.data = {};
-    if (on) target.data['musicMode'] = true;
-    else delete target.data['musicMode'];
-  }
+  // ⚠ EVERYTHING HERE IS DERIVED — no card-local copy of anything (#1590). A
+  // re-mounted card used to come up `idle` while the input was still live, and
+  // the unmount that preceded it had already stopped the tracks.
+  let view = $derived(nodeAudioInput.view(id));
+  let inState = $derived(view.state as AudioInputState);
+  let errorMsg = $derived(view.errorMsg);
+  let liveChannels = $derived(view.liveChannels);
+  let options = $derived(inputDeviceOptions(inputDeviceRoster()));
+  let selectedDeviceId = $derived(inputDeviceValue(node));
+  let musicMode = $derived(inputMusicMode(node));
 
   function pGain(): number {
     return node?.params['gain'] ?? audioInDef.params[0]!.defaultValue;
@@ -111,166 +85,35 @@
     return e.readParam(node, 'gain');
   }
 
-  /**
-   * Re-enumerate the audioinput devices. Returns whether labels are
-   * visible (= permission has been granted at some point). Empty
-   * labels indicate the browser's pre-permission privacy gate is
-   * still in effect.
-   */
-  async function refreshDevices(): Promise<{ hasLabels: boolean }> {
-    if (typeof navigator === 'undefined' || !navigator.mediaDevices?.enumerateDevices) {
-      devices = [];
-      return { hasLabels: false };
-    }
-    try {
-      const all = await navigator.mediaDevices.enumerateDevices();
-      const ins = all.filter((d) => d.kind === 'audioinput');
-      devices = ins;
-      return { hasLabels: ins.some((d) => d.label !== '') };
-    } catch (err) {
-      console.warn('[audioIn] enumerateDevices failed:', err);
-      devices = [];
-      return { hasLabels: false };
-    }
-  }
-
-  /**
-   * Acquire the selected (or default) input device. On success, attaches
-   * the MediaStream to the engine module via `audioInAttach`.
-   */
-  async function requestStream(): Promise<void> {
-    const targetId = selectedDeviceId ?? findDefaultInputDevice(devices);
-    // ASK for a stereo pair — see buildAudioInConstraints. It's an IDEAL
-    // constraint (channelCount: 2, no `exact:`), so a mono device still
-    // streams (and the engine wiring keys off the DELIVERED channelCount,
-    // not this request). A multichannel USB interface (e.g. Expert
-    // Sleepers ES-9) hands us a true L/R pair (its FIRST stereo pair,
-    // device inputs 1/2) instead of a browser-downmixed mono signal.
-    // EMPIRICAL: the browser caps ES-9 capture at 2 channels
-    // (getCapabilities max=2; channelCount:{exact:4} → OverconstrainedError),
-    // so 4-in / per-channel is native-only (the native track; see the
-    // es9-stereo-io plan).
-    // `musicMode` forces the browser capture DSP off for a clean line feed.
-    const constraints = buildAudioInConstraints(targetId, { musicMode });
-
-    // ⚠ ACQUISITION IS THE REGISTRY'S (#1590). The constraints are the card's
-    // business — device list, saved id, music mode; the STREAM, the engine
-    // attach and the late-engine reconciler are the NODE's, because all three
-    // used to die with this component. `t.stop()` is irreversible, so this is
-    // the one row in #1583 where the unmount could not be recovered from.
-    await nodeAudioInput.request(id, constraints, {
-      onResolved: (realDeviceId) => {
-        if (realDeviceId && realDeviceId !== selectedDeviceId) {
-          selectedDeviceId = realDeviceId;
-          setSavedDeviceId(realDeviceId);
-        } else if (selectedDeviceId) {
-          setSavedDeviceId(selectedDeviceId);
-        }
-      },
-    });
-
-    // Permission may have just been granted — re-enumerate for real labels.
-    if (nodeAudioInput.isStreaming(id)) await refreshDevices();
-  }
-
-  /** USER-INITIATED release (the stop control + the re-acquire path). NEVER
-   *  call this from a lifecycle hook — that is the #1590 defect. */
-  function stopStream(): void {
-    nodeAudioInput.stop(id);
-  }
-
-  function onPickDevice(deviceId: string): void {
-    selectedDeviceId = deviceId;
-    setSavedDeviceId(deviceId);
-    // If we were already streaming, re-acquire on the new device.
-    if (inState === 'streaming' || inState === 'device-in-use' || inState === 'error') {
-      requestStream();
-    }
-  }
-
-  function onToggleMusicMode(on: boolean): void {
-    musicMode = on;
-    setSavedMusicMode(on);
-    // Capture DSP constraints can't be changed on a live track without a
-    // re-acquire, so re-run getUserMedia if we're already streaming.
-    if (inState === 'streaming') {
-      requestStream();
-    }
-  }
-
-  function onDeviceChange(): void {
-    // Just refresh the list — the user's selectedDeviceId stays.
-    // Browsers may have changed deviceId values for the SAME physical
-    // device across plug events; if the saved id no longer matches,
-    // the next requestStream() will report OverconstrainedError and
-    // the user can repick.
-    refreshDevices();
-  }
-
   // ----- lifecycle -----
-
-  // ADOPT the node's input entry before anything reads it. Non-destructive: if
-  // a previous mount left this node streaming, this picks that entry up rather
-  // than replacing it — which is what makes re-expanding show the LIVE input.
-  // (In an $effect, not at init: `id` is a prop, and reading it at init would
-  // capture only its first value — svelte-check's state_referenced_locally.
-  // Re-running is free: adopt is idempotent and non-destructive.)
-  $effect(() => {
-    nodeAudioInput.adopt(id, engineCtx);
-  });
-
-  onMount(() => {
-    if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
-      nodeAudioInput.setStatus(id, 'unsupported', 'Browser does not support getUserMedia');
-      return;
-    }
-
-    untrack(() => {
-      selectedDeviceId = readSavedDeviceId();
-      musicMode = readSavedMusicMode();
-    });
-
-    // Initial enumerate. Empty labels at this point = no prior
-    // permission grant; we wait for the user to click "Enable".
-    refreshDevices().then((res) => {
-      if (devices.length === 0) {
-        nodeAudioInput.setStatus(id, 'no-inputs-found', 'No audio inputs detected.');
-        return;
-      }
-      // If labels are already visible (permission previously granted
-      // in this origin), auto-acquire — same convenience the CAMERA
-      // card provides for repeat visits.
-      if (res.hasLabels) {
-        if (!selectedDeviceId) {
-          selectedDeviceId = findDefaultInputDevice(devices);
-        }
-        requestStream();
-      }
-    });
-
-    if (navigator.mediaDevices?.addEventListener) {
-      navigator.mediaDevices.addEventListener('devicechange', onDeviceChange);
-    }
-  });
-
-  // ⚠ NO `stopStream()` HERE (#1590). This unmount runs on COLLAPSE, on dock
-  // LRU eviction, on ESC, on M/E and on navigation — none of which mean the
-  // user is done with the rack's live input. It used to call `stopStream()`,
-  // whose `t.stop()` is IRREVERSIBLE: the input went silent mid-performance,
-  // the OS mic indicator dropped, and re-expanding could not bring it back
-  // (only a fresh getUserMedia can, which is a new permission decision).
-  // The stream is keyed to the NODE now and released by Canvas's
-  // `nodeAudioInput.sweep(liveIds)` when the node itself is gone.
   //
-  // The devicechange listener IS card-owned — it only refreshes the dropdown.
-  onDestroy(() => {
-    if (navigator.mediaDevices?.removeEventListener) {
-      navigator.mediaDevices.removeEventListener('devicechange', onDeviceChange);
-    }
+  // ONE effect, and it is the same one both face surfaces run: adopt the node's
+  // registry entry (non-destructive — a re-mount picks up a live entry), start
+  // the app-wide device watch, and take the ONE unattended acquire this node
+  // gets IF this origin already holds a grant.
+  //
+  // ⚠ IN AN `$effect`, NOT AT INIT: `id` is a prop, and reading it at init would
+  // capture only its first value (svelte-check's `state_referenced_locally`).
+  // Re-running is free — every step is idempotent.
+  $effect(() => {
+    void bindAudioInputSurface(id, engineCtx);
   });
+
+  // ⚠ NO `onDestroy` AT ALL, AND ITS ABSENCE IS THE #1590 FIX. This unmount runs
+  // on COLLAPSE, on dock LRU eviction, on ESC, on M/E and on navigation — none
+  // of which mean the player is done with the rack's live input. It used to call
+  // `stopStream()`, whose `t.stop()` is IRREVERSIBLE. The stream is keyed to the
+  // NODE now and released by Canvas's `nodeAudioInput.sweep(liveIds)` when the
+  // node itself is gone; the `devicechange` listener is the app-wide one in
+  // `input-device.svelte`, which is never torn down either.
 
   // Status text for the LED row.
-  const STATE_LABEL: Record<State, string> = {
+  //
+  // ⚠ THE LEGACY CARD KEEPS ITS READOUTS. The resting-text rulings govern
+  // FACES, and this template is what `?shell=legacy` renders until the legacy
+  // fleet is deleted. The FACE deletes both of these — the state word and the
+  // stereo/mono badge — onto `StatusLed` detail; see `audio-in-status.ts`.
+  const STATE_LABEL: Record<AudioInputState, string> = {
     idle: 'idle',
     requesting: 'requesting…',
     streaming: 'active',
@@ -298,19 +141,17 @@
           class="device-select"
           data-testid="audioin-device-select"
           value={selectedDeviceId ?? ''}
-          onchange={(e) => onPickDevice((e.currentTarget as HTMLSelectElement).value)}
-          disabled={devices.length === 0}
+          onchange={(e) => pickAudioInputDevice(id, (e.currentTarget as HTMLSelectElement).value)}
+          disabled={options.length === 0}
         >
-          {#if devices.length === 0}
+          {#if options.length === 0}
             <option value="">(no inputs)</option>
           {:else}
             {#if !selectedDeviceId}
               <option value="" disabled selected>(pick one)</option>
             {/if}
-            {#each devices as d, i (d.deviceId)}
-              <option value={d.deviceId} selected={d.deviceId === selectedDeviceId}>
-                {formatDeviceLabel(d, i)}
-              </option>
+            {#each options as o (o.value)}
+              <option value={o.value} selected={o.value === selectedDeviceId}>{o.label}</option>
             {/each}
           {/if}
         </select>
@@ -341,7 +182,7 @@
           type="checkbox"
           data-testid="audioin-music-mode"
           checked={musicMode}
-          onchange={(e) => onToggleMusicMode((e.currentTarget as HTMLInputElement).checked)}
+          onchange={(e) => setAudioInputMusicMode(id, (e.currentTarget as HTMLInputElement).checked)}
         />
         <span class="row-label music-label">music mode</span>
       </label>
@@ -355,8 +196,8 @@
           <button
             class="primary"
             data-testid="audioin-enable"
-            onclick={requestStream}
-            disabled={devices.length === 0}
+            onclick={() => acquireAudioInput(id)}
+            disabled={options.length === 0}
           >
             {inState === 'permission-denied' ? 'Retry permission' : inState === 'device-in-use' || inState === 'error' ? 'Retry' : 'Click to enable'}
           </button>
@@ -364,7 +205,7 @@
           <button
             class="ghost"
             data-testid="audioin-disable"
-            onclick={stopStream}
+            onclick={() => releaseAudioInput(id)}
           >
             Stop
           </button>

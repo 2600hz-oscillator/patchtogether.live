@@ -5288,6 +5288,97 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // `freezeIsNotASeam` — this def has no `freeze` param at all, and the gate
   // refuses that field when there is none.
   'blood',
+
+  // ── AUDIO IN (2026-08-31) — the rack's SOURCE FROM OUTSIDE ───────────────
+  //
+  // `audioOut`'s twin, one wire earlier, and built to the same narrow shape:
+  // one ranked param (`gain`, a fader), one extension, no pages. What it does
+  // NOT share with its twin is the interesting part.
+  //
+  // ⚠ THE INVENTORY'S THIRD CLAUSE WAS ALREADY FALSE WHEN THIS PR OPENED. The
+  // entry read: "a hardware CAPTURE BINDER: a live enumerateDevices roster
+  // (service state, not node state, so no selector cell projects it), a
+  // permission/status flow with five failure states, and a getUserMedia stream
+  // THE CARD STARTS AND STOPS WITH ITS OWN LIFETIME." The first two clauses are
+  // true and are what the extension body answers. The third had been false since
+  // #1590 — `node-audio-input-registry.svelte.ts` says in its own header that
+  // "the card ADOPTS and READS; it never CREATES or DESTROYS", and
+  // `AudioinCard.svelte` carried the matching "⚠ NO `stopStream()` HERE" banner.
+  // It is corrected in the inventory in this diff rather than left to be
+  // re-derived by whoever reads it next.
+  //
+  // ⚠ AND THE PROMOTION STILL HAD TO MOVE THREE THINGS, which is why the false
+  // clause mattered: it named the ONE thing that had already moved and was
+  // silent about the three that had not. All three lived in
+  // `AudioinCard.svelte`'s own `onMount` and would have died with it —
+  // `audioIn` is in neither `DOM_SOURCE_LANE_TYPES` nor
+  // `CARD_PRODUCER_LANE_TYPES`, so `needsHeadlessSourceMount` is FALSE and no
+  // `<HeadlessSourceHost>` keeps a copy alive the way it does for `cameraInput`:
+  //
+  //   1. `nodeAudioInput.adopt(id, engineCtx)` — without it `request()` returns
+  //      IDLE and `view()` reads idle forever, so the module would have been
+  //      inert AND silent;
+  //   2. the initial `enumerateDevices()` + the `no-inputs-found` status + the
+  //      returning-visitor auto-acquire;
+  //   3. the `devicechange` subscription.
+  //
+  //   (1) and (3) are now `$lib/audio/input-device.svelte.ts` (the input-side
+  //   twin of the `output-device` seam `audioOut`'s promotion authored) plus
+  //   `$lib/ui/modules/audioIn/audio-in-actions.ts`, and the LEGACY CARD is
+  //   moved onto them in the same diff.
+  //
+  // ⚠ THE IRREVERSIBLE HAZARD IS THE SECOND SURFACE, and it is why this face
+  // ships `beginAutoAcquire`. Before promotion exactly one component ever ran
+  // the unattended acquire. A faced AUDIO IN has three, two of which can be
+  // mounted simultaneously — and `request()` calls `#releaseTracks` FIRST, so
+  // two auto-acquiring surfaces would stop each other's tracks mid-performance.
+  // `MediaStreamTrack.stop()` cannot be undone. The claim is atomic, on the
+  // REGISTRY (node lifetime), and it is once-per-node rather than once-per-mount
+  // so a re-expand cannot re-open an input the player deliberately STOPPED.
+  //
+  // ⚠ A `tileBody` IS NOT OPTIONAL HERE, and `cameraInput` is the evidence: it
+  // shipped `fullViewBody` alone, and the lane tile could neither pick a device
+  // nor START one — which reached the owner as "no video until it's expanded".
+  // ENABLE is the ONLY route to a first `getUserMedia` grant, so on this module
+  // the same omission would put a rack's microphone one expand away from
+  // existing at all.
+  //
+  // ⚠ IT KEEPS A LANE PICTURE, and it is the only device binder in its wave that
+  // can. Two real `audio` outputs ⇒ `primaryAudioOutPortId` resolves
+  // `audio_l_out` ⇒ `glyphBinding` returns a live `live-audio` binding, so the
+  // tile paints what is actually arriving. Its twin cannot: `audioOut` declares
+  // `outputs: []`, which is the same structural fact that forces `glyph: 'none'`
+  // there.
+  //
+  // ⚠ TWO RESTING READOUTS ARE DELETED FROM THE FACE, NOT HIDDEN: the card's
+  // eight-word STATE LABEL (`idle`/`active`/`permission denied`/…) and its
+  // `stereo`/`mono` CHANNEL BADGE. Both are derived values painted outside a
+  // control. They survive as `StatusLed` `detail` — one sentence, on
+  // `aria-label` and `title` — through the pure `audio-in-status.ts`, which is
+  // where the eight-state machine now lives and where it is negative-controlled.
+  // The legacy card keeps both, because the resting-text rulings govern faces
+  // and that template is what `?shell=legacy` renders.
+  //
+  // ⚠ ITS BLAST RADIUS IS EVERY USER AT ONCE. `pinned-audioIn` is canvas-hidden
+  // and the 🎧 topbar tray is its ONLY surface; `Canvas.svelte` already wires
+  // `workflowAudioInFace` through `dockRailRendersFace`, so this name flips that
+  // tray from the verbatim card to the faceplate for everybody in the same
+  // commit. `workflow-audio-io-face.spec.ts` is written to flip WITH it (it
+  // reads `strictFace` off the manifest rather than typing an expectation), and
+  // its `audioin-device-select` legacy-only marker is why neither body may reuse
+  // that testid.
+  //
+  // ⚠ CHROME CAPS THIS DEVICE AT TWO CHANNELS (measured against a real ES-9:
+  // `getCapabilities().channelCount` → `{max: 2}`, and `channelCount:{exact:4}`
+  // throws `OverconstrainedError`). Nothing in this face implies more — there is
+  // no channel picker, no per-channel trim and no third lamp.
+  //
+  // ⚠ ZERO ATTEST, and no contract movement. An audio def; `face` is
+  // hash-transparent by construction and never enters the WebGL basis; both
+  // bodies are DOM with no drawing surface at all, so nothing enrols. `docs`
+  // moved (three sentences that described the card as the owner), which is a
+  // `docs:accept` re-pin and not a port or param change.
+  'audioIn',
 ]);
 
 /**
