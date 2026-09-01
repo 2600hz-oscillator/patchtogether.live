@@ -182,6 +182,7 @@ author a `face` and rank the controls — no new platform capability.
 | `shimmershine` | audio | done | — |
 | `sidecar` | audio | done | — |
 | `sixstrum` | audio | done | — |
+| `skifree` | audio | done | — |
 | `slewSwitch` | audio | done | — |
 | `snaredrum` | audio | done | — |
 | `sourcery` | video | done | — |
@@ -239,7 +240,6 @@ the primary interaction is not param-shaped — needs a purpose-built surface.
 | `peertube` | video | — | `needs-media-controller` |
 | `recorderbox` | video | — | `needs-media-controller` |
 | `seqtris` | audio | — | — |
-| `skifree` | audio | — | — |
 | `textmarquee` | video | — | — |
 | `toybox` | video | — | `needs-media-controller` |
 | `trails` | audio | — | — |

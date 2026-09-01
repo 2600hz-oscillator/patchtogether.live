@@ -312,15 +312,40 @@ test.describe('SKIFREE — the game belongs to the NODE', () => {
     const before = await forceCrash(page, NODE);
     expect(before, 'two forced crashes are on the record').toBeGreaterThanOrEqual(2);
 
-    // ⚠ THE LANE TILE IS A `module-shell-placeholder`, NOT A `module-shell` —
-    // skifree is un-migrated, so the shipping shell paints the placeholder and
-    // the real card exists only inside the dock full view. That IS the defect's
-    // setting, so the locator says it out loud rather than reaching for the
-    // faced one.
+    // ⚠ THE LANE TILE IS A `module-shell` — AND IT USED TO BE A
+    // `module-shell-placeholder`, HARD-CODED HERE. skifree was un-migrated when
+    // this spec was written, so the shipping shell painted a placeholder and
+    // the real card existed only inside the dock full view; that WAS the
+    // defect's setting and the locator said so out loud. The face promotion
+    // changes the setting and not the subject: what this test is about is
+    // whether the RUN survives an expand/collapse cycle, which is a property of
+    // the NODE and is unchanged by which component paints the lane.
+    //
+    // ⚠ RE-POINTED RATHER THAN RELAXED. A locator loose enough to match either
+    // tile would have made this spec silently blind to the swap, which is the
+    // opposite of what a lane-tile assertion is for — so it names the faced
+    // tile, and reverting the promotion reddens here with a message that says
+    // what happened rather than timing out at 30 s.
     const tile = page.locator(
-      `.svelte-flow__node[data-id="${NODE}"] [data-testid="module-shell-placeholder"]`,
+      `.svelte-flow__node[data-id="${NODE}"] [data-testid="module-shell"]`,
     );
-    await expect(tile).toBeVisible();
+    await expect(
+      tile,
+      'skifree is in STRICT_FACES, so its lane tile is the curated ModuleShell — if this is '
+        + 'timing out, check whether the promotion was reverted (the placeholder would be '
+        + '`module-shell-placeholder`)',
+    ).toBeVisible();
+
+    // …and the module's OWN lane picture is there, which is the thing #1974's
+    // zero-lane clause structurally cannot check on an `order: []` face: it
+    // `continue`s past a face that ranks nothing before it measures anything,
+    // so without this line a regression to "title bar and jack rail" would be
+    // invisible to every browser gate in the suite.
+    await expect(
+      tile.getByTestId('skifree-tile-canvas'),
+      'the promoted lane tile must paint the module\'s own slope — skifree has no params and '
+        + 'no glyph, so the tileBody is the only thing on it',
+    ).toBeVisible();
 
     // Open the dock to LOOK at the game — the ordinary reason a player expands.
     const expand = tile.getByTestId('shell-open-dock');
@@ -329,8 +354,10 @@ test.describe('SKIFREE — the game belongs to the NODE', () => {
     await expect(page.getByTestId('dock-full-view')).toBeVisible();
     await expect(expand).toHaveAttribute('data-expanded', 'true');
 
-    // Collapse it with ESC — which `ModuleShellPlaceholder` documents as the
-    // gesture ("TRANSIENT dockStore full-view occupancy, per-tab, ESC-closable").
+    // Collapse it with ESC — the dockStore's own gesture ("TRANSIENT dockStore
+    // full-view occupancy, per-tab, ESC-closable"). ⚠ That sentence used to
+    // credit `ModuleShellPlaceholder`, which no longer paints this module; the
+    // occupancy semantics are the DOCK's and are unchanged by the promotion.
     // ⚠ NOT the EXPAND pill: while the pane is open the dock overlay sits over
     // the lane tile, so the pill resolves and reports visible/enabled/stable and
     // the click never lands — a 30 s timeout with a perfectly healthy-looking
