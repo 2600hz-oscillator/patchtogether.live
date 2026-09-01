@@ -26,8 +26,39 @@
 import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 import { setNodeParams } from './_module-coverage-helpers';
-import { BOOT_MS } from '../_helpers/boot-budget';
+import { BOOT_MS, SLOW_BOOT_TEST_TIMEOUT_MS } from '../_helpers/boot-budget';
 import { waitFrames } from '../_helpers/frames';
+
+// ⚠ THE PER-TEST BUDGET IS A BOUND, AND IT WAS THE FLAT 30 s DEFAULT.
+//
+// MEASURED, run 33472900654 (PR #2280, e2e shard 6/12) — recovered
+// `timedOut -> passed` on the SAME SHA, and look at the SPREAD:
+//
+//   attempt 1  35 238 ms  timedOut     ("Test timeout of 30000ms exceeded")
+//   attempt 2   5 151 ms  passed
+//
+// Nearly SEVEN TIMES, same commit, same code, minutes apart. Nothing about this
+// test got slower; the runner did. The trace names the culprit exactly: the
+// `__ensureEngine()` inside `spawnPatch` took 19.80 s of the 30 s budget, and
+// the shard's co-tenants — `face-screen-render-suite` batches 5/8 and 6/8 at
+// 189 s and 187 s of continuous WebGL — are why. #2280 re-pinned `e2e-timings`,
+// which re-bins the twelve shards and reshuffles exactly that co-tenancy.
+//
+// ⚠ AND NO ASSERTION FAILED HERE EITHER. The last event of the failing attempt
+// is the DRIVEN peak already reading non-flat:
+//
+//   data-trace-peak="0.4121"      (the claim, satisfied)
+//
+// The glyph was live and moving. The test had ~2 s of work left and no budget.
+//
+// Reproduced locally rather than assumed: 1.8 s idle, and CI's verbatim
+// `page.evaluate: Test timeout of 30000ms exceeded` at load ~44 on 10 cores —
+// the same call the CI trace left unfinished (`dockGlyphFrame`).
+//
+// The bound therefore comes from `boot-budget` (90 s on CI/SwiftShader, 30 s
+// local). ⚠ This raises no CLAIM in the test: the static-silent window is still
+// counted in FRAMES, and every "goes live" wait still has to actually come true.
+test.describe.configure({ timeout: SLOW_BOOT_TEST_TIMEOUT_MS });
 
 /** Painted frames the SILENT glyph must stay byte-identical across. FRAMES, not
  *  ms: the glyph repaints once per rAF, so "static" is a claim about frames and
