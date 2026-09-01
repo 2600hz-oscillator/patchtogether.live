@@ -191,6 +191,14 @@ test.describe('TEXTMARQUEE face — the editor moved, and it still means the sam
     // Let the debounced persist settle before selecting, so its re-render
     // cannot collapse the selection mid-gesture. The poll below is what
     // actually decides; this only avoids a self-inflicted race.
+    // pacing: TextmarqueeEditorBody's own PERSIST_DEBOUNCE_MS (250 ms) — a
+    // PRODUCT interval the component defines, not a render wait. There is no
+    // observable to poll for it: a pending debounce is a private setTimeout
+    // handle, and the state it will produce is indistinguishable from the state
+    // already in the store. The +150 ms is scheduler slack. It cannot make this
+    // test pass on its own — every assertion below is an auto-retrying poll on
+    // the persisted model, so waiting too little fails and waiting too long only
+    // costs time.
     await page.waitForTimeout(PERSIST_DEBOUNCE_MS + 150);
     await editor.click();
     await selectAll(editor);

@@ -264,9 +264,15 @@
       ctx2d.fillRect(0, 0, cw, ch);
       const srcAspect = ENGINE_W / ENGINE_H;
       const dstAspect = cw / ch;
-      let w = cw, h = ch, x = 0, y = 0;
-      if (dstAspect > srcAspect) { h = ch; w = Math.round(h * srcAspect); x = Math.round((cw - w) / 2); }
-      else { w = cw; h = Math.round(w / srcAspect); y = Math.round((ch - h) / 2); }
+      // LETTERBOX the 4:3 engine frame into whatever box the plate gave us,
+      // rather than stretching it. Both branches assign every one of the four,
+      // so nothing is initialised twice.
+      let w: number, h: number, x: number, y: number;
+      if (dstAspect > srcAspect) {
+        h = ch; w = Math.round(h * srcAspect); x = Math.round((cw - w) / 2); y = 0;
+      } else {
+        w = cw; h = Math.round(w / srcAspect); x = 0; y = Math.round((ch - h) / 2);
+      }
       drawPreviewDownscaled(ctx2d, src, x, y, w, h);
     }
     rafId = requestAnimationFrame(draw);
