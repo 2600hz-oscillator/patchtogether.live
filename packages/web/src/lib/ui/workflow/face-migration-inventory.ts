@@ -1450,6 +1450,20 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
       'until this PR only the legacy card could write.',
   },
   {
+    type: 'seqtris',
+    disposition: 'bespoke-surface',
+    why:
+      'a GAME plus a HARDWARE BINDER, and neither half is generic-face material. The well is an ' +
+      '8×8 picture of live gameplay — sixty-four coloured cells painted from transient engine ' +
+      'state — and the eight controls beside it are not params: they are the LAUNCHPAD\'S OWN ' +
+      'SCENE COLUMN, laid out in hardware order (including the two dead buttons) precisely so the ' +
+      'mapping is learnable from the screen. Ranking them as cells would reorder them, which is ' +
+      'the one thing they must not do. The CONNECT gesture and the bound / no-device / claimed ' +
+      'status are WebMIDI service state rather than params — the outToLaunch + chromaconsole + ' +
+      'ptzcam argument. Two knobs (grav, quant) are the only generic material, and a face that ' +
+      'ranked those would move them to the lane and leave the board and the controller behind.',
+  },
+  {
     type: 'textmarquee',
     disposition: 'bespoke-surface',
     why:
