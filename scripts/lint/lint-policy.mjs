@@ -166,10 +166,32 @@ export const STAGED_RULES = [
     rule: 'prefer-spread',
     why: '`Function.prototype.apply` in the livecode runtime, where the call is forwarding a dynamic argument list into user-authored code. Spread is usually equivalent but not when the callee inspects `arguments`; wants a runtime check, not a rewrite.',
   },
-  {
-    rule: 'svelte/no-dom-manipulating',
-    why: 'Direct DOM writes in the text-marquee card, which drives its own scroll animation outside Svelte state on purpose (a per-frame text transform is not a state update). Fixing it means moving the animation into the framework, which is a rewrite of the module, not a lint fix.',
-  },
+  // ⚠ `svelte/no-dom-manipulating` WAS STAGED HERE AND IS NOW A HARD ERROR
+  // (2026-08-31, with the textmarquee face). Its `why` read: "Direct DOM writes
+  // in the text-marquee card, which drives its own scroll animation outside
+  // Svelte state on purpose (a per-frame text transform is not a state update).
+  // Fixing it means moving the animation into the framework, which is a rewrite
+  // of the module, not a lint fix."
+  //
+  // ⚠ THE DIAGNOSIS WAS WRONG IN BOTH HALVES, AND THE ENTRY OUTLIVED ITS OWN
+  // SUBJECT TWICE. `TextmarqueeCard.svelte` never drove a scroll animation: the
+  // CRAWL is animated ENGINE-side from `frame.time` (`textmarquee.ts`
+  // `computeDrawOffset`), and the card's rAF was only ever a preview blit — a
+  // fact #1720 then made structural by moving the rasterizer to node lifetime.
+  // What the rule was actually seeing was the card's `contenteditable`
+  // SERIALIZER: `innerHTML`, `createElement` and `appendChild` in
+  // `applyModelToDom`, reconciling a rich-text document that Svelte state cannot
+  // express, which is a legitimate use and not an animation at all.
+  //
+  // It is gone because that serializer was EXTRACTED to
+  // `$lib/graph/textmarquee-editor` so the face body and the legacy card share
+  // one copy (the extraction's real purpose was that `getComputedStyle` makes
+  // the editor's cascade part of the persisted document — see that module's
+  // header). The DOM writes now live in a `.ts` module, which this rule's
+  // subject does not include, and the last finding in any `.svelte` file went
+  // with them. So the staging list ratcheted itself exactly as designed: the
+  // rule is PROMOTED rather than the entry rewritten, and a new direct DOM write
+  // inside a component is now a BLOCKING error.
   // ⚠ `svelte/no-at-html-tags` WAS STAGED HERE AND IS NOW A HARD ERROR (#1794).
   // Its `why` read: "`{@html}` in the Fader control … security-relevant (XSS
   // surface) and therefore explicitly NOT a mechanical fix". The finding was

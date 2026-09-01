@@ -195,6 +195,7 @@ author a `face` and rank the controls — no new platform capability.
 | `synesthesia` | audio | done | — |
 | `tempest` | video | done | — |
 | `tempolock` | audio | done | — |
+| `textmarquee` | video | done | — |
 | `tidyVco` | audio | done | — |
 | `tiler` | video | done | — |
 | `timelorde` | audio | done | — |
@@ -240,7 +241,6 @@ the primary interaction is not param-shaped — needs a purpose-built surface.
 | `peertube` | video | — | `needs-media-controller` |
 | `recorderbox` | video | — | `needs-media-controller` |
 | `seqtris` | audio | — | — |
-| `textmarquee` | video | — | — |
 | `toybox` | video | — | `needs-media-controller` |
 | `trails` | audio | — | — |
 | `videobox` | video | — | `needs-media-controller` |

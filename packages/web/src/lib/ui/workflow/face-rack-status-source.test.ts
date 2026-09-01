@@ -1222,6 +1222,23 @@ const EXTENSION_BODY_ROLES: Readonly<Record<string, BodyRule>> = {
       + 'physical panel over WebUSB, not a VideoEngine preview, so the ruling\'s subject does not '
       + 'exist here in either sense.',
   },
+
+  // ── TEXTMARQUEE (2026-08-31) — the roster's first DOCUMENT EDITOR ─────────
+  //
+  // ⚠ EVERY OTHER `picture` ENTRY IN THIS ROSTER IS ABOUT A PREVIEW BEING
+  // RESCUED, OR (blood) A BOOT. This one is about a WRITER. textmarquee's four
+  // params only MOVE the ribbon; what it SAYS is `node.data.richText`, and the
+  // only affordance in the tree that could write it was the card promotion
+  // stops the shipping shell rendering. A body that mounted the preview and
+  // forgot the editor would satisfy this gate's predicate perfectly and ship a
+  // module whose text can never be changed again.
+  //
+  // ⚠ THE TEXT AUDIT IS UNUSUALLY EASY HERE AND IS STATED ANYWAY: the card
+  // painted NO derived value at all — no size number beside the slider, no
+  // colour hex, no character count. So this promotion deletes ZERO resting
+  // readouts, which is worth recording precisely because every other row in
+  // the face program deleted at least one.
+  textmarquee: { role: 'picture', why: 'the RICH-TEXT EDITOR that is this module — a `contenteditable` document plus its toolbar (align left/centre/right, bold, italic, underline, the per-selection TEXT colour, a 12-entry FONT family picker and the SIZE range), the layer BACKGROUND swatch, the live OUT preview and the SCREEN switch. ⚠ THIS BODY IS NOT A PREVIEW BEING RESCUED, IT IS THE MODULE\'S ONLY WRITER: all four params (ScrlX/ScrlY/PosX/PosY) move the ribbon and none of them says what it READS, which is node.data.richText — thirteen of the card\'s fifteen data-testids are that writer and ZERO of them are expressible as a face cell, because they act on a live DOM Selection, or are `<input type="color">`, or are the document itself. `ShellEntryCell` (#1509) is real and shipped and is emphatically NOT the seam: it parses ONE SCALAR per cell. ⚠ AND RE-HOSTING THE EDITOR IS A SEMANTIC CHANGE UNLESS IT IS STOPPED — the sharpest finding in this promotion. `serializeEditor` reads getComputedStyle, so the editor\'s CASCADE is part of the persisted document: the card\'s `.editor` rule set color:#ffffff and white-space:pre-wrap, and `.dock-ext-body` sets neither and inherits the faceplate\'s var(--text,#eef1f5). A body that copied the markup would have stamped #eef1f5 onto every untouched run, `bold:true` under any ancestor at font-weight>=600 and `center` under any centred ancestor — written into Y.Doc-persisted data, synced to collaborators, rasterized into the video texture and read back by the still-live legacy card. The serializer is therefore extracted to $lib/graph/textmarquee-editor (outside lib/video/**, so it costs no attest) and BOTH surfaces stamp EDITOR_BASE_STYLE on the element explicitly. ⚠ IT IS NOT THE PRODUCER: the rasterize-and-push half moved to $lib/ui/media/extras-producers on NODE lifetime in #1720, so a saved rack shows your text with no UI mounted and textmarquee stays correctly out of CARD_PRODUCER_LANE_TYPES; this body writes the MODEL and blits. ⚠ SCREEN OFF KEEPS THE WATCH MARK, on acidwarp\'s argument in its strongest form: textmarquee is a pure SOURCE with no video input, so a lapsed mark would not stall a preview of somebody else\'s picture, it would MUTE the generator every downstream node is sampling. ⚠ WHAT IT PAINTS AS TEXT IS ALL CONTROL CAPTIONS — the six toolbar glyphs, the TEXT / FONT / SIZE / BG swatch labels, the twelve font NAMES inside the select that chooses them, and SCREEN ON/OFF — plus one empty-state badge, TYPE TEXT…, which names the surface\'s own condition (the samsloop NO SAMPLE LOADED shape) and tells the player that the "textmarquee" word in the picture is the factory placeholder rather than their document. ⚠ ZERO RESTING READOUTS WERE DELETED because the card painted none: no value, no measurement, not even a number beside the SIZE slider. ⚠ IT MUST STAY 2-D: textmarquee.ts is in the WebGL attest basis and this file is deliberately outside it, but resolveWebglBasis() step (2) sweeps lib/ui/modules/**/*.svelte by CONTENT, so a getContext("webgl") here would enrol it and put every future face edit on the real-GPU attest critical path.' },
 };
 
 /**

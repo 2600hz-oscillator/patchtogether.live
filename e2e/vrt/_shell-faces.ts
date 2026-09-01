@@ -4927,6 +4927,78 @@ export const FACES = [
   // `numpad-plus-writes.test.ts` pins what every gesture writes, and
   // `numpad-plus-face.spec.ts` drives the real grid and reads the graph back.
   { type: 'numpadPlus', pages: 4 },
+  // ── TEXTMARQUEE (2026-08-31) — the roster's first DOCUMENT EDITOR ─────────
+  //
+  // `pages: 1` — the face declares one band (`ribbon`) holding all four knobs,
+  // and nothing is lifted out of it (no hero), so the declared count and the
+  // painted count agree.
+  //
+  // ── ⚠ THE DETERMINISM ARGUMENT, IN THE ORDER THE RISK ACTUALLY RUNS ───────
+  //
+  // (1) `freezeFaceVideo` IS A NO-OP HERE, like bentbox and warrensvisions. It
+  //     writes `params.freeze = 1`; this def declares `scrollX`, `scrollY`,
+  //     `posX`, `posY` and nothing else, and the factory's `setParam` guard is
+  //     `if (paramId in params)`, so the write lands nowhere. ⚠ Do NOT "fix"
+  //     that by adding a `freeze` param — that is a `params` edit on a def
+  //     inside the WebGL attest basis, i.e. an owner-machine re-attest, to buy
+  //     an assertion that already holds for the reason below.
+  //
+  // (2) THE PICTURE HAS NO TIME TERM AT REST, EXACTLY. `surface.draw` calls
+  //     `computeDrawOffset`, which adds `scrollOffset(scrollX, frame.time, …)`
+  //     to a pure `posToDrawX/Y`. `scrollOffset` opens with
+  //     `vel = (clamp01(speedKnob) - 0.5) * 2 * MAX_SCREENS_PER_SEC * span`
+  //     and then `if (vel === 0) return 0`. `TEXTMARQUEE_DEFAULTS.scrollX` and
+  //     `.scrollY` are both 0.5, and `0.5 - 0.5 === 0` is exact in IEEE-754, so
+  //     the early return fires and `frame.time` reaches nothing. `bootWithFace`
+  //     spawns ONE node with nothing patched and no CV, so both scenes are a
+  //     STATIC ribbon by construction, not by a flag.
+  //
+  // (3) ⚠ THE REMAINING RISK IS GLYPH RASTERIZATION, AND IT IS NAMED RATHER
+  //     THAN ARGUED AWAY. With no card mounted and an empty model, the
+  //     `extras-producers` rasterizer clears the texture and the FACTORY's own
+  //     placeholder shows: `64px sans-serif`, the word "textmarquee", painted
+  //     into an OffscreenCanvas and uploaded as a GL texture. That is
+  //     system-font glyphs inside a texture — the class
+  //     `vrt-exemptions.ts`'s textmarquee block already names for this module's
+  //     CARD scene, where the canvas is MASKED. This file applies no masks, so
+  //     here it is compared.
+  //
+  //     The argument that it holds: `snapshotPathTemplate` carries no
+  //     `{platform}` segment, so there is ONE baseline set, authored on Linux
+  //     CI and compared on Linux CI. The old exemption's wording — "rasterize
+  //     differently ACROSS PLATFORMS" — is a cross-platform claim about a
+  //     one-platform pin, and same-image/same-Chromium/same-fontconfig glyph
+  //     rasterization is deterministic. The card scene is the partial evidence:
+  //     its toolbar, swatches, `<select>` and knob rows have been pinned and
+  //     green for this module's whole life; the canvas is the only thing it
+  //     never compared.
+  //
+  //     ⚠ THAT ARGUMENT IS NOT THE MEASUREMENT, AND MUST NOT BE READ AS ONE.
+  //     The measurement is two independent Linux boots: `vrt:commit` captures
+  //     the baselines on the runner, and this PR's own `vrt-strict` shard then
+  //     re-boots and compares against them. If that comparison shows ANY
+  //     differing pixels in the preview well, the honest outcome is to move
+  //     this module to `FACES_WITHOUT_SCENES` below CARRYING THAT NUMBER — not
+  //     a mask, and not a re-run.
+  {
+    type: 'textmarquee',
+    pages: 1,
+    videoFaceWhy:
+      'a VIDEO module, so it must boot into the video zone rather than a mixer channel column — '
+      + 'without this field bootWithFace waits out the full 90 s test timeout for a column '
+      + 'membership a video node never acquires. Both scenes also carry a live picture: the '
+      + 'compact tile paints a VideoTileThumb through hasVideoSurface (textmarquee\'s FIRST lane '
+      + 'picture — the card only ever painted its preview inside itself), and the dock body is '
+      + "the module's own fullViewBody extension: the rich-text editor, its toolbar, the layer "
+      + 'background swatch, the OUT preview and the SCREEN switch. The freeze write itself is a '
+      + 'NO-OP on this def — it declares no `freeze` param — and that is deliberate rather than '
+      + 'an omission: with scrollX/scrollY at their 0.5 defaults `scrollOffset` returns on '
+      + '`vel === 0` before `frame.time` is used at all, so the ribbon is placed by posX/posY '
+      + 'alone and both scenes are identical frame to frame by construction. What the picture '
+      + 'shows at rest is the FACTORY placeholder (the word "textmarquee" in 64px sans-serif), '
+      + 'because an empty model makes the node-lifetime rasterizer clear the texture rather than '
+      + 'push a black layer.',
+  },
 ] as const;
 
 /**
