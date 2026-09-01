@@ -84,6 +84,7 @@ import { froggerDef } from '$lib/audio/modules/frogger';
 import { scoreDef } from '$lib/audio/modules/score';
 import { chromaconsoleDef } from '$lib/audio/modules/chromaconsole';
 import { ptzcamDef } from '$lib/audio/modules/ptzcam';
+import { seqtrisDef } from '$lib/audio/modules/seqtris';
 import { trailsDef } from '$lib/audio/modules/trails';
 import { cubeDef } from '$lib/audio/modules/cube';
 import { cloudsDef } from '$lib/audio/modules/clouds';
@@ -405,6 +406,7 @@ const RANGE_BOUND_CARDS: Readonly<Record<string, { params: readonly ParamDef[] }
   'BackdraftCard.svelte': backdraftDef,
   'ChromaconsoleCard.svelte': chromaconsoleDef,
   'PtzcamCard.svelte': ptzcamDef,
+  'SeqtrisCard.svelte': seqtrisDef,
   'TrailsCard.svelte': trailsDef,
   'CubeCard.svelte': cubeDef,
   'CloudsCard.svelte': cloudsDef,
@@ -772,6 +774,7 @@ const MAPPING_BOUND_CARDS: readonly string[] = [
   'PictureboxCard.svelte',
   'ChromaconsoleCard.svelte',
   'PtzcamCard.svelte',
+  'SeqtrisCard.svelte',
   'TrailsCard.svelte',
   'CubeCard.svelte',
   'CloudsCard.svelte',
