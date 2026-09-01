@@ -40,7 +40,7 @@ import {
   listClipPlayers,
 } from './automation-assign';
 import type { Edge, ModuleNode } from './types';
-import { validateEdge } from './validate-edge';
+import { makeAdoptionGraph, validateEdge } from './validate-edge';
 import {
   COLUMN_COUNT,
   SEND_BOX_COUNT,
@@ -342,6 +342,13 @@ export function reconcileColumnWiring(resolveDef: ColumnDefResolver): boolean {
   // De-dup by id, then DROP any edge that fails validateEdge (prevents one
   // malformed edge from poisoning the whole reconcile pass for every peer).
   const nodesArr = Object.values(patch.nodes).filter(Boolean) as ModuleNode[];
+  // Built from the edges ALREADY in the patch, so a desired edge leaving a
+  // TYPE-TRANSPARENT output is judged on what that output actually emits.
+  const adoption = makeAdoptionGraph(
+    nodesArr,
+    Object.values(patch.edges).filter(Boolean) as Edge[],
+    resolveDef as never,
+  );
   const desiredById = new Map<string, WcolEdge>();
   for (const e of desired) {
     if (desiredById.has(e.id)) continue;
@@ -349,7 +356,7 @@ export function reconcileColumnWiring(resolveDef: ColumnDefResolver): boolean {
       id: e.id, source: e.source, target: e.target,
       sourceType: e.sourceType, targetType: e.targetType,
     };
-    if (!validateEdge(asEdge, nodesArr, resolveDef as never).ok) continue;
+    if (!validateEdge(asEdge, nodesArr, resolveDef as never, adoption).ok) continue;
     desiredById.set(e.id, e);
   }
 

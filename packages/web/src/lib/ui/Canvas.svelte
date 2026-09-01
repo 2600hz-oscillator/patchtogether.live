@@ -221,6 +221,9 @@
   // `?shell=1` opt-in preview flag so it's a strict no-op until owner sign-off.
   import { laneRenderKind, emittedTypeFor, isShellSwappable, dockRailRendersFace, NON_SHELL_LANE_TYPES } from '$lib/ui/workflow/legacy-fallback';
   import { migrated } from '$lib/ui/workflow/strict-faces';
+  // TEST SEAM (#2068): force a PROMOTED type back onto the un-migrated render
+  // path. Dev/VITE_E2E_HOOKS builds only — see `laneMigrated` below.
+  import { forcedUnmigrated, installForcedPlaceholderHook } from '$lib/dev/forced-placeholder.svelte';
   // DOM-SOURCE seam: a video module whose source lives on its CARD stays alive
   // in an off-screen host when the shell swaps its lane card away.
   import { HEADLESS_MOUNT_LANE_TYPES, DOM_SOURCE_LANE_TYPES, CARD_PRODUCER_LANE_TYPES, FACE_MOUNTS_PRODUCER, needsHeadlessSourceMount } from '$lib/ui/workflow/dom-source-modules';
@@ -340,7 +343,8 @@
   import { organizeLayout, type Box } from '$lib/ui/canvas/organize';
   import type { CableType, Edge, PortDef, ModuleNode } from '$lib/graph/types';
   import { canConnect } from '$lib/graph/types';
-  import { validateEdge } from '$lib/graph/validate-edge';
+  import { makeAdoptionGraph, validateEdge } from '$lib/graph/validate-edge';
+  import { effectiveOutputType } from '$lib/graph/adopted-type';
   import {
     audioEdgeId,
     expandLegGroups,
@@ -528,6 +532,34 @@
    *  the flag selects the old one. Anything other than exactly `legacy` (including a
    *  stale `?shell=1` bookmark) resolves to faceplates. */
   let shellFaces = $derived(page.url?.searchParams?.get('shell') !== 'legacy');
+
+  /**
+   * STRICT_FACES membership AS THE RENDER PATH MUST READ IT — the single
+   * promotion question this component asks, everywhere it asks it.
+   *
+   * It is `migrated(type)` in every build a user can reach. The second term is
+   * the FORCED-PLACEHOLDER TEST SEAM (#2068): under DEV / `VITE_E2E_HOOKS=1` a
+   * spec may name types that must render through the UN-MIGRATED path even
+   * though they are promoted, so a test whose subject is that path (the graph
+   * MIDI dispatch fallback, the dock's verbatim-card branch) keeps a subject
+   * after the last un-promoted module is gone. `forcedUnmigrated` re-reads the
+   * same gate and constant-folds to `false` in a production build, so this is
+   * `migrated(type)` there by construction — see
+   * `$lib/dev/forced-placeholder.svelte.ts` for both ends of the guard.
+   *
+   * ⚠ CANVAS IS THE ONE EVALUATION SITE and that is load-bearing here.
+   * `DockFullView`, `DockCardHost` and `AudioIoSurface` all take an INJECTED
+   * `migrated` boolean rather than calling `migrated()` themselves (see
+   * `dockRailRendersFace`'s header), so routing every read through this helper
+   * makes a forced type indistinguishable from an un-promoted one on EVERY
+   * surface at once — the lane tile, the dock full view, the rail tray and the
+   * 🎧 panel. A seam that moved only the lane would leave the dock painting a
+   * faceplate with no legacy card to drive, which is the half of the subject
+   * these specs actually need.
+   */
+  function laneMigrated(type: string): boolean {
+    return migrated(type) && !forcedUnmigrated(type);
+  }
 
   /** `?seed=none` — A TEST-ONLY EMPTY RACK. Suppresses the four one-shot
    *  SEEDERS below (the pinned M/E/C + surface singletons, the default
@@ -725,6 +757,12 @@
   // this body's top level would latch a stale value instead of re-installing.
   if (testHooksEnabled()) {
     onMount(() => {
+      // #2068 — `__forceUnmigrated(types)`: render those types through the
+      // UN-MIGRATED lane/dock path (see `laneMigrated`). Installed here rather
+      // than in the module body so it shares this block's one gate, and it
+      // drains `__forceUnmigratedPending` so an `addInitScript` write placed
+      // before boot is honoured too.
+      installForcedPlaceholderHook();
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (globalThis as any).__patch = patch;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -2227,7 +2265,7 @@
         node,
         title: dockDisplayName(node),
         pinned: false,
-        face: dockRailRendersFace({ shellFaces, pinned: false, migrated: migrated(node.type) }),
+        face: dockRailRendersFace({ shellFaces, pinned: false, migrated: laneMigrated(node.type) }),
       });
     }
     return out;
@@ -2725,7 +2763,7 @@
         userDocked: !!dockStore.entryFor(n.id),
         type: n.type,
         hasCard: isShellSwappable(n.type, cardTypeSet.has(n.type)),
-        migrated: migrated(n.type),
+        migrated: laneMigrated(n.type),
       });
       // ⚠ A DOCK FULL VIEW DOES NOT ALWAYS MOUNT THE REAL CARD, and this used
       // to be an unconditional `continue` that assumed it always does.
@@ -2767,7 +2805,7 @@
       // are named in `FACE_MOUNTS_PRODUCER` with the reason they can.
       const fullViewShowsFaceInstead =
         dockStore.isFullView(n.id) &&
-        migrated(n.type) &&
+        laneMigrated(n.type) &&
         (DOM_SOURCE_LANE_TYPES.has(n.type) ||
           (CARD_PRODUCER_LANE_TYPES.has(n.type) && !FACE_MOUNTS_PRODUCER.has(n.type)));
       if (
@@ -2841,7 +2879,7 @@
         face: dockRailRendersFace({
           shellFaces,
           pinned: true,
-          migrated: migrated(dockedBottomNode.type),
+          migrated: laneMigrated(dockedBottomNode.type),
         }),
       });
     }
@@ -2896,7 +2934,7 @@
       dockRailRendersFace({
         shellFaces,
         pinned: true,
-        migrated: migrated(workflowAudioInNode.type),
+        migrated: laneMigrated(workflowAudioInNode.type),
       }),
   );
   let workflowAudioOutFace = $derived(
@@ -2904,7 +2942,7 @@
       dockRailRendersFace({
         shellFaces,
         pinned: true,
-        migrated: migrated(workflowAudioOutNode.type),
+        migrated: laneMigrated(workflowAudioOutNode.type),
       }),
   );
   /** A cable feeds TIMELORDE's clock input (DIN assignment or hand-patch)
@@ -3175,7 +3213,7 @@
         userDocked: !!dockEntry,
         type: n.type,
         hasCard: isShellSwappable(n.type, cardTypeSet.has(n.type)),
-        migrated: migrated(n.type),
+        migrated: laneMigrated(n.type),
       });
       const emittedType = emittedTypeFor(renderKind, n.type);
       const dockZone = dockEntry?.zone ?? null;
@@ -4271,7 +4309,7 @@
       sourceType: 'audio',
       targetType: 'audio',
     };
-    return validateEdge(candidate, Object.values(patch.nodes) as ModuleNode[], defLookup).ok;
+    return validateEdge(candidate, Object.values(patch.nodes) as ModuleNode[], defLookup, liveAdoption()).ok;
   }
 
   /** The def a leg-group plan reads for a node, through the SAME three-registry
@@ -4685,7 +4723,7 @@
       sourceType,
       targetType,
     };
-    const verdict = validateEdge(candidate, Object.values(patch.nodes) as ModuleNode[], defLookup);
+    const verdict = validateEdge(candidate, Object.values(patch.nodes) as ModuleNode[], defLookup, liveAdoption());
     if (!verdict.ok) {
       trace(`reject connect ${connection.source}.${connection.sourceHandle} → ${connection.target}.${connection.targetHandle}: ${verdict.reason}`);
       return;
@@ -4833,7 +4871,15 @@
         params.handleType === 'source'
           ? def.outputs.find((p) => p.id === params.handleId)
           : def.inputs.find((p) => p.id === params.handleId);
-      cableType = port?.type as string | undefined;
+      // A carried OUTPUT carries what it EMITS, not what it declares — a
+      // TYPE-TRANSPARENT jack (`adoptsUpstreamFrom`) fed by a CV is carrying a
+      // CV, and every downstream consumer of this carry (the rear card's
+      // compat-dim, the front PatchPanel's, the drop modal, the patch-to
+      // picker) reads THIS value. Fixing it here fixes all of them at once.
+      cableType =
+        port && params.handleType === 'source'
+          ? (effectiveOutputType(params.nodeId, port, liveAdoption()) as string)
+          : (port?.type as string | undefined);
     }
     connectDragState.pickup({
       nodeId: params.nodeId,
@@ -5191,7 +5237,7 @@
     const lhs = { nodeId: droppedId, def: a };
     const rhs = { nodeId: ontoId, def: b };
     for (const dir of ['downstream', 'upstream'] as const) {
-      if (buildDropPlan(lhs, rhs, dir).census.offeredInputs > 0) return true;
+      if (buildDropPlan(lhs, rhs, dir, { adoption: liveAdoption() }).census.offeredInputs > 0) return true;
     }
     return false;
   }
@@ -5809,7 +5855,7 @@
       })
       .filter((edge): edge is Edge => edge !== null)
       .filter((edge) =>
-        validateEdge(edge, Object.values(patch.nodes) as ModuleNode[], defLookup).ok,
+        validateEdge(edge, Object.values(patch.nodes) as ModuleNode[], defLookup, liveAdoption()).ok,
       );
     if (planned.length === 0) return;
     ydoc.transact(() => {
@@ -7013,6 +7059,22 @@
   // handles every card style (PatchPanel-mounted handles AND directly-
   // rendered handles on cards like LINES / VIDEOOUT / SCOPE).
 
+  /** The live graph a connection validator needs to resolve a TYPE-TRANSPARENT
+   *  output (`PortDef.adoptsUpstreamFrom`): SCALER's `out` emits whatever is
+   *  patched into SCALER's `in`, so a CV routed through it must be judged `cv`
+   *  rather than on the declared `audio` fallback — otherwise every `cv` jack
+   *  refuses it and the adoption never applies (the owner's "scaler's output
+   *  wont patch to cv ins"). Rebuilt per call because the patch is live and a
+   *  cable added a moment ago must count; it is O(edges), the same order as the
+   *  `Object.values(patch.nodes)` every call site already does. */
+  function liveAdoption() {
+    return makeAdoptionGraph(
+      Object.values(patch.nodes) as ModuleNode[],
+      Object.values(patch.edges) as Edge[],
+      defLookup,
+    );
+  }
+
   function defLookup(type: string): AnyDef | undefined {
     // Meta defs (sticky etc.) carry inputs/outputs/params shaped
     // identically to AudioModuleDef / VideoModuleDef; AnyDef is the
@@ -7104,6 +7166,11 @@
       patch.edges,
       patch.nodes,
       defLookup,
+      // Name the jack the menu was opened on so a TYPE-TRANSPARENT output is
+      // offered the ports its ACTUAL emitted type reaches, not its fallback.
+      portMenuSourceNodeId && portMenuSourcePortId
+        ? { nodeId: portMenuSourceNodeId, portId: portMenuSourcePortId }
+        : undefined,
     );
   }
 
@@ -7685,7 +7752,12 @@
           detail.direction === 'output'
             ? def.outputs.find((p) => p.id === detail.portId)
             : def.inputs.find((p) => p.id === detail.portId);
-        cableType = port?.type as string | undefined;
+        // Same rule as handleClickConnectStart: a carried OUTPUT carries its
+        // EMITTED type so a pass-through fed by a CV lights the CV holes.
+        cableType =
+          port && detail.direction === 'output'
+            ? (effectiveOutputType(detail.nodeId, port, liveAdoption()) as string)
+            : (port?.type as string | undefined);
       }
       // Detach an occupied input when grabbing it (one-motion rewire) —
       // mirrors handleClickConnectStart.
@@ -7901,7 +7973,7 @@
       return;
     }
     const candidate: Edge = { id, source: from, target: to, sourceType, targetType };
-    const verdict = validateEdge(candidate, Object.values(patch.nodes) as ModuleNode[], defLookup);
+    const verdict = validateEdge(candidate, Object.values(patch.nodes) as ModuleNode[], defLookup, liveAdoption());
     if (!verdict.ok) {
       // SILENT discard — output→output / input→input / type-incompat.
       trace(`carry-commit reject ${from.nodeId}.${from.portId} → ${to.nodeId}.${to.portId}: ${verdict.reason}`);
@@ -8056,7 +8128,7 @@
     // future direct port-row picker) — validate + SILENTLY discard on
     // failure (no toast), matching the drag-path's silent return.
     const candidate: Edge = { id, source: from, target: to, sourceType, targetType };
-    const verdict = validateEdge(candidate, Object.values(patch.nodes) as ModuleNode[], defLookup);
+    const verdict = validateEdge(candidate, Object.values(patch.nodes) as ModuleNode[], defLookup, liveAdoption());
     if (!verdict.ok) {
       trace(`patch-to reject ${from.nodeId}.${from.portId} → ${to.nodeId}.${to.portId}: ${verdict.reason}`);
       return;
@@ -8607,10 +8679,25 @@
     if (!inputs) return undefined;
     return inputs.find((p) => canConnect(cableType, p.type));
   }
-  /** Pick the first output port whose type can drive `dstType`. */
-  function firstCompatibleOutput(outputs: PortDef[] | undefined, dstType: CableType): PortDef | undefined {
+  /** Pick the first output port whose type can drive `dstType`.
+   *
+   *  `willCarry` is the type the module is ABOUT to be fed on `inPortId` — a
+   *  splice knows that before the cable exists. A TYPE-TRANSPARENT output
+   *  (`adoptsUpstreamFrom: inPortId`) will therefore emit exactly that, which is
+   *  what lets SCALER or ATTENUMIX be dropped onto a live CV cable. Judged on
+   *  the declared `audio` fallback the splice was refused, so inserting a gain
+   *  stage into a CV run silently did nothing. */
+  function firstCompatibleOutput(
+    outputs: PortDef[] | undefined,
+    dstType: CableType,
+    fedInput?: { portId: string; willCarry: CableType },
+  ): PortDef | undefined {
     if (!outputs) return undefined;
-    return outputs.find((p) => canConnect(p.type, dstType));
+    return outputs.find((p) => {
+      const emitted =
+        fedInput && p.adoptsUpstreamFrom === fedInput.portId ? fedInput.willCarry : p.type;
+      return canConnect(emitted, dstType);
+    });
   }
 
   /** Search every edge in the current snapshot for one whose midpoint
@@ -8637,7 +8724,10 @@
       // Output side: pick the first declared output that can drive the
       // downstream port. The downstream port's declared type is
       // edge.targetType; canConnect(outPort.type, targetType) gates it.
-      const outPort = firstCompatibleOutput(newDef.outputs, e.targetType);
+      const outPort = firstCompatibleOutput(newDef.outputs, e.targetType, {
+        portId: inPort.id,
+        willCarry: e.sourceType,
+      });
       if (!outPort) continue;
       return { edge: e, inPort, outPort };
     }
@@ -9683,6 +9773,7 @@
               def: dropModal.ontoDef,
               label: patchDropLabel(dropModal.ontoId),
             }}
+            adoption={liveAdoption()}
             direction="downstream"
             live
             repairCandidates={patchDropRepairCandidates}
@@ -9726,7 +9817,7 @@
               node={fv.node}
               nodeTypes={nodeTypes as unknown as Record<string, unknown>}
               rackSize={rackSizeByType[fv.node.type]}
-              migrated={migrated(fv.node.type)}
+              migrated={laneMigrated(fv.node.type)}
               title={fv.title}
               onClose={() => dockStore.closeFullView(fv.node.id)}
               onCollapse={() => dockStore.closeFullView(fv.node.id)}

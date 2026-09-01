@@ -26,7 +26,7 @@ import {
   fixtureProblems,
   fixtureType,
 } from './_face-fixtures';
-import { BOOT_MS, PLACEHOLDER_PAINT_MS } from '../_helpers/boot-budget';
+import { BOOT_MS, PLACEHOLDER_PAINT_MS, SLOW_BOOT_TEST_TIMEOUT_MS } from '../_helpers/boot-budget';
 // Zero-import pure module — see `placeholderSubjectType` for why this is
 // imported rather than transcribed.
 import { NON_SHELL_LANE_TYPES } from '../../packages/web/src/lib/ui/workflow/legacy-fallback';
@@ -38,6 +38,29 @@ import { NON_SHELL_LANE_TYPES } from '../../packages/web/src/lib/ui/workflow/leg
 // #1904 sweep found the same defect at twenty more sites, and a bound that is
 // re-typed per spec is a bound that drifts — the reason frame waits have
 // exactly one home too.
+
+// ⚠ THE PER-TEST BUDGET IS A BOUND, AND IT WAS THE INVISIBLE 30 s DEFAULT.
+//
+// ⚠ AND THIS IS THE SPEC `boot-budget.ts` ITSELF NAMES as the most-flaked in the
+// suite (16 recovered flakes across 31 runs, #1875). #1904 moved its bounds to
+// the shared export and left the budget CONTAINING them at the flat default:
+// `PLACEHOLDER_PAINT_MS` is 45 000 on CI inside a 30 000 ms budget — 1.50x, a
+// tile wait that could not possibly finish. 4 sites (BOOT_MS + PLACEHOLDER_PAINT_MS).
+//
+// An inner bound at or above the budget that CONTAINS it can never come true:
+// the outer clock kills the test first, so a legible `element not found` is
+// converted into an illegible `Test timeout of 30000ms exceeded` — the class
+// #2291 root-caused and #2293 repaired at its second call site. Nothing in this
+// file said "30000"; `e2e/playwright.config.ts` never overrides Playwright's
+// default, so there was nothing to grep for except the ABSENCE of a budget.
+//
+// The budget therefore comes from `boot-budget` (90 000 on CI/SwiftShader,
+// 30 000 local) instead of the invisible default. A bound only costs wall-clock
+// when it is EXCEEDED, so this adds exactly zero to a green run; lane cost stays
+// gauged by `--global-timeout`, not by this.
+//
+// ⚠ BOUNDS ONLY. No assertion, subject or wait target changed here.
+test.describe.configure({ timeout: SLOW_BOOT_TEST_TIMEOUT_MS });
 
 async function gotoWorkflow(page: Page, opts: { shell: boolean }): Promise<void> {
   await page.goto(opts.shell ? '/rack' : '/rack?shell=legacy');
@@ -158,7 +181,8 @@ async function dropAndSettle(page: Page, spawn: () => Promise<unknown>, what: st
 /** Drive the REAL palette-drop path into channel column `ch`. */
 /**
  * A module type that renders a `module-shell-placeholder` in a lane — DERIVED
- * from the live registry, never named.
+ * from the live registry, never named, and RESOLVED AS A VALUE rather than
+ * returned-or-thrown (see `PlaceholderSubject` below).
  *
  * ⚠ WHY THIS EXISTS. A placeholder is what an UNPROMOTED module renders, so
  * every hard-coded placeholder subject in this file was a standing bet that the
@@ -176,7 +200,18 @@ async function dropAndSettle(page: Page, spawn: () => Promise<unknown>, what: st
  * carries its reason: a module whose SPAWN reaches for hardware or a permission
  * prompt would make this geometry test depend on the runner's devices.
  */
-function placeholderSubjectType(): string {
+
+/**
+ * The derivation's THREE outcomes — the same shape `_face-fixtures.ts`'s
+ * `deriveFixture` returns, and for the same reason: "the predicate went blind"
+ * and "the migration consumed every eligible subject" produce the same empty
+ * list and need OPPOSITE responses.
+ */
+type PlaceholderSubject =
+  | { kind: 'ok'; type: string; pool: readonly string[]; why: string }
+  | { kind: 'migration-complete' | 'no-candidate'; type: null; pool: readonly string[]; why: string };
+
+function derivePlaceholderSubject(): PlaceholderSubject {
   /**
    * Renders its verbatim legacy card in the lane — never a placeholder.
    *
@@ -205,6 +240,14 @@ function placeholderSubjectType(): string {
     'vstFx',          // a plugin host / user-supplied binary
     'vstInstrument',  // as vstFx
   ]);
+  /** Shell-eligible audio modules across the WHOLE population — promoted and
+   *  un-promoted alike. THE INSTRUMENT'S NEGATIVE CONTROL: promotion moves a
+   *  module out of the POOL, never out of this, so an empty result here means
+   *  the fitness rule itself stopped working (the `<Fader>` → `<NeonFader>`
+   *  rename class) and no amount of migration can cause it. */
+  const eligible = REGISTRY.filter(
+    (m) => m.domain === 'audio' && !NON_SHELL.has(m.type) && !NEEDS_HARDWARE.has(m.type),
+  ).map((m) => m.type);
   const candidates = REGISTRY.filter(
     (m) => m.strictFace !== true
       && m.domain === 'audio'
@@ -215,14 +258,73 @@ function placeholderSubjectType(): string {
     // Sorted so the pick is DETERMINISTIC across runs and shards — a test that
     // measured a different module each run would be unreproducible.
     .sort();
-  if (candidates.length === 0) {
-    throw new Error(
-      'no un-promoted, shell-eligible audio module is left to use as a PLACEHOLDER subject. '
-      + 'If the migration is genuinely complete, this test has outlived its subject and should '
-      + 'be retired deliberately — do not re-point it at a faced module.',
-    );
+
+  // ⚠ THE INSTRUMENT CHECK COMES BEFORE THE MIGRATION CHECK, exactly as in
+  // `deriveFixture` (:527 before :552). A blind filter presents itself as a
+  // finished migration, and that failure is SILENT AND GREEN — the worse of
+  // the two — so it must be reachable ahead of the skip that would absorb it.
+  if (eligible.length === 0) {
+    return {
+      kind: 'no-candidate',
+      type: null,
+      pool: candidates,
+      why:
+        `the placeholder-subject filter accepts NOTHING across the whole registry `
+        + `(${REGISTRY.length} modules, promoted and un-promoted alike). That cannot be a `
+        + 'migration state: promotion removes modules from the un-promoted POOL, never from the '
+        + 'population measured here. So the filter itself stopped working — `domain`, '
+        + '`NON_SHELL_LANE_TYPES` or the manifest changed shape. FIX THE FILTER; do not read a '
+        + 'finished migration into it.',
+    };
   }
-  return candidates[0]!;
+  // ⚠ AND EXHAUSTION IS A NAMED SKIP, NOT A THROW (#2295). This used to
+  // `throw new Error` from inside a test body, which is a hard RED in a state
+  // that is DESIGNED — the face programme finishing — landing on whichever
+  // unrelated PR promotes the last audio module. Runway measured 2026-09-01: 5.
+  if (candidates.length === 0) {
+    return {
+      kind: 'migration-complete',
+      type: null,
+      pool: candidates,
+      why:
+        'no un-promoted, shell-eligible audio module is left to use as a PLACEHOLDER subject — '
+        + `every one of the ${eligible.length} the filter accepts is now in STRICT_FACES. That is `
+        + 'the END STATE of the face programme, not a failure: nothing renders a '
+        + '`module-shell-placeholder` any more, so a tile-geometry test written about one has no '
+        + 'subject. Retire the case with the placeholder tile — do NOT re-point it at a faced '
+        + 'module, whose geometry is the faces suites\' subject and is covered there.',
+    };
+  }
+  return {
+    kind: 'ok',
+    type: candidates[0]!,
+    pool: candidates,
+    why: `placeholder subject: ${candidates[0]} — first by name of ${candidates.length} un-promoted, shell-eligible audio modules`,
+  };
+}
+
+const PLACEHOLDER_SUBJECT = derivePlaceholderSubject();
+
+/**
+ * The named reason a case skips when the derived pool cannot supply the
+ * subjects it needs — the ONE phrase the skip budget claims, so every one of
+ * these degradations is admitted by a single named entry.
+ *
+ * ⚠ `need` IS PART OF THE STATE, NOT A DETAIL. Two cases below need TWO
+ * DISTINCT placeholder types (uniformity is trivially true of a set of one),
+ * and a pool of exactly one is neither `ok` for them nor `migration-complete`
+ * for the derivation. Measured 2026-09-01: promoting `recorderbox` ALONE — one
+ * face PR — emptied the default rack of placeholders and reddened THREE cases
+ * in this file, because each of them was quietly borrowing the seeded video
+ * zone's tile instead of dropping a subject of its own. Each now drops what it
+ * needs and says so when it cannot.
+ */
+function placeholderPoolShortfall(need: number): string {
+  return (
+    `the derived placeholder pool cannot supply ${need} distinct un-promoted subject(s): it holds `
+    + `${PLACEHOLDER_SUBJECT.pool.length} (${PLACEHOLDER_SUBJECT.pool.join(', ') || 'none'}). `
+    + PLACEHOLDER_SUBJECT.why
+  );
 }
 
 async function dropInColumn(page: Page, type: string, ch: number): Promise<void> {
@@ -517,13 +619,39 @@ test.describe('P0.3b workflow-shell legacy-fallback bridge', () => {
     // the floor that makes the comparison mean anything, and if promotions ever
     // drain the rack below it this fails LOUDLY — asking for a new subject —
     // rather than passing while measuring nothing.
+    // ── THE INSTRUMENT FIRST, THEN THE MIGRATION (the `deriveFixture` order) ─
+    // A filter that accepts nothing anywhere reads exactly like a finished
+    // migration and fails GREEN, so it reds here — ahead of the skip.
+    expect(
+      PLACEHOLDER_SUBJECT.kind === 'no-candidate' ? PLACEHOLDER_SUBJECT.why : null,
+      'the placeholder-subject derivation went blind',
+    ).toBeNull();
+    // An exhausted pool is the DESIGNED end state: with every audio module
+    // faced, nothing renders a `module-shell-placeholder` and a test about
+    // placeholder geometry has no subject. NAMED skip (#2295) — it used to be a
+    // throw from inside this body, i.e. a red for a non-defect.
+    //
+    // ⚠ THE THRESHOLD IS **TWO**, NOT ONE, AND THAT IS THE FLOOR BELOW SPEAKING.
+    // "Uniform" is trivially true of a set of one, so this case needs two
+    // DISTINCT placeholder types — and it used to get the second one from the
+    // seeded rack, which is a borrowed subject, not a derived one.
+    test.skip(PLACEHOLDER_SUBJECT.pool.length < 2, placeholderPoolShortfall(2));
+
     await gotoWorkflow(page, { shell: true });
     await waitForHooks(page);
-    // The default rack alone no longer clears the floor — promotions have
-    // drained it to ONE placeholder (measured 2026-08-24: `recorderbox`). So the
-    // second subject is DROPPED, and its type is derived rather than named, by
-    // the same rule that decides what a placeholder IS.
-    await dropInColumn(page, placeholderSubjectType(), 1);
+    // ⚠ BOTH SUBJECTS ARE NOW DROPPED, AND THE SEEDED RACK IS NOT COUNTED ON.
+    // This used to drop ONE and rely on the default rack for the other, with a
+    // note saying promotions had drained it to a single placeholder
+    // (`recorderbox`, measured 2026-08-24). That last seeded placeholder is one
+    // face PR from gone: measured 2026-09-01, promoting `recorderbox` alone
+    // takes the rack to ZERO and this case fails on its own floor
+    // ("uniformity needs at least two DISTINCT placeholder module types"),
+    // which reads like a tile-geometry regression. Dropping both makes the
+    // population this case measures its OWN, and the skip above states the one
+    // condition under which it cannot have it.
+    for (const t of PLACEHOLDER_SUBJECT.pool.slice(0, 2)) {
+      await dropInColumn(page, t, 1);
+    }
     const placeholders = page.locator(`${MAIN_CANVAS} [data-testid="module-shell-placeholder"]`);
     await expect(placeholders.first()).toBeVisible({ timeout: PLACEHOLDER_PAINT_MS });
 
@@ -568,14 +696,32 @@ test.describe('P0.3b workflow-shell legacy-fallback bridge', () => {
     // path, then prove every tile is the SAME width/height AND the stack is flush
     // (each member's flow-space slot is exactly one tile-height above the next —
     // no overlap, no gap), so the reserved slot == the rendered tile at every zoom.
+    // The mixed population below needs ONE un-promoted subject; without it the
+    // placeholder half of the claim has nothing to measure. NAMED skip (#2295).
+    expect(
+      PLACEHOLDER_SUBJECT.kind === 'no-candidate' ? PLACEHOLDER_SUBJECT.why : null,
+      'the placeholder-subject derivation went blind',
+    ).toBeNull();
+    test.skip(PLACEHOLDER_SUBJECT.pool.length < 1, placeholderPoolShortfall(1));
+
     await gotoWorkflow(page, { shell: true });
     await waitForHooks(page);
-    const types = ['tidyVco', 'vca', 'delay'];
+    // ⚠ THE THIRD MEMBER IS DERIVED, AND IT USED TO BE THE LITERAL `delay`
+    // (#2295). The three drops exist to put BOTH lane kinds in ONE column — the
+    // uniform-width claim is only interesting across a shell tile and a
+    // placeholder tile — and `delay` was named as the placeholder. It was
+    // promoted in P1 batch 3, so from then on all three drops were faced and
+    // the placeholder assertion below was being satisfied by the SEEDED VIDEO
+    // ZONE instead, from a different column: a precondition passing for a
+    // reason the test never states. Measured 2026-09-01: promote `recorderbox`
+    // — the rack's last seeded placeholder — and this case reds with
+    // "Received: 0" on a change that breaks nothing it was written to protect.
+    const types = ['tidyVco', 'vca', PLACEHOLDER_SUBJECT.pool[0]!];
     for (const t of types) {
       await dropInColumn(page, t, 1);
     }
-    // Tiles mounted (tidyVco/vca render the migrated shell as of P1 batch 1;
-    // delay + the video-zone trio stay placeholders).
+    // Tiles mounted: tidyVco/vca render the migrated shell, and the derived
+    // third member renders the placeholder — BOTH KINDS, in this column.
     // ⚠ BOTH SCOPED TO THE CANVAS, and the second one had ALREADY GONE BLIND.
     // `page.locator('[data-testid="module-shell"]')` matched the pinned audioOut
     // faceplate in the always-mounted 🎧 topbar panel, so "a migrated tile
@@ -710,9 +856,22 @@ test.describe('P0.3b workflow-shell legacy-fallback bridge', () => {
     // CONTENT inside the tile swaps (data-shell-tier still promotes mini →
     // compact → full) — so every node's flow position is BYTE-IDENTICAL across
     // zoom levels that cross BOTH tier boundaries (0.30 and 0.52).
+    // Same shape as the case above: the tier/box invariants are asserted across
+    // BOTH lane kinds, so one un-promoted subject is a precondition. NAMED skip.
+    expect(
+      PLACEHOLDER_SUBJECT.kind === 'no-candidate' ? PLACEHOLDER_SUBJECT.why : null,
+      'the placeholder-subject derivation went blind',
+    ).toBeNull();
+    test.skip(PLACEHOLDER_SUBJECT.pool.length < 1, placeholderPoolShortfall(1));
+
     await gotoWorkflow(page, { shell: true });
     await waitForHooks(page);
-    for (const t of ['tidyVco', 'vca']) {
+    // ⚠ THE PLACEHOLDER IS DROPPED, NOT BORROWED (#2295). Both drops here are
+    // promoted, so the assertion below was being satisfied by whatever
+    // placeholder the SEEDED rack happened to still have — measured
+    // 2026-09-01, that is `recorderbox` and nothing else, so its promotion
+    // reddens this case with "Received: 0" for a non-defect.
+    for (const t of ['tidyVco', 'vca', PLACEHOLDER_SUBJECT.pool[0]!]) {
       await dropInColumn(page, t, 1);
     }
     await expect(page.locator('[data-testid="module-shell-placeholder"]')).not.toHaveCount(0);
@@ -757,14 +916,23 @@ test.describe('P0.3b workflow-shell legacy-fallback bridge', () => {
   // 96 h CI census to 2026-08-18 — never a hard failure, so every one of those jobs reported SUCCESS.
   // LOST WHILE PARKED: the tile header composition — domain-colour rule, gap, the FULL long name (not truncated) and the type badge on row 2; the identity a user reads a lane by.
   // Re-enable only on a root cause (#1847); "it passes now" is not one.
-  // ⚠ WHOEVER UN-PARKS THIS: ITS SUBJECT MOVED WHILE IT SLEPT (2026-08-24).
-  // `workflow-synesthesia` is PROMOTED, so it renders `module-shell` and never a
-  // `module-shell-placeholder` — this body's wait will time out for a reason
-  // that has nothing to do with #1847, and reading that as "still flaky" would
-  // be wrong. Give it a placeholder subject first (the live test above derives
-  // one from the rack rather than naming it, which is the pattern to copy).
-  // The BODY IS DELIBERATELY UNTOUCHED, per the park's own terms — this is a
-  // note, not an edit to the assertions.
+  // ⚠ ITS SUBJECT MOVED WHILE IT SLEPT (2026-08-24), AND THAT HALF IS NOW FIXED
+  // (#2295). The note here used to say only that `workflow-synesthesia` had been
+  // PROMOTED — so it renders `module-shell`, never a `module-shell-placeholder`,
+  // and this body's wait would have timed out for a reason with no relation to
+  // #1847 — and it left the assertions untouched "per the park's own terms".
+  // That is how an already-false assertion sits preserved in amber: the park
+  // absorbs it, and whoever un-parks reads the timeout as "still flaky". The
+  // SUBJECT is therefore repaired now, ahead of any un-park, and DERIVED rather
+  // than re-typed (the live test above is the pattern).
+  //
+  // ⚠ THE PARK ITSELF STAYS, and the distinction is the whole reason to say so.
+  // #1847 is CI nondeterminism — 2 recovered-on-retry observations in the 96 h
+  // census to 2026-08-18, six days BEFORE synesthesia was promoted — so the
+  // stale subject cannot be its cause and fixing the subject is not a root
+  // cause. This file's own rule holds: *"Re-enable only on a root cause; 'it
+  // passes now' is not one."* What changed is that an un-park now measures
+  // #1847 instead of measuring a dead node id.
   test.fixme('tile header: domain-colour rule ── gap ── FULL long name, type badge on row 2', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 2 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page }) => {
     // The owner tile-header redesign: the module NAME no longer shares its row
     // with the type badge (long names truncated as "RECORDE…"/"SYNESTH…"). Row 1
@@ -772,8 +940,59 @@ test.describe('P0.3b workflow-shell legacy-fallback bridge', () => {
     // the tile's LEFT edge, vertically centred on the name text, stopping at a
     // set gap BEFORE the name; the NAME then takes the full remaining width. The
     // faint uppercase type badge moved DOWN to row 2.
+    // ⚠ THE SUBJECTS ARE DERIVED, AND THE TWO NAMES THAT USED TO BE HERE ARE
+    // WHY (#2295). `['workflow-recorderbox', 'workflow-synesthesia']` was a
+    // standing bet that neither module would be faced; `synesthesia` was
+    // promoted on 2026-08-24 and the leg has been asserting a placeholder for a
+    // faced module ever since, invisible because the park absorbs it.
+    //
+    // Instrument first, then the migration — the `deriveFixture` order.
+    expect(
+      PLACEHOLDER_SUBJECT.kind === 'no-candidate' ? PLACEHOLDER_SUBJECT.why : null,
+      'the placeholder-subject derivation went blind',
+    ).toBeNull();
+    test.skip(PLACEHOLDER_SUBJECT.kind === 'migration-complete', PLACEHOLDER_SUBJECT.why);
+
     await gotoWorkflow(page, { shell: true });
-    const ids = ['workflow-recorderbox', 'workflow-synesthesia'];
+    await waitForHooks(page);
+    // ⚠ THE LONGEST-NAMED CANDIDATE, not the alphabetical pick the sibling test
+    // uses, because THE NAME IS THIS TEST'S SUBJECT: the reported bug was a long
+    // name truncating to "RECORDE…" when it shared row 1 with the type badge, so
+    // the strongest available subject is the longest name the pool still offers.
+    // Ties break on the name so the choice is deterministic across shards.
+    //
+    // ⚠ AND THERE IS DELIBERATELY NO MINIMUM NAME LENGTH. A floor would be a
+    // threshold sitting on a population the face programme is draining — the
+    // ratchet hazard `_face-fixtures.ts` records for its own deleted
+    // `pool.length <= 1` slack floor — and it would red on a promotion rather
+    // than on a defect. What the assertions lose as the pool shortens is stated
+    // instead: the "renders in FULL / no ellipsis" leg gets weaker the shorter
+    // the longest remaining name is, while the rule, gap and badge-row geometry
+    // legs are length-independent and keep their full strength.
+    const longestNamed = [...PLACEHOLDER_SUBJECT.pool].sort(
+      (a, b) => b.length - a.length || a.localeCompare(b),
+    )[0]!;
+    await dropInColumn(page, longestNamed, 1);
+
+    // The population is read off the RACK — every placeholder tile the default
+    // rack seeded plus the one just dropped — so a promotion drops a member
+    // automatically instead of leaving a dead node id asserted here.
+    const ids = await page.evaluate(
+      (canvasSel) =>
+        Array.from(
+          document.querySelectorAll(`${canvasSel} [data-testid="module-shell-placeholder"]`),
+        )
+          .map((tile) => tile.closest('.svelte-flow__node')?.getAttribute('data-id') ?? '')
+          .filter((id) => id !== ''),
+      MAIN_CANVAS,
+    );
+    // MINIMUM-POPULATION GUARD: a per-tile loop over an empty list passes while
+    // measuring nothing, and this list is derived from the DOM.
+    expect(
+      ids,
+      'no placeholder tile is on the rack, so the header composition is measured on nothing — '
+        + `the derived drop (${longestNamed}) did not land`,
+    ).not.toEqual([]);
     for (const id of ids) {
       await expect(
         page.locator(`.svelte-flow__node[data-id="${id}"] [data-testid="module-shell-placeholder"]`),
@@ -796,6 +1015,9 @@ test.describe('P0.3b workflow-shell legacy-fallback bridge', () => {
         // zoom transform). offsetParent for all of these is the relative .rl-tile.
         return {
           id,
+          // The module TYPE the tile itself reports, so the expected name is
+          // DERIVED from the subject rather than matched against a literal.
+          shellType: tile.getAttribute('data-shell-type') ?? '',
           tileW: tile.offsetWidth,
           nameText: (name.textContent ?? '').trim(),
           nameScrollW: name.scrollWidth,
@@ -814,11 +1036,24 @@ test.describe('P0.3b workflow-shell legacy-fallback bridge', () => {
       });
     }, ids);
 
-    expect(metrics.every((m) => m !== null), 'both long-name placeholders resolved').toBe(true);
+    expect(metrics.every((m) => m !== null), 'every placeholder resolved its header parts').toBe(true);
     for (const m of metrics) {
-      // (b) the FULL long name renders — no ellipsis: the auto-namer's bare
-      // prefix (RECORDERBOX / SYNESTHESIA) fits the 192px tile un-truncated.
-      expect(m!.nameText, `${m!.id}: the full long name is present`).toMatch(/^(RECORDERBOX|SYNESTHESIA)$/);
+      // (b) the FULL name renders — no ellipsis: the auto-namer's own output
+      // fits the 192px tile un-truncated.
+      //
+      // ⚠ THE EXPECTATION IS DERIVED FROM THE TILE'S OWN TYPE, not matched
+      // against `/^(RECORDERBOX|SYNESTHESIA)$/`. That alternation was a second
+      // copy of the hard-coded subject list and would have gone red on the very
+      // promotion the ids above already survive. `nextDefaultName`
+      // ($lib/multiplayer/module-naming) gives the FIRST instance of a type the
+      // bare uppercased type and every later one a numeric suffix ≥ 2 — never
+      // `<TYPE>1` — so this is the auto-namer's contract restated, and a
+      // truncated render ("RECORDE…") fails it whatever the module is.
+      const expectedName = new RegExp(`^${m!.shellType.toUpperCase().replace(/[^A-Z0-9]/g, '.')}\\d*$`);
+      expect(
+        m!.nameText,
+        `${m!.id}: the FULL auto-name for '${m!.shellType}' is present, un-truncated`,
+      ).toMatch(expectedName);
       expect(m!.nameScrollW, `${m!.id}: name does not overflow (no …)`).toBeLessThanOrEqual(m!.nameClientW);
       // (c) the decorative rule: 2px thick, DOMAIN colour (== the spine hue),
       // from the tile's LEFT edge, with a clean set gap BEFORE the name.

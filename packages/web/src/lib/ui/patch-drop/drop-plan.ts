@@ -82,6 +82,8 @@
 // makes "nothing is ever silently absent" a checkable property rather than a
 // promise.
 
+import { effectiveOutputType, type AdoptionGraph } from '$lib/graph/adopted-type';
+export type { AdoptionGraph };
 import { canConnectToPort } from '$lib/graph/types';
 // The lattice lives in `graph/` (#1780): `graph/types.ts` derives canConnect's
 // video quadrant from it and must not reach up into `ui/`, so the modal and the
@@ -108,6 +110,11 @@ export interface DropPortLike {
   label?: string;
   accepts?: readonly string[];
   paramTarget?: string;
+  /** OUTPUT jacks only: this port emits whatever is patched into the named
+   *  INPUT (PortDef.adoptsUpstreamFrom). Carried here so the drop plan can ask
+   *  the shared walk what the jack ACTUALLY emits instead of offering rows
+   *  against a declared fallback that is wrong the moment a CV is upstream. */
+  adoptsUpstreamFrom?: string;
 }
 
 /** Which way the modal is currently reading the drop. */
@@ -270,7 +277,7 @@ export function buildDropPlan(
   dropped: DropSideInput,
   onto: DropSideInput,
   direction: DropDirection,
-  opts: { carriedPortId?: string } = {},
+  opts: { carriedPortId?: string; adoption?: AdoptionGraph } = {},
 ): DropPlan {
   const fromSide = direction === 'downstream' ? onto : dropped;
   const intoSide = direction === 'downstream' ? dropped : onto;
@@ -298,12 +305,23 @@ export function buildDropPlan(
   const accepts = (cable: string, p: DropPortLike) =>
     canConnectToPort(cable, { type: p.type, accepts: p.accepts });
 
-  const carriable: CarriableOut[] = allOuts.map((p) => ({
-    portId: p.id,
-    label: portLabel(p),
-    cable: p.type,
-    reaches: allIns.some((i) => accepts(p.type, i)),
-  }));
+  // A TYPE-TRANSPARENT output (`adoptsUpstreamFrom`) carries what is patched
+  // into the input it adopts from, so that is what the modal must offer rows
+  // against — judged on the declaration, a SCALER already fed by an LFO showed
+  // every CV input as REFUSED. `effectiveOutputType` falls back to the declared
+  // type with nothing upstream (and with no `adoption` supplied at all), so a
+  // caller that cannot see the graph keeps exactly today's behaviour.
+  const emits = (p: DropPortLike) => effectiveOutputType(from.nodeId, p, opts.adoption) as string;
+
+  const carriable: CarriableOut[] = allOuts.map((p) => {
+    const cable = emits(p);
+    return {
+      portId: p.id,
+      label: portLabel(p),
+      cable,
+      reaches: allIns.some((i) => accepts(cable, i)),
+    };
+  });
   // Prefer an output that can actually land somewhere: opening on a dead carry
   // when a live one exists would make the modal look empty for no reason. The
   // user's explicit pick still wins over the preference.

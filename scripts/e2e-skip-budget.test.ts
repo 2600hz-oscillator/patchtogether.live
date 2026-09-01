@@ -230,3 +230,95 @@ describe('the lane gate itself (budgetViolations) — the predicate CI calls', (
     expect(budgetViolations(rows, 'behavioral')).toEqual([]);
   });
 });
+
+// ── the `collab` lane, armed 2026-09-01 (#2294) ────────────────────────────
+//
+// Until this issue the collab lane was UNAUDITED: it passed no `--lane`, and
+// `--lane collab` was rejected outright by the audit CLI. Every runtime skip on
+// the one lane that carries the eleven two-peer DOOM multiplayer tests printed
+// and gated nothing, so "the DOOM WASM/WAD provisioning broke and all eleven
+// stood down" and "all eleven passed" produced the same green job.
+//
+// The assertions below are about the BOUNDARY, not about a population snapshot:
+// exactly one named quarantine is admitted, and the DOOM guards deliberately are
+// not — the lane must redden when they fire, because that is the whole signal.
+describe('the collab lane (#2294): armed, with ONE named skip', () => {
+  it('is an audited lane at all — `--lane collab` used to be rejected', () => {
+    expect(AUDITED_LANES).toContain('collab');
+    // KNOWN_LANES spreads AUDITED_LANES, so promoting a lane must not leave a
+    // duplicate behind — a homeLane check reading a doubled list still passes,
+    // which is how a stale second copy survives unnoticed.
+    expect(KNOWN_LANES.filter((l) => l === 'collab')).toEqual(['collab']);
+  });
+
+  it('admits the ONE legitimate skip: in-card-title\'s task #101 quarantine', () => {
+    // The `50 passed / 1 skipped` measured on 2026-09-01 is this row.
+    const rows = [
+      {
+        file: 'in-card-title.spec.ts',
+        title: 'rename in A appears in B inside the in-card title (peer Yjs sync)',
+        reason:
+          'task #101: quarantined — relay-contention timeout on the @collab lane; '
+          + 'root-cause the A→relay→B propagation stall, add a regression test, then un-fixme',
+      },
+    ];
+    expect(budgetViolations(rows, 'collab')).toEqual([]);
+  });
+
+  it('⚠ REDDENS a DOOM asset skip — the eleven-tests-go-dark regression this lane exists to catch', () => {
+    // Not a hypothetical shape: the WAD is fetched over the network from a
+    // third-party mirror inside the collab job. If that step degrades, every
+    // doom-mp-* test hits `test.skip(!assets.ok, assets.reason)` and the suite
+    // reports a serene "40 passed / 11 skipped".
+    //
+    // ⚠ THIS IS ALSO WHERE THE DOOM FLAKE CARVE-OUT MUST *NOT* REACH.
+    // e2e-report-audit.mjs excludes doom-*.spec.ts from `--fail-on-flaky` by
+    // owner ruling; the skip budget has no such exclusion and must not grow one.
+    // A DOOM flake is DOOM's timing being DOOM. A DOOM skip is DOOM not running.
+    const doomRows = [
+      { file: 'doom-mp-real.spec.ts', title: 'owner hosts + launches MP as P1', reason: 'DOOM WASM / WAD missing' },
+      {
+        file: 'doom-mp-lockstep-sharedstate.spec.ts',
+        title: 'two peers in a FRESH coop game share IDENTICAL gamestate',
+        reason: 'DOOM WASM / WAD missing — run build-doom-wasm.sh + fetch DOOM1.WAD',
+      },
+    ];
+    const v = budgetViolations(doomRows, 'collab');
+    expect(v.length).toBe(2);
+    for (const row of v) expect(row.violation).toMatch(/no budget entry/);
+  });
+
+  it('⚠ no entry admits a DOOM spec on collab — the invariant #2294 bought', () => {
+    // Stated as an invariant rather than a snapshot so it does not go stale on
+    // unrelated additions. Widening this is not a bookkeeping edit: it re-opens
+    // the exact hole the issue closed, and DOOM changes need owner approval.
+    const doomAdmitted = SKIP_BUDGET.filter((e) => e.lanes.includes('collab'))
+      .flatMap((e) => e.specs.filter((s) => /^doom-/.test(s)).map((s) => `${s} via ${e.reason}`));
+    expect(
+      doomAdmitted,
+      'A DOOM skip admitted on the collab lane means the eleven multiplayer tests can stand '
+        + 'down silently again (#2294). Do not register one to quiet a red lane.',
+    ).toEqual([]);
+  });
+
+  it('REDDENS an unregistered reason and a reasonless row on collab, like every other lane', () => {
+    const unknown = budgetViolations(
+      [{ file: 'awareness.spec.ts', title: 'both contexts converge', reason: 'relay was busy, never mind' }],
+      'collab',
+    );
+    expect(unknown.length).toBe(1);
+    expect(unknown[0]!.violation).toMatch(/no budget entry/);
+
+    const anonymous = budgetViolations(
+      [{ file: 'shared-rack-sync.spec.ts', title: 'full flow', reason: null }],
+      'collab',
+    );
+    expect(anonymous.length).toBe(1);
+    expect(anonymous[0]!.violation).toMatch(/reasonless/);
+  });
+
+  it('CONTROL: the collab quarantine is NOT admitted on e2e — arming one lane is not arming all', () => {
+    const rows = [{ file: 'in-card-title.spec.ts', title: 't', reason: 'task #101: quarantined' }];
+    expect(budgetViolations(rows, 'e2e').length).toBe(1);
+  });
+});

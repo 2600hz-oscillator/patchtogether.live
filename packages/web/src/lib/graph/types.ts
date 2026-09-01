@@ -359,11 +359,27 @@ export interface PortDef {
    * had ZERO effect at a video destination. Adopting the upstream type keeps a
    * CV signal CV through the bridge so AMOUNT actually scales the ±CV value.
    *
-   * Resolution is LIVE (re-derived in buildPatchSnapshot every graph update),
-   * so re-patching the upstream re-types the output. Falls back to this port's
-   * declared `type` when nothing is patched upstream, or when the adopted type
-   * could not legally reach the actual downstream target (canConnect guard) —
-   * so an audio source still emits `audio` and drives an audio bus normally.
+   * Resolution is LIVE (re-derived every graph update), so re-patching the
+   * upstream re-types the output. Falls back to this port's declared `type`
+   * when nothing is patched upstream, or when the adopted type could not
+   * legally reach the actual downstream target (canConnect guard) — so an audio
+   * source still emits `audio` and drives an audio bus normally.
+   *
+   * ⚠ IT IS A CONNECT-TIME RULE AS WELL AS A READ-TIME ONE. The walk lives in
+   * `./adopted-type` and is shared by `buildPatchSnapshot` (which re-types an
+   * EXISTING edge) and by every validator that decides whether a NEW cable may
+   * be created (`validateEdge`, the patch-to cascade, the drop modal, the rear
+   * card, the matrix grid, the cable splice). It used to live only in the
+   * snapshot, which meant `canConnect` — handed two cable types and no graph —
+   * judged SCALER's `out` on its declared `audio` and refused every `cv` jack,
+   * so the adoption could never apply: transparent for reading, opaque for
+   * patching. `canConnect` is unchanged and still refuses `audio → cv`; what
+   * changed is only WHICH type a pass-through is judged on.
+   *
+   * ⚠ WITH NOTHING UPSTREAM THE DECLARED TYPE STANDS, so a bare pass-through
+   * cannot be patched into a jack only its adopted type could reach. That is
+   * deliberate — the edge would genuinely carry the declared type — and every
+   * adopting module says so in its docs: patch the input first.
    */
   adoptsUpstreamFrom?: string;
 }
