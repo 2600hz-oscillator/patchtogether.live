@@ -21,9 +21,9 @@ Every registered module carries exactly one **disposition**: what kind of work i
 
 | disposition | what it means | modules | done |
 |---|---|---|---|
-| `generic-face` | author a `face` and rank the controls — no new platform capability | 177 | 177 |
+| `generic-face` | author a `face` and rank the controls — no new platform capability | 178 | 177 |
 | `blocked` | would be a face today but for the named capability, and nothing else | 0 | — |
-| `bespoke-surface` | the primary interaction is not param-shaped — needs a purpose-built surface | 17 | — |
+| `bespoke-surface` | the primary interaction is not param-shaped — needs a purpose-built surface | 16 | — |
 | `organizational-native` | rack furniture; not a migration at all | 3 | — |
 
 ## What each blocker buys
@@ -95,7 +95,7 @@ author a `face` and rank the controls — no new platform capability.
 | `graphicEq` | video | done | — |
 | `illogic` | audio | done | — |
 | `inwards` | video | done | — |
-| `joystick` | audio | done | — |
+| `joystick` | audio | — | — |
 | `karplus` | audio | done | — |
 | `kickdrum` | audio | done | — |
 | `kria` | audio | done | — |
@@ -194,6 +194,7 @@ author a `face` and rank the controls — no new platform capability.
 | `synesthesia` | audio | done | — |
 | `tempest` | video | done | — |
 | `tempolock` | audio | done | — |
+| `textmarquee` | video | done | — |
 | `tidyVco` | audio | done | — |
 | `tiler` | video | done | — |
 | `timelorde` | audio | done | — |
@@ -240,7 +241,6 @@ the primary interaction is not param-shaped — needs a purpose-built surface.
 | `peertube` | video | — | `needs-media-controller` |
 | `recorderbox` | video | — | `needs-media-controller` |
 | `seqtris` | audio | — | — |
-| `textmarquee` | video | — | — |
 | `toybox` | video | — | `needs-media-controller` |
 | `trails` | audio | — | — |
 | `videobox` | video | — | `needs-media-controller` |

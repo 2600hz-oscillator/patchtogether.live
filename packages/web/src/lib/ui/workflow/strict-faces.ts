@@ -5344,6 +5344,56 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // refuses that field when there is none.
   'blood',
 
+  // ── TEXTMARQUEE (2026-08-31) — the roster's first RICH-TEXT EDITOR ───────
+  //
+  // ⚠ THE INVENTORY SAID `bespoke-surface` AND ITS FACTS WERE TRUE. It read:
+  // "a RICH TEXT EDITOR: a contenteditable marquee with per-run colour and
+  // formatting. Typing the text IS the module, and it is beyond a short-text
+  // field." Every clause of that is accurate — and the CONCLUSION it drew is
+  // the picturebox/painter/score shape, invalidated by a slot that did not
+  // exist when it was written. A `fullViewBody` is not a CELL; it does not have
+  // to be short, scalar or parseable. `ShellEntryCell` (#1509) is real and
+  // shipped, and it is emphatically NOT the seam here — it parses one scalar
+  // per cell, which a styled multi-paragraph document is not. The face does not
+  // squeeze the editor into a field; it hands the editor the faceplate's full
+  // width.
+  //
+  // ⚠ THE PROMOTION'S ONE REAL HAZARD IS THE MODEL WRITER. All four params
+  // (ScrlX/ScrlY/PosX/PosY) only MOVE the ribbon; what it SAYS is
+  // `node.data.richText`, and the only affordance in the tree that could write
+  // it was `TextmarqueeCard.svelte`, which promotion stops the shipping shell
+  // rendering. Thirteen of the card's fifteen `data-testid`s are that writer —
+  // a live DOM Selection (align/B/I/U), three colour inputs, a twelve-entry
+  // font `<select>`, a size range and the `contenteditable` itself — and ZERO
+  // of them are expressible as a face cell. All thirteen move to the body.
+  //
+  // ⚠ AND THE RE-HOST IS NOT A MOVE, IT IS A SEMANTIC CHANGE UNLESS YOU STOP
+  // IT. `serializeEditor` reads `getComputedStyle`, so the editor's CASCADE is
+  // part of the persisted document: the card's `.editor` rule set
+  // `color:#ffffff` and `white-space:pre-wrap`, and `.dock-ext-body` sets
+  // neither and inherits the faceplate's `var(--text, #eef1f5)`. A body that
+  // simply copied the markup would have written `#eef1f5` into every untouched
+  // run of every rack anyone opened the dock on — Y.Doc-persisted, synced to
+  // collaborators, and read back by the still-live legacy card. The serializer
+  // is therefore extracted to `$lib/graph/textmarquee-editor` (OUTSIDE
+  // `lib/video/**`, so it costs no attest) and both surfaces stamp
+  // `EDITOR_BASE_STYLE` on the element explicitly instead of inheriting it.
+  //
+  // ⚠ NOT A PRODUCER, AND THAT IS ALREADY TRUE. The rasterize-and-push half
+  // moved to `$lib/ui/media/extras-producers` on NODE lifetime in #1720, so
+  // textmarquee is correctly absent from `CARD_PRODUCER_LANE_TYPES` and stays
+  // absent. This body writes the MODEL and blits a preview.
+  //
+  // ⚠ NO `xyPads` FOR posX/posY, DELIBERATELY: a pad is dock-only and costs no
+  // lane rank, so folding posY into posX would halve what the LANE paints, to
+  // buy a gesture for the one pair the def's own docs calibrate for LFO sweep.
+  //
+  // ⚠ ZERO ATTEST AND ZERO CONTRACT MOVEMENT, MEASURED not assumed: `face` is
+  // hash-transparent and comments are stripped by `attest-code-basis`, and
+  // `scripts/webgl-attest-hash.sh` returns the SAME hash with this diff applied
+  // as without it. No `params` field is touched, so contract-lock does not move
+  // either.
+  'textmarquee',
   // ── SKIFREE (2026-08-31) — the promotion whose VALUE IS TWO SHIPPING BUG
   //    FIXES, and the face is what makes them reachable ────────────────────
   //
