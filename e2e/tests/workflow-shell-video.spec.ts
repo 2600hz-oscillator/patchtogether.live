@@ -35,6 +35,7 @@ import { VIDEO_THUMB_FPS, SHELL_TILE_W } from '../../packages/web/src/lib/ui/wor
 import { SHELL_COLUMN_W } from '../../packages/web/src/lib/graph/channel-columns';
 import {
   VIDEO_SINK_FIXTURE,
+  contractDomain,
   fixtureProblems,
   fixtureType,
   videoInPortId,
@@ -129,6 +130,26 @@ const COST_RATE_SLACK = 1.25;
 const VIDEO_OUT = 'workflow-videoOut';
 const RECORDERBOX = 'workflow-recorderbox';
 const SYNESTHESIA = 'workflow-synesthesia';
+
+/**
+ * A node's RACKLINE lane tile, EITHER KIND — a faced `module-shell` or the
+ * un-migrated `module-shell-placeholder`.
+ *
+ * ⚠ IT EXISTS BECAUSE TWO CASES IN THIS FILE ENCODED A MIGRATION STATE THEY DO
+ * NOT DEPEND ON (#2295), which is the same finding `workflow-shell.spec.ts`
+ * already records for its `vzFaceSelector`: matching either testid is STRICTLY
+ * MORE GENERAL and weakens nothing, because both kinds are the same
+ * `SHELL_TILE_W` box and neither caller reads the tile's contents. What the
+ * callers actually assert is (a) a tile PAINTED before geometry is measured,
+ * and (b) that the lane shows the RACKLINE look rather than the verbatim legacy
+ * card — and both survive a promotion. Naming one kind made a PACKING test and
+ * a HEADLESS-HOST test depend on the promotion queue: measured 2026-09-01,
+ * promoting `recorderbox` alone reds the first, and promoting `archivist` reds
+ * the second.
+ */
+const laneTileSelector = (id: string) =>
+  `.svelte-flow__node[data-id="${id}"] `
+  + ':is([data-testid="module-shell"], [data-testid="module-shell-placeholder"])';
 
 // DERIVED, never re-typed (#2239): the gap is whatever the shell pitch leaves
 // over a uniform tile. It was hardcoded 24 for the old 216 pitch, so the pitch
@@ -682,9 +703,9 @@ test.describe('?shell=1 video visibility', () => {
     // 2) PACKED zone: recorderbox clears videoOut by exactly one gutter. The
     //    packing derives from each occupant's real width, so a uniform tile
     //    lands on the same gutter the wide legacy card used to.
-    await expect(
-      page.locator(`.svelte-flow__node[data-id="${RECORDERBOX}"] [data-testid="module-shell-placeholder"]`),
-    ).toBeVisible({ timeout: 15_000 });
+    // EITHER lane tile: this is a READINESS WAIT for the packing measurement
+    // below, which derives from the occupant's WIDTH — the same for both kinds.
+    await expect(page.locator(laneTileSelector(RECORDERBOX))).toBeVisible({ timeout: 15_000 });
     await expect
       .poll(async () => {
         const vo = await nodeRect(page, VIDEO_OUT);
@@ -722,10 +743,34 @@ test.describe('?shell=1 video visibility', () => {
   // for a reason none of the other cases has anything to do with.
   test('the derived video-SINK fixture is healthy', () => {
     expect(fixtureProblems(VIDEO_SINK_FIXTURE), VIDEO_SINK_FIXTURE.why).toEqual([]);
-    // And it must be WIRABLE, which is the half `VIDEO_FIXTURE` does not
-    // promise: a resolved subject with no video input port would fail at
-    // injectPatch with an edge to a port that does not exist.
-    expect(SINK_IN_PORT, `the derived sink '${SINK_TYPE}' exposes a video input port`).not.toBeNull();
+    // ⚠ THE WIRABILITY LEG IS GATED ON `kind === 'ok'`, AND IT WAS NOT (#2295).
+    // `fixtureProblems` deliberately treats `migration-complete` as HEALTHY —
+    // it is the designed end state — but this second assertion read
+    // `SINK_IN_PORT`, which is `null` in exactly that state because `SINK_TYPE`
+    // is `''`. So the one test whose job is to be the SINGLE red for an
+    // exhausted pool would itself have gone red for the CLEAN exit, printing
+    // "the derived sink '' exposes a video input port" on the day the last
+    // un-promoted video sink was faced. `VIDEO_SINK_FIXTURE` is two promotions
+    // from that state (`mappy`, `toybox`), and both have face work in flight.
+    //
+    // What it asserts is a property OF A RESOLVED PICK — the half `VIDEO_FIXTURE`
+    // does not promise, since a subject with no video input port would fail at
+    // injectPatch with an edge to a port that does not exist — so it is
+    // meaningless when there is no pick, and asking it anyway is what made the
+    // clean exit look like a defect.
+    if (VIDEO_SINK_FIXTURE.kind === 'ok') {
+      expect(
+        SINK_IN_PORT,
+        `the derived sink '${SINK_TYPE}' exposes a video input port`,
+      ).not.toBeNull();
+    }
+    // ⚠ AND THERE IS DELIBERATELY NOTHING HERE FOR THE `migration-complete`
+    // ARM. A first draft added an `expect(why).toBeTruthy()` to "report" the
+    // end state; a non-empty string is always truthy, so it could never fail —
+    // decoration wearing a check's clothes, the shape `fixtureProblems`'s own
+    // header refuses. The end state is announced where it is ACTED ON: the case
+    // below skips with `VIDEO_SINK_FIXTURE.why` as its reason, which the lane
+    // audit reads and the skip budget claims by name.
   });
 
   test('video-domain tiles show LIVE ANIMATED thumbnails via the real chain; the fake wave glyph is GONE for them', async ({ page }) => {
@@ -813,11 +858,54 @@ test.describe('?shell=1 video visibility', () => {
     // NON_SHELL_LANE_TYPES snowflake, video in AND out), so it CANNOT be a faced
     // module — and a future promotion drops it from the pool automatically
     // instead of reddening this line.
-    for (const id of ['g1', RECORDERBOX]) {
+    //
+    // ⚠ AND THE SECOND MEMBER USED TO BE THE LITERAL `RECORDERBOX`, WHICH THE
+    // PARAGRAPH ABOVE ARGUES AGAINST IN ITS OWN LOOP (#2295). `recorderbox` is
+    // un-promoted TODAY and is queued like everything else; the day it is faced
+    // this leg would have read
+    // "workflow-recorderbox renders a placeholder tile … Received: 0" — a hard
+    // RED, on someone else's promotion, in the exact wording of a product
+    // regression. There is no spare: it was the only literal here.
+    //
+    // So the WHOLE population is derived, from the rack the shell actually
+    // rendered: every lane node currently painting a `module-shell-placeholder`
+    // whose module is VIDEO-domain in the contract golden. That is strictly
+    // more than the two names — it covers whatever the default rack seeds, not
+    // a hand-picked pair — and a promotion removes a member automatically,
+    // exactly as it already does for `g1`.
+    //
+    // ⚠ THE DOMAIN FILTER IS PART OF THE ASSERTION, NOT AN OPTIMISATION.
+    // `synesthesia` is an AUDIO-domain placeholder on this very page and must
+    // NOT carry a video thumb (asserted directly a few lines below); sweeping
+    // every placeholder without asking the golden would demand one of it and
+    // fail for a reason that is the OPPOSITE of the rule.
+    const placeholderHosts = (
+      await page.evaluate(() =>
+        Array.from(
+          document.querySelectorAll('.svelte-flow__node [data-testid="module-shell-placeholder"]'),
+        ).map((tile) => ({
+          id: tile.closest('.svelte-flow__node')?.getAttribute('data-id') ?? '',
+          type: tile.getAttribute('data-shell-type') ?? '',
+        })),
+      )
+    ).filter((h) => h.id !== '' && contractDomain(h.type) === 'video');
+
+    // ⚠ MINIMUM-POPULATION GUARD. A derived loop over an empty set passes
+    // vacuously, and this one derives from the DOM — so it must contain the
+    // subject this case spawned for exactly this purpose before any of it
+    // means anything. (`g1`'s own placeholder-ness is asserted above; this
+    // asserts the DERIVATION found it, which is a different claim.)
+    expect(
+      placeholderHosts.map((h) => h.id),
+      `the derived placeholder population must include the spawned sink 'g1' (${SINK_TYPE}) — ` +
+        'without it this loop proves nothing about the placeholder thumb host',
+    ).toContain('g1');
+
+    for (const { id, type } of placeholderHosts) {
       const tile = page.locator(`.svelte-flow__node[data-id="${id}"] [data-testid="module-shell-placeholder"]`);
-      await expect(tile, `${id} renders a placeholder tile`).toHaveCount(1);
-      await expect(tile.locator('[data-testid="video-tile-thumb"]'), `${id} has the live thumb canvas`).toHaveCount(1);
-      await expect(tile.locator('.tile-wave'), `${id} fake wave glyph gone`).toHaveCount(0);
+      await expect(tile, `${id} (${type}) renders a placeholder tile`).toHaveCount(1);
+      await expect(tile.locator('[data-testid="video-tile-thumb"]'), `${id} (${type}) has the live thumb canvas`).toHaveCount(1);
+      await expect(tile.locator('.tile-wave'), `${id} (${type}) fake wave glyph gone`).toHaveCount(0);
     }
 
     // ⚠ A PROMOTED VIDEO MODULE KEEPS ITS LANE THUMBNAIL (#1785) — the owner
@@ -1391,8 +1479,9 @@ test.describe('?shell=1 video CHAIN parity', () => {
     // The LANE still shows the uniform tile (the shell look is preserved — this
     // fix is NOT "give every source module the legacy card back")…
     await expect(
-      page.locator(`.svelte-flow__node[data-id="arc1"] [data-testid="module-shell-placeholder"]`),
-      'archivist still renders the uniform RACKLINE tile in its lane',
+      page.locator(laneTileSelector('arc1')),
+      'archivist still renders the uniform RACKLINE tile in its lane (either kind — the claim is '
+        + '"not the verbatim legacy card back", which a promotion does not change)',
     ).toHaveCount(1);
 
     // …while its REAL card is mounted in the off-screen lifecycle host, so its
@@ -1421,25 +1510,32 @@ test.describe('?shell=1 video CHAIN parity', () => {
     // that matches nothing and the `toHaveCount(0)` leg would have passed
     // vacuously, certifying exactly the state it exists to refuse.
     //
-    // ⚠ THE LANE TILE IS ALSO CARRIED PER ROW, for the same reason the card
-    // testid is. "Node-owned source" and "un-migrated" are two INDEPENDENT
-    // properties that happened to coincide for the first three rows, and reading
-    // one off the other is what breaks the moment either moves. `tvLibrarian` is
-    // now PROMOTED, so its lane tile is a real faceplate (`module-shell`) rather
-    // than the RACKLINE placeholder — which changes nothing about the two legs
-    // this test actually owns (no headless host, no card mounted anywhere), and
-    // those still run unchanged for every row.
+    // ⚠ THE LANE TILE USED TO BE CARRIED PER ROW, and that column is GONE
+    // (#2295). Its note argued — correctly — that "node-owned source" and
+    // "un-migrated" are INDEPENDENT properties and that reading one off the
+    // other breaks the moment either moves; `tvLibrarian` had already been
+    // promoted and its row re-typed to `module-shell` once. But the column was
+    // still a hand-maintained migration state that a promotion turns FALSE, so
+    // the next of these four to be faced reds this case with "does not render
+    // the module-shell-placeholder tile its migration state calls for" — a
+    // message that reads like a lane regression and is not one.
+    //
+    // The column's own note says what to do with it: the tile kind "changes
+    // nothing about the two legs this test actually owns (no headless host, no
+    // card mounted anywhere)". So the wait is now EITHER kind — a readiness
+    // signal that the node mounted a RACKLINE tile at all — and the two legs
+    // that ARE this test's subject run unchanged for every row.
     const converted = [
-      ['vb1', 'videobox', 'videobox-card', 'module-shell-placeholder'],
-      ['vv1', 'videovarispeed', 'videovarispeed-card', 'module-shell-placeholder'],
-      ['pt1', 'peertube', 'peertube-card', 'module-shell-placeholder'],
-      ['tv1', 'tvLibrarian', 'tv-librarian-card', 'module-shell'],
+      ['vb1', 'videobox', 'videobox-card'],
+      ['vv1', 'videovarispeed', 'videovarispeed-card'],
+      ['pt1', 'peertube', 'peertube-card'],
+      ['tv1', 'tvLibrarian', 'tv-librarian-card'],
     ] as const;
-    for (const [nodeId, type, cardTestId, laneTile] of converted) {
+    for (const [nodeId, type, cardTestId] of converted) {
       await injectPatch(page, [{ id: nodeId, type, position: { x: -1600, y: 5100 } }]);
       await expect(
-        page.locator(`.svelte-flow__node[data-id="${nodeId}"] [data-testid="${laneTile}"]`),
-        `${type} does not render the ${laneTile} tile its migration state calls for`,
+        page.locator(laneTileSelector(nodeId)),
+        `${type} mounted no RACKLINE lane tile of either kind`,
       ).toHaveCount(1);
       await expect(
         page.locator(`[data-testid="headless-source-host"][data-node-id="${nodeId}"]`),

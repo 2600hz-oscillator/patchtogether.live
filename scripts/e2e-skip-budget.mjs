@@ -415,16 +415,69 @@ export const SKIP_BUDGET = [
   // satisfied by an unrelated edit elsewhere in the file, and if that guard is
   // ever removed this entry goes stale loudly instead of drifting onto whatever
   // string is nearest.
+  // ⚠ AND IT WAS RE-AIMED A SECOND TIME (#2295), FOR THE OPPOSITE HALF OF THE
+  // SAME PROBLEM. `/VIDEO_SINK_FIXTURE\.why/` binds to the SOURCE, which is what
+  // direction A checks and what a dynamic site can be claimed by statically —
+  // but the LANE AUDIT matches the entry against the row's REALIZED reason, and
+  // the realized reason is the `why` TEXT, which lives in `_face-fixtures.ts`
+  // and does not contain the expression. So on the day the pool actually
+  // emptied, the skip this entry exists to admit would have been a budget
+  // VIOLATION: the designed clean exit reddening the lane audit, which is the
+  // wrong-exit shape one layer up from the one #2295 is about.
+  //
+  // The alternation now carries BOTH — the expressions for direction A, and the
+  // `deriveFixture` verdict's own words for the runtime side. And it covers all
+  // FOUR fixtures and all THREE consuming specs, because they share one
+  // `migration-complete` sentence by construction: an entry that admitted only
+  // the video sink would have left the audio pools (one promotion from empty)
+  // failing the audit for degrading exactly as designed.
+  //
+  // ⚠ `no-candidate` IS DELIBERATELY NOT ADMITTED. Its `why` is a different
+  // sentence ("THE FITNESS PREDICATE ACCEPTS NOTHING…") and it is a FIXTURE
+  // DEFECT — a blind instrument, which the fixture-health tests already red on.
+  // A row carrying it SHOULD be a violation.
   {
-    specs: ['workflow-shell-video.spec.ts'],
-    reason: /VIDEO_SINK_FIXTURE\.why/,
+    specs: [
+      'workflow-dock-ux.spec.ts',
+      'workflow-shell-video.spec.ts',
+      'workflow-shell.spec.ts',
+    ],
+    reason:
+      /HAS NO SUBJECT LEFT, BY DESIGN|AUDIO_PLACEHOLDER_FIXTURE\.why|AUDIO_OPERABLE_FIXTURE\.why|VIDEO_FIXTURE\.why|VIDEO_SINK_FIXTURE\.why/,
     lanes: ['e2e'],
     homeLane: 'e2e',
     why:
-      'A DYNAMIC guard: the video-SINK fixture is resolved from the registry, and an exhausted pool '
-      + 'is a MIGRATION state rather than a failure. The named fixture-health test in the same file '
-      + 'is what goes red for it, so this case skips to keep one failure in one place instead of two. '
-      + 'Tolerated but surfaced.',
+      'DYNAMIC guards over the four derived legacy-fallback fixtures (AUDIO_PLACEHOLDER, '
+      + 'AUDIO_OPERABLE, VIDEO, VIDEO_SINK in e2e/tests/_face-fixtures.ts). Each is resolved from the '
+      + 'contract golden × STRICT_FACES, and an exhausted pool is the END STATE OF THE FACE '
+      + 'PROGRAMME — every module that could host the un-migrated case is faced — not a failure. '
+      + 'The named fixture-health test in each file is what goes red for a BLIND predicate, so these '
+      + 'cases skip to keep one failure in one place instead of two. Tolerated but surfaced: when a '
+      + 'row appears here, the case has lost its subject and should be DELETED with the placeholder '
+      + 'tile, never re-pointed at a faced module.',
+  },
+  // The same shape for the two derivations that live in a SPEC rather than in
+  // `_face-fixtures.ts`, so their `why` literals are in the spec source and one
+  // phrase serves both directions (#2295). Both used to THROW on exhaustion:
+  // `pickLegacyDockType` from module scope of a test body, and
+  // `placeholderSubjectType` from inside one — a hard RED for a designed
+  // migration state, landing on whichever unrelated PR promoted the last
+  // candidate. Runways when this entry was written: 1 (`moog956`) and 5.
+  {
+    specs: ['workflow-rear-card.spec.ts', 'workflow-shell.spec.ts'],
+    reason:
+      /NO OCCUPANT LEFT, BY DESIGN|no un-promoted, shell-eligible audio module is left|the derived placeholder pool cannot supply/,
+    lanes: ['e2e'],
+    homeLane: 'e2e',
+    why:
+      'DYNAMIC guards over two in-spec candidate derivations: workflow-rear-card\'s legacy DOCK '
+      + 'occupant (the `.fp-card-mount` branch of DockFullView, which only an UN-FACED module can '
+      + 'render) and workflow-shell\'s placeholder GEOMETRY subject. Both degrade to a named skip '
+      + 'when every candidate is faced, which is the designed end state — the branch and the tile '
+      + 'they are about are deleted with the legacy card fleet. A row here means that case has lost '
+      + 'its subject and should be retired with its subject, never re-pointed at a faced module. '
+      + 'The BLIND-instrument arm of each derivation is a separate RED assertion in the same body, '
+      + 'so an empty candidate scan cannot hide behind this entry.',
   },
   {
     specs: ['auth-routes.spec.ts'],

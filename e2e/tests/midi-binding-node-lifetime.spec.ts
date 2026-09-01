@@ -41,10 +41,35 @@
 // page — one evaluate per phase, never one round-trip per sample.
 //
 // ── SUBJECTS ─────────────────────────────────────────────────────────────────
-// DERIVED, not declared: the subject module must be ABSENT from STRICT_FACES
-// (parsed from the shared source), because a promoted module renders a real
-// <ModuleShell> with real controls and would test the wrong lane. If the subject
-// is ever promoted, this spec fails loudly instead of silently going vacuous.
+// ⚠ THE SUBJECT IS NOW A **PROMOTED** MODULE, AND THAT INVERSION IS THE FIX FOR
+// #2068. What this spec needs is the un-migrated RENDER PATH — a lane tile that
+// mounts no param control — not any particular module. It used to get there by
+// naming a module that happened still to be on that path, which is a standing
+// bet against the face programme: `wavecel` → `depolarizer` → `moog956`, two
+// re-points in one day, and `moog956` was the last candidate in the registry.
+// The owner has ruled that EVERYTHING migrates, so in the limit no such module
+// exists and no fourth re-point is available.
+//
+// So the placeholder path is REQUESTED instead, through the forced-placeholder
+// test seam ($lib/dev/forced-placeholder.svelte.ts, installed only under DEV /
+// VITE_E2E_HOOKS): `__forceUnmigrated([type])` makes Canvas's ONE promotion
+// read (`laneMigrated`) answer "un-migrated" for that type on every surface it
+// injects the answer into — the lane tile, the dock full view, the rail tray.
+//
+// ⚠ AND THE SUBJECT IS DELIBERATELY ONE THAT **IS** PROMOTED, which is what
+// keeps the seam non-vacuous. `depolarizer` — this spec's own second subject,
+// promoted out from under it on 2026-08-20 — is in STRICT_FACES today, asserted
+// in `beforeAll`. If the seam ever stops working, the default shell renders its
+// real <ModuleShell> face and the placeholder assertion below reds immediately;
+// there is no arrangement in which this spec passes while the seam does nothing.
+// A subject that was merely un-promoted would pass either way.
+//
+// ⚠ A REGISTERED "never promoted" FIXTURE MODULE WOULD NOT HAVE WORKED. #2068
+// says so and the reason is structural: a def auto-enrols in every
+// registry-driven sweep (VRT, the per-module I/O sweeps, the docs catalog, the
+// face-migration inventory's own remaining-count), i.e. it is exactly the
+// durable un-migrated fixture subject the owner ruling forbids. A render seam
+// has no def, no ports, no card and no inventory row.
 //
 // ── WHAT A GREEN RUN HERE STRUCTURALLY CANNOT SEE ────────────────────────────
 //   * ONE module. This is a runtime proof on a representative un-migrated
@@ -58,92 +83,91 @@
 //     see the header of `$lib/midi/graph-param-dispatch.ts`.
 //   * The RANGE a mounted control uses. Phase A and phase B agreeing here says
 //     the subject's Knob and the subject's def agree; a card that re-typed a
-//     different range would diverge, and no runtime gate sees that. ⚠ For the
-//     CURRENT subject the hole is REAL but currently harmless: the def declares
-//     `scale` as `min: 0, max: 5, defaultValue: 2` and `Moog956Card.svelte`
-//     RE-TYPES exactly those three numbers as literals rather than importing
-//     them, so the two agree by inspection today and nothing gates it —
-//     `moog956` is not in `RANGE_BOUND_CARDS`. That is the backdraft shape
-//     sitting one edit away, and the caveat stands as written.
+//     different range would diverge, and no runtime gate sees that. ⚠ THE
+//     CAVEAT IS GENERAL AND NO LONGER APPLIES TO THIS SUBJECT. It was written
+//     for `moog956`, whose card re-typed `scale`'s `min: 0, max: 5,
+//     defaultValue: 2` as literals rather than importing them, so the two
+//     agreed by inspection and nothing gated it (`moog956` is not in
+//     `RANGE_BOUND_CARDS`) — the backdraft shape sitting one edit away.
+//     `DepolarizerCard` reads `def('depth').min/max/defaultValue` off
+//     `depolarizerDef`, so for THIS subject card and def cannot diverge. The
+//     hole is still real for any future re-point onto a literal-typing card.
 
 // `_fixtures` (not bare @playwright/test) for `errorWatch`: this spec expands,
 // collapses and LRU-evicts real cards, which is exactly the flow a lifetime bug
 // announces itself in as a console error.
 import { test, expect, type Page } from './_fixtures';
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
 import { spawnPatch } from './_helpers';
 import { REGISTRY } from './_registry';
 
-const STRICT_FACES_SRC = readFileSync(
-  fileURLToPath(
-    new URL('../../packages/web/src/lib/ui/workflow/strict-faces.ts', import.meta.url),
-  ),
-  'utf8',
-);
+/**
+ * The PROMOTED set, read off the MANIFEST's own `strictFace` projection.
+ *
+ * ⚠ IT USED TO REGEX THE `strict-faces.ts` SOURCE, AND THAT PARSER WAS BROKEN —
+ * measured 2026-09-01, not suspected. The member list is `export const
+ * STRICT_FACES … [ … ]` with a per-module rationale comment above almost every
+ * entry, and the extractor was `/'([^']+)'/g` over the block: `[^']+` crosses
+ * newlines, so every APOSTROPHE in that prose ("the card's", "it's") opened a
+ * match that ran to the next one and swallowed the real entries in between. It
+ * reported 563 "types", most of them paragraphs, and — the part that matters —
+ * `depolarizer` and `moog956` came back FALSE while `vca` came back true. Which
+ * entries survive depends on where the apostrophes happen to fall.
+ *
+ * ⚠ SO THE OLD `beforeAll` GUARD COULD SILENTLY FAIL TO FIRE. Its whole job was
+ * "red if this spec's subject has been promoted", and a false negative for the
+ * subject is exactly the case it cannot afford: the spec would have gone on
+ * asserting a placeholder against a faced module. The two re-points it did catch
+ * were luck of the apostrophes, not the anchor doing its job. (The `export const`
+ * anchor in the note this replaces was real and is not the part that broke.)
+ *
+ * `strictFace` on the registry manifest is STRICT_FACES membership emitted by
+ * the generator for exactly this question — the same field
+ * `workflow-shell.spec.ts` selects placeholder subjects on — so it cannot drift
+ * from the set it describes, and no parser sits between them.
+ */
+const PROMOTED = new Set(REGISTRY.filter((m) => m.strictFace === true).map((m) => m.type));
 
-/** The PROMOTED set, parsed off its export (anchored on `export const`, never a
- *  bare name match — the same footgun `card-producer-lifetime.spec.ts` records,
- *  where an unanchored regex ran on to the file header's prose mention). */
-function strictFaces(): Set<string> {
-  const block = /export const STRICT_FACES[^[]*\[([\s\S]*?)\n\]/.exec(STRICT_FACES_SRC);
-  if (!block) throw new Error('could not parse STRICT_FACES — has the shape changed?');
-  const types = [...block[1]!.matchAll(/'([^']+)'/g)].map((m) => m[1]!);
-  if (types.length === 0) throw new Error('STRICT_FACES parsed EMPTY — refusing to pass vacuously');
-  return new Set(types);
-}
-
-const PROMOTED = strictFaces();
-
-/** The subject: an UN-MIGRATED audio module with a plain [0,1] param and a
- *  legacy card that renders it as a Knob. Its un-migrated-ness is ASSERTED
- *  below, not assumed.
+/** The subject: a PROMOTED audio module, driven onto the un-migrated render
+ *  path by the forced-placeholder seam (see the SUBJECTS section of the header).
+ *  Its promotion is ASSERTED in `beforeAll`, not assumed — that assertion is
+ *  what makes the seam load-bearing rather than decorative.
  *
- *  ⚠ RE-POINTED TWICE IN ONE DAY (2026-08-20): `wavecel` → `depolarizer` →
- *  `moog956`. Both times the `beforeAll` precondition fired exactly as designed
- *  — *"Re-point this spec at a module that is still un-migrated"* — and the
- *  guard working is the only reason this spec did not silently go vacuous
- *  against a `<ModuleShell>`. It is filed as #2068, because the CHURN is the
- *  defect and a third re-point does not fix it.
+ *  ⚠ RE-POINTED TWICE IN ONE DAY (2026-08-20) BEFORE THE SEAM EXISTED:
+ *  `wavecel` → `depolarizer` → `moog956`. Both times the old `beforeAll`
+ *  precondition fired exactly as designed — *"Re-point this spec at a module
+ *  that is still un-migrated"* — and the guard working is the only reason this
+ *  spec did not silently go vacuous against a `<ModuleShell>`. #2068 filed the
+ *  CHURN as the defect, because a third re-point does not fix it. This is that
+ *  fix, and the pick returns to `depolarizer`: the module the churn ran over.
  *
- *  ⚠ THE PREVIOUS PICK'S REASONING WAS WRONG, AND SPECIFICALLY SO — read this
- *  before choosing a fourth. `depolarizer` was called "structurally
- *  un-promotable" on the faceplate skill's STOP 1 refusal ("≤2 params, no
- *  control families, no node.data-backed affordances … the same grounds on
- *  which `noise` is refused"). Both halves were false: `noise` was ALREADY in
- *  STRICT_FACES when it was cited, and the owner had directed the opposite —
- *  *"they still need to be done, <4 params or not"* (2026-08-20) — so the
- *  batch-18 blitz promoted `depolarizer` hours later. That skill text is
- *  corrected in #2067; do not resurrect the argument from a stale copy.
+ *  ⚠ WHAT THE PICK NOW NEEDS, and it is a shorter list than the old one. Not
+ *  "still un-migrated" — the seam supplies that. Only: an audio module that
+ *  resolves a legacy card (`laneRenderKind` returns 'legacy', not
+ *  'placeholder', for a type with no card), is not a `NON_SHELL_LANE_TYPES`
+ *  snowflake (same reason), needs no hardware or network, and renders the bound
+ *  param as a `<Knob>` (which sets `aria-label={label}`) so the learn gesture
+ *  and the mounted-control count have something to find. `DepolarizerCard` is
+ *  90 lines, one knob, one CV in / one CV out.
  *
- *  ⚠ SO THE PICK IS NOW MADE ON DISPOSITION, NOT ON THINNESS. `moog956` is
- *  `bespoke-surface` in the face-migration inventory: its primary interaction
- *  is a ribbon DRAG, not a param, so it needs a hand-written surface behind the
- *  extension seam rather than a ranked cell list. No lane or directive is
- *  face-queueing that disposition, so the subject does not expire with this
- *  blitz or the next batch — which is exactly how both prior picks died, by
- *  borrowing from the `generic-face` population being actively drained.
+ *  ⚠ AND IT CLOSES THE RANGE HOLE THE PREVIOUS SUBJECT LEFT OPEN. `moog956`'s
+ *  card RE-TYPED its `scale` bounds as literals (`min={0} max={5}`) rather than
+ *  importing them, so card and def agreed only by inspection and nothing gated
+ *  it — the caveat in "WHAT A GREEN RUN CANNOT SEE" below existed for that.
+ *  `DepolarizerCard` reads `def('depth').min/max` off `depolarizerDef` itself,
+ *  so the two CANNOT diverge and the caveat no longer applies to this subject.
  *
- *  It is still only a delay, not a fix: EVERY module is eventually migrated off
- *  the legacy card, so in the limit no valid subject exists. #2068 carries the
- *  durable shape (a forced-placeholder harness hook rather than a registry
- *  fixture, which would auto-enrol in every registry-driven sweep).
- *
- *  ⚠ THE "[0,1] param" REQUIREMENT THIS COMMENT USED TO STATE IS NOT REAL, and
- *  believing it needlessly narrowed the candidate set to one heavyweight looper
- *  card. `ccToParam` maps CC 0..127 across the param's OWN declared
- *  `[min,max]`, read off the registry manifest at `beforeAll` — so any range
- *  works and the expectation is derived, never hard-coded. `moog956`'s `scale`
- *  is `0..5 linear`, and `Moog956Card.svelte` renders it as `<Knob
- *  label="Scale">` (the Knob sets `aria-label={label}`). */
+ *  ⚠ THE "[0,1] param" REQUIREMENT AN EARLIER VERSION STATED IS NOT REAL.
+ *  `ccToParam` maps CC 0..127 across the param's OWN declared `[min,max]`, read
+ *  off the registry manifest at test time — so any range works and the
+ *  expectation is derived, never hard-coded. (`depth` happens to be 0..1.) */
 const SUBJECT = {
   nodeId: 'mb-rb',
-  type: 'moog956',
-  paramId: 'scale',
+  type: 'depolarizer',
+  paramId: 'depth',
   /** The Knob's aria-label on the legacy card — how the mounted-control count
-   *  is taken. `<Knob>` sets `aria-label={label}`, and Moog956Card passes
-   *  `label="Scale"`. */
-  ariaLabel: 'Scale',
+   *  is taken. `<Knob>` sets `aria-label={label}`, and DepolarizerCard passes
+   *  `label="DEPTH"`. */
+  ariaLabel: 'DEPTH',
   channel: 0,
   cc: 21,
 } as const;
@@ -288,12 +312,40 @@ async function openFullView(page: Page, nodeId: string): Promise<void> {
 }
 
 async function boot(page: Page): Promise<void> {
+  // ── ASK FOR THE UN-MIGRATED RENDER PATH (#2068) ────────────────────────────
+  // Seeded BEFORE navigation, so the very first paint of the rack already has
+  // the subject on the placeholder path and nothing has to re-render into it.
+  // `installForcedPlaceholderHook` drains this pending list when Canvas mounts.
+  await page.addInitScript((type: string) => {
+    (globalThis as unknown as { __forceUnmigratedPending: string[] }).__forceUnmigratedPending = [
+      type,
+    ];
+  }, SUBJECT.type);
+
   // Plain `/rack` — the DEFAULT faceplate shell. Under `?shell=legacy` the real
   // card renders in the lane and this defect is invisible, which is exactly how
   // the existing midi-learn.spec.ts (on the `rack` fixture) stayed green
   // through it.
   await page.goto('/rack');
   await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: 30_000 });
+
+  // THE SEAM TOOK, asserted rather than assumed — and it is asserted HERE, at
+  // the hook, so a build without VITE_E2E_HOOKS fails naming the missing hook
+  // instead of timing out later on a placeholder that was never going to exist.
+  // Re-applying is idempotent; it also covers a boot ordering in which the
+  // pending list was drained before this navigation's Canvas mounted.
+  const forced = await page.evaluate((type: string) => {
+    const w = globalThis as unknown as { __forceUnmigrated?: (t: string[]) => string[] };
+    if (typeof w.__forceUnmigrated !== 'function') return null;
+    return w.__forceUnmigrated([type]);
+  }, SUBJECT.type);
+  expect(
+    forced,
+    '__forceUnmigrated hook not present — a DEV/VITE_E2E_HOOKS build is expected (the same gate ' +
+      'as __patch / __ydoc / __midiTestInject)',
+  ).not.toBeNull();
+  expect(forced, `the forced-placeholder seam must hold ${SUBJECT.type}`).toEqual([SUBJECT.type]);
+
   await page.evaluate(() => window.localStorage.removeItem('pt.midi-bindings.v1'));
 }
 
@@ -347,15 +399,23 @@ async function armLearn(page: Page): Promise<void> {
 
 test.describe('#1727 — a MIDI CC binding outlives every view of its module', () => {
   test.beforeAll(() => {
-    // DERIVED PRECONDITION, asserted rather than assumed: the subject must be
-    // UN-MIGRATED, or the default shell renders a real <ModuleShell> with real
-    // controls and this whole spec silently tests the wrong lane.
+    // ⚠ THE PRECONDITION IS INVERTED, AND THE INVERSION IS THE CONTROL (#2068).
+    // It used to read "the subject must be UN-MIGRATED". It now reads "the
+    // subject must be PROMOTED", because the placeholder path is REQUESTED by
+    // the forced-placeholder seam rather than borrowed from a module that has
+    // not been faced yet. Asserting promotion is what stops the seam being
+    // decorative: against an un-promoted subject this spec would pass whether
+    // or not `__forceUnmigrated` did anything, and the day the last un-promoted
+    // module went it would have failed for a reason with no relation to #1727.
+    // With a promoted subject the placeholder assertion in each test can only
+    // hold if the seam is working.
     expect(
       PROMOTED.has(SUBJECT.type),
-      `${SUBJECT.type} has been PROMOTED into STRICT_FACES, so it no longer renders as a ` +
-        'placeholder on the default shell. Re-point this spec at a module that is still ' +
-        'un-migrated (the defect class is not module-specific).',
-    ).toBe(false);
+      `${SUBJECT.type} is NOT in STRICT_FACES, so the default shell would render it as a ` +
+        'placeholder anyway and the forced-placeholder seam this spec is built on would be ' +
+        'unproven — a green run would say nothing about it. Point SUBJECT at a PROMOTED audio ' +
+        'module that resolves a legacy card and renders its bound param as a <Knob>.',
+    ).toBe(true);
     // …and it must actually declare the param this spec binds.
     const mod = REGISTRY.find((m) => m.type === SUBJECT.type);
     expect(mod, `${SUBJECT.type} is missing from the registry manifest`).toBeTruthy();
@@ -380,8 +440,17 @@ test.describe('#1727 — a MIDI CC binding outlives every view of its module', (
 
     // The default lane shows the uniform tile — the module's own card is NOT
     // here. This is the state the defect lives in.
+    //
+    // ⚠ IT IS ALSO THE SEAM'S OWN CONTROL. `SUBJECT.type` IS promoted (asserted
+    // in `beforeAll`), so on the default shell it renders `module-shell`, not
+    // this. Reaching a placeholder at all is proof that `__forceUnmigrated`
+    // moved Canvas's promotion read; if the seam regresses, this is the line
+    // that reds, and it reds before anything about MIDI is exercised.
     await expect(
       page.locator(`.svelte-flow__node[data-id="${SUBJECT.nodeId}"] [data-testid="module-shell-placeholder"]`),
+      `${SUBJECT.type} must render the UN-MIGRATED placeholder tile — it is PROMOTED, so this ` +
+        'can only be true if the forced-placeholder seam (__forceUnmigrated → Canvas.laneMigrated) ' +
+        'is working. A `module-shell` here means the seam stopped moving the lane.',
     ).toHaveCount(1, { timeout: 20_000 });
 
     // ── ARRANGE: the only way a user can learn a CC here is the dock full-view.
