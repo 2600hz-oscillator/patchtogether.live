@@ -5229,6 +5229,77 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // refuses that field when there is none.
   'blood',
 
+  // ── SKIFREE (2026-08-31) — the promotion whose VALUE IS TWO SHIPPING BUG
+  //    FIXES, and the face is what makes them reachable ────────────────────
+  //
+  // ⚠ TWO LIVE DEFECTS, BOTH FOUND BY READING AND BOTH INVISIBLE TO EVERY GATE
+  // IN THIS REPO, are repaired in the same diff. Neither is a cost of
+  // promoting; both were what a player got on `main`.
+  //
+  //   1. THE PICTURE WAS CROPPED ON EVERY RETINA DISPLAY. `SkiFree.create()`
+  //      overwrites the canvas it is handed — `canvas.width = width * dpr` —
+  //      so the source is 640x640 at DPR 2 while `SkifreeCard`'s visible canvas
+  //      is 320x320, and its three-argument `drawImage(src, 0, 0)` painted the
+  //      source at NATIVE size into a quarter of the area. The player saw the
+  //      TOP-LEFT QUADRANT with the skier in the corner. ⚠ NO GATE CAN SEE
+  //      THIS: Playwright and VRT both run at `deviceScaleFactor: 1`, where the
+  //      two numbers coincide and the bug does not exist. Fixed on BOTH
+  //      surfaces with a nine-argument draw whose destination is derived from
+  //      `src.width/height`, plus a named `EXEMPT_CALLS` entry.
+  //   2. STEERING HAS BEEN BROKEN SINCE #2192. `controller.enableMouse(el)`
+  //      attaches its listeners to `el` but computes
+  //      `canvas.getBoundingClientRect()` against the FACTORY's canvas — which
+  //      that PR made DETACHED, by design — so every field is 0 and
+  //      `e.clientX - rect.left` fed raw VIEWPORT coordinates into a 0..320
+  //      space. The skier pinned itself to an edge. Both surfaces now map their
+  //      OWN element's rect through the def's pure `pointerToCanvasCoord`;
+  //      `enableMouse` has no caller left in the tree.
+  //
+  // ⚠ `order: []` IS LEGAL AND IS THE FLIPPER SHAPE, NOT THE JOYSTICK ONE. The
+  // #1974 clause refuses a face that RANKS controls and then resolves to zero
+  // cells at the tier the player is looking at; its own exclusion names
+  // `flipper` (`params: []`) and `videoOut` (`order: []` with a picture) as the
+  // honest case, and skifree — `params: []`, contract-lock has zero `param`
+  // rows — is the third. ⚠ THE CONSEQUENCE IS THAT THE CLAUSE `continue`s PAST
+  // THIS FACE BEFORE MEASURING ANYTHING, so nothing else in CI would notice the
+  // lane regressing to a title bar and a jack rail. `skifree-face-model.test.ts`
+  // pins the `tileBody`'s EXISTENCE for exactly that reason.
+  //
+  // ⚠ THE STANDING REFUSE-SPEC'S LEAD BLOCKER WAS ALREADY DEAD.
+  // `.myrobots/2026-08-24-bespoke-wave5/skifree/spec.md` refused this face on
+  // three legs, and B1 ("promotion DELETES THE GAME — the engine lives on the
+  // card") was TRUE WHEN WRITTEN and was retired by #2192 (868ddb9ee), which
+  // moved the bundle load, the controller and its disposal into the FACTORY on
+  // node lifetime. B3 (no determinism seam) survives and is discharged
+  // honestly, as a `FACES_WITHOUT_SCENES` entry with the measurement in it
+  // rather than a VRT mask. B2 is the `order: []` question above.
+  //
+  // TWO EXTENSION SLOTS, because the shell has nothing of its own to paint for
+  // this module on either surface: `glyph: 'none'` is FORCED (no `type: 'audio'`
+  // output, so every live glyph literal resolves `{kind:'static'}`; and
+  // `hasVideoSurface` is `domain === 'video'` while this is an audio def with a
+  // video PORT). `fullViewBody` is the steerable slope — the module's only
+  // direct-manipulation instrument; `tileBody` is the read-only lane picture,
+  // without which the tile is strictly worse than the placeholder it replaces.
+  //
+  // ⚠ AND THE THING PROMOTION REPLACES IS A BLANK TILE, NOT A CARD. skifree is
+  // not in `NON_SHELL_LANE_TYPES`, is not a `CARD_PRODUCER` and is not in
+  // `HEADLESS_MOUNT_LANE_TYPES`, so `laneRenderKind` already returned
+  // 'placeholder' and the shipping shell mounted no skifree surface at all
+  // while the game ran and fired its gate underneath.
+  //
+  // THE CARD'S HUD ROW IS DELETED, NOT MOVED: `{distance}m · lives {n} ·
+  // CV|MOUSE|IDLE · GAME OVER` is a measurement, a count, a state word and a
+  // status banner in DOM chrome beside the picture — none of the four permitted
+  // resting-text roles. The numbers survive as the bundle's own in-canvas
+  // InfoBox (the game's artwork) and on the frame's `aria-label`; the control
+  // mode survives as two `StatusLed` lamps with STATIC captions.
+  //
+  // ZERO ATTEST: an audio def, and no skifree file is in `WEBGL_PATHS`.
+  // ZERO ART: `ART_EXCLUDED`, and the module has no audio output at all.
+  // CONTRACT UNCHANGED: `face` is not in contract-lock and no port or param
+  // moves; the `docs` re-authoring is the only reason `docs:accept` runs.
+  'skifree',
   // ── AUDIO IN (2026-08-31) — the rack's SOURCE FROM OUTSIDE ───────────────
   //
   // `audioOut`'s twin, one wire earlier, and built to the same narrow shape:

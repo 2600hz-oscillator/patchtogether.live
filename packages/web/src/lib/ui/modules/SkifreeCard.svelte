@@ -32,9 +32,17 @@
   //      ⚠ It must never RE-PARENT the owned canvas — a DOM node has one
   //      parent, so adopting it would hand the game's surface to a component
   //      that unmounts. That is the cameraInput trap, one seam over.
-  //   2. Forward native MOUSE steering while focused and CV is unpatched
-  //      (`enableMouse` takes THIS card's visible element, which is why mouse
-  //      is a card concern even though the game is not).
+  //   2. Forward MOUSE steering while focused and CV is unpatched — from ITS
+  //      OWN pointer handlers, mapped through the def's pure
+  //      `pointerToCanvasCoord`. ⚠ IT USED TO CALL `controller.enableMouse()`
+  //      AND THAT WAS BROKEN ON EVERY SURFACE SINCE #2192: the bundle's
+  //      handlers attach to the element they are given but take their rect from
+  //      the FACTORY's canvas, which is detached, so `getBoundingClientRect()`
+  //      is all zeros and `e.clientX - rect.left` handed raw VIEWPORT
+  //      coordinates to a 0..320 space — the skier pinned itself to an edge and
+  //      steering was one stuck direction. Fixed here and in the face body
+  //      (`skifree/SkifreeScreen.svelte`) through ONE shared pure mapper, so
+  //      the two surfaces cannot drift apart.
   //   3. Poll the node's snapshot for the HUD.
   //
   // maxInstances:1 → one card at a time; the bridge is a single
@@ -50,6 +58,7 @@
   import { ensureSkifreeBridge } from '$lib/audio/skifree-bridge';
   import {
     SKIFREE_CANVAS_SIZE,
+    pointerToCanvasCoord,
     type SkifreeBridge,
     type SkifreeController,
     type SkifreeSnapshot,
@@ -98,17 +107,34 @@
     return (eng.read(node, 'controller') as SkifreeController | undefined) ?? null;
   }
 
-  /** Engage / disengage native mouse steering. Engaged only when focused AND
-   *  CV is not driving (cvDriven false). The controller's enable/disable is
-   *  idempotent. */
-  function syncMouseControl(): void {
-    if (!controller) return;
-    const bridge = ensureBridge();
-    if (focused && !bridge.cvDriven) {
-      controller.enableMouse(canvasEl ?? undefined);
-    } else {
-      controller.disableMouse();
-    }
+  /** Is mouse steering engaged right now? Engaged only when this card's canvas
+   *  is FOCUSED and CV is not driving. Read per pointer event rather than
+   *  latched, so a CV cable patched mid-gesture takes the cursor back on the
+   *  very next move. */
+  function mouseEngaged(): boolean {
+    return focused && !ensureBridge().cvDriven;
+  }
+
+  /**
+   * Write the cursor from a pointer position on THIS card's canvas.
+   *
+   * ⚠ THE CARD OWNS THIS NOW, AND IT HAD TO. `controller.enableMouse(el)`
+   * attaches to `el` but computes `canvas.getBoundingClientRect()` against the
+   * FACTORY's canvas — detached since #2192, so every field is 0 — and then
+   * does `e.clientX - rect.left`. The cursor received raw VIEWPORT coordinates
+   * in a 0..320 space, so the skier parked on an edge and "steering" was a
+   * single stuck direction. The map is a RATIO of THIS element's rect, through
+   * the def's pure `pointerToCanvasCoord`, which the face body calls too.
+   */
+  function steerFromPointer(e: PointerEvent): void {
+    const ctl = controller;
+    const el = canvasEl;
+    if (!ctl || !el || !mouseEngaged()) return;
+    const r = el.getBoundingClientRect();
+    ctl.setCursor(
+      pointerToCanvasCoord(e.clientX, r.left, r.width),
+      pointerToCanvasCoord(e.clientY, r.top, r.height),
+    );
   }
 
   /**
@@ -123,11 +149,7 @@
    */
   function blit(): void {
     const next = nodeController();
-    if (next !== controller) {
-      controller = next;
-      // A game that has just appeared may need mouse engaged immediately.
-      syncMouseControl();
-    }
+    if (next !== controller) controller = next;
     const src = controller?.canvas;
     const dst = canvasEl;
     if (src && dst && src.width > 0 && src.height > 0) {
@@ -135,18 +157,25 @@
       if (c2d) {
         c2d.imageSmoothingEnabled = false;
         try {
-          // ⚠ THE THREE-ARGUMENT FORM, BECAUSE THIS IS GENUINELY 1:1. Both
-          // canvases are sized from the SAME exported constant — the factory
-          // mints its game canvas at `SKIFREE_CANVAS_SIZE` and this card's
-          // visible canvas is `width={CSS}` where `CSS = SKIFREE_CANVAS_SIZE` —
-          // so there is no scale factor to apply. An earlier draft wrote the
-          // nine-argument `drawImage(src, 0,0,sw,sh, 0,0,dw,dh)`, which is a
-          // RESAMPLE by shape even when the numbers happen to match, and
-          // `preview-downscale-source.test.ts` (#1846) caught it. The gate was
-          // right: a call that names a destination width and height is claiming
-          // a resize this code never performs, and the honest spelling is also
-          // the one that cannot alias if the sizes ever drift apart.
-          c2d.drawImage(src, 0, 0);
+          // ⚠ NINE ARGUMENTS, AND THE THREE-ARGUMENT FORM WAS SHIPPING A CROP.
+          // This code used to argue the blit was "genuinely 1:1, both canvases
+          // are sized from the SAME exported constant". The premise is FALSE
+          // and the bundle is where it breaks: `SkiFree.create()` OVERWRITES
+          // the canvas it is handed —
+          //     canvas.style.width = `${width}px`;      // 320
+          //     canvas.width       = Math.round(width * dpr);
+          // — so on any DPR >= 2 display the SOURCE is 640x640 while this
+          // canvas is 320x320, and a 3-argument draw paints the source at its
+          // NATIVE size into a quarter of the area: the player saw the TOP-LEFT
+          // QUADRANT of the slope with the skier in the corner. Every gate in
+          // the repo is blind to it — Playwright and VRT run at
+          // `deviceScaleFactor: 1`, where the two numbers coincide.
+          //
+          // The destination rect is derived from `src.width/height`, never from
+          // `SKIFREE_CANVAS_SIZE`: the source size is the bundle's to choose.
+          // `preview-downscale-source.test.ts` (#1846) carries this call as a
+          // NAMED exemption — deliberately crisp, like FOXY and RASTERIZE.
+          c2d.drawImage(src, 0, 0, src.width, src.height, 0, 0, dst.width, dst.height);
         } catch (_e) { /* detached/tainted this frame — leave the last image */ }
       }
     }
@@ -157,17 +186,15 @@
     const eng = engineCtx.get();
     if (eng && node) {
       const snap = eng.read(node, 'snapshot') as SkifreeSnapshot | undefined;
-      if (snap) {
-        snapshot = snap;
-        // The factory updates bridge.cvDriven each tick; re-evaluate mouse.
-        syncMouseControl();
-      }
+      if (snap) snapshot = snap;
     }
     snapRaf = requestAnimationFrame(pollSnapshot);
   }
 
-  function onFocus(): void { focused = true; syncMouseControl(); }
-  function onBlur(): void { focused = false; syncMouseControl(); }
+  // Focus is still the card's arming gesture — `mouseEngaged()` reads it, and
+  // `bridge.cvDriven`, per pointer event rather than latching a mode.
+  function onFocus(): void { focused = true; }
+  function onBlur(): void { focused = false; }
 
   onMount(() => {
     snapRaf = requestAnimationFrame(pollSnapshot);
@@ -175,23 +202,23 @@
   });
 
   onDestroy(() => {
-    // ⚠ EVERYTHING RELEASED HERE IS THIS COMPONENT'S OWN — two rAF handles and
-    // the mouse binding. NOTHING node-owned is touched, and there is no longer
-    // a spelling for touching it: the controller is created and disposed by the
-    // factory (node lifetime), and the card-facing `releaseSkifreeCardState`
-    // was DELETED rather than deprecated, so `tsc` refuses a future teardown
-    // that tries to reach the game from here.
+    // ⚠ EVERYTHING RELEASED HERE IS THIS COMPONENT'S OWN — two rAF handles.
+    // NOTHING node-owned is touched, and there is no longer a spelling for
+    // touching it: the controller is created and disposed by the factory (node
+    // lifetime), and the card-facing `releaseSkifreeCardState` was DELETED
+    // rather than deprecated, so `tsc` refuses a future teardown that tries to
+    // reach the game from here.
     //
-    // ⚠ `disableMouse()` IS RELEASED, DELIBERATELY. The pointer binding is on
-    // THIS card's element; leaving it engaged would keep a handler on a node
-    // that is being removed from the document, and the next mount re-engages it
-    // through `syncMouseControl`. It is card state, so the card frees it —
-    // which is exactly the distinction that was missing before.
+    // ⚠ THERE IS NO LONGER A MOUSE BINDING TO RELEASE, and that is a
+    // simplification the steering fix bought outright: the pointer handlers are
+    // Svelte attributes on this card's own canvas, so they die with the
+    // template. The old `disableMouse()` call here was freeing a listener the
+    // BUNDLE had installed on this element — necessary while the bundle owned
+    // the binding, and meaningless now that it does not.
     if (snapRaf !== null) cancelAnimationFrame(snapRaf);
     snapRaf = null;
     if (blitRaf !== null) cancelAnimationFrame(blitRaf);
     blitRaf = null;
-    try { controller?.disableMouse(); } catch (_e) { /* */ }
     controller = null;
   });
 </script>
@@ -202,9 +229,19 @@
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <div class="game-area">
-      <!-- The bundle controller binds to THIS canvas (window.SkiFree.create).
-           tabindex makes it focusable so native mouse control can engage
-           when x/y are unpatched. -->
+      <!-- The card BLITS the node's game canvas here and never re-parents it.
+           `tabindex` makes it focusable so mouse steering can engage when x/y
+           are unpatched — the card's arming gesture, unchanged. The pointer
+           handlers are the card's OWN (see `steerFromPointer`); the bundle's
+           `enableMouse` is never called, because its rect comes from the
+           factory's detached canvas and is all zeros. -->
+      <!-- svelte-ignore a11y_no_noninteractive_element_interactions
+           — this canvas is already the card's focusable steering surface
+           (`tabindex="0"`, focus/blur arming), so the pointer handlers are on
+           the element that ALREADY owns the gesture. The alternative Svelte
+           would accept is a wrapper with an interactive role, which would put a
+           SECOND focus target on a card that has exactly one control. There is
+           no keyboard steering to expose (owner ruling: no keyboard a11y). -->
       <canvas
         bind:this={canvasEl}
         width={CSS}
@@ -213,6 +250,8 @@
         tabindex="0"
         onfocus={onFocus}
         onblur={onBlur}
+        onpointerdown={steerFromPointer}
+        onpointermove={steerFromPointer}
         data-viz-passthrough
         data-testid="skifree-canvas"
       ></canvas>
