@@ -2,7 +2,7 @@
 
 Multiplayer browser-native modular synthesizer. Audio + video domains. Patches are CRDT-shared (Yjs); rendering is local (Web Audio + WebGL2).
 
-> Status: Stage B (multi-user). 119 audio modules · 68 video modules · cross-domain CV bridge.
+> Status: Stage B (multi-user). 120 audio modules · 68 video modules · cross-domain CV bridge.
 
 In-app docs: <https://patchtogether.live/docs>.
 
@@ -29,7 +29,7 @@ If you stay inside one `flox activate` shell, drop the `flox activate --` prefix
 ## Run locally as a standalone demo (no network)
 
 The public canvas at `/` is architected so it boots with no network
-dependency: SvelteKit serves it from your localhost dev server, all 118
+dependency: SvelteKit serves it from your localhost dev server, all 120
 audio + 68 video modules render in-process (Web Audio + WebGL2), and the
 runtime-fetched assets (wavetable WAVs, TR-808 samples, glitch image,
 SM64 bundle) ship inside the repo under `packages/web/static/`. Use it as
@@ -78,7 +78,7 @@ spin up, and patches make sound.
 
 Works offline (single-machine, single-user):
 
-- Spawning any of the 119 audio / 68 video modules from the palette
+- Spawning any of the 120 audio / 68 video modules from the palette
 - Patching cables, including the cross-domain CV bridge
 - Saving + loading patches via "Save Perf" / "Load Perf" (browser local storage)
 - Loading any of the bundled example patches
@@ -128,7 +128,7 @@ Doesn't work offline (visible but harmlessly inert):
 
 ## Modules
 
-195 modules total (119 audio · 68 video · 8 meta), registered across three per-domain catalogs (`packages/web/src/lib/audio/module-registry.ts`, `.../video/module-registry.ts` and `.../meta/module-registry.ts`). Registration is glob-driven, so these counts are asserted against the live registries by `packages/web/src/lib/docs/docs-facts.test.ts` rather than maintained by hand. The full I/O + param tables are auto-generated from the registries and published at <https://patchtogether.live/docs/modules>; right-clicking any module on the canvas opens its per-module docs page in a new tab.
+196 modules total (120 audio · 68 video · 8 meta), registered across three per-domain catalogs (`packages/web/src/lib/audio/module-registry.ts`, `.../video/module-registry.ts` and `.../meta/module-registry.ts`). Registration is glob-driven, so these counts are asserted against the live registries by `packages/web/src/lib/docs/docs-facts.test.ts` rather than maintained by hand. The full I/O + param tables are auto-generated from the registries and published at <https://patchtogether.live/docs/modules>; right-clicking any module on the canvas opens its per-module docs page in a new tab.
 
 ### Audio (30)
 

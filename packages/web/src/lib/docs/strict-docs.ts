@@ -262,6 +262,10 @@ export const STRICT_DOCS: ReadonlySet<string> = new Set<string>([
   // PTZCAM (2026-08-29): CV → physical PTZ camera via the PT-PTZ MIDI helper.
   // New module — ships with co-located docs.
   'ptzcam',
+  // TRAILS (2026-08-31): the Bela Trails touch-gesture recorder read over
+  // WebMIDI into twelve CV/gate jacks plus a divided clock. New module — ships
+  // with co-located docs.
+  'trails',
   'clockedRunner',
   'livecode',
   // Batch 13 — heavy synth voices, effects & utilities (near the end of the
