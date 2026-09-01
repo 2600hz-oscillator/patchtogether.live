@@ -669,6 +669,20 @@ test('no phase divergence: open → flip → close → the flip key turns the ca
 test('canvas rear view left ON: a docked LEGACY pane still shows its FRONT, and the dock flip round-trips front⇄RearCard', async ({
   page,
 }) => {
+  // ── THE INSTRUMENT FIRST, THEN THE MIGRATION (the `deriveFixture` order) ──
+  // A scan that recognises none of its candidates has gone BLIND, and a blind
+  // scan reports itself as a finished migration — so it must red here, before
+  // the skip below can absorb it. See `pickLegacyDockType`.
+  expect(
+    LEGACY_DOCK.kind === 'no-candidate' ? LEGACY_DOCK.why : null,
+    'the legacy-dock candidate scan recognised nothing',
+  ).toBeNull();
+  // An exhausted candidate set is the DESIGNED end state, not a failure: the
+  // `.fp-card-mount` branch this case is about is deleted with the legacy card
+  // fleet. A NAMED skip carrying the reason — never a silent pass, and never a
+  // throw that reads like a product regression (#2295).
+  test.skip(LEGACY_DOCK.kind === 'migration-complete', LEGACY_DOCK.why);
+
   await gotoWorkflow(page);
   // ⚠ THE SUBJECT IS DERIVED, AND IT USED TO BE THE HARD-CODED `scope`.
   //
@@ -689,7 +703,13 @@ test('canvas rear view left ON: a docked LEGACY pane still shows its FRONT, and 
   // ⚠ The candidates are NAMED rather than "first un-faced module in the
   // registry" on purpose: a bare registry scan would happily wander onto a
   // device module needing hardware, or onto DOOM.
-  const legacyType = pickLegacyDockType();
+  //
+  // ⚠ AND EXHAUSTION IS NO LONGER A THROW (#2295). It used to `throw new Error`
+  // from inside this body when every candidate was faced — a hard RED, in a
+  // migration state that is DESIGNED, on whichever unrelated PR happened to
+  // promote the last one. `moog960` and `cartesian` are already spent; the
+  // runway is one. The three outcomes are resolved above.
+  const legacyType = LEGACY_DOCK.type!;
   await spawnPatch(page, [{ id: 'sc', type: legacyType, position: { x: 460, y: 240 } }]);
 
   // Arm the trap: flip the CANVAS to rear view BEFORE docking.
@@ -737,21 +757,70 @@ test('canvas rear view left ON: a docked LEGACY pane still shows its FRONT, and 
  */
 const LEGACY_DOCK_CANDIDATES = ['moog956', 'moog960', 'cartesian'] as const;
 
-/** The first candidate this checkout has NOT yet promoted. */
-function pickLegacyDockType(): string {
+/**
+ * What the candidate scan found — THREE outcomes, deliberately, and the shape
+ * is `_face-fixtures.ts`'s `deriveFixture` rather than a fourth invention:
+ *
+ *   * `ok` — `type` is an un-faced candidate; run the case.
+ *   * `migration-complete` — every candidate is REGISTERED and every one of
+ *     them is FACED. That is the designed end state of the face programme, not
+ *     a defect: `DockFullView`'s `{:else}` branch (`.fp-card-mount`) has no
+ *     occupant left to prove, and the branch itself is scheduled for deletion
+ *     with the legacy card fleet. A NAMED SKIP, never a silent pass.
+ *   * `no-candidate` — the scan recognises NONE of the names. That cannot be a
+ *     migration state (promotion moves a module between the two sets above; it
+ *     never removes it from the registry), so it means the list has rotted or
+ *     the manifest stopped loading. RED, with the names printed.
+ *
+ * ⚠ THE INSTRUMENT CHECK COMES FIRST, for the reason `deriveFixture` states at
+ * length: a scan that recognises nothing presents itself as a finished
+ * migration, and that failure is silent and green — the worse of the two.
+ */
+type LegacyDockPick =
+  | { kind: 'ok'; type: string; why: string }
+  | { kind: 'migration-complete' | 'no-candidate'; type: null; why: string };
+
+function pickLegacyDockType(): LegacyDockPick {
   const faced = new Set(REGISTRY.filter((m) => m.strictFace === true).map((m) => m.type));
   const known = new Set(REGISTRY.map((m) => m.type));
-  for (const t of LEGACY_DOCK_CANDIDATES) {
-    if (known.has(t) && !faced.has(t)) return t;
+  const registered = LEGACY_DOCK_CANDIDATES.filter((t) => known.has(t));
+  const unfaced = registered.filter((t) => !faced.has(t));
+
+  if (registered.length === 0) {
+    return {
+      kind: 'no-candidate',
+      type: null,
+      why:
+        `workflow-rear-card: the registry manifest knows NONE of the LEGACY_DOCK_CANDIDATES ` +
+        `(${LEGACY_DOCK_CANDIDATES.join(', ')}). That is not a migration state — promotion moves ` +
+        'a module from un-faced to faced, it never unregisters one — so either these names were ' +
+        'renamed/deleted, or the manifest did not load. FIX THE LIST (or the manifest); do not ' +
+        'read a finished migration into it.',
+    };
   }
-  throw new Error(
-    `workflow-rear-card: every LEGACY_DOCK_CANDIDATES entry ` +
-      `(${LEGACY_DOCK_CANDIDATES.join(', ')}) is now in STRICT_FACES or no longer registered, ` +
-      `so there is no un-faced occupant left to prove the LEGACY dock pane with. This test's ` +
-      `subject is the un-migrated branch of DockFullView (\`.fp-card-mount\`); add another ` +
-      `un-faced plain-panel module above, or retire the test with the branch it covers.`,
-  );
+  if (unfaced.length === 0) {
+    return {
+      kind: 'migration-complete',
+      type: null,
+      why:
+        `workflow-rear-card: every LEGACY_DOCK_CANDIDATES entry (${registered.join(', ')}) is now ` +
+        'in STRICT_FACES, so the LEGACY dock pane has NO OCCUPANT LEFT, BY DESIGN. This case\'s ' +
+        "subject is the un-migrated branch of DockFullView (`.fp-card-mount`), which the face " +
+        'programme is finishing: when the last module is faced the branch is deleted and this ' +
+        'case goes with it. ⚠ DO NOT re-point it at a faced module — a faced occupant renders ' +
+        '<ModuleShell>, and the flip it would then exercise is the RearCard round-trip already ' +
+        'covered by sections (1) and (4) above. Delete this case with the branch instead.',
+    };
+  }
+  const type = unfaced[0]!;
+  return {
+    kind: 'ok',
+    type,
+    why: `legacy dock occupant: ${type} — first un-faced of ${registered.join(', ')}`,
+  };
 }
+
+const LEGACY_DOCK = pickLegacyDockType();
 
 // ── (6) A CARD THAT CONSUMED THE FLIP KEY MUST NOT ALSO FLIP (#1790) ───────
 //

@@ -221,6 +221,9 @@
   // `?shell=1` opt-in preview flag so it's a strict no-op until owner sign-off.
   import { laneRenderKind, emittedTypeFor, isShellSwappable, dockRailRendersFace, NON_SHELL_LANE_TYPES } from '$lib/ui/workflow/legacy-fallback';
   import { migrated } from '$lib/ui/workflow/strict-faces';
+  // TEST SEAM (#2068): force a PROMOTED type back onto the un-migrated render
+  // path. Dev/VITE_E2E_HOOKS builds only — see `laneMigrated` below.
+  import { forcedUnmigrated, installForcedPlaceholderHook } from '$lib/dev/forced-placeholder.svelte';
   // DOM-SOURCE seam: a video module whose source lives on its CARD stays alive
   // in an off-screen host when the shell swaps its lane card away.
   import { HEADLESS_MOUNT_LANE_TYPES, DOM_SOURCE_LANE_TYPES, CARD_PRODUCER_LANE_TYPES, FACE_MOUNTS_PRODUCER, needsHeadlessSourceMount } from '$lib/ui/workflow/dom-source-modules';
@@ -529,6 +532,34 @@
    *  stale `?shell=1` bookmark) resolves to faceplates. */
   let shellFaces = $derived(page.url?.searchParams?.get('shell') !== 'legacy');
 
+  /**
+   * STRICT_FACES membership AS THE RENDER PATH MUST READ IT — the single
+   * promotion question this component asks, everywhere it asks it.
+   *
+   * It is `migrated(type)` in every build a user can reach. The second term is
+   * the FORCED-PLACEHOLDER TEST SEAM (#2068): under DEV / `VITE_E2E_HOOKS=1` a
+   * spec may name types that must render through the UN-MIGRATED path even
+   * though they are promoted, so a test whose subject is that path (the graph
+   * MIDI dispatch fallback, the dock's verbatim-card branch) keeps a subject
+   * after the last un-promoted module is gone. `forcedUnmigrated` re-reads the
+   * same gate and constant-folds to `false` in a production build, so this is
+   * `migrated(type)` there by construction — see
+   * `$lib/dev/forced-placeholder.svelte.ts` for both ends of the guard.
+   *
+   * ⚠ CANVAS IS THE ONE EVALUATION SITE and that is load-bearing here.
+   * `DockFullView`, `DockCardHost` and `AudioIoSurface` all take an INJECTED
+   * `migrated` boolean rather than calling `migrated()` themselves (see
+   * `dockRailRendersFace`'s header), so routing every read through this helper
+   * makes a forced type indistinguishable from an un-promoted one on EVERY
+   * surface at once — the lane tile, the dock full view, the rail tray and the
+   * 🎧 panel. A seam that moved only the lane would leave the dock painting a
+   * faceplate with no legacy card to drive, which is the half of the subject
+   * these specs actually need.
+   */
+  function laneMigrated(type: string): boolean {
+    return migrated(type) && !forcedUnmigrated(type);
+  }
+
   /** `?seed=none` — A TEST-ONLY EMPTY RACK. Suppresses the four one-shot
    *  SEEDERS below (the pinned M/E/C + surface singletons, the default
    *  MIXMSTRS→AUDIO OUT wire, the default videoOut, and the video-zone
@@ -725,6 +756,12 @@
   // this body's top level would latch a stale value instead of re-installing.
   if (testHooksEnabled()) {
     onMount(() => {
+      // #2068 — `__forceUnmigrated(types)`: render those types through the
+      // UN-MIGRATED lane/dock path (see `laneMigrated`). Installed here rather
+      // than in the module body so it shares this block's one gate, and it
+      // drains `__forceUnmigratedPending` so an `addInitScript` write placed
+      // before boot is honoured too.
+      installForcedPlaceholderHook();
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (globalThis as any).__patch = patch;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -2227,7 +2264,7 @@
         node,
         title: dockDisplayName(node),
         pinned: false,
-        face: dockRailRendersFace({ shellFaces, pinned: false, migrated: migrated(node.type) }),
+        face: dockRailRendersFace({ shellFaces, pinned: false, migrated: laneMigrated(node.type) }),
       });
     }
     return out;
@@ -2725,7 +2762,7 @@
         userDocked: !!dockStore.entryFor(n.id),
         type: n.type,
         hasCard: isShellSwappable(n.type, cardTypeSet.has(n.type)),
-        migrated: migrated(n.type),
+        migrated: laneMigrated(n.type),
       });
       // ⚠ A DOCK FULL VIEW DOES NOT ALWAYS MOUNT THE REAL CARD, and this used
       // to be an unconditional `continue` that assumed it always does.
@@ -2767,7 +2804,7 @@
       // are named in `FACE_MOUNTS_PRODUCER` with the reason they can.
       const fullViewShowsFaceInstead =
         dockStore.isFullView(n.id) &&
-        migrated(n.type) &&
+        laneMigrated(n.type) &&
         (DOM_SOURCE_LANE_TYPES.has(n.type) ||
           (CARD_PRODUCER_LANE_TYPES.has(n.type) && !FACE_MOUNTS_PRODUCER.has(n.type)));
       if (
@@ -2841,7 +2878,7 @@
         face: dockRailRendersFace({
           shellFaces,
           pinned: true,
-          migrated: migrated(dockedBottomNode.type),
+          migrated: laneMigrated(dockedBottomNode.type),
         }),
       });
     }
@@ -2896,7 +2933,7 @@
       dockRailRendersFace({
         shellFaces,
         pinned: true,
-        migrated: migrated(workflowAudioInNode.type),
+        migrated: laneMigrated(workflowAudioInNode.type),
       }),
   );
   let workflowAudioOutFace = $derived(
@@ -2904,7 +2941,7 @@
       dockRailRendersFace({
         shellFaces,
         pinned: true,
-        migrated: migrated(workflowAudioOutNode.type),
+        migrated: laneMigrated(workflowAudioOutNode.type),
       }),
   );
   /** A cable feeds TIMELORDE's clock input (DIN assignment or hand-patch)
@@ -3175,7 +3212,7 @@
         userDocked: !!dockEntry,
         type: n.type,
         hasCard: isShellSwappable(n.type, cardTypeSet.has(n.type)),
-        migrated: migrated(n.type),
+        migrated: laneMigrated(n.type),
       });
       const emittedType = emittedTypeFor(renderKind, n.type);
       const dockZone = dockEntry?.zone ?? null;
@@ -9726,7 +9763,7 @@
               node={fv.node}
               nodeTypes={nodeTypes as unknown as Record<string, unknown>}
               rackSize={rackSizeByType[fv.node.type]}
-              migrated={migrated(fv.node.type)}
+              migrated={laneMigrated(fv.node.type)}
               title={fv.title}
               onClose={() => dockStore.closeFullView(fv.node.id)}
               onCollapse={() => dockStore.closeFullView(fv.node.id)}

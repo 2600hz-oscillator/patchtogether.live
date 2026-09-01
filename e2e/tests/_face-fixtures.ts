@@ -720,6 +720,22 @@ export function videoInPortId(type: string): string | null {
 }
 
 /**
+ * A type's declared `domain`, off the golden — `''` when the golden has never
+ * heard of it (fail safe, never guess).
+ *
+ * Exported for the specs that read a module type OFF THE PAGE (a placeholder
+ * tile carries its own `data-shell-type`) and need to know whether the video
+ * assertions apply to it. Reading the domain here rather than re-listing video
+ * module names in a spec is the same discipline the fixtures above follow: the
+ * golden moves in the same PR as the contract it describes, a hand list does
+ * not. ⚠ It answers about the DECLARED domain only — it says nothing about
+ * promotion, card resolution or mount cost, which is what the fixtures are for.
+ */
+export function contractDomain(type: string): string {
+  return CONTRACT.get(type)?.domain ?? '';
+}
+
+/**
  * A still-UN-MIGRATED **VIDEO SINK** — an un-promoted video module that can be
  * FED by a source, for the PLACEHOLDER-host half of `workflow-shell-video`'s
  * live-thumb case.
