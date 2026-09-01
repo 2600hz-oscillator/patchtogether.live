@@ -22,6 +22,7 @@ import type { Page } from '@playwright/test';
 import { test, expect } from './_fixtures';
 import { spawnPatch } from './_helpers';
 import { readScopePeakOverWindow } from './_module-coverage-helpers';
+import { SLOW_BOOT_TEST_TIMEOUT_MS } from '../_helpers/boot-budget';
 // THE SAME reset instrument the CARD's RST test uses. Shared deliberately —
 // see the header of _clip-reset-trace.ts.
 import {
@@ -34,7 +35,35 @@ import {
   waitForWrap,
 } from './_clip-reset-trace';
 
-test.describe.configure({ mode: 'parallel' });
+// ⚠ THE PER-TEST BUDGET IS A BOUND, AND IT WAS THE INVISIBLE 30 s DEFAULT.
+//
+// ⚠ THE SUMMED VARIANT, AND IT HARD-FAILED BOTH ATTEMPTS. The MUTE test below
+// declares 15 000 + 8 000 + 4 000 + 15 000 = 42 000 ms of tolerance inside a
+// 30 000 ms budget: the bounds cannot all be spent, so the test dies on the
+// outer clock before the last poll can even start. Run 33503519404 (branch
+// `fix/trails-note-mode-axes`, which touches NO launchpad code) failed it twice:
+// `Test timeout of 32594ms exceeded` then `33150ms` — the odd numbers are
+// `_setup-credit` crediting the fixture nav.
+//
+// ⚠ THIS DOES NOT UN-PARK ANYTHING. The two `test.fixme` FLAKE-PARK legs below
+// stay parked exactly as they are; a reachable budget is a PRECONDITION of ever
+// diagnosing them (the :303 park annotation says so in its own words — "un-park
+// = the PAIR's budget diagnosis"), not the diagnosis itself.
+//
+// An inner bound at or above the budget that CONTAINS it can never come true:
+// the outer clock kills the test first, so a legible `element not found` is
+// converted into an illegible `Test timeout of 30000ms exceeded` — the class
+// #2291 root-caused and #2293 repaired at its second call site. Nothing in this
+// file said "30000"; `e2e/playwright.config.ts` never overrides Playwright's
+// default, so there was nothing to grep for except the ABSENCE of a budget.
+//
+// The budget therefore comes from `boot-budget` (90 000 on CI/SwiftShader,
+// 30 000 local) instead of the invisible default. A bound only costs wall-clock
+// when it is EXCEEDED, so this adds exactly zero to a green run; lane cost stays
+// gauged by `--global-timeout`, not by this.
+//
+// ⚠ BOUNDS ONLY. No assertion, subject or wait target changed here.
+test.describe.configure({ mode: 'parallel', timeout: SLOW_BOOT_TEST_TIMEOUT_MS });
 
 // Deck pad placements (launchpad-map: DECK_RESET_COL/ROW, DECK_MONO/MUTE/RATE_ROW).
 const RESET_PAD = { x: 2, y: 1 };

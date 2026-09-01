@@ -26,7 +26,7 @@ import {
   fixtureProblems,
   fixtureType,
 } from './_face-fixtures';
-import { BOOT_MS, PLACEHOLDER_PAINT_MS } from '../_helpers/boot-budget';
+import { BOOT_MS, PLACEHOLDER_PAINT_MS, SLOW_BOOT_TEST_TIMEOUT_MS } from '../_helpers/boot-budget';
 // Zero-import pure module — see `placeholderSubjectType` for why this is
 // imported rather than transcribed.
 import { NON_SHELL_LANE_TYPES } from '../../packages/web/src/lib/ui/workflow/legacy-fallback';
@@ -38,6 +38,29 @@ import { NON_SHELL_LANE_TYPES } from '../../packages/web/src/lib/ui/workflow/leg
 // #1904 sweep found the same defect at twenty more sites, and a bound that is
 // re-typed per spec is a bound that drifts — the reason frame waits have
 // exactly one home too.
+
+// ⚠ THE PER-TEST BUDGET IS A BOUND, AND IT WAS THE INVISIBLE 30 s DEFAULT.
+//
+// ⚠ AND THIS IS THE SPEC `boot-budget.ts` ITSELF NAMES as the most-flaked in the
+// suite (16 recovered flakes across 31 runs, #1875). #1904 moved its bounds to
+// the shared export and left the budget CONTAINING them at the flat default:
+// `PLACEHOLDER_PAINT_MS` is 45 000 on CI inside a 30 000 ms budget — 1.50x, a
+// tile wait that could not possibly finish. 4 sites (BOOT_MS + PLACEHOLDER_PAINT_MS).
+//
+// An inner bound at or above the budget that CONTAINS it can never come true:
+// the outer clock kills the test first, so a legible `element not found` is
+// converted into an illegible `Test timeout of 30000ms exceeded` — the class
+// #2291 root-caused and #2293 repaired at its second call site. Nothing in this
+// file said "30000"; `e2e/playwright.config.ts` never overrides Playwright's
+// default, so there was nothing to grep for except the ABSENCE of a budget.
+//
+// The budget therefore comes from `boot-budget` (90 000 on CI/SwiftShader,
+// 30 000 local) instead of the invisible default. A bound only costs wall-clock
+// when it is EXCEEDED, so this adds exactly zero to a green run; lane cost stays
+// gauged by `--global-timeout`, not by this.
+//
+// ⚠ BOUNDS ONLY. No assertion, subject or wait target changed here.
+test.describe.configure({ timeout: SLOW_BOOT_TEST_TIMEOUT_MS });
 
 async function gotoWorkflow(page: Page, opts: { shell: boolean }): Promise<void> {
   await page.goto(opts.shell ? '/rack' : '/rack?shell=legacy');
