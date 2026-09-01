@@ -120,9 +120,9 @@ async function sendAttackToSurface(page: Page, knobHost: Locator): Promise<void>
 }
 
 test.describe('CONTROL SURFACE faceplate', () => {
-  test.beforeEach(({}, testInfo) => {
-    testInfo.setTimeout(SLOW_BOOT_TEST_TIMEOUT_MS * 2);
-  });
+  // Group-scoped budget: boot + spawn + (in two legs) a dock open. Derived
+  // from the shared boot bound rather than a flat literal.
+  test.setTimeout(SLOW_BOOT_TEST_TIMEOUT_MS * 2);
 
   test('the LANE TILE is the SHELL: LOCK + the empty-state prompt, and no legacy card', async ({ page }) => {
     // ⚠ THE REGRESSION PIN FOR THE `NON_SHELL_LANE_TYPES` DRAIN, which is what
