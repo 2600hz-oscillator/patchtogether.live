@@ -294,6 +294,29 @@ test.describe('illogic face — four identical dials, and the four numbers they 
   // 96 h CI census to 2026-08-18 — it also hard-failed 3 time(s) on a branch, but the recovered-on-retry runs stayed green.
   // LOST WHILE PARKED: the two seams no unit or ART gate can reach — that ILLOGIC's DOM prints and redraws the LIVE graph value, and that the knobs cannot contaminate the logic jacks' clean gate output.
   // Re-enable only on a root cause (#1847); "it passes now" is not one.
+  //
+  // ⚠ ONE HYPOTHESIS TESTED AND REFUTED, 2026-09-01 — recorded so it is not
+  // re-run. The sibling negative control below WAS a budget overrun: it spends
+  // `READY_BUDGET_MS` twice (once polling, then again driving
+  // `readGateWhenPopulated` to EXHAUSTION, which is its contract), ~40 s against
+  // Playwright's 30 s default, and it failed with the timeout's message rather
+  // than the refusal's. The obvious guess was that THIS leg shares that cause —
+  // it declares three budgeted waits, 3 x 20 s = 60 s on CI, which is also over
+  // the clock. IT DOES NOT. All three of its waits are expected to SUCCEED, so
+  // each returns as soon as the analyser window fills and none of the three
+  // budgets is actually spent; a wait that genuinely exhausted here would THROW
+  // "never produced a fully-populated window", a hard failure with its own
+  // message, not a timeout. MEASURED, `E2E_SWIFTSHADER=1`, 5 consecutive runs:
+  // 10.8 / 10.6 / 10.8 / 10.7 / 10.6 s — a tight distribution with ~19 s of
+  // headroom. Cross-check that the local clock is not simply faster than CI:
+  // `e2e-timings.generated.json` records 26.8 s for this FILE with this leg
+  // skipped — i.e. essentially the negative control alone — and that same leg
+  // measures 30.3 s locally under the same flag, so local is at least as slow
+  // as CI here. A leg at 10.7 s locally is not the one hitting a 30 s wall.
+  //
+  // So the park STANDS: the 21 recovered-on-retry observations still have no
+  // proven cause, and the double-budget arithmetic is now excluded rather than
+  // merely unexamined. Five local passes say nothing about CI nondeterminism.
   test.fixme('IN A REAL BROWSER: the logic jacks are a clean gate, and the knobs do not reach them', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 21 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({
     page,
   }) => {
