@@ -37,7 +37,8 @@ import type { Edge, ModuleNode } from '$lib/graph/types';
 import type { DomainEngine } from '$lib/audio/engine';
 import { getVideoModuleDef, type VideoModuleDef } from './module-registry';
 import { createWaveformRenderer, type WaveformRenderer } from './waveform-video';
-import { buildCvBridgeMapping, cvBridgeKnobTracksBase, mapCvBridgeValue, type CvBridgeMapping } from './cv-bridge-map';
+import { buildCvBridgeMapping, cvBridgeKnobTracksBase, mapCvBridgeValue, CvActivityDetector, type CvBridgeMapping } from './cv-bridge-map';
+import { notifyAutomationTouch, notifyAutomationRelease, cvHolder } from '$lib/audio/automation-touch';
 import {
   followEnvelope,
   makeEnvelopeFollower,
@@ -494,6 +495,17 @@ export class VideoEngine implements DomainEngine {
      *  (fast attack / slow release one-pole over the window RMS). null for
      *  cv/gate (they take the tail sample). */
     env: EnvelopeFollower | null;
+    /** Idle/active detector over the RAW source stream — CONTINUOUS (scaled)
+     *  targets only; null for gate targets (an edge detector needs the raw
+     *  stream every frame, and a "gate" has no param movement to record).
+     *  Drives the record-CV-automation seam: ACTIVE ⇒ this bridge grabs the
+     *  target param via the automation-touch registry (live CV wins over
+     *  clip-automation playback, and an ARMED lane records the movement);
+     *  IDLE ⇒ the grab releases and the bridge YIELDS its per-frame write to
+     *  any live clip-automation driver (see tickCvBridges). */
+    detector: CvActivityDetector | null;
+    /** Whether this bridge currently holds the automation-touch grab. */
+    cvHeld: boolean;
     /** Disconnect the upstream AudioNode tap into our analyser. */
     teardown: () => void;
   }>();
@@ -1389,8 +1401,9 @@ export class VideoEngine implements DomainEngine {
       cancelAnimationFrame(this.rafId);
       this.rafId = null;
     }
-    for (const bridge of this.cvBridges.values()) {
+    for (const [edgeId, bridge] of this.cvBridges) {
       try { bridge.teardown(); } catch { /* */ }
+      this.releaseCvHold(edgeId, bridge);
     }
     this.cvBridges.clear();
     for (const bridge of this.videoTextureBridges.values()) {
@@ -1868,6 +1881,7 @@ void main() {
     const existing = this.cvBridges.get(edgeId);
     if (existing) {
       try { existing.teardown(); } catch { /* */ }
+      this.releaseCvHold(edgeId, existing);
     }
     // Resolve the input port id → paramTarget. Caller passes us the PORT
     // id from the edge target (e.g. "speed_cv"); the module def maps that
@@ -1894,6 +1908,10 @@ void main() {
       sourceType,
       // Only an AUDIO source is envelope-followed; cv/gate take the tail sample.
       env: sourceType === 'audio' ? makeEnvelopeFollower() : null,
+      // Idle/active detection only for CONTINUOUS param targets; a gate target
+      // must see the raw stream every frame (its module edge-detects).
+      detector: mapping.scale ? new CvActivityDetector() : null,
+      cvHeld: false,
       teardown,
     });
   }
@@ -1902,6 +1920,7 @@ void main() {
     const entry = this.cvBridges.get(edgeId);
     if (!entry) return;
     try { entry.teardown(); } catch { /* */ }
+    this.releaseCvHold(edgeId, entry);
     this.cvBridges.delete(edgeId);
     // The cable is gone: return the param it was driving to the manual base
     // immediately, so the control isn't stuck at the last CV value. (The
@@ -1914,9 +1933,79 @@ void main() {
     if (!stillDriven) this.restoreBase(entry.targetNodeId, entry.mapping.targetParamId);
   }
 
+  /**
+   * The RECORD-CV-AUTOMATION seam (owner model, 2026-08): advance one bridge's
+   * idle/active detector and decide whether the bridge may write its target
+   * param this frame.
+   *
+   *  - ACTIVE (source moving): grab the param via the automation-touch registry
+   *    under this bridge's `cv:<edgeId>` holder — clip-automation playback
+   *    suspends (live wins) and an ARMED lane's recorder samples the
+   *    engine-effective value (overdub) — and WRITE.
+   *  - IDLE: release the grab, and YIELD the write to any LIVE clip-automation
+   *    driver on the same param (`transientMods` — playback/hold refreshed it
+   *    within TRANSIENT_HOLD_FRAMES), so a recorded movement LOOPS while the
+   *    stick is parked. With no automation driving, keep writing exactly as
+   *    before (a parked off-centre stick is a deliberate held offset).
+   *
+   * FEEDBACK GUARD: the detector is fed the RAW SOURCE sample only (the
+   * analyser tap on the audio side) — never the target uniform — so playback
+   * writing the param can never register as live movement.
+   *
+   * Gate targets (no detector) always write: their module edge-detects the raw
+   * stream, and there is no continuous param to record.
+   */
+  private cvBridgeMayWrite(
+    edgeId: string,
+    bridge: { detector: CvActivityDetector | null; cvHeld: boolean; targetNodeId: string; mapping: CvBridgeMapping },
+    sample: number,
+    nowMs: number,
+  ): boolean {
+    if (!bridge.detector) return true;
+    const active = bridge.detector.update(sample, nowMs);
+    if (active) {
+      // Notify EVERY active tick, not just the idle→active transition —
+      // mirroring the MIDI path (which notifies per CC message). notifyTouch is
+      // an idempotent set-add, and the registry early-returns when no clip
+      // player exists, so this is ~2 Map ops/frame. Per-tick delivery is what
+      // lets a controller that registered (or was re-enabled) MID-MOTION pick
+      // the grab up on the next frame instead of waiting for the source to
+      // idle once. `cvHeld` still tracks the transition for the release side.
+      bridge.cvHeld = true;
+      notifyAutomationTouch(
+        { nodeId: bridge.targetNodeId, paramId: bridge.mapping.targetParamId },
+        cvHolder(edgeId),
+      );
+      return true;
+    }
+    if (bridge.cvHeld) {
+      bridge.cvHeld = false;
+      notifyAutomationRelease(
+        { nodeId: bridge.targetNodeId, paramId: bridge.mapping.targetParamId },
+        cvHolder(edgeId),
+      );
+    }
+    return !this.transientMods.has(this.paramKey(bridge.targetNodeId, bridge.mapping.targetParamId));
+  }
+
+  /** End a bridge's automation-touch grab (cable removed / bridge replaced /
+   *  engine dispose) so a param is never left suspended by a dead bridge. */
+  private releaseCvHold(
+    edgeId: string,
+    bridge: { cvHeld: boolean; targetNodeId: string; mapping: CvBridgeMapping },
+  ): void {
+    if (!bridge.cvHeld) return;
+    bridge.cvHeld = false;
+    notifyAutomationRelease(
+      { nodeId: bridge.targetNodeId, paramId: bridge.mapping.targetParamId },
+      cvHolder(edgeId),
+    );
+  }
+
   private tickCvBridges(): void {
     if (this.cvBridges.size === 0) return;
-    for (const bridge of this.cvBridges.values()) {
+    const nowMs = performance.now();
+    for (const [edgeId, bridge] of this.cvBridges) {
       const handle = this.nodes.get(bridge.targetNodeId);
       if (!handle) continue;
       // ⚠ RE-CENTRE ON THE LIVE MANUAL BASE (#2236). The mapping is built ONCE
@@ -1939,15 +2028,18 @@ void main() {
         // slow-release one-pole) to a 0..1 modulation value. The target reads
         // this as an already-unipolar signal (it does NOT re-fold audio). Also
         // hand the raw window to the target so its UI can draw a waveform
-        // overlay (TOYBOX's inline scope).
+        // overlay (TOYBOX's inline scope) — the overlay ALWAYS refreshes
+        // (visual, conflict-free); only the param write is activity-gated.
         const env = followEnvelope(bridge.env, bridge.buf);
+        handle.setParamWave?.(bridge.mapping.targetParamId, bridge.buf);
+        if (!this.cvBridgeMayWrite(edgeId, bridge, env, nowMs)) continue;
         const v = mapCvBridgeValue(bridge.mapping, env);
         handle.setParam(bridge.mapping.targetParamId, v);
-        handle.setParamWave?.(bridge.mapping.targetParamId, bridge.buf);
         continue;
       }
       // cv / gate: tail sample is "newest" in the rolling-window analyser.
       const raw = bridge.buf[bridge.buf.length - 1] ?? 0;
+      if (!this.cvBridgeMayWrite(edgeId, bridge, raw, nowMs)) continue;
       // Gate target: raw value through (module edge-detects). Continuous
       // target: map ±1 across the param's full range (mirrors audio path).
       const v = mapCvBridgeValue(bridge.mapping, raw);

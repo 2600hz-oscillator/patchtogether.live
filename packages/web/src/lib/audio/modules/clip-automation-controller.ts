@@ -14,11 +14,15 @@
 //  - RECORD is PER-LANE CONTINUOUS OVERDUB under a PER-LANE ARM (Deluge-like):
 //    each ARMED lane with a playing note clip runs its OWN QuantizedRecordWindow
 //    + pass map — punch-in at THAT clip's next wrap, commit each wrap, keep
-//    going. A lane records any control the user TOUCHES (screen / MIDI /
-//    Electra — the touch registry; NEVER CV, which fires no touch and never
-//    reaches the store tap) on a MODULE ASSIGNED to that lane (data.autoAssign,
-//    module→lane). Tracks are auto-created per touched param (targetKey
-//    `nodeId::paramId`), capped at MAX_AUTOMATION_TRACKS.
+//    going. A lane records any control under a LIVE GRAB (the touch registry:
+//    screen / MIDI / Electra hands, AND — since the record-CV-automation model,
+//    owner 2026-08 — a cv-bridge whose source stream is ACTIVE, holder
+//    `cv:<edgeId>`) on a MODULE ASSIGNED to that lane (data.autoAssign,
+//    module→lane). A param held ONLY by cv grips samples the ENGINE-EFFECTIVE
+//    value (base + CV — `readEffectiveNorm`); any human holder keeps the store
+//    tap. An IDLE cv source fires no grab, so a parked stick records nothing
+//    and its recorded movement LOOPS. Tracks are auto-created per grabbed param
+//    (targetKey `nodeId::paramId`), capped at MAX_AUTOMATION_TRACKS.
 //  - The commit target is LATCHED at pass start (the clip playing when the pass
 //    began) and each wrap commits to THAT latched clip index BEFORE the pass
 //    re-latches — so a queued launch landing on the wrap commits to the
@@ -49,6 +53,7 @@ import {
   SEAM_GLIDE_S,
   type RampPoint,
 } from './clip-automation-engine';
+import { isCvHolder } from '$lib/audio/automation-touch';
 
 /** A value moved "enough" to count as a recorded edit (below 7-bit MIDI 1/127). */
 const MOVE_EPS = 0.005;
@@ -66,6 +71,17 @@ export interface AutomationControllerDeps {
   /** Current NORMALIZED (0..1) value of the target's param — the store tap
    *  (mount-independent, modulation-free), or null if unresolvable. */
   readNorm(target: AutomationTarget): number | null;
+  /** Current ENGINE-EFFECTIVE (base + live CV) normalized value of the target's
+   *  param — engine.readParam (video: the live uniform the cv bridge wrote this
+   *  frame; audio: intrinsic + modulator tap), or null if unresolvable. Used
+   *  ONLY for a param held exclusively by cv-bridge grips (`cv:<edgeId>`
+   *  holders), so recording captures what the modulation actually did. While a
+   *  cv grip is live, that param's playback is SUSPENDED, so the only writer of
+   *  the engine value is the cv bridge itself — a played-back value can never
+   *  be re-recorded through this tap (the no-self-capture rule holds).
+   *  Optional so inert test harnesses can omit it (capture then falls back to
+   *  the store tap, the pre-CV behavior). */
+  readEffectiveNorm?(target: AutomationTarget): number | null;
   /** The target param's curve id ('discrete' ⇒ hold interpolation). */
   curve(target: AutomationTarget): string | undefined;
   /** Normalized size of ONE unit for a discrete param (so the record gate
@@ -221,8 +237,13 @@ export class AutomationController {
     const wasSuspended = this.suspended.delete(k);
     if (!holders && !wasSuspended) return; // double-release / never grabbed → no-op
     if (this.deps.hold && this.drivenKeys.has(k)) {
-      // Hand-off pin: the user's final value at the release instant.
-      this.deps.hold(target, this.deps.readNorm(target), 0);
+      // Hand-off pin: the final value at the release instant. A CV grip's
+      // release pins the ENGINE-EFFECTIVE value (the last bridge write) so the
+      // resume glide starts from what was actually heard/seen, not the CV-free
+      // store base; a human release keeps the store tap as before.
+      const pin = (isCvHolder(holder) ? this.deps.readEffectiveNorm?.(target) : null)
+        ?? this.deps.readNorm(target);
+      this.deps.hold(target, pin, 0);
     }
     this.resumeGlide.add(k);
   }
@@ -432,6 +453,30 @@ export class AutomationController {
     return [...new Set([...this.grabbed.keys(), ...this.suspended])];
   }
 
+  /** The value source for RECORD capture of key `k`: a param held ONLY by
+   *  cv-bridge grips samples the ENGINE-EFFECTIVE value (base + CV) so the
+   *  modulation movement is what lands in the clip; any HUMAN holder (screen /
+   *  MIDI / Electra) keeps the store tap — the hand writes the store, so the
+   *  store IS its live value (and engine.readParam would double-apply any CV
+   *  summed on top of that hand). Falls back to the store tap when the
+   *  effective tap is absent (inert harnesses) or unresolvable. */
+  private captureRead(k: string, target: AutomationTarget): number | null {
+    if (this.deps.readEffectiveNorm) {
+      const holders = this.grabbed.get(k);
+      if (holders && holders.size > 0) {
+        let allCv = true;
+        for (const h of holders) {
+          if (!isCvHolder(h)) { allCv = false; break; }
+        }
+        if (allCv) {
+          const v = this.deps.readEffectiveNorm(target);
+          if (v != null) return v;
+        }
+      }
+    }
+    return this.deps.readNorm(target);
+  }
+
   /**
    * PER-LANE RECORD — called once per tick per ARMED lane with a PLAYING note
    * clip and ≥1 ASSIGNED module, ONLY on that lane's recorder client, with the
@@ -527,7 +572,7 @@ export class AutomationController {
           this.capHit = true; // surfaced politely (card badge); durable cap holds
           continue;
         }
-        const v = this.deps.readNorm(target);
+        const v = this.captureRead(k, target);
         if (v == null) continue; // unresolvable control (no ParamDef) → skip
         const unit = this.deps.unitNorm(target);
         const gate = new RecordGate(unit != null ? { unitDelta: unit } : {});
@@ -551,7 +596,7 @@ export class AutomationController {
           st.released = true; // window frozen — a re-grab opens a NEW segment
           continue;
         }
-        const v = this.deps.readNorm(st.target);
+        const v = this.captureRead(key(st.target), st.target);
         if (v == null) continue;
         st.gate.sample(fracStep, v);
         st.maxDev = Math.max(st.maxDev, Math.abs(v - st.startVal));
@@ -613,7 +658,7 @@ export class AutomationController {
         this.capHit = true;
         continue;
       }
-      const v = this.deps.readNorm(target);
+      const v = this.captureRead(k, target);
       if (v == null) continue;
       const unit = this.deps.unitNorm(target);
       const gate = new RecordGate(unit != null ? { unitDelta: unit } : {});

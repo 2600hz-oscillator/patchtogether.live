@@ -955,10 +955,17 @@ test.describe('VRT: P1 curated faces (?shell=1) — compact lane tile + dock ful
         'coverage that is gone.',
     ).toEqual([]);
 
-    // NON-VACUITY: this whole block is green over an empty list too. Today the
-    // list has exactly one member and it is milkdrop (#2083); if it empties,
-    // that is a real event — the face became capturable, or was un-promoted —
-    // and this line is what makes it visible rather than silently permissive.
+    // NON-VACUITY: this whole block is green over an empty list too. If it
+    // empties, that is a real event — a face became capturable, or was
+    // un-promoted — and this line is what makes it visible rather than silently
+    // permissive.
+    //
+    // ⚠ THE POPULATION IS NOT NAMED HERE ANY MORE, DELIBERATELY. This comment
+    // used to read "today the list has exactly one member and it is milkdrop
+    // (#2083)", which was already false when acidwarp joined in #2111 and is
+    // false again now — a hand-typed count in prose beside a list that grows is
+    // the stale-ledger shape this repo keeps meeting. The list itself is the
+    // enumeration; every member carries its own measured argument.
     expect(
       FACES_WITHOUT_SCENES.length > 0,
       'FACES_WITHOUT_SCENES is empty — if that is intentional (every face is now baselined), ' +
