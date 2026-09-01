@@ -463,6 +463,10 @@ export const EXEMPT_OUTPUT_EMIT: Record<string, string> = {
   // midiLane.note_gate / midiclock shape. The divider math + the pulse pair are
   // pinned in trails.test.ts against the factory's own automation timeline.
   'trails.clock': 'a 5 ms one-shot per division (the shared MIDICLOCK GATE_PULSE_S) is below the scope poll resolution, like midiLane.note_gate; divider math + the high/low pulse pair pinned by trails.test.ts',
+  'trails.trig1': 'a 5 ms one-shot per STEP (the shared TRIGGER_PULSE_S) is below the scope poll resolution — the sweep samples ~168 times across its 5 s bound, roughly every 30 ms, so catching a 5 ms pulse is luck rather than measurement (it passed locally and read 0.0000 on CI). Identical class to trails.clock / midiLane.note_gate. The step rule and the pulse are pinned in trails.test.ts, and the LIVE trigger→voice chain is proven in trails.spec.ts, which asserts multiple distinct AUDIBLE strikes inside one held gesture',
+  'trails.trig2': 'a 5 ms one-shot per STEP (the shared TRIGGER_PULSE_S) is below the scope poll resolution — the sweep samples ~168 times across its 5 s bound, roughly every 30 ms, so catching a 5 ms pulse is luck rather than measurement (it passed locally and read 0.0000 on CI). Identical class to trails.clock / midiLane.note_gate. The step rule and the pulse are pinned in trails.test.ts, and the LIVE trigger→voice chain is proven in trails.spec.ts, which asserts multiple distinct AUDIBLE strikes inside one held gesture',
+  'trails.trig3': 'a 5 ms one-shot per STEP (the shared TRIGGER_PULSE_S) is below the scope poll resolution — the sweep samples ~168 times across its 5 s bound, roughly every 30 ms, so catching a 5 ms pulse is luck rather than measurement (it passed locally and read 0.0000 on CI). Identical class to trails.clock / midiLane.note_gate. The step rule and the pulse are pinned in trails.test.ts, and the LIVE trigger→voice chain is proven in trails.spec.ts, which asserts multiple distinct AUDIBLE strikes inside one held gesture',
+  'trails.trig4': 'a 5 ms one-shot per STEP (the shared TRIGGER_PULSE_S) is below the scope poll resolution — the sweep samples ~168 times across its 5 s bound, roughly every 30 ms, so catching a 5 ms pulse is luck rather than measurement (it passed locally and read 0.0000 on CI). Identical class to trails.clock / midiLane.note_gate. The step rule and the pulse are pinned in trails.test.ts, and the LIVE trigger→voice chain is proven in trails.spec.ts, which asserts multiple distinct AUDIBLE strikes inside one held gesture',
   'midiLane.note_gate': 'single ~6 ms one-shot pulse below the scope poll resolution (like midiclock sub-frame gates); by-note→gate logic covered by midi-lane.test.ts',
   'midiLane.poly':      'poly is always live (#674) but a poly→SCOPE edge reads lane-0 PITCH (steady DC, AC-scope can\'t peak it); always-live behavior covered by midi-lane.test.ts + adsr-poly-midilane.spec.ts',
   // ── SKIFREE partial: the `gate` output fires ONLY on a crash / eaten-by-
@@ -473,8 +477,17 @@ export const EXEMPT_OUTPUT_EMIT: Record<string, string> = {
   // are covered by e2e/tests/skifree.spec.ts which drives the skier into a
   // crash (and an eat) via the controller's _forceCrash / _forceEaten hooks
   // and asserts the gate pulse reaches a downstream SCOPE.
-  'skifree.gate': 'fires only on in-game crash/eaten event; covered by e2e/tests/skifree.spec.ts (_forceCrash/_forceEaten → gate → SCOPE)',
-  'skifree.out':  'animated game canvas (rAF self-driven, no still frame); covered by e2e/tests/skifree.spec.ts + skifree.test.ts (CV→cursor + gate hook)',
+  //
+  // ⚠ THAT SENTENCE WAS TRUE AND SAID NOTHING ABOUT THE SHIPPING SURFACE, and
+  // the `why` strings below now say so. `skifree.spec.ts` boots
+  // `/rack?shell=legacy`, so until #2192 moved the game onto the NODE the cited
+  // coverage existed only on a shell no player meets — and the hooks it drives
+  // were the CARD's controller. Both halves are now node-owned, and
+  // `skifree-face.spec.ts` asserts the same gate → SCOPE path on the DEFAULT
+  // shell with the screen switched OFF, which is the state the sweep's own
+  // exemption is really about.
+  'skifree.gate': 'fires only on in-game crash/eaten event; covered by e2e/tests/skifree.spec.ts (_forceCrash/_forceEaten → gate → SCOPE, ?shell=legacy) AND e2e/tests/skifree-face.spec.ts (the same path on the DEFAULT shell, with SCREEN OFF)',
+  'skifree.out':  'animated game canvas (rAF self-driven, no still frame); covered by e2e/tests/skifree.spec.ts + skifree.test.ts (CV→cursor + gate hook) + skifree-face.spec.ts (the surfaces that blit it)',
   // ── GIBRIBBON gameplay-conditional gates: evt_hit/miss/fire/kill/gameover
   // fire only on an in-game judgement (a correct ABXY press clears an event /
   // an uncleared event HITS the marine), which the generic sweep doesn't
@@ -606,6 +619,7 @@ export const PINNED_PER_PORT_EXEMPT_KEYS: readonly string[] = Object.freeze([
   'timelorde.1/12', 'timelorde.1/16', 'timelorde.1/32', 'timelorde.1/64',
   'timelorde.1/8',
   'trails.clock',
+  'trails.trig1', 'trails.trig2', 'trails.trig3', 'trails.trig4',
 ]);
 
 // ─── REACHABILITY LEDGER — entries that exist but can never be READ ───────────

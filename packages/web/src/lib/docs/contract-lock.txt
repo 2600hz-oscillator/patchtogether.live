@@ -2523,6 +2523,7 @@ ptzcam param pan -1..1 linear default=0
 ptzcam param slew 0..1 linear default=0.3
 ptzcam param tilt -1..1 linear default=0
 ptzcam param zoom 0..1 linear default=0
+ptzcam family ptzcam-connect kind=other prefix=ptzcam-connect
 push2Control meta domain=meta maxInstances=1
 push2Control family push2-control-connect kind=other prefix=push2-control-connect
 qbrt meta domain=audio
@@ -3349,6 +3350,14 @@ trails out g1 gate edge=gate
 trails out g2 gate edge=gate
 trails out g3 gate edge=gate
 trails out g4 gate edge=gate
+trails out poly1 polyPitchGate
+trails out poly2 polyPitchGate
+trails out poly3 polyPitchGate
+trails out poly4 polyPitchGate
+trails out trig1 gate edge=trigger
+trails out trig2 gate edge=trigger
+trails out trig3 gate edge=trigger
+trails out trig4 gate edge=trigger
 trails out x1 cv
 trails out x2 cv
 trails out x3 cv

@@ -581,6 +581,41 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
   { type: 'shimmershine', disposition: 'generic-face' },
   { type: 'sidecar', disposition: 'generic-face' },
   { type: 'sixstrum', disposition: 'generic-face' },
+  {
+    type: 'skifree',
+    disposition: 'generic-face',
+    // ⚠ THE OLD `why` WAS WRONG ON ITS LOAD-BEARING CLAUSE AND RIGHT ON THE
+    // OTHER: "a GAME: a scrolling viewport played on the keyboard, with no
+    // params at all." There is NO keyboard handler in `SkifreeCard.svelte`, in
+    // the vendored `embed.js` or in the upstream `js/` classes — steering is
+    // two bipolar CV inputs plus the MOUSE. "No params at all" is true, and it
+    // is the only thing that ever made this entry look bespoke.
+    //
+    // `params: []` is `flipper`'s shape, not `joystick`'s. #1974's zero-lane
+    // clause refuses a face that RANKS controls and then drops them at the tier
+    // the player is looking at, and it explicitly SKIPS a face that ranks
+    // nothing — naming `flipper` and `videoOut` as the honest case. So
+    // `order: []` is legal here, and the missing picture is answered by the
+    // extension seam rather than by a disposition: `tileBody` for the lane,
+    // `fullViewBody` for the dock.
+    //
+    // ⚠ AND THE STANDING REFUSE-SPEC'S LEAD BLOCKER IS DEAD. `.myrobots/
+    // 2026-08-24-bespoke-wave5/skifree/spec.md` refused this face on "promotion
+    // DELETES THE GAME — the engine lives on the card", which was TRUE WHEN
+    // WRITTEN and was retired by #2192 (868ddb9ee): the bundle load, the
+    // controller and its disposal all moved into the FACTORY, on node lifetime.
+    // The remaining cost is VRT-only and is discharged as a named
+    // `FACES_WITHOUT_SCENES` entry — the game is a committed third-party IIFE
+    // running its own rAF and its own RNG, which `simPin` cannot reach.
+    note:
+      'a GAME with `params: []`, so the face ranks nothing and BOTH extension body slots are '
+      + 'load-bearing: `fullViewBody` is the steerable slope (the mouse is the module\'s only '
+      + 'direct-manipulation instrument) and `tileBody` is the read-only lane picture, without '
+      + 'which the tile would be a title bar and four jacks. The card\'s `{distance}m · lives {n} '
+      + '· CV|MOUSE|IDLE · GAME OVER` chrome row is DELETED by the resting-text ruling, not '
+      + 'relocated: the numbers survive as the bundle\'s own in-canvas InfoBox and on the '
+      + 'picture\'s aria-label, and the control mode as two static-caption StatusLed lamps.',
+  },
   { type: 'slewSwitch', disposition: 'generic-face' },
   { type: 'snaredrum', disposition: 'generic-face' },
   { type: 'sourcery', disposition: 'generic-face' },
@@ -932,6 +967,28 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
       'assignment slots that reports stale saved assignments. The roster is WebMIDI service ' +
       'state, and the slot list is the interaction.',
   },
+  // ⚠ THE OLD `why` WAS TRUE IN ITS FACTS AND WRONG IN BOTH OF ITS
+  // CONCLUSIONS, and it is worth naming which was which.
+  //
+  // TRUE and still true: the connect gesture and the live bound / no-port /
+  // no-reply / camera-absent state ARE WebMIDI service state rather than params.
+  // That is exactly why the module gets a `controlFamily` + an extension body
+  // instead of five param cells.
+  //
+  // FALSE (1) — the PRECEDENT. It reasoned "like chromaconsole", pointing at the
+  // one binder in the tree that is still unfaced, while every other device
+  // binder had already shipped this shape: midiclock, midiCvBuddy, midiLane,
+  // midiOutBuddy, launchpadControlLeft, outToLaunch, push2Control, es9,
+  // cameraInput and electraControl are all in STRICT_FACES. ptzcam does not
+  // inherit chromaconsole's blocker either: chromaconsole's real constraint is
+  // that `deviceSlotParams` mints eight identical `slot 1`..`slot 8` params
+  // whose meaning is per-NODE `node.data.assign`, and ptzcam has nothing of the
+  // kind — its four knobs are ordinary named params.
+  //
+  // FALSE (2) — "the four trim knobs are the only generic-face material". The
+  // CONNECT gesture is a fifth ranked control through the family key-space, and
+  // its `testidPrefix` already existed on the legacy card, so no card edit was
+  // needed to satisfy module-docs-lint. It ranks FIRST, not fifth.
   {
     type: 'trails',
     disposition: 'bespoke-surface',
@@ -953,11 +1010,21 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
   },
   {
     type: 'ptzcam',
-    disposition: 'bespoke-surface',
-    why:
-      'a MIDI DEVICE BINDER like chromaconsole: the connect gesture and the live bound/unbound/' +
-      'camera-absent state are WebMIDI service state, not params — the four trim knobs are the ' +
-      'only generic-face material and the binding surface is the module.',
+    disposition: 'generic-face',
+    note:
+      'face + `fullViewBody`, the midiclock shape. CONNECT is a ranked `action` cell (an action ' +
+      'cell is not dock-restricted, so it reaches the lane tile inside the glyph-less compact cap ' +
+      'of 3) and ranks FIRST, because the module is inert twice over before it — Web MIDI ' +
+      'publishes no port until the browser consents, and the native PT-PTZ helper is what ' +
+      'publishes the virtual camera pair at all. The body carries the three things that cannot be ' +
+      'cells: the live `PT-PTZ-*` roster (read off the app\'s sysex MIDI access, so a ' +
+      '`ShellSelectorCell.options` — a pure fn of the node — would be stale across the async ' +
+      'grant), the nine-kind LINK state, and the per-axis abs/velocity mode the CAMERA reports in ' +
+      'the caps handshake. The mode line is the one deleted readout: three lamps lit on VELOCITY, ' +
+      'rendered only inside `{#if caps}` so pre-handshake "unknown" is the indicator\'s ABSENCE ' +
+      'rather than three dark lamps identical to a bound all-absolute camera. `glyph: \'none\'` is ' +
+      'forced (`outputs: []`). The send loop is in the factory on the scheduler tick and has ' +
+      'always run with no surface mounted, so promotion moves no producer.',
   },
   {
     type: 'clipplayer',
@@ -1466,11 +1533,6 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
       'status are WebMIDI service state rather than params — the outToLaunch + chromaconsole + ' +
       'ptzcam argument. Two knobs (grav, quant) are the only generic material, and a face that ' +
       'ranked those would move them to the lane and leave the board and the controller behind.',
-  },
-  {
-    type: 'skifree',
-    disposition: 'bespoke-surface',
-    why: 'a GAME: a scrolling viewport played on the keyboard, with no params at all.',
   },
   {
     type: 'textmarquee',

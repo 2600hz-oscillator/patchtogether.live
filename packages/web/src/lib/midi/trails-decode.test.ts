@@ -15,12 +15,16 @@ import {
   createTrailsDecoder,
   encodeTrailsAxis,
   encodeTrailsGate,
+  encodeTrailsNote,
+  trailsNoteToValue14,
   TRAILS_ACTIVITY_GATE_TIMEOUT_MS,
   TRAILS_AXIS_MAP,
   TRAILS_CC_FULL_SCALE,
   TRAILS_CC_PAIR,
   TRAILS_CHANNEL_COUNT,
   TRAILS_LOOP_PLAYHEAD_CHANNEL,
+  TRAILS_NOTE_AXIS_RANGE,
+  TRAILS_NOTE_VELOCITY,
   type TrailsEvent,
 } from './trails-decode';
 
@@ -384,6 +388,516 @@ describe('trails-decode: the loop gate', () => {
   });
 });
 
+// ── NOTE MODE ──────────────────────────────────────────────────────────────
+//
+// THE DEFECT, in the owner's words: "when i hit scale i am just getting one
+// continuous note output even when i select other notes in the scale."
+//
+// The mechanism, from the quick reference: "When both pitch and temporal
+// quantisation are enabled, Trails transmits MIDI Notes. Otherwise it sends
+// high-resolution MIDI CC." Note mode REPLACES the CC stream — same two axes,
+// same per-axis MIDI channels, quantised to a scale. The note branch used to
+// maintain only `held` and emit a gate, so the instant a player enabled
+// quantisation every X/Y jack froze at its last CC value and every touch
+// produced the same held pitch downstream.
+//
+// ⚠ THE LOAD-BEARING ASSERTION IN THIS SECTION IS THAT THE VALUE CHANGES
+// BETWEEN TWO DIFFERENT NOTES. A test that only checked a gate fired was green
+// throughout the entire life of the bug.
+
+/** The eight wire channels as note-on statuses, spelled as literals so the
+ *  vectors cannot agree with TRAILS_AXIS_MAP by construction. */
+const NOTE_ON_CH1_X = 0x90; // wire channel 0 = channel 1's X
+const NOTE_ON_CH1_Y = 0x91; // wire channel 1 = channel 1's Y
+const NOTE_ON_CH3_X = 0x94; // wire channel 4 = channel 3's X
+
+describe('trails-decode: note mode drives the AXES', () => {
+  it('THE BUG: two different notes produce two DIFFERENT axis values', () => {
+    // The whole defect in four lines. Before the fix both of these produced a
+    // gate and nothing else, so `axes()` was empty and the jack never moved.
+    const d = createTrailsDecoder();
+    const low = axes(d.handle([NOTE_ON_CH1_X, 40, 100], 0));
+    const high = axes(d.handle([NOTE_ON_CH1_X, 100, 100], 1));
+    expect(low, 'a note emits an axis value at all').toHaveLength(1);
+    expect(high).toHaveLength(1);
+    expect(low[0]).toMatchObject({ channel: 1, axis: 'x' });
+    expect(high[0]).toMatchObject({ channel: 1, axis: 'x' });
+    expect(
+      high[0]!.unit,
+      'a HIGHER note must read higher — the jack has to track the scale',
+    ).toBeGreaterThan(low[0]!.unit);
+    // …and it is not merely different, it is the documented mapping.
+    expect(low[0]!.unit).toBeCloseTo(40 / 127, 4);
+    expect(high[0]!.unit).toBeCloseTo(100 / 127, 4);
+  });
+
+  it('THE OWNER\'S OWN CAPTURE: the notes their hardware sent move the jack', () => {
+    // From the 2026-09-01 MON paste, note mode with both quantisations on:
+    // ch1 carried 77, 80, 82, 88, 89 and ch2 carried 81, 83, 89, 93. Those are
+    // channel 1's X and channel 1's Y — the SAME Trails channel, two axes, two
+    // MIDI channels, exactly as in CC mode.
+    const d = createTrailsDecoder();
+    const xUnits = [77, 80, 82, 88, 89].map(
+      (n) => axes(d.handle([NOTE_ON_CH1_X, n, 100], 0))[0]!.unit,
+    );
+    const yUnits = [81, 83, 89, 93].map(
+      (n) => axes(d.handle([NOTE_ON_CH1_Y, n, 100], 0))[0]!.unit,
+    );
+    // Every strike moved the jack, and the order is monotone with the pitch.
+    expect(new Set(xUnits).size, 'five distinct notes, five distinct values').toBe(5);
+    expect([...xUnits].sort((a, b) => a - b)).toEqual(xUnits);
+    expect(new Set(yUnits).size).toBe(4);
+    // The travel that spread buys, stated as a number so a window change is
+    // visible as a change to THIS expectation and not only to a constant.
+    expect(Math.max(...xUnits) - Math.min(...xUnits)).toBeCloseTo(12 / 127, 4);
+    expect(Math.max(...yUnits) - Math.min(...yUnits)).toBeCloseTo(12 / 127, 4);
+  });
+
+  it('each axis keeps its OWN MIDI channel in note mode, as in CC mode', () => {
+    const d = createTrailsDecoder();
+    expect(axes(d.handle([NOTE_ON_CH1_Y, 60, 100], 0))[0]).toMatchObject({
+      channel: 1,
+      axis: 'y',
+    });
+    expect(axes(d.handle([NOTE_ON_CH3_X, 60, 100], 0))[0]).toMatchObject({
+      channel: 3,
+      axis: 'x',
+    });
+    // A wire channel Trails does not use is still not guessed at.
+    expect(axes(d.handle([0x98, 60, 100], 0))).toHaveLength(0);
+  });
+
+  it('note mode works from a COLD START, with no CC ever received', () => {
+    // The realistic case: the player enables quantisation before ever streaming
+    // CC on that channel, so there is no latched coarse half for `emitAxis` to
+    // fall back on. A fix that only updated a fine half would emit nothing here.
+    const d = createTrailsDecoder();
+    const out = axes(d.handle([NOTE_ON_CH1_X, 127, 100], 0));
+    expect(out).toHaveLength(1);
+    expect(out[0]!.unit).toBe(1);
+  });
+
+  it('the gate still behaves EXACTLY as before — the axis is added, not swapped in', () => {
+    const d = createTrailsDecoder();
+    const on = d.handle([NOTE_ON_CH1_X, 60, 100], 0);
+    expect(gates(on)).toEqual([{ kind: 'gate', channel: 1, high: true, source: 'note' }]);
+    // A second held note still does not re-fire the gate…
+    expect(gates(d.handle([NOTE_ON_CH1_X, 64, 100], 1))).toHaveLength(0);
+    // …and the gate still falls only when the last one is released.
+    expect(gates(d.handle([0x80, 60, 0], 2))).toHaveLength(0);
+    expect(gates(d.handle([0x80, 64, 0], 3))[0]!.high).toBe(false);
+  });
+
+  // ── ⚠ THE GATE DEFECT: one Trails channel, TWO MIDI channels ──────────────
+  //
+  // Owner, on hardware: "i need gates on a channel when notes are firing on
+  // that channel."
+  //
+  // A Trails channel spends TWO MIDI channels, one per axis. The channel state
+  // is keyed by the TRAILS channel (which was already correct), but both axes'
+  // notes landed in ONE `Set<number>` — and a Set DEDUPLICATES. So whenever X
+  // and Y quantised to the same note number, the two strikes collapsed into one
+  // entry and releasing X dropped the channel's gate while Y was still
+  // sounding. A gesture on the pad's diagonal does this on every step.
+
+  it('THE GATE DEFECT: an X release must NOT drop the gate while Y is still held', () => {
+    // The exact byte sequence, on the pair the owner's hardware was using
+    // (MIDI ch3/ch4 = Trails channel 2's X and Y), with X and Y landing on the
+    // SAME note number — the case a shared Set could not represent.
+    const d = createTrailsDecoder();
+    expect(gates(d.handle([0x92, 71, 127], 0))).toEqual([
+      { kind: 'gate', channel: 2, high: true, source: 'note' },
+    ]);
+    // Y strikes the same note. The channel is already sounding, so no new edge.
+    expect(gates(d.handle([0x93, 71, 127], 1))).toHaveLength(0);
+    // ⚠ THE ASSERTION. Before the fix this emitted `high: false` and the jack
+    // went low mid-gesture.
+    expect(
+      gates(d.handle([0x92, 71, 0], 2)),
+      'X released, Y still sounding — the CHANNEL is still in contact',
+    ).toHaveLength(0);
+    // …and the gate falls once the LAST axis lets go, exactly once.
+    expect(gates(d.handle([0x93, 71, 0], 3))).toEqual([
+      { kind: 'gate', channel: 2, high: false, source: 'note' },
+    ]);
+  });
+
+  it('…and the reverse: a Y release does not drop a gate X is still holding', () => {
+    const d = createTrailsDecoder();
+    d.handle([0x92, 60, 127], 0);
+    d.handle([0x93, 60, 127], 1);
+    expect(gates(d.handle([0x93, 60, 0], 2))).toHaveLength(0);
+    expect(gates(d.handle([0x92, 60, 0], 3))[0]!.high).toBe(false);
+  });
+
+  it('the gate is the OR of the two axes, not one axis and not their sum', () => {
+    // Y alone is contact too: a channel sounding on one coordinate is sounding.
+    const d = createTrailsDecoder();
+    expect(gates(d.handle([0x93, 90, 127], 0))).toEqual([
+      { kind: 'gate', channel: 2, high: true, source: 'note' },
+    ]);
+    expect(gates(d.handle([0x93, 90, 0], 1))[0]!.high).toBe(false);
+  });
+
+  it('NO CROSS-TALK: the two axes keep separate note books', () => {
+    // The shared Set also meant one axis could DELETE the other's note. Here X
+    // holds 71 and Y strikes and releases 71; X must be untouched.
+    const d = createTrailsDecoder();
+    d.handle([0x92, 71, 127], 0); // X holds 71
+    d.handle([0x93, 71, 127], 1); // Y holds 71 too
+    d.handle([0x93, 71, 0], 2); // Y lets go — X still has its own 71
+    expect(gates(d.handle([0x92, 71, 0], 3)), 'only NOW does the channel fall').toEqual([
+      { kind: 'gate', channel: 2, high: false, source: 'note' },
+    ]);
+  });
+
+  it('a whole diagonal gesture holds ONE continuous gate', () => {
+    // The realistic shape, and the one that made this visible: a finger moving
+    // along the diagonal quantises X and Y to the same degree at every step. A
+    // monophonic note stream — release both, strike both — must produce exactly
+    // one rise at the start and one fall at the end, not a rise/fall per step.
+    const d = createTrailsDecoder();
+    let t = 0;
+    const edges: boolean[] = [];
+    const steps = [60, 62, 64, 65, 67, 69, 71];
+    for (const [i, note] of steps.entries()) {
+      if (i > 0) {
+        const prev = steps[i - 1]!;
+        edges.push(...gates(d.handle([0x92, prev, 0], t++)).map((g) => g.high));
+        edges.push(...gates(d.handle([0x93, prev, 0], t++)).map((g) => g.high));
+      }
+      edges.push(...gates(d.handle([0x92, note, 127], t++)).map((g) => g.high));
+      edges.push(...gates(d.handle([0x93, note, 127], t++)).map((g) => g.high));
+    }
+    // ⚠ A MONOPHONIC RELEASE-THEN-STRIKE STREAM DOES DIP, and that is correct:
+    // both axes genuinely let go before the next pair. What must NOT happen is
+    // a dip driven by ONE axis while the other is holding — which is what the
+    // per-step assertions above pin. Here the contract is that every fall is
+    // paired with a rise, so the gate never ends up stranded low mid-gesture.
+    const falls = edges.filter((h) => !h).length;
+    const rises = edges.filter((h) => h).length;
+    expect(rises, 'one rise per re-strike, the first included').toBe(steps.length);
+    expect(falls, 'and never more falls than rises').toBeLessThan(rises);
+    // The gesture ends SOUNDING — the last strike was not cancelled by a stale
+    // note-off from the other axis.
+    expect(gates(d.handle([0x92, 71, 0], t++))).toHaveLength(0);
+    expect(gates(d.handle([0x93, 71, 0], t++))[0]!.high).toBe(false);
+  });
+
+  it('gates stay keyed to the TRAILS channel — MON ch3/ch4 are ONE jack, g2', () => {
+    // ⚠ THE READING ERROR THAT PRODUCED THE REPORT. The owner saw notes on MON
+    // "ch3" and "ch4", looked at gate jacks 3 and 4, and found them silent. Two
+    // MIDI channels, ONE Trails channel: both of those are channel 2, and the
+    // gate they drive is g2. The decoder was already right about this; the
+    // readout is what did not say so.
+    expect(TRAILS_AXIS_MAP[2]).toEqual({ channel: 2, axis: 'x' });
+    expect(TRAILS_AXIS_MAP[3]).toEqual({ channel: 2, axis: 'y' });
+    const d = createTrailsDecoder();
+    expect(gates(d.handle([0x92, 63, 127], 0))[0]!.channel).toBe(2);
+    expect(gates(d.handle([0x93, 99, 127], 1))).toHaveLength(0); // same channel
+    // Nothing reached channels 3 or 4 — which is why their edge counters read 0.
+    expect(gates(d.handle([0x92, 63, 0], 2))).toHaveLength(0);
+    expect(gates(d.handle([0x93, 99, 0], 3))[0]!.channel).toBe(2);
+  });
+
+  // ── THE STEP TRIGGER ──────────────────────────────────────────────────────
+  //
+  // Owner: "i would like to be able to trigger kick drum from trails … i don't
+  // think our gates are there?"
+  //
+  // They are not, and the reason is measurable. The two axes are quantised
+  // INDEPENDENTLY, so X crosses a scale boundary when the horizontal position
+  // does and Y when the vertical does — moments that essentially never
+  // coincide. The channel-level OR of the two therefore goes high on the first
+  // touch and never falls. The manual is clear about what the hardware does
+  // instead: "The GATE output produces a TRIGGER whenever the gesture returns to
+  // the start of its loop or after each silent section", and the Bar's roster
+  // includes GATE WIDTH and STEP DENSITY — a pulse train, one per step.
+
+  it('THE DEFECT: an INTERLEAVED gesture yields ONE gate edge but a trigger PER STEP', () => {
+    // The realistic stream, and the whole report in one test. X and Y take
+    // turns moving; the contact level never falls, so a drum on `g` fires once.
+    const d = createTrailsDecoder();
+    let t = 0;
+    const feed = (bytes: number[]) => d.handle(bytes, t++);
+    const rises: number[] = [];
+    const steps: number[] = [];
+    const seq: number[][] = [
+      [0x92, 60, 127], [0x93, 67, 127], // both strike
+      [0x92, 60, 0], [0x92, 62, 127], // X moves, Y still held
+      [0x93, 67, 0], [0x93, 69, 127], // Y moves, X still held
+      [0x92, 62, 0], [0x92, 64, 127], // X again
+      [0x93, 69, 0], [0x93, 71, 127], // Y again
+    ];
+    for (const bytes of seq) {
+      for (const ev of feed(bytes)) {
+        if (ev.kind === 'gate' && ev.high) rises.push(1);
+        if (ev.kind === 'trigger') steps.push(1);
+      }
+    }
+    expect(rises, 'the contact level rises ONCE for the whole gesture').toHaveLength(1);
+    expect(steps.length, 'but every quantiser step articulates').toBeGreaterThan(3);
+  });
+
+  it('an ALIGNED step fires the trigger ONCE, not once per axis', () => {
+    // ⚠ THE FLAM THIS RULE EXISTS TO PREVENT. One step of a temporally
+    // quantised gesture puts TWO note-ons on the wire, X and Y. A trigger per
+    // note-on would strike a kick twice per step.
+    const d = createTrailsDecoder();
+    let t = 0;
+    const stepsAt: number[] = [];
+    const steps = [[60, 67], [62, 69], [64, 71], [65, 72]];
+    for (const [i, pair] of steps.entries()) {
+      const [x, y] = pair as [number, number];
+      if (i > 0) {
+        const [px, py] = steps[i - 1] as [number, number];
+        d.handle([0x92, px, 0], t++);
+        d.handle([0x93, py, 0], t++);
+      }
+      for (const ev of d.handle([0x92, x, 127], t++)) if (ev.kind === 'trigger') stepsAt.push(i);
+      for (const ev of d.handle([0x93, y, 127], t++)) if (ev.kind === 'trigger') stepsAt.push(i);
+    }
+    expect(stepsAt, 'exactly one trigger per step, in step order').toEqual([0, 1, 2, 3]);
+  });
+
+  it('the FIRST touch from silence triggers once, not twice', () => {
+    const d = createTrailsDecoder();
+    const first = d.handle([0x92, 60, 127], 0).filter((e) => e.kind === 'trigger');
+    const second = d.handle([0x93, 67, 127], 1).filter((e) => e.kind === 'trigger');
+    expect(first).toEqual([{ kind: 'trigger', channel: 2, source: 'step' }]);
+    expect(second, 'the other axis of the SAME step adds nothing').toHaveLength(0);
+  });
+
+  it('the step rule is TIME-FREE — the same stream triggers the same however slow', () => {
+    // ⚠ NO COALESCING WINDOW. A window would need a magic millisecond value
+    // wedged between USB packet jitter and the shortest musical step, and would
+    // decide a musical question with a timer. The rule reads the STREAM: a
+    // strike triggers only when a release has been seen since the last one.
+    // Feeding the identical bytes a thousand times slower must not change it.
+    const fast = createTrailsDecoder();
+    const slow = createTrailsDecoder();
+    const seq: number[][] = [
+      [0x92, 60, 127], [0x93, 67, 127],
+      [0x92, 60, 0], [0x93, 67, 0],
+      [0x92, 62, 127], [0x93, 69, 127],
+    ];
+    const count = (d: ReturnType<typeof createTrailsDecoder>, scale: number) => {
+      let n = 0;
+      seq.forEach((b, i) => {
+        for (const ev of d.handle(b, i * scale)) if (ev.kind === 'trigger') n++;
+      });
+      return n;
+    };
+    expect(count(fast, 1)).toBe(2);
+    expect(count(slow, 1000)).toBe(2);
+  });
+
+  it('a repeated SAME note still steps — a held rhythm is not swallowed', () => {
+    const d = createTrailsDecoder();
+    let n = 0;
+    for (let i = 0; i < 4; i++) {
+      for (const ev of d.handle([0x92, 60, 127], i * 10)) if (ev.kind === 'trigger') n++;
+      for (const ev of d.handle([0x92, 60, 0], i * 10 + 5)) if (ev.kind === 'trigger') n++;
+    }
+    expect(n, 'four strikes of one note are four steps').toBe(4);
+  });
+
+  it('CC MODE is bounded and says so: contact + loop, never per-step', () => {
+    // ⚠ NOT PARITY, and no constant could make it parity. In CC mode the device
+    // transmits X and Y only — its step gate is not a MIDI message at all — so
+    // the honest set is "the stream started" and "the playhead restarted".
+    const d = createTrailsDecoder();
+    const start = d.handle([CC_STATUS_CH1, CC_MSB, 0x40], 1000);
+    expect(start.filter((e) => e.kind === 'trigger')).toEqual([
+      { kind: 'trigger', channel: 1, source: 'contact' },
+    ]);
+    // A long continuous stream adds NO further triggers — there are no steps.
+    let mid = 0;
+    for (let i = 1; i < 40; i++) {
+      for (const ev of d.handle([CC_STATUS_CH1, CC_MSB, 0x40 + i], 1000 + i * 5)) {
+        if (ev.kind === 'trigger') mid++;
+      }
+    }
+    expect(mid, 'a continuous CC stream has no steps to report').toBe(0);
+    // …but a loop restart does articulate, exactly as the manual describes.
+    expect(d.handle([0xfa], 1200).filter((e) => e.kind === 'trigger')).toEqual([
+      { kind: 'trigger', channel: 1, source: 'loop' },
+    ]);
+    // …and so does the stream resuming after a real silence.
+    d.tick(1200 + TRAILS_ACTIVITY_GATE_TIMEOUT_MS * 2);
+    expect(
+      d.handle([CC_STATUS_CH1, CC_MSB, 0x20], 5000).filter((e) => e.kind === 'trigger'),
+    ).toEqual([{ kind: 'trigger', channel: 1, source: 'contact' }]);
+  });
+
+  it('triggers are per channel and never leak across them', () => {
+    const d = createTrailsDecoder();
+    const ch2 = d.handle([0x92, 60, 127], 0).filter((e) => e.kind === 'trigger');
+    expect(ch2).toEqual([{ kind: 'trigger', channel: 2, source: 'step' }]);
+    const ch3 = d.handle([0x94, 60, 127], 1).filter((e) => e.kind === 'trigger');
+    expect(ch3).toEqual([{ kind: 'trigger', channel: 3, source: 'step' }]);
+  });
+
+  it('VELOCITY IS CONSTANT ON THIS FIRMWARE — measured, not assumed', () => {
+    // 12643 messages of real gesture, every note row reading vel=127. The
+    // constant carries the citation; this pins that the double sends what the
+    // hardware sends, so a firmware that varies velocity shows as a difference.
+    expect(TRAILS_NOTE_VELOCITY).toBe(127);
+    expect(encodeTrailsNote({ channel: 2, axis: 'x' }, 71)).toEqual([0x92, 71, 127]);
+  });
+
+  it('AXIS, then NOTE, then GATE — a downstream voice sees pitch before contact', () => {
+    // One note message is three facts in a fixed order: where the axis is, what
+    // pitch it quantised to, and whether the channel is now sounding. A voice
+    // that read the gate first would articulate the PREVIOUS pitch.
+    const d = createTrailsDecoder();
+    const out = d.handle([NOTE_ON_CH1_X, 60, 100], 0);
+    expect(out.map((e) => e.kind)).toEqual(['axis', 'note', 'gate', 'trigger']);
+  });
+
+  it('a RELEASE holds the axis rather than dropping it to zero', () => {
+    // The jack behaves the same way it does when a CC stream goes quiet: it
+    // holds. Emitting 0 on release would slam every destination to the bottom
+    // of its range between notes.
+    const d = createTrailsDecoder();
+    d.handle([NOTE_ON_CH1_X, 100, 100], 0);
+    expect(axes(d.handle([NOTE_ON_CH1_X, 100, 0], 1)), 'vel-0 release').toHaveLength(0);
+    expect(axes(d.handle([0x80, 100, 0], 2)), '0x80 note-off').toHaveLength(0);
+  });
+
+  it('LAST-NOTE PRIORITY: releasing a stacked note does not jump the jack back', () => {
+    // One axis carries one coordinate, so stacked notes are not something the
+    // device produces — but if one arrives, the newest wins and a release moves
+    // nothing, which is the standard mono behaviour and the only one that
+    // cannot make a jack lurch backwards on a key lift.
+    const d = createTrailsDecoder();
+    d.handle([NOTE_ON_CH1_X, 40, 100], 0);
+    const second = axes(d.handle([NOTE_ON_CH1_X, 100, 100], 1));
+    expect(second[0]!.unit).toBeCloseTo(100 / 127, 4);
+    expect(axes(d.handle([0x80, 100, 0], 2))).toHaveLength(0);
+  });
+
+  it('a velocity-0 note-on is a RELEASE, not a strike at the bottom of the pad', () => {
+    // The running-status shape the owner's hardware actually sends. Treating it
+    // as a strike would emit an axis value for a note that is being let go.
+    const d = createTrailsDecoder();
+    d.handle([NOTE_ON_CH1_X, 100, 100], 0);
+    const release = d.handle([NOTE_ON_CH1_X, 100, 0], 1);
+    expect(axes(release)).toHaveLength(0);
+    expect(gates(release)).toEqual([{ kind: 'gate', channel: 1, high: false, source: 'note' }]);
+  });
+
+  it('the note WINDOW is one constant, and moving it moves the whole mapping', () => {
+    // The hardware-correction path, exercised: the shipped window is the full
+    // MIDI range because it is the only span the wire guarantees, and a player
+    // who wants more travel narrows it in one line.
+    expect(TRAILS_NOTE_AXIS_RANGE).toEqual({ lo: 0, hi: 127 });
+    const wide = createTrailsDecoder();
+    const narrow = createTrailsDecoder({ noteRange: { lo: 60, hi: 72 } });
+    const w = axes(wide.handle([NOTE_ON_CH1_X, 66, 100], 0))[0]!.unit;
+    const n = axes(narrow.handle([NOTE_ON_CH1_X, 66, 100], 0))[0]!.unit;
+    expect(w).toBeCloseTo(66 / 127, 6);
+    expect(n, 'the midpoint of a one-octave window').toBeCloseTo(0.5, 4);
+    // …and the narrow window clamps rather than running off the end of the jack.
+    expect(axes(narrow.handle([NOTE_ON_CH1_X, 127, 100], 1))[0]!.unit).toBe(1);
+    expect(axes(narrow.handle([NOTE_ON_CH1_X, 0, 100], 2))[0]!.unit).toBe(0);
+  });
+
+  it('the mapping is LINEAR IN SEMITONES — the same shape a V/oct CV has', () => {
+    // Stated as a property rather than as three magic numbers: a MIDI note is
+    // linear in semitones and so is volt-per-octave, so equal pitch intervals
+    // must produce equal jack intervals. That is what makes this mapping
+    // already V/oct-SHAPED; only the constant of proportionality is a choice,
+    // and TRAILS_NOTE_AXIS_RANGE is where it lives.
+    const d = createTrailsDecoder();
+    const at = (n: number) => axes(d.handle([NOTE_ON_CH1_X, n, 100], 0))[0]!.unit;
+    const octave1 = at(72) - at(60);
+    const octave2 = at(96) - at(84);
+    // Precision 4, not more: a note lands on the SAME 14-bit integer scale the
+    // CC path uses, so every value here is quantised to 1/16383 = 6.1e-5 and a
+    // tighter tolerance would be asserting against the rounding rather than
+    // against the mapping.
+    expect(octave2).toBeCloseTo(octave1, 4);
+    // A ten-octave window is exactly 0.1 per octave — the 1 V/oct shape if full
+    // scale is read as 10 V, which is the alternative the constant documents.
+    const voct = createTrailsDecoder({ noteRange: { lo: 0, hi: 120 } });
+    const vAt = (n: number) => axes(voct.handle([NOTE_ON_CH1_X, n, 100], 0))[0]!.unit;
+    expect(vAt(72) - vAt(60)).toBeCloseTo(0.1, 4);
+  });
+
+  it('trailsNoteToValue14 lands on the same 14-bit scale the CC path uses', () => {
+    expect(trailsNoteToValue14(0)).toBe(0);
+    expect(trailsNoteToValue14(127)).toBe(TRAILS_CC_FULL_SCALE);
+    // Out-of-window notes clamp instead of wrapping or going negative.
+    expect(trailsNoteToValue14(-5)).toBe(0);
+    expect(trailsNoteToValue14(999)).toBe(TRAILS_CC_FULL_SCALE);
+    // A degenerate window holds at the bottom rather than dividing by zero.
+    expect(trailsNoteToValue14(60, { lo: 60, hi: 60 })).toBe(0);
+    expect(Number.isFinite(trailsNoteToValue14(60, { lo: 90, hi: 10 }))).toBe(true);
+  });
+
+  it('a mode SWITCH back to CC resumes from a coherent value', () => {
+    // Note mode writes the same latches the CC assembler reads, so a device
+    // that leaves quantisation lands on a real position rather than on whatever
+    // was stale from before the notes.
+    const d = createTrailsDecoder();
+    d.handle([NOTE_ON_CH1_X, 100, 100], 0);
+    const back = axes(d.handle([CC_STATUS_CH1, CC_MSB, 0x10], 1));
+    expect(back).toHaveLength(1);
+    // ⚠ THE DOCUMENTED COST, ASSERTED RATHER THAN HIDDEN. The first coarse half
+    // after the switch combines with the fine half the note left behind, so it
+    // reads up to one full LSB (127/16383 = 0.78 %) high — the same tolerance
+    // the 14-bit assembler's header already states for an MSB-only stream.
+    const coarseOnly = (0x10 << 7) / TRAILS_CC_FULL_SCALE;
+    expect(back[0]!.unit).toBeGreaterThanOrEqual(coarseOnly);
+    expect(back[0]!.unit - coarseOnly).toBeLessThanOrEqual(127 / TRAILS_CC_FULL_SCALE);
+    // …and the very next fine half makes it exact, so the residue lasts one
+    // message rather than until the channel next moves.
+    const exact = axes(d.handle([CC_STATUS_CH1, CC_LSB, 0x00], 2));
+    expect(exact[0]!.unit).toBe(coarseOnly);
+  });
+
+  it('note mode still leaves the loop retrigger and the activity timeout alone', () => {
+    // AGENTS.md rule 7 and the existing loop fix: a note channel is the
+    // articulation, so neither mechanism may double-trigger it. Adding an axis
+    // emit must not have changed that.
+    const d = createTrailsDecoder();
+    d.handle([NOTE_ON_CH1_X, 60, 100], 0);
+    glide(d, 2, 4, 10);
+    expect(gates(d.handle([0xfa], 50)).map((g) => g.channel)).toEqual([2]);
+    // Channel 2 is a CC channel and its activity gate falls on silence, as it
+    // always did. Channel 1 is holding a note, and no timeout may touch it.
+    const fell = gates(d.tick(60_000));
+    expect(fell.map((g) => g.channel), 'only the CC channel timed out').toEqual([2]);
+    expect(d.tick(120_000), 'a held note is never dropped by the timeout').toHaveLength(0);
+  });
+
+  it('encodeTrailsNote produces the golden note-mode bytes', () => {
+    // Literal expectations: channel 1's Y is wire channel 1, channel 3's X is
+    // wire channel 4 — and a release is a note-ON at velocity 0, which is the
+    // shape the owner's capture shows.
+    expect(encodeTrailsNote({ channel: 1, axis: 'y' }, 81, 100)).toEqual([0x91, 81, 100]);
+    expect(encodeTrailsNote({ channel: 3, axis: 'x' }, 60, 0)).toEqual([0x94, 60, 0]);
+  });
+
+  it('the encoder feeds the REAL decoder end to end', () => {
+    const d = createTrailsDecoder();
+    for (const note of [24, 60, 108]) {
+      const out = axes(d.handle(encodeTrailsNote({ channel: 4, axis: 'y' }, note), 0));
+      expect(out[0]).toMatchObject({ channel: 4, axis: 'y' });
+      expect(out[0]!.unit).toBeCloseTo(note / 127, 4);
+    }
+  });
+
+  it('a note frame is RECOGNISED whether or not it moved anything', () => {
+    const d = createTrailsDecoder();
+    expect(d.handleFrame([NOTE_ON_CH1_X, 60, 100], 0).recognised).toBe(true);
+    // A repeat of the SAME note: the gate does not change and the axis lands on
+    // the same value, but the frame was understood completely.
+    expect(d.handleFrame([NOTE_ON_CH1_X, 60, 100], 1).recognised).toBe(true);
+  });
+});
+
 describe('trails-decode: transport', () => {
   it('decodes clock, start, continue and stop', () => {
     const d = createTrailsDecoder();
@@ -393,9 +907,13 @@ describe('trails-decode: transport', () => {
     expect(d.handle([0xfa], 0)).toEqual([{ kind: 'transport', running: true, reset: true }]);
     // Once a channel has a gesture, the same byte ALSO retriggers its gate.
     glide(d, 1, 4, 10);
+    // ⚠ THREE events now, not two: the manual says the gate output "produces a
+    // TRIGGER whenever the gesture returns to the start of its loop", so a
+    // restart articulates the trigger jack as well as notching the level gate.
     expect(d.handle([0xfa], 20)).toEqual([
       { kind: 'transport', running: true, reset: true },
       { kind: 'gate', channel: 1, high: true, source: 'loop' },
+      { kind: 'trigger', channel: 1, source: 'loop' },
     ]);
     expect(d.handle([0xfb], 0)).toEqual([{ kind: 'transport', running: true, reset: false }]);
     expect(d.handle([0xfc], 0)).toEqual([{ kind: 'transport', running: false, reset: false }]);
@@ -417,12 +935,30 @@ describe('trails-decode: RECOGNITION is not the same as emitting an event', () =
 
   it('understood-but-silent frames are RECOGNISED', () => {
     const d = createTrailsDecoder();
-    // A second held note: the level did not change, so no event — but the
-    // frame was understood completely.
+    // A second held note produces no GATE event — the level did not change —
+    // and the frame was understood completely.
+    //
+    // ⚠ IT DOES NOW PRODUCE AN AXIS EVENT, and that is the note-mode fix rather
+    // than a weakening of this test: in note mode the note IS the axis, so a
+    // second note is a new coordinate even when the contact level is unchanged.
+    // This assertion used to read `events` as a whole and was one of the places
+    // the frozen-axis defect looked correct.
     d.handle([0x90, 60, 100], 0);
     const second = d.handleFrame([0x90, 64, 100], 1);
-    expect(second.events).toHaveLength(0);
+    expect(gates(second.events), 'no gate edge — the channel was already held').toHaveLength(0);
+    expect(axes(second.events), 'but the axis moved to the new note').toHaveLength(1);
     expect(second.recognised).toBe(true);
+
+    // A note-OFF for a note that is not held changes no LEVEL — no gate edge,
+    // no axis move — and is still perfectly understood. It does report the axis
+    // as not sounding, which is the honest answer to a release that arrived.
+    const quiet = createTrailsDecoder();
+    const stray = quiet.handleFrame([0x80, 60, 0], 0);
+    expect(gates(stray.events)).toHaveLength(0);
+    expect(axes(stray.events)).toHaveLength(0);
+    expect(stray.events.map((e) => e.kind)).toEqual(['note']);
+    expect(stray.events[0]).toMatchObject({ kind: 'note', on: false, sounding: false });
+    expect(stray.recognised).toBe(true);
 
     // An LSB before its axis has ever sent an MSB: understood, and deliberately
     // emits no AXIS event rather than guessing a coarse half. (It is still real
