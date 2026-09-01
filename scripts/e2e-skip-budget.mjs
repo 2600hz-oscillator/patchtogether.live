@@ -342,7 +342,15 @@ export const SKIP_BUDGET = [
     // the name had to leave this list with it: this budget is anchored
     // budget→tree, and "an entry naming a spec that no longer exists is RED".
     // The other two BLOOD specs are untouched and keep this entry alive.
-    specs: ['blood-audio-output.spec.ts', 'blood-ingame.spec.ts'],
+    // ⚠ `blood-face-screen.spec.ts` JOINED 2026-08-31 (the blood face). Its two
+    // guards are the SAME two conditions, on the promoted surface: the engine
+    // may not reach ready on SwiftShader, and a prod-preview build strips the
+    // `__engine` hooks its boot proof reads. Worth naming the second one
+    // explicitly, because that spec's FIRST test is the check that the faceplate
+    // boots the engine at all — so if the hooks guard ever started firing in the
+    // sharded lane, the promotion's central proof would be silently absent while
+    // the job stayed green, which is exactly the shape this budget surfaces.
+    specs: ['blood-audio-output.spec.ts', 'blood-ingame.spec.ts', 'blood-face-screen.spec.ts'],
     reason: /BLOOD (engine|runtime)|engine not ready|extras unavailable|runtime\/extras unavailable/,
     lanes: ['e2e'],
     homeLane: 'e2e',

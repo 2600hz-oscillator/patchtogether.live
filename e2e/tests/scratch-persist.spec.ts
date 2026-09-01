@@ -18,6 +18,15 @@
 
 import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
+import { BOOT_MS, SLOW_BOOT_TEST_TIMEOUT_MS } from '../_helpers/boot-budget';
+
+// The pinned-param test is FOUR full app boots (1 goto + a 3-reload guard
+// loop, each reload a fresh JS context), so its cost is boot-count-driven and
+// the default 30 s whole-test budget is a lottery ticket on a hot shard —
+// measured losing one: timedOut → passed on the same SHA (run 33279114856,
+// e2e shard 4/12, #1903 flake-gate red). Per-spec budget per boot-budget.ts;
+// never in playwright.config.ts (WebGL attest basis).
+test.describe.configure({ timeout: SLOW_BOOT_TEST_TIMEOUT_MS });
 
 // Contract strings mirrored from the source (lib/multiplayer/local-replica.ts
 // REPLICA_DB_PREFIX + lib/multiplayer/local-scratch.ts key format). A change
@@ -108,7 +117,11 @@ async function waitForPinned(page: Page, ids: readonly string[]): Promise<void> 
       return wanted.every((id) => w.__patch!.nodes[id]?.data?.pinned === true);
     },
     ids as string[],
-    { timeout: 15_000 },
+    // BOOT bound, not an assertion — this waits on a boot subject after a
+    // goto/reload, so it takes the export site's number (the hand-typed 15 s
+    // was the same flat-bound class the #1906 sweep ended for toBeVisible
+    // sites).
+    { timeout: BOOT_MS },
   );
 }
 

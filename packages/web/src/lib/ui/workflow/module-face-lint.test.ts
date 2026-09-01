@@ -1276,6 +1276,34 @@ describe('module-face lint — MOMENTARY pads (face.momentary)', () => {
     'synesthesia:b_mode',
     'synesthesia:a_bipolar',
     'synesthesia:b_bipolar',
+    // BLOOD, 2026-08-31 — `fillMode`, LETTERBOX (0) vs FILL (1).
+    //
+    // VERIFIED AT THE READ SITE, per this roster's standard, and the read is as
+    // plain as they come: `surface.draw` evaluates
+    // `aspectFitScale(bloodAspect, ctx.res.width / ctx.res.height,
+    // params.fillMode >= 0.5 ? 'fill' : 'letterbox')` fresh on EVERY frame. It
+    // is a bare level threshold. There IS an edge detector in this module —
+    // `detectEdge` in `setParam` — but it is reached only by the `cv_`-prefixed
+    // params, and `fillMode` is neither prefixed nor targeted by any of the
+    // thirteen gate jacks, so nothing can pulse it.
+    //
+    // LATCHING, not momentary: it is a framing choice a player makes once for
+    // the display they are sending BLOOD to and leaves alone. A momentary render
+    // would snap the picture back to letterbox the instant they let go, so FILL
+    // could never actually be used — and it would also write a value into the
+    // Y.Doc on every press/release pair, which is the storm this ratchet exists
+    // to prevent.
+    //
+    // ⚠ NO `options` ROSTER, AND THE ABSENCE IS DELIBERATE RATHER THAN AN
+    // OVERSIGHT. Naming the two states would be a `params` edit on a def inside
+    // the WebGL attest basis — a real-GPU re-attest plus a contract re-pin for
+    // two captions — while `discrete 0..1` already derives a TOGGLE for free
+    // through `paramCellKind`. The roster changes the affordance, never the
+    // edge-versus-level question this list answers.
+    //
+    // ⚠ Its `curve` needed NO correction: the def has declared `discrete` since
+    // the module shipped. The quiet case, like `acidwarp:freeze` above.
+    'blood:fillMode',
   ]);
 
   it('no ACKNOWLEDGED_LATCHING param is DOCUMENTED as momentary (the cross-check)', () => {

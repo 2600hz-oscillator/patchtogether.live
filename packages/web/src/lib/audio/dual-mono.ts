@@ -276,6 +276,17 @@ export const DUAL_MONO_LEDGER: ReadonlyMap<string, DualMonoEntry> = new Map<stri
   }],
 
   // ── video-domain: not materialized by AudioEngine at all ──────────────────
+  ['gibribbon', {
+    cls: 'video-domain',
+    why: '`domain: video`. The audio-driven Vib-Ribbon-spirit game (2026-08-29 '
+      + 'redirect): ONE mono `audio_in` feeds the module\'s own AnalyserNode '
+      + '(the graphicEq shape — the VIDEO engine materializes it and the '
+      + 'audio arrives over the video↔audio bridge into `audioInputs`), which '
+      + 'the module folds into four musical bands to derive the course. The '
+      + 'input is an ANALYSIS TAP, deliberately mono like the original '
+      + 'game\'s CD analysis — a stereo pair would add nothing the '
+      + 'relative-prominence extractor could use.',
+  }],
   ['milkdrop', {
     cls: 'video-domain',
     why: '`domain: video`. Butterchurn visualizer with one audio input and a video '

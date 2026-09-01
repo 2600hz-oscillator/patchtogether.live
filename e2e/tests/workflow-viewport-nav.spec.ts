@@ -20,6 +20,7 @@
 
 import { test, expect, type Page } from '@playwright/test';
 import { installRenderSmokeHooks } from './_render-smoke';
+import { BOOT_MS } from '../_helpers/boot-budget';
 
 // channel-columns.ts geometry (kept in sync with the pure module).
 const HP_UNIT = 22.5;
@@ -43,7 +44,7 @@ async function waitForPinnedTrio(page: Page): Promise<void> {
       );
     },
     undefined,
-    { timeout: 15_000 },
+    { timeout: BOOT_MS },
   );
 }
 
@@ -56,7 +57,7 @@ async function waitForFlowHook(page: Page): Promise<void> {
       return typeof w.__flow?.flowToScreenPosition === 'function' && typeof w.__flow?.getViewport === 'function';
     },
     undefined,
-    { timeout: 15_000 },
+    { timeout: BOOT_MS },
   );
 }
 

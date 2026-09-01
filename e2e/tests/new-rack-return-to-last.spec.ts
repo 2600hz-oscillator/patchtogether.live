@@ -84,7 +84,7 @@ async function waitForPinnedTrio(page: Page): Promise<void> {
       );
     },
     undefined,
-    { timeout: 15_000 },
+    { timeout: BOOT_MS },
   );
 }
 
