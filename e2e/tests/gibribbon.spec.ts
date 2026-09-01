@@ -1,26 +1,35 @@
 // e2e/tests/gibribbon.spec.ts
 //
-// GibRibbon module smoke + full-play integration + gate-bridge coverage.
+// GIBRIBBON (the AUDIO-IN rewrite) — smoke + gameplay integration +
+// gate-bridge coverage against the LEGACY shell (the `rack` fixture's
+// surface; the faceplate half lives in gibribbon-face.spec.ts).
 //
-//   1. The card mounts cleanly with a visible 1024×576 canvas that renders
+//   1. The card mounts cleanly with the 1024×576 playfield rendering
 //      non-black (the white vector ribbon).
-//   2. Full play: drive clock+gate+CV to SPAWN an imp event, scroll it into
-//      the timing window with clock ticks, then a correct ABXY press (X for an
-//      imp) CLEARS it → score increases (an enemy was fired-and-killed).
-//   3. A MISS degrades the marine (health_cv moves down) without a press.
-//   4. forcePulse on each event gate bridges into a downstream SCOPE.ch1
-//      (the cross-domain video→audio gate bridge), proven deterministically
-//      (no reliance on gameplay RNG / SwiftShader pixels).
+//   2. ATTRACT is HONEST: a bare module self-plays (score grows, the
+//      lookahead lane fills with varied kinds) AND reports mode 'attract'.
+//   3. The REAL CHAINS play, both of them:
+//      - a fake navigator gamepad → the GAMEPAD module → cables →
+//        gibribbon's button/axis jacks → the judge (presses counted, aim
+//        written);
+//      - a REAL AUDIO CABLE (noise → audio_in): MOVING audio wakes attract
+//        into a live run and the analysed signal spawns events — "events
+//        should only happen based on audio", proven through the cable.
+//   4. Deterministic play via the `__gibribbonTestBands` seam: a band spike
+//      spawns its mapped event, the correct press clears it (score up);
+//      an uncleared event HITS the marine (health drops).
+//   5. THE DEATH PATH (the owner's bug): repeated uncleared events degrade
+//      the marine to GAME OVER, and the restart PORT starts a fresh run.
+//   6. forcePulse bridges every event gate into a downstream SCOPE.ch1.
 //
-// DETERMINISTIC BY DESIGN: every gameplay assertion reads the engine's `read`
-// state (score / health / combo) or a SCOPE analyser snapshot — NO fragile
-// pixel diffs (only ONE coarse "is the canvas non-black?" check). Inputs are
-// driven via eng.setParam(node, paramTarget, value), the same path a patched
-// cable uses.
+// DETERMINISTIC BY DESIGN: assertions read the engine's `read` state or a
+// SCOPE analyser snapshot; timing is polled on engine observables (the ONE
+// transport is the internal tempo — course ticks land every ~420 ms at the
+// default knobs, so polls, not sleeps).
 
 import { test, expect } from './_fixtures';
 import { type Page } from '@playwright/test';
-import { spawnPatch, type SpawnNode, type SpawnEdge } from './_helpers';
+import { spawnPatch, type SpawnEdge } from './_helpers';
 import { collectPageErrors } from './_page-errors';
 
 test.describe.configure({ mode: 'serial' });
@@ -49,113 +58,80 @@ async function setParam(page: Page, nodeId: string, paramId: string, value: numb
   );
 }
 
-/** Pulse a discrete input: rising edge (1) then falling edge (0). */
+/** Pulse a discrete input: rising edge then falling edge (edges are QUEUED
+ *  by the factory, so no sleep is needed between the two writes). */
 async function pulse(page: Page, nodeId: string, paramId: string): Promise<void> {
   await setParam(page, nodeId, paramId, 1);
-  await page.waitForTimeout(8);
   await setParam(page, nodeId, paramId, 0);
-  await page.waitForTimeout(8);
 }
 
-/** Advance the game clock PAST the opening count-in (GIB_TUNING.countInTicks)
- *  with all CV low so nothing spawns — so a subsequent controlled spawn pulse
- *  actually lands an event. Without this, the first couple of clock ticks fall
- *  inside the count-in window and chooseSpawn() suppresses them by design. */
-async function warmUpPastCountIn(page: Page, nodeId: string): Promise<void> {
-  await setParam(page, nodeId, 'cv1', 0);
-  await setParam(page, nodeId, 'cv2', 0);
-  await setParam(page, nodeId, 'cv3', 0);
-  await setParam(page, nodeId, 'cv4', 0);
-  // countInTicks is 2; pulse 3× to be safely past it.
-  for (let i = 0; i < 3; i++) await pulse(page, nodeId, 'clock');
+/** The deterministic AUDIO seam: while set, the factory feeds these four
+ *  band levels to the extractor instead of its analyser fold (test-only —
+ *  the analyser path is covered by the live-cable test below). */
+async function setTestBands(page: Page, bands: [number, number, number, number] | null): Promise<void> {
+  await page.evaluate((b) => {
+    const w = globalThis as unknown as { __gibribbonTestBands?: number[] };
+    if (b) w.__gibribbonTestBands = b;
+    else delete w.__gibribbonTestBands;
+  }, bands);
+}
+
+async function readKey(page: Page, nodeId: string, key: string): Promise<unknown> {
+  return await page.evaluate(
+    ({ id, k }) => {
+      const w = globalThis as unknown as {
+        __engine?: () => {
+          read: (node: { id: string; type: string; domain: string }, key: string) => unknown;
+        } | null;
+        __patch: { nodes: Record<string, { id: string; type: string; domain: string }> };
+      };
+      const eng = w.__engine?.();
+      const node = w.__patch.nodes[id];
+      if (!eng || !node) return null;
+      return eng.read(node, k) ?? null;
+    },
+    { id: nodeId, k: key },
+  );
 }
 
 async function readNum(page: Page, nodeId: string, key: string): Promise<number | null> {
-  return await page.evaluate(
-    ({ id, k }) => {
-      const w = globalThis as unknown as {
-        __engine?: () => {
-          read: (node: { id: string; type: string; domain: string }, key: string) => unknown;
-        } | null;
-        __patch: { nodes: Record<string, { id: string; type: string; domain: string }> };
-      };
-      const eng = w.__engine?.();
-      const node = w.__patch.nodes[id];
-      if (!eng || !node) return null;
-      const v = eng.read(node, k);
-      return typeof v === 'number' ? v : null;
-    },
-    { id: nodeId, k: key },
-  );
+  const v = await readKey(page, nodeId, key);
+  return typeof v === 'number' ? v : null;
 }
-
 async function readStr(page: Page, nodeId: string, key: string): Promise<string | null> {
-  return await page.evaluate(
-    ({ id, k }) => {
-      const w = globalThis as unknown as {
-        __engine?: () => {
-          read: (node: { id: string; type: string; domain: string }, key: string) => unknown;
-        } | null;
-        __patch: { nodes: Record<string, { id: string; type: string; domain: string }> };
-      };
-      const eng = w.__engine?.();
-      const node = w.__patch.nodes[id];
-      if (!eng || !node) return null;
-      const v = eng.read(node, k);
-      return typeof v === 'string' ? v : null;
-    },
-    { id: nodeId, k: key },
-  );
+  const v = await readKey(page, nodeId, key);
+  return typeof v === 'string' ? v : null;
 }
 
-/** forcePulse a gate output via the extras hook (test-only deterministic
- *  bridge driver). Returns false if the handle isn't materialised yet. */
-async function forcePulse(page: Page, nodeId: string, port: string, repeats = 6): Promise<boolean> {
-  return await page.evaluate(
-    async ({ id, p, n }) => {
-      const w = globalThis as unknown as {
-        __engine?: () => {
-          read: (node: { id: string; type: string; domain: string }, key: string) => unknown;
-        } | null;
-        __patch: { nodes: Record<string, { id: string; type: string; domain: string }> };
-      };
-      const eng = w.__engine?.();
-      const node = w.__patch.nodes[id];
-      if (!eng || !node) return false;
-      const extras = eng.read(node, 'extras') as { forcePulse?: (p: string) => void } | undefined;
-      if (!extras || typeof extras.forcePulse !== 'function') return false;
-      for (let i = 0; i < n; i++) {
-        extras.forcePulse(p);
-        if (i < n - 1) await new Promise((r) => setTimeout(r, 40));
-      }
-      return true;
-    },
-    { id: nodeId, p: port, n: repeats },
-  );
+/** Put the module into deterministic PLAY mode (attract off — self-play
+ *  stops on the next tick; the toggle is honest). */
+async function deterministicPlay(page: Page, nodeId: string): Promise<void> {
+  await setParam(page, nodeId, 'autoplay', 0);
+  await expect.poll(async () => readStr(page, nodeId, 'mode'), { timeout: 5000 }).toBe('play');
 }
 
-/** Read the lookahead-lane queue (array of {button,kind,pos,hot}) via the
- *  engine read path — the readable upcoming-buttons queue the player reacts to. */
-async function readLane(
-  page: Page,
-  nodeId: string,
-): Promise<{ button: string; kind: string; pos: number; hot: boolean }[]> {
-  return await page.evaluate((id) => {
-    const w = globalThis as unknown as {
-      __engine?: () => {
-        read: (n: { id: string; type: string; domain: string }, k: string) => unknown;
-      } | null;
-      __patch: { nodes: Record<string, { id: string; type: string; domain: string }> };
-    };
-    const eng = w.__engine?.();
-    const node = w.__patch.nodes[id];
-    if (!eng || !node) return [];
-    const lane = eng.read(node, 'lane') as { button: string; kind: string; pos: number; hot: boolean }[] | undefined;
-    return Array.isArray(lane) ? lane : [];
-  }, nodeId);
+/** Wait until the internal transport has carried the course past the
+ *  count-in (it ticks by itself — ~420 ms per course tick at defaults). */
+async function warmPastCountIn(page: Page, nodeId: string): Promise<void> {
+  await expect
+    .poll(async () => readNum(page, nodeId, 'tick'), { timeout: 10_000 })
+    .toBeGreaterThanOrEqual(3);
 }
 
-async function readScopePeak(page: Page, scopeNodeId: string): Promise<{ peak: number; rms: number } | null> {
+/** Spike one band via the test seam until at least one course tick has
+ *  consumed it, then drop back to silence — ONE controlled spawn window. */
+async function spikeBand(page: Page, nodeId: string, band: number): Promise<void> {
+  const t0 = (await readNum(page, nodeId, 'tick')) ?? 0;
+  const bands: [number, number, number, number] = [0, 0, 0, 0];
+  bands[band] = 0.95;
+  await setTestBands(page, bands);
+  await expect
+    .poll(async () => readNum(page, nodeId, 'tick'), { timeout: 10_000 })
+    .toBeGreaterThan(t0);
+  await setTestBands(page, [0, 0, 0, 0]);
+}
+
+async function readScopePeak(page: Page, scopeNodeId: string): Promise<number | null> {
   return await page.evaluate((id) => {
     const w = globalThis as unknown as {
       __engine?: () => {
@@ -168,18 +144,16 @@ async function readScopePeak(page: Page, scopeNodeId: string): Promise<{ peak: n
     if (!eng || !node) return null;
     const snap = eng.read(node, 'snapshot') as { ch1: Float32Array } | undefined;
     if (!snap) return null;
-    let peak = 0, sq = 0;
+    let peak = 0;
     for (let i = 0; i < snap.ch1.length; i++) {
-      const v = snap.ch1[i]!;
-      const a = Math.abs(v);
+      const a = Math.abs(snap.ch1[i]!);
       if (a > peak) peak = a;
-      sq += v * v;
     }
-    return { peak, rms: Math.sqrt(sq / Math.max(1, snap.ch1.length)) };
+    return peak;
   }, scopeNodeId);
 }
 
-test('gibribbon: card mounts cleanly + 1024×576 canvas renders the white ribbon', async ({ page }) => {
+test('gibribbon: card mounts cleanly + the playfield renders the white ribbon', async ({ page }) => {
   const errors = collectPageErrors(page);
 
   await page.goto('/rack?shell=legacy&seed=none');
@@ -198,129 +172,230 @@ test('gibribbon: card mounts cleanly + 1024×576 canvas renders the white ribbon
     const c = el as HTMLCanvasElement;
     return { w: c.width, h: c.height };
   });
-  // 16:9 internal canvas, scaled up to match the higher-res engine FBO.
   expect(size.w).toBe(1024);
   expect(size.h).toBe(576);
 
-  // The card polls the framebuffer at 30 Hz; give it a few frames, then assert
-  // the canvas has the white ribbon (non-black pixels). ONE coarse pixel check.
-  await page.waitForTimeout(300);
-  const nonBg = await page.evaluate(() => {
-    const c = document.querySelector('.svelte-flow__node-gibribbon [data-testid="gibribbon-screen"]') as HTMLCanvasElement | null;
-    if (!c) return 0;
-    const ctx = c.getContext('2d');
-    if (!ctx) return 0;
-    const img = ctx.getImageData(0, 0, c.width, c.height);
-    let n = 0;
-    for (let i = 0; i < img.data.length; i += 4) {
-      if (img.data[i]! > 80 || img.data[i + 1]! > 80 || img.data[i + 2]! > 80) n += 1;
-    }
-    return n;
-  });
-  expect(nonBg).toBeGreaterThan(50); // the white ribbon line is ≥ this many lit px
+  // ONE coarse pixel check: the white ribbon line is on screen.
+  await expect
+    .poll(
+      async () =>
+        await page.evaluate(() => {
+          const c = document.querySelector(
+            '.svelte-flow__node-gibribbon [data-testid="gibribbon-screen"]',
+          ) as HTMLCanvasElement | null;
+          if (!c) return 0;
+          const ctx = c.getContext('2d');
+          if (!ctx) return 0;
+          const img = ctx.getImageData(0, 0, c.width, c.height);
+          let n = 0;
+          for (let i = 0; i < img.data.length; i += 4) {
+            if (img.data[i]! > 80 || img.data[i + 1]! > 80 || img.data[i + 2]! > 80) n += 1;
+          }
+          return n;
+        }),
+      { timeout: 10_000 },
+    )
+    .toBeGreaterThan(50);
 
-  // Benign noise is decided in ONE place (`_page-errors.ts`): AudioContext
-  // autoplay warnings, and a failed load of a NAMED optional asset — here
-  // /doom/DOOM1.WAD, which GibRibbon reads for its gib sprites and which is
-  // gitignored + user-supplied, so it falls back to line-art figures by design
-  // (sprite decode is unit-tested separately).
-  //
-  // The three clauses this replaces were `DOOM1.WAD` + `/404 \(Not Found\)/` +
-  // `Failed to load resource` — the last two of which dropped EVERY failed
-  // resource load in the product, not just the WAD's. This spec is the one
-  // place in the repo where that 404 genuinely happens, so it is also the place
-  // most likely to hide a second, real one behind it.
+  // Benign noise is decided in ONE place (`_page-errors.ts`): the gitignored
+  // /doom/DOOM1.WAD 404 is the named optional asset (line-art fallback by
+  // design); anything else is significant.
   expect(errors.significant()).toEqual([]);
 });
 
-test('gibribbon: AUTOPLAY — a bare card (no clock/CV patched) self-plays', async ({ page, rack }) => {
-  // REGRESSION: a freshly-dropped GibRibbon card used to sit inert — marine
-  // running in place, ZERO events — because clockTick only fired on an external
-  // clock edge. The internal autoplay clock must drive the game with nothing
-  // patched. With no button presses the spawned events MISS → the health ladder
-  // degrades from the initial 'healthy', proving the game is actually running.
+test('gibribbon: ATTRACT is honest — a bare module self-plays AND says so', async ({ page, rack }) => {
   await spawnPatch(page, [
     { id: 'g', type: 'gibribbon', position: { x: 200, y: 200 }, domain: 'video' },
   ]);
   await expect(page.locator('.svelte-flow__node-gibribbon')).toBeVisible();
 
-  const health0 = await readStr(page, 'g', 'health'); // 'healthy' at start
-  // No setParam at all — the card must self-play on its internal clock and,
-  // unpressed, degrade off the starting rung within a few seconds.
+  expect(await readStr(page, 'g', 'mode')).toBe('attract');
+
+  // Self-play SCORES (the bot clears through the real judge — and it also
+  // deliberately fumbles, so the damage ladder is visible in attract).
   await expect
-    .poll(async () => (await readStr(page, 'g', 'health')) !== health0, {
-      timeout: 15_000,
-      intervals: [500, 1000, 1500, 2000],
-    })
-    .toBe(true);
-});
+    .poll(async () => readNum(page, 'g', 'score'), { timeout: 20_000, intervals: [500, 1000, 2000] })
+    .toBeGreaterThan(0);
 
-test('gibribbon: AUTOPLAY shows a VARIED, READABLE stream — ≥3 distinct kinds approach in the first ~5s', async ({ page, rack }) => {
-  // DROP-AND-PLAY (gap #1) + READABLE LOOKAHEAD (gap #2): a bare card must not
-  // just "degrade health" — it must show a varied stream of distinct event
-  // kinds the player can READ in the lookahead lane. We accumulate the distinct
-  // kinds visible in the lane over the opening seconds and assert ≥3 of the four
-  // kinds (loop/jump/imp/zombie) appear, AND that the lane is actually populated
-  // (a non-empty readable queue), within ~5s.
-  await spawnPatch(page, [
-    { id: 'g', type: 'gibribbon', position: { x: 200, y: 200 }, domain: 'video' },
-  ]);
-  await expect(page.locator('.svelte-flow__node-gibribbon')).toBeVisible();
-
+  // …and the lookahead lane shows a varied, readable queue.
   const seenKinds = new Set<string>();
-  let sawNonEmptyLane = false;
   await expect
     .poll(
       async () => {
-        const lane = await readLane(page, 'g');
-        if (lane.length > 0) sawNonEmptyLane = true;
-        for (const slot of lane) seenKinds.add(slot.kind);
+        const lane = (await readKey(page, 'g', 'lane')) as { kind: string; button: string }[] | null;
+        for (const slot of lane ?? []) {
+          seenKinds.add(slot.kind);
+          expect(['a', 'b', 'x', 'y']).toContain(slot.button);
+        }
         return seenKinds.size;
       },
-      { timeout: 12_000, intervals: [250, 250, 250, 500] },
+      { timeout: 20_000, intervals: [250, 250, 500] },
     )
     .toBeGreaterThanOrEqual(3);
 
-  expect(sawNonEmptyLane, 'the lookahead lane must show a readable upcoming-button queue').toBe(true);
-  // Every lane button is a valid ABXY mapping (the queue is meaningful).
-  const finalLane = await readLane(page, 'g');
-  for (const slot of finalLane) expect(['a', 'b', 'x', 'y']).toContain(slot.button);
+  expect(await readStr(page, 'g', 'mode')).toBe('attract');
 });
 
-test('gibribbon: joystick X/Y axes are consumed (no dead ports) — aim engaged, game stays playable', async ({ page }) => {
-  // NO DEAD IO (gap #1): the `x`/`y` axes must DO something and not break play.
-  // The PRECISE re-centring behaviour (aimX shifts the judgement point; aimY
-  // moves the marine) is locked deterministically in gibribbon-events.test.ts
-  // (setAim + judgePress aim-shift unit tests). Here we prove the axes are
-  // genuinely WIRED through the engine setParam path: with both sticks pushed,
-  // a deterministically-spawned imp still clears on a correct X press (the aim
-  // path consumes the values without throwing or dropping the press).
-  const errors: string[] = [];
-  page.on('pageerror', (e) => errors.push(e.message));
-  await page.goto('/rack?shell=legacy&seed=none');
-  await page.waitForLoadState('networkidle');
+test('gibribbon: REAL AUDIO CABLE — noise into audio_in wakes attract and spawns the course', async ({ page, rack }) => {
+  // The owner's redirect, proven through a real cable: an audio module's out
+  // → gibribbon.audio_in → the module's OWN analyser → bands → events. The
+  // test wiggles the noise LEVEL so the signal MOVES (a stationary source is
+  // deliberately not "interesting" — the resting floor holds), which both
+  // wakes attract into a live run and drives spawns.
+  await spawnPatch(
+    page,
+    [
+      { id: 'n', type: 'noise', position: { x: 80, y: 120 }, domain: 'audio' },
+      { id: 'g', type: 'gibribbon', position: { x: 520, y: 120 }, domain: 'video' },
+    ],
+    [
+      {
+        id: 'e-audio',
+        from: { nodeId: 'n', portId: 'white' },
+        to: { nodeId: 'g', portId: 'audio_in' },
+        sourceType: 'audio',
+        targetType: 'audio',
+      } as SpawnEdge,
+    ],
+  );
+  await expect(page.locator('.svelte-flow__node-gibribbon')).toBeVisible();
+
+  // Wiggle the source level ~4 Hz from the test (the cable and the analysis
+  // are fully real; only the modulation hand is ours) until the audio
+  // registers as presence AND the analysed course populates.
+  let lvl = 0;
+  await expect
+    .poll(
+      async () => {
+        lvl = lvl === 0 ? 1 : 0;
+        await setParam(page, 'n', 'level', lvl);
+        return await readStr(page, 'g', 'mode');
+      },
+      { timeout: 20_000, intervals: [120] },
+    )
+    .toBe('play');
+
+  // …and the analysed signal populates the course (events spawned FROM the
+  // cable, nothing else driving).
+  await expect
+    .poll(
+      async () => {
+        lvl = lvl === 0 ? 1 : 0;
+        await setParam(page, 'n', 'level', lvl);
+        const lane = (await readKey(page, 'g', 'lane')) as unknown[] | null;
+        return lane?.length ?? 0;
+      },
+      { timeout: 30_000, intervals: [150] },
+    )
+    .toBeGreaterThan(0);
+});
+
+test('gibribbon: the REAL CHAIN — fake pad → GAMEPAD module → cables → the judge', async ({ page, rack }) => {
+  await page.evaluate(() => {
+    const fakePad = {
+      id: 'Xbox Wireless Controller (STD STUB)',
+      index: 0,
+      connected: true,
+      timestamp: performance.now(),
+      mapping: 'standard',
+      axes: [0, 0, 0, 0] as number[],
+      buttons: Array.from({ length: 17 }, () => ({ pressed: false, touched: false, value: 0 })),
+    };
+    const w = globalThis as unknown as { __fakePad: typeof fakePad };
+    w.__fakePad = fakePad;
+    (navigator as unknown as { getGamepads: () => unknown[] }).getGamepads = () => [
+      w.__fakePad, null, null, null,
+    ];
+  });
+
+  await spawnPatch(
+    page,
+    [
+      { id: 'gp', type: 'gamepad', position: { x: 80, y: 120 }, domain: 'audio' },
+      { id: 'g', type: 'gibribbon', position: { x: 520, y: 120 }, domain: 'video' },
+    ],
+    [
+      { id: 'e-a', from: { nodeId: 'gp', portId: 'a' }, to: { nodeId: 'g', portId: 'a' }, sourceType: 'gate', targetType: 'gate' },
+      { id: 'e-x', from: { nodeId: 'gp', portId: 'x' }, to: { nodeId: 'g', portId: 'x_btn' }, sourceType: 'gate', targetType: 'gate' },
+      { id: 'e-lx', from: { nodeId: 'gp', portId: 'lx' }, to: { nodeId: 'g', portId: 'x' }, sourceType: 'cv', targetType: 'cv' },
+      { id: 'e-ly', from: { nodeId: 'gp', portId: 'ly' }, to: { nodeId: 'g', portId: 'y' }, sourceType: 'cv', targetType: 'cv' },
+    ] as SpawnEdge[],
+  );
+  await expect(page.locator('.svelte-flow__node-gibribbon')).toBeVisible();
+  await deterministicPlay(page, 'g');
+
+  const pressesBefore = (await readNum(page, 'g', 'presses')) ?? 0;
+
+  await expect
+    .poll(
+      async () => {
+        await page.evaluate(() => {
+          const w = globalThis as unknown as {
+            __fakePad?: { buttons: { pressed: boolean; touched: boolean; value: number }[]; timestamp: number };
+          };
+          if (!w.__fakePad) return;
+          w.__fakePad.buttons[0] = { pressed: true, touched: true, value: 1 };
+          w.__fakePad.timestamp = performance.now();
+        });
+        await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => r())));
+        await page.evaluate(() => {
+          const w = globalThis as unknown as {
+            __fakePad?: { buttons: { pressed: boolean; touched: boolean; value: number }[]; timestamp: number };
+          };
+          if (!w.__fakePad) return;
+          w.__fakePad.buttons[0] = { pressed: false, touched: false, value: 0 };
+          w.__fakePad.timestamp = performance.now();
+        });
+        return (await readNum(page, 'g', 'presses')) ?? 0;
+      },
+      { timeout: 15_000, intervals: [100, 200, 400] },
+    )
+    .toBeGreaterThan(pressesBefore);
+
+  // The stick reaches the AIM axes through the cv cables.
+  await page.evaluate(() => {
+    const w = globalThis as unknown as { __fakePad?: { axes: number[]; timestamp: number } };
+    if (!w.__fakePad) return;
+    w.__fakePad.axes = [0.8, -0.6, 0, 0];
+    w.__fakePad.timestamp = performance.now();
+  });
+  await expect
+    .poll(
+      async () =>
+        await page.evaluate((id) => {
+          const w = globalThis as unknown as {
+            __engine?: () => {
+              readParam: (n: { id: string; type: string; domain: string }, k: string) => number | undefined;
+            } | null;
+            __patch: { nodes: Record<string, { id: string; type: string; domain: string }> };
+          };
+          const eng = w.__engine?.();
+          const node = w.__patch.nodes[id];
+          if (!eng || !node) return 0;
+          return eng.readParam(node, 'axis_x') ?? 0;
+        }, 'g'),
+      { timeout: 15_000 },
+    )
+    .toBeGreaterThan(0.2);
+});
+
+test('gibribbon: a band spike spawns its imp → the correct press clears it (score up)', async ({ page, rack }) => {
   await spawnPatch(page, [
     { id: 'g', type: 'gibribbon', position: { x: 200, y: 200 }, domain: 'video' },
   ]);
   await expect(page.locator('.svelte-flow__node-gibribbon')).toBeVisible();
-  await setParam(page, 'g', 'autoplay', 0); // deterministic control
+  await deterministicPlay(page, 'g');
 
-  // Push BOTH axes (the formerly-dead ports) — these now feed setAim() every
-  // frame. axis_y moves the marine vertically; axis_x re-centres the window.
-  // Keep axis_x modest so it nudges (not maxes) the window centre.
-  await setParam(page, 'g', 'axis_x', 0.3);
-  await setParam(page, 'g', 'axis_y', -0.8);
+  expect(await readNum(page, 'g', 'score')).toBe(0);
+  await warmPastCountIn(page, 'g');
 
-  // Advance past the opening count-in so the spawn pulse below actually lands.
-  await warmUpPastCountIn(page, 'g');
+  // The adaptive extractor needs a VARYING band: silence primed the
+  // baseline, so this spike is a full-range prominence peak on the high-mid
+  // band → an IMP spawns.
+  await spikeBand(page, 'g', 2);
 
-  // Spawn an imp + clear it under aim (proves the press path still works while
-  // the axes are live).
-  await setParam(page, 'g', 'cv3', 0.95);
-  await setParam(page, 'g', 'gate', 1);
-  await pulse(page, 'g', 'clock');
-  await setParam(page, 'g', 'cv3', 0.0);
-
+  // The imp approaches over ~8 course ticks; hammer X until a press lands
+  // inside the phase-adjusted window.
   const cleared = await page.waitForFunction(
     ({ id }) => {
       const w = globalThis as unknown as {
@@ -339,138 +414,64 @@ test('gibribbon: joystick X/Y axes are consumed (no dead ports) — aim engaged,
       return typeof s === 'number' && s > 0;
     },
     { id: 'g' },
-    { timeout: 8000, polling: 60 },
-  ).catch(() => null);
-
-  expect(cleared, 'with X/Y axes engaged a correct press should still clear the imp').toBeTruthy();
-  // No exceptions from the aim path.
-  expect(errors.filter((e) => !e.includes('AudioContext'))).toEqual([]);
-});
-
-test('gibribbon: GAME OVER overlay + in-card RESTART returns to a fresh healthy game', async ({ page, rack }) => {
-  // GAME-OVER + RESTART from the play surface (gap #3/#5): drive the marine to
-  // death (autoplay off, three controlled misses), assert the on-canvas GAME
-  // OVER overlay appears, then RESTART in-card → health 'healthy', score 0,
-  // game live again.
-  await spawnPatch(page, [
-    { id: 'g', type: 'gibribbon', position: { x: 200, y: 200 }, domain: 'video' },
-  ]);
-  await expect(page.locator('.svelte-flow__node-gibribbon')).toBeVisible();
-  await setParam(page, 'g', 'autoplay', 0);
-
-  // Advance past the opening count-in so the first spawn below actually lands.
-  await warmUpPastCountIn(page, 'g');
-
-  // Drive three misses (healthy → wounded → critical → dead). Each: spawn an
-  // obstacle then tick well past the miss line with no press.
-  for (let m = 0; m < 3; m++) {
-    await setParam(page, 'g', 'cv1', 0.95);
-    await setParam(page, 'g', 'gate', 1);
-    await pulse(page, 'g', 'clock');
-    await setParam(page, 'g', 'cv1', 0.0);
-    for (let i = 0; i < 10; i++) await pulse(page, 'g', 'clock');
-  }
-
-  await expect.poll(async () => readStr(page, 'g', 'health'), { timeout: 8000 }).toBe('dead');
-
-  // The on-canvas GAME OVER overlay (DOM) must be visible.
-  const overlay = page.locator('[data-testid="gibribbon-gameover"]');
-  await expect(overlay).toBeVisible();
-  await expect(overlay).toContainText('GAME OVER');
-
-  // RESTART from the play surface → fresh healthy game.
-  await page.locator('[data-testid="gibribbon-restart"]').click();
-  await expect.poll(async () => readStr(page, 'g', 'health'), { timeout: 4000 }).toBe('healthy');
-  expect(await readNum(page, 'g', 'score')).toBe(0);
-  await expect(overlay).toBeHidden();
-});
-
-test('gibribbon: clock+gate+CV spawns an imp → a correct ABXY press clears it (score up)', async ({ page, rack }) => {
-  await spawnPatch(page, [
-    { id: 'g', type: 'gibribbon', position: { x: 200, y: 200 }, domain: 'video' },
-  ]);
-  await expect(page.locator('.svelte-flow__node-gibribbon')).toBeVisible();
-
-  // Deterministic control: turn OFF autoplay (the internal self-play clock) so
-  // this test owns every spawn via the external clock below.
-  await setParam(page, 'g', 'autoplay', 0);
-
-  expect(await readNum(page, 'g', 'score')).toBe(0);
-
-  // Advance past the opening count-in so the spawn pulse below actually lands.
-  await warmUpPastCountIn(page, 'g');
-
-  // cv3 → 'imp' (default cvEventMap = [loop, jump, imp, zombie]). Hold cv3 HIGH
-  // + gate HIGH, then tick the clock to spawn an imp on the beat, then keep
-  // ticking to scroll it toward the marine (each clock = scrollPerClock).
-  await setParam(page, 'g', 'cv3', 0.95);
-  await setParam(page, 'g', 'gate', 1);
-
-  // First clock beat: spawns the imp at pos 1.0. Drop cv3 so we don't keep
-  // spawning more imps as it scrolls. The imp now scrolls left toward the
-  // marine via both clock ticks AND the engine's per-frame scroll (~0.22/s),
-  // so it crosses the timing window over the next few seconds.
-  await pulse(page, 'g', 'clock');
-  await setParam(page, 'g', 'cv3', 0.0);
-
-  // Hammer the X button (the imp's ABXY button) on a tight poll: every poll we
-  // pulse x_btn (rising→falling edge) and re-check the score. Whichever press
-  // lands while the imp is inside the hit window clears it (marine
-  // fires-and-kills) → score > 0. This is robust to the exact pos/scroll phase
-  // (no dependence on counting ticks).
-  const cleared = await page.waitForFunction(
-    ({ id }) => {
-      const w = globalThis as unknown as {
-        __engine?: () => {
-          read: (n: { id: string; type: string; domain: string }, k: string) => unknown;
-          setParam: (n: { id: string; type: string; domain: string; params: Record<string, number> }, k: string, v: number) => void;
-        } | null;
-        __patch: { nodes: Record<string, { id: string; type: string; domain: string; params: Record<string, number> }> };
-      };
-      const eng = w.__engine?.();
-      const node = w.__patch.nodes[id];
-      if (!eng || !node) return false;
-      // Rising then falling edge on x_btn (the edge detector needs the fall to
-      // re-arm; one full press per poll).
-      eng.setParam(node, 'btn_x', 1);
-      eng.setParam(node, 'btn_x', 0);
-      const s = eng.read(node, 'score');
-      return typeof s === 'number' && s > 0;
-    },
-    { id: 'g' },
-    { timeout: 8000, polling: 60 },
+    { timeout: 15_000, polling: 60 },
   ).catch(() => null);
 
   expect(cleared, 'a correct X press should clear the imp and raise the score').toBeTruthy();
   expect(await readNum(page, 'g', 'score')).toBeGreaterThan(0);
+  await setTestBands(page, null);
 });
 
-test('gibribbon: a missed event degrades the marine (health drops below healthy)', async ({ page, rack }) => {
+test('gibribbon: an uncleared event HITS the marine — health drops below healthy', async ({ page, rack }) => {
   await spawnPatch(page, [
     { id: 'g', type: 'gibribbon', position: { x: 200, y: 200 }, domain: 'video' },
   ]);
   await expect(page.locator('.svelte-flow__node-gibribbon')).toBeVisible();
-
-  // Deterministic control: OFF autoplay so only the controlled miss below drives
-  // the health ladder.
-  await setParam(page, 'g', 'autoplay', 0);
+  await deterministicPlay(page, 'g');
 
   expect(await readStr(page, 'g', 'health')).toBe('healthy');
+  await warmPastCountIn(page, 'g');
 
-  // Advance past the opening count-in so the spawn pulse below actually lands.
-  await warmUpPastCountIn(page, 'g');
+  // One bass spike, no press: the loop reaches the marine and hits him.
+  await spikeBand(page, 'g', 0);
+  await expect
+    .poll(async () => readStr(page, 'g', 'health'), { timeout: 15_000 })
+    .not.toBe('healthy');
+  expect(['wounded', 'critical', 'dead']).toContain(await readStr(page, 'g', 'health'));
+  await setTestBands(page, null);
+});
 
-  // Spawn a loop event (cv1) and let the clock scroll it PAST the marine with
-  // NO button press → a miss → degrade healthy → wounded.
-  await setParam(page, 'g', 'cv1', 0.95);
-  await setParam(page, 'g', 'gate', 1);
-  await pulse(page, 'g', 'clock');
-  await setParam(page, 'g', 'cv1', 0.0);
-  // Tick well past the miss line (pos 1.0 → missPos −0.12 over ~7 ticks at 0.18).
-  for (let i = 0; i < 10; i++) await pulse(page, 'g', 'clock');
+test('gibribbon: THE DEATH PATH — repeated hits reach GAME OVER, restart PORT revives', async ({ page, rack }) => {
+  // The owner's bug, as an e2e: the marine MUST die when hit enough — and
+  // the restart gate must bring him back.
+  await spawnPatch(page, [
+    { id: 'g', type: 'gibribbon', position: { x: 200, y: 200 }, domain: 'video' },
+  ]);
+  await expect(page.locator('.svelte-flow__node-gibribbon')).toBeVisible();
+  await deterministicPlay(page, 'g');
+  await warmPastCountIn(page, 'g');
 
-  const health = await readStr(page, 'g', 'health');
-  expect(['wounded', 'critical', 'dead']).toContain(health);
+  // A metronome of bass spikes with NO presses: every loop that reaches the
+  // marine degrades him a form — healthy → wounded → critical → DEAD.
+  let hi = true;
+  await expect
+    .poll(
+      async () => {
+        hi = !hi;
+        await setTestBands(page, hi ? [0.95, 0, 0, 0] : [0, 0, 0, 0]);
+        return await readKey(page, 'g', 'dead');
+      },
+      { timeout: 45_000, intervals: [300] },
+    )
+    .toBe(true);
+  await setTestBands(page, null);
+  expect(await readStr(page, 'g', 'health')).toBe('dead');
+
+  // The restart PORT (same paramTarget path a patched cable uses).
+  await pulse(page, 'g', 'restart_btn');
+  await expect.poll(async () => readStr(page, 'g', 'health'), { timeout: 5000 }).toBe('healthy');
+  expect(await readNum(page, 'g', 'score')).toBe(0);
+  expect(await readStr(page, 'g', 'mode')).toBe('play');
 });
 
 // ── gate-bridge coverage: every event gate reaches a downstream SCOPE ────────
@@ -497,13 +498,10 @@ for (const port of GATE_PORTS) {
     );
     await expect(page.locator('.svelte-flow__node-gibribbon')).toBeVisible();
 
-    // Baseline: gate idle → scope reads ~0.
-    const before = await readScopePeak(page, scopeId);
-    expect(before?.peak ?? 0).toBeLessThan(0.2);
+    expect((await readScopePeak(page, scopeId)) ?? 0).toBeLessThan(0.2);
 
-    // Drive the gate via forcePulse until the bridged pulse shows on ch1.
     const ok = await page.waitForFunction(
-      async ({ id, p, sid }) => {
+      ({ id, p, sid }) => {
         const w = globalThis as unknown as {
           __engine?: () => {
             read: (n: { id: string; type: string; domain: string }, k: string) => unknown;

@@ -24,10 +24,33 @@
 //
 // Renderer-independent for the AUDIO assertion (analyser reads the engine's own
 // PCM, not the GL canvas) → SwiftShader-safe. Gated on blood-ready + e2e hooks.
+//
+// ── ⚠ RE-POINTED OFF `?shell=legacy` (2026-08-31, the blood face) ───────────
+//
+// The live test below used to boot `/rack?shell=legacy&seed=none` and wait on
+// `blood-card` / `blood-ready`. That surface is an escape hatch no player meets,
+// and — much worse for this particular spec — it is the surface whose card held
+// the tree's ONLY `extras.ensureLoaded()` call. So a green run proved the whole
+// menu → level → MultiVoc → worklet → audio_l → SCOPE chain works WHEN THE
+// LEGACY CARD BOOTS THE ENGINE, and said nothing at all about the surface the
+// promotion actually ships. `laneRenderKind` returns 'legacy' BEFORE `migrated`
+// is read, so it would have stayed green forever over a face that never booted.
+//
+// It now boots the DEFAULT shell and opens the dock faceplate, so the engine is
+// started by `BloodScreenBody`'s `autoBootBlood` and everything downstream —
+// including the audible-output assertion — is a statement about the shipping
+// surface. The assertions themselves are UNCHANGED; only the boot path and the
+// readiness locator moved.
+//
+// ⚠ THE SECOND TEST IS DELIBERATELY LEFT ON THE `rack` FIXTURE. It is
+// `test.fixme`-PARKED under #1847, so re-pointing it would rewrite a test nobody
+// runs and would make the park's "the body and its assertions are UNCHANGED"
+// note false. It moves when it is un-parked.
 
 import { test, expect } from './_fixtures';
 import { type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
+import { BOOT_MS, SLOW_BOOT_TEST_TIMEOUT_MS } from '../_helpers/boot-budget';
 
 const BLOOD_ID = 'blood-aud';
 const SCOPE_ID = 'scope-aud';
@@ -61,9 +84,32 @@ async function readScopePeak(page: Page, scopeId: string): Promise<{ peak: numbe
 }
 
 test('BLOOD audio_l → SCOPE: the game-audio mixer produces audible signal in-game', async ({ page }) => {
-  test.setTimeout(90_000);
+  // ⚠ THE CEILING IS DERIVED, AND THE RE-POINT IS WHY IT MOVED — measured on a
+  // RED run, not raised on suspicion. CI run 33435725342, e2e shard 5/12: this
+  // test failed BOTH attempts with `Test timeout of 90000ms exceeded`, and its
+  // own log line had ALREADY printed a healthy result on each
+  // (`peak=0.6976` / `peak=0.7599` against a 0.01 floor). So the assertion was
+  // reached and would have passed; the flat 90 s guillotine came down on the way
+  // out.
+  //
+  // ⚠ THE COST IS A SERIALISATION, NOT A SLOWDOWN, and that is the whole reason a
+  // bump is the honest fix rather than a cover-up. On `?shell=legacy` the card
+  // mounted WITH THE PAGE, so BLOOD's 5.9 MB ASYNCIFY cold boot (20-25 s on a
+  // 2-core SwiftShader VM, per blood-mount.spec.ts's header) overlapped
+  // `waitForLoadState('networkidle')` and `spawnPatch`. On the shipping surface
+  // the body mounts in the DOCK, so that boot cannot begin until the dock is
+  // open — the same work, ~20 s of it moved from concurrent to sequential.
+  //
+  // Expressed as "the existing budget PLUS one cold boot", both from the ONE
+  // export site, so it scales with the renderer instead of being a different
+  // assertion on every runner (#1875/#1906): 90 s + 30 s on CI, 30 s + 15 s
+  // locally. It BOUNDS the failure; nothing here asserts it.
+  test.setTimeout(SLOW_BOOT_TEST_TIMEOUT_MS + BOOT_MS);
   page.on('pageerror', (e) => console.error('pageerror:', e.message));
-  await page.goto('/rack?shell=legacy&seed=none');
+  // ⚠ THE DEFAULT SHELL — see the header. This is the boot path a player takes,
+  // and after the promotion it is the ONLY one that exercises the face's engine
+  // boot. `seed=none` keeps the rack empty so spawnPatch owns the graph.
+  await page.goto('/rack?shell=1&seed=none');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(
@@ -83,10 +129,34 @@ test('BLOOD audio_l → SCOPE: the game-audio mixer produces audible signal in-g
     ],
   );
 
-  await page.getByTestId('blood-card').waitFor({ state: 'visible', timeout: 10_000 });
-  const ready = await page
-    .getByTestId('blood-ready')
-    .waitFor({ state: 'visible', timeout: 25_000 })
+  // ── OPEN THE FACEPLATE, WHICH IS WHAT BOOTS THE ENGINE ───────────────────
+  //
+  // On the default shell the lane tile is a `ModuleShell` and the module's own
+  // surface lives in the dock full view — exactly where the legacy card used to
+  // be mounted, so WHEN blood boots is unchanged by the promotion; only WHICH
+  // component does it moved.
+  const shell = page.locator(`.svelte-flow__node[data-id="${BLOOD_ID}"] [data-testid="module-shell"]`);
+  await expect(shell, 'the promoted BLOOD face renders a ModuleShell tile in the lane')
+    .toBeVisible({ timeout: SLOW_BOOT_TEST_TIMEOUT_MS });
+  await shell.getByTestId('shell-open-dock').click();
+  const frame = page.getByTestId('dock-full-view').getByTestId('blood-face-frame');
+  await expect(frame, 'the BLOOD faceplate body mounts in the dock')
+    .toBeVisible({ timeout: SLOW_BOOT_TEST_TIMEOUT_MS });
+
+  // ⚠ READ OFF A DATA ATTRIBUTE, NOT A STATUS LINE. The card's "Running — click
+  // + use arrows/Ctrl/Space" readout is DELETED by the promotion (a derived
+  // state word outside any control), so `blood-ready` no longer exists on the
+  // shipping surface. The state is on `data-blood-status`, which is assertable
+  // without painting anything.
+  //
+  // ⚠ `BOOT_MS`, NOT THE HAND-TYPED 25 s THIS SPEC CARRIED ON THE CARD. What is
+  // being waited for is exactly one cold WASM boot, and `BOOT_MS` is the fleet's
+  // name for that (30 s under SLOW_RENDER, 15 s locally) — so the wait scales
+  // with the renderer rather than meaning something different on every machine.
+  // It exits the instant the body reports ready.
+  const ready = await expect
+    .poll(() => frame.getAttribute('data-blood-status'), { timeout: BOOT_MS })
+    .toBe('ready')
     .then(() => true)
     .catch(() => false);
   test.skip(!ready, 'BLOOD engine did not reach ready (renderer/heap-sensitive on CI)');

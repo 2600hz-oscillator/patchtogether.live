@@ -72,6 +72,7 @@ dockscope        sum
 featurecv        sum
 filter           dual-mono
 foxy             sum
+gibribbon        video-domain
 milkdrop         video-domain
 moog902          deferred
 moog904a         dual-mono

@@ -15,6 +15,13 @@
   // full-game override (cached in IndexedDB). The "Blood data missing" overlay
   // is the failure path — it means the bundled files did not resolve.
   // See docs/adr/007-game-asset-distribution.md.
+  //
+  // ⚠ THE BOOT IS NO LONGER THIS CARD'S. `extras.ensureLoaded()` used to be
+  // called from HERE and nowhere else in the tree, which made the engine boot a
+  // property of a component the shipping shell does not mount. It moved into
+  // `$lib/blood/blood-boot.ts`, which this card and the faceplate body both
+  // call — see that file's header for why the extraction was a precondition of
+  // promoting the module rather than tidying after it.
 
   import { onMount, onDestroy } from 'svelte';
   import { type NodeProps } from '@xyflow/svelte';
@@ -29,15 +36,12 @@
     shouldClaimBloodKey,
   } from '$lib/blood/blood-keys';
   import {
-    setInjectedBloodData,
-    BLOOD_REQUIRED_FILES,
-    type BloodDataFile,
-  } from '$lib/blood/blood-runtime';
-  import {
-    getBloodFiles,
-    putBloodFiles,
-    canonicalBloodName,
-  } from '$lib/blood/blood-data-store';
+    BLOOD_REQUIRED,
+    autoBootBlood,
+    bootBlood,
+    importBloodData,
+    type BloodLoadStatus,
+  } from '$lib/blood/blood-boot';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import ModuleTitle from './ModuleTitle.svelte';
@@ -49,14 +53,12 @@
 
   let cardEl: HTMLDivElement | null = $state(null);
   let fileInputEl: HTMLInputElement | null = $state(null);
-  let loadStatus = $state<'idle' | 'loading' | 'ready' | 'error'>('idle');
+  let loadStatus = $state<BloodLoadStatus>('idle');
   let loadError = $state<string | null>(null);
-  let missing = $state<string[]>([]);
-  // Names of in-browser data files currently injected (picked or IDB-restored).
-  let loadedDataNames = $state<string[]>([]);
+  let missing = $state<readonly string[]>([]);
   let importing = $state(false);
 
-  const REQUIRED = [...BLOOD_REQUIRED_FILES];
+  const REQUIRED = BLOOD_REQUIRED;
 
   // PatchPanel descriptors derived straight from the def ports.
   const inputs: PortDescriptor[] = bloodDef.inputs.map((p) => ({
@@ -75,75 +77,52 @@
     setNodeParam(id, 'audioGain', v);
   }
 
+  /** ⚠ SPELLED INLINE, NOT SHARED — see the paragraph in blood-boot.ts. This
+   *  literal `read(…, 'extras')` is what enrols this card in
+   *  `card-media-lifetime.test.ts` / `dom-source-modules.test.ts`, which grep
+   *  card sources for it; routing it through a helper takes the card off that
+   *  gate and strands its `EXTRAS_OWNERS` entry. One-shot ACTIONS are shared;
+   *  this accessor is not one. */
   function getExtras(): BloodHandleExtras | null {
     const e = engineCtx.get();
     if (!e) return null;
     try {
       const videoEngine = e.getDomain<VideoEngine>('video');
-      const extras = videoEngine.read(id, 'extras') as BloodHandleExtras | undefined;
-      return extras ?? null;
+      return (videoEngine.read(id, 'extras') as BloodHandleExtras | undefined) ?? null;
     } catch {
       return null;
     }
+  }
+
+  function apply(r: { status: 'ready' | 'error'; error: string | null; missing: readonly string[] }): void {
+    loadStatus = r.status;
+    loadError = r.error;
+    missing = r.missing;
   }
 
   async function tryLoad(): Promise<void> {
     const extras = getExtras();
     if (!extras) return;
     loadStatus = 'loading';
-    const err = await extras.ensureLoaded();
-    missing = extras.missingDataFiles();
-    if (err) {
-      loadStatus = 'error';
-      loadError = err;
-    } else {
-      loadStatus = 'ready';
-      loadError = null;
-    }
+    apply(await bootBlood(extras));
   }
 
   // ---- In-browser Blood data loading (the HOSTED-preview path) ----
   // The owner can't drop proprietary Blood data on the hosted server, so they
-  // pick their own files here; we register the bytes with the runtime + cache
-  // them in IndexedDB so they only pick ONCE.
+  // pick their own files here; `importBloodData` registers the bytes with the
+  // runtime, caches them in IndexedDB so they only pick ONCE, drops the latched
+  // failed load and re-boots.
 
-  function registerInjected(files: BloodDataFile[]): void {
-    setInjectedBloodData(files);
-    loadedDataNames = files.map((f) => f.name.toUpperCase());
-  }
-
-  /** Auto-restore previously-picked data from IndexedDB (so a reload boots
-   *  straight in). Returns true if any data was restored. */
-  async function restoreFromIndexedDb(): Promise<boolean> {
-    try {
-      const stored = await getBloodFiles();
-      if (stored.length === 0) return false;
-      registerInjected(stored.map((f) => ({ name: f.name, bytes: f.bytes })));
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
-  /** Handle the file picker selection: read each file → register + persist. */
+  /** Handle the file picker selection. */
   async function onFilesPicked(e: Event): Promise<void> {
     const input = e.target as HTMLInputElement;
-    const fileList = input.files;
-    if (!fileList || fileList.length === 0) return;
+    const extras = getExtras();
+    const files = input.files ? Array.from(input.files) : [];
+    if (files.length === 0 || !extras) return;
     importing = true;
     try {
-      const picked: BloodDataFile[] = [];
-      for (const file of Array.from(fileList)) {
-        const bytes = new Uint8Array(await file.arrayBuffer());
-        picked.push({ name: canonicalBloodName(file.name), bytes });
-      }
-      // Persist for next reload, register with the runtime, then boot.
-      await putBloodFiles(picked.map((f) => ({ name: f.name, bytes: f.bytes })));
-      registerInjected(picked);
-      // A prior attempt may have latched the data-missing result — reset so the
-      // fresh data is actually used.
-      getExtras()?.resetLoad();
-      await tryLoad();
+      const done = await importBloodData(files, extras);
+      if (done) apply(done.result);
     } finally {
       importing = false;
       // Allow re-picking the same file/folder later.
@@ -222,8 +201,14 @@
     // static/blood/ — either way tryLoad() boots the engine without a picker.
     // The "Load full Blood data…" picker stays as an optional OVERRIDE.
     void (async () => {
-      await restoreFromIndexedDb();
-      await tryLoad();
+      loadStatus = 'loading';
+      // ⚠ THE ACCESSOR, NOT A HANDLE — `autoBootBlood` waits for the engine to
+      // ADOPT this node before booting. Reading `extras` once, synchronously,
+      // loses a race on a heavier graph and leaves BLOOD dark forever; see the
+      // note on `awaitBloodExtras`.
+      const r = await autoBootBlood(getExtras);
+      if (r) apply(r);
+      else loadStatus = 'idle'; // the engine never adopted it — offer BOOT
     })();
   });
   onDestroy(() => {
