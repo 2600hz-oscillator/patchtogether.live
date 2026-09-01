@@ -463,6 +463,10 @@ export const EXEMPT_OUTPUT_EMIT: Record<string, string> = {
   // midiLane.note_gate / midiclock shape. The divider math + the pulse pair are
   // pinned in trails.test.ts against the factory's own automation timeline.
   'trails.clock': 'a 5 ms one-shot per division (the shared MIDICLOCK GATE_PULSE_S) is below the scope poll resolution, like midiLane.note_gate; divider math + the high/low pulse pair pinned by trails.test.ts',
+  'trails.trig1': 'a 5 ms one-shot per STEP (the shared TRIGGER_PULSE_S) is below the scope poll resolution — the sweep samples ~168 times across its 5 s bound, roughly every 30 ms, so catching a 5 ms pulse is luck rather than measurement (it passed locally and read 0.0000 on CI). Identical class to trails.clock / midiLane.note_gate. The step rule and the pulse are pinned in trails.test.ts, and the LIVE trigger→voice chain is proven in trails.spec.ts, which asserts multiple distinct AUDIBLE strikes inside one held gesture',
+  'trails.trig2': 'a 5 ms one-shot per STEP (the shared TRIGGER_PULSE_S) is below the scope poll resolution — the sweep samples ~168 times across its 5 s bound, roughly every 30 ms, so catching a 5 ms pulse is luck rather than measurement (it passed locally and read 0.0000 on CI). Identical class to trails.clock / midiLane.note_gate. The step rule and the pulse are pinned in trails.test.ts, and the LIVE trigger→voice chain is proven in trails.spec.ts, which asserts multiple distinct AUDIBLE strikes inside one held gesture',
+  'trails.trig3': 'a 5 ms one-shot per STEP (the shared TRIGGER_PULSE_S) is below the scope poll resolution — the sweep samples ~168 times across its 5 s bound, roughly every 30 ms, so catching a 5 ms pulse is luck rather than measurement (it passed locally and read 0.0000 on CI). Identical class to trails.clock / midiLane.note_gate. The step rule and the pulse are pinned in trails.test.ts, and the LIVE trigger→voice chain is proven in trails.spec.ts, which asserts multiple distinct AUDIBLE strikes inside one held gesture',
+  'trails.trig4': 'a 5 ms one-shot per STEP (the shared TRIGGER_PULSE_S) is below the scope poll resolution — the sweep samples ~168 times across its 5 s bound, roughly every 30 ms, so catching a 5 ms pulse is luck rather than measurement (it passed locally and read 0.0000 on CI). Identical class to trails.clock / midiLane.note_gate. The step rule and the pulse are pinned in trails.test.ts, and the LIVE trigger→voice chain is proven in trails.spec.ts, which asserts multiple distinct AUDIBLE strikes inside one held gesture',
   'midiLane.note_gate': 'single ~6 ms one-shot pulse below the scope poll resolution (like midiclock sub-frame gates); by-note→gate logic covered by midi-lane.test.ts',
   'midiLane.poly':      'poly is always live (#674) but a poly→SCOPE edge reads lane-0 PITCH (steady DC, AC-scope can\'t peak it); always-live behavior covered by midi-lane.test.ts + adsr-poly-midilane.spec.ts',
   // ── SKIFREE partial: the `gate` output fires ONLY on a crash / eaten-by-
@@ -615,6 +619,7 @@ export const PINNED_PER_PORT_EXEMPT_KEYS: readonly string[] = Object.freeze([
   'timelorde.1/12', 'timelorde.1/16', 'timelorde.1/32', 'timelorde.1/64',
   'timelorde.1/8',
   'trails.clock',
+  'trails.trig1', 'trails.trig2', 'trails.trig3', 'trails.trig4',
 ]);
 
 // ─── REACHABILITY LEDGER — entries that exist but can never be READ ───────────
