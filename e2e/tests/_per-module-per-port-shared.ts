@@ -442,6 +442,14 @@ export const EXEMPT_OUTPUT_EMIT: Record<string, string> = {
   //     The chord allocation + always-live poly is unit-tested in
   //     midi-lane.test.ts, and the live POLY→synth→audio chain in
   //     adsr-poly-midilane.spec.ts + pentemelodica.spec.ts, so we keep the driver mono + exempt poly.
+  // ── TRAILS partial: the twelve X/Y/gate jacks ARE driven in this sweep (see
+  // the `trails` driver in _per-port-drivers.ts — a simulated Bela Trails
+  // streams real 14-bit CC through the real decoder). `clock` is the one that
+  // cannot be: it emits a 5 ms one-shot per division (the shared MIDICLOCK
+  // GATE_PULSE_S), which is below the scope poll resolution — the identical
+  // midiLane.note_gate / midiclock shape. The divider math + the pulse pair are
+  // pinned in trails.test.ts against the factory's own automation timeline.
+  'trails.clock': 'a 5 ms one-shot per division (the shared MIDICLOCK GATE_PULSE_S) is below the scope poll resolution, like midiLane.note_gate; divider math + the high/low pulse pair pinned by trails.test.ts',
   'midiLane.note_gate': 'single ~6 ms one-shot pulse below the scope poll resolution (like midiclock sub-frame gates); by-note→gate logic covered by midi-lane.test.ts',
   'midiLane.poly':      'poly is always live (#674) but a poly→SCOPE edge reads lane-0 PITCH (steady DC, AC-scope can\'t peak it); always-live behavior covered by midi-lane.test.ts + adsr-poly-midilane.spec.ts',
   // ── SKIFREE partial: the `gate` output fires ONLY on a crash / eaten-by-
@@ -593,6 +601,7 @@ export const PINNED_PER_PORT_EXEMPT_KEYS: readonly string[] = Object.freeze([
   'skifree.gate', 'skifree.out',
   'timelorde.1/12', 'timelorde.1/16', 'timelorde.1/32', 'timelorde.1/64',
   'timelorde.1/8',
+  'trails.clock',
 ]);
 
 // ─── REACHABILITY LEDGER — entries that exist but can never be READ ───────────
