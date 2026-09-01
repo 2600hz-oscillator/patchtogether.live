@@ -44,10 +44,16 @@
 
 import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
+// ⚠ IMPORTED, NOT RE-DERIVED. This file used to carry its own
+// `process.env.E2E_SWIFTSHADER === '1' || !!process.env.CI` and its own
+// `30_000 : 15_000` for the topbar — a second, drifting copy of the one bound
+// #2286 gave exactly one home. The boot wait is a BOUND, not an assertion, so
+// it belongs to the shared budget; the in-test polls below are game-state
+// waits and keep their own numbers deliberately.
+import { SLOW_RENDER, BOOT_MS } from '../_helpers/boot-budget';
 
 test.describe.configure({ mode: 'parallel' });
 
-const SLOW_RENDER = process.env.E2E_SWIFTSHADER === '1' || !!process.env.CI;
 const NODE = 'ski';
 /** The def's own `SKIFREE_CANVAS_SIZE`. Restated here because an e2e cannot
  *  import from `packages/web`; the unit test is what pins them equal. */
@@ -56,9 +62,7 @@ const CANVAS_SIZE = 320;
 /** The shipping shell. NOT `?shell=legacy` — see the header. */
 async function gotoShell(page: Page): Promise<void> {
   await page.goto('/rack');
-  await expect(page.getByTestId('workflow-topbar')).toBeVisible({
-    timeout: SLOW_RENDER ? 30_000 : 15_000,
-  });
+  await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: BOOT_MS });
   await page.locator('.svelte-flow__pane:visible').first().waitFor({ state: 'visible' });
 }
 
