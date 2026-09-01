@@ -8,16 +8,21 @@
   // foreground — the TEXT colour is the only foreground.) The DOM is serialized into a
   // small RICH-TEXT MODEL (paragraphs → styled runs) persisted in
   // node.data.richText (Y.Doc-synced, in place — never reassign the live data
-  // map, the [[yjs-save-load-real-ydoc]] trap). That SAME model is rendered to
-  // an offscreen 2D canvas (system-font glyphs) and pushed to the engine module
-  // via read('extras').setTextCanvas — so editor DOM + video texture come from
-  // one serializable source of truth. ⚠ The RENDER-AND-PUSH half no longer lives
-  // here: it is node-lifetime, in $lib/ui/media/extras-producers, so the node
-  // shows your text with no card mounted (#1720). This card writes the MODEL and
-  // nothing else. See the note further down.
+  // map, the [[yjs-save-load-real-ydoc]] trap). ⚠ The RENDER-AND-PUSH half does
+  // NOT live here: it is node-lifetime, in $lib/ui/media/extras-producers, so
+  // the node shows your text with no card mounted (#1720). This card writes the
+  // MODEL and nothing else. See the note further down.
   //
   // Plus four knobs (ScrlX/ScrlY scroll speed, PosX/PosY position) each with a
   // matching CV input, and a live preview of the OUT layer.
+  //
+  // ⚠ THIS IS THE LEGACY SURFACE NOW (2026-08-31). textmarquee is in
+  // STRICT_FACES, so the shipping shell renders `ModuleShell` plus the face's
+  // `fullViewBody` ($lib/ui/modules/textmarquee/TextmarqueeEditorBody.svelte);
+  // this card is reached only under `?shell=legacy`. The two share ONE
+  // serializer ($lib/graph/textmarquee-editor) and ONE `previewCollapsed` key,
+  // deliberately — they must not be able to disagree about a document or about
+  // whether the screen is on.
 
   import { onMount, onDestroy } from 'svelte';
   import { type NodeProps } from '@xyflow/svelte';
@@ -30,38 +35,53 @@
   } from '$lib/video/modules/textmarquee';
   import {
     type RichTextModel,
-    type RichParagraph,
-    type RichRun,
     type RichAlign,
-    emptyRichTextModel,
     coerceRichTextModel,
     modelPlainText,
     clampFontPx,
-    truncateModelChars,
     normalizeFontFamily,
     FONT_FAMILIES,
     DEFAULT_FONT_FAMILY,
     MIN_FONT_PX,
     MAX_FONT_PX,
     DEFAULT_FONT_PX,
-    MAX_CHARS,
   } from '$lib/video/modules/textmarquee-layout';
+  // ⚠ THE SERIALIZER IS SHARED WITH THE FACE BODY (2026-08-31). It used to be
+  // ~150 lines private to this file; both surfaces now call one copy, and both
+  // stamp `EDITOR_BASE_STYLE` on the editor element so the styles the
+  // serializer READS BACK are set explicitly rather than inherited from
+  // whatever mounts them. See $lib/graph/textmarquee-editor's header — the
+  // inherited-cascade hole it closes was a data corruption, not a look.
+  import {
+    applyEditorBaseStyle,
+    applyModelToDom as applyModelToEditor,
+    serializeEditor as serializeEditorDom,
+  } from '$lib/graph/textmarquee-editor';
   import type { VideoEngine } from '$lib/video/engine';
   import { VIDEO_RES } from '$lib/video/engine';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
-  import { portsFromDef } from './card-kit';
+  import { portsFromDef, paramSpec } from './card-kit';
   import { drawPreviewDownscaled } from './preview-downscale';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
   const engineCtx = useEngine();
 
-  function pdef(name: string): number {
-    return textmarqueeDef.params.find((d) => d.id === name)!.defaultValue;
-  }
-  function p(name: string): number {
-    return node?.params[name] ?? pdef(name);
+  // ⚠ RANGES COME FROM THE DEF, NEVER RE-TYPED HERE. This card used to spell
+  // `min={0} max={1}` on all four knobs — four hand-copied bounds a def-reading
+  // gate cannot see disagreeing with the contract. `paramSpec` is the accessor
+  // form deliberately: exporting a `*_RANGE` constant from `textmarquee.ts`
+  // would move the WebGL attest hash, and an accessor does not.
+  const SPEC = {
+    scrollX: paramSpec(textmarqueeDef, 'scrollX'),
+    scrollY: paramSpec(textmarqueeDef, 'scrollY'),
+    posX: paramSpec(textmarqueeDef, 'posX'),
+    posY: paramSpec(textmarqueeDef, 'posY'),
+  } as const;
+
+  function p(name: keyof typeof SPEC): number {
+    return node?.params[name] ?? SPEC[name].defaultValue;
   }
   function setParam(paramId: string) {
     return (v: number) => setNodeParam(id, paramId, v);
@@ -103,118 +123,25 @@
   }
 
   // ── contenteditable ⇄ model serialization ────────────────────────────────
-  // The editor is genuinely minimal: each block-level element (div / p) is a
-  // paragraph; inline styled spans become runs. We read computed inline styles
-  // to derive bold/italic/underline/color, and the block's text-align for the
-  // paragraph alignment.
+  // ⚠ EXTRACTED (2026-08-31). The ~110 lines that used to live here —
+  // styleOfNode, rgbToHex, alignOf, runsFromNodes, runsFromBlock, isBlock,
+  // serializeEditor — are now `$lib/graph/textmarquee-editor`, called by this
+  // card AND by the face's TextmarqueeEditorBody. One copy, so the two surfaces
+  // cannot disagree about what a typed paragraph MEANS, and it lives OUTSIDE
+  // `lib/video/**` so it costs no WebGL attest.
   let editorEl: HTMLDivElement | null = $state(null);
   // Guard so applying the model → DOM doesn't immediately re-serialize back.
   let applyingToDom = false;
 
-  function styleOfNode(el: HTMLElement): Omit<RichRun, 'text'> {
-    const cs = getComputedStyle(el);
-    const weight = cs.fontWeight;
-    const bold = weight === 'bold' || Number(weight) >= 600;
-    const italic = cs.fontStyle === 'italic';
-    const underline = cs.textDecorationLine.includes('underline');
-    const color = rgbToHex(cs.color);
-    const out: Omit<RichRun, 'text'> = {};
-    if (bold) out.bold = true;
-    if (italic) out.italic = true;
-    if (underline) out.underline = true;
-    if (color) out.color = color;
-    return out;
-  }
-
-  function rgbToHex(rgb: string): string | undefined {
-    const m = rgb.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
-    if (!m) return undefined;
-    const hex = (n: string) => Number(n).toString(16).padStart(2, '0');
-    return `#${hex(m[1]!)}${hex(m[2]!)}${hex(m[3]!)}`;
-  }
-
-  function alignOf(el: HTMLElement): RichAlign {
-    const a = getComputedStyle(el).textAlign;
-    if (a === 'center') return 'center';
-    if (a === 'right' || a === 'end') return 'right';
-    return 'left';
-  }
-
-  /** Collect styled runs from a list of LIVE DOM nodes (text nodes + inline
-   *  elements). `parentStyleEl` is the live element whose computed style applies
-   *  to a bare text node (so getComputedStyle reads real inherited formatting).
-   *  Operates on live nodes only, so bold/italic/underline/colour resolve. */
-  function runsFromNodes(nodes: Node[], parentStyleEl: HTMLElement): RichRun[] {
-    const runs: RichRun[] = [];
-    const visit = (node: Node, styleEl: HTMLElement) => {
-      if (node.nodeType === Node.TEXT_NODE) {
-        const text = node.textContent ?? '';
-        if (text.length === 0) return;
-        runs.push({ text, ...styleOfNode(styleEl) });
-      } else if (node.nodeType === Node.ELEMENT_NODE) {
-        const ce = node as HTMLElement;
-        if (ce.tagName === 'BR') {
-          const last = runs[runs.length - 1];
-          if (last) last.text += '\n';
-          else runs.push({ text: '\n' });
-        } else {
-          for (const c of Array.from(ce.childNodes)) visit(c, ce);
-        }
-      }
-    };
-    for (const n of nodes) visit(n, parentStyleEl);
-    if (runs.length === 0) runs.push({ text: '' });
-    return runs;
-  }
-
-  /** Walk a block element collecting styled runs from its inline descendants. */
-  function runsFromBlock(block: HTMLElement): RichRun[] {
-    return runsFromNodes(Array.from(block.childNodes), block);
-  }
-
-  /** Is an element a block-level paragraph container (DIV / P)? Inline styled
-   *  spans + text are gathered into the surrounding paragraph instead. */
-  function isBlock(el: HTMLElement): boolean {
-    return el.tagName === 'DIV' || el.tagName === 'P';
-  }
-
-  /** Serialize the editor DOM into a RichTextModel (keeping the layer fg/bg).
-   *  Browsers freely mix DIRECT text nodes / inline spans (the first line) with
-   *  block DIVs (later lines), so we group consecutive inline/text content into
-   *  an implicit paragraph and emit each block DIV/P as its own paragraph. */
+  /** Serialize the editor DOM into a RichTextModel (keeping the layer fg/bg). */
   function serializeEditor(): RichTextModel {
     if (!editorEl) return model;
-    const paragraphs: RichParagraph[] = [];
-    let loose: Node[] = []; // consecutive LIVE inline/text nodes → one paragraph
-
-    const flushLoose = () => {
-      if (loose.length > 0) {
-        paragraphs.push({ runs: runsFromNodes(loose, editorEl!), align: alignOf(editorEl!) });
-        loose = [];
-      }
-    };
-
-    for (const child of Array.from(editorEl.childNodes)) {
-      if (child.nodeType === Node.ELEMENT_NODE && isBlock(child as HTMLElement)) {
-        flushLoose();
-        const b = child as HTMLElement;
-        paragraphs.push({ runs: runsFromBlock(b), align: alignOf(b) });
-      } else {
-        // Loose live text node / inline element (SPAN / B / I / U / BR) — the
-        // first typed line often lands here before browsers wrap it in a DIV.
-        loose.push(child);
-      }
-    }
-    flushLoose();
-
-    if (paragraphs.length === 0) {
-      paragraphs.push({ runs: [{ text: '' }], align: alignOf(editorEl) });
-    }
-    // Cap total chars (a pasted wall of text can't blow up the texture).
-    return truncateModelChars(
-      { paragraphs, fg: model.fg, bg: layerBg, fontPx, fontFamily },
-      MAX_CHARS,
-    );
+    return serializeEditorDom(editorEl, {
+      fg: model.fg,
+      bg: layerBg,
+      fontPx,
+      fontFamily,
+    });
   }
 
   function onEditorInput() {
@@ -230,37 +157,7 @@
   function applyModelToDom(m: RichTextModel) {
     if (!editorEl) return;
     applyingToDom = true;
-    editorEl.innerHTML = '';
-    // EMPTY model → leave the contenteditable truly empty. A pre-seeded
-    // `<div><br></div>` placeholder makes the browser interleave the first
-    // typed characters around the <br> (caret-vs-<br> ordering bug), so an
-    // empty editor must start with NO children — the browser then handles the
-    // first keystroke cleanly.
-    if (modelPlainText(m).length === 0) {
-      applyingToDom = false;
-      return;
-    }
-    for (const para of m.paragraphs) {
-      const div = document.createElement('div');
-      div.style.textAlign = para.align;
-      for (const run of para.runs) {
-        const segments = run.text.split('\n');
-        segments.forEach((seg, i) => {
-          if (seg.length > 0) {
-            const span = document.createElement('span');
-            if (run.bold) span.style.fontWeight = 'bold';
-            if (run.italic) span.style.fontStyle = 'italic';
-            if (run.underline) span.style.textDecoration = 'underline';
-            if (run.color) span.style.color = run.color;
-            span.textContent = seg;
-            div.appendChild(span);
-          }
-          if (i < segments.length - 1) div.appendChild(document.createElement('br'));
-        });
-      }
-      if (div.childNodes.length === 0) div.appendChild(document.createElement('br'));
-      editorEl.appendChild(div);
-    }
+    applyModelToEditor(editorEl, m);
     applyingToDom = false;
   }
 
@@ -347,12 +244,40 @@
   let previewEl: HTMLCanvasElement | null = $state(null);
   let rafId: number | null = null;
 
+  // ⚠ THE CARD NOW HONOURS `previewCollapsed` (2026-08-31, with the face). It
+  // used to blit unconditionally, against the fleet rule — so a player who
+  // switched SCREEN off on the faceplate and then opened `?shell=legacy` got
+  // the picture back, and the two surfaces disagreed about a key they share.
+  //
+  // ⚠ AND THE COLLAPSED BRANCH STILL MARKS THE NODE WATCHED, for the reason
+  // acidwarp's body states: `blitOutputForPreview` IS the engine's "someone is
+  // watching" signal, and textmarquee is a SOURCE, so a collapsed state that
+  // merely stopped blitting would drop it out of the pull set and turn SCREEN
+  // into a producer kill switch for everything downstream of `out`.
+  //
+  // Default absent ⇒ false ⇒ ON, so no existing rack changes.
+  //
+  // ⚠ READ FRESH INSIDE THE LOOP, NOT THROUGH A `$derived`. `patch`/`node.data`
+  // reads are not reliably reactive in the legacy card subtree
+  // ([[patch-reads-are-not-reactive-in-the-legacy-card-subtree]]), and the Yjs
+  // node proxy's identity never changes, so a derived over it can never
+  // recompute ([[yjs-proxy-stable-identity-defeats-derived]]). The rAF already
+  // runs every frame; a direct read is both simpler and correct.
+  function isPreviewCollapsed(): boolean {
+    return (node?.data as { previewCollapsed?: boolean } | undefined)?.previewCollapsed ?? false;
+  }
+
   function pump() {
     rafId = requestAnimationFrame(pump);
     const e = engineCtx.get();
-    if (!e || !node || !previewEl) return;
+    if (!e || !node) return;
     try {
       const ve = e.getDomain<VideoEngine>('video');
+      if (isPreviewCollapsed()) {
+        ve.markWatched(id);
+        return;
+      }
+      if (!previewEl) return;
       // #1802 — gated preview blit (see VideoEngine.blitOutputForPreview).
       // The rAF is re-armed at the TOP of pump(), so a bare return is safe.
       if (!ve.blitOutputForPreview(id)) return;
@@ -375,7 +300,15 @@
     layerBg = model.bg;
     fontPx = clampFontPx(model.fontPx);
     fontFamily = normalizeFontFamily(model.fontFamily);
-    if (editorEl) editorEl.style.fontFamily = fontFamily;
+    if (editorEl) {
+      // ⚠ THE SERIALIZED-IN STYLE CONTRACT, STAMPED ON THE ELEMENT. It used to
+      // come from this card's `.editor` CSS rule, which meant the editor's
+      // MEANING depended on where it was mounted — the exact hole the face body
+      // would have fallen through. Both surfaces set it explicitly now, from
+      // the one shared constant.
+      applyEditorBaseStyle(editorEl);
+      editorEl.style.fontFamily = fontFamily;
+    }
     applyModelToDom(model);
     if (previewEl) {
       previewEl.width = 168;
@@ -475,10 +408,10 @@
 
     <!-- Knobs -->
     <div class="row">
-      <Knob value={p('scrollX')} min={0} max={1} defaultValue={pdef('scrollX')} label="SCRLX" curve="linear" onchange={setParam('scrollX')} moduleId={id} paramId="scrollX" />
-      <Knob value={p('scrollY')} min={0} max={1} defaultValue={pdef('scrollY')} label="SCRLY" curve="linear" onchange={setParam('scrollY')} moduleId={id} paramId="scrollY" />
-      <Knob value={p('posX')}    min={0} max={1} defaultValue={pdef('posX')}    label="POSX"  curve="linear" onchange={setParam('posX')}    moduleId={id} paramId="posX" />
-      <Knob value={p('posY')}    min={0} max={1} defaultValue={pdef('posY')}    label="POSY"  curve="linear" onchange={setParam('posY')}    moduleId={id} paramId="posY" />
+      <Knob value={p('scrollX')} min={SPEC.scrollX.min} max={SPEC.scrollX.max} defaultValue={SPEC.scrollX.defaultValue} label="SCRLX" curve={SPEC.scrollX.curve} onchange={setParam('scrollX')} moduleId={id} paramId="scrollX" />
+      <Knob value={p('scrollY')} min={SPEC.scrollY.min} max={SPEC.scrollY.max} defaultValue={SPEC.scrollY.defaultValue} label="SCRLY" curve={SPEC.scrollY.curve} onchange={setParam('scrollY')} moduleId={id} paramId="scrollY" />
+      <Knob value={p('posX')}    min={SPEC.posX.min}    max={SPEC.posX.max}    defaultValue={SPEC.posX.defaultValue}    label="POSX"  curve={SPEC.posX.curve}    onchange={setParam('posX')}    moduleId={id} paramId="posX" />
+      <Knob value={p('posY')}    min={SPEC.posY.min}    max={SPEC.posY.max}    defaultValue={SPEC.posY.defaultValue}    label="POSY"  curve={SPEC.posY.curve}    onchange={setParam('posY')}    moduleId={id} paramId="posY" />
     </div>
   </PatchPanel>
 </div>
@@ -555,11 +488,14 @@
     border-radius: 3px;
     font-size: 0.85rem;
     line-height: 1.3;
-    /* White by default so untouched glyphs render white (the TEXT colour picker
-       overrides per selection); getComputedStyle reads this into each run. */
-    color: #ffffff;
+    /* ⚠ `color` AND `white-space` MOVED OUT OF THIS RULE (2026-08-31). They are
+       what `serializeEditor` reads back out of the DOM, so they are DATA, and
+       leaving them in a per-surface stylesheet is what would have let the face
+       body inherit `--text` and stamp #eef1f5 onto every untouched run. Both
+       surfaces now stamp `EDITOR_BASE_STYLE` on the ELEMENT (onMount →
+       applyEditorBaseStyle), which wins over this rule anyway. The values are
+       unchanged: white on dark, pre-wrap. */
     outline: none;
-    white-space: pre-wrap;
     word-break: break-word;
   }
   .editor:focus { border-color: var(--accent-dim); }

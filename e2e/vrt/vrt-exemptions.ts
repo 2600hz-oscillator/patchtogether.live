@@ -190,11 +190,34 @@ export const VRT_MODULE_MASKS: Record<string, MaskRect[]> = {
     { selector: 'canvas', why: 'live OUT preview canvas repainting off the engine clock; the quantizer and Bayer dither are covered by posterbox.test.ts and posterbox-functional.spec.ts readPixels probes.' },
   ],
   // TEXTMARQUEE carries a live OUT preview canvas (continuously animated when
-  // scrolling) — mask it. The card ALSO contains a contenteditable region whose
-  // rendered SYSTEM-FONT glyphs rasterize differently across platforms (the
-  // exact known linux-VRT glyph nondeterminism), so the LINUX baseline is
-  // captured by the vrt-update.yml dispatch; the committed baseline gates the
-  // chrome (toolbar buttons + FG/BG swatches + the four knob rows).
+  // scrolling) — mask it. The committed baseline gates the chrome (toolbar
+  // buttons + FG/BG swatches + the four knob rows).
+  //
+  // ⚠ TWO SENTENCES HERE WERE STALE AND ARE CORRECTED (2026-08-31, with the
+  // textmarquee face). This block used to say the contenteditable's SYSTEM-FONT
+  // glyphs "rasterize differently ACROSS PLATFORMS (the exact known linux-VRT
+  // glyph nondeterminism), so the LINUX baseline is captured by the
+  // vrt-update.yml dispatch". Both halves misdescribe the instrument:
+  //
+  //   * `snapshotPathTemplate` has NO `{platform}` segment, so there is ONE
+  //     baseline set and Linux CI authors ALL of it. A cross-platform
+  //     difference cannot be observed by this suite in either direction — the
+  //     capture and the comparison are the same runner image. "The LINUX
+  //     baseline" is not a special case here, it is the only case.
+  //   * And the contenteditable is EMPTY at rest on this scene (a fresh spawn
+  //     has no `node.data.richText`), so the region this sentence was about
+  //     paints no glyphs at all. What renders text is the PREVIEW CANVAS — the
+  //     factory's "textmarquee" placeholder in 64px sans-serif — and that is
+  //     masked below.
+  //
+  // ⚠ THIS BLOCK STILL DESCRIBES THE CARD, AND THE CARD IS STILL RENDERED.
+  // textmarquee entered STRICT_FACES on 2026-08-31, but `vrt.spec.ts:86` boots
+  // `/rack?shell=legacy`, so this scene is unaffected by the promotion and its
+  // baseline does not move. (The 4plexvid block below claims the opposite about
+  // ITS card for the same reason and is wrong; left alone here so this diff
+  // stays scoped to textmarquee, and named in the face PR's body.) The FACE's
+  // own scenes live in `workflow-shell-faces.spec.ts`, which applies NO masks —
+  // their determinism argument is in `_shell-faces.ts`, not here.
   textmarquee: [
     { selector: 'canvas', why: 'live OUT preview canvas, continuously animated off the rAF loop while scrolling; the toolbar, FG/BG swatches and four knob rows are the gate.' },
   ],
