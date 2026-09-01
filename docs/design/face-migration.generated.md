@@ -12,8 +12,8 @@ Every registered module carries exactly one **disposition**: what kind of work i
 |  | count |
 |---|---|
 | registered modules | 197 |
-| done (faced + promoted) | 172 |
-| remaining (excludes organizational-native) | 22 |
+| done (faced + promoted) | 173 |
+| remaining (excludes organizational-native) | 21 |
 | registered with NO disposition (must be zero) | 0 |
 | inventory entries naming a dead def (must be zero) | 0 |
 
@@ -21,16 +21,16 @@ Every registered module carries exactly one **disposition**: what kind of work i
 
 | disposition | what it means | modules | done |
 |---|---|---|---|
-| `generic-face` | author a `face` and rank the controls — no new platform capability | 173 | 172 |
+| `generic-face` | author a `face` and rank the controls — no new platform capability | 174 | 173 |
 | `blocked` | would be a face today but for the named capability, and nothing else | 0 | — |
-| `bespoke-surface` | the primary interaction is not param-shaped — needs a purpose-built surface | 21 | — |
+| `bespoke-surface` | the primary interaction is not param-shaped — needs a purpose-built surface | 20 | — |
 | `organizational-native` | rack furniture; not a migration at all | 3 | — |
 
 ## What each blocker buys
 
 | blocker | issue | modules waiting |
 |---|---|---|
-| `needs-media-controller` | #1511 | 7 |
+| `needs-media-controller` | #1511 | 6 |
 
 ## `generic-face`
 
@@ -44,6 +44,7 @@ author a `face` and rank the controls — no new platform capability.
 | `analogLogicMaths` | audio | done | — |
 | `analogVco` | audio | done | — |
 | `attenumix` | audio | done | — |
+| `audioIn` | audio | done | — |
 | `audioOut` | audio | done | — |
 | `b3ntb0x` | video | done | — |
 | `backdraft` | video | done | — |
@@ -225,7 +226,6 @@ the primary interaction is not param-shaped — needs a purpose-built surface.
 | module | domain | state | blockers |
 |---|---|---|---|
 | `archivist` | video | — | `needs-media-controller` |
-| `audioIn` | audio | — | `needs-media-controller` |
 | `chromaconsole` | audio | — | — |
 | `clipplayer` | audio | — | — |
 | `controlSurface` | meta | — | — |

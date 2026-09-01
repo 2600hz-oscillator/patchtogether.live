@@ -738,12 +738,44 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
   },
   {
     type: 'audioIn',
-    disposition: 'bespoke-surface',
-    blockers: ['needs-media-controller'],
-    why:
-      'a hardware CAPTURE BINDER: a live enumerateDevices roster (service state, not node state, ' +
-      'so no selector cell projects it), a permission/status flow with five failure states, and a ' +
-      'getUserMedia stream the card starts and stops with its own lifetime.',
+    // ⚠ WAS `bespoke-surface` WITH A `needs-media-controller` BLOCKER. The old
+    // record read: "a hardware CAPTURE BINDER: a live enumerateDevices roster
+    // (service state, not node state, so no selector cell projects it), a
+    // permission/status flow with five failure states, and a getUserMedia stream
+    // the card starts and stops with its own lifetime."
+    //
+    // ⚠ THE FIRST TWO CLAUSES ARE STILL TRUE and neither is a BLOCKER: the
+    // EXTENSION BODY is the rung of the ladder for exactly this, which is the
+    // resolution `legacy-fallback.ts` records by name for `cameraInput` ("the
+    // one slot that can hold a control no `ParamDef` can express") and which
+    // `audioOut` below then applied to the same roster on the other direction of
+    // the wire. This module needs TWO slots rather than one — `fullViewBody` for
+    // the dock and the 🎧 tray, `tileBody` for the lane — because ENABLE is the
+    // only route to a first `getUserMedia` grant and `cameraInput` shipped
+    // without a tile and lost it.
+    //
+    // ⚠ THE THIRD CLAUSE WAS FACTUALLY FALSE, and had been since #1590 — which
+    // matters, because it is the clause that made the disposition read as
+    // blocked-on-the-platform. `node-audio-input-registry.svelte.ts` states in
+    // its own header that "the card ADOPTS and READS; it never CREATES or
+    // DESTROYS", teardown is keyed to GRAPH lifetime through
+    // `sweep(liveNodeIds)`, and `AudioinCard.svelte` carried the matching "⚠ NO
+    // `stopStream()` HERE" banner. The stream had not been the card's for months.
+    //
+    // ⚠ AND THE PROMOTION WAS NOT A FREE READ-THROUGH, for the same reason
+    // `audioOut`'s was not. THREE things did still live in the card's own
+    // `onMount` — `nodeAudioInput.adopt` (without which `request()` returns IDLE
+    // and the module is silent), the initial `enumerateDevices` + auto-acquire,
+    // and the `devicechange` subscription — and this module is in neither
+    // `DOM_SOURCE_LANE_TYPES` nor `CARD_PRODUCER_LANE_TYPES`, so no headless host
+    // would have kept that card alive. They moved to
+    // `$lib/audio/input-device.svelte.ts` (the input-side twin of the seam
+    // audioOut's promotion authored) plus `$lib/ui/modules/audioIn/
+    // audio-in-actions.ts`, and the legacy card moved onto them too.
+    //
+    // ⚠ NO `why` FIELD — the type refuses one on `generic-face`, which is the
+    // rule enforced by `tsc` rather than by a test.
+    disposition: 'generic-face',
   },
   {
     type: 'audioOut',
@@ -763,7 +795,11 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
     // control no `ParamDef` can express."
     //
     // ⚠ IT WAS NOT A FREE READ-THROUGH, AND THE WORK IS WORTH NAMING because
-    // the same shape still waits on `audioIn` above. The card was the SOLE
+    // the same shape then repeated on `audioIn` above — which was promoted one
+    // wave later and paid exactly this cost, in the same three places (a roster
+    // seam, a saved key with an origin, and a card that had to be moved onto
+    // both). This sentence used to read "still waits on `audioIn` above"; it
+    // does not wait any more. The card was the SOLE
     // caller of `setSinkId` and re-applied the saved device from a retry loop in
     // its own `onMount` — and audioOut is in neither `DOM_SOURCE_LANE_TYPES` nor
     // `CARD_PRODUCER_LANE_TYPES`, so unlike `cameraInput` NO headless host would
