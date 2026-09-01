@@ -340,7 +340,8 @@
   import { organizeLayout, type Box } from '$lib/ui/canvas/organize';
   import type { CableType, Edge, PortDef, ModuleNode } from '$lib/graph/types';
   import { canConnect } from '$lib/graph/types';
-  import { validateEdge } from '$lib/graph/validate-edge';
+  import { makeAdoptionGraph, validateEdge } from '$lib/graph/validate-edge';
+  import { effectiveOutputType } from '$lib/graph/adopted-type';
   import {
     audioEdgeId,
     expandLegGroups,
@@ -4271,7 +4272,7 @@
       sourceType: 'audio',
       targetType: 'audio',
     };
-    return validateEdge(candidate, Object.values(patch.nodes) as ModuleNode[], defLookup).ok;
+    return validateEdge(candidate, Object.values(patch.nodes) as ModuleNode[], defLookup, liveAdoption()).ok;
   }
 
   /** The def a leg-group plan reads for a node, through the SAME three-registry
@@ -4685,7 +4686,7 @@
       sourceType,
       targetType,
     };
-    const verdict = validateEdge(candidate, Object.values(patch.nodes) as ModuleNode[], defLookup);
+    const verdict = validateEdge(candidate, Object.values(patch.nodes) as ModuleNode[], defLookup, liveAdoption());
     if (!verdict.ok) {
       trace(`reject connect ${connection.source}.${connection.sourceHandle} → ${connection.target}.${connection.targetHandle}: ${verdict.reason}`);
       return;
@@ -4833,7 +4834,15 @@
         params.handleType === 'source'
           ? def.outputs.find((p) => p.id === params.handleId)
           : def.inputs.find((p) => p.id === params.handleId);
-      cableType = port?.type as string | undefined;
+      // A carried OUTPUT carries what it EMITS, not what it declares — a
+      // TYPE-TRANSPARENT jack (`adoptsUpstreamFrom`) fed by a CV is carrying a
+      // CV, and every downstream consumer of this carry (the rear card's
+      // compat-dim, the front PatchPanel's, the drop modal, the patch-to
+      // picker) reads THIS value. Fixing it here fixes all of them at once.
+      cableType =
+        port && params.handleType === 'source'
+          ? (effectiveOutputType(params.nodeId, port, liveAdoption()) as string)
+          : (port?.type as string | undefined);
     }
     connectDragState.pickup({
       nodeId: params.nodeId,
@@ -5191,7 +5200,7 @@
     const lhs = { nodeId: droppedId, def: a };
     const rhs = { nodeId: ontoId, def: b };
     for (const dir of ['downstream', 'upstream'] as const) {
-      if (buildDropPlan(lhs, rhs, dir).census.offeredInputs > 0) return true;
+      if (buildDropPlan(lhs, rhs, dir, { adoption: liveAdoption() }).census.offeredInputs > 0) return true;
     }
     return false;
   }
@@ -5809,7 +5818,7 @@
       })
       .filter((edge): edge is Edge => edge !== null)
       .filter((edge) =>
-        validateEdge(edge, Object.values(patch.nodes) as ModuleNode[], defLookup).ok,
+        validateEdge(edge, Object.values(patch.nodes) as ModuleNode[], defLookup, liveAdoption()).ok,
       );
     if (planned.length === 0) return;
     ydoc.transact(() => {
@@ -7013,6 +7022,22 @@
   // handles every card style (PatchPanel-mounted handles AND directly-
   // rendered handles on cards like LINES / VIDEOOUT / SCOPE).
 
+  /** The live graph a connection validator needs to resolve a TYPE-TRANSPARENT
+   *  output (`PortDef.adoptsUpstreamFrom`): SCALER's `out` emits whatever is
+   *  patched into SCALER's `in`, so a CV routed through it must be judged `cv`
+   *  rather than on the declared `audio` fallback — otherwise every `cv` jack
+   *  refuses it and the adoption never applies (the owner's "scaler's output
+   *  wont patch to cv ins"). Rebuilt per call because the patch is live and a
+   *  cable added a moment ago must count; it is O(edges), the same order as the
+   *  `Object.values(patch.nodes)` every call site already does. */
+  function liveAdoption() {
+    return makeAdoptionGraph(
+      Object.values(patch.nodes) as ModuleNode[],
+      Object.values(patch.edges) as Edge[],
+      defLookup,
+    );
+  }
+
   function defLookup(type: string): AnyDef | undefined {
     // Meta defs (sticky etc.) carry inputs/outputs/params shaped
     // identically to AudioModuleDef / VideoModuleDef; AnyDef is the
@@ -7104,6 +7129,11 @@
       patch.edges,
       patch.nodes,
       defLookup,
+      // Name the jack the menu was opened on so a TYPE-TRANSPARENT output is
+      // offered the ports its ACTUAL emitted type reaches, not its fallback.
+      portMenuSourceNodeId && portMenuSourcePortId
+        ? { nodeId: portMenuSourceNodeId, portId: portMenuSourcePortId }
+        : undefined,
     );
   }
 
@@ -7685,7 +7715,12 @@
           detail.direction === 'output'
             ? def.outputs.find((p) => p.id === detail.portId)
             : def.inputs.find((p) => p.id === detail.portId);
-        cableType = port?.type as string | undefined;
+        // Same rule as handleClickConnectStart: a carried OUTPUT carries its
+        // EMITTED type so a pass-through fed by a CV lights the CV holes.
+        cableType =
+          port && detail.direction === 'output'
+            ? (effectiveOutputType(detail.nodeId, port, liveAdoption()) as string)
+            : (port?.type as string | undefined);
       }
       // Detach an occupied input when grabbing it (one-motion rewire) —
       // mirrors handleClickConnectStart.
@@ -7901,7 +7936,7 @@
       return;
     }
     const candidate: Edge = { id, source: from, target: to, sourceType, targetType };
-    const verdict = validateEdge(candidate, Object.values(patch.nodes) as ModuleNode[], defLookup);
+    const verdict = validateEdge(candidate, Object.values(patch.nodes) as ModuleNode[], defLookup, liveAdoption());
     if (!verdict.ok) {
       // SILENT discard — output→output / input→input / type-incompat.
       trace(`carry-commit reject ${from.nodeId}.${from.portId} → ${to.nodeId}.${to.portId}: ${verdict.reason}`);
@@ -8056,7 +8091,7 @@
     // future direct port-row picker) — validate + SILENTLY discard on
     // failure (no toast), matching the drag-path's silent return.
     const candidate: Edge = { id, source: from, target: to, sourceType, targetType };
-    const verdict = validateEdge(candidate, Object.values(patch.nodes) as ModuleNode[], defLookup);
+    const verdict = validateEdge(candidate, Object.values(patch.nodes) as ModuleNode[], defLookup, liveAdoption());
     if (!verdict.ok) {
       trace(`patch-to reject ${from.nodeId}.${from.portId} → ${to.nodeId}.${to.portId}: ${verdict.reason}`);
       return;
@@ -8607,10 +8642,25 @@
     if (!inputs) return undefined;
     return inputs.find((p) => canConnect(cableType, p.type));
   }
-  /** Pick the first output port whose type can drive `dstType`. */
-  function firstCompatibleOutput(outputs: PortDef[] | undefined, dstType: CableType): PortDef | undefined {
+  /** Pick the first output port whose type can drive `dstType`.
+   *
+   *  `willCarry` is the type the module is ABOUT to be fed on `inPortId` — a
+   *  splice knows that before the cable exists. A TYPE-TRANSPARENT output
+   *  (`adoptsUpstreamFrom: inPortId`) will therefore emit exactly that, which is
+   *  what lets SCALER or ATTENUMIX be dropped onto a live CV cable. Judged on
+   *  the declared `audio` fallback the splice was refused, so inserting a gain
+   *  stage into a CV run silently did nothing. */
+  function firstCompatibleOutput(
+    outputs: PortDef[] | undefined,
+    dstType: CableType,
+    fedInput?: { portId: string; willCarry: CableType },
+  ): PortDef | undefined {
     if (!outputs) return undefined;
-    return outputs.find((p) => canConnect(p.type, dstType));
+    return outputs.find((p) => {
+      const emitted =
+        fedInput && p.adoptsUpstreamFrom === fedInput.portId ? fedInput.willCarry : p.type;
+      return canConnect(emitted, dstType);
+    });
   }
 
   /** Search every edge in the current snapshot for one whose midpoint
@@ -8637,7 +8687,10 @@
       // Output side: pick the first declared output that can drive the
       // downstream port. The downstream port's declared type is
       // edge.targetType; canConnect(outPort.type, targetType) gates it.
-      const outPort = firstCompatibleOutput(newDef.outputs, e.targetType);
+      const outPort = firstCompatibleOutput(newDef.outputs, e.targetType, {
+        portId: inPort.id,
+        willCarry: e.sourceType,
+      });
       if (!outPort) continue;
       return { edge: e, inPort, outPort };
     }
@@ -9676,6 +9729,7 @@
               def: dropModal.ontoDef,
               label: patchDropLabel(dropModal.ontoId),
             }}
+            adoption={liveAdoption()}
             direction="downstream"
             live
             repairCandidates={patchDropRepairCandidates}

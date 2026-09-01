@@ -12,6 +12,11 @@
 
 import type { Edge, ModuleNode, PortDef } from '$lib/graph/types';
 import { canConnect, canConnectToPort } from '$lib/graph/types';
+import {
+  effectiveOutputType,
+  makeAdoptionGraph,
+  resolveEmittedType,
+} from '$lib/graph/adopted-type';
 import { isReservedDefaultName, readName } from '$lib/multiplayer/module-naming';
 import { collapseStereoPorts } from '$lib/ui/stereo-jack-collapse';
 import type { StereoPairDefLike } from '$lib/graph/stereo-pairs';
@@ -174,6 +179,18 @@ export function moduleDisplayName(
  * If `srcDirection === 'input'`, candidates are OUTPUT ports of the target
  * whose declared type satisfies canConnect(dstType_actually_src_now, srcType).
  *
+ * ⚠ "Declared type" is right for INPUTS and WRONG for a TYPE-TRANSPARENT
+ * OUTPUT. A jack declaring `adoptsUpstreamFrom` emits whatever is patched into
+ * the named input, so SCALER's `out` — declared `audio` — carries `cv` the
+ * moment an LFO is on its `in`. Judged on the declaration, this cascade listed
+ * NO compatible port on any CV-input module and the patch simply could not be
+ * discovered. Both directions now resolve the OUTPUT side through the shared
+ * upstream walk: `src` (optional, for the output-source direction) names the
+ * jack the menu was opened on, and the input-source direction resolves each
+ * candidate output against `targetNodeId`. With nothing upstream the walk
+ * returns the declared type, so an unfed pass-through still lists nothing —
+ * deliberate; see the unpatched-case note in graph/adopted-type.
+ *
  * Returned list preserves the def's declared port order.
  */
 export function compatibleTargetPorts(
@@ -184,13 +201,27 @@ export function compatibleTargetPorts(
   edges: Partial<Record<string, Edge>> | Record<string, Edge>,
   nodes: Partial<Record<string, ModuleNode>> | Record<string, ModuleNode>,
   defLookup: (type: string) => AnyDef | undefined,
+  /** The jack this menu was opened on. Optional for source compatibility; without
+   *  it a TYPE-TRANSPARENT source output is judged on its declared type. */
+  src?: { nodeId: string; portId: string },
 ): CandidatePort[] {
   const out: CandidatePort[] = [];
+  // The live graph the pass-through walk needs, from the same maps this helper
+  // is already handed — no new parameter, and no second walk.
+  const adoption = makeAdoptionGraph(
+    (Object.values(nodes).filter(Boolean) as ModuleNode[]),
+    (Object.values(edges).filter(Boolean) as Edge[]),
+    defLookup as never,
+  );
   if (srcDirection === 'output') {
+    // What the source jack ACTUALLY emits — its declared type unless it is a
+    // pass-through with something on the input it adopts from.
+    const emitted =
+      (src ? resolveEmittedType(src.nodeId, src.portId, adoption) : undefined) ?? srcType;
     const compatible = targetDef.inputs.filter((p) =>
       // Honour a per-port `accepts` widening (e.g. a SCOPE probe taking the CV
       // family on an audio input) so the cascade matches the drag validator.
-      canConnectToPort(srcType, p),
+      canConnectToPort(emitted, p),
     );
     // ONE ENTRY PER STEREO PAIR — the same collapse the card's jack rows use,
     // so the picker offers the same jacks the panel shows — PLUS, for a pair,
@@ -271,7 +302,11 @@ export function compatibleTargetPorts(
     // The source is an INPUT — we're patching FROM the chosen target's
     // OUTPUT into our input. Compatibility is canConnect(targetOutputType,
     // srcType) — the cable runs from target → source.
-    const compatible = targetDef.outputs.filter((p) => canConnect(p.type as string, srcType));
+    const compatible = targetDef.outputs.filter((p) =>
+      // The TARGET's outputs are the sources here, so each is judged on what IT
+      // emits — a SCALER already fed by a CV offers its `out` to a CV input.
+      canConnect(effectiveOutputType(targetNodeId, p, adoption) as string, srcType),
+    );
     // The source is an INPUT, so the user is choosing a SOURCE here and the
     // image is the source's to split — that is what the picker's own channel
     // rows do. No per-leg rows on this rail; see the `portMenuStereoPair`

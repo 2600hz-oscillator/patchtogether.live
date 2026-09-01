@@ -18,6 +18,7 @@
   import type { NodeProps } from '@xyflow/svelte';
   import ModuleTitle from './ModuleTitle.svelte';
   import { patch } from '$lib/graph/store';
+  import { makeAdoptionGraph } from '$lib/graph/adopted-type';
   import { docVersion } from '$lib/graph/node-versions.svelte';
   import { getModuleDef } from '$lib/audio/module-registry';
   import { getVideoModuleDef } from '$lib/video/module-registry';
@@ -135,7 +136,21 @@
       colJacks.map((colJack) => ({
         rowJack,
         colJack,
-        cls: classifyCell(rowJack, colJack, liveEdges, xId!, yId!, nameOf),
+        cls: classifyCell(
+          rowJack,
+          colJack,
+          liveEdges,
+          xId!,
+          yId!,
+          nameOf,
+          // A type-transparent output cell is classified on what the jack
+          // emits, so the grid and `createMatrixEdge` agree on the same cable.
+          makeAdoptionGraph(
+            Object.values(patch.nodes).filter(Boolean) as ModuleNode[],
+            Object.values(patch.edges).filter(Boolean) as never,
+            defLookup,
+          ),
+        ),
       })),
     );
   });

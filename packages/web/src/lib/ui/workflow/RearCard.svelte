@@ -54,10 +54,14 @@
   import { portConnections } from '$lib/ui/port-patch-helpers';
   import { remoteEndpointsTitle } from '$lib/ui/patch-panel-labels';
   import { patch } from '$lib/graph/store';
-  import { nodeVersion, edgesVersion, nodesStructuralVersion } from '$lib/graph/node-versions.svelte';
+  import {
+    effectiveOutputType,
+    makeAdoptionGraph,
+  } from '$lib/graph/adopted-type';
   import { getModuleDef } from '$lib/audio/module-registry';
   import { getVideoModuleDef } from '$lib/video/module-registry';
   import { getMetaModuleDef } from '$lib/meta/module-registry';
+  import { nodeVersion, edgesVersion, nodesStructuralVersion } from '$lib/graph/node-versions.svelte';
   import type { ModuleNode } from '$lib/graph/types';
 
   interface Props {
@@ -159,14 +163,36 @@
     );
   }
 
+  /** The live graph the pass-through walk needs. Rebuilt per call — a cable
+   *  patched a moment ago must count, and it is O(edges) inside a hover-time
+   *  predicate that already walks this card's holes. */
+  function liveAdoption() {
+    return makeAdoptionGraph(
+      Object.values(patch.nodes).filter(Boolean) as ModuleNode[],
+      Object.values(patch.edges).filter(Boolean) as never,
+      defLookup,
+    );
+  }
+
   /** data-compat: absent when idle; 'source' on the picked hole; 'ok' on holes
    *  a commit would accept; 'dim' (≈35% opacity) on holes it would reject. */
   function compatOf(hole: RearHole): 'source' | 'ok' | 'dim' | undefined {
     const src = carried;
     if (!src) return undefined;
     if (isCarrySource(hole)) return 'source';
+    // An OUTPUT hole on THIS card is judged on what it EMITS. A
+    // TYPE-TRANSPARENT jack (`adoptsUpstreamFrom`) already fed by a CV carries
+    // a CV, so carrying an INPUT and looking for a source must light it; on its
+    // declared `audio` fallback it stayed dimmed and the rewire looked
+    // impossible. (The carried cable's own type is resolved the same way, at
+    // the pickup — see Canvas.handleClickConnectStart.)
+    const outPort =
+      hole.direction === 'output' ? def.outputs?.find((p) => p.id === hole.portId) : undefined;
+    const holeForCompat = outPort
+      ? { ...hole, cable: effectiveOutputType(nodeId, outPort, liveAdoption()) as string }
+      : hole;
     const ok = rearHoleAcceptsCarry(
-      hole,
+      holeForCompat,
       hole.direction === 'input' ? acceptsById.get(hole.portId) : undefined,
       { handleType: src.handleType, cableType: src.cableType, accepts: carriedAccepts },
       (s, d) => canConnectToPort(s as CableType, d as { type: CableType; accepts?: readonly CableType[] }),

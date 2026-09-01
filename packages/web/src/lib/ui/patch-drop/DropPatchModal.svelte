@@ -41,6 +41,7 @@
     type DropDirection,
     type DropEdge,
     type DropSideInput,
+    type AdoptionGraph,
   } from './drop-plan';
 
   interface Props {
@@ -64,6 +65,11 @@
     live?: boolean;
     /** Render the TAB hint as pressed — the scene that shows the flip mid-gesture. */
     tabPressed?: boolean;
+    /** The live graph, so a TYPE-TRANSPARENT output (`adoptsUpstreamFrom`) is
+     *  offered rows against what it ACTUALLY emits. Omitted by the static
+     *  reference scenes, which have no patch — they then read declared types,
+     *  which is the pre-existing behaviour. */
+    adoption?: AdoptionGraph;
     /**
      * #1838: the backpanel's STARTING state. False everywhere the user is —
      * the owner asked for collapsed-by-default. The reference page's scenes
@@ -88,6 +94,7 @@
     committed = [],
     live = false,
     tabPressed = false,
+    adoption = undefined,
     rearOpen = false,
     onCommit,
     onCancel,
@@ -102,7 +109,7 @@
   let dir = $derived(dirOverride ?? direction);
   let carried = $derived(carriedOverride ?? carriedPortId);
 
-  let plan = $derived(buildDropPlan(dropped, onto, dir, { carriedPortId: carried }));
+  let plan = $derived(buildDropPlan(dropped, onto, dir, { carriedPortId: carried, adoption }));
 
   /** Edge key for the committed set — direction-free, so a 1→2 edge committed
    *  in the default view is still recognised after the flip. */

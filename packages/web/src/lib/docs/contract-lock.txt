@@ -98,15 +98,15 @@ attenumix in cv1 cv
 attenumix in cv2 cv
 attenumix in cv3 cv
 attenumix in cv4 cv
-attenumix in in1 audio
-attenumix in in2 audio
-attenumix in in3 audio
-attenumix in in4 audio
+attenumix in in1 audio accepts=cv,gate,pitch
+attenumix in in2 audio accepts=cv,gate,pitch
+attenumix in in3 audio accepts=cv,gate,pitch
+attenumix in in4 audio accepts=cv,gate,pitch
 attenumix out mix audio
-attenumix out out1 audio
-attenumix out out2 audio
-attenumix out out3 audio
-attenumix out out4 audio
+attenumix out out1 audio adopts=in1
+attenumix out out2 audio adopts=in2
+attenumix out out3 audio adopts=in3
+attenumix out out4 audio adopts=in4
 attenumix param att1 0..1 linear default=0
 attenumix param att2 0..1 linear default=0
 attenumix param att3 0..1 linear default=0

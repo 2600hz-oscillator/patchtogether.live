@@ -21,7 +21,7 @@ import { getModuleDef as getAudioModuleDef } from '$lib/audio/module-registry';
 import { getVideoModuleDef } from '$lib/video/module-registry';
 import { getMetaModuleDef } from '$lib/meta/module-registry';
 import type { ModuleNode, Edge } from './types';
-import { validateEdge, type ResolveDef } from './validate-edge';
+import { makeAdoptionGraph, validateEdge, type ResolveDef } from './validate-edge';
 // The two reason strings the summariser BUCKETS ON live with the summariser,
 // so the producer and the consumer cannot drift into disagreement (a
 // re-worded reason here would otherwise silently fall into the "migrated"
@@ -538,6 +538,15 @@ export function loadEnvelopeIntoStore(
     for (const node of Object.values(keptNodes)) {
       livePatch.nodes[node.id] = node;
     }
+    // ONE adoption graph over the WHOLE incoming edge set, so a saved patch of
+    // `lfo → scaler.in` + `scaler.out → filter.cutoff` reloads intact. Without
+    // it the second cable resolved as `audio → cv` and was dropped on load —
+    // the file would round-trip lossily.
+    const loadAdoption = makeAdoptionGraph(
+      survivingNodes,
+      Object.values(loadedEdges),
+      resolveDefForValidation,
+    );
     for (const edge of Object.values(loadedEdges)) {
       // Drop edges referencing dropped nodes (e.g. unknown module types).
       if (!keptNodes[edge.source.nodeId] || !keptNodes[edge.target.nodeId]) {
@@ -558,7 +567,12 @@ export function loadEnvelopeIntoStore(
       // ordered after it) AND, in multiuser, syncs the poison to every peer.
       // Drop the one bad edge HERE — exactly like the missing-node branch above
       // — so a malformed import can never reach (and wedge) the reconciler.
-      const validation = validateEdge(edge, survivingNodes, resolveDefForValidation);
+      const validation = validateEdge(
+        edge,
+        survivingNodes,
+        resolveDefForValidation,
+        loadAdoption,
+      );
       if (!validation.ok) {
         diagnostics.push({
           nodeId: edge.id,

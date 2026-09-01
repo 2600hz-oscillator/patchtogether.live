@@ -25,7 +25,7 @@
 
 import { patch, ydoc, LOCAL_ORIGIN } from '$lib/graph/store';
 import type { CableType, Edge, ModuleNode } from '$lib/graph/types';
-import { validateEdge, type ResolveDef } from '$lib/graph/validate-edge';
+import { makeAdoptionGraph, validateEdge, type ResolveDef } from '$lib/graph/validate-edge';
 import {
   expandLegGroups,
   planAudioCommit,
@@ -112,10 +112,14 @@ export function createMatrixEdge(
   const id = matrixEdgeId(source, target);
   if (patch.edges[id]) return id; // idempotent — same edge already present
   const candidate: Edge = { id, source, target, sourceType, targetType };
+  const nodesArr = Object.values(patch.nodes) as ModuleNode[];
   const verdict = validateEdge(
     candidate,
-    Object.values(patch.nodes) as ModuleNode[],
+    nodesArr,
     resolveDef,
+    // A matrix cell whose OUTPUT is type-transparent is judged on what that
+    // output emits right now, exactly like the drag path.
+    makeAdoptionGraph(nodesArr, Object.values(patch.edges) as Edge[], resolveDef),
   );
   if (!verdict.ok) return null; // illegal — silent no-op, matches the drag path
 
