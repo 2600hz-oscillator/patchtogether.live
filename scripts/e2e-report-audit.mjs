@@ -49,6 +49,14 @@ import { budgetViolations, classifySkipRow, AUDITED_LANES } from './e2e-skip-bud
 // ⚠ EXCLUDED FROM FAILING THE JOB, NOT FROM BEING REPORTED. A DOOM flake still
 // prints, under its own heading naming the ruling. A silent exclusion is the
 // failure mode even when the exclusion is correct.
+//
+// ⚠ AND IT IS A *FLAKE* CARVE-OUT ONLY — IT DOES NOT REACH THE SKIP BUDGET.
+// `budgetViolations()` below never consults `isDoomReserved`, so a DOOM row that
+// SKIPPED still reddens an audited lane. That distinction is load-bearing since
+// #2294 armed `--lane collab`: the eleven two-peer DOOM multiplayer tests live
+// on that lane, and "they all skipped because the WASM/WAD provisioning broke"
+// is precisely the regression the lane must go red for. A flake is DOOM's timing
+// being DOOM; a skip is DOOM not having run.
 const DOOM_SPEC = /(^|\/)doom-[^/]*\.spec\.ts$/;
 
 /** True when a row belongs to an owner-reserved DOOM spec. */
@@ -221,7 +229,8 @@ if (isMain) {
   const path = argv.find((a) => !a.startsWith('--'));
   if (!path) {
     throw new Error(
-      'usage: e2e-report-audit.mjs <merged-report.json> [--lane <e2e|behavioral>] [--json-out <file>] [--fail-on-flaky]',
+      `usage: e2e-report-audit.mjs <merged-report.json> [--lane <${AUDITED_LANES.join('|')}>] `
+        + '[--json-out <file>] [--fail-on-flaky]',
     );
   }
   const flagValue = (name) => {
