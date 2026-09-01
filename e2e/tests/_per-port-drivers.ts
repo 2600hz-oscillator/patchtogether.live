@@ -862,11 +862,18 @@ const DRIVERS: Record<string, PerPortDriver> = {
           // the sweep's 0.005 floor — 0 V is a legitimate pitch (middle C) and
           // would otherwise be indistinguishable from a jack that never moved.
           sim.noteTouch(ch, 84 + ch, 96 + ch);
+          // ⚠ AND A SECOND STEP, for trig1..trig4. A step trigger fires when
+          // the stream says the gesture MOVED ON, so a single strike leaves one
+          // 5 ms pulse the sweep's sampler can step straight over. A release
+          // plus a re-strike is a second step — what a real gesture does, and
+          // what makes the jack readably alive rather than intermittently dead.
+          sim.noteRelease(ch, 84 + ch, 96 + ch);
+          sim.noteTouch(ch, 86 + ch, 98 + ch);
         }
       });
     },
     note:
-      'TRAILS: install the simulated Bela Trails via __trailsTestInstall, then drive BOTH modes on all four channels — a held CC touch (x1..y4 + g1..g4) and a held note-mode strike (poly1..poly4, whose lanes only exist in note mode). Notes are pitched away from C4 so the V/oct lanes are non-zero. (clock exempt — 5 ms one-shot)',
+      'TRAILS: install the simulated Bela Trails via __trailsTestInstall, then drive BOTH modes on all four channels — a held CC touch (x1..y4 + g1..g4) and a held note-mode strike plus a second step (poly1..poly4, whose lanes only exist in note mode, and trig1..trig4, which fire per STEP). Notes are pitched away from C4 so the V/oct lanes are non-zero. (clock exempt — 5 ms one-shot)',
   },
 
   // ───── MIDI LANE — mock requestMIDIAccess + send note-on + CCs ─────

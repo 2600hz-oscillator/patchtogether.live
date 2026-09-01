@@ -389,6 +389,41 @@ export type TrailsEvent =
        *  poly lane's gate should sit at. */
       sounding: boolean;
     }
+  /**
+   * ONE ARTICULATION on a channel — the thing a drum voice fires from.
+   *
+   * ⚠ WHY THIS EXISTS AS A SEPARATE FACT FROM `gate`. The `gate` event is a
+   * LEVEL: "is this channel sounding". That is the right answer to a different
+   * question, and during a real gesture it is USELESS FOR TRIGGERING, because
+   * the two axes are quantised INDEPENDENTLY — X crosses a scale boundary when
+   * the finger's horizontal position does, Y when its vertical position does,
+   * and those moments essentially never coincide. So the channel-level OR of
+   * the two goes high at the first touch and stays high for the whole gesture.
+   * Measured on the decoder: an interleaved gesture of ten note messages
+   * produces exactly ONE rising edge, so a downstream kick fires once and then
+   * never again. That is the owner's report.
+   *
+   * A trigger is therefore not a re-labelling of the gate; it is the fact the
+   * gate cannot carry.
+   *
+   *   'step'    — note mode: the channel advanced to a new step.
+   *   'contact' — CC mode: the axis stream started after silence. The only
+   *               articulation CC mode puts on the wire (see below).
+   *   'loop'    — the playhead restarted (MIDI Start), in either mode.
+   *
+   * ⚠ CC MODE IS STRICTLY POORER AND THAT IS A PROPERTY OF THE WIRE. In note
+   * mode a Note On IS the articulation, so 'step' is exact. In CC mode the
+   * device transmits X and Y and nothing else — its step gate is not a MIDI
+   * message at all (the manual's MIDI table is eight rows of X/Y) — so all that
+   * can honestly be produced is 'contact' and 'loop'. There is no value of any
+   * constant that would recover per-step triggers from a continuous CC stream,
+   * and this file will not pretend otherwise.
+   */
+  | {
+      kind: 'trigger';
+      channel: TrailsChannel;
+      source: 'step' | 'contact' | 'loop';
+    }
   /** One MIDI clock tick (0xF8). MIDI is fixed at 24 of these per quarter. */
   | { kind: 'clock' }
   /** Transport moved. `reset` is true for Start (0xFA) and false for Continue
@@ -470,6 +505,31 @@ interface ChannelState {
    * always computed.
    */
   held: { x: Set<number>; y: Set<number> };
+  /**
+   * Has EITHER axis let go since this channel last fired a step trigger?
+   *
+   * ⚠ THE WHOLE STEP RULE, AND IT IS DELIBERATELY TIME-FREE. One step of a
+   * temporally-quantised gesture puts TWO note-ons on the wire — X and Y are
+   * separate MIDI channels — so a trigger per note-on would flam a kick on
+   * every step. The obvious fix is a coalescing time window, and it is the
+   * wrong one: it needs a magic millisecond value wedged between USB packet
+   * jitter and the shortest musical step, and it decides a musical question
+   * with a timer.
+   *
+   * This decides it with the stream instead. A note-on fires a step trigger
+   * only when the channel has seen a RELEASE since its last one (or was silent
+   * altogether). Both axes releasing and re-striking is one step: the first
+   * strike consumes the flag and the second finds it already spent. Two axes
+   * moving at different moments is two steps, and honestly so — they are two
+   * quantiser steps.
+   *
+   * ⚠ THE ASSUMPTION, STATED: the device sends a release for every note. That
+   * is MEASURED, not hoped — the owner's MON capture shows note-on rows with
+   * velocity 0, the running-status release, and no bare 0x80 rows. A firmware
+   * that played legato (a new note-on with no release) would advance the step
+   * without setting this flag and would need the alternative rule.
+   */
+  releasedSinceTrigger: boolean;
   /** Has this channel EVER produced a note? Once true the activity path is
    *  permanently off for it — see TRAILS_ACTIVITY_GATE_TIMEOUT_MS. */
   sawNote: boolean;
@@ -483,6 +543,7 @@ function newChannelState(): ChannelState {
     msb: { x: null, y: null },
     lsb: { x: 0, y: 0 },
     held: { x: new Set<number>(), y: new Set<number>() },
+    releasedSinceTrigger: false,
     sawNote: false,
     lastAxisMs: Number.NEGATIVE_INFINITY,
     gateHigh: false,
@@ -554,6 +615,11 @@ export function createTrailsDecoder(opts: TrailsDecoderOptions = {}): TrailsDeco
     if (s.sawNote || s.gateHigh) return;
     s.gateHigh = true;
     out.push({ kind: 'gate', channel, high: true, source: 'activity' });
+    // ⚠ CC MODE'S ONLY ARTICULATION, and it is thin on purpose. The device
+    // transmits X and Y and nothing else in this mode, so "the stream started
+    // again after a gap" is the entire set of contact events that reach us.
+    // The hardware's own per-step gate is not on the wire here at all.
+    out.push({ kind: 'trigger', channel, source: 'contact' });
   }
 
   /**
@@ -608,6 +674,10 @@ export function createTrailsDecoder(opts: TrailsDecoderOptions = {}): TrailsDeco
       // has never streamed at all.
       s.lastAxisMs = nowMs;
       out.push({ kind: 'gate', channel, high: true, source: 'loop' });
+      // The manual, verbatim: "The GATE output produces a TRIGGER whenever the
+      // gesture returns to the start of its loop". So a restart articulates in
+      // BOTH modes, and the trigger jack is where that lands cleanly.
+      out.push({ kind: 'trigger', channel, source: 'loop' });
     }
   }
 
@@ -672,9 +742,12 @@ export function createTrailsDecoder(opts: TrailsDecoderOptions = {}): TrailsDeco
       // previous level makes the handover fall out for free: note-on while high
       // is still no edge, note-off while high is the falling edge that was lost.
       const wasHigh = s.gateHigh;
+      const wasSounding = s.held.x.size > 0 || s.held.y.size > 0;
       s.sawNote = true;
       if (isOn) s.held[ref.axis].add(note);
       else s.held[ref.axis].delete(note);
+      // A release ARMS the next step. See `releasedSinceTrigger`.
+      if (!isOn) s.releasedSinceTrigger = true;
 
       // ⚠ THE NOTE IS THE AXIS. This is the whole fix, and it is deliberately
       // written as a WRITE INTO THE CC LATCHES followed by the ordinary
@@ -733,6 +806,13 @@ export function createTrailsDecoder(opts: TrailsDecoderOptions = {}): TrailsDeco
       s.gateHigh = high;
       if (high !== wasHigh) {
         out.push({ kind: 'gate', channel: ref.channel, high, source: 'note' });
+      }
+      // THE STEP TRIGGER. After the gate, so a consumer reading both in order
+      // sees the level settle before the articulation — and only on a STRIKE
+      // that the stream says begins a new step.
+      if (isOn && (!wasSounding || s.releasedSinceTrigger)) {
+        s.releasedSinceTrigger = false;
+        out.push({ kind: 'trigger', channel: ref.channel, source: 'step' });
       }
       return out;
     }

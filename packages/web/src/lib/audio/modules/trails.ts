@@ -66,6 +66,9 @@
 //   g1..g4 (gate): the four channels' contact gates, RE-STRUCK once per loop
 //     repetition (see TRAILS_LOOP_RETRIGGER_NOTCH_S).
 //   clock (gate): a divided pulse train from the device's MIDI clock.
+//   trig1..trig4 (gate, TRIGGER): one pulse per gesture STEP — what a drum
+//     voice fires from. See TRAILS_TRIGGER_VS_GATE for why this is a separate
+//     jack from g1..g4 rather than a notch cut into it.
 //   poly1..poly4 (polyPitchGate): each channel's two axes as V/oct + gate,
 //     voice 0 = X and voice 1 = Y. ⚠ NOTE MODE ONLY — see TRAILS_POLY_LANE.
 //
@@ -88,6 +91,7 @@ import type { ParamDef } from '$lib/graph/types';
 import { createMidiScheduler } from '$lib/audio/midi-timing';
 import { createPolySender, type PolySender } from '$lib/audio/poly';
 import { midiToVOct } from '$lib/audio/note-entry';
+import { TRIGGER_PULSE_S } from '$lib/audio/gate-trigger';
 import { getSchedulerClock } from '$lib/audio/scheduler-clock';
 import {
   CLOCK_DIVISORS,
@@ -133,6 +137,11 @@ export function trailsGatePortId(channel: TrailsChannel): string {
   return `g${channel}`;
 }
 export const TRAILS_CLOCK_PORT_ID = 'clock';
+
+/** Port id for one channel's step-trigger jack. */
+export function trailsTrigPortId(channel: TrailsChannel): string {
+  return `trig${channel}`;
+}
 
 /** Port id for one channel's poly note bus. */
 export function trailsPolyPortId(channel: TrailsChannel): string {
@@ -361,6 +370,71 @@ export const TRAILS_TRAIL_LENGTH = 48;
  */
 export const TRAILS_LOOP_RETRIGGER_NOTCH_S = 0.005;
 
+/**
+ * WHY THE STEP ARTICULATION IS A NEW JACK AND NOT A NOTCH IN THE GATE.
+ *
+ * Owner: "in note mode (or not) i would like to be able to trigger kick drum
+ * from trails. i think what i need is gate/pitch outputs that are functionally
+ * the same as the ones on the device, and i don't think our gates are there?"
+ *
+ * ── WHAT THE DEVICE'S GATE ACTUALLY IS ──────────────────────────────────────
+ *
+ * The manual, verbatim and already quoted in `trails-decode.ts`:
+ *
+ *   "The GATE output produces a TRIGGER whenever the gesture returns to the
+ *    start of its loop or after each silent section in the recording."
+ *
+ * A TRIGGER. Not "is high while touched". And the Bar's assignable roster —
+ * "Step Density, GATE WIDTH, Smoothing, Volume or Portamento" — settles it: a
+ * signal with a settable WIDTH is a pulse, and a signal with a settable step
+ * DENSITY is a pulse TRAIN, one per step. The device's gate jack is a rhythm
+ * generator. Ours was only ever a contact level, which is why a kick patched to
+ * it fired once and never again.
+ *
+ * ── WHY NOT SIMPLY NOTCH g1..g4 ─────────────────────────────────────────────
+ *
+ * A notch was the obvious move — the `'loop'` retrigger above already cuts one —
+ * and it is rejected for three reasons, stated so the choice can be argued with:
+ *
+ *   1. A NOTCH IN A LEVEL IS A HOLE. `g1..g4` are documented and shipped as
+ *      level-sensitive contact gates; a player holding a pad through a VCA
+ *      patched to `g1` would get a click on every step. The loop notch is
+ *      tolerable at ONE per repetition and would not be at one per step.
+ *   2. THEY ANSWER DIFFERENT QUESTIONS. "Is this channel sounding" and "a step
+ *      just happened" are both real and neither substitutes for the other. On
+ *      the hardware they are the same jack only because the hardware has one
+ *      jack and a WIDTH knob to slide between the two behaviours; two jacks is
+ *      that knob's two ends, both available at once.
+ *   3. AGENTS.md rule 7 — gate consumers stay level-sensitive, and no shipped
+ *      consumer of `g1..g4` is converted to edge-only by adding a jack beside
+ *      it. Changing `g1`'s semantics would have converted every one of them.
+ *
+ * The cost, stated plainly: four more jacks on an already busy module, and a
+ * player has to know which one to patch. The docs name it, and a drum voice
+ * wants TRIG while an envelope or VCA wants GATE.
+ */
+export const TRAILS_TRIGGER_VS_GATE =
+  'trig{n} is a per-step TRIGGER (what a drum fires from); g{n} is a contact LEVEL.';
+
+/**
+ * How long a step trigger stays high.
+ *
+ * The repo's shared `TRIGGER_PULSE_S` — 5 ms, "within the real-hardware 1-5 ms
+ * band", the same width `archivist`, `peertube` and `tv-librarian` strike with.
+ * Aliased rather than re-typed so every trigger in the rack keeps one width.
+ *
+ * ⚠ DELIBERATELY `TRIGGER_PULSE_S`, NOT the `GATE_PULSE_S` the CLOCK jack uses,
+ * even though the two are both 5 ms today. They answer different questions —
+ * one is how long a TRIGGER is high, the other how long a gate PULSE is — and
+ * the constants are allowed to diverge. Picking the one that names this port's
+ * semantics is what keeps a future change to either from silently moving both.
+ *
+ * ⚠ NOT the device's Bar-assignable GATE WIDTH. That is an internal function
+ * with no MIDI message, so its value is unknowable here; what reaches us is the
+ * step's TIMING, and the width is ours to choose.
+ */
+export const TRAILS_TRIGGER_PULSE_S = TRIGGER_PULSE_S;
+
 export interface TrailsState {
   /** Device binding state, mirrored so a surface needs one read. */
   readonly status: TrailsStatus;
@@ -386,6 +460,16 @@ export interface TrailsState {
    *  gesture plays back, so it is the counter a test asserts 1:1 against
    *  `loopRestarts`. */
   readonly gateEdges: readonly number[];
+  /**
+   * STEP TRIGGERS emitted per channel (indexed 0..3) — the count of times a
+   * drum voice patched to `trig{n}` would have fired.
+   *
+   * Separate from `gateEdges` because they measure different things and the
+   * difference IS the defect this port exists for: during one interleaved
+   * gesture `gateEdges` advances ONCE (the contact level never falls) while
+   * this advances once per step.
+   */
+  readonly stepTriggers: readonly number[];
   /**
    * Raw MIDI frames the bound ports have delivered, and how many of them the
    * decoder made nothing of.
@@ -454,6 +538,12 @@ export const trailsDef: AudioModuleDef = {
     // A divided clock is a TRIGGER, not a level: it fires once per edge and the
     // pulse width carries no meaning, which is exactly MIDICLOCK's `clock`.
     { id: 'clock', type: 'gate', edge: 'trigger' },
+    // The four per-channel STEP TRIGGERS — what a drum voice fires from. A
+    // TRIGGER, not a level: see TRAILS_TRIGGER_VS_GATE.
+    { id: 'trig1', type: 'gate', edge: 'trigger', label: 'trig 1' },
+    { id: 'trig2', type: 'gate', edge: 'trigger', label: 'trig 2' },
+    { id: 'trig3', type: 'gate', edge: 'trigger', label: 'trig 3' },
+    { id: 'trig4', type: 'gate', edge: 'trigger', label: 'trig 4' },
     // The four per-channel note buses. NOTE-MODE ONLY — see the docs below and
     // TRAILS_POLY_LANE for why there are four of these rather than one.
     { id: 'poly1', type: 'polyPitchGate', label: 'poly 1' },
@@ -465,7 +555,7 @@ export const trailsDef: AudioModuleDef = {
 
   docs: {
     explanation:
-      "The Bela TRAILS eurorack module, read straight into the rack over its USB-C port. Trails is a quad touch-gesture recorder: an 85 by 85 mm multitouch pad whose four channels each record a finger gesture, loop it, and keep emitting an X position, a Y position and a contact gate long after you have taken your hand away. This module receives all of that as MIDI and hands it to the patch as twelve modulation jacks plus a clock. Mental model: your finger is a modulation source, and once you lift it the gesture keeps performing itself. The pad view on the card mirrors the physical surface one to one — up to four coloured touch points with fading trails, in the same coordinates the jacks emit — so you can see what the rack is receiving without looking down at the hardware. RANGE picks whether the X and Y jacks are the pad's own 0..1 coordinates (the default, so patching X into a video module's horizontal position puts the picture where your finger is) or bipolar around the pad's centre. SMOOTH glides the X and Y jacks toward each new sample instead of stepping, which turns a jittery fingertip into a sweep at the cost of trailing the hand. CLOCK DIV divides the device's own MIDI clock into a pulse train, so a recorded gesture and the rack can share a tempo. Nothing is streamed into the saved patch: the touch data is live engine state, so a gesture never bloats the document or reaches collaborators. Connecting asks the browser for MIDI permission when you press CONNECT and not before, so loading a patch that contains this module never raises a prompt. There is no MIDI back to the device — Trails takes its clock and reset as CV on its own jacks, so to slave it to the rack, patch a clock out of CV BUDDY into the module's clock input. Two things about the hardware are worth knowing before you patch it. The device transmits its X and Y positions and its transport, and nothing else: the gate you see on the module's own gate jacks is not a MIDI message, so the gates here are reconstructed from the stream — high while a channel is sending, re-struck at the top of every loop, and falling when the channel goes quiet. And the touch bar down the panel is not transmitted at all, and has no output jack of its own on the hardware either; it is an assignable modifier of the device's internal behaviour, so what it changes reaches this module in the shape of the X, Y and gate it shapes rather than as a signal you can patch. The bar is drawn on the pad view so the picture matches the panel, greyed to say it carries no data. MON opens a live readout of every MIDI message the device is sending, including any this module does not recognise, which is how to check what your firmware actually transmits. The third thing worth knowing is what happens when you turn on pitch quantisation. With both pitch and temporal quantisation enabled the device stops sending its continuous high-resolution positions and sends MIDI notes instead, quantised to the scale you picked. Those notes are the same two axes, on the same per-axis channels, so the X and Y jacks keep working: each note number is spread across the jack's travel, so playing up a scale walks the jack upward in even steps. Because a note number is already linear in semitones, the jack is a pitch-shaped signal in the same way a volt-per-octave control voltage is, just normalised into this rack's range rather than measured in volts. The travel a scale covers depends on how wide it is: the whole MIDI note range is spread across the jack, so a scale spanning an octave or two moves it by a tenth to a fifth of full scale rather than end to end. Turn RANGE to BI to double that swing, or use an attenuverter downstream to make a narrow scale reach further. And once you are in note mode you do not have to go through a control voltage at all: each channel has a POLY jack carrying that channel's two axes as actual notes, one voice for X and one for Y, which you can patch straight into any polyphonic instrument to hear the scale you picked without calibrating anything. Those jacks are silent in the ordinary continuous mode, because there are no notes to send. One thing this hardware will not give you is dynamics: every note it sends carries the same fixed velocity, measured on the device rather than assumed, so nothing here can tell a firm press from a light one.",
+      "The Bela TRAILS eurorack module, read straight into the rack over its USB-C port. Trails is a quad touch-gesture recorder: an 85 by 85 mm multitouch pad whose four channels each record a finger gesture, loop it, and keep emitting an X position, a Y position and a contact gate long after you have taken your hand away. This module receives all of that as MIDI and hands it to the patch as twelve modulation jacks plus a clock. Mental model: your finger is a modulation source, and once you lift it the gesture keeps performing itself. The pad view on the card mirrors the physical surface one to one — up to four coloured touch points with fading trails, in the same coordinates the jacks emit — so you can see what the rack is receiving without looking down at the hardware. RANGE picks whether the X and Y jacks are the pad's own 0..1 coordinates (the default, so patching X into a video module's horizontal position puts the picture where your finger is) or bipolar around the pad's centre. SMOOTH glides the X and Y jacks toward each new sample instead of stepping, which turns a jittery fingertip into a sweep at the cost of trailing the hand. CLOCK DIV divides the device's own MIDI clock into a pulse train, so a recorded gesture and the rack can share a tempo. Nothing is streamed into the saved patch: the touch data is live engine state, so a gesture never bloats the document or reaches collaborators. Connecting asks the browser for MIDI permission when you press CONNECT and not before, so loading a patch that contains this module never raises a prompt. There is no MIDI back to the device — Trails takes its clock and reset as CV on its own jacks, so to slave it to the rack, patch a clock out of CV BUDDY into the module's clock input. Two things about the hardware are worth knowing before you patch it. The device transmits its X and Y positions and its transport, and nothing else: the gate you see on the module's own gate jacks is not a MIDI message at all, so everything the GATE and TRIG jacks here emit is reconstructed from the position and note streams rather than read from the device. That reconstruction gives you two different signals, and picking the right one is the difference between a drone and a rhythm. GATE is contact: high while a channel is sounding, which through a gesture usually means high the whole way through, because a playing gesture never stops and, with quantisation on, the horizontal and vertical notes overlap almost continuously. TRIG is the step: a short pulse each time the gesture moves on, which is what a drum wants. You can patch both from one gesture and get a sustained layer and a rhythmic layer together. And the touch bar down the panel is not transmitted at all, and has no output jack of its own on the hardware either; it is an assignable modifier of the device's internal behaviour, so what it changes reaches this module in the shape of the X, Y and gate it shapes rather than as a signal you can patch. The bar is drawn on the pad view so the picture matches the panel, greyed to say it carries no data. MON opens a live readout of every MIDI message the device is sending, including any this module does not recognise, which is how to check what your firmware actually transmits. The third thing worth knowing is what happens when you turn on pitch quantisation. With both pitch and temporal quantisation enabled the device stops sending its continuous high-resolution positions and sends MIDI notes instead, quantised to the scale you picked. Those notes are the same two axes, on the same per-axis channels, so the X and Y jacks keep working: each note number is spread across the jack's travel, so playing up a scale walks the jack upward in even steps. Because a note number is already linear in semitones, the jack is a pitch-shaped signal in the same way a volt-per-octave control voltage is, just normalised into this rack's range rather than measured in volts. The travel a scale covers depends on how wide it is: the whole MIDI note range is spread across the jack, so a scale spanning an octave or two moves it by a tenth to a fifth of full scale rather than end to end. Turn RANGE to BI to double that swing, or use an attenuverter downstream to make a narrow scale reach further. And once you are in note mode you do not have to go through a control voltage at all: each channel has a POLY jack carrying that channel's two axes as actual notes, one voice for X and one for Y, which you can patch straight into any polyphonic instrument to hear the scale you picked without calibrating anything. Those jacks are silent in the ordinary continuous mode, because there are no notes to send. One thing this hardware will not give you is dynamics: every note it sends carries the same fixed velocity, measured on the device rather than assumed, so nothing here can tell a firm press from a light one. To strike a drum from a gesture, patch TRIG rather than GATE. GATE tells you whether a channel is sounding, and through a gesture the answer stays yes the whole way, because the two axes cross their quantiser steps at different moments and one of them is nearly always sounding; a drum patched there fires once and then waits forever. TRIG fires once per step instead, plus once each time the loop comes back round, which is what the gate jack on the hardware itself does. How much TRIG can tell you depends on the mode, and the difference is worth knowing rather than guessing at: with quantisation on, the device sends a note per step and the triggers are exact. In the continuous mode it sends only positions and keeps its step gate to itself, so the most that can honestly be produced is a pulse when a channel starts moving again after being still, and one per loop restart.",
     inputs: {},
     outputs: {
       x1: "Channel 1's horizontal pad position. 0 is the left edge of the pad and 1 the right, or −1..+1 about the centre when RANGE is BI. It keeps streaming while a recorded gesture plays back, and holds its last value when the channel is idle. With pitch quantisation switched on the device sends notes instead of continuous positions, and this jack follows those notes: each note number lands at its own point along the travel, so a scale steps the jack rather than sliding it, and a released note holds the last pitch rather than dropping to zero.",
@@ -476,12 +566,17 @@ export const trailsDef: AudioModuleDef = {
       y3: "Channel 3's vertical pad position, in the same coordinates as Y1.",
       x4: "Channel 4's horizontal pad position, in the same coordinates as X1.",
       y4: "Channel 4's vertical pad position, in the same coordinates as Y1.",
-      g1: "Channel 1's contact gate: high while the channel is touched or its recorded gesture is playing, low when it is idle, and RE-STRUCK once at the top of every loop repetition so a looping gesture articulates an envelope again each time round. The retrigger is a brief dip to zero and back rather than a level change, because the device streams a recorded gesture continuously and the level never falls by itself — without the dip a looping channel would be one endless held gate. Patch it into an envelope so a touch articulates as well as modulates. Note that the device transmits only one playhead, its first channel's, so the loop retrigger is driven from that: with clock-synchronised recording every channel shares the cycle and they all re-strike together, but channels running a different step count will re-strike at channel 1's rate rather than their own.",
-      g2: "Channel 2's contact gate, high while that channel is active and re-struck at each loop repetition. See GATE 1 for how the loop retrigger works and what the device does and does not transmit.",
-      g3: "Channel 3's contact gate, high while that channel is active and re-struck at each loop repetition. See GATE 1 for how the loop retrigger works and what the device does and does not transmit.",
-      g4: "Channel 4's contact gate, high while that channel is active and re-struck at each loop repetition. See GATE 1 for how the loop retrigger works and what the device does and does not transmit.",
+      g1: "Channel 1's CONTACT gate: high while the channel is sounding, low when it is idle. It answers \"is this channel in contact\", and during a gesture the answer is usually yes the whole way through, so expect a long held gate rather than a rhythm. That is deliberate and it is worth understanding before you patch it. In the continuous mode the device streams positions without a pause while a recorded gesture plays back, so contact never ends; the gate is re-struck once at the top of each loop repetition, as a brief dip to zero and back, so a looping gesture articulates an envelope again each time round. With quantisation on, the channel is counted as sounding while EITHER its horizontal or its vertical note is held, and because those two are quantised separately they overlap almost continuously — one is nearly always sounding — so the gate stays up for the whole gesture and the loop dip is not applied, because the notes themselves are already the articulation. If you want a drone that follows a gesture, this is the jack. If you want to strike a drum once per step, patch TRIG instead. Two limits are worth knowing. The loop dip is driven by the device's transport, and the device reports only one playhead, its first channel's: with clock-synchronised recording every channel shares the cycle and they re-strike together, but a channel running a different step count re-strikes at channel 1's rate rather than its own. And the hardware's own gate jacks are not transmitted over MIDI at all, so everything on this jack is reconstructed from the position and note streams rather than read from the device.",
+      g2: "Channel 2's contact gate, in the same form as GATE 1 — high while that channel is sounding, and long-held through a gesture rather than rhythmic. See GATE 1 for what it does in each mode, why it holds, and what the device does and does not transmit.",
+      g3: "Channel 3's contact gate, in the same form as GATE 1 — high while that channel is sounding. See GATE 1 for the mode differences and the limits.",
+      g4: "Channel 4's contact gate, in the same form as GATE 1 — high while that channel is sounding. See GATE 1 for the mode differences and the limits.",
       clock:
         "A pulse train derived from the MIDI clock the device transmits, divided by the CLOCK DIV setting — at the default 24 that is one pulse per quarter note, the division TIMELORDE expects. It is a trigger: each pulse is a short fixed-width rising edge and the level between pulses carries no meaning. Silent until the device's transport is running.",
+      trig1:
+        "A short pulse every time channel 1's gesture steps — this is the jack to patch into a drum. It fires once per step of the recorded or played gesture, plus once each time the loop returns to its start, which is what the module's own gate jack does on the hardware. Use it wherever you want something struck rather than held: a kick, a snare, a sampler, an envelope you want re-articulated. It is deliberately not the same jack as GATE 1. GATE 1 answers \"is this channel sounding\", and during a gesture that answer stays yes the whole time, because the horizontal and vertical positions cross their quantiser steps at different moments and one of them is essentially always sounding. A drum patched there fires once at the start of a gesture and then never again, which is the problem this jack fixes. How much it can tell you depends on the mode. With pitch and temporal quantisation on, the device sends a note for every step and this jack is exact, one pulse per step. In the ordinary continuous mode the device sends only positions, and its own step gate is not transmitted at all, so all this can honestly fire on is the moment a channel starts moving again after being still, and each loop restart. If you want steady triggers from a gesture, turn quantisation on.",
+      trig2: "Channel 2's step trigger, in the same form as TRIG 1 — a short pulse per gesture step and per loop restart, for striking a drum or re-articulating an envelope.",
+      trig3: "Channel 3's step trigger, in the same form as TRIG 1.",
+      trig4: "Channel 4's step trigger, in the same form as TRIG 1.",
       poly1:
         "Channel 1's two axes as a note bus, for playing an instrument directly instead of reconstructing pitch from a control voltage. Voice 1 is the X axis and voice 2 is the Y axis, each carrying a pitch and its own gate, so one finger plays a two-note chord that moves as you move. Patch it into any polyphonic voice. Only alive when the device is sending notes: turn on both pitch and temporal quantisation and this starts playing, and in the ordinary continuous mode it sits silent while the X, Y and gate jacks carry everything as usual. The pitch is the real quantised note the device chose, so it lands in tune with whatever scale you picked on the panel rather than being a voltage you have to calibrate. The gate stays up for as long as you hold the position, so a sustained touch sustains the note. Velocity is not part of it: this hardware sends the same fixed velocity for every note, so the bus carries no dynamics and a voice that responds to how hard you play will always hear the same thing.",
       poly2: "Channel 2's two axes as a note bus, in the same form as POLY 1 — voice 1 is X, voice 2 is Y, and it is alive only when the device is sending notes. Each channel has its own bus so you can play a different instrument from each recorded gesture.",
@@ -526,6 +621,7 @@ export const trailsDef: AudioModuleDef = {
       makeSource(trailsAxisPortId(ch, 'x'));
       makeSource(trailsAxisPortId(ch, 'y'));
       makeSource(trailsGatePortId(ch));
+      makeSource(trailsTrigPortId(ch));
     }
     makeSource(TRAILS_CLOCK_PORT_ID);
 
@@ -568,6 +664,9 @@ export const trailsDef: AudioModuleDef = {
     let midiFrames = 0;
     let midiFramesUnrecognised = 0;
     const gateEdges: number[] = TRAILS_CHANNELS.map(() => 0);
+    /** Step triggers emitted per channel — the counter that shows a kick would
+     *  have fired, and the one a test asserts against a step count. */
+    const stepTriggers: number[] = TRAILS_CHANNELS.map(() => 0);
 
     // ── Scheduling ────────────────────────────────────────────────────────
     const scheduler = createMidiScheduler(ctx);
@@ -666,6 +765,22 @@ export const trailsDef: AudioModuleDef = {
               if (i >= 0 && i < gateEdges.length) gateEdges[i]!++;
             }
           }
+        } else if (ev.kind === 'trigger') {
+          // ONE ARTICULATION = ONE PULSE. Written like MIDICLOCK's clock pulse
+          // and unlike `retriggerGate`: this jack has no level to preserve, so
+          // there is no notch to cut — it is low, goes high, and comes back.
+          //
+          // ⚠ `cancelScheduledValues` FIRST, so two steps closer together than
+          // the pulse width produce two pulses rather than a stuck-high jack
+          // whose first falling edge lands after the second rise.
+          const src = sources.get(trailsTrigPortId(ev.channel));
+          if (src) {
+            src.offset.cancelScheduledValues(at);
+            src.offset.setValueAtTime(1, at);
+            src.offset.setValueAtTime(0, at + TRAILS_TRIGGER_PULSE_S);
+          }
+          const i = ev.channel - 1;
+          if (i >= 0 && i < stepTriggers.length) stepTriggers[i]!++;
         } else if (ev.kind === 'note') {
           // ── THE POLY BUS ───────────────────────────────────────────────
           //
@@ -770,6 +885,7 @@ export const trailsDef: AudioModuleDef = {
         clockTicks,
         loopRestarts,
         gateEdges,
+        stepTriggers,
         midiFrames,
         midiFramesUnrecognised,
       };
@@ -790,6 +906,7 @@ export const trailsDef: AudioModuleDef = {
         // no longer on screen, which is worse than not resetting at all.
         loopRestarts = 0;
         gateEdges.fill(0);
+        stepTriggers.fill(0);
       },
     };
 

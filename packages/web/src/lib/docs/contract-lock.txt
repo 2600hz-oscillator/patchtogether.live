@@ -3353,6 +3353,10 @@ trails out poly1 polyPitchGate
 trails out poly2 polyPitchGate
 trails out poly3 polyPitchGate
 trails out poly4 polyPitchGate
+trails out trig1 gate edge=trigger
+trails out trig2 gate edge=trigger
+trails out trig3 gate edge=trigger
+trails out trig4 gate edge=trigger
 trails out x1 cv
 trails out x2 cv
 trails out x3 cv

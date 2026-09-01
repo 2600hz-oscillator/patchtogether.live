@@ -20,12 +20,14 @@ import {
   trailsAxisPortId,
   trailsGatePortId,
   trailsPolyPortId,
+  trailsTrigPortId,
   TRAILS_POLY_LANE,
   TRAILS_CHANNELS,
   TRAILS_BAR_TRANSMITS_MIDI,
   TRAILS_CLOCK_PORT_ID,
   TRAILS_LOOP_RETRIGGER_NOTCH_S,
   TRAILS_MAX_SMOOTH_TAU_S,
+  TRAILS_TRIGGER_PULSE_S,
   TRAILS_TRAIL_LENGTH,
   type TrailsCardApi,
   type TrailsState,
@@ -237,6 +239,7 @@ describe('trails def shape', () => {
       ...TRAILS_CHANNELS.flatMap((c) => [trailsAxisPortId(c, 'x'), trailsAxisPortId(c, 'y')]),
       ...TRAILS_CHANNELS.map((c) => trailsGatePortId(c)),
       TRAILS_CLOCK_PORT_ID,
+      ...TRAILS_CHANNELS.map((c) => trailsTrigPortId(c)),
       ...TRAILS_CHANNELS.map((c) => trailsPolyPortId(c)),
     ];
     expect(trailsDef.outputs.map((p) => p.id)).toEqual(derived);
@@ -252,8 +255,16 @@ describe('trails def shape', () => {
     // stay `gate`. What is new is four buses that exist only in note mode,
     // where the device genuinely is emitting pitches.
     expect(trailsDef.outputs.filter((p) => p.type === 'cv')).toHaveLength(8);
-    expect(trailsDef.outputs.filter((p) => p.type === 'gate')).toHaveLength(5);
     expect(trailsDef.outputs.filter((p) => p.type === 'polyPitchGate')).toHaveLength(4);
+    // ⚠ THE GATE-CABLE PORTS ARE COUNTED BY EDGE VOCABULARY, not as one lump.
+    // Nine share the `gate` CABLE and they are two different signals: four
+    // level-sensitive contact gates, and five triggers (four step triggers plus
+    // the divided clock). A bare count of nine would have hidden a trig port
+    // accidentally declared as a level, which is the mistake rule 7 is about.
+    const gateCable = trailsDef.outputs.filter((p) => p.type === 'gate');
+    expect(gateCable).toHaveLength(9);
+    expect(gateCable.filter((p) => p.edge === 'gate')).toHaveLength(4);
+    expect(gateCable.filter((p) => p.edge === 'trigger')).toHaveLength(5);
     // No `pitch`-typed output: a MONO pitch cable would have to pick one of the
     // two axes and call it the note, which is a choice the device does not make.
     expect(trailsDef.outputs.some((p) => p.type === 'pitch')).toBe(false);
@@ -882,6 +893,94 @@ describe('trails factory: NOTE MODE steers the jacks', () => {
       (h.read!('state') as TrailsState).channels[0]!.gate,
       'the pad mirror must not show the finger lifting either',
     ).toBe(true);
+  });
+
+  // ── The per-channel STEP TRIGGERS ──────────────────────────────────────
+
+  it('THE DEFECT, at the jack: one gesture = ONE gate edge but MANY trig pulses', async () => {
+    // The owner's report made mechanical at the module boundary. An interleaved
+    // gesture (X and Y crossing their quantiser steps at different moments)
+    // leaves the contact level high throughout, so a drum on `g2` fires once.
+    const h = await trailsDef.factory!(makeMockCtx(), makeNode());
+    handle = h;
+    const seq: number[][] = [
+      [0x92, 60, 127], [0x93, 67, 127],
+      [0x92, 60, 0], [0x92, 62, 127],
+      [0x93, 67, 0], [0x93, 69, 127],
+      [0x92, 62, 0], [0x92, 64, 127],
+      [0x93, 69, 0], [0x93, 71, 127],
+    ];
+    for (const bytes of seq) sim.send(bytes);
+
+    expect(risingEdges(h, 'g2'), 'the contact gate rose once and stayed').toBe(1);
+    const pulses = eventsOn(h, 'trig2').filter((e) => e.value === 1);
+    expect(pulses.length, 'but the trigger jack articulated every step').toBeGreaterThan(3);
+    const st = h.read!('state') as TrailsState;
+    expect(st.stepTriggers[1]).toBe(pulses.length);
+    expect(st.gateEdges[1], 'the two counters disagree — that IS the defect').toBe(1);
+  });
+
+  it('each trigger is a PULSE: high then low one pulse-width later', async () => {
+    const h = await trailsDef.factory!(makeMockCtx(), makeNode());
+    handle = h;
+    sim.noteTouch(1, 60, 67);
+    const ev = eventsOn(h, 'trig1').filter((e) => e.value !== undefined);
+    expect(ev.map((e) => e.value)).toEqual([1, 0]);
+    expect(ev[1]!.time - ev[0]!.time).toBeCloseTo(TRAILS_TRIGGER_PULSE_S, 9);
+  });
+
+  it('⚠ RULE 7: the contact gate is STILL a level — no notch was cut into it', async () => {
+    // The trade-off, asserted. Adding a jack must not have converted `g1` from
+    // a level into an edge: a VCA patched there must not click per step.
+    const h = await trailsDef.factory!(makeMockCtx(), makeNode());
+    handle = h;
+    sim.noteTouch(1, 60, 67);
+    sim.send([0x90, 60, 0]);
+    sim.send([0x90, 62, 127]); // X steps while Y holds
+    const gateValues = eventsOn(h, 'g1')
+      .filter((e) => e.value !== undefined)
+      .map((e) => e.value);
+    expect(gateValues, 'one rise, and nothing cut into it').toEqual([1]);
+    expect(lastValue(h, 'g1')).toBe(1);
+    // …while the trigger jack carried both steps.
+    expect((h.read!('state') as TrailsState).stepTriggers[0]).toBe(2);
+  });
+
+  it('two steps closer together than the pulse width still make TWO pulses', async () => {
+    // `cancelScheduledValues` first, or the first pulse's pending fall would
+    // land after the second rise and leave the jack stuck high.
+    const h = await trailsDef.factory!(makeMockCtx(), makeNode());
+    handle = h;
+    for (let i = 0; i < 3; i++) {
+      sim.send([0x90, 60, 127]);
+      sim.send([0x90, 60, 0]);
+    }
+    expect((h.read!('state') as TrailsState).stepTriggers[0]).toBe(3);
+    expect(eventsOn(h, 'trig1').filter((e) => e.value === 1)).toHaveLength(3);
+  });
+
+  it('CC mode pulses on CONTACT and on each loop restart — bounded, and honest', async () => {
+    const h = await trailsDef.factory!(makeMockCtx(), makeNode());
+    handle = h;
+    sim.glide(1, 8);
+    const afterContact = (h.read!('state') as TrailsState).stepTriggers[0];
+    expect(afterContact, 'the stream starting is one articulation').toBe(1);
+    // A long continuous stream adds nothing — CC mode has no steps on the wire.
+    sim.glide(1, 40);
+    expect((h.read!('state') as TrailsState).stepTriggers[0]).toBe(afterContact);
+    // …and each loop restart articulates.
+    sim.loopRestart();
+    sim.loopRestart();
+    expect((h.read!('state') as TrailsState).stepTriggers[0]).toBe(afterContact! + 2);
+  });
+
+  it('resetMonitor zeroes the step counter with the others', async () => {
+    const h = await trailsDef.factory!(makeMockCtx(), makeNode());
+    handle = h;
+    sim.noteTouch(1, 60, 67);
+    expect((h.read!('state') as TrailsState).stepTriggers[0]).toBeGreaterThan(0);
+    (h.read!('card-api') as TrailsCardApi).resetMonitor();
+    expect((h.read!('state') as TrailsState).stepTriggers).toEqual([0, 0, 0, 0]);
   });
 
   // ── The per-channel poly note buses ────────────────────────────────────

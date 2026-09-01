@@ -600,6 +600,144 @@ describe('trails-decode: note mode drives the AXES', () => {
     expect(gates(d.handle([0x93, 99, 0], 3))[0]!.channel).toBe(2);
   });
 
+  // ── THE STEP TRIGGER ──────────────────────────────────────────────────────
+  //
+  // Owner: "i would like to be able to trigger kick drum from trails … i don't
+  // think our gates are there?"
+  //
+  // They are not, and the reason is measurable. The two axes are quantised
+  // INDEPENDENTLY, so X crosses a scale boundary when the horizontal position
+  // does and Y when the vertical does — moments that essentially never
+  // coincide. The channel-level OR of the two therefore goes high on the first
+  // touch and never falls. The manual is clear about what the hardware does
+  // instead: "The GATE output produces a TRIGGER whenever the gesture returns to
+  // the start of its loop or after each silent section", and the Bar's roster
+  // includes GATE WIDTH and STEP DENSITY — a pulse train, one per step.
+
+  it('THE DEFECT: an INTERLEAVED gesture yields ONE gate edge but a trigger PER STEP', () => {
+    // The realistic stream, and the whole report in one test. X and Y take
+    // turns moving; the contact level never falls, so a drum on `g` fires once.
+    const d = createTrailsDecoder();
+    let t = 0;
+    const feed = (bytes: number[]) => d.handle(bytes, t++);
+    const rises: number[] = [];
+    const steps: number[] = [];
+    const seq: number[][] = [
+      [0x92, 60, 127], [0x93, 67, 127], // both strike
+      [0x92, 60, 0], [0x92, 62, 127], // X moves, Y still held
+      [0x93, 67, 0], [0x93, 69, 127], // Y moves, X still held
+      [0x92, 62, 0], [0x92, 64, 127], // X again
+      [0x93, 69, 0], [0x93, 71, 127], // Y again
+    ];
+    for (const bytes of seq) {
+      for (const ev of feed(bytes)) {
+        if (ev.kind === 'gate' && ev.high) rises.push(1);
+        if (ev.kind === 'trigger') steps.push(1);
+      }
+    }
+    expect(rises, 'the contact level rises ONCE for the whole gesture').toHaveLength(1);
+    expect(steps.length, 'but every quantiser step articulates').toBeGreaterThan(3);
+  });
+
+  it('an ALIGNED step fires the trigger ONCE, not once per axis', () => {
+    // ⚠ THE FLAM THIS RULE EXISTS TO PREVENT. One step of a temporally
+    // quantised gesture puts TWO note-ons on the wire, X and Y. A trigger per
+    // note-on would strike a kick twice per step.
+    const d = createTrailsDecoder();
+    let t = 0;
+    const stepsAt: number[] = [];
+    const steps = [[60, 67], [62, 69], [64, 71], [65, 72]];
+    for (const [i, pair] of steps.entries()) {
+      const [x, y] = pair as [number, number];
+      if (i > 0) {
+        const [px, py] = steps[i - 1] as [number, number];
+        d.handle([0x92, px, 0], t++);
+        d.handle([0x93, py, 0], t++);
+      }
+      for (const ev of d.handle([0x92, x, 127], t++)) if (ev.kind === 'trigger') stepsAt.push(i);
+      for (const ev of d.handle([0x93, y, 127], t++)) if (ev.kind === 'trigger') stepsAt.push(i);
+    }
+    expect(stepsAt, 'exactly one trigger per step, in step order').toEqual([0, 1, 2, 3]);
+  });
+
+  it('the FIRST touch from silence triggers once, not twice', () => {
+    const d = createTrailsDecoder();
+    const first = d.handle([0x92, 60, 127], 0).filter((e) => e.kind === 'trigger');
+    const second = d.handle([0x93, 67, 127], 1).filter((e) => e.kind === 'trigger');
+    expect(first).toEqual([{ kind: 'trigger', channel: 2, source: 'step' }]);
+    expect(second, 'the other axis of the SAME step adds nothing').toHaveLength(0);
+  });
+
+  it('the step rule is TIME-FREE — the same stream triggers the same however slow', () => {
+    // ⚠ NO COALESCING WINDOW. A window would need a magic millisecond value
+    // wedged between USB packet jitter and the shortest musical step, and would
+    // decide a musical question with a timer. The rule reads the STREAM: a
+    // strike triggers only when a release has been seen since the last one.
+    // Feeding the identical bytes a thousand times slower must not change it.
+    const fast = createTrailsDecoder();
+    const slow = createTrailsDecoder();
+    const seq: number[][] = [
+      [0x92, 60, 127], [0x93, 67, 127],
+      [0x92, 60, 0], [0x93, 67, 0],
+      [0x92, 62, 127], [0x93, 69, 127],
+    ];
+    const count = (d: ReturnType<typeof createTrailsDecoder>, scale: number) => {
+      let n = 0;
+      seq.forEach((b, i) => {
+        for (const ev of d.handle(b, i * scale)) if (ev.kind === 'trigger') n++;
+      });
+      return n;
+    };
+    expect(count(fast, 1)).toBe(2);
+    expect(count(slow, 1000)).toBe(2);
+  });
+
+  it('a repeated SAME note still steps — a held rhythm is not swallowed', () => {
+    const d = createTrailsDecoder();
+    let n = 0;
+    for (let i = 0; i < 4; i++) {
+      for (const ev of d.handle([0x92, 60, 127], i * 10)) if (ev.kind === 'trigger') n++;
+      for (const ev of d.handle([0x92, 60, 0], i * 10 + 5)) if (ev.kind === 'trigger') n++;
+    }
+    expect(n, 'four strikes of one note are four steps').toBe(4);
+  });
+
+  it('CC MODE is bounded and says so: contact + loop, never per-step', () => {
+    // ⚠ NOT PARITY, and no constant could make it parity. In CC mode the device
+    // transmits X and Y only — its step gate is not a MIDI message at all — so
+    // the honest set is "the stream started" and "the playhead restarted".
+    const d = createTrailsDecoder();
+    const start = d.handle([CC_STATUS_CH1, CC_MSB, 0x40], 1000);
+    expect(start.filter((e) => e.kind === 'trigger')).toEqual([
+      { kind: 'trigger', channel: 1, source: 'contact' },
+    ]);
+    // A long continuous stream adds NO further triggers — there are no steps.
+    let mid = 0;
+    for (let i = 1; i < 40; i++) {
+      for (const ev of d.handle([CC_STATUS_CH1, CC_MSB, 0x40 + i], 1000 + i * 5)) {
+        if (ev.kind === 'trigger') mid++;
+      }
+    }
+    expect(mid, 'a continuous CC stream has no steps to report').toBe(0);
+    // …but a loop restart does articulate, exactly as the manual describes.
+    expect(d.handle([0xfa], 1200).filter((e) => e.kind === 'trigger')).toEqual([
+      { kind: 'trigger', channel: 1, source: 'loop' },
+    ]);
+    // …and so does the stream resuming after a real silence.
+    d.tick(1200 + TRAILS_ACTIVITY_GATE_TIMEOUT_MS * 2);
+    expect(
+      d.handle([CC_STATUS_CH1, CC_MSB, 0x20], 5000).filter((e) => e.kind === 'trigger'),
+    ).toEqual([{ kind: 'trigger', channel: 1, source: 'contact' }]);
+  });
+
+  it('triggers are per channel and never leak across them', () => {
+    const d = createTrailsDecoder();
+    const ch2 = d.handle([0x92, 60, 127], 0).filter((e) => e.kind === 'trigger');
+    expect(ch2).toEqual([{ kind: 'trigger', channel: 2, source: 'step' }]);
+    const ch3 = d.handle([0x94, 60, 127], 1).filter((e) => e.kind === 'trigger');
+    expect(ch3).toEqual([{ kind: 'trigger', channel: 3, source: 'step' }]);
+  });
+
   it('VELOCITY IS CONSTANT ON THIS FIRMWARE — measured, not assumed', () => {
     // 12643 messages of real gesture, every note row reading vel=127. The
     // constant carries the citation; this pins that the double sends what the
@@ -614,7 +752,7 @@ describe('trails-decode: note mode drives the AXES', () => {
     // that read the gate first would articulate the PREVIOUS pitch.
     const d = createTrailsDecoder();
     const out = d.handle([NOTE_ON_CH1_X, 60, 100], 0);
-    expect(out.map((e) => e.kind)).toEqual(['axis', 'note', 'gate']);
+    expect(out.map((e) => e.kind)).toEqual(['axis', 'note', 'gate', 'trigger']);
   });
 
   it('a RELEASE holds the axis rather than dropping it to zero', () => {
@@ -769,9 +907,13 @@ describe('trails-decode: transport', () => {
     expect(d.handle([0xfa], 0)).toEqual([{ kind: 'transport', running: true, reset: true }]);
     // Once a channel has a gesture, the same byte ALSO retriggers its gate.
     glide(d, 1, 4, 10);
+    // ⚠ THREE events now, not two: the manual says the gate output "produces a
+    // TRIGGER whenever the gesture returns to the start of its loop", so a
+    // restart articulates the trigger jack as well as notching the level gate.
     expect(d.handle([0xfa], 20)).toEqual([
       { kind: 'transport', running: true, reset: true },
       { kind: 'gate', channel: 1, high: true, source: 'loop' },
+      { kind: 'trigger', channel: 1, source: 'loop' },
     ]);
     expect(d.handle([0xfb], 0)).toEqual([{ kind: 'transport', running: true, reset: false }]);
     expect(d.handle([0xfc], 0)).toEqual([{ kind: 'transport', running: false, reset: false }]);
