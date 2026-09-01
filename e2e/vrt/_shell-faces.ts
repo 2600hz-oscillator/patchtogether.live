@@ -3761,6 +3761,47 @@ export const FACES = [
     // and nothing that advances between frames. The lamps change only when
     // `notify()` fires, and `notify()` fires only on a MIDI transport message.
   },
+  // ── PTZ CAM — the SECOND binder baselined, on midiclock's argument with a
+  //    SECOND independent reason it cannot drift ──────────────────────────────
+  {
+    type: 'ptzcam',
+    // TWO bands: `camera` (the CONNECT cell) and `aim` (the four trim knobs).
+    // Nothing is padded to reach a tab rail — `DOCK_TAB_MIN_BANDS` is 7.
+    pages: 2,
+
+    // ⚠ THE DETERMINISM ARGUMENT IS midiclock's, DOUBLED. A freshly spawned
+    // ptzcam has no MIDI access — `requestMIDIAccess` is never called until
+    // someone presses CONNECT, and this scene presses nothing (`midi.spec.ts`
+    // pins "page load never requests Web-MIDI access", and `ptz-midi.ts`'s
+    // header states it as a design constraint). So `listPtzOutputNames()`
+    // returns `[]` NOT because the runner has no cameras but because `access`
+    // is null and the function short-circuits on it. The picker renders exactly
+    // one option — its own `— first camera —` literal — the binding is `idle`,
+    // and the body paints its pre-connect hint with the LINK lamp dark.
+    //
+    // ⚠ AND THE SECOND REASON IS WHY THIS IS SAFER THAN midiclock's, not merely
+    // as safe. Even a runner that HAD granted sysex MIDI would still show an
+    // empty roster, because the roster is filtered to ports whose name begins
+    // `PT-PTZ` — names published by a native helper process (tools/pt-ptz)
+    // that exists on no CI machine. Two independent conditions, either of which
+    // alone makes the capture deterministic, and reaching the hardware-dependent
+    // state requires a gesture this suite does not perform.
+    //
+    // ⚠ THE AXIS LAMPS ARE STRUCTURALLY OUT OF FRAME, which is the half worth
+    // stating because it is the surface's most interesting content. They render
+    // only inside `{#if status.caps}`, and `caps` is populated exclusively by an
+    // inbound sysex frame from a real camera. With no access there is no port,
+    // with no port no handshake, with no handshake no caps — so the block cannot
+    // paint here at all. Their strings are pinned in
+    // `ptzcam-status-model.test.ts` and their wiring in
+    // `ptzcam-face-model.test.ts`; the pixels are the owner's hardware to judge.
+    //
+    // ⚠ NO `videoFaceWhy` AND NO `simPin`. `domain: 'audio'`, `outputs: []`, no
+    // canvas anywhere on the surface: there is no clock to pin and nothing that
+    // advances between frames. The lamps change only when the binding layer
+    // bumps `ptzMidiVersion`, which happens only on a MIDI access/port/handshake
+    // event — none of which can occur without the press.
+  },
   // ── SYNESTHESIA (2026-08-24) ──────────────────────────────────────────────
   {
     type: 'synesthesia',
@@ -5021,6 +5062,66 @@ export const FACES_WITHOUT_SCENES: readonly UnbaselinableFace[] = [
       'packages/web/src/lib/ui/workflow/module-face-lint.test.ts',
       'packages/web/src/lib/ui/modules/milkdrop-face-model.test.ts',
     ],
+  },
+  {
+    type: 'skifree',
+    scenes: ['compact', 'dock'],
+    why:
+      'THE RENDERER IS NOT OURS, AND THAT IS THE MEASUREMENT RATHER THAN A LABEL. skifree\'s '
+      + 'pixels are produced by `/skifree/skifree.bundle.js` — a COMMITTED PRE-BUILT esbuild IIFE '
+      + 'of `packages/web/native/skifree/embed.js` plus the upstream skifree.js classes — which '
+      + 'boots its own `requestAnimationFrame` loop the moment it loads and draws terrain, '
+      + 'snowboarders, the yeti and the skier\'s animation cycle from its own `Math.random()`. '
+      + 'There is no naturally still frame at any point after load. '
+      + '(1) `simPin` CANNOT REACH IT, and this half is structural rather than behavioural. '
+      + 'simPin installs boot-time globals with `addInitScript` so a FACTORY can read them at '
+      + 'construction; the seed and the clock that would have to be pinned are inside the '
+      + 'bundle\'s closure, and the controller it hands back exposes exactly `setCursor`, '
+      + '`enableMouse`, `disableMouse`, `reset`, `dispose`, `getState`, `_forceCrash` and '
+      + '`_forceEaten` — no freeze, no seed, no tick. Reaching one means editing the vendored '
+      + 'source and re-running the bundle recipe (packages/web/native/skifree/README.md), and '
+      + '`scripts/lint/lint-policy.mjs` names skifree in its exclusions precisely because that '
+      + 'code is not this repo\'s to change casually. That is a fork-and-maintain decision, not a '
+      + 'face PR. '
+      + '(2) A `freeze` PARAM IS NOT THE ROUTE EITHER, and it is refused rather than merely '
+      + 'unused: skifree declares `params: []` and its contract-lock rows are meta + two CV in + '
+      + 'gate/video out with ZERO param rows, so adding one is a real contract change plus a '
+      + 'docs:accept — bought for a WEAKER guarantee, since a freeze written post-boot holds A '
+      + 'frame and never WHICH frame (the defect that put milkdrop on this list). '
+      + '⚠ The CARD roster reached this verdict long ago and states the same exit condition — '
+      + 'EXEMPT_FROM_VRT in vrt-exemptions.ts: "animated ski-slope (rAF-self-driven terrain + '
+      + 'sprites + skier anim) defeats deterministic single-frame capture". This entry is the '
+      + 'FACE roster catching up to it about the very same renderer, and the card exemption stays '
+      + 'standing rather than being discharged by a promotion that changed nothing about the '
+      + 'bundle.',
+    coveredBy: [
+      // The FACE's structure, and the ONLY thing in CI that can see the lane
+      // tile at all: #1974's zero-lane clause `continue`s past an `order: []`
+      // face before it measures anything, so this file pins the `tileBody`'s
+      // EXISTENCE, the forced glyph, and the source-order rule that keeps the
+      // cursor write above the previewCollapsed branch.
+      'packages/web/src/lib/ui/modules/skifree-face-model.test.ts',
+      // The DEFAULT-SHELL browser legs: steering THROUGH the face until
+      // `snapshot.distance` climbs (the positive control for the #2192 rect
+      // bug), the lane tile painting with nothing expanded, and SCREEN OFF
+      // leaving the gate firing.
+      'e2e/tests/skifree-face.spec.ts',
+      // The game belongs to the NODE — the default-shell lifetime legs, whose
+      // lane-tile locator this promotion re-points from the placeholder to the
+      // faced tile.
+      'e2e/tests/skifree-node-lifetime.spec.ts',
+      // The engine contract, pixel-free: crash/eaten -> gate -> SCOPE, and the
+      // CV-overrides-mouse flip.
+      'e2e/tests/skifree.spec.ts',
+      // Both coordinate maps — the CV path and the POINTER path — including the
+      // zero-rect branch that is the whole of the steering defect.
+      'packages/web/src/lib/audio/modules/skifree.test.ts',
+    ],
+    // ⚠ NO `freezeIsNotASeam`, and its ABSENCE is required rather than
+    // incidental: the anchor's inverse leg reddens a declaration whose def has
+    // no `freeze` param, and skifree declares `params: []`. (Its `declaresFreeze`
+    // probe reads `lib/video/modules/<type>.ts`, which does not exist for an
+    // audio def either — so the field would be dead twice over.)
   },
   {
     type: 'blood',

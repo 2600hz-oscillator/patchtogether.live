@@ -1076,6 +1076,19 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // crash/eaten → gate → SCOPE) provide coverage. Promote to a real VRT
   // baseline once a deterministic-time render-freeze hook is added so the
   // scene can be pinned at a known frame.
+  //
+  // ⚠ THE HOOK IS STILL MISSING AND THE FACE PROMOTION DID NOT CHANGE THAT —
+  // stated here because a promotion is exactly when a reader would expect this
+  // entry to be discharged. The renderer is a COMMITTED PRE-BUILT third-party
+  // IIFE (`/skifree/skifree.bundle.js`) driving its own rAF and its own RNG;
+  // the controller it returns exposes no freeze, no seed and no tick, and
+  // `scripts/lint/lint-policy.mjs` names skifree in its exclusions precisely
+  // because that source is not this repo's to edit casually. `simPin` installs
+  // page globals a FACTORY can read at construction and cannot reach inside
+  // that closure. So the FACE carries the same argument, measured, as a named
+  // `FACES_WITHOUT_SCENES` entry in `e2e/vrt/_shell-faces.ts` — the two
+  // exemptions are one claim about one renderer, and neither is discharged by
+  // the other.
   skifree: 'animated ski-slope (rAF-self-driven terrain + sprites + skier anim) defeats deterministic single-frame capture; unit + E2E provide coverage',
   // ANALOGLOGICMATHS first-slice PR: VRT baseline pending; ART + unit + E2E
   // provide coverage. Card is small (2 attenuverter knobs + patch panel) and

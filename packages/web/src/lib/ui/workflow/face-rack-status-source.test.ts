@@ -316,7 +316,19 @@ const EXTENSION_BODY_ROLES: Readonly<Record<string, BodyRule>> = {
   // naming lives / level / seconds / score. That is where the ruling puts this
   // class, and the model test pins that it stays an ATTRIBUTE rather than
   // becoming a text node.
-  frogger: { role: 'picture', why: 'the ARCADE BOARD — a 14x13 grid of traffic, river rafts and home pads painted every rAF from the engine snapshot by the module\'s own exported `drawFrogger`, plus its SCREEN switch. ⚠ IT IS THE MODULE\'S IDENTITY, NOT A PREVIEW OF SOMETHING ELSEWHERE: the board IS how you read what the gate outputs are doing, and before promotion it existed only on a legacy card the shipping shell does not mount (frogger is not in NON_SHELL_LANE_TYPES, not a CARD_PRODUCER and not in HEADLESS_MOUNT_LANE_TYPES, so its lane tile was a blank placeholder). ⚠ THE HUD NUMBERS ARE PAINTED INTO THE CANVAS BY THE GAME and are allowed as the game\'s own artwork; the face adds NO chrome row of its own, and the body\'s only DOM text is the SCREEN caption. The measurements reach the a11y tree through role="img" + aria-label on the board frame. ⚠ SCREEN OFF IS UNUSUALLY SAFE HERE and the reason is worth copying carefully: the game runs on the shared SCHEDULER CLOCK subscribed in the module\'s FACTORY — not in this component, not on rAF, and not gated on the AudioContext (the clock is a Web Worker setInterval) — so collapsing the board stops a drawFrogger call and NOTHING else: the timer counts, the traffic moves and HOME/DEAD/LEVEL keep firing. `skifree`, one module away in the same family, does NOT have that property. ⚠ NO WATCH MARK: markWatched is a VideoEngine pull-set concept and this is domain audio with three gate outputs.' },
+  frogger: { role: 'picture', why: 'the ARCADE BOARD — a 14x13 grid of traffic, river rafts and home pads painted every rAF from the engine snapshot by the module\'s own exported `drawFrogger`, plus its SCREEN switch. ⚠ IT IS THE MODULE\'S IDENTITY, NOT A PREVIEW OF SOMETHING ELSEWHERE: the board IS how you read what the gate outputs are doing, and before promotion it existed only on a legacy card the shipping shell does not mount (frogger is not in NON_SHELL_LANE_TYPES, not a CARD_PRODUCER and not in HEADLESS_MOUNT_LANE_TYPES, so its lane tile was a blank placeholder). ⚠ THE HUD NUMBERS ARE PAINTED INTO THE CANVAS BY THE GAME and are allowed as the game\'s own artwork; the face adds NO chrome row of its own, and the body\'s only DOM text is the SCREEN caption. The measurements reach the a11y tree through role="img" + aria-label on the board frame. ⚠ SCREEN OFF IS UNUSUALLY SAFE HERE and the reason is worth copying carefully: the game runs on the shared SCHEDULER CLOCK subscribed in the module\'s FACTORY — not in this component, not on rAF, and not gated on the AudioContext (the clock is a Web Worker setInterval) — so collapsing the board stops a drawFrogger call and NOTHING else: the timer counts, the traffic moves and HOME/DEAD/LEVEL keep firing. ⚠ THIS ENTRY USED TO ADD "`skifree`, one module away in the same family, does NOT have that property", and that clause is now FALSE and is struck: it was written before #2192 (868ddb9ee) moved skifree\'s bundle load, controller and disposal into ITS factory on node lifetime, so both games are now scheduler-clock modules whose SCREEN switch skips a blit and nothing else. ⚠ NO WATCH MARK: markWatched is a VideoEngine pull-set concept and this is domain audio with three gate outputs.' },
+  // ── SKIFREE — frogger's sibling, and the roster's first SHARED body ───────
+  //
+  // ⚠ THE ONLY ENTRY WHOSE COMPONENT IS ALSO MOUNTED ON THE LANE TILE. This
+  // extension fills BOTH wired slots from ONE surface component
+  // (`SkifreeScreen.svelte`, rendered by `SkifreeSlopeBody` at 320 px and
+  // steerable, and by `SkifreeTileBody` at 104 px and read-only), so the
+  // `picture` predicate resolves through the mount rather than off a `<canvas>`
+  // in this file — which is exactly the indirection `paintsCanvas` follows, and
+  // the reason it follows it. This roster only covers `fullViewBody`; the tile
+  // body's existence is pinned in `skifree-face-model.test.ts`, because nothing
+  // here or in #1974's zero-lane clause can see it.
+  skifree: { role: 'picture', why: 'the SKI SLOPE — the upstream skifree.js engine\'s own canvas, blitted every rAF from the NODE\'s detached game canvas, plus its SCREEN switch and the module\'s ONE direct-manipulation instrument: the mouse. ⚠ IT IS THE MODULE\'S IDENTITY AND ITS ONLY CONTROL SURFACE AT ONCE. skifree declares `params: []`, so no ranked cell exists at any tier and no ParamCellKind mounts a canvas; without this body a promoted skifree could not be steered by hand at all, and before promotion the picture existed only on a legacy card the shipping shell does not mount (not in NON_SHELL_LANE_TYPES, not a CARD_PRODUCER, not in HEADLESS_MOUNT_LANE_TYPES, so its lane tile was a blank placeholder). ⚠ TWO SHIPPING DEFECTS ARE FIXED IN THE BLIT AND THE STEERING RESPECTIVELY, and both are invisible to every gate in the repo: the card\'s three-argument drawImage painted the TOP-LEFT QUADRANT on any DPR >= 2 display (the bundle re-sizes the canvas it is handed by devicePixelRatio, and Playwright and VRT both run at deviceScaleFactor: 1), and the bundle\'s own enableMouse takes its rect from the FACTORY\'s DETACHED canvas — all zeros since #2192 — so the cursor received raw VIEWPORT coordinates. Both surfaces now map their own element\'s rect through the def\'s pure pointerToCanvasCoord and derive the destination rect from src.width/height. ⚠ THE CURSOR WRITE SITS ABOVE THE previewCollapsed BRANCH: player.isMoving latches ONLY through setCursor, so a write routed through the paint would make SCREEN OFF a play kill switch on an unpatched rack. ⚠ THE CARD\'S HUD ROW IS DELETED, NOT MOVED — `{distance}m · lives {n} · CV|MOUSE|IDLE · GAME OVER` is a measurement, a count, a state word and a status banner in DOM chrome, none of the four permitted roles. What survives: the distance and lives the bundle\'s own InfoBox paints INSIDE the picture (the game\'s artwork, the frogger licence), the same values plus the steering mode on the frame\'s aria-label, and the control mode as TWO StatusLed lamps (CV, MOUSE) whose captions are STATIC — a three-way CV|MOUSE|IDLE caption would be the deleted state word with a lamp drawn beside it, so both dark IS idle. ⚠ THE ONLY OTHER PAINTED TEXT is the SCREEN caption and two TRANSIENT overlays naming the surface\'s own condition (`Loading…` and the bundle-load failure, the samsloop NO SAMPLE LOADED shape), each replaced the moment a game exists. ⚠ SCREEN OFF IS SAFE FOR THE SAME STRUCTURAL REASON AS FROGGER: the game is created in the FACTORY and its snapshot is assembled on the shared SCHEDULER CLOCK, so collapsing skips a drawImage and nothing else — the skier skis, `gate` pulses on every crash and the `out` video port keeps carrying the slope, because drawFrame reads the factory\'s own controller and never this component. Its one named cost: with no picture there is nothing to point at, so a run that has never STARTED cannot be started by mouse while off (a run in progress continues, and CV steering is unaffected). ⚠ NO WATCH MARK: markWatched is a VideoEngine pull-set concept and this is domain audio with a gate output and a cross-domain video bridge port.' },
   foxy: { role: 'picture', why: 'the video-synth\'s live output preview canvas and its SCREEN switch.' },
   gibribbon: { role: 'picture', why: 'the GAME SCREEN — the Vib-Ribbon-spirit ribbon course rasterised by the module\'s own engine (score, combo, ATTRACT label, count-in and GAME OVER are painted INTO the frame — the game\'s own artwork, per the GAMES.md ruling), blitted by the SHARED GibribbonScreen component both surfaces mount, plus its SCREEN and MONITOR switches, the RESET action and the WAD warn lamp. ⚠ IT IS THE MODULE\'S IDENTITY, NOT A PREVIEW OF SOMETHING ELSEWHERE — and unlike frogger it also IS the video output a rack projects (domain video), which is what face.monitor cites. ⚠ THE BODY\'S ONLY DOM TEXT IS CONTROL CAPTIONS (SCREEN / MONITOR / RESET / WAD); the derived numbers reach the a11y tree through aria-label on the playfield (role application — it genuinely owns the keyboard), pinned + negative-controlled in gibribbon-face-model.test.ts. ⚠ SCREEN OFF IS SAFE FOR THE FROGGER REASON: the game steps on the shared SCHEDULER CLOCK subscribed in the module FACTORY (a Web Worker setInterval, not rAF, not the AudioContext), so collapsing the screen stops a putImageData and NOTHING else — attract keeps playing and the evt_* gates keep firing. ⚠ NO WATCH MARK NEEDED: the module publishes audioSources, so the engine\'s pull-eval already exempts it from unwatched-skip structurally.' },
   freezeframe: { role: 'picture', why: 'the frame-hold preview canvas — the one surface on which "is it frozen?" is answerable at all.' },
@@ -668,6 +680,85 @@ const EXTENSION_BODY_ROLES: Readonly<Record<string, BodyRule>> = {
       + 'an identity-scoped claim in the factory, so there is no second owner. Every measurement '
       + 'goes through `StatusLed` into `aria-label`/`title`; the only text nodes are option NAMES, '
       + 'control captions, and an ERROR that is absent whenever nothing is wrong.',
+  },
+
+  // ── PTZCAM — the THIRD status body, the SECOND binder, and the first whose
+  //    subject is a piece of hardware OUTSIDE the computer ────────────────────
+  //
+  // midiclock's subject is a MIDI device attached to this machine. This one's is
+  // a physical PTZ camera reached through a native helper process (tools/pt-ptz)
+  // that translates sysex into USB camera control — so there are TWO things that
+  // must be true before anything works, and the body's whole job is saying which
+  // of them is not.
+  //
+  // TEXT ON THE SURFACE, exhaustively: the camera `<select>`'s option NAMES
+  // (`PT-PTZ-…` port names plus the `— first camera —` default and the
+  // `(offline)` suffix on a saved-but-absent pick), the `Camera` control
+  // CAPTION, four static lamp captions (LINK / PAN / TILT / ZOOM), and — only
+  // when something is wrong — the FAULT line, `role="alert"`, absent whenever
+  // nothing is wrong. Plus one EMPTY-STATE instruction before any grant, which
+  // is the licence midiclock and es9 already hold and is unavoidable here for
+  // the same reason: the gate is a browser permission prompt, and no in-page
+  // affordance can substitute for saying "press it".
+  //
+  // ⚠ THE `(offline)` SUFFIX IS AN OPTION NAME, NOT A STATE WORD, and the
+  // distinction is load-bearing rather than lawyerly. `node.data.device` is a
+  // saved port NAME; a patch reloaded before the helper starts holds a name the
+  // live roster does not contain, and a `<select>` bound to a missing value
+  // silently renders its first option instead — so the player's saved camera
+  // would be lost BY RENDERING. The synthetic row is what keeps the choice
+  // visible, and it names the thing that is not there.
+  //
+  // ⚠ THE ONE DELETED READOUT IS THE AXIS-MODE LINE (`pan abs · tilt abs ·
+  // zoom abs`), and it is the entry's interesting half twice over.
+  //
+  // It is not decoration: the axis mode is the SEMANTICS OF EVERY OTHER CONTROL
+  // on the module. An ABSOLUTE axis reads knob+CV as a position and obeys SLEW;
+  // a VELOCITY axis reads the same number as a rate, treats zero as an explicit
+  // stop inside a deadzone, and ignores SLEW entirely (a commanded stop must
+  // never be slewed). Deleting it outright would leave four knobs whose meaning
+  // is unknowable from the face.
+  //
+  // So it is THREE LAMPS — PAN / TILT / ZOOM, lit on VELOCITY, sentence on
+  // `aria-label` — and the block renders ONLY inside `{#if status.caps}`. That
+  // guard is the part a naive port drops. The underlying fact is three-valued
+  // (`abs | vel | none`) and ABSENT before the handshake, so three unguarded
+  // booleans would paint pre-bind exactly as they paint for a bound all-absolute
+  // NexiGo P610 — all dark — and the face would be asserting "all three axes are
+  // positions" about a module that knows nothing about any camera yet. Hiding
+  // the block makes "unknown" the indicator's ABSENCE rather than one of its
+  // states, which is what the legacy card's `{#if modeLine !== null}` did.
+  //
+  // ⚠ NO CONNECT BUTTON HERE: the gesture is a ranked `action` cell that reaches
+  // the LANE TILE, which is the whole reason it is a cell. ⚠ NO STATUS REGISTRY,
+  // for midiclock's reason rather than cameraInput's — the sysex send loop lives
+  // in the module FACTORY on the scheduler tick and has always run with no
+  // surface mounted, so promotion parks no live card off-screen and there is no
+  // second owner. ⚠ NO SCREEN SWITCH and NO WATCH MARK: `domain: 'audio'` with
+  // `outputs: []`, no canvas, and no VideoEngine pull set to fall out of — there
+  // is no producer here that hiding a surface could stop. ⚠ IT MUST NOT GROW A
+  // CANVAS: the role predicate greps raw source, and beyond the gate, attest
+  // basis membership is derived from CONTENT.
+  ptzcam: {
+    role: 'status-primitive',
+    why:
+      'the CAMERA BINDING for the PTZ head: the live `PT-PTZ-*` roster picker with its '
+      + '`(offline)` synthetic row, the nine-kind LINK lamp, the `role="alert"` fault line, and '
+      + 'the three per-axis mode lamps (lit = VELOCITY). The picker cannot be a face cell for the '
+      + "reason midiclock states above — its roster lives on the app's sysex MIDI access behind "
+      + '`requestMIDIAccess({sysex:true})`, differs per machine and changes when the helper '
+      + 'starts, so it is neither a `ParamDef` nor an `options` roster (a fixed set known when '
+      + 'the def is authored). ⚠ CONNECT and the four trim knobs are NOT duplicated here: all '
+      + 'five are ranked cells that reach the lane, and a body carrying them too would be a '
+      + 'second implementation of controls the face already owns. ⚠ The axis lamps replace the '
+      + "card's `pan abs · tilt abs · zoom abs` line, and they render only inside `{#if caps}` "
+      + 'because the fact is three-valued and ABSENT pre-handshake — unguarded booleans would '
+      + 'make "no camera yet" pixel-identical to "all three axes absolute". ⚠ No status registry '
+      + '(the sysex send loop is in the factory on the scheduler tick and runs with no surface '
+      + 'mounted), no screen switch and no watch mark (domain audio, `outputs: []`, no canvas). '
+      + 'Every measurement goes through `StatusLed` into `aria-label`/`title`; the only text '
+      + 'nodes are option NAMES, control captions, an empty-state instruction, and an ERROR that '
+      + 'is absent whenever nothing is wrong.',
   },
 
   // ── ES-9 — the LINK STATUS strip, and the first body in this roster that
