@@ -453,6 +453,33 @@ const SUBJECTS: readonly Subject[] = [
   // claim is the one thing this subject makes untrue, and whoever next reads a
   // jump in this file's cost artifact should know which row moved.
   { type: 'blood', prefix: 'blood', domain: 'video', why: '⚠ THE FIRST ROW WHOSE BODY IS NOT RESCUING A PICTURE BUT STARTING A MODULE. BloodCard.svelte mounts no canvas at all, so the face ADDS blood\'s first live picture and its first SCREEN switch; what the card owned was the tree\'s ONLY `extras.ensureLoaded()` call, and blood is in neither half of HEADLESS_MOUNT_LANE_TYPES, so a body that mounted this canvas and forgot to boot would pass every leg below while shipping a module that is dark forever. That specific failure is covered by blood-face-screen.spec.ts and by the default-shell leg of blood-audio-output.spec.ts, not here — this row proves the SWITCH. ⚠ SCREEN OFF KEEPS THE GAME RUNNING, but NOT because of this body\'s markWatched call — measured, not assumed: blood is pull-exempt from construction (a non-empty audioSources map, which it always has because PatchEngine.registerDomain injects the AudioContext whenever both domains are registered), and deleting the mark leaves blood-face-screen.spec.ts green. The mark stays as topology-independent insurance, since surface.draw is what calls runtime.runFrame() and a lapsed pull would freeze the SIMULATION rather than a picture. ⚠ It is also the only subject here whose body owns a capture-phase WINDOW keyboard listener, so a body that failed to tear it down would poison later batch-mates with swallowed keys — which this file would report as a mysterious click failure two modules later.' },
+
+  // ── TEXTMARQUEE (2026-08-31) — the table's first DOCUMENT EDITOR ──────────
+  //
+  // Added in the SAME diff as the promotion, per this file's convention.
+  // Verified before writing rather than assumed: `type == prefix == extension
+  // id`, the body uses the standard `{#if !previewCollapsed}` REMOVES
+  // mechanism, and it declares the conventional `textmarquee-face-canvas` — so
+  // no `canvas` override is needed.
+  //
+  // ⚠ APPENDED AT THE TAIL, NOT INSERTED BESIDE THE OTHER VIDEO SOURCES, for
+  // the mechanical reason blood's block above states: batches are sliced from
+  // this array in DECLARATION ORDER and each test's TITLE is its batch's
+  // comma-joined module list, so an insertion anywhere but the tail renames
+  // every batch after it and orphans that many rows in
+  // `e2e-timings.generated.json`.
+  //
+  // ⚠ THIS ROW IS ALSO THE ONLY RENDER-LEVEL PLACE THE EDITOR IS MOUNTED
+  // ALONGSIDE THE SWITCH, and the two can genuinely interfere: the body's
+  // toolbar buttons `preventDefault` their mousedown to keep the
+  // `contenteditable`'s Selection alive, and the SCREEN button deliberately
+  // does NOT — it is a sibling of the editor, not a child of it, so clicking it
+  // blurs the document (which flushes the pending debounced write) instead of
+  // silently swallowing the gesture. A future edit that moved SCREEN inside the
+  // toolbar would keep this row green and start losing the last ~250 ms of
+  // typing on every collapse; that specific failure is covered by
+  // `textmarquee-face-editor.spec.ts`, not here.
+  { type: 'textmarquee', prefix: 'textmarquee', domain: 'video', why: 'the rich-text marquee\'s live OUT preview — and the ONLY subject in this table whose body is not rescuing a picture but a WRITER. All four of textmarquee\'s params (ScrlX/ScrlY/PosX/PosY) merely MOVE the ribbon; what it SAYS is node.data.richText, which nothing but the legacy card could write before this promotion, so the same body carries a contenteditable, a 9-control formatting toolbar and the layer background swatch. A SOURCE with no video input, so the retained watch mark is the sharpest form of the #2015 argument — a lapsed mark would not stall a preview of somebody else\'s picture, it would MUTE the generator every downstream node samples. ⚠ AND ITS PREVIEW IS THE ONE PICTURE IN THIS TABLE THAT IS TEXT: with an empty model the node-lifetime rasterizer clears the texture and the FACTORY placeholder (the word "textmarquee" in 64px sans-serif) shows through, which is why this module\'s face scenes carry a stated glyph-determinism argument in _shell-faces.ts rather than inheriting the fleet\'s.' },
 ] as const;
 
 /** The representative module for the PERSISTENCE leg — see that test's comment. */

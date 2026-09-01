@@ -117,6 +117,7 @@ import { ringbackDef } from '$lib/audio/modules/ringback';
 import { ringsDef } from '$lib/audio/modules/rings';
 import { rasterizeDef } from '$lib/audio/modules/rasterize';
 import { kriaDef } from '$lib/audio/modules/kria';
+import { textmarqueeDef } from '$lib/video/modules/textmarquee';
 import { sidecarDef } from '$lib/audio/modules/sidecar';
 import { slewSwitchDef } from '$lib/audio/modules/slewswitch';
 import { snaredrumDef } from '$lib/audio/modules/snaredrum';
@@ -704,6 +705,25 @@ const RANGE_BOUND_CARDS: Readonly<Record<string, { params: readonly ParamDef[] }
   // card offer a value `coerceTrack` silently clamps away with every
   // def-reading gate green: the backdraft shape.
   'KriaCard.svelte': kriaDef,
+  // Enrolled with its FACEPLATE (2026-08-31). ⚠ THE PURE UNBOUND CASE, and the
+  // cheapest kind to fix: all four knobs passed literal `min={0} max={1}` with
+  // `defaultValue={pdef(id)}` reading the def beside them — so the DEFAULT was
+  // def-driven and the RANGE was a copy that merely happened to agree. Half-
+  // bound in the frogger sense, on a card whose four controls are the module's
+  // entire param surface.
+  //
+  // ⚠ BOUND WITH `paramSpec(textmarqueeDef, id)` AND NOT WITH A `*_RANGE`
+  // EXPORT, which is the one detail that is not a style preference:
+  // `textmarquee.ts` lives in `packages/web/src/lib/video/**`, the WebGL attest
+  // basis, so a new exported constant there would move the content hash and put
+  // an owner-machine real-GPU re-attest on this diff. The accessor does not —
+  // measured, `scripts/webgl-attest-hash.sh` returns the same hash with this PR
+  // as without it.
+  //
+  // ⚠ AND THE CARD IS NOT DEAD CODE AFTER PROMOTION: `?shell=legacy` still
+  // renders it verbatim, so its ranges still reach a user (the RasterizeCard
+  // note above makes the same point against the same wrong assumption).
+  'TextmarqueeCard.svelte': textmarqueeDef,
 };
 
 /**
@@ -907,6 +927,15 @@ const MAPPING_BOUND_CARDS: readonly string[] = [
   // omission, but stated.
   'Moog921aCard.svelte',
   'Moog921bCard.svelte',
+  // Enrolled with its FACEPLATE (2026-08-31), and the anchor walked it here in
+  // ONE step rather than two: the same edit that replaced four literal
+  // `min={0} max={1}` pairs with `paramSpec(textmarqueeDef, id)` also replaced
+  // the four `curve="linear"` props, so there was never an intermediate state
+  // with the numbers bound and the curve still typed. Value-identical — the def
+  // has declared `linear` on all four since the module shipped. `units` is
+  // "absent on both sides": no param on textmarquee declares one and the card
+  // has never passed one, so there is nothing to paint and nothing to drift.
+  'TextmarqueeCard.svelte',
 ];
 
 /**

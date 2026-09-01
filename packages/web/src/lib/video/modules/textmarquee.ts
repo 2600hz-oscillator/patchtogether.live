@@ -12,14 +12,22 @@
 // opposite edge); posX/posY place it (calibrated so a bipolar LFO sweeps it
 // fully off one edge → off the other → back).
 //
-// ── ARCHITECTURE (matches PICTUREBOX's card-owned-source pattern) ──────────
+// ── ARCHITECTURE (matches PICTUREBOX's node-owned-source pattern) ──────────
 // The factory is DOM-free-testable: it owns the OUTPUT FBO + a "text texture"
-// and the scroll/position math (the pure helper in textmarquee-layout.ts). The
-// CARD renders the rich-text model → an offscreen canvas and pushes it in via
-// `read('extras').setTextCanvas(canvas, w, h)`; the factory uploads it into the
-// text texture. Until the card pushes a canvas, the factory renders its OWN
-// default placeholder canvas (so a freshly-spawned node is never a dead black
-// frame — this also satisfies the per-port output-emit sweep).
+// and the scroll/position math (the pure helper in textmarquee-layout.ts).
+//
+// ⚠ THIS PARAGRAPH USED TO SAY "the CARD renders the rich-text model … and
+// pushes it in", AND THAT HAS BEEN FALSE SINCE #1720. The rasterize-and-push
+// half is NODE-lifetime: `$lib/ui/media/extras-producers` (`rasterizeRichText`),
+// driven by `node-extras-registry`, is the ONLY writer of `setTextCanvas`, so a
+// saved rack shows your text with no UI mounted at all. What a UI surface owns
+// is `node.data.richText` — the MODEL — which the legacy card and (since the
+// face) `TextmarqueeEditorBody` both write through the shared serializer in
+// `$lib/graph/textmarquee-editor`.
+//
+// Until something pushes a canvas, the factory renders its OWN default
+// placeholder canvas (so a freshly-spawned node is never a dead black frame —
+// this also satisfies the per-port output-emit sweep).
 //
 // ── Inputs / CV ──
 //   scrollX / scrollY (cv): horizontal / vertical scroll SPEED (bipolar;
@@ -131,7 +139,7 @@ export const textmarqueeDef: VideoModuleDef = {
   ],
 
   docs: {
-    explanation: `A rich-text MARQUEE video SOURCE — it generates its own picture from text you type, with no video input. You author a styled paragraph in the card's tiny editor (system fonts, per-selection text colour, bold/italic/underline, paragraph align, font family + size, and one layer background fill); that model is rasterized to an offscreen canvas of real system glyphs, uploaded as a texture, and painted into the output frame as a single ribbon. The four knobs only move that ribbon: PosX/PosY place its top-left on screen, and ScrlX/ScrlY crawl it continuously, wrapping back in from the opposite edge once it has fully left — a 90s-screensaver text scroller. Background fills the block's bounding box; everything outside the block reads as layer black. A freshly-spawned node shows a built-in "textmarquee" placeholder until you type. Usage: type a short word at a big SIZE for a screen-filling banner, set a bipolar LFO into ScrlX for a classic side-scroll, or sweep PosX/PosY with an LFO to fly the whole banner fully off one edge, across, and back.`,
+    explanation: `A rich-text MARQUEE video SOURCE — it generates its own picture from text you type, with no video input. You author a styled paragraph in the module's tiny editor (system fonts, per-selection text colour, bold/italic/underline, paragraph align, font family + size, and one layer background fill); that model is rasterized to an offscreen canvas of real system glyphs, uploaded as a texture, and painted into the output frame as a single ribbon. The four knobs only move that ribbon: PosX/PosY place its top-left on screen, and ScrlX/ScrlY crawl it continuously, wrapping back in from the opposite edge once it has fully left — a 90s-screensaver text scroller. Background fills the block's bounding box; everything outside the block reads as layer black. A freshly-spawned node shows a built-in "textmarquee" placeholder until you type. Usage: type a short word at a big SIZE for a screen-filling banner, set a bipolar LFO into ScrlX for a classic side-scroll, or sweep PosX/PosY with an LFO to fly the whole banner fully off one edge, across, and back.`,
     inputs: {
       scrollX: "CV modulating ScrlX — horizontal scroll speed. Bipolar around the knob (0.5 = static): a ±1 source sweeps the full crawl-speed range, scrolling left below centre and right above, with the ribbon wrapping in from the opposite edge.",
       scrollY: "CV modulating ScrlY — vertical scroll speed. Bipolar around the knob (0.5 = static): a ±1 source sweeps the full speed range, crawling the ribbon up or down and wrapping it back in from the opposite edge.",
@@ -148,6 +156,55 @@ export const textmarqueeDef: VideoModuleDef = {
       posY: "PosY — raw vertical position, 0..1. 0 places the ribbon fully off the top, 1 fully off the bottom, 0.5 centred. Combined additively with the ScrlY scroll offset.",
     },
   },
+  face: {
+    // ⚠ `'none'` AND IT IS MECHANICALLY FORCED, not a taste call. This def
+    // declares ONE output and it is `video`, so `primaryAudioOutPortId` is
+    // null; with no `attack/decay/sustain/release`, no `algorithm` and no
+    // `shape` morph, EVERY other literal falls through `glyphBinding` to
+    // `{ kind: 'static' }` — a dead deterministic squiggle — which
+    // `module-face-lint`'s dead-glyph clause refuses outright. The tile's
+    // picture comes from `hasVideoSurface` (the generic `VideoTileThumb`),
+    // which is textmarquee's FIRST lane picture: the card only ever painted
+    // its preview inside itself.
+    glyph: 'none',
+
+    // The dock body — see $lib/ui/modules/textmarquee/. It is not a preview
+    // being rescued, it is the module's only WRITER: the rich-text editor,
+    // its toolbar, the layer background, and the SCREEN switch. See the
+    // extension's own header.
+    extension: 'textmarquee',
+
+    order: [
+      // ⚠ POSITION RANKS ABOVE SCROLL, and the defaults are why. `scrollX` /
+      // `scrollY` default to 0.5, which `scrollOffset` special-cases to a
+      // velocity of exactly zero — so out of the box the two SCRL knobs do
+      // nothing at all and the two POS knobs are the only controls that move
+      // the ribbon. A player who has just typed a word wants to place it
+      // before they crawl it.
+      'posX',
+      'posY',
+      // Below them, and in the same X-then-Y order, so the four dials read as
+      // two pairs rather than four unrelated values.
+      'scrollX',
+      'scrollY',
+    ],
+
+    // ⚠ NO `xyPads`, AND THE REFUSAL IS DELIBERATE. `posX`/`posY` are a
+    // textbook pad pair — continuous, 0..1, one gesture — and the card draws
+    // FOUR DIALS, not a pad. Declaring one would fold posY into posX's cell,
+    // halving what the LANE paints (a pad is dock-only and costs no lane rank,
+    // so the lane would drop to the two SCRL knobs) to buy a gesture for the
+    // one control pair a player sets once and then modulates with an LFO. The
+    // def's own `docs` say so: PosX/PosY are calibrated for a ±1 LFO sweep.
+    //
+    // ⚠ ONE BAND, NOT PADDED TO A TAB RAIL. Four knobs are one idea — where
+    // the ribbon is and how fast it crawls — and `DOCK_TAB_MIN_BANDS` is 7, so
+    // reaching the rail would mean inventing six more pages. That is exactly
+    // the shape the owner's control-heavy ruling was written against. The
+    // module itself is the body above the band.
+    pages: [{ id: 'ribbon', label: 'ribbon', controls: ['posX', 'posY', 'scrollX', 'scrollY'] }],
+  },
+
   factory(ctx, node): VideoNodeHandle {
     const gl = ctx.gl;
     const program = ctx.compileFragment(FRAG_SRC);
