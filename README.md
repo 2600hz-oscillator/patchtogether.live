@@ -2,7 +2,7 @@
 
 Multiplayer browser-native modular synthesizer. Audio + video domains. Patches are CRDT-shared (Yjs); rendering is local (Web Audio + WebGL2).
 
-> Status: Stage B (multi-user). 120 audio modules · 68 video modules · cross-domain CV bridge.
+> Status: Stage B (multi-user). 121 audio modules · 68 video modules · cross-domain CV bridge.
 
 In-app docs: <https://patchtogether.live/docs>.
 
@@ -78,7 +78,7 @@ spin up, and patches make sound.
 
 Works offline (single-machine, single-user):
 
-- Spawning any of the 120 audio / 68 video modules from the palette
+- Spawning any of the 121 audio / 68 video modules from the palette
 - Patching cables, including the cross-domain CV bridge
 - Saving + loading patches via "Save Perf" / "Load Perf" (browser local storage)
 - Loading any of the bundled example patches
@@ -128,7 +128,7 @@ Doesn't work offline (visible but harmlessly inert):
 
 ## Modules
 
-196 modules total (120 audio · 68 video · 8 meta), registered across three per-domain catalogs (`packages/web/src/lib/audio/module-registry.ts`, `.../video/module-registry.ts` and `.../meta/module-registry.ts`). Registration is glob-driven, so these counts are asserted against the live registries by `packages/web/src/lib/docs/docs-facts.test.ts` rather than maintained by hand. The full I/O + param tables are auto-generated from the registries and published at <https://patchtogether.live/docs/modules>; right-clicking any module on the canvas opens its per-module docs page in a new tab.
+197 modules total (121 audio · 68 video · 8 meta), registered across three per-domain catalogs (`packages/web/src/lib/audio/module-registry.ts`, `.../video/module-registry.ts` and `.../meta/module-registry.ts`). Registration is glob-driven, so these counts are asserted against the live registries by `packages/web/src/lib/docs/docs-facts.test.ts` rather than maintained by hand. The full I/O + param tables are auto-generated from the registries and published at <https://patchtogether.live/docs/modules>; right-clicking any module on the canvas opens its per-module docs page in a new tab.
 
 ### Audio (30)
 
