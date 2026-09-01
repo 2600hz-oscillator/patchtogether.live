@@ -81,6 +81,7 @@ import { analogLogicMathsDef } from '$lib/audio/modules/analog-logic-maths';
 import { backdraftDef } from '$lib/video/modules/backdraft';
 import { bugglesDef } from '$lib/audio/modules/buggles';
 import { froggerDef } from '$lib/audio/modules/frogger';
+import { modtrisDef } from '$lib/audio/modules/modtris';
 import { scoreDef } from '$lib/audio/modules/score';
 import { chromaconsoleDef } from '$lib/audio/modules/chromaconsole';
 import { ptzcamDef } from '$lib/audio/modules/ptzcam';
@@ -301,6 +302,24 @@ const RANGE_BOUND_CARDS: Readonly<Record<string, { params: readonly ParamDef[] }
   // module — and frogger sat outside this set, whose own stated scope is that
   // every card NOT in it is unchecked.
   'FroggerCard.svelte': froggerDef,
+  // Converted with its FACEPLATE (2026-08-31). ⚠ HALF-BOUND *AND* POSITIONAL,
+  // which is the worst pairing in this set so far. The card read
+  // `modtrisDef.params[0]!.defaultValue` / `params[1]!.defaultValue` for the two
+  // faders' VALUES and then re-typed SIX range literals two lines later
+  // (`min={30} max={240} defaultValue={60}` and `min={1} max={20}
+  // defaultValue={10}`), so it LOOKED def-driven while carrying a second copy of
+  // both travels.
+  //
+  // The POSITIONAL half is the sharper one and it was about to become live: the
+  // same PR adds a VRT determinism seam to `modtris.ts`, and the first draft of
+  // that seam was a `freeze` ParamDef. Declared ahead of `gravityBpm`, it would
+  // have re-pointed BOTH faders at the wrong params — DROP driving a freeze
+  // flag, LVL driving gravity — with `contract-lock`, `module-docs-lint` and
+  // every range assertion in the suite green, because all of them read the DEF
+  // and none of them can see the card. Bound with `paramSpec` per id, and the
+  // `curve` (`log` on DROP, which `NeonFader` genuinely consumes) and `label`
+  // come off the def too.
+  'ModtrisCard.svelte': modtrisDef,
   // Converted with its FACEPLATE (2026-08-26). UNBOUND-BUT-AGREEING, the
   // ordinary case: five NeonFaders passing `min={30} max={300}` and three
   // copies of `min={0.001} max={10}` as literals that happened to match
@@ -716,6 +735,17 @@ const MAPPING_BOUND_CARDS: readonly string[] = [
   // it off the def removed the last unverifiable claim on the module's only
   // control. Value-identical: the def already declared `linear`.
   'FroggerCard.svelte',
+  // Enrolled with its FACEPLATE (2026-08-31), and the anchor walked it here in
+  // ONE step: binding the two faders through `paramSpec(modtrisDef, id)` bound
+  // `min`, `max`, `defaultValue`, `label` AND `curve` at the same time, so there
+  // was never an intermediate state with the numbers bound and `curve="log"` /
+  // `curve="linear"` still typed. ⚠ THE CURVE CLAUSE IS NOT DECORATION HERE:
+  // DROP is `log` over 30..240, and `NeonFader` genuinely branches on it, so a
+  // card that re-typed `curve="linear"` would give the same param two different
+  // travel laws depending on whether you touched the legacy card or the face —
+  // with every def-reading gate green, because none of them can see a card.
+  // Value-identical: the def already declared `log` and `linear`.
+  'ModtrisCard.svelte',
   // Enrolled with its FACEPLATE (2026-08-26), in ONE step: the five faders moved
   // into an `{#each}` over the def's own param ids, so `label`, `curve` and the
   // three range props all resolve through `paramSpec(scoreDef, id)` at once and

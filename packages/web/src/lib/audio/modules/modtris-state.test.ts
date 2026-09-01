@@ -9,6 +9,10 @@ import {
   pieceCells,
   clearLines,
   detectRisingEdge,
+  gravitySecondsPerDrop,
+  levelForLines,
+  LEVEL_GRAVITY_FACTOR,
+  MIN_SECONDS_PER_DROP,
   PIECE_KINDS,
   PIECE_COLOR_INDEX,
   COLS,
@@ -348,6 +352,142 @@ describe('stepModtrisState — overfill', () => {
     const anyOccupied = s2.well.some((v) => v !== 0);
     expect(anyOccupied).toBe(false);
     expect(s2.lines).toBe(0);
+  });
+});
+
+// ── THE DIFFICULTY RAMP — the control that used to do NOTHING ──────────────
+//
+// ⚠ EVERY LEG BELOW FAILS ON THE OLD CODE, which is the point of writing them
+// here rather than in the face model test. Before this diff `levelStep` was read
+// by nothing: `gravitySecondsPerDrop` took `gravityBpm` alone, `ModtrisState`
+// had no `level` field, and the stepper's own type comment said "unused in v1
+// stepper but reserved for future scoring" — while `docs.controls.levelStep`
+// promised "how many cleared lines it takes to advance a level and ramp the
+// difficulty (gravity speeds up each level)". The docs were false in both
+// clauses and no gate in the repo could see it.
+describe('gravitySecondsPerDrop — the LVL ramp', () => {
+  it('level 0 is exactly the un-ramped interval, so an opening game is unchanged', () => {
+    // The compatibility leg: everything that ever measured this module measured
+    // it at level 0, so level 0 must still be 60/bpm to the last bit.
+    expect(gravitySecondsPerDrop(60, 0)).toBe(1);
+    expect(gravitySecondsPerDrop(240, 0)).toBe(0.25);
+    expect(gravitySecondsPerDrop(30, 0)).toBe(2);
+    // …and the default argument is level 0, which is what every pre-existing
+    // caller relied on implicitly.
+    expect(gravitySecondsPerDrop(60)).toBe(gravitySecondsPerDrop(60, 0));
+  });
+
+  it('each level SHORTENS the interval, monotonically', () => {
+    let prev = gravitySecondsPerDrop(60, 0);
+    for (let lvl = 1; lvl <= 8; lvl++) {
+      const now = gravitySecondsPerDrop(60, lvl);
+      expect(now, `level ${lvl} must be faster than level ${lvl - 1}`).toBeLessThan(prev);
+      prev = now;
+    }
+    expect(gravitySecondsPerDrop(60, 5)).toBeCloseTo(LEVEL_GRAVITY_FACTOR ** 5, 10);
+  });
+
+  it('is FLOORED, so a long run cannot outrun the 25 ms scheduler tick', () => {
+    // Without the floor, level 40 at 240 BPM is ~3 microseconds per drop and the
+    // gravity `while` loop in one step would run the piece to the floor and lock
+    // it every tick — gravity stops being gravity.
+    expect(gravitySecondsPerDrop(240, 60)).toBe(MIN_SECONDS_PER_DROP);
+    expect(gravitySecondsPerDrop(240, 60)).toBeGreaterThan(0.025);
+  });
+
+  it('levelForLines is the ONE definition, and guards a nonsense threshold', () => {
+    expect(levelForLines(0, 10)).toBe(0);
+    expect(levelForLines(9, 10)).toBe(0);
+    expect(levelForLines(10, 10)).toBe(1);
+    expect(levelForLines(35, 10)).toBe(3);
+    // LVL 1 = a level per line, the steepest the fader can ask for.
+    expect(levelForLines(4, 1)).toBe(4);
+    // A 0 / negative threshold clamps to 1 rather than dividing by zero.
+    expect(levelForLines(4, 0)).toBe(4);
+    expect(Number.isFinite(levelForLines(4, -3))).toBe(true);
+  });
+});
+
+describe('stepModtrisState — the level is DERIVED and it reaches the running game', () => {
+  it('a fresh board is level 0', () => {
+    const s = initModtrisState({ rng: seededRng(1) });
+    expect(s.level).toBe(0);
+  });
+
+  it('the level tracks lines / levelStep on the very next step', () => {
+    let s: ModtrisState = initModtrisState({ rng: seededRng(4) });
+    s = stepModtrisState(s, NO_INPUTS, BASE_PARAMS, 0.001, { rng: seededRng(4) });
+    // Doctor the line count directly — this leg is about the DERIVATION, not
+    // about how hard it is to clear 30 rows from a unit test.
+    s = { ...s, lines: 30 };
+    const next = stepModtrisState(s, NO_INPUTS, BASE_PARAMS, 0.001, { rng: seededRng(4) });
+    expect(next.level).toBe(3);
+  });
+
+  it('MOVING THE FADER RE-PRICES THE RAMP IMMEDIATELY, not at the next level-up', () => {
+    // The claim `docs.controls.levelStep` makes ("it applies to the RUNNING
+    // game"), and the reason the level is re-derived every step rather than
+    // accumulated. Same state, two thresholds, one step apart.
+    let s: ModtrisState = initModtrisState({ rng: seededRng(5) });
+    s = stepModtrisState(s, NO_INPUTS, BASE_PARAMS, 0.001, { rng: seededRng(5) });
+    s = { ...s, lines: 20 };
+    const coarse = stepModtrisState(s, NO_INPUTS, { gravityBpm: 60, levelStep: 20 }, 0.001, { rng: seededRng(5) });
+    const steep = stepModtrisState(s, NO_INPUTS, { gravityBpm: 60, levelStep: 2 }, 0.001, { rng: seededRng(5) });
+    expect(coarse.level).toBe(1);
+    expect(steep.level).toBe(10);
+  });
+
+  it('THE RAMP CHANGES THE MEASURED DROP INTERVAL — the assertion that fails on the old code', () => {
+    // The behavioural half. Two identical boards differing only in `lines`, run
+    // with the SAME params for the same simulated time: the one that has cleared
+    // enough lines to reach a level must have fallen FURTHER.
+    //
+    // ⚠ THE PIECE ROW IS THE MEASUREMENT, not the level field — a `level` that is
+    // computed and then ignored would pass every leg above.
+    function fallenRowsAfter(lines: number, ticks: number): number {
+      let s: ModtrisState = initModtrisState({ rng: seededRng(6) });
+      s = stepModtrisState(s, NO_INPUTS, BASE_PARAMS, 0.001, { rng: seededRng(6) });
+      s = { ...s, lines, gravityAccumSeconds: 0 };
+      const startRow = s.piece!.row;
+      for (let i = 0; i < ticks; i++) {
+        s = stepModtrisState(s, NO_INPUTS, BASE_PARAMS, 0.025, { rng: seededRng(6) });
+        if (!s.piece) break; // locked — stop measuring
+      }
+      return (s.piece?.row ?? ROWS) - startRow;
+    }
+    const atLevel0 = fallenRowsAfter(0, 120);
+    const atLevel5 = fallenRowsAfter(50, 120);
+    expect(atLevel0, 'sanity: gravity moved the piece at all at level 0').toBeGreaterThan(0);
+    expect(
+      atLevel5,
+      `level 5 must drop the piece further in the same 3 s than level 0 does `
+        + `(${atLevel5} rows vs ${atLevel0}). Equal means levelStep is inert again.`,
+    ).toBeGreaterThan(atLevel0);
+  });
+
+  it('NEGATIVE CONTROL: at ZERO lines the LVL fader changes nothing at all', () => {
+    // The other half of "sweeping levelStep 1 -> 20 must change the interval
+    // after N cleared lines and must NOT change it at zero lines". Without this
+    // leg, a ramp keyed on the fader rather than on the line count would pass.
+    function rowAfter(levelStep: number): number {
+      let s: ModtrisState = initModtrisState({ rng: seededRng(8) });
+      s = stepModtrisState(s, NO_INPUTS, { gravityBpm: 60, levelStep }, 0.001, { rng: seededRng(8) });
+      for (let i = 0; i < 60; i++) {
+        s = stepModtrisState(s, NO_INPUTS, { gravityBpm: 60, levelStep }, 0.025, { rng: seededRng(8) });
+      }
+      return s.piece?.row ?? -1;
+    }
+    expect(rowAfter(1)).toBe(rowAfter(20));
+  });
+
+  it('an OVERFILL resets the level with the line count', () => {
+    let s: ModtrisState = initModtrisState({ rng: seededRng(9) });
+    s = stepModtrisState(s, NO_INPUTS, BASE_PARAMS, 0.001, { rng: seededRng(9) });
+    s = { ...s, well: new Uint8Array(COLS * ROWS).fill(1), piece: null, lines: 40, level: 4 };
+    const next = stepModtrisState(s, NO_INPUTS, BASE_PARAMS, 0.001, { rng: seededRng(9) });
+    expect(next.events.overfill).toBe(true);
+    expect(next.lines).toBe(0);
+    expect(next.level).toBe(0);
   });
 });
 
