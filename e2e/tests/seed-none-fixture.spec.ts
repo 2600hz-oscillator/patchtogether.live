@@ -15,8 +15,28 @@
 // like "the tests pass" from one side only.
 
 import { test, expect } from './_fixtures';
-import { BOOT_MS } from '../_helpers/boot-budget';
+import { BOOT_MS, SLOW_BOOT_TEST_TIMEOUT_MS } from '../_helpers/boot-budget';
 import { canvasPane } from './_helpers';
+
+// ⚠ THE PER-TEST BUDGET IS A BOUND, AND IT WAS THE INVISIBLE 30 s DEFAULT.
+//
+// This file bounds its boot wait with `BOOT_MS` — 30 000 on CI, IDENTICAL to
+// the 30 000 default budget it was running inside. 1 site, 1.00x.
+//
+// An inner bound at or above the budget that CONTAINS it can never come true:
+// the outer clock kills the test first, so a legible `element not found` is
+// converted into an illegible `Test timeout of 30000ms exceeded` — the class
+// #2291 root-caused and #2293 repaired at its second call site. Nothing in this
+// file said "30000"; `e2e/playwright.config.ts` never overrides Playwright's
+// default, so there was nothing to grep for except the ABSENCE of a budget.
+//
+// The budget therefore comes from `boot-budget` (90 000 on CI/SwiftShader,
+// 30 000 local) instead of the invisible default. A bound only costs wall-clock
+// when it is EXCEEDED, so this adds exactly zero to a green run; lane cost stays
+// gauged by `--global-timeout`, not by this.
+//
+// ⚠ BOUNDS ONLY. No assertion, subject or wait target changed here.
+test.describe.configure({ timeout: SLOW_BOOT_TEST_TIMEOUT_MS });
 
 /** Every node id on the graph. */
 async function nodeIds(page: import('@playwright/test').Page): Promise<string[]> {

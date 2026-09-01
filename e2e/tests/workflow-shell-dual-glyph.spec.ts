@@ -22,7 +22,31 @@
 import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch, seedKriaGate } from './_helpers';
 import { setNodeParams } from './_module-coverage-helpers';
-import { BOOT_MS } from '../_helpers/boot-budget';
+import { BOOT_MS, SLOW_BOOT_TEST_TIMEOUT_MS } from '../_helpers/boot-budget';
+
+// ⚠ THE PER-TEST BUDGET IS A BOUND, AND IT WAS THE INVISIBLE 30 s DEFAULT.
+//
+// ⚠ THIS SPEC ALREADY SPENT ITS FLAKE. Run 33509092036 recovered "(a) dock hero
+// shows BOTH displays" `timedOut -> passed` on the SAME SHA with the bare
+// `Test timeout of 30000ms exceeded` — one of seven such recovered flakes in the
+// 47.5 h window audited on 2026-09-01, and one of the two still unrepaired on
+// `origin/main` when that audit was written. Its boot wait is bounded with
+// `BOOT_MS` — 30 000 on CI, IDENTICAL to the budget containing it (1.00x).
+//
+// An inner bound at or above the budget that CONTAINS it can never come true:
+// the outer clock kills the test first, so a legible `element not found` is
+// converted into an illegible `Test timeout of 30000ms exceeded` — the class
+// #2291 root-caused and #2293 repaired at its second call site. Nothing in this
+// file said "30000"; `e2e/playwright.config.ts` never overrides Playwright's
+// default, so there was nothing to grep for except the ABSENCE of a budget.
+//
+// The budget therefore comes from `boot-budget` (90 000 on CI/SwiftShader,
+// 30 000 local) instead of the invisible default. A bound only costs wall-clock
+// when it is EXCEEDED, so this adds exactly zero to a green run; lane cost stays
+// gauged by `--global-timeout`, not by this.
+//
+// ⚠ BOUNDS ONLY. No assertion, subject or wait target changed here.
+test.describe.configure({ timeout: SLOW_BOOT_TEST_TIMEOUT_MS });
 
 /** The dock hero glyph width cap (mirrors DOCK_HERO_GLYPH_W). */
 const DOCK_HERO_GLYPH_W = 214;

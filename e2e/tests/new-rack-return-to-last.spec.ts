@@ -19,7 +19,28 @@
 // the dashboard create tests + rackspaces.test.ts.
 
 import { test, expect, type Page } from '@playwright/test';
-import { BOOT_MS } from '../_helpers/boot-budget';
+import { BOOT_MS, SLOW_BOOT_TEST_TIMEOUT_MS } from '../_helpers/boot-budget';
+
+// ⚠ THE PER-TEST BUDGET IS A BOUND, AND IT WAS THE INVISIBLE 30 s DEFAULT.
+//
+// This file bounds its boot waits with `BOOT_MS` — 30 000 on CI, IDENTICAL to
+// the 30 000 default budget they were running inside. 3 sites, 1.00x, and one
+// test block declares BOOT_MS + 10 000 + 10 000 = 50 000 ms of tolerance in it.
+//
+// An inner bound at or above the budget that CONTAINS it can never come true:
+// the outer clock kills the test first, so a legible `element not found` is
+// converted into an illegible `Test timeout of 30000ms exceeded` — the class
+// #2291 root-caused and #2293 repaired at its second call site. Nothing in this
+// file said "30000"; `e2e/playwright.config.ts` never overrides Playwright's
+// default, so there was nothing to grep for except the ABSENCE of a budget.
+//
+// The budget therefore comes from `boot-budget` (90 000 on CI/SwiftShader,
+// 30 000 local) instead of the invisible default. A bound only costs wall-clock
+// when it is EXCEEDED, so this adds exactly zero to a green run; lane cost stays
+// gauged by `--global-timeout`, not by this.
+//
+// ⚠ BOUNDS ONLY. No assertion, subject or wait target changed here.
+test.describe.configure({ timeout: SLOW_BOOT_TEST_TIMEOUT_MS });
 
 const SCRATCH_STORAGE_KEY = 'pt:local-scratch-id';
 const REPLICA_DB_PREFIX = 'pt-rack-v1-';

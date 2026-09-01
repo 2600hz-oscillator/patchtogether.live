@@ -14,8 +14,31 @@
 import { test, expect, loadVoiceDemo } from './_fixtures';
 import { type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
+import { SLOW_BOOT_TEST_TIMEOUT_MS } from '../_helpers/boot-budget';
 
-test.describe.configure({ mode: 'parallel' });
+// ⚠ THE PER-TEST BUDGET IS A BOUND, AND IT WAS THE INVISIBLE 30 s DEFAULT.
+//
+// ⚠ THIS SPEC TOOK `main` RED. Run 33408552411, e2e shard 5: "livecode: JS
+// recreates the voice-demo patch" failed attempt 1 with
+// `page.waitForLoadState: Test timeout of 30000ms exceeded` and passed attempt 2
+// at the SAME SHA — a recovered flake, which `--fail-on-flaky` reds anyway.
+// This file set NO per-test budget from any source, so every test in it ran on
+// the flat default while spawning a full engine plus a voice-demo graph.
+//
+// An inner bound at or above the budget that CONTAINS it can never come true:
+// the outer clock kills the test first, so a legible `element not found` is
+// converted into an illegible `Test timeout of 30000ms exceeded` — the class
+// #2291 root-caused and #2293 repaired at its second call site. Nothing in this
+// file said "30000"; `e2e/playwright.config.ts` never overrides Playwright's
+// default, so there was nothing to grep for except the ABSENCE of a budget.
+//
+// The budget therefore comes from `boot-budget` (90 000 on CI/SwiftShader,
+// 30 000 local) instead of the invisible default. A bound only costs wall-clock
+// when it is EXCEEDED, so this adds exactly zero to a green run; lane cost stays
+// gauged by `--global-timeout`, not by this.
+//
+// ⚠ BOUNDS ONLY. No assertion, subject or wait target changed here.
+test.describe.configure({ mode: 'parallel', timeout: SLOW_BOOT_TEST_TIMEOUT_MS });
 
 async function readPatchSummary(
   page: Page,
