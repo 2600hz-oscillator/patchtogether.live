@@ -4484,6 +4484,97 @@ export const FACES = [
     ],
   },
 
+  // ── GIBRIBBON — the REWRITE-CLASS promotion: determinism DESIGNED IN, so
+  //    the face scenes are baselinable and FACES_WITHOUT_SCENES is refused ──
+  //
+  // The rewritten engine (gibribbon-engine.ts) is a pure function of
+  // (seed, scheduler tick count, per-tick inputs): no Math.random, no
+  // Date.now, no wall-clock dt — render interpolation reads the tick-derived
+  // phase and sprite animation runs on the scheduler tick count. So BOTH
+  // scenes pin the same way the module's card scene does (vrt-scenes.ts),
+  // via three boot-time globals the factory reads at construction (this
+  // roster's simPin → addInitScript path) and once more in its tick (the
+  // card scene's afterSpawn path):
+  //
+  //   seed  → the xorshift stream (course tie-breaks, per-run reseed chain);
+  //   ticks → rebuild + step EXACTLY N scheduler ticks with idle inputs, then
+  //           SUPPRESS all further stepping — the frogger/pong shape, which
+  //           makes the picture TIME-INVARIANT rather than frozen at an
+  //           arbitrary boot-speed-dependent moment. 168 ticks = 4.2 s of
+  //           seeded ATTRACT self-play: a populated course, a non-zero SCORE
+  //           and the in-canvas ATTRACT label (the honest-self-play claim, in
+  //           pixels);
+  //   noWad → pins the ART PATH to the line-art fallback. The DOOM1.WAD is
+  //           gitignored and setup-fetched, and its decode is ASYNC — without
+  //           this pin the captured frame is a function of fetch timing and
+  //           of which environment fetched the file.
+  //
+  // ⚠ `freezeFaceVideo`'s `params.freeze = 1` write lands NOWHERE on this def
+  // (no `freeze` param) and needs to land nowhere: with the tick pin
+  // suppressing the stepper, the paint is a pure function of the engine state
+  // and there is no wall-clock term left in the frame. Do NOT "fix" that by
+  // adding a freeze ParamDef — a `params` edit on a def inside the WebGL
+  // attest basis costs an owner-machine re-attest to buy an assertion that
+  // already holds (this file's own 2026-08-25 rule).
+  //
+  // ⚠ FACES_WITHOUT_SCENES IS NOT CLAIMABLE HERE, BY THE SPEC'S OWN WORD: its
+  // bar is "evidence that simPin AND freeze cannot reach this renderer", and
+  // here both can BY CONSTRUCTION — the old blanket exemption text retired
+  // with the rewrite (vrt-exemptions.ts carries the discharge note).
+  {
+    type: 'gibribbon',
+    // No declared face.pages: the dock renders ONE unlabelled band holding the
+    // three ranked cells (difficulty / tempo / attract) under the extension
+    // body (the game screen). The 13 CV-target params are noUserControl and
+    // render zero cells.
+    pages: 1,
+    videoFaceWhy:
+      'a VIDEO module, so it must boot into the video zone rather than a mixer channel column — '
+      + 'without this field bootWithFace waits out the full 90 s test timeout for a column '
+      + 'membership a video node never acquires. Both scenes carry a live picture (the compact '
+      + "tile's VideoTileThumb through hasVideoSurface, and the dock body's own fullViewBody "
+      + 'game screen), and the module ANIMATES BY CONSTRUCTION — an attract run is self-playing '
+      + 'the moment the factory boots. The freeze write itself is a NO-OP on this def (no '
+      + '`freeze` param, deliberately — the attest-basis rule): stillness comes from the '
+      + '__gibribbonVrtTicks suppression in simPin, which stops the ONE clock the whole game '
+      + 'derives from.',
+    simPin: [
+      {
+        global: '__gibribbonVrtSeed',
+        value: 0xc0de,
+        why:
+          'pins the xorshift32 stream — course-extraction tie-breaks and the per-run reseed '
+          + 'chain are the only randomness in the rewritten engine (no Math.random anywhere, '
+          + 'pinned by gibribbon-face-model.test.ts). Alone it fixes WHICH attract run plays '
+          + 'but not how far along it the capture lands — the nibbles lesson, both halves '
+          + 'required.',
+      },
+      {
+        global: '__gibribbonVrtTicks',
+        value: 168,
+        why:
+          'rebuilds the run and steps it EXACTLY 168 scheduler ticks (4.2 s of seeded attract '
+          + 'self-play) with idle inputs, then SUPPRESSES all further stepping — the '
+          + 'frogger/pong shape, time-invariant rather than frozen. 168 is a POSITION on the '
+          + "game's timeline: past the count-in, into a populated course with the attract bot "
+          + 'scoring, so the frame shows the ribbon, the lookahead lane, a non-zero SCORE and '
+          + 'the ATTRACT label, and cannot be reached by a stepper that never ran. It matters '
+          + 'more here than anywhere: the game clock is a Web Worker setInterval that no audio '
+          + 'suspend and no rAF gate can hold — the module-side early-return is the ONLY '
+          + 'mechanism (GAMES.md §4.1).',
+      },
+      {
+        global: '__gibribbonVrtNoWad',
+        value: true,
+        why:
+          'pins the ART PATH to the line-art fallback: DOOM1.WAD is gitignored + setup-fetched '
+          + 'and its sprite decode is ASYNC, so without this the captured frame is a function '
+          + 'of fetch timing and environment. The fallback is a real shipped path (the WAD lamp '
+          + 'lights beside RESET); the sprite path is covered by the wad-sprites unit suite.',
+      },
+    ],
+  },
+
   // ── TV LIBRARIAN — a LIVE THIRD-PARTY STREAM that is nevertheless capturable
   {
     type: 'tvLibrarian',

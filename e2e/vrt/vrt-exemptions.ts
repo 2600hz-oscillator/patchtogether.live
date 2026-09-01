@@ -972,12 +972,22 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // RED, so they can only ever move together.
   // MODTRIS research prototype: same rationale as PONG.
   modtris: 'animated game state defeats deterministic capture; unit + ART + E2E provide coverage',
-  // GIBRIBBON — Vib-Ribbon-style ribbon scroller: the ribbon + sprites scroll
-  // continuously (per-frame scroll + clock-driven spawns), so no naturally
-  // still frame. Same rationale as PONG / MODTRIS / FROGGER. Pure event
-  // generator + WAD sprite decoder are unit-tested; e2e/tests/gibribbon.spec.ts
-  // covers spawn→clear→score, miss→degrade, + every event gate → SCOPE bridge.
-  gibribbon: 'animated scrolling ribbon + sprites defeat deterministic single-frame capture; gibribbon-events + wad-sprites unit tests + gibribbon.spec.ts provide coverage',
+  // ⚠ GIBRIBBON REMOVED 2026-08-29 — THE OWNER-RULED FULL REWRITE DESIGNED THE
+  // DETERMINISM SEAMS IN rather than retrofitting them, so the old blanket
+  // reason ("animated scrolling ribbon + sprites defeat deterministic
+  // single-frame capture") stopped being true of the module. The rewrite's
+  // engine is a pure function of (seed, scheduler tick count, inputs): no
+  // Math.random, no Date.now, no wall-clock dt anywhere in the game — render
+  // interpolation reads the tick-derived phase, and sprite animation runs on
+  // the scheduler tick count. Three seams pin a capture: `__gibribbonVrtSeed`
+  // (the xorshift stream), `__gibribbonVrtTicks` (rebuild + step exactly N
+  // scheduler ticks, then SUPPRESS — the frogger/pong shape, time-invariant
+  // rather than frozen), and the module-side `__videoEngineFreezeTime` early
+  // return in the subscribed tick (the ONLY thing that can hold a
+  // scheduler-clocked game — the worker interval ignores audio suspends).
+  // Baselined on the card scene (vrt-scenes.ts, pinned attract mid-course)
+  // and both face scenes (_shell-faces.ts). The siblings above and below
+  // keep their exemptions — each needs its own seam and its own argument.
   // ⚠ FROGGER REMOVED 2026-08-26 — THE EXEMPTION STATED ITS OWN EXIT CONDITION
   // AND THE CONDITION IS NOW MET. It read: "Promote to a real VRT baseline once
   // a deterministic-time test hook is added so the scene can freeze the game at
@@ -1508,7 +1518,12 @@ export const ALLOWED_PERMANENT_EXEMPT: ReadonlySet<string> = new Set([
   // now. See the note where its entry stood in EXEMPT_FROM_VRT above for the
   // argument. This list is ANCHORED in both directions, so leaving the name
   // here while the module is baselined would be RED.
-  'modtris', 'gibribbon', 'skifree',
+  // ⚠ `gibribbon` REMOVED 2026-08-29 — the rewrite designed its seams in and
+  // the module is baselined on all three of its scenes. See the note where its
+  // entry stood in EXEMPT_FROM_VRT above. This list is ANCHORED in both
+  // directions, so leaving the name here while the module is baselined would
+  // be RED.
+  'modtris', 'skifree',
   'analogLogicMaths', 'bentbox', 'b3ntb0x', 'acidwarp',
   // ⚠ `gamepad` REMOVED 2026-08-24 — the third drain, after `cvBuddy` and
   // `midiclock`. See the note where its entry used to stand in EXEMPT_FROM_VRT
