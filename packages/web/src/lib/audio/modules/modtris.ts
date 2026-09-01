@@ -36,10 +36,20 @@
 // Params:
 //   gravityBpm (log 30..240, default 60): drop-tick tempo.
 //   levelStep (linear 1..20, default 10): lines-per-level threshold (controls difficulty ramp).
+//
+// ⚠ `vizPassthrough: true` IS A LICENCE, NOT A WORKING PATH, and the
+// user-facing prose that promised otherwise has been removed from
+// `docs.explanation`. `GROUP_VIZ_HOST_TYPES` is `new Set(['scope'])`, so
+// GroupCard opens a portal slot for this module and mounts nothing into it —
+// measured `canvasInSlot 0` for modtris (and frogger / pong / nibbles) against
+// SCOPE's 1, recorded in `group-viz-hosts.test.ts` and tracked as #1755. The
+// flag stays declared because it is what the eventual host fix reads. The
+// well's real home is the DOCK FACEPLATE BODY (see `face.extension` below).
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
 import { getSchedulerClock, SCHEDULER_TICK_MS } from '$lib/audio/scheduler-clock';
+import { mulberry32 } from '$lib/sync/prng';
 import {
   initModtrisState,
   stepModtrisState,
@@ -47,6 +57,7 @@ import {
   type ModtrisInputs,
   type ModtrisParams,
   type ModtrisState,
+  type Rng,
 } from './modtris-state';
 
 export type { ModtrisState, ModtrisParams } from './modtris-state';
@@ -58,6 +69,24 @@ const GATE_PULSE_S = 0.005;
 const GATE_SPACER_S = 0.005;
 /** Schedule cushion — see PONG's identical comment. */
 const SCHEDULE_CUSHION_S = 0.005;
+
+/**
+ * How many ticks the VRT pin steps when `__modtrisVrtTicks` is absent.
+ *
+ * ⚠ NOT A POPULATION COUNT — it is a POSITION on the game's own timeline.
+ * 1600 ticks x 25 ms = 40 s of play at the default 60 BPM gravity, which is far
+ * enough in that pieces have LOCKED and the well carries a real stack, so the
+ * pinned frame differs from the boot frame in the well AND in the NEXT queue
+ * and cannot be reached by a stepper that never ran. Both capture paths set the
+ * global explicitly; this is the value a bare seed gets.
+ */
+const VRT_DEFAULT_PINNED_TICKS = 1600;
+
+/** All five gate edges low — what the pinned sim runs with, since a VRT scene
+ *  patches nothing into the steering inputs. */
+const NO_INPUT_EDGES: ModtrisInputs = {
+  rotateL: false, rotateR: false, dropFast: false, moveL: false, moveR: false,
+};
 
 export const modtrisDef: AudioModuleDef = {
   type: 'modtris',
@@ -92,9 +121,84 @@ export const modtrisDef: AudioModuleDef = {
     },
   ],
 
+  // ── THE FACEPLATE ────────────────────────────────────────────────────────
+  //
+  // THE TIER LADDER, read back as a sentence: at mini you get DROP; at compact
+  // and above, DROP and LVL; at the dock, both plus THE WELL. Derived through
+  // `curatedFace` in modtris-face-model.test.ts, never read off the cap
+  // constants — four sibling faces got that wrong by reading `FACE_TIER_CAPS`
+  // directly, which is the pre-reconciliation number rather than what the lane
+  // actually fits.
+  //
+  // ⚠ THE RANK. `gravityBpm` is the module's TEMPO, and on a module whose two
+  // outputs are GATES that is rank 1 by definition — everything downstream of
+  // `line_cleared` is clocked by how fast the stack fills. It is also the param
+  // read on EVERY step (`gravitySecondsPerDrop`), so its effect lands on the
+  // next frame. THE LOSER, NAMED: `levelStep` lost mini to it because a
+  // threshold that changes difficulty over the next several minutes is not a
+  // control a 46 px lane column can serve.
+  //
+  // ⚠ AND THE RANK ONLY BECAME DEFENSIBLE IN THIS DIFF. `levelStep` was read by
+  // NOTHING until the ramp landed in `modtris-state.ts` — declared, faded,
+  // contract-locked, documented as a difficulty ramp, and inert. Ranking a dead
+  // control 2 of 2 would have baked the defect into the UI, so the wiring and
+  // the face ship together.
+  //
+  // ⚠ `glyph: 'none'` IS FORCED, and that is measured rather than assumed. Both
+  // outputs are `type: 'gate'`, so `primaryAudioOutPortId` is NULL and every
+  // LIVE glyph kind — scope, meter, envelope, waveform — resolves
+  // `{kind:'static'}` and is refused by the dead-glyph clause. `'algorithm'`
+  // still RESOLVES since #2160 widened it, and it is refused on its own merits:
+  // a null `paramId` means the shell feeds `topologyValue: 0`, and
+  // `ShellExtensionGlyphProps` is `{num, numbers?, testid?}` with NO `nodeId`,
+  // so the component could not resolve a graph node and could not reach the
+  // game snapshot. It would be one constant picture, identical on every modtris
+  // in the rack forever. Pinned both ways, including the counterfactual, in
+  // modtris-face-model.test.ts. ⚠ SO THE LANE TILE STILL HAS NO WELL. That is
+  // not a regression — modtris is not in `NON_SHELL_LANE_TYPES`, is not a
+  // `CARD_PRODUCER` and is not in `HEADLESS_MOUNT_LANE_TYPES`, so
+  // `laneRenderKind` already returned 'placeholder' and the shipping shell
+  // mounted NO modtris surface at all while the game ran and pulsed gates
+  // underneath — but it is not the fix either.
+  face: {
+    order: ['gravityBpm', 'levelStep'],
+    glyph: 'none',
+    // ONE band. Both params answer the same question — HOW HARD IS THIS GAME —
+    // and splitting them would invent a distinction the module does not have.
+    // ⚠ `order` and `pages` AGREE, unusual for this house style and stated so a
+    // reader does not go hunting for the disagreement. A tab rail needs
+    // DOCK_TAB_MIN_BANDS = 7 bands and NOTHING IS PADDED to reach one.
+    pages: [{ id: 'fall', label: 'fall', controls: ['gravityBpm', 'levelStep'] }],
+    // ⚠ DECLARED, AND THE REASON IS PARITY RATHER THAN TASTE. The legacy card
+    // renders both as `<NeonFader>`; without `paramCells` the shell derives
+    // KNOBS and a player's muscle memory for a vertical throw lands on a rotary.
+    // ⚠ Note the divergence from the sibling: `frogger` declares NOTHING here
+    // because `FroggerCard` draws a `<Knob>`. Each face matches its OWN card;
+    // copying across the family would be a parity loss nothing gates.
+    paramCells: { gravityBpm: 'fader', levelStep: 'fader' },
+    // The well. See $lib/ui/modules/modtris/shell-extension.ts.
+    extension: 'modtris',
+    // ⚠ AUTHORED RATHER THAN DERIVED. All five inputs are `gate` with NO
+    // `paramTarget` — they are the module's real signal inputs, not CV holes for
+    // a ranked param — so the rail would otherwise be five anonymous jacks.
+    // ⚠ THE IDS ARE NOT FREE: an input group must claim the LEADING slot
+    // ('voice'/'signal') or name a declared page, or it appends as a stray band
+    // after every page and the rear totality gate cannot see it
+    // (module-face-lint). The four steering triggers take the leading 'signal'
+    // slot — they ARE what you play the module with — and DROP takes the 'fall'
+    // page's own slot, beside the gravity fader that shares that band. The
+    // OUTPUT rail takes the derived default (both `gate`, one section).
+    rear: {
+      groups: [
+        { id: 'signal', label: 'steer', ports: ['move_l', 'move_r', 'rotate_l', 'rotate_r'] },
+        { id: 'fall', label: 'drop', ports: ['drop_fast'] },
+      ],
+    },
+  },
+
   docs: {
     explanation:
-      "A playable Tetris-style block-stacking game wrapped as a CV/gate module — the falling-block gameplay drives the patch. Pieces drop into a 10×20 well at a tempo you set (DROP); you steer and rotate them with five gate inputs, and the game emits gate pulses on the events it produces: every line cleared and an overfill (game over). So a sequencer or clock pattern playing the game becomes a generative trigger source whose rhythm follows the stacking — a four-line 'Tetris' fires four separate LINE pulses in quick succession. You play entirely over the patch (the card just shows the well + next-piece preview on a 2D canvas); since the module is vizPassthrough, that canvas can be portaled into a containing GROUP card for cross-domain video. DROP sets the gravity tempo and LVL sets how many cleared lines bump the difficulty.",
+      "A playable Tetris-style block-stacking game wrapped as a CV/gate module — the falling-block gameplay drives the patch. Pieces drop into a 10×20 well at a tempo you set (DROP); you steer and rotate them with five gate inputs, and the game emits gate pulses on the events it produces: every line cleared and an overfill (game over). So a sequencer or clock pattern playing the game becomes a generative trigger source whose rhythm follows the stacking — a four-line 'Tetris' fires four separate LINE pulses in quick succession. You DON'T touch a surface to play: you patch gates into MOVE L/R, ROT L/R and DROP, and the well accumulates every decision you have made, so the same input pattern produces a different output rate ten seconds later. The well + next-piece preview + line count render on a 2D canvas at the head of the module's dock faceplate (and on the legacy card), and there is no video output port — MODTRIS speaks in gates, and the well is how you read what it is saying. DROP sets the gravity tempo and LVL sets how many cleared lines it takes to speed it up.",
     inputs: {
       rotate_l: "Rotate the current piece counter-clockwise on each rising edge — one quarter-turn per pulse (acts on the leading edge only, so a held gate rotates once).",
       rotate_r: "Rotate the current piece clockwise on each rising edge — one quarter-turn per pulse.",
@@ -110,9 +214,9 @@ export const modtrisDef: AudioModuleDef = {
     },
     controls: {
       gravityBpm:
-        "DROP gravity tempo in BPM (30..240, log, default 60) — how fast pieces fall on their own. Higher = faster, more frantic stacking (and a denser stream of LINE/OVERFILL pulses).",
+        "DROP gravity tempo in BPM (30..240, log, default 60) — how fast pieces fall on their own before the LVL ramp is applied. Higher = faster, more frantic stacking (and a denser stream of LINE/OVERFILL pulses). It is read on every scheduler tick, so a move lands on the next drop rather than the next piece. MIDI-learnable.",
       levelStep:
-        "LVL threshold (1..20, default 10) — how many cleared lines it takes to advance a level and ramp the difficulty (gravity speeds up each level). Lower = a steeper difficulty curve.",
+        "LVL threshold (1..20, default 10) — how many cleared lines it takes to advance a level. Each level multiplies the time between automatic drops by 0.85, so the game gets ~18% faster per level on top of whatever DROP is set to, down to a floor of 50 ms per row. Lower = a steeper difficulty curve: at LVL 1 every cleared line speeds the game up. It applies to the RUNNING game — the level is re-derived from the line count on every tick, so moving this fader mid-game re-prices the ramp immediately rather than at the next level-up — and an overfill resets the line count, and with it the level, to zero. MIDI-learnable.",
     },
   },
 
@@ -170,13 +274,98 @@ export const modtrisDef: AudioModuleDef = {
       gravityBpm: (node.params ?? {}).gravityBpm ?? 60,
       levelStep:  (node.params ?? {}).levelStep  ?? 10,
     };
-    let state: ModtrisState = initModtrisState();
+    let rng: Rng = Math.random;
+    let state: ModtrisState = initModtrisState({ rng });
 
     // ---- Scheduler tick subscription -----------------------------------
     // Each tick: sample all 5 gate inputs, edge-detect, step the stepper,
     // fire output gates for any emitted events.
     const dtSeconds = SCHEDULER_TICK_MS / 1000;
+
+    // ── THE VRT DETERMINISM PIN — A SEED *AND* A TICK COUNT ────────────────
+    //
+    // ⚠ MODTRIS NEEDS BOTH, AND THAT IS THE DIFFERENCE FROM FROGGER. frogger's
+    // stepper has no `Math.random` anywhere, so a tick count alone made its
+    // board a pure function of (ticks, params). modtris has a 7-BAG
+    // FISHER-YATES SHUFFLE (`refillQueueIfNeeded`), so the tick count alone
+    // fixes HOW FAR the sim ran and not WHICH pieces it ran with.
+    //
+    // ⚠ AND THE SEED ALONE IS NOT ENOUGH EITHER, which is measured on the
+    // sibling with this exact topology rather than assumed: pong drifted 72
+    // differing pixels at max channel delta 237 across two ubuntu boots WITH a
+    // seed, because a seed fixes WHICH trajectory and cannot fix how far along
+    // it the capture landed. The number of scheduler ticks that land before the
+    // harness's screenshot is a function of boot speed.
+    //
+    // So the pin does both: it rebuilds the state under `mulberry32(seed)`,
+    // steps it a FIXED number of ticks, and then STOPS TICKING ALTOGETHER. The
+    // well is TIME-INVARIANT rather than frozen at whatever moment the harness
+    // reached — lushgarden's and pong's shape. That matters more here than
+    // almost anywhere, because the game clock is a Web Worker `setInterval`
+    // that is NOT gated on the AudioContext, so the harness's audio suspend
+    // could never have stopped this game.
+    //
+    // ⚠ NO `freeze` ParamDef, DELIBERATELY. A `params` edit is in contract-lock
+    // (and, on a def in the WebGL basis, in the attest hash), so it costs a
+    // contract re-pin and buys only INTRA-boot stillness — it holds whichever
+    // frame the harness caught, a different frame per boot. A boot-time global
+    // costs neither and buys time-invariance. Reach for a ParamDef only when no
+    // boot-time global can reach the seam (a WORKER `renderLocus` is that case;
+    // this factory is main-thread).
+    //
+    // ⚠ READ TWICE — AT CONSTRUCTION AND ONCE MORE IN THE TICK — because the
+    // two capture paths install the globals at different moments. The FACE
+    // harness uses `simPin`, i.e. `addInitScript` BEFORE `goto`, so they are
+    // already there when this factory runs. The CARD scene (`vrt-scenes.ts`)
+    // sets them from `afterSpawn`, i.e. AFTER construction. A construction-only
+    // read would leave the card scene silently unpinned — a dead pin that
+    // produces a plausible well and a different one on every boot.
+    //
+    // ⚠ NOTHING IN THE APP EVER SETS EITHER GLOBAL.
+    //
+    // ⚠ DOOM IS EXCLUDED FROM THIS MECHANISM BY NAME. It is the other game
+    // module in the tree and it must never be re-timed: `runtime.runTic()` is
+    // called inside its `surface.draw`, so DOOM's game clock IS its frame clock
+    // and pinning ticks would re-specify how far the marine walks. No DOOM file
+    // was opened for this change.
+    let vrtPinned = false;
+    function readVrtPin(): { seed: number; ticks: number } | undefined {
+      const g = globalThis as { __modtrisVrtSeed?: number; __modtrisVrtTicks?: number };
+      const seed = g.__modtrisVrtSeed;
+      if (typeof seed !== 'number' || !Number.isFinite(seed)) return undefined;
+      const t = g.__modtrisVrtTicks;
+      const ticks = typeof t === 'number' && Number.isFinite(t) && t >= 0
+        ? Math.floor(t)
+        : VRT_DEFAULT_PINNED_TICKS;
+      return { seed: seed | 0, ticks };
+    }
+    function applyVrtPin(seed: number, ticks: number): void {
+      // ONE generator for the init bag AND every refill, so the stream
+      // continues rather than restarting — handing the stepper a second
+      // generator would make the capture deterministic only until the first bag
+      // ran out.
+      rng = mulberry32(seed);
+      state = initModtrisState({ rng });
+      for (let i = 0; i < ticks; i++) {
+        state = stepModtrisState(state, NO_INPUT_EDGES, params, dtSeconds, { rng });
+      }
+      vrtPinned = true;
+    }
+    const bootPin = readVrtPin();
+    if (bootPin !== undefined) applyVrtPin(bootPin.seed, bootPin.ticks);
+
     const tick = () => {
+      // ⚠ THE PIN COMES FIRST AND RETURNS. Letting the clock advance the well
+      // even once re-introduces the boot-speed dependence the pin exists to
+      // remove. This is the "suppress all further stepping" half, not a freeze.
+      if (vrtPinned) return;
+      // The LATE install (the card scene's `afterSpawn`). One-shot: once it
+      // fires, the branch above owns every subsequent tick.
+      const latePin = readVrtPin();
+      if (latePin !== undefined) {
+        applyVrtPin(latePin.seed, latePin.ticks);
+        return;
+      }
       const rL = rotateLTap.read();
       const rR = rotateRTap.read();
       const dF = dropFastTap.read();
@@ -191,7 +380,7 @@ export const modtrisDef: AudioModuleDef = {
       };
       lastRotateL = rL; lastRotateR = rR; lastDropFast = dF; lastMoveL = mL; lastMoveR = mR;
 
-      state = stepModtrisState(state, inputs, params, dtSeconds);
+      state = stepModtrisState(state, inputs, params, dtSeconds, { rng });
 
       if (state.events.linesCleared > 0) {
         pulseGateNTimes(lineClearedSrc, state.events.linesCleared);
@@ -346,11 +535,24 @@ export function drawModtris(
       }
     }
 
-    // Line count.
+    // Line count + difficulty level.
+    //
+    // ⚠ PAINTED INTO THE CANVAS BY THE MODULE'S OWN FUNCTION, which is what the
+    // resting-text ruling allows: a game's score inside its playfield is the
+    // game's artwork, and the strip is 30 % of the canvas by construction
+    // (`wellWidthPx = w * 0.7`) rather than slack to be reclaimed. A `LINES 17`
+    // or `LEVEL 2` row rendered as CHROME BESIDE the well would be the refused
+    // hero-readout shape and neither surface has one.
+    //
+    // ⚠ `LV` IS NEW IN THIS DIFF and it is here because `levelStep` is newly
+    // WIRED: without it the only evidence a level advanced is that the pieces
+    // feel faster, which is indistinguishable from someone having moved DROP.
     ctx2d.fillStyle = '#dafff7';
     ctx2d.font = '700 11px ui-monospace, monospace';
     ctx2d.fillText('LN', stripX, wellY + 90);
     ctx2d.fillText(String(state.lines), stripX, wellY + 102);
+    ctx2d.fillText('LV', stripX, wellY + 120);
+    ctx2d.fillText(String(state.level), stripX, wellY + 132);
   }
 }
 

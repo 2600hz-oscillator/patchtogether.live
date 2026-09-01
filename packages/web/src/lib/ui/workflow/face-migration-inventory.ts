@@ -1302,10 +1302,49 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
       'it simply had not been DECLARED as a param, on the def\'s stated reasoning that a discrete ' +
       'choice is not a continuous AudioParam — true of an AudioParam, and not of a `ParamDef`.',
   },
+  // ⚠ MOVED HERE FROM `bespoke-surface` (2026-08-31), AND ITS OLD `why` WAS
+  // FALSE ON BOTH CLAUSES — measured against the card rather than re-read. It
+  // read "a GAME: a falling-block viewport played on the keyboard, with two
+  // faders beside it."
+  //
+  //   "played on the keyboard" — `ModtrisCard.svelte` registers NO key handler
+  //   of any kind, and the def never had one. modtris is driven entirely by five
+  //   rising-edge GATE inputs, which is the whole point of the port and is
+  //   stated at length in the def's own header. The same sentence was wrong on
+  //   `frogger` and on `skifree`; it is a family-resemblance error, not a
+  //   measurement.
+  //
+  //   "with two faders beside it" — the comparison was never face-vs-card.
+  //   modtris is not in NON_SHELL_LANE_TYPES, is not a CARD_PRODUCER and is not
+  //   in HEADLESS_MOUNT_LANE_TYPES, so the shipping shell already rendered a
+  //   BLANK PLACEHOLDER for it while the game ran and pulsed gates underneath.
+  //   It was face-vs-grey.
   {
     type: 'modtris',
-    disposition: 'bespoke-surface',
-    why: 'a GAME: a falling-block viewport played on the keyboard, with two faders beside it.',
+    disposition: 'generic-face',
+    note:
+      'DONE. Two ranked params (DROP, LVL) as declared `fader` cells plus the WELL as a ' +
+      '`fullViewBody` extension — the `rasterize` / `frogger` shape, an audio-domain module ' +
+      'whose picture the shell has no generic route to (`hasVideoSurface` is ' +
+      '`domain === "video"`). ⚠ THE PROMOTION ALSO WIRED A DEAD CONTROL: `levelStep` was read ' +
+      'by NOTHING — the stepper\'s own type comment said "unused in v1 stepper", and ' +
+      '`ModtrisState` carried no `level` field at all — while the docs promised "gravity speeds ' +
+      'up each level". A face cannot rank a control it knows is inert, so the ramp ships in the ' +
+      'same diff (`level = floor(lines / levelStep)`, seconds-per-drop x 0.85 per level, floored ' +
+      'at 50 ms). ⚠ AND IT DISCHARGED THE MODULE\'S VRT EXEMPTION BY JUDGEMENT RATHER THAN BY ' +
+      'ITS OWN TERMS: unlike frogger\'s, modtris\' EXEMPT_FROM_VRT entry stated no exit ' +
+      'condition, and the seam is strictly harder — frogger has no RNG, so a tick count alone ' +
+      'pinned its board, while modtris\' 7-bag Fisher-Yates shuffle needs a SEED ' +
+      '(`__modtrisVrtSeed`) as well as a tick budget (`__modtrisVrtTicks`). It left ' +
+      'EXEMPT_FROM_VRT and ALLOWED_PERMANENT_EXEMPT in the same commit. ⚠ THE LANE TILE STILL ' +
+      'HAS NO WELL and that is not fixed here: both outputs are `gate`, so ' +
+      '`primaryAudioOutPortId` is null and every glyph but `none` resolves static, while ' +
+      '`ShellExtensionGlyphProps` carries no `nodeId` so a glyph component could not reach the ' +
+      'game snapshot even if a kind fitted. ⚠ AND `vizPassthrough: true` REMAINS A LICENCE ' +
+      'RATHER THAN A PATH — `GROUP_VIZ_HOST_TYPES` is `new Set(["scope"])` and ' +
+      '`group-viz-hosts.test.ts` measures `canvasInSlot 0` for modtris (#1755) — so the ' +
+      'user-facing prose promising a GROUP-card portal was deleted from `docs.explanation` ' +
+      'instead of being left to describe something the product does not do.',
   },
   {
     type: 'moog956',

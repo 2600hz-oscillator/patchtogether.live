@@ -462,6 +462,54 @@ export const SKIP_BUDGET = [
       + 'is what goes red for it, so this case skips to keep one failure in one place instead of two. '
       + 'Tolerated but surfaced.',
   },
+  // ⚠ THE AUDIO TWIN OF THE ENTRY ABOVE, AND IT DIFFERS IN THE ONE WAY THAT
+  // MATTERS: `VIDEO_SINK_FIXTURE`'s guard does not fire on CI today, so its
+  // entry only PERMITS a row. This one fires on every audited run from the
+  // moment `modtris` was promoted (2026-08-31) — modtris was the last member of
+  // the derived `AUDIO_OPERABLE_FIXTURE` pool, `audioIn` (the only other
+  // candidate) is DENIED for getUserMedia, so `deriveFixture` returns
+  // `migration-complete` and the guard skips by name.
+  //
+  // ⚠ THE REGEX IS AN ALTERNATION ON PURPOSE, and it is the lesson of the
+  // re-aimed entry above applied in advance. Direction B claims a DYNAMIC site
+  // by matching this pattern against the spec's whole SOURCE TEXT, so a pattern
+  // that only spelled the realized prose would be claiming the site through a
+  // string that happens to appear in the file — the incidental claim that broke
+  // when its unrelated neighbour was deleted. The first arm names the guard's
+  // own reason EXPRESSION (`workflow-shell.spec.ts:371`), so the source claim
+  // cannot drift onto anything else and goes stale LOUDLY if the guard is
+  // removed. The second arm is the realized sentence `deriveFixture` emits,
+  // which is what the LANE AUDIT actually matches at runtime. Neither arm alone
+  // covers both directions.
+  //
+  // ⚠ AND THIS IS NOT A HOLE TO BE PLUGGED LATER. `deriveFixture`'s own
+  // `migration-complete` text offers "re-point it at a purpose-built fixture
+  // module that is deliberately never promoted"; the owner ruled that branch out
+  // on 2026-08-31 — every module gets migrated, `toybox` and DOOM included, and
+  // the legacy-card path then goes away entirely. So the pool is deliberately
+  // NOT re-pointed at a durable un-migrated subject and `mountsAFader` is NOT
+  // widened: this leg tests the placeholder/legacy-card machinery and is deleted
+  // along with it in LEG-08/09, at which point this entry goes stale and
+  // direction A turns it RED, which is the correct way for it to end.
+  {
+    specs: ['workflow-shell.spec.ts'],
+    reason: /AUDIO_OPERABLE_FIXTURE\.why|LEGACY-FALLBACK CASE HAS NO SUBJECT LEFT, BY DESIGN/,
+    lanes: ['e2e'],
+    homeLane: 'e2e',
+    why:
+      'A DYNAMIC guard on an EXHAUSTED derived fixture pool, and the exhaustion is the DESIGNED end '
+      + 'state rather than a failure: "un-migrated module -> placeholder in lane + legacy card '
+      + 'operable in the dock" needs a module that is NOT in STRICT_FACES, and the last audio '
+      + 'candidate that rendered a placeholder tile and mounted a <NeonFader> was promoted. What is '
+      + 'LOST meanwhile is real and worth naming rather than filing under bookkeeping: this was the '
+      + 'ONE leg in the suite that DROVE a legacy card control (a `.fader-wrap .track` drag) inside '
+      + 'the dock full view instead of merely looking at a tile, and it was strengthened once '
+      + 'because of this very module (the #2137 `scrollIntoViewIfNeeded` fix, added when the '
+      + 'derivation first offered modtris and its faders sat below the dock fold). The named '
+      + 'fixture-health test at the top of the same file still runs and still passes — '
+      + '`fixtureProblems` deliberately does not count `migration-complete` as a problem — so the '
+      + 'DERIVATION is still gated even though this case has nothing left to derive.',
+  },
   {
     specs: ['auth-routes.spec.ts'],
     reason: /live-deploy only/,
