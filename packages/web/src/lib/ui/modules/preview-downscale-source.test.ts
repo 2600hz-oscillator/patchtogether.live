@@ -111,6 +111,56 @@ const EXEMPT_CALLS: readonly ExemptCall[] = [
       'card resamples the SHARED WebGL DRAWING BUFFER, and these pixels never touch it — foxy ' +
       'is an AUDIO def whose rasters are painted on the audio side and handed over as ImageData.',
   },
+  // ── SKIFREE — the pair added BY the bug this form fixes ──────────────────
+  //
+  // ⚠ THESE TWO ENTRIES EXIST BECAUSE THE THREE-ARGUMENT FORM WAS THE DEFECT
+  // HERE, WHICH IS THE OPPOSITE OF EVERY OTHER ROW ABOVE. `SkifreeCard` drew
+  // `drawImage(src, 0, 0)` under a comment arguing it was "genuinely 1:1, both
+  // canvases are sized from the SAME exported constant". The premise is FALSE:
+  // the vendored bundle OVERWRITES the canvas it is handed —
+  // `canvas.width = Math.round(width * dpr)` — so the source is 640x640 on any
+  // DPR >= 2 display while the destination is 320x320, and a three-argument
+  // draw paints the source at NATIVE size into a quarter of the area. The
+  // player saw the TOP-LEFT QUADRANT of the ski slope with the skier in the
+  // corner. ⚠ NEITHER THIS GATE NOR ANY OTHER COULD SEE IT: this file reads
+  // argument COUNTS (and the three-arg form is the one it blesses), and
+  // Playwright and VRT both run at `deviceScaleFactor: 1`, where the two
+  // numbers coincide and the bug does not exist. The honest spelling names the
+  // destination, and the destination is derived from `src.width/height` rather
+  // than from `SKIFREE_CANVAS_SIZE`, because the source size is the bundle's to
+  // choose.
+  {
+    file: 'SkifreeCard.svelte',
+    receiver: 'c2d',
+    firstArg: 'src',
+    why:
+      'DELIBERATELY CRISP, and the resample is REAL rather than incidental — the source is the '
+      + 'vendored skifree.js bundle\'s own canvas, which it sizes to `width * devicePixelRatio`, '
+      + 'so this is a genuine 2:1 downscale on a retina display and a 1:1 copy elsewhere. SKIFREE '
+      + 'is 1991 pixel art (imageSmoothingEnabled = false three lines above) and a box-filtered '
+      + 'downscale would soften exactly the sprite grid the game exists to show — the FOXY / '
+      + 'RASTERIZE argument, on a source this repo does not own. ⚠ It is also OUT of scope for '
+      + 'the #1846 defect on its merits, not merely by preference: that bug is aliasing when a '
+      + 'card resamples the SHARED WebGL DRAWING BUFFER, and these pixels never touch it — '
+      + 'skifree is an AUDIO def whose canvas is painted by a 2-D context inside a committed '
+      + 'third-party IIFE.',
+  },
+  {
+    file: 'skifree/SkifreeScreen.svelte',
+    receiver: 'c2d',
+    firstArg: 'src',
+    why:
+      'DELIBERATELY CRISP — the SkifreeCard entry above, on the FACE surface, and the shared one: '
+      + 'this ONE component is both the dock `fullViewBody` (320 CSS px, steerable) and the lane '
+      + '`tileBody` (104 CSS px, read-only), so the lane tile is a genuine ~6:1 downscale of the '
+      + 'bundle\'s 640-px canvas and smoothing it would turn a sprite field into grey mush. '
+      + 'imageSmoothingEnabled = false two lines above. Promotion makes `migrated()` true, so '
+      + 'from this PR onward nothing renders SkifreeCard on either default surface and an '
+      + 'assertion about ITS smoothing stops protecting anything a player can see — the '
+      + 'FoxyOutputBody situation exactly. ⚠ Also out of scope for #1846 on its merits: an AUDIO '
+      + 'def whose pixels come from a 2-D context in a vendored bundle, never from the shared '
+      + 'WebGL drawing buffer.',
+  },
   {
     file: 'SynesthesiaCard.svelte',
     receiver: 'ctx2d',

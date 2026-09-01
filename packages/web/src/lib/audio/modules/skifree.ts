@@ -22,11 +22,22 @@
 //           drive VIDEO OUT / BENTBOX / any video module. Mirrors the
 //           SM64 `out` port pattern.
 //
-// Native mouse control: when x/y are NOT patched AND the card has focus,
-// the player steers with the real mouse directly on the canvas (the card
-// calls the engine's enableMouse). Any patched CV input OVERRIDES the
-// mouse (the card disables mouse + the factory writes the CV cursor each
-// scheduler tick).
+// Native mouse control: when x/y are NOT patched, CLICK the slope to take the
+// controls and then steer with the real mouse on the picture. Any patched CV
+// input OVERRIDES the mouse (the surface stops writing the cursor and the
+// factory writes the CV cursor each scheduler tick).
+//
+// ⚠ THE SURFACES OWN THE MOUSE, AND THE BUNDLE'S OWN `enableMouse` IS NOT USED
+// BY ANYTHING. Its handlers close over the FACTORY'S canvas — which is DETACHED
+// by construction (see "THE GAME ITSELF" below) — and take their rect from it,
+// so `getBoundingClientRect()` returns all zeros and the cursor received raw
+// VIEWPORT coordinates. That has been the shipping behaviour since #2192 moved
+// the game onto the node: a click at viewport x=900 wrote cursor x=900 into a
+// 320-wide coordinate space, so the skier pinned itself to the right edge and
+// "steering" was a single stuck direction. Both surfaces now map their OWN
+// element's rect through `pointerToCanvasCoord` below and call `setCursor`
+// directly. `enableMouse`/`disableMouse` remain on the controller type because
+// they are the vendored bundle's API, not ours to delete.
 //
 // Bundle: committed pre-built at /skifree/skifree.bundle.js (~24 KB,
 // esbuild IIFE of packages/web/native/skifree/embed.js + the upstream
@@ -72,6 +83,43 @@ export const SKIFREE_CANVAS_SIZE = 320;
  */
 export function cvToCanvasCoord(cv: number, size: number = SKIFREE_CANVAS_SIZE): number {
   const c = (cv + 1) * 0.5 * size;
+  if (c < 0) return 0;
+  if (c > size) return size;
+  return c;
+}
+
+/**
+ * Map ONE axis of a pointer event onto the game's canvas coordinate space.
+ *
+ * The second half of the cursor story, and it lives beside `cvToCanvasCoord`
+ * deliberately: the CV path and the MOUSE path write the SAME `setCursor`, in
+ * the same units, so one file owning both is what stops the two drifting into
+ * different coordinate spaces.
+ *
+ * `client` is `e.clientX` / `e.clientY`; `rectStart` and `rectSize` are the
+ * displayed element's `getBoundingClientRect()` left/width (or top/height). The
+ * displayed size is almost never `size` — the dock paints the slope at 320 CSS
+ * px and the lane tile at 160 — so the map is a RATIO, never a subtraction.
+ *
+ * ⚠ A ZERO-SIZED RECT RETURNS THE CENTRE, AND THAT BRANCH IS THE WHOLE BUG.
+ * The vendored bundle's own mouse handlers do `e.clientX - rect.left` against a
+ * canvas that is DETACHED — every field of that rect is 0 — so they fed raw
+ * VIEWPORT pixels into a 0..320 space and the skier parked on an edge. A ratio
+ * against a zero width is a division by zero, so the honest answer for "I
+ * cannot measure this element" is the resting cursor (canvas centre, the same
+ * place CV 0 maps to) rather than a number in the wrong units.
+ *
+ * Exported (pure) for the unit test in skifree.test.ts.
+ */
+export function pointerToCanvasCoord(
+  client: number,
+  rectStart: number,
+  rectSize: number,
+  size: number = SKIFREE_CANVAS_SIZE,
+): number {
+  if (!(rectSize > 0)) return size * 0.5;
+  const c = ((client - rectStart) / rectSize) * size;
+  if (!Number.isFinite(c)) return size * 0.5;
   if (c < 0) return 0;
   if (c > size) return size;
   return c;
@@ -235,11 +283,46 @@ export const skifreeDef: AudioModuleDef = {
   ],
   params: [],
 
+  // ── THE FACEPLATE ────────────────────────────────────────────────────────
+  //
+  // `order: []` — and it is the FLIPPER shape, not the joystick one. The def
+  // declares `params: []`, so there is nothing to rank and nothing is dropped:
+  // #1974's clause is about a face that RANKS controls and then resolves to
+  // zero cells at the tier the player is looking at, and its own exclusion
+  // ("a face that ranks NOTHING is not in scope") names `flipper` and
+  // `videoOut` as the honest shape. skifree is the third. ⚠ THE CONSEQUENCE IS
+  // THAT NOTHING IN CI WATCHES THIS LANE: the clause `continue`s past an
+  // `order: []` face before it measures anything, so the tile could regress to
+  // a title and a jack rail with every gate green. `skifree-face-model.test.ts`
+  // therefore pins the `tileBody`'s EXISTENCE itself.
+  //
+  // `glyph: 'none'` is FORCED, run through the resolver rather than argued from
+  // the module's description: `primaryAudioOutPortId` matches `type === 'audio'`
+  // and skifree declares NONE (`gate` is a gate, `out` is video), so every live
+  // literal — scope, meter, envelope, waveform — resolves `{kind:'static'}` and
+  // is refused by the dead-glyph clause. `hasVideoSurface` is `domain ===
+  // 'video'`, and this is an audio def with a video PORT, so the shell's own
+  // video thumbnail is out of reach too. The picture has to come from the
+  // module, which is what the extension is for.
+  //
+  // TWO SLOTS, because the two surfaces are counterparts and neither is
+  // optional here. `fullViewBody` is the dock's slope — the STEERABLE one, and
+  // the only place a player can take the controls. `tileBody` is the lane's,
+  // read-only: without it a promoted skifree's lane tile is a title bar and
+  // four jacks, which is strictly worse than the placeholder it replaces on a
+  // module whose entire purpose is a game you watch. See
+  // $lib/ui/modules/skifree/shell-extension.ts.
+  face: {
+    order: [],
+    glyph: 'none',
+    extension: 'skifree',
+  },
+
   docs: {
     explanation:
-      "The classic SkiFree game wrapped as a hybrid audio/video module — ski downhill, dodge trees, rocks, and snowboarders, and outrun the yeti that eventually chases and EATS you. The skier always heads down the mountain and steers toward a cursor; you supply that cursor with two CV inputs (X and Y), so an LFO, sequencer, JOYSTICK, or envelope plays the slope. (When nothing is patched and the card has focus you can also steer with the real mouse on the canvas; any patched CV overrides the mouse.) The game produces one trigger output — a gate that pulses on every crash or yeti-eat — and one VIDEO output carrying the live game canvas, so SKIFREE can drive VIDEO OUT, BENTBOX, or any video module. It has no parameters and no internal audio (the gate is the sound source you build the patch around); it's single-instance per rack (only one SKIFREE can run at a time).",
+      "The classic SkiFree game wrapped as a hybrid audio/video module — ski downhill, dodge trees, rocks, and snowboarders, and outrun the yeti that eventually chases and EATS you. The skier always heads down the mountain and steers toward a cursor; you supply that cursor with two CV inputs (X and Y), so an LFO, sequencer, JOYSTICK, or envelope plays the slope. (When nothing is patched you can steer by hand instead: CLICK the slope on the module's faceplate to take the controls, then move the pointer over it — the skier heads for wherever you point, and moving the pointer BELOW the skier is what sends it downhill. Any patched CV immediately overrides the mouse.) The game produces one trigger output — a gate that pulses on every crash or yeti-eat — and one VIDEO output carrying the live game canvas, so SKIFREE can drive VIDEO OUT, BENTBOX, or any video module. It has no parameters and no internal audio (the gate is the sound source you build the patch around); it's single-instance per rack (only one SKIFREE can run at a time). The slope keeps running whether or not you are looking at it — the game lives on the node, so a rack you never expand is still skiing, still crashing and still firing its gate.",
     inputs: {
-      x: "Bipolar CV (−1..+1) → the cursor's X position the skier steers toward. −1 = far left, 0 = straight down the fall line, +1 = far right. Read at scheduler-tick rate (a continuous position, not a gate). Patching it overrides on-card mouse steering.",
+      x: "Bipolar CV (−1..+1) → the cursor's X position the skier steers toward. −1 = far left, 0 = straight down the fall line, +1 = far right. Read at scheduler-tick rate (a continuous position, not a gate). Patching it overrides mouse steering on the faceplate.",
       y: "Bipolar CV (−1..+1) → the cursor's Y position the skier steers toward. −1 = top, 0 = center, +1 = bottom — pulling the cursor lower makes the skier point more steeply downhill (faster). Continuous position, read each tick; patching it overrides the mouse.",
     },
     outputs: {
