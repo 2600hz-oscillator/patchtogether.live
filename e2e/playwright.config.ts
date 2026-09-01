@@ -191,12 +191,18 @@ export default defineConfig({
           ? [
               '**/camera-input.spec.ts',
               '**/audio-in.spec.ts',
+              '**/audio-in-face.spec.ts',
               '**/audio-input-survives-card-collapse.spec.ts',
               ...EFFECTIVE_HEAVY_GLOBS,
             ]
           : [
               '**/camera-input.spec.ts',
               '**/audio-in.spec.ts',
+              // The FACE spec needs the fake mic too — and a spec that needs it
+              // and is named in NEITHER list runs here, where getUserMedia is
+              // deliberately kept failing, i.e. green over a module that never
+              // opened a device.
+              '**/audio-in-face.spec.ts',
               // #1590 — needs the fake mic, so it must NOT run here: the
               // default project deliberately keeps getUserMedia FAILING, and
               // several specs assert that predictable NotAllowedError.
@@ -228,7 +234,11 @@ export default defineConfig({
       testMatch:
         WEBGL_HEAVY_MODE === 'only'
           ? []
-          : ['**/audio-in.spec.ts', '**/audio-input-survives-card-collapse.spec.ts'],
+          : [
+              '**/audio-in.spec.ts',
+              '**/audio-in-face.spec.ts',
+              '**/audio-input-survives-card-collapse.spec.ts',
+            ],
       use: {
         ...devices['Desktop Chrome'],
         permissions: ['microphone'],

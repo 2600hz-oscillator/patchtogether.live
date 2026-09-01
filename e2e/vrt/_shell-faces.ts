@@ -3494,6 +3494,62 @@ export const FACES = [
     // `no-devices` disabled state. Both are stable run-to-run on the machine
     // that authors the file.
   },
+  {
+    type: 'audioIn',
+    // ONE param, no `face.pages` — the same page-less shape as `audioOut` and
+    // `noise`. The dock scene is the source-controls body over a single fader.
+    pages: 0,
+    // ⚠ NO `videoFaceWhy`. `domain: 'audio'`, so the boot must be the ordinary
+    // mixer-column spawn; setting it would move the subject into the purple
+    // VIDEO ZONE, which is the wrong rack and is the easy copy-paste from the
+    // picture-bearing faces either side of it.
+    //
+    // ⚠ AND NO `singletonAdoptWhy`, CHECKED RATHER THAN COPIED. `audioInDef`
+    // declares no `maxInstances` and is not in `cap.ts`'s
+    // `PINNED_COUNTS_TOWARD_CAP` (timelorde alone), so `__spawnFromPalette` is
+    // not refused and the sweep gets a fresh instance of its own rather than
+    // adopting `pinned-audioIn`. That matters here: the pinned one lives in the
+    // 🎧 tray and is the instance a returning user's grant would apply to.
+    //
+    // ── WHY THE PICTURE IS DETERMINISTIC, which a CAPTURE BINDER has to earn ─
+    //
+    // This module's legacy card is EXEMPT_FROM_VRT precisely because its state
+    // "depends on getUserMedia permission + audioinput presence". The face is
+    // not, and the difference is a PRODUCT guarantee rather than a test flag:
+    //
+    //   1. NOTHING IS EVER ACQUIRED IN A FRESH CONTEXT. Both face surfaces bind
+    //      through `bindAudioInputSurface`, which takes its ONE unattended
+    //      acquire only when `enumerateDevices()` reports LABELLED entries — the
+    //      browser's own signal that this origin already holds a microphone
+    //      grant. A Playwright context starts with none, so no `getUserMedia`
+    //      call is made, no permission dialog can appear, and the capture state
+    //      is `idle` (or `no-inputs-found` on a container with no audio
+    //      hardware) every single run.
+    //   2. THE LAMPS FOLLOW FROM THAT. `LIVE` dark, `FAULT` dark at `idle` — and
+    //      `StatusLed`'s caption is STATIC by contract, so neither lamp's text
+    //      can vary with state even in principle. The eight-state sentence is on
+    //      `aria-label`/`title`, which no capture sees.
+    //   3. THE GLYPH IS SILENT. `face.glyph: 'meter'` binds live to
+    //      `audio_l_out`, and with nothing attached that port carries only the
+    //      factory's zero-offset `ConstantSourceNode` keep-alive. The face
+    //      harness ALSO freezes analyser taps pre-frame (see analogVco above),
+    //      so this is belt and braces rather than the only argument.
+    //
+    // ⚠ THE PICKER'S OPTIONS ARE THE RUNNER'S OWN HARDWARE, which is the one
+    // machine-dependent thing in frame — `audioOut`'s entry above says the same
+    // about the same class, and the answer is the same: baselines are authored
+    // by linux CI and a local macOS run is a smoke test, not a capture.
+    // Pre-permission every label is EMPTY, so the roster renders the positional
+    // fallback (`Input #1`, from `formatDeviceLabel`), and a container with no
+    // audio inputs shows the picker's disabled `(no inputs)` state. Both are
+    // stable run-to-run on the machine that authors the file.
+    //
+    // ⚠ THE COMPACT SCENE IS THE ONE THAT MOVED. Before promotion the lane tile
+    // was a `ModuleShellPlaceholder`; it now carries the meter glyph, the fader
+    // and the `tileBody`'s picker + lamps + ENABLE. That gesture is the only
+    // route to a first grant, so it being IN the baseline is the point rather
+    // than incidental.
+  },
   // THE 4-VOICE 3-D VIDEO SYNTH — the widest face in the fleet, and the one
   // whose promotion needed a precursor PR to be possible at all.
   //

@@ -699,7 +699,29 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // covers the device-picker helpers for real; the def-shape half is covered by
   // modules-card-map.test.ts, which is what now stands in the reason.
   // `scripts/exemption-coverage-anchors.test.ts` makes this class un-writable.
-  audioIn: 'card state depends on getUserMedia permission + audioinput presence (varies across CI runners); e2e/tests/audio-in.spec.ts + devices.test.ts + modules-card-map.test.ts provide coverage',
+  //
+  // ⚠ SCOPED TO THE CARD, AND THE FACE IS NOW CAPTURED — the identical split the
+  // `cameraInput` and `loopback` entries above draw, recorded here for the
+  // identical reason: "the module is exempt" is the obvious wrong inference from
+  // this line, and it would buy a needless exemption for a surface that captures
+  // fine. This entry has always been about the LEGACY CARD scene, which paints a
+  // state WORD (`idle` / `active` / `no inputs` / …) and a stereo|mono BADGE
+  // derived from whatever hardware and prior grant the runner happens to have.
+  //
+  // ⚠ THE FACE SCENES ARE NOT EXEMPT, and the mechanism is a PRODUCT guarantee
+  // rather than a test flag. `bindAudioInputSurface` takes its ONE unattended
+  // acquire only when `enumerateDevices()` reports LABELLED entries — i.e. when
+  // this origin already holds a microphone grant — so a fresh Playwright context
+  // never opens a device, the lamps stay dark, the picker renders the browser's
+  // positional fallback and the glyph taps the factory's silent keep-alive. The
+  // face harness additionally freezes analyser taps pre-frame. So `audioIn` is
+  // NOT in `FACES_WITHOUT_SCENES`; see its entry in `_shell-faces.ts`.
+  //
+  // ⚠ THE CARD STILL EXISTS AND IS STILL RENDERED — under `?shell=legacy` it is
+  // the lane surface and the 🎧 tray's occupant, which is exactly what
+  // `audio-in.spec.ts` drives. So this exemption is not obsolete just because
+  // the module was promoted.
+  audioIn: 'CARD scene only: the card paints a state word + a stereo|mono badge derived from getUserMedia permission + audioinput presence (both vary across CI runners). The FACE scenes ARE captured — no prior grant means no acquire, so the lamps are dark and the picker shows the browser positional fallback; see _shell-faces.ts. Card coverage is e2e/tests/audio-in.spec.ts + devices.test.ts + modules-card-map.test.ts',
   // GROUP is a Phase-1 collapse-N-modules container with no engine
   // binding. A bare GROUP! has no exposed ports → its visual surface
   // is just the card chrome + label, which carries no module-specific
