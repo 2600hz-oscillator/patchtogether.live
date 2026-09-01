@@ -25,6 +25,7 @@ import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnPatch } from './_helpers';
 import { readScopePeakOverWindow } from './_module-coverage-helpers';
+import { SLOW_BOOT_TEST_TIMEOUT_MS } from '../_helpers/boot-budget';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const WAV_PATH = resolve(__dirname, '../fixtures/samsloop-test.wav');
@@ -206,6 +207,10 @@ test.describe('workflow media system (P3)', () => {
   test('sticky menu: outside clicks leave it open; ESC closes; ESC also cancels a started drag with no module created', async ({
     page,
   }) => {
+    // This leg loads an asset and drives a drag; on a loaded shard it ran out
+    // of Playwright's INVISIBLE 30 s default (nothing here said 30000 — only
+    // its absence). Bound from the shared export like its siblings.
+    test.setTimeout(SLOW_BOOT_TEST_TIMEOUT_MS);
     await gotoWorkflow(page);
     await loadViaLoader(page, [WAV_PATH]);
     await openPickerSection(page, 'sounds');
@@ -234,7 +239,7 @@ test.describe('workflow media system (P3)', () => {
     page,
   }) => {
     // Media decode + a 2.5 s audibility window + a CI SwiftShader boot.
-    test.setTimeout(90_000);
+    test.setTimeout(SLOW_BOOT_TEST_TIMEOUT_MS);
     await gotoWorkflow(page);
     await spawnPatch(page, [{ id: 'sc', type: 'scope', position: { x: 60, y: 200 } }]);
     await loadViaLoader(page, [WAV_PATH]);
@@ -324,7 +329,7 @@ test.describe('workflow media system (P3)', () => {
   test('drag-from-existing reuses the ONE module; right-click adds a second rail module; drags still default to the first', async ({
     page,
   }) => {
-    test.setTimeout(90_000);
+    test.setTimeout(SLOW_BOOT_TEST_TIMEOUT_MS);
     await gotoWorkflow(page);
     // Side by side — a SCOPE card is ~570px tall, so stacking them would
     // overlap sc2's patch trigger under sc1's card body.
@@ -387,7 +392,7 @@ test.describe('workflow media system (P3)', () => {
     page,
   }) => {
     // One video-domain module boots the video engine on CI's SwiftShader.
-    test.setTimeout(90_000);
+    test.setTimeout(SLOW_BOOT_TEST_TIMEOUT_MS);
     await gotoWorkflow(page);
     await spawnPatch(page, [{ id: 'fx', type: 'chroma', position: { x: 60, y: 200 }, domain: 'video' }]);
     await loadViaLoader(page, [
@@ -487,7 +492,7 @@ test.describe('workflow media system (P3)', () => {
   test('rebind: after quicksave→reload→quickload, re-adding the matching file re-links the EXISTING module (no duplicate)', async ({
     page,
   }) => {
-    test.setTimeout(90_000);
+    test.setTimeout(SLOW_BOOT_TEST_TIMEOUT_MS);
     await gotoWorkflow(page);
     await spawnPatch(page, [{ id: 'sc', type: 'scope', position: { x: 60, y: 200 } }]);
     await loadViaLoader(page, [WAV_PATH]);
