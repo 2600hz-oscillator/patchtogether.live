@@ -246,6 +246,7 @@ import { runLivecodeNode } from '$lib/ui/modules/livecode-cell-actions';
 import { launchpadConnectSingle, launchpadPair } from '$lib/ui/modules/launchpad-cell-actions';
 import { push2Connect } from '$lib/ui/modules/push2-cell-actions';
 import { electraSendToDevice } from '$lib/ui/modules/electra-cell-actions';
+import { readSurfaceData, setSurfaceLocked } from '$lib/graph/control-surface';
 import { outToLaunchConnect } from '$lib/ui/modules/out-to-launch-cell-actions';
 import { timelordeFaceTap } from '$lib/ui/modules/timelorde/face-tap';
 import {
@@ -3120,6 +3121,31 @@ const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
   // preset is generated FROM it and pushed outward — so a `data` probe would
   // fail on a perfectly live button, and a `data-rev` probe is the dead-button
   // hazard this file warns about two entries up.
+  // ── CONTROL SURFACE — the FIFTH meta-domain face, and the first whose one
+  //    ranked cell is a TOGGLE over the module's own node.data ───────────────
+  //
+  // ⚠ THE LOCK IS THIS MODULE'S ONLY ADDRESSABLE CONTROL, and the reason is
+  // electraControl's, one entry below: every other affordance on the surface
+  // proxies a param on a DIFFERENT node, which no face key can address at any
+  // rank. `node.data.locked` is the module's OWN — it freezes/frees the group
+  // boxes for rearranging — and `ShellToggleCell` is the registry's exact shape
+  // for "a 0/1 LATCHING switch backed by node.data".
+  //
+  // ⚠ IT WRITES THROUGH `setSurfaceLocked`, the same in-place LOCAL_ORIGIN
+  // mutator the legacy card's lock button calls, so the two surfaces cannot
+  // disagree about what locking means and the flip reaches Cmd-Z and every
+  // collaborator. A toggle cell is not dock-restricted, so LOCK reaches the
+  // lane tile — which matters here, because dragging a group box is a LANE
+  // gesture on the dock body and the lock is what arms it.
+  controlSurface: {
+    'control-surface-lock-{n}': {
+      kind: 'toggle',
+      label: 'Lock',
+      value: (node) => readSurfaceData(node).locked ?? false,
+      onchange: (nodeId, on) => setSurfaceLocked(nodeId, on),
+    },
+  },
+
   electraControl: {
     'electra-connect-button-{n}': {
       kind: 'action',
