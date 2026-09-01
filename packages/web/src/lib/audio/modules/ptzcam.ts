@@ -28,7 +28,8 @@
 // page can never leave a head panning mid-set.
 
 import type { AudioModuleDef } from '$lib/audio/module-registry';
-import { patch as livePatch, ydoc } from '$lib/graph/store';
+import type { ModuleFace } from '$lib/graph/types';
+import { patch as livePatch, ydoc, LOCAL_ORIGIN } from '$lib/graph/store';
 import { getSchedulerClock, SCHEDULER_TICK_MS } from '$lib/audio/scheduler-clock';
 import { planPtzSend, type PtzPlan, type PtzTargets } from '$lib/audio/ptz-control';
 import { buildSetAbs, buildSetVel } from '$lib/audio/ptz-sysex';
@@ -64,6 +65,62 @@ export interface PtzcamState {
   readonly lastVel: PtzTargets | null;
 }
 
+// ─────────────────────────── THE FACE ───────────────────────────────────────
+//
+// ⚠ CONNECT RANKS FIRST, ABOVE EVERY KNOB, and that ordering is the whole
+// reason this module gets a `controlFamily` rather than four param cells and a
+// dock-only button. ptzcam is inert TWICE over before the gesture: Web MIDI
+// shows no port at all until the browser consents, and even after consent the
+// PT-PTZ helper's virtual pair has to exist. So a fresh spawn is a module whose
+// every knob is a no-op, and the one thing that changes that must be reachable
+// where the module is met. The compact lane cap is 3 (`faceTierCap`, glyph-less
+// tile), so any rank below 3 loses the gesture from the tile entirely — which
+// is exactly what made midiclock make it a cell (#2187), and the argument is
+// stronger here because midiclock at least had one meaningful param before the
+// grant and this one has none.
+//
+// ⚠ `glyph: 'none'` IS FORCED, NOT CHOSEN. `outputs: []`, so
+// `primaryAudioOutPortId` is null and every literal except 'algorithm' resolves
+// `{ kind: 'static' }` — a DEAD glyph, which `module-face-lint` reddens
+// unconditionally. And 'algorithm' + an `extension` id would RESOLVE (the
+// `layoutSource: <ext>` branch) and pass the dead-glyph clause while painting an
+// empty topology plate, because this extension exports no `glyph` slot. Run
+// through `glyphBinding`, not guessed: 'none' is the only honest value.
+//
+// TWO BANDS, NOT A TAB RAIL: `DOCK_TAB_MIN_BANDS` is 7 and nothing here is
+// padded to reach it. `camera` is the binding, `aim` is the four trim knobs —
+// they are different KINDS of thing (one reaches hardware, four are stage trim),
+// which is what a band boundary is for.
+export const PTZCAM_FACE: ModuleFace = {
+  glyph: 'none',
+  order: ['ptzcam-connect-{n}', 'pan', 'tilt', 'zoom', 'slew'],
+  extension: 'ptzcam',
+  pages: [
+    {
+      id: 'camera',
+      label: 'camera',
+      hint:
+        'CONNECT is the one-time-per-origin Web-MIDI grant plus the search for the PT-PTZ '
+        + "helper's virtual port pair; until it is granted this module has no camera to drive "
+        + 'and every knob below is a no-op. Which camera this module drives is picked in the '
+        + "faceplate's device body, and remembered with the patch.",
+      controls: ['ptzcam-connect-{n}'],
+    },
+    {
+      id: 'aim',
+      label: 'aim',
+      hint:
+        'The base value each axis is sent at, summed with whatever is patched into the matching '
+        + 'CV jack — so with the knobs at default a patched LFO or joystick IS the aim and these '
+        + 'become stage trim. What the sum MEANS is the camera\'s to say: an absolute axis reads '
+        + 'it as a position, a velocity axis as a rate, and the lamps on the device body say '
+        + 'which each axis is. SLEW rate-limits absolute motion only — a commanded stop is never '
+        + 'slewed.',
+      controls: ['pan', 'tilt', 'zoom', 'slew'],
+    },
+  ],
+};
+
 export const ptzcamDef: AudioModuleDef = {
   // String LITERALS, not constants: module-manifest.ts extracts these fields
   // with a ?raw regex and cannot resolve a reference.
@@ -88,12 +145,24 @@ export const ptzcamDef: AudioModuleDef = {
     { id: 'slew', label: 'slew', defaultValue: 0.3, min: 0, max: 1, curve: 'linear' },
   ],
 
+  face: PTZCAM_FACE,
+
+  // The CONNECT gesture is not a `ParamDef` — it writes nothing, it asks the
+  // browser for permission — so it reaches `face.order` through the family
+  // key-space, exactly as midiclock's does. `testidPrefix` already appears on
+  // the legacy card (`ptzcam-connect-{id}`), so module-docs-lint's
+  // card-drift clause holds with no card edit.
+  controlFamilies: [
+    { id: 'ptzcam-connect', label: 'Connect camera', kind: 'other', testidPrefix: 'ptzcam-connect' },
+  ],
+
   docs: {
     explanation:
       'Drives a physical PTZ camera from the patch. It sends MIDI sysex to the PT-PTZ helper ' +
       'app running on the same machine, which translates into USB camera control — the camera ' +
       'physically pans, tilts and zooms. The helper exposes one MIDI pair per connected camera ' +
-      '(PT-PTZ-…); the card picks which camera this module drives, so two modules can run two ' +
+      "(PT-PTZ-…); the faceplate's device body picks which camera this module drives, so two " +
+      'modules can run two ' +
       "cameras. The module carries no audio or video of its own — the camera's picture reaches " +
       'the rack through a normal camera input. Each axis follows what the camera itself ' +
       'reports in the bind handshake: an ABSOLUTE axis (NexiGo P610 pan/tilt/zoom, Logitech ' +
@@ -118,6 +187,8 @@ export const ptzcamDef: AudioModuleDef = {
       tilt: 'Base tilt, ±1. Position on an absolute axis, rate on a velocity axis. CV on tilt_cv adds to it.',
       zoom: 'Base zoom, 0 wide to 1 full telephoto. CV on zoom_cv adds to it.',
       slew: 'Rate limit on absolute-axis motion, fractions of full range per second on a square curve; 1 is instant. Velocity axes ignore it.',
+      'ptzcam-connect-{n}':
+        "The gesture that makes the module do anything at all, and it is two grants in one. Web MIDI shows no port until the browser consents — one prompt, once per origin — and the PT-PTZ helper (tools/pt-ptz, started with start_ptz.sh) is what publishes the virtual PT-PTZ-… pair a camera lives behind, so before this press there is no port to bind, no camera to ask about, and PAN, TILT, ZOOM and SLEW all send nothing. Pressing it grants access, resolves the pair this module is pointed at (the first PT-PTZ-… pair unless a camera is picked in the device body), and requests the caps handshake that tells the module which axes are absolute and which are velocity. It is safe to press again: on an already-granted origin it simply re-resolves, which is what re-binds a helper that was restarted or a camera that was replugged. The outcome is always nameable — bound, no helper port, no caps reply, camera absent, or one of the browser's own refusals — and it is the device body's lamps and error line that name it.",
     },
   },
 
@@ -154,13 +225,21 @@ export const ptzcamDef: AudioModuleDef = {
       const data = (live?.data as Record<string, unknown> | undefined) ?? {};
       return typeof data.device === 'string' && data.device !== '' ? data.device : null;
     }
+    // ⚠ LOCAL_ORIGIN, which it was NOT before this face landed. The UndoManager
+    // tracks exactly `LOCAL_ORIGIN` (graph/store.ts), so an untagged
+    // `ydoc.transact` synced the camera pick to every rack-mate and never
+    // reached Cmd-Z — the same silent undo bypass `mutateNode` exists to close,
+    // found here because the face makes the picker a first-class control. The
+    // write stays in the FACTORY rather than moving to `mutateNode` in a surface
+    // because both surfaces call it through `selectPort`, and because the
+    // factory must be able to re-point itself with no UI mounted.
     function writeDeviceSelection(name: string | null): void {
       ydoc.transact(() => {
         const live = livePatch.nodes[nodeId];
         if (!live) return;
         if (!live.data) live.data = {};
         (live.data as Record<string, unknown>).device = name ?? '';
-      });
+      }, LOCAL_ORIGIN);
     }
 
     let binding: PtzBinding | null = null;

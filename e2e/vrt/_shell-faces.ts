@@ -3761,6 +3761,47 @@ export const FACES = [
     // and nothing that advances between frames. The lamps change only when
     // `notify()` fires, and `notify()` fires only on a MIDI transport message.
   },
+  // ── PTZ CAM — the SECOND binder baselined, on midiclock's argument with a
+  //    SECOND independent reason it cannot drift ──────────────────────────────
+  {
+    type: 'ptzcam',
+    // TWO bands: `camera` (the CONNECT cell) and `aim` (the four trim knobs).
+    // Nothing is padded to reach a tab rail — `DOCK_TAB_MIN_BANDS` is 7.
+    pages: 2,
+
+    // ⚠ THE DETERMINISM ARGUMENT IS midiclock's, DOUBLED. A freshly spawned
+    // ptzcam has no MIDI access — `requestMIDIAccess` is never called until
+    // someone presses CONNECT, and this scene presses nothing (`midi.spec.ts`
+    // pins "page load never requests Web-MIDI access", and `ptz-midi.ts`'s
+    // header states it as a design constraint). So `listPtzOutputNames()`
+    // returns `[]` NOT because the runner has no cameras but because `access`
+    // is null and the function short-circuits on it. The picker renders exactly
+    // one option — its own `— first camera —` literal — the binding is `idle`,
+    // and the body paints its pre-connect hint with the LINK lamp dark.
+    //
+    // ⚠ AND THE SECOND REASON IS WHY THIS IS SAFER THAN midiclock's, not merely
+    // as safe. Even a runner that HAD granted sysex MIDI would still show an
+    // empty roster, because the roster is filtered to ports whose name begins
+    // `PT-PTZ` — names published by a native helper process (tools/pt-ptz)
+    // that exists on no CI machine. Two independent conditions, either of which
+    // alone makes the capture deterministic, and reaching the hardware-dependent
+    // state requires a gesture this suite does not perform.
+    //
+    // ⚠ THE AXIS LAMPS ARE STRUCTURALLY OUT OF FRAME, which is the half worth
+    // stating because it is the surface's most interesting content. They render
+    // only inside `{#if status.caps}`, and `caps` is populated exclusively by an
+    // inbound sysex frame from a real camera. With no access there is no port,
+    // with no port no handshake, with no handshake no caps — so the block cannot
+    // paint here at all. Their strings are pinned in
+    // `ptzcam-status-model.test.ts` and their wiring in
+    // `ptzcam-face-model.test.ts`; the pixels are the owner's hardware to judge.
+    //
+    // ⚠ NO `videoFaceWhy` AND NO `simPin`. `domain: 'audio'`, `outputs: []`, no
+    // canvas anywhere on the surface: there is no clock to pin and nothing that
+    // advances between frames. The lamps change only when the binding layer
+    // bumps `ptzMidiVersion`, which happens only on a MIDI access/port/handshake
+    // event — none of which can occur without the press.
+  },
   // ── SYNESTHESIA (2026-08-24) ──────────────────────────────────────────────
   {
     type: 'synesthesia',

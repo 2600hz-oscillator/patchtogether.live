@@ -682,6 +682,85 @@ const EXTENSION_BODY_ROLES: Readonly<Record<string, BodyRule>> = {
       + 'control captions, and an ERROR that is absent whenever nothing is wrong.',
   },
 
+  // ── PTZCAM — the THIRD status body, the SECOND binder, and the first whose
+  //    subject is a piece of hardware OUTSIDE the computer ────────────────────
+  //
+  // midiclock's subject is a MIDI device attached to this machine. This one's is
+  // a physical PTZ camera reached through a native helper process (tools/pt-ptz)
+  // that translates sysex into USB camera control — so there are TWO things that
+  // must be true before anything works, and the body's whole job is saying which
+  // of them is not.
+  //
+  // TEXT ON THE SURFACE, exhaustively: the camera `<select>`'s option NAMES
+  // (`PT-PTZ-…` port names plus the `— first camera —` default and the
+  // `(offline)` suffix on a saved-but-absent pick), the `Camera` control
+  // CAPTION, four static lamp captions (LINK / PAN / TILT / ZOOM), and — only
+  // when something is wrong — the FAULT line, `role="alert"`, absent whenever
+  // nothing is wrong. Plus one EMPTY-STATE instruction before any grant, which
+  // is the licence midiclock and es9 already hold and is unavoidable here for
+  // the same reason: the gate is a browser permission prompt, and no in-page
+  // affordance can substitute for saying "press it".
+  //
+  // ⚠ THE `(offline)` SUFFIX IS AN OPTION NAME, NOT A STATE WORD, and the
+  // distinction is load-bearing rather than lawyerly. `node.data.device` is a
+  // saved port NAME; a patch reloaded before the helper starts holds a name the
+  // live roster does not contain, and a `<select>` bound to a missing value
+  // silently renders its first option instead — so the player's saved camera
+  // would be lost BY RENDERING. The synthetic row is what keeps the choice
+  // visible, and it names the thing that is not there.
+  //
+  // ⚠ THE ONE DELETED READOUT IS THE AXIS-MODE LINE (`pan abs · tilt abs ·
+  // zoom abs`), and it is the entry's interesting half twice over.
+  //
+  // It is not decoration: the axis mode is the SEMANTICS OF EVERY OTHER CONTROL
+  // on the module. An ABSOLUTE axis reads knob+CV as a position and obeys SLEW;
+  // a VELOCITY axis reads the same number as a rate, treats zero as an explicit
+  // stop inside a deadzone, and ignores SLEW entirely (a commanded stop must
+  // never be slewed). Deleting it outright would leave four knobs whose meaning
+  // is unknowable from the face.
+  //
+  // So it is THREE LAMPS — PAN / TILT / ZOOM, lit on VELOCITY, sentence on
+  // `aria-label` — and the block renders ONLY inside `{#if status.caps}`. That
+  // guard is the part a naive port drops. The underlying fact is three-valued
+  // (`abs | vel | none`) and ABSENT before the handshake, so three unguarded
+  // booleans would paint pre-bind exactly as they paint for a bound all-absolute
+  // NexiGo P610 — all dark — and the face would be asserting "all three axes are
+  // positions" about a module that knows nothing about any camera yet. Hiding
+  // the block makes "unknown" the indicator's ABSENCE rather than one of its
+  // states, which is what the legacy card's `{#if modeLine !== null}` did.
+  //
+  // ⚠ NO CONNECT BUTTON HERE: the gesture is a ranked `action` cell that reaches
+  // the LANE TILE, which is the whole reason it is a cell. ⚠ NO STATUS REGISTRY,
+  // for midiclock's reason rather than cameraInput's — the sysex send loop lives
+  // in the module FACTORY on the scheduler tick and has always run with no
+  // surface mounted, so promotion parks no live card off-screen and there is no
+  // second owner. ⚠ NO SCREEN SWITCH and NO WATCH MARK: `domain: 'audio'` with
+  // `outputs: []`, no canvas, and no VideoEngine pull set to fall out of — there
+  // is no producer here that hiding a surface could stop. ⚠ IT MUST NOT GROW A
+  // CANVAS: the role predicate greps raw source, and beyond the gate, attest
+  // basis membership is derived from CONTENT.
+  ptzcam: {
+    role: 'status-primitive',
+    why:
+      'the CAMERA BINDING for the PTZ head: the live `PT-PTZ-*` roster picker with its '
+      + '`(offline)` synthetic row, the nine-kind LINK lamp, the `role="alert"` fault line, and '
+      + 'the three per-axis mode lamps (lit = VELOCITY). The picker cannot be a face cell for the '
+      + "reason midiclock states above — its roster lives on the app's sysex MIDI access behind "
+      + '`requestMIDIAccess({sysex:true})`, differs per machine and changes when the helper '
+      + 'starts, so it is neither a `ParamDef` nor an `options` roster (a fixed set known when '
+      + 'the def is authored). ⚠ CONNECT and the four trim knobs are NOT duplicated here: all '
+      + 'five are ranked cells that reach the lane, and a body carrying them too would be a '
+      + 'second implementation of controls the face already owns. ⚠ The axis lamps replace the '
+      + "card's `pan abs · tilt abs · zoom abs` line, and they render only inside `{#if caps}` "
+      + 'because the fact is three-valued and ABSENT pre-handshake — unguarded booleans would '
+      + 'make "no camera yet" pixel-identical to "all three axes absolute". ⚠ No status registry '
+      + '(the sysex send loop is in the factory on the scheduler tick and runs with no surface '
+      + 'mounted), no screen switch and no watch mark (domain audio, `outputs: []`, no canvas). '
+      + 'Every measurement goes through `StatusLed` into `aria-label`/`title`; the only text '
+      + 'nodes are option NAMES, control captions, an empty-state instruction, and an ERROR that '
+      + 'is absent whenever nothing is wrong.',
+  },
+
   // ── ES-9 — the LINK STATUS strip, and the first body in this roster that
   //    carries no picker at all ──────────────────────────────────────────────
   es9: {

@@ -2523,6 +2523,7 @@ ptzcam param pan -1..1 linear default=0
 ptzcam param slew 0..1 linear default=0.3
 ptzcam param tilt -1..1 linear default=0
 ptzcam param zoom 0..1 linear default=0
+ptzcam family ptzcam-connect kind=other prefix=ptzcam-connect
 push2Control meta domain=meta maxInstances=1
 push2Control family push2-control-connect kind=other prefix=push2-control-connect
 qbrt meta domain=audio
