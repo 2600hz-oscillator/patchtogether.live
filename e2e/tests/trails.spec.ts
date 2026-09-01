@@ -628,6 +628,131 @@ test('@trails NOTE MODE steers x1 — a different note is a different level → 
   errorWatch.assertClean();
 });
 
+// ═══════════ THE POLY NOTE BUSES ═══════════
+//
+// AGENTS.md rule 8, for the poly half: the REAL default-mode source through the
+// module to an AUDIBLE-OUTPUT assertion. Nothing is stubbed but the USB cable.
+//
+//   [simulated Bela Trails, NOTE MODE] --note-on per axis on the wire-->
+//   trails.poly1 --polyPitchGate--> tidyVco.poly ; tidyVco.out_l --> SCOPE.ch1
+//
+// TIDY VCO is a real polyphonic voice whose amp-EG sustain defaults to 0.75, so
+// a held lane gate sustains and the assertion is about the module rather than
+// about an envelope's decay.
+//
+// ⚠ THE CC-MODE STEP IS A SECOND NEGATIVE CONTROL, and the strongest one here.
+// The poly buses are documented as alive ONLY in note mode; a full CC gesture
+// that leaves the voice silent is what proves that end to end, and it would
+// catch a poly port wired to something always-on.
+
+/** Notes for the poly chain. Well away from C4 (= 0 V), so a lane sitting at
+ *  its resting 0 cannot be mistaken for a pitch that was actually written. */
+const POLY_NOTE_X = 48;
+const POLY_NOTE_Y = 55;
+
+test('@trails NOTE MODE plays a real poly voice through poly1 → audible', async ({
+  page,
+  rack,
+  errorWatch,
+}) => {
+  void rack;
+  await spawnPatch(
+    page,
+    [
+      { id: 'tr', type: 'trails', position: { x: 60, y: 60 }, domain: 'audio' },
+      { id: 'voice', type: 'tidyVco', position: { x: 420, y: 60 }, domain: 'audio' },
+      { id: 'scp', type: 'scope', position: { x: 820, y: 60 }, domain: 'audio', params: { timeMs: 200 } },
+    ],
+    [
+      {
+        id: 'e-poly',
+        from: { nodeId: 'tr', portId: 'poly1' },
+        to: { nodeId: 'voice', portId: 'poly' },
+        sourceType: 'polyPitchGate',
+        targetType: 'polyPitchGate',
+      },
+      {
+        id: 'e-scope',
+        from: { nodeId: 'voice', portId: 'out_l' },
+        to: { nodeId: 'scp', portId: 'ch1' },
+        sourceType: 'audio',
+        targetType: 'audio',
+      },
+    ],
+  );
+
+  // (1) NEGATIVE CONTROL. No notes, no lanes gated, the voice is silent.
+  const before = await readScopePeakOverWindow(page, 'scp', SILENCE_WINDOW_MS);
+  expect(before.polls, 'the SCOPE was actually sampled').toBeGreaterThan(0);
+  expect(
+    before.rms,
+    `an ungated poly voice must be silent — ${describeScopeWindow(before)}`,
+  ).toBeLessThan(AUDIBLE_FLOOR);
+
+  const installed = await installSim(page);
+  expect(installed, 'simulated Trails installed + attached (needs VITE_E2E_HOOKS)').toBe(true);
+
+  // (2) ⚠ SECOND NEGATIVE CONTROL: a full CC-mode gesture. The x/y jacks move
+  //     and the contact gate rises, but the device is sending NO notes — so the
+  //     poly bus must stay at rest and the voice must stay silent.
+  await page.evaluate(() => {
+    const w = globalThis as unknown as { __trailsSim?: TrailsLoopSim };
+    w.__trailsSim!.glide(1, 16, { x: 0.1, y: 0.1 }, { x: 0.9, y: 0.9 });
+  });
+  const ccState = await trailsState(page, 'tr');
+  expect(ccState?.axisMessages, 'the CC gesture really did arrive').toBeGreaterThan(0);
+  const duringCc = await readScopePeakOverWindow(page, 'scp', SILENCE_WINDOW_MS);
+  expect(
+    duringCc.rms,
+    `the poly bus is NOTE-MODE ONLY — a CC gesture must not play the voice `
+      + `(${describeScopeWindow(duringCc)})`,
+  ).toBeLessThan(AUDIBLE_FLOOR);
+
+  // (3) The player enables pitch quantisation. Now the device sends notes, and
+  //     the SAME parse feeds the same channel's poly bus.
+  await page.evaluate(
+    ({ x, y }) => {
+      const w = globalThis as unknown as { __trailsSim?: TrailsSim };
+      w.__trailsSim!.noteTouch(1, x, y);
+    },
+    { x: POLY_NOTE_X, y: POLY_NOTE_Y },
+  );
+
+  // (4) THE AUDIBLE ASSERTION. Two lanes gated, a real worklet voice, real
+  //     sound at the scope.
+  const playing = await readScopePeakOverWindow(page, 'scp', AUDIBLE_CAP_MS, {
+    untilPeak: AUDIBLE_FLOOR,
+  });
+  expect(playing.polls, 'the SCOPE was sampled while the voice played').toBeGreaterThan(0);
+  expect(
+    playing.rms,
+    `a quantised note must PLAY the poly voice — ${describeScopeWindow(playing)}`,
+  ).toBeGreaterThan(AUDIBLE_FLOOR);
+  expect(playing.rms, 'the note RAISED the output').toBeGreaterThan(duringCc.rms + 0.02);
+  expect(playing.nonzeroSamples, 'a structured signal, not a single glitch').toBeGreaterThan(50);
+
+  // (5) THE OTHER DIRECTION. Releasing both axes drops both lane gates and the
+  //     voice releases. Measured with `sampleScopeRms` for its LO — a max-hold
+  //     window cannot assert silence straight after audio (see the note in the
+  //     first spec), and the amp EG needs its release to run out.
+  await page.evaluate(
+    ({ x, y }) => {
+      const w = globalThis as unknown as { __trailsSim?: TrailsSim };
+      w.__trailsSim!.noteRelease(1, x, y);
+    },
+    { x: POLY_NOTE_X, y: POLY_NOTE_Y },
+  );
+  const released = await sampleScopeRms(page, 'scp', 40, 25);
+  expect(released.samples, 'the SCOPE was sampled while releasing').toBeGreaterThan(0);
+  expect(
+    released.lo,
+    `releasing both axes must close the poly voice `
+      + `(lo=${released.lo.toFixed(4)} hi=${released.hi.toFixed(4)} samples=${released.samples})`,
+  ).toBeLessThan(AUDIBLE_FLOOR);
+
+  errorWatch.assertClean();
+});
+
 test('@trails MON reports the traffic the module does NOT understand', async ({
   page,
   errorWatch,
@@ -661,7 +786,7 @@ test('@trails MON reports the traffic the module does NOT understand', async ({
   });
 
   const log = page.getByTestId('trails-mon-text-tr');
-  await expect(log).toContainText('ch1 CC47', { timeout: 10_000 });
+  await expect(log).toContainText('ch1[1X] CC47', { timeout: 10_000 });
   // ⚠ THE COUNT, not the words. The header prints "N not decoded" even when N
   // is zero, so asserting the bare phrase would pass on a monitor that had
   // silently dropped every unrecognised frame — the one failure this test
@@ -669,7 +794,7 @@ test('@trails MON reports the traffic the module does NOT understand', async ({
   await expect(log).toContainText('5 not decoded');
   await expect(log).toContainText('trails-decode.ts');
   // The row the module DOES understand is there too, unflagged.
-  await expect(log).toContainText('ch1 CC15');
+  await expect(log).toContainText('ch1[1X] CC15');
 
   // ⚠ THE READOUT MUST NOT LIE ABOUT VELOCITY. A strike and its running-status
   // release share one row — the release is a note-ON at velocity 0 — so the
@@ -691,7 +816,7 @@ test('@trails MON reports the traffic the module does NOT understand', async ({
   await expect(log).not.toContainText('vel=0');
   // …and the label carries no momentary state that could freeze out of step
   // with the value beside it.
-  await expect(log).toContainText('ch1 NOTE 81');
+  await expect(log).toContainText('ch1[1X] NOTE 81');
   await expect(log).not.toContainText('NOTE 81 on');
 
   errorWatch.assertClean();

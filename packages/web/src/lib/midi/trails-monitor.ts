@@ -41,6 +41,12 @@
 // ⚠ NO WINDOW, NO Y.DOC, NO ENGINE. Plain data in, plain data out, fixed-size
 // state. A 250 msg/s stream costs one map bump and one ring write per message.
 
+// The ONE import, and it is data rather than behaviour: the channel→axis map,
+// so a row can name the jack a MIDI channel drives. See `describeTrailsFrame`
+// for why annotating with the decoder's own belief is a diagnosis rather than a
+// monitor agreeing with itself.
+import { TRAILS_AXIS_MAP } from '$lib/midi/trails-decode';
+
 /** Distinct message shapes the rolling log remembers. A SHAPE, not a message:
  *  "channel 1, CC 15" is one row whose count grows and whose value updates, so
  *  a 250 msg/s stream stays readable instead of scrolling a fixed window's
@@ -194,6 +200,24 @@ export function describeTrailsFrame(data: ArrayLike<number>): TrailsFrameDescrip
   // have a reader comparing "ch0" against a table that starts at 1 — an
   // off-by-one argument in the one place whose entire job is settling one.
   const ch = (status & 0x0f) + 1;
+  // …AND ANNOTATED WITH THE JACK IT DRIVES.
+  //
+  // ⚠ THIS IS THE THIRD READOUT DEFECT, and the one that cost the most. A MIDI
+  // channel is NOT a Trails channel: the device spends two MIDI channels per
+  // Trails channel, one per axis, so MIDI ch3 and ch4 are Trails channel 2's X
+  // and Y. Printing the bare MIDI number invited exactly the reading it got —
+  // the owner saw "ch3 NOTE 63 / ch4 NOTE 99", looked at gate jacks 3 and 4,
+  // found them dead, and reported the gates as broken. They were firing
+  // correctly, on jack 2, the whole time.
+  //
+  // The annotation is the module's BELIEF about that channel, taken from the
+  // same TRAILS_AXIS_MAP the decoder uses. That is deliberate and is not the
+  // monitor re-deriving a decode it is supposed to be able to contradict: if
+  // the map is wrong for some firmware, this prints the wrong belief right next
+  // to the traffic that disproves it, which is the diagnosis rather than a
+  // cover-up. A channel the map does not claim is annotated as unused.
+  const belief = TRAILS_AXIS_MAP[status & 0x0f];
+  const jack = belief ? `${belief.channel}${belief.axis.toUpperCase()}` : '--';
   const d1 = data.length >= 2 ? data[1]! & 0x7f : null;
   const d2 = data.length >= 3 ? data[2]! & 0x7f : null;
 
@@ -207,7 +231,7 @@ export function describeTrailsFrame(data: ArrayLike<number>): TrailsFrameDescrip
 
   switch (kind) {
     case STATUS_CC:
-      return plain(`cc-${ch}-${d1}`, `ch${ch} CC${d1}`, d2);
+      return plain(`cc-${ch}-${d1}`, `ch${ch}[${jack}] CC${d1}`, d2);
     case STATUS_NOTE_ON:
       // ONE key for the strike and its running-status release. Splitting them
       // would double the note rows and, at a 32-row cap on a device sending
@@ -216,7 +240,7 @@ export function describeTrailsFrame(data: ArrayLike<number>): TrailsFrameDescrip
       // be smuggled into the label is carried by `onVelocity` instead.
       return {
         key: `note-${ch}-${d1}`,
-        label: `ch${ch} NOTE ${d1}`,
+        label: `ch${ch}[${jack}] NOTE ${d1}`,
         value: d2,
         valueLabel: 'vel',
         // Velocity 0 is the release, not a strike at zero force.
@@ -225,19 +249,19 @@ export function describeTrailsFrame(data: ArrayLike<number>): TrailsFrameDescrip
     case STATUS_NOTE_OFF:
       return {
         key: `noteoff-${ch}-${d1}`,
-        label: `ch${ch} NOTE ${d1} off`,
+        label: `ch${ch}[${jack}] NOTE ${d1} off`,
         value: d2,
         valueLabel: 'vel',
         onVelocity: null,
       };
     case STATUS_PITCH_BEND:
-      return plain(`bend-${ch}`, `ch${ch} PITCH-BEND`, d2);
+      return plain(`bend-${ch}`, `ch${ch}[${jack}] PITCH-BEND`, d2);
     case STATUS_POLY_AFTERTOUCH:
-      return plain(`pat-${ch}-${d1}`, `ch${ch} POLY-AT ${d1}`, d2);
+      return plain(`pat-${ch}-${d1}`, `ch${ch}[${jack}] POLY-AT ${d1}`, d2);
     case STATUS_CHANNEL_AFTERTOUCH:
-      return plain(`cat-${ch}`, `ch${ch} CHAN-AT`, d1);
+      return plain(`cat-${ch}`, `ch${ch}[${jack}] CHAN-AT`, d1);
     case STATUS_PROGRAM:
-      return plain(`pc-${ch}`, `ch${ch} PROGRAM`, d1);
+      return plain(`pc-${ch}`, `ch${ch}[${jack}] PROGRAM`, d1);
     default: {
       const hex = status.toString(16).toUpperCase().padStart(2, '0');
       return plain(`raw-${status}`, `0x${hex} (unknown status)`, d1);

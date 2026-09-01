@@ -204,6 +204,31 @@ export const TRAILS_LOOP_PLAYHEAD_CHANNEL: TrailsChannel = 1;
  */
 export const TRAILS_LOOP_RETRIGGER_SCOPE: 'first' | 'active' = 'active';
 
+/**
+ * The velocity Trails puts on every note-on. MEASURED ON HARDWARE, NOT INFERRED.
+ *
+ * ⚠ THE QUESTION IS SETTLED AND THE ANSWER IS "NO TOUCH FORCE". The manual never
+ * uses the word "velocity", so this was an open hardware item — and the fixed
+ * MON readout answered it in one paste (owner, 2026-09-01, note mode, 12643
+ * messages across a full gesture session): EVERY note row, on every axis and
+ * every channel, read `vel=127`.
+ *
+ *   ch4 NOTE 71  x514  vel=127      ch4 NOTE 56  x240  vel=127
+ *   ch3 NOTE 63  x336  vel=127      ch4 NOTE 77  x226  vel=127
+ *   ch3 NOTE 99  x294  vel=127      ch3 NOTE 83  x204  vel=127
+ *
+ * A constant across 500+ strikes on one row is not a pad that happened to be
+ * pressed identically each time; it is a firmware that does not transmit force.
+ *
+ * CONSEQUENCE, STATED SO NOBODY RE-OPENS IT: there is no touch-size data on the
+ * wire, so a velocity-derived output would be a jack that can never carry
+ * information — the same mistake the absent `bar` output is documented to avoid.
+ * Do not build one. This constant exists so the simulated device sends what the
+ * hardware sends, and so a firmware that later DOES vary velocity shows up as a
+ * disagreement with a number that has a citation.
+ */
+export const TRAILS_NOTE_VELOCITY = 127;
+
 /** The window of MIDI note numbers one axis's 0..1 travel is spread across. */
 export interface TrailsNoteRange {
   /** The note that reads 0.0 (and everything below it). */
@@ -335,6 +360,35 @@ export type TrailsEvent =
        */
       source: 'note' | 'activity' | 'loop';
     }
+  /**
+   * A NOTE-MODE strike or release, per AXIS — the quantised pitch itself.
+   *
+   * ⚠ THIS IS NOT A SECOND PARSER, and the distinction matters. One note
+   * message is two facts, exactly as one CC message is: where the axis IS
+   * (`axis`) and whether it is sounding (`gate`). A note carries a third that a
+   * CC simply does not have — WHICH PITCH — and that is the only thing this
+   * event adds. It rides the same branch, in the same order, and CC mode never
+   * produces one, which is what makes the poly outputs silent in CC mode by
+   * construction rather than by a mode flag someone has to remember to check.
+   *
+   * PER AXIS, not per channel, because the poly bus is per-axis: one Trails
+   * channel's X and Y are two independent voices on two lanes. The `gate` event
+   * beside this one is the channel-level OR of the two, which is what the
+   * single-jack gate outputs need.
+   */
+  | {
+      kind: 'note';
+      channel: TrailsChannel;
+      axis: TrailsAxis;
+      /** The MIDI note number this message carried. */
+      note: number;
+      /** Was this a STRIKE (true) or a release (false)? Pitch is written on a
+       *  strike only — last-note priority, matching the axis path. */
+      on: boolean;
+      /** Is this AXIS still holding any note after the message? The level a
+       *  poly lane's gate should sit at. */
+      sounding: boolean;
+    }
   /** One MIDI clock tick (0xF8). MIDI is fixed at 24 of these per quarter. */
   | { kind: 'clock' }
   /** Transport moved. `reset` is true for Start (0xFA) and false for Continue
@@ -392,8 +446,30 @@ interface ChannelState {
   /** Last fine half seen for each axis. Starts at 0 — the value an MSB-only
    *  device implies. */
   lsb: { x: number; y: number };
-  /** MIDI notes currently held for this channel. */
-  held: Set<number>;
+  /**
+   * MIDI notes currently held, PER AXIS.
+   *
+   * ⚠ SPLIT BY AXIS, AND THE SPLIT IS A BUG FIX. One Trails channel occupies
+   * TWO MIDI channels — its X and its Y — and this state is keyed by the TRAILS
+   * channel, so both axes' notes used to land in one `Set<number>`. A `Set`
+   * DEDUPLICATES, so the moment X and Y quantised to the SAME note number
+   * (routine: any gesture on the pad's diagonal, or any scale coarse enough
+   * that both coordinates land on one degree) the two strikes collapsed into a
+   * single entry — and releasing X emptied the set and DROPPED THE CHANNEL'S
+   * GATE while Y was still sounding. Worse, Y's own release then found nothing
+   * to delete and computed no level change, so it emitted nothing and the gate
+   * stayed low until the next strike.
+   *
+   * Reproduced before the fix, on the exact shape the owner's hardware sends:
+   *   0x92 71 127 (ch2 X) -> gate HIGH
+   *   0x93 71 127 (ch2 Y) -> no event, correct: the channel is already sounding
+   *   0x92 71 0   (release X, Y STILL HELD) -> gate LOW   <- the defect
+   *
+   * With the sets split, "is this channel sounding" is the OR of its two axes,
+   * which is what a contact gate means and what the CC-mode activity path has
+   * always computed.
+   */
+  held: { x: Set<number>; y: Set<number> };
   /** Has this channel EVER produced a note? Once true the activity path is
    *  permanently off for it — see TRAILS_ACTIVITY_GATE_TIMEOUT_MS. */
   sawNote: boolean;
@@ -406,7 +482,7 @@ function newChannelState(): ChannelState {
   return {
     msb: { x: null, y: null },
     lsb: { x: 0, y: 0 },
-    held: new Set<number>(),
+    held: { x: new Set<number>(), y: new Set<number>() },
     sawNote: false,
     lastAxisMs: Number.NEGATIVE_INFINITY,
     gateHigh: false,
@@ -597,8 +673,8 @@ export function createTrailsDecoder(opts: TrailsDecoderOptions = {}): TrailsDeco
       // is still no edge, note-off while high is the falling edge that was lost.
       const wasHigh = s.gateHigh;
       s.sawNote = true;
-      if (isOn) s.held.add(note);
-      else s.held.delete(note);
+      if (isOn) s.held[ref.axis].add(note);
+      else s.held[ref.axis].delete(note);
 
       // ⚠ THE NOTE IS THE AXIS. This is the whole fix, and it is deliberately
       // written as a WRITE INTO THE CC LATCHES followed by the ordinary
@@ -636,7 +712,24 @@ export function createTrailsDecoder(opts: TrailsDecoderOptions = {}): TrailsDeco
         emitAxis(ref, s, out);
       }
 
-      const high = s.held.size > 0;
+      // The quantised pitch, per axis — the poly bus's raw material. Emitted
+      // for a release too, because a lane's gate has to fall.
+      out.push({
+        kind: 'note',
+        channel: ref.channel,
+        axis: ref.axis,
+        note,
+        on: isOn,
+        sounding: s.held[ref.axis].size > 0,
+      });
+
+      // ⚠ THE OR OF THE CHANNEL'S TWO AXES. A contact gate answers "is this
+      // Trails channel sounding", and a channel is sounding while EITHER of its
+      // coordinates is. Reading one axis alone — which a shared, deduplicating
+      // note set silently did — drops the gate mid-gesture. This is also the
+      // same question the CC-mode activity path answers, computed the same way,
+      // which is what keeps one parser rather than two.
+      const high = s.held.x.size > 0 || s.held.y.size > 0;
       s.gateHigh = high;
       if (high !== wasHigh) {
         out.push({ kind: 'gate', channel: ref.channel, high, source: 'note' });
@@ -749,7 +842,7 @@ export function encodeTrailsAxis(
 export function encodeTrailsNote(
   ref: TrailsAxisRef,
   note: number,
-  velocity = 100,
+  velocity: number = TRAILS_NOTE_VELOCITY,
   axisMap: readonly TrailsAxisRef[] = TRAILS_AXIS_MAP,
 ): number[] {
   const wireChannel = axisMap.findIndex((a) => a.channel === ref.channel && a.axis === ref.axis);

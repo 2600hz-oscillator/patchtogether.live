@@ -19,8 +19,8 @@ describe('trails-monitor: naming a frame', () => {
     // The wire nibble is 0-based and the manual's table starts at 1. A monitor
     // that printed the nibble would have its reader arguing about an off-by-one
     // with the one document it is being compared against.
-    expect(describeTrailsFrame([0xb0, 15, 64]).label).toBe('ch1 CC15');
-    expect(describeTrailsFrame([0xb7, 15, 64]).label).toBe('ch8 CC15');
+    expect(describeTrailsFrame([0xb0, 15, 64]).label).toBe('ch1[1X] CC15');
+    expect(describeTrailsFrame([0xb7, 15, 64]).label).toBe('ch8[4Y] CC15');
   });
 
   it('names the transport bytes rather than printing them raw', () => {
@@ -31,7 +31,7 @@ describe('trails-monitor: naming a frame', () => {
 
   it('an UNKNOWN status is reported by its hex rather than guessed at', () => {
     expect(describeTrailsFrame([0xf1, 0x20]).label).toBe('SYSTEM 0xF1');
-    expect(describeTrailsFrame([0xe0, 0, 64]).label).toBe('ch1 PITCH-BEND');
+    expect(describeTrailsFrame([0xe0, 0, 64]).label).toBe('ch1[1X] PITCH-BEND');
     expect(describeTrailsFrame([]).label).toBe('(empty frame)');
   });
 
@@ -63,10 +63,10 @@ describe('trails-monitor: tallying', () => {
     for (let i = 0; i < 9; i++) m.observe([CC_CH1, 47, i], false);
     const snap = m.snapshot();
     expect(snap.unrecognised).toBe(9);
-    const row = snap.rows.find((r) => r.label === 'ch1 CC47')!;
+    const row = snap.rows.find((r) => r.label === 'ch1[1X] CC47')!;
     expect(row.count).toBe(9);
     expect(row.decoded).toBe(false);
-    expect(snap.summary).toContain('ch1 CC47');
+    expect(snap.summary).toContain('ch1[1X] CC47');
     expect(snap.summary).toContain('9 not decoded');
     // The advice that turns the observation into an action is on the page.
     expect(snap.summary).toContain('trails-decode.ts');
@@ -91,7 +91,7 @@ describe('trails-monitor: tallying', () => {
     m.observe([CC_CH1, 22, 1], false);
     const snap = m.snapshot();
     expect(snap.truncated).toBe(true);
-    expect(snap.rows.map((r) => r.label).sort()).toEqual(['ch1 CC20', 'ch1 CC21', 'ch1 CC22']);
+    expect(snap.rows.map((r) => r.label).sort()).toEqual(['ch1[1X] CC20', 'ch1[1X] CC21', 'ch1[1X] CC22']);
   });
 
   it('is bounded — an unbounded firmware cannot grow the table without limit', () => {
@@ -140,7 +140,7 @@ describe('trails-monitor: the readout must not lie about velocity', () => {
       m.observe([NOTE_ON_CH2, 81, 97], true);
       m.observe([NOTE_ON_CH2, 81, 0], true);
     }
-    const row = m.snapshot().rows.find((r) => r.label === 'ch2 NOTE 81')!;
+    const row = m.snapshot().rows.find((r) => r.label === 'ch2[1Y] NOTE 81')!;
     expect(row.count, 'strikes and releases share one row').toBe(106);
     expect(row.lastValue, 'the raw last byte really was the release').toBe(0);
     expect(row.lastOnVelocity, 'THE FIX: the last STRIKE velocity survives').toBe(97);
@@ -180,7 +180,7 @@ describe('trails-monitor: the readout must not lie about velocity', () => {
     m.observe([NOTE_ON_CH2, 81, 97], true);
     m.observe([NOTE_ON_CH2, 81, 0], true);
     const row = m.snapshot().rows[0]!;
-    expect(row.label).toBe('ch2 NOTE 81');
+    expect(row.label).toBe('ch2[1Y] NOTE 81');
     expect(row.label, 'no momentary state smuggled into the name').not.toContain('on');
     expect(row.label).not.toContain('off');
   });
@@ -194,7 +194,7 @@ describe('trails-monitor: the readout must not lie about velocity', () => {
     m.observe([CC_CH1, 15, 10], true);
     m.observe([CC_CH1, 15, 99], false);
     const row = m.snapshot().rows[0]!;
-    expect(row.label).toBe('ch1 CC15');
+    expect(row.label).toBe('ch1[1X] CC15');
     expect(row.lastValue).toBe(99);
     expect(row.decoded).toBe(false);
   });
@@ -229,9 +229,9 @@ describe('trails-monitor: driven by the REAL decoder', () => {
     const snap = m.snapshot();
     expect(snap.total).toBe(5);
     expect(snap.unrecognised).toBe(2);
-    expect(snap.rows.find((r) => r.label === 'ch1 CC47')!.decoded).toBe(false);
-    expect(snap.rows.find((r) => r.label === 'ch9 CC15')!.decoded).toBe(false);
-    expect(snap.rows.find((r) => r.label === `ch1 CC${TRAILS_CC_PAIR.msb}`)!.decoded).toBe(true);
+    expect(snap.rows.find((r) => r.label === 'ch1[1X] CC47')!.decoded).toBe(false);
+    expect(snap.rows.find((r) => r.label === 'ch9[--] CC15')!.decoded).toBe(false);
+    expect(snap.rows.find((r) => r.label === `ch1[1X] CC${TRAILS_CC_PAIR.msb}`)!.decoded).toBe(true);
   });
 
   it('NOTE-MODE traffic reads as decoded, and the strike velocity is on the page', () => {
@@ -246,7 +246,7 @@ describe('trails-monitor: driven by the REAL decoder', () => {
     }
     const snap = m.snapshot();
     expect(snap.unrecognised).toBe(0);
-    expect(snap.rows.find((r) => r.label === 'ch1 NOTE 77')!.lastOnVelocity).toBe(97);
-    expect(snap.rows.find((r) => r.label === 'ch2 NOTE 81')!.lastOnVelocity).toBe(88);
+    expect(snap.rows.find((r) => r.label === 'ch1[1X] NOTE 77')!.lastOnVelocity).toBe(97);
+    expect(snap.rows.find((r) => r.label === 'ch2[1Y] NOTE 81')!.lastOnVelocity).toBe(88);
   });
 });

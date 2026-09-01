@@ -15,10 +15,31 @@
 // outputs, the MIDI subscription and `dispose()` live; `video` would drag a
 // module with no pixels into the WebGL attest basis.
 //
-// ── WHY EVERY OUTPUT IS cv OR gate ──────────────────────────────────────────
-// A modulation source must never declare a pitch-typed or poly output: those
-// make `isNoteSource` true and put the module on a note LANE, which is not what
-// a touch position is. X/Y are positions; the gates are contact.
+// ── WHY THE CV/GATE OUTPUTS ARE cv AND gate — AND WHY THE POLY ONES ARE NOT ──
+//
+// The original rule here read: "a modulation source must never declare a
+// pitch-typed or poly output: those make `isNoteSource` true". ⚠ THAT RULE IS
+// NOW DELIBERATELY BROKEN, with owner approval, and the reversal is recorded
+// rather than quietly edited away.
+//
+// X/Y stay `cv` and the contact gates stay `gate`, for the original reason: a
+// touch POSITION is not a pitch, and a `cv` cable in this rack is a normalised
+// modulation amount (ADR-004). Nothing about that changed.
+//
+// What was added is four `polyPitchGate` buses that exist ONLY in note mode,
+// where the device really is emitting pitches. That flips `isNoteSource` true,
+// and the cost of doing so was MEASURED rather than assumed:
+//
+//   `isNoteSource`'s only consumers are `resolveClipWiring` (returns null for a
+//   note source → not clip-eligible) and the column note-tap pass (skips note
+//   sources). BOTH describe wiring something INTO the module. TRAILS declares
+//   `inputs: []`, so every branch of `resolveClipWiring` already returned null
+//   and `isClipEligible(trailsDef)` was ALREADY false before this change.
+//   Verified by running both predicates against the def with and without a poly
+//   output: false → false. The contract flips; the behaviour does not.
+//
+// It does not touch audio-lane / mixer placement, which is decided by
+// `isChainAudioParticipant` / `resolveMainAudioOut`, not by `isNoteSource`.
 //
 // ── THE DATA-FLOW LAW ───────────────────────────────────────────────────────
 // A live gesture is 100–250 messages a second. Not one of them touches the
@@ -45,6 +66,8 @@
 //   g1..g4 (gate): the four channels' contact gates, RE-STRUCK once per loop
 //     repetition (see TRAILS_LOOP_RETRIGGER_NOTCH_S).
 //   clock (gate): a divided pulse train from the device's MIDI clock.
+//   poly1..poly4 (polyPitchGate): each channel's two axes as V/oct + gate,
+//     voice 0 = X and voice 1 = Y. ⚠ NOTE MODE ONLY — see TRAILS_POLY_LANE.
 //
 // ⚠ THERE IS NO `bar` OUTPUT, and that is a finding rather than an omission.
 // The device's MIDI table is eight rows of X/Y; the Bar is an assignable
@@ -63,6 +86,8 @@ import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
 import type { ParamDef } from '$lib/graph/types';
 import { createMidiScheduler } from '$lib/audio/midi-timing';
+import { createPolySender, type PolySender } from '$lib/audio/poly';
+import { midiToVOct } from '$lib/audio/note-entry';
 import { getSchedulerClock } from '$lib/audio/scheduler-clock';
 import {
   CLOCK_DIVISORS,
@@ -74,6 +99,7 @@ import {
 import {
   createTrailsDecoder,
   TRAILS_CHANNEL_COUNT,
+  type TrailsAxis,
   type TrailsChannel,
   type TrailsEvent,
 } from '$lib/midi/trails-decode';
@@ -107,6 +133,35 @@ export function trailsGatePortId(channel: TrailsChannel): string {
   return `g${channel}`;
 }
 export const TRAILS_CLOCK_PORT_ID = 'clock';
+
+/** Port id for one channel's poly note bus. */
+export function trailsPolyPortId(channel: TrailsChannel): string {
+  return `poly${channel}`;
+}
+
+/**
+ * Which poly LANE each axis occupies: X is voice 0, Y is voice 1.
+ *
+ * ── WHY FOUR 2-VOICE PORTS AND NOT ONE 8-VOICE PORT ─────────────────────────
+ *
+ * The bus is wide enough for one global port — `POLY_CHANNEL_PAIRS` is 16, so
+ * all eight of the device's simultaneous notes (4 channels x X and Y) would fit
+ * with room to spare. Width is NOT the reason. Two things that are measurable
+ * in this tree are:
+ *
+ *   1. ⚠ NO SHIPPED CONSUMER READS PAST LANE 4. `POLY_VOICES` in the CUBE
+ *      worklet is 5, `POLY_SUM_VOICES` in the shared poly oscillator sum is 5,
+ *      TIDY_VOICES is 5, sixstrum reads 6. A single global port would put
+ *      channel 3's axes on lanes 4-5 and channel 4's on lanes 6-7, and every
+ *      instrument in the rack would silently drop them — a jack that looks
+ *      patched and carries nothing, which is the exact failure this repo names
+ *      "green and silent". Per-channel puts X on lane 0 and Y on lane 1, inside
+ *      every consumer's window.
+ *   2. ROUTING IS THE POINT OF FOUR RECORDERS. Channel 1 into one voice and
+ *      channel 2 into another is the reason the hardware has four channels at
+ *      all; one merged bus would make that a patch you cannot express.
+ */
+export const TRAILS_POLY_LANE: Readonly<Record<TrailsAxis, number>> = { x: 0, y: 1 };
 
 // ── Params ──────────────────────────────────────────────────────────────────
 
@@ -399,12 +454,18 @@ export const trailsDef: AudioModuleDef = {
     // A divided clock is a TRIGGER, not a level: it fires once per edge and the
     // pulse width carries no meaning, which is exactly MIDICLOCK's `clock`.
     { id: 'clock', type: 'gate', edge: 'trigger' },
+    // The four per-channel note buses. NOTE-MODE ONLY — see the docs below and
+    // TRAILS_POLY_LANE for why there are four of these rather than one.
+    { id: 'poly1', type: 'polyPitchGate', label: 'poly 1' },
+    { id: 'poly2', type: 'polyPitchGate', label: 'poly 2' },
+    { id: 'poly3', type: 'polyPitchGate', label: 'poly 3' },
+    { id: 'poly4', type: 'polyPitchGate', label: 'poly 4' },
   ],
   params: [TRAILS_RANGE_PARAM, TRAILS_SMOOTH_PARAM, TRAILS_DIVISOR_PARAM],
 
   docs: {
     explanation:
-      "The Bela TRAILS eurorack module, read straight into the rack over its USB-C port. Trails is a quad touch-gesture recorder: an 85 by 85 mm multitouch pad whose four channels each record a finger gesture, loop it, and keep emitting an X position, a Y position and a contact gate long after you have taken your hand away. This module receives all of that as MIDI and hands it to the patch as twelve modulation jacks plus a clock. Mental model: your finger is a modulation source, and once you lift it the gesture keeps performing itself. The pad view on the card mirrors the physical surface one to one — up to four coloured touch points with fading trails, in the same coordinates the jacks emit — so you can see what the rack is receiving without looking down at the hardware. RANGE picks whether the X and Y jacks are the pad's own 0..1 coordinates (the default, so patching X into a video module's horizontal position puts the picture where your finger is) or bipolar around the pad's centre. SMOOTH glides the X and Y jacks toward each new sample instead of stepping, which turns a jittery fingertip into a sweep at the cost of trailing the hand. CLOCK DIV divides the device's own MIDI clock into a pulse train, so a recorded gesture and the rack can share a tempo. Nothing is streamed into the saved patch: the touch data is live engine state, so a gesture never bloats the document or reaches collaborators. Connecting asks the browser for MIDI permission when you press CONNECT and not before, so loading a patch that contains this module never raises a prompt. There is no MIDI back to the device — Trails takes its clock and reset as CV on its own jacks, so to slave it to the rack, patch a clock out of CV BUDDY into the module's clock input. Two things about the hardware are worth knowing before you patch it. The device transmits its X and Y positions and its transport, and nothing else: the gate you see on the module's own gate jacks is not a MIDI message, so the gates here are reconstructed from the stream — high while a channel is sending, re-struck at the top of every loop, and falling when the channel goes quiet. And the touch bar down the panel is not transmitted at all, and has no output jack of its own on the hardware either; it is an assignable modifier of the device's internal behaviour, so what it changes reaches this module in the shape of the X, Y and gate it shapes rather than as a signal you can patch. The bar is drawn on the pad view so the picture matches the panel, greyed to say it carries no data. MON opens a live readout of every MIDI message the device is sending, including any this module does not recognise, which is how to check what your firmware actually transmits. The third thing worth knowing is what happens when you turn on pitch quantisation. With both pitch and temporal quantisation enabled the device stops sending its continuous high-resolution positions and sends MIDI notes instead, quantised to the scale you picked. Those notes are the same two axes, on the same per-axis channels, so the X and Y jacks keep working: each note number is spread across the jack's travel, so playing up a scale walks the jack upward in even steps. Because a note number is already linear in semitones, the jack is a pitch-shaped signal in the same way a volt-per-octave control voltage is, just normalised into this rack's range rather than measured in volts. The travel a scale covers depends on how wide it is: the whole MIDI note range is spread across the jack, so a scale spanning an octave or two moves it by a tenth to a fifth of full scale rather than end to end. Turn RANGE to BI to double that swing, or use an attenuverter downstream to make a narrow scale reach further.",
+      "The Bela TRAILS eurorack module, read straight into the rack over its USB-C port. Trails is a quad touch-gesture recorder: an 85 by 85 mm multitouch pad whose four channels each record a finger gesture, loop it, and keep emitting an X position, a Y position and a contact gate long after you have taken your hand away. This module receives all of that as MIDI and hands it to the patch as twelve modulation jacks plus a clock. Mental model: your finger is a modulation source, and once you lift it the gesture keeps performing itself. The pad view on the card mirrors the physical surface one to one — up to four coloured touch points with fading trails, in the same coordinates the jacks emit — so you can see what the rack is receiving without looking down at the hardware. RANGE picks whether the X and Y jacks are the pad's own 0..1 coordinates (the default, so patching X into a video module's horizontal position puts the picture where your finger is) or bipolar around the pad's centre. SMOOTH glides the X and Y jacks toward each new sample instead of stepping, which turns a jittery fingertip into a sweep at the cost of trailing the hand. CLOCK DIV divides the device's own MIDI clock into a pulse train, so a recorded gesture and the rack can share a tempo. Nothing is streamed into the saved patch: the touch data is live engine state, so a gesture never bloats the document or reaches collaborators. Connecting asks the browser for MIDI permission when you press CONNECT and not before, so loading a patch that contains this module never raises a prompt. There is no MIDI back to the device — Trails takes its clock and reset as CV on its own jacks, so to slave it to the rack, patch a clock out of CV BUDDY into the module's clock input. Two things about the hardware are worth knowing before you patch it. The device transmits its X and Y positions and its transport, and nothing else: the gate you see on the module's own gate jacks is not a MIDI message, so the gates here are reconstructed from the stream — high while a channel is sending, re-struck at the top of every loop, and falling when the channel goes quiet. And the touch bar down the panel is not transmitted at all, and has no output jack of its own on the hardware either; it is an assignable modifier of the device's internal behaviour, so what it changes reaches this module in the shape of the X, Y and gate it shapes rather than as a signal you can patch. The bar is drawn on the pad view so the picture matches the panel, greyed to say it carries no data. MON opens a live readout of every MIDI message the device is sending, including any this module does not recognise, which is how to check what your firmware actually transmits. The third thing worth knowing is what happens when you turn on pitch quantisation. With both pitch and temporal quantisation enabled the device stops sending its continuous high-resolution positions and sends MIDI notes instead, quantised to the scale you picked. Those notes are the same two axes, on the same per-axis channels, so the X and Y jacks keep working: each note number is spread across the jack's travel, so playing up a scale walks the jack upward in even steps. Because a note number is already linear in semitones, the jack is a pitch-shaped signal in the same way a volt-per-octave control voltage is, just normalised into this rack's range rather than measured in volts. The travel a scale covers depends on how wide it is: the whole MIDI note range is spread across the jack, so a scale spanning an octave or two moves it by a tenth to a fifth of full scale rather than end to end. Turn RANGE to BI to double that swing, or use an attenuverter downstream to make a narrow scale reach further. And once you are in note mode you do not have to go through a control voltage at all: each channel has a POLY jack carrying that channel's two axes as actual notes, one voice for X and one for Y, which you can patch straight into any polyphonic instrument to hear the scale you picked without calibrating anything. Those jacks are silent in the ordinary continuous mode, because there are no notes to send. One thing this hardware will not give you is dynamics: every note it sends carries the same fixed velocity, measured on the device rather than assumed, so nothing here can tell a firm press from a light one.",
     inputs: {},
     outputs: {
       x1: "Channel 1's horizontal pad position. 0 is the left edge of the pad and 1 the right, or −1..+1 about the centre when RANGE is BI. It keeps streaming while a recorded gesture plays back, and holds its last value when the channel is idle. With pitch quantisation switched on the device sends notes instead of continuous positions, and this jack follows those notes: each note number lands at its own point along the travel, so a scale steps the jack rather than sliding it, and a released note holds the last pitch rather than dropping to zero.",
@@ -421,6 +482,11 @@ export const trailsDef: AudioModuleDef = {
       g4: "Channel 4's contact gate, high while that channel is active and re-struck at each loop repetition. See GATE 1 for how the loop retrigger works and what the device does and does not transmit.",
       clock:
         "A pulse train derived from the MIDI clock the device transmits, divided by the CLOCK DIV setting — at the default 24 that is one pulse per quarter note, the division TIMELORDE expects. It is a trigger: each pulse is a short fixed-width rising edge and the level between pulses carries no meaning. Silent until the device's transport is running.",
+      poly1:
+        "Channel 1's two axes as a note bus, for playing an instrument directly instead of reconstructing pitch from a control voltage. Voice 1 is the X axis and voice 2 is the Y axis, each carrying a pitch and its own gate, so one finger plays a two-note chord that moves as you move. Patch it into any polyphonic voice. Only alive when the device is sending notes: turn on both pitch and temporal quantisation and this starts playing, and in the ordinary continuous mode it sits silent while the X, Y and gate jacks carry everything as usual. The pitch is the real quantised note the device chose, so it lands in tune with whatever scale you picked on the panel rather than being a voltage you have to calibrate. The gate stays up for as long as you hold the position, so a sustained touch sustains the note. Velocity is not part of it: this hardware sends the same fixed velocity for every note, so the bus carries no dynamics and a voice that responds to how hard you play will always hear the same thing.",
+      poly2: "Channel 2's two axes as a note bus, in the same form as POLY 1 — voice 1 is X, voice 2 is Y, and it is alive only when the device is sending notes. Each channel has its own bus so you can play a different instrument from each recorded gesture.",
+      poly3: "Channel 3's two axes as a note bus, in the same form as POLY 1 — voice 1 is X, voice 2 is Y, and it is alive only when the device is sending notes.",
+      poly4: "Channel 4's two axes as a note bus, in the same form as POLY 1 — voice 1 is X, voice 2 is Y, and it is alive only when the device is sending notes.",
     },
     controls: {
       range:
@@ -462,6 +528,17 @@ export const trailsDef: AudioModuleDef = {
       makeSource(trailsGatePortId(ch));
     }
     makeSource(TRAILS_CLOCK_PORT_ID);
+
+    // ── The four per-channel poly note buses ──────────────────────────────
+    //
+    // ⚠ SILENT UNLESS THE DEVICE IS IN NOTE MODE, by construction rather than
+    // by a flag. These are written only from `'note'` events, and the decoder
+    // only produces one from a MIDI note — which the device only sends with
+    // both quantisations enabled. In ordinary CC mode every lane rests at
+    // pitch 0 / gate 0 and the x/y/gate jacks are the whole story, exactly as
+    // before this existed.
+    const polySenders = new Map<TrailsChannel, PolySender>();
+    for (const ch of TRAILS_CHANNELS) polySenders.set(ch, createPolySender(ctx));
 
     // ── Knobs ─────────────────────────────────────────────────────────────
     const knobs: Record<string, number> = {};
@@ -589,6 +666,30 @@ export const trailsDef: AudioModuleDef = {
               if (i >= 0 && i < gateEdges.length) gateEdges[i]!++;
             }
           }
+        } else if (ev.kind === 'note') {
+          // ── THE POLY BUS ───────────────────────────────────────────────
+          //
+          // Pitch is TRUE V/OCT — `midiToVOct`, 0 V = C4 = MIDI 60 — which is
+          // the bus's documented unit and the one every poly consumer converts
+          // from. That is deliberately NOT what the x/y CV jacks carry: a `cv`
+          // cable in this rack is a normalised modulation amount (ADR-004), so
+          // the same note reaches the rack twice in two honest units — as a
+          // position on x/y, and as a pitch here.
+          //
+          // ⚠ THE GATE IS A LEVEL, not a fixed-width pulse. Written straight to
+          // the lane's ConstantSource rather than through `scheduleStep`, whose
+          // `gateOffSec` would impose a note length the device never sent —
+          // Trails holds a note for as long as the finger is down. AGENTS.md
+          // rule 7: gate consumers stay level-sensitive.
+          const sender = polySenders.get(ev.channel);
+          const lane = sender?.voices[TRAILS_POLY_LANE[ev.axis]];
+          if (lane) {
+            // Pitch on a STRIKE only — last-note priority, the same rule the
+            // x/y axis path uses, so a release never drags the pitch anywhere.
+            if (ev.on) lane.pitchSrc.offset.setValueAtTime(midiToVOct(ev.note), at);
+            lane.gateSrc.offset.cancelScheduledValues(at);
+            lane.gateSrc.offset.setValueAtTime(ev.sounding ? 1 : 0, at);
+          }
         } else if (ev.kind === 'clock') {
           clockTicks++;
           if (++tickCounter >= divisorNow()) {
@@ -695,9 +796,21 @@ export const trailsDef: AudioModuleDef = {
     return {
       domain: 'audio',
       inputs: new Map(),
-      outputs: new Map(
-        [...sources.entries()].map(([id, src]) => [id, { node: src as AudioNode, output: 0 }]),
-      ),
+      // ⚠ `{ node, output }`, NEVER a bare AudioNode — a bare node in this map
+      // ships a module that is green and silent (the seqtris PR paid for that
+      // lesson in as many words).
+      outputs: new Map<string, { node: AudioNode; output: number }>([
+        ...[...sources.entries()].map(
+          ([id, src]) => [id, { node: src as AudioNode, output: 0 }] as const,
+        ),
+        ...TRAILS_CHANNELS.map(
+          (ch) =>
+            [
+              trailsPolyPortId(ch),
+              { node: polySenders.get(ch)!.output as AudioNode, output: 0 },
+            ] as const,
+        ),
+      ]),
       setParam(id, value) {
         if (id in knobs) knobs[id] = value;
       },
@@ -716,6 +829,8 @@ export const trailsDef: AudioModuleDef = {
         unsubscribeMidi();
         unsubscribeTick();
         decoder.reset();
+        for (const sender of polySenders.values()) sender.dispose();
+        polySenders.clear();
         for (const src of sources.values()) {
           try {
             src.stop();

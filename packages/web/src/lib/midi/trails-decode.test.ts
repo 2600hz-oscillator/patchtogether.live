@@ -24,6 +24,7 @@ import {
   TRAILS_CHANNEL_COUNT,
   TRAILS_LOOP_PLAYHEAD_CHANNEL,
   TRAILS_NOTE_AXIS_RANGE,
+  TRAILS_NOTE_VELOCITY,
   type TrailsEvent,
 } from './trails-decode';
 
@@ -487,10 +488,133 @@ describe('trails-decode: note mode drives the AXES', () => {
     expect(gates(d.handle([0x80, 64, 0], 3))[0]!.high).toBe(false);
   });
 
-  it('AXIS BEFORE GATE — a downstream envelope sees the pitch already set', () => {
+  // ── ⚠ THE GATE DEFECT: one Trails channel, TWO MIDI channels ──────────────
+  //
+  // Owner, on hardware: "i need gates on a channel when notes are firing on
+  // that channel."
+  //
+  // A Trails channel spends TWO MIDI channels, one per axis. The channel state
+  // is keyed by the TRAILS channel (which was already correct), but both axes'
+  // notes landed in ONE `Set<number>` — and a Set DEDUPLICATES. So whenever X
+  // and Y quantised to the same note number, the two strikes collapsed into one
+  // entry and releasing X dropped the channel's gate while Y was still
+  // sounding. A gesture on the pad's diagonal does this on every step.
+
+  it('THE GATE DEFECT: an X release must NOT drop the gate while Y is still held', () => {
+    // The exact byte sequence, on the pair the owner's hardware was using
+    // (MIDI ch3/ch4 = Trails channel 2's X and Y), with X and Y landing on the
+    // SAME note number — the case a shared Set could not represent.
+    const d = createTrailsDecoder();
+    expect(gates(d.handle([0x92, 71, 127], 0))).toEqual([
+      { kind: 'gate', channel: 2, high: true, source: 'note' },
+    ]);
+    // Y strikes the same note. The channel is already sounding, so no new edge.
+    expect(gates(d.handle([0x93, 71, 127], 1))).toHaveLength(0);
+    // ⚠ THE ASSERTION. Before the fix this emitted `high: false` and the jack
+    // went low mid-gesture.
+    expect(
+      gates(d.handle([0x92, 71, 0], 2)),
+      'X released, Y still sounding — the CHANNEL is still in contact',
+    ).toHaveLength(0);
+    // …and the gate falls once the LAST axis lets go, exactly once.
+    expect(gates(d.handle([0x93, 71, 0], 3))).toEqual([
+      { kind: 'gate', channel: 2, high: false, source: 'note' },
+    ]);
+  });
+
+  it('…and the reverse: a Y release does not drop a gate X is still holding', () => {
+    const d = createTrailsDecoder();
+    d.handle([0x92, 60, 127], 0);
+    d.handle([0x93, 60, 127], 1);
+    expect(gates(d.handle([0x93, 60, 0], 2))).toHaveLength(0);
+    expect(gates(d.handle([0x92, 60, 0], 3))[0]!.high).toBe(false);
+  });
+
+  it('the gate is the OR of the two axes, not one axis and not their sum', () => {
+    // Y alone is contact too: a channel sounding on one coordinate is sounding.
+    const d = createTrailsDecoder();
+    expect(gates(d.handle([0x93, 90, 127], 0))).toEqual([
+      { kind: 'gate', channel: 2, high: true, source: 'note' },
+    ]);
+    expect(gates(d.handle([0x93, 90, 0], 1))[0]!.high).toBe(false);
+  });
+
+  it('NO CROSS-TALK: the two axes keep separate note books', () => {
+    // The shared Set also meant one axis could DELETE the other's note. Here X
+    // holds 71 and Y strikes and releases 71; X must be untouched.
+    const d = createTrailsDecoder();
+    d.handle([0x92, 71, 127], 0); // X holds 71
+    d.handle([0x93, 71, 127], 1); // Y holds 71 too
+    d.handle([0x93, 71, 0], 2); // Y lets go — X still has its own 71
+    expect(gates(d.handle([0x92, 71, 0], 3)), 'only NOW does the channel fall').toEqual([
+      { kind: 'gate', channel: 2, high: false, source: 'note' },
+    ]);
+  });
+
+  it('a whole diagonal gesture holds ONE continuous gate', () => {
+    // The realistic shape, and the one that made this visible: a finger moving
+    // along the diagonal quantises X and Y to the same degree at every step. A
+    // monophonic note stream — release both, strike both — must produce exactly
+    // one rise at the start and one fall at the end, not a rise/fall per step.
+    const d = createTrailsDecoder();
+    let t = 0;
+    const edges: boolean[] = [];
+    const steps = [60, 62, 64, 65, 67, 69, 71];
+    for (const [i, note] of steps.entries()) {
+      if (i > 0) {
+        const prev = steps[i - 1]!;
+        edges.push(...gates(d.handle([0x92, prev, 0], t++)).map((g) => g.high));
+        edges.push(...gates(d.handle([0x93, prev, 0], t++)).map((g) => g.high));
+      }
+      edges.push(...gates(d.handle([0x92, note, 127], t++)).map((g) => g.high));
+      edges.push(...gates(d.handle([0x93, note, 127], t++)).map((g) => g.high));
+    }
+    // ⚠ A MONOPHONIC RELEASE-THEN-STRIKE STREAM DOES DIP, and that is correct:
+    // both axes genuinely let go before the next pair. What must NOT happen is
+    // a dip driven by ONE axis while the other is holding — which is what the
+    // per-step assertions above pin. Here the contract is that every fall is
+    // paired with a rise, so the gate never ends up stranded low mid-gesture.
+    const falls = edges.filter((h) => !h).length;
+    const rises = edges.filter((h) => h).length;
+    expect(rises, 'one rise per re-strike, the first included').toBe(steps.length);
+    expect(falls, 'and never more falls than rises').toBeLessThan(rises);
+    // The gesture ends SOUNDING — the last strike was not cancelled by a stale
+    // note-off from the other axis.
+    expect(gates(d.handle([0x92, 71, 0], t++))).toHaveLength(0);
+    expect(gates(d.handle([0x93, 71, 0], t++))[0]!.high).toBe(false);
+  });
+
+  it('gates stay keyed to the TRAILS channel — MON ch3/ch4 are ONE jack, g2', () => {
+    // ⚠ THE READING ERROR THAT PRODUCED THE REPORT. The owner saw notes on MON
+    // "ch3" and "ch4", looked at gate jacks 3 and 4, and found them silent. Two
+    // MIDI channels, ONE Trails channel: both of those are channel 2, and the
+    // gate they drive is g2. The decoder was already right about this; the
+    // readout is what did not say so.
+    expect(TRAILS_AXIS_MAP[2]).toEqual({ channel: 2, axis: 'x' });
+    expect(TRAILS_AXIS_MAP[3]).toEqual({ channel: 2, axis: 'y' });
+    const d = createTrailsDecoder();
+    expect(gates(d.handle([0x92, 63, 127], 0))[0]!.channel).toBe(2);
+    expect(gates(d.handle([0x93, 99, 127], 1))).toHaveLength(0); // same channel
+    // Nothing reached channels 3 or 4 — which is why their edge counters read 0.
+    expect(gates(d.handle([0x92, 63, 0], 2))).toHaveLength(0);
+    expect(gates(d.handle([0x93, 99, 0], 3))[0]!.channel).toBe(2);
+  });
+
+  it('VELOCITY IS CONSTANT ON THIS FIRMWARE — measured, not assumed', () => {
+    // 12643 messages of real gesture, every note row reading vel=127. The
+    // constant carries the citation; this pins that the double sends what the
+    // hardware sends, so a firmware that varies velocity shows as a difference.
+    expect(TRAILS_NOTE_VELOCITY).toBe(127);
+    expect(encodeTrailsNote({ channel: 2, axis: 'x' }, 71)).toEqual([0x92, 71, 127]);
+  });
+
+  it('AXIS, then NOTE, then GATE — a downstream voice sees pitch before contact', () => {
+    // One note message is three facts in a fixed order: where the axis is, what
+    // pitch it quantised to, and whether the channel is now sounding. A voice
+    // that read the gate first would articulate the PREVIOUS pitch.
     const d = createTrailsDecoder();
     const out = d.handle([NOTE_ON_CH1_X, 60, 100], 0);
-    expect(out.map((e) => e.kind)).toEqual(['axis', 'gate']);
+    expect(out.map((e) => e.kind)).toEqual(['axis', 'note', 'gate']);
   });
 
   it('a RELEASE holds the axis rather than dropping it to zero', () => {
@@ -683,11 +807,15 @@ describe('trails-decode: RECOGNITION is not the same as emitting an event', () =
     expect(axes(second.events), 'but the axis moved to the new note').toHaveLength(1);
     expect(second.recognised).toBe(true);
 
-    // A note-OFF for a note that is not held: nothing changes in either
-    // direction, and the frame is still perfectly understood.
+    // A note-OFF for a note that is not held changes no LEVEL — no gate edge,
+    // no axis move — and is still perfectly understood. It does report the axis
+    // as not sounding, which is the honest answer to a release that arrived.
     const quiet = createTrailsDecoder();
     const stray = quiet.handleFrame([0x80, 60, 0], 0);
-    expect(stray.events).toHaveLength(0);
+    expect(gates(stray.events)).toHaveLength(0);
+    expect(axes(stray.events)).toHaveLength(0);
+    expect(stray.events.map((e) => e.kind)).toEqual(['note']);
+    expect(stray.events[0]).toMatchObject({ kind: 'note', on: false, sounding: false });
     expect(stray.recognised).toBe(true);
 
     // An LSB before its axis has ever sent an MSB: understood, and deliberately

@@ -19,6 +19,8 @@ import {
   trailsDef,
   trailsAxisPortId,
   trailsGatePortId,
+  trailsPolyPortId,
+  TRAILS_POLY_LANE,
   TRAILS_CHANNELS,
   TRAILS_BAR_TRANSMITS_MIDI,
   TRAILS_CLOCK_PORT_ID,
@@ -30,6 +32,9 @@ import {
 } from './trails';
 import { GATE_PULSE_S } from './midiclock';
 import { TRAILS_CC_FULL_SCALE } from '$lib/midi/trails-decode';
+import { isNoteSource, isClipEligible, resolveClipWiring } from '$lib/graph/patch-convenience';
+import { POLY_CHANNEL_PAIRS } from '$lib/audio/poly';
+import { midiToVOct } from '$lib/audio/note-entry';
 import {
   __resetTrailsForTest,
   installSimulatedTrails,
@@ -78,8 +83,33 @@ class FakeConstantSourceNode {
   offset = makeParam(0);
   start = vi.fn();
   stop = vi.fn();
+  disconnect = vi.fn();
+  /**
+   * ⚠ A REAL FUNCTION, not a bare `vi.fn()`, because the poly bus's whole
+   * addressing lives in this call: `pitchSrc.connect(merger, 0, lane*2)` is the
+   * ONLY thing that says which lane a ConstantSource is. A spy that recorded
+   * the call without wiring it would let a test read lane 0 while the module
+   * wrote lane 1 and still pass.
+   */
+  connect(target?: unknown, _output?: number, input?: number): void {
+    if (target instanceof FakeChannelMergerNode && typeof input === 'number') {
+      target.inputs.set(input, this);
+    }
+  }
+}
+
+/** The poly bus's ChannelMergerNode. Records nothing of its own — every value
+ *  the bus carries is written to a ConstantSource `offset`, which the mock above
+ *  already records, so the merger only has to exist and accept connections. */
+class FakeChannelMergerNode {
+  readonly channelCount: number;
+  /** Merger input index → the ConstantSource feeding it. */
+  readonly inputs = new Map<number, FakeConstantSourceNode>();
   connect = vi.fn();
   disconnect = vi.fn();
+  constructor(channels: number) {
+    this.channelCount = channels;
+  }
 }
 
 function makeMockCtx(): AudioContext {
@@ -87,7 +117,39 @@ function makeMockCtx(): AudioContext {
     currentTime: 0,
     sampleRate: 48000,
     createConstantSource: () => new FakeConstantSourceNode(),
+    createChannelMerger: (n: number) => new FakeChannelMergerNode(n),
   } as unknown as AudioContext;
+}
+
+/**
+ * The automation events on one poly LANE's pitch or gate ConstantSource.
+ *
+ * ⚠ REACHED THROUGH THE PORT'S OWN MERGER, not through a handle the test kept
+ * from construction. `createPolySender` connects lane i's pitch to merger input
+ * `i*2` and its gate to `i*2+1`, so this asserts against the node the ENGINE
+ * would actually read — the same reason the outputs map stores `{ node, output }`
+ * rather than a bare node.
+ */
+function polyLaneEvents(
+  handle: AudioDomainNodeHandle,
+  portId: string,
+  lane: number,
+  kind: 'pitch' | 'gate',
+): RecordedSchedule[] {
+  const merger = handle.outputs.get(portId)?.node as unknown as FakeChannelMergerNode | undefined;
+  if (!merger) return [];
+  return merger.inputs.get(lane * 2 + (kind === 'gate' ? 1 : 0))?.offset.events ?? [];
+}
+
+/** The last value written to one poly lane's pitch or gate. */
+function polyLaneValue(
+  handle: AudioDomainNodeHandle,
+  portId: string,
+  lane: number,
+  kind: 'pitch' | 'gate',
+): number | undefined {
+  const withValue = polyLaneEvents(handle, portId, lane, kind).filter((e) => e.value !== undefined);
+  return withValue.at(-1)?.value;
 }
 
 function makeNode(params?: Record<string, number>): ModuleNode {
@@ -175,18 +237,56 @@ describe('trails def shape', () => {
       ...TRAILS_CHANNELS.flatMap((c) => [trailsAxisPortId(c, 'x'), trailsAxisPortId(c, 'y')]),
       ...TRAILS_CHANNELS.map((c) => trailsGatePortId(c)),
       TRAILS_CLOCK_PORT_ID,
+      ...TRAILS_CHANNELS.map((c) => trailsPolyPortId(c)),
     ];
     expect(trailsDef.outputs.map((p) => p.id)).toEqual(derived);
   });
 
-  it('every output is cv or gate — NEVER pitch or poly (the isNoteSource trap)', () => {
-    // A pitch- or poly-typed output would put a touch position onto a note
-    // LANE, which is not what a coordinate is.
-    for (const port of trailsDef.outputs) {
-      expect(['cv', 'gate'], `output ${port.id}`).toContain(port.type);
-    }
+  it('POSITIONS stay cv, CONTACT stays gate, and only the NOTE buses are poly', () => {
+    // ⚠ THIS TEST REVERSED. It used to read "every output is cv or gate —
+    // NEVER pitch or poly (the isNoteSource trap)", and the reversal is
+    // deliberate and owner-approved rather than a rule quietly relaxed.
+    //
+    // The original reason still holds for the jacks it was written about: a
+    // touch POSITION is not a pitch, so x/y stay `cv` and the contact gates
+    // stay `gate`. What is new is four buses that exist only in note mode,
+    // where the device genuinely is emitting pitches.
     expect(trailsDef.outputs.filter((p) => p.type === 'cv')).toHaveLength(8);
     expect(trailsDef.outputs.filter((p) => p.type === 'gate')).toHaveLength(5);
+    expect(trailsDef.outputs.filter((p) => p.type === 'polyPitchGate')).toHaveLength(4);
+    // No `pitch`-typed output: a MONO pitch cable would have to pick one of the
+    // two axes and call it the note, which is a choice the device does not make.
+    expect(trailsDef.outputs.some((p) => p.type === 'pitch')).toBe(false);
+    // The positions specifically are still cv, named rather than counted.
+    for (const c of TRAILS_CHANNELS) {
+      for (const axis of ['x', 'y'] as const) {
+        expect(trailsDef.outputs.find((p) => p.id === trailsAxisPortId(c, axis))!.type).toBe('cv');
+      }
+    }
+  });
+
+  it('the poly outputs make it a NOTE SOURCE — and that costs nothing, measured', () => {
+    // ⚠ THE CONTRACT CHANGE, WITH ITS BLAST RADIUS PINNED. `isNoteSource` has
+    // exactly two consumers and both are about wiring something INTO a module:
+    // `resolveClipWiring` (a note source is never a clip target) and the column
+    // note-tap pass. TRAILS declares NO INPUTS, so both already declined it —
+    // `isClipEligible` was false before this change and is false after.
+    //
+    // Asserting the BEFORE state too, because "it was already false" is the
+    // entire justification for accepting the flip, and an unasserted premise is
+    // how a justification rots.
+    expect(trailsDef.inputs, 'the premise: nothing can be wired IN').toEqual([]);
+    expect(isNoteSource(trailsDef as never), 'the contract flipped').toBe(true);
+    expect(isClipEligible(trailsDef as never), 'the behaviour did not').toBe(false);
+    expect(resolveClipWiring(trailsDef as never)).toBeNull();
+    // …and the same predicate on a def with the poly ports removed agrees, so
+    // the `false` above is a property of having no inputs and not of the flip.
+    const withoutPoly = {
+      ...trailsDef,
+      outputs: trailsDef.outputs.filter((p) => p.type !== 'polyPitchGate'),
+    };
+    expect(isNoteSource(withoutPoly as never)).toBe(false);
+    expect(isClipEligible(withoutPoly as never), 'false either way').toBe(false);
   });
 
   it('every gate-cable port declares its edge vocabulary', () => {
@@ -575,7 +675,7 @@ describe('trails factory: the state the pad mirror paints', () => {
     const snap = api.monitor();
     expect(snap.total).toBe(6);
     expect(snap.unrecognised).toBe(2);
-    expect(snap.rows.find((r) => r.label === 'ch1 CC47')?.decoded).toBe(false);
+    expect(snap.rows.find((r) => r.label === 'ch1[1X] CC47')?.decoded).toBe(false);
     // The COUNT — the header prints "N not decoded" even at zero, so the bare
     // phrase would pass on a monitor that dropped the rejected frames.
     expect(snap.summary).toContain('2 not decoded');
@@ -612,8 +712,25 @@ describe('trails factory: the state the pad mirror paints', () => {
 
   it('NEGATIVE CONTROL: with no touches, every jack is still at rest', async () => {
     handle = await trailsDef.factory!(makeMockCtx(), makeNode());
+    // ⚠ EVERY OUTPUT, INCLUDING THE POLY BUSES, and they are read through their
+    // OWN accessor rather than the ConstantSource one. A poly port's node is a
+    // ChannelMergerNode with no `offset` at all, so the scalar reader returns
+    // nothing for it — which would make this sweep VACUOUSLY pass on four ports
+    // while looking exhaustive. Each kind is asserted with the reader that can
+    // actually see it.
     for (const port of trailsDef.outputs) {
-      expect(eventsOn(handle, port.id), `port ${port.id}`).toHaveLength(0);
+      if (port.type === 'polyPitchGate') {
+        for (let lane = 0; lane < POLY_CHANNEL_PAIRS; lane++) {
+          for (const kind of ['pitch', 'gate'] as const) {
+            expect(
+              polyLaneEvents(handle, port.id, lane, kind),
+              `poly ${port.id} lane ${lane} ${kind}`,
+            ).toHaveLength(0);
+          }
+        }
+      } else {
+        expect(eventsOn(handle, port.id), `port ${port.id}`).toHaveLength(0);
+      }
     }
     expect(state(handle).channels.every((c) => !c.gate && c.trail.length === 0)).toBe(true);
   });
@@ -735,6 +852,173 @@ describe('trails factory: NOTE MODE steers the jacks', () => {
     }
     expect(new Set(seen).size, 'five notes, five distinct jack values').toBe(5);
     expect([...seen].sort((a, b) => a - b)).toEqual(seen);
+  });
+
+  it('THE GATE DEFECT: the jack stays HIGH while either axis is sounding', async () => {
+    // Owner: "i need gates on a channel when notes are firing on that channel."
+    // One Trails channel spends TWO MIDI channels; both axes' notes shared one
+    // deduplicating Set, so an X release with Y still held dropped g2 to 0
+    // mid-gesture. `noteTouch` strikes both axes with the SAME note number,
+    // which is the collision that made it reachable.
+    const h = await trailsDef.factory!(makeMockCtx(), makeNode());
+    handle = h;
+    sim.noteTouch(2, 71, 71);
+    expect(lastValue(h, 'g2')).toBe(1);
+    // Release X ONLY, by hand — the sim's `noteRelease` lets go of both.
+    sim.send([0x92, 71, 0]);
+    expect(lastValue(h, 'g2'), 'Y is still sounding, so the channel is').toBe(1);
+    // …and the last axis to let go is the one that lowers it.
+    sim.send([0x93, 71, 0]);
+    expect(lastValue(h, 'g2')).toBe(0);
+  });
+
+  it('a diagonal gesture does not chatter the gate on the pad mirror either', async () => {
+    const h = await trailsDef.factory!(makeMockCtx(), makeNode());
+    handle = h;
+    sim.noteTouch(1, 60, 60);
+    expect((h.read!('state') as TrailsState).channels[0]!.gate).toBe(true);
+    sim.send([0x90, 60, 0]); // X lets go; Y still holds 60
+    expect(
+      (h.read!('state') as TrailsState).channels[0]!.gate,
+      'the pad mirror must not show the finger lifting either',
+    ).toBe(true);
+  });
+
+  // ── The per-channel poly note buses ────────────────────────────────────
+  //
+  // Four ports, two lanes each: lane 0 = X, lane 1 = Y. Alive ONLY in note
+  // mode, because they are written only from the decoder's `'note'` event and
+  // CC mode never produces one.
+
+  it('a note-mode strike puts V/OCT on lane 0 (X) and lane 1 (Y)', async () => {
+    const h = await trailsDef.factory!(makeMockCtx(), makeNode());
+    handle = h;
+    sim.noteTouch(1, 60, 72); // C4 and C5
+    const port = trailsPolyPortId(1);
+    // ⚠ V/OCT, NOT the normalised 0..1 the x/y jacks carry. 0 V = C4 = MIDI 60,
+    // so C4 is exactly 0 and the octave above it is exactly 1.
+    expect(polyLaneValue(h, port, TRAILS_POLY_LANE.x, 'pitch')).toBeCloseTo(midiToVOct(60), 9);
+    expect(polyLaneValue(h, port, TRAILS_POLY_LANE.x, 'pitch')).toBe(0);
+    expect(polyLaneValue(h, port, TRAILS_POLY_LANE.y, 'pitch')).toBe(1);
+    // …and both lanes are gated.
+    expect(polyLaneValue(h, port, TRAILS_POLY_LANE.x, 'gate')).toBe(1);
+    expect(polyLaneValue(h, port, TRAILS_POLY_LANE.y, 'gate')).toBe(1);
+  });
+
+  it('an octave up is exactly +1 — the bus really is volts per octave', async () => {
+    const h = await trailsDef.factory!(makeMockCtx(), makeNode());
+    handle = h;
+    const port = trailsPolyPortId(1);
+    sim.noteTouch(1, 48, 48);
+    const low = polyLaneValue(h, port, TRAILS_POLY_LANE.x, 'pitch')!;
+    sim.noteTouch(1, 60, 60);
+    const mid = polyLaneValue(h, port, TRAILS_POLY_LANE.x, 'pitch')!;
+    sim.noteTouch(1, 72, 72);
+    const high = polyLaneValue(h, port, TRAILS_POLY_LANE.x, 'pitch')!;
+    expect(mid - low).toBeCloseTo(1, 9);
+    expect(high - mid).toBeCloseTo(1, 9);
+  });
+
+  it('the lane GATE is a LEVEL — it holds, and falls only on release', async () => {
+    // AGENTS.md rule 7: gate consumers stay level-sensitive. `scheduleStep`'s
+    // `gateOffSec` would impose a note length the device never sent.
+    const h = await trailsDef.factory!(makeMockCtx(), makeNode());
+    handle = h;
+    const port = trailsPolyPortId(2);
+    sim.noteTouch(2, 64, 67);
+    expect(polyLaneValue(h, port, TRAILS_POLY_LANE.x, 'gate')).toBe(1);
+    // No scheduled gate-down anywhere in the lane's timeline.
+    const gateEvents = polyLaneEvents(h, port, TRAILS_POLY_LANE.x, 'gate');
+    expect(gateEvents.filter((e) => e.value === 0), 'nothing closed it by itself').toHaveLength(0);
+    sim.noteRelease(2, 64, 67);
+    expect(polyLaneValue(h, port, TRAILS_POLY_LANE.x, 'gate')).toBe(0);
+  });
+
+  it('the two lanes gate INDEPENDENTLY — releasing X leaves Y sounding', async () => {
+    // The poly mirror of the channel-gate fix, and the reason the `'note'`
+    // event is per-AXIS while the `'gate'` event is the channel-level OR.
+    const h = await trailsDef.factory!(makeMockCtx(), makeNode());
+    handle = h;
+    const port = trailsPolyPortId(2);
+    sim.noteTouch(2, 71, 71);
+    sim.send([0x92, 71, 0]); // release X only
+    expect(polyLaneValue(h, port, TRAILS_POLY_LANE.x, 'gate')).toBe(0);
+    expect(polyLaneValue(h, port, TRAILS_POLY_LANE.y, 'gate'), 'Y is still held').toBe(1);
+    // …while the CHANNEL gate jack, which is the OR, stays high.
+    expect(lastValue(h, 'g2')).toBe(1);
+  });
+
+  it('a release HOLDS the lane pitch — last-note priority, as on the CV axis', async () => {
+    const h = await trailsDef.factory!(makeMockCtx(), makeNode());
+    handle = h;
+    const port = trailsPolyPortId(1);
+    sim.noteTouch(1, 84, 84);
+    const held = polyLaneValue(h, port, TRAILS_POLY_LANE.x, 'pitch');
+    sim.noteRelease(1, 84, 84);
+    expect(polyLaneValue(h, port, TRAILS_POLY_LANE.x, 'pitch')).toBe(held);
+  });
+
+  it('each channel drives its OWN bus — no cross-talk between the four', async () => {
+    const h = await trailsDef.factory!(makeMockCtx(), makeNode());
+    handle = h;
+    sim.noteTouch(3, 60, 62);
+    expect(polyLaneValue(h, trailsPolyPortId(3), TRAILS_POLY_LANE.x, 'gate')).toBe(1);
+    for (const other of [1, 2, 4] as const) {
+      expect(
+        polyLaneEvents(h, trailsPolyPortId(other), TRAILS_POLY_LANE.x, 'gate'),
+        `channel ${other} must be untouched`,
+      ).toHaveLength(0);
+    }
+  });
+
+  it('X and Y land on lanes 0 and 1 — inside every shipped consumer\'s window', async () => {
+    // ⚠ THE REASON THERE ARE FOUR PORTS. The bus is 16 lanes wide, but no
+    // shipped consumer reads past lane 4 (CUBE's POLY_VOICES and the shared
+    // poly-osc-sum are both 5). A single global port would put channels 3 and 4
+    // on lanes 4..7 and every instrument in the rack would silently drop them.
+    expect(TRAILS_POLY_LANE).toEqual({ x: 0, y: 1 });
+    expect(Math.max(TRAILS_POLY_LANE.x, TRAILS_POLY_LANE.y)).toBeLessThan(5);
+    expect(POLY_CHANNEL_PAIRS).toBeGreaterThan(TRAILS_POLY_LANE.y);
+
+    const h = await trailsDef.factory!(makeMockCtx(), makeNode());
+    handle = h;
+    sim.noteTouch(4, 60, 62);
+    // Nothing was written above lane 1 on any port.
+    for (const ch of TRAILS_CHANNELS) {
+      for (let lane = 2; lane < POLY_CHANNEL_PAIRS; lane++) {
+        expect(
+          polyLaneEvents(h, trailsPolyPortId(ch), lane, 'gate'),
+          `ch${ch} lane ${lane} must stay at rest`,
+        ).toHaveLength(0);
+      }
+    }
+  });
+
+  it('⚠ CC MODE LEAVES THE POLY BUSES SILENT — the mode dependence, asserted', async () => {
+    // The buses exist only where notes do. A CC gesture must not put anything
+    // on them, or a player in the ordinary mode would find a patched poly cable
+    // emitting a pitch of 0 V with a gate that never rises — worse than absent.
+    const h = await trailsDef.factory!(makeMockCtx(), makeNode());
+    handle = h;
+    // ⚠ NO `gateOn()` HERE. That helper sends a NOTE — it is the legacy
+    // contact-gate double from before note mode existed — so using it in a
+    // "CC mode" test would drive the very path this asserts is quiet.
+    sim.glide(1, 12);
+    sim.clock(24);
+    sim.loopRestart();
+    // The CC path is alive…
+    expect(eventsOn(h, 'x1').length).toBeGreaterThan(0);
+    // …and every poly lane on every channel is untouched.
+    for (const ch of TRAILS_CHANNELS) {
+      for (const kind of ['pitch', 'gate'] as const) {
+        for (const lane of [TRAILS_POLY_LANE.x, TRAILS_POLY_LANE.y]) {
+          expect(
+            polyLaneEvents(h, trailsPolyPortId(ch), lane, kind),
+            `ch${ch} lane ${lane} ${kind}`,
+          ).toHaveLength(0);
+        }
+      }
+    }
   });
 
   it('NEGATIVE CONTROL: an unused channel stays at rest through a note run', async () => {

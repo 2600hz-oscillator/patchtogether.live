@@ -843,6 +843,7 @@ const DRIVERS: Record<string, PerPortDriver> = {
           __trailsSim?: {
             touch: (ch: number, x: number, y: number) => void;
             gateOn: (ch: number) => void;
+            noteTouch: (ch: number, xNote: number, yNote: number, velocity?: number) => void;
           };
         };
         if (!w.__trailsTestInstall) return;
@@ -854,10 +855,18 @@ const DRIVERS: Record<string, PerPortDriver> = {
           // Distinct per channel so a cross-wired jack reads WRONG rather than
           // merely non-zero, and all comfortably above the 0.005 floor.
           sim.touch(ch, 0.8, 0.6);
+          // ⚠ BOTH MODES, because the device has two and they drive DIFFERENT
+          // jacks. The CC touch above feeds x1..y4 and g1..g4; the poly1..poly4
+          // buses exist only in note mode and would read as dead ports without
+          // this. Notes chosen well away from C4 so the V/oct pitch lanes clear
+          // the sweep's 0.005 floor — 0 V is a legitimate pitch (middle C) and
+          // would otherwise be indistinguishable from a jack that never moved.
+          sim.noteTouch(ch, 84 + ch, 96 + ch);
         }
       });
     },
-    note: 'TRAILS: install the simulated Bela Trails via __trailsTestInstall + hold a gated touch on all four channels; x1..y4 + g1..g4 emit (clock exempt — 5 ms one-shot)',
+    note:
+      'TRAILS: install the simulated Bela Trails via __trailsTestInstall, then drive BOTH modes on all four channels — a held CC touch (x1..y4 + g1..g4) and a held note-mode strike (poly1..poly4, whose lanes only exist in note mode). Notes are pitched away from C4 so the V/oct lanes are non-zero. (clock exempt — 5 ms one-shot)',
   },
 
   // ───── MIDI LANE — mock requestMIDIAccess + send note-on + CCs ─────

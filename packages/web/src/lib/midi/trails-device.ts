@@ -38,6 +38,7 @@ import {
   encodeTrailsAxis,
   encodeTrailsGate,
   encodeTrailsNote,
+  TRAILS_NOTE_VELOCITY,
   type TrailsChannel,
 } from '$lib/midi/trails-decode';
 
@@ -491,7 +492,11 @@ export async function installSimulatedTrails(
     gateOff(channel) {
       send(encodeTrailsGate(channel, false));
     },
-    noteTouch(channel, xNote, yNote, velocity = 100) {
+    noteTouch(channel, xNote, yNote, velocity = TRAILS_NOTE_VELOCITY) {
+      // BOTH AXES, because that is what one finger produces in note mode: the
+      // Trails channel occupies two MIDI channels and quantises each coordinate
+      // separately. A double that struck only X could not reproduce the gate
+      // defect this pair exists to pin.
       send(encodeTrailsNote({ channel, axis: 'x' }, xNote, velocity));
       send(encodeTrailsNote({ channel, axis: 'y' }, yNote, velocity));
     },
