@@ -94,6 +94,38 @@ test.describe('per-module per-port: inputs accept signal (wire-up)', () => {
       continue;
     }
 
+    // SEQTRIS row: 3 recovered-on-retry observations in 24 h, all e2e shard 4
+    // (runs 33472900654 / 33509092036 / 33537562900, 2026-09-01), each the
+    // identical attempt-1 error: `mount FRAME budget exhausted after 300
+    // frames — not mounted: sut, up-clock-seq`, attempt 2 green at the same
+    // SHA. The error-context snapshot shows the app fully booted with an
+    // EMPTY canvas — engine up, rAF ticking (the 300 frames counted), and the
+    // spawn transact produced no DOM at all. Passes locally in 211 ms.
+    // Four hypotheses were eliminated by evidence before parking: the lazy
+    // launchpad import (its prefetch is fire-and-forget and the factory body
+    // has NO awaits); engine boot burning the frame budget (__ensureEngine is
+    // awaited BEFORE waitForMounted starts counting); a factory await chain
+    // stalling the serial reconciler (none exists); stale timings (the runs
+    // span three different shard plans). Mechanism unproven — parked per the
+    // 2026-08-22 owner ruling rather than re-run. Coverage loss while parked:
+    // THIS module's inputs-accept row only; seqtris.spec.ts's rule-8 legs
+    // still drive the real clock + Launchpad inputs through to an audible
+    // output, and every other module's row still runs.
+    if (mod.type === 'seqtris') {
+      test.fixme(
+        title,
+        {
+          annotation: {
+            type: 'fixme',
+            description:
+              'FLAKE-PARK #1847 — nondeterministic on CI: 3 recovered-on-retry observations on e2e shard 4 (runs 33472900654/33509092036/33537562900, 2026-09-01): attempt 1 "mount FRAME budget exhausted after 300 frames — not mounted: sut, up-clock-seq" with a booted app and an EMPTY canvas, attempt 2 green at the same SHA; four hypotheses eliminated in-session (see source comment); parked until root-caused',
+          },
+        },
+        () => {},
+      );
+      continue;
+    }
+
     test(title, async ({ rack }) => {
       // Per-iteration: spawnPatch (~1s under-load) + 100ms wait + edge-read
       // (~50ms). The default 30s test budget is ALWAYS too tight under shard
