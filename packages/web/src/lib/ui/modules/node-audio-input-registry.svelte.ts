@@ -103,6 +103,10 @@ interface Entry {
   engine: EngineAccessor | null;
   /** Set while an attach is owed to an engine that was not up yet. */
   reconcileTimer: ReturnType<typeof setInterval> | null;
+  /** Has the ONE unattended acquire this node gets already been claimed? See
+   *  `beginAutoAcquire`. Lives on the ENTRY so it is swept with the node — a
+   *  module-scope `Set<nodeId>` would be a second lifetime to keep in step. */
+  autoAcquired: boolean;
 }
 
 const IDLE: AudioInputView = {
@@ -141,7 +145,42 @@ class NodeAudioInputRegistry {
       deviceId: null,
       engine,
       reconcileTimer: null,
+      autoAcquired: false,
     };
+  }
+
+  /**
+   * Claim the ONE unattended acquire this node gets. Returns true AT MOST ONCE
+   * per node, and only from `idle`.
+   *
+   * ⚠ THIS IS THE PROMOTION'S IRREVERSIBLE HAZARD, AND IT IS WHY THE GUARD IS
+   * HERE RATHER THAN IN A COMPONENT. Before the face, exactly one surface
+   * (`AudioinCard`) ever ran the returning-visitor auto-acquire, in its own
+   * `onMount`. A faced AUDIO IN has THREE — the lane tile's `tileBody`, the dock
+   * full view's `fullViewBody` and the card itself under `?shell=legacy` — and a
+   * player who expands a module is looking at two of them at once. `request()`
+   * calls `#releaseTracks` FIRST, and `MediaStreamTrack.stop()` cannot be
+   * undone, so two surfaces each auto-acquiring would tear each other's capture
+   * down mid-performance: the #1590 failure through a new door, with the mount
+   * that lost the race left holding a permanently `ended` track.
+   *
+   * The `state !== 'idle'` half is what makes a SECOND surface a no-op (the
+   * first has already moved the entry to `requesting`/`streaming`). The
+   * `autoAcquired` half is what stops a re-mount re-opening an input the player
+   * deliberately STOPPED — `stop()` returns the entry to `idle`, so the state
+   * guard alone would re-acquire on the next expand and the stop control would
+   * be un-obeyable.
+   *
+   * The caller supplies the constraints and the permission probe; this only
+   * decides WHO goes, which is the part that must be atomic.
+   */
+  beginAutoAcquire(id: string): boolean {
+    const e = this.#entries[id];
+    if (!e) return false; // adopt first — an unknown id has no lifetime to claim
+    if (e.autoAcquired) return false;
+    if (e.state !== 'idle') return false;
+    e.autoAcquired = true;
+    return true;
   }
 
   /** Reactive read for the card. Unknown ids read `idle` rather than throwing —

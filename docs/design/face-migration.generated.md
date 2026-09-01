@@ -30,7 +30,7 @@ Every registered module carries exactly one **disposition**: what kind of work i
 
 | blocker | issue | modules waiting |
 |---|---|---|
-| `needs-media-controller` | #1511 | 7 |
+| `needs-media-controller` | #1511 | 6 |
 
 ## `generic-face`
 
@@ -44,6 +44,7 @@ author a `face` and rank the controls — no new platform capability.
 | `analogLogicMaths` | audio | done | — |
 | `analogVco` | audio | done | — |
 | `attenumix` | audio | done | — |
+| `audioIn` | audio | done | — |
 | `audioOut` | audio | done | — |
 | `b3ntb0x` | video | done | — |
 | `backdraft` | video | done | — |
@@ -226,7 +227,6 @@ the primary interaction is not param-shaped — needs a purpose-built surface.
 | module | domain | state | blockers |
 |---|---|---|---|
 | `archivist` | video | — | `needs-media-controller` |
-| `audioIn` | audio | — | `needs-media-controller` |
 | `chromaconsole` | audio | — | — |
 | `clipplayer` | audio | — | — |
 | `controlSurface` | meta | — | — |
