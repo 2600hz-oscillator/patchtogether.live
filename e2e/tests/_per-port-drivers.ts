@@ -844,6 +844,7 @@ const DRIVERS: Record<string, PerPortDriver> = {
             touch: (ch: number, x: number, y: number) => void;
             gateOn: (ch: number) => void;
             noteTouch: (ch: number, xNote: number, yNote: number, velocity?: number) => void;
+            noteRelease: (ch: number, xNote: number, yNote: number) => void;
           };
         };
         if (!w.__trailsTestInstall) return;
