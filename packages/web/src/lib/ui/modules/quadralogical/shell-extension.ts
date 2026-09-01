@@ -22,7 +22,10 @@
 //
 // ONE slot: `fullViewBody`. Dock-only, enforced by `dockFullViewHeadPlan`,
 // because a 192 px lane tile cannot carry a module surface; the lane keeps the
-// generic `VideoTileThumb` and the generic `XyPad`.
+// generic `VideoTileThumb`. (⚠ NOT "and the generic `XyPad`" — the first
+// version of this line repeated the falsehood `quadralogicalDef`'s own xyPads
+// comment corrects: `laneOrder` makes every declared pad's anchor dock-only,
+// so no lane tier has ever painted a pad.)
 
 import type { ShellExtension } from '$lib/ui/workflow/shell-extensions';
 import QuadralogicalScreenBody from './QuadralogicalScreenBody.svelte';

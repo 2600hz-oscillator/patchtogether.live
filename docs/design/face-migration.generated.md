@@ -12,8 +12,8 @@ Every registered module carries exactly one **disposition**: what kind of work i
 |  | count |
 |---|---|
 | registered modules | 197 |
-| done (faced + promoted) | 176 |
-| remaining (excludes organizational-native) | 18 |
+| done (faced + promoted) | 177 |
+| remaining (excludes organizational-native) | 17 |
 | registered with NO disposition (must be zero) | 0 |
 | inventory entries naming a dead def (must be zero) | 0 |
 
@@ -21,7 +21,7 @@ Every registered module carries exactly one **disposition**: what kind of work i
 
 | disposition | what it means | modules | done |
 |---|---|---|---|
-| `generic-face` | author a `face` and rank the controls — no new platform capability | 177 | 176 |
+| `generic-face` | author a `face` and rank the controls — no new platform capability | 177 | 177 |
 | `blocked` | would be a face today but for the named capability, and nothing else | 0 | — |
 | `bespoke-surface` | the primary interaction is not param-shaped — needs a purpose-built surface | 17 | — |
 | `organizational-native` | rack furniture; not a migration at all | 3 | — |
@@ -95,7 +95,7 @@ author a `face` and rank the controls — no new platform capability.
 | `graphicEq` | video | done | — |
 | `illogic` | audio | done | — |
 | `inwards` | video | done | — |
-| `joystick` | audio | — | — |
+| `joystick` | audio | done | — |
 | `karplus` | audio | done | — |
 | `kickdrum` | audio | done | — |
 | `kria` | audio | done | — |

@@ -1,22 +1,21 @@
 <script lang="ts">
   // JoystickCard — XY pad emitting four bipolar CV outputs.
   //
-  // ⚠ THIS IS THE LIVE SURFACE — the previous version of this comment claimed
-  // the opposite and was wrong (corrected 2026-08-23). It read "joystick is in
-  // STRICT_FACES (queue Q43), so both the lane and the dock render ModuleShell
-  // … this card only paints under `?shell=legacy`". joystick is NOT in
-  // STRICT_FACES and never has been: it declares no `face`, and `STRICT_FACES`
-  // is asserted equal to the set of defs that declare one. So this card is what
-  // the DOCK actually mounts today, and the lane shows the uniform placeholder
-  // — not a curated face.
+  // ⚠ THIS IS THE LEGACY SURFACE (and this header has now been wrong in BOTH
+  // directions, so date every claim). joystick entered STRICT_FACES on
+  // 2026-09-01 — the owner's two-ordinary-cells fallback (owner-decisions
+  // 2026-08-31 item 2): the lane tile and the dock bands paint `pos_x`/`pos_y`
+  // as two plain knob cells, and the real pad is the `joystick` extension's
+  // `fullViewBody` (`joystick/JoystickPadBody.svelte`), which ports THIS
+  // file's drag contract. This card still paints under `?shell=legacy` and in
+  // the dock rail for a user-docked node, so it must keep working — but it is
+  // no longer what the default shell mounts anywhere.
   //
-  // The stale claim mattered, because a reader who believed it would think the
-  // migration had already happened here and leave both surfaces alone. The
-  // refusal is recorded on the def (`$lib/audio/modules/joystick.ts`): a face
-  // would resolve to ZERO lane controls, because both of this module's params
-  // are axes of one pad and `laneOrder` makes a pad's anchor dock-only. It is
-  // now enforced by `module-face-lint`, with this module's shape as the
-  // negative control.
+  // The old #1974 refusal ("a face here resolves to ZERO lane controls,
+  // because both params are axes of one pad") was about the `xyPads` shape,
+  // and it still stands — on the SHAPE. The promotion declares no `xyPads`;
+  // `module-face-lint` keeps denying the pad-only shape via its synthetic
+  // `joystick-shaped-fixture`, which reads nothing from the live def.
   //
   // The user drags a virtual stick inside a square pad. Pad-center maps to
   // (0, 0) CV; pad-edge maps to ±1.
@@ -39,8 +38,11 @@
   //
   // Visual: a small square with the stick indicator + crosshair guides.
   // The current x/y values are shown in a tiny readout below the pad. (The
-  // 2026-08-17 resting-decimal ruling is about FACEPLATES; the legacy cards are
-  // untouched, and the face carries the value in `aria-valuetext` instead.)
+  // 2026-08-17 resting-decimal ruling is about FACEPLATES; the legacy cards
+  // are untouched. On the FACE the values live in the pad body's `aria-label`
+  // — NOT `aria-valuetext`, which only exists on range roles; the def's #2038
+  // note records the same wrong-attribute correction — and on the knob cells'
+  // `aria-valuetext`, where the role really has one.)
 
   import type { NodeProps } from '@xyflow/svelte';
   import { onDestroy } from 'svelte';
