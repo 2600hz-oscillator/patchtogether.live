@@ -336,6 +336,23 @@ const EXTENSION_BODY_ROLES: Readonly<Record<string, BodyRule>> = {
   grainsOfVision: { role: 'picture', why: 'the video-granulator\'s live preview canvas and its SCREEN switch (#1928 — the toggle a promotion would otherwise delete with the card).' },
   mandelbulb: { role: 'picture', why: 'the raymarched fractal\'s live preview canvas and its SCREEN switch.' },
   mirrorpool: { role: 'picture', why: 'the kaleidoscopic reflector\'s live preview canvas and its SCREEN switch.' },
+  //
+  // ⚠ THE SECOND ENTRY WHOSE CANVAS DELIBERATELY PAINTS NUMBERS, and it lands
+  // on the ALLOWED side of the resting-text ruling for the same reason frogger
+  // does: `drawModtris` paints `NEXT`, the next-piece preview, `LN n` and `LV n`
+  // INTO THE PLAYFIELD, by the module's own pure function, into a strip the
+  // painter reserves at 30 % of the canvas by construction
+  // (`wellWidthPx = w * 0.7`). What is FORBIDDEN is a `LINES 17` or `LEVEL 2`
+  // row rendered as CHROME BESIDE the well, and this body renders none — its
+  // entire DOM text is the SCREEN switch caption, asserted exhaustively and
+  // negative-controlled in `modtris-face-model.test.ts`.
+  //
+  // ⚠ `LV` IS NEW IN THAT PAINTER AND THE REASON IS A WIRING FIX, not decoration:
+  // `levelStep` was a declared, faded, contract-locked control that NOTHING read
+  // until this promotion wired the ramp, and without the number the only evidence
+  // a level advanced is that the pieces feel faster — indistinguishable from
+  // someone having moved DROP.
+  modtris: { role: 'picture', why: 'the TETRIS WELL — a 10x20 stack plus the NEXT-piece preview and the LN / LV counts, painted every rAF from the engine snapshot by the module\'s own exported `drawModtris`, plus its SCREEN switch. ⚠ IT IS THE MODULE\'S IDENTITY, NOT A PREVIEW OF SOMETHING ELSEWHERE: the well IS how you read what the gate outputs are doing — modtris is a gate-driven ACCUMULATOR whose output rate is a function of the stack you have built — and before promotion it existed only on a legacy card the shipping shell does not mount (modtris is not in NON_SHELL_LANE_TYPES, not a CARD_PRODUCER and not in HEADLESS_MOUNT_LANE_TYPES, so its lane tile was a blank placeholder). ⚠ THE COUNTS ARE PAINTED INTO THE CANVAS BY THE GAME and are allowed as the game\'s own artwork; the face adds NO chrome row of its own, and the body\'s only DOM text is the SCREEN caption. They reach the a11y tree through role="img" + aria-label on the well frame — and that frame sits OUTSIDE the collapse guard, so the accessible name genuinely tracks the game while the picture is off (frogger\'s puts it inside, so the same claim in that file is false there). ⚠ SCREEN OFF IS UNUSUALLY SAFE HERE for the same measured reason as frogger\'s: the game runs on the shared SCHEDULER CLOCK subscribed in the module\'s FACTORY — not in this component, not on rAF, and not gated on the AudioContext (the clock is a Web Worker setInterval) — so collapsing the well stops a drawModtris call and NOTHING else: pieces keep falling, lines keep clearing and LINE/OVERFILL keep firing. `skifree`, one module away in the same family, does NOT have that property. ⚠ NO WATCH MARK: markWatched is a VideoEngine pull-set concept and this is domain audio with two gate outputs.' },
   // ⚠ THE ONE `picture` BODY WHOSE PICTURE IS NOT THE ENGINE'S OUTPUT, because
   // this module HAS no output: `outToLaunchDef` declares `outputs: []` and its
   // surface is `{ fbo: null, texture: null }` — the only video def in the fleet

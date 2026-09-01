@@ -1023,8 +1023,44 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // ⚠ REMOVED FROM ALLOWED_PERMANENT_EXEMPT IN THE SAME COMMIT — the two lists
   // are anchored in both directions and an entry naming a non-exempt module is
   // RED, so they can only ever move together.
-  // MODTRIS research prototype: same rationale as PONG.
-  modtris: 'animated game state defeats deterministic capture; unit + ART + E2E provide coverage',
+  // ⚠ MODTRIS REMOVED 2026-08-31 — AND UNLIKE FROGGER'S AND PONG'S, THIS
+  // EXEMPTION NAMED NO EXIT CONDITION, so leaving it is a JUDGEMENT rather than
+  // a discharge and is recorded as one. Its entry read, in full: "MODTRIS
+  // research prototype: same rationale as PONG. / animated game state defeats
+  // deterministic capture; unit + ART + E2E provide coverage." The first clause
+  // was an inherited rationale, and the module is now baselined on all three of
+  // its scenes (the legacy card here, plus `face-modtris-compact` /
+  // `face-modtris-dock`).
+  //
+  // ⚠ THE SEAM IS STRICTLY HARDER THAN FROGGER'S AND THAT IS THE PART WORTH
+  // KEEPING. frogger has NO RNG anywhere in its stepper, so its board was
+  // already a pure function of tick count and a tick pin was three lines.
+  // modtris has a 7-BAG FISHER-YATES SHUFFLE (`refillQueueIfNeeded`), so a tick
+  // count fixes HOW FAR the sim ran and not WHICH pieces it ran with; and a seed
+  // alone fixes WHICH trajectory and not how far along it the capture landed
+  // (measured on pong: 72 differing pixels, max channel delta 237, across two
+  // ubuntu boots WITH a seed). The pin is therefore BOTH — `__modtrisVrtSeed`
+  // plus `__modtrisVrtTicks`, read at construction AND once in the tick so the
+  // face harness's `addInitScript` install and this card scene's `afterSpawn`
+  // install both land — and it steps a fixed number of ticks and then STOPS
+  // TICKING ALTOGETHER, which makes the well TIME-INVARIANT rather than frozen
+  // at an arbitrary moment. That matters here because the game clock is a Web
+  // Worker `setInterval` NOT gated on the AudioContext, so `freezeAudio` alone
+  // could never have stopped this game.
+  //
+  // ⚠ THIS LIST AND `ALLOWED_PERMANENT_EXEMPT` ARE ANCHORED IN BOTH DIRECTIONS,
+  // so modtris left both in the SAME commit. ⚠ AND THE SIBLING BELOW IS
+  // DELIBERATELY LEFT STANDING: skifree needs its own seam and its own
+  // argument, and it is genuinely harder than either (its engine self-drives
+  // on rAF from bundle load, inside a committed third-party IIFE with its own
+  // RNG). Nothing here generalises to it by family resemblance. (gibribbon
+  // was the other name in this sentence until origin/main's owner-ruled
+  // REWRITE discharged it too — see its own note just below.)
+  //
+  // ⚠ DOOM IS EXCLUDED FROM THIS REASONING BY NAME AND MUST STAY EXEMPT. Its
+  // `runtime.runTic()` runs inside `surface.draw`, so DOOM's game clock IS its
+  // frame clock and a tick pin would re-specify how far the marine walks. No
+  // DOOM file was opened for this change.
   // ⚠ GIBRIBBON REMOVED 2026-08-29 — THE OWNER-RULED FULL REWRITE DESIGNED THE
   // DETERMINISM SEAMS IN rather than retrofitting them, so the old blanket
   // reason ("animated scrolling ribbon + sprites defeat deterministic
@@ -1596,12 +1632,17 @@ export const ALLOWED_PERMANENT_EXEMPT: ReadonlySet<string> = new Set([
   // now. See the note where its entry stood in EXEMPT_FROM_VRT above for the
   // argument. This list is ANCHORED in both directions, so leaving the name
   // here while the module is baselined would be RED.
+  // ⚠ `modtris` REMOVED 2026-08-31 — it is baselined on all three of its scenes
+  // now. See the note where its entry stood in EXEMPT_FROM_VRT above for the
+  // argument, which is a JUDGEMENT rather than a discharge (its entry named no
+  // exit condition). This list is ANCHORED in both directions, so leaving the
+  // name here while the module is baselined would be RED.
   // ⚠ `gibribbon` REMOVED 2026-08-29 — the rewrite designed its seams in and
   // the module is baselined on all three of its scenes. See the note where its
   // entry stood in EXEMPT_FROM_VRT above. This list is ANCHORED in both
   // directions, so leaving the name here while the module is baselined would
   // be RED.
-  'modtris', 'skifree',
+  'skifree',
   'analogLogicMaths', 'bentbox', 'b3ntb0x', 'acidwarp',
   // ⚠ `gamepad` REMOVED 2026-08-24 — the third drain, after `cvBuddy` and
   // `midiclock`. See the note where its entry used to stand in EXEMPT_FROM_VRT

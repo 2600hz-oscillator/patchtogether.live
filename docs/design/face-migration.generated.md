@@ -122,6 +122,7 @@ author a `face` and rank the controls — no new platform capability.
 | `mirrorpool` | video | done | — |
 | `mixer` | audio | done | — |
 | `mixmstrs` | audio | done | — |
+| `modtris` | audio | done | — |
 | `monoglitch` | video | done | — |
 | `moog902` | audio | done | — |
 | `moog903a` | audio | done | — |
@@ -234,7 +235,6 @@ the primary interaction is not param-shaped — needs a purpose-built surface.
 | `controlSurface` | meta | — | — |
 | `doom` | video | — | — |
 | `mappy` | video | — | — |
-| `modtris` | audio | — | — |
 | `moog956` | audio | — | — |
 | `nibbles` | video | — | — |
 | `painter` | video | — | — |
