@@ -257,7 +257,27 @@ test('the TILE carries the gesture that opens the device, and both picks persist
 
   // ── MUSIC MODE persists AND re-acquires (the capture DSP constraints cannot
   // be changed on a live track, so the switch has to re-open the device).
-  await tile.getByTestId('audioin-tile-music-mode').check();
+  //
+  // ⚠ IT IS A DOCK CONTROL, NOT A TILE ONE, and that is deliberate: the shell
+  // budgets the lane tile's height and it fits ONE tileBody row (measured — the
+  // first draft's three rows painted over the GAIN caption in the compact VRT
+  // baseline). So the tile keeps the picker and the acquire gesture, which
+  // cannot live anywhere else, and this switch lives one click away. It is also
+  // ALWAYS present on the pinned instance, whose 🎧 tray mounts the full-view
+  // body.
+  await expect(
+    tile.getByTestId('audioin-tile-music-mode'),
+    'the compact tier is one row: music mode must NOT be on the tile',
+  ).toHaveCount(0);
+  await page.evaluate(
+    (n) => (globalThis as unknown as { __openDockFullView(x: string): void }).__openDockFullView(n),
+    NODE,
+  );
+  const paneBody = page.locator(
+    `.dock-fullview-pane [data-audioin-node="${NODE}"][data-testid="audioin-face-controls"]`,
+  );
+  await expect(paneBody).toBeVisible({ timeout: BOOT_MS });
+  await paneBody.getByTestId('audioin-face-music-mode').check();
   await expect
     .poll(async () => (await savedData(page))['musicMode'], {
       message: 'music mode did not persist to node.data',

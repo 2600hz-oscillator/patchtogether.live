@@ -109,90 +109,120 @@
      GONE would be satisfied forever by the pinned one. Scoping by NODE is what
      makes "this node has no mounted surface" expressible at all, which is the
      ACT of the #1590 regression spec. -->
+{#snippet devicePicker()}
+  <select
+    class="device nodrag"
+    data-testid="{testidPrefix}-device"
+    value={picked ?? ''}
+    disabled={options.length === 0}
+    aria-label="Audio input device"
+    aria-valuetext={pickerText}
+    onchange={(e) => pickAudioInputDevice(nodeId, (e.currentTarget as HTMLSelectElement).value)}
+  >
+    {#if options.length === 0}
+      <option value="">(no inputs)</option>
+    {:else}
+      {#if !picked}
+        <option value="" disabled selected>(pick one)</option>
+      {/if}
+      {#each options as o (o.value)}
+        <option value={o.value} selected={o.value === picked}>{o.label}</option>
+      {/each}
+    {/if}
+  </select>
+{/snippet}
+
+<!-- ⚠ A REAL `<button>` AND A REAL CLICK. The browser grants a FIRST microphone
+     permission only from a genuine activation context, so this gesture can never
+     move into an effect — and it must exist on the TILE, which is the whole
+     reason this component is shared. Its CAPTION is the gesture's own name
+     (ENABLE / RETRY / STOP — permitted face text), and it doubles as the tile's
+     statement of whether the input is open. -->
+{#snippet actionButton()}
+  <button
+    type="button"
+    class="act nodrag"
+    class:stop={action === 'stop'}
+    data-testid="{testidPrefix}-action"
+    data-action={action ?? 'none'}
+    disabled={action === null || options.length === 0}
+    title={detail}
+    onclick={onAction}
+  >{action ? inputActionLabel(action, compact) : '…'}</button>
+{/snippet}
+
+{#snippet faultLamp()}
+  <StatusLed caption="FAULT" lit={faultLit} tone="warn" {detail} testid="{testidPrefix}-fault" />
+{/snippet}
+
 <div
   class="src"
   class:compact
   data-testid="{testidPrefix}-controls"
   data-audioin-node={nodeId}
 >
-  <div class="lamps">
-    <!-- ⚠ TWO LAMPS, NOT ONE, AND THE SECOND IS NOT DECORATION. `StatusLed`'s
-         caption is STATIC by contract, so one lamp cannot distinguish "not
-         running because you have not asked" from "not running because the
-         browser refused" — and those are the two states a player has to tell
-         apart before they can act. LIVE dark + FAULT dark is a rack waiting for
-         a click; LIVE dark + FAULT lit is a rack that needs a decision. The
-         sentence behind both is the same `detail`, which reaches `aria-label`
-         and `title` and never a text node. -->
-    <StatusLed
-      caption="LIVE"
-      lit={liveLit}
-      {detail}
-      testid="{testidPrefix}-live"
-    />
-    <StatusLed
-      caption="FAULT"
-      lit={faultLit}
-      tone="warn"
-      {detail}
-      testid="{testidPrefix}-fault"
-    />
-  </div>
+  {#if compact}
+    <!-- ⚠ THE LANE TILE IS **ONE ROW**, AND THAT IS A MEASURED CONSTRAINT, not a
+         taste call. The shell budgets the tile's height, and the first draft put
+         three rows here: the VRT compact baseline came back with the lamps row
+         PAINTED OVER the GAIN fader's caption. `cameraInput`'s shipped tile is
+         the shape that fits — lamp, picker, gesture, one line — and this is that
+         shape.
+         WHAT THE TILE DROPS, AND WHY EACH IS SAFE:
+           * the LIVE lamp — this face has a live `meter` GLYPH on the same tile,
+             so signal presence is already drawn, and the action button's own
+             caption says STOP when the input is open. `cameraInput` has no lamp
+             pair here either.
+           * MUSIC MODE — a set-and-forget capture-DSP switch, not a play
+             control. It is one click away in the dock full view, and it is
+             ALWAYS present on the pinned instance's 🎧 tray, which is the
+             `fullViewBody`.
+           * the error PROSE — the `cameraInput` precedent verbatim: there is no
+             room for a sentence at 192 px, and the FAULT lamp's `title` carries
+             the same sentence.
+         WHAT IT KEEPS is the part that cannot live anywhere else: ENABLE is the
+         ONLY route to a first `getUserMedia` grant. -->
+    <div class="pick-row">
+      {@render faultLamp()}
+      {@render devicePicker()}
+      {@render actionButton()}
+    </div>
+  {:else}
+    <div class="lamps">
+      <!-- ⚠ TWO LAMPS, NOT ONE, AND THE SECOND IS NOT DECORATION. `StatusLed`'s
+           caption is STATIC by contract, so one lamp cannot distinguish "not
+           running because you have not asked" from "not running because the
+           browser refused" — and those are the two states a player has to tell
+           apart before they can act. LIVE dark + FAULT dark is a rack waiting for
+           a click; LIVE dark + FAULT lit is a rack that needs a decision. The
+           sentence behind both is the same `detail`, which reaches `aria-label`
+           and `title` and never a text node. -->
+      <StatusLed caption="LIVE" lit={liveLit} {detail} testid="{testidPrefix}-live" />
+      {@render faultLamp()}
+    </div>
 
-  <div class="pick-row">
-    <select
-      class="device nodrag"
-      data-testid="{testidPrefix}-device"
-      value={picked ?? ''}
-      disabled={options.length === 0}
-      aria-label="Audio input device"
-      aria-valuetext={pickerText}
-      onchange={(e) => pickAudioInputDevice(nodeId, (e.currentTarget as HTMLSelectElement).value)}
-    >
-      {#if options.length === 0}
-        <option value="">(no inputs)</option>
-      {:else}
-        {#if !picked}
-          <option value="" disabled selected>(pick one)</option>
-        {/if}
-        {#each options as o (o.value)}
-          <option value={o.value} selected={o.value === picked}>{o.label}</option>
-        {/each}
-      {/if}
-    </select>
+    <div class="pick-row">
+      {@render devicePicker()}
+      {@render actionButton()}
+    </div>
 
-    <!-- ⚠ A REAL `<button>` AND A REAL CLICK. The browser grants a FIRST
-         microphone permission only from a genuine activation context, so this
-         gesture can never move into an effect — and it must exist on the TILE,
-         which is the whole reason this component is shared. -->
-    <button
-      type="button"
-      class="act nodrag"
-      class:stop={action === 'stop'}
-      data-testid="{testidPrefix}-action"
-      data-action={action ?? 'none'}
-      disabled={action === null || options.length === 0}
-      title={detail}
-      onclick={onAction}
-    >{action ? inputActionLabel(action, compact) : '…'}</button>
-  </div>
+    <label class="music nodrag" title="Force the browser's echo-cancel / noise-suppress / auto-gain OFF for a clean line-level feed">
+      <input
+        type="checkbox"
+        data-testid="{testidPrefix}-music-mode"
+        checked={musicMode}
+        onchange={(e) => setAudioInputMusicMode(nodeId, (e.currentTarget as HTMLInputElement).checked)}
+      />
+      <span>music mode</span>
+    </label>
 
-  <label class="music nodrag" title="Force the browser's echo-cancel / noise-suppress / auto-gain OFF for a clean line-level feed">
-    <input
-      type="checkbox"
-      data-testid="{testidPrefix}-music-mode"
-      checked={musicMode}
-      onchange={(e) => setAudioInputMusicMode(nodeId, (e.currentTarget as HTMLInputElement).checked)}
-    />
-    <span>music mode</span>
-  </label>
-
-  <!-- ⚠ TRANSIENT, NOT RESTING. This element does not exist unless something
-       failed — feedback on a gesture, the shape `audioOut`'s body already ships
-       for a rejected `setSinkId`. At rest there is no error and therefore no
-       text. `role="alert"` makes the failure an announcement as well as a line. -->
-  {#if !compact && view.errorMsg}
-    <p class="err" role="alert" data-testid="{testidPrefix}-error">{view.errorMsg}</p>
+    <!-- ⚠ TRANSIENT, NOT RESTING. This element does not exist unless something
+         failed — feedback on a gesture, the shape `audioOut`'s body already ships
+         for a rejected `setSinkId`. At rest there is no error and therefore no
+         text. `role="alert"` makes the failure an announcement as well as a line. -->
+    {#if view.errorMsg}
+      <p class="err" role="alert" data-testid="{testidPrefix}-error">{view.errorMsg}</p>
+    {/if}
   {/if}
 </div>
 
