@@ -5517,6 +5517,47 @@ export const FACES = [
       + 'two-platform capture that cannot be satisfied because there is only one baseline set.',
   },
 
+  // ── CHROMA CONSOLE (2026-09-02) — the DEVICE control surface ──────────────
+  //
+  // `pages: 2` — the face declares `device` (CONNECT + PUSH ALL) and `slots`
+  // (the eight assignable knobs), and nothing is lifted out of either (no hero;
+  // the `fullViewBody` takes the dock head via `dockFullViewHeadPlan`), so the
+  // declared count and the painted count agree. Two is far below
+  // `DOCK_TAB_MIN_BANDS`, so this is a sectioned faceplate, not a tab rail.
+  //
+  // ── ⚠ THE DETERMINISM ARGUMENT IS THE CARD'S OWN, INHERITED ──────────────
+  //
+  // This module already carried a committed CARD baseline, and
+  // `ChromaconsoleCard.svelte`'s header says why it could: "no message
+  // counters, no activity blink, no elapsed times, no 'last CC sent' readout …
+  // There is no polling timer: nothing on this card changes on its own." The
+  // face is held to the same bar deliberately — the device body has no timer,
+  // no rAF, and paints neither ledger counter — so the resting plate is a pure
+  // function of the node's params and `node.data.assign`, both of which a fresh
+  // spawn fills from the descriptor's own defaults.
+  //
+  // ⚠ AND THE MACHINE-DEPENDENT HALF CANNOT REACH THE CAPTURE, which is worth
+  // stating because it is the only thing on the surface that could differ
+  // between two machines. The output roster comes from `requestMIDIAccess()`,
+  // which is never called until someone presses CONNECT — `midi.spec.ts` pins
+  // "page load never requests Web-MIDI access" — and this scene presses nothing.
+  // So `listOutputs()` returns `[]` NOT because the runner has no MIDI devices
+  // but because `midiAccess` is null and `outputs()` short-circuits on it: the
+  // picker renders exactly its own `— no output —` literal, the channel sits at
+  // the descriptor's `defaultChannel` (1), the MIDI lamp is dark, and the body
+  // paints its pre-connect hint.
+  //
+  // ⚠ THE SLOT BOARD IS THE DESCRIPTOR'S OWN DEFAULTS: `resolveSlots` falls back
+  // to `defaultSlots` when `node.data.assign` is absent, so the eight chips read
+  // tilt / rate / time / mix / character / movement / diffusion / texture on
+  // every boot, with `·snap` on exactly rate and time. ASSIGN mode is component
+  // state initialised false, so the pickers are not in frame.
+  //
+  // ⚠ NO `videoFaceWhy` AND NO `simPin`. `domain: 'audio'`, `outputs: []`, no
+  // canvas anywhere on the surface: there is no clock to pin and nothing that
+  // advances between frames.
+  { type: 'chromaconsole', pages: 2 },
+
 ] as const;
 
 /**
