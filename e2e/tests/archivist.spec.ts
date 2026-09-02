@@ -114,8 +114,14 @@ test.describe('ARCHIVIST (archive.org, mocked)', () => {
     await expect(card).toHaveAttribute('data-media-type', 'image');
     // image = clean downstream output.
     await expect(card).toHaveAttribute('data-clean-output', 'true');
-    // no play-only warning for images.
-    await expect(page.locator('[data-testid="archivist-cors-warn"]')).toHaveCount(0);
+    // ⚠ THE PLAY-ONLY WARNING IS NOW A LAMP: ALWAYS MOUNTED, UNLIT FOR A CLEAN
+    // ITEM. It used to be a sentence rendered only when the output was tainted.
+    // The face promotion made it a `StatusLed` with a STATIC caption (owner
+    // ruling: a faceplate paints no resting readout of derived state), and the
+    // card draws the same shared control, so both surfaces agree by
+    // construction. `data-lit` is the stronger assertion of the two anyway —
+    // absence cannot tell "clean" apart from "the lamp was deleted".
+    await expect(page.locator('[data-testid="archivist-cors-warn"]')).toHaveAttribute('data-lit', '0');
     // the <img> got the mocked src.
     await expect(page.locator('[data-testid="archivist-image"]')).toHaveJSProperty('complete', true);
     // attribution link points at the details page.
@@ -142,7 +148,8 @@ test.describe('ARCHIVIST (archive.org, mocked)', () => {
     await expect(page.locator('[data-testid="archivist-play"]')).toBeVisible();
     await expect(page.locator('[data-testid="archivist-seek"]')).toBeVisible();
     await expect(page.locator('[data-testid="archivist-rand-pos"]')).toBeVisible();
-    await expect(page.locator('[data-testid="archivist-cors-warn"]')).toHaveCount(0);
+    // Mounted and UNLIT — see the IMAGE leg's note on the lamp.
+    await expect(page.locator('[data-testid="archivist-cors-warn"]')).toHaveAttribute('data-lit', '0');
   });
 
   test('VIDEO: search → PLAY-ONLY (warning shown, no clean output)', async ({ page }) => {
@@ -159,8 +166,10 @@ test.describe('ARCHIVIST (archive.org, mocked)', () => {
     await expect(card).toHaveAttribute('data-media-type', 'video');
     // video = NO clean output (archive.org video lacks CORS on the served file).
     await expect(card).toHaveAttribute('data-clean-output', 'false');
-    // the play-only warning is shown.
+    // the play-only warning is shown — and LIT, which is what now carries the
+    // distinction the two clean legs assert the other side of.
     await expect(page.locator('[data-testid="archivist-cors-warn"]')).toBeVisible();
+    await expect(page.locator('[data-testid="archivist-cors-warn"]')).toHaveAttribute('data-lit', '1');
     // still plays/scrubs in the preview (transport present).
     await expect(page.locator('[data-testid="archivist-play"]')).toBeVisible();
     await expect(page.locator('[data-testid="archivist-seek"]')).toBeVisible();
