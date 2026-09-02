@@ -311,7 +311,7 @@ describe('chromaconsole — the slot reassignment is UNDOABLE', () => {
     // `trackedOrigins = [LOCAL_ORIGIN]`, so an untagged transaction is atomic and
     // syncs to rack-mates but never reaches the UndoManager. A slot reassignment
     // is the module's most destructive and least reconstructible edit — which of
-    // twenty-seven controls was slot 5 before? — and it was outside Cmd-Z.
+    // twenty-nine controls was slot 5 before? — and it was outside Cmd-Z.
     //
     // Nothing else in the tree can see this: the mutate guard scans `.params`
     // writes and this is `.data`, and no behavioural gate presses Cmd-Z after a

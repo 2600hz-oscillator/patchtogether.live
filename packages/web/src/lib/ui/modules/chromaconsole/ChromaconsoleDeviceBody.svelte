@@ -105,12 +105,24 @@
   // on purpose. Transmission detail is observable through the handle's ledger
   // (`read('ledger')`), which is where the e2e looks.
   //
-  // ⚠ THIS BODY OWNS NO SUBSCRIPTION. Unlike midiclock's there is no push seam
-  // to register with: `DeviceCardApi` is pull-only, and nothing on this module
-  // changes on its own (which is what keeps the resting render stable). Reads
-  // re-run on the node version and on this surface's own gestures — the card's
-  // pattern, and the reason it needs no teardown.
+  // ⚠ THIS BODY SUBSCRIBES TO ONE SIGNAL, AND IT IS NOT A PUSH SEAM.
+  // `DeviceCardApi` is pull-only and nothing on this module changes on its own,
+  // which is what keeps the resting render byte-stable. But the handle state it
+  // reads — the port, the channel, the problem line, the whole output roster —
+  // is NOT in the Y.Doc, so `nodeVersion` cannot see any of it, and the gestures
+  // that move it now live OUTSIDE this component as ranked cells.
+  //
+  // ⚠ THAT IS THE PROMOTION'S OWN HAZARD, NOT AN INHERITED ONE. The legacy
+  // card's connect button was inside the card and bumped the card's counter
+  // after the grant resolved; CONNECT is a cell now and cannot. Pressing it with
+  // the faceplate ALREADY OPEN — the path this body's own empty state instructs
+  // — left the picker empty, the lamp dark and the hint up over a bound pedal.
+  // `onChromaconsoleHandleChange` is the seam's own revision, fired from the
+  // gestures that cause it; `revision` below stays for this surface's immediate
+  // local refresh. Neither is a timer, and the resting render still changes for
+  // nothing.
 
+  import { onDestroy } from 'svelte';
   import { patch } from '$lib/graph/store';
   import { setNodeParam } from '$lib/graph/mutate';
   import { nodeVersion } from '$lib/graph/node-versions.svelte';
@@ -129,8 +141,10 @@
     chromaconsoleApi,
     chromaconsoleAssignSlot,
     chromaconsoleFireAction,
+    chromaconsoleHandleRevision,
     chromaconsoleSelectPort,
     chromaconsoleSetChannel,
+    onChromaconsoleHandleChange,
   } from '../chromaconsole-cell-actions';
   import {
     CHROMA_CHANNEL_CHOICES,
@@ -145,6 +159,15 @@
   /** Bumped by this surface's own gestures so the api-backed reads re-run. There
    *  is no polling timer: nothing here changes on its own. */
   let revision = $state(0);
+  /** Mirrors the ACTION SEAM's handle revision — the gestures that move device
+   *  state from outside this component (the ranked CONNECT cell). Nothing here
+   *  polls it; the seam pushes. */
+  let handleV = $state(chromaconsoleHandleRevision());
+  onDestroy(
+    onChromaconsoleHandleChange(() => {
+      handleV = chromaconsoleHandleRevision();
+    }),
+  );
   /** The transient editing mode — see the header. */
   let assigning = $state(false);
 
@@ -164,13 +187,20 @@
     undelivered: 0,
   };
 
+  // ⚠ `handleV` IS LOAD-BEARING ON THESE TWO AND ONLY THESE TWO. Everything
+  // `status()` and `listOutputs()` report lives on the device handle rather than
+  // in the graph, so neither `node` nor `revision` can wake them for a grant
+  // pressed from the lane tile. `slots()` below is graph-backed — the assignment
+  // IS `node.data.assign` — and does not need it.
   let status = $derived.by<DeviceStatus>(() => {
     void revision;
+    void handleV;
     void node;
     return chromaconsoleApi(nodeId)?.status() ?? EMPTY_STATUS;
   });
   let outputs = $derived.by<{ id: string; name: string }[]>(() => {
     void revision;
+    void handleV;
     void node;
     return chromaconsoleApi(nodeId)?.listOutputs() ?? [];
   });

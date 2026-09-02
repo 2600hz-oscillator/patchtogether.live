@@ -22,7 +22,7 @@
 //     pure function of the NODE, and the channel lives on the device HANDLE, not
 //     on the graph. A cell would paint a channel that never changed. (ptzcam
 //     records the same finding for its port picker, from the async-grant side.)
-//   THE EIGHT ASSIGNMENTS — `node.data.assign`, a per-NODE map over a 27-entry
+//   THE EIGHT ASSIGNMENTS — `node.data.assign`, a per-NODE map over a 29-entry
 //     grouped roster, plus the NAMES it gives the eight otherwise-identical
 //     slot params. A cell caption is `ParamDef.label` with no node input
 //     anywhere in the shell, so the names have no other home; the assignment

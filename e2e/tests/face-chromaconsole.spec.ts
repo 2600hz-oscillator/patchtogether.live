@@ -199,6 +199,24 @@ test.describe('CHROMA CONSOLE faceplate — the faced chain reaches the wire', (
       'and it is no longer the empty placeholder',
     ).toHaveCount(0);
 
+    // ⚠ THE FACEPLATE IS OPENED **BEFORE** THE GRANT, AND THE ORDER IS THE
+    // ASSERTION. The body's own empty state paints "Press Connect MIDI to grant
+    // access and pick the pedal", so the path a player actually walks is: open
+    // the plate, read the instruction, press the cell — with this surface
+    // already mounted. A grant writes NOTHING to the Y.Doc (the port and the
+    // channel live on the device HANDLE), so a body whose reads are keyed only
+    // on the node and on its own gestures repaints for neither, and the picker
+    // stays empty under a hint telling you to use it. Connecting first and
+    // opening afterwards — the cheaper order — is exactly the order that cannot
+    // see it, because a fresh mount reads the handle once on the way up.
+    const dock = await openDock(page);
+    const body = dock.locator(`[data-testid="chromaconsole-device-body-${NODE}"]`);
+    await expect(body).toBeVisible({ timeout: SLOW_BOOT_TEST_TIMEOUT_MS });
+    await expect(
+      body.locator(`[data-testid="chromaconsole-port-${NODE}"]`),
+      'nothing is bound before the grant',
+    ).toHaveValue('');
+
     // ── THE PRESS REACHES THE SEAM. The observable is the AUDITION LEDGER: a
     // grant writes nothing to the graph, so `readData` is structurally blind to
     // this gesture and a dead button would satisfy any DOM assertion.
@@ -212,13 +230,10 @@ test.describe('CHROMA CONSOLE faceplate — the faced chain reaches the wire', (
       })
       .toBeGreaterThan(before.delivered);
 
-    // ── AUTO-DETECT PICKED THE PEDAL, NOT THE DECOY, and the body says so. This
-    // is the shared `matchPortByHint` seam running for the first time in
-    // production: earliest HINT wins, which is why the descriptor orders its
-    // hints most-specific-first.
-    const dock = await openDock(page);
-    const body = dock.locator(`[data-testid="chromaconsole-device-body-${NODE}"]`);
-    await expect(body).toBeVisible({ timeout: SLOW_BOOT_TEST_TIMEOUT_MS });
+    // ── AUTO-DETECT PICKED THE PEDAL, NOT THE DECOY, and the ALREADY-OPEN body
+    // says so. This is the shared `matchPortByHint` seam running for the first
+    // time in production: earliest HINT wins, which is why the descriptor orders
+    // its hints most-specific-first.
     await expect(body.locator(`[data-testid="chromaconsole-port-${NODE}"]`)).toHaveValue(
       CHROMA_PORT.id,
     );
@@ -314,6 +329,25 @@ test.describe('CHROMA CONSOLE faceplate — the faced chain reaches the wire', (
     expect(await readCapturedCcs(page, CHROMA_PORT.id)).toEqual([
       { channel: 1, cc: CC_BYPASS, value: 120 },
     ]);
+
+    // ⚠ AND THE SECOND SURFACE FOLLOWS THE GRAPH — THE ROUND TRIP, NOT THE
+    // WRITE. Every assertion above this one reads the WIRE or `node.params`, and
+    // [[yjs-proxy-stable-identity-defeats-derived]] is precisely the bug that
+    // passes all of them: `patch.nodes[id]` is a proxy with STABLE IDENTITY, so a
+    // `$derived` reading it never propagates and the picture freezes while the
+    // graph is correct. The board must repaint for a value written ANYWHERE it
+    // does not own — the band knob directly above it, a clip-automation lane, a
+    // rack-mate, a Cmd-Z of the reassignment this PR just made undoable.
+    //
+    // `slot1` is 64 when it becomes a BYPASS slot (tilt's default), and 64 ties
+    // between the two range midpoints (32 / 96), which `nearestSegmentValue`
+    // resolves EARLIER — so a frozen board sits on BYPASS. 120 is unambiguously
+    // ENGAGE. The two states are therefore distinguishable, which is the only
+    // reason this assertion can discriminate at all.
+    await expect(
+      seg.getByRole('radio').nth(1),
+      'the board repaints for a graph write it did not make',
+    ).toHaveAttribute('aria-checked', 'true');
 
     // And pressing a segment writes the range's midpoint through the same param,
     // reaching the same controller — the second surface is a real control, not a

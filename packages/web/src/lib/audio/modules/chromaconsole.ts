@@ -259,7 +259,7 @@ export const chromaconsoleDef: AudioModuleDef = {
           // [LOCAL_ORIGIN]`, so an untagged transaction is atomic and syncs to
           // rack-mates but never reaches the UndoManager — which this write was
           // until the face PR. A slot reassignment is the module's most
-          // destructive and least reconstructible edit (which of twenty-seven
+          // destructive and least reconstructible edit (which of twenty-nine
           // controls was slot 5 before?) and is exactly the operation a player
           // reaches for undo after. `mutateNode` is the sanctioned seam and
           // defaults to LOCAL_ORIGIN.

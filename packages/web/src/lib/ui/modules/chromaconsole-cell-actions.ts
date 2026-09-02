@@ -41,6 +41,60 @@ import { matchPortByHint } from '$lib/devices/device-descriptor';
 import type { DeviceCardApi } from '$lib/devices/device-module';
 import type { ModuleNode } from '$lib/graph/types';
 
+// ─────────────── THE HANDLE-STATE SIGNAL, AND WHY IT IS HERE ────────────────
+//
+// ⚠ A GRANT WRITES NOTHING TO THE Y.DOC. The port, the channel, the problem
+// line and the whole output roster live on the DEVICE HANDLE
+// (`createDeviceHandle`) and never touch the graph — which is deliberate (a
+// port id is machine-local) and is exactly what makes them invisible to
+// `nodeVersion`. So a surface whose reads are keyed on the node repaints for
+// none of them.
+//
+// ⚠ AND THE PROMOTION IS WHAT MADE THAT BITE. On the legacy card the connect
+// button was INSIDE the component, so its handler could bump the card's own
+// counter after the grant resolved. The face moves that gesture to a ranked
+// `action` cell, which lives out here and cannot reach the body's local state:
+// press CONNECT with the faceplate already open — the path the body's own empty
+// state instructs, "Press Connect MIDI to grant access and pick the pedal" —
+// and the picker stayed empty, the lamp dark and the hint up under a granted,
+// auto-detected, fully bound pedal.
+//
+// This is the seam's own revision, bumped by every gesture that moves handle
+// state, with subscribers notified. ptzcam solves the same problem with
+// `ptzMidiVersion` and midiclock with `DeviceCardApi.subscribe`; this device's
+// api is pull-only and has neither, so the signal belongs beside the gestures
+// that cause it.
+//
+// ⚠ NOT A TIMER AND NOT A POLL. The resting render of this module must stay
+// byte-stable for a committed VRT baseline (the legacy card's header records
+// why), so the surface may only be woken by something that ACTUALLY HAPPENED.
+// Subscribers are notified from event handlers and promise callbacks, never
+// from inside a `$derived` — a bump during derivation is `state_unsafe_mutation`
+// and permanently poisons the consumer's deriveds, which is the failure ptzcam's
+// own header records against `ptz-midi.ts`.
+let handleRevision = 0;
+const handleListeners = new Set<() => void>();
+
+/** Monotonic count of handle-state changes this seam has caused. */
+export function chromaconsoleHandleRevision(): number {
+  return handleRevision;
+}
+
+/** Subscribe to handle-state changes. Returns the unsubscriber. */
+export function onChromaconsoleHandleChange(fn: () => void): () => void {
+  handleListeners.add(fn);
+  return () => {
+    handleListeners.delete(fn);
+  };
+}
+
+/** Notify every surface that the handle moved. Copied before iterating so an
+ *  unsubscribe during dispatch cannot skip a live listener. */
+function bumpHandle(): void {
+  handleRevision++;
+  for (const fn of [...handleListeners]) fn();
+}
+
 /** The live card-api handle for a chromaconsole node, or null when the engine
  *  is not up / the node is gone / the handle does not answer the read key. */
 export function chromaconsoleApi(nodeId: string): DeviceCardApi | null {
@@ -80,6 +134,7 @@ export function chromaconsoleAutoSelectPort(api: DeviceCardApi): string | null {
   if (index < 0) return null;
   const id = ports[index]!.id;
   api.selectPort(id);
+  bumpHandle();
   return id;
 }
 
@@ -98,9 +153,24 @@ export function chromaconsoleConnect(nodeId: string): boolean {
   }
   recordAudition({ nodeId, seam: 'engine-message', delivered: true });
   // ⚠ NOT AWAITED — see the header's user-activation note. The outcome reaches
-  // the surface through `status().problem` and the port roster, both of which
-  // the body re-reads on its own revision bump.
-  void api.connect().then(() => chromaconsoleAutoSelectPort(api));
+  // the surface through `status().problem` and the port roster, neither of which
+  // is in the graph, so the handle signal is the ONLY thing that can repaint a
+  // faceplate that was already open when the press landed.
+  //
+  // ⚠ THE BUMP IS UNCONDITIONAL, AND A REFUSED GRANT IS THE REASON. When the
+  // prompt is denied or suppressed, `connect()` resolves false and the handle's
+  // `problem` carries `midiOutcomeMessage`'s sentence — which the body paints as
+  // its `role="alert"` line and is the only thing in the product that says what
+  // happened. Bumping only on success would silence exactly the case that needs
+  // saying. `catch` covers the same ground for a rejection the api does not
+  // currently produce, so a future one cannot strand the surface.
+  void api
+    .connect()
+    .then(() => {
+      chromaconsoleAutoSelectPort(api);
+    })
+    .catch(() => undefined)
+    .finally(bumpHandle);
   return true;
 }
 
@@ -137,6 +207,7 @@ export function chromaconsoleSelectPort(nodeId: string, portId: string | null): 
   const api = chromaconsoleApi(nodeId);
   if (!api) return false;
   api.selectPort(portId);
+  bumpHandle();
   return true;
 }
 
@@ -145,6 +216,7 @@ export function chromaconsoleSetChannel(nodeId: string, channel: number): boolea
   const api = chromaconsoleApi(nodeId);
   if (!api) return false;
   api.setChannel(channel);
+  bumpHandle();
   return true;
 }
 
