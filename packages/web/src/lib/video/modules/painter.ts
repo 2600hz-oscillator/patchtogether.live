@@ -2,22 +2,30 @@
 //
 // PAINTER — an MS-Paint-style drawing surface as a video SOURCE.
 //
-// The card is a tiny Windows-95 Paint: a toolbar (pencil / brush / line / rect /
-// ellipse / fill / eraser / eyedropper / text), the 28-colour palette, and an
-// engine-resolution drawing canvas. Whatever the user paints appears, in real
-// time, on this module's single video OUTPUT at the engine's output resolution
-// (1024×768 in 4:3, 1366×768 in 16:9) — a 1:1 mapping (the card's canvas IS the
-// frame).
+// The faceplate is a tiny Windows-95 Paint: a toolbar (pencil / brush / line /
+// rect / ellipse / fill / eraser / eyedropper / text), the 28-colour palette,
+// and an engine-resolution drawing canvas. Whatever the user paints appears, in
+// real time, on this module's single video OUTPUT — a 1:1 mapping (the drawing
+// canvas IS the frame).
 //
-// ── ARCHITECTURE (the card-owned-source pattern, same as TEXTMARQUEE/PICTUREBOX)
-// The factory is DOM-free-testable: it owns the OUTPUT FBO + an "upload texture"
-// and a passthrough blit shader. The CARD owns the interactive paint canvas
-// (engine-resolution), replays the Y.Doc-synced op log onto it, and pushes the
-// live canvas in via `read('extras').setPaintCanvas(canvas)`; the factory uploads
-// it into the texture each frame and blits it 1:1 into the FBO. Until the card
+// ── ARCHITECTURE (the extras-channel source pattern, same as TEXTMARQUEE /
+// PICTUREBOX). The factory is DOM-free-testable: it owns the OUTPUT FBO + an
+// "upload texture" and a passthrough blit shader. Some surface hands it a 2-D
+// canvas through `read('extras').setPaintCanvas(canvas)`; the factory uploads it
+// into the texture each frame and blits it 1:1 into the FBO. Until something
 // pushes a canvas, the factory paints a WHITE placeholder (MS-Paint's default
 // blank page) so a freshly-spawned node is never a dead black frame — this also
 // satisfies the per-port output-emit sweep.
+//
+// ⚠ WHO PUSHES, AND WHY IT IS NOT A UI QUESTION. The node's picture is the
+// deterministic replay of `node.data.ops`, so `$lib/ui/media/extras-producers`
+// replays it onto a NODE-owned canvas on NODE lifetime and binds that (#1720) —
+// which is what makes a saved rack render the drawing rather than a blank page
+// with nothing opened. While a DRAWING SURFACE is mounted (the faceplate's
+// `fullViewBody`, or `PainterCard.svelte` under `?shell=legacy`) that surface
+// CLAIMS the binding and pushes its own canvas instead, because an in-progress
+// stroke must show on OUT before the op commits. Both replay the same log, so
+// the lease changes WHICH canvas is bound and never WHAT is on it.
 //
 // The drawing model (the PaintOp log, deterministic apply, flood fill, the
 // palette) is pure + unit-tested in painter-draw.ts. This file owns ONLY the GL
@@ -27,12 +35,15 @@ import type { VideoModuleDef } from '$lib/video/module-registry';
 import type { VideoNodeHandle, VideoNodeSurface } from '$lib/video/engine';
 import { PAINT_BG } from './painter-draw';
 
-/** Handle extras the card resolves via `engine.read(id, 'extras')` to feed the
- *  card-rendered paint canvas to the engine module. Mirrors TEXTMARQUEE. */
+/** Handle extras a surface (or the node-lifetime producer) resolves via
+ *  `engine.read(id, 'extras')` to feed a rendered paint canvas to the engine
+ *  module. Mirrors TEXTMARQUEE. */
 export interface PainterHandleExtras {
-  /** Bind the card's live paint canvas (engine-resolution, top-left origin, bg
-   *  already filled). The factory uploads it each frame. `null` reverts to the
-   *  white placeholder. */
+  /** Bind a live paint canvas (engine-resolution, top-left origin, bg already
+   *  filled). The factory uploads it each frame. `null` reverts to the white
+   *  placeholder — which is why no surface teardown calls it: handing the
+   *  binding back to the node-lifetime producer is a `release()`, not a null
+   *  push. */
   setPaintCanvas: (canvas: HTMLCanvasElement | OffscreenCanvas | null) => void;
 }
 
@@ -63,10 +74,38 @@ export const painterDef: VideoModuleDef = {
   ],
   params: [],
 
+  face: {
+    // ⚠ RANKS NOTHING BECAUSE THERE IS NOTHING TO RANK — the flipper/videoOut
+    // shape, not an empty declaration. This def carries `params: []` and
+    // `inputs: []`; every affordance the module has is either per-collaborator
+    // LOCAL tool state (a cell would paint another peer's active tool out from
+    // under them mid-stroke) or an op-log ACTION, and neither is a param cell.
+    // `module-face-lint`'s empty-lane clause skips exactly this case and
+    // negative-controls the skip against `flipper`, so the exclusion is a
+    // judgement about the module rather than a hole a face can reach by
+    // emptying `order`.
+    order: [],
+
+    // ⚠ MECHANICALLY FORCED, not a taste call. This def declares ONE output and
+    // it is `video`, so `primaryAudioOutPortId` is null; with no ADSR quartet,
+    // no `algorithm` and no `shape` morph, every other literal falls through
+    // `glyphBinding` to `{ kind: 'static' }` — a dead deterministic squiggle —
+    // which the dead-glyph clause refuses outright. The tile's picture comes
+    // from `hasVideoSurface` (the generic `VideoTileThumb`), and for this
+    // module that thumbnail IS the drawing.
+    glyph: 'none',
+
+    // The dock body — see $lib/ui/modules/painter/. It is not a preview being
+    // rescued: it is the nine tools, the palette, the text stamp, UNDO/CLEAR
+    // and the canvas whose pixels are this module's video output. See the
+    // extension's own header.
+    extension: 'painter',
+  },
+
   docs: {
-    explanation: `painter is an interactive MS-Paint-style drawing SURFACE that acts as a pure video SOURCE — there is no video input. The card is a tiny Windows-95 Paint: a 9-tool palette (pencil, brush, eraser, fill, pick/eyedropper, line, rect, ellipse, text), the classic 28-colour Win95 swatch grid (2 rows x 14), a SIZE slider, a FILL toggle, and an engine-resolution drawing canvas. The tools work the MS-Paint way — pencil draws a hard 1px stroke; brush/line/rect/ellipse draw at the SIZE width; FILL toggles a filled vs outlined interior for rect/ellipse; fill flood-fills under the click with the FOREGROUND colour; pick (eyedropper) samples a pixel's colour; and text stamps the typed string. Left-click a swatch sets the FOREGROUND (strokes/text/fill), right-click sets the BACKGROUND (eraser + filled-shape interior); tool and colour choices stay LOCAL per collaborator. UNDO removes the last committed op and CLEAR empties the canvas back to a blank white page. Whatever you paint appears in real time on the single video output, 1:1 — the card binds its live canvas to the module once and the engine uploads + blits it into the output FBO every frame (1024x768 in 4:3, 1366x768 in 16:9). Until you draw anything the output is a flat opaque WHITE page (MS-Paint's default blank page), never a dead black frame — the shader returns solid white when no canvas is bound. The drawing is stored as a Y.Doc-synced ordered op log (node.data.ops): each committed stroke/shape/fill/text appends one PaintOp and on mount/remote-edit the card deterministically replays the log, so every collaborator sees the same picture. The card's drawing/preview canvas is resizable (it flex-fills the space between the toolbar and palette and is the actual video output); resizing only scales the on-card display — the output stays at engine resolution. Usage: spawn it, pick a tool and colour, draw, and patch OUT (on the yellow drill-down patch panel) into any video destination (mixer, keyer, effect, output) to use your sketch as a live source or hand-drawn matte.`,
+    explanation: `painter is an interactive MS-Paint-style drawing SURFACE that acts as a pure video SOURCE — there is no video input, and no knobs: the pointer IS the instrument. Open its faceplate and you get a tiny Windows-95 Paint: a 9-tool row (pencil, brush, eraser, fill, pick/eyedropper, line, rect, ellipse, text), the classic Win95 swatch grid of 28 colours (2 rows x 14), a SIZE slider, a FILL toggle, a text-stamp field, UNDO/CLEAR, and an engine-resolution drawing canvas. The tools work the MS-Paint way — pencil draws a hard 1px stroke; brush/line/rect/ellipse draw at the SIZE width; FILL toggles a filled vs outlined interior for rect/ellipse; fill flood-fills under the click with the FOREGROUND colour; pick (eyedropper) samples a pixel's colour; and text stamps the typed string. Left-click a swatch sets the FOREGROUND (strokes/text/fill), RIGHT-click sets the BACKGROUND, which is what the eraser paints with and what a filled shape's interior is filled with; tool and colour choices stay LOCAL per collaborator. UNDO removes the last committed op and CLEAR empties the canvas back to a blank white page. Whatever you paint appears in real time on the single video output, 1:1 — the live drawing canvas is bound to the module and the engine uploads + blits it into the output FBO every frame (the drawing buffer is 1024x768, letterboxed by the shader when the engine is running 16:9). Until you draw anything the output is a flat opaque WHITE page (MS-Paint's default blank page), never a dead black frame — the shader returns solid white when no canvas is bound. The drawing is stored as a Y.Doc-synced ordered op log (node.data.ops): each committed stroke/shape/fill/text appends one PaintOp and the log is deterministically replayed on load and on every remote edit, so every collaborator sees the same picture — and the replay is owned by the NODE, not by any surface, so a saved rack shows your drawing on its OUT the moment it loads, with nothing opened. SCREEN ON/OFF puts the whole paint set away and reclaims its space; the module goes on rendering the drawing while it is off, and the switch stays reachable so any collaborator can bring the editor back. Usage: spawn it, pick a tool and colour, draw, and patch OUT (on the yellow drill-down patch panel) into any video destination (mixer, keyer, effect, output) to use your sketch as a live source or hand-drawn matte.`,
     outputs: {
-      out: "Video output carrying the painted canvas at the engine output resolution, blitted 1:1 from the card's live drawing surface every frame (a flat opaque white page before you draw anything). This is the module's only port and lives on the card's drill-down patch panel.",
+      out: 'Video output carrying the painted canvas at the engine output resolution, blitted 1:1 from the live drawing surface every frame (a flat opaque white page before you draw anything). This is the module\'s only port.',
     },
   },
   factory(ctx, node): VideoNodeHandle {
@@ -78,7 +117,7 @@ export const painterDef: VideoModuleDef = {
 
     const { fbo, texture } = ctx.createFbo();
 
-    // The uploaded paint texture (the card's canvas, or the white placeholder).
+    // The uploaded paint texture (the bound drawing canvas, or the placeholder).
     const paintTex = gl.createTexture();
     if (!paintTex) throw new Error('PAINTER: createTexture failed');
     gl.bindTexture(gl.TEXTURE_2D, paintTex);
@@ -94,7 +133,7 @@ export const painterDef: VideoModuleDef = {
     let lastTime = 0;
 
     /** The factory's own white placeholder canvas (a blank MS-Paint page) so a
-     *  fresh node renders non-black before the card binds its canvas. No-ops in a
+     *  fresh node renders non-black before anything binds a canvas. No-ops in a
      *  headless node test where no 2D canvas exists (the unit suite covers the
      *  draw math directly). */
     function paintPlaceholder(): void {
