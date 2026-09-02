@@ -47,7 +47,7 @@
   import { patch } from '$lib/graph/store';
   import type { ModuleNode } from '$lib/graph/types';
   import { clampRibbon, moog956Def } from '$lib/audio/modules/moog956';
-  import { cardParams } from '../card-kit';
+  import { cardParams, paramSpec } from '../card-kit';
   import { createDragCommit } from '$lib/ui/controls/drag-commit';
   import {
     ribbonPersistPos,
@@ -65,6 +65,14 @@
     compact?: boolean;
   }
   let { nodeId, testidPrefix, compact = false }: Props = $props();
+
+  // ⚠ BOUND TO THE DEF, NOT RE-TYPED. The `aria-valuemin/max` below are the
+  // slider's declared range, and the legacy card was fixed in this same diff to
+  // stop carrying literals for exactly this reason. `card-range-source.test.ts`
+  // scans only top-level `modules/*.svelte`, so nothing in this directory is
+  // gated — which makes hardcoding `0`/`1` here precisely the "agrees by
+  // inspection, gated by nothing" state the promotion set out to end.
+  const POS = paramSpec(moog956Def, 'pos');
 
   let node = $derived(patch.nodes[nodeId] as ModuleNode | undefined);
   const { paramVal } = cardParams(moog956Def, () => nodeId, () => node);
@@ -146,8 +154,8 @@
   bind:this={ribbonEl}
   role="slider"
   aria-label="956 ribbon"
-  aria-valuemin={0}
-  aria-valuemax={1}
+  aria-valuemin={POS.min}
+  aria-valuemax={POS.max}
   aria-valuenow={pos}
   aria-valuetext={valueText}
   tabindex="-1"
