@@ -6013,10 +6013,16 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // matching attestation on main), while a control edit to
   // `NIBBLES_MAX_LENGTH` moves it. That discipline is the whole
   // reason this PR refuses a `freeze` param, refuses `units: 'ms'` on
-  // `tick_ms`, refuses to make SCALE a ParamDef, refuses to paint the score,
-  // and leaves the card's re-typed `min={40} max={200}` range literal alone —
-  // the correct fix for that last one exports a range accessor FROM the def,
-  // which is a `nibbles.ts` edit and belongs in an attest window, not here.
+  // `tick_ms`, refuses to make SCALE a ParamDef, and refuses to paint the
+  // score.
+  // ⚠ IT DOES NOT EXTEND TO THE CARD'S RANGE LITERAL, and an earlier draft of
+  // this paragraph said it did — wrongly. It argued that the card's re-typed
+  // `min={40} max={200}` had to stay because "the correct fix exports a range
+  // accessor FROM the def, which is a `nibbles.ts` edit". `paramSpec(def, id)`
+  // lives in `card-kit` and takes the def as an ARGUMENT: the conversion is a
+  // CARD-ONLY edit and moves no hash. The card is bound and enrolled in
+  // `card-range-source.test.ts` in this same PR. An attest cost defers a DEF
+  // edit; it is never a reason to leave a second copy of a range in a card.
   // ⚠ CONTRACT: NOTHING. No param, no port, and no `controlFamilies` line —
   // `nibbles-face-model.test.ts` asserts `controlFamilies ?? [] === []` three
   // times over, so an earlier draft of this paragraph that claimed one was

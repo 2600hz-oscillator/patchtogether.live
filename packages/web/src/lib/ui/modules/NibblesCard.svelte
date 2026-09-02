@@ -20,7 +20,7 @@
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
-  import { cardParams, portsFromDef } from './card-kit';
+  import { cardParams, paramSpec, portsFromDef } from './card-kit';
   // ⚠ ONE IMPLEMENTATION, TWO SURFACES. Every gesture below is now the same
   // call the v2 faceplate makes (`nibbles-game-actions.ts`), so a change to how
   // this game is driven cannot land on only one of them. Two of the four are
@@ -50,7 +50,22 @@
   let node = $derived(data?.node as ModuleNode);
   const engineCtx = useEngine();
 
-  const { defaultFor, paramVal, set } = cardParams(nibblesDef, () => id, () => node);
+  const { paramVal, set } = cardParams(nibblesDef, () => id, () => node);
+
+  // ⚠ THE TICK KNOB'S TRAVEL COMES OFF THE DEF, NOT OUT OF THIS FILE. It used
+  // to read `min={40} max={200}` as literals that happened to AGREE with
+  // `nibblesDef` — the backdraft class, where nothing holds the two copies
+  // together and a def-reading gate cannot see the card's copy at all. This is
+  // the boy-scout conversion `card-range-source.test.ts` asks for when a card is
+  // touched, and its two sibling games (FroggerCard, ModtrisCard) are already in
+  // that set.
+  //
+  // ⚠ AND IT COSTS NO ATTEST, which an earlier note on this branch got wrong:
+  // `paramSpec(def, id)` is a CARD-side accessor that takes the def as an
+  // argument, so nothing in `nibbles.ts` changes and the WebGL content hash does
+  // not move. (Exporting a `*_RANGE` constant FROM the def would be the edit
+  // that costs one — that is the shape to avoid, not this one.)
+  const TICK = paramSpec(nibblesDef, 'tick_ms');
 
   // ---------- Card surface ----------
   let cardEl: HTMLDivElement | null = $state(null);
@@ -166,8 +181,8 @@
   <div class="row">
     <Knob
       value={paramVal('tick_ms')}
-      min={40} max={200} defaultValue={defaultFor('tick_ms')}
-      label="TICK" curve="linear"
+      min={TICK.min} max={TICK.max} defaultValue={TICK.defaultValue}
+      label="TICK" curve={TICK.curve}
       onchange={set('tick_ms')} moduleId={id} paramId="tick_ms"
     />
     <div class="buttons">

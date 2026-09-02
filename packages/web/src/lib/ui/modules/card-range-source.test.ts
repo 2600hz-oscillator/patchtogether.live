@@ -82,6 +82,7 @@ import { backdraftDef } from '$lib/video/modules/backdraft';
 import { bugglesDef } from '$lib/audio/modules/buggles';
 import { froggerDef } from '$lib/audio/modules/frogger';
 import { modtrisDef } from '$lib/audio/modules/modtris';
+import { nibblesDef } from '$lib/video/modules/nibbles';
 import { scoreDef } from '$lib/audio/modules/score';
 import { chromaconsoleDef } from '$lib/audio/modules/chromaconsole';
 import { ptzcamDef } from '$lib/audio/modules/ptzcam';
@@ -321,6 +322,25 @@ const RANGE_BOUND_CARDS: Readonly<Record<string, { params: readonly ParamDef[] }
   // `curve` (`log` on DROP, which `NeonFader` genuinely consumes) and `label`
   // come off the def too.
   'ModtrisCard.svelte': modtrisDef,
+  // Converted with its FACEPLATE (2026-09-02), completing the wave-5 game group
+  // — frogger and modtris are two rows up, and skifree declares no ParamDef the
+  // card draws. UNBOUND-BUT-AGREEING, the ordinary case: one `<Knob>` passing
+  // `min={40} max={200}` as literals that matched `nibblesDef.tick_ms`. Nothing
+  // held them there, and the card is a LIVE surface after promotion — it is
+  // where `nibbles.spec.ts` and `nibbles-render-smoke.spec.ts` both run, both at
+  // `?shell=legacy`.
+  //
+  // ⚠ AND IT COST NO ATTEST, WHICH THE PR THAT CONVERTED IT FIRST GOT WRONG.
+  // `nibbles.ts` IS in the WebGL attest basis, and the branch's own prose argued
+  // the literal had to stay because "the correct fix exports a range accessor
+  // FROM the def, which is a nibbles.ts edit". That is the WRONG SHAPE of fix:
+  // `paramSpec(def, id)` lives in `card-kit` and takes the def as an ARGUMENT,
+  // so the conversion touches only the card and the content hash does not move
+  // (re-measured: 2f505b4230…3f56b073, unchanged). An attest cost is a real
+  // reason to defer a def edit and NOT a reason to leave a second copy of a
+  // range in a card — the two were conflated, and the effect was to argue for
+  // keeping exactly the divergence this set exists to remove.
+  'NibblesCard.svelte': nibblesDef,
   // Converted with its FACEPLATE (2026-08-26). UNBOUND-BUT-AGREEING, the
   // ordinary case: five NeonFaders passing `min={30} max={300}` and three
   // copies of `min={0.001} max={10}` as literals that happened to match
@@ -766,6 +786,20 @@ const MAPPING_BOUND_CARDS: readonly string[] = [
   // with every def-reading gate green, because none of them can see a card.
   // Value-identical: the def already declared `log` and `linear`.
   'ModtrisCard.svelte',
+  // Enrolled with its FACEPLATE (2026-09-02), and the anchor walked it here in
+  // ONE step, exactly as it did for the two rows above: the card has one drawn
+  // control (TICK), so binding it through `paramSpec(nibblesDef, 'tick_ms')`
+  // bound `min`, `max`, `defaultValue` AND `curve` in the same edit and left no
+  // intermediate state with the numbers bound and `curve="linear"` still typed.
+  // Value-identical: the def already declared `linear` over 40..200.
+  //
+  // ⚠ `label` IS DELIBERATELY NOT BOUND HERE, which is the one difference from
+  // the modtris and score rows. The def says `Tick` and the card paints `TICK`,
+  // and `nibbles.png` is a committed VRT baseline of that card — binding the
+  // label would be a look change riding in on a source-hygiene fix, which is
+  // the kind of thing the owner asks to review before it merges. The clause
+  // this list turns on is `curve`/`units`, and that is bound.
+  'NibblesCard.svelte',
   // Enrolled with its FACEPLATE (2026-08-26), in ONE step: the five faders moved
   // into an `{#each}` over the def's own param ids, so `label`, `curve` and the
   // three range props all resolve through `paramSpec(scoreDef, id)` at once and
