@@ -32,7 +32,11 @@
 import { test, expect } from './_fixtures';
 import { type Page } from '@playwright/test';
 import { spawnPatch, seedKriaGate, type SpawnEdge, type SpawnNode } from './_helpers';
-import { readScopePeakOverWindow, describeScopeWindow } from './_module-coverage-helpers';
+import {
+  readScopePeakOverWindow,
+  describeScopeWindow,
+  type ScopeWindow,
+} from './_module-coverage-helpers';
 
 test.describe.configure({ mode: 'parallel' });
 
@@ -118,6 +122,50 @@ async function connectAndBind(page: Page): Promise<void> {
   await port.waitFor({ state: 'visible' });
   await port.click();
   await expect(page.getByTestId(`seqtris-unbind-${NODE}`)).toBeVisible();
+}
+
+/**
+ * LISTEN FIRST, THEN PLAY — for the ONE-SHOT legs of this file.
+ *
+ * ⚠ A SEQTRIS PRESS IS A SHORT SOUND THAT NOTHING RE-TRIGGERS. With no clock
+ * patched the game runs on `gravity: 1` → divisor 1, so a move note holds its
+ * gate for `max(0.02, gravitySec() * 0.5)` ≈ 42 ms and a tie for ≈ 83 ms; the
+ * DX7 master release adds ~0.4 s. That is UNDER 300 ms of usable sound, ONCE,
+ * per press — and with no clock there is no second chance.
+ *
+ * Opening the observation window AFTER the stimulus has round-tripped
+ * therefore races the note's own release rather than the module. MEASURED on
+ * this tree: inserting a 300 ms gap between the last press and the sampler's
+ * first look reproduces the shipped CI signature EXACTLY — `peak=0.0024
+ * rms=0.0011` over a FULL 10 s window with a demonstrably healthy sampler
+ * (501 polls, 22 ms max gap), against `peak=0.0034 rms=0.0015 polls=501
+ * elapsed=10001ms maxSampleGap=31ms` from the run that took a PR red. Nothing
+ * is wrong with SEQTRIS in that run; the instrument arrived after the sound.
+ * A press costs four CDP round-trips and a state read, so a contended shard
+ * buys that gap for free — which is why this failed cold and passed warm.
+ *
+ * ⚠ THE CAP IS NOT THE LEVER. Widening `AUDIBLE_CAP_MS` cannot fix this: the
+ * window already ran to its full 10 s cap and the sound had ended before the
+ * FIRST sample. The only fix is to be looking before the note happens.
+ *
+ * `readScopePeakOverWindow` runs its sampling loop inside the page and yields
+ * between polls, so `drive`'s evaluates interleave with it; CDP delivers the
+ * sampler's call first on the shared session, so it has already taken its
+ * first sample by the time the stimulus lands.
+ */
+async function listenWhile(page: Page, drive: () => Promise<void>): Promise<ScopeWindow> {
+  const listening = readScopePeakOverWindow(page, 'sc', AUDIBLE_CAP_MS, {
+    untilPeak: AUDIBLE_FLOOR,
+  });
+  try {
+    await drive();
+  } catch (err) {
+    // Never leave the in-page sampler running for its full cap behind a failed
+    // stimulus — that turns a fast, precise error into a 10 s one.
+    await listening.catch(() => {});
+    throw err;
+  }
+  return listening;
 }
 
 /** SEQTRIS → DX7 → SCOPE, optionally with a KRIA clock into the game. */
@@ -220,21 +268,24 @@ test('the real chain: LAUNCHPAD scene presses ALONE make sound, with no clock pa
   expect(before.clockPatched).toBe(false);
   expect(before.notesFired, 'nothing has been played yet').toBe(0);
 
-  for (const i of [SCENE.moveRight, SCENE.moveLeft, SCENE.rotateRight, SCENE.moveRight]) {
-    await pressScene(page, i);
-  }
+  // ⚠ The sampler is ALREADY LOOKING when the presses land — see `listenWhile`.
+  // A press is under 300 ms of sound and nothing here re-triggers it, so a
+  // window opened after the presses round-trip measures the release tail, not
+  // the note.
+  const w = await listenWhile(page, async () => {
+    for (const i of [SCENE.moveRight, SCENE.moveLeft, SCENE.rotateRight, SCENE.moveRight]) {
+      await pressScene(page, i);
+    }
+  });
 
   const after = await readState(page);
   expect(after.notesFired, 'scene presses should have played notes').toBeGreaterThan(0);
 
-  const w = await readScopePeakOverWindow(page, 'sc', AUDIBLE_CAP_MS, {
-    untilPeak: AUDIBLE_FLOOR,
-    // Keep pressing while we listen, so a note's own decay cannot end the run
-    // before the sampler's first peek.
-  });
   expect(
     w.peak,
-    `a Launchpad press should be audible through PIECE → DX7 — ${describeScopeWindow(w)}`,
+    `a Launchpad press should be audible through PIECE → DX7 — the presses DID reach the ` +
+      `game core (notesFired=${after.notesFired}), so this is the PIECE → DX7 → SCOPE leg ` +
+      `never carrying the note — ${describeScopeWindow(w)}`,
   ).toBeGreaterThan(AUDIBLE_FLOOR);
 });
 
@@ -280,7 +331,12 @@ test('a DROP is ONE tied gate carrying every row it falls through', async ({
   await installLaunchpad(page);
   await connectAndBind(page);
 
-  await pressScene(page, SCENE.drop);
+  // Same one-shot exposure as the Launchpad leg: a tie holds for ≈83 ms plus
+  // the voice's release, it happens ONCE, and nothing re-triggers it — so the
+  // sampler has to be looking before the drop, not after. See `listenWhile`.
+  const w = await listenWhile(page, async () => {
+    await pressScene(page, SCENE.drop);
+  });
 
   const state = await readState(page);
   expect(state.tiedDrops, 'the drop should have emitted a tie, not a burst').toBe(1);
@@ -293,10 +349,11 @@ test('a DROP is ONE tied gate carrying every row it falls through', async ({
   // rules out.
   expect(state.notesFired, 'a tie plus the next spawn note is two scheduling events').toBe(2);
 
-  const w = await readScopePeakOverWindow(page, 'sc', AUDIBLE_CAP_MS, { untilPeak: AUDIBLE_FLOOR });
   expect(
     w.peak,
-    `the tied drop chord should be audible — ${describeScopeWindow(w)}`,
+    `the tied drop chord should be audible — the drop DID reach the game core ` +
+      `(tiedDrops=${state.tiedDrops} notesFired=${state.notesFired}), so this is the ` +
+      `PIECE → DX7 → SCOPE leg never carrying the chord — ${describeScopeWindow(w)}`,
   ).toBeGreaterThan(AUDIBLE_FLOOR);
 });
 
