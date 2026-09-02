@@ -128,19 +128,37 @@
   let isTimeMedia = $derived(itemType === 'audio' || itemType === 'video');
 
   // ---- The persisted search inputs ----
+  //
+  // ⚠ THE YEAR BOUNDS ARE `number | null`, NOT STRINGS, AND THAT IS A FIX
+  // RATHER THAN A PREFERENCE. They are bound to `<input type="number">`, which
+  // Svelte treats as NUMBER-LIKE: `bind_value` writes `to_number(input.value)`
+  // into the bound state — a NUMBER once a digit is typed, `null` when the box
+  // is emptied — regardless of what the declaration initialised it to. The
+  // shipped card held these as `$state('')` under a `…Str` name and called
+  // `.trim()` on them, so typing a year and pressing Search threw
+  // `$.get(...).trim is not a function` INSIDE `ydoc.transact` and killed the
+  // gesture. Every archivist test left the year boxes empty, so nothing ever
+  // reached the line; the face spec's first leg now types one.
   let searchTerm = $state('');
   let mediaType = $state<ArchivistMediaType>('video');
-  let yearFromStr = $state('');
-  let yearToStr = $state('');
+  let yearFrom = $state<number | null>(null);
+  let yearTo = $state<number | null>(null);
 
   onMount(() => {
     const d = patch.nodes[nodeId]?.data as Record<string, unknown> | undefined;
     if (!d) return;
     if (typeof d.searchTerm === 'string') searchTerm = d.searchTerm;
     if (typeof d.mediaType === 'string') mediaType = d.mediaType as ArchivistMediaType;
-    if (typeof d.yearFrom === 'number') yearFromStr = String(d.yearFrom);
-    if (typeof d.yearTo === 'number') yearToStr = String(d.yearTo);
+    if (typeof d.yearFrom === 'number') yearFrom = d.yearFrom;
+    if (typeof d.yearTo === 'number') yearTo = d.yearTo;
   });
+
+  /** A year bound as the graph must hold it: a FINITE number, or null. Never
+   *  NaN — the card's `currentQuery` would drop a NaN anyway, but a NaN written
+   *  into the Y.Doc is a value a peer has to render. */
+  function yearOrNull(v: number | null): number | null {
+    return typeof v === 'number' && Number.isFinite(v) ? v : null;
+  }
 
   /**
    * Mirror the inputs onto the node.
@@ -158,8 +176,8 @@
       const d = t.data as Record<string, unknown>;
       d.searchTerm = searchTerm;
       d.mediaType = mediaType;
-      d.yearFrom = yearFromStr.trim() === '' ? null : Number(yearFromStr);
-      d.yearTo = yearToStr.trim() === '' ? null : Number(yearToStr);
+      d.yearFrom = yearOrNull(yearFrom);
+      d.yearTo = yearOrNull(yearTo);
     }, LOCAL_ORIGIN);
   }
 
@@ -172,8 +190,24 @@
     writeSearchInputs();
     archivistStatus.request(nodeId, { kind: 'search' });
   }
+  /**
+   * ↻ next — re-roll another match from the page the card already holds.
+   *
+   * ⚠ IT DELIBERATELY DOES **NOT** WRITE THE INPUTS, and that is the one place
+   * this differs from `runSearch`. THREE mounts of this component exist at once
+   * (the parked card's, the dock body's and the lane tile's) and each holds its
+   * OWN one-shot-hydrated copy of the four keys, so a `writeSearchInputs()`
+   * here lets a re-roll pressed on a STALE mount overwrite the graph's query
+   * with that mount's boxes — a lane tile that hydrated at spawn would blank a
+   * term typed in the dock, and the card's own `nextRandom` falls back to a
+   * FULL search on an empty page, which would then run the blanked query. The
+   * gesture says "another one like the last", so it must not restate what the
+   * last one was. Nothing is lost by omitting it: a term typed here and then
+   * re-rolled has already reached the graph through the input's own `onchange`,
+   * which fires on the blur the button click causes. The legacy card's ↻ next
+   * never wrote them either — this restores that.
+   */
   function nextRandom(): void {
-    writeSearchInputs();
     archivistStatus.request(nodeId, { kind: 'next' });
   }
   function onSearchKeydown(ev: KeyboardEvent): void {
@@ -248,7 +282,7 @@
         class="year-input nodrag"
         type="number"
         placeholder="from yr"
-        bind:value={yearFromStr}
+        bind:value={yearFrom}
         onchange={writeSearchInputs}
         data-testid="{testidPrefix}-year-from"
         aria-label="Year from"
@@ -258,7 +292,7 @@
         class="year-input nodrag"
         type="number"
         placeholder="to yr"
-        bind:value={yearToStr}
+        bind:value={yearTo}
         onchange={writeSearchInputs}
         data-testid="{testidPrefix}-year-to"
         aria-label="Year to"

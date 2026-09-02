@@ -422,6 +422,38 @@ describe('⚠ THE WRITE-ONLY MIRROR IS REPAIRED — the query comes from the GRA
     expect(runSearch).toContain('writeSearchInputs()');
     expect(runSearch.indexOf('writeSearchInputs()')).toBeLessThan(runSearch.indexOf('request('));
   });
+
+  it('↻ next does NOT write them — a stale mount must not restate the query', () => {
+    // ⚠ THREE MOUNTS HOLD THREE ONE-SHOT COPIES of the four keys, so a write
+    // here lets a re-roll pressed on the lane tile blank a term typed in the
+    // dock — and the card's `nextRandom` falls back to a FULL search on an
+    // empty page, which would then run the blanked query. The legacy card's
+    // ↻ next never wrote them; a term typed on this surface reaches the graph
+    // through the input's own `onchange` (the blur the button click causes).
+    const nextRandom = /function nextRandom\(\): void \{([\s\S]*?)\n  \}/.exec(controlsCode)?.[1] ?? '';
+    expect(nextRandom).toContain("request(nodeId, { kind: 'next' })");
+    expect(nextRandom).not.toContain('writeSearchInputs()');
+  });
+
+  it('the YEAR BOUNDS are number|null, because `type="number"` binds a NUMBER', () => {
+    // ⚠ A CRASH, NOT A STYLE POINT. Svelte's `bind_value` treats
+    // `<input type="number">` as number-like and writes `to_number(input.value)`
+    // into the bound state, so a `$state('')` named `…Str` holds a NUMBER the
+    // moment a digit is typed. The shipped card called `.trim()` on it and
+    // threw `$.get(...).trim is not a function` inside `ydoc.transact`, killing
+    // the search gesture. Every archivist test left the boxes empty, so nothing
+    // reached the line until `face-archivist.spec.ts` typed one.
+    expect(controlsCode).toMatch(/let yearFrom = \$state<number \| null>\(null\)/);
+    expect(controlsCode).toMatch(/let yearTo = \$state<number \| null>\(null\)/);
+    expect(controlsCode).toContain('bind:value={yearFrom}');
+    expect(controlsCode).toContain('bind:value={yearTo}');
+    // Nothing string-shaped survives on a bound number input.
+    expect(controlsCode).not.toContain('yearFromStr');
+    expect(controlsCode).not.toContain('yearToStr');
+    // ...and the value that reaches the doc is FINITE or null, never NaN.
+    expect(controlsCode).toMatch(/d\.yearFrom = yearOrNull\(yearFrom\)/);
+    expect(controlsCode).toMatch(/Number\.isFinite\(v\)/);
+  });
 });
 
 describe('⚠ HASH TRANSPARENCY — every new file is outside the WebGL attest basis', () => {

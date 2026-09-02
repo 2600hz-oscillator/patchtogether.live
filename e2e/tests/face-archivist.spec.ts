@@ -310,7 +310,34 @@ test.describe('ARCHIVIST face — the promotion is what makes it reachable', () 
     await expect(body.getByTestId('archivist-face-empty')).toBeVisible();
     await expect(body.getByTestId('archivist-face-play')).toHaveCount(0);
 
+    // ⚠ A YEAR BOUND IS TYPED BEFORE THE SEARCH, AND THIS LINE IS THE WHOLE
+    // REASON THE LEG DOES IT. `<input type="number">` under `bind:value` is
+    // NUMBER-LIKE to Svelte: its binding writes `to_number(input.value)`, so
+    // the bound state holds a NUMBER (or null when empty) the moment a digit is
+    // typed — never the string the declaration's initialiser suggests. A
+    // `writeSearchInputs` that called `.trim()` on it therefore threw a
+    // TypeError inside `ydoc.transact`, taking the search gesture down with it,
+    // and every shipped archivist test left the year boxes empty so nothing
+    // ever reached the line. Filling one is the only way a gate sees it.
+    await body.getByTestId('archivist-face-year-from').fill('1970');
+    await body.getByTestId('archivist-face-year-to').fill('1985');
+
     await searchFrom(page, body, 'archivist-face', 'video');
+
+    // The bounds really reached the GRAPH as NUMBERS — the shape `currentQuery`
+    // accepts. A NaN or a string here means the parse silently dropped them and
+    // the query ran unbounded.
+    const years = await page.evaluate(() => {
+      const w = window as unknown as {
+        __patch?: { nodes: Record<string, { data?: { yearFrom?: unknown; yearTo?: unknown } }> };
+      };
+      const d = w.__patch?.nodes?.farc?.data;
+      return { from: d?.yearFrom, to: d?.yearTo };
+    });
+    expect(years, 'the typed year bounds reached the graph as finite numbers').toEqual({
+      from: 1970,
+      to: 1985,
+    });
 
     // The whole chain ran: the off-screen card received the command, fetched,
     // parsed, picked a derivative and ATTACHED it to the node-owned element.
