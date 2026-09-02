@@ -83,6 +83,11 @@ import { CELLSHADE_BAND_STEPS } from '$lib/video/modules/cellshade';
 // The four controller-slot indices `padIndex` selects — derived from the def's
 // own `min`/`max` span, so the exemption cannot outlive the roster it names.
 import { GAMEPAD_SLOT_OPTIONS } from '$lib/audio/modules/gamepad';
+// ⚠ THE DEF ITSELF, not an exported roster constant. mappy is in the WebGL
+// attest basis, where an exported constant moves the content hash and an
+// accessor does not — and reading the live `options` is also the stronger form
+// the blocks above reach for by importing their source arrays.
+import { mappyDef } from '$lib/video/modules/mappy';
 import { listModuleDefs } from '$lib/audio/module-registry';
 import { listVideoModuleDefs } from '$lib/video/module-registry';
 import { listMetaModuleDefs } from '$lib/meta/module-registry';
@@ -576,6 +581,41 @@ const NUMERIC_LABEL_EXEMPTIONS: readonly { type: string; param: string; label: s
       + 'that is not the integer and inventing one ("Player 1") would assert a fact the platform '
       + 'does not provide. The legacy card has always printed exactly these four glyphs.',
   })),
+  // ── MAPPY · `surfaceCount` (2026-09-01, wave 4) ──────────────────────────
+  //
+  // ⚠ DERIVED FROM THE LIVE DEF, which is one step stronger than the imported
+  // arrays above: it reads the roster the shell will actually paint, so this
+  // block cannot go stale in the direction that fails OPEN and it costs the def
+  // no exported constant (the `paramSpec` discipline — an export off a def in
+  // the WebGL attest basis moves the hash, an accessor does not).
+  //
+  // The `cellshade/bits` and `slewSwitch/length` argument, verbatim: this is a
+  // COUNT, not a measurement. SURFACES 3 means "three live projection surfaces,
+  // each with its own quad and its own input"; a player says "three surfaces"
+  // out loud, and there is no name for the state that is not the integer.
+  // Inventing one would be the vocabulary-invention the moog904c review
+  // declined.
+  //
+  // ⚠ AND THE ROSTER EXISTS FOR THE READOUT AND THE AFFORDANCE TOGETHER. The
+  // legacy card paints the live count as a number between its −/+ buttons
+  // (`mappy-count-n`), and `paintsReadout` refuses a `format` — so WITHOUT the
+  // roster the promoted lane tile would show a dial with no number on it, and
+  // the count would be reachable and unreadable. With it the dock paints a
+  // six-state `Segmented` row (the honest replacement for a stepper) and the
+  // lane dial prints the count. The number here is not an addition to the
+  // faceplate's text, it is the card's own readout surviving promotion.
+  ...(((mappyDef.params ?? []).find((p) => p.id === 'surfaceCount')?.options ?? []) as readonly { label: string }[])
+    .map((o) => ({
+      type: 'mappy',
+      param: 'surfaceCount',
+      label: o.label,
+      why:
+        `a SURFACE COUNT — ${o.label} is not a reading of the dial, it is what the state IS: `
+        + `${o.label} live projection surface${o.label === '1' ? '' : 's'}, each warped onto its own `
+        + 'quad and fed by its own input. A player says the number out loud while aligning a venue, '
+        + 'the legacy card prints exactly this glyph between its −/+ buttons, and there is no name '
+        + 'for "three surfaces" that is not the integer.',
+    })),
 ];
 
 /** Every label that could reach a painted readout, as `(type, param, label)`. */

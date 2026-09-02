@@ -60,16 +60,29 @@ async function setLayout(page: Page, id: string) {
 }
 
 /** Read MAPPY's live surface layout back out of the store. */
+/** The persisted layout: the GEOMETRY from `node.data.surfaces`, and the live
+ *  COUNT from the `surfaceCount` PARAM.
+ *
+ *  ⚠ THE COUNT USED TO BE READ FROM `node.data.surfaceCount`, and that key is
+ *  GONE (2026-09-01, the mappy face). It was a mirror of the param that the
+ *  factory PREFERRED — which would have made every generic faceplate cell
+ *  inert, since a shell cell writes the param alone. Reading the dead mirror
+ *  here returns `undefined` for every rack; the param is the one source. */
 async function readLayout(page: Page, id: string) {
   return page.evaluate(({ id }) => {
     const w = globalThis as unknown as {
-      __patch: { nodes: Record<string, { data?: { surfaces?: { corners: number[][]; fit?: boolean }[]; surfaceCount?: number } }> };
+      __patch: {
+        nodes: Record<string, {
+          params?: Record<string, number>;
+          data?: { surfaces?: { corners: number[][]; fit?: boolean }[] };
+        }>;
+      };
     };
     const n = w.__patch.nodes[id];
     const d = n?.data ?? {};
     return {
       surfaces: (d.surfaces ?? []).map((s) => ({ corners: s.corners, fit: s.fit })),
-      count: d.surfaceCount,
+      count: n?.params?.surfaceCount,
     };
   }, { id });
 }

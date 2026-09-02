@@ -493,6 +493,20 @@ const SUBJECTS: readonly Subject[] = [
   // mechanism, and it declares the conventional `<type>-face-canvas` — so no
   // `canvas` override is needed.
   { type: 'videobox', prefix: 'videobox', domain: 'video', why: 'the file player\'s live engine-output preview and its SCREEN switch — an ADDITION, since VideoboxCard adopts the raw <video> and has no SCREEN switch at all. ⚠ The watch-mark case is the OUTPUT plus the module\'s whole point: a loaded file feeds video AND audio_l/audio_r downstream, so a lapsed mark would idle the picture every consumer samples while the element kept decoding — the switch must collapse the preview copy and nothing else. The deeper "keeps playing" property (the element itself, on node lifetime) is collapse-keeps-playing.spec.ts\'s and face-videobox.spec.ts\'s subject; this row proves the SWITCH.' },
+
+  // ── MAPPY (2026-09-01, wave 4) — the PROJECTION MAPPER ────────────────────
+  //
+  // Added in the SAME diff as the promotion, per this file's convention, and
+  // APPENDED AT THE TAIL for the mechanical reason blood's note gives: batches
+  // slice this array in declaration order and each test's TITLE is its batch's
+  // comma-joined module list, so appending changes exactly one title.
+  //
+  // Verified before writing rather than assumed: `type == prefix == extension
+  // id`, the body uses the standard `{#if !previewCollapsed}` REMOVES
+  // mechanism, and it declares the conventional `<type>-face-canvas` — so no
+  // `canvas` override is needed.
+  { type: 'mappy', prefix: 'mappy', domain: 'video', why: 'the projection mapper\'s composite preview and its SCREEN switch — an ADDITION, since MappyCard blits unconditionally and has no switch at all. ⚠ THE PICTURE IS ALSO THE CONTROL here (the quadralogical shape): the corner-pin handles live in an SVG overlay ON the collapsing frame, so this switch removes the module\'s editing surface as well as its preview — which is exactly why the collapsed branch must still mark the node watched. ⚠ The watch-mark case is the sharpest in the table after textmarquee\'s: mappy is a MID-CHAIN COMPOSITOR whose entire purpose is to feed a projector, `markWatched` happens INSIDE `blitOutputForPreview`, and a lapsed mark drops the node out of the pull set — so a collapsed branch that merely stopped blitting would make a control labelled SCREEN black out the stage while the module looked like it was running. This row proves the SWITCH; that the ENGINE keeps compositing is argued at the source and in the EXTENSION_BODY_ROLES entry, because no runtime gate here can observe a watch mark.' },
+
 ] as const;
 
 /** The representative module for the PERSISTENCE leg — see that test's comment. */

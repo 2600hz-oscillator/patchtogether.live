@@ -5000,6 +5000,59 @@ export const FACES = [
   // drops either surface moves this baseline and gets a review.
   { type: 'joystick', pages: 1 },
 
+  // ── MAPPY (2026-09-01, wave 4) — the PROJECTION MAPPER ────────────────────
+  //
+  // `pages: 2` — the face declares two bands (`surfaces`, `map`) and nothing is
+  // lifted out of either (no hero; the `fullViewBody` takes the dock head via
+  // `dockFullViewHeadPlan`), so the declared count and the painted count agree.
+  // Two is far below `DOCK_TAB_MIN_BANDS`, so this is a sectioned faceplate and
+  // not a tab rail.
+  //
+  // ── ⚠ THE DETERMINISM ARGUMENT, AND IT IS UNUSUALLY STRONG ────────────────
+  //
+  // A face scene spawns the node and patches NOTHING, and an unpatched mappy is
+  // the module's own designed idle state rather than a blank: `draw()` skips
+  // every surface that is neither within the count nor fed, so a fresh spawn
+  // composites exactly ONE surface, and with no input texture `drawGrid` is
+  // forced true — the picture is surface 0's NUMBERED CALIBRATION GRID.
+  //
+  // That grid is a pure function of the surface uv: an 8x8 checker, grid lines,
+  // a border, cross-hairs and a seven-segment `1`, every term derived from `s`
+  // and the constant surface index. `mappy.ts` states it — "Deterministic — no
+  // time dependence" — and the shader is the evidence: `calibrationGrid` reads
+  // no clock, no accumulator, no uniform that is not a param, and the module
+  // declares no CV inputs at all, so nothing can move it between two boots.
+  //
+  // ⚠ NO `simPin` AND NO `freezeIsNotASeam`. There is nothing to pin: the
+  // module has no RNG, no ring, no feedback FBO and no wall-clock term. And
+  // `freezeFaceVideo` writes `params.freeze = 1`, which this def has no param
+  // for, so the write lands nowhere — the same no-op textmarquee records.
+  //
+  // ⚠ THE OVERLAY IS DETERMINISTIC TOO, and it is what actually fills the
+  // frame: four corner handles on the full-frame UNIT_QUAD plus the quad
+  // outline, positioned from `node.data.surfaces` which `normalizeSurfaces`
+  // fills with the same defaults on every boot. `selected` is component state
+  // initialised to 0, so surface 1 is focused (thick stroke, r=8 handles) in
+  // every capture.
+  //
+  // ⚠ AND THIS MODULE'S `EXEMPT_FROM_VRT` ENTRY IS NOW NARROWED TO THE LEGACY
+  // CARD, whose old `why` claimed "nothing patched is non-deterministic chrome
+  // over a black preview". That was false about the CARD too — an unpatched
+  // mappy paints a numbered grid, not black — and the exemption's real ask, a
+  // deterministic composite baseline, is what these two scenes are.
+  { type: 'mappy', pages: 2, videoFaceWhy:
+      'a VIDEO module, so it must boot into the video zone rather than a mixer channel column — '
+      + 'without this field bootWithFace waits out the full test timeout for a column membership '
+      + 'a video node never acquires. ⚠ AND IT IS CAPTURABLE DESPITE ITS OLD `EXEMPT_FROM_VRT` '
+      + 'ENTRY, which is narrowed to the legacy card in this same diff: the exemption said '
+      + '"nothing patched is non-deterministic chrome over a black preview", and an unpatched '
+      + 'mappy paints its NUMBERED CALIBRATION GRID — a pure function of the surface uv with no '
+      + 'clock, no accumulator and no uniform that is not a param (the def says so in as many '
+      + 'words, and the module declares no CV inputs at all). The corner-pin overlay over it is '
+      + 'equally still: four handles on the full-frame UNIT_QUAD from `normalizeSurfaces`\''
+      + ' defaults, with surface 1 focused on every boot.',
+  },
+
 ] as const;
 
 /**

@@ -13,7 +13,11 @@ import type { ModuleNode } from './types';
 import {
   ensureSurfaces,
   getSurfaceCount,
+  getShowGrid,
+  setShowGrid,
+  toggleGrid,
   setSurfaceCount,
+  setSurfaceCountTo,
   addSurface,
   removeSurface,
   setCorner,
@@ -81,7 +85,7 @@ describe('mappy-edit — real Y.Doc surface mutators', () => {
     expect(after).toEqual(shaped);
   });
 
-  it('setSurfaceCount mirrors to the param + clamps', () => {
+  it('setSurfaceCount writes the PARAM + clamps', () => {
     setup();
     setSurfaceCount(MID, 4);
     expect(getSurfaceCount(patch.nodes[MID])).toBe(4);
@@ -89,6 +93,72 @@ describe('mappy-edit — real Y.Doc surface mutators', () => {
     setSurfaceCount(MID, 99);
     expect(getSurfaceCount(patch.nodes[MID])).toBe(6);
     expect(patch.nodes[MID]!.params.surfaceCount).toBe(6);
+  });
+
+  // ── ⚠ THE INERT-CONTROL TRAP, PINNED AT THE SEAM ──────────────────────────
+  //
+  // `surfaceCount` and `showGrid` used to be written TWICE — onto `node.data`
+  // and onto the param — and the FACTORY PREFERRED THE MIRROR. That is
+  // invisible while the only writers are the card and the MAP editor (they
+  // write both), and it is a dead faceplate the moment a generic shell cell
+  // exists, because a shell param cell writes the PARAM ALONE: on any node a
+  // card had ever touched the mirror would win and the promoted control would
+  // do nothing, with every def-reading gate green.
+  //
+  // These two cases are what keep the mirror from coming back by habit.
+  it('writes NO node.data mirror for surfaceCount — the param is the one source', () => {
+    setup();
+    setSurfaceCount(MID, 3);
+    const data = patch.nodes[MID]!.data as Record<string, unknown>;
+    expect(
+      data.surfaceCount,
+      'a node.data.surfaceCount mirror is what made the promoted faceplate cell inert',
+    ).toBeUndefined();
+    expect(patch.nodes[MID]!.params.surfaceCount).toBe(3);
+  });
+
+  it('a STALE node.data.surfaceCount from an old rack is ignored', () => {
+    setup();
+    // A rack saved before this change carries the mirror. It was always written
+    // in the SAME call as the param (ea2504939 / 614052097), so the two agree
+    // in every rack this build can load — but the reader must be the param.
+    patch.nodes[MID]!.data = { surfaceCount: 5 } as unknown as Record<string, unknown>;
+    expect(getSurfaceCount(patch.nodes[MID])).toBe(1); // the param's default
+    setSurfaceCount(MID, 2);
+    expect(getSurfaceCount(patch.nodes[MID])).toBe(2);
+  });
+
+  it('setSurfaceCountTo reaches an ABSOLUTE count and drops each new surface in as an inset quad', () => {
+    setup();
+    // The faceplate's write. A bare setNodeParam would leave surfaces 2 and 3
+    // at the full-frame default, stacked exactly on surface 1 — a control that
+    // looks dead because every added quad is invisible under the first.
+    setSurfaceCountTo(MID, 3);
+    expect(getSurfaceCount(patch.nodes[MID])).toBe(3);
+    const arr = ensureSurfaces(MID)!;
+    expect(arr[1]!.corners).toEqual(insetQuadForIndex(1));
+    expect(arr[2]!.corners).toEqual(insetQuadForIndex(2));
+    // idempotent, and clamped in both directions
+    expect(setSurfaceCountTo(MID, 3)).toBe(3);
+    expect(setSurfaceCountTo(MID, 99)).toBe(6);
+    expect(setSurfaceCountTo(MID, -4)).toBe(1);
+  });
+
+  it('the GRID override is the param, in both directions, with no mirror', () => {
+    setup();
+    expect(getShowGrid(patch.nodes[MID])).toBe(false);
+    toggleGrid(MID, false);
+    expect(patch.nodes[MID]!.params.showGrid).toBe(1);
+    expect(getShowGrid(patch.nodes[MID])).toBe(true);
+    expect((patch.nodes[MID]!.data as Record<string, unknown>).showGrid).toBeUndefined();
+    toggleGrid(MID, true);
+    expect(patch.nodes[MID]!.params.showGrid).toBe(0);
+    expect(getShowGrid(patch.nodes[MID])).toBe(false);
+    // the absolute setter the faceplate's Toggle commits through
+    setShowGrid(MID, true);
+    expect(getShowGrid(patch.nodes[MID])).toBe(true);
+    setShowGrid(MID, false);
+    expect(getShowGrid(patch.nodes[MID])).toBe(false);
   });
 
   it('setCorner mutates in place + clamps to [0,1]; survives repeated writes', () => {

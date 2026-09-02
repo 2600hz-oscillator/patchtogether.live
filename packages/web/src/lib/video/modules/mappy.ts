@@ -391,18 +391,46 @@ void main() {
 // ───────────────────────── params / defaults ─────────────────────────
 
 interface MappyParams {
-  // showGrid is stored as a 0/1 param so it threads through the param/CV
-  // plumbing + persistence like every other numeric param, but it's surfaced
-  // to the user as a toggle on the card (and ALSO mirrored to node.data.showGrid
-  // so the card reads it the same way it reads surfaces).
+  // showGrid is a 0/1 SWITCH: it threads through the param/CV plumbing +
+  // persistence like every other numeric param, and it is surfaced as a GRID
+  // toggle on every surface (the faceplate cell, the card button, the MAP
+  // editor's bar button).
   showGrid: number;
-  // surfaceCount is the number of LIVE surfaces (1..6) — the +/− on the card. A
-  // live surface ALWAYS renders: its calibration grid when no input is patched
-  // (set up the geometry first), or the warped video once inN is connected. A
-  // surface beyond the count still auto-activates the moment its input is
-  // connected, so patching inN can never go to a dead surface.
+  // surfaceCount is the number of LIVE surfaces (1..6). A live surface ALWAYS
+  // renders: its calibration grid when no input is patched (set up the geometry
+  // first), or the warped video once inN is connected. A surface beyond the
+  // count still auto-activates the moment its input is connected, so patching
+  // inN can never go to a dead surface.
   surfaceCount: number;
 }
+
+/** The surface-count roster — one entry per legal count.
+ *
+ *  ⚠ IT IS A ROSTER AND NOT JUST A RANGE, AND THAT IS THE PARITY ARGUMENT.
+ *  `MappyCard.svelte` paints the live count as a number between its −/+ buttons
+ *  (`mappy-count-n`). On the faceplate a param earns a painted readout ONLY
+ *  when it declares `options` or `landmarks` (`paintsReadout` in
+ *  knob-vocabulary-model; a declared `format` is refused outright by the same
+ *  predicate), so a bare `1..6 discrete` param would paint a LANE dial with no
+ *  number on it — the count would be reachable and unreadable. With the roster
+ *  the dock paints a six-state `Segmented` row (SEGMENTED_MAX_OPTIONS is 6, so
+ *  it stays an inline button row rather than a dropdown) and the lane dial
+ *  prints the count under itself. It is NOT in the module contract: only
+ *  `id min..max curve default units` is projected (contract-signature.ts), so
+ *  the roster adds no contract-lock line. */
+const SURFACE_COUNT_OPTIONS = Array.from(
+  { length: MAPPY_SURFACE_COUNT - MAPPY_MIN_SURFACES + 1 },
+  (_, i) => {
+    const n = MAPPY_MIN_SURFACES + i;
+    return {
+      value: n,
+      label: String(n),
+      title: n === 1
+        ? 'ONE live surface — the single-projection de-skew case'
+        : `${n} live surfaces, each with its own quad and its own input (in1..in${n})`,
+    };
+  },
+);
 
 const DEFAULTS: MappyParams = {
   showGrid: 0,
@@ -427,15 +455,41 @@ export const mappyDef: VideoModuleDef = {
     { id: 'out', type: 'video' }, // the composite (canonical surface)
   ],
   params: [
-    // showGrid is a hidden 0/1 param (the card drives it as a toggle); kept in
-    // the param list so it persists + has a default for the manifest.
-    { id: 'showGrid', label: 'Grid', defaultValue: DEFAULTS.showGrid, min: 0, max: 1, curve: 'linear' },
-    // surfaceCount (1..6) — the +/− on the card; persisted like any param.
-    { id: 'surfaceCount', label: 'Surfaces', defaultValue: DEFAULTS.surfaceCount, min: MAPPY_MIN_SURFACES, max: MAPPY_SURFACE_COUNT, curve: 'linear' },
+    // ⚠ `discrete`, NOT `linear`, AND THE CORRECTION IS FUNCTIONAL — the
+    // `frametable.ts` precedent, which calls the same move a fix rather than a
+    // re-label. `looksLikeToggle` is `curve === 'discrete' && min === 0 &&
+    // max === 1`, so while this said `linear` the faceplate painted a KnobConic
+    // sweeping a continuum for a control the factory reads as `>= 0.5` and every
+    // surface draws as a two-state GRID ON/OFF button: a ~200 px drag to flip a
+    // switch. Nothing outside the UI reads `curve`; the factory's threshold is
+    // unchanged either way, which is what makes the move neutral by
+    // construction. ⚠ AND NO GATE FIRES ON THE MISTAKE: module-face-lint's
+    // switch-classification leg only reaches params that are ALREADY
+    // `0..1 discrete`, so a mis-declared switch is invisible to it — which is
+    // exactly how this one survived to promotion day.
+    { id: 'showGrid', label: 'Grid', defaultValue: DEFAULTS.showGrid, min: 0, max: 1, curve: 'discrete' },
+    // ⚠ `discrete` for the same class of reason and a different consequence:
+    // the number of live surfaces is an INTEGER COUNT, and a `linear` curve let
+    // a dial (or a CV-motorised write) rest at 2.4 surfaces. `clampSurfaceCount`
+    // rounds on read, so the ENGINE never saw a fraction — but the control did,
+    // and the value persisted into the Y.Doc off-detent. `discrete` snaps the
+    // control to the integers the module actually has.
+    { id: 'surfaceCount', label: 'Surfaces', defaultValue: DEFAULTS.surfaceCount, min: MAPPY_MIN_SURFACES, max: MAPPY_SURFACE_COUNT, curve: 'discrete', options: SURFACE_COUNT_OPTIONS },
+  ],
+
+  // ── THE NON-PARAM AFFORDANCES THE FACEPLATE RANKS ─────────────────────────
+  //
+  // The venue MAP — export the projector alignment (count + corners + FIT) and
+  // load it into a different patch at the same venue. Both testids ALREADY
+  // exist on `MappyCard.svelte`, so module-docs-lint's numbered-legend leg
+  // passes with no card edit (the `ptzcam-connect` shape).
+  controlFamilies: [
+    { id: 'mappy-import-map', label: 'Map import', kind: 'other', testidPrefix: 'mappy-import-map' },
+    { id: 'mappy-export-map', label: 'Map export', kind: 'other', testidPrefix: 'mappy-export-map' },
   ],
 
   docs: {
-    explanation: "MAPPY is a multi-surface MANUAL projection mapper (corner-pin homography). It hosts up to six SURFACES; each surface i is fed by video input in(i+1), warped onto its own draggable four-corner QUAD in normalized [0,1] output space (corner order TL, TR, BR, BL), then composited painter's-order OVER into ONE video output you send to a projector — in1 paints first (bottom), in6 last (top). Per surface a homography (unit-square → that quad) defines the projective warp; the shader runs per output texel, applies the INVERSE homography to find the matching source uv, and samples there only where it lands inside [0,1] (else transparent so under-layers show). Use one surface to DE-SKEW an awkwardly-angled projection, or up to six to map each face of a white cube/stage set. GRIDS-FIRST: a fresh MAPPY shows one surface, and any live surface with no input patched renders a NUMBERED calibration grid (per-surface-tinted checker + bright border + cross-hairs + a big seven-segment digit naming the input that will feed it) — so set the geometry on the physical faces FIRST (drag corners, add surfaces), THEN patch video and surface N swaps grid→warped feed in the quad you already mapped (surface↔input is fixed, no reassignment). DOM-only card affordances (NOT params): drag a corner HANDLE to pin it or drag a surface's INTERIOR to move the whole quad bodily; a MAP button opens a full-window editor (large canvas, big precise handles, drag-to-move, surface tabs, snap-to-grid); a per-surface FIT/CROP toggle in the legend (FIT zoom-fits the whole source into the quad, CROP windows it at native 1:1 scale — move to pan, resize to crop); a per-surface reset (corners→full-frame) and focus/select; and export map / import map buttons that save and reload the venue layout (count + corners + FIT) as JSON. This is the manual mapper — camera-assisted auto-align is a later phase, so there is no camera input and no CV by design.",
+    explanation: "MAPPY is a multi-surface MANUAL projection mapper (corner-pin homography). It hosts up to six SURFACES; each surface i is fed by video input in(i+1), warped onto its own draggable four-corner QUAD in normalized [0,1] output space (corner order TL, TR, BR, BL), then composited painter's-order OVER into ONE video output you send to a projector — in1 paints first (bottom), in6 last (top). Per surface a homography (unit-square → that quad) defines the projective warp; the shader runs per output texel, applies the INVERSE homography to find the matching source uv, and samples there only where it lands inside [0,1] (else transparent so under-layers show). Use one surface to DE-SKEW an awkwardly-angled projection, or up to six to map each face of a white cube/stage set. GRIDS-FIRST: a fresh MAPPY shows one surface, and any live surface with no input patched renders a NUMBERED calibration grid (per-surface-tinted checker + bright border + cross-hairs + a big seven-segment digit naming the input that will feed it) — so set the geometry on the physical faces FIRST (drag corners, add surfaces), THEN patch video and surface N swaps grid→warped feed in the quad you already mapped (surface↔input is fixed, no reassignment). GESTURE-SHAPED affordances (NOT params), carried by the faceplate's MAP body and by the legacy card alike: drag a corner HANDLE to pin it or drag a surface's INTERIOR to move the whole quad bodily; a MAP button opens a full-window editor (large canvas, big precise handles, drag-to-move, surface tabs, snap-to-grid); a per-surface FIT/CROP toggle in the legend (FIT zoom-fits the whole source into the quad, CROP windows it at native 1:1 scale — move to pan, resize to crop); a per-surface reset (corners→full-frame) and focus/select. The faceplate also carries a SCREEN ON/OFF switch that collapses the composite preview and reclaims its space while MAPPY KEEPS COMPOSITING and keeps feeding `out` — a mid-chain mapper feeding a projector must never stop rendering because a preview is hidden. Export map / import map save and reload the venue layout (count + corners + FIT) as JSON; they are ranked controls on the faceplate and buttons on the card. This is the manual mapper — camera-assisted auto-align is a later phase, so there is no camera input and no CV by design.",
     inputs: {
       "in1": "Video feed for surface 1, composited FIRST (the bottom layer) and warped into surface 1's quad. With nothing patched, surface 1 shows its numbered calibration grid (digit 1).",
       "in2": "Video feed for surface 2, warped into surface 2's quad and composited OVER surface 1 where they overlap. Patching it auto-activates surface 2; unconnected it shows the grid (digit 2).",
@@ -448,9 +502,54 @@ export const mappyDef: VideoModuleDef = {
       "out": "The composite video output — all live surfaces warped and blended painter's-order OVER onto an opaque black floor. Send it to a projector (videoOut); it is also the on-card live preview.",
     },
     controls: {
-      "showGrid": "GRID toggle (param showGrid, 0/1; surfaced as the GRID ON/OFF button). When ON it FORCES the numbered calibration grid onto every live surface in place of its video — a re-alignment override. OFF lets each connected input show its warped feed; an unpatched surface still shows its grid regardless.",
-      "surfaceCount": "Number of LIVE surfaces, 1–6 (param surfaceCount; the +/− counter on the card). Each live surface renders its calibration grid until its input is patched, then the warped video. Newly added surfaces drop in as a staggered inset quad; connecting inN auto-activates surface N even beyond this count.",
+      "showGrid": "GRID switch (param showGrid, a 0/1 discrete two-state; a Toggle on the faceplate, the GRID ON/OFF button on the card and in the MAP editor). When ON it FORCES the numbered calibration grid onto every live surface in place of its video — a re-alignment override. OFF lets each connected input show its warped feed; an unpatched surface still shows its grid regardless.",
+      "surfaceCount": "Number of LIVE surfaces, 1–6 (param surfaceCount, discrete with a 1..6 roster: a six-state button row on the dock faceplate, a snapping dial that prints the count in the lane tile, and the +/− counter on the card). Each live surface renders its calibration grid until its input is patched, then the warped video. RAISING it drops each newly-live surface in as a staggered inset quad (not a full-frame duplicate) unless you had already shaped that surface, in which case its corners are kept; lowering it preserves geometry, so −/+ is non-destructive. Connecting inN auto-activates surface N even beyond this count.",
+      "mappy-import-map-{n}": "IMPORT MAP — load a venue layout from a .json file, REPLACING the current one (surface count + every surface's four corners + its FIT/CROP mode). A foreign, garbage or future-version file is rejected with a message and mutates nothing. Input↔surface routing, the GRID override and all engine state are untouched: a map is the spatial alignment only.",
+      "mappy-export-map-{n}": "EXPORT MAP — download the current venue layout (surface count + every surface's four corners + FIT/CROP) as a .json file. Align MAPPY to a physical projector target once, export, and import it into a different patch at the same venue.",
     },
+  },
+
+  // ── THE FACE (wave-4 promotion) ───────────────────────────────────────────
+  face: {
+    // ⚠ FORCED, not chosen. `glyphBinding` short-circuits on the first
+    // `type: 'audio'` OUTPUT and mappy declares none (one `video` out), so
+    // every non-'none' literal resolves `{kind:'static'}` — a DEAD glyph the
+    // face lint reddens. The lane tile's picture does not come from here at
+    // all: `hasVideoSurface(def)` is `domain === 'video'` and nothing else, and
+    // `laneGlyphFor` short-circuits to 'picture' for a video def.
+    // `mappy-face-model.test.ts` asserts THOSE two, never the literal.
+    glyph: 'none',
+
+    // The MAP body — see $lib/ui/modules/mappy/. LOAD-BEARING, not additive:
+    // promotion stops both default surfaces rendering `MappyCard.svelte`, and
+    // the corner-pin drag, the whole-surface move, the per-surface FIT/CROP and
+    // RESET, the MAP editor and the composite preview are ALL card-only today.
+    // Without this file a promoted mappy could not be aligned at all, which is
+    // the entire module.
+    extension: 'mappy',
+
+    // ⚠ GRID RANKS FIRST, and the argument is the workflow rather than the
+    // alphabet. MAPPY's job is a physical alignment session: you stand at the
+    // projector, force the numbered grid on, drag until the grid lands on the
+    // wall, and turn it off. The count is set once at the start of that session;
+    // the override is reached for over and over during it. So the two-cell
+    // compact tile keeps the switch a player uses mid-session.
+    order: [
+      'showGrid',
+      'surfaceCount',
+      'mappy-import-map-{n}',
+      'mappy-export-map-{n}',
+    ],
+
+    // Two bands, because they are two different IDEAS rather than a header
+    // hunt: SURFACES is the live rig, MAP is the venue file. Two bands is well
+    // under `DOCK_TAB_MIN_BANDS`, so this is a sectioned faceplate and NOT a tab
+    // rail — the owner's ruling is that a control-heavy face gets tabs, never
+    // that pages are padded to earn them.
+    pages: [
+      { id: 'surfaces', label: 'surfaces', controls: ['showGrid', 'surfaceCount'] },
+      { id: 'map', label: 'map', controls: ['mappy-import-map-{n}', 'mappy-export-map-{n}'] },
+    ],
   },
   factory(ctx, node): VideoNodeHandle {
     const gl = ctx.gl;
@@ -494,18 +593,33 @@ export const mappyDef: VideoModuleDef = {
       const data = node.data as { surfaces?: unknown } | undefined;
       return normalizeSurfaces(data?.surfaces);
     }
-    /** showGrid is mirrored on node.data so the card toggle + the param agree;
-     *  prefer node.data when present, else the param. When ON it FORCES the grid
-     *  on every live surface (a re-alignment override). */
+    // ── ⚠ THE PARAMS ARE THE SINGLE SOURCE OF TRUTH FOR THESE TWO ────────────
+    //
+    // Both of these used to PREFER a `node.data` mirror over the param and fall
+    // back to the param only when the mirror was absent. That is fine while the
+    // ONLY writers are card gestures that write both — and it is a silent kill
+    // switch the moment a GENERIC param cell exists, because every shell cell
+    // writes the param ALONE. On a fresh node the faceplate would have worked;
+    // on any node a card, a map import or a `?shell=legacy` collaborator had
+    // touched, the mirror was present and the faceplate's GRID toggle and
+    // SURFACES control would have been DEAD — with every def-reading gate green
+    // (the params exist, the cells render, faces-parity's `readParam` oracle
+    // sees the param move) and the engine ignoring all of it.
+    //
+    // ⚠ AND DROPPING THE MIRROR IS BEHAVIOUR-PRESERVING FOR EVERY SAVED RACK,
+    // measured rather than assumed: `mappy-edit.ts` has written `setNodeParam`
+    // in the SAME call as the `node.data` write since the seam was created
+    // (ea2504939), and `MappyCard.svelte` did the same before that seam existed
+    // (614052097) — so no rack this build can load holds a data/param pair that
+    // disagrees. The mirror is now not written at all (see mappy-edit.ts), and
+    // every reader — card, MAP editor, map export — reads the param.
+    /** The GRID override: when ON it FORCES the calibration grid onto every
+     *  live surface in place of its video (a re-alignment override). */
     function gridOn(): boolean {
-      const data = node.data as { showGrid?: unknown } | undefined;
-      if (data && typeof data.showGrid === 'boolean') return data.showGrid;
       return params.showGrid >= 0.5;
     }
-    /** Number of live surfaces (1..6) — node.data.surfaceCount wins, else param. */
+    /** Number of live surfaces (1..6). */
     function surfaceCount(): number {
-      const data = node.data as { surfaceCount?: unknown } | undefined;
-      if (data && typeof data.surfaceCount === 'number') return clampSurfaceCount(data.surfaceCount);
       return clampSurfaceCount(params.surfaceCount);
     }
 

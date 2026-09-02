@@ -5655,6 +5655,61 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // CONTRACT UNCHANGED: no controlFamilies, no new params. `docs:accept` runs
   // because the explanation's card-ownership prose was stale (LEG-02).
   'videobox',
+  // ── MAPPY (wave 4, 2026-09-01) — THE PROJECTION MAPPER ───────────────────
+  //
+  // Two ranked params (`showGrid`, a Toggle; `surfaceCount`, a six-state
+  // roster), two ranked control families (import map / export map), two bands,
+  // `glyph: 'none'` (FORCED — mappy declares no audio output, so every other
+  // literal resolves a dead `{kind:'static'}`; the tile picture comes from
+  // `hasVideoSurface`), and a `fullViewBody` carrying the module itself.
+  //
+  // ⚠ THE INVENTORY'S CONCLUSION WAS FALSE AND THE FALSE CONCLUSION HAD
+  // PROPAGATED INTO A GATE. The entry read "direct geometry manipulation is the
+  // entire module", and `dock-tray-shrink-to-content.spec.ts` quoted it to pin
+  // mappy's un-migrated status as a DURABLE PROPERTY rather than a queue
+  // position. The first clause is a fair description of the corner pin and is
+  // exactly what the `fullViewBody` slot is for; what it is NOT is a statement
+  // that the module has nothing rankable — mappy declares TWO real params the
+  // card paints as a GRID button and a +/− stepper. That spec is re-pointed in
+  // this diff onto the #2299 forced-placeholder seam, which asks for the
+  // un-migrated RENDER PATH instead of depending on any module still being on
+  // it (the owner's ruling: everything migrates, so a durable un-migrated
+  // subject may not exist).
+  //
+  // ⚠ THE INERT-CONTROL TRAP, and it would have shipped GREEN AND BROKEN. The
+  // factory PREFERRED a `node.data` mirror over the param for BOTH of these,
+  // while every generic shell cell writes the param alone. On a fresh node the
+  // faceplate would have worked; on any node the card, a map import or a
+  // `?shell=legacy` collaborator had touched, the mirror was present and the
+  // GRID toggle and SURFACES control would have been DEAD — with the params
+  // declared, the cells rendered and faces-parity's `readParam` oracle watching
+  // the param move. The mirror is deleted in both directions and every reader
+  // (factory, card, MAP editor, map export) now reads the param;
+  // `SHELL_PARAM_WRITES.mappy` makes the count's write the same write the
+  // card's `+` makes, so a newly-live surface still drops in as a staggered
+  // inset quad rather than a full-frame duplicate nobody can grab.
+  //
+  // ⚠ THIS IS THE PROGRAM'S ONE GPU RE-ATTEST, and it is spent on two `curve`
+  // corrections that are FUNCTIONAL (the `frametable.ts` precedent):
+  // `showGrid` and `surfaceCount` were declared `linear`, so `looksLikeToggle`
+  // was false and the faceplate would have painted a continuous 200 px drag
+  // over a two-state override and a fractional surface count. `curve` IS in the
+  // contract signature, so this is `docs:accept` + contract-lock review as well.
+  // No gate could have caught the mis-declaration: module-face-lint's
+  // switch-classification leg only reaches params that are ALREADY
+  // `0..1 discrete`. `showGrid` is registered in `ACKNOWLEDGED_LATCHING` — it
+  // is a persistent re-alignment override, not a press-pad.
+  //
+  // ⚠ ONE ADDITION BEYOND THE PLAN, ARGUED: `surfaceCount` gains a 1..6
+  // `options` roster. The card paints the live count as a number
+  // (`mappy-count-n`), and a param earns a painted readout only when it
+  // declares `options` or `landmarks` (`paintsReadout`), so a bare discrete
+  // param would have left the LANE tile with a numberless dial — a parity
+  // deletion the dock-only body cannot repair. The roster is NOT projected into
+  // the contract (only `id min..max curve default units` is), so it adds no
+  // contract-lock line, and it rides the attest window the curve fix already
+  // opened.
+  'mappy',
 ]);
 
 /**

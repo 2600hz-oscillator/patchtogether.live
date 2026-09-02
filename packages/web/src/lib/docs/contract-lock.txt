@@ -1611,8 +1611,10 @@ mappy in in4 video
 mappy in in5 video
 mappy in in6 video
 mappy out out video
-mappy param showGrid 0..1 linear default=0
-mappy param surfaceCount 1..6 linear default=1
+mappy param showGrid 0..1 discrete default=0
+mappy param surfaceCount 1..6 discrete default=1
+mappy family mappy-export-map kind=other prefix=mappy-export-map
+mappy family mappy-import-map kind=other prefix=mappy-import-map
 marbles meta domain=audio
 marbles in dejavu_cv cv param=deja_vu cvScale=linear
 marbles in length_cv cv param=length cvScale=linear

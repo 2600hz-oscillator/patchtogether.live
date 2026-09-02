@@ -1304,6 +1304,27 @@ describe('module-face lint — MOMENTARY pads (face.momentary)', () => {
     // ⚠ Its `curve` needed NO correction: the def has declared `discrete` since
     // the module shipped. The quiet case, like `acidwarp:freeze` above.
     'blood:fillMode',
+    // MAPPY `showGrid`, 2026-09-01. The GRID OVERRIDE: when on, every LIVE
+    // surface draws its numbered calibration grid in place of its video.
+    //
+    // LATCHING, classified AT THE READ SITE. The factory's `gridOn()` is a bare
+    // `params.showGrid >= 0.5` sampled inside `surface.draw` every frame; there
+    // is no edge detector anywhere in this module (it declares no CV inputs at
+    // all — "no camera input and no CV here, by design"). It is the state a
+    // player leaves ON for the whole alignment session — force the grid up,
+    // walk to the projector, drag corners until the grid lands on the physical
+    // face, then turn it off — so a momentary render would show the grid only
+    // while the mouse button was down, which is the one way it could not be
+    // used, and would write a value into the Y.Doc on every press/release pair.
+    //
+    // ⚠ Its `curve` DID need the correction, which is the difference from
+    // `blood:fillMode` above: this param was declared `linear`, so it was
+    // invisible to the very leg that would have demanded this entry —
+    // `switchLikeParams` only reaches params that are ALREADY `0..1 discrete`.
+    // A mis-declared switch is not merely rendered wrong, it is UNCLASSIFIED
+    // and no gate says so; that is why the linear->discrete move is in the same
+    // diff as the promotion rather than deferred to dodge a GPU re-attest.
+    'mappy:showGrid',
   ]);
 
   it('no ACKNOWLEDGED_LATCHING param is DOCUMENTED as momentary (the cross-check)', () => {
