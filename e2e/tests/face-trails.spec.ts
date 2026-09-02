@@ -513,5 +513,45 @@ test('@trails the FACE does not disturb the audio path — a touch still opens a
   expect(state?.channels[0]?.x).toBeCloseTo(0.9, 2);
   expect(state?.channels[0]?.gate).toBe(true);
 
+  // (5) ⚠ AND THE INK REACHED THE CANVAS — the one assertion nothing else in the
+  //     tree makes. Everything above proves the ENGINE moved; a mirror whose
+  //     dirty check never let a frame through would satisfy every one of them
+  //     while painting the resting grid forever. That is the green-and-silent
+  //     class this module is most exposed to, because the dirty check is the
+  //     only logic on the surface that is not a verbatim port of the card, and
+  //     the VRT baseline photographs the RESTING state by construction (no
+  //     runner has a Trails, so the scene can never reach a painted touch).
+  //
+  //     The probe is CHROMATIC ink, not "pixels changed": the resting palette is
+  //     near-grey (#101318 / #0c0e12 plus faint white strokes and the hatch), so
+  //     a saturated pixel can only be a channel dot or its trail. Measured on
+  //     both tiers at rest: exactly 0.
+  const chromatic = async (testid: string): Promise<number> =>
+    page.getByTestId(testid).evaluate((el) => {
+      const c = el as HTMLCanvasElement;
+      const d = c.getContext('2d')!.getImageData(0, 0, c.width, c.height).data;
+      let n = 0;
+      for (let i = 0; i < d.length; i += 4) {
+        const r = d[i]!, g = d[i + 1]!, b = d[i + 2]!;
+        if (Math.max(r, g, b) - Math.min(r, g, b) > 40) n++;
+      }
+      return n;
+    });
+  //     Polled: the touch is decoded synchronously but the repaint lands on the
+  //     mirror's own rAF, so this waits for a frame rather than assuming one.
+  await expect
+    .poll(() => chromatic(`trails-face-pad-${NODE}`), {
+      message: 'the DOCK mirror must paint the touch the jack is carrying',
+    })
+    .toBeGreaterThan(0);
+  //     BOTH tiers, because they are two independent component instances with
+  //     their own loops and their own per-instance dirty state — one painting is
+  //     not evidence the other did.
+  await expect
+    .poll(() => chromatic(`trails-tile-pad-${NODE}`), {
+      message: 'the LANE TILE mirror must paint it too',
+    })
+    .toBeGreaterThan(0);
+
   errorWatch.assertClean();
 });
