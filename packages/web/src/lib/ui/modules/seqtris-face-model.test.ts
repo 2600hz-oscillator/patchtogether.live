@@ -422,7 +422,7 @@ describe('seqtris — CLAIM 5: the SCENE COLUMN is the imported roster, in order
     expect(DOCK).toMatch(/api\(\)\?\.press\(action\);/);
   });
 
-  it('⚠ NO SURFACE CALLS `release\(\)` — that is the node\'s death, not a component\'s', () => {
+  it('⚠ NO SURFACE CALLS `release()` — that is the node\'s death, not a component\'s', () => {
     // #1728, refused by name in the binder's own header: `release()` is called
     // from the factory's `dispose`. `unbind()` is a USER GESTURE and lives on
     // the dock body only.
