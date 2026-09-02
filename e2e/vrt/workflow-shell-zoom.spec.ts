@@ -102,17 +102,43 @@ test.describe('VRT: ?shell=1 rack holds position vs the lane grid at fixed zooms
       // returns 'shell' and `module-shell-placeholder` never attaches for it.
       // Waiting on the old testid would hang for the full 15 s and then fail,
       // which is why the two occupants are split rather than looped together —
-      // they are no longer the same kind of tile. recorderbox is still
-      // un-migrated and still a placeholder.
+      // they are no longer the same kind of tile.
       // ⚠ ITS BASELINE MOVES: the video zone repacks around a 192 px tile where
       // a wider placeholder used to sit, the same way it did when videoOut was
       // promoted (#1821).
-      await page
-        .locator('.svelte-flow__node[data-id="workflow-synesthesia"] [data-testid="module-shell"]')
-        .waitFor({ state: 'attached', timeout: 15_000 });
-      await page
-        .locator('.svelte-flow__node[data-id="workflow-recorderbox"] [data-testid="module-shell-placeholder"]')
-        .waitFor({ state: 'attached', timeout: 15_000 });
+      //
+      // ⚠ recorderbox MADE THE SAME MOVE (wave 5, 2026-09-02) AND THE SENTENCE
+      // THAT USED TO SIT HERE — "recorderbox is still un-migrated and still a
+      // placeholder" — WOULD HAVE HUNG THIS SPEC FOR THE FULL 15 s AND THEN
+      // FAILED, which is exactly what the synesthesia note one paragraph up
+      // warns about. It is the LAST of the three video-zone occupants to
+      // promote, so this file no longer waits on a placeholder at all: all
+      // three are `module-shell` tiles now, and the loop the split was undoing
+      // could legitimately come back. It is left split because the comments
+      // above each wait are the record of when and why each one moved.
+      //
+      // ⚠ TWO OF ITS THREE BASELINES MOVED — 040 and 080 — AND 130 DID NOT,
+      // WHICH IS WORTH WRITING DOWN BECAUSE THE OBVIOUS PREDICTION IS WRONG
+      // TWICE OVER. All three scenes centre the SAME flow anchor (300, 4200)
+      // and differ only in ZOOM, so a higher zoom frames LESS rack: at 1.3 the
+      // visible flow region is ~985 x ~554 units and the video-zone occupants
+      // are entirely OUT OF FRAME — that baseline shows the zone's empty top
+      // band and no tiles at all. Only 040 and 080 can see this zone, so only
+      // they can move when an occupant is promoted. (Checked against the
+      // committed PNGs, not inferred.)
+      //
+      // ⚠ AND THE REASON THE TWO ABOVE GIVE — "the zone repacks around a 192 px
+      // tile where a WIDER placeholder sat" — IS FALSE FOR THIS PROMOTION and
+      // is not repeated here. Placeholder tiles are already `SHELL_TILE_W`-
+      // uniform (`workflow-shell.spec.ts` asserts exactly that), so nothing
+      // repacks: the three occupants sit at the same pitch before and after.
+      // What moves is the tile's CONTENT — a placeholder graphic becomes a face
+      // tile with a live thumb well and the module's own transport row.
+      for (const id of ['workflow-synesthesia', 'workflow-recorderbox']) {
+        await page
+          .locator(`.svelte-flow__node[data-id="${id}"] [data-testid="module-shell"]`)
+          .waitFor({ state: 'attached', timeout: 15_000 });
+      }
       await page.evaluate(() => {
         const w = globalThis as unknown as {
           __setSpawnFlowPos: (p: { x: number; y: number }) => void;

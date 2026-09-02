@@ -24,6 +24,7 @@ import {
 
 import { scoreDef } from '$lib/audio/modules/score';
 import { timelordeDef } from '$lib/audio/modules/timelorde';
+import { moog956Def } from '$lib/audio/modules/moog956';
 
 // ---------- shared fixtures --------------------------------------------------
 
@@ -140,6 +141,66 @@ describe('listExposableControls', () => {
     const gain = got.find((c) => c.id === 'param-gain');
     expect(mute?.kind).toBe('button');
     expect(gain?.kind).toBe('knob');
+  });
+
+  // ── A PRESS PAD IS NOT AN EXPOSABLE CONTROL (2026-09-02) ──────────────────
+  //
+  // The group bar has NO release edge: `GroupExposedControls.svelte`'s
+  // `togglePlay` is a single `setNodeParam(child, paramId, playing ? 0 : 1)`
+  // per click, so a `face.momentary` param rendered there LATCHES a durable
+  // Y.Doc value — the persisted-stuck-pad bug `$lib/audio/momentary-params`
+  // exists to end, re-entered by a different surface.
+  //
+  // ⚠ THE TRAP IS THAT A PAD AND A LATCHING SWITCH ARE THE SAME ParamDef.
+  // `looksLikeToggle` is `discrete && 0..1` and matches both, so the intent
+  // can only come from the DECLARATION. That is exactly why moog956 became
+  // reachable: correcting its `gate` from a mis-declared `linear` to the
+  // `discrete` it always behaved as promoted it into the button branch.
+  it('does NOT auto-expose a face.momentary press pad, but still exposes a real toggle', () => {
+    const lookup: ControlDefLookup = () => ({
+      exposableControls: [],
+      params: [
+        // IDENTICAL ParamDef shapes — only the declaration separates them.
+        { id: 'strike', label: 'Strike', defaultValue: 0, min: 0, max: 1, curve: 'discrete' },
+        { id: 'mute', label: 'Mute', defaultValue: 0, min: 0, max: 1, curve: 'discrete' },
+      ],
+      face: { momentary: ['strike'] },
+    });
+    const got = listExposableControls('whatever', lookup);
+    expect(got.some((c) => c.paramId === 'strike')).toBe(false);
+    // NEGATIVE CONTROL: the filter must be the DECLARATION, not the shape —
+    // an ordinary latching switch of the same shape still reaches the bar.
+    expect(got.find((c) => c.paramId === 'mute')?.kind).toBe('button');
+  });
+
+  it('still honours an EXPLICIT exposableControls entry for a momentary param', () => {
+    // The explicit list is a louder claim than this default, exactly as
+    // `noUserControl` treats it — it is matched before the auto tail.
+    const lookup: ControlDefLookup = () => ({
+      exposableControls: [
+        { id: 'bigPad', label: 'Pad', kind: 'button', paramId: 'strike' },
+      ] as readonly ExposableControl[],
+      params: [
+        { id: 'strike', label: 'Strike', defaultValue: 0, min: 0, max: 1, curve: 'discrete' },
+      ],
+      face: { momentary: ['strike'] },
+    });
+    const got = listExposableControls('whatever', lookup);
+    expect(got.map((c) => c.id)).toEqual(['bigPad']);
+  });
+
+  it('the REAL moog956 def never puts its ribbon gate on the group bar', () => {
+    // Anchored to the SHIPPED def rather than a fixture: moog956's `gate` is
+    // `0..1 discrete` + `face.momentary`, so without the filter it renders as
+    // a latching ▶/■ button that writes a HIGH gate into the rack and never
+    // drops it — the drone this module's promotion exists to prevent.
+    const lookup: ControlDefLookup = () => moog956Def;
+    const got = listExposableControls('moog956', lookup);
+    expect(got.some((c) => c.paramId === 'gate')).toBe(false);
+    // …and the ordinary params are untouched, so the filter is narrow.
+    for (const id of ['pos', 'scale', 'offset']) {
+      expect(got.some((c) => c.paramId === id), `${id} is still exposable`).toBe(true);
+    }
   });
 
   it('returns [] for an unknown type', () => {
