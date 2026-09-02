@@ -1285,7 +1285,17 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // moving frame defeats single-shot pixel capture. Unit suites cover
   // the module-def shape (videobox.test.ts) + the playhead-sync drift
   // math (videobox-sync.test.ts); E2E spawn smoke covers card render.
-  videobox: 'live <video> element + ticking playhead readout defeat deterministic capture; unit + sync-math + per-module spawn smoke provide coverage',
+  //
+  // ⚠ NARROWED 2026-09-01 (videobox face): this entry now covers ONLY THE
+  // LEGACY CARD, reachable at `?shell=legacy`. videobox is in STRICT_FACES, so
+  // what a workflow-mode player operates is the ModuleShell faceplate — and
+  // unlike the card, the FACE has two committed baselines
+  // (`face-videobox-compact` / `-dock`): a face scene loads NO file, so the
+  // shader's idle branch runs (a pure function of position with no clock) and
+  // the transport/seek rest at their spawn state. The tvLibrarian disposition,
+  // argued per-half in its `_shell-faces.ts` roster entry rather than
+  // duplicated here.
+  videobox: 'faced (STRICT_FACES): the operated surface is the ModuleShell faceplate, captured by face-videobox-{compact,dock} (an unloaded node paints the constant idle gradient — see _shell-faces.ts). This entry covers only the LEGACY card (?shell=legacy): a live <video> element + ticking playhead readout defeat deterministic capture there; unit + sync-math + per-module spawn smoke + the node-source/collapse e2e sweeps provide coverage',
   // TV LIBRARIAN — like VIDEOBOX, a live external <video> (a remote HLS stream
   // via hls.js) plus a runtime-fetched channel list (network-dependent + the
   // famelack dataset/streams change), so the card has no deterministic frame to

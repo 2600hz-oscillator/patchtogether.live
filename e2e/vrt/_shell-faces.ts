@@ -4854,6 +4854,29 @@ export const FACES = [
       },
     ],
   },
+
+  // ── VIDEOBOX — the LOCAL-FILE PLAYER, capturable for the tvLibrarian reason
+  {
+    type: 'videobox',
+    // No `face.pages`, so the dock renders one unlabelled section holding the
+    // single ranked cell (`gain`) above the player body. One control is the
+    // honest count for this module.
+    pages: 1,
+    videoFaceWhy:
+      'a VIDEO module, so it must boot into the video zone rather than a mixer channel column — '
+      + 'without this field bootWithFace waits out the full test timeout for a column membership '
+      + 'a video node never acquires. ⚠ AND IT IS CAPTURABLE DESPITE SITTING IN `EXEMPT_FROM_VRT` '
+      + 'FOR A LIVE <video> ELEMENT, which is the tvLibrarian distinction one entry up: that '
+      + 'exemption is TRUE OF THE CARD SCENE, which loads a real clip and adopts the live '
+      + 'element. A FACE scene spawns the node and loads NOTHING, so `uHasInput` is 0 and the '
+      + 'shader\'s idle branch runs — a pure function of position with no clock, no accumulator '
+      + 'and no uniform that is not a param (pinned in videobox-face-model.test.ts). The rest of '
+      + 'the surface is equally still at spawn: no fileMeta, so the seek slider is disabled at '
+      + '0, the transport shows Play, no filename line exists, and the drop-hint overlay is '
+      + 'static text. ⚠ NO simPin AND NO NETWORK: unlike tvLibrarian there is no runtime roster '
+      + 'fetch to pin — the only asynchronous inputs this surface has are user gestures, and a '
+      + 'scene performs none.',
+  },
   // ── NUMPAD+ — the KEYPAD PERFORMANCE SEQUENCER ────────────────────────────
   //
   // `pages: 4` is the POST-hero band count. The declared pages are also four —
