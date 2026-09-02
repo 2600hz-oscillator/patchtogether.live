@@ -5004,6 +5004,20 @@ export const FACES = [
     // three ranked cells (`speed`, `start`, `end`) above the transport body.
     // Three controls is not control-heavy and does not earn a tab rail.
     pages: 1,
+    // ⚠ COMPACT REMOVED 2026-09-02 (the painter/mirrorpool/matrixMix treatment)
+    // — and removed AFTER the data-thumb-painted fix, which the paragraph below
+    // records but which the census DISPROVED as sufficient: the identical
+    // 1011 px / ratio 0.15 well flip fired on FIVE SHAs across FOUR branches in
+    // the scene's first ~18.5 h (snh-gibribbon, nibbles, seqtris, clipplayer,
+    // plus a 1041 = 1011 + 30 composite on recorderbox), always attempt-1,
+    // always 3/3 hard, green on the branch's next run with nothing touched —
+    // and the decisive pair: main run 33690→ green and clipplayer run red on
+    // the SAME shard 11/12, BOTH carrying the fix. So the paint-stamp wait is
+    // necessary but not sufficient; some second mechanism still flips the well.
+    // The dock scene (the module's own fullViewBody) survives and gates.
+    // Restore when the residual mechanism is root-caused: delete this line and
+    // dispatch `GREP=face-videovarispeed task vrt:commit`.
+    scenes: ['dock'],
     videoFaceWhy:
       'a VIDEO module, so it must boot into the video zone rather than a mixer channel column — '
       + 'without this field bootWithFace waits out the full test timeout for a column membership '
