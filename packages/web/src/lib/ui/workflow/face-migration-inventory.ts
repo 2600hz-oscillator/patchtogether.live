@@ -784,14 +784,63 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
   // hand-written surface behind the extension seam — which is BUILT and adopted
   // (#1512), so this disposition names WORK, not a wait. What a given module is
   // still waiting on, if anything, is named in its own `blockers`.
+  // ⚠ WAS `bespoke-surface` WITH A `needs-media-controller` BLOCKER. The old
+  // record read: "an archive.org SEARCH BROWSER: a typed query with year
+  // bounds, a result list to pick from, and a player. The list is the
+  // interaction, the query is typed, and the <video> source is card-owned."
+  //
+  // ⚠ THE LAST CLAUSE IS STILL TRUE, AND IT IS NOT A BLOCKER. This is the
+  // THIRD member of `DOM_SOURCE_LANE_TYPES` to be faced, and unlike the two
+  // 2026-09-02 retirements next door it does NOT get there by
+  // reclassification: peertube's blocker was a category error (it had already
+  // LEFT the set) and recorderbox was never in it, whereas archivist IS in it,
+  // its three elements ARE card-attached, and `needsHeadlessSourceMount`
+  // genuinely returns true. The blocker is DISCHARGED the way cameraInput's
+  // and loopback's were — the card keeps sole ownership of the elements and
+  // the fetch/attach chain, and every affordance it draws is carried to the
+  // faceplate through a status/command registry. See the `CARD_SOURCE_FACED`
+  // entry in face-migration-inventory.test.ts, which is the gate that refuses
+  // a DOM-source `generic-face` without one.
+  //
+  // ⚠ THE SECOND CLAUSE WAS FALSE AS WRITTEN AND IS CORRECTED: "a result list
+  // to pick from" describes a surface this module never had. archivist fetches
+  // a page of up to 50 docs and picks a RANDOM one; the player's second draw
+  // is the ↻ next button, not a row in a roster. There is no list to move to a
+  // body, which is why this face needed no `selector`-cell argument at all —
+  // the affordances that could not be cells are a free-text TERM, two YEAR
+  // bounds, a media-type filter, and four transport ACTIONS.
+  //
+  // ⚠ AND THE BLOCKER STAYS REGISTERED: `MIGRATION_BLOCKERS` keeps
+  // `needs-media-controller` because it is dropped from THIS entry only.
   {
     type: 'archivist',
-    disposition: 'bespoke-surface',
-    blockers: ['needs-media-controller'],
-    why:
-      'an archive.org SEARCH BROWSER: a typed query with year bounds, a result list to pick from, ' +
-      'and a player. The list is the interaction, the query is typed, and the <video> source is ' +
-      'card-owned.',
+    disposition: 'generic-face',
+    note:
+      'an archive.org SEARCH BROWSER, faced 2026-09-02: one ranked param (gain, a fader) over an ' +
+      'extension that fills BOTH body slots. ⚠ IT IS IN `DOM_SOURCE_LANE_TYPES`, so promotion ' +
+      'parks the REAL card in <HeadlessSourceHost> at left:-9999px with pointer-events:none — ' +
+      'MOUNTED, which is what keeps the three node-owned elements attached and a loaded item ' +
+      'playing, but UNCLICKABLE. Since this card is all controls, every one of them is carried ' +
+      'to the faceplate through $lib/ui/media/archivist-status-registry: the card publishes ' +
+      'loading/statusMsg/errorMsg/docCount/positionSec and registers six commands, and the ' +
+      'bodies read and invoke. No second owner exists — the bodies fetch nothing, adopt no ' +
+      'element and call no engine method. ⚠ THE BODIES ARE LOAD-BEARING IN THE STRONGEST FORM ' +
+      'ON THIS ROSTER: a fresh archivist has NO item (node.data.item is null until a search ' +
+      'writes one, and the factory searches nothing on its own), so a promotion without them ' +
+      'would ship a media source that can never be given any media. ⚠ BOTH SLOTS, because ' +
+      'cameraInput shipped fullViewBody-only and lost its only route to a first capture; the ' +
+      'lane tile carries a compact copy of the same search and transport and does NO mount-time ' +
+      'work (one onMount read, one registry subscribe — no fetch, no probe). ⚠ ONE COMPONENT, ' +
+      'THREE MOUNTS (ArchivistBrowseControls.svelte), so the card and both bodies cannot drift — ' +
+      'this module has a documented case of exactly that drift in updateDuration\'s comment. ' +
+      '⚠ A WRITE-ONLY MIRROR WAS FIXED: the card wrote the four search keys to the Y.Doc and ' +
+      'never read them back, so a rack-mate\'s typing left it searching a stale local copy; the ' +
+      'query is now read from the GRAPH at the moment a search runs. ⚠ TWO RESTING READOUTS ' +
+      'DELETED ON EVERY SURFACE: the `0:04 / 2:00` time line (position lives on the scrubber and ' +
+      'its aria-valuetext — videobox and videovarispeed made the same deletion) and the ' +
+      '`Internet Archive · {type}` line (the type restated the picker two rows up). Both live on ' +
+      'the picture\'s aria-label. The play-only warning is KEPT as a CLEAN OUT StatusLed, since ' +
+      'it is the only account a player has of a patched `video` jack delivering the idle pattern.',
   },
   {
     type: 'audioIn',
