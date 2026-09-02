@@ -12,8 +12,8 @@ Every registered module carries exactly one **disposition**: what kind of work i
 |  | count |
 |---|---|
 | registered modules | 197 |
-| done (faced + promoted) | 185 |
-| remaining (excludes organizational-native) | 9 |
+| done (faced + promoted) | 186 |
+| remaining (excludes organizational-native) | 8 |
 | registered with NO disposition (must be zero) | 0 |
 | inventory entries naming a dead def (must be zero) | 0 |
 
@@ -21,9 +21,9 @@ Every registered module carries exactly one **disposition**: what kind of work i
 
 | disposition | what it means | modules | done |
 |---|---|---|---|
-| `generic-face` | author a `face` and rank the controls — no new platform capability | 185 | 185 |
+| `generic-face` | author a `face` and rank the controls — no new platform capability | 186 | 186 |
 | `blocked` | would be a face today but for the named capability, and nothing else | 0 | — |
-| `bespoke-surface` | the primary interaction is not param-shaped — needs a purpose-built surface | 9 | — |
+| `bespoke-surface` | the primary interaction is not param-shaped — needs a purpose-built surface | 8 | — |
 | `organizational-native` | rack furniture; not a migration at all | 3 | — |
 
 ## What each blocker buys
@@ -151,6 +151,7 @@ author a `face` and rank the controls — no new platform capability.
 | `moog994` | audio | done | — |
 | `moog995` | audio | done | — |
 | `moogCp3` | audio | done | — |
+| `nibbles` | video | done | — |
 | `ninelives` | audio | done | — |
 | `noise` | audio | done | — |
 | `numpadPlus` | audio | done | — |
@@ -240,7 +241,6 @@ the primary interaction is not param-shaped — needs a purpose-built surface.
 | `chromaconsole` | audio | — | — |
 | `clipplayer` | audio | — | — |
 | `doom` | video | — | — |
-| `nibbles` | video | — | — |
 | `painter` | video | — | — |
 | `seqtris` | audio | — | — |
 | `toybox` | video | — | `needs-media-controller` |

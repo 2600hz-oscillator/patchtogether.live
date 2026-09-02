@@ -1173,7 +1173,42 @@ const MIXER_COMPOSITE_SCENES: CompositeVrtScene[] = [
   },
 ];
 
-/** All composite VRT scenes. Iterated by `vrt-composite.spec.ts`. */
+/**
+ * All composite VRT scenes. Iterated by `vrt-composite.spec.ts`.
+ *
+ * ⚠ EVERY SCENE HERE CAPTURES A FRAME THAT INCLUDES THE STATUS BAR, so all of
+ * them move whenever the module REGISTRY GROWS — that bar prints
+ * `catalog {availableModules}`, i.e. `listModuleDefs().length +
+ * listVideoModuleDefs().length` (`Canvas.svelte`). That is a fact about the
+ * frame, not about the module under test, and it has now cost two separate
+ * investigations on the same five nibbles scenes.
+ *
+ * ⚠ IT LOOKS EXACTLY LIKE NONDETERMINISM AND IS NOT. `185` -> `189` is six
+ * pixels of glyph, but the digits are not the same width, so the text run to
+ * its right shifts ~1 px and the diff returns ~1242 differing pixels across ~23
+ * x-ranges at a full black/white delta. MEASURED 2026-09-02:
+ * `nibbles-cv-{min,25,75}` moved that way while `{50,max}` moved by the six
+ * pixels alone — one cause, two magnitudes, and the large one reads as a
+ * rendering regression if you stop at the pixel count.
+ *
+ * ⚠ AND THE "THE TWO LANES DISAGREE" READING OF IT IS FALSE. Recorded because
+ * this branch believed it and RESTORED these five files on the strength of it.
+ * The argument was: main is green with the `catalog 185` baselines committed
+ * while the capture lane renders 189, so the lanes must be rendering different
+ * apps. They are not. `vrt-composite.spec.ts` IS NOT IN THE GATING `vrt-strict`
+ * LANE AT ALL — that lane holds only `workflow-shell-faces.spec.ts` and
+ * `vrt.spec.ts` (its own roster, `e2e/vrt-strict-timings.generated.json`, is
+ * the check). Main's green says nothing about these scenes because nothing in
+ * the required set compares them; they are compared in the INFORMATIONAL `vrt`
+ * lane. The capture was right and the baselines were four modules stale:
+ * `ptzcam`, `seqtris`, `tempolock` and `trails` all registered after the `185`
+ * capture (#2260, 2026-08-28), and 185 + 4 = 189.
+ *
+ * SO a counter-only move on these scenes is a REFRESH. The honest check is to
+ * READ THE BAR rather than count pixels: crop the bottom ~12 rows and confirm
+ * the only textual change is the catalog number. Anything else in that band, or
+ * any change above it, is a real finding and must not be re-pinned.
+ */
 export const COMPOSITE_VRT_SCENES: CompositeVrtScene[] = [
   {
     id: 'nibbles-cv-min',
