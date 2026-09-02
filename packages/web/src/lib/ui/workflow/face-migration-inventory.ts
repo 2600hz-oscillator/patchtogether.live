@@ -1422,10 +1422,37 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
   },
   {
     type: 'moog956',
-    disposition: 'bespoke-surface',
-    why:
-      'a RIBBON CONTROLLER: the playable strip — press position and gate — IS the module, and a ' +
-      '1-D touch surface is not a knob. Scale and offset are params around it.',
+    disposition: 'generic-face',
+    note:
+      'PROMOTED (2026-09-02). ⚠ THE `why` WAS TRUE IN ITS PARTS AND WRONG IN ITS CONCLUSION, ' +
+      'the same difference as the eleven promotions before it. "A 1-D touch surface is not a ' +
+      'knob" is right; what it could not express is not the POSITION (a 0..1 throw is a FADER, ' +
+      'exactly, and `pos` ranks as one) but the ONE-POINTER GESTURE — one stroke writing `pos` ' +
+      'AND raising `gate`, sliding with the gate standing, dropping the gate on release while ' +
+      'LEAVING the pitch. Two cells reach every value that gesture reaches; what they cannot do ' +
+      'is reach them TOGETHER, which is the arity `ModuleFace.xyPads` records one dimension up ' +
+      'and which the wired extension seam exists for. So the strip is the module\'s own surface ' +
+      'and all four params still rank as ordinary cells beneath it — the joystick shape (owner ' +
+      'decision 2026-08-31 item 2) at 1-D. "Scale and offset are params around it" was simply ' +
+      'true and is kept. ' +
+      '⚠ TWO BODIES, AND THE SECOND ONE IS A PARITY HOLE RATHER THAN A PICTURE: ' +
+      '`faceTierCap(\'compact\', \'none\')` is 3, so the compact lane tile paints ' +
+      '`pos`/`scale`/`offset` and `gate` — one of the module\'s two OUTPUTS — falls off. The ' +
+      '`tileBody` strip restores the whole gesture where the module is normally met (the ' +
+      'skifree/audioIn finding); the `fullViewBody` is the same strip at plate width, where the ' +
+      'ribbon\'s precision actually exists. ' +
+      '⚠ THE CONTRACT MOVED and the move corrects a lie: `gate` was declared `curve: \'linear\'` ' +
+      'while the factory has thresholded it at `> 0.5` since the module shipped, which made it ' +
+      'invisible to the switch-classification ratchet AND made `face.momentary` refuse it. ' +
+      'Neutral by construction, re-pinned through `docs:accept`. The same edit ends a ' +
+      'data-integrity bug: a press whose release never arrived used to persist a HIGH gate into ' +
+      'the rack and sync it to every peer. ' +
+      '⚠ THE DELETED READOUT is the card\'s `{n} st` pitch line (owner-decisions item 11) — the ' +
+      'value is the strip\'s `aria-valuetext`, which `role="slider"` genuinely has. The gate LED ' +
+      'survives as a colour mark on the wiper. ' +
+      '⚠ THE STATED REDUNDANCY (twotracks/joystick): the dock paints the strip AND the four ' +
+      'cells over the same params; the cells are the parity-credited controls and the MIDI-learn ' +
+      'anchors the hand-rolled card never had, and the strip carries no `control-*` anchor.',
   },
   {
     type: 'nibbles',
