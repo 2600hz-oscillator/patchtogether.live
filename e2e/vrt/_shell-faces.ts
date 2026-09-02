@@ -4947,6 +4947,41 @@ export const FACES = [
       + 'button is disabled on an empty catalogue, and the empty-state overlay and the legal '
       + 'disclaimer are static text.',
   },
+  // ── ARCHIVIST — the INTERNET ARCHIVE BROWSER, capturable on the STRONGEST
+  //    form of the peertube argument
+  {
+    type: 'archivist',
+    // No `face.pages`, so the dock renders one unlabelled section holding the
+    // single ranked cell (`gain`) above the browse body. One control is the
+    // honest count for this module; nothing is padded to reach a rail.
+    pages: 1,
+    videoFaceWhy:
+      'a VIDEO module, so it must boot into the video zone rather than a mixer channel column — '
+      + 'without this field bootWithFace waits out the full test timeout for a column membership '
+      + 'a video node never acquires. ⚠ AND IT IS CAPTURABLE DESPITE SITTING IN `EXEMPT_FROM_VRT` '
+      + '— AND IN THE ANCHORED `ALLOWED_PERMANENT_EXEMPT` LIST — WHICH IS WORTH READING SLOWLY, '
+      + 'because that pairing is rarer than the videobox/peertube case above. The exemption reads '
+      + '"live external archive.org source + live <video>/<audio> + ticking playhead", and all '
+      + 'three clauses are TRUE OF THE CARD SCENE, which searches a real index, loads a real '
+      + 'derivative and scrubs it. A FACE scene spawns the node and searches NOTHING. ⚠ (1) NO '
+      + 'SOURCE: `node.data.item` is null at spawn and the FACTORY never loads anything on its '
+      + 'own, so `uHasInput` is 0 and archivist.ts\'s idle branch runs — `vec4(0.04, 0.05, 0.09 + '
+      + 'vUv.y * 0.06, 1.0)`, a pure function of position with no clock, no accumulator and no '
+      + 'uniform that is not a param. Read at the shader rather than assumed. ⚠ (2) NO ELEMENT: '
+      + 'with no item the card attaches none of its three, so there is no decode cadence and no '
+      + 'live <audio>/<video> anywhere in the capture. ⚠ (3) NO TICKING PLAYHEAD, twice over: the '
+      + 'card\'s `0:04 / 2:00` readout is DELETED on this surface, and the seek slider that '
+      + 'replaced it is not even RENDERED at spawn — the transport sits behind `isTimeMedia`, '
+      + 'which is false with no item. ⚠ NO simPin AND NO NETWORK, AND THIS IS STRICTLY STRONGER '
+      + 'THAN PEERTUBE\'S OWN CASE: peertube has an `autoLoadCatalogue` flag that merely happens '
+      + 'to be FALSE, whereas archivist has no auto-load concept at all — a search is reachable '
+      + 'ONLY through a user gesture, and a scene performs none. The tile body was written to '
+      + 'preserve that property deliberately (one non-reactive onMount read and one registry '
+      + 'subscribe; no fetch, no probe), which is the recorderbox lesson applied before it could '
+      + 'cost anything. The rest of the surface is equally still: the search box is empty, Search '
+      + 'and ↻ next are disabled until a card publishes, the attribution row and the CLEAN OUT '
+      + 'lamp are absent entirely with no item, and the empty-state overlay is static text.',
+  },
   // ── VIDEOVARISPEED — the VARISPEED FILE PLAYER, capturable for the same
   //    reason, RE-DERIVED rather than inherited (its card exemption names two
   //    moving things videobox's does not).
