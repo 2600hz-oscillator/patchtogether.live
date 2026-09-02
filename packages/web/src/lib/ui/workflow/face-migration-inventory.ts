@@ -981,13 +981,45 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
       'face.hero.cell so PF-22 keeps it off the lane roster; the five faders are ordinary param ' +
       'cells. First adopter of the #1509 TextEntry primitive.',
   },
+  // ⚠ THE OLD `why` WAS TRUE IN ONE CLAUSE OF FOUR, and naming which is the
+  // point — the entry was cited as a PRECEDENT by two other modules while three
+  // of its four clauses were dead:
+  //
+  //   TRUE and still true: the live output-port ROSTER is WebMIDI service state
+  //   rather than a param, so it is a `fullViewBody` and not a cell (a
+  //   `ShellSelectorCell.options` is a pure function of the node).
+  //
+  //   FALSE (1) "connect gesture" — a shipped `action` cell on five siblings
+  //   (midiclock, midiCvBuddy, midiOutBuddy, ptzcam, es9) at the time this was
+  //   written, and now on this module too, where it ranks FIRST.
+  //   FALSE (2) "channel" — a FIXED 16-entry roster. It is in the body for a
+  //   DIFFERENT reason the entry never gave: the channel lives on the device
+  //   HANDLE, not the graph, so a cell's node-pure `value` would be stale.
+  //   FALSE (3) "the slot list is the interaction" — the 29-entry assignment
+  //   roster is STATIC descriptor data, not service state, and the eight slots
+  //   ARE real params with real cells.
+  //
+  // The real constraint was never named: `deviceSlotParams` mints eight
+  // identical `0..127 linear` params labelled "slot 1".."slot 8", and what each
+  // one DRIVES is per-NODE `node.data.assign` — which a cell caption
+  // (`ParamDef.label`, no node input anywhere in the shell) cannot say.
   {
     type: 'chromaconsole',
-    disposition: 'bespoke-surface',
-    why:
-      'a MIDI DEVICE BINDER: connect gesture, live output-port roster, channel, and a list of ' +
-      'assignment slots that reports stale saved assignments. The roster is WebMIDI service ' +
-      'state, and the slot list is the interaction.',
+    disposition: 'generic-face',
+    note:
+      'face + `fullViewBody`, the midiclock/ptzcam shape with one addition. TWO ranked `action` ' +
+      'cells — CONNECT (rank 1: Web MIDI publishes no port until the browser consents, so a ' +
+      'fresh spawn is eight knobs that send nothing) and PUSH ALL (rank 2: the pedal is ' +
+      '`readBack: none`, so re-sending every slot is the ONLY reconciliation that exists in ' +
+      'either direction, and neither gesture has a second surface while the eight slot VALUES ' +
+      'have four) — over the eight slot params as ordinary knob cells. The body carries what ' +
+      'cannot be a cell: the live output roster (WebMIDI service state), the channel (which ' +
+      'lives on the device HANDLE, so a node-pure `ShellSelectorCell.value` would paint a stale ' +
+      'number), and the slot BOARD — the eight assignment selects over the 29-entry grouped ' +
+      'roster, the NAMES those assignments give eight otherwise-identical params, and the real ' +
+      '`Segmented` for a slot assigned to one of the pedal\'s named-range selectors. Two ' +
+      'surfaces per slot is the owner-approved shape (owner decisions 2026-08-31 item 7); ' +
+      'per-node cell derivation is the alternative that ruling declines as platform work.',
   },
   // ⚠ THE OLD `why` WAS TRUE IN ITS FACTS AND WRONG IN BOTH OF ITS
   // CONCLUSIONS, and it is worth naming which was which.
@@ -998,14 +1030,18 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
   // instead of five param cells.
   //
   // FALSE (1) — the PRECEDENT. It reasoned "like chromaconsole", pointing at the
-  // one binder in the tree that is still unfaced, while every other device
-  // binder had already shipped this shape: midiclock, midiCvBuddy, midiLane,
-  // midiOutBuddy, launchpadControlLeft, outToLaunch, push2Control, es9,
-  // cameraInput and electraControl are all in STRICT_FACES. ptzcam does not
-  // inherit chromaconsole's blocker either: chromaconsole's real constraint is
-  // that `deviceSlotParams` mints eight identical `slot 1`..`slot 8` params
-  // whose meaning is per-NODE `node.data.assign`, and ptzcam has nothing of the
-  // kind — its four knobs are ordinary named params.
+  // one binder that was then still unfaced, while every other device binder had
+  // already shipped this shape: midiclock, midiCvBuddy, midiLane, midiOutBuddy,
+  // launchpadControlLeft, outToLaunch, push2Control, es9, cameraInput and
+  // electraControl are all in STRICT_FACES. ptzcam did not inherit
+  // chromaconsole's blocker either: chromaconsole's real constraint is that
+  // `deviceSlotParams` mints eight identical `slot 1`..`slot 8` params whose
+  // meaning is per-NODE `node.data.assign`, and ptzcam has nothing of the kind —
+  // its four knobs are ordinary named params. ⚠ AND THE CITATION IS NOW STALE IN
+  // THE OTHER DIRECTION TOO: chromaconsole itself is faced (its entry above),
+  // with the per-node names on its extension body under the owner's
+  // two-surfaces-per-slot ruling, so "the binder that cannot be faced" names no
+  // module in this tree.
   //
   // FALSE (2) — "the four trim knobs are the only generic-face material". The
   // CONNECT gesture is a fifth ranked control through the family key-space, and

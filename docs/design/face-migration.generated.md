@@ -12,8 +12,8 @@ Every registered module carries exactly one **disposition**: what kind of work i
 |  | count |
 |---|---|
 | registered modules | 197 |
-| done (faced + promoted) | 188 |
-| remaining (excludes organizational-native) | 6 |
+| done (faced + promoted) | 189 |
+| remaining (excludes organizational-native) | 5 |
 | registered with NO disposition (must be zero) | 0 |
 | inventory entries naming a dead def (must be zero) | 0 |
 
@@ -21,9 +21,9 @@ Every registered module carries exactly one **disposition**: what kind of work i
 
 | disposition | what it means | modules | done |
 |---|---|---|---|
-| `generic-face` | author a `face` and rank the controls — no new platform capability | 188 | 188 |
+| `generic-face` | author a `face` and rank the controls — no new platform capability | 189 | 189 |
 | `blocked` | would be a face today but for the named capability, and nothing else | 0 | — |
-| `bespoke-surface` | the primary interaction is not param-shaped — needs a purpose-built surface | 6 | — |
+| `bespoke-surface` | the primary interaction is not param-shaped — needs a purpose-built surface | 5 | — |
 | `organizational-native` | rack furniture; not a migration at all | 3 | — |
 
 ## What each blocker buys
@@ -57,6 +57,7 @@ author a `face` and rank the controls — no new platform capability.
 | `cellshade` | video | done | — |
 | `charlottesEchos` | audio | done | — |
 | `chroma` | video | done | — |
+| `chromaconsole` | audio | done | — |
 | `chromakey` | video | done | — |
 | `clap` | audio | done | — |
 | `clipplayer` | audio | done | — |
@@ -240,7 +241,6 @@ the primary interaction is not param-shaped — needs a purpose-built surface.
 | module | domain | state | blockers |
 |---|---|---|---|
 | `archivist` | video | — | `needs-media-controller` |
-| `chromaconsole` | audio | — | — |
 | `doom` | video | — | — |
 | `seqtris` | audio | — | — |
 | `toybox` | video | — | `needs-media-controller` |

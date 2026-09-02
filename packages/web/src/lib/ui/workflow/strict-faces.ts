@@ -4420,6 +4420,72 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // is the only instrument that closes it.
   'ptzcam',
 
+  // ── CHROMA CONSOLE — the THIRD binder, and the DEVICE-MODULE template ─────
+  //
+  // A control surface for the Hologram Chroma Console guitar pedal: it sends
+  // MIDI CC and carries no audio (the pedal's audio is patched through the ES-9
+  // by hand, an owner decision). The module calls itself "the first device
+  // module", and the shape it establishes — N fixed assignable slots over a
+  // named control roster — is what every device module after it will have, so
+  // this face is a template rather than a one-off.
+  //
+  // ⚠ THE PROMOTION'S CENTRAL DECISION IS OWNER-RULED AND SHOULD NOT BE
+  // RE-LITIGATED FROM THE TREE ALONE. `deviceSlotParams` mints EIGHT IDENTICAL
+  // `0..127 linear` params labelled `slot 1`..`slot 8`, because a ParamDef id is
+  // public and permanent (contract-lock, saved patches, peers' Y.Docs, Electra
+  // tables, clip-automation targets) while what each slot DRIVES is per-NODE
+  // `node.data.assign`. A face cell's caption is `ParamDef.label`: `shellCellFor`
+  // takes the module TYPE, and every param arm in ModuleShell passes
+  // `label={pd.label}`. So the band can only say `slot 1`..`slot 8`, and the
+  // NAMES live on the device body's slot board directly above it — owner
+  // decisions 2026-08-31, item 7: "accept two operable surfaces per slot — a
+  // generic band knob plus the body's real Segmented", with per-node cell
+  // derivation named there as platform work the same ruling declines.
+  //
+  // ⚠ IT IS NOT A PARITY LOSS, WHICH IS THE THING TO CHECK RATHER THAN ASSUME.
+  // Every affordance the legacy card has is on the faceplate: the connect
+  // gesture and PUSH ALL are ranked `action` cells (so both reach the LANE TILE,
+  // which the card never did — the default shell painted this module as a
+  // placeholder), the eight slot values are knob cells, and the output picker,
+  // the channel, the eight assignment selects, the enum slots' `Segmented`, the
+  // stale-slot warning and the five pedal commands are the `fullViewBody`. Two
+  // readouts are deleted under the 2026-08-17 ruling — the per-slot value and
+  // the stale-slot COUNT — and the second is replaced by a per-chip mark that
+  // says WHICH slot rather than how many.
+  //
+  // ⚠ RANK: TWO GESTURES ABOVE EIGHT KNOBS, on this module's own argument. The
+  // pedal is `readBack: 'none'`, so PUSH ALL is the only reconciliation that
+  // exists in either direction, and neither it nor CONNECT has a second surface;
+  // the eight slot VALUES have four (MIDI learn, clip automation, the Electra,
+  // the Push 2 card). That would be the wrong ranking on a module whose knobs
+  // are its only route to its own state.
+  //
+  // ⚠ THE RESTING SURFACE STAYS BYTE-STABLE, INHERITED FROM THE CARD AS A
+  // REQUIREMENT RATHER THAN A HABIT. `ChromaconsoleCard.svelte`'s header records
+  // that its determinism (no counters, no activity blink, no elapsed times, no
+  // "last CC sent") is load-bearing for a committed VRT baseline, is what the
+  // resting-text ruling independently demands, and is what stops the surface
+  // implying it knows what the pedal holds — three unrelated pressures selecting
+  // one set of deletions. The face keeps all three: BINDERS §2.1 would permit a
+  // non-text activity dot and it is refused here.
+  //
+  // ⚠ ZERO GPU ATTEST, and the def already argued why: it chose `domain: audio`
+  // partly because `video` "would additionally have dragged the module into the
+  // WebGL attest basis and forced a GPU re-attest for a module with no pixels in
+  // it". No canvas on the body, nothing under `lib/video/**`. Zero ART: no audio
+  // output at all, so the audio-profile gate never reaches it. Zero Push 2
+  // movement: `PUSH_CARD_CONTROLS` pins all eight slots explicitly and an
+  // override REPLACES rather than merges, so a face cannot re-rank that card.
+  // The contract DOES move — two `controlFamilies` lines, projected by
+  // `serializeModuleContract` — which is a `docs:accept`, not an attest.
+  //
+  // ⚠ WHAT NO GATE IN THIS TREE CAN SEE: no CI runner has a Chroma Console or a
+  // granted MIDI origin. Everything past "a port is selected" — the auto-detect
+  // hint match against real hardware names, the channel, the pedal's response to
+  // any of it — ships on argument plus the unit models plus the mocked-port e2e,
+  // and the owner's hardware is the only instrument that closes it.
+  'chromaconsole',
+
   // ── LAUNCHPAD CONTROL — the SECOND meta-domain face, and the first
   //    promotion that is a DELETION ──────────────────────────────────────────
   //
