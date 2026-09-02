@@ -65,6 +65,7 @@ author a `face` and rank the controls — no new platform capability.
 | `cofefve` | audio | done | — |
 | `colorizer` | video | done | — |
 | `colourofmagic` | video | done | — |
+| `controlSurface` | meta | done | — |
 | `cube` | audio | done | — |
 | `cvBuddy` | audio | done | — |
 | `cvBuddyMini` | audio | done | — |
@@ -235,7 +236,6 @@ the primary interaction is not param-shaped — needs a purpose-built surface.
 | `archivist` | video | — | `needs-media-controller` |
 | `chromaconsole` | audio | — | — |
 | `clipplayer` | audio | — | — |
-| `controlSurface` | meta | — | — |
 | `doom` | video | — | — |
 | `moog956` | audio | — | — |
 | `nibbles` | video | — | — |

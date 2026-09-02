@@ -725,6 +725,7 @@ colourofmagic param pal_r 0..16777215 discrete default=16738816
 colourofmagic param preview 0..21 discrete default=1
 colourofmagic param replace 0..1 discrete default=0
 controlSurface meta domain=meta
+controlSurface family control-surface-lock kind=other prefix=control-surface-lock
 cube meta domain=audio
 cube in connect cv param=connect cvScale=linear
 cube in connect_strength cv param=connect_strength cvScale=linear
