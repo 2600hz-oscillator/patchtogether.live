@@ -1,6 +1,6 @@
 {
   "_comment": "Per-TEST cost in SECONDS for the REQUIRED vrt-strict lane (VRT_STRICT=1). Keyed \"<spec file> :: <test title>\". Consumed by scripts/vrt-shard-plan.mjs to bin-pack the lane across shards. Regenerate with `flox activate -- task vrt:strict:timings:accept -- <ci-run-id>`. Reviewed as a diff, never hand-edited.",
-  "_source": "UNION of ci.yml runs 33651528775 (main, 412 keys) and 33654251659 (feat/nibbles-face, grafting 2 key(s) main's run could not measure): 414 keys, 5095.9 CPU-s",
+  "_source": "UNION of ci.yml runs 33651528775 (main, 412 keys) and 33654251659 (feat/nibbles-face, grafting 2 key(s) main's run could not measure): 414 keys, 5095.9 CPU-s  ∪  ci.yml run 33663808159 (painter)",
   "_first_test_warmup_note": "The FIRST test of each SHARD absorbs that shard's vite dev-server cold boot, so the roster carries one inflated number PER SHARD, not one per run. In this sample they are the four vrt.spec.ts card scenes that happened to sort first on their shard (cartesian 15.5s, adsr 17.2s, buggles 16.6s, depolarizer 16.6s) against a per-shard median of ~4.8s for their siblings — i.e. ~12s of each belongs to the SHARD, not to the module. Recorded as measured rather than smoothed: identifying them is a one-line check (per-shard max vs that shard's median), and smoothing would hide a scene that is genuinely slow. The effect is one bin per shard biased by ~12s; the coverage assertions, not the balance, are what make the split safe.",
   "tests": {
     "vrt.spec.ts :: adsr card matches baseline": 17.8,
@@ -287,6 +287,7 @@
     "workflow-shell-faces.spec.ts :: face-outToLaunch-dock: the dock full-view faceplate matches baseline": 11.2,
     "workflow-shell-faces.spec.ts :: face-outlines-compact: the compact lane tile matches baseline": 17.7,
     "workflow-shell-faces.spec.ts :: face-outlines-dock: the dock full-view faceplate matches baseline": 24.6,
+    "workflow-shell-faces.spec.ts :: face-painter-dock: the dock full-view faceplate matches baseline": 14.2,
     "workflow-shell-faces.spec.ts :: face-peakstate-compact: the compact lane tile matches baseline": 14.7,
     "workflow-shell-faces.spec.ts :: face-peakstate-dock: the dock full-view faceplate matches baseline": 21,
     "workflow-shell-faces.spec.ts :: face-peertube-compact: the compact lane tile matches baseline": 13,
