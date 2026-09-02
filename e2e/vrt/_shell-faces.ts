@@ -3936,6 +3936,48 @@ export const FACES = [
     // boot path applies.
   },
 
+  // ── CONTROL SURFACE — the FIFTH meta scene, electraControl's DYNAMIC
+  //    sibling, and the first face whose promotion is an owner-approved
+  //    LANE-TIER change (the free-growing card becomes a 192×180 tile) ───────
+  {
+    type: 'controlSurface',
+    // ONE band: the single LOCK toggle cell. `params: []`, so nothing else
+    // could rank — the proxied knobs are a body, for the addressability reason
+    // electraControl's entry gives. `DOCK_TAB_MIN_BANDS` is 7 and nothing is
+    // padded toward it.
+    pages: 1,
+
+    // ⚠ THE CAPTURE STATE IS DETERMINISTIC BY CONSTRUCTION — the electraControl
+    // argument, and here it is even shorter: a freshly spawned controlSurface
+    // has ZERO bindings, and unlike the fixed 6×6 board this module's grid is
+    // enumerated FROM the data, so the empty state is not a grid of
+    // placeholders — it is the LOCK cell, the tile's empty-state instruction
+    // (the module's only discovery path) and, in the dock, the board's
+    // empty-state prompt. There is no canvas, no clock, no animation and no
+    // engine node: `domain: 'meta'` with `inputs: []` and `outputs: []`. The
+    // patch-dependent surface — group boxes, proxied knobs, live source
+    // colours, the tile's colour strip — is structurally OUT OF FRAME rather
+    // than merely still, because it cannot paint without a binding and a solo
+    // spawn has none.
+    //
+    // ⚠ WHAT THIS BASELINE DOES **NOT** COVER, stated rather than implied: the
+    // BOUND board — every group box, proxied knob, colour stripe, rename field
+    // and the tile strip. A mocked baseline is reachable (the e2e builds a
+    // bound board through the real Send-to path), but installing that in the
+    // VRT harness is a harness change, the boundary gamepad / midiclock /
+    // electraControl all drew. The bound surface is covered by
+    // `e2e/tests/control-surface.spec.ts` (the card, verbatim, under
+    // `?shell=legacy`), by `e2e/tests/controlsurface-face.spec.ts` (the board
+    // body and tile, on the DEFAULT shell) and by
+    // `controlsurface-face-model.test.ts`.
+    //
+    // ⚠ NO `videoFaceWhy` AND NO `simPin`. `domain: 'meta'` — no ports, no
+    // canvas, no engine node — so `hasVideoSurface` is false and the AUDIO
+    // boot path is the right one (matrixMix, electraControl and push2Control
+    // all take it too). There is no clock to pin and nothing that advances
+    // between frames.
+  },
+
   // ── LAUNCHPAD CONTROL — the second BINDER, and the second META scene ───────
   {
     type: 'launchpadControlLeft',

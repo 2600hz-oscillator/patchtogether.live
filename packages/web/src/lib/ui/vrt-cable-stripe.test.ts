@@ -242,6 +242,21 @@ const PENDING_PALETTE_REGEN: readonly string[] = [];
 // an extra member and `toEqual` goes red in the other direction. That ordering —
 // promote, drain, capture, THEN declare — is why a face PR must re-run the full
 // unit lane AFTER the baseline bot commits, not only before the push.
+//
+// ⚠ `controlSurface` JOINED 2026-09-01, by the exact route `matrixMix`'s entry
+// above records: nothing about the card changed — its face PR DRAINED the
+// module's `EXEMPT_FROM_VRT` entry, which enrolled `vrt.spec.ts/controlSurface`
+// for the first time, and the roster grew without any card being edited. On the
+// merits it is the documented structural case: a META-domain module with
+// `inputs: []` and `outputs: []` and no engine binding, so there is no cable
+// for a stripe to colour and `ControlSurfaceCard.svelte` renders no `.stripe`
+// element at all (the gate's own probe says so: "card renders no .stripe
+// element"; the card's `cs-knob-stripe` divs are source CONTROL-COLOUR
+// passthroughs, a different mechanism, and none render on the empty solo spawn
+// the scene captures anyway). NOT the hardcoded-hex divergence this list warns
+// about; no hex, no stripe. And per the header's ordering note, this line
+// landed in the commit AFTER the capture bot's — it could not have been
+// written before.
 const NOT_TOKEN_PINNED_SCENES: readonly string[] = [
   // mixer / moog903a / moog904c / moog914 / moog984 left this census on
   // 2026-08-28 (baselines DELETED with the owner-approved CPU-fleet demotion)
@@ -251,7 +266,7 @@ const NOT_TOKEN_PINNED_SCENES: readonly string[] = [
   // only, so this line landed in the commit AFTER the capture bot's — the
   // ordering this file's own header requires. (shimmershine, demoted and
   // restored alongside them, was never here: its card pins a stripe token.)
-  'audioOut', 'chromaconsole', 'electraControl', 'launchpadControlLeft', 'matrixMix',
+  'audioOut', 'chromaconsole', 'controlSurface', 'electraControl', 'launchpadControlLeft', 'matrixMix',
   'mixer', 'moog903a',
   'moog904b', 'moog904c', 'moog905', 'moog907a', 'moog911a', 'moog912',
   'moog914',

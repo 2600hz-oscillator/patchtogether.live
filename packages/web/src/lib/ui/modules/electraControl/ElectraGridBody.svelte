@@ -283,6 +283,16 @@
                   style:background={`#${c.color}`}
                   aria-hidden="true"
                 ></div>
+                <!-- ⚠ THE EXPLICIT `testid` IS LOAD-BEARING (2026-09-01, found
+                     by the controlSurface promotion): `Knob.svelte` emits
+                     `data-testid="control-<paramId>"` whenever `paramId` is
+                     passed — and `paramId` MUST be passed, it is the MIDI-learn
+                     key — while faces-parity asserts EXACT MULTISET EQUALITY
+                     between the dock's `control-*` testids and THIS def's param
+                     ids, which is `[]`. One bound slot therefore failed the
+                     whole face; the sweep never binds one, so the defect was
+                     green and latent. The override is the prop's own documented
+                     purpose ("keep the binding, give up only the claim"). -->
                 <Knob
                   value={readParam(c.moduleId, c.paramId, c.def)}
                   min={c.def.min}
@@ -295,6 +305,7 @@
                   readLive={liveReader(c.moduleId, c.paramId)}
                   moduleId={c.moduleId}
                   paramId={c.paramId}
+                  testid={`electra-slot-dial-${c.row}-${c.knob}`}
                 />
                 {#if editing === c.slot}
                   <!-- svelte-ignore a11y_autofocus — autofocus is the POINT: this input only exists while a

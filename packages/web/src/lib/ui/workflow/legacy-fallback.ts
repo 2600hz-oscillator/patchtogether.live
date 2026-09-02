@@ -173,6 +173,25 @@ export type LaneRenderKind = 'legacy' | 'shell' | 'placeholder' | 'stub';
  *     that one the board moves from inline-on-the-tile to one click away in the
  *     dock full view — the ordinary semantic-zoom contract every promoted module
  *     accepts, with no affordance lost.
+ *     ⚠ AND THE PARENTHETICAL IN THAT ENTRY — "the same measurement on which
+ *     controlSurface was refused" — DESCRIBES A REFUSAL THAT HAS SINCE BEEN
+ *     OVERTURNED, see below; it is kept because it was true when the entry was
+ *     written and the electraControl argument never rested on it.
+ *   ⚠ controlSurface USED TO BE IN THIS SET and is not any more. Its refusal
+ *     was the electraControl width arithmetic without electraControl's drawer
+ *     escape: the free-growing pointer board (360–760 px, a function of how
+ *     many sources are bound) cannot be a 192 px lane tile, and controlSurface
+ *     is NOT pinned, so every instance lives in a lane. What retired the entry
+ *     is that the measurement was taken BEFORE `tileBody` existed (#2242):
+ *     the lane tile now carries the module's one OWN control (the LOCK, a
+ *     ranked toggle cell over node.data.locked) plus a live strip of
+ *     bound-source colours, and the board itself is one Expand away in the
+ *     dock full view — the ordinary semantic-zoom contract, owner-approved for
+ *     exactly this module (2026-08-31, owner-decisions item 10, on the
+ *     electraControl precedent). The prune side effect the card owned moved to
+ *     the tileBody (node-on-canvas lifetime), and a USER-DOCKED node's rail
+ *     occupant still mounts the verbatim card (`dockRailRendersFace` requires
+ *     `pinned`), so no surface is ever prune-less.
  * Everything else with a resolvable card swaps.
  */
 export const NON_SHELL_LANE_TYPES: ReadonlySet<string> = new Set<string>([
@@ -180,7 +199,6 @@ export const NON_SHELL_LANE_TYPES: ReadonlySet<string> = new Set<string>([
   'sticky',
   'cadillac',
   'clipplayer',
-  'controlSurface',
 ]);
 
 /** Inputs to the pure lane-render decision. */
