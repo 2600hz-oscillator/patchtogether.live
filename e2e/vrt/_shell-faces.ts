@@ -4920,6 +4920,33 @@ export const FACES = [
       + 'scene performs none.',
   },
 
+  // ── PEERTUBE — the FEDIVERSE BROWSER, capturable for the tvLibrarian reason
+  //    and with a STRICTLY STRONGER argument than tvLibrarian's own
+  {
+    type: 'peertube',
+    // No `face.pages`, so the dock renders one unlabelled section holding the
+    // single ranked cell (`gain`) above the browse body. One control is the
+    // honest count for this module; nothing is padded to reach a rail.
+    pages: 1,
+    videoFaceWhy:
+      'a VIDEO module, so it must boot into the video zone rather than a mixer channel column — '
+      + 'without this field bootWithFace waits out the full test timeout for a column membership '
+      + 'a video node never acquires. ⚠ AND IT IS CAPTURABLE DESPITE SITTING IN `EXEMPT_FROM_VRT` '
+      + 'FOR A LIVE HLS STREAM, the tvLibrarian/videobox distinction two entries up: that '
+      + 'exemption is TRUE OF THE CARD SCENE, a different surface with its own baseline. A FACE '
+      + 'scene spawns the node and selects NOTHING, so `uHasInput` is 0 and peertube.ts\'s idle '
+      + 'branch runs — `vec4(0.05, 0.04, 0.09 + vUv.y * 0.06, 1.0)`, a pure function of position '
+      + 'with no clock, no accumulator and no uniform that is not a param. Read at the shader '
+      + 'rather than assumed. ⚠ NO simPin AND NO NETWORK, AND THIS IS THE PART THAT IS STRONGER '
+      + 'THAN TVLIBRARIAN\'S: tvLibrarian needs `__tvLibrarianTestCountries` because its picker '
+      + 'fetches a country roster AT MOUNT and paints the browser\'s own rejection message when '
+      + 'the runner cannot reach famelack. peertube\'s roster is fetched only on a SEARCH — '
+      + '`PEERTUBE_PROFILE.autoLoadCatalogue` is FALSE — so a fresh spawn issues ZERO network '
+      + 'requests and there is nothing to pin. The rest of the surface is equally still: no '
+      + 'selection, so the transport and the attribution anchor are absent entirely, the ↻ next '
+      + 'button is disabled on an empty catalogue, and the empty-state overlay and the legal '
+      + 'disclaimer are static text.',
+  },
   // ── VIDEOVARISPEED — the VARISPEED FILE PLAYER, capturable for the same
   //    reason, RE-DERIVED rather than inherited (its card exemption names two
   //    moving things videobox's does not).

@@ -34,6 +34,11 @@ import type { VideoModuleDef } from '$lib/video/module-registry';
 import type { VideoNodeHandle, VideoNodeSurface } from '$lib/video/engine';
 import { aspectFitScale } from '$lib/video/video-res';
 import { BloodRuntime, loadBloodData } from '$lib/blood/blood-runtime';
+import {
+  makePcmPumpState,
+  planPcmPump,
+  PCM_MAX_CHUNK_FRAMES,
+} from '$lib/blood/blood-pcm-schedule';
 import { detectEdge, makeEdgeState, type EdgeState } from '$lib/doom/cv-gate-edge';
 import {
   CV_GATE_PORT_IDS,
@@ -96,8 +101,16 @@ async function ensureBloodPcmWorklet(ac: BaseAudioContext): Promise<void> {
   PCM_WORKLET_LOADED.add(ac);
 }
 
-// MultiVoc mixes at 44100 (Blood config.cpp MixRate); pump ~60 Hz like DOOM.
-const PCM_MIX_RATE = 44100;
+// ⚠ THERE IS NO `PCM_MIX_RATE` CONSTANT ANY MORE, AND ITS ABSENCE IS THE FIX.
+// The pump used to post a fixed `Math.round(44100 / 60)` = 735 frames per
+// `setInterval(..., 16)` tick. The ring it feeds is drained at the CONTEXT's
+// rate (this app pins 48 000 Hz), and the tick fires whenever the main thread —
+// busy running the Build engine in rAF — allows, so production was
+// `735 × whatever` against a flat 48 000/s drain: 62 % of demand on an IDLE box,
+// 1.7 % under a forced stall, and the worklet's "generous headroom" could never
+// accumulate because production never once exceeded consumption. The frames a
+// tick owes now come from `planPcmPump` (imported above), off the context clock.
+// See `$lib/blood/blood-pcm-schedule.ts` for the measurements and the arithmetic.
 
 /** Card-facing handle (engine.read(id, 'extras')). The BLOOD analogue of
  *  DoomHandleExtras, trimmed to the single-player Phase-1 surface. */
@@ -341,11 +354,34 @@ export const bloodDef: VideoModuleDef = {
           node.connect(pcmKeepAlive);
           pcmKeepAlive.connect(ac.destination);
         }
-        const framesPerPump = Math.round(PCM_MIX_RATE / 60);
+        // ⚠ THE TICK OWES WHAT THE CONTEXT CLOCK SAYS, NOT A CONSTANT. See the
+        // note beside the deleted `PCM_MIX_RATE` above and the full derivation in
+        // `blood-pcm-schedule.ts`. `planPcmPump` is pure and unit-tested; all this
+        // does is run its answer against the mixer.
+        //
+        // ⚠ THE TICK PERIOD IS STILL 16 ms AND THAT IS NOT A BUDGET. It is how
+        // often we ASK; how much we mix is decided by the clock, so a tick that
+        // arrives 900 ms late mixes 900 ms of audio instead of 15 ms of it. That
+        // is the whole difference between this and what it replaced.
+        let pump = makePcmPumpState();
         pumpInterval = setInterval(() => {
           if (!runtime || !runtime.isInitialized() || !pcmWorklet) return;
-          const frames = runtime.getPcmFrames(framesPerPump);
-          if (frames.length > 0) pcmWorklet.port.postMessage({ type: 'pcm', samples: frames });
+          const plan = planPcmPump(pump, ac.currentTime, ac.sampleRate);
+          pump = plan.next;
+          // `bpt_pump_audio` clamps to its own scratch, so a catch-up tick makes
+          // several calls. Each returns a freshly-allocated interleaved chunk.
+          let owed = plan.frames;
+          while (owed > 0) {
+            const want = owed > PCM_MAX_CHUNK_FRAMES ? PCM_MAX_CHUNK_FRAMES : owed;
+            const frames = runtime.getPcmFrames(want);
+            const got = frames.length >> 1;
+            if (got <= 0) break; // mixer returned nothing — stop asking this tick
+            pcmWorklet.port.postMessage({ type: 'pcm', samples: frames });
+            owed -= got;
+          }
+          // The mixer gave us less than the clock asked for; do not book the
+          // shortfall as delivered or the ring accounting drifts permanently.
+          if (owed > 0) pump = { ...pump, delivered: pump.delivered - owed };
         }, 16);
         try { pcmWorklet.port.postMessage({ type: 'gain', value: params.audioGain }); } catch { /* */ }
       } catch (e) {

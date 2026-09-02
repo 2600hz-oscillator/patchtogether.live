@@ -73,6 +73,86 @@ function p(over: Partial<ParamDef> & { id: string }): ParamDef {
 }
 
 // ---------------------------------------------------------------------------
+// THE TIER-3 SUBJECT — derived from the registry, with a SYNTHETIC last resort
+// ---------------------------------------------------------------------------
+//
+// ⚠ THE TWO TIER-3 LEGS USED TO REQUIRE THAT AN UN-FACED MODULE STILL EXISTED,
+// and that is a dependency with an expiry date on it. Every face promotion
+// shrinks the pool, and the DECLARED DESTINATION of the face migration is a
+// registry in which nothing is un-faced — so the legs were guaranteed to fail
+// eventually, and for a reason that has nothing to do with what they assert.
+// Promoting `peertube` emptied the VIDEO pool outright and the video leg went
+// red with `expected undefined to be truthy`: a true statement about the
+// registry and a false one about the GENERIC rule, which is the only thing
+// tier 3 exists to measure. (The one remaining un-faced video def with three or
+// more params is DOOM, which this predicate rejects on its own merits — it
+// carries plain switches — so nothing here reaches into it.)
+//
+// Fixed at the SUBJECT, the same way the video leg's earlier `!d.face` repair
+// was: the pool is DERIVED and PREFERRED while it has members, so the legs keep
+// measuring a shipped def for as long as one qualifies; when it empties, the
+// SAME rule is exercised on a def built right here and never registered. No
+// module is named, no count is typed, and no leg skips.
+//
+// The predicate selects a def on which the GENERIC ranking reduces to
+// declaration order — every turnable param CONTINUOUS (the generic tier
+// PARTITIONS, demoting `discrete 0..1` switches below the continuous params;
+// re-implementing that partition in the assertion would make it a copy of the
+// implementation and prove nothing), no momentary pad and no `noUserControl`,
+// both of which are dropped at every tier. The synthetic def is built in that
+// same shape, so it exercises the identical code path.
+
+const isPlainSwitch = (q: ParamDef): boolean =>
+  q.curve === 'discrete' && q.min === 0 && q.max === 1;
+
+/** A def on which declaration order IS the whole GENERIC ranking. */
+function isGenericTierSubject(d: PushCardDefLike): boolean {
+  const params = d.params ?? [];
+  return (
+    !d.face
+    && params.length >= 3
+    && !params.some((q) => isTurnable(q) && isPlainSwitch(q))
+    && noUserControlIds(d as NoUserControlDefLike).size === 0
+    && momentaryParamIds(d as { face?: { momentary?: readonly string[] } }).size === 0
+  );
+}
+
+/**
+ * The tier-3 subject for one domain. `origin` is carried into the assertion
+ * messages so a failure states which of the two the leg was reading rather than
+ * leaving that to be guessed.
+ */
+function genericTierSubject(
+  domain: 'audio' | 'video',
+  pool: readonly PushCardDefLike[],
+): { def: PushCardDefLike; origin: string } {
+  const candidates = pool.filter(isGenericTierSubject);
+  if (candidates.length > 0) {
+    return {
+      def: candidates[0],
+      origin: `registry def '${candidates[0].type}' (${candidates.length} un-faced ${domain} candidates)`,
+    };
+  }
+  // The end state: every module in this domain is faced. The ids are
+  // deliberately NOT in alphabetical order, so an implementation that SORTED
+  // instead of preserving declaration order reddens here — which the registry
+  // path cannot promise, since a real def's ids may happen to be sorted.
+  return {
+    def: fixture({
+      type: `generic-tier-${domain}`,
+      domain,
+      params: [
+        p({ id: 'zoom', min: 0.25, max: 4, curve: 'exp' }),
+        p({ id: 'blend', min: 0, max: 1 }),
+        p({ id: 'amount', min: -1, max: 1 }),
+        p({ id: 'tint', min: 0, max: 360 }),
+      ],
+    }),
+    origin: `SYNTHETIC def (no un-faced ${domain} module qualifies — the migration is complete for this domain)`,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // 1. THE CONFIG GATE
 // ---------------------------------------------------------------------------
 
@@ -629,17 +709,19 @@ describe('resolvePushCardControls — tier 2, the curated face', () => {
 
 describe('resolvePushCardControls — tier 3, the GENERIC card', () => {
   it('AUDIO: declaration order is the ranking', () => {
-    // DERIVED, not named: the first un-faced audio def with enough params. It
-    // used to be `charlottesEchos` — which now carries a face, so it moved from
-    // this tier to the FACE tier (and its card re-ranked from declaration order
-    // to `face.order`; no `PUSH_CARD_CONTROLS` entry, so that is the intended
+    // DERIVED, not named: the first un-faced audio def the tier-3 predicate
+    // accepts, or the synthetic def in that shape once none does. It used to be
+    // `charlottesEchos` — which now carries a face, so it moved from this tier
+    // to the FACE tier (and its card re-ranked from declaration order to
+    // `face.order`; no `PUSH_CARD_CONTROLS` entry, so that is the intended
     // effect of promoting it). Naming a module here would have gone stale
-    // silently the moment it was promoted.
-    const def = allDefs().find((d) => d.domain === 'audio' && !d.face && (d.params ?? []).length >= 3);
-    expect(def, 'expected at least one un-faced audio module').toBeTruthy();
-    const spec = resolvePushCardControls(def!, {});
-    expect(spec.source).toBe('generic');
-    expect(spec.domain).toBe('audio');
+    // silently the moment it was promoted; REQUIRING one to be un-faced goes
+    // stale the moment the migration finishes, which is what
+    // `genericTierSubject` exists to survive.
+    const { def, origin } = genericTierSubject('audio', allDefs().filter((d) => d.domain === 'audio'));
+    const spec = resolvePushCardControls(def, {});
+    expect(spec.source, `tier-3 AUDIO subject: ${origin}`).toBe('generic');
+    expect(spec.domain, `tier-3 AUDIO subject: ${origin}`).toBe('audio');
   });
 
   it('VIDEO: the SAME rule, carrying its own domain', () => {
@@ -667,30 +749,29 @@ describe('resolvePushCardControls — tier 3, the GENERIC card', () => {
     // and then declaration order genuinely IS the whole answer, which is what
     // the leg claims. The first draft skipped this and selected a def carrying a
     // `freeze` switch; it failed with `freeze` demoted to last, correctly.
-    const isPlainSwitch = (q: ParamDef): boolean =>
-      q.curve === 'discrete' && q.min === 0 && q.max === 1;
-    const def = listVideoModuleDefs().find(
-      (d) =>
-        !d.face
-        && (d.params ?? []).length >= 3
-        && !(d.params ?? []).some((q) => isTurnable(q) && isPlainSwitch(q))
-        && noUserControlIds(d as NoUserControlDefLike).size === 0
-        && momentaryParamIds(d as { face?: { momentary?: readonly string[] } }).size === 0,
-    ) as unknown as PushCardDefLike;
-    expect(
-      def,
-      'expected an un-faced video module whose turnable params are all continuous',
-    ).toBeTruthy();
+    //
+    // ⚠ AND THE SUBJECT NO LONGER HAS TO BE A SHIPPED MODULE. Promoting
+    // `peertube` emptied this pool — see `genericTierSubject` — so the same
+    // predicate now falls through to a def built in that shape rather than
+    // asserting that the face migration is unfinished.
+    const { def, origin } = genericTierSubject(
+      'video',
+      listVideoModuleDefs() as unknown as PushCardDefLike[],
+    );
     const spec = resolvePushCardControls(def, {});
-    expect(spec.source).toBe('generic');
-    expect(spec.domain).toBe('video');
+    expect(spec.source, `tier-3 VIDEO subject: ${origin}`).toBe('generic');
+    expect(spec.domain, `tier-3 VIDEO subject: ${origin}`).toBe('video');
     // Same selection rule, not a second one: declaration order.
     //
     // The def was selected to have no momentary pad, no `noUserControl` and no
     // plain switch, so eligibility here reduces to `isTurnable` and the ranking
     // reduces to declaration order.
     const expected = (def.params ?? []).filter((q) => isTurnable(q)).slice(0, 8).map((q) => q.id);
-    expect(pushCardParams(spec).map((q) => q.id)).toEqual(expected);
+    expect(
+      expected.length,
+      `the tier-3 subject must rank at least two controls or the ordering claim asserts nothing — ${origin}`,
+    ).toBeGreaterThan(1);
+    expect(pushCardParams(spec).map((q) => q.id), `tier-3 VIDEO subject: ${origin}`).toEqual(expected);
   });
 
   it('demotes plain on/off switches BELOW the continuous params', () => {

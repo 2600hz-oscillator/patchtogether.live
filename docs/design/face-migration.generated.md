@@ -30,7 +30,7 @@ Every registered module carries exactly one **disposition**: what kind of work i
 
 | blocker | issue | modules waiting |
 |---|---|---|
-| `needs-media-controller` | #1511 | 4 |
+| `needs-media-controller` | #1511 | 3 |
 
 ## `generic-face`
 
@@ -158,6 +158,7 @@ author a `face` and rank the controls — no new platform capability.
 | `outlines` | video | done | — |
 | `outToLaunch` | video | done | — |
 | `peakstate` | video | done | — |
+| `peertube` | video | done | — |
 | `pentemelodica` | audio | done | — |
 | `picturebox` | video | done | — |
 | `polarizer` | audio | done | — |
@@ -240,7 +241,6 @@ the primary interaction is not param-shaped — needs a purpose-built surface.
 | `doom` | video | — | — |
 | `nibbles` | video | — | — |
 | `painter` | video | — | — |
-| `peertube` | video | — | `needs-media-controller` |
 | `recorderbox` | video | — | `needs-media-controller` |
 | `seqtris` | audio | — | — |
 | `toybox` | video | — | `needs-media-controller` |
