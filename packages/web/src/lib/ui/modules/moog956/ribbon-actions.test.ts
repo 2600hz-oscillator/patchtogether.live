@@ -28,6 +28,12 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 
 import { patch, ydoc, LOCAL_ORIGIN } from '$lib/graph/store';
 import { setActiveEngine } from '$lib/audio/engine-ref';
+import {
+  registerAutomationController,
+  unregisterAutomationController,
+} from '$lib/audio/automation-touch';
+import type { AutomationTarget } from '$lib/audio/modules/clip-types';
+import type { AutomationController } from '$lib/audio/modules/clip-automation-controller';
 import type { PatchEngine } from '$lib/audio/engine';
 import type { ModuleNode } from '$lib/graph/types';
 import { moog956Def } from '$lib/audio/modules/moog956';
@@ -191,5 +197,64 @@ describe('moog956 ribbon — the semitone reading is ONE string for two destinat
     expect(ribbonSemitoneText(0.5, 2, 0)).toBe('12.0 st');
     expect(ribbonSemitoneText(1, 2, 0)).toBe('24.0 st');
     expect(ribbonSemitoneText(0, 2, -1)).toBe('-12.0 st');
+  });
+});
+
+describe('moog956 ribbon — the stroke GRABS `pos` from any clip automating it', () => {
+  // ⚠ THE STRIP IS A HAND ON A PARAM, and every other surface that moves `pos`
+  // already says so: the ranked `pos` FADER cell grabs inside `NeonFader`, and
+  // the MIDI / Electra pumps grab at their own seams. The strip wrote `pos`
+  // durably and grabbed nothing, so with a `moog956::pos` clip playing a finger
+  // neither suspended playback nor recorded — `drive()` kept re-scheduling over
+  // the stroke, and the "live wins" contract was bypassed on the very surface
+  // this promotion makes primary. The two surfaces the face deliberately makes
+  // redundant must not behave differently under automation.
+
+  it('a press TOUCHES and a release RELEASES, as a matched pair', () => {
+    const seen: string[] = [];
+    registerAutomationController(NODE, {
+      notifyTouch: (t: AutomationTarget, holder: string) =>
+        seen.push(`touch:${t.nodeId}::${t.paramId}:${holder}`),
+      notifyRelease: (t: AutomationTarget, holder: string) =>
+        seen.push(`release:${t.nodeId}::${t.paramId}:${holder}`),
+    } as unknown as AutomationController);
+
+    try {
+      ribbonPress(NODE, 0.3);
+      ribbonSlide(NODE, 0.6);
+      ribbonRelease(NODE);
+    } finally {
+      unregisterAutomationController(NODE);
+    }
+
+    expect(
+      seen,
+      'the grab must bracket the whole stroke — taken on the press and dropped '
+        + 'on the release, so automation resumes on the finger lifting rather '
+        + 'than at the loop wrap',
+    ).toEqual([
+      `touch:${NODE}::${RIBBON_POS_PARAM}:pointer`,
+      `release:${NODE}::${RIBBON_POS_PARAM}:pointer`,
+    ]);
+  });
+
+  it('NEGATIVE CONTROL: the recorder would have seen a grab on the GATE too', () => {
+    // The pair above is an exact `toEqual`, so it already refuses extras — but
+    // assert the discrimination directly: `gate` is engine-only and must NOT be
+    // announced to automation, and a recorder that captured nothing at all
+    // would make the assertion above vacuously green.
+    const seen: string[] = [];
+    registerAutomationController(NODE, {
+      notifyTouch: (t: AutomationTarget) => seen.push(`touch:${t.paramId}`),
+      notifyRelease: (t: AutomationTarget) => seen.push(`release:${t.paramId}`),
+    } as unknown as AutomationController);
+    try {
+      ribbonPress(NODE, 0.4);
+      ribbonRelease(NODE);
+    } finally {
+      unregisterAutomationController(NODE);
+    }
+    expect(seen.length, 'the recorder really was wired').toBe(2);
+    expect(seen.some((s) => s.includes(RIBBON_GATE_PARAM))).toBe(false);
   });
 });

@@ -51,6 +51,7 @@
 // above is observable at all — the final state is identical either way.
 
 import { getActiveEngine } from '$lib/audio/engine-ref';
+import { notifyAutomationTouch, notifyAutomationRelease } from '$lib/audio/automation-touch';
 import { momentaryRest } from '$lib/audio/momentary-params';
 import { setNodeParam } from '$lib/graph/mutate';
 import { patch } from '$lib/graph/store';
@@ -121,6 +122,17 @@ export function ribbonPersistPos(nodeId: string, pos: number): void {
  * this the tapped pitch would reach the engine and never the document.
  */
 export function ribbonPress(nodeId: string, pos: number): number {
+  // ⚠ THE HAND GRABS `pos` FIRST — before any write, so a clip automating this
+  // param is suspended for the whole stroke rather than from the second frame.
+  // Every OTHER surface that moves `pos` already does this: the ranked `pos`
+  // FADER cell grabs inside `NeonFader`, and MIDI/Electra grab at their own
+  // seams. The strip wrote `pos` durably and grabbed nothing, so with a
+  // `moog956::pos` clip playing a finger neither suspended playback nor
+  // recorded — `drive()` kept re-scheduling over the stroke and the
+  // "live wins" contract ($lib/audio/automation-touch) was bypassed on the one
+  // surface the promotion makes primary. The legacy card had the same hole;
+  // this seam is where it gets closed for all three surfaces at once.
+  notifyAutomationTouch({ nodeId, paramId: RIBBON_POS_PARAM }, 'pointer');
   const p = ribbonSlide(nodeId, pos);
   ribbonPersistPos(nodeId, p);
   setMomentaryParam(nodeId, RIBBON_GATE_PARAM, true, gateRest());
@@ -137,6 +149,11 @@ export function ribbonPress(nodeId: string, pos: number): number {
  */
 export function ribbonRelease(nodeId: string): void {
   setMomentaryParam(nodeId, RIBBON_GATE_PARAM, false, gateRest());
+  // The PHYSICAL release of the grab taken in `ribbonPress` — paired, so
+  // automation resumes on the finger lifting rather than at the loop wrap.
+  // Called on the unmount path too (the strips release before teardown), which
+  // is the case that would otherwise strand a param overridden forever.
+  notifyAutomationRelease({ nodeId, paramId: RIBBON_POS_PARAM }, 'pointer');
 }
 
 /**
