@@ -115,12 +115,24 @@ export const VRT_MODULE_MASKS: Record<string, MaskRect[]> = {
   videoOut: [
     { selector: 'canvas', why: 'the output canvas renders whatever is patched into it and repaints off the engine clock; the solo-spawn chrome is the gate.' },
   ],
-  // RECORDERBOX — live preview canvas (+ a hidden full-res capture canvas,
-  // off-screen at left:-9999px so its mask rect lands outside the captured
-  // card box). Mask the canvas + gate on the deterministic chrome (title,
-  // IN/OUT/A·L/A·R handles, FILE field, RECORD button).
+  // RECORDERBOX — ONE live preview canvas. Mask it + gate on the deterministic
+  // chrome (title, IN/OUT/A·L/A·R handles, FILE field, RECORD button).
+  //
+  // ⚠ THE SECOND HALF OF THE OLD `why` WAS FALSE AND IS CORRECTED RATHER THAN
+  // DELETED. It read "plus a hidden off-screen full-res capture canvas", and
+  // described a capture canvas that had been an ELEMENT OF THE CARD — which it
+  // has not been since #1574/#1584 (bdef392f6). `node-recorder-registry`
+  // creates it and NEVER appends it to the document, deliberately: a detached
+  // canvas keeps its last bitmap, so a card-owned one recorded a freeze frame
+  // for every span the card was unmounted. So there is no second element in
+  // this card at all, off-screen or otherwise, and the parenthetical about a
+  // mask rect landing outside the captured box described a rect that never
+  // existed. The MASK itself is unchanged and still correct — one canvas, one
+  // selector — which is why this is a comment fix and not a behaviour change.
+  // (Same stale-prose class as the module's own migration-inventory entry,
+  // corrected in the same diff.)
   recorderbox: [
-    { selector: 'canvas', why: 'a live preview canvas blitted off the engine clock, plus a hidden off-screen full-res capture canvas; the title, handles, FILE field and RECORD button are the gate.' },
+    { selector: 'canvas', why: 'a live preview canvas blitted off the engine clock; the title, handles, FILE field and RECORD button are the gate. The full-resolution CAPTURE canvas is the node registry\'s and never enters the document, so it is not an element here to mask.' },
   ],
   chroma: [
     { selector: 'canvas', why: 'live keyed-output preview canvas repainting off the engine clock; the key controls and handle rows are the gate.' },

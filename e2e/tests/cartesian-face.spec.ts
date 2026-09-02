@@ -7,8 +7,20 @@
 // faces-parity drives a panel by its declared click/drag probe — it cannot type.
 // So the panel's probe asserts a GATE click moves `node.data.cells`, and the
 // TYPED half is here. The `entry` ShellCell wrapper has no faces-parity sweep
-// adopter yet; the first will be a band-shaped field (recorderbox's filename,
-// once #1511 deletes `needs-media-controller`).
+// adopter yet.
+//
+// ⚠ THE PREDICTION THAT USED TO END THAT SENTENCE IS NOW WRONG, and it is
+// corrected rather than left to be inherited: it said the first adopter would be
+// "a band-shaped field (recorderbox's filename, once #1511 deletes
+// `needs-media-controller`)". recorderbox IS promoted now and its blocker is
+// gone — and its FILE field is deliberately NOT a `ShellEntryCell`. That kind
+// forbids clamping, while the shipped save path SANITIZES
+// (`recorderbox-store.sanitizeRecordingFilename`), so an entry cell's rejections
+// would disagree with the name actually written to disk. A refusal the model
+// then silently overrides is the exact class leg 2 below exists to catch, which
+// is why that module keeps a real `<input type="text">` in its extension body.
+// So this spec remains the ONLY typed-entry proof, and is not waiting on a
+// sweep adopter that is not coming from there.
 //
 // ⚠ IT BOOTS THE LANE'S OWN WAY, NOT `bootWithFace`, AND THAT IS A FIX RATHER
 // THAN A PREFERENCE. The first version imported `bootWithFace` /
@@ -43,8 +55,25 @@
 
 import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
+import { SLOW_BOOT_TEST_TIMEOUT_MS } from '../_helpers/boot-budget';
 
 test.describe.configure({ mode: 'parallel' });
+
+// ⚠ THIS FILE DECLARED NO BUDGET AND RODE THE INVISIBLE 30 s DEFAULT, which is
+// the failure its own header above already describes once ("timed out on CI
+// shard 9/10 and PASSED ON RETRY — it lost the runner lottery"). That round was
+// answered by making the boot CHEAPER; this one could not be, because nothing
+// about the spec changed. It lost the lottery again when a cost-artifact re-pin
+// re-binned the shards and moved it, with a MEASURED cost of 17.6 CPU-s against a
+// 30 s ceiling — twelve seconds of headroom on a lane whose whole design is that
+// shard membership moves.
+//
+// ⚠ NOT A FLAT BUMP. The number is the ONE export site every other dock spec in
+// this directory uses, so it tracks the lane's own slow-boot budget instead of
+// becoming a second opinion about it — and it BOUNDS the failure rather than
+// gating anything: every wait below is still an auto-retrying assertion on the
+// real subject.
+test.setTimeout(SLOW_BOOT_TEST_TIMEOUT_MS);
 
 const NODE = 'cart';
 
