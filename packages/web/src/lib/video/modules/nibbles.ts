@@ -180,16 +180,26 @@ export const nibblesDef: VideoModuleDef = {
 
   // ── THE FACE ───────────────────────────────────────────────────────────────
   //
-  // ⚠ `glyph: 'none'` IS MANDATORY AND COUNTER-INTUITIVE HERE. `laneGlyphFor`
-  // returns 'picture' for any `domain === 'video'` def BEFORE it ever reads
-  // `face.glyph`, so the lane tile paints a live per-node `VideoTileThumb` with
-  // nothing declared — and any other literal would be a DEAD glyph binding the
-  // lint reddens (`primaryAudioOutPortId` is null: `snake` and `gated` are
-  // audio ports but the glyph resolver needs a primary, and every live kind
-  // resolves 'static' here). "'none' + blank tile" and "'none' + live thumb"
-  // are indistinguishable from the declaration, which is why
-  // `nibbles-face-model.test.ts` asserts `hasVideoSurface(def)` DIRECTLY and
-  // never infers the picture from the face.
+  // ⚠ `glyph: 'none'` IS COUNTER-INTUITIVE HERE, AND IT IS A JUDGEMENT RATHER
+  // THAN A FORCED DEFAULT — the opposite of what a reader coming from frogger
+  // will assume, so it is measured rather than asserted.
+  //
+  // `laneGlyphFor` returns 'picture' for any `domain === 'video'` def BEFORE it
+  // ever reads `face.glyph`, so the lane tile paints a live per-node
+  // `VideoTileThumb` with nothing declared, and no literal here can change
+  // that. ⚠ BUT THE LITERAL WOULD NOT BE DEAD EITHER: this def declares two
+  // `audio` outputs, so `primaryAudioOutPortId` resolves `snake` and
+  // 'scope' / 'meter' / 'waveform' all bind LIVE — and `module-face-lint`'s
+  // dead-glyph leg only reddens a binding of kind 'static'. So a
+  // `glyph: 'meter'` here would pass every gate in the tree while ModuleShell
+  // painted the video thumb and never painted the meter at all. 'none' is the
+  // honest declaration because this module's identity is the game it is
+  // drawing, not a VU of the square wave its length happens to pitch.
+  //
+  // ⚠ AND SINCE "'none' + blank tile" AND "'none' + live thumb" ARE
+  // INDISTINGUISHABLE FROM THE DECLARATION, `nibbles-face-model.test.ts`
+  // asserts `hasVideoSurface(def)` DIRECTLY and never infers the picture from
+  // the face.
   //
   // ⚠ NO `freeze` PARAM, DELIBERATELY. The determinism seam this module needs
   // already exists as two boot-time globals (`__nibblesVrtSeed` +
@@ -207,21 +217,31 @@ export const nibblesDef: VideoModuleDef = {
     // fast the snake moves. It is read EVERY frame (`surface.draw`), so it acts
     // on the next tick. AUTO is second because it is a MODE rather than a
     // quantity — it changes WHO is playing, not how fast — and it is the
-    // control you flip once at spawn and leave. RESET is last: a gesture, not a
-    // setting.
+    // control you flip once at spawn and leave.
+    //
+    // ⚠ RESET IS NOT RANKED AT ALL, and it is not an oversight. It lives on the
+    // extension body beside SCREEN and SCALE, because a ranked `action` cell
+    // needs an AUDITION probe here (reset writes no param and no `node.data`)
+    // and `faces-parity` spawns every module with no `domain` — defaulted to
+    // `'audio'` — so a VIDEO module's factory is never constructed in that
+    // sweep and the audition cannot deliver. Measured both directions; the
+    // probe lives in `face-nibbles.spec.ts` instead.
     order: ['tick_ms', 'auto'],
     glyph: 'none',
-    // ONE band. Two params and one gesture, one idea — HOW THE SNAKE MOVES —
-    // and splitting a rate from a mode would invent a distinction the module
-    // does not make. `order` and `pages` AGREE, stated so a reader does not go
-    // hunting for the disagreement the house style usually carries.
+    // ONE band. Two params, one idea — HOW THE SNAKE MOVES — and splitting a
+    // rate from a mode would invent a distinction the module does not make.
+    // `order` and `pages` AGREE, stated so a reader does not go hunting for the
+    // disagreement the house style usually carries.
     //
-    // ⚠ AND THE TAB RAIL IS REFUSED ON PURPOSE. The owner's control-heavy
-    // ruling is about "lots of controls of DIFFERENT types"; the rail engages
-    // at DOCK_TAB_MIN_BANDS = 7 bands and "do NOT pad pages to force the rail"
-    // is explicit. Three ranked keys is not control-heavy.
+    // ⚠ AND THE TAB RAIL IS REFUSED ON PURPOSE. nibbles is exactly the module a
+    // reader might expect to be TABBED, so the refusal is argued rather than
+    // skipped: the owner's control-heavy ruling is about "lots of controls of
+    // DIFFERENT types", the rail engages at DOCK_TAB_MIN_BANDS = 7 bands, and
+    // "do NOT pad pages to force the rail" is explicit. Two ranked params plus
+    // three body affordances is not control-heavy.
     pages: [{ id: 'snake', label: 'snake', controls: ['tick_ms', 'auto'] }],
-    // The live screen, its SCREEN switch, its SCALE switch and the ARROW KEYS.
+    // The live screen, its SCREEN / SCALE / RESET controls and the ARROW KEYS
+    // that are this module's only manual steering.
     // See $lib/ui/modules/nibbles/shell-extension.ts.
     extension: 'nibbles',
     // ⚠ AUTHORED RATHER THAN DERIVED, and the authored split MEANS something
