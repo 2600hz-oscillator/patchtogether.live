@@ -239,6 +239,85 @@ export function shouldRewriteSavedId(r: DeviceRebind): boolean {
   return r.matchedBy === 'name-unique' || r.matchedBy === 'name-ambiguous';
 }
 
+// ── THE MIDI PORT PICK — ONE SEAM FOR EVERY MIDI MODULE FACTORY ─────────────
+//
+// ⚠ THIS EXISTS BECAUSE THE NAME HALF OF #2228 WAS WRITE-ONLY FOR MIDI. Every
+// MIDI module's SURFACE persists `data.lastDeviceName` at pick time (they all
+// import `nameOfDevice` above for exactly that) and NOT ONE of their FACTORIES
+// ever read it back — `cameraInput` is the only module in the tree that calls
+// `resolveDevice`. So a reloaded patch could only ever match on
+// `data.lastDeviceId`, which the Web MIDI spec leaves implementation-defined
+// and Chrome regenerates between sessions; each factory then hand-rolled the
+// same `pickDefaultDevice()`: keep the saved id if it is still enumerated, else
+// take the first port.
+//
+// ⚠ AND MIDI-OUT-BUDDY DIVERGED FROM ITS THREE SIBLINGS ON THE ONE LINE THAT
+// MATTERS. midiclock, midiCvBuddy and midiLane all assign
+// `selectedDeviceId = pickDefaultDevice()` UNCONDITIONALLY when access is
+// granted, so a stale saved id falls through to the first port. midiOutBuddy
+// guarded it — `if (!selectedDeviceId) selectedDeviceId = pickDefaultDevice()`
+// — and a stale id, being truthy, BLOCKED THE PICK: the module stayed bound to
+// a port that does not exist. Measured on the shipped default shell: the grant
+// succeeds, `connected` goes true, the body's `<select>` renders with
+// `selectedIndex === -1` (a BLANK picker — the bound value matches no option),
+// `out()` resolves null, and every note the module computes is dropped in
+// silence. Owner report, 2026-09-02: "pressing connect never yields a working
+// output picker", "can't select a midi out".
+//
+// The rules, and the order is the whole point:
+//
+//   1. `resolveDevice` — exact id, then unique name, then a deterministic and
+//      REPORTED tie-break on an ambiguous name. This is the half that heals a
+//      regenerated id back onto the RIGHT hardware rather than merely onto SOME
+//      hardware.
+//   2. FIRST AVAILABLE — nothing matched, but ports exist. This is the
+//      pre-existing fallback for a module that has never been bound, now
+//      applied to an unresolvable saved binding too: a blank picker that sends
+//      nothing is strictly worse than a real port the player can see and
+//      change, and it is what three of the four modules already did. Reported
+//      separately from `resolveDevice`'s verdicts, because "this is your synth"
+//      and "this is A synth" are different claims.
+//   3. NONE — no ports at all.
+//
+// ⚠ IT DOES NOT PERSIST THE HEALED ID, unlike the camera path's
+// `shouldRewriteSavedId` loop. A module factory has no Y.Doc writer and does
+// not need one: this resolution is pure and idempotent, so the next grant
+// reaches the same port. The saved NAME is the durable record, which is the
+// whole reason it survives the id churn.
+
+/** How a MIDI port binding was reached. `resolveDevice`'s verdicts, plus the
+ *  "nothing matched, take what is there" fallback — which is not a match at all
+ *  and must not be reported as one. */
+export type MidiPortMatch = DeviceMatch | 'first-available';
+
+export interface MidiPortBinding {
+  /** The port id to bind, or null when nothing is connected. */
+  readonly id: string | null;
+  readonly matchedBy: MidiPortMatch;
+  /** On `name-ambiguous`, every connected id carrying the saved name. */
+  readonly candidates: readonly string[];
+}
+
+/**
+ * Which MIDI port a module should bind, given what its patch saved and what the
+ * browser enumerates right now.
+ *
+ * `connected` MUST be in the browser's own enumeration order: the
+ * `first-available` fallback takes `[0]`, which is the same port the
+ * hand-rolled `access.inputs.values().next()` it replaces would have taken, so
+ * a never-bound module keeps binding exactly what it binds today.
+ */
+export function bindMidiPort(
+  saved: SavedDevice,
+  connected: readonly ConnectedDevice[],
+): MidiPortBinding {
+  const resolved = resolveDevice(saved, connected);
+  if (resolved.id) return resolved;
+  const first = connected[0];
+  if (!first) return { id: null, matchedBy: 'none', candidates: [] };
+  return { id: first.id, matchedBy: 'first-available', candidates: [] };
+}
+
 // ── GAMEPADS — THE SAME IDEA WITH THE RULES THE OTHER WAY UP ────────────────
 //
 // ⚠ A GAMEPAD DOES NOT FIT `resolveDevice`, AND FORCING IT WOULD REPRODUCE THE

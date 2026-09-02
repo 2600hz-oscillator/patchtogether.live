@@ -714,3 +714,209 @@ export async function injectMidiIn(
     { portId, bytes: [...bytes] },
   );
 }
+
+// ---------------------------------------------------------------------------
+// THE DEVICE-BINDING HARNESS — one mock the whole MIDI regression suite shares
+// ---------------------------------------------------------------------------
+//
+// WHY A FOURTH MOCK, STATED PLAINLY. The three above each answer one question
+// and structurally cannot answer this one:
+//
+//   * `installMidiMock` is inbound-only with a NO-OP `send()`.
+//   * `installMidiOutCapture` captures bytes but has no inputs, no port
+//     dynamics, and a grant that always resolves INSTANTLY.
+//   * `installElectraMidiMock` is name-strict to Electra and sysex-shaped.
+//
+// The class the owner hit on 2026-09-02 needs all of: NAMED ports on BOTH
+// sides, a grant whose TIMING and OUTCOME the test decides (a real prompt can
+// be refused, or answered after `MIDI_PROMPT_TIMEOUT_MS`), ports that appear
+// and disappear AFTER the grant, and byte capture — because the only honest
+// end of a MIDI assertion is what left the port.
+//
+// ⚠ IT REUSES THE SAME CAPTURE GLOBALS (`__midiOutSent` /
+// `__midiOutSentDetailed`), so `readMidiOutCaptured`, `readCapturedCcs` and
+// `clearMidiOutCaptured` above work against it unchanged. One recording
+// vocabulary for every MIDI spec in the tree.
+
+export type MidiGrantMode =
+  /** Resolve immediately — a permission already granted for this origin. */
+  | 'instant'
+  /** Reject — the user (or policy) refused. */
+  | 'deny'
+  /** Never settle on its own; the test calls `grantMidiNow` to answer late.
+   *  This is the SUPPRESSED-PROMPT shape `midi-access.ts` exists to name. */
+  | 'hang';
+
+export interface MidiDeviceMockOptions {
+  outputs?: readonly FakeMidiOutPort[];
+  inputs?: readonly FakeMidiInPort[];
+  /** How `navigator.requestMIDIAccess()` behaves. Default 'instant'. */
+  grant?: MidiGrantMode;
+}
+
+export function midiDeviceMockScript(
+  outputs: readonly FakeMidiOutPort[],
+  inputs: readonly FakeMidiInPort[],
+  grant: MidiGrantMode,
+): string {
+  return `
+(() => {
+  if (window.__fakeMidiOutInstalled) return;
+  window.__fakeMidiOutInstalled = true;
+  window.__midiOutSent = [];
+  window.__midiOutSentDetailed = [];
+
+  const outs = new Map();
+  const ins = new Map();
+  const inputHandlers = new Map();
+
+  function makeOutput(spec) {
+    return {
+      id: spec.id, name: spec.name, manufacturer: 'PatchTogether',
+      state: 'connected', connection: 'open', type: 'output', version: '1.0',
+      send(data, timestamp) {
+        // A DISCONNECTED port throws in Chromium. Modelled, because "the app
+        // kept sending to a port that went away" is one of the states this
+        // harness exists to catch.
+        if (this.state === 'disconnected') throw new Error('port is disconnected');
+        const bytes = Array.from(data);
+        window.__midiOutSent.push(bytes);
+        window.__midiOutSentDetailed.push({
+          portId: spec.id, bytes, at: performance.now(),
+          scheduledAt: typeof timestamp === 'number' ? timestamp : undefined,
+        });
+      },
+      clear() {},
+    };
+  }
+
+  function makeInput(spec) {
+    let _h = null;
+    const inp = {
+      id: spec.id, name: spec.name, manufacturer: 'PatchTogether',
+      state: 'connected', connection: 'open', type: 'input', version: '1.0',
+      get onmidimessage() { return _h; },
+      set onmidimessage(fn) { _h = fn; inputHandlers.set(spec.id, fn); },
+    };
+    inputHandlers.set(spec.id, null);
+    return inp;
+  }
+
+  for (const spec of ${JSON.stringify(outputs)}) outs.set(spec.id, makeOutput(spec));
+  for (const spec of ${JSON.stringify(inputs)}) ins.set(spec.id, makeInput(spec));
+
+  const access = { sysexEnabled: false, inputs: ins, outputs: outs, onstatechange: null };
+
+  function fire(port) {
+    if (typeof access.onstatechange === 'function') access.onstatechange({ port });
+  }
+
+  const MODE = ${JSON.stringify(grant)};
+  let grantLate = () => {};
+  navigator.requestMIDIAccess = () => {
+    if (MODE === 'instant') return Promise.resolve(access);
+    if (MODE === 'deny') {
+      return Promise.reject(new DOMException('permission refused', 'SecurityError'));
+    }
+    return new Promise((resolve) => { grantLate = () => resolve(access); });
+  };
+
+  window.__midiDeviceMock = {
+    /** Answer a 'hang' grant — the user finally pressing Allow. */
+    grantNow() { grantLate(); },
+    /** Deliver bytes to one input's onmidimessage. False when nothing is wired. */
+    inject(portId, bytes) {
+      const h = inputHandlers.get(portId);
+      if (typeof h !== 'function') return false;
+      h({ data: Uint8Array.from(bytes), timeStamp: performance.now() });
+      return true;
+    },
+    /** How many inputs the app has actually subscribed to. */
+    handlerCount() {
+      let n = 0;
+      for (const h of inputHandlers.values()) if (typeof h === 'function') n++;
+      return n;
+    },
+    /** Add a port AFTER the grant, firing statechange like real hardware. */
+    plug(kind, spec) {
+      if (kind === 'output') { const o = makeOutput(spec); outs.set(spec.id, o); fire(o); }
+      else { const i = makeInput(spec); ins.set(spec.id, i); fire(i); }
+    },
+    /** Unplug a port. Chromium KEEPS it enumerated with state 'disconnected'. */
+    unplug(portId) {
+      const p = outs.get(portId) || ins.get(portId);
+      if (!p) return false;
+      p.state = 'disconnected';
+      fire(p);
+      return true;
+    },
+  };
+})();
+`;
+}
+
+/** Install the device-binding harness. MUST be called BEFORE `page.goto(...)`. */
+export async function installMidiDeviceMock(
+  page: Page,
+  opts: MidiDeviceMockOptions = {},
+): Promise<void> {
+  await page.addInitScript({
+    content: midiDeviceMockScript(
+      opts.outputs ?? [DEFAULT_FAKE_MIDI_OUT],
+      opts.inputs ?? [],
+      opts.grant ?? 'instant',
+    ),
+  });
+}
+
+/** Answer a `grant: 'hang'` request — the late Allow that `onLateResolve` exists
+ *  to honour. */
+export async function grantMidiNow(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    (window as unknown as { __midiDeviceMock: { grantNow(): void } }).__midiDeviceMock.grantNow();
+  });
+}
+
+/** Hot-plug a port after the grant. Fires `MIDIAccess.onstatechange`. */
+export async function plugMidiPort(
+  page: Page,
+  kind: 'input' | 'output',
+  spec: FakeMidiOutPort,
+): Promise<void> {
+  await page.evaluate(
+    ({ kind, spec }) => {
+      (window as unknown as {
+        __midiDeviceMock: { plug(k: string, s: unknown): void };
+      }).__midiDeviceMock.plug(kind, spec);
+    },
+    { kind, spec },
+  );
+}
+
+/** Unplug a port: state goes 'disconnected' and statechange fires, which is
+ *  what Chromium does — the port stays enumerated. */
+export async function unplugMidiPort(page: Page, portId: string): Promise<boolean> {
+  return page.evaluate(
+    (id) =>
+      (window as unknown as {
+        __midiDeviceMock: { unplug(id: string): boolean };
+      }).__midiDeviceMock.unplug(id),
+    portId,
+  );
+}
+
+/** Deliver bytes to a mock INPUT. Resolves false when the app has not attached
+ *  a handler yet — poll the true condition rather than sleeping. */
+export async function injectMidiDeviceIn(
+  page: Page,
+  portId: string,
+  bytes: readonly number[],
+): Promise<boolean> {
+  return page.evaluate(
+    ({ portId, bytes }) =>
+      (window as unknown as {
+        __midiDeviceMock: { inject(p: string, b: number[]): boolean };
+      }).__midiDeviceMock.inject(portId, [...bytes]),
+    { portId, bytes: [...bytes] },
+  );
+}
