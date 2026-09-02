@@ -521,6 +521,19 @@ const SUBJECTS: readonly Subject[] = [
   // `canvas` override is needed.
     { type: 'mappy', prefix: 'mappy', domain: 'video', why: 'the projection mapper\'s composite preview and its SCREEN switch — an ADDITION, since MappyCard blits unconditionally and has no switch at all. ⚠ THE PICTURE IS ALSO THE CONTROL here (the quadralogical shape): the corner-pin handles live in an SVG overlay ON the collapsing frame, so this switch removes the module\'s editing surface as well as its preview — which is exactly why the collapsed branch must still mark the node watched. ⚠ The watch-mark case is the sharpest in the table after textmarquee\'s: mappy is a MID-CHAIN COMPOSITOR whose entire purpose is to feed a projector, `markWatched` happens INSIDE `blitOutputForPreview`, and a lapsed mark drops the node out of the pull set — so a collapsed branch that merely stopped blitting would make a control labelled SCREEN black out the stage while the module looked like it was running. This row proves the SWITCH; that the ENGINE keeps compositing is argued at the source and in the EXTENSION_BODY_ROLES entry, because no runtime gate here can observe a watch mark.' },
 
+  // ── RECORDERBOX (2026-09-02, wave 5) — the RECORDER ───────────────────────
+  //
+  // Added in the SAME diff as the promotion, per this file's convention, and
+  // APPENDED AT THE TAIL for the mechanical reason blood's note gives: batches
+  // slice this array in declaration order and each test's TITLE is its batch's
+  // comma-joined module list, so appending changes exactly one title.
+  //
+  // Verified before writing rather than assumed: `type == prefix == extension
+  // id`, the body uses the standard `{#if !previewCollapsed}` REMOVES
+  // mechanism, and it declares the conventional `<type>-face-canvas` — so no
+  // `canvas` override is needed.
+    { type: 'recorderbox', prefix: 'recorderbox', domain: 'video', why: 'the recorder\'s MONITOR preview and its SCREEN switch — an ADDITION, since RecorderboxCard blits unconditionally and has no switch at all. ⚠ THE ONE ROW IN THIS TABLE WHOSE SWITCH PROVABLY CANNOT REACH THE THING IT LOOKS LIKE IT MIGHT, which is why it is worth covering rather than assuming: a player who sees SCREEN OFF on a RECORDER will reasonably fear they just stopped the take, and they did not — a take runs on node-recorder-registry\'s own pump under an `acquireRenderLease`, and a lease bypasses BOTH preview gates, so the encode is at full rate whether this body is collapsed, unmounted or throttled. That is a STRONGER guarantee than the fleet\'s correctly-ordered `markWatched`, because there is no ordering here to get wrong. ⚠ THE WATCH MARK IS STILL RETAINED AND STILL LOAD-BEARING, for the case with NO take running: recorderbox is a mid-chain SINK with a video pass-through, so a lapsed mark idles the whole chain feeding `in` and stalls the `out` every downstream module reads — a control labelled SCREEN muting a signal path. As everywhere in this file, that half is argued at the source and in the EXTENSION_BODY_ROLES entry; this row proves the SWITCH.' },
+
 ] as const;
 
 /** The representative module for the PERSISTENCE leg — see that test's comment. */
