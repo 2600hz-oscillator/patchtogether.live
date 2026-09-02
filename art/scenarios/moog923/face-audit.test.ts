@@ -231,12 +231,77 @@ describe('M1 · the noise half and the filter half are independent, bit-exactly'
     // instrumented as one: establish the scatter FIRST from repeat spawns at a
     // FIXED setting, then show the cutoff sweep stays inside it while a LEVEL
     // change of comparable size lands far outside.
+    //
+    // ⚠ THE POSITIVE CONTROL AT THE BOTTOM WENT RED ON CI AND ITS ESTIMATOR WAS
+    // THE BUG — the SAME defect, and the same remedy, as the M3 factory leg
+    // below (read its header first; this is that diagnosis a second time on a
+    // second leg, which is why the two now read alike).
+    //
+    // It used to compare a SINGLE unseeded `level: 0.5` spawn against `mid` and
+    // demand `toBeCloseTo(6.02, 1)` — a ±0.05 dB bound. Two things were wrong
+    // with that at once:
+    //
+    //   1. UNEQUAL AVERAGING. `mid` is a midrange over four repeat spawns;
+    //      `halved` was one draw. The two sides of one subtraction carried
+    //      different amounts of noise, so the difference inherited a single
+    //      spawn's variance in full.
+    //   2. THE CONSTANT DOES NOT BELONG HERE. 20·log10 2 is an EXACT property of
+    //      a gain node, and it is already asserted exactly, on PINNED tables, to
+    //      NINE decimals, in `the FACTORY reaches those generators and scales
+    //      both taps by ONE level` below. Re-asserting it here on an unseeded
+    //      draw did not add a check; it added a coin toss over a fact already
+    //      nailed down, and the coin came up tails on PR #2314's art lane
+    //      (CI run 33643488786), on a branch that touched no audio at all:
+    //      `expected 6.073094054686388 to be close to 6.02, difference 0.0531,
+    //      tolerance 0.05`.
+    //
+    // MEASURED END TO END, 30 runs of this leg on the shipping factory: the old
+    // estimator's own run-to-run sd is 0.0125 dB, so its ±0.05 dB bound sat at
+    // 3.99 SIGMA. The worst of those 30 local runs already spent HALF the
+    // tolerance (6.0448), and CI's 6.0731 is 4.2 sigma — a tail draw from
+    // exactly this distribution, not an event needing any other explanation. A
+    // 4-sigma bound on a per-push test is a scheduled failure, not a flake.
+    //
+    // ⚠ AND A LONGER WINDOW CANNOT HELP, for the reason the M3 header already
+    // records: the factory builds a 2 s table and LOOPS it, so `secs: 20`
+    // re-measures the SAME table ten times. The variance is ACROSS SPAWNS. Only
+    // repeat spawns or a pinned seed touch it — "widen the window" would have
+    // looked like a fix and changed nothing.
+    //
+    // THE SUBJECT IS FIXED INSTEAD OF THE THRESHOLD:
+    //
+    //   1. EQUAL AVERAGING. `halved` is now the midrange of the SAME number of
+    //      repeat spawns as `mid`, so both sides of the subtraction carry the
+    //      same estimator and the same variance. Measured over the same 30 runs:
+    //      sd 0.0084 dB, down from 0.0125 — 1.48x tighter.
+    //   2. THE CLAIM IS NOW THE LEG'S ACTUAL JOB — and this is the half that
+    //      matters, because (1) ALONE WOULD NOT HAVE BEEN ENOUGH TO TRUST. A
+    //      ±0.05 dB bound over an 0.0084 dB sd is 5.9 sigma, which sounds safe
+    //      until you notice the sd is THIS MACHINE'S: CI's runner scatter is not
+    //      something a laptop can measure, and if it runs 1.5x wider the "5.9
+    //      sigma" is 3.9 and we are back where we started. So the redundant
+    //      constant goes instead of being re-toleranced. What this control
+    //      exists to prove is that the instrument the four sweep assertions
+    //      above use is NOT BLIND — that a real level change lands far outside
+    //      the band they are permitted — so it is asserted against
+    //      SWEEP_BOUND_DB itself, derived rather than hand-typed. Margin over
+    //      the same 30 runs: 593 sigma below, 711 sigma above. Nothing here
+    //      depends on a variance the CI runner might not share.
     const at = async (over: Record<string, number>) =>
       db(rms((await render({ params: { level: 1, ...over }, secs: 2 })).out.white));
+    /** The estimator, named ONCE and used on BOTH sides of the subtraction. */
+    const midrange = (xs: number[]) => (Math.max(...xs) + Math.min(...xs)) / 2;
+    /** Repeat spawns per estimate. Both sides get the same count, by construction. */
+    const SPAWNS = 4;
+    /** The scatter a fixed setting is permitted. */
+    const SCATTER_BOUND_DB = 0.2;
+    /** How far a CUTOFF sweep is permitted to move the noise taps. */
+    const SWEEP_BOUND_DB = 0.25;
 
-    const fixed = [await at({}), await at({}), await at({}), await at({})];
+    const fixed: number[] = [];
+    for (let i = 0; i < SPAWNS; i++) fixed.push(await at({}));
     const scatter = Math.max(...fixed) - Math.min(...fixed);
-    expect(scatter, 'white spawn scatter at a fixed LEVEL, dB').toBeLessThan(0.2);
+    expect(scatter, 'white spawn scatter at a fixed LEVEL, dB').toBeLessThan(SCATTER_BOUND_DB);
 
     const swept = [
       await at({ lpCutoff: 0 }),
@@ -244,15 +309,33 @@ describe('M1 · the noise half and the filter half are independent, bit-exactly'
       await at({ hpCutoff: 0 }),
       await at({ hpCutoff: 1 }),
     ];
-    const mid = (Math.max(...fixed) + Math.min(...fixed)) / 2;
+    const mid = midrange(fixed);
     for (const v of swept) {
-      expect(Math.abs(v - mid), 'white moved with a CUTOFF, dB from the fixed-setting mean').
-        toBeLessThan(0.25);
+      expect(
+        Math.abs(v - mid),
+        'white moved with a CUTOFF, dB from the fixed-setting midrange',
+      ).toBeLessThan(SWEEP_BOUND_DB);
     }
 
-    // POSITIVE CONTROL on the same instrument: a real level change IS seen.
-    const halved = await at({ level: 0.5 });
-    expect(mid - halved, 'a x0.5 LEVEL, dB — the probe can see a change').toBeCloseTo(6.02, 1);
+    // POSITIVE CONTROL on the same instrument, with the SAME estimator on both
+    // sides: a real level change IS seen, and it lands nowhere near the band the
+    // four assertions above call "unmoved".
+    const halvedSpawns: number[] = [];
+    for (let i = 0; i < SPAWNS; i++) halvedSpawns.push(await at({ level: 0.5 }));
+    const drop = mid - midrange(halvedSpawns);
+    expect(
+      drop,
+      `a x0.5 LEVEL must land FAR outside the ${SWEEP_BOUND_DB} dB sweep band — ` +
+        `otherwise the four assertions above are vacuous`,
+    ).toBeGreaterThan(4 * SWEEP_BOUND_DB);
+    // …and the UPPER bound is not symmetry for its own sake: it is the only
+    // thing here that catches the `level: 0.5` render coming back SILENT, which
+    // reads as an INFINITE drop and would sail through the assertion above. One
+    // extra halving of level is the ceiling — 12.04 dB is a different module.
+    expect(
+      drop,
+      'a x0.5 LEVEL, dB — a drop past a SECOND halving means silence, not gain',
+    ).toBeLessThan(2 * 20 * Math.log10(2));
   });
 });
 
