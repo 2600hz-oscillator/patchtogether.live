@@ -5655,6 +5655,77 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // CONTRACT UNCHANGED: no controlFamilies, no new params. `docs:accept` runs
   // because the explanation's card-ownership prose was stale (LEG-02).
   'videobox',
+  // ── PEERTUBE (wave 4, 2026-09-01) — the FEDIVERSE SEARCH BROWSER ─────────
+  //
+  // tvLibrarian's face shape on the def that SHARES ITS CONTROLLER: ONE ranked
+  // param (`gain`, a fader — unity at the midpoint of a 0..2 throw),
+  // `glyph: 'none'` (a REAL choice, not a forced one: two `audio` outputs mean
+  // any other literal resolves to a LIVE binding and the dead-glyph clause
+  // stays silent while a VU of the film's soundtrack competes with the module's
+  // own picture for the tile), two `noUserControl` bridge caches
+  // (`cv_play_trigger` / `cv_next_trigger`, writer 'cv-port' — the only legal
+  // value, since both gate inputs declare `paramTarget`), no pages, and a
+  // `fullViewBody` extension carrying the browse surface.
+  //
+  // ⚠ THE INVENTORY'S BLOCKER WAS ALREADY DISCHARGED AND THE ENTRY SAID SO
+  // ITSELF. It read `needs-media-controller` plus "⚠ ITS SOURCE IS NO LONGER
+  // CARD-OWNED (LEG-02 P3, #1511) … The blocker stays because it is
+  // ALL-OR-NOTHING: its probe is HEADLESS_MOUNT_LANE_TYPES being EMPTY, and
+  // archivist, cameraInput and loopback are still in it." That is a category
+  // error: a registry-wide probe is not a fact about THIS module, and
+  // `cameraInput` and `loopback` are both `generic-face` TODAY with that same
+  // blocker outstanding. peertube does not even pay the headless-host tax it
+  // was being charged for — it left `DOM_SOURCE_LANE_TYPES` in the same phase.
+  // Corrected in the inventory in this diff.
+  //
+  // ⚠ THE BODY IS LOAD-BEARING, NOT ADDITIVE, AND MORE SO THAN VIDEOBOX'S.
+  // videobox's body rescues a file picker; this one rescues the ONLY WAY TO
+  // NAME A VIDEO. peertube is in neither half of `HEADLESS_MOUNT_LANE_TYPES`,
+  // so under the shell no card is mounted anywhere: without this file a
+  // promoted peertube would be a search browser with no search box.
+  //
+  // ⚠ THE ROSTER CANNOT BE A `selector` CELL, for the tvLibrarian reason:
+  // `ShellSelectorCell.options` is a pure synchronous `(node) => Option[]` and
+  // this roster is a runtime Sepia Search fetch with its own loading, error and
+  // empty states. Persisting it into `node.data` to make it expressible would
+  // sync a volatile third-party payload into every saved rack.
+  //
+  // ⚠ ONE DEAD CONTROL IS DELETED RATHER THAN CARRIED FORWARD: the card's
+  // "instance (optional)" input wrote `node.data.instanceHost` and NOTHING read
+  // it — `buildSearchUrl(query, { count, start })` takes no host and
+  // `fetchCatalogue` never looks at `data`. The def's `docs.explanation` and
+  // `module-manifest.ts` both claimed it scoped/biased the search; both are
+  // corrected here. ⚠ THE `PeerTubeData.instanceHost` FIELD ITSELF IS KEPT: it
+  // is a TYPE declaration in `peertube-query.ts`, which is in the WebGL attest
+  // basis and where type declarations are deliberately NOT hash-transparent —
+  // deleting it would buy a real-GPU re-attest window for a dead field that
+  // still sits in saved racks. Named rather than silently paid.
+  //
+  // ⚠ ONE RESTING READOUT IS DELETED ON BOTH SURFACES, NOT HIDDEN: the card's
+  // `peertube-now-playing` line (the selected video's name, restated outside
+  // every control). It moves to the picture's `aria-label` on the face body AND
+  // on the legacy card. ⚠ ITS SOURCE IS `selectionLabel`, NOT THE ROSTER, and
+  // that is the one place this differs from tvLibrarian's identical deletion:
+  // `PEERTUBE_PROFILE.autoLoadCatalogue` is FALSE, so a reloaded rack restores
+  // the selection with an EMPTY catalogue and no highlighted row to be the
+  // painted answer. The controller publishes `selectionLabel` from `node.data`,
+  // which survives that state.
+  //
+  // ⚠ THE ATTRIBUTION ANCHOR IS KEPT (owner question §5.7 of the wave plan,
+  // recommended default): `https://<host>/w/<uuid>` is a navigational CONTROL,
+  // not a readout — the only route from a playing federated video to the
+  // creator's page, and now the only place the instance host is named at all.
+  // The PeerTube / Sepia Search legal disclaimer is kept for the same reason
+  // tvLibrarian's is, and this is the cohort question that entry named.
+  //
+  // ZERO ATTEST: `face` / `noUserControl` / `docs` are hash-transparent by
+  // construction (`attest-code-basis.ts`), no param, port or factory code
+  // moves, and the two new Svelte files are not in the basis (only
+  // CubeVizSurface and WavesculptVizSurface are). Verified by measuring
+  // `webgl-attest-hash.sh` before and after. CONTRACT UNCHANGED: no
+  // controlFamilies, no new params. `docs:accept` runs because the
+  // explanation's instance-host and card-ownership prose was false.
+  'peertube',
 ]);
 
 /**

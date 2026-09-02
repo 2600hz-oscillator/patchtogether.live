@@ -38,23 +38,32 @@
   // `ensureAudioWired`, on node lifetime — which is what stops a card unmount
   // mid-retry from stranding the element muted forever.
   //
-  // Multiplayer: only { searchTerm, instanceHost, selectedHost, uuid, name } live
-  // on node.data (synced). Transient playback state is published by the
-  // controller and read here — NEVER per-frame written to the synced store (the
-  // per-frame-write storm lesson).
+  // Multiplayer: only { searchTerm, selectedHost, uuid, name } live on node.data
+  // (synced). Transient playback state is published by the controller and read
+  // here — NEVER per-frame written to the synced store (the per-frame-write
+  // storm lesson).
+  //
+  // ⚠ THE SEARCH BOX, THE ROSTER, THE TRANSPORT, THE ATTRIBUTION ANCHOR AND THE
+  // DISCLAIMER ARE NOT IN THIS FILE ANY MORE. They live in
+  // `./peertube/PeerTubePicker.svelte`, which the FACEPLATE BODY also mounts
+  // (wave-4 face promotion). Promotion stops rendering this card on normal
+  // surfaces, so a copy in each place is how the two drift — and this module
+  // pair has a documented instance of correctness travelling by hand-copy and
+  // arriving late (the `muted = false` audio trap).
 
-  import { onMount, onDestroy } from 'svelte';
+  import { onDestroy } from 'svelte';
   import { nodeMedia, type NodeMediaLease } from '$lib/ui/media/node-media-registry';
   import { nodeHlsSource, HLS_SOURCE_SLOT } from '$lib/ui/media/node-hls-source.svelte';
   import { type NodeProps } from '@xyflow/svelte';
   import { captureFlowStore } from './card-kit';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
-  import { patch, ydoc, LOCAL_ORIGIN } from '$lib/graph/store';
+  import { mutateNode } from '$lib/graph/mutate';
   import { startCornerResize } from './card-resize';
   import ModuleTitle from './ModuleTitle.svelte';
   import type { ModuleNode } from '$lib/graph/types';
-  import { watchUrl, type PeerTubeData } from '$lib/video/modules/peertube-query';
+  import type { PeerTubeData } from '$lib/video/modules/peertube-query';
+  import PeerTubePicker from './peertube/PeerTubePicker.svelte';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -95,16 +104,10 @@
   let uuid = $derived<string | null>(
     (node?.data as Partial<PeerTubeData> | undefined)?.uuid ?? null,
   );
-  let videoName = $derived<string | null>(
-    (node?.data as Partial<PeerTubeData> | undefined)?.name ?? null,
-  );
 
   // ---- Card-local UI state ----
   let videoHost: HTMLDivElement | null = $state(null);
   let mediaLease: NodeMediaLease<HTMLElement> | null = null;
-  let searchTerm = $state('');
-  let instanceHost = $state('');
-  let rateMsg = $state<string | null>(null);
 
   // ---- The controller's published status ----
   //
@@ -113,25 +116,21 @@
   // differ — the stale-mirror bug the pre-#1511 cards all had.
   let src = $derived(nodeHlsSource.view(id));
   let streamState = $derived(src.streamState);
-  let catalogue = $derived(src.catalogue);
   let isPlaying = $derived(src.isPlaying);
-  let displayFrac = $derived(src.playheadFrac);
-  let loading = $derived(src.loadingCatalogue || src.loadingStream);
-  let statusMsg = $derived(src.statusMsg);
-  /** The controller's error, or this card's own rate-limit refusal. */
-  let errorMsg = $derived(rateMsg ?? src.error);
 
-  // ---- Synced writes (single transact; only the small persisted set) ----
-  function writeSearchTerm(): void {
-    ydoc.transact(() => {
-      const t = patch.nodes[id];
-      if (!t) return;
-      if (!t.data) t.data = {};
-      const d = t.data as Partial<PeerTubeData>;
-      d.searchTerm = searchTerm;
-      d.instanceHost = instanceHost;
-    }, LOCAL_ORIGIN);
-  }
+  // ── THE VIDEO NAME LIVES ON THE ACCESSIBLE NAME, NOT IN A TEXT NODE ──────
+  //
+  // ⚠ THE `peertube-now-playing` READOUT IS DELETED ON BOTH SURFACES, NOT
+  // HIDDEN (owner ruling, 2026-08-17 — a derived value restated outside every
+  // control). It moves to the picture's accessible name here and in the face
+  // body, so it stays speakable and assertable, and the roster's highlighted
+  // row is the painted answer. The instance host is not lost with it: the
+  // attribution ANCHOR in the picker is a navigational control and names it.
+  let pictureLabel = $derived<string>(
+    src.selectionLabel
+      ? `PEERTUBE picture — playing ${src.selectionLabel}${selectedHost ? ` on ${selectedHost}` : ''}`
+      : 'PEERTUBE picture — nothing selected',
+  );
 
   // ---- Adopt the NODE-owned <video> into this card ----
   //
@@ -155,76 +154,12 @@
     };
   });
 
-  onMount(() => {
-    const d = node?.data as Partial<PeerTubeData> | undefined;
-    if (d) {
-      searchTerm = d.searchTerm ?? '';
-      instanceHost = d.instanceHost ?? '';
-    }
-  });
-
-  // ---- Search (debounced + rate-limited: ~50 calls / 10 s) ----
-  //
-  // The RATE LIMIT stays here on purpose: it exists to protect Sepia Search from
-  // a human holding a key down, which is a fact about this input box and not
-  // about the node. The FETCH itself is the controller's — this only decides
-  // whether to ask for one.
-  const RATE_WINDOW_MS = 10_000;
-  const RATE_MAX = 50;
-  let callTimestamps: number[] = [];
-  function rateOk(): boolean {
-    const now = Date.now();
-    callTimestamps = callTimestamps.filter((t) => now - t < RATE_WINDOW_MS);
-    if (callTimestamps.length >= RATE_MAX) return false;
-    callTimestamps.push(now);
-    return true;
-  }
-
-  let searchDebounce: ReturnType<typeof setTimeout> | null = null;
-  function onSearchInput(): void {
-    writeSearchTerm();
-    if (searchDebounce) clearTimeout(searchDebounce);
-    searchDebounce = setTimeout(() => { runSearch(); }, 350);
-  }
-  function onSearchKeydown(ev: KeyboardEvent): void {
-    if (ev.key === 'Enter') {
-      ev.preventDefault();
-      if (searchDebounce) { clearTimeout(searchDebounce); searchDebounce = null; }
-      runSearch();
-    }
-  }
-
-  function runSearch(): void {
-    if (!rateOk()) {
-      rateMsg = 'Slow down — too many searches; try again in a moment.';
-      return;
-    }
-    rateMsg = null;
-    writeSearchTerm();
-    nodeHlsSource.request(id, { kind: 'catalogue', key: searchTerm });
-  }
-
-  // ---- Gestures ----
-  //
-  // Each of these is a USER ACTION that cannot originate anywhere else, handed
-  // to the controller through the one seam that can reach it whether or not this
-  // card is the surface the user is looking at.
-  function selectResult(key: string): void {
-    nodeHlsSource.request(id, { kind: 'select', candidateKey: key });
-  }
-  function nextResult(): void {
-    nodeHlsSource.request(id, { kind: 'next' });
-  }
-  function togglePlay(): void {
-    nodeHlsSource.request(id, { kind: 'togglePlay' });
-  }
-
   onDestroy(() => {
-    if (searchDebounce) clearTimeout(searchDebounce);
     // NOTE what is deliberately ABSENT: no teardownHls, no detach, no
     // unwireAudio, no setPlaying(false), no trigger-loop stop, no display-timer
     // stop. NONE of those exist here any more — they are the controller's, on
-    // node lifetime. Everything released here is THIS CARD'S OWN.
+    // node lifetime. The search debounce is the PICKER's and dies with it.
+    // Everything released here is THIS CARD'S OWN.
     mediaLease?.release();
     mediaLease = null;
   });
@@ -238,23 +173,22 @@
       minWidth: MIN_WIDTH,
       minHeight: MIN_HEIGHT,
       getStartSize: () => ({ width: cardWidth, height: cardHeight }),
+      // Boy-scout: TRACKED (mutateNode -> LOCAL_ORIGIN) so the resize reaches
+      // Cmd-Z. The bare SyncedStore proxy write this replaces was outside the
+      // UndoManager entirely — the same defect videobox's promotion fixed on
+      // its own resize (#2303).
       apply: (w, h) => {
-        const t = patch.nodes[id];
-        if (t) {
-          if (!t.data) t.data = {};
-          (t.data as Record<string, unknown>).width = w;
-          (t.data as Record<string, unknown>).height = h;
-        }
+        mutateNode(id, (live) => {
+          if (!live.data) live.data = {};
+          (live.data as Record<string, unknown>).width = w;
+          (live.data as Record<string, unknown>).height = h;
+        });
       },
       onStart: () => { resizing = true; },
       onEnd: () => { resizing = false; resizeAbort = null; },
     });
   }
   onDestroy(() => { if (resizeAbort) resizeAbort.abort(); });
-
-  let attributionUrl = $derived<string>(
-    selectedHost && uuid ? watchUrl(selectedHost, uuid) : '',
-  );
 </script>
 
 <div
@@ -273,41 +207,8 @@
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <div class="body">
-      <!-- Search -->
-      <div class="controls">
-        <input
-          class="search-input nodrag"
-          type="text"
-          placeholder="search the fediverse…"
-          bind:value={searchTerm}
-          oninput={onSearchInput}
-          onkeydown={onSearchKeydown}
-          data-testid="peertube-search"
-          aria-label="Search term"
-        />
-        <div class="row">
-          <input
-            class="instance-input nodrag"
-            type="text"
-            placeholder="instance (optional)"
-            bind:value={instanceHost}
-            onchange={writeSearchTerm}
-            data-testid="peertube-instance"
-            aria-label="Instance host (optional)"
-          />
-          <button
-            type="button"
-            class="next-btn nodrag"
-            onclick={nextResult}
-            disabled={catalogue.length === 0}
-            data-testid="peertube-next"
-            title="Load the next result"
-          >↻ next</button>
-        </div>
-      </div>
-
       <!-- Preview -->
-      <div class="preview-wrap" data-testid="peertube-preview">
+      <div class="preview-wrap" data-testid="peertube-preview" role="img" aria-label={pictureLabel}>
         <!-- The <video> is NOT declared here: it belongs to the NODE and is
              adopted into this host div (see the $effect above). Declaring it
              in markup is what tied its lifetime to the card. -->
@@ -321,58 +222,10 @@
         {/if}
       </div>
 
-      {#if videoName}
-        <div class="now-playing" data-testid="peertube-now-playing" title={videoName}>
-          <span class="np-name">{videoName}</span>
-          {#if attributionUrl}
-            <a class="np-src nodrag" href={attributionUrl} target="_blank" rel="noopener noreferrer">{selectedHost}</a>
-          {/if}
-        </div>
-      {/if}
-
-      {#if uuid}
-        <div class="transport">
-          <button type="button" class="play-btn nodrag" onclick={togglePlay} aria-pressed={isPlaying} data-testid="peertube-play">{isPlaying ? 'Pause' : 'Play'}</button>
-          <div class="bar" data-testid="peertube-bar"><div class="fill" style="width: {displayFrac * 100}%"></div></div>
-        </div>
-      {/if}
-
-      {#if errorMsg}
-        <div class="error" data-testid="peertube-error">{errorMsg}</div>
-      {/if}
-      {#if loading}
-        <div class="status" data-testid="peertube-status">{statusMsg ?? 'Loading…'}</div>
-      {/if}
-
-      <!-- Results -->
-      <div class="results" data-testid="peertube-results">
-        {#each catalogue as c (c.key)}
-          <button
-            type="button"
-            class="result nodrag"
-            class:sel={c.key === src.selectionKey}
-            onclick={() => selectResult(c.key)}
-            data-testid="peertube-result"
-            data-key={c.key}
-          >
-            {#if c.thumbnailUrl}
-              <img class="thumb" src={c.thumbnailUrl} alt="" loading="lazy" />
-            {:else}
-              <span class="thumb thumb-empty">▶</span>
-            {/if}
-            <span class="r-meta">
-              <span class="r-title">{c.label}</span>
-              <span class="r-sub">{c.sublabel}</span>
-            </span>
-          </button>
-        {/each}
-      </div>
-
-      <!-- Attribution / posture -->
-      <div class="disclaimer" data-testid="peertube-disclaimer">
-        Federated public videos via the <a href="https://joinpeertube.org" target="_blank" rel="noopener noreferrer">PeerTube</a>
-        fediverse · search by <a href="https://sepiasearch.org" target="_blank" rel="noopener noreferrer">Sepia Search</a>.
-      </div>
+      <!-- The search box, the transport, the attribution anchor, the roster and
+           the disclaimer — ONE component, shared verbatim with the faceplate's
+           `fullViewBody`, so neither surface can drift from the other. -->
+      <PeerTubePicker nodeId={id} {selectedHost} {uuid} />
     </div>
   </PatchPanel>
 
@@ -403,25 +256,6 @@
     min-height: 0;
     overflow: hidden;
   }
-
-  .controls { display: flex; flex-direction: column; gap: 4px; }
-  .row { display: flex; gap: 4px; align-items: center; }
-  .search-input {
-    width: 100%;
-    background: #11151c; color: var(--text); border: 1px solid #404652;
-    border-radius: 2px; font-size: 0.7rem; padding: 4px 6px;
-  }
-  .instance-input {
-    flex: 1; min-width: 0;
-    background: #11151c; color: var(--text); border: 1px solid #404652;
-    border-radius: 2px; font-size: 0.62rem; padding: 3px 5px;
-  }
-  .next-btn {
-    background: #2a3340; color: var(--text); border: none; border-radius: 2px;
-    padding: 3px 8px; font-size: 0.6rem; cursor: pointer; letter-spacing: 0.03em;
-  }
-  .next-btn:disabled { opacity: 0.5; cursor: default; }
-  .next-btn:hover:not(:disabled) { filter: brightness(1.2); }
 
   .preview-wrap {
     position: relative;
@@ -454,53 +288,6 @@
     font-family: ui-monospace, monospace;
   }
   .overlay.err { color: #ffb86b; }
-
-  .now-playing { display: flex; align-items: baseline; gap: 6px; font-size: 0.7rem; overflow: hidden; }
-  .np-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .np-src { color: var(--accent-dim); font-size: 0.55rem; font-family: ui-monospace, monospace; text-decoration: none; margin-left: auto; }
-  .np-src:hover { text-decoration: underline; }
-
-  .transport { display: flex; align-items: center; gap: 6px; }
-  .play-btn {
-    background: var(--cable-video); color: #000; border: none; border-radius: 2px;
-    padding: 3px 10px; font-size: 0.66rem; cursor: pointer; min-width: 52px;
-  }
-  .play-btn:hover { filter: brightness(1.1); }
-  .bar { flex: 1; height: 4px; background: #1a1f2a; border-radius: 2px; overflow: hidden; }
-  .fill { height: 100%; background: var(--cable-video); }
-
-  .error { font-size: 0.6rem; color: #ff8c6b; font-family: ui-monospace, monospace; }
-  .status { font-size: 0.6rem; color: var(--text-dim); font-family: ui-monospace, monospace; }
-
-  .results {
-    flex: 1; min-height: 0;
-    overflow-y: auto;
-    display: flex; flex-direction: column; gap: 1px;
-    border: 1px solid var(--border); border-radius: 2px;
-    padding: 2px;
-  }
-  .result {
-    display: flex; align-items: center; gap: 6px;
-    background: transparent; color: var(--text);
-    border: none; border-radius: 2px;
-    padding: 3px 4px; cursor: pointer; text-align: left; width: 100%;
-  }
-  .result:hover { background: rgba(0, 240, 255, 0.08); }
-  .result.sel { background: rgba(0, 240, 255, 0.16); }
-  .thumb { width: 48px; height: 27px; object-fit: cover; border-radius: 1px; background: #000; flex: 0 0 auto; }
-  .thumb-empty { display: flex; align-items: center; justify-content: center; color: var(--text-dim); font-size: 0.7rem; }
-  .r-meta { display: flex; flex-direction: column; min-width: 0; }
-  .r-title { font-size: 0.64rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .r-sub { font-size: 0.5rem; color: var(--text-dim); font-family: ui-monospace, monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-
-  .disclaimer {
-    margin-top: auto;
-    font-size: 0.5rem; line-height: 1.3;
-    color: var(--text-dim);
-    border-top: 1px solid var(--divider);
-    padding-top: 4px;
-  }
-  .disclaimer a { color: var(--accent-dim); }
 
   .resize-handle {
     position: absolute; right: 0; bottom: 0;

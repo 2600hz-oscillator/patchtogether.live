@@ -120,22 +120,30 @@ export const DENIED: Readonly<Record<string, string>> = {
   archivist:
     'fetches archive.org over the NETWORK at mount and its media is CORS-tainted by design — ' +
     'a fixture must never depend on a third-party host being reachable from the runner',
-  // ⚠ THE SECOND HALF OF THIS REASON USED TO BE FALSE, AND IT IS CORRECTED
-  // RATHER THAN DELETED. It read: "…and the module itself is known-broken — no
-  // audio, red CI (#786)". Both clauses are wrong and were wrong on the day
-  // peertube shipped: `git log -S'muted = false'` on `PeerTubeCard.svelte`
-  // returns exactly ONE commit — #786 itself — so the module was BORN with the
-  // un-mute that the tv-librarian no-audio bug (#785, one day earlier) taught,
-  // and #786 also shipped the real-media audio guard that still runs on every
-  // PR (`peertube.spec.ts` asserts a non-zero peak at an AUDIO OUT terminal plus
-  // `muted === false`). A reason string is ungated prose, so a claim like that
-  // survives indefinitely and reads as evidence; this one was still being cited
-  // as fact two months later. The FIRST half is true and is sufficient on its
-  // own.
-  peertube:
-    'resolves a remote PeerTube instance over the network to play anything (same ' +
-    'third-party-host class as archivist) — a fixture must never depend on a third-party host ' +
-    'being reachable from the runner',
+  // ⚠ `peertube` WAS HERE AND IS DELETED BY HAND, NOT AMENDED — the THIRD
+  // instance of the class the `audioOut` and `twotracks` notes above describe,
+  // and this file predicted it would keep happening. Its entry read: "resolves
+  // a remote PeerTube instance over the network to play anything (same
+  // third-party-host class as archivist) — a fixture must never depend on a
+  // third-party host being reachable from the runner." That reason is STILL
+  // TRUE and is not being overturned; it is simply no longer READ. peertube
+  // entered STRICT_FACES with its wave-4 promotion, so it leaves `unpromoted`,
+  // the loop below stops consulting this map for it, and the record would go
+  // INVISIBLE rather than RED.
+  //
+  // Its own history is worth keeping one line of, because it is the reason this
+  // entry was long: the reason string USED TO carry a second half — "…and the
+  // module itself is known-broken — no audio, red CI (#786)" — and both clauses
+  // were false on the day peertube shipped. `git log -S'muted = false'` on
+  // `PeerTubeCard.svelte` returned exactly ONE commit, #786 itself, so the
+  // module was BORN with the un-mute that the tv-librarian no-audio bug (#785,
+  // one day earlier) taught, and #786 also shipped the real-media audio guard
+  // that still runs on every PR. A reason string is ungated prose: that claim
+  // survived two months and was still being cited as fact. Three entries
+  // deleted this way in three merges is the strongest evidence yet for the
+  // one-line repair already routed to the owner (a `DENIED ∩ STRICT_FACES ===
+  // ∅` clause in workflow-shell.spec.ts's existing anchor block) — still
+  // correctly NOT self-served under the no-new-gates ruling.
   doom:
     'OWNER RULING (2026-08-17): never touch DOOM in any way without specific approval. It is ' +
     'named here so a DERIVED pool can never select it silently — the mechanical reason is that ' +

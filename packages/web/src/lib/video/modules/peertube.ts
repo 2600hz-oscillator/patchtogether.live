@@ -135,8 +135,77 @@ export const peertubeDef: VideoModuleDef = {
     { id: 'cv_next_trigger', label: 'Next trigger', defaultValue: 0, min: 0, max: 1, curve: 'linear' },
   ],
 
+  // ── THE FACE (wave-4 backfill, 2026-09-01) ────────────────────────────────
+  //
+  // tvLibrarian's shape on the def its whole controller is shared with: ONE
+  // ranked control over a picture, and everything else — the search, the
+  // roster, the transport — on a `fullViewBody`.
+  face: {
+    // ⚠ A REAL CHOICE, NOT A FORCED ONE, which is why it carries a reason.
+    // `glyphBinding()` short-circuits on the first `type: 'audio'` OUTPUT and
+    // this def HAS two (audio_l / audio_r), so a glyph literal here would
+    // resolve to a LIVE binding and the dead-glyph clause would NOT catch it —
+    // it would paint a VU of the federated video's soundtrack where the
+    // module's own picture belongs. It is 'none' because for a video module the
+    // picture IS the module's identity in a rack (#1785); the tile picture
+    // arrives from `hasVideoSurface(def)` (`domain === 'video'` and nothing
+    // else), so it is free, per-node, and needs no glyph.
+    glyph: 'none',
+
+    // The browse body — see $lib/ui/modules/peertube/. LOAD-BEARING rather
+    // than decorative: peertube left `DOM_SOURCE_LANE_TYPES` in LEG-02 P3
+    // (#1511) when its stream became node-owned, so there is no
+    // `<HeadlessSourceHost>` and under the shell NO card is mounted anywhere.
+    // Without this file a promoted peertube could not be SEARCHED at all.
+    extension: 'peertube',
+
+    // One ranked key, because the module has one control a player turns.
+    // `gain` scales the picture handed downstream; the two synthetic params
+    // below are bridge caches, declared out of the ranking rather than ranked.
+    order: ['gain'],
+
+    // A linear 0..2 output level whose landmark is unity at the MIDDLE of the
+    // throw — the reading a fader gives for free and a rotary does not. No card
+    // choice is being preserved or overturned: the card never exposed `gain`.
+    paramCells: { gain: 'fader' },
+  },
+
+  // ⚠ WITHOUT THIS THE FACE PAINTS TWO CONTINUOUS ROTARIES OVER RAW GATE
+  // LEVELS. `cv_play_trigger` / `cv_next_trigger` are bridge-written caches,
+  // not settings, and face completeness is unconditional for a promoted def —
+  // so they are declared OUT rather than left to be ranked. `'cv-port'` is the
+  // only legal writer for each (both `play_trigger` and `next_trigger` declare
+  // `paramTarget`, so `'internal'` is RED at no-user-control.ts) and it is also
+  // the TRUE one.
+  //
+  // ⚠ IT IS NOT COSMETIC BEYOND THE FACEPLATE, and the PR body says so:
+  // `group-controls.ts` drops a `noUserControl` param from
+  // `listExposableControls` and `push-card-schema.ts` drops it from the Push 2
+  // card. peertube has no explicit `PUSH_CARD_CONTROLS` entry, so its push card
+  // is resolved from the live def and re-ranks itself from three params to one.
+  noUserControl: [
+    {
+      param: 'cv_play_trigger',
+      writer: 'cv-port',
+      why:
+        'written by the `play_trigger` gate bridge as a raw level (0..1). It is a CACHE, not a '
+        + 'setting: the node-owned HLS controller polls it and edge-detects a rising edge to '
+        + 'toggle transport, so a player turning a dial here would be overwritten by the next '
+        + 'bridge write.',
+    },
+    {
+      param: 'cv_next_trigger',
+      writer: 'cv-port',
+      why:
+        'written by the `next_trigger` gate bridge as a raw level (0..1). Same cache shape as '
+        + 'cv_play_trigger: the node-owned HLS controller edge-detects a rising edge on it to '
+        + 'advance to the next search result, and any value a player set would be replaced on '
+        + 'the next edge.',
+    },
+  ],
+
   docs: {
-    explanation: `A federated-video SOURCE that streams public videos from the PeerTube fediverse. Type a term into the search box (debounced ~350ms, rate-limited to ~50 calls / 10s, optionally scoped to one instance) and the card queries Sepia Search — the CORS-open meta-index of the PeerTube federation — for a results list (title, channel@host, duration, thumbnail). Click a result and the card hits that instance's video-details API to resolve the HLS master playlist (.m3u8), then attaches it via hls.js (or progressive MP4 / Safari-native HLS) to a card-owned crossorigin video element. The engine samples that element into a WebGL framebuffer; the fragment shader is a straight passthrough of the live frame (and draws a dim near-black idle gradient when nothing is loaded), so the video out is a genuine downstream-usable texture, not play-only. Unlike ARCHIVIST (which is VIDEO-ONLY because archive.org's final media hop is CORS-tainted, so its audio jacks are dead), PeerTube sends Access-Control-Allow-Origin:* on the master playlist + segments, so the texture is UNTAINTED and the stereo audio track is fully extractable and patchable on audio_l/audio_r (split from a MediaElementSource via a 2-channel splitter, with a silent gain-0 keep-alive bridged to the destination that keeps the element decoding at full rate even when audio isn't patched). Frames upload at the source's decode cadence (requestVideoFrameCallback; Firefox falls back to a currentTime-advance check) downscaled to the engine resolution so a high-bitrate stream doesn't flood GPU texture traffic. Only the selection (selected host, video uuid, name) plus the last search term and optional instance host are persisted to the node so rack-mates resolve the SAME stream; ~1/6 instances misconfigure CORS (raw S3, no ACAO) and a stream that taints, errors, or stalls past a 14s timeout is marked "display unavailable" and auto-skips to the next result after a short beat rather than hanging. The card UI (none of these are module params) is: a search input + optional instance-host input, a "↻ next" button, the resizable 16:9 preview screen, a now-playing label with an attribution link to the watch page, a Play/Pause transport button with a playhead progress bar, a scrollable results list, and a Sepia Search / PeerTube attribution disclaimer. The card has a resizable 16:9 preview screen (bottom-right corner-drag handle, persisted size; default 360x540, min 360x360). Usage: drop it as a video source and feed its output into a mixer or any video module; patch a clock into next_trigger to channel-surf the results hands-free, and patch the loaded/ended event outs or playhead CV downstream to sequence around the playback.`,
+    explanation: `A federated-video SOURCE that streams public videos from the PeerTube fediverse. Type a term into the search box (debounced ~350ms, rate-limited to ~50 calls / 10s) and the node's tuner queries Sepia Search — the CORS-open meta-index of the PeerTube federation — for a results list (title, channel@host, duration, thumbnail). Click a result and it hits that instance's video-details API to resolve the HLS master playlist (.m3u8), then attaches it via hls.js (or progressive MP4 / Safari-native HLS) to a NODE-owned crossorigin video element (the element, its demuxer, the engine attach, the audio wire, the catalogue and both trigger polls belong to $lib/ui/media/node-hls-source-registry on GRAPH lifetime — no surface owns any of it). The engine samples that element into a WebGL framebuffer; the fragment shader is a straight passthrough of the live frame (and draws a dim near-black idle gradient when nothing is loaded), so the video out is a genuine downstream-usable texture, not play-only. Unlike ARCHIVIST (which is VIDEO-ONLY because archive.org's final media hop is CORS-tainted, so its audio jacks are dead), PeerTube sends Access-Control-Allow-Origin:* on the master playlist + segments, so the texture is UNTAINTED and the stereo audio track is fully extractable and patchable on audio_l/audio_r (split from a MediaElementSource via a 2-channel splitter, with a silent gain-0 keep-alive bridged to the destination that keeps the element decoding at full rate even when audio isn't patched). Frames upload at the source's decode cadence (requestVideoFrameCallback; Firefox falls back to a currentTime-advance check) downscaled to the engine resolution so a high-bitrate stream doesn't flood GPU texture traffic. Only the selection (selected host, video uuid, name) plus the last search term are persisted to the node so rack-mates resolve the SAME stream; ~1/6 instances misconfigure CORS (raw S3, no ACAO) and a stream that taints, errors, or stalls past a 14s timeout is marked "display unavailable" and auto-skips to the next result after a short beat rather than hanging. The faceplate ranks ONE control (GAIN, as a fader) and carries everything else on its dock full-view body (none of these are module params): the search input, a "↻ next" button, the live 16:9 preview of the module's OWN engine output with a SCREEN on/off switch, a Play/Pause transport with a playhead bar, the scrollable results list, an attribution link to the selected video's watch page on its home instance, and the Sepia Search / PeerTube attribution disclaimer. The legacy card (?shell=legacy) mounts the same search-and-roster component over its own preview of the node's video element, and adds a corner-drag resize of its rack tile (persisted size; default 360x540, min 360x360). Usage: drop it as a video source and feed its output into a mixer or any video module; patch a clock into next_trigger to channel-surf the results hands-free, and patch the loaded/ended event outs or playhead CV downstream to sequence around the playback.`,
     inputs: {
       play_trigger: "Trigger (gate cable, edge:'trigger'): a rising edge toggles the current video between play and pause. Routed through the CV bridge as the synthetic cv_play_trigger param, which the card polls + edge-detects (<0.5 -> >=0.5); it fires once per rising edge, not while held. Patch a clock or any gate here for hands-free transport.",
       next_trigger: "Trigger (gate cable, edge:'trigger'): a rising edge advances to the NEXT result in the search list (wrapping to the first; if the list is empty it re-runs the last search). Routed through the CV bridge as the synthetic cv_next_trigger param and edge-detected by the card; fires once per rising edge, not while held. Patch a clock here to channel-surf the results in time.",

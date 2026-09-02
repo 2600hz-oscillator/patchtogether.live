@@ -251,7 +251,15 @@ test.describe('PEERTUBE — network-mocked source chain', () => {
     // Pick the first result → it resolves + attaches + persists the selection.
     await results.first().click();
     await expect(card).toHaveAttribute('data-has-selection', 'true', { timeout: 10_000 });
-    await expect(page.getByTestId('peertube-now-playing')).toContainText('Mock Federated Clip');
+    // ⚠ RE-POINTED 2026-09-01 (peertube face). This read
+    // `getByTestId('peertube-now-playing')).toContainText(...)`. That readout —
+    // the selected video's name, restated outside every control — is DELETED on
+    // BOTH surfaces under the 2026-08-17 ruling, and the identity moved to the
+    // picture's accessible name. The ASSERTION is unchanged in substance: the
+    // card still says which video it is playing, in the place a screen reader
+    // and a test can both reach.
+    await expect(card.getByTestId('peertube-preview'))
+      .toHaveAttribute('aria-label', /playing Mock Federated Clip/, { timeout: 10_000 });
 
     // The selection persisted to node.data (syncs to rack-mates).
     const persisted = await page.evaluate(() => {

@@ -493,6 +493,18 @@ const SUBJECTS: readonly Subject[] = [
   // mechanism, and it declares the conventional `<type>-face-canvas` — so no
   // `canvas` override is needed.
   { type: 'videobox', prefix: 'videobox', domain: 'video', why: 'the file player\'s live engine-output preview and its SCREEN switch — an ADDITION, since VideoboxCard adopts the raw <video> and has no SCREEN switch at all. ⚠ The watch-mark case is the OUTPUT plus the module\'s whole point: a loaded file feeds video AND audio_l/audio_r downstream, so a lapsed mark would idle the picture every consumer samples while the element kept decoding — the switch must collapse the preview copy and nothing else. The deeper "keeps playing" property (the element itself, on node lifetime) is collapse-keeps-playing.spec.ts\'s and face-videobox.spec.ts\'s subject; this row proves the SWITCH.' },
+  // ── PEERTUBE (2026-09-01, wave 4) — the FEDIVERSE BROWSER ────────────────
+  //
+  // Added in the SAME diff as the promotion, per this file's convention, and
+  // APPENDED AT THE TAIL for the mechanical reason blood's note gives: batches
+  // slice this array in declaration order and each test's TITLE is its batch's
+  // comma-joined module list, so appending changes exactly one title.
+  //
+  // Verified before writing rather than assumed: `type == prefix == extension
+  // id`, the body uses the standard `{#if !previewCollapsed}` REMOVES
+  // mechanism, and it declares the conventional `<type>-face-canvas` — so no
+  // `canvas` override is needed.
+  { type: 'peertube', prefix: 'peertube', domain: 'video', why: 'the fediverse browser\'s live engine-output preview and its SCREEN switch — an ADDITION, since PeerTubeCard adopts the raw node-owned <video> and has no SCREEN switch at all. ⚠ The watch-mark case is the sharpest in this table after textmarquee\'s: peertube is a SOURCE feeding video AND audio_l/audio_r, so a lapsed mark would not stall a preview of somebody else\'s picture — it would idle the picture every downstream consumer samples while the element went on decoding. The switch must collapse the preview COPY and nothing else. The deeper "the stream keeps playing" property (the element, its demuxer and its audio wire, all on NODE lifetime) is node-source-hls.spec.ts\'s and face-peertube.spec.ts\'s subject; this row proves the SWITCH.' },
 ] as const;
 
 /** The representative module for the PERSISTENCE leg — see that test's comment. */
