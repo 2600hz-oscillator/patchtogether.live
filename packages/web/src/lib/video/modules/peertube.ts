@@ -2,7 +2,7 @@
 //
 // PEERTUBE — federated-video SOURCE. Search the PeerTube fediverse (via Sepia
 // Search) → pick a video → its per-instance HLS master playlist (.m3u8) is
-// attached (by the card, via hls.js) to a card-owned <video crossorigin=anonymous>
+// attached (via hls.js) to a NODE-OWNED <video crossorigin=anonymous>
 // → the engine samples it into the FBO (a CLEAN `video` texture) AND extracts
 // stereo audio (audio_l / audio_r via MediaElementSource → ChannelSplitter).
 //
@@ -12,18 +12,29 @@
 // `credentialless` COEP posture, so a crossorigin <video> fed by hls.js both
 // PLAYS and yields an UNTAINTED WebGL2 texture (+ analysable WebAudio). ~1/6
 // instances misconfigure CORS (raw S3, no ACAO) → the element taints / fails to
-// load; the CARD degrades to "display unavailable" + auto-skips (never taints the
-// texture or hangs). This factory is the VIDEOBOX/TV-LIBRARIAN texture+audio
-// pattern; the SEARCH/PICK/HLS-attach + transport live in the card.
+// load; the SURFACE degrades to "display unavailable" + the controller auto-skips
+// (never taints the texture or hangs). This factory is the VIDEOBOX/TV-LIBRARIAN
+// texture+audio pattern.
 //
-// The factory is DOM-free + multiplayer-agnostic. The CARD owns hls.js, the
-// <video> element, the Sepia search, the results UI, transport, and the
-// node.data writes (synced to rack-mates). The factory owns the FBO + the frame
+// ⚠ THIS HEADER USED TO SAY "the CARD owns hls.js, the <video> element, the
+// Sepia search, the results UI, transport, and the node.data writes", and that
+// stopped being true at LEG-02 P3 (#1511) — before the face promotion, not
+// because of it. ALL of it belongs to
+// `$lib/ui/media/node-hls-source-registry` on GRAPH lifetime, created and swept
+// from Canvas's own effects, with no surface involved at any point. What a
+// SURFACE owns is the search box's debounce and rate limit, and forwarding
+// gestures through `nodeHlsSource.request(...)` — and since the wave-4 face
+// promotion there are two of them (the faceplate's `fullViewBody` and, at
+// `?shell=legacy`, the card), sharing ONE `PeerTubePicker.svelte`.
+//
+// The factory is DOM-free + multiplayer-agnostic. It owns the FBO + the frame
 // uploader (shared video-frame-upload pump) + the audio splitter + the gate/CV
-// OUTPUT ConstantSourceNodes, which the card drives via the handle extras.
+// OUTPUT ConstantSourceNodes, which the node's controller drives via the handle
+// extras.
 //
 // Inputs (gate, edge:'trigger', paramTarget — main-thread edge-detect in the
-// card via $lib/audio/edge-detect createEdgeCounter; NEVER whole-buffer rescan):
+// controller via $lib/audio/edge-detect createEdgeCounter; NEVER whole-buffer
+// rescan):
 //   play_trigger (cv_play_trigger): rising edge toggles play/pause.
 //   next_trigger (cv_next_trigger): rising edge loads the next search result.
 //

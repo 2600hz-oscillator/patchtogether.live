@@ -287,7 +287,7 @@ describe('⚠ SCREEN ON/OFF — collapses the COPY, never the producer', () => {
   });
 
   it('never consults the stream — SCREEN is not a transport control', () => {
-    const drawFn = /function draw\(\)[\s\S]*?\n  \}/.exec(bodyCode)?.[0] ?? '';
+    const drawFn = /function draw\(\)[\s\S]*?\n {2}\}/.exec(bodyCode)?.[0] ?? '';
     expect(drawFn.length).toBeGreaterThan(200);
     expect(drawFn).not.toMatch(/nodeHlsSource|togglePlay|pause/);
   });
