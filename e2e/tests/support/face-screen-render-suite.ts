@@ -480,6 +480,19 @@ const SUBJECTS: readonly Subject[] = [
   // typing on every collapse; that specific failure is covered by
   // `textmarquee-face-editor.spec.ts`, not here.
   { type: 'textmarquee', prefix: 'textmarquee', domain: 'video', why: 'the rich-text marquee\'s live OUT preview — and the ONLY subject in this table whose body is not rescuing a picture but a WRITER. All four of textmarquee\'s params (ScrlX/ScrlY/PosX/PosY) merely MOVE the ribbon; what it SAYS is node.data.richText, which nothing but the legacy card could write before this promotion, so the same body carries a contenteditable, a 9-control formatting toolbar and the layer background swatch. A SOURCE with no video input, so the retained watch mark is the sharpest form of the #2015 argument — a lapsed mark would not stall a preview of somebody else\'s picture, it would MUTE the generator every downstream node samples. ⚠ AND ITS PREVIEW IS THE ONE PICTURE IN THIS TABLE THAT IS TEXT: with an empty model the node-lifetime rasterizer clears the texture and the FACTORY placeholder (the word "textmarquee" in 64px sans-serif) shows through, which is why this module\'s face scenes carry a stated glyph-determinism argument in _shell-faces.ts rather than inheriting the fleet\'s.' },
+
+  // ── VIDEOBOX (2026-09-01, wave 3) — the LOCAL-FILE PLAYER ─────────────────
+  //
+  // Added in the SAME diff as the promotion, per this file's convention, and
+  // APPENDED AT THE TAIL for the mechanical reason blood's note gives: batches
+  // slice this array in declaration order and each test's TITLE is its batch's
+  // comma-joined module list, so appending changes exactly one title.
+  //
+  // Verified before writing rather than assumed: `type == prefix == extension
+  // id`, the body uses the standard `{#if !previewCollapsed}` REMOVES
+  // mechanism, and it declares the conventional `<type>-face-canvas` — so no
+  // `canvas` override is needed.
+  { type: 'videobox', prefix: 'videobox', domain: 'video', why: 'the file player\'s live engine-output preview and its SCREEN switch — an ADDITION, since VideoboxCard adopts the raw <video> and has no SCREEN switch at all. ⚠ The watch-mark case is the OUTPUT plus the module\'s whole point: a loaded file feeds video AND audio_l/audio_r downstream, so a lapsed mark would idle the picture every consumer samples while the element kept decoding — the switch must collapse the preview copy and nothing else. The deeper "keeps playing" property (the element itself, on node lifetime) is collapse-keeps-playing.spec.ts\'s and face-videobox.spec.ts\'s subject; this row proves the SWITCH.' },
 ] as const;
 
 /** The representative module for the PERSISTENCE leg — see that test's comment. */

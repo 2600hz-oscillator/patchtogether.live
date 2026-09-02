@@ -19,6 +19,7 @@
 
 import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
+import { BOOT_MS, SLOW_BOOT_TEST_TIMEOUT_MS } from '../_helpers/boot-budget';
 
 const TRIANGLE_PARAMS = { shape: 2, tile: 0, rotate: 0, zoom: 2.2 };
 
@@ -122,6 +123,75 @@ test.describe('full-frame — VIDEO OUT + VIDEOBOX + BENTBOX', () => {
     await expect(page.locator('[data-testid="videobox-card"]')).toHaveCount(1);
     await exercise(page, 'videobox-card', 'videobox-fs-wrap', 'videobox-fs-wrap', 'vb');
     expect(errors).toEqual([]);
+  });
+
+  test('VIDEOBOX on the DEFAULT shell: the FACE body enters Full Frame on the SAME node.data.fullFrame key', async ({ page }) => {
+    // ⚠ THE LEG THE WAVE-3 PROMOTION OWES. The legacy leg above boots
+    // `?shell=legacy`, which is precisely the surface promotion does NOT
+    // change — an existing green legacy spec is never evidence about a face.
+    // This leg drives the ModuleShell dock body and reads the flag back off
+    // the SAME `readFullFrame` helper (i.e. the same `node.data.fullFrame`
+    // key), so the two surfaces cannot quietly fork the persistence: a body
+    // writing `data.faceFullFrame` would pass its own DOM assertions and fail
+    // HERE, on the shared key.
+    //
+    // Bounded from the ONE export site: on the default shell the dock body is
+    // a LAZY chunk that cannot start loading until the dock opens, so this leg
+    // serialises a mount the legacy leg overlapped with page load.
+    test.setTimeout(SLOW_BOOT_TEST_TIMEOUT_MS);
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    page.on('console', (m) => {
+      if (m.type() === 'error') errors.push(m.text());
+    });
+    await page.goto('/rack?seed=none');
+    await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: BOOT_MS });
+    await spawnPatch(page, [
+      { id: 'vbf', type: 'videobox', position: { x: 200, y: 60 }, domain: 'video' },
+    ]);
+
+    // The promotion's precondition: no card anywhere on the default shell.
+    await expect(page.locator('[data-testid="videobox-card"]')).toHaveCount(0);
+
+    // Open the dock faceplate (auto-retrying — the tile button is
+    // hit-testable while a previous pane is still tearing down).
+    const shell = page.locator('.svelte-flow__node[data-id="vbf"] [data-testid="module-shell"]');
+    await expect(shell).toBeVisible({ timeout: BOOT_MS });
+    const dockShell = page
+      .getByTestId('dock-full-view')
+      .locator('[data-testid="module-shell"][data-shell-tier="dock"][data-shell-node="vbf"]');
+    await expect(async () => {
+      if (await dockShell.count() === 0) {
+        await shell.getByTestId('shell-open-dock').click();
+      }
+      await expect(dockShell).toBeVisible({ timeout: 2_000 });
+    }).toPass({ timeout: SLOW_BOOT_TEST_TIMEOUT_MS });
+
+    const body = dockShell.locator('[data-testid="videobox-face-body"]');
+    await expect(body).toBeVisible({ timeout: SLOW_BOOT_TEST_TIMEOUT_MS });
+    const wrap = body.locator('[data-testid="videobox-face-wrap"]');
+    await expect(wrap).toBeVisible();
+
+    // Right-click the picture -> canvas menu -> Full Frame.
+    await wrap.click({ button: 'right' });
+    await expect(page.locator('[data-testid="video-canvas-context-menu"]')).toBeVisible();
+    await page.locator('[data-testid="ctx-full-frame"]').click();
+
+    await expect(body).toHaveAttribute('data-full-frame', 'true');
+    await expect(wrap, 'wrap gained full-frame').toHaveClass(/full-frame/);
+    // The chrome is hidden — the surface shows only video (+ its overlays).
+    await expect(body.locator('[data-testid="videobox-play-btn"]')).toBeHidden();
+    await expect(body.locator('[data-testid="videobox-seek"]')).toBeHidden();
+    // Persisted on the SAME key the legacy card reads.
+    expect(await readFullFrame(page, 'vbf'), 'fullFrame persisted true (shared key)').toBe(true);
+
+    // Double-click exits.
+    await body.dblclick();
+    await expect(body).toHaveAttribute('data-full-frame', 'false');
+    await expect(body.locator('[data-testid="videobox-play-btn"]')).toBeVisible();
+    expect(await readFullFrame(page, 'vbf'), 'fullFrame persisted false (shared key)').toBe(false);
+
+    expect(errors, `page errors: ${errors.join(' | ')}`).toEqual([]);
   });
 
   test('BENTBOX: right-click -> Full Frame, dblclick exits', async ({ page }) => {

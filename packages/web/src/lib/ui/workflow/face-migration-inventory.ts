@@ -1660,12 +1660,26 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
   },
   {
     type: 'videobox',
-    disposition: 'bespoke-surface',
-    blockers: ['needs-media-controller'],
-    why:
-      'a FILE PLAYER: drag-and-drop target, remembered file-handle re-allow prompt, transport and ' +
-      'a resizable screen. The <video> is already node-adopted but the card still creates and ' +
-      'attaches the source.',
+    disposition: 'generic-face',
+    note:
+      'PROMOTED (2026-09-01, wave 3). ⚠ THIS ENTRY\'S OWN `why` WAS FALSE IN THE CLAUSE THAT ' +
+      'DECIDED IT, kept here as the correction. It read: "a FILE PLAYER: drag-and-drop target, ' +
+      'remembered file-handle re-allow prompt, transport and a resizable screen. The <video> is ' +
+      'already node-adopted but the card still creates and attaches the source." The player half ' +
+      'is accurate — and every one of those affordances now lives on the `fullViewBody`. But ' +
+      '"the card still creates and attaches the source" had been false since LEG-02 P1 (#1511): ' +
+      '`attachExternalSource` does not appear in VideoboxCard.svelte, and the attach, audio ' +
+      'wire, saved-handle restore, drift loop, gate loop and sync application are all ' +
+      '`node-video-source-registry`\'s, on NODE lifetime — which is exactly what the ' +
+      '`needs-media-controller` blocker asked for, so the blocker was already discharged. The ' +
+      'second stale fact decided the old disposition: `gain` used to be a declared param ' +
+      'nothing wrote and nothing read; #2189 wired `uGain`, so videobox has exactly one honest ' +
+      'control to rank. ONE ranked cell (`gain`, fader) + `glyph: \'none\'` (a real choice — ' +
+      'two audio outputs would bind a LIVE soundtrack VU over the module\'s own picture) + one ' +
+      '`noUserControl` bridge cache (`cv_play_trigger`) over a `picture` body carrying the ' +
+      'file/drop/re-allow/re-link gestures, the transport, the seek thumb, fullscreen, Full ' +
+      'Frame on the same `node.data.fullFrame` key, the SCREEN switch and the corner resize ' +
+      'over the card\'s own `width`/`height` keys.',
   },
   {
     type: 'videovarispeed',
