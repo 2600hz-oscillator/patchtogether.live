@@ -537,6 +537,28 @@ const SUBJECTS: readonly Subject[] = [
   // mechanism, and it declares the conventional `<type>-face-canvas` — so no
   // `canvas` override is needed.
   { type: 'peertube', prefix: 'peertube', domain: 'video', why: 'the fediverse browser\'s live engine-output preview and its SCREEN switch — an ADDITION, since PeerTubeCard adopts the raw node-owned <video> and has no SCREEN switch at all. ⚠ The watch-mark case is the sharpest in this table after textmarquee\'s: peertube is a SOURCE feeding video AND audio_l/audio_r, so a lapsed mark would not stall a preview of somebody else\'s picture — it would idle the picture every downstream consumer samples while the element went on decoding. The switch must collapse the preview COPY and nothing else. The deeper "the stream keeps playing" property (the element, its demuxer and its audio wire, all on NODE lifetime) is node-source-hls.spec.ts\'s and face-peertube.spec.ts\'s subject; this row proves the SWITCH.' },
+
+  // ── ARCHIVIST (2026-09-02) — appended for the reason the batching note gives
+  //
+  // Appended at the END, so it joins the LAST batch and changes exactly one test
+  // title; every earlier batch's comma-joined title stays byte-identical.
+  //
+  // ⚠ IT IS ROSTERED EVEN THOUGH IT HAS A RENDER-LEVEL LEG OF ITS OWN, which is
+  // the peertube precedent one row up rather than a departure from this file's
+  // header. `face-archivist.spec.ts` measures the MEDIA CLOCK across the toggle
+  // ("SCREEN OFF is not a pause"); this row proves the SWITCH — reachable on the
+  // faceplate at all, starts ON, collapses the canvas, RECLAIMS the space, comes
+  // back. Different subjects, and `quadralogical` is this file's own recorded
+  // case of assuming otherwise and leaving a switch at zero live coverage while
+  // everyone believed it covered.
+  //
+  // Verified before writing rather than assumed: `type == prefix == extension
+  // id` ('archivist'); the toggle is the conventional
+  // `archivist-face-screen-toggle` carrying `aria-pressed` and SCREEN ON/OFF
+  // text; the body uses the standard `{#if !previewCollapsed}` REMOVES
+  // mechanism; and it declares the conventional `archivist-face-canvas`, so no
+  // `canvas` override is needed.
+  { type: 'archivist', prefix: 'archivist', domain: 'video', why: 'the Internet Archive browser\'s live engine-output preview and its SCREEN switch — an ADDITION, since ArchivistCard previews the raw node-owned elements and has no SCREEN switch at all. ⚠ THE WATCH-MARK CASE IS peertube\'s IN ITS WIDEST FORM: archivist is a pure SOURCE feeding `image`, `video` AND `audio_l`/`audio_r`, so a lapsed mark would idle the picture every downstream consumer samples while the element went on decoding. ⚠ AND SCREEN OFF CANNOT REACH THE PLAYBACK AT ALL HERE, which is stronger than the ordering-dependent guarantee the rest of this table relies on: the three elements, their play(), the 100 ms playhead pump and the gate/CV writes ALL belong to the card that <HeadlessSourceHost> keeps parked off-screen, and this body only BLITS — the switch removes a drawImage and nothing else. That deeper property is face-archivist.spec.ts\'s subject; this row proves the SWITCH.' },
 ] as const;
 
 /** The representative module for the PERSISTENCE leg — see that test's comment. */
