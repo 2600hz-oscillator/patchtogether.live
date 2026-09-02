@@ -46,7 +46,16 @@ const AUDIBLE_FLOOR = 0.03;
 /** Full window for the SILENCE half — no early exit, because an assertion of
  *  silence has nothing to exit early on. */
 const SILENCE_WINDOW_MS = 500;
-/** Cap that BOUNDS THE FAILURE for the audible half; `untilPeak` is the gate. */
+/** How many non-silent samples in the analyser's 2048-sample ring make a
+ *  STRUCTURED signal rather than a transient. Used both as the assertion's
+ *  floor and as the window's early-exit target, so they cannot drift apart. */
+const STRUCTURED_SAMPLES = 50;
+/** Cap that BOUNDS THE FAILURE for the audible half; the `until*` target the
+ *  caller names is the gate — and it must name the field it then asserts on.
+ *  See `_module-coverage-helpers`, "the exit condition must imply the
+ *  assertion": a window keyed on `untilPeak` may legitimately close on a single
+ *  non-silent sample of the analyser ring, which is an `rms` of ~0.022 however
+ *  loud the module is. */
 const AUDIBLE_CAP_MS = 6000;
 
 interface TrailsSim {
@@ -216,8 +225,8 @@ test('@trails a simulated touch reaches x1 and opens a real VCA → audible RMS'
     untilPeak: AUDIBLE_FLOOR,
   });
   expect(flowing.polls, 'the SCOPE was sampled across the audible window').toBeGreaterThan(0);
-  // ⚠ `peak`, NOT `rms`. `untilPeak` returns on the first poll whose PEAK clears
-  // the target, so peak is the only field it guarantees; the rms at that instant
+  // ⚠ `peak`, NOT `rms` — matching the `untilPeak` target above, which is the
+  // only field this window was told to wait for; the rms at that instant
   // is whatever a mostly-pre-touch buffer happened to hold, and asserting on it
   // makes this spec fail under load while the audio is perfectly fine (observed:
   // peak 0.1890 against rms 0.0246, polls=4, elapsed=61ms).
@@ -391,8 +400,14 @@ test('@trails a looping gesture strikes the gate ONCE PER REPETITION → audible
   // (3) THE AUDIBLE ASSERTION. The gate rose, so the oscillator reaches the
   //     scope. This is also what makes the edge counts below mean something:
   //     they are counts of edges on a jack that demonstrably carries signal.
+  //
+  //     ⚠ `untilRms`, NOT `untilPeak` — the window has to wait for the quantity
+  //     the assertion below is about. Keyed on peak this read exited 3 ms in on
+  //     an analyser ring holding ONE non-silent sample (measured on run
+  //     33579058140: peak=0.9949, rms=0.0220 = sqrt(0.9949²/2048)) and failed an
+  //     rms floor of 0.03 while the audio was perfect.
   const open = await readScopePeakOverWindow(page, 'scp', AUDIBLE_CAP_MS, {
-    untilPeak: AUDIBLE_FLOOR,
+    untilRms: AUDIBLE_FLOOR,
   });
   expect(open.polls, 'the SCOPE was sampled across the audible window').toBeGreaterThan(0);
   expect(
@@ -436,7 +451,7 @@ test('@trails a looping gesture strikes the gate ONCE PER REPETITION → audible
   //     carrying audio after four re-strikes, so the fix articulates rather
   //     than interrupting.
   const after = await readScopePeakOverWindow(page, 'scp', AUDIBLE_CAP_MS, {
-    untilPeak: AUDIBLE_FLOOR,
+    untilRms: AUDIBLE_FLOOR,
   });
   expect(
     after.rms,
@@ -549,7 +564,8 @@ test('@trails NOTE MODE steers x1 — a different note is a different level → 
     untilPeak: AUDIBLE_FLOOR,
   });
   expect(lowWin.polls, 'the SCOPE was sampled at the low note').toBeGreaterThan(0);
-  // `peak` — the only field an early-exiting read guarantees. See below.
+  // `peak` — the one field this window named as its target, and so the one an
+  // early exit guarantees. See below.
   expect(
     lowWin.peak,
     `a quantised note must open the VCA through x1 — ${describeScopeWindow(lowWin)}`,
@@ -735,8 +751,12 @@ test('@trails NOTE MODE plays a real poly voice through poly1 → audible', asyn
 
   // (4) THE AUDIBLE ASSERTION. Two lanes gated, a real worklet voice, real
   //     sound at the scope.
+  //     ⚠ Both fields this asserts on are named as targets. An `untilPeak` exit
+  //     guarantees neither: it can close the window on an analyser ring holding
+  //     a single non-silent sample, which is `rms` ~0.022 and `nonzero` 1.
   const playing = await readScopePeakOverWindow(page, 'scp', AUDIBLE_CAP_MS, {
-    untilPeak: AUDIBLE_FLOOR,
+    untilRms: AUDIBLE_FLOOR,
+    untilNonzeroSamples: STRUCTURED_SAMPLES,
   });
   expect(playing.polls, 'the SCOPE was sampled while the voice played').toBeGreaterThan(0);
   expect(
@@ -744,7 +764,10 @@ test('@trails NOTE MODE plays a real poly voice through poly1 → audible', asyn
     `a quantised note must PLAY the poly voice — ${describeScopeWindow(playing)}`,
   ).toBeGreaterThan(AUDIBLE_FLOOR);
   expect(playing.rms, 'the note RAISED the output').toBeGreaterThan(duringCc.rms + 0.02);
-  expect(playing.nonzeroSamples, 'a structured signal, not a single glitch').toBeGreaterThan(50);
+  expect(
+    playing.nonzeroSamples,
+    `a structured signal, not a single glitch — ${describeScopeWindow(playing)}`,
+  ).toBeGreaterThan(STRUCTURED_SAMPLES);
 
   // (5) THE OTHER DIRECTION. Releasing both axes drops both lane gates and the
   //     voice releases. Measured with `sampleScopeRms` for its LO — a max-hold
