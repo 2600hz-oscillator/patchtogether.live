@@ -5300,6 +5300,204 @@ export const FACES = [
     ],
   },
 
+  // ── NIBBLES — the game group's fourth face, and the one whose determinism
+  //    seam ALREADY EXISTED and is ALREADY PROVEN BYTE-IDENTICAL ────────────
+  //
+  // ⚠ BOTH SCENES CARRY A LIVE PICTURE HERE, unlike its three siblings whose
+  // compact tiles are static. frogger, modtris and skifree are AUDIO defs whose
+  // compact tile is faders and jacks — deterministic for free — and only their
+  // DOCK body moves. nibbles is `domain: 'video'`, so `hasVideoSurface` is true
+  // and the COMPACT tile paints a live `VideoTileThumb` of the running game as
+  // well. So both scenes need the pin, not just the dock, and a reader who
+  // copies a sibling's "compact is free" paragraph onto this entry would be
+  // wrong.
+  //
+  // ⚠ AND THE PIN IS TWO HALVES, NEITHER SUFFICIENT ALONE. That is not a guess:
+  // `.myrobots/2026-08-23-nibbles-composite-vrt-nondeterminism.md` diagnosed the
+  // same scene class on this module and MEASURED it byte-for-byte — two runs
+  // differing pre-fix (2ed942ac…/62fc8ce5…), byte-identical post-fix
+  // (14256032…/14256032…). Its method is worth repeating as well as its result:
+  // it classified the DIFF PNG first, which refuted the file's own leading
+  // hypothesis in one look (the difference was LEN 4 → LEN 5 with the pellet
+  // moved — game state, not an analyser offset), and it compared captured PNGs
+  // BYTE-FOR-BYTE rather than repeating the tolerance-gated check, because a
+  // flake hiding inside a tolerance is invisible to a pass/fail loop.
+  //
+  // ⚠ NO `freeze` ParamDef, and the refusal is priced rather than stylistic:
+  // `nibbles.ts` is IN the WebGL attest basis, so a `params` edit costs an
+  // owner-machine GPU re-attest CI cannot run — to buy an assertion the two
+  // globals below already hold. The 4plexvid conclusion, reached from the other
+  // side. `simPin` is an e2e-only boot global and costs neither.
+  {
+    type: 'nibbles',
+    // ONE band, TWO params and one action. `order` and `pages` agree; a rail
+    // needs DOCK_TAB_MIN_BANDS = 7 and nothing is padded to reach one.
+    pages: 1,
+    videoFaceWhy:
+      'a VIDEO module, so it must boot into the video zone rather than a mixer channel column — '
+      + 'without this field bootWithFace waits out the full test timeout for a column membership '
+      + 'a video node never acquires. ⚠ BOTH scenes carry a live picture, which is what separates '
+      + 'this entry from its three sibling GAMES: the compact tile paints a VideoTileThumb '
+      + 'through hasVideoSurface (they are audio defs and get faders), and the dock body is the '
+      + "module's own fullViewBody extension — the 320x200 game screen plus its SCREEN and SCALE "
+      + 'switches. ⚠ THE FREEZE HALF OF THIS FLAG IS A NO-OP HERE and that is deliberate, not an '
+      + 'oversight: nibbles declares no `freeze` param, so freezeFaceVideo\'s `params.freeze = 1` '
+      + "write is rejected by setParam's `if (paramId in params)` guard and lands nowhere. The "
+      + 'still-picture assertion is satisfied by the __videoEngineFreezeTime pin below instead. '
+      + 'Do NOT remove this field on the grounds that the freeze is inert — that is the exact '
+      + 'reasoning that cost 4plexvid both its scenes, and it is about the WRONG HALF of a '
+      + 'two-purpose flag; and do NOT add a `freeze` param to make the freeze real, because a '
+      + '`params` edit on a def inside the WebGL attest basis costs an owner-machine re-attest.',
+    simPin: [
+      {
+        global: '__videoEngineFreezeTime',
+        value: 1.0,
+        why:
+          'pins `frame.time`, so `dt` is identically 0, `tickAccumS` never reaches `tickPeriodS` '
+          + 'and the snake never steps. ⚠ NECESSARY BUT NOT SUFFICIENT, and the asymmetry is the '
+          + 'whole reason this entry has two pins: freezing the clock stops the STEPPING and says '
+          + 'nothing about WHICH frame it stopped on, because `initialSeed()` still falls back to '
+          + '`Date.now()`. ⚠ THIS IS ALSO WHY THE PIN IS ON THE ENGINE CLOCK RATHER THAN THE '
+          + "MODULE: unlike frogger's and modtris' Web Worker setInterval, nibbles' game clock IS "
+          + 'the VIDEO ENGINE\'s — `surface.draw(frame)` accumulates `frame.time - lastDrawTimeS` '
+          + 'into `tickAccumS` and steps the game from there — so the engine freeze reaches it '
+          + 'where a module tick-count hook would have had to be invented. ⚠ DOOM IS EXCLUDED '
+          + 'FROM THIS MECHANISM BY NAME: its runTic() also runs inside surface.draw, so its game '
+          + 'clock IS its frame clock and re-timing it would re-specify the game. No DOOM file '
+          + 'was opened for this entry.',
+      },
+      {
+        global: '__nibblesVrtSeed',
+        value: 0xC0DE,
+        why:
+          'pins `initialSeed()`, so the snake start and every pellet placement are identical run '
+          + 'to run. ⚠ IT MUST BE SET BEFORE SPAWN, and the module is explicit about why: '
+          + '`maybeApplyVrtSeed` re-seeds `state` on a later draw frame but does NOT repaint, so '
+          + "a post-spawn pin would leave the original Date.now() frame on screen. simPin's "
+          + 'addInitScript runs before goto, which is strictly earlier than any afterSpawn hook '
+          + 'manages. ⚠ AND IT IS THE SAME SEED `vrt-composite-scenes.ts` ALREADY PINS, '
+          + 'deliberately: one seed for both deterministic capture paths means a surface a human '
+          + 'has already reviewed. The pair (clock + seed) is proven byte-identical in both '
+          + 'directions by the measurement in '
+          + '.myrobots/2026-08-23-nibbles-composite-vrt-nondeterminism.md — differing pre-fix, '
+          + 'identical post-fix, compared BYTE-FOR-BYTE rather than through the diff tolerance.',
+      },
+    ],
+  },
+
+  // ── PAINTER (2026-09-02) — the DRAWING SURFACE ────────────────────────────
+  //
+  // `pages: 0` — the SECOND zero-band entry in this roster, after `noise`, and
+  // it gets there by the opposite route. noise has one param that its HERO
+  // promotes out of the band, and `heroFacePlan` drops the band its hero
+  // emptied. painter has NO PARAMS AT ALL, so `order` is empty, nothing is
+  // ranked at any tier and the shell renders no section band to drop. The dock
+  // is the `fullViewBody` and nothing else.
+  //
+  // ⚠ THIS ENTRY SAID `pages: 1` AND THE CAPTURE CAUGHT IT — recorded rather
+  // than quietly corrected, because it is the evidence that
+  // `openDock`'s `toHaveCount(pages)` is a real structural gate and not
+  // bookkeeping. The first `GREP=painter task vrt:commit` (run 33652235755)
+  // committed `face-painter-compact.png` and FAILED the dock scene on
+  // "Expected: 1 … unexpected value 0" before it could photograph anything. A
+  // roster count is a claim about the plate, and this one was wrong.
+  //
+  // ── ⚠ THE DETERMINISM ARGUMENT ────────────────────────────────────────────
+  //
+  // A face scene spawns the node and patches NOTHING, so `node.data.ops` is
+  // EMPTY and both scenes are a BLANK WHITE PAGE by construction rather than by
+  // a flag. The module has no params, no CV inputs, no RNG, no ring, no
+  // feedback FBO and no wall-clock term anywhere: `painter.ts` uploads whatever
+  // canvas is bound and blits it 1:1, and with an empty log the node-lifetime
+  // producer fills that canvas with `PAINT_BG`. There is nothing that could
+  // move between two boots.
+  //
+  // ⚠ NO `simPin` AND NO `freezeIsNotASeam`. There is nothing to pin, and
+  // `freezeFaceVideo` writes `params.freeze = 1` which this def has no param
+  // for — the same no-op mappy and textmarquee both record.
+  //
+  // ⚠ THE ONE NAMED RISK IS GLYPH RASTERIZATION, AND IT IS THE EMOJI TOOL ROW.
+  // `_fonts.ts` pins the sans and mono stacks to bundled woff2 faces; the nine
+  // tool buttons paint EMOJI (pencil / brush / eraser / bucket / dropper), which
+  // no bundled face covers, so they resolve through fontconfig to the runner's
+  // emoji font. The argument that it holds is the one textmarquee's entry makes
+  // for its own in-texture glyphs: `snapshotPathTemplate` carries no
+  // `{platform}` segment, so there is ONE baseline set, authored on Linux CI and
+  // compared on Linux CI, and same-image/same-Chromium/same-fontconfig
+  // rasterization is deterministic.
+  //
+  // ⚠ THAT ARGUMENT IS NOT THE MEASUREMENT AND MUST NOT BE READ AS ONE. The
+  // measurement is two independent Linux boots: `GREP=painter task vrt:commit`
+  // captures on the runner, and this PR's own `vrt-strict` shard re-boots and
+  // compares. If that comparison shows ANY differing pixels in the tool row, the
+  // honest outcome is to move this module to `FACES_WITHOUT_SCENES` below
+  // CARRYING THAT NUMBER — not a mask, and not a re-run.
+  //
+  // ⚠ THE MEASUREMENT CAME BACK AND THE PREDICTION WAS WRONG, recorded here
+  // because guessing which half of a promotion is fragile is exactly what this
+  // roster keeps getting wrong. The emoji tool row was the named risk; it is in
+  // the DOCK scene, and the dock scene PASSED. What broke was the COMPACT tile,
+  // which this comment called deterministic "by construction" — and it is, in
+  // its interior. What is not deterministic is the frame the capture catches at
+  // the tile's right EDGE. See the COMPACT REMOVED note on the entry below.
+  {
+    type: 'painter',
+    pages: 0,
+    // ⚠ COMPACT REMOVED 2026-09-02 — the mirrorpool / matrixMix class, and the
+    // first instance of it caught with a MECHANISM rather than a shrug. Both of
+    // those entries record "did not reproduce" / "PASSED on a re-run of the same
+    // shards at the same SHA" without ever saying what moved. Here it was caught
+    // in the act:
+    //
+    //   run 33663808159 — face-painter-compact on vrt-strict shard 3 — PASSED
+    //   run 33667724929 — face-painter-compact on vrt-strict shard 4 — FAILED
+    //
+    // Same scene, same product code. The ONLY delta between those two runs is
+    // `vrt-strict-timings.generated.json`, which is CI planner data and touches
+    // no product and no spec — so RE-PINNING A COST ARTIFACT RE-BINS THIS LANE,
+    // and the re-bin moved this scene onto a shard where it renders differently.
+    // Placement is the variable, which is why "it was green last run" was true
+    // and worthless.
+    //
+    // ⚠ AND THE FAILING RENDER IS THE WRONG ONE, WHICH IS WHY THIS IS NOT A
+    // RECAPTURE. 30 px over the zeroed tolerance out of 7,216, and 45 of the 49
+    // pixels outside the fleet's ±2-LSB AA band sit in ONE COLUMN: x=87, the
+    // last column of an 88 px capture. The tile INTERIOR — VideoTileThumb,
+    // title, EXPAND pill — is byte-identical. A lane tile's left and right
+    // borders are symmetric, so "which image is correct" is a testable claim,
+    // and the test decides it: across rows 20-38 the BASELINE's x=87 matches its
+    // own x=0 to within 0-1 (settled), while the ACTUAL diverges by 4-20 — the
+    // capture caught the right edge before the lane layout settled. Re-authoring
+    // would bake the unsettled frame in, which is what the VRT playbook forbids
+    // and what would have looked like a clean green fix.
+    //
+    // The DOCK scene is unaffected and still gates — and that matters more here
+    // than in either precedent, because painter's dock body IS the module (nine
+    // tools, the palette, the canvas whose pixels are the output). It passed on
+    // shard 12 in the same red run, so the EMOJI TOOL ROW named below as this
+    // entry's one residual risk is not what broke, and stays covered.
+    //
+    // Restore when the placement-sensitivity class is fixed (a sibling branch is
+    // in flight for `face-videovarispeed-compact`, the same shape): delete this
+    // line and dispatch `GREP=painter task vrt:commit`.
+    scenes: ['dock'],
+    videoFaceWhy:
+      'a VIDEO module, so it must boot into the video zone rather than a mixer channel column — '
+      + 'without this field bootWithFace waits out the full test timeout for a column membership '
+      + 'a video node never acquires. ⚠ ONE SCENE, NOT TWO — see the COMPACT REMOVED note above; '
+      + 'the surviving dock scene is the module\'s own fullViewBody, the MS-Paint editor, and it '
+      + 'is the one that carries the promotion\'s whole visual surface. ⚠ ITS PICTURE IS A BLANK '
+      + 'WHITE PAGE, and '
+      + 'that is the module\'s designed idle state rather than a blank capture: a fresh spawn has '
+      + 'an EMPTY op log, the node-lifetime producer fills its canvas with PAINT_BG, and the '
+      + 'shader returns opaque white when nothing is bound at all — painter is never a dead black '
+      + 'frame, which is also what satisfies the per-port emit sweep. ⚠ AND THIS MODULE\'S '
+      + 'EXEMPT_FROM_VRT ENTRY IS NARROWED TO THE LEGACY CARD in this same diff: it said the '
+      + 'canvas was "op-driven, non-deterministic first paint", which is true of a canvas someone '
+      + 'has DRAWN ON and false of a fresh spawn, and its exit condition named a darwin+linux '
+      + 'two-platform capture that cannot be satisfied because there is only one baseline set.',
+  },
+
   // ── CLIP PLAYER — the launcher, and the last module card to leave
   //    NON_SHELL_LANE_TYPES ────────────────────────────────────────────────
   //
