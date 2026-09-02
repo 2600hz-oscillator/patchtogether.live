@@ -5155,11 +5155,20 @@ export const FACES = [
 
   // ── PAINTER (2026-09-02) — the DRAWING SURFACE ────────────────────────────
   //
-  // `pages: 1` — the face declares NO `pages` and `order` is EMPTY, so the dock
-  // renders the `fullViewBody` at the head and the single unlabeled `__all`
-  // band beneath it with nothing in it. That is the flipper/videoOut shape and
-  // it is what the dock scene photographs: an editor over a plate with no
-  // controls, which is the whole design.
+  // `pages: 0` — the SECOND zero-band entry in this roster, after `noise`, and
+  // it gets there by the opposite route. noise has one param that its HERO
+  // promotes out of the band, and `heroFacePlan` drops the band its hero
+  // emptied. painter has NO PARAMS AT ALL, so `order` is empty, nothing is
+  // ranked at any tier and the shell renders no section band to drop. The dock
+  // is the `fullViewBody` and nothing else.
+  //
+  // ⚠ THIS ENTRY SAID `pages: 1` AND THE CAPTURE CAUGHT IT — recorded rather
+  // than quietly corrected, because it is the evidence that
+  // `openDock`'s `toHaveCount(pages)` is a real structural gate and not
+  // bookkeeping. The first `GREP=painter task vrt:commit` (run 33652235755)
+  // committed `face-painter-compact.png` and FAILED the dock scene on
+  // "Expected: 1 … unexpected value 0" before it could photograph anything. A
+  // roster count is a claim about the plate, and this one was wrong.
   //
   // ── ⚠ THE DETERMINISM ARGUMENT ────────────────────────────────────────────
   //
@@ -5193,7 +5202,7 @@ export const FACES = [
   // CARRYING THAT NUMBER — not a mask, and not a re-run.
   {
     type: 'painter',
-    pages: 1,
+    pages: 0,
     videoFaceWhy:
       'a VIDEO module, so it must boot into the video zone rather than a mixer channel column — '
       + 'without this field bootWithFace waits out the full test timeout for a column membership '
