@@ -39,6 +39,8 @@
     slotOf,
     lanePlaying,
     laneQueued,
+    clipPadState,
+    type ClipPadState,
     defaultNoteClip,
     coerceClipRecord,
     rowToMidi,
@@ -412,14 +414,20 @@
       : `Scene ${slot + 1} plays this many times, then auto-advances to the next content scene (set on a Launchpad: hold GRID + hold this scene's launch button)`;
   }
 
-  function padState(idx: number): 'empty' | 'loaded' | 'queued' | 'playing' {
-    const lane = laneOf(idx);
-    const slot = slotOf(idx);
-    const pl = lanePlaying(dataObj(), lane);
-    const q = laneQueued(dataObj(), lane);
-    if (q === slot) return 'queued';
-    if (pl === slot) return q === 'stop' ? 'queued' : 'playing';
-    return clips[String(idx)] ? 'loaded' : 'empty';
+  /** How this pad paints — THE SHARED projection (`clipPadState`), not a
+   *  card-local copy. The v2 face paints the same grid from the same function,
+   *  so "the card and the face disagree about what is playing" cannot be
+   *  written here without being written there.
+   *
+   *  `void clips` is the REACTIVE LEAF this subtree needs: a `patch` read is
+   *  not reactive inside the legacy card, so the pad repaints on a clip
+   *  add/remove only because this touches the `clips` derived. Passing
+   *  `dataObj()` alone would leave the grid frozen while the graph was
+   *  correct. */
+  function padState(idx: number): ClipPadState {
+    void clips;
+    void cardVersion;
+    return clipPadState(dataObj(), idx);
   }
   // 8 distinct row hues — the DEFAULT color a channel shows until the user picks
   // one with its color swatch. The default-hue + effective-colour math lives in

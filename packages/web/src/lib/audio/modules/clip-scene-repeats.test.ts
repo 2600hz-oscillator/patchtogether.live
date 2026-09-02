@@ -33,6 +33,7 @@ import {
   SCENE_STRIDE,
   clipIndex,
   defaultNoteClip,
+  type AudioClipRecord,
   type ClipPlayerData,
   type NoteClipRecord,
 } from './clip-types';
@@ -42,6 +43,20 @@ function clip(lengthSteps = 16, div?: number): NoteClipRecord {
   c.lengthSteps = lengthSteps;
   if (div !== undefined) c.div = div;
   return c;
+}
+/** A VALID audio clip — one that survives `coerceClipRecord`'s audio arm. */
+function audioClip(lengthSteps = 16): AudioClipRecord {
+  return {
+    kind: 'audio',
+    mediaId: 'm-anchor',
+    lengthSteps,
+    frames: lengthSteps * 12_000,
+    sampleRate: 48_000,
+    channels: 2,
+    format: 'pcm-f32',
+    takeAt: 1,
+    loop: true,
+  };
 }
 function dataWith(clips: Record<string, NoteClipRecord>, extra: Partial<ClipPlayerData> = {}): ClipPlayerData {
   return { clips, ...extra } as ClipPlayerData;
@@ -194,14 +209,53 @@ describe('sceneRepeatAnchor — the FROZEN unit (longest clip incl. rate/div)', 
     expect(sceneRepeatAnchor(dataWith({}), 0, SPB)).toBeNull();
     expect(anchorSceneRepeatTrack(dataWith({}), 0, SPB, undefined)).toBeNull();
   });
-  it('a NON-NOTE clip (audio/snapshot shell) still anchors with the engine len-1 fallback', () => {
-    // The targeting set (sceneHasContent) counts raw-truthy entries of any
-    // declared kind — the anchor must not silently die on a non-note-only
-    // scene (the repeat chain would end there).
+  it('an AUDIO clip anchors on its OWN lengthSteps, exactly like a note clip', () => {
+    // ⚠ THE REGRESSION THIS PINS. The anchor used to read
+    // `kind === 'note' ? lengthSteps : 1`, so a 16-step audio take anchored the
+    // scene at ONE STEP — a 64th of its true unit — and every repeat count in
+    // that scene was 64× too fast. `clipLengthSteps` is kind-agnostic, so the
+    // audio clip below anchors at 16/(4×1) = 4 beats, the SAME answer a
+    // 16-step note clip gives.
+    const d = {
+      clips: { [String(clipIndex(0, 2))]: audioClip(16) },
+    } as unknown as ClipPlayerData;
+    expect(sceneRepeatAnchor(d, 0, SPB)).toEqual({ lane: 2, unitBeats: 4, stepBeats: 0.25 });
+    // NEGATIVE CONTROL for the assertion above: the pre-fix answer (unitBeats
+    // 0.25, the len-1 fallback) must NOT be what comes back — otherwise this
+    // test would pass against the very code it exists to reject.
+    expect(sceneRepeatAnchor(d, 0, SPB)!.unitBeats).not.toBe(0.25);
+    // And it beats a SHORTER note clip in the same scene, which it could never
+    // do while it was pinned to one step.
+    const mixed = {
+      clips: {
+        [String(clipIndex(0, 2))]: audioClip(16),
+        [String(clipIndex(0, 0))]: { kind: 'note', steps: [], lengthSteps: 8, root: 48, loop: true },
+      },
+    } as unknown as ClipPlayerData;
+    expect(sceneRepeatAnchor(mixed, 0, SPB)!.lane).toBe(2);
+  });
+  it('a clip kind with NO length of its own still anchors at one step', () => {
+    // `snapshot` carries no `lengthSteps`, and the targeting set
+    // (`sceneHasContent`) counts raw-truthy entries of any declared kind — so
+    // the anchor must not silently die on a snapshot-only scene or the repeat
+    // chain would end there.
+    const d = {
+      clips: { [String(clipIndex(0, 2))]: { kind: 'snapshot', snapshot: {}, loop: true } },
+    } as unknown as ClipPlayerData;
+    expect(sceneRepeatAnchor(d, 0, SPB)).toEqual({ lane: 2, unitBeats: 0.25, stepBeats: 0.25 });
+  });
+  it('a MALFORMED audio record coerces away and anchors NOTHING', () => {
+    // The audio arm of coerceClipRecord DROPS a record it cannot schedule (no
+    // mediaId here). Stated as a test because it is a deliberate consequence of
+    // adding validation: `sceneHasContent` is RAW-truthy and still counts this
+    // cell as content, so a scene holding only malformed audio is targetable
+    // but unanchorable. (Pre-existing in kind — any junk record, including the
+    // retired stamped `kind:'automation'` clip, already behaved this way; the
+    // engine's load-seam zombie sweep is the mitigation.)
     const d = {
       clips: { [String(clipIndex(0, 2))]: { kind: 'audio', loop: true } },
     } as unknown as ClipPlayerData;
-    expect(sceneRepeatAnchor(d, 0, SPB)).toEqual({ lane: 2, unitBeats: 0.25, stepBeats: 0.25 });
+    expect(sceneRepeatAnchor(d, 0, SPB)).toBeNull();
   });
   it('anchorSceneRepeatTrack seeds transition GRACE from the ACTUAL playing set (never a prior tracker)', () => {
     const d = dataWith({ [clipIndex(0, 0)]: clip(16) });
