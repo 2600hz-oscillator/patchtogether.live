@@ -390,6 +390,59 @@ describe('recorderbox face — the controls that must NOT become generic cells',
     expect(/onclick=\{toggleRecord\}/.test(src)).toBe(true);
   });
 
+  it('⚠ THE TILE STARTS NO ENCODER PROBE AT MOUNT — the ~60-scene VRT regression', () => {
+    // THE DEFECT THIS PINS, measured by CI rather than reasoned about: the tile
+    // body used to kick `probeRecorderboxSupport` from a mount `$effect`. That
+    // is a REAL four-frame encode-and-flush (`probeEncoders` deliberately does
+    // not trust `isConfigSupported`), and `Canvas` auto-spawns a recorderbox
+    // into every workflow rack — so it ran codec work on EVERY rack boot, while
+    // every other video tile's thumb was establishing its first frames. The
+    // first strict VRT run after the promotion reddened ~60 scenes: every video
+    // face's COMPACT tile plus several timing-sensitive dock scenes. The two
+    // video face scenes that PASSED were recorderbox's own, i.e. exactly the two
+    // where `__recorderboxTestEncoder` skips the probe — CI ran the controlled
+    // experiment for us. (videoOut's promotion put an equally live thumb in the
+    // same zone and moved TWO baselines, which rules out "one more tile".)
+    //
+    // The tile may still READ a cached answer and may probe ON INTENT; what it
+    // must never do again is probe because it mounted.
+    const src = read(TILE_BODY);
+    expect(
+      src.includes('cachedRecorderboxSupport'),
+      'the tile reads the memoised answer rather than starting a probe',
+    ).toBe(true);
+    // No `$effect` in this body may reach the probe. Scan each effect block.
+    for (const m of src.matchAll(/\$effect\(/g)) {
+      const start = m.index!;
+      // Take the balanced-ish tail: up to the next `\n  });` at script indent.
+      const end = src.indexOf('\n  });', start);
+      const block = src.slice(start, end === -1 ? src.length : end);
+      expect(
+        /probeRecorderboxSupport\(/.test(block),
+        'a mount/reactive effect in the TILE body starts an encoder probe again — that is the '
+          + '~60-scene VRT regression. Probe on intent, or read the cache.',
+      ).toBe(false);
+    }
+  });
+
+  it('NEGATIVE CONTROL: the effect scan CAN see a probe inside an effect', () => {
+    // Four absence checks over a mis-parsed file look exactly like four passes.
+    const fixture = '$effect(() => {\n    void probeRecorderboxSupport(1, 2);\n  });';
+    const start = fixture.indexOf('$effect(');
+    const end = fixture.indexOf('\n  });', start);
+    expect(/probeRecorderboxSupport\(/.test(fixture.slice(start, end))).toBe(true);
+    // …and the real tile really does contain at least one effect to scan.
+    expect((read(TILE_BODY).match(/\$effect\(/g) ?? []).length).toBeGreaterThan(0);
+  });
+
+  it('the DOCK body still probes at mount — the asymmetry is deliberate', () => {
+    // Opening a dock full view is ONE deliberate act on ONE node, and the
+    // ENCODER / RECOVERY fault lamps are that surface's job and cannot be
+    // painted without an answer. Memoised, so it is a cache read once anything
+    // has asked.
+    expect(/probeRecorderboxSupport\(/.test(read(FULL_VIEW_BODY))).toBe(true);
+  });
+
   it('the tile does NOT duplicate the dock body\'s heavy surfaces', () => {
     // A 192 px tile cannot hold a text field, an ellipsised path and a
     // three-option select without becoming the card again — and none of the

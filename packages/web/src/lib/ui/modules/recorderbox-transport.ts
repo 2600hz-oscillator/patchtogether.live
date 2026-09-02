@@ -149,6 +149,46 @@ function pinnedSupport(): RecorderboxSupport | null {
 }
 
 /**
+ * THE PROBE IS MEMOISED PER PAGE, AND THAT IS A FIX RATHER THAN A TIDY-UP.
+ *
+ * ⚠ `probeEncoders` IS NOT CHEAP AND IS NOT A LOOKUP. It deliberately does not
+ * trust `VideoEncoder.isConfigSupported` — a false positive on a headless
+ * software runner — so it ANDs the config check with a REAL ENCODE-AND-FLUSH of
+ * four frames at the engine resolution. That is the right probe and it is
+ * genuine codec work.
+ *
+ * ⚠ MEASURED, BY CI, AS A NATURAL EXPERIMENT. The first strict run after this
+ * promotion failed ~60 scenes — every VIDEO face's COMPACT lane tile, plus a
+ * handful of timing-sensitive dock scenes — each by a handful of pixels. The
+ * two scenes that PASSED were `face-recorderbox-compact` and
+ * `face-recorderbox-dock`: the only two where the `__recorderboxTestEncoder`
+ * pin skips this probe. `videoOut`'s promotion, which put an equally live
+ * thumb in the same pinned video zone, moved exactly TWO baselines — so a
+ * second live tile is not the cause and an encode at boot is.
+ *
+ * The mechanism is not subtle once stated: `Canvas` auto-spawns a recorderbox
+ * into the video zone of every workflow rack, so its LANE TILE mounts on every
+ * boot — and a per-mount encode-and-flush is real work landing exactly while
+ * every other video tile's thumb is establishing its first frames.
+ *
+ * So: one probe per page (keyed by the resolution it asked about, because that
+ * is what it asked about), and — see `cachedRecorderboxSupport` — the LANE TILE
+ * no longer starts one at all.
+ */
+const SUPPORT_CACHE = new Map<string, Promise<RecorderboxSupport>>();
+
+/** The last settled probe result, for `cachedRecorderboxSupport`'s synchronous
+ *  read. `let` rather than a map entry because the question it answers — "can
+ *  this RUNTIME encode?" — is not per-resolution in any way a surface acts on. */
+let RESOLVED_SUPPORT: RecorderboxSupport | null = null;
+
+/** Exported for the unit suite's own reset; production never calls it. */
+export function __resetSupportCache(): void {
+  SUPPORT_CACHE.clear();
+  RESOLVED_SUPPORT = null;
+}
+
+/**
  * Ask the runtime whether it can encode at this resolution.
  *
  * ⚠ THE ONLY CALLER OF `probeEncoders` IN THE TREE was `RecorderboxCard`'s
@@ -159,19 +199,43 @@ function pinnedSupport(): RecorderboxSupport | null {
  *
  * Never throws: a probe failure is "cannot record", not a broken surface.
  */
-export async function probeRecorderboxSupport(
+export function probeRecorderboxSupport(
   width: number,
   height: number,
 ): Promise<RecorderboxSupport> {
   const pinned = pinnedSupport();
-  if (pinned) return pinned;
-  try {
-    const s = await probeEncoders(width, height);
-    return { canRecord: s.canRecord, opfs: s.opfs, checked: true };
-  } catch {
-    return { canRecord: false, opfs: false, checked: true };
+  if (pinned) return Promise.resolve(pinned);
+  const key = `${width}x${height}`;
+  let p = SUPPORT_CACHE.get(key);
+  if (!p) {
+    p = probeEncoders(width, height)
+      .then((s) => ({ canRecord: s.canRecord, opfs: s.opfs, checked: true }))
+      .catch(() => ({ canRecord: false, opfs: false, checked: true }))
+      .then((r) => {
+        RESOLVED_SUPPORT = r;
+        return r;
+      });
+    SUPPORT_CACHE.set(key, p);
   }
+  return p;
 }
+
+/**
+ * The capability answer IF ONE IS ALREADY KNOWN, synchronously — never starting
+ * a probe.
+ *
+ * This is what the LANE TILE reads. A tile that mounts on every rack boot must
+ * not do codec work to decide how to paint a switch: it renders RECORD live
+ * (the honest rendering of "nobody has asked yet"), and the authoritative check
+ * happens in `startRecorderboxTake`, on intent. Once anything HAS asked — a
+ * press, or the dock body opening — every tile picks the answer up from here.
+ */
+export function cachedRecorderboxSupport(): RecorderboxSupport | null {
+  const pinned = pinnedSupport();
+  if (pinned) return pinned;
+  return RESOLVED_SUPPORT;
+}
+
 
 /**
  * This node's mid-flight takes left behind by a crash.
@@ -445,6 +509,23 @@ export async function startRecorderboxTake(host: StartTakeHost): Promise<boolean
 
   STARTING.add(nodeId);
   try {
+    // ── THE AUTHORITATIVE CAPABILITY CHECK, AND IT LIVES HERE ON PURPOSE ──
+    //
+    // A surface's `canRecord()` is only ever "no KNOWN reason to refuse": the
+    // lane tile deliberately starts no probe at mount (it auto-spawns into
+    // every rack, and a per-mount encode-and-flush is what reddened ~60 VRT
+    // scenes — see `probeRecorderboxSupport`). So the real refusal happens on
+    // INTENT, in the one place every surface funnels through, which is also
+    // strictly stronger than the old shape: previously a surface holding a
+    // stale `support` could arm a runtime that cannot encode.
+    //
+    // Memoised, so this is a cache read on every press after the first.
+    const support = await probeRecorderboxSupport(VIDEO_RES.width, VIDEO_RES.height);
+    if (!support.canRecord) {
+      setRecorderboxData(nodeId, 'recording', false);
+      return false;
+    }
+    if (!host.stillArmed()) return false;
     // ── PRESENTATION-SAFE folder resolution ──
     // While in element-fullscreen, opening ANY modal (the folder picker, a
     // permission prompt, the overwrite confirm) makes Chrome EXIT fullscreen —
@@ -566,8 +647,17 @@ export async function stopRecorderboxTake(nodeId: string): Promise<void> {
 export interface RecorderboxTransportHost extends StartTakeHost {
   /** `node.data.recording` — the Y.Doc-synced arm bit. */
   recording(): boolean;
-  /** Whether this runtime can encode at all. A probe that has not answered yet
-   *  reports false, so nothing is armed against an unknown encoder. */
+  /**
+   * "No KNOWN reason to refuse" — NOT the authoritative capability answer.
+   *
+   * ⚠ IT IS DELIBERATELY OPTIMISTIC WHERE NOTHING HAS ASKED YET. The lane tile
+   * mounts on every rack boot and must not run an encode-and-flush to decide
+   * how to paint a switch, so it reports `true` until something has actually
+   * probed. `startRecorderboxTake` does the real check on intent and reverts
+   * `data.recording` itself, so an unencodable runtime still refuses — and a
+   * PEER FLIP is refused too, which a mount-time flag could not have done on a
+   * tile that never probed.
+   */
   canRecord(): boolean;
 }
 
@@ -587,9 +677,9 @@ export type TransportAction = 'start' | 'stop' | null;
 export function transportAction(
   want: boolean,
   isLive: boolean,
-  canRecord: boolean,
+  mayRecord: boolean,
 ): TransportAction {
-  if (want && !isLive && canRecord) return 'start';
+  if (want && !isLive && mayRecord) return 'start';
   if (!want && isLive) return 'stop';
   return null;
 }

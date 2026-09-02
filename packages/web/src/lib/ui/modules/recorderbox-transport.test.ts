@@ -28,6 +28,8 @@ import { describe, expect, it } from 'vitest';
 import {
   FOLDER_HINT_NO_PICKER,
   UNCHECKED_SUPPORT,
+  __resetSupportCache,
+  cachedRecorderboxSupport,
   changeRecorderboxFolder,
   folderDisplayName,
   formatElapsed,
@@ -145,6 +147,34 @@ describe('the capability and recovery probes ANSWER in a node environment', () =
   // both run on mount, so a throw here is a dead faceplate rather than a missing
   // lamp. Neither browser API exists in this environment, which is precisely the
   // hostile case.
+  it('⚠ THE PROBE IS MEMOISED PER PAGE, and the cache is READABLE synchronously', async () => {
+    // WHY THIS IS A TEST AND NOT AN IMPLEMENTATION DETAIL. `probeEncoders` is a
+    // real four-frame encode-and-flush, and `Canvas` auto-spawns a recorderbox
+    // into every workflow rack — so one probe per mounting surface was codec
+    // work on every rack boot. It reddened ~60 VRT scenes on the first strict
+    // run after the promotion, and the only video face scenes that passed were
+    // the two where the pin skips the probe.
+    __resetSupportCache();
+    expect(
+      cachedRecorderboxSupport(),
+      'nothing has asked yet, so there is no answer to read — this is what lets the LANE TILE '
+        + 'paint a live switch without starting an encode',
+    ).toBeNull();
+
+    // The SAME promise is handed out for the same question…
+    const a = probeRecorderboxSupport(640, 480);
+    const b = probeRecorderboxSupport(640, 480);
+    expect(a, 'a second ask reuses the first probe').toBe(b);
+    const resolved = await a;
+
+    // …and once it settles the answer is readable with no probe at all.
+    expect(cachedRecorderboxSupport()).toEqual(resolved);
+
+    // The reset is real, so this test cannot pass by leaking into the next one.
+    __resetSupportCache();
+    expect(cachedRecorderboxSupport()).toBeNull();
+  });
+
   it('the support probe resolves `checked` even with no WebCodecs at all', async () => {
     const s = await probeRecorderboxSupport(640, 480);
     expect(s.checked, 'the probe must always answer — `checked` is what enables the switch').toBe(true);

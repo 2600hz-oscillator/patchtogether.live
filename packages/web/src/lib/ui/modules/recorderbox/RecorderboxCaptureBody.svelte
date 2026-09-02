@@ -154,7 +154,8 @@
     reconcileRecorderboxTransport({
       nodeId,
       recording: () => recording,
-      canRecord: () => support.canRecord,
+      // "No KNOWN reason to refuse" — see the seam's RecorderboxTransportHost.
+      canRecord: () => !support.checked || support.canRecord,
       engine: () => engineCtx.get(),
       stillArmed: () => recorderboxRecording(recorderboxNode(nodeId)),
       setFolderHint: (h) => { folderHint = h; },
@@ -165,6 +166,12 @@
     recoverable = await scanRecoverableTakes(nodeId);
   }
 
+  // ⚠ THE DOCK BODY DOES probe at mount, unlike the lane tile, and the asymmetry
+  // is deliberate: opening a dock full view is ONE deliberate act on ONE node,
+  // where the tile mounts on every rack boot for a module Canvas auto-spawns.
+  // The probe is memoised page-wide, so this is a cache read whenever anything
+  // has already asked. It is here because the ENCODER / RECOVERY fault lamps
+  // are this surface's job and cannot be painted without an answer.
   $effect(() => {
     void nodeId;
     untrack(() => {
@@ -176,7 +183,9 @@
   });
 
   function toggleRecord(): void {
-    if (!support.canRecord) return;
+    // STOP is never gated on a capability answer (the registry offers no other
+    // exit); START is refused only once the probe has actually said no.
+    if (!recording && support.checked && !support.canRecord) return;
     setRecorderboxData(nodeId, 'recording', !recording);
   }
 

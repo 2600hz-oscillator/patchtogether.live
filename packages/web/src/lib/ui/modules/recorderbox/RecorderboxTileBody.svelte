@@ -54,6 +54,7 @@
   import { nodeRecorder } from '../node-recorder-registry.svelte';
   import {
     UNCHECKED_SUPPORT,
+    cachedRecorderboxSupport,
     formatElapsed,
     probeRecorderboxSupport,
     reconcileRecorderboxTransport,
@@ -101,17 +102,26 @@
   let elapsed = $derived(live?.elapsed ?? 0);
   let lastSavedChunk = $derived<string | null>(live?.lastSavedChunk ?? null);
 
-  let support = $state<RecorderboxSupport>(UNCHECKED_SUPPORT);
+  // ⚠ THE TILE STARTS NO PROBE, AND THAT IS A FIX WITH A MEASUREMENT BEHIND IT.
+  // `probeEncoders` is a REAL four-frame encode-and-flush, and `Canvas`
+  // auto-spawns a recorderbox into every workflow rack — so probing here ran
+  // codec work on EVERY rack boot, while every other video tile's thumb was
+  // establishing its first frames. CI ran the experiment: the first strict run
+  // after this promotion reddened ~60 scenes (every video face's compact tile
+  // plus timing-sensitive dock scenes), and the only video face scenes that
+  // PASSED were recorderbox's own two — the two where `__recorderboxTestEncoder`
+  // skips the probe. videoOut's promotion put an equally live thumb in the same
+  // zone and moved exactly two baselines, so the extra tile is not the cause.
+  //
+  // So this reads the answer only if something ELSE has already asked (a press,
+  // or the dock body opening), and otherwise renders RECORD live — the honest
+  // painting of "nobody has asked yet". The authoritative refusal is in
+  // `startRecorderboxTake`, on intent, which also covers the PEER FLIP path a
+  // mount-time flag never could.
+  let support = $state<RecorderboxSupport>(cachedRecorderboxSupport() ?? UNCHECKED_SUPPORT);
   // A hint raised here has no room to be painted; the fallback it reports is
   // spoken through the REC lamp's own detail instead (see `recDetail`).
   let folderHint = $state<string | null>(null);
-
-  $effect(() => {
-    void nodeId;
-    void probeRecorderboxSupport(VIDEO_RES.width, VIDEO_RES.height).then((s) => {
-      support = s;
-    });
-  });
 
   // THE TRANSPORT — the same one line the dock body runs, so a lane press and a
   // dock press cannot behave differently, and a rack-mate's flip or a patch
@@ -120,16 +130,29 @@
     reconcileRecorderboxTransport({
       nodeId,
       recording: () => recording,
-      canRecord: () => support.canRecord,
+      // "No KNOWN reason to refuse" — see the seam's RecorderboxTransportHost.
+      canRecord: () => !support.checked || support.canRecord,
       engine: () => engineCtx.get(),
       stillArmed: () => recorderboxRecording(recorderboxNode(nodeId)),
       setFolderHint: (h) => { folderHint = h; },
     });
   });
 
-  function toggleRecord(): void {
-    if (!support.canRecord) return;
-    setRecorderboxData(nodeId, 'recording', !recording);
+  async function toggleRecord(): Promise<void> {
+    // ⚠ STOP IS NEVER GATED ON A CAPABILITY ANSWER. A take already running must
+    // be endable whatever the probe says (or has not yet said) — the registry
+    // deliberately offers no other exit.
+    if (recording) {
+      setRecorderboxData(nodeId, 'recording', false);
+      return;
+    }
+    if (support.checked && !support.canRecord) return;
+    setRecorderboxData(nodeId, 'recording', true);
+    // Resolve the capability on INTENT rather than on mount, and adopt the
+    // answer so the switch paints its refusal. `startRecorderboxTake` performs
+    // the same (memoised) check and reverts `data.recording` itself, so this is
+    // only about what the tile SHOWS.
+    support = await probeRecorderboxSupport(VIDEO_RES.width, VIDEO_RES.height);
   }
 
   let recDetail = $derived(
