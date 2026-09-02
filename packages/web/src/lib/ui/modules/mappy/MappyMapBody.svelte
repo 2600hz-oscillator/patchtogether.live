@@ -495,19 +495,31 @@
   }
   .overlay polygon,
   .overlay .handle { pointer-events: none; }
+  /* ⚠ THE HINT SITS OVER THE CALIBRATION GRID, NOT OVER BLACK, and the card's
+     styling does not survive the move. `MappyCard` paints this as dim grey on
+     `inset: 0` — which reads on its 320 px well only by luck of where the
+     checker's dark squares fall, and at this body's 480 px it landed straight
+     across the bright tinted row (visible in the first baseline capture). The
+     placeholder names this surface's own empty condition, so it has to be
+     readable against the picture it is explaining: a backing plate plus a
+     shadow, sized to the text rather than to the frame. */
   .empty-hint {
     position: absolute;
-    inset: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: var(--text-dim, #889);
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    max-width: calc(100% - 32px);
+    color: var(--text, #eef1f5);
     font-size: 0.72rem;
     font-family: ui-monospace, monospace;
     pointer-events: none;
     text-align: center;
-    padding: 0 16px;
+    padding: 5px 10px;
     line-height: 1.3;
+    background: rgba(5, 6, 8, 0.78);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    text-shadow: 0 0 4px #000;
   }
   .screen-btn {
     position: absolute;
