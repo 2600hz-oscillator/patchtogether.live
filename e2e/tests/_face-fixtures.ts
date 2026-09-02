@@ -114,9 +114,25 @@ export const DENIED: Readonly<Record<string, string>> = {
   cameraInput:
     'the video twin of audioIn: it needs getUserMedia, which is capability-dependent on CI ' +
     'where there is no camera to grant — the mount would depend on the machine, not the code',
-  recorderbox:
-    'mounts a MediaRecorder capture path over a hardware H.264 encoder. CI has no OS H.264 ' +
-    'encoder, so this fixture would be capability-dependent exactly where the suite runs',
+  // ⚠ `recorderbox` WAS HERE AND IS DELETED, NOT AMENDED — the FOURTH instance
+  // of the class the `audioOut` note above describes, in as many merges. Its
+  // entry read: "mounts a MediaRecorder capture path over a hardware H.264
+  // encoder. CI has no OS H.264 encoder, so this fixture would be
+  // capability-dependent exactly where the suite runs."
+  //
+  // Same mechanism, same reason for deleting by hand: promotion moves it out of
+  // `unpromoted` (the population this record filters), so the loop below stops
+  // consulting it and the record goes INVISIBLE rather than RED.
+  //
+  // ⚠ AND IT WAS ALREADY WRONG IN ITS FIRST CLAUSE, which is worth one line
+  // because the same sentence is quoted elsewhere. Nothing here mounts a
+  // `MediaRecorder`: the module encodes through WebCodecs (`VideoEncoder` +
+  // mediabunny), and a MOUNT does not open an encoder at all — `probeEncoders`
+  // is `isConfigSupported` and nothing more, which every runner answers. What
+  // is genuinely capability-dependent is a take ACTUALLY EMITTING CHUNKS, which
+  // is a different sentence about a different moment, and one no fixture MOUNT
+  // ever reaches. The stated reason stopped describing the module long before
+  // the promotion made it invisible.
   archivist:
     'fetches archive.org over the NETWORK at mount and its media is CORS-tainted by design — ' +
     'a fixture must never depend on a third-party host being reachable from the runner',

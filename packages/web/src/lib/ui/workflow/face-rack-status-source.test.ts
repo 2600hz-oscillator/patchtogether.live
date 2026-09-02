@@ -328,6 +328,46 @@ const EXTENSION_BODY_ROLES: Readonly<Record<string, BodyRule>> = {
   // two components happening to agree.
   audioIn: { role: 'status-primitive', why: 'the CAPTURE BINDER — the live enumerateDevices input roster, the ENABLE/RETRY/STOP gesture that is the only route to a first getUserMedia grant, the music-mode DSP switch, and TWO StatusLeds (LIVE, FAULT). ⚠ IT MOUNTS NO DRAWING SURFACE AND MUST NOT GROW ONE: the role predicate follows the mount and greps raw source (it cannot tell code from a comment, so the tag is spelled out in words), and beyond the gate a drawn body would enrol an audio def in the GPU attest for nothing. ⚠ NO METER HERE, UNLIKE audioOut\'s body one row up, and the difference is structural rather than stylistic: this def declares audio_l_out/audio_r_out, so primaryAudioOutPortId resolves and face.glyph:\'meter\' is a LIVE shell binding on the lane tile — the picture exists, it is the shell\'s, and drawing a second one here would derive the same level twice. ⚠ TWO LAMPS, NOT ONE, BECAUSE THE CAPTION IS STATIC BY CONTRACT: one lamp cannot separate "not running because nobody asked" (idle) from "not running because the browser refused" (permission-denied / device-in-use / no-inputs-found / unsupported / error), and those are the two states a player must tell apart before they can act. Both announce the same sentence through `detail`. ⚠ TWO RESTING READOUTS WERE DELETED RATHER THAN HIDDEN: the card\'s eight-word STATE LABEL and its stereo/mono CHANNEL BADGE, both derived values painted outside a control. They live in the pure audio-in-status.ts and reach aria-label/title only. ⚠ ALL PAINTED TEXT IS A CONTROL CAPTION OR AN OPTION NAME: the two static lamp captions, the music-mode caption, the action button\'s own caption (ENABLE/RETRY/STOP — the cameraInput precedent for a caption that names the gesture it performs), and the device roster\'s own names with the browser\'s pre-permission positional fallback. The one SENTENCE is the transient role="alert" error line, which does not exist unless something failed — the audioOut sink-error shape — and it is dropped on the compact tile where the FAULT lamp\'s title carries it verbatim. ⚠ IT IS A BODY RATHER THAN A PANEL by the probe discriminator: ShellPanelCell REQUIRES a minWidth NUMBER and a probe speaking data/data-rev/text, while this surface\'s observable is an OS permission decision and a MediaStreamTrack.readyState on a resource the node owns. ⚠ IT IS ALSO THE PINNED INSTANCE\'S ONLY SURFACE: pinned-audioIn is canvas-hidden and the 🎧 tray mounts it at view=\'drawer\', which dockFullViewHeadPlan treats as a faceplate view. ⚠ NO SCREEN SWITCH and NO WATCH MARK: the video-screen ruling runs over STRICT_FACES INTERSECT video defs and this is domain audio, markWatched is a VideoEngine pull-set concept this module has no part in, and there is no picture here to collapse.' },
   b3ntb0x: { role: 'picture', why: 'the feedback-bender\'s live output preview canvas and its SCREEN switch.' },
+  // ── RECORDERBOX (2026-09-02, wave 5) — the roster's first RECORDER, and the
+  //    first body whose SCREEN switch is provably unable to reach the thing it
+  //    looks like it might ─────────────────────────────────────────────────
+  //
+  // ⚠ THREE PAINTED READOUTS WERE DELETED HERE, named because item 11 of the
+  // 2026-08-31 owner decisions asks for them by name: the card's `REC 00:12`
+  // overlay (a TICKING measurement painted over the picture), its `SAVING…`
+  // state word, and its `saved <chunk>` line. All three are `StatusLed`
+  // `detail` now. The two capability BADGES ("no H.264 encoder available",
+  // "crash-recovery unavailable (no OPFS)") became lamps for the same reason —
+  // each was a sentence about state, outside any control.
+  //
+  // ⚠ WHAT IS PAINTED, EXHAUSTIVELY, and why each is on the allowed side:
+  // three static lamp captions (REC / SAVING / ENCODER-or-RECOVERY), the SCREEN
+  // switch caption, the FILE and DIR and SIZE row labels, the `.mp4` extension
+  // caption, the RECORD switch's own caption, the SIZE roster's option names,
+  // the DESTINATION FOLDER's name, the recovery rows' file names, and — only
+  // when a pick has just failed — the transient folder hint.
+  //   * THE FOLDER NAME IS AN OPTION NAME INSIDE ITS OWN CONTROL, the audioIn
+  //     device-roster shape: it is what the CHANGE button beside it acts on,
+  //     and the empty state ("(chosen on record)") is instructional copy in an
+  //     empty state (the samsloop / midiclock licence). ⚠ It is also the one
+  //     painted string here that is load-bearing rather than merely permitted:
+  //     #1583 was a destination SILENTLY REDIRECTED to the browser's downloads
+  //     mid-performance, and moving this to a hover would re-open exactly the
+  //     invisibility that made that bug expensive.
+  //   * THE RECOVERY FILE NAMES are likewise the option each Save/Discard pair
+  //     acts on, and the whole block is ABSENT AT REST (`listRecoverable`
+  //     returns nothing after a clean boot), so the idle dock baseline is
+  //     deterministic and carries none of it.
+  //   * THE FOLDER HINT is feedback on a GESTURE — the ShellFileCell /
+  //     audioOut sink-error shape — and does not exist unless a pick failed or
+  //     a presenting take fell back to downloads.
+  //
+  // ⚠ THE FILE FIELD STAYS AN `<input type="text">` AND MUST NOT BECOME A
+  // `ShellEntryCell`: that kind forbids clamping, and the shipped save path
+  // SANITIZES (`recorderbox-store.sanitizeRecordingFilename`), so an entry
+  // cell's rejections would disagree with the name actually written to disk.
+  // It is also what discharges the typed-entry parity leg for this module.
+  recorderbox: { role: 'picture', why: 'the RECORDER\'S MONITOR — the live `in` picture blitted from the engine, its SCREEN switch, the REC and SAVING lamps, the FILE name field with its `.mp4` caption, the destination-folder row with its PICK/CHANGE gesture, the SIZE tier picker, the RECORD/STOP switch, and — first in the flow, absent at rest — the crash-RECOVERY block. ⚠ IT IS THE WHOLE FACEPLATE, NOT AN ADDITION TO ONE: recorderboxDef declares `params: []` so `face.order` is `[]` (the videoOut shape), and recorderbox is in NEITHER half of HEADLESS_MOUNT_LANE_TYPES, not in DOM_SOURCE_LANE_TYPES and not in CARD_PRODUCER_LANE_TYPES — so promotion stops RecorderboxCard being mounted anywhere and this body plus its `tileBody` counterpart are the only surfaces the module has. ⚠ SCREEN OFF CANNOT REACH THE ENCODE, and that is a STRONGER guarantee than a correctly-ordered watch mark rather than a weaker one: a take runs on node-recorder-registry\'s OWN pump under an `acquireRenderLease`, and a lease bypasses BOTH preview gates — so the recording is at full rate whether this body is collapsed, unmounted or throttled, and there is no ordering here that could get it wrong. The `markWatched` call in the collapsed branch is still retained and still load-bearing for the case with NO take running: `blitOutputForPreview` IS the engine\'s "someone is watching" signal, a node leaves the pull set 1.5 s after its last mark, and without it SCREEN OFF on an idle recorderbox would idle the whole chain feeding `in` and stall the `out` pass-through every downstream module reads. ⚠ THIS BODY NEVER CREATES OR DESTROYS A RECORDING. #1574 was an owner P0 in exactly this area — the card\'s onDestroy called `recorder.abandon()`, so COLLAPSING the dock destroyed the user\'s take — and the registry\'s ABSENCE of any teardown method is what makes the mistake unexpressible here; every action goes through the shared $lib/ui/modules/recorderbox-transport seam the legacy card also calls. ⚠ THE RECOVERY BLOCK IS FIRST IN THE FLOW, not last as on the card, and the absolute-overlay geometry it needed there is DELETED with it: `.card` is `overflow: hidden` under a rack-tier-pinned height, so appended flow content put Save and Discard outside the box unreachable (an owner-reported bug, pinned by recorderbox-recover-reachable.spec.ts). A dock pane has no such pin, so a blocking question with unsaved user data behind it simply goes at the top. ⚠ THREE RESTING READOUTS DELETED, NOT HIDDEN: the ticking `REC 00:12` overlay, the `SAVING…` state word and the `saved <chunk>` line, all now StatusLed `detail` reaching aria-label and title only; the two capability badges became lamps for the same reason. ⚠ ALL OTHER PAINTED TEXT IS A CONTROL CAPTION, A ROW LABEL, AN OPTION NAME or an absent-at-rest transient — enumerated in the comment above this entry, where the folder name\'s licence (and why hiding it would re-open #1583) is argued rather than asserted.' },
   // ── BLOOD — the roster's first GAME, and the first body whose failure mode
   //    is SILENCE rather than a missing picture ────────────────────────────
   //

@@ -6024,6 +6024,110 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // code moves. No ART fingerprint moves either — moog956 is on `ART_BACKLOG`
   // and has no committed profile, and nothing about the DSP changed.
   'moog956',
+
+  // ── RECORDERBOX (wave 5, 2026-09-02) — THE RECORDER ──────────────────────
+  //
+  // `order: []` + `glyph: 'none'` + an extension filling BOTH wired body slots.
+  // The `videoOut` shape, arrived at from the same place: `recorderboxDef`
+  // declares `params: []`, so there is nothing for the generic bands to rank
+  // and the extension IS the faceplate rather than an addition to one.
+  //
+  // ⚠ THE INVENTORY ENTRY WAS FALSE IN EVERY CLAUSE AFTER THE DASH, AND
+  // #1574/#1584 (bdef392f6) IS WHAT MADE IT FALSE — eight months of prose
+  // describing a card that had already been rewritten. It read: "the capture
+  // canvas plus its per-frame encode loop live on the card, so the recording
+  // exists only while it is mounted." The capture canvas is created by
+  // `node-recorder-registry`, NEVER enters the document, and is pumped by the
+  // registry under its own `acquireRenderLease`; the card's own line 257 says
+  // "CAPTURE IS NOT HERE" in capitals. The recording survives card unmount BY
+  // CONSTRUCTION — that is the entire point of the registry, and the registry
+  // exposes no teardown precisely so a future card cannot undo it. "A take
+  // list" was wrong too: that block is a crash-RECOVERY list read from OPFS
+  // manifests, empty after a clean boot.
+  //
+  // ⚠ AND `needs-media-controller` NEVER APPLIED. recorderbox is a SINK — it
+  // consumes the engine's FBO through `blitOutputForPreview` and owns no
+  // `<video>`, no `MediaStream` source and no element to adopt — so it is in
+  // neither half of `HEADLESS_MOUNT_LANE_TYPES`, neither `DOM_SOURCE_LANE_TYPES`
+  // nor `CARD_PRODUCER_LANE_TYPES`. The blocker described the module the
+  // inventory thought it was.
+  //
+  // ⚠ THE STOP-2 IS THE WHOLE TRANSPORT, and it is why this PR carries a
+  // precursor commit. Because recorderbox is in none of those sets, promotion
+  // stops `RecorderboxCard.svelte` being mounted ANYWHERE — no headless host,
+  // no lane card, nothing. Six things lived only in that component and would
+  // have gone with it: the `probeEncoders` support probe (its ONLY caller in
+  // the tree), the `listRecoverable` crash scan (likewise), the ~120-line start
+  // orchestration, the folder re-pick, the `<a download>` fallback, and the
+  // `$effect` that reacts to `node.data.recording`. All six moved to
+  // `$lib/ui/modules/recorderbox-transport.ts` — `lib/ui`, never `lib/video`,
+  // which is hashed wholesale for the GPU attest (nine recorderbox files wide).
+  //
+  // ⚠ THE `$effect` IS PORTED, NOT PARAPHRASED, and that is load-bearing:
+  // `data.recording` is Y.Doc-SYNCED, so it also flips when a RACK-MATE presses
+  // RECORD and when a saved patch LOADS with `recording: true` still on it.
+  // Neither passes through a click handler, so re-writing the start call at each
+  // surface would have dropped both paths while every hand test still passed.
+  // The reactive reads live inside `reconcileRecorderboxTransport`; each surface
+  // is one line that cannot track less.
+  //
+  // ⚠ RECORD IS NOT A `ShellToggleCell` AND SIZE IS NOT A `ShellSelectorCell`.
+  // Neither cell kind can express `disabled` (`Toggle.svelte` has no such prop
+  // at all), and SIZE's `disabled` is the SOLE guard on a mid-take quality
+  // change; and `faces-parity` CLICKS every toggle cell, which on a real
+  // recorderbox means a folder prompt, an encoder probe, `nodeRecorder.start`,
+  // a render lease and a full-canvas capture pump that NOTHING ever stops
+  // (the registry exposes no teardown by design). Both live in the extension's
+  // own markup, with their own disabled state — which also drops the contract
+  // diff to zero.
+  //
+  // ⚠ BOTH BODY SLOTS, AND THE TILE IS THE LOAD-BEARING HALF.
+  // `Canvas.svelte:1759-1795` auto-spawns a recorderbox into the video zone of
+  // every fresh workflow rack, wired to the master buses, so a `fullViewBody`
+  // alone would have made the first module of every new session a live
+  // thumbnail with no way to start a take under it — cameraInput's lesson, one
+  // module worse.
+  //
+  // ⚠ SCREEN OFF CANNOT REACH THE ENCODE, which is a STRONGER guarantee than
+  // the fleet's correctly-ordered `markWatched`: a take runs on the registry's
+  // own pump under a render lease that bypasses BOTH preview gates. The
+  // `markWatched` in the collapsed branch is still load-bearing for the case
+  // with no take running, where it is what keeps the upstream chain feeding
+  // `in` and the `out` pass-through alive.
+  //
+  // ⚠ THREE RESTING READOUTS ARE DELETED, NOT HIDDEN: the card's `REC 00:12`
+  // overlay (a ticking measurement painted over the picture), its `SAVING…`
+  // state word, and its `saved <chunk>` line. All three are now `StatusLed`
+  // `detail`, reaching aria-label and title and never a text node. The two
+  // capability BADGES became lamps for the same reason. What is KEPT and
+  // painted: the FILE field (an `<input type="text">`, NOT a `ShellEntryCell` —
+  // that kind forbids clamping and the save path SANITIZES, so its rejections
+  // would disagree with the name written to disk), the `.mp4` caption, the DIR
+  // row's folder NAME (an option name inside its own control, and the #1583
+  // bug was a silently-redirected destination — hiding it would re-open exactly
+  // that), the PICK/CHANGE button (the folder handle is deliberately kept OUT
+  // of `node.data`, so no `ShellActionProbe` could observe it), the SIZE
+  // roster's option names, and the transient folder hint.
+  //
+  // ⚠ WHAT SHIPS ON ARGUMENT PLUS AN AUDITION LEDGER RATHER THAN MEASUREMENT:
+  // the ENCODER INTERLOCK's negative half. No CI runner has an H.264 encoder
+  // that emits chunks — the headless software runner reports `avc` as
+  // config-supported and then emits ZERO chunks for real frames — so CI can
+  // prove the switch is DISABLED and a take is REFUSED, and cannot prove a
+  // file is written. The e2e's transport experiment therefore asserts that a
+  // press reaches `nodeRecorder.start` with no card mounted; whether the bytes
+  // are good is the owner's hardware check, and this module already carries an
+  // outstanding one from the capture-wiring fix.
+  //
+  // ZERO ATTEST: `face` / `docs` are hash-transparent by construction
+  // (attest-code-basis strips both), no param, port or factory code moves, and
+  // the transport plus both bodies live under `lib/ui/**`, outside the basis.
+  // CONTRACT UNCHANGED: no params, no controlFamilies, no `PortDef.label` (the
+  // rail derives AUDIO L / AUDIO R where the card wrote `A·L` / `A·R`; a label
+  // is NOT hash-transparent on a video def and prose is not worth a GPU
+  // window). `docs:accept` runs because the explanation's card-ownership prose
+  // was stale.
+  'recorderbox',
 ]);
 
 /**
