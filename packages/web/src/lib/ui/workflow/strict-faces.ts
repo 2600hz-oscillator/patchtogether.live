@@ -5938,6 +5938,71 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // UNCHANGED: no controlFamilies, no new params. `docs:accept` runs because
   // the explanation's card-ownership prose was stale.
   'videovarispeed',
+
+  // ── PAINTER (2026-09-02) — the roster's first DRAWING SURFACE ────────────
+  //
+  // ⚠ THE INVENTORY ENTRY WAS FACTUALLY TRUE AND DREW THE TEXTMARQUEE
+  // CONCLUSION. It read: "a DRAWING SURFACE: freehand strokes on a canvas plus
+  // a typed text stamp. Direct pointer painting is the module and it declares
+  // no params at all." Both clauses are exactly right, and neither is a reason
+  // not to promote — what changed is the LADDER, not the module. A
+  // `fullViewBody` is a SLOT, not a cell: it does not have to be scalar,
+  // rankable or short. `videoOut` is the shipped zero-param precedent and
+  // `flipper` is the shipped ranks-nothing one; painter is both at once.
+  //
+  // ⚠ THE BODY IS THE WHOLE MODULE, WHICH IS RARER THAN IT SOUNDS. Most
+  // `fullViewBody` adopters rescue a preview or a picker beside a plate full of
+  // knobs. This def has `params: []` AND `inputs: []`, so the faceplate carries
+  // ZERO bands and the extension IS the plate: nine tools, the 28-colour Win95
+  // palette, SIZE, FILL, the text stamp, UNDO/CLEAR and the drawing canvas.
+  // painter is in none of `DOM_SOURCE_LANE_TYPES`, `CARD_PRODUCER_LANE_TYPES`
+  // or `HEADLESS_MOUNT_LANE_TYPES`, so after promotion no card mounts anywhere
+  // and a body that failed to mount would ship a module nobody can draw on.
+  //
+  // ⚠ THE PICTURE ALREADY SURVIVES WITH NO SURFACE MOUNTED, and that half is
+  // NOT this PR's work — #1720 moved the op-log replay onto NODE lifetime in
+  // `$lib/ui/media/extras-producers`, which is why a saved rack renders the
+  // drawing rather than the white placeholder. The `.myrobots` spec predicted
+  // this PR would have to port it; the tree had already done so, verified
+  // against `extras-producers.ts` before writing a line. What this PR adds is
+  // the EDITOR, and the lease handshake that lets the body push its own live
+  // canvas while it is mounted (an in-progress stroke must reach OUT before the
+  // op commits) and hand the binding straight back on unmount.
+  //
+  // ⚠ ONE SEAM, TWO MOUNTS: every pointer -> `PaintOp` conversion lives in
+  // `$lib/ui/modules/painter/paint-surface.ts`, imported by the face body AND
+  // by `PainterCard.svelte`. This is not tidiness — a stroke drawn on the face
+  // and the same stroke drawn on the still-live legacy card must serialise
+  // identically, and the op log is VALID either way, so a divergence would sync
+  // two different pictures to two peers with every gate green.
+  //
+  // ⚠ THE TYPED-ENTRY LEG IS SATISFIED BY THE BODY, NOT BY DELETING ANYTHING.
+  // `PainterCard.svelte` mounts `<input type="text">` (the TEXT tool's stamp
+  // string), so `face-migration-inventory`'s typed-entry clause arms the moment
+  // the disposition flips. Its escape is CARRYING the affordance, which is the
+  // outcome wanted anyway: the body renders the same field. ⚠ It must stay in
+  // the body FILE — that leg reads the directly-named `fullViewBody` source, so
+  // an `<input>` hidden inside an imported child would read as "the face
+  // carries none".
+  //
+  // ⚠ SCREEN ON/OFF PUTS THE WHOLE PAINT SET AWAY, not just a preview well, and
+  // that is the honest reading rather than a shortcut: here the picture IS the
+  // instrument, so leaving a toolbar behind with nothing to draw on would be
+  // chrome for a surface that is gone. The output is untouched — the release
+  // hands the binding back to the node-lifetime producer and the body goes on
+  // renewing the watch mark. The recorded objection (`previewCollapsed` is
+  // Y.Doc-synced, so a peer can collapse the only input device for everyone) is
+  // real and SELF-UNDOING: the toggle renders outside the collapse, so any peer
+  // restores it with one click. That is why painter is NOT added to
+  // `NO_SCREEN_SWITCH`, whose one entry (videoOut) is exempt because collapsing
+  // it would delete the module's reason to exist rather than reclaim space.
+  //
+  // ⚠ ZERO ATTEST, MEASURED not asserted: `face` and `docs` are stripped at
+  // module scope by `attest-code-basis`, comments are stripped, and every new
+  // file is outside the basis (`lib/ui/modules/**/*.svelte` is swept BY CONTENT
+  // for a GL context and neither new file creates one). No `params`, no port
+  // and no factory code moves, so contract-lock does not move either.
+  'painter',
 ]);
 
 /**

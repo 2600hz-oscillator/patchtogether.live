@@ -12,8 +12,8 @@ Every registered module carries exactly one **disposition**: what kind of work i
 |  | count |
 |---|---|
 | registered modules | 197 |
-| done (faced + promoted) | 183 |
-| remaining (excludes organizational-native) | 11 |
+| done (faced + promoted) | 184 |
+| remaining (excludes organizational-native) | 10 |
 | registered with NO disposition (must be zero) | 0 |
 | inventory entries naming a dead def (must be zero) | 0 |
 
@@ -21,9 +21,9 @@ Every registered module carries exactly one **disposition**: what kind of work i
 
 | disposition | what it means | modules | done |
 |---|---|---|---|
-| `generic-face` | author a `face` and rank the controls — no new platform capability | 183 | 183 |
+| `generic-face` | author a `face` and rank the controls — no new platform capability | 184 | 184 |
 | `blocked` | would be a face today but for the named capability, and nothing else | 0 | — |
-| `bespoke-surface` | the primary interaction is not param-shaped — needs a purpose-built surface | 11 | — |
+| `bespoke-surface` | the primary interaction is not param-shaped — needs a purpose-built surface | 10 | — |
 | `organizational-native` | rack furniture; not a migration at all | 3 | — |
 
 ## What each blocker buys
@@ -156,6 +156,7 @@ author a `face` and rank the controls — no new platform capability.
 | `onetonine` | video | done | — |
 | `outlines` | video | done | — |
 | `outToLaunch` | video | done | — |
+| `painter` | video | done | — |
 | `peakstate` | video | done | — |
 | `peertube` | video | done | — |
 | `pentemelodica` | audio | done | — |
@@ -240,7 +241,6 @@ the primary interaction is not param-shaped — needs a purpose-built surface.
 | `doom` | video | — | — |
 | `moog956` | audio | — | — |
 | `nibbles` | video | — | — |
-| `painter` | video | — | — |
 | `recorderbox` | video | — | `needs-media-controller` |
 | `seqtris` | audio | — | — |
 | `toybox` | video | — | `needs-media-controller` |

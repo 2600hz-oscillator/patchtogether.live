@@ -5153,6 +5153,64 @@ export const FACES = [
       + ' defaults, with surface 1 focused on every boot.',
   },
 
+  // ── PAINTER (2026-09-02) — the DRAWING SURFACE ────────────────────────────
+  //
+  // `pages: 1` — the face declares NO `pages` and `order` is EMPTY, so the dock
+  // renders the `fullViewBody` at the head and the single unlabeled `__all`
+  // band beneath it with nothing in it. That is the flipper/videoOut shape and
+  // it is what the dock scene photographs: an editor over a plate with no
+  // controls, which is the whole design.
+  //
+  // ── ⚠ THE DETERMINISM ARGUMENT ────────────────────────────────────────────
+  //
+  // A face scene spawns the node and patches NOTHING, so `node.data.ops` is
+  // EMPTY and both scenes are a BLANK WHITE PAGE by construction rather than by
+  // a flag. The module has no params, no CV inputs, no RNG, no ring, no
+  // feedback FBO and no wall-clock term anywhere: `painter.ts` uploads whatever
+  // canvas is bound and blits it 1:1, and with an empty log the node-lifetime
+  // producer fills that canvas with `PAINT_BG`. There is nothing that could
+  // move between two boots.
+  //
+  // ⚠ NO `simPin` AND NO `freezeIsNotASeam`. There is nothing to pin, and
+  // `freezeFaceVideo` writes `params.freeze = 1` which this def has no param
+  // for — the same no-op mappy and textmarquee both record.
+  //
+  // ⚠ THE ONE NAMED RISK IS GLYPH RASTERIZATION, AND IT IS THE EMOJI TOOL ROW.
+  // `_fonts.ts` pins the sans and mono stacks to bundled woff2 faces; the nine
+  // tool buttons paint EMOJI (pencil / brush / eraser / bucket / dropper), which
+  // no bundled face covers, so they resolve through fontconfig to the runner's
+  // emoji font. The argument that it holds is the one textmarquee's entry makes
+  // for its own in-texture glyphs: `snapshotPathTemplate` carries no
+  // `{platform}` segment, so there is ONE baseline set, authored on Linux CI and
+  // compared on Linux CI, and same-image/same-Chromium/same-fontconfig
+  // rasterization is deterministic.
+  //
+  // ⚠ THAT ARGUMENT IS NOT THE MEASUREMENT AND MUST NOT BE READ AS ONE. The
+  // measurement is two independent Linux boots: `GREP=painter task vrt:commit`
+  // captures on the runner, and this PR's own `vrt-strict` shard re-boots and
+  // compares. If that comparison shows ANY differing pixels in the tool row, the
+  // honest outcome is to move this module to `FACES_WITHOUT_SCENES` below
+  // CARRYING THAT NUMBER — not a mask, and not a re-run.
+  {
+    type: 'painter',
+    pages: 1,
+    videoFaceWhy:
+      'a VIDEO module, so it must boot into the video zone rather than a mixer channel column — '
+      + 'without this field bootWithFace waits out the full test timeout for a column membership '
+      + 'a video node never acquires. Both scenes carry a picture and NEITHER of them moves: the '
+      + 'compact tile paints a VideoTileThumb through hasVideoSurface (painter\'s first lane '
+      + 'picture — the card only ever painted inside itself), and the dock body is the module\'s '
+      + 'own fullViewBody, the MS-Paint editor. ⚠ THE PICTURE IN BOTH IS A BLANK WHITE PAGE, and '
+      + 'that is the module\'s designed idle state rather than a blank capture: a fresh spawn has '
+      + 'an EMPTY op log, the node-lifetime producer fills its canvas with PAINT_BG, and the '
+      + 'shader returns opaque white when nothing is bound at all — painter is never a dead black '
+      + 'frame, which is also what satisfies the per-port emit sweep. ⚠ AND THIS MODULE\'S '
+      + 'EXEMPT_FROM_VRT ENTRY IS NARROWED TO THE LEGACY CARD in this same diff: it said the '
+      + 'canvas was "op-driven, non-deterministic first paint", which is true of a canvas someone '
+      + 'has DRAWN ON and false of a fresh spawn, and its exit condition named a darwin+linux '
+      + 'two-platform capture that cannot be satisfied because there is only one baseline set.',
+  },
+
 ] as const;
 
 /**
