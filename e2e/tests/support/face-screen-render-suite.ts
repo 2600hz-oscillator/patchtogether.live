@@ -594,6 +594,36 @@ const SUBJECTS: readonly Subject[] = [
   // Added in the SAME diff as the promotion, per this file's convention, and
   // APPENDED AT THE TAIL so batching changes exactly one test title.
   { type: 'painter', prefix: 'painter', domain: 'video', why: 'the MS-Paint EDITOR and its SCREEN switch. ⚠ THE ONLY ROW IN THIS TABLE WHOSE CANVAS IS THE SOURCE RATHER THAN A COPY OF ONE, and the distinction changes what OFF means. Every sibling here blits an engine frame that already exists, so the fleet sentence is “OFF stops the copy and keeps the watch mark”. painter\'s canvas is UPSTREAM of the engine — its pixels are uploaded into the module\'s texture and blitted 1:1 into the output FBO — so there is no copy to stop: OFF puts the whole PAINT SET away (toolbar, canvas and palette together, because here the picture IS the instrument and a toolbar with nothing to draw on is chrome for a surface that is gone), and $lib/ui/media/extras-producers takes the binding back and goes on producing the frame. ⚠ AND IT IS THE ROW MOST LIKELY TO CATCH A REAL DEFECT, because painter\'s canvas is the only one in this table that is DESTROYED AND RECREATED into a live engine binding: the body re-runs its setup in an $effect keyed on the element rather than in onMount precisely because the SCREEN cycle remounts it, and a regression to onMount would come back from OFF holding a 2-D context on a detached element — a blank editor with the ops still committing. This row\'s final leg (the picture RETURNS, in this faceplate, exactly once, occupying real space) is what sees the remount at all. ⚠ painter declares `params: []`, so unlike every other subject there is not one control cell anywhere on the plate: if the body fails to mount, the faceplate is EMPTY and the module cannot be drawn on by any route. Verified before writing rather than assumed: `type == prefix == extension id`, the body uses the standard `{#if !previewCollapsed}` REMOVES mechanism, and it declares the conventional `painter-face-canvas` — so no `canvas` override is needed.' },
+
+  // ── ARCHIVIST (2026-09-02) — appended for the reason the batching note gives
+  //
+  // Appended at the END, so it joins the LAST batch and changes exactly one test
+  // title; every earlier batch's comma-joined title stays byte-identical.
+  //
+  // ⚠ IT SITS AFTER `nibbles` AND `painter` BY ARRIVAL, not by whichever side
+  // git happened to take. Each was a MERGE CONFLICT at this same anchor and each
+  // reached main first — nibbles (#2317), then painter (#2318) — which is the
+  // rule nibbles' own note states and peertube's states before it. This branch
+  // has now been re-ordered by that rule TWICE, which is why the paragraph below
+  // names its precedent instead of pointing at a row number.
+  //
+  // ⚠ IT IS ROSTERED EVEN THOUGH IT HAS A RENDER-LEVEL LEG OF ITS OWN, which is
+  // the `peertube` precedent — NAMED rather than pointed at as "one row up",
+  // because arrival ordering moves rows and this note has already outlived two
+  // such moves. `face-archivist.spec.ts` measures the MEDIA CLOCK across the toggle
+  // ("SCREEN OFF is not a pause"); this row proves the SWITCH — reachable on the
+  // faceplate at all, starts ON, collapses the canvas, RECLAIMS the space, comes
+  // back. Different subjects, and `quadralogical` is this file's own recorded
+  // case of assuming otherwise and leaving a switch at zero live coverage while
+  // everyone believed it covered.
+  //
+  // Verified before writing rather than assumed: `type == prefix == extension
+  // id` ('archivist'); the toggle is the conventional
+  // `archivist-face-screen-toggle` carrying `aria-pressed` and SCREEN ON/OFF
+  // text; the body uses the standard `{#if !previewCollapsed}` REMOVES
+  // mechanism; and it declares the conventional `archivist-face-canvas`, so no
+  // `canvas` override is needed.
+  { type: 'archivist', prefix: 'archivist', domain: 'video', why: 'the Internet Archive browser\'s live engine-output preview and its SCREEN switch — an ADDITION, since ArchivistCard previews the raw node-owned elements and has no SCREEN switch at all. ⚠ THE WATCH-MARK CASE IS peertube\'s IN ITS WIDEST FORM: archivist is a pure SOURCE feeding `image`, `video` AND `audio_l`/`audio_r`, so a lapsed mark would idle the picture every downstream consumer samples while the element went on decoding. ⚠ AND SCREEN OFF CANNOT REACH THE PLAYBACK AT ALL HERE, which is stronger than the ordering-dependent guarantee the rest of this table relies on: the three elements, their play(), the 100 ms playhead pump and the gate/CV writes ALL belong to the card that <HeadlessSourceHost> keeps parked off-screen, and this body only BLITS — the switch removes a drawImage and nothing else. That deeper property is face-archivist.spec.ts\'s subject; this row proves the SWITCH.' },
 ] as const;
 
 /** The representative module for the PERSISTENCE leg — see that test's comment. */
