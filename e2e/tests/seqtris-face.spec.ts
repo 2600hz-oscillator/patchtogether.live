@@ -33,10 +33,14 @@
 //   3. RULE 8, RE-PAID ON THE SURFACE THAT NOW SHIPS — the simulated Launchpad
 //      through the FACE's own CONNECT / picker / unbind, then an ON-SCREEN scene
 //      press through PIECE → DX7 → audible SCOPE RMS.
-//   4. SCREEN — the picture goes, the accessible name stays, and the game KEEPS
+//   4. THE FAULT IS VISIBLE — a second SEQTRIS asking for a claimed Launchpad is
+//      refused by name, and the lamp LIGHTS AMBER rather than staying dark. The
+//      leg that catches `tone="warn"` beside a readiness-only `lit`, where the
+//      warn tone is dead CSS and a refused claim looks exactly like idle.
+//   5. SCREEN — the picture goes, the accessible name stays, and the game KEEPS
 //      PLAYING. The only leg that can fail if someone gates the module on the
 //      view.
-//   5. NEGATIVE CONTROL — the identical dock graph, undriven, silent over a
+//   6. NEGATIVE CONTROL — the identical dock graph, undriven, silent over a
 //      full window with no early exit.
 //
 // Every leg carries a `pageerror` guard: a shared derivation repaired only on
@@ -50,7 +54,7 @@
 // crosses the floor). The in-page sampler throws on zero samples, so "the
 // instrument never looked" cannot print as "the module is silent".
 
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Locator, type Page } from '@playwright/test';
 import { spawnPatch, seedKriaGate, type SpawnEdge, type SpawnNode } from './_helpers';
 import {
   readScopePeakOverWindow,
@@ -147,19 +151,28 @@ async function installLaunchpad(page: Page): Promise<void> {
   });
 }
 
-function shellTile(page: Page) {
-  return page.locator(`.svelte-flow__node[data-id="${NODE}"] [data-testid="module-shell"]`);
+function shellTile(page: Page, id: string = NODE) {
+  return page.locator(`.svelte-flow__node[data-id="${id}"] [data-testid="module-shell"]`);
 }
 
 /** Open the dock full view — where the `fullViewBody` paints. ⚠ CONNECT, the
  *  picker and the scene column are DOCK-ONLY by `dockFullViewHeadPlan`: a
  *  ~192 px lane tile cannot carry them under `_card-overflow`'s bound, which is
  *  the `midiCvBuddy` / `skifree` call rather than a preference. */
-async function openDock(page: Page) {
-  await shellTile(page).getByTestId('shell-open-dock').click();
+async function openDock(page: Page, id: string = NODE) {
+  await shellTile(page, id).getByTestId('shell-open-dock').click();
   await expect(page.getByTestId('dock-full-view')).toBeVisible();
   await expect(page.getByTestId('seqtris-face-body')).toBeVisible();
   return page.getByTestId('seqtris-face-body');
+}
+
+/** The lamp's own dot colour, which is where `tone` actually lands. ⚠ READ THE
+ *  `.lamp` CHILD, never the wrapper: every tone-dependent rule in
+ *  `StatusLed.svelte` is `.status-led.warn.lit .lamp` / `… .cap`, so the
+ *  wrapper's own background never moves and an assertion on it would pass under
+ *  either tone. */
+async function lampColour(led: Locator): Promise<string> {
+  return led.locator('.lamp').evaluate((el) => getComputedStyle(el).backgroundColor);
 }
 
 /** A `pageerror` collector. ⚠ EVERY FACE SPEC OWES ONE. */
@@ -450,6 +463,101 @@ test.describe('SEQTRIS — the promoted FACE, on the default shell', () => {
         + `core (notesFired=${after.notesFired}), so this is the PIECE → DX7 → SCOPE leg never `
         + `carrying the note — ${describeScopeWindow(w)}`,
     ).toBeGreaterThan(AUDIBLE_FLOOR);
+
+    expect(realErrors(errors)).toEqual([]);
+  });
+
+  test('a REFUSED claim is VISIBLE on the lamp, not only speakable', async ({ page }) => {
+    // ⚠ THE DEVICE-SURFACE FAILURE THIS FILE EXISTS TO CATCH, and the one the
+    // promotion nearly shipped. The card signalled `no-device` / `claimed` /
+    // `unsupported` three ways at once — the paragraph's TEXT changed, it took
+    // `.status.problem` colouring, and it took `role="alert"`. The face deletes
+    // that paragraph (correctly — a sentence of derived service state painted at
+    // rest is none of the four permitted roles) and compensates with
+    // `tone="warn"` on the lamp. But `tone` is COLOUR ON A LIT LAMP ONLY: with a
+    // readiness-only `lit`, mutually exclusive with `problem`, the warn tone can
+    // NEVER render and a refused claim leaves the plate pixel-identical to idle —
+    // a dark lamp and a CONNECT flow that looks like it did nothing.
+    //
+    // ⚠ THE FAULT IS REACHED THROUGH THE MODULE'S OWN REFUSAL, not through a
+    // browser permission: `owner` in `seqtris-launchpad.ts` is ONE token for the
+    // whole page, so a second SEQTRIS picking the port a first one holds is
+    // refused BY NAME (`claimed`). Deterministic, no prompt, no grant to deny.
+    const errors = watchPageErrors(page);
+    await gotoShell(page);
+    const g = graph({ clocked: false });
+    g.nodes.push({
+      id: 'sq2', type: 'seqtris', position: { x: 40, y: 60 }, domain: 'audio', params: {},
+    });
+    await spawnPatch(page, g.nodes, g.edges);
+    await resumeAudio(page);
+    await installLaunchpad(page);
+
+    // ── THE PRECONDITION: THE FIRST NODE TAKES THE CLAIM ───────────────────
+    // ⚠ DRIVEN THROUGH THE ENGINE HANDLE ON PURPOSE, AND THE EXCEPTION IS
+    // NARROW. Boundary 8 is about the SUBJECT of an assertion, and the subject
+    // here is the SECOND node's rendering of a refusal — the first node's bind
+    // is only the state that makes a refusal possible, and its own gesture path
+    // is already driven through the real affordances by the RULE 8 leg above.
+    // ⚠ AND THE UI ROUTE IS NOT AVAILABLE ANYWAY: the dock full view is a
+    // bottom-anchored overlay whose `faceplate-editor` intercepts pointer events
+    // over the lane, so a second tile cannot be clicked while the first node's
+    // pane is open — measured, as an illegible 30 s click timeout.
+    await page.evaluate(async (id) => {
+      const w = globalThis as unknown as {
+        __engine?: () => { read: (n: unknown, k: string) => unknown } | null;
+        __patch: { nodes: Record<string, unknown> };
+      };
+      const api = w.__engine!()!.read(w.__patch.nodes[id], 'card-api') as {
+        connect: () => Promise<void>;
+        launchpadStatus: () => { ports: readonly { name: string }[] };
+        bindPort: (p: unknown) => void;
+      };
+      await api.connect();
+      api.bindPort(api.launchpadStatus().ports[0]);
+    }, NODE);
+
+    // ── THE SECOND ASKS FOR IT AND IS REFUSED ──────────────────────────────
+    const second = await openDock(page, 'sq2');
+    const led = second.getByTestId('seqtris-face-led');
+    await expect(led, 'an unbound, un-refused SEQTRIS is the QUIET resting state')
+      .toHaveAttribute('data-lit', '0');
+
+    await second.getByTestId('seqtris-face-connect').click();
+    await second.getByTestId('seqtris-face-port-0').click();
+
+    // ⚠ THE ASSERTION THAT WOULD HAVE CAUGHT IT. Not `aria-label`, which was
+    // already right — the PIXEL.
+    await expect(
+      led,
+      'a refused claim must LIGHT the lamp. If this is 0, `lit` is readiness-only, `tone="warn"` '
+        + 'is dead CSS, and the fault is pixel-identical to idle on the plate',
+    ).toHaveAttribute('data-lit', '1');
+    expect(
+      await led.getAttribute('aria-label'),
+      'and the sentence still rides the accessible name',
+    ).toContain('Another SEQTRIS is holding the Launchpad');
+
+    // ⚠ AND IT IS THE WARN COLOUR, NOT THE READY COLOUR — proven by comparing
+    // the two lamps that are on screen together rather than by naming a hex.
+    // The first node's TILE lamp is lit ACCENT (it holds the claim); this one is
+    // lit WARN. Same component, same `lit`, different `tone`.
+    const boundColour = await lampColour(shellTile(page, NODE).getByTestId('seqtris-tile-led'));
+    const refusedColour = await lampColour(led);
+    expect(
+      refusedColour,
+      `a refused claim must not be painted like a healthy one (bound=${boundColour} `
+        + `refused=${refusedColour})`,
+    ).not.toBe(boundColour);
+    expect(refusedColour, 'vacuity: the lamp must actually be painted').not.toMatch(
+      /rgba\(0, 0, 0, 0\)|transparent/,
+    );
+
+    // ⚠ ONE FLAG, TWO SURFACES — the refused node's own LANE lamp agrees with
+    // its dock. A tile still dark beside an amber dock would be two surfaces
+    // disagreeing about one hardware claim.
+    await expect(shellTile(page, 'sq2').getByTestId('seqtris-tile-led'))
+      .toHaveAttribute('data-lit', '1');
 
     expect(realErrors(errors)).toEqual([]);
   });

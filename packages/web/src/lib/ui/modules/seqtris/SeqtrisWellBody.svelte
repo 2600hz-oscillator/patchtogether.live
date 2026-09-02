@@ -156,10 +156,29 @@
          `lit` state, and the `<p class="status">` sentence becomes its
          `detail` — reaching `aria-label` + `title` and never a text node. The
          note below the picker is why that paragraph is deleted rather than
-         carried over. -->
+         carried over.
+
+         ⚠ `lit` IS `bound || problem`, AND THE `|| problem` HALF IS LOAD-BEARING
+         RATHER THAN GENEROUS. Every tone-dependent rule in `StatusLed.svelte` is
+         gated on `.lit` (`.status-led.warn.lit .lamp`, `.status-led.warn.lit
+         .cap`) — so `tone="warn"` beside a READINESS-ONLY lit expression, which is
+         MUTUALLY EXCLUSIVE with `problem`, can never render: a denied grant, an absent
+         Launchpad or a claim held by another SEQTRIS would leave the plate
+         PIXEL-IDENTICAL to idle: a dark lamp, an unchanged caption and a CONNECT
+         button that looks like it did nothing. The card did not have that hole —
+         its `<p class="status">` changed text, took `.status.problem` colouring
+         AND `role="alert"`. The three shipped fault lamps (`audioIn` FAULT,
+         `es9` XRUN, `midiOutBuddy` LANE) all pair `warn` with a `lit` that is
+         TRUE EXACTLY WHEN THE FAULT HOLDS; this is that idiom, folded into one
+         lamp because the two conditions are disjoint. So: DARK = idle/listing,
+         LIT ACCENT = bound, LIT WARN = a fault, and the sentence naming which
+         one rides `aria-label`/`title` as before.
+         ⚠ THE TILE'S LAMP CARRIES THE IDENTICAL EXPRESSION — a lane tile and an
+         open dock pane are mounted at once, and one lit amber beside one dark
+         would be two surfaces disagreeing about one hardware claim. -->
     <StatusLed
       caption="PAD"
-      lit={bound}
+      lit={bound || problem}
       tone={problem ? 'warn' : 'accent'}
       detail={status?.message ?? 'No SEQTRIS engine on this node yet.'}
       testid="seqtris-face-led"
@@ -204,11 +223,14 @@
        hoverable, unpainted. That is the recorderbox promotion's exact move
        (three resting readouts, same disposal) and it is what makes this body's
        declared `control-grid` role true rather than asserted.
-       ⚠ ONE NAMED DELTA: the card put `role="alert"` on that paragraph in the
-       `problem` states, so a screen reader announced a lost device without being
-       asked. The lamp's `tone="warn"` carries the same condition visually and
-       its `aria-label` carries the same sentence, but the LIVE announcement is
-       gone. Reported rather than glossed. -->
+       ⚠ ONE NAMED DELTA, AND IT IS NARROWER THAN IT FIRST READS: the card put
+       `role="alert"` on that paragraph in the `problem` states, so a screen
+       reader announced a lost device without being asked. The lamp above carries
+       the condition VISUALLY (lit + `tone="warn"` — see its comment for why the
+       `lit` expression has to include `problem` for that to be true at all) and
+       carries the same sentence on `aria-label` + `title`, but the LIVE
+       ANNOUNCEMENT is gone: a reader must move to the lamp to hear it. That one
+       clause is the whole delta. Reported rather than glossed. -->
 
   <!-- The column's height tracks the well's from ONE constant, so the two
        cannot drift apart in a later edit to either. -->

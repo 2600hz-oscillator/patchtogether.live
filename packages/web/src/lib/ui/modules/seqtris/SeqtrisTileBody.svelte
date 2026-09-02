@@ -74,6 +74,16 @@
     return api?.launchpadStatus() ?? null;
   });
   let bound = $derived(status?.kind === 'bound');
+  // ⚠ THE SAME EXPRESSION THE DOCK USES, AND IT MUST STAY THE SAME ONE. A lane
+  // tile and an open dock pane are mounted at once on the same node; a lamp lit
+  // amber in one and dark in the other would be two surfaces disagreeing about
+  // one hardware claim, which is the failure the page-wide revision tick exists
+  // to prevent. See the dock body's lamp comment for why `lit` has to include
+  // `problem` before `tone="warn"` can render at all.
+  let problem = $derived(
+    status !== null
+      && (status.kind === 'no-device' || status.kind === 'claimed' || status.kind === 'unsupported'),
+  );
 </script>
 
 <div class="seqtris-tile" data-testid="seqtris-tile-host">
@@ -85,7 +95,8 @@
        tile at all. -->
   <StatusLed
     caption="PAD"
-    lit={bound}
+    lit={bound || problem}
+    tone={problem ? 'warn' : 'accent'}
     detail={status?.message ?? 'No SEQTRIS engine on this node yet.'}
     testid="seqtris-tile-led"
   />

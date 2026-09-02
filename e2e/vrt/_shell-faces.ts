@@ -5354,16 +5354,29 @@ export const FACES = [
   // the promotion DELETED the painted status paragraph (all six strings moved
   // to the lamp's `StatusLed` detail, reaching aria-label and title only), so
   // neither string is in the frame to move.
-  // ⚠ AND THE LAMP BESIDE THEM DOES NOT MOVE EITHER — the half worth CHECKING
-  // rather than assuming. `lit` is `kind === 'bound'` and a VRT boot binds
-  // nothing, but the body also passes `tone={problem ? 'warn' : 'accent'}`, and
-  // `unsupported` IS a problem while `idle` is not — so the two runner states
-  // DO reach `StatusLed` with different props. VERIFIED AT THE CSS: every
-  // tone-dependent rule in `StatusLed.svelte` is gated on `.lit`
-  // (`.status-led.warn.lit .lamp`, `.status-led.warn.lit .cap`), so an UNLIT
-  // lamp renders identically under either tone. The picture is the same both
-  // ways, and that is why this entry needs no settle assertion of its own.
+  // ⚠ THE LAMP BESIDE THEM IS THE HALF THAT MUST BE CHECKED RATHER THAN
+  // ASSUMED, and the answer CHANGED ONCE ON THIS BRANCH — read it before
+  // copying the shape. `lit` is `bound || problem` and `tone` is
+  // `problem ? 'warn' : 'accent'`, so an `unsupported` runner WOULD light the
+  // lamp amber where an `idle` one leaves it dark. That is deliberate rather
+  // than an oversight: every tone rule in `StatusLed.svelte` is gated on `.lit`
+  // (`.status-led.warn.lit .lamp`, `.status-led.warn.lit .cap`), so the
+  // readiness-only `lit={bound}` this body shipped first made `tone="warn"`
+  // DEAD CSS and left a denied grant PIXEL-IDENTICAL to idle — a device surface
+  // whose fault was invisible. Visibility is worth more than pixel-invariance
+  // here, and the invariance was never actually load-bearing:
+  //   * `webMidiPresent()` is `typeof navigator.requestMIDIAccess === 'function'`
+  //     and every runner this suite uses is Chromium, which has it — so the
+  //     resting kind is `idle`: not bound, not a problem, LAMP DARK;
+  //   * and that is evidence, not a prediction. The CARD baseline
+  //     (`vrt.spec.ts/seqtris.png`) has painted the `idle` STRING since the
+  //     module shipped and has never flapped, which is the same predicate under
+  //     observation on the same runners for longer than this face has existed.
+  // ⚠ SO A MOVE ON THIS SCENE'S BIND ROW MEANS THE RUNNER LOST WEB MIDI — worth
+  // knowing rather than worth hiding, and the one thing a pin here would have
+  // concealed.
   { type: 'seqtris', pages: 1 },
+
   // ── NIBBLES — the game group's fourth face, and the one whose determinism
   //    seam ALREADY EXISTED and is ALREADY PROVEN BYTE-IDENTICAL ────────────
   //

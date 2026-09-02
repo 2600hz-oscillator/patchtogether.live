@@ -610,6 +610,95 @@ function pulseTimes(from: SeqtrisState, n: number): SeqtrisState {
   return s;
 }
 
+// ────────────────────────────────────────────────────────────────────────────
+
+const STATUS_LED = readFileSync(
+  new URL('../controls/StatusLed.svelte', import.meta.url),
+  'utf8',
+);
+
+describe("seqtris — CLAIM 7b: a FAULT is VISIBLE, not just speakable", () => {
+  // ⚠ THE HOLE THIS CLOSES SHIPPED ONCE ALREADY ON THIS BRANCH, and nothing in
+  // the tree could see it. The card signalled `no-device` / `claimed` /
+  // `unsupported` THREE ways at once — the paragraph's TEXT changed, it took
+  // `.status.problem` colouring, and it took `role="alert"`. The promotion
+  // deletes the paragraph (correctly: a sentence of derived service state
+  // painted at rest is none of the four permitted roles) and compensates with
+  // `tone="warn"` on the lamp. But `tone` is COLOUR ON A LIT LAMP ONLY, and the
+  // first version of this body passed `lit={bound}` — mutually exclusive with
+  // `problem` — so the warn tone could NEVER render and a denied grant left the
+  // plate pixel-identical to idle: a dark lamp and a CONNECT button that looked
+  // like it did nothing.
+  //
+  // The three shipped fault lamps all pair `warn` with a `lit` that is TRUE
+  // EXACTLY WHEN THE FAULT HOLDS (`audioIn` FAULT, `es9` XRUN, `midiOutBuddy`
+  // LANE). This claim pins that pairing here, at the mechanism rather than at
+  // the call site's good intentions.
+  it('the MECHANISM: every tone rule in StatusLed is gated on `.lit`', () => {
+    // The premise, read rather than remembered — this is WHY `lit` has to
+    // include `problem`. If StatusLed ever tints an UNLIT lamp, this leg goes
+    // red and the pairing below stops being load-bearing.
+    const warnRules = [...STATUS_LED.matchAll(/^\s*(\.status-led[^{]*\.warn[^{]*)\{/gm)]
+      .map((m) => m[1]!.trim());
+    expect(warnRules.length, 'the tone must have rules at all, or this claim is vacuous')
+      .toBeGreaterThan(0);
+    for (const rule of warnRules) {
+      expect(rule, `\`${rule}\` tints without requiring .lit — the pairing below is now stale`)
+        .toContain('.lit');
+    }
+  });
+
+  it('`bound` and `problem` are DISJOINT, so `lit={bound}` would make `warn` unreachable', () => {
+    // Both predicates are derived from the same six-kind union. `bound` is one
+    // kind; `problem` is three others. There is no state in which a
+    // `lit={bound}` lamp is lit AND `tone` is `warn`.
+    const kinds = ['unsupported', 'idle', 'listing', 'no-device', 'claimed', 'bound'] as const;
+    const isBound = (k: string): boolean => k === 'bound';
+    const isProblem = (k: string): boolean =>
+      k === 'no-device' || k === 'claimed' || k === 'unsupported';
+    expect(kinds.filter((k) => isBound(k) && isProblem(k)), 'the two must not overlap')
+      .toEqual([]);
+    expect(kinds.filter(isProblem).length, 'and a fault must be REACHABLE, or nothing is at stake')
+      .toBe(3);
+  });
+
+  it('⚠ BOTH surfaces light the lamp on a PROBLEM, and pass the warn tone with it', () => {
+    for (const [name, src] of [['dock body', DOCK], ['lane tile', TILE]] as const) {
+      expect(
+        src,
+        `${name}: \`lit\` must include \`problem\` — with \`lit={bound}\` the warn tone is dead `
+          + 'CSS and a denied grant is INVISIBLE (dark lamp, unchanged caption, a CONNECT button '
+          + 'that looks like it did nothing)',
+      ).toMatch(/lit=\{bound \|\| problem\}/);
+      expect(src, `${name}: and the tone must ride with it`)
+        .toMatch(/tone=\{problem \? 'warn' : 'accent'\}/);
+    }
+  });
+
+  it('the two surfaces carry the IDENTICAL expression — they cannot disagree', () => {
+    // A lane tile and an open dock pane are mounted at once on the same node.
+    // One lit amber beside one dark is two surfaces disagreeing about one
+    // hardware claim, which is the failure the page-wide revision tick exists
+    // to prevent — so the expressions are compared, not just each matched.
+    const litOf = (src: string): string | null => /lit=\{([^}]*)\}/.exec(src)?.[1]?.trim() ?? null;
+    const toneOf = (src: string): string | null =>
+      /tone=\{([^}]*)\}/.exec(src)?.[1]?.trim() ?? null;
+    expect(litOf(DOCK)).toBe(litOf(TILE));
+    expect(toneOf(DOCK)).toBe(toneOf(TILE));
+    expect(litOf(DOCK), 'vacuity control: the extractor really found an expression').toBeTruthy();
+  });
+
+  it('NEGATIVE CONTROL: the matcher REJECTS the readiness-only shape it replaced', () => {
+    // Driven against the exact source this branch shipped first, so the legs
+    // above are not passing on a regex nobody has watched fail.
+    const before = DOCK.replace('lit={bound || problem}', 'lit={bound}');
+    expect(before, 'VACUITY GUARD: the substitution must have actually changed the source, or '
+      + 'this control is comparing a string with itself').not.toBe(DOCK);
+    expect(before).not.toMatch(/lit=\{bound \|\| problem\}/);
+    expect(before, 'the substitution must have actually landed').toMatch(/lit=\{bound\}/);
+  });
+});
+
 describe('seqtris — CLAIM 8: the VRT determinism argument, DERIVED', () => {
   // ⚠ `_shell-faces.ts` carries NO `simPin` for this module. That absence is
   // only honest if the board really is time-invariant at rest, so it is
