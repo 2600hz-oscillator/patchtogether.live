@@ -375,7 +375,7 @@ describe('SCREEN OFF must never darken the projector', () => {
     expect(bodyCode).toMatch(/previewCollapsed/);
     expect(bodyCode).toMatch(/markWatched\(nodeId\)/);
     // the mark is INSIDE the collapsed branch, ahead of the early return
-    const collapsed = /if \(previewCollapsed\) \{([\s\S]*?)\n    \}/.exec(bodyCode)?.[1] ?? '';
+    const collapsed = /if \(previewCollapsed\) \{([\s\S]*?)\n {4}\}/.exec(bodyCode)?.[1] ?? '';
     expect(collapsed, 'the SCREEN-OFF branch itself must mark the node watched')
       .toMatch(/markWatched/);
     expect(collapsed).toMatch(/requestAnimationFrame\(draw\)/);
