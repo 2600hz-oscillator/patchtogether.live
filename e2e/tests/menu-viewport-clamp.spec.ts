@@ -361,7 +361,7 @@ test('clip editor menus inside the dock full-view pane stay fully in view (owner
   await expect(pane).toBeVisible();
 
   // ⚠ THE CHOREOGRAPHY CHANGED WITH THE PROMOTION, AND THE SUBJECT DID NOT.
-  // `clipplayer` was promoted (#2320), so this pane paints the FACEPLATE: the
+  // `clipplayer` was promoted, so this pane paints the FACEPLATE: the
   // launch grid and the note editor are two BANDS that render at the same time
   // rather than two mutually exclusive card VIEWS. That deletes three steps
   // this test used to need — the click-then-wait-then-dblclick dance around the

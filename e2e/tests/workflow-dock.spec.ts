@@ -436,7 +436,7 @@ test.describe('dock drawer patch menu + rear-view patching (owner fixes 2026-07-
     // ⚠ THE PINNED CLIP PLAYER IS FORCED ONTO THE UN-MIGRATED PATH, and the
     // reason is that the SUBJECT of the two tests below is the dock's
     // VERBATIM-CARD BRANCH, not the clip player. `clipplayer` was promoted
-    // (#2320), so `DockFullView` now mounts its faceplate and there is no
+    // so `DockFullView` now mounts its faceplate and there is no
     // `data-dock-card` frame for `Canvas.cardRectFor` to resolve — which is
     // precisely the platform contract the picker-position fix is about.
     //

@@ -189,7 +189,7 @@ test.describe('workflow shell', () => {
     // assertion changed with it rather than being relaxed. This line used to
     // read `[data-dock-card="pinned-clipplayer"]` with the comment "the same
     // real card mounts, just in the faceplate frame"; `clipplayer` was promoted
-    // (#2320) and `DockFullView` switches on bare STRICT_FACES membership, so
+    // and `DockFullView` switches on bare STRICT_FACES membership, so
     // the pane mounts `<ModuleShell view="dock-full">` exactly as it does for
     // every other promoted module. What this test is ABOUT is unchanged —
     // occupancy: `c` opens a full-view PANE and not the exclusive pinned

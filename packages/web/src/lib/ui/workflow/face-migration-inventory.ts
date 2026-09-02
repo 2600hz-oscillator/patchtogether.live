@@ -1125,7 +1125,8 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
     // framing — a `controlFamilies` entry over node.data ranks fine.
     note:
       'PROMOTED — the FIFTH meta-domain face, and the second-to-last module to leave ' +
-      'NON_SHELL_LANE_TYPES (clipplayer, the last one, followed in #2320). ONE ranked TOGGLE ' +
+      'NON_SHELL_LANE_TYPES (clipplayer, the last one, followed with its own face). ONE ranked ' +
+      'TOGGLE ' +
       'cell — LOCK, over ' +
       'node.data.locked through the same setSurfaceLocked mutator the card calls — because every ' +
       'other affordance proxies a param on a DIFFERENT node, which no face key can address at any ' +

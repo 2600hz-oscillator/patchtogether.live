@@ -378,7 +378,7 @@ function uniformDomainClass(type: string): string | null {
  * ⚠ THE EXAMPLES IN THAT SENTENCE ARE A SNAPSHOT AND ALL THREE HAVE NOW
  * EXPIRED: `electraControl` was promoted and left `NON_SHELL_LANE_TYPES`,
  * `controlSurface` followed on 2026-09-01, and `clipplayer` — the last MODULE
- * CARD the set ever held — followed in #2320. The set now holds `group`,
+ * CARD the set ever held — followed with its own face. The set now holds `group`,
  * `sticky` and `cadillac`: organizational chrome and a roaming sprite, none of
  * which has a module card at all, so the audio side's OLD accidental safety
  * (demanding audio-class cables) would today exclude them for a second reason

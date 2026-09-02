@@ -439,7 +439,7 @@ test('the derived audio legacy-fallback fixtures are healthy', () => {
     // ⚠ THE SUBJECT IS THE LIVE SET, NOT A NAMED MODULE, AND THAT IS THE THIRD
     // RE-POINT THIS LEG WOULD OTHERWISE HAVE TAKEN. It named `clipplayer`,
     // "a NON_SHELL_LANE_TYPES snowflake", and `clipplayer` was promoted in
-    // #2320 — the LAST module card that set ever held. Nominating another
+    // its own face PR — the LAST module card that set ever held. Nominating another
     // member by hand is what went stale twice; iterating the set cannot,
     // because `rendersPlaceholderTile` reads the same set. The remaining
     // members (`group`, `sticky`, `cadillac`) are organizational chrome and a

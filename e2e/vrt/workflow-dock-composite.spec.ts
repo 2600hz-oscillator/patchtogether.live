@@ -105,7 +105,7 @@ test.describe('VRT: workflow bottom dock composites', () => {
     // why. This scene is the DOCKED-CARD + PATCH-PICKER composite — the
     // verbatim-card branch of `DockFullView` and the geometry
     // `Canvas.cardRectFor` resolves from a `[data-dock-card-frame]`. `clipplayer`
-    // was promoted (#2320), so that pane now paints a faceplate and there is no
+    // was promoted, so that pane now paints a faceplate and there is no
     // card frame at all; the scene would be measuring a different thing under
     // the same baseline name.
     //
