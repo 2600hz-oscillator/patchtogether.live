@@ -144,7 +144,16 @@ export const EXEMPT_OUTPUT_EMIT_MODULES: Record<string, string> = {
   // ── Hardware-input sources ──
   gamepad:    'no gamepad attached in test browser; covered by gamepad.spec.ts',
   joystick:   'no joystick movement in test browser; covered by joystick.spec.ts',
-  moog956:    'ribbon controller; pitch/gate emitted only while the ribbon is touched (no pointer drag in the per-port harness); covered by moog956.test.ts',
+  // ⚠ THE SECOND HALF OF THIS REASON STOPPED BEING TRUE ON 2026-09-02 and is
+  // corrected here rather than left standing: "covered by moog956.test.ts" was
+  // a UNIT test driving the factory against a mock AudioContext, which is not
+  // evidence that either output leaves the module. The promotion ships
+  // `face-moog956.spec.ts`, whose second leg performs a REAL pointer stroke on
+  // the shipping surface and measures BOTH jacks through the audio graph — the
+  // gate as an audible VCA open, the pitch as the Goertzel band of the VCO it
+  // is driving, moving an octave under a slide. The exemption itself stands:
+  // this harness has no gesture to give, which is exactly the reason.
+  moog956:    'ribbon controller; pitch/gate emitted only while the ribbon is touched (no pointer drag in the per-port harness); covered by face-moog956.spec.ts (a real pointer stroke → audible VCA + Goertzel pitch band) and moog956.test.ts',
   audioIn:    'requires live mic input; no audio device in CI; covered by audio-in.spec.ts',
   // ── MIDI-driven ──
   midiCvBuddy: 'requires MIDI device; covered by midi-cv-buddy.spec.ts',

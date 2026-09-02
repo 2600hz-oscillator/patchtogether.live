@@ -11,10 +11,15 @@
 // to reach the state where NO control has registered a setter. The defect class
 // outlives the face migration — the graph-level dispatch fallback is permanent —
 // but its SUBJECT did not: the spec was re-pointed twice in one day
-// (`wavecel` → `depolarizer` → `moog956`) and `moog956` is the last un-promoted
-// module that fits. #2068 recorded the conclusion rather than taking a third
-// re-point: what such a spec needs is a way to ASK for the placeholder path, not
-// a module that happens still to be on it.
+// (`wavecel` → `depolarizer` → `moog956`) and at the time `moog956` was the last
+// un-promoted module that fits. #2068 recorded the conclusion rather than taking
+// a third re-point: what such a spec needs is a way to ASK for the placeholder
+// path, not a module that happens still to be on it.
+//
+// ⚠ AND THE POOL IS NOW EMPTY — `moog956` was promoted on 2026-09-02, so there
+// is no un-promoted module left to re-point to and the third re-point this seam
+// refused to take is no longer even available. The seam is the only way to reach
+// the placeholder path; that is the argument holding, not a claim going stale.
 //
 // ⚠ AND A REGISTERED FIXTURE MODULE IS NOT THE ANSWER, which is why this is a
 // render seam and not a def. A "never promoted" module in the registry would

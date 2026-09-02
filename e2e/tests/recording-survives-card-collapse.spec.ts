@@ -4,11 +4,32 @@
 //
 // Owner, on dev: "when recorderbox is un-expanded, it stops the recording."
 //
-// RECORDERBOX is un-migrated, so under the faceplate shell its card exists ONLY inside
-// the dock full-view. Collapsing UNMOUNTS the card, and the card's onDestroy ran
+// RECORDERBOX was un-migrated, so under the faceplate shell its card existed ONLY inside
+// the dock full-view. Collapsing UNMOUNTED the card, and the card's onDestroy ran
 // `recorder.abandon()` plus `cancelAnimationFrame(rafId)` — a view action destroyed the
 // take. The recorder, its capture canvas, its frame pump and its render lease now live in
 // node-recorder-registry, keyed to the NODE.
+//
+// ── ⚠ RE-POINTED AT THE FACEPLATE (wave 5), AND THE GUARD IS DELIBERATELY WEAKER ──
+//
+// recorderbox is PROMOTED, so the default shell mounts no card anywhere and the dock
+// full-view renders `RecorderboxCaptureBody` instead. Every locator below moved from the
+// card's testids to the face's. That is bookkeeping. THIS IS NOT:
+//
+//   ⚠ COLLAPSING NO LONGER UNMOUNTS EVERY SURFACE. The face fills BOTH extension slots,
+//   and `ModuleShell` renders `tileBody` wherever `fullViewBody` is not — so collapsing
+//   the dock now leaves `RecorderboxTileBody` mounted in the lane, still running the same
+//   transport reconciler. The original mechanism ("the only mounted surface goes away")
+//   is therefore NO LONGER REPRODUCIBLE BY A VIEW ACTION at all. That is a product
+//   IMPROVEMENT and a COVERAGE LOSS at the same time, and it is named here rather than
+//   left for someone to infer from a green run.
+//
+//   What still holds, and what this file still proves: a VIEW action must not stop the
+//   take, and the take must keep GROWING while the surface that started it is gone. What
+//   it can no longer prove is that a take survives with NO surface mounted — the
+//   structural guarantee for that is the registry's own ABSENCE of any teardown method
+//   (no dispose, no release, no detach), which `tsc` enforces before any test runs, plus
+//   `recorderbox-face-model.test.ts`'s source leg that no surface calls `.abandon()`.
 //
 // ── The assertion is CAUSAL, not statistical ─────────────────────────────────
 //
@@ -158,9 +179,12 @@ test('a recording keeps GROWING while its card is collapsed', async ({ page }) =
   });
 
   await page.evaluate((id) => (globalThis as unknown as { __openDockFullView(x: string): void }).__openDockFullView(id), 'rec');
-  await expect(page.getByTestId('recorderbox-card')).toBeVisible({ timeout: 20_000 });
+  // The FACE's dock body, not the card — recorderbox is promoted and no card is
+  // mounted anywhere on the default shell.
+  await expect(page.getByTestId('recorderbox-face-body')).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByTestId('recorderbox-card')).toHaveCount(0);
 
-  await page.getByTestId('recorderbox-record').click();
+  await page.getByTestId('recorderbox-face-record').click();
   await expect
     .poll(async () => (await nodeRecording(page, 'rec')).recording, { timeout: 30_000 })
     .toBe(true);
@@ -169,9 +193,9 @@ test('a recording keeps GROWING while its card is collapsed', async ({ page }) =
   const before = await waitForElapsedPast(page, 'rec', 0.3, 15_000);
   expect(before.ok, `recording did not advance even WITH the card mounted: ${JSON.stringify(before)}`).toBe(true);
 
-  // ── THE ACT UNDER TEST: collapse. This unmounts the card. ──
+  // ── THE ACT UNDER TEST: collapse. This unmounts the surface that armed the take. ──
   await page.getByTestId('faceplate-collapse').click();
-  await expect(page.getByTestId('recorderbox-card')).toHaveCount(0, { timeout: 15_000 });
+  await expect(page.getByTestId('recorderbox-face-body')).toHaveCount(0, { timeout: 15_000 });
 
   const atCollapse = (await nodeRecording(page, 'rec')).elapsed ?? 0;
   expect(
@@ -190,11 +214,17 @@ test('a recording keeps GROWING while its card is collapsed', async ({ page }) =
 
   // Re-expand and stop: the take the user made is finalized, not lost.
   await page.evaluate((id) => (globalThis as unknown as { __openDockFullView(x: string): void }).__openDockFullView(id), 'rec');
-  await expect(page.getByTestId('recorderbox-card')).toBeVisible({ timeout: 20_000 });
-  // The re-mounted card shows the SAME running take, not a fresh idle one.
-  await expect(page.getByTestId('recorderbox-rec-indicator')).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByTestId('recorderbox-face-body')).toBeVisible({ timeout: 20_000 });
+  // The re-mounted surface shows the SAME running take, not a fresh idle one.
+  // ⚠ THE OBSERVABLE MOVED WITH THE READOUT: the card's `REC 00:12` overlay is
+  // deleted (a ticking measurement painted over the picture), so what says
+  // "still recording" is the REC lamp being LIT, with the elapsed time on its
+  // accessible name where the resting-text ruling puts it.
+  const recLed = page.getByTestId('recorderbox-face-rec-led');
+  await expect(recLed).toHaveAttribute('data-lit', '1', { timeout: 10_000 });
+  await expect(recLed).toHaveAttribute('aria-label', /recording for \d\d:\d\d/);
 
-  await page.getByTestId('recorderbox-record').click();
+  await page.getByTestId('recorderbox-face-record').click();
   await expect
     .poll(async () => (await nodeRecording(page, 'rec')).recording, { timeout: 30_000 })
     .toBe(false);
@@ -244,8 +274,8 @@ test('NEGATIVE CONTROL: deleting the node DOES end its recording', async ({ page
     (globalThis as unknown as { showDirectoryPicker?: unknown }).showDirectoryPicker = undefined;
   });
   await page.evaluate((id) => (globalThis as unknown as { __openDockFullView(x: string): void }).__openDockFullView(id), 'rec');
-  await expect(page.getByTestId('recorderbox-card')).toBeVisible({ timeout: 20_000 });
-  await page.getByTestId('recorderbox-record').click();
+  await expect(page.getByTestId('recorderbox-face-body')).toBeVisible({ timeout: 20_000 });
+  await page.getByTestId('recorderbox-face-record').click();
   await expect.poll(async () => (await nodeRecording(page, 'rec')).recording, { timeout: 30_000 }).toBe(true);
 
   // Remove the node from the graph — the ONE event that must end the recording.

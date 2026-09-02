@@ -2152,7 +2152,7 @@ moog923 param lpCutoff 0..1 linear default=0.5
 moog956 meta domain=audio
 moog956 out gate gate edge=gate
 moog956 out pitch pitch
-moog956 param gate 0..1 linear default=0
+moog956 param gate 0..1 discrete default=0
 moog956 param offset -2..2 linear default=0
 moog956 param pos 0..1 linear default=0
 moog956 param scale 0..5 linear default=2
