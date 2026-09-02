@@ -317,7 +317,7 @@
         class="op"
         class:on={velMode}
         aria-pressed={velMode}
-        title="VELOCITY mode — while on, clicking a cell cycles its velocity instead of toggling the note (the card's Shift-click, latched here because a faceplate has no shift modifier of its own)"
+        title="VELOCITY mode — while on, clicking a cell cycles its velocity instead of toggling the note. Shift-clicking a cell does the same for one click; this LATCHES it, standing in for the card's held-Shift, which a faceplate has no keyboard handler for."
         data-testid={`clipplayer-velmode-${nodeId}`}
         onclick={() => (velMode = !velMode)}>VEL</button
       >
@@ -394,9 +394,9 @@
                 aria-label={`step ${step} row ${row}`}
                 title={cellTitle(clip, step, midi)}
                 data-testid={`clipplayer-cell-${row}-${step}`}
-                onclick={() =>
+                onclick={(e) =>
                   ensureThenEdit(() =>
-                    velMode
+                    velMode || e.shiftKey
                       ? cycleClipplayerNoteVelocity(nodeId, selectedClip, step, midi)
                       : toggleClipplayerNote(nodeId, selectedClip, step, midi),
                   )}

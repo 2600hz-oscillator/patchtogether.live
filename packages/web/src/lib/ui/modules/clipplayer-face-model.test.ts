@@ -419,6 +419,26 @@ describe('clipplayer face — what a def-reading gate cannot see', () => {
     expect(panel).not.toMatch(/nowSticky[^\n]*writeClipplayer/);
   });
 
+  // ⚠ THE CELL TOOLTIP PROMISES SHIFT-CLICK, SO THE HANDLER MUST READ IT. The
+  // card sets `shiftHeld` from its own keydown/keyup pair, so "Shift-click:
+  // cycle velocity" is literally true there; the face carried the SENTENCE
+  // over and, at first, only the latched VEL button — a gesture the tooltip on
+  // all 128 cells advertised and nothing implemented. This is the class of bug
+  // no gate here can see: the prose and the handler live four hundred lines
+  // apart, and `faces-parity` drives the LATCH, which worked. Both paths now
+  // reach the same action, which is also the card's exact behaviour.
+  it('a note cell cycles velocity from EITHER the VEL latch or a shift-click', () => {
+    const src = read('ClipplayerNotePanel.svelte');
+    // The tooltip that makes the promise…
+    expect(src, 'the cell tooltip advertises shift-click').toContain('Shift-click: cycle velocity');
+    // …and the handler that keeps it. Both disjuncts, on the same call.
+    expect(src, 'the cell click reads the shift modifier too').toMatch(
+      /velMode \|\| e\.shiftKey\s*\n?\s*\?\s*cycleClipplayerNoteVelocity/,
+    );
+    // …and the click handler must actually RECEIVE the event to read it.
+    expect(src, 'the cell onclick takes the event').toMatch(/onclick=\{\(e\) =>\s*\n?\s*ensureThenEdit/);
+  });
+
   // ⚠ THE MIDI BINDING ON RST IS DOCUMENTED AND PERSISTED (its keys live in
   // localStorage and the def advertises it), and a bare <Button> in a shell
   // action cell would have dropped it. The body wraps RST in the same
