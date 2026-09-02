@@ -680,14 +680,20 @@ export const SKIP_BUDGET = [
     lanes: ['e2e'],
     homeLane: 'e2e',
     why:
-      'PARKED (2026-08-29) — the SYNESTHESIA row only of the registry-driven inputs-accept wire-up sweep: '
-      + '1 recovered-on-retry observation on PR #2265 e2e shard 3 under the live fail-on-flaky gate '
-      + '(attempt 1: pageerror "Cannot read properties of undefined (reading 0)" during input wire-up; '
-      + 'attempt 2 green at the same SHA; the PR under test composes label strings deterministically, so a '
-      + 'bug there would fail both attempts). While parked, a synesthesia input that throws on wire-up '
-      + 'ships green — its outputs/behavioral dims and every other module\'s inputs row still run. '
+      'PARKED (2026-09-01) — the SEQTRIS row only of the registry-driven inputs-accept wire-up sweep: '
+      + '3 recovered-on-retry observations in 24 h, all e2e shard 4 (runs 33472900654/33509092036/33537562900), '
+      + 'each the identical attempt-1 "mount FRAME budget exhausted after 300 frames — not mounted: sut, '
+      + 'up-clock-seq" with a booted app and an empty canvas, attempt 2 green at the same SHA; four '
+      + 'hypotheses eliminated before parking (see the spec source). While parked, a seqtris input that '
+      + 'throws on wire-up ships green — seqtris.spec.ts still drives the real clock + Launchpad inputs to '
+      + 'an audible output, and every other module\'s inputs row still runs. '
+      + 'The SYNESTHESIA row that used to be parked here is UN-PARKED (2026-09-02): its pageerror "Cannot '
+      + 'read properties of undefined (reading 0)" was the audio reconciler treating a same-id TYPE change '
+      + 'as a no-op, so this sweep\'s shared page left the previous row\'s engine handle bound at node id '
+      + '`sut` and synesthesia\'s card drew another module\'s snapshot — fixed in reconciler.ts, pinned by '
+      + 'reconciler-node-type-swap.spec.ts. '
       + 'Scope caveat (the section note above): this entry admits any FLAKE-PARK row in this spec; the '
-      + 'per-module anchor lives in the spec source (`mod.type === \'synesthesia\'`), not here.',
+      + 'per-module anchor lives in the spec source (`mod.type === \'seqtris\'`), not here.',
   },
   {
     specs: ['perf-tempo-under-modulation.spec.ts'],
