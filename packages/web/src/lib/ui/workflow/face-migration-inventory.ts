@@ -391,7 +391,29 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
   { type: 'graphicEq', disposition: 'generic-face' },
   { type: 'illogic', disposition: 'generic-face' },
   { type: 'inwards', disposition: 'generic-face' },
-  { type: 'joystick', disposition: 'generic-face', note: 'its 2-D pad is a HAND-CLONE — migrate onto the shared `xy` cell (#1509 §3), never two knobs' },
+  {
+    type: 'joystick',
+    disposition: 'generic-face',
+    // ⚠ THE OLD NOTE ("migrate onto the shared `xy` cell, never two knobs")
+    // was overturned by the owner, not by drift: an `xyPads` face here
+    // resolves to ZERO lane controls (the pad anchor is dock-only and the
+    // partner folds at every tier), which module-face-lint denies with this
+    // module's old shape as its permanent negative control, and widening that
+    // gate to credit a `tileBody` is a gate edit the 2026-08-25 ruling
+    // reserves to the owner. The 2026-08-31 decision (owner-decisions item 2)
+    // picked the fallback the old note forbade.
+    note:
+      'SHIPPED as the two-ordinary-cells fallback (owner decision 2026-08-31): `pos_x`/`pos_y` '
+      + 'rank as two plain bipolar knob cells — the lane tile paints them, honestly satisfying '
+      + 'the #1974 lane clause — and the real pad (jump-to-point, Y flip, tracked commits, '
+      + 'double-click re-centre, #1963 no-snap-back) is the `joystick` extension\'s '
+      + '`fullViewBody` at the dock. The stated cost is the twotracks redundancy: the dock '
+      + 'shows the pad AND both knobs beneath it. The knobs are the parity-credited cells and '
+      + 'the per-axis MIDI/Electra anchors; the pad emits no `control-*` anchor and no '
+      + '`data-control-params` (joystick-face-model.test.ts pins both directions). The card\'s '
+      + 'x/y decimal readout is DELETED on the promoted surfaces, not relocated: values live on '
+      + 'the pad\'s aria-label and the knobs\' aria-valuetext.',
+  },
   { type: 'karplus', disposition: 'generic-face' },
   { type: 'kickdrum', disposition: 'generic-face' },
   { type: 'lfo', disposition: 'generic-face' },

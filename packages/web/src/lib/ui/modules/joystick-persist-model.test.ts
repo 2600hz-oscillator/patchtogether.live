@@ -15,12 +15,13 @@
 //     self-contradiction the ruling killed, and it is asserted against the
 //     artifact so re-introducing the sentence is red.
 //
-// ⚠ THIS FILE IS NOT `joystick-face-model.test.ts` AND joystick IS NOT FACED.
-// Q43 was built and held — see the note on the def for the three measurements
-// that hold it (`XyPad` paints a resting decimal, exposes no `aria-valuetext`,
-// and is outside `face-readout-source.test.ts`'s `PRIMITIVES`). When the pad is
-// brought up to the 2026-08-17 ruling, the face lands and its own model test
-// arrives with it.
+// ⚠ THIS FILE IS NOT `joystick-face-model.test.ts` — that file exists now
+// (2026-09-01, the promotion this header spent two revisions promising) and
+// pins the FACE: the two-ordinary-cells curation, the dock pad body's drag
+// contract, and the redundancy discipline (the pad emits no `control-*`
+// anchor). THIS file stays what it always was: the #1963 value semantics
+// every surface shares — card, knob cells and pad body all commit through
+// `clampJoy` and all persist through `node.params`.
 
 import { describe, expect, it } from 'vitest';
 import { clampJoy, joystickDef } from '$lib/audio/modules/joystick';

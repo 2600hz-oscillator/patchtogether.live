@@ -3542,8 +3542,11 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // moved two of its four assigned modules OUT of the plain set. Both
   // reclassifications are recorded in `.myrobots/2026-08-23-cut-a-batch2-
   // derivation.md` with the read sites; the short form is that `samsloop`'s
-  // recording switches are `node.data` and not params, and `joystick` cannot
-  // paint a lane tile at all (see the refusal note further down this file).
+  // recording switches are `node.data` and not params, and `joystick` could
+  // not paint a lane tile with the pad-only shape it was then assumed to need.
+  // (⚠ RESOLVED 2026-09-01: the owner's two-ordinary-cells fallback ranks the
+  // axes as plain knob cells and joystick is promoted — see its own entry at
+  // the end of this set. The refusal itself still stands, on the SHAPE.)
 
   // SHAPEDRAMPS — a sync-locked parametric ramp generator, and the FIRST module
   // in this programme to gain a picture rather than carry one forward.
@@ -5622,6 +5625,47 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // `docs:accept` + contract-lock re-pin (the ptzcam-class cost the wave plan
   // budgeted).
   'controlSurface',
+
+  // ── JOYSTICK (2026-09-01, face-program wave 3) — the #1974 refusal's own
+  // module, promoted WITHOUT weakening the gate that carries the refusal ─────
+  //
+  // For two years of program history this module WAS the zero-lane-controls
+  // counterexample: two params, both axes of one pad, so a face declaring
+  // `xyPads` resolves to ZERO lane controls (`laneOrder` drops the anchor,
+  // `foldedOrder` drops the partner) and `module-face-lint`'s
+  // lane-paints-something clause denies it — with a fixture of exactly that
+  // shape as its permanent negative control.
+  //
+  // ⚠ THE PROMOTION IS THE OWNER'S TWO-ORDINARY-CELLS FALLBACK (2026-08-31,
+  // owner-decisions item 2), chosen over teaching the lint to credit a
+  // `tileBody` (a gate edit the 2026-08-25 ruling reserves to the owner). The
+  // face declares NO `xyPads`: `pos_x`/`pos_y` rank as two plain bipolar knob
+  // cells, so the lane clause is satisfied honestly — the tile really paints
+  // both — and the real pad (jump-to-point, capture, Y flip, tracked
+  // rAF-coalesced commits, double-click re-centre, #1963 no-snap-back) is the
+  // `joystick` extension's `fullViewBody` at the head of the dock.
+  //
+  // ⚠ THE STATED COST (the twotracks redundancy): the dock shows the pad AND
+  // the two knobs beneath it — two operable surfaces over one pair of params.
+  // The knobs are the parity-credited cells and the MIDI-learn / Electra /
+  // control-surface anchors (a per-axis assign the hand-rolled card never
+  // had); the pad carries NO `control-*` anchor and NO `data-control-params`,
+  // or faces-parity would count each axis twice and `face-xy-body-source`'s
+  // inverse leg would refuse the undeclared pad. Pinned both ways in
+  // `joystick-face-model.test.ts`.
+  //
+  // ⚠ THE NEGATIVE CONTROL SURVIVES THIS PROMOTION BY CONSTRUCTION: the lint's
+  // fixture (`joystick-shaped-fixture`) is a synthetic literal of the OLD
+  // pad-only shape, not a read of this def, so promoting the real module
+  // changes nothing about what the gate denies. The deleted readout is the
+  // card's `x: 0.00 / y: 0.00` row (owner-decisions item 11): the face paints
+  // no decimals anywhere — values live on the pad's `aria-label` and the knob
+  // cells' `aria-valuetext`.
+  //
+  // ⚠ ZERO ATTEST, and no contract movement: an audio def, `face` is
+  // hash-transparent by construction, the body is DOM with no drawing surface,
+  // and no docs sentence moved.
+  'joystick',
   // ── VIDEOBOX (wave 3, 2026-09-01) — the FILE PLAYER ──────────────────────
   //
   // tvLibrarian's exact face shape on the def its audio plumbing was copied

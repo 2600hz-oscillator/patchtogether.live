@@ -3113,6 +3113,18 @@ describe('module-face lint — FACEPLATE STRUCTURE (PF-20: hero / sidebar / hint
 // literal resolves `{ kind: 'static' }`, which the dead-glyph clause above
 // refuses by name). flipper drops nothing; joystick drops everything it has.
 //
+// ⚠ THE REAL `joystick` IS PROMOTED NOW (2026-09-01) AND THIS GATE IS WHY IT
+// SHIPPED THE WAY IT DID — read the two together. The owner declined widening
+// this clause to credit a `tileBody` (the 2026-08-25 no-new-gates ruling makes
+// that edit the owner's) and picked the two-ordinary-cells fallback instead:
+// joystick's live face declares NO `xyPads`, ranks `pos_x`/`pos_y` as plain
+// knob cells the lane really paints, and carries the pad as a `fullViewBody`.
+// So the promoted module no longer HAS the shape this clause denies — the
+// shape itself, "two ranked params, both axes of one declared pad", lives on
+// UNCHANGED in the synthetic `joystick-shaped-fixture` below, which reads
+// nothing from the live def and therefore survives the promotion by
+// construction. The negative control is permanent; the module was not.
+//
 // Framing it as the drop also removes the exemption `flipper` would otherwise
 // have needed — a strictly better shape than carving out the honest case.
 //
