@@ -302,7 +302,11 @@
 
   <div class="board" data-testid="chromaconsole-board-{nodeId}" aria-label={boardDetail}>
     {#each chips as chip (chip.slotId)}
-      <div class="slot" data-testid="chromaconsole-slot-{nodeId}-{chip.index + 1}">
+      <div
+        class="slot"
+        class:wide={chip.control?.role === 'enum'}
+        data-testid="chromaconsole-slot-{nodeId}-{chip.index + 1}"
+      >
         {#if assigning}
           <select
             aria-label={chip.detail}
@@ -443,13 +447,25 @@
     border-color: var(--accent, #6af);
     color: var(--accent, #6af);
   }
-  /* TWO columns of four: eight one-line chips fit the plate the eight knob
-     cells below occupy, and an enum slot's Segmented has room for its named
-     ranges without the board growing a third column. */
+  /* FOUR columns of two — the card's own grid, and the width `knobLabel`'s
+     shortening rule was written for ("a 4-across grid cell").
+     ⚠ TWO COLUMNS WAS MEASURED AND REJECTED: the plate's width is set by its
+     widest row (the five pedal commands), so a 2-column board stretched each
+     column to ~300 px and left a canyon of empty grey between a name and its
+     neighbour — the shape the 2026-08-17 ruling names ("we do not want useless
+     gray horizontal space on cards, ever"). Four columns spend the same width
+     on content. */
   .board {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 3px 10px;
+  }
+  /* A slot showing a SELECTOR takes two columns: its named ranges are a row of
+     buttons (six of them for a module switch), and a quarter-width cell would
+     wrap them into an unreadable stack. Only an enum-assigned slot is wide, so
+     the resting board — eight one-line names — stays four across. */
+  .slot.wide {
+    grid-column: span 2;
   }
   .slot {
     display: flex;
