@@ -6128,6 +6128,71 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // window). `docs:accept` runs because the explanation's card-ownership prose
   // was stale.
   'recorderbox',
+
+  // ── SEQTRIS — a GAME plus a HARDWARE BINDER, promoted with BOTH body slots ─
+  //
+  // ⚠ THE THING PROMOTION REPLACES IS A BLANK PLACEHOLDER, NOT A CARD. seqtris
+  // is not in NON_SHELL_LANE_TYPES, not a CARD_PRODUCER (the card only READS
+  // `engine.read(node,'card-api')`; nothing engine-side depends on it being
+  // mounted) and not in HEADLESS_MOUNT_LANE_TYPES — so under the shipping
+  // default shell the card is NOT MOUNTED AT ALL today, and the lane paints
+  // `ModuleShellPlaceholder` while the game runs, the pads stay lit and PIECE /
+  // LINE / SPAWN keep firing into whatever is patched. Every seqtris e2e
+  // reaches the card only through the `rack` fixture, which is `?shell=legacy`
+  // by construction, so the whole existing suite stays green either way and
+  // GREEN DOES NOT MEAN COVERED HERE — `e2e/tests/seqtris-face.spec.ts` is the
+  // default-shell half, added in this same diff.
+  //
+  // TWO PARAMS ARE ALL A GENERIC FACE COULD RANK, and the module is a well plus
+  // the LAUNCHPAD'S OWN SCENE COLUMN. Ranking the eight buttons is impossible
+  // twice over — `face.order` is a PRIORITY ranking, so it would reorder the
+  // one thing that must not move, and the two dead buttons have no `ParamDef`
+  // to rank at all — while the CONNECT gesture and the bound / no-device /
+  // claimed status are WebMIDI SERVICE state rather than params (the
+  // outToLaunch + chromaconsole + ptzcam argument). No `ParamCellKind` mounts a
+  // live 8x8 grid and a PF-14 `panel` cell's first legal rank is 7 against a
+  // two-param module, so `fullViewBody` + `tileBody` are the only route rather
+  // than a preference. `skifree` is the precedent for filling both.
+  //
+  // ⚠ THE WELL STAYS DOM. It is a CSS grid of 64 `<span>`s, not a canvas, and
+  // the modtris/skifree DPR lessons DO NOT APPLY — both are canvas-BLIT hazards
+  // and a `1fr` grid with `aspect-ratio: 1/1` has neither. Converting it to
+  // "follow the precedent" would delete 64 testids and the `data-piece`
+  // attribute (the only machine-readable read of the board that is not a
+  // `page.evaluate` into engine internals) and IMPORT a bug class this module
+  // is immune to.
+  //
+  // ⚠ AND THE BODIES SUBSCRIBE RATHER THAN rAF, which is the sharpest
+  // divergence from those two siblings. seqtris' factory PUSHES — `changed()`
+  // fires a listener set on every state change — so an rAF poll would burn a
+  // frame's work per node per frame to re-read a board that moves at most once
+  // per clock pulse, and would make an idle, unclocked seqtris (the resting
+  // state a VRT scene captures) do work forever.
+  //
+  // ⚠ NO simPin, AND THE ABSENCE IS THE POINT. Unlike modtris, pong, frogger
+  // and skifree, seqtris was NEVER in EXEMPT_FROM_VRT: `createSeqtrisState`
+  // seeds from the fixed `SEQTRIS_DEFAULT_SEED` (not `Math.random`) and
+  // `tick()` returns early on `edges <= 0`, so with nothing patched into
+  // `clock` the board is TIME-INVARIANT at rest by construction. Both halves of
+  // modtris' pin have no counterpart here, and adding one would be machinery
+  // pinning a thing that does not move.
+  //
+  // NIL CONTRACT, NIL ART, NIL ATTEST. No param, port or domain change (the
+  // `params` array is untouched, so both knobs were already live and there was
+  // no dead control to wire); `seqtris` is ART_EXCLUDED with a reasoned entry
+  // and no poly width, chord voicing or note derivation moves; and `face` is in
+  // HASH_TRANSPARENT_PROPS while no seqtris spec matches `webgl-heavy-globs.ts`.
+  //
+  // ⚠ `workflow-shell.spec.ts` IS NOT AT RISK, unlike the modtris precursor:
+  // `AUDIO_OPERABLE_FIXTURE`'s predicate is `mountsAFader` and this card draws
+  // `KnobConic`, so seqtris is not that pool's pick and cannot become one.
+  //
+  // ⚠ THE FLAKE-PARKED per-port row STAYS PARKED. `per-module-per-port-inputs.spec.ts`
+  // `test.fixme`s seqtris' inputs-accept row (#1847, mount FRAME budget) and
+  // this promotion neither un-parks it nor widens it — but it DOES change what
+  // mounts, so if that park is ever re-opened it must be re-opened against the
+  // post-promotion mount rather than against the card.
+  'seqtris',
 ]);
 
 /**
