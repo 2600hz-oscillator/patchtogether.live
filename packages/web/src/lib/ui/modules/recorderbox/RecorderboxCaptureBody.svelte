@@ -445,11 +445,21 @@
 </div>
 
 <style>
+  /* ⚠ NO HORIZONTAL PADDING, AND IT IS A GATE FIX RATHER THAN A STYLE CHOICE.
+     `workflow-shell-faces`' EMPTY-PLATE clause measures the face's own box
+     against its own INK — a canvas is ink, this body's padding is not — and
+     refuses more than 40 CSS px of reserve. MEASURED on the first CI capture:
+     content 523, face body 564, slack 41. Of that, 33 px is the SHARED shell
+     chrome (the editor's 22 px L/R padding plus the shell's own), which the
+     gate's own notes call the normal "the name row defines the plate" mode;
+     the remaining 8 px was this rule's `padding-right`, reserving width nothing
+     draws in. `FrametableOutputBody` already uses `6px 0 2px` for the same
+     reason, so this is the fleet idiom rather than a local workaround. */
   .recorderbox-body {
     display: flex;
     flex-direction: column;
     gap: 6px;
-    padding: 6px 8px 2px;
+    padding: 6px 0 2px;
     box-sizing: border-box;
   }
   .preview-wrap {
