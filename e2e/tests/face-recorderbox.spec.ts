@@ -210,6 +210,45 @@ async function openDock(page: Page, nodeId: string) {
   return dockShell;
 }
 
+/**
+ * Seed one mid-flight manifest — the record `listRecoverable(nodeId)` scans for
+ * (DB `patchtogether-recorderbox`, store `manifests`, keyPath `opfsPath`,
+ * `status: 'recording'`), copied from `recorderbox-recover-reachable.spec.ts`.
+ *
+ * ⚠ IT MUST LAND BEFORE THE DOCK BODY MOUNTS. `RecorderboxCaptureBody` scans in
+ * a mount `$effect` and there is no rescan trigger, so a write after the pane is
+ * open is simply never read.
+ */
+async function seedRecoverable(page: Page, nodeId: string): Promise<void> {
+  await page.evaluate(async (id) => {
+    await new Promise<void>((resolve, reject) => {
+      const req = indexedDB.open('patchtogether-recorderbox', 1);
+      req.onupgradeneeded = () => {
+        const db = req.result;
+        if (!db.objectStoreNames.contains('manifests')) {
+          db.createObjectStore('manifests', { keyPath: 'opfsPath' });
+        }
+      };
+      req.onsuccess = () => {
+        const db = req.result;
+        const tx = db.transaction('manifests', 'readwrite');
+        tx.objectStore('manifests').put({
+          nodeId: id,
+          filename: 'interrupted-take',
+          startedAt: 1_750_000_000_000,
+          mime: 'video/mp4',
+          opfsPath: `recorderbox/${id}-1750000000000-interrupted-take.mp4`,
+          status: 'recording',
+          chunkName: 'interrupted-take.mp4',
+        });
+        tx.oncomplete = () => { db.close(); resolve(); };
+        tx.onerror = () => { db.close(); reject(tx.error); };
+      };
+      req.onerror = () => reject(req.error);
+    });
+  }, nodeId);
+}
+
 /** Write `node.data.recording` straight onto the shared doc — what a RACK-MATE's
  *  press looks like from this browser, and what a patch loaded with
  *  `recording: true` looks like too. Deliberately NOT a click. */
@@ -471,5 +510,70 @@ test.describe('RECORDERBOX face — the promotion is what makes it recordable', 
     const size = body.locator('[data-testid="recorderbox-face-quality"]');
     await expect(size).toBeEnabled();
     await expect(size).toHaveValue('balanced');
+  });
+
+  /**
+   * ⚠ THE OWNER-REPORTED BUG WAS PINNED ONLY ON THE SURFACE THE PROMOTION STOPS
+   * MOUNTING. `recorderbox-recover-reachable.spec.ts` — written for an owner
+   * report on 2026-07-31, "the recovery question appeared and its Save/Discard
+   * were clipped away" — boots `?shell=legacy` and asserts on
+   * `recorderbox-recover-*`, i.e. the CARD. After this promotion the default
+   * shell mounts no card anywhere, so on the surface a player actually reaches
+   * that owner P0 had ZERO coverage. This is the
+   * [[shared-derivation-repaired-only-on-the-surface-you-looked-at]] shape: the
+   * geometry argument for the dock ("a dock pane has no rack-tier height pin")
+   * is a good argument, and an argument is not a measurement.
+   *
+   * ⚠ `toBeVisible()` WOULD NOT CATCH IT, which is why this leg is geometric.
+   * An element clipped by an ancestor's `overflow: hidden` still reports as
+   * visible — non-empty box, not `display: none`. `elementFromPoint` at the
+   * button's own centre is the assertion that proves reachability, and it is
+   * ancestor-agnostic: it catches a clip by ANY ancestor and a cover by any
+   * sibling, without this file having to know which element does the clipping.
+   */
+  test('the RECOVERY question is ANSWERABLE on the faceplate, not merely rendered', async ({ page }) => {
+    test.setTimeout(takeBudget(0));
+    await pinEncoder(page, true);
+    await boot(page);
+    await spawnPatch(page, [{ id: 'frb5', type: 'recorderbox', domain: 'video' }], [], {
+      mountTimeout: BOOT_MS,
+    });
+
+    // Seed BEFORE the dock opens — the body scans in a mount effect.
+    await seedRecoverable(page, 'frb5');
+    const dock = await openDock(page, 'frb5');
+    const prompt = dock.locator('[data-testid="recorderbox-face-recover"]');
+    await expect(prompt, 'the seeded manifest raises the recovery prompt on the FACE').toBeVisible({
+      timeout: SLOW_BOOT_TEST_TIMEOUT_MS,
+    });
+
+    for (const testid of ['recorderbox-face-recover-save', 'recorderbox-face-recover-discard']) {
+      const btn = dock.locator(`[data-testid="${testid}"]`);
+      await expect(btn).toBeVisible();
+      await expect(btn).toBeEnabled();
+      const box = await btn.boundingBox();
+      expect(box, `${testid} should have a box`).not.toBeNull();
+
+      const hit = await page.evaluate(
+        ({ x, y, id }) => {
+          const el = document.elementFromPoint(x, y);
+          return !!el?.closest(`[data-testid="${id}"]`);
+        },
+        { x: box!.x + box!.width / 2, y: box!.y + box!.height / 2, id: testid },
+      );
+      expect(
+        hit,
+        `${testid} is not the topmost element at its own centre — it is clipped by an ancestor `
+          + 'or covered by a sibling, so the player can read the question and cannot answer it. '
+          + 'That is the owner-reported 2026-07-31 bug, on the surface the promotion moved it to.',
+      ).toBe(true);
+    }
+
+    // ⚠ AND IT IS WIRED, not decorative — so this leg cannot pass on a panel
+    // that merely LOOKS answerable. Discard retires the only candidate.
+    await dock.locator('[data-testid="recorderbox-face-recover-discard"]').click();
+    await expect(prompt, 'discarding the only candidate retires the prompt').toBeHidden({
+      timeout: SLOW_BOOT_TEST_TIMEOUT_MS,
+    });
   });
 });
