@@ -20,11 +20,16 @@
 // belong to the NODE, not to a mounted card.
 //
 // ⚠ AFTER P2 THIS IS THE COMMON PATH, NOT AN EDGE CASE. videovarispeed has left
-// `DOM_SOURCE_LANE_TYPES`, so it gets NO headless host and its lane renders a
-// placeholder tile — an ordinary rack has no videovarispeed card mounted
-// anywhere at all. "The CV path works with no card" is therefore the normal
-// operating condition, and this spec is the only thing standing between us and
-// a silent regression on it.
+// `DOM_SOURCE_LANE_TYPES`, so it gets NO headless host — an ordinary rack has no
+// videovarispeed card mounted anywhere at all. "The CV path works with no card"
+// is therefore the normal operating condition, and this spec is the only thing
+// standing between us and a silent regression on it.
+//
+// ⚠ AND SINCE THE WAVE-4 PROMOTION THE CARD HAS NO SURFACE ON THE DEFAULT SHELL
+// AT ALL. The lane renders a faceplate rather than a placeholder tile, and the
+// dock full view renders the faceplate too — so `videovarispeed-card` count 0
+// now holds even with the pane OPEN, which is why `loadSlot` below drives the
+// face body. The permanent discriminator is unchanged and is simply stronger.
 //
 // ── WHAT THIS PROVES, AND HOW THE TWO HALVES DIVIDE ─────────────────────────
 //
@@ -188,24 +193,30 @@ async function fireAssetSelect(page: Page, slot: number): Promise<void> {
 }
 
 /** Load a fixture into `slot` through the REAL pickers, inside the dock full
- *  view — the only surface a varispeed card now has. */
+ *  view — the only surface a varispeed has, and since the wave-4 promotion that
+ *  surface is the FACEPLATE, not the card.
+ *
+ *  ⚠ RE-POINTED AT THE FACE BODY (2026-09-01). This helper used to drive
+ *  `videovarispeed-card` inside the pane and open the 7-slot sheet with a
+ *  `contextmenu` on it. Both are gone from the default shell: the dock mounts
+ *  `<ModuleShell>` now, and the bank is a permanent section of the body rather
+ *  than a right-click sheet (right-click is claimed per-control by
+ *  `ControlContextMenu`). The `expectNoCardAndNoHost` discriminator below is
+ *  unchanged and now holds INSIDE the pane too, which is strictly stronger. */
 async function loadSlot(page: Page, slot: number): Promise<void> {
   const pane = page.locator('[data-testid="dock-full-view"]');
+  const body = pane.locator('[data-testid="videovarispeed-face-body"]');
+  await expect(body).toBeVisible({ timeout: 20_000 });
   if (slot === 0) {
-    await pane.locator('[data-testid="videovarispeed-file-input"]').setInputFiles(FIXTURE);
-    await expect(pane.locator('[data-testid="videovarispeed-card"]')).toHaveAttribute(
-      'data-has-local-file', 'true', { timeout: 20_000 },
-    );
+    await body.locator('[data-testid="videovarispeed-file-input"]').setInputFiles(FIXTURE);
+    await expect(body).toHaveAttribute('data-has-local-file', 'true', { timeout: 20_000 });
     return;
   }
-  // dispatchEvent, not .click(): the card repaints from the transport, so
-  // Playwright's actionability "stable" check never settles.
-  await pane.locator('[data-testid="videovarispeed-card"]').dispatchEvent('contextmenu');
-  await expect(pane.locator('[data-testid="videovarispeed-multi-panel"]')).toBeVisible({ timeout: 20_000 });
-  await pane.locator(`[data-testid="videovarispeed-slot-input-${slot}"]`).setInputFiles(FIXTURE);
-  await expect(pane.locator(`[data-testid="videovarispeed-slot-${slot}"]`))
+  // The bank needs no opening gesture on the faceplate.
+  await expect(body.locator('[data-testid="videovarispeed-multi-panel"]')).toBeVisible({ timeout: 20_000 });
+  await body.locator(`[data-testid="videovarispeed-slot-input-${slot}"]`).setInputFiles(FIXTURE);
+  await expect(body.locator(`[data-testid="videovarispeed-slot-${slot}"]`))
     .toHaveAttribute('data-slot-local', 'true', { timeout: 20_000 });
-  await pane.locator('[data-testid="videovarispeed-multi-close"]').dispatchEvent('click');
 }
 
 /** Spawn the rack: a REAL clip player patched into the ASSET ports, plus the

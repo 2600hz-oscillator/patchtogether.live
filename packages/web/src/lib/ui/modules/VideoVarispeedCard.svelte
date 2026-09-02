@@ -49,25 +49,15 @@
   } from '$lib/video/modules/videovarispeed-transport';
   import {
     canPersistVideoHandles,
-    newVideoFileId,
-    putVideoFileHandle,
-    getVideoFileHandle,
-    deleteVideoFileHandle,
-    queryHandleReadPermission,
-    requestHandleReadPermission,
     type StoredFileHandle,
   } from '$lib/video/video-file-store';
   import { nodeMedia, type NodeMediaLease } from '$lib/ui/media/node-media-registry';
-  import { nodeVarispeed } from '$lib/ui/media/node-varispeed.svelte';
-  import {
-    registerVideoExport,
-    unregisterVideoExport,
-  } from '$lib/video/video-export-registry';
+  import { nodeVarispeed, reAllowVarispeedHandle } from '$lib/ui/media/node-varispeed.svelte';
   import ModuleTitle from './ModuleTitle.svelte';
   import { cardParams, portsFromDef } from './card-kit';
   import CropOverlay from '$lib/ui/video/CropOverlay.svelte';
   import { videoAspectStore } from '$lib/ui/video-aspect-store.svelte';
-  import { defaultCropRect, refitCrop, type CropRect } from '$lib/video/crop-core';
+  import { defaultCropRect, type CropRect } from '$lib/video/crop-core';
   import { writeCrop as commitCrop, readCrop } from './crop-edit';
   import { testHooksEnabled } from '$lib/dev/test-hooks';
 
@@ -109,14 +99,19 @@
   // headless host and the dock tray), so switching to slot 3 and expanding put
   // you back on slot 0 from the top. Node-owned state cannot be reset by a view
   // appearing or disappearing.
-  let activeSlot = $derived(nodeVarispeed.view(id).activeSlot);
+  let status = $derived(nodeVarispeed.view(id));
+  let activeSlot = $derived(status.activeSlot);
   let videoEl = $derived<HTMLVideoElement | null>(slotEls[activeSlot] ?? null);
   /** Registry key for asset slot `i`. Per-slot object URLs (local bytes, never
    *  synced) are owned by the registry under these keys — this card reads them
    *  via `nodeMedia.objectUrl` and NEVER revokes one. */
   const slotKey = (i: number): string => `slot${i}`;
-  // Per-slot local filenames (drives the active card's data-has-local-file).
-  let slotNames = $state<(string | null)[]>(new Array(ASSET_SLOTS).fill(null));
+  // ⚠ READ FROM THE CONTROLLER, NEVER MIRRORED. These were card `$state` with
+  // a rehydration `$effect` to paper over the stale-mirror class; the loader is
+  // the controller's now, so the names, the error, the lapsed-handle offer and
+  // the per-slot load spinner are all read through `status`.
+  let slotNames = $derived<readonly (string | null)[]>(status.slotNames);
+  let slotLoading = $derived<readonly boolean[]>(status.loadingSlots);
   // Per-slot LOCAL duration (seconds), captured from el.duration at
   // `loadedmetadata`. The synced fileMeta.duration can lag a freshly-loaded
   // slot by a frame or two (an unsynced slot reads durationSec=0 → resolveWindow
@@ -124,16 +119,15 @@
   // dead). Reading the local element duration closes that window race AND lets
   // each inactive slot's VIRTUAL playhead wrap against its own duration so the
   // 7 slots de-sync by their differing lengths (Step 2).
-  let slotDuration: number[] = new Array(ASSET_SLOTS).fill(0);
   // Per-slot VIRTUAL playhead (seconds). The ACTIVE slot tracks its element's
   // real currentTime; every OTHER loaded slot advances incrementally each
   // transport tick (dt × signed effective speed, wrapped via decideEdgeAction)
   // so a switch JUMPS the output to the selected clip at ITS live time rather
   // than restarting from 0. Incremental (not closed-form) so it integrates a
   // time-varying SPEED CV and survives loop wraps/clamps without drift.
-  let localFileName = $state<string | null>(null);
   let isDragOver = $state(false);
-  let loadError = $state<string | null>(null);
+  let loadError = $derived<string | null>(status.error);
+  let pickError = $state<string | null>(null);
   // "Load multiple…" panel toggle (right-click on the card).
   let multiOpen = $state(false);
 
@@ -144,8 +138,7 @@
   // clip plays again WITHOUT a re-pick. Firefox / Safari never produce a handle
   // and fall back to the re-link prompt only.
   const canRememberHandle = canPersistVideoHandles();
-  let pendingHandle = $state<StoredFileHandle | null>(null);
-  let handleReloadAttempted = false;
+  let pendingHandleName = $derived<string | null>(status.pendingHandleName);
 
   // ---- Reactive reads from data (Yjs-backed) ----
   // Synced 7-slot file meta (parallel to the asset slots). null entries = empty.
@@ -220,25 +213,13 @@
     void cropState.active; void cropState.rect.x; void cropState.rect.y; void cropState.rect.w;
     pushCrop();
   });
-  // On an OUTPUT aspect flip (16:9↔4:3): re-fit the stored rect (preserve
-  // center + width, recompute height, clamp) and persist if it actually moved,
-  // so the synced value stays valid for the new aspect. Guarded to avoid a
-  // write-storm (only writes on a real change).
-  let lastRefitAspect = 0;
-  $effect(() => {
-    const a = outAspect;
-    if (!cropActive) { lastRefitAspect = a; return; }
-    if (a === lastRefitAspect) return;
-    lastRefitAspect = a;
-    const fitted = refitCrop(cropState.rect, a, a);
-    if (
-      Math.abs(fitted.x - cropState.rect.x) > 1e-6 ||
-      Math.abs(fitted.y - cropState.rect.y) > 1e-6 ||
-      Math.abs(fitted.w - cropState.rect.w) > 1e-6
-    ) {
-      commitCrop(id, true, fitted);
-    }
-  });
+  // ⚠ THE OUTPUT-ASPECT RE-FIT IS GONE FROM HERE AND IS THE CONTROLLER'S. It
+  // re-fits the stored rect on a 16:9↔4:3 flip and re-persists it when it
+  // actually moved — a PERSISTENCE-CORRECTNESS effect, not a view concern. As a
+  // card `$effect` it only ran while a card happened to be mounted, so a rack
+  // whose aspect flipped with the module collapsed (or, on the default shell,
+  // simply not docked) kept a rect that is invalid for the new aspect, and the
+  // next reader silently coerced it to something the player never chose.
 
   // ---- Transport param accessors (knob + sliders live on node.params) ----
   const { defaultFor, paramVal } = cardParams(videoVarispeedDef, () => id, () => node);
@@ -246,330 +227,49 @@
     setNodeParam(id, k, v);
   };
 
-  // ---- CV-connection detection (CACHED) ----
-  //
-  // END CV normals to +1 (unpatched END = full duration); START CV normals
-  // to 0. We only sum a CV offset into a slider when its port has an incoming
-  // edge. The hot rAF loop must NOT scan the patch every frame, so we compute
-  // these reactively (recomputed only when the edge set changes) + read the
-  // cached booleans in the loop.
-  function portConnected(portId: string): boolean {
-    for (const e of Object.values(patch.edges)) {
-      if (e && e.target.nodeId === id && e.target.portId === portId) return true;
-    }
-    return false;
-  }
-  let startCvConnected = $derived<boolean>(
-    (void Object.keys(patch.edges).length, portConnected('startCv')),
-  );
-  let endCvConnected = $derived<boolean>(
-    (void Object.keys(patch.edges).length, portConnected('endCv')),
-  );
-
-  // ---- Live CV reads from the engine (raw bipolar -1..+1 samples) ----
-  function readCv(paramId: string): number {
-    const e = engineCtx.get();
-    if (!e || !node) return 0;
-    const v = e.readParam(node, paramId);
-    return typeof v === 'number' ? v : 0;
-  }
-
-  // ---- Extras / engine helpers ----
-
   // ---- data writers ----
-  function writePlaying(next: boolean): void {
-    ydoc.transact(() => {
-      const t = patch.nodes[id];
-      if (!t) return;
-      if (!t.data) t.data = {};
-      (t.data as Partial<VideoVarispeedData>).isPlaying = next;
-    }, LOCAL_ORIGIN);
-  }
-  function writeFileMeta(meta: VideoboxFileMeta): void {
-    // Drop a stale remembered handle in THIS browser's IDB if the id changes
-    // (a fresh pick); a reload reuses the same id, so no churn there.
-    const prevId = fileMeta?.handleId;
-    if (prevId && prevId !== meta.handleId) {
-      void deleteVideoFileHandle(prevId);
-    }
-    ydoc.transact(() => {
-      const t = patch.nodes[id];
-      if (!t) return;
-      if (!t.data) t.data = {};
-      const d = t.data as Partial<VideoVarispeedData>;
-      d.fileMeta = meta;
-      // NOTE: this deliberately does NOT reset `isPlaying`. It used to, which
-      // is a SECOND, independent cause of "it stopped playing": the IndexedDB
-      // handle-reload path runs through loadFile → writeFileMeta, so a card
-      // that restored its own file came back PAUSED even when the node's
-      // synced state said it was playing. Play state belongs to the transport
-      // (writePlaying), not to a metadata write. A genuinely NEW file still
-      // pauses — `loadFileIntoSlot` is only reached from an explicit user load,
-      // which sets the transport state itself.
-    }, LOCAL_ORIGIN);
-  }
-  function writeLoop(next: boolean): void {
-    ydoc.transact(() => {
-      const t = patch.nodes[id];
-      if (!t) return;
-      if (!t.data) t.data = {};
-      (t.data as Partial<VideoVarispeedData>).loop = next;
-    }, LOCAL_ORIGIN);
-  }
-  function toggleLoop(): void { writeLoop(!loop); }
-
-  // ---- File-picker handling ----
   //
-  // `opts.handle` — a FileSystemFileHandle to persist for one-click reload (from
-  //   showOpenFilePicker / a drop that exposed getAsFileSystemHandle, or the
-  //   synthetic blob-handle the perf-zip loader seeds).
-  // `opts.reuseHandleId` — reload from an existing remembered handle: keep the
-  //   patch's existing handleId rather than minting a new one.
-  async function loadFile(
-    file: File,
-    opts?: { handle?: StoredFileHandle | null; reuseHandleId?: string },
-  ): Promise<void> {
-    // Legacy single-load path → slot 0 (the main preview element). Makes
-    // slot 0 active so the existing transport drives it.
-    await loadFileIntoSlot(0, file, opts);
-  }
+  // ⚠ ONLY THE LOOP TOGGLE IS LEFT, and it is a REQUEST rather than a write:
+  // `writePlaying`, `writeFileMeta` and `writeSlotMeta` all belonged to the
+  // loader/transport and moved with it, so the two surfaces cannot write the
+  // same synced keys through two different code paths.
+  function toggleLoop(): void { nodeVarispeed.request(id, { kind: 'setLoop', loop: !loop }); }
 
-  /** Load `file` into asset slot `slot`. Slot 0 is the main preview element +
-   *  the back-compat single-video write (fileMeta + export resolver); slots
-   *  1..6 are the "Load multiple…" preloaded elements (per-slot objectUrl +
-   *  slotMeta). When loading the ACTIVE slot, re-wires audio + decodes the
-   *  first frame. Per-slot size cap keeps 7 preloaded elements bounded. */
-  async function loadFileIntoSlot(
-    slot: number,
-    file: File,
-    opts?: { handle?: StoredFileHandle | null; reuseHandleId?: string },
-  ): Promise<void> {
-    loadError = null;
-    if (slot === activeSlot) pendingHandle = null;
-    if (slot < 0 || slot >= ASSET_SLOTS) return;
-    if (!file.type.startsWith('video/')) {
-      loadError = `Not a video file: ${file.type || file.name}`;
-      return;
-    }
-    if (Number.isFinite(file.size) && file.size > VIDEOVARISPEED_MAX_SLOT_BYTES) {
-      loadError = `File too large (max ${Math.round(VIDEOVARISPEED_MAX_SLOT_BYTES / (1024 * 1024))} MB per slot)`;
-      return;
-    }
-    const el = slotEls[slot];
-    // Hand the new url to the NODE-owned registry: it revokes THIS slot's
-    // previous url and keeps the new one alive across card unmounts.
-    const url = URL.createObjectURL(file);
-    nodeMedia.setObjectUrl(id, slotKey(slot), url, file.name);
-    slotNames[slot] = file.name;
-    if (slot === 0) {
-      localFileName = file.name;
-    }
-    // The portable "Export performance" (.zip) resolver is multi-slot: it
-    // resolves EVERY populated slot's bytes (registerSlotExport, once on mount),
-    // so all 7 videos travel in the bundle — not just slot 0 (the data-loss bug
-    // Fix B repairs). Nothing slot-specific to register here.
-    if (!el) return;
-    el.src = url;
-    el.muted = false;
-
-    await new Promise<void>((resolve) => {
-      if (el.readyState >= 1 /* HAVE_METADATA */) { resolve(); return; }
-      const onMeta = (): void => { el.removeEventListener('loadedmetadata', onMeta); resolve(); };
-      el.addEventListener('loadedmetadata', onMeta, { once: true });
+  // ---- File loading, FORWARDED to the node's controller ----
+  //
+  // ⚠ EVERYTHING THAT USED TO LIVE HERE IS GONE, not duplicated: `loadFile`,
+  // `loadFileIntoSlot`, `writeFileMeta`, `writeSlotMeta`, the slot-0 and
+  // per-slot saved-handle restores and their two `$effect`s, the multi-slot
+  // export resolver and the per-slot size cap. All of it is
+  // $lib/ui/media/node-varispeed-registry, on GRAPH lifetime.
+  //
+  // That was a REPAIR, not a tidy-up. This card's `$effect` on
+  // `fileMeta.handleId` was the documented delivery mechanism for THREE writers
+  // outside the module — the Loaded-Assets picker spawn, `runAssetRebindSweep`
+  // and the perf-zip restore — and videovarispeed gets no headless host, so on
+  // the default shell no card was mounted to notice. Dropping a video into the
+  // asset picker and never opening the dock loaded nothing.
+  //
+  // What is left here is what a VIEW owns: the gesture.
+  function loadFile(file: File, opts?: { handle?: StoredFileHandle | null }): void {
+    const res = nodeVarispeed.request(id, {
+      kind: 'loadFile',
+      slot: 0,
+      file,
+      handle: opts?.handle ?? undefined,
     });
-
-    // Capture the LOCAL duration now (el.duration is authoritative the instant
-    // metadata loaded — before the synced fileMeta round-trips). Closes the
-    // durationSec=0 window race that left Play looking dead on a fresh slot, and
-    // gives each inactive slot's virtual playhead its own loop length.
-    slotDuration[slot] = Number.isFinite(el.duration) ? el.duration : 0;
-    // Keep this (and every other loaded) slot's decode alive even while it's NOT
-    // the active source, so a later switch lands on an already-warm element
-    // (never the throttled-to-1fps bug). Retries until the engine materializes.
-    nodeVarispeed.request(id, { kind: 'slotLoaded', slot });
-
-    // Persist the handle (slot 0 only; slots 1..6 keep objectUrl/handle local).
-    let handleId: string | undefined = opts?.reuseHandleId;
-    if (slot === 0 && opts?.handle && canRememberHandle) {
-      if (!handleId) handleId = newVideoFileId();
-      await putVideoFileHandle(handleId, opts.handle);
+    if (!res.delivered) {
+      console.warn(`[videovarispeed] no controller for node ${id} — the graph sync has not run`);
     }
-
-    const meta: VideoboxFileMeta = {
-      name: file.name,
-      duration: Number.isFinite(el.duration) ? el.duration : 0,
-      size: Number.isFinite(file.size) ? file.size : undefined,
-      handleId,
-    };
-    if (slot === 0) writeFileMeta(meta);
-    writeSlotMeta(slot, meta);
-
-    // Force a first frame to decode so the output streams immediately even
-    // before play (rVFC fires on the first decoded frame) — also satisfies the
-    // "preload first frame" requirement for the inactive slots.
-    try { el.currentTime = 0; } catch { /* */ }
-
-    nodeVarispeed.request(id, { kind: 'slotLoaded', slot });
   }
-
-  /** Write a per-slot fileMeta into the synced slotMeta array.
-   *
-   *  Rebuilds the array from PLAIN clones of the existing entries. Reading back
-   *  a previously-written entry yields a LIVE Y type (already integrated into
-   *  the doc); putting it into the new array and reassigning would throw
-   *  "reassigning object that already occurs in the tree" and abort the
-   *  transaction — so before this, every slot AFTER the first silently failed
-   *  to persist (only slot 0 ever saved). Cloning to plain objects keeps the
-   *  whole-array reassign legal. (Same Y-reintegration trap as the sequencer
-   *  save-to-slot bug.) */
-  function writeSlotMeta(slot: number, meta: VideoboxFileMeta | null): void {
-    ydoc.transact(() => {
-      const t = patch.nodes[id];
-      if (!t) return;
-      if (!t.data) t.data = {};
-      const d = t.data as Partial<VideoVarispeedData>;
-      const cur = Array.isArray(d.slotMeta) ? d.slotMeta : [];
-      const arr: (VideoboxFileMeta | null)[] = [];
-      for (let i = 0; i < ASSET_SLOTS; i++) {
-        if (i === slot) { arr.push(meta); continue; }
-        const e = cur[i] as VideoboxFileMeta | null | undefined;
-        // PLAIN clone of any prior entry — never re-insert a live Y type.
-        arr.push(e ? { name: e.name, duration: e.duration, size: e.size, handleId: e.handleId } : null);
-      }
-      d.slotMeta = arr;
-    }, LOCAL_ORIGIN);
-  }
-
-  // ---- Persistence: reload from a remembered handle on patch / perf-zip load ----
-  //
-  // After a load, fileMeta may carry a handleId pointing at a handle THIS
-  // browser persisted, OR the synthetic blob handle the perf-zip loader seeded
-  // (putVideoFileBlob under `bundle-<nodeId>`). Same flow as VIDEOBOX:
-  //   - granted  → reload immediately (no re-pick);
-  //   - prompt   → stash for a one-click re-allow gesture;
-  //   - missing / denied → re-link prompt covers it.
-  async function tryReloadFromHandle(): Promise<void> {
-    const hid = fileMeta?.handleId;
-    if (!hid || hasLocalFile) return;
-    const handle = await getVideoFileHandle(hid);
-    if (!handle) return; // not in this browser → re-link prompt path
-    const perm = await queryHandleReadPermission(handle);
-    if (perm === 'granted') {
-      try {
-        const file = await handle.getFile();
-        await loadFile(file, { handle, reuseHandleId: hid });
-      } catch { /* file moved/gone — re-link prompt takes over */ }
-      return;
-    }
-    if (perm === 'prompt') pendingHandle = handle;
-    // 'denied' → re-link prompt covers it.
-  }
-
-  // ---- Per-slot reload on perf-zip / patch load (slots 1..6) ----
-  //
-  // The portable .zip now carries EVERY populated slot's bytes (Fix B); on load
-  // Canvas seeds each into the IDB blob store keyed by that slot's
-  // slotMeta[i].handleId. Here each slot whose synced meta carries a handleId
-  // that resolves to a (granted) blob handle in THIS browser is auto-loaded —
-  // so all 7 videos come back with no re-pick. Slot 0 is handled by
-  // tryReloadFromHandle above (it owns the legacy single-video fileMeta path);
-  // a granted blob seeded under a slot's handleId wraps as 'granted' (see
-  // video-file-store.blobHandleFrom), so cross-machine restore works too. A
-  // slot whose handle isn't in this browser (a peer never had that file) is
-  // skipped — the slot stays empty (its synced slotMeta still shows the name).
-  const slotReloadAttempted = new Array<boolean>(ASSET_SLOTS).fill(false);
-  async function tryReloadSlotFromHandle(slot: number): Promise<void> {
-    if (slot <= 0 || slot >= ASSET_SLOTS) return; // slot 0 = single-video path
-    if (slotHasLocalVideo(slot)) return; // already loaded locally
-    const hid = slotMeta[slot]?.handleId;
-    if (!hid) return;
-    const handle = await getVideoFileHandle(hid);
-    if (!handle) return; // not in this browser → stays empty (name still shows)
-    const perm = await queryHandleReadPermission(handle);
-    if (perm !== 'granted') return; // re-pick covers a lapsed/foreign handle
-    try {
-      const file = await handle.getFile();
-      await loadFileIntoSlot(slot, file, { handle, reuseHandleId: hid });
-    } catch { /* file moved/gone — slot stays empty */ }
-  }
-
-  // Run each slot's reload once its synced slotMeta.handleId becomes available
-  // (mirrors the slot-0 $effect below). Independent per-slot attempt flags so a
-  // late-arriving slot still fires.
-  $effect(() => {
-    for (let i = 1; i < ASSET_SLOTS; i++) {
-      const hid = slotMeta[i]?.handleId;
-      if (!hid || slotReloadAttempted[i] || slotHasLocalVideo(i)) continue;
-      slotReloadAttempted[i] = true;
-      void tryReloadSlotFromHandle(i);
-    }
-  });
-
-  // One-click "re-allow": request read permission inside this click gesture,
-  // then reload. Bound to the re-allow button.
-  async function onReAllow(): Promise<void> {
-    const handle = pendingHandle;
-    const hid = fileMeta?.handleId;
-    if (!handle) return;
-    const perm = await requestHandleReadPermission(handle);
-    if (perm === 'granted') {
-      pendingHandle = null;
-      try {
-        const file = await handle.getFile();
-        await loadFile(file, { handle, reuseHandleId: hid ?? undefined });
-        return;
-      } catch { /* fall through to re-link */ }
-    }
-    pendingHandle = null;
-  }
-
-  // Re-link prompt visibility: saved fileMeta exists (a file was loaded at save)
-  // but THIS browser has no local copy + no usable handle.
-  let showRelinkPrompt = $derived<boolean>(
-    !hasLocalFile && fileMeta !== null && pendingHandle === null,
-  );
-
-  // Run the handle-reload attempt once fileMeta.handleId becomes available.
-  $effect(() => {
-    void fileMeta?.handleId;
-    if (handleReloadAttempted) return;
-    if (!fileMeta?.handleId) return;
-    if (hasLocalFile) return;
-    handleReloadAttempted = true;
-    void tryReloadFromHandle();
-  });
-
-  // Wire the element's audio into the engine, RETRYING until it sticks.
-  //
-  // wireAudio() can no-op for two reasons that are both transient at file-load
-  // time: (a) getExtras() returns null because the engine hasn't materialized
-  // this card's video node yet (the reconciler runs async to the card, and is
-  // slower to settle when a cross-domain audio edge is already present), and
-  // (b) the factory's own <video> reference isn't set yet because
-  // the engine-side attach (driven by the controller's retry) hasn't run. Calling
-  // wireAudio exactly once (the old behaviour) lost this race and left audio_l /
-  // audio_r stuck on the silent placeholder forever -> the operator's downstream
-  // AUDIO-OUT patch was silent. wireAudio() is idempotent (guards on its own
-  // audioWired flag), so retrying until isAudioWired() reports true is safe and
-  // converges as soon as both the handle and the element are ready.
-  let audioWireTimer: ReturnType<typeof setTimeout> | null = null;
-
-  // Keep EVERY loaded slot's element decoding (persistent per-element keep-alive
-  // in the engine), not just the active one — a melodic/random switch pattern
-  // defeats any "active + predicted-next" hybrid, so every loaded slot must stay
-  // warm or it throttles to ~1 fps and the switch lands on a frozen frame (the
-  // original bug). keepSlotAlive is idempotent per element; retried until the
-  // engine has materialized this node (same race ensureAudioWired guards).
-  let keepAliveTimer: ReturnType<typeof setTimeout> | null = null;
 
   function onFileInputChange(ev: Event): void {
     const input = ev.target as HTMLInputElement;
     const file = input.files?.[0];
     // The native <input type=file> can't hand us a FileSystemFileHandle, so a
-    // pick through this path gets no remembered-handle persistence (only
-    // fileMeta + the export resolver). The picker button path uses
-    // showOpenFilePicker when available to also persist a handle.
-    if (file) void loadFile(file);
+    // pick through this path gets no remembered-handle persistence. The picker
+    // button path uses showOpenFilePicker when available to also persist one.
+    if (file) loadFile(file);
     try { input.value = ''; } catch { /* */ }
   }
 
@@ -589,10 +289,10 @@
       const handle = handles?.[0];
       if (!handle) return true; // user cancelled — still "handled"
       const file = await handle.getFile();
-      await loadFile(file, { handle });
+      loadFile(file, { handle });
     } catch (e) {
       if ((e as { name?: string })?.name !== 'AbortError') {
-        loadError = `Could not open file: ${(e as Error)?.message ?? 'unknown error'}`;
+        pickError = `Could not open file: ${(e as Error)?.message ?? 'unknown error'}`;
       }
     }
     return true;
@@ -622,73 +322,43 @@
       } catch { /* fall back to the plain File below */ }
     }
     const file = handle ? await handle.getFile().catch(() => null) : ev.dataTransfer?.files?.[0];
-    if (file) void loadFile(file, { handle });
+    if (file) loadFile(file, { handle });
   }
+
+  // One-click "re-allow": requestPermission() is honoured only inside a real
+  // user gesture, so the click performs what the controller can only offer.
+  async function onReAllow(): Promise<void> {
+    await reAllowVarispeedHandle(id);
+  }
+
+  // Re-link prompt visibility: saved fileMeta exists (a file was loaded at save)
+  // but THIS browser has no local copy + no usable handle.
+  let showRelinkPrompt = $derived<boolean>(
+    !hasLocalFile && fileMeta !== null && pendingHandleName === null,
+  );
 
   // ---- "Load multiple…" 7-slot panel (right-click toggle) ------------
   function onCardContextMenu(ev: MouseEvent): void {
     ev.preventDefault();
     multiOpen = !multiOpen;
   }
-  let slotLoading = $state<boolean[]>(new Array(ASSET_SLOTS).fill(false));
-  async function onSlotFileInputChange(ev: Event, slot: number): Promise<void> {
+  function onSlotFileInputChange(ev: Event, slot: number): void {
     const input = ev.target as HTMLInputElement;
     const file = input.files?.[0];
     if (file) {
-      slotLoading[slot] = true;
-      try {
-        // Try to capture a FileSystemFileHandle on Chromium for slot 0 reload;
-        // slots 1..6 keep objectUrl-only (re-link prompt covers reload).
-        await loadFileIntoSlot(slot, file);
-      } finally {
-        slotLoading[slot] = false;
+      const res = nodeVarispeed.request(id, { kind: 'loadFile', slot, file });
+      if (!res.delivered) {
+        console.warn(`[videovarispeed] no controller for node ${id} — the graph sync has not run`);
       }
     }
     try { input.value = ''; } catch { /* */ }
   }
   function clearSlot(slot: number): void {
-    if (slot < 0 || slot >= ASSET_SLOTS) return;
-    const el = slotEls[slot];
-    if (el) { try { el.pause(); el.removeAttribute('src'); el.load(); } catch { /* */ } }
-    // An explicit user CLEAR is the one place a card may free a slot's url —
-    // it is a deliberate content change, not a view teardown. The registry
-    // owns the revoke so the bookkeeping stays in one place.
-    nodeMedia.setObjectUrl(id, slotKey(slot), null);
-    slotNames[slot] = null;
-    slotDuration[slot] = 0;
-    if (slot === 0) { localFileName = null; }
-    writeSlotMeta(slot, null);
-    // If we cleared the ACTIVE slot, fall back to slot 0 if it has a video.
-    if (slot === activeSlot && slot !== 0 && slotHasLocalVideo(0)) selectAssetSlot(0);
-  }
-
-  // ---- Transport window + speed helpers (live, CV-summed) ----
-  function effectiveSpeed(): number {
-    return speedKnobToMultiplier(
-      effectiveSpeedKnob(paramVal('speed'), readCv('speedCv')),
-    );
-  }
-  /** Effective duration of slot `i`: prefer the LOCAL element duration (set at
-   *  loadedmetadata) and fall back to the synced fileMeta — closes the
-   *  durationSec=0 race where a fresh slot's synced meta hasn't arrived yet
-   *  (which collapsed resolveWindow → Play looked dead). */
-  function slotDurationSec(i: number): number {
-    const local = slotDuration[i] ?? 0;
-    if (Number.isFinite(local) && local > 0) return local;
-    if (i === activeSlot && Number.isFinite(durationSec) && durationSec > 0) return durationSec;
-    const el = slotEls[i];
-    return el && Number.isFinite(el.duration) ? el.duration : 0;
-  }
-  /** Resolve the playback window for a given duration with the live (CV-summed)
-   *  START/END. Shared by the active transport + every slot's virtual playhead
-   *  so they wrap on the SAME [start,end] (slots de-sync purely by duration). */
-  function windowForDuration(dur: number) {
-    const startFrac = effectiveStartFraction(paramVal('start'), readCv('startCv'), startCvConnected);
-    const endFrac = effectiveEndFraction(paramVal('end'), readCv('endCv'), endCvConnected);
-    return resolveWindow(dur, startFrac, endFrac);
-  }
-  function currentWindow() {
-    return windowForDuration(slotDurationSec(activeSlot));
+    // An explicit user CLEAR is the one place a slot's bytes may be freed — a
+    // deliberate content change, not a view teardown. The CONTROLLER owns the
+    // revoke, the element reset, the synced write and the fall-back to slot 0,
+    // so both surfaces perform exactly one clear.
+    nodeVarispeed.request(id, { kind: 'clearSlot', slot });
   }
 
   // ---- Transport + slot select, FORWARDED to the node's controller ----
@@ -731,29 +401,6 @@
   }
 
 
-  /** Resolve ALL populated slots' bytes for the portable "Export performance"
-   *  (.zip) path. Each slot's bytes live ONLY in its local object URL (never on
-   *  node.data — only per-slot fileMeta syncs), so we fetch each loaded URL. The
-   *  registry flattens the array to one media entry per slot, each tagged with
-   *  its `slot` index so the loader restores it into the matching slot. Returns
-   *  null when nothing is loaded. Registered ONCE on mount; it reads the live
-   *  slotUrls/slotNames each export, so it always reflects the current state. */
-  async function resolveAllSlotBytes() {
-    const out: { bytes: Uint8Array; name: string; slot: number }[] = [];
-    for (let i = 0; i < ASSET_SLOTS; i++) {
-      const u = nodeMedia.objectUrl(id, slotKey(i));
-      if (!u) continue;
-      try {
-        const resp = await fetch(u);
-        const ab = await (await resp.blob()).arrayBuffer();
-        const bytes = new Uint8Array(ab);
-        if (bytes.length === 0) continue;
-        out.push({ bytes, name: slotNames[i] ?? `slot-${i}.mp4`, slot: i });
-      } catch { /* revoked/torn-down URL — skip this slot */ }
-    }
-    return out.length > 0 ? out : null;
-  }
-
   // ---- Adopt the NODE-owned <video> elements into this card ----
   //
   // One effect per slot host. Adoption is a TRANSFER and release is
@@ -783,13 +430,12 @@
       slotLeases[i] = lease;
       const el = lease.el as HTMLVideoElement;
       slotEls[i] = el;
-      // REHYDRATE the card-local reactive mirrors from the node-owned
-      // registry + the live element. Without this a remount believes the node
-      // has no local bytes, re-shows the re-link prompt and lets the transport
-      // pause a video that is still playing (measured on the re-expand leg).
-      slotNames[i] = nodeMedia.mediaName(id, slotKey(i));
-      if (Number.isFinite(el.duration) && el.duration > 0) slotDuration[i] = el.duration;
-      if (i === 0) localFileName = slotNames[0];
+      // ⚠ NO REHYDRATION STEP. The card used to mirror `slotNames`,
+      // `slotDuration` and `localFileName` into its own `$state` and re-read
+      // them here, because a remount otherwise believed the node had no local
+      // bytes and re-showed the re-link prompt. Those mirrors are gone: every
+      // one of them is now read THROUGH the controller's published status, so
+      // there is nothing that can be stale.
       leases.push(lease);
     }
     return () => {
@@ -798,40 +444,35 @@
   });
 
   // ---- Mount / unmount ----
-  onMount(() => {
-    // Register the multi-slot bytes resolver for the portable .zip export. Done
-    // once on mount (not per slot-0 load) so EVERY populated slot travels in the
-    // bundle — the Fix B repair for "7 videos in, 1 video out".
-    registerVideoExport(id, resolveAllSlotBytes);
-
-    // ⚠ NO attach poll, NO gate loop, NO transport loop. All three are the
-    // controller's, on node lifetime — which is the mechanical fact that takes
-    // videovarispeed out of `DOM_SOURCE_LANE_TYPES`: the grep gate derives that
-    // set by walking this card's subtree for the engine attach CALL, so the
-    // declaration and the code cannot drift.
-  });
-
+  //
+  // ⚠ NO attach poll, NO gate loop, NO transport loop, and — since the wave-4
+  // face PR — NO export registration either. The multi-slot bytes resolver is
+  // registered by the CONTROLLER on node lifetime, because this card is not
+  // mounted on the default shell at all: registering it here meant a rack whose
+  // videovarispeed was never docked exported none of its seven slots' bytes.
+  //
+  // The absence of the engine attach CALL is also the mechanical fact that
+  // keeps videovarispeed out of `DOM_SOURCE_LANE_TYPES`: the grep gate derives
+  // that set by walking this card's subtree for it, so the declaration and the
+  // code cannot drift.
   onDestroy(() => {
     // NOTE what is deliberately ABSENT here: no engine detach, no per-slot
-    // `revokeObjectURL`, no `unwireAudio()`. All
-    // 7 elements, their urls and their audio wiring belong to the NODE and
-    // must survive this card being unmounted — a collapse/expand is a card
-    // move, not a node deletion. Teardown happens in nodeMedia.sweep() when
-    // the node actually leaves the graph.
-    unregisterVideoExport(id);
+    // `revokeObjectURL`, no `unwireAudio()`, and no export unregister. All
+    // 7 elements, their urls, their audio wiring and the export resolver belong
+    // to the NODE and must survive this card being unmounted — a collapse or
+    // expand is a card move, not a node deletion. Teardown happens in
+    // `nodeMedia.sweep()` and the controller's own dispose when the node
+    // actually leaves the graph.
     for (const l of slotLeases) l?.release();
     slotLeases.fill(null);
   });
 
   // ---- Displayed current position ----
-  let displayPos = $state(0);
-  let displayTimer: ReturnType<typeof setInterval> | null = null;
-  function refreshDisplay(): void {
-    if (videoEl && hasLocalFile) { displayPos = videoEl.currentTime; return; }
-    displayPos = 0;
-  }
-  onMount(() => { displayTimer = setInterval(refreshDisplay, 100); });
-  onDestroy(() => { if (displayTimer !== null) clearInterval(displayTimer); });
+  //
+  // Published by the controller (its transport tick already samples the active
+  // element every frame), so the card's own 100 ms `setInterval` mirror is gone
+  // — one clock for one value, and it keeps running with no card mounted.
+  let displayPos = $derived<number>(status.positionSec);
 
   // ---- Test hook (gated on testHooksEnabled) --------------------------------
   //
@@ -850,8 +491,18 @@
   }
 
   // ---- Reactive transport readouts ----
+  /** One live engine read, for the two readouts this card still paints. The
+   *  cached CV-connection scan the hot rAF loop needed is gone with the loop. */
+  function readCvSample(paramId: string): number {
+    const e = engineCtx.get();
+    if (!e || !node) return 0;
+    try {
+      const v = e.readParam(node, paramId);
+      return typeof v === 'number' ? v : 0;
+    } catch { return 0; }
+  }
   let speedMult = $derived(
-    speedKnobToMultiplier(effectiveSpeedKnob(paramVal('speed'), readCv('speedCv'))),
+    speedKnobToMultiplier(effectiveSpeedKnob(paramVal('speed'), readCvSample('speedCv'))),
   );
   let speedLabel = $derived(`${speedMult >= 0 ? '+' : ''}${speedMult.toFixed(1)}×`);
   let windowValid = $derived(
@@ -889,17 +540,17 @@
           <div>Drop a video file</div>
           <div class="sub">or click to select</div>
         </div>
-      {:else if !hasLocalFile && pendingHandle}
+      {:else if !hasLocalFile && pendingHandleName}
         <!-- One-click re-allow: a remembered handle exists but its read
              permission lapsed. Re-grant + reload in a single user gesture. -->
         <div class="overlay reallow-hint" data-testid="videovarispeed-reallow-hint">
-          <div><strong>{fileMeta?.name}</strong></div>
+          <div><strong>{pendingHandleName}</strong></div>
           <button
             type="button"
             class="reallow-btn"
             onclick={onReAllow}
             data-testid="videovarispeed-reallow-btn"
-          >Click to re-allow {fileMeta?.name}</button>
+          >Click to re-allow {pendingHandleName}</button>
         </div>
       {:else if showRelinkPrompt}
         <!-- Re-link fallback (no usable handle / cross-machine): re-pick the
@@ -988,9 +639,11 @@
         data-testid="videovarispeed-play-btn"
         aria-pressed={isPlaying}
       >{isPlaying ? 'Pause' : 'Play'}</button>
-      <span class="time" data-testid="videovarispeed-time">
-        {formatTime(displayPos)} / {formatTime(durationSec)}
-      </span>
+      <!-- ⚠ THE `0:04 / 2:00` LINE IS DELETED ON BOTH SURFACES (owner ruling
+           2026-08-17): a derived value painted outside every control. Position
+           survives on the seek slider below and on its aria-valuetext. Removed
+           from the card too rather than only from the faceplate, so the two
+           surfaces do not disagree about what this module shows. -->
     </div>
 
     <input
@@ -1004,6 +657,7 @@
       disabled={durationSec <= 0}
       data-testid="videovarispeed-seek"
       aria-label="Video playhead"
+      aria-valuetext="{formatTime(displayPos)} of {formatTime(durationSec)}"
     />
 
     <div class="speed-row">
@@ -1064,8 +718,9 @@
     {/if}
 
     <!-- Hidden preloaded <video> elements for slots 1..6 (slot 0 is the main
-         preview above). Each is bound so loadFileIntoSlot can drive it +
-         attachExternalSource can sample it once it becomes active. They stay
+         preview above). Each is adopted from the node-owned registry so the
+         controller's loader can drive it + attachExternalSource can sample it
+         once it becomes active. They stay
          off-screen but resident so a gate switch is an instant element swap. -->
     <div class="slot-pool" aria-hidden="true">
       {#each [1, 2, 3, 4, 5, 6] as si (si)}
@@ -1238,7 +893,6 @@
     min-width: 56px;
   }
   .play-btn:hover { filter: brightness(1.1); }
-  .time { font-size: 0.65rem; color: var(--text-dim); font-family: ui-monospace, monospace; }
 
   .seek { width: 100%; accent-color: var(--cable-video); }
   .seek:disabled { opacity: 0.5; }
