@@ -29,6 +29,7 @@ import type { ModuleNode } from '$lib/graph/types';
 import { serializeMap, parseMap, applyMap } from './mappy-map-io';
 import { applyMapLayout, getSurfaceCount } from './mappy-edit';
 import { recordAudition } from './audition-ledger';
+import { recordMappyMapOutcome } from './mappy-map-outcome.svelte';
 
 /** The live node, or undefined when the store has no such id. */
 function liveNode(nodeId: string): ModuleNode | undefined {
@@ -57,8 +58,7 @@ export function exportMappyMap(nodeId: string): MappyMapStatus {
   if (!node) {
     // The seam was reached and found NOTHING — the ledger's own definition of
     // an undelivered press.
-    recordAudition({ nodeId, seam: 'file-export', delivered: false });
-    return { status: null, error: 'export failed' };
+    return report(nodeId, { status: null, error: 'export failed' }, false);
   }
   try {
     // ⚠ The count comes from the PARAM (via the shared reader), never from a
@@ -79,12 +79,25 @@ export function exportMappyMap(nodeId: string): MappyMapStatus {
     a.remove();
     // Revoke on the next tick so the click has surely started the download.
     setTimeout(() => URL.revokeObjectURL(url), 0);
-    recordAudition({ nodeId, seam: 'file-export', delivered: true });
-    return { status: `exported ${plural(map.count)}`, error: null };
+    return report(nodeId, { status: `exported ${plural(map.count)}`, error: null }, true);
   } catch {
-    recordAudition({ nodeId, seam: 'file-export', delivered: false });
-    return { status: null, error: 'export failed' };
+    return report(nodeId, { status: null, error: 'export failed' }, false);
   }
+}
+
+/** Record the audition AND publish the outcome, then hand the caller the same
+ *  pair. ⚠ BOTH LEDGERS, ALWAYS: `delivered` answers "did the press reach the
+ *  seam" for the parity sweep, and the outcome answers "what happened" for the
+ *  player — a press that reached the seam and found nothing to export is
+ *  `delivered: true` with a message, which is why they cannot be one field. */
+function report(
+  nodeId: string,
+  r: MappyMapStatus,
+  delivered: boolean,
+): MappyMapStatus {
+  recordAudition({ nodeId, seam: 'file-export', delivered });
+  recordMappyMapOutcome(nodeId, r);
+  return r;
 }
 
 /**
@@ -103,15 +116,21 @@ export async function importMappyMapFile(nodeId: string, file: File): Promise<Ma
   try {
     text = await file.text();
   } catch {
-    return { status: null, error: 'could not read file' };
+    const r = { status: null, error: 'could not read file' };
+    recordMappyMapOutcome(nodeId, r);
+    return r;
   }
   const parsed = parseMap(text);
   if (!parsed.ok) {
     // ⚠ Do NOT mutate on a foreign/garbage file — the whole point of the
     // kind/version tag. The layout on screen is the one the player aligned.
-    return { status: null, error: `not a MAPPY map: ${parsed.error}` };
+    const r = { status: null, error: `not a MAPPY map: ${parsed.error}` };
+    recordMappyMapOutcome(nodeId, r);
+    return r;
   }
   const layout = applyMap(parsed.map);
   applyMapLayout(nodeId, layout);
-  return { status: `imported ${plural(layout.count)}`, error: null };
+  const r = { status: `imported ${plural(layout.count)}`, error: null };
+  recordMappyMapOutcome(nodeId, r);
+  return r;
 }

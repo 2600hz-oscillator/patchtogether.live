@@ -254,6 +254,41 @@ test.describe('MAPPY face — the promotion is what makes it aimable', () => {
     await expect(body.locator('[data-testid="mappy-face-handle-3-0"]')).toBeVisible();
   });
 
+  test('the ranked EXPORT cell downloads the map and reports itself IN THE BODY', async ({ page }) => {
+    test.setTimeout(SLOW_BOOT_TEST_TIMEOUT_MS * 2);
+    await boot(page);
+    await spawnPatch(page, [{ id: 'fm4', type: 'mappy', domain: 'video' }], [], {
+      mountTimeout: BOOT_MS,
+    });
+    const dock = await openDock(page, 'fm4');
+    const body = dock.locator('[data-testid="mappy-map-body"]');
+    await expect(body).toBeVisible({ timeout: SLOW_BOOT_TEST_TIMEOUT_MS });
+
+    // ⚠ THE OUTCOME CROSSES SURFACES, AND NOTHING ELSE CAN SEE THAT IT DOES.
+    // ModuleShell paints a status/error line under a `file` cell and NOTHING
+    // under an `action` cell, so a ranked EXPORT has nowhere of its own to say
+    // what it did — and "the download failed" and "the button is dead" are the
+    // same picture without it. The body owns the line; the cell fires the
+    // action; `mappy-map-outcome.svelte` is the only thing joining them.
+    await expect(body.locator('[data-testid="mappy-face-map-status"]')).toHaveCount(0);
+
+    const cell = dock.locator(CELL('mappy-export-map-{n}'));
+    await expect(cell).toHaveAttribute('data-cell-control', 'action');
+    const [download] = await Promise.all([
+      page.waitForEvent('download'),
+      cell.locator('button').first().click(),
+    ]);
+    expect(download.suggestedFilename()).toMatch(/^mappy-map-\d+\.json$/);
+
+    const status = body.locator('[data-testid="mappy-face-map-status"]');
+    await expect(status).toHaveAttribute('data-status-kind', 'ok', {
+      timeout: SLOW_BOOT_TEST_TIMEOUT_MS,
+    });
+    // A fresh mappy is one live full-frame surface, and the line says so — the
+    // export is honest on a bare rack rather than failing for want of a subject.
+    await expect(status).toHaveText('exported 1 surface');
+  });
+
   test('the ranked GRID toggle reaches the param, and the MAP EDITOR agrees', async ({ page }) => {
     test.setTimeout(SLOW_BOOT_TEST_TIMEOUT_MS * 2);
     await boot(page);

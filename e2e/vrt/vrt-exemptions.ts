@@ -1384,8 +1384,8 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // shared mappy-homography.test.ts (DLT solve / apply / invert / column-major)
   // + e2e/tests/mappy-output.spec.ts (real source → mappy → output: composite
   // non-blank + warping a surface / driving an input changes the output) +
-  // mappy-face.spec.ts (the corner pin committing from the FACE).
-  mappy: 'faced (STRICT_FACES): the operated surface is the ModuleShell faceplate, captured by face-mappy-{compact,dock} — an unpatched spawn paints surface 1\'s numbered calibration grid, a pure function of the surface uv with no time term (see _shell-faces.ts). This entry covers only the LEGACY card (?shell=legacy), which has no committed baseline. Unit (mappy.test.ts surface-normalize + homography-bridge warp/back-project/round-trip/degenerate) + mappy-homography.test.ts + e2e (mappy-output.spec.ts: real source→mappy→output, composite non-blank, warp/drive changes output; mappy-face.spec.ts: the corner pin commits from the faceplate) provide coverage.',
+  // face-mappy.spec.ts (the corner pin committing from the FACE).
+  mappy: 'faced (STRICT_FACES): the operated surface is the ModuleShell faceplate, captured by face-mappy-{compact,dock} — an unpatched spawn paints surface 1\'s numbered calibration grid, a pure function of the surface uv with no time term (see _shell-faces.ts). This entry covers only the LEGACY card (?shell=legacy), which has no committed baseline. Unit (mappy.test.ts surface-normalize + homography-bridge warp/back-project/round-trip/degenerate) + mappy-homography.test.ts + e2e (mappy-output.spec.ts: real source→mappy→output, composite non-blank, warp/drive changes output; face-mappy.spec.ts: the corner pin commits from the faceplate) provide coverage.',
   // CHROMA — v3 reshape (this PR) changed the card layout + stripe colour
   // entirely (was a 5-fader mask-extractor; now a 3-fader hue-shifter +
   // tint swatch). Old baselines were deleted; regenerate via

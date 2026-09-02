@@ -331,14 +331,37 @@ describe('the two ranked control FAMILIES are real cells the card already names'
     }
   });
 
-  it('the venue file format has ONE implementation, called by both surfaces', () => {
-    // A second copy in the body is how the card and the faceplate come to
-    // disagree about what a `.json` map means, with nothing red.
+  it('the venue file format has ONE implementation — the shared action seam', () => {
+    // A second copy is how the card, the ranked cells and the faceplate come to
+    // disagree about what a `.json` map means, with nothing red. The card and
+    // the cells both call `mappy-map-actions`; nothing re-implements the
+    // serializer or the download.
     expect(cardCode).toMatch(/from '\.\/mappy-map-actions'/);
-    expect(bodyCode).toMatch(/from '\.\.\/mappy-map-actions'/);
-    for (const code of [cardCode, bodyCode]) {
-      expect(code, 'neither surface may re-implement serializeMap').not.toMatch(/serializeMap\(/);
+    const cells = stripSourceComments(
+      readFileSync(resolve(HERE, '../workflow/shell-cells.ts'), 'utf8'),
+    );
+    expect(cells).toMatch(/from '\$lib\/ui\/modules\/mappy-map-actions'/);
+    for (const [name, code] of [['MappyCard', cardCode], ['MappyMapBody', bodyCode]] as const) {
+      expect(code, `${name} may not re-implement serializeMap`).not.toMatch(/serializeMap\(/);
+      expect(code, `${name} may not re-implement the download`).not.toMatch(/createObjectURL/);
     }
+  });
+
+  it('the BODY paints the map OUTCOME and does NOT repeat the two ranked controls', () => {
+    // ⚠ THE FIRST DRAFT DID REPEAT THEM, and the dock painted export/import
+    // twice, inches apart: the body's own pair above the ranked cells' pair.
+    // ModuleShell paints a status line under a `file` cell and nothing under an
+    // `action` cell, so the outcome — not a second button — is what this
+    // surface owes. It crosses over on the shared per-node record.
+    expect(bodyCode).toMatch(/mappyMapOutcome\(nodeId\)/);
+    expect(bodyCode, 'the body must not mount its own map file input')
+      .not.toMatch(/type="file"/);
+    expect(bodyCode, 'the body must not fire the export itself')
+      .not.toMatch(/exportMappyMap/);
+    // …and BOTH actions publish into that record, or the line would be blind to
+    // half of what it reports.
+    const actions = stripSourceComments(read('mappy-map-actions.ts'));
+    expect((actions.match(/recordMappyMapOutcome\(/g) ?? []).length).toBeGreaterThanOrEqual(4);
   });
 });
 

@@ -19,11 +19,15 @@
   //   * THE MAP ⤢ BUTTON, which mounts the existing full-window `MappyEditor`
   //     (big handles, snap-to-grid, surface tabs) — unchanged, and mounted from
   //     here so it survives the promotion that stops the card rendering.
-  //   * THE MAP I/O STATUS LINE. The shell paints a status/error line for a
-  //     `file` cell for free, but an `action` cell has nowhere to say what
-  //     happened — so the EXPORT outcome needs a home, and this is it. Both
-  //     halves route through the one seam (`mappy-map-actions`) the ranked cells
-  //     call, so the body and the cells cannot disagree about the file format.
+  //   * THE MAP I/O OUTCOME LINE. ModuleShell paints a status/error line under a
+  //     `file` cell for free and NOTHING under an `action` cell, so the ranked
+  //     EXPORT has nowhere to say what it did — and a refused import
+  //     ("not a MAPPY map: …") is the only thing distinguishing a rejection from
+  //     a dead button. ⚠ THE BUTTONS THEMSELVES ARE NOT REPEATED HERE. An
+  //     earlier draft gave this body its own export/import pair so it could own
+  //     the outcome locally, and the dock then painted the same two controls
+  //     twice, inches apart. The controls are the ranked cells; this surface
+  //     shows the outcome, which crosses over on `mappy-map-outcome.svelte`.
   //   * THE EMPTY-STATE HINT — a placeholder naming this surface's own
   //     condition (the samsloop NO SAMPLE LOADED shape), replaced the moment any
   //     input is patched.
@@ -58,7 +62,6 @@
   // which is quadralogical's shape and not a naive `{#if !collapsed}` around
   // the loop.
 
-  import { onDestroy } from 'svelte';
   import { patch } from '$lib/graph/store';
   import { nodeVersion, edgesVersion } from '$lib/graph/node-versions.svelte';
   import { mutateNode } from '$lib/graph/mutate';
@@ -81,7 +84,7 @@
     resetSurface as editResetSurface,
     toggleSurfaceFit as editToggleSurfaceFit,
   } from '../mappy-edit';
-  import { exportMappyMap, importMappyMapFile } from '../mappy-map-actions';
+  import { mappyMapOutcome } from '../mappy-map-outcome.svelte';
   import { hitTestSurfaces } from '../mappy-hit';
   import { drawPreviewDownscaled } from '../preview-downscale';
   import { cardParams } from '../card-kit';
@@ -159,33 +162,12 @@
   let selected = $state(0);
   let editorOpen = $state(false);
 
-  // ── map I/O status (the ACTION cell has no status line of its own) ────────
-  let mapStatus = $state<{ kind: 'ok' | 'err'; text: string } | null>(null);
-  let statusTimer: ReturnType<typeof setTimeout> | null = null;
-  function flashResult(r: { status: string | null; error: string | null }): void {
-    if (r.error) mapStatus = { kind: 'err', text: r.error };
-    else if (r.status) mapStatus = { kind: 'ok', text: r.status };
-    else return;
-    if (statusTimer) clearTimeout(statusTimer);
-    statusTimer = setTimeout(() => { mapStatus = null; statusTimer = null; }, 4000);
-  }
-
-  let importInput: HTMLInputElement | null = $state(null);
-  function onExportMap(): void {
-    flashResult(exportMappyMap(nodeId));
-  }
-  function onImportClick(): void {
-    importInput?.click();
-  }
-  async function onImportFile(ev: Event): Promise<void> {
-    const input = ev.currentTarget as HTMLInputElement;
-    const file = input.files?.[0];
-    input.value = ''; // so picking the SAME file again re-fires change
-    if (!file) return;
-    const r = await importMappyMapFile(nodeId, file);
-    if (!r.error && selected >= surfaceCount) selected = Math.max(0, surfaceCount - 1);
-    flashResult(r);
-  }
+  // ── the map I/O OUTCOME (the ranked ACTION cell has no status line) ───────
+  // Read from the shared per-node record the actions publish, so a press on the
+  // ranked cell BELOW this body reports itself HERE. It persists until the next
+  // map action rather than timing out: an outcome that erases itself while the
+  // player is reading it is worse than one that waits to be replaced.
+  let mapStatus = $derived(mappyMapOutcome(nodeId));
 
   // ── pointer drag — corner-pin OR whole-surface move ───────────────────────
   // ONE SVG-level pointer-down runs the shared pure hit-test; the overlay shapes
@@ -313,9 +295,7 @@
       if (rafId !== null) { cancelAnimationFrame(rafId); rafId = null; }
     };
   });
-  onDestroy(() => {
-    if (statusTimer) clearTimeout(statusTimer);
-  });
+
 
   /** The accessible name for the picture: what a sighted player reads off the
    *  legend — how many surfaces are live and how many are fed. `aria-label`
@@ -416,33 +396,8 @@
       title="Open the full-window mapping editor for precise corner-pin"
     >MAP ⤢</button>
 
-    <!-- The map I/O the RANKED CELLS also drive, repeated here because the
-         action cell's outcome has nowhere else to be seen, and because a player
-         aligning a venue is already looking at this surface. -->
-    <button
-      class="tool-btn nodrag"
-      type="button"
-      onclick={onExportMap}
-      data-testid="mappy-face-export-map"
-      title="Save the surface layout (count + corners + FIT) to a .json file — reuse it in another patch at the same venue"
-    >export map</button>
-    <button
-      class="tool-btn nodrag"
-      type="button"
-      onclick={onImportClick}
-      data-testid="mappy-face-import-map"
-      title="Load a surface layout from a .json file — REPLACES the current layout"
-    >import map</button>
-    <input
-      bind:this={importInput}
-      class="file-input"
-      type="file"
-      accept="application/json,.json"
-      onchange={onImportFile}
-      data-testid="mappy-face-import-file"
-      tabindex="-1"
-      aria-hidden="true"
-    />
+    <!-- The venue map's OUTCOME. Its two controls are the ranked cells in the
+         MAP band below; only what they DID is painted here. -->
     {#if mapStatus}
       <span
         class="map-status"
@@ -590,27 +545,6 @@
     cursor: pointer;
   }
   .map-btn:hover { background: rgba(74, 223, 255, 0.22); }
-  .tool-btn {
-    background: #2a2f3a;
-    color: var(--text);
-    border: 1px solid #404652;
-    border-radius: 3px;
-    padding: 3px 10px;
-    font-size: 0.64rem;
-    font-family: ui-monospace, monospace;
-    letter-spacing: 0.04em;
-    cursor: pointer;
-  }
-  .tool-btn:hover { background: #353c49; border-color: var(--cable-video, #4adfff); }
-  .file-input {
-    /* visually hidden but still clickable programmatically */
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip: rect(0 0 0 0);
-    white-space: nowrap;
-  }
   .map-status {
     font-size: 0.6rem;
     font-family: ui-monospace, monospace;
