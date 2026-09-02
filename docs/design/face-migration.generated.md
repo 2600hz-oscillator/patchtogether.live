@@ -57,6 +57,7 @@ author a `face` and rank the controls — no new platform capability.
 | `cellshade` | video | done | — |
 | `charlottesEchos` | audio | done | — |
 | `chroma` | video | done | — |
+| `chromaconsole` | audio | done | — |
 | `chromakey` | video | done | — |
 | `clap` | audio | done | — |
 | `clockedRunner` | audio | done | — |
@@ -240,7 +241,6 @@ the primary interaction is not param-shaped — needs a purpose-built surface.
 | module | domain | state | blockers |
 |---|---|---|---|
 | `archivist` | video | — | `needs-media-controller` |
-| `chromaconsole` | audio | — | — |
 | `clipplayer` | audio | — | — |
 | `doom` | video | — | — |
 | `toybox` | video | — | `needs-media-controller` |

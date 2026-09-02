@@ -420,6 +420,8 @@ chromaconsole param slot5 0..127 linear default=64
 chromaconsole param slot6 0..127 linear default=64
 chromaconsole param slot7 0..127 linear default=64
 chromaconsole param slot8 0..127 linear default=64
+chromaconsole family chromaconsole-connect kind=other prefix=chromaconsole-connect
+chromaconsole family chromaconsole-pushall kind=other prefix=chromaconsole-pushall
 chromakey meta domain=video
 chromakey in bg video
 chromakey in fg video

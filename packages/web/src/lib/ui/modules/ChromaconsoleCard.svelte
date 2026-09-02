@@ -47,6 +47,8 @@
     slottableControls,
     type DeviceControl,
   } from '$lib/devices/device-descriptor';
+  import { chromaconsoleAutoSelectPort } from './chromaconsole-cell-actions';
+  import { chromaconsoleSlotName } from './chromaconsole/chromaconsole-status-model';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode | undefined);
@@ -108,14 +110,16 @@
     // Straight from the click handler — an await before requestMIDIAccess
     // spends the user activation and Chromium refuses to prompt.
     await a.connect();
-    // Auto-detect is a CONVENIENCE, never a requirement: port names differ by
-    // OS, driver and hub, and a pedal behind a generic interface reports the
-    // interface's name. If the hint misses, the picker is right there.
-    const ports = a.listOutputs();
-    const hinted = ports.findIndex((p) =>
-      CHROMA_CONSOLE.portHints.some((h) => p.name.toLowerCase().includes(h.toLowerCase())),
-    );
-    if (hinted >= 0) a.selectPort(ports[hinted]!.id);
+    // ⚠ AUTO-DETECT NOW ROUTES THROUGH THE SHARED SEAM, AND THAT IS A BEHAVIOUR
+    // FIX. This card used to re-implement the match inline as "earliest PORT
+    // that matches any hint", while `matchPortByHint` — which had a full unit
+    // suite and ZERO production callers — is "earliest HINT that matches any
+    // port". The descriptor orders its hints most-specific-first on purpose, so
+    // with both a DIN interface enumerating as "Chroma" and the real pedal
+    // present, the card bound the interface and the descriptor's ordering was
+    // silently defeated. One implementation now serves the card and the face's
+    // ranked CONNECT cell.
+    chromaconsoleAutoSelectPort(a);
     revision++;
   }
 
@@ -156,17 +160,15 @@
   /**
    * A knob label short enough for a 4-across grid cell.
    *
-   * The descriptor's labels are qualified for the assignment picker, where the
-   * distinction matters ("amount · character" vs "effect vol · character").
-   * On the knob itself the qualifier is already visible in the select directly
-   * above it, so the tail alone is unambiguous — and the full string overlaps
-   * its neighbours at this width, which is worse than shortening it.
+   * ⚠ THE ARITHMETIC MOVED, THE ANSWER DID NOT. It lives in
+   * `chromaconsole/chromaconsole-status-model` because the face's device body
+   * needs the same short name for its slot board, and a hand-copy is how the two
+   * surfaces would drift. Same rule as before: the descriptor's labels are
+   * qualified for the assignment picker, where the distinction matters
+   * ("amount · character" vs "effect vol · character"), and on the control
+   * itself the qualifier is already visible in the select directly above it.
    */
-  function knobLabel(control: DeviceControl | undefined, index: number): string {
-    if (!control) return `slot ${index + 1}`;
-    const parts = control.label.split('·');
-    return (parts.at(-1) ?? control.label).trim();
-  }
+  const knobLabel = chromaconsoleSlotName;
 
   /** Enum controls render as a Segmented that writes each range's midpoint. */
   function segmentOptions(control: DeviceControl) {
