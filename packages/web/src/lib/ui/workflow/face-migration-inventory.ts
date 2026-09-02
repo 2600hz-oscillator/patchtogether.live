@@ -1711,11 +1711,37 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
   },
   {
     type: 'videovarispeed',
-    disposition: 'bespoke-surface',
-    blockers: ['needs-media-controller'],
-    why:
-      'a multi-SLOT varispeed player: several file slots, a crop overlay dragged over the frame, ' +
-      'and scrub/speed transport — over a card-owned video source.',
+    disposition: 'generic-face',
+    note:
+      'PROMOTED (2026-09-01, wave 4). ⚠ THIS ENTRY\'S OWN `why` WAS HALF FALSE AND HALF TRUE, ' +
+      'and the halves point opposite ways — which is why this promotion is bigger than ' +
+      'videobox\'s and why the correction is worth the space. It read: "a multi-SLOT varispeed ' +
+      'player: several file slots, a crop overlay dragged over the frame, and scrub/speed ' +
+      'transport — over a card-owned video source." The player half is accurate, and every one ' +
+      'of those affordances now lives on the `fullViewBody`. "Over a card-owned video source" ' +
+      'had been FALSE since LEG-02 P2 (#1511): the seven elements, the engine attach, the audio ' +
+      'wire, the transport loop, the 33 ms CV poll, the gate-driven slot switch, the seven ' +
+      'virtual playheads and the crop push are all `node-varispeed-registry`\'s, on GRAPH ' +
+      'lifetime. But the `needs-media-controller` blocker was NOT fully discharged, and the ' +
+      'residue is what the recon would have missed: that registry imported neither ' +
+      '`video-file-store` nor `video-export-registry` and could not load bytes at all, so the ' +
+      'per-slot LOADER, both saved-handle RESTORES, the multi-slot EXPORT resolver and the crop ' +
+      'ASPECT RE-FIT were still card `$effect`s. This PR moves those four, which is what ' +
+      'discharges the blocker rather than declaring it discharged. ⚠ AND THE MOVE IS A REPAIR: ' +
+      'videovarispeed is in neither `DOM_SOURCE_LANE_TYPES` nor `CARD_PRODUCER_LANE_TYPES`, so ' +
+      'it gets no headless host and the default shell mounts no card anywhere — yet the card\'s ' +
+      '`fileMeta.handleId` effect is the documented delivery mechanism for the Loaded-Assets ' +
+      'picker spawn, `runAssetRebindSweep` and the perf-zip restore. All three were already ' +
+      'dock-gated on main. THREE ranked cells (`speed` as the card\'s rotary — its law is an ' +
+      'asymmetric clock face a linear throw cannot read — plus `start`/`end` as `fader`s, the ' +
+      'primitive the card already drew) + `glyph: \'none\'` (a real choice: two audio outputs ' +
+      'would bind a LIVE soundtrack VU over the module\'s own picture) + NINE `noUserControl` ' +
+      'bridge caches, over a `picture` body carrying the drop target, the verbatim ' +
+      'showOpenFilePicker handle acquisition, the re-allow and re-link overlays, the transport, ' +
+      'the seek thumb, the SPEED multiplier, the START-past-END warning, the crop editor, the ' +
+      '7-slot asset bank and the module\'s first SCREEN switch. No pages: three cells is not ' +
+      'control-heavy, and the wave plan\'s proposed transport/window split would have padded ' +
+      'pages to manufacture a tab rail.',
   },
 
   // ── organizational-native ─────────────────────────────────────────────────

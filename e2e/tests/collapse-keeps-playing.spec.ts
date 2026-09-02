@@ -15,6 +15,15 @@
 // (Canvas.svelte), i.e. those specs were validating a mode users do not have.
 // This spec goes to plain `/rack` deliberately; do not add a shell param.
 //
+// ⚠ AND BOTH REAL PLAYERS ARE NOW FACED (videobox wave 3, videovarispeed wave
+// 4, both 2026-09-01), so the placement leg below takes its FACED branch for
+// each: the dock pane mounts a ModuleShell body that BLITS, the node-owned
+// <video> stays PARKED, and the element is found in neither pane. The UN-FACED
+// branch is retained rather than deleted because it is what keeps this sweep
+// honest for the next un-faced member (loopback, archivist, cameraInput), and
+// because a face PR that quietly ADOPTED the element would otherwise keep every
+// progress assertion green.
+//
 // REGISTRY-DRIVEN, so a new DOM-source video module cannot opt out by
 // accident: the subject list is DERIVED from DOM_SOURCE_LANE_TYPES in
 // $lib/ui/workflow/dom-source-modules.ts (itself held exhaustive by that
@@ -223,12 +232,17 @@ async function boot(page: Page): Promise<void> {
 // is NOT, for either subject this sweep actually exercises, and both were
 // MEASURED here (in-page trace at 250 ms, no test-side perturbation):
 //
-//   videovarispeed  the CARD wraps the element itself — its rAF transport calls
-//                   decideEdgeAction() and writes `videoEl.currentTime =
-//                   window.startSec` at the window edge (`el.loop` is false the
-//                   whole time). Trace: 3.816 -> 0.086 -> ... -> 3.944 -> 0.166,
-//                   a clean wrap every ~4.0 s, forever.
-//   videobox        `currentTime` is a WALL CLOCK. VideoboxCard's drift loop
+//   videovarispeed  the NODE'S CONTROLLER wraps the element itself — its rAF
+//                   transport calls decideEdgeAction() and writes
+//                   `currentTime = window.startSec` at the window edge
+//                   (`el.loop` is false the whole time). Trace: 3.816 -> 0.086
+//                   -> ... -> 3.944 -> 0.166, a clean wrap every ~4.0 s,
+//                   forever. (Measured when that loop was still on the card; it
+//                   moved to $lib/ui/media/node-varispeed-registry in LEG-02 P2
+//                   and the wrap behaviour is unchanged — which is the point of
+//                   a verbatim move.)
+//   videobox        `currentTime` is a WALL CLOCK. The node source controller's
+//                   drift loop
 //                   (decideDriftCorrection, every 500 ms) computes
 //                   `lastSyncPosition + (Date.now()-lastSyncTime)/1000`, clamps
 //                   it to `duration - 0.05`, and SEEKS whenever the element is
@@ -515,7 +529,10 @@ test('the sweep is NOT VACUOUS: it still exercises real file players', () => {
   //
   // ⚠ DELIBERATELY NOT A TYPED FLOOR (`>= 2`), and the distinction is the repo
   // standard rather than taste. The real player population is videobox +
-  // videovarispeed and is expected to STAY that pair across this whole epic —
+  // videovarispeed — both now FACED, and the predicate that derives them still
+  // reads their LEGACY CARDS, which are alive at `?shell=legacy` and keep their
+  // `-file-input` / `-play-btn` testids for exactly that reason. It is expected
+  // to STAY that pair across this whole epic —
   // so a literal `2` would sit EXACTLY ON the population, which is a ratchet in
   // behaviour whatever it is in intent: the next legitimate change to that set
   // breaks a gate that was never measuring the thing it names. Membership is
@@ -570,6 +587,27 @@ for (const type of TYPES) {
     // right observation two levels below where the classification lived.
     const fileInput = pane.locator('input[type="file"][data-testid$="-file-input"]').first();
     const playBtn = pane.locator('button[data-testid$="-play-btn"]').first();
+    // ⚠ WAIT FOR THE PREDICTED SHAPE BEFORE SAMPLING IT — and predict from the
+    // STATIC half, which is knowable without the browser.
+    //
+    // MEASURED on this tree (2026-09-01, videovarispeed wave 4): a COLD run of
+    // the whole sweep failed the videobox row with "source says true, runtime
+    // says false", and the SAME row passed on a warm re-run seconds later. A
+    // FACED member's dock body is a LAZY `import.meta.glob` chunk
+    // (`shell-extensions.ts`), so `dock-full-view` exists a tick or two before
+    // the surface inside it does — and a bare `.count()` the instant the pane
+    // appears reads zero. That is not a slow product, it is a sample taken
+    // before the subject exists.
+    //
+    // Both shells are covered because the wait is DERIVED, not hard-coded: a
+    // predicted player must actually materialise its two controls (and if it
+    // never does, the assertion below fires with the real message rather than a
+    // timeout), while a predicted non-player has nothing to wait for and is
+    // sampled once — so the DISAGREEMENT check keeps both directions.
+    if (realPlayerTypes().includes(type)) {
+      await expect(fileInput).toHaveCount(1, { timeout: 20_000 });
+      await expect(playBtn).toHaveCount(1, { timeout: 20_000 });
+    }
     const isPlayer = (await fileInput.count()) > 0 && (await playBtn.count()) > 0;
     // ⚠ ANCHOR THE STATIC PREDICATE TO THE RUNTIME ONE, per subject and in both
     // directions. `realPlayerTypes()` reads the card SOURCE so the population is

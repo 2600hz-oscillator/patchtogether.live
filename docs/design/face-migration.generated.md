@@ -30,7 +30,7 @@ Every registered module carries exactly one **disposition**: what kind of work i
 
 | blocker | issue | modules waiting |
 |---|---|---|
-| `needs-media-controller` | #1511 | 5 |
+| `needs-media-controller` | #1511 | 4 |
 
 ## `generic-face`
 
@@ -211,6 +211,7 @@ author a `face` and rank the controls — no new platform capability.
 | `videocube` | video | done | — |
 | `videoMixer` | video | done | — |
 | `videoOut` | video | done | — |
+| `videovarispeed` | video | done | — |
 | `vstFx` | audio | done | — |
 | `vstInstrument` | audio | done | — |
 | `warrensspectrum` | audio | done | — |
@@ -244,7 +245,6 @@ the primary interaction is not param-shaped — needs a purpose-built surface.
 | `seqtris` | audio | — | — |
 | `toybox` | video | — | `needs-media-controller` |
 | `trails` | audio | — | — |
-| `videovarispeed` | video | — | `needs-media-controller` |
 
 ## `organizational-native`
 
