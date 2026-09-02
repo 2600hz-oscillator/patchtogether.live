@@ -122,6 +122,7 @@ import {
   selectSamsloopRate,
   toggleSamsloopRecord,
 } from '$lib/ui/modules/samsloop-face-actions';
+import { exportMappyMap, importMappyMapFile } from '$lib/ui/modules/mappy-map-actions';
 import {
   twotracksTransport,
   twotracksSaveTape,
@@ -246,6 +247,7 @@ import { runLivecodeNode } from '$lib/ui/modules/livecode-cell-actions';
 import { launchpadConnectSingle, launchpadPair } from '$lib/ui/modules/launchpad-cell-actions';
 import { push2Connect } from '$lib/ui/modules/push2-cell-actions';
 import { electraSendToDevice } from '$lib/ui/modules/electra-cell-actions';
+import { readSurfaceData, setSurfaceLocked } from '$lib/graph/control-surface';
 import { outToLaunchConnect } from '$lib/ui/modules/out-to-launch-cell-actions';
 import { timelordeFaceTap } from '$lib/ui/modules/timelorde/face-tap';
 import {
@@ -3120,6 +3122,31 @@ const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
   // preset is generated FROM it and pushed outward — so a `data` probe would
   // fail on a perfectly live button, and a `data-rev` probe is the dead-button
   // hazard this file warns about two entries up.
+  // ── CONTROL SURFACE — the FIFTH meta-domain face, and the first whose one
+  //    ranked cell is a TOGGLE over the module's own node.data ───────────────
+  //
+  // ⚠ THE LOCK IS THIS MODULE'S ONLY ADDRESSABLE CONTROL, and the reason is
+  // electraControl's, one entry below: every other affordance on the surface
+  // proxies a param on a DIFFERENT node, which no face key can address at any
+  // rank. `node.data.locked` is the module's OWN — it freezes/frees the group
+  // boxes for rearranging — and `ShellToggleCell` is the registry's exact shape
+  // for "a 0/1 LATCHING switch backed by node.data".
+  //
+  // ⚠ IT WRITES THROUGH `setSurfaceLocked`, the same in-place LOCAL_ORIGIN
+  // mutator the legacy card's lock button calls, so the two surfaces cannot
+  // disagree about what locking means and the flip reaches Cmd-Z and every
+  // collaborator. A toggle cell is not dock-restricted, so LOCK reaches the
+  // lane tile — which matters here, because dragging a group box is a LANE
+  // gesture on the dock body and the lock is what arms it.
+  controlSurface: {
+    'control-surface-lock-{n}': {
+      kind: 'toggle',
+      label: 'Lock',
+      value: (node) => readSurfaceData(node).locked ?? false,
+      onchange: (nodeId, on) => setSurfaceLocked(nodeId, on),
+    },
+  },
+
   electraControl: {
     'electra-connect-button-{n}': {
       kind: 'action',
@@ -3306,6 +3333,52 @@ const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
         action: 'click',
         effect: { kind: 'text', testid: 'numpad-key-hint', expect: 'changed' },
       },
+    },
+  },
+
+  // ── MAPPY — the VENUE MAP, the projection mapper's portable alignment ──────
+  //
+  // These two are the only affordances on MAPPY that are neither a param nor a
+  // pointer gesture over the picture, so they are the only two the faceplate
+  // can rank as cells. Everything else — corner pin, whole-surface move, the
+  // six per-surface FIT/CROP pairs, the MAP editor — lives in the
+  // `fullViewBody`, and the block's own header there says why each one has to.
+  //
+  // ⚠ BOTH CALL THE SHARED ACTION SEAM, never a second copy of the file format.
+  // `mappy-map-actions.ts` is what the LEGACY CARD calls too, which is the whole
+  // point: a venue map exported from the card and imported from the faceplate
+  // is the same file by construction rather than by two authors agreeing.
+  mappy: {
+    // IMPORT — a `file` cell, so the shell paints the picker AND the
+    // status/error line the action returns. That line is not decoration: a
+    // foreign or garbage file is REJECTED and mutates nothing, and a rejection
+    // that said nothing would read exactly like a dead button.
+    'mappy-import-map-{n}': {
+      kind: 'file',
+      label: 'import map',
+      title: 'Load a surface layout (count + corners + FIT) from a .json file — REPLACES the current layout',
+      accept: 'application/json,.json',
+      onFile: (nodeId, file) => importMappyMapFile(nodeId, file),
+    },
+
+    // EXPORT — an `action` cell with the `file-export` seam, the samsloop
+    // precedent. ⚠ NOT `engine-message`: an export reaches no engine, and a
+    // probe watching `engine-message` on this node would be satisfied by
+    // something that never wrote a file. There is no graph write either — a
+    // download leaves `node.data` and every param exactly as they were — so
+    // `readParam`/`readData`, the two oracles the parity sweep uses everywhere
+    // else, are structurally blind to it and the ledger is the only observable.
+    //
+    // ⚠ AND IT IS HONEST ON A BARE RACK, which is where faces-parity presses
+    // it: a freshly-spawned mappy has one full-frame surface, so the press
+    // exports a real one-surface map rather than failing for want of a subject.
+    'mappy-export-map-{n}': {
+      kind: 'action',
+      label: 'export map',
+      title: 'Save the surface layout (count + corners + FIT) to a .json file — reuse it in another patch at the same venue',
+      mode: 'trigger',
+      probe: { effect: { kind: 'audition', seam: 'file-export' } },
+      onFire: (nodeId) => { exportMappyMap(nodeId); },
     },
   },
 };

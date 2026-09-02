@@ -53,20 +53,67 @@ export function ensureSurfaces(id: string): MappySurfaceState[] | null {
   return d.surfaces!;
 }
 
-/** Read the live surface-count (node.data.surfaceCount), defaulting to 1. */
+// ── ⚠ THE PARAM IS THE ONE SOURCE FOR `surfaceCount` AND `showGrid` ─────────
+//
+// Both used to be written TWICE — once onto `node.data` and once onto the param
+// — and the FACTORY preferred the `node.data` mirror. That is invisible while
+// the only writers are the card and the MAP editor, which write both. It stops
+// being invisible the moment a generic faceplate cell exists, because every
+// shell param cell writes the PARAM ALONE: on any node that had ever been
+// touched the mirror would win and the faceplate's controls would be inert,
+// with every def-reading gate green.
+//
+// So the mirror is gone in both directions: nothing writes it, and every reader
+// (the factory, the card, the MAP editor, the map exporter) reads the param.
+// ⚠ Behaviour-preserving for every saved rack — the `setNodeParam` call has sat
+// beside the `node.data` write since this seam was created (ea2504939) and in
+// `MappyCard.svelte` before it existed (614052097), so no rack this build can
+// load holds a pair that disagrees. A stale `node.data.surfaceCount` /
+// `.showGrid` left in an old rack is now simply unread.
+
+/** Read the live surface-count (param `surfaceCount`), defaulting to 1. */
 export function getSurfaceCount(node: ModuleNode | undefined): number {
-  const c = (node?.data as { surfaceCount?: unknown } | undefined)?.surfaceCount;
+  const c = node?.params?.surfaceCount;
   return typeof c === 'number' ? clampSurfaceCount(c) : DEFAULT_SURFACE_COUNT;
 }
 
-/** Set the live surface-count (1..6), mirrored to the param so it persists. */
+/** Read the live GRID override (param `showGrid`, a 0/1 two-state). */
+export function getShowGrid(node: ModuleNode | undefined): boolean {
+  const v = node?.params?.showGrid;
+  return typeof v === 'number' ? v >= 0.5 : false;
+}
+
+/** Set the live surface-count (1..6). */
 export function setSurfaceCount(id: string, n: number): void {
   const t = patch.nodes[id];
   if (!t) return;
-  if (!t.data) t.data = {};
-  const next = clampSurfaceCount(n);
-  (t.data as { surfaceCount?: number }).surfaceCount = next;
-  setNodeParam(id, 'surfaceCount', next);
+  setNodeParam(id, 'surfaceCount', clampSurfaceCount(n));
+}
+
+/**
+ * Set the count to an ABSOLUTE value by repeated add/remove — the write the
+ * faceplate's `surfaceCount` cell commits through (`SHELL_PARAM_WRITES`).
+ *
+ * ⚠ A PLAIN `setNodeParam` HERE WOULD BE A DIFFERENT CONTROL FROM THE CARD'S
+ * `+`. `addSurface` does one thing besides raising the number: a newly-live
+ * surface still sitting at the untouched full-frame default drops in as
+ * `insetQuadForIndex` — a staggered box you can see and grab. Writing the param
+ * directly would make every added surface a full-frame duplicate stacked
+ * exactly on the one below it, i.e. a control that appears to do nothing. The
+ * shape of the write matters, not just the number, which is what the override
+ * registry is for.
+ *
+ * Idempotent, and clamped by `addSurface`/`removeSurface` themselves, so a
+ * segmented jump (1 → 5) and a dial drag both land on the same state.
+ */
+export function setSurfaceCountTo(id: string, n: number): number {
+  const target = clampSurfaceCount(n);
+  let cur = getSurfaceCount(patch.nodes[id] as ModuleNode | undefined);
+  // Bounded by MAPPY_SURFACE_COUNT either way; the guard is belt for a store
+  // that refuses a write (a detached node) rather than a real loop risk.
+  for (let i = 0; i < MAPPY_SURFACE_COUNT && cur < target; i++) cur = addSurface(id);
+  for (let i = 0; i < MAPPY_SURFACE_COUNT && cur > target; i++) cur = removeSurface(id);
+  return cur;
 }
 
 /** True if a surface's corners are still the untouched full-frame default. */
@@ -215,12 +262,18 @@ export function applyMapLayout(
 }
 
 /** Toggle the global GRID override (force the calibration grid on every live
- *  surface). Mirrored to the param so it persists + the factory reads it. */
+ *  surface). Writes the param, which is what the factory reads. */
 export function toggleGrid(id: string, current: boolean): void {
   const t = patch.nodes[id];
   if (!t) return;
-  if (!t.data) t.data = {};
-  const next = !current;
-  (t.data as { showGrid?: boolean }).showGrid = next;
-  setNodeParam(id, 'showGrid', next ? 1 : 0);
+  setNodeParam(id, 'showGrid', current ? 0 : 1);
+}
+
+/** Set the GRID override to an ABSOLUTE state — the write the faceplate's
+ *  `showGrid` Toggle commits through, and the same seam `toggleGrid` uses so a
+ *  press on the card and a press on the faceplate cannot diverge. */
+export function setShowGrid(id: string, on: boolean): void {
+  const t = patch.nodes[id];
+  if (!t) return;
+  setNodeParam(id, 'showGrid', on ? 1 : 0);
 }

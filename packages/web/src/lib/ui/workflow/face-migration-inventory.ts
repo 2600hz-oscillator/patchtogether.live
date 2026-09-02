@@ -1080,10 +1080,38 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
   },
   {
     type: 'controlSurface',
-    disposition: 'bespoke-surface',
-    why:
-      'a free-form CONTROL SURFACE: knob boxes dragged into place per source module, renameable in ' +
-      'situ. Its content is other modules parameters, so it has no params of its own to rank.',
+    disposition: 'generic-face',
+    // ⚠ WAS `bespoke-surface`. The old `why` read: "a free-form CONTROL
+    // SURFACE: knob boxes dragged into place per source module, renameable in
+    // situ. Its content is other modules parameters, so it has no params of its
+    // own to rank." The first sentence is true and is what the fullViewBody
+    // carries. The second sentence's CONCLUSION was false: the LOCK toggle
+    // (`node.data.locked`) is one node-data-backed control of the module's OWN,
+    // and matrixMix/electraControl had already refuted the zero-rankable
+    // framing — a `controlFamilies` entry over node.data ranks fine.
+    note:
+      'PROMOTED — the FIFTH meta-domain face, and the second-to-last module to leave ' +
+      'NON_SHELL_LANE_TYPES (clipplayer remains). ONE ranked TOGGLE cell — LOCK, over ' +
+      'node.data.locked through the same setSurfaceLocked mutator the card calls — because every ' +
+      'other affordance proxies a param on a DIFFERENT node, which no face key can address at any ' +
+      'rank (the electraControl addressability argument). The board — group boxes, proxied knobs, ' +
+      'passthrough colour stripes, per-knob rename, drag layout, empty-state prompt — is a ' +
+      '`control-grid` fullViewBody; a `tileBody` adds the lane strip of live bound-source colours ' +
+      'AND carries the AUTO-PRUNE effect, whose only production caller was the card\'s $effect ' +
+      '(controlSurface is in neither half of HEADLESS_MOUNT_LANE_TYPES, so a body-only promotion ' +
+      'would have stopped it silently — the ES-9 card-only-side-effect shape). ' +
+      '⚠ THIS IS A LANE-TIER CHANGE, OWNER-APPROVED 2026-08-31 (owner-decisions item 10): the ' +
+      'free-growing 360–760 px inline panel becomes a 192×180 tile plus one Expand click, on the ' +
+      'electraControl / semantic-zoom precedent — the refusal this entry used to justify was ' +
+      'measured BEFORE `tileBody` existed (#2242). A USER-DOCKED node\'s rail occupant still ' +
+      'mounts the verbatim card (dockRailRendersFace requires `pinned`), where it stays ' +
+      'DYNAMIC_SIZED. ⚠ EVERY PROXIED KNOB IN THE BODY PASSES AN EXPLICIT testid — Knob.svelte ' +
+      'emits control-<paramId> whenever the MIDI-learn key is passed, and faces-parity asserts ' +
+      'exact multiset equality against params: [] — and for the same reason the body does NOT ' +
+      'reuse the card\'s control-surface-* testid vocabulary (every one of those matches the ' +
+      'sweep\'s ^control- scan); its namespace is cs-board-*. ⚠ ZERO RESTING READOUTS DELETED: ' +
+      'the card painted no derived value outside a control (the lock caption is a control\'s own ' +
+      'label), so the promotion deletes none.',
   },
   {
     type: 'doom',
@@ -1229,10 +1257,34 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
   },
   {
     type: 'mappy',
-    disposition: 'bespoke-surface',
-    why:
-      'a PROJECTION MAPPER: quad corners dragged on a canvas, with mapping import/export. Direct ' +
-      'geometry manipulation is the entire module.',
+    disposition: 'generic-face',
+    note:
+      'PROMOTED. The old entry read "quad corners dragged on a canvas, with mapping ' +
+      'import/export — direct geometry manipulation is the entire module". The first half is ' +
+      'TRUE and is precisely what a `fullViewBody` is for; the CONCLUSION is false, and it had ' +
+      'already propagated into a gate — `dock-tray-shrink-to-content.spec.ts` quoted this entry ' +
+      'to pin mappy\'s un-migrated status as a DURABLE PROPERTY rather than a queue position ' +
+      '(that spec now asks for the un-migrated RENDER PATH through the #2299 forced-placeholder ' +
+      'seam, so it depends on no module\'s disposition at all). mappy declares TWO real params ' +
+      'the card paints as controls: a GRID override button and a +/- surface counter. They rank ' +
+      'as a Toggle and a six-state roster, with the venue MAP\'s import/export as two ranked ' +
+      'control families beside them. ' +
+      'The body carries what is genuinely gesture-shaped: the composite preview with its ' +
+      'corner-pin overlay, the whole-surface move drag, surface focus, the six INDEPENDENT ' +
+      'per-surface FIT/CROP and RESET pairs (a controlFamilies template is ONE cell with no ' +
+      'per-member index, so they cannot be cells), the MAP button that opens the full-window ' +
+      'editor, the export outcome\'s status line (the shell paints one for a FILE cell and not ' +
+      'for an ACTION cell), the empty-state hint, and the module\'s first SCREEN switch. ' +
+      '⚠ It also hand-carries the card\'s `ydoc.getMap("edges").observeDeep` bridge, which lives ' +
+      'in none of the three shared mappy seams: without it `live[]`, the hit-test roster and the ' +
+      'editor\'s `connected` prop never see a cable patched while the pane is open. ' +
+      '⚠ THE PROMOTION\'S REAL COST WAS AN INERT-CONTROL TRAP: the factory PREFERRED a ' +
+      '`node.data` mirror over the param for both controls while every shell cell writes the ' +
+      'param alone, so on any node a card or a `?shell=legacy` collaborator had touched the ' +
+      'faceplate would have been dead with every def-reading gate green. The mirror is gone in ' +
+      'both directions. And both params moved `curve: linear` -> `discrete` (a FUNCTIONAL fix, ' +
+      'the frametable precedent: a two-state override was going to paint a 200 px continuous ' +
+      'drag), which is a contract re-pin and the program\'s one real-GPU re-attest.',
   },
   {
     type: 'matrixMix',

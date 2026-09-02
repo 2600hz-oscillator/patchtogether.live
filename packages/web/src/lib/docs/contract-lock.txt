@@ -725,6 +725,7 @@ colourofmagic param pal_r 0..16777215 discrete default=16738816
 colourofmagic param preview 0..21 discrete default=1
 colourofmagic param replace 0..1 discrete default=0
 controlSurface meta domain=meta
+controlSurface family control-surface-lock kind=other prefix=control-surface-lock
 cube meta domain=audio
 cube in connect cv param=connect cvScale=linear
 cube in connect_strength cv param=connect_strength cvScale=linear
@@ -1611,8 +1612,10 @@ mappy in in4 video
 mappy in in5 video
 mappy in in6 video
 mappy out out video
-mappy param showGrid 0..1 linear default=0
-mappy param surfaceCount 1..6 linear default=1
+mappy param showGrid 0..1 discrete default=0
+mappy param surfaceCount 1..6 discrete default=1
+mappy family mappy-export-map kind=other prefix=mappy-export-map
+mappy family mappy-import-map kind=other prefix=mappy-import-map
 marbles meta domain=audio
 marbles in dejavu_cv cv param=deja_vu cvScale=linear
 marbles in length_cv cv param=length cvScale=linear

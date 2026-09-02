@@ -69,17 +69,20 @@ describe('electraControl face — the promotion', () => {
   // false` — which is what `moduleSwapsToShell` returns for a carved-out type —
   // must still resolve 'legacy'. Without this, the assertion could not tell "the
   // carve-out is gone" from "the rule stopped consulting it".
+  // (⚠ The subject used to be `controlSurface`; its own promotion drained that
+  // membership on 2026-09-01, so the control re-points at `clipplayer` — the
+  // set's last snowflake with a card.)
   it('the rule still honours a carve-out for the types that keep one', () => {
     expect(
       laneRenderKind({
         shellFaces: true,
         userDocked: false,
-        type: 'controlSurface',
+        type: 'clipplayer',
         hasCard: false,
         migrated: false,
       }),
     ).toBe('legacy');
-    expect(NON_SHELL_LANE_TYPES.has('controlSurface'), 'a real member remains').toBe(true);
+    expect(NON_SHELL_LANE_TYPES.has('clipplayer'), 'a real member remains').toBe(true);
   });
 
   // ⚠ THE SURFACE THAT ACTUALLY MATTERS. This module is the `E` of the M/E/C pin
@@ -200,6 +203,23 @@ describe('electraControl body — what a source gate cannot see', () => {
   // Three renderers draw this grid; re-typing the rule is how they disagree.
   it('the body imports the shared slot-label expression rather than re-typing it', () => {
     expect(body()).toMatch(/electraSlotLabel/);
+  });
+
+  // ⚠ THE LATENT PARITY FAILURE (found 2026-09-01 by the controlSurface
+  // promotion): `Knob.svelte` emits `data-testid="control-<paramId>"` whenever
+  // `paramId` is passed — and it must be passed, it is the MIDI-learn key —
+  // while faces-parity asserts exact multiset equality between the dock's
+  // `control-*` testids and this def's params, which is `[]`. One bound slot
+  // failed the whole face; the sweep never binds one, so the defect shipped
+  // green. The explicit override is the prop's documented purpose.
+  it('every proxied Knob passes an explicit testid override — never the control-<paramId> claim', () => {
+    const src = body();
+    expect(src, 'the override is present on the proxied Knob').toMatch(
+      /testid=\{`electra-slot-dial-\$\{c\.row\}-\$\{c\.knob\}`\}/,
+    );
+    // The MIDI-learn key stays: dropping paramId would be the trap the prop
+    // exists to avoid (it would silently delete MIDI Learn from every slot).
+    expect(src).toMatch(/paramId=\{c\.paramId\}/);
   });
 
   // ⚠ THE RESTING-TEXT RULING, at the one place a source gate is blind: an

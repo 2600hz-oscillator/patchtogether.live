@@ -4644,12 +4644,12 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   //
   // ⚠ THE PROMOTION LOSES NOTHING, and that is the STOP-1 answer rather than a
   // hope. `push2Control` is NOT in `NON_SHELL_LANE_TYPES` — the set is `group`,
-  // `sticky`, `cadillac`, `clipplayer`, `controlSurface` (⚠ this sentence used
-  // to name `electraControl` too, and that MEMBERSHIP ENDED with its own
-  // promotion below; a hand-transcribed copy of another module's set is exactly
-  // the thing that goes quietly stale, so it is corrected here rather than left
-  // to read as current fact) — so `laneRenderKind` returns `'placeholder'`
-  // TODAY: a uniform rackline tile
+  // `sticky`, `cadillac`, `clipplayer` (⚠ this sentence used to name
+  // `electraControl` and then `controlSurface` too, and BOTH memberships ended
+  // with their own promotions; a hand-transcribed copy of another module's set
+  // is exactly the thing that goes quietly stale, so it is corrected here — for
+  // the second time — rather than left to read as current fact) — so
+  // `laneRenderKind` returns `'placeholder'` TODAY: a uniform rackline tile
   // with ZERO ranked controls, on a module that also declares `inputs: []` and
   // `outputs: []`, so its jack rail is empty too. A name and a badge. Its
   // entire surface was reachable only through the dock, on a module that does
@@ -4775,7 +4775,9 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   //
   // ⚠ THE STOP-1 ANSWER IS DIFFERENT FROM EVERY OTHER MODULE IN THIS BATCH, and
   // it is worth being exact because the surface arithmetic looks like the one
-  // that REFUSED `controlSurface`. gamepad, push2Control and launchpadControlLeft
+  // that REFUSED `controlSurface` (⚠ a refusal since OVERTURNED by that
+  // module's own promotion — the measurement predated `tileBody`; see its
+  // entry below). gamepad, push2Control and launchpadControlLeft
   // each argued "there is no tier to lose" — they rendered `'placeholder'`
   // already. That is NOT true here: this module rendered `'legacy'`, so it had a
   // real tier. What makes the promotion a gain anyway is WHERE THE MODULE LIVES.
@@ -4787,7 +4789,10 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // body on `isFaceplateView(view)` = `view !== 'lane'` — "the pinned drawer
   // paints the same full faceplate and wants the same head precedence (#1739)" —
   // so the board paints there at full width and the 192 px tile arithmetic that
-  // refused controlSurface never applies to the instance every user has.
+  // refused controlSurface never applies to the instance every user has. (That
+  // refusal is itself now history — controlSurface promoted onto a `tileBody`
+  // + Expand, see its entry below — but the drawer argument here never needed
+  // it.)
   //
   // The residual is a SECOND, user-spawned canvas instance, which IS reachable
   // (`graph/cap.ts` excludes the pin from `maxInstances` counting, so the palette
@@ -5560,6 +5565,71 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // moved (three sentences that described the card as the owner), which is a
   // `docs:accept` re-pin and not a port or param change.
   'audioIn',
+  // ── CONTROL SURFACE (2026-09-01) — the FIFTH meta-domain face, the
+  //    second-to-last module to leave NON_SHELL_LANE_TYPES, and the first
+  //    promotion that is an OWNER-APPROVED LANE-TIER CHANGE rather than a
+  //    lateral move ───────────────────────────────────────────────────────────
+  //
+  // electraControl's dynamic sibling: a free-form panel of POINTERS to other
+  // modules' controls, grouped per source module, filled by right-clicking any
+  // MIDI-assignable knob anywhere in the rack. A binding is {moduleId,
+  // paramId} — never a copy — so a proxied knob reads and writes the SOURCE
+  // node's live param and shares its MIDI key.
+  //
+  // ⚠ THE PROMOTION IS A DELETION AND A PRECONDITION, exactly as for
+  // electraControl: `NON_SHELL_LANE_TYPES` short-circuits `laneRenderKind`
+  // BEFORE `migrated` is read, `FACES` is asserted EQUAL to this set in both
+  // directions, and `bootWithFace` waits on a `module-shell` testid a
+  // carved-out type never renders. Membership and promotion cannot coexist.
+  //
+  // ⚠ THE STOP-1 ANSWER IS THE ONE THIS SET PREVIOUSLY RECORDED AS A REFUSAL,
+  // and the refusal expired on a platform fact: the 360–760 px free-growing
+  // board cannot be a 192 px lane tile, controlSurface is NOT pinned (no
+  // drawer escape), and that measurement was taken BEFORE `tileBody` existed
+  // (#2242). The lane tile now carries the LOCK — the module's one OWN
+  // control, `node.data.locked`, a ranked toggle cell — plus a `tileBody`
+  // strip of live bound-source colours, and the board is one Expand away in
+  // the dock full view. OWNER-APPROVED 2026-08-31 (owner-decisions item 10, on
+  // the electraControl / semantic-zoom precedent), with a mandatory owner
+  // preview of the COMPACT tier before merge. This flips the lane for every
+  // existing controlSurface in every saved patch at once.
+  //
+  // ⚠ THE INVENTORY `why` WAS FALSE IN ITS LOAD-BEARING CLAUSE — "it has no
+  // params of its own to rank". The LOCK is a node-data-backed control of its
+  // own, and matrixMix/electraControl had already refuted the zero-rankable
+  // framing. Same stale-`why` class as the seven promotions before it;
+  // corrected in the inventory note in this diff.
+  //
+  // ⚠ THE STOP-2 IS THE PRUNE, and it is the ES-9 shape one seam later:
+  // `pruneSurfaceDangling` had exactly ONE production caller — the card's
+  // `$effect` — and controlSurface is in neither half of
+  // `HEADLESS_MOUNT_LANE_TYPES`, so a promotion that only built the board
+  // would have stopped it silently with every registry test green (a dangling
+  // binding lingers in node.data; the next Electra flash emits a dead
+  // control). It rides the `tileBody` — mounted whenever the node is on
+  // canvas, dock open or not — and the e2e asserts it WITH THE DOCK CLOSED.
+  //
+  // ⚠ EVERY PROXIED KNOB IN THE BODY PASSES AN EXPLICIT `testid`. `Knob.svelte`
+  // emits `control-<paramId>` whenever `paramId` is passed (and `paramId` is
+  // the MIDI-learn key, so it must be passed), and faces-parity asserts exact
+  // multiset equality against this def's params — `[]` — so ONE bound proxy
+  // without the override fails the whole face. The same latent failure existed
+  // in the shipped `ElectraGridBody` (green only because the sweep never binds
+  // a slot) and is fixed in the same diff.
+  //
+  // ⚠ THE USER-DOCKED RESIDUAL, stated rather than discovered in review: a
+  // user-docked controlSurface keeps mounting the verbatim legacy card in the
+  // dock rail (`dockRailRendersFace` requires `pinned`), and the card is
+  // `DYNAMIC_SIZED`, so the free-growing board survives promotion unmodified
+  // there. With 3+ surfaces, boards beyond `MAX_FULLVIEW_PANES = 2` evict each
+  // other in the full view.
+  //
+  // ZERO ATTEST: a meta def — no engine node, no basis file, and both bodies
+  // are DOM with no drawing surface. CONTRACT MOVED: `controlFamilies` ARE
+  // projected into the contract signature, so the one-member LOCK family is a
+  // `docs:accept` + contract-lock re-pin (the ptzcam-class cost the wave plan
+  // budgeted).
+  'controlSurface',
 
   // ── JOYSTICK (2026-09-01, face-program wave 3) — the #1974 refusal's own
   // module, promoted WITHOUT weakening the gate that carries the refusal ─────
@@ -5660,6 +5730,61 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // CONTRACT UNCHANGED: no controlFamilies, no new params. `docs:accept` runs
   // because the explanation's card-ownership prose was stale (LEG-02).
   'videobox',
+  // ── MAPPY (wave 4, 2026-09-01) — THE PROJECTION MAPPER ───────────────────
+  //
+  // Two ranked params (`showGrid`, a Toggle; `surfaceCount`, a six-state
+  // roster), two ranked control families (import map / export map), two bands,
+  // `glyph: 'none'` (FORCED — mappy declares no audio output, so every other
+  // literal resolves a dead `{kind:'static'}`; the tile picture comes from
+  // `hasVideoSurface`), and a `fullViewBody` carrying the module itself.
+  //
+  // ⚠ THE INVENTORY'S CONCLUSION WAS FALSE AND THE FALSE CONCLUSION HAD
+  // PROPAGATED INTO A GATE. The entry read "direct geometry manipulation is the
+  // entire module", and `dock-tray-shrink-to-content.spec.ts` quoted it to pin
+  // mappy's un-migrated status as a DURABLE PROPERTY rather than a queue
+  // position. The first clause is a fair description of the corner pin and is
+  // exactly what the `fullViewBody` slot is for; what it is NOT is a statement
+  // that the module has nothing rankable — mappy declares TWO real params the
+  // card paints as a GRID button and a +/− stepper. That spec is re-pointed in
+  // this diff onto the #2299 forced-placeholder seam, which asks for the
+  // un-migrated RENDER PATH instead of depending on any module still being on
+  // it (the owner's ruling: everything migrates, so a durable un-migrated
+  // subject may not exist).
+  //
+  // ⚠ THE INERT-CONTROL TRAP, and it would have shipped GREEN AND BROKEN. The
+  // factory PREFERRED a `node.data` mirror over the param for BOTH of these,
+  // while every generic shell cell writes the param alone. On a fresh node the
+  // faceplate would have worked; on any node the card, a map import or a
+  // `?shell=legacy` collaborator had touched, the mirror was present and the
+  // GRID toggle and SURFACES control would have been DEAD — with the params
+  // declared, the cells rendered and faces-parity's `readParam` oracle watching
+  // the param move. The mirror is deleted in both directions and every reader
+  // (factory, card, MAP editor, map export) now reads the param;
+  // `SHELL_PARAM_WRITES.mappy` makes the count's write the same write the
+  // card's `+` makes, so a newly-live surface still drops in as a staggered
+  // inset quad rather than a full-frame duplicate nobody can grab.
+  //
+  // ⚠ THIS IS THE PROGRAM'S ONE GPU RE-ATTEST, and it is spent on two `curve`
+  // corrections that are FUNCTIONAL (the `frametable.ts` precedent):
+  // `showGrid` and `surfaceCount` were declared `linear`, so `looksLikeToggle`
+  // was false and the faceplate would have painted a continuous 200 px drag
+  // over a two-state override and a fractional surface count. `curve` IS in the
+  // contract signature, so this is `docs:accept` + contract-lock review as well.
+  // No gate could have caught the mis-declaration: module-face-lint's
+  // switch-classification leg only reaches params that are ALREADY
+  // `0..1 discrete`. `showGrid` is registered in `ACKNOWLEDGED_LATCHING` — it
+  // is a persistent re-alignment override, not a press-pad.
+  //
+  // ⚠ ONE ADDITION BEYOND THE PLAN, ARGUED: `surfaceCount` gains a 1..6
+  // `options` roster. The card paints the live count as a number
+  // (`mappy-count-n`), and a param earns a painted readout only when it
+  // declares `options` or `landmarks` (`paintsReadout`), so a bare discrete
+  // param would have left the LANE tile with a numberless dial — a parity
+  // deletion the dock-only body cannot repair. The roster is NOT projected into
+  // the contract (only `id min..max curve default units` is), so it adds no
+  // contract-lock line, and it rides the attest window the curve fix already
+  // opened.
+  'mappy',
   // ── VIDEOVARISPEED (wave 4, 2026-09-01) — the VARISPEED FILE PLAYER ──────
   //
   // The videobox shape one module along, on a def that shares its audio
