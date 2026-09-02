@@ -25,6 +25,7 @@
   import type { ClipPlayerData } from '$lib/audio/modules/clip-types';
   import { clipplayerSceneViews } from './clipplayer-face-model';
   import { cycleClipplayerSceneRepeat, launchClipplayerScene } from './clipplayer-face-actions';
+  import { clipplayerNowSticky } from './clipplayer-face-selection.svelte';
 
   interface Props {
     nodeId: string;
@@ -36,6 +37,9 @@
     d: (patch.nodes[nodeId] as ModuleNode | undefined)?.data as ClipPlayerData | undefined,
   }));
   let scenes = $derived(clipplayerSceneViews(live.d));
+  /** The SAME sticky NOW the launch grid's toggle sets — one modifier per node,
+   *  as on the card, where `launchScene` and `launchPad` read one flag. */
+  let nowSticky = $derived(clipplayerNowSticky(nodeId));
 </script>
 
 <div class="scenes" data-testid="clipplayer-face-scene-row" role="group" aria-label="scene repeats">
@@ -56,11 +60,11 @@
       >
       <button
         class="scene-go"
-        title={`Launch scene ${s.slot + 1} (this slot across all channels)`}
+        title={`Launch scene ${s.slot + 1} (this slot across all channels)${nowSticky ? ' — NOW' : ''}`}
         aria-label={`launch scene ${s.slot + 1} from the scenes band`}
         data-slot={s.slot}
         data-testid={`clipplayer-face-scene-go-${s.slot}`}
-        onclick={(e) => launchClipplayerScene(nodeId, s.slot, e.shiftKey)}>▶</button
+        onclick={(e) => launchClipplayerScene(nodeId, s.slot, e.shiftKey || nowSticky)}>▶</button
       >
     </span>
   {/each}

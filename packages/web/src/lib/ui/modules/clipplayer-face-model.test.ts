@@ -419,6 +419,34 @@ describe('clipplayer face — what a def-reading gate cannot see', () => {
     expect(panel).not.toMatch(/nowSticky[^\n]*writeClipplayer/);
   });
 
+  // ⚠ EVERY CELL THAT LAUNCHES READS THE SAME NOW, and the scenes band is the
+  // reason this leg exists. `launchClipplayerScene` has TWO callers on the
+  // faceplate — the grid's per-row ▶ and `ClipplayerScenePanel`'s ▶ — and they
+  // are separate PF-14 cells, so a NOW held as component state in the grid
+  // reached one and not the other: pressing NOW then launching a scene from the
+  // SESSION band quantized anyway. The legacy card cannot express that bug
+  // (`launchScene` and `launchPad` read one `nowSticky`), which is exactly why
+  // no parity gate could see it — both surfaces have a NOW and both launch.
+  it('BOTH launching cells read the same node-keyed NOW', () => {
+    const store = readFileSync(
+      resolve(HERE, 'clipplayer', 'clipplayer-face-selection.svelte.ts'),
+      'utf8',
+    );
+    // The flag is node-keyed and view-local — never node.data, never synced.
+    expect(store, 'NOW is node-keyed').toMatch(/nowSticky\s*=\s*new SvelteMap<string, boolean>/);
+    expect(store, 'and pruned with the selection').toMatch(/nowSticky\.keys\(\)/);
+    for (const f of ['ClipplayerLaunchPanel.svelte', 'ClipplayerScenePanel.svelte']) {
+      const src = read(f);
+      expect(src, `${f} reads the shared NOW`).toContain('clipplayerNowSticky(nodeId)');
+      // …and every launch call in the file passes it, never a bare shiftKey.
+      for (const m of src.matchAll(/launchClipplayer(?:Scene|Pad)\([^)]*\)/g)) {
+        expect(m[0], `${f}: ${m[0]} must honour sticky NOW`).toMatch(/nowSticky|\bnow\b/);
+      }
+    }
+    // Only the grid owns the TOGGLE; the scenes band reads it.
+    expect(read('ClipplayerScenePanel.svelte')).not.toContain('clipplayerSetNowSticky');
+  });
+
   // ⚠ THE CELL TOOLTIP PROMISES SHIFT-CLICK, SO THE HANDLER MUST READ IT. The
   // card sets `shiftHeld` from its own keydown/keyup pair, so "Shift-click:
   // cycle velocity" is literally true there; the face carried the SENTENCE

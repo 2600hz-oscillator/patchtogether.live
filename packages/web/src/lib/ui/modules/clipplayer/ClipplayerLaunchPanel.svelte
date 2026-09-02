@@ -36,7 +36,11 @@
     launchClipplayerScene,
     setClipplayerLaneColor,
   } from './clipplayer-face-actions';
-  import { clipplayerSelectClip } from './clipplayer-face-selection.svelte';
+  import {
+    clipplayerNowSticky,
+    clipplayerSelectClip,
+    clipplayerSetNowSticky,
+  } from './clipplayer-face-selection.svelte';
   import ClipplayerClipMenu from './ClipplayerClipMenu.svelte';
 
   interface Props {
@@ -68,15 +72,18 @@
   /** STICKY NOW — while on, a plain pad click launches IMMEDIATELY, ignoring
    *  QNT, exactly as a shift-click does.
    *
-   *  ⚠ IT LIVES IN THIS PANEL RATHER THAN IN THE DECK BODY, and the reason is
-   *  the one that decides every placement on this face: it is a MODIFIER ON THE
-   *  PAD CLICK, and the pad click is here. On the card both were in one
-   *  component so the choice never arose; splitting them across a cell and a
-   *  body would have needed a second node-keyed registry to carry one boolean
-   *  between two mounts, for a control whose whole meaning is "the next thing I
-   *  click in this grid". View-local like the card's, and never synced: it is a
-   *  performance modifier, not patch content. */
-  let nowSticky = $state(false);
+   *  ⚠ IT IS NODE-KEYED RATHER THAN COMPONENT STATE, and the scenes band is
+   *  why. This panel is not the only cell that launches: `ClipplayerScenePanel`
+   *  is a separate PF-14 cell whose ▶ calls the same `launchClipplayerScene`,
+   *  and the legacy card has ONE `nowSticky` governing pads and scenes alike.
+   *  Held here, the modifier reached the pads and not the scenes band — two
+   *  launch affordances on one faceplate disagreeing about what NOW means.
+   *  The registry lives in `clipplayer-face-selection.svelte.ts`, which already
+   *  existed to carry the clip selection across the same two mounts.
+   *
+   *  Still view-local and never synced: it is a performance modifier, not patch
+   *  content, and must not reach a collaborator's screen. */
+  let nowSticky = $derived(clipplayerNowSticky(nodeId));
 
   // Single-click launches; double-click opens the editor instead. The card's
   // 220 ms debounce, verbatim — without it every double-click also fires a
@@ -140,7 +147,7 @@
              never shifts (VRT determinism). -->
         <button
           class="scene-launch"
-          title={`Launch scene ${slot + 1} (this slot across all channels)`}
+          title={`Launch scene ${slot + 1} (this slot across all channels)${nowSticky ? ' — NOW' : ''}`}
           aria-label={`launch scene ${slot + 1}`}
           data-slot={slot}
           data-testid={`clipplayer-scene-launch-${slot}`}
@@ -182,7 +189,7 @@
         ? 'NOW on — launches drop immediately (ignore QNT)'
         : 'NOW off — launches follow QNT (shift-click a pad for a one-off immediate launch)'}
       data-testid={`clipplayer-now-${nodeId}`}
-      onclick={() => (nowSticky = !nowSticky)}>NOW</button
+      onclick={() => clipplayerSetNowSticky(nodeId, !nowSticky)}>NOW</button
     >
   </div>
 </div>
