@@ -150,9 +150,20 @@ describe('the REAL defs that declare a press-pad', () => {
     // `setNodeParam`, so a rack closed mid-hold saves a stuck key — the tomtom
     // failure mode exactly, ×12 — and the loop below now asserts the repair on
     // all twelve.
+    // moog956 (2026-09-02) is the first member whose pad is HALF OF A GESTURE
+    // rather than a button: the ribbon's one pointer stroke raises `gate` and
+    // writes `pos` together. Its enrolment also came with a curve correction —
+    // `gate` was declared `linear` while the factory has thresholded it at
+    // `> 0.5` since the module shipped, and `looksLikeSwitch` reaches only
+    // params that are ALREADY `0..1 discrete`, so the pad was unclassifiable
+    // until the declaration told the truth. The failure mode it closes is
+    // tomtom's with the opposite symptom: a rack saved mid-note reloaded with
+    // the gate HIGH and the patched envelope open, i.e. a drone nothing could
+    // stop.
     const declaring = (listModuleDefs() as unknown as (MomentaryDefLike & { type: string })[])
       .filter((d) => (d.face?.momentary ?? []).length > 0);
-    expect(declaring.map((d) => d.type).sort()).toEqual(['bluebox', 'clap', 'tidyVco', 'tomtom']);
+    expect(declaring.map((d) => d.type).sort())
+      .toEqual(['bluebox', 'clap', 'moog956', 'tidyVco', 'tomtom']);
     for (const def of declaring) {
       for (const pid of momentaryIds(def as MomentaryDefLike)) {
         const rest = momentaryRest(def as MomentaryDefLike, pid);

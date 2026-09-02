@@ -142,6 +142,7 @@ author a `face` and rank the controls — no new platform capability.
 | `moog921b` | audio | done | — |
 | `moog921Vco` | audio | done | — |
 | `moog923` | audio | done | — |
+| `moog956` | audio | done | — |
 | `moog960` | audio | done | — |
 | `moog961` | audio | done | — |
 | `moog962` | audio | done | — |
@@ -238,7 +239,6 @@ the primary interaction is not param-shaped — needs a purpose-built surface.
 | `chromaconsole` | audio | — | — |
 | `clipplayer` | audio | — | — |
 | `doom` | video | — | — |
-| `moog956` | audio | — | — |
 | `nibbles` | video | — | — |
 | `painter` | video | — | — |
 | `recorderbox` | video | — | `needs-media-controller` |
