@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
-  "webglContentHash": "2368bb009496e874379778cadf9ef101011950e11878b110db24e26db4667294",
-  "attestedAt": "2026-09-02T10:55:31.533Z",
+  "webglContentHash": "2f505b423083261ce6161bc2ac0d668727aadcd4276fb6f31c864c103f56b073",
+  "attestedAt": "2026-09-02T12:36:35.136Z",
   "attestedBy": "patchtogether-maintainer",
-  "gitHeadAtAttest": "2e1068b9a52f90d74f49393181b511dc50f3ad19",
+  "gitHeadAtAttest": "468a340d826799efb78ffe75699d748ccd5e895e",
   "playwrightVersion": "1.50.0",
   "os": "darwin 25.4.0 (arm64)",
   "machineClass": "local-trusted-gpu-workstation",
@@ -12,15 +12,15 @@
     "windowMs": 10204,
     "maxForeignCpu": 0.1,
     "thresholdCpu": 25,
-    "load1": 3.7587890625,
+    "load1": 3.95166015625,
     "cores": 10
   },
   "gpu": "ANGLE (Apple, ANGLE Metal Renderer: Apple M5, Unspecified Version)",
   "appServer": {
-    "url": "http://127.0.0.1:58530",
+    "url": "http://127.0.0.1:57084",
     "mode": "dev",
-    "root": "/Users/2600hz/Documents/workspace/inet.modular/.claude/worktrees/facemappy",
-    "commit": "2e1068b9a52f90d74f49393181b511dc50f3ad19"
+    "root": "/Users/2600hz/Documents/workspace/wt-blood-pcm",
+    "commit": "468a340d826799efb78ffe75699d748ccd5e895e"
   },
   "repeatEach": 1,
   "suites": {
@@ -57,5 +57,5 @@
       "flakyDetails": []
     }
   },
-  "durationSec": 290
+  "durationSec": 318
 }

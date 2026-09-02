@@ -22,9 +22,17 @@
 // module routes this node through a ChannelSplitter so audio_l + audio_r can be
 // patched to different downstream sinks.
 //
-// Rate: MultiVoc mixes at 44100 (Blood config.cpp MixRate), which matches the
-// AudioContext default in every supported browser. A non-default context rate
-// would pitch-shift (chipmunk Blood); a resampler is a follow-up.
+// ⚠ RATE, AND THE OLD VERSION OF THIS PARAGRAPH WAS WRONG ABOUT ITS OWN APP.
+// It said MultiVoc's 44100 (Blood config.cpp MixRate) "matches the AudioContext
+// default in every supported browser", with the mismatch case as a hypothetical
+// follow-up. It is not hypothetical here: `Canvas.svelte` PINS the context to
+// 48 000 Hz on purpose (every ART baseline and worklet time-constant is
+// calibrated at one rate), so Blood has always played ~8.8 % sharp. That pitch
+// shift is real, is unchanged by this file, and still wants a resampler.
+//
+// What it is NOT is the reason the module went silent — the two are independent.
+// Pitch is samples-per-second on the way OUT; the silence was how many samples
+// the main thread ever handed IN (see the ring comment below).
 //
 // LOUDNESS: MultiVoc already mixes at proper levels and clamps to int16, so the
 // /32768 conversion lands near unity for a loud SFX (no DOOM-style -42 dB makeup
@@ -36,10 +44,21 @@ const MAKEUP = 1.0;
 class BloodPcmProcessor extends AudioWorkletProcessor {
   constructor() {
     super();
-    // ~1 second of stereo frames at 44100 Hz. The main thread tops up every
-    // ~16 ms (~735 frames), so this is generous headroom to ride out a long
-    // render frame without underrunning.
-    this._ringFrames = 44100;
+    // ⚠ THE OLD SIZE WAS 44100 AND ITS COMMENT WAS FALSE, WHICH IS WHY THIS ONE
+    // CITES A MEASUREMENT. It said "the main thread tops up every ~16 ms (~735
+    // frames), so this is generous headroom to ride out a long render frame". The
+    // headroom did not exist: 735 frames per tick is a 44.1 kHz budget, the
+    // context is pinned to 48 kHz, and the tick only fires when the Build engine
+    // leaves the main thread free — measured at 24.8 ms on an IDLE 10-core box,
+    // i.e. 29 846 frames/s produced against 48 000 drained. A ring whose producer
+    // never once outruns its consumer cannot hold ANY cushion, so its size was
+    // irrelevant and 38 % of every output sample was a hard zero.
+    //
+    // `$lib/blood/blood-pcm-schedule.ts` fixed the producer; this is the ring that
+    // now has something to hold. 2 s at 48 kHz: the scheduler's MAX_CUSHION_S is
+    // 1 s and one catch-up tick may add up to MAX_PER_TICK_S (1.25 s) on top, so
+    // the ring must exceed their sum or the overrun path would eat a catch-up.
+    this._ringFrames = 96000;
     this._ringL = new Float32Array(this._ringFrames);
     this._ringR = new Float32Array(this._ringFrames);
     this._read = 0;
