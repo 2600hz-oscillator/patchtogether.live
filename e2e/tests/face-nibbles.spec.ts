@@ -160,9 +160,18 @@ async function trackHead(
       const cells: { x: number; y: number }[] = [];
       const t0 = performance.now();
       let frames = 0;
+      let alive = eng.read(node, 'alive') === true;
       while (frames < budget && cells.length < want) {
         await new Promise<void>((r) => requestAnimationFrame(() => r()));
         frames += 1;
+        // ⚠ A DEAD SNAKE ENDS THE MEASUREMENT IMMEDIATELY. With AUTO off there
+        // is no auto-restart, so the head can never move again and every
+        // remaining frame is a guaranteed no-op. Spending the budget anyway is
+        // not neutral: it turned one CI failure into 900 frames / 103 SECONDS
+        // of polling a corpse, which is time charged to the shard for an answer
+        // already known at frame 1. Bail and let the caller report `alive`.
+        alive = eng.read(node, 'alive') === true;
+        if (!alive) break;
         const h = headCell();
         if (!h) continue;
         const last = cells[cells.length - 1];
@@ -172,7 +181,7 @@ async function trackHead(
         cells,
         frames,
         elapsedMs: Math.round(performance.now() - t0),
-        alive: eng.read(node, 'alive') === true,
+        alive,
         score: (eng.read(node, 'score') as number | undefined) ?? -1,
       };
     },
@@ -203,6 +212,20 @@ async function nodeState(page: Page, nodeId: string) {
       previewScale: n?.data?.previewScale,
       previewCollapsed: n?.data?.previewCollapsed,
     };
+  }, nodeId);
+}
+
+/** Is the snake still alive? One round trip, for the runway precondition — see
+ *  the RESET note in the steering test. */
+async function nodeAlive(page: Page, nodeId: string): Promise<boolean> {
+  return page.evaluate((id) => {
+    const w = globalThis as unknown as {
+      __engine?: () => { read: (n: unknown, k: string) => unknown } | null;
+      __patch: { nodes: Record<string, unknown> };
+    };
+    const eng = w.__engine?.();
+    const node = w.__patch.nodes[id];
+    return !!eng && !!node && eng.read(node, 'alive') === true;
   }, nodeId);
 }
 
@@ -264,11 +287,46 @@ test.describe('NIBBLES face — the promotion is what makes it playable', () => 
     const frame = body.locator('[data-testid="nibbles-face-screen-frame"]');
     await expect(frame).toBeVisible();
 
+    // ── ⚠ RESTART THE GAME, AND THAT IS THE FIX FOR A REAL CI RED ──────────
+    // MEASURED (run 33658977822, e2e shards 1 and 2, both attempts): `alive
+    // =false, score=4` — the snake was DEAD against the right wall before the
+    // arrow key was ever pressed, and it had never eaten.
+    //
+    // The cause is a wall-clock budget hidden inside a GAME RULE. `newGame`
+    // places the snake at the board centre (40,25) heading RIGHT, so it has 39
+    // cells of runway — at this test's `tick_ms: 200` that is 7.8 SECONDS of
+    // life, and the clock starts at SPAWN because nibbles ticks inside
+    // `surface.draw`. Everything between spawn and the key press therefore has
+    // to fit inside 7.8 s: the shell mount, the dock open (an auto-retrying
+    // `toPass`), the lazy body chunk, the first track, the click and the focus
+    // assertion. Locally that whole sequence is ~2 s. On a contended
+    // SwiftShader shard it is not, and the runway is gone before the test does
+    // the thing it exists to test.
+    //
+    // ⚠ THIS IS NOT A TIMEOUT TO RAISE — the budget belongs to the SNAKE, not
+    // to Playwright, and no timeout anywhere can buy more board. RESET is the
+    // honest fix: it restarts the game (fresh snake, centre, heading right)
+    // and so re-zeros the runway HERE, leaving the boot cost outside the window
+    // entirely. What remains inside is one click, one focus assertion, ~600 ms
+    // of pre-track and one keypress — against a fresh 7.8 s.
+    //
+    // ⚠ AND IT IS PRESSED BEFORE THE FRAME IS FOCUSED, deliberately: clicking
+    // RESET moves focus to the RESET button, so doing it the other way round
+    // would take the keyboard away from the screen and the ArrowDown would land
+    // nowhere. (`fireNibblesReset` is the same seam the RESET-delivers test
+    // asserts, so this also fails loudly rather than silently if that breaks.)
+    await body.locator('[data-testid="nibbles-reset"]').click();
+
     // ── THE SNAKE IS MOVING, AND IT IS MOVING ON X ─────────────────────────
     // Observed rather than asserted from `newGame`: this is also the check
     // that the framebuffer read works at all, so a later zero-motion result
     // cannot be blamed on the instrument.
     const before = await trackHead(page, 'fn1', 3, 900);
+    expect(
+      before.alive,
+      'the snake must be ALIVE after RESET and before the key press — if this is false the '
+        + 'restart did not take and nothing below measures steering',
+    ).toBe(true);
     expect(
       before.cells.length,
       `the snake must be moving before any key is pressed — saw ${before.cells.length} `
@@ -290,6 +348,16 @@ test.describe('NIBBLES face — the promotion is what makes it playable', () => 
     await frame.click({ position: { x: 20, y: 20 } });
     await expect(frame).toBeFocused();
     await page.keyboard.press('ArrowDown');
+    // ⚠ THE RUNWAY IS RE-CHECKED AT THE MOMENT THE KEY LANDS. A dead snake here
+    // means the window closed anyway, and that is a DIFFERENT failure from "the
+    // key did not steer" — the two printed the same red before, which is what
+    // made the CI failure read as a product bug rather than a test one.
+    const atPress = await nodeAlive(page, 'fn1');
+    expect(
+      atPress,
+      'the snake must still be alive when ArrowDown lands — if this is false the boot ate the '
+        + '7.8 s of runway again and the assertion below would be measuring a corpse, not steering',
+    ).toBe(true);
 
     const after = await trackHead(page, 'fn1', 4, 900);
     expect(
