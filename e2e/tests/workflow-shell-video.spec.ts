@@ -495,6 +495,13 @@ function videoCaseTimeout(liveness: number, change: number): number {
   // Page load + `injectPatch` + the 15 s lane-visible waits + DOM assertions.
   // Deliberately generous under SLOW_RENDER for the same reason the ceilings
   // are: a starved runner spends real wall clock on the same small work.
+  //
+  // ⚠ AND IT NO LONGER HAS TO COVER A `toDataURL()` — see `sampleCanvasChange`.
+  // The change window's baseline used to be a separate Playwright→page round
+  // trip charged to THIS term, and on run 33637747841's shard 2 that one call
+  // cost 81.2 s against a 45 000 ms allowance. It is now the window's own first
+  // sample, inside `CHANGE_MAX_MS`. Nothing here was raised to accommodate it;
+  // the spend was moved to where a budget can see it.
   const SETUP_MS = SLOW_RENDER ? 45_000 : 15_000;
   return SETUP_MS + liveness * LIVENESS_MAX_MS + change * CHANGE_MAX_MS;
 }
@@ -565,15 +572,8 @@ async function sampleDrawAdvance(
   );
 }
 
-async function canvasData(page: Page, selector: string): Promise<string> {
-  return page.evaluate((sel) => {
-    const c = document.querySelector(sel) as HTMLCanvasElement | null;
-    return c ? c.toDataURL() : '';
-  }, selector);
-}
-
 /**
- * Wait for the canvas's pixels to CHANGE from `before` (a live picture),
+ * Wait for the canvas's pixels to CHANGE (a live picture), BASELINE AND ALL,
  * sampled INSIDE THE PAGE.
  *
  * ⚠ THIS USED TO BE A PLAYWRIGHT-SIDE `expect.poll`, AND THAT IS THE #1993
@@ -585,6 +585,34 @@ async function canvasData(page: Page, selector: string): Promise<string> {
  * look" both arrive as the same bare timeout. This is the same fix #1982/#1983
  * made to `sampleThumbCost` in this file; that change left these two helpers
  * behind, which is why the poll survived to fail on shard 5 at 7eeccfb30.
+ *
+ * ⚠ AND #1993 LEFT THE BASELINE OUTSIDE, WHICH IS THE LAST COPY OF THE SAME
+ * DEFECT AND IT WENT RED ON ITS OWN. The window's `before` used to come from a
+ * separate `canvasData()` helper — one more Playwright→page round trip
+ * shipping one more whole `toDataURL()` PNG, taken while the same starved main
+ * thread was blitting every video tile on the page. MEASURED, from the blob
+ * report of the run that failed (feat/peertube-face, run 33637747841, e2e shard
+ * 2/12, `video-domain tiles show LIVE ANIMATED thumbnails`), FIRST attempt vs
+ * the retry that passed:
+ *
+ *     step                              failing attempt      passing retry
+ *     setup → g1 thumb visible                 24.0 s              21.6 s
+ *     sampleDrawAdvance (60 s ceiling)         49.7 s               7.7 s
+ *     canvasData  ← ONE toDataURL()            81.2 s               5.6 s
+ *     sampleCanvasChange                 22.1 s, KILLED            13.4 s
+ *
+ * ONE `toDataURL()` cost 81.2 s of a 165 s envelope — 1.8× the whole 45 s
+ * `SETUP_MS` term that is supposed to cover it — and it is spent OUTSIDE every
+ * budget `videoCaseTimeout` accounts for, so the change window it precedes was
+ * guillotined by the envelope at 22.1 s instead of returning its own diagnosis.
+ * That is exactly the failure `videoCaseTimeout`'s header describes ("a run
+ * that was still legitimately inside every budget it was given would be killed
+ * by the envelope around them"), one layer further out.
+ *
+ * So the baseline is the window's FIRST encoded sample, taken on the same rAF
+ * tick loop as the comparisons: one round trip instead of two, and the capture
+ * is now INSIDE the frame budget and the ms ceiling, where a starved runner
+ * makes it report rather than hang. No budget number changed.
  *
  * ⚠ THE GATE IS A FRAME COUNT, NOT A CLOCK. What is being waited for is a
  * REPAINT, which is a per-frame event, so the budget is frames. The ms ceiling
@@ -604,8 +632,12 @@ async function canvasData(page: Page, selector: string): Promise<string> {
  */
 interface CanvasChangeSample {
   changed: boolean;
+  /** The BASELINE was encoded at all. False means the selector matched no
+   *  canvas — a different failure from a frozen one, and the assertion the
+   *  caller-side `expect(first).not.toBe('')` used to make. */
+  captured: boolean;
   rafSamples: number;
-  /** How many times the canvas was actually encoded + compared. */
+  /** How many times the canvas was actually encoded (baseline included). */
   samples: number;
   elapsedMs: number;
 }
@@ -613,17 +645,21 @@ interface CanvasChangeSample {
 async function sampleCanvasChange(
   page: Page,
   selector: string,
-  before: string,
   frameBudget: number,
   maxMs: number,
 ): Promise<CanvasChangeSample> {
   return page.evaluate(
-    async ({ selector, before, frameBudget, maxMs, minGapMs }) => {
+    async ({ selector, frameBudget, maxMs, minGapMs }) => {
+      const encode = (): string => {
+        const c = document.querySelector(selector) as HTMLCanvasElement | null;
+        return c ? c.toDataURL() : '';
+      };
       const t0 = performance.now();
       let rafSamples = 0;
       let samples = 0;
       let changed = false;
       let lastSampleAt = -Infinity;
+      let before = '';
       await new Promise<void>((resolve) => {
         const tick = (): void => {
           rafSamples++;
@@ -631,8 +667,19 @@ async function sampleCanvasChange(
           if (now - lastSampleAt >= minGapMs) {
             lastSampleAt = now;
             samples++;
-            const c = document.querySelector(selector) as HTMLCanvasElement | null;
-            if (c && c.toDataURL() !== before) {
+            const data = encode();
+            if (before === '') {
+              // ⚠ NO CANVAS ⇒ RESOLVE NOW rather than spend the whole budget on
+              // a selector that matches nothing. Every call site asserts the
+              // surface is visible immediately before, so this is a hard error,
+              // not a race worth waiting out — and it keeps the fast fail the
+              // caller-side `not.toBe('')` had.
+              if (data === '') {
+                resolve();
+                return;
+              }
+              before = data;
+            } else if (data !== '' && data !== before) {
               changed = true;
               resolve();
               return;
@@ -646,14 +693,20 @@ async function sampleCanvasChange(
         };
         requestAnimationFrame(tick);
       });
-      return { changed, rafSamples, samples, elapsedMs: performance.now() - t0 };
+      return { changed, captured: before !== '', rafSamples, samples, elapsedMs: performance.now() - t0 };
     },
-    { selector, before, frameBudget, maxMs, minGapMs: 1000 / VIDEO_THUMB_FPS },
+    { selector, frameBudget, maxMs, minGapMs: 1000 / VIDEO_THUMB_FPS },
   );
 }
 
-async function expectCanvasChanges(page: Page, selector: string, before: string, what: string): Promise<void> {
-  const s = await sampleCanvasChange(page, selector, before, CHANGE_FRAME_BUDGET, CHANGE_MAX_MS);
+async function expectCanvasChanges(page: Page, selector: string, what: string): Promise<void> {
+  const s = await sampleCanvasChange(page, selector, CHANGE_FRAME_BUDGET, CHANGE_MAX_MS);
+  expect(
+    s.captured,
+    `${what}: canvas snapshot captured — '${selector}' matched no canvas to encode, so the ` +
+      'change window below has nothing to compare and would report a frozen picture for a ' +
+      'MISSING one.',
+  ).toBe(true);
   expect(
     s.changed,
     `${what}: canvas pixels change between frames — saw NO change over ${s.samples} encoded ` +
@@ -976,9 +1029,7 @@ test.describe('?shell=1 video visibility', () => {
     // …and the PICTURE actually animates (two different frames). ⚠ MOVEMENT,
     // not non-blackness: a producer can go bright AND FROZEN, and a blackness
     // check calls that healthy.
-    const first = await canvasData(page, thumbSel);
-    expect(first, 'thumb canvas snapshot captured').not.toBe('');
-    await expectCanvasChanges(page, thumbSel, first, 'g1 tile thumbnail');
+    await expectCanvasChanges(page, thumbSel, 'g1 tile thumbnail');
   });
 
   test('the RESTORED lane thumbnail is still GATED: off-screen costs nothing, on-screen is capped (#1785 / #1802)', async ({
@@ -1229,9 +1280,7 @@ test.describe('?shell=1 video visibility', () => {
     const FEEDBACK_FACE_CANVAS = '[data-testid="dock-full-view"] [data-testid="feedback-face-canvas"]';
     const dockPreview = faceplate.locator('[data-testid="feedback-face-canvas"]');
     await expect(dockPreview, 'feedback video surface mounts in the dock').toBeVisible();
-    const bFirst = await canvasData(page, FEEDBACK_FACE_CANVAS);
-    expect(bFirst).not.toBe('');
-    await expectCanvasChanges(page, FEEDBACK_FACE_CANVAS, bFirst, 'docked feedback');
+    await expectCanvasChanges(page, FEEDBACK_FACE_CANVAS, 'docked feedback');
     // Plain-mount contract holds: no xyflow handles/nodes inside the faceplate.
     await expect(faceplate.locator('.svelte-flow__handle')).toHaveCount(0);
     await page.keyboard.press('Escape');
@@ -1262,9 +1311,7 @@ test.describe('?shell=1 video visibility', () => {
         }),
       { message: 'videoOut holds a render lease while its full-view is open' })
       .toContain(VIDEO_OUT);
-    const oFirst = await canvasData(page, dockOutSel);
-    expect(oFirst).not.toBe('');
-    await expectCanvasChanges(page, dockOutSel, oFirst, 'docked videoOut (lines patched in)');
+    await expectCanvasChanges(page, dockOutSel, 'docked videoOut (lines patched in)');
     await page.keyboard.press('Escape');
     await expect(faceplate).toHaveCount(0);
     // Lease released with the view.
@@ -1429,9 +1476,7 @@ test.describe('?shell=1 video CHAIN parity', () => {
       // …and the user-viewable OUTPUT surface actually paints MOVING pixels
       // (not a black canvas — the owner's "nothing renders").
       const outSel = videoOutSurfaceSel(url);
-      const first = await canvasData(page, outSel);
-      expect(first, `${url}: OUTPUT canvas snapshot captured`).not.toBe('');
-      await expectCanvasChanges(page, outSel, first, `${url}: OUTPUT surface`);
+      await expectCanvasChanges(page, outSel, `${url}: OUTPUT surface`);
 
       return { nodes: await engineNodeIds(page) };
     }

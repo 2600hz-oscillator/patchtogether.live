@@ -44,11 +44,7 @@ e2e/tests/audio-in.spec.ts :: exposes BOTH L and R outputs of the stereo pair (b
 e2e/tests/audio-in.spec.ts :: menu patch-out wires pinned AUDIO IN → SCOPE and the fake-mic signal materializes :: waitForTimeout(800) #1
 e2e/tests/audio-in.spec.ts :: streams the fake 440 Hz sine to SCOPE.ch1 (non-silence) :: waitForTimeout(800) #1
 e2e/tests/behavioral-observation-window.spec.ts :: readFramesWallClockSpaced :: waitForTimeout(spacingMs) #1
-e2e/tests/blood-audio-output.spec.ts :: BLOOD audio_l → SCOPE: the game-audio mixer produces audible signal in-game :: waitForTimeout(80) #1
-e2e/tests/blood-audio-output.spec.ts :: BLOOD audio_l → SCOPE: the game-audio mixer produces audible signal in-game :: waitForTimeout(80) #2
-e2e/tests/blood-audio-output.spec.ts :: BLOOD audio_l → SCOPE: the game-audio mixer produces audible signal in-game :: waitForTimeout(900) #1
 e2e/tests/blood-audio-output.spec.ts :: BLOOD music: in-level OPL3 music produces SUSTAINED audio on audio_l (standing still) :: waitForTimeout(110) #1
-e2e/tests/blood-audio-output.spec.ts :: pressAndSample :: waitForTimeout(settleMs) #1
 e2e/tests/blood-mount.spec.ts :: BLOOD card mounts, idle surface paints, and boots out-of-box from bundled shareware :: waitForTimeout(200) #1
 e2e/tests/blood-mount.spec.ts :: BLOOD card mounts, idle surface paints, and boots out-of-box from bundled shareware :: waitForTimeout(800) #1
 e2e/tests/bluebox.spec.ts :: bluebox: clicking "5" produces 770 + 1336 Hz peaks at the scope :: waitForTimeout(200) #1

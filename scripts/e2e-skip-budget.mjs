@@ -750,7 +750,8 @@ export const SKIP_BUDGET = [
   },
   {
     specs: [
-      'blood-audio-output.spec.ts',
+      // blood-audio-output.spec.ts left this group 2026-09-02: its #1847 park was
+      // root-caused to the fixed-count PCM pump (rate-exact fix + un-park, same PR).
       'clap.spec.ts',
       'coverage-groups-3-4-5.spec.ts',
       'cv-range-uniformity.spec.ts',
