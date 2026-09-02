@@ -42,6 +42,7 @@
   // `out` pass-through every downstream module is reading.
   import { onDestroy, untrack } from 'svelte';
   import { patch } from '$lib/graph/store';
+  import { nodeVersion } from '$lib/graph/node-versions.svelte';
   import { mutateNode } from '$lib/graph/mutate';
   import { useEngine } from '$lib/audio/engine-context';
   import { VIDEO_RES, type VideoEngine } from '$lib/video/engine';
@@ -78,19 +79,49 @@
 
   const engineCtx = useEngine();
 
-  // ── Node-backed state. Read through `patch`, which IS reactive in the
-  //    faceplate subtree (the legacy-card subtree is the one where it is not).
-  let node = $derived(patch.nodes[nodeId] ?? null);
-  let filename = $derived(recorderboxFilename(node));
-  let recording = $derived(recorderboxRecording(node));
-  let quality = $derived(recorderboxQuality(node));
+  // ── Node-backed state.
+  // ⚠ TWO THINGS ARE WRONG WITH THE OBVIOUS `$derived(patch.nodes[id]...)`, AND
+  // BOTH WERE MEASURED HERE RATHER THAN INHERITED:
+  //
+  //   1. `patch.nodes[id]` IS NOT REACTIVE ON ITS OWN. `node-versions.svelte.ts`
+  //      maintains a per-node signal from ONE `nodes.observeDeep`, and
+  //      `nodeVersion(id)` is how a surface subscribes to it — which is exactly
+  //      what `ModuleShell` does before every live-node read.
+  //   2. ⚠ TOUCHING THE SIGNAL IS NOT ENOUGH IF THE DERIVED RETURNS THE NODE.
+  //      The SyncedStore node proxy has a STABLE IDENTITY, so a derived that
+  //      recomputes to "the same proxy" is value-equal and Svelte does not
+  //      notify its dependents at all
+  //      ([[yjs-proxy-stable-identity-defeats-derived]]). So each derivation
+  //      below returns the LEAF — a boolean, a string, an enum — whose value
+  //      really does change, which is the same shape `ModuleShell.displayName`
+  //      uses.
+  //
+  // MEASURED, in that order: with neither, a RECORD press wrote
+  // `data.recording = true` to the doc and nothing reacted. With (1) alone the
+  // effect STILL never re-ran — the reconcile logged exactly twice, both with
+  // `recording === false`, while `__patch.nodes.d1.data.recording` was true.
+  // A unit test over `node.data` passes on both states, which is why this is a
+  // comment and an e2e leg rather than a hope.
+  let filename = $derived.by(() => {
+    void nodeVersion(nodeId);
+    return recorderboxFilename(patch.nodes[nodeId] ?? null);
+  });
+  let recording = $derived.by(() => {
+    void nodeVersion(nodeId);
+    return recorderboxRecording(patch.nodes[nodeId] ?? null);
+  });
+  let quality = $derived.by(() => {
+    void nodeVersion(nodeId);
+    return recorderboxQuality(patch.nodes[nodeId] ?? null);
+  });
 
   // ⚠ VIEW STATE ON THE NODE, NOT IN THE COMPONENT. This body unmounts on dock
   // collapse / LRU eviction (the #1531 / #1574 / #1583 class), and `node.data`
   // is what survives a remount, a reload and collab sync. Absent ⇒ false ⇒ ON.
-  let previewCollapsed = $derived<boolean>(
-    (patch.nodes[nodeId]?.data?.previewCollapsed as boolean | undefined) ?? false,
-  );
+  let previewCollapsed = $derived.by<boolean>(() => {
+    void nodeVersion(nodeId);
+    return (patch.nodes[nodeId]?.data?.previewCollapsed as boolean | undefined) ?? false;
+  });
   function togglePreview(): void {
     const next = !previewCollapsed;
     mutateNode(nodeId, (live) => {
@@ -122,7 +153,7 @@
   $effect(() => {
     reconcileRecorderboxTransport({
       nodeId,
-      recording: () => recorderboxRecording(patch.nodes[nodeId] ?? null),
+      recording: () => recording,
       canRecord: () => support.canRecord,
       engine: () => engineCtx.get(),
       stillArmed: () => recorderboxRecording(recorderboxNode(nodeId)),

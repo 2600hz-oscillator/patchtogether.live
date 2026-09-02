@@ -47,6 +47,7 @@
   // makes "press RECORD on the lane tile and a take actually starts" true with
   // no card mounted anywhere. See ../recorderbox-transport.
   import { patch } from '$lib/graph/store';
+  import { nodeVersion } from '$lib/graph/node-versions.svelte';
   import { useEngine } from '$lib/audio/engine-context';
   import { VIDEO_RES } from '$lib/video/engine';
   import StatusLed from '$lib/ui/controls/StatusLed.svelte';
@@ -69,7 +70,32 @@
 
   const engineCtx = useEngine();
 
-  let recording = $derived(recorderboxRecording(patch.nodes[nodeId] ?? null));
+  // ⚠ TWO THINGS ARE WRONG WITH THE OBVIOUS `$derived(patch.nodes[id]...)`, AND
+  // BOTH WERE MEASURED HERE RATHER THAN INHERITED:
+  //
+  //   1. `patch.nodes[id]` IS NOT REACTIVE ON ITS OWN. `node-versions.svelte.ts`
+  //      maintains a per-node signal from ONE `nodes.observeDeep`, and
+  //      `nodeVersion(id)` is how a surface subscribes to it — which is exactly
+  //      what `ModuleShell` does before every live-node read.
+  //   2. ⚠ TOUCHING THE SIGNAL IS NOT ENOUGH IF THE DERIVED RETURNS THE NODE.
+  //      The SyncedStore node proxy has a STABLE IDENTITY, so a derived that
+  //      recomputes to "the same proxy" is value-equal and Svelte does not
+  //      notify its dependents at all
+  //      ([[yjs-proxy-stable-identity-defeats-derived]]). So each derivation
+  //      below returns the LEAF — a boolean, a string, an enum — whose value
+  //      really does change, which is the same shape `ModuleShell.displayName`
+  //      uses.
+  //
+  // MEASURED, in that order: with neither, a RECORD press wrote
+  // `data.recording = true` to the doc and nothing reacted. With (1) alone the
+  // effect STILL never re-ran — the reconcile logged exactly twice, both with
+  // `recording === false`, while `__patch.nodes.d1.data.recording` was true.
+  // A unit test over `node.data` passes on both states, which is why this is a
+  // comment and an e2e leg rather than a hope.
+  let recording = $derived.by(() => {
+    void nodeVersion(nodeId);
+    return recorderboxRecording(patch.nodes[nodeId] ?? null);
+  });
   let live = $derived(nodeRecorder.view(nodeId));
   let recState = $derived(live?.state ?? 'idle');
   let elapsed = $derived(live?.elapsed ?? 0);
@@ -93,7 +119,7 @@
   $effect(() => {
     reconcileRecorderboxTransport({
       nodeId,
-      recording: () => recorderboxRecording(patch.nodes[nodeId] ?? null),
+      recording: () => recording,
       canRecord: () => support.canRecord,
       engine: () => engineCtx.get(),
       stillArmed: () => recorderboxRecording(recorderboxNode(nodeId)),

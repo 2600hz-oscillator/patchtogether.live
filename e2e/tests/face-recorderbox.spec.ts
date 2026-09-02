@@ -67,6 +67,21 @@
 // failing assertion pass: the pin replaces a MACHINE fact, and every assertion
 // below is about the CODE's response to it.
 //
+// ── THE POSITIVE CONTROL, AND IT WAS NOT HYPOTHETICAL ───────────────────────
+//
+// ⚠ LEG 1 FAILED FOR REAL BEFORE IT PASSED, on the first shape of these bodies,
+// and the defect it caught is one no unit test could: `patch.nodes[id]` reads
+// are not reactive on their own, AND touching `nodeVersion(id)` is not enough
+// if the derivation returns the NODE — the SyncedStore proxy has a stable
+// identity, so a derived that recomputes to the same proxy is value-equal and
+// Svelte notifies nobody. Measured: a RECORD press wrote
+// `data.recording = true` to the doc, `window.__nodeRecording` reported no
+// take, the reconcile ran exactly twice (both with `recording === false`), and
+// the switch stayed on `● REC` while the graph was perfectly correct. Deriving
+// the LEAF with the signal touched inside it turns all four legs green. A unit
+// test over `node.data` passes on BOTH states, which is precisely why this file
+// exists and why the fix is not "obviously right by inspection".
+//
 // NO WALL-CLOCK WAITS. Every wait is an auto-retrying `expect` on the real
 // subject; the only wall-clock numbers are the test BUDGET, from the one export
 // site in `boot-budget.ts`, and they BOUND a failure rather than gating it.
@@ -97,9 +112,22 @@ async function pinEncoder(page: Page, canEncode: boolean): Promise<void> {
   }, canEncode ? 1 : 0);
 }
 
-/** Stub the FOLDER picker so arming does not open a native dialog nothing can
- *  dismiss. The counters are asserted on: the folder model must call the
- *  DIRECTORY picker and NEVER the single-file save picker. */
+/**
+ * Stub the FOLDER picker so arming does not open a native dialog nothing can
+ * dismiss. The counters are asserted on: the folder model must call the
+ * DIRECTORY picker and NEVER the single-file save picker.
+ *
+ * ⚠ THE FAKE FOLDER IS EMPTY, AND THAT DETAIL COST A DEBUGGING ROUND. The
+ * nearest existing stub (`recorderbox.spec.ts`) has `getFileHandle` resolve
+ * UNCONDITIONALLY, which is a folder in which EVERY name already exists — so
+ * `mayShowOverwriteConfirm` fires, `confirm()` is auto-DISMISSED by Playwright,
+ * and the take is cancelled before it starts. That stub gets away with it only
+ * because its assertion (the directory picker was called) happens BEFORE the
+ * overwrite check. A stub that models an impossible folder is not a
+ * simplification, it is a different scenario. Here `create: false` reports
+ * NotFound — a fresh destination — so no modal is raised at all and nothing in
+ * this file depends on dialog handling.
+ */
 async function stubPickers(page: Page): Promise<void> {
   await page.addInitScript(() => {
     const w = globalThis as unknown as {
@@ -115,7 +143,11 @@ async function stubPickers(page: Page): Promise<void> {
     };
     const fakeDir = {
       name: 'takes',
-      getFileHandle: async () => fakeFile,
+      getFileHandle: async (_name: string, opts?: { create?: boolean }) => {
+        // An EMPTY folder: a lookup finds nothing, a create hands back a sink.
+        if (!opts?.create) throw new DOMException('not found', 'NotFoundError');
+        return fakeFile;
+      },
       queryPermission: async () => 'granted',
       requestPermission: async () => 'granted',
     };
@@ -415,7 +447,13 @@ test.describe('RECORDERBOX face — the promotion is what makes it recordable', 
     // lamps. The card painted `REC 00:12`, `SAVING…` and `saved <chunk>`; none
     // of the three may exist as a text node on either surface.
     await expect(page.locator('[data-testid="recorderbox-rec-indicator"]')).toHaveCount(0);
-    await expect(body).not.toContainText('SAVING');
+    // ⚠ `SAVING` SURVIVES AS A LAMP CAPTION AND THAT IS LEGAL — a caption is a
+    // NAME, painted identically lit and unlit, which is the whole design of
+    // `StatusLed`. What is deleted is the card's `SAVING…` STATE WORD, which
+    // existed only while finalizing and was therefore a state painted as text.
+    // The ellipsis is what tells them apart, so the assertion names it.
+    await expect(body).not.toContainText('SAVING…');
+    await expect(body.locator('[data-testid="recorderbox-face-saving-led"]')).toHaveText('SAVING');
     await expect(body.locator('[data-testid="recorderbox-face-rec-led"]')).toHaveAttribute(
       'aria-label',
       /not recording/i,
