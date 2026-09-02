@@ -1535,16 +1535,30 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // output), the face model's own negative controls, and per-module-per-port
   // e2e.
   moog902: 'No card VRT baseline — and the card is unreachable: moog902 is in STRICT_FACES, so both surfaces render ModuleShell instead of Moog902VcaCard. Pixel coverage is the two face scenes (face-moog902-compact / face-moog902-dock) in the shell-faces roster. Functional coverage: DSP worklet unit (gain law + x2-at-6V anchor + the mode-dependent x3 ceiling + CV summing + bit-exact inverted output), moog902-face-model unit, per-module-per-port e2e. NOT ART-covered — moog902 is in the ART backlog and has no scenario (this reason previously claimed otherwise, #1912).',
-  // PAINTER (new video module) — VRT baseline pending (the new-module pattern).
-  // The card is an interactive MS-Paint surface; its drawing canvas content is
-  // user/op-driven (not deterministic at first paint), and CI runs linux-only so
-  // a darwin baseline can\'t be captured from this authoring machine. Functional
-  // coverage: painter.test.ts (palette/coerceOps/applyVectorOp/floodFill PCU) +
-  // per-module-per-port (handle presence + OUT emits) + painter.spec.ts (the real
-  // draw → canvas → synced-op chain + FILL + CLEAR). Promote into MODULES once a
-  // deterministic darwin + linux baseline is captured via `vrt-update.yml`
-  // (mask the canvas, like the other canvas cards above).
-  painter: 'VRT baseline pending — interactive MS-Paint canvas (op-driven, non-deterministic first paint); covered by painter.test.ts (PCU) + per-module-per-port + painter.spec.ts (draw/fill/clear). Promote into MODULES with a canvas mask once darwin + linux baselines land via vrt-update.yml.',
+  // PAINTER — this entry covers the LEGACY CARD scene only; the module is
+  // PROMOTED (2026-09-02) and its FACEPLATE is captured (face-painter-compact /
+  // face-painter-dock in the shell-faces roster), so the visual gate is not
+  // absent here — it moved to the surface that ships.
+  //
+  // ⚠ BOTH HALVES OF THE OLD REASON WERE WRONG, in opposite directions, and
+  // that is why this is a rewrite rather than a trim:
+  //
+  //  1. "op-driven, NON-DETERMINISTIC FIRST PAINT" is true of a canvas someone
+  //     has DRAWN ON and FALSE of the thing a VRT scene captures. A scene spawns
+  //     the node and touches nothing, so `node.data.ops` is EMPTY and the canvas
+  //     is a blank white page — the module's own designed idle state, with no
+  //     clock, no RNG and no param that could move it.
+  //  2. Its EXIT CONDITION NAMED A CAPTURE MODEL THAT DOES NOT EXIST: "once a
+  //     deterministic darwin + linux baseline is captured".
+  //     `snapshotPathTemplate` has no `{platform}` segment, so there is ONE
+  //     baseline set and LINUX CI AUTHORS IT. A two-platform condition is not a
+  //     high bar, it is an unreachable one, and an exemption whose exit cannot
+  //     be reached is permanent by accident rather than by decision — the
+  //     twotracks finding, on a second module.
+  //
+  // What is actually true of the CARD scene: it is still capturable and still
+  // uncaptured, and the card is now reachable only under `?shell=legacy`.
+  painter: 'Legacy-card scene only — the FACEPLATE is captured (face-painter-compact / face-painter-dock). painter is in STRICT_FACES, so both default surfaces render ModuleShell and the card is reachable only under ?shell=legacy. ⚠ THE OLD REASON WAS WRONG TWICE: a VRT scene spawns the node and draws nothing, so the canvas is a BLANK WHITE PAGE rather than a non-deterministic first paint; and its exit named a darwin+linux capture that cannot happen, because snapshotPathTemplate has no {platform} segment and linux CI authors the ONE set. Functional coverage: painter.test.ts + paint-surface unit (the shared gesture seam) + painter-face-model unit + per-module-per-port + painter.spec.ts (legacy draw/fill/clear) + face-painter.spec.ts (the faced chain). Drop this entry when the legacy card is deleted, or earlier by dispatching GREP=painter task vrt:commit to let linux CI author the card baseline.',
   // MOOG 921A / 921B / 904B (batch 1) — PROMOTED out of EXEMPT_FROM_VRT: darwin
   // baselines captured in this PR (the shared MoogPanel label fix is what makes
   // the engraved-black control captions legible on the beige faceplate, so the

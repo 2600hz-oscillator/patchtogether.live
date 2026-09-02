@@ -1599,10 +1599,36 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
   },
   {
     type: 'painter',
-    disposition: 'bespoke-surface',
-    why:
-      'a DRAWING SURFACE: freehand strokes on a canvas plus a typed text stamp. Direct pointer ' +
-      'painting is the module and it declares no params at all.',
+    disposition: 'generic-face',
+    note:
+      'PROMOTED (2026-09-02). ⚠ THE OLD `why` WAS FACTUALLY TRUE AND ITS CONCLUSION WAS THE ' +
+      'TEXTMARQUEE ONE. It read: "a DRAWING SURFACE: freehand strokes on a canvas plus a typed ' +
+      'text stamp. Direct pointer painting is the module and it declares no params at all." Both ' +
+      'clauses are exactly right and neither disqualifies anything — what changed is the LADDER. ' +
+      'A `fullViewBody` is a SLOT, not a CELL, so "not cell-shaped" stopped being a refusal; ' +
+      'videoOut is the shipped zero-param precedent and flipper the shipped ranks-nothing one, ' +
+      'and painter is both at once. `face.order` is EMPTY: every affordance is either ' +
+      'per-collaborator LOCAL tool state (a cell would paint another peer\'s active tool out from ' +
+      'under them mid-stroke) or an op-log ACTION. ⚠ THE BODY IS THE WHOLE MODULE rather than a ' +
+      'preview beside a plate — nine tools, the 28-colour Win95 palette, SIZE, FILL, the text ' +
+      'stamp, UNDO/CLEAR and the drawing canvas whose pixels ARE the video output — and painter ' +
+      'is in none of DOM_SOURCE_LANE_TYPES / CARD_PRODUCER_LANE_TYPES / HEADLESS_MOUNT_LANE_TYPES, ' +
+      'so after promotion no card mounts anywhere. ⚠ THE PICTURE ALREADY SURVIVED WITH NO SURFACE ' +
+      'MOUNTED BEFORE THIS PR: #1720 moved the op-log replay onto NODE lifetime in ' +
+      'extras-producers.ts (measured then: meanRGB 255,255,255 with no card vs the drawing\'s ' +
+      '255,0,0), so what promotion adds is the EDITOR plus the lease handshake that lets the ' +
+      'mounted surface push its own live canvas — an in-progress stroke reaches OUT before the op ' +
+      'commits — and hand the binding straight back on unmount. ⚠ ONE SEAM, TWO MOUNTS: the ' +
+      'pointer -> PaintOp arithmetic is $lib/ui/modules/painter/paint-surface.ts, imported by the ' +
+      'body AND by the still-live legacy card, because the op log is VALID either way and a ' +
+      'divergence would sync two different pictures to two peers with every gate green. ⚠ THE ' +
+      'TYPED-ENTRY LEG IS CARRIED, NOT DODGED: the card mounts <input type="text"> for the TEXT ' +
+      "tool's stamp string, and the body renders the same field in its OWN file (the leg reads " +
+      'the directly-named fullViewBody source, so an input inside an imported child would read as ' +
+      '"the face carries none"). ⚠ SCREEN OFF puts the whole paint set away rather than collapsing ' +
+      'a preview well — here the picture IS the instrument — and the output is untouched: the ' +
+      'release re-pushes the node-lifetime producer and the body goes on renewing the watch mark. ' +
+      'ZERO attest, contract unchanged.',
   },
   {
     type: 'peertube',
