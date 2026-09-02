@@ -247,8 +247,6 @@ e2e/tests/snaredrum-face.spec.ts :: snaredrum face: the dock HIT and HOLD-TO-ROL
 e2e/tests/snaredrum-roll.spec.ts :: SNARE DRUM real chain: SEQUENCER held gate → gate_in → CONTINUOUS two-hand roll (L + R, no gaps) :: waitForTimeout(700) #1
 e2e/tests/snaredrum-roll.spec.ts :: pollStereo :: waitForTimeout(pollMs) #1
 e2e/tests/snh-hold.spec.ts :: ch1MinMaxOverWindow :: waitForTimeout(pollMs) #1
-e2e/tests/snh-hold.spec.ts :: setup :: waitForTimeout(500) #1
-e2e/tests/snh-hold.spec.ts :: setup :: waitForTimeout(600) #1
 e2e/tests/soak.spec.ts :: soak: voice patch produces finite, in-range audio over 30s :: waitForTimeout(POLL_INTERVAL_MS) #1
 e2e/tests/stereo-autowire.spec.ts :: an only-L and an only-R cable from DIFFERENT sources coexist on one input :: waitForTimeout(300) #1
 e2e/tests/sticky-note.spec.ts :: sticky reconcile: no console errors when spawning a sticky-only patch :: waitForTimeout(150) #1
