@@ -3372,6 +3372,7 @@ trails out y4 cv
 trails param divisor 1..24 discrete default=24
 trails param range 0..1 discrete default=0
 trails param smooth 0..1 linear default=0
+trails family trails-connect kind=other prefix=trails-connect
 treeohvox meta domain=audio
 treeohvox in accent_cv cv param=accent cvScale=linear
 treeohvox in accent_in gate edge=gate

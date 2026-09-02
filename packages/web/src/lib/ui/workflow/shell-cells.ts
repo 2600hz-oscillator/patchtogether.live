@@ -198,6 +198,7 @@ import {
 } from '$lib/ui/modules/matrixmix-cell-actions';
 import { midiclockConnect } from '$lib/ui/modules/midiclock-cell-actions';
 import { ptzcamConnect } from '$lib/ui/modules/ptzcam-cell-actions';
+import { trailsConnect } from '$lib/ui/modules/trails-cell-actions';
 import { es9Connect, es9Disconnect } from '$lib/ui/modules/es9-cell-actions';
 import { vstConnect, vstDisconnect } from '$lib/ui/modules/vst-cell-actions';
 import {
@@ -2677,6 +2678,49 @@ const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
       mode: 'trigger',
       probe: { effect: { kind: 'audition', seam: 'engine-message' } },
       onFire: (nodeId) => { ptzcamConnect(nodeId); },
+    },
+  },
+
+  // ── TRAILS — the THIRD binder's grant, and the one whose module is inert
+  //    ONCE rather than twice ─────────────────────────────────────────────────
+  //
+  // midiclock waits on the browser's Web-MIDI consent; ptzcam waits on that AND
+  // on a native helper publishing a virtual port pair. This module waits on the
+  // consent alone — the Bela Trails is class-compliant USB-MIDI, so a granted
+  // origin with the device plugged in binds with no driver and no helper app.
+  // That makes the argument for a CELL simpler, not weaker: there is exactly one
+  // thing standing between a fresh spawn and twenty-one live jacks, and it is a
+  // click that must happen where the module is met.
+  //
+  // ⚠ IT RANKS FIRST IN `face.order`, and the rank is the load-bearing half.
+  // `faceTierCap` caps a glyph-less COMPACT tile at 3 cells, and this face has
+  // four ranked keys — so rank 4 would put the only gesture that makes the
+  // module work at all behind the dock full view while every other gate stayed
+  // green (the dock plan would still be perfect and the lane would still paint
+  // three cells). `trails-face-model.test.ts` pins the rank for that reason.
+  //
+  // ⚠ AN AUDITION, NOT A `bound` STATE READ — ptzcam's argument, and here it is
+  // not close. `status().kind === 'bound'` needs a granted origin AND a physical
+  // Bela Trails on USB; no CI runner has either, so a state probe would be
+  // permanently RED on a perfectly live control. A revision counter would be the
+  // opposite failure — green on a button that bumps a number and reaches
+  // nothing. The audition asks what a runner CAN answer: did the press resolve a
+  // callable off the live engine handle and call it.
+  //
+  // ⚠ AND `trailsConnect` RECORDS `delivered: false` ON ITS FALLBACK BRANCH,
+  // because `connectTrails()` is app-level and a click can race the reconciler.
+  // The gesture is not lost, but it did not reach THIS node's seam, and the
+  // ledger says the true thing rather than the convenient one.
+  trails: {
+    'trails-connect-{n}': {
+      kind: 'action',
+      label: 'Connect Trails',
+      title:
+        'Grant this site access to Web MIDI (one-time per origin) and bind any Bela Trails on '
+        + 'USB — it is class-compliant, so no driver or helper app is involved',
+      mode: 'trigger',
+      probe: { effect: { kind: 'audition', seam: 'engine-message' } },
+      onFire: (nodeId) => { trailsConnect(nodeId); },
     },
   },
 

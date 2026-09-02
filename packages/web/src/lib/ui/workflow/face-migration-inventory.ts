@@ -1011,10 +1011,23 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
   // CONNECT gesture is a fifth ranked control through the family key-space, and
   // its `testidPrefix` already existed on the legacy card, so no card edit was
   // needed to satisfy module-docs-lint. It ranks FIRST, not fifth.
+  // ── TRAILS — SHIPPED 2026-09-02, and the disposition MOVED with it ─────────
+  //
+  // ⚠ THE ENTRY IS `generic-face` NOW, AND THAT IS A MECHANICAL REQUIREMENT
+  // RATHER THAN A RECLASSIFICATION OF THE SURFACE. `migrationDone` is
+  // `disposition === 'generic-face' && isFaced`, and the identity leg above
+  // asserts the done-set IS `STRICT_FACES` — plus an independent leg reading the
+  // DEF ("a module cannot be 'needs a bespoke surface' and ship a curated face
+  // at the same time"). So a bespoke surface that SHIPS flips its disposition;
+  // leaving it on `bespoke-surface` fails three clauses at once. The build spec
+  // for this module predicted the opposite ("the disposition stays
+  // `bespoke-surface`; its state flips to done automatically"), which is the
+  // face-inventory prose failure mode in its own file: TRUE of an earlier tree,
+  // never re-checked. The `note` below is where the bespoke half is recorded.
   {
     type: 'trails',
-    disposition: 'bespoke-surface',
-    why:
+    disposition: 'generic-face',
+    note:
       'a MIDI DEVICE BINDER whose second surface is a PICTURE. Two of the three things this '
       + 'module offers are outside the generic-face vocabulary: the CONNECT gesture and the '
       + 'bound / no-port / denied / prompt-suppressed status are WebMIDI service state rather '
@@ -1025,10 +1038,29 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
       + 'declared pad names the two params its axes DRIVE, and these axes drive nothing, they '
       + 'report. A third non-param surface has since joined them: MON, a live readout of the raw '
       + 'MIDI the device is sending INCLUDING the messages this module does not recognise, which '
-      + 'is the only affordance that can correct the wire constants against real hardware. Three '
-      + 'knobs (range, smooth, clock div) are the only generic-face material, and a face that '
-      + 'ranked those would move the knobs to the lane and leave behind every one of the things '
-      + 'that make the module usable.',
+      + 'is the only affordance that can correct the wire constants against real hardware. '
+      // ⚠ THE CLAUSE THAT STOPPED BEING TRUE, corrected rather than left standing.
+      // It read: "Three knobs are the only generic-face material, and a face that
+      // ranked those would move the knobs to the lane and leave behind every one
+      // of the things that make the module usable." Both halves were accurate
+      // about a face with THREE ranked keys and no bodies; neither survives the
+      // shipped surface, and this entry is one of the seven the face-inventory
+      // prose audit found had been TRUE-when-written and never re-checked.
+      + 'SHIPPED 2026-09-02 as `face` + BOTH body slots. The three knobs are NOT the only '
+      + 'ranked material: CONNECT reaches face.order through the family key-space and ranks '
+      + 'FIRST, so on a glyph-less compact tile (cap 3) the lane paints CONNECT, RANGE and '
+      + 'SMOOTH, and the grant no longer requires finding the dock. Nothing is left behind '
+      + 'either — the pad mirror is ONE component mounted by the `fullViewBody` at the card\'s '
+      + 'own 140px and by the `tileBody` at 40px, so the picture is on the lane tile too; the '
+      + 'bound sentence moved onto StatusLed.detail (aria-label + title) while the four fault '
+      + 'sentences survive as painted role="alert" text; and MON, its reset, the counters ratio '
+      + 'and the selectable `<pre>` summary are dock-only by MEASUREMENT — the lane body budget '
+      + 'is LANE_BODY_H(112) − LANE_KNOB_READOUT_H(57) − 4 ≈ 51px (both range and divisor '
+      + 'declare `options`, so the compact row earns a readout) and the panel alone is taller '
+      + 'than that. The parity leftover set is EMPTY: all ten card testids and every non-testid '
+      + 'affordance have a home, the module still makes NO node.data writes, and `?shell=legacy` '
+      + 'still renders the verbatim card, so the three DOM-asserting legs in trails.spec.ts are '
+      + 'unchanged rather than re-pointed.',
   },
   {
     type: 'ptzcam',
