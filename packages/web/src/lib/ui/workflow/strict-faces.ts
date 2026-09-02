@@ -6024,6 +6024,209 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // code moves. No ART fingerprint moves either — moog956 is on `ART_BACKLOG`
   // and has no committed profile, and nothing about the DSP changed.
   'moog956',
+
+  // ── RECORDERBOX (wave 5, 2026-09-02) — THE RECORDER ──────────────────────
+  //
+  // `order: []` + `glyph: 'none'` + an extension filling BOTH wired body slots.
+  // The `videoOut` shape, arrived at from the same place: `recorderboxDef`
+  // declares `params: []`, so there is nothing for the generic bands to rank
+  // and the extension IS the faceplate rather than an addition to one.
+  //
+  // ⚠ THE INVENTORY ENTRY WAS FALSE IN EVERY CLAUSE AFTER THE DASH, AND
+  // #1574/#1584 (bdef392f6) IS WHAT MADE IT FALSE — eight months of prose
+  // describing a card that had already been rewritten. It read: "the capture
+  // canvas plus its per-frame encode loop live on the card, so the recording
+  // exists only while it is mounted." The capture canvas is created by
+  // `node-recorder-registry`, NEVER enters the document, and is pumped by the
+  // registry under its own `acquireRenderLease`; the card's own line 257 says
+  // "CAPTURE IS NOT HERE" in capitals. The recording survives card unmount BY
+  // CONSTRUCTION — that is the entire point of the registry, and the registry
+  // exposes no teardown precisely so a future card cannot undo it. "A take
+  // list" was wrong too: that block is a crash-RECOVERY list read from OPFS
+  // manifests, empty after a clean boot.
+  //
+  // ⚠ AND `needs-media-controller` NEVER APPLIED. recorderbox is a SINK — it
+  // consumes the engine's FBO through `blitOutputForPreview` and owns no
+  // `<video>`, no `MediaStream` source and no element to adopt — so it is in
+  // neither half of `HEADLESS_MOUNT_LANE_TYPES`, neither `DOM_SOURCE_LANE_TYPES`
+  // nor `CARD_PRODUCER_LANE_TYPES`. The blocker described the module the
+  // inventory thought it was.
+  //
+  // ⚠ THE STOP-2 IS THE WHOLE TRANSPORT, and it is why this PR carries a
+  // precursor commit. Because recorderbox is in none of those sets, promotion
+  // stops `RecorderboxCard.svelte` being mounted ANYWHERE — no headless host,
+  // no lane card, nothing. Six things lived only in that component and would
+  // have gone with it: the `probeEncoders` support probe (its ONLY caller in
+  // the tree), the `listRecoverable` crash scan (likewise), the ~120-line start
+  // orchestration, the folder re-pick, the `<a download>` fallback, and the
+  // `$effect` that reacts to `node.data.recording`. All six moved to
+  // `$lib/ui/modules/recorderbox-transport.ts` — `lib/ui`, never `lib/video`,
+  // which is hashed wholesale for the GPU attest (nine recorderbox files wide).
+  //
+  // ⚠ THE `$effect` IS PORTED, NOT PARAPHRASED, and that is load-bearing:
+  // `data.recording` is Y.Doc-SYNCED, so it also flips when a RACK-MATE presses
+  // RECORD and when a saved patch LOADS with `recording: true` still on it.
+  // Neither passes through a click handler, so re-writing the start call at each
+  // surface would have dropped both paths while every hand test still passed.
+  // The reactive reads live inside `reconcileRecorderboxTransport`; each surface
+  // is one line that cannot track less.
+  //
+  // ⚠ RECORD IS NOT A `ShellToggleCell` AND SIZE IS NOT A `ShellSelectorCell`.
+  // Neither cell kind can express `disabled` (`Toggle.svelte` has no such prop
+  // at all), and SIZE's `disabled` is the SOLE guard on a mid-take quality
+  // change; and `faces-parity` CLICKS every toggle cell, which on a real
+  // recorderbox means a folder prompt, an encoder probe, `nodeRecorder.start`,
+  // a render lease and a full-canvas capture pump that NOTHING ever stops
+  // (the registry exposes no teardown by design). Both live in the extension's
+  // own markup, with their own disabled state — which also drops the contract
+  // diff to zero.
+  //
+  // ⚠ BOTH BODY SLOTS, AND THE TILE IS THE LOAD-BEARING HALF.
+  // `Canvas.svelte:1759-1795` auto-spawns a recorderbox into the video zone of
+  // every fresh workflow rack, wired to the master buses, so a `fullViewBody`
+  // alone would have made the first module of every new session a live
+  // thumbnail with no way to start a take under it — cameraInput's lesson, one
+  // module worse.
+  //
+  // ⚠ SCREEN OFF CANNOT REACH THE ENCODE, which is a STRONGER guarantee than
+  // the fleet's correctly-ordered `markWatched`: a take runs on the registry's
+  // own pump under a render lease that bypasses BOTH preview gates. The
+  // `markWatched` in the collapsed branch is still load-bearing for the case
+  // with no take running, where it is what keeps the upstream chain feeding
+  // `in` and the `out` pass-through alive.
+  //
+  // ⚠ THREE RESTING READOUTS ARE DELETED, NOT HIDDEN: the card's `REC 00:12`
+  // overlay (a ticking measurement painted over the picture), its `SAVING…`
+  // state word, and its `saved <chunk>` line. All three are now `StatusLed`
+  // `detail`, reaching aria-label and title and never a text node. The two
+  // capability BADGES became lamps for the same reason. What is KEPT and
+  // painted: the FILE field (an `<input type="text">`, NOT a `ShellEntryCell` —
+  // that kind forbids clamping and the save path SANITIZES, so its rejections
+  // would disagree with the name written to disk), the `.mp4` caption, the DIR
+  // row's folder NAME (an option name inside its own control, and the #1583
+  // bug was a silently-redirected destination — hiding it would re-open exactly
+  // that), the PICK/CHANGE button (the folder handle is deliberately kept OUT
+  // of `node.data`, so no `ShellActionProbe` could observe it), the SIZE
+  // roster's option names, and the transient folder hint.
+  //
+  // ⚠ WHAT SHIPS ON ARGUMENT PLUS AN AUDITION LEDGER RATHER THAN MEASUREMENT:
+  // the ENCODER INTERLOCK's negative half. No CI runner has an H.264 encoder
+  // that emits chunks — the headless software runner reports `avc` as
+  // config-supported and then emits ZERO chunks for real frames — so CI can
+  // prove the switch is DISABLED and a take is REFUSED, and cannot prove a
+  // file is written. The e2e's transport experiment therefore asserts that a
+  // press reaches `nodeRecorder.start` with no card mounted; whether the bytes
+  // are good is the owner's hardware check, and this module already carries an
+  // outstanding one from the capture-wiring fix.
+  //
+  // ZERO ATTEST: `face` / `docs` are hash-transparent by construction
+  // (attest-code-basis strips both), no param, port or factory code moves, and
+  // the transport plus both bodies live under `lib/ui/**`, outside the basis.
+  // CONTRACT UNCHANGED: no params, no controlFamilies, no `PortDef.label` (the
+  // rail derives AUDIO L / AUDIO R where the card wrote `A·L` / `A·R`; a label
+  // is NOT hash-transparent on a video def and prose is not worth a GPU
+  // window). `docs:accept` runs because the explanation's card-ownership prose
+  // was stale.
+  'recorderbox',
+
+  // ── NIBBLES (2026-09-02) — the last of the wave-5 GAMES, and the only one
+  //    that is VIDEO domain ────────────────────────────────────────────────
+  //
+  // Its three siblings (frogger, modtris, skifree) are AUDIO defs carrying gate
+  // outputs, so `hasVideoSurface` is false for all three and each had to solve
+  // the lane picture for itself — skifree by authoring a whole second
+  // `tileBody`. nibbles is `domain: 'video'`, and `laneGlyphFor` returns
+  // 'picture' on that alone, BEFORE it reads `face.glyph`: so promotion gives
+  // this module a LIVE PER-NODE `VideoTileThumb` on the lane tile for free,
+  // where the shipping shell painted a blank placeholder (nibbles is not in
+  // NON_SHELL_LANE_TYPES, is not a CARD_PRODUCER and is not in
+  // HEADLESS_MOUNT_LANE_TYPES, so the game ran and fired gates under a grey
+  // square). That is the strongest single argument for doing it, and it is
+  // measured rather than hoped: `face.glyph: 'none'` is MANDATORY here and
+  // "'none' + blank tile" and "'none' + live thumb" are indistinguishable from
+  // the declaration, so `nibbles-face-model.test.ts` asserts `hasVideoSurface`
+  // DIRECTLY.
+  //
+  // TWO ranked params (TICK, AUTO) in ONE band; the picture, its SCREEN, SCALE
+  // and RESET controls and the ARROW KEYS in a `fullViewBody` extension.
+  //
+  // ⚠ RESET IS A BODY BUTTON RATHER THAN A RANKED `ShellActionCell`, AND THAT
+  // IS A MEASUREMENT RATHER THAN A TASTE CALL — the build spec argued for the
+  // cell and the measurement overruled it. An action cell's probe here would
+  // have to be an AUDITION (reset writes no param and no `node.data`; a
+  // `data-rev` probe is outlawed as "a revision-only probe passes on a dead
+  // button that bumps the counter"). But `faces-parity` spawns EVERY module
+  // with `spawnPatch({ id, type, position })` and NO `domain`, which
+  // `_helpers.ts` defaults to `'audio'` — so a VIDEO module's factory is never
+  // constructed in that sweep at all and `engine.read(node, 'extras')` returns
+  // `undefined`. MEASURED on this module on the default shell, both ways:
+  // spawned `domain: 'video'` the ledger records `delivered: true`; spawned the
+  // sweep's way, `delivered: false`. ⚠ THE PROBE IS NOT LOST, IT MOVED
+  // SOMEWHERE STRICTLY STRONGER: `face-nibbles.spec.ts` presses the body's
+  // RESET on a REAL constructed nibbles and asserts the ledger, which is what
+  // the sweep's probe was trying to be. The harness gap is reported to the
+  // owner rather than fixed here — changing that spawn would construct real
+  // video nodes for every video face in a required sweep.
+  //
+  // ⚠ THE ARROW KEYS ARE THE MODULE'S INSTRUMENT, NOT KEYBOARD-A11Y WORK, and
+  // the distinction is made explicitly because it is easy to conflate. a11y
+  // keyboard nav is reaching and operating a CONTROL without a mouse: none is
+  // proposed and no control's key handling is touched. `pushDirection` is the
+  // only manual steering nibbles has, exactly as a ribbon is moog956's and a
+  // mouse is skifree's, so a promoted face without it would be a game with no
+  // way to play it. The body takes `tabindex="-1"` rather than the card's `"0"`
+  // — focusable by CLICK, absent from the tab order — so Tab remains the
+  // faceplate FLIP gesture and this promotion adds no tab stop inside the plate.
+  //
+  // ⚠ TWO DELETIONS BY THE RESTING-TEXT RULING, and one of them is EXPENSIVE.
+  // The card's `LEN {n} †` row is a labelled derived value with a state glyph
+  // sitting beside the picture — none of the four permitted roles — and unlike
+  // frogger and modtris there is NOTHING PAINTED IN THIS CANVAS to fall back
+  // on: `paintFrame` draws a background, a border ring, the food cell, the
+  // snake and a scanline darken, with no `fillText`, no glyph table and no
+  // font. So the ruling does not RELOCATE the score here, it DELETES it; the
+  // value survives on the screen's `aria-label`, and `nibbles.spec.ts` already
+  // reads it through `eng.read(node,'score')` rather than off the DOM, so no
+  // assertion had to be weakened. Restoring a painted score would be a
+  // `paintFrame` edit on a file IN the WebGL attest basis — a separate, priced,
+  // owner-facing change, deliberately not folded in here. The `.tip` sentence
+  // ("Click to focus → arrow keys drive snake") is deleted as prose and its
+  // content folded into `docs.explanation`, where right-click ANNOTATE can
+  // carry it.
+  //
+  // ⚠ ZERO ATTEST, MEASURED IN BOTH DIRECTIONS RATHER THAN INHERITED.
+  // `nibbles.ts`, `nibbles-game.ts` and `nibbles-bot.ts` are all IN the WebGL
+  // attest basis (`webgl-attest-hash.sh --list`). This PR touches `nibbles.ts`
+  // with `face` and `docs` and NOTHING else — both are in
+  // `HASH_TRANSPARENT_PROPS` — and the hash is unchanged
+  // (2f505b4230…3f56b073 before and after, which is main's own hash and has a
+  // matching attestation on main), while a control edit to
+  // `NIBBLES_MAX_LENGTH` moves it. That discipline is the whole
+  // reason this PR refuses a `freeze` param, refuses `units: 'ms'` on
+  // `tick_ms`, refuses to make SCALE a ParamDef, and refuses to paint the
+  // score.
+  // ⚠ IT DOES NOT EXTEND TO THE CARD'S RANGE LITERAL, and an earlier draft of
+  // this paragraph said it did — wrongly. It argued that the card's re-typed
+  // `min={40} max={200}` had to stay because "the correct fix exports a range
+  // accessor FROM the def, which is a `nibbles.ts` edit". `paramSpec(def, id)`
+  // lives in `card-kit` and takes the def as an ARGUMENT: the conversion is a
+  // CARD-ONLY edit and moves no hash. The card is bound and enrolled in
+  // `card-range-source.test.ts` in this same PR. An attest cost defers a DEF
+  // edit; it is never a reason to leave a second copy of a range in a card.
+  // ⚠ CONTRACT: NOTHING. No param, no port, and no `controlFamilies` line —
+  // `nibbles-face-model.test.ts` asserts `controlFamilies ?? [] === []` three
+  // times over, so an earlier draft of this paragraph that claimed one was
+  // contradicted by its own PR's tests. `docs:accept` produces an empty
+  // `contract-lock.txt` diff.
+  //
+  // ⚠ TWO LIVE DEFECTS ARE FIXED IN THE SAME DIFF, both on the CARD as well as
+  // the face, because the gestures now share one seam: SCALE was component
+  // `$state` (so a dock collapse or an LRU eviction reset a 4x zoom to 1x — the
+  // #1531/#1574/#1583 class), and AUTO was a ledgered raw `params` write
+  // (`raw-write-ledger.ts`, `kind: 'debt'`) that promotion would have made
+  // unreachable-without-paying rather than paid. The ledger entry is deleted in
+  // this commit.
+  'nibbles',
 ]);
 
 /**

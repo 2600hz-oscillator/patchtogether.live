@@ -5199,6 +5199,211 @@ export const FACES = [
   // baseline and get a review, which is the only automated notice that would.
   { type: 'moog956', pages: 1 },
 
+  // ── RECORDERBOX (2026-09-02, wave 5) — the RECORDER ───────────────────────
+  //
+  // `pages: 0`, the `videoOut` / `flipper` shape and for the same mechanical
+  // reason: `recorderboxDef` declares `params: []`, so `face.order` is `[]`,
+  // so `dockFacePlan` refuses the empty band rather than painting a bare
+  // divider rule under the extension body. The whole plate is the
+  // `fullViewBody`.
+  //
+  // ── ⚠ THE DETERMINISM ARGUMENT, DERIVED RATHER THAN INHERITED ─────────────
+  //
+  // (1) THE PICTURE. A face scene spawns the node and patches NOTHING, so
+  //     `getInputTexture` returns null, `uHasInput` is 0 and the shader's idle
+  //     branch runs: `vec4(0.10 + vUv.y * 0.05, 0.04, 0.06, 1.0)` — a pure
+  //     function of position with no clock, no accumulator, no CV input (the
+  //     def declares none) and no uniform that is not a param (there are no
+  //     params). The COMPACT tile carries a live `VideoTileThumb` of the same
+  //     idle sweep, because a zero-control face keeps its glyph strip at every
+  //     tier — the videoOut case exactly.
+  //
+  // (2) THE CHROME AT SPAWN IS STILL. `node.data` is empty on a fresh spawn, so
+  //     FILE reads its `recording` default, SIZE reads BALANCED
+  //     (`coerceQuality(undefined)`), DIR reads its empty-state "(chosen on
+  //     record)" beside PICK, RECORD reads `● RECORD`, and both lamps are dark.
+  //     The elapsed time, the chunk name and the folder path — the three things
+  //     that could tick — are `StatusLed` `detail` and reach `aria-label` and
+  //     `title` only, so none of them is in the frame at all.
+  //
+  // (3) THE TWO ASYNC READS BOTH RESOLVE TO THE SAME PICTURE, which is the leg
+  //     worth writing down because it is the one that could have made this
+  //     scene a coin-flip on probe timing. The RECOVERY block is gated on
+  //     `listRecoverable`, which reads the `patchtogether-recorderbox`
+  //     IndexedDB — empty in a fresh Playwright context, so the block never
+  //     renders and there is no before/after state to race. The third lamp is
+  //     gated on `support.checked && !support.canRecord` (or `&& !support.opfs`),
+  //     and on the Linux runner BOTH gates are false in BOTH states: before the
+  //     probe answers `checked` is false, and after it answers `canRecord` is
+  //     TRUE — CI's headless software runner reports `avc` as config-supported
+  //     even though its encoder then emits zero chunks for real frames, which
+  //     `recorderbox.spec.ts` measured and records. So the lamp is absent
+  //     whether the probe has landed or not — WHICH IS EXACTLY WHY THE PIN
+  //     BELOW EXISTS, because that sentence is a claim about the RUNNER and not
+  //     about this code.
+  //
+  // ⚠ THE ONE `simPin`, AND IT IS NOT ABOUT THE PICTURE. `probeEncoders`
+  // deliberately does NOT trust `VideoEncoder.isConfigSupported` — that is a
+  // false positive on a headless software runner, which then writes an `ftyp`
+  // and never a `moof` — so it ANDs the config check with a REAL
+  // encode-and-flush smoke test. That is the correct probe and it lands after
+  // an unknown number of frames, which gives this faceplate TWO legal resting
+  // pictures: probe pending (no fault lamp, RECORD enabled) and probe answered
+  // (possibly a fault lamp, RECORD dimmed). A baseline would pin whichever one
+  // the runner happened to be in on capture day — a coin flip on the machine's
+  // encoder and its scheduling, not a regression gate, and the sort of latent
+  // race that passes for months and then fails on an unrelated PR.
+  //
+  // `__recorderboxTestEncoder: 1` collapses that to one picture by answering
+  // the capability question in the CODE: probe skipped, `checked` true,
+  // `canRecord` true, no fault lamp, RECORD enabled. The seam is a page global
+  // read at probe time — the `__loopbackTestFrame` /
+  // `__tvLibrarianTestCountries` shape — and it lives in
+  // `$lib/ui/modules/recorderbox-transport.ts`, OUTSIDE the WebGL attest basis,
+  // so it costs no GPU window.
+  //
+  // ⚠ WHAT IT DOES NOT DO IS HIDE THE FAULT STATE. The pin is a tri-state: a
+  // FALSY value pins "this runtime cannot encode", so the disabled switch and
+  // its lamp are reachable from a scene or a spec deliberately rather than by
+  // being on the wrong machine. Nothing here asserts the fault picture, and
+  // that is a stated gap: the capability lamps have no baseline, and their
+  // render-level coverage is `face-recorderbox.spec.ts`'s interlock legs.
+  //
+  // ⚠ NO OTHER PIN AND NO `freezeIsNotASeam`. There is nothing else to pin: no
+  // RNG, no ring, no feedback FBO, no wall-clock term, no network. And
+  // `freezeFaceVideo` writes `params.freeze = 1`, which this def has no param
+  // for, so the write lands nowhere — the same no-op mappy and textmarquee
+  // record.
+  //
+  // ⚠ THE EXISTING `vrt.spec.ts/recorderbox.png` CARD BASELINE MUST NOT MOVE.
+  // Nothing in this PR changes the card's markup — the transport extraction is
+  // behaviour-preserving and the mask in `vrt-exemptions.ts` still covers the
+  // one canvas. If the bot modifies it, stop and read why.
+  { type: 'recorderbox', pages: 0, videoFaceWhy:
+      'a VIDEO module, so it must boot into the video zone rather than a mixer channel column — '
+      + 'without this field bootWithFace waits out the full test timeout for a column membership '
+      + 'a video node never acquires. ⚠ AND BOTH SCENES CARRY A LIVE PICTURE, the videoOut shape: '
+      + 'the dock faceplate IS a fullViewBody blitting the video engine every rAF, and the compact '
+      + 'lane tile paints a live VideoTileThumb because this face ranks no controls and so keeps '
+      + 'its glyph strip at every tier. Neither is pixel-deterministic without the video freeze. '
+      + '⚠ IT IS CAPTURABLE DESPITE THE MODULE CARRYING A `vrt-exemptions` CANVAS MASK, and the '
+      + 'distinction is the tvLibrarian/videobox one: that mask is about the CARD scene on a rack '
+      + 'where something may be patched in. A face scene patches NOTHING, so `uHasInput` is 0 and '
+      + 'the idle branch runs — a pure function of position with no clock and no accumulator. The '
+      + 'rest of the surface is equally still at spawn: FILE reads its default, SIZE reads '
+      + 'BALANCED, DIR reads its empty state, both lamps are dark, and the recovery block does not '
+      + 'exist (a fresh context has no OPFS manifests). ⚠ THE THREE TICKING VALUES — elapsed, last '
+      + 'chunk, destination path — are StatusLed `detail` and reach aria-label/title only, so they '
+      + 'are not in the frame to move.',
+    simPin: [
+      {
+        global: '__recorderboxTestEncoder',
+        value: 1,
+        why:
+          'the capability probe is the ONE thing on this surface that is a property of the RUNNER '
+          + 'rather than of the code, and it lands late. `probeEncoders` deliberately does not '
+          + 'trust `VideoEncoder.isConfigSupported` (a false positive on a headless software '
+          + 'runner, which writes an `ftyp` and never a `moof`), so it ANDs it with a real '
+          + 'encode-and-flush smoke test — correct, and asynchronous by an unknown number of '
+          + 'frames. That gives the resting plate TWO legal pictures: probe pending (no fault '
+          + 'lamp, RECORD enabled) and probe answered (possibly a fault lamp, RECORD dimmed). A '
+          + 'baseline would pin whichever the runner was in, which is a coin flip on the machine '
+          + 'and not a regression gate. Pinned to 1 the answer comes from the code: probe skipped, '
+          + '`checked` true, `canRecord` true, one picture. ⚠ It is a TRI-STATE, not a flag — a '
+          + 'FALSY value pins "cannot encode", so the fault surface stays reachable deliberately '
+          + 'rather than only by being on the wrong machine. The seam is a page global read at '
+          + 'probe time (the `__loopbackTestFrame` shape) in '
+          + '$lib/ui/modules/recorderbox-transport.ts, which is `lib/ui` and therefore outside the '
+          + 'WebGL attest basis, so it costs no GPU window.',
+      },
+    ],
+  },
+
+  // ── NIBBLES — the game group's fourth face, and the one whose determinism
+  //    seam ALREADY EXISTED and is ALREADY PROVEN BYTE-IDENTICAL ────────────
+  //
+  // ⚠ BOTH SCENES CARRY A LIVE PICTURE HERE, unlike its three siblings whose
+  // compact tiles are static. frogger, modtris and skifree are AUDIO defs whose
+  // compact tile is faders and jacks — deterministic for free — and only their
+  // DOCK body moves. nibbles is `domain: 'video'`, so `hasVideoSurface` is true
+  // and the COMPACT tile paints a live `VideoTileThumb` of the running game as
+  // well. So both scenes need the pin, not just the dock, and a reader who
+  // copies a sibling's "compact is free" paragraph onto this entry would be
+  // wrong.
+  //
+  // ⚠ AND THE PIN IS TWO HALVES, NEITHER SUFFICIENT ALONE. That is not a guess:
+  // `.myrobots/2026-08-23-nibbles-composite-vrt-nondeterminism.md` diagnosed the
+  // same scene class on this module and MEASURED it byte-for-byte — two runs
+  // differing pre-fix (2ed942ac…/62fc8ce5…), byte-identical post-fix
+  // (14256032…/14256032…). Its method is worth repeating as well as its result:
+  // it classified the DIFF PNG first, which refuted the file's own leading
+  // hypothesis in one look (the difference was LEN 4 → LEN 5 with the pellet
+  // moved — game state, not an analyser offset), and it compared captured PNGs
+  // BYTE-FOR-BYTE rather than repeating the tolerance-gated check, because a
+  // flake hiding inside a tolerance is invisible to a pass/fail loop.
+  //
+  // ⚠ NO `freeze` ParamDef, and the refusal is priced rather than stylistic:
+  // `nibbles.ts` is IN the WebGL attest basis, so a `params` edit costs an
+  // owner-machine GPU re-attest CI cannot run — to buy an assertion the two
+  // globals below already hold. The 4plexvid conclusion, reached from the other
+  // side. `simPin` is an e2e-only boot global and costs neither.
+  {
+    type: 'nibbles',
+    // ONE band, TWO params and one action. `order` and `pages` agree; a rail
+    // needs DOCK_TAB_MIN_BANDS = 7 and nothing is padded to reach one.
+    pages: 1,
+    videoFaceWhy:
+      'a VIDEO module, so it must boot into the video zone rather than a mixer channel column — '
+      + 'without this field bootWithFace waits out the full test timeout for a column membership '
+      + 'a video node never acquires. ⚠ BOTH scenes carry a live picture, which is what separates '
+      + 'this entry from its three sibling GAMES: the compact tile paints a VideoTileThumb '
+      + 'through hasVideoSurface (they are audio defs and get faders), and the dock body is the '
+      + "module's own fullViewBody extension — the 320x200 game screen plus its SCREEN and SCALE "
+      + 'switches. ⚠ THE FREEZE HALF OF THIS FLAG IS A NO-OP HERE and that is deliberate, not an '
+      + 'oversight: nibbles declares no `freeze` param, so freezeFaceVideo\'s `params.freeze = 1` '
+      + "write is rejected by setParam's `if (paramId in params)` guard and lands nowhere. The "
+      + 'still-picture assertion is satisfied by the __videoEngineFreezeTime pin below instead. '
+      + 'Do NOT remove this field on the grounds that the freeze is inert — that is the exact '
+      + 'reasoning that cost 4plexvid both its scenes, and it is about the WRONG HALF of a '
+      + 'two-purpose flag; and do NOT add a `freeze` param to make the freeze real, because a '
+      + '`params` edit on a def inside the WebGL attest basis costs an owner-machine re-attest.',
+    simPin: [
+      {
+        global: '__videoEngineFreezeTime',
+        value: 1.0,
+        why:
+          'pins `frame.time`, so `dt` is identically 0, `tickAccumS` never reaches `tickPeriodS` '
+          + 'and the snake never steps. ⚠ NECESSARY BUT NOT SUFFICIENT, and the asymmetry is the '
+          + 'whole reason this entry has two pins: freezing the clock stops the STEPPING and says '
+          + 'nothing about WHICH frame it stopped on, because `initialSeed()` still falls back to '
+          + '`Date.now()`. ⚠ THIS IS ALSO WHY THE PIN IS ON THE ENGINE CLOCK RATHER THAN THE '
+          + "MODULE: unlike frogger's and modtris' Web Worker setInterval, nibbles' game clock IS "
+          + 'the VIDEO ENGINE\'s — `surface.draw(frame)` accumulates `frame.time - lastDrawTimeS` '
+          + 'into `tickAccumS` and steps the game from there — so the engine freeze reaches it '
+          + 'where a module tick-count hook would have had to be invented. ⚠ DOOM IS EXCLUDED '
+          + 'FROM THIS MECHANISM BY NAME: its runTic() also runs inside surface.draw, so its game '
+          + 'clock IS its frame clock and re-timing it would re-specify the game. No DOOM file '
+          + 'was opened for this entry.',
+      },
+      {
+        global: '__nibblesVrtSeed',
+        value: 0xC0DE,
+        why:
+          'pins `initialSeed()`, so the snake start and every pellet placement are identical run '
+          + 'to run. ⚠ IT MUST BE SET BEFORE SPAWN, and the module is explicit about why: '
+          + '`maybeApplyVrtSeed` re-seeds `state` on a later draw frame but does NOT repaint, so '
+          + "a post-spawn pin would leave the original Date.now() frame on screen. simPin's "
+          + 'addInitScript runs before goto, which is strictly earlier than any afterSpawn hook '
+          + 'manages. ⚠ AND IT IS THE SAME SEED `vrt-composite-scenes.ts` ALREADY PINS, '
+          + 'deliberately: one seed for both deterministic capture paths means a surface a human '
+          + 'has already reviewed. The pair (clock + seed) is proven byte-identical in both '
+          + 'directions by the measurement in '
+          + '.myrobots/2026-08-23-nibbles-composite-vrt-nondeterminism.md — differing pre-fix, '
+          + 'identical post-fix, compared BYTE-FOR-BYTE rather than through the diff tolerance.',
+      },
+    ],
+  },
+
 ] as const;
 
 /**

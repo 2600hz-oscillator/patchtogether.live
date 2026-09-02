@@ -1456,8 +1456,51 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
   },
   {
     type: 'nibbles',
-    disposition: 'bespoke-surface',
-    why: 'a GAME: a snake viewport played on the keyboard; its outputs are taps off the running game.',
+    disposition: 'generic-face',
+    // ⚠ THE OLD `why` WAS FACTUALLY CORRECT AND STILL DREW THE WRONG
+    // CONCLUSION — "a GAME: a snake viewport played on the keyboard; its
+    // outputs are taps off the running game." Every clause of that is true; it
+    // was the ONE entry in this game group whose `why` was true when written.
+    // What it missed is that nibbles declares TWO real params the card paints
+    // as a knob and a button, plus one gesture, so a ranked cell list is
+    // exactly what its control surface IS — and the viewport and the arrow keys
+    // are the `fullViewBody` extension's job, which is the call frogger,
+    // modtris and skifree all reached one wave earlier.
+    note:
+      'DONE. Two ranked params (TICK, AUTO) in ONE band, with the 320x200 game screen, its '
+      + 'SCREEN, SCALE and RESET controls and the ARROW KEYS as a `fullViewBody` extension. '
+      + '⚠ RESET IS A BODY BUTTON RATHER THAN A RANKED ACTION CELL, on a measurement that '
+      + 'overruled the build spec: an action cell needs an AUDITION probe here (reset writes no '
+      + 'param and no node.data), and faces-parity spawns every module with NO `domain`, which '
+      + '`_helpers.ts` defaults to `audio` — so a VIDEO module\'s factory is never constructed in '
+      + 'that sweep and `read(node, "extras")` is undefined. Measured both ways on the default '
+      + 'shell: `domain: video` delivers, the sweep\'s spawn does not. The probe moved into '
+      + '`face-nibbles.spec.ts`, which presses it on a real constructed module. ⚠ IT IS THE ONLY VIDEO-DOMAIN MODULE IN ITS GAME GROUP, '
+      + 'and that is what makes this promotion cheaper than its three siblings\': `laneGlyphFor` '
+      + 'returns \'picture\' for `domain === "video"` BEFORE it reads `face.glyph`, so the lane '
+      + 'tile gets a LIVE PER-NODE VideoTileThumb for free where the shipping shell painted a '
+      + 'blank placeholder — skifree had to author a whole second `tileBody` for the same thing. '
+      + '`face.glyph: \'none\'` is therefore MANDATORY rather than a lazy default, and since '
+      + '"none + blank tile" and "none + live thumb" are indistinguishable from the declaration, '
+      + 'the face-model test asserts `hasVideoSurface` DIRECTLY. ⚠ THE ARROW KEYS ARE THE '
+      + 'INSTRUMENT, NOT KEYBOARD-A11Y: `pushDirection` is the module\'s only manual steering, so '
+      + 'the body is focusable and takes keydown — but at `tabindex="-1"`, not the card\'s "0", so '
+      + 'it is reachable by CLICK and absent from the tab order, and Tab stays the faceplate FLIP '
+      + 'gesture. ⚠ THE CARD\'S `LEN {n}` ROW IS DELETED, NOT RELOCATED, and this is the group\'s '
+      + 'expensive case: `paintFrame` contains no `fillText`, no glyph table and no font, so '
+      + 'unlike frogger and modtris there is no in-canvas HUD to fall back on. The value lives on '
+      + 'the screen\'s aria-label; `nibbles.spec.ts` already read it through `eng.read(node, '
+      + '"score")` rather than off the DOM, so no assertion was weakened. Restoring a PAINTED '
+      + 'score would be a `paintFrame` edit on a file in the WebGL attest basis and is left as a '
+      + 'separate priced change. ⚠ ZERO ATTEST, MEASURED BOTH WAYS: all three nibbles sources are '
+      + 'in the basis, this PR adds only `face` and edits `docs` (both hash-transparent; the '
+      + 'CONTRACT is untouched — no param, no port and no `controlFamilies`) and the hash is '
+      + 'byte-identical to main\'s, while a control edit to '
+      + 'NIBBLES_MAX_LENGTH moves it. ⚠ AND IT REPAIRS TWO LIVE DEFECTS ON THE CARD TOO, because '
+      + 'both surfaces now call ONE gesture seam: the 1x-4x zoom was component `$state` (a dock '
+      + 'collapse or an LRU eviction reset it — #1531/#1574/#1583) and AUTO was a ledgered raw '
+      + '`params` write that promotion would have made unreachable-without-paying rather than '
+      + 'paid; the raw-write-ledger entry is deleted in the same commit.',
   },
   {
     type: 'numpadPlus',
@@ -1625,12 +1668,35 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
   },
   {
     type: 'recorderbox',
-    disposition: 'bespoke-surface',
-    blockers: ['needs-media-controller'],
-    why:
-      'a RECORDER: arm/record/stop transport, quality selection, a typed filename, a take list and ' +
-      'a save flow — and the capture canvas plus its per-frame encode loop live on the card, so ' +
-      'the recording exists only while it is mounted.',
+    disposition: 'generic-face',
+    note:
+      'PROMOTED (wave 5). ⚠ EVERY CLAUSE OF THE OLD `why` AFTER THE DASH WAS FALSE, AND #1574/#1584 ' +
+      '(bdef392f6) IS WHAT MADE IT FALSE — the entry described a card that had already been ' +
+      'rewritten, and nothing re-read it. It said "the capture canvas plus its per-frame encode ' +
+      'loop live on the card, so the recording exists only while it is mounted": the capture ' +
+      'canvas is created by `node-recorder-registry`, NEVER enters the document and is pumped by ' +
+      'the registry under its own `acquireRenderLease`, the card\'s line 257 says "CAPTURE IS NOT ' +
+      'HERE" in capitals, and the recording surviving card unmount is the registry\'s entire ' +
+      'purpose — it exposes no teardown precisely so a future card cannot undo it. "A take list" ' +
+      'was wrong too: that block is a crash-RECOVERY list read from OPFS manifests, empty after a ' +
+      'clean boot. This is the entry the tree\'s own stale-`why` class is NAMED after (see the ' +
+      'note at the top of this file), and it is rewritten here rather than deleted. ' +
+      '⚠ `needs-media-controller` NEVER APPLIED EITHER: recorderbox is a SINK — it consumes the ' +
+      'engine\'s FBO via `blitOutputForPreview` and owns no <video>, no MediaStream source and no ' +
+      'element to adopt — so it is in neither half of HEADLESS_MOUNT_LANE_TYPES, and in neither ' +
+      'DOM_SOURCE_LANE_TYPES nor CARD_PRODUCER_LANE_TYPES. The blocker described a module this ' +
+      'never was, and it is dropped from this entry WITHOUT being deleted from MIGRATION_BLOCKERS ' +
+      '(other entries still cite it). ' +
+      '⚠ WHAT WAS ACTUALLY LOAD-BEARING is what no def-reading gate could see: because ' +
+      'recorderbox is in none of those sets, promotion stops RecorderboxCard being mounted ' +
+      'ANYWHERE, and SIX things lived only in it — the `probeEncoders` support probe and the ' +
+      '`listRecoverable` crash scan (each the tree\'s ONLY caller), the ~120-line start ' +
+      'orchestration, the folder re-pick, the <a download> fallback, and the $effect reacting to ' +
+      'the Y.Doc-synced `node.data.recording`. All six moved to ' +
+      '$lib/ui/modules/recorderbox-transport.ts, which the legacy card and both faceplate bodies ' +
+      'call. The surface is face + `fullViewBody` + `tileBody`: `params: []` means `order: []` ' +
+      '(the videoOut shape), and the tile body is not optional because Canvas auto-spawns a ' +
+      'recorderbox into every fresh workflow rack.',
   },
   {
     type: 'score',
