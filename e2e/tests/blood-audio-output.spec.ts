@@ -410,12 +410,13 @@ test('BLOOD audio_l → SCOPE: the game-audio mixer produces audible signal in-g
 // Test: drive into a level, then STAND STILL (no fire / no movement) and sample
 // the SCOPE — continuous music keeps RMS above the floor on (nearly) every
 // sample, whereas sparse ambient SFX would not. Asserts the SUSTAINED fraction.
-// ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; the body and its assertions are UNCHANGED.
-// NONDETERMINISM: 4 recovered-on-retry observation(s) across 3 SHA(s) / 2 branch(es) in the
-// 96 h CI census to 2026-08-18 — never a hard failure, so every one of those jobs reported SUCCESS.
-// LOST WHILE PARKED: the whole OPL3 music path from BLOOD's software-MIDI synth through driver_sdl's device-less wasm pump, the blood-pcm worklet and out to audio_l — the half of the Phase-2 wiring a silent regression would leave looking green.
-// Re-enable only on a root cause (#1847); "it passes now" is not one.
-test.fixme('BLOOD music: in-level OPL3 music produces SUSTAINED audio on audio_l (standing still)', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 4 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page, rack }) => {
+// ▶ UN-PARKED (was FLAKE-PARK #1847; 4 recovered-on-retry observations in the 96 h census to
+// 2026-08-18, never a hard failure). Root cause found, not waited out: the pump posted a fixed
+// 735 frames (44100/60) per setInterval tick into a ring drained at the 48 kHz context rate, so
+// production ran at ~62% of demand and the ring intermittently underflowed to silence — which a
+// retry could win on scheduling luck. blood-pcm-schedule.ts makes the pump rate-exact off the
+// context clock, removing the nondeterminism at its source. Body and assertions UNCHANGED.
+test('BLOOD music: in-level OPL3 music produces SUSTAINED audio on audio_l (standing still)', async ({ page, rack }) => {
   test.setTimeout(90_000);
   await spawnPatch(
     page,
