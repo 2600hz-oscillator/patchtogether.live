@@ -24,9 +24,14 @@
 //   * the LOAD PROGRESS and FAILURE prose, which name which item is being
 //     fetched and what a failed search should be changed to.
 //
-// `ModuleShell`'s `controlCell` renders a `static` face cell as a dead dashed
-// label by design, so there is no generic cell that could hold any of them. The
-// extension is the last rung of the ladder and the only rung that fits.
+// None of them is expressible as a generic cell. `ShellSelectorCell.options` is
+// typed `(node: ModuleNode | undefined) => SelectorOption<string>[]` — PURE and
+// SYNCHRONOUS (shell-cells.ts:269), so it cannot express a runtime fetch; and a
+// `static` face key renders as the deliberately INERT dashed label whenever no
+// spec is registered for it (ModuleShell.svelte:757, :1930), which is the case
+// for every affordance above and would stay the case unless a new cell kind
+// were invented for this one module. The extension is the last rung of the
+// ladder and the only rung that fits.
 //
 // ⚠ WHY "THE CARD STILL HAS THOSE" IS NOT AN ANSWER — the cameraInput/loopback
 // argument, on the third and last member of `DOM_SOURCE_LANE_TYPES`. Promotion
