@@ -5297,6 +5297,68 @@ export const FACES = [
     ],
   },
 
+  // ── SEQTRIS — the entry whose determinism argument is that IT ALREADY HAD
+  //    ONE, and which therefore takes NO PIN ─────────────────────────────────
+  //
+  // ⚠ THIS IS THE RARE CASE WHERE THE RIGHT ANSWER IS "ADD NO SEAM", and it is
+  // stated at length precisely because the three nearest neighbours in this
+  // file (modtris, pong, gibribbon) all take one, and a reader copying the
+  // shape here would be adding machinery to pin a thing that does not move.
+  //
+  // ⚠ UNLIKE modtris, pong, frogger AND skifree, SEQTRIS WAS NEVER IN
+  // `EXEMPT_FROM_VRT`. There is nothing to discharge, and the CARD baseline
+  // (`vrt.spec.ts/seqtris.png`) has been green since the module shipped. The
+  // card's own header says why, and the claim is DERIVED rather than trusted in
+  // `packages/web/src/lib/ui/modules/seqtris-face-model.test.ts` (CLAIM 8):
+  //
+  //   * `createSeqtrisState` seeds from `SEQTRIS_DEFAULT_SEED = 0x5e9721` — a
+  //     FIXED constant — and the engine contains no `Math.random` at all. So
+  //     modtris' `__modtrisVrtSeed` half has NO COUNTERPART here: there is no
+  //     trajectory to choose, because there is only one.
+  //   * the game advances ONLY on a clock edge — `tick()` returns early on
+  //     `edges <= 0` — and a face scene patches nothing into `clock`. So
+  //     modtris' `__modtrisVrtTicks` half has no counterpart either: the board
+  //     is TIME-INVARIANT at rest by construction rather than by being stepped
+  //     to a chosen position and then stopped. (Measured further: gravity is a
+  //     clock DIVISOR, so even a scene that DID patch a clock would hold the
+  //     same picture for the first seven pulses at the default GRAV of 8.)
+  //
+  // ⚠ NO `videoFaceWhy`. That field boots the VIDEO ZONE and turns on
+  // `freezeFaceVideo`, which WRITES `params.freeze`; seqtris declares no
+  // `freeze` param, so the write would invent an undeclared key and the
+  // assertion after it would be measuring a freeze that never happened — the
+  // `timelorde` hazard, verbatim. This is an AUDIO def and reaches its channel
+  // column on the ordinary path.
+  //
+  // ⚠ AND NO `freeze` ParamDef EITHER, on this file's own measured rule: a
+  // `params` edit is a contract-lock change bought for a WEAKER guarantee (it
+  // holds whichever frame the harness caught, a different frame per boot),
+  // which is precisely what this module does not need.
+  //
+  // ── WHAT EACH SCENE PINS, AND THEY ARE NOT THE SAME ARGUMENT ─────────────
+  //
+  // `face-seqtris-compact` — ⚠ THE TILE HAS A PICTURE, which is the divergence
+  // from modtris' compact entry and the reason that entry's paragraph must NOT
+  // be copied here. `glyph: 'none'` means no glyph, but the `tileBody` paints
+  // the live 8x8 well plus the bind lamp, so this baseline really does carry
+  // the board. It is deterministic for the SEEDED-BAG reason above, not for
+  // modtris' "there is nothing to draw on a lane tile" reason.
+  //
+  // `face-seqtris-dock` — the well at 176 px, the eight-row hardware scene
+  // column (both dead spacers included) and the bind row. ⚠ THE ONE REAL
+  // DETERMINISM RISK ON THIS MODULE WAS NEVER THE GAME: it was
+  // `seqtrisStatusMessage()`, which returns `unsupported` when
+  // `webMidiPresent()` is false and `idle` when it is true — TWO DIFFERENT
+  // STRINGS IN THE SAME PIXEL REGION, decided by the runner rather than by the
+  // code. ⚠ THAT RISK IS NOW STRUCTURALLY ABSENT rather than merely settled:
+  // the promotion DELETED the painted status paragraph (all six strings moved
+  // to the lamp's `StatusLed` detail, reaching aria-label and title only), so
+  // neither string is in the frame to move. The lamp is DARK in both states —
+  // `lit` is `kind === 'bound'`, and a VRT boot binds nothing — so the picture
+  // is identical either way. Stated because it is the reason this entry needs
+  // no settle assertion of its own.
+  { type: 'seqtris', pages: 1 },
+
 ] as const;
 
 /**
