@@ -4975,7 +4975,29 @@ export const FACES = [
       + 'static text. ⚠ THE START-PAST-END WARNING IS ABSENT AT SPAWN AND THAT IS DETERMINISTIC, '
       + 'not lucky: start defaults to 0 and end to 1, so `resolveWindow` returns hasWindow true '
       + 'for any duration. ⚠ NO simPin AND NO NETWORK: the only asynchronous inputs this surface '
-      + 'has are user gestures and a decoded file, and a scene performs neither.',
+      + 'has are user gestures and a decoded file, and a scene performs neither. '
+      + '⚠⚠ AND THE PARAGRAPH ABOVE WAS TRUE ABOUT THE SHADER AND WRONG ABOUT THE SCENE, WHICH '
+      + 'IS THE WHOLE OF THE 2026-09-02 DEFECT. "A pure function of position with no clock" '
+      + 'describes what the idle branch PAINTS; it says nothing about WHEN it has painted, and '
+      + 'this scene\'s picture reaches the PNG through a preview well that is NOT synchronous '
+      + 'with the engine. MEASURED (VideoTileThumb instrumented per rAF; the trace is in that '
+      + 'component\'s header): the well is a flat #050608 from its first draw tick, because that '
+      + 'tick blits an FBO the engine has not yet rendered into, and `VIDEO_THUMB_FPS` then '
+      + 'throttles the next tick by 66.7 ms of WALL CLOCK. `freezeFaceVideo`\'s six-frame settle '
+      + 'window fits inside that interval whenever a frame is under ~11 ms, so on a lightly '
+      + 'loaded shard it sampled two identical UNPAINTED wells, called the surface still, and '
+      + 'photographed a blank well — 1011 px against a baseline whose well is painted (972 px of '
+      + 'the idle gradient plus 72 px of letterbox bar). GREEN ON SHARD 11 (run 33654251659), RED '
+      + 'ON SHARD 8/12 of the re-binned run 33658977822, byte-identical tree: rAF rate, not '
+      + 'code. The scene now waits for `data-thumb-painted` (see `awaitFaceVideoPainted`) before '
+      + 'freezing, so the determinism claim is about an OBSERVED first paint rather than about '
+      + 'the shader alone. '
+      + '⚠ ALSO CORRECTED: this def declares NO `freeze` param (its params are speed/start/end, '
+      + 'their three CV twins, four gate params and the two asset params), so `freezeFaceVideo`\'s '
+      + '`params.freeze = 1` write lands on a key nothing reads — the bentbox/warrensvisions '
+      + 'no-op case. What actually holds this picture still is that there is no clip to decode, '
+      + 'which is the argument above; the freeze is a belt with no trousers and is kept only for '
+      + 'the stillness ASSERTION it ends with.',
   },
   // ── NUMPAD+ — the KEYPAD PERFORMANCE SEQUENCER ────────────────────────────
   //
@@ -6217,8 +6239,195 @@ const VIDEO_FREEZE_SETTLE_FRAMES = 6;
  *
  * A COUNT OF WINDOWS, not a wall-clock budget, so it is the same assertion on
  * every renderer. Six windows is ~36 frames.
+ *
+ * ⚠⚠ AND THE "IT DOES NOT WEAKEN THE ASSERTION" PARAGRAPH ABOVE HAS ONE HOLE,
+ * MEASURED 2026-09-02: it is true of a surface that is MOVING and false of one
+ * that has not started. A well before its first paint is perfectly still, so
+ * this loop returns "same" on its FIRST window and the scene photographs a
+ * blank. The parenthetical about `minIntervalMs` above spotted the wall-clock
+ * cadence and drew the wrong conclusion from it — the six-frame window does not
+ * merely make the answer renderer-dependent, it makes it WRONG on a fast one.
+ * `awaitFaceVideoPainted` closes that for the lane wells; see it for the trace
+ * and for the bespoke dock previews it does not reach.
  */
 const VIDEO_FREEZE_ATTEMPTS = 6;
+
+/**
+ * Upper bound, in real animation frames, on how long a video face's preview
+ * well may take to publish its first honest frame.
+ *
+ * A BUDGET, not a wait: the wait itself is the auto-retrying condition below,
+ * and this only decides how long a BROKEN scene takes to say so. Frames rather
+ * than ms so it is the same bound on every renderer, and generous because the
+ * thing being bounded is a wall-clock preview cadence (66.7 ms per thumbnail
+ * repaint) observed through a frame clock whose rate is unknown: 900 frames is
+ * ~15 s at 60 fps and ~7 s at 120 fps, both far beyond the ~230 ms the measured
+ * sequence needs, and the scene's own `faceSceneTimeout` is the real ceiling.
+ */
+const VIDEO_PAINT_FRAMES = 900;
+
+/**
+ * How many consecutive frames a capture root must go on holding NO preview well
+ * before "there is no well here" is believed.
+ *
+ * A single query is a snapshot, and a snapshot taken during a mount reads
+ * exactly like the steady state — the failure shape this whole helper exists to
+ * end. Six frames is the same settle `freezeFaceVideo` uses, and it costs
+ * nothing: by the time this runs the tile has been framed and the audio freeze
+ * has settled several windows on top of it.
+ */
+const VIDEO_WELL_SETTLE_FRAMES = 6;
+
+/**
+ * Wait until every preview well inside a face scene's CAPTURE ROOT is showing a
+ * REAL rendered frame, and prove it — the step that runs BEFORE
+ * `freezeFaceVideo`, because freezing an unpainted well produces a picture that
+ * is perfectly still and completely blank.
+ *
+ * ⚠ THIS EXISTS BECAUSE A STILLNESS CHECK CANNOT SEE FIRST PAINT, and the hole
+ * is the one `freezeFaceVideo`'s own doc-comment names ("a scene whose video
+ * never rendered at all … satisfies it VACUOUSLY"). MEASURED at its cause
+ * (2026-09-02, `face-videovarispeed-compact`, `VideoTileThumb` instrumented per
+ * rAF; the full trace is in that component's header):
+ *
+ *   * the well is a flat `#050608` from the tile's FIRST draw tick — before the
+ *     engine has drawn the node's surface even once, because that tick blits an
+ *     FBO nothing has rendered into;
+ *   * `VIDEO_THUMB_FPS` throttles that loop to one draw per 66.7 ms of WALL
+ *     CLOCK, no matter how fast rAF runs;
+ *   * so `freezeFaceVideo`'s six-frame settle window fits entirely inside one
+ *     throttle interval whenever a frame is shorter than ~11 ms, and two
+ *     identical unpainted samples end its loop with "still".
+ *
+ * That is a frames-versus-wall-clock mismatch in the INSTRUMENT, and it is why
+ * the scene was green on VRT shard 11 (run 33654251659) and red on shard 8/12 of
+ * the re-binned run 33658977822 with a byte-identical tree — 1011 px, ratio
+ * 0.15, read from that job's own log: the less loaded shard runs rAF faster and photographs the well one repaint too early. The committed baseline
+ * is the PAINTED state — measured, 972 px of the module's idle gradient plus 72
+ * px of letterbox bar filling a 36x29 well — so the FAST shard is the one that
+ * fails, by the 1011 px the failing run reported.
+ *
+ * ⚠ IT WAITS ON STATE THE PRODUCT PUBLISHES, NOT ON A DELAY. `VideoTileThumb`
+ * sets `data-thumb-painted` once, on the first tick whose source was a surface
+ * the engine had actually drawn — or, for a texture-less node like
+ * `outToLaunch`, on the first tick at all, because there the dark well IS the
+ * picture. Nothing else can stand in for it: the throttle lives in the
+ * component, so no amount of ENGINE state implies the well has consumed a
+ * frame, and the well's own pixels cannot distinguish "still because it is up
+ * to date" from "still because it is throttled".
+ *
+ * ⚠ SCOPED TO THE CAPTURE ROOT, DELIBERATELY. A well elsewhere in the document
+ * — the lane tile sitting behind an open dock drawer — is not photographed, and
+ * requiring it to paint would hang any scene whose tile has been scrolled out
+ * of the viewport: the tap is IntersectionObserver-gated, so an off-screen tile
+ * legitimately never ticks. The caller passes the root it is about to
+ * photograph.
+ *
+ * ⚠ AND WHAT IT IS STRUCTURALLY UNABLE TO SEE, stated because a green run looks
+ * identical either way. A capture root with NO well in it is REPORTED and
+ * skipped rather than silently satisfied, and two real cases land there: `pong`,
+ * which declares `videoFaceWhy` for the BOOT path but is `domain: 'audio'` and
+ * has no picture at all, and most DOCK roots, whose picture is the face's own
+ * `fullViewBody` canvas rather than a `video-tile-thumb` (the dock hero does not
+ * paint the shell glyph when the face brought its own picture, PF-20). Those
+ * surfaces keep only the protection `freezeFaceVideo` gives them, which for a
+ * bespoke dock preview is a 33.3 ms `PREVIEW_MIN_INTERVAL_MS` cadence against
+ * the same six-frame window — the same class of race with twice the margin, and
+ * never yet observed to flip. Closing it needs the same first-paint statement
+ * from each bespoke body, which is a separate and much wider change.
+ *
+ * ⚠ THE ENGINE'S DRAW COUNT IS REPORTED, NOT ASSERTED, and that is a choice.
+ * `framesDrawnFor(nodeId) >= 1` is implied by any stamped well that HAS a
+ * texture, so as an assertion it would add nothing here — while on a root with
+ * no well it would be the only leg, i.e. a brand-new way for any of the 59
+ * `videoFaceWhy` scenes to go red for a reason this change never measured. It
+ * rides in the failure message instead, where it separates "the well never
+ * ticked" from "the engine never drew the node".
+ */
+export async function awaitFaceVideoPainted(
+  page: Page,
+  nodeId: string,
+  rootSelector: string,
+  label: string,
+): Promise<void> {
+  const seen = await page.evaluate(async (
+    { id, root, budget, settleFrames }:
+      { id: string; root: string; budget: number; settleFrames: number },
+  ) => {
+    const w = globalThis as unknown as {
+      __engine?: () => { getDomain: (d: string) => { framesDrawnFor: (i: string) => number } };
+    };
+    const drawnFor = (): number => {
+      try {
+        return w.__engine?.().getDomain('video').framesDrawnFor(id) ?? -1;
+      } catch {
+        return -1;
+      }
+    };
+    const wells = (): HTMLCanvasElement[] => {
+      const el = document.querySelector(root);
+      if (!el) return [];
+      return Array.from(
+        el.querySelectorAll('canvas[data-testid="video-tile-thumb"]'),
+      ) as HTMLCanvasElement[];
+    };
+    const unpaintedIn = (list: HTMLCanvasElement[]): HTMLCanvasElement[] =>
+      list.filter((c) => c.dataset.thumbPainted !== '1');
+    const frame = () => new Promise((r) => requestAnimationFrame(() => r(null)));
+
+    // ── IS THERE A WELL HERE AT ALL? Settled, never sampled once. ──────────
+    let frames = 0;
+    let list = wells();
+    while (frames < settleFrames && list.length === 0) {
+      await frame();
+      frames++;
+      list = wells();
+    }
+
+    // ── THE WAIT ITSELF, IN THE PAGE ───────────────────────────────────────
+    // Never a Playwright poll loop: that is one round-trip per sample on the
+    // same main thread as the subject, and it starves the very repaint it is
+    // waiting for.
+    let unpainted = unpaintedIn(list);
+    while (frames < budget && unpainted.length > 0) {
+      await frame();
+      frames++;
+      list = wells();
+      unpainted = unpaintedIn(list);
+    }
+    return {
+      drawn: drawnFor(),
+      frames,
+      rootFound: !!document.querySelector(root),
+      wells: list.length,
+      unpainted: unpainted.map((c) => c.getAttribute('data-thumb-node') ?? '?'),
+    };
+  }, {
+    id: nodeId,
+    root: rootSelector,
+    budget: VIDEO_PAINT_FRAMES,
+    settleFrames: VIDEO_WELL_SETTLE_FRAMES,
+  });
+
+  // THE POSITIVE CONTROL FOR THE SCOPING, the same one `freezeFaceVideo` takes:
+  // a wait scoped to a subject that is not there is trivially satisfied, and
+  // "nothing left to paint" is exactly what this would then report.
+  expect(
+    seen.rootFound,
+    `${label}: awaitFaceVideoPainted never found its capture root '${rootSelector}'. An absent `
+      + `root holds no wells to wait for, so this is a broken instrument rather than a ready one.`,
+  ).toBe(true);
+
+  expect(
+    seen.unpainted,
+    `${label}: ${seen.unpainted.length} of ${seen.wells} preview well(s) inside `
+      + `'${rootSelector}' had still not published a rendered frame after ${seen.frames} real `
+      + `frames. VIDEO_THUMB_FPS throttles each well to one draw per 66.7 ms of WALL CLOCK, so `
+      + `a well that never stamps is a well the engine has nothing to give (framesDrawnFor`
+      + `('${nodeId}') = ${seen.drawn}; -1 = the video domain was unreachable) or a tile whose `
+      + `tap never ran. Capturing now would photograph the pre-paint well.`,
+  ).toEqual([]);
+}
 
 /**
  * Pin a face scene's LIVE VIDEO SURFACE by writing the module's own `freeze`

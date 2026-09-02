@@ -159,6 +159,7 @@ import {
   LEGACY_FOLD_PX,
   LEGACY_FOLD_VIEWPORT,
   assertFaceAudioFrozen,
+  awaitFaceVideoPainted,
   bootWithFace,
   faceSceneTimeout,
   frameMember,
@@ -457,7 +458,22 @@ test.describe('VRT: P1 curated faces (?shell=1) — compact lane tile + dock ful
       // ── AND THE VIDEO SURFACE, for a scene that declares one ────────────
       // An AudioContext suspend says nothing about a rAF-driven picture; see
       // freezeFaceVideo. Opt-in per scene, with the reason on the roster entry.
-      if (videoFaceWhy) await freezeFaceVideo(page, memberId, `face-${type}-compact`);
+      //
+      // ⚠ PAINTED FIRST, THEN FROZEN, AND THE ORDER IS THE FIX. Freezing an
+      // unpainted well yields a picture that is perfectly still and completely
+      // blank, which `freezeFaceVideo` accepts — see `awaitFaceVideoPainted`
+      // for the measurement, and for the shard-speed dependence it produced on
+      // `face-videovarispeed-compact`. This is the tier the lane thumbnail is
+      // IN, so it is the tier the wait actually bites on.
+      if (videoFaceWhy) {
+        await awaitFaceVideoPainted(
+          page,
+          memberId,
+          `.svelte-flow__node[data-id="${memberId}"]`,
+          `face-${type}-compact`,
+        );
+        await freezeFaceVideo(page, memberId, `face-${type}-compact`);
+      }
       const tile = page.locator(`.svelte-flow__node[data-id="${memberId}"] [data-testid="module-shell"]`);
       await expect(tile).toHaveScreenshot(`face-${type}-compact.png`, {
         maxDiffPixels: COMPACT_MAX_DIFF,
@@ -608,7 +624,24 @@ test.describe('VRT: P1 curated faces (?shell=1) — compact lane tile + dock ful
       await freezeFaceAudio(page, `face-${type}-dock`);
       // The dock faceplate is where a fullViewBody extension paints, so this is
       // the scene the video freeze actually exists for.
-      if (videoFaceWhy) await freezeFaceVideo(page, memberId, `face-${type}-dock`);
+      //
+      // ⚠ THE FIRST-PAINT WAIT RUNS HERE TOO, AND ON MOST DOCK SCENES IT IS A
+      // REPORTED NO-OP. The dock capture root usually holds the face's OWN
+      // `fullViewBody` canvas rather than a `video-tile-thumb` (the dock hero
+      // does not paint the shell glyph when the face brought its own picture,
+      // PF-20). It is called anyway rather than compact-only, because the dock
+      // hero DOES paint the shell glyph for a video face that brought no body,
+      // and that well is inside this capture. See `awaitFaceVideoPainted`'s
+      // scope note for what the no-op case leaves open.
+      if (videoFaceWhy) {
+        await awaitFaceVideoPainted(
+          page,
+          memberId,
+          '[data-testid="dock-full-view"]',
+          `face-${type}-dock`,
+        );
+        await freezeFaceVideo(page, memberId, `face-${type}-dock`);
+      }
       await settle(page);
       await expect(faceplate).toHaveScreenshot(`face-${type}-dock.png`, {
         maxDiffPixels: DOCK_MAX_DIFF,
