@@ -40,6 +40,7 @@
     archivistStatus,
     ARCHIVIST_STATUS_IDLE,
     ARCHIVIST_MEDIA_TYPES,
+    type ArchivistStatus,
   } from '$lib/ui/media/archivist-status-registry';
   import type { ArchivistMediaType } from '$lib/video/modules/archivist-query';
   import { formatTime, SKIP_STEP_S, clampSeek } from '$lib/video/modules/archivist-scrub';
@@ -85,21 +86,41 @@
 
   // ---- The card's published status, read THROUGH the registry ----
   //
-  // Subscribed rather than mirrored into `$state`, so there is no moment at
-  // which this surface's answer and the card's answer can differ. `null` is a
-  // REAL state — no card has published, i.e. none is mounted — and it renders
-  // as idle with every gesture disabled rather than as a live-looking surface
-  // whose buttons go nowhere.
-  let statusTick = $state(0);
-  $effect(() => archivistStatus.subscribe(nodeId, () => { statusTick += 1; }));
-  let status = $derived.by(() => {
-    void statusTick;
-    return archivistStatus.read(nodeId) ?? ARCHIVIST_STATUS_IDLE;
+  // `null` is a REAL state — no card has published, i.e. none is mounted — and
+  // it renders as idle with every gesture disabled rather than as a live-
+  // looking surface whose buttons go nowhere.
+  //
+  // ⚠ THE SUBSCRIBER ASSIGNS; IT NEVER READ-MODIFY-WRITES. This is a
+  // correctness requirement, not a style note, and it is written down because
+  // the first draft got it wrong and took the whole rack down with it. The
+  // block shipped as `let statusTick = $state(0)` bumped by `statusTick += 1`,
+  // and `notify()` runs SYNCHRONOUSLY inside the PUBLISHER's own `$effect` —
+  // ArchivistCard's publish, registerCommands and the lease release all call
+  // it. So `statusTick += 1` executed inside that effect's TRACKED run, reading
+  // `statusTick` and writing it in one expression. Svelte then has an effect
+  // that reads and writes the same state: every archivist spawn died with
+  // `effect_update_depth_exceeded` and took the rack's render down with it.
+  //
+  // A bare ASSIGNMENT has no such read, so the publisher's effect never
+  // acquires this state as a dependency. It is also exactly what the two
+  // shipped siblings do — `CameraSourceControls.svelte` and
+  // `LoopbackOutputBody.svelte` each hold a `$state` and `sync()` it — and it
+  // costs nothing in freshness, because `sync()` runs synchronously in the
+  // notify: there is still no moment at which this surface's answer and the
+  // card's can differ.
+  let live = $state<ArchivistStatus | null>(null);
+  let commandable = $state(false);
+  $effect(() => {
+    const id = nodeId;
+    const sync = (): void => {
+      live = archivistStatus.read(id);
+      commandable = archivistStatus.hasCommands(id);
+    };
+    sync();
+    return archivistStatus.subscribe(id, sync);
   });
-  let hasCommands = $derived.by(() => {
-    void statusTick;
-    return archivistStatus.hasCommands(nodeId);
-  });
+  let status = $derived<ArchivistStatus>(live ?? ARCHIVIST_STATUS_IDLE);
+  let hasCommands = $derived(commandable);
 
   let loading = $derived(status.loading);
   let errorMsg = $derived(status.errorMsg);

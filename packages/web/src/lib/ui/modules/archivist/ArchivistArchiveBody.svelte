@@ -39,7 +39,11 @@
   import { useEngine } from '$lib/audio/engine-context';
   import type { VideoEngine } from '$lib/video/engine';
   import { VIDEO_RES } from '$lib/video/engine';
-  import { archivistStatus, ARCHIVIST_STATUS_IDLE } from '$lib/ui/media/archivist-status-registry';
+  import {
+    archivistStatus,
+    ARCHIVIST_STATUS_IDLE,
+    type ArchivistStatus,
+  } from '$lib/ui/media/archivist-status-registry';
   import type { ArchivistData } from '$lib/video/modules/archivist';
   import { buildDetailsUrl, hasCleanOutput } from '$lib/video/modules/archivist-query';
   import { drawPreviewDownscaled } from '../preview-downscale';
@@ -84,12 +88,21 @@
   let detailsUrl = $derived<string>(itemIdentifier ? buildDetailsUrl(itemIdentifier) : '');
 
   // The card's browser-local progress, for the transient overlays only.
-  let statusTick = $state(0);
-  $effect(() => archivistStatus.subscribe(nodeId, () => { statusTick += 1; }));
-  let status = $derived.by(() => {
-    void statusTick;
-    return archivistStatus.read(nodeId) ?? ARCHIVIST_STATUS_IDLE;
+  //
+  // ⚠ ASSIGN, NEVER READ-MODIFY-WRITE — the full argument is in
+  // `ArchivistBrowseControls.svelte`, which shipped the counter version of this
+  // block and killed the rack with `effect_update_depth_exceeded`. `notify()`
+  // runs synchronously inside ArchivistCard's own publishing `$effect`, so a
+  // `tick += 1` here is a tracked read AND write inside that effect. A bare
+  // assignment is not.
+  let live = $state<ArchivistStatus | null>(null);
+  $effect(() => {
+    const id = nodeId;
+    const sync = (): void => { live = archivistStatus.read(id); };
+    sync();
+    return archivistStatus.subscribe(id, sync);
   });
+  let status = $derived<ArchivistStatus>(live ?? ARCHIVIST_STATUS_IDLE);
 
   // ── THE ITEM NAME LIVES ON THE ACCESSIBLE NAME, NOT IN A TEXT NODE ────────
   //
