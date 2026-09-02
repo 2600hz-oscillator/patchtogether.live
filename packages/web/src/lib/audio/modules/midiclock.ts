@@ -47,6 +47,7 @@ import {
 // note-jitter under load). See packages/web/src/lib/audio/midi-timing.ts.
 import { createMidiScheduler } from '$lib/audio/midi-timing';
 import { createMidiInputClaim } from '$lib/midi/input-attach';
+import { bindMidiPort, type ConnectedDevice } from '$lib/graph/device-rebind';
 import { requestMidiAccess, midiOutcomeMessage } from '$lib/audio/midi-access';
 import type { ModuleFace, ParamDef } from '$lib/graph/types';
 // Re-exported for callers/tests that historically imported these from midiclock.
@@ -516,12 +517,25 @@ export const midiclockDef: AudioModuleDef = {
       claim.attachOnly(inp ? [inp] : [], handleMidiMessage);
     }
 
+    /**
+     * Which input port to bind — the SHARED seam (`bindMidiPort`), not a
+     * fourth hand-rolled copy of "saved id if still there, else the first one".
+     *
+     * ⚠ THE SAVED **NAME** IS THE DURABLE RECORD, NOT THE ID.
+     * `MIDIInput.id` is implementation-defined and Chrome regenerates it,
+     * which is why this module's surface writes `data.lastDeviceName` at pick
+     * time. Until this call site existed nothing ever read that name back, so a
+     * reloaded patch could only ever fall through to "the first port" — the
+     * WRONG hardware, silently. See `bindMidiPort`'s header.
+     */
     function pickDefaultDevice(): string | null {
       if (!access) return null;
-      if (selectedDeviceId && access.inputs.has(selectedDeviceId)) return selectedDeviceId;
-      const first = access.inputs.values().next();
-      if (first.done) return null;
-      return first.value.id;
+      const connected: ConnectedDevice[] = [];
+      for (const [id, inp] of access.inputs) connected.push({ id, name: inp.name ?? id });
+      return bindMidiPort(
+        { id: selectedDeviceId, name: savedData.lastDeviceName ?? null },
+        connected,
+      ).id;
     }
 
     async function connect(): Promise<boolean> {
