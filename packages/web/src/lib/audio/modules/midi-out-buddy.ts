@@ -55,6 +55,7 @@ import { getSchedulerClock } from '$lib/audio/scheduler-clock';
 import { createPolyReceiver, POLY_CHANNEL_PAIRS } from '$lib/audio/poly';
 import { createRisingEdgeDetector } from './transport-helpers';
 import { requestMidiAccess, midiOutcomeMessage } from '$lib/audio/midi-access';
+import { bindMidiPort, type ConnectedDevice } from '$lib/graph/device-rebind';
 
 // ---------------- Web MIDI minimal types (output side) ----------------
 //
@@ -707,12 +708,25 @@ export const midiOutBuddyDef: AudioModuleDef = {
     const unsubscribeTick = getSchedulerClock().subscribe(tick);
 
     // ---------------- Device selection / hot-plug ----------------
+    /**
+     * Which output port to bind — the SHARED seam, not a fourth hand-rolled
+     * copy of "saved id if still there, else the first one".
+     *
+     * ⚠ THE SAVED **NAME** IS THE DURABLE RECORD, NOT THE ID. `MIDIOutput.id`
+     * is implementation-defined and Chrome regenerates it, which is why the
+     * body writes `data.lastDeviceName` at pick time. Until this call site
+     * existed nothing ever read that name back, so a reloaded patch bound a
+     * port id that no longer existed — see `bindMidiPort`'s header for the
+     * measured consequence (a blank picker and total silence).
+     */
     function pickDefaultDevice(): string | null {
       if (!access) return null;
-      if (selectedDeviceId && access.outputs.has(selectedDeviceId)) return selectedDeviceId;
-      const first = access.outputs.values().next();
-      if (first.done) return null;
-      return (first.value as MidiOutputLike).id;
+      const connected: ConnectedDevice[] = [];
+      for (const [id, o] of access.outputs) connected.push({ id, name: o.name ?? id });
+      return bindMidiPort(
+        { id: selectedDeviceId, name: savedData.lastDeviceName ?? null },
+        connected,
+      ).id;
     }
 
     async function connect(): Promise<boolean> {
@@ -752,7 +766,14 @@ export const midiOutBuddyDef: AudioModuleDef = {
           }
           notify();
         };
-        if (!selectedDeviceId) selectedDeviceId = pickDefaultDevice();
+        // ⚠ UNCONDITIONAL, like all three sibling MIDI modules. The guard that
+        // used to stand here (`if (!selectedDeviceId)`) made a STALE SAVED ID —
+        // truthy, but naming a port this session does not have — block the pick
+        // outright, leaving the module bound to a phantom: blank picker, no
+        // bytes, "connected" lamp. `pickDefaultDevice` is now the shared
+        // resolver, so re-running it on an id that IS still enumerated is an
+        // exact-id match and changes nothing.
+        selectedDeviceId = pickDefaultDevice();
         permissionDenied = false;
         accessMessage = '';
         notify();
