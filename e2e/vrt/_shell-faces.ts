@@ -4978,9 +4978,19 @@ export const FACES = [
       + 'ONLY through a user gesture, and a scene performs none. The tile body was written to '
       + 'preserve that property deliberately (one non-reactive onMount read and one registry '
       + 'subscribe; no fetch, no probe), which is the recorderbox lesson applied before it could '
-      + 'cost anything. The rest of the surface is equally still: the search box is empty, Search '
-      + 'and ↻ next are disabled until a card publishes, the attribution row and the CLEAN OUT '
-      + 'lamp are absent entirely with no item, and the empty-state overlay is static text.',
+      + 'cost anything. The rest of the surface is equally still: the search box is empty, the '
+      + 'attribution row and the CLEAN OUT lamp are absent entirely with no item, and the '
+      + 'empty-state overlay is static text. ⚠ THE TWO BUTTONS ARE READ OFF THE CAPTURE RATHER '
+      + 'THAN REASONED ABOUT, because the first draft of this sentence claimed BOTH were disabled '
+      + '"until a card publishes" and the scene says otherwise. SEARCH RENDERS **ENABLED**: '
+      + 'promotion keeps the real card mounted in `<HeadlessSourceHost>`, so it registers its '
+      + 'commands at spawn and `hasCommands` is already true when the faceplate paints — the '
+      + 'disabled state is what a scene with NO card would show, and archivist is precisely the '
+      + 'module that always has one. ↻ NEXT renders DISABLED, and for a reason that has nothing '
+      + 'to do with the card: `canReroll` also needs `docCount > 0 || hasItem`, and a scene that '
+      + 'never searches has neither. Both are settled by the time the faceplate is visible — the '
+      + 'registration is a `$effect` in the same mount batch, not a later arrival — so neither is '
+      + 'a late-painting well of the videovarispeed/painter kind.',
   },
   // ── VIDEOVARISPEED — the VARISPEED FILE PLAYER, capturable for the same
   //    reason, RE-DERIVED rather than inherited (its card exemption names two
