@@ -140,7 +140,11 @@ describe('chromaconsole face — the two probes, and the two SEPARATE seams', ()
     // access instead of re-sending eight CCs. Green everywhere, dead in the
     // player's hands.
     const src = SRC('./shell-cells.ts');
-    const block = /chromaconsole: \{([\s\S]*?)\n  \},/.exec(src)?.[1] ?? '';
+    // ⚠ `{2}` RATHER THAN TWO LITERAL SPACES — `no-regex-spaces`, which is a
+    // lint ERROR rather than a style note for exactly the reason it bites here:
+    // this match is TERMINATED by the registry block's two-space indent, and two
+    // invisible characters are the thing a later edit miscounts. Same match.
+    const block = /chromaconsole: \{([\s\S]*?)\n {2}\},/.exec(src)?.[1] ?? '';
     expect(block, 'the registry block was found').not.toBe('');
     expect(block).toMatch(/chromaconsoleConnect\(nodeId\)/);
     expect(block).toMatch(/chromaconsolePushAll\(nodeId\)/);
