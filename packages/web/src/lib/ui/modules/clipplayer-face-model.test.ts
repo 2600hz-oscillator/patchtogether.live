@@ -383,7 +383,9 @@ describe('clipplayer face — what a def-reading gate cannot see', () => {
     // The only call site is the helper; the helper is only called from onclick.
     const calls = [...src.matchAll(/ensureClipplayerClip\(/g)];
     expect(calls, 'exactly one ensure call site').toHaveLength(1);
-    for (const m of src.matchAll(/\$effect\(([\s\S]{0,400}?)\n  \}\);/g)) {
+    // `\n {2}\}` rather than two literal spaces: `no-regex-spaces` is enforced,
+    // and a counted quantifier is what the rule asks for.
+    for (const m of src.matchAll(/\$effect\(([\s\S]{0,400}?)\n {2}\}\);/g)) {
       expect(m[1], 'no $effect writes a clip').not.toContain('ensureClipplayerClip');
     }
   });

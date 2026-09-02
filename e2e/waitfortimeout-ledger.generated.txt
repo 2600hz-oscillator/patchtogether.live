@@ -153,7 +153,6 @@ e2e/tests/lushgarden.spec.ts :: grow gate: [GATED] badge, rate-spawning stops, o
 e2e/tests/lushgarden.spec.ts :: grow gate: [GATED] badge, rate-spawning stops, one plant per rising edge, reset clears :: waitForTimeout(1500) #1
 e2e/tests/lushgarden.spec.ts :: grow gate: [GATED] badge, rate-spawning stops, one plant per rising edge, reset clears :: waitForTimeout(700) #1
 e2e/tests/lushgarden.spec.ts :: waitForProbe :: waitForTimeout(80) #1
-e2e/tests/menu-viewport-clamp.spec.ts :: clip editor menus inside the dock full-view pane stay fully in view (owner case, ?shell=1) :: waitForTimeout(350) #1
 e2e/tests/menu-viewport-clamp.spec.ts :: panNodeTo :: waitForTimeout(120) #1
 e2e/tests/meowbox.spec.ts :: Sequencer → MEOWBOX → Scope → AudioOut produces audible RMS via the new pitch cable :: waitForTimeout(100) #1
 e2e/tests/meowbox.spec.ts :: knob pitch ≡ CV pitch: +12 semi knob (no CV) sounds same RMS as +1V CV (knob=0) :: waitForTimeout(600) #1
