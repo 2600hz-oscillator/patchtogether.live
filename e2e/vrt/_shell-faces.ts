@@ -5344,16 +5344,62 @@ export const FACES = [
   // compares. If that comparison shows ANY differing pixels in the tool row, the
   // honest outcome is to move this module to `FACES_WITHOUT_SCENES` below
   // CARRYING THAT NUMBER — not a mask, and not a re-run.
+  //
+  // ⚠ THE MEASUREMENT CAME BACK AND THE PREDICTION WAS WRONG, recorded here
+  // because guessing which half of a promotion is fragile is exactly what this
+  // roster keeps getting wrong. The emoji tool row was the named risk; it is in
+  // the DOCK scene, and the dock scene PASSED. What broke was the COMPACT tile,
+  // which this comment called deterministic "by construction" — and it is, in
+  // its interior. What is not deterministic is the frame the capture catches at
+  // the tile's right EDGE. See the COMPACT REMOVED note on the entry below.
   {
     type: 'painter',
     pages: 0,
+    // ⚠ COMPACT REMOVED 2026-09-02 — the mirrorpool / matrixMix class, and the
+    // first instance of it caught with a MECHANISM rather than a shrug. Both of
+    // those entries record "did not reproduce" / "PASSED on a re-run of the same
+    // shards at the same SHA" without ever saying what moved. Here it was caught
+    // in the act:
+    //
+    //   run 33663808159 — face-painter-compact on vrt-strict shard 3 — PASSED
+    //   run 33667724929 — face-painter-compact on vrt-strict shard 4 — FAILED
+    //
+    // Same scene, same product code. The ONLY delta between those two runs is
+    // `vrt-strict-timings.generated.json`, which is CI planner data and touches
+    // no product and no spec — so RE-PINNING A COST ARTIFACT RE-BINS THIS LANE,
+    // and the re-bin moved this scene onto a shard where it renders differently.
+    // Placement is the variable, which is why "it was green last run" was true
+    // and worthless.
+    //
+    // ⚠ AND THE FAILING RENDER IS THE WRONG ONE, WHICH IS WHY THIS IS NOT A
+    // RECAPTURE. 30 px over the zeroed tolerance out of 7,216, and 45 of the 49
+    // pixels outside the fleet's ±2-LSB AA band sit in ONE COLUMN: x=87, the
+    // last column of an 88 px capture. The tile INTERIOR — VideoTileThumb,
+    // title, EXPAND pill — is byte-identical. A lane tile's left and right
+    // borders are symmetric, so "which image is correct" is a testable claim,
+    // and the test decides it: across rows 20-38 the BASELINE's x=87 matches its
+    // own x=0 to within 0-1 (settled), while the ACTUAL diverges by 4-20 — the
+    // capture caught the right edge before the lane layout settled. Re-authoring
+    // would bake the unsettled frame in, which is what the VRT playbook forbids
+    // and what would have looked like a clean green fix.
+    //
+    // The DOCK scene is unaffected and still gates — and that matters more here
+    // than in either precedent, because painter's dock body IS the module (nine
+    // tools, the palette, the canvas whose pixels are the output). It passed on
+    // shard 12 in the same red run, so the EMOJI TOOL ROW named below as this
+    // entry's one residual risk is not what broke, and stays covered.
+    //
+    // Restore when the placement-sensitivity class is fixed (a sibling branch is
+    // in flight for `face-videovarispeed-compact`, the same shape): delete this
+    // line and dispatch `GREP=painter task vrt:commit`.
+    scenes: ['dock'],
     videoFaceWhy:
       'a VIDEO module, so it must boot into the video zone rather than a mixer channel column — '
       + 'without this field bootWithFace waits out the full test timeout for a column membership '
-      + 'a video node never acquires. Both scenes carry a picture and NEITHER of them moves: the '
-      + 'compact tile paints a VideoTileThumb through hasVideoSurface (painter\'s first lane '
-      + 'picture — the card only ever painted inside itself), and the dock body is the module\'s '
-      + 'own fullViewBody, the MS-Paint editor. ⚠ THE PICTURE IN BOTH IS A BLANK WHITE PAGE, and '
+      + 'a video node never acquires. ⚠ ONE SCENE, NOT TWO — see the COMPACT REMOVED note above; '
+      + 'the surviving dock scene is the module\'s own fullViewBody, the MS-Paint editor, and it '
+      + 'is the one that carries the promotion\'s whole visual surface. ⚠ ITS PICTURE IS A BLANK '
+      + 'WHITE PAGE, and '
       + 'that is the module\'s designed idle state rather than a blank capture: a fresh spawn has '
       + 'an EMPTY op log, the node-lifetime producer fills its canvas with PAINT_BG, and the '
       + 'shader returns opaque white when nothing is bound at all — painter is never a dead black '

@@ -285,7 +285,6 @@
     "workflow-shell-faces.spec.ts :: face-outToLaunch-dock: the dock full-view faceplate matches baseline": 11.2,
     "workflow-shell-faces.spec.ts :: face-outlines-compact: the compact lane tile matches baseline": 17.7,
     "workflow-shell-faces.spec.ts :: face-outlines-dock: the dock full-view faceplate matches baseline": 24.6,
-    "workflow-shell-faces.spec.ts :: face-painter-compact: the compact lane tile matches baseline": 8.1,
     "workflow-shell-faces.spec.ts :: face-painter-dock: the dock full-view faceplate matches baseline": 14.2,
     "workflow-shell-faces.spec.ts :: face-peakstate-compact: the compact lane tile matches baseline": 14.7,
     "workflow-shell-faces.spec.ts :: face-peakstate-dock: the dock full-view faceplate matches baseline": 21,
