@@ -708,12 +708,15 @@ export const FACES = [
   // Deterministic on a silent rack like every sibling: a mixer contains no
   // generator, so with nothing patched masterL is bit-exactly zero.
   //
-  // ⚠ THE ONLY ENTRY THAT DECLARES `foldHeight`, and it is the reason that field
+  // ⚠ THE FIRST ENTRY TO DECLARE `foldHeight`, and it is the reason that field
   // exists. The unfolded pane MEASURES 1623 CSS px, so at the shared 1400 it
   // starts at y = -290 and cannot be framed; `foldViewportFor` gives this scene
   // 2048 (425 px of headroom) and leaves every other scene's viewport — and
   // therefore every other committed baseline — untouched. See the measurement
   // on `foldViewportFor` for why raising the shared constant is NOT a no-op.
+  // (⚠ It is no longer the ONLY one: `clipplayer` measured 1436 px and took
+  // 1792 on the same argument. The mechanism generalised on its second use,
+  // which is the outcome a per-scene field is supposed to have.)
   {
     type: 'mixmstrs',
     pages: 4,
@@ -5349,6 +5352,24 @@ export const FACES = [
     // a tab rail would render one band at a time, which is fatal for the one
     // thing the surface is for (comparing eight lanes).
     pages: 4,
+    // ⚠ THE SECOND ENTRY EVER TO DECLARE `foldHeight`, and it was MEASURED
+    // rather than guessed: the first capture attempt failed with the harness's
+    // own number — "the unfolded pane starts at y=-102 in a 1400 px viewport …
+    // (pane is 1436 CSS px tall)". The pane is the deck body plus a 261 px
+    // launch grid plus four bands, one of which holds the note editor.
+    //
+    // 1792 gives 356 px of headroom, on mixmstrs' argument one row up: raising
+    // the SHARED `FOLD_VIEWPORT.height` is NOT a no-op — the measurement on
+    // `foldViewportFor` records that every face's diff moved at a different
+    // height — so a scene that needs more room takes it per-scene and leaves
+    // every other committed baseline untouched.
+    //
+    // ⚠ AND 1436 IS NOT A DESIGN COMPLAINT. The dock pane SCROLLS; the harness
+    // unfolds it only so the capture contains the whole faceplate rather than
+    // the window. The one place height IS capped is the note editor's roll,
+    // which scrolls inside its own 260 px box precisely so a 128-step clip
+    // cannot grow the plate without bound.
+    foldHeight: 1792,
   },
 
 ] as const;

@@ -493,4 +493,22 @@ describe('clipplayer — the docs corrections this promotion carried', () => {
     expect(blob.toUpperCase()).toContain('CLICK');
     expect(CARD(), 'the gesture the doc now describes').toContain('cycleSceneRepeat');
   });
+
+  // ⚠ THE SAME STALE CLAIM WAS IN THE EXPLANATION TOO — a THIRD surface, found
+  // only by grepping the def for the sentence rather than trusting that fixing
+  // the control blob had fixed the module's prose. It also said "nothing shown
+  // for infinite", which the card contradicts in its own markup: at rest it
+  // renders `sceneRepeatLabel`, which returns "∞" for a count of 0, and only
+  // swaps to the progress flair WHILE a scene is counting.
+  it('the EXPLANATION carries the same correction, not just the control blob', () => {
+    const explanation = clipplayerDef.docs!.explanation;
+    expect(explanation).not.toContain('read-only');
+    expect(explanation).not.toContain('editing the count from the card is a follow-up');
+    expect(explanation).not.toContain('nothing shown for infinite');
+    expect(explanation, 'and it states the gesture both surfaces perform').toContain(
+      '∞ → 2 → 3 → 4 → 8 → ∞',
+    );
+    // The card's own resting label is what makes "∞" the honest word.
+    expect(CARD()).toContain("return c === 0 ? '∞'");
+  });
 });
