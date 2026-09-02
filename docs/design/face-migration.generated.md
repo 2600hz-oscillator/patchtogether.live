@@ -170,6 +170,7 @@ author a `face` and rank the controls — no new platform capability.
 | `qbrt` | audio | done | — |
 | `quadralogical` | video | done | — |
 | `rasterize` | audio | done | — |
+| `recorderbox` | video | done | — |
 | `reshaper` | video | done | — |
 | `resofilter` | audio | done | — |
 | `reverb` | audio | done | — |
@@ -241,7 +242,6 @@ the primary interaction is not param-shaped — needs a purpose-built surface.
 | `doom` | video | — | — |
 | `nibbles` | video | — | — |
 | `painter` | video | — | — |
-| `recorderbox` | video | — | `needs-media-controller` |
 | `seqtris` | audio | — | — |
 | `toybox` | video | — | `needs-media-controller` |
 | `trails` | audio | — | — |

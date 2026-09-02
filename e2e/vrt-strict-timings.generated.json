@@ -309,6 +309,8 @@
     "workflow-shell-faces.spec.ts :: face-quadralogical-dock: the dock full-view faceplate matches baseline": 42.5,
     "workflow-shell-faces.spec.ts :: face-rasterize-compact: the compact lane tile matches baseline": 7.8,
     "workflow-shell-faces.spec.ts :: face-rasterize-dock: the dock full-view faceplate matches baseline": 11.7,
+    "workflow-shell-faces.spec.ts :: face-recorderbox-compact: the compact lane tile matches baseline": 13.6,
+    "workflow-shell-faces.spec.ts :: face-recorderbox-dock: the dock full-view faceplate matches baseline": 19.8,
     "workflow-shell-faces.spec.ts :: face-reshaper-compact: the compact lane tile matches baseline": 14.2,
     "workflow-shell-faces.spec.ts :: face-reshaper-dock: the dock full-view faceplate matches baseline": 18.5,
     "workflow-shell-faces.spec.ts :: face-resofilter-compact: the compact lane tile matches baseline": 7.9,
