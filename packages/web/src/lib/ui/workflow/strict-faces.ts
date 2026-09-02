@@ -5939,6 +5939,196 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // the explanation's card-ownership prose was stale.
   'videovarispeed',
 
+  // ── MOOG 956 RIBBON (2026-09-02) — the ONE-POINTER GESTURE, and the first
+  // face whose extension body exists for an ARITY the cell grid cannot
+  // express ────────────────────────────────────────────────────────────────
+  //
+  // The inventory refused this module with "the playable strip — press position
+  // and gate — IS the module, and a 1-D touch surface is not a knob". The
+  // second clause is TRUE and the conclusion was wrong, which is now the
+  // recurring shape of these refusals. What a knob cannot express is not the
+  // POSITION — a 0..1 throw is a fader, exactly — but the GESTURE: one pointer
+  // stroke that writes `pos` AND raises `gate`, slides with the gate standing,
+  // and on release drops the gate while LEAVING the pitch. Two cells reach
+  // every value that gesture reaches; what they cannot do is reach them
+  // TOGETHER, which is the same distinction `ModuleFace.xyPads` records for a
+  // 2-D pad one arity up. So the gesture is the module's own surface and every
+  // param still ranks as an ordinary cell beneath it — the joystick shape
+  // (owner decision 2026-08-31 item 2) applied to a 1-D instrument.
+  //
+  // ⚠ IT IS THE FIRST PROMOTION IN THIS PROGRAM TO SHIP `tileBody` FOR A
+  // PARITY HOLE RATHER THAN A PICTURE, and the hole is arithmetic:
+  // `faceTierCap('compact', 'none')` is 3, so the compact lane tile paints
+  // `pos`/`scale`/`offset` and `gate` — one of the module's two OUTPUTS —
+  // would be reachable only by zooming to `full` or opening the dock. A tile
+  // that can set a pitch and not sound it is not the module. Ranking `gate`
+  // into the top three instead would trade `offset` away AND still split one
+  // stroke into two gestures. Same finding skifree and audioIn record: a
+  // module whose only non-param control lives in the full view is unusable
+  // from the lane.
+  //
+  // ⚠ THE STOP-2 IS AN ORDERING BUG THAT DID NOT EXIST BEFORE THE PROMOTION
+  // AND WOULD HAVE SHIPPED SILENT. `setNodeParam` reaches the engine on a
+  // LATER MICROTASK (reconciler.ts `schedule` → `queueMicrotask`) while
+  // `setMomentaryParam` reaches it on THIS instruction, so the naive press
+  // raises the gate BEFORE the pitch moves — every note attacking at the
+  // previous note's pitch and gliding, on the one module whose stated promise
+  // is that the ribbon holds its last pitch. All three surfaces therefore go
+  // through ONE seam (`ui/modules/moog956/ribbon-actions.ts`) that pushes the
+  // pitch at the engine first, synchronously, and only then raises the gate.
+  //
+  // ⚠ THE CONTRACT MOVED, AND THE MOVE IS THE CORRECTION OF A LIE: `gate` was
+  // declared `curve: 'linear'` while the factory has read it as
+  // `value > 0.5 ? 1 : 0` since the module shipped. `looksLikeSwitch` reaches
+  // only params that are ALREADY `0..1 discrete`, so the mis-declaration made
+  // this param invisible to module-face-lint's switch-classification ratchet
+  // and made `face.momentary` refuse it outright — a mis-declared switch is
+  // not merely rendered wrong, it is UNCLASSIFIED and no gate says so. Moved
+  // `linear → discrete` in this diff (`mappy:showGrid`'s call one wave
+  // earlier), NEUTRAL BY CONSTRUCTION — every value either side of the
+  // threshold still resolves to the same 0 or 1 — and re-pinned through
+  // `docs:accept`.
+  //
+  // ⚠ AND THE SAME EDIT CLOSES A DATA-INTEGRITY BUG THE CARD SHIPPED WITH:
+  // `gate` was written into the Y.Doc, so a press whose release never arrived
+  // (the card unmounting mid-hold — pointer capture protects a MOVING pointer,
+  // not a DELETED element) persisted a HIGH gate that then synced to every
+  // peer and survived reload as a drone. `face.momentary` routes it through
+  // `setMomentaryParam` (engine only, panic-latched) and `restedParams`
+  // repairs racks already saved that way. The card's `pos` raw-write DEBT is
+  // paid in the same diff (`createDragCommit`) and its ledger entry deleted.
+  //
+  // ⚠ THE STATED REDUNDANCY (twotracks/joystick): at the dock the strip AND
+  // the four cells are live over the same params. The CELLS are the
+  // parity-credited controls and the MIDI-learn / Electra / control-surface
+  // anchors the hand-rolled card never had; the strip emits NO `control-*`
+  // anchor and no cell attributes, or faces-parity counts `pos` twice — a
+  // multiset failure that only surfaces in the browser lane, half an hour
+  // late. `moog956-face-model.test.ts` pins the absences.
+  //
+  // ⚠ ONE RESTING READOUT IS DELETED, NOT HIDDEN: the card's `{n} st` pitch
+  // line (owner-decisions 2026-08-31 item 11). The value is the strip's
+  // `aria-valuetext` — and `role="slider"` genuinely HAS one, so unlike the
+  // joystick pad one seam over this surface needs no `aria-label` fallback.
+  // The gate LED survives as a colour mark: the wiper burns while the finger
+  // is down.
+  //
+  // ⚠ IT EMPTIES `workflow-rear-card`'s `LEGACY_DOCK_CANDIDATES` POOL
+  // (`moog960` and `cartesian` were already spent), so that case now reaches
+  // `migration-complete` and SKIPS — the designed end state, named here
+  // because a skip is not a pass. #2295 already replaced the throw that used
+  // to make this an unrelated PR's hard RED.
+  //
+  // ZERO ATTEST: an audio def, `face`/`docs` are hash-transparent by
+  // construction, both bodies are DOM with no drawing surface, and no factory
+  // code moves. No ART fingerprint moves either — moog956 is on `ART_BACKLOG`
+  // and has no committed profile, and nothing about the DSP changed.
+  'moog956',
+
+  // ── RECORDERBOX (wave 5, 2026-09-02) — THE RECORDER ──────────────────────
+  //
+  // `order: []` + `glyph: 'none'` + an extension filling BOTH wired body slots.
+  // The `videoOut` shape, arrived at from the same place: `recorderboxDef`
+  // declares `params: []`, so there is nothing for the generic bands to rank
+  // and the extension IS the faceplate rather than an addition to one.
+  //
+  // ⚠ THE INVENTORY ENTRY WAS FALSE IN EVERY CLAUSE AFTER THE DASH, AND
+  // #1574/#1584 (bdef392f6) IS WHAT MADE IT FALSE — eight months of prose
+  // describing a card that had already been rewritten. It read: "the capture
+  // canvas plus its per-frame encode loop live on the card, so the recording
+  // exists only while it is mounted." The capture canvas is created by
+  // `node-recorder-registry`, NEVER enters the document, and is pumped by the
+  // registry under its own `acquireRenderLease`; the card's own line 257 says
+  // "CAPTURE IS NOT HERE" in capitals. The recording survives card unmount BY
+  // CONSTRUCTION — that is the entire point of the registry, and the registry
+  // exposes no teardown precisely so a future card cannot undo it. "A take
+  // list" was wrong too: that block is a crash-RECOVERY list read from OPFS
+  // manifests, empty after a clean boot.
+  //
+  // ⚠ AND `needs-media-controller` NEVER APPLIED. recorderbox is a SINK — it
+  // consumes the engine's FBO through `blitOutputForPreview` and owns no
+  // `<video>`, no `MediaStream` source and no element to adopt — so it is in
+  // neither half of `HEADLESS_MOUNT_LANE_TYPES`, neither `DOM_SOURCE_LANE_TYPES`
+  // nor `CARD_PRODUCER_LANE_TYPES`. The blocker described the module the
+  // inventory thought it was.
+  //
+  // ⚠ THE STOP-2 IS THE WHOLE TRANSPORT, and it is why this PR carries a
+  // precursor commit. Because recorderbox is in none of those sets, promotion
+  // stops `RecorderboxCard.svelte` being mounted ANYWHERE — no headless host,
+  // no lane card, nothing. Six things lived only in that component and would
+  // have gone with it: the `probeEncoders` support probe (its ONLY caller in
+  // the tree), the `listRecoverable` crash scan (likewise), the ~120-line start
+  // orchestration, the folder re-pick, the `<a download>` fallback, and the
+  // `$effect` that reacts to `node.data.recording`. All six moved to
+  // `$lib/ui/modules/recorderbox-transport.ts` — `lib/ui`, never `lib/video`,
+  // which is hashed wholesale for the GPU attest (nine recorderbox files wide).
+  //
+  // ⚠ THE `$effect` IS PORTED, NOT PARAPHRASED, and that is load-bearing:
+  // `data.recording` is Y.Doc-SYNCED, so it also flips when a RACK-MATE presses
+  // RECORD and when a saved patch LOADS with `recording: true` still on it.
+  // Neither passes through a click handler, so re-writing the start call at each
+  // surface would have dropped both paths while every hand test still passed.
+  // The reactive reads live inside `reconcileRecorderboxTransport`; each surface
+  // is one line that cannot track less.
+  //
+  // ⚠ RECORD IS NOT A `ShellToggleCell` AND SIZE IS NOT A `ShellSelectorCell`.
+  // Neither cell kind can express `disabled` (`Toggle.svelte` has no such prop
+  // at all), and SIZE's `disabled` is the SOLE guard on a mid-take quality
+  // change; and `faces-parity` CLICKS every toggle cell, which on a real
+  // recorderbox means a folder prompt, an encoder probe, `nodeRecorder.start`,
+  // a render lease and a full-canvas capture pump that NOTHING ever stops
+  // (the registry exposes no teardown by design). Both live in the extension's
+  // own markup, with their own disabled state — which also drops the contract
+  // diff to zero.
+  //
+  // ⚠ BOTH BODY SLOTS, AND THE TILE IS THE LOAD-BEARING HALF.
+  // `Canvas.svelte:1759-1795` auto-spawns a recorderbox into the video zone of
+  // every fresh workflow rack, wired to the master buses, so a `fullViewBody`
+  // alone would have made the first module of every new session a live
+  // thumbnail with no way to start a take under it — cameraInput's lesson, one
+  // module worse.
+  //
+  // ⚠ SCREEN OFF CANNOT REACH THE ENCODE, which is a STRONGER guarantee than
+  // the fleet's correctly-ordered `markWatched`: a take runs on the registry's
+  // own pump under a render lease that bypasses BOTH preview gates. The
+  // `markWatched` in the collapsed branch is still load-bearing for the case
+  // with no take running, where it is what keeps the upstream chain feeding
+  // `in` and the `out` pass-through alive.
+  //
+  // ⚠ THREE RESTING READOUTS ARE DELETED, NOT HIDDEN: the card's `REC 00:12`
+  // overlay (a ticking measurement painted over the picture), its `SAVING…`
+  // state word, and its `saved <chunk>` line. All three are now `StatusLed`
+  // `detail`, reaching aria-label and title and never a text node. The two
+  // capability BADGES became lamps for the same reason. What is KEPT and
+  // painted: the FILE field (an `<input type="text">`, NOT a `ShellEntryCell` —
+  // that kind forbids clamping and the save path SANITIZES, so its rejections
+  // would disagree with the name written to disk), the `.mp4` caption, the DIR
+  // row's folder NAME (an option name inside its own control, and the #1583
+  // bug was a silently-redirected destination — hiding it would re-open exactly
+  // that), the PICK/CHANGE button (the folder handle is deliberately kept OUT
+  // of `node.data`, so no `ShellActionProbe` could observe it), the SIZE
+  // roster's option names, and the transient folder hint.
+  //
+  // ⚠ WHAT SHIPS ON ARGUMENT PLUS AN AUDITION LEDGER RATHER THAN MEASUREMENT:
+  // the ENCODER INTERLOCK's negative half. No CI runner has an H.264 encoder
+  // that emits chunks — the headless software runner reports `avc` as
+  // config-supported and then emits ZERO chunks for real frames — so CI can
+  // prove the switch is DISABLED and a take is REFUSED, and cannot prove a
+  // file is written. The e2e's transport experiment therefore asserts that a
+  // press reaches `nodeRecorder.start` with no card mounted; whether the bytes
+  // are good is the owner's hardware check, and this module already carries an
+  // outstanding one from the capture-wiring fix.
+  //
+  // ZERO ATTEST: `face` / `docs` are hash-transparent by construction
+  // (attest-code-basis strips both), no param, port or factory code moves, and
+  // the transport plus both bodies live under `lib/ui/**`, outside the basis.
+  // CONTRACT UNCHANGED: no params, no controlFamilies, no `PortDef.label` (the
+  // rail derives AUDIO L / AUDIO R where the card wrote `A·L` / `A·R`; a label
+  // is NOT hash-transparent on a video def and prose is not worth a GPU
+  // window). `docs:accept` runs because the explanation's card-ownership prose
+  // was stale.
+  'recorderbox',
+
   // ── NIBBLES (2026-09-02) — the last of the wave-5 GAMES, and the only one
   //    that is VIDEO domain ────────────────────────────────────────────────
   //

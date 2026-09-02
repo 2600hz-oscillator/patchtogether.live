@@ -244,11 +244,20 @@ export const RAW_WRITE_LEDGER: Readonly<Record<string, RawWriteEntry>> = {
     kind: 'debt',
     why: 'panel switch write — user gesture, should be undoable + synced',
   },
-  'ui/modules/Moog956Card.svelte': {
-    keys: ['pos', 'gate'],
-    kind: 'debt',
-    why: 'ribbon controller — performance gesture; needs the transient-first treatment, not a bare store write',
-  },
+  // ⚠ `Moog956Card.svelte` PAID AND REMOVED 2026-09-02, in the promotion PR.
+  // The entry read: "ribbon controller — performance gesture; needs the
+  // transient-first treatment, not a bare store write", keys `pos` + `gate`.
+  // Both halves are now discharged rather than re-argued, and each by the
+  // treatment its own remedy named:
+  //   * `pos` rides a `createDragCommit` pump — tracked, undoable, synced, one
+  //     Y.Doc write per frame — through `ui/modules/moog956/ribbon-actions.ts`,
+  //     the seam the card, the lane `tileBody` and the dock `fullViewBody` all
+  //     call, so the three surfaces cannot drift apart.
+  //   * `gate` stopped being a durable value at all: it is `face.momentary`, so
+  //     it goes through `setMomentaryParam` (engine only, panic-latched) and a
+  //     press can no longer persist a stuck HIGH gate into the rack.
+  // This ledger is anchored to the SOURCE in both directions, so removing the
+  // entry without removing the writes would have been red.
   // ⚠ `ui/modules/NibblesCard.svelte` LEFT THIS LEDGER with the nibbles face
   // (its `auto` raw write is now `setNodeParam` in `nibbles-game-actions.ts`,
   // shared by the card and the face's toggle cell). Recorded here rather than

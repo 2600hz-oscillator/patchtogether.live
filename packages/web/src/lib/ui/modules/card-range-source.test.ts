@@ -99,6 +99,7 @@ import { moog907aDef } from '$lib/audio/modules/moog907a';
 import { moog914Def } from '$lib/audio/modules/moog914';
 import { moog921aDef } from '$lib/audio/modules/moog921a';
 import { moog921bDef } from '$lib/audio/modules/moog921b';
+import { moog956Def } from '$lib/audio/modules/moog956';
 import { unityscalemathematikDef } from '$lib/audio/modules/unityscalemathematik';
 import { featurecvDef } from '$lib/audio/modules/featurecv';
 import { ninelivesDef } from '$lib/audio/modules/ninelives';
@@ -696,6 +697,24 @@ const RANGE_BOUND_CARDS: Readonly<Record<string, { params: readonly ParamDef[] }
   // re-ordering the panel would move a strict baseline for nothing.)
   'Moog921aCard.svelte': moog921aDef,
   'Moog921bCard.svelte': moog921bDef,
+  // FACE PROGRAM · moog956 (2026-09-02). Enrolled with its faceplate, and the
+  // card was FULLY UNBOUND: both Knobs hand-typed `min`/`max`/`defaultValue`
+  // and `curve="linear"`, and the ribbon's own `aria-valuemin`/`aria-valuemax`
+  // re-typed `pos`'s 0..1 a third time. Every literal AGREED with the def, so
+  // this is the maintainability half rather than a live divergence — but it
+  // becomes user-visible exactly at promotion, when the dock renders the same
+  // params straight off the `ParamDef` and any disagreement would show up as
+  // two surfaces of one module with different travel.
+  //
+  // Range AND mapping: `curve` comes off `paramSpec(moog956Def, …)` on both
+  // knobs, and `units` is bound by being absent on both sides — no moog956
+  // param declares one and the card passes none, which the anchor reads as
+  // "nothing left to drift". No param declares `format` either, so the readout
+  // clause is inert here; the semitone line the card paints is NOT a param
+  // readout at all but a derived pitch, and it now comes from
+  // `ribbonSemitoneText`, the same formatter the FACE speaks on its strip's
+  // `aria-valuetext`.
+  'Moog956Card.svelte': moog956Def,
   // THE FACEPLATE QUEUE · Q46. Enrolled with its faceplate. The card was
   // HALF-BOUND, which is the state worth naming: SCAN already read
   // `rasterizeDef.params[0]!.max` while SAMP/F and GAIN hand-typed `16..8000`
@@ -961,6 +980,14 @@ const MAPPING_BOUND_CARDS: readonly string[] = [
   // omission, but stated.
   'Moog921aCard.svelte',
   'Moog921bCard.svelte',
+  // Enrolled with its FACEPLATE (2026-09-02), in ONE step like textmarqueeCard
+  // below: the edit that bound both Knobs' ranges also bound their `curve`, so
+  // there was never an intermediate state with the numbers bound and the curve
+  // still typed. Value-identical — the def has declared `linear` on `scale` and
+  // `offset` since the module shipped, and `Knob.svelte` branches on `log`/
+  // `exp` alone anyway. `units` is absent on both sides: no moog956 param
+  // declares one and the card has never passed one.
+  'Moog956Card.svelte',
   // Enrolled with its FACEPLATE (2026-08-31), and the anchor walked it here in
   // ONE step rather than two: the same edit that replaced four literal
   // `min={0} max={1}` pairs with `paramSpec(textmarqueeDef, id)` also replaced

@@ -6,19 +6,28 @@
 // ── Model ──────────────────────────────────────────────────────────────────
 // RECORDERBOX is a monitor-and-record sink, modelled on OUTPUT (video-out.ts):
 // it draws its `in` video input into its own per-instance FBO every frame
-// (so the card can preview it AND so `out` can pass the video through to
+// (so a surface can preview it AND so `out` can pass the video through to
 // downstream modules) AND it owns two audio-domain SINK nodes
 // (MediaStreamAudioDestinationNode, one per L/R input). When the operator
-// arms Record, the card streams the live preview canvas + the merged L/R
-// audio into a fragmented MP4 written to OPFS scratch, then Save-As's it to
-// disk on stop. See packages/web/src/lib/video/recorderbox-recorder.ts for
-// the encoding pipeline and recorderbox-store.ts for the crash-recovery store.
+// arms Record, the NODE-KEYED registry ($lib/ui/modules/node-recorder-registry)
+// pumps the engine output into its OWN off-document capture canvas and merges
+// the L/R audio into a fragmented MP4 written to OPFS scratch, then writes it
+// out on stop. See packages/web/src/lib/video/recorderbox-recorder.ts for the
+// encoding pipeline and recorderbox-store.ts for the crash-recovery store.
 //
-// ── Controls (card) ─────────────────────────────────────────────────────────
+// ⚠ THE CAPTURE IS NOT ON A SURFACE, AND HAS NOT BEEN SINCE #1574/#1584. The
+// recorder, its capture canvas, its frame pump and its render lease all belong
+// to the NODE for the recording's whole lifetime, so a take survives collapsing
+// the dock, an LRU eviction, or promotion removing the legacy card entirely.
+// Surfaces RESOLVE a take's configuration (folder, codec, audio tap) through
+// $lib/ui/modules/recorderbox-transport and then read the registry; they never
+// create or destroy a recording.
+//
+// ── Controls (surface) ──────────────────────────────────────────────────────
 //   * Filename  — editable text field (node.data.filename). Used DIRECTLY as the
 //                 base of the saved file name — NO per-save "Save As" prompt.
 //                 Synced to rack-mates via Y.Doc.
-//   * Record    — ON/OFF toggle styled like every other module button.
+//   * Record    — ON/OFF switch on the faceplate (lane tile AND dock body).
 //                 ON  = (Chromium) pick a destination FOLDER once via
 //                       showDirectoryPicker (the Record press is the user
 //                       gesture), then stream frames+audio to OPFS scratch and
@@ -41,11 +50,12 @@
 //                 even index/fps grid), not off jittery wall-clock time. This
 //                 fixes the macOS Preview/QuickTime "slow-motion" artifact that an
 //                 irregular (variable-rate) PTS stream produced.
-//   * (badge)   — "no H.264 encoder available" when the runtime can't encode
-//                 H.264 (headless CI, some OSes); Record is disabled, never
-//                 crashes.
+//   * (lamp)    — an ENCODER fault lamp when the runtime can't encode H.264
+//                 (headless CI, some OSes); Record is disabled, never crashes.
+//                 The sentence is the lamp's `detail` (aria-label + title),
+//                 never a painted text node.
 //   * Recover   — on mount, if a previous recording was left mid-flight
-//                 (tab crash before stop), the card offers "recover unsaved
+//                 (tab crash before stop), the dock body offers "recover unsaved
 //                 recording?" — a fragmented MP4 is playable from whatever
 //                 fragments reached disk, so the take is not lost. If the
 //                 destination FOLDER was persisted at start, Save re-requests
@@ -63,7 +73,8 @@
 //   Outputs:
 //     out      (video) — pass-through of `in` (input → FBO → out), so you can
 //                        chain RECORDERBOX inline without breaking the signal.
-//   Params: none (filename + record state live in node.data, not params).
+//   Params: none (filename + record state live in node.data, not params) —
+//           which is why face.order is [] and the extension IS the faceplate.
 //
 // ── How the AUDIO inputs work (the cross-domain primitive this module adds) ──
 // `audio_l` / `audio_r` are `audio`-TYPED inputs on a VIDEO module — a new
@@ -72,7 +83,7 @@
 // (AudioEngine.getOutputNode) and connects it straight into the
 // MediaStreamAudioDestinationNode this handle publishes via
 // `audioInputs` (VideoEngine.getAudioInput). The two dest nodes feed a
-// ChannelMergerNode whose MediaStream the card hands to the recorder — so a
+// ChannelMergerNode whose MediaStream the transport hands to the recorder — so a
 // stereo VCO/mixer is captured as the MP4's AAC track, A/V-synced to the
 // canvas frames via a shared t0 epoch.
 //
@@ -161,10 +172,45 @@ export const recorderboxDef: VideoModuleDef = {
   ],
   params: [],
 
+  // ── FACE (2026-09-02) — the `videoOut` / `flipper` shape ─────────────────
+  //
+  // `order: []` because `params: []`: there is nothing for the generic control
+  // bands to rank, and every affordance this module has is `node.data`, a
+  // browser capability or a gesture. The extension IS the faceplate.
+  //
+  // ⚠ RECORD IS NOT A `ShellToggleCell` AND SIZE IS NOT A `ShellSelectorCell`,
+  // for two independent reasons recorded here because a later reader will ask:
+  //   1. NEITHER CELL KIND CAN EXPRESS `disabled`. `ShellToggleCell` declares
+  //      only label/value/onchange and `Toggle.svelte` has no `disabled` prop at
+  //      all, so a lane tile would paint a live-looking RECORD switch on a
+  //      machine with no H.264 encoder. And SIZE's `disabled` attribute is the
+  //      SOLE guard on a mid-take quality change (`onQualityChange` carries no
+  //      `recState` check of its own), so dropping it lets a face read SMALL
+  //      over a running HIGH take. `Selector.svelte` HAS `disabled`;
+  //      `ShellSelectorCell` cannot reach it.
+  //   2. `faces-parity` CLICKS EVERY TOGGLE CELL, so enrolling RECORD would
+  //      make CI start a real take — folder prompt, encoder probe, render lease
+  //      and a full-canvas capture pump — that nothing ever stops, because the
+  //      registry deliberately exposes no teardown.
+  // Keeping both in the extension's own markup also drops the contract diff to
+  // zero: no param is added, so `contract-lock.txt` does not move.
+  //
+  // ⚠ `glyph: 'none'` IS FORCED, not chosen. `glyphBinding` short-circuits on
+  // the first `type: 'audio'` OUTPUT and this def has none — `audio_l`/`audio_r`
+  // are INPUTS — and with `params: []` every other literal resolves a dead
+  // `{kind: 'static'}`, which the dead-glyph clause refuses by name. The tile
+  // picture arrives from `hasVideoSurface(def)` (`domain === 'video'` and
+  // nothing else), so it is free and per-node.
+  face: {
+    order: [],
+    glyph: 'none',
+    extension: 'recorderbox',
+  },
+
   docs: {
-    explanation: `RECORDERBOX is a video-domain SINK that records whatever you patch into it — picture plus a left/right soundtrack — to a high-quality, crash-recoverable H.264/HEVC MP4. Modelled on OUTPUT, it draws its \`in\` video into a per-instance framebuffer every frame so the card can show a live preview AND so \`out\` can pass the picture through unbroken; meanwhile each audio input feeds a gain into a stereo channel-merger that drives a MediaStreamAudioDestinationNode, and a sample-accurate audio-thread worklet taps that stereo signal so the recorder muxes it as the MP4's AAC track, A/V-synced to the captured frames. Arm recording with the on-card RECORD/STOP button: on Chromium the first press asks you to pick a destination FOLDER once (then every take and rolling chunk auto-writes into it with no further Save-As prompt — the only prompt is an overwrite confirm), while Firefox/Safari fall back to a per-chunk download. Typical use: chain it inline anywhere in a video patch (preview on the card, signal continues to \`out\`), patch your stereo mix into A·L/A·R, type a base FILE name, pick a SIZE tier (HIGH = original ~14 Mbps H.264; BALANCED/SMALL prefer hardware HEVC), and hit RECORD. The audio is TAP-ONLY and inaudible — it is captured (via a silent gain-0 keep-alive that never reaches your speakers) but NOT monitored, so route the same source to AUDIO OUT separately if you want to hear it. Long takes auto-roll to a new FILENAME-CHUNK#-DATETIME.mp4 every ~10 min (with a 5 s audio overlap), and a take left mid-flight by a crash can be recovered on reload.`,
+    explanation: `RECORDERBOX is a video-domain SINK that records whatever you patch into it — picture plus a left/right soundtrack — to a high-quality, crash-recoverable H.264/HEVC MP4. Modelled on OUTPUT, it draws its \`in\` video into a per-instance framebuffer every frame so its faceplate can show a live preview AND so \`out\` can pass the picture through unbroken; meanwhile each audio input feeds a gain into a stereo channel-merger that drives a MediaStreamAudioDestinationNode, and a sample-accurate audio-thread worklet taps that stereo signal so the recorder muxes it as the MP4's AAC track, A/V-synced to the captured frames. Arm recording with the RECORD/STOP switch — it is on the lane tile as well as in the dock full view, so a take can be started without expanding the module: on Chromium the first press asks you to pick a destination FOLDER once (then every take and rolling chunk auto-writes into it with no further Save-As prompt — the only prompt is an overwrite confirm), while Firefox/Safari fall back to a per-chunk download. Typical use: chain it inline anywhere in a video patch (preview on the faceplate, signal continues to \`out\`), patch your stereo mix into A·L/A·R, type a base FILE name, pick a SIZE tier (HIGH = original ~14 Mbps H.264; BALANCED/SMALL prefer hardware HEVC), and hit RECORD. The audio is TAP-ONLY and inaudible — it is captured (via a silent gain-0 keep-alive that never reaches your speakers) but NOT monitored, so route the same source to AUDIO OUT separately if you want to hear it. Long takes auto-roll to a new FILENAME-CHUNK#-DATETIME.mp4 every ~10 min (with a 5 s audio overlap), and a take left mid-flight by a crash can be recovered on reload. The recording belongs to the NODE, not to whichever surface started it: collapsing the picture, closing the full view or scrolling the tile away never ends a take — only STOP and deleting the module do.`,
     inputs: {
-      in: "The picture to record and monitor — a polymorphic video input (video / mono-video / image are upcast, like OUTPUT.in). It is drawn into the card's preview, into the hidden full-resolution capture canvas the encoder reads, and passed through unchanged to the `out` jack. With nothing patched the card shows a slow dark-crimson idle sweep.",
+      in: "The picture to record and monitor — a polymorphic video input (video / mono-video / image are upcast, like OUTPUT.in). It is drawn into the faceplate's preview, into the node-owned full-resolution capture canvas the encoder reads, and passed through unchanged to the `out` jack. With nothing patched the picture is a slow dark-crimson idle sweep.",
       audio_l: "Left channel of the soundtrack to record. An audio-typed input on a video module (the cross-domain audio→video bridge): the upstream audio source feeds a gain that is summed into channel 0 of a stereo merger, captured as the left side of the AAC track. Capture is tap-only/inaudible — recorded but not monitored to the speakers.",
       audio_r: "Right channel of the soundtrack to record. Like audio_l but summed into channel 1 of the merger (the right side of the stereo AAC track the recorder encodes). Patch a stereo mixer/VCO across A·L and A·R for a stereo MP4; tap-only, so route the source to AUDIO OUT separately to hear it.",
     },
@@ -179,16 +225,17 @@ export const recorderboxDef: VideoModuleDef = {
     const uTex = gl.getUniformLocation(program, 'uTex');
     const uHasInput = gl.getUniformLocation(program, 'uHasInput');
 
-    // Per-instance FBO — same pattern as OUTPUT. The card blits this into the
-    // engine drawing buffer (engine.blitOutputToDrawingBuffer) for its preview
-    // AND draws it into the hidden capture canvas the recorder encodes.
+    // Per-instance FBO — same pattern as OUTPUT. A surface blits this into the
+    // engine drawing buffer for its preview (blitOutputForPreview), and the
+    // NODE-OWNED registry pumps the UNGATED blit into its own off-document
+    // capture canvas for the encoder.
     const { fbo, texture } = ctx.createFbo();
 
     let lastInputTexture: WebGLTexture | null = null;
 
     // ── Audio capture sinks ──────────────────────────────────────────────
     // One MediaStreamAudioDestinationNode per L/R input port; a ChannelMerger
-    // sums them into a 2-channel stream the card's recorder consumes. Guard on
+    // sums them into a 2-channel stream the node's recorder consumes. Guard on
     // ctx.audioCtx: a video engine registered without an AudioContext (jsdom
     // tests, audio-off racks) records video only (silent) — never crashes.
     let audioInputs: Map<string, { node: AudioNode; input: number }> | undefined;
@@ -226,7 +273,7 @@ export const recorderboxDef: VideoModuleDef = {
     let captureSampleRate = 0;
     // The published tap Promise — resolved once addModule + node creation
     // complete (or with null on no-AudioContext / load failure). read() returns
-    // this so the card can `await` it at record start.
+    // this so the transport can `await` it at record start.
     let captureTap: Promise<RecorderboxAudioCaptureTap | null> = Promise.resolve(null);
     if (ctx.audioCtx) {
       const ac = ctx.audioCtx;
@@ -342,7 +389,7 @@ export const recorderboxDef: VideoModuleDef = {
       // Same async-in-factory pattern as MANDELBULB's mandelbulb-osc: load the
       // module, build the node, connect the encodable-rate source → capture →
       // gain(0)→destination keep-alive (so Chromium runs its process()). Publish
-      // the {port, sampleRate} tap via a Promise the card awaits at record start.
+      // the {port, sampleRate} tap via a Promise the transport awaits at record start.
       // On any failure resolve null → the recorder uses the audioStream fallback.
       const tapAc = captureAc;
       const tapSrc = captureTapSource;
@@ -393,7 +440,7 @@ export const recorderboxDef: VideoModuleDef = {
         const inputTex = frame.getInputTexture(node.id, 'in');
         lastInputTexture = inputTex;
         // Render input (or idle pattern) into our own FBO — passthrough for
-        // `out` + source for the card's preview/capture blit.
+        // `out` + source for the faceplate preview and the node-owned capture blit.
         g.bindFramebuffer(g.FRAMEBUFFER, fbo);
         g.viewport(0, 0, ctx.res.width, ctx.res.height);
         g.useProgram(program);
@@ -425,8 +472,8 @@ export const recorderboxDef: VideoModuleDef = {
       read(key) {
         if (key === 'hasInput') return lastInputTexture !== null;
         if (key === 'fboTexture') return texture;
-        // The card pulls the live capture MediaStream from here to feed the
-        // recorder (or null when no audio context — record video only).
+        // The transport pulls the live capture MediaStream from here to feed
+        // the recorder (or null when no audio context — record video only).
         if (key === 'audioStream') return captureStream;
         if (key === 'hasAudio') return captureStream !== null;
         // The sample-accurate capture tap (PREFERRED). A Promise resolving to

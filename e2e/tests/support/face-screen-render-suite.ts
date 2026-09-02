@@ -537,6 +537,22 @@ const SUBJECTS: readonly Subject[] = [
   // mechanism, and it declares the conventional `<type>-face-canvas` — so no
   // `canvas` override is needed.
   { type: 'peertube', prefix: 'peertube', domain: 'video', why: 'the fediverse browser\'s live engine-output preview and its SCREEN switch — an ADDITION, since PeerTubeCard adopts the raw node-owned <video> and has no SCREEN switch at all. ⚠ The watch-mark case is the sharpest in this table after textmarquee\'s: peertube is a SOURCE feeding video AND audio_l/audio_r, so a lapsed mark would not stall a preview of somebody else\'s picture — it would idle the picture every downstream consumer samples while the element went on decoding. The switch must collapse the preview COPY and nothing else. The deeper "the stream keeps playing" property (the element, its demuxer and its audio wire, all on NODE lifetime) is node-source-hls.spec.ts\'s and face-peertube.spec.ts\'s subject; this row proves the SWITCH.' },
+  // ── RECORDERBOX (2026-09-02, wave 5) — the RECORDER ───────────────────────
+  //
+  // Added in the SAME diff as the promotion, per this file's convention, and
+  // APPENDED AT THE TAIL for the mechanical reason blood's note gives: batches
+  // slice this array in declaration order and each test's TITLE is its batch's
+  // comma-joined module list, so appending changes exactly one title. ⚠ recorderbox
+  // lands AFTER videovarispeed, mappy and peertube because all three of those rows
+  // reached main first; keeping the arrival order is what keeps every earlier
+  // batch's title byte-identical.
+  //
+  // Verified before writing rather than assumed: `type == prefix == extension
+  // id`, the body uses the standard `{#if !previewCollapsed}` REMOVES
+  // mechanism, and it declares the conventional `<type>-face-canvas` — so no
+  // `canvas` override is needed.
+    { type: 'recorderbox', prefix: 'recorderbox', domain: 'video', why: 'the recorder\'s MONITOR preview and its SCREEN switch — an ADDITION, since RecorderboxCard blits unconditionally and has no switch at all. ⚠ THE ONE ROW IN THIS TABLE WHOSE SWITCH PROVABLY CANNOT REACH THE THING IT LOOKS LIKE IT MIGHT, which is why it is worth covering rather than assuming: a player who sees SCREEN OFF on a RECORDER will reasonably fear they just stopped the take, and they did not — a take runs on node-recorder-registry\'s own pump under an `acquireRenderLease`, and a lease bypasses BOTH preview gates, so the encode is at full rate whether this body is collapsed, unmounted or throttled. That is a STRONGER guarantee than the fleet\'s correctly-ordered `markWatched`, because there is no ordering here to get wrong. ⚠ THE WATCH MARK IS STILL RETAINED AND STILL LOAD-BEARING, for the case with NO take running: recorderbox is a mid-chain SINK with a video pass-through, so a lapsed mark idles the whole chain feeding `in` and stalls the `out` every downstream module reads — a control labelled SCREEN muting a signal path. As everywhere in this file, that half is argued at the source and in the EXTENSION_BODY_ROLES entry; this row proves the SWITCH.' },
+
 
   // ── NIBBLES (2026-09-02, wave 5) — the SNAKE GAME ─────────────────────────
   //
