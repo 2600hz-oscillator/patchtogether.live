@@ -15,6 +15,15 @@
 // (Canvas.svelte), i.e. those specs were validating a mode users do not have.
 // This spec goes to plain `/rack` deliberately; do not add a shell param.
 //
+// ⚠ AND BOTH REAL PLAYERS ARE NOW FACED (videobox wave 3, videovarispeed wave
+// 4, both 2026-09-01), so the placement leg below takes its FACED branch for
+// each: the dock pane mounts a ModuleShell body that BLITS, the node-owned
+// <video> stays PARKED, and the element is found in neither pane. The UN-FACED
+// branch is retained rather than deleted because it is what keeps this sweep
+// honest for the next un-faced member (loopback, archivist, cameraInput), and
+// because a face PR that quietly ADOPTED the element would otherwise keep every
+// progress assertion green.
+//
 // REGISTRY-DRIVEN, so a new DOM-source video module cannot opt out by
 // accident: the subject list is DERIVED from DOM_SOURCE_LANE_TYPES in
 // $lib/ui/workflow/dom-source-modules.ts (itself held exhaustive by that
@@ -223,12 +232,17 @@ async function boot(page: Page): Promise<void> {
 // is NOT, for either subject this sweep actually exercises, and both were
 // MEASURED here (in-page trace at 250 ms, no test-side perturbation):
 //
-//   videovarispeed  the CARD wraps the element itself — its rAF transport calls
-//                   decideEdgeAction() and writes `videoEl.currentTime =
-//                   window.startSec` at the window edge (`el.loop` is false the
-//                   whole time). Trace: 3.816 -> 0.086 -> ... -> 3.944 -> 0.166,
-//                   a clean wrap every ~4.0 s, forever.
-//   videobox        `currentTime` is a WALL CLOCK. VideoboxCard's drift loop
+//   videovarispeed  the NODE'S CONTROLLER wraps the element itself — its rAF
+//                   transport calls decideEdgeAction() and writes
+//                   `currentTime = window.startSec` at the window edge
+//                   (`el.loop` is false the whole time). Trace: 3.816 -> 0.086
+//                   -> ... -> 3.944 -> 0.166, a clean wrap every ~4.0 s,
+//                   forever. (Measured when that loop was still on the card; it
+//                   moved to $lib/ui/media/node-varispeed-registry in LEG-02 P2
+//                   and the wrap behaviour is unchanged — which is the point of
+//                   a verbatim move.)
+//   videobox        `currentTime` is a WALL CLOCK. The node source controller's
+//                   drift loop
 //                   (decideDriftCorrection, every 500 ms) computes
 //                   `lastSyncPosition + (Date.now()-lastSyncTime)/1000`, clamps
 //                   it to `duration - 0.05`, and SEEKS whenever the element is
@@ -515,7 +529,10 @@ test('the sweep is NOT VACUOUS: it still exercises real file players', () => {
   //
   // ⚠ DELIBERATELY NOT A TYPED FLOOR (`>= 2`), and the distinction is the repo
   // standard rather than taste. The real player population is videobox +
-  // videovarispeed and is expected to STAY that pair across this whole epic —
+  // videovarispeed — both now FACED, and the predicate that derives them still
+  // reads their LEGACY CARDS, which are alive at `?shell=legacy` and keep their
+  // `-file-input` / `-play-btn` testids for exactly that reason. It is expected
+  // to STAY that pair across this whole epic —
   // so a literal `2` would sit EXACTLY ON the population, which is a ratchet in
   // behaviour whatever it is in intent: the next legitimate change to that set
   // breaks a gate that was never measuring the thing it names. Membership is
