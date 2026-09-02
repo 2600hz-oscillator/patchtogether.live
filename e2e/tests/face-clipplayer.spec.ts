@@ -245,6 +245,12 @@ test.describe('CLIP PLAYER faceplate', () => {
     }, CP);
     await expect(grid.getByTestId('clipplayer-pad-0')).toHaveAttribute('data-state', 'loaded');
 
+    // STICKY NOW is on the grid, where the card has it: a modifier on the pad
+    // click, carried by the panel that reads it. Asserted BEFORE the launch so
+    // the leg below cannot pass on a surface that lost it.
+    await expect(grid.getByTestId(`clipplayer-now-${CP}`)).toBeVisible();
+    await expect(grid.getByTestId(`clipplayer-now-${CP}`)).toHaveAttribute('aria-pressed', 'false');
+
     // ⚠ THE GESTURE. A single click on the face's own pad — through the 220 ms
     // debounce the panel shares with the card, which is why the effect is
     // POLLED rather than read once.

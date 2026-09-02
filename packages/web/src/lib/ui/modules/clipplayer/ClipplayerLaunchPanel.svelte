@@ -65,12 +65,25 @@
 
   let menu = $state<ClipplayerMenuAt | null>(null);
 
+  /** STICKY NOW — while on, a plain pad click launches IMMEDIATELY, ignoring
+   *  QNT, exactly as a shift-click does.
+   *
+   *  ⚠ IT LIVES IN THIS PANEL RATHER THAN IN THE DECK BODY, and the reason is
+   *  the one that decides every placement on this face: it is a MODIFIER ON THE
+   *  PAD CLICK, and the pad click is here. On the card both were in one
+   *  component so the choice never arose; splitting them across a cell and a
+   *  body would have needed a second node-keyed registry to carry one boolean
+   *  between two mounts, for a control whose whole meaning is "the next thing I
+   *  click in this grid". View-local like the card's, and never synced: it is a
+   *  performance modifier, not patch content. */
+  let nowSticky = $state(false);
+
   // Single-click launches; double-click opens the editor instead. The card's
   // 220 ms debounce, verbatim — without it every double-click also fires a
   // launch on its way to the editor.
   let clickTimer: ReturnType<typeof setTimeout> | null = null;
   function onPadClick(index: number, ev: MouseEvent) {
-    const now = ev.shiftKey;
+    const now = ev.shiftKey || nowSticky;
     if (clickTimer) clearTimeout(clickTimer);
     clickTimer = setTimeout(() => {
       clickTimer = null;
@@ -131,7 +144,7 @@
           aria-label={`launch scene ${slot + 1}`}
           data-slot={slot}
           data-testid={`clipplayer-scene-launch-${slot}`}
-          onclick={(e) => launchClipplayerScene(nodeId, slot, e.shiftKey)}>▶</button
+          onclick={(e) => launchClipplayerScene(nodeId, slot, e.shiftKey || nowSticky)}>▶</button
         >
         {#each row as pad (pad.index)}
           <button
@@ -158,6 +171,19 @@
         {/each}
       </div>
     {/each}
+  </div>
+
+  <div class="foot">
+    <button
+      class="now"
+      class:on={nowSticky}
+      aria-pressed={nowSticky}
+      title={nowSticky
+        ? 'NOW on — launches drop immediately (ignore QNT)'
+        : 'NOW off — launches follow QNT (shift-click a pad for a one-off immediate launch)'}
+      data-testid={`clipplayer-now-${nodeId}`}
+      onclick={() => (nowSticky = !nowSticky)}>NOW</button
+    >
   </div>
 </div>
 
@@ -275,6 +301,30 @@
       opacity: 0.7;
     }
   }
+  .foot {
+    display: flex;
+    margin-left: 14px;
+  }
+  .now {
+    height: 16px;
+    padding: 0 8px;
+    font-size: 9px;
+    letter-spacing: 0.06em;
+    color: rgb(255 255 255 / 0.42);
+    background: rgb(255 255 255 / 0.05);
+    border: 1px solid rgb(255 255 255 / 0.1);
+    border-radius: 2px;
+    cursor: pointer;
+  }
+  .now:hover {
+    color: #fff;
+  }
+  .now.on {
+    color: #fff;
+    border-color: var(--domain, #4dd6c1);
+    background: color-mix(in srgb, var(--domain, #4dd6c1) 26%, transparent);
+  }
+
   .auto-dot {
     position: absolute;
     right: 2px;

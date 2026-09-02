@@ -400,6 +400,25 @@ describe('clipplayer face — what a def-reading gate cannot see', () => {
     expect(read('ClipplayerNotePanel.svelte')).toContain('clipplayer-clear-auto-');
   });
 
+  // ⚠ THE AFFORDANCE DIFF'S ONE REAL GAP, CLOSED. Enumerating the card's
+  // data-testids against the face's found exactly one CONTROL with no home:
+  // the sticky NOW toggle. (The other absences are not controls: keys/buttons
+  // 2-5 of the control strip SELECTED a view, and the faceplate paints all four
+  // at once; `clipplayer-back` left the same way; the inline arranger timeline
+  // is a subset of the ARR pop-out the deck opens; and the `clipplayer-range`
+  // span was a derived readout, now the editor group's accessible name.)
+  it('sticky NOW is on the grid panel, with the pads that read it', () => {
+    const panel = read('ClipplayerLaunchPanel.svelte');
+    expect(panel).toContain('clipplayer-now-');
+    // It must actually MODIFY the launch, not merely paint: both the pad click
+    // and the scene launch read it.
+    expect(panel).toMatch(/ev\.shiftKey \|\| nowSticky/);
+    expect(panel).toMatch(/e\.shiftKey \|\| nowSticky/);
+    // …and it is VIEW-LOCAL, like the card's: a performance modifier is not
+    // patch content and must not reach a collaborator's screen.
+    expect(panel).not.toMatch(/nowSticky[^\n]*writeClipplayer/);
+  });
+
   // ⚠ THE MIDI BINDING ON RST IS DOCUMENTED AND PERSISTED (its keys live in
   // localStorage and the def advertises it), and a bare <Button> in a shell
   // action cell would have dropped it. The body wraps RST in the same
