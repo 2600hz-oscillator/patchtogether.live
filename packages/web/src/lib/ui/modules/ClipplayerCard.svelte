@@ -31,6 +31,15 @@
   // its tooltip used to claim "5" from a long-dead cable width, and a number
   // restated in a card is exactly the divergence the card-vs-def rule covers.
   import { POLY_CHANNEL_PAIRS } from '$lib/audio/poly';
+  // CRASH RECOVERY for interrupted audio takes. Lives in lib/ui, never
+  // lib/video — that directory is hashed wholesale for the WebGL attest.
+  import {
+    clipRecoveryLabel,
+    discardClipTake,
+    recoverClipTake,
+    scanClipRecoveries,
+    type ClipRecoveryCandidate,
+  } from '$lib/ui/modules/clip-media-recovery';
   import {
     CLIP_LANES,
     CLIP_SLOTS,
@@ -480,6 +489,33 @@
   // for the "p/N" progress flair while a finite-repeat scene is counting.
   let repProgress = $state<{ slot: number; done: number; total: number } | null>(null);
   let repProgressSig = ''; // change-detector (progress moves at pass granularity)
+  // ── CRASH RECOVERY: takes this node was still recording when its tab died ──
+  //
+  // Scanned ONCE on mount, the way recorderbox scans its own. The prompt exists
+  // only when there is something to restore, so a rack with no interrupted take
+  // renders exactly as it did before — which is also why it moves no VRT
+  // baseline: no scene seeds a manifest.
+  let clipRecoveries = $state<ClipRecoveryCandidate[]>([]);
+  async function rescanClipRecoveries() {
+    try {
+      clipRecoveries = await scanClipRecoveries(id);
+    } catch {
+      clipRecoveries = []; // storage is unavailable — offer nothing, break nothing
+    }
+  }
+  $effect(() => {
+    void id;
+    void rescanClipRecoveries();
+  });
+  async function doRecoverTake(c: ClipRecoveryCandidate) {
+    await recoverClipTake(id, c);
+    await rescanClipRecoveries();
+  }
+  async function doDiscardTake(c: ClipRecoveryCandidate) {
+    await discardClipTake(c);
+    await rescanClipRecoveries();
+  }
+
   // Track-cap "MAX" badge: lit for a few seconds after a touch/commit hit
   // MAX_AUTOMATION_TRACKS (the polite surface — client-local, polled).
   let capHitUntil = 0;
@@ -1690,6 +1726,33 @@
     : undefined}
 >
   <div class="stripe"></div>
+  {#if clipRecoveries.length > 0}
+    <!-- An interrupted take. An OVERLAY, not flow content: the rack tier
+         HARD-PINS this card's height and `.card` is `overflow: hidden`, so a
+         prompt appended to the flow would have its buttons clipped away and the
+         recovery would be visible but unreachable — the exact defect
+         recorderbox's own prompt was moved to an overlay to fix. -->
+    <div class="clip-recover" data-testid="clipplayer-recover">
+      <p class="clip-recover-title">Recover interrupted take?</p>
+      {#each clipRecoveries as c (c.manifest.mediaId)}
+        <div class="clip-recover-row">
+          <span class="clip-recover-name">{clipRecoveryLabel(c)}</span>
+          <button
+            type="button"
+            class="clip-recover-save nodrag"
+            data-testid="clipplayer-recover-save"
+            title="Restore this take into its slot, truncated to the last whole loop"
+            onclick={() => doRecoverTake(c)}>Recover</button>
+          <button
+            type="button"
+            class="clip-recover-discard nodrag"
+            data-testid="clipplayer-recover-discard"
+            title="Delete this take and free its storage"
+            onclick={() => doDiscardTake(c)}>Discard</button>
+        </div>
+      {/each}
+    </div>
+  {/if}
   <header class="title">
     <ModuleTitle {id} {data} defaultLabel="CLIP PLAYER" inline />
     <span class="title-btns">
@@ -2871,6 +2934,59 @@
     cursor: pointer;
   }
   .arr-open:hover { color: var(--accent, #c9f); border-color: var(--accent, #c9f); }
+  /* The recovery prompt floats over the grid, which is idle whenever a
+   * recovery is pending. Opaque, not translucent: it is a blocking question,
+   * and the pads behind it must not read as live. */
+  .clip-recover {
+    position: absolute;
+    left: 12px;
+    right: 12px;
+    top: 40px;
+    z-index: 8;
+    padding: 8px;
+    border: 1px dashed var(--accent-dim);
+    border-radius: 4px;
+    background: var(--module-bg);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.55);
+  }
+  .clip-recover-title {
+    margin: 0 0 6px;
+    font-size: 0.66rem;
+    color: var(--accent);
+  }
+  .clip-recover-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 4px;
+  }
+  .clip-recover-name {
+    flex: 1;
+    min-width: 0;
+    font-size: 0.64rem;
+    font-family: ui-monospace, monospace;
+    color: var(--text-dim);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .clip-recover-save,
+  .clip-recover-discard {
+    font-size: 0.6rem;
+    padding: 3px 7px;
+    border-radius: 3px;
+    cursor: pointer;
+    border: 1px solid var(--border);
+    background: var(--input-bg, #111);
+    color: var(--text);
+  }
+  .clip-recover-save:hover {
+    border-color: var(--accent);
+  }
+  .clip-recover-discard:hover {
+    border-color: #ff3b30;
+  }
+
   .body {
     margin-top: 18px;
     padding: 0 12px;
