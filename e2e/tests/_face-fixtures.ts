@@ -133,9 +133,27 @@ export const DENIED: Readonly<Record<string, string>> = {
   // is a different sentence about a different moment, and one no fixture MOUNT
   // ever reaches. The stated reason stopped describing the module long before
   // the promotion made it invisible.
-  archivist:
-    'fetches archive.org over the NETWORK at mount and its media is CORS-tainted by design — ' +
-    'a fixture must never depend on a third-party host being reachable from the runner',
+  // ⚠ `archivist` WAS HERE AND IS DELETED BY HAND, NOT AMENDED — the SIXTH
+  // instance of the class the `audioOut` note above describes, and the one this
+  // file's own `peertube` note named in advance ("same third-party-host class
+  // as archivist"). Its entry read: "fetches archive.org over the NETWORK at
+  // mount and its media is CORS-tainted by design — a fixture must never depend
+  // on a third-party host being reachable from the runner."
+  //
+  // Same mechanism, same reason for deleting by hand: promotion moves it out of
+  // `unpromoted` (the population this record filters), so the loop below stops
+  // consulting it and the record goes INVISIBLE rather than RED.
+  //
+  // ⚠ AND ITS FIRST CLAUSE WAS FALSE, in the recorderbox way rather than the
+  // peertube way — worth the line, because the promotion's own argument turns
+  // on the opposite fact. NOTHING fetches archive.org at MOUNT: `node.data.item`
+  // is null at spawn, the factory loads nothing on its own, and the face's lane
+  // tile was written to keep it that way (one non-reactive `onMount` read and
+  // one registry subscribe — no fetch, no probe). A search is reachable ONLY
+  // through a user gesture, which is why `face-archivist-compact` and
+  // `face-archivist-dock` are capturable VRT scenes at all. The second clause —
+  // CORS-tainted media — stays TRUE and is simply about a moment no fixture
+  // mount reaches, exactly as recorderbox's encoder sentence was.
   // ⚠ `peertube` WAS HERE AND IS DELETED BY HAND, NOT AMENDED — the THIRD
   // instance of the class the `audioOut` and `twotracks` notes above describe,
   // and this file predicted it would keep happening. Its entry read: "resolves

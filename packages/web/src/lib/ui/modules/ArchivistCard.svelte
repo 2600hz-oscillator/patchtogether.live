@@ -62,10 +62,9 @@
     skipBy,
     randomSeek,
     positionFraction,
-    fractionToSeconds,
-    formatTime,
-    SKIP_STEP_S,
   } from '$lib/video/modules/archivist-scrub';
+  import { archivistStatus } from '$lib/ui/media/archivist-status-registry';
+  import ArchivistBrowseControls from './archivist/ArchivistBrowseControls.svelte';
   import ModuleTitle from './ModuleTitle.svelte';
 
   let { id, data }: NodeProps = $props();
@@ -120,10 +119,23 @@
   const leases: (NodeMediaLease<HTMLElement> | null)[] = [null, null, null];
 
   // ---- Local UI state ----
-  let searchTerm = $state('');
-  let mediaType = $state<ArchivistMediaType>('video');
-  let yearFromStr = $state('');
-  let yearToStr = $state('');
+  //
+  // ⚠ THE FOUR SEARCH INPUTS ARE NO LONGER HELD HERE. They were card-local
+  // `$state` hydrated once from `node.data` at mount, which had TWO consequences
+  // — one of them a shipped defect this promotion had to fix rather than
+  // inherit:
+  //
+  //   1. it made the card the only surface that could compose a query, which
+  //      promotion (card parked off-screen, pointer-events:none) turns into "no
+  //      surface can"; and
+  //   2. ⚠ A PEER'S TYPING NEVER ARRIVED. The card WROTE all four keys to the
+  //      Y.Doc for multiplayer and then never read them again, so a rack-mate
+  //      changing the term left this card searching its own stale local copy —
+  //      the mirror was write-only. Same for a patch loaded while the card was
+  //      already mounted.
+  //
+  // The GRAPH is now the single answer: `ArchivistBrowseControls` writes the
+  // keys and `currentQuery()` below reads them at the moment a search runs.
   let lastDocs = $state<ArchivistDoc[]>([]); // current search page (for re-roll)
   let loading = $state(false);
   let statusMsg = $state<string | null>(null);
@@ -190,16 +202,6 @@
     if (imgEl) imgEl.alt = item?.title ?? 'archive.org image';
   });
 
-  onMount(() => {
-    const d = node?.data as Partial<ArchivistData> | undefined;
-    if (d) {
-      searchTerm = d.searchTerm ?? '';
-      mediaType = d.mediaType ?? 'video';
-      yearFromStr = d.yearFrom != null ? String(d.yearFrom) : '';
-      yearToStr = d.yearTo != null ? String(d.yearTo) : '';
-    }
-  });
-
   // ---- Engine helpers ----
   function videoEngine(): VideoEngine | null {
     const e = engineCtx.get();
@@ -223,18 +225,6 @@
       d.isPlaying = false;
     }, LOCAL_ORIGIN);
   }
-  function writeSearchInputs(): void {
-    ydoc.transact(() => {
-      const t = patch.nodes[id];
-      if (!t) return;
-      if (!t.data) t.data = {};
-      const d = t.data as Partial<ArchivistData>;
-      d.searchTerm = searchTerm;
-      d.mediaType = mediaType;
-      d.yearFrom = yearFromStr.trim() === '' ? null : Number(yearFromStr);
-      d.yearTo = yearToStr.trim() === '' ? null : Number(yearToStr);
-    }, LOCAL_ORIGIN);
-  }
   function writePlaying(on: boolean): void {
     ydoc.transact(() => {
       const t = patch.nodes[id];
@@ -245,11 +235,37 @@
   }
 
   // ---- Search + load ----
-  function parseYear(s: string): number | null {
-    const t = s.trim();
-    if (t === '') return null;
-    const n = Number(t);
-    return Number.isFinite(n) ? n : null;
+
+  /**
+   * The query, READ FROM THE GRAPH at the moment it is needed.
+   *
+   * ⚠ THE GRAPH IS THE SINGLE ANSWER, and that is what makes ONE command seam
+   * serve three surfaces. Three mounts of `ArchivistBrowseControls` can write
+   * these keys (the card's, the dock body's, the lane tile's) and a rack-mate
+   * can write them over Yjs; a query composed from any surface's own local copy
+   * would be a fourth opinion, and the one that ran would depend on which
+   * button was pressed. `ArchivistCommands.search` therefore takes no
+   * arguments — see the registry's note — and this is the read it names.
+   *
+   * A plain non-reactive read is exactly right here: it runs inside a click /
+   * command handler, never in a derivation, so the legacy card subtree's
+   * non-reactive `patch` is not a constraint on it.
+   */
+  function currentQuery(): {
+    term: string;
+    mediatype: ArchivistMediaType;
+    yearFrom: number | null;
+    yearTo: number | null;
+  } {
+    const d = patch.nodes[id]?.data as Partial<ArchivistData> | undefined;
+    const num = (v: unknown): number | null =>
+      typeof v === 'number' && Number.isFinite(v) ? v : null;
+    return {
+      term: typeof d?.searchTerm === 'string' ? d.searchTerm : '',
+      mediatype: (d?.mediaType ?? 'video') as ArchivistMediaType,
+      yearFrom: num(d?.yearFrom),
+      yearTo: num(d?.yearTo),
+    };
   }
 
   /** Fetch a fresh random search page for the current inputs. */
@@ -257,17 +273,8 @@
     errorMsg = null;
     loading = true;
     statusMsg = 'Searching archive.org…';
-    writeSearchInputs();
     try {
-      const url = buildSearchUrl(
-        {
-          term: searchTerm,
-          mediatype: mediaType,
-          yearFrom: parseYear(yearFromStr),
-          yearTo: parseYear(yearToStr),
-        },
-        { rows: 50, random: true },
-      );
+      const url = buildSearchUrl(currentQuery(), { rows: 50, random: true });
       const resp = await fetch(url);
       if (!resp.ok) throw new Error(`search HTTP ${resp.status}`);
       const json = await resp.json();
@@ -322,10 +329,14 @@
       if (meta.restricted) return false; // skip restricted (belt + braces)
 
       // Resolve the concrete type. For 'any' we use the doc's mediatype.
+      // Read from the GRAPH for the same reason `runSearch` does — this runs
+      // one await after the search that produced `doc`, and the filter that
+      // chose it is the one on the node.
+      const wanted = currentQuery().mediatype;
       const concrete =
-        mediaType === 'any'
+        wanted === 'any'
           ? concreteTypeFromMediatype(doc.mediatype)
-          : (mediaType as Exclude<ArchivistMediaType, 'any'>);
+          : (wanted as Exclude<ArchivistMediaType, 'any'>);
       if (!concrete) return false;
 
       const file = pickBestFile(meta.files, concrete);
@@ -502,9 +513,11 @@
     else try { el.pause(); } catch { /* */ }
   }
 
-  function onSeekInput(ev: Event): void {
-    const input = ev.target as HTMLInputElement;
-    const target = clampSeek(Number(input.value), durationSec);
+  /** Absolute seek, in seconds. Clamped here rather than at the surface: the
+   *  clamp is a property of the LOADED ITEM's duration, which only this owner
+   *  is guaranteed to have (a surface can be mounted before metadata lands). */
+  function seekTo(positionS: number): void {
+    const target = clampSeek(positionS, durationSec);
     const el = activeMediaEl();
     if (el) try { el.currentTime = target; } catch { /* */ }
     displayPos = target;
@@ -526,6 +539,48 @@
     try { el.currentTime = target; } catch { /* */ }
     displayPos = target;
   }
+
+  // ---- THE STATUS / COMMAND SEAM ($lib/ui/media/archivist-status-registry) ----
+  //
+  // ⚠ THIS IS WHAT MAKES A PROMOTED ARCHIVIST USABLE AT ALL. archivist is in
+  // `DOM_SOURCE_LANE_TYPES`, so under the default shell this card is MOUNTED —
+  // in `<HeadlessSourceHost>`, which is what keeps the three node-owned
+  // elements attached and a loaded item playing — but parked at `left:-9999px`
+  // with `pointer-events: none`, so nothing it draws can be clicked. The
+  // faceplate's bodies show the state published below and invoke the commands
+  // registered below. Ownership does not move: this card is still the only
+  // thing that fetches, attaches, plays or seeks.
+  //
+  // ⚠ PUBLISH IS A TRACKED READ OF ALL FIVE FIELDS, deliberately. `loading`
+  // alone is not the status a consumer paints: `statusMsg` says WHICH item is
+  // being fetched, `errorMsg` carries the recovery instruction, `docCount`
+  // decides whether ↻ next can promise a re-roll, and `positionSec` is the
+  // scrubber's live position — the one field that ticks, and the reason it is
+  // published here rather than written to the doc every 100 ms.
+  $effect(() => {
+    archivistStatus.publish(id, {
+      loading,
+      statusMsg,
+      errorMsg,
+      docCount: lastDocs.length,
+      positionSec: displayPos,
+    });
+  });
+
+  $effect(() => {
+    // The lease is OWNER-CHECKED, so the remount churn this card sees (lane →
+    // headless host → dock rail) cannot let a stale teardown unregister the
+    // live mount's commands. See the registry header.
+    const lease = archivistStatus.registerCommands(id, {
+      search: () => { void runSearch(); },
+      next: () => { void nextRandom(); },
+      togglePlay,
+      skip,
+      seek: seekTo,
+      jumpRandom,
+    });
+    return () => lease.release();
+  });
 
   // ---- Sync shared isPlaying to the local element ----
   $effect(() => {
@@ -594,15 +649,6 @@
     getExtras()?.fireEnded();
   }
 
-  // ---- Form handlers ----
-  function onSearchKeydown(ev: KeyboardEvent): void {
-    if (ev.key === 'Enter') { ev.preventDefault(); void runSearch(); }
-  }
-  function onTypeChange(ev: Event): void {
-    mediaType = (ev.target as HTMLSelectElement).value as ArchivistMediaType;
-    writeSearchInputs();
-  }
-
   // ---- Corner-drag resize ----
   let resizing = $state(false);
   let resizeAbort: AbortController | null = null;
@@ -634,7 +680,7 @@
   class:resizing
   style="width: {cardWidth}px; height: {cardHeight}px;"
   data-testid="archivist-card"
-  data-media-type={item?.type ?? mediaType}
+  data-media-type={item?.type ?? 'none'}
   data-has-item={item !== null}
   data-clean-output={cleanOut}
   data-is-playing={isPlaying}
@@ -646,72 +692,18 @@
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
   <div class="body">
-    <!-- Search controls -->
-    <div class="controls">
-      <div class="row">
-        <select
-          class="type-select nodrag"
-          value={mediaType}
-          onchange={onTypeChange}
-          data-testid="archivist-type"
-          aria-label="Media type"
-        >
-          <option value="image">image</option>
-          <option value="audio">audio</option>
-          <option value="video">video</option>
-          <option value="any">any</option>
-        </select>
-        <input
-          class="search-input nodrag"
-          type="text"
-          placeholder="search archive.org…"
-          bind:value={searchTerm}
-          onkeydown={onSearchKeydown}
-          onchange={writeSearchInputs}
-          data-testid="archivist-search"
-          aria-label="Search term"
-        />
-      </div>
-      <div class="row years">
-        <input
-          class="year-input nodrag"
-          type="number"
-          placeholder="from yr"
-          bind:value={yearFromStr}
-          onchange={writeSearchInputs}
-          data-testid="archivist-year-from"
-          aria-label="Year from"
-        />
-        <span class="dash">–</span>
-        <input
-          class="year-input nodrag"
-          type="number"
-          placeholder="to yr"
-          bind:value={yearToStr}
-          onchange={writeSearchInputs}
-          data-testid="archivist-year-to"
-          aria-label="Year to"
-        />
-        <button
-          type="button"
-          class="search-btn nodrag"
-          onclick={() => void runSearch()}
-          disabled={loading}
-          data-testid="archivist-search-btn"
-        >Search</button>
-        <button
-          type="button"
-          class="reroll-btn nodrag"
-          onclick={() => void nextRandom()}
-          disabled={loading || (lastDocs.length === 0 && item === null)}
-          data-testid="archivist-reroll-btn"
-          title="Load another random match"
-        >↻ next</button>
-      </div>
-    </div>
-
-    <!-- Preview -->
-    <div class="preview-wrap" data-testid="archivist-preview">
+    <!-- Preview. ⚠ THE ITEM IDENTITY LIVES ON THE ACCESSIBLE NAME, which is
+         where the deleted `Internet Archive · {type}` line's content went — the
+         same move the face body makes, so the two surfaces say one thing. -->
+    <div
+      class="preview-wrap"
+      data-testid="archivist-preview"
+      role="img"
+      aria-label={item
+        ? `ARCHIVIST picture — ${item.type} item “${item.title}” from the Internet Archive`
+          + (cleanOut ? '' : ' (play-only: no clean picture output)')
+        : 'ARCHIVIST picture — nothing loaded'}
+    >
       <!-- The three media elements are NOT declared here: they belong to the
            NODE and are adopted into these host divs (see the $effect above).
            Declaring them in markup is what tied their lifetime to the card. -->
@@ -740,45 +732,34 @@
       {/if}
     </div>
 
-    {#if errorMsg}
-      <div class="error" data-testid="archivist-error">{errorMsg}</div>
-    {/if}
+    <!-- Search, transport and attribution — THE SHARED COMPONENT, not a copy.
+         The dock full-view body and the lane tile mount the same file, so the
+         three surfaces cannot drift; see its header for why that is structural
+         on this module rather than merely tidy.
 
-    <!-- Transport (time-media only) -->
-    {#if isTimeMedia}
-      <div class="transport">
-        <button type="button" class="t-btn nodrag" onclick={() => skip(-SKIP_STEP_S)} data-testid="archivist-back" title="Back 10s">−10s</button>
-        <button type="button" class="play-btn nodrag" onclick={togglePlay} aria-pressed={isPlaying} data-testid="archivist-play">{isPlaying ? 'Pause' : 'Play'}</button>
-        <button type="button" class="t-btn nodrag" onclick={() => skip(SKIP_STEP_S)} data-testid="archivist-fwd" title="Forward 10s">+10s</button>
-        <button type="button" class="t-btn nodrag" onclick={jumpRandom} data-testid="archivist-rand-pos" title="Jump to random position">⤭</button>
-        <span class="time" data-testid="archivist-time">{formatTime(displayPos)} / {formatTime(durationSec)}</span>
-      </div>
-      <input
-        class="seek nodrag"
-        type="range"
-        min="0"
-        max={Math.max(0.001, durationSec)}
-        step="0.01"
-        value={displayPos}
-        oninput={onSeekInput}
-        disabled={durationSec <= 0}
-        data-testid="archivist-seek"
-        aria-label="Playhead"
-      />
-    {/if}
+         ⚠ IT SITS BELOW THE PICTURE NOW (the search row used to be above it).
+         One order for all three surfaces, and it is the order every other video
+         surface in the tree already uses — picture first, browse under it.
 
-    <!-- Attribution + per-type CORS note -->
-    {#if item}
-      <div class="meta" data-testid="archivist-meta">
-        <a class="title-link nodrag" href={detailsUrl} target="_blank" rel="noopener noreferrer" title={item.title}>{item.title}</a>
-        <div class="src-line">
-          Internet Archive · {item.type}
-          {#if !cleanOut}
-            <span class="cors-warn" data-testid="archivist-cors-warn" title="archive.org video lacks CORS on the served file, so the texture output is tainted — preview/scrub only.">⚠ play-only (no clean output)</span>
-          {/if}
-        </div>
-      </div>
-    {/if}
+         ⚠ TWO RESTING READOUTS ARE DELETED HERE, NOT MOVED. The `0:04 / 2:00`
+         time line is gone (position lives on the scrubber and its
+         `aria-valuetext`, the deletion videobox and videovarispeed already
+         made), and so is the `Internet Archive · {type}` line — the type
+         restated the picker two rows up and the source is the module's whole
+         identity. What that line carried is on the picture's `aria-label`, and
+         the `play-only` warning it hosted is now a `CLEAN OUT` StatusLed whose
+         caption is static and whose sentence rides on `aria-label`/`title`. -->
+    <ArchivistBrowseControls
+      nodeId={id}
+      testidPrefix="archivist"
+      hasItem={item !== null}
+      itemTitle={item?.title ?? null}
+      itemType={item?.type ?? null}
+      {durationSec}
+      {isPlaying}
+      cleanOutput={cleanOut}
+      {detailsUrl}
+    />
   </div>
 
   <div
@@ -810,31 +791,11 @@
     min-height: 0;
   }
 
-  .controls { display: flex; flex-direction: column; gap: 4px; }
-  .row { display: flex; gap: 4px; align-items: center; }
-  .type-select {
-    background: #1a1f2a; color: var(--text); border: 1px solid #404652;
-    border-radius: 2px; font-size: 0.65rem; padding: 3px 4px;
-  }
-  .search-input {
-    flex: 1; min-width: 0;
-    background: #11151c; color: var(--text); border: 1px solid #404652;
-    border-radius: 2px; font-size: 0.7rem; padding: 4px 6px;
-  }
-  .years { font-size: 0.65rem; }
-  .year-input {
-    width: 56px;
-    background: #11151c; color: var(--text); border: 1px solid #404652;
-    border-radius: 2px; font-size: 0.65rem; padding: 3px 4px;
-  }
-  .dash { color: var(--text-dim); }
-  .search-btn, .reroll-btn {
-    background: var(--cable-video); color: #000; border: none; border-radius: 2px;
-    padding: 3px 8px; font-size: 0.65rem; cursor: pointer; letter-spacing: 0.03em;
-  }
-  .reroll-btn { background: #2a3340; color: var(--text); }
-  .search-btn:disabled, .reroll-btn:disabled { opacity: 0.5; cursor: default; }
-  .search-btn:hover:not(:disabled) { filter: brightness(1.1); }
+  /* ⚠ THE SEARCH, TRANSPORT, SEEK, ERROR AND META RULES ARE GONE FROM HERE
+     because their markup is gone from here: all of it moved into
+     `archivist/ArchivistBrowseControls.svelte`, which carries its own scoped
+     styles and is mounted by this card and by both faceplate bodies. Copying
+     the rules back would be the drift that component exists to prevent. */
 
   .preview-wrap {
     position: relative;
@@ -885,34 +846,6 @@
     animation: spin 0.8s linear infinite;
   }
   @keyframes spin { to { transform: rotate(360deg); } }
-
-  .error { font-size: 0.6rem; color: #ff6b6b; font-family: ui-monospace, monospace; }
-
-  .transport { display: flex; align-items: center; gap: 4px; }
-  .play-btn {
-    background: var(--cable-video); color: #000; border: none; border-radius: 2px;
-    padding: 3px 10px; font-size: 0.7rem; cursor: pointer; min-width: 52px;
-  }
-  .play-btn:hover { filter: brightness(1.1); }
-  .t-btn {
-    background: #2a3340; color: var(--text); border: none; border-radius: 2px;
-    padding: 3px 6px; font-size: 0.6rem; cursor: pointer;
-  }
-  .t-btn:hover { filter: brightness(1.2); }
-  .time { font-size: 0.6rem; color: var(--text-dim); font-family: ui-monospace, monospace; margin-left: auto; }
-
-  .seek { width: 100%; accent-color: var(--cable-video); }
-  .seek:disabled { opacity: 0.5; }
-
-  .meta { display: flex; flex-direction: column; gap: 2px; }
-  .title-link {
-    font-size: 0.65rem; color: var(--text);
-    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-    text-decoration: none;
-  }
-  .title-link:hover { text-decoration: underline; color: var(--cable-video); }
-  .src-line { font-size: 0.55rem; color: var(--text-dim); font-family: ui-monospace, monospace; }
-  .cors-warn { color: #ffb454; }
 
   .resize-handle {
     position: absolute; right: 0; bottom: 0; width: 16px; height: 16px;

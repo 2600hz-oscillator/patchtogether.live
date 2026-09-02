@@ -229,6 +229,7 @@
   import { HEADLESS_MOUNT_LANE_TYPES, DOM_SOURCE_LANE_TYPES, CARD_PRODUCER_LANE_TYPES, FACE_MOUNTS_PRODUCER, needsHeadlessSourceMount } from '$lib/ui/workflow/dom-source-modules';
   import { cameraStatus } from '$lib/ui/media/camera-status-registry';
   import { loopbackStatus } from '$lib/ui/media/loopback-status-registry';
+  import { archivistStatus } from '$lib/ui/media/archivist-status-registry';
   import { loopbackCropPump } from '$lib/ui/media/loopback-crop-pump';
   import { groupCardHostsChildCard } from '$lib/ui/modules/group-viz-hosts';
   import { nodeMedia } from '$lib/ui/media/node-media-registry';
@@ -2596,6 +2597,14 @@
     // leave a pump measuring the viewport forever.
     loopbackStatus.sweep(liveIds);
     loopbackCropPump.sweep(liveIds);
+    // ...and the same status/command seam for ARCHIVIST
+    // ($lib/ui/media/archivist-status-registry), the THIRD and last member of
+    // DOM_SOURCE_LANE_TYPES to be promoted. Same reason as the two above: its
+    // card is off-screen in <HeadlessSourceHost> under the default shell, so
+    // this registry is the only thing joining that card to the faceplate's
+    // dock body and lane tile — and like every row here it is keyed to the
+    // NODE, so the graph is what retires it, never a card unmount.
+    archivistStatus.sweep(liveIds);
     // ...and the NODE-OWNED VIDEO SOURCE (LEG-02, #1511:
     // $lib/ui/media/node-video-source-registry) — the row that lets a
     // file-backed video module leave `DOM_SOURCE_LANE_TYPES` altogether. Before
