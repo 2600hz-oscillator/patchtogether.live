@@ -7,9 +7,10 @@
   // 2026-08-31 item 2): the lane tile and the dock bands paint `pos_x`/`pos_y`
   // as two plain knob cells, and the real pad is the `joystick` extension's
   // `fullViewBody` (`joystick/JoystickPadBody.svelte`), which ports THIS
-  // file's drag contract. This card still paints under `?shell=legacy` and in
-  // the dock rail for a user-docked node, so it must keep working — but it is
-  // no longer what the default shell mounts anywhere.
+  // file's drag contract. This card still paints in the LANE under
+  // `?shell=legacy`, so it must keep working — but the dock full view switches
+  // on STRICT_FACES alone, so post-promotion the dock mounts the face even
+  // under `?shell=legacy`, and the default shell mounts this card nowhere.
   //
   // The old #1974 refusal ("a face here resolves to ZERO lane controls,
   // because both params are axes of one pad") was about the `xyPads` shape,

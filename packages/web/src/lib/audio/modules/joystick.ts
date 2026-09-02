@@ -12,10 +12,12 @@
 //   * Four ConstantSourceNodes — one per output port. Each carries an
 //     offset that we set via setValueAtTime() whenever the card pushes
 //     a new position.
-//   * The pad UI lives on the faceplate's shared `xy` cell (and, under
-//     ?shell=legacy, on JoystickCard); the audio module exposes a pair
-//     of internal params `pos_x` and `pos_y` (range -1..+1) that the pad
-//     writes via the normal param path. The factory mirrors those into
+//   * The pad UI lives on the `joystick` extension's `fullViewBody`
+//     (JoystickPadBody.svelte — there is no shared xy cell in this design;
+//     see the face block below) and, in the lane under ?shell=legacy, on
+//     JoystickCard; the audio module exposes a pair of internal params
+//     `pos_x` and `pos_y` (range -1..+1) that the pad writes via the
+//     normal param path. The factory mirrors those into
 //     the ConstantSource offsets so the engine's per-param tap
 //     analyser sees live activity for the motorized fader path (also
 //     useful for tests that poke setParam directly without UI).
