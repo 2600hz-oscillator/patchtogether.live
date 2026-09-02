@@ -6358,6 +6358,107 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // for a GL context and neither new file creates one). No `params`, no port
   // and no factory code moves, so contract-lock does not move either.
   'painter',
+
+  // ── ARCHIVIST (2026-09-02) — THE INTERNET ARCHIVE SEARCH BROWSER ─────────
+  //
+  // One ranked param (`gain`, a fader — unity at the midpoint of a 0..2
+  // throw), `glyph: 'none'` (a REAL choice, not a forced one: two `audio`
+  // outputs mean any other literal resolves to a LIVE binding, so a glyph
+  // would paint a VU of a found recording where the module's own picture
+  // belongs), one `noUserControl` bridge cache (`cv_play_trigger`, writer
+  // 'cv-port' — the only legal value, since `play_trigger` declares
+  // `paramTarget`), no pages, and an extension carrying BOTH body slots.
+  //
+  // ⚠ THE THIRD AND LAST MEMBER OF `DOM_SOURCE_LANE_TYPES` TO BE PROMOTED, AND
+  // THE BLOCKER IS REAL HERE IN A WAY IT WAS NOT FOR ITS TWO PREDECESSORS.
+  // peertube's entry (#2305) retired `needs-media-controller` by showing the
+  // blocker was a CATEGORY ERROR for that module — it had already LEFT the set
+  // — and recorderbox's (#2314) by showing the module was never in it at all.
+  // Neither argument transfers: archivist IS in `DOM_SOURCE_LANE_TYPES`, its
+  // three media elements ARE card-attached, and `needsHeadlessSourceMount`
+  // genuinely returns true for it. The blocker is therefore NOT retired by
+  // reclassification — it is DISCHARGED the way cameraInput and loopback
+  // discharged it: the card keeps sole ownership of the elements and of the
+  // fetch/attach chain, and every affordance it draws is carried to the
+  // faceplate through a status/command registry. The inventory records that
+  // with a named `CARD_SOURCE_FACED` entry, which is the gate that refuses a
+  // DOM-source `generic-face` without one.
+  //
+  // ⚠ WHY THAT MATTERS MORE HERE THAN ON EITHER PREDECESSOR.
+  // `<HeadlessSourceHost>` parks the real card at `left:-9999px` with
+  // `pointer-events: none`, so the card is MOUNTED (the elements stay
+  // attached, a loaded item goes on playing) but nothing on it is CLICKABLE —
+  // and archivist's card is ALL controls. A fresh archivist has NO item:
+  // `node.data.item` is null until a search writes one, and the factory
+  // searches nothing on its own. So a promotion without these bodies would
+  // ship a media source that can never be given any media — cameraInput's "a
+  // live source with no way to START it" in its strongest form.
+  //
+  // ⚠ BOTH BODY SLOTS, AND THE TILE IS NOT A NICETY — cameraInput's lesson
+  // applied to the module it applies to hardest. A `fullViewBody`-only
+  // extension would paint the idle gradient in the lane with no way to fill
+  // it, and a player would have to already know to open the dock. The tile
+  // body does NO mount-time work (one non-reactive `onMount` read and one
+  // registry subscribe; no fetch, no probe) — recorderbox's 60-scene VRT
+  // regression came from exactly the opposite. `EXTENSION_BODY_ROLES` is
+  // structurally unable to see a `tileBody`, so it is pinned in
+  // `archivist-face-model.test.ts`.
+  //
+  // ⚠ ONE COMPONENT, THREE MOUNTS: `ArchivistBrowseControls.svelte` is
+  // imported by the card AND both bodies. Not tidiness — this module has a
+  // documented case of the two halves of one surface disagreeing
+  // (`updateDuration`'s comment records the seek `max` and the time readout
+  // stuck at 0 after metadata landed), so no-drift is made structural rather
+  // than conventional: the property `PeerTubePicker` was introduced for next
+  // door.
+  //
+  // ⚠ A SHIPPED DEFECT IS FIXED RATHER THAN INHERITED: the card WROTE
+  // searchTerm/mediaType/yearFrom/yearTo to the Y.Doc for multiplayer and then
+  // NEVER READ THEM AGAIN — the mirror was write-only, so a rack-mate's typing
+  // (or a patch loaded into an already-mounted card) left this card searching
+  // its own stale local copy. The query is now read from the GRAPH at the
+  // moment a search runs, which is also what lets ONE command seam serve three
+  // surfaces without a fourth opinion about what the query is.
+  //
+  // ⚠ TWO RESTING READOUTS DELETED ON EVERY SURFACE, NOT HIDDEN: the
+  // `0:04 / 2:00` time line (position lives on the scrubber and its
+  // `aria-valuetext` — the deletion videobox and videovarispeed already made)
+  // and the `Internet Archive · {type}` line (the type restated the picker two
+  // rows up; the source is the module's whole identity). What they carried is
+  // on the picture's `aria-label`. The `play-only (no clean output)` warning
+  // becomes a `CLEAN OUT` StatusLed — kept, not deleted, because it is the
+  // ONLY account a player has of a patched `video` jack delivering the idle
+  // pattern (the videovarispeed START-past-END argument).
+  //
+  // ZERO ATTEST: `face` / `noUserControl` / `docs` are hash-transparent by
+  // construction (`attest-code-basis.ts`), no param, port or factory code
+  // moves, and every new file is under `lib/ui/**` rather than `lib/video/**`.
+  // Measured before and after, not asserted. CONTRACT UNCHANGED: no
+  // controlFamilies, no new params. `docs:accept` runs because the
+  // explanation's card-ownership and card-resize prose was made false by the
+  // promotion.
+  //
+  // ⚠ TWO VRT FACE SCENES, AND THE FIRST DRAFT OF THIS ENTRY GOT IT WRONG —
+  // recorded rather than quietly corrected. It reasoned that archivist sits in
+  // `EXEMPT_FROM_VRT` and in the anchored `ALLOWED_PERMANENT_EXEMPT` list, so a
+  // face scene would mean draining that exemption. That is a CONFLATION of two
+  // different rosters: the exemption governs the module's own CARD scene, and
+  // `FACES` in e2e/vrt/_shell-faces.ts is a separate list. 61 of the 66 exempt
+  // modules are face-rostered today, cameraInput, loopback, videobox,
+  // tvLibrarian and peertube among them. `vrt-meta.test.ts` caught it, which is
+  // the gate doing exactly its job.
+  //
+  // The scenes are capturable on the STRONGEST form of the peertube argument:
+  // the card's exemption names a live source, a live element and a ticking
+  // playhead, and a FACE scene has NONE of the three — `node.data.item` is null
+  // at spawn, the factory loads nothing on its own, so the shader's idle branch
+  // runs (a pure function of vUv.y), no element is attached, and the transport
+  // that would tick is behind `isTimeMedia` and does not render at all. No
+  // simPin and no network: unlike peertube there is not even an
+  // `autoLoadCatalogue` flag to be false — a search is reachable ONLY through a
+  // user gesture. Baselines come from Linux CI through the vrt-update bot, as
+  // always; none is captured locally.
+  'archivist',
 ]);
 
 /**

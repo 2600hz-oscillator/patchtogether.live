@@ -700,6 +700,38 @@ describe('face-migration inventory — DERIVED from the tree, not from this list
   }
 
   const CARD_SOURCE_FACED: Readonly<Record<string, CarriedAffordances>> = {
+    archivist: {
+      why:
+        'THE WHOLE MODULE, and this is the widest carry on the roster because this card is all '
+        + 'controls. The SEARCH (a free-text term, two year bounds and a media-type filter), the '
+        + '↻ NEXT re-roll, the four TRANSPORT actions (play/pause, ±10s, random position), the '
+        + 'SEEK bar, the load PROGRESS prose and the FAILURE prose — all rebuilt in the '
+        + 'faceplate through ONE shared component mounted by the card, the dock fullViewBody and '
+        + 'the lane tileBody alike. The card keeps sole ownership of the three node-owned '
+        + 'elements, the archive.org fetch/parse/best-file-pick chain, the engine attach and the '
+        + 'audio wire; the bodies read a published status and invoke a registered command, so no '
+        + 'second owner exists. ⚠ THE STAKES ARE HIGHER THAN FOR EITHER SIBLING BELOW: camera '
+        + 'and loopback lose a way to START a source that would otherwise be running, whereas a '
+        + 'fresh archivist has NO item at all — `node.data.item` is null until a search writes '
+        + 'one and the factory searches nothing on its own — so an unreachable search box is not '
+        + 'a degraded module, it is a media source that can never be given any media. ⚠ NONE OF '
+        + 'IT COULD BE A CELL: a free-text term and two year bounds are not `ParamDef`s, ↻ next '
+        + 'and the transport are ACTIONS rather than values, `ShellSelectorCell.options` is a PURE '
+        + 'SYNCHRONOUS `(node) => SelectorOption[]` (shell-cells.ts:269) that cannot express a '
+        + 'runtime archive.org fetch, and a `static` face key renders as the deliberately INERT '
+        + 'dashed label while no spec is registered for it. ⚠ THE TILE SLOT IS FILLED TOO, because '
+        + 'cameraInput shipped `fullViewBody`-only and lost its only route to a first capture; '
+        + 'here the lane tile would otherwise be an idle gradient with no way to fill it. ⚠ TWO '
+        + 'OF THE SIX COMMANDS CARRY A NUMBER (skip a signed delta, seek an absolute position), '
+        + 'which is why this seam takes a discriminated-union request rather than the bare '
+        + 'command id its two siblings use — a seam that could not carry the argument would have '
+        + 'forced a body to touch the element, i.e. to become the second owner. ⚠ SEPARATELY, a '
+        + 'WRITE-ONLY Y.Doc MIRROR was repaired in the same diff: the card wrote all four search '
+        + 'keys for multiplayer and never read them back, so a rack-mate\'s typing left it '
+        + 'searching a stale local copy. The query is now read from the GRAPH when a search runs, '
+        + 'which is also what lets one command seam serve three surfaces.',
+      seam: '$lib/ui/media/archivist-status-registry',
+    },
     cameraInput: {
       why:
         'the DEVICE PICKER (a runtime enumerateDevices roster, so never a ParamDef and never an '
@@ -729,16 +761,35 @@ describe('face-migration inventory — DERIVED from the tree, not from this list
     },
   };
 
-  it('CARD-OWNED SOURCE: a generic-face module must have CARRIED its card-only affordances', () => {
-    // DOM_SOURCE_LANE_TYPES is itself grep-gated against the cards that call
-    // attachExternalSource (dom-source-modules.test.ts), so this reads a
-    // maintained artifact rather than re-grepping for the same thing.
+  /**
+   * The rule, as a PURE function of (types, exemptions, dispositions).
+   *
+   * ⚠ EXTRACTED 2026-09-02, AND THE EXTRACTION IS THE POINT. The negative
+   * control below used to assert that some member of `DOM_SOURCE_LANE_TYPES`
+   * was NOT in `CARD_SOURCE_FACED` — i.e. it proved the rule still bit by
+   * pointing at a module that had not been faced yet. `archivist` was the last
+   * such module, so promoting it made that leg UNSATISFIABLE: the set is now
+   * fully covered, and the assertion "the exemption is not universal" became
+   * false-by-success rather than false-by-regression.
+   *
+   * A population-shaped negative control expires when the population drains.
+   * The honest replacement is a control over the PREDICATE, so the gate is fed
+   * a synthetic uncovered module and asked to refuse it — which keeps working
+   * at every population size, including this one. Both the real gate and the
+   * control call THIS function, so a "simplification" of the rule to a blanket
+   * skip reddens the control instead of quietly disarming it.
+   */
+  function carriedAffordanceOffenders(
+    types: Iterable<string>,
+    faced: Readonly<Record<string, CarriedAffordances>>,
+    entryOf: (t: string) => ReturnType<typeof inventoryEntry>,
+  ): string[] {
     const offenders: string[] = [];
-    for (const type of [...DOM_SOURCE_LANE_TYPES].sort()) {
-      const entry = inventoryEntry(type);
+    for (const type of [...types].sort()) {
+      const entry = entryOf(type);
       if (!entry) continue; // reported by the totality gate
       if (entry.disposition === 'generic-face') {
-        if (!CARD_SOURCE_FACED[type]) {
+        if (!faced[type]) {
           offenders.push(
             `${type}: dispositioned generic-face, but its card owns the source and the shell ` +
               'parks that card off-screen (pointer-events:none) — every button it draws becomes ' +
@@ -752,7 +803,16 @@ describe('face-migration inventory — DERIVED from the tree, not from this list
         offenders.push(`${type}: is a DOM-source module but does not declare needs-media-controller`);
       }
     }
-    expect(offenders.sort()).toEqual([]);
+    return offenders.sort();
+  }
+
+  it('CARD-OWNED SOURCE: a generic-face module must have CARRIED its card-only affordances', () => {
+    // DOM_SOURCE_LANE_TYPES is itself grep-gated against the cards that call
+    // attachExternalSource (dom-source-modules.test.ts), so this reads a
+    // maintained artifact rather than re-grepping for the same thing.
+    expect(
+      carriedAffordanceOffenders(DOM_SOURCE_LANE_TYPES, CARD_SOURCE_FACED, inventoryEntry),
+    ).toEqual([]);
   });
 
   it('ANCHORED: every CARD_SOURCE_FACED entry still names a faced DOM-source module', () => {
@@ -804,24 +864,41 @@ describe('face-migration inventory — DERIVED from the tree, not from this list
     }
   });
 
-  it('NEGATIVE CONTROL: the exemption is NOT universal — the hazard still stands for the rest', () => {
-    // Without this the clause could be silently vacuous (nobody covered) or
-    // silently universal (everybody covered) and the sweep would look identical
-    // either way. Both directions, off the live sets.
+  it('POSITIVE CONTROL: the rule REFUSES an uncovered DOM-source module', () => {
+    // ⚠ THIS REPLACED A POPULATION-SHAPED NEGATIVE CONTROL ON 2026-09-02, and
+    // the reason is worth keeping: the old leg asserted that some member of
+    // DOM_SOURCE_LANE_TYPES was still UNCOVERED, which was a fact about how far
+    // the migration had got rather than about the rule. `archivist` was the
+    // last uncovered member, so promoting it would have made that assertion
+    // fail — not because anything regressed, but because the queue it was
+    // measuring had emptied. A control that expires when the work finishes
+    // cannot protect the work that comes after it.
+    //
+    // So the rule is exercised DIRECTLY instead: feed it a module that is
+    // generic-face and NOT in the exemption map, and require that it complains.
+    // This holds at every population size, including a fully-drained one.
+    const offenders = carriedAffordanceOffenders(
+      ['syntheticUncoveredSource'],
+      {},
+      () => ({ type: 'syntheticUncoveredSource', disposition: 'generic-face', why: 'synthetic' }),
+    );
+    expect(offenders, 'the rule let an uncovered generic-face DOM source through').toHaveLength(1);
+    expect(offenders[0]).toContain('syntheticUncoveredSource');
+    expect(offenders[0]).toContain('CARD_SOURCE_FACED');
+
+    // The other arm, likewise exercised rather than assumed: a DOM-source
+    // module that is NOT generic-face must still declare the blocker.
+    const blockerOffenders = carriedAffordanceOffenders(
+      ['syntheticBlockedSource'],
+      {},
+      () => ({ type: 'syntheticBlockedSource', disposition: 'bespoke-surface', why: 'synthetic' }),
+    );
+    expect(blockerOffenders, 'a blocker-less DOM source was accepted').toHaveLength(1);
+    expect(blockerOffenders[0]).toContain('needs-media-controller');
+
+    // And the mechanism is not dead code: real modules DO reach the exemption.
     const covered = [...DOM_SOURCE_LANE_TYPES].filter((t) => CARD_SOURCE_FACED[t]);
     expect(covered, 'no DOM-source module is exempt — the mechanism is dead code').not.toEqual([]);
-
-    const uncovered = [...DOM_SOURCE_LANE_TYPES].filter((t) => !CARD_SOURCE_FACED[t]);
-    expect(uncovered, 'every DOM-source module is exempt — the gate checks nothing').not.toEqual([]);
-
-    // And an uncovered member really is refused a generic face. This is the leg
-    // that fails if someone "simplifies" the condition to a blanket skip.
-    for (const t of uncovered) {
-      expect(
-        inventoryEntry(t)?.disposition,
-        `${t} has no carried-affordance entry, so it must not be generic-face`,
-      ).not.toBe('generic-face');
-    }
   });
 
   it('SCOPE: this gate reads DISPOSITIONS and DEFS — it cannot see a rebuilt affordance WORK', () => {
