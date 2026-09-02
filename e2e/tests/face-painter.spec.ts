@@ -274,13 +274,31 @@ async function pickBg(body: Locator, hex: string): Promise<void> {
   await body.locator(`[data-testid="painter-face-swatch-${hex}"]`).click({ button: 'right' });
 }
 
+/**
+ * The canvas's box, IN THE VIEWPORT.
+ *
+ * ⚠ `scrollIntoViewIfNeeded` FIRST, and it is not defensive padding. The dock
+ * pane scrolls, `boundingBox()` reports document coordinates whether or not the
+ * element is on screen, and `page.mouse` drives real viewport pixels — so a
+ * canvas scrolled below the fold takes every gesture in this file and lands it
+ * on whatever is actually there. Measured: with the editor at its full editing
+ * size the drag silently painted NOTHING and the failure surfaced as
+ * "0 ops committed", which reads like a broken commit path rather than a test
+ * pointing at the wrong pixels.
+ */
+async function canvasBox(body: Locator): Promise<{ x: number; y: number; width: number; height: number }> {
+  const canvas = body.locator('[data-testid="painter-face-canvas"]');
+  await canvas.scrollIntoViewIfNeeded();
+  const box = await canvas.boundingBox();
+  if (!box) throw new Error('the face canvas has no bounding box');
+  return box;
+}
+
 /** Flood the whole page with the current FOREGROUND — one click, and it
  *  saturates the frame, so the strip probe reads it unambiguously. */
 async function floodFill(page: Page, body: Locator): Promise<void> {
   await body.locator('[data-testid="painter-face-tool-fill"]').click();
-  const canvas = body.locator('[data-testid="painter-face-canvas"]');
-  const box = await canvas.boundingBox();
-  if (!box) throw new Error('the face canvas has no bounding box');
+  const box = await canvasBox(body);
   await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
 }
 
@@ -288,9 +306,7 @@ async function floodFill(page: Page, body: Locator): Promise<void> {
 async function drawStroke(page: Page, body: Locator, yFrac = 0.5): Promise<void> {
   await body.locator('[data-testid="painter-face-tool-brush"]').click();
   await body.locator('[data-testid="painter-face-size"]').fill('48');
-  const canvas = body.locator('[data-testid="painter-face-canvas"]');
-  const box = await canvas.boundingBox();
-  if (!box) throw new Error('the face canvas has no bounding box');
+  const box = await canvasBox(body);
   const y = box.y + box.height * yFrac;
   await page.mouse.move(box.x + box.width * 0.15, y);
   await page.mouse.down();
@@ -512,9 +528,7 @@ test.describe('PAINTER face — the promotion is what makes it drawable', () => 
     await pickBg(body, BLUE);
     await body.locator('[data-testid="painter-face-tool-eraser"]').click();
     await body.locator('[data-testid="painter-face-size"]').fill('48');
-    const canvas = body.locator('[data-testid="painter-face-canvas"]');
-    const box = await canvas.boundingBox();
-    if (!box) throw new Error('the face canvas has no bounding box');
+    const box = await canvasBox(body);
     const y = box.y + box.height * 0.5;
     await page.mouse.move(box.x + box.width * 0.2, y);
     await page.mouse.down();

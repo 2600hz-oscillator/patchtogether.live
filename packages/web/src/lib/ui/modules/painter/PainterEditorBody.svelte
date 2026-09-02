@@ -397,62 +397,73 @@
 
 <div class="pt-body" data-testid="painter-face-body">
   {#if !previewCollapsed}
+    <!-- ⚠ TWO ROWS, AND THE SPLIT IS A LAYOUT CONSTRAINT RATHER THAN TASTE.
+         `.faceplate-body` is `width: max-content`, and a WRAPPING flex row's
+         max-content is its UN-wrapped sum — so a single toolbar row would set
+         the plate's width from the chrome (measured: 614 CSS px) and leave
+         empty plate beside a canvas that did not ask for it. Split, each row's
+         max-content is under the canvas's own width, so the PICTURE is what
+         earns the plate — which is the compact ruling's own list. -->
     <div class="toolbar nodrag" data-testid="painter-face-toolbar">
-      <div class="tools">
-        {#each PAINT_TOOLS as t (t.id)}
-          <button
-            type="button"
-            class="tool"
-            class:active={tool === t.id}
-            title={t.label}
-            aria-label={t.label}
-            aria-pressed={tool === t.id}
-            data-testid={`painter-face-tool-${t.id}`}
-            onclick={() => (tool = t.id)}
-          >{t.glyph}</button>
-        {/each}
+      <div class="row">
+        <div class="tools">
+          {#each PAINT_TOOLS as t (t.id)}
+            <button
+              type="button"
+              class="tool"
+              class:active={tool === t.id}
+              title={t.label}
+              aria-label={t.label}
+              aria-pressed={tool === t.id}
+              data-testid={`painter-face-tool-${t.id}`}
+              onclick={() => (tool = t.id)}
+            >{t.glyph}</button>
+          {/each}
+        </div>
+
+        <label class="opt" title="Brush / line size">
+          <span class="lbl">SIZE</span>
+          <input
+            type="range" class="nodrag" min={MIN_BRUSH} max={MAX_BRUSH} step="1" value={brush}
+            aria-label="brush size"
+            data-testid="painter-face-size"
+            oninput={(e) => (brush = Number((e.currentTarget as HTMLInputElement).value))} />
+        </label>
+
+        <label class="opt chk" title="Fill rectangles / ellipses with the background colour">
+          <input
+            type="checkbox" class="nodrag" checked={fillShapes}
+            data-testid="painter-face-fill-shapes"
+            onchange={(e) => (fillShapes = (e.currentTarget as HTMLInputElement).checked)} />
+          <span class="lbl">FILL</span>
+        </label>
       </div>
 
-      <label class="opt" title="Brush / line size">
-        <span class="lbl">SIZE</span>
-        <input
-          type="range" class="nodrag" min={MIN_BRUSH} max={MAX_BRUSH} step="1" value={brush}
-          aria-label="brush size"
-          data-testid="painter-face-size"
-          oninput={(e) => (brush = Number((e.currentTarget as HTMLInputElement).value))} />
-      </label>
+      <div class="row">
+        <!-- The TEXT tool's stamp string.
+             ⚠ IT IS IN THIS FILE RATHER THAN IN A SHARED CHILD ON PURPOSE:
+             `face-migration-inventory`'s typed-entry leg reads the
+             DIRECTLY-NAMED fullViewBody source, so an <input> hidden inside an
+             imported component would read as "the face carries none" and the
+             promotion would redden — with the affordance present and working.
+             ⚠ AND IT IS TOOL-GATED, exactly as the card has it: the field does
+             nothing at all unless TEXT is the active tool, and a control that
+             cannot act is the dead-control shape this program keeps deleting. -->
+        {#if tool === 'text'}
+          <input
+            type="text" class="text-input nodrag" value={textValue}
+            placeholder="text to stamp"
+            aria-label="text to stamp"
+            data-testid="painter-face-text-input"
+            oninput={(e) => (textValue = (e.currentTarget as HTMLInputElement).value)} />
+        {/if}
 
-      <label class="opt chk" title="Fill rectangles / ellipses with the background colour">
-        <input
-          type="checkbox" class="nodrag" checked={fillShapes}
-          data-testid="painter-face-fill-shapes"
-          onchange={(e) => (fillShapes = (e.currentTarget as HTMLInputElement).checked)} />
-        <span class="lbl">FILL</span>
-      </label>
-
-      <!-- The TEXT tool's stamp string.
-           ⚠ IT IS IN THIS FILE RATHER THAN IN A SHARED CHILD ON PURPOSE:
-           `face-migration-inventory`'s typed-entry leg reads the
-           DIRECTLY-NAMED fullViewBody source, so an <input> hidden inside an
-           imported component would read as "the face carries none" and the
-           promotion would redden — with the affordance present and working.
-           ⚠ AND IT IS TOOL-GATED, exactly as the card has it: the field does
-           nothing at all unless TEXT is the active tool, and a control that
-           cannot act is the dead-control shape this program keeps deleting. -->
-      {#if tool === 'text'}
-        <input
-          type="text" class="text-input nodrag" value={textValue}
-          placeholder="text to stamp"
-          aria-label="text to stamp"
-          data-testid="painter-face-text-input"
-          oninput={(e) => (textValue = (e.currentTarget as HTMLInputElement).value)} />
-      {/if}
-
-      <div class="actions">
-        <button type="button" class="act" data-testid="painter-face-undo"
-          title="Undo — remove the last committed op" onclick={undo}>↶ UNDO</button>
-        <button type="button" class="act" data-testid="painter-face-clear"
-          title="Clear the canvas back to a blank white page" onclick={clearAll}>CLEAR</button>
+        <div class="actions">
+          <button type="button" class="act" data-testid="painter-face-undo"
+            title="Undo — remove the last committed op" onclick={undo}>↶ UNDO</button>
+          <button type="button" class="act" data-testid="painter-face-clear"
+            title="Clear the canvas back to a blank white page" onclick={clearAll}>CLEAR</button>
+        </div>
       </div>
     </div>
 
@@ -514,6 +525,15 @@
 
 <style>
   .pt-body {
+    /* ⚠ ONE WIDTH FOR THE WHOLE EDITOR, AND THE CANVAS IS WHAT SETS IT. The
+       dock plate is `width: max-content`, so whatever child is widest decides
+       how much grey the player is handed; the compact ruling's gate measures
+       the gap between the plate and the rightmost thing the face DRAWS. Naming
+       the width once and giving it to the canvas, the toolbar rows and the
+       palette makes the PICTURE the widest drawn element by construction —
+       there is no arrangement of the chrome that can quietly out-grow it. 480
+       is the 4:3 editing size the spec mock uses (360 tall). */
+    --pt-w: 480px;
     display: flex;
     flex-direction: column;
     gap: 6px;
@@ -523,9 +543,15 @@
 
   .toolbar {
     display: flex;
+    flex-direction: column;
+    gap: 4px;
+    width: var(--pt-w);
+  }
+  .toolbar .row {
+    display: flex;
     align-items: center;
     gap: 10px;
-    flex-wrap: wrap;
+    min-width: 0;
   }
   .tools { display: flex; gap: 2px; }
   .tool {
@@ -552,8 +578,8 @@
   .opt.chk { gap: 3px; }
 
   .text-input {
-    flex: 1 1 90px;
-    min-width: 90px;
+    flex: 1 1 80px;
+    min-width: 80px;
     height: 22px;
     font-size: 0.72rem;
     color: var(--text);
@@ -577,13 +603,11 @@
   }
   .act:hover { border-color: var(--accent-dim); }
 
-  /* The editing surface. It is WIDTH-EARNED rather than padded: a paint canvas
-     you cannot see the strokes on is not an editor. Capped so the faceplate
-     never grows sideways past the bands that would sit under it (there are
-     none here — `face.order` is empty — but the plate is shared). */
+  /* The editing surface, and the WIDEST THING THE FACE DRAWS — see `--pt-w`.
+     A live picture is a width earner in the compact ruling's own list; a
+     toolbar is not. */
   .canvas-wrap {
-    width: 100%;
-    max-width: 520px;
+    width: var(--pt-w);
     border: 1px solid var(--border);
     background: var(--module-bg);
     box-shadow: inset 0 0 6px rgba(0, 0, 0, 0.35);
@@ -599,12 +623,13 @@
     image-rendering: auto;
   }
 
+  /* Spans the plate under the canvas, for the same reason — a 28-swatch grid
+     stopping short of the picture it colours reads as a truncation. */
   .palette-row {
     display: flex;
     align-items: center;
     gap: 8px;
-    width: 100%;
-    max-width: 520px;
+    width: var(--pt-w);
   }
   .current { position: relative; width: 28px; height: 28px; flex: 0 0 auto; }
   .current .sw {
