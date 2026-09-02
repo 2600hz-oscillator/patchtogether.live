@@ -1,13 +1,27 @@
 <script lang="ts">
   // RecorderboxCard — UI for RECORDERBOX, the video+audio recorder sink.
   //
+  // ⚠ THIS CARD IS THE `?shell=legacy` SURFACE ONLY. recorderbox is PROMOTED,
+  // so the default shell renders `$lib/ui/modules/recorderbox/` (a lane tile
+  // body + a dock full-view body) and never mounts this component — recorderbox
+  // is in neither half of HEADLESS_MOUNT_LANE_TYPES, so there is no headless
+  // host either. Every transport decision below is therefore SHARED rather than
+  // owned: it lives in `./recorderbox-transport`, which this card and both
+  // faceplate bodies call, so the three surfaces cannot drift.
+  //
   // What it does:
   //   * Live preview of the `in` video (same blit as VideoOutCard — asks the
   //     engine to render THIS node's FBO into its drawing buffer, then
   //     drawImage()s it into the visible <canvas>).
-  //   * A HIDDEN capture <canvas> at the engine's native resolution that the
-  //     recorder encodes (we draw the engine canvas into it each rAF while
-  //     armed — keeps the preview small + crisp while recording full-res).
+  //   * ⚠ THERE IS NO CAPTURE CANVAS HERE, and the sentence that used to sit on
+  //     this line ("a HIDDEN capture <canvas> at the engine's native resolution
+  //     that the recorder encodes… each rAF while armed") has been FALSE since
+  //     #1574/#1584. The capture canvas is created by
+  //     `node-recorder-registry`, never enters the document, and is pumped by
+  //     the registry — which is the whole point: a detached canvas keeps its
+  //     last bitmap, so a card-owned one recorded a freeze frame for every
+  //     collapsed span. It contradicted :92-96 of this same file for two
+  //     months, and it is the sentence the migration inventory copied.
   //   * Filename text field bound to node.data.filename (synced via Y.Doc).
   //   * Record ON/OFF toggle (node.data.recording). ON picks a destination
   //     FOLDER once (showDirectoryPicker), then auto-writes the recording into it
@@ -32,48 +46,36 @@
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { useEngine } from '$lib/audio/engine-context';
-  import { patch } from '$lib/graph/store';
   import type { VideoEngine } from '$lib/video/engine';
   import { VIDEO_RES } from '$lib/video/engine';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
-  import {
-    RecorderboxRecorder,
-    probeEncoders,
-    type RecorderState,
-  } from '$lib/video/recorderbox-recorder';
-  import {
-    pickEncodeProfile,
-    coerceQuality,
-    QUALITY_VALUES,
-    qualityLabel,
-    type RecorderboxQuality,
-  } from '$lib/video/recorderbox-quality';
-  import {
-    listRecoverable,
-    readOpfsBytes,
-    deleteOpfsFile,
-    deleteManifest,
-    markManifestDone,
-    ensureHandleWritePermission,
-    sanitizeRecordingFilename,
-    canSaveViaPicker,
-    type RecorderboxManifest,
-  } from '$lib/video/recorderbox-store';
-  import {
-    promptSaveDestination,
-    streamToHandle,
-    promptSaveFolder,
-    fileExistsInDir,
-    fileHandleInDir,
-  } from '$lib/video/recorderbox-save-flow';
-  import {
-    planRecordStartFolder,
-    mayShowOverwriteConfirm,
-  } from './recorderbox-present-policy';
-  import { chunkFileName } from '$lib/video/recorderbox-chunk-name';
+  import type { RecorderState } from '$lib/video/recorderbox-recorder';
+  import { QUALITY_VALUES, qualityLabel } from '$lib/video/recorderbox-quality';
   import { nodeRecorder } from './node-recorder-registry.svelte';
   import { drawPreviewDownscaled } from './preview-downscale';
+  // THE SHARED TRANSPORT SEAM. Everything the card used to own inline — the
+  // support probe, the crash scan, the ~120-line start orchestration, the
+  // folder re-pick, the download fallback and the `data.recording` REACTOR —
+  // now lives in one plain module the faceplate bodies call too.
+  import {
+    UNCHECKED_SUPPORT,
+    changeRecorderboxFolder,
+    discardTake,
+    folderDisplayName,
+    formatElapsed,
+    probeRecorderboxSupport,
+    recoverTake,
+    reconcileRecorderboxTransport,
+    recorderboxFilename,
+    recorderboxNode,
+    recorderboxQuality,
+    recorderboxRecording,
+    scanRecoverableTakes,
+    setRecorderboxData,
+    type RecorderboxManifest,
+    type RecorderboxSupport,
+  } from './recorderbox-transport';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -82,12 +84,17 @@
   const ENGINE_W = VIDEO_RES.width;
   const ENGINE_H = VIDEO_RES.height;
 
-  let filename = $derived<string>((node?.data?.filename as string | undefined) ?? 'recording');
-  let recording = $derived<boolean>((node?.data?.recording as boolean | undefined) ?? false);
+  // ⚠ READ OFF THE `node` PROP, NOT OFF `patch`. `patch` reads are not reactive
+  // in the legacy card subtree ([[patch-reads-are-not-reactive-in-the-legacy-card-subtree]]),
+  // which is exactly why the shared transport takes GETTERS: this surface hands
+  // it these leaves, the faceplate bodies hand it their own `patch` reads, and
+  // each subtree tracks the source it is actually reactive to.
+  let filename = $derived(recorderboxFilename(node));
+  let recording = $derived(recorderboxRecording(node));
   // QUALITY/SIZE tier. Default BALANCED (owner default 2026-06-15) — ~−80% size
   // for a small quality hit; HIGH (original ~14 Mbps H.264) is one click away.
   // Synced to rack-mates via Y.Doc.
-  let quality = $derived<RecorderboxQuality>(coerceQuality(node?.data?.quality));
+  let quality = $derived(recorderboxQuality(node));
 
   let previewEl: HTMLCanvasElement | null = $state(null);
   // NOTE: there is no capture canvas here any more. The registry creates one
@@ -97,11 +104,7 @@
   let rafId: number | null = null;
 
   // Encoder support → drives the disabled badge.
-  let support = $state<{ canRecord: boolean; opfs: boolean; checked: boolean }>({
-    canRecord: false,
-    opfs: false,
-    checked: false,
-  });
+  let support = $state<RecorderboxSupport>(UNCHECKED_SUPPORT);
 
   // ── #1574: the recording belongs to the NODE, not to this card ──
   // These are READS of $lib/ui/modules/node-recorder-registry, which owns the
@@ -130,98 +133,71 @@
   // The last chunk file the recorder reported saving (status line / a11y).
   let lastSavedChunk = $derived<string | null>(live?.lastSavedChunk ?? null);
   // Display name of the remembered destination folder (null = none chosen yet).
-  // (Read `.name` via a structural cast — the project's FileSystemDirectoryHandle
-  // typing doesn't surface it, but every real handle has a `.name`.)
-  let folderName = $derived<string | null>(
-    saveFolder ? ((saveFolder as { name?: string }).name ?? null) : null,
-  );
+  let folderName = $derived(folderDisplayName(saveFolder));
   // Transient guidance under the folder row (e.g. the Chrome root-block hint).
   let folderHint = $state<string | null>(null);
 
   // Recovery prompt state.
   let recoverable = $state<RecorderboxManifest[]>([]);
 
-  function setData(key: 'filename' | 'recording' | 'quality', value: string | boolean) {
-    const target = patch.nodes[id];
-    if (target) {
-      if (!target.data) target.data = {};
-      target.data[key] = value;
-    }
-  }
-
   function onFilenameInput(e: Event) {
-    const v = (e.target as HTMLInputElement).value;
-    setData('filename', v);
+    setRecorderboxData(id, 'filename', (e.target as HTMLInputElement).value);
   }
 
   function onQualityChange(e: Event) {
-    const v = (e.target as HTMLSelectElement).value;
-    setData('quality', coerceQuality(v));
+    setRecorderboxData(id, 'quality', (e.target as HTMLSelectElement).value);
   }
 
   function toggleRecord() {
     if (!support.canRecord) return;
-    setData('recording', !recording);
+    setRecorderboxData(id, 'recording', !recording);
   }
 
   // Re-pick the destination folder at ANY time (a user gesture — the button
   // click — so showDirectoryPicker is allowed). Without this the first-picked
   // folder is sticky and the only way to change it was deleting the module.
-  // showDirectoryPicker swallows BOTH a dismiss AND Chrome's "contains system
-  // files" root-block into 'cancel', so on an empty pick we surface the
-  // actionable subfolder hint (Chrome refuses readwrite on Documents/Desktop/
-  // Downloads/home roots — you must choose a SUBfolder).
+  // The seam owns the hint strings, so the card and the faceplate cannot give
+  // two different accounts of the SAME refusal (Chrome swallows both a dismiss
+  // and its "contains system files" root-block into 'cancel').
   async function changeFolder() {
-    if (recState === 'recording' || recState === 'finalizing') return;
-    const picked = await promptSaveFolder();
-    if (picked === 'cancel') {
-      folderHint = 'Pick a SUBFOLDER — Chrome blocks Documents/Desktop/Downloads roots ("contains system files").';
-      return;
-    }
-    if (picked == null) {
-      folderHint = 'This browser has no folder picker — recordings download instead.';
-      return;
-    }
-    if (!(await ensureHandleWritePermission(picked))) {
-      folderHint = 'Write permission was denied for that folder.';
-      return;
-    }
-    nodeRecorder.rememberFolder(id, picked);
-    folderHint = null;
+    folderHint = await changeRecorderboxFolder(id);
   }
 
-  // Prompt the user for the OUTPUT location at the START of recording (the
-  // Record toggle is a valid user gesture). The returned FileSystemFileHandle
-  // is structured-cloneable, so the recorder persists it to the IndexedDB
-  // manifest → on crash-recovery we restore to the SAME chosen path with the
-  // SAME name, no re-picking. (promptSaveDestination + streamToHandle live in
-  // recorderbox-save-flow.ts so they're unit-testable without a Svelte harness.)
-  //   * a handle  → start recording, stream to it on stop.
-  //   * null      → no picker (Firefox/Safari): record to OPFS, download on stop.
-  //   * 'cancel'  → user dismissed the picker: do NOT record.
+  // ── Start / stop the recorder when node.data.recording flips ──
+  //
+  // ⚠ ONE LINE, AND THE BODY LIVES IN THE SEAM. `data.recording` is Y.Doc-
+  // synced, so this reactor is also what handles a RACK-MATE's press and a
+  // patch LOADED with `recording: true` — neither of which passes through
+  // `toggleRecord`. Keeping the reads inside `reconcileRecorderboxTransport`
+  // is what stops this card and the two faceplate bodies tracking different
+  // things.
+  $effect(() => {
+    reconcileRecorderboxTransport({
+      nodeId: id,
+      recording: () => recording,
+      canRecord: () => support.canRecord,
+      engine: () => engineCtx.get(),
+      stillArmed: () => recorderboxRecording(recorderboxNode(id)),
+      setFolderHint: (h) => { folderHint = h; },
+    });
+  });
 
-  // ── Download fallback (Firefox/Safari, or a recovery handle that's gone) ──
-  // The recorder's saveBytes contract: used ONLY when no destHandle exists.
-  async function saveBytes(bytes: Uint8Array, name: string, mime: string): Promise<void> {
-    const safeName = sanitizeRecordingFilename(name, 'mp4');
-    const blob = new Blob([bytes as BlobPart], { type: mime });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = safeName;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  // ── Recovery prompt: scan for this node's mid-flight recordings on mount ──
+  async function scanRecoverable() {
+    recoverable = await scanRecoverableTakes(id);
   }
 
-  function getVideoEngine(): VideoEngine | undefined {
-    const e = engineCtx.get();
-    if (!e) return undefined;
-    try { return e.getDomain<VideoEngine>('video'); } catch { return undefined; }
+  async function recoverOne(m: RecorderboxManifest) {
+    await recoverTake(m);
+    await scanRecoverable();
   }
 
-  // ── rAF: preview blit + (while armed) full-res capture frame ──
+  async function discardOne(m: RecorderboxManifest) {
+    await discardTake(m);
+    await scanRecoverable();
+  }
+
+  // ── rAF: preview blit ──
   function draw() {
     rafId = null;
     const e = engineCtx.get();
@@ -260,254 +236,16 @@
     rafId = requestAnimationFrame(draw);
   }
 
-  // ── Start / stop the recorder when node.data.recording flips ──
-  $effect(() => {
-    const want = recording;
-    const isLive = nodeRecorder.isRecording(id);
-    if (want && !isLive && support.canRecord) {
-      void startRecording();
-    } else if (!want && isLive) {
-      void stopRecording();
-    }
-  });
-
-  // Guards against the $effect re-entering startRecording while the START
-  // save-location picker is open (an async user-gesture dialog).
-  let starting = false;
-
-  async function startRecording() {
-    if (starting) return;
-    const ve = getVideoEngine();
-    if (!ve) { setData('recording', false); return; }
-
-    starting = true;
-    try {
-      // ── Resolve the destination FOLDER (Tweak 1: no per-save prompt) ──
-      // Pick a folder ONCE; subsequent records + every rolling chunk auto-write
-      // into it. If we already remember one (re-verify permission) → use it
-      // silently. Else prompt once (the Record press is the user gesture).
-      //   * a dir handle → write FILENAME-CHUNK#-DATETIME chunks into it.
-      //   * null         → no directory picker (Firefox/Safari): per-chunk
-      //                    <a download> fallback (the recorder uses saveBytes).
-      //   * 'cancel'     → user dismissed → do NOT record; revert the toggle.
-      // ── PRESENTATION-SAFE folder resolution ──
-      // While in element-fullscreen, opening ANY modal (the folder picker, a
-      // permission prompt, or the overwrite confirm) makes Chrome EXIT fullscreen
-      // — kicking the performer out, re-flashing the "is now full screen" overlay,
-      // and forcing a re-click. So while presenting we never open a modal: use an
-      // already-chosen folder, else fall back to the download path with a
-      // non-modal hint. (planRecordStartFolder / mayShowOverwriteConfirm are pure
-      // + unit-tested in recorderbox-save-flow.ts. See presentation-fullscreen-plan.)
-      const isFullscreen = typeof document !== 'undefined' && !!document.fullscreenElement;
-
-      let dirHandle: FileSystemDirectoryHandle | null = saveFolder;
-      if (dirHandle && !(await ensureHandleWritePermission(dirHandle))) {
-        dirHandle = null; // permission lapsed — re-resolve below.
-      }
-      const plan = planRecordStartFolder(!!dirHandle, isFullscreen);
-      if (plan.action === 'prompt') {
-        const picked = await promptSaveFolder();
-        if (picked === 'cancel') {
-          setData('recording', false);
-          return;
-        }
-        // The user may have flipped Record OFF while the picker was open.
-        if (!recording) return;
-        if (picked) {
-          dirHandle = picked;
-          // Remember → no prompt next time. On the NODE, so a collapse or an
-          // LRU eviction cannot forget it (#1583).
-          nodeRecorder.rememberFolder(id, picked);
-        }
-        // picked === null → no FS-Access: dirHandle stays null → download path.
-      } else if (plan.action === 'download') {
-        // Presenting with no pre-chosen folder: do NOT pop the picker (it would
-        // drop fullscreen). Record to the download fallback and nudge the user to
-        // set a folder BEFORE presenting next time.
-        folderHint =
-          'Recording to downloads — set a folder before presenting to save straight to disk.';
-      }
-      // plan.action === 'use' → keep the already-granted dirHandle, no prompt.
-
-      // ── OVERWRITE prompt — a modal, so SKIP it while presenting. ──
-      // Chunk names carry a unique DATETIME so a real collision is near-impossible;
-      // outside fullscreen this stays a genuine safety net.
-      if (dirHandle && mayShowOverwriteConfirm(isFullscreen)) {
-        const firstName = chunkFileName(filename, 1, new Date());
-        if (await fileExistsInDir(dirHandle, firstName)) {
-          const ok =
-            typeof confirm === 'function'
-              ? confirm(`"${firstName}" already exists. Overwrite?`)
-              : true;
-          if (!ok) {
-            setData('recording', false);
-            return;
-          }
-        }
-      }
-      if (!recording) return;
-
-      const ew = ve.canvas.width || ENGINE_W;
-      const eh = ve.canvas.height || ENGINE_H;
-
-      // Resolve the encode profile for the chosen quality tier at THIS
-      // resolution: HIGH = the original H.264 / 14 Mbps; BALANCED/SMALL prefer
-      // hardware HEVC if the runtime can encode it, else a lower-bitrate H.264.
-      // Probed against the real runtime (degrades gracefully). All tiers request
-      // the hardware encoder so a software encode can't starve the audio capture.
-      const profile = await pickEncodeProfile(quality, ew, eh);
-      // The user may have flipped Record OFF while the probe ran.
-      if (!recording) return;
-
-      // Pull the live audio source the module published. PREFER the
-      // sample-accurate capture tap (read('audioCapture') → a Promise resolving
-      // to { port, sampleRate } | null): the worklet posts planar f32 stereo
-      // from the audio thread + the recorder drains it losslessly (no
-      // clicks/pops). Fall back to the legacy capture MediaStream's audio track
-      // (audioStream) when no tap is available (no AudioContext / worklet load
-      // failed). null/absent both = record video only / silent.
-      const e = engineCtx.get();
-      let audioCapture: { port: MessagePort; sampleRate: number } | null = null;
-      let audioTrack: MediaStreamTrack | null = null;
-      if (e && node) {
-        try {
-          audioCapture = (await e.read(node, 'audioCapture')) as
-            | { port: MessagePort; sampleRate: number }
-            | null;
-        } catch {
-          audioCapture = null;
-        }
-        // The user may have flipped Record OFF while the tap Promise settled.
-        if (!recording) return;
-        const stream = e.read(node, 'audioStream') as MediaStream | null | undefined;
-        audioTrack = stream?.getAudioTracks?.()[0] ?? null;
-      }
-
-      // Hand the fully-resolved config to the NODE-keyed registry. It owns the
-      // canvas, the pump and the render lease from here; this card keeps no
-      // handle it could tear down.
-      const started = await nodeRecorder.start(id, {
-        engine: ve,
-        width: ew,
-        height: eh,
-        options: {
-        nodeId: id,
-        audioCapture,   // PREFERRED — sample-accurate worklet tap (lossless).
-        audioTrack,     // FALLBACK — legacy MediaStreamAudioTrackSource path.
-        filename,
-        // FOLDER model: chunks auto-write into the picked folder under their
-        // FILENAME-CHUNK#-DATETIME names; null → per-chunk <a download> fallback.
-        dirHandle,
-        videoCodec: profile.videoCodec,
-        videoBitrate: profile.videoBitrate,
-        keyFrameInterval: profile.keyFrameInterval,
-        audioBitrate: profile.audioBitrate,
-        hardwareAcceleration: profile.hardwareAcceleration,
-        width: ew,
-        height: eh,
-        saveBytes,
-        },
-      });
-      if (!started) setData('recording', false);
-    } finally {
-      starting = false;
-    }
-  }
-
-  async function stopRecording() {
-    // The registry finalizes and writes the file; state falls back to 'idle'
-    // automatically because `live` becomes null once the entry is gone.
-    await nodeRecorder.stop(id);
-  }
-
-  // ── Recovery prompt: scan for this node's mid-flight recordings on mount ──
-  async function scanRecoverable() {
-    try {
-      recoverable = await listRecoverable(id);
-    } catch {
-      recoverable = [];
-    }
-  }
-
-  async function retireRecovery(opfsPath: string) {
-    await markManifestDone(opfsPath);
-    await deleteOpfsFile(opfsPath);
-    await deleteManifest(opfsPath);
-  }
-
-  async function recoverOne(m: RecorderboxManifest) {
-    try {
-      // 1a) Persisted destination FOLDER (Chromium, the folder model): re-acquire
-      //     write permission, resolve the chunk's file handle INSIDE the folder
-      //     (FILENAME-CHUNK#-DATETIME.mp4), and STREAM the partial straight back —
-      //     no re-picking. (requestPermission needs a user gesture: the Save btn.)
-      if (m.dirHandle && (await ensureHandleWritePermission(m.dirHandle))) {
-        const name = m.chunkName ?? sanitizeRecordingFilename(m.filename, 'mp4');
-        const fh = await fileHandleInDir(m.dirHandle, name);
-        const written = await streamToHandle(m.opfsPath, fh);
-        if (written > 0) {
-          await retireRecovery(m.opfsPath);
-          await scanRecoverable();
-          return;
-        }
-      }
-
-      // 1b) Legacy persisted single-file handle (Chromium): re-acquire write
-      //     permission + stream the partial back to the original chosen path.
-      if (m.destHandle && (await ensureHandleWritePermission(m.destHandle))) {
-        const written = await streamToHandle(m.opfsPath, m.destHandle);
-        if (written > 0) {
-          await retireRecovery(m.opfsPath);
-          await scanRecoverable();
-          return;
-        }
-        // Nothing written — fall through to the picker/download fallback.
-      }
-
-      // 2) Fallback (handle gone / permission denied / Firefox/Safari): prompt
-      //    for a NEW destination if the picker is available + stream to it; else
-      //    download the bytes. Either way the suggested name is the chunk name
-      //    (FILENAME-CHUNK#-DATETIME.mp4) when one was recorded.
-      const suggestedName = m.chunkName ?? sanitizeRecordingFilename(m.filename, 'mp4');
-      const dest =
-        m.dirHandle == null && m.destHandle == null && canSaveViaPicker()
-          ? await promptSaveDestination(suggestedName)
-          : null;
-      if (dest && dest !== 'cancel') {
-        await streamToHandle(m.opfsPath, dest);
-      } else if (dest === 'cancel') {
-        // User dismissed the picker — keep the candidate.
-        await scanRecoverable();
-        return;
-      } else {
-        const bytes = await readOpfsBytes(m.opfsPath);
-        if (bytes && bytes.byteLength > 0) {
-          await saveBytes(bytes, suggestedName, m.mime);
-        }
-      }
-      await retireRecovery(m.opfsPath);
-    } catch {
-      // Keep the candidate if the save was cancelled / failed.
-    }
-    await scanRecoverable();
-  }
-
-  async function discardOne(m: RecorderboxManifest) {
-    try {
-      await deleteOpfsFile(m.opfsPath);
-      await deleteManifest(m.opfsPath);
-    } catch { /* */ }
-    await scanRecoverable();
+  function getVideoEngine(): VideoEngine | undefined {
+    const e = engineCtx.get();
+    if (!e) return undefined;
+    try { return e.getDomain<VideoEngine>('video'); } catch { return undefined; }
   }
 
   onMount(() => {
     rafId = requestAnimationFrame(draw);
     // Probe encoder support at the engine resolution.
-    void probeEncoders(ENGINE_W, ENGINE_H).then((s) => {
-      support = { canRecord: s.canRecord, opfs: s.opfs, checked: true };
-    }).catch(() => {
-      support = { canRecord: false, opfs: false, checked: true };
-    });
+    void probeRecorderboxSupport(ENGINE_W, ENGINE_H).then((s) => { support = s; });
     void scanRecoverable();
   });
 
@@ -521,12 +259,7 @@
     if (rafId !== null) cancelAnimationFrame(rafId);
   });
 
-  function fmtElapsed(s: number): string {
-    const total = Math.floor(s);
-    const mm = String(Math.floor(total / 60)).padStart(2, '0');
-    const ss = String(total % 60).padStart(2, '0');
-    return `${mm}:${ss}`;
-  }
+  const fmtElapsed = formatElapsed;
 
   // Port layout.
   const inputs: PortDescriptor[] = [
