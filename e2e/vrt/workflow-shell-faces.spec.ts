@@ -159,6 +159,7 @@ import {
   LEGACY_FOLD_PX,
   LEGACY_FOLD_VIEWPORT,
   assertFaceAudioFrozen,
+  awaitCaptureBoxSettled,
   awaitFaceVideoPainted,
   bootWithFace,
   faceSceneTimeout,
@@ -475,6 +476,13 @@ test.describe('VRT: P1 curated faces (?shell=1) — compact lane tile + dock ful
         await freezeFaceVideo(page, memberId, `face-${type}-compact`);
       }
       const tile = page.locator(`.svelte-flow__node[data-id="${memberId}"] [data-testid="module-shell"]`);
+      // ── AND THE LAYOUT, which is the OTHER settle dimension ─────────────
+      // The box is the frame of the picture, so a box still settling moves the
+      // tile's BORDER COLUMNS while nothing in the middle moves — the
+      // `face-painter-compact` signature (#2318: 45 of 49 differing pixels in
+      // column x=87 of an 88 px tile). Applies to every face, not only the
+      // video ones: this dimension has nothing to do with a picture.
+      await awaitCaptureBoxSettled(tile, `face-${type}-compact`);
       await expect(tile).toHaveScreenshot(`face-${type}-compact.png`, {
         maxDiffPixels: COMPACT_MAX_DIFF,
       });
@@ -643,6 +651,9 @@ test.describe('VRT: P1 curated faces (?shell=1) — compact lane tile + dock ful
         await freezeFaceVideo(page, memberId, `face-${type}-dock`);
       }
       await settle(page);
+      // The dock pane has just been UNFOLDED, so this tier has a live reason
+      // for its capture box to still be moving — more so than the lane tile.
+      await awaitCaptureBoxSettled(faceplate, `face-${type}-dock`);
       await expect(faceplate).toHaveScreenshot(`face-${type}-dock.png`, {
         maxDiffPixels: DOCK_MAX_DIFF,
       });

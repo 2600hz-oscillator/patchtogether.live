@@ -7203,15 +7203,210 @@ async function spawnVideoZoneMember(page: Page, type: string): Promise<string> {
   return fresh[0]!;
 }
 
+/**
+ * Consecutive real frames a layout quantity must hold IDENTICAL before it is
+ * believed settled.
+ *
+ * THREE, not the two that "has it stopped moving?" naively needs, because two
+ * identical samples is also what an easing curve's plateau and a single dropped
+ * frame produce. Three costs two extra frames per scene and removes that
+ * reading. A COUNT OF FRAMES, so it is the same assertion on every renderer —
+ * the quantity being watched is a layout box, which changes on frames and not
+ * on a clock.
+ */
+const LAYOUT_SETTLE_FRAMES = 3;
+
+/**
+ * Frame budget for a layout quantity to settle. A BOUND on how long a broken
+ * scene takes to say so, never a wait — same shape as VIDEO_PAINT_FRAMES.
+ */
+const LAYOUT_SETTLE_BUDGET_FRAMES = 900;
+
+/**
+ * Wait until the element a scene is ABOUT TO PHOTOGRAPH has stopped moving, and
+ * prove it — the LAYOUT sibling of `awaitFaceVideoPainted`.
+ *
+ * ⚠ IT WATCHES THE CAPTURE TARGET ITSELF, not a proxy. `toHaveScreenshot` shoots
+ * the element's bounding box, so that box IS the frame of the picture: a box
+ * still settling crops or resamples the tile's own edge, and the pixels that
+ * move are the BORDER COLUMNS rather than anything in the middle. That is the
+ * signature #2318 measured on `face-painter-compact` — 45 of 49 differing
+ * pixels in column x=87, the last of an 88 px tile, with the baseline's x=87
+ * matching its own x=0 within 0-1 while the failing capture diverged 4-20.
+ * Green on shard 3 (run 33663808159), red 3/3 on shard 4 (run 33667724929),
+ * with only the timings artifact between them.
+ *
+ * ⚠ WHAT IT ADDS OVER PLAYWRIGHT'S OWN STABILISATION, stated because the
+ * overlap is real and the gap is narrow. `toHaveScreenshot` already re-shoots
+ * until two consecutive images match, so a box moving by WHOLE pixels is
+ * absorbed — the cropped image is identical at both positions. What that cannot
+ * see is a box that SETTLES somewhere the baseline was not captured from, and
+ * it cannot see it because the two shots it compares are taken at the same
+ * geometry. This makes the settle explicit and, when it fails, prints the trail
+ * of boxes and the FRACTIONAL device-pixel offset of the final one.
+ *
+ * ⚠ THE FRACTION IS REPORTED, NOT ASSERTED, and that is deliberate. A capture
+ * box at a fractional offset is resampled, and its edge columns then depend on
+ * the phase rather than on the pixels — a real instrument weakness, and one
+ * this branch has measured no fix for. Asserting integrality would be a NEW
+ * GATE over ~200 existing scenes on a property nobody has checked, which is the
+ * standing no-new-gates ruling exactly. It rides in the message instead, so the
+ * next occurrence is one read rather than one investigation.
+ *
+ * ⚠⚠ AND HERE IS WHAT THE MEASUREMENT ACTUALLY SAID, because a gate is worth
+ * only what it was measured to do. On this machine the compact box is ALREADY
+ * SETTLED when the old path reached the screenshot: instrumented over 300
+ * frames on `videovarispeed`, `matrixMix` and `adsr`, the box changed ZERO
+ * times (`lastChangeFrame: 0`, one distinct box) and this wait exits at its
+ * two-frame minimum. So it is a guard against a race this branch did NOT
+ * observe, not a demonstrated repair — it makes the property explicit and will
+ * NAME the failure the next time a box is caught mid-flight.
+ *
+ * ⚠⚠ THE SAME MEASUREMENT POINTS SOMEWHERE ELSE FOR THE PAINTER CLASS, and it
+ * should be read before this wait is credited with fixing it. The compact box
+ * is `x=618.7999877929688, w=86.39996337890625` at dpr 1 — fractional in BOTH,
+ * because the tile is 192 CSS px at the 0.45 LOD design-point zoom and
+ * 192 * 0.45 = 86.4 is not an integer. Playwright therefore shoots an 88 px PNG
+ * of an 86.4 px box, and column x=87 is a PARTIAL-COVERAGE edge whose value is
+ * a function of the box's fractional width. That is exactly where painter's 45
+ * of 49 differing pixels were. A phase difference needs nothing to be moving —
+ * it needs the box to land on a different fraction, which a different float
+ * path through the pan/zoom (or a one-pixel-different pane) produces
+ * deterministically, and would explain a 3/3 failure that a settle wait and
+ * Playwright's own re-shooting both absorb nothing of. Measured here, the
+ * fraction is IDENTICAL across five boots (same x, same w to the last bit) and
+ * differs BETWEEN MODULES at the 1e-4 level. So: do not assume this wait
+ * restores `face-painter-compact`; re-run it and compare the two boxes.
+ */
+export async function awaitCaptureBoxSettled(target: Locator, label: string): Promise<void> {
+  const seen = await target.evaluate(
+    async (el: Element, { need, budget }: { need: number; budget: number }) => {
+      const raf = () => new Promise((r) => requestAnimationFrame(() => r(null)));
+      const read = (): string => {
+        const r = el.getBoundingClientRect();
+        return `${r.x},${r.y},${r.width},${r.height}`;
+      };
+      const trail: string[] = [];
+      let last = read();
+      trail.push(last);
+      let same = 1;
+      let frames = 0;
+      while (frames < budget && same < need) {
+        await raf();
+        frames++;
+        const now = read();
+        if (now === last) {
+          same++;
+        } else {
+          same = 1;
+          last = now;
+          if (trail.length < 12) trail.push(now);
+        }
+      }
+      const r = el.getBoundingClientRect();
+      const frac = (v: number): number => Number((v - Math.floor(v)).toFixed(3));
+      return {
+        settled: same >= need,
+        frames,
+        box: last,
+        trail,
+        connected: el.isConnected,
+        dpr: globalThis.devicePixelRatio,
+        fraction: [frac(r.x), frac(r.y), frac(r.width), frac(r.height)],
+      };
+    },
+    { need: LAYOUT_SETTLE_FRAMES, budget: LAYOUT_SETTLE_BUDGET_FRAMES },
+  );
+
+  // A DETACHED node reports a 0,0,0,0 box that is beautifully stable, so the
+  // stillness answer would be "yes" about an element nobody can photograph.
+  expect(
+    seen.connected,
+    `${label}: the capture target left the document while awaitCaptureBoxSettled was watching `
+      + `it. A detached node reports a permanently stable 0,0,0,0 box, so this would otherwise `
+      + `report a settled layout about an element that is not there.`,
+  ).toBe(true);
+
+  expect(
+    seen.settled,
+    `${label}: the capture box never held still for ${LAYOUT_SETTLE_FRAMES} consecutive frames `
+      + `in ${seen.frames}. Last box ${seen.box}; the first boxes seen were `
+      + `[${seen.trail.join(' | ')}]. Fractional device-pixel offset at dpr ${seen.dpr}: `
+      + `[${seen.fraction.join(', ')}] — a non-zero fraction means the shot is RESAMPLED and its `
+      + `edge columns depend on that phase, which is reported here rather than asserted.`,
+  ).toBe(true);
+}
+
 /** Center the viewport on the lane-1 member (members bottom-anchor toward the
  *  4320 lane baseline) at `zoom`, then wait for the LOD face tier to settle on
- *  the member's tile + two rAFs so the tier content swap lands. */
+ *  the member's tile + two rAFs so the tier content swap lands.
+ *
+ *  ⚠ THE MEASURED SIZE IS WAITED FOR, NOT READ ON SPEC. The viewport below is
+ *  computed from `inode.measured.width/height`, which xyflow fills in from a
+ *  ResizeObserver AFTER mount — and the expression carries `?? 192` / `?? 180`
+ *  fallbacks, so an unmeasured node does not FAIL, it CENTRES ON A DIFFERENT
+ *  POINT: the two viewports differ by (real - 192)/2 * zoom, which lands the
+ *  whole tile at a different sub-pixel phase and moves its border columns while
+ *  nothing in the middle moves. That is a layout-readiness hole of exactly the
+ *  shape this file's video-paint hole had — a value read before the thing that
+ *  produces it has run, with a plausible answer either way. It is settled over
+ *  `LAYOUT_SETTLE_FRAMES` and then ASSERTED, so the fallbacks become
+ *  unreachable rather than silently load-bearing.
+ *
+ *  ⚠ AND WHAT THE MEASUREMENT SAID, so nobody credits this with more than it
+ *  did: at entry the node is ALREADY measured, at `192x180` — which is exactly
+ *  what the fallbacks say. Checked on `videovarispeed`, `matrixMix`,
+ *  `mirrorpool` and `adsr`. So the hole is real in SHAPE and does not bite
+ *  today, the wait confirms the value rather than changing it, and it can move
+ *  no baseline. What it buys is that the day a lane tile stops being 192x180,
+ *  or xyflow measures later than it does now, this fails LOUDLY instead of
+ *  centring the pane somewhere else and re-authoring every compact baseline. */
 export async function frameMember(
   page: Page,
   memberId: string,
   zoom: number,
   tier: string,
 ): Promise<void> {
+  const measured = await page.evaluate(
+    async ({ id, need, budget }: { id: string; need: number; budget: number }) => {
+      const w = globalThis as unknown as {
+        __flow: {
+          getInternalNode: (i: string) => { measured?: { width?: number; height?: number } } | undefined;
+        };
+      };
+      const raf = () => new Promise((r) => requestAnimationFrame(() => r(null)));
+      const read = (): string => {
+        const m = w.__flow?.getInternalNode(id)?.measured;
+        return m?.width && m?.height ? `${m.width}x${m.height}` : '';
+      };
+      let last = read();
+      const atEntry = last;
+      let same = last ? 1 : 0;
+      let frames = 0;
+      while (frames < budget && (!last || same < need)) {
+        await raf();
+        frames++;
+        const now = read();
+        if (now && now === last) same++;
+        else {
+          same = now ? 1 : 0;
+          last = now;
+        }
+      }
+      return { size: last, atEntry, frames, settled: !!last && same >= need };
+    },
+    { id: memberId, need: LAYOUT_SETTLE_FRAMES, budget: LAYOUT_SETTLE_BUDGET_FRAMES },
+  );
+  expect(
+    measured.settled,
+    `${memberId}: xyflow never reported a stable measured size for this node in `
+      + `${measured.frames} frames (last '${measured.size || '(unmeasured)'}', at entry `
+      + `'${measured.atEntry || '(unmeasured)'}'). The viewport below is computed from it, and `
+      + `its \`?? 192\` / \`?? 180\` fallbacks would centre the pane on a different point — a `
+      + `tile at a different sub-pixel phase, captured against a baseline authored at the `
+      + `right one.`,
+  ).toBe(true);
+
   await page.evaluate(
     ({ memberId, zoom }) => {
       const w = globalThis as unknown as {
