@@ -15,11 +15,36 @@
   import Knob from '$lib/ui/controls/Knob.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import { patch } from '$lib/graph/store';
-  import { nibblesDef, type NibblesHandleExtras } from '$lib/video/modules/nibbles';
+  import { nodeVersion } from '$lib/graph/node-versions.svelte';
+  import { nibblesDef } from '$lib/video/modules/nibbles';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
   import { cardParams, portsFromDef } from './card-kit';
+  // ⚠ ONE IMPLEMENTATION, TWO SURFACES. Every gesture below is now the same
+  // call the v2 faceplate makes (`nibbles-game-actions.ts`), so a change to how
+  // this game is driven cannot land on only one of them. Two of the four are
+  // also BUG FIXES the card gets in the same move:
+  //   * AUTO was a raw `patch.nodes[id].params.auto = …` store write, carried
+  //     in raw-write-ledger.ts as `kind: 'debt'` ("should be undoable +
+  //     synced"). It goes through `setNodeParam` now, and the ledger entry is
+  //     DELETED in the same commit — promotion would otherwise have made that
+  //     debt unreachable without paying it, i.e. green forever while describing
+  //     a path nobody can take.
+  //   * SCALE was component `$state`, so it died with the component — and under
+  //     the shipping shell this card lives ONLY inside the dock full view, so
+  //     collapsing the pane (or the dock's LRU evicting it) already reset a
+  //     user's 4x zoom to 1x. It lives on `node.data.previewScale` now
+  //     (#1531 / #1574 / #1583), which is also the key the faceplate reads, so
+  //     the two surfaces show one zoom.
+  import {
+    cycleNibblesScale,
+    fireNibblesReset,
+    nibblesDirectionForKey,
+    nibblesPreviewScale,
+    pushNibblesDirection,
+    toggleNibblesAuto,
+  } from './nibbles-game-actions';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -37,17 +62,18 @@
 
   // ---------- Resize state ----------
   // Scale step in multiples of the native 320×200 source. 1×, 2×, 3×, 4×.
-  let scale = $state(1);
+  // ⚠ ON THE NODE, NOT IN THIS COMPONENT — see the import block. `nodeVersion`
+  // is the dependency because `patch.nodes[id].data` is a Y-backed proxy whose
+  // identity never changes, so a derived reading through it would never
+  // recompute inside xyflow's node subtree.
+  let scale = $derived.by<number>(() => {
+    void nodeVersion(id);
+    return nibblesPreviewScale(patch.nodes[id] as ModuleNode | undefined);
+  });
 
   // ---------- Auto + focus ----------
   let autoOn = $derived(paramVal('auto') >= 0.5);
   let hasFocus = $state(false);
-
-  function getExtras(): NibblesHandleExtras | null {
-    const eng = engineCtx.get();
-    if (!eng || !node) return null;
-    return (eng.read(node, 'extras') as NibblesHandleExtras | undefined) ?? null;
-  }
 
   function pollStatus() {
     const eng = engineCtx.get(); if (!eng || !node || !ctx2d) return;
@@ -71,37 +97,26 @@
     if (pollTimer) clearInterval(pollTimer);
   });
 
-  function toggleAuto() {
-    const t = patch.nodes[id]; if (!t) return;
-    t.params.auto = (t.params.auto ?? 0) >= 0.5 ? 0 : 1;
-  }
+  function toggleAuto() { toggleNibblesAuto(id); }
 
-  function resetGame() {
-    const extras = getExtras();
-    extras?.reset();
-  }
+  function resetGame() { fireNibblesReset(id); }
 
-  function cycleScale() {
-    scale = (scale % 4) + 1; // 1 → 2 → 3 → 4 → 1
-  }
+  function cycleScale() { cycleNibblesScale(id); }
 
   // Keyboard: arrow keys drive direction only when the card holds focus.
   function onKeyDown(e: KeyboardEvent) {
     if (!hasFocus) return;
-    if (autoOn) return;
-    let dir: 'up' | 'down' | 'left' | 'right' | null = null;
-    if (e.key === 'ArrowUp') dir = 'up';
-    else if (e.key === 'ArrowDown') dir = 'down';
-    else if (e.key === 'ArrowLeft') dir = 'left';
-    else if (e.key === 'ArrowRight') dir = 'right';
+    const dir = nibblesDirectionForKey(e.key);
     if (!dir) return;
     // Same pattern as the DoomCard arrow-key handling (PR #275): stop
     // propagation so SvelteFlow's keyboard-pan handler doesn't move the
     // viewport while we're driving the snake.
     e.preventDefault();
     e.stopPropagation();
-    const extras = getExtras();
-    extras?.pushDirection(dir);
+    // ⚠ THE AUTO GUARD IS THE FACTORY'S, NOT THIS COMPONENT'S. `pushDirection`
+    // already returns false while AUTO is on; the card used to re-derive that
+    // rule locally, which is one more place for it to disagree.
+    pushNibblesDirection(id, dir);
   }
 
   function onFocusIn() { hasFocus = true; }

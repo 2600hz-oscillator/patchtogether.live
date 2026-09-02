@@ -249,11 +249,16 @@ export const RAW_WRITE_LEDGER: Readonly<Record<string, RawWriteEntry>> = {
     kind: 'debt',
     why: 'ribbon controller — performance gesture; needs the transient-first treatment, not a bare store write',
   },
-  'ui/modules/NibblesCard.svelte': {
-    keys: ['auto'],
-    kind: 'debt',
-    why: 'card button write — user gesture, should be undoable + synced',
-  },
+  // ⚠ `ui/modules/NibblesCard.svelte` LEFT THIS LEDGER with the nibbles face
+  // (its `auto` raw write is now `setNodeParam` in `nibbles-game-actions.ts`,
+  // shared by the card and the face's toggle cell). Recorded here rather than
+  // deleted silently, because the REASON it had to go with that PR is the
+  // interesting part: promotion makes a raw write UNREACHABLE without paying
+  // it — the face's cell writes through the sanctioned path, so a player can no
+  // longer take the raw one, while the code and this entry both stay GREEN
+  // FOREVER describing a path nobody can walk. That is the stale-scoping shape
+  // this ledger's anchoring exists to catch, and the owner ruling is explicit:
+  // never ledger payable debt, fix it in one sweep.
   'ui/modules/QuadralogicalCard.svelte': {
     keys: ['pos_x', 'pos_y'],
     kind: 'debt',
