@@ -766,12 +766,21 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // the pure collision math; E2E covers the deletion + self-destruct +
   // TIMELORDE-survives flows.
   cadillac: 'no card render — roaming overlay sprite, not a SvelteFlow node body. Unit (collision math) + E2E (deletion, self-destruct, timelorde-survives) provide coverage.',
-  // CONTROL SURFACE — meta module whose entire body is binding-dependent
-  // (proxied controls vary per patch); a fresh surface is just a blank
-  // square + lock button. No stable module-specific pixels worth
-  // fingerprinting. Covered by control-surface.test.ts (model) + the
-  // control-surface e2e (spawn → send → proxy drives source → collapse).
-  controlSurface: 'content is binding-dependent (proxied controls vary by patch); empty state is a blank square. Covered by control-surface.test.ts + control-surface.spec.ts.',
+  // ⚠ `controlSurface` WAS HERE AND IS DRAINED (2026-09-01, its face PR — the
+  // fifth drain in the meta/binder block). Its entry read: "content is
+  // binding-dependent (proxied controls vary by patch); empty state is a blank
+  // square", and it sat in ALLOWED_PERMANENT_EXEMPT beside it. The
+  // binding-dependence half was always right and is unchanged — the BOUND
+  // board still cannot be captured from a solo spawn. The CONCLUSION expired
+  // with the promotion, the same way matrixMix's did: a solo-spawned
+  // controlSurface face is a stable, deterministic tile (the LOCK cell and the
+  // tile's empty-state instruction; in the dock, the board's empty-state
+  // prompt), so the empty state is baselined by the two face-controlSurface
+  // scenes and the bound surface stays covered by control-surface.spec.ts
+  // (`?shell=legacy`), controlsurface-face.spec.ts (default shell) and
+  // controlsurface-face-model.test.ts. Both lists are ANCHORED in both
+  // directions, so leaving the name here while the module is baselined would
+  // be RED.
   // ⚠ `matrixMix` WAS HERE AND IS DRAINED. Its entry read: "grid body is
   // patch-dependent — solo-spawn shows only the axis dropdowns + a pick-a-module
   // hint (no stable module-specific pixels)", with NO exit condition, and it sat
@@ -1663,7 +1672,14 @@ export const ALLOWED_PERMANENT_EXEMPT: ReadonlySet<string> = new Set([
   // without a gesture this suite never performs). See the note it used to sit
   // beside in EXEMPT_FROM_VRT. Anchored in both directions, so leaving the name
   // here while the module is baselined would be RED.
-  'cadillac', 'controlSurface',
+  // ⚠ `controlSurface` REMOVED 2026-09-01 with its face PR — the fifth drain in
+  // the meta/binder block. See the note where its entry used to stand in
+  // EXEMPT_FROM_VRT: the binding-dependence half of its reason was true and
+  // stays true of the BOUND board; the empty face is deterministic and now
+  // baselined by the two face-controlSurface scenes. This list is ANCHORED in
+  // both directions, so leaving the name here while the module is baselined
+  // would be RED.
+  'cadillac',
   // ⚠ `push2Control` REMOVED 2026-08-25 — the fourth drain in the MIDI-binder
   // block, and the first whose exemption named a ground that was genuinely
   // still true (its replica canvas paints whatever module is in lane 1). That
