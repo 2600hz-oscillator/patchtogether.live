@@ -178,8 +178,74 @@ export const nibblesDef: VideoModuleDef = {
     },
   ],
 
+  // ── THE FACE ───────────────────────────────────────────────────────────────
+  //
+  // ⚠ `glyph: 'none'` IS MANDATORY AND COUNTER-INTUITIVE HERE. `laneGlyphFor`
+  // returns 'picture' for any `domain === 'video'` def BEFORE it ever reads
+  // `face.glyph`, so the lane tile paints a live per-node `VideoTileThumb` with
+  // nothing declared — and any other literal would be a DEAD glyph binding the
+  // lint reddens (`primaryAudioOutPortId` is null: `snake` and `gated` are
+  // audio ports but the glyph resolver needs a primary, and every live kind
+  // resolves 'static' here). "'none' + blank tile" and "'none' + live thumb"
+  // are indistinguishable from the declaration, which is why
+  // `nibbles-face-model.test.ts` asserts `hasVideoSurface(def)` DIRECTLY and
+  // never infers the picture from the face.
+  //
+  // ⚠ NO `freeze` PARAM, DELIBERATELY. The determinism seam this module needs
+  // already exists as two boot-time globals (`__nibblesVrtSeed` +
+  // `__videoEngineFreezeTime`) and is already proven byte-identical in both
+  // directions. A `freeze` ParamDef would be a `params` edit on a def that IS
+  // in the WebGL attest basis — an owner-machine GPU re-attest CI cannot run —
+  // to buy an assertion that already holds. Same for `units: 'ms'` on
+  // `tick_ms`: a `format`/`units` declaration makes the readout PAINT, which
+  // re-introduces a resting decimal under the dial, and costs a re-attest for
+  // the privilege. The milliseconds live on `aria-valuetext` instead.
+  face: {
+    // TICK first: it is the module's TEMPO, and on nibbles the tempo is also
+    // the rate of every downstream event — the three gates, the `gated`
+    // envelope retrigger and the steps of `length_cv` are all clocked by how
+    // fast the snake moves. It is read EVERY frame (`surface.draw`), so it acts
+    // on the next tick. AUTO is second because it is a MODE rather than a
+    // quantity — it changes WHO is playing, not how fast — and it is the
+    // control you flip once at spawn and leave. RESET is last: a gesture, not a
+    // setting.
+    order: ['tick_ms', 'auto'],
+    glyph: 'none',
+    // ONE band. Two params and one gesture, one idea — HOW THE SNAKE MOVES —
+    // and splitting a rate from a mode would invent a distinction the module
+    // does not make. `order` and `pages` AGREE, stated so a reader does not go
+    // hunting for the disagreement the house style usually carries.
+    //
+    // ⚠ AND THE TAB RAIL IS REFUSED ON PURPOSE. The owner's control-heavy
+    // ruling is about "lots of controls of DIFFERENT types"; the rail engages
+    // at DOCK_TAB_MIN_BANDS = 7 bands and "do NOT pad pages to force the rail"
+    // is explicit. Three ranked keys is not control-heavy.
+    pages: [{ id: 'snake', label: 'snake', controls: ['tick_ms', 'auto'] }],
+    // The live screen, its SCREEN switch, its SCALE switch and the ARROW KEYS.
+    // See $lib/ui/modules/nibbles/shell-extension.ts.
+    extension: 'nibbles',
+    // ⚠ AUTHORED RATHER THAN DERIVED, and the authored split MEANS something
+    // the derived one does not. nibbles has NO INPUTS AT ALL, so the input rail
+    // is empty and there is nothing to curate there. The OUTPUT rail has seven
+    // ports across four cable domains, and the derived default splits by CABLE
+    // DOMAIN once the rail out-runs a column — which would file `length_cv`
+    // (a PITCH source) away from the two oscillators it pitches. "The picture /
+    // the events / the voice" is the module's actual structure.
+    //
+    // ⚠ EVERY GROUP DECLARES `direction: 'output'`. The field defaults to
+    // 'input' and module-face-lint refuses a group whose ports are not on the
+    // rail it declares.
+    rear: {
+      groups: [
+        { id: 'picture', label: 'picture', direction: 'output', ports: ['out'] },
+        { id: 'events', label: 'events', direction: 'output', ports: ['pellet', 'death', 'dir_change'] },
+        { id: 'voice', label: 'voice', direction: 'output', ports: ['length_cv', 'snake', 'gated'] },
+      ],
+    },
+  },
+
   docs: {
-    explanation: "A playable QBasic-Nibbles snake game rendered as a patchable video source. The classic snake roams an 80x50 grid (CPU-rasterised to a 320x200 frame with a gentle CRT scanline darken) eating one pellet at a time, growing its body, and dying on a wall or self collision. Drive it two ways: click the card to focus it and steer with the arrow keys, or flip AUTO on to let the built-in greedy bot self-play (it walks toward the pellet, avoiding its own tail, with no foresight so it eventually traps and dies — then auto-restarts). The game advances at the rate set by Tick. Beyond the video frame, the snake's life becomes control voltage and sound: gate pulses fire on pellet/death/direction-change, a length CV tracks how long the snake has grown, and two square-wave audio outs are pitched by the snake's length (length 4 = A2/110 Hz, every +12 length = +1 octave). Patch the gates into envelopes/triggers and the length CV into pitch or filter cutoff to sonify the game. The card also has a RESET button, a 1x-4x zoom button, and a live LEN readout (a dagger appears when the snake is dead). The card's game screen is resizable: the on-card scale button cycles the 320x200 source through 1x / 2x / 3x / 4x zoom (image-rendering: pixelated, so it stays crisp); the knobs, buttons, and patch jacks stay fixed-size while only the screen grows.",
+    explanation: "A playable QBasic-Nibbles snake game rendered as a patchable video source. The classic snake roams an 80x50 grid (CPU-rasterised to a 320x200 frame with a gentle CRT scanline darken) eating one pellet at a time, growing its body, and dying on a wall or self collision. Drive it two ways: open the module's faceplate, click the game screen to focus it and steer with the arrow keys, or flip AUTO on to let the built-in greedy bot self-play (it walks toward the pellet, avoiding its own tail, with no foresight so it eventually traps and dies — then auto-restarts). Arrow keys are ignored while AUTO is on, so the two drivers never fight. The game advances at the rate set by Tick. Beyond the video frame, the snake's life becomes control voltage and sound: gate pulses fire on pellet/death/direction-change, a length CV tracks how long the snake has grown, and two square-wave audio outs are pitched by the snake's length (length 4 = A2/110 Hz, every +12 length = +1 octave). Patch the gates into envelopes/triggers and the length CV into pitch or filter cutoff to sonify the game. The faceplate's game screen carries three controls of its own, overlaid on its corners. SCREEN collapses the picture to reclaim its space WITHOUT stopping anything — the snake keeps moving and every gate, CV and audio output keeps firing, because the game ticks inside the module's own draw. SCALE cycles the 320x200 source through 1x / 2x / 3x / 4x zoom (image-rendering: pixelated, so it stays crisp); above 1x the picture scrolls inside its own box rather than widening the plate. Both are per-view preferences stored on the node, so they survive a collapse, an eviction and a reload. RESET starts a fresh game immediately — a new snake at length 4, a newly-placed pellet, the length CV and both pitches re-derived — independent of AUTO, writing nothing to the patch and not undoable, because the game is the module's own internal state and is deliberately never persisted.",
     inputs: {},
     outputs: {
       out: "Video output — the 320x200 rasterised game frame (dark-slate board, red pellet, lime head, green body) with every other scanline dimmed ~15% for a mild CRT look.",
@@ -191,8 +257,8 @@ export const nibblesDef: VideoModuleDef = {
       gated: "Audio output — the same length-pitched square wave routed through an envelope (15 ms attack, 100 ms plateau, exponential decay tail) that fits inside a 500 ms total window and retriggers on every pellet eat, so it sounds only when the snake feeds.",
     },
     controls: {
-      auto: "Auto — discrete 0/1 toggle (also the on-card AUTO button). When ON, the built-in greedy bot drives the snake and auto-restarts it on death; arrow-key steering is ignored. When OFF, you steer with the arrow keys (card must hold focus).",
-      tick_ms: "Tick — the game-tick period in milliseconds (40-200, default 80; ~12 Hz at default). Lower is a faster snake; clamped to the 40-200 ms window. Exposed as the TICK knob on the card.",
+      auto: "Auto — a two-state switch. When ON, the built-in greedy bot drives the snake and auto-restarts it on death; arrow-key steering is ignored. When OFF, you steer with the arrow keys (the game screen must hold focus — click it). Flipping it ON also clears the bot's remembered heading so a freshly-enabled AUTO re-decides on the very next tick instead of stalling.",
+      tick_ms: "Tick — the game-tick period in milliseconds (40-200, default 80; ~12 ticks per second at default). Lower is a faster snake; clamped to the 40-200 ms window. It is read every frame, so a change lands on the next tick, and because every gate, the length CV step rate and the envelope retrigger are clocked by it, it is the module's tempo control.",
     },
   },
   factory(ctx: VideoEngineContext, node): VideoNodeHandle {
