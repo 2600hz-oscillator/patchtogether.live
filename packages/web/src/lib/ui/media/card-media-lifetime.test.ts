@@ -253,10 +253,29 @@ const EXTRAS_OWNERS: Readonly<Record<string, ExtrasOwnerVerdict>> = {
   // FACTORY), and the extras channel carries only human input (keyboard
   // presses, a reset) — there is nothing a registry could reproduce and
   // nothing an unmount can tear down.
-  NibblesCard: {
-    owner: 'module-renders-itself',
-    why: 'nibbles.ts paints a frame before the first tick and ticks its own clock, with a built-in greedy bot under AUTO; the card pushes only arrow keys and a reset',
-  },
+  // ⚠ NibblesCard LEFT THIS ROSTER 2026-09-02 (the face promotion), through the
+  // SAME scan boundary GibribbonCard left by one entry up — and the repetition
+  // is the point: this is now the second time a face PR has moved a card's
+  // `read(…, 'extras')` call out of a `*Card.svelte` and silently emptied the
+  // gate's own subject set for that module. Here the call moved into the plain
+  // `$lib/ui/modules/nibbles-game-actions.ts`, the ONE gesture seam the legacy
+  // card, the faceplate body and the shell's RESET action cell all share, so
+  // the `*Card.svelte`-only scan can no longer see it.
+  //
+  // The SUBSTANCE of the old verdict is unchanged and stronger. `nibbles.ts`
+  // paints and uploads a frame BEFORE any card exists (`paintFrame();
+  // uploadFramebuffer();` run at factory construction) and ticks its own clock
+  // inside `surface.draw`, with a built-in greedy bot under AUTO; what crosses
+  // the extras channel is human input only — four arrow directions and a reset
+  // — so there is nothing a registry could reproduce and nothing an unmount can
+  // tear down. The card has no `onDestroy` teardown of node state at all: it
+  // clears its own `setInterval` and nothing else.
+  //
+  // ⚠ AND THE OPPOSITE FAILURE MODE (a module that never INITIALISES, the
+  // #1720 half this file was widened for) does not apply either, for a reason
+  // that is structural rather than careful: the module is PULL-EXEMPT via its
+  // non-empty `audioSources` map (`VideoEngine.isPullExempt` names NIBBLES in
+  // its own comment), so it renders with nothing mounted and nothing watching.
 };
 
 /** The module TYPE a card basename resolves to, or null. */

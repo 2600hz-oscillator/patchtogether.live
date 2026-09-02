@@ -1325,6 +1325,35 @@ describe('module-face lint — MOMENTARY pads (face.momentary)', () => {
     // and no gate says so; that is why the linear->discrete move is in the same
     // diff as the promotion rather than deferred to dodge a GPU re-attest.
     'mappy:showGrid',
+    // NIBBLES `auto`, 2026-09-02. SELF-PLAY: the built-in greedy bot drives the
+    // snake and auto-restarts it on death, and the arrow keys are refused while
+    // it is on.
+    //
+    // LATCHING, classified AT THE READ SITE — two of them, both bare levels.
+    // `applyAutoDirection` opens with `if (params.auto < 0.5) return;` on every
+    // game tick, and `advanceGame`'s restart branch is
+    // `if (!state.alive && params.auto >= 0.5)`. There is no edge detector on
+    // this param anywhere in the module, and there could not be one from a
+    // cable either: nibbles declares `inputs: []`. It is the setting you flip
+    // once at spawn and leave for the module's whole life — the entire point is
+    // that the bot keeps playing — so a momentary render would self-play only
+    // while the mouse button was held, which is the one way it could not be
+    // used, and would write to the Y.Doc on every press/release pair.
+    //
+    // ⚠ ITS `curve` NEEDED NO CORRECTION — `discrete 0..1` since the module
+    // shipped — so `paramCellKind` derives a `<Toggle>` for it and the face
+    // DECLARES nothing. That is deliberate and was checked rather than assumed:
+    // the `moog962` trap (a `2..3 discrete` param drawn as a KNOB with two
+    // reachable positions across a whole dial, which failed faces-parity twice)
+    // is one param shape away, and `looksLikeToggle` is what keeps this on the
+    // other side of it.
+    //
+    // ⚠ AND IT IS NOT `face.momentary`, which at the ParamDef looks identical
+    // and is opposite in behaviour: AUTO must persist across a reload.
+    // `setParam` additionally clears `lastAutoDir` on the transition so a
+    // freshly-enabled AUTO re-decides on the very next tick rather than
+    // stalling — a detail that only makes sense for a mode that STAYS on.
+    'nibbles:auto',
   ]);
 
   it('no ACKNOWLEDGED_LATCHING param is DOCUMENTED as momentary (the cross-check)', () => {

@@ -554,6 +554,30 @@ const SUBJECTS: readonly Subject[] = [
     { type: 'recorderbox', prefix: 'recorderbox', domain: 'video', why: 'the recorder\'s MONITOR preview and its SCREEN switch — an ADDITION, since RecorderboxCard blits unconditionally and has no switch at all. ⚠ THE ONE ROW IN THIS TABLE WHOSE SWITCH PROVABLY CANNOT REACH THE THING IT LOOKS LIKE IT MIGHT, which is why it is worth covering rather than assuming: a player who sees SCREEN OFF on a RECORDER will reasonably fear they just stopped the take, and they did not — a take runs on node-recorder-registry\'s own pump under an `acquireRenderLease`, and a lease bypasses BOTH preview gates, so the encode is at full rate whether this body is collapsed, unmounted or throttled. That is a STRONGER guarantee than the fleet\'s correctly-ordered `markWatched`, because there is no ordering here to get wrong. ⚠ THE WATCH MARK IS STILL RETAINED AND STILL LOAD-BEARING, for the case with NO take running: recorderbox is a mid-chain SINK with a video pass-through, so a lapsed mark idles the whole chain feeding `in` and stalls the `out` every downstream module reads — a control labelled SCREEN muting a signal path. As everywhere in this file, that half is argued at the source and in the EXTENSION_BODY_ROLES entry; this row proves the SWITCH.' },
 
 
+  // ── NIBBLES (2026-09-02, wave 5) — the SNAKE GAME ─────────────────────────
+  //
+  // Added in the SAME diff as the promotion, per this file's convention, and
+  // APPENDED AT THE TAIL for the mechanical reason blood's note gives: batches
+  // slice this array in declaration order and each test's TITLE is its batch's
+  // comma-joined module list, so appending changes exactly one title. ⚠ nibbles
+  // lands AFTER peertube because that row reached main first — the same arrival
+  // rule peertube's own note states, applied one wave on. This ordering was a
+  // MERGE CONFLICT between the two branches and was resolved by arrival, not by
+  // whichever side git happened to take.
+  //
+  // ⚠ IT NEEDS THE `canvas` OVERRIDE, and for a THIRD distinct reason — neither
+  // quadralogical's (no conventionally-named canvas exists) nor twotracks'
+  // (there are two pictures). Here the canvas is deliberately named
+  // `nibbles-screen`, VERBATIM from the legacy card, because that is the testid
+  // `nibbles.spec.ts` and `nibbles-render-smoke.spec.ts` already read — both of
+  // which drive `?shell=legacy`, so carrying the name means the face and the
+  // card describe the same element rather than forking the vocabulary.
+  //
+  // Verified before writing rather than assumed: the body uses the standard
+  // `{#if !previewCollapsed}` REMOVES mechanism and declares
+  // `nibbles-face-screen-toggle`.
+  { type: 'nibbles', prefix: 'nibbles', canvas: 'nibbles-screen', domain: 'video', why: '⚠ THE ONE SUBJECT IN THIS TABLE WHOSE GAME CLOCK IS THE DRAW ITSELF, which makes "SCREEN OFF keeps it running" load-bearing in a way no sibling row shares. pong and frogger step on the shared scheduler clock and could not be stopped by a preview toggle if you tried; nibbles accumulates `frame.time - lastDrawTimeS` inside `surface.draw` and calls `advanceGame()` from there, so a lapsed pull would stop the SNAKE — and with it the three gates, the length CV and BOTH square-wave audio outs, none of which this surface shows. It cannot happen (the module is pull-exempt through its non-empty audioSources map, and the body renews `markWatched` in both screen states above the collapse branch), and that is argued at the source and in the EXTENSION_BODY_ROLES entry because no runtime gate here can observe a watch mark; this row proves the SWITCH. ⚠ The picture is ALSO the control surface, the quadralogical/mappy shape: the arrow keys that steer the snake are handled on the collapsing frame, so SCREEN OFF removes the module\'s playing interface as well as its preview — which is a view choice rather than a control loss, since AUTO self-play, TICK and RESET all stay on the plate.' },
+
   // ── PAINTER (2026-09-02) — the DRAWING SURFACE ──────────────────────
   //
   // Added in the SAME diff as the promotion, per this file's convention, and
