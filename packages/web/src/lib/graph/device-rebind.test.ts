@@ -13,6 +13,7 @@ import {
   resolveDeviceSet,
   shouldRewriteSavedId,
   resolveGamepadSlot,
+  bindMidiPort,
   type ConnectedDevice,
 } from './device-rebind';
 
@@ -245,5 +246,105 @@ describe('resolveGamepadSlot — ⚠ the rules are INVERTED, and that is the fix
     expect(naive.id).toBe(XB);
     // …and the resolver disagrees, which is the whole assertion.
     expect(resolveGamepadSlot({ slot: 0, id: PS }, pads).slot).toBe(1);
+  });
+});
+
+// ── bindMidiPort — THE MIDI MODULE FACTORY'S PICK ───────────────────────────
+//
+// ⚠ THIS IS THE SEAM THE OWNER'S 2026-09-02 REPORT LANDED ON. Every MIDI
+// module's SURFACE has written `data.lastDeviceName` since #2228 and not one
+// FACTORY ever read it back, so a reloaded patch could only match on
+// `data.lastDeviceId` — the implementation-defined `MIDIPort.id` that Chrome
+// regenerates between sessions. midiOutBuddy compounded it: its grant path
+// GUARDED the pick (`if (!selectedDeviceId)`), so a stale-but-truthy saved id
+// blocked the pick outright and left the module bound to a port that does not
+// exist — a blank picker and total silence.
+//
+// Each case names which half it covers, and the NEGATIVE CONTROL reproduces
+// both pre-fix answers so the fix cannot be read as a no-op.
+describe('bindMidiPort — the MIDI factory pick', () => {
+  // Two ports whose ids came from THIS session. The saved patches below
+  // remember last session's ids, which no longer exist.
+  const ports = [dev('s2-a', 'Decoy Out A'), dev('s2-b', 'Target Out B')];
+
+  it('1. an exact id still enumerated wins, and nothing moves', () => {
+    expect(bindMidiPort({ id: 's2-a', name: 'Decoy Out A' }, ports)).toEqual({
+      id: 's2-a',
+      matchedBy: 'exact-id',
+      candidates: [],
+    });
+  });
+
+  it('2. ⚠ A REGENERATED ID HEALS BY NAME — the owner-reported case', () => {
+    // What a reloaded patch actually carries: last session's id (gone) plus the
+    // name #2228 started persisting for exactly this moment.
+    expect(bindMidiPort({ id: 's1-b', name: 'Target Out B' }, ports)).toEqual({
+      id: 's2-b',
+      matchedBy: 'name-unique',
+      candidates: [],
+    });
+  });
+
+  it('2b. NEGATIVE CONTROL: both pre-fix answers, on that same fixture', () => {
+    // (a) midiOutBuddy's guarded grant path kept the stale id verbatim — a port
+    //     the browser does not have. Blank picker, no bytes.
+    const guarded = 's1-b';
+    expect(ports.some((p) => p.id === guarded)).toBe(false);
+    // (b) its three siblings dropped through to "the first port", which IS a
+    //     real port and therefore looks fine — while addressing another synth.
+    expect(ports[0]!.id).toBe('s2-a');
+    // The resolver disagrees with BOTH, which is the whole assertion.
+    expect(bindMidiPort({ id: 's1-b', name: 'Target Out B' }, ports).id).toBe('s2-b');
+  });
+
+  it('3. an AMBIGUOUS name binds deterministically and REPORTS every candidate', () => {
+    // The Windows/WinMM shape the launchpad binder already documents: one piece
+    // of hardware exposing several interfaces under one name.
+    const twins = [dev('p1', 'Launchpad'), dev('p2', 'Launchpad')];
+    expect(bindMidiPort({ id: 'gone', name: 'Launchpad' }, twins)).toEqual({
+      id: 'p1',
+      matchedBy: 'name-ambiguous',
+      candidates: ['p1', 'p2'],
+    });
+  });
+
+  it('4. nothing matched but ports exist → FIRST AVAILABLE, reported as such', () => {
+    // Preserves what a never-bound module already did, and applies it to an
+    // unresolvable saved binding too: a real port a player can see and change
+    // beats a blank picker that sends nothing.
+    expect(bindMidiPort({ id: 'gone', name: 'A Synth That Left' }, ports)).toEqual({
+      id: 's2-a',
+      matchedBy: 'first-available',
+      candidates: [],
+    });
+  });
+
+  it('4b. …and `first-available` is never reported as a MATCH', () => {
+    // The distinction is the point: "this is your synth" and "this is A synth"
+    // are different claims, and a surface that conflates them tells a player
+    // their gear is bound when it is not.
+    const r = bindMidiPort({ id: 'gone', name: 'A Synth That Left' }, ports);
+    expect(['exact-id', 'name-unique', 'name-ambiguous']).not.toContain(r.matchedBy);
+  });
+
+  it('5. no ports at all → none, never an invented id', () => {
+    expect(bindMidiPort({ id: 's1-b', name: 'Target Out B' }, [])).toEqual({
+      id: null,
+      matchedBy: 'none',
+      candidates: [],
+    });
+  });
+
+  it("6. a never-bound module takes the first port — today's behaviour, unchanged", () => {
+    expect(bindMidiPort({ id: null, name: null }, ports)).toEqual({
+      id: 's2-a',
+      matchedBy: 'first-available',
+      candidates: [],
+    });
+  });
+
+  it('7. a BLANK saved name never matches — it would match every unnamed port', () => {
+    const unnamed = [dev('u1', ''), dev('u2', '')];
+    expect(bindMidiPort({ id: 'gone', name: '' }, unnamed).matchedBy).toBe('first-available');
   });
 });
