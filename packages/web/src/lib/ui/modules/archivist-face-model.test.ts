@@ -329,7 +329,7 @@ describe('⚠ SCREEN ON/OFF — present, on the shared key, and it keeps the wat
     // SOURCE feeding image, video AND both audio jacks, so that would idle the
     // picture every consumer samples — a control labelled SCREEN must not be a
     // downstream mute.
-    const collapsed = /if \(previewCollapsed\) \{([\s\S]*?)\n    \}/.exec(bodyCode)?.[1] ?? '';
+    const collapsed = /if \(previewCollapsed\) \{([\s\S]*?)\n {4}\}/.exec(bodyCode)?.[1] ?? '';
     expect(collapsed).toContain('markWatched');
   });
 
@@ -337,7 +337,7 @@ describe('⚠ SCREEN ON/OFF — present, on the shared key, and it keeps the wat
     // Stronger than the fleet's ordering-dependent guarantee: the element, its
     // play(), the playhead pump and every gate/CV write are the off-screen
     // CARD's, and this body never reaches them at all.
-    const collapsed = /if \(previewCollapsed\) \{([\s\S]*?)\n    \}/.exec(bodyCode)?.[1] ?? '';
+    const collapsed = /if \(previewCollapsed\) \{([\s\S]*?)\n {4}\}/.exec(bodyCode)?.[1] ?? '';
     expect(collapsed).not.toContain('pause');
     expect(collapsed).not.toContain('archivistStatus.request');
   });
@@ -418,7 +418,7 @@ describe('⚠ THE WRITE-ONLY MIRROR IS REPAIRED — the query comes from the GRA
   });
 
   it('the surface WRITES the inputs before asking for a search', () => {
-    const runSearch = /function runSearch\(\): void \{([\s\S]*?)\n  \}/.exec(controlsCode)?.[1] ?? '';
+    const runSearch = /function runSearch\(\): void \{([\s\S]*?)\n {2}\}/.exec(controlsCode)?.[1] ?? '';
     expect(runSearch).toContain('writeSearchInputs()');
     expect(runSearch.indexOf('writeSearchInputs()')).toBeLessThan(runSearch.indexOf('request('));
   });
@@ -430,7 +430,7 @@ describe('⚠ THE WRITE-ONLY MIRROR IS REPAIRED — the query comes from the GRA
     // empty page, which would then run the blanked query. The legacy card's
     // ↻ next never wrote them; a term typed on this surface reaches the graph
     // through the input's own `onchange` (the blur the button click causes).
-    const nextRandom = /function nextRandom\(\): void \{([\s\S]*?)\n  \}/.exec(controlsCode)?.[1] ?? '';
+    const nextRandom = /function nextRandom\(\): void \{([\s\S]*?)\n {2}\}/.exec(controlsCode)?.[1] ?? '';
     expect(nextRandom).toContain("request(nodeId, { kind: 'next' })");
     expect(nextRandom).not.toContain('writeSearchInputs()');
   });
