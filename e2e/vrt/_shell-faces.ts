@@ -6472,16 +6472,46 @@ const VIDEO_FREEZE_ATTEMPTS = 6;
 const VIDEO_PAINT_FRAMES = 900;
 
 /**
- * How many consecutive frames a capture root must go on holding NO preview well
- * before "there is no well here" is believed.
+ * ⚠ A FRAME SPENT BEFORE `freezeFaceVideo` IS NOT FREE, AND THIS CONSTANT USED
+ * TO BE 6. It said "a single query is a snapshot, and a snapshot taken during a
+ * mount reads exactly like the steady state", settled the "is there a well
+ * here?" question over six frames, and closed with "it costs nothing". That
+ * last clause was wrong, and CI measured it within the hour.
  *
- * A single query is a snapshot, and a snapshot taken during a mount reads
- * exactly like the steady state — the failure shape this whole helper exists to
- * end. Six frames is the same settle `freezeFaceVideo` uses, and it costs
- * nothing: by the time this runs the tile has been framed and the audio freeze
- * has settled several windows on top of it.
+ * `freezeFaceVideo` HOLDS THE FRAME THE PICTURE HAD REACHED WHEN THE HARNESS
+ * GOT AROUND TO WRITING `freeze`. For a module that integrates once per DRAW,
+ * six extra frames is six extra draws, so the held frame is a DIFFERENT frame —
+ * which is exactly what mirrorpool's own roster entry says, and it was written
+ * before this helper existed.
+ *
+ * ⚠ THE EVIDENCE IS CI, NOT A LOCAL A/B, and the difference matters because the
+ * local A/B looked like proof and was retracted by its own control.
+ * `face-mirrorpool-dock` is GREEN on main across its last five runs and RED on
+ * this branch at 92 px (run 33674048221, vrt-strict shard 9/12); the only
+ * behavioural change this branch makes to that scene is frames. Post-freeze
+ * frames are not a new class — main's own path already runs `settle(page)`
+ * between the freeze and the shot — so the six PRE-freeze ones are the change.
+ *
+ * ⚠ THE RETRACTED MEASUREMENT, kept because a falsified claim is worth more
+ * than a deleted one: two boots with 0 vs 6 pre-freeze frames differed by
+ * 1392 px, which reads as causality until the negative control runs. TWO BOOTS
+ * OF IDENTICAL CODE differ by 3736 px on the GPU and 2501 px under SwiftShader.
+ * The noise floor is larger than the effect, so that A/B establishes nothing —
+ * and it means this scene does not reproduce boot-to-boot on a dev machine on
+ * either renderer, which its roster entry's "BYTE-IDENTICAL across boots" claim
+ * does not lead you to expect.
+ *
+ * A dock capture root holds no `video-tile-thumb` (PF-20), so this loop's ONLY
+ * effect on such a scene was to re-phase its simulation. The question is now
+ * asked in ZERO frames, and the mount-race it was guarding against is answered
+ * by what has ALREADY been awaited before this runs — `frameMember` waits for
+ * the tile's `data-shell-tier` and the well renders in that same component
+ * pass; the dock has been opened, unfolded and had its band geometry asserted;
+ * and `freezeFaceAudio` has settled several windows on top of either. If that
+ * reasoning is ever wrong the failure is the OLD behaviour — a well nobody
+ * waited for — and not a new one, which is the safe direction to be wrong in.
  */
-const VIDEO_WELL_SETTLE_FRAMES = 6;
+const VIDEO_WELL_SETTLE_FRAMES = 0;
 
 /**
  * Wait until every preview well inside a face scene's CAPTURE ROOT is showing a
@@ -6580,7 +6610,13 @@ export async function awaitFaceVideoPainted(
       list.filter((c) => c.dataset.thumbPainted !== '1');
     const frame = () => new Promise((r) => requestAnimationFrame(() => r(null)));
 
-    // ── IS THERE A WELL HERE AT ALL? Settled, never sampled once. ──────────
+    // ── IS THERE A WELL HERE AT ALL? ──────────────────────────────────────
+    // ⚠ ZERO FRAMES when there is none — see VIDEO_WELL_SETTLE_FRAMES. Every
+    // frame spent here is spent BEFORE `freezeFaceVideo`, and on a module that
+    // integrates once per draw that re-phases the picture the freeze is about
+    // to hold. `settleFrames` is 0 today; it stays a parameter so the loop can
+    // be re-armed with a measurement behind it rather than by editing control
+    // flow back in.
     let frames = 0;
     let list = wells();
     while (frames < settleFrames && list.length === 0) {
