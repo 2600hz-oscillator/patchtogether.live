@@ -762,20 +762,60 @@ export async function captureCanvasStatsFrameSpaced(
 //  2. `pollMs` drops 60 → 20, comfortably finer than the ~42 ms AnalyserNode
 //     ring at 48 kHz/2048, so consecutive samples overlap and a transient
 //     cannot fall between two reads. This is only affordable because of (1).
-//  3. `untilPeak` turns "observe for a fixed wall-clock window" into "observe
-//     UNTIL the thing happens, bounded by a cap" for the callers that are
-//     asking `does this ever make sound?`. A fixed window is a DIFFERENT
+//  3. The `until*` targets turn "observe for a fixed wall-clock window" into
+//     "observe UNTIL the thing happens, bounded by a cap" for the callers that
+//     are asking `does this ever make sound?`. A fixed window is a DIFFERENT
 //     assertion on every machine (the CLAUDE.md frames-vs-milliseconds
 //     argument, in the audio domain: a gated voice needs the main-thread
 //     scheduler to tick, and how many ticks fit in 600 ms is a property of the
 //     runner). A bounded condition-wait is the same assertion everywhere, and
 //     on a healthy machine it returns EARLIER than the old fixed window — so
 //     this is a CI wall-time saving, not a cost. Callers asserting SILENCE
-//     deliberately omit it and observe the full window.
+//     deliberately omit them and observe the full window.
 //
 // `polls === 0` THROWS. "The instrument never looked" must never be able to
 // masquerade as "the module is silent" — that ambiguity is what cost this run,
 // and every one of the ~40 call sites now gets the guard for free.
+//
+// ═════════ THE EXIT CONDITION MUST IMPLY THE ASSERTION ═════════
+//
+// ⚠ THE ONE RULE FOR CALLERS: name as an `until*` target EVERY field you are
+// going to assert on. A bounded condition-wait whose condition is a DIFFERENT
+// quantity from the caller's assertion is not a wait at all — it is a licence
+// to stop looking at the exact instant the assertion is guaranteed false.
+//
+// MEASURED, `trails.spec.ts:369` on PR #2302, run 33579058140, e2e shard 7/12:
+//
+//     Error: a playing gesture must open the VCA through g1 —
+//       peak=0.9949 rms=0.0220 polls=1 elapsed=3ms maxSampleGap=0ms
+//       (hit target early)
+//
+// The caller exited on `untilPeak: 0.03` and asserted `rms > 0.03`. Do the
+// arithmetic on those two numbers and the mechanism is exact, not plausible:
+// the analyser ring is 2048 samples, so the window's total energy was
+// 2048 × 0.0219848² = 0.98983 — which is 0.9949², the square of the reported
+// peak, to five figures. The ring held EXACTLY ONE non-silent sample: the first
+// sample of the just-opened VCA. `peak` cleared its target on that one sample,
+// the window closed 3 ms in, and `rms` could not have been anything but ~0.022
+// no matter how loud the module was. The audio was perfect; the instrument
+// stopped the clock at the only instant where the assertion could not hold.
+//
+// So the targets are ANDed: the window ends early only when every stated target
+// is met, and each is compared with the same strict `>` the callers' matcher
+// (`toBeGreaterThan`) uses. `peak`/`rms`/`nonzeroSamples` are each max-held
+// independently, and the assertions read those same max-holds, so
+//
+//     early exit  ⟹  every asserted field already clears its floor
+//
+// holds by construction rather than by timing. The cap still BOUNDS THE FAILURE:
+// when the targets are never met the full window runs and the assertion fails on
+// a real observation.
+//
+// REJECTED ALTERNATIVE — `minMs`. Making the caller pass `minMs: 60` (about one
+// ring's depth) would have made this rarer without making it impossible, and it
+// is an arbitrary millisecond wait for a renderer-dependent condition, which is
+// exactly what AGENTS.md forbids. Observing the quantity you are about to
+// assert on costs the same wall clock and is a guarantee.
 
 /** What one observation window saw. `polls` / `elapsedMs` / `audioAdvancedS`
  *  are the INSTRUMENT's own vitals — put them in assertion messages so a red
@@ -798,20 +838,42 @@ export interface ScopeWindow {
    *  loop had no way to report this at all, which is why a 600 ms window that
    *  collapsed to one 42 ms peek was indistinguishable from silence. */
   maxSampleGapMs: number;
-  /** True when the window ended early because `untilPeak` was reached. */
+  /** True when the window ended early because every stated target was met. */
   reachedTarget: boolean;
+  /** The early-exit targets this window was waiting for, rendered for a message
+   *  (`"rms>0.03, nonzero>50"`), or `''` when the caller asked for the full
+   *  window. Printed by `describeScopeWindow` so a red run always says WHICH
+   *  quantity ended (or failed to end) the observation. */
+  exitCriteria: string;
 }
 
+/**
+ * ⚠ Name as a target EVERY field you are going to assert on. The targets are
+ * ANDed and compared with strict `>` — the same comparison `toBeGreaterThan`
+ * makes — so an early exit implies your assertion by construction. Exiting on
+ * one quantity and asserting on another is the defect documented above.
+ */
 export interface ScopeWindowOptions {
   /** Sampling period inside the page. Default 20 ms — finer than the ~42 ms
    *  analyser ring, so consecutive snapshots overlap. */
   pollMs?: number;
-  /** Stop as soon as the running max peak exceeds this. Turns the window into
-   *  a BOUNDED CONDITION WAIT (`windowMs` becomes the cap that BOUNDS THE
+  /** Stop once the running max peak exceeds this. Turns the window into a
+   *  BOUNDED CONDITION WAIT (`windowMs` becomes the cap that BOUNDS THE
    *  FAILURE, not the gate). Omit it to always observe the full window — which
-   *  is what an assertion of SILENCE needs. */
+   *  is what an assertion of SILENCE needs.
+   *
+   *  ⚠ This alone is satisfied by a SINGLE sample of the analyser ring, so it
+   *  does NOT license an assertion on `rms` or `nonzeroSamples`. Use
+   *  `untilRms` / `untilNonzeroSamples` for those. */
   untilPeak?: number;
-  /** Minimum observation before `untilPeak` may end the window. Defaults to 0.
+  /** Stop once the running max per-snapshot RMS exceeds this. This is the
+   *  target for "the jack is carrying SUSTAINED audio", and the one an
+   *  `expect(w.rms).toBeGreaterThan(floor)` must pass. */
+  untilRms?: number;
+  /** Stop once the running max per-snapshot count of non-silent samples exceeds
+   *  this. The target for "a structured signal, not a single glitch". */
+  untilNonzeroSamples?: number;
+  /** Minimum observation before the targets may end the window. Defaults to 0.
    *  Only useful when a caller wants both an early exit and a floor. */
   minMs?: number;
 }
@@ -838,11 +900,32 @@ export async function readScopePeakOverWindow(
   opts: ScopeWindowOptions = {},
 ): Promise<ScopeWindow> {
   const pollMs = opts.pollMs ?? 20;
-  const untilPeak = opts.untilPeak ?? Number.POSITIVE_INFINITY;
+  // An UNSTATED target must not be able to hold the window open (that would
+  // turn every existing `untilPeak` caller into a full-cap wait), so it floors
+  // at −Infinity and is trivially met. `hasTargets` is what separates "the
+  // caller stated nothing, observe the whole window" from "everything the
+  // caller stated is satisfied".
+  const untilPeak = opts.untilPeak ?? Number.NEGATIVE_INFINITY;
+  const untilRms = opts.untilRms ?? Number.NEGATIVE_INFINITY;
+  const untilNonzero = opts.untilNonzeroSamples ?? Number.NEGATIVE_INFINITY;
+  const hasTargets =
+    opts.untilPeak !== undefined ||
+    opts.untilRms !== undefined ||
+    opts.untilNonzeroSamples !== undefined;
   const minMs = opts.minMs ?? 0;
 
+  // Rendered once here rather than in the page, so the message names exactly
+  // what the caller asked to wait for.
+  const exitCriteria = [
+    opts.untilPeak === undefined ? null : `peak>${opts.untilPeak}`,
+    opts.untilRms === undefined ? null : `rms>${opts.untilRms}`,
+    opts.untilNonzeroSamples === undefined ? null : `nonzero>${opts.untilNonzeroSamples}`,
+  ]
+    .filter((s): s is string => s !== null)
+    .join(', ');
+
   const result = await page.evaluate(
-    async ({ id, windowMs, pollMs, untilPeak, minMs }) => {
+    async ({ id, windowMs, pollMs, untilPeak, untilRms, untilNonzero, hasTargets, minMs }) => {
       const w = globalThis as unknown as {
         __engine?: () => {
           read: (n: { id: string; type: string; domain: string }, k: string) => unknown;
@@ -919,7 +1002,17 @@ export async function readScopePeakOverWindow(
             polls++;
           }
           const elapsed = at - t0;
-          if (peak > untilPeak && elapsed >= minMs) {
+          // EVERY stated target, with the same strict `>` the callers' matcher
+          // uses — so an early exit implies every assertion they will make.
+          // An omitted target is −Infinity and is trivially true, so it never
+          // holds the window open; `hasTargets` is what keeps a caller who
+          // stated nothing (every SILENCE assertion) on the full window.
+          const met =
+            hasTargets &&
+            peak > untilPeak &&
+            rms > untilRms &&
+            nonzeroSamples > untilNonzero;
+          if (met && elapsed >= minMs) {
             reachedTarget = true;
             finish();
             return;
@@ -933,7 +1026,7 @@ export async function readScopePeakOverWindow(
         sample();
       });
     },
-    { id: scopeNodeId, windowMs, pollMs, untilPeak, minMs },
+    { id: scopeNodeId, windowMs, pollMs, untilPeak, untilRms, untilNonzero, hasTargets, minMs },
   );
 
   if (result.polls === 0) {
@@ -946,17 +1039,27 @@ export async function readScopePeakOverWindow(
         `INSTRUMENT failure, not a silent module. Do NOT read the peak as 0.`,
     );
   }
-  return result;
+  return { ...result, exitCriteria };
 }
 
 /** One-line vitals for an assertion message. Makes a red run diagnosable:
- *  "silent" and "starved sampler" print differently. */
+ *  "silent" and "starved sampler" print differently — and, since the flake
+ *  documented above, so do "the window ended on the condition you named" and
+ *  "the cap ran out while that condition never held". `(hit target early)` used
+ *  to print without saying WHICH target, which read as reassurance in the one
+ *  message where the early exit was the cause. */
 export function describeScopeWindow(w: ScopeWindow): string {
+  const ending = !w.exitCriteria
+    ? ' (full window, no early-exit target)'
+    : w.reachedTarget
+      ? ` (ended early: reached ${w.exitCriteria})`
+      : ` (full window; NEVER reached ${w.exitCriteria})`;
   return (
     `peak=${w.peak.toFixed(4)} rms=${w.rms.toFixed(4)} ` +
+    `nonzero=${w.nonzeroSamples} ` +
     `polls=${w.polls} elapsed=${Math.round(w.elapsedMs)}ms ` +
     `maxSampleGap=${Math.round(w.maxSampleGapMs)}ms` +
-    (w.reachedTarget ? ' (hit target early)' : '')
+    ending
   );
 }
 

@@ -68,8 +68,27 @@
 //   * the TRANSPORT loop — playbackRate, throttled reverse scrub, window edges,
 //     and the six off-air virtual playheads;
 //   * the CV poll — cv_start, cv_pause, cv_reset, cv_loop_toggle and asset_gate;
-//   * the per-slot saved-handle restore and the multi-slot export resolver;
+//   * the PER-SLOT LOADER (`loadFile`), the slot-0 and per-slot SAVED-HANDLE
+//     RESTORE and the MULTI-SLOT EXPORT RESOLVER;
+//   * the crop push AND its aspect re-fit;
 //   * `activeSlot`, `slotPos[]` and the one-shot latch.
+//
+// ⚠ THE THREE ITEMS ON THE SECOND BULLET ARRIVED IN THE FACE PR, NOT IN P2, AND
+// THIS HEADER CLAIMED THEM A WAVE EARLY. Until then `loadFileIntoSlot`,
+// `tryReloadFromHandle`, `tryReloadSlotFromHandle` and `resolveAllSlotBytes`
+// all lived in `VideoVarispeedCard.svelte` — and this module imports neither
+// `video-file-store` nor `video-export-registry`, so it could not load bytes at
+// all. That mattered beyond tidiness, because the card's `$effect` on
+// `fileMeta.handleId` is the DOCUMENTED DELIVERY MECHANISM for three writers
+// OUTSIDE the module: the Loaded-Assets picker spawn and the rebind sweep
+// (`$lib/media/asset-spawn` — videovarispeed is the module spawned for EVERY
+// video asset) and the perf-zip restore (`Canvas.svelte`), each of which writes
+// `fileMeta`/`slotMeta` and waits for a surface to notice. videovarispeed is in
+// neither `DOM_SOURCE_LANE_TYPES` nor `CARD_PRODUCER_LANE_TYPES`, so it gets NO
+// headless host and the default shell mounts no card anywhere — meaning all
+// three were already dock-gated on `main`: drop a video into the asset picker,
+// never open the dock, and nothing loads. Moving the loader here is the REPAIR;
+// the face promotion is what made it unavoidable rather than what broke it.
 //
 // The card keeps only what a view owns: which element is adopted into which
 // host, and the gestures a mounted surface must originate.
@@ -105,7 +124,17 @@ import {
   type PlaybackWindow,
 } from '$lib/video/modules/videovarispeed-transport';
 import { slotForVOct, ASSET_SLOTS } from '$lib/video/asset-select';
-import type { VideoSourceClock, VideoSourceRequestResult } from './node-video-source-registry';
+import type { CropRect } from '$lib/video/crop-core';
+import type { VideoboxFileMeta } from '$lib/video/modules/videobox-sync';
+// ⚠ The per-slot size cap comes from the DEF, never re-typed here — the same
+// one-source rule a card's control range obeys. Reading a WebGL-basis file is
+// free; editing one costs a GPU attest window.
+import { VIDEOVARISPEED_MAX_SLOT_BYTES } from '$lib/video/modules/videovarispeed';
+import type {
+  VideoSourceClock,
+  VideoSourceHandleHooks,
+  VideoSourceRequestResult,
+} from './node-video-source-registry';
 
 /**
  * The media slot key for asset slot `i`.
@@ -132,6 +161,10 @@ export const NODE_VARISPEED_TYPES: ReadonlySet<string> = new Set<string>([
 
 /** CV poll cadence — ~30 Hz, the rate the card used. */
 export const CV_INTERVAL_MS = 33;
+/** Housekeeping cadence — the saved-handle restore, the crop aspect re-fit and
+ *  the published duration. Deliberately an order of magnitude slower than the
+ *  gate poll; see `startHousekeepingLoop`. */
+export const HOUSEKEEPING_INTERVAL_MS = 250;
 /** Retry cadence + ceiling for the races against the engine's async `addNode`. */
 export const RETRY_INTERVAL_MS = 100;
 export const RETRY_ATTEMPTS = 50;
@@ -190,6 +223,31 @@ export interface VarispeedDoc {
   read(nodeId: string): VarispeedSyncState | null;
   writePlaying(nodeId: string, next: boolean): void;
   writeLoop(nodeId: string, next: boolean): void;
+  /** Publish the ACTIVE-slot-0 file metadata (`node.data.fileMeta`) — the
+   *  legacy single-video key the perf-zip loader, the asset picker and the
+   *  rebind sweep all write and read. */
+  writeFileMeta(nodeId: string, meta: VideoboxFileMeta): void;
+  /** Publish one slot's metadata into the synced `slotMeta` array. `null`
+   *  clears the slot. The binding owns the PLAIN-clone discipline (never
+   *  re-insert a live Y type — the sequencer save-to-slot trap). */
+  writeSlotMeta(nodeId: string, slot: number, meta: VideoboxFileMeta | null): void;
+  /**
+   * Read the eight file-meta records (slot 0's legacy `fileMeta` plus the seven
+   * `slotMeta` rows).
+   *
+   * ⚠ A SEPARATE READER FROM `read()` ON PURPOSE, AND IT IS A HOT-PATH
+   * CONSTRAINT RATHER THAN A TIDY-UP. `read()` is called on EVERY rAF frame by
+   * `transportTick`, PER NODE, and a rack can hold ten varispeeds. Folding the
+   * metas into it would make each of those frames clone eight objects for a
+   * value the frame path never looks at. The metas are needed only by the
+   * saved-handle restore, which runs a handful of times per node, so they get
+   * their own reader and the frame path stays exactly as cheap as it was before
+   * this module owned the loader.
+   */
+  readMeta(nodeId: string): VarispeedMetaState | null;
+  /** Persist the crop rect. Used ONLY by the aspect re-fit — every other crop
+   *  write is a surface gesture that goes through `crop-edit`. */
+  writeCrop(nodeId: string, active: boolean, rect: CropRect): void;
 }
 
 /**
@@ -206,8 +264,23 @@ export interface VarispeedSyncState {
   isPlaying: boolean;
   /** Undefined means "never set" — resolved with VARISPEED_DEFAULT_LOOP. */
   loop?: boolean;
-  /** The persisted crop rect, or null for full-frame passthrough. */
+  /** The persisted crop rect COERCED against the live output aspect, or null
+   *  for full-frame passthrough. */
   crop: unknown | null;
+  /** The RAW stored rect, uncoerced — the aspect re-fit needs both halves to
+   *  tell "the stored value is still valid" from "it moved and must be
+   *  re-persisted". Absent when nothing is stored. */
+  rawCrop?: CropRect | null;
+  /** The live OUTPUT aspect the crop is locked to (16:9 ↔ 4:3). */
+  outAspect?: number;
+}
+
+/** The eight file-meta records, read OFF the frame path. See `readMeta`. */
+export interface VarispeedMetaState {
+  /** Slot 0's legacy single-video metadata. */
+  fileMeta: VideoboxFileMeta | null;
+  /** The synced 7-slot metadata array (sparse; `null` = empty slot). */
+  slotMeta: readonly (VideoboxFileMeta | null)[];
 }
 
 /** Element operations, injected because node-env has no HTMLVideoElement. */
@@ -221,12 +294,24 @@ export interface VarispeedElementOps<E> {
   setPlaybackRate(el: E, rate: number): void;
   playbackRate(el: E): number;
   duration(el: E): number;
+  /** Point the element at an object URL. */
+  setSrc(el: E, url: string): void;
+  /** Drop the element's source (an explicit user CLEAR of a slot). */
+  clearSrc(el: E): void;
+  /** Resolve once the element has metadata (duration / readyState populated). */
+  awaitMetadata(el: E): Promise<void>;
 }
 
 /** The node-media seam — the same registry P1 uses, narrowed. */
 export interface VarispeedMedia<E> {
   ensure(nodeId: string, slot: string): E;
   mediaName(nodeId: string, slot: string): string | null;
+  /** The object URL currently owned for this slot, or null. */
+  objectUrl(nodeId: string, slot: string): string | null;
+  /** Hand a NEW object URL to the registry, which revokes the previous one.
+   *  The controller must NEVER revoke one itself — that is the specific
+   *  teardown that made a loaded file unrecoverable (#1511). */
+  setObjectUrl(nodeId: string, slot: string, url: string | null, name?: string | null): void;
 }
 
 /** A per-frame loop. Bound to rAF in the browser; driven by hand in tests, so a
@@ -243,7 +328,25 @@ export interface VarispeedDeps<E> {
   el: VarispeedElementOps<E>;
   clock: VideoSourceClock;
   frames: VarispeedFrameLoop;
+  /** `URL.createObjectURL`. Injected: the core has no `URL` in node env. */
+  createObjectUrl(file: File): string;
+  /** Register / unregister the portable "Export performance" bytes resolver.
+   *  NODE-scoped: it used to be registered from the card's `onMount`, so a rack
+   *  whose videovarispeed had no card mounted — which is EVERY rack under the
+   *  default shell — exported none of its seven slots' bytes. */
+  registerExport(nodeId: string, resolve: () => Promise<VarispeedExportedBytes[] | null>): void;
+  unregisterExport(nodeId: string): void;
+  /** Read the bytes behind an object URL, for the export resolver. */
+  fetchBytes(url: string): Promise<Uint8Array>;
   onStatus?(nodeId: string, status: VarispeedStatus): void;
+}
+
+/** One populated slot's bytes for the portable .zip. `slot` rides along so the
+ *  loader restores into the matching slot index (the Fix B multi-slot shape). */
+export interface VarispeedExportedBytes {
+  bytes: Uint8Array;
+  name: string;
+  slot: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -264,6 +367,20 @@ export interface VarispeedStatus {
   readonly slotPos: readonly number[];
   readonly attached: boolean;
   readonly audioWired: boolean;
+  /** The ACTIVE slot's duration in seconds, read from its element at
+   *  `loadedmetadata`. Published because the synced `fileMeta.duration` lags a
+   *  freshly loaded slot by a round trip, and a surface reading 0 draws a dead
+   *  scrubber over a clip that is playing. */
+  readonly durationSec: number;
+  /** A load failure to show the player, or null. */
+  readonly error: string | null;
+  /** The name of a remembered handle whose read permission is in the `prompt`
+   *  state. The surface offers the one-click re-allow, because
+   *  `requestPermission()` is honoured only inside that click's gesture — the
+   *  controller can offer it but cannot perform it. */
+  readonly pendingHandleName: string | null;
+  /** Which slots have a load in flight (the row's `…` caption). */
+  readonly loadingSlots: readonly boolean[];
 }
 
 export const NO_VARISPEED: VarispeedStatus = {
@@ -273,6 +390,10 @@ export const NO_VARISPEED: VarispeedStatus = {
   slotPos: new Array(ASSET_SLOTS).fill(0),
   attached: false,
   audioWired: false,
+  durationSec: 0,
+  error: null,
+  pendingHandleName: null,
+  loadingSlots: new Array(ASSET_SLOTS).fill(false),
 };
 
 /** Gestures a mounted surface may originate. */
@@ -288,7 +409,17 @@ export type VarispeedCommand =
    *  and the attach. The controller cannot observe an object-URL write. */
   | { kind: 'slotLoaded'; slot: number }
   /** The persisted crop changed — re-push it. */
-  | { kind: 'cropChanged' };
+  | { kind: 'cropChanged' }
+  /** A picked / dropped / re-allowed File becomes slot `slot`'s source. THE
+   *  gesture the whole module is for, and the one a def-reading gate cannot
+   *  see: no ParamCellKind mounts an `<input type=file>`. */
+  | { kind: 'loadFile'; slot: number; file: File; handle?: unknown; reuseHandleId?: string }
+  /** An explicit user CLEAR of one slot — the one place a surface may free a
+   *  slot's bytes, because it is a deliberate content change rather than a view
+   *  teardown. */
+  | { kind: 'clearSlot'; slot: number }
+  /** Dismiss the load error after a surface has shown it. */
+  | { kind: 'clearError' };
 
 export interface NodeVarispeedRegistry {
   sync(nodes: readonly ModuleNode[], engine: VarispeedEngine | null): void;
@@ -320,12 +451,18 @@ interface Controller<E> {
   reverseAccumMs: number;
   lastFrameMs: number;
   lastGate: Record<string, number>;
+  /** Per-slot restore latch — each slot's saved-handle reload runs ONCE per
+   *  controller, not once per graph tick. */
+  reloadAttempted: boolean[];
+  /** The aspect the stored crop was last re-fitted for. */
+  lastRefitAspect: number;
   disposed: boolean;
   dispose(): void;
 }
 
 export function createNodeVarispeedRegistry<E>(
   deps: VarispeedDeps<E>,
+  hooks?: VideoSourceHandleHooks,
 ): NodeVarispeedRegistry {
   const controllers = new Map<string, Controller<E>>();
   let liveEngine: VarispeedEngine | null = deps.engine;
@@ -471,6 +608,226 @@ export function createNodeVarispeedRegistry<E>(
         return false;
       },
     );
+  }
+
+  // ── THE LOADER ────────────────────────────────────────────────────────────
+  //
+  // Moved verbatim from `VideoVarispeedCard.loadFileIntoSlot`, with the two
+  // card-only mirrors (`slotNames`, `slotDuration` `$state`) replaced by reads
+  // through `nodeMedia` and the element — the stale-mirror class the card's own
+  // rehydration effect existed to paper over.
+
+  function setLoading(c: Controller<E>, slot: number, on: boolean): void {
+    const next = [...c.status.loadingSlots];
+    next[slot] = on;
+    patch(c, { loadingSlots: next });
+  }
+
+  /** Load `file` into asset slot `slot`. Slot 0 also writes the legacy
+   *  single-video `fileMeta` (the key the perf-zip loader, the asset picker and
+   *  the rebind sweep all use); every slot writes its `slotMeta` row. */
+  async function loadFileIntoSlot(
+    c: Controller<E>,
+    slot: number,
+    file: File,
+    opts?: { handle?: unknown; reuseHandleId?: string },
+  ): Promise<void> {
+    if (c.disposed) return;
+    if (slot < 0 || slot >= ASSET_SLOTS) return;
+    patch(c, { error: null });
+    if (slot === c.status.activeSlot) patch(c, { pendingHandleName: null });
+    if (!file.type.startsWith('video/')) {
+      patch(c, { error: `Not a video file: ${file.type || file.name}` });
+      return;
+    }
+    if (Number.isFinite(file.size) && file.size > VIDEOVARISPEED_MAX_SLOT_BYTES) {
+      const mb = Math.round(VIDEOVARISPEED_MAX_SLOT_BYTES / (1024 * 1024));
+      patch(c, { error: `File too large (max ${mb} MB per slot)` });
+      return;
+    }
+    setLoading(c, slot, true);
+    try {
+      const key = varispeedSlotKey(slot);
+      // Hand the new url to the NODE-owned registry: it revokes THIS slot's
+      // previous url and keeps the new one alive across every surface change.
+      deps.media.setObjectUrl(c.node.id, key, deps.createObjectUrl(file), file.name);
+      const url = deps.media.objectUrl(c.node.id, key);
+      const el = c.els[slot];
+      if (!url || !el) return;
+      deps.el.setSrc(el, url);
+      // muted=false so the audio reaches MediaElementSource; slots 1..6 are
+      // re-muted by the transport whenever they are off air.
+      deps.el.setMuted(el, false);
+      refreshNames(c);
+
+      await deps.el.awaitMetadata(el);
+      if (c.disposed) return;
+
+      const duration = deps.el.duration(el);
+      c.slotDuration[slot] = duration;
+      // Keep this (and every other loaded) slot's decode alive even while it is
+      // NOT the active source, so a later switch lands on an already-warm
+      // element rather than one throttled to ~1 fps.
+      ensureAllSlotsAlive(c);
+
+      // Persist the handle (slot 0 only — slots 1..6 restore from the perf-zip
+      // blob store, which seeds a handle under the slot's own id).
+      let handleId: string | undefined = opts?.reuseHandleId;
+      if (opts?.handle && hooks?.canPersist()) {
+        try {
+          if (!handleId) handleId = hooks.newId();
+          await hooks.put(handleId, opts.handle);
+        } catch { handleId = opts?.reuseHandleId; }
+      }
+      if (c.disposed) return;
+
+      const meta: VideoboxFileMeta = {
+        name: file.name,
+        duration: Number.isFinite(duration) ? duration : 0,
+        size: Number.isFinite(file.size) ? file.size : undefined,
+        handleId,
+      };
+      if (slot === 0) deps.doc.writeFileMeta(c.node.id, meta);
+      deps.doc.writeSlotMeta(c.node.id, slot, meta);
+
+      // Force a first frame to decode so the output streams immediately even
+      // before play — rVFC fires on the first decoded frame.
+      try { deps.el.seek(el, 0); } catch { /* */ }
+      c.slotPos[slot] = 0;
+
+      refreshNames(c);
+      publishDuration(c);
+      if (slot === c.status.activeSlot) attachActive(c);
+    } finally {
+      if (!c.disposed) setLoading(c, slot, false);
+    }
+  }
+
+  /** An explicit user CLEAR. The ONE place a surface may free a slot's bytes. */
+  function clearSlot(c: Controller<E>, slot: number): void {
+    if (slot < 0 || slot >= ASSET_SLOTS) return;
+    const el = c.els[slot];
+    if (el) {
+      try { deps.el.pause(el); } catch { /* */ }
+      try { deps.el.clearSrc(el); } catch { /* */ }
+    }
+    deps.media.setObjectUrl(c.node.id, varispeedSlotKey(slot), null);
+    c.slotDuration[slot] = 0;
+    c.slotPos[slot] = 0;
+    deps.doc.writeSlotMeta(c.node.id, slot, null);
+    refreshNames(c);
+    // Cleared the ACTIVE slot → fall back to slot 0 when it still holds bytes.
+    if (slot === c.status.activeSlot && slot !== 0 && hasBytes(c, 0)) selectSlot(c, 0);
+    publishDuration(c);
+  }
+
+  /** Restore one slot from a remembered handle. The `granted` branch needs NO
+   *  gesture, which is what makes "a saved rack comes back playing with no
+   *  surface mounted" true; `prompt` is published for a surface to offer as a
+   *  click, because `requestPermission()` is honoured only inside one. */
+  async function tryReloadSlot(c: Controller<E>, slot: number): Promise<void> {
+    if (!hooks || c.disposed) return;
+    if (hasBytes(c, slot)) return;
+    const metas = deps.doc.readMeta(c.node.id);
+    const meta = slot === 0
+      ? (metas?.fileMeta ?? metas?.slotMeta?.[0] ?? null)
+      : (metas?.slotMeta?.[slot] ?? null);
+    const handleId = meta?.handleId;
+    if (!handleId) return;
+    let handle: unknown | null = null;
+    try { handle = await hooks.get(handleId); } catch { return; }
+    if (!handle || c.disposed) return;
+    let perm: 'granted' | 'prompt' | 'denied';
+    try { perm = await hooks.queryPermission(handle); } catch { return; }
+    if (c.disposed) return;
+    if (perm === 'granted') {
+      try {
+        const file = await hooks.getFile(handle);
+        await loadFileIntoSlot(c, slot, file, { handle, reuseHandleId: handleId });
+      } catch { /* moved or deleted on disk — the re-link prompt covers it */ }
+      return;
+    }
+    // Only slot 0's lapsed permission is offerable: the re-allow overlay names
+    // ONE file, and slots 1..6 are re-picked from the bank instead.
+    if (perm === 'prompt' && slot === 0) {
+      patch(c, { pendingHandleName: meta?.name ?? handleId });
+    }
+    // 'denied' → the re-link prompt covers it.
+  }
+
+  /** Fire every slot's restore once its synced meta carries a handleId. Latched
+   *  per slot so a late-arriving `slotMeta` (a peer's write, a perf-zip load
+   *  that lands after the controller was built) still gets its one attempt. */
+  function pumpReloads(c: Controller<E>): void {
+    if (!hooks || c.disposed) return;
+    // Every slot already latched or already holding bytes ⇒ nothing to read.
+    // That is the steady state for the whole life of a loaded node, so the
+    // expensive `readMeta` never runs on it.
+    let pending = false;
+    for (let i = 0; i < ASSET_SLOTS; i++) {
+      if (!c.reloadAttempted[i] && !hasBytes(c, i)) { pending = true; break; }
+    }
+    if (!pending) return;
+    const metas = deps.doc.readMeta(c.node.id);
+    if (!metas) return;
+    for (let i = 0; i < ASSET_SLOTS; i++) {
+      if (c.reloadAttempted[i] || hasBytes(c, i)) continue;
+      const meta = i === 0
+        ? (metas.fileMeta ?? metas.slotMeta?.[0] ?? null)
+        : (metas.slotMeta?.[i] ?? null);
+      if (!meta?.handleId) continue;
+      c.reloadAttempted[i] = true;
+      void tryReloadSlot(c, i);
+    }
+  }
+
+  /**
+   * RE-FIT the stored crop on an OUTPUT-aspect flip (16:9 ↔ 4:3) and re-persist
+   * it when it actually moved.
+   *
+   * ⚠ A PERSISTENCE-CORRECTNESS EFFECT, and it was a card `$effect` — so a rack
+   * whose aspect flipped while the module had no surface kept a rect that is
+   * invalid for the new aspect, and the next reader silently coerced it to
+   * something the player never chose. `doc.read().crop` is ALREADY coerced for
+   * the live aspect (the binding owns the one coercion), so the whole job here
+   * is noticing the aspect moved and writing the coerced value back.
+   */
+  function refitCropForAspect(c: Controller<E>): void {
+    const state = deps.doc.read(c.node.id);
+    if (!state) return;
+    const a = state.outAspect;
+    if (typeof a !== 'number' || !Number.isFinite(a) || a <= 0) return;
+    const fitted = state.crop as CropRect | null;
+    if (!fitted) { c.lastRefitAspect = a; return; }
+    if (a === c.lastRefitAspect) return;
+    c.lastRefitAspect = a;
+    const raw = state.rawCrop ?? null;
+    if (!raw) return;
+    if (
+      Math.abs(fitted.x - raw.x) > 1e-6 ||
+      Math.abs(fitted.y - raw.y) > 1e-6 ||
+      Math.abs(fitted.w - raw.w) > 1e-6
+    ) {
+      deps.doc.writeCrop(c.node.id, true, fitted);
+    }
+  }
+
+  /** Resolve EVERY populated slot's bytes for the portable .zip. The bytes live
+   *  only in the per-slot object URL (never on `node.data` — only the per-slot
+   *  meta syncs), so each loaded URL is fetched back. */
+  async function resolveAllSlotBytes(nodeId: string): Promise<VarispeedExportedBytes[] | null> {
+    const out: VarispeedExportedBytes[] = [];
+    for (let i = 0; i < ASSET_SLOTS; i++) {
+      const key = varispeedSlotKey(i);
+      const url = deps.media.objectUrl(nodeId, key);
+      if (!url) continue;
+      try {
+        const bytes = await deps.fetchBytes(url);
+        if (bytes.length === 0) continue;
+        out.push({ bytes, name: deps.media.mediaName(nodeId, key) ?? `slot-${i}.mp4`, slot: i });
+      } catch { /* revoked / torn-down URL — skip this slot */ }
+    }
+    return out.length > 0 ? out : null;
   }
 
   /**
@@ -651,11 +1008,46 @@ export function createNodeVarispeedRegistry<E>(
     c.timers.push(handle);
   }
 
+  /**
+   * The three HOUSEKEEPING jobs that used to be card `$effect`s: the
+   * saved-handle restore, the crop aspect re-fit and the published duration.
+   *
+   * ⚠ THEIR OWN, SLOWER LOOP — NOT THE 33 Hz CV POLL, AND NOT THE rAF FRAME.
+   * None of them is a per-frame fact: a handle restore fires a handful of times
+   * per node, an aspect flip is a user action, and a duration arrives once per
+   * load. Running them at gate cadence would cost a ten-varispeed rack 900 doc
+   * reads a second to learn nothing — main-thread pressure paid against the
+   * concurrent video decodes that are the whole point of this module.
+   *
+   * They also run BEFORE any `liveEngine` guard on purpose: none of them
+   * touches the engine, and a saved rack must restore its clips even where the
+   * video engine never materialises.
+   */
+  function startHousekeepingLoop(c: Controller<E>): void {
+    const handle = deps.clock.setInterval(() => {
+      if (c.disposed) return;
+      pumpReloads(c);
+      refitCropForAspect(c);
+      publishDuration(c);
+    }, HOUSEKEEPING_INTERVAL_MS);
+    c.timers.push(handle);
+  }
+
   function refreshNames(c: Controller<E>): void {
     const names: (string | null)[] = [];
     for (let i = 0; i < ASSET_SLOTS; i++) names.push(deps.media.mediaName(c.node.id, varispeedSlotKey(i)));
     const changed = names.some((n, i) => n !== c.status.slotNames[i]);
     if (changed) patch(c, { slotNames: names });
+    // A slot that just acquired bytes clears the re-link/re-allow offer for it.
+    if (changed && c.status.pendingHandleName !== null && hasBytes(c, 0)) {
+      patch(c, { pendingHandleName: null });
+    }
+  }
+
+  /** Publish the ACTIVE slot's duration — the scrubber's `max`. */
+  function publishDuration(c: Controller<E>): void {
+    const d = slotDurationSec(c, c.status.activeSlot);
+    if (d !== c.status.durationSec) patch(c, { durationSec: d });
   }
 
   function createController(node: ModuleNode): Controller<E> {
@@ -680,6 +1072,8 @@ export function createNodeVarispeedRegistry<E>(
       reverseAccumMs: 0,
       lastFrameMs: 0,
       lastGate: {},
+      reloadAttempted: new Array(ASSET_SLOTS).fill(false),
+      lastRefitAspect: 0,
       disposed: false,
       dispose(): void {
         if (c.disposed) return;
@@ -688,17 +1082,27 @@ export function createNodeVarispeedRegistry<E>(
         c.timers = [];
         if (c.frameHandle !== null) { try { deps.frames.stop(c.frameHandle); } catch { /* */ } }
         c.frameHandle = null;
+        try { deps.unregisterExport(node.id); } catch { /* */ }
         // ⚠ DELIBERATELY ABSENT: no `attach(id, null)`, no url revoke, no track
         // stop. The elements and their bytes belong to `nodeMedia` and are freed
         // by ITS graph-keyed sweep in the same Canvas effect. Detaching here
         // would re-create #1511 one level down.
       },
     };
+    // The multi-slot bytes resolver, registered on NODE lifetime. It reads the
+    // live per-slot urls each export, so it always reflects the current state.
+    deps.registerExport(node.id, () => resolveAllSlotBytes(node.id));
     refreshNames(c);
+    publishDuration(c);
     attachActive(c);
     ensureAllSlotsAlive(c);
     pushCrop(c);
+    // A node restored from a saved rack (or one the asset picker just wrote
+    // `fileMeta` onto) already carries the handle ids; a freshly spawned one
+    // does not. Both go through the same call — it no-ops without one.
+    pumpReloads(c);
     startCvLoop(c);
+    startHousekeepingLoop(c);
     c.frameHandle = deps.frames.start((nowMs) => transportTick(c, nowMs));
     return c;
   }
@@ -759,6 +1163,14 @@ export function createNodeVarispeedRegistry<E>(
             if (cmd.slot === c.status.activeSlot) attachActive(c);
             break;
           case 'cropChanged': pushCrop(c); break;
+          case 'loadFile':
+            void loadFileIntoSlot(c, cmd.slot, cmd.file, {
+              handle: cmd.handle,
+              reuseHandleId: cmd.reuseHandleId,
+            });
+            break;
+          case 'clearSlot': clearSlot(c, cmd.slot); break;
+          case 'clearError': patch(c, { error: null }); break;
           case 'gateStart': gateStart(c); break;
           case 'gatePause': gatePause(c); break;
           case 'gateReset': gateReset(c); break;

@@ -17,7 +17,24 @@ import { videoVarispeedDef } from '$lib/video/modules/videovarispeed';
 import { readCrop } from '$lib/ui/modules/crop-edit';
 import { videoAspectStore } from '$lib/ui/video-aspect-store.svelte';
 import type { ModuleNode as GraphNode } from '$lib/graph/types';
+import { ASSET_SLOTS } from '$lib/video/asset-select';
+import type { VideoboxFileMeta } from '$lib/video/modules/videobox-sync';
+import {
+  canPersistVideoHandles,
+  newVideoFileId,
+  putVideoFileHandle,
+  getVideoFileHandle,
+  deleteVideoFileHandle,
+  queryHandleReadPermission,
+  requestHandleReadPermission,
+  type StoredFileHandle,
+} from '$lib/video/video-file-store';
+import {
+  registerVideoExport,
+  unregisterVideoExport,
+} from '$lib/video/video-export-registry';
 import { nodeMedia } from './node-media-registry';
+import type { VideoSourceHandleHooks } from './node-video-source-registry';
 import {
   createNodeVarispeedRegistry,
   varispeedSlotKey,
@@ -35,7 +52,36 @@ const statuses = $state<Record<string, VarispeedStatus>>({});
 interface VarispeedData {
   isPlaying?: boolean;
   loop?: boolean;
+  fileMeta?: VideoboxFileMeta | null;
+  slotMeta?: (VideoboxFileMeta | null)[];
+  crop?: { active: boolean; x: number; y: number; w: number };
 }
+
+/** PLAIN clone of a (possibly live Y) file-meta record. */
+function cloneMeta(m: VideoboxFileMeta | null | undefined): VideoboxFileMeta | null {
+  return m ? { name: m.name, duration: m.duration, size: m.size, handleId: m.handleId } : null;
+}
+
+/** The live OUTPUT aspect the crop is locked to. ONE reader, shared by the doc
+ *  seam's coercion and by the aspect re-fit that consumes it. */
+function liveOutAspect(): number {
+  return videoAspectStore.engineRes.height > 0
+    ? videoAspectStore.engineRes.width / videoAspectStore.engineRes.height
+    : 4 / 3;
+}
+
+/** The FileSystemFileHandle machinery, bound to the real IDB-backed store —
+ *  the SAME hooks shape the P1 (videobox) controller takes, imported rather
+ *  than re-declared so the two restore paths cannot drift. */
+const handleHooks: VideoSourceHandleHooks = {
+  canPersist: () => canPersistVideoHandles(),
+  newId: () => newVideoFileId(),
+  put: (id, handle) => putVideoFileHandle(id, handle as StoredFileHandle),
+  get: (id) => getVideoFileHandle(id) as Promise<unknown | null>,
+  queryPermission: (handle) => queryHandleReadPermission(handle as StoredFileHandle),
+  requestPermission: (handle) => requestHandleReadPermission(handle as StoredFileHandle),
+  getFile: (handle) => (handle as StoredFileHandle).getFile(),
+};
 
 function adaptEngine(engine: PatchEngine | null): VarispeedEngine | null {
   if (!engine) return null;
@@ -100,12 +146,17 @@ const registry = createNodeVarispeedRegistry<HTMLElement>({
       // in a browser-side store the pure core has no business importing. The
       // core receives the same rect-or-null the card used to push, so there is
       // exactly one coercion in the codebase and the two cannot disagree.
-      const outAspect =
-        videoAspectStore.engineRes.height > 0
-          ? videoAspectStore.engineRes.width / videoAspectStore.engineRes.height
-          : 4 / 3;
+      const outAspect = liveOutAspect();
       const cropState = readCrop(t as unknown as GraphNode, outAspect, outAspect);
+      const rawCrop = d.crop
+        ? { x: d.crop.x, y: d.crop.y, w: d.crop.w }
+        : null;
+      // ⚠ NO FILE METAS HERE. This runs on EVERY rAF frame, per node; the eight
+      // meta records live behind `readMeta` below so the frame path never pays
+      // to clone a value it does not look at (see the seam's doc comment).
       return {
+        outAspect,
+        rawCrop,
         isPlaying: d.isPlaying ?? false,
         // ⚠ `?? true`, NOT `?? false`. LOOP is ON by default for this module
         // (`VideoVarispeedCard` read `data.loop ?? true`), and getting the
@@ -138,8 +189,66 @@ const registry = createNodeVarispeedRegistry<HTMLElement>({
         (t.data as VarispeedData).loop = next;
       }, LOCAL_ORIGIN);
     },
+    writeFileMeta(nodeId, meta) {
+      // Drop a stale remembered handle in THIS browser's IDB when the id
+      // changes (a fresh pick); a reload reuses the same id, so no churn there.
+      const prevId = (patch.nodes[nodeId]?.data as VarispeedData | undefined)?.fileMeta?.handleId;
+      if (prevId && prevId !== meta.handleId) void deleteVideoFileHandle(prevId);
+      ydoc.transact(() => {
+        const t = patch.nodes[nodeId];
+        if (!t) return;
+        if (!t.data) t.data = {};
+        // ⚠ DELIBERATELY NOT resetting `isPlaying`. It used to, which was an
+        // independent cause of "it stopped playing": the handle-reload path
+        // runs through here, so a node that restored its own file came back
+        // PAUSED even when the synced state said it was playing.
+        (t.data as VarispeedData).fileMeta = { ...meta };
+      }, LOCAL_ORIGIN);
+    },
+    writeSlotMeta(nodeId, slot, meta) {
+      // ⚠ REBUILD FROM PLAIN CLONES. Reading back a previously-written entry
+      // yields a LIVE Y type (already integrated into the doc); putting it in
+      // the new array and reassigning throws "reassigning object that already
+      // occurs in the tree" and aborts the transaction — before which every
+      // slot AFTER the first silently failed to persist (only slot 0 saved).
+      ydoc.transact(() => {
+        const t = patch.nodes[nodeId];
+        if (!t) return;
+        if (!t.data) t.data = {};
+        const d = t.data as VarispeedData;
+        const cur = Array.isArray(d.slotMeta) ? d.slotMeta : [];
+        const arr: (VideoboxFileMeta | null)[] = [];
+        for (let i = 0; i < ASSET_SLOTS; i++) {
+          arr.push(i === slot ? (meta ? { ...meta } : null) : cloneMeta(cur[i] ?? null));
+        }
+        d.slotMeta = arr;
+      }, LOCAL_ORIGIN);
+    },
+    readMeta(nodeId) {
+      const t = patch.nodes[nodeId];
+      if (!t) return null;
+      const d = (t.data ?? {}) as VarispeedData;
+      // ⚠ PLAIN CLONES, never the live Y children. The core hands these back
+      // through `writeSlotMeta`; re-inserting a live Y type throws "reassigning
+      // object that already occurs in the tree" and aborts the transaction —
+      // the trap `writeSlotMeta` below was written for.
+      return {
+        fileMeta: cloneMeta(d.fileMeta ?? null),
+        slotMeta: Array.from({ length: ASSET_SLOTS }, (_, i) => cloneMeta(d.slotMeta?.[i] ?? null)),
+      };
+    },
+    writeCrop(nodeId, active, rect) {
+      ydoc.transact(() => {
+        const t = patch.nodes[nodeId];
+        if (!t) return;
+        if (!t.data) t.data = {};
+        (t.data as VarispeedData).crop = { active, x: rect.x, y: rect.y, w: rect.w };
+      }, LOCAL_ORIGIN);
+    },
   },
   media: {
+    objectUrl: (nodeId, slot) => nodeMedia.objectUrl(nodeId, slot),
+    setObjectUrl: (nodeId, slot, url, name) => { nodeMedia.setObjectUrl(nodeId, slot, url, name); },
     ensure: (nodeId, slot) =>
       nodeMedia.ensure(nodeId, slot, {
         kind: 'video',
@@ -171,6 +280,25 @@ const registry = createNodeVarispeedRegistry<HTMLElement>({
       const d = (el as HTMLVideoElement).duration;
       return Number.isFinite(d) ? d : 0;
     },
+    setSrc: (el, url) => { (el as HTMLVideoElement).src = url; },
+    clearSrc: (el) => {
+      const v = el as HTMLVideoElement;
+      v.removeAttribute('src');
+      v.load();
+    },
+    awaitMetadata: (el) =>
+      new Promise<void>((resolve) => {
+        const v = el as HTMLVideoElement;
+        if (v.readyState >= 1 /* HAVE_METADATA */) { resolve(); return; }
+        v.addEventListener('loadedmetadata', () => resolve(), { once: true });
+      }),
+  },
+  createObjectUrl: (file) => URL.createObjectURL(file),
+  registerExport: (nodeId, resolve) => { registerVideoExport(nodeId, resolve); },
+  unregisterExport: (nodeId) => { unregisterVideoExport(nodeId); },
+  fetchBytes: async (url) => {
+    const resp = await fetch(url);
+    return new Uint8Array(await (await resp.blob()).arrayBuffer());
   },
   clock: {
     now: () => Date.now(),
@@ -198,7 +326,7 @@ const registry = createNodeVarispeedRegistry<HTMLElement>({
     },
   },
   onStatus: (nodeId, status) => { statuses[nodeId] = status; },
-});
+}, handleHooks);
 
 /**
  * The process-wide node-owned varispeed registry.
@@ -246,6 +374,37 @@ if (typeof window !== 'undefined') {
     const row = registry.snapshot().find((r) => r.nodeId === nodeId);
     return row ? { activeSlot: row.activeSlot, slotPos: [...row.slotPos] } : null;
   };
+}
+
+/**
+ * One-click "re-allow <name>" for the SLOT-0 remembered handle.
+ *
+ * ⚠ THIS CANNOT LIVE IN THE CONTROLLER, and the reason is the browser's, not a
+ * layering preference: `requestPermission()` is honoured only INSIDE a real
+ * user gesture. The controller can discover that a handle's permission lapsed
+ * and publish its NAME (`status.pendingHandleName`); performing the re-grant is
+ * necessarily a surface's job. Mirrors `reAllowVideoHandle` exactly.
+ */
+export async function reAllowVarispeedHandle(nodeId: string): Promise<boolean> {
+  const meta = (patch.nodes[nodeId]?.data as VarispeedData | undefined)?.fileMeta ?? null;
+  const handleId = meta?.handleId;
+  if (!handleId) return false;
+  const handle = await getVideoFileHandle(handleId);
+  if (!handle) return false;
+  const perm = await requestHandleReadPermission(handle);
+  if (perm !== 'granted') return false;
+  try {
+    const file = await handle.getFile();
+    return nodeVarispeed.request(nodeId, {
+      kind: 'loadFile',
+      slot: 0,
+      file,
+      handle,
+      reuseHandleId: handleId,
+    }).delivered;
+  } catch {
+    return false;
+  }
 }
 
 export { varispeedSlotKey };

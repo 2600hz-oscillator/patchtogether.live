@@ -4274,8 +4274,13 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // the module has been shipping a seven-slot instrument with six slots behind
   // an undiscoverable right-click. The dock body puts the bank on screen
   // permanently and binds no `oncontextmenu` at all, which also hands the node
-  // its normal right-click menu back — today BOTH fire (`varispeed-panel-layout`
-  // presses Escape to dismiss the node menu its own right-click summoned).
+  // its normal right-click menu back — on the card BOTH fired, which is why the
+  // (now retired) `varispeed-panel-layout` spec had to press Escape to dismiss
+  // the node menu its own right-click summoned. videovarispeed's wave-4
+  // promotion made the same move for the same reason and retired that spec with
+  // it: right-click is claimed PER-CONTROL by `ControlContextMenu`, so an
+  // affordance whose only opener is a whole-surface `oncontextmenu` has no
+  // opener on a faceplate.
   //
   // ⚠ THE INPUT PATH IS THE STOP-2 QUESTION AND IT IS ANSWERED BY THE
   // EXTENSION, NOT BY THE FACE. Eight `<input type="file">` elements live on the
@@ -5710,6 +5715,88 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // contract-lock line, and it rides the attest window the curve fix already
   // opened.
   'mappy',
+  // ── VIDEOVARISPEED (wave 4, 2026-09-01) — the VARISPEED FILE PLAYER ──────
+  //
+  // The videobox shape one module along, on a def that shares its audio
+  // plumbing: `glyph: 'none'` (again a REAL choice — two `audio` outputs mean
+  // any other literal binds a LIVE VU of the clip's soundtrack where the
+  // module's own picture belongs), NINE `noUserControl` bridge caches, no
+  // pages, and a `fullViewBody` extension carrying everything gesture-shaped.
+  //
+  // THREE ranked keys rather than videobox's one, because a player genuinely
+  // turns three things: SPEED, and the two ends of the window. START and END
+  // are `fader`s — the card has always drawn them as horizontal ranges, so the
+  // primitive is preserved rather than substituted. SPEED is deliberately NOT
+  // a fader: its law is an asymmetric analog-clock face (full-left −4×, twelve
+  // o'clock +1×, full-right +4×) that a rotary reads and a linear throw does
+  // not, and swapping the primitive on the headline control is a look change,
+  // not parity.
+  //
+  // ⚠ NO `pages`, AND THE PLAN THAT SCOPED THIS PROMOTION ASKED FOR TWO. Three
+  // cells is not control-heavy; the 2026-08-19 ruling forbids padding pages to
+  // manufacture a tab rail, so the split is dropped and this is the correction.
+  //
+  // ⚠ THE INVENTORY'S BLOCKER WAS STALE IN ITS FIRST CLAUSE AND ALIVE IN ITS
+  // SECOND, WHICH IS WHY THIS PR IS BIGGER THAN VIDEOBOX'S. "Over a card-owned
+  // video source" has been false since LEG-02 P2 (#1511): the elements, the
+  // attach, the audio wire, the transport, the 33 ms CV poll, the gate-driven
+  // slot switch, the seven virtual playheads and the crop push are all
+  // `node-varispeed-registry`'s. But that registry imported neither
+  // `video-file-store` nor `video-export-registry` and could not load bytes at
+  // all — the LOADER, the slot-0 and per-slot saved-handle restores, the
+  // multi-slot export resolver and the crop ASPECT RE-FIT were still card
+  // `$effect`s. So this PR moves those four as well, and the module's own
+  // registry header (which claimed two of them a wave early) is corrected.
+  //
+  // ⚠ THAT MOVE IS A REPAIR, NOT A PROMOTION COST. videovarispeed is in
+  // NEITHER `DOM_SOURCE_LANE_TYPES` NOR `CARD_PRODUCER_LANE_TYPES`, so it gets
+  // no `<HeadlessSourceHost>` and the default shell mounts no card anywhere —
+  // `node-source-videovarispeed.spec.ts` says so outright ("an ordinary rack
+  // has no videovarispeed card mounted anywhere at all"). The card's `$effect`
+  // on `fileMeta.handleId` is nevertheless the DOCUMENTED delivery mechanism
+  // for three writers outside the module: the Loaded-Assets picker spawn
+  // (`asset-spawn.ts` — videovarispeed is the module spawned for EVERY video
+  // asset), `runAssetRebindSweep`, and the perf-zip restore in `Canvas.svelte`.
+  // All three were already dock-gated on `main`: drop a video into the asset
+  // picker, never open the dock, and nothing loads. Same for the EXPORT half —
+  // a rack whose varispeed was never docked exported none of its seven slots'
+  // bytes. Four regression legs in `node-varispeed-registry.test.ts` pin it,
+  // positive-controlled (removing the move reddens seven).
+  //
+  // ⚠ THE STOP-2 IS THE FILE SYSTEM ACCESS HANDLE ACQUISITION, ported VERBATIM
+  // into the body, exactly as videobox's was. `showOpenFilePicker` /
+  // `getAsFileSystemHandle` are honoured only inside a real user gesture and
+  // the native `<input type=file>` cannot hand back a `FileSystemFileHandle` —
+  // a body built on the input alone would never persist a handle, never
+  // restore a clip on reload, never set `pendingHandleName`, and would ship the
+  // re-allow overlay as unreachable dead code.
+  //
+  // ⚠ THE BODY BLITS AND NEVER ADOPTS. The node-owned `<video>` has one parent
+  // and the legacy card adopts it under `?shell=legacy`; the blit is also more
+  // honest, because the engine output is what the CROP output windows and what
+  // downstream receives, letterboxed exactly as they see it.
+  //
+  // ⚠ THE 7-SLOT BANK IS AN ALWAYS-VISIBLE SECTION, NOT A RIGHT-CLICK SHEET.
+  // On the card "Load multiple…" was opened by a whole-card `oncontextmenu`,
+  // which a faceplate cannot reuse: right-click is claimed PER-CONTROL by
+  // `ControlContextMenu` (MIDI-learn / automation). An affordance whose only
+  // opener belongs to another owner has no opener.
+  //
+  // ⚠ ONE RESTING READOUT IS DELETED, NOT HIDDEN: the card's `0:04 / 2:00`
+  // time line — a derived value painted outside every control, the same one
+  // videobox deleted. Position survives on the seek slider and its
+  // `aria-valuetext`. The SPEED multiplier is KEPT and moves body-side beside
+  // the scrubber (owner decision 2026-08-31 §8): it is the reading of the
+  // asymmetric clock-face law that the knob's angle alone cannot give, and
+  // painting it through a `ParamDef.format` would edit an in-basis `params`
+  // array and cost a real-GPU re-attest for a readout.
+  //
+  // ZERO ATTEST: `face` / `noUserControl` / `docs` are hash-transparent by
+  // construction (attest-code-basis) and no param, port or factory code moves;
+  // the controller lives under `lib/ui/**`, outside the basis. CONTRACT
+  // UNCHANGED: no controlFamilies, no new params. `docs:accept` runs because
+  // the explanation's card-ownership prose was stale.
+  'videovarispeed',
 ]);
 
 /**
