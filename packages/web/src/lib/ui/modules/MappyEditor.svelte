@@ -7,6 +7,8 @@
 
   import { onMount, onDestroy } from 'svelte';
   import { useEngine } from '$lib/audio/engine-context';
+  import { patch } from '$lib/graph/store';
+  import { nodeVersion } from '$lib/graph/node-versions.svelte';
   import type { ModuleNode } from '$lib/graph/types';
   import type { VideoEngine } from '$lib/video/engine';
   import { VIDEO_RES } from '$lib/video/engine';
@@ -20,6 +22,7 @@
   } from '$lib/video/modules/mappy';
   import {
     getSurfaceCount,
+    getShowGrid,
     addSurface,
     removeSurface,
     setCorner,
@@ -33,24 +36,49 @@
 
   let {
     id,
-    node,
     connected,
     onClose,
   }: {
     id: string;
-    node: ModuleNode | undefined;
     connected: boolean[];
     onClose: () => void;
   } = $props();
 
   // ───────── derived state from the live node ─────────
-  let surfaces = $derived<MappySurfaceState[]>(
-    normalizeSurfaces((node?.data as { surfaces?: unknown } | undefined)?.surfaces),
-  );
-  let surfaceCount = $derived<number>(getSurfaceCount(node));
-  let showGrid = $derived<boolean>(
-    ((node?.data as { showGrid?: unknown } | undefined)?.showGrid as boolean) ?? false,
-  );
+  //
+  // ⚠ EACH DERIVED RE-READS `patch.nodes[id]`; the node is NOT captured once.
+  // This used to take the node as a PROP, which worked only because its one
+  // caller was a legacy card whose xyflow props churn on every graph tick. A
+  // Y.Doc node proxy's IDENTITY never changes, so a derived that closes over a
+  // captured proxy can go stale while the graph is perfectly correct — the
+  // faceplate body has no incidental churn to rescue it, and the symptom is a
+  // frozen bar over a live picture. `MatrixMixGridBody` is the shipped shape.
+  //
+  // ⚠ AND EACH ONE READS `nodeVersion(id)` FIRST — the reactive pump. The
+  // `patch` proxy is SyncedStore's, not a Svelte signal: reading through it in
+  // a `$derived` subscribes to NOTHING, so a derived over it re-runs only when
+  // something ELSE it touched changed. This component got away with that for as
+  // long as its one caller was a legacy card whose xyflow props churn on every
+  // graph tick — and it stopped working the moment a faceplate body, which has
+  // no such churn, mounted it: MEASURED, the editor's surface tabs froze at one
+  // while the card beside it correctly showed two. `nodeVersion(id)` bumps for
+  // anything under `nodes[id]`, which is exactly this component's subject.
+  let surfaces = $derived.by<MappySurfaceState[]>(() => {
+    void nodeVersion(id);
+    return normalizeSurfaces((patch.nodes[id]?.data as { surfaces?: unknown } | undefined)?.surfaces);
+  });
+  let surfaceCount = $derived.by<number>(() => {
+    void nodeVersion(id);
+    return getSurfaceCount(patch.nodes[id] as ModuleNode | undefined);
+  });
+  // ⚠ THE PARAM, not a `node.data.showGrid` mirror — see mappy-edit.ts. With
+  // the mirror still in place the editor's bar button would have read one
+  // source while a faceplate cell wrote another: "GRID OFF" printed over a
+  // screen full of grid, and a first press that is a no-op.
+  let showGrid = $derived.by<boolean>(() => {
+    void nodeVersion(id);
+    return getShowGrid(patch.nodes[id] as ModuleNode | undefined);
+  });
   /** A surface is editable if it's within the count OR has a connected input. */
   let live = $derived<boolean[]>(
     Array.from({ length: MAPPY_SURFACE_COUNT }, (_, i) => i < surfaceCount || !!connected[i]),

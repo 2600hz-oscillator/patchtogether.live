@@ -27,6 +27,7 @@
 // settles. See `midi-cc-write-storm-fix`.
 
 import { applyCloudseedPreset } from '$lib/ui/modules/cloudseed-preset-actions';
+import { setShowGrid, setSurfaceCountTo } from '$lib/ui/modules/mappy-edit';
 import { patch } from '$lib/graph/store';
 import type { ModuleNode } from '$lib/graph/types';
 import { createSettleCommit } from './settle-commit';
@@ -81,6 +82,45 @@ export const SHELL_PARAM_WRITES: Readonly<Record<string, Readonly<Record<string,
     // the dial's `discrete` snap is a display concern, not a guarantee about
     // what a CV/MIDI-motorized value hands us.
     preset_index: (nodeId, v) => cloudseedPresetCommit.write(nodeId, Math.round(v)),
+  },
+
+  // ── MAPPY — the registry's SECOND entry, and a different KIND of macro ─────
+  //
+  // cloudseed's override exists because one number stands for forty-six. This
+  // one exists because the number is not the whole write: raising
+  // `surfaceCount` must also DROP THE NEWLY-LIVE SURFACE IN SOMEWHERE VISIBLE.
+  //
+  // ⚠ WITHOUT IT THE CELL IS A CONTROL THAT APPEARS TO DO NOTHING, and every
+  // gate stays green. Every surface's quad DEFAULTS to the full-frame
+  // UNIT_QUAD, so a bare `setNodeParam('surfaceCount', 3)` makes surfaces 2 and
+  // 3 exact full-frame duplicates stacked on surface 1 — the composite is
+  // pixel-identical, the corner handles land on top of each other, and there is
+  // nothing to grab. `addSurface` is the card's `+`, and it drops each
+  // newly-live surface that is still at the untouched default in as
+  // `insetQuadForIndex`: a staggered box you can see and drag onto a physical
+  // face. The faceplate must make the SAME write the card's button makes, not
+  // merely arrive at the same number.
+  //
+  // ⚠ NO STORM GUARD, and the difference from cloudseed is the amplification.
+  // A macro write detonates a 46-key transaction per survivor, so its override
+  // must coalesce. This one commits a handful of corner arrays at most SIX
+  // times over the param's whole range, the per-control drag pump already
+  // coalesces the incoming stream, and `addSurface` skips a surface the player
+  // has shaped — so a sweep is bounded by the range rather than by the gesture.
+  mappy: {
+    // Absolute, idempotent, clamped: a dial drag and a six-state Segmented jump
+    // (1 → 5) both land on the same state, applying the inset drop for each
+    // surface that becomes live on the way.
+    surfaceCount: (nodeId, v) => { setSurfaceCountTo(nodeId, Math.round(v)); },
+    // ⚠ THE GRID OVERRIDE IS ROUTED FOR SYMMETRY, NOT FOR A DIFFERENT WRITE.
+    // `setShowGrid` writes the same `showGrid` param `setNodeParam` would, so
+    // this override changes no value — it makes the faceplate's Toggle, the
+    // card's GRID button and the MAP editor's bar button all commit through ONE
+    // function. That is what keeps a later change to how the override is stored
+    // from repairing two surfaces and leaving the third reading the old thing,
+    // which is the failure this module already had once (the `node.data` mirror
+    // the factory preferred).
+    showGrid: (nodeId, v) => { setShowGrid(nodeId, v >= 0.5); },
   },
 };
 

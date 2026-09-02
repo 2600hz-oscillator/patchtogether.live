@@ -1369,19 +1369,35 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // (colourofmagic.spec.ts — all 8 outs emit, recolorization, mono-override
   // clobber, over/clamp) provide coverage.
   colourofmagic: 'SOLO-spawn VRT exempt (live preview canvas; nothing patched is black). The deterministic per-block composite VRT is vrt-colourofmagic.spec.ts (6 scenes: pass/rgb/ydbdr/hsv recolorization + mono-override channel clobber + palette CMY remap, captured by linux CI). Unit (colourofmagic-colorspace.test.ts) + e2e (colourofmagic.spec.ts) provide coverage.',
-  // MAPPY — multi-surface manual projection mapper (v1). The SOLO-spawn card
-  // carries a LIVE composite preview canvas + an SVG corner-drag overlay whose
-  // handles only appear for CONNECTED inputs, so a SOLO (nothing-patched) VRT
-  // is non-deterministic chrome over a black/empty preview. Functional
-  // coverage: mappy.test.ts (homography-bridge: full-frame back-projection,
-  // forward warp onto a dragged quad, round-trip, degenerate-quad null, surface
-  // normalization/clamp) + the shared mappy-homography.test.ts (DLT solve /
-  // apply / invert / column-major) + e2e/tests/mappy-output.spec.ts (real
-  // source → mappy → output: composite non-blank + warping a surface / driving
-  // an input changes the output, renderer-tolerant pixel deltas). Promote into
-  // MODULES + capture deterministic darwin/linux composite baselines (flat
-  // sources → a frozen warp) in a follow-up PR.
-  mappy: 'SOLO-spawn VRT exempt (live composite preview canvas + connected-only corner overlay; nothing patched is non-deterministic chrome over a black preview). Unit (mappy.test.ts surface-normalize + homography-bridge warp/back-project/round-trip/degenerate) + mappy-homography.test.ts + e2e (mappy-output.spec.ts: real source→mappy→output, composite non-blank, warp/drive changes output) provide coverage. Capture deterministic darwin/linux composite baselines in a follow-up PR.',
+  // MAPPY — multi-surface manual projection mapper.
+  //
+  // ⚠ NARROWED 2026-09-01 (mappy face): this entry now covers ONLY THE LEGACY
+  // CARD, reachable at `?shell=legacy`. mappy is in STRICT_FACES, so what a
+  // workflow-mode player operates is the ModuleShell faceplate — and that
+  // surface HAS two committed baselines (`face-mappy-compact` / `-dock`).
+  //
+  // ⚠ AND THE OLD `why` WAS FALSE ON ITS OWN TERMS, which is why the narrowing
+  // is a correction rather than a bookkeeping move. It claimed the SOLO capture
+  // was "non-deterministic chrome over a black preview" and that the corner
+  // handles "only appear for CONNECTED inputs". Both were wrong after the
+  // grids-first rework: the card's own template guards its overlay and legend on
+  // `live[i]` (within the surface count OR connected), and an unpatched live
+  // surface paints its NUMBERED CALIBRATION GRID — an 8x8 checker, a border,
+  // cross-hairs and a seven-segment digit, every term a pure function of the
+  // surface uv, with no clock and no accumulator (mappy.ts says so in as many
+  // words). So a solo spawn is neither black nor non-deterministic; it is the
+  // module's designed idle picture. The remaining honest reason to keep the
+  // card exempt is simply that it has no committed baseline and the surface a
+  // player meets is now the faceplate.
+  //
+  // Functional coverage for the module itself is unchanged: mappy.test.ts
+  // (homography-bridge: full-frame back-projection, forward warp onto a dragged
+  // quad, round-trip, degenerate-quad null, surface normalization/clamp) + the
+  // shared mappy-homography.test.ts (DLT solve / apply / invert / column-major)
+  // + e2e/tests/mappy-output.spec.ts (real source → mappy → output: composite
+  // non-blank + warping a surface / driving an input changes the output) +
+  // face-mappy.spec.ts (the corner pin committing from the FACE).
+  mappy: 'faced (STRICT_FACES): the operated surface is the ModuleShell faceplate, captured by face-mappy-{compact,dock} — an unpatched spawn paints surface 1\'s numbered calibration grid, a pure function of the surface uv with no time term (see _shell-faces.ts). This entry covers only the LEGACY card (?shell=legacy), which has no committed baseline. Unit (mappy.test.ts surface-normalize + homography-bridge warp/back-project/round-trip/degenerate) + mappy-homography.test.ts + e2e (mappy-output.spec.ts: real source→mappy→output, composite non-blank, warp/drive changes output; face-mappy.spec.ts: the corner pin commits from the faceplate) provide coverage.',
   // CHROMA — v3 reshape (this PR) changed the card layout + stripe colour
   // entirely (was a 5-fader mask-extractor; now a 3-fader hue-shifter +
   // tint swatch). Old baselines were deleted; regenerate via

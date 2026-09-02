@@ -75,23 +75,32 @@ function plainSurface(s: MappySurfaceState): MappyMapSurface {
 }
 
 /**
- * Serialize the current MAPPY surface layout (read from node.data) into a
- * portable map object. Normalizes through the canonical helpers first so the
- * exported geometry is always the well-formed 6-surface array (every corner in
- * [0,1], FIT filled), and the LIVE count is clamped to [1,6].
+ * Serialize the current MAPPY surface layout into a portable map object.
+ * Normalizes through the canonical helpers first so the exported geometry is
+ * always the well-formed 6-surface array (every corner in [0,1], FIT filled),
+ * and the LIVE count is clamped to [1,6].
  *
- * `data` is `node.data` (or any `{ surfaces?, surfaceCount? }`); reading from
- * the loose shape keeps this decoupled from the Y types.
+ * `data` is `node.data` (or any `{ surfaces? }`); reading from the loose shape
+ * keeps this decoupled from the Y types.
+ *
+ * ⚠ `count` IS A SEPARATE ARGUMENT AND USED TO BE READ OFF `data`. The live
+ * surface count is the `surfaceCount` PARAM — `node.data.surfaceCount` was a
+ * mirror the factory preferred, and that mirror is gone (see mappy-edit.ts:
+ * a generic faceplate cell writes the param alone, so a mirror the engine
+ * preferred would have made the promoted control inert). Reading it here would
+ * have exported `1` for every rack after the promotion — a map that silently
+ * dropped the venue's surfaces on import, with no error anywhere.
  */
 export function serializeMap(
-  data: { surfaces?: unknown; surfaceCount?: unknown } | undefined,
+  data: { surfaces?: unknown } | undefined,
+  count: unknown,
 ): MappyMap {
   const surfaces = normalizeSurfaces(data?.surfaces);
-  const count = clampSurfaceCount(data?.surfaceCount);
+  const liveCount = clampSurfaceCount(count);
   return {
     version: MAPPY_MAP_VERSION,
     kind: MAPPY_MAP_KIND,
-    count,
+    count: liveCount,
     surfaces: surfaces.map(plainSurface),
   };
 }

@@ -1229,10 +1229,34 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
   },
   {
     type: 'mappy',
-    disposition: 'bespoke-surface',
-    why:
-      'a PROJECTION MAPPER: quad corners dragged on a canvas, with mapping import/export. Direct ' +
-      'geometry manipulation is the entire module.',
+    disposition: 'generic-face',
+    note:
+      'PROMOTED. The old entry read "quad corners dragged on a canvas, with mapping ' +
+      'import/export — direct geometry manipulation is the entire module". The first half is ' +
+      'TRUE and is precisely what a `fullViewBody` is for; the CONCLUSION is false, and it had ' +
+      'already propagated into a gate — `dock-tray-shrink-to-content.spec.ts` quoted this entry ' +
+      'to pin mappy\'s un-migrated status as a DURABLE PROPERTY rather than a queue position ' +
+      '(that spec now asks for the un-migrated RENDER PATH through the #2299 forced-placeholder ' +
+      'seam, so it depends on no module\'s disposition at all). mappy declares TWO real params ' +
+      'the card paints as controls: a GRID override button and a +/- surface counter. They rank ' +
+      'as a Toggle and a six-state roster, with the venue MAP\'s import/export as two ranked ' +
+      'control families beside them. ' +
+      'The body carries what is genuinely gesture-shaped: the composite preview with its ' +
+      'corner-pin overlay, the whole-surface move drag, surface focus, the six INDEPENDENT ' +
+      'per-surface FIT/CROP and RESET pairs (a controlFamilies template is ONE cell with no ' +
+      'per-member index, so they cannot be cells), the MAP button that opens the full-window ' +
+      'editor, the export outcome\'s status line (the shell paints one for a FILE cell and not ' +
+      'for an ACTION cell), the empty-state hint, and the module\'s first SCREEN switch. ' +
+      '⚠ It also hand-carries the card\'s `ydoc.getMap("edges").observeDeep` bridge, which lives ' +
+      'in none of the three shared mappy seams: without it `live[]`, the hit-test roster and the ' +
+      'editor\'s `connected` prop never see a cable patched while the pane is open. ' +
+      '⚠ THE PROMOTION\'S REAL COST WAS AN INERT-CONTROL TRAP: the factory PREFERRED a ' +
+      '`node.data` mirror over the param for both controls while every shell cell writes the ' +
+      'param alone, so on any node a card or a `?shell=legacy` collaborator had touched the ' +
+      'faceplate would have been dead with every def-reading gate green. The mirror is gone in ' +
+      'both directions. And both params moved `curve: linear` -> `discrete` (a FUNCTIONAL fix, ' +
+      'the frametable precedent: a two-state override was going to paint a 200 px continuous ' +
+      'drag), which is a contract re-pin and the program\'s one real-GPU re-attest.',
   },
   {
     type: 'matrixMix',

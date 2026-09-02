@@ -5,21 +5,37 @@
   //   * A live PREVIEW of the composite output (the canonical surface, pulled
   //     via blitOutputToDrawingBuffer — same pattern as QuadralogicalCard /
   //     BackdraftCard).
-  //   * An SVG overlay on the preview: for every surface whose input is
-  //     CONNECTED, four draggable corner DOTS + the quad outline, coloured per
-  //     surface. Dragging a corner writes node.data.surfaces[i].corners[c] in
-  //     NORMALIZED [0,1] output space (IN PLACE — never spread-reassigning the
-  //     live Y object). A "selected" surface owns the on-top, opaque handles;
-  //     the others draw dimmed so a busy 6-surface scene stays legible.
-  //   * A surface LEGEND: one row per CONNECTED input (in1..in6) — its colour
-  //     swatch, a focus/select toggle, and a "reset" (corners → full-frame).
+  //   * An SVG overlay on the preview: for every LIVE surface — within the
+  //     surface count OR with its input connected, the same `live[]` rule the
+  //     engine applies — four draggable corner DOTS + the quad outline, coloured
+  //     per surface. Dragging a corner writes node.data.surfaces[i].corners[c]
+  //     in NORMALIZED [0,1] output space (IN PLACE — never spread-reassigning
+  //     the live Y object). A "selected" surface owns the on-top, opaque
+  //     handles; the others draw dimmed so a busy 6-surface scene stays legible.
+  //     ⚠ THE TWO LINES ABOVE USED TO SAY "CONNECTED", which the template at
+  //     the `{#if live[i]}` guards has contradicted since the grids-first
+  //     rework: an unpatched surface within the count is drawn and draggable —
+  //     that is the whole grids-first workflow.
+  //   * A surface LEGEND: one row per LIVE surface (in1..in6) — its colour
+  //     swatch, a focus/select toggle, a FIT/CROP toggle, and a "reset"
+  //     (corners → full-frame).
   //   * A "show grid" toggle (numbered calibration grid in place of the input).
   //   * Ports via the yellow PatchPanel (no raw side jacks).
+  //
+  // ⚠ MAPPY IS PROMOTED (STRICT_FACES), so on the DEFAULT shell neither the lane
+  // tile nor the dock renders this component: the faceplate's `fullViewBody`
+  // (`$lib/ui/modules/mappy/MappyMapBody.svelte`) is the surface a player meets.
+  // This card still renders under `?shell=legacy`, so every edit here must keep
+  // the two agreeing — which is why the geometry, the map I/O and the surface
+  // count all go through the SHARED seams (mappy-edit / mappy-hit /
+  // mappy-map-io / mappy-map-actions) rather than being re-implemented on
+  // either side.
 
   import { onMount, onDestroy } from 'svelte';
   import { type NodeProps } from '@xyflow/svelte';
   import { useEngine } from '$lib/audio/engine-context';
   import { patch, ydoc } from '$lib/graph/store';
+  import { nodeVersion } from '$lib/graph/node-versions.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import type { ModuleNode } from '$lib/graph/types';
@@ -37,6 +53,7 @@
   } from '$lib/video/modules/mappy';
   import {
     getSurfaceCount,
+    getShowGrid,
     addSurface,
     removeSurface,
     setCorner as editSetCorner,
@@ -44,9 +61,8 @@
     resetSurface as editResetSurface,
     toggleGrid as editToggleGrid,
     toggleSurfaceFit as editToggleSurfaceFit,
-    applyMapLayout,
   } from './mappy-edit';
-  import { serializeMap, parseMap, applyMap } from './mappy-map-io';
+  import { exportMappyMap, importMappyMapFile } from './mappy-map-actions';
   import { hitTestSurfaces } from './mappy-hit';
   import MappyEditor from './MappyEditor.svelte';
   import ModuleTitle from './ModuleTitle.svelte';
@@ -54,7 +70,6 @@
   import { drawPreviewDownscaled } from './preview-downscale';
 
   let { id, data }: NodeProps = $props();
-  let node = $derived(data?.node as ModuleNode);
   const engineCtx = useEngine();
 
   // ───────── reactive edges → which inputs are connected ─────────
@@ -83,16 +98,35 @@
   }
 
   // ───────── surface state (node.data, reactive via the snapshot bus) ─────────
-  let surfaces = $derived<MappySurfaceState[]>(
-    normalizeSurfaces((node?.data as { surfaces?: unknown } | undefined)?.surfaces),
-  );
+  let surfaces = $derived.by<MappySurfaceState[]>(() => {
+    void nodeVersion(id);
+    return normalizeSurfaces(
+      (patch.nodes[id]?.data as { surfaces?: unknown } | undefined)?.surfaces,
+    );
+  });
   // per-surface FIT (true = zoom-fit default, false = crop/window). Independent
   // per surface — normalizeSurfaces fills `fit` (ON for old/missing data).
   let fits = $derived<boolean[]>(surfaces.map((s) => surfaceFitOn(s)));
-  let showGrid = $derived<boolean>(
-    ((node?.data as { showGrid?: unknown } | undefined)?.showGrid as boolean) ?? false,
-  );
-  let surfaceCount = $derived<number>(getSurfaceCount(node));
+  // ⚠ BOTH READ THE PARAM, never a `node.data` mirror. The mirror is gone (see
+  // mappy-edit.ts): the factory used to PREFER it, which would have made every
+  // generic faceplate cell — they write the param alone — inert on any node a
+  // card had touched.
+  //
+  // ⚠ AND BOTH READ `nodeVersion(id)` FIRST — the shared reactive pump. `patch`
+  // is SyncedStore's proxy, not a Svelte signal, and `node` here is an xyflow
+  // PROP: these binds used to work only because that prop churns on every graph
+  // tick, i.e. by accident of a neighbour's re-render. That accident does not
+  // survive being read anywhere else (the MAP editor's tabs froze at one
+  // surface the first time a faceplate body mounted it), so the dependency is
+  // named rather than inherited.
+  let showGrid = $derived.by<boolean>(() => {
+    void nodeVersion(id);
+    return getShowGrid(patch.nodes[id] as ModuleNode | undefined);
+  });
+  let surfaceCount = $derived.by<number>(() => {
+    void nodeVersion(id);
+    return getSurfaceCount(patch.nodes[id] as ModuleNode | undefined);
+  });
   /** A surface is LIVE (shown + editable) if it's within the surface count OR
    *  its input is connected (auto-activate on patch) — mirrors the engine. */
   let live = $derived<boolean[]>(
@@ -128,8 +162,12 @@
   // surface's geometry + per-surface FIT. EXPORT downloads it as JSON; IMPORT
   // reads a file, validates it (foreign/garbage rejected with a non-crashing
   // message), and REPLACES the current layout via the in-place Yjs seam.
-  // The (de)serialize/validate logic is the PURE mappy-map-io helper; only the
-  // Blob/URL/file-picker glue lives here.
+  //
+  // ⚠ THE WHOLE ACTION LIVES IN `mappy-map-actions.ts` NOW, not here. It is the
+  // one seam the faceplate's `mappy-import-map-{n}` / `mappy-export-map-{n}`
+  // cells and the MAP body also call, so the venue file format has exactly one
+  // implementation. This component keeps only the flash timer, which is a piece
+  // of THIS surface's presentation.
   let mapStatus = $state<{ kind: 'ok' | 'err'; text: string } | null>(null);
   let importInput: HTMLInputElement | null = $state(null);
   let statusTimer: ReturnType<typeof setTimeout> | null = null;
@@ -140,24 +178,13 @@
     statusTimer = setTimeout(() => { mapStatus = null; statusTimer = null; }, 4000);
   }
 
+  function flashResult(r: { status: string | null; error: string | null }): void {
+    if (r.error) flashStatus('err', r.error);
+    else if (r.status) flashStatus('ok', r.status);
+  }
+
   function onExportMap(): void {
-    try {
-      const map = serializeMap(node?.data as { surfaces?: unknown; surfaceCount?: unknown } | undefined);
-      const json = JSON.stringify(map, null, 2);
-      const blob = new Blob([json], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `mappy-map-${Date.now()}.json`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      // revoke on the next tick so the click has surely started the download
-      setTimeout(() => URL.revokeObjectURL(url), 0);
-      flashStatus('ok', `exported ${map.count} surface${map.count === 1 ? '' : 's'}`);
-    } catch {
-      flashStatus('err', 'export failed');
-    }
+    flashResult(exportMappyMap(id));
   }
 
   function onImportClick(): void {
@@ -170,22 +197,9 @@
     // reset so picking the SAME file again re-fires change
     input.value = '';
     if (!file) return;
-    let text: string;
-    try {
-      text = await file.text();
-    } catch {
-      flashStatus('err', 'could not read file');
-      return;
-    }
-    const parsed = parseMap(text);
-    if (!parsed.ok) {
-      flashStatus('err', `not a MAPPY map: ${parsed.error}`);
-      return; // do NOT mutate on a foreign/garbage file
-    }
-    const layout = applyMap(parsed.map);
-    applyMapLayout(id, layout);
-    if (selected >= layout.count) selected = Math.max(0, layout.count - 1);
-    flashStatus('ok', `imported ${layout.count} surface${layout.count === 1 ? '' : 's'}`);
+    const r = await importMappyMapFile(id, file);
+    if (!r.error && selected >= surfaceCount) selected = Math.max(0, surfaceCount - 1);
+    flashResult(r);
   }
 
   // ───────── pointer drag — corner-pin OR whole-surface move ─────────
@@ -494,7 +508,7 @@
 </div>
 
 {#if editorOpen}
-  <MappyEditor {id} {node} {connected} onClose={() => (editorOpen = false)} />
+  <MappyEditor {id} {connected} onClose={() => (editorOpen = false)} />
 {/if}
 
 <style>

@@ -13,9 +13,17 @@ import {
 } from './mappy-map-io';
 import { normalizeSurfaces, MAPPY_SURFACE_COUNT } from '$lib/video/modules/mappy';
 
-/** Build a node.data with ≥2 surfaces at DISTINCT positions + mixed FIT, plus a
- *  live surfaceCount. The remaining slots stay full-frame (normalizeSurfaces
- *  fills them). */
+/** Build a node.data with ≥2 surfaces at DISTINCT positions + mixed FIT, plus
+ *  the live surface count the caller passes to `serializeMap`. The remaining
+ *  slots stay full-frame (normalizeSurfaces fills them).
+ *
+ *  ⚠ `surfaceCount` IS NO LONGER READ OFF THIS OBJECT. It used to be a
+ *  `node.data` mirror of the `surfaceCount` PARAM, and the factory PREFERRED
+ *  the mirror — which would have made every generic faceplate cell inert once
+ *  mappy was promoted, since a shell cell writes the param alone. The mirror is
+ *  deleted; the live count is now the param, so `serializeMap` takes it as an
+ *  explicit second argument and this fixture keeps the number only so the
+ *  round-trip has something to assert against. */
 function makeData() {
   const surfaces = normalizeSurfaces([
     // surface 0 — a top-left box, CROP
@@ -32,7 +40,7 @@ describe('mappy-map-io — serialize/apply round-trip', () => {
   it('round-trips the surface layout: serialize → parse → applyMap deep-equals the original', () => {
     const data = makeData();
 
-    const map = serializeMap(data);
+    const map = serializeMap(data, data.surfaceCount);
     // the payload is the venue layout, not the patch
     expect(map.kind).toBe(MAPPY_MAP_KIND);
     expect(map.version).toBe(MAPPY_MAP_VERSION);
@@ -55,7 +63,7 @@ describe('mappy-map-io — serialize/apply round-trip', () => {
 
   it('preserves DISTINCT corner positions for each surface (not collapsed/shared)', () => {
     const data = makeData();
-    const applied = applyMap(serializeMap(data));
+    const applied = applyMap(serializeMap(data, data.surfaceCount));
     expect(applied.surfaces[0]!.corners).not.toEqual(applied.surfaces[1]!.corners);
     expect(applied.surfaces[0]!.corners).toEqual(data.surfaces[0]!.corners);
     expect(applied.surfaces[1]!.corners).toEqual(data.surfaces[1]!.corners);
@@ -63,20 +71,21 @@ describe('mappy-map-io — serialize/apply round-trip', () => {
 
   it('preserves per-surface FIT/CROP across the round-trip', () => {
     const data = makeData();
-    const applied = applyMap(serializeMap(data));
+    const applied = applyMap(serializeMap(data, data.surfaceCount));
     expect(applied.surfaces[0]!.fit).toBe(false); // CROP
     expect(applied.surfaces[1]!.fit).toBe(true); // FIT
     expect(applied.surfaces[2]!.fit).toBe(false); // CROP
   });
 
   it('serializes a full 6-surface array even when fewer are live', () => {
-    const map = serializeMap({ surfaces: [{ corners: [[0, 0], [1, 0], [1, 1], [0, 1]], fit: true }], surfaceCount: 1 });
+    const map = serializeMap({ surfaces: [{ corners: [[0, 0], [1, 0], [1, 1], [0, 1]], fit: true }] }, 1);
     expect(map.count).toBe(1);
     expect(map.surfaces).toHaveLength(MAPPY_SURFACE_COUNT);
   });
 
   it('clamps an out-of-range live count on apply', () => {
-    const map = serializeMap(makeData());
+    const d = makeData();
+    const map = serializeMap(d, d.surfaceCount);
     const applied = applyMap({ ...map, count: 99 });
     expect(applied.count).toBe(MAPPY_SURFACE_COUNT);
     const lo = applyMap({ ...map, count: 0 });

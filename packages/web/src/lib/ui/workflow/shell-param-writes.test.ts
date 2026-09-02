@@ -10,34 +10,65 @@
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { listModuleDefs } from '$lib/audio/module-registry';
+import { listVideoModuleDefs } from '$lib/video/module-registry';
+import { listMetaModuleDefs } from '$lib/meta/module-registry';
 import { patch, ydoc, undoManager, LOCAL_ORIGIN } from '$lib/graph/store';
 import type { ModuleNode } from '$lib/graph/types';
 import { SHELL_PARAM_WRITES, shellParamWrite, flushShellParamWrites } from './shell-param-writes';
 import '$lib/audio/modules';
+import '$lib/video/modules';
 
 describe('SHELL_PARAM_WRITES — the macro-write registry', () => {
   it("cloudseed's preset_index is overridden (the whole-space recall)", () => {
     expect(typeof shellParamWrite('cloudseed', 'preset_index')).toBe('function');
   });
 
+  it("mappy's surfaceCount and showGrid are overridden (the write SHAPE, not the number)", () => {
+    // Raising `surfaceCount` must also drop each newly-live surface in as a
+    // staggered inset quad — `addSurface`'s job. A bare `setNodeParam` would
+    // leave every added surface at the full-frame UNIT_QUAD stacked exactly on
+    // the one below it: a control that appears to do nothing while the value
+    // moves correctly. `showGrid` is routed for SYMMETRY (it writes the same
+    // param either way) so all three surfaces commit through one function.
+    expect(typeof shellParamWrite('mappy', 'surfaceCount')).toBe('function');
+    expect(typeof shellParamWrite('mappy', 'showGrid')).toBe('function');
+  });
+
   it('nothing else is overridden — an override is not the default', () => {
     const pairs = Object.entries(SHELL_PARAM_WRITES).flatMap(([type, m]) =>
       Object.keys(m).map((pid) => `${type}.${pid}`),
     );
-    expect(pairs.sort()).toEqual(['cloudseed.preset_index']);
+    expect(pairs.sort()).toEqual([
+      'cloudseed.preset_index',
+      'mappy.showGrid',
+      'mappy.surfaceCount',
+    ]);
   });
 
   it('an unlisted param / module falls through to the normal setter (null)', () => {
     expect(shellParamWrite('cloudseed', 'late_out')).toBeNull();
     expect(shellParamWrite('reverb', 'preset_index')).toBeNull();
     expect(shellParamWrite('not-a-module', 'preset_index')).toBeNull();
+    expect(shellParamWrite('mappy', 'nope')).toBeNull();
   });
 
   it('every override key names a REAL param on a REAL module', () => {
     // An override on a renamed/typo'd param is a silent no-op that reads like a
     // shipped decision — the same trap `face.paramCells` is linted for.
+    //
+    // ⚠ ALL THREE REGISTRIES, and the widening is a repair rather than a
+    // precaution. This walked `listModuleDefs()` alone — the AUDIO registry —
+    // for as long as the only entry was an audio module, so the first VIDEO
+    // override (mappy, 2026-09-01) reported "not a registered module" for a
+    // perfectly real def. The gate would have failed OPEN in the other
+    // direction just as easily: a typo'd video param id could never have been
+    // caught, because the whole module was already unknown to it.
     const defs = new Map(
-      (listModuleDefs() as unknown as { type: string; params?: { id: string }[] }[]).map((d) => [
+      ([
+        ...listModuleDefs(),
+        ...listVideoModuleDefs(),
+        ...listMetaModuleDefs(),
+      ] as unknown as { type: string; params?: { id: string }[] }[]).map((d) => [
         d.type,
         new Set((d.params ?? []).map((p) => p.id)),
       ]),

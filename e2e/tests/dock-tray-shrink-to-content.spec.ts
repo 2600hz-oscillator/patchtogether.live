@@ -91,21 +91,52 @@ async function whatIsAt(page: import('@playwright/test').Page, x: number, y: num
 test.describe('#1573 expanded tray hugs its content', () => {
   test('a narrow legacy card leaves the canvas exposed AND clickable beside it', async ({ page }) => {
     test.setTimeout(120_000);
+    // ── ⚠ THE PRECONDITION IS A RENDER PATH, NOT A MODULE (#2068 / #2299) ────
+    //
+    // This test needs ONE thing of its subject: that the dock renders it as a
+    // LEGACY CARD, because "a narrow card leaves the canvas exposed beside it"
+    // is a statement about the un-migrated tray. It has been re-pointed twice
+    // for that — `sourcery` (faced in batch-22 G3), then `mappy` — and the
+    // comment that stood here argued mappy was different in KIND: that its
+    // `bespoke-surface` disposition made the legacy card a PROPERTY rather than
+    // a queue position.
+    //
+    // That was wrong, and it was wrong in the way the inventory's `why` prose is
+    // systematically wrong: it quoted a disposition as a durable fact. mappy is
+    // faced as of 2026-09-01 (its "direct geometry manipulation is the entire
+    // module" reasoning described exactly what a `fullViewBody` is for), so the
+    // assertion below would have gone red on that PR — correctly, and for the
+    // third time.
+    //
+    // ⚠ AND A THIRD RE-POINT IS THE WRONG FIX, per the owner's ruling: everything
+    // migrates and the legacy UI is then deleted, so nominating another
+    // un-migrated module would make a preserved un-migrated module a DEPENDENCY
+    // OF THE TEST SUITE. #2299 shipped the seam that answers this properly —
+    // `__forceUnmigrated([type])` moves Canvas's ONE promotion-evaluation site,
+    // so the spec ASKS FOR the placeholder/legacy-card path instead of depending
+    // on any module still being on it. The subject stays `mappy` purely because
+    // it is a narrow card and the geometry claim is about a narrow card; any
+    // other narrow card would do, and none of them needs to stay un-migrated.
+    await page.addInitScript(() => {
+      (globalThis as unknown as { __forceUnmigratedPending: string[] })
+        .__forceUnmigratedPending = ['mappy'];
+    });
     await page.goto('/rack');
     await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: 30_000 });
-    // ⚠ THE SUBJECT IS CHOSEN FOR A DURABLE PROPERTY, NOT CONVENIENCE (batch-22 G3).
-    // This was `sourcery` until G3 gave it a face, at which point `isLegacyCard`
-    // went false and the test failed — correctly, and on the PR that caused it.
-    // The precondition it needs is "un-migrated", and sourcery's un-migrated
-    // status was only ever a QUEUE POSITION: every module on the `generic-face`
-    // disposition is scheduled to lose it, so any of them is a subject with an
-    // expiry date.
-    //
-    // `mappy` is dispositioned `bespoke-surface` — its primary interaction is not
-    // param-shaped, so it is not on the face path at all. Its legacy card is a
-    // PROPERTY of that disposition rather than a batch that has not happened yet.
-    // If a future ruling moves it, the assertion below fails loudly and names the
-    // reason, which is exactly how this landed here.
+    // THE SEAM TOOK, asserted at the hook so a build without VITE_E2E_HOOKS
+    // fails naming the missing hook rather than timing out later on a legacy
+    // card that was never going to render. Re-applying is idempotent and also
+    // covers a boot ordering in which the pending list was drained first.
+    const forced = await page.evaluate(() => {
+      const w = globalThis as unknown as { __forceUnmigrated?: (t: string[]) => string[] };
+      if (typeof w.__forceUnmigrated !== 'function') return null;
+      return w.__forceUnmigrated(['mappy']);
+    });
+    expect(
+      forced,
+      '__forceUnmigrated hook not present — a DEV/VITE_E2E_HOOKS build is expected (the same gate '
+        + 'as __patch / __ydoc / __openDockFullView)',
+    ).toEqual(['mappy']);
     await spawnPatch(page, [{ id: 'p1', type: 'mappy', domain: 'video' }], [], { mountTimeout: 30_000 });
 
     await page.evaluate((id) => (globalThis as never as { __openDockFullView(i: string): void }).__openDockFullView(id), 'p1');
@@ -115,10 +146,11 @@ test.describe('#1573 expanded tray hugs its content', () => {
     const [tray] = g.panes;
     expect(
       tray.isLegacyCard,
-      'mappy is `bespoke-surface` and therefore un-migrated, so it renders a legacy card frame. '
-        + 'If this is false, mappy gained a curated face: RE-POINT this test at another '
-        + 'un-migrated module (prefer another `bespoke-surface` one) rather than relaxing the '
-        + 'assertion — the subject is what must produce the condition, not the threshold.',
+      'the dock must render a legacy card frame for a FORCED-UNMIGRATED type. The seam was '
+        + 'confirmed installed above, so a false here means `__forceUnmigrated` no longer reaches '
+        + "Canvas's promotion-evaluation site (`laneMigrated`) — repair the seam rather than "
+        + 'relaxing this, and never by nominating a module that must stay un-migrated: the owner '
+        + 'ruling is that everything migrates and the legacy UI is then deleted.',
     ).toBe(true);
 
     // The tray wraps its content rather than the viewport. Stated as a relation:
