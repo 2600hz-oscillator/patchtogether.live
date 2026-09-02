@@ -1,32 +1,32 @@
 {
   "schemaVersion": 1,
-  "webglContentHash": "20cc0b74adea7feb820c716a9fb1926c44f747ce8afd578b0725f272ee8951ca",
-  "attestedAt": "2026-09-01T03:31:16.222Z",
+  "webglContentHash": "2368bb009496e874379778cadf9ef101011950e11878b110db24e26db4667294",
+  "attestedAt": "2026-09-02T10:55:31.533Z",
   "attestedBy": "patchtogether-maintainer",
-  "gitHeadAtAttest": "dac91ccbd8876cadebf1a6d74517d2a7711a01b6",
+  "gitHeadAtAttest": "2e1068b9a52f90d74f49393181b511dc50f3ad19",
   "playwrightVersion": "1.50.0",
   "os": "darwin 25.4.0 (arm64)",
   "machineClass": "local-trusted-gpu-workstation",
   "preflight": {
     "samples": 7,
     "windowMs": 10204,
-    "maxForeignCpu": 0,
+    "maxForeignCpu": 0.1,
     "thresholdCpu": 25,
-    "load1": 2.98193359375,
+    "load1": 3.7587890625,
     "cores": 10
   },
   "gpu": "ANGLE (Apple, ANGLE Metal Renderer: Apple M5, Unspecified Version)",
   "appServer": {
-    "url": "http://127.0.0.1:49229",
+    "url": "http://127.0.0.1:58530",
     "mode": "dev",
-    "root": "/Users/2600hz/Documents/workspace/inet.modular/.claude/worktrees/pintrio2",
-    "commit": "dac91ccbd8876cadebf1a6d74517d2a7711a01b6"
+    "root": "/Users/2600hz/Documents/workspace/inet.modular/.claude/worktrees/facemappy",
+    "commit": "2e1068b9a52f90d74f49393181b511dc50f3ad19"
   },
   "repeatEach": 1,
   "suites": {
     "A-heavy": {
       "specFiles": 60,
-      "passed": 226,
+      "passed": 227,
       "failed": 0,
       "flaky": 0,
       "skipped": 5,
@@ -57,5 +57,5 @@
       "flakyDetails": []
     }
   },
-  "durationSec": 313
+  "durationSec": 290
 }
