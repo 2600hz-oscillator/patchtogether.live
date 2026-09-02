@@ -5938,6 +5938,92 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // UNCHANGED: no controlFamilies, no new params. `docs:accept` runs because
   // the explanation's card-ownership prose was stale.
   'videovarispeed',
+
+  // ── MOOG 956 RIBBON (2026-09-02) — the ONE-POINTER GESTURE, and the first
+  // face whose extension body exists for an ARITY the cell grid cannot
+  // express ────────────────────────────────────────────────────────────────
+  //
+  // The inventory refused this module with "the playable strip — press position
+  // and gate — IS the module, and a 1-D touch surface is not a knob". The
+  // second clause is TRUE and the conclusion was wrong, which is now the
+  // recurring shape of these refusals. What a knob cannot express is not the
+  // POSITION — a 0..1 throw is a fader, exactly — but the GESTURE: one pointer
+  // stroke that writes `pos` AND raises `gate`, slides with the gate standing,
+  // and on release drops the gate while LEAVING the pitch. Two cells reach
+  // every value that gesture reaches; what they cannot do is reach them
+  // TOGETHER, which is the same distinction `ModuleFace.xyPads` records for a
+  // 2-D pad one arity up. So the gesture is the module's own surface and every
+  // param still ranks as an ordinary cell beneath it — the joystick shape
+  // (owner decision 2026-08-31 item 2) applied to a 1-D instrument.
+  //
+  // ⚠ IT IS THE FIRST PROMOTION IN THIS PROGRAM TO SHIP `tileBody` FOR A
+  // PARITY HOLE RATHER THAN A PICTURE, and the hole is arithmetic:
+  // `faceTierCap('compact', 'none')` is 3, so the compact lane tile paints
+  // `pos`/`scale`/`offset` and `gate` — one of the module's two OUTPUTS —
+  // would be reachable only by zooming to `full` or opening the dock. A tile
+  // that can set a pitch and not sound it is not the module. Ranking `gate`
+  // into the top three instead would trade `offset` away AND still split one
+  // stroke into two gestures. Same finding skifree and audioIn record: a
+  // module whose only non-param control lives in the full view is unusable
+  // from the lane.
+  //
+  // ⚠ THE STOP-2 IS AN ORDERING BUG THAT DID NOT EXIST BEFORE THE PROMOTION
+  // AND WOULD HAVE SHIPPED SILENT. `setNodeParam` reaches the engine on a
+  // LATER MICROTASK (reconciler.ts `schedule` → `queueMicrotask`) while
+  // `setMomentaryParam` reaches it on THIS instruction, so the naive press
+  // raises the gate BEFORE the pitch moves — every note attacking at the
+  // previous note's pitch and gliding, on the one module whose stated promise
+  // is that the ribbon holds its last pitch. All three surfaces therefore go
+  // through ONE seam (`ui/modules/moog956/ribbon-actions.ts`) that pushes the
+  // pitch at the engine first, synchronously, and only then raises the gate.
+  //
+  // ⚠ THE CONTRACT MOVED, AND THE MOVE IS THE CORRECTION OF A LIE: `gate` was
+  // declared `curve: 'linear'` while the factory has read it as
+  // `value > 0.5 ? 1 : 0` since the module shipped. `looksLikeSwitch` reaches
+  // only params that are ALREADY `0..1 discrete`, so the mis-declaration made
+  // this param invisible to module-face-lint's switch-classification ratchet
+  // and made `face.momentary` refuse it outright — a mis-declared switch is
+  // not merely rendered wrong, it is UNCLASSIFIED and no gate says so. Moved
+  // `linear → discrete` in this diff (`mappy:showGrid`'s call one wave
+  // earlier), NEUTRAL BY CONSTRUCTION — every value either side of the
+  // threshold still resolves to the same 0 or 1 — and re-pinned through
+  // `docs:accept`.
+  //
+  // ⚠ AND THE SAME EDIT CLOSES A DATA-INTEGRITY BUG THE CARD SHIPPED WITH:
+  // `gate` was written into the Y.Doc, so a press whose release never arrived
+  // (the card unmounting mid-hold — pointer capture protects a MOVING pointer,
+  // not a DELETED element) persisted a HIGH gate that then synced to every
+  // peer and survived reload as a drone. `face.momentary` routes it through
+  // `setMomentaryParam` (engine only, panic-latched) and `restedParams`
+  // repairs racks already saved that way. The card's `pos` raw-write DEBT is
+  // paid in the same diff (`createDragCommit`) and its ledger entry deleted.
+  //
+  // ⚠ THE STATED REDUNDANCY (twotracks/joystick): at the dock the strip AND
+  // the four cells are live over the same params. The CELLS are the
+  // parity-credited controls and the MIDI-learn / Electra / control-surface
+  // anchors the hand-rolled card never had; the strip emits NO `control-*`
+  // anchor and no cell attributes, or faces-parity counts `pos` twice — a
+  // multiset failure that only surfaces in the browser lane, half an hour
+  // late. `moog956-face-model.test.ts` pins the absences.
+  //
+  // ⚠ ONE RESTING READOUT IS DELETED, NOT HIDDEN: the card's `{n} st` pitch
+  // line (owner-decisions 2026-08-31 item 11). The value is the strip's
+  // `aria-valuetext` — and `role="slider"` genuinely HAS one, so unlike the
+  // joystick pad one seam over this surface needs no `aria-label` fallback.
+  // The gate LED survives as a colour mark: the wiper burns while the finger
+  // is down.
+  //
+  // ⚠ IT EMPTIES `workflow-rear-card`'s `LEGACY_DOCK_CANDIDATES` POOL
+  // (`moog960` and `cartesian` were already spent), so that case now reaches
+  // `migration-complete` and SKIPS — the designed end state, named here
+  // because a skip is not a pass. #2295 already replaced the throw that used
+  // to make this an unrelated PR's hard RED.
+  //
+  // ZERO ATTEST: an audio def, `face`/`docs` are hash-transparent by
+  // construction, both bodies are DOM with no drawing surface, and no factory
+  // code moves. No ART fingerprint moves either — moog956 is on `ART_BACKLOG`
+  // and has no committed profile, and nothing about the DSP changed.
+  'moog956',
 ]);
 
 /**

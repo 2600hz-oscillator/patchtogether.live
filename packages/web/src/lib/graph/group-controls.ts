@@ -13,6 +13,7 @@
 import type { ModuleNode, ParamDef, NoUserControlParam } from './types';
 import type { ExposedControl, GroupData } from './group-projection';
 import type { ExposableControl } from '$lib/audio/module-registry';
+import { momentaryIds } from '$lib/audio/momentary-params';
 
 /**
  * Loose ModuleDef shape we care about for control discovery — accepts any
@@ -28,6 +29,10 @@ export interface ControlDefLookup {
     /** #1726 — params the module gives the player no control over. Read here
      *  so the group bar never auto-exposes one. */
     noUserControl?: readonly NoUserControlParam[];
+    /** The face's declared PRESS pads. Read here for the same reason as
+     *  `noUserControl`: the group bar must never auto-expose one. See
+     *  `listExposableControls`. */
+    face?: { momentary?: readonly string[] };
   } | undefined;
 }
 
@@ -88,10 +93,40 @@ export function listExposableControls(
   // louder claim than "no user control", and the explicit list is that claim.
   const noControl = new Set((def.noUserControl ?? []).map((e) => e.param));
 
+  // ── A PRESS PAD IS NOT AN EXPOSABLE CONTROL (2026-09-02) ──────────────────
+  //
+  // ⚠ THE GROUP BAR HAS NO RELEASE EDGE, so a `face.momentary` param rendered
+  // here is a LATCH by construction. `GroupExposedControls.svelte`'s
+  // `togglePlay` is `setNodeParam(child.id, paramId, playing ? 0 : 1)` — one
+  // DURABLE Y.Doc write per click, no pointerup path, nothing that falls back
+  // to rest — which is exactly the persisted-stuck-pad bug
+  // `$lib/audio/momentary-params` exists to end, re-entered through a
+  // different surface.
+  //
+  // It became REACHABLE for moog956 in this diff and that is why it is fixed
+  // here: `looksLikeToggle` is `discrete && 0..1`, so correcting `gate`'s
+  // mis-declared `linear` curve promoted it from a (harmless, wrong) knob into
+  // that latching ▶/■ button. But the hazard is NOT moog956's — tomtom
+  // `strike`, clap `trigger`, tidyVco `hold` and bluebox's pads are all
+  // `0..1 discrete` momentary and have been rendering as latching group-bar
+  // buttons all along. Filtering at the seam is the fix; filtering moog956
+  // alone would be a special case for a shared defect.
+  //
+  // The precedent is `push-card-schema.ts`, which skips momentary ids in all
+  // three of its tiers for the same reason: a surface that cannot send the
+  // release edge must not offer the press.
+  //
+  // ⚠ AN EXPLICIT `exposableControls` ENTRY STILL WINS — it is checked above
+  // and never reaches this loop. A module that deliberately surfaces its pad
+  // under a custom kind is making a louder claim than this default, exactly as
+  // `noUserControl` treats it.
+  const momentary = momentaryIds(def);
+
   const auto: ExposableControl[] = [];
   for (const p of params) {
     if (coveredParamIds.has(p.id)) continue;
     if (noControl.has(p.id)) continue;
+    if (momentary.has(p.id)) continue;
     auto.push({
       id: `param-${p.id}`,
       label: p.label,
