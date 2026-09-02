@@ -147,11 +147,10 @@
    * pointing the same way:
    *
    *   * RESET / SCALE / the arrow keys have TWO callers each — this body and
-   *     the legacy card (or the shell's own action cell) — so they must be one
-   *     shared implementation or they will drift. SCREEN has exactly ONE: the
-   *     card never had a screen switch, because the ruling that requires one
-   *     post-dates it and is about the surface promotion DESTROYS. There is
-   *     nothing here to keep in step.
+   *     the legacy card — so they must be one shared implementation or they
+   *     will drift. SCREEN has exactly ONE: the card never had a screen switch,
+   *     because the ruling that requires one post-dates it and is about the
+   *     surface promotion DESTROYS. There is nothing here to keep in step.
    *   * `video-face-screen-source.test.ts` reads this file's SOURCE and
    *     requires it to WRITE `.data.previewCollapsed` — that is the leg that
    *     separates a body which can actually toggle the screen from one that

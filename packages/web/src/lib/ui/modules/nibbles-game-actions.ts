@@ -13,13 +13,12 @@
 // `<ModuleShell>` instead), so a second copy in the body would be two spellings
 // of one gesture with nothing able to see them diverge.
 //
-// It also has to be a `.ts` file for a MECHANICAL reason: `shell-cells.ts` specs
-// are plain DATA called from ModuleShell. They are not components and cannot
-// `getContext`, so the RESET cell reaches the live engine through
-// `getActiveEngine()` — already exported, already consumed from plain `.ts` by
-// `manual-strike-actions.ts`. (Two independent agents have previously invented
-// the false blocker that a shell-cells action needs a platform PR to reach the
-// engine. It does not.)
+// It reaches the live engine through `getActiveEngine()` rather than the Svelte
+// engine CONTEXT — already exported, already consumed from plain `.ts` by
+// `manual-strike-actions.ts` — which is what lets a caller that is NOT a
+// component use it, and what keeps the two surfaces on one implementation.
+// Reading the engine at the moment of the press is exactly right: that is when
+// a non-null engine is required.
 //
 // ── WHY RESET CANNOT REUSE `resolveManualStrike` ───────────────────────────
 //
@@ -48,6 +47,16 @@
 // next observable inward: did the seam resolve a callable off the live engine
 // handle and call it. `delivered: false` is RECORDED, never dropped — "never
 // pressed" and "pressed and reached nothing" must stay distinguishable.
+//
+// ⚠ AND THE PROBE THAT READS IT IS `face-nibbles.spec.ts`, NOT `faces-parity`,
+// which is why RESET is a BODY BUTTON rather than a ranked `ShellActionCell`.
+// That sweep spawns every module with `spawnPatch({ id, type, position })` and
+// no `domain`, which `e2e/tests/_helpers.ts` defaults to `'audio'` — so a VIDEO
+// module's factory is never constructed there and `read(node, 'extras')` is
+// `undefined`. MEASURED on the default shell, both directions: spawned
+// `domain: 'video'` the ledger records `delivered: true`; spawned the sweep's
+// way, `delivered: false` on a perfectly live button. The face spec presses
+// this seam on a REAL constructed module instead, which is strictly stronger.
 
 import { getActiveEngine } from '$lib/audio/engine-ref';
 import { mutateNode, setNodeParam } from '$lib/graph/mutate';
