@@ -5397,7 +5397,67 @@ export const FACES = [
   // ⚠ SO A MOVE ON THIS SCENE'S BIND ROW MEANS THE RUNNER LOST WEB MIDI — worth
   // knowing rather than worth hiding, and the one thing a pin here would have
   // concealed.
-  { type: 'seqtris', pages: 1 },
+  //
+  // ── ⚠ COMPACT REMOVED 2026-09-02 — THE painter CLASS, AND THE CPU HALF OF IT
+  //
+  // The mirrorpool / matrixMix / painter placement-sensitivity class, caught in
+  // the act on this branch. Same scene, same product code, and the ONLY delta
+  // between the two runs is `vrt-strict-timings.generated.json` — CI planner
+  // data that touches no product and no spec:
+  //
+  //   run 33684552094 — face-seqtris-compact on vrt-strict shard  6 — PASSED
+  //   run 33692179171 — face-seqtris-compact on vrt-strict shard  5 — FAILED
+  //
+  // RE-PINNING A COST ARTIFACT RE-BINS THIS LANE, so "it was green last run" was
+  // true and worthless. That much is painter's finding, verbatim.
+  //
+  // ⚠ BUT THE MECHANISM IS NOT painter's, AND SAYING SO IS THE POINT — #2322's
+  // `awaitCaptureBoxSettled` DID ITS JOB HERE. painter's signature was the
+  // capture-before-settle one: 45 of 49 differing pixels in column x=87, the
+  // last column of an 88 px capture, with the interior byte-identical. This
+  // scene shows NO border column at all. Measured, expected vs actual:
+  //
+  //   15 differing pixels of 7,216. Max channel-sum delta 14 (+7,+2,+5 on one
+  //   pixel); 13 of the 15 differ by <=3 across all four channels, i.e. inside
+  //   the fleet's own +/-2-LSB band that `threshold: 0.01` absorbs. The two that
+  //   exceed it sit at x=37-38, y=13-14 — ON THE QUANT KnobConic's CONIC-GRADIENT
+  //   ARC — plus two rounded-corner pixels at y=0. The well, all 64 cells, the
+  //   `l` piece, the PAD lamp and the EXPAND pill are byte-identical.
+  //
+  // ⚠ AND THE VARIABLE IS THE SILICON, WHICH IS WHY A RE-CAPTURE CANNOT FIX IT.
+  // Read from each shard's own `/proc/cpuinfo` step:
+  //
+  //   run 33684552094 shard  6 — AMD EPYC 7763 — PASSED   (shard 5 that run: 7763)
+  //   run 33692179171 shard  5 — AMD EPYC 9V74 — FAILED
+  //
+  // The fleet is MIXED and the CPU model is not a function of the shard index,
+  // so the re-bin is only what moved this scene onto different silicon. A
+  // conic-gradient arc is trigonometric rasterisation and is the most
+  // CPU-sensitive thing on this plate; +/-7 LSB is 3.5x the band the gate is
+  // calibrated for. Neither render is "wrong" — unlike painter, where border
+  // symmetry made "which image is correct" a testable claim and answered it — so
+  // `vrt:accept` or a `GREP=seqtris` re-author would only bake in whichever CPU
+  // the capture happened to land on and re-roll the same die next re-bin.
+  //
+  // ⚠ NOT A FLEET-WIDE BOMB, AND THAT WAS CHECKED RATHER THAN ASSUMED: FIFTEEN
+  // other `face-*-compact` scenes ran on that SAME 9V74 shard (adsr, cloudseed,
+  // destroy, destructor, gibribbon, midiCvBuddy, moog904c, moog956, numpadPlus,
+  // onetonine, …) and every one of them PASSED. KnobConic under 9V74 is fine in
+  // general; this tile's particular arc sits on a rounding knife-edge.
+  //
+  // THE DOCK SCENE IS UNAFFECTED AND STILL GATES — it passed on shard 12 of the
+  // same red run — and it is the scene that carries this promotion's whole
+  // surface: the 176 px well, the eight-row hardware scene column with both dead
+  // spacers, CONNECT/Unbind and the bind lamp. What the compact scene alone
+  // pinned — that the LANE TILE paints a live board — is covered without pixels
+  // by `e2e/tests/seqtris-face.spec.ts` leg 1, which asserts 64 cells, a
+  // non-transparent computed background, and a piece colour DIFFERENT from an
+  // empty cell's. That is PAINT rather than presence, and it is renderer-tolerant
+  // by construction.
+  //
+  // Restore when the placement-sensitivity class is fixed: delete the `scenes`
+  // line and dispatch `GREP=seqtris task vrt:commit`.
+  { type: 'seqtris', pages: 1, scenes: ['dock'] },
 
   // ── NIBBLES — the game group's fourth face, and the one whose determinism
   //    seam ALREADY EXISTED and is ALREADY PROVEN BYTE-IDENTICAL ────────────

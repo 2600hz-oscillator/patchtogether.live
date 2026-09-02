@@ -1,6 +1,6 @@
 {
   "_comment": "Per-TEST cost in SECONDS for the REQUIRED vrt-strict lane (VRT_STRICT=1). Keyed \"<spec file> :: <test title>\". Consumed by scripts/vrt-shard-plan.mjs to bin-pack the lane across shards. Regenerate with `flox activate -- task vrt:strict:timings:accept -- <ci-run-id>`. Reviewed as a diff, never hand-edited.",
-  "_source": "UNION of ci.yml runs 33651528775 (main) ∪ 33654251659 (feat/nibbles-face) ∪ 33663808159 (feat/painter-face) ∪ 33673574988 (feat/chromaconsole-face) ∪ 33684552094 (feat/seqtris-surface, ALL 12 vrt-strict shards reported; introduces the two face-seqtris scenes) — 419 keys, 5344.0 CPU-s. Shared keys take the LATEST run that measured them; a grafted key keeps the value from the run that introduced it.",
+  "_source": "UNION of ci.yml runs 33651528775 (main) ∪ 33654251659 (feat/nibbles-face) ∪ 33663808159 (feat/painter-face) ∪ 33673574988 (feat/chromaconsole-face) ∪ 33684552094 (feat/seqtris-surface, ALL 12 vrt-strict shards reported; introduces face-seqtris-dock; the compact scene was withdrawn in this same PR — see the roster entry) — 419 keys, 5344.0 CPU-s. Shared keys take the LATEST run that measured them; a grafted key keeps the value from the run that introduced it.",
   "tests": {
     "vrt.spec.ts :: adsr card matches baseline": 18,
     "vrt.spec.ts :: buggles card matches baseline": 18.6,
@@ -339,7 +339,6 @@
     "workflow-shell-faces.spec.ts :: face-score-dock: the dock full-view faceplate matches baseline": 10.5,
     "workflow-shell-faces.spec.ts :: face-scoreboard-compact: the compact lane tile matches baseline": 15.8,
     "workflow-shell-faces.spec.ts :: face-scoreboard-dock: the dock full-view faceplate matches baseline": 21.3,
-    "workflow-shell-faces.spec.ts :: face-seqtris-compact: the compact lane tile matches baseline": 8.1,
     "workflow-shell-faces.spec.ts :: face-seqtris-dock: the dock full-view faceplate matches baseline": 6.4,
     "workflow-shell-faces.spec.ts :: face-shapedramps-compact: the compact lane tile matches baseline": 18.6,
     "workflow-shell-faces.spec.ts :: face-shapedramps-dock: the dock full-view faceplate matches baseline": 26.6,
