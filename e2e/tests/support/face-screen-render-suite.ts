@@ -499,12 +499,19 @@ const SUBJECTS: readonly Subject[] = [
   // APPENDED AT THE TAIL for the mechanical reason blood's note gives: batches
   // slice this array in declaration order and each test's TITLE is its batch's
   // comma-joined module list, so appending changes exactly one title.
+  // ── VIDEOVARISPEED (wave 4) — the VARISPEED FILE PLAYER ──────────────────
+  //
+  // Added in the SAME diff as the promotion, and APPENDED AT THE TAIL for the
+  // mechanical reason blood's note gives: batches slice this array in
+  // declaration order and each test's TITLE is its batch's comma-joined module
+  // list, so appending changes exactly one title.
   //
   // Verified before writing rather than assumed: `type == prefix == extension
   // id`, the body uses the standard `{#if !previewCollapsed}` REMOVES
   // mechanism, and it declares the conventional `<type>-face-canvas` — so no
   // `canvas` override is needed.
   { type: 'peertube', prefix: 'peertube', domain: 'video', why: 'the fediverse browser\'s live engine-output preview and its SCREEN switch — an ADDITION, since PeerTubeCard adopts the raw node-owned <video> and has no SCREEN switch at all. ⚠ The watch-mark case is the sharpest in this table after textmarquee\'s: peertube is a SOURCE feeding video AND audio_l/audio_r, so a lapsed mark would not stall a preview of somebody else\'s picture — it would idle the picture every downstream consumer samples while the element went on decoding. The switch must collapse the preview COPY and nothing else. The deeper "the stream keeps playing" property (the element, its demuxer and its audio wire, all on NODE lifetime) is node-source-hls.spec.ts\'s and face-peertube.spec.ts\'s subject; this row proves the SWITCH.' },
+  { type: 'videovarispeed', prefix: 'videovarispeed', domain: 'video', why: 'the varispeed player\'s live engine-output preview and its SCREEN switch — an ADDITION, since VideoVarispeedCard adopts the raw <video> and has no SCREEN switch at all. \u26a0 The watch-mark case is stronger here than for any sibling: this module has TWO video outputs, and CROP is a SECOND pass over its own frame, so a lapsed mark would idle both the picture every consumer samples AND the zoom a second screen is showing, while the element went on decoding. The switch must collapse the preview copy and nothing else. The deeper "keeps playing" property (the seven elements, on node lifetime) is collapse-keeps-playing.spec.ts\'s and face-videovarispeed.spec.ts\'s subject; this row proves the SWITCH.' },
 ] as const;
 
 /** The representative module for the PERSISTENCE leg — see that test's comment. */

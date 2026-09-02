@@ -4884,6 +4884,15 @@ export const FACES = [
     // No `face.pages`, so the dock renders one unlabelled section holding the
     // single ranked cell (`gain`) above the browse body. One control is the
     // honest count for this module; nothing is padded to reach a rail.
+
+  // ── VIDEOVARISPEED — the VARISPEED FILE PLAYER, capturable for the same
+  //    reason, RE-DERIVED rather than inherited (its card exemption names two
+  //    moving things videobox's does not).
+  {
+    type: 'videovarispeed',
+    // No `face.pages`, so the dock renders one unlabelled section holding the
+    // three ranked cells (`speed`, `start`, `end`) above the transport body.
+    // Three controls is not control-heavy and does not earn a tab rail.
     pages: 1,
     videoFaceWhy:
       'a VIDEO module, so it must boot into the video zone rather than a mixer channel column — '
@@ -4903,6 +4912,23 @@ export const FACES = [
       + 'selection, so the transport and the attribution anchor are absent entirely, the ↻ next '
       + 'button is disabled on an empty catalogue, and the empty-state overlay and the legal '
       + 'disclaimer are static text.',
+      + 'a video node never acquires. ⚠ AND IT IS CAPTURABLE DESPITE SITTING IN `EXEMPT_FROM_VRT`, '
+      + 'but the argument is RE-DERIVED here rather than copied from videobox, because this '
+      + 'module\'s exemption names TWO moving things and they fail differently. (1) "a live '
+      + '<video> streamed at varispeed": a FACE scene spawns the node and loads NOTHING, so '
+      + '`uHasInput` is 0 and the shader\'s idle branch runs — a pure function of position with '
+      + 'no clock, no accumulator and no uniform that is not a param — and with no element there '
+      + 'is no decode cadence to vary. (2) "a ticking playhead readout": that readout is DELETED '
+      + 'on this surface (the card\'s `0:04 / 2:00` line), and what replaces it cannot tick '
+      + 'either — the seek slider is `disabled` at 0 with no duration, and `positionSec` is 0 '
+      + 'until an element has bytes. The rest is equally still at spawn: the transport shows '
+      + 'Play, LOOP is on by construction (VARISPEED_DEFAULT_LOOP), the SPEED multiplier reads '
+      + 'its default `+1.0×` (knob 0.5, no CV patched), no filename line exists, the crop row '
+      + 'shows only "add crop", the seven bank rows all read "—", and the drop-hint overlay is '
+      + 'static text. ⚠ THE START-PAST-END WARNING IS ABSENT AT SPAWN AND THAT IS DETERMINISTIC, '
+      + 'not lucky: start defaults to 0 and end to 1, so `resolveWindow` returns hasWindow true '
+      + 'for any duration. ⚠ NO simPin AND NO NETWORK: the only asynchronous inputs this surface '
+      + 'has are user gestures and a decoded file, and a scene performs neither.',
   },
   // ── NUMPAD+ — the KEYPAD PERFORMANCE SEQUENCER ────────────────────────────
   //

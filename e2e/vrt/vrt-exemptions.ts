@@ -1337,7 +1337,19 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // (videovarispeed.test.ts) + the varispeed transport math
   // (videovarispeed-transport.test.ts); e2e (videovarispeed-output.spec.ts)
   // covers the wired-up output path + spawn smoke covers card render.
-  videovarispeed: 'live <video> element streamed at varispeed + ticking playhead readout defeat deterministic capture; unit + transport-math + e2e output spec + per-module spawn smoke provide coverage',
+  //
+  // ⚠ NARROWED 2026-09-01 (videovarispeed face): this entry now covers ONLY THE
+  // LEGACY CARD, reachable at `?shell=legacy`. videovarispeed is in
+  // STRICT_FACES, so what a workflow-mode player operates is the ModuleShell
+  // faceplate — and unlike the card, the FACE has two committed baselines
+  // (`face-videovarispeed-compact` / `-dock`). Both halves of the exemption
+  // above are re-derived for that scene in `_shell-faces.ts` rather than
+  // assumed: a face scene loads NO clip, so there is no decode cadence to vary,
+  // and the ticking readout is DELETED on that surface (its replacement, the
+  // seek slider, is `disabled` at 0 with no duration). The tvLibrarian
+  // disposition, argued per-half in the roster entry rather than duplicated
+  // here.
+  videovarispeed: 'faced (STRICT_FACES): the operated surface is the ModuleShell faceplate, captured by face-videovarispeed-{compact,dock} (an unloaded node paints the constant idle gradient and the time readout is deleted — see _shell-faces.ts). This entry covers only the LEGACY card (?shell=legacy): a live <video> element streamed at varispeed + a ticking playhead readout defeat deterministic capture there; unit + transport-math + registry-controller unit + e2e output/crop/switch specs + per-module spawn smoke provide coverage',
   // CHROMAKEY — new 2-input compositor; card chrome is static but baseline
   // capture pending. Unit + E2E (video-controls.spec.ts) provide coverage.
   // Promote into MODULES + capture darwin/linux baselines in a follow-up PR.

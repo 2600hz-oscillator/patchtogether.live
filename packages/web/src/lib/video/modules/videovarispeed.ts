@@ -37,25 +37,35 @@
 //
 // File-load + <video> + the per-frame-upload output pattern is reused from
 // VIDEOBOX (that part works); the transport math lives in
-// videovarispeed-transport.ts. The card drives playbackRate / scrub / window;
-// the factory stores params + samples the element into its FBO.
+// videovarispeed-transport.ts. The factory stores params + samples the element
+// into its FBO.
 //
-// 7-SLOT ASSET SELECTOR (asset-selector PR): the card owns up to 7 preloaded
-// <video> elements (one per slot) and swaps which one is the ACTIVE source via
-// attachExternalSource on a gate-driven slot switch — the factory itself stays
-// single-element (it samples whatever element is currently attached). A clip
-// player's note/gate output picks the slot (see asset-select.ts for the 7-note
-// → slot map); on the gate edge the newly-active video restarts from the
-// beginning (currentTime=0) and the audio is re-wired to the new element. The
-// per-slot file BYTES stay LOCAL (objectUrl/handle) exactly like the single
-// video — only per-slot fileMeta syncs so collaborators can re-link.
+// ⚠ NOTHING IN THIS PARAGRAPH IS THE CARD'S ANY MORE, and the correction is
+// worth reading because this header asserted the opposite for two waves. The
+// playbackRate / scrub / window transport, the seven preloaded <video>
+// elements, the gate-driven slot switch, the audio re-wire, the CV poll, the
+// per-slot LOADER and the saved-handle restore all belong to
+// `$lib/ui/media/node-varispeed-registry`, on GRAPH lifetime (LEG-02 P2 #1511
+// moved the transport; the wave-4 face PR moved the loader). The module is
+// faced, so under the default shell NO card is mounted anywhere — if any of it
+// still needed one, the module would simply not work.
+//
+// 7-SLOT ASSET SELECTOR: the NODE owns up to 7 preloaded <video> elements (one
+// per slot) and swaps which one is the ACTIVE source via attachExternalSource
+// on a gate-driven slot switch — the factory itself stays single-element (it
+// samples whatever element is currently attached). A clip player's note/gate
+// output picks the slot (see asset-select.ts for the 7-note → slot map); on the
+// gate edge the newly-active video jumps to that slot's live virtual position
+// and the audio is re-wired to the new element. The per-slot file BYTES stay
+// LOCAL (objectUrl/handle) exactly like the single video — only per-slot
+// fileMeta syncs so collaborators can re-link.
 //
 // Inputs:
 //   cv_start / cv_pause / cv_reset / cv_loop_toggle (gate, paramTarget=…):
 //     rising-edge transport gates.
 //   asset_pitch (pitch, RAW V/oct passthrough): slot-select pitch. NO cvScale
-//     so the bridge passes the raw V/oct through; the card reads it on each
-//     asset_gate rising edge.
+//     so the bridge passes the raw V/oct through; the node's controller reads it
+//     on each asset_gate rising edge.
 //   asset_gate (gate, paramTarget): rising-edge slot-select trigger.
 //   speedCv / startCv / endCv (cv, linear, paramTarget=…): per-param CV displacement.
 //
@@ -69,7 +79,8 @@
 //   speedCv / startCv / endCv (linear -1..1): cached CV values.
 //   cv_start / cv_pause / cv_reset / cv_loop_toggle (linear 0..1):
 //     cached state from the gate inputs.
-//   asset_pitch (raw V/oct cache) / asset_gate (raw gate level; card edge-detects).
+//   asset_pitch (raw V/oct cache) / asset_gate (raw gate level; the node's
+//     controller edge-detects).
 
 import type { VideoModuleDef } from '$lib/video/module-registry';
 import type { VideoNodeHandle, VideoNodeSurface } from '$lib/video/engine';
@@ -81,8 +92,10 @@ import type { CropRect } from '$lib/video/crop-core';
 import type { VideoboxFileMeta } from './videobox-sync';
 
 // Passthrough sample of the source texture, with an idle pattern so an empty
-// card reads as "alive but empty" rather than "broken" (mirrors VIDEOBOX /
-// CAMERA so the file-input modules look consistent).
+// module reads as "alive but empty" rather than "broken" (mirrors VIDEOBOX /
+// CAMERA so the file-input modules look consistent). ⚠ It is also what makes
+// the FACE's VRT scenes deterministic: a scene loads no clip, so uHasInput is 0
+// and this branch runs — a pure function of position, no clock, no accumulator.
 const FRAG_SRC = `#version 300 es
 precision highp float;
 
@@ -119,7 +132,8 @@ void main() {
  *  in the module's DESCRIPTIONS entry. */
 export const VIDEOVARISPEED_MAX_SLOT_BYTES = 100 * 1024 * 1024; // 100 MB
 
-/** Persisted shape on node.data. The card is the only writer. */
+/** Persisted shape on node.data. The NODE's controller is the writer (the legacy card
+ *  and the faceplate body both originate gestures through it). */
 export interface VideoVarispeedData {
   /** Metadata about the file the loader picked. Null until a file is picked.
    *  Local-only player, but we keep it on data so it survives reload. This is
@@ -152,8 +166,8 @@ export const VIDEOVARISPEED_DATA_DEFAULTS: VideoVarispeedData = {
   slotMeta: new Array(ASSET_SLOTS).fill(null),
 };
 
-/** Handle extras — the card calls these to drive the audio wiring once the
- *  local <video> has loaded its file. Mirrors VIDEOBOX. */
+/** Handle extras — the NODE's controller calls these to drive the audio wiring
+ *  once a slot's <video> has loaded its file. Mirrors VIDEOBOX. */
 export interface VideoVarispeedHandleExtras {
   /** Wire the ACTIVE element's audio into the graph (after src + metadata).
    *  Idempotent; re-points audio_l/r when the active element changed. */
@@ -166,12 +180,14 @@ export interface VideoVarispeedHandleExtras {
   /** Create (once) a PERSISTENT keep-alive for a loaded slot element that is
    *  NOT the active source, so its decode never throttles to ~1 fps while it
    *  waits to be switched in. Idempotent per element; never torn down on switch
-   *  (only on module dispose). The card calls this for every loaded slot so a
+   *  (only on module dispose). The controller calls this for every loaded slot so a
    *  random/melodic switch pattern always lands on an already-warm element. */
   keepSlotAlive(el: HTMLVideoElement): void;
   /** Push the current crop rect for the CROP output. `null` ⇒ passthrough (the
-   *  full frame). The card reads node.data.crop (synced), coerces + fits it via
-   *  $lib/video/crop-core, and calls this on every change / mount / aspect flip;
+   *  full frame). The NODE's controller reads node.data.crop (synced), coerces +
+   *  fits it via $lib/video/crop-core, and calls this on every change / aspect
+   *  flip — including at node creation, which is what makes a rack saved WITH a
+   *  crop apply it on load even though no surface mounts;
    *  the engine's crop pass windows the module's own output by this rect. */
   setCrop(rect: CropRect | null): void;
 }
@@ -185,19 +201,19 @@ interface VideoVarispeedParams {
   end: number;
   // CV inputs (bipolar -1..+1), separate from the knob/slider params so the
   // cross-domain CV bridge's raw-sample write doesn't clobber the user's
-  // setting; the card reads both + combines them.
+  // setting; the controller reads both + combines them.
   speedCv: number;
   startCv: number;
   endCv: number;
   // Gate edge-detector params (synthetic; the bridge writes the gate level
-  // here, the card edge-detects).
+  // here, the controller edge-detects).
   cv_start: number;
   cv_pause: number;
   cv_reset: number;
   cv_loop_toggle: number;
   // Asset-selector synthetic params. asset_pitch caches the RAW V/oct of the
   // slot-select pitch (NO cvScale ⇒ raw passthrough); asset_gate caches the
-  // raw gate level the card edge-detects.
+  // raw gate level the controller edge-detects.
   asset_pitch: number;
   asset_gate: number;
 }
@@ -227,7 +243,7 @@ export const videoVarispeedDef: VideoModuleDef = {
   // No cap — files are user-supplied; multiple cards is a legit use case.
   inputs: [
     // --- Gate inputs (rising-edge). Each routes through the standard CV
-    //     bridge into a synthetic cv_<x> param; the card polls + edge-detects
+    //     bridge into a synthetic cv_<x> param; the controller polls + edge-detects
     //     (mirrors DOOM / VIDEOBOX). port id == paramTarget per PR #264. ---
     // start: (re)start playback from the START point.
     { id: 'cv_start',       type: 'gate', edge: 'trigger', paramTarget: 'cv_start' },
@@ -239,13 +255,13 @@ export const videoVarispeedDef: VideoModuleDef = {
     { id: 'cv_loop_toggle', type: 'gate', edge: 'trigger', paramTarget: 'cv_loop_toggle' },
     // --- 7-slot asset selector ---
     // asset_pitch: V/oct slot-select pitch. NO cvScale ⇒ raw passthrough so
-    // the card reads the raw V/oct on each gate edge. `pitch`-typed so a clip
+    // the node's controller reads the raw V/oct on each gate edge. `pitch`-typed so a clip
     // player's pitch (polyPitchGate → lane 0) can patch in.
     { id: 'asset_pitch', type: 'pitch', paramTarget: 'asset_pitch' },
     // asset_gate: rising-edge slot-select trigger (raw passthrough; card edge-detects).
     { id: 'asset_gate',  type: 'gate', edge: 'trigger', paramTarget: 'asset_gate' },
     // --- CV inputs (bipolar -1..+1), separate paramTargets from the
-    //     knob/slider params; the card sums them. ---
+    //     knob/fader params; the controller sums them. ---
     { id: 'speedCv', type: 'cv', paramTarget: 'speedCv', cvScale: { mode: 'linear' } },
     { id: 'startCv', type: 'cv', paramTarget: 'startCv', cvScale: { mode: 'linear' } },
     { id: 'endCv',   type: 'cv', paramTarget: 'endCv',   cvScale: { mode: 'linear' } },
@@ -254,7 +270,7 @@ export const videoVarispeedDef: VideoModuleDef = {
     { id: 'video',   type: 'video' },
     // CROP: the boxed sub-region of the `video` output, scaled to full output
     // resolution (a first-class zoom). Passes the full frame through until a
-    // crop is defined via the card's "add crop" overlay, so it is never black +
+    // crop is defined via the surface's "add crop" overlay, so it is never black +
     // always streams. Shared crop core: $lib/video/crop-core + crop-render.
     { id: 'crop',    type: 'video' },
     { id: 'audio_l', type: 'audio' },
@@ -269,20 +285,20 @@ export const videoVarispeedDef: VideoModuleDef = {
     { id: 'speedCv', label: 'Speed CV', defaultValue: 0, min: -1, max: 1, curve: 'linear' },
     { id: 'startCv', label: 'Start CV', defaultValue: 0, min: -1, max: 1, curve: 'linear' },
     { id: 'endCv',   label: 'End CV',   defaultValue: 0, min: -1, max: 1, curve: 'linear' },
-    // Edge-detector params for the gate inputs. Hidden from the card UI (the
+    // Edge-detector params for the gate inputs. Declared `noUserControl` (the
     // ports render as gate handles). curve:linear so values arrive raw.
     { id: 'cv_start',        label: 'Start gate', defaultValue: 0, min: 0, max: 1, curve: 'linear' },
     { id: 'cv_pause',        label: 'Pause gate', defaultValue: 0, min: 0, max: 1, curve: 'linear' },
     { id: 'cv_reset',        label: 'Reset gate', defaultValue: 0, min: 0, max: 1, curve: 'linear' },
     { id: 'cv_loop_toggle',  label: 'Loop gate',  defaultValue: 0, min: 0, max: 1, curve: 'linear' },
     // Asset-selector synthetic params. asset_pitch carries the raw V/oct (wide
-    // range); asset_gate is the 0/1 gate level the card edge-detects.
+    // range); asset_gate is the 0/1 gate level the controller edge-detects.
     { id: 'asset_pitch', label: 'Asset pitch', defaultValue: 0, min: -10, max: 10, curve: 'linear' },
     { id: 'asset_gate',  label: 'Asset gate',  defaultValue: 0, min: 0,   max: 1,  curve: 'linear' },
   ],
 
   docs: {
-    explanation: "A local-file video player with a performant varispeed transport. Drop or pick a video and it decodes into the VIDEO output (rVFC-driven, so the texture streams at ANY speed without freezing). The SPEED knob is an asymmetric analog-clock face: full-left = -4x (reverse), 12 o'clock = +1x normal, full-right = +4x — forward speeds drive native <video>.playbackRate (audio pitch/tempo-shifts like tape varispeed) while reverse scrubs currentTime at a throttled ~10 Hz (audio muted in reverse). START/END sliders carve a play window into the clip; at the END edge LOOP jumps back to START while ONE-SHOT stops. The source aspect is letterboxed/pillarboxed into the 4:3 FBO so clips never stretch. DOM-only buttons (not patch params) handle file loading and transport: \"Choose video…\" / drag-drop / Chromium re-link, Play/Pause, a seek scrubber, and a LOOP↔1-SHOT toggle. Right-click the card to open the \"Load multiple…\" panel — up to 7 preloaded slots mapped to the C-major scale rows C..B; a clip player or any pitch+gate source can then switch which clip plays via the ASSET ports, each slot running its own virtual playhead so a switch jumps to that clip's live, de-synced position. CROP: press \"add crop\" to overlay a resizable, aspect-locked rectangle (thin red border) on the card's video screen — drag inside to move it, drag a corner to resize; the box always keeps the current output aspect (16:9 or 4:3), and the CROP output re-samples just that boxed region scaled up to the full output resolution, i.e. a live zoom into part of the frame as its own first-class video output (\"remove crop\" returns CROP to a full-frame passthrough). Use it to scratch, reverse, freeze, and loop-window a clip live, punch a zoomed detail out to a second screen, or as a 7-clip melodic video switcher feeding BENTBOX / a CRT chain.",
+    explanation: "A local-file video player with a performant varispeed transport. Drop or pick a video and it decodes into the VIDEO output (rVFC-driven, so the texture streams at ANY speed without freezing). The SPEED knob is an asymmetric analog-clock face: full-left = -4x (reverse), 12 o'clock = +1x normal, full-right = +4x — forward speeds drive native <video>.playbackRate (audio pitch/tempo-shifts like tape varispeed) while reverse scrubs currentTime at a throttled ~10 Hz (audio muted in reverse); the live multiplier is printed beside the scrubber. START/END faders carve a play window into the clip; at the END edge LOOP jumps back to START while ONE-SHOT stops. The source aspect is letterboxed/pillarboxed into the 4:3 FBO so clips never stretch. The NODE owns all seven <video> elements, their object URLs, the transport, the CV gates, the per-slot loader and the saved-file restore (a node-scoped controller created with the graph — the clip keeps playing, switching and answering CV with no surface mounted at all). Gestures — not patch params — handle the rest: \"Choose video…\" / drag-drop / Chromium one-click re-allow / re-link, Play/Pause, a seek scrubber, and a LOOP↔1-SHOT toggle. The ASSET BANK holds up to 7 preloaded slots mapped to the C-major scale rows C..B; a clip player or any pitch+gate source can switch which clip plays via the ASSET ports, each slot running its own virtual playhead so a switch jumps to that clip's live, de-synced position. CROP: press \"add crop\" to overlay a resizable, aspect-locked rectangle (thin red border) on the picture — drag inside to move it, drag a corner to resize; the box always keeps the current output aspect (16:9 or 4:3), and the CROP output re-samples just that boxed region scaled up to the full output resolution, i.e. a live zoom into part of the frame as its own first-class video output (\"remove crop\" returns CROP to a full-frame passthrough). The faceplate also carries a SCREEN ON/OFF switch: OFF collapses the preview and reclaims its space while the clip KEEPS PLAYING and keeps feeding the video, crop and audio outs. Use it to scratch, reverse, freeze, and loop-window a clip live, punch a zoomed detail out to a second screen, or as a 7-clip melodic video switcher feeding BENTBOX / a CRT chain.",
     inputs: {
       cv_start: "Gate (rising-edge / trigger). On the edge it (re)starts playback from the START window point and begins playing; if the window is empty (START past END) it instead seeks the current spot and stays paused.",
       cv_pause: "Gate (rising-edge / trigger). Each rising edge toggles pause/unpause — it flips the play state on the edge, it is not level-held.",
@@ -291,30 +307,167 @@ export const videoVarispeedDef: VideoModuleDef = {
       asset_pitch: "Pitch (raw V/oct passthrough, no cvScale). Selects which of 7 asset slots plays: pitch class C=slot1 D E F G A B=slot7 (octave-independent); a black-key class selects no slot. Read on each ASSET GATE rising edge.",
       asset_gate: "Gate (rising-edge / trigger). On the edge it reads ASSET PITCH, maps it to a slot, and if that slot holds a loaded video makes it the active source — jumping the output to that slot's live virtual position (re-triggering the already-active slot restarts it from the window start). Empty or out-of-key selections are ignored.",
       speedCv: "CV (bipolar -1..+1, modulates Speed). Sums into the SPEED knob position before the varispeed map, so +-1 sweeps the full reverse-to-forward span centred on the knob setting.",
-      startCv: "CV (bipolar -1..+1, modulates Start). Sums into the START slider only while patched (unpatched normals to 0), shifting the window's start/reset point earlier or later.",
+      startCv: "CV (bipolar -1..+1, modulates Start). Sums into the START fader only while patched (unpatched normals to 0), shifting the window's start/reset point earlier or later.",
       endCv: "CV (bipolar -1..+1, modulates End). Sums into the END slider only while patched (unpatched normals to full duration); negative CV pulls the window's end point earlier.",
     },
     outputs: {
       video: "Video. The decoded clip at the current transport state (speed, scrub, window), aspect-preserved (letterbox/pillarbox) into the engine FBO; an idle dark gradient before a file loads.",
-      crop: "Video. The CROP region of the VIDEO output — the aspect-locked rectangle set by \"add crop\" on the card, re-sampled and scaled up to fill the full output resolution (a live zoom). Until a crop is added it passes the full VIDEO frame through unchanged (never black), so it always streams; \"remove crop\" restores that passthrough. The crop rect is normalized on the node (synced + undoable) and re-fits when the output aspect (16:9↔4:3) flips.",
+      crop: "Video. The CROP region of the VIDEO output — the aspect-locked rectangle set by \"add crop\" on the picture, re-sampled and scaled up to fill the full output resolution (a live zoom). Until a crop is added it passes the full VIDEO frame through unchanged (never black), so it always streams; \"remove crop\" restores that passthrough. The crop rect is normalized on the node (synced + undoable) and re-fits when the output aspect (16:9↔4:3) flips.",
       audio_l: "Audio (left). Left channel of the ACTIVE slot's audio, tapped from its media-element source; varispeed pitch/tempo-shifts it on forward play and it is muted during reverse.",
       audio_r: "Audio (right). Right channel of the active slot's audio, following the same active slot as audio_l and re-pointed automatically when the asset slot switches.",
     },
     controls: {
-      speed: "Speed knob (0..1, default 0.5). Asymmetric varispeed: 0 = -4x reverse, 0.5 = +1x normal forward, 1 = +4x; readout shows the live multiplier. Summed with Speed CV.",
-      start: "Start slider (0..1 of duration, default 0). The play-from and reset-to point of the playback window. Summed with Start CV when patched.",
-      end: "End slider (0..1 of duration, default 1). The end of the playback window; if START passes END the window is empty and playback halts. Summed with End CV when patched (unpatched normals to full duration).",
+      speed: "Speed knob (0..1, default 0.5). Asymmetric varispeed: 0 = -4x reverse, 0.5 = +1x normal forward, 1 = +4x; the live multiplier is printed beside the scrubber on the faceplate body. Summed with Speed CV.",
+      start: "Start fader (0..1 of duration, default 0). The play-from and reset-to point of the playback window. Summed with Start CV when patched.",
+      end: "End fader (0..1 of duration, default 1). The end of the playback window; if START passes END the window is empty and playback halts. Summed with End CV when patched (unpatched normals to full duration).",
       speedCv: "Cached Speed CV value (-1..+1, default 0). Holds the live bipolar sample from the speedCv input, summed into the SPEED knob; not a user-facing control.",
-      startCv: "Cached Start CV value (-1..+1, default 0). Holds the live bipolar sample from the startCv input, summed into the START slider while patched; not a user-facing control.",
-      endCv: "Cached End CV value (-1..+1, default 0). Holds the live bipolar sample from the endCv input, summed into the END slider only while patched; not a user-facing control.",
-      cv_start: "Synthetic Start-gate cache (0..1, default 0). Holds the cv_start gate level the card polls and edge-detects to fire a window-start restart; not shown on the card UI.",
-      cv_pause: "Synthetic Pause-gate cache (0..1, default 0). Holds the cv_pause gate level the card edge-detects to toggle pause/unpause; not shown on the card UI.",
-      cv_reset: "Synthetic Reset-gate cache (0..1, default 0). Holds the cv_reset gate level the card edge-detects to seek to START; not shown on the card UI.",
-      cv_loop_toggle: "Synthetic Loop-gate cache (0..1, default 0). Holds the cv_loop_toggle gate level the card edge-detects to flip LOOP vs ONE-SHOT; not shown on the card UI.",
-      asset_pitch: "Synthetic Asset-pitch cache (raw V/oct, default 0, range -10..10). Holds the raw asset_pitch value the card reads on each asset-gate edge to pick a slot; not shown on the card UI.",
-      asset_gate: "Synthetic Asset-gate cache (0..1, default 0). Holds the asset_gate level the card edge-detects to trigger a slot switch; not shown on the card UI.",
+      startCv: "Cached Start CV value (-1..+1, default 0). Holds the live bipolar sample from the startCv input, summed into the START fader while patched; not a user-facing control.",
+      endCv: "Cached End CV value (-1..+1, default 0). Holds the live bipolar sample from the endCv input, summed into the END fader only while patched; not a user-facing control.",
+      cv_start: "Synthetic Start-gate cache (0..1, default 0). Holds the cv_start gate level the node's controller polls and edge-detects to fire a window-start restart; no on-screen control.",
+      cv_pause: "Synthetic Pause-gate cache (0..1, default 0). Holds the cv_pause gate level the node's controller edge-detects to toggle pause/unpause; no on-screen control.",
+      cv_reset: "Synthetic Reset-gate cache (0..1, default 0). Holds the cv_reset gate level the node's controller edge-detects to seek to START; no on-screen control.",
+      cv_loop_toggle: "Synthetic Loop-gate cache (0..1, default 0). Holds the cv_loop_toggle gate level the node's controller edge-detects to flip LOOP vs ONE-SHOT; no on-screen control.",
+      asset_pitch: "Synthetic Asset-pitch cache (raw V/oct, default 0, range -10..10). Holds the raw asset_pitch value the node's controller reads on each asset-gate edge to pick a slot; no on-screen control.",
+      asset_gate: "Synthetic Asset-gate cache (0..1, default 0). Holds the asset_gate level the node's controller edge-detects to trigger a slot switch; not shown on the faceplate.",
     },
   },
+
+  // ── THE FACE (wave-4 promotion) ───────────────────────────────────────────
+  face: {
+    // ⚠ A REAL CHOICE, NOT A FORCED ONE — the videobox/tvLibrarian argument on
+    // a def that shares their audio plumbing. `glyphBinding()` short-circuits on
+    // the first `type: 'audio'` OUTPUT and this def HAS two (audio_l/audio_r),
+    // so any other literal resolves to a LIVE `live-audio` binding and the
+    // dead-glyph clause would NOT catch it. It is 'none' because a VU of the
+    // CLIP'S SOUNDTRACK would sit where the module's own picture belongs: for a
+    // video module the picture IS its identity in a rack (#1785). The tile
+    // picture arrives from `hasVideoSurface(def)` — `domain === 'video'` and
+    // nothing else — so it is free, per-node, and outranks the cells.
+    glyph: 'none',
+
+    // The transport body — see $lib/ui/modules/videovarispeed/. Promotion stops
+    // BOTH default surfaces rendering `VideoVarispeedCard.svelte`, and
+    // videovarispeed is in neither `DOM_SOURCE_LANE_TYPES` nor
+    // `CARD_PRODUCER_LANE_TYPES`, so there is no `<HeadlessSourceHost>` either:
+    // under the shell NO card is mounted anywhere. Without this file a promoted
+    // videovarispeed could not be given a clip, scrubbed, cropped, or switched
+    // between its seven slots.
+    extension: 'videovarispeed',
+
+    // Three ranked keys, because a player turns three things: how fast, and the
+    // two ends of the window. Everything else this module does is a GESTURE (a
+    // file pick, a slot strike, a crop drag, a scrub) and lives in the body;
+    // the nine synthetic params are bridge caches, declared out below.
+    //
+    // ⚠ NO `pages`. Three cells is not control-heavy, and the 2026-08-19 ruling
+    // forbids padding pages to manufacture a tab rail. The plan that scoped
+    // this promotion proposed a transport/window split; three cells in one band
+    // is the honest shape and this is the correction.
+    order: ['speed', 'start', 'end'],
+
+    // START and END are the two ends of one linear span over the clip, and the
+    // card has always drawn them as horizontal `<input type=range>` sliders —
+    // a fader is that primitive, so this preserves the gesture rather than
+    // substituting a rotary for it.
+    //
+    // ⚠ SPEED IS DELIBERATELY *NOT* A FADER. The card draws it as a `<Knob>`,
+    // and its law is an ASYMMETRIC ANALOG-CLOCK FACE (full-left −4×, twelve
+    // o'clock +1×, full-right +4×) that a rotary reads and a linear throw does
+    // not. Substituting the primitive on the headline control is a look change,
+    // not parity. Its live multiplier is painted BODY-SIDE beside the scrubber
+    // (owner decision 2026-08-31 §8) rather than through a `ParamDef.format`,
+    // which would edit an in-basis `params` array and cost a GPU re-attest for
+    // a readout.
+    paramCells: { start: 'fader', end: 'fader' },
+  },
+
+  // ⚠ NINE BRIDGE CACHES, DECLARED OUT RATHER THAN RANKED. Face completeness is
+  // unconditional for a promoted def, so without this every one of them would
+  // paint a turnable cell over a value the CV bridge overwrites on its next
+  // write — nine dials that do nothing and then snap back. Each is anchored by
+  // its OWN input port's `paramTarget`, which makes `'cv-port'` the only legal
+  // writer (`'internal'` is RED at no-user-control.ts) and also the true one.
+  //
+  // ⚠ NOT COSMETIC BEYOND THE FACEPLATE: `group-controls.ts` drops a
+  // `noUserControl` param from `listExposableControls` and `push-card-schema`
+  // drops it from the Push 2 card, which re-ranks itself from twelve params to
+  // three — an improvement (raw gate levels and a V/oct cache had no business
+  // on a hardware controller), but a behaviour change outside the face.
+  noUserControl: [
+    {
+      param: 'speedCv',
+      writer: 'cv-port',
+      why:
+        'written by the `speedCv` input bridge as a raw bipolar sample (-1..+1). It is a CACHE, '
+        + 'not a setting: the transport sums it into the SPEED knob every frame, so a player '
+        + 'turning a dial here would be overwritten by the next bridge write.',
+    },
+    {
+      param: 'startCv',
+      writer: 'cv-port',
+      why:
+        'written by the `startCv` input bridge as a raw bipolar sample (-1..+1), summed into the '
+        + 'START slider only while that port is patched. A cache the bridge rewrites, not a '
+        + 'setting a player holds.',
+    },
+    {
+      param: 'endCv',
+      writer: 'cv-port',
+      why:
+        'written by the `endCv` input bridge as a raw bipolar sample (-1..+1), summed into the '
+        + 'END slider only while that port is patched. A cache the bridge rewrites, not a '
+        + 'setting a player holds.',
+    },
+    {
+      param: 'cv_start',
+      writer: 'cv-port',
+      why:
+        'written by the `cv_start` gate bridge as a raw level (0..1). The node controller polls '
+        + 'it at ~30 Hz and edge-detects a rising crossing to restart from the window START; the '
+        + 'level itself is never a value anyone sets.',
+    },
+    {
+      param: 'cv_pause',
+      writer: 'cv-port',
+      why:
+        'written by the `cv_pause` gate bridge as a raw level (0..1). The node controller '
+        + 'edge-detects it to toggle pause/unpause; the cached level is bridge state, not a '
+        + 'control.',
+    },
+    {
+      param: 'cv_reset',
+      writer: 'cv-port',
+      why:
+        'written by the `cv_reset` gate bridge as a raw level (0..1). The node controller '
+        + 'edge-detects it to seek back to START; the cached level is bridge state, not a '
+        + 'control.',
+    },
+    {
+      param: 'cv_loop_toggle',
+      writer: 'cv-port',
+      why:
+        'written by the `cv_loop_toggle` gate bridge as a raw level (0..1). The node controller '
+        + 'edge-detects it to flip LOOP vs ONE-SHOT — the state the body\'s LOOP button shows, '
+        + 'which is where a player operates it.',
+    },
+    {
+      param: 'asset_pitch',
+      writer: 'cv-port',
+      why:
+        'written by the `asset_pitch` input bridge as a RAW V/oct value (no cvScale), read on '
+        + 'each ASSET GATE edge to pick one of the seven slots. A dial over a raw pitch would be '
+        + 'overwritten by the patched source on its next sample; the slot is chosen by clicking '
+        + 'a row in the body\'s bank.',
+    },
+    {
+      param: 'asset_gate',
+      writer: 'cv-port',
+      why:
+        'written by the `asset_gate` gate bridge as a raw level (0..1). The node controller '
+        + 'edge-detects it to perform the slot switch; the cached level is bridge state, not a '
+        + 'control.',
+    },
+  ],
   factory(ctx, node): VideoNodeHandle {
     const gl = ctx.gl;
     const program = ctx.compileFragment(FRAG_SRC);
@@ -326,7 +479,7 @@ export const videoVarispeedDef: VideoModuleDef = {
     const { fbo, texture: outTexture } = ctx.createFbo();
 
     // ---- CROP output ----
-    // The crop rect is card-owned SYNCED state (node.data.crop); the card
+    // The crop rect is SYNCED node state (node.data.crop); the controller
     // coerces/fits it via $lib/video/crop-core and pushes it here through
     // extras.setCrop(). null ⇒ passthrough (full frame → the CROP output equals
     // the VIDEO output, never black, always streaming). The pass re-samples the
@@ -638,7 +791,7 @@ export const videoVarispeedDef: VideoModuleDef = {
         if (paramId in params) {
           (params as unknown as Record<string, number>)[paramId] = value;
         }
-        // Gate edge-detection is owned by the card (it polls readParam).
+        // Gate edge-detection is owned by the node's controller (it polls readParam).
       },
       readParam(paramId) {
         return (params as unknown as Record<string, number>)[paramId];
@@ -652,7 +805,7 @@ export const videoVarispeedDef: VideoModuleDef = {
         // never re-creates its (permanent) MediaElementSource. A full detach
         // (el === null, on destroy / slot-clear) reverts audio_l/r to the
         // silent placeholders; a switch BETWEEN loaded slots leaves audio on
-        // the old splitter until the card's wireAudio() re-points it to the new
+        // the old splitter until the controller's wireAudio() re-points it to the new
         // element (so audio never drops to silence mid-switch).
         detachRvfc();
         sourceTexAllocated = false;
@@ -660,7 +813,7 @@ export const videoVarispeedDef: VideoModuleDef = {
         if (videoEl) {
           attachRvfc();
           // Eagerly create the new element's persistent keep-alive so it never
-          // sat throttled before the card wires audio. Idempotent per element.
+          // sat throttled before the controller wires audio. Idempotent per element.
           keepAlives.ensure(videoEl);
         } else {
           // True detach (no active element): revert to silent placeholders.

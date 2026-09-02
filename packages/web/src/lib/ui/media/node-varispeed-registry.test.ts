@@ -26,17 +26,20 @@ import { listModuleDefs } from '$lib/audio/module-registry';
 import { listVideoModuleDefs } from '$lib/video/module-registry';
 import { DOM_SOURCE_LANE_TYPES } from '$lib/ui/workflow/dom-source-modules';
 import { ASSET_SLOTS, ASSET_SLOT_NOTES } from '$lib/video/asset-select';
+import { VIDEOVARISPEED_MAX_SLOT_BYTES } from '$lib/video/modules/videovarispeed';
 import {
   createNodeVarispeedRegistry,
   varispeedSlotKey,
   NODE_VARISPEED_TYPES,
   NO_VARISPEED,
   CV_INTERVAL_MS,
+  HOUSEKEEPING_INTERVAL_MS,
   VARISPEED_DEFAULT_LOOP,
   type VarispeedDeps,
   type VarispeedEngine,
   type VarispeedStatus,
 } from './node-varispeed-registry';
+import type { VideoSourceHandleHooks } from './node-video-source-registry';
 
 interface FakeEl {
   time: number;
@@ -44,6 +47,7 @@ interface FakeEl {
   muted: boolean;
   rate: number;
   dur: number;
+  src?: string | null;
 }
 
 function makeClock() {
@@ -117,14 +121,32 @@ function makeEngine() {
   };
 }
 
+interface HarnessState {
+  isPlaying: boolean;
+  loop?: boolean;
+  crop: unknown | null;
+  rawCrop?: { x: number; y: number; w: number } | null;
+  outAspect?: number;
+  fileMeta?: { name: string; duration: number; size?: number; handleId?: string } | null;
+  slotMeta?: ({ name: string; duration: number; size?: number; handleId?: string } | null)[];
+}
+
 interface Harness {
   deps: VarispeedDeps<FakeEl>;
+  hooks: VideoSourceHandleHooks;
   els: Map<string, FakeEl>;
   names: Map<string, string | null>;
+  urls: Map<string, string | null>;
   statuses: Array<{ nodeId: string; status: VarispeedStatus }>;
-  state: Map<string, { isPlaying: boolean; loop?: boolean; crop: unknown | null }>;
+  state: Map<string, HarnessState>;
   playWrites: Array<{ nodeId: string; v: boolean }>;
   loopWrites: Array<{ nodeId: string; v: boolean }>;
+  metaWrites: Array<{ nodeId: string; slot: number | 'file'; meta: unknown }>;
+  cropWrites: Array<{ nodeId: string; active: boolean; rect: { x: number; y: number; w: number } }>;
+  exports: Map<string, () => Promise<unknown>>;
+  /** Handles this fake IDB holds, by id, with their permission state. */
+  handles: Map<string, { perm: 'granted' | 'prompt' | 'denied'; file: File }>;
+  bytes: Map<string, Uint8Array>;
 }
 
 function makeHarness(
@@ -138,7 +160,22 @@ function makeHarness(
   const state: Harness['state'] = new Map();
   const playWrites: Harness['playWrites'] = [];
   const loopWrites: Harness['loopWrites'] = [];
+  const metaWrites: Harness['metaWrites'] = [];
+  const cropWrites: Harness['cropWrites'] = [];
+  const urls = new Map<string, string | null>();
+  const exports = new Map<string, () => Promise<unknown>>();
+  const handles: Harness['handles'] = new Map();
+  const bytes = new Map<string, Uint8Array>();
   const k = (n: string, s: string) => `${n}::${s}`;
+  const hooks: VideoSourceHandleHooks = {
+    canPersist: () => true,
+    newId: () => `id-${handles.size + 1}`,
+    put: async (id, handle) => { handles.set(id, handle as { perm: 'granted' | 'prompt' | 'denied'; file: File }); },
+    get: async (id) => handles.get(id) ?? null,
+    queryPermission: async (h) => (h as { perm: 'granted' | 'prompt' | 'denied' }).perm,
+    requestPermission: async () => 'granted',
+    getFile: async (h) => (h as { file: File }).file,
+  };
   const deps: VarispeedDeps<FakeEl> = {
     engine,
     doc: {
@@ -151,6 +188,32 @@ function makeHarness(
         loopWrites.push({ nodeId, v });
         const s = state.get(nodeId); if (s) s.loop = v;
       },
+      writeFileMeta: (nodeId, meta) => {
+        metaWrites.push({ nodeId, slot: 'file', meta });
+        const s = state.get(nodeId); if (s) s.fileMeta = { ...meta };
+      },
+      writeSlotMeta: (nodeId, slot, meta) => {
+        metaWrites.push({ nodeId, slot, meta });
+        const s = state.get(nodeId);
+        if (s) {
+          const arr = s.slotMeta ? [...s.slotMeta] : new Array(ASSET_SLOTS).fill(null);
+          arr[slot] = meta ? { ...meta } : null;
+          s.slotMeta = arr;
+        }
+      },
+      readMeta: (nodeId) => {
+        const st = state.get(nodeId);
+        if (!st) return null;
+        return {
+          fileMeta: st.fileMeta ?? null,
+          slotMeta: st.slotMeta ?? new Array(ASSET_SLOTS).fill(null),
+        };
+      },
+      writeCrop: (nodeId, active, rect) => {
+        cropWrites.push({ nodeId, active, rect: { ...rect } });
+        const s = state.get(nodeId);
+        if (s) { s.rawCrop = { ...rect }; s.crop = { ...rect }; }
+      },
     },
     media: {
       ensure: (nodeId, slot) => {
@@ -160,6 +223,11 @@ function makeHarness(
         return el;
       },
       mediaName: (nodeId, slot) => names.get(k(nodeId, slot)) ?? null,
+      objectUrl: (nodeId, slot) => urls.get(k(nodeId, slot)) ?? null,
+      setObjectUrl: (nodeId, slot, url, name) => {
+        urls.set(k(nodeId, slot), url);
+        names.set(k(nodeId, slot), url === null ? null : (name ?? null));
+      },
     },
     el: {
       currentTime: (el) => el.time,
@@ -171,12 +239,22 @@ function makeHarness(
       setPlaybackRate: (el, r) => { el.rate = r; },
       playbackRate: (el) => el.rate,
       duration: (el) => el.dur,
+      setSrc: (el, url) => { el.src = url; },
+      clearSrc: (el) => { el.src = null; },
+      awaitMetadata: async () => { /* the fake element has metadata already */ },
     },
     clock,
     frames,
+    createObjectUrl: (file) => `blob:${file.name}`,
+    registerExport: (nodeId, resolve) => { exports.set(nodeId, resolve); },
+    unregisterExport: (nodeId) => { exports.delete(nodeId); },
+    fetchBytes: async (url) => bytes.get(url) ?? new Uint8Array(0),
     onStatus: (nodeId, status) => { statuses.push({ nodeId, status }); },
   };
-  return { deps, els, names, statuses, state, playWrites, loopWrites };
+  return {
+    deps, hooks, els, names, urls, statuses, state,
+    playWrites, loopWrites, metaWrites, cropWrites, exports, handles, bytes,
+  };
 }
 
 function vvNode(id: string): ModuleNode {
@@ -597,5 +675,241 @@ describe('command delivery + robustness', () => {
       typeof el.getContext,
       'the fake element grew a real DOM surface — this suite would be asserting about a browser it does not have',
     ).toBe('undefined');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// THE LOADER, THE RESTORE, THE EXPORT AND THE ASPECT RE-FIT (wave-4 face PR)
+//
+// ⚠ THESE FOUR WERE THE CARD'S, AND WERE THEREFORE DOCK-GATED ON `main`.
+// videovarispeed is in neither `DOM_SOURCE_LANE_TYPES` nor
+// `CARD_PRODUCER_LANE_TYPES`, so it gets no headless host: on the default shell
+// no card is mounted anywhere, and the card's `$effect` on `fileMeta.handleId`
+// was the delivery mechanism for the Loaded-Assets picker spawn, the rebind
+// sweep and the perf-zip restore. Every leg below therefore runs with NO card
+// — there is no component in this file at all — because "it only works while a
+// surface happens to be mounted" IS the defect class.
+// ---------------------------------------------------------------------------
+
+/** A `File` the node-env test lane can build. */
+function fakeVideo(name = 'clip.webm', size = 1_000, type = 'video/webm'): File {
+  return { name, size, type } as unknown as File;
+}
+
+describe('the per-slot LOADER lives on the node', () => {
+  function boot() {
+    const c = makeClock(); const f = makeFrames(); const eng = makeEngine();
+    const h = makeHarness(c.clock, f.frames, eng.engine);
+    h.state.set('v1', { isPlaying: false, loop: true, crop: null });
+    const reg = createNodeVarispeedRegistry(h.deps, h.hooks);
+    reg.sync([vvNode('v1')], eng.engine);
+    return { c, f, eng, h, reg };
+  }
+
+  it('loads bytes into a slot with NO surface mounted, and publishes the name', async () => {
+    const { h, reg } = boot();
+    reg.request('v1', { kind: 'loadFile', slot: 3, file: fakeVideo('three.webm') });
+    await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+    expect(h.urls.get('v1::slot3'), 'no object url reached the node registry').toBe('blob:three.webm');
+    expect(reg.view('v1').slotNames[3]).toBe('three.webm');
+  });
+
+  it('slot 0 writes BOTH the legacy fileMeta and the slotMeta row', async () => {
+    const { h, reg } = boot();
+    reg.request('v1', { kind: 'loadFile', slot: 0, file: fakeVideo('zero.webm') });
+    await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+    // `fileMeta` is the key the perf-zip loader, the asset picker and the
+    // rebind sweep all read — a loader that wrote only `slotMeta` would leave
+    // all three writing into a field nothing restores from.
+    expect(h.metaWrites.some((w) => w.slot === 'file')).toBe(true);
+    expect(h.metaWrites.some((w) => w.slot === 0)).toBe(true);
+  });
+
+  it('a slot 1..6 load writes ONLY its own slotMeta row', async () => {
+    const { h, reg } = boot();
+    reg.request('v1', { kind: 'loadFile', slot: 5, file: fakeVideo('five.webm') });
+    await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+    expect(h.metaWrites.some((w) => w.slot === 'file')).toBe(false);
+    expect(h.metaWrites.filter((w) => w.slot === 5)).toHaveLength(1);
+  });
+
+  it('refuses a non-video file and PUBLISHES the reason', async () => {
+    const { h, reg } = boot();
+    reg.request('v1', { kind: 'loadFile', slot: 0, file: fakeVideo('notes.txt', 10, 'text/plain') });
+    await Promise.resolve();
+    expect(reg.view('v1').error).toMatch(/Not a video file/);
+    expect(h.urls.get('v1::slot0') ?? null, 'a refused file still created a url').toBeNull();
+  });
+
+  it('refuses a file over the DEF-declared per-slot cap, and names the cap', async () => {
+    const { reg } = boot();
+    reg.request('v1', {
+      kind: 'loadFile',
+      slot: 0,
+      file: fakeVideo('huge.webm', VIDEOVARISPEED_MAX_SLOT_BYTES + 1),
+    });
+    await Promise.resolve();
+    // The cap comes from the def, never re-typed here — a card that widened it
+    // would silently admit files the module documents as refused.
+    expect(reg.view('v1').error).toContain(`${Math.round(VIDEOVARISPEED_MAX_SLOT_BYTES / (1024 * 1024))} MB`);
+  });
+
+  it('clearError dismisses it after a surface has shown it', async () => {
+    const { reg } = boot();
+    reg.request('v1', { kind: 'loadFile', slot: 0, file: fakeVideo('x.txt', 10, 'text/plain') });
+    await Promise.resolve();
+    expect(reg.view('v1').error).not.toBeNull();
+    reg.request('v1', { kind: 'clearError' });
+    expect(reg.view('v1').error).toBeNull();
+  });
+
+  it('an explicit CLEAR frees the slot and falls back to slot 0', async () => {
+    const { h, reg } = boot();
+    loadSlot(h, 'v1', 0);
+    loadSlot(h, 'v1', 2);
+    reg.request('v1', { kind: 'selectSlot', slot: 2 });
+    expect(reg.view('v1').activeSlot).toBe(2);
+    reg.request('v1', { kind: 'clearSlot', slot: 2 });
+    expect(h.names.get('v1::slot2') ?? null).toBeNull();
+    expect(reg.view('v1').activeSlot, 'clearing the ON-AIR slot left the player on nothing').toBe(0);
+  });
+});
+
+describe('the SAVED-HANDLE RESTORE runs on node creation, with no surface', () => {
+  it('a GRANTED handle reloads slot 0 with no card and no gesture', async () => {
+    const c = makeClock(); const f = makeFrames(); const eng = makeEngine();
+    const h = makeHarness(c.clock, f.frames, eng.engine);
+    h.handles.set('h-0', { perm: 'granted', file: fakeVideo('saved.webm') });
+    h.state.set('v1', {
+      isPlaying: false, loop: true, crop: null,
+      fileMeta: { name: 'saved.webm', duration: 10, handleId: 'h-0' },
+    });
+    const reg = createNodeVarispeedRegistry(h.deps, h.hooks);
+    reg.sync([vvNode('v1')], eng.engine);
+    for (let i = 0; i < 8; i++) await Promise.resolve();
+    expect(
+      reg.view('v1').slotNames[0],
+      'a rack saved with a clip came back empty because nothing was mounted to notice',
+    ).toBe('saved.webm');
+  });
+
+  it('a LAPSED (prompt) handle loads nothing and publishes the name for a click', async () => {
+    const c = makeClock(); const f = makeFrames(); const eng = makeEngine();
+    const h = makeHarness(c.clock, f.frames, eng.engine);
+    h.handles.set('h-0', { perm: 'prompt', file: fakeVideo('saved.webm') });
+    h.state.set('v1', {
+      isPlaying: false, loop: true, crop: null,
+      fileMeta: { name: 'saved.webm', duration: 10, handleId: 'h-0' },
+    });
+    const reg = createNodeVarispeedRegistry(h.deps, h.hooks);
+    reg.sync([vvNode('v1')], eng.engine);
+    for (let i = 0; i < 8; i++) await Promise.resolve();
+    // requestPermission() is honoured only inside a real user gesture, so the
+    // controller can OFFER the re-allow and must not perform it.
+    expect(reg.view('v1').slotNames[0]).toBeNull();
+    expect(reg.view('v1').pendingHandleName).toBe('saved.webm');
+  });
+
+  it('slots 1..6 restore from their OWN slotMeta handles — the Fix B multi-slot path', async () => {
+    const c = makeClock(); const f = makeFrames(); const eng = makeEngine();
+    const h = makeHarness(c.clock, f.frames, eng.engine);
+    h.handles.set('h-4', { perm: 'granted', file: fakeVideo('four.webm') });
+    const slotMeta = new Array(ASSET_SLOTS).fill(null);
+    slotMeta[4] = { name: 'four.webm', duration: 3, handleId: 'h-4' };
+    h.state.set('v1', { isPlaying: false, loop: true, crop: null, slotMeta });
+    const reg = createNodeVarispeedRegistry(h.deps, h.hooks);
+    reg.sync([vvNode('v1')], eng.engine);
+    for (let i = 0; i < 8; i++) await Promise.resolve();
+    expect(reg.view('v1').slotNames[4]).toBe('four.webm');
+  });
+
+  it('a LATE slotMeta (a peer write, a perf-zip load) still gets its one attempt', async () => {
+    const c = makeClock(); const f = makeFrames(); const eng = makeEngine();
+    const h = makeHarness(c.clock, f.frames, eng.engine);
+    h.state.set('v1', { isPlaying: false, loop: true, crop: null });
+    const reg = createNodeVarispeedRegistry(h.deps, h.hooks);
+    reg.sync([vvNode('v1')], eng.engine);
+    // The bytes arrive AFTER the controller was built — the perf-zip shape.
+    h.handles.set('h-1', { perm: 'granted', file: fakeVideo('late.webm') });
+    const slotMeta = new Array(ASSET_SLOTS).fill(null);
+    slotMeta[1] = { name: 'late.webm', duration: 3, handleId: 'h-1' };
+    h.state.get('v1')!.slotMeta = slotMeta;
+    c.tick(HOUSEKEEPING_INTERVAL_MS);
+    for (let i = 0; i < 8; i++) await Promise.resolve();
+    expect(reg.view('v1').slotNames[1]).toBe('late.webm');
+  });
+});
+
+describe('the MULTI-SLOT export resolver is registered on NODE lifetime', () => {
+  it('registers on creation and yields EVERY populated slot, each tagged', async () => {
+    const c = makeClock(); const f = makeFrames(); const eng = makeEngine();
+    const h = makeHarness(c.clock, f.frames, eng.engine);
+    h.state.set('v1', { isPlaying: false, loop: true, crop: null });
+    const reg = createNodeVarispeedRegistry(h.deps, h.hooks);
+    reg.sync([vvNode('v1')], eng.engine);
+    expect(h.exports.has('v1'), 'nothing registered — a rack export would carry no varispeed bytes').toBe(true);
+
+    h.urls.set('v1::slot0', 'blob:a'); h.names.set('v1::slot0', 'a.webm');
+    h.urls.set('v1::slot2', 'blob:c'); h.names.set('v1::slot2', 'c.webm');
+    h.bytes.set('blob:a', new Uint8Array([1, 2, 3]));
+    h.bytes.set('blob:c', new Uint8Array([4, 5]));
+
+    const out = await h.exports.get('v1')!() as Array<{ slot: number; name: string }>;
+    // The single-slot resolver dropped slots 1..6 from the portable .zip: a
+    // performance with 7 videos lost 6 of them.
+    expect(out.map((r) => r.slot)).toEqual([0, 2]);
+    expect(out.map((r) => r.name)).toEqual(['a.webm', 'c.webm']);
+  });
+
+  it('yields null when nothing is loaded, and UNREGISTERS on dispose', async () => {
+    const c = makeClock(); const f = makeFrames(); const eng = makeEngine();
+    const h = makeHarness(c.clock, f.frames, eng.engine);
+    h.state.set('v1', { isPlaying: false, loop: true, crop: null });
+    const reg = createNodeVarispeedRegistry(h.deps, h.hooks);
+    reg.sync([vvNode('v1')], eng.engine);
+    expect(await h.exports.get('v1')!()).toBeNull();
+    reg.sweep([]);
+    expect(h.exports.has('v1'), 'a deleted node left a resolver behind').toBe(false);
+  });
+});
+
+describe('the crop ASPECT RE-FIT is the node\'s, not a card $effect', () => {
+  it('re-persists the stored rect when the OUTPUT aspect flips', () => {
+    const c = makeClock(); const f = makeFrames(); const eng = makeEngine();
+    const h = makeHarness(c.clock, f.frames, eng.engine);
+    // The binding coerces the raw rect against the live aspect, so `crop` is
+    // ALREADY the re-fitted value; the controller's job is noticing the aspect
+    // moved and writing that value back.
+    h.state.set('v1', {
+      isPlaying: false, loop: true,
+      outAspect: 4 / 3,
+      rawCrop: { x: 0.1, y: 0.2, w: 0.5 },
+      crop: { x: 0.1, y: 0.2, w: 0.5 },
+    });
+    const reg = createNodeVarispeedRegistry(h.deps, h.hooks);
+    reg.sync([vvNode('v1')], eng.engine);
+    c.tick(HOUSEKEEPING_INTERVAL_MS);
+    expect(h.cropWrites, 'an unchanged rect was re-written — a write storm').toHaveLength(0);
+
+    const s = h.state.get('v1')!;
+    s.outAspect = 16 / 9;
+    s.crop = { x: 0.1, y: 0.25, w: 0.5 }; // what the new aspect coerces it to
+    c.tick(HOUSEKEEPING_INTERVAL_MS);
+    expect(
+      h.cropWrites,
+      'a rack whose aspect flipped with no surface mounted kept a rect invalid for the new aspect',
+    ).toHaveLength(1);
+    expect(h.cropWrites[0]!.rect.y).toBeCloseTo(0.25, 10);
+  });
+
+  it('writes nothing when there is no ACTIVE crop', () => {
+    const c = makeClock(); const f = makeFrames(); const eng = makeEngine();
+    const h = makeHarness(c.clock, f.frames, eng.engine);
+    h.state.set('v1', { isPlaying: false, loop: true, crop: null, outAspect: 4 / 3 });
+    const reg = createNodeVarispeedRegistry(h.deps, h.hooks);
+    reg.sync([vvNode('v1')], eng.engine);
+    h.state.get('v1')!.outAspect = 16 / 9;
+    c.tick(HOUSEKEEPING_INTERVAL_MS);
+    expect(h.cropWrites).toHaveLength(0);
   });
 });
