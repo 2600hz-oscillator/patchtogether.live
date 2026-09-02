@@ -68,31 +68,38 @@ test.describe('per-module per-port: inputs accept signal (wire-up)', () => {
       continue;
     }
 
-    // ⏸ FLAKE-PARK #1847 — the SYNESTHESIA row ONLY. The live body below is
-    // UNCHANGED and still runs for every other module; un-parking is deleting
-    // this block. Evidence: PR #2265 (a label-string-composition change), run
-    // 33258138560 e2e shard 3/12, 2026-08-29 14:54Z — attempt 1 died on
-    // `pageerror: Cannot read properties of undefined (reading '0')` during
-    // input wire-up, attempt 2 passed at the same SHA. Synesthesia's own
-    // source has no literal `[0]`, so the throw is downstream app code racing
-    // under shard load — nondeterministic measurement of a real contract,
-    // which is the park class, not the exempt class. NOT triaged as related
-    // to #2265: that diff composes label strings deterministically — a bug
-    // there would fail BOTH attempts, and indexes nothing.
-    if (mod.type === 'synesthesia') {
-      test.fixme(
-        title,
-        {
-          annotation: {
-            type: 'fixme',
-            description:
-              'FLAKE-PARK #1847 — nondeterministic on CI: 1 recovered-on-retry observation (PR #2265 run 33258138560, e2e shard 3/12, 2026-08-29): attempt 1 pageerror Cannot read properties of undefined (reading 0) during input wire-up, attempt 2 green at the same SHA; parked until root-caused',
-          },
-        },
-        () => {},
-      );
-      continue;
-    }
+    // ⏹ UN-PARKED — the SYNESTHESIA row, formerly FLAKE-PARK #1847. ROOT CAUSE
+    // FOUND AND FIXED; "it passes now" was never the argument.
+    //
+    // The recorded failure was `pageerror: Cannot read properties of undefined
+    // (reading '0')` on attempt 1 (PR #2265, run 33258138560, e2e shard 3/12,
+    // 2026-08-29), green on attempt 2 at the same SHA. The park note observed
+    // that synesthesia's own source indexes nothing and could not place the
+    // throw. It is `drawVuMeters` (synesthesia-draw.ts), whose `levels[c] ?? 0`
+    // INDEXES BEFORE the `??` can apply — so it throws the instant
+    // `SynesthesiaCard` hands it a snapshot that has no `levelsA`.
+    //
+    // It got one because THIS SWEEP RESPAWNS EVERY ROW AT THE SAME NODE ID
+    // (`sut`) ON A SHARED PAGE (support/rack-session.ts: one boot per worker,
+    // MAX_ROWS_PER_PAGE=20), and the audio reconciler computed node removal by
+    // ID ABSENCE ALONE. A node whose TYPE changed at a reused id got no
+    // removeNode and no addNode, so the PREVIOUS row's engine handle stayed
+    // bound to `sut` — and `engine.read(node, 'snapshot')` is keyed by node id
+    // with no type check, so synesthesia's card was handed the previous
+    // module's snapshot. What made it nondeterministic rather than constant is
+    // that `resetRack` clears the graph in its OWN transaction, which normally
+    // lets the reconciler tear the old node down first; `enqueue` reads
+    // `latest` when its chained pass RUNS, so a pass still in flight on an
+    // awaited factory (shard contention) coalesces that empty state away. And a
+    // Playwright retry runs in a FRESH worker, so attempt 2 booted a page with
+    // no predecessor at `sut` — green at the same SHA for a reason unrelated to
+    // the code under test, which is what "recovered on retry" was measuring.
+    //
+    // Fixed in reconciler.ts step 2: a same-id type/domain change is now a
+    // remove + an add. Reproduced and eliminated end-to-end in
+    // `reconciler-node-type-swap.spec.ts` — pre-fix that spec records the
+    // IDENTICAL `Cannot read properties of undefined (reading '0')` and a
+    // 0%-painted VU canvas; post-fix, no pageerror and 83% painted.
 
     // SEQTRIS row: 3 recovered-on-retry observations in 24 h, all e2e shard 4
     // (runs 33472900654 / 33509092036 / 33537562900, 2026-09-01), each the

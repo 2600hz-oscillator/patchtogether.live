@@ -52,8 +52,15 @@ export function attachReconciler(
    * Its two jobs: warn ONCE per node id rather than on every pass, and stop us
    * re-attempting a factory that will throw identically every time (the module
    * registry is static for the life of the build, so a retry cannot succeed).
+   *
+   * ⚠ KEYED BY id → TYPE, NOT BY id ALONE. That stated rationale — "the same
+   * factory throws identically every time" — is about the TYPE, so the mark has
+   * to be. Step 2 now re-materializes a node whose type changed at a reused id,
+   * which makes an id-only mark actively wrong: a failed type A at id X would
+   * blacklist the ADDRESS, and the DIFFERENT module the operator puts there next
+   * would silently never appear with no second warning to explain it.
    */
-  const failedNodes = new Set<string>();
+  const failedNodes = new Map<string, string>();
   // The LIVE data reference each applied node was last cloned from. The
   // snapshot leaks the live SyncedStore proxy as `node.data` (snapshot.ts
   // `data: n.data`), whose identity is STABLE for a given node — so an
@@ -134,9 +141,41 @@ export function attachReconciler(
       appliedEdges.delete(id);
     }
 
-    // 2. Removed nodes.
+    // 2. Removed nodes — BY ID ABSENCE **OR BY IDENTITY CHANGE**.
+    //
+    // ⚠ AN ID IS NOT AN IDENTITY. This pass used to remove only ids that had
+    // LEFT the snapshot, and step 3 skips any id it already holds, so a node
+    // whose `type` (or `domain`) changed AT A REUSED ID was invisible to the
+    // reconciler: no removeNode, no addNode, and the PREVIOUS module's engine
+    // handle stayed bound to that id forever. `engine.read(node, key)` is keyed
+    // by node id with no type check, so the new module's card/face is then
+    // handed the OLD module's snapshot and throws on the shape mismatch —
+    // MODTRIS reading `state.well[…]` (modtris.ts) or SYNESTHESIA passing a
+    // missing `levelsA` into `drawVuMeters`, whose `levels[c] ?? 0` throws on
+    // the index read before the `??` can apply. Every module that answers the
+    // shared `read('snapshot')` key with its own shape is exposed: pong,
+    // frogger, scope, dockscope, nibbles, skifree, gamepad, featurecv, cube,
+    // synesthesia, modtris.
+    //
+    // Letting step 3 "just re-add" is NOT an alternative fix: AudioEngine.addNode
+    // is idempotent per node id (engine.ts — `if (this.nodes.has(node.id)) return`),
+    // so the stale handle can only be repaired by removing it FIRST. That is why
+    // this belongs in the removal pass and not the add pass.
+    //
+    // ── WHY IT IS REACHABLE AT ALL, given a delete and an add ──────────────
+    // Both writers that re-use an id delete-then-add inside ONE Y.Doc
+    // transaction (`loadEnvelopeIntoStore` swapping the live store; the e2e
+    // `spawnPatch` helper clearing and rebuilding the rack), and one
+    // transaction is one snapshot — the empty intermediate state never exists
+    // to be observed. Even when the clear IS a separate transaction, `enqueue`
+    // reads `latest` when its chained pass RUNS, not when it is queued, so a
+    // slow in-flight pass (an awaited factory) coalesces the empty state away
+    // under contention. Both routes land here as "same id, different type".
     const removedNodeIds = [...appliedNodes.keys()]
-      .filter((id) => !currentNodes.has(id))
+      .filter((id) => {
+        const cur = currentNodes.get(id);
+        return !cur || identityChanged(appliedNodes.get(id)!, cur);
+      })
       .sort();
     for (const id of removedNodeIds) {
       const prev = appliedNodes.get(id)!;
@@ -144,12 +183,12 @@ export function attachReconciler(
       appliedNodes.delete(id);
       appliedDataRefs.delete(id);
     }
-    // Drop the failed mark for any node no longer in the snapshot, so the set
+    // Drop the failed mark for any node no longer in the snapshot, so the map
     // cannot grow without bound across a long session and so a node that is
     // deleted and re-added gets a genuine second attempt.
     if (failedNodes.size > 0) {
       const live = new Set(snap.nodes.map((n) => n.id));
-      for (const id of [...failedNodes]) if (!live.has(id)) failedNodes.delete(id);
+      for (const id of [...failedNodes.keys()]) if (!live.has(id)) failedNodes.delete(id);
     }
 
     // 3. Added nodes (await — async factories). Snapshot is sorted; we
@@ -158,7 +197,8 @@ export function attachReconciler(
     for (const node of snap.nodes) {
       if (isMeta(node)) continue;
       if (appliedNodes.has(node.id)) continue;
-      if (failedNodes.has(node.id)) continue; // already known bad — do not retry or re-warn
+      // already known bad AT THIS TYPE — do not retry or re-warn
+      if (failedNodes.get(node.id) === node.type) continue;
       // engine.addNode THROWS on an unknown/removed module type or a factory
       // that blows up. Unguarded, ONE bad node aborted the rest of THIS pass —
       // every later node, every edge, and every param below it — and on a live
@@ -169,7 +209,7 @@ export function attachReconciler(
       try {
         await engine.addNode(node);
       } catch (err) {
-        failedNodes.add(node.id);
+        failedNodes.set(node.id, node.type);
         console.warn(
           `[reconciler] skipping node ${node.id} (type ${node.type}): ${(err as Error).message}`,
         );
@@ -271,6 +311,12 @@ export function attachReconciler(
       unsubscribe();
     },
   };
+}
+
+/** Is the node now at this id a DIFFERENT MODULE from the one the engine bound
+ *  there? An id is an address, not an identity — see step 2. */
+function identityChanged(prev: ModuleNode, cur: ModuleNode): boolean {
+  return prev.type !== cur.type || prev.domain !== cur.domain;
 }
 
 function snapshotNode(node: ModuleNode): ModuleNode {
