@@ -188,10 +188,18 @@ export const clipplayerDef: AudioModuleDef = {
     // patches by design.
     { id: 'snh', label: 's&h', defaultValue: 1, min: 0, max: 1, curve: 'discrete' },
     // CLIP-VIEW (note editor) DISPLAY ONLY — these two do NOT touch playback,
-    // pitch, or the emitted CV; they only change how many pitch rows the card's
+    // pitch, or the emitted CV; they only change how many pitch rows the
     // piano-roll draws. restrictRange OFF (default) = the full editable range
-    // (byte-identical to before this feature). ON = a 4-octave window whose
+    // (byte-identical to before this feature). ON = a THREE-octave window whose
     // LOWEST octave is rangeFloor's C, clamped inside the editable range.
+    //
+    // ⚠ "THREE", NOT "FOUR", AND THE NUMBER WAS WRONG IN SEVEN PLACES.
+    // `restrictedRowWindow(root, scale, floor, octaves = 3)` is the shipped law
+    // and `ClipplayerCard.svelte` passes `RESTRICT_OCTAVES = 3`, so the window
+    // has always been three octaves tall. Two doc blobs below and four card
+    // comments said four. Nothing caught it because every one of them is PROSE:
+    // the only surfaces that state the number to a player are the tooltips, and
+    // those INTERPOLATE the constant, so they were right the whole time.
     { id: 'restrictRange', label: 'RngLim', defaultValue: 0, min: 0, max: 1, curve: 'discrete' },
     { id: 'rangeFloor', label: 'RngFlr', defaultValue: 3, min: 0, max: 8, curve: 'discrete' },
   ],
@@ -237,8 +245,8 @@ export const clipplayerDef: AudioModuleDef = {
       gateLength: "GATE — how much of each step the per-note gate stays high, from short staccato stabs to near-legato (held/tied notes ignore this and stay high across their full span).",
       quantize: "QNT — launch quantization: on, a clip you launch waits and drops in cleanly at the next loop boundary of the LONGEST currently-playing clip (the shared reference bar — the Deluge model), so mixed-length clips stay phase-locked; off, it launches immediately. A launch fires immediately only when NOTHING is playing yet (there is no reference loop to line up to) or with a per-lane NOW override — a launch into an idle lane is otherwise queued to that reference boundary, not fired at once.",
       snh: "S&H — one global sample-and-hold toggle for all 8 lanes' pitch outputs: on (default), on a rest the gate closes but each lane's pitch HOLDS its last note (latched to the gate edge); off, rests reset pitch to 0 (the legacy continuous behavior).",
-      restrictRange: "RESTRICT RANGE (clip-view display only) — off (default) the piano-roll note editor shows the WHOLE editable pitch range at once; on, it shows a compact 4-octave window (its lowest octave set by the FLOOR control) so a tall grid stays scannable. Affects the editor view ONLY — never the played notes, pitch CV, or anything a clip emits.",
-      rangeFloor: "RANGE FLOOR (clip-view display only) — the LOWEST octave shown when RESTRICT RANGE is on: the 4-octave editor window runs from this octave's C upward, clamped so it never scrolls past the editable range's top or bottom. Display only; does not transpose or gate anything.",
+      restrictRange: "RESTRICT RANGE (clip-view display only) — off (default) the piano-roll note editor shows the WHOLE editable pitch range at once; on, it shows a compact 3-octave window (its lowest octave set by the FLOOR control) so a tall grid stays scannable. Affects the editor view ONLY — never the played notes, pitch CV, or anything a clip emits.",
+      rangeFloor: "RANGE FLOOR (clip-view display only) — the LOWEST octave shown when RESTRICT RANGE is on: the 3-octave editor window runs from this octave's C upward, clamped so it never scrolls past the editable range's top or bottom. Display only; does not transpose or gate anything.",
       "clipplayer-mono-{n}":
         "Lane {n}'s mono/poly toggle — switches that lane between MONO (one note per column, replace-on-add) and POLY (a chord: multiple notes stacked in one column, played out the lane's poly pitch output up to the poly cable's voice width).",
       "clipplayer-rate-{n}":
@@ -249,31 +257,197 @@ export const clipplayerDef: AudioModuleDef = {
         "A note cell in the piano-roll editor (rows are scale degrees/pitches, columns are steps). Click to toggle a note on or off at that pitch and step; right-click a note for its menu. The menu's top level is three SUBMENUS that expand into their option lists — NOTE PROBABILITY (a 0–100% firing chance), PITCH PROBABILITY (an off–100% pitch-instability amount in 40 increments) and SKIP EVERY (a 1–8 count-divider that plays the note only on every Nth loop of the clip) — followed by three actions on the CLIP you are editing: COPY and PASTE, which use the same typed clipboard as the Launchpad and Push 2 (so a clip copied on the card pastes on the hardware and vice versa; a paste replaces the target's notes AND its recorded automation, and a whole-SCENE buffer will not paste onto a single clip), and CLEAR, which DELETES the clip — the same undoable operation as the launch grid's right-click CLEAR, and distinct from the editor's ⌫, which empties the notes but keeps the clip. The first two STACK and decide WHETHER the note fires: it sounds only when it's that loop's turn AND it wins its probability roll. The third decides WHAT PITCH it fires at — off (the default) plays exactly the note you drew, and turning it up lets the note wander to nearby SCALE DEGREES of the clip's key, from occasional ornaments through melodic variation to out-of-key reharmonisation at the top, with octaves favoured over equally-distant dissonances. The cell colour codes the first two — white = always fires, a dimmer purple/orange as probability drops, RED (dimmer the higher N) for a play-every note, and the AVERAGE of the two when a note is both probabilistic and play-every. Pitch probability deliberately does NOT add a third colour to that blend (it would be unreadable at cell size): a note whose pitch can wander gets a DASHED border instead, and its exact amount is in the cell's tooltip and the menu's checkmark. The cells make up the clip you're editing for the selected lane+slot.",
       "clipplayer-auto-arm-{n}":
         "Lane {n}'s ◉ automation arm (CLIP RECORD, CONTINUOUS OVERDUB) — the small teal button under channel {n}'s column, next to its RATE control; PER LANE, Deluge-like (this replaced the old single global AUTO button), and distinct from the experimental red ● arranger record. While lane {n} is armed and a note clip plays in it, the recorder punches in cleanly at THAT clip's own next loop start; then just MOVE any control of a MODULE assigned to lane {n} (screen / MIDI / Electra all count — CV never records): it records WHILE you hold it, and every OTHER track keeps playing back so the automation loops audibly/visibly. Recording lands in the clip PLAYING in the lane (each clip carries its own envelopes). Release a control and it reverts to playback next loop. It overdubs EVERY loop until you click the ◉ again — a MANUAL STOP (no auto punch-out); stopping mid-loop keeps the untouched tail. Touching a control on an UNASSIGNED module records nothing — right-click the module's card → \"Assign to automation lane\" first. A 🟡🟡🔴🔴 countdown flashes this ◉ (and the recording clip's grid cell + Launchpad pad) on the last four beats before the clip's wrap. Per-lane single-writer: the arming client records this lane (another collaborator can record a DIFFERENT lane at the same time); peers still play back. On a Launchpad, SHIFT + the top-row button of the lane's column toggles the same arm (lane 8 = double-tap SHIFT).",
-      "clipplayer-auto-assigned-{n}":
-        "Per-lane ASSIGNED-MODULE count — one tiny chip per lane, tinted the lane's colour, showing how many MODULES are assigned to that lane's automation (right-click a module's CARD → \"Assign to automation lane\"; the assigned card gets a border in the lane's colour; a deleted module is not counted). A dim chip = nothing assigned. While lane {n} is armed, moving ANY control of these modules records it (max 16 recorded controls per clip). The module menu's \"Remove automation assignment\" only stops FUTURE recording — the recorded envelopes keep playing until you \"Clear recorded automation\" (right-click the control) or CLR AUTO the clip.",
-      "clipplayer-auto-cap-{n}":
-        "MAX badge — flashes for a few seconds when a touch (or a record commit) would exceed the 16-recorded-controls cap of the recording clip's automation. Nothing is lost: the 16 existing tracks keep recording/playing; the over-cap control is simply not captured. Free a slot by clearing a recorded control (right-click → \"Clear recorded automation\") or the clip's CLR AUTO.",
-      "clipplayer-clear-auto-{n}":
-        "CLR AUTO — delete the OPEN clip's whole recorded automation (all of its envelopes) while keeping its notes. Shown in the piano-roll editor only when the clip carries automation; undoable. The editor's ⌫ clear wipes notes AND automation together; per-control deletion is right-click → \"Clear recorded automation\".",
-      "clipplayer-auto-override-{n}":
-        "Automation override dot — lights when a control this player automates is being grabbed live (screen drag / MIDI CC / Electra), which SUSPENDS that param's automation playback (live wins) until you physically RELEASE the control (pointer-up, or a short idle after the last MIDI/Electra move) — NOT the loop wrap, so a gesture spanning a loop is never interrupted. On release the param glides back to the envelope; the instant you grab it the queued automation tail is truncated so it doesn't fight your hand. Click the dot to re-enable every suspended param at once.",
       "clipplayer-scene-repeat-{n}":
-        "Scene {n}'s repeat-count flair — a small read-only \"×N\" to the right of that scene's row, shown only when the scene carries a finite repeat count (infinite shows nothing — the default). While the scene is actively counting it shows live progress \"p/N\" (pass p of N). After N passes of the scene's longest clip the player auto-launches the next content scene down. The count itself is SET on a Launchpad: HOLD GRID + HOLD the scene's launch button, then tap pad k in the orange repeat-count view (pad 64 = back to infinite); card-side editing is a follow-up.",
+        "Scene {n}'s repeat count — the \"×N\" beside that scene's row. By default a launched scene loops forever (∞); CLICK to cycle the count ∞ → 2 → 3 → 4 → 8 → ∞, and after N passes of the scene's LONGEST clip the player auto-launches the next content scene down, skipping empty rows, through the normal quantized launch path. While the scene is actively counting the card shows live progress \"p/N\" (pass p of N). The count is also settable on a Launchpad — HOLD GRID + HOLD the scene's launch button, then tap pad k in the orange repeat-count view (pad 64 = back to infinite) — and it is CONTENT: a whole-scene COPY/PASTE carries it with the scene. Manual always wins: launching another scene resets the count fresh, launching an individual clip outside the scene cancels the countdown, and stopping every scene lane cancels it too, while MUTING lanes never alters it.",
     },
   },
 
+  // ── CONTROL FAMILIES — SIX, and it was TEN ────────────────────────────────
+  //
+  // ⚠ FOUR FAMILIES ARE DELETED IN THE SAME DIFF THAT PROMOTES THIS MODULE, and
+  // the deletion is a CONTRACT change (families are in the contract signature),
+  // so it is stated here rather than left to the lock diff to explain.
+  //
+  // A declared family is a promise that the control can be RANKED on a face,
+  // and a ranked family resolves to a shell cell that `faces-parity` DRIVES and
+  // asserts moved. Four of the ten could never satisfy that, for two different
+  // reasons, and neither is fixable by ranking them somewhere else:
+  //
+  //   `clipplayer-auto-assigned`  a per-lane COUNT. No gesture at all.
+  //   `clipplayer-auto-cap`       the MAX badge. A readout, and a CONDITIONAL
+  //                               one — it renders for a few seconds after a
+  //                               touch exceeds the 16-track cap and is absent
+  //                               on every fresh node.
+  //   `clipplayer-auto-override`  a dot that renders only WHILE a grabbed
+  //                               control is suspending automation playback.
+  //   `clipplayer-clear-auto`     CLR AUTO, rendered only inside the editor and
+  //                               only when the open clip carries automation.
+  //
+  // NOTHING IS LOST FROM THE SURFACE. All four still paint — the first three as
+  // `StatusLed` lamps in the module's `fullViewBody` (caption static, the
+  // measurement on `aria-label`/`title`, per the 2026-08-17/19 readout rulings)
+  // and CLR AUTO as the same button in the note editor. What they stop being is
+  // CELLS, because a cell that no probe can reach is a cell nothing can prove
+  // is alive, and the legacy card keeps every one of them under `?shell=legacy`.
+  //
+  // ⚠ `clipplayer-scene-repeat` SURVIVED ONLY BECAUSE THE PROSE WAS RE-READ.
+  // Its doc blob above described a "read-only ×N" whose count is set on a
+  // Launchpad, with card-side editing "a follow-up" — which would have put it
+  // in the list above. The card grew the click gesture (`cycleSceneRepeat`) and
+  // says so in its own comment; the doc was never re-read. Corrected above.
+  //
+  // Every `testidPrefix` below is a literal BOTH surfaces emit — the legacy
+  // card and the face's panel — which is what `module-docs-lint`'s card grep
+  // checks, so a rename on either surface is red.
   controlFamilies: [
     { id: 'clipplayer-mono', label: 'Per-lane mono/poly toggle', kind: 'other', testidPrefix: 'clipplayer-mono' },
     { id: 'clipplayer-rate', label: 'Per-lane clock rate (mult/div)', kind: 'other', testidPrefix: 'clipplayer-rate' },
     { id: 'clipplayer-pad', label: 'Clip launch grid', kind: 'cell', testidPrefix: 'clipplayer-pad' },
     { id: 'clipplayer-cell', label: 'Piano-roll note cells', kind: 'cell', testidPrefix: 'clipplayer-cell' },
     { id: 'clipplayer-auto-arm', label: 'Per-lane automation record arm', kind: 'other', testidPrefix: 'clipplayer-auto-arm' },
-    { id: 'clipplayer-auto-assigned', label: 'Per-lane automation assigned-module count', kind: 'other', testidPrefix: 'clipplayer-auto-assigned' },
-    { id: 'clipplayer-auto-cap', label: 'Automation track-cap badge', kind: 'other', testidPrefix: 'clipplayer-auto-cap' },
-    { id: 'clipplayer-clear-auto', label: 'Per-clip automation clear', kind: 'other', testidPrefix: 'clipplayer-clear-auto' },
-    { id: 'clipplayer-auto-override', label: 'Automation override indicator', kind: 'other', testidPrefix: 'clipplayer-auto-override' },
-    { id: 'clipplayer-scene-repeat', label: 'Per-scene repeat-count flair', kind: 'other', testidPrefix: 'clipplayer-scene-repeat' },
+    { id: 'clipplayer-scene-repeat', label: 'Per-scene repeat count', kind: 'other', testidPrefix: 'clipplayer-scene-repeat' },
   ],
+
+  // ── THE FACE ──────────────────────────────────────────────────────────────
+  //
+  // WHAT IT IS FOR: eight instrument lanes, eight clip slots each, locked to
+  // TIMELORDE. You launch clips into lanes and they drop in on a shared musical
+  // boundary; you draw the notes in a piano roll; you record your knob moves
+  // into whichever clip is playing. The verb a player performs is PLAY THE
+  // ARRANGEMENT LIVE — deciding what happens next while the current thing is
+  // still going.
+  //
+  // THE LADDER, read back as a sentence: at every lane tier you get the global
+  // playback settings (STEP, QNT, S&H) and a live strip saying which of the
+  // eight lanes are sounding; one Expand away you get the launcher itself — the
+  // 8×8 grid at its real size, the note editor, the four per-lane rows, the
+  // scene repeats, the transport, both recorders and the performance deck.
+  //
+  // ⚠ THE LANE-TIER CHANGE IS OWNER-APPROVED (2026-08-31, owner-decisions item
+  // 10): `clipplayer` leaves `NON_SHELL_LANE_TYPES` and the 336 px launcher (up
+  // to ~2,200 px in clip view) becomes a 192×180 tile plus one Expand, on the
+  // electraControl / semantic-zoom precedent. The owner previews the COMPACT
+  // tier before merge; the pinned `c`-pane instance is unaffected, since it
+  // already paints at faceplate width.
+  //
+  // ⚠ `glyph: 'none'` IS THE ONLY LITERAL THAT COMPILES INTO A GREEN RUN, and
+  // the premise is true by inspection: `primaryAudioOutPortId` matches
+  // `type === 'audio'` and this module declares NONE (its 24 outputs are
+  // `polyPitchGate`, `gate` and `cv`), so every live-audio binding
+  // short-circuits and 'envelope' needs a/d/s/r params there are none of. Each
+  // falls to `{kind:'static'}`, which module-face-lint reddens by name (#1692).
+  // 'algorithm' would resolve — it accepts a `face.extension` — but
+  // `ShellExtensionGlyphProps` carries no nodeId, so every clip player in the
+  // rack would draw the same picture, while the only useful glance here ("is
+  // anything playing HERE") is per-node. The `tileBody` strip is that glance.
+  //
+  // ⚠ THE GRID RANKS FIRST, THROUGH `hero.cell`, AND THAT IS THE ONLY WAY IT
+  // COULD. `clipplayer-pad-{n}` resolves to a PF-14 PANEL and module-face-lint
+  // refuses a panel SELECTED at a lane tier, so a panel's first legal rank is
+  // SEVEN; PF-22's `laneOrder` drops `face.hero.cell` from the LANE roster only,
+  // so the picture costs no lane rank and may rank first. kria's route exactly.
+  // The seven PARAMS therefore hold ranks 1-7 of the lane order and the five
+  // remaining panels sit at 8-12, safely past the six-cell plate.
+  //
+  // ⚠ FOUR PAGES, NO TAB RAIL, AND THE COUNT IS HONEST RATHER THAN TRIMMED.
+  // `DOCK_TAB_MIN_BANDS` is 7 and this face has 13 ranked keys, so a rail was
+  // three invented section headers away; the module's own structure is four
+  // ideas — the session, the channel strip, the editor, the global playback
+  // settings — and padding those to seven to earn a rail is the failure mode
+  // the owner ruled on for `ruttetra`. It also matters MORE here than
+  // elsewhere: a tab rail renders exactly ONE band at a time, and the thing a
+  // player does on a launcher is compare eight lanes and pick the next one —
+  // which is the comparison a rail would make impossible.
+  //
+  // The transport, both recorders, the clip-undo stack, the per-lane MUTE/STOP
+  // deck, the monome GRID bind, the arranger pop-out and the automation status
+  // lamps are the extension's `fullViewBody`; the lane strip and the panic stop
+  // are its `tileBody`. See $lib/ui/modules/clipplayer/shell-extension.ts.
+  face: {
+    title: 'clip player',
+    hint: 'eight lanes of clips, launched onto a shared musical boundary and locked to TIMELORDE',
+    glyph: 'none',
+    extension: 'clipplayer',
+    hero: { cell: 'clipplayer-pad-{n}' },
+    order: [
+      // Ranks 1-7 are the PARAMS, and they are the lane budget: the hero costs
+      // no lane rank, so these are what a 192 px tile paints.
+      'stepDiv',
+      'quantize',
+      'snh',
+      'octave',
+      'gateLength',
+      'restrictRange',
+      'rangeFloor',
+      // The hero picture. Ranked here rather than first so the ORDER reads as
+      // the lane budget it also is; `hero.cell` is what promotes it.
+      'clipplayer-pad-{n}',
+      // Ranks 9-13: the remaining panels, all past the six-cell plate.
+      'clipplayer-mono-{n}',
+      'clipplayer-rate-{n}',
+      'clipplayer-auto-arm-{n}',
+      'clipplayer-scene-repeat-{n}',
+      'clipplayer-cell-{n}',
+    ],
+    pages: [
+      {
+        // ⚠ THE SCENE REPEATS SHARE THIS BAND WITH THE GRID, AND A GATE IS WHY.
+        // A row of the grid IS a scene, so they belong together on the design
+        // argument alone — but the mechanical reason is that the launch grid is
+        // promoted OUT of its band into the hero, and `heroFacePlan` DROPS a
+        // band the hero emptied, taking its hint with it. A page whose only
+        // control is the hero cell is a page whose prose is authored, reviewed
+        // and painted nowhere (`module-face-lint`'s annotation-reachability
+        // clause says exactly that, by name).
+        id: 'session',
+        label: 'session',
+        hint:
+          'the launch grid — columns are the eight instrument lanes, rows are the eight clip ' +
+          'slots, and a row is a SCENE. Click a pad to launch it, click the playing pad to stop ' +
+          'the lane, double-click to open it in the editor; give a scene a finite repeat count ' +
+          'and it hands over to the next scene with content after that many passes of its ' +
+          'longest clip.',
+        controls: ['clipplayer-pad-{n}', 'clipplayer-scene-repeat-{n}'],
+      },
+      {
+        id: 'channels',
+        label: 'channels',
+        hint:
+          'per lane, and all eight at once because the reason to look is to compare them: ' +
+          'MONO replaces the note under a new one where POLY stacks a chord, the RATE ' +
+          'divides or multiplies that lane off the STEP grid for polyrhythms, and the arm ' +
+          'records knob moves into whatever clip is playing there.',
+        controls: [
+          'clipplayer-mono-{n}',
+          'clipplayer-rate-{n}',
+          'clipplayer-auto-arm-{n}',
+        ],
+      },
+      {
+        id: 'editor',
+        label: 'editor',
+        hint:
+          'the piano roll for whichever clip the grid has open, and the two display-only ' +
+          'controls that decide how much of the pitch range it draws — neither touches ' +
+          'playback, the pitch CV, or anything a clip emits.',
+        controls: ['clipplayer-cell-{n}', 'restrictRange', 'rangeFloor'],
+        clusters: [{ label: 'pitch window', controls: ['restrictRange', 'rangeFloor'] }],
+      },
+      {
+        id: 'playback',
+        label: 'playback',
+        hint:
+          'global to every lane. STEP sets how many steps fall per TIMELORDE beat; QNT holds ' +
+          'a launch until the longest playing clip wraps; S&H holds each pitch through a rest ' +
+          'instead of resetting it.',
+        controls: ['stepDiv', 'quantize', 'snh', 'octave', 'gateLength'],
+        clusters: [
+          { label: 'grid', controls: ['stepDiv', 'quantize'] },
+          { label: 'voice', controls: ['snh', 'octave', 'gateLength'] },
+        ],
+      },
+    ],
+  },
 
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     const nodeId = node.id;

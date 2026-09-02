@@ -69,20 +69,23 @@ describe('electraControl face — the promotion', () => {
   // false` — which is what `moduleSwapsToShell` returns for a carved-out type —
   // must still resolve 'legacy'. Without this, the assertion could not tell "the
   // carve-out is gone" from "the rule stopped consulting it".
-  // (⚠ The subject used to be `controlSurface`; its own promotion drained that
-  // membership on 2026-09-01, so the control re-points at `clipplayer` — the
-  // set's last snowflake with a card.)
+  // (⚠ The subject has now moved twice: it was `controlSurface`, whose own
+  // promotion drained that membership on 2026-09-01, then `clipplayer`, whose
+  // promotion drained the set of its LAST MODULE CARD. It re-points at `sticky`
+  // — organizational chrome, which is what `NON_SHELL_LANE_TYPES` now holds
+  // exclusively, and which no face programme can promote away. That makes this
+  // the last re-point the control can ever need.)
   it('the rule still honours a carve-out for the types that keep one', () => {
     expect(
       laneRenderKind({
         shellFaces: true,
         userDocked: false,
-        type: 'clipplayer',
+        type: 'sticky',
         hasCard: false,
         migrated: false,
       }),
     ).toBe('legacy');
-    expect(NON_SHELL_LANE_TYPES.has('clipplayer'), 'a real member remains').toBe(true);
+    expect(NON_SHELL_LANE_TYPES.has('sticky'), 'a real member remains').toBe(true);
   });
 
   // ⚠ THE SURFACE THAT ACTUALLY MATTERS. This module is the `E` of the M/E/C pin

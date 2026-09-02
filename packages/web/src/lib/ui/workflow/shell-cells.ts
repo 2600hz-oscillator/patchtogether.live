@@ -74,6 +74,12 @@ import BlueboxToneBankPanel from '$lib/ui/modules/BlueboxToneBankPanel.svelte';
 import ClapHeroPanel from '$lib/ui/modules/ClapHeroPanel.svelte';
 import CubeHeroPanel from '$lib/ui/modules/cube/CubeHeroPanel.svelte';
 import CubeTableStackPanel from '$lib/ui/modules/cube/CubeTableStackPanel.svelte';
+import ClipplayerArmPanel from '$lib/ui/modules/clipplayer/ClipplayerArmPanel.svelte';
+import ClipplayerLaunchPanel from '$lib/ui/modules/clipplayer/ClipplayerLaunchPanel.svelte';
+import ClipplayerMonoPanel from '$lib/ui/modules/clipplayer/ClipplayerMonoPanel.svelte';
+import ClipplayerNotePanel from '$lib/ui/modules/clipplayer/ClipplayerNotePanel.svelte';
+import ClipplayerRatePanel from '$lib/ui/modules/clipplayer/ClipplayerRatePanel.svelte';
+import ClipplayerScenePanel from '$lib/ui/modules/clipplayer/ClipplayerScenePanel.svelte';
 import KriaGridPanel from '$lib/ui/modules/kria/KriaGridPanel.svelte';
 import ScoreStaffPanel from '$lib/ui/modules/score/ScoreStaffPanel.svelte';
 import ScoreSlotsPanel from '$lib/ui/modules/score/ScoreSlotsPanel.svelte';
@@ -2076,6 +2082,145 @@ const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
       onFire: (nodeId) => { timelordeFaceTap(nodeId); },
     },
   },
+
+  // ── THE CLIP LAUNCHER ────────────────────────────────────────────────────
+  //
+  // SIX panels, and the shape of the module is why there are six rather than
+  // one. kria's grid is ONE picture; a clip launcher is a picture (the pads)
+  // with EIGHT-WIDE ROWS around it and a SECOND picture behind it (the piano
+  // roll). Each row is a declared control family with its own documentation, so
+  // each gets its own cell — which is also the only way the faceplate keeps the
+  // property the card's spec calls the point of the surface: you SEE THE EIGHT
+  // LANES AGAINST EACH OTHER. A single "selected lane" cell in kria's style
+  // would show one badge and hide seven.
+  //
+  // ⚠ EVERY PROBE HERE FIRES ON A FRESHLY SPAWNED PLAYER WITH NO SETUP, AND
+  // THAT IS WHAT DECIDED WHICH FAMILIES SURVIVED. Four of the module's ten
+  // declared families are pure or conditional READOUTS — the assigned-module
+  // count, the MAX track-cap badge, the automation override dot and CLR AUTO —
+  // and none has a gesture the sweep could drive on a fresh node. They are
+  // deleted from the def in this PR and painted as `StatusLed` lamps (and, for
+  // the two that were buttons, as buttons) in the module's own bodies, where no
+  // cell contract applies. A family that cannot be probed is a cell that cannot
+  // be proven alive, which is the class this registry exists for.
+  clipplayer: {
+    // THE LAUNCH GRID — 8 instrument lanes × 8 clip slots, plus the scene
+    // column and the per-lane colour header. This IS the module: its seven
+    // params are global playback settings and everything a player performs
+    // lives in `node.data`.
+    //
+    // ⚠ RANKED FIRST VIA `face.hero.cell` — the kria route. `module-face-lint`
+    // refuses a panel SELECTED at a lane tier (a panel declares its own
+    // minWidth; a lane knob column is 46 px), which made a panel's first legal
+    // rank SEVEN. PF-22's `laneOrder` drops `face.hero.cell` from the lane
+    // roster only, so the picture costs no lane rank and may rank first.
+    //
+    // ⚠ THE PROBE CLICKS AN EMPTY PAD, WHICH IS THE ONE GESTURE GUARANTEED TO
+    // WRITE. `launchPad` on an empty slot CREATES the clip and arms the lane
+    // (`ensureClip` then `queueLane`), so `clips` gains a key on a node that
+    // has none — a `data` probe, not the weaker `data-rev`. A LOADED pad would
+    // only toggle a queue, and a fresh player has no clips at all. The 220 ms
+    // single-vs-double-click debounce is why the effect must be POLLED rather
+    // than read once; the sweep polls by construction.
+    'clipplayer-pad-{n}': {
+      kind: 'panel',
+      label: 'the launch grid',
+      component: ClipplayerLaunchPanel,
+      // Eight 28 px pads, seven 3 px gaps, the 14 px scene column and the
+      // plate's own padding. Width EARNED by a picture-you-play.
+      minWidth: 280,
+      probe: {
+        testid: 'clipplayer-pad-0',
+        action: 'click',
+        effect: { kind: 'data', key: 'clips', expect: 'changed' },
+      },
+    },
+
+    // THE PIANO ROLL — the note editor for whichever clip the launch grid has
+    // open, plus the clip-scoped gestures (length, scale, div, swing, double,
+    // custom scale) that operate on it.
+    //
+    // ⚠ THE PROBE CLICKS A CELL AND IT WORKS IN BOTH STATES, which is the
+    // ordering hazard this had to be designed around: the sweep drives every
+    // cell of one node in RANK ORDER, so by the time it reaches this panel the
+    // pad probe above has already created clip 0. A probe aimed at an
+    // empty-state button would fire on a state that no longer exists. Clicking
+    // cell (0,0) CREATES the clip when the slot is empty and TOGGLES a note
+    // when it is not — `clips` changes either way, so the probe is independent
+    // of what ran before it.
+    'clipplayer-cell-{n}': {
+      kind: 'panel',
+      label: 'the note editor',
+      component: ClipplayerNotePanel,
+      // 16 steps at 15 px with 2 px gaps is the DEFAULT clip; a longer clip
+      // scrolls inside the panel rather than widening the faceplate.
+      minWidth: 300,
+      probe: {
+        testid: 'clipplayer-cell-0-0',
+        action: 'click',
+        effect: { kind: 'data', key: 'clips', expect: 'changed' },
+      },
+    },
+
+    // ── THE FOUR EIGHT-WIDE ROWS. Each is one declared family, each paints all
+    // eight members, and each probe drives member 0 and watches the array that
+    // member writes.
+    'clipplayer-mono-{n}': {
+      kind: 'panel',
+      label: 'mono / poly',
+      component: ClipplayerMonoPanel,
+      minWidth: 248, // 8 × 28 px + 7 × 3 px
+      probe: {
+        testid: 'clipplayer-mono-0',
+        action: 'click',
+        effect: { kind: 'data', key: 'mono', expect: 'changed' },
+      },
+    },
+    'clipplayer-rate-{n}': {
+      kind: 'panel',
+      label: 'clock rate',
+      component: ClipplayerRatePanel,
+      minWidth: 248,
+      probe: {
+        testid: 'clipplayer-rate-0',
+        action: 'click',
+        effect: { kind: 'data', key: 'rate', expect: 'changed' },
+      },
+    },
+    'clipplayer-auto-arm-{n}': {
+      kind: 'panel',
+      label: 'automation arm',
+      component: ClipplayerArmPanel,
+      minWidth: 248,
+      // Arming writes ONE KEY of `automation.lanes` (per-key set/delete, so two
+      // peers arming different lanes merge) — which is what the probe must
+      // watch, not `automation` as a whole.
+      probe: {
+        testid: 'clipplayer-auto-arm-0',
+        action: 'click',
+        effect: { kind: 'data', key: 'automation.lanes', expect: 'changed' },
+      },
+    },
+    'clipplayer-scene-repeat-{n}': {
+      kind: 'panel',
+      label: 'scene repeats',
+      component: ClipplayerScenePanel,
+      minWidth: 248,
+      // ⚠ THIS CELL EXISTS ONLY BECAUSE THE DEF'S PROSE WAS RE-READ AGAINST THE
+      // CARD. `docs.controls` still called the flair "a small read-only ×N"
+      // whose count is "SET on a Launchpad", card editing "a follow-up" — and
+      // the card has carried `cycleSceneRepeat` on a click long enough to say
+      // so in its own comment. A read-only family has no probe and would have
+      // been deleted with the other four; the corrected prose ships in the same
+      // diff as this registration.
+      probe: {
+        testid: 'clipplayer-scene-repeat-0',
+        action: 'click',
+        effect: { kind: 'data', key: 'sceneRepeats', expect: 'changed' },
+      },
+    },
+  },
+
   kria: {
     // THE STEP GRID — 7 lanes × 16 steps for the selected track, plus the
     // sixteen pattern slots on the same surface. This IS the module: its two

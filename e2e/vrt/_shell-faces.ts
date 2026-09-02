@@ -5153,6 +5153,60 @@ export const FACES = [
       + ' defaults, with surface 1 focused on every boot.',
   },
 
+  // ── CLIP PLAYER — the launcher, and the last module card to leave
+  //    NON_SHELL_LANE_TYPES ────────────────────────────────────────────────
+  //
+  // ⚠ A FRESHLY SPAWNED CLIP PLAYER IS DETERMINISTIC BY CONSTRUCTION, and the
+  // reason is worth stating because this module's LEGACY CARD is one of the
+  // ones the strict roster refuses (`clipplayer` is NOT in
+  // `STRICT_VRT_MODULES` — its chrome animates: blinking queued pads, the
+  // record blink, the automation countdown pulse). NOT ONE of those animations
+  // can run on a solo spawn:
+  //
+  //   · the QUEUED-pad blink needs `data.queued[lane]` to be set, which only a
+  //     launch writes, and this capture launches nothing;
+  //   · the AUTOMATION COUNTDOWN needs a lane ARMED with a clip PLAYING in it,
+  //     and the four-beat pulse is painted from `getAutomationRender`, which
+  //     the panels do not read at all — the one poll that does lives in the
+  //     `fullViewBody` and it reassigns only on a real change, so with nothing
+  //     recording its `sig` is the empty string on every frame;
+  //   · the PLAYHEAD column in the note editor is gated on
+  //     `lanePlaying(data, editLane) === editSlot`, so with nothing launched
+  //     the panel makes NO engine read at all and `curStep` stays −1.
+  //
+  // So both scenes are a pure function of stored `node.data`, which a fresh
+  // node has none of. The pads are 64 identical empty squares, the four lane
+  // rows are their defaults (POLY, rate `1`, disarmed, ∞), and the editor draws
+  // a DEFAULT clip's grid at reduced contrast — deliberately, since a slot with
+  // no clip yet is a state the surface must distinguish from a loaded one.
+  //
+  // ⚠ NO `videoFaceWhy` AND NO `simPin`: `domain: 'audio'`, so the audio boot
+  // path is the right one, and there is no clock to pin — the module is LOCKED
+  // TO TIMELORDE and runs only while the transport does, which a capture does
+  // not start.
+  //
+  // ⚠ THE LANE COLOURS ARE THE ONE DERIVED THING IN FRAME, and they are pure:
+  // `laneColorEff` falls back to `defaultLaneColorHex(lane)`, eight fixed hues
+  // computed from the lane index alone, so the header swatches and every pad
+  // tint are identical on every boot.
+  //
+  // ⚠ WHAT THIS BASELINE DOES **NOT** COVER, stated rather than implied: a
+  // LOADED player. Launched pads, drawn notes, armed lanes, a counting scene
+  // and the automation lamps are all invisible to it — which is most of the
+  // module's subject. That surface is covered by `face-clipplayer.spec.ts`
+  // (which drives the real face through the real dock), by the eighteen
+  // existing clipplayer specs under `?shell=legacy`, and by
+  // `clipplayer-face-model.test.ts`.
+  {
+    type: 'clipplayer',
+    // FOUR bands: session (the launch grid, promoted into the hero, plus the
+    // scene repeats that keep the band non-empty), channels, editor, playback.
+    // `DOCK_TAB_MIN_BANDS` is 7 and nothing is padded toward it — on a launcher
+    // a tab rail would render one band at a time, which is fatal for the one
+    // thing the surface is for (comparing eight lanes).
+    pages: 4,
+  },
+
 ] as const;
 
 /**

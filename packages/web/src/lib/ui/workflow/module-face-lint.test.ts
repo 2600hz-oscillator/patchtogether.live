@@ -1325,6 +1325,32 @@ describe('module-face lint — MOMENTARY pads (face.momentary)', () => {
     // and no gate says so; that is why the linear->discrete move is in the same
     // diff as the promotion rather than deferred to dodge a GPU re-attest.
     'mappy:showGrid',
+    // CLIPPLAYER `restrictRange`, 2026-09-02. The piano roll's pitch WINDOW:
+    // OFF (the default) draws the whole editable range at once, ON draws a
+    // three-octave window from the FLOOR octave's C upward.
+    //
+    // LATCHING, classified AT THE READ SITE, and this one has TWO read sites
+    // that agree. `ClipplayerCard.svelte` derives it as
+    // `(node?.params.restrictRange ?? 0) >= 0.5` and feeds a `$derived` that
+    // picks `restrictedRowWindow` over `editableRowRange`; the face's
+    // `ClipplayerNotePanel.svelte` runs the identical level test for the same
+    // choice. Nothing else in the module reads it. There is no edge detector on
+    // this path — the module's ONLY `createEdgeCounter` consumers are its two
+    // trigger INPUTS (`stop_all`, `reset`), neither of which touches a param.
+    //
+    // ⚠ AND IT IS THE ONE PARAM OF THE SEVEN THAT `looksLikeSwitch` REACHES,
+    // which is worth stating because the entry otherwise reads like a sample of
+    // a class: `quantize` and `snh` are the same 0..1 discrete shape but DEFAULT
+    // TO 1, and `switchLikeParams` only reaches a switch that rests at 0. This
+    // is the whole class, not one of it.
+    //
+    // It is DISPLAY-ONLY (the def says so twice: it never touches playback,
+    // pitch, or the emitted CV), and it is the state a player leaves ON while
+    // working in a narrow register. A momentary render would snap the editor
+    // back to the full range the instant they released — the one way the
+    // control could not be used — and would write to the Y.Doc on every
+    // press/release pair.
+    'clipplayer:restrictRange',
   ]);
 
   it('no ACKNOWLEDGED_LATCHING param is DOCUMENTED as momentary (the cross-check)', () => {

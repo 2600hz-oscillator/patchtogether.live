@@ -4644,11 +4644,12 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   //
   // ⚠ THE PROMOTION LOSES NOTHING, and that is the STOP-1 answer rather than a
   // hope. `push2Control` is NOT in `NON_SHELL_LANE_TYPES` — the set is `group`,
-  // `sticky`, `cadillac`, `clipplayer` (⚠ this sentence used to name
-  // `electraControl` and then `controlSurface` too, and BOTH memberships ended
-  // with their own promotions; a hand-transcribed copy of another module's set
-  // is exactly the thing that goes quietly stale, so it is corrected here — for
-  // the second time — rather than left to read as current fact) — so
+  // `sticky`, `cadillac` (⚠ this sentence has now named `electraControl`,
+  // `controlSurface` and `clipplayer` in turn, and EVERY one of those
+  // memberships ended with that module's own promotion; a hand-transcribed copy
+  // of another module's set is exactly the thing that goes quietly stale, so it
+  // is corrected here — for the third time — rather than left to read as
+  // current fact, and the set now holds no module card at all) — so
   // `laneRenderKind` returns `'placeholder'` TODAY: a uniform rackline tile
   // with ZERO ranked controls, on a module that also declares `inputs: []` and
   // `outputs: []`, so its jack rail is empty too. A name and a badge. Its
@@ -5938,6 +5939,70 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // UNCHANGED: no controlFamilies, no new params. `docs:accept` runs because
   // the explanation's card-ownership prose was stale.
   'videovarispeed',
+
+  // ── CLIP PLAYER — the launcher the snowflake list was built around ────────
+  //
+  // ⚠ THIS PROMOTION EMPTIES `NON_SHELL_LANE_TYPES` OF ITS LAST MODULE CARD,
+  // and the removal is in this same diff because it HAS to be: `laneRenderKind`
+  // consults that set while `DockFullView` switches on bare membership HERE, so
+  // promoting without removing paints the verbatim card on the canvas and the
+  // faceplate in the dock — two different instruments for one node, and no gate
+  // in the repo reads both sides (`module-face-lint` reads the def,
+  // `faces-parity` drives the dock, neither reads the lane set). The prior
+  // spec's §2 called that "a split-brain no gate would catch" and it was right;
+  // what it could not know is that `tileBody` (#2242) and the owner's 2026-08-31
+  // lane-tier ruling would make the honest half of the fix cheap.
+  //
+  // ⚠ WHAT THE OLD SPEC PRICED AS THE BLOCKER, MEASURED AGAINST THE TREE. It
+  // argued the module needs "ten shell cells … there is no arrangement of shell
+  // cells that is a clip launcher", and that panels rank 8-17 so the lane tile
+  // "can only ever be seven knobs". Both premises moved: PF-22's `laneOrder`
+  // drops `face.hero.cell` from the LANE roster, so the launch grid ranks FIRST
+  // as a panel (kria's route, and kria is named in PF-22's own comment as a
+  // module the old arithmetic locked out of having a faceplate at all); and the
+  // lane tile is not seven knobs but three plus a `tileBody` strip of the eight
+  // lanes' live state. The count is also not ten: FOUR of the declared families
+  // are pure or conditional READOUTS with no gesture a probe could drive, and
+  // they are deleted from the def here (a contract change) and painted as
+  // `StatusLed` lamps in the module's own body.
+  //
+  // SIX PANELS, and the shape is the module's rather than a compromise: the
+  // launch grid (the hero), the piano roll, and four EIGHT-WIDE rows — mono,
+  // rate, arm, scene repeats. All eight members of each row paint at once,
+  // because comparing the eight lanes is what a launcher is looked at for; a
+  // kria-style "selected lane" cell would have shown one and hidden seven.
+  //
+  // ⚠ THE STOP-2 SWEEP FOUND ONE ONGOING BEHAVIOUR AND IT NEEDED NO MOVE. The
+  // card runs `pruneAutoAssignDangling` in a `$effect`, which is the exact
+  // shape promotion deletes silently — but `pruneAllAutoAssignDangling()`
+  // already sweeps EVERY clip player from the Canvas graph-change seam, whose
+  // own comment says it exists so an assignment is dropped "even when no
+  // clipplayer CARD is mounted". The behaviour was already outside the UI. The
+  // card's remaining component-only work is its rAF poll (moved to the
+  // `fullViewBody`) and the right-click clip menu, which is EXTRACTED to a
+  // shared component all three surfaces now render — the card's own comment
+  // records that having two copies of that menu is how a restructure once
+  // landed on one surface with every test green.
+  //
+  // ⚠ TWO PRODUCT DELTAS, BOTH NAMED RATHER THAN DISCOVERED. The face's
+  // per-lane RATE is a CYCLING BUTTON where the card draws a `<select>`: a
+  // panel declares an operability probe and the sweep's only gestures are click
+  // and drag, so a native select is a cell nothing can prove alive — and the
+  // gesture it becomes is the one the def's docs already describe for the
+  // Launchpad deck's RATE row ("tap to cycle up"). And the editor band draws a
+  // DEFAULT clip's grid for an empty slot, committing it on the first edit,
+  // because a faceplate has no views: the band is on screen from the moment the
+  // dock opens, where the card only ever entered its editor through a
+  // double-click that had already created the clip.
+  //
+  // CONTRACT: four controlFamilies REMOVED (families are in the signature).
+  // DOCS: `docs:accept` runs — the shipped restrict-range window is THREE
+  // octaves and two doc blobs said four (`restrictedRowWindow`'s own default is
+  // 3 and the card passes 3; only the tooltips were right, because they
+  // interpolate the constant), and the scene-repeat blob still called the flair
+  // read-only after the card grew its click gesture. ZERO ATTEST: no param,
+  // port or factory code moves and every new file is under `lib/ui/**`.
+  'clipplayer',
 ]);
 
 /**
