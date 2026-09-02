@@ -5353,10 +5353,16 @@ export const FACES = [
   // code. ⚠ THAT RISK IS NOW STRUCTURALLY ABSENT rather than merely settled:
   // the promotion DELETED the painted status paragraph (all six strings moved
   // to the lamp's `StatusLed` detail, reaching aria-label and title only), so
-  // neither string is in the frame to move. The lamp is DARK in both states —
-  // `lit` is `kind === 'bound'`, and a VRT boot binds nothing — so the picture
-  // is identical either way. Stated because it is the reason this entry needs
-  // no settle assertion of its own.
+  // neither string is in the frame to move.
+  // ⚠ AND THE LAMP BESIDE THEM DOES NOT MOVE EITHER — the half worth CHECKING
+  // rather than assuming. `lit` is `kind === 'bound'` and a VRT boot binds
+  // nothing, but the body also passes `tone={problem ? 'warn' : 'accent'}`, and
+  // `unsupported` IS a problem while `idle` is not — so the two runner states
+  // DO reach `StatusLed` with different props. VERIFIED AT THE CSS: every
+  // tone-dependent rule in `StatusLed.svelte` is gated on `.lit`
+  // (`.status-led.warn.lit .lamp`, `.status-led.warn.lit .cap`), so an UNLIT
+  // lamp renders identically under either tone. The picture is the same both
+  // ways, and that is why this entry needs no settle assertion of its own.
   { type: 'seqtris', pages: 1 },
   // ── NIBBLES — the game group's fourth face, and the one whose determinism
   //    seam ALREADY EXISTED and is ALREADY PROVEN BYTE-IDENTICAL ────────────
