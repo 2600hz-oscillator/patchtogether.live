@@ -587,6 +587,27 @@ for (const type of TYPES) {
     // right observation two levels below where the classification lived.
     const fileInput = pane.locator('input[type="file"][data-testid$="-file-input"]').first();
     const playBtn = pane.locator('button[data-testid$="-play-btn"]').first();
+    // ⚠ WAIT FOR THE PREDICTED SHAPE BEFORE SAMPLING IT — and predict from the
+    // STATIC half, which is knowable without the browser.
+    //
+    // MEASURED on this tree (2026-09-01, videovarispeed wave 4): a COLD run of
+    // the whole sweep failed the videobox row with "source says true, runtime
+    // says false", and the SAME row passed on a warm re-run seconds later. A
+    // FACED member's dock body is a LAZY `import.meta.glob` chunk
+    // (`shell-extensions.ts`), so `dock-full-view` exists a tick or two before
+    // the surface inside it does — and a bare `.count()` the instant the pane
+    // appears reads zero. That is not a slow product, it is a sample taken
+    // before the subject exists.
+    //
+    // Both shells are covered because the wait is DERIVED, not hard-coded: a
+    // predicted player must actually materialise its two controls (and if it
+    // never does, the assertion below fires with the real message rather than a
+    // timeout), while a predicted non-player has nothing to wait for and is
+    // sampled once — so the DISAGREEMENT check keeps both directions.
+    if (realPlayerTypes().includes(type)) {
+      await expect(fileInput).toHaveCount(1, { timeout: 20_000 });
+      await expect(playBtn).toHaveCount(1, { timeout: 20_000 });
+    }
     const isPlayer = (await fileInput.count()) > 0 && (await playBtn.count()) > 0;
     // ⚠ ANCHOR THE STATIC PREDICATE TO THE RUNTIME ONE, per subject and in both
     // directions. `realPlayerTypes()` reads the card SOURCE so the population is

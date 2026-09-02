@@ -33,6 +33,7 @@ import {
   NODE_VARISPEED_TYPES,
   NO_VARISPEED,
   CV_INTERVAL_MS,
+  HOUSEKEEPING_INTERVAL_MS,
   VARISPEED_DEFAULT_LOOP,
   type VarispeedDeps,
   type VarispeedEngine,
@@ -199,6 +200,14 @@ function makeHarness(
           arr[slot] = meta ? { ...meta } : null;
           s.slotMeta = arr;
         }
+      },
+      readMeta: (nodeId) => {
+        const st = state.get(nodeId);
+        if (!st) return null;
+        return {
+          fileMeta: st.fileMeta ?? null,
+          slotMeta: st.slotMeta ?? new Array(ASSET_SLOTS).fill(null),
+        };
       },
       writeCrop: (nodeId, active, rect) => {
         cropWrites.push({ nodeId, active, rect: { ...rect } });
@@ -825,7 +834,7 @@ describe('the SAVED-HANDLE RESTORE runs on node creation, with no surface', () =
     const slotMeta = new Array(ASSET_SLOTS).fill(null);
     slotMeta[1] = { name: 'late.webm', duration: 3, handleId: 'h-1' };
     h.state.get('v1')!.slotMeta = slotMeta;
-    c.tick(CV_INTERVAL_MS);
+    c.tick(HOUSEKEEPING_INTERVAL_MS);
     for (let i = 0; i < 8; i++) await Promise.resolve();
     expect(reg.view('v1').slotNames[1]).toBe('late.webm');
   });
@@ -879,13 +888,13 @@ describe('the crop ASPECT RE-FIT is the node\'s, not a card $effect', () => {
     });
     const reg = createNodeVarispeedRegistry(h.deps, h.hooks);
     reg.sync([vvNode('v1')], eng.engine);
-    c.tick(CV_INTERVAL_MS);
+    c.tick(HOUSEKEEPING_INTERVAL_MS);
     expect(h.cropWrites, 'an unchanged rect was re-written — a write storm').toHaveLength(0);
 
     const s = h.state.get('v1')!;
     s.outAspect = 16 / 9;
     s.crop = { x: 0.1, y: 0.25, w: 0.5 }; // what the new aspect coerces it to
-    c.tick(CV_INTERVAL_MS);
+    c.tick(HOUSEKEEPING_INTERVAL_MS);
     expect(
       h.cropWrites,
       'a rack whose aspect flipped with no surface mounted kept a rect invalid for the new aspect',
@@ -900,7 +909,7 @@ describe('the crop ASPECT RE-FIT is the node\'s, not a card $effect', () => {
     const reg = createNodeVarispeedRegistry(h.deps, h.hooks);
     reg.sync([vvNode('v1')], eng.engine);
     h.state.get('v1')!.outAspect = 16 / 9;
-    c.tick(CV_INTERVAL_MS);
+    c.tick(HOUSEKEEPING_INTERVAL_MS);
     expect(h.cropWrites).toHaveLength(0);
   });
 });

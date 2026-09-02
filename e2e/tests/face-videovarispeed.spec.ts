@@ -140,8 +140,10 @@ async function loadSlot(
   testid: string,
 ): Promise<void> {
   await body.locator(`[data-testid="${testid}"]`).setInputFiles(FIXTURE);
-  await expect(body.locator('[data-testid="videovarispeed-face-body"]').first())
-    .toHaveAttribute('data-has-local-file', 'true', { timeout: SLOW_BOOT_TEST_TIMEOUT_MS });
+  // `body` IS the face body — assert on it, never on a nested self-lookup.
+  await expect(body).toHaveAttribute(
+    'data-has-local-file', 'true', { timeout: SLOW_BOOT_TEST_TIMEOUT_MS },
+  );
 }
 
 test.describe('VIDEOVARISPEED face — the promotion is what makes it loadable', () => {
@@ -357,14 +359,15 @@ test.describe('VIDEOVARISPEED face — the promotion is what makes it loadable',
     await expect(page.getByTestId('dock-full-view')).toHaveCount(0);
     await expect(page.locator('[data-testid="videovarispeed-card"]')).toHaveCount(0);
 
+    // ⚠ NO `test.skip` GUARD ON THE HOOK. `videovarispeed-perfzip.spec.ts` calls
+    // `__perfZip.export()` unguarded for the same reason: the hook is
+    // unconditional in an e2e build, and a capability skip here would let the
+    // one leg that proves the repair vanish silently — which is the exact shape
+    // this PR exists to remove.
     const zipLen = await page.evaluate(async () => {
-      const hook = (globalThis as unknown as {
-        __perfZip?: { export(): Promise<Uint8Array> };
-      }).__perfZip;
-      if (!hook) return -1;
-      return (await hook.export()).byteLength;
+      const w = globalThis as unknown as { __perfZip: { export(): Promise<Uint8Array> } };
+      return (await w.__perfZip.export()).byteLength;
     });
-    test.skip(zipLen === -1, 'the perf-zip e2e hook is not exposed in this build');
 
     // The fixture is ~120 s of webm in TWO slots; an envelope with no media is
     // a few KB, so a threshold well above that proves bytes travelled.

@@ -151,16 +151,12 @@ const registry = createNodeVarispeedRegistry<HTMLElement>({
       const rawCrop = d.crop
         ? { x: d.crop.x, y: d.crop.y, w: d.crop.w }
         : null;
+      // ⚠ NO FILE METAS HERE. This runs on EVERY rAF frame, per node; the eight
+      // meta records live behind `readMeta` below so the frame path never pays
+      // to clone a value it does not look at (see the seam's doc comment).
       return {
         outAspect,
         rawCrop,
-        // ⚠ PLAIN CLONES, never the live Y children. The core compares these
-        // against what it just wrote and hands them back through
-        // `writeSlotMeta`; re-inserting a live Y type throws "reassigning
-        // object that already occurs in the tree" and aborts the transaction —
-        // the trap `writeSlotMeta` below was written for.
-        fileMeta: cloneMeta(d.fileMeta ?? null),
-        slotMeta: Array.from({ length: ASSET_SLOTS }, (_, i) => cloneMeta(d.slotMeta?.[i] ?? null)),
         isPlaying: d.isPlaying ?? false,
         // ⚠ `?? true`, NOT `?? false`. LOOP is ON by default for this module
         // (`VideoVarispeedCard` read `data.loop ?? true`), and getting the
@@ -227,6 +223,19 @@ const registry = createNodeVarispeedRegistry<HTMLElement>({
         }
         d.slotMeta = arr;
       }, LOCAL_ORIGIN);
+    },
+    readMeta(nodeId) {
+      const t = patch.nodes[nodeId];
+      if (!t) return null;
+      const d = (t.data ?? {}) as VarispeedData;
+      // ⚠ PLAIN CLONES, never the live Y children. The core hands these back
+      // through `writeSlotMeta`; re-inserting a live Y type throws "reassigning
+      // object that already occurs in the tree" and aborts the transaction —
+      // the trap `writeSlotMeta` below was written for.
+      return {
+        fileMeta: cloneMeta(d.fileMeta ?? null),
+        slotMeta: Array.from({ length: ASSET_SLOTS }, (_, i) => cloneMeta(d.slotMeta?.[i] ?? null)),
+      };
     },
     writeCrop(nodeId, active, rect) {
       ydoc.transact(() => {

@@ -161,6 +161,10 @@ export const NODE_VARISPEED_TYPES: ReadonlySet<string> = new Set<string>([
 
 /** CV poll cadence — ~30 Hz, the rate the card used. */
 export const CV_INTERVAL_MS = 33;
+/** Housekeeping cadence — the saved-handle restore, the crop aspect re-fit and
+ *  the published duration. Deliberately an order of magnitude slower than the
+ *  gate poll; see `startHousekeepingLoop`. */
+export const HOUSEKEEPING_INTERVAL_MS = 250;
 /** Retry cadence + ceiling for the races against the engine's async `addNode`. */
 export const RETRY_INTERVAL_MS = 100;
 export const RETRY_ATTEMPTS = 50;
@@ -227,6 +231,20 @@ export interface VarispeedDoc {
    *  clears the slot. The binding owns the PLAIN-clone discipline (never
    *  re-insert a live Y type — the sequencer save-to-slot trap). */
   writeSlotMeta(nodeId: string, slot: number, meta: VideoboxFileMeta | null): void;
+  /**
+   * Read the eight file-meta records (slot 0's legacy `fileMeta` plus the seven
+   * `slotMeta` rows).
+   *
+   * ⚠ A SEPARATE READER FROM `read()` ON PURPOSE, AND IT IS A HOT-PATH
+   * CONSTRAINT RATHER THAN A TIDY-UP. `read()` is called on EVERY rAF frame by
+   * `transportTick`, PER NODE, and a rack can hold ten varispeeds. Folding the
+   * metas into it would make each of those frames clone eight objects for a
+   * value the frame path never looks at. The metas are needed only by the
+   * saved-handle restore, which runs a handful of times per node, so they get
+   * their own reader and the frame path stays exactly as cheap as it was before
+   * this module owned the loader.
+   */
+  readMeta(nodeId: string): VarispeedMetaState | null;
   /** Persist the crop rect. Used ONLY by the aspect re-fit — every other crop
    *  write is a surface gesture that goes through `crop-edit`. */
   writeCrop(nodeId: string, active: boolean, rect: CropRect): void;
@@ -255,10 +273,14 @@ export interface VarispeedSyncState {
   rawCrop?: CropRect | null;
   /** The live OUTPUT aspect the crop is locked to (16:9 ↔ 4:3). */
   outAspect?: number;
+}
+
+/** The eight file-meta records, read OFF the frame path. See `readMeta`. */
+export interface VarispeedMetaState {
   /** Slot 0's legacy single-video metadata. */
-  fileMeta?: VideoboxFileMeta | null;
+  fileMeta: VideoboxFileMeta | null;
   /** The synced 7-slot metadata array (sparse; `null` = empty slot). */
-  slotMeta?: readonly (VideoboxFileMeta | null)[];
+  slotMeta: readonly (VideoboxFileMeta | null)[];
 }
 
 /** Element operations, injected because node-env has no HTMLVideoElement. */
@@ -706,10 +728,10 @@ export function createNodeVarispeedRegistry<E>(
   async function tryReloadSlot(c: Controller<E>, slot: number): Promise<void> {
     if (!hooks || c.disposed) return;
     if (hasBytes(c, slot)) return;
-    const state = deps.doc.read(c.node.id);
+    const metas = deps.doc.readMeta(c.node.id);
     const meta = slot === 0
-      ? (state?.fileMeta ?? state?.slotMeta?.[0] ?? null)
-      : (state?.slotMeta?.[slot] ?? null);
+      ? (metas?.fileMeta ?? metas?.slotMeta?.[0] ?? null)
+      : (metas?.slotMeta?.[slot] ?? null);
     const handleId = meta?.handleId;
     if (!handleId) return;
     let handle: unknown | null = null;
@@ -738,13 +760,21 @@ export function createNodeVarispeedRegistry<E>(
    *  that lands after the controller was built) still gets its one attempt. */
   function pumpReloads(c: Controller<E>): void {
     if (!hooks || c.disposed) return;
-    const state = deps.doc.read(c.node.id);
-    if (!state) return;
+    // Every slot already latched or already holding bytes ⇒ nothing to read.
+    // That is the steady state for the whole life of a loaded node, so the
+    // expensive `readMeta` never runs on it.
+    let pending = false;
+    for (let i = 0; i < ASSET_SLOTS; i++) {
+      if (!c.reloadAttempted[i] && !hasBytes(c, i)) { pending = true; break; }
+    }
+    if (!pending) return;
+    const metas = deps.doc.readMeta(c.node.id);
+    if (!metas) return;
     for (let i = 0; i < ASSET_SLOTS; i++) {
       if (c.reloadAttempted[i] || hasBytes(c, i)) continue;
       const meta = i === 0
-        ? (state.fileMeta ?? state.slotMeta?.[0] ?? null)
-        : (state.slotMeta?.[i] ?? null);
+        ? (metas.fileMeta ?? metas.slotMeta?.[0] ?? null)
+        : (metas.slotMeta?.[i] ?? null);
       if (!meta?.handleId) continue;
       c.reloadAttempted[i] = true;
       void tryReloadSlot(c, i);
@@ -959,16 +989,7 @@ export function createNodeVarispeedRegistry<E>(
    *  mounted (a collapsed group, a canvas-hidden node). */
   function startCvLoop(c: Controller<E>): void {
     const handle = deps.clock.setInterval(() => {
-      if (c.disposed) return;
-      // ⚠ THESE THREE RUN BEFORE THE `liveEngine` GUARD BELOW, and that is the
-      // point: none of them touches the engine, and all three used to be card
-      // `$effect`s. A saved-handle restore, an aspect re-fit and the published
-      // duration must not wait on an engine that may never materialise (an
-      // audio-only rack still holds a videovarispeed node).
-      pumpReloads(c);
-      refitCropForAspect(c);
-      publishDuration(c);
-      if (!liveEngine) return;
+      if (c.disposed || !liveEngine) return;
       if (risingEdge(c, 'cv_start')) gateStart(c);
       if (risingEdge(c, 'cv_pause')) gatePause(c);
       if (risingEdge(c, 'cv_reset')) gateReset(c);
@@ -984,6 +1005,31 @@ export function createNodeVarispeedRegistry<E>(
         if (slot != null && hasBytes(c, slot)) selectSlot(c, slot);
       }
     }, CV_INTERVAL_MS);
+    c.timers.push(handle);
+  }
+
+  /**
+   * The three HOUSEKEEPING jobs that used to be card `$effect`s: the
+   * saved-handle restore, the crop aspect re-fit and the published duration.
+   *
+   * ⚠ THEIR OWN, SLOWER LOOP — NOT THE 33 Hz CV POLL, AND NOT THE rAF FRAME.
+   * None of them is a per-frame fact: a handle restore fires a handful of times
+   * per node, an aspect flip is a user action, and a duration arrives once per
+   * load. Running them at gate cadence would cost a ten-varispeed rack 900 doc
+   * reads a second to learn nothing — main-thread pressure paid against the
+   * concurrent video decodes that are the whole point of this module.
+   *
+   * They also run BEFORE any `liveEngine` guard on purpose: none of them
+   * touches the engine, and a saved rack must restore its clips even where the
+   * video engine never materialises.
+   */
+  function startHousekeepingLoop(c: Controller<E>): void {
+    const handle = deps.clock.setInterval(() => {
+      if (c.disposed) return;
+      pumpReloads(c);
+      refitCropForAspect(c);
+      publishDuration(c);
+    }, HOUSEKEEPING_INTERVAL_MS);
     c.timers.push(handle);
   }
 
@@ -1056,6 +1102,7 @@ export function createNodeVarispeedRegistry<E>(
     // does not. Both go through the same call — it no-ops without one.
     pumpReloads(c);
     startCvLoop(c);
+    startHousekeepingLoop(c);
     c.frameHandle = deps.frames.start((nowMs) => transportTick(c, nowMs));
     return c;
   }
