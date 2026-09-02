@@ -5126,6 +5126,91 @@ export const FACES = [
       + ' defaults, with surface 1 focused on every boot.',
   },
 
+  // ── NIBBLES — the game group's fourth face, and the one whose determinism
+  //    seam ALREADY EXISTED and is ALREADY PROVEN BYTE-IDENTICAL ────────────
+  //
+  // ⚠ BOTH SCENES CARRY A LIVE PICTURE HERE, unlike its three siblings whose
+  // compact tiles are static. frogger, modtris and skifree are AUDIO defs whose
+  // compact tile is faders and jacks — deterministic for free — and only their
+  // DOCK body moves. nibbles is `domain: 'video'`, so `hasVideoSurface` is true
+  // and the COMPACT tile paints a live `VideoTileThumb` of the running game as
+  // well. So both scenes need the pin, not just the dock, and a reader who
+  // copies a sibling's "compact is free" paragraph onto this entry would be
+  // wrong.
+  //
+  // ⚠ AND THE PIN IS TWO HALVES, NEITHER SUFFICIENT ALONE. That is not a guess:
+  // `.myrobots/2026-08-23-nibbles-composite-vrt-nondeterminism.md` diagnosed the
+  // same scene class on this module and MEASURED it byte-for-byte — two runs
+  // differing pre-fix (2ed942ac…/62fc8ce5…), byte-identical post-fix
+  // (14256032…/14256032…). Its method is worth repeating as well as its result:
+  // it classified the DIFF PNG first, which refuted the file's own leading
+  // hypothesis in one look (the difference was LEN 4 → LEN 5 with the pellet
+  // moved — game state, not an analyser offset), and it compared captured PNGs
+  // BYTE-FOR-BYTE rather than repeating the tolerance-gated check, because a
+  // flake hiding inside a tolerance is invisible to a pass/fail loop.
+  //
+  // ⚠ NO `freeze` ParamDef, and the refusal is priced rather than stylistic:
+  // `nibbles.ts` is IN the WebGL attest basis, so a `params` edit costs an
+  // owner-machine GPU re-attest CI cannot run — to buy an assertion the two
+  // globals below already hold. The 4plexvid conclusion, reached from the other
+  // side. `simPin` is an e2e-only boot global and costs neither.
+  {
+    type: 'nibbles',
+    // ONE band, TWO params and one action. `order` and `pages` agree; a rail
+    // needs DOCK_TAB_MIN_BANDS = 7 and nothing is padded to reach one.
+    pages: 1,
+    videoFaceWhy:
+      'a VIDEO module, so it must boot into the video zone rather than a mixer channel column — '
+      + 'without this field bootWithFace waits out the full test timeout for a column membership '
+      + 'a video node never acquires. ⚠ BOTH scenes carry a live picture, which is what separates '
+      + 'this entry from its three sibling GAMES: the compact tile paints a VideoTileThumb '
+      + 'through hasVideoSurface (they are audio defs and get faders), and the dock body is the '
+      + "module's own fullViewBody extension — the 320x200 game screen plus its SCREEN and SCALE "
+      + 'switches. ⚠ THE FREEZE HALF OF THIS FLAG IS A NO-OP HERE and that is deliberate, not an '
+      + 'oversight: nibbles declares no `freeze` param, so freezeFaceVideo\'s `params.freeze = 1` '
+      + "write is rejected by setParam's `if (paramId in params)` guard and lands nowhere. The "
+      + 'still-picture assertion is satisfied by the __videoEngineFreezeTime pin below instead. '
+      + 'Do NOT remove this field on the grounds that the freeze is inert — that is the exact '
+      + 'reasoning that cost 4plexvid both its scenes, and it is about the WRONG HALF of a '
+      + 'two-purpose flag; and do NOT add a `freeze` param to make the freeze real, because a '
+      + '`params` edit on a def inside the WebGL attest basis costs an owner-machine re-attest.',
+    simPin: [
+      {
+        global: '__videoEngineFreezeTime',
+        value: 1.0,
+        why:
+          'pins `frame.time`, so `dt` is identically 0, `tickAccumS` never reaches `tickPeriodS` '
+          + 'and the snake never steps. ⚠ NECESSARY BUT NOT SUFFICIENT, and the asymmetry is the '
+          + 'whole reason this entry has two pins: freezing the clock stops the STEPPING and says '
+          + 'nothing about WHICH frame it stopped on, because `initialSeed()` still falls back to '
+          + '`Date.now()`. ⚠ THIS IS ALSO WHY THE PIN IS ON THE ENGINE CLOCK RATHER THAN THE '
+          + "MODULE: unlike frogger's and modtris' Web Worker setInterval, nibbles' game clock IS "
+          + 'the VIDEO ENGINE\'s — `surface.draw(frame)` accumulates `frame.time - lastDrawTimeS` '
+          + 'into `tickAccumS` and steps the game from there — so the engine freeze reaches it '
+          + 'where a module tick-count hook would have had to be invented. ⚠ DOOM IS EXCLUDED '
+          + 'FROM THIS MECHANISM BY NAME: its runTic() also runs inside surface.draw, so its game '
+          + 'clock IS its frame clock and re-timing it would re-specify the game. No DOOM file '
+          + 'was opened for this entry.',
+      },
+      {
+        global: '__nibblesVrtSeed',
+        value: 0xC0DE,
+        why:
+          'pins `initialSeed()`, so the snake start and every pellet placement are identical run '
+          + 'to run. ⚠ IT MUST BE SET BEFORE SPAWN, and the module is explicit about why: '
+          + '`maybeApplyVrtSeed` re-seeds `state` on a later draw frame but does NOT repaint, so '
+          + "a post-spawn pin would leave the original Date.now() frame on screen. simPin's "
+          + 'addInitScript runs before goto, which is strictly earlier than any afterSpawn hook '
+          + 'manages. ⚠ AND IT IS THE SAME SEED `vrt-composite-scenes.ts` ALREADY PINS, '
+          + 'deliberately: one seed for both deterministic capture paths means a surface a human '
+          + 'has already reviewed. The pair (clock + seed) is proven byte-identical in both '
+          + 'directions by the measurement in '
+          + '.myrobots/2026-08-23-nibbles-composite-vrt-nondeterminism.md — differing pre-fix, '
+          + 'identical post-fix, compared BYTE-FOR-BYTE rather than through the diff tolerance.',
+      },
+    ],
+  },
+
 ] as const;
 
 /**

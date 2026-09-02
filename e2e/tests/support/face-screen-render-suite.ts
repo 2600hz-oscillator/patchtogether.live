@@ -521,6 +521,26 @@ const SUBJECTS: readonly Subject[] = [
   // `canvas` override is needed.
     { type: 'mappy', prefix: 'mappy', domain: 'video', why: 'the projection mapper\'s composite preview and its SCREEN switch — an ADDITION, since MappyCard blits unconditionally and has no switch at all. ⚠ THE PICTURE IS ALSO THE CONTROL here (the quadralogical shape): the corner-pin handles live in an SVG overlay ON the collapsing frame, so this switch removes the module\'s editing surface as well as its preview — which is exactly why the collapsed branch must still mark the node watched. ⚠ The watch-mark case is the sharpest in the table after textmarquee\'s: mappy is a MID-CHAIN COMPOSITOR whose entire purpose is to feed a projector, `markWatched` happens INSIDE `blitOutputForPreview`, and a lapsed mark drops the node out of the pull set — so a collapsed branch that merely stopped blitting would make a control labelled SCREEN black out the stage while the module looked like it was running. This row proves the SWITCH; that the ENGINE keeps compositing is argued at the source and in the EXTENSION_BODY_ROLES entry, because no runtime gate here can observe a watch mark.' },
 
+  // ── NIBBLES (2026-09-02, wave 5) — the SNAKE GAME ─────────────────────────
+  //
+  // Added in the SAME diff as the promotion, per this file's convention, and
+  // APPENDED AT THE TAIL for the mechanical reason blood's note gives: batches
+  // slice this array in declaration order and each test's TITLE is its batch's
+  // comma-joined module list, so appending changes exactly one title.
+  //
+  // ⚠ IT NEEDS THE `canvas` OVERRIDE, and for a THIRD distinct reason — neither
+  // quadralogical's (no conventionally-named canvas exists) nor twotracks'
+  // (there are two pictures). Here the canvas is deliberately named
+  // `nibbles-screen`, VERBATIM from the legacy card, because that is the testid
+  // `nibbles.spec.ts` and `nibbles-render-smoke.spec.ts` already read — both of
+  // which drive `?shell=legacy`, so carrying the name means the face and the
+  // card describe the same element rather than forking the vocabulary.
+  //
+  // Verified before writing rather than assumed: the body uses the standard
+  // `{#if !previewCollapsed}` REMOVES mechanism and declares
+  // `nibbles-face-screen-toggle`.
+  { type: 'nibbles', prefix: 'nibbles', canvas: 'nibbles-screen', domain: 'video', why: '⚠ THE ONE SUBJECT IN THIS TABLE WHOSE GAME CLOCK IS THE DRAW ITSELF, which makes "SCREEN OFF keeps it running" load-bearing in a way no sibling row shares. pong and frogger step on the shared scheduler clock and could not be stopped by a preview toggle if you tried; nibbles accumulates `frame.time - lastDrawTimeS` inside `surface.draw` and calls `advanceGame()` from there, so a lapsed pull would stop the SNAKE — and with it the three gates, the length CV and BOTH square-wave audio outs, none of which this surface shows. It cannot happen (the module is pull-exempt through its non-empty audioSources map, and the body renews `markWatched` in both screen states above the collapse branch), and that is argued at the source and in the EXTENSION_BODY_ROLES entry because no runtime gate here can observe a watch mark; this row proves the SWITCH. ⚠ The picture is ALSO the control surface, the quadralogical/mappy shape: the arrow keys that steer the snake are handled on the collapsing frame, so SCREEN OFF removes the module\'s playing interface as well as its preview — which is a view choice rather than a control loss, since AUTO self-play, TICK and RESET all stay on the plate.' },
+
 ] as const;
 
 /** The representative module for the PERSISTENCE leg — see that test's comment. */
