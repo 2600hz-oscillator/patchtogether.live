@@ -1500,15 +1500,43 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
   },
   {
     type: 'peertube',
-    disposition: 'bespoke-surface',
-    blockers: ['needs-media-controller'],
-    why:
-      'a fediverse SEARCH BROWSER: typed query plus an optional instance host, a result list, and ' +
-      'a player. ⚠ ITS SOURCE IS NO LONGER CARD-OWNED (LEG-02 P3, #1511) — the element, the ' +
-      'hls.js demuxer, the attach, the audio wire, the catalogue and both triggers moved to ' +
+    disposition: 'generic-face',
+    note:
+      'PROMOTED (2026-09-01, wave 4). ⚠ THIS ENTRY DISPROVED ITS OWN BLOCKER IN ITS OWN PROSE ' +
+      'AND KEPT IT ANYWAY, which is the correction worth recording. It read: "a fediverse SEARCH ' +
+      'BROWSER: typed query plus an optional instance host, a result list, and a player. ⚠ ITS ' +
+      'SOURCE IS NO LONGER CARD-OWNED (LEG-02 P3, #1511) — the element, the hls.js demuxer, the ' +
+      'attach, the audio wire, the catalogue and both triggers moved to ' +
       '$lib/ui/media/node-hls-source-registry on graph lifetime. The blocker stays because it is ' +
       'ALL-OR-NOTHING: its probe is HEADLESS_MOUNT_LANE_TYPES being EMPTY, and archivist, ' +
-      'cameraInput and loopback are still in it.',
+      'cameraInput and loopback are still in it." The LEG-02 sentence is exactly right and is ' +
+      'why the promotion is cheap. The retention argument is a CATEGORY ERROR: a registry-wide ' +
+      'probe is not a fact about this module, and cameraInput and loopback are both ' +
+      'generic-face TODAY with that same blocker outstanding. peertube does not even pay the ' +
+      'headless-host tax it was being charged for — it left DOM_SOURCE_LANE_TYPES in the same ' +
+      'phase, so under the shell NO card is mounted anywhere, which makes the fullViewBody ' +
+      'load-bearing rather than a nicety: without it a promoted peertube would be a search ' +
+      'browser with no search box. The blocker is dropped from THIS entry only; the ' +
+      'registration stays and other entries still name it. ' +
+      '⚠ "AN OPTIONAL INSTANCE HOST" WAS A DEAD CONTROL, not a migration obstacle: the input ' +
+      'wrote node.data.instanceHost and NOTHING read it (buildSearchUrl takes no host; ' +
+      'fetchCatalogue ignores data). The control and its write are deleted, and the def docs + ' +
+      'module-manifest prose that claimed it scoped the search are corrected. The ' +
+      'PeerTubeData.instanceHost TYPE is deliberately KEPT: peertube-query.ts is in the WebGL ' +
+      'attest basis and type declarations are not hash-transparent there, so deleting it would ' +
+      'buy a real-GPU re-attest window for a dead field that still sits in saved racks. ' +
+      '⚠ SHAPE: one ranked param (gain, a fader), glyph none (a real choice — two audio outputs ' +
+      'mean any other literal binds LIVE and the dead-glyph clause stays silent), two ' +
+      'noUserControl bridge caches, and PeerTubePicker.svelte shared by the card and the body so ' +
+      'the pair cannot drift — this module already has a documented case of correctness ' +
+      'travelling by hand-copy and arriving late (the muted = false audio trap). ' +
+      '⚠ ONE DERIVED READOUT DELETED ON BOTH SURFACES: peertube-now-playing, the selected ' +
+      "video's name painted outside every control. It lives on the picture's aria-label, sourced " +
+      'from the controller\'s selectionLabel rather than from a highlighted roster row — ' +
+      'autoLoadCatalogue is FALSE here, so a reloaded rack restores a selection with an EMPTY ' +
+      'catalogue and tvLibrarian\'s highlighted-row answer would not transfer. The attribution ' +
+      'ANCHOR to https://<host>/w/<uuid> is KEPT as a navigational control (and is now the only ' +
+      'place the instance host is named), as is the PeerTube / Sepia Search legal disclaimer.',
   },
   // ⚠ RECLASSIFIED 2026-08-24, bespoke-surface -> generic-face, and — like pong's
   // reclassification below — THE OLD WHY WAS RIGHT ABOUT THE MODULE AND WRONG ABOUT

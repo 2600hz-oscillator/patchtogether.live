@@ -229,7 +229,22 @@ export function resolveStream(raw: RawVideoDetails): ResolvedStream | null {
 export interface PeerTubeData {
   /** Last search term (so a reopened card shows what was searched). */
   searchTerm: string;
-  /** Optional user-entered instance host to bias resolution (or ''). */
+  /**
+   * ⚠ VESTIGIAL AND DELIBERATELY NOT DELETED (2026-09-01, peertube face).
+   *
+   * It was documented as "an optional user-entered instance host to bias
+   * resolution", and NOTHING EVER READ IT: `buildSearchUrl(query, { count,
+   * start })` takes no host, and `PEERTUBE_PROFILE.fetchCatalogue` never looks
+   * at `data`. The input that wrote it is deleted from both surfaces, and the
+   * def docs + `module-manifest.ts` prose that claimed it scoped or biased the
+   * search are corrected.
+   *
+   * The FIELD stays because this file is in the WebGL attest basis and TYPE
+   * declarations are deliberately NOT hash-transparent there
+   * (`scripts/attest-code-basis.ts`, "WHAT IS STILL HASHED"): removing it would
+   * buy a real-GPU re-attest window for a key that also still sits, harmlessly,
+   * in every saved rack that ever had a value typed into that box.
+   */
   instanceHost: string;
   /** The selected video's host (where the stream lives), or null. */
   selectedHost: string | null;

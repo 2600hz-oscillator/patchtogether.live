@@ -1326,7 +1326,19 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // has no deterministic frame to capture. Pure cores (Sepia query build/parse +
   // per-instance stream resolution) are unit-tested; e2e mocks the network (no
   // live Sepia/instance/HLS in CI).
-  peertube: 'live external PeerTube HLS <video> + runtime-fetched, ever-changing Sepia-Search results + live thumbnails defeat deterministic capture (same as tvLibrarian/videobox); pure-core unit tests (query/parse/stream-resolve) + network-mocked e2e provide coverage',
+  //
+  // ⚠ NARROWED 2026-09-01 (peertube face): this entry now covers ONLY THE
+  // LEGACY CARD, reachable at `?shell=legacy`. peertube is in STRICT_FACES, so
+  // what a workflow-mode player operates is the ModuleShell faceplate — and
+  // unlike the card, the FACE has two committed baselines
+  // (`face-peertube-compact` / `-dock`). A face scene selects nothing and
+  // searches nothing, so the shader's idle branch runs (a pure function of
+  // position, no clock) AND — unlike tvLibrarian, whose picker fetches a
+  // country roster at mount — `PEERTUBE_PROFILE.autoLoadCatalogue` is FALSE, so
+  // a fresh spawn issues zero network requests and needs no `simPin` at all.
+  // Argued in full in this module's `_shell-faces.ts` roster entry rather than
+  // duplicated here.
+  peertube: 'faced (STRICT_FACES): the operated surface is the ModuleShell faceplate, captured by face-peertube-{compact,dock} (an unselected node paints the constant idle gradient and, with autoLoadCatalogue false, fetches nothing — see _shell-faces.ts). This entry covers only the LEGACY card (?shell=legacy): a live external PeerTube HLS <video> + runtime-fetched, ever-changing Sepia-Search results + live thumbnails defeat deterministic capture there; pure-core unit tests (query/parse/stream-resolve) + network-mocked e2e provide coverage',
   // VIDEOVARISPEED — sibling of VIDEOBOX: a live <video> element streamed
   // via rVFC at a varying (varispeed) cadence, plus a ticking playhead
   // readout. Both defeat deterministic single-frame capture, same as
