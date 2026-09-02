@@ -31,14 +31,30 @@
     MIN_BRUSH,
     MAX_BRUSH,
     coerceOps,
-    applyVectorOp,
-    floodFill,
-    hexToRgba,
     appendOp,
     popOp,
     clearOps,
     type OpLogData,
   } from '$lib/video/modules/painter-draw';
+  // ⚠ THE GESTURE ARITHMETIC IS SHARED WITH THE FACE BODY, NOT COPIED INTO IT.
+  // `$lib/ui/modules/painter/paint-surface` is the one place a pointer becomes a
+  // `PaintOp`; `PainterEditorBody.svelte` imports the same functions. A stroke
+  // drawn here and the same stroke drawn on the faceplate must serialise
+  // identically or the two surfaces paint different pictures on every peer —
+  // and the op log is valid either way, so nothing would notice.
+  import {
+    applyOpToCanvas,
+    fillOpFor,
+    gestureKindFor,
+    PAINT_TOOLS,
+    pickColorAt,
+    pointerToCanvas,
+    replayPaintOps,
+    shapeOpFor,
+    strokeOpFor,
+    textOpFor,
+    type PaintToolState,
+  } from './painter/paint-surface';
   import type { VideoEngine } from '$lib/video/engine';
   import { VIDEO_RES } from '$lib/video/engine';
   import { nodeExtras } from '$lib/ui/media/node-extras';
@@ -67,17 +83,10 @@
   let fillShapes = $state(false); // rect/ellipse: outline only vs filled
   let textValue = $state('TEXT');
 
-  const TOOLS: { id: Tool; label: string; glyph: string }[] = [
-    { id: 'pencil', label: 'Pencil', glyph: '✏️' },
-    { id: 'brush', label: 'Brush', glyph: '🖌️' },
-    { id: 'eraser', label: 'Eraser', glyph: '🧽' },
-    { id: 'fill', label: 'Fill', glyph: '🪣' },
-    { id: 'eyedropper', label: 'Pick', glyph: '💧' },
-    { id: 'line', label: 'Line', glyph: '╱' },
-    { id: 'rect', label: 'Rect', glyph: '▭' },
-    { id: 'ellipse', label: 'Ellipse', glyph: '◯' },
-    { id: 'text', label: 'Text', glyph: 'A' },
-  ];
+  /** The local tool state, in the shape the shared seam takes. */
+  function tools(): PaintToolState {
+    return { tool, fg, bg, brush, fillShapes, text: textValue };
+  }
 
   // ── Op log (node.data.ops, Y.Doc-synced) ──────────────────────────────────
   function readOps(): PaintOp[] {
@@ -103,34 +112,13 @@
   }
 
   // ── Repaint the canvas from the op log ────────────────────────────────────
-  function fillBackground() {
-    if (!ctx2d) return;
-    ctx2d.fillStyle = PAINT_BG;
-    ctx2d.fillRect(0, 0, ENGINE_W, ENGINE_H);
-  }
-
-  function applyOpToCanvas(op: PaintOp) {
-    if (!ctx2d) return;
-    if (op.kind === 'fill') {
-      try {
-        const img = ctx2d.getImageData(0, 0, ENGINE_W, ENGINE_H);
-        floodFill(img, op.x, op.y, hexToRgba(op.color));
-        ctx2d.putImageData(img, 0, 0);
-      } catch {
-        /* getImageData can throw on a tainted/headless ctx — skip */
-      }
-      return;
-    }
-    if (op.kind === 'snapshot') return; // v1 generates none; future raster checkpoints
-    applyVectorOp(ctx2d, op);
-  }
-
-  /** Full repaint from the synced op log. Cheap for vector ops; called on mount +
-   *  remote/undo/clear changes (guarded so it never fights an active local draw). */
+  /** Full repaint from the synced op log — the SAME `replayPaintOps` the
+   *  node-lifetime producer and the face body run, so all three replays of one
+   *  log cannot drift. Called on mount + remote/undo/clear changes (guarded so
+   *  it never fights an active local draw). */
   function syncFromOps() {
     if (!ctx2d || isDrawing) return;
-    fillBackground();
-    for (const op of readOps()) applyOpToCanvas(op);
+    replayPaintOps(ctx2d, readOps(), ENGINE_W, ENGINE_H);
   }
 
   // Re-sync whenever the synced op log changes (local commit, remote edit, undo).
@@ -171,13 +159,6 @@
   // Snapshot of the committed canvas (for shape-drag preview without corrupting).
   let committed: HTMLCanvasElement | null = null;
 
-  function toCanvasXY(e: PointerEvent): [number, number] {
-    if (!canvasEl) return [0, 0];
-    const r = canvasEl.getBoundingClientRect();
-    const x = (e.clientX - r.left) * (canvasEl.width / r.width);
-    const y = (e.clientY - r.top) * (canvasEl.height / r.height);
-    return [x, y];
-  }
 
   function snapshotCommitted() {
     if (!canvasEl) return;
@@ -195,103 +176,68 @@
   function onPointerDown(e: PointerEvent) {
     if (!ctx2d || !canvasEl) return;
     canvasEl.setPointerCapture?.(e.pointerId);
-    const [x, y] = toCanvasXY(e);
+    const [x, y] = pointerToCanvas(canvasEl, e.clientX, e.clientY);
     startX = x; startY = y;
 
-    if (tool === 'eyedropper') {
-      try {
-        const px = ctx2d.getImageData(Math.floor(x), Math.floor(y), 1, 1).data;
-        const hex = `#${[px[0], px[1], px[2]].map((n) => (n ?? 0).toString(16).padStart(2, '0')).join('')}`;
-        fg = hex;
-      } catch { /* headless */ }
-      return;
-    }
-    if (tool === 'fill') {
-      const op: PaintOp = { kind: 'fill', color: fg, x, y };
-      applyOpToCanvas(op);
-      commitOp(op);
-      return;
-    }
-    if (tool === 'text') {
-      if (textValue.length > 0) {
-        const op: PaintOp = { kind: 'text', color: fg, size: Math.max(12, brush * 6), x, y, font: 'sans-serif', text: textValue };
-        applyOpToCanvas(op);
-        commitOp(op);
+    switch (gestureKindFor(tool)) {
+      case 'pick': {
+        const hex = pickColorAt(ctx2d, x, y);
+        if (hex) fg = hex;
+        return;
       }
-      return;
+      case 'fill': {
+        const op = fillOpFor(tools(), x, y);
+        applyOpToCanvas(ctx2d, op, ENGINE_W, ENGINE_H);
+        commitOp(op);
+        return;
+      }
+      case 'text': {
+        const op = textOpFor(tools(), x, y);
+        if (!op) return;
+        applyOpToCanvas(ctx2d, op, ENGINE_W, ENGINE_H);
+        commitOp(op);
+        return;
+      }
+      case 'stroke': {
+        isDrawing = true;
+        strokePts = [x, y];
+        // the initial dot
+        applyOpToCanvas(ctx2d, strokeOpFor(tools(), strokePts), ENGINE_W, ENGINE_H);
+        return;
+      }
+      default: {
+        // line / rect / ellipse — snapshot so the drag previews without committing
+        isDrawing = true;
+        snapshotCommitted();
+      }
     }
-
-    isDrawing = true;
-    if (tool === 'pencil' || tool === 'brush' || tool === 'eraser') {
-      strokePts = [x, y];
-      // draw the initial dot
-      drawLiveStroke();
-    } else {
-      // line / rect / ellipse — snapshot so we can preview without committing
-      snapshotCommitted();
-    }
-  }
-
-  function strokeColor(): string {
-    return tool === 'eraser' ? bg : fg;
-  }
-
-  function drawLiveStroke() {
-    if (!ctx2d) return;
-    applyVectorOp(ctx2d, {
-      kind: 'stroke',
-      tool: tool === 'eraser' ? 'eraser' : tool === 'brush' ? 'brush' : 'pencil',
-      color: strokeColor(),
-      size: tool === 'pencil' ? 1 : brush,
-      points: strokePts,
-    });
   }
 
   function onPointerMove(e: PointerEvent) {
-    if (!isDrawing || !ctx2d) return;
-    const [x, y] = toCanvasXY(e);
-    if (tool === 'pencil' || tool === 'brush' || tool === 'eraser') {
+    if (!isDrawing || !ctx2d || !canvasEl) return;
+    const [x, y] = pointerToCanvas(canvasEl, e.clientX, e.clientY);
+    if (gestureKindFor(tool) === 'stroke') {
       strokePts.push(x, y);
       // redraw the whole stroke (cheap; keeps round joins smooth)
-      drawLiveStroke();
-    } else {
-      // shape preview: restore committed + draw the in-progress shape
-      restoreCommitted();
-      applyVectorOp(ctx2d, {
-        kind: 'shape',
-        tool: tool === 'line' ? 'line' : tool === 'rect' ? 'rect' : 'ellipse',
-        color: fg,
-        size: brush,
-        fill: tool !== 'line' && fillShapes ? bg : null,
-        x0: startX, y0: startY, x1: x, y1: y,
-      });
+      applyOpToCanvas(ctx2d, strokeOpFor(tools(), strokePts), ENGINE_W, ENGINE_H);
+      return;
     }
+    // shape preview: restore committed + draw the in-progress shape
+    restoreCommitted();
+    applyOpToCanvas(ctx2d, shapeOpFor(tools(), startX, startY, x, y), ENGINE_W, ENGINE_H);
   }
 
   function onPointerUp(e: PointerEvent) {
-    if (!isDrawing) return;
+    if (!isDrawing || !canvasEl) return;
     isDrawing = false;
-    const [x, y] = toCanvasXY(e);
-    if (tool === 'pencil' || tool === 'brush' || tool === 'eraser') {
+    const [x, y] = pointerToCanvas(canvasEl, e.clientX, e.clientY);
+    if (gestureKindFor(tool) === 'stroke') {
       if (strokePts.length === 0) strokePts = [startX, startY];
-      commitOp({
-        kind: 'stroke',
-        tool: tool === 'eraser' ? 'eraser' : tool === 'brush' ? 'brush' : 'pencil',
-        color: strokeColor(),
-        size: tool === 'pencil' ? 1 : brush,
-        points: strokePts.slice(),
-      });
+      commitOp(strokeOpFor(tools(), strokePts));
       strokePts = [];
-    } else {
-      commitOp({
-        kind: 'shape',
-        tool: tool === 'line' ? 'line' : tool === 'rect' ? 'rect' : 'ellipse',
-        color: fg,
-        size: brush,
-        fill: tool !== 'line' && fillShapes ? bg : null,
-        x0: startX, y0: startY, x1: x, y1: y,
-      });
+      return;
     }
+    commitOp(shapeOpFor(tools(), startX, startY, x, y));
   }
 
   // Palette: left = fg, right (contextmenu) = bg.
@@ -326,7 +272,6 @@
       canvasEl.height = ENGINE_H;
       ctx2d = canvasEl.getContext('2d');
     }
-    fillBackground();
     syncFromOps();
     extrasLease = nodeExtras.claim(id, leaseHolder);
     bindCanvasToEngine();
@@ -353,7 +298,7 @@
     <!-- Toolbar: tools + brush size + actions -->
     <div class="toolbar nodrag" data-testid="painter-toolbar">
       <div class="tools">
-        {#each TOOLS as t (t.id)}
+        {#each PAINT_TOOLS as t (t.id)}
           <button
             type="button"
             class="tool"

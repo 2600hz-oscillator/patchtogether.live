@@ -1030,13 +1030,45 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
       'face.hero.cell so PF-22 keeps it off the lane roster; the five faders are ordinary param ' +
       'cells. First adopter of the #1509 TextEntry primitive.',
   },
+  // ⚠ THE OLD `why` WAS TRUE IN ONE CLAUSE OF FOUR, and naming which is the
+  // point — the entry was cited as a PRECEDENT by two other modules while three
+  // of its four clauses were dead:
+  //
+  //   TRUE and still true: the live output-port ROSTER is WebMIDI service state
+  //   rather than a param, so it is a `fullViewBody` and not a cell (a
+  //   `ShellSelectorCell.options` is a pure function of the node).
+  //
+  //   FALSE (1) "connect gesture" — a shipped `action` cell on five siblings
+  //   (midiclock, midiCvBuddy, midiOutBuddy, ptzcam, es9) at the time this was
+  //   written, and now on this module too, where it ranks FIRST.
+  //   FALSE (2) "channel" — a FIXED 16-entry roster. It is in the body for a
+  //   DIFFERENT reason the entry never gave: the channel lives on the device
+  //   HANDLE, not the graph, so a cell's node-pure `value` would be stale.
+  //   FALSE (3) "the slot list is the interaction" — the 29-entry assignment
+  //   roster is STATIC descriptor data, not service state, and the eight slots
+  //   ARE real params with real cells.
+  //
+  // The real constraint was never named: `deviceSlotParams` mints eight
+  // identical `0..127 linear` params labelled "slot 1".."slot 8", and what each
+  // one DRIVES is per-NODE `node.data.assign` — which a cell caption
+  // (`ParamDef.label`, no node input anywhere in the shell) cannot say.
   {
     type: 'chromaconsole',
-    disposition: 'bespoke-surface',
-    why:
-      'a MIDI DEVICE BINDER: connect gesture, live output-port roster, channel, and a list of ' +
-      'assignment slots that reports stale saved assignments. The roster is WebMIDI service ' +
-      'state, and the slot list is the interaction.',
+    disposition: 'generic-face',
+    note:
+      'face + `fullViewBody`, the midiclock/ptzcam shape with one addition. TWO ranked `action` ' +
+      'cells — CONNECT (rank 1: Web MIDI publishes no port until the browser consents, so a ' +
+      'fresh spawn is eight knobs that send nothing) and PUSH ALL (rank 2: the pedal is ' +
+      '`readBack: none`, so re-sending every slot is the ONLY reconciliation that exists in ' +
+      'either direction, and neither gesture has a second surface while the eight slot VALUES ' +
+      'have four) — over the eight slot params as ordinary knob cells. The body carries what ' +
+      'cannot be a cell: the live output roster (WebMIDI service state), the channel (which ' +
+      'lives on the device HANDLE, so a node-pure `ShellSelectorCell.value` would paint a stale ' +
+      'number), and the slot BOARD — the eight assignment selects over the 29-entry grouped ' +
+      'roster, the NAMES those assignments give eight otherwise-identical params, and the real ' +
+      '`Segmented` for a slot assigned to one of the pedal\'s named-range selectors. Two ' +
+      'surfaces per slot is the owner-approved shape (owner decisions 2026-08-31 item 7); ' +
+      'per-node cell derivation is the alternative that ruling declines as platform work.',
   },
   // ⚠ THE OLD `why` WAS TRUE IN ITS FACTS AND WRONG IN BOTH OF ITS
   // CONCLUSIONS, and it is worth naming which was which.
@@ -1047,14 +1079,18 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
   // instead of five param cells.
   //
   // FALSE (1) — the PRECEDENT. It reasoned "like chromaconsole", pointing at the
-  // one binder in the tree that is still unfaced, while every other device
-  // binder had already shipped this shape: midiclock, midiCvBuddy, midiLane,
-  // midiOutBuddy, launchpadControlLeft, outToLaunch, push2Control, es9,
-  // cameraInput and electraControl are all in STRICT_FACES. ptzcam does not
-  // inherit chromaconsole's blocker either: chromaconsole's real constraint is
-  // that `deviceSlotParams` mints eight identical `slot 1`..`slot 8` params
-  // whose meaning is per-NODE `node.data.assign`, and ptzcam has nothing of the
-  // kind — its four knobs are ordinary named params.
+  // one binder that was then still unfaced, while every other device binder had
+  // already shipped this shape: midiclock, midiCvBuddy, midiLane, midiOutBuddy,
+  // launchpadControlLeft, outToLaunch, push2Control, es9, cameraInput and
+  // electraControl are all in STRICT_FACES. ptzcam did not inherit
+  // chromaconsole's blocker either: chromaconsole's real constraint is that
+  // `deviceSlotParams` mints eight identical `slot 1`..`slot 8` params whose
+  // meaning is per-NODE `node.data.assign`, and ptzcam has nothing of the kind —
+  // its four knobs are ordinary named params. ⚠ AND THE CITATION IS NOW STALE IN
+  // THE OTHER DIRECTION TOO: chromaconsole itself is faced (its entry above),
+  // with the per-node names on its extension body under the owner's
+  // two-surfaces-per-slot ruling, so "the binder that cannot be faced" names no
+  // module in this tree.
   //
   // FALSE (2) — "the four trim knobs are the only generic-face material". The
   // CONNECT gesture is a fifth ranked control through the family key-space, and
@@ -1612,10 +1648,36 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
   },
   {
     type: 'painter',
-    disposition: 'bespoke-surface',
-    why:
-      'a DRAWING SURFACE: freehand strokes on a canvas plus a typed text stamp. Direct pointer ' +
-      'painting is the module and it declares no params at all.',
+    disposition: 'generic-face',
+    note:
+      'PROMOTED (2026-09-02). ⚠ THE OLD `why` WAS FACTUALLY TRUE AND ITS CONCLUSION WAS THE ' +
+      'TEXTMARQUEE ONE. It read: "a DRAWING SURFACE: freehand strokes on a canvas plus a typed ' +
+      'text stamp. Direct pointer painting is the module and it declares no params at all." Both ' +
+      'clauses are exactly right and neither disqualifies anything — what changed is the LADDER. ' +
+      'A `fullViewBody` is a SLOT, not a CELL, so "not cell-shaped" stopped being a refusal; ' +
+      'videoOut is the shipped zero-param precedent and flipper the shipped ranks-nothing one, ' +
+      'and painter is both at once. `face.order` is EMPTY: every affordance is either ' +
+      'per-collaborator LOCAL tool state (a cell would paint another peer\'s active tool out from ' +
+      'under them mid-stroke) or an op-log ACTION. ⚠ THE BODY IS THE WHOLE MODULE rather than a ' +
+      'preview beside a plate — nine tools, the 28-colour Win95 palette, SIZE, FILL, the text ' +
+      'stamp, UNDO/CLEAR and the drawing canvas whose pixels ARE the video output — and painter ' +
+      'is in none of DOM_SOURCE_LANE_TYPES / CARD_PRODUCER_LANE_TYPES / HEADLESS_MOUNT_LANE_TYPES, ' +
+      'so after promotion no card mounts anywhere. ⚠ THE PICTURE ALREADY SURVIVED WITH NO SURFACE ' +
+      'MOUNTED BEFORE THIS PR: #1720 moved the op-log replay onto NODE lifetime in ' +
+      'extras-producers.ts (measured then: meanRGB 255,255,255 with no card vs the drawing\'s ' +
+      '255,0,0), so what promotion adds is the EDITOR plus the lease handshake that lets the ' +
+      'mounted surface push its own live canvas — an in-progress stroke reaches OUT before the op ' +
+      'commits — and hand the binding straight back on unmount. ⚠ ONE SEAM, TWO MOUNTS: the ' +
+      'pointer -> PaintOp arithmetic is $lib/ui/modules/painter/paint-surface.ts, imported by the ' +
+      'body AND by the still-live legacy card, because the op log is VALID either way and a ' +
+      'divergence would sync two different pictures to two peers with every gate green. ⚠ THE ' +
+      'TYPED-ENTRY LEG IS CARRIED, NOT DODGED: the card mounts <input type="text"> for the TEXT ' +
+      "tool's stamp string, and the body renders the same field in its OWN file (the leg reads " +
+      'the directly-named fullViewBody source, so an input inside an imported child would read as ' +
+      '"the face carries none"). ⚠ SCREEN OFF puts the whole paint set away rather than collapsing ' +
+      'a preview well — here the picture IS the instrument — and the output is untouched: the ' +
+      'release re-pushes the node-lifetime producer and the body goes on renewing the watch mark. ' +
+      'ZERO attest, contract unchanged.',
   },
   {
     type: 'peertube',

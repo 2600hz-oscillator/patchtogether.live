@@ -33,6 +33,26 @@
      * steps by construction — cloudseed `late_mode` is the known case.
      */
     snapActive?: boolean;
+    /**
+     * OVERRIDE for the emitted `data-testid` — Knob's prop of the same name,
+     * for the same reason, and its comment carries the full argument.
+     *
+     * ⚠ THE DEFAULT `control-<paramId>` IS A CLAIM, NOT A NAME.
+     * `faces-parity.spec.ts` asserts EXACT MULTISET EQUALITY between the dock
+     * full view's `[data-testid^="control-"]` elements and the live def's
+     * ParamDef ids, so anything emitting that prefix asserts "I am THE cell for
+     * one of this module's declared params". A `fullViewBody` offering a SECOND
+     * surface for a param the face already ranks emits the id twice and reads to
+     * that gate as a duplicate. chromaconsole is the first case: its eight
+     * `0..127` slots are knob cells in the band, and a slot assigned to one of
+     * the pedal's named-range selectors is ALSO operable as a real Segmented on
+     * the device board — the owner-approved two-surfaces-per-slot shape.
+     *
+     * ⚠ AND DROPPING `paramId` IS NOT THE FIX, exactly as on Knob: it is also
+     * the MIDI-learn binding key, so suppressing the testid that way would
+     * silently delete MIDI Learn from the control.
+     */
+    testid?: string;
   }
 
   let {
@@ -44,6 +64,7 @@
     moduleId,
     paramId,
     snapActive = false,
+    testid,
   }: Props = $props();
 
   let midiRange = $derived(numericOptionRange(segments));
@@ -115,7 +136,7 @@
     class="segmented"
     role="radiogroup"
     aria-label={label}
-    data-testid={paramId ? `control-${paramId}` : undefined}
+    data-testid={testid ?? (paramId ? `control-${paramId}` : undefined)}
     oncontextmenu={openContextMenu}
   >
     {#each segments as seg, i (seg.value)}

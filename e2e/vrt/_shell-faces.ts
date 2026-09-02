@@ -5020,7 +5020,29 @@ export const FACES = [
       + 'static text. ⚠ THE START-PAST-END WARNING IS ABSENT AT SPAWN AND THAT IS DETERMINISTIC, '
       + 'not lucky: start defaults to 0 and end to 1, so `resolveWindow` returns hasWindow true '
       + 'for any duration. ⚠ NO simPin AND NO NETWORK: the only asynchronous inputs this surface '
-      + 'has are user gestures and a decoded file, and a scene performs neither.',
+      + 'has are user gestures and a decoded file, and a scene performs neither. '
+      + '⚠⚠ AND THE PARAGRAPH ABOVE WAS TRUE ABOUT THE SHADER AND WRONG ABOUT THE SCENE, WHICH '
+      + 'IS THE WHOLE OF THE 2026-09-02 DEFECT. "A pure function of position with no clock" '
+      + 'describes what the idle branch PAINTS; it says nothing about WHEN it has painted, and '
+      + 'this scene\'s picture reaches the PNG through a preview well that is NOT synchronous '
+      + 'with the engine. MEASURED (VideoTileThumb instrumented per rAF; the trace is in that '
+      + 'component\'s header): the well is a flat #050608 from its first draw tick, because that '
+      + 'tick blits an FBO the engine has not yet rendered into, and `VIDEO_THUMB_FPS` then '
+      + 'throttles the next tick by 66.7 ms of WALL CLOCK. `freezeFaceVideo`\'s six-frame settle '
+      + 'window fits inside that interval whenever a frame is under ~11 ms, so on a lightly '
+      + 'loaded shard it sampled two identical UNPAINTED wells, called the surface still, and '
+      + 'photographed a blank well — 1011 px against a baseline whose well is painted (972 px of '
+      + 'the idle gradient plus 72 px of letterbox bar). GREEN ON SHARD 11 (run 33654251659), RED '
+      + 'ON SHARD 8/12 of the re-binned run 33658977822, byte-identical tree: rAF rate, not '
+      + 'code. The scene now waits for `data-thumb-painted` (see `awaitFaceVideoPainted`) before '
+      + 'freezing, so the determinism claim is about an OBSERVED first paint rather than about '
+      + 'the shader alone. '
+      + '⚠ ALSO CORRECTED: this def declares NO `freeze` param (its params are speed/start/end, '
+      + 'their three CV twins, four gate params and the two asset params), so `freezeFaceVideo`\'s '
+      + '`params.freeze = 1` write lands on a key nothing reads — the bentbox/warrensvisions '
+      + 'no-op case. What actually holds this picture still is that there is no clip to decode, '
+      + 'which is the argument above; the freeze is a belt with no trousers and is kept only for '
+      + 'the stillness ASSERTION it ends with.',
   },
   // ── NUMPAD+ — the KEYPAD PERFORMANCE SEQUENCER ────────────────────────────
   //
@@ -5426,6 +5448,160 @@ export const FACES = [
       },
     ],
   },
+
+  // ── PAINTER (2026-09-02) — the DRAWING SURFACE ────────────────────────────
+  //
+  // `pages: 0` — the SECOND zero-band entry in this roster, after `noise`, and
+  // it gets there by the opposite route. noise has one param that its HERO
+  // promotes out of the band, and `heroFacePlan` drops the band its hero
+  // emptied. painter has NO PARAMS AT ALL, so `order` is empty, nothing is
+  // ranked at any tier and the shell renders no section band to drop. The dock
+  // is the `fullViewBody` and nothing else.
+  //
+  // ⚠ THIS ENTRY SAID `pages: 1` AND THE CAPTURE CAUGHT IT — recorded rather
+  // than quietly corrected, because it is the evidence that
+  // `openDock`'s `toHaveCount(pages)` is a real structural gate and not
+  // bookkeeping. The first `GREP=painter task vrt:commit` (run 33652235755)
+  // committed `face-painter-compact.png` and FAILED the dock scene on
+  // "Expected: 1 … unexpected value 0" before it could photograph anything. A
+  // roster count is a claim about the plate, and this one was wrong.
+  //
+  // ── ⚠ THE DETERMINISM ARGUMENT ────────────────────────────────────────────
+  //
+  // A face scene spawns the node and patches NOTHING, so `node.data.ops` is
+  // EMPTY and both scenes are a BLANK WHITE PAGE by construction rather than by
+  // a flag. The module has no params, no CV inputs, no RNG, no ring, no
+  // feedback FBO and no wall-clock term anywhere: `painter.ts` uploads whatever
+  // canvas is bound and blits it 1:1, and with an empty log the node-lifetime
+  // producer fills that canvas with `PAINT_BG`. There is nothing that could
+  // move between two boots.
+  //
+  // ⚠ NO `simPin` AND NO `freezeIsNotASeam`. There is nothing to pin, and
+  // `freezeFaceVideo` writes `params.freeze = 1` which this def has no param
+  // for — the same no-op mappy and textmarquee both record.
+  //
+  // ⚠ THE ONE NAMED RISK IS GLYPH RASTERIZATION, AND IT IS THE EMOJI TOOL ROW.
+  // `_fonts.ts` pins the sans and mono stacks to bundled woff2 faces; the nine
+  // tool buttons paint EMOJI (pencil / brush / eraser / bucket / dropper), which
+  // no bundled face covers, so they resolve through fontconfig to the runner's
+  // emoji font. The argument that it holds is the one textmarquee's entry makes
+  // for its own in-texture glyphs: `snapshotPathTemplate` carries no
+  // `{platform}` segment, so there is ONE baseline set, authored on Linux CI and
+  // compared on Linux CI, and same-image/same-Chromium/same-fontconfig
+  // rasterization is deterministic.
+  //
+  // ⚠ THAT ARGUMENT IS NOT THE MEASUREMENT AND MUST NOT BE READ AS ONE. The
+  // measurement is two independent Linux boots: `GREP=painter task vrt:commit`
+  // captures on the runner, and this PR's own `vrt-strict` shard re-boots and
+  // compares. If that comparison shows ANY differing pixels in the tool row, the
+  // honest outcome is to move this module to `FACES_WITHOUT_SCENES` below
+  // CARRYING THAT NUMBER — not a mask, and not a re-run.
+  //
+  // ⚠ THE MEASUREMENT CAME BACK AND THE PREDICTION WAS WRONG, recorded here
+  // because guessing which half of a promotion is fragile is exactly what this
+  // roster keeps getting wrong. The emoji tool row was the named risk; it is in
+  // the DOCK scene, and the dock scene PASSED. What broke was the COMPACT tile,
+  // which this comment called deterministic "by construction" — and it is, in
+  // its interior. What is not deterministic is the frame the capture catches at
+  // the tile's right EDGE. See the COMPACT REMOVED note on the entry below.
+  {
+    type: 'painter',
+    pages: 0,
+    // ⚠ COMPACT REMOVED 2026-09-02 — the mirrorpool / matrixMix class, and the
+    // first instance of it caught with a MECHANISM rather than a shrug. Both of
+    // those entries record "did not reproduce" / "PASSED on a re-run of the same
+    // shards at the same SHA" without ever saying what moved. Here it was caught
+    // in the act:
+    //
+    //   run 33663808159 — face-painter-compact on vrt-strict shard 3 — PASSED
+    //   run 33667724929 — face-painter-compact on vrt-strict shard 4 — FAILED
+    //
+    // Same scene, same product code. The ONLY delta between those two runs is
+    // `vrt-strict-timings.generated.json`, which is CI planner data and touches
+    // no product and no spec — so RE-PINNING A COST ARTIFACT RE-BINS THIS LANE,
+    // and the re-bin moved this scene onto a shard where it renders differently.
+    // Placement is the variable, which is why "it was green last run" was true
+    // and worthless.
+    //
+    // ⚠ AND THE FAILING RENDER IS THE WRONG ONE, WHICH IS WHY THIS IS NOT A
+    // RECAPTURE. 30 px over the zeroed tolerance out of 7,216, and 45 of the 49
+    // pixels outside the fleet's ±2-LSB AA band sit in ONE COLUMN: x=87, the
+    // last column of an 88 px capture. The tile INTERIOR — VideoTileThumb,
+    // title, EXPAND pill — is byte-identical. A lane tile's left and right
+    // borders are symmetric, so "which image is correct" is a testable claim,
+    // and the test decides it: across rows 20-38 the BASELINE's x=87 matches its
+    // own x=0 to within 0-1 (settled), while the ACTUAL diverges by 4-20 — the
+    // capture caught the right edge before the lane layout settled. Re-authoring
+    // would bake the unsettled frame in, which is what the VRT playbook forbids
+    // and what would have looked like a clean green fix.
+    //
+    // The DOCK scene is unaffected and still gates — and that matters more here
+    // than in either precedent, because painter's dock body IS the module (nine
+    // tools, the palette, the canvas whose pixels are the output). It passed on
+    // shard 12 in the same red run, so the EMOJI TOOL ROW named below as this
+    // entry's one residual risk is not what broke, and stays covered.
+    //
+    // Restore when the placement-sensitivity class is fixed (a sibling branch is
+    // in flight for `face-videovarispeed-compact`, the same shape): delete this
+    // line and dispatch `GREP=painter task vrt:commit`.
+    scenes: ['dock'],
+    videoFaceWhy:
+      'a VIDEO module, so it must boot into the video zone rather than a mixer channel column — '
+      + 'without this field bootWithFace waits out the full test timeout for a column membership '
+      + 'a video node never acquires. ⚠ ONE SCENE, NOT TWO — see the COMPACT REMOVED note above; '
+      + 'the surviving dock scene is the module\'s own fullViewBody, the MS-Paint editor, and it '
+      + 'is the one that carries the promotion\'s whole visual surface. ⚠ ITS PICTURE IS A BLANK '
+      + 'WHITE PAGE, and '
+      + 'that is the module\'s designed idle state rather than a blank capture: a fresh spawn has '
+      + 'an EMPTY op log, the node-lifetime producer fills its canvas with PAINT_BG, and the '
+      + 'shader returns opaque white when nothing is bound at all — painter is never a dead black '
+      + 'frame, which is also what satisfies the per-port emit sweep. ⚠ AND THIS MODULE\'S '
+      + 'EXEMPT_FROM_VRT ENTRY IS NARROWED TO THE LEGACY CARD in this same diff: it said the '
+      + 'canvas was "op-driven, non-deterministic first paint", which is true of a canvas someone '
+      + 'has DRAWN ON and false of a fresh spawn, and its exit condition named a darwin+linux '
+      + 'two-platform capture that cannot be satisfied because there is only one baseline set.',
+  },
+
+  // ── CHROMA CONSOLE (2026-09-02) — the DEVICE control surface ──────────────
+  //
+  // `pages: 2` — the face declares `device` (CONNECT + PUSH ALL) and `slots`
+  // (the eight assignable knobs), and nothing is lifted out of either (no hero;
+  // the `fullViewBody` takes the dock head via `dockFullViewHeadPlan`), so the
+  // declared count and the painted count agree. Two is far below
+  // `DOCK_TAB_MIN_BANDS`, so this is a sectioned faceplate, not a tab rail.
+  //
+  // ── ⚠ THE DETERMINISM ARGUMENT IS THE CARD'S OWN, INHERITED ──────────────
+  //
+  // This module already carried a committed CARD baseline, and
+  // `ChromaconsoleCard.svelte`'s header says why it could: "no message
+  // counters, no activity blink, no elapsed times, no 'last CC sent' readout …
+  // There is no polling timer: nothing on this card changes on its own." The
+  // face is held to the same bar deliberately — the device body has no timer,
+  // no rAF, and paints neither ledger counter — so the resting plate is a pure
+  // function of the node's params and `node.data.assign`, both of which a fresh
+  // spawn fills from the descriptor's own defaults.
+  //
+  // ⚠ AND THE MACHINE-DEPENDENT HALF CANNOT REACH THE CAPTURE, which is worth
+  // stating because it is the only thing on the surface that could differ
+  // between two machines. The output roster comes from `requestMIDIAccess()`,
+  // which is never called until someone presses CONNECT — `midi.spec.ts` pins
+  // "page load never requests Web-MIDI access" — and this scene presses nothing.
+  // So `listOutputs()` returns `[]` NOT because the runner has no MIDI devices
+  // but because `midiAccess` is null and `outputs()` short-circuits on it: the
+  // picker renders exactly its own `— no output —` literal, the channel sits at
+  // the descriptor's `defaultChannel` (1), the MIDI lamp is dark, and the body
+  // paints its pre-connect hint.
+  //
+  // ⚠ THE SLOT BOARD IS THE DESCRIPTOR'S OWN DEFAULTS: `resolveSlots` falls back
+  // to `defaultSlots` when `node.data.assign` is absent, so the eight chips read
+  // tilt / rate / time / mix / character / movement / diffusion / texture on
+  // every boot, with `·snap` on exactly rate and time. ASSIGN mode is component
+  // state initialised false, so the pickers are not in frame.
+  //
+  // ⚠ NO `videoFaceWhy` AND NO `simPin`. `domain: 'audio'`, `outputs: []`, no
+  // canvas anywhere on the surface: there is no clock to pin and nothing that
+  // advances between frames.
+  { type: 'chromaconsole', pages: 2 },
 
 ] as const;
 
@@ -6467,8 +6643,231 @@ const VIDEO_FREEZE_SETTLE_FRAMES = 6;
  *
  * A COUNT OF WINDOWS, not a wall-clock budget, so it is the same assertion on
  * every renderer. Six windows is ~36 frames.
+ *
+ * ⚠⚠ AND THE "IT DOES NOT WEAKEN THE ASSERTION" PARAGRAPH ABOVE HAS ONE HOLE,
+ * MEASURED 2026-09-02: it is true of a surface that is MOVING and false of one
+ * that has not started. A well before its first paint is perfectly still, so
+ * this loop returns "same" on its FIRST window and the scene photographs a
+ * blank. The parenthetical about `minIntervalMs` above spotted the wall-clock
+ * cadence and drew the wrong conclusion from it — the six-frame window does not
+ * merely make the answer renderer-dependent, it makes it WRONG on a fast one.
+ * `awaitFaceVideoPainted` closes that for the lane wells; see it for the trace
+ * and for the bespoke dock previews it does not reach.
  */
 const VIDEO_FREEZE_ATTEMPTS = 6;
+
+/**
+ * Upper bound, in real animation frames, on how long a video face's preview
+ * well may take to publish its first honest frame.
+ *
+ * A BUDGET, not a wait: the wait itself is the auto-retrying condition below,
+ * and this only decides how long a BROKEN scene takes to say so. Frames rather
+ * than ms so it is the same bound on every renderer, and generous because the
+ * thing being bounded is a wall-clock preview cadence (66.7 ms per thumbnail
+ * repaint) observed through a frame clock whose rate is unknown: 900 frames is
+ * ~15 s at 60 fps and ~7 s at 120 fps, both far beyond the ~230 ms the measured
+ * sequence needs, and the scene's own `faceSceneTimeout` is the real ceiling.
+ */
+const VIDEO_PAINT_FRAMES = 900;
+
+/**
+ * ⚠ A FRAME SPENT BEFORE `freezeFaceVideo` IS NOT FREE, AND THIS CONSTANT USED
+ * TO BE 6. It said "a single query is a snapshot, and a snapshot taken during a
+ * mount reads exactly like the steady state", settled the "is there a well
+ * here?" question over six frames, and closed with "it costs nothing". That
+ * last clause was wrong, and CI measured it within the hour.
+ *
+ * `freezeFaceVideo` HOLDS THE FRAME THE PICTURE HAD REACHED WHEN THE HARNESS
+ * GOT AROUND TO WRITING `freeze`. For a module that integrates once per DRAW,
+ * six extra frames is six extra draws, so the held frame is a DIFFERENT frame —
+ * which is exactly what mirrorpool's own roster entry says, and it was written
+ * before this helper existed.
+ *
+ * ⚠ THE EVIDENCE IS CI, NOT A LOCAL A/B, and the difference matters because the
+ * local A/B looked like proof and was retracted by its own control.
+ * `face-mirrorpool-dock` is GREEN on main across its last five runs and RED on
+ * this branch at 92 px (run 33674048221, vrt-strict shard 9/12); the only
+ * behavioural change this branch makes to that scene is frames. Post-freeze
+ * frames are not a new class — main's own path already runs `settle(page)`
+ * between the freeze and the shot — so the six PRE-freeze ones are the change.
+ *
+ * ⚠ THE RETRACTED MEASUREMENT, kept because a falsified claim is worth more
+ * than a deleted one: two boots with 0 vs 6 pre-freeze frames differed by
+ * 1392 px, which reads as causality until the negative control runs. TWO BOOTS
+ * OF IDENTICAL CODE differ by 3736 px on the GPU and 2501 px under SwiftShader.
+ * The noise floor is larger than the effect, so that A/B establishes nothing —
+ * and it means this scene does not reproduce boot-to-boot on a dev machine on
+ * either renderer, which its roster entry's "BYTE-IDENTICAL across boots" claim
+ * does not lead you to expect.
+ *
+ * A dock capture root holds no `video-tile-thumb` (PF-20), so this loop's ONLY
+ * effect on such a scene was to re-phase its simulation. The question is now
+ * asked in ZERO frames, and the mount-race it was guarding against is answered
+ * by what has ALREADY been awaited before this runs — `frameMember` waits for
+ * the tile's `data-shell-tier` and the well renders in that same component
+ * pass; the dock has been opened, unfolded and had its band geometry asserted;
+ * and `freezeFaceAudio` has settled several windows on top of either. If that
+ * reasoning is ever wrong the failure is the OLD behaviour — a well nobody
+ * waited for — and not a new one, which is the safe direction to be wrong in.
+ */
+const VIDEO_WELL_SETTLE_FRAMES = 0;
+
+/**
+ * Wait until every preview well inside a face scene's CAPTURE ROOT is showing a
+ * REAL rendered frame, and prove it — the step that runs BEFORE
+ * `freezeFaceVideo`, because freezing an unpainted well produces a picture that
+ * is perfectly still and completely blank.
+ *
+ * ⚠ THIS EXISTS BECAUSE A STILLNESS CHECK CANNOT SEE FIRST PAINT, and the hole
+ * is the one `freezeFaceVideo`'s own doc-comment names ("a scene whose video
+ * never rendered at all … satisfies it VACUOUSLY"). MEASURED at its cause
+ * (2026-09-02, `face-videovarispeed-compact`, `VideoTileThumb` instrumented per
+ * rAF; the full trace is in that component's header):
+ *
+ *   * the well is a flat `#050608` from the tile's FIRST draw tick — before the
+ *     engine has drawn the node's surface even once, because that tick blits an
+ *     FBO nothing has rendered into;
+ *   * `VIDEO_THUMB_FPS` throttles that loop to one draw per 66.7 ms of WALL
+ *     CLOCK, no matter how fast rAF runs;
+ *   * so `freezeFaceVideo`'s six-frame settle window fits entirely inside one
+ *     throttle interval whenever a frame is shorter than ~11 ms, and two
+ *     identical unpainted samples end its loop with "still".
+ *
+ * That is a frames-versus-wall-clock mismatch in the INSTRUMENT, and it is why
+ * the scene was green on VRT shard 11 (run 33654251659) and red on shard 8/12 of
+ * the re-binned run 33658977822 with a byte-identical tree — 1011 px, ratio
+ * 0.15, read from that job's own log: the less loaded shard runs rAF faster and photographs the well one repaint too early. The committed baseline
+ * is the PAINTED state — measured, 972 px of the module's idle gradient plus 72
+ * px of letterbox bar filling a 36x29 well — so the FAST shard is the one that
+ * fails, by the 1011 px the failing run reported.
+ *
+ * ⚠ IT WAITS ON STATE THE PRODUCT PUBLISHES, NOT ON A DELAY. `VideoTileThumb`
+ * sets `data-thumb-painted` once, on the first tick whose source was a surface
+ * the engine had actually drawn — or, for a texture-less node like
+ * `outToLaunch`, on the first tick at all, because there the dark well IS the
+ * picture. Nothing else can stand in for it: the throttle lives in the
+ * component, so no amount of ENGINE state implies the well has consumed a
+ * frame, and the well's own pixels cannot distinguish "still because it is up
+ * to date" from "still because it is throttled".
+ *
+ * ⚠ SCOPED TO THE CAPTURE ROOT, DELIBERATELY. A well elsewhere in the document
+ * — the lane tile sitting behind an open dock drawer — is not photographed, and
+ * requiring it to paint would hang any scene whose tile has been scrolled out
+ * of the viewport: the tap is IntersectionObserver-gated, so an off-screen tile
+ * legitimately never ticks. The caller passes the root it is about to
+ * photograph.
+ *
+ * ⚠ AND WHAT IT IS STRUCTURALLY UNABLE TO SEE, stated because a green run looks
+ * identical either way. A capture root with NO well in it is REPORTED and
+ * skipped rather than silently satisfied, and two real cases land there: `pong`,
+ * which declares `videoFaceWhy` for the BOOT path but is `domain: 'audio'` and
+ * has no picture at all, and most DOCK roots, whose picture is the face's own
+ * `fullViewBody` canvas rather than a `video-tile-thumb` (the dock hero does not
+ * paint the shell glyph when the face brought its own picture, PF-20). Those
+ * surfaces keep only the protection `freezeFaceVideo` gives them, which for a
+ * bespoke dock preview is a 33.3 ms `PREVIEW_MIN_INTERVAL_MS` cadence against
+ * the same six-frame window — the same class of race with twice the margin, and
+ * never yet observed to flip. Closing it needs the same first-paint statement
+ * from each bespoke body, which is a separate and much wider change.
+ *
+ * ⚠ THE ENGINE'S DRAW COUNT IS REPORTED, NOT ASSERTED, and that is a choice.
+ * `framesDrawnFor(nodeId) >= 1` is implied by any stamped well that HAS a
+ * texture, so as an assertion it would add nothing here — while on a root with
+ * no well it would be the only leg, i.e. a brand-new way for any of the 59
+ * `videoFaceWhy` scenes to go red for a reason this change never measured. It
+ * rides in the failure message instead, where it separates "the well never
+ * ticked" from "the engine never drew the node".
+ */
+export async function awaitFaceVideoPainted(
+  page: Page,
+  nodeId: string,
+  rootSelector: string,
+  label: string,
+): Promise<void> {
+  const seen = await page.evaluate(async (
+    { id, root, budget, settleFrames }:
+      { id: string; root: string; budget: number; settleFrames: number },
+  ) => {
+    const w = globalThis as unknown as {
+      __engine?: () => { getDomain: (d: string) => { framesDrawnFor: (i: string) => number } };
+    };
+    const drawnFor = (): number => {
+      try {
+        return w.__engine?.().getDomain('video').framesDrawnFor(id) ?? -1;
+      } catch {
+        return -1;
+      }
+    };
+    const wells = (): HTMLCanvasElement[] => {
+      const el = document.querySelector(root);
+      if (!el) return [];
+      return Array.from(
+        el.querySelectorAll('canvas[data-testid="video-tile-thumb"]'),
+      ) as HTMLCanvasElement[];
+    };
+    const unpaintedIn = (list: HTMLCanvasElement[]): HTMLCanvasElement[] =>
+      list.filter((c) => c.dataset.thumbPainted !== '1');
+    const frame = () => new Promise((r) => requestAnimationFrame(() => r(null)));
+
+    // ── IS THERE A WELL HERE AT ALL? ──────────────────────────────────────
+    // ⚠ ZERO FRAMES when there is none — see VIDEO_WELL_SETTLE_FRAMES. Every
+    // frame spent here is spent BEFORE `freezeFaceVideo`, and on a module that
+    // integrates once per draw that re-phases the picture the freeze is about
+    // to hold. `settleFrames` is 0 today; it stays a parameter so the loop can
+    // be re-armed with a measurement behind it rather than by editing control
+    // flow back in.
+    let frames = 0;
+    let list = wells();
+    while (frames < settleFrames && list.length === 0) {
+      await frame();
+      frames++;
+      list = wells();
+    }
+
+    // ── THE WAIT ITSELF, IN THE PAGE ───────────────────────────────────────
+    // Never a Playwright poll loop: that is one round-trip per sample on the
+    // same main thread as the subject, and it starves the very repaint it is
+    // waiting for.
+    let unpainted = unpaintedIn(list);
+    while (frames < budget && unpainted.length > 0) {
+      await frame();
+      frames++;
+      list = wells();
+      unpainted = unpaintedIn(list);
+    }
+    return {
+      drawn: drawnFor(),
+      frames,
+      rootFound: !!document.querySelector(root),
+      wells: list.length,
+      unpainted: unpainted.map((c) => c.getAttribute('data-thumb-node') ?? '?'),
+    };
+  }, {
+    id: nodeId,
+    root: rootSelector,
+    budget: VIDEO_PAINT_FRAMES,
+    settleFrames: VIDEO_WELL_SETTLE_FRAMES,
+  });
+
+  // THE POSITIVE CONTROL FOR THE SCOPING, the same one `freezeFaceVideo` takes:
+  // a wait scoped to a subject that is not there is trivially satisfied, and
+  // "nothing left to paint" is exactly what this would then report.
+  expect(
+    seen.rootFound,
+    `${label}: awaitFaceVideoPainted never found its capture root '${rootSelector}'. An absent `
+      + `root holds no wells to wait for, so this is a broken instrument rather than a ready one.`,
+  ).toBe(true);
+
+  expect(
+    seen.unpainted,
+    `${label}: ${seen.unpainted.length} of ${seen.wells} preview well(s) inside `
+      + `'${rootSelector}' had still not published a rendered frame after ${seen.frames} real `
+      + `frames. VIDEO_THUMB_FPS throttles each well to one draw per 66.7 ms of WALL CLOCK, so `
+      + `a well that never stamps is a well the engine has nothing to give (framesDrawnFor`
+      + `('${nodeId}') = ${seen.drawn}; -1 = the video domain was unreachable) or a tile whose `
+      + `tap never ran. Capturing now would photograph the pre-paint well.`,
+  ).toEqual([]);
+}
 
 /**
  * Pin a face scene's LIVE VIDEO SURFACE by writing the module's own `freeze`
@@ -7244,15 +7643,210 @@ async function spawnVideoZoneMember(page: Page, type: string): Promise<string> {
   return fresh[0]!;
 }
 
+/**
+ * Consecutive real frames a layout quantity must hold IDENTICAL before it is
+ * believed settled.
+ *
+ * THREE, not the two that "has it stopped moving?" naively needs, because two
+ * identical samples is also what an easing curve's plateau and a single dropped
+ * frame produce. Three costs two extra frames per scene and removes that
+ * reading. A COUNT OF FRAMES, so it is the same assertion on every renderer —
+ * the quantity being watched is a layout box, which changes on frames and not
+ * on a clock.
+ */
+const LAYOUT_SETTLE_FRAMES = 3;
+
+/**
+ * Frame budget for a layout quantity to settle. A BOUND on how long a broken
+ * scene takes to say so, never a wait — same shape as VIDEO_PAINT_FRAMES.
+ */
+const LAYOUT_SETTLE_BUDGET_FRAMES = 900;
+
+/**
+ * Wait until the element a scene is ABOUT TO PHOTOGRAPH has stopped moving, and
+ * prove it — the LAYOUT sibling of `awaitFaceVideoPainted`.
+ *
+ * ⚠ IT WATCHES THE CAPTURE TARGET ITSELF, not a proxy. `toHaveScreenshot` shoots
+ * the element's bounding box, so that box IS the frame of the picture: a box
+ * still settling crops or resamples the tile's own edge, and the pixels that
+ * move are the BORDER COLUMNS rather than anything in the middle. That is the
+ * signature #2318 measured on `face-painter-compact` — 45 of 49 differing
+ * pixels in column x=87, the last of an 88 px tile, with the baseline's x=87
+ * matching its own x=0 within 0-1 while the failing capture diverged 4-20.
+ * Green on shard 3 (run 33663808159), red 3/3 on shard 4 (run 33667724929),
+ * with only the timings artifact between them.
+ *
+ * ⚠ WHAT IT ADDS OVER PLAYWRIGHT'S OWN STABILISATION, stated because the
+ * overlap is real and the gap is narrow. `toHaveScreenshot` already re-shoots
+ * until two consecutive images match, so a box moving by WHOLE pixels is
+ * absorbed — the cropped image is identical at both positions. What that cannot
+ * see is a box that SETTLES somewhere the baseline was not captured from, and
+ * it cannot see it because the two shots it compares are taken at the same
+ * geometry. This makes the settle explicit and, when it fails, prints the trail
+ * of boxes and the FRACTIONAL device-pixel offset of the final one.
+ *
+ * ⚠ THE FRACTION IS REPORTED, NOT ASSERTED, and that is deliberate. A capture
+ * box at a fractional offset is resampled, and its edge columns then depend on
+ * the phase rather than on the pixels — a real instrument weakness, and one
+ * this branch has measured no fix for. Asserting integrality would be a NEW
+ * GATE over ~200 existing scenes on a property nobody has checked, which is the
+ * standing no-new-gates ruling exactly. It rides in the message instead, so the
+ * next occurrence is one read rather than one investigation.
+ *
+ * ⚠⚠ AND HERE IS WHAT THE MEASUREMENT ACTUALLY SAID, because a gate is worth
+ * only what it was measured to do. On this machine the compact box is ALREADY
+ * SETTLED when the old path reached the screenshot: instrumented over 300
+ * frames on `videovarispeed`, `matrixMix` and `adsr`, the box changed ZERO
+ * times (`lastChangeFrame: 0`, one distinct box) and this wait exits at its
+ * two-frame minimum. So it is a guard against a race this branch did NOT
+ * observe, not a demonstrated repair — it makes the property explicit and will
+ * NAME the failure the next time a box is caught mid-flight.
+ *
+ * ⚠⚠ THE SAME MEASUREMENT POINTS SOMEWHERE ELSE FOR THE PAINTER CLASS, and it
+ * should be read before this wait is credited with fixing it. The compact box
+ * is `x=618.7999877929688, w=86.39996337890625` at dpr 1 — fractional in BOTH,
+ * because the tile is 192 CSS px at the 0.45 LOD design-point zoom and
+ * 192 * 0.45 = 86.4 is not an integer. Playwright therefore shoots an 88 px PNG
+ * of an 86.4 px box, and column x=87 is a PARTIAL-COVERAGE edge whose value is
+ * a function of the box's fractional width. That is exactly where painter's 45
+ * of 49 differing pixels were. A phase difference needs nothing to be moving —
+ * it needs the box to land on a different fraction, which a different float
+ * path through the pan/zoom (or a one-pixel-different pane) produces
+ * deterministically, and would explain a 3/3 failure that a settle wait and
+ * Playwright's own re-shooting both absorb nothing of. Measured here, the
+ * fraction is IDENTICAL across five boots (same x, same w to the last bit) and
+ * differs BETWEEN MODULES at the 1e-4 level. So: do not assume this wait
+ * restores `face-painter-compact`; re-run it and compare the two boxes.
+ */
+export async function awaitCaptureBoxSettled(target: Locator, label: string): Promise<void> {
+  const seen = await target.evaluate(
+    async (el: Element, { need, budget }: { need: number; budget: number }) => {
+      const raf = () => new Promise((r) => requestAnimationFrame(() => r(null)));
+      const read = (): string => {
+        const r = el.getBoundingClientRect();
+        return `${r.x},${r.y},${r.width},${r.height}`;
+      };
+      const trail: string[] = [];
+      let last = read();
+      trail.push(last);
+      let same = 1;
+      let frames = 0;
+      while (frames < budget && same < need) {
+        await raf();
+        frames++;
+        const now = read();
+        if (now === last) {
+          same++;
+        } else {
+          same = 1;
+          last = now;
+          if (trail.length < 12) trail.push(now);
+        }
+      }
+      const r = el.getBoundingClientRect();
+      const frac = (v: number): number => Number((v - Math.floor(v)).toFixed(3));
+      return {
+        settled: same >= need,
+        frames,
+        box: last,
+        trail,
+        connected: el.isConnected,
+        dpr: globalThis.devicePixelRatio,
+        fraction: [frac(r.x), frac(r.y), frac(r.width), frac(r.height)],
+      };
+    },
+    { need: LAYOUT_SETTLE_FRAMES, budget: LAYOUT_SETTLE_BUDGET_FRAMES },
+  );
+
+  // A DETACHED node reports a 0,0,0,0 box that is beautifully stable, so the
+  // stillness answer would be "yes" about an element nobody can photograph.
+  expect(
+    seen.connected,
+    `${label}: the capture target left the document while awaitCaptureBoxSettled was watching `
+      + `it. A detached node reports a permanently stable 0,0,0,0 box, so this would otherwise `
+      + `report a settled layout about an element that is not there.`,
+  ).toBe(true);
+
+  expect(
+    seen.settled,
+    `${label}: the capture box never held still for ${LAYOUT_SETTLE_FRAMES} consecutive frames `
+      + `in ${seen.frames}. Last box ${seen.box}; the first boxes seen were `
+      + `[${seen.trail.join(' | ')}]. Fractional device-pixel offset at dpr ${seen.dpr}: `
+      + `[${seen.fraction.join(', ')}] — a non-zero fraction means the shot is RESAMPLED and its `
+      + `edge columns depend on that phase, which is reported here rather than asserted.`,
+  ).toBe(true);
+}
+
 /** Center the viewport on the lane-1 member (members bottom-anchor toward the
  *  4320 lane baseline) at `zoom`, then wait for the LOD face tier to settle on
- *  the member's tile + two rAFs so the tier content swap lands. */
+ *  the member's tile + two rAFs so the tier content swap lands.
+ *
+ *  ⚠ THE MEASURED SIZE IS WAITED FOR, NOT READ ON SPEC. The viewport below is
+ *  computed from `inode.measured.width/height`, which xyflow fills in from a
+ *  ResizeObserver AFTER mount — and the expression carries `?? 192` / `?? 180`
+ *  fallbacks, so an unmeasured node does not FAIL, it CENTRES ON A DIFFERENT
+ *  POINT: the two viewports differ by (real - 192)/2 * zoom, which lands the
+ *  whole tile at a different sub-pixel phase and moves its border columns while
+ *  nothing in the middle moves. That is a layout-readiness hole of exactly the
+ *  shape this file's video-paint hole had — a value read before the thing that
+ *  produces it has run, with a plausible answer either way. It is settled over
+ *  `LAYOUT_SETTLE_FRAMES` and then ASSERTED, so the fallbacks become
+ *  unreachable rather than silently load-bearing.
+ *
+ *  ⚠ AND WHAT THE MEASUREMENT SAID, so nobody credits this with more than it
+ *  did: at entry the node is ALREADY measured, at `192x180` — which is exactly
+ *  what the fallbacks say. Checked on `videovarispeed`, `matrixMix`,
+ *  `mirrorpool` and `adsr`. So the hole is real in SHAPE and does not bite
+ *  today, the wait confirms the value rather than changing it, and it can move
+ *  no baseline. What it buys is that the day a lane tile stops being 192x180,
+ *  or xyflow measures later than it does now, this fails LOUDLY instead of
+ *  centring the pane somewhere else and re-authoring every compact baseline. */
 export async function frameMember(
   page: Page,
   memberId: string,
   zoom: number,
   tier: string,
 ): Promise<void> {
+  const measured = await page.evaluate(
+    async ({ id, need, budget }: { id: string; need: number; budget: number }) => {
+      const w = globalThis as unknown as {
+        __flow: {
+          getInternalNode: (i: string) => { measured?: { width?: number; height?: number } } | undefined;
+        };
+      };
+      const raf = () => new Promise((r) => requestAnimationFrame(() => r(null)));
+      const read = (): string => {
+        const m = w.__flow?.getInternalNode(id)?.measured;
+        return m?.width && m?.height ? `${m.width}x${m.height}` : '';
+      };
+      let last = read();
+      const atEntry = last;
+      let same = last ? 1 : 0;
+      let frames = 0;
+      while (frames < budget && (!last || same < need)) {
+        await raf();
+        frames++;
+        const now = read();
+        if (now && now === last) same++;
+        else {
+          same = now ? 1 : 0;
+          last = now;
+        }
+      }
+      return { size: last, atEntry, frames, settled: !!last && same >= need };
+    },
+    { id: memberId, need: LAYOUT_SETTLE_FRAMES, budget: LAYOUT_SETTLE_BUDGET_FRAMES },
+  );
+  expect(
+    measured.settled,
+    `${memberId}: xyflow never reported a stable measured size for this node in `
+      + `${measured.frames} frames (last '${measured.size || '(unmeasured)'}', at entry `
+      + `'${measured.atEntry || '(unmeasured)'}'). The viewport below is computed from it, and `
+      + `its \`?? 192\` / \`?? 180\` fallbacks would centre the pane on a different point — a `
+      + `tile at a different sub-pixel phase, captured against a baseline authored at the `
+      + `right one.`,
+  ).toBe(true);
+
   await page.evaluate(
     ({ memberId, zoom }) => {
       const w = globalThis as unknown as {

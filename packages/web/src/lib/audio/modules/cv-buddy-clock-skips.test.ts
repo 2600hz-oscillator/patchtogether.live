@@ -249,3 +249,208 @@ describe('CV Buddy — the late-tick counter reaches the card', () => {
     expect(handle.readParam!('clockSkips')).toBeGreaterThan(0);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// THE ANTI-BURST INVARIANT — what a dropped pulse must never turn into.
+//
+// Provenance: a live performance (SPEEDERR-001, 2026-09-02) where the CV clock
+// fed two Pamela's Workouts and a Böhm off a passive split. Analysis of the
+// recording found the pulse grid locked to ±0.002 pulses (±0.3 ms) for 88 s,
+// then ONE clean +1.000-pulse step at t≈90.0 s — a single LOST edge, with no
+// extra edges anywhere in the take. `advanceClock` already drops-and-counts
+// rather than flushing, which is why the take shows a lost edge and not a
+// burst, and that is the behaviour this block welds down.
+//
+// Why it needs its own coverage even though `clock-math.test.ts` is green:
+// clock-math proves the RETURNED array is right. It cannot see what the tick
+// loop does with it. The dangerous regression is one line in `tick()` —
+// widening the window backwards, dropping the `Math.max(clockThrough, now)`
+// floor, or re-scheduling a window already emitted — any of which re-emits
+// past-due pulses. WebAudio then clamps every past timestamp to "now" and the
+// train leaves as a clump of near-simultaneous edges. Downstream that is the
+// worst possible failure: an edge-COUNTING follower that internally multiplies
+// (a PAM) turns one flushed pair into triple/quad fires, and every follower on
+// the split takes the same hit at once.
+//
+// So the invariant is asymmetric on purpose, and it is stated in the direction
+// hardware forgives: a clock may EMIT FEWER edges than the grid demands, never
+// more, and never two closer together than one period. A follower re-locks
+// from a missing pulse; it cannot un-hear a burst.
+describe('CV Buddy — a missed deadline DROPS pulses, it never flushes them', () => {
+  /** Rising edges actually written to the `clock` jack, in schedule order. */
+  function risingEdges(handle: {
+    outputs?: Map<string, { node: unknown }>;
+  }): number[] {
+    const node = handle.outputs!.get('clock')!.node as unknown as FakeConstantSource;
+    return node.offset.events.filter((e) => e.value === 1).map((e) => e.time);
+  }
+
+  /**
+   * The checker, shared by the real clock and the positive control below.
+   * Returns every way a train violates the invariant, so a failure names the
+   * mode rather than just "false".
+   */
+  function burstViolations(edges: number[], periodS: number): string[] {
+    const bad: string[] = [];
+    const eps = periodS * 1e-6;
+    for (let i = 1; i < edges.length; i++) {
+      const gap = edges[i]! - edges[i - 1]!;
+      if (gap < periodS - eps) {
+        bad.push(
+          `edge ${i} at ${edges[i]!.toFixed(6)}s is ${(gap * 1000).toFixed(3)}ms after its ` +
+            `predecessor — closer than one ${(periodS * 1000).toFixed(3)}ms period`,
+        );
+      }
+    }
+    return bad;
+  }
+
+  /** Distance from the nearest grid point, in periods. */
+  function offGridBy(edges: number[], periodS: number): number {
+    if (edges.length === 0) return 0;
+    let worst = 0;
+    for (const e of edges) {
+      const n = (e - edges[0]!) / periodS;
+      worst = Math.max(worst, Math.abs(n - Math.round(n)));
+    }
+    return worst;
+  }
+
+  // The performance's own numbers, so a regression is measured where it bit.
+  const BPM = 94.08761422877872;
+  const PPQN = 4;
+  const PERIOD = 60 / BPM / PPQN; // ≈ 159.42 ms
+
+  function seedPerf() {
+    clearPatch();
+    livePatch.nodes[NODE_ID] = {
+      id: NODE_ID,
+      type: 'cvBuddy',
+      domain: 'audio',
+      position: { x: 0, y: 0 },
+      params: { ppqn: PPQN, clockOffsetMs: 0 },
+    } as never;
+    livePatch.nodes['tl1'] = {
+      id: 'tl1',
+      type: 'timelorde',
+      domain: 'audio',
+      position: { x: 0, y: 0 },
+      params: { bpm: BPM, running: 1 },
+    } as never;
+  }
+
+  it('a 300 ms main-thread wedge loses pulses WITHOUT bunching the survivors', async () => {
+    seedPerf();
+    const ctx = new FakeAudioContext();
+    const handle = await build(ctx);
+
+    runTicks(ctx, 40, 0.025); // 1 s of healthy transport
+    const beforeSkips = cardState(handle).skips;
+    expect(beforeSkips).toBe(0);
+
+    // The wedge. 300 ms > the 200 ms lookahead, so at 159.42 ms/pulse exactly
+    // one pulse comes due with no window able to hold it — the performance's
+    // failure, reproduced.
+    ctx.currentTime += 0.3;
+    hoisted.tick!();
+
+    runTicks(ctx, 40, 0.025); // and the clock carries on
+
+    expect(cardState(handle).skips).toBeGreaterThan(0);
+
+    const edges = risingEdges(handle);
+    expect(edges.length).toBeGreaterThan(5);
+    expect(burstViolations(edges, PERIOD)).toEqual([]);
+  });
+
+  it('every surviving edge stays ON the original grid — the phase never teleports', async () => {
+    // The other half of "dropped, not flushed": a clock that re-anchored to the
+    // recovery instant would keep its RATE while silently re-phasing, so the
+    // followers would land a fraction of a pulse off forever after.
+    seedPerf();
+    const ctx = new FakeAudioContext();
+    const handle = await build(ctx);
+
+    runTicks(ctx, 20, 0.025);
+    ctx.currentTime += 0.42; // a wedge that is NOT a whole number of periods
+    hoisted.tick!();
+    runTicks(ctx, 40, 0.025);
+
+    const edges = risingEdges(handle);
+    expect(offGridBy(edges, PERIOD)).toBeLessThan(1e-6);
+  });
+
+  it('no edge is ever scheduled into the PAST (the clamp-to-now burst source)', async () => {
+    // WebAudio silently clamps a past timestamp to the current time. That clamp
+    // is the mechanism that turns a backlog into a clump, so the assertion is
+    // made where it is still visible: at the setValueAtTime call site.
+    seedPerf();
+    const ctx = new FakeAudioContext();
+    const handle = await build(ctx);
+    const node = handle.outputs!.get('clock')!.node as unknown as FakeConstantSource;
+
+    let seen = 0;
+    const stalls = [0.025, 0.025, 0.9, 0.025, 0.3, 0.025, 2.5, 0.025];
+    for (const dt of stalls) {
+      hoisted.tick!();
+      for (const e of node.offset.events.slice(seen)) {
+        expect(e.time).toBeGreaterThanOrEqual(ctx.currentTime);
+      }
+      seen = node.offset.events.length;
+      ctx.currentTime += dt;
+    }
+  });
+
+  it('CONSERVATION: every grid point is either EMITTED or COUNTED as skipped', async () => {
+    // The aggregate law behind the two checks above, and the one that makes the
+    // skip counter trustworthy as a diagnostic rather than decorative: across a
+    // span containing a stall, emitted edges + reported skips must account for
+    // the grid EXACTLY. A duplicated pulse inflates the left side; a pulse
+    // dropped without incrementing the counter deflates it. Either way the
+    // owner's readout stops meaning "this many edges the gear never saw", which
+    // is the only reason the number is on the card.
+    seedPerf();
+    const ctx = new FakeAudioContext();
+    const handle = await build(ctx);
+
+    runTicks(ctx, 10, 0.025);
+    ctx.currentTime += 3; // a 3 s wedge — ~19 pulses lost
+    hoisted.tick!();
+    runTicks(ctx, 80, 0.025);
+
+    const edges = risingEdges(handle);
+    const skips = cardState(handle).skips;
+    // The grid the transport asked for, from the first edge to the last window.
+    const spanned = (edges[edges.length - 1]! - edges[0]!) / PERIOD + 1;
+
+    expect(skips).toBeGreaterThan(0);
+    // ±1 for the half-open window boundary; anything larger is a real leak.
+    expect(Math.abs(edges.length + skips - spanned)).toBeLessThanOrEqual(1);
+  });
+
+  it('POSITIVE CONTROL: the checker CATCHES a flushing scheduler', () => {
+    // Without this the four assertions above are unfalsifiable — a checker that
+    // cannot fail would pass just as happily against the enqueue-and-flush bug
+    // it exists to forbid. So the naive scheduler is built here on purpose and
+    // fed through the SAME `burstViolations`, which must reject it.
+    const LOOKAHEAD = 0.2;
+    const emitted: number[] = [];
+    let next = 0;
+    let now = 0;
+    const naiveTick = () => {
+      while (next < now + LOOKAHEAD) {
+        emitted.push(Math.max(next, now)); // ← the WebAudio clamp, modelled
+        next += PERIOD;
+      }
+    };
+    for (const dt of [0.025, 0.025, 0.025, 1.0, 0.025, 0.025]) {
+      naiveTick();
+      now += dt;
+    }
+
+    const violations = burstViolations(emitted, PERIOD);
+    expect(violations.length).toBeGreaterThan(0);
+    // …and it is the clump we claim: several edges at the same clamped instant.
+    expect(violations[0]).toMatch(/closer than one/);
+  });
+});

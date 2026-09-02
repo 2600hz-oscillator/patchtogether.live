@@ -4420,6 +4420,72 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // is the only instrument that closes it.
   'ptzcam',
 
+  // ── CHROMA CONSOLE — the THIRD binder, and the DEVICE-MODULE template ─────
+  //
+  // A control surface for the Hologram Chroma Console guitar pedal: it sends
+  // MIDI CC and carries no audio (the pedal's audio is patched through the ES-9
+  // by hand, an owner decision). The module calls itself "the first device
+  // module", and the shape it establishes — N fixed assignable slots over a
+  // named control roster — is what every device module after it will have, so
+  // this face is a template rather than a one-off.
+  //
+  // ⚠ THE PROMOTION'S CENTRAL DECISION IS OWNER-RULED AND SHOULD NOT BE
+  // RE-LITIGATED FROM THE TREE ALONE. `deviceSlotParams` mints EIGHT IDENTICAL
+  // `0..127 linear` params labelled `slot 1`..`slot 8`, because a ParamDef id is
+  // public and permanent (contract-lock, saved patches, peers' Y.Docs, Electra
+  // tables, clip-automation targets) while what each slot DRIVES is per-NODE
+  // `node.data.assign`. A face cell's caption is `ParamDef.label`: `shellCellFor`
+  // takes the module TYPE, and every param arm in ModuleShell passes
+  // `label={pd.label}`. So the band can only say `slot 1`..`slot 8`, and the
+  // NAMES live on the device body's slot board directly above it — owner
+  // decisions 2026-08-31, item 7: "accept two operable surfaces per slot — a
+  // generic band knob plus the body's real Segmented", with per-node cell
+  // derivation named there as platform work the same ruling declines.
+  //
+  // ⚠ IT IS NOT A PARITY LOSS, WHICH IS THE THING TO CHECK RATHER THAN ASSUME.
+  // Every affordance the legacy card has is on the faceplate: the connect
+  // gesture and PUSH ALL are ranked `action` cells (so both reach the LANE TILE,
+  // which the card never did — the default shell painted this module as a
+  // placeholder), the eight slot values are knob cells, and the output picker,
+  // the channel, the eight assignment selects, the enum slots' `Segmented`, the
+  // stale-slot warning and the five pedal commands are the `fullViewBody`. Two
+  // readouts are deleted under the 2026-08-17 ruling — the per-slot value and
+  // the stale-slot COUNT — and the second is replaced by a per-chip mark that
+  // says WHICH slot rather than how many.
+  //
+  // ⚠ RANK: TWO GESTURES ABOVE EIGHT KNOBS, on this module's own argument. The
+  // pedal is `readBack: 'none'`, so PUSH ALL is the only reconciliation that
+  // exists in either direction, and neither it nor CONNECT has a second surface;
+  // the eight slot VALUES have four (MIDI learn, clip automation, the Electra,
+  // the Push 2 card). That would be the wrong ranking on a module whose knobs
+  // are its only route to its own state.
+  //
+  // ⚠ THE RESTING SURFACE STAYS BYTE-STABLE, INHERITED FROM THE CARD AS A
+  // REQUIREMENT RATHER THAN A HABIT. `ChromaconsoleCard.svelte`'s header records
+  // that its determinism (no counters, no activity blink, no elapsed times, no
+  // "last CC sent") is load-bearing for a committed VRT baseline, is what the
+  // resting-text ruling independently demands, and is what stops the surface
+  // implying it knows what the pedal holds — three unrelated pressures selecting
+  // one set of deletions. The face keeps all three: BINDERS §2.1 would permit a
+  // non-text activity dot and it is refused here.
+  //
+  // ⚠ ZERO GPU ATTEST, and the def already argued why: it chose `domain: audio`
+  // partly because `video` "would additionally have dragged the module into the
+  // WebGL attest basis and forced a GPU re-attest for a module with no pixels in
+  // it". No canvas on the body, nothing under `lib/video/**`. Zero ART: no audio
+  // output at all, so the audio-profile gate never reaches it. Zero Push 2
+  // movement: `PUSH_CARD_CONTROLS` pins all eight slots explicitly and an
+  // override REPLACES rather than merges, so a face cannot re-rank that card.
+  // The contract DOES move — two `controlFamilies` lines, projected by
+  // `serializeModuleContract` — which is a `docs:accept`, not an attest.
+  //
+  // ⚠ WHAT NO GATE IN THIS TREE CAN SEE: no CI runner has a Chroma Console or a
+  // granted MIDI origin. Everything past "a port is selected" — the auto-detect
+  // hint match against real hardware names, the channel, the pedal's response to
+  // any of it — ships on argument plus the unit models plus the mocked-port e2e,
+  // and the owner's hardware is the only instrument that closes it.
+  'chromaconsole',
+
   // ── LAUNCHPAD CONTROL — the SECOND meta-domain face, and the first
   //    promotion that is a DELETION ──────────────────────────────────────────
   //
@@ -6227,6 +6293,71 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // unreachable-without-paying rather than paid. The ledger entry is deleted in
   // this commit.
   'nibbles',
+
+  // ── PAINTER (2026-09-02) — the roster's first DRAWING SURFACE ────────────
+  //
+  // ⚠ THE INVENTORY ENTRY WAS FACTUALLY TRUE AND DREW THE TEXTMARQUEE
+  // CONCLUSION. It read: "a DRAWING SURFACE: freehand strokes on a canvas plus
+  // a typed text stamp. Direct pointer painting is the module and it declares
+  // no params at all." Both clauses are exactly right, and neither is a reason
+  // not to promote — what changed is the LADDER, not the module. A
+  // `fullViewBody` is a SLOT, not a cell: it does not have to be scalar,
+  // rankable or short. `videoOut` is the shipped zero-param precedent and
+  // `flipper` is the shipped ranks-nothing one; painter is both at once.
+  //
+  // ⚠ THE BODY IS THE WHOLE MODULE, WHICH IS RARER THAN IT SOUNDS. Most
+  // `fullViewBody` adopters rescue a preview or a picker beside a plate full of
+  // knobs. This def has `params: []` AND `inputs: []`, so the faceplate carries
+  // ZERO bands and the extension IS the plate: nine tools, the 28-colour Win95
+  // palette, SIZE, FILL, the text stamp, UNDO/CLEAR and the drawing canvas.
+  // painter is in none of `DOM_SOURCE_LANE_TYPES`, `CARD_PRODUCER_LANE_TYPES`
+  // or `HEADLESS_MOUNT_LANE_TYPES`, so after promotion no card mounts anywhere
+  // and a body that failed to mount would ship a module nobody can draw on.
+  //
+  // ⚠ THE PICTURE ALREADY SURVIVES WITH NO SURFACE MOUNTED, and that half is
+  // NOT this PR's work — #1720 moved the op-log replay onto NODE lifetime in
+  // `$lib/ui/media/extras-producers`, which is why a saved rack renders the
+  // drawing rather than the white placeholder. The `.myrobots` spec predicted
+  // this PR would have to port it; the tree had already done so, verified
+  // against `extras-producers.ts` before writing a line. What this PR adds is
+  // the EDITOR, and the lease handshake that lets the body push its own live
+  // canvas while it is mounted (an in-progress stroke must reach OUT before the
+  // op commits) and hand the binding straight back on unmount.
+  //
+  // ⚠ ONE SEAM, TWO MOUNTS: every pointer -> `PaintOp` conversion lives in
+  // `$lib/ui/modules/painter/paint-surface.ts`, imported by the face body AND
+  // by `PainterCard.svelte`. This is not tidiness — a stroke drawn on the face
+  // and the same stroke drawn on the still-live legacy card must serialise
+  // identically, and the op log is VALID either way, so a divergence would sync
+  // two different pictures to two peers with every gate green.
+  //
+  // ⚠ THE TYPED-ENTRY LEG IS SATISFIED BY THE BODY, NOT BY DELETING ANYTHING.
+  // `PainterCard.svelte` mounts `<input type="text">` (the TEXT tool's stamp
+  // string), so `face-migration-inventory`'s typed-entry clause arms the moment
+  // the disposition flips. Its escape is CARRYING the affordance, which is the
+  // outcome wanted anyway: the body renders the same field. ⚠ It must stay in
+  // the body FILE — that leg reads the directly-named `fullViewBody` source, so
+  // an `<input>` hidden inside an imported child would read as "the face
+  // carries none".
+  //
+  // ⚠ SCREEN ON/OFF PUTS THE WHOLE PAINT SET AWAY, not just a preview well, and
+  // that is the honest reading rather than a shortcut: here the picture IS the
+  // instrument, so leaving a toolbar behind with nothing to draw on would be
+  // chrome for a surface that is gone. The output is untouched — the release
+  // hands the binding back to the node-lifetime producer and the body goes on
+  // renewing the watch mark. The recorded objection (`previewCollapsed` is
+  // Y.Doc-synced, so a peer can collapse the only input device for everyone) is
+  // real and SELF-UNDOING: the toggle renders outside the collapse, so any peer
+  // restores it with one click. That is why painter is NOT added to
+  // `NO_SCREEN_SWITCH`, whose one entry (videoOut) is exempt because collapsing
+  // it would delete the module's reason to exist rather than reclaim space.
+  //
+  // ⚠ ZERO ATTEST, MEASURED not asserted: `face` and `docs` are stripped at
+  // module scope by `attest-code-basis`, comments are stripped, and every new
+  // file is outside the basis (`lib/ui/modules/**/*.svelte` is swept BY CONTENT
+  // for a GL context and neither new file creates one). No `params`, no port
+  // and no factory code moves, so contract-lock does not move either.
+  'painter',
 
   // ── ARCHIVIST (2026-09-02) — THE INTERNET ARCHIVE SEARCH BROWSER ─────────
   //
