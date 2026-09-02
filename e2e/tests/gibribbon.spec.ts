@@ -118,16 +118,68 @@ async function warmPastCountIn(page: Page, nodeId: string): Promise<void> {
     .toBeGreaterThanOrEqual(3);
 }
 
-/** Spike one band via the test seam until at least one course tick has
- *  consumed it, then drop back to silence — ONE controlled spawn window. */
+/** How many events the lookahead lane is currently showing — the observable
+ *  form of "the extractor has spawned something". `read('lane')` is
+ *  `upcomingLane()`, which lists exactly the UNRESOLVED events still ahead of
+ *  the miss point. */
+async function laneLength(page: Page, nodeId: string): Promise<number> {
+  const lane = (await readKey(page, nodeId, 'lane')) as unknown[] | null;
+  return Array.isArray(lane) ? lane.length : 0;
+}
+
+/**
+ * Spike one band via the test seam until the extractor has actually SPAWNED
+ * the event, then drop back to silence — ONE controlled spawn window.
+ *
+ * ⚠ TWO THINGS ABOUT THIS HELPER ARE LOAD-BEARING, AND THE OLD SHAPE HAD
+ * NEITHER.
+ *
+ * 1. THE SPIKE GOES UP BEFORE `tick` IS SAMPLED. `courseTick()` consumes the
+ *    four band levels INSTANTANEOUSLY at the tick boundary — it pushes
+ *    `bands[i]` into each channel's history and hands the same array to
+ *    `extractSpawn` — so the spike only counts if it is STANDING when a
+ *    boundary fires. This helper used to read `t0` first and then raise the
+ *    spike. A course tick landing in the gap between those two round-trips
+ *    (~420 ms apart at the default tempo, and a loaded shard can stall a CDP
+ *    round-trip well past that) already satisfies `tick > t0`, so the very
+ *    first poll tore the spike straight back down having never let a boundary
+ *    see it. Nothing spawned, and the caller then sat out its ENTIRE timeout
+ *    waiting on a game it had given nothing to do — which reads as "the
+ *    marine was never hit" or "the press never cleared the imp", i.e. as a
+ *    product bug, when the module had behaved perfectly.
+ *
+ * 2. THE POSTCONDITION IS THE EVENT, NOT THE TICK. One consumed boundary is
+ *    still not a spawn: `extractSpawn` vetoes any tick inside
+ *    `minSpawnGapEasyTicks` of the last spawn. Holding the spike until the
+ *    event is visible in the lookahead lane makes the helper's contract the
+ *    thing its callers actually depend on, and turns a rate-limited tick into
+ *    "keep the spike up one more tick" instead of a silent no-op.
+ *
+ * Both callers spike into a run that `deterministicPlay` has just restarted
+ * (`restartRun` does `Object.assign(s, newRun(...))`), so the baseline is an
+ * empty lane and this anchor cannot be vacuously satisfied by leftovers.
+ */
 async function spikeBand(page: Page, nodeId: string, band: number): Promise<void> {
-  const t0 = (await readNum(page, nodeId, 'tick')) ?? 0;
+  const laneBefore = await laneLength(page, nodeId);
   const bands: [number, number, number, number] = [0, 0, 0, 0];
   bands[band] = 0.95;
+  // Spike FIRST — then sample the tick it has to survive.
   await setTestBands(page, bands);
+  const t0 = (await readNum(page, nodeId, 'tick')) ?? 0;
   await expect
-    .poll(async () => readNum(page, nodeId, 'tick'), { timeout: 10_000 })
+    .poll(async () => readNum(page, nodeId, 'tick'), {
+      timeout: 10_000,
+      message: 'a course tick must fire while the spike is standing for the extractor to see it',
+    })
     .toBeGreaterThan(t0);
+  await expect
+    .poll(async () => laneLength(page, nodeId), {
+      timeout: 10_000,
+      message:
+        `band ${band} was spiked to 0.95 across a course tick but no event reached the ` +
+        'lookahead lane — the extractor never spawned, so the caller has nothing to judge',
+    })
+    .toBeGreaterThan(laneBefore);
   await setTestBands(page, [0, 0, 0, 0]);
 }
 

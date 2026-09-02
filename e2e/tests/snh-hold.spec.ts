@@ -64,6 +64,41 @@ async function ch1MinMaxOverWindow(
   return { min, max, polls };
 }
 
+/**
+ * Hold until the gated note's V/oct has ACTUALLY ARRIVED at the SCOPE input.
+ *
+ * ⚠ THIS IS THE ANCHOR THE MIN-ASSERTIONS BELOW CANNOT LIVE WITHOUT. The
+ * pitch port is a poly `ConstantSource` created at `offset.value = 0`
+ * (`poly.ts` `createPolySender`), and with S&H ON `emitStep` passes
+ * `writePitch: false` on every rest — so the port is NEVER written back to 0
+ * once a note has landed. `ch1_last_sample` can therefore read EXACTLY 0.000
+ * for one reason and one reason only: no gated step has reached the scope YET.
+ *
+ * That makes a fixed sleep before the window structurally unsound here. These
+ * tests assert a MINIMUM over a window, and a minimum has the opposite failure
+ * geometry from a peak — ONE cold sample anywhere in the window kills it, no
+ * matter how perfect every other sample is. When the sleep expired before the
+ * first gated step (a loaded shard need only delay the graph by one clock
+ * division), the window opened on the module's pre-note rest state, `min`
+ * came back 0.000, and the assertion reported a COLLAPSED HOLD — a product
+ * defect that had not happened. `max` passed in the same window, because the
+ * note did arrive, just later than the sleep assumed.
+ *
+ * Anchoring on the observable costs the same wall clock and is a guarantee
+ * instead of a probability: after this returns, 0.000 is unreachable unless
+ * S&H genuinely stops holding.
+ */
+async function waitForNoteEstablished(page: Page, scopeNodeId: string): Promise<void> {
+  await expect
+    .poll(async () => (await readScopeCh1(page, scopeNodeId)) ?? 0, {
+      timeout: 15_000,
+      message:
+        'the gated note must reach the SCOPE input before a min-over-window opens — ' +
+        'ch1 never left 0, so the clock/graph/bridge never delivered a gated step',
+    })
+    .toBeGreaterThan(NOTE_VOCT - 0.15);
+}
+
 /** Set running + bpm on every TIMELORDE (creating one if absent). */
 async function setTransport(page: Page, running: number, bpm = 80): Promise<void> {
   await page.evaluate(
@@ -156,7 +191,9 @@ test.describe('baked-in gate-sampled S&H: SEQUENCER pitch → SCOPE', () => {
       });
     });
     await seedKriaGate(page, 'clk');
-    await page.waitForTimeout(500); // bind the bridge + start sounding
+    // Bind the bridge + start sounding. The window may only open once the
+    // gated note is OBSERVABLE at the scope — see waitForNoteEstablished.
+    await waitForNoteEstablished(page, 'scp');
   }
 
   test('S&H ON (default): pitch CV HOLDS the note across rests (min never collapses to 0)', async ({ page }) => {
@@ -252,7 +289,9 @@ test.describe('baked-in gate-sampled S&H: CLIPPLAYER pitch → SCOPE (8 lanes, o
       });
     });
     await setTransport(page, 1, 80);
-    await page.waitForTimeout(600);
+    // Same anchor as the SEQUENCER block: the clip's lane-0 note must be
+    // standing at the scope input before a MIN-over-window may open.
+    await waitForNoteEstablished(page, 'scp');
   }
 
   test('S&H ON (default): lane-0 pitch HOLDS across the clip rest', async ({ page }) => {
