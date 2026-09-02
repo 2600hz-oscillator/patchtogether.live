@@ -6,100 +6,134 @@
   // hardware ribbon, lifting off HOLDS the last pitch (only the gate
   // falls) — the patched VCO stays at the last played note.
   //
-  // Pointer drives two internal params on the node:
-  //   pos  (0..1) — finger position along the strip (held on release).
-  //   gate (0/1)  — 1 while pressed, 0 on release.
-  // SCALE (octave span) + OFFSET (base octave) are knobs.
+  // ⚠ THIS IS THE LEGACY SURFACE. moog956 entered STRICT_FACES on 2026-09-02:
+  // the lane tile and the dock bands paint `pos` (a FADER cell), `scale`,
+  // `offset` and a momentary `gate` pad, and the real strip is the `moog956`
+  // extension's `tileBody` (lane) + `fullViewBody` (dock). This card still
+  // paints in the LANE under `?shell=legacy`, so it must keep working.
+  //
+  // ⚠ THE GESTURE IS NOT IMPLEMENTED HERE ANY MORE. Press / slide / release
+  // all go through `./moog956/ribbon-actions`, the one seam all three surfaces
+  // call, so a fix lands on every surface at once. Two things changed for this
+  // card in the same move, and both were bugs rather than refactors:
+  //
+  //   1. THE RAW-WRITE DEBT IS PAID. `t.params.pos = …` on every pointermove
+  //      was a ledgered raw write (`raw-write-ledger.ts`, kind `debt`, stated
+  //      remedy "needs the transient-first treatment"). It is now a tracked,
+  //      rAF-coalesced `createDragCommit` pump — the treatment named — and the
+  //      ledger entry is DELETED in the same diff. Deleting the entry alone
+  //      would have been red the other way: the guard is anchored to the
+  //      source, so an unlisted raw write fails it.
+  //   2. `gate` IS A PRESS, NOT A SAVED VALUE. It used to be written into the
+  //      Y.Doc, which persists a stuck HIGH gate whenever the release edge
+  //      never arrives (the card unmounts mid-hold — pointer capture protects
+  //      a moving pointer, not a deleted element). It now goes through
+  //      `setMomentaryParam`: engine only, panic-latched, never persisted. So
+  //      the LED below reads the LOCAL finger state, which is what it always
+  //      was in substance.
+  //
+  // ⚠ THE RANGES ARE BOUND TO THE DEF (`paramSpec`), not re-typed. The knobs
+  // used to carry literal `min={0} max={5}` beside a def that declares the
+  // same numbers — agreeing by inspection, gated by nothing, one edit from the
+  // backdraft class. `card-range-source.test.ts` now holds this card.
   //
   // Uses the SHARED beige <MoogPanel> wrapper (re-bound control palette) so
   // the stock Knob / PatchPanel controls inherit the Moog-era look — same
   // pattern as Moog903aCard / Moog992Card.
   import type { NodeProps } from '@xyflow/svelte';
+  import { onDestroy } from 'svelte';
   import Knob from '$lib/ui/controls/Knob.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
-  import { patch } from '$lib/graph/store';
-  import { setNodeParam } from '$lib/graph/mutate';
-  import { moog956Def, clampRibbon, ribbonToVOct } from '$lib/audio/modules/moog956';
-  import { useEngine } from '$lib/audio/engine-context';
+  import { moog956Def, clampRibbon } from '$lib/audio/modules/moog956';
   import type { ModuleNode } from '$lib/graph/types';
   import MoogPanel from './moog/MoogPanel.svelte';
-  import { portsFromDef } from './card-kit';
+  import { cardParams, paramSpec, portsFromDef } from './card-kit';
+  import { createDragCommit } from '$lib/ui/controls/drag-commit';
+  import { clearStuckMomentaryParams } from './manual-strike-actions';
+  import {
+    ribbonPersistPos,
+    ribbonPress,
+    ribbonRelease,
+    ribbonSemitoneText,
+    ribbonSlide,
+  } from './moog956/ribbon-actions';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
 
-  const engineCtx = useEngine();
+  const { paramVal, set, live } = cardParams(moog956Def, () => id, () => node);
 
-  function def(pid: string) {
-    return moog956Def.params.find((p) => p.id === pid)!;
-  }
-
-  let pos = $derived(clampRibbon(node?.params.pos ?? def('pos').defaultValue));
-  let gate = $derived((node?.params.gate ?? def('gate').defaultValue) > 0.5);
-  let scale = $derived(node?.params.scale ?? def('scale').defaultValue);
-  let offset = $derived(node?.params.offset ?? def('offset').defaultValue);
-
-  // Live pitch readout (V/oct) for the on-card display.
-  let pitchVOct = $derived(ribbonToVOct(pos, scale, offset));
-
-  function setParam(paramId: string) {
-    return (v: number) => setNodeParam(id, paramId, v);
-  }
-  function readLive(paramId: string) {
-    return () => {
-      const eng = engineCtx.get();
-      if (!eng || !node) return undefined;
-      return eng.readParam(node, paramId);
-    };
-  }
-
-  function writePos(p: number) {
-    const t = patch.nodes[id];
-    if (t) t.params.pos = clampRibbon(p);
-  }
-  function writeGate(on: boolean) {
-    const t = patch.nodes[id];
-    if (t) t.params.gate = on ? 1 : 0;
-  }
+  const POS = paramSpec(moog956Def, 'pos');
+  const SCALE = paramSpec(moog956Def, 'scale');
+  const OFFSET = paramSpec(moog956Def, 'offset');
 
   // ---- ribbon pointer drag ----
   let ribbonEl: HTMLDivElement | null = $state(null);
   let touching = $state(false);
+  let dragPos = $state(0);
+
+  let pos = $derived(clampRibbon(touching ? dragPos : paramVal('pos')));
+  let scale = $derived(paramVal('scale'));
+  let offset = $derived(paramVal('offset'));
+
+  // Live pitch readout, in semitones — the SAME formatter the face speaks on
+  // its strip's `aria-valuetext`, so the two surfaces cannot disagree about
+  // the number. (A legacy card printing a value is untouched by the
+  // resting-text ruling, which is about faceplates.)
+  let semitoneText = $derived(ribbonSemitoneText(pos, scale, offset));
+
+  // One tracked pump: N pointermoves per frame → ONE Y.Doc write.
+  const commitPos = createDragCommit((v) => ribbonPersistPos(id, v));
+  onDestroy(() => {
+    // Release before teardown: the card unmounts mid-hold on a dock swap or an
+    // LRU eviction, and the engine would otherwise keep the gate HIGH with no
+    // surface left to drop it.
+    if (touching) ribbonRelease(id);
+    commitPos.dispose();
+  });
+
+  // Repair a rack saved by an older build with the gate stuck HIGH. Under
+  // `?shell=legacy` this card is the only surface, so ModuleShell's identical
+  // effect never runs.
+  $effect(() => {
+    clearStuckMomentaryParams(id, moog956Def);
+  });
 
   function posFromPointer(ev: PointerEvent): number {
     if (!ribbonEl) return 0;
     const rect = ribbonEl.getBoundingClientRect();
+    if (rect.width <= 0) return 0;
     return clampRibbon((ev.clientX - rect.left) / rect.width); // 0..1 across
   }
 
   function onPointerDown(ev: PointerEvent) {
     if (!ribbonEl) return;
     touching = true;
-    ribbonEl.setPointerCapture(ev.pointerId);
-    writePos(posFromPointer(ev));
-    writeGate(true);
+    dragPos = ribbonPress(id, posFromPointer(ev));
+    try { ribbonEl.setPointerCapture(ev.pointerId); } catch { /* */ }
     ev.preventDefault();
     ev.stopPropagation();
   }
   function onPointerMove(ev: PointerEvent) {
     if (!touching) return;
-    writePos(posFromPointer(ev));
+    const p = ribbonSlide(id, posFromPointer(ev));
+    dragPos = p;
+    commitPos.commit(p);
   }
-  function onPointerUp(ev: PointerEvent) {
+  function endGesture(ev?: PointerEvent) {
     if (!touching) return;
     touching = false;
-    try { ribbonEl?.releasePointerCapture(ev.pointerId); } catch { /* */ }
-    // Ribbon holds its last pitch — drop the gate only, leave pos.
-    writeGate(false);
+    // Flush before the release: the ribbon HOLDS its last pitch, so the final
+    // position is the thing the module promises to keep.
+    commitPos.flush();
+    ribbonRelease(id);
+    if (ev) {
+      try { ribbonEl?.releasePointerCapture(ev.pointerId); } catch { /* */ }
+    }
   }
 
   const RIBBON_PX = 200;
   let dotX = $derived(pos * RIBBON_PX);
-
-  function fmtSemis(v: number): string {
-    // V/oct → semitones for a human-readable readout.
-    return (v * 12).toFixed(1);
-  }
 
   const inputs = portsFromDef(moog956Def.inputs);
   const outputs = portsFromDef(moog956Def.outputs);
@@ -114,15 +148,17 @@
         style="width: {RIBBON_PX}px;"
         role="slider"
         aria-label="Ribbon controller"
-        aria-valuemin={0}
-        aria-valuemax={1}
+        aria-valuemin={POS.min}
+        aria-valuemax={POS.max}
         aria-valuenow={pos}
+        aria-valuetext={semitoneText}
         tabindex="0"
         data-testid="moog956-ribbon"
         onpointerdown={onPointerDown}
         onpointermove={onPointerMove}
-        onpointerup={onPointerUp}
-        onpointercancel={onPointerUp}
+        onpointerup={endGesture}
+        onpointercancel={endGesture}
+        onlostpointercapture={() => endGesture()}
       >
         <div
           class="wiper"
@@ -132,14 +168,14 @@
         ></div>
       </div>
       <div class="readout" data-testid="moog956-readout">
-        <span class="gate-led" class:on={gate} aria-hidden="true"></span>
-        <span>{fmtSemis(pitchVOct)} st</span>
+        <span class="gate-led" class:on={touching} aria-hidden="true"></span>
+        <span>{semitoneText}</span>
       </div>
     </div>
 
     <div class="knob-row" data-testid="moog956-knobs">
-      <Knob value={scale} min={0} max={5} defaultValue={2} label="Scale" curve="linear" onchange={setParam('scale')} moduleId={id} paramId="scale" readLive={readLive('scale')} />
-      <Knob value={offset} min={-2} max={2} defaultValue={0} label="Offset" curve="linear" onchange={setParam('offset')} moduleId={id} paramId="offset" readLive={readLive('offset')} />
+      <Knob value={scale} min={SCALE.min} max={SCALE.max} defaultValue={SCALE.defaultValue} label="Scale" curve={SCALE.curve} onchange={set('scale')} moduleId={id} paramId="scale" readLive={live('scale')} />
+      <Knob value={offset} min={OFFSET.min} max={OFFSET.max} defaultValue={OFFSET.defaultValue} label="Offset" curve={OFFSET.curve} onchange={set('offset')} moduleId={id} paramId="offset" readLive={live('offset')} />
     </div>
   </PatchPanel>
 </MoogPanel>

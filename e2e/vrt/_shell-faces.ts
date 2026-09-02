@@ -5153,6 +5153,30 @@ export const FACES = [
       + ' defaults, with surface 1 focused on every boot.',
   },
 
+  // ── MOOG 956 RIBBON (2026-09-02, the face-program backlog) ────────────────
+  //
+  // `pages: 1` — the face declares no `pages`, so the dock renders the one
+  // unlabeled `__all` band: the `pos` FADER, the `scale` and `offset` knobs and
+  // the momentary `gate` pad, BENEATH the `fullViewBody` strip.
+  //
+  // ⚠ BOTH SCENES ARE DETERMINISTIC AT REST WITH NO SEAM OF ANY KIND, and each
+  // clause is the module's own rather than a general claim: `domain: 'audio'`
+  // (no video renderer to still); NO canvas anywhere on either surface (the
+  // strip is a bordered box and a positioned wiper, both DOM); `pos` defaults
+  // to 0, so the wiper sits hard left on every boot; the wiper's only
+  // animation is a `box-shadow` transition gated on the drag class, and
+  // `dragging` is component state that starts false. `freezeFaceVideo` writes
+  // `params.freeze = 1` and this def has no such param, so the write lands
+  // nowhere — the no-op textmarquee and mappy both record; there is nothing to
+  // pin because there is no clock term to pin.
+  //
+  // ⚠ THE COMPACT SCENE PHOTOGRAPHS THE `tileBody`, which is the half of this
+  // promotion a registry sweep cannot ask for: `faceTierCap('compact','none')`
+  // is 3, so `gate` falls off the tile and the strip is what puts the gesture
+  // back. A later "cleanup" that dropped the tile strip would move this
+  // baseline and get a review, which is the only automated notice that would.
+  { type: 'moog956', pages: 1 },
+
   // ── RECORDERBOX (2026-09-02, wave 5) — the RECORDER ───────────────────────
   //
   // `pages: 0`, the `videoOut` / `flipper` shape and for the same mechanical
