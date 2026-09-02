@@ -182,14 +182,32 @@ test.describe('workflow shell', () => {
     // C → the built-in CLIP PLAYER as a dock FULL-VIEW PANE, not the pinned
     // drawer (owner 2026-07-26: "opening clip player with c is same as
     // expanding any other module" — so it can sit side-by-side with a module;
-    // the full behavior sweep lives in workflow-dock-occupancy.spec.ts). The
-    // same real card mounts, just in the faceplate frame. ESC still closes it.
+    // the full behavior sweep lives in workflow-dock-occupancy.spec.ts). ESC
+    // still closes it.
+    //
+    // ⚠ THE OCCUPANT IS THE FACEPLATE NOW, NOT THE VERBATIM CARD, and the
+    // assertion changed with it rather than being relaxed. This line used to
+    // read `[data-dock-card="pinned-clipplayer"]` with the comment "the same
+    // real card mounts, just in the faceplate frame"; `clipplayer` was promoted
+    // (#2320) and `DockFullView` switches on bare STRICT_FACES membership, so
+    // the pane mounts `<ModuleShell view="dock-full">` exactly as it does for
+    // every other promoted module. What this test is ABOUT is unchanged —
+    // occupancy: `c` opens a full-view PANE and not the exclusive pinned
+    // drawer — so it asserts the pane hosts the module's surface, whichever
+    // branch that surface comes from.
+    //
+    // ⚠ AND `?shell=legacy` DOES NOT CHANGE THAT, which is worth stating
+    // because this test boots it. The flag steers `laneRenderKind` (the CANVAS
+    // lane); the dock full view reads `migrated(type)` alone. Two different
+    // questions, one of which the URL does not answer.
     await page.keyboard.press('c');
     const clipPane = page.locator(
       '[data-testid="dock-fullview-pane"][data-pane-node="pinned-clipplayer"]',
     );
     await expect(clipPane).toBeVisible();
-    await expect(clipPane.locator('[data-dock-card="pinned-clipplayer"]')).toBeVisible();
+    await expect(
+      clipPane.locator('[data-testid="module-shell"][data-shell-node="pinned-clipplayer"]'),
+    ).toBeVisible();
     await expect(drawer).toHaveCount(0); // NOT the exclusive pinned drawer
     await page.keyboard.press('Escape');
     await expect(page.getByTestId('dock-fullview-drawer')).toHaveCount(0);

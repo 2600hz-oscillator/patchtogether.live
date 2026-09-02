@@ -435,11 +435,25 @@ test('the derived audio legacy-fallback fixtures are healthy', () => {
 
     // NEGATIVE — and it still REFUSES things, by name and with a reason. A
     // predicate that accepts everything is equally blind, and it fails green.
+    //
+    // ⚠ THE SUBJECT IS THE LIVE SET, NOT A NAMED MODULE, AND THAT IS THE THIRD
+    // RE-POINT THIS LEG WOULD OTHERWISE HAVE TAKEN. It named `clipplayer`,
+    // "a NON_SHELL_LANE_TYPES snowflake", and `clipplayer` was promoted in
+    // #2320 — the LAST module card that set ever held. Nominating another
+    // member by hand is what went stale twice; iterating the set cannot,
+    // because `rendersPlaceholderTile` reads the same set. The remaining
+    // members (`group`, `sticky`, `cadillac`) are organizational chrome and a
+    // roaming sprite, none of which any face programme can promote away.
     expect(
-      f.probe('clipplayer'),
-      `${name}: clipplayer is a NON_SHELL_LANE_TYPES snowflake — laneRenderKind returns ` +
-        "'legacy' for it, so it renders no placeholder tile and must be refused",
-    ).not.toBeNull();
+      [...NON_SHELL_LANE_TYPES].filter((t) => f.probe(t) === null),
+      `${name}: every NON_SHELL_LANE_TYPES member must be REFUSED — laneRenderKind returns ` +
+        "'legacy' for each, so none of them renders a placeholder tile to assert on",
+    ).toEqual([]);
+    expect(
+      NON_SHELL_LANE_TYPES.size,
+      `${name}: the negative control has a subject at all (an emptied set would make the ` +
+        'clause above vacuously green)',
+    ).toBeGreaterThan(0);
     expect(
       f.probe('__no_such_module__'),
       `${name}: a type the golden has never heard of must be refused, not resolved`,
