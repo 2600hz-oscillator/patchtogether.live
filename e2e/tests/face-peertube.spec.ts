@@ -57,11 +57,27 @@ import { fileURLToPath } from 'node:url';
 import { spawnPatch } from './_helpers';
 import { BOOT_MS, SLOW_BOOT_TEST_TIMEOUT_MS } from '../_helpers/boot-budget';
 
-/** VP8 + Opus, an open codec the test Chromium decodes with no OS H.264
+/** VP8 + Opus (~2 s), an open codec the test Chromium decodes with no OS H.264
  *  encoder — the same fixture `peertube.spec.ts` resolves to, for the same
  *  reason. Served as a PROGRESSIVE file so no hls.js fragment decode is in the
  *  path (the recorderbox/edges local-passes-CI-fails trap). */
-const WEBM = readFileSync(fileURLToPath(new URL('../fixtures/av-clip.webm', import.meta.url)));
+const SHORT_WEBM = readFileSync(fileURLToPath(new URL('../fixtures/av-clip.webm', import.meta.url)));
+
+/** ⚠ THE LONG FIXTURE (120 s, video-only VP9), FOR THE LEG THAT MEASURES A
+ *  CLOCK — and this file paid the documented tuition to learn it. The SCREEN
+ *  leg first shipped on `av-clip.webm` and was GREEN LOCALLY THREE TIMES OVER,
+ *  then failed on BOTH attempts on CI e2e shard 2/12 with
+ *  `0.000 s over 19 samples / 3157 ms`. The instrument was fine — 19 samples is
+ *  a running accumulator, not a starved one. The ~2 s clip had simply ENDED
+ *  inside the 3 s observation window on a loaded shard: the #1553 class that
+ *  `e2e/fixtures/README.md` names in its own warning ("A fixture's DURATION is
+ *  part of a spec's correctness budget, not a detail"). ⚠ NOTE WHAT THE FAILURE
+ *  LOOKED LIKE: a zero that reads exactly like "the SCREEN switch became a
+ *  pause" — a product P0 — when it was the fixture. The headroom is therefore
+ *  ASSERTED below rather than assumed, the way `collapse-keeps-playing.spec.ts`
+ *  does it, so a future fixture swap reddens on the headroom line instead of on
+ *  the ruling. */
+const LONG_WEBM = readFileSync(fileURLToPath(new URL('../fixtures/lobby-clip-long.webm', import.meta.url)));
 
 const HOST = 'mock.peertube.test';
 const UUID = 'vid-face-1';
@@ -74,8 +90,14 @@ const OBSERVE_MS = 3_000;
 /** Forward seconds of media that must accumulate in that window. Well under
  *  `OBSERVE_MS` so a slow SwiftShader runner has headroom. */
 const MIN_PROGRESS_S = 0.3;
+/** The media time this spec's SCREEN leg can consume between "the element is
+ *  playing" and the end of its observation window, worst case on a loaded
+ *  SwiftShader shard: the toggle round-trip, the canvas-removal assertion, and
+ *  `OBSERVE_MS` itself. Asserted against the LIVE element's remaining duration,
+ *  never against a number remembered about a file. */
+const WORST_CASE_MEDIA_S = 30;
 
-async function installMocks(page: Page): Promise<void> {
+async function installMocks(page: Page, media: Buffer = SHORT_WEBM): Promise<void> {
   // ⚠ ONE ROW. See the header.
   await page.route('**/sepiasearch.org/api/v1/search/videos**', (route) =>
     route.fulfill({
@@ -109,7 +131,7 @@ async function installMocks(page: Page): Promise<void> {
       status: 200,
       contentType: 'video/webm',
       headers: { 'access-control-allow-origin': '*', 'accept-ranges': 'bytes' },
-      body: WEBM,
+      body: media,
     }),
   );
   await page.route('**/static/thumbnails/**', (route) =>
@@ -155,6 +177,7 @@ async function mediaState(page: Page) {
       paused: v.paused,
       muted: v.muted,
       currentTime: v.currentTime,
+      duration: v.duration,
       where: v.closest('[data-testid="dock-full-view"]')
         ? 'dock'
         : v.closest('[data-testid="node-media-parking"]')
@@ -218,17 +241,20 @@ test.describe('PEERTUBE face — the promotion is what makes it searchable', () 
   // `$derived` does not surface as a thrown assertion — it takes the subtree's
   // render down and the symptom lands somewhere else entirely (the
   // tv-librarian-face incident, twice).
-  test.beforeEach(async ({ page }) => {
+  // ⚠ MOCKS ARE INSTALLED PER TEST, NOT HERE, because the fixture is part of
+  // each leg's correctness budget: the SCREEN leg measures a media clock and
+  // needs the 120 s file, the other does not.
+  test.beforeEach(({ page }) => {
     page.on('pageerror', (err) => {
       throw new Error(`uncaught page error during a peertube face test: ${err.message}`);
     });
-    await installMocks(page);
   });
 
   test('the shell replaces the card, and the face still SEARCHES and PLAYS @video', async ({ page }) => {
     // Serialises the dock's lazy body chunk plus a real webm decode behind the
     // boot — bounded from the one export site, never a flat literal.
     test.setTimeout(SLOW_BOOT_TEST_TIMEOUT_MS * 2);
+    await installMocks(page, SHORT_WEBM);
     await boot(page);
     await spawnPatch(page, [{ id: 'fpt1', type: 'peertube', domain: 'video' }], [], {
       mountTimeout: BOOT_MS,
@@ -299,6 +325,8 @@ test.describe('PEERTUBE face — the promotion is what makes it searchable', () 
 
   test('SCREEN OFF collapses the picture and does NOT pause the stream @video', async ({ page }) => {
     test.setTimeout(SLOW_BOOT_TEST_TIMEOUT_MS * 2);
+    // ⚠ THE LONG FIXTURE — see LONG_WEBM's note. This leg measures a clock.
+    await installMocks(page, LONG_WEBM);
     await boot(page);
     await spawnPatch(page, [{ id: 'fpt2', type: 'peertube', domain: 'video' }], [], {
       mountTimeout: BOOT_MS,
@@ -318,6 +346,26 @@ test.describe('PEERTUBE face — the promotion is what makes it searchable', () 
       undefined,
       { timeout: SLOW_BOOT_TEST_TIMEOUT_MS },
     );
+
+    // ⚠ THE HEADROOM GUARD, and it exists because its absence produced a
+    // failure that looked exactly like a product P0. On the ~2 s fixture this
+    // leg reported `0.000 s` on CI and read as "the SCREEN switch became a
+    // pause"; the clip had ended. Asserted against the LIVE element, so a
+    // fixture swap reddens HERE with a fixture message.
+    const before = await mediaState(page);
+    expect(before, 'the node-owned <video> exists before the measurement').not.toBeNull();
+    expect(
+      Number.isFinite(before!.duration),
+      `fixture duration must be FINITE (got ${before!.duration}) — a raw MediaRecorder WebM ` +
+        'reports Infinity; regenerate with generate-lobby-clip-long.mjs, whose duration patch ' +
+        'is not optional',
+    ).toBe(true);
+    expect(
+      before!.duration - before!.currentTime,
+      `remaining media (${(before!.duration - before!.currentTime).toFixed(1)}s of ` +
+        `${before!.duration.toFixed(1)}s) must exceed the ${WORST_CASE_MEDIA_S}s worst case for ` +
+        'this leg, or a zero below means THE CLIP ENDED, not that SCREEN paused it',
+    ).toBeGreaterThan(WORST_CASE_MEDIA_S);
 
     const toggle = body.locator('[data-testid="peertube-face-screen-toggle"]');
     await expect(toggle).toHaveAttribute('aria-pressed', 'true');
@@ -339,6 +387,12 @@ test.describe('PEERTUBE face — the promotion is what makes it searchable', () 
         'exact mute the 2026-08-18 ruling forbids, and on a SOURCE it would idle the picture ' +
         'every downstream consumer samples.',
     ).toBeGreaterThan(MIN_PROGRESS_S);
+    // POSITIVE-DIRECTION COMPANION to the headroom guard: the clip must still
+    // have been mid-play when the window closed, so a future shrink of the
+    // fixture cannot make a passing run mean something weaker.
+    const after = await mediaState(page);
+    expect(after!.currentTime, 'the clip must not have ended inside the observation window')
+      .toBeLessThan(after!.duration - 1);
 
     // The collapse persisted on the node (not component state), and the
     // picture comes back LIVE.
