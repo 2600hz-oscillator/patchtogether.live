@@ -5622,6 +5622,65 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // `docs:accept` + contract-lock re-pin (the ptzcam-class cost the wave plan
   // budgeted).
   'controlSurface',
+  // ── VIDEOBOX (wave 3, 2026-09-01) — the FILE PLAYER ──────────────────────
+  //
+  // tvLibrarian's exact face shape on the def its audio plumbing was copied
+  // from: ONE ranked param (`gain`, a fader — unity at the midpoint of a 0..2
+  // throw), `glyph: 'none'` (a REAL choice: two `audio` outputs mean any other
+  // literal binds a LIVE VU of the film's soundtrack where the module's own
+  // picture belongs), one `noUserControl` bridge cache (`cv_play_trigger`,
+  // writer 'cv-port' — the only legal value, `play_trigger` declares
+  // `paramTarget`), no pages, and a `fullViewBody` extension carrying
+  // everything gesture-shaped.
+  //
+  // ⚠ THE INVENTORY'S BLOCKER WAS ALREADY DISCHARGED WHEN THIS PR OPENED. The
+  // entry read `needs-media-controller` and "the card still creates and
+  // attaches the source" — false since LEG-02 P1 (#1511): `attachExternalSource`
+  // does not appear in `VideoboxCard.svelte`, and the attach, audio wire,
+  // saved-handle restore, 500 ms drift loop, 33 ms gate loop and sync→element
+  // application are all `node-video-source-registry`'s, on NODE lifetime. The
+  // second stale fact is the one that decided the old disposition: `gain` used
+  // to be a param nothing wrote and nothing read; #2189 wired `uGain`, so the
+  // module now has exactly one honest control to rank. Both corrected in the
+  // inventory in this diff.
+  //
+  // ⚠ THE STOP-2 IS THE FILE SYSTEM ACCESS HANDLE ACQUISITION, ported VERBATIM
+  // into the body. `showOpenFilePicker` / `getAsFileSystemHandle` are honoured
+  // only inside a real user gesture and the native `<input type=file>` cannot
+  // hand back a `FileSystemFileHandle` — so a body built on the input alone
+  // would never persist a handle, never restore a file on rack reload (the
+  // card header calls that restore "the headline of this conversion"), never
+  // set `pendingHandleName`, and would ship the re-allow overlay as
+  // permanently unreachable dead code while `docs.explanation` promises it
+  // works. `videobox-face-model.test.ts` pins the port at source.
+  //
+  // ⚠ THE BODY BLITS AND NEVER ADOPTS. The node-owned `<video>` has one parent
+  // and the legacy card adopts it under `?shell=legacy`; the blit is also
+  // strictly more honest, because the engine output is what `gain` scales and
+  // what downstream receives. The engine frame's anamorphic 16:9-into-4:3
+  // upload is blitted AS-IS per the 2026-08-31 owner decision (§3): consistent
+  // with the fleet, and the upload aspect is a separate, already-reported
+  // platform defect — not letterboxed around here.
+  //
+  // ⚠ THIS PR ALSO CARRIES THE `collapse-keeps-playing.spec.ts` REPAIR (the
+  // wave-3/wave-4 pairing constraint): a blitting body means the node-owned
+  // `<video>` never enters the dock pane, so the sweep's dock-scoped queries
+  // are re-pointed document-wide with a negative leg (a FACED member's element
+  // is NOT in the dock). Without the repair the sweep reports a green SKIP and
+  // an owner-P0 regression guard silently disappears.
+  //
+  // ⚠ ONE RESTING READOUT IS DELETED, NOT HIDDEN: the card's `0:04 / 2:00`
+  // time line (a derived value painted outside a control). Position survives
+  // on the seek slider itself and on its `aria-valuetext`. The rack-tile
+  // corner resize also does not carry to the lane (dock-only now), and
+  // fullscreen becomes an engine-resolution readback rather than the
+  // native-res element — named at owner preview.
+  //
+  // ZERO ATTEST: `face` / `noUserControl` / `docs` are hash-transparent by
+  // construction (attest-code-basis) and no param, port or factory code moves.
+  // CONTRACT UNCHANGED: no controlFamilies, no new params. `docs:accept` runs
+  // because the explanation's card-ownership prose was stale (LEG-02).
+  'videobox',
 ]);
 
 /**

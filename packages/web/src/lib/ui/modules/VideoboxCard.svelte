@@ -44,7 +44,7 @@
   import { onMount, onDestroy } from 'svelte';
   import { type NodeProps } from '@xyflow/svelte';
   import { useEngine } from '$lib/audio/engine-context';
-  import { patch } from '$lib/graph/store';
+  import { mutateNode } from '$lib/graph/mutate';
   import { startCornerResize } from './card-resize';
   import { createFullscreen } from './use-fullscreen.svelte';
   import { createFullFrame } from './use-full-frame.svelte';
@@ -424,12 +424,14 @@
   // synced) so a wall-of-TVs layout survives reload + is shareable.
   let fullFrame = $derived<boolean>((node?.data?.fullFrame as boolean | undefined) ?? false);
   const ff = createFullFrame({
+    // Tracked (mutateNode → LOCAL_ORIGIN) so Full Frame reaches Cmd-Z — the
+    // bare proxy write this replaces transacted with NO origin, so the
+    // UndoManager never captured it. Same seam the face body uses.
     setFullFrame: (on) => {
-      const target = patch.nodes[id];
-      if (target) {
-        if (!target.data) target.data = {};
-        (target.data as Record<string, unknown>).fullFrame = on;
-      }
+      mutateNode(id, (live) => {
+        if (!live.data) live.data = {};
+        live.data.fullFrame = on;
+      });
     },
     exitFullscreen: () => void fs.exit(),
   });
@@ -461,22 +463,28 @@
   // ---------- Corner-drag resize ----------
   let resizing = $state(false);
   let resizeAbort: AbortController | null = null;
+  let lastApplied: { w: number; h: number } | null = null;
   function onResizeStart(ev: PointerEvent) {
     resizeAbort = startCornerResize(ev, {
       flowStore,
       minWidth: MIN_WIDTH,
       minHeight: MIN_HEIGHT,
       getStartSize: () => ({ width: cardWidth, height: cardHeight }),
+      // Tracked (mutateNode → LOCAL_ORIGIN) so a resize reaches Cmd-Z. The
+      // quantized size only moves on a whole-tile crossing, and the dedupe
+      // below makes a drag a handful of tracked writes (one per crossing) —
+      // never a per-pointermove storm on the doc or the undo stack.
       apply: (w, h) => {
-        const target = patch.nodes[id];
-        if (target) {
-          if (!target.data) target.data = {};
-          (target.data as Record<string, unknown>).width = w;
-          (target.data as Record<string, unknown>).height = h;
-        }
+        if (lastApplied && lastApplied.w === w && lastApplied.h === h) return;
+        lastApplied = { w, h };
+        mutateNode(id, (live) => {
+          if (!live.data) live.data = {};
+          live.data.width = w;
+          live.data.height = h;
+        });
       },
-      onStart: () => { resizing = true; },
-      onEnd: () => { resizing = false; resizeAbort = null; },
+      onStart: () => { resizing = true; lastApplied = null; },
+      onEnd: () => { resizing = false; resizeAbort = null; lastApplied = null; },
     });
   }
   onDestroy(() => { if (resizeAbort) resizeAbort.abort(); });

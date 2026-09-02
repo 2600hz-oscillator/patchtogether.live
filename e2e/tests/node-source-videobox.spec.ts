@@ -237,7 +237,9 @@ test.describe('videobox: the source belongs to the NODE (#1511)', () => {
     // Opening the dock is not a workaround: a file picker is only honoured
     // inside a real user gesture, and an off-screen `pointer-events: none` host
     // was never clickable either. So loading a file has ALWAYS required an
-    // expanded card, on `main` too. What changes is what happens after it closes.
+    // expanded surface, on `main` too (the legacy card then; the ModuleShell
+    // face body since the wave-3 promotion — same testids, same controller
+    // seam). What changes is what happens after it closes.
     await page.evaluate((id) => {
       (globalThis as unknown as { __openDockFullView: (i: string) => void }).__openDockFullView(id);
     }, NODE);
@@ -251,17 +253,26 @@ test.describe('videobox: the source belongs to the NODE (#1511)', () => {
 
     // Confirm REAL playback before touching anything — in-page, never a
     // Playwright poll of the thread under measurement.
+    //
+    // ⚠ THE NODE-OWNED ELEMENT, NOT A DOCK-SCOPED QUERY (wave 3 repair).
+    // videobox is FACED now: the dock pane mounts a ModuleShell body that
+    // BLITS the engine output and never adopts the <video>, so the element
+    // stays PARKED even while the pane is open and a
+    // `[data-testid="dock-full-view"] video` query would wait forever on a
+    // file that is genuinely playing. `mediaPlacement` below is what pins
+    // WHERE it lives; this wait only cares that it PLAYS.
     await page.waitForFunction(
       () => {
-        const v = document.querySelector('[data-testid="dock-full-view"] video') as HTMLVideoElement | null;
+        const v = document.querySelector('video[data-testid="videobox-video"]') as HTMLVideoElement | null;
         return !!v && !v.paused && v.currentTime > 0.05;
       },
       undefined,
       { timeout: 30_000 },
     );
 
-    // ── DISMISS. The card unmounts from the dock, and — because videobox is no
-    //    longer in DOM_SOURCE_LANE_TYPES — nothing re-mounts it anywhere. ─────
+    // ── DISMISS. The dock surface unmounts (since the wave-3 promotion that is
+    //    the ModuleShell face body, not the card), and — because videobox is no
+    //    longer in DOM_SOURCE_LANE_TYPES — nothing re-mounts anything anywhere. ─
     await page.getByTestId('faceplate-collapse').click();
     await expect(pane).toHaveCount(0, { timeout: 20_000 });
 
