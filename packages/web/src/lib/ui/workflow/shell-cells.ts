@@ -122,6 +122,7 @@ import {
   selectSamsloopRate,
   toggleSamsloopRecord,
 } from '$lib/ui/modules/samsloop-face-actions';
+import { exportMappyMap, importMappyMapFile } from '$lib/ui/modules/mappy-map-actions';
 import {
   twotracksTransport,
   twotracksSaveTape,
@@ -3306,6 +3307,52 @@ const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
         action: 'click',
         effect: { kind: 'text', testid: 'numpad-key-hint', expect: 'changed' },
       },
+    },
+  },
+
+  // ── MAPPY — the VENUE MAP, the projection mapper's portable alignment ──────
+  //
+  // These two are the only affordances on MAPPY that are neither a param nor a
+  // pointer gesture over the picture, so they are the only two the faceplate
+  // can rank as cells. Everything else — corner pin, whole-surface move, the
+  // six per-surface FIT/CROP pairs, the MAP editor — lives in the
+  // `fullViewBody`, and the block's own header there says why each one has to.
+  //
+  // ⚠ BOTH CALL THE SHARED ACTION SEAM, never a second copy of the file format.
+  // `mappy-map-actions.ts` is what the LEGACY CARD calls too, which is the whole
+  // point: a venue map exported from the card and imported from the faceplate
+  // is the same file by construction rather than by two authors agreeing.
+  mappy: {
+    // IMPORT — a `file` cell, so the shell paints the picker AND the
+    // status/error line the action returns. That line is not decoration: a
+    // foreign or garbage file is REJECTED and mutates nothing, and a rejection
+    // that said nothing would read exactly like a dead button.
+    'mappy-import-map-{n}': {
+      kind: 'file',
+      label: 'import map',
+      title: 'Load a surface layout (count + corners + FIT) from a .json file — REPLACES the current layout',
+      accept: 'application/json,.json',
+      onFile: (nodeId, file) => importMappyMapFile(nodeId, file),
+    },
+
+    // EXPORT — an `action` cell with the `file-export` seam, the samsloop
+    // precedent. ⚠ NOT `engine-message`: an export reaches no engine, and a
+    // probe watching `engine-message` on this node would be satisfied by
+    // something that never wrote a file. There is no graph write either — a
+    // download leaves `node.data` and every param exactly as they were — so
+    // `readParam`/`readData`, the two oracles the parity sweep uses everywhere
+    // else, are structurally blind to it and the ledger is the only observable.
+    //
+    // ⚠ AND IT IS HONEST ON A BARE RACK, which is where faces-parity presses
+    // it: a freshly-spawned mappy has one full-frame surface, so the press
+    // exports a real one-surface map rather than failing for want of a subject.
+    'mappy-export-map-{n}': {
+      kind: 'action',
+      label: 'export map',
+      title: 'Save the surface layout (count + corners + FIT) to a .json file — reuse it in another patch at the same venue',
+      mode: 'trigger',
+      probe: { effect: { kind: 'audition', seam: 'file-export' } },
+      onFire: (nodeId) => { exportMappyMap(nodeId); },
     },
   },
 };
