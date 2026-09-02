@@ -337,19 +337,38 @@
     justify-content: center;
     padding: 6px 0 2px;
   }
-  /* The positioning context for the two corner switches. Sized to the 1x
+  /* The positioning context for all three corner switches. Sized to the 1x
      picture, so the plate is sized to 1x — an entry justified by 4x would be
-     justifying the card's bug. */
+     justifying the card's bug.
+     ⚠ A DECLARED `width`, NOT `max-width`, AND THAT IS A FIX RATHER THAN A
+     STYLE. The three buttons are absolutely positioned against THIS box and
+     contribute nothing to its size, and with SCREEN OFF its only in-flow child
+     is an empty `.preview-wrap` — so a shrink-to-fit box measured 0 px wide and
+     `right: 4px` put SCREEN OFF at x = -4, i.e. OUTSIDE the plate and to the
+     LEFT of the two buttons it is supposed to sit opposite (measured: plate
+     102 px, box 0 px, SCREEN at 83.5 with the caption wrapped onto two lines).
+     A declared width makes the corners mean the same thing in both screen
+     states. At 1x SCREEN ON the box already measured exactly 322, so this
+     changes no pixel of the default picture. */
   .screen-box {
     position: relative;
-    max-width: 322px;
+    width: 322px;
+    max-width: 100%;
   }
   .preview-wrap {
     display: flex;
     justify-content: flex-start;
     /* Above 1x the canvas overflows and THIS box scrolls; the plate never
-       grows. */
+       grows.
+       ⚠ BOTH AXES, and the height half was the missing one. `max-width` alone
+       held the plate at 322 px while a 4x zoom grew it to 810 px TALL and took
+       the dock shell to ~947 px — the card's `width: max-content` bug, rotated
+       90 degrees, which is exactly what this body was written to avoid. The cap
+       is the 1x picture: the 200 px canvas plus the frame's 1 px border top and
+       bottom. At 1x the content is exactly that tall, so nothing overflows and
+       no scrollbar appears in the default scene. */
     max-width: 100%;
+    max-height: 202px;
     overflow: auto;
     /* Only load-bearing with SCREEN OFF: the canvas is gone, and without a
        floor the wrap would collapse to zero and take the absolutely-positioned

@@ -354,6 +354,40 @@ test.describe('NIBBLES face — the promotion is what makes it playable', () => 
         + `(alive=${collapsed.alive}, score=${collapsed.score})`,
     ).toBeGreaterThanOrEqual(3);
 
+    // ── ⚠ AND THE CORNER CONTROLS ARE STILL IN THEIR CORNERS ───────────────
+    // The three switches are absolutely positioned against a box whose ONLY
+    // in-flow child is the picture, so with SCREEN OFF that box is a
+    // shrink-to-fit element with nothing in it. MEASURED before the fix: the
+    // box collapsed to 0 px wide, `right: 4px` put SCREEN at x = 83.5 — to the
+    // LEFT of SCALE (140) and RESET (180), with its caption wrapped onto two
+    // lines — and RESET at 180..223 sat OUTSIDE a plate whose right edge was
+    // 187. Every other assertion in this test passed throughout: the toggle
+    // worked, the canvas went away, the space was reclaimed and the game kept
+    // running. Only geometry could see it.
+    const box = async (sel: string) => {
+      const b = await body.locator(sel).boundingBox();
+      expect(b, `${sel} must be laid out`).not.toBeNull();
+      return b!;
+    };
+    const plateBox = await body.boundingBox();
+    expect(plateBox, 'the body must be laid out').not.toBeNull();
+    const plate = plateBox!;
+    const scaleB = await box('[data-testid="nibbles-scale"]');
+    const resetB = await box('[data-testid="nibbles-reset"]');
+    const screenB = await box('[data-testid="nibbles-face-screen-toggle"]');
+    expect(
+      screenB.x,
+      `with SCREEN OFF the switch must stay in the RIGHT corner, past SCALE (${scaleB.x}) and `
+        + `RESET (${resetB.x}) — it landed at ${screenB.x}`,
+    ).toBeGreaterThan(resetB.x + resetB.width);
+    for (const [name, b] of [['scale', scaleB], ['reset', resetB], ['screen', screenB]] as const) {
+      expect(b.x, `${name} must start inside the plate`).toBeGreaterThanOrEqual(plate.x);
+      expect(
+        b.x + b.width,
+        `${name} must end inside the plate (plate ${plate.x}..${plate.x + plate.width})`,
+      ).toBeLessThanOrEqual(plate.x + plate.width + 1);
+    }
+
     // …and switching back on shows the LIVE game, not a stale frame.
     await toggle.click();
     await expect(body.locator('[data-testid="nibbles-screen"]')).toBeVisible();
@@ -470,6 +504,9 @@ test.describe('NIBBLES face — the promotion is what makes it playable', () => 
     await expect(body).toBeVisible({ timeout: SLOW_BOOT_TEST_TIMEOUT_MS });
     const scale = body.locator('[data-testid="nibbles-scale"]');
     await expect(scale).toHaveText('1×');
+    // The plate at 1x — the size the zoom must NOT change. See the tail of this
+    // test.
+    const plateAt1x = (await body.boundingBox())!;
 
     await scale.click();
     await scale.click();
@@ -494,5 +531,29 @@ test.describe('NIBBLES face — the promotion is what makes it playable', () => 
     // …and the picture is actually drawn at that zoom, not merely labelled.
     await expect(reopened.locator('[data-testid="nibbles-screen"]'))
       .toHaveAttribute('style', /width: 960px/);
+
+    // ⚠ AND THE ZOOM SCROLLS ON BOTH AXES RATHER THAN GROWING THE PLATE. The
+    // card's bug is `width: max-content` + an inline `320*scale`, which makes a
+    // 4x card 1280 px WIDE; this body capped the width and left the HEIGHT
+    // uncapped, so a 3x zoom grew the plate to ~610 px and a 4x zoom took the
+    // dock shell to ~947 px — the same bug rotated 90 degrees. Measured, then
+    // fixed with `max-height` on the scroll box. The style attribute above is
+    // what a label-only check sees; this is what a player sees.
+    const bodyAgain = reopened.locator('[data-testid="nibbles-face-body"]');
+    const plateAtZoom = (await bodyAgain.boundingBox())!;
+    expect(
+      plateAtZoom.height,
+      `the 3x zoom must scroll inside its own box, not grow the plate — 1x plate was `
+        + `${plateAt1x.height} px tall, at 3x it is ${plateAtZoom.height} px`,
+    ).toBeLessThanOrEqual(plateAt1x.height + 1);
+    expect(plateAtZoom.width).toBeLessThanOrEqual(plateAt1x.width + 1);
+    // …and the zoom is REAL: the box genuinely overflows on both axes.
+    const overflows = await bodyAgain.locator('.preview-wrap').evaluate(
+      (el) => ({ y: el.scrollHeight > el.clientHeight, x: el.scrollWidth > el.clientWidth }),
+    );
+    expect(
+      overflows,
+      'a capped plate that does not overflow would mean the picture was CLIPPED rather than scrollable',
+    ).toEqual({ x: true, y: true });
   });
 });

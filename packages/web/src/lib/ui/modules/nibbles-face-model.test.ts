@@ -386,7 +386,18 @@ describe('nibbles — the SCALE zoom is on the node, which is a BUG FIX and not 
     expect(CARD_CODE, 'the card still grows — it is about to stop rendering')
       .toMatch(/width: max-content/);
     expect(BODY_CODE).toMatch(/overflow: auto/);
-    expect(BODY_CODE).toMatch(/max-width: 322px/);
+    // ⚠ A DECLARED `width`, NOT a `max-width`, and the difference is a fix
+    // rather than a style. The three corner switches are absolutely positioned
+    // against `.screen-box`, and with SCREEN OFF its only in-flow child is an
+    // empty wrap — so a shrink-to-fit box measured 0 px and `right: 4px` put
+    // the SCREEN switch OUTSIDE the plate and to the LEFT of the two buttons it
+    // sits opposite. The geometry is asserted at the render in
+    // `face-nibbles.spec.ts`; this is the source half.
+    expect(BODY_CODE).toMatch(/width: 322px/);
+    expect(
+      BODY_CODE,
+      'a shrink-to-fit box collapses to 0 px with SCREEN OFF and takes the corner switches with it',
+    ).not.toMatch(/max-width: 322px/);
     expect(BODY_CODE, 'the body must not size itself from the zoom')
       .not.toMatch(/width: max-content/);
   });

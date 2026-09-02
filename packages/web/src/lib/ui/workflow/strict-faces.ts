@@ -6007,16 +6007,21 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // ⚠ ZERO ATTEST, MEASURED IN BOTH DIRECTIONS RATHER THAN INHERITED.
   // `nibbles.ts`, `nibbles-game.ts` and `nibbles-bot.ts` are all IN the WebGL
   // attest basis (`webgl-attest-hash.sh --list`). This PR touches `nibbles.ts`
-  // with `face`, `controlFamilies` and `docs` and NOTHING else — all three are
-  // in `HASH_TRANSPARENT_PROPS` — and the hash is unchanged
-  // (2368bb0094…4667294 before and after), while a control edit to
-  // `NIBBLES_MAX_LENGTH` moves it (ccdedf2487…). That discipline is the whole
+  // with `face` and `docs` and NOTHING else — both are in
+  // `HASH_TRANSPARENT_PROPS` — and the hash is unchanged
+  // (2f505b4230…3f56b073 before and after, which is main's own hash and has a
+  // matching attestation on main), while a control edit to
+  // `NIBBLES_MAX_LENGTH` moves it. That discipline is the whole
   // reason this PR refuses a `freeze` param, refuses `units: 'ms'` on
   // `tick_ms`, refuses to make SCALE a ParamDef, refuses to paint the score,
   // and leaves the card's re-typed `min={40} max={200}` range literal alone —
   // the correct fix for that last one exports a range accessor FROM the def,
   // which is a `nibbles.ts` edit and belongs in an attest window, not here.
-  // CONTRACT: one `controlFamilies` line, and nothing else.
+  // ⚠ CONTRACT: NOTHING. No param, no port, and no `controlFamilies` line —
+  // `nibbles-face-model.test.ts` asserts `controlFamilies ?? [] === []` three
+  // times over, so an earlier draft of this paragraph that claimed one was
+  // contradicted by its own PR's tests. `docs:accept` produces an empty
+  // `contract-lock.txt` diff.
   //
   // ⚠ TWO LIVE DEFECTS ARE FIXED IN THE SAME DIFF, both on the CARD as well as
   // the face, because the gestures now share one seam: SCALE was component
