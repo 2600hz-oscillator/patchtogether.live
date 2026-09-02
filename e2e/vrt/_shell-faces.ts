@@ -4908,6 +4908,7 @@ export const FACES = [
   // `numpad-plus-writes.test.ts` pins what every gesture writes, and
   // `numpad-plus-face.spec.ts` drives the real grid and reads the graph back.
   { type: 'numpadPlus', pages: 4 },
+
   // ── TEXTMARQUEE (2026-08-31) — the roster's first DOCUMENT EDITOR ─────────
   //
   // `pages: 1` — the face declares one band (`ribbon`) holding all four knobs,
@@ -4980,6 +4981,25 @@ export const FACES = [
       + 'because an empty model makes the node-lifetime rasterizer clear the texture rather than '
       + 'push a black layer.',
   },
+
+
+  // ── JOYSTICK (2026-09-01, face-program wave 3) — the two-ordinary-cells
+  // fallback (owner decision 2026-08-31 item 2) ─────────────────────────────
+  //
+  // `pages: 1` — the face declares no `pages`, so the dock renders the one
+  // unlabeled `__all` band: two bipolar knob cells (X, Y) BENEATH the
+  // `fullViewBody` pad. Both scenes are deterministic at rest with no seam of
+  // any kind: `domain: 'audio'`, no canvas anywhere on the surface, and both
+  // axes default to 0, so the dot sits at the crosshair centre on every boot
+  // (`joystick-persist-model.test.ts` pins the defaults). Nothing animates —
+  // the only writers are a pointer gesture, a knob cell, MIDI learn or a
+  // collab peer, none of which occur in a solo capture.
+  //
+  // ⚠ THE DOCK SCENE DELIBERATELY PHOTOGRAPHS THE REDUNDANCY: pad above, two
+  // knobs below, per the owner decision — so a later "cleanup" that quietly
+  // drops either surface moves this baseline and gets a review.
+  { type: 'joystick', pages: 1 },
+
 ] as const;
 
 /**

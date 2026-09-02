@@ -54,10 +54,22 @@
 //     `faces-parity`'s "the visible thing and the operable thing are two
 //     different elements" rule there. Recorded rather than fixed, because the
 //     honest fix is a DOM assertion and this lane has no DOM.
-//   * IT SAYS NOTHING ABOUT THE LANE. A `'body'` pad is dropped at the DOCK
-//     only; every lane tier keeps the generic `XyPad` by construction
-//     (`curatedFace`'s tier test). `module-face-lint`'s completeness sweep is
-//     what proves the axes are still ranked at all.
+//   * IT SAYS NOTHING ABOUT THE LANE — and the first draft of this bullet got
+//     the lane fact BACKWARDS. It claimed "every lane tier keeps the generic
+//     `XyPad` by construction"; `curated-face.ts` says the opposite three
+//     files away: `laneOrder` makes every declared pad's anchor dock-only, so
+//     NO lane tier has ever painted a pad, `surface` or not. What is true is
+//     narrower: this file's subject is the DOCK surface swap only, and
+//     `module-face-lint`'s completeness sweep is what proves the axes are
+//     still ranked at all.
+//   * IT CANNOT SEE A PAD A BODY PAINTS WITHOUT THE CELL CONTRACT. A body
+//     that draws its own pad with module-owned testids and no
+//     `data-control-params` (the `joystick` two-ordinary-cells shape, owner
+//     decision 2026-08-31 — the ranked knob cells are the parity-credited
+//     controls and the pad is a deliberate redundant surface) is invisible to
+//     both legs BY DESIGN: the inverse leg keys on `data-control-params`, and
+//     that absence is exactly what keeps faces-parity's multiset honest. The
+//     module's own face-model test is what pins such a pad's behaviour.
 
 import { describe, expect, it } from 'vitest';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';

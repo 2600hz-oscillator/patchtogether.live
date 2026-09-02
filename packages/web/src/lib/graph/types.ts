@@ -782,10 +782,13 @@ export interface FaceXyPad {
    * untouched because the pad was never in it.
    *
    * ⚠ THE #1974 REFUSAL IS A SEPARATE QUESTION AND THIS FIELD DOES NOT ANSWER
-   * IT. `joystick` is refused because a pad is its ONLY control, so the lane
-   * resolves to ZERO controls whatever any face declares. A module adopting
-   * `'body'` must still have something else to show in the lane; if it does
-   * not, the answer is to not promote it.
+   * IT. A pad-only face resolves to ZERO lane controls whatever any face
+   * declares, and module-face-lint denies it. A module adopting `'body'` must
+   * still have something else to show in the lane. (`joystick` — the refusal's
+   * own module — shipped 2026-09-01 WITHOUT this field: the owner's
+   * two-ordinary-cells fallback ranks its axes as plain knob cells and its
+   * `fullViewBody` pad is a redundant module-owned surface, NOT a declared
+   * body pad. The denied SHAPE survives as the lint's synthetic fixture.)
    *
    * ⚠ AND IT IS A CLAIM THE GATES CHECK IN BOTH DIRECTIONS, not a hint.
    * `module-face-lint` INVERTS its render-parity assertion for a `'body'`

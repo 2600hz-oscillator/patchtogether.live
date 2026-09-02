@@ -12,10 +12,12 @@
 //   * Four ConstantSourceNodes — one per output port. Each carries an
 //     offset that we set via setValueAtTime() whenever the card pushes
 //     a new position.
-//   * The pad UI lives on the faceplate's shared `xy` cell (and, under
-//     ?shell=legacy, on JoystickCard); the audio module exposes a pair
-//     of internal params `pos_x` and `pos_y` (range -1..+1) that the pad
-//     writes via the normal param path. The factory mirrors those into
+//   * The pad UI lives on the `joystick` extension's `fullViewBody`
+//     (JoystickPadBody.svelte — there is no shared xy cell in this design;
+//     see the face block below) and, in the lane under ?shell=legacy, on
+//     JoystickCard; the audio module exposes a pair of internal params
+//     `pos_x` and `pos_y` (range -1..+1) that the pad writes via the
+//     normal param path. The factory mirrors those into
 //     the ConstantSource offsets so the engine's per-param tap
 //     analyser sees live activity for the motorized fader path (also
 //     useful for tests that poke setParam directly without UI).
@@ -96,78 +98,47 @@ export const joystickDef: AudioModuleDef = {
     },
   },
 
-  // ⚠ NO `face` YET — Q43 IS BUILT AND HELD, AND THE BLOCKER IS NOT THIS FILE.
-  // The migration inventory prescribes the shared `xy` cell for this module and
-  // that is still right; what is not ready is the cell. Measured 2026-08-19
-  // while building the promotion:
+  // ── THE FACE (2026-09-01) — the TWO-ORDINARY-CELLS fallback, by owner
+  // decision (2026-08-31, face-program owner-decisions item 2) ───────────────
   //
-  //   * `XyPad.svelte` painted a `.xy-readout` row — `x <n> / y <n>`, two
-  //     resting decimals — which is exactly the text the 2026-08-17 ruling
-  //     removes, so promoting would MOVE this module's decimal from the card to
-  //     the faceplate rather than delete it (the stated point of the migration);
-  //   * the pad exposed NO value in the accessibility tree that the ruling's
-  //     "the number survives where it is speakable" half could point at; and
-  //   * `face-readout-source.test.ts` lists only `KnobConic` and `NeonFader` in
-  //     its `PRIMITIVES`, so the gate that enforces the ruling was BLIND to the
-  //     pad — which is why none of this was already red.
+  // The long-standing #1974 refusal was real and is not being argued with: a
+  // face declaring `xyPads: [{x:'pos_x', y:'pos_y'}]` resolves to ZERO lane
+  // controls (`laneOrder` makes every pad anchor dock-only; `foldedOrder`
+  // removes the partner at every tier), and `module-face-lint`'s
+  // lane-paints-something clause denies exactly that shape — with a fixture of
+  // this module's OLD shape as its permanent negative control. Two exits
+  // existed: teach the lint to credit a `tileBody` (a gate edit, which the
+  // 2026-08-25 "no new gates without discussion" ruling puts in the owner's
+  // hands), or rank the two axes as ORDINARY CELLS and let the module's own
+  // `fullViewBody` carry the pad at the dock. The owner picked the second.
   //
-  // ✅ ALL THREE ARE CLEARED BY #2038, and this comment is updated rather than
-  // deleted so the next reader can see WHY the blocker lifted rather than
-  // finding a promotion with no recorded reason. The readout row is DELETED
-  // from the primitive (not hidden, and with no prop to re-enable it); the
-  // values live in the pad's `aria-label`, which is where a `role="application"`
-  // control's value belongs — there is no `aria-valuetext` on that role, so the
-  // middle bullet's original wording was asking for the wrong attribute; and
-  // `xy-pad-readout-source.test.ts` now denies the class at the PRIMITIVE level,
-  // so the gate is no longer blind to it.
+  // So: NO `xyPads`. `pos_x`/`pos_y` are two plain bipolar knob cells — that
+  // is what the lane tile paints, and it is what makes the lint's lane clause
+  // TRUE rather than dodged. The real pad — jump-to-point, pointer capture,
+  // Y flip, rAF-coalesced tracked commits, double-click re-centre, NO
+  // snap-back (#1963 "1 - persist") — is `JoystickPadBody.svelte`, mounted as
+  // the `fullViewBody` of the `joystick` extension at the head of the dock
+  // full view.
   //
-  // ⚠ THIS DOES NOT PROMOTE THE MODULE — #2038 is a primitive fix and stops at
-  // the primitive.
+  // ⚠ THE COST IS STATED, NOT HIDDEN (the twotracks redundancy): the dock
+  // shows the pad body AND the two knob cells beneath it — two operable
+  // surfaces over the same pair of params — against this module's old
+  // inventory note ("never two knobs"). The knobs are the parity-credited
+  // cells (`control-pos_x`/`control-pos_y`, MIDI-learnable like any band
+  // knob); the pad is the module's own surface with its own testids and
+  // MUST NOT emit `data-control-params` or a `control-*` anchor, or
+  // faces-parity counts each axis twice and `face-xy-body-source.test.ts`'s
+  // inverse leg refuses the undeclared pad. `joystick-face-model.test.ts`
+  // pins both directions.
   //
-  // Everything else Q43 needs was done and shipped earlier: the #1963 ruling
-  // (no snap-back, the docs corrected), the raw-write debt paid, and a
-  // `faceLaneCellHeights` fold bug that attempting the promotion exposed.
-  //
-  // ── ⚠ AND THERE IS A SECOND, OLDER BLOCKER THIS COMMENT NEVER MENTIONED ────
-  //
-  // Re-derived 2026-08-23 while cut A batch 2 was assigned this module. The
-  // three bullets above are all about the READOUT, and all three really are
-  // cleared — so read on its own this comment says "unblocked", which is what
-  // it said before it was corrected. It is not, and the reason is structural
-  // rather than cosmetic:
-  //
-  //   THIS MODULE'S LANE TILE WOULD BE EMPTY. `joystick` declares exactly two
-  //   params and both are the axes of one pad. `laneOrder` deletes every
-  //   declared `xyPads` anchor from the lane order (a pad is square; a lane
-  //   knob column is 46 px) and `foldedOrder` removes the partner axis at every
-  //   tier, so a face here resolves to ZERO controls at mini, compact AND full.
-  //   Nor is there a glyph to fall back on: `glyphBinding` reaches a live trace
-  //   only through a primary AUDIO output, and this module declares four `cv`
-  //   outputs and no audio, so every glyph literal resolves `{ kind: 'static' }`
-  //   — which `module-face-lint`'s dead-glyph clause refuses by name. The tile
-  //   would be a title bar and a jack rail with nothing between them, which is
-  //   strictly worse than the uniform placeholder it would replace.
-  //
-  // This is the refusal `strict-faces.ts` records in the `quadralogical` entry
-  // and `types.ts` records on `FaceXyPad.surface` — and `quadralogical` is
-  // promotable with the SAME pad only because it has eighteen other ranked
-  // params. `surface: 'body'` does not answer it either: that field changes
-  // WHICH DOCK SURFACE paints the pad, never whether a lane has one.
-  //
-  // ⚠ IT IS NOW ENFORCED, which it was not when the comment above was written.
-  // Nothing in the repo failed on a zero-control lane — the cap-vs-fit-plan
-  // clause reads `rendered === face.controls.length`, which is `0 === 0` and
-  // green — so a face authored here would have SHIPPED with a blank tile
-  // through the whole gate set. `module-face-lint.test.ts` now denies a
-  // promoted face that ranks controls and resolves to none of them at a lane
-  // tier, with this exact shape as its permanent negative control.
-  //
-  // So the honest status is BLOCKED, on a platform capability rather than on
-  // this file: either a glyph binding that can paint a pad's position (which
-  // `types.ts` already prescribes the shape for), or lifting the pad-in-lane
-  // restriction (`LANE_CELL_H.xy` is already carried at its real 96 px against
-  // that day). Both move every pad-bearing face's lane tile and its baselines,
-  // so both are platform work and not a face PR.
+  // ⚠ `glyph: 'none'` IS FORCED, not chosen: four `cv` outputs and no audio
+  // out means every glyph literal resolves `{ kind: 'static' }`, which the
+  // dead-glyph clause refuses by name.
+  face: {
+    order: ['pos_x', 'pos_y'],
+    glyph: 'none',
+    extension: 'joystick',
+  },
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     const initial = node.params ?? {};
     const live = {

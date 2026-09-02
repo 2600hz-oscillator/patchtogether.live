@@ -1169,9 +1169,18 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // here; linux baseline pending a `task vrt:update` run on linux CI (see
   // the vrt-update.yml capture on linux CI). DE/shading correctness is
   // additionally covered by mandelbulb-math.test.ts + mandelbulb.test.ts.
-  // JOYSTICK first-slice PR: card is small + simple (XY pad + four CV
-  // ports), VRT baseline pending. Unit + E2E provide coverage.
-  joystick: 'VRT baseline pending; unit + E2E provide coverage. UI is small + stable — pinning baselines in a follow-up PR.',
+  // ⚠ `joystick` DRAINED 2026-09-01 (face-program wave 3, the promotion PR).
+  // Its entry was never a determinism argument at all — "VRT baseline pending
+  // … in a follow-up PR" was a deferral that then sat here for months while
+  // the card stayed exactly as capturable as it always was: a static square
+  // pad with the dot at the persisted position, which on a solo spawn is the
+  // (0,0) centre on every boot (`joystick-persist-model.test.ts` pins the
+  // defaults). Nothing animates and nothing is time-driven. The promotion
+  // baselines all three scenes — the legacy card here plus
+  // face-joystick-compact / face-joystick-dock in `workflow-shell-faces` —
+  // so the deferral is discharged rather than re-argued. This list is
+  // ANCHORED in both directions: leaving the entry while the module is
+  // baselined would be RED.
   // ⚠ `gamepad` DRAINED 2026-08-24 — the third drain, after `cvBuddy` and
   // `midiclock`, and it discharges the SAME shape of wrong conclusion those two
   // did. The entry read: "card content driven by live navigator.getGamepads()
@@ -1658,7 +1667,12 @@ export const ALLOWED_PERMANENT_EXEMPT: ReadonlySet<string> = new Set([
   // `midiclock`. See the note where its entry used to stand in EXEMPT_FROM_VRT
   // for the argument. This list is ANCHORED in both directions, so leaving the
   // name here while the module is baselined would be RED.
-  'tempest', 'vfpgaRunner', 'joystick',
+  'tempest', 'vfpgaRunner',
+  // ⚠ `joystick` REMOVED 2026-09-01 — the promotion PR baselines all three of
+  // its scenes (the legacy card + both face scenes). Its entry was a deferral
+  // ("baseline pending"), not a determinism argument — see the note where it
+  // stood in EXEMPT_FROM_VRT. This list is ANCHORED in both directions, so
+  // leaving the name here while the module is baselined would be RED.
   // ⚠ `numpadPlus` REMOVED 2026-08-26 — the fifth drain. See the note where its
   // entry stood in EXEMPT_FROM_VRT: both animations its reason named are gated
   // on params that default to 0, so the entry described a state the capture
