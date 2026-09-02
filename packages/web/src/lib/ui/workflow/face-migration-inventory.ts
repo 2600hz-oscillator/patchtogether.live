@@ -815,7 +815,7 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
   {
     type: 'archivist',
     disposition: 'generic-face',
-    why:
+    note:
       'an archive.org SEARCH BROWSER, faced 2026-09-02: one ranked param (gain, a fader) over an ' +
       'extension that fills BOTH body slots. ⚠ IT IS IN `DOM_SOURCE_LANE_TYPES`, so promotion ' +
       'parks the REAL card in <HeadlessSourceHost> at left:-9999px with pointer-events:none — ' +
