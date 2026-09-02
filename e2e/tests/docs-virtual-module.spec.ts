@@ -451,12 +451,25 @@ const PROBES: Probe[] = [
   // wavesculpt) have no live-card probe — see interactive-doc-modules.ts. ---
 ];
 
-/** Wait for the live virtual module to finish mounting (the flow host appears
- *  only after the dynamic card-map import resolves). */
+/** Wait for the live virtual module to finish mounting.
+ *
+ *  The flow host appearing is only a CORRELATE of readiness: it is gated on the
+ *  dynamic card-map import resolving, and the card inside it is still
+ *  `visibility: hidden` until xyflow measures the node. Waiting on the host and
+ *  then asserting a faceplate control is the shape that failed on CI (run
+ *  33567352895) — the control resolved for ten straight seconds and never
+ *  became visible, because the measurement had been dropped.
+ *
+ *  `data-card-ready` is the card's OWN observable: VirtualModule flips it when
+ *  xyflow reports the node measured and un-hides it. Assert that, so a
+ *  regression fails HERE, naming the card, instead of downstream on whichever
+ *  control the probe happened to pick. */
 async function waitForLiveCard(page: Page) {
   const vm = page.getByTestId('virtual-module');
   await expect(vm).toBeVisible({ timeout: 15_000 });
-  await expect(page.getByTestId('virtual-module-flow')).toBeVisible({ timeout: 15_000 });
+  const flow = page.getByTestId('virtual-module-flow');
+  await expect(flow).toBeVisible({ timeout: 15_000 });
+  await expect(flow).toHaveAttribute('data-card-ready', 'true', { timeout: 15_000 });
 }
 
 /** Open the patch panel (left trigger) and drill into INPUT so the port rows

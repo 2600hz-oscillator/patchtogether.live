@@ -45,6 +45,7 @@
   import type { ModuleNode } from '$lib/graph/types';
   import type { DocIndex } from '$lib/docs/doc-index';
   import { docHover, type DocHoverState } from './use-doc-hover.svelte';
+  import NodeMeasureGuard from './NodeMeasureGuard.svelte';
 
   interface DefLike {
     type: string;
@@ -112,6 +113,12 @@
   let Flow = $state<Component | null>(null);
   let nodeTypes = $state<Record<string, Component>>({});
   let flowNodes = $state<unknown[]>([]);
+  // The card's OWN readiness: xyflow has measured the demo node and un-hidden
+  // it. `flow-host` existing only means the dynamic import resolved — the node
+  // inside it is `visibility: hidden` until measurement lands (see
+  // NodeMeasureGuard), so anything that needs to SEE the faceplate must wait on
+  // this, not on the host. Surfaced as `data-card-ready` for e2e.
+  let cardMeasured = $state(false);
 
   onMount(() => {
     let cancelled = false;
@@ -188,7 +195,11 @@
 >
   {#if bound && Flow && CardComponent}
     {@const FlowC = Flow}
-    <div class="flow-host" data-testid="virtual-module-flow">
+    <div
+      class="flow-host"
+      data-testid="virtual-module-flow"
+      data-card-ready={cardMeasured ? 'true' : 'false'}
+    >
       <FlowC
         nodes={flowNodes}
         edges={[]}
@@ -203,7 +214,9 @@
         panOnScroll={false}
         preventScrolling={false}
         proOptions={{ hideAttribution: true }}
-      />
+      >
+        <NodeMeasureGuard id={DEMO_ID} onmeasured={() => (cardMeasured = true)} />
+      </FlowC>
     </div>
   {:else}
     <div class="vm-loading" data-testid="virtual-module-loading">loading live module…</div>
