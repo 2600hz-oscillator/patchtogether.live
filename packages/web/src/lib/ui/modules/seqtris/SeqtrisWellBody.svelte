@@ -151,9 +151,12 @@
 
 <div class="seqtris-face-body" data-testid="seqtris-face-body">
   <div class="bind-row">
-    <!-- ⚠ A LAMP WITH A `detail`, NOT A LAMP PLUS A REPEATED SENTENCE. The
-         status prose below is the card's, kept for parity; this carries the
-         same state to the a11y tree in the primitive's own form. -->
+    <!-- ⚠ THE LAMP IS THE WHOLE STATUS SURFACE, and it replaces BOTH of the
+         card's binder indicators: the bare `<span class="led">` becomes its
+         `lit` state, and the `<p class="status">` sentence becomes its
+         `detail` — reaching `aria-label` + `title` and never a text node. The
+         note below the picker is why that paragraph is deleted rather than
+         carried over. -->
     <StatusLed
       caption="PAD"
       lit={bound}

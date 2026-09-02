@@ -46,8 +46,9 @@ import SeqtrisTileBody from './SeqtrisTileBody.svelte';
 
 export default {
   // The DOCK: the well, the eight-row hardware scene column (both dead buttons
-  // included), CONNECT / Unbind, the index-keyed port picker, the status line
-  // and the SCREEN switch.
+  // included), CONNECT / Unbind, the index-keyed port picker, the bind LAMP
+  // (which carries the six status strings on its `detail`, never as a text
+  // node) and the SCREEN switch.
   fullViewBody: SeqtrisWellBody,
   // The LANE: the same well, read-only, plus the bind lamp. The tile is where a
   // player normally meets this module, and until now it could show nothing

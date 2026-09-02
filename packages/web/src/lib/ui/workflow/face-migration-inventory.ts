@@ -1751,8 +1751,9 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
       'is what `paramCellKind` already resolves for both and there is no `knob` literal to ' +
       'declare — plus BOTH extension body slots. `fullViewBody` carries the well, the eight-row ' +
       'hardware scene column INCLUDING the two dead buttons, CONNECT / Unbind, the index-keyed ' +
-      'port picker and the status line; `tileBody` carries the same well read-only plus a bind ' +
-      'lamp, so the lane answers "is it playing, and is my Launchpad on it" without expanding. ' +
+      'port picker and the bind LAMP that carries the six status strings on its `detail`; ' +
+      '`tileBody` carries the same well read-only plus that lamp, so the lane answers "is it ' +
+      'playing, and is my Launchpad on it" without expanding. ' +
       '⚠ THE WELL STAYS DOM — a CSS grid of 64 spans, not a canvas: the modtris/skifree DPR ' +
       'lessons are canvas-BLIT hazards that a 1fr grid with a 1/1 aspect-ratio cannot have, and ' +
       'converting it would delete 64 testids plus the `data-piece` attribute (the only ' +
@@ -1761,7 +1762,7 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
       'this factory PUSHES on every state change, so a poll would make an idle, unclocked ' +
       'seqtris do work forever. ⚠ THE CARD\'S `revision` SEAM IS CARRIED OVER AND MADE SHARED — ' +
       '`launchpadStatus()` reads a per-binding closure that nothing invalidates, so omitting the ' +
-      'tick freezes the status line, the lamp and the CONNECT/Unbind swap silently, and a lane ' +
+      'tick freezes the lamp, its status detail and the CONNECT/Unbind swap silently, and a lane ' +
       'tile mounted beside an open dock pane would otherwise disagree with it about one ' +
       'hardware claim. ⚠ NO simPin AND NO VRT EXEMPTION TO DISCHARGE: unlike modtris, pong, ' +
       'frogger and skifree, seqtris was NEVER in EXEMPT_FROM_VRT — the bag is seeded from a ' +
