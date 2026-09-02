@@ -21,6 +21,50 @@
   //     all. Engine-side, the blit's markWatched TTL (~1.5s) + the central
   //     card-visibility feed (video-card-visibility.ts) then decay the chain
   //     out of the pull active set on their own.
+  //
+  // ⚠ FIRST-PAINT READINESS (`data-thumb-painted`) — WHY THE WELL HAS TO SAY
+  // SO ITSELF, and it is a measurement rather than a nicety.
+  //
+  // This well has THREE states, and the first two are pixel-different from the
+  // third while being indistinguishable from it to any "has the picture
+  // settled?" check:
+  //
+  //   1. the canvas before its first tick — no 2D context yet, so the CSS
+  //      `background: #050608` below is what composites;
+  //   2. after tick 1 but before the ENGINE has drawn this node's surface —
+  //      `fillRect('#050608')` has run and the blit copied an FBO that has
+  //      never been rendered into, so the well is a flat #050608;
+  //   3. after a tick that blitted a surface the engine HAS drawn — the
+  //      module's real picture (for a source with nothing loaded, its idle
+  //      shader; videovarispeed's is a 0.05/0.05/0.08+y gradient).
+  //
+  // States 1 and 2 are perfectly STILL, so a stillness check (the VRT face
+  // scenes' `freezeFaceVideo`) is satisfied VACUOUSLY by both and photographs
+  // a well that has not yet shown anything. MEASURED (2026-09-02,
+  // videovarispeed compact face scene, this component instrumented per rAF):
+  //
+  //     t=10260ms  canvas present, framesDrawnFor=0, centre px (0,0,0)
+  //     t=10274ms  tick 1 ran,     framesDrawnFor=0, centre px (5,6,8)
+  //     t=10400ms  ENGINE DREW,    framesDrawnFor=1, centre px (5,6,8)  <-- stale
+  //     t=10491ms  tick 2 ran,     framesDrawnFor=3, centre px (13,13,27)
+  //
+  // The ~230 ms gap is WALL-CLOCK and structural: `VIDEO_THUMB_FPS` throttles
+  // this loop to one draw per 66.7 ms no matter how fast rAF runs, so a
+  // frame-counted settle window (6 rAFs) fits ENTIRELY INSIDE one throttle
+  // interval whenever rAF beats ~90 fps — which is exactly what a lightly
+  // loaded CI shard does. That is how `face-videovarispeed-compact` was green
+  // on shard 11 (run 33654251659) and red on shard 8/12 of run 33658977822 —
+  // 1011 px, ratio 0.15 — with a byte-identical tree.
+  //
+  // So the well publishes the state it is actually in, ONCE, as an attribute a
+  // capture can wait on. It is a one-time write per canvas (never per frame)
+  // and it is never cleared — the canvas dies with the tile. The condition is
+  // one draw count, `framesDrawnFor(nodeId) >= 1`, and it is the right test for
+  // a TEXTURE-LESS node as well: `outToLaunch` has no picture and the dark well
+  // IS its honest answer, but the engine still DRAWS it (its screen is 81
+  // physical LEDs), so it stamps on the same condition rather than on a special
+  // case. MEASURED: `framesDrawnFor('outToLaunch') = 29` at the point its face
+  // scene's wait returns, one well, stamped.
 
   import { onMount } from 'svelte';
   import { useEngine } from '$lib/audio/engine-context';
@@ -47,6 +91,9 @@
     let rafId: number | null = null;
     let visible = false;
     let lastDraw = 0;
+    /** Has this well published its first HONEST frame? See the readiness note
+     *  in the header. One write per canvas for the life of the tile. */
+    let painted = false;
     const minFrameMs = 1000 / VIDEO_THUMB_FPS;
 
     const draw = (now: number) => {
@@ -95,6 +142,13 @@
             // picture, and it is DETERMINISTIC — which is also what lets
             // `face-outToLaunch-compact` be a real baseline instead of a mask.
             const hasPicture = videoEngine.outputTexture(nodeId) !== null;
+            // ⚠ READ BEFORE THE BLIT, and the ordering is the guarantee: draw
+            // counts only ever accumulate, so a node that had already been
+            // drawn when this was read is still drawn when the blit copies its
+            // FBO a few statements later. Reading it AFTER would be the same
+            // number or larger and would still be sound; reading it here keeps
+            // "what was true of the pixels I am about to copy" literal.
+            const rendered = videoEngine.framesDrawnFor(nodeId) > 0;
             // The legacy preview seam: blit THIS node's FBO into the engine's
             // drawing buffer (marks it watched), then snapshot it. Never let an
             // engine hiccup kill the loop.
@@ -112,6 +166,29 @@
                   el.height,
                 );
                 drawPreviewDownscaled(ctx2d, src, r.x, r.y, r.w, r.h);
+              }
+              // The well now shows this node's REAL answer, so publish it once.
+              // Guarded on `ctx2d` rather than sitting beside it, because a
+              // canvas that could not get a 2D context has painted nothing and
+              // must not claim to.
+              //
+              // ⚠ THE CONDITION IS `rendered` ALONE, AND THE FIRST DRAFT'S
+              // `!hasPicture || rendered` WAS AN UNTRUTHFUL SIGNAL — caught by
+              // its own control, which recorded the well's pixel at the first
+              // frame it claimed readiness and got (5,6,8) rather than the idle
+              // gradient. `outputTexture` returns null for a TEXTURE-LESS node
+              // AND for a node the engine has not added yet, and those are not
+              // the same claim: the first says "the dark well is my picture",
+              // the second says "ask me later". One draw count separates them,
+              // and it is the right test for BOTH cases — a texture-less sink
+              // (`outToLaunch`, whose screen is 81 physical LEDs) is drawn like
+              // any other node once the blit above has marked it watched, so it
+              // reaches `framesDrawnFor >= 1` and stamps on its honest dark
+              // well, which is what lets `face-outToLaunch-compact` be a real
+              // baseline rather than a mask.
+              if (!painted && rendered) {
+                painted = true;
+                el.dataset.thumbPainted = '1';
               }
             }
           } catch {

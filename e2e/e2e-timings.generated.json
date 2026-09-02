@@ -1,6 +1,6 @@
 {
   "_comment": "Per-spec-file cost in SECONDS of test execution (CPU time, summed across a file's tests). Regenerate with `flox activate -- task e2e:timings:accept -- <ci-run-id>` (scripts/e2e-timings-accept.mjs) and REVIEW THE DIFF. Costs only — contention classes are derived at plan time by scripts/e2e-contention-scan.mjs and are deliberately NOT committed here (#1600).",
-  "_source": "UNION of ci.yml runs 33651528775 (main, 413 keys) and 33654251659 (feat/nibbles-face, grafting 1 key(s) main's run could not measure): 414 keys, 23871.4 CPU-s  ∪  ci.yml run 33663808159 (painter)",
+  "_source": "UNION of ci.yml runs 33651528775 (main) ∪ 33654251659 (feat/nibbles-face) ∪ 33663808159 (feat/painter-face) ∪ 33673574988 (feat/chromaconsole-face, grafting 1 key(s) no earlier run could measure: face-chromaconsole.spec.ts): 416 keys, 24129.2 CPU-s. Shared keys take the LATEST run that measured them; a grafted key keeps the value from the run that introduced it.",
   "files": {
     "4plexer.spec.ts": 32.9,
     "acidwarp-face-screen.spec.ts": 52.5,
@@ -119,6 +119,7 @@
     "es9-shell-lifetime.spec.ts": 37.4,
     "export-state-only.spec.ts": 4.1,
     "extras-producer-lifetime.spec.ts": 171.6,
+    "face-chromaconsole.spec.ts": 87.2,
     "face-mappy.spec.ts": 129.8,
     "face-moog956.spec.ts": 12.1,
     "face-nibbles.spec.ts": 104.8,

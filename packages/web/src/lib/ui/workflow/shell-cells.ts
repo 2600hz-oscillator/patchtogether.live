@@ -247,6 +247,10 @@ import {
 import { runLivecodeNode } from '$lib/ui/modules/livecode-cell-actions';
 import { launchpadConnectSingle, launchpadPair } from '$lib/ui/modules/launchpad-cell-actions';
 import { push2Connect } from '$lib/ui/modules/push2-cell-actions';
+import {
+  chromaconsoleConnect,
+  chromaconsolePushAll,
+} from '$lib/ui/modules/chromaconsole-cell-actions';
 import { electraSendToDevice } from '$lib/ui/modules/electra-cell-actions';
 import { readSurfaceData, setSurfaceLocked } from '$lib/graph/control-surface';
 import { outToLaunchConnect } from '$lib/ui/modules/out-to-launch-cell-actions';
@@ -2681,12 +2685,83 @@ const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
     },
   },
 
-  // ── TRAILS — the THIRD binder's grant, and the one whose module is inert
+  // ── CHROMA CONSOLE — the THIRD binder, and the first whose second cell is a
+  //    RECONCILIATION rather than a link ─────────────────────────────────────
+  //
+  // A control surface for the Hologram Chroma Console guitar pedal: it sends CC
+  // and carries no audio. Eight of the pedal's thirty-four documented CCs are
+  // backed by real params (`slot1`…`slot8`) and render as ordinary knob cells;
+  // these two are the gestures that are not params at all.
+  //
+  // ⚠ CONNECT IS midiclock's ARGUMENT (#2187) VERBATIM. Web MIDI publishes no
+  // port until the browser consents, so a fresh spawn is eight knobs that send
+  // nothing — and until promotion the only affordance that could ask for the
+  // grant lived on a legacy card the default shell paints as a lane
+  // PLACEHOLDER. An `action` cell is not dock-restricted (only `panel` is, by
+  // `panelCellKeys`), so ranking it FIRST puts the gesture on the tile inside
+  // the glyph-less compact cap of 3.
+  //
+  // ⚠ PUSH ALL IS WHAT THIS MODULE ADDS TO THAT COHORT, and it earns rank 2 on
+  // a property of the DEVICE rather than of the browser. The pedal is
+  // `readBack: 'none'` — no state query, no dump, no handshake — so the app is
+  // permanently the authority, a hand on a physical knob desyncs the screen
+  // with no way to detect it, and PUSH ALL is the ONLY reconciliation that
+  // exists in either direction. It is also the only gesture on the module with
+  // no second surface: the eight slot VALUES are reachable through MIDI learn,
+  // clip automation, the Electra and the Push 2 card, which is why two gestures
+  // outrank eight knobs here and would not on a module whose knobs are its only
+  // route to its own state.
+  //
+  // ⚠ AN AUDITION PROBE ON BOTH, NOT A STATE READ — midiclock's argument, and
+  // it binds twice as hard here. The obvious observables (`status().connected`
+  // flipping; the transmitter's `delivered` count rising) depend on the MACHINE
+  // rather than on the button: no CI runner has a Chroma Console, a granted MIDI
+  // origin, or any output port at all, so a state probe would be permanently RED
+  // on a perfectly live control. The audition asks what the runner CAN answer —
+  // did the press resolve a callable off the live engine handle and call it.
+  //
+  // ⚠ AND BOTH RECORD `delivered: false` WHEN THE HANDLE IS ABSENT. A press that
+  // reached nothing is recorded loudly rather than dropped; the module's own e2e
+  // already pins that shape one layer down ("with NO output selected, a write
+  // sends nothing and is RECORDED undelivered").
+  //
+  // ⚠ THE PEDAL'S FIVE `role: 'action'` COMMANDS ARE NOT HERE. Tap tempo,
+  // capture, the two gesture-looper commands and the calibration menu are the
+  // DEVICE's transport rather than this module's own controls, and each would
+  // need a `controlFamily` whose `testidPrefix` cannot be checked — the card
+  // emits them as `chromaconsole-action-${id}-${controlId}`, an interpolation
+  // whose per-control literal appears in no card source, so module-docs-lint's
+  // grep would pass on a prefix naming nothing. They are buttons on the device
+  // body, keeping the card's exact testids.
+  chromaconsole: {
+    'chromaconsole-connect-{n}': {
+      kind: 'action',
+      label: 'Connect MIDI…',
+      title:
+        'Grant this site access to Web MIDI (one-time per origin) and look for the pedal by '
+        + 'name, then pick an output in the dock',
+      mode: 'trigger',
+      probe: { effect: { kind: 'audition', seam: 'engine-message' } },
+      onFire: (nodeId) => { chromaconsoleConnect(nodeId); },
+    },
+    'chromaconsole-pushall-{n}': {
+      kind: 'action',
+      label: 'Push all',
+      title:
+        'Re-send all eight slots at their current values — the only way to make the pedal match '
+        + 'the screen again, since it never reports its own settings back',
+      mode: 'trigger',
+      probe: { effect: { kind: 'audition', seam: 'engine-message' } },
+      onFire: (nodeId) => { chromaconsolePushAll(nodeId); },
+    },
+  },
+
+  // ── TRAILS — the FOURTH binder's grant, and the one whose module is inert
   //    ONCE rather than twice ─────────────────────────────────────────────────
   //
-  // midiclock waits on the browser's Web-MIDI consent; ptzcam waits on that AND
-  // on a native helper publishing a virtual port pair. This module waits on the
-  // consent alone — the Bela Trails is class-compliant USB-MIDI, so a granted
+  // midiclock and chromaconsole wait on the browser's Web-MIDI consent; ptzcam
+  // waits on that AND on a native helper publishing a virtual port pair. This
+  // module waits on the consent alone — the Bela Trails is class-compliant USB-MIDI, so a granted
   // origin with the device plugged in binds with no driver and no helper app.
   // That makes the argument for a CELL simpler, not weaker: there is exactly one
   // thing standing between a fresh spawn and twenty-one live jacks, and it is a
