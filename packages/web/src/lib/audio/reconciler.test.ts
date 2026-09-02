@@ -581,3 +581,265 @@ describe('reconciler — no per-pass data deep-clone (CC-storm hardening)', () =
     expect(recA.ops).toContain('addNode tb');
   });
 });
+
+// ── A TYPE CHANGE AT A REUSED ID IS A REMOVE + AN ADD ───────────────────────
+//
+// THE DEFECT. Step 2 removed only ids that had LEFT the snapshot and step 3
+// skips any id it already holds, so a node whose `type` (or `domain`) changed
+// AT A REUSED ID produced NO removeNode and NO addNode — the previous module's
+// engine handle stayed bound to that id. `engine.read(node, key)` is keyed by
+// node id with NO type check, and a dozen modules answer the SAME
+// `read('snapshot')` key with their OWN shape (pong, frogger, scope, dockscope,
+// nibbles, skifree, gamepad, featurecv, cube, synesthesia, modtris), so the new
+// module's surface was handed the OLD module's snapshot: SYNESTHESIA's card
+// passes a missing `levelsA` into `drawVuMeters`, whose `levels[c] ?? 0` throws
+// on the INDEX READ before the `??` applies — `Cannot read properties of
+// undefined (reading '0')`. MODTRIS is the same shape via `state.well[…]`.
+//
+// The engine below deliberately mirrors the two AudioEngine properties that
+// make this unrecoverable downstream: handles are keyed by ID ALONE, and
+// `addNode` is IDEMPOTENT PER ID (`if (this.nodes.has(node.id)) return`), so a
+// stale binding can ONLY be repaired by removing it first.
+describe('reconciler — a type/domain change at a REUSED node id', () => {
+  /** Per-type snapshot shapes, standing in for the real `read('snapshot')`
+   *  contract each module owns. */
+  const SNAPSHOT_BY_TYPE: Record<string, Record<string, unknown>> = {
+    scope: { window: [1, 2, 3] },
+    synesthesia: { levelsA: [0, 0, 0, 0], levelsB: [0, 0, 0, 0] },
+  };
+
+  /** A DomainEngine that binds a per-id handle, exactly like AudioEngine. */
+  class HandleEngine extends RecordingEngine {
+    /** nodeId → the type whose handle is currently bound at that id. */
+    handles = new Map<string, string>();
+    /** Resolves when `gate` is released; `undefined` means "don't block". */
+    private gate: Promise<void> | undefined;
+    private releaseGate: (() => void) | undefined;
+    /** ids whose addNode must await the gate. */
+    blockIds = new Set<string>();
+
+    constructor(domainName = 'audio') {
+      super();
+      this.domain = domainName as 'audio';
+    }
+
+    /** Arm a gate so the NEXT blocked addNode parks the reconcile pass. */
+    arm(): void {
+      this.gate = new Promise<void>((r) => { this.releaseGate = r; });
+    }
+    release(): void {
+      this.releaseGate?.();
+      this.gate = undefined;
+      this.releaseGate = undefined;
+    }
+
+    override async addNode(nd: ModuleNode): Promise<void> {
+      // ⚠ THE IDEMPOTENCE THAT MAKES THE BUG UNRECOVERABLE IN THE ADD PASS.
+      if (this.handles.has(nd.id)) return;
+      if (this.blockIds.has(nd.id) && this.gate) await this.gate;
+      this.handles.set(nd.id, nd.type);
+      this.ops.push(`addNode ${nd.id}:${nd.type}`);
+    }
+    override removeNode(id: string): void {
+      this.ops.push(`removeNode ${id}:${this.handles.get(id) ?? '?'}`);
+      this.handles.delete(id);
+    }
+    // Params are OPTIONAL so this stays assignable to RecordingEngine's
+    // zero-arg `read()`; the reconciler's engine always passes both.
+    override read(id?: string, key?: string): unknown {
+      if (key !== 'snapshot' || id === undefined) return undefined;
+      const boundType = this.handles.get(id);
+      return boundType ? SNAPSHOT_BY_TYPE[boundType] : undefined;
+    }
+  }
+
+  function makeHandleEngine(extraDomains: string[] = []): {
+    pe: PatchEngine;
+    rec: HandleEngine;
+    byDomain: Map<string, HandleEngine>;
+  } {
+    const pe = new PatchEngine();
+    const rec = new HandleEngine('audio');
+    const byDomain = new Map<string, HandleEngine>([['audio', rec]]);
+    pe.registerDomain(rec);
+    for (const d of extraDomains) {
+      const other = new HandleEngine(d);
+      byDomain.set(d, other);
+      pe.registerDomain(other);
+    }
+    return { pe, rec, byDomain };
+  }
+
+  /** `addNode` is awaited, so a pass over N nodes needs N+ turns. */
+  async function drain(): Promise<void> {
+    for (let i = 0; i < 8; i++) await new Promise((r) => setTimeout(r, 0));
+  }
+
+  it('ONE transaction that deletes and re-adds id `sut` at a NEW type removes then adds', async () => {
+    // This is the shape both real writers produce: `loadEnvelopeIntoStore`
+    // swapping the live store, and the e2e `spawnPatch` helper clearing and
+    // rebuilding the rack. ONE transaction is ONE snapshot, so the empty
+    // intermediate state never exists to be observed — the reconciler sees
+    // only "id sut, different type".
+    const P = freshPatch();
+    const bus = createSnapshotBus({ patch: P.patch as never, ydoc: P.ydoc });
+    const { pe, rec } = makeHandleEngine();
+    const handle = attachReconciler(pe, { bus });
+
+    P.ydoc.transact(() => { P.patch.nodes['sut'] = n('sut', 'scope'); });
+    await drain();
+    expect(rec.ops).toEqual(['addNode sut:scope']);
+    rec.ops.length = 0;
+
+    P.ydoc.transact(() => {
+      delete P.patch.nodes['sut'];
+      P.patch.nodes['sut'] = n('sut', 'synesthesia');
+    });
+    await drain();
+
+    // THE ASSERTION: removal of the OLD module, then the add of the new one,
+    // in that order. Before the fix this was `[]`.
+    expect(rec.ops).toEqual(['removeNode sut:scope', 'addNode sut:synesthesia']);
+
+    // …and the observable consequence: `read` settles to the NEW module's
+    // snapshot shape. Before the fix it returned SCOPE's `{ window }`, which
+    // is what a synesthesia surface throws on.
+    const after = pe.read(n('sut', 'synesthesia'), 'snapshot') as
+      | { levelsA?: number[]; window?: number[] }
+      | undefined;
+    expect(after?.levelsA, 'the NEW module answers read()').toEqual([0, 0, 0, 0]);
+    expect(after?.window, 'no trace of the OLD module').toBeUndefined();
+
+    handle.dispose();
+  });
+
+  it('THE CI CONDITION — an empty state COALESCED away by an in-flight pass still swaps', async () => {
+    // ⚠ THE FLAKE. The e2e shared rack session clears the graph in its OWN
+    // transaction before each row, so an intermediate empty state DOES exist —
+    // and it is still not always seen. `enqueue` chains
+    // `inFlight.then(() => doReconcile(latest))` and reads `latest` when the
+    // pass RUNS, not when it is queued: while a slow factory is awaited, the
+    // clear and the re-add both land, `latest` advances past the empty state,
+    // and the queued pass reads only the final one. That is the difference
+    // between "the previous row's module is torn down" and "it isn't", and it
+    // is decided by machine contention — hence recovered-on-retry.
+    const P = freshPatch();
+    const bus = createSnapshotBus({ patch: P.patch as never, ydoc: P.ydoc });
+    const { pe, rec } = makeHandleEngine();
+    const handle = attachReconciler(pe, { bus });
+
+    P.ydoc.transact(() => { P.patch.nodes['sut'] = n('sut', 'scope'); });
+    await drain();
+    rec.ops.length = 0;
+
+    // Park a pass mid-flight on a slow factory.
+    rec.blockIds.add('slow');
+    rec.arm();
+    P.ydoc.transact(() => { P.patch.nodes['slow'] = n('slow', 'scope'); });
+    await new Promise((r) => setTimeout(r, 0));
+
+    // Clear and re-add as SEPARATE transactions while that pass is parked.
+    P.ydoc.transact(() => { delete P.patch.nodes['sut']; });
+    await new Promise((r) => setTimeout(r, 0));
+    P.ydoc.transact(() => { P.patch.nodes['sut'] = n('sut', 'synesthesia'); });
+    await new Promise((r) => setTimeout(r, 0));
+
+    // Nothing has run for `sut` yet — the empty state was coalesced away.
+    expect(rec.ops.filter((o) => o.startsWith('removeNode sut'))).toEqual([]);
+
+    rec.release();
+    await drain();
+
+    expect(rec.ops.filter((o) => o.includes('sut'))).toEqual([
+      'removeNode sut:scope',
+      'addNode sut:synesthesia',
+    ]);
+    expect(rec.handles.get('sut')).toBe('synesthesia');
+    handle.dispose();
+  });
+
+  it('a DOMAIN change at a reused id removes from the OLD domain and adds to the NEW', async () => {
+    // `removeNode(prev)` has to route by the PREVIOUS node's domain — the
+    // handle lives in the engine that built it, not the one the new node names.
+    const P = freshPatch();
+    const bus = createSnapshotBus({ patch: P.patch as never, ydoc: P.ydoc });
+    const { pe, byDomain } = makeHandleEngine(['video']);
+    const audio = byDomain.get('audio')!;
+    const video = byDomain.get('video')!;
+    const handle = attachReconciler(pe, { bus });
+
+    P.ydoc.transact(() => { P.patch.nodes['sut'] = n('sut', 'scope'); });
+    await drain();
+    audio.ops.length = 0;
+
+    P.ydoc.transact(() => {
+      P.patch.nodes['sut'] = { ...n('sut', 'picturebox'), domain: 'video' };
+    });
+    await drain();
+
+    expect(audio.ops, 'torn down where it was built').toEqual(['removeNode sut:scope']);
+    expect(video.ops, 'built where it now belongs').toEqual(['addNode sut:picturebox']);
+    expect(audio.handles.has('sut'), 'no stale audio handle').toBe(false);
+    handle.dispose();
+  });
+
+  it('NEGATIVE CONTROL — an UNCHANGED type at the same id is never churned', async () => {
+    // Guards the instrument. A filter that removed on any re-observation would
+    // pass every assertion above while tearing the whole rack down and
+    // rebuilding it on every pass — audible as a click on every param write.
+    const P = freshPatch();
+    const bus = createSnapshotBus({ patch: P.patch as never, ydoc: P.ydoc });
+    const { pe, rec } = makeHandleEngine();
+    const handle = attachReconciler(pe, { bus });
+
+    P.ydoc.transact(() => { P.patch.nodes['sut'] = n('sut', 'scope'); });
+    await drain();
+    rec.ops.length = 0;
+
+    // A param write, a data write, and a same-type re-assignment of the node.
+    P.ydoc.transact(() => { P.patch.nodes['sut']!.params['gain'] = 0.5; });
+    await drain();
+    P.ydoc.transact(() => { P.patch.nodes['sut'] = n('sut', 'scope'); });
+    await drain();
+    P.ydoc.transact(() => { P.patch.nodes['other'] = n('other', 'scope'); });
+    await drain();
+
+    expect(rec.ops.filter((o) => o.startsWith('removeNode'))).toEqual([]);
+    expect(rec.ops.filter((o) => o.startsWith('addNode'))).toEqual(['addNode other:scope']);
+    expect(rec.ops).toContain('setParam sut.gain=0.5');
+    handle.dispose();
+  });
+
+  it('a factory that THREW at one type does not blacklist the ADDRESS for another', async () => {
+    // The failed-node mark is keyed id → TYPE. Its stated rationale — "the same
+    // factory throws identically every time" — is about the type, and step 2 can
+    // now re-materialize a node whose type changed at a reused id, so an id-only
+    // mark would make the DIFFERENT module the operator puts there next silently
+    // never appear.
+    const P = freshPatch();
+    const bus = createSnapshotBus({ patch: P.patch as never, ydoc: P.ydoc });
+    const pe = new PatchEngine();
+    class SelectivelyBadEngine extends HandleEngine {
+      override async addNode(nd: ModuleNode): Promise<void> {
+        if (nd.type === 'brokenType') throw new Error(`no def for ${nd.type}`);
+        await super.addNode(nd);
+      }
+    }
+    const rec = new SelectivelyBadEngine('audio');
+    pe.registerDomain(rec);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const handle = attachReconciler(pe, { bus });
+
+    P.ydoc.transact(() => { P.patch.nodes['sut'] = n('sut', 'brokenType'); });
+    await drain();
+    expect(rec.ops).toEqual([]);
+
+    P.ydoc.transact(() => { P.patch.nodes['sut'] = n('sut', 'synesthesia'); });
+    await drain();
+    expect(rec.ops, 'the healthy module at the same id still materializes')
+      .toEqual(['addNode sut:synesthesia']);
+
+    warn.mockRestore();
+    handle.dispose();
+  });
+});
