@@ -1166,12 +1166,46 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
       'always run with no surface mounted, so promotion moves no producer.',
   },
   {
+    // ⚠ THE OLD `why` WAS TRUE AS DESCRIPTION AND CIRCULAR AS AN ARGUMENT — the
+    // eleventh consecutive face where that has been the case. It read: "the
+    // CLIP LAUNCHER: a scene/track grid of pads with per-cell arm, capture,
+    // quantised launch and automation state. It is already carved out of the
+    // shell swap (NON_SHELL_LANE_TYPES) and is the canonical bespoke surface
+    // the extension seam was built for (#1512, now shipped)." The first
+    // sentence is an accurate inventory of what the card does. The second is
+    // the module citing its own carve-out as the reason for its carve-out, and
+    // it was written when the extension seam had one slot; `tileBody` (#2242)
+    // and PF-22's hero-rank fix both landed afterwards and are what made the
+    // faceplate reachable.
     type: 'clipplayer',
-    disposition: 'bespoke-surface',
-    why:
-      'the CLIP LAUNCHER: a scene/track grid of pads with per-cell arm, capture, quantised launch ' +
-      'and automation state. It is already carved out of the shell swap (NON_SHELL_LANE_TYPES) ' +
-      'and is the canonical bespoke surface the extension seam was built for (#1512, now shipped).',
+    disposition: 'generic-face',
+    note:
+      'PROMOTED — the LAST module card to leave NON_SHELL_LANE_TYPES, which now holds only ' +
+      'organizational chrome and a roaming sprite. SIX PF-14 PANEL CELLS carry the instrument: ' +
+      'the 8x8 LAUNCH GRID (ranked first through `face.hero.cell`, the kria route — a panel is ' +
+      'refused at a lane tier, so PF-22 dropping the hero from `laneOrder` is what makes rank 1 ' +
+      'legal at all), the PIANO ROLL, and four EIGHT-WIDE rows (mono/poly, clock rate, ' +
+      'automation arm, scene repeats) that paint all eight lanes at once because comparing the ' +
+      'eight lanes is what a launcher is looked at for. The transport, both recorders, the ' +
+      'clip-undo stack, the per-lane mute/stop deck, the monome bind, the arranger pop-out and ' +
+      'the automation lamps are a `control-grid` fullViewBody; a `tileBody` gives the 192px lane ' +
+      'tile a strip of the eight lanes\' live state plus a panic STOP, which is the per-node ' +
+      'glance a shell glyph structurally cannot give (ShellExtensionGlyphProps carries no ' +
+      'nodeId). Lane-tier change per owner ruling 2026-08-31, owner-decisions item 10, alongside ' +
+      'controlSurface; the owner previews the COMPACT tier before merge. FOUR CONTROL FAMILIES ' +
+      'ARE DELETED (a contract change): auto-assigned, auto-cap and auto-override are pure or ' +
+      'conditional READOUTS with no gesture a faces-parity probe could drive on a fresh node, and ' +
+      'clear-auto renders only inside the editor on a clip that carries automation — all four ' +
+      'still paint, three as StatusLed lamps in the body and CLR AUTO as a button in the note ' +
+      'panel, but none is a CELL, because a family no probe can reach is a cell nothing can ' +
+      'prove is alive. `clipplayer-scene-repeat` survived that cut only because its doc prose was ' +
+      're-read against the card: it still described a "read-only" flair set on a Launchpad, and ' +
+      'the card has carried a click-to-cycle gesture long enough to say so in its own comment. ' +
+      'The right-click clip menu is EXTRACTED to one shared component all three surfaces render ' +
+      '— the card\'s own comment records that two copies of it is how a restructure once landed ' +
+      'on one surface with every test green. The ONE ongoing behaviour the card owned needed no ' +
+      'move: `pruneAllAutoAssignDangling` already sweeps every clip player from the Canvas ' +
+      'graph-change seam, expressly so an assignment is dropped with no card mounted.',
   },
   {
     type: 'clockedRunner',
@@ -1208,7 +1242,9 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
     // framing — a `controlFamilies` entry over node.data ranks fine.
     note:
       'PROMOTED — the FIFTH meta-domain face, and the second-to-last module to leave ' +
-      'NON_SHELL_LANE_TYPES (clipplayer remains). ONE ranked TOGGLE cell — LOCK, over ' +
+      'NON_SHELL_LANE_TYPES (clipplayer, the last one, followed with its own face). ONE ranked ' +
+      'TOGGLE ' +
+      'cell — LOCK, over ' +
       'node.data.locked through the same setSurfaceLocked mutator the card calls — because every ' +
       'other affordance proxies a param on a DIFFERENT node, which no face key can address at any ' +
       'rank (the electraControl addressability argument). The board — group boxes, proxied knobs, ' +

@@ -22,6 +22,9 @@ import {
 } from '$lib/mike/music-theory';
 import { coerceRateIndex } from './clip-clock';
 import { POLY_CHANNEL_PAIRS } from '$lib/audio/poly';
+// The MEDIA leaf — kind-agnostic (audio today, video later). clip-media imports
+// nothing from here, so the dependency runs one way only.
+import { isClipAudioFormat, type ClipAudioFormat } from '$lib/audio/clip-media';
 // Type-only import (erased at runtime → no cycle with clip-arrange.ts, which
 // imports VALUES from this file). The arranger model lives in clip-arrange.ts.
 import type { ArrangeData, ClipPlayMode } from './clip-arrange';
@@ -219,15 +222,54 @@ export interface NoteClipRecord extends ClipBase {
   defaultProb?: number;
 }
 
-/** LATER — audio-loop clip (reuses SAMSLOOP's bytes discipline). */
+/** Where on the mixer a take was tapped. `board-in` is the RAW patched channel
+ *  input — before EQ, before the compressor, before the fader — which is the
+ *  only point on mixmstrs where the audio is what the player patched in. It is
+ *  NOT a synonym for the module's existing `send{R}Pre`, which already means
+ *  post-EQ/post-comp, PRE-FADER; the `.dsp` calls a pre-EQ tap "a THIRD mode,
+ *  not a redefinition of this one" and this is that third mode. */
+export type ClipRecordTap = 'board-in' | 'post-fader' | 'master';
+
+/** An AUDIO clip — a recorded loop in a launcher slot.
+ *
+ *  ⚠ THE MEDIA IS NOT HERE. This record carries a `mediaId` and a dozen
+ *  integers (~120 bytes); the samples live in the clip media store (OPFS) and
+ *  travel in the `.ptperf.zip`. The superseded forward declaration held
+ *  `fileBytesB64` on samsloop's model, and that cannot work at launcher scale:
+ *  samsloop's own budget is 3 MB per take / 12 MB per rack IN BASE64 against a
+ *  relay that warns at 16 MB, one 4-bar studio take is 3 MB, and a launcher
+ *  holds 64 clips. NO MIGRATION — the old field was never constructed,
+ *  validated, decoded or played anywhere, so nothing ever wrote it. */
 export interface AudioClipRecord extends ClipBase {
   kind: 'audio';
-  fileBytesB64: string;
-  fileSize: number;
-  fileMime?: string;
-  fileName?: string;
-  sampleRate?: number;
-  sampleLength?: number;
+  /** Content key in the clip media store. NEVER bytes. */
+  mediaId: string;
+  /** Loop length in STEPS — THE SAME UNIT A NOTE CLIP USES, which is the whole
+   *  point: every piece of launch / scene / repeat maths that reads a clip's
+   *  length works unchanged (see `clipLengthSteps`). */
+  lengthSteps: number;
+  /** Exact recorded frame count — the sample-accurate truth. `lengthSteps` is
+   *  the MUSICAL INTENT; the two are reconciled at playback. */
+  frames: number;
+  /** THE RATE THE FRAMES ACTUALLY ARE — the capture context's rate, never a
+   *  requested one. Tagging samsloop takes with the requested rate instead of
+   *  the achieved one made everything play −148 cents and 8.8 % long. */
+  sampleRate: number;
+  channels: 1 | 2;
+  format: ClipAudioFormat;
+  /** `Date.now()` at commit — the change signature. Two takes of the same
+   *  length at the same settings are otherwise identical in metadata and a
+   *  player keyed on the rest would keep playing the first (samsloop #1353). */
+  takeAt: number;
+  /** Provenance, for the pad tooltip and a later re-record. */
+  src?: { nodeId: string; channel: number; tap: ClipRecordTap };
+  /** Peak |sample| over the take. A PICTURE input (a meter), never painted as
+   *  a number on the faceplate. */
+  peak?: number;
+  /** The OPTIONAL associated VIDEO take — the tie-in seam, unused in v1. A
+   *  second `mediaId` into the same store, so the clip's audio and video takes
+   *  share one lifecycle and one GC. */
+  videoMediaId?: string;
 }
 
 /** LATER — node-state snapshot clip (param/graph scene). */
@@ -457,6 +499,24 @@ export interface ClipPlayerData {
    *  binding while the KEYS keyboard is armed/recording a clip; peers + the card
    *  see it. Absent/null = not note-recording. v1 single-recorder per clip. */
   noteRec?: NoteRecState | null;
+  /** AUDIO clip-record arm state — PER LANE. A sparse RECORD keyed by the lane
+   *  digit ('0'..'7'), NOT an array, for the reason `automation.lanes` is a
+   *  record: a whole-array write LAST-WRITER-WINS, so two peers arming
+   *  DIFFERENT lanes concurrently would clobber each other — which is the exact
+   *  thing per-lane arm exists to allow. (The interim ARRAY shape of
+   *  `automation.lanes` had to be migrated away at 81084fe9 for this; there is
+   *  no reason to re-learn it here.) `recorderId` is the SINGLE WRITER **per
+   *  lane**: peer A can record lane 1 while peer B records lane 2.
+   *
+   *  A DISTINCT FIELD FROM `noteRec` on purpose. A slot holds exactly one clip
+   *  KIND, so the note recorder and the audio recorder can never target the
+   *  same record — and three record surfaces that look alike and are not
+   *  (`noteRec` / `automation` / this) each keep their own field, the same
+   *  separation the automation redesign settled on.
+   *
+   *  LIVE/TRANSIENT — never duplicated (`CLIP_PLAYER_TRANSIENT_DATA_FIELDS`).
+   *  Absent/empty = nothing armed. Written from slice 5 onward. */
+  audioRec?: Record<string, AudioRecState | null>;
   /** AUTOMATION record-arm state — PER LANE (the owner's Deluge-like model:
    *  "we arm this per channel, not as a global"). `lanes` is a sparse RECORD
    *  keyed by the lane digit ('0'..'7') — a PER-KEY map (like `autoAssign` and
@@ -749,6 +809,9 @@ export const CLIP_PLAYER_TRANSIENT_DATA_FIELDS = [
   'recording', // arranger record-arm (legacy launch-log)
   'songRec', // SONG-REC arm (the printed-performance recorder; `song` is CONTENT)
   'noteRec', // KEYS note-record state
+  'audioRec', // per-lane AUDIO clip-record arm + recorderIds (a duplicate must
+  // never be born recording: it would double-record the lane and its copied
+  // recorderId would double-claim the single-writer lease)
   'automation', // per-lane automation arm + recorderIds
   'autoAssign', // module→lane claims (globally exclusive — never copied)
   'resetNonce', // reset intent counter
@@ -797,6 +860,43 @@ export function readNoteRec(data: ClipPlayerData | undefined): NoteRecState | nu
   };
 }
 
+/** AUDIO clip-record arm state for ONE lane (see `ClipPlayerData.audioRec`).
+ *
+ *  ⚠ EVERY BOUNDARY IS A FRAME COUNT, not a time. All three are resolved ONCE
+ *  on the main thread from `ctx.currentTime × ctx.sampleRate` at the moment the
+ *  phase changes, and the worklet then compares against its own `currentFrame`.
+ *  A seconds-domain boundary re-derived per tick is the blood failure: a
+ *  44.1 kHz-shaped budget spent against a 48 kHz drain delivered 62 % of demand
+ *  and 38 % of every output sample was a hard zero.
+ *
+ *  DECLARED IN SLICE 1, WRITTEN BY NOBODY YET. It is here now for one concrete
+ *  reason: the field has to join `CLIP_PLAYER_TRANSIENT_DATA_FIELDS` before
+ *  anything can write it, or the first duplicated clipplayer is born recording,
+ *  with a copied `recorderId` double-claiming the lane. */
+export interface AudioRecState {
+  /** Instrument lane being recorded (0..CLIP_LANES-1). */
+  lane: number;
+  /** Clip slot within the lane (0..SCENE_STRIDE-1). */
+  slot: number;
+  /** SINGLE = exactly one loop, then stop. ENDLESS = until STOP, which lands at
+   *  the END of the current loop, never mid-loop. */
+  mode: 'single' | 'endless';
+  phase: 'armed' | 'recording' | 'stopping';
+  /** The frame the take starts on; null while armed and not yet resolved. */
+  startFrame: number | null;
+  /** The frame the take ends on: set at ARM for `single`, at STOP for
+   *  `endless`, null while an endless take is open. */
+  stopFrame: number | null;
+  /** The unit loop in frames — what an `endless` take takes a whole multiple
+   *  of. `stopFrame` is always `startFrame + n × unitFrames` computed from the
+   *  anchor, never by repeated addition, so the ≤½-sample rounding of one loop
+   *  cannot accumulate. */
+  unitFrames: number;
+  /** Single-writer lease — the arming client's `ydoc.clientID`, exactly like
+   *  `AutomationLaneState.recorderId`. */
+  recorderId: number;
+}
+
 /** Normalize a per-lane state array to exactly CLIP_LANES entries. */
 function coerceLaneArray<T>(raw: unknown, fallback: T): T[] {
   const out: T[] = new Array(CLIP_LANES).fill(fallback);
@@ -834,6 +934,52 @@ export function laneMuted(data: ClipPlayerData | undefined, lane: number): boole
 /** Record mode, defaulting to legacy 'replace'. */
 export function clipRecordMode(data: ClipPlayerData | undefined): 'replace' | 'overdub' {
   return data?.recordMode === 'overdub' ? 'overdub' : 'replace';
+}
+
+// ---------------------------------------------------------------------------
+// PAD STATE — the ONE projection of how a launch-grid cell paints.
+//
+// ⚠ IT LIVES HERE BECAUSE TWO SURFACES PAINT THE SAME GRID. `ClipplayerCard`
+// and the v2 face each carried their own copy of this precedence ladder. They
+// were logically identical, no gate compared them, and they had ALREADY drifted
+// on their last clause: the card asked `clips[k] ? 'loaded' : 'empty'` (RAW
+// truthiness) while the face asked `coerceClipRecord(clips[k]) !== null`. A
+// record that coerces away — the retired stamped `kind:'automation'` clip, any
+// junk — therefore painted LOADED on the card and EMPTY on the face, and on
+// the card it painted loaded while that same card's own `hasClip` (which does
+// coerce) said there was nothing there, so a pad could offer a tooltip for a
+// clip its right-click menu would not open.
+//
+// The coerced reading is the one kept, for two reasons: it is what a clip
+// actually IS to every consumer downstream (the engine plays `readClip`, not
+// the raw map), and it is the reading that makes `padState === 'loaded'` and
+// `hasClip` agree BY CONSTRUCTION rather than by both being maintained. The
+// engine's load-seam zombie sweep exists precisely to paper over the raw
+// reading; with this it no longer has to.
+// ---------------------------------------------------------------------------
+
+/** A launch-grid pad's painted state.
+ *
+ *  ⚠ THE PRECEDENCE IS LOAD-BEARING AND IT IS NOT ALPHABETICAL. QUEUED WINS
+ *  OVER PLAYING: a pad whose lane has a pending launch — or a pending STOP —
+ *  reads `queued` even while it is still sounding, which is what makes the
+ *  blink mean "a change is coming" rather than "something is happening". */
+export type ClipPadState = 'empty' | 'loaded' | 'queued' | 'playing';
+
+/** How the pad at flat `index` paints, FROM STORED DATA ALONE.
+ *
+ *  PURE, and deliberately store-free: a plain function of a plain object, so
+ *  both the legacy card and the v2 face project the identical state and neither
+ *  needs a browser to test it. See the block comment above for why this is one
+ *  function and not two. */
+export function clipPadState(data: ClipPlayerData | undefined, index: number): ClipPadState {
+  const lane = laneOf(index);
+  const slot = slotOf(index);
+  const playing = lanePlaying(data, lane);
+  const queued = laneQueued(data, lane);
+  if (queued === slot) return 'queued';
+  if (playing === slot) return queued === 'stop' ? 'queued' : 'playing';
+  return readClip(data, index) ? 'loaded' : 'empty';
 }
 
 // ---------------------------------------------------------------------------
@@ -1018,11 +1164,101 @@ export function coerceClipRecord(raw: unknown): ClipRecord | null {
     if (typeof r.gain === 'number') out.gain = r.gain;
     return out;
   }
-  if (r.kind === 'audio' || r.kind === 'snapshot') return r as unknown as ClipRecord;
+  if (r.kind === 'audio') return coerceAudioClipRecord(r, loop);
+  // 'snapshot' is STILL a forward declaration with zero constructors and zero
+  // readers, so it keeps the pass-through it has always had. (That is a real
+  // validation hole, named here rather than left to be found — but tightening
+  // it is a change to a kind this feature does not touch, and a silent drop of
+  // a shape nothing writes buys nothing.)
+  if (r.kind === 'snapshot') return r as unknown as ClipRecord;
   // Unknown kinds — including the RETIRED stamped `kind:'automation'` clip from
   // the pre-rehome model (clean break; the branch is unreleased) — coerce away
   // silently: the cell reads as empty, the load never crashes.
   return null;
+}
+
+/** Validate/normalize the AUDIO arm of `coerceClipRecord`, or null.
+ *
+ *  ⚠ DROP, DO NOT REPAIR. Every field below is load-bearing for SCHEDULING a
+ *  take: without `mediaId` there are no bytes, without `frames`/`sampleRate`
+ *  there is no duration, without `lengthSteps` there is no loop. A record
+ *  missing one of them cannot be played at all, so half-loading it would paint
+ *  a pad that silently does nothing. The forgiving-clamp discipline the note
+ *  arm uses applies to DECORATION (colour, name, gain), not to identity.
+ *
+ *  ⚠ `lengthSteps` IS **NOT** CLAMPED TO `MAX_CLIP_STEPS`. That ceiling is the
+ *  piano-roll's 8-page editor bound, and an audio clip has no piano roll. An
+ *  Arm–Endless take runs to the per-take seconds cap, which at 120 bpm on the
+ *  1/16 grid is thousands of steps; clamping it to 128 would leave the clip
+ *  looping at 128 steps while its media is thousands long — a length that
+ *  disagrees with its own bytes. Only the note arm's `clampStepCount` may
+ *  clamp, because only the note arm has an editor to fit. */
+function coerceAudioClipRecord(r: Record<string, unknown>, loop: boolean): AudioClipRecord | null {
+  const mediaId = typeof r.mediaId === 'string' ? r.mediaId : '';
+  if (!mediaId) return null;
+  const lengthSteps = Number(r.lengthSteps);
+  if (!Number.isFinite(lengthSteps) || lengthSteps < 1) return null;
+  const frames = Number(r.frames);
+  if (!Number.isFinite(frames) || frames < 1) return null;
+  const sampleRate = Number(r.sampleRate);
+  // A rate is finite AND POSITIVE or it is not a rate — a stored 0 divides into
+  // an infinite duration at playback.
+  if (!Number.isFinite(sampleRate) || sampleRate <= 0) return null;
+  const channels = Number(r.channels);
+  if (channels !== 1 && channels !== 2) return null;
+  if (!isClipAudioFormat(r.format)) return null;
+  const out: AudioClipRecord = {
+    kind: 'audio',
+    mediaId,
+    lengthSteps: Math.max(1, Math.round(lengthSteps)),
+    frames: Math.max(1, Math.round(frames)),
+    sampleRate,
+    channels,
+    format: r.format,
+    // The change signature is REQUIRED by the type but never a reason to drop a
+    // record: a take with no stamp is stale-but-playable, and 0 sorts first.
+    takeAt: typeof r.takeAt === 'number' && Number.isFinite(r.takeAt) ? r.takeAt : 0,
+    loop,
+  };
+  const src = r.src as { nodeId?: unknown; channel?: unknown; tap?: unknown } | undefined;
+  if (src && typeof src === 'object' && typeof src.nodeId === 'string') {
+    const channel = Number(src.channel);
+    const tap = src.tap;
+    if (
+      Number.isFinite(channel) &&
+      (tap === 'board-in' || tap === 'post-fader' || tap === 'master')
+    ) {
+      out.src = { nodeId: src.nodeId, channel: Math.trunc(channel), tap };
+    }
+  }
+  if (typeof r.peak === 'number' && Number.isFinite(r.peak)) out.peak = Math.abs(r.peak);
+  if (typeof r.videoMediaId === 'string' && r.videoMediaId) out.videoMediaId = r.videoMediaId;
+  if (typeof r.color === 'number') out.color = r.color;
+  if (typeof r.name === 'string') out.name = r.name;
+  if (typeof r.gain === 'number') out.gain = r.gain;
+  return out;
+}
+
+/** A clip's LOOP LENGTH IN STEPS — kind-agnostically.
+ *
+ *  ⚠ THIS EXISTS BECAUSE `: 1` WAS RESTATED IN FOUR PLACES. The launch
+ *  reference-bar collector, the scheduler's loop wrap, the scene-repeat anchor
+ *  and the lane-phase publisher each carried their own
+ *  `kind === 'note' ? max(1, lengthSteps) : 1`, and every one of them is a bug
+ *  the moment a clip that is not a note has a real length: a 4-bar audio take
+ *  would wrap after ONE step, drag the shared reference bar down with it, and
+ *  anchor a scene repeat at a 64th of its true unit. One helper, four callers,
+ *  and a new kind (video) inherits the right answer instead of a fifth copy.
+ *
+ *  The rule is a PROPERTY, not a kind list: any clip carrying a usable
+ *  `lengthSteps` reports it; anything else is one step. That is what makes it
+ *  kind-agnostic — `'snapshot'` (which has no length) still reads 1 without
+ *  being named here, and so will any later kind that genuinely has no length.
+ *  PURE. */
+export function clipLengthSteps(clip: ClipRecord | null | undefined): number {
+  const len = (clip as { lengthSteps?: unknown } | null | undefined)?.lengthSteps;
+  if (typeof len !== 'number' || !Number.isFinite(len)) return 1;
+  return Math.max(1, Math.round(len));
 }
 
 // ---------------------------------------------------------------------------
@@ -1464,6 +1700,166 @@ export function lanesFromFiring(firing: NoteEvent[]): StepLanes {
     if (len > gateSteps) gateSteps = len;
   }
   return { lanes, velocity, gateSteps, any: starting.length > 0 };
+}
+
+
+// ── SCHEDULED POLY VOICE ALLOCATION — a note keeps its lane until IT ends ────
+//
+// ⚠ THE DEFECT THIS REPLACES (owner report, 2026-09-02: "midi out on a poly
+// lane to a poly synth isn't playing polyphony").
+//
+// `lanesFromFiring` above packs the notes STARTING on one step into lanes
+// 0..n-1, and `PolySender.scheduleStep` then writes ALL POLY_CHANNEL_PAIRS
+// lanes — `lanes[i] ?? { pitch: 0, gate: 0 }` — so every lane the current onset
+// did not fill is FORCED TO GATE 0. Two consequences, both fatal to real
+// polyphony, and neither visible on the chord that happens to be the test case:
+//
+//   1. A note still SOUNDING from an earlier step is closed by the next onset,
+//      because its lane is not in this step's firing set.
+//   2. Voices are re-packed FROM LANE 0 on every onset, so a new note lands on
+//      the lane a held note is using and overwrites its PITCH — under a gate
+//      that never fell. A downstream consumer that tracks note identity by gate
+//      EDGE (midiOutBuddy) therefore sees no new note-on at all and keeps
+//      sounding the FIRST pitch.
+//
+// Measured on the shipped chain — CLIPPLAYER lane 1 → MIDI-OUT-BUDDY `poly` →
+// a capturing MIDIOutput, with a clip holding 60 (8 steps), 64 (from step 2,
+// 6 steps) and 67 (from step 4, 4 steps): peak concurrency 1, and the ONLY
+// pitch ever transmitted was 60. Ten onsets, ten single-voice bursts. A chord
+// whose notes all start on the SAME step was fine (6 voices, 20/20 onsets),
+// which is why every existing test passed: they all print co-onset chords.
+//
+// ⚠ THE ALLOCATOR ALREADY EXISTED AND THE PLAYBACK PATH NEVER GOT IT.
+// `$lib/audio/poly-alloc` was written for exactly this failure ("releasing a
+// LOW note SHIFTED the remaining notes down a lane → rewrote pitch on a
+// STILL-SOUNDING voice") and clipplayer wires it into LIVE AUDITION only
+// (`serviceAudition`). Clip PLAYBACK kept the positional repack.
+//
+// ⚠ WHY A SECOND, TIME-KEYED BOOK RATHER THAN `VoiceAllocator` ITSELF.
+// `VoiceAllocator` is edge-driven: it owns lanes between a `noteOn` and a
+// `noteOff` that arrive as they happen. Clip playback SCHEDULES ahead
+// (LOOKAHEAD_S), so at the moment lane assignment is decided the release of the
+// note being placed has not happened and will not happen for seconds. There is
+// no note-off event to drive an edge allocator with; what there IS, exactly, is
+// the note's scheduled END TIME. So ownership here is keyed by that time, which
+// makes the whole thing a PURE function of the scheduled times — deterministic,
+// replayable, and identical on every peer, which an event-driven allocator
+// racing a lookahead window would not be.
+
+/** Which lanes are occupied, and until when (audio-context seconds). */
+export interface PolyLaneBook {
+  /** Scheduled end time of each lane's note; `-Infinity` when free. */
+  busyUntil: number[];
+  /** The MIDI note occupying each lane, or null when free. */
+  note: (number | null)[];
+}
+
+/** A fresh book: every lane free. */
+export function createPolyLaneBook(): PolyLaneBook {
+  return {
+    busyUntil: new Array<number>(POLY_CHANNEL_PAIRS).fill(-Infinity),
+    note: new Array<number | null>(POLY_CHANNEL_PAIRS).fill(null),
+  };
+}
+
+/** One voice to write onto the poly cable. Only these lanes are touched. */
+export interface PolyLaneWrite {
+  lane: number;
+  /** V/oct, WITHOUT the module's octave offset (the caller adds it). */
+  pitch: number;
+  midi: number;
+  /** When the gate opens. */
+  onAt: number;
+  /** When the gate closes. */
+  offAt: number;
+}
+
+/**
+ * Place one step's firing notes on lanes that respect what is still sounding.
+ *
+ * Rules, in order — the same shape `poly-alloc` uses, resolved against
+ * SCHEDULED TIME rather than live note-off events:
+ *
+ *   1. RETIRE. Any lane whose note has ended by `onAt` is free again.
+ *   2. RE-ARM. A note whose own pitch is already held keeps ITS lane, so a
+ *      repeated pitch re-triggers one voice instead of consuming a second.
+ *   3. LOWEST FREE LANE. Deterministic, so two peers place the same chord on
+ *      the same lanes.
+ *   4. STEAL THE OLDEST-ENDING. Past POLY_CHANNEL_PAIRS simultaneous voices
+ *      something must give; the voice that ends soonest is the one whose loss
+ *      costs least, and it is a decision rather than a silent drop.
+ *
+ * ⚠ IT NEVER RETURNS A LANE IT DID NOT ASSIGN, which is the half that fixes the
+ * bug: the caller writes ONLY these lanes, so a voice still sounding on a lane
+ * this step did not touch keeps its pitch AND its open gate.
+ */
+export function assignPolyLanes(
+  book: PolyLaneBook,
+  // Only the MIDI number is read, so the SESSION path (`NoteEvent`) and the
+  // SONG path (`SongNoteEvent`, which has a beat instead of a step) share one
+  // allocator rather than two that could drift apart.
+  firing: readonly { midi: number }[],
+  onAt: number,
+  gateOffSec: number,
+): PolyLaneWrite[] {
+  // 1. RETIRE — a lane whose note has already ended is available again.
+  for (let i = 0; i < POLY_CHANNEL_PAIRS; i++) {
+    if (book.busyUntil[i]! <= onAt) {
+      book.busyUntil[i] = -Infinity;
+      book.note[i] = null;
+    }
+  }
+
+  const offAt = onAt + gateOffSec;
+  const writes: PolyLaneWrite[] = [];
+
+  for (const ev of firing) {
+    if (writes.length >= POLY_CHANNEL_PAIRS) break;
+    let lane = -1;
+
+    // 2. RE-ARM the same pitch on the lane already holding it.
+    for (let i = 0; i < POLY_CHANNEL_PAIRS; i++) {
+      if (book.note[i] === ev.midi) { lane = i; break; }
+    }
+    // 3. LOWEST FREE LANE.
+    if (lane < 0) {
+      for (let i = 0; i < POLY_CHANNEL_PAIRS; i++) {
+        if (book.note[i] === null) { lane = i; break; }
+      }
+    }
+    // 4. STEAL the voice that ends soonest.
+    if (lane < 0) {
+      let victim = 0;
+      for (let i = 1; i < POLY_CHANNEL_PAIRS; i++) {
+        if (book.busyUntil[i]! < book.busyUntil[victim]!) victim = i;
+      }
+      lane = victim;
+    }
+
+    book.note[lane] = ev.midi;
+    book.busyUntil[lane] = offAt;
+    writes.push({ lane, pitch: midiToVOct(ev.midi), midi: ev.midi, onAt, offAt });
+  }
+
+  return writes;
+}
+
+/** Lanes that hold nothing at `at` — the only ones a rest may zero when
+ *  Sample & Hold is OFF. A busy lane must never be rewritten by a rest: that
+ *  is defect (1) above in its other clothes. */
+export function freePolyLanesAt(book: PolyLaneBook, at: number): number[] {
+  const free: number[] = [];
+  for (let i = 0; i < POLY_CHANNEL_PAIRS; i++) {
+    if (book.busyUntil[i]! <= at) free.push(i);
+  }
+  return free;
+}
+
+/** Forget every voice — a stop / panic / clip switch, where the caller has
+ *  already zeroed the cable and no lane is sounding any more. */
+export function resetPolyLaneBook(book: PolyLaneBook): void {
+  book.busyUntil.fill(-Infinity);
+  book.note.fill(null);
 }
 
 // ---------------------------------------------------------------------------

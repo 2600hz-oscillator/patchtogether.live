@@ -27,6 +27,10 @@ import {
   lanesForStep,
   notesFiringAt,
   lanesFromFiring,
+  assignPolyLanes,
+  createPolyLaneBook,
+  freePolyLanesAt,
+  resetPolyLaneBook,
   setNoteProb,
   setClipDefaultProb,
   clipDefaultProbEff,
@@ -92,6 +96,10 @@ import {
   toggleLaneAutomationArm,
   migrateAutomationLanesShape,
   scrubClipPlayerTransientData,
+  clipLengthSteps,
+  CLIP_PLAYER_TRANSIENT_DATA_FIELDS,
+  type AudioClipRecord,
+  type ClipRecord,
   coerceAutomationEvent,
   coerceAutoTrack,
   coerceAutoClipRecord,
@@ -525,6 +533,16 @@ describe('automation: CLEAN BREAK — the retired stamped kind coerces away sile
       queuedImmediate: [true],
       recording: true,
       noteRec: { lane: 0, slot: 0, armed: true, recording: true, overdub: false },
+      // AUDIO clip-record arm — a duplicate born with this would double-record
+      // the lane AND double-claim the single-writer lease with a copied
+      // recorderId. The one field slice 1 exists to get right before anything
+      // can write it.
+      audioRec: {
+        '0': {
+          lane: 0, slot: 0, mode: 'endless', phase: 'recording',
+          startFrame: 48_000, stopFrame: null, unitFrames: 96_000, recorderId: 123,
+        },
+      },
       automation: { lanes: { '0': { arm: true, recorderId: 123 } } },
       autoAssign: { modA: 0 },
       resetNonce: 5,
@@ -532,7 +550,7 @@ describe('automation: CLEAN BREAK — the retired stamped kind coerces away sile
     };
     scrubClipPlayerTransientData(data);
     // Scrubbed (a duplicate is born disarmed, unassigned, stopped):
-    for (const f of ['playing', 'queued', 'queuedImmediate', 'recording', 'noteRec', 'automation', 'autoAssign', 'resetNonce', 'sceneLaunch']) {
+    for (const f of ['playing', 'queued', 'queuedImmediate', 'recording', 'noteRec', 'audioRec', 'automation', 'autoAssign', 'resetNonce', 'sceneLaunch']) {
       expect(f in data, `${f} scrubbed`).toBe(false);
     }
     // Content + settings survive:
@@ -2089,5 +2107,339 @@ describe('scene copy/paste — sceneWritePlan (full-replace plan incl. deletes)'
     expect(plan.map((p) => p.index)).toEqual(
       Array.from({ length: CLIP_LANES }, (_, lane) => clipIndex(4, lane)),
     );
+  });
+});
+
+// ── assignPolyLanes — A NOTE KEEPS ITS LANE UNTIL IT ENDS ───────────────────
+//
+// ⚠ THE DEFECT (owner report, 2026-09-02: "midi out on a poly lane to a poly
+// synth isn't playing polyphony"). `lanesFromFiring` packs the notes STARTING
+// on one step into lanes 0..n-1, and `PolySender.scheduleStep` then writes ALL
+// sixteen lanes — so an onset both CLOSED every voice it did not fill and
+// re-packed from lane 0 ON TOP of a note that was still sounding. Measured end
+// to end (CLIPPLAYER lane 1 → MIDI-OUT-BUDDY `poly` → a capturing MIDIOutput)
+// on a clip holding 60 from step 0, 64 from step 2 and 67 from step 4: peak
+// concurrency ONE, and 60 was the only pitch ever transmitted.
+//
+// A chord whose notes all start on the SAME step was always fine — which is
+// exactly why every existing test passed. `lanesFromFiring`'s own cases below
+// are all co-onset, so this block deliberately drives the STAGGERED shape.
+describe('assignPolyLanes — scheduled poly voice allocation', () => {
+  const ev = (midi: number) => ({ midi });
+
+  it('a co-onset chord takes lanes 0..n-1 — the shape that always worked', () => {
+    const book = createPolyLaneBook();
+    const w = assignPolyLanes(book, [ev(60), ev(64), ev(67)], 1, 0.5);
+    expect(w.map((x) => x.lane)).toEqual([0, 1, 2]);
+    expect(w.map((x) => x.midi)).toEqual([60, 64, 67]);
+    expect(w.every((x) => x.onAt === 1 && x.offAt === 1.5)).toBe(true);
+  });
+
+  it('⚠ A NOTE STARTING UNDER A HELD ONE GETS ITS OWN LANE — the bug', () => {
+    const book = createPolyLaneBook();
+    // 60 sounds from t=0 to t=4 (a held pad).
+    assignPolyLanes(book, [ev(60)], 0, 4);
+    // 64 starts at t=1, while 60 is still down.
+    const second = assignPolyLanes(book, [ev(64)], 1, 3);
+    expect(second).toHaveLength(1);
+    expect(second[0]!.lane, 'must NOT be lane 0 — that is the held note').toBe(1);
+    // 67 at t=2, both still down.
+    const third = assignPolyLanes(book, [ev(67)], 2, 2);
+    expect(third[0]!.lane).toBe(2);
+    // All three lanes are occupied by their own notes.
+    expect(book.note.slice(0, 3)).toEqual([60, 64, 67]);
+  });
+
+  it('⚠ NEGATIVE CONTROL: the positional pack puts all three on lane 0', () => {
+    // What `lanesFromFiring` returns for each of those three steps, since each
+    // step's firing set has exactly one note. Lane 0, every time — on top of
+    // whatever was still sounding there.
+    expect(lanesFromFiring([{ step: 0, midi: 60 }]).lanes).toHaveLength(1);
+    expect(lanesFromFiring([{ step: 2, midi: 64 }]).lanes).toHaveLength(1);
+    expect(lanesFromFiring([{ step: 4, midi: 67 }]).lanes).toHaveLength(1);
+    // …i.e. index 0 for all three, which is the collapse. The allocator
+    // disagrees, which is the whole assertion.
+    const book = createPolyLaneBook();
+    assignPolyLanes(book, [ev(60)], 0, 4);
+    assignPolyLanes(book, [ev(64)], 1, 3);
+    expect(assignPolyLanes(book, [ev(67)], 2, 2)[0]!.lane).not.toBe(0);
+  });
+
+  it('a lane is REUSED once its note has ended', () => {
+    const book = createPolyLaneBook();
+    assignPolyLanes(book, [ev(60)], 0, 1); // ends at t=1
+    const later = assignPolyLanes(book, [ev(72)], 2, 1); // t=2, 60 is long gone
+    expect(later[0]!.lane, 'the freed lane comes back').toBe(0);
+    expect(book.note[0]).toBe(72);
+  });
+
+  it('a lane frees exactly AT its end time, not a moment later', () => {
+    const book = createPolyLaneBook();
+    assignPolyLanes(book, [ev(60)], 0, 1); // ends at t=1
+    expect(assignPolyLanes(book, [ev(72)], 1, 1)[0]!.lane).toBe(0);
+  });
+
+  it('a repeated pitch RE-ARMS its own lane instead of eating a second', () => {
+    const book = createPolyLaneBook();
+    assignPolyLanes(book, [ev(60)], 0, 4);
+    const again = assignPolyLanes(book, [ev(60)], 1, 4);
+    expect(again[0]!.lane).toBe(0);
+    expect(again[0]!.offAt, 'and its release moves out with it').toBe(5);
+    expect(book.note.filter((n) => n === 60)).toHaveLength(1);
+  });
+
+  it('past the cable width it STEALS the voice that ends soonest', () => {
+    const book = createPolyLaneBook();
+    // Fill every lane, each ending later than the last EXCEPT lane 3.
+    for (let i = 0; i < POLY_CHANNEL_PAIRS; i++) {
+      assignPolyLanes(book, [ev(40 + i)], 0, i === 3 ? 0.5 : 10);
+    }
+    const overflow = assignPolyLanes(book, [ev(90)], 0.1, 10);
+    expect(overflow[0]!.lane, 'the soonest-ending voice is the cheapest to lose').toBe(3);
+    expect(book.note[3]).toBe(90);
+  });
+
+  it('never returns more voices than the cable has lanes', () => {
+    const book = createPolyLaneBook();
+    const big = Array.from({ length: POLY_CHANNEL_PAIRS + 5 }, (_, i) => ev(40 + i));
+    expect(assignPolyLanes(book, big, 0, 1)).toHaveLength(POLY_CHANNEL_PAIRS);
+  });
+
+  it('freePolyLanesAt names only the lanes that hold nothing', () => {
+    const book = createPolyLaneBook();
+    assignPolyLanes(book, [ev(60), ev(64)], 0, 2);
+    const free = freePolyLanesAt(book, 1);
+    expect(free, 'the two sounding lanes are excluded').not.toContain(0);
+    expect(free).not.toContain(1);
+    expect(free).toHaveLength(POLY_CHANNEL_PAIRS - 2);
+    // Once both have ended, everything is free again.
+    expect(freePolyLanesAt(book, 2)).toHaveLength(POLY_CHANNEL_PAIRS);
+  });
+
+  it('reset forgets every voice', () => {
+    const book = createPolyLaneBook();
+    assignPolyLanes(book, [ev(60), ev(64)], 0, 10);
+    resetPolyLaneBook(book);
+    expect(book.note.every((n) => n === null)).toBe(true);
+    expect(assignPolyLanes(book, [ev(72)], 1, 1)[0]!.lane).toBe(0);
+  });
+
+  it('an empty firing set writes nothing and disturbs no voice', () => {
+    const book = createPolyLaneBook();
+    assignPolyLanes(book, [ev(60)], 0, 10);
+    expect(assignPolyLanes(book, [], 1, 1)).toEqual([]);
+    expect(book.note[0], 'the held voice is untouched').toBe(60);
+    expect(book.busyUntil[0]).toBe(10);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// AUDIO CLIPS — the data model that lets a recorded loop live in a slot.
+//
+// ⚠ NOTHING CAN CONSTRUCT ONE YET. The recorder lands in a later slice; these
+// tests pin the SHAPE and the coerce boundary now, because everything after
+// them assumes an audio clip that reaches the engine is schedulable. The old
+// `AudioClipRecord` was a forward declaration with `fileBytesB64` and a
+// pass-through in `coerceClipRecord`; it had zero constructors and zero
+// readers, so this replaces it with NO migration.
+// ---------------------------------------------------------------------------
+
+/** A minimal VALID audio clip — the accept baseline every reject case mutates. */
+function audioClipFixture(over: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    kind: 'audio',
+    mediaId: 'media-abc',
+    lengthSteps: 16,
+    frames: 192_000,
+    sampleRate: 48_000,
+    channels: 2,
+    format: 'pcm-f32',
+    takeAt: 1_700_000_000_000,
+    loop: true,
+    ...over,
+  };
+}
+
+describe('coerceClipRecord — the AUDIO arm (accept/reject matrix)', () => {
+  it('accepts a complete record and returns it NORMALIZED, not the raw object', () => {
+    const raw = audioClipFixture();
+    const got = coerceClipRecord(raw) as AudioClipRecord;
+    expect(got).not.toBe(raw); // the old branch handed the raw object straight back
+    expect(got).toEqual({
+      kind: 'audio',
+      mediaId: 'media-abc',
+      lengthSteps: 16,
+      frames: 192_000,
+      sampleRate: 48_000,
+      channels: 2,
+      format: 'pcm-f32',
+      takeAt: 1_700_000_000_000,
+      loop: true,
+    });
+  });
+
+  it('accepts each declared format and BOTH channel counts', () => {
+    for (const format of ['pcm-f32', 'pcm-i16', 'opus']) {
+      expect((coerceClipRecord(audioClipFixture({ format })) as AudioClipRecord)?.format).toBe(format);
+    }
+    for (const channels of [1, 2]) {
+      expect((coerceClipRecord(audioClipFixture({ channels })) as AudioClipRecord)?.channels).toBe(channels);
+    }
+  });
+
+  it('REJECTS every record it could not schedule', () => {
+    const rejects: [string, Record<string, unknown>][] = [
+      ['no mediaId at all', audioClipFixture({ mediaId: undefined })],
+      ['an EMPTY mediaId', audioClipFixture({ mediaId: '' })],
+      ['a non-string mediaId', audioClipFixture({ mediaId: 42 })],
+      ['no lengthSteps', audioClipFixture({ lengthSteps: undefined })],
+      ['lengthSteps 0', audioClipFixture({ lengthSteps: 0 })],
+      ['a negative lengthSteps', audioClipFixture({ lengthSteps: -4 })],
+      ['a NaN lengthSteps', audioClipFixture({ lengthSteps: NaN })],
+      ['no frames', audioClipFixture({ frames: undefined })],
+      ['frames 0 — a take with no samples', audioClipFixture({ frames: 0 })],
+      ['an Infinite frames', audioClipFixture({ frames: Infinity })],
+      ['no sampleRate', audioClipFixture({ sampleRate: undefined })],
+      ['sampleRate 0 — divides into an infinite duration', audioClipFixture({ sampleRate: 0 })],
+      ['a negative sampleRate', audioClipFixture({ sampleRate: -48_000 })],
+      ['channels 0', audioClipFixture({ channels: 0 })],
+      ['channels 3 — no third leg exists', audioClipFixture({ channels: 3 })],
+      ['a fractional channel count', audioClipFixture({ channels: 1.5 })],
+      ['an UNKNOWN format', audioClipFixture({ format: 'flac' })],
+      ['no format', audioClipFixture({ format: undefined })],
+      ['the SUPERSEDED bytes-in-the-doc shape', { kind: 'audio', fileBytesB64: 'AAAA', fileSize: 4, loop: true }],
+    ];
+    for (const [why, raw] of rejects) {
+      expect(coerceClipRecord(raw), why).toBeNull();
+    }
+  });
+
+  it('a rejected audio clip reads as an EMPTY cell, never as a throw', () => {
+    const data = { clips: { '0': { kind: 'audio', loop: true } } };
+    expect(() => readClip(data, 0)).not.toThrow();
+    expect(readClip(data, 0)).toBeNull();
+  });
+
+  it('OPTIONAL fields survive when well-formed and are dropped when not', () => {
+    const withOpts = coerceClipRecord(
+      audioClipFixture({
+        src: { nodeId: 'mx1', channel: 3, tap: 'board-in' },
+        peak: -0.8,
+        videoMediaId: 'vid-1',
+        name: 'take 2',
+        color: 4,
+        gain: 0.5,
+      }),
+    ) as AudioClipRecord;
+    expect(withOpts.src).toEqual({ nodeId: 'mx1', channel: 3, tap: 'board-in' });
+    expect(withOpts.peak).toBe(0.8); // |sample|, so a signed input is absolutised
+    expect(withOpts.videoMediaId).toBe('vid-1');
+    expect(withOpts.name).toBe('take 2');
+    expect(withOpts.color).toBe(4);
+    expect(withOpts.gain).toBe(0.5);
+
+    // A malformed optional NEVER drops the record — only identity fields do.
+    const badOpts = coerceClipRecord(
+      audioClipFixture({
+        src: { nodeId: 'mx1', channel: 3, tap: 'not-a-tap' },
+        peak: 'loud',
+        videoMediaId: '',
+      }),
+    ) as AudioClipRecord;
+    expect(badOpts).not.toBeNull();
+    expect(badOpts.src).toBeUndefined();
+    expect(badOpts.peak).toBeUndefined();
+    expect(badOpts.videoMediaId).toBeUndefined();
+  });
+
+  it('takeAt is REQUIRED by the type but never a reason to drop a record', () => {
+    const noStamp = coerceClipRecord(audioClipFixture({ takeAt: undefined })) as AudioClipRecord;
+    expect(noStamp).not.toBeNull();
+    expect(noStamp.takeAt).toBe(0);
+  });
+
+  it('`loop: false` is honoured, like every other kind', () => {
+    expect((coerceClipRecord(audioClipFixture({ loop: false })) as AudioClipRecord).loop).toBe(false);
+  });
+
+  it('does NOT clamp lengthSteps to MAX_CLIP_STEPS — that is the piano roll\'s bound', () => {
+    // An Arm-Endless take runs to the per-take seconds cap: at 120 bpm on the
+    // 1/16 grid that is thousands of steps. Clamping it to 128 would leave the
+    // clip looping at a length that disagrees with its own bytes.
+    const long = coerceClipRecord(
+      audioClipFixture({ lengthSteps: MAX_CLIP_STEPS * 10, frames: 48_000 * 600 }),
+    ) as AudioClipRecord;
+    expect(long.lengthSteps).toBe(MAX_CLIP_STEPS * 10);
+    // ...while a NOTE clip, which does have an editor to fit, still clamps.
+    const note = coerceClipRecord({
+      kind: 'note', steps: [], lengthSteps: MAX_CLIP_STEPS * 10, root: 48, loop: true,
+    });
+    expect((note as { lengthSteps: number }).lengthSteps).toBe(MAX_CLIP_STEPS);
+  });
+
+  it('rounds a fractional lengthSteps / frames rather than storing a fraction', () => {
+    const got = coerceClipRecord(audioClipFixture({ lengthSteps: 15.6, frames: 191_999.4 })) as AudioClipRecord;
+    expect(got.lengthSteps).toBe(16);
+    expect(got.frames).toBe(191_999);
+  });
+
+  it('the OTHER kinds are untouched by the audio arm', () => {
+    expect(coerceClipRecord({ kind: 'note', steps: [], lengthSteps: 8, root: 48, loop: true })).toMatchObject({
+      kind: 'note', lengthSteps: 8,
+    });
+    expect(coerceClipRecord({ kind: 'snapshot', snapshot: { a: 1 }, loop: true })).toMatchObject({ kind: 'snapshot' });
+    expect(coerceClipRecord({ kind: 'automation', tracks: {} })).toBeNull();
+  });
+});
+
+describe('clipLengthSteps — one loop length for every clip kind', () => {
+  it('reads a NOTE clip\'s own length', () => {
+    expect(clipLengthSteps(coerceClipRecord({ kind: 'note', steps: [], lengthSteps: 32, root: 48, loop: true }))).toBe(32);
+  });
+
+  it('reads an AUDIO clip\'s own length — the whole point of the helper', () => {
+    // ⚠ THE REGRESSION. Four call sites carried
+    // `kind === 'note' ? max(1, lengthSteps) : 1`, so a 16-step audio take
+    // wrapped after ONE step, dragged the shared launch reference bar down with
+    // it, and anchored a scene repeat at a 64th of its true unit.
+    expect(clipLengthSteps(coerceClipRecord(audioClipFixture({ lengthSteps: 16 })))).toBe(16);
+    expect(clipLengthSteps(coerceClipRecord(audioClipFixture({ lengthSteps: 512 })))).toBe(512);
+  });
+
+  it('a kind with NO length of its own reads ONE STEP', () => {
+    expect(clipLengthSteps(coerceClipRecord({ kind: 'snapshot', snapshot: {}, loop: true }))).toBe(1);
+    expect(clipLengthSteps(null)).toBe(1);
+    expect(clipLengthSteps(undefined)).toBe(1);
+  });
+
+  it('is a PROPERTY test, not a kind list — a future kind with a length inherits it', () => {
+    // Deliberately a shape no `ClipKind` names today: the rule is "carries a
+    // usable lengthSteps", so a video clip added later needs no edit here.
+    expect(clipLengthSteps({ kind: 'video', lengthSteps: 24 } as unknown as ClipRecord)).toBe(24);
+  });
+
+  it('floors at 1 and rounds, so no caller can divide or modulo by 0', () => {
+    for (const bad of [0, -8, 0.4, NaN, Infinity, undefined, null, 'sixteen']) {
+      const got = clipLengthSteps({ kind: 'note', lengthSteps: bad } as unknown as ClipRecord);
+      expect(Number.isInteger(got), String(bad)).toBe(true);
+      expect(got, String(bad)).toBeGreaterThanOrEqual(1);
+    }
+    expect(clipLengthSteps({ kind: 'note', lengthSteps: 15.6 } as unknown as ClipRecord)).toBe(16);
+  });
+});
+
+describe('audioRec is TRANSIENT — a duplicate is never born recording', () => {
+  it('is in the transient field list', () => {
+    expect(CLIP_PLAYER_TRANSIENT_DATA_FIELDS).toContain('audioRec');
+  });
+
+  it('sits beside the other three record surfaces, which stay SEPARATE fields', () => {
+    // Three record surfaces that look alike and are not: the KEYS note
+    // recorder, the arranger launch-log, the per-lane automation arm — and now
+    // the audio recorder. Folding any two together is how one arm silently
+    // clears another's state.
+    for (const f of ['noteRec', 'recording', 'automation', 'audioRec']) {
+      expect(CLIP_PLAYER_TRANSIENT_DATA_FIELDS, f).toContain(f);
+    }
   });
 });

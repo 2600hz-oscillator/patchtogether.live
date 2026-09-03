@@ -144,7 +144,10 @@ async function seedPatch(page: Page, nodes: SeedNode[], edges: SeedEdge[] = []):
     { nodes, edges },
   );
   for (const n of nodes) {
-    await expect(page.locator(`.svelte-flow__node[data-id="${n.id}"]`)).toBeVisible({
+    // `.first()` — a pinned module (TIMELORDE) renders on the canvas AND in
+    // its workflow surface, so the id matches twice. Either mount proves the
+    // node materialized, which is all this wait is for.
+    await expect(page.locator(`.svelte-flow__node[data-id="${n.id}"]`).first()).toBeVisible({
       timeout: BOOT_MS,
     });
   }
@@ -518,5 +521,169 @@ test('midiclock rebinds its INPUT by name, and the rebound port drives the modul
     await injectMidiDeviceIn(page, IN_A.id, [0xf8]),
     'and the decoy input was NOT the one subscribed',
   ).toBe(false);
+  expect(errors).toEqual([]);
+});
+
+// ── 8. POLYPHONY — a CLIP LANE's chord reaches the wire as CONCURRENT notes ──
+//
+// ⚠ THE DEFECT (owner report, 2026-09-02: "midi out on a poly lane to a poly
+// synth isn't playing polyphony"). CLIPPLAYER's playback path built its poly
+// cable with `lanesFromFiring` — the notes STARTING on this step packed into
+// lanes 0..n-1 — and handed it to `PolySender.scheduleStep`, which writes ALL
+// sixteen lanes (`lanes[i] ?? { pitch: 0, gate: 0 }`). So an onset CLOSED every
+// voice it did not itself fill, and re-packed from lane 0 on top of a note that
+// was still sounding: the new pitch landed on the held note's lane under a gate
+// that never fell, MIDI-OUT-BUDDY's per-lane edge tracker saw no new rise, and
+// it went on sounding the first pitch.
+//
+// Measured on this exact chain before the fix — peak concurrency ONE, and 60
+// was the only pitch ever transmitted across ten onsets. After: peak THREE,
+// all three pitches, overlapping.
+//
+// ⚠ WHY THE STAGGERED SHAPE, AND NOT A PLAIN CHORD. A chord whose notes all
+// start on the SAME step was always fine (measured: 6 voices, 20/20 onsets),
+// because one step's firing set then contains every voice and the positional
+// pack happens to be right. Every existing clip test prints co-onset chords,
+// which is precisely why all of them stayed green over this. The shape that
+// breaks is the ordinary musical one: a note entering while another is held.
+//
+// The allocator's own rules (re-arm, lowest-free, steal-soonest-ending, the
+// retire boundary) are pinned in `clip-types.test.ts`. This leg exists because
+// that layer cannot see the consequence: bytes on a MIDI port.
+test('a clip lane chord reaches the wire as CONCURRENT MIDI notes', async ({ page }) => {
+  test.setTimeout(SLOW_BOOT_TEST_TIMEOUT_MS * 6);
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+
+  await installMidiDeviceMock(page, { outputs: [OUT_A, OUT_B] });
+  await boot(page);
+
+  // TIMELORDE + CLIPPLAYER + MIDI-OUT-BUDDY, wired the way the lane tap wires
+  // them (`midiOutBuddyDef.chainWiring.laneTap`): the lane's poly pitch cable
+  // into `poly`, its mono gate into `gate`, its velocity into `velocity`.
+  await seedPatch(
+    page,
+    [
+      { id: 'tl', type: 'timelorde', params: { running: 0, bpm: 200 } },
+      {
+        id: 'cp',
+        type: 'clipplayer',
+        params: { quantize: 0, stepDiv: 2, gateLength: 0.9, octave: 0 },
+        data: {
+          clips: {
+            // Lane 0, slot 0. THREE OVERLAPPING NOTES: each enters while the
+            // previous is still held, and all three are down together from
+            // step 4 on.
+            '0': {
+              kind: 'note',
+              lengthSteps: 8,
+              root: 48,
+              loop: true,
+              steps: [
+                { step: 0, midi: 60, velocity: 100, lengthSteps: 8 },
+                { step: 2, midi: 64, velocity: 100, lengthSteps: 6 },
+                { step: 4, midi: 67, velocity: 100, lengthSteps: 4 },
+              ],
+            },
+          },
+          queued: [0, null, null, null, null, null, null, null],
+        },
+      },
+      { id: 'mob', type: 'midiOutBuddy' },
+    ],
+    [
+      { id: 'e-poly', from: { nodeId: 'cp', portId: 'pitch1' }, to: { nodeId: 'mob', portId: 'poly' }, sourceType: 'polyPitchGate', targetType: 'polyPitchGate' },
+      { id: 'e-gate', from: { nodeId: 'cp', portId: 'gate1' }, to: { nodeId: 'mob', portId: 'gate' }, sourceType: 'gate', targetType: 'gate' },
+      { id: 'e-vel', from: { nodeId: 'cp', portId: 'vel1' }, to: { nodeId: 'mob', portId: 'velocity' }, sourceType: 'cv', targetType: 'cv' },
+    ],
+  );
+
+  const dock = await openDock(page, 'mob');
+  await dock.getByTestId('shell-cell-midi-out-buddy-connect').click();
+  const select = dock.getByTestId('midi-out-buddy-output-select-mob');
+  await expect(select).toBeVisible({ timeout: BOOT_MS });
+  await select.selectOption(OUT_B.id);
+  await clearMidiOutCaptured(page);
+
+  // Run the rack transport. CLIPPLAYER has no clock of its own.
+  await page.evaluate(() => {
+    const w = globalThis as unknown as {
+      __patch: { nodes: Record<string, { type?: string; params?: Record<string, number> }> };
+      __ydoc: { transact: (fn: () => void) => void };
+    };
+    w.__ydoc.transact(() => {
+      for (const n of Object.values(w.__patch.nodes)) {
+        if (n.type === 'timelorde') {
+          if (!n.params) n.params = {};
+          n.params.running = 1;
+          n.params.bpm = 200;
+        }
+      }
+    });
+  });
+
+  /** Peak simultaneous sounding notes on the chosen port, and which pitches
+   *  were down at that moment — replayed from the captured byte stream, so the
+   *  claim is about the WIRE and not about any app state. */
+  const peakChord = async (): Promise<{ peak: number; pitches: number[] }> => {
+    const msgs = await readMidiOutCaptured(page, OUT_B.id);
+    const held = new Set<number>();
+    let peak = 0;
+    let pitches: number[] = [];
+    for (const m of msgs) {
+      const status = m.bytes[0] ?? 0;
+      const pitch = m.bytes[1] ?? 0;
+      const vel = m.bytes[2] ?? 0;
+      if (status >= 0x90 && status <= 0x9f && vel > 0) held.add(pitch);
+      else if (status >= 0x80 && status <= 0x9f) held.delete(pitch);
+      if (held.size > peak) {
+        peak = held.size;
+        pitches = [...held].sort((a, b) => a - b);
+      }
+    }
+    return { peak, pitches };
+  };
+
+  // The gate: THREE notes down at once. Polled because the transport has to
+  // reach step 4 for all three to overlap — the timeout BOUNDS the failure.
+  await expect
+    .poll(async () => (await peakChord()).peak, {
+      message: 'three overlapping clip notes must be three sounding MIDI notes',
+      timeout: SLOW_BOOT_TEST_TIMEOUT_MS,
+    })
+    .toBeGreaterThanOrEqual(3);
+
+  const { pitches } = await peakChord();
+  expect(pitches, 'and they are the three DISTINCT pitches the clip holds').toEqual([60, 64, 67]);
+
+  // Every voice is a real, matched note — never a Note On with no Note Off, and
+  // never a stranded pitch on the external instrument.
+  const all = await readMidiOutCaptured(page, OUT_B.id);
+  const ons = all.filter((m) => (m.bytes[0] ?? 0) === 0x90 && (m.bytes[2] ?? 0) > 0);
+  expect(ons.length, 'PRECONDITION: the chain really transmitted').toBeGreaterThanOrEqual(3);
+  expect(new Set(ons.map((m) => m.bytes[1])), 'all three voices reached the wire').toEqual(
+    new Set([60, 64, 67]),
+  );
+
+  // ⚠ POLLED, NOT READ. The peak gate above returns the INSTANT the third voice
+  // arrives — which is before any of them is due to end, so a bare read here
+  // would be asserting that a note was released early. The release is its own
+  // observable event; wait for it, bounded.
+  await expect
+    .poll(
+      async () =>
+        (await readMidiOutCaptured(page, OUT_B.id)).filter((m) => (m.bytes[0] ?? 0) === 0x80)
+          .length,
+      {
+        message: 'each voice is released, never stranded on the instrument',
+        timeout: SLOW_BOOT_TEST_TIMEOUT_MS,
+      },
+    )
+    .toBeGreaterThanOrEqual(3);
+
+  expect(
+    await readMidiOutCaptured(page, OUT_A.id),
+    'nothing leaked to the port the player did not choose',
+  ).toEqual([]);
   expect(errors).toEqual([]);
 });

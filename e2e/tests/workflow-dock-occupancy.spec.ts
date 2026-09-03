@@ -265,12 +265,21 @@ test.describe('bottom-drawer occupancy: pinned XOR full-view (?shell=1)', () => 
     ).toEqual({ left: 0, top: 0 });
 
     // BOTH INTERACTABLE: a real click lands in the clip player pane (its S&H
-    // toggle exposes aria-pressed) AND in the module pane (the vca shell).
-    const snh = paneFor(page, CLIP_ID).getByTestId('clipplayer-snh-toggle');
+    // switch reports state) AND in the module pane (the vca shell).
+    //
+    // ⚠ `control-snh` AND `aria-checked`, BOTH BECAUSE OF THE PROMOTION. This
+    // pane used to paint the legacy card, whose S&H was a toggle BUTTON
+    // (`clipplayer-snh-toggle`, `aria-pressed`). `snh` is a ranked PARAM on the
+    // face, so it renders as the shared shell control — `control-snh`, the
+    // testid `faces-parity` asserts against the def — and that control is a
+    // `role="switch"`, whose state attribute is `aria-checked`. Not a
+    // workaround: `aria-pressed` belongs to a toggle button and `aria-checked`
+    // to a switch, so the faceplate is the more correct of the two.
+    const snh = paneFor(page, CLIP_ID).getByTestId('control-snh');
     await expect(snh).toBeVisible();
-    const before = await snh.getAttribute('aria-pressed');
+    const before = await snh.getAttribute('aria-checked');
     await snh.click();
-    await expect(snh).toHaveAttribute('aria-pressed', before === 'true' ? 'false' : 'true');
+    await expect(snh).toHaveAttribute('aria-checked', before === 'true' ? 'false' : 'true');
     await expect(paneFor(page, 'm1').getByTestId('faceplate-editor')).toBeVisible();
   });
 
@@ -622,12 +631,12 @@ test.describe('full-view SPLIT: two panes, one drawer occupant (?shell=1)', () =
     const clipJacks = paneFor(page, CLIP_ID).getByTestId('back-jack');
     expect(await clipJacks.count(), 'clip player rear card renders its jacks').toBeGreaterThan(0);
     // …and its FRONT controls are gone while flipped.
-    await expect(paneFor(page, CLIP_ID).getByTestId('clipplayer-snh-toggle')).toBeHidden();
+    await expect(paneFor(page, CLIP_ID).getByTestId('control-snh')).toBeHidden();
 
     // Flip back → front controls return, no reboot of the occupant.
     await pressFlipKey(page);
     await expect(clipFace).toHaveAttribute('data-flipped', 'false');
-    await expect(paneFor(page, CLIP_ID).getByTestId('clipplayer-snh-toggle')).toBeVisible();
+    await expect(paneFor(page, CLIP_ID).getByTestId('control-snh')).toBeVisible();
   });
 });
 
@@ -660,7 +669,7 @@ test.describe('bottom-drawer occupancy: preview-off M/E drawer + the same C pane
     await expect(paneFor(page, CLIP_ID)).toBeVisible();
     await expect(drawer).toHaveCount(0);
     // …and its real controls are live in the pane.
-    await expect(paneFor(page, CLIP_ID).getByTestId('clipplayer-snh-toggle')).toBeVisible();
+    await expect(paneFor(page, CLIP_ID).getByTestId('control-snh')).toBeVisible();
 
     // C again closes it.
     await page.keyboard.press('c');
