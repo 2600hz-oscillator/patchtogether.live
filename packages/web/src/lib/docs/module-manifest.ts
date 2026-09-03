@@ -1481,6 +1481,13 @@ export function buildModuleManifest(
       // suffix rule above.)
       if (file === 'clip-record-capture.ts') return false;
       if (file === 'clip-record-machine.ts') return false;
+      // The clip-recorder WORKLET WIRING — the graph/port seam that connects
+      // the eight-input capture worklet to mixmstrs' tap rosters and pumps
+      // chunks into the clip media store. Not a ModuleDef (the recorder is a
+      // seam between mixmstrs and clipplayer, not a patchable module); it
+      // lives HERE because mono-normal-not-defeated's factory derivation
+      // resolves factories from the module dirs.
+      if (file === 'clip-recorder-node.ts') return false;
       if (file === 'clip-lane-phase.ts') return false;
       if (file === 'clip-reconcile.ts') return false;
       // CLIPPLAYER's shared COPY BUFFER — the one typed clipboard the card's
