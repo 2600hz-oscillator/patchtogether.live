@@ -276,8 +276,11 @@ async function wcolEdges(page: Page): Promise<string[]> {
   });
 }
 
+// The S2 inversion collapsed the two-renderer table: the drawer routes through
+// DockFullView, which never read the shell flag, so both arms were already
+// looking at the same faceplate (see the pane-wrapper note below) and the lane
+// half of the legacy arm died with the flip. One arm carries the subject.
 for (const [label, url] of [
-  ['legacy-cards', '/rack?shell=legacy'],
   ['faces', '/rack'],
 ] as const) {
   test(`master transport drives audible clip playback through the real lane chain (${label})`, async ({ page }) => {
@@ -285,7 +288,7 @@ for (const [label, url] of [
     // windows + boot + the reconciler-edge poll + four click/assert round-trips.
     // The local (real-GPU) ceiling still gets headroom over the flat 30s default
     // because a COLD dev server pays SvelteKit's on-demand route compile on the
-    // first `/rack?shell=legacy` boot (measured: the flat 20s bootWorkflow poll
+    // first `/rack` boot (measured: the flat 20s bootWorkflow poll
     // blown on the first COLD run, 9.6s per test once warm).
     test.setTimeout(SLOW_RENDER ? 90_000 : 60_000);
     const budgetWarns: string[] = [];

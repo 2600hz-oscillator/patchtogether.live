@@ -1,14 +1,14 @@
 // e2e/tests/landing-routing.spec.ts
 //
 // Phase 1 of the landing-page overhaul: the scratch canvas moved from `/` to
-// `/rack?shell=legacy&seed=none`, and `/` is now a static, prerendered landing / front door.
+// `/rack?seed=none`, and `/` is now a static, prerendered landing / front door.
 //
 // This spec pins the load-bearing routing invariants:
-//   1. `/rack?shell=legacy&seed=none` boots the canvas AND is cross-origin isolated (SharedArrayBuffer
+//   1. `/rack?seed=none` boots the canvas AND is cross-origin isolated (SharedArrayBuffer
 //      for Faust — the reason the canvas can't sit under Clerk). (Finding A: the
 //      isolation is enforced globally by _headers `/*` + vite server/preview
 //      headers, reinforced by hooks.server.ts ISOLATED_EXACT which now lists
-//      `/rack?shell=legacy&seed=none`, not `/`.)
+//      `/rack?seed=none`, not `/`.)
 //   2. `/` renders the landing with NO canvas / no AudioContext.
 //   3. Anon `GET /` returns 200 even with the beta gate active (Finding C: `/`
 //      is an EXACT carve-out in BETA_GATE_PUBLIC_PATHS — the public front door).
@@ -41,9 +41,9 @@ test.describe.configure({ timeout: SLOW_BOOT_TEST_TIMEOUT_MS });
 
 test.describe('landing routing', () => {
   test('the rack route boots the canvas and is cross-origin isolated', async ({ page }) => {
-    const resp = await page.goto('/rack?shell=legacy&seed=none');
-    expect(resp, 'no response for /rack?shell=legacy&seed=none').toBeTruthy();
-    expect(resp!.status(), `/rack?shell=legacy&seed=none status ${resp!.status()}`).toBe(200);
+    const resp = await page.goto('/rack?seed=none');
+    expect(resp, 'no response for /rack?seed=none').toBeTruthy();
+    expect(resp!.status(), `/rack?seed=none status ${resp!.status()}`).toBe(200);
 
     await expect(page.locator('[data-testid="canvas-root"]')).toBeVisible({ timeout: BOOT_MS });
 
@@ -58,7 +58,7 @@ test.describe('landing routing', () => {
   }) => {
     // The hole the direct-load test above could not see (a gate that reads only
     // one side): `/` is deliberately NOT isolated, so a CLIENT-SIDE navigation
-    // into `/rack?shell=legacy&seed=none` keeps the landing's document and arrives with
+    // into `/rack?seed=none` keeps the landing's document and arrives with
     // `crossOriginIsolated === false` — SharedArrayBuffer undefined, Faust WASM
     // threads degraded, and the ES-9 bridge card stuck in 'unsupported' with no
     // connect button (owner report 2026-08-05). The rack-bound landing tiles

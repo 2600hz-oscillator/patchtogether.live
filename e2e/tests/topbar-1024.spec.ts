@@ -23,7 +23,7 @@ async function boot(page: Page): Promise<void> {
   // control) is the CANVAS topbar in Canvas.svelte, which lives on /rack?shell=legacy&seed=none
   // since the landing-page move (#995) — `/` is the static landing and has
   // no rack topbar at all.
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await page.waitForLoadState('networkidle');
   await page.locator('header.workflow-topbar').waitFor({ state: 'visible', timeout: 10_000 });
   // Wait for the widest actions-cluster controls to be mounted before we

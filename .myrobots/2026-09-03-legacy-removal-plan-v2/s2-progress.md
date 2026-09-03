@@ -52,6 +52,16 @@ of the 171 explicit URL-flip pool carry the pattern.
 Helpers are clean of the pattern except `_card-overflow.ts` (card-DOM helper,
 dies later) and `_toybox-fixture-helpers.ts` (toybox = family (b) anyway).
 
+⚠ **The `:has` rewrite INVERTS negative card-absence assertions.** A leg that
+asserts `.svelte-flow__node-<type>` has count 0 ("no CARD is mounted") is
+CORRECT with the per-type class — the class is emitted only by the legacy card
+path, so it stays 0 on the default shell. Rewriting it to
+`:has([data-shell-type])` makes it match the FACE tile → count 1 → red (bit
+camerainput-shell-source:192 and loopback-shell-source:278; both reverted to
+the per-type class). NEVER apply the mechanical rewrite to a negative
+assertion whose subject is card absence — check every `toHaveCount(0)`
+before rewriting a file.
+
 ## Commit sequence (each green, pushed; battery per commit-group)
 
 ## Flip-batch measurement (the honest instrument, preview @4752)
@@ -125,7 +135,9 @@ into `face-clipplayer.spec.ts`, which already covers grid+pads).
 | 1 | fixture flip: `rack` → default shell; `rackLegacy` opt-in alias added; 57 still-legacy-dependent files moved onto it; 27 files get shell-agnostic node selectors | DONE — battery: typecheck 0, lint 0, `--list` 3077/506 unchanged, full batch 369 passed/37 skipped/0 red after moves, REPEAT=3 on the 24 rewritten = 180 passed/0 failed |
 | 2 | `rackDefault` fold (10 consumers → `rack`; fixture deleted) | pending |
 | 3+ | drain `rackLegacy`: node-locator mechanical rewrites back onto default | pending |
-| … | URL-flip pool (171 explicit, grouped commits) | pending |
+| 3 | URL-flip wave 1: 80/144 mechanical-pool files flipped (URLs + `:has` locators), 6588ed099 | DONE — pool run 373 passed/129 skipped; 64 reds REVERTED to legacy boot (family-b/e queue below) |
+| 4 | manual-pool flips + family-(c) first cuts (24 files: shell-source legacy legs, es9 legacy arm, master-transport legacy arm, flip-rack legacy arm, menu-clamp canvas-card legs, midi-learn-note leg 2, rings-face card leg, vca-face card describe — see manifest) | verification batch running |
+| … | URL-flip remainder: the 64 reverted reds (below) — each needs per-family triage, not a blanket flip | pending |
 | … | helper flips: `_per-module-per-port-shared.ts`, `_toybox-fixture-helpers.ts`, `carl-rackspace.helpers.ts`, `rack-session.ts` `LEGACY_RACK_URL` | pending |
 | … | card-DOM rewrites / fold-and-delete with named-coverage manifest (owner ruling 5) | pending |
 | … | family (c) machinery deletions + skip-budget same-commit | pending |
@@ -134,11 +146,52 @@ into `face-clipplayer.spec.ts`, which already covers grid+pads).
 
 ## Coverage manifest (fold-and-delete rows land here as they happen)
 
-*(empty — no spec deleted yet)*
+Format: deleted test → why it dies → where the coverage lives now.
+
+| deleted (file :: test) | class | coverage now |
+|---|---|---|
+| camerainput-shell-source :: "?shell=legacy is UNCHANGED — real card in lane, no host" | legacy escape hatch + deleted HeadlessSourceHost | same file's default-shell legs; workflow-shell-video per-row card-absence |
+| loopback-shell-source :: "?shell=legacy is UNCHANGED — real card in lane, no host" | same | same |
+| es9-shell-lifetime :: "preview OFF is unchanged — legacy card in-lane" | legacy renderer arm | the three default-shell lifetime legs in the same file |
+| workflow-master-transport :: "…(legacy-cards)" table arm | duplicate arm — drawer routes via DockFullView, never read the flag (file's own comment) | the surviving `faces` arm, identical surface |
+| flip-rack-rear-view :: both tests × "legacy (?shell=legacy)" renderer arm (2 tests) | legacy renderer arm of a rack-level parity table | the `shell (default rack)` arm |
+| menu-viewport-clamp :: "numpad key remap menu … corner" (canvas card) | card-only anchor (face keymap is dock-only) | numpad-plus-face.spec.ts (portal+clamp); lane-tile drill-down leg in same file (transformed-node escape class) |
+| menu-viewport-clamp :: "clip editor note-/clip-probability menus … (canvas)" | card-only anchor (pads dock-only on default) | dock full-view leg in same file (same menus + flyout + backdrop) |
+| midi-learn-note :: "the LEGACY CARD's button (SCORE PLAY) binds a NOTE" | compat-surface leg | FACE leg in same file (incl. orphaned `<node>:play` record migration) |
+| rings-face :: "the CARD STRUM button drives the SAME seam" | compat-surface leg | dock-cell strum leg + NEGATIVE CONTROL in same file |
+| vca-face :: "VCA legacy card — def-owned readout reaches the card" describe (1 test) | card readout path (`paramProps`) | face `aria-valuetext` readout legs in same file |
+
+Collection: 3077 → **3066** tests in 506 files (−11: the rows above).
+
+## The 64 URL-flip reds (reverted to legacy boot; drain per family)
+
+From the 144-file pool run (preview, one pass; failures ARE per-file
+measurements, root causes pending per family):
+toybox family (toybox-combine-editor -cv-section -disk-loading -feedback
+-layer-input -layer-selector -new-content -node-batch -node-controls
+-node-menu -presets -presets-io -shadertoy -video-inputs -video-projection),
+samsloop (samsloop samsloop-boundaries-roundtrip -download -persistence
+-record -window), timelorde (-tap-tempo -transport-state -video,
+trails), video-orientation (20 tests), per-module-per-port-outputs,
+videoout-drop-patch, camera-input, wavecel-viz, wavecel-video-outs,
+waveform-trace-shape, workflow-spawn-reveal, video-preview-downscale,
+video-controls, vst-bridge, vst-lane-autowire, slider-drag, skifree,
+scoreboard, recorderbox-recover-reachable, reconciler-node-type-swap, pong,
+picturebox-asset-select, perf-midi-cc-coalesce, ai-smoke, chromaconsole,
+clip-media-recover-reachable, coverage-group-1-sinks, coverage-groups-6-7-8-9,
+cube, duplicate-module, es9-card-shows-state, foxy-freeze-locks-wavetable,
+gibribbon, in-card-title, livecode, midi, midi-autobind-perfzip,
+midi-out-buddy, nibbles, organize-modules, patch-menu-redesign,
+patch-panel-nested.
+(Some are 1-test reds — likely cheap rescues; toybox/samsloop/timelorde are
+real card-DOM families. in-card-title + card-drop-patch remain family (c)
+whole-file deletions per the brief.)
 
 ## Defects found in the product by S2
 
-*(none yet)*
+*(none yet — every red so far is explainable as face-vs-card DOM shape;
+patch-panel and multi-output warrant a closer product look during their
+family rewrites)*
 
 ## Environment notes for a successor
 

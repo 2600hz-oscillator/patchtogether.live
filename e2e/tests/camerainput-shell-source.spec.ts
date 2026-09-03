@@ -288,30 +288,9 @@ test.describe('CAMERA under the DEFAULT shell — promoted lane, node-owned sour
     ).toContainText(/site settings/i, { timeout: SLOW_BOOT_TEST_TIMEOUT_MS });
   });
 
-  test('`?shell=legacy` is UNCHANGED — the real card is in the lane and no host exists', async ({ page, errorWatch }) => {
-    // ⚠ THE ESCAPE HATCH IS PART OF THE CONTRACT, and this promotion is exactly
-    // the kind of change that quietly breaks it: the headless host would be a
-    // SECOND mount of a card that is already in the lane, which is the
-    // double-getUserMedia hazard `needsHeadlessSourceMount`'s 'legacy' arm
-    // exists to prevent. Asserting the host is ABSENT is what proves that arm
-    // still fires for this module now that it is promoted.
-    test.setTimeout(SLOW_BOOT_TEST_TIMEOUT_MS);
-
-    await stubMediaDevices(page);
-    await page.goto('/rack?shell=legacy');
-    await expect(page.getByTestId('workflow-topbar'))
-      .toBeVisible({ timeout: SLOW_BOOT_TEST_TIMEOUT_MS });
-    await page.locator('.svelte-flow__pane:visible').first().waitFor({ state: 'visible' });
-    await spawnCameraChain(page);
-
-    await expect(
-      page.locator(`.svelte-flow__node-cameraInput[data-id="${CAM}"]`),
-      'the verbatim legacy card is the lane surface under ?shell=legacy',
-    ).toBeVisible({ timeout: SLOW_BOOT_TEST_TIMEOUT_MS });
-
-    await expect(
-      page.locator('[data-testid="headless-source-host"][data-node-type="cameraInput"]'),
-      'and NO headless host — that would be a second mount of the same card',
-    ).toHaveCount(0);
-  });
+  // The legacy-escape-hatch leg was DELETED by the S2 inversion: its subject
+  // was the `?shell=legacy` renderer plus the absence of the (since deleted)
+  // HeadlessSourceHost. Node-source ownership on the shell users get is
+  // covered by the tests above and by workflow-shell-video's per-row
+  // card-absence assertions.
 });

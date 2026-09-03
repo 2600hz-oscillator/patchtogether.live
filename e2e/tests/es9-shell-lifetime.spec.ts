@@ -64,12 +64,8 @@ async function faceBodyMounted(page: Page): Promise<boolean> {
   return (await page.locator(`[data-testid="es9-bridge-body-${NODE}"]`).count()) > 0;
 }
 
-async function spawnEs9(page: Page, shell: boolean): Promise<void> {
-  // `shell` true → the FACEPLATE default (bare /rack); false → legacy cards.
-  // ⚠ Was `?shell=legacy${shell ? '&shell=1' : ''}` after the sweep — a
-  // duplicate `shell` param, and `searchParams.get` returns the FIRST, so
-  // both arms silently resolved to legacy.
-  await page.goto(`/rack${shell ? '' : '?shell=legacy'}`);
+async function spawnEs9(page: Page): Promise<void> {
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [
     { id: NODE, type: 'es9', position: { x: 140, y: 140 }, domain: 'audio' },
@@ -81,7 +77,7 @@ test('?shell=1 renders es9 COMPACT, and the bridge is owned with NO card mounted
   page,
   rack,
 }) => {
-  await spawnEs9(page, true);
+  await spawnEs9(page);
 
   // The lane tile is a shell tile — NOT the legacy card. This is the half the
   // previous fix had to give up.
@@ -110,7 +106,7 @@ test('?shell=1 renders es9 COMPACT, and the bridge is owned with NO card mounted
 });
 
 test('EXPAND to dock then COLLAPSE does not touch the connection', async ({ page, rack }) => {
-  await spawnEs9(page, true);
+  await spawnEs9(page);
 
   // Open the dock full view (the same call the tile's EXPAND button makes).
   await page.evaluate((id) => {
@@ -145,7 +141,7 @@ test('EXPAND to dock then COLLAPSE does not touch the connection', async ({ page
 test('NEGATIVE CONTROL — deleting the NODE does release the bridge', async ({ page, rack }) => {
   // Without this, every assertion above would pass against an implementation
   // that simply never released anything.
-  await spawnEs9(page, true);
+  await spawnEs9(page);
   // Delete through the real store — the reconciler then disposes the engine
   // handle, which is the ONLY path that releases the bridge.
   await page.evaluate((id) => {
@@ -157,11 +153,6 @@ test('NEGATIVE CONTROL — deleting the NODE does release the bridge', async ({ 
     .toBe(false);
 });
 
-test('preview OFF is unchanged — the legacy card still renders in-lane', async ({ page, rack }) => {
-  await spawnEs9(page, false);
-  const lane = page.locator(`.svelte-flow__node[data-id="${NODE}"]`);
-  const laneClass = (await lane.getAttribute('class')) ?? '';
-  expect(laneClass, 'no shell tile without ?shell=1').toContain('svelte-flow__node-es9');
-  expect(await cardMounted(page), 'the real card is in the lane').toBe(true);
-  expect(await bridgeOwned(page)).toBe(true);
-});
+// The `preview OFF` leg (legacy card in-lane + bridge owned) was DELETED by
+// the S2 inversion: its subject was the legacy renderer itself. The bridge's
+// card-independence is pinned by the three tests above on the shell users get.

@@ -133,7 +133,7 @@ test.describe('persisted rack — restored video is live without a manual add/de
   }) => {
     test.setTimeout(90_000);
 
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
 
     const idbOk = await page.evaluate(

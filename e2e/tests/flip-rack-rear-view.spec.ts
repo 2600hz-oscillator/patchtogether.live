@@ -43,13 +43,13 @@ test.describe.configure({ mode: 'parallel' });
 
 /** The two rack renderers, both reachable in production.
  *
- *  `shell` is the DEFAULT — no query flag — and is listed first deliberately:
- *  it is what a user gets. `legacy` is the `?shell=legacy` opt-out that most of
- *  this suite still runs through (see the `rack` fixture). A renderer that
- *  cannot satisfy the body below is a renderer whose flip is broken. */
+ *  Since the S2 inversion there is ONE production renderer — the default
+ *  shell. The `legacy (?shell=legacy)` arm was DELETED with the fixture flip:
+ *  its subject was the opt-out renderer itself, which leaves the product with
+ *  the card fleet (S4). A renderer that cannot satisfy the body below is a
+ *  renderer whose flip is broken. */
 const RENDERERS = [
   { name: 'shell (default rack)', url: '/rack?seed=none' },
-  { name: 'legacy (?shell=legacy)', url: '/rack?shell=legacy&seed=none' },
 ] as const;
 
 /** What `elementFromPoint` resolves at the CENTRE of `selector`, described as

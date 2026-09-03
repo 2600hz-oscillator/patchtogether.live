@@ -481,35 +481,9 @@ test.describe('LOOPBACK under the DEFAULT shell — promoted lane, node-owned so
     ).toBe(true);
   });
 
-  test('`?shell=legacy` is UNCHANGED — the real card is in the lane and no host exists', async ({ page, errorWatch }) => {
-    // ⚠ THE ESCAPE HATCH IS PART OF THE CONTRACT, and this promotion is exactly
-    // the kind of change that quietly breaks it: the headless host would be a
-    // SECOND mount of a card that is already in the lane, which is the
-    // double-capture hazard `needsHeadlessSourceMount`'s 'legacy' arm exists to
-    // prevent. Asserting the host is ABSENT is what proves that arm still fires
-    // for this module now that it is promoted.
-    test.setTimeout(SLOW_BOOT_TEST_TIMEOUT_MS);
-
-    await stubDisplayMedia(page);
-    await bootRack(page, '/rack?shell=legacy');
-    await spawnLoopbackChain(page);
-
-    await expect(
-      page.locator(`.svelte-flow__node-loopback[data-id="${LOOP}"]`),
-      'the verbatim legacy card is the lane surface under ?shell=legacy',
-    ).toBeVisible({ timeout: BOOT_MS });
-
-    await expect(
-      page.locator(HOST),
-      'and NO headless host — that would be a second mount of the same card',
-    ).toHaveCount(0);
-
-    // The card's own buttons are the reachable ones here — the legacy surface
-    // owes the same affordances the faceplate now carries.
-    await expect(page.getByTestId('loopback-start-capture')).toHaveCount(1);
-    expect(
-      await videoWhere(page),
-      'the node-owned <video> lives in the LANE card under the legacy shell',
-    ).toEqual({ present: true, count: 1, where: 'lane' });
-  });
+  // The legacy-escape-hatch leg was DELETED by the S2 inversion: its subject
+  // was the `?shell=legacy` renderer plus the absence of the (since deleted)
+  // HeadlessSourceHost. Node-source ownership on the shell users get is
+  // covered by the tests above and by workflow-shell-video's per-row
+  // card-absence assertions.
 });

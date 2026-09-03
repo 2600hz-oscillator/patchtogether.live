@@ -654,7 +654,7 @@ test.describe('bottom-drawer occupancy: preview-off M/E drawer + the same C pane
   });
 
   test('`c` opens the SAME clip pane flag-off; `m`/`e` still toggle the shipped drawer', async ({ page }) => {
-    await page.goto('/rack?shell=legacy');
+    await page.goto('/rack');
     // Same first-load budget as gotoShellWorkflow (cold-compile latency).
     await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: BOOT_MS });
     await page.locator('.svelte-flow__pane:visible').first().waitFor({ state: 'visible' });

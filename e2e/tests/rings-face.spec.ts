@@ -138,35 +138,11 @@ test.describe('rings face — THE AUDITION (the module could not be sounded befo
       .toBe(true);
   });
 
-  test('the CARD STRUM button drives the SAME seam (one implementation, not two)', async ({ page }) => {
-    // §7-B: the legacy card had a MODEL button, six faders and a jack field and
-    // no way to excite any of it. It now shares the face's seam exactly.
-    //
-    // ⚠ `?shell=legacy`, AND THAT IS LOAD-BEARING RATHER THAN INCIDENTAL. rings
-    // is in STRICT_FACES as of this PR, so `migrated()` is true and the DEFAULT
-    // rack renders the curated ModuleShell face — the legacy card is not
-    // mounted at all and its testids do not exist. This leg exists precisely
-    // because the card is still the surface `?shell=legacy` users get, and the
-    // defect it fixes (a module that cannot be sounded) was THEIRS first.
-    await page.goto('/rack?shell=legacy&seed=none');
-    await expect(page.getByTestId('workflow-topbar')).toBeVisible({
-      timeout: SLOW_RENDER ? 30_000 : 15_000,
-    });
-    const nodeId = await spawnRings(page);
-
-    const cardStrum = page.getByTestId(`rings-strum-${nodeId}-1`);
-    await expect(cardStrum, 'the legacy card carries a STRUM button').toBeVisible();
-
-    const before = lastSeq(await readAuditionLog(page));
-    await cardStrum.click();
-
-    await expect
-      .poll(async () => delivered(await readAuditionLog(page), nodeId, before), {
-        message: 'the card button must reach the same manual-strike seam the face cell reaches',
-        timeout: SLOW_RENDER ? 15_000 : 8_000,
-      })
-      .toBe(true);
-  });
+  // The CARD-STRUM leg (`?shell=legacy`, the card button driving the same
+  // seam) was DELETED by the S2 inversion: its subject was the compatibility
+  // surface, which leaves the product with the card fleet. One-implementation
+  // delivery is pinned by the dock-cell leg above plus the NEGATIVE CONTROL
+  // below, on the shell users get.
 
   test('NEGATIVE CONTROL — the predicate reads FALSE when the seam cannot deliver', async ({ page }) => {
     // ⚠ WITHOUT THIS LEG THE TWO ABOVE PROVE NOTHING. A predicate that returned

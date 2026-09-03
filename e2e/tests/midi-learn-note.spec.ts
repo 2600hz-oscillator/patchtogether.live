@@ -119,7 +119,7 @@ async function injectNote(page: Page, channel: number, note: number, velocity: n
 }
 
 async function bootScore(page: Page): Promise<void> {
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await page.waitForLoadState('networkidle');
   await page.evaluate(() => window.localStorage.removeItem('pt.midi-bindings.v1'));
   await spawnPatch(
@@ -127,7 +127,7 @@ async function bootScore(page: Page): Promise<void> {
     [{ id: 'ds-1', type: 'score', position: { x: 120, y: 120 }, domain: 'audio', params: { isPlaying: 0 } }],
     [],
   );
-  await expect(page.locator('.svelte-flow__node-score')).toHaveCount(1);
+  await expect(page.locator('.svelte-flow__node:has([data-shell-type="score"])')).toHaveCount(1);
 }
 
 test('MIDI assign: a gate INPUT row binds a NOTE (binding materializes + bound state)', async ({ page }) => {
@@ -136,7 +136,7 @@ test('MIDI assign: a gate INPUT row binds a NOTE (binding materializes + bound s
 
   // ADSR has a top-level (auto-grouped) `gate` input — its row is directly
   // hittable once the patch panel opens (no nested sections to expand).
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await page.waitForLoadState('networkidle');
   await page.evaluate(() => window.localStorage.removeItem('pt.midi-bindings.v1'));
   await spawnPatch(
@@ -144,7 +144,7 @@ test('MIDI assign: a gate INPUT row binds a NOTE (binding materializes + bound s
     [{ id: 'ad-1', type: 'adsr', position: { x: 120, y: 120 }, domain: 'audio', params: {} }],
     [],
   );
-  const card = page.locator('.svelte-flow__node-adsr');
+  const card = page.locator('.svelte-flow__node:has([data-shell-type="adsr"])');
   await expect(card).toHaveCount(1);
   await installSimMidi(page);
 
@@ -198,59 +198,12 @@ test('MIDI assign: a gate INPUT row binds a NOTE (binding materializes + bound s
   expect(errors, `page errors: ${errors.join('; ')}`).toEqual([]);
 });
 
-test('MIDI assign: the LEGACY CARD\'s button (SCORE PLAY) still binds a NOTE that TOGGLES the param', async ({ page }) => {
-  const errors: string[] = [];
-  page.on('pageerror', (e) => errors.push(e.message));
-
-  await bootScore(page);
-  const card = page.locator('.svelte-flow__node-score');
-  await installSimMidi(page);
-
-  // The PLAY button is wrapped by MidiAssignButton; the inner button carries
-  // data-testid="score-play-<nodeId>". Right-click the wrapper (the button surface).
-  const playBtn = card.locator('[data-testid="score-play-ds-1"]');
-  await expect(playBtn).toHaveCount(1);
-  expect(await readParam(page, 'ds-1', 'isPlaying')).toBe(0);
-
-  await playBtn.click({ button: 'right' });
-  const menu = page.locator('[data-testid="control-context-menu"]');
-  await expect(menu).toBeVisible();
-  await menu.locator('[data-testid="ctx-midi-learn"]').click();
-  await expect(menu).toBeHidden();
-
-  // Inject NOTE-on → the bound toggle fires once → isPlaying flips to 1.
-  await injectNote(page, 0, 60, 110);
-  await expect.poll(() => readParam(page, 'ds-1', 'isPlaying')).toBe(1);
-  // The button shows its bound badge.
-  await expect(card.locator('[data-testid="score-play-ds-1"]').locator('xpath=ancestor::*[contains(@class,"midi-assign-button")]').locator('.midi-badge')).toContainText('NOTE 60');
-
-  // A NOTE-off does NOT re-toggle (toggle fires on the press edge only).
-  // Same sustained-negative shape as above: the window IS the assertion, so it
-  // is counted in frames rather than milliseconds.
-  await injectNote(page, 0, 60, 0);
-  await waitFrames(page, NO_REBIND_FRAMES);
-  expect(await readParam(page, 'ds-1', 'isPlaying')).toBe(1);
-
-  // A second NOTE-on toggles back off.
-  await injectNote(page, 0, 60, 110);
-  await expect.poll(() => readParam(page, 'ds-1', 'isPlaying')).toBe(0);
-
-  // A NOTE on a DIFFERENT note must NOT toggle.
-  await injectNote(page, 0, 61, 110);
-  await waitFrames(page, NO_REBIND_FRAMES);
-  expect(await readParam(page, 'ds-1', 'isPlaying')).toBe(0);
-
-  // Forget the binding → subsequent NOTE-ons no longer drive the toggle.
-  await playBtn.click({ button: 'right' });
-  await expect(menu).toBeVisible();
-  await menu.locator('[data-testid="ctx-midi-forget"]').click();
-  await expect(menu).toBeHidden();
-  await injectNote(page, 0, 60, 110);
-  await waitFrames(page, NO_REBIND_FRAMES);
-  expect(await readParam(page, 'ds-1', 'isPlaying')).toBe(0);
-
-  expect(errors, `page errors: ${errors.join('; ')}`).toEqual([]);
-});
+// LEG 2 (the LEGACY CARD's SCORE PLAY button binds a NOTE) was DELETED by the
+// S2 inversion: its subject was the compatibility surface itself, which leaves
+// the product with the card fleet. The note-toggle press-edge semantics, the
+// badge, and the forget path live on in the FACE leg below — including the
+// orphaned `<node>:play` record migration, which is the half only the face
+// leg could ever fail on.
 
 test('MIDI assign: the FACE\'s isPlaying toggle binds a NOTE, and a saved legacy `:play` record still drives it', async ({ page }) => {
   const errors: string[] = [];

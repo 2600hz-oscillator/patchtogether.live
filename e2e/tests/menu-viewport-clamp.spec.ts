@@ -83,7 +83,7 @@ function expectNearAnchor(
 }
 
 async function gotoClassic(page: Page): Promise<void> {
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await page.waitForFunction(() => {
     const w = window as unknown as { __patch?: unknown; __flow?: unknown };
     return !!w.__patch && !!w.__flow;
@@ -207,130 +207,16 @@ test('control (MIDI) context menu opens fully in view from a fader at the bottom
   await expect(menu).toBeHidden();
 });
 
-// ============================================================================
-// Remap menu family — NUMPAD+ key remap menu at the corner
-// ============================================================================
-
-// ⚠ THIS ONE STAYS ON `?shell=legacy`, AND THE REASON MATTERS AFTER THE FACE
-// PROMOTION. Its subject is a `position: fixed` menu escaping SvelteFlow's
-// TRANSFORMED node — a property only the CARD has, because the faceplate's
-// keymap panel is dock-only and the dock is not inside that transform. So this
-// is not a gate pinning an old host as correct: the card is still a shipped
-// surface (`?shell=legacy` must keep working) and it is the only surface where
-// this failure mode exists. The FACE's own menu — portal plus viewport clamp,
-// out of the dock — is driven in `numpad-plus-face.spec.ts`.
-test('numpad key remap menu opens fully in view at the bottom-right corner', async ({ page }) => {
-  await gotoClassic(page);
-  await spawnPatch(page, [{ id: 'n1', type: 'numpadPlus', position: { x: 200, y: 120 } }]);
-  await panNodeTo(page, 'n1', 'corner');
-  const key = page.locator('.svelte-flow__node[data-id="n1"] [data-testid="numpad-key-11"]');
-  await expect(key).toBeVisible();
-  await key.click({ button: 'right' });
-  const menu = page.getByTestId('numpad-key-menu');
-  await expectFullyInViewport(page, menu);
-  await page.keyboard.press('Escape');
-});
-
-// ============================================================================
-// Clip-editor grid menus on the CANVAS card (panned to the corner — also
-// proves the portal escapes SvelteFlow's transformed viewport)
-// ============================================================================
-
-test('clip editor note-probability + clip-probability menus stay in view with the card at the corner (canvas)', async ({ page }) => {
-  await gotoClassic(page);
-  await spawnPatch(page, [{ id: 'cp1', type: 'clipplayer', position: { x: 120, y: 80 } }]);
-  const node = page.locator('.svelte-flow__node[data-id="cp1"]');
-
-  // Enter the clip editor (double-click pad 0 — also CREATES clip 0; the
-  // clip-probability menu only opens on pads that HAVE a clip), pan the
-  // card's bottom-right to the window corner, and right-click the LAST grid
-  // cell — the owner's exact gesture at the most extreme anchor.
-  const pad = node.locator('[data-testid="clipplayer-pad-0"]');
-  await expect(pad).toBeVisible();
-  await pad.dblclick();
-  const roll = node.locator('[data-testid="clipplayer-pianoroll"]');
-  await expect(roll).toBeVisible();
-  // RIGHT-edge extremity (the owner's exact symptom: menu clipped at the
-  // right window edge). The canvas' bottom-right corner is owned by the
-  // minimap + attribution overlays (they'd swallow the clicks), so the cell
-  // anchor is the LAST step column at mid-window height instead.
-  await panNodeTo(page, 'cp1', 'right');
-  const lastCol = roll.locator('.cell[data-step="15"]');
-  const vh = page.viewportSize()!.height;
-  const cell = await (async () => {
-    const n = await lastCol.count();
-    let best = lastCol.first();
-    let bestDist = Infinity;
-    for (let i = 0; i < n; i++) {
-      const b = await lastCol.nth(i).boundingBox();
-      if (!b) continue;
-      const cy = b.y + b.height / 2;
-      if (cy < 60 || cy > vh - 60) continue; // fully on-screen, clear of overlays
-      const d = Math.abs(cy - vh * 0.45);
-      if (d < bestDist) {
-        bestDist = d;
-        best = lastCol.nth(i);
-      }
-    }
-    return best;
-  })();
-  // The probability menu only opens on a cell that HOLDS a note — toggle one
-  // on with a left-click first.
-  await cell.click();
-  await cell.click({ button: 'right' });
-  const probMenu = page.getByTestId('clipplayer-prob-menu-cp1');
-  await expectFullyInViewport(page, probMenu);
-  const cellBox = (await cell.boundingBox())!;
-  expectNearAnchor((await probMenu.boundingBox())!, {
-    x: cellBox.x + cellBox.width / 2,
-    y: cellBox.y + cellBox.height / 2,
-  });
-
-  // ⚠ THE SUBMENU FLYOUT IS NOW THE THING THAT CAN OVERFLOW, and it needs its
-  // own assertion — otherwise this test would keep passing while measuring
-  // nothing that matters. Until 2026-08-24 the note menu was ONE ~90-row column,
-  // so "the prob menu is fully in viewport" was a real constraint. The owner's
-  // restructure moved the option lists into flyouts, leaving the parent menu
-  // seven short rows that fit almost anywhere — the parent assertion above went
-  // from hard to nearly free, and the long column it used to cover moved into a
-  // box no assertion here saw. The flyout also opens to the RIGHT of a menu
-  // already at the window's right edge, which is the worst case for it.
-  await page.getByTestId('clipplayer-sub-note-cp1').click();
-  const flyout = page.getByTestId('clipplayer-submenu-note-cp1');
-  await expect(flyout).toBeVisible();
-  await expectFullyInViewport(page, flyout);
-  // …and it must not paint ON TOP of the parent it flew out of (the failure a
-  // pure in-viewport clamp allows: slide it back inside by covering its own
-  // menu). `flip: false` is what keeps it sliding along the edge instead.
-  const parentBox = (await probMenu.boundingBox())!;
-  const flyBox = (await flyout.boundingBox())!;
-  const overlapX = Math.min(parentBox.x + parentBox.width, flyBox.x + flyBox.width) - Math.max(parentBox.x, flyBox.x);
-  const overlapY = Math.min(parentBox.y + parentBox.height, flyBox.y + flyBox.height) - Math.max(parentBox.y, flyBox.y);
-  expect(
-    overlapX <= 0 || overlapY <= 0,
-    `flyout must not cover its parent menu (overlap ${Math.round(overlapX)}x${Math.round(overlapY)} CSS px)`,
-  ).toBe(true);
-
-  // The prob menus dismiss via their backdrop (they have no Esc handler —
-  // and Esc would close a dock full-view out from under the dock variant).
-  await page.getByRole('button', { name: 'close clip menu' }).click();
-  await expect(probMenu).toBeHidden();
-  await expect(flyout).toBeHidden();
-
-  // Back to the session grid; right-click the (now clip-carrying) pad with
-  // the card's right edge hugging the window's right edge.
-  await node.locator('[data-testid="clipplayer-strip-2-cp1"]').click();
-  await expect(pad).toBeVisible();
-  await panNodeTo(page, 'cp1', 'right');
-  await pad.click({ button: 'right' });
-  const clipProbMenu = page.getByTestId('clipplayer-clip-prob-menu-cp1');
-  await expectFullyInViewport(page, clipProbMenu);
-  const padBox = (await pad.boundingBox())!;
-  expectNearAnchor((await clipProbMenu.boundingBox())!, {
-    x: padBox.x + padBox.width / 2,
-    y: padBox.y + padBox.height / 2,
-  });
-});
+// The two CANVAS-CARD legs (numpad key-remap at the corner; clip-editor
+// note/clip-probability menus on the in-canvas card) were DELETED by the S2
+// inversion: their anchors — the card's in-lane keymap and pad grid — do not
+// exist on the default shell (both panels are dock-only there), so their
+// subject leaves the product with the card fleet. The menu classes they drove
+// keep coverage where the surfaces now live: the dock full-view leg below
+// (the owner's case: same prob menus + flyout, backdrop dismissal) and
+// `numpad-plus-face.spec.ts` (the face's portal + clamp); the
+// fixed-menu-escapes-the-transformed-node class is carried by the lane-tile
+// drill-down leg at the bottom of this file.
 
 // ============================================================================
 // THE OWNER'S CASE — clip editor inside the DOCK full-view pane (?shell=1)

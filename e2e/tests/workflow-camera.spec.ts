@@ -62,7 +62,7 @@ async function mappedCameras(page: Page): Promise<PatchNode[]> {
 }
 
 async function gotoWorkflow(page: Page): Promise<void> {
-  await page.goto('/rack?shell=legacy');
+  await page.goto('/rack');
   await page.locator('.svelte-flow__pane:visible').first().waitFor({ state: 'visible' });
 }
 
@@ -234,7 +234,7 @@ test.describe('workflow camera manager (P4)', () => {
 
     // Never a canvas card, whatever the count.
     expect(
-      await page.locator('.flow .svelte-flow__node-cameraInput').count(),
+      await page.locator('.flow .svelte-flow__node:has([data-shell-type="cameraInput"])').count(),
     ).toBe(0);
 
     // PERSISTENCE ROUND-TRIP: quicksave slot 1 → full reload → quickload.
@@ -271,7 +271,7 @@ test.describe('workflow camera manager (P4)', () => {
     await expect(page.getByTestId('workflow-camera-label').nth(1)).toHaveText(/camera 3/);
     // …and they are still headless — zero camera cards on the canvas.
     expect(
-      await page.locator('.flow .svelte-flow__node-cameraInput').count(),
+      await page.locator('.flow .svelte-flow__node:has([data-shell-type="cameraInput"])').count(),
     ).toBe(0);
   });
 });

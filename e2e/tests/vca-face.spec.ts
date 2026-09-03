@@ -365,33 +365,8 @@ test.describe('vca face — the two dials NAME their sense, and neither can see 
   });
 });
 
-test.describe('VCA legacy card — the def-owned readout reaches the card too', () => {
-  test('the base fader prints the DEF formatter, not the raw number', async ({ page }) => {
-    test.setTimeout(SLOW_RENDER ? 60_000 : 30_000);
-    // NO `shell=1`: this is the legacy card path, the one `paramProps` feeds.
-    await page.goto('/rack?shell=legacy');
-    await page.locator('.svelte-flow__pane:visible').first().waitFor({
-      state: 'visible',
-      timeout: SLOW_RENDER ? 30_000 : 15_000,
-    });
-    await spawnPatch(page, [
-      { id: 'v', type: 'vca', position: { x: 460, y: 240 }, params: { base: 0.25 } },
-    ]);
-
-    const card = page.locator('.svelte-flow__node[data-id="v"]');
-    const baseFader = card.getByTestId('control-base');
-    await expect(baseFader).toBeVisible();
-
-    // The tag exists only while hovering/dragging — which is exactly why no
-    // screenshot gate could ever have caught the divergence.
-    await baseFader.hover();
-    const tag = card.locator('.value-tag').first();
-    await expect(tag).toBeVisible();
-    await expect(
-      tag,
-      `the card's value tag must speak the DEF's vocabulary (ParamDef.format via ` +
-        `paramProps), not a bare number — the curated face already prints ` +
-        `${JSON.stringify(formatVcaBase(0.25))} for this same param.`,
-    ).toHaveText(formatVcaBase(0.25));
-  });
-});
+// The 'VCA legacy card' describe (the card's hover value-tag speaking the DEF
+// formatter via `paramProps`) was DELETED by the S2 inversion: its subject was
+// the legacy card's readout path, which leaves the product with the card
+// fleet. The def-owned vocabulary itself is pinned above on the face readouts
+// (`aria-valuetext` on base/strength), the surface users get.
