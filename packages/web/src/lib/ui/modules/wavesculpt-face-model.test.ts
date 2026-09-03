@@ -141,14 +141,31 @@ describe('wavesculpt — the declared cells', () => {
     expect(BODY).toContain('data-control-params="pos_x,pos_y"');
   });
 
-  it('⚠ the SCREEN switch must never UNMOUNT the surface', () => {
-    // Unmounting runs the surface's onDestroy, which disposes the GL context
-    // AND uninstalls the video_out frame drawer — so a collapsed preview would
-    // black out an OUTPUT other modules consume. The body hides with CSS.
-    expect(BODY).toContain('<WavesculptVizSurface');
+  it('⚠ the SCREEN switch must never DROP the surface claim', () => {
+    // ⚠ THIS LEG USED TO READ `<WavesculptVizSurface`, AND THE MOUNT IT PINNED
+    // IS GONE (legacy-removal S1). The renderer belongs to the NODE now —
+    // `$lib/ui/media/NodeVizSurfaceHost` mounts exactly one per node, parked
+    // off-screen — and this body CLAIMS its canvas into the pad. A second mount
+    // is not merely redundant: the surface stamps `data-testid="wavesculpt-
+    // canvas"` on its own canvas, so two mounts put two of them in the document
+    // and `wavesculpt.spec.ts` asserts exactly one.
+    //
+    // The RULE is unchanged and is what this leg still pins: the picture must
+    // not sit inside an `{#if}` on the SCREEN state. What SCREEN OFF costs has
+    // shrunk (a dropped claim parks the canvas; it no longer disposes the GL
+    // context or uninstalls the `video_out` drawer) but a released claim still
+    // leaves a BLANK PAD with a live crosshair and dot drawn on it, which reads
+    // as a broken surface. Hide the wrapper; never drop the host.
+    expect(BODY).toContain('nodeVizSurfaces.claim(');
+    expect(BODY, 'the body must not mount a second renderer').not.toContain(
+      '<WavesculptVizSurface',
+    );
+    // The claim host div, and the SCREEN state reaching it as a CLASS.
+    expect(/class="viz"[^>]*class:hidden=\{previewCollapsed\}[^>]*bind:this=\{vizHost\}/.test(BODY))
+      .toBe(true);
     expect(
-      /\{#if !previewCollapsed\}[\s\S]{0,200}<WavesculptVizSurface/.test(BODY),
-      'the surface must not sit inside an {#if} on the SCREEN state',
+      /\{#if !previewCollapsed\}[\s\S]{0,200}bind:this=\{vizHost\}/.test(BODY),
+      'the claim host must not sit inside an {#if} on the SCREEN state',
     ).toBe(false);
   });
 });

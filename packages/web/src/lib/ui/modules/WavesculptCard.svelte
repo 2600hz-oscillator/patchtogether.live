@@ -14,19 +14,31 @@
   //     their existing ports.
   //   * Bottom: BENTSCREEN WIGGLES — 12 BENTBOX knobs (unchanged from v1).
   //
-  // ⚠ THE PICTURE IS NOT DRAWN HERE ANY MORE. The WebGL2 renderer, the 2-D
-  // presentation canvas and all three view modes moved to
-  // `wavesculpt/WavesculptVizSurface.svelte`, so the legacy card and the
-  // faceplate body can paint the SAME picture from the SAME code rather than
-  // keeping two renderers in step with one DSP. This card mounts that surface
-  // where its canvas used to be and keeps the CONTROLS.
+  // ⚠ THE PICTURE IS NOT DRAWN HERE ANY MORE, AND SINCE legacy-removal S1 IT IS
+  // NOT MOUNTED HERE EITHER. The WebGL2 renderer, the 2-D presentation canvas
+  // and all three view modes live in `wavesculpt/WavesculptVizSurface.svelte`,
+  // and the NODE mounts it — `$lib/ui/media/NodeVizSurfaceHost`, on GRAPH
+  // lifetime, parked off-screen. This card is a VIEW: it CLAIMS that canvas into
+  // its screen box to show it, and keeps the CONTROLS.
   //
-  // Two consequences worth knowing before editing:
-  //   * the rAF loop lives in the surface, so `pollCamLive` (below) is handed
-  //     to it as `onFrame` — the poll still runs once per rendered frame, ahead
-  //     of the render, which is the property it was written for;
-  //   * this file no longer creates a WebGL context, so it is no longer in the
-  //     WebGL attest basis — the surface is.
+  // ⚠ THE DIFFERENCE IS NOT COSMETIC. Mounting the surface made this card
+  // LOAD-BEARING: the surface installs the module's cross-domain frame drawer,
+  // and with no drawer installed `wavesculpt.ts`'s own `drawFrame` fills the
+  // bridge canvas SOLID BLACK. So `wavesculpt` sat in `CARD_PRODUCER_LANE_TYPES`
+  // and the default shell kept this card mounted OFF-SCREEN in
+  // `<HeadlessSourceHost>` purely to keep the picture alive (#1587). A card that
+  // is load-bearing cannot be deleted, and every card is being deleted.
+  //
+  // Three consequences worth knowing before editing:
+  //   * ADOPT, NEVER MOUNT. A DOM element has one parent, and the surface stamps
+  //     `data-testid="wavesculpt-canvas"` on its own canvas — a second mount
+  //     would put two of them in the document (`wavesculpt.spec.ts` asserts
+  //     exactly one, fifteen times) and run two GL contexts for one node;
+  //   * `pollCamLive` (below) is registered as the NODE's per-frame listener, so
+  //     the poll still runs once per rendered frame ahead of the render, which
+  //     is the property it was written for — see the registry's `onFrame`;
+  //   * this file creates no WebGL context, so it is not in the WebGL attest
+  //     basis — the surface is, and its bytes are pinned.
 
   import { onDestroy } from 'svelte';
   import { type NodeProps } from '@xyflow/svelte';
@@ -78,9 +90,14 @@
     WAVETABLE_PRESETS,
     loadWavetablePreset,
   } from '$lib/audio/wavetable-presets';
-  import { VIDEO_RES } from '$lib/video/engine';
   import ModuleTitle from './ModuleTitle.svelte';
-  import WavesculptVizSurface from './wavesculpt/WavesculptVizSurface.svelte';
+  // ⚠ THE RENDERER IS NOT IMPORTED HERE. It is mounted once per NODE by
+  // `$lib/ui/media/NodeVizSurfaceHost`; this card claims its canvas. Naming the
+  // component in an import would also re-enrol `wavesculpt` in
+  // `CARD_PRODUCER_LANE_TYPES` — that set is DERIVED by walking a card's
+  // component subtree for producer seams, and the seam is inside the surface.
+  import { nodeVizSurfaces } from '$lib/ui/media/node-viz-surfaces';
+  import { VIZ_CLAIM_PRIORITY } from '$lib/ui/media/node-viz-surface-registry';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -108,8 +125,12 @@
   const DEFAULT_HEIGHT = 900;
   const MIN_WIDTH = 1080;
   const MIN_HEIGHT = 720;
-  const ENGINE_W = VIDEO_RES.width;
-  const ENGINE_H = VIDEO_RES.height;
+  // ⚠ THE BACKING-STORE SIZE MOVED WITH THE MOUNT. The card used to pass
+  // `width`/`height` to the surface; the node host mounts it at the surface's
+  // own defaults, which ARE `VIDEO_RES` — the same numbers, from the same
+  // constant, so the adopted canvas is byte-for-byte the box this card drew
+  // before. Nothing here may set them again: two views of one canvas cannot
+  // disagree about its resolution.
 
   let cardWidth = $derived<number>(
     (node?.data?.width as number | undefined) ?? DEFAULT_WIDTH,
@@ -516,6 +537,34 @@
     if (cam.rot   !== liveRot)  liveRot  = cam.rot;
   }
 
+  // ---- The NODE's picture, claimed into this card's screen box ----
+  //
+  // ⚠ CLAIM, NOT CREATE. The node host `ensure`s the surface into existence with
+  // no view at all, so the renderer runs — and `video_out` carries a picture —
+  // whether or not any card is mounted. A claim is a transfer with an
+  // owner-checked release, so this card and the dock faceplate can hand the
+  // canvas back and forth without either teardown stranding the live one.
+  //
+  // ⚠ AND IT IS RANKED RATHER THAN LAST-WINS. Under `?shell=legacy` this card
+  // and a `DockFullView` faceplate can BOTH be mounted (`laneMigrated` is not
+  // gated on the shell flag), and the surface the player opened deliberately is
+  // the one that should hold the picture — so the dock outranks the card, and
+  // closing it hands the canvas straight back here with no remount and no GL
+  // re-init. See `$lib/ui/media/node-viz-surface-registry`.
+  let vizHost = $state<HTMLDivElement | null>(null);
+  $effect(() => {
+    const host = vizHost;
+    if (!host) return;
+    const claim = nodeVizSurfaces.claim(id, host, VIZ_CLAIM_PRIORITY.card);
+    return () => claim.release();
+  });
+
+  // The CADENCE GUARANTEE, re-homed. `pollCamLive` used to ride the surface's
+  // `onFrame` prop because this card mounted it; it now rides the same rAF
+  // through the node's per-frame listener list, so the poll is still pinned to
+  // the render it shares a frame with and still cannot be coalesced away.
+  $effect(() => nodeVizSurfaces.onFrame(id, pollCamLive));
+
   onDestroy(() => {
     if (resizeAbort) resizeAbort.abort();
   });
@@ -781,20 +830,18 @@
           <div class="pad-label">zoom / rot</div>
         </div>
 
-        <div class="screen-wrap" data-testid="wavesculpt-screen-wrap">
-          <!-- THE renderer, not a copy of it. The surface emits the
-               `wavesculpt-canvas` element itself and no wrapper, so it stays a
-               direct flex child of `.screen-wrap` and this box is unchanged.
-               `onFrame` hands it `pollCamLive`, which is how the joystick dots
-               keep tracking a gamepad/LFO at the render's own cadence now that
-               the rAF loop belongs to the surface. -->
-          <WavesculptVizSurface
-            nodeId={id}
-            width={ENGINE_W}
-            height={ENGINE_H}
-            onFrame={pollCamLive}
-          />
-        </div>
+        <!-- THE NODE'S renderer, adopted — not a mount of it, and not a copy.
+             The canvas is `appendChild`ed straight into this box by the claim
+             above, so it is still a DIRECT flex child of `.screen-wrap` and the
+             VRT-pinned box is unchanged. It arrives carrying the surface's own
+             scoped class, so the 100%/100% fill comes with it. Empty in markup
+             on purpose: declaring anything here would give Svelte a child to
+             manage in a container the registry re-parents into. -->
+        <div
+          class="screen-wrap"
+          data-testid="wavesculpt-screen-wrap"
+          bind:this={vizHost}
+        ></div>
 
         <div class="right-controls">
           <!-- VIEW toggle cycles through three render modes:

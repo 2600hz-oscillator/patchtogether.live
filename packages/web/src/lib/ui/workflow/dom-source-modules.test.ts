@@ -78,6 +78,12 @@ import { NODE_ARCHIVIST_SOURCE_TYPES } from '$lib/ui/media/node-archivist-source
 // be owned here, and a type owned here must have left. Importing it is what
 // makes a producer extraction atomic — neither half can land alone.
 import { NODE_FRAME_PRODUCER_TYPES } from '$lib/ui/media/frame-producers';
+// ⚠ AND THE PRODUCERS THAT ARE A MOUNTED COMPONENT rather than a callback
+// (legacy-removal S1). Same two-directional obligation as the line above; the
+// only difference is HOW the node owns the work. See
+// `$lib/ui/media/node-viz-surface-registry` for why wavesculpt's WebGL2 renderer
+// could not become a `FrameProducer`.
+import { NODE_VIZ_SURFACE_TYPES } from '$lib/ui/media/node-viz-surfaces';
 
 /** Every node-scoped owner there is — SOURCES and per-frame PRODUCERS alike.
  *  Read as ONE set wherever the question is "has SOMETHING taken ownership of
@@ -91,6 +97,7 @@ const NODE_OWNED_SOURCE_TYPES: ReadonlySet<string> = new Set<string>([
   ...NODE_CAMERA_SOURCE_TYPES,
   ...NODE_ARCHIVIST_SOURCE_TYPES,
   ...NODE_FRAME_PRODUCER_TYPES,
+  ...NODE_VIZ_SURFACE_TYPES,
 ]);
 import { STRICT_FACES } from './strict-faces';
 import { NON_SHELL_LANE_TYPES, laneRenderKind, type LaneRenderKind } from './legacy-fallback';
@@ -1038,6 +1045,7 @@ describe('DOM_SOURCE_LANE_TYPES — the grep gate (a new source module cannot sh
       ['NODE_CAMERA_SOURCE_TYPES', NODE_CAMERA_SOURCE_TYPES],
       ['NODE_ARCHIVIST_SOURCE_TYPES', NODE_ARCHIVIST_SOURCE_TYPES],
       ['NODE_FRAME_PRODUCER_TYPES', NODE_FRAME_PRODUCER_TYPES],
+      ['NODE_VIZ_SURFACE_TYPES', NODE_VIZ_SURFACE_TYPES],
     ] as const;
     const doubleOwned: string[] = [];
     for (let i = 0; i < owners.length; i++) {
@@ -1173,11 +1181,20 @@ describe('needsHeadlessSourceMount — the pure headless-mount decision', () => 
     // CARD_PRODUCER half still has six members whose card IS the producer. So the
     // decision is as live as it ever was; only its DOM-source subjects are gone.
     // `wavesculpt` exercises the identical arm.
+    //
+    // ⚠ AND A FIFTH TIME (legacy-removal S1/7), WHICH IS WHY IT IS NO LONGER A
+    // NAME. `wavesculpt`'s renderer moved to the node too, so the fourth
+    // re-point lasted exactly one slice. Five re-points of one leg is the
+    // signal: the subject is not a fact about any module, it is "any member of
+    // the union", so DERIVE it. The ANCHOR below is what keeps that honest when
+    // the union finally empties — and when it does, the leg really does go with
+    // it, because a decision with no population left is not a decision.
+    const subject = [...HEADLESS_MOUNT_LANE_TYPES][0];
     for (const kind of KINDS) {
       const want = kind === 'shell' || kind === 'placeholder';
       expect(
-        needsHeadlessSourceMount({ kind, type: 'wavesculpt' }),
-        `wavesculpt @ ${kind}`,
+        needsHeadlessSourceMount({ kind, type: subject! }),
+        `${subject} @ ${kind}`,
       ).toBe(want);
     }
   });
@@ -1185,13 +1202,16 @@ describe('needsHeadlessSourceMount — the pure headless-mount decision', () => 
   it('ANCHORED: the subject above is a REAL member, so the leg cannot go vacuous', () => {
     // Every other arm of this decision returns FALSE for a type it does not
     // know, so a subject that quietly left the union would make the `want ===
-    // false` cases pass and only the two TRUE cases fail — a half-blind leg. If
-    // the producer extractions retire wavesculpt too, this reddens and whoever
-    // does it re-points the subject rather than discovering it later.
+    // false` cases pass and only the two TRUE cases fail — a half-blind leg.
+    // With the subject DERIVED the failure mode changes shape: the leg above
+    // would run on `undefined` and pass every `false` case. This is the guard
+    // for that, and it is the leg that reddens the day the last member leaves.
     expect(
-      HEADLESS_MOUNT_LANE_TYPES.has('wavesculpt'),
-      'the headless-mount arm needs a live member to exercise it',
-    ).toBe(true);
+      HEADLESS_MOUNT_LANE_TYPES.size,
+      'the headless-mount arm needs a live member to exercise it — if the extractions have ' +
+        'emptied the union, this decision has no population and the legs that read it should ' +
+        'be retired with the host itself, not re-pointed at a synthetic type',
+    ).toBeGreaterThan(0);
   });
 
   it('NEVER mounts a module whose source moved to a node controller, on ANY lane kind', () => {
@@ -1419,33 +1439,62 @@ describe('FACE_MOUNTS_PRODUCER — the dock-open exemption, anchored both ways',
     ).toEqual([]);
   });
 
-  it('it is a PROPER SUBSET — the default is "keep the host", and something uses it', () => {
-    // ⚠ THE VACUITY LEG. If every producer were exempt, the deny-by-default this
-    // set inverted would be gone and the change that introduced it would be
-    // undone in silence.
+  it('the DEFAULT still decides — a faced producer OUTSIDE the exemption keeps its host', () => {
+    // ⚠ THE VACUITY LEG, AND IT HAS NOW LOST ITS POPULATION TWICE — which is
+    // exactly the sequence its own failure message predicted, so the repair is
+    // the one that message prescribes rather than a new idea.
     //
-    // ⚠ ITS NAMED SUBJECT WAS `timelorde` AND IS NOW DERIVED (legacy-removal
-    // S1). The name was the right anchor when it was written — timelorde is the
-    // module the deny-by-default exists FOR, because its face only BLITS
-    // `video_out` and hosting was the only thing keeping the picture alive while
-    // the faceplate was open. It is also exactly the module the producer
-    // extractions retire, so the name reddens on a commit where the RULE has not
-    // changed at all. The complement is the claim; any member of it is the
-    // anchor.
-    const facedProducers = [...CARD_PRODUCER_LANE_TYPES].filter((t) => STRICT_FACES.has(t));
-    const keepsHost = facedProducers.filter((t) => !FACE_MOUNTS_PRODUCER.has(t));
+    // ROUND 1: the named subject was `timelorde`, the module the deny-by-default
+    // exists FOR (its face only BLITS `video_out`, so hosting was the only thing
+    // keeping the picture alive while the faceplate was open). The producer
+    // extractions retired it, and a NAME reddens on a commit where the RULE has
+    // not changed at all — so the leg was re-derived onto the complement.
+    //
+    // ROUND 2 (legacy-removal S1/7): `wavesculpt` was the complement's last
+    // member, and this slice retires it too. `CARD_PRODUCER_LANE_TYPES ∩
+    // STRICT_FACES` is now `{cube, rasterize}` and both are exempt, so the
+    // complement is EMPTY — a population, not a rule, reaching zero.
+    //
+    // ⚠ SO THE CLAIM MOVES ONTO THE DECISION ITSELF, with a SYNTHETIC subject.
+    // `needsHeadlessSourceMount` never reads `FACE_MOUNTS_PRODUCER`;
+    // `Canvas.svelte` does, to compute `hostedElsewhere`. The property that
+    // matters is the one the 2026-08-23 inversion introduced: a faced producer
+    // whose dock full view is open and which is NOT exempt must still be hosted.
+    // Reproduce that decision here on an input the population cannot empty.
+    const syntheticFacedProducer = 'synthetic-faced-producer';
     expect(
-      keepsHost,
-      'EVERY faced producer claims to mount its own producer, so no module exercises the ' +
-        'default — the exemption has quietly become the rule. ⚠ If the producer extractions ' +
-        'have retired the last non-exempt member, this leg has lost its POPULATION rather than ' +
-        'its rule: re-anchor it on the decision (a synthetic faced producer outside the ' +
-        'exemption must still keep its host), do not delete it.',
-    ).not.toEqual([]);
-    // ...and the complement really is the complement, so the leg above cannot be
-    // satisfied by a `keepsHost` that stopped tracking the exemption at all.
-    for (const t of keepsHost) expect(FACE_MOUNTS_PRODUCER.has(t)).toBe(false);
-    for (const t of FACE_MOUNTS_PRODUCER) expect(keepsHost).not.toContain(t);
+      FACE_MOUNTS_PRODUCER.has(syntheticFacedProducer),
+      'the synthetic subject must be OUTSIDE the exemption for this leg to mean anything',
+    ).toBe(false);
+    expect(
+      needsHeadlessSourceMount({
+        kind: 'shell',
+        // Membership in the producer half is what `Canvas` tests before it
+        // consults the exemption, so the synthetic subject borrows a real
+        // member's membership and differs only in the exemption.
+        type: [...CARD_PRODUCER_LANE_TYPES][0]!,
+        // `fullViewShowsFaceInstead` is TRUE for an exempt type (the face mounts
+        // the producer, so the dock IS the mount) and FALSE otherwise — which
+        // makes `hostedElsewhere` false and the host required.
+        hostedElsewhere: false,
+      }),
+      'a faced producer outside FACE_MOUNTS_PRODUCER must KEEP its headless host while its dock ' +
+        'full view is open. If this is false the deny-by-default has been undone.',
+    ).toBe(true);
+    // ...and the exemption really is what flips it: an EXEMPT type's dock full
+    // view sets `hostedElsewhere`, and then no host is mounted.
+    expect(
+      needsHeadlessSourceMount({
+        kind: 'shell',
+        type: [...FACE_MOUNTS_PRODUCER][0]!,
+        hostedElsewhere: true,
+      }),
+      'an exempt producer whose face mounts the renderer must NOT also be hosted',
+    ).toBe(false);
+    // ...and the set is still a SUBSET of the population it is consulted for,
+    // which is the half `every member is a CARD_PRODUCER` above already pins —
+    // restated here so the two halves of "proper subset" stay together.
+    for (const t of FACE_MOUNTS_PRODUCER) expect(CARD_PRODUCER_LANE_TYPES.has(t)).toBe(true);
   });
 });
 
@@ -1585,9 +1634,15 @@ describe('the DOCK FULL VIEW hosts the real card only for an UN-MIGRATED module'
   // the DECISION's behaviour given each answer; that Canvas computes the answer
   // correctly is proven in e2e/tests/camerainput-shell-source.spec.ts, which
   // opens the dock faceplate and asserts the picture survives it.
+  // ⚠ THE SUBJECT IS DERIVED, NOT NAMED — see the sibling block above for why
+  // (five re-points of one leg across the conversions). Any member of the union
+  // exercises the identical decision; the ANCHOR at the end is what reddens when
+  // the union has none left.
+  const fullViewSubject = [...HEADLESS_MOUNT_LANE_TYPES][0]!;
+
   it('an un-migrated full-view occupant is hosted ELSEWHERE and gets no second mount', () => {
     expect(
-      needsHeadlessSourceMount({ kind: 'shell', type: 'wavesculpt', hostedElsewhere: true }),
+      needsHeadlessSourceMount({ kind: 'shell', type: fullViewSubject, hostedElsewhere: true }),
     ).toBe(false);
   });
 
@@ -1600,20 +1655,21 @@ describe('the DOCK FULL VIEW hosts the real card only for an UN-MIGRATED module'
     // (its source is node-owned), so asking the question about it now returns
     // `false` for a completely different reason and would pass while proving
     // nothing. archivist was re-pointed to next and converted within the same
-    // slice; `wavesculpt` is a CARD_PRODUCER member, which is the half of
-    // `HEADLESS_MOUNT_LANE_TYPES` that still carries the original subject.
+    // slice; `wavesculpt` was the CARD_PRODUCER member that carried it next, and
+    // legacy-removal S1/7 extracted that too. The subject is DERIVED now.
     expect(
-      needsHeadlessSourceMount({ kind: 'shell', type: 'wavesculpt', hostedElsewhere: false }),
+      needsHeadlessSourceMount({ kind: 'shell', type: fullViewSubject, hostedElsewhere: false }),
     ).toBe(true);
   });
 
   it('ANCHORED: the subject above is a REAL member, so this pair cannot go vacuous', () => {
-    // If archivist is extracted too, this reddens and whoever does it re-points
-    // the subject rather than discovering later that both legs pass on a type
-    // the decision no longer knows about.
+    // With the subject derived, an emptied union would run both legs on
+    // `undefined` — where the FALSE leg passes for the wrong reason and only the
+    // TRUE one fails. This is the guard for that, and it is what says "retire
+    // the host, do not re-point at a synthetic type" when the day comes.
     expect(
-      HEADLESS_MOUNT_LANE_TYPES.has('wavesculpt'),
+      HEADLESS_MOUNT_LANE_TYPES.size,
       'the DOCK FULL VIEW legs need a module the headless host still applies to',
-    ).toBe(true);
+    ).toBeGreaterThan(0);
   });
 });

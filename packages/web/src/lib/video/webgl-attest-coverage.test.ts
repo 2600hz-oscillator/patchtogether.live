@@ -42,6 +42,10 @@ import '$lib/video/modules';
 import { listModuleDefs } from '$lib/audio/module-registry';
 import { listVideoModuleDefs } from '$lib/video/module-registry';
 import { conventionalCardName } from '$lib/ui/modules-card-map';
+// ⚠ THE SECOND RENDER-TREE ROOT (legacy-removal S1). A module whose renderer is
+// mounted by the NODE rather than by its card is not reachable from the card at
+// all — see `renderTreeRootsFor` below.
+import { NODE_VIZ_SURFACE_TYPES } from '$lib/ui/media/node-viz-surfaces';
 
 import {
   resolveWebglBasis,
@@ -363,22 +367,96 @@ describe('WebGL attestation — fail-closed coverage guard (§12)', () => {
     return { found: visit(cardAbs), scanned };
   }
 
-  it('(6) rendersWebGL ↔ card-getContext cross-check holds in both directions', () => {
-    // Forward: every rendersWebGL-flagged audio module's CARD RENDER TREE must
+  /**
+   * The ROOTS of a module's render tree.
+   *
+   * ⚠ THE CARD IS NO LONGER THE ONLY ONE, AND THIS LEG FOUND THAT ITSELF.
+   * `rendersWebGL` claims "this module IS a GPU render path", and until
+   * legacy-removal S1 the only way to reach a module's renderer was through its
+   * card. wavesculpt's renderer now belongs to the NODE
+   * (`$lib/ui/media/NodeVizSurfaceHost`, one mount per node) and the card merely
+   * ADOPTS its canvas — so a card-rooted walk called a perfectly live flag
+   * stale, one level up from the "why the tree and not the file" note above.
+   *
+   * STILL FAIL-CLOSED, in the direction that matters: the host is a root ONLY
+   * for a module the node-viz-surface roster actually names, so a module that
+   * stopped rendering WebGL anywhere still reddens, and a module that quietly
+   * left the roster loses the extra root rather than keeping a free pass. The
+   * host imports its surfaces RELATIVELY for this walk's sake — see the note in
+   * `NodeVizSurfaceHost.svelte`.
+   */
+  const NODE_VIZ_SURFACE_HOST = 'packages/web/src/lib/ui/media/NodeVizSurfaceHost.svelte';
+  function renderTreeRootsFor(type: string, cardPath: string): string[] {
+    const roots = [cardPath];
+    if (NODE_VIZ_SURFACE_TYPES.has(type)) roots.push(NODE_VIZ_SURFACE_HOST);
+    return roots;
+  }
+
+  it('(6) rendersWebGL ↔ render-tree getContext cross-check holds in both directions', () => {
+    // Forward: every rendersWebGL-flagged audio module's RENDER TREE must
     // actually create a WebGL context (the flag is real, not stale).
     const flagged = listModuleDefs().filter((d) => (d as { rendersWebGL?: boolean }).rendersWebGL);
     for (const def of flagged) {
       // Convention: PascalCase(type) + 'Card.svelte' (override via def.card).
       const cardName = (def as { card?: string }).card ?? conventionalCardName(def.type);
       const cardPath = `packages/web/src/lib/ui/modules/${cardName}.svelte`;
-      const abs = join(REPO_ROOT, cardPath);
-      expect(existsSync(abs), `card for rendersWebGL module ${def.type} not found at ${cardPath}`).toBe(true);
-      const { found, scanned } = cardTreeCreatesWebglContext(abs);
+      expect(
+        existsSync(join(REPO_ROOT, cardPath)),
+        `card for rendersWebGL module ${def.type} not found at ${cardPath}`,
+      ).toBe(true);
+      const roots = renderTreeRootsFor(def.type, cardPath);
+      const scannedAll: string[] = [];
+      let found = false;
+      for (const root of roots) {
+        const abs = join(REPO_ROOT, root);
+        expect(existsSync(abs), `render-tree root ${root} for ${def.type} not found`).toBe(true);
+        const r = cardTreeCreatesWebglContext(abs);
+        scannedAll.push(...r.scanned);
+        if (r.found) {
+          found = true;
+          break;
+        }
+      }
       expect(
         found,
-        `module ${def.type} is flagged rendersWebGL but NEITHER ${cardPath} NOR any .svelte ` +
-          `it renders creates a WebGL context — stale flag. Scanned:\n  ${scanned.join('\n  ')}`,
+        `module ${def.type} is flagged rendersWebGL but NONE of its render-tree roots ` +
+          `(${roots.join(', ')}) NOR any .svelte they render creates a WebGL context — stale ` +
+          `flag. Scanned:\n  ${scannedAll.join('\n  ')}`,
       ).toBe(true);
+    }
+
+    // ⚠ THE SECOND ROOT IS ANCHORED, so this leg cannot go quietly card-only.
+    // If the roster empties, the extra root stops being added and nothing above
+    // would say so — the forward legs would simply pass on the cards again.
+    expect(
+      NODE_VIZ_SURFACE_TYPES.size,
+      'no module has a node-mounted viz surface — if that is intended, delete the second ' +
+        'render-tree root with the registry; if it is not, the extra root has silently stopped ' +
+        'covering anything',
+    ).toBeGreaterThan(0);
+    for (const type of NODE_VIZ_SURFACE_TYPES) {
+      const def = listModuleDefs().find((d) => d.type === type);
+      if (!def) continue; // a video-domain surface is covered by the lib/video sweep
+      expect(
+        (def as { rendersWebGL?: boolean }).rendersWebGL,
+        `${type}'s renderer is mounted by the node host, so its flag is only provable through ` +
+          'the second root — an unflagged member would leave that root untested',
+      ).toBe(true);
+      // ⚠ NEGATIVE CONTROL ON THE SECOND ROOT ITSELF: the CARD alone must NOT
+      // reach a WebGL context for this module. If it does, the renderer has come
+      // back onto the card and the extra root is decoration — a root that can be
+      // deleted with every leg still green is a root nobody is testing.
+      const cardName = (def as { card?: string }).card ?? conventionalCardName(type);
+      const cardOnly = cardTreeCreatesWebglContext(
+        join(REPO_ROOT, `packages/web/src/lib/ui/modules/${cardName}.svelte`),
+      );
+      expect(
+        cardOnly.found,
+        `${type}'s card render tree reaches a WebGL context on its own, so the node-host root ` +
+          'proves nothing. Either the renderer is mounted from the card again (which would be ' +
+          'a second mount of a node-owned surface) or the roster entry is stale. Scanned:\n  ' +
+          `${cardOnly.scanned.join('\n  ')}`,
+      ).toBe(false);
     }
 
     // Reverse: every AUDIO-domain card that DOES create a WebGL context must

@@ -328,6 +328,36 @@ export const DOM_SOURCE_LANE_TYPES: ReadonlySet<string> = new Set<string>([]);
  * blit of a settled frame is byte-identical every time, so the arm that existed
  * to keep the VRT capture deterministic has nothing left to protect against.
  *
+ * ⚠ AND WAVESCULPT (legacy-removal S1) — the FOURTH and last producer
+ * departure, and the only one whose producer is a COMPONENT rather than a
+ * callback.
+ *
+ * `WavesculptVizSurface.svelte` installs the module's cross-domain frame drawer,
+ * and with no drawer installed `wavesculpt.ts`'s own `drawFrame` fills the
+ * bridge canvas SOLID BLACK — so whichever surface mounted the renderer decided
+ * whether `video_out` carried a picture at all. That renderer cannot become a
+ * `FrameProducer` callback: it is a WebGL2 scene with a persistent GL context,
+ * per-node framebuffers and a presentation canvas, in a file whose BYTES are
+ * pinned by the WebGL attest basis. So it stays the component it is and the
+ * NODE mounts it — `$lib/ui/media/NodeVizSurfaceHost`, one per node, parked
+ * off-screen, listed in `$lib/ui/media/node-viz-surfaces`.
+ *
+ * ⚠ THE CARD AND THE FACEPLATE NOW *ADOPT* THAT CANVAS, WHICH IS FORCED RATHER
+ * THAN ELEGANT. A DOM element has one parent and the surface stamps
+ * `data-testid="wavesculpt-canvas"` on its own canvas, so a parked producer plus
+ * a viewer-only second mount would put TWO of them in the document —
+ * `wavesculpt.spec.ts` asserts exactly one, fifteen times, as does the VRT
+ * surface roster. One mount, claimed by whichever view is showing it, is the
+ * only arrangement that keeps every existing gate honest AND runs one GL
+ * context per node.
+ *
+ * ⚠ AND IT RETIRED A SECOND-MOUNT DEFENCE RATHER THAN RE-HOMING IT. The
+ * faceplate body carried `ownsVideoOut={false}` because `install*FrameDrawer`
+ * is a bare `Map.set` — last writer silently wins, so a second mount STOLE the
+ * drawer at mount time from a card that was still live (measured: 9 live frames,
+ * then 81 consecutive black). With one mount per node there is no second
+ * installer to defend against.
+ *
  * ⚠ AND THE TRACE MOVED WITH IT, WHICH IS THE HALF A READER WILL LOOK FOR. The
  * picture is `modules/scope/ScopeTraceSurface.svelte` now — one renderer for the
  * legacy card, the faceplate body and `GroupCard`'s viz-passthrough mount, where
@@ -351,7 +381,6 @@ export const DOM_SOURCE_LANE_TYPES: ReadonlySet<string> = new Set<string>([]);
 export const CARD_PRODUCER_LANE_TYPES: ReadonlySet<string> = new Set<string>([
   'cube',
   'rasterize',
-  'wavesculpt',
 ]);
 
 /**

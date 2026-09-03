@@ -419,18 +419,27 @@ describe('face-migration inventory — blockers are LIVE, measured against the T
       'ModuleShell renders no glyph extension slot — WIRED_SHELL_EXTENSION_SLOTS is anchored to its ' +
         'source by shell-extensions.test.ts, so this reading empty means the wiring moved',
     ).toContain('glyph');
-    // ⚠ THE ANCHOR MOVED HALVES (legacy-removal S1, 2026-09-03). This named
-    // `archivist` as "the canonical card-owned <video> source", which it was
-    // until its source moved to `node-archivist-source-registry` and
-    // `DOM_SOURCE_LANE_TYPES` emptied. The field this control exists to prove
-    // NON-EMPTY is `HEADLESS_MOUNT_LANE_TYPES`, the UNION, and its CARD_PRODUCER
-    // half still has six members whose card IS the picture — so the probe still
-    // reads a real population and the control still has something to say.
+    // ⚠ THE ANCHOR MOVED HALVES (legacy-removal S1, 2026-09-03) AND THEN STOPPED
+    // BEING A NAME AT ALL (S1/7). It named `archivist` as "the canonical
+    // card-owned <video> source" until archivist's source moved to a node
+    // controller and `DOM_SOURCE_LANE_TYPES` emptied; it was re-pointed at
+    // `wavesculpt`, whose renderer moved to the node one slice later. Two
+    // re-points of one control in two slices is the signal that the NAME was
+    // never the claim.
+    //
+    // What this control exists to prove is that the probe READ SOMETHING — that
+    // `HEADLESS_MOUNT_LANE_TYPES` resolved rather than silently coming back
+    // empty and reporting "no module needs a host" forever. So assert
+    // NON-EMPTINESS and agreement with the source of truth, which is a claim no
+    // conversion can invalidate until the last member leaves — at which point
+    // the headless host has no population and should be deleted, not re-anchored.
     expect(
-      tree.cardOwnedSourceTypes,
-      'the headless-mount set read without wavesculpt — it is the canonical card-IS-the-producer ' +
-        'module, and the DOM-source half of this union is empty since legacy-removal S1',
-    ).toContain('wavesculpt');
+      tree.cardOwnedSourceTypes.length,
+      'the headless-mount set read EMPTY — either every producer has been extracted (in which ' +
+        'case <HeadlessSourceHost> and the evidence field should go with them) or this probe ' +
+        'stopped resolving and now reports "nothing needs a host" whatever the tree says',
+    ).toBeGreaterThan(0);
+    expect(tree.cardOwnedSourceTypes).toEqual([...HEADLESS_MOUNT_LANE_TYPES].sort());
   });
 
   it('NO STALE BLOCKER: every declared blocker names a capability the tree does NOT have', () => {

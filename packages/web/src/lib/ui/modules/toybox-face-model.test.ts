@@ -134,13 +134,18 @@ describe('⚠ THE MEDIA BLOCKER WAS FALSE FOR THIS MODULE — recorderbox’s ar
     // stopped needing a host on 2026-09-03 (legacy-removal S1 moved its source
     // to a node controller) — and a control whose subject converts is a control
     // that silently stops controlling, which is exactly the failure this leg
-    // guards against in the other direction. Re-pointed to `wavesculpt`, a
-    // CARD_PRODUCER member whose card IS the picture.
-    expect(needsHeadlessSourceMount({ kind: 'shell', type: 'wavesculpt' })).toBe(true);
+    // guards against in the other direction. It was re-pointed to `wavesculpt`,
+    // whose renderer left the card one slice later (legacy-removal S1/7) — so
+    // the subject is DERIVED now rather than named a third time. Any member of
+    // the union proves the same thing: the predicate is still answering TRUE for
+    // something, so toybox's FALSE above is a fact about toybox.
+    const stillHosted = [...HEADLESS_MOUNT_LANE_TYPES][0];
     expect(
-      HEADLESS_MOUNT_LANE_TYPES.has('wavesculpt'),
-      'the control needs a module the headless host still applies to',
-    ).toBe(true);
+      HEADLESS_MOUNT_LANE_TYPES.size,
+      'the control needs a module the headless host still applies to — when the union empties, ' +
+        'this control has no subject and the host itself should be gone',
+    ).toBeGreaterThan(0);
+    expect(needsHeadlessSourceMount({ kind: 'shell', type: stillHosted! })).toBe(true);
   });
 
   it('the card never calls attachExternalSource — its layers reach the engine through the module’s OWN extras', () => {

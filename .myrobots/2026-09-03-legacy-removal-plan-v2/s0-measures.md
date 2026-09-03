@@ -482,3 +482,214 @@ fails every scene on a module this branch has never touched. Linux CI authors th
 single baseline set; a local diff is evidence about font rasterisation, not about
 a change. timelorde's card paint path DID change (composite → 1:1 blit of the same
 composited bitmap) so its three scenes need the CI lane and an owner preview.
+
+---
+
+## Addendum 3 — S1 IS COMPLETE (appended 2026-09-03, after S1/7)
+
+`wavesculpt` is extracted. All SEVEN producers the brief names are node-keyed:
+`archivist`, `cameraInput`, `loopback` (source registries) and `scope`,
+`synesthesia`, `timelorde`, `wavesculpt` (producers). The design is §W's, not
+the two-mount shortcut §W warned against.
+
+⚠ ONE CORRECTION TO §W BEFORE ANYTHING ELSE: it says `wavesculpt.spec.ts` is
+**15** tests. It is **17** — the file grew after §W was written. Both extra
+tests are in the same describe and drive the same step seam, so nothing about
+§W's argument changes; the number was just stale by the time it was consumed,
+which is the class of thing this file exists to stop.
+
+### The sets, read off the tree rather than remembered
+
+| set | members |
+|---|---|
+| `DOM_SOURCE_LANE_TYPES` | **∅** |
+| `CARD_PRODUCER_LANE_TYPES` | `{cube, rasterize}` |
+| `HEADLESS_MOUNT_LANE_TYPES` | `{cube, rasterize}` |
+| `NODE_FRAME_PRODUCER_TYPES` | `{scope, synesthesia, timelorde}` |
+| `NODE_VIZ_SURFACE_TYPES` *(new)* | `{wavesculpt}` |
+| `SUBTREE_SEAM_EXEMPTIONS` | **∅** (deny-by-default anchor still live) |
+
+⚠ **"ALL CARDS ARE THIN VIEWS" IS NOT TRUE AND MUST NOT BE WRITTEN DOWN AS IF
+IT WERE.** It is true of the SEVEN. `CubeCard` and `RasterizeCard` are still
+load-bearing producers — they are in `CARD_PRODUCER_LANE_TYPES` because the
+derivation still finds a producer seam in their subtrees, `<HeadlessSourceHost>`
+still exists for them, and `FACE_MOUNTS_PRODUCER` is `{cube, rasterize}` because
+both faces mount the producing surface themselves. They were never on the S1
+list (the brief's seven), so this is scope, not a miss — but S4 cannot delete
+the fleet while two cards are still producers, and nothing before this line said
+so in one place.
+
+### V — WHY WAVESCULPT'S PRODUCER IS A COMPONENT, AND WHAT THAT COST
+
+§W's design, built: ONE surface per node, mounted off-screen by a node-keyed
+host (`$lib/ui/media/NodeVizSurfaceHost`), with every view CLAIMING its canvas
+by DOM move. `WavesculptVizSurface.svelte` is **byte-identical** (`git diff`
+reports 0 lines) and the attest hash is unmoved at `2f505b42…`.
+
+Three things a reader will want, that only became visible while building it:
+
+1. **ADOPTION WAS FORCED, NOT PREFERRED.** The surface stamps
+   `data-testid="wavesculpt-canvas"` on its own canvas. A parked producer PLUS a
+   viewer-only second mount (the obvious cheap shape) puts TWO of them in the
+   document — and `wavesculpt.spec.ts` asserts `toHaveCount(1)` on it in EIGHT places,
+   as does the VRT surface roster (`expectCount: 1`). The one-mount rule is not
+   an aesthetic; every selector in the tree already depends on it.
+2. **CLAIMS ARE RANKED, NOT LAST-WINS**, which is where this differs from
+   `nodeMedia.adopt`. Under `?shell=legacy` the lane card AND a `DockFullView`
+   faceplate can both be mounted — `laneMigrated` is not gated on the shell flag
+   — so two live views can want one element. A bare transfer would decide that
+   by MOUNT ORDER and would also make closing the dock leave the card with an
+   empty screen box, because the card's claim would already have been
+   overwritten. The registry keeps every standing claim, ranks them
+   (`dock` > `card`), and re-resolves on release: closing the dock hands the
+   canvas straight back with no remount and no GL re-init. Unit-tested.
+3. **THE `ownsVideoOut={false}` DEFENCE IS DELETED, NOT RE-HOMED.** The face
+   body carried it because `installWavesculptFrameDrawer` is a bare `Map.set` —
+   last writer silently wins, so a second mount STOLE the drawer at mount time
+   from a card that was still live (the measured 9 live frames then 81
+   consecutive black). With one mount per node there is no second installer.
+
+### W2 IS ANSWERED: `onFrame` MOVED TO THE NODE, AND THE MEASURED REASON HOLDS
+
+The card registers `pollCamLive` as the NODE's per-frame listener
+(`nodeVizSurfaces.onFrame`), which the one surface calls from its own `tick()`.
+The poll still rides the render's own frame — the property the original
+regression was fixed by — and it is now a list, so a second view could take the
+same guarantee without a second renderer. Verified end to end, not structurally:
+`gamepad.spec.ts` "GAMEPAD stick reaches BOTH extremes of WAVESCULPT.pos_x +
+moves the on-card joystick dot" passes, and that test is exactly the
+starved-poll regression.
+
+### FOUR GATES WHOSE SUBJECT THIS SLICE MOVED, AND ONE THAT WAS MEASURING THE WRONG TREE
+
+The first three are the re-point pattern this branch keeps meeting. The fourth
+is a real finding.
+
+1. `dom-source-modules.test.ts` — the `needsHeadlessSourceMount` and DOCK
+   FULL VIEW legs named `wavesculpt`, the FIFTH name in that slot across the
+   conversions. Five re-points of one leg is the signal that the subject was
+   never a fact about a module: it is DERIVED from
+   `HEADLESS_MOUNT_LANE_TYPES` now, with an anchor that reddens when the union
+   empties and says *retire the host, do not re-point at a synthetic type*.
+2. `toybox-face-model.test.ts` and `face-migration-inventory.test.ts` — same
+   shape, same repair. The inventory's positive control now asserts the probe
+   READ SOMETHING (non-empty + equal to the source of truth) instead of naming a
+   member, which is the claim it always meant.
+3. `FACE_MOUNTS_PRODUCER`'s "PROPER SUBSET" leg lost its POPULATION for the
+   second time — its own failure message predicted exactly this and prescribed
+   the repair, so the leg is re-anchored on the DECISION with a synthetic
+   subject rather than deleted.
+4. ⚠ **`webgl-attest-coverage.test.ts` §(6) WAS WALKING THE WRONG TREE, and it
+   is the one to read.** `rendersWebGL` claims "this module IS a GPU render
+   path", and the check walks the module's render tree from its CARD. With the
+   renderer owned by the node, wavesculpt's card reaches no GL context at all —
+   so a perfectly live flag read STALE. The walk now takes a SECOND root (the
+   node host) for roster members only, and carries a negative control that the
+   CARD alone must NOT reach a context: a second root that can be deleted with
+   every leg still green is a root nobody is testing. The host imports its
+   surfaces RELATIVELY on purpose — the walk follows relative `.svelte` edges
+   only, so a `$lib` import would have broken it at exactly the hop that matters.
+
+### The e2e denominator after S1/7
+
+`3084 → 3082 tests in 506 files.` −4 (wavesculpt's four `CARD_PRODUCER`-derived
+legs), +2 (its two node-viz-surface legs, in the same file so the webgl-heavy
+lane is preserved). No spec FILE added or removed, so §X's inversion denominator
+is unchanged at 423.
+
+### ⚠ THE TWO NEW LEGS RUN IN NO PR JOB, AND NEITHER DOES ANY OF THIS
+
+`card-producer-lifetime.spec.ts` and `wavesculpt.spec.ts` are both on
+`e2e/webgl-heavy-globs.ts`, and that file's own header records what that means:
+the `e2e-video` lane that used to run the excluded specs was DELETED on
+2026-06-20 (#839), `E2E_WEBGL_HEAVY=only` has no caller in CI, and the sharded
+matrix sets `exclude`. So every leg written here — and all 17 of
+`wavesculpt.spec.ts` — is exercised ONLY by the local real-GPU
+`task webgl:attest` run and by `webgl-smoke`'s `@webgl-smoke` subset.
+
+The legs were put in that file deliberately anyway: the filename decides the
+lane, and a new file would have run in no job at all AND been invisible to the
+attest. But nobody should read "wavesculpt is green" off a PR. It was verified
+by hand, on the lane's own env, and the numbers are below.
+
+### Carry-forward for S2, corrected
+
+1. §A5 stands: the `dom-source-modules.ts` vocabulary rename is still deferred,
+   and the reason is now stronger — the file's DOM-source half is empty AND its
+   producer half has two different owner shapes (a callback registry and a
+   surface registry). Rename in S5, when the surviving concept has settled.
+2. §A4's unreachable branch stands unchanged.
+3. **NEW for S4:** `<HeadlessSourceHost>` cannot be deleted while `cube` and
+   `rasterize` are card producers. Extracting those two is not an S1 leftover —
+   they were never on the list — but it IS a precondition for the fleet delete,
+   and `cube`'s renderer is `CubeVizSurface`, the same component shape
+   wavesculpt just proved. `NodeVizSurfaceHost` takes a second roster entry.
+4. **NEW for S3/S5:** `paintsCanvas` in `face-rack-status-source.test.ts` grew a
+   third branch (a body that CLAIMS a node-owned canvas). Its MOUNT-following
+   branch now has no live subject and is kept on a synthetic pair — if cube's
+   hero panel ever becomes a `fullViewBody`, give the branch its real subject
+   back.
+5. §Z's `grouping-phase3.spec.ts:116` dev-vs-preview red is unchanged and
+   untouched; it passes under the preview build, which is what CI targets.
+6. ⚠ **VRT IS NOT LOCALLY JUDGEABLE (§Z) AND TWO SCENES CHANGED HOSTS.** The
+   wavesculpt DOCK face body now shows the node's canvas instead of a second
+   mount of the same component: same element, same scoped class, same
+   `VIDEO_RES` backing store, so the picture should be identical — but
+   `face-wavesculpt-dock` / `face-wavesculpt-compact` and the three
+   module-level wavesculpt scenes need the Linux CI lane and an owner preview
+   before anyone calls them unchanged.
+
+### VERIFICATION (S1/7), verbatim
+
+```
+task typecheck                        4126 files, 0 errors, 0 warnings
+e2e tsc                               clean
+task lint                             eslint gate PASS, shellcheck gate PASS
+task test  (FULL)                     web 967 files / 19342 passed | 7 skipped
+                                      dsp 1228 · server 159 · art 16 · scripts 644
+task webgl:attest:check               hash 2f505b42… UNCHANGED, attestation matches
+WavesculptVizSurface.svelte           git diff = 0 lines (bytes pinned)
+cd e2e && npx playwright test --list  Total: 3082 tests in 506 files  (3084 before)
+
+E2E on the webgl-heavy lane's own env (E2E_WEBGL_HEAVY=only, --workers=1,
+E2E_USE_PREVIEW=1, preview build with VITE_E2E_HOOKS=1):
+  wavesculpt.spec.ts                  17 passed
+  card-producer-lifetime.spec.ts      13 passed (incl. the 2 new wavesculpt legs)
+  REPEAT=3 on both                    90 passed (3 × 30)
+
+E2E on the default lane (same preview server):
+  --grep wavesculpt                   30 passed, 3 skipped (all 3 pre-existing
+                                      named exemptions: io-spec-consistency card
+                                      overflow, per-module-per-port behavioral +
+                                      outputs)
+  gamepad.spec.ts                     17 passed (incl. the joystick-dot cadence leg)
+  in-card-title, collapse-keeps-playing, extras-producer-lifetime,
+  workflow-shell-video, docs-virtual-module
+                                      79 passed, 8 skipped (pre-existing;
+                                      5 are collapse-keeps-playing's capture
+                                      modules, which skip on every run)
+  grouping-phase3, workflow-channel-columns, workflow-surfaces,
+  io-spec-consistency               215 passed, 15 skipped
+
+POSITIVE CONTROL (measured, then reverted): with the node host suppressed in
+Canvas.svelte (`vizSurfaceNodes` forced empty) and the preview REBUILT —
+  wavesculpt.spec.ts                  17/17 FAILED (toHaveCount(1) → 0 canvases)
+  card-producer-lifetime wavesculpt   2/2 FAILED
+so the extracted host is what those legs are actually measuring.
+```
+
+### ⚠ What this verification structurally cannot see
+
+1. **SwiftShader.** Everything above ran on a real macOS GPU. CI's heavy lane is
+   SwiftShader, and the pixel legs are renderer-tolerant by construction, but
+   the timings are not transferable.
+2. **VRT.** Stated above: macOS cannot author or judge a baseline.
+3. **A THIRD CLAIMANT.** The rank table has two entries because there are two
+   views today. A future third surface inherits `dock` or `card`'s number by
+   accident unless whoever adds it ranks it deliberately; the unit suite pins
+   the ARBITRATION, not the roster of who may claim.
+4. **THE PARK IS OFF-SCREEN, NOT UNRENDERED.** A parked canvas is still laid out
+   at `left:-9999px`. Nothing measured whether ~N parked wavesculpt canvases in
+   one rack cost anything; one per wavesculpt node is the same count of GL
+   contexts as before, so the change is neutral by construction rather than by
+   measurement.

@@ -894,7 +894,7 @@ const EXTENSION_BODY_ROLES: Readonly<Record<string, BodyRule>> = {
 
   timelorde: { role: 'picture', why: 'the 220x220 DISPLAY — the owner\'s owl painting, its eyes and border brightening on the beat, or the live VIDEO IN feed when one is patched — plus the SCREEN switch. ⚠ THE ONLY BODY IN THIS ROSTER THAT RENDERS NOTHING: it blits `video_out`\'s own drawFrame, i.e. the frame `TimelordeCard` composites and pushes from an off-screen HeadlessSourceHost, so the faceplate and every downstream video module see the same pixels by construction and the owl render has exactly one implementation. ⚠ THAT ALSO INVERTS THE COLLAPSE RULE relative to rasterize: the producer here is the CARD, alive for the whole session, so SCREEN OFF costs a blit and never the picture — `video_out` is untouched. It is the module this floor most needed, because the card\'s rAF is the SOLE writer of `displayFrame`: a SCREEN switch that stopped it would turn a preview toggle into a producer kill switch for the whole rack. No derived value is painted here; the transport strip and the BPM footer the legacy card carried are gone by the resting-text ruling, and what they said now lives in the two transport rosters and in this canvas\'s aria-label.' },
 
-  wavesculpt: { role: 'picture', why: 'the 4-voice 3-D scene — four wave ribbons inside a room whose six walls can be live video, seen through a camera the player flies — plus the SCREEN switch and the MONITOR resize. ⚠ IT MOUNTS `WavesculptVizSurface`, THE SAME COMPONENT THE LEGACY CARD MOUNTS, so the faceplate and the card are two mounts of ONE renderer rather than two renderers drifting against one DSP; that extraction was its own PR and is the reason this module could be promoted at all. ⚠ THE PICTURE IS ALSO THE PAD: the camera pad is declared `surface: \'body\'` and is painted here as an overlay ON the render, because you fly a camera by watching where it goes — the gesture and its feedback are one surface, which no band cell can express. The pad shows the KNOB while CV moves the PICTURE; those are two different numbers and both are correct, and this body deliberately does NOT read the camera shadow to reconcile them (that shadow is an owner-listed defect). ⚠ SCREEN OFF HIDES WITH CSS AND NEVER UNMOUNTS THE SURFACE: unmounting would run its onDestroy, disposing the GL context and uninstalling the cross-domain frame drawer, so collapsing a preview would black out `video_out` for every module downstream — the module\'s own drawFrame fills solid black with no drawer installed. The renderer keeps running; only the view stops. ⚠ NO DERIVED VALUE IS PAINTED. The pad\'s X/Y live on its `aria-label`, and the only text nodes on the surface are the two switch captions (SCREEN ON/OFF, MONITOR ON/OFF), which are control captions on their own buttons. What the canvas draws is the render itself, and the dock VRT baselines are what see it.' },
+  wavesculpt: { role: 'picture', why: 'the 4-voice 3-D scene — four wave ribbons inside a room whose six walls can be live video, seen through a camera the player flies — plus the SCREEN switch and the MONITOR resize. ⚠ IT ADOPTS THE NODE\'S `WavesculptVizSurface` CANVAS RATHER THAN MOUNTING A RENDERER: since legacy-removal S1 the renderer belongs to the NODE (`$lib/ui/media/NodeVizSurfaceHost`, one mount per node, parked off-screen), and this body and the legacy card each CLAIM its canvas to show it. So the faceplate, the card and every module downstream see ONE renderer\'s pixels by construction, and the picture exists before either surface does — where two mounts of one component would still have been two GL contexts and two elements carrying one `data-testid`. The dock claim OUTRANKS the card\'s, so closing this pane hands the canvas back with no remount. ⚠ THE PICTURE IS ALSO THE PAD: the camera pad is declared `surface: \'body\'` and is painted here as an overlay ON the render, because you fly a camera by watching where it goes — the gesture and its feedback are one surface, which no band cell can express. The pad shows the KNOB while CV moves the PICTURE; those are two different numbers and both are correct, and this body deliberately does NOT read the camera shadow to reconcile them (that shadow is an owner-listed defect). ⚠ SCREEN OFF HIDES WITH CSS AND NEVER RELEASES THE CLAIM: what a dropped claim costs has SHRUNK with the extraction (it parks the canvas back with the node host, where the GL context and the cross-domain frame drawer stay installed, so `video_out` is untouched by anything this body does) — but a released claim still leaves a BLANK PAD with a live crosshair and dot drawn on it, which reads as a broken surface. The renderer keeps running; only the view stops, and now that is true by construction rather than by care. ⚠ NO DERIVED VALUE IS PAINTED. The pad\'s X/Y live on its `aria-label`, and the only text nodes on the surface are the two switch captions (SCREEN ON/OFF, MONITOR ON/OFF), which are control captions on their own buttons. What the canvas draws is the render itself, and the dock VRT baselines are what see it.' },
 
   // ── MIDICLOCK — the SECOND status body, and the first BINDER ─────────────
   //
@@ -1501,14 +1501,14 @@ const EXTENSION_BODY_ROLES: Readonly<Record<string, BodyRule>> = {
 };
 
 /**
- * Does this body put a CANVAS on screen — directly, or through a component it
- * mounts?
+ * Does this body put a CANVAS on screen — directly, through a component it
+ * mounts, or by ADOPTING a node-owned one?
  *
  * ⚠ THE SECOND CASE IS NOT A LOOPHOLE, IT IS THE ARCHITECTURE THE REPO WANTS.
- * `wavesculpt` is the first body whose picture comes from a SHARED surface
- * component (`WavesculptVizSurface`), mounted here and by the legacy card, so
- * that the faceplate and the card are two mounts of ONE renderer instead of two
- * renderers drifting against one DSP — the shape `cube` established. A
+ * A body whose picture comes from a SHARED surface component — mounted here and
+ * by the legacy card, so that the faceplate and the card are two mounts of ONE
+ * renderer instead of two renderers drifting against one DSP — is the shape
+ * `cube` established and `wavesculpt` first brought to a `fullViewBody`. A
  * `/<canvas/` grep of the body alone reads that correct arrangement as "paints
  * nothing", which would push authors toward re-drawing the picture locally: the
  * exact drift this file's neighbours exist to prevent.
@@ -1518,14 +1518,32 @@ const EXTENSION_BODY_ROLES: Readonly<Record<string, BodyRule>> = {
  * directory. It is deliberately not transitive and deliberately not a
  * whole-tree search — a body that mounts something that mounts something is
  * far enough from its own picture that the claim should be written down again.
+ *
+ * ⚠ THE THIRD CASE IS THE SAME ARGUMENT ONE STEP FURTHER, AND WAVESCULPT MOVED
+ * INTO IT (legacy-removal S1). Two mounts of one renderer is still two GL
+ * contexts and — because a surface stamps its own `data-testid` on its own
+ * canvas — two elements where every gate in the tree expects one. So the NODE
+ * mounts the renderer (`$lib/ui/media/NodeVizSurfaceHost`) and a view CLAIMS the
+ * canvas into itself. That body owns no `<canvas>` and mounts no component, and
+ * it is MORE of a picture than either of the shapes above, not less: what it
+ * shows is the module's actual output rather than a second render of it.
+ *
+ * ⚠ AND THE CLAIM IS CALL-SHAPED FOR THE REASON THE PRODUCER SEAMS ARE. A body
+ * that merely names the registry in a comment paints nothing; only a real
+ * `claim(...)` moves an element.
  */
 /** Escape a captured source expression for use inside a RegExp. */
 function escapeRe(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+/** A view CLAIMING the node-owned surface canvas — `$lib/ui/media/
+ *  node-viz-surface-registry`. Call-shaped, so prose about it does not match. */
+const VIZ_CLAIM_RE = /\bnodeVizSurfaces\s*\.\s*claim\s*\(/;
+
 function paintsCanvas(src: string, extId: string): boolean {
   if (/<canvas/.test(src)) return true;
+  if (VIZ_CLAIM_RE.test(src)) return true;
   for (const m of src.matchAll(/import\s+([A-Z][A-Za-z0-9_]*)\s+from\s+'\.\/([^']+\.svelte)'/g)) {
     const [, name, rel] = m;
     // MOUNTED, not merely imported — an unused import paints nothing.
@@ -1872,18 +1890,46 @@ describe('#2024 — every extension body declares what its canvas PAINTS', () =>
       'the status body must NOT satisfy the picture predicate',
     ).toBe(false);
 
-    // ⚠ AND THE MOUNT-FOLLOWING BRANCH DISCRIMINATES TOO, which the two bodies
-    // above cannot show: videoOut owns its canvas directly and cvBuddy owns
-    // none, so neither exercises the indirection wavesculpt introduced. A body
-    // that mounts a canvas-bearing component IS a picture; one that merely
-    // IMPORTS it is not, because an unused import paints nothing.
-    const viaMount = fullViewBodySource('wavesculpt');
-    expect(viaMount, 'wavesculpt fullViewBody source').not.toBeNull();
-    expect(/<canvas/.test(viaMount!), 'the body owns no canvas of its own').toBe(false);
-    expect(ROLE_PREDICATE.picture.holds(viaMount!, 'wavesculpt')).toBe(true);
-    const importedNotMounted = viaMount!.replace(/<WavesculptVizSurface[^>]*\/>/, '');
+    // ⚠ AND THE ADOPTION BRANCH DISCRIMINATES TOO, which the two bodies above
+    // cannot show: videoOut owns its canvas directly and cvBuddy owns none, so
+    // neither exercises the indirection wavesculpt introduced. wavesculpt's body
+    // owns NO canvas and mounts NO component — the node owns the renderer and
+    // this body CLAIMS its canvas — and it is the most literal picture in the
+    // roster, because what it shows is the module's actual output.
+    const viaClaim = fullViewBodySource('wavesculpt');
+    expect(viaClaim, 'wavesculpt fullViewBody source').not.toBeNull();
+    expect(/<canvas/.test(viaClaim!), 'the body owns no canvas of its own').toBe(false);
+    expect(ROLE_PREDICATE.picture.holds(viaClaim!, 'wavesculpt')).toBe(true);
+    // ...and NAMING the registry is not claiming from it. Same discipline as
+    // PRODUCER_SEAMS: prose about a seam must not satisfy the seam.
+    const mentionedNotClaimed = viaClaim!.replace(/nodeVizSurfaces\s*\.\s*claim\s*\(/g, 'nodeVizSurfaces.claim ');
     expect(
-      ROLE_PREDICATE.picture.holds(importedNotMounted, 'wavesculpt'),
+      ROLE_PREDICATE.picture.holds(mentionedNotClaimed, 'wavesculpt'),
+      'a body that only MENTIONS the viz-surface registry must not satisfy picture',
+    ).toBe(false);
+
+    // ⚠ AND THE MOUNT-FOLLOWING BRANCH IS KEPT ON A SYNTHETIC PAIR, BECAUSE ITS
+    // ONLY REAL SUBJECT JUST LEFT IT. wavesculpt was the one `fullViewBody` that
+    // mounted a canvas-bearing sibling component; cube's `CubeVizSurface` is
+    // mounted from a face HERO PANEL, not from an extension body, so this branch
+    // has no live subject in the roster today. Deleting a correct rule because
+    // today's population cannot reach it is how the next body to use the shape
+    // ships unchecked — so the pair below is built here instead. A body that
+    // MOUNTS such a component IS a picture; one that merely IMPORTS it is not.
+    const MOUNTS = "import VizThing from './VizThing.svelte';\n<VizThing {nodeId} />";
+    const IMPORTS_ONLY = "import VizThing from './VizThing.svelte';\n<div class=\"empty\"></div>";
+    const vizThingFile = resolve(MODULES_DIR, 'wavesculpt', 'WavesculptVizSurface.svelte');
+    expect(existsSync(vizThingFile) && /<canvas/.test(read(vizThingFile)))
+      .toBe(true); // the resolver really does find a canvas-bearing sibling
+    expect(
+      paintsCanvas(MOUNTS.replace(/VizThing\.svelte/, 'WavesculptVizSurface.svelte'), 'wavesculpt'),
+      'a body that RENDERS a canvas-bearing sibling component is a picture',
+    ).toBe(true);
+    expect(
+      paintsCanvas(
+        IMPORTS_ONLY.replace(/VizThing\.svelte/, 'WavesculptVizSurface.svelte'),
+        'wavesculpt',
+      ),
       'importing a canvas-bearing component without RENDERING it must not satisfy picture',
     ).toBe(false);
 

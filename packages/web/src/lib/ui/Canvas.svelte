@@ -241,6 +241,7 @@
   import { nodeCameraSource } from '$lib/ui/media/node-camera-source.svelte';
   import { nodeArchivistSource } from '$lib/ui/media/node-archivist-source.svelte';
   import { nodeFrameProducers } from '$lib/ui/media/node-frame-producers';
+  import { NODE_VIZ_SURFACE_TYPES } from '$lib/ui/media/node-viz-surfaces';
   import { nodePresent } from '$lib/ui/modules/node-present-registry.svelte';
   import { createFullscreen } from '$lib/ui/modules/use-fullscreen.svelte';
   import { resolveVideoEngine } from '$lib/ui/modules/use-present.svelte';
@@ -418,6 +419,7 @@
   import DockFullView from '$lib/ui/dock/DockFullView.svelte';
   // Off-screen lifecycle host for DOM-source video modules the shell swapped out.
   import HeadlessSourceHost from '$lib/ui/workflow/HeadlessSourceHost.svelte';
+  import NodeVizSurfaceHost from '$lib/ui/media/NodeVizSurfaceHost.svelte';
   import { SHELL_TILE_W, SHELL_TILE_H_SLOT, SHELL_VIDEO_ZONE_TILE_INSET_Y, videoZonePackedXs, spineCableVar } from '$lib/ui/workflow/module-shell-model';
   // DOCKING P2.5b: the pan-gesture screen-space cable tail (stub → rail).
   import DockPanTail, { type DockTailSpec } from '$lib/ui/dock/DockPanTail.svelte';
@@ -2842,6 +2844,25 @@
   $effect(() => {
     nodeFrameProducers.sync(snapshot.nodes, engine);
   });
+
+  /** THE NODE-MOUNTED VIZ SURFACES (legacy-removal S1) — the eighth registry,
+   *  and the only one whose producer is a COMPONENT.
+   *
+   *  ⚠ WHY IT IS AN `{#each}` AND NOT A `.sync()` LIKE THE SEVEN ABOVE. Those
+   *  own a resource or a loop, so a plain TS controller can `ensure`/`dispose`
+   *  them against the graph. WAVESCULPT's producer is a WebGL2 renderer with a
+   *  persistent GL context, per-node framebuffers and a presentation canvas, and
+   *  it lives in a file whose BYTES are pinned by the WebGL attest basis — so it
+   *  stays the Svelte component it already is and what moves is who MOUNTS it.
+   *  Mount/unmount IS the lifecycle here, which is why the graph drives it
+   *  through a keyed each rather than through a sweep.
+   *
+   *  ⚠ NOT `<HeadlessSourceHost>` WITH A LONGER LIST, either: that host parks a
+   *  whole CARD inside a single-node `<SvelteFlow>` because a card needs a flow
+   *  provider. A viz surface takes a `nodeId` and paints. */
+  let vizSurfaceNodes = $derived(
+    snapshot.nodes.filter((n) => NODE_VIZ_SURFACE_TYPES.has(n.type)),
+  );
 
   let headlessSourceNodes = $derived.by<ModuleNode[]>(() => {
     const collapsed = collapsedGroupIds;
@@ -10012,6 +10033,15 @@
       nodes={headlessSourceNodes}
       nodeTypes={nodeTypes as unknown as Record<string, unknown>}
     />
+    <!-- NODE-LIFETIME VIZ SURFACES (legacy-removal S1). One `<canvas>` per
+         wavesculpt node, parked off-screen, owning the module's cross-domain
+         frame drawer and the DRS step seam — so `video_out` carries a picture
+         on a saved rack with NO card and NO faceplate mounted anywhere. The
+         legacy card and the dock body CLAIM that canvas to show it; neither
+         creates one. Renders NOTHING when no such node exists. -->
+    {#each vizSurfaceNodes as vs (vs.id)}
+      <NodeVizSurfaceHost nodeId={vs.id} type={vs.type} />
+    {/each}
     <!-- ⚠ #1838 — SUPPRESSED WHILE THE DROP MODAL IS OPEN. Owner: "in this view
          we do not want the dangling dotted patch cable, it's clutter that's not
          helpful." The ghost is `position: fixed` at z-index 1002 and the scrim

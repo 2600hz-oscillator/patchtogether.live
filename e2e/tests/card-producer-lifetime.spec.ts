@@ -1607,3 +1607,334 @@ for (const type of nodeFrameProducerTypes()) {
     expect(providerErrors, `provider throw(s): ${providerErrors.join(' | ')}`).toEqual([]);
   });
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// THE THIRD SHAPE: a producer the NODE MOUNTS AS A SURFACE (legacy-removal S1)
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// Same file, same reason as the block above: subjects here are modules LEAVING
+// `CARD_PRODUCER_LANE_TYPES`, so a departure removes four tests from the first
+// half silently, with the lane green and less coverage than it had. And the
+// filename decides the CI job — `**/card-producer-lifetime.spec.ts` is on the
+// webgl-heavy list, so a new file would have run in no job at all.
+//
+// ⚠ WHAT IS DIFFERENT FROM THE `FrameProducer` HALF, because a reader will look
+// for a copy and find a different shape. Those producers are CALLBACKS on a
+// shared ticker. WAVESCULPT's is a WebGL2 renderer with a persistent GL context
+// and a presentation canvas, in a file whose BYTES are pinned by the attest
+// basis — so the component stayed a component and the NODE mounts it
+// (`$lib/ui/media/NodeVizSurfaceHost`). That makes ONE extra claim testable and
+// necessary, and it is the one this block exists for beyond "the producer runs":
+// there is exactly ONE `wavesculpt-canvas` element in the document at all times,
+// and the views ADOPT it rather than mounting their own.
+//
+// ⚠ THE PROGRESS PROBE IS MOTION *AND* A BLACK FLOOR, WHICH IS NOT THE MIX
+// TIMELORDE USES, AND THE DIFFERENCE IS THE MODULE. timelorde's dead producer
+// reads BRIGHT and FROZEN (drawFrame blits the last bitmap anyone pushed), so
+// "not black" proves nothing there and only motion can judge it. WAVESCULPT's
+// dead state is a literal `fillRect('#000')` in `wavesculpt.ts`'s own drawFrame
+// when no drawer is installed — so here BOTH readings are evidence, and they
+// fail in different ways: a producer that never installed reads black AND
+// still, a renderer that installed and then died reads lit AND still.
+//
+// ⚠ AND THE NEGATIVE CONTROL THIS MODULE CANNOT OFFER, STATED RATHER THAN
+// FAKED. The `pixelPort` fixtures above require a `stillWhen` — a module-defined
+// state in which a LIVE producer legitimately stops moving — and wavesculpt has
+// none: its shader clock advances every frame in every view mode, which is
+// exactly why the VRT scenes need `__wavesculptVrtFreeze` and why this file's
+// own `waitForCoverageToSettle` says its ribbon "would never satisfy
+// unchanged". Inventing one (pinning the test-only freeze flag) would control
+// the INSTRUMENT with a test hook rather than with the module. What stands in
+// its place: the BLACK FLOOR is an independent second reading of the same
+// frame, the DELETE leg shows the probe reports nothing for nothing, and the
+// extraction was verified with a measured POSITIVE control — with the node
+// host's surface suppressed, the movement leg goes red and the port reads
+// `nonBlack 0`. That control is a build-time measurement, not a shipped leg,
+// and saying so is the honest version.
+
+const VIZ_SURFACES_SRC = readFileSync(
+  fileURLToPath(
+    new URL('../../packages/web/src/lib/ui/media/node-viz-surfaces.ts', import.meta.url),
+  ),
+  'utf8',
+);
+
+/** The node-mounted viz surfaces, parsed from their own roster.
+ *
+ *  ⚠ ANCHORED ON `= [` AND CLOSED ON `\n];`, for the reason the sibling parser
+ *  records: the type annotation is `readonly VizSurfaceProducer[]`, so a lazy
+ *  `[^[]*\[` stops at the annotation's own bracket pair and captures nothing. */
+function nodeVizSurfaceTypes(): string[] {
+  const arr = /export const VIZ_SURFACE_PRODUCERS[^=]*=\s*\[([\s\S]*?)\n\];/.exec(VIZ_SURFACES_SRC);
+  if (!arr) throw new Error('could not parse VIZ_SURFACE_PRODUCERS — has the shape changed?');
+  const types = [...arr[1]!.matchAll(/\btype:\s*'([^']+)'/g)].map((m) => m[1]!);
+  if (types.length === 0) {
+    throw new Error('VIZ_SURFACE_PRODUCERS parsed EMPTY — refusing to pass vacuously');
+  }
+  return types;
+}
+
+/** Where a node's viz-surface canvas currently LIVES, by landmark. The whole
+ *  adoption mechanism is a DOM move, so the assertion is about ancestry. */
+async function vizCanvasHome(
+  page: Page,
+  nodeId: string,
+): Promise<{ count: number; parked: boolean; inCard: boolean; inDock: boolean; hosts: number }> {
+  return page.evaluate((id) => {
+    const all = [...document.querySelectorAll('canvas[data-testid="wavesculpt-canvas"]')];
+    const mine = all.filter((c) => c.getAttribute('data-node-id') === id);
+    const el = mine[0] ?? null;
+    const closest = (sel: string) => !!el?.closest(sel);
+    return {
+      // EVERY such canvas in the document, not just this node's — a second mount
+      // for ANY node is the defect this leg exists for.
+      count: all.length,
+      parked: closest(`[data-testid="node-viz-surface"][data-node-id="${id}"]`),
+      inCard: closest('[data-testid="wavesculpt-screen-wrap"]'),
+      inDock: closest('[data-testid="dock-full-view"]'),
+      hosts: document.querySelectorAll(`[data-testid="node-viz-surface"][data-node-id="${id}"]`).length,
+    };
+  }, nodeId);
+}
+
+for (const type of nodeVizSurfaceTypes()) {
+  const mod = REGISTRY.find((m) => m.type === type);
+  if (!mod) throw new Error(`${type} has a node viz surface but is not in the registry manifest`);
+  const pixelPort = mod.outputs.find((p) => p.type === 'video' || p.type === 'mono-video')?.id;
+  if (!pixelPort) {
+    throw new Error(
+      `${type} is a node-mounted viz surface with no video output — its producer's product is a ` +
+        'picture, so a module with nowhere to put one cannot be what this registry is for',
+    );
+  }
+  const nodeId = `nodeviz-${type}`;
+
+  test(`${type}: the renderer runs with NO card mounted anywhere, and there is exactly ONE of it`, async ({ page }) => {
+    test.setTimeout(SLOW_RENDER ? 180_000 : 90_000);
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+
+    await boot(page);
+    await spawnPatch(page, [{ id: nodeId, type, domain: mod.domain }], [], { mountTimeout: 30_000 });
+
+    // The lane shows the shell's tile for a faced module…
+    await expect(
+      page.locator(
+        `.svelte-flow__node[data-id="${nodeId}"] [data-testid="${
+          mod.strictFace === true ? 'module-shell' : 'module-shell-placeholder'
+        }"]`,
+      ),
+    ).toHaveCount(1, { timeout: 20_000 });
+
+    // …its REAL card is nowhere…
+    await expect
+      .poll(async () => anyCardMounts(page, nodeId, type), {
+        message:
+          `${type}'s card must not be mounted ANYWHERE — its renderer is node-lifetime, so a ` +
+          'card mount would be a second owner of the frame drawer',
+        timeout: 20_000,
+      })
+      .toBe(0);
+
+    // …and the ONE surface is parked in its node host, claimed by nobody.
+    await expect
+      .poll(async () => (await vizCanvasHome(page, nodeId)).hosts, { timeout: 20_000 })
+      .toBe(1);
+    const cold = await vizCanvasHome(page, nodeId);
+    expect(
+      cold.count,
+      `exactly one ${type} canvas must exist in the document. Two means a view MOUNTED the ` +
+        'surface instead of claiming it — two GL contexts for one node, and two elements ' +
+        'carrying one data-testid, which every selector in this tree assumes is unique. ' +
+        `Saw ${JSON.stringify(cold)}`,
+    ).toBe(1);
+    expect(cold.parked, 'with no view claiming it the canvas sits in the node host').toBe(true);
+
+    // ⚠ THE PROGRESS LEG. Everything above is satisfiable by a surface that
+    // mounted, published, was counted — and rendered nothing at all.
+    const moved = await framesToChange(page, nodeId, pixelPort);
+    expect(
+      moved.changed,
+      `${type}.${pixelPort} must emit a MOVING picture with no card and no faceplate anywhere. ` +
+        `${fmtChange(moved)}`,
+    ).toBe(true);
+    expect(
+      moved.nonBlackMax,
+      `${type}.${pixelPort} must be LIT, not merely changing. With no frame drawer installed ` +
+        "this module's own drawFrame fills SOLID BLACK, so a zero here is the exact #1587 " +
+        `defect — the node mounted no renderer. ${fmtChange(moved)}`,
+    ).toBeGreaterThan(0);
+
+    // ── THE ADOPTION HANDOFF, which is this shape's own failure mode ─────────
+    // A dock full view CLAIMS the canvas out of the node host. That is a DOM
+    // move on a live element, and the claim it must not break is that the
+    // producer never stops — so sample EVERY frame across the move.
+    const openPending = probeEveryFrame(page, nodeId, pixelPort);
+    await page.evaluate((id) => {
+      (globalThis as unknown as { __openDockFullView: (i: string) => void }).__openDockFullView(id);
+    }, nodeId);
+    const openHandoff = await openPending;
+    await expect(page.locator('[data-testid="dock-full-view"]')).toHaveCount(1, { timeout: 30_000 });
+    expect(
+      openHandoff.longestBlackRun,
+      `${type}.${pixelPort} lost its picture while the dock full view CLAIMED its canvas, for ` +
+        `${openHandoff.longestBlackRun} consecutive frames of ${openHandoff.frames} sampled. ` +
+        `Series (nonBlack px/frame): ${openHandoff.series.join(',')}`,
+    ).toBeLessThan(MAX_BLACK_RUN_FRAMES);
+
+    await expect
+      .poll(async () => (await vizCanvasHome(page, nodeId)).inDock, {
+        message: 'the dock body must ADOPT the node canvas, not mount a second surface',
+        timeout: 20_000,
+      })
+      .toBe(true);
+    const docked = await vizCanvasHome(page, nodeId);
+    expect(docked.count, `still exactly one canvas with the dock open: ${JSON.stringify(docked)}`)
+      .toBe(1);
+    expect(docked.parked, 'the claimed canvas has LEFT the node host').toBe(false);
+    // ...and still no card, anywhere: the whole point of the extraction is that
+    // a faced producer no longer needs one kept alive behind the faceplate.
+    expect(
+      await anyCardMounts(page, nodeId, type),
+      'a node-owned renderer needs no headless host while its faceplate is open',
+    ).toBe(0);
+
+    // ── AND BACK. Closing the pane releases the claim; the canvas returns to the
+    // node host rather than being destroyed, and the picture never stops.
+    const closePending = probeEveryFrame(page, nodeId, pixelPort);
+    await page.getByTestId('faceplate-collapse').first().click();
+    const closeHandoff = await closePending;
+    await expect(page.locator('[data-testid="dock-full-view"]')).toHaveCount(0, { timeout: 20_000 });
+    expect(
+      closeHandoff.longestBlackRun,
+      `${type}.${pixelPort} lost its picture when the dock RELEASED its canvas, for ` +
+        `${closeHandoff.longestBlackRun} consecutive frames of ${closeHandoff.frames} sampled. ` +
+        `Series (nonBlack px/frame): ${closeHandoff.series.join(',')}`,
+    ).toBeLessThan(MAX_BLACK_RUN_FRAMES);
+    await expect
+      .poll(async () => (await vizCanvasHome(page, nodeId)).parked, {
+        message: 'a released claim parks the canvas back with the node host',
+        timeout: 20_000,
+      })
+      .toBe(true);
+    const after = await framesToChange(page, nodeId, pixelPort);
+    expect(
+      after.changed && after.nonBlackMax > 0,
+      `${type}.${pixelPort} must still be lit and moving after the claim round-trip. ` +
+        `${fmtChange(after)}`,
+    ).toBe(true);
+
+    // ── DELETE — the node leaves the graph and the renderer goes with it. This
+    // is also the instrument's own negative control: the same probe, on a
+    // subject that is gone, must report nothing.
+    await page.evaluate((id) => {
+      const w = globalThis as unknown as {
+        __patch: { nodes: Record<string, unknown>; edges: Record<string, unknown> };
+        __ydoc: { transact: (fn: () => void) => void };
+      };
+      w.__ydoc.transact(() => {
+        for (const [eid, e] of Object.entries(w.__patch.edges)) {
+          const edge = e as { source?: { nodeId?: string }; target?: { nodeId?: string } } | undefined;
+          if (edge?.source?.nodeId === id || edge?.target?.nodeId === id) delete w.__patch.edges[eid];
+        }
+        delete w.__patch.nodes[id];
+      });
+    }, nodeId);
+    await expect
+      .poll(async () => hasVideoSource(page, nodeId, pixelPort), {
+        message: `${type}'s engine handle must be gone after the node is deleted`,
+        timeout: 20_000,
+      })
+      .toBe(false);
+    await expect
+      .poll(async () => (await vizCanvasHome(page, nodeId)).count, {
+        message: 'the node host unmounts with the node, so no canvas is left behind',
+        timeout: 20_000,
+      })
+      .toBe(0);
+    const gone = await framesToChange(page, nodeId, pixelPort);
+    expect(
+      gone.changed || gone.nonBlackMax > 0,
+      `the probe reports a live picture for a node that no longer exists — it is measuring ` +
+        `something other than this producer. ${fmtChange(gone)}`,
+    ).toBe(false);
+
+    const providerErrors = errors.filter((e) => /useStore|SvelteFlowProvider/i.test(e));
+    expect(providerErrors, `provider throw(s): ${providerErrors.join(' | ')}`).toEqual([]);
+  });
+
+  test(`${type} [legacy shell]: the CARD adopts the node's canvas — one element, one renderer`, async ({ page }) => {
+    test.setTimeout(SLOW_RENDER ? 180_000 : 90_000);
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+
+    // ⚠ THIS ARM IS THE ONE `wavesculpt.spec.ts` DEPENDS ON, and it is why the
+    // two-mount design was refused. All fifteen of that suite's tests drive the
+    // DRS step seam and then photograph `[data-testid="wavesculpt-canvas"]`. The
+    // seam halts the rAF of the surface that INSTALLED it — so if the seam owner
+    // and the photographed element were two different mounts, stepping would
+    // freeze a surface nobody is looking at while the photographed one free-ran.
+    // With one mount, adopted, they are the same element by construction. This
+    // leg pins that construction; that suite consumes it.
+    await boot(page, 'legacy');
+    await spawnPatch(page, [{ id: nodeId, type, domain: mod.domain }], [], { mountTimeout: 30_000 });
+
+    await expect
+      .poll(async () => (await vizCanvasHome(page, nodeId)).inCard, {
+        message: `${type}'s legacy card must ADOPT the node canvas into its screen box`,
+        timeout: 30_000,
+      })
+      .toBe(true);
+    const adopted = await vizCanvasHome(page, nodeId);
+    expect(
+      adopted.count,
+      `exactly one ${type} canvas with the card mounted: ${JSON.stringify(adopted)}`,
+    ).toBe(1);
+    expect(adopted.parked, 'the card holds it, so it is not in the node host').toBe(false);
+    expect(adopted.hosts, 'the node host is still mounted — it OWNS the surface').toBe(1);
+
+    // THE SEAM IS ON THE PHOTOGRAPHED SURFACE. It is installed by the node's
+    // mount, and the element the card shows is that mount's canvas.
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () => typeof (globalThis as { __wavesculptStep?: unknown }).__wavesculptStep === 'function',
+        ),
+      { message: 'the node-mounted surface installs the DRS step seam', timeout: 30_000 })
+      .toBe(true);
+    const stepped = await page.evaluate(() => {
+      const g = globalThis as {
+        __wavesculptStep?: (t?: number) => number;
+        __wavesculptStepCount?: () => number;
+      };
+      g.__wavesculptStep?.(2000);
+      const before = g.__wavesculptStepCount?.() ?? 0;
+      for (let i = 0; i < 5; i++) g.__wavesculptStep?.(2000);
+      const during = g.__wavesculptStepCount?.() ?? 0;
+      // NEGATIVE CONTROL, in the same evaluate so no rAF can interleave: while
+      // step mode holds and NOTHING steps, the counter must not move. That is
+      // the seam actually halting the rAF of the mount whose canvas the card is
+      // showing — a seam pointed at some OTHER mount would leave this free-running.
+      const idle = g.__wavesculptStepCount?.() ?? 0;
+      g.__wavesculptStep?.(); // resume
+      return { delta: during - before, idleDelta: idle - during };
+    });
+    expect(stepped.delta, 'five steps advance the counter by exactly five').toBe(5);
+    expect(
+      stepped.idleDelta,
+      'in step mode with nothing stepping the counter must not move — otherwise the seam is ' +
+        'halting a mount other than the one being photographed',
+    ).toBe(0);
+
+    // The picture, with the card mounted: same instrument as the default-shell
+    // arm, so the two states are comparable.
+    const moved = await framesToChange(page, nodeId, pixelPort);
+    expect(
+      moved.changed && moved.nonBlackMax > 0,
+      `${type}.${pixelPort} must be lit and moving with the legacy card mounted. ${fmtChange(moved)}`,
+    ).toBe(true);
+
+    const providerErrors = errors.filter((e) => /useStore|SvelteFlowProvider/i.test(e));
+    expect(providerErrors, `provider throw(s): ${providerErrors.join(' | ')}`).toEqual([]);
+  });
+}
