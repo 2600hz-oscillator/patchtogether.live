@@ -625,6 +625,22 @@ const SUBJECTS: readonly Subject[] = [
   // `canvas` override is needed.
   { type: 'archivist', prefix: 'archivist', domain: 'video', why: 'the Internet Archive browser\'s live engine-output preview and its SCREEN switch — an ADDITION, since ArchivistCard previews the raw node-owned elements and has no SCREEN switch at all. ⚠ THE WATCH-MARK CASE IS peertube\'s IN ITS WIDEST FORM: archivist is a pure SOURCE feeding `image`, `video` AND `audio_l`/`audio_r`, so a lapsed mark would idle the picture every downstream consumer samples while the element went on decoding. ⚠ AND SCREEN OFF CANNOT REACH THE PLAYBACK AT ALL HERE, which is stronger than the ordering-dependent guarantee the rest of this table relies on: the three elements, their play(), the 100 ms playhead pump and the gate/CV writes ALL belong to the card that <HeadlessSourceHost> keeps parked off-screen, and this body only BLITS — the switch removes a drawImage and nothing else. That deeper property is face-archivist.spec.ts\'s subject; this row proves the SWITCH.' },
 
+  // ── TOYBOX (2026-09-02) — appended at the END, per this file's batching note,
+  //    so it joins the LAST batch and changes exactly one test title. It sits
+  //    after `archivist` by ARRIVAL: that branch reached main first (#2320),
+  //    which is the ordering rule nibbles', painter's and archivist's own notes
+  //    each state in turn.
+  //
+  // ⚠ IT IS ROSTERED EVEN THOUGH IT HAS A RENDER-LEVEL LEG OF ITS OWN — the
+  //    peertube/archivist precedent. `face-toybox.spec.ts` measures that the
+  //    COMPOSITE KEEPS ADVANCING across the toggle ("SCREEN OFF is not a
+  //    pause"); this row proves the SWITCH — reachable on the faceplate at all,
+  //    starts ON, removes the canvas, RECLAIMS the space, comes back. Different
+  //    subjects, and `quadralogical` is this file's own recorded case of
+  //    assuming otherwise and leaving a switch at zero live coverage while
+  //    everyone believed it covered.
+  { type: 'toybox', prefix: 'toybox', domain: 'video', why: 'the FOUR-LAYER COMPOSITOR\'s live output picture and its SCREEN switch — an ADDITION, since ToyboxCard has a preview and no switch at all. ⚠ THE WATCH-MARK CASE IS THE STRONGEST IN THIS TABLE, and it is about HISTORY rather than about a source. Every other row here protects a picture that would merely stop being copied; toybox\'s combine roster includes FEEDBACK, FRAMEDELAY, EXQUISITE and DATAMOSH, each of which accumulates state BETWEEN frames, so a lapsed mark would not pause the picture — it would destroy the nest, and switching the screen back on would show a black or stale frame with the patch still visibly wired. `out` is a real cable other modules sample, so the same lapse idles every downstream consumer too. ⚠ AND THERE IS NO CARD ANYWHERE TO FALL BACK ON. toybox is in none of DOM_SOURCE_LANE_TYPES / CARD_PRODUCER_LANE_TYPES / HEADLESS_MOUNT_LANE_TYPES, so unlike archivist, cameraInput and loopback there is no parked card still holding the module up: this body IS the module\'s surface, and the screen is the only picture of it. ⚠ THE SWITCH DELIBERATELY REMOVES THE PICTURE ONLY, not the console under it — the layer band and all three tabs stay fully operable, because building a patch blind on a projector is the normal show posture and the graph editor must keep working with the screen off. That is the opposite of painter, one row up, where the picture IS the instrument and OFF puts the whole paint set away. Verified before writing rather than assumed: `type == prefix == extension id` (\'toybox\'); the toggle is the conventional `toybox-face-screen-toggle` carrying `aria-pressed` and SCREEN ON/OFF text; the body uses the standard `{#if screenOn}` REMOVES mechanism; and the console declares the conventional `toybox-face-canvas` on the faceplate (the legacy card keeps `toybox-canvas`), so no `canvas` override is needed.' },
+
   // ── ⚠ DOOM IS DELIBERATELY **NOT** ROSTERED HERE (2026-09-02) ─────────────
   //
   // Recorded rather than omitted, because "doom's switch is covered elsewhere"

@@ -708,15 +708,20 @@ export const FACES = [
   // Deterministic on a silent rack like every sibling: a mixer contains no
   // generator, so with nothing patched masterL is bit-exactly zero.
   //
-  // ⚠ THE FIRST ENTRY TO DECLARE `foldHeight`, and it is the reason that field
-  // exists. The unfolded pane MEASURES 1623 CSS px, so at the shared 1400 it
-  // starts at y = -290 and cannot be framed; `foldViewportFor` gives this scene
-  // 2048 (425 px of headroom) and leaves every other scene's viewport — and
-  // therefore every other committed baseline — untouched. See the measurement
-  // on `foldViewportFor` for why raising the shared constant is NOT a no-op.
-  // (⚠ It is no longer the ONLY one: `clipplayer` measured 1436 px and took
-  // 1792 on the same argument. The mechanism generalised on its second use,
-  // which is the outcome a per-scene field is supposed to have.)
+  // ⚠ THE FIRST ENTRY TO DECLARE `foldHeight`, and the reason that field exists.
+  // The unfolded pane MEASURES 1623 CSS px, so at the shared 1400 it starts at
+  // y = -290 and cannot be framed; `foldViewportFor` gives this scene 2048
+  // (425 px of headroom) and leaves every other scene's viewport — and therefore
+  // every other committed baseline — untouched. See the measurement on
+  // `foldViewportFor` for why raising the shared constant is NOT a no-op.
+  //
+  // ⚠ IT IS NO LONGER THE ONLY ONE, and the two that joined it did so on the
+  // same day by the same route — each was told the number by a failing capture
+  // rather than predicting it. `clipplayer` measured 1436 px and `toybox` 1475,
+  // and both took 1792. The mechanism generalised on its second and third use,
+  // which is the outcome a per-scene field is supposed to have; the alternative
+  // — one shared height raised three times — is measured right here to move
+  // every existing dock baseline through layout.
   {
     type: 'mixmstrs',
     pages: 4,
@@ -5886,6 +5891,118 @@ export const FACES = [
     // which scrolls inside its own 260 px box precisely so a 128-step clip
     // cannot grow the plate without bound.
     foldHeight: 1792,
+  },
+
+  // ── TOYBOX — the FOUR-LAYER COMPOSITOR, and the last face in the programme
+  //    besides doom
+  {
+    type: 'toybox',
+    // ⚠ THE SECOND ENTRY EVER TO DECLARE `foldHeight`, and it was found by CI
+    // rather than predicted — recorded that way rather than quietly fixed. The
+    // first bot capture failed with the dock scene's own message: "the unfolded
+    // pane starts at y=-141 in a 1400 px viewport — it has grown off the top of
+    // the window … (pane is 1475 CSS px tall)". The local determinism probe had
+    // already printed `578x1476` and it was read as merely "tall".
+    //
+    // MEASURED, so the number is not a guess. In a 1280x1400 window the body is
+    // 1244 CSS px on its DEFAULT tab, and every part of that is the card's own
+    // design carried across rather than slack:
+    //
+    //   screen 360 (480x360 at the engine's 4:3)   tab rail   19
+    //   screen bar 22                              CV pane   633
+    //   layer band 170                             ─────────────
+    //                                              body     1244  (+ dock chrome = 1475)
+    //
+    // The CV pane is SIX rows at 96 px each, and 96 is the card's own row: a
+    // `.cv-row` is `flex-direction: column` by design — head, then target+param,
+    // then the two knobs beside the scope. Measured at BOTH 512 px and 720 px of
+    // body width and the rows do not shrink, so this is not wrapping that a
+    // wider plate would fix.
+    //
+    // ⚠ SO THE SCENE GETS A TALLER WINDOW RATHER THAN THE PRODUCT GETTING A
+    // SHORTER PANE. The alternative considered and rejected was capping
+    // `.tb-pane` with an internal scroll: the faceplate ALREADY scrolls inside
+    // the dock, so that would add a second scrollbar inside a scrolling pane,
+    // hide two of the six modulation rows from the player, and do it to fit a
+    // capture window — the tail wagging the dog. Raising the SHARED
+    // `FOLD_VIEWPORT.height` is worse still and is measured on `foldViewportFor`
+    // to move every existing dock baseline through layout.
+    //
+    // 1792 gives 317 px of headroom over the 1475 px pane — the same shape of
+    // margin mixmstrs took (2048 over 1623, 425 px). It is deliberately NOT
+    // 2048: `foldViewportFor` isolates per scene, so a bigger window than the
+    // scene needs buys nothing and costs capture time.
+    foldHeight: 1792,
+    // `face.order: []` and no `face.pages`, so the dock renders ZERO control
+    // bands: `toyboxDef.params` is empty and there is nothing to rank. The
+    // faceplate is the extension's `fullViewBody` and the dock chrome, and
+    // nothing is padded to manufacture a rail.
+    pages: 0,
+    videoFaceWhy:
+      'a VIDEO module, so it must boot into the video zone rather than a mixer channel column — '
+      + 'without this field `bootWithFace` waits out the full test timeout for a column '
+      + 'membership a video node never acquires. It is ALSO what turns on '
+      + '`awaitFaceVideoPainted` + `freezeFaceVideo`, and BOTH need reading carefully here. '
+      + '⚠ `freezeFaceVideo` ALONE CANNOT STOP THIS PICTURE, and not for acidwarp\'s reason. It '
+      + 'writes `params.freeze = 1`; `toyboxDef.params` is `[]`, so that write lands on a param '
+      + 'no factory reads and changes nothing at all. What actually stops the picture is the '
+      + '`simPin` below, and the freeze write is then a harmless no-op the shared helper makes '
+      + 'on every video face. '
+      + '⚠ THE COMPACT SCENE\'S WELL PAINTS LATE, AND THAT IS SAID HERE RATHER THAN DISCOVERED '
+      + 'LATER. A GEN layer\'s GLSL is FETCHED at runtime (`noise-fbm.frag.glsl`, a static asset '
+      + 'resolved lazily on selection and never JS-bundled) and then COMPILED, so the first '
+      + 'frames after spawn render the idle field rather than the pattern. '
+      + '`awaitFaceVideoPainted` closes the compact half — the lane tile is a `VideoTileThumb`, '
+      + 'so it publishes `data-thumb-painted` only once the engine has actually drawn the node — '
+      + 'but it CANNOT close the dock half, because the dock capture root holds this module\'s '
+      + 'own `toybox-face-canvas` and no tile thumb at all, and that helper reports-and-skips a '
+      + 'root with no well. The dock scene therefore rests on `simPin` making every frame '
+      + 'identical INCLUDING the pre-compile ones, plus `freezeFaceVideo`\'s own '
+      + 'sample-until-still loop, which will not return while the picture is still changing from '
+      + 'idle to pattern. The card VRT suite closes the same race with a bespoke '
+      + '"poll until >10% of the preview is lit, then freeze" helper on a 10 s budget '
+      + '(vrt-toybox.spec.ts), and toybox-randomize.spec.ts records the same thing from the '
+      + 'other side ("while the new GLSL fetches + compiles the layer contributes nothing" — '
+      + 'it waits 90 frames after a content swap). No equivalent was added to the shared '
+      + 'harness in a face PR. '
+      + '⚠ MEASURED RATHER THAN PREDICTED, and it holds: vrt-determinism-probe on this branch '
+      + 'reports BOTH tiers bit-identical across two full boots — compact 88x82 diff@1=0 '
+      + 'diff@26=0 maxDelta=0, dock 578x1476 diff@1=0 diff@26=0 maxDelta=0, pageerrors=0 on '
+      + 'each. The interesting column is `tries=2/2`: freezeFaceVideo needed a SECOND settle '
+      + 'round on both tiers before the surface stopped moving, which is the settle earning its '
+      + 'place rather than a margin to spend. If a baseline ever lands showing the idle field '
+      + 'instead of the pattern, THAT race is the mechanism, and the fix is the settle, not the '
+      + 'pin. '
+      + '⚠ THE SIX CV SCOPES ARE THE OTHER MOVING THING, and they settle rather than needing a '
+      + 'pin: CV-MOD is the default tab, each row paints an always-on inline scope, and with no '
+      + 'cable patched every sample is the constant OFFSET — so the trace changes only while the '
+      + 'ring buffer fills and is still thereafter, which is what `freezeFaceVideo`\'s retry loop '
+      + 'is for — and the measured `tries=2/2` above is most likely them. Nothing else on the '
+      + 'surface moves: the layer band, the tab rail and the pane are static DOM.',
+    // ⚠ A CLOCK PIN, NOT A FREEZE PARAM — the cheaper of the two whenever it
+    // applies, and here it is the ONLY one that applies. Adding a `freeze`
+    // ParamDef to `toyboxDef` would move `params`, which moves contract-lock AND
+    // the WebGL attest hash, to buy a WEAKER guarantee (a freeze holds A frame
+    // without choosing WHICH). This global is already shipped and already read
+    // by the factory.
+    simPin: [
+      {
+        global: '__toyboxFreezeTime',
+        value: 1.0,
+        why:
+          'pins the ONLY time term the render reads. `toybox.ts`\'s draw resolves '
+          + '`const time = frozenTime() ?? frame.time`, and `frozenTime()` is exactly '
+          + '`globalThis.__toyboxFreezeTime` — so with it set, every layer\'s `iTime` uniform is '
+          + 'the same number on every frame and the composite becomes a pure function of '
+          + '`node.data`. `simPin` installs it via `addInitScript` BEFORE `goto`, which is '
+          + 'strictly earlier than the card VRT suite manages: the value is in place before any '
+          + 'module factory runs, so there is no pre-pin frame to race. Sufficient ALONE for the '
+          + 'DEFAULT patch, and that is a property of the default rather than of the module: a '
+          + 'fresh node is one GEN layer wired straight to OUT, with no FEEDBACK, FRAMEDELAY, '
+          + 'EXQUISITE or DATAMOSH op in the graph — those four DO accumulate between frames, and '
+          + 'a scene that added one would need more than a clock pin.',
+      },
+    ],
   },
 
 ] as const;

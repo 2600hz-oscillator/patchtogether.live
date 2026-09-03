@@ -6732,6 +6732,103 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // read-only after the card grew its click gesture. ZERO ATTEST: no param,
   // port or factory code moves and every new file is under `lib/ui/**`.
   'clipplayer',
+
+  // ── TOYBOX (2026-09-02) — THE FOUR-LAYER COMPOSITOR, "A WHOLE SUB-RACK IN A
+  //    CARD", AND THE LAST MODULE THE MEDIA-CONTROLLER BLOCKER WAS WAITING ON
+  //
+  // `order: []`, `glyph: 'none'`, one `fullViewBody`, no `tileBody`, no `rear`
+  // groups. The empty order is FORCED, not chosen: `toyboxDef.params` is `[]`,
+  // so there is not one ParamDef in this module for a cell to rank — the
+  // videoOut / recorderbox / painter shape.
+  //
+  // ⚠ THE `needs-media-controller` BLOCKER IS DROPPED AS FALSE, ON
+  // RECORDERBOX'S ARGUMENT RATHER THAN ARCHIVIST'S — and picking the wrong
+  // neighbour to copy is the mistake worth naming, because all three shipped in
+  // one week. archivist IS in `DOM_SOURCE_LANE_TYPES`, its elements ARE
+  // card-attached, and it needed a whole status/command registry so a PARKED
+  // card could stay the sole owner. None of that transfers. toybox is in
+  // NEITHER half of `HEADLESS_MOUNT_LANE_TYPES`: it never calls
+  // `attachExternalSource` (its per-layer elements reach the engine through the
+  // module's OWN handle extras, `attachLayerVideo`), and it is not a card
+  // producer (the factory renders every layer from `node.data` with no UI
+  // mounted anywhere). The blocker's probe is a property of the TREE —
+  // "`HEADLESS_MOUNT_LANE_TYPES` is empty" — and toybox's membership in the set
+  // of modules WAITING on it is the part that was false.
+  //
+  // ⚠ AND THE TAX IT DESCRIBED WAS ALREADY PAID, in this module's own history
+  // rather than in this PR: #1589 moved every per-layer `<video>`, object-URL
+  // and camera MediaStream into `$lib/ui/media/node-media-registry`, swept from
+  // Canvas on GRAPH lifetime, and `card-media-lifetime.test.ts` fails the build
+  // if a revoke/stop/detach ever returns to an unmount path. The IMAGE half is
+  // a node-lifetime `extras-producers` entry (`EXTRAS_PRODUCER_TYPES`), so an
+  // image layer is reconstructed from `node.data` with no surface at all. The
+  // spec package that recorded the blocker (.myrobots/face-specs/toybox.html
+  // rev 2) still describes the pre-#1589 card in the PRESENT TENSE and calls
+  // the registry port "the face PR's precondition"; it had already shipped a
+  // fortnight earlier. Read the card, never the why.
+  //
+  // ⚠ WHAT WAS ACTUALLY LOAD-BEARING is what no def-reading gate could see, and
+  // it is the opposite of a media problem: because toybox is in none of those
+  // sets there is no `<HeadlessSourceHost>`, so promotion stops
+  // `ToyboxCard.svelte` mounting ANYWHERE — and that card was this module's
+  // only surface. Everything in it had to MOVE, not be duplicated:
+  // `$lib/ui/modules/toybox/ToyboxConsole.svelte` is ONE component with a
+  // `layout` prop that the legacy card and the faceplate body both mount. A
+  // fork would have been two consoles over one Y.Doc drifting apart one fix at
+  // a time; `toybox-face-model.test.ts` pins the single-tree property in both
+  // directions, and every zone is a SNIPPET, so a control cannot exist on one
+  // surface and be missing from the other without being deleted outright.
+  //
+  // ⚠ THE OWNER SPECIFIED THIS LAYOUT (2026-08-28): "i'd want to generally keep
+  // what we have while migrating to our new look&feel. and putting cv-mod,
+  // combine graph, preset controls on 3 tabs, all below a screen that turns on
+  // and off." So the body is SCREEN → a persistent LAYER band → a three-tab
+  // rail: a restyle plus a rail, not a redesign. The band is persistent rather
+  // than a fourth tab because every tab REFERENCES layers and none OWNS them —
+  // the graph's L1–L4 source nodes emit what the band configures, the CV rail
+  // addresses layer params by the graph's own display names, and a preset
+  // captures and locks them. Inside any one tab, the other two would be
+  // pointing at something off screen.
+  //
+  // ⚠ THE TAB RAIL IS THE TWO SECTION COLLAPSES, RESTYLED. The card carries a
+  // ▸/▾ toggle for COMBINE GRAPH and one for CV / MOD; a tab does that job with
+  // one control instead of two, and `editorVisible` / `cvVisible` are the one
+  // predicate both hosts answer. It is BODY-INTERNAL chrome and invokes no
+  // shell arithmetic: `dockTabPlan`'s `DOCK_TAB_MIN_BANDS` governs param BANDS,
+  // and this face declares zero.
+  //
+  // ⚠ THE KNOB TESTIDS ARE HOST-DEPENDENT, which is a gate fact and not a
+  // preference. `Knob.svelte` derives `control-<paramId>` from the MIDI-learn
+  // key, and `faces-parity` asserts exact multiset equality between the dock's
+  // `[data-testid^="control-"]` elements and the def's ParamDef ids — the EMPTY
+  // set here. Twenty knobs would each have read as an unbacked extra. Dropping
+  // `paramId` would have "fixed" that by making twenty controls un-learnable,
+  // so the face passes Knob's own `testid` override instead (`toybox-dial-*`):
+  // the NAME changes, the MIDI binding does not, and the legacy card keeps
+  // `control-*` for the shipped specs and every saved binding.
+  //
+  // ⚠ SCREEN OFF KEEPS RENDERING AND RENEWS THE WATCH MARK. On the blit path
+  // that mark is a side effect of PAINTING (`blitOutputForPreview` calls
+  // `markWatched` only when it decides to blit), so a face whose screen is off
+  // would let it lapse and `computePullActiveSet` would drop the node. That is
+  // not merely "no picture while it is off": the combine roster carries
+  // FEEDBACK, FRAMEDELAY, EXQUISITE and DATAMOSH, each accumulating history
+  // between frames, and `out` is a real cable other modules sample. The
+  // console's `renewWatchMark` runs every rAF on the face regardless, so OFF
+  // changes what is PAINTED and never what is PRODUCED.
+  //
+  // ⚠ NO `tileBody`, decided rather than defaulted: every control here is
+  // layer-scoped or graph-node-scoped, so choosing WHICH one to operate is
+  // already a dock task, and a lone control on a 192 px tile would be operating
+  // something the player cannot see they selected. The lane keeps the generic
+  // `VideoTileThumb` — for a compositor the picture IS the identity.
+  //
+  // ⚠ ZERO ATTEST, MEASURED not asserted: `face` is stripped at module scope by
+  // `attest-code-basis`, every new file is under `lib/ui` (and that sweep of
+  // `lib/ui/modules/**/*.svelte` looks for a GL context BY CONTENT — none of
+  // these creates one), and no param, port or factory code moves, so
+  // contract-lock does not move either.
+  'toybox',
 ]);
 
 /**

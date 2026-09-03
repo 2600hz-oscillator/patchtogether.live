@@ -22,7 +22,6 @@ import {
   migrationBlockers,
   migrationDone,
   type FaceMigrationDisposition,
-  type MigrationBlockerId,
 } from './face-migration-inventory';
 
 /** One registered module, as the report needs it. */
@@ -136,12 +135,12 @@ export function renderFaceMigrationReport(modules: readonly ReportModule[]): str
   lines.push('## What each blocker buys');
   lines.push('');
   const blockerRows: string[][] = [];
-  for (const id of Object.keys(MIGRATION_BLOCKERS).sort() as MigrationBlockerId[]) {
+  for (const id of Object.keys(MIGRATION_BLOCKERS).sort()) {
     const users = sorted
       .map((m) => inventoryEntry(m.type))
       .filter((e): e is NonNullable<typeof e> => !!e)
-      .filter((e) => migrationBlockers(e).includes(id));
-    blockerRows.push([`\`${id}\``, `#${MIGRATION_BLOCKERS[id].issue}`, String(users.length)]);
+      .filter((e) => (migrationBlockers(e) as readonly string[]).includes(id));
+    blockerRows.push([`\`${id}\``, `#${MIGRATION_BLOCKERS[id]!.issue}`, String(users.length)]);
   }
   lines.push(table(blockerRows, ['blocker', 'issue', 'modules waiting']));
   lines.push('');

@@ -89,7 +89,6 @@ import {
   staleBlockers,
   type CapabilityEvidence,
   type MigrationBlocker,
-  type MigrationBlockerId,
 } from './face-migration-inventory';
 import { renderFaceMigrationReport, type ReportModule } from './face-migration-report';
 
@@ -133,6 +132,20 @@ function faceOf(type: string): ModuleFace | undefined {
  * ⚠ THE FILE, NOT THE COMPONENT: `shell-extensions`' `import.meta.glob` is LAZY,
  * so the component object is unreachable from a node-env test. Same ten-liner as
  * `face-rack-status-source.test.ts` — two gates reading one seam the same way.
+ *
+ * READ THE SAME WAY THE CARD IS — its own source plus the local `.svelte` components it delegates to, one
+ * level deep, through the shared `readCardSourceWithDelegates`.
+ *
+ * ⚠ THE DELEGATE FOLLOW IS A SYMMETRY FIX, NOT A WIDENING FOR ITS OWN SAKE, and
+ * the asymmetry it removes was latent rather than theoretical. The typed-entry
+ * leg below compares a CARD's markup against a BODY's, and the card side has
+ * followed delegates since 2026-08-07 (`$lib/ui/card-source`, written for
+ * exactly this: "a gate reading only the wrapper concludes whatever 'no markup'
+ * happens to mean for it"). Reading the body WITHOUT delegates made the
+ * comparison green only while BOTH sides were blind to the same file — which is
+ * how archivist and peertube passed, since each carries its typed field inside
+ * a component its body imports. The moment the card side could see one, they
+ * would have reddened for carrying the affordance correctly.
  */
 function fullViewBodySource(extId: string): string | null {
   const ext = resolve(CARD_DIR, extId, 'shell-extension.ts');
@@ -143,7 +156,13 @@ function fullViewBodySource(extId: string): string | null {
   const imported = new RegExp(`import\\s+${m[1]}\\s+from\\s+'\\./([^']+)'`).exec(src);
   if (!imported) return null;
   const file = resolve(CARD_DIR, extId, imported[1]!);
-  return existsSync(file) ? readFileSync(file, 'utf8') : null;
+  if (!existsSync(file)) return null;
+  return readCardSourceWithDelegates(
+    file,
+    resolve(CARD_DIR, extId),
+    { readFileSync, existsSync },
+    join,
+  );
 }
 
 /** The RENDERED markup only: script blocks, style blocks and comments removed.
@@ -270,7 +289,7 @@ describe('face-migration inventory — IDENTITY with the faced population', () =
 });
 
 describe('face-migration inventory — blockers resolve, in both directions', () => {
-  const declaredIds = new Set(Object.keys(MIGRATION_BLOCKERS) as MigrationBlockerId[]);
+  const declaredIds = new Set<string>(Object.keys(MIGRATION_BLOCKERS));
 
   it('every blocker a module or a disposition names is DECLARED with its issue', () => {
     const undeclared: string[] = [];
@@ -283,7 +302,7 @@ describe('face-migration inventory — blockers resolve, in both directions', ()
   });
 
   it('ANCHORED: every declared blocker is named by something', () => {
-    const used = new Set<MigrationBlockerId>();
+    const used = new Set<string>();
     for (const entry of FACE_MIGRATION_INVENTORY) {
       for (const id of migrationBlockers(entry)) used.add(id);
     }
@@ -408,7 +427,7 @@ describe('face-migration inventory — blockers are LIVE, measured against the T
 
   it('NO STALE BLOCKER: every declared blocker names a capability the tree does NOT have', () => {
     const stale = staleBlockers(treeEvidence()).map((id) => {
-      const b = MIGRATION_BLOCKERS[id as MigrationBlockerId];
+      const b = MIGRATION_BLOCKERS[id]!;
       return `${id} (#${b.issue}) — its probe FIRED: ${b.probe.evidence}`;
     });
     expect(
@@ -799,9 +818,27 @@ describe('face-migration inventory — DERIVED from the tree, not from this list
         }
         continue;
       }
-      if (!migrationBlockers(entry).includes('needs-media-controller')) {
-        offenders.push(`${type}: is a DOM-source module but does not declare needs-media-controller`);
-      }
+      // ⚠ THIS ARM USED TO READ `if (!migrationBlockers(entry).includes(
+      // 'needs-media-controller')) offenders.push(…)` — an un-faced DOM-source
+      // module escaped the clause above by DECLARING the blocker. That escape
+      // was deleted with the blocker itself (2026-09-02, toybox's promotion:
+      // see `MigrationBlockerId` in the inventory for why the last declaration
+      // went), so the condition it tested is no longer expressible — the union
+      // is empty and `migrationBlockers(entry)` can only be `[]`.
+      //
+      // The rule is UNCHANGED in substance and is now stated directly: the
+      // shell parks a DOM-source module's card off-screen with
+      // `pointer-events: none`, so its buttons are unreachable no matter which
+      // disposition the entry carries. Naming a capability it was waiting on
+      // never made them reachable; it only deferred the question. A DOM-source
+      // module therefore owes a CARRIED-affordance account, and `generic-face`
+      // is the only disposition a promoted module has.
+      offenders.push(
+        `${type}: is a DOM-source module dispositioned '${entry.disposition}'. The shell parks ` +
+          'its card off-screen (pointer-events:none) whatever the disposition says, so its ' +
+          'affordances must be CARRIED to a face and recorded in CARD_SOURCE_FACED. There is no ' +
+          'longer a blocker to declare instead — see MigrationBlockerId in face-migration-inventory.ts.',
+      );
     }
     return offenders.sort();
   }
@@ -887,14 +924,24 @@ describe('face-migration inventory — DERIVED from the tree, not from this list
     expect(offenders[0]).toContain('CARD_SOURCE_FACED');
 
     // The other arm, likewise exercised rather than assumed: a DOM-source
-    // module that is NOT generic-face must still declare the blocker.
+    // module that is NOT generic-face is refused outright.
+    //
+    // ⚠ THIS ARM USED TO ASSERT THE MESSAGE NAMED `needs-media-controller` —
+    // the escape a bespoke-surface entry took by DECLARING the blocker. That
+    // escape was deleted with the blocker itself (2026-09-02; see
+    // `MigrationBlockerId` in face-migration-inventory.ts for why the last
+    // declaration went), so there is nothing left to declare and the arm now
+    // asserts the refusal it was always really about: the shell parks a
+    // DOM-source module's card off-screen whatever its disposition says, so an
+    // un-carried one is an offender however it is labelled.
     const blockerOffenders = carriedAffordanceOffenders(
       ['syntheticBlockedSource'],
       {},
       () => ({ type: 'syntheticBlockedSource', disposition: 'bespoke-surface', why: 'synthetic' }),
     );
-    expect(blockerOffenders, 'a blocker-less DOM source was accepted').toHaveLength(1);
-    expect(blockerOffenders[0]).toContain('needs-media-controller');
+    expect(blockerOffenders, 'an un-carried non-generic-face DOM source was accepted').toHaveLength(1);
+    expect(blockerOffenders[0]).toContain('syntheticBlockedSource');
+    expect(blockerOffenders[0]).toContain('CARD_SOURCE_FACED');
 
     // And the mechanism is not dead code: real modules DO reach the exemption.
     const covered = [...DOM_SOURCE_LANE_TYPES].filter((t) => CARD_SOURCE_FACED[t]);

@@ -225,10 +225,37 @@ const EXTRAS_OWNERS: Readonly<Record<string, ExtrasOwnerVerdict>> = {
     owner: 'node-lifetime-producer',
     why: "the picture is the deterministic replay of node.data.ops; unmounted it read a blank white page (meanRGB 255,255,255) against the drawing's 255,0,0",
   },
-  ToyboxCard: {
-    owner: 'node-lifetime-producer',
-    why: 'an IMAGE layer is node.data.layers[i].imageBytes decoded — picturebox wearing a layer index; the VIDEO half is a local file no reload can reconstruct and its attach already survives an unmount',
-  },
+  // ⚠ ToyboxCard LEFT THIS ROSTER 2026-09-02 (the face promotion), through the
+  // SAME scan boundary GibribbonCard and NibblesCard left by — the THIRD time a
+  // face PR has moved a card's `read(…, 'extras')` call out of a `*Card.svelte`
+  // and silently emptied this gate's subject set for that module. Here the card
+  // became a ~120-line frame around the shared
+  // `$lib/ui/modules/toybox/ToyboxConsole.svelte`, which the legacy card and the
+  // faceplate body both mount, and the extras call went with the console — a
+  // file this `*Card.svelte`-only scan cannot see. Its verdict read:
+  // "node-lifetime-producer — an IMAGE layer is node.data.layers[i].imageBytes
+  // decoded — picturebox wearing a layer index; the VIDEO half is a local file
+  // no reload can reconstruct and its attach already survives an unmount".
+  //
+  // THE SUBSTANCE IS UNCHANGED AND NOW STRONGER, which is why this is a
+  // deletion and not a move. Both halves of that verdict are still true and
+  // still gated elsewhere: the image half is a `node-extras-registry` producer
+  // (toybox is in `EXTRAS_PRODUCER_TYPES`, anchored by this file's own
+  // NODE-LIFETIME PRODUCER leg), so an image layer is reproduced from
+  // `node.data` with no surface mounted at all; and the video half's elements,
+  // object-URLs and camera tracks live in `$lib/ui/media/node-media-registry`
+  // on GRAPH lifetime since #1589, with `nodeMedia.sweep(...)` from Canvas as
+  // the only teardown. What promotion changed is only WHERE the console lives.
+  //
+  // ⚠ AND THE never-INITIALISES half (#1720) does not apply either, for a
+  // structural reason rather than a careful one: `toybox.ts`'s factory renders
+  // all four layers from `node.data` every frame — shader, mesh and image
+  // layers all come back from the graph — so a rack reopened with no dock ever
+  // opened paints its patch. What crosses the extras channel is the two things
+  // the GRAPH genuinely cannot hold: a decoded ImageBitmap (a cache of bytes
+  // that ARE in the graph) and a local `<video>` element (a file no reload can
+  // reconstruct, whose absence the console reports in words — "not loaded in
+  // this session — re-pick the file").
   ArchivistCard: {
     owner: 'headless-card-mount',
     why: 'the extras channel rides alongside a card-owned DOM media element the engine holds via attachExternalSource, so the card must stay mounted for the SOURCE regardless',
