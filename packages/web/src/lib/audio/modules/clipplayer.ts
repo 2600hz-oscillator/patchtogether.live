@@ -52,6 +52,7 @@ import { drainAudition, clearAudition } from './clip-audition';
 import { applyPitchProbability } from '$lib/audio/pitch-probability';
 import {
   readClip,
+  clipLengthSteps,
   notesFiringAt,
   lanesFromFiring,
   assignPolyLanes,
@@ -411,7 +412,10 @@ export const clipplayerDef: AudioModuleDef = {
     ): PlayingLaneClock[] {
       return referenceClocks(d?.playing, (L, slot) => {
         const clip = readClip(d, clipIndex(slot, L)); // SYNCED clip at the synced slot
-        const len = clip?.kind === 'note' ? Math.max(1, clip.lengthSteps) : 1;
+        // KIND-AGNOSTIC LENGTH. The reference bar is the LONGEST playing clip's
+        // wrap, so a clip whose length this collector cannot see drags the
+        // shared bar down to one step for every peer at once.
+        const len = clipLengthSteps(clip);
         const divIdx = clipDivIndex(clip?.kind === 'note' ? clip : null, d, L); // SYNCED rate/div
         return {
           lenSteps: len,
@@ -1398,6 +1402,11 @@ export const clipplayerDef: AudioModuleDef = {
         return [];
       }
       const clip = readClip(liveData(), clipIndex(ln.active, L));
+      // NOTE clips emit steps. An AUDIO clip deliberately emits NOTHING here:
+      // it is not a step sequence, it is one buffer scheduled once at launch
+      // and looped by the source node, so a per-step emit would be a second,
+      // drifting opinion about when it sounds. This `[]` is the right answer
+      // for it, not a not-yet-implemented one.
       if (!clip || clip.kind !== 'note') return [];
       // Roll the per-note probability dice ONCE for this lane-step; the survivors
       // drive BOTH the audio scheduling below AND the print buffer (via the
@@ -2099,10 +2108,11 @@ export const clipplayerDef: AudioModuleDef = {
               ln.divIndex = clipDivIndex(activeClip?.kind === 'note' ? activeClip : null, d0, L);
             }
             const laneDur = laneStepDur(stepDur, ln.divIndex);
-            // Loop length from the CACHED clip (a NOTE clip loops over its own
-            // lengthSteps — its sibling automation is LINKED to the same length;
-            // audio/snapshot shells fall back to 1).
-            const len = activeClip?.kind === 'note' ? Math.max(1, activeClip.lengthSteps) : 1;
+            // Loop length from the CACHED clip, KIND-AGNOSTICALLY (a note clip
+            // loops over its own lengthSteps — its sibling automation is LINKED
+            // to the same length; an audio clip loops over the length its take
+            // was recorded to; a kind with no length reads 1).
+            const len = clipLengthSteps(activeClip);
             // SWING: even steps sit on the un-swung grid, odd steps push late by
             // swing*laneDur. Swing 0 ⇒ offset 0 ⇒ the emitted times are the base
             // grid (byte-identical to the un-swung schedule). The grid recurrence
@@ -2256,7 +2266,13 @@ export const clipplayerDef: AudioModuleDef = {
           for (let L = 0; L < LANES; L++) {
             const ln = lanes[L];
             const clip = laneClips[L];
-            if (ln.active === null || clip?.kind !== 'note') {
+            // KIND-AGNOSTIC. Publish the phase for ANY playing clip that has a
+            // length, not just a note one: the audio clip recorder needs this
+            // lane's live phase to resolve a punch-in against the same wrap the
+            // grid is showing, and re-deriving it there would be a second
+            // opinion about where the playhead is. A STOPPED lane still
+            // publishes null (fall back to the audible step).
+            if (ln.active === null || !clip) {
               setLanePhase(nodeId, L, null);
               continue;
             }
@@ -2265,7 +2281,7 @@ export const clipplayerDef: AudioModuleDef = {
               anchorStep: a.step,
               anchorTime: a.step >= 0 ? a.time : -Infinity,
               laneDur: laneStepDur(stepDur, ln.divIndex),
-              lengthSteps: Math.max(1, clip.lengthSteps),
+              lengthSteps: clipLengthSteps(clip),
               ctxTime: ctx.currentTime,
               perfNow,
             });
