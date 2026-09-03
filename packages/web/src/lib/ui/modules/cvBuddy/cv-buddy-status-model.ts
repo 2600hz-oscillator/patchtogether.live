@@ -79,6 +79,10 @@ export function cvBuddyRoutedDetail(
   return 'Not routed: every ES-9 note jack is already allocated to other CV Buddies on this rack.';
 }
 
+/** Which mechanism drives the RUN + CLOCK jacks — mirrors
+ *  `CvBuddyClockHealth.driver` (cv-buddy.ts read('clockHealth')). */
+export type CvBuddyClockDriver = 'worklet' | 'main';
+
 /**
  * The late-tick counter, as words for the lamp's `title` / `aria-label`.
  *
@@ -88,15 +92,32 @@ export function cvBuddyRoutedDetail(
  * exactly what "instrumented, and healthy" looks like, with no text at all. The
  * count itself is a measurement, so it goes here rather than onto the plate.
  *
- * The two-instrument sentence is repeated in both branches on purpose — this
+ * The two-instrument sentence is repeated in every branch on purpose — this
  * string is the only place a player is told that `skips` and the ES-9 card's
  * `xruns` have OPPOSITE fixes, and that is the whole diagnostic value of
  * either number.
+ *
+ * ⚠ THE DRIVER CHANGES WHAT A RISING COUNT MEANS, so it changes the sentence.
+ * Under the 'worklet' driver (every real browser) the CLOCK jack is emitted on
+ * the audio thread and a main-thread stall costs NOTHING at the jack — the
+ * counter keeps rising because it still measures the stalls themselves, which
+ * is exactly the number that tells a UI stall from an ES-9 underrun. Under the
+ * 'main' driver (test/SSR, or a context whose worklet failed to load) a rising
+ * count means what it always meant: pulses the jack never carried.
  */
-export function cvBuddySkipDetail(skips: number): string {
+export function cvBuddySkipDetail(skips: number, driver: CvBuddyClockDriver = 'main'): string {
   const tail =
     'Rising here means a main-thread stall; rising xruns on the ES-9 card instead means the jack '
     + 'is starving. Neither means look elsewhere.';
+  if (driver === 'worklet') {
+    if (skips <= 0) {
+      return `No main-thread stalls since this node was created. The clock itself is generated on `
+        + `the audio thread, so a stall would delay nothing at the jack. ${tail}`;
+    }
+    return `${skips} clock pulse${skips === 1 ? '' : 's'} came due during a main-thread stall — the `
+      + `audio-thread clock still emitted ${skips === 1 ? 'it' : 'them'}, so nothing was lost at `
+      + `the jack. ${tail}`;
+  }
   if (skips <= 0) return `No late clock pulses since this node was created. ${tail}`;
   return `${skips} clock pulse${skips === 1 ? '' : 's'} a late scheduler tick could not place. ${tail}`;
 }

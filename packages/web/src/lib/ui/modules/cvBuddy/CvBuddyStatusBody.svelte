@@ -54,13 +54,14 @@
     type CvBuddyAlloc,
     type CvBuddyInstance,
   } from '$lib/audio/cv-buddy/slot-alloc';
-  import type { CvBuddyClockState } from '$lib/audio/modules/cv-buddy';
+  import type { CvBuddyClockState, CvBuddyClockHealth } from '$lib/audio/modules/cv-buddy';
   import {
     cvBuddyRouted,
     cvBuddyRoutedDetail,
     cvBuddySkipDetail,
     cvBuddySlotDetail,
     cvBuddySlotName,
+    type CvBuddyClockDriver,
   } from './cv-buddy-status-model';
 
   let { nodeId }: { nodeId: string } = $props();
@@ -119,6 +120,11 @@
   // other instance the lamp does not render: there is no measurement, and a
   // permanently dark lamp for a thing that cannot happen is noise.
   let clockSkips = $state(0);
+  // WHICH mechanism drives the jacks (read('clockHealth').driver): the same
+  // stall shows as a lost pulse under 'main' and as an ABSORBED stall under
+  // 'worklet' (the audio-thread clock kept emitting) — the lamp's detail
+  // sentence must not claim a loss that did not happen.
+  let clockDriver = $state<CvBuddyClockDriver>('main');
   $effect(() => {
     if (!ownsClock) {
       clockSkips = 0;
@@ -130,6 +136,8 @@
       if (!e || !n) return;
       const st = e.read(n, 'state') as CvBuddyClockState | undefined;
       if (st && typeof st.skips === 'number') clockSkips = st.skips;
+      const h = e.read(n, 'clockHealth') as CvBuddyClockHealth | undefined;
+      if (h && (h.driver === 'worklet' || h.driver === 'main')) clockDriver = h.driver;
     };
     poll();
     // 1 Hz: a cumulative counter, not a meter. Fast polling would buy nothing,
@@ -138,7 +146,7 @@
     return () => clearInterval(timer);
   });
 
-  let skipDetail = $derived<string>(cvBuddySkipDetail(clockSkips));
+  let skipDetail = $derived<string>(cvBuddySkipDetail(clockSkips, clockDriver));
 </script>
 
 <div class="cv-buddy-status" data-testid="cv-buddy-status-{nodeId}">

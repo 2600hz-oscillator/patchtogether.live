@@ -141,4 +141,34 @@ describe('the LATE lamp\'s detail — a count that never paints', () => {
     // `read('state')` returning something odd must not produce "-3 clock pulses".
     expect(cvBuddySkipDetail(-3)).toBe(cvBuddySkipDetail(0));
   });
+
+  it("the 'worklet' driver never claims a loss — the audio-thread clock absorbed the stall", () => {
+    // Under the cv-clock worklet a rising count measures main-thread stalls
+    // the jack never felt. The 'main' text ("could not place") would be a
+    // false alarm about pulses that WERE emitted.
+    const d = cvBuddySkipDetail(3, 'worklet');
+    expect(d).toContain('3 clock pulses');
+    expect(d).toMatch(/audio-thread clock still emitted/);
+    expect(d).not.toMatch(/could not place/);
+    expect(cvBuddySkipDetail(1, 'worklet')).toContain('1 clock pulse came due');
+  });
+
+  it("the 'worklet' healthy branch says WHY a stall would be harmless", () => {
+    const d = cvBuddySkipDetail(0, 'worklet');
+    expect(d).toMatch(/generated on the audio thread/);
+    expect(d, 'a zero must not be printed as a number').not.toMatch(/\b0\b/);
+  });
+
+  it('⚠ the two-instrument pairing survives under BOTH drivers', () => {
+    for (const n of [0, 1, 42]) {
+      for (const driver of ['worklet', 'main'] as const) {
+        expect(cvBuddySkipDetail(n, driver)).toMatch(/xruns on the ES-9 card/);
+        expect(cvBuddySkipDetail(n, driver)).toMatch(/main-thread stall/);
+      }
+    }
+  });
+
+  it("the default driver is 'main' — the existing card contract is unchanged", () => {
+    expect(cvBuddySkipDetail(7)).toBe(cvBuddySkipDetail(7, 'main'));
+  });
 });
