@@ -55,6 +55,11 @@ import {
   clipLengthSteps,
   notesFiringAt,
   lanesFromFiring,
+  assignPolyLanes,
+  createPolyLaneBook,
+  freePolyLanesAt,
+  resetPolyLaneBook,
+  type PolyLaneBook,
   type NoteEvent,
   DEFAULT_VELOCITY,
   clipIndex,
@@ -494,6 +499,11 @@ export const clipplayerDef: AudioModuleDef = {
       // positional repack: releasing a low note no longer shifts the others down
       // a lane (which rewrote pitch on a still-sounding voice → glitch).
       alloc: VoiceAllocator;
+      // CLIP PLAYBACK voice ownership. Distinct from `alloc` above, which is
+      // edge-driven and serves LIVE AUDITION: playback SCHEDULES ahead, so a
+      // note's release is a future TIME rather than an event to react to. See
+      // `assignPolyLanes`.
+      playBook: PolyLaneBook;
       // The MIDI note (or null) currently WRITTEN to each poly voice-lane, so a
       // drain reconciles ownership → the MINIMUM set of clean gate/pitch edges
       // (a held voice whose owner is unchanged is never re-written).
@@ -528,6 +538,7 @@ export const clipplayerDef: AudioModuleDef = {
         lastVel: 0,
         sched: [],
         alloc: createVoiceAllocator(POLY_CHANNEL_PAIRS),
+        playBook: createPolyLaneBook(),
         laneKey: new Array<number | null>(POLY_CHANNEL_PAIRS).fill(null),
         audVel: 0,
         autoStarted: false,
@@ -1258,7 +1269,16 @@ export const clipplayerDef: AudioModuleDef = {
         if (v > vel) vel = v;
       }
       const gateOff = Math.max(0.001, maxLen * secPerBeat);
-      ln.poly.scheduleStep(at, voiced, gateOff, { writePitch: true, writeGate: true });
+      // Same sparse, allocated write as the session path — an ARRANGEMENT has
+      // the identical overlap shape (a pad printed under a moving line is two
+      // chords at different beats), so the positional re-pack would collapse it
+      // the same way. See `assignPolyLanes`.
+      for (const wv of assignPolyLanes(ln.playBook, chord, at, gateOff)) {
+        const v = ln.poly.voices[wv.lane]!;
+        v.pitchSrc.offset.setValueAtTime(wv.pitch + octave, wv.onAt);
+        v.gateSrc.offset.setValueAtTime(1, wv.onAt);
+        v.gateSrc.offset.setValueAtTime(0, wv.offAt);
+      }
       ln.gateSrc.offset.setValueAtTime(1, at);
       ln.gateSrc.offset.setValueAtTime(0, at + gateOff);
       ln.velSrc.offset.setValueAtTime(vel, at);
@@ -1311,6 +1331,13 @@ export const clipplayerDef: AudioModuleDef = {
       ln.velSrc.offset.cancelScheduledValues(at);
       ln.velSrc.offset.setValueAtTime(0, at);
       ln.poly.silence(at);
+      // ⚠ AND THE PLAYBACK BOOK, unlike the audition allocator one line down.
+      // The two differ because their ownership means different things: the KEYS
+      // allocator still owns lanes for keys a human is physically holding, while
+      // `poly.silence` has just cancelled every SCHEDULED gate — so no clip
+      // voice is sounding any more and a book that still claimed lanes would
+      // steal from itself and refuse the next chord its own free lanes.
+      resetPolyLaneBook(ln.playBook);
       // A panic/stop zeroes the poly voices in hardware but KEEPS the audition
       // allocator's ownership (the KEYS keys are still physically held). Clear the
       // written-state mirror so the next audition drain RE-OPENS every still-held
@@ -1596,24 +1623,37 @@ export const clipplayerDef: AudioModuleDef = {
         r.gateSteps > 1 ? Math.max(0.001, span - 0.002) : Math.max(0.001, span * gateFrac);
       const voiced = r.lanes.map((v) => ({ pitch: v.pitch + octave, gate: v.gate }));
       // Gate-sampled Sample & Hold (ONE global toggle for all 8 lanes, default
-      // ON). On a GATED step (r.any) we always write pitch (the gate edge — the
-      // pitch re-latches). On an EMPTY step (a rest) with S&H ON we schedule
-      // ONLY the per-voice gate-close and leave pitchSrc untouched, so the
-      // lane's pitch CV HOLDS its last value (no external S&H needed). With S&H
-      // OFF an empty step rewrites pitch=0 (legacy continuous behavior). Note:
-      // on a clip (re)launch the first note step is r.any, so pitch re-latches
-      // correctly and leading rests of a NEW clip can't hold the prior clip's
-      // pitch through a gated step.
+      // ON). On an EMPTY step (a rest) with S&H ON nothing is written at all, so
+      // each lane's pitch CV HOLDS its last value (no external S&H needed). With
+      // S&H OFF an empty step rewrites pitch=0 on the lanes that are actually
+      // FREE (legacy continuous behavior, minus the part that was a bug).
       const snh = readParam('snh', 1) >= 0.5;
-      const writePitch = r.any || !snh ? true : false;
-      // writeGate: r.any — only NOTE steps touch the poly gate; rest steps leave
-      // it untouched so a held/tied note (gateSteps>1) keeps its poly gate HIGH
-      // across the span, exactly like the mono gate below (which the else branch
-      // never re-zeroes). Before this, poly.scheduleStep re-wrote gate=0 on every
-      // rest step → a tied note released a step early on the poly bus while the
-      // mono bus sustained (gate/held-note plan Phase 1). A note self-closes via
-      // gateOff on its own note step, so a skipped rest never sticks a gate high.
-      ln.poly.scheduleStep(atTime, voiced, gateOff, { writePitch, writeGate: r.any });
+      // ⚠ SPARSE, PER-VOICE WRITES — never `poly.scheduleStep`, which writes ALL
+      // POLY_CHANNEL_PAIRS lanes (`lanes[i] ?? { pitch: 0, gate: 0 }`) and so
+      // closes every voice this step did not itself fill. Combined with the
+      // positional re-pack in `lanesFromFiring`, that is the owner-reported
+      // "poly lane to a poly synth isn't playing polyphony": a note starting
+      // while another is held landed on the HELD note's lane, rewriting its
+      // pitch under a gate that never fell, so an edge-tracking consumer
+      // (MIDI-OUT-BUDDY) emitted no second Note On and went on sounding the
+      // first pitch. `assignPolyLanes` gives each note a lane of its own for its
+      // whole life and returns ONLY the lanes to touch. See its header for the
+      // measurement.
+      const writes = assignPolyLanes(ln.playBook, firing, atTime, gateOff);
+      for (const wv of writes) {
+        const v = ln.poly.voices[wv.lane]!;
+        v.pitchSrc.offset.setValueAtTime(wv.pitch + octave, wv.onAt);
+        v.gateSrc.offset.setValueAtTime(1, wv.onAt);
+        v.gateSrc.offset.setValueAtTime(0, wv.offAt);
+      }
+      if (!r.any && !snh) {
+        // A rest with S&H OFF zeroes the pitch of the lanes that hold nothing.
+        // ⚠ NEVER a busy lane: rewriting a sounding voice's pitch is the other
+        // half of the same defect.
+        for (const lane of freePolyLanesAt(ln.playBook, atTime)) {
+          ln.poly.voices[lane]!.pitchSrc.offset.setValueAtTime(0, atTime);
+        }
+      }
       ln.sched.push({ t: atTime, idx });
       if (ln.sched.length > 32) ln.sched.shift();
       if (r.any) {
