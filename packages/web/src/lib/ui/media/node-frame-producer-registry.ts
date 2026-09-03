@@ -128,6 +128,15 @@ export interface FrameEnv {
    * captured value would pin whichever arm happened to be true at boot.
    */
   prefersReducedMotion(): boolean;
+  /**
+   * A monotonic clock in milliseconds — `performance.now()` in the browser.
+   *
+   * INJECTED rather than called directly, because a producer whose picture is a
+   * function of WALL TIME (timelorde's beat pulse) is otherwise untestable
+   * without sleeping: the unit suite drives this forward by hand and asserts the
+   * frame moved BECAUSE the clock did.
+   */
+  nowMs(): number;
   /** `createImageBitmap`, or null where the runtime has none. */
   createImageBitmap: ((src: unknown) => Promise<unknown>) | null;
   /** Load an image asset by URL, resolving only once it is DECODED (not merely

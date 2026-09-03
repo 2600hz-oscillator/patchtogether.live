@@ -40,6 +40,7 @@ import {
   NODE_FRAME_PRODUCER_TYPES,
   SCOPE_FRAME_PRODUCER,
   SYNESTHESIA_FRAME_PRODUCER,
+  TIMELORDE_FRAME_PRODUCER,
 } from './frame-producers';
 import {
   createNodeFrameProducerRegistry,
@@ -82,8 +83,13 @@ function fakeEngine(params: Record<string, number> = {}): FakeEngine {
 
 const noGraph: FrameGraph = { findSource: () => null, node: () => undefined };
 
+/** The default host env: no reduced motion, no bitmaps, no images, and a clock
+ *  the test can WIND BY HAND — the whole reason `nowMs` is injected rather than
+ *  read from `performance`. */
+let fakeNowMs = 0;
 const env: FrameEnv = {
   prefersReducedMotion: () => false,
+  nowMs: () => fakeNowMs,
   createImageBitmap: null,
   loadImage: () => Promise.resolve(null),
 };
@@ -143,7 +149,7 @@ describe('NODE_FRAME_PRODUCER_TYPES — who owns a module per-frame push', () =>
   });
 
   it('is exactly the extracted set, so a silent departure is visible in the diff', () => {
-    expect([...NODE_FRAME_PRODUCER_TYPES].sort()).toEqual(['scope', 'synesthesia']);
+    expect([...NODE_FRAME_PRODUCER_TYPES].sort()).toEqual(['scope', 'synesthesia', 'timelorde']);
   });
 
   it('⚠ is DISJOINT from CARD_PRODUCER_LANE_TYPES — the atomicity gate', () => {
@@ -575,5 +581,205 @@ describe('SYNESTHESIA_FRAME_PRODUCER — the cross-domain pixel path, off the ca
     registry.sync([node('syn', 'synesthesia', { a_mode: 1 })], eng);
     registry.tick();
     expect(eng.writes).toEqual([]);
+  });
+});
+
+// ── THE TIMELORDE PRODUCER ───────────────────────────────────────────────────
+
+describe('TIMELORDE_FRAME_PRODUCER — the composited display, off the card', () => {
+  interface TlHarness {
+    registry: ReturnType<typeof createNodeFrameProducerRegistry>;
+    eng: FakeEngine;
+    /** Every 2D op the composite performed, in order. */
+    ops: string[];
+    /** Bitmaps handed to `createImageBitmap`, resolved by `settle()`. */
+    settle: () => Promise<void>;
+    conversions: number;
+  }
+
+  function tlHarness(opts: {
+    reduced?: boolean;
+    /** What `read(node,'hasDisplayFrame')` answers. */
+    holdsFrame?: () => 0 | 1;
+    /** Resolve the owl load with a decoded image (default) or nothing. */
+    owl?: { width: number; height: number } | null;
+    /** Hold conversions open until `settle()` — models a slow bitmap encode. */
+    slowConvert?: boolean;
+    graph?: FrameGraph;
+  }): TlHarness {
+    const ops: string[] = [];
+    let conversions = 0;
+    const pending: Array<() => void> = [];
+    const eng = fakeEngine();
+    eng.read = (_n, key) => (key === 'hasDisplayFrame' ? (opts.holdsFrame?.() ?? 0) : undefined);
+    const registry = createNodeFrameProducerRegistry(
+      [TIMELORDE_FRAME_PRODUCER],
+      {
+        createSurface(_nodeId, _type, w, h) {
+          return {
+            width: w,
+            height: h,
+            getContext: () =>
+              new Proxy(
+                {},
+                {
+                  get(_t, k) {
+                    if (k === 'getImageData') {
+                      return (_x: number, _y: number, gw: number, gh: number) => {
+                        ops.push('getImageData');
+                        return { data: new Uint8ClampedArray(gw * gh * 4) };
+                      };
+                    }
+                    return (...args: unknown[]) => {
+                      ops.push(`${String(k)}(${args.length})`);
+                    };
+                  },
+                  set(_t, k) {
+                    ops.push(`set:${String(k)}`);
+                    return true;
+                  },
+                },
+              ),
+          } as unknown as FrameSurface;
+        },
+        startTicker: () => () => {},
+        env: {
+          prefersReducedMotion: () => opts.reduced === true,
+          nowMs: () => fakeNowMs,
+          createImageBitmap: (_src) => {
+            conversions++;
+            return opts.slowConvert
+              ? new Promise<unknown>((r) => pending.push(() => r({})))
+              : Promise.resolve({});
+          },
+          loadImage: () =>
+            Promise.resolve(
+              opts.owl === null ? null : ((opts.owl ?? { width: 400, height: 400 }) as never),
+            ),
+        },
+      },
+      opts.graph ?? noGraph,
+    );
+    return {
+      registry,
+      eng,
+      ops,
+      get conversions() {
+        return conversions;
+      },
+      settle: async () => {
+        for (const r of pending.splice(0)) r();
+        // Two microtask turns: one for the bitmap promise, one for the `.then`.
+        await Promise.resolve();
+        await Promise.resolve();
+      },
+    };
+  }
+
+  it('composites the OWL and pushes a display frame when nothing is patched', async () => {
+    const h = tlHarness({});
+    h.registry.sync([node('t', 'timelorde')], h.eng);
+    h.registry.tick(); // kicks the owl load
+    await h.settle();
+    h.registry.tick(); // owl decoded — now it draws
+    await h.settle();
+    expect(h.ops.some((o) => o.startsWith('fillRect'))).toBe(true);
+    expect(h.ops.some((o) => o.startsWith('drawImage'))).toBe(true);
+    expect(h.eng.writes.map((w) => w.key)).toContain('displayFrame');
+  });
+
+  it('prefers the PATCHED FEED over the owl when one is connected', () => {
+    const graph: FrameGraph = {
+      findSource: (n, p) => (n === 't' && p === 'video_in' ? { nodeId: 'src', portId: 'out' } : null),
+      node: (id) => ({ id, type: 'src', domain: 'audio' } as unknown as ModuleNode),
+    };
+    const h = tlHarness({ graph });
+    h.eng.videoSource = () => ({ drawFrame: () => void h.ops.push('feedDrawFrame') });
+    h.registry.sync([node('t', 'timelorde')], h.eng);
+    h.registry.tick();
+    expect(h.ops).toContain('feedDrawFrame');
+    // …and it did NOT also paint the idle ground under it.
+    expect(h.ops.some((o) => o.startsWith('fillRect'))).toBe(false);
+  });
+
+  it('⚠ under REDUCED MOTION it CONVERGES: pushes while the node holds nothing, then stops', () => {
+    // The live bug this arm encodes: a one-shot push that lands before the
+    // engine handle exists — or on a handle that is then replaced — is lost
+    // FOREVER, and video_out serves the idle field for the rest of the session.
+    let holds: 0 | 1 = 0;
+    const h = tlHarness({ reduced: true, holdsFrame: () => holds });
+    h.registry.sync([node('t', 'timelorde')], h.eng);
+    h.registry.tick();
+    h.registry.tick();
+    expect(h.conversions, 'it keeps trying while the node holds no frame').toBeGreaterThan(0);
+    const before = h.conversions;
+    holds = 1;
+    h.registry.tick();
+    h.registry.tick();
+    expect(h.conversions, 'and stops the moment the node holds one').toBe(before);
+  });
+
+  it('⚠ under REDUCED MOTION the picture is the BARE owl — no per-pixel beat boost', async () => {
+    // `pulse` is pinned to 0 there, and the boost is what makes the frame a
+    // function of wall-clock time. Its absence is the whole VRT determinism
+    // claim, so it is asserted at the op stream rather than described.
+    const h = tlHarness({ reduced: true });
+    h.registry.sync([node('t', 'timelorde')], h.eng);
+    h.registry.tick();
+    await h.settle();
+    fakeNowMs = 12_345;
+    h.registry.tick();
+    await h.settle();
+    expect(h.ops).not.toContain('getImageData');
+    expect(h.ops.some((o) => o.startsWith('putImageData'))).toBe(false);
+    fakeNowMs = 0;
+  });
+
+  it('the beat boost runs when the CLOCK says it should — the picture follows time', async () => {
+    // The inverse control of the leg above: with motion allowed, the same
+    // producer DOES read back and boost, and it does so because `nowMs` moved.
+    // Injecting the clock is what makes that assertable without sleeping.
+    const h = tlHarness({});
+    h.registry.sync([node('t', 'timelorde', { bpm: 120, running: 1 })], h.eng);
+    h.registry.tick();
+    await h.settle();
+    let boosted = false;
+    // Sweep a whole beat: `beatPulse` is FLAT 0 for the last 40 % of every beat,
+    // so a single sample can legitimately miss — the same trap the e2e movement
+    // probe records for this module.
+    for (let ms = 0; ms <= 500; ms += 25) {
+      fakeNowMs = ms;
+      h.ops.length = 0;
+      h.registry.tick();
+      await h.settle();
+      if (h.ops.includes('getImageData')) boosted = true;
+    }
+    fakeNowMs = 0;
+    expect(boosted, 'somewhere in a beat the pulse is non-zero and the boost runs').toBe(true);
+  });
+
+  it('⚠ ONE bitmap conversion in flight — a slow encode must not queue up', async () => {
+    const h = tlHarness({ slowConvert: true });
+    h.registry.sync([node('t', 'timelorde')], h.eng);
+    h.registry.tick();
+    h.registry.tick();
+    h.registry.tick();
+    expect(h.conversions, 'three frames, one conversion').toBe(1);
+    await h.settle();
+    h.registry.tick();
+    expect(h.conversions, 'and the next frame is free to start one').toBe(2);
+  });
+
+  it('per-node scratch: two timelordes keep separate beat anchors and owls', async () => {
+    const h = tlHarness({});
+    h.registry.sync([node('t1', 'timelorde'), node('t2', 'timelorde')], h.eng);
+    h.registry.tick();
+    await h.settle();
+    h.registry.tick();
+    await h.settle();
+    const rows = h.registry.snapshot();
+    expect(rows.map((r) => r.nodeId).sort()).toEqual(['t1', 't2']);
+    expect(rows.every((r) => r.hasSurface), 'each node composites into its OWN surface').toBe(true);
+    expect(rows.every((r) => r.lastError === null)).toBe(true);
   });
 });

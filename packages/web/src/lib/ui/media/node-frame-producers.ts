@@ -138,6 +138,9 @@ const registry = createNodeFrameProducerRegistry(
           window.matchMedia('(prefers-reduced-motion: reduce)').matches
         );
       },
+      nowMs() {
+        return typeof performance !== 'undefined' ? performance.now() : Date.now();
+      },
       createImageBitmap:
         typeof createImageBitmap === 'function'
           ? (src: unknown) => createImageBitmap(src as ImageBitmapSource)

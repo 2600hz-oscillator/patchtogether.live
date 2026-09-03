@@ -26,11 +26,14 @@
 // WHOLESALE for the WebGL attest, so importing is free and editing is not.
 
 import { scopeDef } from '$lib/audio/modules/scope';
+import { applyBeatBoost, beatPulse } from '$lib/audio/modules/timelorde-wizard';
 import { videoChannelLevels } from '../../../../../dsp/src/lib/synesthesia-dsp';
 import {
   frameProducerTypes,
   type FrameCtx,
+  type FrameImage,
   type FrameProducer,
+  type FrameSurface,
 } from './node-frame-producer-registry';
 
 /**
@@ -199,6 +202,222 @@ export const SYNESTHESIA_FRAME_PRODUCER: FrameProducer = {
   },
 };
 
+// ── TIMELORDE: the composited display, and the ONLY writer of it ─────────────
+//
+// TIMELORDE is an AUDIO module carrying a `video_in`/`video_out` pair so it can
+// sit INLINE in a video chain, and both are consumed on the main thread for the
+// same reason synesthesia's are: the audio engine has no AudioNode for a video
+// port. The composite is the patched feed when one is connected, else the
+// owner's owl painting with a colour-targeted beat boost on its eyes and border.
+// It is pushed into the node as an `ImageBitmap`, and `video_out`'s own
+// `drawFrame` blits the latest one downstream.
+//
+// ⚠ THIS PUSH IS THE SOLE WRITER OF THE NODE'S HELD FRAME, and the failure
+// without it is the STALE-BITMAP shape rather than a black one: `drawFrame`
+// keeps blitting the last frame anyone pushed, so a dead producer reads BRIGHT
+// and FROZEN. MEASURED with the dock full view open on a promoted timelorde
+// before `FACE_MOUNTS_PRODUCER` got its deny-by-default: the face canvas
+// painting `nonBlack 47034/48400` — a perfect picture, from a card that was
+// already gone. On a cold open with nothing pushed yet the same state paints the
+// `#07090d` idle field instead, and a VRT baseline captured then would have
+// pinned a black square forever. "Not black" cannot tell those apart; motion can.
+
+/** The composite size. The card composited at this size and pushed a bitmap of
+ *  it; both surfaces blit 1:1 from it, so it stays exactly what it was. */
+const TL_DISPLAY_W = 220;
+const TL_DISPLAY_H = 220;
+
+/** The owner's folk-art OWL PAINTING — a bundled static asset served at the site
+ *  root. Referenced by static path (the cadillac / media-burn precedent). */
+const TL_OWL_SRC = '/img/timelorde-owl.png';
+
+interface TimelordeState {
+  owl?: FrameImage | null;
+  owlPending?: boolean;
+  beatAnchorMs?: number;
+  prevRunning?: boolean;
+  /** An `ImageBitmap` conversion is in flight — see the note at the push. */
+  converting?: boolean;
+}
+
+function tlParam(ctx: FrameCtx, id: string, dflt: number): number {
+  const raw = ctx.node.params?.[id];
+  return typeof raw === 'number' ? raw : dflt;
+}
+
+/** Draw the LIVE feed patched into `video_in` into the scratch. True on success.
+ *  Structurally identical to synesthesia's reader and for the same reason: a
+ *  video-domain source is blitted through the engine's shared drawing buffer, an
+ *  audio-domain mono-video source paints itself in through `drawFrame`. */
+function tlDrawVideoFeed(
+  ctx: FrameCtx,
+  surface: FrameSurface,
+  ctx2d: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
+): boolean {
+  const src = ctx.graph.findSource(ctx.node.id, 'video_in');
+  if (!src) return false;
+  const srcDomain = ctx.graph.node(src.nodeId)?.domain ?? 'audio';
+  if (srcDomain === 'video') {
+    const image = ctx.engine.blitVideoNode(src.nodeId);
+    if (!image) return false;
+    try {
+      ctx2d.clearRect(0, 0, TL_DISPLAY_W, TL_DISPLAY_H);
+      ctx2d.drawImage(image as CanvasImageSource, 0, 0, TL_DISPLAY_W, TL_DISPLAY_H);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  const vsrc = ctx.engine.videoSource(src.nodeId, src.portId);
+  if (!vsrc?.drawFrame) return false;
+  try {
+    vsrc.drawFrame(surface);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** The owl, with the colour-targeted beat boost. Until the image decodes we
+ *  paint just the dark idle ground, so the display is never garbage. */
+function tlDrawOwl(
+  ctx2d: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
+  owl: FrameImage | null,
+  pulse: number,
+): void {
+  ctx2d.clearRect(0, 0, TL_DISPLAY_W, TL_DISPLAY_H);
+  ctx2d.fillStyle = '#07090d';
+  ctx2d.fillRect(0, 0, TL_DISPLAY_W, TL_DISPLAY_H);
+  if (!owl) return;
+  const iw = owl.naturalWidth || owl.width;
+  const ih = owl.naturalHeight || owl.height;
+  if (!iw || !ih) return;
+  // object-fit: contain — preserve the painting's aspect, centred.
+  const scale = Math.min(TL_DISPLAY_W / iw, TL_DISPLAY_H / ih);
+  const dw = iw * scale;
+  const dh = ih * scale;
+  try {
+    ctx2d.imageSmoothingEnabled = true;
+    ctx2d.drawImage(
+      owl as unknown as CanvasImageSource,
+      (TL_DISPLAY_W - dw) / 2,
+      (TL_DISPLAY_H - dh) / 2,
+      dw,
+      dh,
+    );
+  } catch {
+    return; // not yet usable (decode race) — the idle ground stands
+  }
+  // ⚠ ONLY WHEN PULSING, which is what keeps the reduced-motion frame
+  // deterministic: `pulse` is pinned to 0 there, so the captured picture is the
+  // bare owl and the per-pixel boost never runs.
+  if (pulse <= 0) return;
+  let frame: ImageData;
+  try {
+    frame = ctx2d.getImageData(0, 0, TL_DISPLAY_W, TL_DISPLAY_H);
+  } catch {
+    return; // tainted/locked — the owl still shows
+  }
+  applyBeatBoost(frame.data, pulse);
+  ctx2d.putImageData(frame, 0, 0);
+}
+
+/**
+ * TIMELORDE — the composited display frame.
+ *
+ * ⚠ THE OWL IS AWAITED ON *DECODE*, NOT ON *LOAD*, and the distinction is
+ * measured. The card flipped its ready flag in `onload`, which fires when the
+ * bytes arrive and not when the bitmap is rasterised — so under
+ * `prefers-reduced-motion` (the VRT capture) exactly one frame is painted and
+ * whatever raster state Chromium happened to be in is LATCHED into it forever.
+ * 13 of 20 separate processes failed unmasked on that. `env.loadImage` resolves
+ * on decode; see its note in `./node-frame-producers`.
+ */
+export const TIMELORDE_FRAME_PRODUCER: FrameProducer = {
+  type: 'timelorde',
+  why:
+    "the composited display is pushed into the node and `video_out`'s own drawFrame blits the " +
+    'LATEST one — so this push is the only writer of what the module passes downstream. With no ' +
+    'writer the port does not go black, it FREEZES on the last bitmap anyone pushed (measured: a ' +
+    'face painting nonBlack 47034/48400 from a card that was already gone), or serves the ' +
+    '#07090d idle field on a cold open.',
+  frame(ctx) {
+    const state = ctx.state as TimelordeState;
+
+    // The owl, once per node. `loadImage` resolves on DECODE.
+    if (state.owl === undefined && !state.owlPending) {
+      state.owlPending = true;
+      void ctx.env.loadImage(TL_OWL_SRC).then((img) => {
+        state.owl = img;
+        state.owlPending = false;
+      });
+    }
+
+    const bpm = tlParam(ctx, 'bpm', 120);
+    const running = tlParam(ctx, 'running', 1) >= 0.5;
+
+    // Re-anchor the beat phase on a stopped→running transition, so the flash
+    // lands on the downbeat after a start rather than at an arbitrary offset.
+    if (running && state.prevRunning === false) state.beatAnchorMs = ctx.env.nowMs();
+    state.prevRunning = running;
+    if (state.beatAnchorMs === undefined) state.beatAnchorMs = ctx.env.nowMs();
+
+    const reduced = ctx.env.prefersReducedMotion();
+
+    // ⚠ THE REDUCED-MOTION ARM IS A CONVERGENCE, NOT A ONE-SHOT, AND THAT WAS A
+    // LIVE BUG. Pushing exactly once means a write that lands before the engine
+    // handle exists — or on a handle that is then replaced — is lost FOREVER,
+    // and `video_out` serves the idle field for the rest of the session.
+    // MEASURED on a default rack under `reducedMotion: 'reduce'`, with the card
+    // mounted and its own canvas carrying the owl at `nonBlack 47034/48400`:
+    // `video_out` read `nonBlack 0/3072, maxLuma 9`. Ordinary racks never saw it
+    // because the live loop re-pushes every frame and the loss self-heals.
+    // So: ask the node whether it HOLDS a frame, and re-do the work only while
+    // it does not. One boolean read per frame, no allocation, no repaint — and
+    // it heals a replaced handle too, which a one-shot retry could not.
+    if (reduced && ctx.engine.read(ctx.node, 'hasDisplayFrame') === 1) return;
+
+    const pulse = reduced
+      ? 0
+      : beatPulse({ bpm, running, nowMs: ctx.env.nowMs(), anchorMs: state.beatAnchorMs });
+
+    const surface = ctx.surface(TL_DISPLAY_W, TL_DISPLAY_H);
+    if (!surface) return;
+    const ctx2d = surface.getContext('2d') as
+      | (CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D)
+      | null;
+    if (!ctx2d) return;
+
+    // The feed wins; the owl is the fallback. ⚠ AND THE OWL IS COMPOSITED EVEN
+    // WHEN A SURFACE SHOWS "wizard off" — that switch hides the on-card picture,
+    // it does not stop the module emitting one, so `video_out` still carries a
+    // coherent frame. `wizardDisplayMode` is the surfaces' business, not this
+    // one's.
+    if (!tlDrawVideoFeed(ctx, surface, ctx2d)) tlDrawOwl(ctx2d, state.owl ?? null, pulse);
+
+    // ⚠ ONE CONVERSION IN FLIGHT AT A TIME. `createImageBitmap` is async, and
+    // the card's version fired one per frame unguarded — fine while conversion
+    // beats the frame budget, and an unbounded queue of decoded bitmaps when it
+    // does not. This cannot reduce the steady-state rate (one per frame is the
+    // ceiling either way); it only refuses to START a second conversion while
+    // the first is still running, which is exactly when you want fewer.
+    const make = ctx.env.createImageBitmap;
+    if (!make || state.converting) return;
+    state.converting = true;
+    void make(surface)
+      .then((bmp) => {
+        state.converting = false;
+        // The handle CLOSES the previous bitmap on write (timelorde.ts), so the
+        // only leak to worry about is a node that left mid-conversion — the
+        // registry has already dropped it, and the write is a no-op there.
+        ctx.engine.write(ctx.node, 'displayFrame', bmp);
+      })
+      .catch(() => {
+        state.converting = false;
+      });
+  },
+};
+
 /**
  * The producers this seam owns.
  *
@@ -210,6 +429,7 @@ export const SYNESTHESIA_FRAME_PRODUCER: FrameProducer = {
 export const FRAME_PRODUCERS: readonly FrameProducer[] = [
   SCOPE_FRAME_PRODUCER,
   SYNESTHESIA_FRAME_PRODUCER,
+  TIMELORDE_FRAME_PRODUCER,
 ];
 
 /**

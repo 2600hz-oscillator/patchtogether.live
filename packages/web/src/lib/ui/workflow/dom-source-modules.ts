@@ -236,13 +236,6 @@ export const DOM_SOURCE_LANE_TYPES: ReadonlySet<string> = new Set<string>([]);
  *                VIDEO OUT` is a black screen. MEASURED with the card never
  *                mounted: nonBlack 0/3072 px, maxLuma 0, ONE distinct frame
  *                signature across 42 rAF frames.
- *   timelorde    the card composites its big display (the patched video_in
- *                feed, else the beat-pulsing owl) and pushes it with
- *                `write(node,'displayFrame')`. Unpushed, `drawFrame` paints
- *                the #07090d idle field. MEASURED never-mounted: nonBlack 0,
- *                maxLuma 8 (that idle colour), 1 distinct signature / 42
- *                frames; with the card mounted: nonBlack 2944/3072, maxLuma
- *                232, 4 distinct signatures over 6 samples.
  *   rasterize    the card reads `readParam` (the knob PLUS the engine's own
  *                per-port CV tap) and pushes `write(node,'cvCombined')`, which
  *                is how a SAME-DOMAIN cv cable reaches a DISPLAY param at all:
@@ -311,6 +304,30 @@ export const DOM_SOURCE_LANE_TYPES: ReadonlySet<string> = new Set<string>([]);
  * downstream of them; `synesthesia-video-mode.spec.ts` drives ACIDWARP into
  * `a_video_in` and reads both.
  *
+ * ⚠ AND TIMELORDE (legacy-removal S1) — the third producer departure, and the
+ * one whose failure mode is BRIGHT rather than dark.
+ *
+ * Its card composited the big display (the patched `video_in` feed, else the
+ * beat-pulsing owl) and pushed it into the node as an ImageBitmap;
+ * `video_out`'s own `drawFrame` blits the LATEST one downstream. Stop the push
+ * and the port does not go black — it FREEZES on the last bitmap anyone pushed.
+ * MEASURED with the dock full view open on a promoted timelorde: the face canvas
+ * painting `nonBlack 47034/48400`, a perfect picture from a card that was
+ * already gone. Cold, with nothing pushed yet, the same state serves the
+ * `#07090d` idle field (measured never-mounted: nonBlack 0, maxLuma 8, 1
+ * distinct signature over 42 frames), and a VRT baseline captured then would
+ * have pinned a black square forever. `TIMELORDE_FRAME_PRODUCER` owns it now.
+ *
+ * ⚠ AND ITS CARD BECAME A SECOND READER OF ITS OWN FACE'S IMPLEMENTATION.
+ * `timelorde/TimelordeDisplayBody.svelte` already said "THIS COMPONENT RENDERS
+ * NOTHING. It BLITS" — pulling `video_out`'s drawFrame so the faceplate and the
+ * downstream module cannot disagree. `TimelordeCard` now does exactly that too,
+ * which collapses the owl render, the colour-targeted beat boost, the
+ * reduced-motion freeze and the live-monitor branch into ONE implementation
+ * owned by the node. The card's two-armed reduced-motion loop went with it: a
+ * blit of a settled frame is byte-identical every time, so the arm that existed
+ * to keep the VRT capture deterministic has nothing left to protect against.
+ *
  * ⚠ AND THE TRACE MOVED WITH IT, WHICH IS THE HALF A READER WILL LOOK FOR. The
  * picture is `modules/scope/ScopeTraceSurface.svelte` now — one renderer for the
  * legacy card, the faceplate body and `GroupCard`'s viz-passthrough mount, where
@@ -334,7 +351,6 @@ export const DOM_SOURCE_LANE_TYPES: ReadonlySet<string> = new Set<string>([]);
 export const CARD_PRODUCER_LANE_TYPES: ReadonlySet<string> = new Set<string>([
   'cube',
   'rasterize',
-  'timelorde',
   'wavesculpt',
 ]);
 

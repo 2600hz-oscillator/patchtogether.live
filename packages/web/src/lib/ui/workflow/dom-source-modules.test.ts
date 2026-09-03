@@ -1213,10 +1213,17 @@ describe('needsHeadlessSourceMount — the pure headless-mount decision', () => 
   });
 
   it('mounts a CARD-PRODUCER module on the same two kinds (#1587)', () => {
-    for (const kind of KINDS) {
-      const want = kind === 'shell' || kind === 'placeholder';
-      expect(needsHeadlessSourceMount({ kind, type: 'wavesculpt' }), `wavesculpt @ ${kind}`).toBe(want);
-      expect(needsHeadlessSourceMount({ kind, type: 'timelorde' }), `timelorde @ ${kind}`).toBe(want);
+    // ⚠ SUBJECTS DERIVED, NOT NAMED. This leg used to spell `wavesculpt` and
+    // `timelorde`, and the legacy-removal producer extractions retire members of
+    // this set one commit at a time — so a named subject reddens on the commit
+    // that converts it, on a rule that has not changed. Reading the set is also
+    // the stronger claim: EVERY member gets the host, not two of them.
+    expect(CARD_PRODUCER_LANE_TYPES.size, 'no producer left to check').toBeGreaterThan(0);
+    for (const type of CARD_PRODUCER_LANE_TYPES) {
+      for (const kind of KINDS) {
+        const want = kind === 'shell' || kind === 'placeholder';
+        expect(needsHeadlessSourceMount({ kind, type }), `${type} @ ${kind}`).toBe(want);
+      }
     }
   });
 
@@ -1415,21 +1422,30 @@ describe('FACE_MOUNTS_PRODUCER — the dock-open exemption, anchored both ways',
   it('it is a PROPER SUBSET — the default is "keep the host", and something uses it', () => {
     // ⚠ THE VACUITY LEG. If every producer were exempt, the deny-by-default this
     // set inverted would be gone and the change that introduced it would be
-    // undone in silence. timelorde is the module that must NOT be in here: its
-    // face only BLITS `video_out`, so hosting is the only thing that keeps the
-    // picture alive while the faceplate is open.
+    // undone in silence.
+    //
+    // ⚠ ITS NAMED SUBJECT WAS `timelorde` AND IS NOW DERIVED (legacy-removal
+    // S1). The name was the right anchor when it was written — timelorde is the
+    // module the deny-by-default exists FOR, because its face only BLITS
+    // `video_out` and hosting was the only thing keeping the picture alive while
+    // the faceplate was open. It is also exactly the module the producer
+    // extractions retire, so the name reddens on a commit where the RULE has not
+    // changed at all. The complement is the claim; any member of it is the
+    // anchor.
     const facedProducers = [...CARD_PRODUCER_LANE_TYPES].filter((t) => STRICT_FACES.has(t));
     const keepsHost = facedProducers.filter((t) => !FACE_MOUNTS_PRODUCER.has(t));
     expect(
       keepsHost,
       'EVERY faced producer claims to mount its own producer, so no module exercises the ' +
-        'default — the exemption has quietly become the rule',
+        'default — the exemption has quietly become the rule. ⚠ If the producer extractions ' +
+        'have retired the last non-exempt member, this leg has lost its POPULATION rather than ' +
+        'its rule: re-anchor it on the decision (a synthetic faced producer outside the ' +
+        'exemption must still keep its host), do not delete it.',
     ).not.toEqual([]);
-    expect(
-      keepsHost,
-      'timelorde must keep its headless host while its dock full view is open: its faceplate ' +
-        'blits `video_out` and mounts no renderer of its own',
-    ).toContain('timelorde');
+    // ...and the complement really is the complement, so the leg above cannot be
+    // satisfied by a `keepsHost` that stopped tracking the exemption at all.
+    for (const t of keepsHost) expect(FACE_MOUNTS_PRODUCER.has(t)).toBe(false);
+    for (const t of FACE_MOUNTS_PRODUCER) expect(keepsHost).not.toContain(t);
   });
 });
 

@@ -1360,18 +1360,23 @@ test.describe('?shell=1 video visibility', () => {
     // ⚠ AN ATTRIBUTE SELECTOR, NOT `filter({hasNot})`: the type lives on the host
     // element ITSELF, and `filter` matches DESCENDANTS — it would have excluded
     // nothing and passed for the wrong reason.
+    //
+    // ⚠ THE NARROWING IS GONE, AND ITS REMOVAL IS THE STRONGER CLAIM
+    // (legacy-removal S1). The exclusion existed for exactly one subject — the
+    // canvas-hidden clock, whose card WAS its producer and therefore had to be
+    // hosted on both shells. timelorde's composite is node-owned now
+    // ($lib/ui/media/frame-producers), so nothing legitimately hosts a card
+    // here and the assertion can be the unqualified one the original line made:
+    // ZERO headless hosts under ?shell=legacy, for anything.
+    //
+    // Keeping the `:not(...)` with its positive control deleted would have been
+    // the failure the note beside it warned about — "count anything, exclude
+    // everything" — so both go together.
     await expect(
-      page.locator('[data-testid="headless-source-host"]:not([data-node-type="timelorde"])'),
-      'a headless host under ?shell=legacy for something OTHER than the canvas-hidden clock — ' +
-        'the shell is supposed to be a strict no-op here',
+      page.locator('[data-testid="headless-source-host"]'),
+      'a headless host exists under ?shell=legacy — the shell is supposed to be a strict no-op ' +
+        'here, and no module left needs a card kept alive on this path',
     ).toHaveCount(0);
-    // POSITIVE CONTROL for the narrowing: the clock's host really is the one
-    // being excluded, so this cannot quietly become "count anything, exclude
-    // everything".
-    await expect(
-      page.locator('[data-testid="headless-source-host"][data-node-type="timelorde"]'),
-      'the canvas-hidden clock has no host on legacy either — #1754 is only half fixed',
-    ).toHaveCount(1);
   });
 });
 
@@ -1519,23 +1524,35 @@ test.describe('?shell=1 video CHAIN parity', () => {
     // videobox's new behaviour is asserted separately below as its own claim.
     // `archivist` is unfaced and still card-owned, so it renders the same
     // placeholder tile videobox used to and exercises the identical arm.
-    await injectPatch(page, [{ id: 'arc1', type: 'archivist', position: { x: -1200, y: 5100 } }]);
+    // ⚠ AND A FOURTH TIME, TO A DIFFERENT HALF OF THE RULE (legacy-removal S1).
+    // `archivist` converted, `DOM_SOURCE_LANE_TYPES` went EMPTY, and this test
+    // went red exactly as the paragraph above predicted it would — caught here
+    // rather than on CI because the branch had not run one yet.
+    //
+    // The subject is now `cube`, from the PRODUCER half
+    // (`CARD_PRODUCER_LANE_TYPES`): a module whose card IS the producer rather
+    // than the source-attacher. That is a different reason for the same
+    // requirement, and it exercises the identical arm of
+    // `needsHeadlessSourceMount` — which is the property this test owns. cube is
+    // FACED, so its lane tile is `module-shell`; the wait below already accepts
+    // either kind for exactly that reason.
+    await injectPatch(page, [{ id: 'cube1', type: 'cube', position: { x: -1200, y: 5100 } }]);
 
     // The LANE still shows the uniform tile (the shell look is preserved — this
     // fix is NOT "give every source module the legacy card back")…
     await expect(
-      page.locator(laneTileSelector('arc1')),
-      'archivist still renders the uniform RACKLINE tile in its lane (either kind — the claim is '
+      page.locator(laneTileSelector('cube1')),
+      'cube still renders the uniform RACKLINE tile in its lane (either kind — the claim is '
         + '"not the verbatim legacy card back", which a promotion does not change)',
     ).toHaveCount(1);
 
     // …while its REAL card is mounted in the off-screen lifecycle host, so its
-    // source attach/detach still runs.
-    const host = page.locator('[data-testid="headless-source-host"][data-node-id="arc1"]');
-    await expect(host, 'archivist gets an off-screen lifecycle host').toHaveCount(1);
-    await expect(host, 'the host mounts the REAL archivist card').toHaveAttribute('data-node-type', 'archivist');
+    // producer still runs.
+    const host = page.locator('[data-testid="headless-source-host"][data-node-id="cube1"]');
+    await expect(host, 'cube gets an off-screen lifecycle host').toHaveCount(1);
+    await expect(host, 'the host mounts the REAL cube card').toHaveAttribute('data-node-type', 'cube');
     await expect(
-      host.locator('[data-testid="archivist-card"]'),
+      host.locator('.mod-card.cube-card'),
       "the hosted card is the module's real card, not a stub",
     ).toHaveCount(1);
 
@@ -1570,11 +1587,22 @@ test.describe('?shell=1 video CHAIN parity', () => {
     // card mounted anywhere)". So the wait is now EITHER kind — a readiness
     // signal that the node mounted a RACKLINE tile at all — and the two legs
     // that ARE this test's subject run unchanged for every row.
+    // ⚠ THE LIST GREW BY FOUR (legacy-removal S1), AND THAT IS THE HALF OF THIS
+    // TEST THAT IS SUPPOSED TO GROW. Every conversion moves a module from the
+    // top half to this one, and a row added here is the assertion that the
+    // off-screen mount — the tax every rack used to pay — really did go away.
+    // `loopback`, `cameraInput` and `archivist` took their sources to node
+    // controllers; `scope`, `synesthesia` and `timelorde` took their per-frame
+    // PUSH to `$lib/ui/media/frame-producers`. Both halves get no host.
     const converted = [
       ['vb1', 'videobox', 'videobox-card'],
       ['vv1', 'videovarispeed', 'videovarispeed-card'],
       ['pt1', 'peertube', 'peertube-card'],
       ['tv1', 'tvLibrarian', 'tv-librarian-card'],
+      ['lb1', 'loopback', 'loopback-card'],
+      ['arc1', 'archivist', 'archivist-card'],
+      ['syn1', 'synesthesia', 'synesthesia-card'],
+      ['tl1', 'timelorde', 'timelorde-card'],
     ] as const;
     for (const [nodeId, type, cardTestId] of converted) {
       await injectPatch(page, [{ id: nodeId, type, position: { x: -1600, y: 5100 } }]);
@@ -1603,7 +1631,7 @@ test.describe('?shell=1 video CHAIN parity', () => {
     // about videobox having changed. A per-node count states what it means and
     // cannot be moved by an unrelated module joining the set.
     await expect(
-      page.locator('[data-testid="headless-source-host"][data-node-id="arc1"]'),
+      page.locator('[data-testid="headless-source-host"][data-node-id="cube1"]'),
     ).toHaveCount(1);
 
     // ⚠ cameraInput IS HOSTED NOW, AND THIS ASSERTION USED TO SAY THE OPPOSITE.
@@ -1625,13 +1653,23 @@ test.describe('?shell=1 video CHAIN parity', () => {
     // deleted: exactly one host for this node, and none at all under
     // `?shell=legacy` (see `camerainput-shell-source.spec.ts`, which drives the
     // legacy shell and asserts the count is zero there).
+    // ⚠ AND IT HAS INVERTED ONCE MORE (legacy-removal S1), WHICH IS THE THIRD
+    // POSITION THIS ONE ASSERTION HAS HELD. It began as "cameraInput must NEVER
+    // be hosted" (the NON_SHELL carve-out kept its real card in the lane), became
+    // "a promoted CAMERA keeps its real card in the off-screen host" when that
+    // carve-out was removed, and is now "no host at all" because getUserMedia,
+    // the device roster, the rebind and the permission machine moved to
+    // `$lib/ui/media/node-camera-source-registry` on graph lifetime.
+    //
+    // The DOUBLE-MOUNT HAZARD the original line guarded is not waived by any of
+    // those moves — it is satisfied more strongly each time, and by construction
+    // now: there is exactly ONE owner of the stream and it is not a surface.
     await injectPatch(page, [{ id: 'cam1', type: 'cameraInput', position: { x: -700, y: 5100 } }]);
-    const camHost = page.locator('[data-testid="headless-source-host"][data-node-id="cam1"]');
-    await expect(camHost, 'a promoted CAMERA keeps its real card in the off-screen host').toHaveCount(1);
     await expect(
-      camHost.locator('[data-testid="camera-device-select"]'),
-      "the hosted card is the module's real card, not a stub",
-    ).toHaveCount(1);
+      page.locator('[data-testid="headless-source-host"][data-node-id="cam1"]'),
+      'a promoted CAMERA got an off-screen host — its stream is node-owned, so that mount would ' +
+        'be a second owner of one device',
+    ).toHaveCount(0);
   });
 
   test('the CAMERA source picker is reachable on the FACEPLATE under the shell (device list capability-gated)', async ({ page }) => {
@@ -1677,18 +1715,26 @@ test.describe('?shell=1 video CHAIN parity', () => {
 
     await injectPatch(page, [{ id: 'cam1', type: 'cameraInput', position: { x: -1200, y: 5100 } }]);
 
-    // (a) THE LANE CARRIES NO PICKER, stated as a property of the whole
-    //     document rather than of a selector that cannot tell the two mounts
-    //     apart: every `camera-device-select` there is must be inside the host.
-    const hostedPicker = page.locator(
-      '[data-testid="headless-source-host"][data-node-id="cam1"] [data-testid="camera-device-select"]',
-    );
-    await expect(hostedPicker, "the real card's picker is in the off-screen host")
-      .toHaveCount(1, { timeout: 15_000 });
+    // (a) NO CARD-SIDE PICKER EXISTS AT ALL, stated as a property of the whole
+    //     document.
+    //
+    // ⚠ THIS LEG USED TO REQUIRE EXACTLY ONE, INSIDE THE HOST (legacy-removal
+    // S1). That was the right claim while the card owned getUserMedia and the
+    // off-screen mount was what kept it alive — and it was carefully written
+    // that way, because a bare `toHaveCount(0)` on the LANE could not tell an
+    // off-screen copy from no copy. The card is not mounted anywhere now
+    // (`$lib/ui/media/node-camera-source-registry` owns the stream, the roster
+    // and the permission machine on graph lifetime), so the document count is
+    // ZERO and the distinction the old leg was defending against cannot arise.
+    //
+    // The blindness it guarded is defended in leg (b) instead, which is where it
+    // has to live now: the FACEPLATE picker is asserted operable rather than
+    // merely present.
     await expect(
       page.locator('[data-testid="camera-device-select"]'),
-      'and it is the ONLY one — nothing reachable in the lane, which is the point',
-    ).toHaveCount(1);
+      'a card-side camera picker is mounted somewhere — the card is not the owner any more, so ' +
+        'any such control is a second surface for one device',
+    ).toHaveCount(0, { timeout: 15_000 });
 
     // (b) THE FACEPLATE CARRIES ONE, and it is genuinely operable. `[data-testid=
     //     "module-shell"]` exists only on the lane tile, so this locator cannot
@@ -1769,21 +1815,53 @@ test.describe('?shell=1 video CHAIN parity', () => {
 
     // ⚠ PERMANENT NEGATIVE CONTROL — the repaired predicate must still be able
     // to FAIL on the thing it was blind to, or this rewrite has only moved the
-    // blindness. Run by hand against the hosted copy while repairing: pointing
-    // `picker` at
+    // blindness. It used to compare against the HOSTED copy of this very picker:
+    // pointing `picker` at
     // `[data-testid="headless-source-host"][data-node-id="cam1"] [data-testid="camera-device-select"]`
-    // fails at the scroll leg with `viewport ratio 0` — where the OLD predicate
-    // (`toBeVisible`) passed on that same element. Kept as an executable leg
-    // rather than a claim: the hosted picker is asserted to be exactly what the
-    // reachable one is not.
-    const hostedBox = await hostedPicker.boundingBox();
-    expect(hostedBox, 'the hosted picker exists to compare against').not.toBeNull();
+    // failed at the scroll leg with `viewport ratio 0`, where the OLD predicate
+    // (`toBeVisible`) passed on that same element.
+    //
+    // ⚠ THAT SUBJECT NO LONGER EXISTS (legacy-removal S1) — the camera's card is
+    // not mounted anywhere, so there is no off-screen copy to compare with. The
+    // control is therefore re-anchored on the INSTRUMENT rather than deleted
+    // with its population: a SYNTHETIC element parked exactly where the host
+    // used to park one, which the predicate must still refuse. A control over a
+    // population that reaches zero stops controlling anything; a control over
+    // the matcher does not.
+    const syntheticOffCanvas = await page.evaluateHandle(() => {
+      const el = document.createElement('div');
+      el.setAttribute('data-testid', 'offscreen-probe');
+      el.style.cssText =
+        'position:fixed;left:-9999px;top:0;width:120px;height:24px;pointer-events:none;';
+      document.body.appendChild(el);
+      return el;
+    });
+    const probeBox = await page
+      .locator('[data-testid="offscreen-probe"]')
+      .boundingBox();
+    expect(probeBox, 'the synthetic off-canvas probe exists to compare against').not.toBeNull();
     expect(
-      hostedBox!.x,
-      `the host's copy must be OFF-canvas — if this ever goes >= 0 the two mounts ` +
-        `are no longer distinguishable by position and the checks above go blind; ` +
-        `saw x=${Math.round(hostedBox!.x)}`,
+      probeBox!.x,
+      `an element parked where the headless host used to park one must read OFF-canvas — if ` +
+        `this ever goes >= 0 the position predicate the checks above rely on has stopped ` +
+        `discriminating; saw x=${Math.round(probeBox!.x)}`,
     ).toBeLessThan(0);
+    const probeReachable = await page
+      .locator('[data-testid="offscreen-probe"]')
+      .evaluate((el) => {
+        const r = el.getBoundingClientRect();
+        const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+        return !!hit && (hit === el || el.contains(hit) || hit.contains(el));
+      });
+    expect(
+      probeReachable,
+      'the hit-test predicate accepted an off-canvas element — it is exactly the blindness the ' +
+        'reachability leg above exists to avoid',
+    ).toBe(false);
+    await syntheticOffCanvas.dispose();
+    await page.evaluate(() => {
+      document.querySelector('[data-testid="offscreen-probe"]')?.remove();
+    });
 
     // CAPABILITY GATE (ci-capability discipline): only assert "lists a real
     // device" where a videoinput actually exists. CI's default project has no

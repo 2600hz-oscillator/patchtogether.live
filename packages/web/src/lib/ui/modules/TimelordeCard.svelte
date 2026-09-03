@@ -9,11 +9,9 @@
   import { setNodeParam } from '$lib/graph/mutate';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
-  import type { VideoEngine } from '$lib/video/engine';
   import ModuleTitle from './ModuleTitle.svelte';
   import {
     beatPulse,
-    applyBeatBoost,
     wizardDisplayMode,
     type WizardDisplayMode,
   } from '$lib/audio/modules/timelorde-wizard';
@@ -189,63 +187,34 @@
   // ── video_in → big display + video_out passthrough (cross-domain) ──
   //
   // TIMELORDE is an AUDIO module that also carries a `video_in` / `video_out`
-  // pair so it can sit INLINE in a video chain. Both are consumed CARD-SIDE
-  // (the SYNESTHESIA / WAVESCULPT-wall precedent — the audio engine has no
-  // AudioNode for a video port): the card walks patch.edges to find the source
-  // patched into video_in, blits its frame into the big display canvas, and
-  // PUSHES that same frame back into the node (handle.write('displayFrame', …))
-  // so video_out's drawFrame can pass it downstream. With nothing patched the
-  // display shows the beat-pulsing wizard (the original behaviour) and we push
-  // a snapshot of the wizard so video_out still emits a coherent picture.
+  // pair so it can sit INLINE in a video chain, and both are consumed on the
+  // MAIN THREAD (the SYNESTHESIA / WAVESCULPT-wall precedent — the audio engine
+  // has no AudioNode for a video port).
+  //
+  // ⚠ THIS CARD COMPOSITES NOTHING ANY MORE; IT BLITS (legacy-removal S1). It
+  // used to walk the edges, blit the patched feed (or the beat-pulsing owl) into
+  // this canvas and push that same frame back into the node, which is why
+  // `timelorde` sat in `CARD_PRODUCER_LANE_TYPES` and the default shell kept the
+  // card mounted OFF-SCREEN in `<HeadlessSourceHost>` to keep the loop running.
+  // The composite belongs to the NODE now
+  // (`$lib/ui/media/frame-producers` — TIMELORDE_FRAME_PRODUCER).
+  //
+  // ⚠ AND IT IS THE SAME BLIT `timelorde/TimelordeDisplayBody.svelte` ALREADY
+  // DID, which is the point rather than a coincidence. That body's header says
+  // it "RENDERS NOTHING — it BLITS", so that the owl render, the colour-targeted
+  // beat boost, the reduced-motion freeze and the live-monitor branch keep
+  // exactly ONE implementation and the faceplate cannot disagree with what a
+  // downstream module receives. The card is now the second reader of that same
+  // one implementation instead of being it.
+  //
+  // ⚠ DO NOT SPELL THE SEAM CALL-SHAPED IN A COMMENT IN THIS SUBTREE. The
+  // producer gate matches its seam regexes against RAW source and strips no
+  // comments, so writing the departed push out as a call re-enrols this module
+  // in the set this change removes it from. Name it, never spell it.
   const DISPLAY_W = 220;
   const DISPLAY_H = 220;
   let displayCanvas: HTMLCanvasElement | null = $state(null);
   let displayRaf: number | null = null;
-
-  // The owl painting, loaded once into an HTMLImageElement so the rAF can blit
-  // it into the display each frame (then colour-key boost the eyes + border).
-  // Until it decodes we paint the dark idle background, so the canvas is never
-  // garbage. (createImageBitmap is overkill for a single static asset.)
-  let owlImg: HTMLImageElement | null = null;
-  let owlReady = $state(false);
-  // ⚠ READY MEANS *DECODED*, NOT *LOADED*, AND THE DIFFERENCE IS MEASURED. This
-  // used to flip `owlReady` in `onload`, which fires when the bytes have arrived
-  // — not when the bitmap is rasterised. With `decoding = 'async'` the first
-  // `drawImage` can therefore paint from a partially-rastered source, and under
-  // `prefers-reduced-motion` (the VRT capture) the card paints EXACTLY ONE frame
-  // and stops, so whatever raster state Chromium happened to be in is LATCHED
-  // into the picture forever. That is the nondeterminism `vrt-live-surfaces.ts`
-  // measured on this very module — 13 of 20 separate processes FAILED unmasked —
-  // and it is why the card scene carries a wrap mask.
-  //
-  // ⚠ AND IT STOPPED BEING MASKABLE THE DAY THIS MODULE GREW A FACE. The dock
-  // faceplate BLITS this same pushed frame, and the FACES roster has no mask
-  // mechanism at all, so a face baseline would inherit that flake with nowhere
-  // to put it. `decode()` resolves only when the image is ready to be painted
-  // synchronously, so the one frame is a function of the decoded bitmap rather
-  // than of boot speed. `onload` is kept as the trigger (decode() on an image
-  // with no src rejects) and as the fallback for a runtime without decode().
-  $effect(() => {
-    if (typeof Image === 'undefined') return;
-    let cancelled = false;
-    const img = new Image();
-    img.decoding = 'async';
-    const ready = () => {
-      if (cancelled) return;
-      owlImg = img;
-      owlReady = true;
-    };
-    img.onload = () => {
-      if (typeof img.decode === 'function') void img.decode().then(ready).catch(ready);
-      else ready();
-    };
-    img.src = OWL_SRC;
-    return () => { cancelled = true; img.onload = null; owlImg = null; owlReady = false; };
-  });
-  // Off-screen scratch we composite into, then transfer to the node as an
-  // ImageBitmap each frame (createImageBitmap is the cheapest DOM→node handoff,
-  // and the node closes the previous bitmap — see timelorde.ts write()).
-  let pushCanvas: HTMLCanvasElement | OffscreenCanvas | null = null;
 
   /** Resolve (nodeId, portId) currently patched into our video_in. */
   function findVideoInSource(): { nodeId: string; portId: string } | null {
@@ -268,199 +237,42 @@
     wizardDisplayMode({ hasVideoIn, wizardOn }),
   );
 
-  function ensurePushCanvas(): HTMLCanvasElement | OffscreenCanvas | null {
-    if (pushCanvas) return pushCanvas;
-    if (typeof OffscreenCanvas !== 'undefined') {
-      pushCanvas = new OffscreenCanvas(DISPLAY_W, DISPLAY_H);
-    } else if (typeof document !== 'undefined') {
-      const c = document.createElement('canvas');
-      c.width = DISPLAY_W; c.height = DISPLAY_H;
-      pushCanvas = c;
-    }
-    return pushCanvas;
-  }
-
-  /** Draw the LIVE video feed patched into video_in into a 2D context. Returns
-   *  true on success (a frame was drawn). Mirrors SynesthesiaCard.readVideoLevels:
-   *  a video-domain source blits via the VideoEngine; an audio-domain mono-video
-   *  source pulls its drawFrame. */
-  function drawVideoFeed(
-    ctx2d: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
-    w: number,
-    h: number,
-  ): boolean {
-    const e = engineCtx.get();
-    if (!e) return false;
-    const src = findVideoInSource();
-    if (!src) return false;
-    const srcNode = patch.nodes[src.nodeId];
-    const srcDomain = srcNode?.domain ?? 'audio';
-    if (srcDomain === 'video') {
-      let ve: VideoEngine | undefined;
-      try { ve = e.getDomain<VideoEngine>('video'); } catch { return false; }
-      if (!ve) return false;
-      try { ve.blitOutputToDrawingBuffer(src.nodeId); } catch { return false; }
-      const img = ve.canvas as CanvasImageSource | undefined;
-      if (!img) return false;
-      try {
-        ctx2d.clearRect(0, 0, w, h);
-        ctx2d.drawImage(img, 0, 0, w, h);
-        return true;
-      } catch { return false; }
-    }
-    // Audio-domain mono-video / video source (SCOPE.out, WAVESCULPT.video_out,
-    // even another TIMELORDE.video_out): pull its drawFrame into our scratch.
-    let ae:
-      | { getVideoSource?: (n: string, p: string) => { drawFrame?: (c: OffscreenCanvas | HTMLCanvasElement) => void } | null }
-      | undefined;
-    try { ae = e.getDomain('audio') as unknown as typeof ae; } catch { return false; }
-    const vsrc = ae?.getVideoSource?.(src.nodeId, src.portId) ?? null;
-    if (!vsrc?.drawFrame) return false;
-    try {
-      vsrc.drawFrame(ctx2d.canvas as OffscreenCanvas | HTMLCanvasElement);
-      return true;
-    } catch { return false; }
-  }
-
-  /** The owner's OWL PAINTING, painted into the big display. The owl fills the
-   *  square (object-fit: contain, centred on the dark ground). After the blit
-   *  we read the pixels back and apply the COLOUR-TARGETED beat boost
-   *  (applyBeatBoost): the YELLOW EYES + the BLUE BORDER brighten by the pulse,
-   *  the brown owl body stays steady — so only the eyes + border pulse with the
-   *  music. (Pure per-pixel maths in timelorde-wizard.ts; this is the I/O.)
+  /** Pull `video_out`'s own drawFrame into this canvas — the audio-domain
+   *  mono-video path, and the SAME one `TimelordeDisplayBody` uses.
    *
-   *  Until the image decodes we paint just the dark idle ground, so the display
-   *  is never garbage (the same fallback the off-screen video_out idle uses). */
-  function drawOwl(
-    ctx2d: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
-    w: number,
-    h: number,
-    pulseNow: number,
-  ): void {
-    ctx2d.clearRect(0, 0, w, h);
-    ctx2d.fillStyle = '#07090d';
-    ctx2d.fillRect(0, 0, w, h);
-    if (!owlImg || !owlReady) return;
-    // object-fit: contain — preserve the painting's aspect, centred.
-    const iw = owlImg.naturalWidth || owlImg.width;
-    const ih = owlImg.naturalHeight || owlImg.height;
-    if (!iw || !ih) return;
-    const scale = Math.min(w / iw, h / ih);
-    const dw = iw * scale;
-    const dh = ih * scale;
-    const dx = (w - dw) / 2;
-    const dy = (h - dh) / 2;
-    try {
-      ctx2d.imageSmoothingEnabled = true;
-      ctx2d.drawImage(owlImg, dx, dy, dw, dh);
-    } catch {
-      return; // image not yet usable (decode race) — idle ground stands
-    }
-    // Colour-key beat boost — only when pulsing (idle frame = the bare owl, so
-    // the VRT capture under reduced-motion stays the deterministic steady owl).
-    if (pulseNow <= 0) return;
-    let frame: ImageData;
-    try {
-      frame = ctx2d.getImageData(0, 0, w, h);
-    } catch {
-      return; // tainted/locked canvas — skip the boost, owl still shows
-    }
-    applyBeatBoost(frame.data, pulseNow);
-    ctx2d.putImageData(frame, 0, 0);
-  }
-
-  // rAF: paint the big display (live feed or wizard) + push the frame to the
-  // node so video_out passes it through. Under reduced-motion (VRT) we still
-  // paint ONE deterministic frame (pulse pinned to 0 by the effect above) and
-  // then stop, so the capture is stable.
-  function renderDisplay(): void {
-    if (!displayCanvas) return;
-    const ctx2d = displayCanvas.getContext('2d', { alpha: false });
-    if (!ctx2d) return;
-    const w = displayCanvas.width;
-    const h = displayCanvas.height;
-    let painted = false;
-    if (hasVideoIn) {
-      painted = drawVideoFeed(ctx2d, w, h);
-    }
-    if (!painted) {
-      // No feed (or none patched) → the owl. (When wizardOff the visible card
-      // shows the "wizard off" placeholder via markup; we still paint the owl
-      // into the push canvas so video_out emits a coherent picture.)
-      drawOwl(ctx2d, w, h, pulse);
-    }
-    // Push the composited display to the node for video_out passthrough.
-    pushDisplayFrame();
-  }
-
-  function pushDisplayFrame(): void {
+   *  ⚠ IT IS A BLIT, NOT A RENDER. The picture is composited by the NODE
+   *  (`$lib/ui/media/frame-producers`) and pushed into the module; `drawFrame`
+   *  serves the latest one, and paints the module's own idle field when nothing
+   *  has been pushed yet — so there is never an uninitialised canvas on screen.
+   *  What this card shows and what a downstream video module receives are the
+   *  same pixels by construction, which is what stops the two drifting. */
+  function blitDisplay(): void {
+    const c = displayCanvas;
+    if (!c) return;
     const e = engineCtx.get();
-    if (!e || !node || !displayCanvas) return;
-    if (typeof createImageBitmap !== 'function') return;
-    const scratch = ensurePushCanvas();
-    if (!scratch) return;
-    const sctx = scratch.getContext('2d') as
-      | CanvasRenderingContext2D
-      | OffscreenCanvasRenderingContext2D
-      | null;
-    if (!sctx) return;
-    try {
-      sctx.clearRect(0, 0, DISPLAY_W, DISPLAY_H);
-      sctx.drawImage(displayCanvas, 0, 0, DISPLAY_W, DISPLAY_H);
-    } catch { return; }
-    void createImageBitmap(scratch as CanvasImageSource)
-      .then((bmp) => {
-        const eng = engineCtx.get();
-        if (eng && node) eng.write(node, 'displayFrame', bmp);
-        else { try { bmp.close(); } catch { /* */ } }
-      })
-      .catch(() => { /* best-effort — never break the rAF loop */ });
+    if (!e) return;
+    let ae:
+      | { getVideoSource?: (n: string, p: string) => { drawFrame?: (c: HTMLCanvasElement) => void } | null }
+      | undefined;
+    try { ae = e.getDomain('audio') as unknown as typeof ae; } catch { return; }
+    const src = ae?.getVideoSource?.(id, 'video_out') ?? null;
+    try { src?.drawFrame?.(c); } catch { /* best-effort — never break the loop */ }
   }
 
+  // ⚠ ONE LOOP, AND NO REDUCED-MOTION BRANCH ANY MORE. The card used to carry
+  // two arms — a live compositing loop, and a one-deterministic-frame arm for
+  // the VRT capture that then had to CONVERGE on the push (see the producer,
+  // which now owns that convergence and the measurement behind it). A blit has
+  // no such problem: under reduced motion the producer settles on one frame and
+  // every blit of it is byte-identical, so re-blitting is free of the
+  // nondeterminism the branch existed to avoid. `TimelordeDisplayBody` runs the
+  // same single unconditional loop for the same reason.
   $effect(() => {
-    // Track the inputs so the loop re-arms when video patch state / wizard
-    // visibility / owl-image readiness changes (owlReady so the deterministic
-    // reduced-motion frame repaints once the painting finishes decoding).
-    void displayMode; void hasVideoIn; void displayCanvas; void owlReady;
+    // Re-arm when the canvas appears; the blit itself reads the node's frame.
     if (!displayCanvas) return;
-    if (prefersReducedMotion()) {
-      // One deterministic frame, then idle (VRT / reduced-motion).
-      renderDisplay();
-      // ⚠ …BUT THE *PUSH* CANNOT BE FIRE-AND-FORGET, AND THAT WAS A LIVE BUG.
-      // `renderDisplay` ends in `pushDisplayFrame`, whose write is the ONLY
-      // thing that ever fills the node's `lastDisplayFrame`. Pushing exactly
-      // once means a write that lands before the engine handle exists — or on a
-      // handle that is then replaced — is lost FOREVER, and `video_out` serves
-      // the #07090d idle field for the rest of the session. MEASURED on a
-      // default rack under `reducedMotion: 'reduce'`, with this card mounted and
-      // its own canvas carrying the owl at `nonBlack 47034/48400`: `video_out`
-      // read `nonBlack 0/3072, maxLuma 9`. Non-reduced-motion racks never saw it
-      // because the ordinary rAF re-pushes every frame and the loss self-heals
-      // invisibly.
-      //
-      // So the push CONVERGES instead: ask the node whether it holds a frame and
-      // re-push only while it does not. One boolean read per frame, no
-      // allocation, no repaint — and it heals a replaced handle too, which a
-      // one-shot retry could not. The picture is byte-identical every time
-      // (`pulse` is pinned to 0 here), so nothing about the VRT determinism this
-      // branch exists for changes.
-      let raf: number | null = null;
-      const ensurePushed = () => {
-        const e = engineCtx.get();
-        if (e && node && e.read?.(node, 'hasDisplayFrame') !== 1) pushDisplayFrame();
-        raf = requestAnimationFrame(ensurePushed);
-      };
-      raf = requestAnimationFrame(ensurePushed);
-      displayRaf = raf;
-      return () => {
-        if (raf !== null) cancelAnimationFrame(raf);
-        raf = null;
-        displayRaf = null;
-      };
-    }
     let raf: number | null = null;
     const loop = () => {
-      renderDisplay();
+      blitDisplay();
       raf = requestAnimationFrame(loop);
     };
     raf = requestAnimationFrame(loop);

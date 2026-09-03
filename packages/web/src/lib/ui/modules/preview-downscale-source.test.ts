@@ -240,30 +240,31 @@ const EXEMPT_CALLS: readonly ExemptCall[] = [
       'progressive halving, and this file is in the WebGL attest basis.',
   },
   {
-    file: 'TimelordeCard.svelte',
+    // ⚠ TWO OF TIMELORDE'S THREE ENTRIES MOVED FILE (legacy-removal S1) AND THE
+    // THIRD IS GENUINELY DEAD — the distinction the ANCHOR clause forces, and the
+    // reason it is worth having. The composite left `TimelordeCard.svelte` for
+    // `$lib/ui/media/frame-producers.ts` when the display became node-lifetime,
+    // so the upstream-frame blit and the owl blit are RE-POINTED. The third —
+    // `sctx.drawImage(displayCanvas, …)` — was the card copying its own visible
+    // canvas into a staging scratch before handing it over; the producer
+    // composites straight into the scratch, so that copy does not exist any
+    // more and its entry is DELETED rather than moved.
+    file: '../media/frame-producers.ts',
     receiver: 'ctx2d',
-    firstArg: 'img',
+    firstArg: 'image as CanvasImageSource',
     why:
       'NOT A DISPLAY — this paints an UPSTREAM frame into TIMELORDE\'s own scratch, which ' +
-      'is then pushed back into the graph as displayFrame. It is a CONTENT path: changing ' +
+      'is then pushed back into the graph as its display frame. It is a CONTENT path: changing ' +
       'the filter changes what downstream modules receive, not how a preview looks.',
   },
   {
-    file: 'TimelordeCard.svelte',
+    file: '../media/frame-producers.ts',
     receiver: 'ctx2d',
-    firstArg: 'owlImg',
+    firstArg: 'owl as unknown as CanvasImageSource',
     why:
       'A decorative still image (the idle owl) aspect-fitted into the frame, not the shared ' +
       'engine drawing buffer. It already sets imageSmoothingEnabled = true, and the reduction ' +
       'from the asset to the frame is small.',
-  },
-  {
-    file: 'TimelordeCard.svelte',
-    receiver: 'sctx',
-    firstArg: 'displayCanvas',
-    why:
-      'NOT A DISPLAY — the DISPLAY_W x DISPLAY_H staging copy that becomes an ImageBitmap ' +
-      'written back to the engine as displayFrame. Content path, same as the img entry above.',
   },
 ];
 

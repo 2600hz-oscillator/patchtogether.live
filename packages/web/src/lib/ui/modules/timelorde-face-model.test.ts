@@ -64,6 +64,14 @@ function stripComments(src: string): string {
 }
 const bodySrc = stripComments(readFileSync(BODY_SRC, 'utf-8'));
 const cardSrc = stripComments(readFileSync(CARD_SRC, 'utf-8'));
+/** The node-lifetime owner of the composite the card used to run
+ *  (legacy-removal S1), and its real-DOM binding. Two files because the split is
+ *  the point: the producer is pure and testable, the singleton is where the
+ *  browser edges — including the owl's DECODE — are named. */
+const PRODUCER_SRC = resolve(HERE, '../media/frame-producers.ts');
+const SINGLETON_SRC = resolve(HERE, '../media/node-frame-producers.ts');
+const producerSrc = stripComments(readFileSync(PRODUCER_SRC, 'utf-8'));
+const singletonSrc = readFileSync(SINGLETON_SRC, 'utf-8');
 
 describe('timelorde face — promoted, and the lane deliberately has NO picture', () => {
   it('is promoted', () => {
@@ -385,42 +393,60 @@ describe('timelorde body — it BLITS the producer, it does not re-render it', (
 });
 
 describe('timelorde face — the DISPLAY’s determinism is a DECODE, not a freeze', () => {
-  it('the card awaits img.decode() before the first paint', () => {
+  // ⚠ BOTH LEGS BELOW MOVED WITH THE CODE (legacy-removal S1), THEY WERE NOT
+  // DELETED — each guards a MEASURED regression, and an assertion that follows
+  // its subject is the only kind worth keeping. The composite left
+  // `TimelordeCard.svelte` for `$lib/ui/media/frame-producers.ts` when the
+  // display became node-lifetime; the card BLITS `video_out` now, exactly as
+  // `TimelordeDisplayBody` always has.
+
+  it('the producer awaits a DECODE, not a load, before the first paint', () => {
     // ⚠ THE MEASUREMENT: `vrt-live-surfaces.ts` recorded 13 of 20 SEPARATE
     // PROCESSES failing the timelorde CARD scene unmasked. Under
-    // prefers-reduced-motion the card paints EXACTLY ONE frame and stops, and
-    // `owlReady` used to flip in `onload` — which fires when the bytes arrive,
+    // prefers-reduced-motion exactly ONE frame is painted and kept, and the owl
+    // ready-latch used to flip in `onload` — which fires when the bytes arrive,
     // not when the bitmap is rastered — so the latched frame was a function of
     // boot speed. The card scene could be masked; the FACES roster has no mask
     // mechanism at all, so the dock baseline would have inherited that flake with
     // nowhere to put it. Fixed at the source instead.
-    expect(cardSrc).toContain('img.decode()');
+    //
+    // The seam is `FrameEnv.loadImage`, whose contract is "resolves only once it
+    // is DECODED"; the real-DOM binding is the only place `decode()` is called.
+    expect(producerSrc, 'the producer loads the owl through the decode-aware seam')
+      .toMatch(/env\.loadImage\(/);
+    expect(singletonSrc).toContain('img.decode()');
     expect(
-      /owlReady\s*=\s*true/.test(cardSrc),
-      'the owl-ready latch vanished — this leg is measuring nothing',
+      /resolves on DECODE|RESOLVES ON \*DECODE\*/i.test(singletonSrc),
+      'the decode contract lost the note that says WHY it is a decode and not a load',
     ).toBe(true);
   });
 
   it('the PUSH is CONVERGENT, not fire-and-forget — the reduced-motion defect', () => {
     // ⚠ FOUND BY THIS FACE AND FIXED IN THE SAME DIFF, and it was never a face
-    // bug: under `prefers-reduced-motion` the card paints ONE frame and pushes
-    // ONE bitmap, so a write that lands before the engine handle exists (or on a
+    // bug: under `prefers-reduced-motion` ONE frame is painted and ONE bitmap
+    // pushed, so a write that lands before the engine handle exists (or on a
     // handle that is then replaced) is lost FOREVER and `video_out` serves the
     // #07090d idle field for the rest of the session. MEASURED on a default rack
     // with `reducedMotion: 'reduce'`, the card mounted and its own canvas
     // carrying the owl at `nonBlack 47034/48400`: `video_out` read
     // `nonBlack 0/3072, maxLuma 9`. Non-reduced racks never saw it because the
-    // ordinary rAF re-pushes every frame and the loss self-heals invisibly.
+    // ordinary loop re-pushes every frame and the loss self-heals invisibly.
     //
-    // The card now ASKS the node whether its frame arrived and re-pushes only
-    // while it has not — which also heals a replaced handle, where a one-shot
-    // retry could not.
-    expect(cardSrc).toContain("'hasDisplayFrame'");
+    // The producer ASKS the node whether its frame arrived and re-does the work
+    // only while it has not — which also heals a replaced handle, where a
+    // one-shot retry could not.
+    expect(producerSrc).toContain("'hasDisplayFrame'");
     expect(
-      /if \(e && node && e\.read\?\.\(node, 'hasDisplayFrame'\) !== 1\) pushDisplayFrame\(\)/.test(cardSrc),
-      'the reduced-motion branch no longer re-pushes while the node holds no frame — a single ' +
-        'lost write makes video_out dark for the whole session',
+      /if \(reduced && ctx\.engine\.read\(ctx\.node, 'hasDisplayFrame'\) === 1\) return;/.test(
+        producerSrc,
+      ),
+      'the reduced-motion arm no longer converges while the node holds no frame — a single lost ' +
+        'write makes video_out dark for the whole session',
     ).toBe(true);
+    // ...and the CARD must not have grown a second push on the way out: one
+    // writer is the property, and two agreeing writers is how it stops being one.
+    expect(cardSrc, 'the card composites nothing and pushes nothing')
+      .not.toMatch(/\bwrite\s*\(\s*node\s*,/);
   });
 
   it('declares NO freeze param — so freezeIsNotASeam must NOT be declared either', () => {

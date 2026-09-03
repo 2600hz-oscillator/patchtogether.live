@@ -1239,15 +1239,37 @@ function nodeFrameProducerTypes(): string[] {
  * silently green. The same discipline `extras-producer-lifetime.spec.ts` uses.
  */
 interface FrameProducerFixture {
-  /** Extra nodes to spawn beside the subject. */
-  readonly driver: { id: string; type: string; domain: 'audio' | 'video' | 'meta' };
+  /** Extra nodes to spawn beside the subject. Omitted when the module drives
+   *  ITSELF — timelorde's owl pulses off its own transport. */
+  readonly driver?: { id: string; type: string; domain: 'audio' | 'video' | 'meta' };
   /** Params the SUBJECT needs for its producer to have anything to do. */
   readonly params?: Record<string, number>;
-  /** The edge that makes the subject's producer have something to report. */
-  readonly edge: { fromPort: string; toPort: string; sourceType: string; targetType: string };
-  /** `engine.read(node, key)` → a record; `field` is the number (or array
-   *  element, via `index`) that must move. */
-  readonly read: { key: string; field: string; index?: number };
+  /** The edge that makes the subject's producer have something to report.
+   *  Present exactly when `driver` is. */
+  readonly edge?: { fromPort: string; toPort: string; sourceType: string; targetType: string };
+  /**
+   * THE PROGRESS PROBE — exactly one of these two, and which one is a fact about
+   * the module rather than a preference.
+   *
+   * `read` — `engine.read(node, key)` → a record; `field` (optionally indexed)
+   * is the number that must move. For producers whose output is NOT a picture:
+   * scope pushes display PARAMS, synesthesia pushes channel LEVELS, and this
+   * page's own pixel instrument is documented as blind to both.
+   *
+   * `pixelPort` — the module's own video output, measured with `framesToChange`
+   * (distinct frame signatures, exiting on the first change). For a producer
+   * whose product IS the picture, that is the honest probe and a number would
+   * be a proxy for it.
+   */
+  readonly read?: { key: string; field: string; index?: number };
+  readonly pixelPort?: string;
+  /**
+   * Params that must make the picture GO STILL — the negative control for a
+   * `pixelPort` probe, and the module's own semantics rather than a trick:
+   * timelorde's owl pulses off the transport, so stopping the transport is the
+   * one state where a live producer legitimately stops moving.
+   */
+  readonly stillWhen?: Record<string, number>;
   /**
    * Does the channel return to the KNOB when the cable is pulled?
    *
@@ -1298,6 +1320,24 @@ const FRAME_PRODUCER_FIXTURES: Record<string, FrameProducerFixture> = {
       'to the worklet, which sample-and-holds them through the env/gate/meter stage. ' +
       '`read("snapshot").levelsA` is what comes back out, and it is what all 48 of this ' +
       'module\'s outputs carry in that mode.',
+  },
+  timelorde: {
+    // ⚠ NO DRIVER, AND THAT IS THE MODULE. The owl's eyes and border pulse off
+    // TIMELORDE's own transport at its own BPM, so the subject drives itself and
+    // a patched source would only replace the picture under test.
+    params: { running: 1, bpm: 120 },
+    pixelPort: 'video_out',
+    // The transport is the switch: `beatPulse` returns a flat 0 when `running`
+    // is 0, so a stopped clock is the one state in which a LIVE producer is
+    // legitimately still. That makes it a negative control the module itself
+    // defines rather than one the test invents.
+    stillWhen: { running: 0 },
+    why:
+      'the composite is pushed into the node and `video_out`\'s own drawFrame blits the LATEST ' +
+      'one, so this port IS the producer\'s product. And "not black" cannot judge it: drawFrame ' +
+      'keeps serving the last bitmap anyone pushed, so a dead producer reads BRIGHT and FROZEN ' +
+      '(measured: nonBlack 47034/48400 from a card that was already gone). Only motion can tell ' +
+      'a live producer from a stale leftover.',
   },
 };
 
@@ -1370,6 +1410,21 @@ for (const type of nodeFrameProducerTypes()) {
         'that can stop running without any gate noticing.',
     );
   }
+  // Deny-by-default on the FIXTURE'S OWN SHAPE, too: exactly one progress probe,
+  // and a driver iff there is an edge for it. A fixture that declared neither
+  // probe would run every structural leg below and observe nothing at all.
+  if ((fixture.read === undefined) === (fixture.pixelPort === undefined)) {
+    throw new Error(`${type}: a fixture declares EXACTLY ONE of \`read\` or \`pixelPort\``);
+  }
+  if ((fixture.driver === undefined) !== (fixture.edge === undefined)) {
+    throw new Error(`${type}: \`driver\` and \`edge\` are declared together or not at all`);
+  }
+  if (fixture.pixelPort !== undefined && fixture.stillWhen === undefined) {
+    throw new Error(
+      `${type}: a \`pixelPort\` probe needs a \`stillWhen\` — a movement claim with no state ` +
+        'that stops the movement cannot tell a producer from a noisy instrument',
+    );
+  }
   const mod = REGISTRY.find((m) => m.type === type);
   if (!mod) throw new Error(`${type} has a node producer but is not in the registry manifest`);
   const nodeId = `nodeproducer-${type}`;
@@ -1384,17 +1439,19 @@ for (const type of nodeFrameProducerTypes()) {
       page,
       [
         { id: nodeId, type, domain: mod.domain, ...(fixture.params ? { params: fixture.params } : {}) },
-        fixture.driver,
+        ...(fixture.driver ? [fixture.driver] : []),
       ],
-      [
-        {
-          id: 'nodeproducer-edge',
-          from: { nodeId: fixture.driver.id, portId: fixture.edge.fromPort },
-          to: { nodeId, portId: fixture.edge.toPort },
-          sourceType: fixture.edge.sourceType,
-          targetType: fixture.edge.targetType,
-        },
-      ],
+      fixture.driver && fixture.edge
+        ? [
+            {
+              id: 'nodeproducer-edge',
+              from: { nodeId: fixture.driver.id, portId: fixture.edge.fromPort },
+              to: { nodeId, portId: fixture.edge.toPort },
+              sourceType: fixture.edge.sourceType,
+              targetType: fixture.edge.targetType,
+            },
+          ]
+        : [],
       { mountTimeout: 30_000 },
     );
 
@@ -1424,38 +1481,80 @@ for (const type of nodeFrameProducerTypes()) {
     // registered, swept, counted and completely silent — which is exactly the
     // failure shape the archivist extraction shipped, where every assertion
     // about state was green while the media made no progress at all.
-    const driven = await sampleProducerChannel(page, nodeId, fixture.read, CHANNEL_FRAMES);
-    expect(
-      driven.distinct,
-      `${type}: ${fixture.read.key}.${fixture.read.field} must FOLLOW the patched modulator with ` +
-        `no card anywhere. ${fixture.why}\n  saw ${driven.distinct} distinct value(s) over ` +
-        `${driven.frames} frames; first ${driven.first}; sample ${driven.values.join(', ')}`,
-    ).toBeGreaterThan(1);
+    if (fixture.pixelPort) {
+      // THE PICTURE ITSELF, with `framesToChange` — the same instrument the
+      // card-producer legs above use, exiting on the first CHANGED frame with a
+      // frame cap that only bounds the failure. "Not black" is refused on
+      // purpose here: this module's drawFrame keeps blitting the last bitmap
+      // anyone pushed, so a dead producer reads bright and frozen.
+      const moved = await framesToChange(page, nodeId, fixture.pixelPort);
+      expect(
+        moved.changed,
+        `${type}.${fixture.pixelPort} must emit a MOVING picture with no card anywhere. ` +
+          `${fixture.why}\n  ${fmtChange(moved)}`,
+      ).toBe(true);
 
-    // NEGATIVE CONTROL on the instrument itself: with the modulator UNPATCHED
-    // the same probe must go still. Without this, a probe that reported noise —
-    // or read a field that jitters for unrelated reasons — would pass the leg
-    // above on a dead producer.
-    await page.evaluate(() => {
-      const w = globalThis as unknown as {
-        __patch: { edges: Record<string, unknown> };
-        __ydoc: { transact: (fn: () => void) => void };
-      };
-      w.__ydoc.transact(() => {
-        delete w.__patch.edges['nodeproducer-edge'];
-      });
-    });
-    await expect
-      .poll(
-        async () => (await sampleProducerChannel(page, nodeId, fixture.read, 30)).distinct,
-        {
+      // NEGATIVE CONTROL on the instrument, defined by the MODULE: the state in
+      // which a live producer legitimately stops moving. Without it, a probe
+      // that reported change for any reason at all would pass the leg above on a
+      // producer that was never running.
+      await page.evaluate(({ id, params }) => {
+        const w = globalThis as unknown as {
+          __patch: { nodes: Record<string, { params?: Record<string, number> }> };
+          __ydoc: { transact: (fn: () => void) => void };
+        };
+        w.__ydoc.transact(() => {
+          const n = w.__patch.nodes[id];
+          if (!n) throw new Error(`stillWhen: no node ${id}`);
+          if (!n.params) n.params = {};
+          for (const [k, v] of Object.entries(params)) n.params[k] = v;
+        });
+      }, { id: nodeId, params: fixture.stillWhen! });
+      await expect
+        .poll(async () => (await framesToChange(page, nodeId, fixture.pixelPort!)).changed, {
           message:
-            `${type}: with the modulator unpatched the same probe must settle — a channel that ` +
-            'keeps moving on its own cannot be evidence that the producer is running',
+            `${type}: in the state that must STOP the picture ` +
+            `(${JSON.stringify(fixture.stillWhen)}) the same probe still reports motion — a ` +
+            'picture that moves whatever the module is doing cannot be evidence that the ' +
+            'producer is running',
           timeout: 30_000,
-        },
-      )
-      .toBe(1);
+        })
+        .toBe(false);
+    } else {
+      const read = fixture.read!;
+      const driven = await sampleProducerChannel(page, nodeId, read, CHANNEL_FRAMES);
+      expect(
+        driven.distinct,
+        `${type}: ${read.key}.${read.field} must FOLLOW the patched modulator with ` +
+          `no card anywhere. ${fixture.why}\n  saw ${driven.distinct} distinct value(s) over ` +
+          `${driven.frames} frames; first ${driven.first}; sample ${driven.values.join(', ')}`,
+      ).toBeGreaterThan(1);
+
+      // NEGATIVE CONTROL on the instrument itself: with the modulator UNPATCHED
+      // the same probe must go still. Without this, a probe that reported noise —
+      // or read a field that jitters for unrelated reasons — would pass the leg
+      // above on a dead producer.
+      await page.evaluate(() => {
+        const w = globalThis as unknown as {
+          __patch: { edges: Record<string, unknown> };
+          __ydoc: { transact: (fn: () => void) => void };
+        };
+        w.__ydoc.transact(() => {
+          delete w.__patch.edges['nodeproducer-edge'];
+        });
+      });
+      await expect
+        .poll(
+          async () => (await sampleProducerChannel(page, nodeId, read, 30)).distinct,
+          {
+            message:
+              `${type}: with the modulator unpatched the same probe must settle — a channel that ` +
+              'keeps moving on its own cannot be evidence that the producer is running',
+            timeout: 30_000,
+          },
+        )
+        .toBe(1);
+    }
 
     // ⚠ AND THE UN-LATCH, which is the half a "does it move" leg cannot see —
     // for the producers whose channel HAS that semantics (see the fixture
@@ -1464,7 +1563,7 @@ for (const type of nodeFrameProducerTypes()) {
     // modulator happened to be at: bright, moving, completely stale. The settled
     // value must be the KNOB, which is only true if the push is still running
     // after the cable is gone.
-    if (fixture.unlatchesToKnob) {
+    if (fixture.unlatchesToKnob && fixture.read) {
       const knob = await page.evaluate(({ id, f }) => {
         const w = globalThis as unknown as { __patch: { nodes: Record<string, { params?: Record<string, number> }> } };
         return w.__patch.nodes[id]?.params?.[f];
