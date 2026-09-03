@@ -99,12 +99,34 @@ async function fieldAdvance(page: Page, field: 'pumpRuns' | 'gametic', minAdvanc
   );
 }
 
+/**
+ * ⚠ RE-POINTED BY THE FACE PROMOTION (2026-09-02), and it is the ONE DOOM spec
+ * that had to move — the recorderbox precedent, verbatim: a spec that LOCATED
+ * THE CARD must find the FACE.
+ *
+ * Every other DOOM spec pins `?shell=legacy` in its own `goto` and is untouched
+ * by this promotion. This one drives `/rack?seed=none` — the DEFAULT shell — on
+ * purpose, because the whole regression it guards (#1590) is about what happens
+ * when the DOCK unmounts the surface. `migrated('doom')` makes that dock full
+ * view mount `<ModuleShell>` + the faceplate body instead of `DoomCard.svelte`,
+ * so `doom-card` resolves to nothing here and the spec would fail at its FIRST
+ * locator rather than testing anything.
+ *
+ * THE CHANGE IS THE TESTID AND NOTHING ELSE. Both surfaces are the same
+ * component — `doom/DoomSurface.svelte`, mounted with `variant="card"` by the
+ * legacy card and `variant="face"` by the body — so the load overlay, the
+ * `.overlay` clear, `__doomCards`, `faceplate-collapse` and every probe field
+ * below are byte-identical on both. No wait, no budget, no assertion and no
+ * threshold in this file moves.
+ */
+const SURFACE = 'doom-face-surface';
+
 async function openDoomCard(page: Page) {
   await page.evaluate(
     (n) => (globalThis as unknown as { __openDockFullView(x: string): void }).__openDockFullView(n),
     NODE,
   );
-  await expect(page.getByTestId('doom-card')).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByTestId(SURFACE)).toBeVisible({ timeout: 20_000 });
 }
 
 test('a RUNNING DOOM session SURVIVES its card being collapsed — and the graph still releases it', async ({
@@ -154,7 +176,7 @@ test('a RUNNING DOOM session SURVIVES its card being collapsed — and the graph
   // Lone-page path: the host seats itself at slot 0 and launches a 1-player
   // netgame (no netcode/lockstep — memberIds ≤ 1), entering GS_LEVEL. ──
   await openDoomCard(page);
-  const card = page.getByTestId('doom-card');
+  const card = page.getByTestId(SURFACE);
   const loadBtn = card.locator('button.overlay').filter({ hasText: 'Click to load DOOM' });
   await expect(loadBtn, 'load-overlay button visible before click').toBeVisible({ timeout: 15_000 });
   await loadBtn.click();
@@ -213,7 +235,7 @@ test('a RUNNING DOOM session SURVIVES its card being collapsed — and the graph
   // ── ACT: collapse. This UNMOUNTS DoomCard (doom is in no headless-mount
   // lane set — the card is genuinely destroyed). ──
   await page.getByTestId('faceplate-collapse').click();
-  await expect(page.getByTestId('doom-card')).toHaveCount(0, { timeout: 15_000 });
+  await expect(page.getByTestId(SURFACE)).toHaveCount(0, { timeout: 15_000 });
 
   // ── ASSERT 1: the session state survived. This is the whole regression. ──
   const afterCollapse = await probe(page);
@@ -263,7 +285,7 @@ test('a RUNNING DOOM session SURVIVES its card being collapsed — and the graph
 
   // ── Re-expanding ADOPTS the running session, not a fresh idle card. ──
   await openDoomCard(page);
-  const cardAgain = page.getByTestId('doom-card');
+  const cardAgain = page.getByTestId(SURFACE);
   await expect(
     cardAgain.locator('button.overlay').filter({ hasText: 'Click to load DOOM' }),
     're-expanding showed the LOAD button over a RUNNING game — the remounted card ' +

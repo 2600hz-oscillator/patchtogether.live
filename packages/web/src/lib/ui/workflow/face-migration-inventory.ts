@@ -103,7 +103,37 @@ export type FaceMigrationDisposition =
 // all. Deleting is the correct disposal: a blocker whose capability exists is
 // not "done", it is FALSE, and leaving it would pre-approve the next thing to
 // take its name.
-export type MigrationBlockerId = 'needs-media-controller';
+//
+// ⚠ `'needs-media-controller'` (#1511) WAS HERE AND IS DELETED TOO, 2026-09-02,
+// FOR THE OTHER OF THE TWO REASONS THE ANCHOR GATE OFFERS — "the modules that
+// needed it were reclassified" — and NOT because the capability shipped. It has
+// not: `HEADLESS_MOUNT_LANE_TYPES` still holds archivist, cameraInput, loopback
+// and six card producers, so the probe below still reads FALSE, and #1511 is
+// still a real piece of platform work.
+//
+// What ended was the WAITING. This blocker was declared by nine modules; eight
+// left it during waves 5-7 (videobox and videovarispeed to
+// `node-video-source-registry`, peertube and tvLibrarian to
+// `node-hls-source-registry`, recorderbox and now toybox because the claim was
+// never true of them, archivist by carrying its affordances through a
+// status/command registry while the card kept ownership). toybox was the last,
+// and with it the record's `blockers` arrays are empty everywhere.
+//
+// DELETING IS THE DISPOSAL THE GATE ASKS FOR, and it is deliberate rather than
+// tidy: "ANCHORED: every declared blocker is named by something" reddens on an
+// entry nobody waits on, precisely so this file cannot keep a roadmap item that
+// stopped describing any module's migration. The MigrationBlockerId union goes
+// empty as a result, which is the honest type — with no blockers declared,
+// `blocked` becomes an unconstructable disposition and `blockers?: []` an
+// unfillable field. That is the state of the fleet, not a gap.
+//
+// ⚠ AND THE MACHINERY BELOW STAYS, on this file's own stated design: `staleBlockers`
+// takes its record as a PARAMETER "so the gate can drive this same predicate
+// over a synthetic record in both directions… That control does not depend on
+// which blockers happen to be declared today, so it survives the last one being
+// deleted — which is precisely when a self-referential gate goes quiet." This is
+// that moment; the synthetic controls are what still exercise the predicate.
+export type MigrationBlockerId = never;
 
 /**
  * THE LIVE TREE, reduced to the handful of facts the capability probes read.
@@ -177,27 +207,31 @@ export interface MigrationBlocker {
  * declaration must be named by something — a capability nothing is waiting on is
  * a stale entry, not a roadmap.
  */
-export const MIGRATION_BLOCKERS: Readonly<Record<MigrationBlockerId, MigrationBlocker>> = {
-  'needs-media-controller': {
-    issue: 1511,
-    capability:
-      'node-owned media lifecycle — creation, device selection, stream acquisition, object-URL ' +
-      'lifetime, engine attachment and teardown owned by a node-scoped controller instead of by ' +
-      'a mounted <X>Card.svelte',
-    unblocks:
-      'every module whose source exists only because a card is mounted; until it lands their ' +
-      'cards are kept alive off-screen by HeadlessSourceHost, which is a tax on every rack',
-    probe: {
-      evidence:
-        'NO module type is left whose engine-visible state depends on its card being mounted ' +
-        '(HEADLESS_MOUNT_LANE_TYPES is empty) — which is #1511 stated as a property of the tree: ' +
-        '"no source may exist because a card is mounted". The set is grep-gated against the ' +
-        'cards that call attachExternalSource, so it cannot lag the code it describes.',
-      shipped: (tree) => tree.cardOwnedSourceTypes.length === 0,
-      landed: (tree) => ({ ...tree, cardOwnedSourceTypes: [] }),
-    },
-  },
-};
+// ⚠ EMPTY SINCE 2026-09-02, and empty is a STATEMENT rather than a gap: no
+// module's v2 surface is waiting on a platform capability any more. See the note
+// on `MigrationBlockerId` above for the disposal of the last entry
+// (`needs-media-controller`, #1511) — it was deleted because nothing waits on
+// it, NOT because it shipped, and #1511 remains real platform work with
+// `HEADLESS_MOUNT_LANE_TYPES` still non-empty.
+//
+// ⚠ AN EMPTY REGISTRY IS NOT AN INVITATION. A future blocker is added the way
+// these two were: with an issue, a `capability`/`unblocks` pair, and a
+// `CapabilityProbe` the TYPE requires — a declaration with no way to observe its
+// own resolution does not compile. The type-level consequence of empty is the
+// honest one and should be left alone: `MigrationBlockerId` is `never`, so
+// `blocked` is an unconstructable disposition and `blockers` an unfillable
+// field, which is exactly what "nothing is blocked" means.
+//
+// ⚠ THE TYPE IS `Record<string, …>` WITH A `satisfies` RATHER THAN
+// `Record<MigrationBlockerId, …>`, and the difference is not cosmetic. With the
+// union empty, `Record<never, MigrationBlocker>` erases to `{}`, so every
+// `Object.entries` consumer below (and in the gate, and in the report) would see
+// `unknown` values and the probe-shape legs would stop type-checking against the
+// thing they check. The `satisfies` keeps the KEY check exactly as strict — a
+// key that is not a declared `MigrationBlockerId` is refused right here — while
+// leaving the VALUE type readable to the consumers.
+export const MIGRATION_BLOCKERS: Readonly<Record<string, MigrationBlocker>> =
+  {} satisfies Readonly<Record<MigrationBlockerId, MigrationBlocker>>;
 
 /**
  * Declared blockers whose capability is ALREADY IN THE TREE — the entries that
@@ -1268,10 +1302,41 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
   },
   {
     type: 'doom',
-    disposition: 'bespoke-surface',
-    why:
-      'a GAME: a WAD-driven viewport with keyboard capture. Its params are CV taps off the running ' +
-      'game, not the interaction — the interaction is play.',
+    disposition: 'generic-face',
+    note:
+      'PROMOTED 2026-09-02 under a SPECIFIC owner authorisation; the standing "never touch DOOM ' +
+      'without approval" ruling is SATISFIED for this change, not overturned. The old `why` read: ' +
+      '"a GAME: a WAD-driven viewport with keyboard capture. Its params are CV taps off the ' +
+      'running game, not the interaction — the interaction is play." ' +
+      '⚠ THE FIRST HALF WAS EXACTLY RIGHT, and it is why the promotion is shaped the way it is: ' +
+      'the interaction IS play, so the play surface moved WHOLE into ' +
+      '$lib/ui/modules/doom/DoomSurface.svelte, which the legacy card and the faceplate body BOTH ' +
+      'mount — one screen, one keyboard map, one node-owned session adoption, no second ' +
+      'implementation to drift. ' +
+      '⚠ THE SECOND HALF IS WHAT MADE THIS READ AS UN-FACEABLE, AND IT MEASURED THE WRONG THING. ' +
+      'The 38 `cv_*` params are not controls that resist ranking; they are targets written by ' +
+      'their own jacks, and `noUserControl` is the field that says so (each is anchored to the ' +
+      'port whose `paramTarget` names it, so the claim is checked rather than asserted). With ' +
+      'those declared the plate ranks exactly TWO controls — `audioGain` and `fillMode`, the same ' +
+      'two the card drew as its Volume knob and OUTPUT FIT toggle — which is a small face, not an ' +
+      'impossible one. ' +
+      '⚠ THE LOAD-BEARING FACT, recorded because it is what a reviewer must check rather than ' +
+      'infer: promotion stops the default shell rendering DoomCard.svelte, and this card was the ' +
+      "module's RUNTIME OWNER — `nodeDoomSession.adopt` (the pump that feeds the lockstep " +
+      'barrier), the awareness/nodes/edges observers, the capture-phase keyboard listeners, the ' +
+      'framebuffer blit and the `__doomCards` hook every DOOM spec reads. A face that carried only ' +
+      'CONTROLS would have shipped a promoted DOOM that is a black tile with no game and no ' +
+      'netgame, while this inventory, faces-parity and every def-reading gate stayed green. ' +
+      '⚠ ONE RESTING READOUT DELETED, DELIBERATELY: the card paints a derived identity sentence ' +
+      '("Player 2 — alice (you)") and a session footer ("2 rack-mates · host: remote · player 2") ' +
+      'beside the screen. The face keeps the short BADGE and moves both sentences to the ' +
+      "surface's accessible name (the GAMES.md §1.1 remedy), so no assertion was weakened and no " +
+      'affordance was lost. The legacy card still paints both. ' +
+      '⚠ NO VRT SCENES: `runtime.runTic()` runs inside `surface.draw`, so DOOM\'s game clock IS ' +
+      'its frame clock. It holds a named FACES_WITHOUT_SCENES exemption whose argument is ' +
+      "RE-DERIVED at the source for the face scenes rather than inherited from the card's " +
+      'EXEMPT_FROM_VRT entry, which stays standing because the promotion changed nothing about ' +
+      'the engine.',
   },
   {
     type: 'electraControl',
@@ -1999,12 +2064,36 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
   },
   {
     type: 'toybox',
-    disposition: 'bespoke-surface',
-    blockers: ['needs-media-controller'],
-    why:
-      'a whole SUB-RACK in a card: a node menu, many source pickers and file imports, a named ' +
-      'preset store, its own camera capture and an interactive canvas. It declares no params — ' +
-      'everything it does is its own surface.',
+    disposition: 'generic-face',
+    note:
+      'DONE (2026-09-02). The old `why` — "a whole SUB-RACK in a card: a node menu, many source ' +
+      'pickers and file imports, a named preset store, its own camera capture and an interactive ' +
+      'canvas. It declares no params — everything it does is its own surface." — was ACCURATE, ' +
+      'and it described a BODY rather than a blocker. `params: []` means `order: []` (the ' +
+      'videoOut shape) and the whole sub-rack mounts in one `fullViewBody`. ' +
+      '⚠ `needs-media-controller` WAS FALSE FOR THIS MODULE and is dropped — on RECORDERBOX\'s ' +
+      'argument, not archivist\'s, which is the distinction worth keeping because all three ' +
+      'promotions landed in one week. archivist genuinely IS in DOM_SOURCE_LANE_TYPES and needed ' +
+      'a status/command registry so its parked card could stay the sole owner; toybox is in ' +
+      'NEITHER half of HEADLESS_MOUNT_LANE_TYPES. It never calls attachExternalSource — its ' +
+      'per-layer <video> elements reach the engine through the module\'s OWN handle extras ' +
+      '(attachLayerVideo) — and it is not a card producer: the factory renders all four layers ' +
+      'from node.data with no UI mounted. ' +
+      '⚠ AND THE TAX THE BLOCKER NAMED WAS ALREADY PAID, in the module\'s own history rather ' +
+      'than in the face PR: #1589 moved every per-layer element, object-URL and camera ' +
+      'MediaStream into $lib/ui/media/node-media-registry on GRAPH lifetime (card-media-lifetime' +
+      '.test.ts fails the build if a revoke/stop/detach returns to an unmount path), and the ' +
+      'IMAGE half is a node-lifetime extras-producers entry, so an image layer is reconstructed ' +
+      'from node.data with no surface at all. The blocker outlived its subject by a fortnight. ' +
+      '⚠ WHAT WAS ACTUALLY LOAD-BEARING is the consequence of that same membership, in the ' +
+      'opposite direction: with toybox in none of those sets there is NO <HeadlessSourceHost>, ' +
+      'so promotion stops ToyboxCard.svelte mounting anywhere — and that card was the module\'s ' +
+      'only surface. Everything MOVED rather than being duplicated: ' +
+      '$lib/ui/modules/toybox/ToyboxConsole.svelte is ONE component with a `layout` prop that ' +
+      'the legacy card and the faceplate body both mount, every zone a snippet, pinned in both ' +
+      'directions by toybox-face-model.test.ts. The face arrangement is owner-specified ' +
+      '(2026-08-28): screen with an on/off switch, a persistent layer band, then three tabs — ' +
+      'cv-mod, combine graph, presets.',
   },
   {
     type: 'tvLibrarian',

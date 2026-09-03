@@ -61,20 +61,47 @@ export const MEDIA_MARKERS = [
   '.mp4',
 ];
 
+// ── WHAT COUNTS AS 'audio' ──────────────────────────────────────────────────
+// A spec that asserts AUDIBLE OUTPUT through a live analyser read: the page
+// renders audio in REAL TIME and the spec samples an observation window
+// expecting non-silence (an RMS/peak floor, or a held CV level). Duration is
+// not the hazard — the render thread is. Co-scheduled audio graphs at 4
+// workers compete for CPU with each other and with the sampling poll; a
+// starved graph underruns, the window reads 0.0000, and the assertion fails
+// on a page whose patch is perfectly correct. Cost packing CONCENTRATES these
+// (expensive specs cluster under LPT because they are expensive), which is
+// the same shape that killed camera-input 3/3 — so they get PASS 1's spread.
+//
+// Markers are the two shared seams every audible assertion goes through —
+// derived membership, never a hand-typed list (#1600's lesson):
+//   · readScopePeakOverWindow — the _module-coverage-helpers window read
+//     whose `.rms`/`.peak` the spec asserts against a floor
+//   · ch1_last_sample — the raw SCOPE analyser channel specs poll directly
+//     via the engine hook (e.g. snh-hold's held-V/oct min-over-window)
+// If you build a new audible-read helper, name one of these markers in the
+// spec (or add the helper here) — same rule as the media note above.
+export const AUDIO_MARKERS = ['readScopePeakOverWindow', 'ch1_last_sample'];
+
 /**
  * Scan a directory of Playwright specs and classify each into a contention
- * class. Only 'media' exists today; the shape leaves room for more.
+ * class: 'media' or 'audio' today; the shape leaves room for more.
+ *
+ * A file joins ONE class. Where both match, 'media' wins: the fake capture
+ * device / decoder-thread fight is the class that reddened a required lane
+ * 3/3, its spread must stay stable, and a media spec's audio graph is spread
+ * anyway by the media round-robin itself.
  *
  * @param {string} dir absolute path to the spec directory
- * @returns {Record<string, 'media'>} basename -> class
+ * @returns {Record<string, 'media' | 'audio'>} basename -> class
  */
 export function scanContention(dir = join(ROOT, 'e2e/tests')) {
-  /** @type {Record<string, 'media'>} */
+  /** @type {Record<string, 'media' | 'audio'>} */
   const out = {};
   for (const f of readdirSync(dir).sort()) {
     if (!f.endsWith('.spec.ts')) continue;
     const src = readFileSync(join(dir, f), 'utf8');
     if (MEDIA_MARKERS.some((m) => src.includes(m))) out[f] = 'media';
+    else if (AUDIO_MARKERS.some((m) => src.includes(m))) out[f] = 'audio';
   }
   return out;
 }
@@ -84,7 +111,11 @@ const isMain =
 
 if (isMain) {
   const map = scanContention();
-  const members = Object.keys(map);
-  console.log(`${members.length} spec(s) classified 'media':`);
-  for (const f of members) console.log(`  ${f}`);
+  /** @type {Record<string, string[]>} */
+  const byClass = {};
+  for (const [f, c] of Object.entries(map)) (byClass[c] ??= []).push(f);
+  for (const [c, members] of Object.entries(byClass).sort()) {
+    console.log(`${members.length} spec(s) classified '${c}':`);
+    for (const f of members) console.log(`  ${f}`);
+  }
 }

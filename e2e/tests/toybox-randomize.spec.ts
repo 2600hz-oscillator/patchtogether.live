@@ -76,6 +76,56 @@ async function spawnToybox(page: Page, extraNodes: SpawnNode[] = [], edges: Spaw
     .toBe('function');
 }
 
+/**
+ * Spawn a toybox under the DEFAULT shell and open its dock full view.
+ *
+ * ⚠ REWRITTEN 2026-09-02, WHEN TOYBOX WAS PROMOTED — the wave-6 §8 lesson
+ * landing on the two rows in this file that were never on `?shell=legacy`.
+ * They used to click the UN-MIGRATED placeholder's EXPAND button and then read
+ * the legacy CARD inside the dock. A faced module has neither: the lane tile is
+ * a `module-shell` with `shell-open-dock`, and what the dock mounts is
+ * `toybox-face-body`. Both rows' SUBJECTS are unchanged — the owner-black
+ * report and the stale-proxy editor repaint both happen in the DOCK, which is
+ * exactly where the face now lives, so these are the rows most worth
+ * re-subjecting rather than leaving green-and-blind on a surface no player
+ * meets.
+ *
+ * `__toyboxRoll` is installed by the CONSOLE's `onMount`, and the console is
+ * what BOTH surfaces render, so the hook arrives on this path exactly as it did
+ * on the old one.
+ */
+async function openDockFace(page: Page): Promise<void> {
+  await page.goto('/rack?seed=none');
+  await page.waitForLoadState('networkidle');
+  await spawnPatch(page, [{ id: 'tb', type: 'toybox', position: { x: 300, y: 60 }, domain: 'video' }]);
+  const shell = page.locator('.svelte-flow__node[data-id="tb"] [data-testid="module-shell"]');
+  await shell.waitFor({ state: 'visible', timeout: 30_000 });
+  // ⚠ THE SHIPPED HOOK, NOT A CLICK ON THE LANE TILE. `shell-open-dock` is not
+  // reliably actionable under parallel shards — measured on face-toybox.spec.ts,
+  // where clicking it failed all five tests on CI shard 1/12 while passing 15/15
+  // locally. `__openDockFullView` is what every other dock spec here uses and is
+  // CI-validated; see cartesian-face.spec.ts's header for the same finding.
+  await page.waitForFunction(
+    () =>
+      typeof (globalThis as unknown as { __openDockFullView?: unknown }).__openDockFullView ===
+      'function',
+    undefined,
+    { timeout: 30_000 },
+  );
+  await page.evaluate(
+    (id) =>
+      (globalThis as unknown as { __openDockFullView: (i: string) => void }).__openDockFullView(id),
+    'tb',
+  );
+  const body = page.getByTestId('dock-full-view').getByTestId('toybox-face-body');
+  await expect(body).toBeVisible({ timeout: 60_000 });
+  await expect
+    .poll(() => page.evaluate(() => typeof (globalThis as unknown as G).__toyboxRoll), {
+      message: '__toyboxRoll hook must be installed by the console the dock full view mounts',
+    })
+    .toBe('function');
+}
+
 async function roll(page: Page, seed: number): Promise<RollResultShape> {
   const res = await page.evaluate((seed) => (globalThis as unknown as G).__toyboxRoll!(seed), seed);
   expect(res, `roll(seed=${seed}) applied`).not.toBeNull();
@@ -100,7 +150,10 @@ function rollScope(json: string): unknown {
 /** One in-page perceptual sample of the toybox preview canvas. */
 async function sampleCanvas(page: Page): Promise<{ lit40: number; mean: number } | null> {
   return page.evaluate(() => {
-    const c = document.querySelector('[data-testid="toybox-canvas"]') as HTMLCanvasElement | null;
+    // Either surface's canvas — see the note in `expectAlive`.
+    const c = document.querySelector(
+      '[data-testid="toybox-canvas"], [data-testid="toybox-face-canvas"]',
+    ) as HTMLCanvasElement | null;
     if (!c) return null;
     const c2d = c.getContext('2d');
     if (!c2d) return null;
@@ -140,7 +193,15 @@ async function expectAlive(page: Page, label: string, capMs = 30_000): Promise<v
   try {
     await page.waitForFunction(
       ({ LIT40_FLOOR, MEAN_FLOOR }) => {
-        const c = document.querySelector('[data-testid="toybox-canvas"]') as HTMLCanvasElement | null;
+        // ⚠ EITHER SURFACE'S CANVAS. The legacy card spells it `toybox-canvas`;
+        // the faceplate body spells it `toybox-face-canvas` (the fleet convention
+        // `face-screen-render-suite` looks for). Two rows in this file boot the
+        // DEFAULT shell and reach the dock, where after the 2026-09-02 promotion
+        // the FACE is what mounts — so a probe that knew only the card's id would
+        // report a black frame for a picture that is painting perfectly.
+        const c = document.querySelector(
+          '[data-testid="toybox-canvas"], [data-testid="toybox-face-canvas"]',
+        ) as HTMLCanvasElement | null;
         if (!c) return false;
         const c2d = c.getContext('2d');
         if (!c2d) return false;
@@ -343,15 +404,7 @@ test.describe('toybox randomize — heavy proofs', () => {
     // ?shell=legacy. This leg keeps the dock path and the FIRST-MOUNT default
     // state (no preset, no roll) covered — both were probe blind spots.
     test.setTimeout(180_000);
-    await page.goto('/rack?seed=none');
-    await page.waitForLoadState('networkidle');
-    await spawnPatch(page, [{ id: 'tb', type: 'toybox', position: { x: 300, y: 60 }, domain: 'video' }]);
-    await page.getByText('EXPAND', { exact: true }).first().click({ timeout: 10_000 });
-    await expect
-      .poll(() => page.evaluate(() => typeof (globalThis as unknown as G).__toyboxRoll), {
-        message: '__toyboxRoll hook must be installed in the dock full view',
-      })
-      .toBe('function');
+    await openDockFace(page);
     await expectAlive(page, 'dock first-mount (default state, no roll)');
     await roll(page, 71);
     await expectAlive(page, 'dock roll seed 71');
@@ -370,17 +423,13 @@ test.describe('toybox randomize — heavy proofs', () => {
     // reference and repaints even under the bug — which is exactly how the
     // original owner-report leg stayed green while the owner's session broke).
     test.setTimeout(240_000);
-    await page.goto('/rack?seed=none');
-    await page.waitForLoadState('networkidle');
-    await spawnPatch(page, [{ id: 'tb', type: 'toybox', position: { x: 300, y: 60 }, domain: 'video' }]);
-    await page.getByText('EXPAND', { exact: true }).first().click({ timeout: 10_000 });
-    await expect
-      .poll(() => page.evaluate(() => typeof (globalThis as unknown as G).__toyboxRoll), {
-        message: '__toyboxRoll hook must be installed in the dock full view',
-      })
-      .toBe('function');
-    const toggle = page.locator('[data-testid="toybox-combine-toggle"]').last();
-    if ((await toggle.getAttribute('aria-expanded')) !== 'true') await toggle.click();
+    await openDockFace(page);
+    // ⚠ THE TAB IS THE COLLAPSE. On the card the combine editor has its own ▾
+    // toggle; on the faceplate it is one of three tabs — the same capability
+    // with one control instead of two. This row's SUBJECT (the editor
+    // repainting after a roll rather than rendering detached proxies) is
+    // unchanged either way.
+    await page.getByTestId('toybox-face-tab-combine').click();
     await page.locator('[data-testid="toybox-graph-svg"]').last().waitFor({ state: 'visible', timeout: 10_000 });
 
     /** (a) every painted node id matches data AND its visible label is

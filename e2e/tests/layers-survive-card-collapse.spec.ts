@@ -102,13 +102,39 @@ async function boot(page: Page): Promise<string[]> {
   return errors;
 }
 
-/** Open the dock full-view — the owner's "expand" — and wait for the real card. */
+/**
+ * Open the dock full-view — the owner's "expand" — and wait for the real
+ * console.
+ *
+ * ⚠ RE-SUBJECTED 2026-09-02, WHEN TOYBOX WAS PROMOTED. This waited for
+ * `toybox-card`, and after promotion there is no card ANYWHERE: toybox is in
+ * none of DOM_SOURCE_LANE_TYPES / CARD_PRODUCER_LANE_TYPES /
+ * HEADLESS_MOUNT_LANE_TYPES, so there is not even a `<HeadlessSourceHost>` copy
+ * — the dock mounts `toybox-face-body` instead. It FAILED on CI rather than
+ * going quietly green, which is the gate working; every other testid this file
+ * drives (`toybox-video-input`, `toybox-preset-export`, `toybox-video-filename`,
+ * `toybox-video-relink`, the preset notice and error) is CONSOLE markup that
+ * both surfaces render unchanged, because the promotion MOVED the console
+ * rather than copying it.
+ *
+ * ⚠ AND THE SUBJECT IS NOW STRICTLY STRONGER. The #1589 class is "the media
+ * dies when the mount goes away"; before promotion the mount was a card that
+ * `?shell=legacy` also renders in the lane, and now the dock full view is the
+ * ONLY mount there is. A collapse is the whole of it.
+ */
 async function expand(page: Page): Promise<void> {
   await page.evaluate(
     (n) => (globalThis as unknown as { __openDockFullView(x: string): void }).__openDockFullView(n),
     NODE,
   );
-  await expect(page.getByTestId('toybox-card')).toBeVisible({ timeout: 40_000 });
+  await expect(page.getByTestId('toybox-face-body')).toBeVisible({ timeout: 40_000 });
+}
+
+/** The PRESET store lives on the face's third tab. The layer band (and so the
+ *  video picker) is persistent, so only preset work needs this. */
+async function presetsTab(page: Page): Promise<void> {
+  await page.getByTestId('toybox-face-tab-presets').click();
+  await expect(page.getByTestId('toybox-preset-section')).toBeVisible({ timeout: 20_000 });
 }
 
 /** Seed layer `LAYER` as a local-file VIDEO layer, optionally with a filename
@@ -171,6 +197,7 @@ interface ExportedZip {
  *  manifest's video entries and the ACTUAL byte length stored for each — the
  *  only reading of "the export worked" that a zero-video zip cannot pass. */
 async function exportAndRead(page: Page): Promise<ExportedZip> {
+  await presetsTab(page);
   const [download] = await Promise.all([
     page.waitForEvent('download', { timeout: 40_000 }),
     page.locator('[data-testid="toybox-preset-export"]').first().dispatchEvent('click'),
@@ -224,7 +251,7 @@ test.describe('#1589 — TOYBOX layer media belongs to the NODE', () => {
 
     // ── THE ACT UNDER TEST: collapse. This unmounts the card. ────────────────
     await page.getByTestId('faceplate-collapse').click();
-    await expect(page.getByTestId('toybox-card')).toHaveCount(0, { timeout: 20_000 });
+    await expect(page.getByTestId('toybox-face-body')).toHaveCount(0, { timeout: 20_000 });
 
     // SAMPLE THE SETTLED STATE, NOT THE TRANSITION. The first CI failures of this
     // spec read `currentTime: 0` at `where: "parking"` AFTER a waitForFunction had
@@ -392,18 +419,21 @@ test.describe('#1589 — TOYBOX layer media belongs to the NODE', () => {
     await expand(page);
     await seedVideoLayer(page, { name: 'ghost.webm' });
 
-    // The card admits it: name shown, bytes absent, and it says so.
+    // The console admits it: name shown, bytes absent, and it says so.
     await expect(page.getByTestId('toybox-video-filename')).toHaveAttribute('data-has-local-file', 'false', {
       timeout: 30_000,
     });
     await expect(page.getByTestId('toybox-video-relink')).toBeVisible({ timeout: 20_000 });
 
+    // The preset store is the face's third tab; the layer band above is
+    // persistent, which is why the two assertions before this one need no tab.
+    await presetsTab(page);
     await page.locator('[data-testid="toybox-preset-export"]').first().dispatchEvent('click');
 
     const err = page.getByTestId('toybox-preset-error');
     await expect(err).toContainText('Export cancelled', { timeout: 20_000 });
     await expect(err).toContainText('ghost.webm');
-    await expect(err, 'the refusal must name the layer the way the card labels it').toContainText('layer 1');
+    await expect(err, 'the refusal must name the layer the way the console labels it').toContainText('layer 1');
     // No success notice — the two must never both appear.
     await expect(page.getByTestId('toybox-preset-notice')).toHaveCount(0);
 

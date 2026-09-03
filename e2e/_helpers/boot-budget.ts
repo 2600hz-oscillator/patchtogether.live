@@ -90,6 +90,29 @@ export const BOOT_MS = SLOW_RENDER ? 30_000 : 15_000;
 export const PLACEHOLDER_PAINT_MS = SLOW_RENDER ? 45_000 : 15_000;
 
 /**
+ * Bound for the FIRST AUDIBLE (or gated-CV) SIGNAL to arrive at a scope after
+ * the graph is told to run — worklet load + first scheduled step + the
+ * analyser ring actually carrying it.
+ *
+ * Same argument as BOOT_MS, different subject: no spec ASSERTS audio-readiness
+ * latency, so no spec should fail on it, and a flat bound is a different
+ * assertion on every runner. The audio version of the lottery is worse than
+ * the paint one, because e2e shards co-schedule audio graphs: at 4 workers a
+ * shard carrying several audible-RMS specs runs up to four AudioContexts at
+ * once on CI's 2 cores, and the render quantum falls behind exactly when the
+ * spec's wait is counting down. Both audible-RMS recovered-flakes of the
+ * 2026-08-31 census (workflow-master-transport, snh-hold) were this bound
+ * expiring under co-scheduled audio, not a product defect — the planner's
+ * `audio` contention class caps the co-tenancy, and this bound absorbs what
+ * the cap cannot remove.
+ *
+ * ⚠ Use it as the CAP of an observable-anchored wait (`expect.poll` on a scope
+ * read, `readScopePeakOverWindow` with an `until*` target) — never as a sleep,
+ * and never to widen what a test CLAIMS.
+ */
+export const AUDIO_READY_MS = SLOW_RENDER ? 30_000 : 15_000;
+
+/**
  * Per-test budget for a spec whose WHOLE test timed out on a slow runner while
  * waiting on a post-boot subject.
  *

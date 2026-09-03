@@ -258,6 +258,7 @@
   import { ELECTRA_CONTROL_TYPE } from '$lib/graph/electra-control';
   import { nodeRecorder } from '$lib/ui/modules/node-recorder-registry.svelte';
   import { nodeSamsloop } from '$lib/ui/modules/node-samsloop-registry.svelte';
+  import { referencedClipMediaIds, sweepClipMedia } from '$lib/audio/clip-media-store';
   import { nodeAudioInput } from '$lib/ui/modules/node-audio-input-registry.svelte';
   import { nodeDoomSession } from '$lib/ui/modules/node-doom-session-registry.svelte';
   import { nodeLaunchpadMonitor } from '$lib/ui/modules/node-launchpad-monitor-registry.svelte';
@@ -2637,6 +2638,29 @@
     // audio-wire retry stranded the element muted forever with nothing running
     // to un-mute it.
     nodeHlsSource.sweep(liveIds);
+    // ...and CLIP MEDIA — the one row here that is not node-keyed at all.
+    //
+    // ⚠ IT SWEEPS mediaIds, NOT nodeIds, BECAUSE THAT IS WHAT A LAUNCHER
+    // DELETES. Every other row above retires state belonging to a node that
+    // went away; a clip's media outlives its node and dies when the CLIP does —
+    // deleting one pad, pasting over one slot, clearing one scene. So the live
+    // set is derived from the clips themselves (`referencedClipMediaIds`), and
+    // this graph pass is the only thing that ever frees the bytes.
+    //
+    // recorderbox has NO GC: it retires scratch only on a successful delivery,
+    // and nothing in the repo enumerates its OPFS directory, so an orphaned
+    // file is invisible forever. A single-take video sink survives that; a
+    // launcher holding 64 clips at ~3 MB per 4-bar studio take does not.
+    //
+    // `sweepClipMedia` is memoised on the live set and single-flighted, because
+    // unlike the Map deletes above it touches IndexedDB and enumerates a
+    // directory — a graph edit that neither adds nor removes an audio clip
+    // costs one string compare. An IN-FLIGHT take is spared by its manifest
+    // status, not by membership: its clip record does not exist until commit.
+    // ⚠ `void` ON PURPOSE. The sweep hands its in-flight promise back so a TEST
+    // can await real completion instead of guessing a tick; this pass must
+    // never block on storage, so the discard is spelled rather than implied.
+    void sweepClipMedia(referencedClipMediaIds(snapshot.nodes));
   });
 
   /** THE EXTRAS-CHANNEL PRODUCER SEAM (#1720). The sixth instance of the #1583
