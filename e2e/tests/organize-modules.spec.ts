@@ -88,7 +88,7 @@ function rectsOverlap(a: { x: number; y: number; w: number; h: number }, b: { x:
 }
 
 async function ready(page: Page) {
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await page.waitForLoadState('networkidle');
   await page.waitForFunction(() => {
     const w = window as unknown as { __patch?: unknown; __flow?: unknown };
@@ -110,10 +110,10 @@ test('rclick on empty pane opens the Add-Module palette', async ({ page }) => {
 test('rclick on existing module opens the per-node action menu (NOT the palette)', async ({ page }) => {
   await ready(page);
   await spawnPatch(page, [{ id: 'm', type: 'mixer', position: { x: 200, y: 200 } }]);
-  const m = page.locator('.svelte-flow__node-mixer').first();
-  // Right-click the card background (title bar) — a knob/fader right-click now
-  // opens the per-control MIDI menu instead of the module menu.
-  await m.locator('.title').click({ button: 'right' });
+  const m = page.locator('.svelte-flow__node:has([data-shell-type="mixer"])').first();
+  // Right-click the tile's NAME row — a control right-click opens the
+  // per-control MIDI menu instead of the module menu.
+  await m.locator('.tile-name').click({ button: 'right' });
   await expect(page.locator('[role="menu"][aria-label="Module actions"]')).toBeVisible();
   await expect(page.locator('.module-palette')).toHaveCount(0);
 });
@@ -519,7 +519,7 @@ test.describe('@collab', () => {
     const pageA = await ctxA.newPage();
     const pageB = await ctxB.newPage();
     for (const p of [pageA, pageB]) {
-      await p.goto('/rack?shell=legacy&seed=none');
+      await p.goto('/rack?seed=none');
       await p.waitForLoadState('networkidle');
       await p.waitForFunction(
         () => typeof (window as unknown as { __attachProvider?: unknown }).__attachProvider === 'function',
@@ -665,7 +665,7 @@ test('patch-to flow on a port surfaces the picker, not the module palette', asyn
     { id: 'f', type: 'filter', position: { x: 760, y: 200 } },
   ]);
   const nodeId = 'm';
-  await page.locator('.svelte-flow__node-lfo [data-testid="patch-trigger"]').click();
+  await page.locator('.svelte-flow__node:has([data-shell-type="lfo"]) [data-testid="patch-trigger"]').click();
   const chrome = page.locator(`[data-patch-panel-chrome="${nodeId}"]`);
   await expect(chrome).toHaveAttribute('aria-hidden', 'false');
   await chrome.locator('[data-testid="patch-panel-nav"][data-nav="outputs"]').click();
@@ -683,7 +683,7 @@ test('rclick after the canvas pans/scrolls still anchors at the cursor (flow-spa
   // fitView keeps re-fitting.
   await spawnPatch(page, [{ id: 'anchor', type: 'mixer', position: { x: 0, y: 0 } }]);
   const box = await paneBox(page);
-  const mixerBox = await page.locator('.svelte-flow__node-mixer').first().boundingBox();
+  const mixerBox = await page.locator('.svelte-flow__node:has([data-shell-type="mixer"])').first().boundingBox();
   // Click well past the mixer's right edge (and within the pane) so the
   // event lands on the empty pane, not on the mixer card or its handles.
   const offsetFromMixer = mixerBox ? (mixerBox.x + mixerBox.width + 80) : (box.x + box.width * 0.8);

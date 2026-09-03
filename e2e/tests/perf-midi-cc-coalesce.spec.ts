@@ -97,7 +97,7 @@ type W = {
 
 async function bootVideoPatch(page: Page, errors: string[]): Promise<void> {
   page.on('pageerror', (e) => errors.push(e.message));
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await page.waitForLoadState('networkidle');
   // Isolate from any persisted bindings on this dev origin.
   await page.evaluate(() => window.localStorage.removeItem('pt.midi-bindings.v1'));
@@ -118,12 +118,15 @@ async function bootVideoPatch(page: Page, errors: string[]): Promise<void> {
   );
 
   // Author toybox LAYER 1 (index 0, the default active layer) as an OBJ layer
-  // via the card UI so the ROT X knob MOUNTS — mounting registers the real
-  // midi-learn setter under `tb:layer:0:rotX` (the layer-qualified paramId
-  // ToyboxCard passes). This is the exact seam the owner's Electra binding
-  // drives.
-  await page.locator('[data-testid="toybox-kind-select"]').selectOption('obj');
-  await expect(page.locator('[role="slider"][aria-label="ROT X"]')).toBeVisible();
+  // via the DOCK console so the ROT X dial MOUNTS — mounting registers the
+  // real midi-learn setter under `tb:layer:0:rotX` (the layer-qualified
+  // paramId the console emits). This is the exact seam the owner's Electra
+  // binding drives; on the default shell the console lives in the dock body.
+  await page.evaluate(() => (globalThis as unknown as { __openDockFullView: (id: string) => void }).__openDockFullView('tb'));
+  const tbPane = page.locator('[data-testid="dock-fullview-pane"][data-pane-node="tb"]');
+  await expect(tbPane).toBeVisible();
+  await tbPane.locator('[data-testid="toybox-kind-select"]').selectOption('obj');
+  await expect(tbPane.locator('[data-testid="toybox-dial-layer:0:rotX"]')).toBeVisible();
 
   // Sim MIDI device + bindings through the REAL import path (identical
   // dispatch to a learned binding: handleCc → setters.get(key) → the
