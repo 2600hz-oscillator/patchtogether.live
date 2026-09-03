@@ -155,10 +155,20 @@ import type { LaneRenderKind } from './legacy-fallback';
  * lifetime, synced from `Canvas.svelte` beside the other four registries. The
  * status seam (`loopback-status-registry`) is UNCHANGED and the faceplate is
  * untouched — what moved is who publishes into it and who owns the commands.
+ *
+ * ⚠ AND CAMERAINPUT WITH IT, in the same slice and for the same structural
+ * reason. Its departure is the widest of the five, because the card owned more
+ * than an element: the device roster, the saved-device rebind, the permission
+ * state machine and the multiplayer presence badge all lived there. Three of
+ * those were already WRONG to live on a card and the file said so in its own
+ * comments — the acquire guards ran on a CARD MOUNT rather than when the node
+ * entered the graph, and the presence badge was removed in `onDestroy`, so it
+ * described "a card is on screen" while claiming to describe "a camera is live".
+ * Both are now the node's. Its new owner is
+ * `$lib/ui/media/node-camera-source-registry`.
  */
 export const DOM_SOURCE_LANE_TYPES: ReadonlySet<string> = new Set<string>([
   'archivist',
-  'cameraInput',
 ]);
 
 /**

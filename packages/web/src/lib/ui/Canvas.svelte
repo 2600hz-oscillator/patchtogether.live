@@ -238,6 +238,7 @@
   import { nodeVarispeed } from '$lib/ui/media/node-varispeed.svelte';
   import { nodeHlsSource } from '$lib/ui/media/node-hls-source.svelte';
   import { nodeLoopbackSource } from '$lib/ui/media/node-loopback-source.svelte';
+  import { nodeCameraSource } from '$lib/ui/media/node-camera-source.svelte';
   import { nodePresent } from '$lib/ui/modules/node-present-registry.svelte';
   import { createFullscreen } from '$lib/ui/modules/use-fullscreen.svelte';
   import { resolveVideoEngine } from '$lib/ui/modules/use-present.svelte';
@@ -2607,6 +2608,12 @@
     // leaves the graph — the one place stopping it is right, because a node
     // leaving IS the content ending.
     nodeLoopbackSource.sweep(liveIds);
+    // ⚠ AND THE CAMERA CONTROLLER (legacy-removal S1). This row does more than
+    // stop a stream: `dispose` also drops the node's AWARENESS BADGE, which now
+    // tracks the STREAM rather than a card mount. Without it a deleted camera
+    // would leave rack-mates looking at "this user has a camera live here" for a
+    // node that no longer exists.
+    nodeCameraSource.sweep(liveIds);
     // ...and the same status/command seam for ARCHIVIST
     // ($lib/ui/media/archivist-status-registry), the THIRD and last member of
     // DOM_SOURCE_LANE_TYPES to be promoted. Same reason as the two above: its
@@ -2758,6 +2765,30 @@
    *  and the state machine — on the NODE's lifetime instead of a card's. */
   $effect(() => {
     nodeLoopbackSource.sync(snapshot.nodes, engine);
+  });
+
+  /** THE NODE-OWNED CAMERA CAPTURE (legacy-removal S1). Fifth registry, and the
+   *  one that takes the most OFF a card: getUserMedia, the device roster, the
+   *  saved-device rebind, the permission state machine and the presence badge.
+   *
+   *  ⚠ THE PROVIDER IS PASSED AS A GETTER because the card reached it through
+   *  Svelte CONTEXT, which a plain module cannot read, and because it can be
+   *  attached LATE — the dev-only `__provider` global the @collab specs install
+   *  is exactly that case. Handing the same getter this component already builds
+   *  keeps one answer to "which provider", including the fallback.
+   *
+   *  ⚠ AND THIS EFFECT IS WHAT MAKES A PEER'S CHANGE LAND. The card watched
+   *  `node.data.deviceId` and `params.enabled` with its own effects, so both were
+   *  dead whenever no card was mounted — a rack-mate's device pick sat in the
+   *  document doing nothing, and a rack-mate's pause changed a shader branch
+   *  while the camera light stayed on. Running them off the graph snapshot is the
+   *  same reactivity, taken from the place that still has it. */
+  $effect(() => {
+    nodeCameraSource.sync(snapshot.nodes, engine, () => {
+      if (provider) return provider;
+      const g = globalThis as unknown as { __provider?: HocuspocusProvider | null };
+      return g.__provider ?? null;
+    });
   });
 
   let headlessSourceNodes = $derived.by<ModuleNode[]>(() => {

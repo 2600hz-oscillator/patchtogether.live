@@ -168,8 +168,12 @@ function videoSourceTypes(): string[] {
     '../../packages/web/src/lib/ui/media/node-loopback-source-registry.ts',
     'NODE_LOOPBACK_SOURCE_TYPES',
   );
+  const cameraOwned = parseTypeSet(
+    '../../packages/web/src/lib/ui/media/node-camera-source-registry.ts',
+    'NODE_CAMERA_SOURCE_TYPES',
+  );
   const all = [
-    ...new Set([...cardOwned, ...nodeOwned, ...varispeedOwned, ...hlsOwned, ...loopbackOwned]),
+    ...new Set([...cardOwned, ...nodeOwned, ...varispeedOwned, ...hlsOwned, ...loopbackOwned, ...cameraOwned]),
   ].sort();
   if (all.length === 0) throw new Error('EVERY source-owner set parsed EMPTY — refusing to pass vacuously');
   return all;

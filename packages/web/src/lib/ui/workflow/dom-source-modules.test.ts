@@ -69,6 +69,7 @@ import { NODE_VIDEO_SOURCE_TYPES } from '$lib/ui/media/node-video-source-registr
 import { NODE_VARISPEED_TYPES } from '$lib/ui/media/node-varispeed-registry';
 import { NODE_HLS_SOURCE_TYPES } from '$lib/ui/media/node-hls-source-registry';
 import { NODE_LOOPBACK_SOURCE_TYPES } from '$lib/ui/media/node-loopback-source-registry';
+import { NODE_CAMERA_SOURCE_TYPES } from '$lib/ui/media/node-camera-source-registry';
 
 /** Every node-scoped source owner there is. Read as ONE set wherever the
  *  question is "has SOMETHING taken ownership of this module's source", so a
@@ -79,6 +80,7 @@ const NODE_OWNED_SOURCE_TYPES: ReadonlySet<string> = new Set<string>([
   ...NODE_VARISPEED_TYPES,
   ...NODE_HLS_SOURCE_TYPES,
   ...NODE_LOOPBACK_SOURCE_TYPES,
+  ...NODE_CAMERA_SOURCE_TYPES,
 ]);
 import { STRICT_FACES } from './strict-faces';
 import { NON_SHELL_LANE_TYPES, laneRenderKind, type LaneRenderKind } from './legacy-fallback';
@@ -881,7 +883,7 @@ describe('DOM_SOURCE_LANE_TYPES — the grep gate (a new source module cannot sh
     // was broken. The other departures fixed measured defects; this one removes
     // the CARD's load-bearingness so the card can be deleted. Same destination,
     // different argument — see the set's own header.
-    for (const t of ['cameraInput', 'archivist']) {
+    for (const t of ['archivist']) {
       expect(DOM_SOURCE_LANE_TYPES.has(t), `${t} is a DOM-source module`).toBe(true);
     }
     // Boundary 1: a pure-GPU generator is NOT one (acidwarp renders from a shader
@@ -924,7 +926,7 @@ describe('DOM_SOURCE_LANE_TYPES — the grep gate (a new source module cannot sh
     // cannot be. The boundary demonstrates the same thing either way — the card
     // was never the right owner — but a reader looking for the bug this one
     // fixed will not find one, and should not go hunting.
-    for (const t of ['videobox', 'videovarispeed', 'peertube', 'tvLibrarian', 'loopback']) {
+    for (const t of ['videobox', 'videovarispeed', 'peertube', 'tvLibrarian', 'loopback', 'cameraInput']) {
       expect(
         DOM_SOURCE_LANE_TYPES.has(t),
         `${t}'s attach, audio wiring and loops belong to a node-scoped controller under ` +
@@ -970,6 +972,7 @@ describe('DOM_SOURCE_LANE_TYPES — the grep gate (a new source module cannot sh
       ['NODE_VARISPEED_TYPES', NODE_VARISPEED_TYPES],
       ['NODE_HLS_SOURCE_TYPES', NODE_HLS_SOURCE_TYPES],
       ['NODE_LOOPBACK_SOURCE_TYPES', NODE_LOOPBACK_SOURCE_TYPES],
+      ['NODE_CAMERA_SOURCE_TYPES', NODE_CAMERA_SOURCE_TYPES],
     ] as const;
     const doubleOwned: string[] = [];
     for (let i = 0; i < owners.length; i++) {
@@ -1385,10 +1388,19 @@ describe('FACE_MOUNTS_PRODUCER — the dock-open exemption, anchored both ways',
 // keep the ACQUIRE alive, and conflating the two is how this promotion could
 // have shipped a first-run dead end. `$lib/ui/media/camera-status-registry` is
 // the answer and has its own unit coverage.
-describe('cameraInput — PROMOTED, and kept alive by the headless host instead', () => {
-  it('is a DOM-source module, which is what makes the host apply', () => {
-    expect(DOM_SOURCE_LANE_TYPES.has('cameraInput')).toBe(true);
-    expect(HEADLESS_MOUNT_LANE_TYPES.has('cameraInput')).toBe(true);
+describe('cameraInput — PROMOTED, and now NODE-OWNED rather than headless-hosted', () => {
+  // ⚠ THIS BLOCK ASSERTED THE OPPOSITE UNTIL 2026-09-03, and the inversion is
+  // the legacy-removal S1 extraction rather than a relaxation. cameraInput was
+  // the FIRST member of `DOM_SOURCE_LANE_TYPES` to be promoted, so it was the
+  // first to exercise the headless host for real — the card stayed mounted
+  // off-screen so getUserMedia, the stream and the permission machine survived
+  // the lane swap. `$lib/ui/media/node-camera-source-registry` owns all three
+  // now, on GRAPH lifetime, so the module needs no card anywhere and gets no
+  // host. The legs below pin the NEW arrangement in both directions; the
+  // `?shell=legacy` leg is unchanged because the card still renders there.
+  it('is NOT a DOM-source module any more — a node controller owns its source', () => {
+    expect(DOM_SOURCE_LANE_TYPES.has('cameraInput')).toBe(false);
+    expect(HEADLESS_MOUNT_LANE_TYPES.has('cameraInput')).toBe(false);
   });
 
   it('is NO LONGER carved out of the shell swap', () => {
@@ -1409,8 +1421,14 @@ describe('cameraInput — PROMOTED, and kept alive by the headless host instead'
     ).toBe('shell');
   });
 
-  it('and is THEREFORE headless-hosted — the source is not orphaned', () => {
-    expect(needsHeadlessSourceMount({ kind: 'shell', type: 'cameraInput' })).toBe(true);
+  it('and is THEREFORE NOT headless-hosted — nothing is orphaned, because nothing is card-owned', () => {
+    // ⚠ THE READING THAT MATTERS IS NOT THIS ONE. `false` here is also what a
+    // module nobody has ever heard of returns, so on its own it proves only that
+    // the type left the set. What makes it a STATEMENT rather than an absence is
+    // the disjointness gate above (cameraInput must be in exactly one node-owner
+    // set) plus `e2e/tests/camerainput-shell-source.spec.ts`, which asserts the
+    // picture survives with no card mounted anywhere.
+    expect(needsHeadlessSourceMount({ kind: 'shell', type: 'cameraInput' })).toBe(false);
   });
 
   it('still keeps its real card under ?shell=legacy, where nothing changed', () => {
@@ -1424,7 +1442,8 @@ describe('cameraInput — PROMOTED, and kept alive by the headless host instead'
     expect(kind).toBe('legacy');
     expect(
       needsHeadlessSourceMount({ kind, type: 'cameraInput' }),
-      'the card is IN the lane there, so a host would be a double mount',
+      'the card is IN the lane there, and it is no longer the source owner either — '
+        + 'both reasons independently forbid a host',
     ).toBe(false);
   });
 
@@ -1465,13 +1484,32 @@ describe('the DOCK FULL VIEW hosts the real card only for an UN-MIGRATED module'
   // opens the dock faceplate and asserts the picture survives it.
   it('an un-migrated full-view occupant is hosted ELSEWHERE and gets no second mount', () => {
     expect(
-      needsHeadlessSourceMount({ kind: 'shell', type: 'cameraInput', hostedElsewhere: true }),
+      needsHeadlessSourceMount({ kind: 'shell', type: 'archivist', hostedElsewhere: true }),
     ).toBe(false);
   });
 
   it('a MIGRATED one still needs the host while its faceplate is open', () => {
+    // ⚠ THE SUBJECT MOVED WITH THE EXTRACTION, and re-pointing it rather than
+    // deleting it is the whole point. This leg is about the DECISION — "a
+    // migrated module's dock faceplate is not a card mount, so the host is still
+    // required" — not about cameraInput, which merely happened to be the first
+    // module to make that true. cameraInput has since left the set entirely
+    // (its source is node-owned), so asking the question about it now returns
+    // `false` for a completely different reason and would pass while proving
+    // nothing. `archivist` is the surviving member that still carries the
+    // original subject.
     expect(
-      needsHeadlessSourceMount({ kind: 'shell', type: 'cameraInput', hostedElsewhere: false }),
+      needsHeadlessSourceMount({ kind: 'shell', type: 'archivist', hostedElsewhere: false }),
+    ).toBe(true);
+  });
+
+  it('ANCHORED: the subject above is a REAL member, so this pair cannot go vacuous', () => {
+    // If archivist is extracted too, this reddens and whoever does it re-points
+    // the subject rather than discovering later that both legs pass on a type
+    // the decision no longer knows about.
+    expect(
+      HEADLESS_MOUNT_LANE_TYPES.has('archivist'),
+      'the DOCK FULL VIEW legs need a module the headless host still applies to',
     ).toBe(true);
   });
 });

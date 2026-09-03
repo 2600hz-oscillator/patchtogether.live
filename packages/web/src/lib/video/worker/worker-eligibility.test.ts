@@ -55,6 +55,7 @@ import { NODE_VIDEO_SOURCE_TYPES } from '$lib/ui/media/node-video-source-registr
 import { NODE_VARISPEED_TYPES } from '$lib/ui/media/node-varispeed-registry';
 import { NODE_HLS_SOURCE_TYPES } from '$lib/ui/media/node-hls-source-registry';
 import { NODE_LOOPBACK_SOURCE_TYPES } from '$lib/ui/media/node-loopback-source-registry';
+import { NODE_CAMERA_SOURCE_TYPES } from '$lib/ui/media/node-camera-source-registry';
 import { WORKER_FACTORY_TYPES } from './worker-factories';
 import { derivedBlockers, declaredLocus, disposition } from './worker-eligibility';
 
@@ -90,6 +91,7 @@ const DOM_SOURCE_TYPES_ANY_OWNER: ReadonlySet<string> = new Set<string>([
   ...NODE_VARISPEED_TYPES,
   ...NODE_HLS_SOURCE_TYPES,
   ...NODE_LOOPBACK_SOURCE_TYPES,
+  ...NODE_CAMERA_SOURCE_TYPES,
 ]);
 
 const INPUTS = {

@@ -239,6 +239,23 @@ describe('SOURCE gate: `CameraState` IS the card\'s `State` — the claim nobody
   // This gate is why the registry re-exports `CameraState` instead of declaring
   // a third copy: two definitions with one gate between them, rather than three
   // definitions and a promise.
+  /**
+   * Does `source` declare a LITERAL string union at `afterMarker`, rather than
+   * aliasing a shared type?
+   *
+   * Two members is the threshold on purpose: `type X = 'a';` is not a union and
+   * `type X = Y;` has none, so anything with two or more quoted members at that
+   * position is a second copy of the state space.
+   */
+  function reDeclaresUnion(source: string, afterMarker: string): boolean {
+    const at = source.indexOf(afterMarker);
+    if (at === -1) return false;
+    const tail = source.slice(at + afterMarker.length);
+    const end = tail.indexOf(';');
+    if (end === -1) return false;
+    return [...tail.slice(0, end).matchAll(/'([a-z-]+)'/g)].length >= 2;
+  }
+
   function unionMembers(source: string, afterMarker: string): string[] {
     const at = source.indexOf(afterMarker);
     expect(at, `${afterMarker} must be present`).toBeGreaterThan(-1);
@@ -248,13 +265,45 @@ describe('SOURCE gate: `CameraState` IS the card\'s `State` — the claim nobody
     return [...tail.slice(0, end).matchAll(/'([a-z-]+)'/g)].map((m) => m[1]!).sort();
   }
 
-  it('the card and `camera-device.ts` declare the SAME capture states', () => {
-    const cardStates = unionMembers(readFileSync(CARD_PATH, 'utf8'), 'type State =');
+  it('NOTHING RE-DECLARES the union any more — the drift is impossible, not merely checked', () => {
+    // ⚠ THIS LEG USED TO COMPARE TWO COPIES AND NOW FORBIDS THE SECOND ONE,
+    // which is strictly stronger and is what the legacy-removal S1 extraction
+    // bought. The card carried a LOCAL nine-member `type State = …` union that
+    // nothing could import, so the only available gate was a source scan
+    // comparing it to `CameraState`. `CameraInputCard.svelte` now writes
+    // `type State = CameraState` and the controller uses `CameraState` directly,
+    // so there is one declaration and two aliases.
+    //
+    // A comparison between two copies passes the day someone adds a state to
+    // both. An absence check fails the day someone adds a second copy at all —
+    // and a second copy is the thing that made the original defect possible.
+    const cardSrc = readFileSync(CARD_PATH, 'utf8');
+    expect(cardSrc, 'the card must ALIAS the shared union, never re-declare its members')
+      .toContain('type State = CameraState;');
+    expect(
+      reDeclaresUnion(cardSrc, 'type State ='),
+      'the card re-declares the capture states — a copy nothing can compare, which is exactly ' +
+        'how a state the dock face cannot render gets added with every runtime assertion green',
+    ).toBe(false);
+
+    const controllerSrc = readFileSync(
+      fileURLToPath(new URL('./node-camera-source-registry.ts', import.meta.url)),
+      'utf8',
+    );
+    expect(controllerSrc, 'the controller must USE the shared union, never re-declare it')
+      .toContain("import type { CameraState } from '$lib/video/camera-device';");
+    expect(reDeclaresUnion(controllerSrc, 'CameraState =')).toBe(false);
+
+    // VACUITY: the one surviving declaration must still be a real, populated
+    // union — otherwise "nobody re-declares it" is true of a deleted concept.
     const deviceStates = unionMembers(
       readFileSync(DEVICE_PATH, 'utf8'),
       'export type CameraState =',
     );
-    expect(deviceStates, '`CameraState` must equal the card\'s `State` union').toEqual(cardStates);
+    expect(deviceStates.length, 'CameraState must still declare its members').toBeGreaterThan(4);
+    for (const st of ['streaming', 'permission-denied', 'device-in-use'] as CameraCaptureState[]) {
+      expect(deviceStates, `${st} is a real capture state`).toContain(st);
+    }
   });
 
   it('and the registry re-exports that union rather than re-typing it', () => {
@@ -274,13 +323,30 @@ describe('SOURCE gate: `CameraState` IS the card\'s `State` — the claim nobody
     ).toBe(false);
   });
 
-  it('POSITIVE CONTROL: the scan really finds states, and finds the known ones', () => {
-    // Membership, not size — a scan that silently stopped matching would make
-    // the leg above compare [] to [] and pass.
-    const cardStates = unionMembers(readFileSync(CARD_PATH, 'utf8'), 'type State =');
-    for (const s of ['streaming', 'permission-denied', 'device-in-use'] as CameraCaptureState[]) {
-      expect(cardStates, `${s} is a real card state and the scan must see it`).toContain(s);
-    }
+  it('POSITIVE CONTROL: the re-declaration detector FIRES on a real re-declaration', () => {
+    // ⚠ THE LEG ABOVE IS AN ABSENCE CHECK, AND AN ABSENCE CHECK WITH A BROKEN
+    // DETECTOR IS THE PUREST FORM OF A GATE THAT CANNOT FAIL. Fed the exact
+    // shape the card carried until 2026-09-03, the detector must say YES.
+    const shippedShape = `
+      type State =
+        | 'idle'
+        | 'requesting'
+        | 'streaming'
+        | 'paused'
+        | 'permission-denied'
+        | 'no-cameras-found'
+        | 'device-in-use'
+        | 'unsupported'
+        | 'error';
+    `;
+    expect(
+      reDeclaresUnion(shippedShape, 'type State ='),
+      'the detector is blind to the very shape it exists to forbid',
+    ).toBe(true);
+    // ...and NO on the alias that replaced it.
+    expect(reDeclaresUnion('type State = CameraState;', 'type State =')).toBe(false);
+    // ...and on a marker that is not present at all, rather than throwing.
+    expect(reDeclaresUnion('nothing here', 'type State =')).toBe(false);
   });
 
   it('NEGATIVE CONTROL: the parser rejects a union it cannot terminate', () => {

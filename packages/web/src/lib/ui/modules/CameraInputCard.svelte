@@ -1,63 +1,72 @@
 <script lang="ts">
   // CameraInputCard — UI for the CAMERA input video module.
   //
-  // Owns: getUserMedia + enumerateDevices + the live <video> element +
-  // permission state machine. Hands the <video> element off to the
-  // engine module's runtime via attachExternalSource so the WebGL2
-  // sampler reads from it directly (single source of truth).
+  // ⚠ THIS CARD OWNS NO LIFECYCLE ANY MORE (legacy-removal S1, 2026-09-03).
+  // getUserMedia, enumerateDevices, the saved-device rebind, the permission
+  // state machine, the engine attach and the multiplayer presence badge all
+  // moved to `$lib/ui/media/node-camera-source-registry` — a NODE-keyed
+  // controller Canvas syncs from the graph. What is left here is a VIEW: the
+  // rack tile, the patch panel, a preview of the node-owned <video>, a device
+  // picker that writes the graph, and buttons that ASK the controller to act.
+  //
+  // WHY. `cameraInput` was in `DOM_SOURCE_LANE_TYPES`, so the default shell kept
+  // this card mounted OFF-SCREEN inside <HeadlessSourceHost> purely to keep the
+  // camera alive — the card was load-bearing, and a load-bearing card cannot be
+  // deleted. Every card is being deleted.
+  //
+  // ⚠ AND THE MOVE FIXED THE GUARDS' TIMING, not just their address. Every one
+  // of the acquire guards (don't prompt on a rack load, don't request a camera
+  // that is gone, "nothing saved" is not "not found") used to run in this card's
+  // `onMount`. A CARD mounting is not a moment at which acquiring a camera is
+  // appropriate; a NODE entering the graph is, and that is when they run now.
+  //
+  // ⚠ ONE DELIBERATE BEHAVIOUR CHANGE, recorded because it is not a pure
+  // relocation: the awareness badge ("this user has a camera live here") now
+  // tracks the STREAM rather than this card's mount. See the controller header.
   //
   // State scopes:
-  //   - `state` (idle, requesting, streaming, ...): per-tab. Lives in
-  //     local Svelte $state. NOT in Yjs — permission grants are
-  //     browser-instance-local.
-  //   - `node.params.enabled / mirror / gain`: in Yjs. Sync across
-  //     collaborators. Mirror toggling on User-A flips User-B's local
-  //     preview too — that's intentional, the param IS shared.
-  //   - `node.data.deviceId`: in Yjs. Each user's browser tries to
-  //     match it to a local camera; if missing, dropdown shows
-  //     "(saved camera not found)" and user picks again.
+  //   - capture state (idle, requesting, streaming, …): per-tab, held by the
+  //     controller. NOT in Yjs — permission grants are browser-instance-local.
+  //   - `node.params.enabled / mirror / gain / fillMode`: in Yjs. `enabled` OWNS
+  //     THE HARDWARE — the controller watches it, so a collaborator's toggle and
+  //     the faceplate's ON cell free the camera exactly as this card's button does.
+  //   - `node.data.deviceId` / `deviceLabel`: in Yjs. The controller watches
+  //     these too, so a device picked on ANY surface (or by a rack-mate) lands.
 
-  import { onMount, onDestroy, untrack } from 'svelte';
+  import { onDestroy } from 'svelte';
   import { nodeMedia, type NodeMediaLease } from '$lib/ui/media/node-media-registry';
-  import { cameraStatus } from '$lib/ui/media/camera-status-registry';
-  import { acquireCameraStream } from '$lib/ui/camera-acquire';
   import { type NodeProps } from '@xyflow/svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import NeonFader from '$lib/ui/controls/NeonFader.svelte';
-  import { useEngine } from '$lib/audio/engine-context';
   import { useProvider } from '$lib/multiplayer/provider-context';
   import {
-    addLocalCameraNodeId,
-    removeLocalCameraNodeId,
     readRemoteCameraPresence,
     type RemoteCameraPresence,
   } from '$lib/multiplayer/camera-presence';
   import type { PresenceUser } from '$lib/multiplayer/presence';
-  import { setNodeParam, mutateNode } from '$lib/graph/mutate';
-  import { resolveDevice, shouldRewriteSavedId } from '$lib/graph/device-rebind';
+  import { setNodeParam } from '$lib/graph/mutate';
   import { cameraInputDef } from '$lib/video/modules/camera-input';
-  import { shouldReacquireOnPick, savedDeviceMissing } from '$lib/video/camera-device';
-  import type { VideoEngine } from '$lib/video/engine';
+  import { savedDeviceMissing, type CameraState } from '$lib/video/camera-device';
+  import {
+    nodeCameraSource,
+    CAMERA_SOURCE_SLOT,
+  } from '$lib/ui/media/node-camera-source.svelte';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
   import NativeFillToggle from './NativeFillToggle.svelte';
   import { portsFromDef } from './card-kit';
 
-  type State =
-    | 'idle'
-    | 'requesting'
-    | 'streaming'
-    | 'paused'
-    | 'permission-denied'
-    | 'no-cameras-found'
-    | 'device-in-use'
-    | 'unsupported'
-    | 'error';
+  // ⚠ IMPORTED, NEVER RE-DECLARED. This used to be a local nine-member union,
+  // and `loopback`'s header already flagged that as the latent defect shape: a
+  // state one surface knows about and the published union does not is a string
+  // another surface's lamp cannot render, with every runtime assertion green.
+  // The controller and every surface now read the ONE declaration in
+  // `$lib/video/camera-device`.
+  type State = CameraState;
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
 
-  const engineCtx = useEngine();
   const providerCtx = useProvider();
 
   // ---- PatchPanel ports (NO raw side handles — the #767 yellow drill-down
@@ -67,83 +76,40 @@
   const inputs = portsFromDef(cameraInputDef.inputs);
   const outputs = portsFromDef(cameraInputDef.outputs);
 
-  // The <video> and the camera STREAM are owned by the NODE, not by this card
-  // (see $lib/ui/media/node-media-registry).
-  //
-  // ⚠ THIS CARD IS NO LONGER GUARANTEED TO BE ON SCREEN, and the note that used
-  // to sit here said the opposite. `cameraInput` WAS in `NON_SHELL_LANE_TYPES`
-  // — "keeps its real card in the lane, so it dodges the expand/collapse move" —
-  // and it is not any more: the module is promoted, so under the default shell
-  // the lane paints its faceplate and this card runs inside
-  // <HeadlessSourceHost>, parked off-screen. The stream is unaffected (that is
-  // the whole point of the node-owned element), but every BUTTON below is
-  // unclickable in that window, which is why the card now publishes its state
-  // and registers its acquire command on $lib/ui/media/camera-status-registry
-  // for the dock faceplate to drive. Under `?shell=legacy` this card is still
-  // the lane surface and nothing about it changes.
-  //
-  // It is unmounted by every card move — the headless host, docking to the
-  // rail, a collapsed group — and `onDestroy` once stopped the tracks, which
-  // needs a fresh permission gesture to undo.
+  // The <video> and the camera STREAM are owned by the NODE (see
+  // $lib/ui/media/node-media-registry). This card ADOPTS the element to SHOW it
+  // and releases it on unmount; both outlive both events.
   let videoHost: HTMLDivElement | null = $state(null);
-  let videoEl: HTMLVideoElement | null = $state(null);
   let mediaLease: NodeMediaLease<HTMLElement> | null = null;
-  const MEDIA_SLOT = 'main';
-  /** Mirror of the NODE-owned stream; rehydrated on adopt. */
-  let stream: MediaStream | null = null;
-  let camState: State = $state('idle');
-  let errorMsg = $state<string | null>(null);
-  let devices = $state<MediaDeviceInfo[]>([]);
-  let selectedDeviceId = $state<string | null>(null);
-  // True once enumerateDevices returns real labels — i.e. camera permission has
-  // been granted in this origin. Before that, deviceIds are redacted to '' so we
-  // can't tell whether the saved camera is actually present.
-  let hasDeviceLabels = $state(false);
-  /** Set when the saved camera was re-found by NAME rather than by its saved
-   *  id. Transient and absent whenever nothing happened — the shape the
-   *  resting-text ruling permits (an outcome with guidance, not a readout), the
-   *  same one `LoopbackOutputBody` renders for its recovery text. */
-  let rebindNotice = $state<string | null>(null);
+
+  // ── The controller's published status ─────────────────────────────────────
+  //
+  // Read from `nodeCameraSource` rather than through `cameraStatus`, and the
+  // difference from LoopbackCard is deliberate: this card needs the DEVICE
+  // ROSTER, which the cross-surface status seam does not carry (it publishes
+  // only `deviceCount`, because that is all the faceplate needs to decide
+  // whether acquire is offerable). Widening that seam to feed one card would be
+  // work that S4 deletes.
+  let live = $derived(nodeCameraSource.view(id));
+  let camState = $derived<State>(live.state);
+  let errorMsg = $derived<string | null>(live.errorMsg);
+  let devices = $derived(live.devices);
+  let selectedDeviceId = $derived<string | null>(live.selectedDeviceId);
+  let hasDeviceLabels = $derived(live.hasDeviceLabels);
+
   // The saved camera no longer resolves to an available device (loaded a patch
   // on a different machine / camera unplugged). Drives the dropdown placeholder.
-  let savedMissing = $derived(savedDeviceMissing(selectedDeviceId, devices, hasDeviceLabels));
-  // Awareness: who else (if anyone) has THIS card's CAMERA active. The
-  // stream itself is local-only, so we render a presence badge instead of
-  // pixels. Null = no remote user; non-null = the first remote user we
-  // see in the awareness states whose cameraNodeIds includes our id.
+  let savedMissing = $derived(
+    savedDeviceMissing(
+      selectedDeviceId,
+      devices.map((d) => ({ deviceId: d.deviceId, label: d.label }) as MediaDeviceInfo),
+      hasDeviceLabels,
+    ),
+  );
+
+  // Awareness: who else (if anyone) has THIS node's CAMERA active. The stream
+  // itself is local-only, so we render a presence badge instead of pixels.
   let remoteCameraUser = $state<PresenceUser | null>(null);
-
-  // Hydrate selectedDeviceId from node.data.deviceId once on mount.
-  // Subsequent picks write back to node.data.deviceId.
-  function readSavedDeviceId(): string | null {
-    const d = node?.data;
-    if (d && typeof d['deviceId'] === 'string') return d['deviceId'] as string;
-    return null;
-  }
-
-  /** The NAME the patch remembered for its camera, or null.
-   *
-   *  ⚠ THIS IS THE HALF THAT DID NOT EXIST, and without it no fallback is
-   *  possible: `MediaDeviceInfo.deviceId` is a per-ORIGIN hash over a browser
-   *  salt plus an OS device identifier, so it does not survive clearing site
-   *  data, a different profile, or the OS enumerating the camera differently
-   *  (a different USB port, a hub, a driver reinstall) — and the card had
-   *  nothing else written down to fall back TO. */
-  function readSavedDeviceLabel(): string | null {
-    const d = node?.data;
-    if (d && typeof d['deviceLabel'] === 'string' && d['deviceLabel'] !== '') {
-      return d['deviceLabel'] as string;
-    }
-    return null;
-  }
-
-  /** This session's label for a device id, or null when it is not enumerable
-   *  or its label is still redacted. */
-  function labelForDeviceId(deviceId: string | null): string | null {
-    if (!deviceId) return null;
-    const found = devices.find((x) => x.deviceId === deviceId);
-    return found && found.label !== '' ? found.label : null;
-  }
 
   function p(name: string): number {
     const def = cameraInputDef.params.find((x) => x.id === name);
@@ -155,334 +121,87 @@
   function setBoolParam(paramId: string, v: boolean): void {
     setNodeParam(id, paramId, v ? 1 : 0);
   }
-  function setSavedDeviceId(deviceId: string | null): void {
-    const label = labelForDeviceId(deviceId);
-    mutateNode(id, (live) => {
-      if (!live.data) live.data = {};
-      if (deviceId === null) {
-        delete live.data['deviceId'];
-        delete live.data['deviceLabel'];
-        return;
-      }
-      live.data['deviceId'] = deviceId;
-      // ⚠ ONLY EVER WRITE A REAL LABEL, and never clear a good one. Before
-      // camera permission is granted `enumerateDevices()` redacts every label
-      // to '', so persisting whatever is on hand would save a name that matches
-      // EVERY unlabelled device on the next machine — a fallback with maximum
-      // confidence and no information. A null here means "nothing better to say
-      // right now"; the label already on the node stays.
-      if (label) live.data['deviceLabel'] = label;
-    });
-  }
 
-  function videoEngine(): VideoEngine | null {
-    const e = engineCtx.get();
-    if (!e) return null;
-    try {
-      return e.getDomain<VideoEngine>('video');
-    } catch {
-      return null;
-    }
+  function onPickDevice(deviceId: string): void {
+    nodeCameraSource.request(id, { kind: 'pick', deviceId });
   }
 
   /**
-   * Refresh the device list. Returns the device labels visibility flag —
-   * before permission has been granted, browsers return entries with empty
-   * labels (privacy-protective). After grant, real labels appear.
+   * ⚠ A REAL CLICK HANDLER, AND IT MUST STAY ONE. On a FIRST visit this is what
+   * raises the permission prompt, and a browser judges that by the call's
+   * activation context. `request` reaches getUserMedia synchronously, so the
+   * activation survives; an `await` anywhere on the path would leave the prompt
+   * unraised on exactly the visit that needed it, and every later visit would
+   * work because the origin is already granted — which is the worst possible
+   * shape for a bug to have.
    */
-  async function refreshDevices(): Promise<{ hasLabels: boolean }> {
-    if (typeof navigator === 'undefined' || !navigator.mediaDevices?.enumerateDevices) {
-      devices = [];
-      return { hasLabels: false };
-    }
-    try {
-      const all = await navigator.mediaDevices.enumerateDevices();
-      const cams = all.filter((d) => d.kind === 'videoinput');
-      devices = cams;
-      const hasLabels = cams.some((d) => d.label !== '');
-      hasDeviceLabels = hasLabels;
-      return { hasLabels };
-    } catch (err) {
-      console.warn('[cameraInput] enumerateDevices failed:', err);
-      devices = [];
-      return { hasLabels: false };
+  function onRequestAccess(): void {
+    const res = nodeCameraSource.request(id, { kind: 'acquire' });
+    if (!res.delivered) {
+      console.warn('[cameraInput] REQUEST ACCESS reached no controller for node', id);
     }
   }
-
-  async function requestStream(): Promise<void> {
-    if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
-      camState = 'unsupported';
-      errorMsg = 'Browser does not support getUserMedia';
-      return;
-    }
-
-    camState = 'requesting';
-    errorMsg = null;
-
-    // First: tear down any existing stream so we can re-acquire on the
-    // selected device cleanly.
-    stopStream();
-
-    const targetId = selectedDeviceId;
-    // Acquisition goes through the retry seam: webcam-friendly constraints
-    // first, then — for a specific device that NotReadableErrors — one BARE
-    // deviceId-only retry at the driver's native format. Exclusive-access
-    // capture drivers (Blackmagic WDM et al.) routinely reject format hints
-    // with the SAME error name as "device busy"; the retry distinguishes a
-    // format-picky driver from a genuinely held device. See camera-acquire.ts.
-    const result = await acquireCameraStream(
-      (c) => navigator.mediaDevices.getUserMedia(c),
-      targetId ?? null,
-    );
-    if (!result.stream) {
-      const e = result.error!;
-      console.warn(
-        '[cameraInput] acquire failed:',
-        e?.name,
-        e?.message,
-        `(bare retry attempted: ${result.usedBareRetry})`,
-      );
-      if (e.name === 'NotAllowedError' || e.name === 'PermissionDeniedError') {
-        camState = 'permission-denied';
-        errorMsg = 'Camera permission blocked. Grant in browser site settings.';
-      } else if (e.name === 'NotFoundError' || e.name === 'OverconstrainedError') {
-        camState = 'no-cameras-found';
-        errorMsg = 'No camera matches the selected constraints.';
-      } else if (e.name === 'NotReadableError') {
-        camState = 'device-in-use';
-        // NotReadableError is ambiguous: another app holding the device OR the
-        // driver failing to start the source (capture cards need a live input
-        // signal in a format the driver offers). Say both — "in use" alone
-        // sends people hunting for an app that may not exist.
-        errorMsg =
-          'Camera is busy or failed to start. Close other capture apps ' +
-          '(OBS, Desktop Video Setup), and check the device has a live input signal.';
-      } else {
-        camState = 'error';
-        errorMsg = `${e.name}: ${e.message}`;
-      }
-      return;
-    }
-    stream = result.stream;
-    // The registry owns it from here: it stops the PREVIOUS stream (a device
-    // switch legitimately replaces it) and never stops this one on unmount.
-    nodeMedia.setStream(id, MEDIA_SLOT, stream);
-
-    // Permission granted — re-enumerate to pick up real device labels.
-    await refreshDevices();
-
-    // Hook the stream into the <video> element. The element itself was
-    // already mounted by the template (so we can use its DOM ref); we
-    // just set srcObject.
-    if (videoEl) {
-      videoEl.srcObject = stream;
-      try {
-        await videoEl.play();
-      } catch (playErr) {
-        // play() can reject if the page hasn't seen a user gesture yet,
-        // but the click that triggered requestStream() counts as one.
-        // Log and keep going — the next user interaction will retry.
-        console.warn('[cameraInput] video.play() rejected:', playErr);
-      }
-    }
-
-    // Announce the element to the engine module.
-    const ve = videoEngine();
-    ve?.attachExternalSource(id, 'video', videoEl);
-
-    // Track the chosen device id back into Yjs once we know what we got.
-    const track = stream.getVideoTracks()[0];
-    if (track) {
-      const settings = track.getSettings?.();
-      const realId = settings?.deviceId ?? null;
-      if (realId && realId !== selectedDeviceId) {
-        selectedDeviceId = realId;
-        setSavedDeviceId(realId);
-      } else if (selectedDeviceId) {
-        setSavedDeviceId(selectedDeviceId);
-      }
-      // Wire end-of-stream — covers permission revoke, hardware unplug,
-      // sleep/wake on macOS.
-      track.addEventListener('ended', () => {
-        if (camState === 'streaming') {
-          camState = 'error';
-          errorMsg = 'Camera stream ended (disconnected or revoked).';
-          stopStream();
-        }
-      });
-    }
-
-    camState = 'streaming';
-    // Awareness signal: tell rack-mates THIS user has a CAMERA active here.
-    // Stream itself stays local — the awareness field is just an id list,
-    // so the receiving side can render a presence badge over the matching
-    // node without seeing pixels.
-    addLocalCameraNodeId(providerCtx.get(), id);
-  }
-
-  /** An EXPLICIT stop (user pressed stop, device unplugged, permission
-   *  revoked). A genuine content change, not a view teardown — so the registry
-   *  frees the stream here. Never called from onDestroy. */
-  function stopStream(): void {
-    nodeMedia.setStream(id, MEDIA_SLOT, null);
-    stream = null;
-    if (videoEl) {
-      videoEl.srcObject = null;
-    }
-    const ve = videoEngine();
-    ve?.attachExternalSource(id, 'video', null);
-    // Awareness signal cleanup: peers should drop the badge when the
-    // stream ends (whether user-initiated, hardware-disconnected, or
-    // permission-revoked).
-    removeLocalCameraNodeId(providerCtx.get(), id);
-  }
-
-  function onPickDevice(deviceId: string): void {
-    selectedDeviceId = deviceId;
-    setSavedDeviceId(deviceId);
-    // The player has said which camera they want, so any "I reconnected this by
-    // name" notice has been answered and must not linger.
-    rebindNotice = null;
-    // An explicit pick is a user gesture + a clear intent to use THAT camera —
-    // (re)acquire from any state except where a request can't/shouldn't fire
-    // (requesting / unsupported). Critically this now includes
-    // 'no-cameras-found' (loaded a patch whose saved camera is gone) and
-    // 'permission-denied' / 'idle' — previously the card stayed stuck there:
-    // switching cameras saved the id but never started the stream.
-    if (shouldReacquireOnPick(camState)) {
-      requestStream();
-    }
-  }
-
-  // ⚠ TRACK EXTERNAL PICKS — the card used to hydrate `node.data.deviceId` ONCE
-  // on mount and never look again, so a device chosen anywhere OTHER than this
-  // card's own `<select>` was saved and never acted on until a remount.
-  //
-  // The live case today is COLLABORATION: `node.data.deviceId` is in Yjs, so a
-  // rack-mate's pick already arrives here — and used to arrive as a value that
-  // sat in the document doing nothing. It was also found while prototyping a
-  // second picker surface for this module, parked on the branch
-  // `parked/camerainput-face-option-a` (which carries its own handoff note),
-  // where the same defect is not a latent one: any second picker writes the
-  // shared key and appears to do nothing at all.
-  //
-  // ⚠ IT IS ALSO WHAT THE DEF ALREADY CLAIMED. This card's own header says
-  // `node.data.deviceId` is "in Yjs. Each user's browser tries to match it to a
-  // local camera" — a promise hydrate-once could not keep for any change after
-  // mount, including a collaborator's.
-  //
-  // Guarded three ways so this cannot loop or fight the user: it fires only when
-  // the saved id DIFFERS from what this card already has, only when the id is
-  // non-null, and it reuses `shouldReacquireOnPick` so the same states that
-  // refuse a re-acquire on a local pick refuse it here too.
-  $effect(() => {
-    const saved = readSavedDeviceId();
-    if (!saved) return;
-    if (saved === untrack(() => selectedDeviceId)) return;
-    untrack(() => {
-      selectedDeviceId = saved;
-      if (shouldReacquireOnPick(camState)) requestStream();
-    });
-  });
 
   // ⚠ THE `enabled` PARAM OWNS THE HARDWARE — THIS BUTTON ONLY WRITES IT.
   //
-  // It used to do both: write the param AND stop/start the track beside it. That
-  // made the BUTTON the authority, and the param's documented behaviour was
-  // therefore only true when the button was the writer. The def's own `docs`
-  // says otherwise, in the param's voice: "off (Pause) stops the camera track to
-  // release the hardware … on (Resume) re-requests the stream". Every other
-  // writer got the param without the hardware:
-  //   * a COLLABORATOR's toggle — `enabled` is in Yjs, so a rack-mate's write
-  //     already arrived here and did nothing but change the shader branch,
-  //     leaving the camera light on for a camera the patch says is off;
-  //   * and now the dock FACEPLATE's ON cell, which is the surface most people
-  //     will reach for once this module is promoted.
-  // Same shape as the hydrate-once `deviceId` defect fixed above: a documented
-  // claim kept by one call site instead of by the state it describes.
+  // It used to do both: write the param AND stop/start the track beside it, which
+  // made the BUTTON the authority and left the param's documented behaviour true
+  // only when the button was the writer. Every other writer — a collaborator's
+  // toggle, the dock faceplate's ON cell — got the param without the hardware.
+  // The controller watches the param off the graph snapshot, so all three
+  // writers now free and re-request the camera identically.
   function onToggleEnabled(): void {
     setBoolParam('enabled', p('enabled') < 0.5);
   }
 
-  /** Last `enabled` this card ACTED on. `null` until the first effect run — see
-   *  the SKIP-FIRST note below. */
-  let actedEnabled: boolean | null = null;
-
-  $effect(() => {
-    const on = p('enabled') > 0.5;
-    // ⚠ SKIP-FIRST IS LOAD-BEARING, NOT AN OPTIMISATION. `enabled` defaults to
-    // 1, so without this the effect's first run would call requestStream() on
-    // every mount of every camera node — firing getUserMedia with none of
-    // onMount's guards (it checks `hasLabels` precisely so a rack load does not
-    // raise a permission PROMPT, and skips a doomed exact-deviceId request when
-    // the saved camera is gone). onMount owns the initial acquire; this effect
-    // owns every CHANGE after it.
-    if (actedEnabled === null) { actedEnabled = on; return; }
-    if (on === actedEnabled) return;
-    actedEnabled = on;
-    untrack(() => {
-      if (!on) {
-        // Pause: stop the track to release the camera (matches the spec §6 —
-        // paused means hardware is freed; resume re-requests).
-        stopStream();
-        camState = 'paused';
-      } else if (shouldReacquireOnPick(camState)) {
-        // Reusing the pick guard is deliberate: the states that refuse a
-        // re-acquire on a device pick ('requesting' — one is already in flight;
-        // 'unsupported' — there is no getUserMedia) refuse it here for the same
-        // reasons.
-        requestStream();
-      }
-    });
-  });
-
-  // ── THE CAPTURE-STATUS SEAM ($lib/ui/media/camera-status-registry) ─────────
-  //
-  // ⚠ WHY A CARD THAT MAY BE OFF-SCREEN STILL HAS TO SPEAK. Promotion moves this
-  // card into <HeadlessSourceHost> under the default shell — off-screen, with
-  // `pointer-events: none`. The stream survives; the BUTTONS do not. Publishing
-  // the state and registering the acquire command is what lets the dock
-  // faceplate show the real lamp, print the recovery text, and offer a working
-  // "Request access" without a second getUserMedia owner existing anywhere.
-  //
-  // ⚠ PUBLISH IS A TRACKED READ OF ALL THREE FIELDS, deliberately. `camState`
-  // alone is not the status a consumer paints: `errorMsg` carries the recovery
-  // instructions, and `devices.length` is what decides whether acquire is even
-  // offerable (the button below is disabled on zero for the same reason).
-  $effect(() => {
-    cameraStatus.publish(id, {
-      state: camState,
-      errorMsg,
-      deviceCount: devices.length,
-      rebindNotice,
-    });
-  });
-
-  $effect(() => {
-    // The lease is OWNER-CHECKED, so the remount churn this card sees (lane →
-    // headless host → dock rail) cannot let a stale teardown unregister the live
-    // mount's command. See the registry header.
-    const lease = cameraStatus.registerCommands(id, {
-      acquire: () => { void requestStream(); },
-    });
-    return () => lease.release();
-  });
-
   function onToggleMirror(): void {
-    const next = p('mirror') < 0.5;
-    setBoolParam('mirror', next);
+    setBoolParam('mirror', p('mirror') < 0.5);
   }
 
-  // Live native aspect of the webcam stream (intrinsic <video> dims once a
-  // frame has decoded), feeding the per-source fit/fill toggle's Native badge.
-  // Falls back to 16:9 (the requested ideal 640×360) before the stream lands.
+  // ---- Adopt the NODE-owned <video> into this card, to SHOW it ----
+  //
+  // ⚠ ADOPT, not create. The controller `ensure`s the element into existence
+  // with no host, so it exists and is attached to the engine whether or not any
+  // surface is mounted. Adoption is a transfer with an owner-checked release.
+  let videoEl = $state<HTMLVideoElement | null>(null);
+  $effect(() => {
+    const host = videoHost;
+    if (!host) return;
+    const lease = nodeMedia.adopt(id, CAMERA_SOURCE_SLOT, host, { kind: 'video' });
+    mediaLease = lease;
+    videoEl = lease.el as HTMLVideoElement;
+    return () => {
+      lease.release();
+      if (mediaLease === lease) mediaLease = null;
+      videoEl = null;
+    };
+  });
+
+  // The selfie-mirror is a PREVIEW transform, not the shader's. The element is
+  // node-owned rather than declared here, so the binding is applied imperatively
+  // — still reactive, because reading `p('mirror')` registers the dependency.
+  $effect(() => {
+    const v = videoEl;
+    if (!v) return;
+    v.style.transform = p('mirror') > 0.5 ? 'scaleX(-1)' : 'none';
+  });
+
+  // Live native aspect of the webcam stream (intrinsic <video> dims once a frame
+  // has decoded), feeding the per-source fit/fill toggle's Native badge. Falls
+  // back to 16:9 (the requested ideal 640×360) before the stream lands.
+  //
+  // ⚠ STAYS ON THE CARD, and it is the one loop that should. It reads the
+  // ELEMENT this card has adopted and feeds a badge this card draws; with no
+  // card mounted there is no badge to feed, and moving it would mint a rAF loop
+  // running for nobody.
   let srcAspect = $state(16 / 9);
   $effect(() => {
     if (camState !== 'streaming') return;
     let raf: number;
     const tick = (): void => {
-      if (videoEl && videoEl.videoWidth > 0 && videoEl.videoHeight > 0) {
-        const a = videoEl.videoWidth / videoEl.videoHeight;
+      const v = videoEl;
+      if (v && v.videoWidth > 0 && v.videoHeight > 0) {
+        const a = v.videoWidth / v.videoHeight;
         if (Math.abs(a - srcAspect) > 0.001) srcAspect = a;
       }
       raf = requestAnimationFrame(tick);
@@ -491,192 +210,27 @@
     return () => cancelAnimationFrame(raf);
   });
 
-  // ---- Lifecycle ----
-  // ---- Adopt the NODE-owned <video> into this card ----
-  $effect(() => {
-    const host = videoHost;
-    if (!host) return;
-    const lease = nodeMedia.adopt(id, MEDIA_SLOT, host, {
-      kind: 'video',
-      init: (el) => {
-        const v = el as HTMLVideoElement;
-        v.playsInline = true;
-        v.muted = true;
-        v.autoplay = true;
-        v.setAttribute('data-testid', 'camera-preview');
-      },
-    });
-    mediaLease = lease;
-    const v = lease.el as HTMLVideoElement;
-    videoEl = v;
-    // Rehydrate from the node: the camera may already be streaming from a
-    // previous mount, in which case the element still holds its srcObject.
-    stream = nodeMedia.stream(id, MEDIA_SLOT);
-    if (stream && v.srcObject !== stream) v.srcObject = stream;
-    if (stream && camState !== 'streaming') {
-      camState = 'streaming';
-      // Re-publish the awareness badge this mount just took responsibility for.
-      addLocalCameraNodeId(providerCtx.get(), id);
-    }
-    return () => {
-      lease.release();
-      if (mediaLease === lease) mediaLease = null;
-    };
-  });
-
-  // The selfie-mirror was a `style:transform` on the element. The element is no
-  // longer declared by this component, so the binding is applied imperatively —
-  // still reactive, because reading p('mirror') registers the dependency.
-  $effect(() => {
-    const v = videoEl;
-    if (!v) return;
-    v.style.transform = p('mirror') > 0.5 ? 'scaleX(-1)' : 'none';
-  });
-
-  onMount(() => {
-    if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
-      camState = 'unsupported';
-      errorMsg = 'Browser does not support getUserMedia';
-      return;
-    }
-
-    untrack(() => {
-      selectedDeviceId = readSavedDeviceId();
-    });
-
-    // Populate the device list with empty labels (no permission yet).
-    // The user picks "Request access" to actually start the stream.
-    refreshDevices().then((res) => {
-      if (devices.length === 0) {
-        camState = 'no-cameras-found';
-        errorMsg = 'No cameras detected.';
-        return;
-      }
-      // If labels are already visible (permission previously granted in
-      // this origin) AND the persisted toggle says enabled, auto-acquire.
-      if (res.hasLabels && p('enabled') > 0.5) {
-        // Guard: if a patch saved a deviceId that's no longer present (loaded on
-        // a different machine / the camera was unplugged), DON'T fire the doomed
-        // exact-deviceId request — it just OverconstrainedErrors. Surface "pick
-        // a camera" directly so the (now working) device dropdown is the path
-        // forward. A null saved id falls through to an unconstrained request
-        // (the browser's default camera).
-        // ⚠ ID FIRST, THEN NAME — and the NAME half is why a reload after a
-        // reboot / re-plug used to strand the module. The saved id is the
-        // fast, exact, same-machine path; when it has been regenerated the
-        // remembered label is the only thing left that still names the
-        // hardware. `resolveDevice` owns the order and the ambiguity
-        // tie-break (two identical webcams report identical labels).
-        const savedLabel = readSavedDeviceLabel();
-        // ⚠ "NOTHING SAVED" IS NOT "NOT FOUND", and collapsing the two is a
-        // regression I shipped and CI caught. `savedDeviceMissing` returned
-        // FALSE for a null saved id — so a camera with no saved device fell
-        // through to an UNCONSTRAINED request and got the browser's default,
-        // which is what a freshly-spawned camera has always done. Routing that
-        // case into the failure branch left every fresh camera stuck at
-        // 'no-cameras-found' without ever calling getUserMedia.
-        const hadSavedDevice = Boolean(selectedDeviceId || savedLabel);
-        const rebind = resolveDevice(
-          { id: selectedDeviceId, name: savedLabel },
-          devices.map((d) => ({ id: d.deviceId, name: d.label })),
-        );
-        if (hadSavedDevice && rebind.id === null) {
-          camState = 'no-cameras-found';
-          errorMsg = 'Saved camera not found — pick another from the list.';
-        } else {
-          // `rebind.id` is null here only when nothing was saved — the
-          // unconstrained default-camera path, which takes no notice and
-          // rewrites nothing.
-          if (rebind.id !== null && rebind.matchedBy !== 'exact-id') {
-            // ⚠ NEVER RE-POINT A PATCH SILENTLY. The player's saved camera id
-            // is gone and we have bound a DIFFERENT id by name; that is almost
-            // always the same physical camera, but "almost always" is exactly
-            // the case that needs saying out loud rather than being discovered
-            // later as "why is this the wrong camera".
-            rebindNotice =
-              rebind.matchedBy === 'name-ambiguous'
-                ? `Reconnected to "${savedLabel}" by name — ${rebind.candidates.length} cameras share that name, so this may not be the same one.`
-                : `Reconnected to "${savedLabel}" by name (its saved id changed).`;
-            selectedDeviceId = rebind.id;
-            // Self-healing: persist THIS session's id so the next load is an
-            // exact hit and the fallback is not paid twice.
-            if (shouldRewriteSavedId(rebind)) setSavedDeviceId(rebind.id);
-          }
-          requestStream();
-        }
-      }
-    });
-
-    // Hand the (empty, not-yet-streaming) <video> element to the engine
-    // module right away so a later track attach via srcObject is picked
-    // up by the per-frame readyState check without waiting for a re-mount.
-    //
-    // Race: the reconciler creates the engine-side node asynchronously
-    // (engine.addNode is `async`). The card may mount before that
-    // landed, in which case the attach is silently dropped. Poll
-    // until the node exists OR we time out — once attached, the engine's
-    // per-frame draw picks the videoEl up.
-    let attachAttempts = 0;
-    const attachInterval = setInterval(() => {
-      attachAttempts++;
-      const ve = videoEngine();
-      // The engine's `read('cameraInput', 'hasVideoElement')` returns
-      // undefined when the node doesn't exist yet, false once the
-      // factory ran but no element is attached, and true once we've
-      // successfully handed it across.
-      const e = engineCtx.get();
-      if (!e || !ve) {
-        if (attachAttempts > 50) clearInterval(attachInterval); // ~5s
-        return;
-      }
-      try {
-        ve.attachExternalSource(id, 'video', videoEl);
-        // Verify it stuck. read() returns undefined if the node isn't
-        // registered yet (still racing the reconciler).
-        const present = ve.read(id, 'hasVideoElement');
-        if (present === true) clearInterval(attachInterval);
-      } catch {
-        // engine not ready
-      }
-      if (attachAttempts > 50) clearInterval(attachInterval);
-    }, 100);
-  });
-
   onDestroy(() => {
-    // NOTE what is deliberately ABSENT: no stopStream(), no detach. A card
-    // unmount is a view move, not a node deletion, and stopping the camera
-    // here required a fresh permission gesture to undo. The stream belongs to
-    // the node and is stopped by nodeMedia when the node leaves the graph.
-    //
-    // The AWARENESS footprint is different in kind and DOES belong here: it
-    // advertises "this user has a camera active on this node" to rack-mates,
-    // and it is republished on mount. Leaving it set for an unmounted card
-    // would show peers a badge for a card that is not on screen.
-    removeLocalCameraNodeId(providerCtx.get(), id);
+    // NOTE what is deliberately ABSENT: no stop, no detach, no track teardown,
+    // and — new since the extraction — no awareness removal either. Unmounting a
+    // view is not a content event, and the badge is about whether a camera is
+    // LIVE, which this card is not the authority on any more.
     mediaLease?.release();
     mediaLease = null;
   });
 
-  // Subscribe to awareness changes — if a remote rack-mate has THIS node
-  // id in their cameraNodeIds set, render the presence badge over our
-  // preview area. Single-user / no-provider canvases get null and the
-  // overlay never shows.
+  // Subscribe to awareness changes — if a remote rack-mate has THIS node id in
+  // their cameraNodeIds set, render the presence badge over our preview area.
+  // Single-user / no-provider canvases get null and the overlay never shows.
   $effect(() => {
     const provider = providerCtx.get();
-    if (!provider) {
-      remoteCameraUser = null;
-      return;
-    }
-    const aw = provider.awareness;
+    const aw = provider?.awareness;
     if (!aw) {
       remoteCameraUser = null;
       return;
     }
     const refresh = (): void => {
-      const remotes: RemoteCameraPresence[] = readRemoteCameraPresence(
-        aw,
-        aw.clientID,
-      );
+      const remotes: RemoteCameraPresence[] = readRemoteCameraPresence(aw, aw.clientID);
       const owner = remotes.find((r) => r.nodeIds.includes(id));
       remoteCameraUser = owner ? owner.user : null;
     };
@@ -794,7 +348,7 @@
         <button
           class="primary"
           data-testid="camera-request-access"
-          onclick={requestStream}
+          onclick={onRequestAccess}
           disabled={devices.length === 0}
         >
           {camState === 'permission-denied' ? 'Retry (in settings)' : camState === 'device-in-use' || camState === 'error' ? 'Retry' : 'Request access'}

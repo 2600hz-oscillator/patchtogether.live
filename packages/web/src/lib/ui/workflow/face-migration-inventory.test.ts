@@ -751,15 +751,16 @@ describe('face-migration inventory — DERIVED from the tree, not from this list
         + 'which is also what lets one command seam serve three surfaces.',
       seam: '$lib/ui/media/archivist-status-registry',
     },
-    cameraInput: {
-      why:
-        'the DEVICE PICKER (a runtime enumerateDevices roster, so never a ParamDef and never an '
-        + 'options list) plus the ACQUIRE gesture, the capture LAMP and the recovery TEXT — all '
-        + 'rebuilt in the faceplate extension body. The card keeps sole ownership of '
-        + 'getUserMedia, the MediaStream and the permission state machine; the body reads a '
-        + 'published status and invokes a registered command, so no second owner exists.',
-      seam: '$lib/ui/media/camera-status-registry',
-    },
+    // ⚠ `cameraInput` HAD AN ENTRY HERE TOO, AND LEFT FOR THE SAME REASON AS
+    // `loopback` (legacy-removal S1, 2026-09-03) — read the note below for the
+    // full argument. The device PICKER, the ACQUIRE gesture, the capture LAMP
+    // and the recovery TEXT are all still carried, in `CameraSourceControls` and
+    // `CameraInputOutputBody` over `$lib/ui/media/camera-status-registry`, gated
+    // by `e2e/tests/camerainput-shell-source.spec.ts`. What went away is the
+    // parked card whose buttons the exemption existed to excuse:
+    // `$lib/ui/media/node-camera-source-registry` owns getUserMedia, the device
+    // roster and the permission state machine now, so cameraInput is not a
+    // DOM-source module and no card is mounted for it anywhere.
     // ⚠ `loopback` HAD AN ENTRY HERE AND NO LONGER NEEDS ONE (legacy-removal S1,
     // 2026-09-03). The distinction matters, because "the exemption was deleted"
     // reads at a glance like "the affordances were dropped", and the opposite

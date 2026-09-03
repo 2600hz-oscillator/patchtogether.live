@@ -361,7 +361,7 @@ test.describe('CAMERA → OUTPUT (fake webcam) — getUserMedia integration @cam
   // webcam + pre-granted permission (playwright.config.ts is in the collab
   // attest basis — adding a project for one test would force a re-attest).
   // Renderer-tolerant: canvas INEQUALITY between two frames, never exact pixels.
-  test('under the default shell the camera card runs HEADLESS, the picker moves to the faceplate, and camera → OUTPUT paints moving pixels', async ({ page }) => {
+  test('under the default shell NO camera card is mounted, the picker lives on the faceplate, and camera → OUTPUT paints moving pixels', async ({ page }) => {
     test.setTimeout(90_000);
 
     await page.goto('/rack');
@@ -417,14 +417,22 @@ test.describe('CAMERA → OUTPUT (fake webcam) — getUserMedia integration @cam
       'the promoted CAMERA paints a faceplate tile in the lane',
     ).toBeVisible({ timeout: 15_000 });
 
-    // The REAL card is alive off-screen, and it is what owns getUserMedia — so
-    // this is also the leg that proves the source survived the swap.
+    // ⚠ NO CARD IS MOUNTED ANYWHERE, AND THAT IS THE SECOND CORRECTION THIS
+    // BLOCK HAS TAKEN (legacy-removal S1, 2026-09-03). The paragraph above
+    // records the promotion moving the card OFF the lane and into
+    // `<HeadlessSourceHost>`; the extraction moves getUserMedia, the device
+    // roster and the permission machine OFF the card entirely, to
+    // `$lib/ui/media/node-camera-source-registry` on graph lifetime. So there is
+    // no host and no card, and this is the ONLY project with a fake webcam —
+    // which makes this leg the strongest evidence anywhere that the controller's
+    // auto-acquire works against real hardware plumbing rather than a stub.
     const camHost = page.locator('[data-testid="headless-source-host"][data-node-id="v-cam"]');
-    await expect(camHost, 'the real card is kept alive in the headless host').toHaveCount(1);
+    await expect(camHost, 'cameraInput has no headless host — the controller owns the source')
+      .toHaveCount(0);
     await expect(
-      camHost.locator('[data-testid="camera-status"]'),
-      'and it reaches streaming with a REAL getUserMedia stream',
-    ).toHaveAttribute('data-state', 'streaming', { timeout: 20_000 });
+      page.locator('[data-testid="camera-status"]'),
+      'and no CameraInputCard is mounted anywhere either',
+    ).toHaveCount(0);
 
     // The DEVICE PICKER is reachable where it now lives — the faceplate — and
     // it lists the fake device. Opened and closed again so the OUTPUT poll below
@@ -434,6 +442,15 @@ test.describe('CAMERA → OUTPUT (fake webcam) — getUserMedia integration @cam
     });
     const dock = page.locator('[data-testid="dock-full-view"]');
     await expect(dock).toHaveCount(1, { timeout: 20_000 });
+    // ⚠ THE STREAMING ASSERTION MOVED HERE FROM THE HOSTED CARD, and it is the
+    // same claim read off the surviving surface: a REAL getUserMedia stream
+    // reached `streaming` with nothing mounted when it was acquired. The
+    // controller had already auto-acquired before this dock was opened — the
+    // dock is where the state is now VISIBLE, not where it is produced.
+    await expect(
+      dock.locator('[data-testid="cameraInput-face-lamp"]'),
+      'the controller reached streaming with a REAL getUserMedia stream',
+    ).toHaveAttribute('data-lamp', 'streaming', { timeout: 20_000 });
     const select = dock.locator('[data-testid="cameraInput-face-device-select"]');
     await expect(select, 'device picker usable on the faceplate').toBeVisible({ timeout: 15_000 });
     await page.waitForFunction(
@@ -517,9 +534,16 @@ test.describe('CAMERA node-owned media lifetime @camera-integration', () => {
       { id: 'v-cam', type: 'cameraInput', position: { x: 80, y: 60 }, domain: 'video', params: { enabled: 1 } },
     ]);
 
+    // ⚠ READINESS IS READ OFF THE ELEMENT, NOT OFF A CARD (legacy-removal S1).
+    // This used to wait on the lane card's `camera-status`, which existed
+    // because `cameraInput` was carved out of the shell swap and later because
+    // the headless host kept a card mounted. Neither is true now: the
+    // controller owns getUserMedia on graph lifetime, so the FIRST observable
+    // of a live capture is the node-owned element's own track — which is also
+    // the thing this test is actually about.
     const camLane = page.locator('.svelte-flow__node[data-id="v-cam"]');
-    await expect(camLane.locator('[data-testid="camera-status"]'))
-      .toHaveAttribute('data-state', 'streaming', { timeout: 30_000 });
+    await expect(camLane.locator('[data-testid="module-shell"]').first())
+      .toBeVisible({ timeout: 15_000 });
 
     /** Liveness of the node's capture, read from the DOM wherever the element
      *  currently lives. `track.readyState` is the decisive signal: 'ended' is
@@ -586,8 +610,13 @@ test.describe('CAMERA node-owned media lifetime @camera-integration', () => {
         };
       });
 
-    const before = await captureState();
+    const before = await waitForLiveCapture();
     expect(before.present, 'the camera element exists before the move').toBe(true);
+    expect(
+      before.where,
+      `with no card mounted the node-owned element is PARKED — 'absent' would mean the `
+        + `controller never ensured it: ${JSON.stringify(before)}`,
+    ).toBe('parking');
     expect(before.tracks, `a live capture track before the move: ${JSON.stringify(before)}`)
       .toEqual(['live']);
 
@@ -645,11 +674,27 @@ test.describe('CAMERA node-owned media lifetime @camera-integration', () => {
     // mounted. `where` is what separates "hosted" from "rescued by the
     // registry", and 'parking' is the signature of the card having been
     // unmounted from every surface at once.
+    // ⚠ THIS LEG'S SUBJECT LEFT THIS MODULE (legacy-removal S1) AND IS NOT LOST,
+    // which is the only reason it is safe to invert rather than delete. It read
+    // `.toBe('host')`, and the paragraph above records what it was measuring:
+    // reverting Canvas's `fullViewShowsFaceInstead` to a constant `false` made
+    // the card unmount on expand and the element fall back to PARKING, with
+    // `tracks` and `count` both still green — `where` was the only reading that
+    // could see it.
+    //
+    // cameraInput cannot exercise that any more, because it has no card to host
+    // and 'parking' is now its correct resting state in every phase. The
+    // regression is still real for the modules that DO still get a headless
+    // host, and it is still covered: `face-archivist.spec.ts` asserts it for the
+    // surviving DOM-source member, and `card-producer-lifetime.spec.ts` asserts
+    // it for the whole CARD_PRODUCER half through `keepsHeadlessWhileDocked`.
+    // What this leg keeps is the weaker but still-real claim that opening the
+    // dock does not lose the element.
     expect(
       expanded.where,
-      `the real card must still be HOSTED while its faceplate is open — 'parking' means it ` +
-        `was unmounted everywhere and only the node registry saved the stream: ${JSON.stringify(expanded)}`,
-    ).toBe('host');
+      `the node-owned element must survive the dock opening — 'absent' means it was destroyed: `
+        + `${JSON.stringify(expanded)}`,
+    ).toBe('parking');
 
     // COLLAPSE — the dock mount goes away. Pre-fix, that unmount stopped the
     // tracks and the camera was gone for good.
@@ -666,7 +711,7 @@ test.describe('CAMERA node-owned media lifetime @camera-integration', () => {
     expect(after.count, 'still exactly one element after collapse').toBe(1);
     expect(after.tracks, `the capture track must still be LIVE after collapse: ${JSON.stringify(after)}`)
       .toEqual(['live']);
-    await expect(camLane.locator('[data-testid="camera-status"]'))
-      .toHaveAttribute('data-state', 'streaming', { timeout: 20_000 });
+    expect(after.where, `and still the parked node-owned element: ${JSON.stringify(after)}`)
+      .toBe('parking');
   });
 });
