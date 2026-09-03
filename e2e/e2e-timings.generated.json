@@ -1,6 +1,6 @@
 {
   "_comment": "Per-spec-file cost in SECONDS of test execution (CPU time, summed across a file's tests). Regenerate with `flox activate -- task e2e:timings:accept -- <ci-run-id>` (scripts/e2e-timings-accept.mjs) and REVIEW THE DIFF. Costs only — contention classes are derived at plan time by scripts/e2e-contention-scan.mjs and are deliberately NOT committed here (#1600).",
-  "_source": "blob-report artifacts of ci.yml run 33690160752 (2599 tests, 419 files, 24758 CPU-s)",
+  "_source": "blob-report artifacts of ci.yml run 33690160752 (2599 tests, 419 files, 24758 CPU-s) PLUS ci.yml run 33684552094 (feat/seqtris-surface) grafting ONLY seqtris-face.spec.ts, the one key no earlier run could measure. Every other cost is MAIN's — re-costing a whole lane from a single run RE-BINS it, and on this lane that starved a shard of audible-RMS specs.",
   "files": {
     "4plexer.spec.ts": 27.6,
     "acidwarp-face-screen.spec.ts": 41.3,
@@ -316,6 +316,7 @@
     "scratch-persist-video-live.spec.ts": 45.6,
     "scratch-persist.spec.ts": 53.2,
     "seed-none-fixture.spec.ts": 15.8,
+    "seqtris-face.spec.ts": 69.5,
     "seqtris.spec.ts": 19.3,
     "shapegen-clock.spec.ts": 0,
     "shapegen.spec.ts": 18.3,

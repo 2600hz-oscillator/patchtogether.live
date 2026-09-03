@@ -178,6 +178,17 @@ export interface Subject {
  *     themselves are enumerated and gate-checked in
  *     `face-rack-status-source.test.ts`; this is prose about why they are not
  *     subjects HERE.)
+ *   * `seqtris` — the `freezeframe` / `foxy` / `backdraft` reason, and named
+ *     rather than left to be noticed, because its `fullViewBody` DOES carry a
+ *     `seqtris-face-screen-toggle` and the header above tells a face PR to add a
+ *     row for exactly that. `e2e/tests/seqtris-face.spec.ts` already drives the
+ *     switch end to end — the grid and its 64 cells go, the `role="img"` frame
+ *     and its `aria-label` stay, the LANE TILE follows the same
+ *     `node.data.previewCollapsed` flag, and `notesFired` / `clockPulses` KEEP
+ *     CLIMBING with the picture off. ⚠ AND THE DEFAULT ASSERTION HERE WOULD NOT
+ *     FIT IT ANYWAY: it looks for `<type>-face-canvas`, and this well is a CSS
+ *     GRID of 64 `<span>`s that deliberately mounts no drawing surface, so a row
+ *     would need a `canvas` override pointing at a thing that is not one.
  */
 const SUBJECTS: readonly Subject[] = [
   // ── the four this file was opened for (batch 22 · group 4) ────────────────
