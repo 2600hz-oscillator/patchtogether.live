@@ -258,6 +258,7 @@
   import { ELECTRA_CONTROL_TYPE } from '$lib/graph/electra-control';
   import { nodeRecorder } from '$lib/ui/modules/node-recorder-registry.svelte';
   import { nodeSamsloop } from '$lib/ui/modules/node-samsloop-registry.svelte';
+  import { nodeClipRecorder } from '$lib/ui/modules/node-clip-recorder-registry.svelte';
   import { referencedClipMediaIds, sweepClipMedia } from '$lib/audio/clip-media-store';
   import { nodeAudioInput } from '$lib/ui/modules/node-audio-input-registry.svelte';
   import { nodeDoomSession } from '$lib/ui/modules/node-doom-session-registry.svelte';
@@ -2576,6 +2577,12 @@
     nodePresent.sweep(liveIds);
     nodeRecorder.sweep(liveIds);
     nodeSamsloop.sweep(liveIds);
+    // ...and the CLIP-RECORD registry, whose seam is `sync`, not `sweep`,
+    // because it must also ENSURE an entry per live mixmstrs node (the arm is
+    // a param, so there is no card press to create the entry on). A swept
+    // node's in-flight takes are ABANDONED with their scratch kept as recover
+    // candidates — never deleted (node-clip-recorder-registry.svelte.ts).
+    nodeClipRecorder.sync(snapshot.nodes);
     nodeAudioInput.sweep(liveIds);
     nodeDoomSession.sweep(liveIds);
     nodeLaunchpadMonitor.sweep(liveIds);
