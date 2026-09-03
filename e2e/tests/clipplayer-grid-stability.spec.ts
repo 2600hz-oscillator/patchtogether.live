@@ -81,7 +81,7 @@ async function startSampler(page: Page): Promise<void> {
     const tops: number[] = [];
     let raf = 0;
     const sample = () => {
-      const g = document.querySelector(`${sel} [data-testid="clipplayer-grid"]`);
+      const g = document.querySelector(`${sel} [data-testid="clipplayer-face-grid"]`);
       if (g) tops.push(+g.getBoundingClientRect().top.toFixed(2));
     };
     // Take t0 SYNCHRONOUSLY. The first rAF callback is up to a frame away, and
@@ -108,6 +108,26 @@ async function readSampler(page: Page): Promise<{ samples: number; distinct: num
   });
 }
 
+/**
+ * ⚠ THE GRID THIS SPEC MEASURES IS THE FACE'S, NOT THE CARD'S, SINCE
+ * `clipplayer` WAS PROMOTED. This file has always booted the DEFAULT shell
+ * (`/rack`, no `?shell=legacy`) and opened the dock full view, so it drove the
+ * verbatim card only because the module was carved out of the swap. With the
+ * promotion the same pane paints the faceplate, and its launch grid is the
+ * `clipplayer-face-grid` panel. Everything else about the spec is unchanged and
+ * still exactly as load-bearing: `[data-clip="n"]`, `data-state` and
+ * `clipplayer-pianoroll` are emitted identically by both surfaces (deliberately
+ * — eighteen spec files locate through them), the pane is still the
+ * `.faceplate-scroll` container, and `[data-clip="1"]` is still the pad one ROW
+ * below `[data-clip="0"]` because the flat key is `lane*64 + slot`.
+ *
+ * ⚠ AND THE GUARD IS NOT VACUOUS ON THE NEW SURFACE. The card's root cause was
+ * a bare `HTMLElement.focus()` scrolling a 540 px card inside a ~352 px
+ * scrollport; the panel calls `focus()` nowhere, so the +2-row jump should be
+ * structurally impossible there — which is a claim worth a test rather than a
+ * comment, and this is that test.
+ */
+
 /** A genuine slow double-click at ONE screen point: two full press/release
  *  pairs, clickCount 1 then 2, so Chromium emits the real `dblclick`. The gap is
  *  incidental — the pane scrolled on the FIRST click's handler either way — so
@@ -130,7 +150,7 @@ async function setupDockedClipplayer(page: Page): Promise<{ rowPitch: number; pa
 
   // The dock pane is screen-space — no xyflow zoom — so px here are CSS px.
   const scale = await page.evaluate((sel) => {
-    const el = document.querySelector(`${sel} [data-testid="clipplayer-grid"]`) as HTMLElement | null;
+    const el = document.querySelector(`${sel} [data-testid="clipplayer-face-grid"]`) as HTMLElement | null;
     if (!el) return NaN;
     return +new DOMMatrixReadOnly(getComputedStyle(el).transform).a.toFixed(4) || 1;
   }, PANE);

@@ -101,6 +101,32 @@ test.describe('VRT: workflow bottom dock composites', () => {
     await waitForClipplayerPin(page);
     await freezeChrome(page);
 
+    // ⚠ THE CLIP PLAYER IS FORCED ONTO THE UN-MIGRATED PATH, and the SUBJECT is
+    // why. This scene is the DOCKED-CARD + PATCH-PICKER composite — the
+    // verbatim-card branch of `DockFullView` and the geometry
+    // `Canvas.cardRectFor` resolves from a `[data-dock-card-frame]`. `clipplayer`
+    // was promoted, so that pane now paints a faceplate and there is no
+    // card frame at all; the scene would be measuring a different thing under
+    // the same baseline name.
+    //
+    // #2068's seam is the sanctioned answer and its own header names this case:
+    // a spec whose subject is that path "keeps a subject after the last
+    // un-promoted module is gone", and nominating another module would make a
+    // preserved un-migrated module a dependency of the suite. The occupant stays
+    // the pinned clip player because `c` is the key that opens it and the
+    // picker is positioned against ITS frame — so this baseline is expected to
+    // be BYTE-IDENTICAL across the promotion, which is the point.
+    const forced = await page.evaluate(() => {
+      const w = globalThis as unknown as { __forceUnmigrated?: (t: string[]) => string[] };
+      if (typeof w.__forceUnmigrated !== 'function') return null;
+      return w.__forceUnmigrated(['clipplayer']);
+    });
+    expect(
+      forced,
+      '__forceUnmigrated hook not present — a DEV/VITE_E2E_HOOKS build is expected (the same gate '
+        + 'as __patch / __ydoc / __openDockFullView)',
+    ).toEqual(['clipplayer']);
+
     // Open the pinned CLIPPLAYER in the dock (the C keymap → a full-view
     // pane), then drive the real patch flow: trigger → OUTPUT → jack-click
     // row → "patch to…".
