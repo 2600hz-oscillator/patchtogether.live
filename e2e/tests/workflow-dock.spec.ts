@@ -433,6 +433,29 @@ test.describe('dock drawer patch menu + rear-view patching (owner fixes 2026-07-
    *  Canvas.cardRectFor resolves. So the patch-menu + rear-view contracts
    *  below are unchanged; only the container moved. */
   async function openClipplayerDrawer(page: Page) {
+    // ⚠ THE PINNED CLIP PLAYER IS FORCED ONTO THE UN-MIGRATED PATH, and the
+    // reason is that the SUBJECT of the two tests below is the dock's
+    // VERBATIM-CARD BRANCH, not the clip player. `clipplayer` was promoted
+    // so `DockFullView` now mounts its faceplate and there is no
+    // `data-dock-card` frame for `Canvas.cardRectFor` to resolve — which is
+    // precisely the platform contract the picker-position fix is about.
+    //
+    // #2068's seam is the sanctioned answer to exactly this, and its own header
+    // says so: a spec whose subject is that path "keeps a subject after the last
+    // un-promoted module is gone", and nominating another un-migrated module
+    // would make a preserved un-migrated module a dependency of the suite. The
+    // occupant stays the pinned clip player because it is the one node the `c`
+    // key opens and the picker geometry is measured against ITS frame.
+    const forced = await page.evaluate(() => {
+      const w = globalThis as unknown as { __forceUnmigrated?: (t: string[]) => string[] };
+      if (typeof w.__forceUnmigrated !== 'function') return null;
+      return w.__forceUnmigrated(['clipplayer']);
+    });
+    expect(
+      forced,
+      '__forceUnmigrated hook not present — a DEV/VITE_E2E_HOOKS build is expected (the same gate '
+        + 'as __patch / __ydoc / __openDockFullView)',
+    ).toEqual(['clipplayer']);
     await page.locator('.svelte-flow__pane:visible').first().click({ position: { x: 500, y: 380 } });
     await page.keyboard.press('c');
     const pane = page.locator(

@@ -4710,11 +4710,12 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   //
   // ⚠ THE PROMOTION LOSES NOTHING, and that is the STOP-1 answer rather than a
   // hope. `push2Control` is NOT in `NON_SHELL_LANE_TYPES` — the set is `group`,
-  // `sticky`, `cadillac`, `clipplayer` (⚠ this sentence used to name
-  // `electraControl` and then `controlSurface` too, and BOTH memberships ended
-  // with their own promotions; a hand-transcribed copy of another module's set
-  // is exactly the thing that goes quietly stale, so it is corrected here — for
-  // the second time — rather than left to read as current fact) — so
+  // `sticky`, `cadillac` (⚠ this sentence has now named `electraControl`,
+  // `controlSurface` and `clipplayer` in turn, and EVERY one of those
+  // memberships ended with that module's own promotion; a hand-transcribed copy
+  // of another module's set is exactly the thing that goes quietly stale, so it
+  // is corrected here — for the third time — rather than left to read as
+  // current fact, and the set now holds no module card at all) — so
   // `laneRenderKind` returns `'placeholder'` TODAY: a uniform rackline tile
   // with ZERO ranked controls, on a module that also declares `inputs: []` and
   // `outputs: []`, so its jack rail is empty too. A name and a badge. Its
@@ -6602,6 +6603,135 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // user gesture. Baselines come from Linux CI through the vrt-update bot, as
   // always; none is captured locally.
   'archivist',
+
+  // ── DOOM (2026-09-02) — THE MODULE THIS FILE'S NEIGHBOURS EXCLUDED BY NAME ─
+  //
+  // Promoted under a SPECIFIC owner authorisation given on 2026-09-02 ("doom and
+  // toybox can be built and join the queue"). The standing 2026-08-17 ruling —
+  // never touch DOOM without specific approval — is NOT overturned by this
+  // entry; it is satisfied for this one change and stays in force for the next.
+  // Everything the ruling protects is untouched here: the WASM, the WAD, the
+  // netcode, the lockstep barrier, the consistency digest, the collab-attest
+  // workflow, and every DOOM spec's waits, budgets and ledger entries.
+  //
+  // ⚠ THE PROMOTION IS A MOVE OF ONE COMPONENT, AND THAT IS THE WHOLE RISK.
+  // `migrated('doom')` makes the default shell mount `<ModuleShell>` instead of
+  // `DoomCard.svelte`, and DOOM's card is not a control panel — it is the
+  // module's RUNTIME OWNER. Its `onMount` adopts the node-keyed multiplayer
+  // session (`nodeDoomSession.adopt`), attaches the awareness / nodes / edges
+  // observers, installs the window-level capture-phase keyboard listeners,
+  // starts the framebuffer blit, and publishes the `__doomCards` hook that every
+  // DOOM e2e reads. A faceplate that did not carry all of that would have
+  // shipped a promoted DOOM that is a black tile with no game, no keyboard and
+  // no netgame — while `face-migration-inventory`, `faces-parity` and every
+  // def-reading gate stayed green. That is the exact failure the module-surfaces
+  // skill names, and the reason the diff moves the surface into one SHARED
+  // `doom/DoomSurface.svelte` mounted by the card (`variant="card"`) and by the
+  // faceplate body (`variant="face"`) rather than authoring a second one.
+  // gibribbon (`gibribbon/GibribbonScreen.svelte`) and nibbles
+  // (`nibbles-game-actions.ts`) made the same move for the same reason.
+  //
+  // ⚠ THE GAME CLOCK IS THE FRAME CLOCK, AND NOTHING HERE TOUCHES IT.
+  // `runtime.runTic()` runs inside `surface.draw` in `video/modules/doom.ts` —
+  // one rendered frame is one game tic — so the face introduces NO second clock,
+  // declares NO `freeze` param and pins NO ticks. SCREEN OFF collapses the
+  // card-style 2-D `putImageData` copy and nothing else: the engine goes on
+  // drawing (DOOM is a pull ROOT unconditionally — `VideoEngine.isPullExempt`
+  // names it, via a non-empty `audioSources` map), so a lockstep peer cannot
+  // stop ticking and starve every other peer's barrier (#345 semantics).
+  //
+  // ⚠ NO VRT SCENES, AND THE ARGUMENT IS RE-DERIVED RATHER THAN INHERITED — see
+  // the `FACES_WITHOUT_SCENES` entry in `e2e/vrt/_shell-faces.ts`, which
+  // measures both mechanisms at the source (`freezeFaceVideo` writes a param
+  // this def does not declare, so the factory's `if (paramId in params)` guard
+  // makes it a no-op; `simPin` installs page globals and DOOM's tic delta is
+  // `performance.now()` read inside `surface.draw`, with the sim state inside
+  // the WASM, so there is no global on the path). The card roster's
+  // `EXEMPT_FROM_VRT` entry reached the same verdict about the same renderer and
+  // stays standing — the promotion changed nothing about the engine.
+  //
+  // ⚠ TWO DEBTS PAID IN THE SAME DIFF, both forced by the move rather than
+  // opportunistic. `raw-write-ledger.ts` carried `DoomCard.svelte` as DEBT for
+  // writing `fillMode` / `audioGain` straight into the store — not undoable, not
+  // LOCAL_ORIGIN-tagged — and that ledger is keyed by CARD PATH, so moving the
+  // writes would have left a stale entry rather than a paid one. Its own note is
+  // the rule ("a face does not pay a card's debt; editing the card does"), so
+  // both now go through `setNodeParam`. And the Volume knob's `min`/`max`/
+  // `defaultValue` were re-typed literals beside the def; they now bind through
+  // `paramSpec(doomDef, 'audioGain')`, which is the accessor that does NOT move
+  // the attest hash.
+  //
+  // ⚠ ZERO ATTEST, MEASURED not asserted: `face` and `noUserControl` are stripped
+  // at module scope by `attest-code-basis` (HASH_TRANSPARENT_PROPS), comments are
+  // stripped, and the new `lib/ui/modules/doom/**` files are outside the basis —
+  // that tree is swept BY CONTENT for `getContext('webgl')` and none of the three
+  // creates a GL context (the preview is a 2-D blit, exactly as the card's was).
+  // No `params`, no port and no factory code moves, so `contract-lock.txt` does
+  // not move either.
+  'doom',
+  // ── CLIP PLAYER — the launcher the snowflake list was built around ────────
+  //
+  // ⚠ THIS PROMOTION EMPTIES `NON_SHELL_LANE_TYPES` OF ITS LAST MODULE CARD,
+  // and the removal is in this same diff because it HAS to be: `laneRenderKind`
+  // consults that set while `DockFullView` switches on bare membership HERE, so
+  // promoting without removing paints the verbatim card on the canvas and the
+  // faceplate in the dock — two different instruments for one node, and no gate
+  // in the repo reads both sides (`module-face-lint` reads the def,
+  // `faces-parity` drives the dock, neither reads the lane set). The prior
+  // spec's §2 called that "a split-brain no gate would catch" and it was right;
+  // what it could not know is that `tileBody` (#2242) and the owner's 2026-08-31
+  // lane-tier ruling would make the honest half of the fix cheap.
+  //
+  // ⚠ WHAT THE OLD SPEC PRICED AS THE BLOCKER, MEASURED AGAINST THE TREE. It
+  // argued the module needs "ten shell cells … there is no arrangement of shell
+  // cells that is a clip launcher", and that panels rank 8-17 so the lane tile
+  // "can only ever be seven knobs". Both premises moved: PF-22's `laneOrder`
+  // drops `face.hero.cell` from the LANE roster, so the launch grid ranks FIRST
+  // as a panel (kria's route, and kria is named in PF-22's own comment as a
+  // module the old arithmetic locked out of having a faceplate at all); and the
+  // lane tile is not seven knobs but three plus a `tileBody` strip of the eight
+  // lanes' live state. The count is also not ten: FOUR of the declared families
+  // are pure or conditional READOUTS with no gesture a probe could drive, and
+  // they are deleted from the def here (a contract change) and painted as
+  // `StatusLed` lamps in the module's own body.
+  //
+  // SIX PANELS, and the shape is the module's rather than a compromise: the
+  // launch grid (the hero), the piano roll, and four EIGHT-WIDE rows — mono,
+  // rate, arm, scene repeats. All eight members of each row paint at once,
+  // because comparing the eight lanes is what a launcher is looked at for; a
+  // kria-style "selected lane" cell would have shown one and hidden seven.
+  //
+  // ⚠ THE STOP-2 SWEEP FOUND ONE ONGOING BEHAVIOUR AND IT NEEDED NO MOVE. The
+  // card runs `pruneAutoAssignDangling` in a `$effect`, which is the exact
+  // shape promotion deletes silently — but `pruneAllAutoAssignDangling()`
+  // already sweeps EVERY clip player from the Canvas graph-change seam, whose
+  // own comment says it exists so an assignment is dropped "even when no
+  // clipplayer CARD is mounted". The behaviour was already outside the UI. The
+  // card's remaining component-only work is its rAF poll (moved to the
+  // `fullViewBody`) and the right-click clip menu, which is EXTRACTED to a
+  // shared component all three surfaces now render — the card's own comment
+  // records that having two copies of that menu is how a restructure once
+  // landed on one surface with every test green.
+  //
+  // ⚠ TWO PRODUCT DELTAS, BOTH NAMED RATHER THAN DISCOVERED. The face's
+  // per-lane RATE is a CYCLING BUTTON where the card draws a `<select>`: a
+  // panel declares an operability probe and the sweep's only gestures are click
+  // and drag, so a native select is a cell nothing can prove alive — and the
+  // gesture it becomes is the one the def's docs already describe for the
+  // Launchpad deck's RATE row ("tap to cycle up"). And the editor band draws a
+  // DEFAULT clip's grid for an empty slot, committing it on the first edit,
+  // because a faceplate has no views: the band is on screen from the moment the
+  // dock opens, where the card only ever entered its editor through a
+  // double-click that had already created the clip.
+  //
+  // CONTRACT: four controlFamilies REMOVED (families are in the signature).
+  // DOCS: `docs:accept` runs — the shipped restrict-range window is THREE
+  // octaves and two doc blobs said four (`restrictedRowWindow`'s own default is
+  // 3 and the card passes 3; only the tooltips were right, because they
+  // interpolate the constant), and the scene-repeat blob still called the flair
+  // read-only after the card grew its click gesture. ZERO ATTEST: no param,
+  // port or factory code moves and every new file is under `lib/ui/**`.
+  'clipplayer',
 ]);
 
 /**

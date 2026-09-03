@@ -1374,6 +1374,57 @@ describe('module-face lint — MOMENTARY pads (face.momentary)', () => {
     // freshly-enabled AUTO re-decides on the very next tick rather than
     // stalling — a detail that only makes sense for a mode that STAYS on.
     'nibbles:auto',
+    // DOOM `fillMode`, 2026-09-02. LETTERBOX (0) vs FILL (1) — whether the fixed
+    // 8:5 native viewport is fitted inside the engine's 4:3 FBO with bars, or
+    // cover-cropped to fill it.
+    //
+    // LATCHING, classified AT THE READ SITE rather than from the name. The
+    // factory reads it once per DRAW as a plain level and feeds it straight to
+    // the fit math — `aspectFitScale(doomAspect, ctx.res.width / ctx.res.height,
+    // params.fillMode >= 0.5 ? 'fill' : 'letterbox')` — so the value IS the state
+    // of the output for as long as it is set. There is no edge detector on this
+    // param anywhere in `video/modules/doom.ts` (the 38 `cv_*` gate targets have
+    // one; this does not), and a momentary reading would mean the picture
+    // cover-cropped only while a mouse button was held, which is the one way an
+    // output-format switch cannot be used.
+    //
+    // ⚠ ITS `curve` NEEDED NO CORRECTION — `discrete 0..1` since the module
+    // shipped — so `paramCellKind` derives a `<Toggle>` and the face declares
+    // nothing. Checked rather than assumed, because the `moog962` trap (a
+    // `2..3 discrete` param drawn as a KNOB with two reachable positions across a
+    // whole dial) is one param shape away.
+    //
+    // ⚠ AND IT IS NOT `face.momentary`, which at the ParamDef looks identical and
+    // is opposite in behaviour: the legacy card has always drawn this as a
+    // persistent `NativeFillToggle`, and the setting must survive a reload.
+    'doom:fillMode',
+
+    // CLIPPLAYER `restrictRange`, 2026-09-02. The piano roll's pitch WINDOW:
+    // OFF (the default) draws the whole editable range at once, ON draws a
+    // three-octave window from the FLOOR octave's C upward.
+    //
+    // LATCHING, classified AT THE READ SITE, and this one has TWO read sites
+    // that agree. `ClipplayerCard.svelte` derives it as
+    // `(node?.params.restrictRange ?? 0) >= 0.5` and feeds a `$derived` that
+    // picks `restrictedRowWindow` over `editableRowRange`; the face's
+    // `ClipplayerNotePanel.svelte` runs the identical level test for the same
+    // choice. Nothing else in the module reads it. There is no edge detector on
+    // this path — the module's ONLY `createEdgeCounter` consumers are its two
+    // trigger INPUTS (`stop_all`, `reset`), neither of which touches a param.
+    //
+    // ⚠ AND IT IS THE ONE PARAM OF THE SEVEN THAT `looksLikeSwitch` REACHES,
+    // which is worth stating because the entry otherwise reads like a sample of
+    // a class: `quantize` and `snh` are the same 0..1 discrete shape but DEFAULT
+    // TO 1, and `switchLikeParams` only reaches a switch that rests at 0. This
+    // is the whole class, not one of it.
+    //
+    // It is DISPLAY-ONLY (the def says so twice: it never touches playback,
+    // pitch, or the emitted CV), and it is the state a player leaves ON while
+    // working in a narrow register. A momentary render would snap the editor
+    // back to the full range the instant they released — the one way the
+    // control could not be used — and would write to the Y.Doc on every
+    // press/release pair.
+    'clipplayer:restrictRange',
   ]);
 
   it('no ACKNOWLEDGED_LATCHING param is DOCUMENTED as momentary (the cross-check)', () => {

@@ -360,17 +360,16 @@ test('clip editor menus inside the dock full-view pane stay fully in view (owner
   const pane = page.locator('[data-testid="dock-fullview-pane"][data-pane-node="cp1"]');
   await expect(pane).toBeVisible();
 
-  // The owner's exact gesture: open the clip editor and right-click a grid
-  // cell — the LAST cell (bottom-right of the grid, deepest into the
-  // drawer's bottom edge). A single click first: the initial click into the
-  // pane shifts the card's layout (focus chrome), which would otherwise
-  // land the SECOND half of a dblclick on a different pad (measured: click 1
-  // → pad-0, click 2 → pad-4); it also creates+queues clip 0 via the launch
-  // timer. The dblclick then re-measures settled geometry and opens clip 0.
-  const dockPad0 = pane.locator('[data-testid="clipplayer-pad-0"]');
-  await dockPad0.click();
-  await page.waitForTimeout(350); // launch timer (220ms) + layout settle
-  await dockPad0.dblclick();
+  // ⚠ THE CHOREOGRAPHY CHANGED WITH THE PROMOTION, AND THE SUBJECT DID NOT.
+  // `clipplayer` was promoted, so this pane paints the FACEPLATE: the
+  // launch grid and the note editor are two BANDS that render at the same time
+  // rather than two mutually exclusive card VIEWS. That deletes three steps
+  // this test used to need — the click-then-wait-then-dblclick dance around the
+  // card's focus chrome (a bare `focus()` scrolled the 540 px card inside its
+  // ~352 px scrollport, landing click 2 on a different pad), and the control
+  // strip press further down that switched back to the grid. What is measured
+  // is unchanged: a menu opened deep in the drawer's bottom-right must stay
+  // fully in view, and must anchor to the thing it was opened on.
   const roll = pane.locator('[data-testid="clipplayer-pianoroll"]');
   await expect(roll).toBeVisible();
   // The probability menu only opens on a cell that HOLDS a note — toggle one
@@ -390,11 +389,11 @@ test('clip editor menus inside the dock full-view pane stay fully in view (owner
   await page.getByRole('button', { name: 'close clip menu' }).click();
   await expect(probMenu).toBeHidden();
 
-  // Clip-probability menu from the clip-carrying pad, back on the session
-  // grid inside the pane.
-  await pane.locator('[data-testid="clipplayer-strip-2-cp1"]').click();
+  // Clip-probability menu from a pad on the session grid — no view switch
+  // needed, since the faceplate paints the grid and the editor at once.
   const pad = pane.locator('[data-testid="clipplayer-pad-0"]');
   await expect(pad).toBeVisible();
+  await pad.scrollIntoViewIfNeeded();
   await pad.click({ button: 'right' });
   const clipProbMenu = page.getByTestId('clipplayer-clip-prob-menu-cp1');
   await expectFullyInViewport(page, clipProbMenu);

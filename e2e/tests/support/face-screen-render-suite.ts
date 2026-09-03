@@ -624,6 +624,43 @@ const SUBJECTS: readonly Subject[] = [
   // mechanism; and it declares the conventional `archivist-face-canvas`, so no
   // `canvas` override is needed.
   { type: 'archivist', prefix: 'archivist', domain: 'video', why: 'the Internet Archive browser\'s live engine-output preview and its SCREEN switch — an ADDITION, since ArchivistCard previews the raw node-owned elements and has no SCREEN switch at all. ⚠ THE WATCH-MARK CASE IS peertube\'s IN ITS WIDEST FORM: archivist is a pure SOURCE feeding `image`, `video` AND `audio_l`/`audio_r`, so a lapsed mark would idle the picture every downstream consumer samples while the element went on decoding. ⚠ AND SCREEN OFF CANNOT REACH THE PLAYBACK AT ALL HERE, which is stronger than the ordering-dependent guarantee the rest of this table relies on: the three elements, their play(), the 100 ms playhead pump and the gate/CV writes ALL belong to the card that <HeadlessSourceHost> keeps parked off-screen, and this body only BLITS — the switch removes a drawImage and nothing else. That deeper property is face-archivist.spec.ts\'s subject; this row proves the SWITCH.' },
+
+  // ── ⚠ DOOM IS DELIBERATELY **NOT** ROSTERED HERE (2026-09-02) ─────────────
+  //
+  // Recorded rather than omitted, because "doom's switch is covered elsewhere"
+  // and "nobody looked at doom's switch" are indistinguishable from an absent
+  // row — and this file's own `quadralogical` note is its recorded case of a
+  // switch sitting at zero live coverage while everyone believed otherwise.
+  // `doom` was promoted with a `fullViewBody` that carries a conventional
+  // `doom-face-screen-toggle`, so the "future face PRs extend this table"
+  // convention above would ordinarily apply. It is refused for ONE mechanical
+  // reason and one boundary reason, both specific to this module:
+  //
+  //   1. ⚠ THE BATCH SHARES ONE PAGE, AND DOOM CLAIMS THE KEYBOARD FROM A
+  //      WINDOW-LEVEL CAPTURE-PHASE LISTENER. `blood`'s row above already names
+  //      this hazard in the abstract ("the only subject here whose body owns a
+  //      capture-phase WINDOW keyboard listener, so a body that failed to tear
+  //      it down would poison later batch-mates with swallowed keys"). DOOM is
+  //      worse than blood's case, not equal to it: its `shouldClaimKey()` also
+  //      returns true whenever its SvelteFlow node merely carries `.selected`,
+  //      independent of focus and independent of the latch — that fallback is
+  //      the fix for a real multiplayer bug and is not going away. A DOOM node
+  //      left selected in a shared batch page would `preventDefault` arrow keys
+  //      for every subject tested after it, and the failure would surface two
+  //      modules later as an unexplained click or key that did nothing.
+  //   2. ⚠ THE STANDING DOOM BOUNDARY. Enrolling DOOM in a shared sweep is
+  //      exactly the "exclude it by name from a broad sweep and state why" case,
+  //      and this is that statement.
+  //
+  // WHAT COVERS IT INSTEAD, so the refusal costs nothing: `face-doom.spec.ts`
+  // drives the same switch on the default shell in ISOLATION — that it is
+  // reachable on the faceplate, starts ON, REMOVES the canvas, keeps the
+  // SURFACE mounted (DOOM must not unmount its body the way gibribbon does),
+  // persists on `node.data`, and comes back exactly once. It also proves the one
+  // thing no row in this table could: that the GAME KEEPS TICKING with the
+  // screen off, measured in DOOM's own game tics. That is the acidwarp /
+  // skifree route — both are faced, both own screen switches, neither is
+  // rostered here, and each is covered by its own named spec.
 ] as const;
 
 /** The representative module for the PERSISTENCE leg — see that test's comment. */

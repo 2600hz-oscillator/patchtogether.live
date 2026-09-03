@@ -62,20 +62,26 @@ describe('controlSurface face — the promotion', () => {
     ).toBe('shell');
   });
 
-  // ⚠ THE NEGATIVE CONTROL: the rule still honours a carve-out for the one
-  // remaining snowflake-with-a-card, so "the entry is gone" and "the rule
-  // stopped consulting the set" cannot look alike.
+  // ⚠ THE NEGATIVE CONTROL: the rule still honours a carve-out for a type that
+  // keeps one, so "the entry is gone" and "the rule stopped consulting the set"
+  // cannot look alike.
+  // (⚠ The subject has now moved twice: it was `controlSurface`, whose own
+  // promotion drained that membership on 2026-09-01, then `clipplayer`, whose
+  // promotion drained the set of its LAST MODULE CARD. It re-points at `sticky`
+  // — organizational chrome, which is what `NON_SHELL_LANE_TYPES` now holds
+  // exclusively, and which no face programme can promote away. That makes this
+  // the last re-point the control can ever need.)
   it('the rule still honours a carve-out for the types that keep one', () => {
     expect(
       laneRenderKind({
         shellFaces: true,
         userDocked: false,
-        type: 'clipplayer',
+        type: 'sticky',
         hasCard: false,
         migrated: false,
       }),
     ).toBe('legacy');
-    expect(NON_SHELL_LANE_TYPES.has('clipplayer'), 'a real member remains').toBe(true);
+    expect(NON_SHELL_LANE_TYPES.has('sticky'), 'a real member remains').toBe(true);
   });
 
   // ⚠ THE USER-DOCKED RESIDUAL, PINNED rather than discovered in review:
