@@ -159,7 +159,7 @@ test.describe('SHAPEGEN — CLOCK gate sample-and-hold', () => {
   // 96 h CI census to 2026-08-18 — never a hard failure, so every one of those jobs reported SUCCESS.
   // LOST WHILE PARKED: SHAPEGEN's sample-and-hold clock semantics across all three states — regenerate on a rising edge, hold within the window, freeze on a stopped clock; trigger-vs-gate edge behaviour on the shared gate cable.
   // Re-enable only on a root cause (#1847); "it passes now" is not one.
-  test.fixme('rising edges regenerate; within-hold window holds; stopped clock freezes regen count', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 6 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page, rackLegacy, errorWatch }) => {
+  test.fixme('rising edges regenerate; within-hold window holds; stopped clock freezes regen count', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 6 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page, rack, errorWatch }) => {
     // ACIDWARP (time-varying) → SHAPEGEN.raster_a.
     // SEQUENCER → SHAPEGEN.clock_in.
     //
@@ -190,13 +190,13 @@ test.describe('SHAPEGEN — CLOCK gate sample-and-hold', () => {
     );
     await seedKriaGate(page, 'clkSeq');
 
-    await expect(page.locator('[data-testid="shapegen-card"]')).toHaveCount(1);
-
-    // The [CLOCKED] badge should show once the clock_in edge is wired.
     await expect(
-      page.locator('[data-testid="shapegen-clocked-badge"]'),
-      '[CLOCKED] badge appears when clock_in is patched',
-    ).toBeVisible();
+      page.locator('.svelte-flow__node:has([data-shell-type="shapegen"])'),
+    ).toHaveCount(1);
+
+    // ⚠ The card's [CLOCKED] badge died with the card (no shell home — the
+    // clock state's observable is the regen counters this test pins below);
+    // recorded in the S2 legacy-removal manifest.
 
     // ---- 1. Wait for at least 2 regenerations (each rising edge fires
     //         exactly one + the first-draw regen seeds count to 1, so

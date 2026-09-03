@@ -20,14 +20,17 @@
 
 import { test, expect } from './_fixtures';
 import { spawnPatch } from './_helpers';
+import { BOOT_MS, SLOW_BOOT_TEST_TIMEOUT_MS } from '../_helpers/boot-budget';
 
 const BLOOD_ID = 'blood-ig';
 const SC_ENTER = 0x1c;
 const SC_DOWN = 0xd0;
 const SC_SPACE = 0x39;
 
-test('blood in-game: drive the menu into a level + read the in-game framebuffer', async ({ page, rackLegacy }) => {
-  test.setTimeout(90_000);
+test('blood in-game: drive the menu into a level + read the in-game framebuffer', async ({ page, rack }) => {
+  // 90 s of drive/sample budget PLUS one cold WASM boot — on the default shell
+  // the engine boots when the DOCK opens (sequential), not with the page.
+  test.setTimeout(90_000 + BOOT_MS);
   await spawnPatch(
     page,
     [
@@ -56,8 +59,19 @@ test('blood in-game: drive the menu into a level + read the in-game framebuffer'
     { mountTimeout: 10_000 },
   ).catch(() => spawnPatch(page, [{ id: BLOOD_ID, type: 'blood', position: { x: 120, y: 80 }, domain: 'video' }], []));
 
-  await page.getByTestId('blood-card').waitFor({ state: 'visible', timeout: 10_000 });
-  const ready = await page.getByTestId('blood-ready').waitFor({ state: 'visible', timeout: 25_000 }).then(() => true).catch(() => false);
+  // The dock faceplate is what boots the engine on the default shell
+  // (blood-audio-output's header records the re-point); readiness lives on
+  // `data-blood-status`, never a painted status line.
+  const shell = page.locator(`.svelte-flow__node[data-id="${BLOOD_ID}"] [data-testid="module-shell"]`);
+  await expect(shell).toBeVisible({ timeout: SLOW_BOOT_TEST_TIMEOUT_MS });
+  await shell.getByTestId('shell-open-dock').click();
+  const frame = page.getByTestId('dock-full-view').getByTestId('blood-face-frame');
+  await expect(frame).toBeVisible({ timeout: SLOW_BOOT_TEST_TIMEOUT_MS });
+  const ready = await expect
+    .poll(() => frame.getAttribute('data-blood-status'), { timeout: BOOT_MS })
+    .toBe('ready')
+    .then(() => true)
+    .catch(() => false);
   test.skip(!ready, 'BLOOD engine did not reach ready (heap/renderer-sensitive)');
 
   const result = await page.evaluate(

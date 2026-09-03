@@ -10,16 +10,27 @@
 //      content changes), proving the renderer mode-switch is wired.
 //
 // Reference rig: a SHAPES procedural video source feeds raster_a; the
-// other two inputs stay unpatched. The card's preview canvas is sampled
-// via getImageData. We don't try to assert specific shape positions —
-// those are pinned by the unit suite (shapegen.test.ts +
-// shapegen-math.test.ts) without a browser in the loop.
+// other two inputs stay unpatched. On the default shell the preview canvas
+// lives in the DOCK full view (`shapegen-face-canvas`) and is sampled via
+// getImageData. We don't try to assert specific shape positions — those are
+// pinned by the unit suite (shapegen.test.ts + shapegen-math.test.ts)
+// without a browser in the loop.
 
 import { test, expect } from './_fixtures';
 import { spawnPatch } from './_helpers';
 
+/** Open the shapegen dock full view — the preview canvas' shell home. */
+async function openDock(page: import('@playwright/test').Page) {
+  await page.evaluate(
+    () => (globalThis as unknown as { __openDockFullView: (id: string) => void }).__openDockFullView('sg'),
+  );
+  const dock = page.locator('[data-testid="dock-full-view"][data-fullview-node="sg"]');
+  await expect(dock).toBeVisible();
+  return dock;
+}
+
 test.describe('SHAPEGEN — 3D-shape-generator video module', () => {
-  test('spawns + card mounts + preview canvas paints without errors', async ({ page, rackLegacy, errorWatch }) => {
+  test('spawns + card mounts + preview canvas paints without errors', async ({ page, rack, errorWatch }) => {
     await spawnPatch(
       page,
       [
@@ -37,15 +48,12 @@ test.describe('SHAPEGEN — 3D-shape-generator video module', () => {
     );
 
     await expect(
-      page.locator('.svelte-flow__node-shapegen'),
-      'SHAPEGEN node visible',
+      page.locator('.svelte-flow__node:has([data-shell-type="shapegen"])'),
+      'SHAPEGEN tile visible',
     ).toBeVisible();
-    await expect(
-      page.locator('[data-testid="shapegen-card"]'),
-      'SHAPEGEN card present',
-    ).toHaveCount(1);
+    const dock = await openDock(page);
 
-    const canvas = page.locator('[data-testid="shapegen-screen"]');
+    const canvas = dock.locator('[data-testid="shapegen-face-canvas"]');
     await expect(canvas, 'SHAPEGEN preview canvas mounted').toHaveCount(1);
 
     // Let the rAF loop tick a few frames so the canvas2D paint runs +
@@ -83,7 +91,7 @@ test.describe('SHAPEGEN — 3D-shape-generator video module', () => {
 
   });
 
-  test('SOLIDS toggle changes the rendered pixel content', async ({ page, rackLegacy, errorWatch }) => {
+  test('SOLIDS toggle changes the rendered pixel content', async ({ page, rack, errorWatch }) => {
     await spawnPatch(
       page,
       [
@@ -99,8 +107,8 @@ test.describe('SHAPEGEN — 3D-shape-generator video module', () => {
       ],
     );
 
-    await expect(page.locator('[data-testid="shapegen-card"]')).toHaveCount(1);
-    const canvas = page.locator('[data-testid="shapegen-screen"]');
+    const dock = await openDock(page);
+    const canvas = dock.locator('[data-testid="shapegen-face-canvas"]');
 
     // Settle initial render.
     await page.waitForTimeout(400);
@@ -154,11 +162,11 @@ test.describe('SHAPEGEN — 3D-shape-generator video module', () => {
 
   });
 
-  test('SIZE + ROT knobs mutate params via the patch store', async ({ page, rackLegacy }) => {
+  test('SIZE + ROT knobs mutate params via the patch store', async ({ page, rack }) => {
     await spawnPatch(page, [
       { id: 'sg', type: 'shapegen', position: { x: 200, y: 100 }, domain: 'video' },
     ]);
-    await expect(page.locator('[data-testid="shapegen-card"]')).toHaveCount(1);
+    await expect(page.locator('.svelte-flow__node:has([data-shell-type="shapegen"])')).toBeVisible();
 
     // Set both knobs to non-default values.
     await page.evaluate(() => {

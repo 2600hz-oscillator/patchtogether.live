@@ -55,10 +55,10 @@
 // surface. The assertions themselves are UNCHANGED; only the boot path and the
 // readiness locator moved.
 //
-// ⚠ THE SECOND TEST IS DELIBERATELY LEFT ON THE `rack` FIXTURE. It is
-// `test.fixme`-PARKED under #1847, so re-pointing it would rewrite a test nobody
-// runs and would make the park's "the body and its assertions are UNCHANGED"
-// note false. It moves when it is un-parked.
+// ⚠ THE SECOND TEST WAS UN-PARKED (root cause fixed in blood-pcm-schedule.ts)
+// and is now re-pointed at the same dock boot path by the S2 legacy-removal
+// inversion — the card readiness waits became the dock frame's
+// `data-blood-status`, and the assertions themselves are unchanged.
 
 import { test, expect } from './_fixtures';
 import { type Page } from '@playwright/test';
@@ -416,8 +416,8 @@ test('BLOOD audio_l → SCOPE: the game-audio mixer produces audible signal in-g
 // production ran at ~62% of demand and the ring intermittently underflowed to silence — which a
 // retry could win on scheduling luck. blood-pcm-schedule.ts makes the pump rate-exact off the
 // context clock, removing the nondeterminism at its source. Body and assertions UNCHANGED.
-test('BLOOD music: in-level OPL3 music produces SUSTAINED audio on audio_l (standing still)', async ({ page, rackLegacy }) => {
-  test.setTimeout(90_000);
+test('BLOOD music: in-level OPL3 music produces SUSTAINED audio on audio_l (standing still)', async ({ page, rack }) => {
+  test.setTimeout(90_000 + BOOT_MS);
   await spawnPatch(
     page,
     [
@@ -426,8 +426,18 @@ test('BLOOD music: in-level OPL3 music produces SUSTAINED audio on audio_l (stan
     ],
     [{ id: 'e-blood-music-scope', from: { nodeId: BLOOD_ID, portId: 'audio_l' }, to: { nodeId: SCOPE_ID, portId: 'ch1' }, sourceType: 'audio', targetType: 'audio' }],
   );
-  await page.getByTestId('blood-card').waitFor({ state: 'visible', timeout: 10_000 });
-  const ready = await page.getByTestId('blood-ready').waitFor({ state: 'visible', timeout: 25_000 }).then(() => true).catch(() => false);
+  // The dock faceplate is what boots the engine on the default shell (see the
+  // first test's header); readiness is `data-blood-status`, not a status line.
+  const shell = page.locator(`.svelte-flow__node[data-id="${BLOOD_ID}"] [data-testid="module-shell"]`);
+  await expect(shell).toBeVisible({ timeout: SLOW_BOOT_TEST_TIMEOUT_MS });
+  await shell.getByTestId('shell-open-dock').click();
+  const frame = page.getByTestId('dock-full-view').getByTestId('blood-face-frame');
+  await expect(frame).toBeVisible({ timeout: SLOW_BOOT_TEST_TIMEOUT_MS });
+  const ready = await expect
+    .poll(() => frame.getAttribute('data-blood-status'), { timeout: BOOT_MS })
+    .toBe('ready')
+    .then(() => true)
+    .catch(() => false);
   test.skip(!ready, 'BLOOD engine did not reach ready (renderer/heap-sensitive on CI)');
 
   // Drive into a level (proven nav) via the runtime, then DO NOTHING.
