@@ -96,7 +96,7 @@ async function readCanvasStats(canvas: Locator): Promise<PixelStats | null> {
 }
 
 test.describe('video: multi-OUTPUT independent routing', () => {
-  test('LINES->OUT-A and INWARDS->OUT-B render independent content', async ({ page, rackLegacy, errorWatch }) => {
+  test('LINES->OUT-A and INWARDS->OUT-B render independent content', async ({ page, rack, errorWatch }) => {
     // Two visually-distinct procedural sources, each piped into its
     // own OUTPUT card. LINES = horizontal stripes, INWARDS = radial
     // expanding rings; their pixel stats are easy to distinguish.
@@ -114,11 +114,12 @@ test.describe('video: multi-OUTPUT independent routing', () => {
       ],
     );
 
-    // Both OUTPUT cards rendered.
-    const outA = page.locator('canvas[data-testid="video-out-canvas"][data-node-id="v-out-a"]');
-    const outB = page.locator('canvas[data-testid="video-out-canvas"][data-node-id="v-out-b"]');
-    await expect(outA, 'OUTPUT A canvas').toHaveCount(1);
-    await expect(outB, 'OUTPUT B canvas').toHaveCount(1);
+    // Both OUTPUT tiles rendered — on the default shell the visible pixel
+    // surface is each node's own tile thumb canvas.
+    const outA = page.locator('.svelte-flow__node[data-id="v-out-a"] canvas[data-testid="video-tile-thumb"]');
+    const outB = page.locator('.svelte-flow__node[data-id="v-out-b"] canvas[data-testid="video-tile-thumb"]');
+    await expect(outA, 'OUTPUT A thumb').toHaveCount(1);
+    await expect(outB, 'OUTPUT B thumb').toHaveCount(1);
 
     // DETERMINISTIC CI GUARD: prove each OUTPUT is driven by its OWN distinct
     // source via engine routing state — not by diffing rendered pixels. The
@@ -189,7 +190,7 @@ test.describe('video: multi-OUTPUT independent routing', () => {
 
   });
 
-  test('unpatched second OUTPUT shows idle pattern, patched first OUTPUT shows source', async ({ page, rackLegacy, errorWatch }) => {
+  test('unpatched second OUTPUT shows idle pattern, patched first OUTPUT shows source', async ({ page, rack, errorWatch }) => {
     // Edge case: only ONE of two OUTPUTs has its input wired. The
     // patched OUTPUT shows its source; the unpatched one shows the
     // OUTPUT shader's idle pattern (not the source either, and not
@@ -209,10 +210,10 @@ test.describe('video: multi-OUTPUT independent routing', () => {
       ],
     );
 
-    const outA = page.locator('canvas[data-testid="video-out-canvas"][data-node-id="v-out-a"]');
-    const outB = page.locator('canvas[data-testid="video-out-canvas"][data-node-id="v-out-b"]');
-    await expect(outA, 'OUTPUT A canvas').toHaveCount(1);
-    await expect(outB, 'OUTPUT B canvas').toHaveCount(1);
+    const outA = page.locator('.svelte-flow__node[data-id="v-out-a"] canvas[data-testid="video-tile-thumb"]');
+    const outB = page.locator('.svelte-flow__node[data-id="v-out-b"] canvas[data-testid="video-tile-thumb"]');
+    await expect(outA, 'OUTPUT A thumb').toHaveCount(1);
+    await expect(outB, 'OUTPUT B thumb').toHaveCount(1);
 
     // DETERMINISTIC CI GUARD: the patched OUTPUT resolves to its source and
     // latches an input texture; the unpatched OUTPUT resolves to NO source and

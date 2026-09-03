@@ -49,16 +49,15 @@ function portRow(page: Page, nodeId: string, portId: string) {
  * view, so without a reset the second call in a test lands somewhere the row
  * does not exist (both hazards were found in es9-per-leg-patching.spec.ts).
  *
- * ⚠ MIXMSTRS IS A **SECTIONED** CARD, and the two rails do not navigate the
- * same way. Its OUTPUTS sit behind the ordinary flat `OUTPUT` nav row, but its
- * INPUTS are split across per-channel sections (`Ch1`..`Ch8`, `Ret1`, `Ret2`) —
- * there is no `data-nav="inputs"` row on a sectioned card at all. A helper that
- * assumed one silently found nothing.
+ * ⚠ ON THE DEFAULT SHELL THE RAIL MENU IS FLAT — the card's per-channel
+ * SECTIONS (`Ch1`..`Ret2`) are a measured, documented delta of the lane rail
+ * (#1762, recorded at the PatchPanel mount in ModuleShell.svelte): every jack
+ * lives under the ordinary INPUT / OUTPUT navs, ports intact, grouping gone.
  */
 async function openPanelAt(
   page: Page,
   nodeId: string,
-  target: { nav: 'inputs' | 'outputs' } | { section: string },
+  target: { nav: 'inputs' | 'outputs' },
 ) {
   await page.keyboard.press('Escape');
   await expect(chrome(page, nodeId)).toHaveCount(0);
@@ -66,16 +65,10 @@ async function openPanelAt(
     .locator(`.svelte-flow__node[data-id="${nodeId}"] [data-testid="patch-trigger"]`)
     .click();
   await expect(chrome(page, nodeId)).toHaveAttribute('aria-hidden', 'false');
-  const row =
-    'section' in target
-      ? chrome(page, nodeId).locator(
-          `[data-testid="patch-panel-section-nav"][data-section-label="${target.section}"]`,
-        )
-      : chrome(page, nodeId).locator(`[data-testid="patch-panel-nav"][data-nav="${target.nav}"]`);
-  await expect(
-    row,
-    `${nodeId} must offer ${'section' in target ? `section ${target.section}` : target.nav}`,
-  ).toBeVisible();
+  const row = chrome(page, nodeId).locator(
+    `[data-testid="patch-panel-nav"][data-nav="${target.nav}"]`,
+  );
+  await expect(row, `${nodeId} must offer ${target.nav}`).toBeVisible();
   await row.click();
 }
 
@@ -126,9 +119,9 @@ test.describe('MIXMSTRS stereo jacks expand to L/R on right-click', () => {
   // ---- ROUTE 1: UNPATCHED INPUT. The case that had NO menu at all, and the
   // one the owner hit — a mixer channel he wants to feed from two mono
   // hardware points.
-  test('an unpatched CHANNEL input expands into its two legs', async ({ page, rackLegacy }) => {
+  test('an unpatched CHANNEL input expands into its two legs', async ({ page, rack }) => {
     await spawnRig(page);
-    await openPanelAt(page, MIX, { section: 'Ch1' });
+    await openPanelAt(page, MIX, { nav: 'inputs' });
     await expectCollapsed(page, 'ch1L', 'ch1R');
 
     await portRow(page, MIX, 'ch1L').click({ button: 'right' });
@@ -143,9 +136,9 @@ test.describe('MIXMSTRS stereo jacks expand to L/R on right-click', () => {
     await expectExpanded(page, 'ch1L', 'ch1R');
   });
 
-  test('a RETURN input expands, and collapses again from either leg', async ({ page, rackLegacy }) => {
+  test('a RETURN input expands, and collapses again from either leg', async ({ page, rack }) => {
     await spawnRig(page);
-    await openPanelAt(page, MIX, { section: 'Ret1' });
+    await openPanelAt(page, MIX, { nav: 'inputs' });
     await expectCollapsed(page, 'ret1L', 'ret1R');
 
     await portRow(page, MIX, 'ret1L').click({ button: 'right' });
@@ -165,29 +158,27 @@ test.describe('MIXMSTRS stereo jacks expand to L/R on right-click', () => {
     await expectCollapsed(page, 'ret1L', 'ret1R');
   });
 
-  test('expanding ONE channel leaves the others collapsed', async ({ page, rackLegacy }) => {
+  test('expanding ONE channel leaves the others collapsed', async ({ page, rack }) => {
     await spawnRig(page);
-    await openPanelAt(page, MIX, { section: 'Ch1' });
+    await openPanelAt(page, MIX, { nav: 'inputs' });
 
     await portRow(page, MIX, 'ch1L').click({ button: 'right' });
     await page.getByTestId('stereo-expand-menu').getByTestId('stereo-expand-toggle').click();
     await expectExpanded(page, 'ch1L', 'ch1R');
 
-    // Ch2 is a DIFFERENT section on this card, so this is a re-drill rather
-    // than a second look at the same list — which is the stronger check: it
-    // proves the expansion did not leak into a sibling rail's rendering.
-    await openPanelAt(page, MIX, { section: 'Ch2' });
+    // Ch2 shares the flat INPUT list on the shell rail (#1762) — the
+    // expansion must not leak into the sibling pair's rows.
     await expectCollapsed(page, 'ch2L', 'ch2R');
 
-    // …and that Ch1 is still expanded after navigating away and back, so the
+    // …and Ch1 is still expanded after CLOSING and re-drilling, so the
     // gesture is not a transient artefact of the view that made it.
-    await openPanelAt(page, MIX, { section: 'Ch1' });
+    await openPanelAt(page, MIX, { nav: 'inputs' });
     await expectExpanded(page, 'ch1L', 'ch1R');
   });
 
   // ---- ROUTE 2: UNPATCHED OUTPUT → the patch picker already claims this
   // right-click, so the expand row lives inside it.
-  test('an unpatched SEND output expands from the patch picker', async ({ page, rackLegacy }) => {
+  test('an unpatched SEND output expands from the patch picker', async ({ page, rack }) => {
     await spawnRig(page);
     await openPanelAt(page, MIX, { nav: 'outputs' });
     await expectCollapsed(page, 'send1L', 'send1R');
@@ -206,7 +197,7 @@ test.describe('MIXMSTRS stereo jacks expand to L/R on right-click', () => {
     await expectExpanded(page, 'send1L', 'send1R');
   });
 
-  test('MASTER expands the same way', async ({ page, rackLegacy }) => {
+  test('MASTER expands the same way', async ({ page, rack }) => {
     await spawnRig(page);
     await openPanelAt(page, MIX, { nav: 'outputs' });
     await expectCollapsed(page, 'masterL', 'masterR');
@@ -220,7 +211,7 @@ test.describe('MIXMSTRS stereo jacks expand to L/R on right-click', () => {
   // ---- ROUTE 3: PATCHED → the unpatch menu claims the right-click. This is
   // when the user MOST wants the two holes (which leg is that cable on?), so a
   // gesture that stopped working the moment a cable landed would be useless.
-  test('a PATCHED jack still expands, via the unpatch menu', async ({ page, rackLegacy }) => {
+  test('a PATCHED jack still expands, via the unpatch menu', async ({ page, rack }) => {
     await spawnRig(page, true);
 
     // Put a real cable on the pair first, through the ordinary patch flow: the
@@ -263,7 +254,7 @@ test.describe('MIXMSTRS stereo jacks expand to L/R on right-click', () => {
   // the assertion that would go red if someone widened the opt-in without
   // meaning to — and it is a REAL control: twotracks derives stereo pairs
   // exactly like mixmstrs does, so a gate keyed on "has pairs" would fail here.
-  test('a module that is NOT opted in offers no expand row', async ({ page, rackLegacy }) => {
+  test('a module that is NOT opted in offers no expand row', async ({ page, rack }) => {
     await spawnPatch(page, [
       { id: 'tt', type: 'twotracks', position: { x: 300, y: 120 }, domain: 'audio' },
     ]);

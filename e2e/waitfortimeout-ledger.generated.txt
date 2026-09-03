@@ -181,7 +181,6 @@ e2e/tests/outlines.spec.ts :: waitForLuma :: waitForTimeout(160) #1
 e2e/tests/patch-load-leak.spec.ts :: readCountersOnce :: waitForTimeout(300) #1
 e2e/tests/patch-load-leak.spec.ts :: the counters track what they claim to — instrument negative control :: waitForTimeout(1500) #1
 e2e/tests/patch-menu-ux.spec.ts :: clicking the patch-trigger opens the menu; hover alone does not :: waitForTimeout(200) #1
-e2e/tests/patch-panel.spec.ts :: both triggers open the same menu (shared state) :: waitForTimeout(150) #1
 e2e/tests/peertube.spec.ts :: audio_l/audio_r -> AUDIO OUT: real HLS-stream energy reaches the terminal output (capability-gated) @video :: waitForTimeout(120) #1
 e2e/tests/pentemelodica.spec.ts :: pentemelodica: a POLYSEQZ chord drives the stereo OUT :: waitForTimeout(40) #1
 e2e/tests/picturebox-asset-select.spec.ts :: waitForLuma :: waitForTimeout(120) #1

@@ -24,16 +24,17 @@ function chrome(page: Page, nodeId: string) {
   return page.locator(`[data-patch-panel-chrome="${nodeId}"]`);
 }
 
-async function openFrom(page: Page, nodeId: string, side: 'left' | 'right' = 'left') {
-  const testid = side === 'left' ? 'patch-trigger' : 'patch-trigger-right';
+async function openFrom(page: Page, nodeId: string) {
+  // The shell's lane rail has ONE drill-down trigger (the card's left/right
+  // corner pair died with the card — see patch-panel.spec.ts's header).
   await page
-    .locator(`.svelte-flow__node[data-id="${nodeId}"] [data-testid="${testid}"]`)
+    .locator(`.svelte-flow__node[data-id="${nodeId}"] [data-testid="patch-trigger"]`)
     .click();
   await expect(chrome(page, nodeId)).toHaveAttribute('aria-hidden', 'false');
 }
 
 test.describe('@aut PatchPanel acceptance flow', () => {
-  test('ADSR click-open, verbose labels, patch via carry, outside-click closes', async ({ page, rackLegacy }) => {
+  test('ADSR click-open, verbose labels, patch via carry, outside-click closes', async ({ page, rack }) => {
     await spawnPatch(page, [
       { id: 'seq', type: 'kria', position: { x: 80, y: 120 } },
       { id: 'adsr', type: 'adsr', position: { x: 900, y: 120 } },
@@ -43,7 +44,7 @@ test.describe('@aut PatchPanel acceptance flow', () => {
     await expect(chrome(page, 'adsr')).toHaveCount(0);
 
     // 2. Click ADSR's trigger — the menu opens (root view).
-    await openFrom(page, 'adsr', 'left');
+    await openFrom(page, 'adsr');
     await expect(chrome(page, 'adsr').locator('[data-testid="patch-panel-root"]')).toBeVisible();
 
     // 3. Drill into INPUT — verbose labels visible.
@@ -63,7 +64,7 @@ test.describe('@aut PatchPanel acceptance flow', () => {
     await expect(chrome(page, 'adsr')).toHaveCount(0);
 
     // 4. Patch SEQUENCER.gate → ADSR.gate via the carry → patch-to flow.
-    await openFrom(page, 'seq', 'left');
+    await openFrom(page, 'seq');
     await chrome(page, 'seq')
       .locator('[data-testid="patch-panel-nav"][data-nav="outputs"]')
       .click();
@@ -85,24 +86,26 @@ test.describe('@aut PatchPanel acceptance flow', () => {
     await expect(chrome(page, 'seq')).toHaveCount(0);
   });
 
-  test('MIXMSTRS spawn → click-open → section nav rows + drill shows verbose labels', async ({ page, rackLegacy }) => {
+  test('MIXMSTRS spawn → click-open → drill shows collapsed stereo rows + verbose labels', async ({ page, rack }) => {
     await spawnPatch(page, [{ id: 'mm', type: 'mixmstrs', position: { x: 200, y: 100 } }]);
 
-    await openFrom(page, 'mm', 'left');
+    await openFrom(page, 'mm');
 
-    // Root: a section nav row per channel + Master.
-    for (const label of ['Ch1', 'Ch2', 'Ch3', 'Ch4', 'Ch5', 'Ch6', 'Master']) {
-      await expect(
-        chrome(page, 'mm').locator(
-          `[data-testid="patch-panel-section-nav"][data-section-label="${label}"]`,
-        ),
-      ).toHaveCount(1);
-    }
+    // Root: INPUT / OUTPUT pivots. ⚠ The card's per-channel SECTION rows
+    // (`Ch1 … Master`) are a MEASURED, DOCUMENTED delta of the shell rail
+    // (#1762, recorded at the PatchPanel mount in ModuleShell.svelte): the
+    // lane rail mounts `groupingStrategy: 'auto'`, so mixmstrs drills into ONE
+    // flat list — every port still reachable, only the grouping gone. In
+    // sectioned mode the HANDLE STACK is derived from the sections, so
+    // restoring the grouping is a product decision, not a `sections={…}` flag.
+    await expect(chrome(page, 'mm').locator('[data-testid="patch-panel-root"]')).toBeVisible();
+    await expect(
+      chrome(page, 'mm').locator('[data-testid="patch-panel-section-nav"]'),
+    ).toHaveCount(0);
 
-    // Drill into Ch1 → its port rows + verbose labels appear (overlay
-    // replaces the root section list).
+    // Drill into INPUT → the port rows + verbose labels appear.
     await chrome(page, 'mm')
-      .locator('[data-testid="patch-panel-section-nav"][data-section-label="Ch1"]')
+      .locator('[data-testid="patch-panel-nav"][data-nav="inputs"]')
       .click();
     const ch1Labels = (
       await chrome(page, 'mm').locator('[data-testid="port-row-label"]').allTextContents()
@@ -126,6 +129,7 @@ test.describe('@aut PatchPanel acceptance flow', () => {
 
     // Back → drill into OUTPUT → the master/send output rows appear.
     await chrome(page, 'mm').locator('[data-testid="patch-panel-back"]').click();
+
     await chrome(page, 'mm')
       .locator('[data-testid="patch-panel-nav"][data-nav="outputs"]')
       .click();

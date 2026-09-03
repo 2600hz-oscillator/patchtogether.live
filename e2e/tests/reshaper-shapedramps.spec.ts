@@ -6,8 +6,9 @@
 // Two scenarios:
 //   1. Shaped wiring   — LINES → RESHAPER.z, SHAPEDRAMPS.h_out → RESHAPER.x,
 //                        SHAPEDRAMPS.v_out → RESHAPER.y. Crank xDisp/yDisp
-//                        + shape morphs. Assert the on-card canvas renders
-//                        non-uniform pixels and the patch produces no
+//                        + shape morphs. Assert the node's tile thumb (the
+//                        default shell's pixel surface for a video module)
+//                        renders non-uniform pixels and the patch produces no
 //                        console errors.
 //   2. Linear wiring   — LINES → RESHAPER.z, SHAPEDRAMPS.h_lin → RESHAPER.x,
 //                        SHAPEDRAMPS.v_lin → RESHAPER.y. The linear ramps
@@ -53,7 +54,7 @@ async function readCanvasStats(
 }
 
 test.describe('RESHAPER + SHAPEDRAMPS integration', () => {
-  test('shaped wiring renders a non-uniform deformed coordinate field', async ({ page, rackLegacy, errorWatch }) => {
+  test('shaped wiring renders a non-uniform deformed coordinate field', async ({ page, rack, errorWatch }) => {
     // ─── BUDGET ──────────────────────────────────────────────────────────
     // This spec spawns three-to-four REAL WebGL video modules and samples their
     // on-card canvases, in the parallel software-rendered shard matrix. Its
@@ -88,9 +89,9 @@ test.describe('RESHAPER + SHAPEDRAMPS integration', () => {
       ],
     );
 
-    await expect(page.locator('.svelte-flow__node-lines'),       'LINES visible').toBeVisible();
-    await expect(page.locator('.svelte-flow__node-shapedramps'), 'SHAPEDRAMPS visible').toBeVisible();
-    await expect(page.locator('.svelte-flow__node-reshaper'),    'RESHAPER visible').toBeVisible();
+    await expect(page.locator('.svelte-flow__node:has([data-shell-type="lines"])'),       'LINES visible').toBeVisible();
+    await expect(page.locator('.svelte-flow__node:has([data-shell-type="shapedramps"])'), 'SHAPEDRAMPS visible').toBeVisible();
+    await expect(page.locator('.svelte-flow__node:has([data-shell-type="reshaper"])'),    'RESHAPER visible').toBeVisible();
 
     // Allow several rAF ticks before sampling. The shapedramps draw runs
     // first (no upstream deps) followed by RESHAPER in topo order, so a
@@ -101,7 +102,7 @@ test.describe('RESHAPER + SHAPEDRAMPS integration', () => {
     // ~48 renders locally and ~6 on CI, i.e. two different assertions.
     await waitFrames(page, 6);
 
-    const stats = await readCanvasStats('canvas[data-testid="reshaper-canvas"]', page);
+    const stats = await readCanvasStats('.svelte-flow__node[data-id="v-reshaper"] canvas[data-testid="video-tile-thumb"]', page);
     expect(stats, 'RESHAPER canvas stats sample').not.toBeNull();
     if (!stats) return;
 
@@ -117,7 +118,7 @@ test.describe('RESHAPER + SHAPEDRAMPS integration', () => {
   // 96 h CI census to 2026-08-18 — never a hard failure, so every one of those jobs reported SUCCESS.
   // LOST WHILE PARKED: the linear control case for RESHAPER — with h_lin/v_lin driving x/y the module must behave as a clean raster passthrough, the reference against which every shaped scan is judged.
   // Re-enable only on a root cause (#1847); "it passes now" is not one.
-  test.fixme('linear (h_lin/v_lin) wiring acts like a clean raster passthrough', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 1 recovered-on-retry observation in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page, rackLegacy, errorWatch }) => {
+  test.fixme('linear (h_lin/v_lin) wiring acts like a clean raster passthrough', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 1 recovered-on-retry observation in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page, rack, errorWatch }) => {
     // Two separate cards, same LINES feeding each. Output RESHAPER wired
     // to h_lin/v_lin (identity coord field). The OUTPUT card displays
     // the same LINES feed directly. Their pixel stats should be very
@@ -138,14 +139,14 @@ test.describe('RESHAPER + SHAPEDRAMPS integration', () => {
       ],
     );
 
-    await expect(page.locator('.svelte-flow__node-shapedramps'), 'SHAPEDRAMPS visible').toBeVisible();
-    await expect(page.locator('.svelte-flow__node-reshaper'),    'RESHAPER visible').toBeVisible();
-    await expect(page.locator('.svelte-flow__node-videoOut'),    'OUTPUT visible').toBeVisible();
+    await expect(page.locator('.svelte-flow__node:has([data-shell-type="shapedramps"])'), 'SHAPEDRAMPS visible').toBeVisible();
+    await expect(page.locator('.svelte-flow__node:has([data-shell-type="reshaper"])'),    'RESHAPER visible').toBeVisible();
+    await expect(page.locator('.svelte-flow__node:has([data-shell-type="videoOut"])'),    'OUTPUT visible').toBeVisible();
 
     await page.waitForTimeout(800);
 
-    const reshaperStats = await readCanvasStats('canvas[data-testid="reshaper-canvas"]', page);
-    const outStats  = await readCanvasStats('canvas[data-testid="video-out-canvas"]', page);
+    const reshaperStats = await readCanvasStats('.svelte-flow__node[data-id="v-reshaper"] canvas[data-testid="video-tile-thumb"]', page);
+    const outStats  = await readCanvasStats('.svelte-flow__node[data-id="v-out"] canvas[data-testid="video-tile-thumb"]', page);
 
     expect(reshaperStats, 'RESHAPER stats').not.toBeNull();
     expect(outStats,  'OUTPUT stats').not.toBeNull();
@@ -171,7 +172,7 @@ test.describe('RESHAPER + SHAPEDRAMPS integration', () => {
 
   });
 
-  test('onboard mix1 crossfades two LINES into RESHAPER.x and reacts to mix1 knob', async ({ page, rackLegacy, errorWatch }) => {
+  test('onboard mix1 crossfades two LINES into RESHAPER.x and reacts to mix1 knob', async ({ page, rack, errorWatch }) => {
     // BUDGET: see the note on the shaped-wiring test above — same measured
     // basis (38.4 s committed for two live tests against a 30 s default), and
     // THIS is the test that tripped it on CI runs 33015637717 / 33018824511.
@@ -198,14 +199,14 @@ test.describe('RESHAPER + SHAPEDRAMPS integration', () => {
       ],
     );
 
-    await expect(page.locator('.svelte-flow__node-shapedramps'), 'SHAPEDRAMPS visible').toBeVisible();
-    await expect(page.locator('.svelte-flow__node-reshaper'),    'RESHAPER visible').toBeVisible();
+    await expect(page.locator('.svelte-flow__node:has([data-shell-type="shapedramps"])'), 'SHAPEDRAMPS visible').toBeVisible();
+    await expect(page.locator('.svelte-flow__node:has([data-shell-type="reshaper"])'),    'RESHAPER visible').toBeVisible();
 
     // Six engine renders — see the note in the shaped-wiring test above.
     await waitFrames(page, 6);
 
     // RESHAPER renders something visible (non-flat).
-    const stats0 = await readCanvasStats('canvas[data-testid="reshaper-canvas"]', page);
+    const stats0 = await readCanvasStats('.svelte-flow__node[data-id="v-reshaper"] canvas[data-testid="video-tile-thumb"]', page);
     expect(stats0, 'RESHAPER stats at mix1=0').not.toBeNull();
     if (!stats0) return;
     expect(stats0.variance, `variance ${stats0.variance} > 50 at mix1=0`).toBeGreaterThan(50);
@@ -230,7 +231,7 @@ test.describe('RESHAPER + SHAPEDRAMPS integration', () => {
     // of its next `tick`, and RESHAPER draws after SHAPEDRAMPS in topo order.
     await waitFrames(page, 4);
 
-    const stats1 = await readCanvasStats('canvas[data-testid="reshaper-canvas"]', page);
+    const stats1 = await readCanvasStats('.svelte-flow__node[data-id="v-reshaper"] canvas[data-testid="video-tile-thumb"]', page);
     expect(stats1, 'RESHAPER stats at mix1=1').not.toBeNull();
     if (!stats1) return;
     expect(stats1.variance, `variance ${stats1.variance} > 50 at mix1=1`).toBeGreaterThan(50);
