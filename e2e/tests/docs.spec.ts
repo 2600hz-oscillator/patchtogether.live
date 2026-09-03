@@ -111,16 +111,17 @@ test('docs page is not behind the Clerk auth wall', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Analog VCO' })).toBeVisible();
 });
 
-test('right-click on a module opens the Docs entry, which opens the per-module docs page in a new tab', async ({ page, context, rackLegacy }) => {
+test('right-click on a module opens the Docs entry, which opens the per-module docs page in a new tab', async ({ page, context, rack }) => {
   await loadVoiceDemo(page);
   await expect(page.locator('.svelte-flow__node')).toHaveCount(5, { timeout: 10_000 });
 
-  // Right-click on the analog VCO card — its module type is 'analogVco', so
+  // Right-click on the analog VCO tile — its module type is 'analogVco', so
   // the Docs link should resolve to /docs/modules/analogVco.
-  const vco = page.locator('.svelte-flow__node-analogVco').first();
-  // Right-click the card background (title bar) — a knob/fader right-click now
-  // opens the per-control MIDI menu instead of the module menu.
-  await vco.locator('.title').click({ button: 'right' });
+  const vco = page.locator('.svelte-flow__node:has([data-shell-type="analogVco"])').first();
+  // Right-click the tile's NAME ROW — a control right-click opens the
+  // per-control MIDI menu instead of the module menu (the shell's `.tile-name`
+  // is the card `.title`'s counterpart).
+  await vco.locator('.tile-name').click({ button: 'right' });
 
   const menu = page.locator('[role="menu"][aria-label="Module actions"]');
   await expect(menu).toBeVisible();
@@ -136,7 +137,7 @@ test('right-click on a module opens the Docs entry, which opens the per-module d
   await newPage.close();
 });
 
-test('right-clicking the empty canvas does NOT show a Docs entry (it shows the Add Module palette path instead)', async ({ page, rackLegacy }) => {
+test('right-clicking the empty canvas does NOT show a Docs entry (it shows the Add Module palette path instead)', async ({ page, rack }) => {
   // Empty canvas — right-click on the SvelteFlow viewport, NOT on a node.
   const viewport = page.locator('.svelte-flow__pane, .svelte-flow__viewport').first();
   await viewport.click({ button: 'right' });

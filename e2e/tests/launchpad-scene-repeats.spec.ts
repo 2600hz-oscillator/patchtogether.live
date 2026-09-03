@@ -136,7 +136,14 @@ async function buildChain(page: import('@playwright/test').Page, prefix: string)
         sourceType: 'audio', targetType: 'audio' },
     ],
   );
-  await expect(page.locator('.svelte-flow__node-clipplayer')).toHaveCount(1);
+  await expect(page.locator('.svelte-flow__node:has([data-shell-type="clipplayer"])')).toHaveCount(1);
+  // The scene-repeat flair lives on the DOCK face's scene row on the default
+  // shell — open it once per test so the UI mirror is on screen.
+  await page.evaluate(
+    (id) => (globalThis as unknown as { __openDockFullView: (id: string) => void }).__openDockFullView(id),
+    `${prefix}-cp`,
+  );
+  await expect(page.locator(`[data-testid="dock-fullview-pane"][data-pane-node="${prefix}-cp"]`)).toBeVisible();
 }
 
 /** Seed 4-step note clips at flat indices (stride-64: index = lane*64 + slot). */
@@ -176,7 +183,7 @@ async function installSingle(page: import('@playwright/test').Page, nodeId: stri
   expect(installed, 'single-unit Launchpad install hook present (VITE_E2E_HOOKS)').toBe(true);
 }
 
-test('@launchpad scene repeats: gesture sets ×2, card flair mirrors it, scene 2 AUTO-LAUNCHES after 2 passes — audible through the real chain', async ({ page, rackLegacy, errorWatch }) => {
+test('@launchpad scene repeats: gesture sets ×2, card flair mirrors it, scene 2 AUTO-LAUNCHES after 2 passes — audible through the real chain', async ({ page, rack, errorWatch }) => {
   await buildChain(page, 'rp');
   // Scene 0 (lane 0 slot 0, index 0) + scene 1 (lane 0 slot 1, index 1) — both
   // drive the audible voice via pitch1/gate1.
@@ -235,7 +242,7 @@ test('@launchpad scene repeats: gesture sets ×2, card flair mirrors it, scene 2
   await expect(page.getByTestId('clipplayer-scene-repeat-0')).toHaveText('×2');
 });
 
-test('@launchpad scene repeats SCROLL-AWARE: with the window scrolled, the held button edits the CORRECT scene slot', async ({ page, rackLegacy, errorWatch }) => {
+test('@launchpad scene repeats SCROLL-AWARE: with the window scrolled, the held button edits the CORRECT scene slot', async ({ page, rack, errorWatch }) => {
   await buildChain(page, 'rq');
   // Content in slots 0..7 of lane 0 → the window can scroll (reveals scene 8).
   await seedClipsAt(page, 'rq-cp', [0, 1, 2, 3, 4, 5, 6, 7]);

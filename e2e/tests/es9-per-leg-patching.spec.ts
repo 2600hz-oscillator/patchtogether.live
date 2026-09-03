@@ -184,7 +184,7 @@ async function pickTarget(
 test.describe('ES-9 per-leg patching — the owner\'s send/return rack', () => {
   test('all EIGHT edges are reconstructible through real UI gestures, exactly', async ({
     page,
-    rackLegacy,
+    rack,
   }) => {
     await spawnRig(page);
 
@@ -245,7 +245,7 @@ test.describe('ES-9 per-leg patching — the owner\'s send/return rack', () => {
       .toEqual(EIGHT_EDGES);
   });
 
-  test('the picker DRILLS a collapsed stereo target into its L and R', async ({ page, rackLegacy }) => {
+  test('the picker DRILLS a collapsed stereo target into its L and R', async ({ page, rack }) => {
     // The affordance itself, asserted where a human would look for it — no
     // modifier key, no drag, just the rows. "Trivial" is the acceptance bar.
     await spawnRig(page);
@@ -265,7 +265,7 @@ test.describe('ES-9 per-leg patching — the owner\'s send/return rack', () => {
 
   test('an UNPAIRED target is a single row — the drill-down does not fire everywhere', async ({
     page,
-    rackLegacy,
+    rack,
   }) => {
     // Scope control. Without it, "RET1 has three rows" would be untested for
     // the case where there must be ONE, and a blanket 3× expansion of every
@@ -280,7 +280,7 @@ test.describe('ES-9 per-leg patching — the owner\'s send/return rack', () => {
 
   test('a STEREO patch into ONE ES-9 jack ASKS which channel, and writes ONE edge', async ({
     page,
-    rackLegacy,
+    rack,
   }) => {
     // ES-9 audio ports are independent PHYSICAL JACKS (owner: "explicitly mono
     // channels when used for audio and it's in hardware"), so two legs must
@@ -309,7 +309,7 @@ test.describe('ES-9 per-leg patching — the owner\'s send/return rack', () => {
 
   test('the same gesture into a NON-hardware mono target behaves identically', async ({
     page,
-    rackLegacy,
+    rack,
   }) => {
     // ⚠ THIS CONTROL CHANGED SHAPE, and the reason is worth stating rather than
     // silently rewriting. It used to assert that `vca.audio` still received
@@ -351,7 +351,7 @@ test.describe('ES-9 per-leg patching — the owner\'s send/return rack', () => {
 
   test('a collapsed jack fed by TWO sources names BOTH in its title and aria-label', async ({
     page,
-    rackLegacy,
+    rack,
   }) => {
     // The owner's screenshots: `SEND 1` read `→ TO es-9.OUT3, es-9.OUT4` while
     // `RET1` read `← FROM es-9.IN14` — the second source simply missing. The
@@ -373,8 +373,10 @@ test.describe('ES-9 per-leg patching — the owner\'s send/return rack', () => {
     await page.keyboard.press('Escape');
     await expect(chrome(page, MIX)).toHaveCount(0);
     await page.locator(`.svelte-flow__node[data-id="${MIX}"] [data-testid="patch-trigger"]`).click();
+    // Flat INPUT drill — the card's per-channel sections are a documented
+    // shell-rail delta (#1762, see ModuleShell's PatchPanel mount).
     await chrome(page, MIX)
-      .locator('[data-testid="patch-panel-section-nav"][data-section-label="Ret1"]')
+      .locator('[data-testid="patch-panel-nav"][data-nav="inputs"]')
       .click();
     const jack = chrome(page, MIX).locator(
       '[data-testid="patch-panel-port-row"][data-port-id="ret1L"] [data-testid="port-row-jack"]',
@@ -392,7 +394,7 @@ test.describe('ES-9 per-leg patching — the owner\'s send/return rack', () => {
 
   test('UNPATCH takes only the cable you picked — the two returns are independent', async ({
     page,
-    rackLegacy,
+    rack,
   }) => {
     // ⚠ THE REGRESSION THIS GUARDS. `ret1L` and `ret1R` are the two halves of
     // one stereo input, so leg-group deletion could plausibly treat the cables
@@ -416,8 +418,10 @@ test.describe('ES-9 per-leg patching — the owner\'s send/return rack', () => {
     await expect(chrome(page, MIX)).toHaveCount(0);
     await page.locator(`.svelte-flow__node[data-id="${MIX}"] [data-testid="patch-trigger"]`).click();
     await expect(chrome(page, MIX)).toHaveAttribute('aria-hidden', 'false');
+    // Flat INPUT drill — the card's per-channel sections are a documented
+    // shell-rail delta (#1762, see ModuleShell's PatchPanel mount).
     await chrome(page, MIX)
-      .locator('[data-testid="patch-panel-section-nav"][data-section-label="Ret1"]')
+      .locator('[data-testid="patch-panel-nav"][data-nav="inputs"]')
       .click();
     await chrome(page, MIX)
       .locator('[data-testid="patch-panel-port-row"][data-port-id="ret1L"]')
