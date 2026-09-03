@@ -5674,6 +5674,7 @@ export const FACES = [
     // `trails.spec.ts` (which drives a SIMULATED device through the real
     // decoder). Reaching them in VRT would mean installing that double in the
     // VRT harness, which is a change to the harness rather than to this module.
+  },
 
   // ── CLIP PLAYER — the launcher, and the last module card to leave
   //    NON_SHELL_LANE_TYPES ────────────────────────────────────────────────
