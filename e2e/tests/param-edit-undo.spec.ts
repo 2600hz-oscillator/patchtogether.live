@@ -43,7 +43,7 @@ async function readParam(page: Page, nodeId: string, paramId: string): Promise<n
   );
 }
 
-test('card param edit is undoable: a Fader edit reverts on undo (setNodeParam migration)', async ({ page, rackLegacy }) => {
+test('face param edit is undoable: a slider edit reverts on undo (setNodeParam migration)', async ({ page, rack }) => {
   // 1. Spawn a reverb with size seeded to a non-default value. The ReverbCard
   //    Size fader's defaultValue is 0.5; we seed 0.9 so the dblclick (which
   //    sets the param to the default) produces an observable change.
@@ -58,8 +58,14 @@ test('card param edit is undoable: a Fader edit reverts on undo (setNodeParam mi
   //    card's migrated `set('size')` closure → setNodeParam('rev-1', 'size', v)
   //    (LOCAL_ORIGIN). A single gesture = a single tracked transaction = a
   //    single undo entry, so one undo() reverts it cleanly.
-  const sizeFader = page
-    .locator('.svelte-flow__node[data-id="rev-1"] .track[role="slider"][aria-label="Size"]');
+  // The Size slider lives on the dock ladder on the shell (`control-size`).
+  await page
+    .locator('.svelte-flow__node[data-id="rev-1"] [data-testid="module-shell"]')
+    .getByTestId('shell-open-dock')
+    .click();
+  await expect(page.getByTestId('dock-full-view')).toBeVisible();
+  const sizeFader = page.getByTestId('dock-full-view').getByTestId('control-size');
+  await sizeFader.scrollIntoViewIfNeeded();
   await expect(sizeFader).toBeVisible();
   await sizeFader.hover();
   await page.mouse.wheel(0, 120); // one notch down → lowers size off 0.9
