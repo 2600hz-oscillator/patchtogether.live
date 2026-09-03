@@ -693,3 +693,54 @@ so the extracted host is what those legs are actually measuring.
    one rack cost anything; one per wavesculpt node is the same count of GL
    contexts as before, so the change is neutral by construction rather than by
    measurement.
+
+### RE-VERIFICATION of `dc2d8c3a2` (appended 2026-09-03, post-outage, verbatim)
+
+The S1/7 build session was cut off by an outage; its commit later proved intact
+and was pushed as-is. This is an INDEPENDENT re-run of the full battery against
+`feat/legacy-removal` @ `dc2d8c3a2` on a clean tree, by a different session, so
+the record above does not rest on a run nobody can attribute. Nothing was
+amended — every leg reproduced.
+
+```
+task typecheck                        4126 files, 0 errors, 0 warnings
+e2e tsc                               clean (runs inside task typecheck, e2e workspace)
+task lint                             eslint gate PASS, shellcheck gate PASS
+task test  (FULL, vitest caches       web 967 files passed | 1 skipped / 19342 passed | 7 skipped
+  cleared first)                      dsp 1228 · server 159 · art 16 · scripts 644 — exit 0
+task webgl:attest:check               hash 2f505b42… UNCHANGED, matching attestation exists
+WavesculptVizSurface.svelte           git diff origin/main...HEAD = EMPTY (CubeVizSurface too)
+cd e2e && npx playwright test --list  Total: 3082 tests in 506 files
+E2E_WEBGL_HEAVY=only --list           Total: 258 tests in 66 files
+
+Heavy lane (E2E_PREVIEW=1 preview build w/ VITE_E2E_HOOKS=1, E2E_WEBGL_HEAVY=only,
+--workers=1, real macOS GPU, GL pixel legs RAN — not skipped):
+  wavesculpt.spec.ts    REPEAT=3      51 passed (17 × 3), 0 skipped, 1.4m
+  card-producer-lifetime.spec.ts
+                        REPEAT=3      39 passed (13 × 3, incl. both new wavesculpt legs), 2.0m
+
+Default lane (same preview server):
+  gamepad.spec.ts                     17 passed — incl. "stick reaches BOTH extremes of
+                                      WAVESCULPT.pos_x + moves the on-card joystick dot"
+                                      (§W2's measured starved-poll regression)
+
+POSITIVE CONTROL (measured, then reverted): vizSurfaceNodes forced empty in
+Canvas.svelte, preview REBUILT + server restarted —
+  wavesculpt.spec.ts "spawns…"        FAILED (wavesculpt-canvas toHaveCount(1) → 0)
+revert + rebuild + restart            same leg 1 passed
+so the node host is what the legs measure, on this build too.
+
+PROGRESS PROBE (throwaway spec, run then deleted, never committed): step seam
+driven 8 frames at pinned t=2000 (delta exactly 8, lit-pixel population > 20),
+then 8 frames at pinned t=8000 — 16-bin intensity-histogram L1 distance > 50.
+PASSED: the sculpt visual demonstrably ADVANCES between pinned clocks; the
+counter is not incrementing over a static image.
+
+DOOM: untouched — dc2d8c3a2 names zero DOOM files, and this verification
+changed no tracked file but this one.
+```
+
+What this re-verification adds over the original record: attribution (a run that
+exists in a log someone ran to completion), the explicit heavy-lane collection
+count (258/66), and the time-advance progress probe, which the original battery
+asserted only indirectly through the morph/rotation legs.
