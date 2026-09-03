@@ -163,7 +163,6 @@ export const SKIP_BUDGET = [
       'doom-late-join.spec.ts',
       'doom-launch.spec.ts',
       'doom-multiplayer.spec.ts',
-      'in-card-title.spec.ts',
     ],
     reason: /COLLAB_JOB lane/,
     lanes: [],
@@ -176,20 +175,11 @@ export const SKIP_BUDGET = [
       + 'cannot fire. A row on collab therefore means COLLAB_JOB went missing from the job — the entire lane '
       + 'standing itself down while reporting green, which is the #2294 shape exactly.',
   },
-  {
-    specs: ['in-card-title.spec.ts'],
-    reason: /task #101/,
-    lanes: ['collab'],
-    homeLane: 'collab',
-    why:
-      'Quarantined @collab rename-sync case (relay-contention timeout); the declaration-level test.fixme '
-      + 'carries the task #101 reason in a details-object annotation, so the report row is named rather than '
-      + 'anonymous. THIS IS THE COLLAB LANE\'S ONE LEGITIMATE SKIP — the `50 passed / 1 skipped` measured on '
-      + '2026-09-01 is this row and nothing else, which is why it is the only entry that gained '
-      + 'lanes:[\'collab\'] when #2294 armed the lane. It stays out of `e2e`/`behavioral`: the case lives '
-      + 'inside the @collab describe, so those lanes never see it. Un-park it by root-causing the '
-      + 'A→relay→B propagation stall (task #101), which deletes this lane membership with it.',
-  },
+  // (The task #101 quarantined @collab rename-sync entry died with
+  // in-card-title.spec.ts in the S2 legacy-removal inversion — the case had
+  // been dark since the quarantine, and its deletion is a NAMED coverage
+  // loss recorded in the S2 ledger: no @collab rename-sync coverage remains;
+  // task #101's eventual fix needs a new home on the default shell.)
 
   // ── environment capabilities CI is known to have ─────────────────────────
   {

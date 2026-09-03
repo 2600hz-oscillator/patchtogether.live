@@ -161,7 +161,10 @@ Format: deleted test → why it dies → where the coverage lives now.
 | rings-face :: "the CARD STRUM button drives the SAME seam" | compat-surface leg | dock-cell strum leg + NEGATIVE CONTROL in same file |
 | vca-face :: "VCA legacy card — def-owned readout reaches the card" describe (1 test) | card readout path (`paramProps`) | face `aria-valuetext` readout legs in same file |
 
-Collection: 3077 → **3066** tests in 506 files (−11: the rows above).
+| in-card-title.spec.ts (WHOLE FILE, 3 tests: card-title placement, card rename persist, quarantined @collab rename-sync) | card-title chrome is card-only; rename affordance moved to the shell `.tile-name` | `module-rename.spec.ts` (default shell: tile-name rename + doc persistence + error paths); livecode rename-validation. ⚠ **NAMED COVERAGE LOSS for the owner: the @collab rename-sync case dies with the file.** It was quarantined dark since task #101 (relay-contention), so nothing that ran goes dark — but no @collab rename-sync coverage remains anywhere, and task #101's eventual fix needs a NEW home on the default shell. Same-commit: timings row pruned (422→421), both skip-budget entries pruned, `e2e-skip-budget.test.ts` + `e2e-report-audit.test.ts` collab scenarios re-anchored on the now-empty collab budget. |
+
+Collection: 3077 → 3066 → **3063** tests in 505 files (−11 legs above, −3
+in-card-title).
 
 ## The 64 URL-flip reds (reverted to legacy boot; drain per family)
 
