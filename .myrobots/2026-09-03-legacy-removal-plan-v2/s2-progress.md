@@ -148,7 +148,9 @@ into `face-clipplayer.spec.ts`, which already covers grid+pads).
 | 12 | fader + fader-midi-assign, a84297e52 — pointer-drag on dock sliders (scrollIntoView first!), radiogroup exact indices, MIDI-learn on dock controls | DONE |
 | 13 | param-edit-undo + poly-chord, de9bea8f4 — dock wheel-edit = one undo step; cart-face grid mapped | DONE |
 | 14 | note-entry + keyboard-nav, 8a22592fe — `cart-face-{gate,pitch,chord}-{i}` same NoteEntry; lazy cells + draft-restore deltas asserted honestly | DONE — rackLegacy 36 |
-| … | card-DOM rewrites remaining (rackLegacy 36): aut-patch-panel, automation-cv-record, blood pair, bluebox, cable-z-order, clip-automation, clipplayer family (8), docs, dx7-syx-load, es9-per-leg-patching, joystick, launchpad-scene-repeats, live-glyphs, mixmstrs-stereo-expand, multi-output, painter, patch-panel, reshaper-shapedramps, save-group-and-naming, score, seqtris, shapegen pair, toybox-control-surface, vfpga (4); then the 63-queue families (toybox 15, samsloop 6, timelorde 4, video-*, vst pair, coverage sweeps, per-module sweeps, ai-smoke, livecode, midi, camera-input, gibribbon, nibbles, organize-modules, patch-menu-redesign, patch-panel-nested, es9-card-shows-state, cube, chromaconsole, duplicate-module, foxy-freeze, clip-media-recover-reachable, in-card-title DONE, …) | pending |
+| 15 | dx7-syx-load, b9c348d59 — upload cell IS the file input; dock-Esc hazard recorded | DONE |
+| 16 | cable-z-order, e6eb559e2 — DRAG GRIP recipe: tile centre is `nodrag`, name row is a button → drag from `.tile-kind` | DONE — rackLegacy 34 |
+| … | card-DOM rewrites remaining (rackLegacy 34): aut-patch-panel, automation-cv-record, blood pair, bluebox, clip-automation, clipplayer family (8), docs, es9-per-leg-patching, joystick (⚠ known parity blocker — check the generic-face endgame memory first), launchpad-scene-repeats, live-glyphs (⚠ glyph screens have NO obvious tile home — needs design study like lfo-modulation did), mixmstrs-stereo-expand, multi-output, painter, patch-panel, reshaper-shapedramps, score, seqtris, shapegen pair, toybox-control-surface, vfpga (4). ⚠ save-group-and-naming: DO NOT rewrite — owner ruling 1 DELETES groups entirely; its group half dies in the group sub-slice (S4), reconcile there. Then the 62-queue families (toybox 15, samsloop 6, timelorde 4, video-*, vst pair, coverage sweeps, per-module sweeps + rack-session/helper flips, ai-smoke, livecode, midi, camera-input, gibribbon, nibbles, organize-modules, patch-menu-redesign, patch-panel-nested, es9-card-shows-state, cube, chromaconsole, duplicate-module (park), foxy-freeze, clip-media-recover-reachable) | pending |
 | … | family (c) machinery deletions + skip-budget same-commit | pending |
 | … | #1847 park reconciliation (28 files) | pending |
 | last | DOOM sub-slice: 14 re-points, boot URL + knob locator only | pending |
@@ -258,6 +260,29 @@ for these files):
   not a test rewrite.
 - patch-panel and multi-output warrant a closer product look during their
   family rewrites (menu triggers / video zone reads).
+
+## The family-(b) rewrite cookbook (proven across commits 6–16)
+
+1. PROBE FIRST with a scratch spec (`zz-probe-tmp.spec.ts`, deleted after):
+   dump `[data-testid]` on the tile and the dock, plus outerHTML of the
+   control you need. The tile and dock paint DIFFERENT primitives for the
+   same param (knob in lane, segmented/slider in dock).
+2. Locators: tile = `.svelte-flow__node[data-id=X] [data-testid="module-shell"]`
+   (or `:has([data-shell-type="T"])` by type); dock = `shell-open-dock` click
+   → `dock-full-view`; off-viewport tiles → `__openDockFullView(id)` global.
+3. Controls carry `control-<paramId>`; family cells `shell-cell-<family>-<key>`;
+   def vocabulary lives in aria-valuetext / segment titles / aria-labels.
+4. Drags: `scrollIntoViewIfNeeded()` first (dock ladder exceeds 720px);
+   node-drag grip = `.tile-kind` (centre is nodrag, name row is a button);
+   right-click target = `.tile-name`/`.tile-kind` for the module menu, the
+   control itself for the MIDI menu.
+5. NEVER Escape to close a face popup (closes the whole dock) — re-select.
+6. NEVER `:has`-rewrite a negative card-absence assertion (inverts it).
+7. Battery per family: run once, REPEAT=3, ONE positive control
+   (suppress the driving gesture → the assert must go red, restore → green),
+   e2e tsc, `--list` after anything that could empty a set, `task lint` when
+   a ledgered waitForTimeout's test title moved (keep titles verbatim), and
+   timings-row prune + budget-entry prune in any commit that deletes a file.
 
 ## Environment notes for a successor
 
