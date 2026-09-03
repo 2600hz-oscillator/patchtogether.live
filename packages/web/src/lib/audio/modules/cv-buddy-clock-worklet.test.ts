@@ -268,14 +268,33 @@ describe('cv-buddy — the cv-clock worklet wiring', () => {
   });
 
   it('health messages from the processor surface on read("clockHealth")', async () => {
+    // Includes the CONTEXT-clock fields (renderedS + gap extremes): the e2e
+    // stall leg judges the pulse counter against renderedS from the SAME
+    // snapshot — a field dropped here would silently un-anchor that spec.
     seedPerf();
     const ctx = new FakeWorkletContext();
     const handle = await build(ctx);
     const wn = FakeAudioWorkletNode.instances[0]!;
-    wn.port.onmessage!({ data: { type: 'health', pulses: 5, skipped: 0 } } as MessageEvent);
-    expect(health(handle)).toMatchObject({ workletPulses: 5, workletSkips: 0 });
-    wn.port.onmessage!({ data: { type: 'health', pulses: 9, skipped: 2 } } as MessageEvent);
-    expect(health(handle)).toMatchObject({ workletPulses: 9, workletSkips: 2 });
+    wn.port.onmessage!({
+      data: { type: 'health', pulses: 5, skipped: 0, renderedS: 0.9, minGapS: null, maxGapS: null },
+    } as MessageEvent);
+    expect(health(handle)).toMatchObject({
+      workletPulses: 5,
+      workletSkips: 0,
+      workletRenderedS: 0.9,
+      workletMinGapS: null,
+      workletMaxGapS: null,
+    });
+    wn.port.onmessage!({
+      data: { type: 'health', pulses: 9, skipped: 2, renderedS: 1.7, minGapS: 0.159, maxGapS: 0.16 },
+    } as MessageEvent);
+    expect(health(handle)).toMatchObject({
+      workletPulses: 9,
+      workletSkips: 2,
+      workletRenderedS: 1.7,
+      workletMinGapS: 0.159,
+      workletMaxGapS: 0.16,
+    });
   });
 
   it('dispose tells the processor to stand down (a 0-input source never GCs itself)', async () => {

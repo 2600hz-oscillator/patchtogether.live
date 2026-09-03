@@ -132,6 +132,19 @@ export interface CvBuddyClockHealth {
   /** Cumulative pulses the worklet dropped-and-counted (config jumps; see
    *  cv-clock-core.ts). Under a healthy clock this stays 0. */
   workletSkips: number;
+  /** CONTEXT seconds `workletPulses` covers, from the same health snapshot.
+   *  ⚠ The counter is meaningful ONLY against this clock: a null-sink or
+   *  contended render thread runs ahead of or behind wall time (CI shard 11
+   *  measured both directions), so `pulses ÷ wall-elapsed` compares two
+   *  different clocks and reads high AND low with no pulse wrong; `pulses` vs
+   *  `renderedS × rate` is exact within ±1 by construction. */
+  workletRenderedS: number;
+  /** Inter-pulse gap extremes (context s), measured at the emitting sample —
+   *  under a constant tempo both sit at one period (±1 sample): min below
+   *  period = bunching, max above = a hole. Null until two pulses have fired
+   *  within one train. */
+  workletMinGapS: number | null;
+  workletMaxGapS: number | null;
 }
 
 /** Contexts whose audioWorklet already loaded the seq-clock module (which
@@ -247,6 +260,9 @@ export async function createCvBuddyHandle(
     let clockWorklet: AudioWorkletNode | null = null;
     let workletPulses = 0;
     let workletSkips = 0;
+    let workletRenderedS = 0;
+    let workletMinGapS: number | null = null;
+    let workletMaxGapS: number | null = null;
     try {
       const aw = (ctx as { audioWorklet?: { addModule(u: string): Promise<void> } })
         .audioWorklet;
@@ -263,10 +279,22 @@ export async function createCvBuddyHandle(
           outputChannelCount: [1, 1],
         });
         clockWorklet.port.onmessage = (e: MessageEvent) => {
-          const d = e.data as { type?: string; pulses?: number; skipped?: number } | undefined;
+          const d = e.data as
+            | {
+                type?: string;
+                pulses?: number;
+                skipped?: number;
+                renderedS?: number;
+                minGapS?: number | null;
+                maxGapS?: number | null;
+              }
+            | undefined;
           if (d?.type === 'health') {
             if (typeof d.pulses === 'number') workletPulses = d.pulses;
             if (typeof d.skipped === 'number') workletSkips = d.skipped;
+            if (typeof d.renderedS === 'number') workletRenderedS = d.renderedS;
+            if (typeof d.minGapS === 'number' || d.minGapS === null) workletMinGapS = d.minGapS;
+            if (typeof d.maxGapS === 'number' || d.maxGapS === null) workletMaxGapS = d.maxGapS;
           }
         };
       }
@@ -467,6 +495,9 @@ export async function createCvBuddyHandle(
             skips: clockSkips,
             workletPulses,
             workletSkips,
+            workletRenderedS,
+            workletMinGapS,
+            workletMaxGapS,
           };
           return health;
         }

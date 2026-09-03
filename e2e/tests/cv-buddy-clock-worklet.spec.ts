@@ -8,17 +8,33 @@
 // in any of those is GREEN-AND-SILENT to every unit lane (the #969 lesson:
 // engine-direct tests have shipped modules that were green and silent).
 //
+// ⚠ EVERY assertion here is anchored on the CONTEXT clock (the worklet's own
+// `renderedS`, snapshotted in the same health message as its counters), NEVER
+// on wall time. The first version compared `pulses` to wall-elapsed × rate and
+// CI shard 11 failed it in BOTH directions on back-to-back attempts — 71
+// where wall said ≤69.3 (headless Chromium's null audio sink rendered AHEAD
+// of wall time: 71 pulses ≈ 1.46 s of audio in 1.32 wall-seconds, no hardware
+// buffer to pace it), then 56 where wall said ~99.3 (the render thread LAGGED
+// a contended shard). Neither reading was a wrong pulse: per CONTEXT time the
+// emitted count is bounded by the grid BY CONSTRUCTION (cv-clock-core.ts —
+// one emission per grid crossing, welded by its unit suite), so a wall-clock
+// window can read high only by under-measuring the audio it covers. Against
+// `renderedS` the count is exact within ±1, and that is what is asserted.
+//
 // So this spec asserts, in order:
 //   1. the worklet DRIVER is active (read('clockHealth').driver === 'worklet')
 //      — i.e. the dist bundle loaded and the processor constructed;
 //   2. the processor is EMITTING: its self-reported cumulative pulse counter
-//      rises at the configured PPQN×BPM rate (the "clock is actually running"
-//      signal, reported from the audio thread itself);
-//   3. ⚠ THE FIX: a ~600 ms main-thread busy-block (the SPEEDERR stall, made
-//      worse) does not cost a single pulse — while the SHADOW main-thread
-//      scheduler's `skips` counter RISES over the same block, which is the
-//      in-vivo positive control that the stall was real and the old path
-//      WOULD have dropped (~19 pulses at this tempo).
+//      rises past a second's worth of pulses;
+//   3. ⚠ THE FIX: an ~800 ms main-thread busy-block (the SPEEDERR stall, made
+//      worse) costs nothing on the context clock — pulsesΔ == renderedSΔ×rate
+//      (±1) across the block, and the GAP LAW holds at sample resolution over
+//      the whole run: no inter-pulse gap above one period + ε (no hole =
+//      nothing dropped) and none below one period − ε (no bunching, the burst
+//      #2324 forbids) — both measured IN CONTEXT TIME at the emitting sample;
+//   4. the SHADOW main-thread scheduler's `skips` counter RISES over the same
+//      block — the in-vivo positive control that the stall was real and the
+//      old path WOULD have dropped (~29 pulses at this tempo under 800 ms).
 //
 // No WebGL, no canvas reads — default e2e lane. All waits are expect.poll on
 // observable engine state; the only fixed duration is the busy-block itself,
@@ -31,15 +47,26 @@ const CVB = 'cvb-1';
 const BPM = 120;
 const PPQN = 24;
 const RATE = (BPM * PPQN) / 60; // 48 pulses/s
+const PERIOD_S = 1 / RATE; // ≈ 20.83 ms
+/** Gap-law tolerance: emission is quantized to the context sample grid
+ *  (±1 sample ≈ 23 µs at 44.1/48 kHz) — 1 ms is generous headroom and still
+ *  20× smaller than the one-period hole a single dropped pulse would open. */
+const GAP_EPS_S = 0.001;
 
 interface ClockHealth {
   driver: 'worklet' | 'main';
   skips: number;
   workletPulses: number;
   workletSkips: number;
+  workletRenderedS: number;
+  workletMinGapS: number | null;
+  workletMaxGapS: number | null;
 }
 
-/** One atomic engine read from the page: health + a wall-clock stamp. */
+/** One atomic engine read from the page. `workletPulses`/`workletRenderedS`
+ *  arrive in the SAME worklet health message, so each snapshot is internally
+ *  consistent on the context clock; `atMs` (wall) rides along for diagnostics
+ *  only and is load-bearing for nothing. */
 async function readHealth(page: Page): Promise<ClockHealth & { atMs: number }> {
   return page.evaluate((id) => {
     const w = globalThis as unknown as {
@@ -52,7 +79,7 @@ async function readHealth(page: Page): Promise<ClockHealth & { atMs: number }> {
   }, CVB);
 }
 
-test('cv-buddy clock: worklet-driven, emitting, and immune to a 600ms main-thread stall', async ({
+test('cv-buddy clock: worklet-driven, emitting, and immune to an 800ms main-thread stall', async ({
   page,
 }) => {
   await page.goto('/rack');
@@ -73,12 +100,12 @@ test('cv-buddy clock: worklet-driven, emitting, and immune to a 600ms main-threa
     .poll(async () => (await readHealth(page)).workletPulses, { timeout: 15_000 })
     .toBeGreaterThan(RATE);
 
-  // 3. THE STALL. Sample, wedge the main thread ~600 ms, let the counter
-  //    settle past the block, sample again.
+  // 3. THE STALL. Snapshot, wedge the main thread ~800 ms, poll until the
+  //    audio-thread counters have visibly moved past the block, snapshot again.
   const before = await readHealth(page);
 
   await page.evaluate(() => {
-    const until = performance.now() + 600;
+    const until = performance.now() + 800;
     // A hot loop, not a timer: nothing on the main thread runs — no scheduler
     // dispatch, no worklet config messages — exactly the incident's shape.
     while (performance.now() < until) {
@@ -86,36 +113,46 @@ test('cv-buddy clock: worklet-driven, emitting, and immune to a 600ms main-threa
     }
   });
 
-  // Wait (on observable state) until the audio-thread counter has visibly
-  // moved past the block, so the second sample is not taken inside the
-  // health-message latency window.
   await expect
     .poll(async () => (await readHealth(page)).workletPulses, { timeout: 15_000 })
     .toBeGreaterThan(before.workletPulses + RATE);
 
   const after = await readHealth(page);
 
-  // ZERO dropped pulses: the emitted count matches wall-clock elapsed × rate.
-  // Slack budget: health posts are throttled to ~50 ms + main-thread delivery
-  // on each endpoint (±~5 pulses worst case combined) and the audio clock can
-  // drift ~0.1% from performance.now(). The OLD path loses
-  // (600−200 ms lookahead)/20.8 ms ≈ 19 pulses under this block — an order of
-  // magnitude outside the slack, so the assertion separates the two cleanly.
-  const elapsedS = (after.atMs - before.atMs) / 1000;
+  // ZERO dropped pulses, judged on the clock the pulses live on: across the
+  // block, emitted == context-seconds-rendered × rate, exact within ±1 (the
+  // half-open window boundary; 1.5 dodges float). Wall time appears in the
+  // message purely so a future failure names both clocks.
   const emitted = after.workletPulses - before.workletPulses;
-  const expected = elapsedS * RATE;
+  const renderedDelta = after.workletRenderedS - before.workletRenderedS;
+  const wallDelta = (after.atMs - before.atMs) / 1000;
+  expect(renderedDelta, 'the audio context must have rendered across the block').toBeGreaterThan(1);
   expect(
-    Math.abs(emitted - expected),
-    `emitted ${emitted} vs expected ~${expected.toFixed(1)} over ${elapsedS.toFixed(2)}s`,
-  ).toBeLessThanOrEqual(6);
+    Math.abs(emitted - renderedDelta * RATE),
+    `emitted ${emitted} vs context-clock expected ${(renderedDelta * RATE).toFixed(2)} ` +
+      `(renderedΔ ${renderedDelta.toFixed(3)}s, wallΔ ${wallDelta.toFixed(3)}s — a divergence ` +
+      'between those two deltas is the shard-contention effect and is NOT a clock fault)',
+  ).toBeLessThanOrEqual(1.5);
 
-  // The audio-thread clock itself dropped nothing.
+  // THE GAP LAW, in context time at sample resolution, over the WHOLE run
+  // including the stall: no hole (nothing dropped) and no bunching (never two
+  // closer than one period — the #2324 invariant, measured at the source).
+  expect(after.workletMinGapS, 'gap extremes must exist after >1s of pulses').not.toBeNull();
+  expect(after.workletMinGapS!, 'bunching: two pulses closer than one period')
+    .toBeGreaterThanOrEqual(PERIOD_S - GAP_EPS_S);
+  expect(after.workletMaxGapS!, 'a hole: an inter-pulse gap above one period = a dropped pulse')
+    .toBeLessThanOrEqual(PERIOD_S + GAP_EPS_S);
+
+  // The audio-thread clock itself dropped-and-counted nothing either.
   expect(after.workletSkips).toBe(0);
 
-  // POSITIVE CONTROL, in vivo: the SHADOW main-thread scheduler measured the
-  // same stall as late — proof the wedge really starved the old path (and
-  // therefore that the zero-loss above was the worklet's doing, not a stall
-  // that never happened).
+  // 4. POSITIVE CONTROL, in vivo: the SHADOW main-thread scheduler measured
+  //    the same stall as late — proof the wedge really starved the old path
+  //    (and therefore that the zero-loss above was the worklet's doing, not a
+  //    stall that never happened). The wedge only has to make the CONTEXT
+  //    clock advance past the 200 ms lookahead while ticks cannot dispatch;
+  //    800 ms of wall wedge leaves 4× headroom even for a render thread
+  //    crawling at quarter speed on a contended shard.
   expect(
     after.skips,
     'the main-thread shadow scheduler must have registered the stall',

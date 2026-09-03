@@ -110,6 +110,19 @@ export class CvClockCore {
    *  is either EMITTED or COUNTED, never flushed late. */
   private dropped = 0;
 
+  /** Context time of the previous emission — null before the first pulse of a
+   *  train. A transport stop breaks the chain, so a stop→start distance never
+   *  poses as an inter-pulse gap. */
+  private lastEmitT: number | null = null;
+  /** Extremes of the inter-pulse gap, CONTEXT seconds, since construction —
+   *  measured AT the emitting sample, a resolution no outside observer has.
+   *  Under a constant config both must read one period (±1 sample): min below
+   *  period = bunching (the burst #2324 forbids), max above = a hole (a
+   *  dropped pulse). A live tempo/offset edit legitimately moves them — they
+   *  diagnose a steady clock, they are not a law across config changes. */
+  private minGap = Infinity;
+  private maxGap = 0;
+
   constructor(sampleRate: number, cfg?: Partial<CvClockConfig>) {
     this.sampleRate = sampleRate > 0 ? sampleRate : 48000;
     if (cfg) this.setConfig(cfg);
@@ -127,6 +140,24 @@ export class CvClockCore {
   get skipped(): number {
     return this.dropped;
   }
+  /** CONTEXT seconds this core has rendered (frames ÷ sampleRate) — the clock
+   *  `pulses` is measured against. ⚠ A consumer comparing `pulses` to WALL
+   *  time compares two different clocks: a null-sink or contended render
+   *  thread runs ahead of or behind wall time (CI shard 11 read 71 pulses in
+   *  1.32 wall-seconds — the context had simply rendered >1.46 s of audio),
+   *  and only this value says how much audio the counters actually cover. */
+  get renderedS(): number {
+    return this.t;
+  }
+  /** Smallest inter-pulse gap seen so far (context s); null before two pulses
+   *  have fired within one train. */
+  get minGapS(): number | null {
+    return Number.isFinite(this.minGap) ? this.minGap : null;
+  }
+  /** Largest inter-pulse gap seen so far (context s); null likewise. */
+  get maxGapS(): number | null {
+    return this.maxGap > 0 ? this.maxGap : null;
+  }
 
   /** Render `frames` samples of clock + run. */
   process(clockOut: Float32Array, runOut: Float32Array, frames: number): void {
@@ -136,9 +167,11 @@ export class CvClockCore {
     if (!this.cfg.running) {
       // Stopped (or not the clock owner): both lines LOW immediately — the
       // mirror of stopClock()'s cancel+set(0) — and the phase re-anchors on
-      // the next start so the train begins WITH the transport.
+      // the next start so the train begins WITH the transport. The gap chain
+      // breaks too: the silence between two trains is not an inter-pulse gap.
       this.nextUnshifted = null;
       this.pulseSamplesLeft = 0;
+      this.lastEmitT = null;
       for (let i = 0; i < n; i++) {
         clockOut[i] = 0;
         runOut[i] = 0;
@@ -185,6 +218,12 @@ export class CvClockCore {
           this.pulseSamplesLeft = pulseSamples;
           this.emitted++;
           this.nextUnshifted += period;
+          if (this.lastEmitT !== null) {
+            const gap = this.t - this.lastEmitT;
+            if (gap < this.minGap) this.minGap = gap;
+            if (gap > this.maxGap) this.maxGap = gap;
+          }
+          this.lastEmitT = this.t;
         }
       }
 

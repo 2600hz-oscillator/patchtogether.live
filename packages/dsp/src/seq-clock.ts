@@ -90,8 +90,13 @@ registerProcessor('seq-clock', SeqClockProcessor);
  *                 forever; see cv-buddy.ts dispose()).
  * Messages OUT: { type: 'health', pulses, skipped } — cumulative counters,
  *               posted only when they moved and at most every ~50 ms, so the
- *               port carries ≤20 msgs/s at any tempo. The wiring side surfaces
- *               them via read('clockHealth').
+ *               port carries ≤20 msgs/s at any tempo. Each message also
+ *               carries `renderedS` (the CONTEXT seconds those counters
+ *               cover — `pulses` is meaningful only against that clock, never
+ *               against wall time; see CvClockCore.renderedS) and the
+ *               inter-pulse gap extremes `minGapS`/`maxGapS`, one consistent
+ *               snapshot per post. The wiring side surfaces them via
+ *               read('clockHealth').
  */
 class CvClockProcessor extends AudioWorkletProcessor {
   private core = new CvClockCore(typeof sampleRate === 'number' ? sampleRate : 48000);
@@ -136,6 +141,9 @@ class CvClockProcessor extends AudioWorkletProcessor {
         type: 'health',
         pulses: this.core.pulses,
         skipped: this.core.skipped,
+        renderedS: this.core.renderedS,
+        minGapS: this.core.minGapS,
+        maxGapS: this.core.maxGapS,
       });
     }
     return true;

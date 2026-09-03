@@ -258,6 +258,71 @@ describe('CvClockCore — drop-not-flush (#2324 restated on the audio thread)', 
   });
 });
 
+describe('CvClockCore — the health clock (renderedS + gap extremes)', () => {
+  // These getters exist because CI shard 11 proved an OUTSIDE clock cannot
+  // judge this core: a wall-clock window read 71 pulses where wall×rate said
+  // ≤69 (the null-sink context had rendered AHEAD of wall time), then 56
+  // where wall said ~99 (the render thread LAGGED a contended shard).
+  // `pulses` is only meaningful against the audio the core actually rendered,
+  // so the core reports that clock — and its inter-pulse extremes — itself.
+
+  it('pulses vs renderedS×rate is exact within ±1 — the context-clock law', () => {
+    const core = new CvClockCore(SR, runningCfg());
+    render(core, 2 * SR);
+    expect(core.renderedS).toBeCloseTo(2, 6);
+    expect(Math.abs(core.pulses - core.renderedS / PERIOD)).toBeLessThanOrEqual(1);
+  });
+
+  it('renderedS advances while STOPPED too — it is the context clock, not a pulse clock', () => {
+    const core = new CvClockCore(SR, runningCfg({ running: false }));
+    render(core, SR);
+    expect(core.renderedS).toBeCloseTo(1, 6);
+    expect(core.pulses).toBe(0);
+  });
+
+  it('under a constant tempo both gap extremes sit at one period (±1 sample)', () => {
+    const core = new CvClockCore(SR, runningCfg({ bpm: 120, ppqn: 24 })); // period 1000 samples
+    render(core, SR);
+    const dt = 1 / SR;
+    const period = cvPulsePeriodS(120, 24);
+    expect(core.minGapS).not.toBeNull();
+    expect(core.minGapS!).toBeGreaterThanOrEqual(period - dt - 1e-9);
+    expect(core.maxGapS!).toBeLessThanOrEqual(period + dt + 1e-9);
+  });
+
+  it('a dropped pulse SHOWS as maxGap above one period — the hole is observable', () => {
+    const core = new CvClockCore(SR, runningCfg({ bpm: 120, ppqn: 24 }));
+    render(core, 1500); // pulses at 0, 1000
+    core.setConfig({ bpm: NaN }); // phase held while the 2000 point goes stale
+    render(core, 1000);
+    core.setConfig({ bpm: 120 }); // recovery drops 2000, emits 3000
+    render(core, 1000);
+    expect(core.skipped).toBe(1);
+    // gap 1000→3000 = two periods: the counted drop and the gap extreme AGREE.
+    expect(core.maxGapS!).toBeCloseTo(2 * cvPulsePeriodS(120, 24), 4);
+  });
+
+  it('a transport stop/start does NOT pose as a gap — the chain breaks at stop', () => {
+    const core = new CvClockCore(SR, runningCfg({ bpm: 120, ppqn: 24 }));
+    render(core, 1500);
+    core.setConfig({ running: false });
+    render(core, 10000); // a long silence between trains
+    core.setConfig({ running: true });
+    render(core, 1500);
+    const dt = 1 / SR;
+    expect(core.maxGapS!).toBeLessThanOrEqual(cvPulsePeriodS(120, 24) + dt + 1e-9);
+  });
+
+  it('gap extremes are null before two pulses have fired', () => {
+    const core = new CvClockCore(SR, runningCfg({ bpm: 120, ppqn: 24 }));
+    expect(core.minGapS).toBeNull();
+    expect(core.maxGapS).toBeNull();
+    render(core, 500); // one pulse only
+    expect(core.minGapS).toBeNull();
+    expect(core.maxGapS).toBeNull();
+  });
+});
+
 describe('CvClockCore — STALL IMMUNITY (the reason this core exists)', () => {
   it('rendering 2 s with ZERO setConfig traffic emits the complete grid', () => {
     // The main-thread analogue of this window (a 400 ms stall against a
