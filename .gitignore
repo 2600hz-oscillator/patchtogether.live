@@ -3,3 +3,7 @@
 *.xcodeproj
 DerivedData/
 .DS_Store
+
+# local agent state — never publish (repo-local; the global gitignore only protects this machine)
+.claude/settings.local.json
+.myrobots/
