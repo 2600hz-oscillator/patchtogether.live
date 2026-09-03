@@ -18,12 +18,12 @@ test.describe.configure({ mode: 'parallel' });
 const INPUT_PORTS = ['poly', 'fm1', 'fm2', 'fm3', 'fm4', 'fm5'];
 const OUTPUT_PORTS = ['out_l', 'out_r', 'voice1', 'voice2', 'voice3', 'voice4', 'voice5'];
 
-test('pentemelodica: card mounts with all 6 input + 7 output handles', async ({ page, rackLegacy, errorWatch }) => {
+test('pentemelodica: tile mounts with all 6 input + 7 output handles', async ({ page, rack, errorWatch }) => {
   await spawnPatch(page, [
     { id: 'pm', type: 'pentemelodica', position: { x: 200, y: 120 }, domain: 'audio' },
   ]);
 
-  const card = page.locator('.svelte-flow__node-pentemelodica').first();
+  const card = page.locator('.svelte-flow__node:has([data-shell-type="pentemelodica"])').first();
   await card.waitFor({ state: 'visible', timeout: 10_000 });
 
   for (const portId of [...INPUT_PORTS, ...OUTPUT_PORTS]) {
@@ -32,17 +32,20 @@ test('pentemelodica: card mounts with all 6 input + 7 output handles', async ({ 
       `handle ${portId} present`,
     ).toHaveCount(1);
   }
-  // The 5 voice waveform previews render.
+  // The 5 per-voice lanes render on the shell in the dock HERO panel (the
+  // card's per-voice scope strip became `pentemelodica-hero-lane-{v}`).
+  await card.locator('[data-testid="module-shell"]').getByTestId('shell-open-dock').click();
+  await expect(page.getByTestId('dock-full-view')).toBeVisible();
   for (let v = 1; v <= 5; v++) {
     await expect(
-      page.getByTestId(`pentemelodica-voice${v}-scope`),
-      `voice ${v} scope present`,
+      page.getByTestId(`pentemelodica-hero-lane-${v}`),
+      `voice ${v} hero lane present`,
     ).toHaveCount(1);
   }
 
 });
 
-test('pentemelodica: a POLYSEQZ chord drives the stereo OUT', async ({ page, rackLegacy, errorWatch }) => {
+test('pentemelodica: a POLYSEQZ chord drives the stereo OUT', async ({ page, rack, errorWatch }) => {
   await spawnPatch(
     page,
     [
