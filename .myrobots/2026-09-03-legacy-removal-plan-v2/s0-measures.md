@@ -346,3 +346,139 @@ deliberately left undone, and the reason is worth having:
 
 **Do it in S5**, with the producer extractions done, when the surviving concept
 has settled.
+
+---
+
+## Addendum 2 — the PRODUCER half (appended 2026-09-03, after S1/4–S1/6)
+
+Three of the four remaining card-producers are extracted (`scope`,
+`synesthesia`, `timelorde`). `wavesculpt` is **NOT**, and the reason is a
+measurement rather than a preference — §W below is the whole of it.
+
+`CARD_PRODUCER_LANE_TYPES` is now `{cube, rasterize, wavesculpt}`.
+`NODE_FRAME_PRODUCER_TYPES` (`$lib/ui/media/frame-producers`) is
+`{scope, synesthesia, timelorde}`, and `dom-source-modules.test.ts` asserts the
+two are disjoint, so neither half of an extraction can land alone.
+
+### W — WHY WAVESCULPT IS NOT EXTRACTED, AND WHAT IT WOULD TAKE
+
+The brief's S0 note already flagged the constraint: `WavesculptVizSurface.svelte`
+is in the WebGL attest basis, so its BYTES must not move. That constraint holds
+and is not the blocker on its own — extracting AROUND the file is possible. Two
+things inside it are, and both were read out of the source rather than guessed.
+
+**W1 — `ownsVideoOut` also gates the DRS STEP SEAM, and the whole
+`wavesculpt.spec.ts` suite is built on it.**
+
+`WavesculptVizSurface.svelte` installs `__wavesculptStep` / `__wavesculptStepCount`
+inside `if (ownsVideoOut)` (its `onMount`), alongside `installBridgeFrameDrawer`.
+The seam pins the clock and halts the rAF self-schedule *for the mount that
+installed it*.
+
+`e2e/tests/wavesculpt.spec.ts` is 15 tests, on the webgl-heavy list, and its
+header states the design: "this suite no longer sleeps on wall-clock … every 'let
+it render N frames' beat drives the WavesculptCard DRS step seam … so the frame
+count is exact + reproducible". `stepFrames()` is deliberately ONE `page.evaluate`
+because a stray rAF tick between a separate before/after read once inflated the
+delta and flaked the exact-count assertion.
+
+So the obvious shape — a node-keyed host mounting the surface with
+`ownsVideoOut={true}` and the card demoted to `ownsVideoOut={false}` — moves the
+step seam to the HOST while the spec keeps reading the CARD's canvas. Stepping
+would freeze a surface nobody is photographing while the photographed one
+free-runs. That suite would go flaky-or-false-green, which is worse than red.
+
+**W2 — the card hands `pollCamLive` to the surface as `onFrame`, and that
+coupling has a MEASURED reason.**
+
+`WavesculptCard` passes `onFrame={pollCamLive}` so the camera-CV poll rides the
+render's own frame. The surface's prop doc calls it "a CADENCE GUARANTEE, NOT A
+CONVENIENCE" and the card's own note records the regression it fixes: as a
+standalone `setInterval(30ms)` the poll was STARVED and coalesced behind the
+card's WebGL render, so a gamepad-driven joystick dot could not reach the stick's
+extremes. Any design that takes the render off the card has to re-home that
+callback, which re-opens a decision somebody already measured.
+
+**The design that satisfies both**, for whoever picks this up: ONE surface per
+node, mounted by a node-keyed host, with the CARD *adopting the host's canvas*
+by DOM move — the `GroupCard` portal pattern, and the same "the card adopts the
+node-owned element to SHOW it" shape the loopback conversion used. That gives one
+GL context, one owner, one step seam, and a card whose pixels ARE the produced
+picture (so `wavesculpt.spec.ts` keeps working unchanged). `onFrame` then needs a
+node-keyed callback the card registers, or `pollCamLive` moves to the node.
+It also removes the need for any `SUBTREE_SEAM_EXEMPTIONS` entry, because the
+card's subtree stops containing the seam-carrying component at all.
+
+⚠ Do NOT ship the two-mount version to save time. It is green and blind.
+
+### X — the e2e denominator, re-derived after S1 (S0 §M2's method)
+
+| | S0 (branch point) | now | note |
+|---|---:|---:|---|
+| spec files total | 552 | **553** | +1 (`face-samsloop-rec-refusal`) |
+| explicit `shell=legacy` | 310 | **310** | |
+| fixture-implicit | 113 | **113** | |
+| **INVERSION DENOMINATOR** | 423 | **423** | reproduces exactly |
+| family (b) reaches card DOM | 152 | **154** | 124 direct + 30 via helper |
+| family (a) URL-only | 271 | **269** | |
+
+The +2 on family (b) is S1's own doing and is expected: the re-pointed
+`timelorde-pinned-source` and `workflow-shell-video` legs still name `.mod-card`
+selectors, because their claim is now *"no card is mounted"* — an assertion that
+has to spell the selector it expects to find nothing for.
+
+⚠ **ONE MATCHER TRAP, worth more than the numbers.** A spec FILENAME can contain
+the pattern: `'e2e/tests/doom-session-survives-card-collapse.spec.ts'` appears as
+a STRING in `vrt/_shell-faces.ts` and matches a naive `-card` search, which
+enrols a helper that reaches no card DOM at all. Strip `'*.spec.ts'` string
+literals before matching. Without that the count reads 136/261 depending on how
+wide the rest of the pattern is; with it, 154 reproduces S0's method.
+
+### Y — the transitive helper check S0 asked for: the third level is NO LONGER empty
+
+S0 §M2 found three card-reaching helpers and recorded that "a third level (a
+helper importing a card-reaching helper) was checked and is empty today; re-run
+the transitive check after S1". Re-run:
+
+| helper | reaches card DOM | how |
+|---|---|---|
+| `tests/_card-overflow.ts` | directly | `.mod-card` selectors |
+| `vrt/vrt-scenes.ts` | directly | per-card scene list |
+| `vrt/_fonts.ts` | directly | injects CSS scoped to `.mod-card .port-label` / `.title` |
+| **`vrt/_shell-faces.ts`** | **transitively** | imports `./_fonts` |
+
+`_shell-faces.ts` is the FACE VRT harness, so the coupling is not a spec bug — it
+is card-scoped font-pinning CSS that the face harness inherits. It costs nothing
+today and becomes dead selectors when the fleet goes: prune it with the CSS in
+S3/S5, and note that a face harness importing a card-scoped helper is exactly the
+shape S0's blind-spot analysis was looking for.
+
+### Z — reds the branch was carrying that S1/4–S1/6 fixed
+
+None of these came from this slice's product changes; all three are earlier S1
+conversions leaving a stale assertion behind, invisible because the branch has
+never run CI.
+
+1. `workflow-shell-video.spec.ts` "a DOM-SOURCE video module keeps its REAL card
+   alive off-screen" — subject `archivist`, converted in S1/3. Re-pointed to
+   `cube` (the producer half); the `converted` rows gained loopback, archivist,
+   synesthesia, timelorde.
+2. the same file's CAMERA picker test — leg (a) required exactly one hosted
+   `camera-device-select`; cameraInput converted in S1/2.
+3. `workflow-surfaces.spec.ts` and `timelorde-pinned-source.spec.ts` — the
+   headless-host assertions this slice inverted.
+
+⚠ **`grouping-phase3.spec.ts:116` is red under the DEV server and green under the
+PREVIEW build**, on the pristine branch and with `Canvas.svelte` from
+`origin/main`. MEASURED in-page: the Y.Doc holds `data.expanded === true` while
+`GroupCard`'s `data-expanded` attribute stays `"false"` — its `expanded`
+derivation never recomputes (the Yjs-proxy-stable-identity class; the neighbouring
+`hasExposedControls` reads `cardVersion` and this one does not). CI targets the
+preview build, which is why `main` is green. Recorded, not fixed: it is a real
+reactivity finding about a derivation none of this work touches.
+
+⚠ **AND `task vrt` IS NOT LOCALLY JUDGEABLE ON macOS.** `task vrt:one -- adsr`
+fails every scene on a module this branch has never touched. Linux CI authors the
+single baseline set; a local diff is evidence about font rasterisation, not about
+a change. timelorde's card paint path DID change (composite → 1:1 blit of the same
+composited bitmap) so its three scenes need the CI lane and an owner preview.
