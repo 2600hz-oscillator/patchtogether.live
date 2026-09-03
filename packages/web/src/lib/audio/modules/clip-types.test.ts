@@ -2230,6 +2230,9 @@ describe('assignPolyLanes — scheduled poly voice allocation', () => {
     expect(assignPolyLanes(book, [], 1, 1)).toEqual([]);
     expect(book.note[0], 'the held voice is untouched').toBe(60);
     expect(book.busyUntil[0]).toBe(10);
+  });
+});
+
 // ---------------------------------------------------------------------------
 // AUDIO CLIPS — the data model that lets a recorded loop live in a slot.
 //
