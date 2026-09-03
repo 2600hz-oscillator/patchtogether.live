@@ -37,15 +37,18 @@ export type LaneRenderKind = 'legacy' | 'shell' | 'placeholder' | 'stub';
  * preview — they keep rendering their real in-lane card:
  *   - organizational chrome with no "module card" to dock (group / sticky),
  *   - the CADILLAC roaming sprite (already filtered from flowNodes upstream),
- *   - clipplayer + the remaining MIDI control surfaces — SNOWFLAKES whose lane
+ *   ⚠ THE SNOWFLAKE CLAUSE THIS LIST WAS BUILT AROUND IS NOW EMPTY. It read:
+ *     "clipplayer + the remaining MIDI control surfaces — SNOWFLAKES whose lane
  *     face is a grid / launcher / mapper, not a ranked-knob skeleton (plan §6):
  *     they get bespoke faces in a later spike, and stay on the verbatim legacy
- *     card until then rather than a lossy placeholder,
- *     ⚠ READ THAT CLAUSE AS A CLAIM ABOUT EACH CARD, NOT AS A LABEL FOR THE
- *     GROUP. It is true of `clipplayer`, whose card IS a launcher grid. It was
- *     NOT true of `launchpadControlLeft` (below), whose card is four buttons
- *     and a status line — and reasoning from the group label rather than from
- *     the card is how that entry outlived its reason by a whole consolidation.
+ *     card until then rather than a lossy placeholder". Every module it ever
+ *     covered has now had that spike — `launchpadControlLeft`, `electraControl`,
+ *     `controlSurface` and finally `clipplayer` (below) — and the surviving
+ *     entries are organisational chrome and a roaming sprite, none of which is a
+ *     module card at all. The clause's own warning was the reason it emptied
+ *     rather than hardened: READ IT AS A CLAIM ABOUT EACH CARD, NOT AS A LABEL
+ *     FOR THE GROUP; reasoning from the group label is how one of its entries
+ *     outlived its reason by a whole consolidation.
  *   ⚠ videoOut USED TO BE IN THIS SET and is not any more (#1821). Its entry
  *     read: "the VIDEO SURFACE snowflake: its legacy card BODY IS the live,
  *     freely-resizable output screen … swapping it for a placeholder tile
@@ -192,13 +195,38 @@ export type LaneRenderKind = 'legacy' | 'shell' | 'placeholder' | 'stub';
  *     the tileBody (node-on-canvas lifetime), and a USER-DOCKED node's rail
  *     occupant still mounts the verbatim card (`dockRailRendersFace` requires
  *     `pinned`), so no surface is ever prune-less.
+ *   ⚠ clipplayer USED TO BE IN THIS SET and is not any more. It was the entry
+ *     the "snowflake" clause was actually true of: its card IS a launcher grid,
+ *     and a ranked-knob skeleton in its place would have been a lane tile of
+ *     three global playback knobs where a player expects to see which of eight
+ *     lanes is sounding. What retired it is that the alternative is no longer a
+ *     skeleton. The launch grid, the piano roll and the four eight-wide lane
+ *     rows are PF-14 PANELS — the same kria route, one size up — so the dock
+ *     full view paints the launcher at its real size; and the lane tile carries
+ *     a `tileBody` strip of the eight lanes' live state plus a panic STOP, so
+ *     the canvas still answers the only question a 192 px tile is asked. The
+ *     rest of the card (transport, both recorders, the undo stack, the
+ *     mute/stop deck, the monome bind, the arranger pop-out) is the module's
+ *     `fullViewBody`, one Expand away — the ordinary semantic-zoom contract,
+ *     owner-approved for exactly this module (2026-08-31, owner-decisions item
+ *     10, alongside controlSurface). The owner previews the COMPACT tier before
+ *     merge; the pinned `c`-pane instance is unchanged, since it already
+ *     painted at faceplate width.
+ *     ⚠ AND THE SPLIT-BRAIN THIS LIST USED TO CREATE IS WHAT IS BEING CLOSED,
+ *     not worked around. `laneRenderKind` consults `NON_SHELL_LANE_TYPES` while
+ *     `DockFullView` switches on bare `STRICT_FACES` membership, so promoting a
+ *     module while leaving it here would have painted the CARD on the canvas
+ *     and the FACEPLATE in the dock — two different instruments for one node,
+ *     with no gate in the repo able to see it (`module-face-lint` reads the def,
+ *     `faces-parity` drives the dock, and neither reads this set). Removing the
+ *     entry in the SAME diff as the promotion is what keeps the two sides one
+ *     instrument.
  * Everything else with a resolvable card swaps.
  */
 export const NON_SHELL_LANE_TYPES: ReadonlySet<string> = new Set<string>([
   'group',
   'sticky',
   'cadillac',
-  'clipplayer',
 ]);
 
 /** Inputs to the pure lane-render decision. */
