@@ -32,6 +32,7 @@ import {
   autoAssignCounts,
   autoClipHasTracks,
   clipIndex,
+  clipPadState,
   coerceClipRecord,
   laneColorEff,
   laneMono,
@@ -40,6 +41,7 @@ import {
   lanePlaying,
   laneQueued,
   slotOf,
+  type ClipPadState,
   type ClipPlayerData,
 } from '$lib/audio/modules/clip-types';
 import { RATE_LABELS, laneRateIndex } from '$lib/audio/modules/clip-clock';
@@ -62,11 +64,14 @@ export type ClipplayerMenuAt =
   | { kind: 'note'; x: number; y: number; idx: number; step: number; midi: number; row: number }
   | { kind: 'clip'; x: number; y: number; idx: number };
 
-/** A launch-grid pad's four painted states. QUEUED WINS OVER PLAYING — a pad
- *  whose lane has a pending launch (or a pending stop) reads as queued even
- *  while it is still sounding, which is what makes the blink mean "a change is
- *  coming" rather than "something is happening". */
-export type ClipplayerPadState = 'empty' | 'loaded' | 'queued' | 'playing';
+/** A launch-grid pad's four painted states.
+ *
+ *  ⚠ AN ALIAS OF THE SHARED `ClipPadState`, NOT A SECOND DECLARATION. The
+ *  legacy card and this face paint the SAME grid, and while each owned its own
+ *  copy of the ladder they had already drifted on its last clause — see
+ *  `clipPadState` in `clip-types`. Re-typing the union here would let them
+ *  drift again in the type as well as the logic. */
+export type ClipplayerPadState = ClipPadState;
 
 /** One pad of the 8×8 launch grid. */
 export interface ClipplayerPadView {
@@ -128,13 +133,20 @@ export function clipplayerPadState(
   data: ClipPlayerData | undefined,
   index: number,
 ): ClipplayerPadState {
-  const lane = laneOf(index);
-  const slot = slotOf(index);
-  const playing = lanePlaying(data, lane);
-  const queued = laneQueued(data, lane);
-  if (queued === slot) return 'queued';
-  if (playing === slot) return queued === 'stop' ? 'queued' : 'playing';
-  return clipRecordAt(data, index) ? 'loaded' : 'empty';
+  // ⚠ DELEGATES. THE LADDER IS NOT RE-TYPED HERE, AND A GATE ENFORCES THAT.
+  //
+  // This face and the legacy `ClipplayerCard` paint the same 8×8 grid, and
+  // while each carried its own copy of the precedence ladder they had ALREADY
+  // drifted on the last clause: the card asked `clips[k] ? …` (raw truthiness)
+  // while this asked `coerceClipRecord(clips[k]) !== null`. A record that
+  // coerces away — the retired stamped `kind:'automation'` clip, any junk —
+  // painted LOADED on the card and EMPTY on the face. The coerced reading won
+  // and moved into `clip-types`, where both surfaces read it.
+  //
+  // `clip-pad-state.test.ts` source-scans the clipplayer surfaces and reddens
+  // on one that writes the `queued === slot` rung itself, so this cannot
+  // silently become a second copy again.
+  return clipPadState(data, index);
 }
 
 /** The NOTE clip stored at a flat index, or null. Coerced through the shared
