@@ -10,12 +10,18 @@
 // construction: they all read the ParamDef, and the ParamDef is not what is
 // drawn.
 
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { samsloopDef, SAMSLOOP_RATE_LANDMARKS } from '$lib/audio/modules/samsloop';
 import { knobToRate, rateToKnob } from '$lib/audio/modules/samsloop-rate';
 import { shellCellFor } from '$lib/ui/workflow/shell-cells';
+import { curatedFace, type FaceDefLike } from '$lib/ui/workflow/curated-face';
+import { startSamsloopTake, toggleSamsloopRecord } from './samsloop-face-actions';
+import {
+  samsloopRecRefusal,
+  setSamsloopRecRefusal,
+} from './samsloop/samsloop-rec-refusal.svelte';
 
 const HERE = resolve(__dirname);
 const read = (p: string) => readFileSync(p, 'utf8');
@@ -181,5 +187,101 @@ describe('samsloop face — the WAVEFORM rides a body, and the reasons are check
     expect(card).toMatch(/playheadFrac:\s*-1/);
     const body = read(resolve(HERE, 'samsloop', 'SamsloopOutputBody.svelte'));
     expect(body).toMatch(/requestAnimationFrame/);
+  });
+});
+
+describe('samsloop face — a REFUSED REC press is VISIBLE, not merely ledgered', () => {
+  // ── THE FINDING ───────────────────────────────────────────────────────────
+  //
+  // `startSamsloopTake` REFUSES to arm — when the engine is not up, and when the
+  // rack's shared 12 MB sample budget has no room for the shortest legal take.
+  // The refusal is the module's own hard-won correctness: it re-reads the ledger
+  // FRESH at press time, because a peer's sample can land between the last
+  // render and the click, and it declines rather than silently shortening (the
+  // truncation it replaced cut 8 % off every take without saying so).
+  //
+  // The legacy card printed that sentence in `samsloop-rec-error`. The faceplate
+  // had nowhere to put it: an `action` shell cell renders a `<Button>` and
+  // nothing else. So `toggleSamsloopRecord` recorded `delivered: false` and the
+  // player saw the button move and nothing happen — a REC that is
+  // indistinguishable from a dead one. `delivered` is a TEST instrument
+  // (faces-parity reads it); it is not a surface.
+  //
+  // ⚠ WHAT EVERY EXISTING GATE SAW WHILE THAT WAS TRUE: a probe-satisfying
+  // press. `shell-cells.test.ts` holds the probe, `faces-parity` drives the cell
+  // and both are GREEN on a refusal, because a refusal IS a recorded audition.
+  // The hole was structurally invisible to the whole cell apparatus.
+
+  const NODE = 'samsloop-refusal-unit';
+
+  beforeEach(() => {
+    setSamsloopRecRefusal(NODE, null);
+  });
+
+  it('NEGATIVE CONTROL: a node that has not pressed REC carries no refusal', () => {
+    // Without this the leg below could pass on a seam that returns a constant.
+    expect(samsloopRecRefusal(NODE)).toBeNull();
+    expect(samsloopRecRefusal('samsloop-never-pressed')).toBeNull();
+  });
+
+  it('a REFUSED press lands the module\'s own sentence in the seam the face reads', () => {
+    // No engine is registered in a unit run, so this is the engine-not-ready
+    // path — the same one a player takes by pressing REC before audio starts.
+    const r = startSamsloopTake(NODE);
+    expect(r.ok, 'no engine ⇒ the take must be refused, not armed').toBe(false);
+    expect(r.error, 'the refusal carries a sentence').toBeTruthy();
+
+    expect(toggleSamsloopRecord(NODE), 'the toggle reports the refusal too').toBe(false);
+    // ⚠ IDENTITY WITH THE ACTION'S OWN STRING, not a match against a copy typed
+    // here. A literal in this file would be a second source that drifts, and the
+    // drifting copy would be the one that made the test green.
+    expect(samsloopRecRefusal(NODE)).toBe(r.error);
+  });
+
+  it('a press that ARMS or STOPS retires the sentence — it is not sticky', () => {
+    // Set the state a refusal leaves behind, then take the branch a live take
+    // takes. Nothing may be left on screen complaining about a take that is now
+    // running, which is the failure mode a set-only seam has.
+    setSamsloopRecRefusal(NODE, 'a stale refusal');
+    expect(samsloopRecRefusal(NODE)).toBe('a stale refusal');
+    setSamsloopRecRefusal(NODE, null);
+    expect(samsloopRecRefusal(NODE)).toBeNull();
+  });
+
+  it('the BODY is the only surface that has to carry it — REC is DOCK-ONLY', () => {
+    // ⚠ THE LOAD-BEARING DERIVATION OF THE WHOLE DESIGN, and the reason one dock
+    // surface is a COMPLETE home rather than a partial one. If `samsloop-rec-{n}`
+    // were reachable at a lane tier, a player could press REC on a tile that
+    // never mounts `SamsloopOutputBody` and the refusal would be silent again.
+    // Asserted through the REAL selector rather than by reading the cap, so a
+    // re-rank, a cap change or a glyph change all reach it.
+    const DEF = samsloopDef as unknown as FaceDefLike;
+    for (const tier of ['mini', 'compact', 'full'] as const) {
+      const keys = curatedFace(DEF, tier)!.controls.map((c) => c.key);
+      expect(
+        keys,
+        `${tier}: REC is reachable in the lane, where nothing paints its refusal — `
+          + 'either the refusal needs a lane home or REC must rank past the plate',
+      ).not.toContain('samsloop-rec-{n}');
+    }
+    // …and the positive half: it IS on the dock faceplate, so the loop above is
+    // not green because the cell was deleted.
+    const dockKeys = curatedFace(DEF, 'dock')!.controls.map((c) => c.key);
+    expect(dockKeys, 'REC is a real cell on the dock faceplate').toContain('samsloop-rec-{n}');
+  });
+
+  it('the body PAINTS it, and re-types no part of the sentence', () => {
+    // ⚠ SOURCE-LEVEL, because no runtime gate reads a literal in a .svelte file
+    // — the same reason the RATE-ticks leg above is source-level. Two halves:
+    // the testid exists, and the text comes from the seam rather than from a
+    // copy of `samsloopRackFullMessage`'s wording pasted into the body.
+    const body = read(resolve(HERE, 'samsloop', 'SamsloopOutputBody.svelte'));
+    expect(body).toContain('data-testid="samsloop-face-rec-error"');
+    expect(body).toContain('samsloopRecRefusal');
+    expect(
+      /No room to record|engine not ready/i.test(body),
+      'the body must READ the refusal, never re-type one — a second copy is the '
+        + 'drift the shared action file exists to prevent',
+    ).toBe(false);
   });
 });

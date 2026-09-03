@@ -366,6 +366,51 @@ describe('clipplayer face — what a def-reading gate cannot see', () => {
     expect(tile).toContain('clipplayerLaneViews');
   });
 
+  // ── THE INTERRUPTED-TAKE RECOVERY PROMPT ─────────────────────────────────
+  //
+  // ⚠ THE HOLE THIS CLOSES, AND WHY NOTHING COULD SEE IT.
+  // `clip-media-recovery.ts` was imported by `ClipplayerCard.svelte` and BY
+  // NOTHING ELSE, and `clipplayer` is not in `HEADLESS_MOUNT_LANE_TYPES` — so on
+  // the default shell the scan for interrupted takes ran NOWHERE. The loss is
+  // silent in both directions: an Arm-Endless take whose tab died is
+  // permanently unrecoverable, AND its manifest keeps `status: 'recording'`, so
+  // the media GC's live set SPARES its bytes forever — a file nobody can reach
+  // and nothing will ever collect. Every registry gate stayed green, because
+  // this is the component-only behaviour the module-surfaces skill says
+  // promotion deletes.
+  it('the DECK body is the recovery seam\'s second importer — the face home', () => {
+    const deck = read('ClipplayerDeckBody.svelte');
+    expect(deck).toContain('clip-media-recovery');
+    for (const id of [
+      'clipplayer-face-recover',
+      'clipplayer-face-recover-save',
+      'clipplayer-face-recover-discard',
+    ]) {
+      expect(deck, `${id} is on the faceplate`).toContain(`data-testid="${id}"`);
+    }
+    // ⚠ ALL THREE ENTRY POINTS, not merely the render. A prompt wired to the
+    // scan and nothing else is a question with no answer; a prompt wired to
+    // Discard only would free the bytes and never restore a take.
+    for (const fn of ['scanClipRecoveries', 'recoverClipTake', 'discardClipTake']) {
+      expect(deck, `${fn} is reached from the face`).toContain(fn);
+    }
+  });
+
+  // ⚠ AND THE SCAN IS DOCK-ONLY, deliberately — recorderbox's own answer, whose
+  // face-model test states the cost half outright ("the recovery scan is
+  // deliberately dock-only too, which also keeps an IndexedDB read off every
+  // rack boot"). This module's scan is strictly worse on that axis:
+  // `scanClipRecoveries` walks the manifests AND opens each candidate's OPFS
+  // file to measure it, while the tile mounts for EVERY clip player in EVERY
+  // rack boot — the #2314 shape exactly.
+  it('the recovery scan never reaches the lane tile — the #2314 rule', () => {
+    const tile = read('ClipplayerTileBody.svelte');
+    expect(tile, 'no OPFS/IndexedDB scan on a surface every rack boot mounts').not.toContain(
+      'scanClipRecoveries',
+    );
+    expect(tile).not.toContain('clip-media-recovery');
+  });
+
   // ⚠ AND THE POLL THE CARD OWNED IS IN THE DOCK BODY, which exists only while
   // the full view is open — exactly the cost the legacy card had while IT was
   // open, and no more.

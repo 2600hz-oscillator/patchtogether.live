@@ -508,6 +508,173 @@ test.describe('CLIP PLAYER faceplate', () => {
     // assign menu rather than the node's own context menu.
     await expect(deck.getByTestId('clipplayer-reset')).toBeVisible();
 
+    // The crash-recovery prompt is ABSENT at rest — which is also what keeps
+    // every dock VRT baseline unmoved by the leg below.
+    await expect(page.locator('[data-testid="clipplayer-face-recover"]')).toHaveCount(0);
+
+    expect(errors).toEqual([]);
+  });
+
+  // ── 6b. THE INTERRUPTED-TAKE RECOVERY QUESTION, ON THE FACE ─────────────
+  //
+  // ⚠ THE AFFORDANCE THE PROMOTION LEFT WITH NO HOME AT ALL, and it is worse
+  // than the recorderbox case it rhymes with. `clip-media-recovery.ts` was
+  // imported by `ClipplayerCard.svelte` and BY NOTHING ELSE, and `clipplayer` is
+  // not headless-mounted — so on the DEFAULT shell the scan ran NOWHERE. An
+  // Arm-Endless take whose tab died was permanently unrecoverable, while its
+  // manifest kept `status: 'recording'` so the media GC SPARED its bytes
+  // forever: a file nobody can reach and nothing will ever collect.
+  //
+  // ⚠ `clip-media-recover-reachable.spec.ts` PINS IT ONLY ON THE SURFACE THE
+  // PROMOTION STOPS MOUNTING. That spec boots `?shell=legacy` and asserts on
+  // `clipplayer-recover-*`, i.e. the CARD, so on the surface a player actually
+  // reaches this had ZERO coverage — the
+  // [[shared-derivation-repaired-only-on-the-surface-you-looked-at]] shape, and
+  // the same one `face-recorderbox.spec.ts` records for its own prompt.
+  //
+  // ⚠ `toBeVisible()` ALONE WOULD NOT CATCH THE DEFECT THIS GUARDS. An element
+  // clipped by an ancestor's `overflow: hidden` still reports as visible: a
+  // non-empty box, not `display: none`. The card had to float this prompt as an
+  // absolute overlay for exactly that reason (rack-pinned height + a clipping
+  // `.card`). The argument that a dock pane carries no such pin is a good
+  // argument, and an argument is not a measurement — so the assertion is
+  // `elementFromPoint` at each button's own centre, which is ancestor-agnostic
+  // and also catches a cover by any sibling.
+  //
+  // ⚠ THE SEEDED TAKE IS DELIBERATELY 2.5 LOOPS LONG. Recovery truncates to the
+  // last WHOLE loop, so this also proves a PARTIAL take is offered at all: a
+  // scan that refused anything but an exact multiple would render nothing here
+  // and this test would fail rather than pass quietly.
+  test('the interrupted-take RECOVERY question is ANSWERABLE on the faceplate', async ({ page }) => {
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(String(e)));
+
+    /** 4 frames per loop x 8 bytes/frame (pcm-f32 stereo) = 32 bytes per loop. */
+    const UNIT_FRAMES = 4;
+    const BYTES_PER_FRAME = 8;
+    /** 10 frames = 2.5 loops. Recovery must offer 2 loops, never 2.5. */
+    const SEEDED_FRAMES = 10;
+    const MEDIA_ID = 'clip-face-interrupted';
+    const NODE = 'f-cp-rec';
+
+    await gotoShell(page);
+    await spawnPatch(page, [
+      { id: NODE, type: 'clipplayer', position: { x: 120, y: 120 }, domain: 'audio' },
+    ]);
+
+    // Seed BEFORE the dock body mounts — the body scans in a mount `$effect`
+    // and there is no rescan trigger, so a write after the pane opens is simply
+    // never read. Same records `listRecoverableClipMedia` / `readClipMedia`
+    // scan for, copied from `clip-media-recover-reachable.spec.ts`.
+    const seeded = await page.evaluate(
+      async ({ nodeId, mediaId, unitFrames, bytesPerFrame, frames }) => {
+        // 1. The SAMPLES, into OPFS at `clipmedia/<mediaId>`. `createWritable`
+        //    is the main-thread OPFS write path (the store's own writer uses a
+        //    sync access handle, which is worker-only).
+        const root = await navigator.storage.getDirectory();
+        const dir = await root.getDirectoryHandle('clipmedia', { create: true });
+        const fh = await dir.getFileHandle(mediaId, { create: true });
+        const w = await fh.createWritable();
+        await w.write(new Uint8Array(frames * bytesPerFrame));
+        await w.close();
+
+        // 2. The MANIFEST, into IndexedDB. `status: 'recording'` is what makes
+        //    it a recover candidate — and what makes the GC spare it.
+        await new Promise<void>((resolve, reject) => {
+          const req = indexedDB.open('patchtogether-clipmedia', 1);
+          req.onupgradeneeded = () => {
+            const db = req.result;
+            if (!db.objectStoreNames.contains('manifests')) {
+              db.createObjectStore('manifests', { keyPath: 'mediaId' });
+            }
+          };
+          req.onsuccess = () => {
+            const db = req.result;
+            const tx = db.transaction('manifests', 'readwrite');
+            tx.objectStore('manifests').put({
+              mediaId,
+              nodeId,
+              lane: 0,
+              slot: 0,
+              startedAt: 1_750_000_000_000,
+              status: 'recording',
+              format: 'pcm-f32',
+              sampleRate: 48_000,
+              channels: 2,
+              frames,
+              unitFrames,
+              lengthSteps: 16,
+            });
+            tx.oncomplete = () => { db.close(); resolve(); };
+            tx.onerror = () => { db.close(); reject(tx.error); };
+          };
+          req.onerror = () => reject(req.error);
+        });
+
+        return { bytesOnDisk: (await fh.getFile()).size };
+      },
+      {
+        nodeId: NODE,
+        mediaId: MEDIA_ID,
+        unitFrames: UNIT_FRAMES,
+        bytesPerFrame: BYTES_PER_FRAME,
+        frames: SEEDED_FRAMES,
+      },
+    );
+    // The seed itself is asserted: a silently-failed OPFS write would leave the
+    // prompt absent and the failure would read as "the feature is broken".
+    expect(seeded.bytesOnDisk, 'the seeded take should be on disk').toBe(
+      SEEDED_FRAMES * BYTES_PER_FRAME,
+    );
+
+    const dock = await openDock(page, NODE);
+    const prompt = dock.getByTestId('clipplayer-face-recover');
+    await expect(prompt, 'the seeded manifest raises the recovery prompt on the FACE').toBeVisible({
+      timeout: SLOW_BOOT_TEST_TIMEOUT_MS,
+    });
+    // It offers the TRUNCATED length: 10 frames of a 4-frame loop is 2 loops.
+    await expect(prompt, 'the prompt offers WHOLE loops, never 2.5').toContainText('2 loops');
+
+    for (const testid of ['clipplayer-face-recover-save', 'clipplayer-face-recover-discard']) {
+      const btn = dock.getByTestId(testid);
+      await expect(btn).toBeVisible();
+      await expect(btn).toBeEnabled();
+      const box = await btn.boundingBox();
+      expect(box, `${testid} should have a box`).not.toBeNull();
+
+      const hit = await page.evaluate(
+        ({ x, y, id }) => {
+          const el = document.elementFromPoint(x, y);
+          return !!el?.closest(`[data-testid="${id}"]`);
+        },
+        { x: box!.x + box!.width / 2, y: box!.y + box!.height / 2, id: testid },
+      );
+      expect(
+        hit,
+        `${testid} is not the topmost element at its own centre — it is clipped by an ancestor `
+          + 'or covered by a sibling, so the player can read the question and cannot answer it.',
+      ).toBe(true);
+    }
+
+    // ⚠ AND IT IS WIRED, not decorative — so this leg cannot pass on a panel
+    // that merely LOOKS answerable, and cannot pass on a button that only hides
+    // the prompt. Discard retires the question AND frees the bytes.
+    await dock.getByTestId('clipplayer-face-recover-discard').click();
+    await expect(prompt, 'discarding the only candidate retires the prompt').toBeHidden({
+      timeout: SLOW_BOOT_TEST_TIMEOUT_MS,
+    });
+    const stillThere = await page.evaluate(async (mediaId) => {
+      try {
+        const root = await navigator.storage.getDirectory();
+        const dir = await root.getDirectoryHandle('clipmedia', { create: false });
+        await dir.getFileHandle(mediaId, { create: false });
+        return true;
+      } catch {
+        return false;
+      }
+    }, MEDIA_ID);
+    expect(stillThere, 'Discard deletes the take, not merely the prompt').toBe(false);
+
     expect(errors).toEqual([]);
   });
 

@@ -31,7 +31,37 @@
   // in the DOCK BODY — a surface that exists only while the full view is open —
   // never in the lane tile, which is the #2314 rule: nothing expensive on a
   // surface that mounts with every rack boot.
+  //
+  // ── ⚠ AND THE CRASH-RECOVERY PROMPT, WHICH HAD NO FACE HOME AT ALL ─────────
+  //
+  // `clip-media-recovery.ts` was imported by `ClipplayerCard.svelte` AND BY
+  // NOTHING ELSE, and clipplayer is not in `HEADLESS_MOUNT_LANE_TYPES`, so on
+  // the default shell the scan for interrupted takes ran NOWHERE. The failure
+  // that leaves is silent in both directions: an Arm-Endless take whose tab died
+  // is permanently unrecoverable, while its manifest keeps `status: 'recording'`
+  // so the media GC SPARES its bytes — a file nobody can reach and nothing will
+  // ever collect. Every registry test stayed green, because this is exactly the
+  // component-only behaviour the module-surfaces skill warns promotion deletes.
+  //
+  // ⚠ WHY THE DOCK BODY AND NOT THE TILE — recorderbox's answer, verbatim and
+  // for the same two reasons. `RecorderboxCaptureBody` carries its recovery
+  // prompt in the `fullViewBody` and `recorderbox-face-model.test.ts` states the
+  // cost half outright ("the recovery scan is deliberately dock-only too, which
+  // also keeps an IndexedDB read off every rack boot"). A clip player's scan is
+  // strictly worse than recorderbox's on that axis: `scanClipRecoveries` walks
+  // the manifests AND opens each candidate's OPFS file to measure it, and
+  // `ClipplayerTileBody` mounts for EVERY clip player in EVERY rack boot — the
+  // #2314 shape, which shipped a 60-scene VRT regression from one probe per
+  // mount. The gesture half is the same too: a recovery question can wait for
+  // the one Expand a player makes before doing anything else with the module.
+  //
+  // ⚠ NOT AN OVERLAY HERE, and the card's own note says why it had to be one
+  // there: `.card` is `overflow: hidden` under a rack-tier-pinned height, so
+  // appended flow content had its buttons clipped away — visible and
+  // unanswerable. A dock pane carries no such pin, so this is ordinary flow
+  // content at the TOP, where a blocking question belongs.
 
+  import { untrack } from 'svelte';
   import { patch } from '$lib/graph/store';
   import { nodeVersion, nodesStructuralVersion } from '$lib/graph/node-versions.svelte';
   import { setNodeParam } from '$lib/graph/mutate';
@@ -80,6 +110,13 @@
     boundClipNode,
     bindingRune,
   } from '$lib/control/monome/monome-control.svelte';
+  import {
+    clipRecoveryLabel,
+    discardClipTake,
+    recoverClipTake,
+    scanClipRecoveries,
+    type ClipRecoveryCandidate,
+  } from '../clip-media-recovery';
   import ClipArrangeEditor from '../ClipArrangeEditor.svelte';
   import { clipplayerLaneViews } from './clipplayer-face-model';
   import {
@@ -274,9 +311,80 @@
   const toggleSongRecMode = () => toggleClipplayerSongRecMode(nodeId);
 
   let arrangeEditorOpen = $state(false);
+
+  // ── CRASH RECOVERY: takes this node was still recording when its tab died ──
+  //
+  // Scanned ONCE per mount of this body, which is once per Expand — the card
+  // scanned once per card mount and there is no other trigger on either
+  // surface, so a manifest written after the pane opened is not read until the
+  // next one. That is the recorderbox contract too, and it is stated rather than
+  // hidden because it is what the e2e has to seed AROUND.
+  //
+  // ⚠ `untrack` IS LOAD-BEARING. `rescanRecoveries` writes `recoveries`, and
+  // without it the write re-runs the effect that made it — a self-feeding loop
+  // that would put an OPFS read on a permanent cycle. The sibling
+  // `RecorderboxCaptureBody` mount effect is untracked for exactly this reason.
+  let recoveries = $state<ClipRecoveryCandidate[]>([]);
+  async function rescanRecoveries(): Promise<void> {
+    try {
+      recoveries = await scanClipRecoveries(nodeId);
+    } catch {
+      // Storage unavailable (a private window, a browser with no OPFS): offer
+      // nothing, break nothing. The prompt is additive by construction.
+      recoveries = [];
+    }
+  }
+  $effect(() => {
+    void nodeId;
+    untrack(() => {
+      void rescanRecoveries();
+    });
+  });
+  async function onRecoverTake(c: ClipRecoveryCandidate): Promise<void> {
+    await recoverClipTake(nodeId, c);
+    await rescanRecoveries();
+  }
+  async function onDiscardTake(c: ClipRecoveryCandidate): Promise<void> {
+    await discardClipTake(c);
+    await rescanRecoveries();
+  }
 </script>
 
 <div class="deck" data-testid="clipplayer-face-deck">
+  <!-- THE BLOCKING QUESTION, FIRST — and ABSENT AT REST, which is what keeps
+       every dock baseline unmoved: no scene seeds a clip-media manifest, so
+       nothing here renders in a VRT capture.
+
+       The label is a count of LOOPS (`clipRecoveryLabel`), never a byte size:
+       recovery truncates to the last WHOLE loop, and loops are the unit the
+       take was recorded in and the only one that says what is coming back.
+       ⚠ NO `aria-label` REPEATS IT — the sentence is painted once, which is
+       also what keeps the `control-grid` speakable-not-painted leg green. -->
+  {#if recoveries.length > 0}
+    <div class="recover" data-testid="clipplayer-face-recover">
+      <p class="recover-title">Recover interrupted take?</p>
+      {#each recoveries as c (c.manifest.mediaId)}
+        <div class="recover-row">
+          <span class="recover-name">{clipRecoveryLabel(c)}</span>
+          <button
+            type="button"
+            class="recover-save nodrag"
+            title="Restore this take into its slot, truncated to the last whole loop"
+            data-testid="clipplayer-face-recover-save"
+            onclick={() => onRecoverTake(c)}>Recover</button
+          >
+          <button
+            type="button"
+            class="recover-discard nodrag"
+            title="Delete this take and free its storage"
+            data-testid="clipplayer-face-recover-discard"
+            onclick={() => onDiscardTake(c)}>Discard</button
+          >
+        </div>
+      {/each}
+    </div>
+  {/if}
+
   <!-- TRANSPORT + the clip-undo stack: the surviving half of the card's control
        strip. `disabled` rather than hidden when there is no TIMELORDE to drive,
        so the gesture's absence reads as a fact about the rack. -->
@@ -614,5 +722,56 @@
   .deck-mute:hover,
   .deck-stop:hover {
     color: #fff;
+  }
+
+  /* THE RECOVERY PROMPT. Ordinary flow content, not an overlay: the card had to
+     float this over its grid because `.card` is `overflow: hidden` under a
+     rack-pinned height and its buttons were clipped away unreachable. A dock
+     pane has no pin, so it sits at the top of the deck where a blocking
+     question belongs. The dashed accent border is recorderbox's — the two
+     prompts ask the same question about the same kind of loss, and a player who
+     has answered one should recognise the other. */
+  .recover {
+    padding: 8px;
+    border: 1px dashed var(--accent-dim);
+    border-radius: 4px;
+    background: var(--module-bg);
+  }
+  .recover-title {
+    margin: 0 0 6px;
+    font-size: 0.66rem;
+    color: var(--accent);
+  }
+  .recover-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 4px;
+  }
+  .recover-name {
+    flex: 1;
+    min-width: 0;
+    font-size: 0.64rem;
+    font-family: ui-monospace, monospace;
+    color: var(--text-dim);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .recover-save,
+  .recover-discard {
+    font-size: 0.6rem;
+    padding: 3px 7px;
+    border-radius: 3px;
+    cursor: pointer;
+    border: 1px solid var(--border);
+    background: var(--input-bg, #111);
+    color: var(--text);
+  }
+  .recover-save:hover {
+    border-color: var(--accent);
+  }
+  .recover-discard:hover {
+    border-color: #ff3b30;
   }
 </style>
