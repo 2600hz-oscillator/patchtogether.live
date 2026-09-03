@@ -60,7 +60,6 @@ export interface ErrorWatch {
 export const test = base.extend<{
   errorWatch: ErrorWatch;
   rack: void;
-  rackDefault: void;
   rackLegacy: void;
 }>({
   errorWatch: async ({ page }, use) => {
@@ -111,16 +110,6 @@ export const test = base.extend<{
     await use();
   },
 
-  // IDENTICAL to `rack` since the S2 fixture flip (#1606's SHELL-READY class
-  // predates it). Kept only until its consumers fold back onto `rack` — do
-  // not add new consumers.
-  rackDefault: async ({ page }, use, testInfo) => {
-    const t0 = Date.now();
-    await page.goto('/rack?seed=none');
-    await page.waitForLoadState('networkidle');
-    applySetupCredit(testInfo, Date.now() - t0,'rackDefault fixture nav');
-    await use();
-  },
 });
 
 export { expect };

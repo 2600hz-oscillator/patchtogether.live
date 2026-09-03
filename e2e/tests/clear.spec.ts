@@ -5,7 +5,7 @@ import { test, expect, loadVoiceDemo, openFileMenu, fileMenuClick } from './_fix
 // 96 h CI census to 2026-08-18 — never a hard failure, so every one of those jobs reported SUCCESS.
 // LOST WHILE PARKED: that Clear actually empties the rack after the voice demo — nodes AND edges — rather than leaving orphaned edges pointing at deleted nodes.
 // Re-enable only on a root cause (#1847); "it passes now" is not one.
-test.fixme('clear after voice demo removes all nodes + edges', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 9 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page, rackDefault }) => {
+test.fixme('clear after voice demo removes all nodes + edges', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 9 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page, rack }) => {
   // The voice demo (5 nodes / 6 edges, sequencer auto-playing).
   await loadVoiceDemo(page);
   await expect(page.locator('.svelte-flow__node')).toHaveCount(5, { timeout: 10_000 });

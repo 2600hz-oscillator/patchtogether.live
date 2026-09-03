@@ -34,7 +34,7 @@ import {
 test.describe.configure({ mode: 'parallel' });
 
 function runPair(group: string, patch: PairPatch): void {
-  test(`${group} — ${patch.label}`, async ({ page, rackDefault, errorWatch }) => {
+  test(`${group} — ${patch.label}`, async ({ page, rack, errorWatch }) => {
     await spawnPatch(page, patch.nodes, patch.edges);
 
     // If a KRIA gate source is in the patch (id 'seq' by convention), seed

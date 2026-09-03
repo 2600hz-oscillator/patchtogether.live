@@ -38,7 +38,7 @@ async function readScopePeak(page: import('@playwright/test').Page, scopeId: str
   return peak;
 }
 
-test('MEOWBOX: gate triggers audible voice on L output', async ({ page, rackDefault, errorWatch }) => {
+test('MEOWBOX: gate triggers audible voice on L output', async ({ page, rack, errorWatch }) => {
   await spawnPatch(
     page,
     [
@@ -64,7 +64,7 @@ test('MEOWBOX: gate triggers audible voice on L output', async ({ page, rackDefa
   expect(peak, `MEOWBOX scope peak (got ${peak})`).toBeGreaterThan(0.001);
 });
 
-test('TIMELORDE: 1x output emits gate pulses at the configured BPM', async ({ page, rackDefault, errorWatch }) => {
+test('TIMELORDE: 1x output emits gate pulses at the configured BPM', async ({ page, rack, errorWatch }) => {
   await spawnPatch(
     page,
     [
@@ -95,7 +95,7 @@ test('TIMELORDE: 1x output emits gate pulses at the configured BPM', async ({ pa
   expect(peak, `TIMELORDE 4x peak (got ${peak})`).toBeGreaterThan(0.5);
 });
 
-test('TIMELORDE: singleton — a duplicate is cleaned up to a single survivor by the dedupe pass', async ({ page, rackDefault }) => {
+test('TIMELORDE: singleton — a duplicate is cleaned up to a single survivor by the dedupe pass', async ({ page, rack }) => {
   // Phase 4c — deterministic post-merge singleton cleanup.
   //
   // PRE-4c MODEL (now obsolete): a forced 2nd TIMELORDE PERSISTED in the graph
@@ -193,7 +193,7 @@ test('TIMELORDE: singleton — a duplicate is cleaned up to a single survivor by
   );
 });
 
-test("CHARLOTTE'S ECHOS: passes signal through and produces echo tail", async ({ page, rackDefault, errorWatch }) => {
+test("CHARLOTTE'S ECHOS: passes signal through and produces echo tail", async ({ page, rack, errorWatch }) => {
   await spawnPatch(
     page,
     [
@@ -241,7 +241,7 @@ test("CHARLOTTE'S ECHOS: passes signal through and produces echo tail", async ({
   expect(peak, `Echos scope peak (got ${peak})`).toBeGreaterThan(0.001);
 });
 
-test('MIXMSTRS: passes channel 1 through to master out', async ({ page, rackDefault, errorWatch }) => {
+test('MIXMSTRS: passes channel 1 through to master out', async ({ page, rack, errorWatch }) => {
   await spawnPatch(
     page,
     [
@@ -265,7 +265,7 @@ test('MIXMSTRS: passes channel 1 through to master out', async ({ page, rackDefa
   expect(peak, `MIXMSTRS scope peak (got ${peak})`).toBeGreaterThan(0.01);
 });
 
-test('MIXMSTRS: multiple instances allowed — both materialize in engine', async ({ page, rackDefault }) => {
+test('MIXMSTRS: multiple instances allowed — both materialize in engine', async ({ page, rack }) => {
   await spawnPatch(
     page,
     [

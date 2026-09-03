@@ -174,7 +174,7 @@ async function waitStoredPos(
 test.describe('JOYSTICK — the FACE (default shell)', () => {
   test('the lane tile is a ModuleShell painting BOTH axis cells — and NOT the pad', async ({
     page,
-    rackDefault,
+    rack,
     errorWatch,
   }) => {
     // `errorWatch` is this spec's pageerror guard: a derivation repaired on
@@ -203,7 +203,7 @@ test.describe('JOYSTICK — the FACE (default shell)', () => {
 
   test('dock: the pad body drags BOTH axes, release LEAVES them, dblclick re-centres', async ({
     page,
-    rackDefault,
+    rack,
     errorWatch,
   }) => {
     await spawnPatch(page, [
