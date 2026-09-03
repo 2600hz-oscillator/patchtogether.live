@@ -608,6 +608,67 @@ const EXTENSION_BODY_ROLES: Readonly<Record<string, BodyRule>> = {
   // button. The card has no readout row, no state word and no decimal, so
   // unlike most entries here nothing had to be removed on promotion.
   scoreboard: { role: 'picture', why: 'the 4-digit neon counter\'s live display and its SCREEN switch — the module\'s entire product, since it has no video input and no audio path: two gates in, four digits out. ⚠ The DIGITS are the OUTPUT PICTURE (what `out` emits), not a readout of a control, which is why numerals on this surface are correct rather than a resting-text violation. ⚠ SCREEN OFF keeping the watch mark is load-bearing on STATE here, not just on the picture: the counter advances on gate edges the factory detects during draw, so a lapsed mark would leave SCORE edges UNCOUNTED and the number WRONG when the screen returns — not merely stale (#2015).' },
+  // ── SEQTRIS — the roster's FIRST **DOM PICTURE**, declared `control-grid` ──
+  //
+  // ⚠ THE ROLE IS NOT AN OBVIOUS FIT AND THE REASONING MATTERS MORE THAN USUAL,
+  // because the naive answer is `picture` and `picture` is REFUSED here — by the
+  // predicate, correctly. This body's live 8×8 well is a CSS GRID OF 64 `<span>`s
+  // rather than a drawing surface: `paintsCanvas` is false, and the honest
+  // response is the matrixMix one (declare the role that is true) rather than
+  // weakening the picture predicate to accept a body with no canvas, which is
+  // the one change that would let a GENUINE picture-body skip its own check.
+  //
+  // ⚠ AND `control-grid` IS TRUE ON ITS OWN TERMS, NOT BY ELIMINATION. The
+  // surface's operating instrument is the eight-row column beside the well: the
+  // LAUNCHPAD'S OWN SCENE COLUMN, in hardware order, both dead buttons included,
+  // where a click IS a move — `api().press(action)` into the same pure core the
+  // pads drive. That is "the surface the module is operated FROM" exactly as
+  // matrixMix's cross-points and gamepad's tiles are, and the well beside it is
+  // this module's state rendered, not a preview of something happening
+  // elsewhere. The `status-primitive` predicate ALSO holds (it imports
+  // `StatusLed` and owns no canvas) — legal, and the same double-satisfaction
+  // gamepad records; the declared role is the one that says what the surface IS.
+  //
+  // ⚠ ALL PAINTED TEXT IS A CONTROL CAPTION: six scene captions
+  // (reset / drop / rot ← / rot → / move ← / move →), the `PAD` lamp caption,
+  // `SCREEN ON|OFF` on its own switch, `Connect Launchpad` / `Unbind` on theirs,
+  // and each listed MIDI port's own NAME in the picker (an option name inside
+  // its own control). No value, no measurement, no state word, no counter.
+  //
+  // ⚠ THE ONE THING THAT HAD TO BE REMOVED ON PROMOTION IS NAMED RATHER THAN
+  // QUIETLY DROPPED: `SeqtrisCard.svelte` paints `<p class="status">` carrying
+  // `seqtrisStatusMessage()` — a SENTENCE OF DERIVED SERVICE STATE as a resting
+  // text node, in none of the four permitted roles. All six strings survive
+  // VERBATIM (the pure function is untouched and still unit-tested at the
+  // source); they now reach `aria-label` + `title` through the lamp's `detail`,
+  // which is the recorderbox promotion's exact disposal of three readouts.
+  // ⚠ Its `role="alert"` on the problem states did NOT survive — the lamp's
+  // `tone="warn"` carries the condition and its accessible name carries the
+  // sentence, but the live announcement is gone. A real, small delta.
+  // ⚠ AND "THE LAMP CARRIES THE CONDITION" IS ONLY TRUE BECAUSE `lit` INCLUDES
+  // `problem`. Every tone rule in `StatusLed.svelte` is gated on `.lit`, so a
+  // readiness-only `lit={bound}` — mutually exclusive with `problem` — would
+  // have made `tone="warn"` DEAD CSS and left a denied grant pixel-identical to
+  // idle. Both bodies pass `lit={bound || problem}`, which is the idiom the
+  // three shipped fault lamps use (`audioIn` FAULT, `es9` XRUN, `midiOutBuddy`
+  // LANE: `warn` always paired with a `lit` that is true exactly when the fault
+  // holds), folded into one lamp because the two conditions are disjoint.
+  // Pinned in `seqtris-face-model.test.ts` CLAIM 7b, mechanism first.
+  //
+  // ⚠ THE SPEAKABLE LEG BITES HERE AND IS ANSWERED STRUCTURALLY: each live
+  // scene button paints its CAPTION (`drop`) and speaks `sceneName(i, action)`
+  // (`Scene button 4 — drop`) — the row number the caption cannot carry, which
+  // is the whole reason the column is on screen for a player with no hardware.
+  // Two structurally different expressions, not the same one in both places.
+  //
+  // ⚠ NO SCREEN-RULING WATCH MARK: `markWatched` is a VideoEngine pull-set
+  // concept and this is `domain: audio`. The SCREEN switch is here anyway (the
+  // modtris argument), and it is safe TWICE OVER — the game runs on the shared
+  // scheduler clock inside the FACTORY, and `launchpad.paint()` is called from
+  // that same factory's `changed()`, so SCREEN OFF stops a DOM render while the
+  // pieces keep falling, PIECE / LINE / SPAWN keep firing AND THE PADS KEEP
+  // SHOWING THE BOARD.
+  seqtris: { role: 'control-grid', why: 'the 8×8 WELL plus the LAUNCHPAD\'S OWN SCENE COLUMN — eight rows in hardware order, the two dead buttons rendered in position, six of them clickable — plus CONNECT / Unbind, the index-keyed port picker and the bind lamp. ⚠ IT IS A CONTROL GRID, NOT A PICTURE, and the predicate is what decides it rather than taste: the well is a CSS grid of 64 spans and mounts NO drawing surface, so the picture predicate is false and weakening it to fit would let a genuine picture-body skip its own check (the matrixMix repair, in the same shape). The column is the surface the module is OPERATED from — a click is `press(action)` into the same pure core the pads drive — and the well is this node\'s own state rendered rather than a preview of something happening elsewhere. ⚠ THE WELL MUST NOT BECOME A CANVAS: converting it would delete 64 data-testids and the `data-piece` attribute, which are the only machine-readable read of the board that is not a page.evaluate into engine internals, and would import the DPR blit hazard a 1fr grid with a 1/1 aspect-ratio structurally cannot have. ⚠ ALL PAINTED TEXT IS A CONTROL CAPTION OR AN OPTION NAME: six scene captions, the PAD lamp caption, SCREEN ON|OFF, Connect Launchpad / Unbind, and each listed MIDI port\'s own name. No value, no measurement, no state word — and NO COUNTERS, which is not an omission: snapshot() exposes lines, totalLines, gameOvers, notesFired, spawns, lineFires, tiedDrops and clockPulses and the CARD showed none of them either ("No timers, no counters, no live numbers on the plate"). ⚠ THE CARD\'S STATUS PARAGRAPH IS DELETED, NOT HIDDEN: all six seqtrisStatusMessage() strings survive verbatim on the lamp\'s StatusLed detail, reaching aria-label and title and never a text node; its role="alert" on the problem states did not survive, which is a named delta rather than an oversight. ⚠ THE VISUAL HALF OF THAT SIGNAL IS KEPT DELIBERATELY: both lamps pass `lit={bound || problem}` with `tone={problem ? \'warn\' : \'accent\'}`, so a denied grant, an absent Launchpad or a claim held by another SEQTRIS lights the lamp AMBER — a readiness-only `lit` would have made the warn tone dead CSS (every tone rule in StatusLed is gated on `.lit`) and left a fault pixel-identical to idle. ⚠ THE SEMANTICS LIVE ON aria-label: the well names itself and its current piece, and each scene button speaks its ROW NUMBER plus caption so the hardware mapping is learnable with no Launchpad plugged in — the inventory\'s stated purpose for the column. ⚠ IT ALSO IMPORTS StatusLed, so status-primitive holds too; control-grid is declared because the column is what the module is played on. ⚠ IT IS A BODY RATHER THAN A PANEL because a PF-14 panel cell\'s first legal rank is 7 and this module declares two params, so no panel can ever reach the plate. ⚠ NO WATCH MARK: markWatched is a VideoEngine pull-set concept and this is domain audio; the SCREEN switch is safe here twice over, since both the game clock and the LED repaint live in the module FACTORY, so SCREEN OFF stops a DOM render while the pads keep showing the board.' },
   // ── ACIDWARP (2026-08-22, #2111) — the module that IS its display ────────
   //
   // TEXT ON THE SURFACE, exhaustively: the SCREEN button's own caption. Nothing
@@ -764,6 +825,23 @@ const EXTENSION_BODY_ROLES: Readonly<Record<string, BodyRule>> = {
   // carries forward, but through a slot no video body uses.
   shapedramps: { role: 'picture', why: 'the parametric ramp generator\'s live output preview and its SCREEN switch. ⚠ An ADDITION, not a port — its card mounts NO canvas (vrt-exemptions records it among the "confirmed 0 canvases each"), so this is the first surface on which what this module emits is visible without patching it into an OUTPUT. ⚠ The retained watch mark (#2015) is the widest-tap form of the argument in this roster: SIX outputs, four of them pure functions of vUv with no input, and THE PREVIEW SHOWS ONLY `h_out` — five of the six are invisible on the very surface whose switch would mute them. Its two identity ramps are invariant to every knob and CV, so if they went dark nothing on the plate would move to say why. No accumulator: all three programs are pure per-frame functions, so SCREEN OFF costs it only the OUTPUT. Its card mounts no `hideControls`, so no MONITOR toggle or resize grip is declared, and nothing on the surface is a derived value in a text node.' },
   dockscope: { role: 'picture', why: 'the 1u rail scope\'s live time-domain trace — the FIRST AUDIO-domain picture in this roster, and the one body here with NO SCREEN SWITCH AND NO WATCH MARK, both by derivation rather than omission. No switch: dockscope declares `outputs: []`, so the trace is not a monitor OF the work, it IS the work, and collapsing it would leave two faders over nothing — `videoOut`\'s exemption argument exactly, on a def the video gate does not reach. No watch mark: `markWatched` is a VideoEngine PULL-SET concept and this module\'s AnalyserNode is fed by the Web Audio graph, which runs whether or not anything is looking, so there is no pull set to fall out of. ⚠ It is also the face that REFUSED the `scope` glyph its inventory note recommends: with no audio output `glyphBinding` falls to `{ kind: \'static\' }`, so the glyph would have painted a placeholder waveform that is not this module\'s signal. The only text on the surface is inside the canvas — the `±1.0` / `±5V` scale annotation `drawDockscope` has always drawn, which names the `range` control\'s own position rather than measuring anything.' },
+  // ── TRAILS (bespoke surface, 2026-09-02) — the roster's first HARDWARE
+  //    MIRROR: a picture of a physical panel that is not in the rack ──────────
+  //
+  // ⚠ IT IS THE FIRST BINDER IN THIS ROSTER DECLARED `picture`. The other four
+  // split two ways and neither way fits: midiclock, ptzcam and midiCvBuddy are
+  // `status-primitive` (a picker, some lamps, an error line), and chromaconsole
+  // — which landed the same day — is `control-grid`, because its slot board is
+  // the surface the module is OPERATED from. This body is a lamp and two buttons
+  // beside a CANVAS, and the canvas is neither a control nor a status primitive:
+  // it is a picture of a panel that is not in the rack.
+  //
+  // ⚠ TWO PREDICATES WOULD HOLD, and the declared one is deliberate. The body
+  // imports `StatusLed`, so `status-primitive`'s positive half is satisfied —
+  // but its NEGATIVE half (no canvas, directly or through a mounted child) is
+  // not, so that role would actually FAIL here. `picture` is the only role whose
+  // predicate this source satisfies, which is the honest kind of "declared".
+  trails: { role: 'picture', why: 'the 1:1 PANEL MIRROR — the Bela Trails\' 85x85mm multitouch pad drawn from the HARDWARE\'S OWN MILLIMETRE CONSTANTS (TRAILS_PAD_MM / TRAILS_BAR_MM / TRAILS_BAR_GAP_MM / TRAILS_BAR_EDGE, never pixels chosen to look right), carrying up to four coloured touch points with 48-point fading trails in the pad\'s own 0..1 coordinates, plus the 10x85mm Touch Bar drawn HATCHED AND DIM along the bottom edge — plus the LINK lamp, the MON toggle and its reset, and the monitor readout MON reveals. ⚠ THE PAD IS A MIRROR, NOT A CONTROL: it carries no pointer handler, writes no param, no `node.data` key and no Y.Doc update, which is what makes it honest as a BODY rather than an `xyPads` cell — a declared pad names the two params its axes DRIVE, and these axes drive nothing, they report. That read-only property matters MORE on the lane tile than on the dock, because a tile and an open dock pane for one node are mounted at once. ⚠ THE HATCH IS A FINDING, NOT A STYLE: the device transmits no Bar value and has no Bar output jack, so a blank-but-normal strip would read as a live control that had broken; the hatch says "not a signal" at a glance on BOTH tiers and the caption under the dock canvas — `bar — not sent over USB-MIDI` — says it in words, gated on the same TRAILS_BAR_TRANSMITS_MIDI flag as the hatch so a firmware that starts transmitting removes both in ONE edit rather than leaving a stale denial under a live strip. That caption is a LANDMARK NAMING THE SURFACE\'S OWN CONDITION (the samsloop `NO SAMPLE LOADED` / dockscope `±5V` shape), not a measurement of any control. ⚠ NOTHING IS PAINTED INTO THE CANVAS AT ALL — no coordinates, no channel numbers, no counts; the picture is a rectangle, a centre cross, a hatch and up to four dots, which is the honest way to stay out of the blind spot this roster leaves open. ⚠ MON IS THE ONE MEASUREMENT ON THE PLATE AND IT IS ABSENT AT REST: the toggle defaults closed, so a resting faceplate paints neither the `loops N · edges a/b/c/d` ratio nor the monitor summary — strictly stronger than livecode\'s shipped OUTPUT LOG, which is visible at rest whenever node.data.lastRun is set. Its subject is a USB device OUTSIDE the rack — specifically the frames this module\'s decoder REJECTED — so it is not derived state about any control here and has no control\'s aria-valuetext to move to; and it is the only affordance in the product that can falsify trails-decode.ts against real hardware, having already found three readout defects the hardware was being blamed for. The counters line stays a LINE rather than four lamps because it is read as a RATIO between two numbers that must advance together, which no boolean lamp can express. ⚠ THE STATUS LAMP\'S `lit` IS NOT `bound`: StatusLed\'s tone styles only the LIT lamp, so lit={bound} would render a FAULT pixel-identically to a fresh spawn and silently delete one of the legacy card\'s three LED states. lit = bound OR problem, tone = warn on problem — dark/amber/accent, exactly the card — with the sentence on aria-label and the fault ALSO painted as a role="alert" line that is absent whenever nothing is wrong. ⚠ IT IS 2-D AND MUST STAY 2-D: attest-basis membership is derived from CONTENT over lib/ui/modules/**, so a WebGL context here would enrol an AUDIO def in the GPU attest for four dots. ⚠ ONE MIRROR COMPONENT, TWO SLOTS: this roster cannot see a tileBody, so what the picture predicate proves of the dock body is carried to the 40px lane mirror BY CONSTRUCTION rather than by two files agreeing — the audioIn argument. ⚠ NO SCREEN SWITCH AND NO WATCH MARK: the video-screen ruling runs over STRICT_FACES INTERSECT video defs and this is domain audio with no video port (skifree has one and therefore has a switch; dockscope, spectrograph and samsloop do not and therefore do not), markWatched is a VideoEngine pull-set concept this module has no part in, and there is no producer for a switch to stop — the decode runs in the FACTORY on the MIDI callback and the scheduler tick, and the paint loop already skips every frame in which nothing moved. ⚠ NO face.rackStatus: the binding is app-level and fanned out to every trails node, so there is no primary instance and no band to suppress. Every other text node on the surface is a control caption, a static lamp caption, an option NAME, instructional copy in the pre-connect EMPTY state, or that error.' },
   // ── GRAPHIC EQ — the meter, and the last MONITOR card ─────────────────────
   graphicEq: { role: 'picture', why: 'the live frequency meters — 8 bands, or 2x8 split L|R — plus its SCREEN switch and, unlike shapes above, a MONITOR toggle and a corner resize grip, because GraphicEqCard.svelte does mount `hideControls`. ⚠ THE PICTURE IS THE READING, not an illustration of it: nothing on this face reports a level (`gain` and `peak` set how the meters RESPOND, never what they currently show), so MONITOR mode costs the player no readout at all and buys the whole frame. ⚠ AND ITS #2015 ARGUMENT IS THE ACCUMULATOR ONE, not the output-only one its three MONITOR siblings use: `peakL[]`/`peakR[]` are per-band peak-hold state advanced once per draw by `decayPeak`, and both AnalyserNodes carry `smoothingTimeConstant = 0.7`. A lapsed mark freezes the caps and stales the smoothing history, so the returning frame asserts peaks belonging to whenever the mark expired — it corrupts what the meters MEAN rather than merely pausing them. The output argument holds on top, and pointedly for a chainable `output`-category module. Nothing on the surface is a derived value in a text node — the numbers are drawn INTO the canvas as the meters themselves, which is the picture, not resting chrome.' },
   // ── BATCH 24 — CUT A, batch 1. All four are pictures; none mounts

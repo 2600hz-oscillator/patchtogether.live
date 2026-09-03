@@ -345,6 +345,49 @@ const FACE_WIDTH_EXEMPTIONS: Readonly<Record<string, string>> = {
   joystick:
     'the XY PAD (220 CSS px + borders) is the plate, and it is structurally invisible to `contentW`: no `[data-cell-key]` (the two-ordinary-cells fallback deliberately keeps the pad OUT of the cell contract — a `control-*` anchor here would double-count both axes in faces-parity), no canvas (attest basis is derived from content), and no text at rest (the x/y readout is the promotion\'s named deletion; the value lives on aria-label). MEASURED on the first CI capture: content 123 (the two knob cells), face body 286, slack 163 — every pixel of it the drawn pad. Not reclaimable: the pad IS the module. See the block comment above.',
 
+  // ── SEQTRIS — THE FOURTH MEMBER OF THE INK-MEASURE BLIND SPOT, and the one
+  //    whose invisible surface is a DOM GRID rather than a pad or a buffer ────
+  //
+  // MEASURED on this branch by walking every descendant of `.faceplate-body`
+  // (dock full view, CSS px; `r` = right edge relative to `contentLeft`):
+  //
+  //   .faceplate-body            300  r=300   ← bodyW
+  //     .editor                  300  r=300   padL/R 22   ← +44 of chrome
+  //       .module-shell          256  r=278   ← THE PLATE, sized BY THE FACE
+  //         .dock-ext-body       254  r=277   padL/R 10
+  //           .seqtris-face-body 234  r=267   ← THE DRIVER
+  //             .play            234  r=267
+  //               .well          176  r=209   ← 64 spans. ZERO ink.
+  //               .controls       52  r=267   ← 8 rows. Only its TEXT is ink.
+  //   contentW                   256          ← the gate's ink measure
+  //
+  // So the plate is sized by THE FACE'S OWN PLAY ROW — a 176 px well + 6 px gap
+  // + the 52 px hardware column = 234, plus 20 px of body padding and the
+  // shell's border — and every one of those pixels is drawn. The 44 px of
+  // reported slack decomposes exactly: 22 px is the EDITOR'S RIGHT PADDING
+  // (chrome, not the face) and 22 px is how far short of the shell's right edge
+  // the rightmost TEXT RANGE falls, because the widest drawn things here are
+  // boxes this gate does not measure.
+  //
+  // ⚠ AND WIDENING CANNOT FIX IT, which is why this is an exemption rather than
+  // a layout change. The slack is `editor padding + (shell edge − ink edge)`;
+  // both terms are invariant under the well's size, so growing the well moves
+  // the plate and the ink together and leaves the difference at 44. The only
+  // way to push it under the ceiling would be to make the six scene captions
+  // fill their 52 px buttons so the text ranges reach further right — which is
+  // gaming the measure rather than consuming the width, and the ceiling's own
+  // error message refuses exactly that trade.
+  //
+  // ⚠ THE WELL CANNOT BECOME A CANVAS TO SATISFY THE INK MEASURE, and the
+  // module already refused that for stronger reasons: a canvas would delete 64
+  // `data-testid`s and the `data-piece` attribute — the only machine-readable
+  // read of the board that is not a `page.evaluate` into engine internals — and
+  // would import the DPR blit hazard a `1fr` grid with `aspect-ratio: 1/1`
+  // structurally cannot have. The joystick entry above records the same refusal
+  // against the same gate.
+  seqtris:
+    'the 8×8 WELL (176 CSS px) plus the LAUNCHPAD SCENE COLUMN (52 px) are the plate, and both are structurally invisible to `contentW`: the well is a CSS grid of 64 `<span>`s — no `[data-cell-key]`, no canvas (deliberately; a canvas would delete the 64 testids and the `data-piece` attribute and import a DPR blit hazard this module cannot have), and no text — while the column contributes only the text ranges of its six captions, never its boxes. MEASURED on this branch: content 256, face body 300, slack 44 against a 40 px ceiling. The 44 decomposes exactly as 22 px of EDITOR padding (chrome) + the 22 px by which the rightmost text range falls short of the module-shell edge; `.module-shell` is 256 px and is sized BY the face\'s own 234 px play row, so every pixel is drawn. ⚠ NOT RECLAIMABLE, AND NOT FIXABLE BY WIDENING: both terms are invariant under the well\'s size, so growing the well moves the plate and the ink together. See the measured table above.',
+
   // ── THE CODE-BUFFER PAIR — THE PLATE IS THE BUFFER, AND THE BUFFER IS NOT
   //    "INK" BY THIS GATE'S DEFINITION ───────────────────────────────────────
   //

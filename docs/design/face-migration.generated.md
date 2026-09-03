@@ -12,8 +12,8 @@ Every registered module carries exactly one **disposition**: what kind of work i
 |  | count |
 |---|---|
 | registered modules | 197 |
-| done (faced + promoted) | 190 |
-| remaining (excludes organizational-native) | 4 |
+| done (faced + promoted) | 192 |
+| remaining (excludes organizational-native) | 2 |
 | registered with NO disposition (must be zero) | 0 |
 | inventory entries naming a dead def (must be zero) | 0 |
 
@@ -21,9 +21,9 @@ Every registered module carries exactly one **disposition**: what kind of work i
 
 | disposition | what it means | modules | done |
 |---|---|---|---|
-| `generic-face` | author a `face` and rank the controls — no new platform capability | 190 | 190 |
+| `generic-face` | author a `face` and rank the controls — no new platform capability | 192 | 192 |
 | `blocked` | would be a face today but for the named capability, and nothing else | 0 | — |
-| `bespoke-surface` | the primary interaction is not param-shaped — needs a purpose-built surface | 4 | — |
+| `bespoke-surface` | the primary interaction is not param-shaped — needs a purpose-built surface | 2 | — |
 | `organizational-native` | rack furniture; not a migration at all | 3 | — |
 
 ## What each blocker buys
@@ -187,6 +187,7 @@ author a `face` and rank the controls — no new platform capability.
 | `scope` | audio | done | — |
 | `score` | audio | done | — |
 | `scoreboard` | video | done | — |
+| `seqtris` | audio | done | — |
 | `shapedramps` | video | done | — |
 | `shapegen` | video | done | — |
 | `shapes` | video | done | — |
@@ -209,6 +210,7 @@ author a `face` and rank the controls — no new platform capability.
 | `tiler` | video | done | — |
 | `timelorde` | audio | done | — |
 | `tomtom` | audio | done | — |
+| `trails` | audio | done | — |
 | `treeohvox` | audio | done | — |
 | `tvLibrarian` | video | done | — |
 | `twotracks` | audio | done | — |
@@ -242,9 +244,7 @@ the primary interaction is not param-shaped — needs a purpose-built surface.
 | module | domain | state | blockers |
 |---|---|---|---|
 | `clipplayer` | audio | — | — |
-| `seqtris` | audio | — | — |
 | `toybox` | video | — | `needs-media-controller` |
-| `trails` | audio | — | — |
 
 ## `organizational-native`
 

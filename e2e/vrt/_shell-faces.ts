@@ -5378,6 +5378,146 @@ export const FACES = [
     ],
   },
 
+  // ── SEQTRIS — the entry whose determinism argument is that IT ALREADY HAD
+  //    ONE, and which therefore takes NO PIN ─────────────────────────────────
+  //
+  // ⚠ THIS IS THE RARE CASE WHERE THE RIGHT ANSWER IS "ADD NO SEAM", and it is
+  // stated at length precisely because the three nearest neighbours in this
+  // file (modtris, pong, gibribbon) all take one, and a reader copying the
+  // shape here would be adding machinery to pin a thing that does not move.
+  //
+  // ⚠ UNLIKE modtris, pong, frogger AND skifree, SEQTRIS WAS NEVER IN
+  // `EXEMPT_FROM_VRT`. There is nothing to discharge, and the CARD baseline
+  // (`vrt.spec.ts/seqtris.png`) has been green since the module shipped. The
+  // card's own header says why, and the claim is DERIVED rather than trusted in
+  // `packages/web/src/lib/ui/modules/seqtris-face-model.test.ts` (CLAIM 8):
+  //
+  //   * `createSeqtrisState` seeds from `SEQTRIS_DEFAULT_SEED = 0x5e9721` — a
+  //     FIXED constant — and the engine contains no `Math.random` at all. So
+  //     modtris' `__modtrisVrtSeed` half has NO COUNTERPART here: there is no
+  //     trajectory to choose, because there is only one.
+  //   * the game advances ONLY on a clock edge — `tick()` returns early on
+  //     `edges <= 0` — and a face scene patches nothing into `clock`. So
+  //     modtris' `__modtrisVrtTicks` half has no counterpart either: the board
+  //     is TIME-INVARIANT at rest by construction rather than by being stepped
+  //     to a chosen position and then stopped. (Measured further: gravity is a
+  //     clock DIVISOR, so even a scene that DID patch a clock would hold the
+  //     same picture for the first seven pulses at the default GRAV of 8.)
+  //
+  // ⚠ NO `videoFaceWhy`. That field boots the VIDEO ZONE and turns on
+  // `freezeFaceVideo`, which WRITES `params.freeze`; seqtris declares no
+  // `freeze` param, so the write would invent an undeclared key and the
+  // assertion after it would be measuring a freeze that never happened — the
+  // `timelorde` hazard, verbatim. This is an AUDIO def and reaches its channel
+  // column on the ordinary path.
+  //
+  // ⚠ AND NO `freeze` ParamDef EITHER, on this file's own measured rule: a
+  // `params` edit is a contract-lock change bought for a WEAKER guarantee (it
+  // holds whichever frame the harness caught, a different frame per boot),
+  // which is precisely what this module does not need.
+  //
+  // ── WHAT EACH SCENE PINS, AND THEY ARE NOT THE SAME ARGUMENT ─────────────
+  //
+  // `face-seqtris-compact` — ⚠ THE TILE HAS A PICTURE, which is the divergence
+  // from modtris' compact entry and the reason that entry's paragraph must NOT
+  // be copied here. `glyph: 'none'` means no glyph, but the `tileBody` paints
+  // the live 8x8 well plus the bind lamp, so this baseline really does carry
+  // the board. It is deterministic for the SEEDED-BAG reason above, not for
+  // modtris' "there is nothing to draw on a lane tile" reason.
+  //
+  // `face-seqtris-dock` — the well at 176 px, the eight-row hardware scene
+  // column (both dead spacers included) and the bind row. ⚠ THE ONE REAL
+  // DETERMINISM RISK ON THIS MODULE WAS NEVER THE GAME: it was
+  // `seqtrisStatusMessage()`, which returns `unsupported` when
+  // `webMidiPresent()` is false and `idle` when it is true — TWO DIFFERENT
+  // STRINGS IN THE SAME PIXEL REGION, decided by the runner rather than by the
+  // code. ⚠ THAT RISK IS NOW STRUCTURALLY ABSENT rather than merely settled:
+  // the promotion DELETED the painted status paragraph (all six strings moved
+  // to the lamp's `StatusLed` detail, reaching aria-label and title only), so
+  // neither string is in the frame to move.
+  // ⚠ THE LAMP BESIDE THEM IS THE HALF THAT MUST BE CHECKED RATHER THAN
+  // ASSUMED, and the answer CHANGED ONCE ON THIS BRANCH — read it before
+  // copying the shape. `lit` is `bound || problem` and `tone` is
+  // `problem ? 'warn' : 'accent'`, so an `unsupported` runner WOULD light the
+  // lamp amber where an `idle` one leaves it dark. That is deliberate rather
+  // than an oversight: every tone rule in `StatusLed.svelte` is gated on `.lit`
+  // (`.status-led.warn.lit .lamp`, `.status-led.warn.lit .cap`), so the
+  // readiness-only `lit={bound}` this body shipped first made `tone="warn"`
+  // DEAD CSS and left a denied grant PIXEL-IDENTICAL to idle — a device surface
+  // whose fault was invisible. Visibility is worth more than pixel-invariance
+  // here, and the invariance was never actually load-bearing:
+  //   * `webMidiPresent()` is `typeof navigator.requestMIDIAccess === 'function'`
+  //     and every runner this suite uses is Chromium, which has it — so the
+  //     resting kind is `idle`: not bound, not a problem, LAMP DARK;
+  //   * and that is evidence, not a prediction. The CARD baseline
+  //     (`vrt.spec.ts/seqtris.png`) has painted the `idle` STRING since the
+  //     module shipped and has never flapped, which is the same predicate under
+  //     observation on the same runners for longer than this face has existed.
+  // ⚠ SO A MOVE ON THIS SCENE'S BIND ROW MEANS THE RUNNER LOST WEB MIDI — worth
+  // knowing rather than worth hiding, and the one thing a pin here would have
+  // concealed.
+  //
+  // ── ⚠ COMPACT REMOVED 2026-09-02 — THE painter CLASS, AND THE CPU HALF OF IT
+  //
+  // The mirrorpool / matrixMix / painter placement-sensitivity class, caught in
+  // the act on this branch. Same scene, same product code, and the ONLY delta
+  // between the two runs is `vrt-strict-timings.generated.json` — CI planner
+  // data that touches no product and no spec:
+  //
+  //   run 33684552094 — face-seqtris-compact on vrt-strict shard  6 — PASSED
+  //   run 33692179171 — face-seqtris-compact on vrt-strict shard  5 — FAILED
+  //
+  // RE-PINNING A COST ARTIFACT RE-BINS THIS LANE, so "it was green last run" was
+  // true and worthless. That much is painter's finding, verbatim.
+  //
+  // ⚠ BUT THE MECHANISM IS NOT painter's, AND SAYING SO IS THE POINT — #2322's
+  // `awaitCaptureBoxSettled` DID ITS JOB HERE. painter's signature was the
+  // capture-before-settle one: 45 of 49 differing pixels in column x=87, the
+  // last column of an 88 px capture, with the interior byte-identical. This
+  // scene shows NO border column at all. Measured, expected vs actual:
+  //
+  //   15 differing pixels of 7,216. Max channel-sum delta 14 (+7,+2,+5 on one
+  //   pixel); 13 of the 15 differ by <=3 across all four channels, i.e. inside
+  //   the fleet's own +/-2-LSB band that `threshold: 0.01` absorbs. The two that
+  //   exceed it sit at x=37-38, y=13-14 — ON THE QUANT KnobConic's CONIC-GRADIENT
+  //   ARC — plus two rounded-corner pixels at y=0. The well, all 64 cells, the
+  //   `l` piece, the PAD lamp and the EXPAND pill are byte-identical.
+  //
+  // ⚠ AND THE VARIABLE IS THE SILICON, WHICH IS WHY A RE-CAPTURE CANNOT FIX IT.
+  // Read from each shard's own `/proc/cpuinfo` step:
+  //
+  //   run 33684552094 shard  6 — AMD EPYC 7763 — PASSED   (shard 5 that run: 7763)
+  //   run 33692179171 shard  5 — AMD EPYC 9V74 — FAILED
+  //
+  // The fleet is MIXED and the CPU model is not a function of the shard index,
+  // so the re-bin is only what moved this scene onto different silicon. A
+  // conic-gradient arc is trigonometric rasterisation and is the most
+  // CPU-sensitive thing on this plate; +/-7 LSB is 3.5x the band the gate is
+  // calibrated for. Neither render is "wrong" — unlike painter, where border
+  // symmetry made "which image is correct" a testable claim and answered it — so
+  // `vrt:accept` or a `GREP=seqtris` re-author would only bake in whichever CPU
+  // the capture happened to land on and re-roll the same die next re-bin.
+  //
+  // ⚠ NOT A FLEET-WIDE BOMB, AND THAT WAS CHECKED RATHER THAN ASSUMED: FIFTEEN
+  // other `face-*-compact` scenes ran on that SAME 9V74 shard (adsr, cloudseed,
+  // destroy, destructor, gibribbon, midiCvBuddy, moog904c, moog956, numpadPlus,
+  // onetonine, …) and every one of them PASSED. KnobConic under 9V74 is fine in
+  // general; this tile's particular arc sits on a rounding knife-edge.
+  //
+  // THE DOCK SCENE IS UNAFFECTED AND STILL GATES — it passed on shard 12 of the
+  // same red run — and it is the scene that carries this promotion's whole
+  // surface: the 176 px well, the eight-row hardware scene column with both dead
+  // spacers, CONNECT/Unbind and the bind lamp. What the compact scene alone
+  // pinned — that the LANE TILE paints a live board — is covered without pixels
+  // by `e2e/tests/seqtris-face.spec.ts` leg 1, which asserts 64 cells, a
+  // non-transparent computed background, and a piece colour DIFFERENT from an
+  // empty cell's. That is PAINT rather than presence, and it is renderer-tolerant
+  // by construction.
+  //
+  // Restore when the placement-sensitivity class is fixed: delete the `scenes`
+  // line and dispatch `GREP=seqtris task vrt:commit`.
+  { type: 'seqtris', pages: 1, scenes: ['dock'] },
+
   // ── NIBBLES — the game group's fourth face, and the one whose determinism
   //    seam ALREADY EXISTED and is ALREADY PROVEN BYTE-IDENTICAL ────────────
   //
@@ -5616,6 +5756,62 @@ export const FACES = [
   // canvas anywhere on the surface: there is no clock to pin and nothing that
   // advances between frames.
   { type: 'chromaconsole', pages: 2 },
+
+  // ── TRAILS — the FOURTH binder baselined, and the first with a PICTURE ─────
+  {
+    type: 'trails',
+    // TWO bands: `device` (the CONNECT cell) and `signal` (the three knobs).
+    // Nothing is padded to reach a tab rail — `DOCK_TAB_MIN_BANDS` is 7.
+    pages: 2,
+
+    // ⚠ THE DETERMINISM ARGUMENT IS midiclock's, ptzcam's AND chromaconsole's,
+    // TRIPLED — three
+    // independent conditions, each of which alone makes the capture stable, and
+    // the reason a canvas on a hardware-fed surface is safe to baseline at all.
+    //
+    //   1. `requestMIDIAccess` is NEVER CALLED until someone presses CONNECT,
+    //      and this scene presses nothing. `midi.spec.ts` pins "page load never
+    //      requests Web-MIDI access" globally, and `trails.spec.ts` pins it for
+    //      this module specifically (`accessCallCount()` is 0 after a spawn).
+    //   2. Even a granted origin binds NOTHING here: the matcher is `/trails/i`
+    //      over port NAMES, and no CI machine has a Bela Trails on USB.
+    //   3. Even a bound port streams nothing without a finger on the pad.
+    //
+    // ⚠ AND THE CANVAS IS DETERMINISTIC BY ITS OWN DIRTY CHECK, not merely by
+    // the absence of a device — which is the half worth stating because this is
+    // the roster's first hardware-mirror picture. `axisMessages` is a monotonic
+    // counter on the engine handle; `TrailsPadMirror`'s rAF compares it (plus the
+    // packed gate mask and the CSS size) against the last painted frame and
+    // returns without touching the 2-D context when nothing changed. With no
+    // device attached nothing ever changes, so the canvas paints EXACTLY the
+    // resting grid ONCE and then never again. There is no animation to settle
+    // and nothing that advances between frames.
+    //
+    // So the capture is: the resting pad face with its centre cross, the hatched
+    // Touch Bar along the bottom edge, the `bar — not sent over USB-MIDI`
+    // caption, a DARK LINK lamp, the MON toggle, the pre-connect hint, and the
+    // ranked control cells.
+    //
+    // ⚠ MON IS CLOSED, so the one non-deterministic region on the surface is not
+    // merely stable — it is NOT RENDERED. `monOpen` is component state defaulting
+    // false and nothing in this scene clicks it, so neither the
+    // `loops N · edges a/b/c/d` ratio nor the monitor summary exists in the DOM
+    // at capture time. That is stronger than pinning them.
+    //
+    // ⚠ NO `videoFaceWhy` AND NO `simPin`. `domain: 'audio'` with no video port,
+    // so the node boots the ordinary audio way; and there is no clock to pin,
+    // because the only thing that could advance the picture is an inbound MIDI
+    // frame, which requires a press this suite does not perform. Pinning a clock
+    // here would buy a WEAKER guarantee than the dirty check already gives.
+    //
+    // ⚠ WHAT THIS BASELINE DOES NOT COVER, stated rather than implied: the
+    // post-connect states — bound, streaming, MON open. Their strings are pinned
+    // in `trails-status-model.test.ts` and `trails-monitor.test.ts`, their
+    // wiring in `trails-face-model.test.ts`, and their behaviour in
+    // `trails.spec.ts` (which drives a SIMULATED device through the real
+    // decoder). Reaching them in VRT would mean installing that double in the
+    // VRT harness, which is a change to the harness rather than to this module.
+  },
 
 ] as const;
 
