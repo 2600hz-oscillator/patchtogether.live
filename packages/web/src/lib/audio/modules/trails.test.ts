@@ -353,10 +353,22 @@ describe('trails def shape', () => {
     expect(trailsDef.outputs.map((p) => p.id)).not.toContain('bar');
   });
 
-  it('declares NO face — the bespoke-surface disposition is deliberate', () => {
-    // Authoring a face IS the promotion (module-face-lint's deny-by-default
-    // anchor), and the inventory entry records why this module is not.
-    expect((trailsDef as { face?: unknown }).face).toBeUndefined();
+  it('declares a face, and the CONNECT gesture ranks FIRST on it', () => {
+    // ⚠ THIS TEST USED TO ASSERT THE OPPOSITE — `face` is `undefined`, "the
+    // bespoke-surface disposition is deliberate" — and that was true until the
+    // surface shipped (2026-09-02). INVERTED rather than deleted, because what
+    // it pins is the same thing it pinned then: authoring a `face` IS the
+    // promotion (module-face-lint's deny-by-default anchor), so this field is
+    // load-bearing in both directions and a silent deletion of it would
+    // un-promote the module while leaving the extension and the cell in place.
+    //
+    // The face's STRUCTURE — the forced `glyph: 'none'`, the tier ladder, the
+    // audition probe, the page cover — is pinned in
+    // `$lib/ui/workflow/trails-face-model.test.ts`, beside the registries that
+    // resolve it. This leg is only the def-side existence claim.
+    expect(trailsDef.face).toBeTruthy();
+    expect(trailsDef.face!.order[0]).toBe('trails-connect-{n}');
+    expect(trailsDef.face!.extension).toBe('trails');
   });
 });
 
