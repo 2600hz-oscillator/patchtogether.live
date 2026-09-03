@@ -1858,19 +1858,62 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
       'and it had to be: four declared CV inputs (queue1..4) bottom out in `data.slots`, which ' +
       'until this PR only the legacy card could write.',
   },
+  // ⚠ MOVED HERE FROM `bespoke-surface` ON PROMOTION, and the move is MECHANICAL
+  // rather than a change of mind: `migrationDone` is
+  // `disposition === 'generic-face' && isFaced`, and the gate asserts the
+  // done-set IS STRICT_FACES in BOTH directions — so a faced module left on
+  // `bespoke-surface` reddens it. `skifree` and `modtris`, the two nearest
+  // siblings, were moved for exactly this reason.
+  //
+  // ⚠ AND UNUSUALLY, EVERY FACT IN THE OLD `why` WAS TRUE — verified line by
+  // line against `SeqtrisCard.svelte` before this edit, which is worth stating
+  // because the standing program finding is that inventory prose is
+  // systematically false (7/7 prior promotions found theirs wrong). Only the
+  // CONCLUSION was stale, and the extension seam is what retires it: the well,
+  // the hardware column and CONNECT go into `fullViewBody` + `tileBody`, so the
+  // two knobs can be ranked WITHOUT leaving the board and the controller
+  // behind. The old text, preserved because it is still the argument:
+  //
+  //   "a GAME plus a HARDWARE BINDER, and neither half is generic-face
+  //    material. The well is an 8×8 picture of live gameplay — sixty-four
+  //    coloured cells painted from transient engine state — and the eight
+  //    controls beside it are not params: they are the LAUNCHPAD'S OWN SCENE
+  //    COLUMN, laid out in hardware order (including the two dead buttons)
+  //    precisely so the mapping is learnable from the screen. Ranking them as
+  //    cells would reorder them, which is the one thing they must not do. The
+  //    CONNECT gesture and the bound / no-device / claimed status are WebMIDI
+  //    service state rather than params — the outToLaunch + chromaconsole +
+  //    ptzcam argument. Two knobs (grav, quant) are the only generic material,
+  //    and a face that ranked those would move them to the lane and leave the
+  //    board and the controller behind."
   {
     type: 'seqtris',
-    disposition: 'bespoke-surface',
-    why:
-      'a GAME plus a HARDWARE BINDER, and neither half is generic-face material. The well is an ' +
-      '8×8 picture of live gameplay — sixty-four coloured cells painted from transient engine ' +
-      'state — and the eight controls beside it are not params: they are the LAUNCHPAD\'S OWN ' +
-      'SCENE COLUMN, laid out in hardware order (including the two dead buttons) precisely so the ' +
-      'mapping is learnable from the screen. Ranking them as cells would reorder them, which is ' +
-      'the one thing they must not do. The CONNECT gesture and the bound / no-device / claimed ' +
-      'status are WebMIDI service state rather than params — the outToLaunch + chromaconsole + ' +
-      'ptzcam argument. Two knobs (grav, quant) are the only generic material, and a face that ' +
-      'ranked those would move them to the lane and leave the board and the controller behind.',
+    disposition: 'generic-face',
+    note:
+      'DONE. Two ranked params (GRAV, QUANT) as DERIVED cells — no `paramCells`, because a knob ' +
+      'is what `paramCellKind` already resolves for both and there is no `knob` literal to ' +
+      'declare — plus BOTH extension body slots. `fullViewBody` carries the well, the eight-row ' +
+      'hardware scene column INCLUDING the two dead buttons, CONNECT / Unbind, the index-keyed ' +
+      'port picker and the bind LAMP that carries the six status strings on its `detail`; ' +
+      '`tileBody` carries the same well read-only plus that lamp, so the lane answers "is it ' +
+      'playing, and is my Launchpad on it" without expanding. ' +
+      '⚠ THE WELL STAYS DOM — a CSS grid of 64 spans, not a canvas: the modtris/skifree DPR ' +
+      'lessons are canvas-BLIT hazards that a 1fr grid with a 1/1 aspect-ratio cannot have, and ' +
+      'converting it would delete 64 testids plus the `data-piece` attribute (the only ' +
+      'machine-readable read of the board that is not a page.evaluate into engine internals). ' +
+      '⚠ AND THE BODIES SUBSCRIBE RATHER THAN rAF, the sharpest divergence from both siblings: ' +
+      'this factory PUSHES on every state change, so a poll would make an idle, unclocked ' +
+      'seqtris do work forever. ⚠ THE CARD\'S `revision` SEAM IS CARRIED OVER AND MADE SHARED — ' +
+      '`launchpadStatus()` reads a per-binding closure that nothing invalidates, so omitting the ' +
+      'tick freezes the lamp, its status detail and the CONNECT/Unbind swap silently, and a lane ' +
+      'tile mounted beside an open dock pane would otherwise disagree with it about one ' +
+      'hardware claim. ⚠ NO simPin AND NO VRT EXEMPTION TO DISCHARGE: unlike modtris, pong, ' +
+      'frogger and skifree, seqtris was NEVER in EXEMPT_FROM_VRT — the bag is seeded from a ' +
+      'fixed constant and `tick()` returns early on `edges <= 0`, so with nothing patched into ' +
+      'CLOCK the board is time-invariant at rest BY CONSTRUCTION. ⚠ NO NEXT-PIECE PREVIEW was ' +
+      'added: `SeqtrisSnapshot` exposes no `next` field and the card never had one, so inventing ' +
+      'one would be a snapshot-shape change and a redesign rather than the 1:1 parity asked for. ' +
+      'CONTRACT, ART AND ATTEST ALL NIL.',
   },
   // ⚠ MOVED HERE FROM `bespoke-surface` (2026-08-31). Unusually, EVERY FACT IN
   // THE OLD `why` WAS TRUE and only the conclusion was stale. It read: "a RICH
