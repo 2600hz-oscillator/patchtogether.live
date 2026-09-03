@@ -56,12 +56,20 @@ async function boot(page: Page): Promise<void> {
 async function openDock(page: Page, nodeId: string): Promise<Locator> {
   const shell = page.locator(`${laneNode(nodeId)} [data-testid="module-shell"]`);
   await expect(shell).toBeVisible({ timeout: BOOT_MS });
+  const opener = shell.getByTestId('shell-open-dock');
   const dockShell = page
     .getByTestId('dock-full-view')
     .locator(`[data-testid="module-shell"][data-shell-tier="dock"][data-shell-node="${nodeId}"]`);
   await expect(async () => {
     if ((await dockShell.count()) === 0) {
-      await shell.getByTestId('shell-open-dock').click();
+      // ⚠ WAIT FOR THE BUTTON, THEN BOUND THE CLICK. A bare `.click()` inherits
+      // the TEST timeout, so a button that is present-but-not-actionable — which
+      // is exactly what the lane tile is while a previous dock pane tears down —
+      // consumed the whole 180 s budget instead of failing this attempt and
+      // letting the retry do its job. MEASURED on CI: two hard timeouts in one
+      // shard, both here and at the tab row below.
+      await expect(opener).toBeVisible({ timeout: 5_000 });
+      await opener.click({ timeout: 5_000 });
     }
     await expect(dockShell).toBeVisible({ timeout: 2_000 });
   }).toPass({ timeout: SLOW_BOOT_TEST_TIMEOUT_MS });
@@ -254,9 +262,11 @@ test.describe('TOYBOX face — the console survives the promotion that deletes i
     await body.getByTestId('toybox-face-tab-presets').click();
     await expect(body.getByTestId('toybox-preset-select')).toBeVisible();
     await expect(body.getByTestId('toybox-randomize')).toBeVisible();
-    await body.getByTestId('toybox-preset-save').click();
-    await expect(body.getByTestId('toybox-preset-name-input')).toBeVisible();
-    await body.getByTestId('toybox-preset-save-cancel').click();
+    // Bounded, for the reason `openDock` states: an unbounded click on a
+    // not-yet-actionable control spends the TEST budget rather than failing.
+    await body.getByTestId('toybox-preset-save').click({ timeout: 10_000 });
+    await expect(body.getByTestId('toybox-preset-name-input')).toBeVisible({ timeout: 10_000 });
+    await body.getByTestId('toybox-preset-save-cancel').click({ timeout: 10_000 });
 
     // The LAYER band is persistent across all three — every tab references
     // layers and none owns them, so it must never be the thing that went away.
@@ -387,24 +397,61 @@ test.describe('TOYBOX face — the console survives the promotion that deletes i
     // The console below is fully operable with the screen off — building a
     // patch blind on a projector is the normal show posture.
     await expect(body.getByTestId('toybox-face-layer-band')).toBeVisible();
-    await body.getByTestId('toybox-face-tab-combine').click();
+    await body.getByTestId('toybox-face-tab-combine').click({ timeout: 10_000 });
     await expect(body.getByTestId('toybox-graph-svg')).toBeVisible();
 
     // And it comes back.
-    await toggle.click();
+    await toggle.click({ timeout: 10_000 });
     await expect(toggle).toHaveAttribute('aria-pressed', 'true');
     await expect(body.getByTestId('toybox-face-canvas')).toBeVisible();
+  });
 
-    // The state is on the NODE, so it survives a remount rather than dying with
-    // the component (#1531 / #1574 / #1583).
-    await toggle.click();
+  // ⚠ ITS OWN TEST, AND THAT IS A CI FINDING RATHER THAN TIDINESS. This leg
+  // used to sit at the tail of the SCREEN test, after TWO frame-observation
+  // windows had already run — so a dock CLOSE and RE-OPEN, the slowest gesture
+  // in this file, was spending what was left of one 180 s budget. It timed out
+  // hard on shard 1/12. Split, it gets a whole budget for one claim, and the
+  // claim is sharper for standing alone.
+  test('the SCREEN state is on the NODE — it survives the dock closing @video', async ({ page }) => {
+    test.setTimeout(SLOW_BOOT_TEST_TIMEOUT_MS * 2);
+    await boot(page);
+    await spawnPatch(page, [{ id: NODE, type: 'toybox', domain: 'video' }], [], {
+      mountTimeout: BOOT_MS,
+    });
+    const dock = await openDock(page, NODE);
+    const body = dock.getByTestId('toybox-face-body');
+    await expect(body).toBeVisible({ timeout: SLOW_BOOT_TEST_TIMEOUT_MS });
+
+    // Switch it OFF, then throw the whole surface away.
+    await body.getByTestId('toybox-face-screen-toggle').click({ timeout: 10_000 });
+    await expect(body.getByTestId('toybox-face-screen-toggle')).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    );
     await page.keyboard.press('Escape');
     await expect(page.getByTestId('dock-full-view')).toHaveCount(0);
+
+    // ⚠ THE GRAPH IS THE FIRST WITNESS. A `$state` in the body would be gone
+    // now; `node.data.previewCollapsed` is what makes the answer survive the
+    // component (#1531 / #1574 / #1583), and reading it costs no remount.
+    expect(
+      await page.evaluate((id) => {
+        const w = globalThis as unknown as {
+          __patch?: { nodes: Record<string, { data?: { previewCollapsed?: boolean } }> };
+        };
+        return w.__patch?.nodes?.[id]?.data?.previewCollapsed ?? null;
+      }, NODE),
+      'previewCollapsed must live on the NODE, not in the component that just unmounted',
+    ).toBe(true);
+
+    // …and the second witness: a fresh body READS it back rather than
+    // defaulting to ON.
     const reopened = await openDock(page, NODE);
     await expect(reopened.getByTestId('toybox-face-screen-toggle')).toHaveAttribute(
       'aria-pressed',
       'false',
     );
+    // The engine never stopped across any of it.
     expect(await framesDrawn(page, NODE)).toBeGreaterThan(0);
   });
 });
