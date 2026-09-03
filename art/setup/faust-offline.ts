@@ -85,7 +85,7 @@ export interface FaustOfflineOptions {
   /** Output NAMES in FAUST OUTPUT INDEX order (position k = Faust output k).
    *  The returned record is keyed by these — ready for pinAll. Capture a
    *  PREFIX of the outputs to keep just the signature ports (e.g. mixmstrs'
-   *  first 6 patchable outs, dropping the 6 trailing meter taps). */
+   *  first 6 patchable outs, dropping the 16 trailing stereo tap legs). */
   outputs: readonly string[];
   sampleRate?: number;
   blockSize?: number;

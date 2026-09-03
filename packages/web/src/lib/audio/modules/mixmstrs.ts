@@ -85,6 +85,104 @@ const NUM_CHANNELS = MIXMSTRS_CHANNELS.length;
  *  enough not to snap. */
 const DUCK_GLIDE_S = 0.005;
 
+// ── WHERE EACH `recTap` VALUE TAKES ITS SIGNAL ──────────────────────────────
+//
+// ⚠ THE TAP-UPSTREAM-OF-THE-DUCK RULE APPLIES TO `BOARD IN` ONLY, and stating
+// that plainly is the whole reason this block exists. `BOARD IN` is deliberately
+// lifted from ahead of MON's attenuator so a take can capture the live input
+// WHILE a previous take plays and ducks it. The other two taps sit downstream of
+// the merger, i.e. downstream of the duck, and there is no version of them that
+// does not:
+//
+//   BOARD IN    the raw patched input, before the duck, before EQ/comp/fader.
+//               Records what you played. Unaffected by MON, by the fader, and
+//               by the launcher return.
+//
+//   POST FADER  the channel after EQ → comp → fader. BY DEFINITION IT RECORDS
+//               THE DUCKED SIGNAL, and it also records the normalled launcher
+//               return, because both join the channel upstream of the strip.
+//               So under `MON: clip-auto`, POST FADER on a lane whose clip is
+//               playing records THE CLIP, not the live input — which is the
+//               correct meaning of "print the channel as the mix hears it", and
+//               is a re-sample rather than a capture. A muted channel records
+//               silence here; that is the point of the tap.
+//
+//   MASTER      the whole mix bus, post master volume: every channel, both
+//               returns, everything. Also post-duck by construction.
+//
+// ⚠ MASTER IS A FEEDBACK PATH, AND THAT IS INHERENT RATHER THAN A BUG. Lane N's
+// clip plays into channel N, channel N sums into master, and MASTER records
+// master — so a take captures the clips already playing. That is exactly what
+// resampling IS, and it is the reason the Deluge has the gesture at all; but it
+// means recording MASTER into a lane that is currently playing folds that lane's
+// own output back in. The recorder does not forbid it: the user asked to record
+// the mix, and the mix contains the clip.
+/** Splitter channel of the first per-channel POST-FADER tap. Outputs 0-5 are
+ *  master L/R + send1 L/R + send2 L/R; 6 onward are the eight channels' taps,
+ *  L then R per channel. */
+export const MIXMSTRS_POST_FADER_TAP_OFFSET = 6;
+
+/** Splitter channels carrying the MASTER bus — `recTap: MASTER`. */
+export const MIXMSTRS_MASTER_TAP = { l: 0, r: 1 } as const;
+
+/** Splitter channels carrying 0-based channel `ch0`'s POST-FADER pair.
+ *
+ *  ⚠ ONE PLACE COMPUTES THIS. The meter analysers and the clip recorder address
+ *  the same sixteen outputs, and a second copy of `6 + 2*ch` is how one of them
+ *  ends up metering channel 4 while the other records channel 5. PURE. */
+export function mixmstrsPostFaderTap(ch0: number): { l: number; r: number } {
+  const base = MIXMSTRS_POST_FADER_TAP_OFFSET + 2 * ch0;
+  return { l: base, r: base + 1 };
+}
+
+/** One tappable leg: connect `node`'s output index `output` into a recorder
+ *  input. Never an output PORT — none of these are patchable jacks. */
+export interface MixmstrsTapLeg {
+  node: AudioNode;
+  output: number;
+}
+
+/** Every tap point the factory publishes for the clip recorder — one roster per
+ *  `recTap` value, served by `read('recTaps')`. All three are LIVE nodes inside
+ *  the running factory graph; connecting an `AudioWorkletNode` input to a leg
+ *  is the whole wiring the recorder slice needs.
+ *
+ *  ⚠ THE ROSTERS ARE THE ADDRESSING, IN ONE PLACE. A recorder that computed
+ *  `6 + 2*ch` for itself would be the second copy of the splitter-index math
+ *  `mixmstrsPostFaderTap` exists to forbid; a recorder that walked the graph
+ *  for the boardIn gains would re-discover wiring this factory already owns.
+ *  It reads this object and picks with `mixmstrsRecTapPair`. */
+export interface MixmstrsRecTaps {
+  /** `recTap: 0` (BOARD IN) — the 16 channel-leg unity inserts, port order
+   *  (ch1L, ch1R, … ch8R). Upstream of the MON duck BY CONSTRUCTION — see the
+   *  semantics block above. The return ports' inserts are NOT here: a record
+   *  lane is a channel, and the returns have no lane. */
+  board: readonly MixmstrsTapLeg[];
+  /** `recTap: 1` (POST FADER) — the 16 stereo tap legs off the output
+   *  splitter, L then R per channel. Downstream of the duck by definition. */
+  postFader: readonly MixmstrsTapLeg[];
+  /** `recTap: 2` (MASTER) — the mix bus pair, the same splitter outputs the
+   *  `masterL`/`masterR` jacks publish. */
+  master: readonly [MixmstrsTapLeg, MixmstrsTapLeg];
+}
+
+/** The stereo leg pair a recorder connects for channel `ch0` (0-based) under
+ *  `recTap` value `tap`. PURE selection over the published rosters — the one
+ *  place (tap value, channel) becomes a pair of legs. MASTER is the same pair
+ *  for every channel: eight lanes recording MASTER is eight copies of the mix,
+ *  which is what the user asked for. */
+export function mixmstrsRecTapPair(
+  taps: MixmstrsRecTaps,
+  tap: number,
+  ch0: number,
+): { l: MixmstrsTapLeg; r: MixmstrsTapLeg } {
+  const t = Math.max(0, Math.min(2, Math.round(tap)));
+  if (t === 2) return { l: taps.master[0], r: taps.master[1] };
+  const roster = t === 1 ? taps.postFader : taps.board;
+  const c = Math.max(0, Math.min(NUM_CHANNELS - 1, Math.floor(ch0)));
+  return { l: roster[2 * c]!, r: roster[2 * c + 1]! };
+}
+
 /** Per-channel CLIP-RECORD arm ids (`ch{N}_rec`), derived from the channel list. */
 export const MIXMSTRS_REC_ARM_IDS: readonly string[] = MIXMSTRS_CHANNELS.map((ch) => `ch${ch}_rec`);
 /** Per-channel MON ids (`ch{N}_mon`), derived from the channel list. */
@@ -187,21 +285,19 @@ function buildParams(): readonly ParamDef[] {
   // construction, and the SCOPE partition the face model asserts in both
   // directions depends on the naming staying that way.
   //
-  // ⚠ `recTap` NAMES A STATE THIS BUILD CANNOT HONOUR, AND THAT IS FLAGGED.
-  // The owner kept the roster as designed, so all three tap points are named.
-  // Only BOARD IN is wired: POST FADER needs the `.dsp`'s own noted future
-  // change (8 STEREO taps replacing the 8 mono ones — the existing taps are
-  // measurably phase-blind and cannot serve), and MASTER, while cheap, is not
-  // wired in v1 either. Nothing consumes this param yet — the recorder lands in
-  // a later slice — so nothing is broken TODAY, but the slice that wires the
-  // recorder owns REFUSING a tap it cannot deliver rather than silently
-  // substituting BOARD IN. Stated here so that obligation cannot be lost.
+  // ⚠ ALL THREE TAPS ARE NOW DELIVERABLE — the roster no longer names a state
+  // this build cannot honour, and the refusal obligation that used to be
+  // recorded here is DISCHARGED rather than deferred. POST FADER required the
+  // `.dsp`'s own noted future change (8 STEREO taps replacing the 8 mono ones,
+  // because the mono sum is measurably phase-blind and could not serve); that
+  // landed, and MASTER was free all along. See the tap-semantics block above
+  // for what each one means relative to MON's duck.
   params.push({
     id: 'recTap', label: 'Tap', defaultValue: 0, min: 0, max: 2, curve: 'discrete',
     options: [
-      { value: 0, label: 'board', title: 'BOARD IN — the RAW patched channel input, before EQ, comp and fader (the only wired tap)' },
-      { value: 1, label: 'post',  title: 'POST FADER — needs the DSP stereo meter taps; not available in this build' },
-      { value: 2, label: 'mast',  title: 'MASTER — record the whole mix bus; not wired in this build' },
+      { value: 0, label: 'board', title: 'BOARD IN (default) — the RAW patched channel input, before the MON duck and before EQ, comp and fader. The only tap that captures what you played rather than what the mix hears' },
+      { value: 1, label: 'post',  title: 'POST FADER — the channel after EQ, comp and fader. Records the DUCKED signal and the launcher return with it, so under MON auto this re-samples the playing clip rather than capturing the live input' },
+      { value: 2, label: 'mast',  title: 'MASTER — the whole mix bus, every channel and both returns. A feedback path by construction: it captures the clips already playing, which is what re-sampling is' },
     ],
   });
   // The quality ladder. `studio` is the default and is NOT overkill: the tap is
@@ -825,7 +921,7 @@ export const mixmstrsDef: AudioModuleDef = {
       inputs[`comp${ch}`] = `CV that offsets channel ${ch}'s COMP macro amount.`;
       inputs[`ch${ch}_send1`] = `CV that offsets channel ${ch}'s SEND 1 amount.`;
       inputs[`ch${ch}_send2`] = `CV that offsets channel ${ch}'s SEND 2 amount.`;
-      controls[`ch${ch}_rec`] = `CLIP-RECORD ARM for channel ${ch}. OFF (default), ONCE = record exactly one loop into the clip launcher and stop, INF = record until STOP, which lands at the END of the current loop rather than immediately. The take is captured PRE-BOARD — the raw signal you patched in, before EQ, before the compressor, before the fader — so a muted channel still records, and a hot module that already exceeds ±1.0 is captured intact. Channel ${ch} records into launcher LANE ${ch}: the channel number and the lane number are the same number everywhere in this product. CV via the ch${ch}_rec input, so a gate can arm a channel.`;
+      controls[`ch${ch}_rec`] = `CLIP-RECORD ARM for channel ${ch}. OFF (default), ONCE = record exactly one loop into the clip launcher and stop, INF = record until STOP, which lands at the END of the current loop rather than immediately. WHAT gets recorded is the recTap selector's business: BOARD IN (the default) captures the raw signal you patched in — before the monitor duck, before EQ, before the compressor, before the fader — so a muted channel still records and a hot module that already exceeds ±1.0 is captured intact; POST FADER and MASTER instead print what the mix hears (see recTap). Channel ${ch} records into launcher LANE ${ch}: the channel number and the lane number are the same number everywhere in this product. CV via the ch${ch}_rec input, so a gate can arm a channel.`;
       inputs[`ch${ch}_rec`] = `CV (discrete) that sets channel ${ch}'s CLIP-RECORD arm — a gate can arm a channel: low = off, mid = one loop, high = record until STOP.`;
       inputs[`ch${ch}_mon`] = `CV (discrete) that sets channel ${ch}'s launcher-return MONITOR mode (live / both / clip-auto).`;
       controls[`ch${ch}_mon`] = `MONITOR mode for channel ${ch}'s launcher return. Lane ${ch} of the clip launcher is NORMALLED into this channel — an internal connection that BREAKS the moment you patch a cable into channel ${ch}'s input, exactly like a hardware normal. AUTO (the default) mutes the live input while lane ${ch}'s clip is playing, so recording a loop and hearing it take over needs no cable moves; BOTH sums the live input and the clip, for playing along with your own loop; LIVE ignores the return entirely. Only the LIVE branch is ducked — the returning clip is never attenuated. CV via the ch${ch}_mon input.`;
@@ -843,7 +939,7 @@ export const mixmstrsDef: AudioModuleDef = {
     inputs.send1Pre = 'CV (discrete) that switches the SEND 1 bus between POST-fader (low) and PRE-fader (high).';
     inputs.send2Pre = 'CV (discrete) that switches the SEND 2 bus between POST-fader (low) and PRE-fader (high).';
     // Bus-scoped clip-record controls.
-    controls.recTap = "WHERE a clip take is tapped from. BOARD IN (the default, and the only wired option) is the RAW patched channel input — before EQ, before the compressor, before the fader. Note that this is NOT the same point as a PRE-fader send: send1Pre/send2Pre's PRE means post-EQ, post-compressor, pre-fader, so 'pre-board' and 'pre-fader' are two different taps on this module. POST FADER would need the DSP's stereo per-channel taps (the shipped mono ones sum L+R and are measurably blind to phase, so they cannot serve), and MASTER would record the whole mix bus; neither is wired in this build.";
+    controls.recTap = "WHERE a clip take is tapped from, and the three answers are genuinely different recordings. BOARD IN (the default) is the RAW patched channel input — before the monitor duck, before EQ, before the compressor, before the fader — so it captures what you PLAYED: a muted channel still records, and a hot module that already exceeds ±1.0 is captured intact. Note this is NOT the same point as a PRE-fader send: send1Pre/send2Pre's PRE means post-EQ, post-compressor, pre-fader, so 'pre-board' and 'pre-fader' are two different taps on this module. POST FADER takes the channel after EQ, compression and the fader — which means it records the channel as the MIX hears it, including the monitor duck and the launcher return, so with MON on auto it re-samples the clip that is playing rather than the live input. MASTER takes the whole mix bus, every channel and both returns; it is a feedback path by construction, because a clip playing into a channel is part of the mix it records — which is exactly what re-sampling is.";
     controls.recQuality = 'RECORDING QUALITY for clip takes. STUDIO (the default) stores PCM f32 at the context sample rate: it costs no conversion at all — the samples are already f32 — and it is the only tier that cannot clip a hot pre-board tap, which matters because a module patched into a channel can exceed ±1.0 before the board ever sees it. STANDARD is PCM i16, half the bytes, and clips at ±1.0. COMPACT is Opus, which needs a Worker encoder per recording lane.';
     inputs.recTap = 'CV (discrete) that selects the clip-recording TAP point.';
     inputs.recQuality = 'CV (discrete) that selects the clip-recording QUALITY tier.';
@@ -901,7 +997,7 @@ export const mixmstrsDef: AudioModuleDef = {
     //
     //     jack --> boardIn[i] --> duck[i] --> merger, input i --> Faust
     //                  |
-    //                  '--> (the clip recorder taps HERE, a later slice)
+    //                  '--> read('recTaps').board — the BOARD IN legs
     //
     // ⚠ TWO NODES, NOT ONE, AND THE ORDER IS THE FEATURE. `boardIn` is the TAP
     // POINT — the raw patched channel input, before EQ, before the compressor,
@@ -941,11 +1037,12 @@ export const mixmstrsDef: AudioModuleDef = {
       duckGain.push(dk);
     }
 
-    // Output splitter: 14 channels. 0..5 are the patchable module outputs
-    // (masterL/R, send1L/R, send2L/R); 6..13 are the per-channel POST-FADER
-    // meter taps the DSP now emits (post EQ → comp → fader). The meter taps
-    // are NOT exposed as module ports — they only feed the VU analysers below.
-    const NUM_OUT = 6 + NUM_CHANNELS; // 14
+    // Output splitter: 22 channels. 0..5 are the patchable module outputs
+    // (masterL/R, send1L/R, send2L/R); 6..21 are the per-channel POST-FADER
+    // taps the DSP emits (post EQ → comp → fader), L then R per channel. The
+    // taps are NOT exposed as module ports — they feed the VU analysers below
+    // and the clip recorder's POST FADER legs (read('recTaps')).
+    const NUM_OUT = 6 + NUM_CHANNELS * 2; // 22 — the taps are STEREO now
     const splitter = ctx.createChannelSplitter(NUM_OUT);
     f.connect(splitter);
 
@@ -986,34 +1083,48 @@ export const mixmstrsDef: AudioModuleDef = {
     // ── Per-channel POST-FADER meter taps — read('levels') → number[8] ──
     //
     // ACCURATE VU for the Electra MIXMASTER meter row (and any on-card meter):
-    // the Faust DSP emits one mono POST-FADER level per channel (post EQ →
-    // comp → volume fader) on worklet outputs 6..11. We split those off and run
-    // each through an AnalyserNode; read('levels') returns their RMS. Unlike the
-    // prior JS input-tap approximation (input-RMS × live chN_volume, which
-    // ignored EQ + comp gain), this reflects exactly what the channel feeds the
-    // master bus. (Master VU stays separate via audioOut.read('outputSnapshot').)
+    // the Faust DSP emits one STEREO POST-FADER pair per channel (post EQ →
+    // comp → volume fader) on worklet outputs 6..21. We split those off and run
+    // each leg through an AnalyserNode; read('levels') combines the pair's RMS.
+    // Unlike the prior JS input-tap approximation (input-RMS × live chN_volume,
+    // which ignored EQ + comp gain), this reflects exactly what the channel
+    // feeds the master bus. (Master VU stays separate via
+    // audioOut.read('outputSnapshot').)
     // The analysers are passive sinks — never connected onward — so they add no
     // audible signal and can't alter the mix.
     //
-    // splitter channels 6..13 = ch1..ch8 post-fader level taps.
+    // splitter channels 6..21 = ch1..ch8 post-fader taps, L then R per channel.
+    //
+    // ⚠ ONE ANALYSER PER LEG, AND THE RMS IS COMBINED AFTER — NOT BEFORE. The
+    // DSP used to hand back `(L+R)*0.5` and that sum is measurably phase-blind:
+    // an anti-phase channel read rms 0.0000e+0 while masterL and masterR each
+    // carried 0.184216. RMSing each leg SEPARATELY and combining the two
+    // energies cannot cancel, because energy is never negative — so a channel
+    // you can hear now meters as something you can see.
     const meterAnalysers: AnalyserNode[] = [];
     const meterBufs: Float32Array<ArrayBuffer>[] = [];
-    const METER_TAP_OFFSET = 6; // outputs 0..5 are master+sends; 6..11 are taps
-    for (let ch = 0; ch < NUM_CHANNELS; ch++) {
+    for (let leg = 0; leg < NUM_CHANNELS * 2; leg++) {
       const ana = ctx.createAnalyser();
       ana.fftSize = 1024;
       ana.smoothingTimeConstant = 0.3;
-      splitter.connect(ana, METER_TAP_OFFSET + ch);
+      splitter.connect(ana, MIXMSTRS_POST_FADER_TAP_OFFSET + leg);
       meterAnalysers.push(ana);
       meterBufs.push(new Float32Array(ana.fftSize));
     }
     function readChannelLevels(): number[] {
       const out: number[] = [];
       for (let ch = 0; ch < NUM_CHANNELS; ch++) {
-        const ana = meterAnalysers[ch]!;
-        const buf = meterBufs[ch]!;
-        ana.getFloatTimeDomainData(buf);
-        out.push(rmsLevel(buf));
+        const l = meterAnalysers[2 * ch]!;
+        const r = meterAnalysers[2 * ch + 1]!;
+        const lb = meterBufs[2 * ch]!;
+        const rb = meterBufs[2 * ch + 1]!;
+        l.getFloatTimeDomainData(lb);
+        r.getFloatTimeDomainData(rb);
+        // Combined RMS of the pair: sqrt((L² + R²)/2). Equals the old reading
+        // for a correlated (mono-ish) channel and, unlike it, never cancels.
+        const a = rmsLevel(lb);
+        const b = rmsLevel(rb);
+        out.push(Math.sqrt((a * a + b * b) / 2));
       }
       return out;
     }
@@ -1266,6 +1377,30 @@ export const mixmstrsDef: AudioModuleDef = {
       outputsMap.set(id, { node: splitter, output: i });
     });
 
+    // ── THE CLIP-RECORD TAP ROSTERS — read('recTaps') ───────────────────────
+    //
+    // All three `recTap` values, deliverable. BOARD IN is the channel-leg
+    // slice of the insert heads (the return ports' inserts are not record
+    // sources — a record lane is a channel). POST FADER and MASTER are
+    // splitter outputs, addressed through the SAME constants the meter
+    // analysers use, so the meter and the recorder cannot disagree about
+    // which output is channel 4. The rosters are built once: the nodes live
+    // exactly as long as this handle, and the recorder slice connects a
+    // worklet input to a leg — nothing here starts recording anything.
+    const recTaps: MixmstrsRecTaps = {
+      board: boardIn
+        .slice(0, NUM_CHANNELS * 2)
+        .map((g) => ({ node: g as AudioNode, output: 0 })),
+      postFader: Array.from({ length: NUM_CHANNELS * 2 }, (_, leg) => ({
+        node: splitter as AudioNode,
+        output: MIXMSTRS_POST_FADER_TAP_OFFSET + leg,
+      })),
+      master: [
+        { node: splitter as AudioNode, output: MIXMSTRS_MASTER_TAP.l },
+        { node: splitter as AudioNode, output: MIXMSTRS_MASTER_TAP.r },
+      ],
+    };
+
     return {
       domain: 'audio',
       inputs: inputsMap,
@@ -1327,6 +1462,9 @@ export const mixmstrsDef: AudioModuleDef = {
         // TODAY — a cable into `ch1_rec` moves what this returns, from the
         // moment the module ships, not in a later slice.
         if (key === 'recState') return readRecState();
+        // THE TAP ROSTERS the clip recorder wires from — every `recTap` value
+        // deliverable, addressed in one place. See MixmstrsRecTaps above.
+        if (key === 'recTaps') return recTaps;
         // Deterministic MON-duck pump seam, the sibling of `pumpCompMacros`
         // above and for the same reason: a wall-clock interval cannot be relied
         // on to tick inside an offline render.

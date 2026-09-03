@@ -1245,8 +1245,9 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // module (16 thresh/ratio behind a bypassed compressor, 2 PRE/POST switches
   // behind sixteen shut sends) against a measured module floor of 2.9062e-4;
   // two correlated full-scale channels already clip the bus (peak 1.2797 at
-  // the defaults, and nothing limits); the per-channel VU tap is a mono sum and
-  // reads 0.0000e+0 on an anti-phase channel the master carries at full level;
+  // the defaults, and nothing limits); the per-channel VU tap WAS a mono sum
+  // reading 0.0000e+0 on an anti-phase channel the master carried at full
+  // level (fixed in slice 3b — stereo taps, energy-combined read('levels'));
   // and the comp macro overwrites a saved compressor at load, measured
   // +29.174 dB. The first three are hero readouts here. The fourth is a
   // def/factory bug that changes saved-rack audio and is NOT fixed in a face

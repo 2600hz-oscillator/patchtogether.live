@@ -70,9 +70,11 @@ const DUR_S = 0.25;
 const N = SR * DUR_S;
 /** Skip the Faust `si.smoo` ramp-in before comparing. */
 const SETTLE = Math.round(0.15 * SR);
-/** Both master legs — an insert fault that hit only one would be invisible on a
- *  mono read, and this module's per-channel meter tap is measurably phase-blind
- *  so it cannot serve as a check. */
+/** Both master legs — an insert fault that hit only one would be invisible on
+ *  a mono read. (The per-channel tap was mono `(L+R)*0.5` and measurably
+ *  phase-blind when this file was written; it is stereo now — see
+ *  rec-tap-points.test.ts — but the master pair remains the right instrument
+ *  here: it is the bus the identity claim is about.) */
 const OUTS = ['masterL', 'masterR'] as const;
 
 const fmt = (v: number) => (v === 0 ? '0.0000e+0' : v.toExponential(4));
@@ -409,7 +411,7 @@ describe('ART mixmstrs / pre-board insert identity', () => {
     expect(state.mon[2], 'ch3 set to live').toBe(0);
     expect(state.mon[0], 'ch1 keeps the clip-auto default').toBe(2);
     expect(state.quality).toBe(1);
-    expect(state.tap, 'BOARD IN is the default and the only wired tap').toBe(0);
+    expect(state.tap, 'BOARD IN is the default tap').toBe(0);
     handle.dispose?.();
   }, 120_000);
 });
