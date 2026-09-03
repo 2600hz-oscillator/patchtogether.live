@@ -144,10 +144,6 @@ e2e/tests/launchpad-keys-record.spec.ts :: @launchpad single-unit KEYS — enter
 e2e/tests/launchpad-keys-record.spec.ts :: @launchpad single-unit KEYS — enter from the Clip KEYS button, live keys AUDIBLE, overdub-record captures notes :: waitForTimeout(120) #2
 e2e/tests/launchpad-perf-controls.spec.ts :: waitForEngine :: waitForTimeout(50) #1
 e2e/tests/launchpad-perf-controls.spec.ts :: waitForEngineAll :: waitForTimeout(50) #1
-e2e/tests/lfo-modulation-visible.spec.ts :: LFO modulating DRUMMERGIRL volume visibly moves the volume fader thumb :: waitForTimeout(140) #1
-e2e/tests/lfo-modulation-visible.spec.ts :: LFO modulating DRUMMERGIRL volume visibly moves the volume fader thumb :: waitForTimeout(300) #1
-e2e/tests/lfo-modulation-visible.spec.ts :: LFO modulating QBRT cutoff visibly moves the cutoff fader thumb :: waitForTimeout(300) #1
-e2e/tests/lfo-modulation-visible.spec.ts :: sampleFaderThumbTops :: waitForTimeout(intervalMs) #1
 e2e/tests/lushgarden.spec.ts :: continuous mode: plants spawn at RATE and the clean preview renders non-black :: waitForTimeout(700) #1
 e2e/tests/lushgarden.spec.ts :: grow gate: [GATED] badge, rate-spawning stops, one plant per rising edge, reset clears :: waitForTimeout(1200) #1
 e2e/tests/lushgarden.spec.ts :: grow gate: [GATED] badge, rate-spawning stops, one plant per rising edge, reset clears :: waitForTimeout(1500) #1
