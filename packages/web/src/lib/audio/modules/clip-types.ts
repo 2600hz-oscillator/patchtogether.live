@@ -1466,6 +1466,166 @@ export function lanesFromFiring(firing: NoteEvent[]): StepLanes {
   return { lanes, velocity, gateSteps, any: starting.length > 0 };
 }
 
+
+// ── SCHEDULED POLY VOICE ALLOCATION — a note keeps its lane until IT ends ────
+//
+// ⚠ THE DEFECT THIS REPLACES (owner report, 2026-09-02: "midi out on a poly
+// lane to a poly synth isn't playing polyphony").
+//
+// `lanesFromFiring` above packs the notes STARTING on one step into lanes
+// 0..n-1, and `PolySender.scheduleStep` then writes ALL POLY_CHANNEL_PAIRS
+// lanes — `lanes[i] ?? { pitch: 0, gate: 0 }` — so every lane the current onset
+// did not fill is FORCED TO GATE 0. Two consequences, both fatal to real
+// polyphony, and neither visible on the chord that happens to be the test case:
+//
+//   1. A note still SOUNDING from an earlier step is closed by the next onset,
+//      because its lane is not in this step's firing set.
+//   2. Voices are re-packed FROM LANE 0 on every onset, so a new note lands on
+//      the lane a held note is using and overwrites its PITCH — under a gate
+//      that never fell. A downstream consumer that tracks note identity by gate
+//      EDGE (midiOutBuddy) therefore sees no new note-on at all and keeps
+//      sounding the FIRST pitch.
+//
+// Measured on the shipped chain — CLIPPLAYER lane 1 → MIDI-OUT-BUDDY `poly` →
+// a capturing MIDIOutput, with a clip holding 60 (8 steps), 64 (from step 2,
+// 6 steps) and 67 (from step 4, 4 steps): peak concurrency 1, and the ONLY
+// pitch ever transmitted was 60. Ten onsets, ten single-voice bursts. A chord
+// whose notes all start on the SAME step was fine (6 voices, 20/20 onsets),
+// which is why every existing test passed: they all print co-onset chords.
+//
+// ⚠ THE ALLOCATOR ALREADY EXISTED AND THE PLAYBACK PATH NEVER GOT IT.
+// `$lib/audio/poly-alloc` was written for exactly this failure ("releasing a
+// LOW note SHIFTED the remaining notes down a lane → rewrote pitch on a
+// STILL-SOUNDING voice") and clipplayer wires it into LIVE AUDITION only
+// (`serviceAudition`). Clip PLAYBACK kept the positional repack.
+//
+// ⚠ WHY A SECOND, TIME-KEYED BOOK RATHER THAN `VoiceAllocator` ITSELF.
+// `VoiceAllocator` is edge-driven: it owns lanes between a `noteOn` and a
+// `noteOff` that arrive as they happen. Clip playback SCHEDULES ahead
+// (LOOKAHEAD_S), so at the moment lane assignment is decided the release of the
+// note being placed has not happened and will not happen for seconds. There is
+// no note-off event to drive an edge allocator with; what there IS, exactly, is
+// the note's scheduled END TIME. So ownership here is keyed by that time, which
+// makes the whole thing a PURE function of the scheduled times — deterministic,
+// replayable, and identical on every peer, which an event-driven allocator
+// racing a lookahead window would not be.
+
+/** Which lanes are occupied, and until when (audio-context seconds). */
+export interface PolyLaneBook {
+  /** Scheduled end time of each lane's note; `-Infinity` when free. */
+  busyUntil: number[];
+  /** The MIDI note occupying each lane, or null when free. */
+  note: (number | null)[];
+}
+
+/** A fresh book: every lane free. */
+export function createPolyLaneBook(): PolyLaneBook {
+  return {
+    busyUntil: new Array<number>(POLY_CHANNEL_PAIRS).fill(-Infinity),
+    note: new Array<number | null>(POLY_CHANNEL_PAIRS).fill(null),
+  };
+}
+
+/** One voice to write onto the poly cable. Only these lanes are touched. */
+export interface PolyLaneWrite {
+  lane: number;
+  /** V/oct, WITHOUT the module's octave offset (the caller adds it). */
+  pitch: number;
+  midi: number;
+  /** When the gate opens. */
+  onAt: number;
+  /** When the gate closes. */
+  offAt: number;
+}
+
+/**
+ * Place one step's firing notes on lanes that respect what is still sounding.
+ *
+ * Rules, in order — the same shape `poly-alloc` uses, resolved against
+ * SCHEDULED TIME rather than live note-off events:
+ *
+ *   1. RETIRE. Any lane whose note has ended by `onAt` is free again.
+ *   2. RE-ARM. A note whose own pitch is already held keeps ITS lane, so a
+ *      repeated pitch re-triggers one voice instead of consuming a second.
+ *   3. LOWEST FREE LANE. Deterministic, so two peers place the same chord on
+ *      the same lanes.
+ *   4. STEAL THE OLDEST-ENDING. Past POLY_CHANNEL_PAIRS simultaneous voices
+ *      something must give; the voice that ends soonest is the one whose loss
+ *      costs least, and it is a decision rather than a silent drop.
+ *
+ * ⚠ IT NEVER RETURNS A LANE IT DID NOT ASSIGN, which is the half that fixes the
+ * bug: the caller writes ONLY these lanes, so a voice still sounding on a lane
+ * this step did not touch keeps its pitch AND its open gate.
+ */
+export function assignPolyLanes(
+  book: PolyLaneBook,
+  // Only the MIDI number is read, so the SESSION path (`NoteEvent`) and the
+  // SONG path (`SongNoteEvent`, which has a beat instead of a step) share one
+  // allocator rather than two that could drift apart.
+  firing: readonly { midi: number }[],
+  onAt: number,
+  gateOffSec: number,
+): PolyLaneWrite[] {
+  // 1. RETIRE — a lane whose note has already ended is available again.
+  for (let i = 0; i < POLY_CHANNEL_PAIRS; i++) {
+    if (book.busyUntil[i]! <= onAt) {
+      book.busyUntil[i] = -Infinity;
+      book.note[i] = null;
+    }
+  }
+
+  const offAt = onAt + gateOffSec;
+  const writes: PolyLaneWrite[] = [];
+
+  for (const ev of firing) {
+    if (writes.length >= POLY_CHANNEL_PAIRS) break;
+    let lane = -1;
+
+    // 2. RE-ARM the same pitch on the lane already holding it.
+    for (let i = 0; i < POLY_CHANNEL_PAIRS; i++) {
+      if (book.note[i] === ev.midi) { lane = i; break; }
+    }
+    // 3. LOWEST FREE LANE.
+    if (lane < 0) {
+      for (let i = 0; i < POLY_CHANNEL_PAIRS; i++) {
+        if (book.note[i] === null) { lane = i; break; }
+      }
+    }
+    // 4. STEAL the voice that ends soonest.
+    if (lane < 0) {
+      let victim = 0;
+      for (let i = 1; i < POLY_CHANNEL_PAIRS; i++) {
+        if (book.busyUntil[i]! < book.busyUntil[victim]!) victim = i;
+      }
+      lane = victim;
+    }
+
+    book.note[lane] = ev.midi;
+    book.busyUntil[lane] = offAt;
+    writes.push({ lane, pitch: midiToVOct(ev.midi), midi: ev.midi, onAt, offAt });
+  }
+
+  return writes;
+}
+
+/** Lanes that hold nothing at `at` — the only ones a rest may zero when
+ *  Sample & Hold is OFF. A busy lane must never be rewritten by a rest: that
+ *  is defect (1) above in its other clothes. */
+export function freePolyLanesAt(book: PolyLaneBook, at: number): number[] {
+  const free: number[] = [];
+  for (let i = 0; i < POLY_CHANNEL_PAIRS; i++) {
+    if (book.busyUntil[i]! <= at) free.push(i);
+  }
+  return free;
+}
+
+/** Forget every voice — a stop / panic / clip switch, where the caller has
+ *  already zeroed the cable and no lane is sounding any more. */
+export function resetPolyLaneBook(book: PolyLaneBook): void {
+  book.busyUntil.fill(-Infinity);
+  book.note.fill(null);
+}
+
 // ---------------------------------------------------------------------------
 // piano-roll note-editor row math (X = step, Y = pitch) — PURE
 // ---------------------------------------------------------------------------

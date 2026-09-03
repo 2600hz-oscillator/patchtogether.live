@@ -27,6 +27,10 @@ import {
   lanesForStep,
   notesFiringAt,
   lanesFromFiring,
+  assignPolyLanes,
+  createPolyLaneBook,
+  freePolyLanesAt,
+  resetPolyLaneBook,
   setNoteProb,
   setClipDefaultProb,
   clipDefaultProbEff,
@@ -2089,5 +2093,128 @@ describe('scene copy/paste — sceneWritePlan (full-replace plan incl. deletes)'
     expect(plan.map((p) => p.index)).toEqual(
       Array.from({ length: CLIP_LANES }, (_, lane) => clipIndex(4, lane)),
     );
+  });
+});
+
+// ── assignPolyLanes — A NOTE KEEPS ITS LANE UNTIL IT ENDS ───────────────────
+//
+// ⚠ THE DEFECT (owner report, 2026-09-02: "midi out on a poly lane to a poly
+// synth isn't playing polyphony"). `lanesFromFiring` packs the notes STARTING
+// on one step into lanes 0..n-1, and `PolySender.scheduleStep` then writes ALL
+// sixteen lanes — so an onset both CLOSED every voice it did not fill and
+// re-packed from lane 0 ON TOP of a note that was still sounding. Measured end
+// to end (CLIPPLAYER lane 1 → MIDI-OUT-BUDDY `poly` → a capturing MIDIOutput)
+// on a clip holding 60 from step 0, 64 from step 2 and 67 from step 4: peak
+// concurrency ONE, and 60 was the only pitch ever transmitted.
+//
+// A chord whose notes all start on the SAME step was always fine — which is
+// exactly why every existing test passed. `lanesFromFiring`'s own cases below
+// are all co-onset, so this block deliberately drives the STAGGERED shape.
+describe('assignPolyLanes — scheduled poly voice allocation', () => {
+  const ev = (midi: number) => ({ midi });
+
+  it('a co-onset chord takes lanes 0..n-1 — the shape that always worked', () => {
+    const book = createPolyLaneBook();
+    const w = assignPolyLanes(book, [ev(60), ev(64), ev(67)], 1, 0.5);
+    expect(w.map((x) => x.lane)).toEqual([0, 1, 2]);
+    expect(w.map((x) => x.midi)).toEqual([60, 64, 67]);
+    expect(w.every((x) => x.onAt === 1 && x.offAt === 1.5)).toBe(true);
+  });
+
+  it('⚠ A NOTE STARTING UNDER A HELD ONE GETS ITS OWN LANE — the bug', () => {
+    const book = createPolyLaneBook();
+    // 60 sounds from t=0 to t=4 (a held pad).
+    assignPolyLanes(book, [ev(60)], 0, 4);
+    // 64 starts at t=1, while 60 is still down.
+    const second = assignPolyLanes(book, [ev(64)], 1, 3);
+    expect(second).toHaveLength(1);
+    expect(second[0]!.lane, 'must NOT be lane 0 — that is the held note').toBe(1);
+    // 67 at t=2, both still down.
+    const third = assignPolyLanes(book, [ev(67)], 2, 2);
+    expect(third[0]!.lane).toBe(2);
+    // All three lanes are occupied by their own notes.
+    expect(book.note.slice(0, 3)).toEqual([60, 64, 67]);
+  });
+
+  it('⚠ NEGATIVE CONTROL: the positional pack puts all three on lane 0', () => {
+    // What `lanesFromFiring` returns for each of those three steps, since each
+    // step's firing set has exactly one note. Lane 0, every time — on top of
+    // whatever was still sounding there.
+    expect(lanesFromFiring([{ step: 0, midi: 60 }]).lanes).toHaveLength(1);
+    expect(lanesFromFiring([{ step: 2, midi: 64 }]).lanes).toHaveLength(1);
+    expect(lanesFromFiring([{ step: 4, midi: 67 }]).lanes).toHaveLength(1);
+    // …i.e. index 0 for all three, which is the collapse. The allocator
+    // disagrees, which is the whole assertion.
+    const book = createPolyLaneBook();
+    assignPolyLanes(book, [ev(60)], 0, 4);
+    assignPolyLanes(book, [ev(64)], 1, 3);
+    expect(assignPolyLanes(book, [ev(67)], 2, 2)[0]!.lane).not.toBe(0);
+  });
+
+  it('a lane is REUSED once its note has ended', () => {
+    const book = createPolyLaneBook();
+    assignPolyLanes(book, [ev(60)], 0, 1); // ends at t=1
+    const later = assignPolyLanes(book, [ev(72)], 2, 1); // t=2, 60 is long gone
+    expect(later[0]!.lane, 'the freed lane comes back').toBe(0);
+    expect(book.note[0]).toBe(72);
+  });
+
+  it('a lane frees exactly AT its end time, not a moment later', () => {
+    const book = createPolyLaneBook();
+    assignPolyLanes(book, [ev(60)], 0, 1); // ends at t=1
+    expect(assignPolyLanes(book, [ev(72)], 1, 1)[0]!.lane).toBe(0);
+  });
+
+  it('a repeated pitch RE-ARMS its own lane instead of eating a second', () => {
+    const book = createPolyLaneBook();
+    assignPolyLanes(book, [ev(60)], 0, 4);
+    const again = assignPolyLanes(book, [ev(60)], 1, 4);
+    expect(again[0]!.lane).toBe(0);
+    expect(again[0]!.offAt, 'and its release moves out with it').toBe(5);
+    expect(book.note.filter((n) => n === 60)).toHaveLength(1);
+  });
+
+  it('past the cable width it STEALS the voice that ends soonest', () => {
+    const book = createPolyLaneBook();
+    // Fill every lane, each ending later than the last EXCEPT lane 3.
+    for (let i = 0; i < POLY_CHANNEL_PAIRS; i++) {
+      assignPolyLanes(book, [ev(40 + i)], 0, i === 3 ? 0.5 : 10);
+    }
+    const overflow = assignPolyLanes(book, [ev(90)], 0.1, 10);
+    expect(overflow[0]!.lane, 'the soonest-ending voice is the cheapest to lose').toBe(3);
+    expect(book.note[3]).toBe(90);
+  });
+
+  it('never returns more voices than the cable has lanes', () => {
+    const book = createPolyLaneBook();
+    const big = Array.from({ length: POLY_CHANNEL_PAIRS + 5 }, (_, i) => ev(40 + i));
+    expect(assignPolyLanes(book, big, 0, 1)).toHaveLength(POLY_CHANNEL_PAIRS);
+  });
+
+  it('freePolyLanesAt names only the lanes that hold nothing', () => {
+    const book = createPolyLaneBook();
+    assignPolyLanes(book, [ev(60), ev(64)], 0, 2);
+    const free = freePolyLanesAt(book, 1);
+    expect(free, 'the two sounding lanes are excluded').not.toContain(0);
+    expect(free).not.toContain(1);
+    expect(free).toHaveLength(POLY_CHANNEL_PAIRS - 2);
+    // Once both have ended, everything is free again.
+    expect(freePolyLanesAt(book, 2)).toHaveLength(POLY_CHANNEL_PAIRS);
+  });
+
+  it('reset forgets every voice', () => {
+    const book = createPolyLaneBook();
+    assignPolyLanes(book, [ev(60), ev(64)], 0, 10);
+    resetPolyLaneBook(book);
+    expect(book.note.every((n) => n === null)).toBe(true);
+    expect(assignPolyLanes(book, [ev(72)], 1, 1)[0]!.lane).toBe(0);
+  });
+
+  it('an empty firing set writes nothing and disturbs no voice', () => {
+    const book = createPolyLaneBook();
+    assignPolyLanes(book, [ev(60)], 0, 10);
+    expect(assignPolyLanes(book, [], 1, 1)).toEqual([]);
+    expect(book.note[0], 'the held voice is untouched').toBe(60);
+    expect(book.busyUntil[0]).toBe(10);
   });
 });
