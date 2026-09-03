@@ -167,6 +167,72 @@ export const seqtrisDef: AudioModuleDef = {
     },
   ],
 
+  face: {
+    // ⚠ `gravity` IS RANK 1, AND THE LOSER IS NAMED. Gravity is the game's
+    // tempo, in clock pulses per row, and everything downstream of PIECE / LINE
+    // / SPAWN is clocked by how fast the stack builds; it is also the one param
+    // with a live engine effect (`setParam` → `setBaseDivisor` → `changed()`),
+    // so moving it repaints immediately. `quantize` is a two-position mode
+    // switch that changes WHEN a press lands, not what the game does, and at
+    // the `mini` tier (one control) a tempo serves better than a latch mode.
+    // ⚠ NEITHER PARAM IS INERT — the one place seqtris is easier than its
+    // modtris sibling, whose face PR had to wire a dead `levelStep` before it
+    // could honestly rank it. `gravity` is read on every `setParam` and every
+    // `gravitySec()`; `quantize` on every `press()`. No wiring work is owed and
+    // `params` is not edited, so contract-lock does not move.
+    order: ['gravity', 'quantize'],
+
+    // ONE band. Both params answer the same question — HOW does the game move —
+    // and `pages` AGREES with `order` rather than disagreeing (stated so a
+    // reader does not go hunting for a distinction the module does not have). A
+    // tab rail needs DOCK_TAB_MIN_BANDS = 7 bands; NOTHING IS PADDED to reach
+    // one, per the owner's control-heavy/tabbed ruling read in the correct
+    // direction.
+    pages: [{ id: 'fall', label: 'fall', controls: ['gravity', 'quantize'] }],
+
+    // ⚠ FORCED, AND MEASURED RATHER THAN ASSUMED. `primaryAudioOutPortId` needs
+    // a `type: 'audio'` output; seqtris' four outputs are polyPitchGate x2 and
+    // gate x2, so every LIVE glyph kind (scope/meter/envelope/waveform)
+    // resolves `{kind:'static'}` and is refused by the dead-glyph clause.
+    // `'algorithm'` resolves but is refused on its merits: `ShellExtensionGlyphProps`
+    // is `{num, numbers?, testid?}` with NO `nodeId`, so a glyph component
+    // cannot resolve a graph node, cannot reach `card-api`, and would draw one
+    // identical picture on every seqtris in the rack forever. `hasVideoSurface`
+    // is `domain === 'video'`; this is audio. So: none — and the tile's picture
+    // comes from the module's own `tileBody` instead.
+    glyph: 'none',
+
+    // ⚠ NO `paramCells`, AND THE ABSENCE IS THE DECLARATION. The card draws
+    // both controls as `<KnobConic>`, and a KNOB is exactly what
+    // `paramCellKind` resolves with nothing declared: `gravity` has no options
+    // and is not a 0/1 switch, and `quantize` has an `options` roster, which
+    // resolves `'knob'` at every LANE tier and `'segmented'` in the DOCK. So
+    // the lane is card-identical and the dock renders the two-position switch
+    // the def already names (`free` / `clock`) instead of a rotary sweeping a
+    // hidden binary. ⚠ There is no `'knob'` literal to declare — the union is
+    // `grid | color | hue | fader` — and `'fader'` would be red anyway (the
+    // lint demands a CONTINUOUS scale, and both params are `discrete`).
+    // ⚠ The `options` LABELS are NOT re-typed here: same one-source rule as a
+    // range, same gate family.
+
+    // The well, the eight-button hardware column and CONNECT.
+    // See $lib/ui/modules/seqtris/shell-extension.ts.
+    extension: 'seqtris',
+
+    // ⚠ AUTHORED RATHER THAN DERIVED. `clock` is a real signal input with NO
+    // paramTarget, so the derived rail would render one anonymous jack. An
+    // input group must claim the LEADING slot ('voice'/'signal') or name a
+    // declared page, or it appends as a stray band after every page and the
+    // rear totality gate cannot see it (module-face-lint). 'signal' is the
+    // leading slot and `clock` IS what you play the module with.
+    // The OUTPUT rail takes the derived default: `piece`/`board` are one cable
+    // domain and `line`/`spawn` another, and `rearFieldPlan` splits by domain
+    // only once the rail out-runs a column — four ports do not.
+    rear: {
+      groups: [{ id: 'signal', label: 'clock', ports: ['clock'] }],
+    },
+  },
+
   docs: {
     explanation:
       'An 8x8 Tetris you play on a Novation Launchpad, wired into the rack as a clocked note '

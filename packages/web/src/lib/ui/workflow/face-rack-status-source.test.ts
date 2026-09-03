@@ -607,6 +607,67 @@ const EXTENSION_BODY_ROLES: Readonly<Record<string, BodyRule>> = {
   // button. The card has no readout row, no state word and no decimal, so
   // unlike most entries here nothing had to be removed on promotion.
   scoreboard: { role: 'picture', why: 'the 4-digit neon counter\'s live display and its SCREEN switch — the module\'s entire product, since it has no video input and no audio path: two gates in, four digits out. ⚠ The DIGITS are the OUTPUT PICTURE (what `out` emits), not a readout of a control, which is why numerals on this surface are correct rather than a resting-text violation. ⚠ SCREEN OFF keeping the watch mark is load-bearing on STATE here, not just on the picture: the counter advances on gate edges the factory detects during draw, so a lapsed mark would leave SCORE edges UNCOUNTED and the number WRONG when the screen returns — not merely stale (#2015).' },
+  // ── SEQTRIS — the roster's FIRST **DOM PICTURE**, declared `control-grid` ──
+  //
+  // ⚠ THE ROLE IS NOT AN OBVIOUS FIT AND THE REASONING MATTERS MORE THAN USUAL,
+  // because the naive answer is `picture` and `picture` is REFUSED here — by the
+  // predicate, correctly. This body's live 8×8 well is a CSS GRID OF 64 `<span>`s
+  // rather than a drawing surface: `paintsCanvas` is false, and the honest
+  // response is the matrixMix one (declare the role that is true) rather than
+  // weakening the picture predicate to accept a body with no canvas, which is
+  // the one change that would let a GENUINE picture-body skip its own check.
+  //
+  // ⚠ AND `control-grid` IS TRUE ON ITS OWN TERMS, NOT BY ELIMINATION. The
+  // surface's operating instrument is the eight-row column beside the well: the
+  // LAUNCHPAD'S OWN SCENE COLUMN, in hardware order, both dead buttons included,
+  // where a click IS a move — `api().press(action)` into the same pure core the
+  // pads drive. That is "the surface the module is operated FROM" exactly as
+  // matrixMix's cross-points and gamepad's tiles are, and the well beside it is
+  // this module's state rendered, not a preview of something happening
+  // elsewhere. The `status-primitive` predicate ALSO holds (it imports
+  // `StatusLed` and owns no canvas) — legal, and the same double-satisfaction
+  // gamepad records; the declared role is the one that says what the surface IS.
+  //
+  // ⚠ ALL PAINTED TEXT IS A CONTROL CAPTION: six scene captions
+  // (reset / drop / rot ← / rot → / move ← / move →), the `PAD` lamp caption,
+  // `SCREEN ON|OFF` on its own switch, `Connect Launchpad` / `Unbind` on theirs,
+  // and each listed MIDI port's own NAME in the picker (an option name inside
+  // its own control). No value, no measurement, no state word, no counter.
+  //
+  // ⚠ THE ONE THING THAT HAD TO BE REMOVED ON PROMOTION IS NAMED RATHER THAN
+  // QUIETLY DROPPED: `SeqtrisCard.svelte` paints `<p class="status">` carrying
+  // `seqtrisStatusMessage()` — a SENTENCE OF DERIVED SERVICE STATE as a resting
+  // text node, in none of the four permitted roles. All six strings survive
+  // VERBATIM (the pure function is untouched and still unit-tested at the
+  // source); they now reach `aria-label` + `title` through the lamp's `detail`,
+  // which is the recorderbox promotion's exact disposal of three readouts.
+  // ⚠ Its `role="alert"` on the problem states did NOT survive — the lamp's
+  // `tone="warn"` carries the condition and its accessible name carries the
+  // sentence, but the live announcement is gone. A real, small delta.
+  // ⚠ AND "THE LAMP CARRIES THE CONDITION" IS ONLY TRUE BECAUSE `lit` INCLUDES
+  // `problem`. Every tone rule in `StatusLed.svelte` is gated on `.lit`, so a
+  // readiness-only `lit={bound}` — mutually exclusive with `problem` — would
+  // have made `tone="warn"` DEAD CSS and left a denied grant pixel-identical to
+  // idle. Both bodies pass `lit={bound || problem}`, which is the idiom the
+  // three shipped fault lamps use (`audioIn` FAULT, `es9` XRUN, `midiOutBuddy`
+  // LANE: `warn` always paired with a `lit` that is true exactly when the fault
+  // holds), folded into one lamp because the two conditions are disjoint.
+  // Pinned in `seqtris-face-model.test.ts` CLAIM 7b, mechanism first.
+  //
+  // ⚠ THE SPEAKABLE LEG BITES HERE AND IS ANSWERED STRUCTURALLY: each live
+  // scene button paints its CAPTION (`drop`) and speaks `sceneName(i, action)`
+  // (`Scene button 4 — drop`) — the row number the caption cannot carry, which
+  // is the whole reason the column is on screen for a player with no hardware.
+  // Two structurally different expressions, not the same one in both places.
+  //
+  // ⚠ NO SCREEN-RULING WATCH MARK: `markWatched` is a VideoEngine pull-set
+  // concept and this is `domain: audio`. The SCREEN switch is here anyway (the
+  // modtris argument), and it is safe TWICE OVER — the game runs on the shared
+  // scheduler clock inside the FACTORY, and `launchpad.paint()` is called from
+  // that same factory's `changed()`, so SCREEN OFF stops a DOM render while the
+  // pieces keep falling, PIECE / LINE / SPAWN keep firing AND THE PADS KEEP
+  // SHOWING THE BOARD.
+  seqtris: { role: 'control-grid', why: 'the 8×8 WELL plus the LAUNCHPAD\'S OWN SCENE COLUMN — eight rows in hardware order, the two dead buttons rendered in position, six of them clickable — plus CONNECT / Unbind, the index-keyed port picker and the bind lamp. ⚠ IT IS A CONTROL GRID, NOT A PICTURE, and the predicate is what decides it rather than taste: the well is a CSS grid of 64 spans and mounts NO drawing surface, so the picture predicate is false and weakening it to fit would let a genuine picture-body skip its own check (the matrixMix repair, in the same shape). The column is the surface the module is OPERATED from — a click is `press(action)` into the same pure core the pads drive — and the well is this node\'s own state rendered rather than a preview of something happening elsewhere. ⚠ THE WELL MUST NOT BECOME A CANVAS: converting it would delete 64 data-testids and the `data-piece` attribute, which are the only machine-readable read of the board that is not a page.evaluate into engine internals, and would import the DPR blit hazard a 1fr grid with a 1/1 aspect-ratio structurally cannot have. ⚠ ALL PAINTED TEXT IS A CONTROL CAPTION OR AN OPTION NAME: six scene captions, the PAD lamp caption, SCREEN ON|OFF, Connect Launchpad / Unbind, and each listed MIDI port\'s own name. No value, no measurement, no state word — and NO COUNTERS, which is not an omission: snapshot() exposes lines, totalLines, gameOvers, notesFired, spawns, lineFires, tiedDrops and clockPulses and the CARD showed none of them either ("No timers, no counters, no live numbers on the plate"). ⚠ THE CARD\'S STATUS PARAGRAPH IS DELETED, NOT HIDDEN: all six seqtrisStatusMessage() strings survive verbatim on the lamp\'s StatusLed detail, reaching aria-label and title and never a text node; its role="alert" on the problem states did not survive, which is a named delta rather than an oversight. ⚠ THE VISUAL HALF OF THAT SIGNAL IS KEPT DELIBERATELY: both lamps pass `lit={bound || problem}` with `tone={problem ? \'warn\' : \'accent\'}`, so a denied grant, an absent Launchpad or a claim held by another SEQTRIS lights the lamp AMBER — a readiness-only `lit` would have made the warn tone dead CSS (every tone rule in StatusLed is gated on `.lit`) and left a fault pixel-identical to idle. ⚠ THE SEMANTICS LIVE ON aria-label: the well names itself and its current piece, and each scene button speaks its ROW NUMBER plus caption so the hardware mapping is learnable with no Launchpad plugged in — the inventory\'s stated purpose for the column. ⚠ IT ALSO IMPORTS StatusLed, so status-primitive holds too; control-grid is declared because the column is what the module is played on. ⚠ IT IS A BODY RATHER THAN A PANEL because a PF-14 panel cell\'s first legal rank is 7 and this module declares two params, so no panel can ever reach the plate. ⚠ NO WATCH MARK: markWatched is a VideoEngine pull-set concept and this is domain audio; the SCREEN switch is safe here twice over, since both the game clock and the LED repaint live in the module FACTORY, so SCREEN OFF stops a DOM render while the pads keep showing the board.' },
   // ── ACIDWARP (2026-08-22, #2111) — the module that IS its display ────────
   //
   // TEXT ON THE SURFACE, exhaustively: the SCREEN button's own caption. Nothing
