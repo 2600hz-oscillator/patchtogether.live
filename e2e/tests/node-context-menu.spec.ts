@@ -32,15 +32,15 @@ async function readNodeState(
   }, id);
 }
 
-test('node context menu: right-click opens, Escape closes', async ({ page, rackLegacy }) => {
+test('node context menu: right-click opens, Escape closes', async ({ page, rack }) => {
   await loadVoiceDemo(page);
   await expect(page.locator('.svelte-flow__node')).toHaveCount(5, { timeout: 10_000 });
 
   // Right-click on the VCO card BACKGROUND (its title bar). Right-clicking a
   // knob/fader now opens the per-control MIDI menu instead, so we target a
   // non-control region to reach the module menu.
-  const vco = page.locator('.svelte-flow__node-analogVco').first();
-  await vco.locator('.title').click({ button: 'right' });
+  const vco = page.locator('.svelte-flow__node:has([data-shell-type="analogVco"])').first();
+  await vco.locator('.tile-name').click({ button: 'right' });
 
   await expect(page.locator('[role="menu"][aria-label="Module actions"]')).toBeVisible();
 
@@ -48,7 +48,7 @@ test('node context menu: right-click opens, Escape closes', async ({ page, rackL
   await expect(page.locator('[role="menu"][aria-label="Module actions"]')).toHaveCount(0);
 });
 
-test('node context menu: Delete removes the node + all edges touching it', async ({ page, rackLegacy }) => {
+test('node context menu: Delete removes the node + all edges touching it', async ({ page, rack }) => {
   await loadVoiceDemo(page);
   await expect(page.locator('.svelte-flow__node')).toHaveCount(5, { timeout: 10_000 });
   // A stereo LEG GROUP renders as ONE bezier (PR-4): the demo's
@@ -61,18 +61,18 @@ test('node context menu: Delete removes the node + all edges touching it', async
   //   adsr.env → vca.cv
   //   vca.audio → out.L
   //   vca.audio → out.R   (so 4 actually — vd-vca is the hub)
-  const vca = page.locator('.svelte-flow__node-vca').first();
-  await vca.click({ button: 'right' });
+  const vca = page.locator('.svelte-flow__node:has([data-shell-type="vca"])').first();
+  await vca.locator('.tile-name').click({ button: 'right' });
 
   await page.locator('[role="menuitem"]', { hasText: 'Delete' }).click();
 
-  await expect(page.locator('.svelte-flow__node-vca')).toHaveCount(0);
+  await expect(page.locator('.svelte-flow__node:has([data-shell-type="vca"])')).toHaveCount(0);
   await expect(page.locator('.svelte-flow__node')).toHaveCount(4);
   // 6 starting edges − 4 touching VCA = 2 remaining (seq.pitch→vco, seq.gate→adsr)
   await expect(page.locator('.svelte-flow__edge')).toHaveCount(2);
 });
 
-test('node context menu: Unpatch all keeps the node, removes only edges touching it', async ({ page, rackLegacy }) => {
+test('node context menu: Unpatch all keeps the node, removes only edges touching it', async ({ page, rack }) => {
   await loadVoiceDemo(page);
   await expect(page.locator('.svelte-flow__node')).toHaveCount(5, { timeout: 10_000 });
   // A stereo LEG GROUP renders as ONE bezier (PR-4): the demo's
@@ -80,19 +80,19 @@ test('node context menu: Unpatch all keeps the node, removes only edges touching
   // graph edges draw 5. Pinned in stereo-only-channel.spec.ts.
   await expect(page.locator('.svelte-flow__edge')).toHaveCount(5);
 
-  const vca = page.locator('.svelte-flow__node-vca').first();
-  await vca.click({ button: 'right' });
+  const vca = page.locator('.svelte-flow__node:has([data-shell-type="vca"])').first();
+  await vca.locator('.tile-name').click({ button: 'right' });
 
   await page.locator('[role="menuitem"]', { hasText: 'Unpatch all' }).click();
 
   // Node count unchanged
   await expect(page.locator('.svelte-flow__node')).toHaveCount(5);
-  await expect(page.locator('.svelte-flow__node-vca')).toHaveCount(1);
+  await expect(page.locator('.svelte-flow__node:has([data-shell-type="vca"])')).toHaveCount(1);
   // 6 starting edges − 4 touching VCA = 2 remaining
   await expect(page.locator('.svelte-flow__edge')).toHaveCount(2);
 });
 
-test('node context menu: TOYBOX hides "Unpatch all" (node-map module) but keeps Docs/Duplicate/Delete', async ({ page, rackLegacy }) => {
+test('node context menu: TOYBOX hides "Unpatch all" (node-map module) but keeps Docs/Duplicate/Delete', async ({ page, rack }) => {
   // TOYBOX is a node-map module — its in-card combine editor owns disconnects,
   // so the generic card menu's "Unpatch all" is hidden for type==='toybox'.
   //
@@ -108,11 +108,11 @@ test('node context menu: TOYBOX hides "Unpatch all" (node-map module) but keeps 
     [{ id: 'tb', type: 'toybox', position: { x: 80, y: 40 }, domain: 'video' }],
     [],
   );
-  const card = page.locator('.svelte-flow__node-toybox').first();
+  const card = page.locator('.svelte-flow__node:has([data-shell-type="toybox"])').first();
   await card.waitFor({ state: 'visible', timeout: 10_000 });
 
-  // Right-click the card title (a non-control region) to open the module menu.
-  await card.locator('.title').click({ button: 'right' });
+  // Right-click the tile name row (a non-control region) to open the module menu.
+  await card.locator('.tile-name').click({ button: 'right' });
   const menu = page.locator('[role="menu"][aria-label="Module actions"]');
   await expect(menu).toBeVisible();
 
@@ -123,7 +123,7 @@ test('node context menu: TOYBOX hides "Unpatch all" (node-map module) but keeps 
   await expect(menu.locator('[role="menuitem"]', { hasText: 'Delete' })).toHaveCount(1);
 });
 
-test('node context menu: Lock snaps to the HP×U rack grid, marks locked + non-draggable; Unlock reverts', async ({ page, rackLegacy }) => {
+test('node context menu: Lock snaps to the HP×U rack grid, marks locked + non-draggable; Unlock reverts', async ({ page, rack }) => {
   // Spawn a single module at a DELIBERATELY off-grid position so the snap is
   // observable. The rack grid is ANISOTROPIC (PR #806): X snaps to the 22.5px
   // HP column (1u = 8hp → 180/8), Y snaps to the 180px U row. So 250→247.5 (11hp),
@@ -144,8 +144,8 @@ test('node context menu: Lock snaps to the HP×U rack grid, marks locked + non-d
   expect(st.x).toBe(250);
   expect(st.y).toBe(430);
 
-  // Right-click the card title (a non-control region) → menu → Lock.
-  await card.locator('.title').click({ button: 'right' });
+  // Right-click the tile name row (a non-control region) → menu → Lock.
+  await card.locator('.tile-name').click({ button: 'right' });
   const menu = page.locator('[role="menu"][aria-label="Module actions"]');
   await expect(menu).toBeVisible();
   const lockItem = menu.getByTestId('ctx-lock');
@@ -173,7 +173,7 @@ test('node context menu: Lock snaps to the HP×U rack grid, marks locked + non-d
   await expect(card).toHaveClass(/\bnode-locked\b/);
 
   // Re-open the menu: the entry now reads "Unlock".
-  await card.locator('.title').click({ button: 'right' });
+  await card.locator('.tile-name').click({ button: 'right' });
   await expect(menu).toBeVisible();
   const unlockItem = menu.getByTestId('ctx-lock');
   await expect(unlockItem).toHaveText('Unlock');

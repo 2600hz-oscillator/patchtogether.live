@@ -23,18 +23,18 @@ async function spawnModule(page: import('@playwright/test').Page, type: string, 
   await expect(page.locator('.module-palette')).toBeVisible();
   await page.keyboard.type(label);
   await page.getByTestId(`palette-item-${type}`).click();
-  await expect(page.locator(`.svelte-flow__node-${type}`)).toHaveCount(1);
+  await expect(page.locator(`.svelte-flow__node:has([data-shell-type="${type}"])`)).toHaveCount(1);
 }
 
 /** Open the module right-click menu by right-clicking the card title bar. */
 async function openModuleMenu(page: import('@playwright/test').Page, type: string) {
-  await page.locator(`.svelte-flow__node-${type}`).first().locator('.title').click({ button: 'right' });
+  await page.locator(`.svelte-flow__node:has([data-shell-type="${type}"])`).first().locator('.tile-name').click({ button: 'right' });
   const menu = page.locator('[role="menu"][aria-label="Module actions"]');
   await expect(menu).toBeVisible();
   return menu;
 }
 
-test('documented module (adsr): Annotate entry toggles a hover popover over a control', async ({ page, rackLegacy }) => {
+test('documented module (adsr): Annotate entry toggles a hover popover over a control', async ({ page, rack }) => {
   await spawnModule(page, 'adsr', 'adsr');
 
   // 1) The Annotate entry exists for a documented module.
@@ -70,7 +70,7 @@ test('documented module (adsr): Annotate entry toggles a hover popover over a co
   await expect(page.getByTestId('annotate-popover')).toHaveCount(0);
 });
 
-test('documented module (adsr): hovering a PATCH PORT shows its doc incl. the CV→param dual context', async ({ page, rackLegacy }) => {
+test('documented module (adsr): hovering a PATCH PORT shows its doc incl. the CV→param dual context', async ({ page, rack }) => {
   await spawnModule(page, 'adsr', 'adsr');
 
   // Turn Annotate ON.
@@ -79,7 +79,7 @@ test('documented module (adsr): hovering a PATCH PORT shows its doc incl. the CV
   await expect(menu).toBeHidden();
 
   // Open the yellow patch panel → drill into INPUT.
-  const card = page.locator('.svelte-flow__node-adsr').first();
+  const card = page.locator('.svelte-flow__node:has([data-shell-type="adsr"])').first();
   await card.getByTestId('patch-trigger').click();
   await expect(page.getByTestId('patch-panel')).toBeVisible();
   await page.locator('[data-testid="patch-panel-nav"][data-nav="inputs"]').click();
@@ -104,7 +104,7 @@ test('documented module (adsr): hovering a PATCH PORT shows its doc incl. the CV
   await page.screenshot({ path: 'test-results/module-annotate-port-popover.png' });
 });
 
-test('undocumented module (matrixMix): NO Annotate entry', async ({ page, rackLegacy }) => {
+test('undocumented module (matrixMix): NO Annotate entry', async ({ page, rack }) => {
   // FIXTURE CHOICE: a currently-undocumented, LIGHTWEIGHT module (the
   // `matrixMix` DOM matrix-mixer card — trivial card, no WebGL). toybox (the
   // permanent docs exemption) is the conceptually-correct "never documented"
