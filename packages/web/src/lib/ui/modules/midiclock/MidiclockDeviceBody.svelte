@@ -323,11 +323,23 @@
 </div>
 
 <style>
+  /* ⚠ A COLUMN, AND THE DIRECTION IS THE WIDTH GATE'S DOING. This was a
+     wrapping ROW (hint/picker + lamps on one line, `margin-left: auto` on the
+     lamps), and a row's MAX-CONTENT ask is the SUM of the whole line even
+     though the plate would happily wrap it. Adding the `debug` toggle pushed
+     that one-line ask past the face band's own, so the plate's width driver
+     flipped from the band's BOXY cells (which the width gate credits as
+     content) to this body's boxes (which it measures by TEXT RANGES) —
+     `face-midiclock-dock` went red with 52 px of "empty plate" that was really
+     this row's un-drawn box width. A column's ask is the MAX of its rows, so
+     the band stays the plate's driver and the lamps row rides in the stretch
+     space — the tidyVco min-width class, fixed at the ask rather than
+     exempted. */
   .midiclock-device {
     display: flex;
-    align-items: center;
-    gap: 12px;
-    flex-wrap: wrap;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
     padding: 6px 10px;
     border: 1px solid var(--border, #333);
     border-radius: 3px;
@@ -369,13 +381,12 @@
     display: inline-flex;
     align-items: center;
     gap: 12px;
-    margin-left: auto;
+    align-self: flex-end;
   }
   .tail-toggle {
     font-size: 9px;
   }
   .tail {
-    flex-basis: 100%;
     display: flex;
     flex-direction: column;
     gap: 4px;
@@ -389,6 +400,14 @@
     margin: 0;
     padding: 6px;
     box-sizing: border-box;
+    /* ⚠ ZERO intrinsic ask, full laid-out width. A `pre` full of unwrapped
+       rows would otherwise bid its longest row into the COLUMN's max-content
+       and widen the whole plate the moment the panel opens; `width: 0` takes
+       it out of the bidding entirely (a percentage cap would not — intrinsic
+       sizing ignores percentages) and `min-width: 100%` hands it the body's
+       real width at layout. Long rows scroll inside, per the repo rule. */
+    width: 0;
+    min-width: 100%;
     max-height: 132px;
     overflow: auto;
     background: #0c0e12;

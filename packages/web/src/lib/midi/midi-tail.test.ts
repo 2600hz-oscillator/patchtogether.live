@@ -29,7 +29,9 @@ describe('decodeMidiMessage — System Real-Time first, because a transport brid
   it('decodes System Common (song position is 14-bit little-endian)', () => {
     expect(decodeMidiMessage([0xf2, 0x01, 0x01])).toBe('SONG POS 129');
     expect(decodeMidiMessage([0xf3, 5])).toBe('SONG SEL 5');
-    expect(decodeMidiMessage([0xf0])).toBe('SYSEX');
+    expect(decodeMidiMessage([0xf0])).toBe('SYSEX (1 bytes)');
+    // The LENGTH is the diagnostic half of a sysex row — the hex column elides.
+    expect(decodeMidiMessage([0xf0, 0x00, 0x21, 0x45, 0xf7])).toBe('SYSEX (5 bytes)');
   });
 
   it('decodes channel voice with the 1-based on-wire channel', () => {
@@ -69,6 +71,18 @@ describe('formatMidiTailRow — timestamped hex + decoded name', () => {
   it('formatMidiHex zero-pads and uppercases', () => {
     expect(formatMidiHex([0x90, 0x3c, 0x64])).toBe('90 3C 64');
     expect(formatMidiHex([0x0f])).toBe('0F');
+  });
+
+  it('a long message ELIDES its hex past 8 bytes — the row stays a row, the count survives', () => {
+    // The tail paints unwrapped rows; an unbounded sysex body would put a mile
+    // of horizontal scroll between the player and the next transport row.
+    const row = formatMidiTailRow({
+      atMs: 1,
+      bytes: [0xf0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 0xf7],
+    });
+    expect(row).toContain('… +4');
+    expect(row).toContain('SYSEX (12 bytes)');
+    expect(row).not.toContain('0A'); // byte 10 is inside the elision
   });
 });
 

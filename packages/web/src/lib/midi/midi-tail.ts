@@ -64,7 +64,7 @@ export function decodeMidiMessage(bytes: readonly number[]): string {
       case 0xfc: return 'STOP';
       case 0xfe: return 'ACTIVE SENSE';
       case 0xff: return 'RESET';
-      case 0xf0: return 'SYSEX';
+      case 0xf0: return `SYSEX (${bytes.length} bytes)`;
       case 0xf1: return 'MTC QUARTER';
       case 0xf2: return `SONG POS ${((bytes[2] ?? 0) << 7) | (bytes[1] ?? 0)}`;
       case 0xf3: return `SONG SEL ${bytes[1] ?? 0}`;
@@ -99,14 +99,27 @@ export function formatMidiHex(bytes: readonly number[]): string {
   return bytes.map((b) => (b & 0xff).toString(16).toUpperCase().padStart(2, '0')).join(' ');
 }
 
+/** Hex bytes shown per row before eliding. Every channel-voice and realtime
+ *  message fits whole; only sysex bodies run past it, and their LENGTH is what
+ *  a diagnosis reads (the decode column carries it), not their middle bytes. */
+export const MIDI_TAIL_HEX_BYTES = 8;
+
 /**
  * One tail row: seconds-with-millis timestamp, hex, decoded name. The
  * timestamp stays in the event's own performance.now() domain rather than
  * being re-anchored to wall time — DELTAS are what a clock diagnosis reads,
  * and this is the same clock the scheduler projects from.
+ *
+ * Long messages elide their hex past MIDI_TAIL_HEX_BYTES (`… +n`): the row is
+ * painted in an unwrapped `pre`, so an unbounded sysex row would otherwise be
+ * a mile of horizontal scroll standing between the player and the next
+ * transport row.
  */
 export function formatMidiTailRow(ev: MidiTailEvent): string {
-  const hex = formatMidiHex(ev.bytes).padEnd(8, ' ');
+  const hex =
+    ev.bytes.length > MIDI_TAIL_HEX_BYTES
+      ? `${formatMidiHex(ev.bytes.slice(0, MIDI_TAIL_HEX_BYTES))} … +${ev.bytes.length - MIDI_TAIL_HEX_BYTES}`
+      : formatMidiHex(ev.bytes).padEnd(8, ' ');
   return `${(ev.atMs / 1000).toFixed(3).padStart(9, ' ')}  ${hex}  ${decodeMidiMessage(ev.bytes)}`;
 }
 
