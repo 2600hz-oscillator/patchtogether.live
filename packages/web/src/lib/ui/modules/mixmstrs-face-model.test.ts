@@ -6,7 +6,7 @@
 //
 //   1. THE RANKING INVARIANT — the whole argument of this face, asserted from
 //      the live def in BOTH directions. A mixer is N interchangeable channel
-//      strips; the face's claim is that the eleven BUS-SCOPED controls take
+//      strips; the face's claim is that the thirteen BUS-SCOPED controls take
 //      every rank a lane tier can reach, so no channel is ever privileged.
 //      That is a property, not a comment, and it is checked as one.
 //   2. GLYPH RESOLUTION — established, not assumed (#1692's `meter` that fell
@@ -70,6 +70,16 @@ describe('mixmstrs face — the SCOPE ranking, asserted from the live def', () =
     expect(isChannelScoped(`send${MIXMSTRS_RETURNS[0]}Pre`), 'a bus tap point is not a channel').toBe(false);
     expect(isChannelScoped(`ch${MIXMSTRS_CHANNELS[0]}_low`), 'a channel EQ band IS a channel control').toBe(true);
     expect(isChannelScoped(`comp${MIXMSTRS_CHANNELS[0]}`), 'a COMP macro IS a channel control').toBe(true);
+    // ⚠ THE CLIP-RECORD CONTROLS, BOTH WAYS. The per-channel pair is claimed by
+    // the `ch{N}_` naming rule with no edit anywhere — which is exactly why the
+    // bus-scoped pair had to AVOID that prefix. A control named `rec{N}` would
+    // have been silently mis-classified as bus-scoped and would have taken lane
+    // ranks it must not have; one named `ch_recTap` would have been claimed as
+    // channel 0's. Asserted so a future rename cannot quietly do either.
+    expect(isChannelScoped(`ch${MIXMSTRS_CHANNELS[0]}_rec`), 'a record ARM is a channel control').toBe(true);
+    expect(isChannelScoped(`ch${MIXMSTRS_CHANNELS[0]}_mon`), 'a MON mode is a channel control').toBe(true);
+    expect(isChannelScoped('recTap'), 'the tap point is BUS-scoped').toBe(false);
+    expect(isChannelScoped('recQuality'), 'the quality tier is BUS-scoped').toBe(false);
   });
 
   it('face.order is a BUS-SCOPED prefix followed by a CHANNEL-SCOPED suffix', () => {
@@ -355,22 +365,46 @@ describe('mixmstrs face — the CAPTIONS, as a partition of the def', () => {
   const BARE = new Set(FACE.bareCells ?? []);
 
   it('every param is either BARE or one of the NAMED exceptions — nothing in between', () => {
-    // The exception restated as a PROPERTY rather than copied as a list: a
-    // send-bus PRE/POST switch is the one control whose cluster heading names
-    // something else (the send AMOUNT row), so it is the one that keeps its
-    // own caption.
+    // The exception restated as TWO PROPERTIES rather than copied as a list.
+    //
+    //  1. A send-bus PRE/POST switch is the one control whose cluster heading
+    //     names something else (the send AMOUNT row), so it keeps its caption.
+    //
+    //  2. ⚠ AND SO DOES ANY PARAM WITH AN `options` ROSTER — added when the
+    //     clip-record band landed, and stated as a RULE because eighteen ids
+    //     pasted here would be a list that goes stale the next time a rostered
+    //     control is added. A rostered cell's readout IS its state name: it
+    //     paints `off` / `once` / `inf`, and with the caption suppressed nothing
+    //     on the plate says WHICH channel's arm that is. `module-face-lint`
+    //     enforces the same property from the other side ("face.bareCells never
+    //     silences a param whose readout is its only STATE NAME"), so the two
+    //     gates now agree by construction rather than by maintenance.
     const isSendPre = (id: string) => /^send\d+Pre$/.test(id);
+    const byId = new Map(PARAMS.map((p) => [p.id, p]));
+    const hasRoster = (id: string) => (byId.get(id)?.options?.length ?? 0) > 0;
+    const keepsCaption = (id: string) => isSendPre(id) || hasRoster(id);
+
     const captioned = PARAM_IDS.filter((id) => !BARE.has(id));
     expect(
-      captioned.filter((id) => !isSendPre(id)).sort(),
-      'a param is captioned but is not a send PRE/POST switch — either it was left out of ' +
-        'face.bareCells by accident, or the exception rule changed and this test did not',
+      captioned.filter((id) => !keepsCaption(id)).sort(),
+      'a param is captioned but is neither a send PRE/POST switch nor a rostered control — ' +
+        'either it was left out of face.bareCells by accident, or the exception rule changed ' +
+        'and this test did not',
     ).toEqual([]);
     expect(
       PARAM_IDS.filter(isSendPre).filter((id) => BARE.has(id)),
       'a send PRE/POST switch went bare — nothing else on the face names the tap point, and ' +
         'the header echo that used to was removed in #1738',
     ).toEqual([]);
+    expect(
+      PARAM_IDS.filter(hasRoster).filter((id) => BARE.has(id)),
+      'a rostered control went bare — its readout is the only thing naming its state, so a ' +
+        'bare cell would paint `off` with nothing saying off of WHAT',
+    ).toEqual([]);
+    // VACUITY GUARD: both properties must select something, or this rule would
+    // be satisfied by a def that happens to have neither kind of control.
+    expect(PARAM_IDS.filter(isSendPre).length, 'send PRE/POST switches exist').toBeGreaterThan(0);
+    expect(PARAM_IDS.filter(hasRoster).length, 'rostered controls exist').toBeGreaterThan(0);
   });
 
   it('ANCHOR: bareCells names only live params, and both sides are non-empty', () => {
