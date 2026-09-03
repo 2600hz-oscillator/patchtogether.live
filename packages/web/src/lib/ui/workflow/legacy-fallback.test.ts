@@ -96,10 +96,28 @@ describe('isShellSwappable — eligibility', () => {
     for (const t of NON_SHELL_LANE_TYPES) {
       expect(isShellSwappable(t, true)).toBe(false);
     }
-    // sanity: the excluded set is the snowflakes we intend to hold back
+    // sanity: the excluded set is the organizational chrome we intend to hold
+    // back. ⚠ THE SECOND LINE USED TO ASSERT `clipplayer` — the last MODULE
+    // CARD this set ever held, and the one the "snowflake" clause it was built
+    // around was actually true of. Its own promotion retired it (below), so the
+    // sanity leg now names what the set has become: chrome and a sprite, no
+    // module cards at all.
     expect(NON_SHELL_LANE_TYPES.has('group')).toBe(true);
-    expect(NON_SHELL_LANE_TYPES.has('clipplayer')).toBe(true);
+    expect(NON_SHELL_LANE_TYPES.has('sticky')).toBe(true);
     expect(NON_SHELL_LANE_TYPES.has('tidyvco')).toBe(false);
+  });
+
+  it('clipplayer SWAPS now that it has a face — and the removal HAD to ride the promotion', () => {
+    // ⚠ THIS IS THE SPLIT-BRAIN LEG, not a bookkeeping one. `laneRenderKind`
+    // consults NON_SHELL_LANE_TYPES while `DockFullView` switches on bare
+    // STRICT_FACES membership, so a clipplayer promoted while still listed here
+    // would paint the verbatim legacy CARD on the canvas and the FACEPLATE in
+    // the dock — two different instruments for one node. No other gate in the
+    // repo reads both sides: `module-face-lint` reads the def and
+    // `faces-parity` drives the dock. This assertion is the one that fails if
+    // the entry ever comes back without the face going with it.
+    expect(NON_SHELL_LANE_TYPES.has('clipplayer')).toBe(false);
+    expect(isShellSwappable('clipplayer', true)).toBe(true);
   });
 
   it('videoOut SWAPS now that it has a face — the carve-out was about a PLACEHOLDER, not about the module', () => {

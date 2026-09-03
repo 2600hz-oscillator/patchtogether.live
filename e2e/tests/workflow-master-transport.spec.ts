@@ -310,9 +310,29 @@ for (const [label, url] of [
     await seedClip(page);
     await tapMaster(page);
 
-    // Open the `c` drawer → the pinned clipplayer card (the owner's surface).
+    // Open the `c` drawer → the pinned clipplayer, the owner's surface.
+    //
+    // ⚠ THE CONTAINER IS THE PANE, NOT `[data-dock-card]`, AND THE PROMOTION IS
+    // WHY. `data-dock-card` is emitted by `DockCardHost` and by `DockFullView`'s
+    // CARD branch only, so it vanishes the moment this drawer paints a
+    // faceplate — which it now does for `clipplayer` on BOTH urls in the table
+    // below, not only the default one. `?shell=legacy` steers `laneRenderKind`,
+    // which decides the CANVAS LANE; the `c` drawer routes through
+    // `DockFullView`, which switches on bare `STRICT_FACES` membership and
+    // never reads the flag. So the `legacy-cards` arm of this test is looking
+    // at the faceplate too, and asserting on a card selector made BOTH arms red.
+    //
+    // The pane wrapper is what the two surfaces have in common: Canvas emits
+    // `[data-testid="dock-fullview-pane"][data-pane-node]` around whichever one
+    // mounts. Everything below is UNCHANGED and still exactly as load-bearing —
+    // `[data-clip="0"]` is emitted identically by the card and by the launch
+    // panel (deliberately; eighteen spec files locate through it), so the
+    // launch, the transport mirror and the audibility windows all still
+    // measure the real chain.
     await page.keyboard.press('c');
-    const dockCard = page.locator(`[data-dock-card="${PINNED_CLIP}"]`);
+    const dockCard = page.locator(
+      `[data-testid="dock-fullview-pane"][data-pane-node="${PINNED_CLIP}"]`,
+    );
     await expect(dockCard).toBeVisible({ timeout: 10_000 });
     const pad = dockCard.locator('[data-clip="0"]');
     await expect(pad).toBeVisible({ timeout: 10_000 });
