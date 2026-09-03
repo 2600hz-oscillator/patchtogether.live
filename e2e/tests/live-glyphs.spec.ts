@@ -1,20 +1,25 @@
 // e2e/tests/live-glyphs.spec.ts
 //
-// LIVE proof for the glyph primitives (VuMeter + ScopeScreen):
+// LIVE proof for the glyph primitives (VuMeter + ScopeScreen), on the
+// DEFAULT shell: the glyphs' shell home is the DOCK HERO (`shell-glyph-meter`
+// / `shell-glyph` / `shell-glyph-wave`, bound per module by glyphKind — the
+// same components the cards adopted, so `data-lit` / `data-mode` /
+// `data-trace-peak` carry over):
 //
-//   1. VuMeter (moog914 adoption): wire a live VCO → the 914 filter bank and
+//   1. VuMeter (moog914 binding): wire a live VCO → the 914 filter bank and
 //      prove the meter LIGHTS from real audio — both the engine-level source
 //      (read('level') RMS > 0) AND the DOM the VuMeter renders (data-lit > 0),
-//      versus a silent 914 (no source) reading 0. This is the segments-change-
-//      with-level assertion, driven by a REAL signal at the audio thread.
+//      versus a silent 914 (no source) whose meter stays dark. Each node's
+//      meter lives in ITS OWN dock pane, so both sides are now assertable
+//      (the card's shared testid could only assert the driven one).
 //
 //   2. ScopeScreen waveform (showcase): the /dev/glyphs showcase drives the
 //      waveform screen with a moving buffer; assert the trace is NON-FLAT via
 //      the DOM-exposed `data-trace-peak` (capability-safe — no GPU/pixel read,
 //      so it's green on CI's SwiftShader too).
 //
-//   3. ScopeScreen envelope + wave (adsr / tidyvco adoptions): the screens
-//      mount in the right mode on their cards.
+//   3. ScopeScreen envelope + wave (adsr / tidyvco bindings): the screens
+//      mount in the right mode on their dock heroes.
 //
 // The RMS/level path is a plain AnalyserNode read (no H.264 / getUserMedia /
 // WebGL), so every assertion here runs identically on CI and locally.
@@ -42,15 +47,29 @@ async function readLevel(page: Page, nodeId: string): Promise<number> {
   }, nodeId);
 }
 
-/** The VuMeter root's `data-lit` (segments currently lit) for a module card. */
-async function meterLit(page: Page, testid: string): Promise<number> {
-  const el = page.locator(`[data-testid="${testid}"]`).first();
+/** The VuMeter root's `data-lit` (segments currently lit) inside a node's own
+ *  dock pane. */
+async function meterLit(page: Page, nodeId: string): Promise<number> {
+  const el = page
+    .locator(`[data-testid="dock-fullview-pane"][data-pane-node="${nodeId}"] [data-testid="shell-glyph-meter"]`)
+    .first();
   const raw = await el.getAttribute('data-lit');
   return raw ? Number(raw) : 0;
 }
 
-test('VuMeter lights from a live 914 output; silent 914 reads zero', async ({ page, rackLegacy }) => {
-  void rackLegacy;
+/** Open a node's dock pane (the shell home of its hero glyph). */
+async function openPane(page: Page, nodeId: string): Promise<void> {
+  await page.evaluate(
+    (id) => (globalThis as unknown as { __openDockFullView: (id: string) => void }).__openDockFullView(id),
+    nodeId,
+  );
+  await expect(
+    page.locator(`[data-testid="dock-fullview-pane"][data-pane-node="${nodeId}"]`),
+  ).toBeVisible();
+}
+
+test('VuMeter lights from a live 914 output; silent 914 reads zero', async ({ page, rack }) => {
+  void rack;
   // A VCO whose SAW output feeds the 914 filter bank input. The 914 bands
   // default to 0.5, so a broadband saw yields audible summed output.
   await spawnPatch(
@@ -80,15 +99,15 @@ test('VuMeter lights from a live 914 output; silent 914 reads zero', async ({ pa
   // The unpatched 914 stays silent.
   expect(await readLevel(page, 'flt2')).toBeLessThan(0.005);
 
-  // The VuMeter DOM the card renders reflects it: the driven meter lights
-  // segments, the silent one is dark. The meter smooths on the shared frame,
-  // so poll until it climbs.
+  // The VuMeter DOM the dock hero renders reflects it: the driven meter lights
+  // segments, the silent one stays dark. The meter smooths on the shared
+  // frame, so poll until it climbs. Two panes ⇒ both sides assertable.
+  await openPane(page, 'flt1');
+  await openPane(page, 'flt2');
   await expect
-    .poll(() => meterLit(page, 'moog914-vumeter'), { timeout: 6000, message: 'driven VuMeter lit segments' })
+    .poll(() => meterLit(page, 'flt1'), { timeout: 6000, message: 'driven VuMeter lit segments' })
     .toBeGreaterThan(0);
-
-  // (Both 914s share the testid; the first match is the driven one at x=460.
-  // The engine-level silent assertion above is the authoritative dark proof.)
+  expect(await meterLit(page, 'flt2'), 'the silent 914 meter is dark').toBe(0);
 });
 
 test('ScopeScreen waveform trace is non-flat when a signal is driven (showcase)', async ({ page }) => {
@@ -109,17 +128,26 @@ test('ScopeScreen waveform trace is non-flat when a signal is driven (showcase)'
     .toBeGreaterThan(0.05);
 });
 
-test('ScopeScreen mounts in envelope mode on ADSR and wave mode on TIDY VCO', async ({ page, rackLegacy }) => {
-  void rackLegacy;
+test('ScopeScreen mounts in envelope mode on ADSR and wave mode on TIDY VCO', async ({ page, rack }) => {
+  void rack;
   await spawnPatch(page, [
     { id: 'env1', type: 'adsr', position: { x: 100, y: 100 } },
     { id: 'osc1', type: 'tidyVco', position: { x: 100, y: 420 } },
   ]);
-  const envScreen = page.locator('[data-testid="adsr-envelope-screen"]').first();
+  await openPane(page, 'env1');
+  await openPane(page, 'osc1');
+
+  const envScreen = page.locator(
+    '[data-testid="dock-fullview-pane"][data-pane-node="env1"] [data-testid="shell-glyph"]',
+  ).first();
   await expect(envScreen).toBeVisible();
   expect(await envScreen.getAttribute('data-mode')).toBe('envelope');
 
-  const waveScreen = page.locator('[data-testid="tidyvco-wave-screen"]').first();
+  // TIDY VCO's hero is the DUAL display: the param-derived core waveform pane
+  // is the wave-mode screen (the live trace rides beside it).
+  const waveScreen = page.locator(
+    '[data-testid="dock-fullview-pane"][data-pane-node="osc1"] [data-testid="shell-glyph-wave"]',
+  ).first();
   await expect(waveScreen).toBeVisible();
   expect(await waveScreen.getAttribute('data-mode')).toBe('wave');
 });
