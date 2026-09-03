@@ -262,3 +262,87 @@ timing artifact.
    `#1847` park must be reconciled as a rewrite (M2).
 5. Re-run the transitive card-reaching-helper check after S1 (M2).
 6. No timing artifact needs pre-emptive re-pinning for the boot change (M5).
+
+---
+
+## Addendum — corrections S1 produced (appended 2026-09-03, after the DOM-source half)
+
+S0 measured the branch point. S1 then changed the tree, and three of the plan's
+numbers moved. Recorded here rather than in a commit message so the next builder
+finds them with the rest of the measurements.
+
+### A1 — The S4 pre-stage list of card-reading face-model tests is under-scoped 2.4×
+
+The plan names **18** `*-face-model.test.ts` files that `readFileSync` their card.
+Derived mechanically from the tree: **44** reference a `*Card.svelte` in
+non-comment code. Missing from the plan's list include `samsloop-`, `toybox-`,
+`recorderbox-`, `videocube-`, `doom-`, `gamepad-`, `mappy-`, `chromaconsole-`,
+`timelorde-`, `scope-`, `synesthesia-`, `archivist-`.
+
+**Re-derive this list before S4 rather than working the plan's.** Three of the 44
+(archivist, toybox, samsloop) were already re-pointed by S1 as a side effect.
+
+### A2 — The docs blast radius is 43 pages, not 187
+
+Plan §1.3(c) says deleting the fleet "breaks all 187 STRICT_DOCS interactive
+pages". Measured: only the **43** `INTERACTIVE_DOC_MODULES` members mount a live
+surface, and only **2** modules (`adsr`, `lfo`) have a committed
+`e2e/vrt/__annotated__/*.legend.json`. The remaining ~142 STRICT_DOCS pages
+already render the abstract `IoDiagram` and never touched a card.
+
+That exposure is now zero — the face-based `VirtualModule` shipped in S1 — but
+the number matters for S3's annotated-pipeline scope, which the plan sizes off
+the same 187.
+
+### A3 — `DOM_SOURCE_LANE_TYPES` is EMPTY, and that has lane-wide consequences
+
+All three DOM-source producers converted, so the set has no members. Two things
+follow that the plan does not anticipate:
+
+1. **An empty derived set can take down the ENTIRE e2e lane.**
+   `card-producer-lifetime.spec.ts`'s `parseLaneSet` threw on an empty parse — a
+   COLLECTION-time throw, which makes Playwright list *zero tests in zero files*
+   across the whole project. Not one red spec: an empty run. ⚠ And `task e2e:one`
+   cannot see it, because a focused run still collects every file. What caught it
+   was `scripts/ci-selection-audit.test.ts` in the UNIT lane, which shells out to
+   `playwright test --list`. **S2 and S4 will empty more derived sets. Run
+   `cd e2e && npx playwright test --list | tail -1` after any commit that empties
+   one, and expect `Total: N tests in M files`.**
+
+2. **Eleven gates lost their subject at once.** Every one was re-pointed to a live
+   subject (`wavesculpt`, a CARD_PRODUCER member) or re-anchored from the
+   POPULATION onto the INSTRUMENT — a control over a population that reaches zero
+   stops controlling anything. The pattern to reuse: keep the derivation, and give
+   its control a synthetic input it must still classify correctly. Each re-point
+   also got an ANCHOR leg asserting its new subject is a real member, so the
+   producer extractions cannot silently re-empty them.
+
+### A4 — `needsHeadlessSourceMount` now has one unreachable branch
+
+`if (i.laneOmitsNode) return CARD_PRODUCER_LANE_TYPES.has(i.type)` — the function
+gates on `HEADLESS_MOUNT_LANE_TYPES` first, which is now exactly the
+CARD_PRODUCER half, so this can only return TRUE. The `false` branch is dead
+until a DOM-source module returns.
+
+Left in place deliberately: it is correct, it is one line, and deleting a correct
+branch because today's population cannot reach it is how the next module to
+arrive ships with the wrong answer. Named in the code and in
+`node-hls-source-registry.test.ts`, whose four-lane-states leg is skipped for the
+same reason with its subject-loss recorded.
+
+### A5 — The `dom-source-modules.ts` vocabulary rename is NOT done
+
+The brief lists it as an S1 item ("rename off 'card', no behavior change"). It is
+deliberately left undone, and the reason is worth having:
+
+- Two e2e specs parse `DOM_SOURCE_LANE_TYPES` / `CARD_PRODUCER_LANE_TYPES` **by
+  symbol name out of that file path** (`collapse-keeps-playing`,
+  `card-producer-lifetime`), as does `worker-eligibility.test.ts` by import. A
+  rename is a cross-lane edit with zero behavioural payoff at the exact moment
+  the next builder needs a stable base.
+- The file's MEANING moved this slice (its DOM-source half is empty; its
+  producer half is the live one). Renaming before the producer extractions land
+  would name it for a shape it is about to leave again.
+
+**Do it in S5**, with the producer extractions done, when the surviving concept
+has settled.
