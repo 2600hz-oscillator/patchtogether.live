@@ -5636,15 +5636,24 @@ export const FACES = [
       + 'sample-until-still loop, which will not return while the picture is still changing from '
       + 'idle to pattern. The card VRT suite closes the same race with a bespoke '
       + '"poll until >10% of the preview is lit, then freeze" helper on a 10 s budget '
-      + '(vrt-toybox.spec.ts); there is deliberately no equivalent added to the shared harness '
-      + 'in a face PR. If a baseline ever lands showing the idle field instead of the pattern, '
-      + 'THAT is the mechanism, and the fix is the settle, not the pin. '
+      + '(vrt-toybox.spec.ts), and toybox-randomize.spec.ts records the same thing from the '
+      + 'other side ("while the new GLSL fetches + compiles the layer contributes nothing" — '
+      + 'it waits 90 frames after a content swap). No equivalent was added to the shared '
+      + 'harness in a face PR. '
+      + '⚠ MEASURED RATHER THAN PREDICTED, and it holds: vrt-determinism-probe on this branch '
+      + 'reports BOTH tiers bit-identical across two full boots — compact 88x82 diff@1=0 '
+      + 'diff@26=0 maxDelta=0, dock 578x1476 diff@1=0 diff@26=0 maxDelta=0, pageerrors=0 on '
+      + 'each. The interesting column is `tries=2/2`: freezeFaceVideo needed a SECOND settle '
+      + 'round on both tiers before the surface stopped moving, which is the settle earning its '
+      + 'place rather than a margin to spend. If a baseline ever lands showing the idle field '
+      + 'instead of the pattern, THAT race is the mechanism, and the fix is the settle, not the '
+      + 'pin. '
       + '⚠ THE SIX CV SCOPES ARE THE OTHER MOVING THING, and they settle rather than needing a '
       + 'pin: CV-MOD is the default tab, each row paints an always-on inline scope, and with no '
       + 'cable patched every sample is the constant OFFSET — so the trace changes only while the '
       + 'ring buffer fills and is still thereafter, which is what `freezeFaceVideo`\'s retry loop '
-      + 'is for. Nothing else on the surface moves: the layer band, the tab rail and the pane are '
-      + 'static DOM.',
+      + 'is for — and the measured `tries=2/2` above is most likely them. Nothing else on the '
+      + 'surface moves: the layer band, the tab rail and the pane are static DOM.',
     // ⚠ A CLOCK PIN, NOT A FREEZE PARAM — the cheaper of the two whenever it
     // applies, and here it is the ONLY one that applies. Adding a `freeze`
     // ParamDef to `toyboxDef` would move `params`, which moves contract-lock AND
