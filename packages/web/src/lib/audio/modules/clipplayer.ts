@@ -2637,7 +2637,17 @@ export const clipplayerDef: AudioModuleDef = {
               case 'pitchVOct': return ln.lastVOct;
               case 'gateValue': return ln.lastGate;
               case 'velValue': return ln.lastVel;
-              case 'currentStep': return laneDisplayStep(L);
+              // ⚠ GATED ON THE SAME `transportRunning()` THE SCHEDULER GATES
+              // ON. A transport stop silences every lane but deliberately KEEPS
+              // `ln.active` (lanes resume on restart) and leaves the elapsed
+              // ring entries behind, so `laneDisplayStep` keeps answering the
+              // LAST step that sounded — and both piano rolls (card + face)
+              // poll this key and painted that stale answer as a full-column
+              // "playhead" frozen on screen for as long as the clip stayed
+              // armed. Nothing is sounding while the scheduler is not running:
+              // the honest read is -1. `laneDisplayStep` itself is untouched —
+              // `reconcileLane`'s cut decision needs the raw anchor.
+              case 'currentStep': return transportRunning() ? laneDisplayStep(L) : -1;
             }
           }
         }

@@ -511,7 +511,177 @@ test.describe('CLIP PLAYER faceplate', () => {
     expect(errors).toEqual([]);
   });
 
-  // ── 7. THE TWO-SURFACE HAZARD, MEASURED AND SCOPED ──────────────────────
+  // ── 7. THE EDITOR FOLLOWS THE PAD, ACROSS LANES ──────────────────────────
+  //
+  // ⚠ THE P0 THIS PINS (owner, 2026-09-03). The selection registry's guard
+  // bounded the flat key by CLIP_COUNT (= 64, a PAD count) while the key space
+  // is stride-64 (`lane*64+slot`, see `padKey` above) — so double-clicking any
+  // pad OFF lane 1 CREATED its clip and then silently dropped the SELECT, and
+  // the editor band stayed bound to the old clip with every edit landing there.
+  // Leg "the extracted clip menu…" above is the shape of the miss: it
+  // double-clicks pad 65 and asserts CREATION, which stayed green throughout.
+  // This leg asserts the BINDING (the head's accessible name) and the WRITE
+  // (the cell click lands in the clip the head names, and ONLY there).
+  test('the editor follows the pad you double-click across lanes, and writes THAT clip', async ({ page }) => {
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(String(e)));
+
+    await gotoShell(page);
+    await spawnPatch(page, [
+      { id: CP, type: 'clipplayer', position: { x: 120, y: 120 }, domain: 'audio' },
+    ]);
+    const dock = await openDock(page, CP);
+    const grid = dock.getByTestId('clipplayer-face-grid');
+    const editor = dock.getByTestId('clipplayer-face-editor');
+    // The clip head is the editor's one role=group; its accessible name carries
+    // the channel/slot identity the 2026-08-17/19 rulings moved off resting text.
+    const head = editor.getByRole('group');
+    await expect(head).toHaveAttribute('aria-label', /^channel 1 slot 1,/);
+
+    // PAD A — lane 1 slot 3 (flat key 2, the stride-invariant lane): bind, edit.
+    await grid.getByTestId('clipplayer-pad-2').dblclick();
+    await expect(head, 'the editor binds to pad A').toHaveAttribute('aria-label', /^channel 1 slot 3,/);
+    await editor.getByTestId('clipplayer-cell-0-0').click();
+    await expect
+      .poll(async () => {
+        const clips = ((await readData(page, CP)).clips ?? {}) as Record<string, { steps?: unknown[] }>;
+        return clips['2']?.steps?.length ?? 0;
+      }, { message: 'the cell click writes clip 2' })
+      .toBe(1);
+
+    // PAD B — lane 3 slot 2 (flat key 129): the key the old CLIP_COUNT bound
+    // rejected. The head must follow, and the next edit must land in 129 —
+    // and NOT in 2, which is precisely where the broken binding sent it.
+    const keyB = String(padKey(2, 1)); // lane index 2, slot index 1 → 129
+    await grid.getByTestId(`clipplayer-pad-${keyB}`).dblclick();
+    await expect(head, 'the editor binds to pad B, off lane 1').toHaveAttribute(
+      'aria-label',
+      /^channel 3 slot 2,/,
+    );
+    await editor.getByTestId('clipplayer-cell-0-1').click();
+    await expect
+      .poll(async () => {
+        const clips = ((await readData(page, CP)).clips ?? {}) as Record<string, { steps?: unknown[] }>;
+        return [clips[keyB]?.steps?.length ?? 0, clips['2']?.steps?.length ?? 0];
+      }, { message: 'the edit lands in clip 129 and clip 2 is untouched' })
+      .toEqual([1, 1]);
+
+    // The editor-foot QUEUE targets B's lane+slot — the same binding, on the
+    // launch path (the card's editor-foot semantics, verbatim).
+    // ⚠ QUEUED **OR** PLAYING, the audible leg's own lesson: with nothing
+    // playing there is no boundary to wait for, so the engine can adopt the
+    // queue into `playing` on its very next tick — polling `queued` alone is a
+    // race against the thing working (it lost on a REPEAT run). Either field
+    // holding slot index 1 on lane index 2 proves the binding.
+    await editor.getByTestId('clipplayer-edit-queue').click();
+    await expect
+      .poll(async () => {
+        const d = await readData(page, CP);
+        return [
+          (d.queued as unknown[] | undefined)?.[2] ?? null,
+          (d.playing as unknown[] | undefined)?.[2] ?? null,
+        ];
+      }, { message: 'QUEUE addresses lane 3 (index 2) at slot 2 (index 1), queued or already adopted' })
+      .toContain(1);
+
+    expect(errors).toEqual([]);
+  });
+
+  // ── 8. THE PLAYHEAD COLUMN DIES WITH THE TRANSPORT ───────────────────────
+  //
+  // ⚠ THE STUCK-COLUMN ARTIFACT (owner, 2026-09-03). Stopping TIMELORDE keeps
+  // every lane's `active` slot (clips resume on restart) and leaves the elapsed
+  // schedule behind, so the engine's `currentStep:L` read kept answering the
+  // LAST sounded step — and the editor painted a full-column "playhead" frozen
+  // on screen for as long as the clip stayed armed. The legacy card polled the
+  // same key and froze the same way, but its editor is a view you leave; the
+  // face's editor band is always on screen, so the column read as a permanent
+  // artifact. The read is now gated on the SAME `transportRunning()` the
+  // scheduler gates on (clipplayer.ts), which clears both surfaces at once.
+  //
+  // The order is the point: run → column PRESENT (the positive control — a
+  // roll that never paints a playhead cannot pass the clears-leg vacuously) →
+  // stop → column CLEARS → run → column RETURNS (the gate did not kill the
+  // playhead, and a stopped lane really does resume).
+  test('the playhead column clears when the transport stops, and returns when it runs', async ({ page }) => {
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(String(e)));
+
+    await gotoShell(page);
+    await spawnPatch(page, [
+      {
+        id: CP, type: 'clipplayer', position: { x: 120, y: 120 }, domain: 'audio',
+        // QNT off so the launch fires immediately; 1/16 steps.
+        params: { quantize: 0, stepDiv: 2 },
+      },
+    ]);
+    // A real transport, STOPPED — free-run (no TIMELORDE) legitimately keeps
+    // its own clock, so the stuck state needs the rack clock present.
+    await setTransport(page, 0);
+    const dock = await openDock(page, CP);
+    const grid = dock.getByTestId('clipplayer-face-grid');
+    const editor = dock.getByTestId('clipplayer-face-editor');
+
+    // Notes for clip 0 (the editor's default binding) seeded through the graph
+    // — the launch and the paint are the subjects, not sixteen cell clicks.
+    await page.evaluate((cp) => {
+      const w = globalThis as unknown as {
+        __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
+        __ydoc: { transact: (fn: () => void) => void };
+      };
+      w.__ydoc.transact(() => {
+        const n = w.__patch.nodes[cp]!;
+        if (!n.data) n.data = {};
+        n.data.clips = {
+          '0': {
+            kind: 'note', lengthSteps: 16, root: 48, loop: true,
+            steps: [
+              { step: 0, midi: 72, velocity: 127, lengthSteps: 1 },
+              { step: 4, midi: 74, velocity: 127, lengthSteps: 1 },
+              { step: 8, midi: 76, velocity: 127, lengthSteps: 1 },
+              { step: 12, midi: 79, velocity: 127, lengthSteps: 1 },
+            ],
+          },
+        };
+      });
+    }, CP);
+    await expect(grid.getByTestId('clipplayer-pad-0')).toHaveAttribute('data-state', 'loaded');
+
+    const playheadCells = editor.locator('.cell.playhead');
+
+    await setTransport(page, 1);
+    await grid.getByTestId('clipplayer-pad-0').click();
+    await expect
+      .poll(async () => await playheadCells.count(), {
+        message: 'POSITIVE CONTROL: the running clip paints a playhead column',
+      })
+      .toBeGreaterThan(0);
+
+    // ⚠ THE STUCK STATE, RECREATED: stop the transport while the clip is still
+    // armed (`data.playing[0]` stays 0 — that is the resume contract, asserted
+    // so this leg cannot silently pass by the lane having stopped instead).
+    await setTransport(page, 0);
+    await expect
+      .poll(async () => await playheadCells.count(), {
+        message: 'the frozen column CLEARS when the transport stops',
+      })
+      .toBe(0);
+    expect(
+      ((await readData(page, CP)).playing as unknown[] | undefined)?.[0],
+      'the lane is still ARMED (stopping the transport is not stopping the clip)',
+    ).toBe(0);
+
+    await setTransport(page, 1);
+    await expect
+      .poll(async () => await playheadCells.count(), {
+        message: 'the playhead returns when the transport runs again',
+      })
+      .toBeGreaterThan(0);
+
+    expect(errors).toEqual([]);
+  });
+
+  // ── 9. THE TWO-SURFACE HAZARD, MEASURED AND SCOPED ──────────────────────
   test('under ?shell=legacy an open dock makes the card AND the face live — scope, do not assume', async ({ page }) => {
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(String(e)));
