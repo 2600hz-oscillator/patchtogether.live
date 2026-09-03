@@ -277,6 +277,24 @@ const SURFACE_RE = /(ClipplayerCard\.svelte|clipplayer[-/][^/]*face[^/]*\.(ts|sv
  *  distinctive first rung and cannot be written any other way. */
 const LADDER_RE = /queued\s*===\s*slot|q\s*===\s*slot/;
 
+/**
+ * Source with comments removed, so the scan reads CODE and not prose.
+ *
+ * ⚠ A MEASURED NECESSITY, NOT TIDINESS. The first cut matched raw text, and the
+ * first surface to delegate CORRECTLY went red — because its comment EXPLAINED
+ * the rung it had just stopped writing. A gate that cannot tell an
+ * implementation from a sentence about the implementation punishes exactly the
+ * documentation this repo runs on, and the obvious workaround ("never name the
+ * thing in a comment") is worse than the gate.
+ *
+ * Deliberately a cheap strip rather than a parser: it removes block and line
+ * comments and does not track string literals. A `//` inside a string would
+ * over-strip that line, which can only ever cause a MISS, never a false red —
+ * and a miss is what the positive control below exists to catch.
+ */
+const stripComments = (src: string): string =>
+  src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
+
 describe('the pad ladder is not re-typed on a surface', () => {
   const surfaces = Object.entries(LIB_FILES)
     .filter(([p]) => !p.includes('.test.'))
@@ -287,6 +305,16 @@ describe('the pad ladder is not re-typed on a surface', () => {
     // otherwise turn this whole describe green by scanning nothing.
     expect(surfaces.length).toBeGreaterThanOrEqual(1);
     expect(surfaces.some(([p]) => p.endsWith('ClipplayerCard.svelte'))).toBe(true);
+    // ⚠ AND THE V2 FACE, BY NAME, NOW THAT IT EXISTS. When this helper was
+    // written the face was still an unmerged branch, so the scan could only
+    // PROMISE to cover it once it landed. It has (#2326), and two surfaces
+    // drifting apart is the entire defect this file guards — so "both surfaces
+    // are actually being read" is asserted rather than left to the regex's good
+    // intentions.
+    expect(
+      surfaces.some(([p]) => p.endsWith('clipplayer/clipplayer-face-model.ts')),
+      'the v2 face model must be in the scanned set — it is the second surface',
+    ).toBe(true);
   });
 
   it('every surface DELEGATES to clipPadState and re-types no ladder of its own', () => {
@@ -296,7 +324,9 @@ describe('the pad ladder is not re-typed on a surface', () => {
     // through it (measured — the negative control below was green when it
     // should have been red). A delegating surface has no reason to write the
     // `queued === slot` rung at all, so its presence is the offence.
-    const offenders = surfaces.filter(([, src]) => LADDER_RE.test(src)).map(([p]) => p);
+    const offenders = surfaces
+      .filter(([, src]) => LADDER_RE.test(stripComments(src)))
+      .map(([p]) => p);
     expect(
       offenders,
       'a clipplayer surface computes pad state itself instead of calling clipPadState — ' +
@@ -307,5 +337,26 @@ describe('the pad ladder is not re-typed on a surface', () => {
   it('the card actually calls the shared helper (not merely imports it)', () => {
     const card = surfaces.find(([p]) => p.endsWith('ClipplayerCard.svelte'))?.[1] ?? '';
     expect(card).toContain('clipPadState(dataObj()');
+  });
+
+  it('POSITIVE CONTROL: the scan still reddens on a re-typed ladder in CODE', () => {
+    // ⚠ THE COMMENT STRIP MUST NOT HAVE BLUNTED THE GATE. This feeds the
+    // stripper a file that both EXPLAINS the rung in prose and WRITES it in
+    // code, and requires the code half to survive — so "reads code, not prose"
+    // is a property with a test rather than a claim in a doc comment.
+    const proseOnly = `
+      // The ladder asks whether queued === slot before anything else.
+      /* Historically this file wrote if (q === slot) return 'queued'; */
+      export const f = (d, i) => clipPadState(d, i);
+    `;
+    const reTyped = `
+      // Delegates to the shared helper.
+      export function f(d, i) {
+        if (queued === slot) return 'queued';
+        return 'empty';
+      }
+    `;
+    expect(LADDER_RE.test(stripComments(proseOnly)), 'prose alone must NOT redden').toBe(false);
+    expect(LADDER_RE.test(stripComments(reTyped)), 'a re-typed rung in CODE must redden').toBe(true);
   });
 });
