@@ -182,6 +182,90 @@ export async function pollScopePeak(
   );
 }
 
+/** What the stereo poller returns: BOTH channel peaks plus provenance. */
+export interface StereoPollResult {
+  peakL: number;
+  peakR: number;
+  samples: number;
+  elapsedMs: number;
+  reachedThreshold: boolean;
+}
+
+/**
+ * Poll BOTH scope channels (ch1 + ch2) until each peak exceeds `threshold`,
+ * or `boundMs` elapses. Tracks the best reading PER CHANNEL, so a channel that
+ * crossed early stays crossed while the loop waits on the other one.
+ *
+ * Exists for the stereo-pair gates (AUDIO IN L/R, ES-9 pairs): the
+ * Playwright-side `expect.poll` shape it replaces did one CDP round trip per
+ * sample on the thread being measured and read a constant near-zero on a
+ * healthy chain.
+ */
+export async function pollScopeStereoPeaks(
+  page: Page,
+  scopeNodeId: string,
+  threshold: number,
+  boundMs: number,
+  sampleEveryMs = 25,
+): Promise<StereoPollResult> {
+  return page.evaluate(
+    ([id, thr, bound, every]) =>
+      new Promise<StereoPollResult>((resolve) => {
+        const w = globalThis as unknown as {
+          __engine?: () => {
+            read: (node: { id: string; type: string; domain: string }, key: string) => unknown;
+          } | null;
+          __patch: { nodes: Record<string, { id: string; type: string; domain: string }> };
+        };
+        const t0 = performance.now();
+        let bestL = 0;
+        let bestR = 0;
+        let samples = 0;
+        const done = (reachedThreshold: boolean): void => {
+          clearInterval(timer);
+          resolve({
+            peakL: bestL,
+            peakR: bestR,
+            samples,
+            elapsedMs: performance.now() - t0,
+            reachedThreshold,
+          });
+        };
+        const read = (): void => {
+          const eng = w.__engine?.();
+          const node = w.__patch?.nodes?.[id as string];
+          const snap =
+            eng && node
+              ? (eng.read(node, 'snapshot') as
+                  | { ch1?: Float32Array; ch2?: Float32Array }
+                  | undefined)
+              : undefined;
+          if (snap?.ch1 || snap?.ch2) {
+            const peak = (buf?: Float32Array): number => {
+              if (!buf) return 0;
+              let p = 0;
+              for (let i = 0; i < buf.length; i++) {
+                const a = Math.abs(buf[i]!);
+                if (a > p) p = a;
+              }
+              return p;
+            };
+            const l = peak(snap.ch1);
+            const r = peak(snap.ch2);
+            samples++;
+            if (l > bestL) bestL = l;
+            if (r > bestR) bestR = r;
+            if (bestL > (thr as number) && bestR > (thr as number)) return done(true);
+          }
+          if (performance.now() - t0 >= (bound as number)) done(false);
+        };
+        const timer = setInterval(read, every as number);
+        read();
+      }),
+    [scopeNodeId, threshold, boundMs, sampleEveryMs] as const,
+  );
+}
+
 /** What the RMS pollers return: the reading PLUS how it was taken. */
 export interface RmsPollResult {
   rms: number;
