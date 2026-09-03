@@ -592,6 +592,26 @@ describe('module-face lint — MOMENTARY pads (face.momentary)', () => {
     // of the control.
     'b3ntb0x:mirrorX',
     'b3ntb0x:mirrorY',
+    // TRAILS `range`, 2026-09-02. UNI (0) vs BI (1) — whether the eight X/Y
+    // jacks emit the pad's own 0..1 coordinates or a bipolar signal centred on
+    // the pad. It has the press-pad shape by coincidence of arity (`0..1
+    // discrete default 0`).
+    //
+    // LATCHING, classified AT THE READ SITE rather than from the shape.
+    // `trails.ts:723` is the only consumer and it is a LEVEL test evaluated
+    // fresh on every axis write — `const bipolar = (): boolean =>
+    // (knobs.range ?? 0) >= 0.5`, feeding the scale that maps a decoded 0..1 pad
+    // position onto the jack — and there is no edge detector
+    // anywhere in the module: the def declares `inputs: []`, so there is not
+    // even a gate jack that could deliver one. A momentary render would snap
+    // every X/Y jack back to unipolar the instant the player let go, which is
+    // not a control anyone could use to patch a centred destination.
+    //
+    // ⚠ Like `dockscope:range` above, it carries an `options` roster, so the two
+    // positions announce UNI and BI rather than pressed/unpressed — the
+    // classification and the roster are the same argument from two directions:
+    // this is a MODE switch, not an enable.
+    'trails:range',
     // MANDELBULB, 2026-08-20. Three params share the press-pad SHAPE
     // (`0..1 discrete`) by coincidence of arity, and all three are states you
     // set and leave — the card renders all three as latching BUTTONS
