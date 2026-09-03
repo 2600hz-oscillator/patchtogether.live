@@ -3712,6 +3712,15 @@
     border-radius: 0 0 3px 3px;
     padding: 8px 0;
     overflow-x: auto;
+    /* ⚠ RESERVE THE SCROLLBAR'S GUTTER. With `overflow-x: auto` alone, content
+     * sitting within a pixel of the pane's width makes the scrollbar appear and
+     * disappear as the six always-on CV scopes repaint — and every appearance
+     * shifts the layout beside it. That is invisible to a person and fatal to a
+     * machine: Playwright's actionability check requires a box unchanged across
+     * two consecutive animation frames, so a jittering pane leaves every control
+     * inside it permanently "visible, enabled and NOT stable". A reserved gutter
+     * is the same picture with a fixed geometry. */
+    scrollbar-gutter: stable;
   }
   canvas {
     display: block;

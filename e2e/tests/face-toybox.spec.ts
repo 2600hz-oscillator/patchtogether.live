@@ -201,6 +201,33 @@ async function combineNodeCount(page: Page, nodeId: string): Promise<number> {
   }, nodeId);
 }
 
+/**
+ * Click a control INSIDE the faceplate body.
+ *
+ * ⚠ ASSERT VISIBLE, THEN DISPATCH — and the split is the point. Playwright's
+ * actionability wait also requires STABLE (an unchanged box across two
+ * consecutive animation frames), and this body is never perfectly still: the
+ * screen blits every frame and six CV scopes repaint beside a pane that can
+ * gain and lose a scrollbar. MEASURED on CI shard 1/12: after the dock-open fix
+ * landed, the failures moved INSIDE the body — `toybox-preset-save` and
+ * `toybox-face-tab-combine` each timed out "waiting for element to be visible,
+ * enabled and stable", twice, on a surface that is demonstrably rendered.
+ *
+ * The `scrollbar-gutter: stable` this PR adds to `.tb-pane` removes the layout
+ * source of that jitter; this removes the DEPENDENCE on perfect stillness,
+ * which a live video console cannot honestly promise. Visibility is still
+ * asserted — the control must really be on screen — and it is the idiom
+ * `layers-survive-card-collapse.spec.ts` already uses for toybox controls on
+ * this same console.
+ */
+async function clickInBody(scope: Locator, testid: string): Promise<void> {
+  const el = scope.getByTestId(testid);
+  await expect(el, `${testid} must be on screen before it is clicked`).toBeVisible({
+    timeout: 15_000,
+  });
+  await el.dispatchEvent('click');
+}
+
 test.describe('TOYBOX face — the console survives the promotion that deletes its card', () => {
   test.beforeEach(({ page }) => {
     page.on('pageerror', (err) => {
@@ -264,7 +291,7 @@ test.describe('TOYBOX face — the console survives the promotion that deletes i
     }
 
     // COMBINE GRAPH — the editor whole, not a summary of it.
-    await body.getByTestId('toybox-face-tab-combine').click();
+    await clickInBody(body, 'toybox-face-tab-combine');
     await expect(body.getByTestId('toybox-graph-svg')).toBeVisible();
     await expect(body.getByTestId('toybox-add-row')).toBeVisible();
     // The full 17-kind ADD roster, spot-checked at both ends so a truncated
@@ -275,14 +302,14 @@ test.describe('TOYBOX face — the console survives the promotion that deletes i
 
     // PRESETS — including the typed-entry field, which is the affordance the
     // migration inventory's typed-entry leg is about.
-    await body.getByTestId('toybox-face-tab-presets').click();
+    await clickInBody(body, 'toybox-face-tab-presets');
     await expect(body.getByTestId('toybox-preset-select')).toBeVisible();
     await expect(body.getByTestId('toybox-randomize')).toBeVisible();
     // Bounded, for the reason `openDock` states: an unbounded click on a
     // not-yet-actionable control spends the TEST budget rather than failing.
-    await body.getByTestId('toybox-preset-save').click({ timeout: 10_000 });
+    await clickInBody(body, 'toybox-preset-save');
     await expect(body.getByTestId('toybox-preset-name-input')).toBeVisible({ timeout: 10_000 });
-    await body.getByTestId('toybox-preset-save-cancel').click({ timeout: 10_000 });
+    await clickInBody(body, 'toybox-preset-save-cancel');
 
     // The LAYER band is persistent across all three — every tab references
     // layers and none owns them, so it must never be the thing that went away.
@@ -318,7 +345,7 @@ test.describe('TOYBOX face — the console survives the promotion that deletes i
     // deepest thing on this surface and the one a summary-shaped migration
     // would have flattened; adding an op through the FACE must reach the same
     // Y.Doc the card writes.
-    await body.getByTestId('toybox-face-tab-combine').click();
+    await clickInBody(body, 'toybox-face-tab-combine');
     await expect(body.getByTestId('toybox-graph-svg')).toBeVisible();
 
     // The DEFAULT graph is on the surface before an ADD means anything — four
@@ -335,7 +362,7 @@ test.describe('TOYBOX face — the console survives the promotion that deletes i
     // next assertion a statement about the EDIT rather than about the mount.
     expect(await combineNodeCount(page, NODE)).toBe(0);
 
-    await body.getByTestId('toybox-add-lumakey').click();
+    await clickInBody(body, 'toybox-add-lumakey');
 
     // ⚠ THE EFFECT, IN THE GRAPH. A click that only added a box would leave a
     // patch that reloads without it and a rack-mate who never sees it.
@@ -366,7 +393,7 @@ test.describe('TOYBOX face — the console survives the promotion that deletes i
 
     // Turn it OFF. The picture is REMOVED — not hidden — so the space is
     // reclaimed, which is the whole point of the switch.
-    await toggle.click();
+    await clickInBody(body, 'toybox-face-screen-toggle');
     await expect(toggle).toHaveAttribute('aria-pressed', 'false');
     await expect(body.getByTestId('toybox-face-canvas')).toHaveCount(0);
 
@@ -413,11 +440,11 @@ test.describe('TOYBOX face — the console survives the promotion that deletes i
     // The console below is fully operable with the screen off — building a
     // patch blind on a projector is the normal show posture.
     await expect(body.getByTestId('toybox-face-layer-band')).toBeVisible();
-    await body.getByTestId('toybox-face-tab-combine').click({ timeout: 10_000 });
+    await clickInBody(body, 'toybox-face-tab-combine');
     await expect(body.getByTestId('toybox-graph-svg')).toBeVisible();
 
     // And it comes back.
-    await toggle.click({ timeout: 10_000 });
+    await clickInBody(body, 'toybox-face-screen-toggle');
     await expect(toggle).toHaveAttribute('aria-pressed', 'true');
     await expect(body.getByTestId('toybox-face-canvas')).toBeVisible();
   });
@@ -439,7 +466,7 @@ test.describe('TOYBOX face — the console survives the promotion that deletes i
     await expect(body).toBeVisible({ timeout: SLOW_BOOT_TEST_TIMEOUT_MS });
 
     // Switch it OFF, then throw the whole surface away.
-    await body.getByTestId('toybox-face-screen-toggle').click({ timeout: 10_000 });
+    await clickInBody(body, 'toybox-face-screen-toggle');
     await expect(body.getByTestId('toybox-face-screen-toggle')).toHaveAttribute(
       'aria-pressed',
       'false',

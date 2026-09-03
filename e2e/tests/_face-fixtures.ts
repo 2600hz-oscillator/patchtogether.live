@@ -178,12 +178,43 @@ export const DENIED: Readonly<Record<string, string>> = {
   // one-line repair already routed to the owner (a `DENIED ∩ STRICT_FACES ===
   // ∅` clause in workflow-shell.spec.ts's existing anchor block) — still
   // correctly NOT self-served under the no-new-gates ruling.
-  doom:
-    'OWNER RULING (2026-08-17): never touch DOOM in any way without specific approval. It is ' +
-    'named here so a DERIVED pool can never select it silently — the mechanical reason is that ' +
-    '`runtime.runTic()` runs inside `surface.draw`, so DOOM\'s game clock IS the frame clock and ' +
-    'spawning it in a UI spec starts a WAD runtime whose progress is measured in game tics. ' +
-    'It currently sorts LAST of the video candidates, and the exclusion must not depend on that.',
+  // ⚠ `doom` WAS HERE AND IS DELETED BY HAND (2026-09-02), the SEVENTH instance
+  // of the class the `audioOut`, `twotracks`, `archivist` and `peertube` notes
+  // above describe — but the FIRST whose entry was carrying a standing OWNER
+  // RULING rather than a capability fact, so it is quoted in full rather than
+  // summarised. It read, verbatim:
+  //
+  //     "OWNER RULING (2026-08-17): never touch DOOM in any way without specific
+  //      approval. It is named here so a DERIVED pool can never select it
+  //      silently — the mechanical reason is that `runtime.runTic()` runs inside
+  //      `surface.draw`, so DOOM's game clock IS the frame clock and spawning it
+  //      in a UI spec starts a WAD runtime whose progress is measured in game
+  //      tics. It currently sorts LAST of the video candidates, and the
+  //      exclusion must not depend on that."
+  //
+  // ⚠ EVERY CLAUSE OF IT IS STILL TRUE. The ruling stands (this promotion was
+  // made under a SPECIFIC 2026-09-02 authorisation for the FACE, which is what
+  // the ruling asks for, and it does not generalise to the next change). The
+  // mechanism is still true and is re-stated at two anchored sites — the
+  // `FACES_WITHOUT_SCENES` entry in `e2e/vrt/_shell-faces.ts` and the standing
+  // `EXEMPT_FROM_VRT` entry in `e2e/vrt/vrt-exemptions.ts` — neither of which is
+  // prose nobody reads.
+  //
+  // IT IS DELETED FOR THE MECHANICAL REASON THE FOUR NOTES ABOVE ESTABLISHED,
+  // AND HERE THE PROMOTION MAKES THE EXCLUSION **STRONGER**, NOT WEAKER. The
+  // loop below iterates `unpromoted`, and `doom` entered `STRICT_FACES` with
+  // this promotion, so it leaves that population entirely: a derived pool can no
+  // longer reach the `DENIED` lookup for it AT ALL, rather than reaching it and
+  // being turned away. A record the loop never consults again would go INVISIBLE
+  // rather than RED, which is precisely the silently-decorative state the
+  // `peertube` note predicted would keep recurring.
+  //
+  // ⚠ AND THE ENTRY'S LAST SENTENCE — "it currently sorts LAST of the video
+  // candidates, and the exclusion must not depend on that" — is the one worth
+  // keeping in the file, because it is now DISCHARGED rather than merely still
+  // true: the exclusion no longer depends on the sort, on this map, or on
+  // anybody remembering to re-add a name. It depends on set membership in
+  // `STRICT_FACES`, which every fixture in this file already reads.
 };
 
 // ── The committed contract golden ────────────────────────────────────────────
@@ -826,9 +857,17 @@ export function contractDomain(type: string): string {
  *     has nothing to advance, and the "blit drives the chain" leg would pass
  *     vacuously.
  *
- * `doom` cannot be selected: the shared `DENIED` map excludes it BY NAME with
- * the owner ruling, so this pool inherits the exclusion rather than relying on
- * it sorting last.
+ * ⚠ `doom` cannot be selected, and the MECHANISM CHANGED on 2026-09-02 — the
+ * prose is updated rather than left true-by-accident. It used to read: "the
+ * shared `DENIED` map excludes it BY NAME with the owner ruling, so this pool
+ * inherits the exclusion rather than relying on it sorting last." `doom` was
+ * PROMOTED (under a specific owner authorisation for its face), so it is no
+ * longer in `unpromoted` and the loop never reaches the `DENIED` lookup for it.
+ * The exclusion is now STRUCTURAL — a promoted module can never enter a derived
+ * pool — which is strictly stronger than a hand-maintained name, and the
+ * now-unread `DENIED` entry was deleted with a tombstone rather than left to
+ * read as live. The owner ruling itself is unchanged and still governs every
+ * other kind of DOOM change.
  */
 export const VIDEO_SINK_FIXTURE: FixtureResolution = deriveFixture(
   'video',
