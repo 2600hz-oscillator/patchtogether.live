@@ -23,29 +23,50 @@ function param(page: Page, id: string, name: string): Promise<number | undefined
   );
 }
 
-test.describe('FADER — card ↔ engine param wiring', () => {
-  test('mounts; the A/B + dry/wet faders and transition dropdowns drive node.params', async ({ page, rackLegacy, errorWatch }) => {
+/** Pointer-drag a dock slider vertically and return the param delta direction.
+ *  The card's <input>.fill() had exact-value semantics; a shell slider is a
+ *  drawn control, so the claim becomes: the GESTURE writes the param, in the
+ *  dragged direction. (Same shape as faces-parity-suite's dragKnob.) */
+async function dragSlider(page: import('@playwright/test').Page, slider: import('@playwright/test').Locator, dyPx: number): Promise<void> {
+  await slider.scrollIntoViewIfNeeded();
+  const box = (await slider.boundingBox())!;
+  const cx = box.x + box.width / 2;
+  const cy = box.y + box.height / 2;
+  await page.mouse.move(cx, cy);
+  await page.mouse.down();
+  await page.mouse.move(cx, cy + dyPx, { steps: 8 });
+  await page.mouse.up();
+}
+
+test.describe('FADER — face ↔ engine param wiring', () => {
+  test('mounts; the A/B + dry/wet faders and transition dropdowns drive node.params', async ({ page, rack, errorWatch }) => {
     await spawnPatch(page, [
       { id: 'fd', type: 'fader', position: { x: 200, y: 120 }, domain: 'video' },
     ]);
-    await expect(page.locator('[data-testid="fader-card"]')).toHaveCount(1);
+    const tile = page.locator('.svelte-flow__node[data-id="fd"] [data-testid="module-shell"]');
+    await expect(tile).toBeVisible();
+    await tile.getByTestId('shell-open-dock').click();
+    const dock = page.getByTestId('dock-full-view');
+    await expect(dock).toBeVisible();
 
-    // A/B fader → params.fader
-    await page.locator('[data-testid="fader-ab"]').fill('0.8');
-    await expect.poll(() => param(page, 'fd', 'fader'), { message: 'A/B fader → params.fader' })
-      .toBeCloseTo(0.8, 5);
+    // A/B fader → params.fader (drag up = raise; default 0.5)
+    const before = (await param(page, 'fd', 'fader')) ?? 0.5;
+    await dragSlider(page, dock.getByTestId('control-fader'), -40);
+    await expect.poll(async () => ((await param(page, 'fd', 'fader')) ?? 0.5) > before, { message: 'A/B fader drag raises params.fader' })
+      .toBe(true);
 
-    // dry/wet fader → params.dryWet
-    await page.locator('[data-testid="fader-drywet"]').fill('0.3');
-    await expect.poll(() => param(page, 'fd', 'dryWet'), { message: 'dry/wet fader → params.dryWet' })
-      .toBeCloseTo(0.3, 5);
+    // dry/wet fader → params.dryWet (drag down = lower; default 1?) — assert it MOVED.
+    const dwBefore = (await param(page, 'fd', 'dryWet')) ?? 0;
+    await dragSlider(page, dock.getByTestId('control-dryWet'), 40);
+    await expect.poll(async () => (await param(page, 'fd', 'dryWet')) !== dwBefore, { message: 'dry/wet fader drag writes params.dryWet' })
+      .toBe(true);
 
-    // transition dropdowns → params (index): dissolve=2, star=3
-    await page.locator('[data-testid="fader-ab-fx"]').selectOption({ value: '2' });
+    // transition radiogroups → params (index): dissolve=2, star=3
+    await dock.getByTestId('control-abTransition').locator('[role="radio"]').nth(2).click();
     await expect.poll(() => param(page, 'fd', 'abTransition'), { message: 'A/B transition → params.abTransition' })
       .toBe(2);
 
-    await page.locator('[data-testid="fader-drywet-fx"]').selectOption({ value: '3' });
+    await dock.getByTestId('control-dwTransition').locator('[role="radio"]').nth(3).click();
     await expect.poll(() => param(page, 'fd', 'dwTransition'), { message: 'D/W transition → params.dwTransition' })
       .toBe(3);
 

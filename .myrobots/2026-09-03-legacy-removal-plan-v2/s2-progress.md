@@ -172,6 +172,9 @@ Format: deleted test → why it dies → where the coverage lives now.
 
 | lfo-modulation-visible.spec.ts (WHOLE FILE, 2 tests) | subject = modulation VISIBLY moving the card fader thumb; the shell renders no CV motion (measured — see Defects) | modulation-reaches-the-param/audio is pinned by filter-cv-depth.spec.ts + modulation.spec.ts (both green on the default shell); the visible-thumb affordance leaves the product with the fleet. Same-commit: timings row pruned (421→420), wait-ledger shrunk 4 lines via `task lint:waits:accept` (diff reviewed = exactly the dead file's lines) |
 
+| fader.spec :: exact `.fill()` values on card inputs | card `<input>` semantics; shell sliders are drawn controls | rewritten: pointer-drag writes the param in the dragged direction + radiogroup transitions assert exact indices (a STRONGER gesture claim, weaker value-exactness — the def clamps stay unit-tested) |
+| fader-midi-assign :: `fader-ab-midi-badge` / `fader-drywet-midi-badge` | card-only per-fader badges | CC-drives-param asserted directly; the shared bound-badge behaviour is pinned by midi-learn.spec.ts on the shell |
+
 Collection: 3077 → 3066 → 3063 → **3061** tests in 504 files.
 
 ## Readout-family REWRITE recipe (proven on 4 files, commit 7)

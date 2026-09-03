@@ -53,7 +53,7 @@ async function injectCc(page: Page, channel: number, cc: number, value: number):
   );
 }
 
-test('FADER A↔B + dry/wet sliders are MIDI/Electra assignable (right-click → learn → CC drives param)', async ({ page, rackLegacy, errorWatch }) => {
+test('FADER A↔B + dry/wet sliders are MIDI/Electra assignable (right-click → learn → CC drives param)', async ({ page, rack, errorWatch }) => {
   await page.evaluate(() => window.localStorage.removeItem('pt.midi-bindings.v1'));
 
   await spawnPatch(
@@ -66,11 +66,19 @@ test('FADER A↔B + dry/wet sliders are MIDI/Electra assignable (right-click →
   );
   await installSimMidi(page);
 
-  const card = page.locator('.svelte-flow__node-fader').first();
-  await expect(card).toBeVisible();
+  const tile = page.locator('.svelte-flow__node[data-id="fad1"] [data-testid="module-shell"]');
+  await expect(tile).toBeVisible();
+  // The sliders live on the dock ladder on the shell; MIDI/Electra assign is
+  // the same control-context-menu, opened from the control itself.
+  await tile.getByTestId('shell-open-dock').click();
+  const dock = page.getByTestId('dock-full-view');
+  await expect(dock).toBeVisible();
+  const abSlider = dock.getByTestId('control-fader');
+  const dwSlider = dock.getByTestId('control-dryWet');
+  await abSlider.scrollIntoViewIfNeeded();
 
   // ---- A↔B fader ----
-  await card.locator('[data-testid="fader-ab"]').click({ button: 'right' });
+  await abSlider.click({ button: 'right' });
   const menu = page.locator('[data-testid="control-context-menu"]');
   await expect(menu, 'right-click opens the control menu').toBeVisible();
   await expect(menu.locator('[data-testid="ctx-midi-learn"]'), 'menu offers MIDI Learn').toBeVisible();
@@ -82,10 +90,13 @@ test('FADER A↔B + dry/wet sliders are MIDI/Electra assignable (right-click →
   await expect
     .poll(() => readParam(page, 'fad1', 'fader'), { timeout: 4000 })
     .toBeGreaterThan(0.5);
-  await expect(card.locator('[data-testid="fader-ab-midi-badge"]'), 'A↔B shows bound badge').toBeVisible();
+  // The card's per-fader midi badge died with it; the binding's OBSERVABLE
+  // effect (CC drives the param) is asserted above, and the shared badge
+  // behaviour is pinned by midi-learn.spec.ts on the shell.
 
   // ---- dry/wet fader ----
-  await card.locator('[data-testid="fader-drywet"]').click({ button: 'right' });
+  await dwSlider.scrollIntoViewIfNeeded();
+  await dwSlider.click({ button: 'right' });
   await expect(menu).toBeVisible();
   await expect(menu.locator('[data-testid="ctx-electra-el1"]'), 'dry/wet is Electra-assignable').toBeVisible();
   await menu.locator('[data-testid="ctx-midi-learn"]').click();
@@ -93,6 +104,5 @@ test('FADER A↔B + dry/wet sliders are MIDI/Electra assignable (right-click →
   await expect
     .poll(() => readParam(page, 'fad1', 'dryWet'), { timeout: 4000 })
     .toBeGreaterThan(0.3);
-  await expect(card.locator('[data-testid="fader-drywet-midi-badge"]'), 'dry/wet shows bound badge').toBeVisible();
 
 });
