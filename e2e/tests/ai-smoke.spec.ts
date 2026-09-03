@@ -11,7 +11,7 @@ import { spawnPatch, canvasPane} from './_helpers';
 
 test.describe('AI smoke check', () => {
   test('app: HTTP 200 + COOP/COEP headers @smoke', async ({ page }) => {
-    const response = await page.goto('/rack?shell=legacy&seed=none');
+    const response = await page.goto('/rack?seed=none');
     expect(response, 'no response').toBeTruthy();
     expect(response!.status(), `status ${response!.status()}`).toBe(200);
     const headers = response!.headers();
@@ -31,12 +31,12 @@ test.describe('AI smoke check', () => {
   });
 
   test('app: title is patchtogether.live @smoke', async ({ page }) => {
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await expect(page).toHaveTitle('patchtogether.live');
   });
 
   test('app: cross-origin-isolated context (Faust SharedArrayBuffer prereq) @smoke', async ({ page }) => {
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     const isolated = await page.evaluate(() => globalThis.crossOriginIsolated);
     expect(isolated, 'crossOriginIsolated must be true').toBe(true);
   });
@@ -125,27 +125,30 @@ test.describe('AI smoke check', () => {
     await loadVoiceDemo(page);
     await expect(page.locator('.svelte-flow__node')).toHaveCount(5, { timeout: 10_000 });
 
-    // First fader on the Analog VCO card = TUNE.
-    const tuneTrack = page
-      .locator('.svelte-flow__node-analogVco .fader-wrap')
+    // The draggable NeonFader lives in the DOCK ladder on the default shell
+    // (the lane tile draws knobs) — open the VCO's pane and take its first
+    // fader (TUNE).
+    const vcoId = (await page
+      .locator('.svelte-flow__node:has([data-shell-type="analogVco"])')
       .first()
-      .locator('.track');
-    const tuneThumb = page
-      .locator('.svelte-flow__node-analogVco .fader-wrap')
-      .first()
-      .locator('.thumb');
+      .getAttribute('data-id'))!;
+    await page.evaluate(
+      (id) => (globalThis as unknown as { __openDockFullView: (id: string) => void }).__openDockFullView(id),
+      vcoId,
+    );
+    const pane = page.locator(`[data-testid="dock-fullview-pane"][data-pane-node="${vcoId}"]`);
+    await expect(pane).toBeVisible();
+    const tune = pane.locator('[data-testid="control-tune"][role="slider"]').first();
+    await tune.scrollIntoViewIfNeeded();
 
-    // ⚠ THE INLINE TRANSFORM, NOT `style.top` (#1794). `NeonFader` positions its
-    // thumb with `style:transform="translateY(…)"`; the control this replaced
-    // used `style:top`. Reading the old property returns '' both times, so
-    // `not.toBe` compares '' to '' and the spec fails claiming the thumb never
-    // moved — a probe bug wearing a product bug's error message. The
-    // non-empty assertions below are what tell the two apart.
-    const readThumb = () => tuneThumb.evaluate((el) => (el as HTMLElement).style.transform);
+    // ⚠ A RENDERED property, not a state variable (#1794's lesson): the shell
+    // Knob spins its `.ptr` pointer with an inline rotate transform, so an empty read
+    // means the probe is on the wrong element — asserted non-empty both times.
+    const readThumb = () => tune.locator('.ptr').evaluate((el) => (el as HTMLElement).style.transform);
     const initialTop = await readThumb();
-    expect(initialTop, 'thumb has no inline transform — this probe is reading the wrong property').not.toBe('');
-    const trackBox = await tuneTrack.boundingBox();
-    expect(trackBox, 'TUNE track not visible').toBeTruthy();
+    expect(initialTop, 'knob tick has no inline transform — this probe is reading the wrong property').not.toBe('');
+    const trackBox = await tune.boundingBox();
+    expect(trackBox, 'TUNE knob not visible').toBeTruthy();
     if (!trackBox) return;
 
     const cx = trackBox.x + trackBox.width / 2;
@@ -180,8 +183,8 @@ test.describe('AI smoke check', () => {
     await expect(page.locator('.svelte-flow__node')).toHaveCount(2);
     await expect(page.locator('.svelte-flow__edge')).toHaveCount(1);
 
-    const sqr = page.locator('.svelte-flow__node-analogVco .svelte-flow__handle[data-handleid="square"]');
-    const audioIn = page.locator('.svelte-flow__node-audioOut .svelte-flow__handle[data-handleid="L"]');
+    const sqr = page.locator('.svelte-flow__node:has([data-shell-type="analogVco"]) .svelte-flow__handle[data-handleid="square"]');
+    const audioIn = page.locator('.svelte-flow__node:has([data-shell-type="audioOut"]) .svelte-flow__handle[data-handleid="L"]');
     const a = await sqr.boundingBox();
     const b = await audioIn.boundingBox();
     if (!a || !b) throw new Error('handles not found');
@@ -216,11 +219,11 @@ test.describe('AI smoke check', () => {
     // Open the AudioOut menu + drill into INPUT, then jack-click the L input
     // row (the patched input) — this detaches e1 + carries the cable.
     await page
-      .locator('.svelte-flow__node-audioOut [data-testid="patch-trigger"]')
+      .locator('.svelte-flow__node:has([data-shell-type="audioOut"]) [data-testid="patch-trigger"]')
       .click();
     // The chrome is body-portaled; resolve AudioOut's by its node id.
     const nodeId = await page
-      .locator('.svelte-flow__node-audioOut')
+      .locator('.svelte-flow__node:has([data-shell-type="audioOut"])')
       .first()
       .getAttribute('data-id');
     const aoChrome = page.locator(`[data-patch-panel-chrome="${nodeId}"]`);
@@ -327,21 +330,16 @@ test.describe('AI smoke check', () => {
     await loadVoiceDemo(page);
     await expect(page.locator('.svelte-flow__node')).toHaveCount(5, { timeout: 10_000 });
 
-    const vco = page.locator('.svelte-flow__node-analogVco');
+    const vco = page.locator('.svelte-flow__node:has([data-shell-type="analogVco"])');
     const before = await vco.evaluate((el) => (el as HTMLElement).style.transform);
 
-    // Grab the card's title bar at a HORIZONTAL offset clearly past both
-    // the patch-trigger (top-left ~22×22 px — see PatchPanel.svelte's
-    // .patch-trigger rules) AND the centered editable-name button
-    // (~70 px wide, centered in the ~210 px title — see ModuleNameLabel
-    // / ModuleTitle). The card is ~212 px wide; the band from card-x
-    // ~30 to ~70 is empty draggable header chrome (left of the centered
-    // button). Aim there, vertically at the title-bar midline.
-    const card = page.locator('.svelte-flow__node-analogVco .card');
-    const cardBox = await card.boundingBox();
-    if (!cardBox) throw new Error('VCO card not visible');
-    const startX = cardBox.x + 50; // past patch-trigger, left of centered name-button
-    const startY = cardBox.y + 24; // inside header.title (padding-top 18 + half text height)
+    // Grab the tile's KIND row — the shell's drag grip (the tile centre is
+    // `nodrag` and the name row is a button; the cable-z-order recipe).
+    const grip = page.locator('.svelte-flow__node:has([data-shell-type="analogVco"]) .tile-kind');
+    const cardBox = await grip.boundingBox();
+    if (!cardBox) throw new Error('VCO tile grip not visible');
+    const startX = cardBox.x + cardBox.width / 2;
+    const startY = cardBox.y + cardBox.height / 2;
     await page.mouse.move(startX, startY);
     await page.mouse.down();
     await page.mouse.move(startX + 80, startY, { steps: 5 });
