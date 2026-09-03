@@ -436,28 +436,36 @@ describe('the garbage collector', () => {
   it('the sweep memo skips a repeat call and re-fires on a real change', async () => {
     // The graph-lifetime pass re-runs on EVERY graph edit; the other sweeps in
     // it are Map deletes, this one touches IDB and enumerates a directory.
+    // ⚠ THE SKIP IS ASSERTED DIRECTLY AND THE RUN IS AWAITED. This test used to
+    // fire the sweep, wait one `setTimeout(0)`, and infer BOTH facts from the
+    // side effect. That is a race, and it shipped: one sweep is three
+    // IndexedDB open/transaction cycles plus a directory enumeration, which a
+    // single macrotask does not cover. Measured GREEN locally (33 × 3) and RED
+    // on CI — "expected File{size 4} to be null" — because the sweep it was
+    // asserting on had simply not finished yet. Awaiting the returned promise
+    // removes the race instead of widening the wait, and `null` states the
+    // memo's decision rather than leaving it inferred from an absence.
     await seedTake('x', 'done');
-    sweepClipMedia(['keep']);
-    sweepClipMedia(['keep']); // memoised — must not start a second sweep
-    await new Promise((r) => setTimeout(r, 0));
+    const first = sweepClipMedia(['keep']);
+    expect(first, 'the first sweep of a new live set RUNS').not.toBeNull();
+    expect(sweepClipMedia(['keep']), 'the repeat call is memoised away').toBeNull();
+    await first;
     expect(await readClipMedia('x')).toBeNull();
 
     await seedTake('y', 'done');
-    sweepClipMedia(['keep']); // same key → skipped, so y survives
-    await new Promise((r) => setTimeout(r, 0));
-    expect(await readClipMedia('y')).not.toBeNull();
+    expect(sweepClipMedia(['keep']), 'same key → still skipped').toBeNull();
+    expect(await readClipMedia('y'), 'so y survives').not.toBeNull();
 
-    sweepClipMedia(['keep', 'other']); // a real change → sweeps
-    await new Promise((r) => setTimeout(r, 0));
+    const second = sweepClipMedia(['keep', 'other']);
+    expect(second, 'a real change re-fires').not.toBeNull();
+    await second;
     expect(await readClipMedia('y')).toBeNull();
   });
 
   it('the memo is order-insensitive — a reordered live set is not a change', async () => {
-    sweepClipMedia(['a', 'b']);
-    await new Promise((r) => setTimeout(r, 0));
+    await sweepClipMedia(['a', 'b']);
     await seedTake('z', 'done');
-    sweepClipMedia(['b', 'a']);
-    await new Promise((r) => setTimeout(r, 0));
+    expect(sweepClipMedia(['b', 'a']), 'a reorder is not a change').toBeNull();
     expect(await readClipMedia('z')).not.toBeNull();
   });
 
@@ -469,11 +477,11 @@ describe('the garbage collector', () => {
     // emit — and it is spelled as an ESCAPE in the source, because writing it
     // literally would put a NUL byte in the file and make every `grep` over
     // that file report no matches, silently.
-    sweepClipMedia(['a', 'b']);
-    await new Promise((r) => setTimeout(r, 0));
+    await sweepClipMedia(['a', 'b']);
     await seedTake('collide', 'done');
-    sweepClipMedia(['a b']); // a DIFFERENT set — must not be memo-suppressed
-    await new Promise((r) => setTimeout(r, 0));
+    const run = sweepClipMedia(['a b']); // a DIFFERENT set — must not be suppressed
+    expect(run, 'a different live set must not be memo-suppressed').not.toBeNull();
+    await run;
     expect(await readClipMedia('collide')).toBeNull();
   });
 });

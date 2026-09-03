@@ -647,22 +647,38 @@ let lastLiveKey = '';
  *  is exactly the defect it exists to find.) */
 const SWEEP_KEY_SEP = '\u0000';
 
-/** The GC as the graph-lifetime `$effect` calls it: fire-and-forget, and
- *  cheap enough to sit in a pass that re-runs on EVERY graph change.
+/** The GC as the graph-lifetime `$effect` calls it: fire-and-forget for the
+ *  caller, and cheap enough to sit in a pass that re-runs on EVERY graph change.
  *
  *  ⚠ THE OTHER REGISTRY SWEEPS IN THAT PASS ARE `Map` DELETES. This one touches
  *  IndexedDB and enumerates an OPFS directory, so it cannot run unguarded at
  *  the same cadence. Two guards, both cheap: skip while a sweep is already in
  *  flight, and skip when the live set is unchanged since the last one. A graph
  *  edit that does not add or remove an audio clip therefore costs one string
- *  compare. */
-export function sweepClipMedia(liveMediaIds: Iterable<string>): void {
+ *  compare.
+ *
+ *  ⚠ RETURNS THE IN-FLIGHT SWEEP, OR `null` WHEN IT SKIPPED — and that return
+ *  value is the difference between a test that observes this function and one
+ *  that guesses at it. It used to return `void` and swallow the promise, so the
+ *  ONLY way to check a sweep had happened was to wait a tick and look for its
+ *  side effect. A sweep is three IndexedDB open/transaction cycles plus a
+ *  directory enumeration; one macrotask does not cover that, and the test
+ *  MEASURED GREEN LOCALLY AND RED ON CI for exactly that reason. Handing back
+ *  the promise removes the race instead of widening a wait, and it makes the
+ *  memo DIRECTLY observable (`null` = skipped) rather than inferred from an
+ *  absence.
+ *
+ *  Production callers ignore it — the graph pass must never block on storage —
+ *  which is why the `$effect` spells the discard with `void`. */
+export function sweepClipMedia(
+  liveMediaIds: Iterable<string>,
+): Promise<ClipMediaGcResult> | null {
   const ids = [...liveMediaIds].sort();
   const key = ids.join(SWEEP_KEY_SEP);
-  if (gcInFlight || key === lastLiveKey) return;
+  if (gcInFlight || key === lastLiveKey) return null;
   lastLiveKey = key;
   gcInFlight = true;
-  void gcClipMedia(ids).finally(() => {
+  return gcClipMedia(ids).finally(() => {
     gcInFlight = false;
   });
 }

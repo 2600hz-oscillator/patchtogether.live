@@ -2657,7 +2657,10 @@
     // directory — a graph edit that neither adds nor removes an audio clip
     // costs one string compare. An IN-FLIGHT take is spared by its manifest
     // status, not by membership: its clip record does not exist until commit.
-    sweepClipMedia(referencedClipMediaIds(snapshot.nodes));
+    // ⚠ `void` ON PURPOSE. The sweep hands its in-flight promise back so a TEST
+    // can await real completion instead of guessing a tick; this pass must
+    // never block on storage, so the discard is spelled rather than implied.
+    void sweepClipMedia(referencedClipMediaIds(snapshot.nodes));
   });
 
   /** THE EXTRAS-CHANNEL PRODUCER SEAM (#1720). The sixth instance of the #1583
