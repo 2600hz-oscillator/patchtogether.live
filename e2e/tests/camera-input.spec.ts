@@ -82,7 +82,7 @@ test.describe('CAMERA → OUTPUT (deterministic render smoke)', () => {
         );
     });
 
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(
@@ -102,8 +102,8 @@ test.describe('CAMERA → OUTPUT (deterministic render smoke)', () => {
       ],
     );
 
-    await expect(page.locator('.svelte-flow__node-cameraInput'), 'CAMERA visible').toBeVisible();
-    await expect(page.locator('.svelte-flow__node-videoOut'), 'OUTPUT visible').toBeVisible();
+    await expect(page.locator('.svelte-flow__node:has([data-shell-type="cameraInput"])'), 'CAMERA visible').toBeVisible();
+    await expect(page.locator('.svelte-flow__node:has([data-shell-type="videoOut"])'), 'OUTPUT visible').toBeVisible();
 
     // Drive a FIXED burst synchronously (no rAF, no waitForTimeout) so the
     // injected frame uploads + renders, then read CAMERA's OWN output texture.
@@ -158,7 +158,7 @@ test.describe('CAMERA → OUTPUT (fake webcam) — getUserMedia integration @cam
       if (m.type() === 'error') errors.push(m.text());
     });
 
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(
@@ -178,18 +178,18 @@ test.describe('CAMERA → OUTPUT (fake webcam) — getUserMedia integration @cam
       ],
     );
 
-    await expect(page.locator('.svelte-flow__node-cameraInput'), 'CAMERA visible').toBeVisible();
-    await expect(page.locator('.svelte-flow__node-videoOut'), 'OUTPUT visible').toBeVisible();
+    await expect(page.locator('.svelte-flow__node:has([data-shell-type="cameraInput"])'), 'CAMERA visible').toBeVisible();
+    await expect(page.locator('.svelte-flow__node:has([data-shell-type="videoOut"])'), 'OUTPUT visible').toBeVisible();
 
     // The device dropdown should populate from enumerateDevices on mount.
     // With the fake-device flag, Chromium emits at least one virtual
     // 'videoinput' entry. Wait for it to land before clicking Request.
-    const select = page.locator('[data-testid="camera-device-select"]');
+    const select = page.locator('[data-testid="cameraInput-tile-device-select"]');
     await expect(select).toBeVisible();
     // Give the async refreshDevices() a beat to populate options.
     await page.waitForFunction(() => {
       const el = document.querySelector(
-        '[data-testid="camera-device-select"]',
+        '[data-testid="cameraInput-tile-device-select"]',
       ) as HTMLSelectElement | null;
       return el ? el.options.length > 0 : false;
     }, undefined, { timeout: 5_000 });
@@ -201,7 +201,7 @@ test.describe('CAMERA → OUTPUT (fake webcam) — getUserMedia integration @cam
     // we get here, OR still 'idle'. Handle both: click Request Access if
     // visible, then wait for streaming. (If it's not visible, we're
     // already in streaming/paused/etc.)
-    const requestBtn = page.locator('[data-testid="camera-request-access"]');
+    const requestBtn = page.locator('[data-testid="cameraInput-tile-request-access"]');
     // Only click when the button is actually ENABLED. On a fast machine the
     // onMount auto-acquire has often already fired by the time we get here, so
     // the button is rendered DISABLED and about to detach (it swaps to
@@ -220,16 +220,19 @@ test.describe('CAMERA → OUTPUT (fake webcam) — getUserMedia integration @cam
       });
     }
 
-    // Wait for the state machine to reach 'streaming'.
-    const status = page.locator('[data-testid="camera-status"]');
-    await expect(status).toHaveAttribute('data-state', 'streaming', {
+    // Wait for the state machine to reach 'streaming' — on the shell the
+    // observable is the tile lamp's data-lamp ('streaming' is 1:1 with the
+    // card's old raw state string).
+    const status = page.locator('[data-testid="cameraInput-tile-lamp"]');
+    await expect(status).toHaveAttribute('data-lamp', 'streaming', {
       timeout: 10_000,
     });
 
     // Local-only hint must be visible while streaming. The CAMERA stream
     // is not multiplayer-streamed (deferred to a future phase); the in-card text keeps
     // user expectations honest.
-    const localOnlyHint = page.locator('[data-testid="camera-local-only-hint"]');
+    await page.evaluate(() => (globalThis as unknown as { __openDockFullView: (id: string) => void }).__openDockFullView('v-cam'));
+    const localOnlyHint = page.locator('[data-testid="cameraInput-face-local-only"]');
     await expect(localOnlyHint, 'local-only hint visible while streaming').toBeVisible();
     await expect(localOnlyHint).toContainText(/local only/i);
     await expect(localOnlyHint).toContainText(/won't see/i);
@@ -264,25 +267,27 @@ test.describe('CAMERA → OUTPUT (fake webcam) — getUserMedia integration @cam
       };
     });
 
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(page, [
       { id: 'v-cam', type: 'cameraInput', position: { x: 80, y: 60 }, domain: 'video' },
     ]);
 
-    await expect(page.locator('.svelte-flow__node-cameraInput'), 'CAMERA visible').toBeVisible();
+    await expect(page.locator('.svelte-flow__node:has([data-shell-type="cameraInput"])'), 'CAMERA visible').toBeVisible();
 
     // The mount auto-acquire hit the stubbed reject → stuck in 'no-cameras-found'
     // (the screenshot state). The dropdown still lists the available camera(s).
-    const status = page.locator('[data-testid="camera-status"]');
-    await expect(status).toHaveAttribute('data-state', 'no-cameras-found', { timeout: 10_000 });
+    // 'no-cameras-found' folds into the lamp's ERROR bucket on the shell;
+    // 'streaming' below is the unambiguous recovery observable.
+    const status = page.locator('[data-testid="cameraInput-tile-lamp"]');
+    await expect(status).toHaveAttribute('data-lamp', 'error', { timeout: 10_000 });
 
-    const select = page.locator('[data-testid="camera-device-select"]');
+    const select = page.locator('[data-testid="cameraInput-tile-device-select"]');
     await page.waitForFunction(
       () => {
         const el = document.querySelector(
-          '[data-testid="camera-device-select"]',
+          '[data-testid="cameraInput-tile-device-select"]',
         ) as HTMLSelectElement | null;
         // At least one real (enabled, non-empty-value) camera option to pick.
         return !!el && Array.from(el.options).some((o) => !o.disabled && o.value !== '');
@@ -307,7 +312,7 @@ test.describe('CAMERA → OUTPUT (fake webcam) — getUserMedia integration @cam
     await select.selectOption(firstRealValue);
 
     await expect(status, 'switching to an available camera starts the stream').toHaveAttribute(
-      'data-state',
+      'data-lamp',
       'streaming',
       { timeout: 10_000 },
     );
@@ -331,17 +336,21 @@ test.describe('CAMERA → OUTPUT (fake webcam) — getUserMedia integration @cam
       };
     });
 
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(page, [
       { id: 'v-cam', type: 'cameraInput', position: { x: 80, y: 60 }, domain: 'video' },
     ]);
 
-    const status = page.locator('[data-testid="camera-status"]');
-    await expect(status).toHaveAttribute('data-state', 'no-cameras-found', {
+    const status = page.locator('[data-testid="cameraInput-tile-lamp"]');
+    await expect(status).toHaveAttribute('data-lamp', 'error', {
       timeout: 5_000,
     });
+    // …and the picker itself says why: zero devices disables it.
+    await expect(
+      page.locator('[data-testid="cameraInput-tile-device-select"]'),
+    ).toBeDisabled();
   });
 
   // THE OWNER P0 (`/rack`: "camera → output renders
@@ -390,7 +399,7 @@ test.describe('CAMERA → OUTPUT (fake webcam) — getUserMedia integration @cam
     //   const camLane = page.locator('.svelte-flow__node[data-id="v-cam"]');
     //   await expect(camLane.locator('…module-shell-placeholder')).toHaveCount(0);
     //   // …so the DEVICE PICKER is reachable + lists the fake device.
-    //   const select = camLane.locator('[data-testid="camera-device-select"]');
+    //   const select = camLane.locator('[data-testid="cameraInput-tile-device-select"]');
     //   await expect(select, 'device picker usable in the shell lane').toBeVisible();
     //
     // ⚠ AND IT KEPT PASSING AFTER THE PROMOTION MADE IT FALSE — this file did

@@ -37,7 +37,7 @@ async function readNodes(page: Page): Promise<PatchNode[]> {
 test.fixme('right-click → Duplicate creates a clone with same params, fresh id, offset position', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 4 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({
   page,
 }) => {
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await page.waitForLoadState('networkidle');
   await spawnPatch(
     page,
@@ -61,13 +61,13 @@ test.fixme('right-click → Duplicate creates a clone with same params, fresh id
   // is control-free, so the module menu opens deterministically. (See the
   // four-modules flake write-up: a tall card's center can sit right on the
   // fader-row, making the target intermittent.)
-  const adsr = page.locator('.svelte-flow__node-adsr').first();
-  await adsr.locator('.title').click({ button: 'right' });
+  const adsr = page.locator('.svelte-flow__node:has([data-shell-type="adsr"])').first();
+  await adsr.locator('.tile-name').click({ button: 'right' });
   await expect(page.locator('[role="menu"][aria-label="Module actions"]')).toBeVisible();
   await page.locator('[role="menuitem"]', { hasText: 'Duplicate' }).click();
 
   // Two ADSRs in the patch graph now.
-  await expect(page.locator('.svelte-flow__node-adsr')).toHaveCount(2);
+  await expect(page.locator('.svelte-flow__node:has([data-shell-type="adsr"])')).toHaveCount(2);
 
   const nodes = await readNodes(page);
   const adsrs = nodes.filter((n) => n.type === 'adsr');
@@ -101,7 +101,7 @@ test.fixme('right-click → Duplicate deep-clones data (mutating dup does not af
   // "reassigning object that already occurs in the tree" gotcha only fires
   // when the same JS reference ends up at two paths — so a mutation through
   // one MUST not be visible at the other.
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await page.waitForLoadState('networkidle');
   await spawnPatch(
     page,
@@ -143,11 +143,11 @@ test.fixme('right-click → Duplicate deep-clones data (mutating dup does not af
   // timeout. Right-clicking `.title` (control-free) opens the module menu
   // deterministically. We also wait for the module menu to be visible before
   // clicking, gating actionability on the menu actually being present.
-  const seq = page.locator('.svelte-flow__node-kria').first();
-  await seq.locator('.title').click({ button: 'right' });
+  const seq = page.locator('.svelte-flow__node:has([data-shell-type="kria"])').first();
+  await seq.locator('.tile-name').click({ button: 'right' });
   await expect(page.locator('[role="menu"][aria-label="Module actions"]')).toBeVisible();
   await page.locator('[role="menuitem"]', { hasText: 'Duplicate' }).click();
-  await expect(page.locator('.svelte-flow__node-kria')).toHaveCount(2);
+  await expect(page.locator('.svelte-flow__node:has([data-shell-type="kria"])')).toHaveCount(2);
 
   // Mutate the duplicate's nested step. Source must be untouched.
   const dupId = await page.evaluate(() => {
@@ -193,7 +193,7 @@ test.fixme('right-click → Duplicate deep-clones data (mutating dup does not af
 test('right-click → Duplicate does not copy edges of the source', async ({ page }) => {
   // Patch: VCO → VCA. Duplicate the VCO. Expect: 1 edge still (VCO → VCA),
   // duplicated VCO has no edges.
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await page.waitForLoadState('networkidle');
   await spawnPatch(
     page,
@@ -208,13 +208,13 @@ test('right-click → Duplicate does not copy edges of the source', async ({ pag
 
   await expect(page.locator('.svelte-flow__edge')).toHaveCount(1);
 
-  const vco = page.locator('.svelte-flow__node-analogVco').first();
+  const vco = page.locator('.svelte-flow__node:has([data-shell-type="analogVco"])').first();
   // Right-click the card background (title bar) — a knob/fader right-click now
   // opens the per-control MIDI menu instead of the module menu.
-  await vco.locator('.title').click({ button: 'right' });
+  await vco.locator('.tile-name').click({ button: 'right' });
   await expect(page.locator('[role="menu"][aria-label="Module actions"]')).toBeVisible();
   await page.locator('[role="menuitem"]', { hasText: 'Duplicate' }).click();
-  await expect(page.locator('.svelte-flow__node-analogVco')).toHaveCount(2);
+  await expect(page.locator('.svelte-flow__node:has([data-shell-type="analogVco"])')).toHaveCount(2);
 
   // Edge count unchanged — duplicate did NOT copy the source's edge.
   await expect(page.locator('.svelte-flow__edge')).toHaveCount(1);
@@ -238,7 +238,7 @@ test('@collab duplicate in A appears in B', async ({ browser }) => {
   const pageB = await ctxB.newPage();
   try {
     for (const p of [pageA, pageB]) {
-      await p.goto('/rack?shell=legacy&seed=none');
+      await p.goto('/rack?seed=none');
       await p.waitForLoadState('networkidle');
       await p.waitForFunction(
         () =>
@@ -296,11 +296,11 @@ test('@collab duplicate in A appears in B', async ({ browser }) => {
     // node, bypassing browser hit-testing entirely — the correct remedy for an
     // unrelated full-overlay. The contextmenu handler lives on .title; the
     // menuitem click handler on the menu item.
-    const adsr = pageA.locator('.svelte-flow__node-adsr').first();
-    await adsr.locator('.title').dispatchEvent('contextmenu');
+    const adsr = pageA.locator('.svelte-flow__node:has([data-shell-type="adsr"])').first();
+    await adsr.locator('.tile-name').dispatchEvent('contextmenu');
     await expect(pageA.locator('[role="menu"][aria-label="Module actions"]')).toBeVisible();
     await pageA.locator('[role="menuitem"]', { hasText: 'Duplicate' }).dispatchEvent('click');
-    await expect(pageA.locator('.svelte-flow__node-adsr')).toHaveCount(2);
+    await expect(pageA.locator('.svelte-flow__node:has([data-shell-type="adsr"])')).toHaveCount(2);
 
     // B: should see 2 ADSR nodes appear within 4s.
     await expect
