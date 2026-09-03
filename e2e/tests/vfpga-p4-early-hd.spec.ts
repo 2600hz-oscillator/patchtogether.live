@@ -6,8 +6,10 @@
 //
 //   src (vfpga-runner = smpte-bars) → bent (vfpga-runner = <program>) → OUTPUT
 //
-// We select the bent program from its card's "load preset…" menu (the production
-// hot-swap path), then assert the OUTPUT canvas is (a) NON-BLACK with spatial
+// We select the bent program from its tile's preset SELECTOR cell (the
+// production hot-swap path on the default shell; `shell-cell-vfpga-preset`,
+// whose `.val` span is the loaded readout), then assert the OUTPUT pixels (the
+// videoOut tile thumb canvas — the downstream chain) are (a) NON-BLACK with spatial
 // STRUCTURE (the bent picture reaches downstream — a renderer-tolerant floor, NOT
 // exact pixels: CI runs SwiftShader) AND (b) DISTINCT from the same source passed
 // straight through (the un-bent reference), proving the bend actually transforms the
@@ -24,8 +26,8 @@ const BENT = ['macroblock-mosh', 'tmds-sparkle', 'scaler-glitch'] as const;
 
 /** OUTPUT canvas pixel stats (mean luma, non-black fraction, spatial variance). */
 async function outputStats(page: Page): Promise<{ mean: number; nonZeroFrac: number; variance: number } | null> {
-  const canvas = page.locator('[data-testid="video-out-canvas"]');
-  await expect(canvas, 'video-out canvas mounted').toHaveCount(1);
+  const canvas = page.locator('.svelte-flow__node[data-id="out"] [data-testid="video-tile-thumb"]');
+  await expect(canvas, 'videoOut tile thumb mounted').toHaveCount(1);
   return canvas.evaluate((el) => {
     const c = el as HTMLCanvasElement;
     const ctx = c.getContext('2d');
@@ -46,7 +48,7 @@ async function outputStats(page: Page): Promise<{ mean: number; nonZeroFrac: num
  *  a renderer-tolerant SPATIAL signature; position-sensitive, so a geometric bend
  *  (mosh smear / scaler stretch / char-slip) that rearranges pixels reads DISTINCT. */
 async function outputFingerprint(page: Page): Promise<number[] | null> {
-  const canvas = page.locator('[data-testid="video-out-canvas"]');
+  const canvas = page.locator('.svelte-flow__node[data-id="out"] [data-testid="video-tile-thumb"]');
   return canvas.evaluate((el) => {
     const c = el as HTMLCanvasElement;
     const ctx = c.getContext('2d');
@@ -141,7 +143,7 @@ async function observeOutputDelta(
     reference?: number[] | null;
   },
 ): Promise<DeltaWatch> {
-  const canvas = page.locator('[data-testid="video-out-canvas"]');
+  const canvas = page.locator('.svelte-flow__node[data-id="out"] [data-testid="video-tile-thumb"]');
   return canvas.evaluate(
     (el, { gapMs, maxSamples, stopAbove, stopBelow, reference }) =>
       new Promise<DeltaWatch>((resolve) => {
@@ -199,12 +201,15 @@ async function observeOutputDelta(
   );
 }
 
-/** Set a node's loaded VFPGA via its card preset menu + wait for the loaded readout. */
-async function loadPreset(page: Page, nodeId: string, vfpga: string, name: string): Promise<void> {
-  const sel = page.locator(`.svelte-flow__node[data-id="${nodeId}"] [data-testid="vfpga-preset"]`);
-  await expect(sel, `preset menu for ${nodeId}`).toHaveCount(1);
-  await sel.selectOption(vfpga);
-  await expect(page.locator(`.svelte-flow__node[data-id="${nodeId}"] [data-testid="vfpga-loaded"]`)).toHaveText(name);
+/** Set a node's loaded VFPGA via its tile's preset SELECTOR cell + wait for the
+ *  cell's value span (the shell's loaded readout). Picking an option closes the
+ *  listbox — never Escape (the dock-wide Esc hazard). */
+async function loadPreset(page: Page, nodeId: string, _vfpga: string, name: string): Promise<void> {
+  const cell = page.locator(`.svelte-flow__node[data-id="${nodeId}"] [data-testid="shell-cell-vfpga-preset"]`);
+  await expect(cell, `preset selector for ${nodeId}`).toHaveCount(1);
+  await cell.click();
+  await page.locator('[role="option"]', { hasText: name }).click();
+  await expect(cell.locator('.val')).toHaveText(name);
 }
 
 async function pollStats(page: Page): Promise<{ mean: number; nonZeroFrac: number; variance: number }> {
@@ -219,7 +224,7 @@ async function pollStats(page: Page): Promise<{ mean: number; nonZeroFrac: numbe
 
 test.describe('vfpga P4 early-HD-era bent VFPGAs', () => {
   for (const program of BENT) {
-    test(`${program}: bends the smpte source into distinct non-black output`, async ({ page, rackLegacy, errorWatch }) => {
+    test(`${program}: bends the smpte source into distinct non-black output`, async ({ page, rack, errorWatch }) => {
       // Two pure-GL vfpga-runners + an OUTPUT compile fast even on SwiftShader,
       // but give headroom for boot + spawn + first-frame settle + the hot-swap.
       test.setTimeout(60_000);
@@ -239,8 +244,8 @@ test.describe('vfpga P4 early-HD-era bent VFPGAs', () => {
         { mountTimeout: 15_000 },
       );
 
-      await expect(page.locator('.svelte-flow__node-vfpgaRunner')).toHaveCount(2);
-      await expect(page.locator('[data-testid="video-out-card"]')).toHaveCount(1);
+      await expect(page.locator('.svelte-flow__node:has([data-shell-type="vfpgaRunner"])')).toHaveCount(2);
+      await expect(page.locator('.svelte-flow__node:has([data-shell-type="videoOut"])')).toHaveCount(1);
 
       // Reference render: `bent` = smpte-bars (its own generated bars == a passthru
       // of the src smpte bars at the same settings). Capture that, then swap to the
@@ -300,7 +305,7 @@ test.describe('vfpga P4 early-HD-era bent VFPGAs', () => {
   // per-frame motion warps A and the output animates. We assert the temporal change is
   // decisively larger with mvectB on than off — a renderer-tolerant causal proof that
   // clip B's motion reaches the picture (a dead vin2 binding would leave it static).
-  test('macroblock-mosh: clip B (vin2) motion transfers onto image A (two-clip datamosh)', async ({ page, rackLegacy, errorWatch }) => {
+  test('macroblock-mosh: clip B (vin2) motion transfers onto image A (two-clip datamosh)', async ({ page, rack, errorWatch }) => {
     // A pure FAILURE BOUND, not the gate. What made 75_000 unreachable was the
     // Playwright-side capture loop (up to 60 CDP round trips, ~1.5 s each under
     // CI load per #1173 — see `observeOutputDelta`); that loop now runs in the
@@ -427,7 +432,7 @@ test.describe('vfpga P4 early-HD-era bent VFPGAs', () => {
   // place — no per-frame GL allocation. Same audit as framestore-howl: assert the
   // render loop survives many frames with NO console errors AND (where the JS-heap
   // API is available — Chromium) that the heap does not grow unboundedly.
-  test('macroblock-mosh: sustained feedback does not leak (FBOs swapped in place)', async ({ page, rackLegacy, errorWatch }) => {
+  test('macroblock-mosh: sustained feedback does not leak (FBOs swapped in place)', async ({ page, rack, errorWatch }) => {
     test.setTimeout(60_000);
 
     await spawnPatch(

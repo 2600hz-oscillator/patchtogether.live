@@ -6,6 +6,11 @@
 // to a richer fabric (sync-bender) re-draws it. Canvas2D (not WebGL), so this is
 // renderer-tolerant by construction (no SwiftShader/real-GPU divergence) — but
 // we still assert a non-black + variance FLOOR rather than exact pixels.
+//
+// On the default shell the FABRIC toggle lives in the dock full view's output
+// body (`vfpga-face-fabric-toggle`, beside the SCREEN switch — an alternate
+// view of the picture belongs with the picture); the floorplan component and
+// its testids are unchanged.
 
 import { test, expect } from './_fixtures';
 import { type Page } from '@playwright/test';
@@ -32,6 +37,8 @@ async function floorplanStats(page: Page): Promise<{ nonZeroFrac: number; varian
   });
 }
 
+/** Spawn host + output and open the host's dock full view (the fabric toggle's
+ *  home on the shell). */
 async function spawnRunner(page: Page) {
   await spawnPatch(
     page,
@@ -43,20 +50,25 @@ async function spawnRunner(page: Page) {
       { id: 'e1', from: { nodeId: 'vf', portId: 'vout1' }, to: { nodeId: 'out', portId: 'in' }, sourceType: 'video', targetType: 'video' },
     ],
   );
-  await expect(page.locator('[data-testid="vfpga-runner-card"]')).toHaveCount(1);
+  const tile = page.locator('.svelte-flow__node[data-id="vf"] [data-testid="module-shell"]');
+  await expect(tile).toBeVisible();
+  await tile.getByTestId('shell-open-dock').click();
+  const dock = page.getByTestId('dock-full-view');
+  await expect(dock).toBeVisible();
+  return dock;
 }
 
 test.describe('vfpga-runner — fabric floorplan view (P5)', () => {
-  test('the floorplan is off by default and toggles a non-blank tile-grid/nets diagram', async ({ page, rackLegacy, errorWatch }) => {
+  test('the floorplan is off by default and toggles a non-blank tile-grid/nets diagram', async ({ page, rack, errorWatch }) => {
     test.setTimeout(45_000);
 
-    await spawnRunner(page);
+    const dock = await spawnRunner(page);
 
-    // Off by default — the card already shows the preview + controls.
+    // Off by default — the dock already shows the preview + controls.
     await expect(page.locator('[data-testid="vfpga-floorplan"]')).toHaveCount(0);
 
     // Toggle it on.
-    const toggle = page.locator('[data-testid="vfpga-floorplan-toggle"]');
+    const toggle = dock.getByTestId('vfpga-face-fabric-toggle');
     await expect(toggle).toHaveCount(1);
     await toggle.click();
     await expect(page.locator('[data-testid="vfpga-floorplan"]')).toHaveCount(1);
@@ -79,17 +91,19 @@ test.describe('vfpga-runner — fabric floorplan view (P5)', () => {
 
   });
 
-  test('switching to a richer fabric (sync-bender) re-draws the floorplan with its legend', async ({ page, rackLegacy }) => {
+  test('switching to a richer fabric (sync-bender) re-draws the floorplan with its legend', async ({ page, rack }) => {
     test.setTimeout(45_000);
-    await spawnRunner(page);
+    const dock = await spawnRunner(page);
 
-    await page.locator('[data-testid="vfpga-floorplan-toggle"]').click();
+    await dock.getByTestId('vfpga-face-fabric-toggle').click();
     await expect(page.locator('[data-testid="vfpga-floorplan"]')).toHaveCount(1);
 
-    // Load the sync-bender fabric (IIN1 → syncBend → OUT1).
-    const select = page.locator('[data-testid="vfpga-preset"]');
-    await select.selectOption('sync-bender');
-    await expect(page.locator('[data-testid="vfpga-loaded"]')).toHaveText('sync-bender');
+    // Load the sync-bender fabric (IIN1 → syncBend → OUT1) via the dock's own
+    // selector cell (the load-preset menu's shell home).
+    const cell = dock.getByTestId('shell-cell-vfpga-preset');
+    await cell.click();
+    await page.locator('[role="option"]', { hasText: 'sync-bender' }).click();
+    await expect(cell.locator('.val')).toHaveText('sync-bender');
 
     // The legend lists the tile types present in this fabric (a clb cell), and
     // the diagram is non-blank.
