@@ -27,7 +27,7 @@
 
 import { test, expect, type Page } from '@playwright/test';
 
-const RACK = '/rack?shell=legacy&seed=none';
+const RACK = '/rack?seed=none';
 
 /** Far enough apart that nothing overlaps at rest — the first overlap in each
  *  test is the one the test itself creates. */
@@ -99,13 +99,18 @@ async function seedPair(page: Page, partner: string): Promise<{ partnerId: strin
   return { partnerId, voId };
 }
 
-/** A REAL pointer drag of a card, grabbed by its header — the realistic grab
- *  point, and the one that makes the pointer disagree with the card's centre
- *  (which is why the drop rule tests the CENTRE, not the cursor). */
+/** A REAL pointer drag of a tile, grabbed by its KIND row — the shell's drag
+ *  grip (the tile centre is `nodrag` and the name row is a button; the
+ *  cable-z-order recipe). The grip still disagrees with the tile's centre,
+ *  which is why the drop rule tests the CENTRE, not the cursor. */
 async function dragCardTo(page: Page, id: string, to: { x: number; y: number }): Promise<void> {
+  const grip = (await page
+    .locator(`.svelte-flow__node[data-id="${id}"] .tile-kind`)
+    .boundingBox())!;
   const box = (await page.locator(`.svelte-flow__node[data-id="${id}"]`).boundingBox())!;
-  const gx = box.x + box.width / 2;
-  const gy = box.y + 14;
+  void box;
+  const gx = grip.x + grip.width / 2;
+  const gy = grip.y + grip.height / 2;
   await page.mouse.move(gx, gy);
   await page.mouse.down();
   for (let i = 1; i <= 16; i++) {

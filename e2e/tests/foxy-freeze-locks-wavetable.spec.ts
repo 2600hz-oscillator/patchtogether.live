@@ -164,7 +164,7 @@ test.describe('FOXY FREEZE TABLE locks the wavetable end-to-end (regression for 
       if (m.type() === 'error') errors.push(m.text());
     });
 
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
 
     // FOXY (self-driving audio source) → SCOPE (ch1 audio in). SCOPE is the
@@ -190,6 +190,14 @@ test.describe('FOXY FREEZE TABLE locks the wavetable end-to-end (regression for 
       ],
     );
 
+    // The wavetable canvas + the FrT toggle live in the DOCK face body.
+    await page
+      .locator('.svelte-flow__node:has([data-shell-type="foxy"]) [data-testid="module-shell"]')
+      .getByTestId('shell-open-dock')
+      .click();
+    await expect(page.getByTestId('dock-full-view')).toBeVisible();
+    await expect(page.getByTestId('foxy-face-wavetable')).toHaveCount(1);
+
     // Switch FOXY to 3D Shape Gen mode (gen_mode = 1). The bug existed in
     // BOTH modes, but the shapes path is the one previous PRs touched, so
     // it's the more interesting surface to lock down.
@@ -206,7 +214,9 @@ test.describe('FOXY FREEZE TABLE locks the wavetable end-to-end (regression for 
     // foxy.ts setParam switch (the new freezeTable case sets the closure
     // mirror). The bridge tick reads the closure mirror and skips the
     // wtFrames reassign + the loadWavetable post.
-    await page.getByTestId('foxy-freeze-table').click();
+    // The dock is TABBED (control-heavy face): FrT lives on the `freeze` page.
+    await page.getByTestId('dock-full-view').getByTestId('faceplate-tab-freeze').click();
+    await page.getByTestId('dock-full-view').locator('[data-testid="control-freezeTable"]').click();
     // Belt-and-suspenders: wait a settle so the reconciler has routed
     // through setParam + the next bridgeTick has observed the new state
     // (BRIDGE_MS=42 throttle ⇒ up to 42 ms can elapse). 300 ms covers it.
@@ -216,7 +226,7 @@ test.describe('FOXY FREEZE TABLE locks the wavetable end-to-end (regression for 
     // (getImageData), not a composited screenshot — see readWavetablePixels.
     const wavetableA = await readWavetableHash(page, 'foxy');
     expect(wavetableA, 'wavetable hash readable after freeze').not.toBeNull();
-    const pngA = await readWavetablePixels(page, 'foxy-wavetable');
+    const pngA = await readWavetablePixels(page, 'foxy-face-wavetable');
 
     // ── Phase 2: wait 2 s while frozen ──
     // During this window the rasters + XYZ scope keep evolving (FrT freezes
@@ -229,7 +239,7 @@ test.describe('FOXY FREEZE TABLE locks the wavetable end-to-end (regression for 
     // Capture B: still frozen, 2 s later.
     const wavetableB = await readWavetableHash(page, 'foxy');
     expect(wavetableB, 'wavetable hash readable 2s into freeze').not.toBeNull();
-    const pngB = await readWavetablePixels(page, 'foxy-wavetable');
+    const pngB = await readWavetablePixels(page, 'foxy-face-wavetable');
 
     // ── Assertion 1: A === B (frozen wavetable held its content). ──
     // Hash equality is the strongest signal — the contents the worklet is
@@ -255,13 +265,15 @@ test.describe('FOXY FREEZE TABLE locks the wavetable end-to-end (regression for 
     ).toBe(0);
 
     // ── Phase 3: UNFREEZE + 2 s of live ──
-    await page.getByTestId('foxy-freeze-table').click();
+    // The dock is TABBED (control-heavy face): FrT lives on the `freeze` page.
+    await page.getByTestId('dock-full-view').getByTestId('faceplate-tab-freeze').click();
+    await page.getByTestId('dock-full-view').locator('[data-testid="control-freezeTable"]').click();
     await page.waitForTimeout(2000);
 
     // Capture C: live, after 2 s of motion.
     const wavetableC = await readWavetableHash(page, 'foxy');
     expect(wavetableC, 'wavetable hash readable after unfreeze').not.toBeNull();
-    const pngC = await readWavetablePixels(page, 'foxy-wavetable');
+    const pngC = await readWavetablePixels(page, 'foxy-face-wavetable');
 
     // ── Assertion 2: C differs substantially from A (table evolves). ──
     // The raster cursors have drifted ~48 bridge ticks during the 2 s of
