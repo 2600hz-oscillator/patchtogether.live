@@ -20,33 +20,32 @@ import { spawnPatch } from './_helpers';
 
 test.describe.configure({ mode: 'parallel' });
 
-test('midi-cv-buddy: drop module → card mounts with no console errors', async ({ page, rackLegacy, errorWatch }) => {
+test('midi-cv-buddy: drop module → the shell tile mounts with no console errors', async ({ page, rack, errorWatch }) => {
   await spawnPatch(page, [{ id: 'm', type: 'midiCvBuddy', position: { x: 200, y: 200 } }]);
-  const card = page.locator('.svelte-flow__node-midiCvBuddy');
+  const card = page.locator('.svelte-flow__node:has([data-shell-type="midiCvBuddy"])');
   await expect(card).toBeVisible();
-  // Card now shows the bare-prefix auto-name (MIDICVBUDDY) — the def's
-  // `MIDI-CV-BUDDY` label is no longer rendered in the title bar because
-  // the editable name button takes precedence over `defaultLabel` once
+  // The tile shows the bare-prefix auto-name (MIDICVBUDDY) — the editable
+  // name button takes precedence over `defaultLabel` once
   // `migrateAssignNames` runs at spawn (see $lib/multiplayer/module-naming.ts).
-  await expect(card.locator('[data-testid="name-label-button"]')).toHaveText(/^MIDICVBUDDY(\d+)?$/);
+  await expect(card.locator('[data-testid="tile-name-label-button"]')).toHaveText(/^MIDICVBUDDY(\d+)?$/);
 });
 
-test('midi-cv-buddy: Connect MIDI… button is visible + interactive', async ({ page, rackLegacy }) => {
+test('midi-cv-buddy: Connect MIDI… button is visible + interactive', async ({ page, rack }) => {
   await spawnPatch(page, [{ id: 'm', type: 'midiCvBuddy', position: { x: 200, y: 200 } }]);
-  const card = page.locator('.svelte-flow__node-midiCvBuddy');
+  const card = page.locator('.svelte-flow__node:has([data-shell-type="midiCvBuddy"])');
   await expect(card).toBeVisible();
-  // The button text contains an ellipsis ("Connect MIDI…") — match
-  // substring to be ellipsis-agnostic.
-  const btn = card.getByRole('button', { name: /Connect MIDI/ });
+  // The connect affordance is the shell ACTION cell (label 'Connect MIDI…');
+  // locate by its cell testid — the accessible name lives on the cell chrome.
+  const btn = card.getByTestId('shell-cell-midi-cv-buddy-connect');
   await expect(btn).toBeVisible();
   await expect(btn).toBeEnabled();
 });
 
-test('midi-cv-buddy: clicking Connect does not crash the card', async ({ page, rackLegacy, errorWatch }) => {
+test('midi-cv-buddy: clicking Connect does not crash the card', async ({ page, rack, errorWatch }) => {
   await spawnPatch(page, [{ id: 'm', type: 'midiCvBuddy', position: { x: 200, y: 200 } }]);
-  const card = page.locator('.svelte-flow__node-midiCvBuddy');
+  const card = page.locator('.svelte-flow__node:has([data-shell-type="midiCvBuddy"])');
   await expect(card).toBeVisible();
-  const btn = card.getByRole('button', { name: /Connect MIDI/ });
+  const btn = card.getByTestId('shell-cell-midi-cv-buddy-connect');
   // Browsers without Web MIDI (or without a granted permission) will
   // reject the request — the card should swallow the rejection and
   // surface the "permission-denied" hint rather than throwing.
@@ -57,10 +56,6 @@ test('midi-cv-buddy: clicking Connect does not crash the card', async ({ page, r
   // The card is still visible and still bears the label — no unhandled
   // exception tore it down.
   await expect(card).toBeVisible();
-  // Card now shows the bare-prefix auto-name (MIDICVBUDDY) — the def's
-  // `MIDI-CV-BUDDY` label is no longer rendered in the title bar because
-  // the editable name button takes precedence over `defaultLabel` once
-  // `migrateAssignNames` runs at spawn (see $lib/multiplayer/module-naming.ts).
-  await expect(card.locator('[data-testid="name-label-button"]')).toHaveText(/^MIDICVBUDDY(\d+)?$/);
+  await expect(card.locator('[data-testid="tile-name-label-button"]')).toHaveText(/^MIDICVBUDDY(\d+)?$/);
   // No unhandled pageerror / console.error along the way.
 });
