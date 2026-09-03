@@ -10,13 +10,13 @@
 //                         sampleHold.cv_quant  →  analogVco.pitch  →  SCOPE.ch1
 //
 // Asserts:
-//   1. Card mounts; "SAMPLE & HOLD" title present; no console errors.
+//   1. Tile mounts; auto-name present; no console errors.
 //   2. The quantized pitch drives the VCO and the SCOPE observes audio
 //      energy (the whole chain is alive).
-//   3. The SCALE knob's name label updates as the `scale` param changes.
+//   3. The SCALE control's aria-valuetext speaks the def's scale name as the
+//      `scale` param changes.
 //   4. CONTINUOUS-QUANTIZER variant: with NO gate patched, cv passes through
-//      continuously and the VCO still sings (pure quantizer mode), and the
-//      card's mode hint reads QUANTIZER.
+//      continuously and the VCO still sings (pure quantizer mode).
 
 import { test, expect } from './_fixtures';
 import { spawnPatch, seedKriaGate } from './_helpers';
@@ -24,7 +24,7 @@ import { readScopePeakOverWindow, setNodeParams } from './_module-coverage-helpe
 
 test.describe.configure({ mode: 'parallel' });
 
-test('SAMPLE & HOLD chain: BUGGLES → S&H (clocked) → VCO → SCOPE produces audio', async ({ page, rackLegacy, errorWatch }) => {
+test('SAMPLE & HOLD chain: BUGGLES → S&H (clocked) → VCO → SCOPE produces audio', async ({ page, rack, errorWatch }) => {
   await spawnPatch(
     page,
     [
@@ -49,9 +49,9 @@ test('SAMPLE & HOLD chain: BUGGLES → S&H (clocked) → VCO → SCOPE produces 
   );
   await seedKriaGate(page, 's-seq');
 
-  const card = page.locator('.svelte-flow__node-sampleHold');
+  const card = page.locator('.svelte-flow__node:has([data-shell-type="sampleHold"])');
   await expect(card).toHaveCount(1);
-  // The editable ModuleTitle defaults to the auto-assigned node name
+  // The editable tile name defaults to the auto-assigned node name
   // (the type slug uppercased, "SAMPLEHOLD") — same convention as RESOFILTER.
   await expect(card).toContainText('SAMPLEHOLD');
 
@@ -62,19 +62,23 @@ test('SAMPLE & HOLD chain: BUGGLES → S&H (clocked) → VCO → SCOPE produces 
 
 });
 
-test('SAMPLE & HOLD scale-name label updates as the scale param changes', async ({ page, rackLegacy }) => {
+test('SAMPLE & HOLD scale name follows the scale param — the def vocabulary on the tile', async ({ page, rack }) => {
+  // Was the card's `samplehold-scale-name` label. On the shell the same
+  // vocabulary reaches the TILE as `control-scale`'s aria-valuetext (the
+  // def formatter feeds the control), which is the claim this test always
+  // made: param → visible scale NAME.
   await spawnPatch(
     page,
     [{ id: 's-sh', type: 'sampleHold', position: { x: 120, y: 120 }, domain: 'audio' }],
     [],
   );
 
-  const card = page.locator('.svelte-flow__node-sampleHold');
-  await expect(card).toHaveCount(1);
+  const tile = page.locator('.svelte-flow__node[data-id="s-sh"] [data-testid="module-shell"]');
+  await expect(tile).toBeVisible();
 
-  const label = page.locator('[data-testid="samplehold-scale-name"]');
+  const scaleCtl = tile.getByTestId('control-scale');
   // default scale = 1 → "Major".
-  await expect(label).toHaveText('Major');
+  await expect(scaleCtl).toHaveAttribute('aria-valuetext', 'Major');
 
   const expected = [
     [0, 'Chromatic'],
@@ -91,11 +95,11 @@ test('SAMPLE & HOLD scale-name label updates as the scale param changes', async 
 
   for (const [scale, name] of expected) {
     await setNodeParams(page, 's-sh', { scale: scale });
-    await expect(label).toHaveText(name);
+    await expect(scaleCtl).toHaveAttribute('aria-valuetext', name);
   }
 });
 
-test('SAMPLE & HOLD continuous-quantizer (no gate): cv passes through, VCO sings, hint=QUANTIZER', async ({ page, rackLegacy, errorWatch }) => {
+test('SAMPLE & HOLD continuous-quantizer (no gate): cv passes through and the VCO sings (pure quantizer mode)', async ({ page, rack, errorWatch }) => {
   // NO sequencer / gate cable — sampleHold becomes a pure quantizer.
   await spawnPatch(
     page,
@@ -116,11 +120,14 @@ test('SAMPLE & HOLD continuous-quantizer (no gate): cv passes through, VCO sings
     ],
   );
 
-  const card = page.locator('.svelte-flow__node-sampleHold');
+  const card = page.locator('.svelte-flow__node:has([data-shell-type="sampleHold"])');
   await expect(card).toHaveCount(1);
 
-  // gate_in is unpatched → the card hints QUANTIZER mode.
-  await expect(page.locator('[data-testid="samplehold-mode-hint"]')).toHaveText('QUANTIZER');
+  // The card's `samplehold-mode-hint` (QUANTIZER with gate_in unpatched) was a
+  // derived-state readout with no face home (readouts ruling — S2 ledger
+  // manifest). The MODE itself is what the rest of this test measures: with no
+  // gate patched the cv passes through continuously-quantized, which only a
+  // module actually IN quantizer mode produces.
 
   // The continuously-quantized cv drives the VCO → audio reaches the scope.
   const obs = await readScopePeakOverWindow(page, 'q-scope', 1000);

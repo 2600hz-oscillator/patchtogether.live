@@ -133,13 +133,14 @@ into `face-clipplayer.spec.ts`, which already covers grid+pads).
 | # | commit | state |
 |---|---|---|
 | 1 | fixture flip: `rack` → default shell; `rackLegacy` opt-in alias added; 57 still-legacy-dependent files moved onto it; 27 files get shell-agnostic node selectors | DONE — battery: typecheck 0, lint 0, `--list` 3077/506 unchanged, full batch 369 passed/37 skipped/0 red after moves, REPEAT=3 on the 24 rewritten = 180 passed/0 failed |
-| 2 | `rackDefault` fold (10 consumers → `rack`; fixture deleted) | pending |
-| 3+ | drain `rackLegacy`: node-locator mechanical rewrites back onto default | pending |
+| 2 | `rackDefault` fold (10 consumers → `rack`; fixture deleted), 6788fc913 | DONE — 13-file smoke green, --list unchanged |
 | 3 | URL-flip wave 1: 80/144 mechanical-pool files flipped (URLs + `:has` locators), 6588ed099 | DONE — pool run 373 passed/129 skipped; 64 reds REVERTED to legacy boot (family-b/e queue below) |
-| 4 | manual-pool flips + family-(c) first cuts (24 files: shell-source legacy legs, es9 legacy arm, master-transport legacy arm, flip-rack legacy arm, menu-clamp canvas-card legs, midi-learn-note leg 2, rings-face card leg, vca-face card describe — see manifest) | verification batch running |
-| … | URL-flip remainder: the 64 reverted reds (below) — each needs per-family triage, not a blanket flip | pending |
-| … | helper flips: `_per-module-per-port-shared.ts`, `_toybox-fixture-helpers.ts`, `carl-rackspace.helpers.ts`, `rack-session.ts` `LEGACY_RACK_URL` | pending |
-| … | card-DOM rewrites / fold-and-delete with named-coverage manifest (owner ruling 5) | pending |
+| 4 | manual-pool flips + family-(c) first cuts, 992d47151 (11 legacy-subject tests deleted with manifest rows; audio-in/ptzcam/toybox-randomize/frogger/modtris/workflow-media/workflow-viewport-nav reverted → family-(b) queue) | DONE — 55 passed/1 skipped; REPEAT=3 on 9 changed files 75 passed; positive control on locator class (kria) |
+| 5 | in-card-title fold-and-delete, c396f44a9 — see manifest | DONE |
+| 6 | rings family-(b) rewrite, 4da834115 — THE PATTERN: tile via `:has`, dock ladder `control-<param>` + Y.Doc read-back; REPEAT=3; positive control (suppressed click → red poll) | DONE — rackLegacy 57→56 |
+| … | URL-flip remainder: the 64 reverted reds (below) — per-family triage, not a blanket flip (cheap-rescue DISPROVEN, see below) | pending |
+| … | helper flips: `_per-module-per-port-shared.ts`, `_toybox-fixture-helpers.ts`, `carl-rackspace.helpers.ts`, `rack-session.ts` `LEGACY_RACK_URL` | pending — each gated on its spec family |
+| … | card-DOM rewrites / fold-and-delete with named-coverage manifest (owner ruling 5) | IN PROGRESS — rings done; readout family (resofilter/sample-hold/clouds/cloudseed) next; then midi-device trio, node-context-menu/`.tile-name` targets, clipplayer family, toybox family, per-module sweeps |
 | … | family (c) machinery deletions + skip-budget same-commit | pending |
 | … | #1847 park reconciliation (28 files) | pending |
 | last | DOOM sub-slice: 14 re-points, boot URL + knob locator only | pending |
@@ -163,8 +164,25 @@ Format: deleted test → why it dies → where the coverage lives now.
 
 | in-card-title.spec.ts (WHOLE FILE, 3 tests: card-title placement, card rename persist, quarantined @collab rename-sync) | card-title chrome is card-only; rename affordance moved to the shell `.tile-name` | `module-rename.spec.ts` (default shell: tile-name rename + doc persistence + error paths); livecode rename-validation. ⚠ **NAMED COVERAGE LOSS for the owner: the @collab rename-sync case dies with the file.** It was quarantined dark since task #101 (relay-contention), so nothing that ran goes dark — but no @collab rename-sync coverage remains anywhere, and task #101's eventual fix needs a NEW home on the default shell. Same-commit: timings row pruned (422→421), both skip-budget entries pruned, `e2e-skip-budget.test.ts` + `e2e-report-audit.test.ts` collab scenarios re-anchored on the now-empty collab budget. |
 
+| rings.spec :: "model button cycles + updates label" — the LABEL half | card readout (`rings-model-name`), no face home by ruling | param half REWRITTEN: dock `control-model` toggle ↔ Y.Doc; audio identity of the two models pinned by the model-switch audio test in the same file |
+| sample-hold.spec :: the `samplehold-mode-hint` QUANTIZER assertion | derived-state card readout, no face home | the mode's BEHAVIOR (continuous quantize with no gate) is the same test's scope-peak assertion — the readout was commentary on it |
+| cloudseed.spec :: `cs-preset-prev`/`cs-preset-next` wrap-around arrows | card-only affordance | preset SELECTION rewritten onto the dock `control-preset_index` radiogroup; name + decay follow via tile aria-valuetext |
+
 Collection: 3077 → 3066 → **3063** tests in 505 files (−11 legs above, −3
 in-card-title).
+
+## Readout-family REWRITE recipe (proven on 4 files, commit 7)
+
+The card's "label follows the param" tests survive on the shell because THE
+DEF FORMATTER FEEDS THE CONTROLS: `control-<param>` carries `aria-valuetext`
+speaking the def vocabulary (tile knob: short/long form; dock segmented:
+long-form names as per-segment `title`, `aria-checked` tracks the param;
+dock radiogroups for enum params). Drive `setNodeParams` → assert
+aria-valuetext/aria-checked; drive the control → read the Y.Doc back. Probe a
+tile/dock with a scratch spec dumping `[data-testid^="control-"]` +
+aria-valuetext before writing (the tile and dock paint DIFFERENT primitives
+for the same param — resofilter's mode is a knob in the lane and a segmented
+in the dock).
 
 ## The 64 URL-flip reds (reverted to legacy boot; drain per family)
 
@@ -186,9 +204,30 @@ cube, duplicate-module, es9-card-shows-state, foxy-freeze-locks-wavetable,
 gibribbon, in-card-title, livecode, midi, midi-autobind-perfzip,
 midi-out-buddy, nibbles, organize-modules, patch-menu-redesign,
 patch-panel-nested.
-(Some are 1-test reds — likely cheap rescues; toybox/samsloop/timelorde are
-real card-DOM families. in-card-title + card-drop-patch remain family (c)
-whole-file deletions per the brief.)
+(toybox/samsloop/timelorde are real card-DOM families. card-drop-patch stays
+in the parks phase; in-card-title was deleted — see manifest.)
+
+**⚠ The cheap-rescue hypothesis is DISPROVEN (measured).** 20 of the 1-3-test
+reds were re-flipped and run: 25 passed / 24 failed — every file kept exactly
+its deeper card-DOM leg; NONE fully rescued. All 20 reverted to legacy. The
+failing leg per file (bankable triage — this is the family-(b) work item list
+for these files):
+- midi-out-buddy :133 "Connect MIDI… reveals OUT device + channel selectors"
+- perf-midi-cc-coalesce :237/:350/:439 (CC burst coalescing — binds knobs on
+  card DOM)
+- picturebox-asset-select :179 (gate→slot display)
+- pong :54 / skifree :178 (card mounts + canvas + io presence)
+- reconciler-node-type-swap :77 ("its card paints" leg)
+- recorderbox-recover-reachable :40 (Save/Discard inside the card)
+- samsloop-boundaries-roundtrip :54, -download :31, -persistence :57 (record
+  flows through card UI)
+- scoreboard :66 (SEQ gate increments counter + preview pixels)
+- slider-drag :106 (ADSR Attack card Fader drag)
+- video-controls :561 (FEEDBACK wet knob), video-preview-downscale :395
+  (on-card preview), wavecel-video-outs :197, waveform-trace-shape :69
+- workflow-spawn-reveal :206 (off-screen lane add pan geometry)
+- vst-bridge :57 / vst-lane-autowire :208 (mocked-helper flows via card)
+- camera-input :154/:240/:317 (device picker/hints — camera project)
 
 ## Defects found in the product by S2
 
