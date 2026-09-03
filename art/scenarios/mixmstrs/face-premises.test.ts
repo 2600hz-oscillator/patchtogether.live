@@ -3,14 +3,15 @@
 // THE FOUR CLAIMS MIXMSTRS' FACEPLATE MAKES, ASSERTED AGAINST THE SHIPPED DSP.
 //
 // The face publishes three derived readouts and DECLINES to publish a fourth
-// thing (a per-channel VU). Every one of those decisions rests on a measurement,
-// and a measurement that lives only in a comment is a check nobody is watching —
-// so each is a permanent leg here, driving the REAL Faust wasm
+// thing (a per-channel VU — since slice 3b a design choice, no longer a
+// measurement constraint: premise 5 below). Each premise rests on a
+// measurement, and a measurement that lives only in a comment is a check
+// nobody is watching — so each is a permanent leg here, driving the REAL Faust wasm
 // (`packages/dsp/dist/mixmstrs.{wasm,json}`, the exact bytes the browser ships)
 // through the headless offline processor.
 //
-//   1. THE INSTRUMENT. Two identical renders must be bit-equal on all fourteen
-//      outputs. #1680 measured three modules whose offline renders were RACY,
+//   1. THE INSTRUMENT. Two identical renders must be bit-equal on all
+//      twenty-two outputs. #1680 measured three modules whose offline renders were RACY,
 //      and a bit-exact zero from a racy rig proves nothing — so this runs FIRST
 //      and every figure below is conditioned on it.
 //   2. `bus`  — the readout's arithmetic must equal what the DSP actually does.
@@ -23,10 +24,13 @@
 //      "0.0" from meaning "too small to see".
 //   4. `send N` — the two PRE/POST switches must be BIT-EXACTLY inert while the
 //      sends are shut and live once one opens.
-//   5. WHY THERE IS NO VU ON THE FACE. `read('levels')` is a mono-sum tap, so an
-//      anti-phase channel reads zero while the master carries it at full level.
-//      Asserted so that the day someone adds meter bars, this is what stops
-//      them — the ninelives/buggles glyph hazard (#1692, #1706) with a live tap.
+//   5. THE TAP SEES PHASE NOW. The per-channel tap used to be a mono sum, so
+//      an anti-phase channel read zero while the master carried it at full
+//      level — the measurement that kept a VU off the face. Slice 3b split the
+//      taps to stereo (they are the clip recorder's POST FADER source), so the
+//      premise FLIPPED and is re-pinned in its fixed form: both legs carry the
+//      channel, the dead mono sum still reads zero, and `read('levels')`
+//      combines energies and cannot cancel.
 //
 // ⚠ COST IS DECLARED, NEVER THE GATE. Each render builds the real factory once
 // (fresh offline processor, wasm instantiation included). The wall-clock cap
@@ -44,12 +48,13 @@ const DUR = 0.4;
 const N = Math.round(SR * DUR);
 const SETTLE = Math.round(0.2 * SR); // past si.smoo's ramp-in on every fader
 
-/** Faust output order: the six patchable ports, then the eight post-fader VU
- *  taps (`mixmstrs.dsp:280-292`). Derived from the def for the first six so a
- *  port rename cannot silently re-key this file. */
+/** Faust output order: the six patchable ports, then the eight post-fader
+ *  STEREO tap pairs, L then R per channel (slice 3b split the old mono taps —
+ *  see premise 5). Derived from the def for the first six so a port rename
+ *  cannot silently re-key this file. */
 const OUTS = [
   ...(mixmstrsDef.outputs ?? []).map((o) => o.id),
-  ...MIXMSTRS_CHANNELS.map((c) => `vu${c}`),
+  ...MIXMSTRS_CHANNELS.flatMap((c) => [`vu${c}L`, `vu${c}R`]),
 ];
 
 const saw = (hz: number, amp: number) => vcoTestSignal({ totalS: DUR, shape: 'saw', freqHz: hz, amp });
@@ -223,11 +228,15 @@ describe('ART mixmstrs / the faceplate premises', () => {
     expect(problems.join('\n'), `the face's SEND readout states the wrong enabler\n${rows.join('\n')}`).toBe('');
   }, CAP);
 
-  it('5 · WHY THERE IS NO VU ON THE FACE — the tap is blind to phase', async () => {
-    // `ch{N}Level = (ch{N}ML + ch{N}MR) * 0.5` (`mixmstrs.dsp:349-356`). An
-    // anti-phase channel cancels in the mono sum while BOTH master legs carry
-    // it untouched. Painting bars off `read('levels')` would be a face claiming
-    // silence about a channel the player can hear.
+  it('5 · THE TAP SEES PHASE NOW — the old mono-sum blindness is dead, and stays dead', async () => {
+    // HISTORY, because this premise used to assert the OPPOSITE. The tap was
+    // `ch{N}Level = (ch{N}ML + ch{N}MR) * 0.5`, and this leg pinned the
+    // consequence: an anti-phase channel read EXACTLY zero while both master
+    // legs carried it untouched — the measurement that kept meter bars off the
+    // face, and the reason `recTap: POST FADER` could not ship (a recording
+    // off that tap captures the cancellation, not the channel). Slice 3b split
+    // the taps to STEREO. The premise flips, and its fixed form is pinned so a
+    // future "simplify the taps back to mono" reddens here first:
     const s = saw(C4_HZ, 0.5);
     const mk = (right: Float32Array) => {
       const ins: (Float32Array | null)[] = new Array(AUDIO_IN_COUNT).fill(null);
@@ -236,13 +245,27 @@ describe('ART mixmstrs / the faceplate premises', () => {
     };
     const inPhase = await render(mk(s));
     const anti = await render(mk(inverted(s)));
-    const vuKey = `vu${MIXMSTRS_CHANNELS[0]}`;
+    const ch1 = MIXMSTRS_CHANNELS[0];
 
-    // The tap sees nothing…
-    expect(rms(inPhase[vuKey]!), 'the in-phase control must light the tap').toBeGreaterThan(0);
-    expect(rms(anti[vuKey]!), 'the anti-phase channel must read exactly zero on the tap').toBe(0);
-    // …while the master carries it identically on BOTH legs. That equality is
-    // what makes this a blindness rather than a level change.
+    // BOTH legs carry the anti-phase channel, at the in-phase level…
+    expect(rms(inPhase[`vu${ch1}L`]!), 'the in-phase control must light the tap').toBeGreaterThan(0);
+    expect(rms(anti[`vu${ch1}L`]!), 'the anti-phase channel must be VISIBLE on the L leg')
+      .toBeCloseTo(rms(inPhase[`vu${ch1}L`]!), 6);
+    expect(rms(anti[`vu${ch1}R`]!), 'and on the R leg')
+      .toBeCloseTo(rms(inPhase[`vu${ch1}R`]!), 6);
+    // …while their MONO SUM — the whole of what the old tap emitted — is still
+    // digital silence. That pair of facts is the defect and the fix in one
+    // picture, and it is why `read('levels')` combines the legs' ENERGIES
+    // (sqrt((L²+R²)/2), asserted at the factory seam in mixmstrs.test.ts)
+    // rather than summing samples.
+    let sumPeak = 0;
+    const l = anti[`vu${ch1}L`]!;
+    const r = anti[`vu${ch1}R`]!;
+    for (let i = SETTLE; i < N; i++) sumPeak = Math.max(sumPeak, Math.abs(l[i]! + r[i]!));
+    expect(sumPeak, 'the legs stay equal-and-opposite; their mono sum is the dead tap').toBeLessThan(1e-6);
+    // The master reference is unchanged: both legs carry the channel
+    // identically in-phase and anti-phase — the control that proves the probe
+    // reaches the bus at full level either way.
     expect(rms(anti.masterL!)).toBeCloseTo(rms(inPhase.masterL!), 12);
     expect(rms(anti.masterR!)).toBeCloseTo(rms(inPhase.masterR!), 12);
     expect(rms(anti.masterL!), 'the master must genuinely be carrying signal').toBeGreaterThan(0);

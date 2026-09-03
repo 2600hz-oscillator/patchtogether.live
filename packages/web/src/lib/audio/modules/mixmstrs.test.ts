@@ -23,7 +23,16 @@ vi.mock('$lib/audio/faust-runtime', () => ({
   instantiateFaustModule: vi.fn(async () => fakeFaustNode),
 }));
 
-import { mapCompMacro, mixmstrsDef, rmsLevel } from './mixmstrs';
+import {
+  mapCompMacro,
+  mixmstrsDef,
+  mixmstrsPostFaderTap,
+  mixmstrsRecTapPair,
+  MIXMSTRS_MASTER_TAP,
+  MIXMSTRS_POST_FADER_TAP_OFFSET,
+  rmsLevel,
+  type MixmstrsRecTaps,
+} from './mixmstrs';
 import type { ModuleNode } from '$lib/graph/types';
 
 describe('mapCompMacro: per-channel comp knob → (enable, thresh, ratio)', () => {
@@ -87,9 +96,18 @@ describe('rmsLevel: pure RMS over a sample window', () => {
 
 // ─────────────────────────────────────────────────────────────────────────
 // read('levels') — drives mixmstrsDef.factory() against a mock Web Audio env.
-// Each of the 8 post-fader meter AnalyserNodes (created in channel order) is
-// fed a KNOWN constant buffer, so read('levels') returns a deterministic,
-// ordered number[8] we can assert on (ordering + scale).
+// The 16 post-fader meter AnalyserNodes (one per LEG, created first and in
+// leg order: ch1L, ch1R, ch2L, ch2R, …) are each fed a KNOWN constant buffer,
+// so read('levels') returns a deterministic, ordered number[8] we can assert
+// on (ordering + scale + the combine-after-RMS property).
+//
+// ⚠ THE COMBINE ORDER IS THE CONTRACT UNDER TEST. The DSP used to hand back a
+// mono `(L+R)*0.5` per channel and that sum is measurably phase-blind: an
+// anti-phase channel read rms 0.0000e+0 while masterL/masterR each carried
+// 0.184216. The factory now RMSes each leg separately and combines energies
+// (`sqrt((L²+R²)/2)`), which cannot cancel — and a constant buffer per leg is
+// exactly the probe that separates the two orders: legs +c and −c read c
+// combined-after and 0 summed-before.
 // ─────────────────────────────────────────────────────────────────────────
 
 interface FakeAnalyser {
@@ -101,9 +119,11 @@ interface FakeAnalyser {
   getFloatTimeDomainData: (buf: Float32Array) => void;
 }
 
-/** Build a mock AudioContext. `levels[ch]` is the constant amplitude the ch-th
- *  post-fader analyser reports (RMS of a constant = that constant). */
-function makeMockCtx(levels: number[]): unknown {
+/** Build a mock AudioContext. `legAmps[k]` is the constant amplitude the k-th
+ *  created analyser reports (RMS of a constant = |constant|); the factory
+ *  creates the 16 meter-leg analysers FIRST, in leg order. Pass 8 per-channel
+ *  values through `perChannel()` when both legs should agree. */
+function makeMockCtx(legAmps: number[]): unknown {
   let analyserCount = 0;
   function audioParam(initial = 0) {
     return {
@@ -128,19 +148,27 @@ function makeMockCtx(levels: number[]): unknown {
       disconnect: vi.fn(),
     }),
     createAnalyser: (): FakeAnalyser => {
-      // The factory creates the 8 meter analysers in ch0..ch7 order — tag each
-      // with its creation index so its buffer carries that channel's level.
-      const ch = analyserCount++;
+      // The factory creates the 16 meter-leg analysers FIRST and in leg order
+      // (ch1L, ch1R, ch2L, ch2R, …) — tag each with its creation index so its
+      // buffer carries that leg's amplitude. Later analysers (comp/rec shadow
+      // observation taps) read past the array and fill 0, which is fine: no
+      // test here asserts through them.
+      const leg = analyserCount++;
       return {
-        __meterCh: ch,
+        __meterCh: leg,
         fftSize: 1024,
         smoothingTimeConstant: 0,
         connect: vi.fn(),
         disconnect: vi.fn(),
-        getFloatTimeDomainData: (buf: Float32Array) => buf.fill(levels[ch] ?? 0),
+        getFloatTimeDomainData: (buf: Float32Array) => buf.fill(legAmps[leg] ?? 0),
       };
     },
   };
+}
+
+/** Expand 8 per-channel amplitudes into 16 leg amplitudes (L = R = value). */
+function perChannel(chans: number[]): number[] {
+  return chans.flatMap((v) => [v, v]);
 }
 
 function makeMixNode(id = 'mx1'): ModuleNode {
@@ -163,7 +191,10 @@ describe("mixmstrs factory: read('levels') — post-fader per-channel VU", () =>
   afterEach(() => vi.clearAllMocks());
 
   it('returns number[8] of the per-channel post-fader RMS levels', async () => {
-    const ctx = makeMockCtx([0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8]);
+    // Both legs of each channel at the same amplitude: the combined RMS
+    // sqrt((c²+c²)/2) = c, so a correlated (mono-ish) channel reads exactly
+    // what the old mono tap read.
+    const ctx = makeMockCtx(perChannel([0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8]));
     const handle = await mixmstrsDef.factory(ctx as never, makeMixNode() as never);
     const levels = handle.read?.('levels') as number[];
     expect(Array.isArray(levels)).toBe(true);
@@ -182,7 +213,7 @@ describe("mixmstrs factory: read('levels') — post-fader per-channel VU", () =>
   it('preserves channel ORDER (louder channel → higher level at its index)', async () => {
     // ch7 loudest, ch1 quietest — the returned array must keep that ordering.
     // Values (ch1..ch8): descending chain is ch7 > ch5 > ch3 > ch2 > ch8 > ch4 > ch6 > ch1.
-    const ctx = makeMockCtx([0.05, 0.5, 0.9, 0.2, 0.95, 0.1, 0.99, 0.3]);
+    const ctx = makeMockCtx(perChannel([0.05, 0.5, 0.9, 0.2, 0.95, 0.1, 0.99, 0.3]));
     const handle = await mixmstrsDef.factory(ctx as never, makeMixNode() as never);
     const levels = handle.read?.('levels') as number[];
     expect(levels[6]).toBeGreaterThan(levels[4]!); // ch7 > ch5
@@ -196,7 +227,7 @@ describe("mixmstrs factory: read('levels') — post-fader per-channel VU", () =>
   });
 
   it('a silent channel reads 0 (no floor / no leakage from neighbors)', async () => {
-    const ctx = makeMockCtx([0, 0.5, 0, 0.5, 0, 0.5, 0, 0.5]);
+    const ctx = makeMockCtx(perChannel([0, 0.5, 0, 0.5, 0, 0.5, 0, 0.5]));
     const handle = await mixmstrsDef.factory(ctx as never, makeMixNode() as never);
     const levels = handle.read?.('levels') as number[];
     expect(levels[0]).toBe(0);
@@ -210,8 +241,38 @@ describe("mixmstrs factory: read('levels') — post-fader per-channel VU", () =>
     handle.dispose?.();
   });
 
-  it('does NOT expose the 8 meter taps as patchable module ports (still 6 outputs)', async () => {
-    const ctx = makeMockCtx([0, 0, 0, 0, 0, 0, 0, 0]);
+  it('REGRESSION: an ANTI-PHASE channel meters at its true level, not 0', async () => {
+    // The phase-blindness fix, pinned at the combine seam. ch1's legs carry
+    // +0.5 and −0.5 — the signal whose mono sum is digital silence and which
+    // read rms 0.0000e+0 off the old (L+R)*0.5 DSP tap. RMS is sign-blind and
+    // energies add, so the combined reading must be the true 0.5. An
+    // implementation that summed the leg buffers BEFORE the RMS would read 0
+    // here, which is exactly the defect this test exists to keep dead.
+    const legs = new Array(16).fill(0);
+    legs[0] = 0.5; // ch1L
+    legs[1] = -0.5; // ch1R — anti-phase
+    const ctx = makeMockCtx(legs);
+    const handle = await mixmstrsDef.factory(ctx as never, makeMixNode() as never);
+    const levels = handle.read?.('levels') as number[];
+    expect(levels[0], 'the anti-phase channel must meter at its true level').toBeCloseTo(0.5, 6);
+    expect(levels[1], 'and nothing leaks into ch2').toBe(0);
+    handle.dispose?.();
+  });
+
+  it('a one-sided channel reads its energy share (L only → c/√2)', async () => {
+    // sqrt((c² + 0²)/2) = c/√2 — the energy combine, asserted off the equal-leg
+    // path so a "just return the L leg" implementation cannot pass.
+    const legs = new Array(16).fill(0);
+    legs[4] = 0.5; // ch3L only
+    const ctx = makeMockCtx(legs);
+    const handle = await mixmstrsDef.factory(ctx as never, makeMixNode() as never);
+    const levels = handle.read?.('levels') as number[];
+    expect(levels[2]).toBeCloseTo(0.5 / Math.SQRT2, 6);
+    handle.dispose?.();
+  });
+
+  it('does NOT expose the 16 tap legs as patchable module ports (still 6 outputs)', async () => {
+    const ctx = makeMockCtx(perChannel([0, 0, 0, 0, 0, 0, 0, 0]));
     const handle = await mixmstrsDef.factory(ctx as never, makeMixNode() as never);
     const outs = handle.outputs as Map<string, unknown>;
     expect([...outs.keys()].sort()).toEqual(
@@ -221,9 +282,62 @@ describe("mixmstrs factory: read('levels') — post-fader per-channel VU", () =>
   });
 
   it("read() of an unknown key is undefined", async () => {
-    const ctx = makeMockCtx([0, 0, 0, 0, 0, 0, 0, 0]);
+    const ctx = makeMockCtx(perChannel([0, 0, 0, 0, 0, 0, 0, 0]));
     const handle = await mixmstrsDef.factory(ctx as never, makeMixNode() as never);
     expect(handle.read?.('nope')).toBeUndefined();
+    handle.dispose?.();
+  });
+
+  it("read('recTaps') publishes all three rosters, addressed off ONE constant", async () => {
+    const ctx = makeMockCtx(perChannel([0, 0, 0, 0, 0, 0, 0, 0]));
+    const handle = await mixmstrsDef.factory(ctx as never, makeMixNode() as never);
+    const taps = handle.read?.('recTaps') as MixmstrsRecTaps;
+    // Shapes: 16 BOARD IN legs (channel legs only — no return-port inserts),
+    // 16 POST FADER legs, one MASTER pair.
+    expect(taps.board).toHaveLength(16);
+    expect(taps.postFader).toHaveLength(16);
+    expect(taps.master).toHaveLength(2);
+    // BOARD IN: 16 DISTINCT insert-head nodes, each tapped at output 0.
+    expect(new Set(taps.board.map((l) => l.node)).size).toBe(16);
+    for (const leg of taps.board) expect(leg.output).toBe(0);
+    // POST FADER + MASTER: every leg is the SAME splitter node, so the tap and
+    // the patchable master jacks cannot be different graphs.
+    const splitterNode = taps.master[0].node;
+    expect(taps.master[1].node).toBe(splitterNode);
+    for (const leg of taps.postFader) expect(leg.node).toBe(splitterNode);
+    // And the indices come from the shared constants — the meter analysers
+    // address the same outputs, which is the "one place computes this" rule.
+    expect(taps.master[0].output).toBe(MIXMSTRS_MASTER_TAP.l);
+    expect(taps.master[1].output).toBe(MIXMSTRS_MASTER_TAP.r);
+    taps.postFader.forEach((leg, k) => {
+      expect(leg.output).toBe(MIXMSTRS_POST_FADER_TAP_OFFSET + k);
+    });
+    handle.dispose?.();
+  });
+
+  it('mixmstrsRecTapPair selects the right stereo pair for every (tap, channel)', async () => {
+    const ctx = makeMockCtx(perChannel([0, 0, 0, 0, 0, 0, 0, 0]));
+    const handle = await mixmstrsDef.factory(ctx as never, makeMixNode() as never);
+    const taps = handle.read?.('recTaps') as MixmstrsRecTaps;
+    // BOARD IN, ch4 (0-based 3) → board legs 6/7.
+    const board = mixmstrsRecTapPair(taps, 0, 3);
+    expect(board.l).toBe(taps.board[6]);
+    expect(board.r).toBe(taps.board[7]);
+    // POST FADER, ch4 → splitter outputs from mixmstrsPostFaderTap(3).
+    const post = mixmstrsRecTapPair(taps, 1, 3);
+    expect(post.l.output).toBe(mixmstrsPostFaderTap(3).l);
+    expect(post.r.output).toBe(mixmstrsPostFaderTap(3).r);
+    // MASTER is the same pair for EVERY channel — eight lanes recording the
+    // mix is eight copies of the mix.
+    for (const ch0 of [0, 3, 7]) {
+      const m = mixmstrsRecTapPair(taps, 2, ch0);
+      expect(m.l).toBe(taps.master[0]);
+      expect(m.r).toBe(taps.master[1]);
+    }
+    // A drifting effective value snaps like readRecState does (0.6 → tap 1),
+    // and an out-of-range channel clamps instead of reading off the roster end.
+    expect(mixmstrsRecTapPair(taps, 0.6, 0).l).toBe(taps.postFader[0]);
+    expect(mixmstrsRecTapPair(taps, 0, 99).l).toBe(taps.board[14]);
     handle.dispose?.();
   });
 });

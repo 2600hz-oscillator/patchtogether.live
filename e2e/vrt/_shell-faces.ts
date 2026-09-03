@@ -700,10 +700,11 @@ export const FACES = [
   // `attenumix.outputs[0]` is a direct out, and mixmstrs is on the right side of
   // it. Asserted, with the port named, in mixmstrs-face-model.test.ts.
   //
-  // ⚠ AND THE METER IS DELIBERATELY NOT THE PER-CHANNEL VU. `read('levels')` is
-  // a mono-sum tap (`mixmstrs.dsp:349-356`) measured to read 0.0000e+0 on an
-  // anti-phase channel that masterL and masterR each carry at rms 0.184216.
-  // Nothing in this scene paints it.
+  // ⚠ AND THE METER IS DELIBERATELY NOT THE PER-CHANNEL VU. Nothing in this
+  // scene paints `read('levels')`. (Historically it also COULD not serve: the
+  // tap was a mono sum that read 0.0000e+0 on an anti-phase channel. Slice 3b
+  // split the taps to stereo and the reading is honest now — the face simply
+  // still declines a per-channel VU, a design choice, not a constraint.)
   //
   // Deterministic on a silent rack like every sibling: a mixer contains no
   // generator, so with nothing patched masterL is bit-exactly zero.

@@ -254,31 +254,42 @@ with {
 //  16,17  return1 L/R
 //  18,19  return2 L/R
 //
-// 14 audio outputs:
-//   0,1  master L/R
-//   2,3  send1 L/R
-//   4,5  send2 L/R
-//   6    ch1 POST-FADER level tap (mono (L+R)/2, post EQ→comp→fader)
-//   7    ch2 POST-FADER level tap
-//   8    ch3 POST-FADER level tap
-//   9    ch4 POST-FADER level tap
-//  10    ch5 POST-FADER level tap
-//  11    ch6 POST-FADER level tap
-//  12    ch7 POST-FADER level tap
-//  13    ch8 POST-FADER level tap
+// 22 audio outputs:
+//   0,1    master L/R
+//   2,3    send1 L/R
+//   4,5    send2 L/R
+//   6,7    ch1 POST-FADER tap L/R (post EQ→comp→fader)
+//   8,9    ch2 POST-FADER tap L/R
+//  10,11   ch3 POST-FADER tap L/R
+//  12,13   ch4 POST-FADER tap L/R
+//  14,15   ch5 POST-FADER tap L/R
+//  16,17   ch6 POST-FADER tap L/R
+//  18,19   ch7 POST-FADER tap L/R
+//  20,21   ch8 POST-FADER tap L/R
 //
-// The 8 trailing outputs are ACCURATE per-channel post-fader meter taps for the
-// Electra MIXMASTER VU row + any on-card meter. They carry the channel's mixed-
-// down signal AFTER EQ, compression, and the volume fader — so the VU reflects
-// what the channel actually contributes to the master bus (the JS input-tap
-// approximation this replaces ignored EQ/comp gain). The module factory taps
-// these with AnalyserNodes and exposes the RMS as `read('levels') -> number[8]`;
-// they are NOT patchable module ports. v1 is mono per channel; a future option
-// is to emit stereo L/R taps (+16 outputs total) for an L/R-split VU.
+// The 16 trailing outputs are ACCURATE per-channel post-fader taps: the
+// channel's signal AFTER EQ, compression, and the volume fader — what the
+// channel actually contributes to the master bus (the JS input-tap
+// approximation this replaced ignored EQ/comp gain). They are NOT patchable
+// module ports; the factory consumes them.
+//
+// ⚠ STEREO, AND THAT IS A CORRECTNESS FIX RATHER THAN A FEATURE. These were
+// mono `(L+R)*0.5` — the "future option" this file has named since it was
+// written — and that sum is MEASURABLY PHASE-BLIND: an anti-phase channel read
+// rms 0.0000e+0 while masterL and masterR each carried 0.184216, byte-identical
+// to the in-phase render. A meter that reads silence on a channel you can hear
+// is wrong, and a RECORDING taken off that tap would be worse: it would capture
+// the cancellation rather than the channel. Splitting them is what makes
+// `recTap = POST FADER` deliverable at all, and it fixes the VU on the way.
+//
+// Two consumers, both in the factory: `read('levels')` RMSes each leg and
+// combines them (so an anti-phase channel now reads its true level), and the
+// clip recorder's POST FADER tap takes the pair as-is.
 
 process(c1l, c1r, c2l, c2r, c3l, c3r, c4l, c4r, c5l, c5r, c6l, c6r, c7l, c7r, c8l, c8r, r1l, r1r, r2l, r2r) =
   outL, outR, s1OutL, s1OutR, s2OutL, s2OutR,
-  ch1Level, ch2Level, ch3Level, ch4Level, ch5Level, ch6Level, ch7Level, ch8Level
+  ch1TapL, ch1TapR, ch2TapL, ch2TapR, ch3TapL, ch3TapR, ch4TapL, ch4TapR,
+  ch5TapL, ch5TapR, ch6TapL, ch6TapR, ch7TapL, ch7TapR, ch8TapL, ch8TapR
 with {
   // Per-channel chains.
   ch1Out = channelChain(ch1Low, ch1Mid, ch1High, ch1Thr, ch1Rat, ch1En, ch1Vol, ch1S1, ch1S2, send1Pre, send2Pre, c1l, c1r);
@@ -341,17 +352,18 @@ with {
   outL = masterL;
   outR = masterR;
 
-  // Per-channel POST-FADER level taps (mono (L+R)/2 of each channel's main
-  // output — i.e. AFTER EQ → comp → volume fader, BEFORE master-bus summing /
-  // master volume). The factory runs each through an AnalyserNode and reports
-  // the RMS as read('levels'). Mixing L+R to mono here keeps the VU one value
-  // per channel; a stereo VU would split these into 16 outputs (future option).
-  ch1Level = (ch1ML + ch1MR) * 0.5;
-  ch2Level = (ch2ML + ch2MR) * 0.5;
-  ch3Level = (ch3ML + ch3MR) * 0.5;
-  ch4Level = (ch4ML + ch4MR) * 0.5;
-  ch5Level = (ch5ML + ch5MR) * 0.5;
-  ch6Level = (ch6ML + ch6MR) * 0.5;
-  ch7Level = (ch7ML + ch7MR) * 0.5;
-  ch8Level = (ch8ML + ch8MR) * 0.5;
+  // Per-channel POST-FADER taps: each channel's main output AFTER
+  // EQ → comp → volume fader, BEFORE master-bus summing and master volume.
+  //
+  // ⚠ THE PAIR IS PASSED THROUGH UNMIXED. Summing to mono here is what made the
+  // old tap phase-blind (see the header): the factory needs both legs, both to
+  // meter honestly and to record from.
+  ch1TapL = ch1ML; ch1TapR = ch1MR;
+  ch2TapL = ch2ML; ch2TapR = ch2MR;
+  ch3TapL = ch3ML; ch3TapR = ch3MR;
+  ch4TapL = ch4ML; ch4TapR = ch4MR;
+  ch5TapL = ch5ML; ch5TapR = ch5MR;
+  ch6TapL = ch6ML; ch6TapR = ch6MR;
+  ch7TapL = ch7ML; ch7TapR = ch7MR;
+  ch8TapL = ch8ML; ch8TapR = ch8MR;
 };
