@@ -31,10 +31,13 @@ import { fileURLToPath } from 'node:url';
 
 import {
   MIXMSTRS_CHANNELS,
+  MIXMSTRS_MON_IDS,
+  MIXMSTRS_REC_ARM_IDS,
   MIXMSTRS_RETURNS,
   mixmstrsChannelIndex,
   mixmstrsDef,
 } from '$lib/audio/modules/mixmstrs';
+import { consoleGridCols } from '$lib/ui/workflow/console-grid';
 import { FACE_TIER_CAPS, laneOrder } from '$lib/ui/workflow/curated-face';
 import { glyphBinding, primaryAudioOutPortId } from '$lib/ui/workflow/shell-glyph-live';
 import { controlTags, OPERATIONAL_FIELDS } from './card-def-agreement';
@@ -179,6 +182,26 @@ describe('mixmstrs face — the SCOPE ranking, asserted from the live def', () =
     );
     expect(channelBands.length, 'no band carries a per-channel cluster — the grid is gone').toBeGreaterThan(0);
 
+    // ⚠ THE PROPERTY IS A CONSOLE-GRID PROPERTY, so it runs over the bands the
+    // grid actually aligns — the ones `consoleGridCols` answers for, the SAME
+    // resolver ModuleShell renders the ruler from. The `record` band is
+    // deliberately OFF the ruler (its cells are segmented rosters; see the
+    // def), and its rows are FOUR-channel halves because eight-wide segmented
+    // rows measured 1324 CSS px against a 1220 px dock pane — column N of a
+    // half-row was never channel N and no ruler ever claimed it was.
+    //
+    // ⚠ AND THE SCOPE IS PINNED, so it cannot go silently vacuous: a `channels`
+    // cluster that lost a member would fall OFF the ruler (unequal counts →
+    // `consoleGridCols` null) and out of this sweep — caught here instead as a
+    // set change. Mirrors the e2e's on-ruler/off-ruler two-sided assertion.
+    const onRuler = channelBands.filter(
+      (p) => consoleGridCols({ clusterFlow: p.clusterFlow, clusters: p.clusters ?? [] }) !== null,
+    );
+    expect(
+      onRuler.map((p) => p.id).sort(),
+      'exactly these channel bands sit on the console ruler (a membership drift lands a band off it)',
+    ).toEqual(['channels', 'dynamics', 'sends']);
+
     // ⚠ THE PROPERTY IS ABOUT THE LEADING RUN, NOT THE WHOLE CLUSTER, and the
     // first draft of this assertion got that wrong — it demanded every cell be
     // per-channel and went red on `sends`, whose two clusters each end with
@@ -187,7 +210,7 @@ describe('mixmstrs face — the SCOPE ranking, asserted from the live def', () =
     // it comes AFTER columns 1..8. What would stagger the grid is a non-channel
     // cell BEFORE or INSIDE the run, so that is what is refused.
     const problems: string[] = [];
-    for (const band of channelBands) {
+    for (const band of onRuler) {
       for (const cluster of band.clusters ?? []) {
         if (!cluster.controls.some(isChannelScoped)) continue;
         const lead = cluster.controls.slice(0, MIXMSTRS_CHANNELS.length);
@@ -211,6 +234,24 @@ describe('mixmstrs face — the SCOPE ranking, asserted from the live def', () =
       }
     }
     expect(problems.join('\n'), 'the console grid is staggered — column N is no longer channel N').toBe('');
+
+    // THE RECORD BAND'S HALF-ROWS still cover the strip: off the ruler its
+    // column identity is per-cell captions (`5RC`), but a LOST member is the
+    // same defect there as anywhere — a channel with no arm, silently. The arm
+    // halves must concatenate to exactly the arm roster in strip order, and the
+    // monitor halves to the monitor roster.
+    const record = (FACE.pages ?? []).find((p) => p.id === 'record');
+    expect(record, 'the record band exists').toBeDefined();
+    const halves = (prefix: string) =>
+      (record!.clusters ?? [])
+        .filter((c) => c.label.startsWith(prefix))
+        .flatMap((c) => c.controls);
+    expect(halves('arm'), 'the arm halves partition the arm roster in strip order').toEqual([
+      ...MIXMSTRS_REC_ARM_IDS,
+    ]);
+    expect(halves('monitor'), 'the monitor halves partition the monitor roster in strip order').toEqual([
+      ...MIXMSTRS_MON_IDS,
+    ]);
 
     // AND THE FADERS LEAD. The band that holds the volumes must hold them in its
     // FIRST cluster, so a column reads fader → tone rather than tone → fader.

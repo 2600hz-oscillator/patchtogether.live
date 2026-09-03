@@ -146,6 +146,26 @@ dropped** — a new leg drives every one through the same CV path and requires i
 to move `read('recState')`, so *"no declared CV input is dead"* still holds for
 all of them, measured against the right instrument.
 
+**E. Eight-wide record rows do not fit the dock pane — CI measured it.** The
+vrt-strict dock scene reported *"104 CSS px of faceplate right of the capture
+box (content 1324, shown 1220)"*: eight `live/both/auto` segmented cells at
+~157 px plus seven 10 px gaps out-measure the 1220 px pane, and
+`.faceplate-body` is `width: max-content`, so a flex row never wraps on its
+own. Users would have seen a clipped plate — the owner's preview at dock width
+already showed exactly that, so the FITTING layout is the approved look. The
+arm and monitor clusters are now FOUR-channel halves (`arm 1–4` / `monitor
+1–4` / `arm 5–8` / `monitor 5–8`; widest record row ~670 px), grouped by
+channel range so a half reads arm-over-monitor for the same four strips; each
+cell keeps its own channel caption (`5RC`), so identity never rested on
+counting columns. quadralogical's `edges` band is the precedent (same gate,
+content 1260, fixed by stacking). Fitting the record band also let the whole
+plate collapse to its true max-content (~691 px against the old 1324-forced
+stretch) — the compact-always ruling landing on its own terms. The face-model
+grid test now scopes its strip-order property to the bands `consoleGridCols`
+actually aligns, PINS that on-ruler set (`channels`/`dynamics`/`sends`) so a
+membership drift cannot fall out of the sweep silently, and asserts the record
+halves partition the arm/monitor rosters in strip order.
+
 ---
 
 ## 0.2 OWNER DECISIONS — §7 is closed

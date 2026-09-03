@@ -583,9 +583,11 @@ export const mixmstrsDef: AudioModuleDef = {
       // pages: whichever lands second folds into an existing band, most
       // naturally `channels`. Sequenced, not parallelised.
       //
-      // Column N is channel N here too, like every other console band: the arm
-      // and monitor clusters are eight cells each in strip order, so a column
-      // reads down as one channel's record strip.
+      // The record strips read in CHANNEL-RANGE HALVES: channels 1–4's arm row
+      // over their monitor row, then 5–8's — see the width measurement below
+      // for why eight-wide rows cannot ship. Each cell still carries its own
+      // channel caption (`1RC`, `5MN`), so identity never rests on counting
+      // columns.
       //
       // ⚠ RESTING TEXT IS OPTION NAMES ONLY (`off` / `once` / `inf`,
       // `live` / `both` / `auto`), which is the permitted role. No elapsed
@@ -615,14 +617,28 @@ export const mixmstrsDef: AudioModuleDef = {
         // same cell count, so the two singleton clusters below are what keep
         // this band off the ruler — a structural consequence, stated here so it
         // reads as the decision it is rather than an accident someone might
-        // "fix". Within the band the arm row is still eight cells in strip
-        // order, left to right; it simply does not share the pitch of the
-        // faders two bands up.
+        // "fix".
+        //
+        // ⚠ THE ROWS ARE FOUR CHANNELS WIDE, AND THAT IS A CI MEASUREMENT, NOT
+        // A TASTE. As eight-wide rows the MONITOR row alone measured **1324 CSS
+        // px against a 1220 px dock pane** (`workflow-shell-faces` dock scene:
+        // "104 CSS px of faceplate right of the capture box") — eight
+        // `live/both/auto` segmented cells at ~157 px plus seven 10 px gaps.
+        // `.faceplate-body` is `width: max-content`, so a flex row NEVER wraps
+        // on its own inside it; the wrap has to be structural. Users would have
+        // seen a clipped plate (the #2335 preview at dock width already showed
+        // exactly that, so the FITTING layout is the approved look). Four-cell
+        // halves put the widest record row at ~670 px — under the `channels`
+        // grid that actually drives the plate — and group each half as
+        // channels 1–4's arm-over-monitor, then 5–8's. quadralogical's `edges`
+        // band is the precedent: same gate, same numbers-first fix.
         //
         // ⚠ OWNER PREVIEW: this is the one visual compromise in the slice.
         clusters: [
-          { label: 'arm', controls: [...MIXMSTRS_REC_ARM_IDS] },
-          { label: 'monitor', controls: [...MIXMSTRS_MON_IDS] },
+          { label: 'arm 1–4', controls: [...MIXMSTRS_REC_ARM_IDS.slice(0, 4)] },
+          { label: 'monitor 1–4', controls: [...MIXMSTRS_MON_IDS.slice(0, 4)] },
+          { label: 'arm 5–8', controls: [...MIXMSTRS_REC_ARM_IDS.slice(4)] },
+          { label: 'monitor 5–8', controls: [...MIXMSTRS_MON_IDS.slice(4)] },
           { label: 'source', controls: ['recTap'] },
           { label: 'quality', controls: ['recQuality'] },
         ] },
