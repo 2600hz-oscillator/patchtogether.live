@@ -1,14 +1,23 @@
 // e2e/tests/score.spec.ts
 //
-// SCORE module — sheet-music sequencer. Covers Phase 1 user-facing flows:
-// - Place note via duration tool + click
+// SCORE module — sheet-music sequencer, on the DEFAULT shell. Covers the
+// user-facing flows the faceplate carries plus the engine-level playback
+// contracts (which never touched a surface at all):
+// - Place note via the VALUE cell + staff click (duration follows the cell)
 // - Drag-snap to nearest 16th tick
-// - Sharp on note (per-note accidental)
-// - Sharp on staff (key signature +1)
-// - Tie two notes -> Tie object exists + SVG <path data-tie-id>
+// - Sharp on the SELECTED note (ACC cell per-note accidental)
+// - Key signature +1 via the KEY cell
 // - Currently-playing-note highlight via __engine().read(node, 'currentNoteId')
 // - Dynamic affects amplitude (ff vs pp peak, observed via dynamicScale read)
-// - Bar overflow rejected (red shake CSS, second whole note not added)
+// - Bar overflow rejected (second whole note not added)
+// - Page nav arrows + PAGES roster (structurally capped at 4)
+// - LOOP toggle, END (stop-bar) selector, stop/loop engine semantics,
+//   tied-note held gate
+//
+// The face-INTERACTION model itself (select/delete, tie toggle, armed marks,
+// quicksave) is pinned by score-face.spec.ts; this file keeps the flows that
+// file does not carry. Card-tool mechanics (two-click tie tool, the painted
+// page counter, the add-page button) died with the card — see the S2 manifest.
 
 import { test, expect } from './_fixtures';
 import { spawnPatch } from './_helpers';
@@ -41,61 +50,82 @@ async function readScoreData(page: import('@playwright/test').Page) {
   });
 }
 
-test('score: place a note via the quarter tool + click', async ({ page, rackLegacy }) => {
-  await spawnPatch(page, [{ id: 'score', type: 'score' }]);
+/** Open the score's dock full view (the staff's home on the default shell). */
+async function openFace(page: import('@playwright/test').Page) {
+  await page.waitForFunction(
+    () => typeof (globalThis as unknown as { __openDockFullView?: unknown }).__openDockFullView === 'function',
+  );
+  await page.evaluate(
+    () => (globalThis as unknown as { __openDockFullView: (id: string) => void }).__openDockFullView('score'),
+  );
+  const pane = page.locator('[data-testid="dock-full-view"][data-fullview-node="score"]');
+  await expect(pane).toBeVisible();
+  return pane;
+}
 
-  await page.locator('[data-testid="score-tool-quarter-score"]').click();
-  const staff = page.locator('[data-testid="score-staff-score"]');
-  const box = await staff.boundingBox();
-  if (!box) throw new Error('no staff bbox');
-  // Click roughly at the middle of bar 0, on the top staff line (F5).
-  await page.mouse.click(box.x + 90, box.y + 30);
+/** Pick a face SELECTOR cell option by label and wait for the roster to close
+ *  (the listbox is portaled OVER the plate — a staff click issued before it
+ *  detaches lands on the popover; score-face.spec.ts documents the measured
+ *  mis-read that produces). */
+async function pickOption(pane: ReturnType<import('@playwright/test').Page['locator']>, family: string, label: string) {
+  const chip = pane.locator(`[data-cell-key="${family}-{n}"] [role="button"][aria-haspopup="listbox"]`);
+  await expect(chip, `the ${family} cell paints a selector`).toBeVisible();
+  await chip.click();
+  const page = chip.page();
+  await page.locator('[role="listbox"] [role="option"]', { hasText: label }).first().click();
+  await expect(page.locator('[role="listbox"]')).toHaveCount(0);
+}
 
-  await expect.poll(async () => (await readScoreData(page)).notes.length).toBeGreaterThan(0);
-  const data = await readScoreData(page);
-  expect(data.notes[0]).toMatchObject({ bar: 0, duration: 'quarter' });
-  expect(data.notes[0].midi).toBeGreaterThanOrEqual(60);
-  expect(data.notes[0].midi).toBeLessThanOrEqual(84);
-});
-
-test('score: drag-snap to nearest 16th tick', async ({ page, rackLegacy }) => {
-  // Pre-seed a note at bar 0, tick 0 so we can grab + drag it.
-  await spawnPatch(page, [
-    {
-      id: 'score',
-      type: 'score',
-      params: {},
-    },
-  ]);
-
-  // Mutate the patch graph directly to seed one note (avoids click-coord flakiness).
-  await page.evaluate(() => {
+/** Seed notes straight into the graph (the same shape _score-helpers uses). */
+async function seedNotes(page: import('@playwright/test').Page, notes: ScoreNoteRow[]) {
+  await page.evaluate((rows) => {
     const w = globalThis as unknown as {
       __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
       __ydoc: { transact: (fn: () => void) => void };
     };
-    const n = w.__patch.nodes['score'];
-    if (!n) return;
     w.__ydoc.transact(() => {
-      n.data = {
-        notes: [{
-          id: 'n1', bar: 0, tick: 0, duration: 'quarter',
-          midi: 77, staffStep: 0, accidental: null,
-        }],
-        dynamics: [],
-        ties: [],
-        keySignature: 0,
-      };
+      const n = w.__patch.nodes['score'];
+      if (!n) return;
+      n.data = { notes: rows, dynamics: [], ties: [], keySignature: 0 };
     });
-  });
+  }, notes);
+}
+
+test('score: place a note via the VALUE cell + staff click — duration follows the cell', async ({ page, rack }) => {
+  await spawnPatch(page, [{ id: 'score', type: 'score' }]);
+  const pane = await openFace(page);
+
+  // Arm HALF via the VALUE cell (the default is quarter, which score-face's own
+  // placement leg covers — the claim HERE is that the cell decides the duration).
+  await pickOption(pane, 'score-value', 'half');
+
+  const staff = pane.locator('[data-testid="score-staff-panel"]');
+  const box = (await staff.boundingBox())!;
+  // Click roughly at the middle of bar 0, on the top staff line.
+  await staff.click({ position: { x: box.width * 0.2, y: 30 } });
+
+  await expect.poll(async () => (await readScoreData(page)).notes.length).toBeGreaterThan(0);
+  const data = await readScoreData(page);
+  expect(data.notes[0]).toMatchObject({ bar: 0, duration: 'half' });
+  expect(data.notes[0].midi).toBeGreaterThanOrEqual(60);
+  expect(data.notes[0].midi).toBeLessThanOrEqual(84);
+});
+
+test('score: drag-snap to nearest 16th tick', async ({ page, rack }) => {
+  await spawnPatch(page, [{ id: 'score', type: 'score', params: {} }]);
+  const pane = await openFace(page);
+
+  // Mutate the patch graph directly to seed one note (avoids click-coord flakiness).
+  await seedNotes(page, [
+    { id: 'n1', bar: 0, tick: 0, duration: 'quarter', midi: 77, staffStep: 0, accidental: null },
+  ]);
 
   // Drag the note across the bar — the resulting tick must be a multiple of 3
-  // (16th-grid). We use the duration tool 'quarter' so quantizeTick uses 12-tick grid.
-  const noteEl = page.locator('[data-note-id="n1"]').first();
+  // (16th-grid). A drag is pointer-down + move; a bare CLICK would SELECT on the
+  // face (and a second click delete), which is exactly why this uses the mouse.
+  const noteEl = pane.locator('[data-testid="score-note-score-n1"]').first();
   await expect(noteEl).toBeVisible();
-  const nb = await noteEl.boundingBox();
-  if (!nb) throw new Error('no note bbox');
-  // Drag horizontally ~80px to the right.
+  const nb = (await noteEl.boundingBox())!;
   await page.mouse.move(nb.x + nb.width / 2, nb.y + nb.height / 2);
   await page.mouse.down();
   await page.mouse.move(nb.x + nb.width / 2 + 80, nb.y + nb.height / 2, { steps: 5 });
@@ -106,110 +136,57 @@ test('score: drag-snap to nearest 16th tick', async ({ page, rackLegacy }) => {
     return data.notes[0]?.tick;
   }).toBeGreaterThan(0);
   const data = await readScoreData(page);
-  // tick must be a multiple of 3 (the quarter-tool grid is 12; 12 = multiple of 3 too)
+  // tick must be a multiple of 3 (the quarter grid is 12; 12 = multiple of 3 too)
   expect(data.notes[0].tick % 3).toBe(0);
 });
 
-test('score: sharp tool on note toggles per-note accidental + transposes MIDI +1', async ({ page, rackLegacy }) => {
+test('score: ACC cell on the SELECTED note toggles per-note accidental + transposes MIDI +1', async ({ page, rack }) => {
   await spawnPatch(page, [{ id: 'score', type: 'score' }]);
+  const pane = await openFace(page);
 
-  // Seed an F5 note via quarter tool click on top line, then click again with sharp tool.
-  await page.evaluate(() => {
-    const w = globalThis as unknown as {
-      __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
-      __ydoc: { transact: (fn: () => void) => void };
-    };
-    w.__ydoc.transact(() => {
-      const n = w.__patch.nodes['score'];
-      if (!n) return;
-      n.data = {
-        notes: [{ id: 'n1', bar: 0, tick: 0, duration: 'quarter', midi: 77, staffStep: 0, accidental: null }],
-        dynamics: [],
-        ties: [],
-        keySignature: 0,
-      };
-    });
-  });
+  await seedNotes(page, [
+    { id: 'n1', bar: 0, tick: 0, duration: 'quarter', midi: 77, staffStep: 0, accidental: null },
+  ]);
 
-  await page.locator('[data-testid="score-tool-sharp-score"]').click();
-  const note = page.locator('[data-note-id="n1"]').first();
-  await note.click();
+  // Select the note, then pick SHARP on the ACC cell — the face's per-note
+  // accidental route (the card's ♯ tool retouched a note the same way).
+  const note = pane.locator('[data-testid="score-note-score-n1"]').first();
+  await note.click({ force: true });
+  await expect
+    .poll(async () =>
+      page.evaluate(() => {
+        const w = globalThis as unknown as { __patch: { nodes: Record<string, { data?: { selectedNoteId?: string } }> } };
+        return w.__patch.nodes['score']?.data?.selectedNoteId ?? null;
+      }),
+    )
+    .toBe('n1');
+  await pickOption(pane, 'score-accidental', 'sharp');
 
   await expect.poll(async () => (await readScoreData(page)).notes[0]?.accidental).toBe('sharp');
   const data = await readScoreData(page);
   expect(data.notes[0].midi).toBe(78);
 });
 
-test('score: sharp tool on empty staff increments key signature', async ({ page, rackLegacy }) => {
+test('score: the KEY cell raises the key signature — un-overridden F plays F#', async ({ page, rack }) => {
   await spawnPatch(page, [{ id: 'score', type: 'score' }]);
+  const pane = await openFace(page);
 
   // Seed an F5 note (no per-note accidental) so we can verify it gets the key-sig sharp.
-  await page.evaluate(() => {
-    const w = globalThis as unknown as {
-      __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
-      __ydoc: { transact: (fn: () => void) => void };
-    };
-    w.__ydoc.transact(() => {
-      const n = w.__patch.nodes['score'];
-      if (!n) return;
-      n.data = {
-        notes: [{ id: 'n1', bar: 0, tick: 0, duration: 'quarter', midi: 77, staffStep: 0, accidental: null }],
-        dynamics: [],
-        ties: [],
-        keySignature: 0,
-      };
-    });
-  });
+  await seedNotes(page, [
+    { id: 'n1', bar: 0, tick: 0, duration: 'quarter', midi: 77, staffStep: 0, accidental: null },
+  ]);
 
-  await page.locator('[data-testid="score-tool-sharp-score"]').click();
-  const staff = page.locator('[data-testid="score-staff-score"]');
-  const box = await staff.boundingBox();
-  if (!box) throw new Error('no staff bbox');
-  // Click somewhere on empty staff space (near bottom of row 1, far right -- avoid the note).
-  await page.mouse.click(box.x + box.width - 50, box.y + 70);
+  // G major = one sharp. The face names the key rather than counting sharps —
+  // the stored value stays the cycle-of-fifths count the engine uses.
+  await pickOption(pane, 'score-key', 'G major');
 
   await expect.poll(async () => (await readScoreData(page)).keySignature).toBe(1);
   const data = await readScoreData(page);
-  // F-letter line should now play as F#5 (MIDI 78) for the un-overridden note.
+  // F-letter line now plays as F#5 (MIDI 78) for the un-overridden note.
   expect(data.notes[0].midi).toBe(78);
 });
 
-test('score: tie tool — picking two notes creates a Tie object + SVG path', async ({ page, rackLegacy }) => {
-  await spawnPatch(page, [{ id: 'score', type: 'score' }]);
-
-  await page.evaluate(() => {
-    const w = globalThis as unknown as {
-      __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
-      __ydoc: { transact: (fn: () => void) => void };
-    };
-    w.__ydoc.transact(() => {
-      const n = w.__patch.nodes['score'];
-      if (!n) return;
-      n.data = {
-        notes: [
-          { id: 'n1', bar: 0, tick: 0, duration: 'quarter', midi: 77, staffStep: 0, accidental: null },
-          { id: 'n2', bar: 0, tick: 12, duration: 'quarter', midi: 76, staffStep: 1, accidental: null },
-        ],
-        dynamics: [],
-        ties: [],
-        keySignature: 0,
-      };
-    });
-  });
-
-  await page.locator('[data-testid="score-tool-tie-score"]').click();
-  await page.locator('[data-note-id="n1"]').first().click();
-  await page.locator('[data-note-id="n2"]').first().click();
-
-  await expect.poll(async () => (await readScoreData(page)).ties.length).toBe(1);
-  const data = await readScoreData(page);
-  expect(data.ties[0]).toMatchObject({ fromNoteId: 'n1', toNoteId: 'n2' });
-  // The SVG path should exist with a data-tie-id attribute.
-  const tieId = data.ties[0].id;
-  await expect(page.locator(`[data-tie-id="${tieId}"]`)).toBeVisible();
-});
-
-test('score: currently-playing note highlight tracks engine.read currentNoteId', async ({ page, rackLegacy }) => {
+test('score: currently-playing note highlight tracks engine.read currentNoteId', async ({ page, rack }) => {
   // Spawn STOPPED — seedScoreThenPlay starts the transport after the music
   // exists, so grid tick 0 is emitted with notes in place (see its header).
   await spawnPatch(page, [{ id: 'score', type: 'score', params: { bpm: 240, isPlaying: 0 } }]);
@@ -242,12 +219,13 @@ test('score: currently-playing note highlight tracks engine.read currentNoteId',
   expect(['n1', 'n2', 'n3']).toContain(noteId);
 });
 
-// ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; the body and its assertions are UNCHANGED.
-// NONDETERMINISM: 5 recovered-on-retry observation(s) across 3 SHA(s) / 2 branch(es) in the
+// ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; the body drives no module DOM
+// (pure seed → Y.Doc → engine chain), so the S2 legacy-removal inversion only
+// moved its fixture. NONDETERMINISM: 5 recovered-on-retry observation(s) across 3 SHA(s) / 2 branch(es) in the
 // 96 h CI census to 2026-08-18 — never a hard failure, so every one of those jobs reported SUCCESS.
 // LOST WHILE PARKED: that ALL THREE notes of a triplet group actually sound — triplet tick math that drops a position is inaudible as a bug and reads as a performance mistake.
 // Re-enable only on a root cause (#1847); "it passes now" is not one.
-test.fixme('score: every triplet position SOUNDS — all three notes of a triplet group', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 5 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page, rackLegacy }) => {
+test.fixme('score: every triplet position SOUNDS — all three notes of a triplet group', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 5 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page, rack }) => {
   // -- THE BUG THIS EXISTS FOR --------------------------------------------
   //
   // `triplet8th` is 4 grid ticks wide, so the toolbar snaps it to
@@ -319,7 +297,7 @@ test.fixme('score: every triplet position SOUNDS — all three notes of a triple
   expect(seen.samples, 'the in-page sampler ran at all').toBeGreaterThan(0);
 });
 
-test('score: dynamic marker scales the env output amplitude', async ({ page, rackLegacy }) => {
+test('score: dynamic marker scales the env output amplitude', async ({ page, rack }) => {
   // ⚠ THE 30s POLL CEILING BELOW WAS UNREACHABLE. Playwright's DEFAULT TEST
   // TIMEOUT is 30s (this config sets no global `timeout`), so the test budget
   // expired before the poll could ever spend its own — the 10s → 30s bump
@@ -386,20 +364,20 @@ test('score: dynamic marker scales the env output amplitude', async ({ page, rac
   expect(await readDynScale()).toBeLessThan(1.05);
 });
 
-test('score: bar overflow rejected — second whole note in the same bar does NOT add', async ({ page, rackLegacy }) => {
+test('score: bar overflow rejected — second whole note in the same bar does NOT add', async ({ page, rack }) => {
   await spawnPatch(page, [{ id: 'score', type: 'score' }]);
+  const pane = await openFace(page);
 
-  await page.locator('[data-testid="score-tool-whole-score"]').click();
-  const staff = page.locator('[data-testid="score-staff-score"]');
-  const box = await staff.boundingBox();
-  if (!box) throw new Error('no staff bbox');
+  await pickOption(pane, 'score-value', 'whole');
+  const staff = pane.locator('[data-testid="score-staff-panel"]');
+  const box = (await staff.boundingBox())!;
 
   // First whole-note click: lands somewhere in bar 0, takes the whole bar.
-  await page.mouse.click(box.x + 90, box.y + 30);
+  await staff.click({ position: { x: box.width * 0.2, y: 30 } });
   await expect.poll(async () => (await readScoreData(page)).notes.length).toBe(1);
 
   // Second click in the same bar should be rejected.
-  await page.mouse.click(box.x + 95, box.y + 30);
+  await staff.click({ position: { x: box.width * 0.22, y: 30 } });
   // Wait a beat for any animation / state propagation.
   await page.waitForTimeout(150);
   const data = await readScoreData(page);
@@ -425,125 +403,98 @@ async function readScoreV2(page: import('@playwright/test').Page) {
   });
 }
 
-test('score: page nav — add a page, navigate via arrows, counter shows correctly', async ({ page, rackLegacy }) => {
+test('score: page nav — grow via the PAGES cell, navigate via arrows, the staff names the page', async ({ page, rack }) => {
   await spawnPatch(page, [{ id: 'score', type: 'score' }]);
+  const pane = await openFace(page);
+  const staff = pane.locator('[data-testid="score-staff-panel"]');
 
-  // Default: 1 page. Counter shows "1 / 1".
-  const counter = page.locator('[data-testid="score-page-counter-score"]');
-  await expect(counter).toHaveText('1 / 1');
-  // Prev disabled at page 1; Next disabled when only 1 page.
-  await expect(page.locator('[data-testid="score-page-prev-score"]')).toBeDisabled();
-  await expect(page.locator('[data-testid="score-page-next-score"]')).toBeDisabled();
+  // Default: 1 page. The page position lives in the staff's ACCESSIBLE NAME
+  // (the card's painted `1 / 1` counter has no faceplate equivalent — readouts
+  // ruling), and the nav arrows do not RENDER at all on a one-page piece —
+  // "the picture's own scrollbar" exists only when there is somewhere to go.
+  await expect.poll(() => staff.getAttribute('aria-label')).toContain('showing page 1 of 1');
+  const prev = pane.locator('[data-testid="score-page-prev-score"]');
+  const next = pane.locator('[data-testid="score-page-next-score"]');
+  await expect(prev).toHaveCount(0);
+  await expect(next).toHaveCount(0);
 
-  // Add a page. Counter denominator updates; current page stays at 1 until
-  // the user navigates with the → arrow.
-  await page.locator('[data-testid="score-page-add-score"]').click();
+  // The PAGES roster is the CAP: exactly 1..4, structurally — there is no
+  // affordance that could take a piece to five pages (the card's add-button
+  // cap test folded into this assertion).
+  const chip = pane.locator('[data-cell-key="score-pages-{n}"] [role="button"][aria-haspopup="listbox"]');
+  await chip.click();
+  await expect
+    .poll(async () => page.locator('[role="listbox"] [role="option"]').allInnerTexts())
+    .toEqual(['1', '2', '3', '4']);
+  await page.locator('[role="listbox"] [role="option"]', { hasText: '2' }).click();
+  await expect(page.locator('[role="listbox"]')).toHaveCount(0);
   await expect.poll(async () => (await readScoreV2(page)).pages).toBe(2);
-  await expect(counter).toHaveText('1 / 2');
-  await expect(page.locator('[data-testid="score-page-next-score"]')).toBeEnabled();
 
-  // Navigate to page 2 via →.
-  await page.locator('[data-testid="score-page-next-score"]').click();
-  await expect(counter).toHaveText('2 / 2');
-  // Prev now enabled, next disabled.
-  await expect(page.locator('[data-testid="score-page-prev-score"]')).toBeEnabled();
-  await expect(page.locator('[data-testid="score-page-next-score"]')).toBeDisabled();
+  // Current page stays at 1 until the user navigates with the → arrow; the
+  // arrows appear now that there is a second page.
+  await expect.poll(() => staff.getAttribute('aria-label')).toContain('showing page 1 of 2');
+  await expect(next).toBeEnabled();
+  await expect(prev).toBeDisabled();
 
-  // Add up to MAX_PAGES (4 total). Click "+" twice more.
-  await page.locator('[data-testid="score-page-add-score"]').click();
-  await page.locator('[data-testid="score-page-add-score"]').click();
-  await expect.poll(async () => (await readScoreV2(page)).pages).toBe(4);
-  // Counter denominator now 4; we're still on page 2 (no auto-jump).
-  await expect(counter).toHaveText('2 / 4');
-  // Add button now disabled (cap reached).
-  await expect(page.locator('[data-testid="score-page-add-score"]')).toBeDisabled();
+  // Navigate to page 2 via →: prev enables, next disables at the end.
+  await next.click();
+  await expect.poll(() => staff.getAttribute('aria-label')).toContain('showing page 2 of 2');
+  await expect(prev).toBeEnabled();
+  await expect(next).toBeDisabled();
 
-  // Navigate forward to page 4.
-  await page.locator('[data-testid="score-page-next-score"]').click();
-  await expect(counter).toHaveText('3 / 4');
-  await page.locator('[data-testid="score-page-next-score"]').click();
-  await expect(counter).toHaveText('4 / 4');
-  // Next disabled (already on last page).
-  await expect(page.locator('[data-testid="score-page-next-score"]')).toBeDisabled();
-
-  // Navigate prev twice.
-  await page.locator('[data-testid="score-page-prev-score"]').click();
-  await expect(counter).toHaveText('3 / 4');
-  await page.locator('[data-testid="score-page-prev-score"]').click();
-  await expect(counter).toHaveText('2 / 4');
-
-  // Next.
-  await page.locator('[data-testid="score-page-next-score"]').click();
-  await expect(counter).toHaveText('3 / 4');
+  // And back.
+  await prev.click();
+  await expect.poll(() => staff.getAttribute('aria-label')).toContain('showing page 1 of 2');
+  await expect(prev).toBeDisabled();
 });
 
-test('score: page count is capped at 4 — add button disabled at max', async ({ page, rackLegacy }) => {
-  // Seed with 4 pages directly.
+test('score: loop toggle persists in score data', async ({ page, rack }) => {
   await spawnPatch(page, [{ id: 'score', type: 'score' }]);
-  await page.evaluate(() => {
-    const w = globalThis as unknown as {
-      __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
-      __ydoc: { transact: (fn: () => void) => void };
-    };
-    w.__ydoc.transact(() => {
-      const n = w.__patch.nodes['score'];
-      if (!n) return;
-      n.data = {
-        notes: [],
-        dynamics: [],
-        ties: [],
-        keySignature: 0,
-        pages: 4,
-        loop: false,
-      };
-    });
-  });
-  await expect(page.locator('[data-testid="score-page-add-score"]')).toBeDisabled();
-  await expect(page.locator('[data-testid="score-page-counter-score"]')).toHaveText('1 / 4');
-});
-
-test('score: loop toggle persists in score data', async ({ page, rackLegacy }) => {
-  await spawnPatch(page, [{ id: 'score', type: 'score' }]);
+  const pane = await openFace(page);
 
   // Default: loop=false.
   await expect.poll(async () => (await readScoreV2(page)).loop).toBe(false);
 
-  await page.locator('[data-testid="score-tool-loop-score"]').click();
+  const loop = pane.locator('[data-testid="shell-cell-score-loop"]');
+  await loop.click();
   await expect.poll(async () => (await readScoreV2(page)).loop).toBe(true);
+  await expect(loop).toHaveAttribute('aria-checked', 'true');
 
-  await page.locator('[data-testid="score-tool-loop-score"]').click();
+  await loop.click();
   await expect.poll(async () => (await readScoreV2(page)).loop).toBe(false);
 });
 
-test('score: stop-bar — placing the marker writes to score data', async ({ page, rackLegacy }) => {
+test('score: END (stop-bar) — "here" writes the marker at the end of the written music', async ({ page, rack }) => {
   await spawnPatch(page, [{ id: 'score', type: 'score' }]);
+  const pane = await openFace(page);
 
-  // Activate stop-bar tool.
-  await page.locator('[data-testid="score-tool-stop-score"]').click();
+  // One quarter at bar 0 tick 0 → the written music ends at tick 12.
+  await seedNotes(page, [
+    { id: 'n1', bar: 0, tick: 0, duration: 'quarter', midi: 72, staffStep: 5, accidental: null },
+  ]);
 
-  // Click on the staff at a known position. The exact (bar, tick) depends on
-  // the layout — we just assert that *some* stopBar gets written.
-  const staff = page.locator('[data-testid="score-staff-score"]');
-  const box = await staff.boundingBox();
-  if (!box) throw new Error('no staff bbox');
-  await page.mouse.click(box.x + 200, box.y + 30);
+  // Pick END → "here" with NOTHING selected: the marker lands where the music
+  // ends (the no-selection branch of scoreSetStop — the most common intent).
+  await pickOption(pane, 'score-stop', 'here');
 
   await expect.poll(async () => {
     const d = await readScoreV2(page);
     return d.stopBar !== undefined;
   }).toBe(true);
   const sb = (await readScoreV2(page)).stopBar;
-  expect(sb).toBeDefined();
-  expect(typeof sb!.bar).toBe('number');
-  expect(typeof sb!.tick).toBe('number');
-  // Tick should be quantized to a 16th boundary.
+  expect(sb).toMatchObject({ bar: 0, tick: 12 });
+  // Tick is on a 16th boundary by construction.
   expect(sb!.tick % 3).toBe(0);
 
-  // Stop-bar SVG is rendered.
-  await expect(page.locator('[data-testid="score-stop-bar-score"]')).toBeVisible();
+  // Stop-bar SVG is rendered on the staff.
+  await expect(pane.locator('[data-testid="score-stop-bar-score"]')).toBeVisible();
+
+  // And "none" clears it — the card had no remover either; the selector does.
+  await pickOption(pane, 'score-stop', 'none');
+  await expect.poll(async () => (await readScoreV2(page)).stopBar === undefined).toBe(true);
 });
 
-test('score: stop-bar + loop=on wraps tickIndex back to 0 at end of sequence', async ({ page, rackLegacy }) => {
+test('score: stop-bar + loop=on wraps tickIndex back to 0 at end of sequence', async ({ page, rack }) => {
   await spawnPatch(page, [
     { id: 'score', type: 'score', params: { bpm: 240, isPlaying: 0 } },
   ]);
@@ -580,7 +531,7 @@ test('score: stop-bar + loop=on wraps tickIndex back to 0 at end of sequence', a
   expect(tickIdx).toBeLessThan(32);
 });
 
-test('score: stop-bar + loop=off stops playback at end of sequence', async ({ page, rackLegacy }) => {
+test('score: stop-bar + loop=off stops playback at end of sequence', async ({ page, rack }) => {
   await spawnPatch(page, [
     { id: 'score', type: 'score', params: { bpm: 480, isPlaying: 0 } },
   ]);
@@ -708,7 +659,7 @@ async function waitForScoreReadout(
 // See `seedScoreThenPlay` for the measurement and the fix. The lesson for the
 // next one: "slower here" and "genuinely different here" print the same red,
 // and a budget was the answer to neither.
-test('score: tied notes produce a single sustained envelope (engine-level held gate)', async ({ page, rackLegacy }) => {
+test('score: tied notes produce a single sustained envelope (engine-level held gate)', async ({ page, rack }) => {
   // 25s in-page wait bound + spawn/goto must fit INSIDE the test budget, or the
   // test timeout fires first and the bound is decorative. Failure-path only —
   // the waiter returns on first match, so green runs are unchanged.

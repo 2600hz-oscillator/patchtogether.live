@@ -1,6 +1,8 @@
 // e2e/tests/painter.spec.ts
 //
-// PAINTER — the real interactive draw → canvas → synced-op chain. The per-port
+// PAINTER — the real interactive draw → canvas → synced-op chain, driven in
+// the DOCK FULL VIEW (the default shell's home for the paint surface; every
+// affordance carries the `painter-face-` prefix). The per-port
 // sweep proves the OUT port emits (the blank white page is a non-black signal);
 // this proves the UNIQUE bit: a pointer drag actually paints the canvas, commits
 // a synced PaintOp (node.data.ops, so it persists + syncs to rack-mates), and
@@ -19,7 +21,7 @@ type PatchGlobal = {
 /** Fraction of sampled canvas pixels that are NOT near-white (i.e. painted). */
 async function paintedFrac(page: Page): Promise<number> {
   return page.evaluate(() => {
-    const c = document.querySelector('[data-testid="painter-canvas"]') as HTMLCanvasElement | null;
+    const c = document.querySelector('[data-testid="painter-face-canvas"]') as HTMLCanvasElement | null;
     if (!c) return -1;
     const ctx = c.getContext('2d');
     if (!ctx) return -1;
@@ -41,13 +43,21 @@ function opCount(page: Page): Promise<number> {
   });
 }
 
+/** Open the painter's dock full view (the paint surface's shell home). */
+async function openDock(page: Page): Promise<void> {
+  await page.evaluate(
+    () => (globalThis as unknown as { __openDockFullView: (id: string) => void }).__openDockFullView('pt'),
+  );
+  await expect(page.locator('[data-testid="dock-full-view"][data-fullview-node="pt"]')).toBeVisible();
+}
+
 /** Drag the mouse across the painter canvas to paint a thick stroke (brush at a
  *  large size so the painted band is unambiguous under sparse pixel sampling).
  *  `yFrac` places the stroke band so multiple strokes don't overlap. */
 async function drawStroke(page: Page, yFrac = 0.5): Promise<void> {
-  await page.locator('[data-testid="painter-tool-brush"]').click();
-  await page.locator('[data-testid="painter-size"]').fill('48');
-  const canvas = page.locator('[data-testid="painter-canvas"]');
+  await page.locator('[data-testid="painter-face-tool-brush"]').click();
+  await page.locator('[data-testid="painter-face-size"]').fill('48');
+  const canvas = page.locator('[data-testid="painter-face-canvas"]');
   const box = await canvas.boundingBox();
   if (!box) throw new Error('painter canvas has no bounding box');
   const y = box.y + box.height * yFrac;
@@ -59,13 +69,14 @@ async function drawStroke(page: Page, yFrac = 0.5): Promise<void> {
 }
 
 test.describe('PAINTER — interactive draw → synced ops', () => {
-  test('a pointer drag paints the canvas + commits a synced stroke op', async ({ page, rackLegacy, errorWatch }) => {
+  test('a pointer drag paints the canvas + commits a synced stroke op', async ({ page, rack, errorWatch }) => {
     await spawnPatch(page, [
       { id: 'pt', type: 'painter', position: { x: 200, y: 120 }, domain: 'video' },
     ]);
+    await openDock(page);
 
-    await expect(page.locator('[data-testid="painter-card"]')).toHaveCount(1);
-    await expect(page.locator('[data-testid="painter-canvas"]')).toHaveCount(1);
+    await expect(page.locator('[data-testid="painter-face-body"]')).toHaveCount(1);
+    await expect(page.locator('[data-testid="painter-face-canvas"]')).toHaveCount(1);
 
     // Blank page = white → ~0 painted pixels, and no ops yet.
     expect(await paintedFrac(page)).toBeLessThan(0.02);
@@ -88,32 +99,34 @@ test.describe('PAINTER — interactive draw → synced ops', () => {
 
   });
 
-  test('CLEAR empties the op log + returns a blank page', async ({ page, rackLegacy }) => {
+  test('CLEAR empties the op log + returns a blank page', async ({ page, rack }) => {
     await spawnPatch(page, [
       { id: 'pt', type: 'painter', position: { x: 200, y: 120 }, domain: 'video' },
     ]);
-    await expect(page.locator('[data-testid="painter-canvas"]')).toHaveCount(1);
+    await openDock(page);
+    await expect(page.locator('[data-testid="painter-face-canvas"]')).toHaveCount(1);
 
     await drawStroke(page);
     await expect.poll(() => opCount(page)).toBeGreaterThan(0);
     expect(await paintedFrac(page)).toBeGreaterThan(0.01);
 
-    await page.locator('[data-testid="painter-clear"]').click();
+    await page.locator('[data-testid="painter-face-clear"]').click();
 
     await expect.poll(() => opCount(page), { message: 'CLEAR empties node.data.ops' }).toBe(0);
     await expect.poll(() => paintedFrac(page), { message: 'canvas is blank/white again' }).toBeLessThan(0.02);
   });
 
-  test('the FILL tool floods the canvas with the foreground colour', async ({ page, rackLegacy }) => {
+  test('the FILL tool floods the canvas with the foreground colour', async ({ page, rack }) => {
     await spawnPatch(page, [
       { id: 'pt', type: 'painter', position: { x: 200, y: 120 }, domain: 'video' },
     ]);
-    await expect(page.locator('[data-testid="painter-canvas"]')).toHaveCount(1);
+    await openDock(page);
+    await expect(page.locator('[data-testid="painter-face-canvas"]')).toHaveCount(1);
 
     // Pick a red foreground, select FILL, click the canvas.
-    await page.locator('[data-testid="painter-swatch-#ff0000"]').click();
-    await page.locator('[data-testid="painter-tool-fill"]').click();
-    const canvas = page.locator('[data-testid="painter-canvas"]');
+    await page.locator('[data-testid="painter-face-swatch-#ff0000"]').click();
+    await page.locator('[data-testid="painter-face-tool-fill"]').click();
+    const canvas = page.locator('[data-testid="painter-face-canvas"]');
     const box = await canvas.boundingBox();
     if (!box) throw new Error('no canvas box');
     await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
