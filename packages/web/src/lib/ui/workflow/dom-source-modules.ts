@@ -367,6 +367,23 @@ export const DOM_SOURCE_LANE_TYPES: ReadonlySet<string> = new Set<string>([]);
  * It also retired the `GroupCard → ScopeCard.svelte` subtree exemption, because
  * the group mounts the surface directly and no longer reaches a card at all.
  *
+ * ⚠ AND RASTERIZE (legacy-removal S1.5) — the FIFTH producer departure, and
+ * the one that was never on S1's list: the brief's seven producers shipped and
+ * this card was still load-bearing, which is exactly the state S4 cannot
+ * delete a fleet in.
+ *
+ * Its two duties moved together into `RASTERIZE_FRAME_PRODUCER`
+ * (`$lib/ui/media/frame-producers`): the `cvCombined` push (scope's seam,
+ * scope's latch failure — see the corrected paragraph above, which stands) and
+ * the painter's ADVANCE, which the card's own comment recorded as "the only
+ * thing advancing the raster" when nothing downstream is patched. TWO surfaces
+ * used to run both duties — the card inside `onMeterFrame` and
+ * `RasterizeOutputBody` in its own rAF — agreeing only because one was pasted
+ * from the other; there is one writer now and it is not a surface. The
+ * surfaces read `imageData` purely to blit, which still advances, deduped on
+ * the module's own 8 ms guard — the same coalescing that already kept the
+ * bridge and a card from racing the cursor at 2×.
+ *
  * DERIVED, never hand-maintained: dom-source-modules.test.ts greps every card
  * component for these producer seams and asserts this set is EXACTLY what it
  * finds, so a new producer-on-the-card module cannot ship dark either.
@@ -380,7 +397,6 @@ export const DOM_SOURCE_LANE_TYPES: ReadonlySet<string> = new Set<string>([]);
  */
 export const CARD_PRODUCER_LANE_TYPES: ReadonlySet<string> = new Set<string>([
   'cube',
-  'rasterize',
 ]);
 
 /**
@@ -521,10 +537,14 @@ export interface HeadlessSourceInput {
 export const FACE_MOUNTS_PRODUCER: ReadonlySet<string> = new Set<string>([
   // The hero cell IS the renderer — `CubeVizSurface`, the same component the
   // legacy card mounts. Two mounts of it is what this exemption prevents.
+  //
+  // ⚠ rasterize LEFT (legacy-removal S1.5): the node producer took over both
+  // card duties, so the dock body stopped being the producer and the
+  // membership leg (every member is a CARD_PRODUCER) would have reddened on a
+  // stale name. ⚠ NO APOSTROPHES IN THIS BLOCK: e2e parseLaneSet extracts the
+  // quoted members from this literal with a bare quote-pair regex, and a
+  // possessive in a comment here silently ate the member below once already.
   'cube',
-  // The body ADVANCES the painter (`read('imageData')` runs it), so it is not
-  // merely a viewer of the producer: while the dock is open it IS the producer.
-  'rasterize',
 ]);
 
 export function needsHeadlessSourceMount(i: HeadlessSourceInput): boolean {

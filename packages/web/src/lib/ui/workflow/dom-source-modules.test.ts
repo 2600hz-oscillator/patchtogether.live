@@ -1080,15 +1080,45 @@ describe('CARD_PRODUCER_LANE_TYPES — the second seam (#1587: the card IS the p
       .toEqual([...CARD_PRODUCER_LANE_TYPES].sort());
   });
 
-  it('every producer seam actually MATCHES a card — a dead seam is a silent hole', () => {
-    // ANCHORED TO THE ARTIFACT: a seam whose regex no longer resolves to any
-    // card is either a rename nobody followed or a mechanism that is gone.
-    // Either way the entry must not sit here reading as coverage.
-    const sources = cardSources();
-    const dead = PRODUCER_SEAMS.filter(
-      (s) => !sources.some((c) => c.files.some((f) => s.re.test(f.src))),
-    ).map((s) => s.id);
-    expect(dead, `producer seam(s) matching NO card: ${dead.join(', ')}`).toEqual([]);
+  it('every producer seam still FIRES on the call shape it was written for — the instrument is live', () => {
+    // ⚠ RE-ANCHORED OFF THE POPULATION (legacy-removal S1.5). This leg used to
+    // require every seam to match a LIVE card, which was right while cards
+    // carried producers and a non-matching seam meant a rename nobody followed.
+    // The producer extractions drain that population BY DESIGN — rasterize's
+    // departure left the `write` seam with no card to match, on a commit where
+    // the rule had not changed — and the population reaching zero is the
+    // epic's goal state, not a hole. What must stay true forever is that each
+    // seam CLASSIFIES a producer card correctly the day one returns, so the
+    // anchor moves from the population to the INSTRUMENT: a synthetic card
+    // body per seam, fed through the SAME `seamHitFor` the derivation runs.
+    const SYNTHETIC_PRODUCERS: Record<string, string> = {
+      'engine.write(node|id, …)':
+        "const bmp = compose();\neng.write(node, 'displayFrame', bmp);",
+      'install*FrameDrawer(…)':
+        'installSomethingFrameDrawer(nodeId, drawIntoBridge);',
+    };
+    for (const seam of PRODUCER_SEAMS) {
+      const body = SYNTHETIC_PRODUCERS[seam.id];
+      expect(
+        body,
+        `${seam.id}: every declared seam carries a synthetic body here — a seam this leg ` +
+          'cannot exercise is a seam nothing controls',
+      ).toBeTruthy();
+      const hit = seamHitFor(
+        { base: 'SyntheticCard', entry: '/synthetic/SyntheticCard.svelte', files: [
+          { path: '/synthetic/SyntheticCard.svelte', src: body! },
+        ] },
+        PRODUCER_SEAMS,
+      );
+      expect(
+        hit?.seam,
+        `${seam.id}: the derivation must classify a card carrying this call as a producer`,
+      ).toBe(seam.id);
+    }
+    // …and the map cannot hoard entries for seams that no longer exist.
+    const ids = new Set(PRODUCER_SEAMS.map((s) => s.id));
+    const stale = Object.keys(SYNTHETIC_PRODUCERS).filter((id) => !ids.has(id));
+    expect(stale, `synthetic bodies for retired seam(s): ${stale.join(', ')}`).toEqual([]);
   });
 
   it('the two sets are DISJOINT — a card growing both seams is a decision, not a merge', () => {

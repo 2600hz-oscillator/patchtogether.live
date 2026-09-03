@@ -1321,6 +1321,27 @@ const FRAME_PRODUCER_FIXTURES: Record<string, FrameProducerFixture> = {
       '`read("snapshot").levelsA` is what comes back out, and it is what all 48 of this ' +
       'module\'s outputs carry in that mode.',
   },
+  rasterize: {
+    driver: { id: 'producer-driver', type: 'lfo', domain: 'audio' },
+    edge: {
+      fromPort: 'phase0',
+      toPort: 'cursor',
+      sourceType: 'cv',
+      targetType: 'cv',
+    },
+    read: { key: 'drawParams', field: 'cursor' },
+    unlatchesToKnob: true,
+    why:
+      'scope\'s seam on a different module, plus the module\'s own heartbeat: the painter is ' +
+      "advanced INSIDE read('imageData') and the bridge only pulls drawFrame when a downstream " +
+      'video edge exists, so the producer both pushes cvCombined (the only path a same-domain ' +
+      'cv cable has to the picture) and reads the frame (the only advance when nothing is ' +
+      "patched downstream). `read('drawParams')` is the inverse of the push — the combined " +
+      'values the painter actually draws with — so a number that follows the LFO proves the ' +
+      'chain with no surface mounted anywhere. ⚠ The obvious pixel probe is BLIND here by ' +
+      'construction: sampling the video out calls drawFrame, which itself advances the painter, ' +
+      'so a dead producer would still show a moving picture to the instrument that asks.',
+  },
   timelorde: {
     // ⚠ NO DRIVER, AND THAT IS THE MODULE. The owl's eyes and border pulse off
     // TIMELORDE's own transport at its own BPM, so the subject drives itself and

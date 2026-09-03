@@ -68,62 +68,29 @@
 
   let canvasEl: HTMLCanvasElement | null = $state(null);
 
-  // ⚠ IS THE CANVAS ON SCREEN? Tracked here rather than taken from
-  // `onMeterFrame`'s own gate, and the distinction is the whole fix. That gate
-  // SKIPS THE CALLBACK ENTIRELY when its element is off-screen, which is right
-  // for an ordinary meter and wrong for this module: the painter is advanced
-  // INSIDE `read('imageData')` (`advanceOncePerFrame`), so with nothing
-  // downstream patched THIS LOOP IS THE ONLY THING ADVANCING THE RASTER, and
-  // skipping it would freeze the module rather than merely stop drawing it —
-  // the #1720/#1721 class the "it KEEPS RENDERING while OFF" floor exists to
-  // prevent. `RasterizeOutputBody` makes exactly this split for the SCREEN
-  // toggle; this is the same split for the viewport.
+  // ⚠ THIS CARD IS A VIEWER, NOT THE PRODUCER (legacy-removal S1.5). The
+  // per-frame `cvCombined` push and the painter's advance both belong to
+  // `RASTERIZE_FRAME_PRODUCER` (`$lib/ui/media/frame-producers`), owned by the
+  // NODE on graph lifetime — so the raster moves and honours its cables with no
+  // card mounted anywhere. This loop only shows the result: read the current
+  // frame, blit it. The read does still advance (`advanceOncePerFrame` inside
+  // `read('imageData')`) — the module dedupes on its own 8 ms guard, so a
+  // viewer's read coalesces with the producer's instead of racing the cursor.
   //
-  // `rootMargin` matches meter-frame's own 100px so the two surfaces agree
-  // about what "off-screen" means.
-  let onScreen = $state(true);
+  // Which is why the SUBSCRIPTION CARRIES THE CANVAS now: meter-frame's
+  // visibility gate ("skip the callback when the element is off-screen") used
+  // to be wrong for this card, because this loop was the only thing advancing
+  // the raster and skipping it froze the module (#1720/#1721). With the
+  // advance node-owned, a scrolled-away card skipping its blit is exactly what
+  // the gate is for.
   $effect(() => {
     const el = canvasEl;
-    if (!el || typeof IntersectionObserver === 'undefined') return;
-    const io = new IntersectionObserver(
-      (entries) => {
-        for (const e of entries) onScreen = e.isIntersecting;
-      },
-      { rootMargin: '100px' },
-    );
-    io.observe(el);
-    return () => io.disconnect();
-  });
-
-  $effect(() => {
-    if (!canvasEl) return;
-    // ⚠ SUBSCRIBED WITH `null`, NOT WITH THE CANVAS. That is the documented way
-    // to take the SHARED, COALESCED rAF without taking its visibility skip —
-    // which is precisely what this module needs (see `onScreen` above). The
-    // win it does collect is the one meter-frame exists for: this card used to
-    // run its OWN `requestAnimationFrame` chain, one more independent callback
-    // and paint flush per mounted rasterize, on the same main thread as the
-    // audio render.
-    const handle = onMeterFrame(null, () => {
+    if (!el) return;
+    const handle = onMeterFrame(el, () => {
       const eng = engineCtx.get();
       if (eng && node && canvasEl) {
-        // PUSH then READ. `eng.readParam` returns the knob PLUS the engine's
-        // own per-port CV tap — the combined value — and costs nothing extra:
-        // the tap already exists for any patched port. The painter runs inside
-        // read('imageData'), so the push has to land first (#1664). With
-        // nothing patched there is no tap, so this equals the knob.
-        const combined: Record<string, number> = {};
-        for (const p of rasterizeDef.params) {
-          const v = eng.readParam(node, p.id);
-          if (typeof v === 'number' && Number.isFinite(v)) combined[p.id] = v;
-        }
-        eng.write(node, 'cvCombined', combined);
-        // ⚠ READ UNCONDITIONALLY — this is what ADVANCES the painter, and the
-        // advance is the cheap half (it writes ~800 pixels). The costly half is
-        // the 1024x768 -> 480x360 scale-draw below, and THAT is what the
-        // viewport gate skips. Same shape as the dock body's SCREEN split.
         const img = eng.read(node, 'imageData') as ImageData | undefined;
-        if (img && onScreen) blit(canvasEl, img);
+        if (img) blit(canvasEl, img);
       }
     });
     return () => handle.stop();

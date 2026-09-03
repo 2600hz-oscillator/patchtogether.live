@@ -149,7 +149,15 @@ describe('NODE_FRAME_PRODUCER_TYPES — who owns a module per-frame push', () =>
   });
 
   it('is exactly the extracted set, so a silent departure is visible in the diff', () => {
-    expect([...NODE_FRAME_PRODUCER_TYPES].sort()).toEqual(['scope', 'synesthesia', 'timelorde']);
+    // rasterize joined in legacy-removal S1.5 — the fourth departure from
+    // CARD_PRODUCER_LANE_TYPES, and the first carrying TWO duties in one body
+    // (the cvCombined push and the painter's advancing read).
+    expect([...NODE_FRAME_PRODUCER_TYPES].sort()).toEqual([
+      'rasterize',
+      'scope',
+      'synesthesia',
+      'timelorde',
+    ]);
   });
 
   it('⚠ is DISJOINT from CARD_PRODUCER_LANE_TYPES — the atomicity gate', () => {

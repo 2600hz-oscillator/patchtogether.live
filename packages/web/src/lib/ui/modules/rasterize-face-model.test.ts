@@ -185,56 +185,57 @@ describe('rasterize — the Push 2 card moved GENERIC → FACE, accepted deliber
   });
 });
 
-describe('rasterize — the cvCombined PUSH is the face body\'s real build risk', () => {
-  // ⚠ THE GAP THIS CLOSES, NAMED BEFORE IT IS ASSERTED. The legacy card runs a
-  // per-rAF loop that reads `eng.readParam` for all four params and writes them
-  // back through `eng.write(node, 'cvCombined', …)` BEFORE `read('imageData')`,
-  // because the painter runs inside that read (#1664). That push is not
-  // decoration: it is THE ONLY THING that makes a patched CV cable reach the
-  // picture. A face has no rAF of its own, so the extension body must carry it
-  // — and nothing in the tree would have noticed it disappearing, because
-  // rasterize has no bespoke spec and the per-port sweeps only ever observe
-  // `thru`, which is the untouched passthrough and is blind to the picture by
-  // construction.
-  //
-  // Asserted at SOURCE level for the same reason the range and readout gates
-  // are: there is no runtime observable for "the picture is deaf to CV" short
-  // of a pixel diff on a deliberately non-deterministic frame.
+describe('rasterize — the cvCombined PUSH moved to the NODE, and there is ONE writer', () => {
+  // ⚠ HISTORY, BECAUSE THE OLD ASSERTION WAS THE OPPOSITE. This block used to
+  // hold "the face body PUSHES the combined value before reading the frame" —
+  // written when the body and the card each carried a pasted copy of the whole
+  // loop, because whoever held the only mounted loop was the only thing making
+  // a patched CV cable reach the picture (#1664) or advancing the painter at
+  // all (#1720/#1721). legacy-removal S1.5 moved BOTH duties to
+  // `RASTERIZE_FRAME_PRODUCER` on node lifetime, so the claims to hold at
+  // source level inverted: the PRODUCER must push-then-read, and the surfaces
+  // must NOT push — a surface that still did would be a second writer of one
+  // engine channel, the exact drift class the scope extraction retired.
   const BODY = readFileSync(
     new URL('./rasterize/RasterizeOutputBody.svelte', import.meta.url),
     'utf8',
   );
+  const CARD = readFileSync(
+    new URL('./RasterizeCard.svelte', import.meta.url),
+    'utf8',
+  );
+  const PRODUCER = readFileSync(
+    new URL('../media/frame-producers.ts', import.meta.url),
+    'utf8',
+  );
 
-  it('the face body PUSHES the combined value before reading the frame', () => {
-    expect(BODY).toMatch(/cvCombined/);
-    expect(BODY).toMatch(/readParam/);
-    const pushAt = BODY.indexOf('cvCombined');
-    const readAt = BODY.indexOf("read(node, 'imageData')");
-    expect(readAt, "the body must read('imageData') — that is what advances the painter")
+  it('the NODE producer pushes the combined value BEFORE reading the frame (#1664)', () => {
+    const block = /export const RASTERIZE_FRAME_PRODUCER[\s\S]*?\n\};/.exec(PRODUCER)?.[0];
+    expect(block, 'RASTERIZE_FRAME_PRODUCER must exist in frame-producers.ts').toBeTruthy();
+    const pushAt = block!.indexOf("'cvCombined'");
+    const readAt = block!.indexOf("'imageData'");
+    expect(pushAt, 'the producer must push cvCombined').toBeGreaterThan(-1);
+    expect(readAt, "the producer must read('imageData') — that is what advances the painter")
       .toBeGreaterThan(-1);
     // ORDER IS THE ASSERTION, not mere presence: reading before pushing paints
     // the frame with last frame's CV, which is the #1664 bug wearing a fix.
     expect(pushAt, 'cvCombined must be written BEFORE imageData is read').toBeLessThan(readAt);
   });
 
-  it('and it reads the frame UNCONDITIONALLY — collapse skips the BLIT, never the advance', () => {
-    // ⚠ THE INVERSION THIS MODULE FORCES. In `spirographs` / `backdraft` the
-    // VIDEO ENGINE owns the producer, so SCREEN OFF stops a copy. Here the
-    // painter is advanced INSIDE `read('imageData')`, so with nothing patched
-    // downstream this loop is the only thing advancing the raster — gating the
-    // read on the toggle would freeze the module, the #1720/#1721 class.
-    //
-    // The negative control is the SHAPE: `previewCollapsed` must not appear as
-    // an early return before the read. It gates the blit on the same line as
-    // the draw instead.
-    const readAt = BODY.indexOf("read(node, 'imageData')");
-    const before = BODY.slice(0, readAt);
-    expect(
-      /if\s*\(\s*previewCollapsed\s*\)\s*return/.test(before),
-      'an early return on previewCollapsed ABOVE the read would freeze the painter',
-    ).toBe(false);
-    // And the blit IS gated — otherwise the toggle would do nothing at all.
-    expect(BODY).toMatch(/!previewCollapsed\s*&&\s*canvasEl/);
+  it('NEITHER surface pushes — a viewer that wrote engine state would be a second producer', () => {
+    // The producer seam the derivation gate greps for is `write(node|id, …)`;
+    // a surface reacquiring it would ALSO re-enrol rasterize in
+    // CARD_PRODUCER_LANE_TYPES via dom-source-modules.test.ts, so this leg and
+    // that gate hold the same line from two directions.
+    // The CALL shape, not the word — both files may (and do) NAME the push in
+    // the comment that says where it went.
+    const PUSH_CALL = /write\(\s*(?:node|id|nodeId)\s*,\s*'cvCombined'/;
+    expect(PUSH_CALL.test(BODY), 'the dock body must not push cvCombined').toBe(false);
+    expect(PUSH_CALL.test(CARD), 'the legacy card must not push cvCombined').toBe(false);
+    // …and both still READ the frame, which is how they show it. The read's
+    // advance is deduped by the module's own 8 ms guard.
+    expect(BODY).toMatch(/read\(node, 'imageData'\)/);
+    expect(CARD).toMatch(/read\(node, 'imageData'\)/);
   });
 
   it('state lives on node.data, not component $state (the #1531/#1574/#1583 class)', () => {

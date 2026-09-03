@@ -25,6 +25,7 @@
 // same discipline `extras-producers.ts` records: `lib/video/**` is hashed
 // WHOLESALE for the WebGL attest, so importing is free and editing is not.
 
+import { rasterizeDef } from '$lib/audio/modules/rasterize';
 import { scopeDef } from '$lib/audio/modules/scope';
 import { applyBeatBoost, beatPulse } from '$lib/audio/modules/timelorde-wizard';
 import { videoChannelLevels } from '../../../../../dsp/src/lib/synesthesia-dsp';
@@ -419,6 +420,60 @@ export const TIMELORDE_FRAME_PRODUCER: FrameProducer = {
 };
 
 /**
+ * RASTERIZE — the combined draw params AND the painter's advance (legacy-removal
+ * S1.5, the fourth producer departure and the first with TWO duties in one body).
+ *
+ * ⚠ THE PUSH IS SCOPE'S, VERBATIM IN SHAPE AND FOR THE SAME REASON: `addEdge`
+ * connects a same-domain cv cable to the AudioParam and never calls `setParam`,
+ * so the painter's four display params reach a patched cable only through this
+ * `write(node,'cvCombined')`. Stop it and a param under CV LATCHES at its last
+ * modulated value forever (`cv-shadow` clears `combined` only on a knob move) —
+ * on a picture that keeps moving, so nothing about it looks broken. The
+ * correction history lives on `dom-source-modules.ts` ("degrades to the knob"
+ * was the wrong story, in the direction that matters).
+ *
+ * ⚠ THE READ IS NOT A LEFTOVER — IT IS THE MODULE'S HEARTBEAT. rasterize's
+ * painter is advanced INSIDE `read('imageData')` (`advanceOncePerFrame`), and
+ * the cross-domain bridge only pulls `drawFrame` when a downstream VIDEO edge
+ * exists. So with nothing patched downstream, whoever holds this loop is the
+ * only thing advancing the raster — that used to be the card (and the dock
+ * body, a second copy), and gating it on a mount is the #1720/#1721 freeze
+ * class. The advance is deduped on the module's own 8 ms guard, so this read,
+ * a viewer's read and the bridge's pull coalesce instead of racing the cursor
+ * at 2×.
+ *
+ * ⚠ PUSH BEFORE READ (#1664). The painter runs inside the read, so the push has
+ * to land first or the frame is painted with last frame's CV — the bug wearing
+ * a fix. `rasterize-face-model.test.ts` holds this order at source level, HERE,
+ * because the surfaces no longer carry either half.
+ */
+export const RASTERIZE_FRAME_PRODUCER: FrameProducer = {
+  type: 'rasterize',
+  why:
+    'the module owns no AnalyserNode per display param, so a patched cv cable reaches the ' +
+    "painter only through `write(node,'cvCombined')` — and the painter itself is advanced " +
+    "INSIDE `read('imageData')`, which the bridge only pulls when a downstream video edge " +
+    'exists. With no owner the raster freezes when nothing is patched downstream, and a param ' +
+    'under CV latches at its last modulated value with the picture still moving.',
+  frame({ node, engine }) {
+    // ALL FOUR, EVERY FRAME, UNCONDITIONALLY — scope's argument, unabridged: a
+    // param whose cable has just been pulled has to be re-written with the bare
+    // knob to come back, so sampling "only the patched ports" would be wrong on
+    // exactly the frame it saves nothing.
+    const combined: Record<string, number> = {};
+    for (const p of rasterizeDef.params) {
+      const v = engine.readParam(node, p.id);
+      if (typeof v === 'number' && Number.isFinite(v)) combined[p.id] = v;
+    }
+    engine.write(node, 'cvCombined', combined);
+    // THE ADVANCE. The returned frame is deliberately dropped: painting a
+    // surface is a VIEW's job (the card and the dock body blit this same read
+    // on their own lifetime); this seam only guarantees the raster moves.
+    engine.read(node, 'imageData');
+  },
+};
+
+/**
  * The producers this seam owns.
  *
  * ⚠ ORDER IS NOT SIGNIFICANT and membership is DERIVED, never re-typed: both
@@ -430,6 +485,7 @@ export const FRAME_PRODUCERS: readonly FrameProducer[] = [
   SCOPE_FRAME_PRODUCER,
   SYNESTHESIA_FRAME_PRODUCER,
   TIMELORDE_FRAME_PRODUCER,
+  RASTERIZE_FRAME_PRODUCER,
 ];
 
 /**
