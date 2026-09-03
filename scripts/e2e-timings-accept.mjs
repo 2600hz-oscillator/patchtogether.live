@@ -41,6 +41,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { assertFullShardSet } from './ci-shard-count.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const OUT = join(ROOT, 'e2e/e2e-timings.generated.json');
@@ -63,8 +64,10 @@ try {
   const blobDir = join(dir, '_merged');
   mkdirSync(blobDir);
   let zips = 0;
+  let shardArtifacts = 0;
   for (const sub of readdirSync(dir)) {
     if (sub === '_merged') continue;
+    shardArtifacts++;
     for (const f of readdirSync(join(dir, sub))) {
       if (!f.endsWith('.zip')) continue;
       const dest = join(blobDir, `${sub}-${f}`);
@@ -73,6 +76,13 @@ try {
     }
   }
   if (zips === 0) throw new Error(`run ${runId} published no blob-report-* zips`);
+  // ⚠ REFUSE A PARTIAL RUN, not just an empty one. Each `e2e` matrix shard
+  // uploads exactly one blob-report-<n> artifact; a run accepted while shards
+  // were cancelled/failed/still pending publishes fewer, the merge quietly
+  // covers less of the suite, and every spec on a missing shard is TRUNCATED
+  // out of the artifact to ride the median (the face-PR truncation failure).
+  // Expected width is DERIVED from ci.yml's `e2e` matrix — see ci-shard-count.mjs.
+  assertFullShardSet(shardArtifacts, 'e2e', `blob-report-* artifact(s) in run ${runId}`);
 
   // Same playwright the workspace pins — versions must match the blobs'.
   // ⚠ JSON goes to a FILE (PLAYWRIGHT_JSON_OUTPUT_NAME), never stdout: npm/npx

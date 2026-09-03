@@ -26,6 +26,7 @@
 
 import { test, expect, type Page } from '@playwright/test';
 import { readScopePeakOverWindow } from './_module-coverage-helpers';
+import { AUDIO_READY_MS } from '../_helpers/boot-budget';
 
 test.describe.configure({ mode: 'parallel' });
 
@@ -33,8 +34,9 @@ test.describe.configure({ mode: 'parallel' });
 // SOFTWARE renderer with 4 workers per shard. The MEASUREMENT windows below
 // cost up to ~14.1s of pure wall-clock — 2× `stepScan(4_000)` (early-exits
 // on the 2nd distinct step, so it stretches toward 4s exactly when the clock is
-// slow) + 2× `readScopePeakOverWindow(…, 2_500)` (a FULL 2.5s each, no early
-// exit) + ~1.1s stop-drain/freeze-scan waits — BEFORE bootWorkflow, the 10s
+// slow) + 2× audibility windows (bounded condition waits — early-exit the
+// instant sustained RMS crosses the asserted floor, capped at AUDIO_READY_MS;
+// see the launch leg) + ~1.1s stop-drain/freeze-scan waits — BEFORE bootWorkflow, the 10s
 // reconciler-edge poll, the clip seed, the drawer open and four click/assert
 // round-trips (each a ~1s page.evaluate under CI contention). That fits a warm
 // dev box inside the flat 30s default; it does NOT fit shard 10 (242 tests /
@@ -353,9 +355,23 @@ for (const [label, url] of [
     const launchScan = await stepScan(page, 4_000);
     expect(launchScan.distinct, scanMsg('launch: steps advance', launchScan)).toBeGreaterThanOrEqual(2);
     // …and the REAL chain is audible at the pinned master.
-    const runRms = await readScopePeakOverWindow(page, 'p0-scope', 2_500);
+    //
+    // ⚠ BOUNDED CONDITION WAIT, not a fixed window. The census (2026-08-31,
+    // item 14) caught this leg recovered-on-retry on a re-binned shard: a
+    // fixed 2.5s window opened immediately after launch, and under
+    // co-scheduled audio the lane's first samples can arrive AFTER it closes —
+    // the window measured the silence before the sound, the same geometry
+    // #2310 closed for snh-hold's sleep. `untilRms` names the exact floor the
+    // assertion below makes (the helper's own rule), so a green run exits the
+    // moment sustained audio crosses it and a silent product still fails at
+    // the AUDIO_READY_MS cap with the starvation diagnostics
+    // (maxSampleGapMs) in the message.
+    const RMS_FLOOR = 0.02;
+    const runRms = await readScopePeakOverWindow(page, 'p0-scope', AUDIO_READY_MS, {
+      untilRms: RMS_FLOOR,
+    });
     expect(runRms.polls, 'scope polled').toBeGreaterThan(0);
-    expect(runRms.rms, 'audible RMS at the master while running').toBeGreaterThan(0.02);
+    expect(runRms.rms, 'audible RMS at the master while running').toBeGreaterThan(RMS_FLOOR);
 
     // (2) STOP from the drawer card: running flips AND playback halts.
     const transport = dockCard.getByTestId(`clipplayer-transport-${PINNED_CLIP}`);
@@ -384,8 +400,11 @@ for (const [label, url] of [
     await expect(transport).toHaveText('■', { timeout: 5_000 });
     const restartScan = await stepScan(page, 4_000);
     expect(restartScan.distinct, scanMsg('restart: steps advance', restartScan)).toBeGreaterThanOrEqual(2);
-    const restartRms = await readScopePeakOverWindow(page, 'p0-scope', 2_500);
-    expect(restartRms.rms, 'audible RMS after restart').toBeGreaterThan(0.02);
+    // Same bounded condition wait as the launch leg, same floor, same cap.
+    const restartRms = await readScopePeakOverWindow(page, 'p0-scope', AUDIO_READY_MS, {
+      untilRms: RMS_FLOOR,
+    });
+    expect(restartRms.rms, 'audible RMS after restart').toBeGreaterThan(RMS_FLOOR);
 
     // (4) The wcol reconcile budget never trips during this ordinary flow.
     expect(budgetWarns).toEqual([]);
