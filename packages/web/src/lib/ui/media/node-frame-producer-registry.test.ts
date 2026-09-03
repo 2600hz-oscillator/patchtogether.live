@@ -39,6 +39,7 @@ import {
   FRAME_PRODUCERS,
   NODE_FRAME_PRODUCER_TYPES,
   SCOPE_FRAME_PRODUCER,
+  SYNESTHESIA_FRAME_PRODUCER,
 } from './frame-producers';
 import {
   createNodeFrameProducerRegistry,
@@ -142,7 +143,7 @@ describe('NODE_FRAME_PRODUCER_TYPES — who owns a module per-frame push', () =>
   });
 
   it('is exactly the extracted set, so a silent departure is visible in the diff', () => {
-    expect([...NODE_FRAME_PRODUCER_TYPES].sort()).toEqual(['scope']);
+    expect([...NODE_FRAME_PRODUCER_TYPES].sort()).toEqual(['scope', 'synesthesia']);
   });
 
   it('⚠ is DISJOINT from CARD_PRODUCER_LANE_TYPES — the atomicity gate', () => {
@@ -422,5 +423,157 @@ describe('SCOPE_FRAME_PRODUCER — the cvCombined push, off the card', () => {
     eng.params.timeMs = 120;
     h.registry.tick();
     expect((eng.writes[1]!.value as Record<string, number>).timeMs).toBe(120);
+  });
+});
+
+// ── THE SYNESTHESIA PRODUCER ─────────────────────────────────────────────────
+
+describe('SYNESTHESIA_FRAME_PRODUCER — the cross-domain pixel path, off the card', () => {
+  /** A graph with ONE edge into `{copy}_video_in`, and a source node whose
+   *  DOMAIN decides which of the two frame paths applies. */
+  function graphWith(
+    edges: Array<{ to: string; srcId: string; srcPort: string }>,
+    srcDomain: 'audio' | 'video' = 'video',
+  ): FrameGraph {
+    return {
+      findSource(targetNodeId, targetPortId) {
+        const e = edges.find((x) => x.to === targetPortId);
+        return e && targetNodeId === 'syn' ? { nodeId: e.srcId, portId: e.srcPort } : null;
+      },
+      node: (id) => ({ id, type: 'src', domain: srcDomain } as unknown as ModuleNode),
+    };
+  }
+
+  /** A surface whose 2D context reports a KNOWN raster, so the levels the
+   *  producer computes are checkable rather than merely non-null. */
+  function pixelHarness(
+    graph: FrameGraph,
+    rgba: [number, number, number, number],
+    opts: { blit?: unknown; drawFrame?: boolean } = {},
+  ) {
+    const drew: string[] = [];
+    const registry = createNodeFrameProducerRegistry(
+      [SYNESTHESIA_FRAME_PRODUCER],
+      {
+        createSurface(_nodeId, _type, w, h) {
+          return {
+            width: w,
+            height: h,
+            getContext: () => ({
+              clearRect: () => void drew.push('clear'),
+              drawImage: () => void drew.push('drawImage'),
+              getImageData: (_x: number, _y: number, gw: number, gh: number) => {
+                const data = new Uint8ClampedArray(gw * gh * 4);
+                for (let i = 0; i < gw * gh; i++) {
+                  data[i * 4] = rgba[0];
+                  data[i * 4 + 1] = rgba[1];
+                  data[i * 4 + 2] = rgba[2];
+                  data[i * 4 + 3] = rgba[3];
+                }
+                return { data };
+              },
+            }),
+          } as unknown as FrameSurface;
+        },
+        startTicker: () => () => {},
+        env,
+      },
+      graph,
+    );
+    const eng = fakeEngine();
+    // `'blit' in opts`, NOT `opts.blit ?? {}` — the whole point of the leg that
+    // passes `blit: null` is that the engine could NOT blit, and `??` would
+    // quietly hand it a truthy stand-in and test the opposite branch.
+    eng.blitVideoNode = () => ('blit' in opts ? opts.blit! : {});
+    eng.videoSource = () =>
+      opts.drawFrame ? { drawFrame: () => void drew.push('drawFrame') } : null;
+    return { registry, eng, drew };
+  }
+
+  it('pushes the patched frame levels for a copy in VIDEO mode', () => {
+    const { registry, eng } = pixelHarness(
+      graphWith([{ to: 'a_video_in', srcId: 'src', srcPort: 'out' }]),
+      [255, 0, 0, 255],
+    );
+    registry.sync([node('syn', 'synesthesia', { a_mode: 1 })], eng);
+    registry.tick();
+    expect(eng.writes.length).toBe(1);
+    expect(eng.writes[0]!.key).toBe('video_levels_a');
+    const lv = eng.writes[0]!.value as number[];
+    expect(lv[0], 'a solid RED frame maxes the R lane').toBeCloseTo(1, 2);
+    expect(lv[1]).toBeCloseTo(0, 2);
+    expect(lv[2]).toBeCloseTo(0, 2);
+  });
+
+  it('⚠ pushes NOTHING for a copy in AUDIO mode — the worklet owns those levels', () => {
+    // A push here would overwrite live spectral analysis with a frame nobody
+    // asked for, and it would pay a blit plus a readback per frame to do it.
+    const { registry, eng, drew } = pixelHarness(
+      graphWith([{ to: 'a_video_in', srcId: 'src', srcPort: 'out' }]),
+      [255, 0, 0, 255],
+    );
+    registry.sync([node('syn', 'synesthesia', { a_mode: 0 })], eng);
+    registry.tick();
+    expect(eng.writes).toEqual([]);
+    expect(drew, 'and it does not even sample the frame').toEqual([]);
+  });
+
+  it('⚠ pushes NOTHING when the port is UNPATCHED — "no source" is not "zeros"', () => {
+    // The distinction is the module's behaviour: an unpatched VIDEO copy must
+    // leave the worklet's held levels alone (gate closed, meters dark), not be
+    // driven to zero by a producer reporting an absence as a measurement.
+    const { registry, eng } = pixelHarness(graphWith([]), [255, 0, 0, 255]);
+    registry.sync([node('syn', 'synesthesia', { a_mode: 1 })], eng);
+    registry.tick();
+    expect(eng.writes).toEqual([]);
+  });
+
+  it('handles the two copies INDEPENDENTLY — one in each mode', () => {
+    const { registry, eng } = pixelHarness(
+      graphWith([
+        { to: 'a_video_in', srcId: 'src', srcPort: 'out' },
+        { to: 'b_video_in', srcId: 'src', srcPort: 'out' },
+      ]),
+      [0, 255, 0, 255],
+    );
+    registry.sync([node('syn', 'synesthesia', { a_mode: 0, b_mode: 1 })], eng);
+    registry.tick();
+    expect(eng.writes.map((w) => w.key)).toEqual(['video_levels_b']);
+  });
+
+  it('takes the AUDIO-domain path through drawFrame, and the VIDEO path through a blit', () => {
+    // The two paths are not interchangeable: an audio-domain mono-video source
+    // paints straight into the scratch, while a video-domain node has to be
+    // blitted into the engine's shared drawing buffer first and then sampled.
+    const vid = pixelHarness(
+      graphWith([{ to: 'a_video_in', srcId: 'src', srcPort: 'out' }], 'video'),
+      [0, 0, 255, 255],
+    );
+    vid.registry.sync([node('syn', 'synesthesia', { a_mode: 1 })], vid.eng);
+    vid.registry.tick();
+    expect(vid.drew).toContain('drawImage');
+
+    const aud = pixelHarness(
+      graphWith([{ to: 'a_video_in', srcId: 'src', srcPort: 'out' }], 'audio'),
+      [0, 0, 255, 255],
+      { drawFrame: true },
+    );
+    aud.registry.sync([node('syn', 'synesthesia', { a_mode: 1 })], aud.eng);
+    aud.registry.tick();
+    expect(aud.drew).toContain('drawFrame');
+    expect(aud.drew, 'the audio path never blits — drawFrame paints the scratch itself')
+      .not.toContain('drawImage');
+    expect(aud.eng.writes[0]!.key).toBe('video_levels_a');
+  });
+
+  it('a video-domain source the engine cannot blit pushes nothing rather than zeros', () => {
+    const { registry, eng } = pixelHarness(
+      graphWith([{ to: 'a_video_in', srcId: 'src', srcPort: 'out' }], 'video'),
+      [255, 255, 255, 255],
+      { blit: null },
+    );
+    registry.sync([node('syn', 'synesthesia', { a_mode: 1 })], eng);
+    registry.tick();
+    expect(eng.writes).toEqual([]);
   });
 });

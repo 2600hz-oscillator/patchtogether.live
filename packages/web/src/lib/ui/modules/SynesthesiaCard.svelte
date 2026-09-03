@@ -4,15 +4,12 @@
   import Knob from '$lib/ui/controls/Knob.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
-  import { patch } from '$lib/graph/store';
   import { setNodeParam } from '$lib/graph/mutate';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode, ParamDef } from '$lib/graph/types';
   import { synesthesiaDef, type SynesthesiaSnapshot } from '$lib/audio/modules/synesthesia';
   import { paramSpec } from './card-kit';
   import { drawVuMeters } from '$lib/audio/modules/synesthesia-draw';
-  import { videoChannelLevels } from '../../../../../dsp/src/lib/synesthesia-dsp';
-  import type { VideoEngine } from '$lib/video/engine';
   import ModuleTitle from './ModuleTitle.svelte';
 
   let { id, data }: NodeProps = $props();
@@ -109,99 +106,22 @@
     { label: 'Copy B', inputs: portsB.inputs, outputs: portsB.outputs },
   ];
 
-  // ---- VIDEO-mode frame reader (the cross-domain pixel path) ----
-  // In VIDEO mode the card reads the patched frame's pixels (only the DOM has a
-  // canvas; the worklet can't), averages them to R/G/B/Luma levels, and writes
-  // them to the worklet which sample-and-holds them through the env/gate/meter
-  // stage. Mirrors WAVESCULPT's wall inputs: walk patch.edges to find the
-  // upstream source, then either blit a video-domain source into the shared
-  // drawing buffer, or pull an audio-domain mono-video source's drawFrame.
-  const FRAME_W = 64;
-  const FRAME_H = 48;
-  let frameCanvas: HTMLCanvasElement | OffscreenCanvas | null = null;
-  let frameCtx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null = null;
-
-  function ensureFrameCanvas(): CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null {
-    if (frameCtx) return frameCtx;
-    if (typeof OffscreenCanvas !== 'undefined') {
-      frameCanvas = new OffscreenCanvas(FRAME_W, FRAME_H);
-    } else if (typeof document !== 'undefined') {
-      const c = document.createElement('canvas');
-      c.width = FRAME_W; c.height = FRAME_H;
-      frameCanvas = c;
-    } else {
-      return null;
-    }
-    frameCtx = frameCanvas.getContext('2d', { willReadFrequently: true }) as
-      | CanvasRenderingContext2D
-      | OffscreenCanvasRenderingContext2D
-      | null;
-    return frameCtx;
-  }
-
-  /** Resolve the (nodeId, portId) currently patched into one of our inputs. */
-  function findInputSource(portId: string): { nodeId: string; portId: string } | null {
-    for (const eid of Object.keys(patch.edges)) {
-      const e = patch.edges[eid];
-      if (!e) continue;
-      if (e.target?.nodeId === id && e.target?.portId === portId) {
-        return { nodeId: e.source.nodeId, portId: e.source.portId };
-      }
-    }
-    return null;
-  }
-
-  /** Draw whatever is patched into {c}_video_in into the scratch canvas, then
-   *  read its pixels → [R,G,B,Luma] levels (0..1). Returns null when no source
-   *  is patched or the frame can't be read (gate stays closed → meters dark). */
-  function readVideoLevels(c: 'a' | 'b'): [number, number, number, number] | null {
-    const e = engineCtx.get();
-    if (!e) return null;
-    const src = findInputSource(`${c}_video_in`);
-    if (!src) return null;
-    const ctx2d = ensureFrameCanvas();
-    if (!ctx2d || !frameCanvas) return null;
-
-    const srcNode = patch.nodes[src.nodeId];
-    const srcDomain = srcNode?.domain ?? 'audio';
-    let imageSource: CanvasImageSource | undefined;
-    if (srcDomain === 'video') {
-      // Cross-domain: render the source video module's FBO into the shared
-      // drawing buffer, then sample that buffer.
-      let videoEngine: VideoEngine | undefined;
-      try { videoEngine = e.getDomain<VideoEngine>('video'); } catch { videoEngine = undefined; }
-      if (!videoEngine) return null;
-      try { videoEngine.blitOutputToDrawingBuffer(src.nodeId); } catch { return null; }
-      imageSource = videoEngine.canvas as CanvasImageSource | undefined;
-    } else {
-      // Audio-domain mono-video source (RASTERIZE, WAVESCULPT.video_out, even
-      // SYNESTHESIA's own raster): pull its drawFrame into the scratch canvas.
-      let audioEngine:
-        | { getVideoSource?: (n: string, p: string) => { drawFrame?: (c: OffscreenCanvas | HTMLCanvasElement) => void } | null }
-        | undefined;
-      try { audioEngine = e.getDomain('audio') as unknown as typeof audioEngine; }
-      catch { audioEngine = undefined; }
-      const vsrc = audioEngine?.getVideoSource?.(src.nodeId, src.portId) ?? null;
-      if (!vsrc?.drawFrame) return null;
-      try { vsrc.drawFrame(frameCanvas); } catch { return null; }
-      // drawFrame already painted frameCanvas; read straight from it.
-      try {
-        const img = ctx2d.getImageData(0, 0, FRAME_W, FRAME_H);
-        return videoChannelLevels(img.data);
-      } catch { return null; }
-    }
-    if (!imageSource) return null;
-    try {
-      ctx2d.clearRect(0, 0, FRAME_W, FRAME_H);
-      ctx2d.drawImage(imageSource, 0, 0, FRAME_W, FRAME_H);
-      const img = ctx2d.getImageData(0, 0, FRAME_W, FRAME_H);
-      return videoChannelLevels(img.data);
-    } catch {
-      return null;
-    }
-  }
-
   // ---- VU meters (one canvas per copy, each drawing 4 band/channel columns) ----
+  //
+  // ⚠ THIS CARD IS A READER NOW, NOT A PRODUCER (legacy-removal S1). The
+  // cross-domain PIXEL path — resolve what is patched into `{c}_video_in`, blit
+  // one frame of it into a 64×48 scratch, average it to R/G/B/Luma and hand the
+  // four numbers to the worklet — used to live right here, so `synesthesia` sat
+  // in `CARD_PRODUCER_LANE_TYPES` and the default shell kept this card mounted
+  // OFF-SCREEN in `<HeadlessSourceHost>` purely to keep that loop running. It
+  // belongs to the NODE now (`$lib/ui/media/frame-producers`), on graph
+  // lifetime. What is left is a repaint of the levels the worklet already
+  // posts — the same thing `synesthesia/SynesthesiaVuBody.svelte` does.
+  //
+  // ⚠ DO NOT SPELL THE SEAM CALL-SHAPED IN A COMMENT IN THIS SUBTREE. The
+  // producer gate matches its seam regexes against RAW source and strips no
+  // comments, so writing the departed push out as a call re-enrols this module
+  // in the set this change removes it from. Name it, never spell it.
   let canvasA: HTMLCanvasElement | null = $state(null);
   let canvasB: HTMLCanvasElement | null = $state(null);
   let raf: number | null = null;
@@ -211,17 +131,6 @@
     function tick(): void {
       const eng = engineCtx.get();
       if (eng && node) {
-        // VIDEO mode: push the latest frame's channel levels to the worklet so
-        // its env/gate/meter stage runs off the colour, before reading back the
-        // VU snapshot the worklet posts.
-        if (isVideo('a')) {
-          const lv = readVideoLevels('a');
-          if (lv) eng.write(node, 'video_levels_a', lv);
-        }
-        if (isVideo('b')) {
-          const lv = readVideoLevels('b');
-          if (lv) eng.write(node, 'video_levels_b', lv);
-        }
         const snap = eng.read(node, 'snapshot') as SynesthesiaSnapshot | undefined;
         if (snap) {
           const ca = canvasA?.getContext('2d');

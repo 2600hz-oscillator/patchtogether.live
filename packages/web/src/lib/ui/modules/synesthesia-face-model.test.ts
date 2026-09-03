@@ -39,8 +39,10 @@ import { STRICT_FACES } from '$lib/ui/workflow/strict-faces';
 import {
   CARD_PRODUCER_LANE_TYPES,
   FACE_MOUNTS_PRODUCER,
+  HEADLESS_MOUNT_LANE_TYPES,
   needsHeadlessSourceMount,
 } from '$lib/ui/workflow/dom-source-modules';
+import { NODE_FRAME_PRODUCER_TYPES } from '$lib/ui/media/frame-producers';
 import { rearFieldPlan } from '$lib/ui/workflow/rear-card-model';
 import { DOCK_TAB_MIN_BANDS } from '$lib/ui/workflow/dock-tabs-model';
 
@@ -50,10 +52,12 @@ const face = synesthesiaDef.face!;
 const HERE = dirname(fileURLToPath(import.meta.url));
 const BODY_SRC = resolve(HERE, 'synesthesia/SynesthesiaVuBody.svelte');
 const EXT_SRC = resolve(HERE, 'synesthesia/shell-extension.ts');
+const CARD_SRC = resolve(HERE, 'SynesthesiaCard.svelte');
 const WORKLET_SRC = resolve(HERE, '../../../../../dsp/src/synesthesia.ts');
 
 const body = (): string => stripSourceComments(readFileSync(BODY_SRC, 'utf8'));
 const ext = (): string => stripSourceComments(readFileSync(EXT_SRC, 'utf8'));
+const card = (): string => stripSourceComments(readFileSync(CARD_SRC, 'utf8'));
 const worklet = (): string => stripSourceComments(readFileSync(WORKLET_SRC, 'utf8'));
 
 const COPIES = ['a', 'b'] as const;
@@ -166,27 +170,49 @@ describe('synesthesia face — the VU wall is the picture, and it is a READER', 
     expect(src).not.toContain('requestAnimationFrame');
   });
 
-  it('⚠ the body PUSHES NOTHING — it must never grow a second video-levels pump', () => {
-    // The card owns that pump and the headless host keeps the card alive. A
-    // second writer here would post two `video` messages per frame for one node.
-    const src = body();
-    expect(src).not.toContain('video_levels');
-    expect(src).not.toMatch(/\beng\??\.write\(/);
+  it('⚠ NEITHER SURFACE pushes video levels — one writer, and it is not a surface', () => {
+    // ⚠ THIS USED TO BE ABOUT THE BODY ALONE, and it was a real hazard: the card
+    // owned the pump, the headless host kept the card alive, and a second writer
+    // in this body would have posted two `video` messages per frame for one
+    // node. The pump is the NODE's now
+    // (`$lib/ui/media/frame-producers` — SYNESTHESIA_FRAME_PRODUCER), so the
+    // same claim covers BOTH surfaces and is stronger for it.
+    for (const [name, src] of [['body', body()], ['card', card()]] as const) {
+      expect(src, `${name} must not push video levels`).not.toContain('video_levels');
+      expect(src, `${name} must not write to the engine at all`).not.toMatch(/\beng\??\.write\(/);
+    }
   });
 
-  it('⚠ synesthesia stays OUT of FACE_MOUNTS_PRODUCER — the parity guard', () => {
-    // IN the producer set (so the host exists at all)…
-    expect(CARD_PRODUCER_LANE_TYPES.has('synesthesia')).toBe(true);
-    // …and NOT in the exemption, because this face only VIEWS the meters; the
-    // card is the sole writer of `video_levels_a/_b`. Exempting it would drop
-    // the host while the dock is open and freeze VIDEO mode.
+  it('⚠ synesthesia has left the CARD-PRODUCER half entirely (legacy-removal S1)', () => {
+    // ⚠ THE INVERSION OF WHAT THIS LEG USED TO ASSERT. It read "IN the producer
+    // set (so the host exists at all) and NOT in the exemption, because this
+    // face only VIEWS the meters" — true while a CARD was the only writer, and
+    // the reason the headless host had to survive a dock open.
+    //
+    // The pixel path is node-lifetime now, so BOTH halves of that argument are
+    // retired at once: there is no host to keep, and no exemption to withhold.
+    expect(CARD_PRODUCER_LANE_TYPES.has('synesthesia')).toBe(false);
+    expect(HEADLESS_MOUNT_LANE_TYPES.has('synesthesia')).toBe(false);
     expect(FACE_MOUNTS_PRODUCER.has('synesthesia')).toBe(false);
-    // The consequence, asserted at the decision rather than described: a
-    // promoted lane tile still asks for the host.
-    expect(needsHeadlessSourceMount({ kind: 'shell', type: 'synesthesia' })).toBe(true);
-    // NEGATIVE CONTROL — an exempted producer does not, so the assertion above
-    // is reading the exemption and not merely the type set.
-    expect(needsHeadlessSourceMount({ kind: 'shell', type: 'cube', hostedElsewhere: true })).toBe(false);
+    // ANCHOR: something took ownership. Without this the assertions above are
+    // also satisfied by the pump having been DELETED.
+    expect(NODE_FRAME_PRODUCER_TYPES.has('synesthesia')).toBe(true);
+    // The consequence, asserted at the decision rather than described: NO lane
+    // kind asks for a card mount any more, including the collapsed-group arm
+    // that is not shell-specific.
+    for (const kind of ['shell', 'placeholder', 'legacy', 'stub'] as const) {
+      expect(
+        needsHeadlessSourceMount({ kind, type: 'synesthesia' }),
+        `no host on lane kind '${kind}'`,
+      ).toBe(false);
+    }
+    expect(needsHeadlessSourceMount({ kind: 'shell', type: 'synesthesia', laneOmitsNode: true }))
+      .toBe(false);
+    // PERMANENT NEGATIVE CONTROL — the decision still says YES for a module that
+    // really is card-owned, so the run above is reading membership and not a
+    // function that has started answering `false` for everything.
+    const stillCardOwned = [...CARD_PRODUCER_LANE_TYPES][0]!;
+    expect(needsHeadlessSourceMount({ kind: 'shell', type: stillCardOwned })).toBe(true);
   });
 
   it('carries a SCREEN toggle whose state lives on the NODE, never in $state', () => {
@@ -238,8 +264,6 @@ describe('synesthesia face — NO card gesture needs a CLICK the host cannot del
   // SYNESTHESIA NEEDS NO SEAM, and the reason is structural rather than lucky:
   // this card has no non-param state at all. Asserted here, at the source,
   // because no runtime gate looks at a card that is no longer rendered.
-  const CARD_SRC = resolve(HERE, 'SynesthesiaCard.svelte');
-  const card = (): string => stripSourceComments(readFileSync(CARD_SRC, 'utf8'));
 
   it('the card owns NO node.data, NO file input and NO device roster', () => {
     const src = card();
@@ -264,13 +288,24 @@ describe('synesthesia face — NO card gesture needs a CLICK the host cannot del
     for (const id of SWITCHES) expect(face.order).toContain(id);
   });
 
-  it('the only card work that must SURVIVE is a rAF, which the host serves fine', () => {
+  it('⚠ the card work that had to SURVIVE has LEFT the card (legacy-removal S1)', () => {
+    // ⚠ THIS LEG USED TO CONCLUDE THAT THE HOST WAS ENOUGH, and the reasoning
+    // was sound for what it was answering: the video-levels pump is a LOOP, not
+    // a gesture, so `pointer-events: none` is irrelevant to it — which is why an
+    // off-screen card mount sufficed here and did not for cameraInput.
+    //
+    // "A loop that needs no gesture" is also the precise description of
+    // something that never needed a card. The pump is
+    // `$lib/ui/media/frame-producers` now, on the NODE, so the question the leg
+    // was answering no longer arises — and the card is one step closer to being
+    // deletable, which the host answer could never deliver.
     const src = card();
-    // The video-levels pump is a loop, not a gesture — `pointer-events: none`
-    // is irrelevant to it, which is the whole reason the headless host is a
-    // sufficient answer here and was not for cameraInput.
+    expect(src, 'the pump is gone from the card entirely').not.toContain('video_levels');
+    expect(NODE_FRAME_PRODUCER_TYPES.has('synesthesia'), 'and it went somewhere').toBe(true);
+    // What REMAINS on the card is a repaint of levels the worklet already posts
+    // — a view, and one the faceplate body duplicates by design.
     expect(src).toContain('requestAnimationFrame');
-    expect(src).toContain("eng.write(node, 'video_levels_a', lv)");
+    expect(src).toContain("read(node, 'snapshot')");
     // NEGATIVE CONTROL on the instrument: the grep really can find a click, so
     // "no third gesture" above is a reading rather than an empty match.
     expect(src.match(/onclick=/g)?.length).toBeGreaterThan(0);

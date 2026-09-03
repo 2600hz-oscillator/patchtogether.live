@@ -1241,10 +1241,24 @@ function nodeFrameProducerTypes(): string[] {
 interface FrameProducerFixture {
   /** Extra nodes to spawn beside the subject. */
   readonly driver: { id: string; type: string; domain: 'audio' | 'video' | 'meta' };
+  /** Params the SUBJECT needs for its producer to have anything to do. */
+  readonly params?: Record<string, number>;
   /** The edge that makes the subject's producer have something to report. */
   readonly edge: { fromPort: string; toPort: string; sourceType: string; targetType: string };
-  /** `engine.read(node, key)` → a record; `field` is the number that must move. */
-  readonly read: { key: string; field: string };
+  /** `engine.read(node, key)` → a record; `field` is the number (or array
+   *  element, via `index`) that must move. */
+  readonly read: { key: string; field: string; index?: number };
+  /**
+   * Does the channel return to the KNOB when the cable is pulled?
+   *
+   * ⚠ NOT UNIVERSAL, AND THE DIFFERENCE IS THE MODULE'S SEMANTICS RATHER THAN
+   * A TEST DETAIL. `cvCombined` is an OVERRIDE of a knob, so an un-patched
+   * param must come back to that knob or it has latched. `video_levels_*` is a
+   * SAMPLE-AND-HOLD into a worklet: with nothing patched the producer pushes
+   * NOTHING (which is correct — "no source" must not be reported as zeros), so
+   * the held value staying put is the specified behaviour, not a latch.
+   */
+  readonly unlatchesToKnob?: true;
   /** Why this is the channel the producer actually owns. */
   readonly why: string;
 }
@@ -1259,12 +1273,31 @@ const FRAME_PRODUCER_FIXTURES: Record<string, FrameProducerFixture> = {
       targetType: 'cv',
     },
     read: { key: 'drawParams', field: 'ch1Offset' },
+    unlatchesToKnob: true,
     why:
       'the producer reads `readParam` (knob PLUS the engine per-port CV tap) and pushes the ' +
       'combined record back through cvCombined — the ONLY path a same-domain cv cable has to a ' +
       'display param, because addEdge connects to the AudioParam and never calls setParam. ' +
       '`read("drawParams")` is the inverse of that push and is what the module\'s own drawFrame ' +
       'renders `out` from, so a number that follows the LFO proves the whole chain end to end.',
+  },
+  synesthesia: {
+    // A SELF-RUNNING video source, so the frame keeps changing without anything
+    // in this test driving it — the same driver `synesthesia-video-mode.spec.ts`
+    // uses for the same reason.
+    driver: { id: 'producer-driver', type: 'acidwarp', domain: 'video' },
+    // Copy A in VIDEO mode. Without it the producer correctly does nothing —
+    // in AUDIO mode the worklet's own spectral bands are the levels.
+    params: { a_mode: 1 },
+    edge: { fromPort: 'out', toPort: 'a_video_in', sourceType: 'video', targetType: 'video' },
+    read: { key: 'snapshot', field: 'levelsA', index: 0 },
+    why:
+      'in VIDEO mode the four lanes ARE the patched frame\'s R/G/B/Luma channels, and only the ' +
+      'main thread can sample a frame — the worklet has no canvas. The producer resolves the ' +
+      'upstream source, blits one frame into a 64×48 scratch, averages it and hands the numbers ' +
+      'to the worklet, which sample-and-holds them through the env/gate/meter stage. ' +
+      '`read("snapshot").levelsA` is what comes back out, and it is what all 48 of this ' +
+      'module\'s outputs carry in that mode.',
   },
 };
 
@@ -1280,17 +1313,17 @@ async function anyCardMounts(page: Page, nodeId: string, type: string): Promise<
   }, { id: nodeId, t: type });
 }
 
-/** Sample `read(node, key)[field]` once per rAF frame, in the page, and report
- *  how many DISTINCT values were seen. One evaluate, never a Playwright poll —
- *  a poll would starve the very loop it is measuring. */
+/** Sample `read(node, key)[field]` (or `[field][index]`) once per rAF frame, in
+ *  the page, and report how many DISTINCT values were seen. One evaluate, never
+ *  a Playwright poll — a poll would starve the very loop it is measuring. */
 async function sampleProducerChannel(
   page: Page,
   nodeId: string,
-  read: { key: string; field: string },
+  read: { key: string; field: string; index?: number },
   frames: number,
 ): Promise<{ frames: number; distinct: number; first: number | null; values: number[] }> {
   return page.evaluate(
-    async ({ id, key, field, n }) => {
+    async ({ id, key, field, index, n }) => {
       const w = globalThis as unknown as {
         __engine?: () => { getDomain: (d: string) => { read: (i: string, k: string) => unknown } };
         __patch: { nodes: Record<string, unknown> };
@@ -1301,9 +1334,13 @@ async function sampleProducerChannel(
         let v: number | null = null;
         try {
           const rec = w.__engine!().getDomain('audio').read(id, key) as
-            | Record<string, number>
+            | Record<string, unknown>
             | undefined;
-          const raw = rec?.[field];
+          const slot = rec?.[field];
+          const raw =
+            index === undefined
+              ? slot
+              : (slot as ArrayLike<number> | undefined)?.[index];
           if (typeof raw === 'number' && Number.isFinite(raw)) v = raw;
         } catch {
           /* engine not ready — recorded as a gap, never as a value */
@@ -1318,7 +1355,7 @@ async function sampleProducerChannel(
         values: seen.slice(0, 12),
       };
     },
-    { id: nodeId, key: read.key, field: read.field, n: frames },
+    { id: nodeId, key: read.key, field: read.field, index: read.index, n: frames },
   );
 }
 
@@ -1346,7 +1383,7 @@ for (const type of nodeFrameProducerTypes()) {
     await spawnPatch(
       page,
       [
-        { id: nodeId, type, domain: mod.domain },
+        { id: nodeId, type, domain: mod.domain, ...(fixture.params ? { params: fixture.params } : {}) },
         fixture.driver,
       ],
       [
@@ -1420,23 +1457,26 @@ for (const type of nodeFrameProducerTypes()) {
       )
       .toBe(1);
 
-    // ⚠ AND THE UN-LATCH, which is the half a "does it move" leg cannot see.
-    // `cv-shadow` clears the combined value only on a KNOB MOVE, so a producer
-    // that stopped pushing would leave this param frozen at whatever the LFO
-    // happened to be at — a bright, moving, completely stale picture. The
-    // settled value must be the KNOB, which is only true if the push is still
-    // running after the cable is gone.
-    const knob = await page.evaluate(({ id, f }) => {
-      const w = globalThis as unknown as { __patch: { nodes: Record<string, { params?: Record<string, number> }> } };
-      return w.__patch.nodes[id]?.params?.[f];
-    }, { id: nodeId, f: fixture.read.field });
-    const settled = await sampleProducerChannel(page, nodeId, fixture.read, 20);
-    expect(
-      settled.first,
-      `${type}: after the cable is pulled, ${fixture.read.field} must return to the KNOB ` +
-        `(${knob}) rather than LATCHING at its last modulated value — the producer is what ` +
-        `overwrites it. Saw ${settled.first}.`,
-    ).toBeCloseTo(typeof knob === 'number' ? knob : 0, 3);
+    // ⚠ AND THE UN-LATCH, which is the half a "does it move" leg cannot see —
+    // for the producers whose channel HAS that semantics (see the fixture
+    // field). `cv-shadow` clears the combined value only on a KNOB MOVE, so a
+    // producer that stopped pushing would leave the param frozen at whatever the
+    // modulator happened to be at: bright, moving, completely stale. The settled
+    // value must be the KNOB, which is only true if the push is still running
+    // after the cable is gone.
+    if (fixture.unlatchesToKnob) {
+      const knob = await page.evaluate(({ id, f }) => {
+        const w = globalThis as unknown as { __patch: { nodes: Record<string, { params?: Record<string, number> }> } };
+        return w.__patch.nodes[id]?.params?.[f];
+      }, { id: nodeId, f: fixture.read.field });
+      const settled = await sampleProducerChannel(page, nodeId, fixture.read, 20);
+      expect(
+        settled.first,
+        `${type}: after the cable is pulled, ${fixture.read.field} must return to the KNOB ` +
+          `(${knob}) rather than LATCHING at its last modulated value — the producer is what ` +
+          `overwrites it. Saw ${settled.first}.`,
+      ).toBeCloseTo(typeof knob === 'number' ? knob : 0, 3);
+    }
 
     // ── DELETE — the node leaves the graph and the producer goes with it ─────
     await page.evaluate((id) => {

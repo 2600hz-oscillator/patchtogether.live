@@ -243,13 +243,6 @@ export const DOM_SOURCE_LANE_TYPES: ReadonlySet<string> = new Set<string>([]);
  *                maxLuma 8 (that idle colour), 1 distinct signature / 42
  *                frames; with the card mounted: nonBlack 2944/3072, maxLuma
  *                232, 4 distinct signatures over 6 samples.
- *   synesthesia  the card samples the two video inputs and pushes
- *                `write(node,'video_levels_a'/'_b')` — the AUDIO-domain
- *                outputs of a video→audio module. Unmounted, the levels
- *                freeze at whatever was last sampled (or never leave zero),
- *                so its audio outs are dead in the common case. Same seam,
- *                same fix; it is a DERIVED member of this set, not a
- *                judgement call (see the gate).
  *   rasterize    the card reads `readParam` (the knob PLUS the engine's own
  *                per-port CV tap) and pushes `write(node,'cvCombined')`, which
  *                is how a SAME-DOMAIN cv cable reaches a DISPLAY param at all:
@@ -299,6 +292,25 @@ export const DOM_SOURCE_LANE_TYPES: ReadonlySet<string> = new Set<string>([]);
  * it: an off-screen card mount was the workaround, and a node-lifetime owner is
  * the fix, exactly as it was for the five DOM-source departures above.
  *
+ * ⚠ AND SYNESTHESIA WITH IT (legacy-removal S1) — the second producer
+ * departure, and the one whose output is NOT A PICTURE.
+ *
+ * In VIDEO mode each copy's four lanes are the R/G/B/Luma channels of whatever
+ * is patched into `{c}_video_in`, and only the main thread can sample a frame:
+ * the worklet has no canvas. So the card resolved the upstream source, blitted
+ * one frame into a 64×48 scratch, averaged it and handed the four numbers to
+ * the worklet, which sample-and-holds them through the whole env/gate/meter
+ * stage. Those numbers are what FORTY-EIGHT output jacks carry in that mode.
+ * `SYNESTHESIA_FRAME_PRODUCER` owns that path now, on graph lifetime.
+ *
+ * ⚠ NOTHING IN THE PIXEL LANE CAN SEE THIS ONE, which is why its verification
+ * lives elsewhere. `card-producer-lifetime.spec.ts` skips its own movement legs
+ * for synesthesia by its own prose — the module's rasters show nothing without a
+ * video source patched in — so a green pixel probe here would mean nothing. The
+ * subject is the LEVELS (`read('snapshot').levelsA/levelsB`) and the jacks
+ * downstream of them; `synesthesia-video-mode.spec.ts` drives ACIDWARP into
+ * `a_video_in` and reads both.
+ *
  * ⚠ AND THE TRACE MOVED WITH IT, WHICH IS THE HALF A READER WILL LOOK FOR. The
  * picture is `modules/scope/ScopeTraceSurface.svelte` now — one renderer for the
  * legacy card, the faceplate body and `GroupCard`'s viz-passthrough mount, where
@@ -322,7 +334,6 @@ export const DOM_SOURCE_LANE_TYPES: ReadonlySet<string> = new Set<string>([]);
 export const CARD_PRODUCER_LANE_TYPES: ReadonlySet<string> = new Set<string>([
   'cube',
   'rasterize',
-  'synesthesia',
   'timelorde',
   'wavesculpt',
 ]);

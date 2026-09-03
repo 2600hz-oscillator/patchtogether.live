@@ -162,9 +162,15 @@ const EXEMPT_CALLS: readonly ExemptCall[] = [
       + 'WebGL drawing buffer.',
   },
   {
-    file: 'SynesthesiaCard.svelte',
+    // ⚠ MOVED FILE, NOT SUBSTANCE (legacy-removal S1) — the same shape as the
+    // four wavesculpt entries below. The cross-domain pixel path left
+    // `SynesthesiaCard.svelte` for `$lib/ui/media/frame-producers.ts` when the
+    // pump became node-lifetime; the CALL is unchanged, so the entry is
+    // re-pointed rather than deleted, and `EXTRA_SCANNED` (see `cardFiles`)
+    // keeps that file inside this sweep's subject.
+    file: '../media/frame-producers.ts',
     receiver: 'ctx2d',
-    firstArg: 'imageSource',
+    firstArg: 'image as CanvasImageSource',
     why:
       'NOT A DISPLAY — an ANALYSIS readback. The very next lines getImageData() this ' +
       'canvas and run videoChannelLevels() over it to derive audio levels. Changing the ' +
@@ -356,6 +362,21 @@ function findResamplingDraws(src: string, file: string): FoundCall[] {
   return out;
 }
 
+/**
+ * Non-`.svelte` files that hold a resampling tap this sweep must keep seeing.
+ *
+ * ⚠ NAMED, AND KEPT SHORT ON PURPOSE. The walk below is `.svelte` under this
+ * directory because that was the whole population when #1846 was filed. The
+ * legacy-removal producer extractions move rAF bodies OUT of cards and into
+ * node-lifetime `.ts` controllers, and a tap that changes file must not fall out
+ * of the subject on the way — which is exactly the failure the four WAVESCULPT
+ * entries above record from when their renderer moved. Following every `.ts`
+ * edge instead would redefine the subject as "the whole app", the blind-gate
+ * failure inverted; naming the destination keeps the population honest and the
+ * reason visible at the point of the edit.
+ */
+const EXTRA_SCANNED = ['../media/frame-producers.ts'] as const;
+
 function cardFiles(): string[] {
   const out: string[] = [];
   const walk = (dir: string): void => {
@@ -366,6 +387,13 @@ function cardFiles(): string[] {
     }
   };
   walk(HERE);
+  for (const rel of EXTRA_SCANNED) {
+    const abs = join(HERE, rel);
+    // ANCHORED: a named file that stops existing is a scan the sweep silently
+    // stopped performing, so it throws rather than skipping.
+    if (!existsSync(abs)) throw new Error(`EXTRA_SCANNED names a missing file: ${rel}`);
+    out.push(abs);
+  }
   return out.sort();
 }
 
