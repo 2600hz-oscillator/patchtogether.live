@@ -744,3 +744,218 @@ What this re-verification adds over the original record: attribution (a run that
 exists in a log someone ran to completion), the explicit heavy-lane collection
 count (258/66), and the time-advance progress probe, which the original battery
 asserted only indirectly through the morph/rotation legs.
+
+---
+
+## Addendum 4 — S1.5: ZERO CARD PRODUCERS (appended 2026-09-03, after cube + rasterize)
+
+Addendum 3 said it in one place: S1 was complete and the fleet was NOT thin,
+because `cube` and `rasterize` — never on the brief's list of seven — were
+still card producers, and S4 cannot delete a fleet containing one. S1.5
+extracted both. **Every producer is node-keyed and no card anywhere is
+load-bearing.** The full nine, by owner shape:
+
+| owner shape | members |
+|---|---|
+| node SOURCE controllers (`$lib/ui/media/node-*-source-registry`) | archivist, cameraInput, loopback (+ the LEG-02 four: videobox, varispeed, peertube, tvLibrarian) |
+| `FrameProducer` callbacks (`$lib/ui/media/frame-producers`) | scope, synesthesia, timelorde, **rasterize** |
+| node-mounted viz surfaces (`NodeVizSurfaceHost`) | wavesculpt, **cube** |
+
+### The sets, read off the tree
+
+| set | members |
+|---|---|
+| `DOM_SOURCE_LANE_TYPES` | **∅** (unchanged) |
+| `CARD_PRODUCER_LANE_TYPES` | **∅** — kept as an export; its EMPTINESS is the statement, and two e2e specs parse it by name |
+| `NODE_FRAME_PRODUCER_TYPES` | `{scope, synesthesia, timelorde, rasterize}` |
+| `NODE_VIZ_SURFACE_TYPES` | `{wavesculpt, cube}` |
+| `HEADLESS_MOUNT_LANE_TYPES` / `FACE_MOUNTS_PRODUCER` / `needsHeadlessSourceMount` / `<HeadlessSourceHost>` | **DELETED** |
+
+### R — rasterize (93c440abd): TWO duties in one body, the first such producer
+
+The card ran the `cvCombined` push (scope's seam — the only path a same-domain
+cv cable has to a display param) AND the painter's advance
+(`advanceOncePerFrame` runs INSIDE `read('imageData')`, and the bridge only
+pulls when a downstream video edge exists). The dock body ran a PASTED second
+copy of both. `RASTERIZE_FRAME_PRODUCER` owns both now — push before read, the
+#1664 order, held at source level by `rasterize-face-model.test.ts`, which used
+to assert the OPPOSITE (that the body carries the push) and now asserts neither
+surface does. The surfaces are viewers: read the frame, blit; the read's own
+advance coalesces on the module's 8 ms guard. The card's meter-frame
+subscription finally carries its canvas — the visibility gate was only ever
+wrong there while the blit and the heartbeat shared a lifetime.
+
+⚠ THE PIXEL PROBE IS BLIND FOR THIS MODULE BY CONSTRUCTION, and the fixture
+says so: sampling the video out calls `drawFrame`, which itself advances the
+painter, so a dead producer still shows the asking instrument a moving
+picture. The honest instruments are `read('drawParams')` (the inverse of the
+push; the e2e leg drives an LFO into SCAN) and `read('cursor')` — a pure
+getter, no advance — which the throwaway progress probe sampled.
+
+### C — cube: the wavesculpt shape, plus the problem wavesculpt never had
+
+Same seam (`installCubeFrameDrawer`; no drawer ⇒ cube.ts fills SOLID BLACK,
+#1724), same attest constraint (`CubeVizSurface.svelte` AND `cube.ts` are both
+in the basis), same answer: the component stays a component, the NODE mounts
+it, the views CLAIM. `CubeVizSurface.svelte` and `cube.ts` are byte-identical
+to origin/main (`git diff` 0 lines each) and the hash is unmoved at
+`2f505b42…`.
+
+**What cube added: the views never agreed on a SHAPE.** The legacy card
+mounted the renderer at 320×260/150×120/162×120 with no orbit; the hero at
+300×210/147×104/147×104 with drag-to-orbit — both owner-reviewed looks, and
+the surface cannot grow a resize path (bytes pinned). So the host mounts PER
+WINNING CLAIMANT KIND: the registry grew `onWinner` (winner-priority
+subscription, unit-tested), `cube/cube-view-mounts.ts` is the one home for the
+size profiles and the orbit action (moved out of `CubeHeroPanel` verbatim,
+def-clamped), and a `{#key}` re-mounts the surface when the kind flips. The
+parked shape is `card`, which preserves the exact bridge-aspect quirk the old
+headless-hosted card gave `video_out` (`renderGl` reads the visible canvas
+aspect for its projection — those numbers reach the port). The remount lands
+where the old design churned anyway: dock open/close used to mount/destroy a
+whole second surface, drawer steal and all. Orbit exists on the dock mount
+alone, so the legacy card keeps its historical no-orbit canvas.
+
+**Two build findings the next builder should not rediscover:**
+
+1. ⚠ **PUBLISH A HOST-OWNED `display:contents` WRAPPER, NEVER THE SURFACE'S
+   OWN ROOT, when the mount can re-key.** A `{#key}` block's anchors live in
+   its container: with the surface's root published and adopted away, the
+   teardown removed NOTHING and two `cube-3d-viz` canvases carried one testid
+   (measured, dock open, count 2 — the old one a dead component's frozen DOM).
+   With the wrapper published, every anchor, teardown and creation happens
+   INSIDE the element the registry moves — the re-key rebuilds the surface in
+   place, in the adopting view, no park round-trip, no orphaned DOM, and
+   `display:contents` keeps it layout-invisible.
+2. ⚠ **DEFER THE `onWinner` → `$state` WRITE.** The callback fires
+   synchronously inside the claiming view's `$effect` (or its teardown); a
+   cross-component `$state` write mid-flush threw and ABORTED THE DOCK'S
+   TEARDOWN — the pane simply never closed. One `queueMicrotask` fixes it;
+   consecutive winner moves queue in order and each re-checks.
+
+### The retirement the anchors prescribed
+
+Emptying `CARD_PRODUCER_LANE_TYPES` fired the gates whose own failure messages
+were written for this day — "the legs that read it should be retired with the
+host itself, not re-pointed at a synthetic type" — so this slice retires, in
+one commit with the extraction: `<HeadlessSourceHost>` (file deleted; Canvas
+usage, `headlessSourceNodes`, `fullViewShowsFaceInstead` gone),
+`needsHeadlessSourceMount`, `HEADLESS_MOUNT_LANE_TYPES`,
+`FACE_MOUNTS_PRODUCER`, and the unit describes that drove them. What survives
+is red-able: both populations EMPTY (asserted in three suites), one node owner
+per former member (the eight-set disjointness gate), and the derivation still
+CLASSIFIES a producer card via synthetic bodies fed through the SAME
+`seamHitFor` — so a card regrowing a seam re-enrols and reds the empty
+`toEqual`. `face-migration-inventory`'s `cardOwnedSourceTypes` evidence field
+retired with its own anchor's blessing; `worker-eligibility`'s card-producer
+arm keeps a synthetic-INJECTED control (its inputs are parameters, so the
+classifier still must fire). `dom-source-modules.ts` now exports exactly two
+empty sets and a retirement record.
+
+⚠ TWO PARSE TRAPS FOR ANYONE EDITING THAT FILE: (1) e2e `parseLaneSet` extracts
+members with a bare quote-pair regex, so an APOSTROPHE in a comment INSIDE a
+parsed array literal silently eats the next member — it cost one red run
+before the literal grew a no-apostrophes warning. (2)
+`parseLaneSet('CARD_PRODUCER_LANE_TYPES')` needed `mayBeEmpty: true` — the
+same collection-time-throw class that took the whole lane down in §A3.
+
+### The e2e denominator after S1.5
+
+`3082 → 3079 (rasterize: −4 derived CARD_PRODUCER legs, +1 FrameProducer leg)
+→ 3077 (cube: −4, +2 viz legs) tests in 506 files.` No spec file added or
+removed; §X's inversion denominator unchanged at 423. The viz half of
+`card-producer-lifetime.spec.ts` is now fixture-driven per type
+(deny-by-default, like the FrameProducer half): canvas testid, card hold,
+DRS-seam globals, and a DRIVE for a module whose stillness is legitimate —
+cube's picture is param-driven, so its motion leg patches an LFO into
+`slice_ry`, and its stillness at rest is pinned from the other side by the
+zdet determinism probe.
+
+### Corrections for S2/S4
+
+1. **S4's producer blocker is CLEARED, and more than cleared**: addendum 3
+   item 3 said `<HeadlessSourceHost>` "cannot be deleted while cube and
+   rasterize are card producers" — it is ALREADY DELETED here, so S4's fleet
+   delete has no producer precondition left at all. `workflow-shell-video`'s
+   host leg is at its terminal form (NO host for anyone, node-viz host for the
+   pair, per-row card-absence selectors that cannot go vacuous).
+2. §A1 stands: re-derive the 44 card-reading face-model tests before S4
+   (cube-face-model and rasterize-face-model were touched here and still read
+   their cards — thin views, still present until S4).
+3. §A5 (the vocabulary rename) stands for S5, now easier: the file is two
+   empty sets and a record.
+4. Addendum 3 item 4 (`paintsCanvas` third branch) unchanged — cube's hero
+   CLAIMS now, but it is a shell-cells panel, not a `fullViewBody`, so the
+   branch keeps its synthetic pair.
+5. §Z's `grouping-phase3.spec.ts:116` dev-vs-preview red is UNCHANGED and was
+   re-confirmed the same way: red once on a dev-server run this slice, green
+   under the preview build (which is what CI targets). ⚠ Related trap: bare
+   `npx playwright test` targets the DEV server (5173) — the preview env is
+   `E2E_USE_PREVIEW=1` (playwright boots `vite preview` at 4173) or
+   `task e2e:one` with `E2E_PREVIEW=1`. Half this slice's first e2e pass ran
+   against dev before that was noticed; everything was re-run under preview.
+6. **VRT is still not locally judgeable.** The cube face scenes should be
+   pixel-stable BY CONSTRUCTION (same canvas sizes per view, a
+   `display:contents` wrapper, and `zdet-g2-{compact,dock}-cube` measured
+   DETERMINISTIC with maxDelta=0 on this branch) — but the six cube pages and
+   the module-level scenes need the Linux CI lane and an owner preview before
+   anyone calls them unchanged, exactly as recorded for wavesculpt.
+
+### VERIFICATION (S1.5, cube commit), verbatim
+
+```
+task typecheck                        4126 files, 0 errors, 0 warnings; e2e tsc clean
+task lint                             eslint gate PASS, shellcheck gate PASS
+task test (FULL, caches cleared)      web 967 files / 19322 passed | 6 skipped
+                                      dsp 1228 · server 159 · art 16 · scripts 644 — exit 0
+task webgl:attest:check               hash 2f505b42… UNCHANGED, attestation matches
+CubeVizSurface.svelte / cube.ts       git diff origin/main...HEAD = EMPTY (both basis files)
+cd e2e && npx playwright test --list  Total: 3077 tests in 506 files
+
+Heavy lane (E2E_USE_PREVIEW=1 preview build w/ VITE_E2E_HOOKS=1,
+E2E_WEBGL_HEAVY=only, --workers=1, real macOS GPU):
+  card-producer-lifetime + wavesculpt REPEAT=3   75 passed (8×3 + 17×3), 2.3m
+
+Default lane (same preview env):
+  cube.spec.ts REPEAT=3               9 passed (3×3)
+  11-file batch (in-card-title, collapse-keeps-playing, extras-producer-
+  lifetime, docs-virtual-module, grouping-phase3, workflow-channel-columns,
+  io-spec-consistency, workflow-shell-video, workflow-surfaces,
+  timelorde-pinned-source, gamepad)   298 passed, 24 skipped (all pre-existing
+                                      named exemptions/parks)
+  --grep cube                         31 passed, 3 skipped (pre-existing)
+  --grep rasterize                    6 passed, 2 skipped (pre-existing)
+
+ZDET DETERMINISM PROBE (VRT_PROBE=1): zdet-g2-compact-cube and
+  zdet-g2-dock-cube both DETERMINISTIC — diff@1=0 diff@26=0 maxDelta=0,
+  settled, 0 pageerrors. The look is byte-stable across two full boots, which
+  is the strongest local statement available that ownership moved and the
+  picture did not.
+
+POSITIVE CONTROLS (measured, then reverted, preview rebuilt each way):
+  rasterize: RASTERIZE_FRAME_PRODUCER.frame() no-opped → its drawParams e2e
+    leg AND a throwaway cursor-instrument probe both FAILED; revert → green.
+  cube: vizSurfaceNodes filtered to exclude cube in Canvas → BOTH cube viz
+    legs FAILED (no canvas anywhere / adoption impossible); revert → green.
+
+DOOM: untouched — no DOOM file appears in either diff, and the sweep that
+retired the headless machinery names its exclusions explicitly.
+```
+
+### ⚠ What this verification structurally cannot see
+
+1. **SwiftShader timings.** Real macOS GPU throughout; the handoff/black-run
+   budgets are frame-counted and renderer-tolerant, but nothing here measured
+   the cube REMOUNT (kind flip) under software rendering.
+2. **VRT** — stated above.
+3. **One non-reproducing observation, recorded rather than hidden:** in ONE
+   combined heavy run (dev-server env, before the preview re-run), wavesculpt's
+   "BLINK modes 1+2" leg read lit=0 once (1 of 9 runs of that leg across the
+   session). Solo REPEAT=6 clean, combined REPEAT=3 re-runs clean on both
+   servers. Best available attribution is GL-context churn across a long
+   single-browser session (the leg's own glPixelsUsable guard passed while the
+   surface's context init failed) — an instrument-environment class, not a
+   product regression; nothing was re-pinned on its account.
+4. **A third claimant kind** still inherits `dock` or `card` by number unless
+   ranked deliberately — unchanged from addendum 3, now with the extra note
+   that a third KIND would also need a `CUBE_VIEW_SIZES` row.

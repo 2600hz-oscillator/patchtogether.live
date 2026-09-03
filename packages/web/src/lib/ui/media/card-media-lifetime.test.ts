@@ -111,10 +111,7 @@ import { listModuleDefs } from '$lib/audio/module-registry';
 import { listVideoModuleDefs } from '$lib/video/module-registry';
 import { listMetaModuleDefs } from '$lib/meta/module-registry';
 import { conventionalCardName, type CardDefLike } from '$lib/ui/modules-card-map';
-import {
-  DOM_SOURCE_LANE_TYPES,
-  HEADLESS_MOUNT_LANE_TYPES,
-} from '$lib/ui/workflow/dom-source-modules';
+import { DOM_SOURCE_LANE_TYPES } from '$lib/ui/workflow/dom-source-modules';
 import { EXTRAS_PRODUCER_TYPES } from '$lib/ui/media/extras-producers';
 
 const CARD_DIR = fileURLToPath(new URL('../modules/', import.meta.url));
@@ -159,9 +156,12 @@ type ExtrasOwner =
   /** $lib/ui/media/node-extras-registry reproduces the push from persisted
    *  `node.data`. Cross-checked: the type must be in EXTRAS_PRODUCER_TYPES. */
   | 'node-lifetime-producer'
-  /** <HeadlessSourceHost> keeps the real card alive off-screen. Cross-checked:
-   *  the type must be in HEADLESS_MOUNT_LANE_TYPES. */
-  | 'headless-card-mount'
+  // ⚠ `'headless-card-mount'` WAS HERE AND IS RETIRED (legacy-removal S1.5)
+  // with `<HeadlessSourceHost>` itself: no entry declared it any more (the two
+  // prose notes below record the last ones leaving), and a verdict whose
+  // cross-check set is retired would be undeclarable anyway. If a card ever
+  // regrows an extras push the honest owners are the checkable
+  // 'node-lifetime-producer' or the trusted 'module-renders-itself'.
   /** The module's own draw is unconditional and the extras channel carries only
    *  HUMAN INPUT (keys, a boot gesture, a reset) — there is nothing a registry
    *  could reproduce, and "no picture until someone plays it" is the designed
@@ -366,12 +366,6 @@ function ownerOffenders(cards: readonly string[]): string[] {
       out.push(
         `${base}: declares 'node-lifetime-producer' but '${type}' has no entry in ` +
           'EXTRAS_PRODUCERS ($lib/ui/media/extras-producers)',
-      );
-    }
-    if (verdict.owner === 'headless-card-mount' && !HEADLESS_MOUNT_LANE_TYPES.has(type)) {
-      out.push(
-        `${base}: declares 'headless-card-mount' but '${type}' is not in ` +
-          'HEADLESS_MOUNT_LANE_TYPES, so nothing keeps its card alive',
       );
     }
   }
@@ -662,8 +656,11 @@ describe('cards on a private node channel must not tear their media down on UNMO
       expect(type, `${base} must resolve to a registered module def`).toBeTruthy();
       // If one of these ever gains a structural owner, the verdict is no longer
       // the trusted kind and must be re-declared as the checkable kind.
+      // (The headless-mount union used to be the second structural owner this
+      // checked; it is retired — extras pushes are the only structural owner
+      // kind left for this channel.)
       expect(
-        EXTRAS_PRODUCER_TYPES.has(type!) || HEADLESS_MOUNT_LANE_TYPES.has(type!),
+        EXTRAS_PRODUCER_TYPES.has(type!),
         `${base} declares 'module-renders-itself' but '${type}' now HAS a structural owner — ` +
           're-declare it as that owner so the check stops being a judgement',
       ).toBe(false);

@@ -226,12 +226,10 @@
   import { forcedUnmigrated, installForcedPlaceholderHook } from '$lib/dev/forced-placeholder.svelte';
   // DOM-SOURCE seam: a video module whose source lives on its CARD stays alive
   // in an off-screen host when the shell swaps its lane card away.
-  import { HEADLESS_MOUNT_LANE_TYPES, DOM_SOURCE_LANE_TYPES, CARD_PRODUCER_LANE_TYPES, FACE_MOUNTS_PRODUCER, needsHeadlessSourceMount } from '$lib/ui/workflow/dom-source-modules';
   import { cameraStatus } from '$lib/ui/media/camera-status-registry';
   import { loopbackStatus } from '$lib/ui/media/loopback-status-registry';
   import { archivistStatus } from '$lib/ui/media/archivist-status-registry';
   import { loopbackCropPump } from '$lib/ui/media/loopback-crop-pump';
-  import { groupCardHostsChildCard } from '$lib/ui/modules/group-viz-hosts';
   import { nodeMedia } from '$lib/ui/media/node-media-registry';
   import { nodeExtras } from '$lib/ui/media/node-extras';
   import { nodeVideoSource } from '$lib/ui/media/node-video-source.svelte';
@@ -418,7 +416,6 @@
   // full-width RACKLINE faceplate, NOT routed through DockCardHost's card flex).
   import DockFullView from '$lib/ui/dock/DockFullView.svelte';
   // Off-screen lifecycle host for DOM-source video modules the shell swapped out.
-  import HeadlessSourceHost from '$lib/ui/workflow/HeadlessSourceHost.svelte';
   import NodeVizSurfaceHost from '$lib/ui/media/NodeVizSurfaceHost.svelte';
   import { SHELL_TILE_W, SHELL_TILE_H_SLOT, SHELL_VIDEO_ZONE_TILE_INSET_Y, videoZonePackedXs, spineCableVar } from '$lib/ui/workflow/module-shell-model';
   // DOCKING P2.5b: the pan-gesture screen-space cable tail (stub → rail).
@@ -2474,55 +2471,11 @@
     return out;
   });
 
-  /** Modules the shell swapped out of their lane whose ENGINE-VISIBLE state
-   *  lives on their CARD — the nodes <HeadlessSourceHost> must keep mounted.
-   *  Two halves, one union (see $lib/ui/workflow/dom-source-modules):
-   *    - DOM_SOURCE_LANE_TYPES — the card-owned `<video>`/`<img>` must stay
-   *      ATTACHED to the engine handle (node registration is graph-driven and
-   *      already UI-independent, but SOURCE attachment was card-mount-driven,
-   *      so camera/videobox/… → OUTPUT was patched-but-black under `?shell=1`);
-   *    - CARD_PRODUCER_LANE_TYPES (#1587) — the card IS the producer: its rAF
-   *      loop is the only writer of the module's picture/analysis, so
-   *      wavesculpt/timelorde/synesthesia emitted black on a SAVED rack the
-   *      user never touched.
-   *
-   *  Uses the SAME pure lane decision the flowNodes derivation uses, so the two
-   *  can never disagree: 'legacy' (`?shell=legacy`, or a NON_SHELL carve-out
-   *  like cameraInput/videoOut) and 'stub' (real card in the dock rail) both
-   *  render the card SOMEWHERE and are excluded — only 'shell'/'placeholder'
-   *  qualify. Additionally excluded:
-   *    - a node whose full faceplate is OPEN in the dock, BECAUSE DockFullView
-   *      mounts its real card there — a second mount would run two media
-   *      elements for one node and the first to unmount would detach the
-   *      survivor's source.
-   *      ⚠ AND THAT IS A CONDITION, NOT A CONSTANT. `DockFullView` mounts the
-   *      real card only for an UN-MIGRATED module; a promoted one gets
-   *      `<ModuleShell>` and no card at all. So a promoted DOM-source module
-   *      (cameraInput) still needs its host WHILE its faceplate is open — see
-   *      `fullViewShowsFaceInstead` at the site, which is where the argument and
-   *      its deliberate scope live,
-   *    - canvas-hidden nodes (pinned drawer / hiddenCard cameras): those render
-   *      no lane card in preview-off EITHER, so hosting them would ADD engine
-   *      state the shell-off rack doesn't have — the opposite of the parity
-   *      this fix exists to guarantee.
-   *
-   *  ⚠ COLLAPSED-GROUP CHILDREN USED TO BE EXCLUDED HERE TOO, on that same
-   *  parity reasoning, and for the DOM-SOURCE half they still are (see
-   *  `needsHeadlessSourceMount`, which is where the argument now lives). For the
-   *  PRODUCER half the exclusion was a hole (#1721): parity requires the two
-   *  shells to AGREE, and BOTH were dark, because the collapsed-child skip in
-   *  the flowNodes derivation below sits OUTSIDE its `shellFaces` branch.
-   *  Measured on the pre-fix tree, wavesculpt.video_out → VIDEO OUT, 20 rAF
-   *  frames of the module's own drawFrame into a 64×48 probe: `nonBlack
-   *  170/3072, maxLuma 203, 20 distinct signatures` before the group, `0/3072,
-   *  0, 1 signature` after it collapsed — identical in the default shell and
-   *  under `?shell=legacy`.
-   *
-   *  ⚠ SO THIS DERIVATION IS NO LONGER A NO-OP UNDER `?shell=legacy`, and the
-   *  `if (!shellFaces) return []` short-circuit that used to open it had to go.
-   *  It is still a no-op for every arm except the collapsed-group one:
-   *  `laneRenderKind` can only return 'legacy'/'stub' when shellFaces is false,
-   *  and neither mounts. */
+  /* The `headlessSourceNodes` derivation STOOD HERE (legacy-removal S1.5
+   * retired it with `<HeadlessSourceHost>`): it kept a LOAD-BEARING CARD
+   * mounted off-screen for the DOM-source and card-producer modules. Both
+   * populations are node-owned now, so no card mount is engine-visible — see
+   * the retirement record in `$lib/ui/workflow/dom-source-modules.ts`. */
   /** NODE-OWNED MEDIA teardown. A DOM-source module's <video>/<img>, object URL
    *  and MediaStream are owned by $lib/ui/media/node-media-registry so they
    *  survive a CARD unmount (expand/collapse moves the real card between the
@@ -2864,141 +2817,6 @@
     snapshot.nodes.filter((n) => NODE_VIZ_SURFACE_TYPES.has(n.type)),
   );
 
-  let headlessSourceNodes = $derived.by<ModuleNode[]>(() => {
-    const collapsed = collapsedGroupIds;
-    const out: ModuleNode[] = [];
-    for (const n of snapshot.nodes) {
-      if (!HEADLESS_MOUNT_LANE_TYPES.has(n.type)) continue;
-      // ⚠ THE CANVAS-HIDDEN ARM OF #1721 — #1754. A canvas-hidden node is
-      // skipped on the premise that SOME OTHER surface mounts its real card.
-      // For the M/E/C drawer trio that premise is true (the dock rail mounts
-      // it). For a CARD PRODUCER it is FALSE, and the measurement is flat:
-      //
-      //   A fresh `/rack` auto-spawns `pinned-timelorde` (`data.pinned: true`,
-      //   `presence: 'type'` — see graph/workflow-pins). MEASURED on this tree,
-      //   BOTH shells: `.mod-card.timelorde-card` = 0 mounts, headless hosts for
-      //   timelorde = 0. Its producer card has never been mounted anywhere, so
-      //   `write(node,'displayFrame')` never runs and `video_out` is the idle
-      //   field forever — `nonBlack 0/3072, maxLuma 8, 1 distinct signature over
-      //   30 frames`, recorded in card-producer-lifetime.spec.ts, which names
-      //   this exclusion as the half it does not cover.
-      //
-      // ⚠ AND IT IS NOT THE PINNED-DRAWER STORY AN EARLIER DRAFT OF THIS COMMENT
-      // TOLD. timelorde is a WORKFLOW_PINNED_SURFACES module, not one of the
-      // M/E/C drawer occupants: it has NO drawer and NO rail, so
-      // `dockRailRendersFace` never fires for it and the defect has nothing to
-      // do with promotion. Gating this on `shellFaces && migrated` would have
-      // fixed exactly half of it — the default shell after the face lands —
-      // and left `?shell=legacy` dark, which is the opposite of the parity the
-      // skip exists to protect. Both shells are equally broken today; both are
-      // fixed here, so they still agree.
-      //
-      // Scoped on CARD_PRODUCER membership, exactly as #2148 scoped its sibling:
-      // hidden CAMERAS are the other kind of canvas-hidden node and are
-      // DOM_SOURCE, so they are untouched, and the trio are not producers.
-      // canvas-hidden ∩ CARD_PRODUCER is {timelorde} today.
-      //
-      // ⚠ AND THE DECISION IS NOT DUPLICATED HERE. The `continue` this replaces
-      // encoded "is this a producer?" in the caller, beside a pure function that
-      // already answers exactly that question for exactly this case:
-      // `needsHeadlessSourceMount`'s `laneOmitsNode` arm returns
-      // `CARD_PRODUCER_LANE_TYPES.has(type)`. So canvas-hidden is folded INTO
-      // `laneOmitsNode` below — it is the same fact ("the lane emits no node at
-      // all for this one") — and the hidden CAMERAS keep their old answer from
-      // the one place that decides it, rather than from a second copy here.
-      // ⚠ THE DOCK FULL VIEW ONLY MOUNTS THE REAL CARD FOR AN UN-MIGRATED
-      // MODULE, and this used to be an unconditional `continue`. See the
-      // `dockFullViewMountsCard` note below — the exclusion moved into
-      // `hostedElsewhere`, which is the input that already means exactly this.
-      const parentGroupId = (n.data as { parentGroupId?: string } | undefined)?.parentGroupId;
-      // The lane emits NO node for a collapsed group's child (see the flowNodes
-      // derivation below), in EITHER shell — so `kind` describes a card that is
-      // never reached, and the decision needs to know that rather than infer it.
-      // A CANVAS-HIDDEN node (pinned singleton / `hiddenCard` camera) is the
-      // same fact by a different route: the flowNodes derivation skips it, so
-      // no lane node is emitted for it either, in either shell.
-      const laneOmitsNode =
-        (!!parentGroupId && collapsed.has(parentGroupId)) || isCanvasHiddenNode(n);
-      const kind = laneRenderKind({
-        shellFaces,
-        userDocked: !!dockStore.entryFor(n.id),
-        type: n.type,
-        hasCard: isShellSwappable(n.type, cardTypeSet.has(n.type)),
-        migrated: laneMigrated(n.type),
-      });
-      // ⚠ A DOCK FULL VIEW DOES NOT ALWAYS MOUNT THE REAL CARD, and this used
-      // to be an unconditional `continue` that assumed it always does.
-      // `DockFullView.svelte` is `{#if migrated} <ModuleShell/> {:else}
-      // <CardComponent/>`: for a PROMOTED module the tray paints the FACEPLATE,
-      // and the card is nowhere in it.
-      //
-      // The old premise held for every member of this set on the day it was
-      // written, because NO card-owned-source module was promoted yet — a gate
-      // whose precondition was the ABSENCE of the feature. Promoting one turns
-      // it false: expanding the faceplate would unmount the card from every
-      // surface at once, and on a CAPTURE source that is the acquire command's
-      // owner vanishing exactly while the user looks at the surface offering it.
-      //
-      // ⚠ SCOPED TO THE DOM-SOURCE HALF ON PURPOSE. The producer half (cube,
-      // rasterize — the two promoted members today) is left EXACTLY as it was,
-      // and not because hosting them would be wrong: because it would be
-      // UNMEASURED. Their faces mount the producing surface through the hero
-      // cell (`CubeVizSurface` IS cube's renderer, per dom-source-modules.ts),
-      // so they are not dark in the tray, and adding a second mount of a card
-      // that installs a frame drawer is a change that needs its own measurement
-      // rather than a ride-along. This decision is already channel-aware for the
-      // same kind of reason — `needsHeadlessSourceMount`'s `laneOmitsNode` arm
-      // returns `CARD_PRODUCER_LANE_TYPES.has(type)`.
-      //
-      // ⚠ AND ON THE DOM-SOURCE HALF IT CANNOT DOUBLE-MOUNT, which is the exact
-      // hazard the original exclusion existed for: `nodeMedia` adoption is a
-      // TRANSFER with an owner-checked release, so there is one element per
-      // (node, slot), two hosts cannot own two elements, and a stale teardown
-      // cannot strand the live one.
-      // ⚠ THE PRODUCER HALF IS NO LONGER LEFT ALONE, and the paragraph above now
-      // records why it USED to be rather than why it still is. The premise was
-      // that a promoted producer's face mounts its renderer (true of cube and
-      // rasterize, the only two at the time). timelorde is the first whose face
-      // only BLITS what the card produces — so with the dock open the card was
-      // unmounted from every surface and the picture froze on the last pushed
-      // bitmap, or on the idle field if none had been pushed yet. Deny by
-      // default now: a faced producer KEEPS its host, and the two that must not
-      // are named in `FACE_MOUNTS_PRODUCER` with the reason they can.
-      const fullViewShowsFaceInstead =
-        dockStore.isFullView(n.id) &&
-        laneMigrated(n.type) &&
-        (DOM_SOURCE_LANE_TYPES.has(n.type) ||
-          (CARD_PRODUCER_LANE_TYPES.has(n.type) && !FACE_MOUNTS_PRODUCER.has(n.type)));
-      if (
-        needsHeadlessSourceMount({
-          kind,
-          type: n.type,
-          laneOmitsNode,
-          // Two producers of "some other live surface already mounts this
-          // node's REAL card":
-          //   * the DOCK FULL VIEW — unless it is showing a faceplate instead
-          //     (see above), and
-          //   * GroupCard, which hidden-mounts a viz-passthrough child's
-          //     surface for exactly as long as the group is collapsed.
-          //
-          // ⚠ THE SECOND ONE HAS NO LIVE SUBJECT AS OF legacy-removal S1, and it
-          // stays anyway. `GROUP_VIZ_HOST_TYPES` is `{scope}` and scope left
-          // `CARD_PRODUCER_LANE_TYPES` when its push moved to the node, so the
-          // two sets no longer intersect and this arm cannot fire today. It is
-          // one correct term; deleting it because today's population cannot
-          // reach it is how the next viz-passthrough opt-in ships double-mounted.
-          // `dom-source-modules.test.ts` keeps the arm honest with a synthetic
-          // input rather than with a member.
-          hostedElsewhere:
-            (dockStore.isFullView(n.id) && !fullViewShowsFaceInstead) ||
-            (laneOmitsNode && groupCardHostsChildCard(n.type)),
-        })
-      ) {
-        out.push(n);
-      }
-    }
-    return out;
-  });
 
   // A VIDEO-domain module expanded in the dock full-view holds a HARD render
   // lease for as long as the faceplate is open: the dock mount is a live
@@ -10022,23 +9840,19 @@
       {minimapOpen ? '▾ map' : '▴ map'}
     </button>
     <AwarenessLayer {provider} />
-    <!-- `?shell=1` DOM-SOURCE LIFECYCLE: a video module whose pixels come from a
-         card-owned <video>/<img> (camera / videobox / archivist / …) loses its
-         SOURCE when the shell swaps its lane card for a tile — the engine node
-         exists but emits nothing, so the whole downstream chain is black. Keep
-         those cards mounted OFF-SCREEN so `attachExternalSource` still runs and
-         the engine's source set matches preview-off exactly. Renders NOTHING
-         when the list is empty (always, preview-off). -->
-    <HeadlessSourceHost
-      nodes={headlessSourceNodes}
-      nodeTypes={nodeTypes as unknown as Record<string, unknown>}
-    />
-    <!-- NODE-LIFETIME VIZ SURFACES (legacy-removal S1). One `<canvas>` per
-         wavesculpt node, parked off-screen, owning the module's cross-domain
-         frame drawer and the DRS step seam — so `video_out` carries a picture
-         on a saved rack with NO card and NO faceplate mounted anywhere. The
-         legacy card and the dock body CLAIM that canvas to show it; neither
-         creates one. Renders NOTHING when no such node exists. -->
+    <!-- `<HeadlessSourceHost>` STOOD HERE (legacy-removal S1.5 retired it):
+         it kept a LOAD-BEARING CARD mounted off-screen for the DOM-source and
+         card-producer modules. Both populations are node-owned now — the
+         registries above and the viz hosts below — so there is no card left
+         whose mount the engine state depends on. See the retirement record in
+         `$lib/ui/workflow/dom-source-modules.ts`. -->
+    <!-- NODE-LIFETIME VIZ SURFACES (legacy-removal S1). One surface per
+         wavesculpt/cube node, parked off-screen, owning the module's
+         cross-domain frame drawer and the DRS step seam — so `video_out`
+         carries a picture on a saved rack with NO card and NO faceplate
+         mounted anywhere. The legacy card and the dock views CLAIM that
+         element to show it; none creates one. Renders NOTHING when no such
+         node exists. -->
     {#each vizSurfaceNodes as vs (vs.id)}
       <NodeVizSurfaceHost nodeId={vs.id} type={vs.type} />
     {/each}

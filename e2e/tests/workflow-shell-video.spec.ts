@@ -1529,13 +1529,15 @@ test.describe('?shell=1 video CHAIN parity', () => {
     // went red exactly as the paragraph above predicted it would — caught here
     // rather than on CI because the branch had not run one yet.
     //
-    // The subject is now `cube`, from the PRODUCER half
-    // (`CARD_PRODUCER_LANE_TYPES`): a module whose card IS the producer rather
-    // than the source-attacher. That is a different reason for the same
-    // requirement, and it exercises the identical arm of
-    // `needsHeadlessSourceMount` — which is the property this test owns. cube is
-    // FACED, so its lane tile is `module-shell`; the wait below already accepts
-    // either kind for exactly that reason.
+    // ⚠ AND A FIFTH TIME, TO ITS TERMINAL FORM (legacy-removal S1.5). `cube`
+    // was the last card producer; its renderer moved to `NodeVizSurfaceHost`
+    // and `<HeadlessSourceHost>` is DELETED, so the positive half of this test
+    // — "a card-owned module GETS a host" — has no possible subject and no
+    // possible mechanism. Its own prose called this end state at P3: "when the
+    // set empties, this test's subject is gone for good". What survives is the
+    // inversion, asserted per-module below: the lane shows a tile, NO host
+    // exists, NO card is mounted anywhere, and (for the viz-surface pair) the
+    // node's own off-screen owner is what replaced the mount.
     await injectPatch(page, [{ id: 'cube1', type: 'cube', position: { x: -1200, y: 5100 } }]);
 
     // The LANE still shows the uniform tile (the shell look is preserved — this
@@ -1546,15 +1548,17 @@ test.describe('?shell=1 video CHAIN parity', () => {
         + '"not the verbatim legacy card back", which a promotion does not change)',
     ).toHaveCount(1);
 
-    // …while its REAL card is mounted in the off-screen lifecycle host, so its
-    // producer still runs.
-    const host = page.locator('[data-testid="headless-source-host"][data-node-id="cube1"]');
-    await expect(host, 'cube gets an off-screen lifecycle host').toHaveCount(1);
-    await expect(host, 'the host mounts the REAL cube card').toHaveAttribute('data-node-type', 'cube');
+    // …with the NODE-OWNED surface host where the headless card mount used to
+    // be, and no card anywhere. `card-producer-lifetime.spec.ts` owns the
+    // pixels; this leg owns the ownership.
     await expect(
-      host.locator('.mod-card.cube-card'),
-      "the hosted card is the module's real card, not a stub",
+      page.locator('[data-testid="node-viz-surface"][data-node-id="cube1"]'),
+      "cube's renderer is mounted by the NODE (NodeVizSurfaceHost), not by any card or host",
     ).toHaveCount(1);
+    await expect(
+      page.locator('[data-testid="headless-source-host"]'),
+      'a headless source host exists — the component was deleted in S1.5, so ANY match means it came back',
+    ).toHaveCount(0);
 
     // ── THE CONVERTED MODULE, asserted as its own claim ──────────────────────
     //
@@ -1594,17 +1598,26 @@ test.describe('?shell=1 video CHAIN parity', () => {
     // `loopback`, `cameraInput` and `archivist` took their sources to node
     // controllers; `scope`, `synesthesia` and `timelorde` took their per-frame
     // PUSH to `$lib/ui/media/frame-producers`. Both halves get no host.
+    // ⚠ ROWS CARRY A FULL CSS SELECTOR NOW, not a testid: `cube` and
+    // `rasterize` joined in S1.5 and NEITHER card stamps a `data-testid` on
+    // its root — cube's is `.mod-card.cube-card` and rasterize's root class is
+    // the generic `.vcard`, so their rows anchor on an element unique to the
+    // card (the viz hold; the card canvas). A selector that matches nothing
+    // would pass vacuously, certifying exactly the state this loop refuses —
+    // the tvLibrarian lesson, one column over.
     const converted = [
-      ['vb1', 'videobox', 'videobox-card'],
-      ['vv1', 'videovarispeed', 'videovarispeed-card'],
-      ['pt1', 'peertube', 'peertube-card'],
-      ['tv1', 'tvLibrarian', 'tv-librarian-card'],
-      ['lb1', 'loopback', 'loopback-card'],
-      ['arc1', 'archivist', 'archivist-card'],
-      ['syn1', 'synesthesia', 'synesthesia-card'],
-      ['tl1', 'timelorde', 'timelorde-card'],
+      ['vb1', 'videobox', '[data-testid="videobox-card"]'],
+      ['vv1', 'videovarispeed', '[data-testid="videovarispeed-card"]'],
+      ['pt1', 'peertube', '[data-testid="peertube-card"]'],
+      ['tv1', 'tvLibrarian', '[data-testid="tv-librarian-card"]'],
+      ['lb1', 'loopback', '[data-testid="loopback-card"]'],
+      ['arc1', 'archivist', '[data-testid="archivist-card"]'],
+      ['syn1', 'synesthesia', '[data-testid="synesthesia-card"]'],
+      ['tl1', 'timelorde', '[data-testid="timelorde-card"]'],
+      ['ras1', 'rasterize', '[data-testid="rasterize-canvas"]'],
+      ['cube2', 'cube', '[data-testid="cube-viz-hold"]'],
     ] as const;
-    for (const [nodeId, type, cardTestId] of converted) {
+    for (const [nodeId, type, cardSelector] of converted) {
       await injectPatch(page, [{ id: nodeId, type, position: { x: -1600, y: 5100 } }]);
       await expect(
         page.locator(laneTileSelector(nodeId)),
@@ -1615,24 +1628,10 @@ test.describe('?shell=1 video CHAIN parity', () => {
         `${type} got an off-screen host — its lifecycle is node-owned, so nothing should be keeping its card alive`,
       ).toHaveCount(0);
       await expect(
-        page.locator(`[data-testid="${cardTestId}"]`),
+        page.locator(cardSelector),
         `a ${type} card is mounted somewhere despite the module being converted`,
       ).toHaveCount(0);
     }
-
-    // Exactly ONE mount FOR THIS NODE: a second live <video> would double
-    // getUserMedia/decode and the first to unmount would detach the survivor.
-    //
-    // ⚠ SCOPED TO THE NODE, and that is the whole assertion — it used to count
-    // every host in the DOCUMENT, which said "for the node" while measuring
-    // something else entirely. The seeded rack's own TIMELORDE joined the
-    // headless set in #1587 (its card is the sole writer of its video_out), so
-    // the document count became 2 and this reddened without a single thing
-    // about videobox having changed. A per-node count states what it means and
-    // cannot be moved by an unrelated module joining the set.
-    await expect(
-      page.locator('[data-testid="headless-source-host"][data-node-id="cube1"]'),
-    ).toHaveCount(1);
 
     // ⚠ cameraInput IS HOSTED NOW, AND THIS ASSERTION USED TO SAY THE OPPOSITE.
     // It read:

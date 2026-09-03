@@ -38,9 +38,6 @@ import { laneGlyphFor, hasVideoSurface } from '$lib/ui/workflow/module-shell-mod
 import { STRICT_FACES } from '$lib/ui/workflow/strict-faces';
 import {
   CARD_PRODUCER_LANE_TYPES,
-  FACE_MOUNTS_PRODUCER,
-  HEADLESS_MOUNT_LANE_TYPES,
-  needsHeadlessSourceMount,
 } from '$lib/ui/workflow/dom-source-modules';
 import { NODE_FRAME_PRODUCER_TYPES } from '$lib/ui/media/frame-producers';
 import { rearFieldPlan } from '$lib/ui/workflow/rear-card-model';
@@ -192,27 +189,17 @@ describe('synesthesia face — the VU wall is the picture, and it is a READER', 
     // The pixel path is node-lifetime now, so BOTH halves of that argument are
     // retired at once: there is no host to keep, and no exemption to withhold.
     expect(CARD_PRODUCER_LANE_TYPES.has('synesthesia')).toBe(false);
-    expect(HEADLESS_MOUNT_LANE_TYPES.has('synesthesia')).toBe(false);
-    expect(FACE_MOUNTS_PRODUCER.has('synesthesia')).toBe(false);
-    // ANCHOR: something took ownership. Without this the assertions above are
+    // ANCHOR: something took ownership. Without this the assertion above is
     // also satisfied by the pump having been DELETED.
     expect(NODE_FRAME_PRODUCER_TYPES.has('synesthesia')).toBe(true);
-    // The consequence, asserted at the decision rather than described: NO lane
-    // kind asks for a card mount any more, including the collapsed-group arm
-    // that is not shell-specific.
-    for (const kind of ['shell', 'placeholder', 'legacy', 'stub'] as const) {
-      expect(
-        needsHeadlessSourceMount({ kind, type: 'synesthesia' }),
-        `no host on lane kind '${kind}'`,
-      ).toBe(false);
-    }
-    expect(needsHeadlessSourceMount({ kind: 'shell', type: 'synesthesia', laneOmitsNode: true }))
-      .toBe(false);
-    // PERMANENT NEGATIVE CONTROL — the decision still says YES for a module that
-    // really is card-owned, so the run above is reading membership and not a
-    // function that has started answering `false` for everything.
-    const stillCardOwned = [...CARD_PRODUCER_LANE_TYPES][0]!;
-    expect(needsHeadlessSourceMount({ kind: 'shell', type: stillCardOwned })).toBe(true);
+    // ⚠ The per-lane-kind `needsHeadlessSourceMount` enumeration and its
+    // permanent negative control STOOD HERE and retired with the decision and
+    // `<HeadlessSourceHost>` themselves (legacy-removal S1.5): the producer
+    // population emptied, so there is no card-owned subject left to control
+    // with, and NO module gets an off-screen card on ANY lane kind — the
+    // structural form of what the enumeration asserted. The set-emptiness that
+    // structure rests on is pinned in dom-source-modules.test.ts and in
+    // node-hls-source-registry.test.ts.
   });
 
   it('carries a SCREEN toggle whose state lives on the NODE, never in $state', () => {

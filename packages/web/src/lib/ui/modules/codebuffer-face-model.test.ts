@@ -39,7 +39,7 @@ import { glyphBinding } from '$lib/ui/workflow/shell-glyph-live';
 import { shellCellFor } from '$lib/ui/workflow/shell-cells';
 import { dockFacePlan } from '$lib/ui/workflow/curated-face';
 import { NON_SHELL_LANE_TYPES } from '$lib/ui/workflow/legacy-fallback';
-import { HEADLESS_MOUNT_LANE_TYPES } from '$lib/ui/workflow/dom-source-modules';
+import { CARD_PRODUCER_LANE_TYPES, DOM_SOURCE_LANE_TYPES } from '$lib/ui/workflow/dom-source-modules';
 import {
   CODE_BUFFER_FACE_H,
   CODE_BUFFER_FACE_MIN_W,
@@ -194,10 +194,12 @@ describe('CLAIM 2 — the evaluation survives a rack with no card mounted', () =
   it('NEITHER module is in a lane set that would keep its card alive', () => {
     for (const t of ['clockedRunner', 'livecode']) {
       expect(NON_SHELL_LANE_TYPES.has(t), `${t}: the lane swaps to a face`).toBe(false);
-      // Not in DOM_SOURCE ∪ CARD_PRODUCER, so there is no off-screen
-      // `<HeadlessSourceHost>` mount: after promotion the card is simply GONE.
+      // Not in DOM_SOURCE ∪ CARD_PRODUCER — and since legacy-removal S1.5 the
+      // off-screen `<HeadlessSourceHost>` is retired outright, so after
+      // promotion NO card is kept mounted for ANY module. The two halves are
+      // asserted separately because the union export retired with the host.
       expect(
-        HEADLESS_MOUNT_LANE_TYPES.has(t),
+        DOM_SOURCE_LANE_TYPES.has(t) || CARD_PRODUCER_LANE_TYPES.has(t),
         `${t}: nothing keeps this card mounted, so anything living only on it is deleted`,
       ).toBe(false);
     }

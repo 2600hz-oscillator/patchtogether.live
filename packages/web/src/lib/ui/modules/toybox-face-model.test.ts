@@ -41,8 +41,6 @@ import { STRICT_FACES } from '$lib/ui/workflow/strict-faces';
 import {
   CARD_PRODUCER_LANE_TYPES,
   DOM_SOURCE_LANE_TYPES,
-  HEADLESS_MOUNT_LANE_TYPES,
-  needsHeadlessSourceMount,
 } from '$lib/ui/workflow/dom-source-modules';
 import { NON_SHELL_LANE_TYPES } from '$lib/ui/workflow/legacy-fallback';
 import { EXTRAS_PRODUCER_TYPES } from '$lib/ui/media/extras-producers';
@@ -117,35 +115,21 @@ describe('⚠ THE MEDIA BLOCKER WAS FALSE FOR THIS MODULE — recorderbox’s ar
   // The distinction matters because all three promotions landed in one week and
   // the arguments do not transfer. archivist IS a DOM source and needed a
   // status/command registry so its parked card could stay the sole owner.
-  it('toybox is in NEITHER half of HEADLESS_MOUNT_LANE_TYPES', () => {
+  it('toybox is in NEITHER card-owned half', () => {
     expect(DOM_SOURCE_LANE_TYPES.has('toybox')).toBe(false);
     expect(CARD_PRODUCER_LANE_TYPES.has('toybox')).toBe(false);
-    expect(HEADLESS_MOUNT_LANE_TYPES.has('toybox')).toBe(false);
   });
 
-  it('so NO card is mounted anywhere after promotion — there is no headless host', () => {
-    // Both shell kinds, and the two arms that could still produce a mount.
-    for (const kind of ['shell', 'placeholder'] as const) {
-      expect(needsHeadlessSourceMount({ kind, type: 'toybox' })).toBe(false);
-    }
-    expect(needsHeadlessSourceMount({ kind: 'shell', type: 'toybox', laneOmitsNode: true })).toBe(false);
-    // ⚠ POSITIVE CONTROL ON THE SAME PREDICATE, so a passing row above cannot be
-    // the function having stopped answering. Its subject was `archivist`, which
-    // stopped needing a host on 2026-09-03 (legacy-removal S1 moved its source
-    // to a node controller) — and a control whose subject converts is a control
-    // that silently stops controlling, which is exactly the failure this leg
-    // guards against in the other direction. It was re-pointed to `wavesculpt`,
-    // whose renderer left the card one slice later (legacy-removal S1/7) — so
-    // the subject is DERIVED now rather than named a third time. Any member of
-    // the union proves the same thing: the predicate is still answering TRUE for
-    // something, so toybox's FALSE above is a fact about toybox.
-    const stillHosted = [...HEADLESS_MOUNT_LANE_TYPES][0];
-    expect(
-      HEADLESS_MOUNT_LANE_TYPES.size,
-      'the control needs a module the headless host still applies to — when the union empties, ' +
-        'this control has no subject and the host itself should be gone',
-    ).toBeGreaterThan(0);
-    expect(needsHeadlessSourceMount({ kind: 'shell', type: stillHosted! })).toBe(true);
+  it('so NO card is mounted anywhere after promotion — the headless host is GONE', () => {
+    // ⚠ This leg used to enumerate `needsHeadlessSourceMount` and carry a
+    // derived positive control, whose own failure message said what to do when
+    // the union emptied: "the host itself should be gone". legacy-removal S1.5
+    // emptied it and deleted the host and the decision, so "no card is mounted
+    // anywhere" is now structural for EVERY module rather than a per-type
+    // answer — the strongest form the claim can take. What remains checkable
+    // here is that the populations that would resurrect a host stay empty.
+    expect(DOM_SOURCE_LANE_TYPES.size).toBe(0);
+    expect(CARD_PRODUCER_LANE_TYPES.size).toBe(0);
   });
 
   it('the card never calls attachExternalSource — its layers reach the engine through the module’s OWN extras', () => {
@@ -178,12 +162,12 @@ describe('⚠ THE MEDIA BLOCKER WAS FALSE FOR THIS MODULE — recorderbox’s ar
   });
 
   it('and toybox was the LAST citer, so the blocker registry is now empty', () => {
-    // ⚠ NOT a claim that #1511 shipped — it has not, and
-    // HEADLESS_MOUNT_LANE_TYPES is non-empty right below. The registry is empty
-    // because nothing is WAITING, which is the disposal the inventory's own
-    // anchor gate asks for.
+    // ⚠ When this was written it added "NOT a claim that #1511 shipped" and
+    // pinned the headless union non-empty beside it. legacy-removal S1.5
+    // finished the extractions, so BOTH facts now hold: nothing is waiting AND
+    // the capability genuinely shipped (every former member is node-owned and
+    // the host is deleted).
     expect(Object.keys(MIGRATION_BLOCKERS)).toEqual([]);
-    expect([...HEADLESS_MOUNT_LANE_TYPES].length).toBeGreaterThan(0);
   });
 });
 

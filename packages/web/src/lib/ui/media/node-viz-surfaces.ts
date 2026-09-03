@@ -45,6 +45,33 @@ export const VIZ_SURFACE_PRODUCERS: readonly VizSurfaceProducer[] = [
       'drawFrame fills solid black, so a card that owned this owned whether video_out carried a ' +
       'picture at all (#1587).',
   },
+  /**
+   * CUBE — the second member (legacy-removal S1.5), and the SAME seam as
+   * wavesculpt on the same registry: `CubeVizSurface` installs
+   * `installCubeFrameDrawer`, and `cube.ts:84` says outright that with no
+   * drawer the module's own drawFrame paints SOLID BLACK. #1724 measured it on
+   * `CUBE.video_out → VIDEO OUT`: never-mounted nonBlack 0/3072, dock open
+   * 3072/3072, collapsed again 0/3072.
+   *
+   * ⚠ WHAT IS DIFFERENT FROM WAVESCULPT — the views did not agree on a SHAPE.
+   * The legacy card mounted the surface at 320×260/150×120/162×120 with no
+   * orbit; the faceplate hero at 300×210/147×104/147×104 with drag-to-orbit.
+   * Both looks are owner-sensitive and the surface's bytes are attest-pinned,
+   * so it cannot grow a resize path — the host re-mounts it per WINNING
+   * CLAIMANT KIND instead (`onWinner` + `CUBE_VIEW_SIZES`), which also keeps
+   * the parked/bridge aspect exactly what the old headless-hosted card gave
+   * `video_out`.
+   */
+  {
+    type: 'cube',
+    why:
+      'its producer is the 3-D wavetable room — a WebGL2 volume render with a persistent GL ' +
+      'context, a field-atlas texture, three presentation canvases and the ' +
+      '`installCubeFrameDrawer` closure over all of it, in a file whose BYTES are pinned by the ' +
+      "WebGL attest basis. With no drawer installed the module's own drawFrame paints SOLID " +
+      'BLACK (#1724), so whichever surface mounted the renderer owned whether video_out carried ' +
+      'a picture at all.',
+  },
 ];
 
 /**

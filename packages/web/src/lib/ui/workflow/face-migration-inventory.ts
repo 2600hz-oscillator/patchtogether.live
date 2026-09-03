@@ -157,13 +157,12 @@ export interface CapabilityEvidence {
    * about what "typed entry" means.
    */
   readonly faceShellMountsTypedEntry: boolean;
-  /**
-   * Module types whose ENGINE-VISIBLE state exists only while their card is
-   * mounted — `HEADLESS_MOUNT_LANE_TYPES`, i.e. a card-owned media element or a
-   * card that IS the producer. That set is itself grep-gated against the cards,
-   * so it cannot lag the code.
-   */
-  readonly cardOwnedSourceTypes: readonly string[];
+  // ⚠ `cardOwnedSourceTypes` WAS HERE AND IS RETIRED (legacy-removal S1.5): it
+  // mirrored `HEADLESS_MOUNT_LANE_TYPES`, which is gone with the headless host
+  // itself — every former member is node-owned and no card mount is
+  // engine-visible. Its own anchor leg said the field "should go with them",
+  // and it did; the deleted `needs-media-controller` blocker was its last
+  // probe reader. See dom-source-modules.ts for the retirement record.
 }
 
 /**
@@ -806,13 +805,15 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
   // section is green by construction — but a reader finding no heading at all
   // would reasonably conclude the disposition had been retired, and it has not.
   //
-  // ⚠ AND EMPTYING IT DID NOT RETIRE `needs-media-controller`. That blocker's
-  // probe is `cardOwnedSourceTypes.length === 0` — i.e. HEADLESS_MOUNT_LANE_TYPES
-  // is empty — and it is still false, because loopback's own card is one of the
-  // things the headless host keeps alive. Modules in the `bespoke-surface`
-  // bucket below still declare the blocker, so the registry entry stays
-  // anchored in both directions. "The last blocked module shipped" and "the
-  // blocker resolved" are different facts and only the first one happened.
+  // ⚠ THE PARAGRAPH THAT STOOD HERE aged out in two steps and is replaced
+  // rather than left misleading: it said emptying the bucket "did not retire
+  // `needs-media-controller`" because the headless-mount set still had members.
+  // The blocker was then deleted outright (2026-09-02, see the note at the
+  // MIGRATION_BLOCKERS registry) — and in legacy-removal S1.5 the capability it
+  // waited on genuinely SHIPPED: every card-owned source and producer is
+  // node-owned, `HEADLESS_MOUNT_LANE_TYPES` is retired with the headless host,
+  // and "the last blocked module shipped" and "the blocker resolved" are now
+  // BOTH true.
   // ── bespoke-surface ───────────────────────────────────────────────────────
   // The primary interaction is not param-shaped. Each of these needs a
   // hand-written surface behind the extension seam — which is BUILT and adopted

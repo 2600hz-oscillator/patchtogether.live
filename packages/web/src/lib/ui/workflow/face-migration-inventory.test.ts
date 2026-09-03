@@ -77,7 +77,7 @@ import { readCardSourceWithDelegates } from '$lib/ui/card-source';
 import type { ModuleFace } from '$lib/graph/types';
 
 import { STRICT_FACES } from './strict-faces';
-import { DOM_SOURCE_LANE_TYPES, HEADLESS_MOUNT_LANE_TYPES } from './dom-source-modules';
+import { DOM_SOURCE_LANE_TYPES } from './dom-source-modules';
 import { shellExtensionIds, WIRED_SHELL_EXTENSION_SLOTS } from './shell-extensions';
 import { shellCellKindsFor } from './shell-cells';
 import {
@@ -394,7 +394,6 @@ describe('face-migration inventory — blockers are LIVE, measured against the T
       shellExtensionIds: shellExtensionIds(),
       wiredShellExtensionSlots: [...WIRED_SHELL_EXTENSION_SLOTS],
       faceShellMountsTypedEntry: mountsTypedEntry(moduleShellTemplate()),
-      cardOwnedSourceTypes: [...HEADLESS_MOUNT_LANE_TYPES].sort(),
     };
   }
 
@@ -419,27 +418,14 @@ describe('face-migration inventory — blockers are LIVE, measured against the T
       'ModuleShell renders no glyph extension slot — WIRED_SHELL_EXTENSION_SLOTS is anchored to its ' +
         'source by shell-extensions.test.ts, so this reading empty means the wiring moved',
     ).toContain('glyph');
-    // ⚠ THE ANCHOR MOVED HALVES (legacy-removal S1, 2026-09-03) AND THEN STOPPED
-    // BEING A NAME AT ALL (S1/7). It named `archivist` as "the canonical
-    // card-owned <video> source" until archivist's source moved to a node
-    // controller and `DOM_SOURCE_LANE_TYPES` emptied; it was re-pointed at
-    // `wavesculpt`, whose renderer moved to the node one slice later. Two
-    // re-points of one control in two slices is the signal that the NAME was
-    // never the claim.
-    //
-    // What this control exists to prove is that the probe READ SOMETHING — that
-    // `HEADLESS_MOUNT_LANE_TYPES` resolved rather than silently coming back
-    // empty and reporting "no module needs a host" forever. So assert
-    // NON-EMPTINESS and agreement with the source of truth, which is a claim no
-    // conversion can invalidate until the last member leaves — at which point
-    // the headless host has no population and should be deleted, not re-anchored.
-    expect(
-      tree.cardOwnedSourceTypes.length,
-      'the headless-mount set read EMPTY — either every producer has been extracted (in which ' +
-        'case <HeadlessSourceHost> and the evidence field should go with them) or this probe ' +
-        'stopped resolving and now reports "nothing needs a host" whatever the tree says',
-    ).toBeGreaterThan(0);
-    expect(tree.cardOwnedSourceTypes).toEqual([...HEADLESS_MOUNT_LANE_TYPES].sort());
+    // ⚠ THE `cardOwnedSourceTypes` ANCHOR THAT STOOD HERE RETIRED WITH ITS
+    // FIELD (legacy-removal S1.5). Its own failure message prescribed exactly
+    // this: "either every producer has been extracted (in which case
+    // <HeadlessSourceHost> and the evidence field should go with them) or this
+    // probe stopped resolving". The first arm happened — every former member
+    // of the headless-mount union is node-owned, the host is deleted, and the
+    // deleted `needs-media-controller` blocker was the field's last probe
+    // reader — so the field and this control went together, as designed.
   });
 
   it('NO STALE BLOCKER: every declared blocker names a capability the tree does NOT have', () => {

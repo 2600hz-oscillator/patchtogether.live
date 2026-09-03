@@ -44,7 +44,6 @@ import { shellExtensionIds, loadShellExtension } from '$lib/ui/workflow/shell-ex
 import {
   DOM_SOURCE_LANE_TYPES,
   CARD_PRODUCER_LANE_TYPES,
-  HEADLESS_MOUNT_LANE_TYPES,
 } from '$lib/ui/workflow/dom-source-modules';
 import { NON_SHELL_LANE_TYPES } from '$lib/ui/workflow/legacy-fallback';
 import { stripSourceComments } from '$lib/source-guards/strip-source-comments';
@@ -205,7 +204,8 @@ describe('recorderbox face — NO CARD IS MOUNTED, which is what the seam is for
     // any of these, a headless card WOULD be mounted and half the reasoning in
     // the seam's header stops applying — so the change should have to edit this
     // assertion and say why.
-    expect(HEADLESS_MOUNT_LANE_TYPES.has('recorderbox')).toBe(false);
+    // (The union export retired with the headless host in legacy-removal S1.5;
+    // the two halves are the surviving statements.)
     expect(DOM_SOURCE_LANE_TYPES.has('recorderbox')).toBe(false);
     expect(CARD_PRODUCER_LANE_TYPES.has('recorderbox')).toBe(false);
     expect(NON_SHELL_LANE_TYPES.has('recorderbox')).toBe(false);

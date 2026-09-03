@@ -178,16 +178,23 @@ function parseLaneSet(name: string, opts: { mayBeEmpty?: boolean } = {}): string
   return types;
 }
 
-/** The producers whose FACE mounts the producing surface itself, so their
- *  headless host stands down while the dock full view is open. Parsed from the
- *  same shared source as the lane sets — a hand-typed copy here would be the
- *  second source of truth for a rule whose whole point is that a module leaves
- *  the default BY NAME. */
-const FACE_MOUNTS_PRODUCER = new Set(parseLaneSet('FACE_MOUNTS_PRODUCER'));
+// ⚠ `FACE_MOUNTS_PRODUCER` WAS PARSED HERE AND IS RETIRED (legacy-removal
+// S1.5) with the headless host, `needsHeadlessSourceMount` and the export
+// itself: with `CARD_PRODUCER_LANE_TYPES` empty there is no producer whose
+// dock state could need the exemption, and the `keepsHeadlessWhileDocked`
+// subject field that consumed it went with it. The retirement record lives on
+// dom-source-modules.ts.
 
 /** The producer subjects, derived from the shared source. */
 function cardProducerTypes(): string[] {
-  const producers = parseLaneSet('CARD_PRODUCER_LANE_TYPES');
+  // ⚠ MAY BE EMPTY, AND IS — the terminal state of the extractions
+  // (legacy-removal S1.5: rasterize -> RASTERIZE_FRAME_PRODUCER, cube ->
+  // NodeVizSurfaceHost). Every leg the first half derives from this list
+  // vanishes with the population, which is exactly why the node-owner halves
+  // below live in THIS file: the same modules, the same instruments, the
+  // OPPOSITE claim. A type re-entering the set re-derives its four legs here
+  // with no edit.
+  const producers = parseLaneSet('CARD_PRODUCER_LANE_TYPES', { mayBeEmpty: true });
   // PARSE SELF-CHECK, and it is not decoration: the two sets are asserted
   // DISJOINT by dom-source-modules.test.ts, so any overlap here means this
   // parse grabbed the wrong array literal — the one failure mode a regex over
@@ -259,8 +266,13 @@ const SUBJECTS = cardProducerTypes().map((type) => {
      * producer. Only the place it lives now depends on the module.
      */
     migrated: mod.strictFace === true,
-    keepsHeadlessWhileDocked:
-      mod.strictFace === true && !FACE_MOUNTS_PRODUCER.has(type),
+    // ⚠ CONSTANT-FALSE SINCE S1.5: FACE_MOUNTS_PRODUCER and the headless host
+    // it modulated are retired, so no subject can keep a host in any dock
+    // state. Left as a field (rather than deleted from the legs) so a type
+    // re-entering the set derives its four legs unchanged — and REDS on the
+    // host assertions, which is correct: the repair for a returning producer
+    // is a node-scoped owner, never a host revival.
+    keepsHeadlessWhileDocked: false,
   };
 });
 
@@ -785,8 +797,7 @@ for (const subject of SUBJECTS) {
       await cardMounts(page, nodeId),
       `${type} must have EXACTLY ONE surface running its producer while its dock full view is ` +
         `open. It is ${keepsHeadlessWhileDocked ? '' : 'NOT '}a module that keeps its headless ` +
-        `host while docked (migrated=${migrated}` +
-        `, faceMountsProducer=${FACE_MOUNTS_PRODUCER.has(type)}), so the headless host must be ` +
+        `host while docked (migrated=${migrated}), so the headless host must be ` +
         `${expectedHeadless}: ${keepsHeadlessWhileDocked
           ? 'its face only BLITS, so unmounting the card would leave a stale or black picture'
           : 'either the dock holds the real card, or the face mounts the producing surface itself'}`,
@@ -1695,30 +1706,105 @@ function nodeVizSurfaceTypes(): string[] {
   return types;
 }
 
-/** Where a node's viz-surface canvas currently LIVES, by landmark. The whole
+/**
+ * Per-type facts the shared viz legs need — the deny-by-default discipline the
+ * `FrameProducer` half already uses: a roster member with no fixture throws at
+ * collection, so adding a surface to `node-viz-surfaces.ts` without saying how
+ * to observe it cannot land silently green.
+ */
+interface VizSurfaceFixture {
+  /** The surface's OWN testid on its headline element — the one every selector
+   *  in the tree assumes is unique per document. */
+  readonly canvasTestId: string;
+  /** The legacy card's claim-hold testid (where the adopted element lands). */
+  readonly cardHoldTestId: string;
+  /** The DRS step-seam globals the surface installs (`ownsVideoOut` default). */
+  readonly stepGlobal: string;
+  readonly stepCountGlobal: string;
+  /** Extra nodes/edges that make the picture MOVE. wavesculpt free-runs (its
+   *  shader clock advances every frame); cube is param-driven and STILL at
+   *  rest — that stillness is its VRT-determinism licence (`zdet`, see
+   *  `_shell-faces.ts`), so the movement probe must drive a param. */
+  readonly drive?: {
+    readonly node: { id: string; type: string; domain: 'audio' | 'video' | 'meta' };
+    readonly edge: { fromPort: string; toPort: string; sourceType: string; targetType: string };
+  };
+  readonly why: string;
+}
+
+const VIZ_SURFACE_FIXTURES: Record<string, VizSurfaceFixture> = {
+  wavesculpt: {
+    canvasTestId: 'wavesculpt-canvas',
+    cardHoldTestId: 'wavesculpt-screen-wrap',
+    stepGlobal: '__wavesculptStep',
+    stepCountGlobal: '__wavesculptStepCount',
+    why:
+      'free-running WebGL2 ribbon — the shader clock advances every frame in every view mode, ' +
+      'so motion needs no driver and stillness cannot be commanded (the block comment above ' +
+      'records why that negative control is deliberately absent).',
+  },
+  cube: {
+    canvasTestId: 'cube-3d-viz',
+    cardHoldTestId: 'cube-viz-hold',
+    stepGlobal: '__cubeStep',
+    stepCountGlobal: '__cubeStepCount',
+    // slice_ry is a cv INPUT; an LFO through it rotates the slicing plane, so
+    // the volume render provably ADVANCES. At rest cube is legitimately STILL
+    // (no time-varying view — every frame is recomputed from params), which is
+    // what `vrt-determinism-probe.spec.ts` pins from the other side.
+    drive: {
+      node: { id: 'nodeviz-driver', type: 'lfo', domain: 'audio' },
+      edge: { fromPort: 'phase0', toPort: 'slice_ry', sourceType: 'cv', targetType: 'cv' },
+    },
+    why:
+      'param-driven WebGL2 volume — the picture is a pure function of the params and tables, ' +
+      'so a moving picture needs a moving param (the LFO into slice_ry) and an idle cube being ' +
+      'still is the module working, not the producer dead. The lit floor is what separates a ' +
+      'still cube from a black one: with no drawer installed cube.ts fills SOLID BLACK (#1724).',
+  },
+};
+
+/** Where a node's viz-surface element currently LIVES, by landmark. The whole
  *  adoption mechanism is a DOM move, so the assertion is about ancestry. */
 async function vizCanvasHome(
   page: Page,
   nodeId: string,
+  fixture: VizSurfaceFixture,
 ): Promise<{ count: number; parked: boolean; inCard: boolean; inDock: boolean; hosts: number }> {
-  return page.evaluate((id) => {
-    const all = [...document.querySelectorAll('canvas[data-testid="wavesculpt-canvas"]')];
-    const mine = all.filter((c) => c.getAttribute('data-node-id') === id);
+  return page.evaluate(({ id, canvasTestId, cardHoldTestId }) => {
+    const all = [...document.querySelectorAll(`[data-testid="${canvasTestId}"]`)];
+    // Per-node filtering uses the surface's own data-node-id where it stamps
+    // one (wavesculpt); cube's canvases carry none (its surface is byte-pinned
+    // and predates the attribute), so ancestry against the park's data-node-id
+    // does the same job — every leg here spawns ONE node of the type anyway.
+    const mine = all.filter((c) => {
+      const stamped = c.getAttribute('data-node-id');
+      if (stamped !== null) return stamped === id;
+      return true;
+    });
     const el = mine[0] ?? null;
     const closest = (sel: string) => !!el?.closest(sel);
     return {
-      // EVERY such canvas in the document, not just this node's — a second mount
-      // for ANY node is the defect this leg exists for.
+      // EVERY such element in the document, not just this node's — a second
+      // mount for ANY node is the defect this leg exists for.
       count: all.length,
       parked: closest(`[data-testid="node-viz-surface"][data-node-id="${id}"]`),
-      inCard: closest('[data-testid="wavesculpt-screen-wrap"]'),
+      inCard: closest(`[data-testid="${cardHoldTestId}"]`),
       inDock: closest('[data-testid="dock-full-view"]'),
       hosts: document.querySelectorAll(`[data-testid="node-viz-surface"][data-node-id="${id}"]`).length,
     };
-  }, nodeId);
+  }, { id: nodeId, canvasTestId: fixture.canvasTestId, cardHoldTestId: fixture.cardHoldTestId });
 }
 
 for (const type of nodeVizSurfaceTypes()) {
+  const fixture = VIZ_SURFACE_FIXTURES[type];
+  if (!fixture) {
+    throw new Error(
+      `${type} is a node-mounted viz surface with no fixture in this spec. Add one naming its ` +
+        'canvas testid, its card hold, its DRS seam globals and how its picture is DRIVEN — a ' +
+        'renderer nothing observes is a renderer that can stop running without any gate noticing.',
+    );
+  }
   const mod = REGISTRY.find((m) => m.type === type);
   if (!mod) throw new Error(`${type} has a node viz surface but is not in the registry manifest`);
   const pixelPort = mod.outputs.find((p) => p.type === 'video' || p.type === 'mono-video')?.id;
@@ -1736,7 +1822,25 @@ for (const type of nodeVizSurfaceTypes()) {
     page.on('pageerror', (e) => errors.push(e.message));
 
     await boot(page);
-    await spawnPatch(page, [{ id: nodeId, type, domain: mod.domain }], [], { mountTimeout: 30_000 });
+    await spawnPatch(
+      page,
+      [
+        { id: nodeId, type, domain: mod.domain },
+        ...(fixture.drive ? [fixture.drive.node] : []),
+      ],
+      fixture.drive
+        ? [
+            {
+              id: 'nodeviz-drive-edge',
+              from: { nodeId: fixture.drive.node.id, portId: fixture.drive.edge.fromPort },
+              to: { nodeId, portId: fixture.drive.edge.toPort },
+              sourceType: fixture.drive.edge.sourceType,
+              targetType: fixture.drive.edge.targetType,
+            },
+          ]
+        : [],
+      { mountTimeout: 30_000 },
+    );
 
     // The lane shows the shell's tile for a faced module…
     await expect(
@@ -1759,9 +1863,9 @@ for (const type of nodeVizSurfaceTypes()) {
 
     // …and the ONE surface is parked in its node host, claimed by nobody.
     await expect
-      .poll(async () => (await vizCanvasHome(page, nodeId)).hosts, { timeout: 20_000 })
+      .poll(async () => (await vizCanvasHome(page, nodeId, fixture)).hosts, { timeout: 20_000 })
       .toBe(1);
-    const cold = await vizCanvasHome(page, nodeId);
+    const cold = await vizCanvasHome(page, nodeId, fixture);
     expect(
       cold.count,
       `exactly one ${type} canvas must exist in the document. Two means a view MOUNTED the ` +
@@ -1804,12 +1908,12 @@ for (const type of nodeVizSurfaceTypes()) {
     ).toBeLessThan(MAX_BLACK_RUN_FRAMES);
 
     await expect
-      .poll(async () => (await vizCanvasHome(page, nodeId)).inDock, {
+      .poll(async () => (await vizCanvasHome(page, nodeId, fixture)).inDock, {
         message: 'the dock body must ADOPT the node canvas, not mount a second surface',
         timeout: 20_000,
       })
       .toBe(true);
-    const docked = await vizCanvasHome(page, nodeId);
+    const docked = await vizCanvasHome(page, nodeId, fixture);
     expect(docked.count, `still exactly one canvas with the dock open: ${JSON.stringify(docked)}`)
       .toBe(1);
     expect(docked.parked, 'the claimed canvas has LEFT the node host').toBe(false);
@@ -1833,7 +1937,7 @@ for (const type of nodeVizSurfaceTypes()) {
         `Series (nonBlack px/frame): ${closeHandoff.series.join(',')}`,
     ).toBeLessThan(MAX_BLACK_RUN_FRAMES);
     await expect
-      .poll(async () => (await vizCanvasHome(page, nodeId)).parked, {
+      .poll(async () => (await vizCanvasHome(page, nodeId, fixture)).parked, {
         message: 'a released claim parks the canvas back with the node host',
         timeout: 20_000,
       })
@@ -1868,7 +1972,7 @@ for (const type of nodeVizSurfaceTypes()) {
       })
       .toBe(false);
     await expect
-      .poll(async () => (await vizCanvasHome(page, nodeId)).count, {
+      .poll(async () => (await vizCanvasHome(page, nodeId, fixture)).count, {
         message: 'the node host unmounts with the node, so no canvas is left behind',
         timeout: 20_000,
       })
@@ -1889,24 +1993,43 @@ for (const type of nodeVizSurfaceTypes()) {
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
 
-    // ⚠ THIS ARM IS THE ONE `wavesculpt.spec.ts` DEPENDS ON, and it is why the
-    // two-mount design was refused. All fifteen of that suite's tests drive the
-    // DRS step seam and then photograph `[data-testid="wavesculpt-canvas"]`. The
-    // seam halts the rAF of the surface that INSTALLED it — so if the seam owner
-    // and the photographed element were two different mounts, stepping would
-    // freeze a surface nobody is looking at while the photographed one free-ran.
-    // With one mount, adopted, they are the same element by construction. This
-    // leg pins that construction; that suite consumes it.
+    // ⚠ THIS ARM IS THE ONE THE MODULE'S OWN SUITE DEPENDS ON, and it is why
+    // the two-mount design was refused. `wavesculpt.spec.ts` (17 tests) and
+    // `cube.spec.ts` both drive their DRS step seam and then photograph the
+    // surface's own testid. The seam halts the rAF of the surface that
+    // INSTALLED it — so if the seam owner and the photographed element were
+    // two different mounts, stepping would freeze a surface nobody is looking
+    // at while the photographed one free-ran. With one mount, adopted, they
+    // are the same element by construction. This leg pins that construction;
+    // those suites consume it.
     await boot(page, 'legacy');
-    await spawnPatch(page, [{ id: nodeId, type, domain: mod.domain }], [], { mountTimeout: 30_000 });
+    await spawnPatch(
+      page,
+      [
+        { id: nodeId, type, domain: mod.domain },
+        ...(fixture.drive ? [fixture.drive.node] : []),
+      ],
+      fixture.drive
+        ? [
+            {
+              id: 'nodeviz-drive-edge',
+              from: { nodeId: fixture.drive.node.id, portId: fixture.drive.edge.fromPort },
+              to: { nodeId, portId: fixture.drive.edge.toPort },
+              sourceType: fixture.drive.edge.sourceType,
+              targetType: fixture.drive.edge.targetType,
+            },
+          ]
+        : [],
+      { mountTimeout: 30_000 },
+    );
 
     await expect
-      .poll(async () => (await vizCanvasHome(page, nodeId)).inCard, {
+      .poll(async () => (await vizCanvasHome(page, nodeId, fixture)).inCard, {
         message: `${type}'s legacy card must ADOPT the node canvas into its screen box`,
         timeout: 30_000,
       })
       .toBe(true);
-    const adopted = await vizCanvasHome(page, nodeId);
+    const adopted = await vizCanvasHome(page, nodeId, fixture);
     expect(
       adopted.count,
       `exactly one ${type} canvas with the card mounted: ${JSON.stringify(adopted)}`,
@@ -1919,27 +2042,30 @@ for (const type of nodeVizSurfaceTypes()) {
     await expect
       .poll(() =>
         page.evaluate(
-          () => typeof (globalThis as { __wavesculptStep?: unknown }).__wavesculptStep === 'function',
+          (name) => typeof (globalThis as Record<string, unknown>)[name] === 'function',
+          fixture.stepGlobal,
         ),
       { message: 'the node-mounted surface installs the DRS step seam', timeout: 30_000 })
       .toBe(true);
-    const stepped = await page.evaluate(() => {
-      const g = globalThis as {
-        __wavesculptStep?: (t?: number) => number;
-        __wavesculptStepCount?: () => number;
-      };
-      g.__wavesculptStep?.(2000);
-      const before = g.__wavesculptStepCount?.() ?? 0;
-      for (let i = 0; i < 5; i++) g.__wavesculptStep?.(2000);
-      const during = g.__wavesculptStepCount?.() ?? 0;
+    const stepped = await page.evaluate(({ stepName, countName }) => {
+      const g = globalThis as unknown as Record<
+        string,
+        ((t?: number) => number) | (() => number) | undefined
+      >;
+      const step = g[stepName] as ((t?: number) => number) | undefined;
+      const count = g[countName] as (() => number) | undefined;
+      step?.(2000);
+      const before = count?.() ?? 0;
+      for (let i = 0; i < 5; i++) step?.(2000);
+      const during = count?.() ?? 0;
       // NEGATIVE CONTROL, in the same evaluate so no rAF can interleave: while
       // step mode holds and NOTHING steps, the counter must not move. That is
       // the seam actually halting the rAF of the mount whose canvas the card is
       // showing — a seam pointed at some OTHER mount would leave this free-running.
-      const idle = g.__wavesculptStepCount?.() ?? 0;
-      g.__wavesculptStep?.(); // resume
+      const idle = count?.() ?? 0;
+      step?.(); // one more driven frame; wavesculpt also treats this as resume
       return { delta: during - before, idleDelta: idle - during };
-    });
+    }, { stepName: fixture.stepGlobal, countName: fixture.stepCountGlobal });
     expect(stepped.delta, 'five steps advance the counter by exactly five').toBe(5);
     expect(
       stepped.idleDelta,

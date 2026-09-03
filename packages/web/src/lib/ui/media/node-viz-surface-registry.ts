@@ -158,6 +158,25 @@ export interface NodeVizSurfaceRegistry<E, H> {
   onFrame(nodeId: string, fn: () => void): () => void;
   /** The node host's surface calls this once per rendered frame. */
   emitFrame(nodeId: string): void;
+  /**
+   * Subscribe to the WINNING claim's priority for a node — `null` when no live
+   * claim stands. Delivered immediately on subscribe with the current value,
+   * then on every claims change that MOVES the winner.
+   *
+   * ⚠ WHY THE HOST NEEDS THIS AT ALL (cube, legacy-removal S1.5): wavesculpt's
+   * two views show its canvas at ONE size, so the host mounts one shape and
+   * the claims only decide WHERE it shows. cube's card and hero mounted the
+   * SAME renderer at DIFFERENT sizes (320×260 vs 300×210 + orbit), and the
+   * renderer's bytes are attest-pinned, so it cannot grow a resize path. The
+   * host therefore re-mounts the surface per WINNING CLAIMANT KIND — and this
+   * is how it learns the kind without importing the dock, the shell or any
+   * view: the claims already carry it as priority.
+   *
+   * The value is the PRIORITY NUMBER, not a kind name, for the same reason
+   * `VIZ_CLAIM_PRIORITY` uses numbers: a third claimant ranks between two
+   * existing ones without renaming anything here.
+   */
+  onWinner(nodeId: string, fn: (priority: number | null) => void): () => void;
   /** The published element for a node, if any. Never creates one. */
   peek(nodeId: string): E | null;
   /** The host currently showing a node's surface, or null when it is parked. */
@@ -181,6 +200,11 @@ interface Entry<E, H> {
    *  or null before it is published. */
   at: H | null;
   listeners: Set<() => void>;
+  /** Winner-change subscribers (the host's per-claimant-kind remount). */
+  winnerListeners: Set<(priority: number | null) => void>;
+  /** The winner priority last delivered, so a resolve that does not move the
+   *  winner notifies nobody. */
+  lastWinner: number | null;
 }
 
 export function createNodeVizSurfaceRegistry<E, H>(
@@ -192,7 +216,15 @@ export function createNodeVizSurfaceRegistry<E, H>(
   function entryFor(nodeId: string): Entry<E, H> {
     let e = entries.get(nodeId);
     if (!e) {
-      e = { el: null, park: null, claims: [], at: null, listeners: new Set() };
+      e = {
+        el: null,
+        park: null,
+        claims: [],
+        at: null,
+        listeners: new Set(),
+        winnerListeners: new Set(),
+        lastWinner: null,
+      };
       entries.set(nodeId, e);
     }
     return e;
@@ -225,11 +257,36 @@ export function createNodeVizSurfaceRegistry<E, H>(
     e.at = target;
   }
 
+  /** Tell the winner subscribers, but only when the winner actually MOVED —
+   *  claims churn that keeps the same winner must not remount anything. */
+  function notifyWinner(nodeId: string): void {
+    const e = entries.get(nodeId);
+    if (!e || e.winnerListeners.size === 0) return;
+    const w = winner(e)?.priority ?? null;
+    if (w === e.lastWinner) return;
+    e.lastWinner = w;
+    // Copied before iterating — a listener may unsubscribe mid-delivery.
+    for (const fn of [...e.winnerListeners]) {
+      try {
+        fn(w);
+      } catch {
+        /* a host's remount decision must never stop the claims machinery */
+      }
+    }
+  }
+
   /** Drop an entry once nothing is left to remember about it. */
   function prune(nodeId: string): void {
     const e = entries.get(nodeId);
     if (!e) return;
-    if (e.el === null && e.claims.length === 0 && e.listeners.size === 0) entries.delete(nodeId);
+    if (
+      e.el === null &&
+      e.claims.length === 0 &&
+      e.listeners.size === 0 &&
+      e.winnerListeners.size === 0
+    ) {
+      entries.delete(nodeId);
+    }
   }
 
   return {
@@ -266,6 +323,7 @@ export function createNodeVizSurfaceRegistry<E, H>(
       const c: Claim<H> = { host, priority, seq: seq++, live: true };
       e.claims.push(c);
       resolve(nodeId);
+      notifyWinner(nodeId);
       return {
         release() {
           if (!c.live) return;
@@ -273,6 +331,7 @@ export function createNodeVizSurfaceRegistry<E, H>(
           const idx = e.claims.indexOf(c);
           if (idx >= 0) e.claims.splice(idx, 1);
           resolve(nodeId);
+          notifyWinner(nodeId);
           prune(nodeId);
         },
       };
@@ -283,6 +342,26 @@ export function createNodeVizSurfaceRegistry<E, H>(
       e.listeners.add(fn);
       return () => {
         e.listeners.delete(fn);
+        prune(nodeId);
+      };
+    },
+
+    onWinner(nodeId, fn) {
+      const e = entryFor(nodeId);
+      e.winnerListeners.add(fn);
+      // Deliver the CURRENT winner immediately, so a host that subscribes
+      // after a view has already claimed does not mount the wrong shape and
+      // wait for churn to correct it. Seeding `lastWinner` alongside keeps the
+      // next claims-change from re-delivering a value every subscriber has
+      // already seen.
+      e.lastWinner = winner(e)?.priority ?? null;
+      try {
+        fn(e.lastWinner);
+      } catch {
+        /* same contract as delivery */
+      }
+      return () => {
+        e.winnerListeners.delete(fn);
         prune(nodeId);
       };
     },

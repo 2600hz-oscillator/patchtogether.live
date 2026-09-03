@@ -41,7 +41,6 @@
 
   import { patch } from '$lib/graph/store';
   import { nodeVersion } from '$lib/graph/node-versions.svelte';
-  import { setNodeParam } from '$lib/graph/mutate';
   import { untrack } from 'svelte';
   import { cubeDef, type CubeSlot } from '$lib/audio/modules/cube';
   import { cubeSlotFrames, cubeSlotTableSig } from './cube-table-actions';
@@ -54,7 +53,16 @@
     cubeWaveStats,
     type CubeFaceParams,
   } from '../cube-face-model';
-  import CubeVizSurface from './CubeVizSurface.svelte';
+  // ⚠ THE RENDERER IS NOT IMPORTED HERE (legacy-removal S1.5). The NODE owns
+  // `CubeVizSurface` — one mount per cube, parked off-screen by
+  // `NodeVizSurfaceHost` on GRAPH lifetime — and this hero CLAIMS its element
+  // into the hold below. The claim's `dock` priority is also what tells the
+  // host to mount the HERO shape (300×210 + drag-to-orbit, `CUBE_VIEW_SIZES`),
+  // so the picture here is pixel-for-pixel the one this panel used to mount
+  // itself. The orbit WRITE lives in `cube-view-mounts.ts` now, wired by the
+  // host at mount time — same def-clamped bumps, same sensitivity.
+  import { nodeVizSurfaces } from '$lib/ui/media/node-viz-surfaces';
+  import { VIZ_CLAIM_PRIORITY } from '$lib/ui/media/node-viz-surface-registry';
 
   interface Props {
     nodeId: string;
@@ -127,44 +135,29 @@
   let caption = $derived(cubeHeroCaption(stats));
   let cam = $derived(cubeCamText(p));
 
-  /** ⚠ RANGES COME FROM THE DEF, never re-typed here (the card-vs-def
-   *  divergence class: a control that writes values its own contract forbids). */
-  const rangeOf = (pid: string): [number, number] => {
-    const d = cubeDef.params.find((q) => q.id === pid)!;
-    return [d.min, d.max];
-  };
-  /** Radians per CSS px of drag. A full sweep of the 300 px view is a bit over
-   *  half a turn, which is the sensitivity the camera knobs give over their
-   *  own travel. */
-  const ORBIT_RAD_PER_PX = 0.01;
-
-  function orbit(dxPx: number, dyPx: number): void {
-    const bump = (pid: string, delta: number): void => {
-      const [lo, hi] = rangeOf(pid);
-      const cur = (typeof live.n?.params?.[pid] === 'number'
-        ? (live.n!.params![pid] as number)
-        : defaultFor(pid)) ?? 0;
-      const next = Math.max(lo, Math.min(hi, cur + delta));
-      if (next !== cur) setNodeParam(nodeId, pid, next);
-    };
-    // Vertical drag = elevation (view_rot_x), horizontal = azimuth
-    // (view_rot_y) — the same two angles the eye vector is built from.
-    if (dyPx !== 0) bump('view_rot_x', dyPx * ORBIT_RAD_PER_PX);
-    if (dxPx !== 0) bump('view_rot_y', -dxPx * ORBIT_RAD_PER_PX);
-  }
+  // ---- The NODE's picture, claimed into this hero ----
+  //
+  // ⚠ CLAIM, NOT CREATE — and RANKED. Under `?shell=legacy` the lane card and
+  // this faceplate can both be mounted; the surface the player deliberately
+  // opened is the one that should hold the picture, so `dock` outranks `card`,
+  // and closing this pane hands the element straight back to the card. See
+  // `$lib/ui/media/node-viz-surface-registry`.
+  let vizHost = $state<HTMLDivElement | null>(null);
+  $effect(() => {
+    const host = vizHost;
+    if (!host) return;
+    const claim = nodeVizSurfaces.claim(nodeId, host, VIZ_CLAIM_PRIORITY.dock);
+    return () => claim.release();
+  });
 </script>
 
 <div class="cube-view" data-testid="cube-view">
-  <CubeVizSurface
-    {nodeId}
-    vizW={300}
-    vizH={210}
-    sliceW={147}
-    sliceH={104}
-    waveW={147}
-    waveH={104}
-    onOrbit={orbit}
-  />
+  <!-- Empty in markup on purpose: the surface's `.viz-col` is `appendChild`ed
+       here by the claim, so declaring a child would give Svelte something to
+       manage in a container the registry re-parents into. Minimum box = the
+       hero mount's own footprint (300 × 210+6+104), so the panel does not
+       collapse during the claim handoff frames. -->
+  <div class="viz-hold" bind:this={vizHost}></div>
   <div class="caps">
     <span class="cap cam" data-testid="cube-hero-cam">cam {cam} · drag to orbit</span>
     <span class="cap" data-testid="cube-hero-caption">{caption}</span>
@@ -173,6 +166,7 @@
 
 <style>
   .cube-view { display: flex; flex-direction: column; gap: 6px; align-items: center; }
+  .viz-hold { min-width: 300px; min-height: 320px; }
   .caps { display: flex; flex-direction: column; gap: 2px; align-items: center; width: 100%; }
   .cap {
     font-family: var(--font-mono, monospace);

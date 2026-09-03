@@ -368,8 +368,20 @@ describe('#1811 render-locus gate', () => {
       'membership of the DOM-source union is a blocker',
     ).toContain('dom-source');
     expect(
-      derivedBlockers({ ...base, type: [...CARD_PRODUCER_LANE_TYPES][0] } as typeof base, INPUTS),
-      'membership of CARD_PRODUCER_LANE_TYPES is a blocker',
+      // ⚠ SYNTHETIC INPUTS, because the REAL set is empty by design since
+      // legacy-removal S1.5 (every card producer was extracted to a node
+      // owner) — `[...emptySet][0]` is `undefined` and a classifier fed an
+      // undefined type returns no blockers, the same trap the DOM-source
+      // control above dodged by reading the union. There is no union to read
+      // here: the classifier's inputs are INJECTED, so the control injects a
+      // population and requires the arm to fire on it. The arm stays in the
+      // classifier for the same reason the set stays exported — a module
+      // becoming card-owned again must classify as blocked, not as eligible.
+      derivedBlockers(
+        { ...base, type: 'synthetic-card-producer' } as typeof base,
+        { ...INPUTS, cardProducerTypes: new Set(['synthetic-card-producer']) },
+      ),
+      'membership of the injected card-producer set is a blocker',
     ).toContain('card-producer');
   });
 });

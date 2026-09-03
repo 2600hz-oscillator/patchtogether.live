@@ -55,13 +55,7 @@ import { conventionalCardName, type CardDefLike } from '$lib/ui/modules-card-map
 // ONE string-aware implementation, imported rather than re-written — see codeOf().
 import { stripComments } from '$lib/ui/media/card-media-lifetime.test';
 
-import {
-  CARD_PRODUCER_LANE_TYPES,
-  DOM_SOURCE_LANE_TYPES,
-  FACE_MOUNTS_PRODUCER,
-  HEADLESS_MOUNT_LANE_TYPES,
-  needsHeadlessSourceMount,
-} from './dom-source-modules';
+import { CARD_PRODUCER_LANE_TYPES, DOM_SOURCE_LANE_TYPES } from './dom-source-modules';
 // The OTHER side of the ownership question (LEG-02, #1511). Imported here rather
 // than asserted from a second copy of the list, so "who owns this module's
 // source" has exactly one answer per module and this gate can check it.
@@ -621,28 +615,49 @@ describe('THE WALK (#1724) — the gate reads what a card MOUNTS, not one file',
   });
 
   it('NEGATIVE CONTROL, both directions: the subtree walk finds a seam the flat walk cannot', () => {
-    // Direction 1 — the widening is LOAD-BEARING. Run the identical predicate
-    // with the pre-#1724 filters reinstated and require the answer to be
-    // strictly smaller. A revert to a flat, suffix-filtered walk fails HERE
-    // rather than silently going green with cube's picture black again.
+    // ⚠ RE-ANCHORED OFF THE POPULATION (legacy-removal S1.5). Direction 1 used
+    // to run the pre-#1724 flat walk against the live tree and require the
+    // subtree walk to find MORE — its one live gain was `CubeCard →
+    // cube/CubeVizSurface.svelte`, and cube's renderer now belongs to the
+    // NODE, so both walks legitimately find the same (empty) set. Its own
+    // failure message asked for "a decision, not a deletion"; the decision is
+    // the same one the seam-liveness leg took — anchor the instrument on a
+    // SYNTHETIC card whose seam lives ONLY in a child component, fed through
+    // the SAME `seamHitFor` the derivation runs. A walk narrowed back to
+    // one-file-per-card cannot be simulated here (the FS walk is what
+    // `componentSubtree` owns, next leg) — what this pins is that ATTRIBUTION
+    // FROM A CHILD FILE works, which is the half a flat SEARCH lost.
+    const entry = '/synthetic/SyntheticCard.svelte';
+    const child = '/synthetic/synthetic/SyntheticVizSurface.svelte';
+    const card = {
+      base: 'SyntheticCard',
+      entry,
+      files: [
+        { path: entry, src: '<div class="clean-card" />' },
+        { path: child, src: "installSyntheticFrameDrawer(nodeId, draw);" },
+      ],
+    };
+    const hit = seamHitFor(card, PRODUCER_SEAMS);
+    expect(
+      hit,
+      'a seam in a CHILD component no longer attributes to its card — the #1724 blindness is back',
+    ).not.toBeNull();
+    expect(hit!.file, 'the hit names the child file, so a reviewer can find it').toContain(
+      'SyntheticVizSurface.svelte',
+    );
+    // Direction 2 is unchanged and still runs on the live tree: the subtree
+    // walk may only ever ADD relative to the flat one. With zero producers
+    // anywhere both sides are empty, and a member appearing on the flat side
+    // alone would still red here.
     const byName = cardNameToType();
     const wide = derivedProducerTypes().found;
     const flatOnly = new Set<string>();
-    for (const card of cardSources()) {
-      const own = card.files.find((f) => f.path === card.entry)!;
-      if (!PRODUCER_SEAMS.some((s) => s.re.test(own.src))) continue;
-      const t = byName.get(card.base);
+    for (const c of cardSources()) {
+      const own = c.files.find((f) => f.path === c.entry)!;
+      if (!PRODUCER_SEAMS.some((se) => se.re.test(own.src))) continue;
+      const t = byName.get(c.base);
       if (t) flatOnly.add(t);
     }
-    const gained = [...wide].filter((t) => !flatOnly.has(t)).sort();
-    expect(
-      gained,
-      'the card-file-only walk found the SAME set as the subtree walk. Either the walk has been ' +
-        'narrowed back to one file per card, or every producer now lives in its card — in which ' +
-        'case this leg has stopped measuring anything and needs a decision, not a deletion.',
-    ).not.toEqual([]);
-    // …and the widening only ever ADDS. A subtree walk that lost a member would
-    // mean the exemption list is eating real coverage.
     expect(
       [...flatOnly].filter((t) => !wide.has(t)).sort(),
       'the subtree walk LOST a type the card-file walk found — an exemption is over-broad',
@@ -655,13 +670,21 @@ describe('THE WALK (#1724) — the gate reads what a card MOUNTS, not one file',
     // ⚠ `$lib/video/engine.ts` is the measured reason `.ts` edges are NOT
     // followed: it DEFINES attachExternalSource and every one of the cards
     // reaches it, so a `.ts`-following walk enrols the entire registry.
-    const cubeCard = join(CARD_DIR, 'CubeCard.svelte');
-    const subtree = componentSubtree(cubeCard).map((p) => rel(p));
-    expect(subtree, 'the entry itself is always in its own subtree').toContain('CubeCard.svelte');
+    // ⚠ SUBJECT MOVED (legacy-removal S1.5): this used to walk CubeCard and
+    // require `cube/CubeVizSurface.svelte` in its subtree — the exact edge
+    // #1724 was about — but that edge is deliberately GONE (the NODE mounts
+    // the renderer now, and the card only claims its element). ToyboxCard
+    // mounts its console by the same relative-subdirectory shape, so the
+    // MECHANISM keeps a live witness; the day toybox converts too, re-point at
+    // any card with a `./<dir>/X.svelte` import, or build the fixture on disk.
+    const toyboxCard = join(CARD_DIR, 'ToyboxCard.svelte');
+    const subtree = componentSubtree(toyboxCard).map((p) => rel(p));
+    expect(subtree, 'the entry itself is always in its own subtree').toContain('ToyboxCard.svelte');
     expect(
       subtree,
-      'CubeCard mounts cube/CubeVizSurface.svelte by a RELATIVE specifier — the edge #1724 was about',
-    ).toContain('cube/CubeVizSurface.svelte');
+      'ToyboxCard mounts toybox/ToyboxConsole.svelte by a RELATIVE specifier — the edge shape ' +
+        '#1724 was about',
+    ).toContain('toybox/ToyboxConsole.svelte');
     expect(
       subtree.some((p) => p.startsWith('../')),
       'a card mounts shared components through the $lib alias; a walk that resolved only relative ' +
@@ -725,10 +748,12 @@ describe('THE WALK (#1724) — the gate reads what a card MOUNTS, not one file',
     // 2. A DYNAMIC mount — `import()`, or a component resolved out of a registry
     //    (the shell-cells PANEL seam is exactly that shape: `shell-cells.ts` maps
     //    cube's hero to CubeHeroPanel, and no static import from CubeCard reaches
-    //    it). This gate cannot follow that edge, and does not need to HERE: the
-    //    panel's own renderer is CubeVizSurface, which the card DOES reach. But
-    //    a module whose producer is ONLY in a dynamically-mounted panel would be
-    //    invisible — the e2e (card-producer-lifetime.spec.ts) is the net.
+    //    it). This gate cannot follow that edge, and since legacy-removal S1.5
+    //    it does not need to for cube AT ALL: the panel no longer mounts a
+    //    renderer — the NODE does (`NodeVizSurfaceHost`), and both the card and
+    //    the panel only CLAIM its element. But a module whose producer is ONLY
+    //    in a dynamically-mounted panel would still be invisible here — the e2e
+    //    (card-producer-lifetime.spec.ts) is the net.
     const shellCells = readFileSync(
       fileURLToPath(new URL('./shell-cells.ts', import.meta.url)),
       'utf8',
@@ -1069,12 +1094,13 @@ describe('CARD_PRODUCER_LANE_TYPES — the second seam (#1587: the card IS the p
     expect(unmapped, `card(s) matching a producer seam resolve to no module def: ${unmapped.join(', ')}`)
       .toEqual([]);
 
-    // VACUITY GUARD, in both halves. If a rename ever empties the seam regexes
-    // the derived set goes empty and an `toEqual` against an emptied declared
-    // set would pass while the gate measured nothing.
+    // VACUITY GUARD. The set is legitimately EMPTY since legacy-removal S1.5
+    // (cube was the last member out), so `[] toEqual []` is the CORRECT green —
+    // what keeps it from being a blind green is the seam-liveness leg below,
+    // which feeds a synthetic producer card through the SAME `seamHitFor` and
+    // requires the derivation to classify it. A seam-regex rename therefore
+    // reds THERE rather than silently emptying both sides of this comparison.
     expect(PRODUCER_SEAMS.length, 'at least one producer seam is declared').toBeGreaterThan(0);
-    expect(found.size, `no card matched any producer seam — did a seam get renamed? seams: ${PRODUCER_SEAMS.map((s) => s.id).join(', ')}`)
-      .toBeGreaterThan(0);
 
     expect([...found].sort(), `derived from card sources: ${hits.join(' | ')}`)
       .toEqual([...CARD_PRODUCER_LANE_TYPES].sort());
@@ -1131,16 +1157,22 @@ describe('CARD_PRODUCER_LANE_TYPES — the second seam (#1587: the card IS the p
     expect(overlap, `type(s) in BOTH lane sets: ${overlap.join(', ')}`).toEqual([]);
   });
 
-  it('HEADLESS_MOUNT_LANE_TYPES is exactly the union — the host filter cannot drift from either half', () => {
-    expect([...HEADLESS_MOUNT_LANE_TYPES].sort()).toEqual(
-      [...new Set([...DOM_SOURCE_LANE_TYPES, ...CARD_PRODUCER_LANE_TYPES])].sort(),
-    );
-    for (const t of HEADLESS_MOUNT_LANE_TYPES) {
-      expect(
-        needsHeadlessSourceMount({ kind: 'placeholder', type: t }),
-        `${t} is headless-mounted when the shell swaps its card away`,
-      ).toBe(true);
-    }
+  it('BOTH halves are EMPTY — the state the headless-mount retirement rests on', () => {
+    // ⚠ `HEADLESS_MOUNT_LANE_TYPES` (the union), `needsHeadlessSourceMount` and
+    // `<HeadlessSourceHost>` retired together in legacy-removal S1.5, exactly
+    // as the decision legs' own anchors prescribed ("retired with the host
+    // itself, not re-pointed at a synthetic type"). This leg is the surviving
+    // population statement: a member returning to EITHER set reddens here, and
+    // whoever brings one back needs a node-scoped owner — not a host revival.
+    expect(
+      DOM_SOURCE_LANE_TYPES.size,
+      'a card-owned DOM source exists again — it needs a node-scoped owner (see the departures ' +
+        'recorded on the set), because nothing keeps a card mounted for it any more',
+    ).toBe(0);
+    expect(
+      CARD_PRODUCER_LANE_TYPES.size,
+      'a card producer exists again — same consequence, producer half',
+    ).toBe(0);
   });
 
   it('NEGATIVE CONTROL: each seam regex fires on the CALL and not on the PROSE around it', () => {
@@ -1184,349 +1216,42 @@ describe('CARD_PRODUCER_LANE_TYPES — the second seam (#1587: the card IS the p
   });
 });
 
-describe('needsHeadlessSourceMount — the pure headless-mount decision', () => {
-  const KINDS: LaneRenderKind[] = ['legacy', 'shell', 'placeholder', 'stub'];
-
-  it('mounts ONLY when the shell swapped the card away (shell | placeholder)', () => {
-    // ⚠ SUBJECT MOVED TWICE NOW (#1511): `videobox` in P1, then
-    // `videovarispeed` in P2 — each conversion retires whatever this leg was
-    // pointed at, which is the epic working rather than the test being fragile.
-    // The repair is always a LIVE subject, never a relaxed expectation:
-    // `archivist` is still card-owned and exercises the same arm. When it
-    // converts, re-point again — and when the set finally empties, this leg's
-    // subject is gone for good and the leg goes with it.
-    //
-    // ⚠ SUBJECT MOVED A THIRD TIME (P3): it pointed at `tvLibrarian`, which this
-    // phase converted along with `peertube`. The remaining card-owned DOM
-    // sources are archivist, cameraInput and loopback — all three CAPTURE-ish,
-    // which is a real change in the character of what is left rather than three
-    // arbitrary names.
-    //
-    // ⚠ SUBJECT MOVED A FOURTH TIME, AND ACROSS THE HALVES (legacy-removal S1).
-    // archivist, cameraInput and loopback all converted, so `DOM_SOURCE_LANE_TYPES`
-    // is EMPTY. The comment above anticipated that and said "when the set finally
-    // empties, this leg's subject is gone for good and the leg goes with it" —
-    // WHICH IS WRONG, and worth correcting rather than following. The arm belongs
-    // to `HEADLESS_MOUNT_LANE_TYPES`, the UNION of the two halves, and the
-    // CARD_PRODUCER half still has six members whose card IS the producer. So the
-    // decision is as live as it ever was; only its DOM-source subjects are gone.
-    // `wavesculpt` exercises the identical arm.
-    //
-    // ⚠ AND A FIFTH TIME (legacy-removal S1/7), WHICH IS WHY IT IS NO LONGER A
-    // NAME. `wavesculpt`'s renderer moved to the node too, so the fourth
-    // re-point lasted exactly one slice. Five re-points of one leg is the
-    // signal: the subject is not a fact about any module, it is "any member of
-    // the union", so DERIVE it. The ANCHOR below is what keeps that honest when
-    // the union finally empties — and when it does, the leg really does go with
-    // it, because a decision with no population left is not a decision.
-    const subject = [...HEADLESS_MOUNT_LANE_TYPES][0];
-    for (const kind of KINDS) {
-      const want = kind === 'shell' || kind === 'placeholder';
-      expect(
-        needsHeadlessSourceMount({ kind, type: subject! }),
-        `${subject} @ ${kind}`,
-      ).toBe(want);
-    }
-  });
-
-  it('ANCHORED: the subject above is a REAL member, so the leg cannot go vacuous', () => {
-    // Every other arm of this decision returns FALSE for a type it does not
-    // know, so a subject that quietly left the union would make the `want ===
-    // false` cases pass and only the two TRUE cases fail — a half-blind leg.
-    // With the subject DERIVED the failure mode changes shape: the leg above
-    // would run on `undefined` and pass every `false` case. This is the guard
-    // for that, and it is the leg that reddens the day the last member leaves.
-    expect(
-      HEADLESS_MOUNT_LANE_TYPES.size,
-      'the headless-mount arm needs a live member to exercise it — if the extractions have ' +
-        'emptied the union, this decision has no population and the legs that read it should ' +
-        'be retired with the host itself, not re-pointed at a synthetic type',
-    ).toBeGreaterThan(0);
-  });
-
-  it('NEVER mounts a module whose source moved to a node controller, on ANY lane kind', () => {
-    // The inverse of the leg above, and the property that makes the conversion
-    // worth anything: a converted module must not keep paying the off-screen
-    // mount. Derived from the ownership set rather than naming videobox, so the
-    // next conversion inherits the assertion instead of needing a new one.
-    for (const type of NODE_OWNED_SOURCE_TYPES) {
-      for (const kind of KINDS) {
-        expect(
-          needsHeadlessSourceMount({ kind, type }),
-          `${type} @ ${kind}: its lifecycle is node-owned, so nothing should keep a card alive for it`,
-        ).toBe(false);
-      }
-      // ...including the two arms that are NOT about the lane kind at all.
-      expect(needsHeadlessSourceMount({ kind: 'shell', type, laneOmitsNode: true }), `${type} in a collapsed group`).toBe(false);
-      expect(needsHeadlessSourceMount({ kind: 'placeholder', type, hostedElsewhere: false }), `${type} hosted nowhere`).toBe(false);
-    }
-  });
-
-  it('mounts a CARD-PRODUCER module on the same two kinds (#1587)', () => {
-    // ⚠ SUBJECTS DERIVED, NOT NAMED. This leg used to spell `wavesculpt` and
-    // `timelorde`, and the legacy-removal producer extractions retire members of
-    // this set one commit at a time — so a named subject reddens on the commit
-    // that converts it, on a rule that has not changed. Reading the set is also
-    // the stronger claim: EVERY member gets the host, not two of them.
-    expect(CARD_PRODUCER_LANE_TYPES.size, 'no producer left to check').toBeGreaterThan(0);
-    for (const type of CARD_PRODUCER_LANE_TYPES) {
-      for (const kind of KINDS) {
-        const want = kind === 'shell' || kind === 'placeholder';
-        expect(needsHeadlessSourceMount({ kind, type }), `${type} @ ${kind}`).toBe(want);
-      }
-    }
-  });
-
-  it('never mounts a module in NEITHER set, whatever the lane renders', () => {
-    for (const kind of KINDS) {
-      expect(needsHeadlessSourceMount({ kind, type: 'acidwarp' })).toBe(false);
-      expect(needsHeadlessSourceMount({ kind, type: 'tidyvco' })).toBe(false);
-    }
-  });
-
-  it("never DOUBLE-mounts: 'legacy' (card in the lane) and 'stub' (card in the dock rail) are excluded", () => {
-    // Two live <video> elements for one node would each getUserMedia, and
-    // whichever unmounted first would detach the survivor's source.
-    expect(needsHeadlessSourceMount({ kind: 'legacy', type: 'cameraInput' })).toBe(false);
-    expect(needsHeadlessSourceMount({ kind: 'stub', type: 'videobox' })).toBe(false);
-  });
-
-  it('is a strict NO-OP under ?shell=legacy (that path can only produce legacy/stub)', () => {
-    for (const type of HEADLESS_MOUNT_LANE_TYPES) {
-      const kind = laneRenderKind({
-        shellFaces: false,
-        userDocked: false,
-        type,
-        hasCard: true,
-        migrated: false,
-      });
-      expect(kind).toBe('legacy');
-      // ⚠ NO `laneOmitsNode` HERE, deliberately: that arm is the one exception
-      // to this claim and has its own describe below. Adding it to this loop
-      // would quietly convert a true statement about the SHELL into a false one
-      // about the whole decision.
-      expect(needsHeadlessSourceMount({ kind, type })).toBe(false);
-    }
-  });
-});
-
-describe("laneOmitsNode — a COLLAPSED GROUP's child, in BOTH shells (#1721)", () => {
-  const KINDS: LaneRenderKind[] = ['legacy', 'shell', 'placeholder', 'stub'];
-
-  it('hosts EXACTLY the producer half — membership derived, never listed here', () => {
-    // DERIVED MEMBERSHIP, both directions, over the whole union: a type is
-    // hosted under this arm IF AND ONLY IF it is a CARD_PRODUCER. Nothing in
-    // this test names a module, so a sixth producer enrols itself and a tenth
-    // DOM-source module stays out, with no edit here.
-    for (const type of HEADLESS_MOUNT_LANE_TYPES) {
-      for (const kind of KINDS) {
-        expect(
-          needsHeadlessSourceMount({ kind, type, laneOmitsNode: true }),
-          `${type} @ ${kind} with the lane emitting no node`,
-        ).toBe(CARD_PRODUCER_LANE_TYPES.has(type));
-      }
-    }
-  });
-
-  it('is SHELL-INDEPENDENT — the same answer on the legacy kind as on the shell kinds', () => {
-    // THE CLAIM THAT MAKES #1721 DIFFERENT from every other row of #1583. The
-    // collapsed-child skip lives in the flowNodes derivation OUTSIDE its
-    // `shellFaces` branch, so the defect exists under `?shell=legacy` too, and
-    // a fix that only ran under the shell would leave half of it standing.
-    // MEASURED on the pre-fix tree, wavesculpt.video_out → VIDEO OUT: before
-    // grouping `nonBlack 170/3072 maxLuma 203, 20 distinct signatures in 20
-    // frames` (default shell) and `172/3072, 206, 20` (?shell=legacy); once the
-    // group collapsed, `0/3072, 0, 1 signature` in BOTH.
-    for (const type of CARD_PRODUCER_LANE_TYPES) {
-      const legacyKind = laneRenderKind({
-        shellFaces: false,
-        userDocked: false,
-        type,
-        hasCard: true,
-        migrated: false,
-      });
-      expect(legacyKind).toBe('legacy');
-      expect(
-        needsHeadlessSourceMount({ kind: legacyKind, type, laneOmitsNode: true }),
-        `${type} in a collapsed group under ?shell=legacy`,
-      ).toBe(true);
-      expect(
-        needsHeadlessSourceMount({ kind: 'placeholder', type, laneOmitsNode: true }),
-        `${type} in a collapsed group under the faceplate shell`,
-      ).toBe(true);
-    }
-  });
-
-  it('leaves the DOM-SOURCE half exactly as it was — a camera is not opened off-screen', () => {
-    // The half of the original author's parity argument that still stands on
-    // its own: `node-media-registry` already owns those elements across a card
-    // unmount, and hosting a capture module because a GROUP is collapsed would
-    // run getUserMedia with no UI anywhere. Asserted over the derived set.
-    for (const type of DOM_SOURCE_LANE_TYPES) {
-      for (const kind of KINDS) {
-        expect(
-          needsHeadlessSourceMount({ kind, type, laneOmitsNode: true }),
-          `${type} @ ${kind} must NOT be hosted just because its group collapsed`,
-        ).toBe(false);
-      }
-    }
-  });
-
-  it('never mounts a module in NEITHER set, collapsed or not', () => {
-    for (const kind of KINDS) {
-      for (const laneOmitsNode of [true, false]) {
-        expect(needsHeadlessSourceMount({ kind, type: 'acidwarp', laneOmitsNode })).toBe(false);
-        expect(needsHeadlessSourceMount({ kind, type: 'tidyvco', laneOmitsNode })).toBe(false);
-      }
-    }
-  });
-
-  it('hostedElsewhere OVERRIDES every arm — no node is mounted twice', () => {
-    // GroupCard hidden-mounts a viz-passthrough child's real card for exactly
-    // as long as the group is collapsed ($lib/ui/modules/group-viz-hosts), which
-    // is precisely the window `laneOmitsNode` is true in. Two live mounts of one
-    // node is the hazard the 'stub' and dock-full-view arms already exist for.
-    for (const type of HEADLESS_MOUNT_LANE_TYPES) {
-      for (const kind of KINDS) {
-        for (const laneOmitsNode of [true, false]) {
-          expect(
-            needsHeadlessSourceMount({ kind, type, laneOmitsNode, hostedElsewhere: true }),
-            `${type} @ ${kind} (laneOmitsNode=${laneOmitsNode}) is already hosted elsewhere`,
-          ).toBe(false);
-        }
-      }
-    }
-  });
-
-  it('PERMANENT NEGATIVE CONTROL: every new input actually MOVES the decision, both ways', () => {
-    // A decision that ignored its new inputs would satisfy some of the above by
-    // accident. Each of these pairs differs in exactly ONE input and must differ
-    // in the answer — so a constant-returning implementation reddens here first.
-    const producer = [...CARD_PRODUCER_LANE_TYPES][0]!;
-    const domSource = [...DOM_SOURCE_LANE_TYPES].find((t) => !NON_SHELL_LANE_TYPES.has(t))!;
-
-    // laneOmitsNode: false → true flips a producer ON, on a kind that never mounts.
-    expect(needsHeadlessSourceMount({ kind: 'legacy', type: producer })).toBe(false);
-    expect(needsHeadlessSourceMount({ kind: 'legacy', type: producer, laneOmitsNode: true })).toBe(true);
-
-    // ...and true → false flips it back OFF again, which is the direction that
-    // proves the arm is not simply "always true for a producer".
-    expect(needsHeadlessSourceMount({ kind: 'stub', type: producer, laneOmitsNode: true })).toBe(true);
-    expect(needsHeadlessSourceMount({ kind: 'stub', type: producer, laneOmitsNode: false })).toBe(false);
-
-    // hostedElsewhere: false → true flips a mounting case OFF...
-    expect(needsHeadlessSourceMount({ kind: 'placeholder', type: producer })).toBe(true);
-    expect(
-      needsHeadlessSourceMount({ kind: 'placeholder', type: producer, hostedElsewhere: true }),
-    ).toBe(false);
-    // ...and back ON when it is false again.
-    expect(
-      needsHeadlessSourceMount({ kind: 'placeholder', type: producer, hostedElsewhere: false }),
-    ).toBe(true);
-
-    // The CHANNEL split is real: same inputs, different half of the union.
-    expect(needsHeadlessSourceMount({ kind: 'legacy', type: domSource, laneOmitsNode: true })).toBe(false);
-    expect(needsHeadlessSourceMount({ kind: 'legacy', type: producer, laneOmitsNode: true })).toBe(true);
-  });
-
-  it('SCOPE: this arm reads a FLAG the caller computes, never the graph', () => {
-    // Stated inside the gate. `needsHeadlessSourceMount` cannot see a group, a
-    // collapsed flag or a node — Canvas computes `laneOmitsNode` from
-    // `collapsedGroupIds` + `data.parentGroupId` and `hostedElsewhere` from the
-    // GroupCard registry, and NOTHING here proves it computes either correctly.
-    // That wiring is proven by e2e/tests/card-producer-lifetime.spec.ts's #1721
-    // leg, which reads the real DOM in both shells; and the CANVAS-HIDDEN arm
-    // (pinned singletons / hiddenCard cameras — #1754) reaches this decision
-    // only because Canvas folds it INTO `laneOmitsNode`, which is a caller fact
-    // this function still cannot see.
-    expect(typeof needsHeadlessSourceMount).toBe('function');
-  });
-});
-
-describe('FACE_MOUNTS_PRODUCER — the dock-open exemption, anchored both ways', () => {
-  // ⚠ AN EXEMPTION LIST THAT NAMES A VANISHED SUBJECT IS RED, and both
-  // directions matter here for different reasons. A member that stops being a
-  // CARD_PRODUCER is a dead entry; a member that stops being FACED is worse than
-  // dead, because `fullViewShowsFaceInstead` only consults this set for migrated
-  // types — the entry would read as a live decision while deciding nothing.
-
-  it('every member is a CARD_PRODUCER — the only population the flag is consulted for', () => {
-    const strays = [...FACE_MOUNTS_PRODUCER].filter((t) => !CARD_PRODUCER_LANE_TYPES.has(t));
-    expect(
-      strays,
-      'a FACE_MOUNTS_PRODUCER entry names a type that is not a card-owned producer, so the ' +
-        'exemption it claims can never be reached. Delete it.',
-    ).toEqual([]);
-  });
-
-  it('every member is FACED — an unfaced entry is a decision that never fires', () => {
-    const unfaced = [...FACE_MOUNTS_PRODUCER].filter((t) => !STRICT_FACES.has(t));
-    expect(
-      unfaced,
-      'a FACE_MOUNTS_PRODUCER entry names an UNPROMOTED module. `fullViewShowsFaceInstead` ' +
-        'requires `migrated(type)`, so the entry is inert — and if that module is ever promoted ' +
-        'it inherits an exemption nobody re-argued.',
-    ).toEqual([]);
-  });
-
-  it('the DEFAULT still decides — a faced producer OUTSIDE the exemption keeps its host', () => {
-    // ⚠ THE VACUITY LEG, AND IT HAS NOW LOST ITS POPULATION TWICE — which is
-    // exactly the sequence its own failure message predicted, so the repair is
-    // the one that message prescribes rather than a new idea.
-    //
-    // ROUND 1: the named subject was `timelorde`, the module the deny-by-default
-    // exists FOR (its face only BLITS `video_out`, so hosting was the only thing
-    // keeping the picture alive while the faceplate was open). The producer
-    // extractions retired it, and a NAME reddens on a commit where the RULE has
-    // not changed at all — so the leg was re-derived onto the complement.
-    //
-    // ROUND 2 (legacy-removal S1/7): `wavesculpt` was the complement's last
-    // member, and this slice retires it too. `CARD_PRODUCER_LANE_TYPES ∩
-    // STRICT_FACES` is now `{cube, rasterize}` and both are exempt, so the
-    // complement is EMPTY — a population, not a rule, reaching zero.
-    //
-    // ⚠ SO THE CLAIM MOVES ONTO THE DECISION ITSELF, with a SYNTHETIC subject.
-    // `needsHeadlessSourceMount` never reads `FACE_MOUNTS_PRODUCER`;
-    // `Canvas.svelte` does, to compute `hostedElsewhere`. The property that
-    // matters is the one the 2026-08-23 inversion introduced: a faced producer
-    // whose dock full view is open and which is NOT exempt must still be hosted.
-    // Reproduce that decision here on an input the population cannot empty.
-    const syntheticFacedProducer = 'synthetic-faced-producer';
-    expect(
-      FACE_MOUNTS_PRODUCER.has(syntheticFacedProducer),
-      'the synthetic subject must be OUTSIDE the exemption for this leg to mean anything',
-    ).toBe(false);
-    expect(
-      needsHeadlessSourceMount({
-        kind: 'shell',
-        // Membership in the producer half is what `Canvas` tests before it
-        // consults the exemption, so the synthetic subject borrows a real
-        // member's membership and differs only in the exemption.
-        type: [...CARD_PRODUCER_LANE_TYPES][0]!,
-        // `fullViewShowsFaceInstead` is TRUE for an exempt type (the face mounts
-        // the producer, so the dock IS the mount) and FALSE otherwise — which
-        // makes `hostedElsewhere` false and the host required.
-        hostedElsewhere: false,
-      }),
-      'a faced producer outside FACE_MOUNTS_PRODUCER must KEEP its headless host while its dock ' +
-        'full view is open. If this is false the deny-by-default has been undone.',
-    ).toBe(true);
-    // ...and the exemption really is what flips it: an EXEMPT type's dock full
-    // view sets `hostedElsewhere`, and then no host is mounted.
-    expect(
-      needsHeadlessSourceMount({
-        kind: 'shell',
-        type: [...FACE_MOUNTS_PRODUCER][0]!,
-        hostedElsewhere: true,
-      }),
-      'an exempt producer whose face mounts the renderer must NOT also be hosted',
-    ).toBe(false);
-    // ...and the set is still a SUBSET of the population it is consulted for,
-    // which is the half `every member is a CARD_PRODUCER` above already pins —
-    // restated here so the two halves of "proper subset" stay together.
-    for (const t of FACE_MOUNTS_PRODUCER) expect(CARD_PRODUCER_LANE_TYPES.has(t)).toBe(true);
-  });
-});
+// ─────────────────────────────────────────────────────────────────────────────
+// ⚠ THREE DESCRIBES RETIRED WITH THE DECISION THEY DROVE (legacy-removal S1.5)
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// `needsHeadlessSourceMount — the pure headless-mount decision`,
+// `laneOmitsNode — a COLLAPSED GROUP's child, in BOTH shells (#1721)` and
+// `FACE_MOUNTS_PRODUCER — the dock-open exemption, anchored both ways` all
+// exercised the pure decision behind `<HeadlessSourceHost>`. Their own anchors
+// wrote the retirement condition down before it arrived:
+//
+//   * the decision anchor: "if the extractions have emptied the union, this
+//     decision has no population and the legs that read it should be retired
+//     with the host itself, not re-pointed at a synthetic type";
+//   * the fifth re-point note: "when the union finally empties, the leg really
+//     does go with it, because a decision with no population left is not a
+//     decision";
+//   * the FACE_MOUNTS vacuity leg had already lost its population twice and
+//     survived on a synthetic subject borrowed from a real member — which no
+//     longer exists to borrow from.
+//
+// The union emptied when cube's renderer moved to `NodeVizSurfaceHost`
+// (rasterize's loop had moved to `RASTERIZE_FRAME_PRODUCER` one commit
+// earlier), the host and the decision are DELETED, and what the three
+// describes protected is now structural: NO module gets an off-screen card on
+// ANY lane kind, in ANY shell, because there is nothing that mounts one. The
+// surviving, red-able statements are:
+//
+//   * both populations EMPTY — the leg above in the CARD_PRODUCER describe;
+//   * every former member owned by exactly ONE node registry — the
+//     disjointness gate over the eight owner sets;
+//   * the derivation still CLASSIFIES a producer card — the synthetic-seams
+//     leg — so a card regrowing a seam re-enrols and reds the empty toEqual.
+//
+// What #1721 measured (a collapsed group's child producing in BOTH shells) is
+// covered at the product level by card-producer-lifetime.spec.ts's collapsed-
+// group legs, which survived the extractions by re-derivation.
 
 // ⚠ THIS BLOCK USED TO ASSERT THE OPPOSITE, DELIBERATELY, AND THE REVERSAL IS
 // THE POINT — so the old assertions are quoted rather than deleted.
@@ -1582,7 +1307,6 @@ describe('cameraInput — PROMOTED, and now NODE-OWNED rather than headless-host
   // `?shell=legacy` leg is unchanged because the card still renders there.
   it('is NOT a DOM-source module any more — a node controller owns its source', () => {
     expect(DOM_SOURCE_LANE_TYPES.has('cameraInput')).toBe(false);
-    expect(HEADLESS_MOUNT_LANE_TYPES.has('cameraInput')).toBe(false);
   });
 
   it('is NO LONGER carved out of the shell swap', () => {
@@ -1603,14 +1327,14 @@ describe('cameraInput — PROMOTED, and now NODE-OWNED rather than headless-host
     ).toBe('shell');
   });
 
-  it('and is THEREFORE NOT headless-hosted — nothing is orphaned, because nothing is card-owned', () => {
-    // ⚠ THE READING THAT MATTERS IS NOT THIS ONE. `false` here is also what a
-    // module nobody has ever heard of returns, so on its own it proves only that
-    // the type left the set. What makes it a STATEMENT rather than an absence is
-    // the disjointness gate above (cameraInput must be in exactly one node-owner
-    // set) plus `e2e/tests/camerainput-shell-source.spec.ts`, which asserts the
-    // picture survives with no card mounted anywhere.
-    expect(needsHeadlessSourceMount({ kind: 'shell', type: 'cameraInput' })).toBe(false);
+  it('and is THEREFORE NOT headless-hosted — structurally, since S1.5', () => {
+    // This leg used to read `needsHeadlessSourceMount`; the decision retired
+    // with the host, so "not hosted" is true of every module by construction.
+    // What makes cameraInput's case a STATEMENT rather than an absence is the
+    // disjointness gate above (it must be in exactly one node-owner set) plus
+    // `e2e/tests/camerainput-shell-source.spec.ts`, which asserts the picture
+    // survives with no card mounted anywhere.
+    expect(NODE_CAMERA_SOURCE_TYPES.has('cameraInput')).toBe(true);
   });
 
   it('still keeps its real card under ?shell=legacy, where nothing changed', () => {
@@ -1622,84 +1346,22 @@ describe('cameraInput — PROMOTED, and now NODE-OWNED rather than headless-host
       migrated: true,
     });
     expect(kind).toBe('legacy');
-    expect(
-      needsHeadlessSourceMount({ kind, type: 'cameraInput' }),
-      'the card is IN the lane there, and it is no longer the source owner either — '
-        + 'both reasons independently forbid a host',
-    ).toBe(false);
+    // (The decision half of this leg — "and no host mounts beside it" —
+    // retired with the decision; no host mounts beside ANYTHING now.)
   });
 
-  it('a DOCKED camera is not hosted either — DockCardHost has the real card', () => {
-    expect(needsHeadlessSourceMount({ kind: 'stub', type: 'cameraInput' })).toBe(false);
-  });
-
-  it('EVERY headless-hosted module is now uniform — no member needs a skip', () => {
-    // ⚠ THIS LOOP USED TO CARRY `if (t === 'cameraInput') continue;`. Dropping
-    // the skip is the assertion: the one module that needed an exception is now
-    // covered by the same rule as the other fourteen, so the sweep is strictly
-    // stronger than it was rather than merely re-pointed.
-    for (const t of HEADLESS_MOUNT_LANE_TYPES) {
-      expect(NON_SHELL_LANE_TYPES.has(t), `${t} must swap to a tile`).toBe(false);
-      expect(needsHeadlessSourceMount({ kind: 'placeholder', type: t })).toBe(true);
-      expect(needsHeadlessSourceMount({ kind: 'shell', type: t })).toBe(true);
-    }
-  });
+  // ⚠ Two legs retired with the decision (S1.5): "a DOCKED camera is not
+  // hosted either" and "EVERY headless-hosted module is now uniform" both read
+  // `needsHeadlessSourceMount` over a population that is empty — the second
+  // one's loop body had already stopped executing. Their claims are structural
+  // now: no lane kind, dock state or membership produces an off-screen card.
 });
 
-describe('the DOCK FULL VIEW hosts the real card only for an UN-MIGRATED module', () => {
-  // ⚠ A GATE WHOSE PRECONDITION WAS THE ABSENCE OF THE FEATURE. Canvas excluded
-  // every full-view node from the headless host unconditionally, on the stated
-  // premise that "DockFullView already mounts its real card". `DockFullView` is
-  // `{#if migrated} <ModuleShell/> {:else} <CardComponent/>`, so that premise
-  // held only while NO card-owned-source module was promoted — which was true
-  // for every member of this set until cameraInput.
-  //
-  // The fix routes it through `hostedElsewhere`, whose contract already says
-  // exactly this ("SOME OTHER live surface already mounts this node's REAL
-  // card"). `needsHeadlessSourceMount` is unchanged; the CALLER's answer to that
-  // question is what was wrong.
-  //
-  // ⚠ THE PURE DECISION CANNOT SEE `migrated`, BY DESIGN — it reads a flag the
-  // caller computes, exactly as it does for `laneOmitsNode`. So these legs pin
-  // the DECISION's behaviour given each answer; that Canvas computes the answer
-  // correctly is proven in e2e/tests/camerainput-shell-source.spec.ts, which
-  // opens the dock faceplate and asserts the picture survives it.
-  // ⚠ THE SUBJECT IS DERIVED, NOT NAMED — see the sibling block above for why
-  // (five re-points of one leg across the conversions). Any member of the union
-  // exercises the identical decision; the ANCHOR at the end is what reddens when
-  // the union has none left.
-  const fullViewSubject = [...HEADLESS_MOUNT_LANE_TYPES][0]!;
-
-  it('an un-migrated full-view occupant is hosted ELSEWHERE and gets no second mount', () => {
-    expect(
-      needsHeadlessSourceMount({ kind: 'shell', type: fullViewSubject, hostedElsewhere: true }),
-    ).toBe(false);
-  });
-
-  it('a MIGRATED one still needs the host while its faceplate is open', () => {
-    // ⚠ THE SUBJECT MOVED WITH THE EXTRACTION, and re-pointing it rather than
-    // deleting it is the whole point. This leg is about the DECISION — "a
-    // migrated module's dock faceplate is not a card mount, so the host is still
-    // required" — not about cameraInput, which merely happened to be the first
-    // module to make that true. cameraInput has since left the set entirely
-    // (its source is node-owned), so asking the question about it now returns
-    // `false` for a completely different reason and would pass while proving
-    // nothing. archivist was re-pointed to next and converted within the same
-    // slice; `wavesculpt` was the CARD_PRODUCER member that carried it next, and
-    // legacy-removal S1/7 extracted that too. The subject is DERIVED now.
-    expect(
-      needsHeadlessSourceMount({ kind: 'shell', type: fullViewSubject, hostedElsewhere: false }),
-    ).toBe(true);
-  });
-
-  it('ANCHORED: the subject above is a REAL member, so this pair cannot go vacuous', () => {
-    // With the subject derived, an emptied union would run both legs on
-    // `undefined` — where the FALSE leg passes for the wrong reason and only the
-    // TRUE one fails. This is the guard for that, and it is what says "retire
-    // the host, do not re-point at a synthetic type" when the day comes.
-    expect(
-      HEADLESS_MOUNT_LANE_TYPES.size,
-      'the DOCK FULL VIEW legs need a module the headless host still applies to',
-    ).toBeGreaterThan(0);
-  });
-});
+// ⚠ THE `DOCK FULL VIEW hosts the real card only for an UN-MIGRATED module`
+// DESCRIBE STOOD HERE and retired with the decision (legacy-removal S1.5). Its
+// ANCHOR leg said, verbatim, that when the union emptied it "says retire the
+// host, do not re-point at a synthetic type" — the union emptied, the host and
+// `needsHeadlessSourceMount` are deleted, and `fullViewShowsFaceInstead` went
+// with them from Canvas. What the pair pinned (a dock faceplate is not a card
+// mount) is now vacuous in the strongest sense: no module has a card whose
+// mount is engine-visible, so there is nothing for a dock state to orphan.

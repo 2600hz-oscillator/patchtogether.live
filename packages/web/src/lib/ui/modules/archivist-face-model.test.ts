@@ -40,7 +40,7 @@ import {
   noUserControlProblems,
 } from '$lib/ui/workflow/no-user-control';
 import type { NoUserControlDefLike } from '$lib/graph/types';
-import { DOM_SOURCE_LANE_TYPES, needsHeadlessSourceMount } from '$lib/ui/workflow/dom-source-modules';
+import { DOM_SOURCE_LANE_TYPES } from '$lib/ui/workflow/dom-source-modules';
 import { NODE_ARCHIVIST_SOURCE_TYPES } from '$lib/ui/media/node-archivist-source-registry';
 
 const def = archivistDef as unknown as FaceDefLike & { type: string };
@@ -120,10 +120,16 @@ describe('⚠ THE BLOCKER IS DISCHARGED, AND ARCHIVIST HAS SINCE LEFT THE SET EN
     expect(NODE_ARCHIVIST_SOURCE_TYPES.has('archivist')).toBe(true);
   });
 
-  it('needs NO headless host in any lane state — there is no card to host', () => {
-    for (const kind of ['shell', 'placeholder', 'legacy', 'stub'] as const) {
-      expect(needsHeadlessSourceMount({ kind, type: 'archivist' }), kind).toBe(false);
-    }
+  it('needs NO headless host — the host itself is retired, and the set stays empty', () => {
+    // This leg used to enumerate `needsHeadlessSourceMount` over the four lane
+    // kinds. The decision retired with `<HeadlessSourceHost>` (legacy-removal
+    // S1.5): NO module gets an off-screen card in ANY lane state, which is the
+    // stronger, structural form of what this leg asserted. What is left to
+    // hold is the population statement the structure rests on.
+    expect(
+      DOM_SOURCE_LANE_TYPES.size,
+      'a card-owned DOM source exists again — the headless host (or a node owner) must come back',
+    ).toBe(0);
   });
 
   it('the CONTROLLER attaches the source, and the card only ADOPTS to display it', () => {

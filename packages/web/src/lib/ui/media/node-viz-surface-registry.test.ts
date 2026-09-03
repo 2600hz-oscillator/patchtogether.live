@@ -313,3 +313,77 @@ describe('node-viz-surfaces — the ROSTER and the HOST agree in both directions
     expect(/ownsVideoOut\s*=/.test('<Surface {nodeId} ownsVideoOut={false} />')).toBe(true);
   });
 });
+
+describe('onWinner — how the host learns the claimant KIND without importing a view (cube)', () => {
+  // ⚠ WHY THIS SEAM EXISTS: wavesculpt's views show one canvas at ONE size, so
+  // the claims only decide WHERE it shows. cube's card and hero mounted the
+  // same attest-pinned renderer at DIFFERENT sizes (320×260 vs 300×210+orbit),
+  // so the host re-mounts per WINNING KIND — and the claims already carry the
+  // kind as priority. These legs own the delivery contract; the host's use of
+  // it is `card-producer-lifetime.spec.ts`'s to prove on real DOM.
+
+  it('delivers the CURRENT winner immediately on subscribe — including null', () => {
+    const { reg } = harness();
+    const seen: Array<number | null> = [];
+    reg.publish('n1', el(), PARK);
+    const off = reg.onWinner('n1', (p) => seen.push(p));
+    expect(seen, 'no claim yet — the host must learn that too').toEqual([null]);
+    off();
+    reg.claim('n1', DOCK, VIZ_CLAIM_PRIORITY.dock);
+    const late: Array<number | null> = [];
+    reg.onWinner('n1', (p) => late.push(p));
+    expect(late, 'a late subscriber learns the standing winner, not a replay of history')
+      .toEqual([VIZ_CLAIM_PRIORITY.dock]);
+  });
+
+  it('fires on every winner MOVE and stays silent on churn that keeps the winner', () => {
+    const { reg } = harness();
+    const seen: Array<number | null> = [];
+    reg.publish('n1', el(), PARK);
+    reg.onWinner('n1', (p) => seen.push(p));
+    const card = reg.claim('n1', CARD, VIZ_CLAIM_PRIORITY.card);
+    const dock = reg.claim('n1', DOCK, VIZ_CLAIM_PRIORITY.dock);
+    // A SECOND card claim while the dock holds the picture changes nothing.
+    const card2 = reg.claim('n1', { id: 'card2' }, VIZ_CLAIM_PRIORITY.card);
+    dock.release();
+    card.release();
+    card2.release();
+    expect(seen).toEqual([
+      null,
+      VIZ_CLAIM_PRIORITY.card,
+      VIZ_CLAIM_PRIORITY.dock,
+      // card2's arrival: silent (dock still wins). dock release → card wins
+      // (card2 is the most recent same-priority claim, same NUMBER — no move).
+      VIZ_CLAIM_PRIORITY.card,
+      // card's release: card2 still stands at the same priority — silent.
+      null,
+    ]);
+  });
+
+  it('a listener that THROWS does not stop delivery, and retract/publish alone notify nobody', () => {
+    const { reg } = harness();
+    const seen: Array<number | null> = [];
+    reg.publish('n1', el(), PARK);
+    reg.onWinner('n1', () => {
+      throw new Error('remount handler exploded');
+    });
+    reg.onWinner('n1', (p) => seen.push(p));
+    reg.claim('n1', DOCK, VIZ_CLAIM_PRIORITY.dock);
+    expect(seen).toEqual([null, VIZ_CLAIM_PRIORITY.dock]);
+    // The host's own remount does retract→publish; claims did not change, so
+    // the winner must not re-fire — that loop would remount forever.
+    reg.retract('n1');
+    reg.publish('n1', el(), PARK);
+    expect(seen).toEqual([null, VIZ_CLAIM_PRIORITY.dock]);
+  });
+
+  it('unsubscribe stops delivery and lets the entry prune with the rest', () => {
+    const { reg } = harness();
+    const seen: Array<number | null> = [];
+    const off = reg.onWinner('n1', (p) => seen.push(p));
+    off();
+    reg.claim('n1', DOCK, VIZ_CLAIM_PRIORITY.dock).release();
+    expect(seen, 'only the immediate delivery, nothing after unsubscribe').toEqual([null]);
+    expect(reg.snapshot(), 'nothing left to remember').toEqual([]);
+  });
+});

@@ -28,7 +28,18 @@
   import { patch } from '$lib/graph/store';
   import { setNodeParam } from '$lib/graph/mutate';
   import { cubeDef, CUBE_SLOTS, type CubeSlot } from '$lib/audio/modules/cube';
-  import CubeVizSurface from './cube/CubeVizSurface.svelte';
+  // ⚠ THE RENDERER IS NOT IMPORTED HERE (legacy-removal S1.5). The NODE owns
+  // `CubeVizSurface` — one mount per cube, parked off-screen by
+  // `NodeVizSurfaceHost` on GRAPH lifetime — and this card CLAIMS its element
+  // into the hold below. With no drawer installed cube's own drawFrame paints
+  // SOLID BLACK (#1724), so a card that mounted the renderer owned whether
+  // `video_out` carried a picture at all; that ownership is the node's now,
+  // and this card is a view. The claim's `card` priority is also what tells
+  // the host to mount the CARD shape (320×260/150×120/162×120, no orbit —
+  // `CUBE_VIEW_SIZES`), so this screen is pixel-for-pixel the one the card
+  // used to mount itself.
+  import { nodeVizSurfaces } from '$lib/ui/media/node-viz-surfaces';
+  import { VIZ_CLAIM_PRIORITY } from '$lib/ui/media/node-viz-surface-registry';
   import { paramSpec } from './card-kit';
   import {
     cubeSlotData,
@@ -189,6 +200,20 @@
   const KNOBS = KNOB_IDS.map((pid) => paramSpec(cubeDef, pid));
   const VIEW_KNOBS = VIEW_IDS.map((pid) => paramSpec(cubeDef, pid));
   const ADSR_KNOBS = ADSR_IDS.map((pid) => paramSpec(cubeDef, pid));
+
+  // ---- The NODE's picture, claimed into this card's screen column ----
+  //
+  // ⚠ CLAIM, NOT CREATE — and RANKED BELOW THE DOCK. Under `?shell=legacy` this
+  // card and a `DockFullView` faceplate can BOTH be mounted; the surface the
+  // player deliberately opened holds the picture, and closing it hands the
+  // element straight back here. See `$lib/ui/media/node-viz-surface-registry`.
+  let vizHost = $state<HTMLDivElement | null>(null);
+  $effect(() => {
+    const host = vizHost;
+    if (!host) return;
+    const claim = nodeVizSurfaces.claim(id, host, VIZ_CLAIM_PRIORITY.card);
+    return () => claim.release();
+  });
 </script>
 
 <div class="mod-card cube-card">
@@ -202,8 +227,12 @@
       <div class="cube-col cube-col-left">
       <!-- Visualization: all THREE views — the 3D cube (headline) on top, the
            2D SLICE cross-section + OUTPUT WAVEFORM side-by-side beneath.
-           SHARED with the faceplate hero (cube/CubeVizSurface.svelte). -->
-      <CubeVizSurface nodeId={id} vizW={320} vizH={260} sliceW={150} sliceH={120} waveW={162} waveH={120} />
+           The NODE mounts the renderer (cube/CubeVizSurface.svelte via
+           NodeVizSurfaceHost); this hold ADOPTS its element. Empty in markup
+           on purpose — the `.viz-col` is `appendChild`ed here by the claim,
+           and the minimum box (320 × 260+6+120) keeps the column from
+           collapsing while the dock holds the picture. -->
+      <div class="viz-hold" bind:this={vizHost} data-testid="cube-viz-hold"></div>
 
       <!-- Wavetable selectors. The FACTORY dropdown is the steady-state source
            selector (+ the synthetic USER option so a loaded table shows its
@@ -362,6 +391,7 @@
   .cube-body { padding: 6px 10px 8px; display: flex; flex-direction: row; gap: 14px; align-items: flex-start; }
   .cube-col { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
   .cube-col-left { flex: 0 0 auto; }
+  .viz-hold { min-width: 320px; min-height: 386px; }
   .cube-col-right { flex: 1 1 340px; min-width: 320px; }
   .wt-selects { display: flex; flex-direction: column; gap: 4px; }
   .wt-row { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
