@@ -708,12 +708,15 @@ export const FACES = [
   // Deterministic on a silent rack like every sibling: a mixer contains no
   // generator, so with nothing patched masterL is bit-exactly zero.
   //
-  // ⚠ THE ONLY ENTRY THAT DECLARES `foldHeight`, and it is the reason that field
-  // exists. The unfolded pane MEASURES 1623 CSS px, so at the shared 1400 it
-  // starts at y = -290 and cannot be framed; `foldViewportFor` gives this scene
-  // 2048 (425 px of headroom) and leaves every other scene's viewport — and
-  // therefore every other committed baseline — untouched. See the measurement
-  // on `foldViewportFor` for why raising the shared constant is NOT a no-op.
+  // ⚠ THE FIRST ENTRY TO DECLARE `foldHeight`, and the reason that field exists.
+  // (It was the ONLY one until toybox joined it on 2026-09-02 — the sentence is
+  // corrected rather than left standing, because "the only one" is exactly the
+  // kind of claim that goes quietly false.) The unfolded pane MEASURES 1623 CSS
+  // px, so at the shared 1400 it starts at y = -290 and cannot be framed;
+  // `foldViewportFor` gives this scene 2048 (425 px of headroom) and leaves
+  // every other scene's viewport — and therefore every other committed baseline
+  // — untouched. See the measurement on `foldViewportFor` for why raising the
+  // shared constant is NOT a no-op.
   {
     type: 'mixmstrs',
     pages: 4,
@@ -5817,6 +5820,42 @@ export const FACES = [
   //    besides doom
   {
     type: 'toybox',
+    // ⚠ THE SECOND ENTRY EVER TO DECLARE `foldHeight`, and it was found by CI
+    // rather than predicted — recorded that way rather than quietly fixed. The
+    // first bot capture failed with the dock scene's own message: "the unfolded
+    // pane starts at y=-141 in a 1400 px viewport — it has grown off the top of
+    // the window … (pane is 1475 CSS px tall)". The local determinism probe had
+    // already printed `578x1476` and it was read as merely "tall".
+    //
+    // MEASURED, so the number is not a guess. In a 1280x1400 window the body is
+    // 1244 CSS px on its DEFAULT tab, and every part of that is the card's own
+    // design carried across rather than slack:
+    //
+    //   screen 360 (480x360 at the engine's 4:3)   tab rail   19
+    //   screen bar 22                              CV pane   633
+    //   layer band 170                             ─────────────
+    //                                              body     1244  (+ dock chrome = 1475)
+    //
+    // The CV pane is SIX rows at 96 px each, and 96 is the card's own row: a
+    // `.cv-row` is `flex-direction: column` by design — head, then target+param,
+    // then the two knobs beside the scope. Measured at BOTH 512 px and 720 px of
+    // body width and the rows do not shrink, so this is not wrapping that a
+    // wider plate would fix.
+    //
+    // ⚠ SO THE SCENE GETS A TALLER WINDOW RATHER THAN THE PRODUCT GETTING A
+    // SHORTER PANE. The alternative considered and rejected was capping
+    // `.tb-pane` with an internal scroll: the faceplate ALREADY scrolls inside
+    // the dock, so that would add a second scrollbar inside a scrolling pane,
+    // hide two of the six modulation rows from the player, and do it to fit a
+    // capture window — the tail wagging the dog. Raising the SHARED
+    // `FOLD_VIEWPORT.height` is worse still and is measured on `foldViewportFor`
+    // to move every existing dock baseline through layout.
+    //
+    // 1792 gives 317 px of headroom over the 1475 px pane — the same shape of
+    // margin mixmstrs took (2048 over 1623, 425 px). It is deliberately NOT
+    // 2048: `foldViewportFor` isolates per scene, so a bigger window than the
+    // scene needs buys nothing and costs capture time.
+    foldHeight: 1792,
     // `face.order: []` and no `face.pages`, so the dock renders ZERO control
     // bands: `toyboxDef.params` is empty and there is nothing to rank. The
     // faceplate is the extension's `fullViewBody` and the dock chrome, and

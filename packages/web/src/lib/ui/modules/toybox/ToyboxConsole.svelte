@@ -3633,10 +3633,39 @@
     width: 480px;
     height: 360px;
   }
+  /* ⚠ DERIVED, not a magic number: the 480 px screen plus 16 px of padding a
+   * side. Written as `max-content` so it stays derived — a hard 512 would go
+   * stale the day the screen changes size and would read as a floor to the
+   * plate-width gate, which is the tidyVco shape. */
+  /* ⚠ NO HORIZONTAL PADDING, AND THAT IS A MEASUREMENT RATHER THAN A TASTE.
+   * The shell already insets an extension body: `.editor` pads 22 CSS px a
+   * side, and `.dock-ext-body` adds its own. A further 16 px here was DOUBLE
+   * padding, and `workflow-shell-faces`' geometry leg is what named it —
+   * "50 CSS px of EMPTY PLATE to the right of the content … against a 40 px
+   * ceiling", the tidyVco ruling ("we do not want useless gray horizontal
+   * space on cards, ever").
+   *
+   * MEASURED in the unfolded dock, CSS px, before -> after:
+   *
+   *   .faceplate-body   578 -> 546      ← the plate (bodyW)
+   *     .editor         578 -> 546        padL/R 22, the shell's own inset
+   *       .module-shell 534 -> 502
+   *         .dock-ext-body 532 -> 500
+   *           .tb-face  512 -> 480      ← this box
+   *             .tb-pane 480 -> 480     ← unchanged: the console's real width
+   *
+   * The console's own content never moved; what went was 32 px of plate the
+   * shell had already provided. `width: auto` keeps the box derived from that
+   * content rather than pinned to a number that would go stale — a hard width
+   * here reads to the same gate as the `min-width` floor the ruling was about.
+   *
+   * ⚠ THE SCREEN STAYS A FIXED 480x360 AND CENTRES. It is the one box whose
+   * size must not drift with the plate: a fractional or per-viewport picture
+   * width is a VRT settle hazard, which is the same reason its backing store is
+   * whole pixels at the engine's own 4:3. */
   .tb-face {
-    width: 512px;
-    max-width: 100%;
-    padding: 10px 16px 12px;
+    width: auto;
+    padding: 10px 0 12px;
     box-sizing: border-box;
     color: var(--text);
   }
