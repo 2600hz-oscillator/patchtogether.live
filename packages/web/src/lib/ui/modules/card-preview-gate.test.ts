@@ -122,11 +122,48 @@ function stripComments(src: string): string {
     .join('\n');
 }
 
+/**
+ * Every module-owned source this gate judges: the flat `lib/ui/modules/*` files
+ * AND one level of module directory beneath them.
+ *
+ * ⚠ THE SUBDIRECTORY LEVEL WAS ADDED 2026-09-02 BECAUSE THE FLAT WALK WENT
+ * VACUOUS, and the vacuity floor above is what caught it rather than a reviewer.
+ * toybox's promotion moved its console — the tree's only `__toyboxFreeze`
+ * one-shot present hook — from `ToyboxCard.svelte` into
+ * `toybox/ToyboxConsole.svelte`, so the ONE-SHOT population emptied and the
+ * #1836 leg would have gone green while measuring nothing. That is the same
+ * structural boundary `dom-source-modules.test.ts` widened its own walk for
+ * (#1724: "the gate's file walk was flat + `*Card.svelte`-filtered, so the
+ * pattern matched a file nothing read"), and it will keep happening: a
+ * `fullViewBody` lives at `modules/<extension-id>/`, by the shell-extension
+ * glob's own convention, so a face PR moves a card's preview code across this
+ * boundary EVERY time.
+ *
+ * One level is deliberate rather than a full recursive walk: it is exactly the
+ * depth the shell-extension glob itself looks at (one directory under
+ * `lib/ui/modules`, holding that module's `shell-extension.ts`), so the subject
+ * set is the same population the shell can actually load.
+ */
 function sourceFiles(): Array<{ name: string; src: string }> {
-  return readdirSync(MODULES_DIR)
-    .filter((f) => f.endsWith('.svelte') || (f.endsWith('.ts') && !f.endsWith('.test.ts')))
-    .sort()
-    .map((name) => ({ name, src: stripComments(readFileSync(join(MODULES_DIR, name), 'utf8')) }));
+  const wanted = (f: string): boolean =>
+    f.endsWith('.svelte') || (f.endsWith('.ts') && !f.endsWith('.test.ts'));
+  const out: Array<{ name: string; src: string }> = [];
+  for (const entry of readdirSync(MODULES_DIR, { withFileTypes: true })) {
+    if (entry.isDirectory()) {
+      for (const inner of readdirSync(join(MODULES_DIR, entry.name))) {
+        if (!wanted(inner)) continue;
+        const rel = `${entry.name}/${inner}`;
+        out.push({ name: rel, src: stripComments(readFileSync(join(MODULES_DIR, rel), 'utf8')) });
+      }
+      continue;
+    }
+    if (!wanted(entry.name)) continue;
+    out.push({
+      name: entry.name,
+      src: stripComments(readFileSync(join(MODULES_DIR, entry.name), 'utf8')),
+    });
+  }
+  return out.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
 }
 
 /** Calls to the ungated blit whose argument is the card's own `id`. */

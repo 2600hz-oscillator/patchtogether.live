@@ -305,6 +305,16 @@ describe('the pad ladder is not re-typed on a surface', () => {
     // otherwise turn this whole describe green by scanning nothing.
     expect(surfaces.length).toBeGreaterThanOrEqual(1);
     expect(surfaces.some(([p]) => p.endsWith('ClipplayerCard.svelte'))).toBe(true);
+    // ⚠ AND THE V2 FACE, BY NAME, NOW THAT IT EXISTS. When this helper was
+    // written the face was still an unmerged branch, so the scan could only
+    // PROMISE to cover it once it landed. It has (#2326), and two surfaces
+    // drifting apart is the entire defect this file guards — so "both surfaces
+    // are actually being read" is asserted rather than left to the regex's good
+    // intentions.
+    expect(
+      surfaces.some(([p]) => p.endsWith('clipplayer/clipplayer-face-model.ts')),
+      'the v2 face model must be in the scanned set — it is the second surface',
+    ).toBe(true);
   });
 
   it('every surface DELEGATES to clipPadState and re-types no ladder of its own', () => {

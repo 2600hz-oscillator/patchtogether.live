@@ -23,6 +23,7 @@ import { mkdtempSync, readFileSync, readdirSync, writeFileSync, rmSync } from 'n
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { assertFullShardSet } from './ci-shard-count.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const OUT = join(ROOT, 'e2e/vrt-strict-timings.generated.json');
@@ -56,6 +57,14 @@ try {
     }
   }
   if (shards === 0) throw new Error(`run ${runId} published no vrt-strict-timings-* artifacts`);
+  // ⚠ REFUSE A PARTIAL RUN, not just an empty one. Each `vrt-strict-shard`
+  // matrix job uploads exactly one vrt-strict-timings-<n> JSON; accepting
+  // while shards were cancelled/failed/still PENDING merges fewer, and every
+  // scene on a missing shard is TRUNCATED out of the artifact to be scheduled
+  // at the median from then on (the face-PR truncation failure). Expected
+  // width is DERIVED from ci.yml's `vrt-strict-shard` matrix — see
+  // ci-shard-count.mjs.
+  assertFullShardSet(shards, 'vrt-strict-shard', `vrt-strict-timings-* shard JSON(s) in run ${runId}`);
 
   const prev = JSON.parse(readFileSync(OUT, 'utf8')).tests;
   const keys = Object.keys(merged).sort();

@@ -84,8 +84,38 @@ async function goto(page: Page, query: string): Promise<void> {
 }
 
 /** Hang an analyser on treeohvox's `audio_out`, via the same output seam a
- *  cable materialises through. */
+ *  cable materialises through.
+ *
+ *  ⚠ THE SEAM IS POLLED AS OBSERVABLE STATE, NOT READ ONCE — the #2310
+ *  disease ("a window opened before the thing it measures existed"), another
+ *  instance. `spawnPatch` resolves on the DOM side while the voice's ASYNC
+ *  factory (worklet compile + handle registration) is still publishing
+ *  `audio_out`, so a single immediate `getOutputNode` read raced it and threw
+ *  "`audio_out` has no audio node" on a cold CI shard — recovered on retry,
+ *  which is exactly the signature the flake gate exists to redden. The poll's
+ *  subject is the seam itself; the attach below keeps its hard throw as the
+ *  can't-happen guard, never as the wait. */
 async function installProbe(page: Page): Promise<void> {
+  await expect
+    .poll(
+      () =>
+        page.evaluate((nid) => {
+          const w = globalThis as unknown as {
+            __engine: () => {
+              getDomain(d: string): {
+                getOutputNode(nodeId: string, portId: string): { node: AudioNode; output: number } | null;
+              };
+            };
+          };
+          return !!w.__engine().getDomain('audio').getOutputNode(nid, 'audio_out');
+        }, NID),
+      {
+        timeout: SLOW ? 30_000 : 15_000,
+        message:
+          '`audio_out` must publish an audio node — the async factory registers the handle after spawnPatch resolves, and the probe cannot attach before it',
+      },
+    )
+    .toBe(true);
   await page.evaluate((nid) => {
     const w = globalThis as unknown as {
       __engine: () => {

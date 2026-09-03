@@ -64,13 +64,12 @@ export type ClipplayerMenuAt =
   | { kind: 'note'; x: number; y: number; idx: number; step: number; midi: number; row: number }
   | { kind: 'clip'; x: number; y: number; idx: number };
 
-/** A launch-grid pad's four painted states.
+/** A launch-grid pad's four painted states — the SHARED type, re-exported under
+ *  this file's own name so the face's callers need not learn a second one.
  *
- *  ⚠ AN ALIAS OF THE SHARED `ClipPadState`, NOT A SECOND DECLARATION. The
- *  legacy card and this face paint the SAME grid, and while each owned its own
- *  copy of the ladder they had already drifted on its last clause — see
- *  `clipPadState` in `clip-types`. Re-typing the union here would let them
- *  drift again in the type as well as the logic. */
+ *  ⚠ AN ALIAS, NOT A COPY. `ClipPadState` is the one definition; declaring the
+ *  union again here is how the card and the face come to disagree about what is
+ *  playing, which is the whole reason `clip-pad-state` exists. */
 export type ClipplayerPadState = ClipPadState;
 
 /** One pad of the 8×8 launch grid. */
@@ -123,29 +122,30 @@ export interface ClipplayerSceneView {
   label: string;
 }
 
-/** How a pad paints, from stored data alone.
+/**
+ * How a pad paints, from stored data alone — DELEGATED to the shared ladder.
  *
- *  ⚠ THE PRECEDENCE IS LOAD-BEARING AND IT IS NOT ALPHABETICAL. A queued slot
- *  reads `queued` even when it is the playing one, because a pending STOP on
- *  the playing pad is the single most important thing the grid can tell you —
- *  and `lanePlaying === slot` is true throughout it. */
+ * ⚠ THIS USED TO RE-TYPE THE LADDER, and that is a merge-order collision rather
+ * than an oversight: #2326 authored this function against a tree where the
+ * shared `clipPadState` did not exist yet, and #2329 landed that helper (plus
+ * the scan that forbids a second copy) an hour earlier. Neither PR ran the
+ * other's tests, so main went red on `clip-pad-state.test.ts` — "a clipplayer
+ * surface computes pad state itself instead of calling clipPadState".
+ *
+ * The two implementations were line-for-line identical in precedence (queued
+ * beats playing; a pending STOP on the playing pad reads queued), differing
+ * only in how the last rung asks whether a clip exists — `clipRecordAt` here
+ * versus `readClip` there, both of which coerce and both of which answer null
+ * for a malformed record. So this is behaviour-preserving by inspection, and
+ * `clipplayer-face-model.test.ts`'s own four pad-state cases pin it.
+ *
+ * Kept as a named wrapper rather than deleted: the face's callers already
+ * import this name, and a thin delegation is the seam the scan is asking for.
+ */
 export function clipplayerPadState(
   data: ClipPlayerData | undefined,
   index: number,
 ): ClipplayerPadState {
-  // ⚠ DELEGATES. THE LADDER IS NOT RE-TYPED HERE, AND A GATE ENFORCES THAT.
-  //
-  // This face and the legacy `ClipplayerCard` paint the same 8×8 grid, and
-  // while each carried its own copy of the precedence ladder they had ALREADY
-  // drifted on the last clause: the card asked `clips[k] ? …` (raw truthiness)
-  // while this asked `coerceClipRecord(clips[k]) !== null`. A record that
-  // coerces away — the retired stamped `kind:'automation'` clip, any junk —
-  // painted LOADED on the card and EMPTY on the face. The coerced reading won
-  // and moved into `clip-types`, where both surfaces read it.
-  //
-  // `clip-pad-state.test.ts` source-scans the clipplayer surfaces and reddens
-  // on one that writes the `queued === slot` rung itself, so this cannot
-  // silently become a second copy again.
   return clipPadState(data, index);
 }
 

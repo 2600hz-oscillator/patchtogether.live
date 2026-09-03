@@ -709,12 +709,20 @@ export const FACES = [
   // Deterministic on a silent rack like every sibling: a mixer contains no
   // generator, so with nothing patched masterL is bit-exactly zero.
   //
-  // ⚠ THE FIRST ENTRY TO DECLARE `foldHeight`, and it is the reason that field
-  // exists. The unfolded pane MEASURES 1623 CSS px, so at the shared 1400 it
-  // starts at y = -290 and cannot be framed; `foldViewportFor` gives this scene
-  // 2048 (425 px of headroom) and leaves every other scene's viewport — and
-  // therefore every other committed baseline — untouched. See the measurement
-  // on `foldViewportFor` for why raising the shared constant is NOT a no-op.
+  // ⚠ THE FIRST ENTRY TO DECLARE `foldHeight`, and the reason that field exists.
+  // The unfolded pane MEASURES 1623 CSS px, so at the shared 1400 it starts at
+  // y = -290 and cannot be framed; `foldViewportFor` gives this scene 2048
+  // (425 px of headroom) and leaves every other scene's viewport — and therefore
+  // every other committed baseline — untouched. See the measurement on
+  // `foldViewportFor` for why raising the shared constant is NOT a no-op.
+  //
+  // ⚠ IT IS NO LONGER THE ONLY ONE, and the two that joined it did so on the
+  // same day by the same route — each was told the number by a failing capture
+  // rather than predicting it. `clipplayer` measured 1436 px and `toybox` 1475,
+  // and both took 1792. The mechanism generalised on its second and third use,
+  // which is the outcome a per-scene field is supposed to have; the alternative
+  // — one shared height raised three times — is measured right here to move
+  // every existing dock baseline through layout.
   //
   // ⚠ FIVE BANDS SINCE THE CLIP-RECORD BAND LANDED, WHICH MAKES `foldHeight` A
   // MEASUREMENT THAT NEEDS RE-TAKING. The 2048 was sized against a 1623 px pane
@@ -725,9 +733,6 @@ export const FACES = [
   // is wrong in a way a GREEN run will not say. It is left at 2048 on purpose:
   // Linux CI authors the single baseline set, so a height guessed on a macOS
   // box would be a second unverified number stacked on the first.
-  // (⚠ It is no longer the ONLY one: `clipplayer` measured 1436 px and took
-  // 1792 on the same argument. The mechanism generalised on its second use,
-  // which is the outcome a per-scene field is supposed to have.)
   {
     type: 'mixmstrs',
     pages: 5,
@@ -5899,6 +5904,118 @@ export const FACES = [
     foldHeight: 1792,
   },
 
+  // ── TOYBOX — the FOUR-LAYER COMPOSITOR, and the last face in the programme
+  //    besides doom
+  {
+    type: 'toybox',
+    // ⚠ THE SECOND ENTRY EVER TO DECLARE `foldHeight`, and it was found by CI
+    // rather than predicted — recorded that way rather than quietly fixed. The
+    // first bot capture failed with the dock scene's own message: "the unfolded
+    // pane starts at y=-141 in a 1400 px viewport — it has grown off the top of
+    // the window … (pane is 1475 CSS px tall)". The local determinism probe had
+    // already printed `578x1476` and it was read as merely "tall".
+    //
+    // MEASURED, so the number is not a guess. In a 1280x1400 window the body is
+    // 1244 CSS px on its DEFAULT tab, and every part of that is the card's own
+    // design carried across rather than slack:
+    //
+    //   screen 360 (480x360 at the engine's 4:3)   tab rail   19
+    //   screen bar 22                              CV pane   633
+    //   layer band 170                             ─────────────
+    //                                              body     1244  (+ dock chrome = 1475)
+    //
+    // The CV pane is SIX rows at 96 px each, and 96 is the card's own row: a
+    // `.cv-row` is `flex-direction: column` by design — head, then target+param,
+    // then the two knobs beside the scope. Measured at BOTH 512 px and 720 px of
+    // body width and the rows do not shrink, so this is not wrapping that a
+    // wider plate would fix.
+    //
+    // ⚠ SO THE SCENE GETS A TALLER WINDOW RATHER THAN THE PRODUCT GETTING A
+    // SHORTER PANE. The alternative considered and rejected was capping
+    // `.tb-pane` with an internal scroll: the faceplate ALREADY scrolls inside
+    // the dock, so that would add a second scrollbar inside a scrolling pane,
+    // hide two of the six modulation rows from the player, and do it to fit a
+    // capture window — the tail wagging the dog. Raising the SHARED
+    // `FOLD_VIEWPORT.height` is worse still and is measured on `foldViewportFor`
+    // to move every existing dock baseline through layout.
+    //
+    // 1792 gives 317 px of headroom over the 1475 px pane — the same shape of
+    // margin mixmstrs took (2048 over 1623, 425 px). It is deliberately NOT
+    // 2048: `foldViewportFor` isolates per scene, so a bigger window than the
+    // scene needs buys nothing and costs capture time.
+    foldHeight: 1792,
+    // `face.order: []` and no `face.pages`, so the dock renders ZERO control
+    // bands: `toyboxDef.params` is empty and there is nothing to rank. The
+    // faceplate is the extension's `fullViewBody` and the dock chrome, and
+    // nothing is padded to manufacture a rail.
+    pages: 0,
+    videoFaceWhy:
+      'a VIDEO module, so it must boot into the video zone rather than a mixer channel column — '
+      + 'without this field `bootWithFace` waits out the full test timeout for a column '
+      + 'membership a video node never acquires. It is ALSO what turns on '
+      + '`awaitFaceVideoPainted` + `freezeFaceVideo`, and BOTH need reading carefully here. '
+      + '⚠ `freezeFaceVideo` ALONE CANNOT STOP THIS PICTURE, and not for acidwarp\'s reason. It '
+      + 'writes `params.freeze = 1`; `toyboxDef.params` is `[]`, so that write lands on a param '
+      + 'no factory reads and changes nothing at all. What actually stops the picture is the '
+      + '`simPin` below, and the freeze write is then a harmless no-op the shared helper makes '
+      + 'on every video face. '
+      + '⚠ THE COMPACT SCENE\'S WELL PAINTS LATE, AND THAT IS SAID HERE RATHER THAN DISCOVERED '
+      + 'LATER. A GEN layer\'s GLSL is FETCHED at runtime (`noise-fbm.frag.glsl`, a static asset '
+      + 'resolved lazily on selection and never JS-bundled) and then COMPILED, so the first '
+      + 'frames after spawn render the idle field rather than the pattern. '
+      + '`awaitFaceVideoPainted` closes the compact half — the lane tile is a `VideoTileThumb`, '
+      + 'so it publishes `data-thumb-painted` only once the engine has actually drawn the node — '
+      + 'but it CANNOT close the dock half, because the dock capture root holds this module\'s '
+      + 'own `toybox-face-canvas` and no tile thumb at all, and that helper reports-and-skips a '
+      + 'root with no well. The dock scene therefore rests on `simPin` making every frame '
+      + 'identical INCLUDING the pre-compile ones, plus `freezeFaceVideo`\'s own '
+      + 'sample-until-still loop, which will not return while the picture is still changing from '
+      + 'idle to pattern. The card VRT suite closes the same race with a bespoke '
+      + '"poll until >10% of the preview is lit, then freeze" helper on a 10 s budget '
+      + '(vrt-toybox.spec.ts), and toybox-randomize.spec.ts records the same thing from the '
+      + 'other side ("while the new GLSL fetches + compiles the layer contributes nothing" — '
+      + 'it waits 90 frames after a content swap). No equivalent was added to the shared '
+      + 'harness in a face PR. '
+      + '⚠ MEASURED RATHER THAN PREDICTED, and it holds: vrt-determinism-probe on this branch '
+      + 'reports BOTH tiers bit-identical across two full boots — compact 88x82 diff@1=0 '
+      + 'diff@26=0 maxDelta=0, dock 578x1476 diff@1=0 diff@26=0 maxDelta=0, pageerrors=0 on '
+      + 'each. The interesting column is `tries=2/2`: freezeFaceVideo needed a SECOND settle '
+      + 'round on both tiers before the surface stopped moving, which is the settle earning its '
+      + 'place rather than a margin to spend. If a baseline ever lands showing the idle field '
+      + 'instead of the pattern, THAT race is the mechanism, and the fix is the settle, not the '
+      + 'pin. '
+      + '⚠ THE SIX CV SCOPES ARE THE OTHER MOVING THING, and they settle rather than needing a '
+      + 'pin: CV-MOD is the default tab, each row paints an always-on inline scope, and with no '
+      + 'cable patched every sample is the constant OFFSET — so the trace changes only while the '
+      + 'ring buffer fills and is still thereafter, which is what `freezeFaceVideo`\'s retry loop '
+      + 'is for — and the measured `tries=2/2` above is most likely them. Nothing else on the '
+      + 'surface moves: the layer band, the tab rail and the pane are static DOM.',
+    // ⚠ A CLOCK PIN, NOT A FREEZE PARAM — the cheaper of the two whenever it
+    // applies, and here it is the ONLY one that applies. Adding a `freeze`
+    // ParamDef to `toyboxDef` would move `params`, which moves contract-lock AND
+    // the WebGL attest hash, to buy a WEAKER guarantee (a freeze holds A frame
+    // without choosing WHICH). This global is already shipped and already read
+    // by the factory.
+    simPin: [
+      {
+        global: '__toyboxFreezeTime',
+        value: 1.0,
+        why:
+          'pins the ONLY time term the render reads. `toybox.ts`\'s draw resolves '
+          + '`const time = frozenTime() ?? frame.time`, and `frozenTime()` is exactly '
+          + '`globalThis.__toyboxFreezeTime` — so with it set, every layer\'s `iTime` uniform is '
+          + 'the same number on every frame and the composite becomes a pure function of '
+          + '`node.data`. `simPin` installs it via `addInitScript` BEFORE `goto`, which is '
+          + 'strictly earlier than the card VRT suite manages: the value is in place before any '
+          + 'module factory runs, so there is no pre-pin frame to race. Sufficient ALONE for the '
+          + 'DEFAULT patch, and that is a property of the default rather than of the module: a '
+          + 'fresh node is one GEN layer wired straight to OUT, with no FEEDBACK, FRAMEDELAY, '
+          + 'EXQUISITE or DATAMOSH op in the graph — those four DO accumulate between frames, and '
+          + 'a scene that added one would need more than a clock pin.',
+      },
+    ],
+  },
+
 ] as const;
 
 /**
@@ -6219,6 +6336,87 @@ export const FACES_WITHOUT_SCENES: readonly UnbaselinableFace[] = [
       'packages/web/src/lib/blood/blood-runtime.test.ts',
       'packages/web/src/lib/blood/blood-keys.test.ts',
     ],
+  },
+  {
+    type: 'doom',
+    scenes: ['compact', 'dock'],
+    why:
+      "DOOM'S GAME CLOCK IS ITS FRAME CLOCK, which is a stronger statement than \"it animates\" "
+      + '(mirrorpool, outlines, warrensvisions and freezeframe all animate and are all baselined) '
+      + 'and it is a mechanism rather than a label: `video/modules/doom.ts` calls '
+      + '`runtime.runTic(msDelta)` INSIDE `surface.draw`, so ONE RENDERED FRAME IS ONE GAME TIC and '
+      + 'any capture of a running DOOM is a capture of however many tics that runner happened to '
+      + 'render. '
+      + '⚠ RE-DERIVED FOR THE FACE SCENES RATHER THAN INHERITED from the card roster\'s '
+      + 'EXEMPT_FROM_VRT entry, because the two capture different surfaces and the card\'s argument '
+      + 'is not automatically the face\'s. Both of this suite\'s mechanisms were read at the source '
+      + 'against THIS def and THIS factory: '
+      + '(1) `freezeFaceVideo` HAS NOTHING TO WRITE. It freezes a video face by setting '
+      + '`params.freeze = 1`; `doomDef.params` is `audioGain`, `fillMode` and 38 `cv_*` gate '
+      + 'targets. There is no `freeze` param and never has been, so the write lands on a key the '
+      + "factory's `if (paramId in params)` guard rejects and is a NO-OP. (That is also why this "
+      + 'entry carries no `freezeIsNotASeam`: the anchor forbids the field on a def with no '
+      + '`freeze` param, and rightly — there is no param to make an argument about.) '
+      + '(2) `simPin` CANNOT REACH THE CLOCK. It installs boot-time page globals with '
+      + "`addInitScript` for a factory to read at construction. DOOM's tic delta is computed from "
+      + '`performance.now()` inside `surface.draw` (`const now = performance.now(); const msDelta = '
+      + 'Math.max(1, Math.min(50, now - lastTicMs))`) — it never reads `frame.time`, so '
+      + '`__videoEngineFreezeTime` does not slow it by a single tic — and the simulation state and '
+      + 'RNG it advances live inside the WASM module. There is no page-global anywhere on the path '
+      + 'and no pin to add short of a new seam through the WASM boundary. '
+      + '⚠ AND THAT SEAM MUST NOT BE BUILT, which is the one thing that makes this entry different '
+      + "from blood's otherwise-identical argument. `vrt-exemptions.ts` says it three times in its "
+      + 'own words — "DOOM IS EXCLUDED FROM THIS REASONING BY NAME AND MUST STAY EXEMPT … a tick '
+      + 'pin would re-specify how far the marine walks" — so the usual discharge (add the hook, '
+      + 'then capture) is refused here on purpose rather than merely unbuilt. '
+      + '⚠ THE NATURAL STILL IS REAL AND IS REFUSED, stated because a reader will find it and '
+      + 'should not have to wonder whether anybody looked. DOOM boots its WASM only on a USER '
+      + 'GESTURE (the "Click to load DOOM" button, which calls `extras.ensureLoaded()`), so a face '
+      + "scene that never clicked would capture the fragment shader's `uHasFrame < 0.5` branch — a "
+      + 'pure function of `vUv`, and therefore perfectly deterministic. It is NOT used, for two '
+      + 'reasons. First, it would be a baseline OF THE IDLE BRANCH rather than of the module: the '
+      + 'picture is a near-black scanline field (`vec4(0.04, 0.02, 0.02, 1.0) * scan`) that is '
+      + 'byte-identical on every renderer AND on a DOOM that cannot boot at all, so it would stay '
+      + 'green against a broken module — a baseline wired to nothing, which is worse than no '
+      + 'baseline. Second, it is stable only while nothing in the scene ever loads the WAD, and the '
+      + 'moment any future leg does, the capture becomes tic-count-dependent with no seam available '
+      + 'to pin it. A baseline whose precondition is "never start the module" is not coverage. '
+      + 'The CARD roster reached the same verdict about this renderer long before the face existed '
+      + '(EXEMPT_FROM_VRT in vrt-exemptions.ts), and that entry stays standing: this promotion '
+      + 'changed nothing about the engine, the WASM or the draw path.',
+    coveredBy: [
+      // The FACE itself, on the DEFAULT shell: that the body mounts and paints,
+      // that the SCREEN switch collapses the preview while the game KEEPS
+      // TICKING (read in game tics off DOOM's own clock, never in milliseconds),
+      // that the keyboard reaches the runtime through the faceplate, and the
+      // pageerror guard.
+      'e2e/tests/face-doom.spec.ts',
+      // The FACE MODEL, none of which needs pixels: the two ranked cells, the
+      // forced glyph, the extension declaration, the forty no-user-control
+      // declarations, and the source-shaped proof that the card and the face
+      // mount ONE surface component rather than two.
+      'packages/web/src/lib/ui/modules/doom-face-model.test.ts',
+      // Every cell operates, and the dock's control set equals the def's param
+      // set — the registry-driven sweep this face auto-enrols in.
+      'e2e/tests/faces-parity.spec.ts',
+      // The SESSION belongs to the NODE, on the DEFAULT shell — the lifetime
+      // legs whose locator this promotion re-points from the legacy card to the
+      // faceplate body. This is the spec that would catch a face body which
+      // failed to adopt the node session, which is the promotion's whole risk.
+      'e2e/tests/doom-session-survives-card-collapse.spec.ts',
+      // The engine contract, pixel-free and untouched by this PR: the WASM
+      // boots, the framebuffer advances, and the keyboard / CV input paths
+      // reach the runtime.
+      'e2e/tests/doom-wasm.spec.ts',
+      'e2e/tests/doom-controls.spec.ts',
+      'e2e/tests/doom-keyboard-routing.spec.ts',
+      // The module's own unit contract: ports, params, the event gates and the
+      // per-slot own-slot-only CV routing rule.
+      'packages/web/src/lib/video/modules/doom.test.ts',
+    ],
+    // ⚠ NO `freezeIsNotASeam`, and its ABSENCE is required rather than
+    // incidental: the anchor's inverse leg reddens a declaration whose def has
+    // no `freeze` param, and `doomDef` declares none.
   },
 
 ];

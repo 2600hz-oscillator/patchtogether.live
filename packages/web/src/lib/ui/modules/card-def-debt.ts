@@ -119,6 +119,36 @@ export const VOCABULARY_DEBT: Readonly<Record<string, readonly string[]>> = {
   // wording (`Dec` is ambiguous with decay), so no pixels moved; the card now
   // binds every range, curve, unit AND label off `paramSpec(destroyDef, …)`,
   // so there is no second copy left to disagree.
+  // ⚠ `DoomCard.svelte: ['audioGain.label']` — STILL OPEN, AND DELIBERATELY NOT
+  // PAID BY THE 2026-09-02 FACE PR. The def declares `label: 'Gain'`; the card's
+  // Knob says `label="Volume"`. Promotion makes the divergence USER-VISIBLE for
+  // the first time — the faceplate renders this control FROM THE DEF, so the two
+  // surfaces now name one control two ways — which is a real finding and is
+  // reported rather than silently absorbed.
+  //
+  // It was drafted as PAID (bind `label={paramSpec(doomDef,'audioGain').label}`)
+  // and REVERTED when the cost was measured rather than assumed. Paying it in
+  // the card's direction renames a shipped control "Volume" → "Gain", which:
+  //   * breaks `doom-controls.spec.ts:448`, which locates the knob BY ITS LABEL
+  //     — MEASURED, it went red — and DOOM specs are off-limits to a face PR
+  //     beyond the one structural re-point the promotion forces; and
+  //   * moves four committed baselines (`composite-doom-evt-{kill,door}-{idle,
+  //     driven}.png` clip a 940x540 region of `?shell=legacy` that contains the
+  //     whole card, so the caption is in frame).
+  // Paying it in the DEF's direction ('Gain' → 'Volume') is worse: `params` is
+  // NOT hash-transparent — only `face`, `docs`, `controlFamilies` and
+  // `noUserControl` are stripped by `attest-code-basis` — so it would move the
+  // WebGL attest hash and re-pin `contract-lock.txt` for one word.
+  //
+  // ⚠ THE ENTRY STAYS LIVE RATHER THAN BECOMING A TOMBSTONE, and that decided
+  // where the code went. This ledger's scan is `*Card.svelte`-ONLY. The face PR
+  // moved DOOM's surface into `doom/DoomSurface.svelte`, and had the Knob gone
+  // with it this entry would have gone STALE (red) while the divergence carried
+  // on existing one directory down — the silently-emptied-subject-set failure
+  // `card-media-lifetime.test.ts` has now recorded three times. So the OUTPUT FIT
+  // row and this Knob were deliberately kept in `DoomCard.svelte` and passed into
+  // the shared surface as a snippet: the gate keeps its subject, the entry keeps
+  // meaning what it says, and the debt is owed by the same file it always was.
   'DoomCard.svelte': ['audioGain.label'],
   'DrummergirlCard.svelte': ['pitch.units'],
   'Dx7Card.svelte': ['algorithm.label', 'transpose.label'],

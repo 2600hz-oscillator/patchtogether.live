@@ -987,12 +987,18 @@ jobs:
           path: packages/web/static/doom/DOOM1.WAD
           key: doom-wad-shareware-v1
 
+      # ⚠ The old slitaz mirror (distro.ibiblio.org/slitaz/.../doom1.wad) now
+      # 404s — this step only survived on the cache key above. Doomworld ships
+      # the SAME bytes zipped (one member, DOOM1.WAD, 4196020 bytes); the SHA-1
+      # check below is what makes the mirror swap safe: same digest as before,
+      # verified 2026-09-03, and `shasum -c` fails the step loudly on mismatch.
       - name: Download DOOM1.WAD (shareware)
         if: steps.cache-doom-wad.outputs.cache-hit != 'true'
         run: |
           curl -L --fail --silent --show-error --retry 3 --retry-delay 2 --retry-all-errors --connect-timeout 10 \
-            -o packages/web/static/doom/DOOM1.WAD \
-            https://distro.ibiblio.org/slitaz/sources/packages/d/doom1.wad
+            -o /tmp/shareware_doom_iwad.zip \
+            https://www.doomworld.com/3ddownloads/ports/shareware_doom_iwad.zip
+          unzip -o -j /tmp/shareware_doom_iwad.zip DOOM1.WAD -d packages/web/static/doom/
           echo "5b2e249b9c5133ec987b3ea77596381dc0d6bc1d  packages/web/static/doom/DOOM1.WAD" \
             | shasum -a 1 -c -
 
@@ -1592,12 +1598,18 @@ jobs:
           path: packages/web/static/doom/DOOM1.WAD
           key: doom-wad-shareware-v1
 
+      # ⚠ The old slitaz mirror (distro.ibiblio.org/slitaz/.../doom1.wad) now
+      # 404s — this step only survived on the cache key above. Doomworld ships
+      # the SAME bytes zipped (one member, DOOM1.WAD, 4196020 bytes); the SHA-1
+      # check below is what makes the mirror swap safe: same digest as before,
+      # verified 2026-09-03, and `shasum -c` fails the step loudly on mismatch.
       - name: Download DOOM1.WAD (shareware)
         if: steps.cache-doom-wad.outputs.cache-hit != 'true'
         run: |
           curl -L --fail --silent --show-error --retry 3 --retry-delay 2 --retry-all-errors --connect-timeout 10 \
-            -o packages/web/static/doom/DOOM1.WAD \
-            https://distro.ibiblio.org/slitaz/sources/packages/d/doom1.wad
+            -o /tmp/shareware_doom_iwad.zip \
+            https://www.doomworld.com/3ddownloads/ports/shareware_doom_iwad.zip
+          unzip -o -j /tmp/shareware_doom_iwad.zip DOOM1.WAD -d packages/web/static/doom/
           echo "5b2e249b9c5133ec987b3ea77596381dc0d6bc1d  packages/web/static/doom/DOOM1.WAD" \
             | shasum -a 1 -c -
 
