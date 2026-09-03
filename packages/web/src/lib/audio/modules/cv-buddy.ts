@@ -47,12 +47,29 @@
 // counts bridge starvation. Rising skips = main-thread scheduling; rising xruns
 // = the jack is starving; neither = look elsewhere. Both are on-screen so the
 // next report is a measurement instead of an impression.
+//
+// ⚠ THE CLOCK IS EMITTED ON THE AUDIO THREAD when the environment has an
+// AudioWorklet (every real browser): the SPEEDERR-001 performance (ledger item
+// 10) lost exactly ONE pulse to a 200–360 ms main-thread stall against the
+// 200 ms lookahead — drop-not-flush held, margin didn't. So the RUN + CLOCK
+// jacks are driven by the 'cv-clock' processor (packages/dsp/src/seq-clock.ts
+// → lib/cv-clock-core.ts), which renders the same accumulator law per sample
+// on the audio thread; a main-thread stall can then starve only the CONFIG
+// messages (a tempo edit applies a tick late) and never the pulse train. The
+// scheduler tick below KEEPS RUNNING as the config pusher AND as a shadow of
+// the old path, so `skips` still measures main-thread stalls — under the
+// worklet a rising count means "the audio-thread clock absorbed this", and
+// read('clockHealth') says which driver owns the jack. In test/SSR (no
+// AudioWorklet) the main-thread path drives the jacks exactly as before, which
+// is the path the #2324 invariant suite pins.
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
 import { patch as livePatch } from '$lib/graph/store';
 import { getSchedulerClock } from '$lib/audio/scheduler-clock';
 import { openGate, closeGate, GATE_HI } from '$lib/audio/gate-trigger';
+import { createWorkletNode } from '$lib/audio/worklet-guard';
+import seqClockWorkletUrl from '@patchtogether.live/dsp/dist/seq-clock.js?url';
 import {
   advanceClock,
   idleClockPhase,
@@ -91,6 +108,49 @@ export interface CvBuddyClockState {
    */
   skips: number;
 }
+
+/**
+ * Which mechanism is actually driving the RUN + CLOCK jacks, via
+ * `read('clockHealth')` — a SEPARATE key from `read('state')` on purpose:
+ * the #2324 invariant suite pins the exact shape of `state`, and the shape it
+ * pins is the main-thread contract, which this does not change.
+ */
+export interface CvBuddyClockHealth {
+  /** 'worklet' — the audio-thread cv-clock processor owns the jacks
+   *  (stall-immune); 'main' — the scheduler-tick path (test/SSR, or a context
+   *  whose AudioWorklet failed to load). */
+  driver: 'worklet' | 'main';
+  /** The same main-thread late-tick counter as `read('state').skips`. Under
+   *  the worklet driver it keeps counting — it measures main-thread stalls the
+   *  audio-thread clock ABSORBED, which is still the diagnostic that tells a
+   *  UI stall from an ES-9 underrun. */
+  skips: number;
+  /** Cumulative pulses the worklet has emitted (0 under the main driver) —
+   *  the live "the clock is actually running" signal, reported by the
+   *  processor itself so a silent worklet cannot present as healthy. */
+  workletPulses: number;
+  /** Cumulative pulses the worklet dropped-and-counted (config jumps; see
+   *  cv-clock-core.ts). Under a healthy clock this stays 0. */
+  workletSkips: number;
+  /** CONTEXT seconds `workletPulses` covers, from the same health snapshot.
+   *  ⚠ The counter is meaningful ONLY against this clock: a null-sink or
+   *  contended render thread runs ahead of or behind wall time (CI shard 11
+   *  measured both directions), so `pulses ÷ wall-elapsed` compares two
+   *  different clocks and reads high AND low with no pulse wrong; `pulses` vs
+   *  `renderedS × rate` is exact within ±1 by construction. */
+  workletRenderedS: number;
+  /** Inter-pulse gap extremes (context s), measured at the emitting sample —
+   *  under a constant tempo both sit at one period (±1 sample): min below
+   *  period = bunching, max above = a hole. Null until two pulses have fired
+   *  within one train. */
+  workletMinGapS: number | null;
+  workletMaxGapS: number | null;
+}
+
+/** Contexts whose audioWorklet already loaded the seq-clock module (which
+ *  registers the 'cv-clock' processor) — one addModule per context, the
+ *  kickdrum.ts idiom. */
+const seqClockModuleLoaded = new WeakSet<BaseAudioContext>();
 
 /** The discrete PPQN menu the card offers (pulses per quarter note). 24 =
  *  DIN-sync default. */
@@ -181,12 +241,67 @@ export async function createCvBuddyHandle(
     const velPass = mkPass();
 
     // ---- generated RUN + CLOCK sources (owner only) ----
+    // These main-thread sources ALWAYS run. When the cv-clock worklet is
+    // available they are not connected to the jacks — the tick keeps
+    // scheduling onto them as a SHADOW of the old path, purely so the `skips`
+    // late-tick counter keeps measuring main-thread stalls (see the header).
     const runSrc = ctx.createConstantSource();
     runSrc.offset.value = 0;
     runSrc.start();
     const clockSrc = ctx.createConstantSource();
     clockSrc.offset.value = 0;
     clockSrc.start();
+
+    // ---- the audio-thread clock (the SPEEDERR-001 structural fix) ----
+    // Best-effort and NEVER throws: in test/SSR there is no `audioWorklet`, a
+    // CSP can refuse the module, an older browser can lack support — in every
+    // such case `clockWorklet` stays null and the main-thread path drives the
+    // jacks byte-identically to before.
+    let clockWorklet: AudioWorkletNode | null = null;
+    let workletPulses = 0;
+    let workletSkips = 0;
+    let workletRenderedS = 0;
+    let workletMinGapS: number | null = null;
+    let workletMaxGapS: number | null = null;
+    try {
+      const aw = (ctx as { audioWorklet?: { addModule(u: string): Promise<void> } })
+        .audioWorklet;
+      if (aw && typeof aw.addModule === 'function') {
+        if (!seqClockModuleLoaded.has(ctx)) {
+          await aw.addModule(seqClockWorkletUrl);
+          seqClockModuleLoaded.add(ctx);
+        }
+        // output 0 = clock (mono), output 1 = run (mono) — wired straight
+        // into the outputs map below, no bus in between.
+        clockWorklet = createWorkletNode(node, ctx, 'cv-clock', {
+          numberOfInputs: 0,
+          numberOfOutputs: 2,
+          outputChannelCount: [1, 1],
+        });
+        clockWorklet.port.onmessage = (e: MessageEvent) => {
+          const d = e.data as
+            | {
+                type?: string;
+                pulses?: number;
+                skipped?: number;
+                renderedS?: number;
+                minGapS?: number | null;
+                maxGapS?: number | null;
+              }
+            | undefined;
+          if (d?.type === 'health') {
+            if (typeof d.pulses === 'number') workletPulses = d.pulses;
+            if (typeof d.skipped === 'number') workletSkips = d.skipped;
+            if (typeof d.renderedS === 'number') workletRenderedS = d.renderedS;
+            if (typeof d.minGapS === 'number' || d.minGapS === null) workletMinGapS = d.minGapS;
+            if (typeof d.maxGapS === 'number' || d.maxGapS === null) workletMaxGapS = d.maxGapS;
+          }
+        };
+      }
+    } catch (err) {
+      console.warn('[cv-buddy] cv-clock worklet unavailable — main-thread clock path drives the jacks', err);
+      clockWorklet = null;
+    }
 
     // ---- params (owner-only in effect) ----
     const savedParams = (node.params ?? {}) as Record<string, number>;
@@ -221,6 +336,41 @@ export async function createCvBuddyHandle(
     // looked like "the clock is unstable" at the jack. Surfaced via read().
     let clockSkips = 0;
 
+    // ---- worklet config pusher ----
+    // Coalesced on the wire: a message goes out only when a value moved, so
+    // the port is silent at rest and carries ~one message per tick during a
+    // BPM knob drag (timelorde writes bpm per frame; the worklet applies it
+    // from the NEXT pulse — no 200 ms lookahead lag, see cv-clock-core.ts).
+    // During a main-thread stall no messages go out at all, and that is the
+    // point: the worklet free-runs on its last config.
+    let lastWorkletCfgKey = '';
+    function pushWorkletConfig(): void {
+      if (!clockWorklet) return;
+      const running = ownsTransport(thisId) && transportRunning();
+      const bpm = transportBpm();
+      const key = `${bpm}|${ppqn}|${clockOffsetMs}|${running}`;
+      if (key === lastWorkletCfgKey) return;
+      lastWorkletCfgKey = key;
+      try {
+        clockWorklet.port.postMessage({
+          type: 'config',
+          config: {
+            bpm,
+            ppqn,
+            offsetMs: clockOffsetMs,
+            running,
+            // The authoritative levels ride along so the dsp package never
+            // duplicates web constants (see CvClockConfig).
+            runLevel: GATE_HI,
+            pulseS: CLOCK_PULSE_HIGH_S,
+          },
+        });
+      } catch {
+        /* a torn-down port must not break the tick */
+      }
+    }
+    pushWorkletConfig();
+
     function stopClock(at: number): void {
       clockSrc.offset.cancelScheduledValues(at);
       clockSrc.offset.setValueAtTime(0, at);
@@ -236,6 +386,12 @@ export async function createCvBuddyHandle(
 
     function tick(): void {
       try {
+        // Feed the audio-thread clock FIRST: its config must never wait on the
+        // shadow-path scheduling below. Everything after this line is the
+        // unchanged main-thread path — the jack driver in test/SSR, and the
+        // `skips` stall-shadow when the worklet owns the jacks.
+        pushWorkletConfig();
+
         const now = ctx.currentTime;
         const owner = ownsTransport(thisId);
         const running = transportRunning();
@@ -299,14 +455,20 @@ export async function createCvBuddyHandle(
         ['pitchCv', { node: pitchPass, output: 0 }],
         ['gate', { node: gatePass, output: 0 }],
         ...(hasVelocity ? [['velCv', { node: velPass, output: 0 }] as const] : []),
-        ['run', { node: runSrc, output: 0 }],
-        ['clock', { node: clockSrc, output: 0 }],
+        // With the cv-clock worklet the jacks are the worklet's own outputs
+        // (0 = clock, 1 = run) — sample-accurate and immune to a main-thread
+        // stall. Without it (test/SSR/load failure) the ConstantSources drive
+        // them exactly as they always have.
+        ['run', clockWorklet ? { node: clockWorklet, output: 1 } : { node: runSrc, output: 0 }],
+        ['clock', clockWorklet ? { node: clockWorklet, output: 0 } : { node: clockSrc, output: 0 }],
       ]),
       setParam(paramId, value) {
         // Snapped on the way in too — a CV/automation/preset write reaches this
         // seam without passing the selector, and the roster is the legal set.
         if (paramId === 'ppqn') ppqn = snapPpqn(value);
         else if (paramId === 'clockOffsetMs') clockOffsetMs = value;
+        // A param edit reaches the audio thread NOW, not a tick later.
+        if (paramId === 'ppqn' || paramId === 'clockOffsetMs') pushWorkletConfig();
       },
       readParam(paramId) {
         if (paramId === 'ppqn') return ppqn;
@@ -327,6 +489,18 @@ export async function createCvBuddyHandle(
           };
           return state;
         }
+        if (key === 'clockHealth') {
+          const health: CvBuddyClockHealth = {
+            driver: clockWorklet ? 'worklet' : 'main',
+            skips: clockSkips,
+            workletPulses,
+            workletSkips,
+            workletRenderedS,
+            workletMinGapS,
+            workletMaxGapS,
+          };
+          return health;
+        }
         return undefined;
       },
       dispose() {
@@ -336,6 +510,15 @@ export async function createCvBuddyHandle(
         for (const g of [pitchPass, gatePass, velPass]) g.disconnect();
         runSrc.disconnect();
         clockSrc.disconnect();
+        if (clockWorklet) {
+          // A 0-input source processor that returns true lives forever — tell
+          // it to stand down (process → false) so the node can be collected
+          // (the card-unmount resource rule, #1531 family).
+          try { clockWorklet.port.postMessage({ type: 'dispose' }); } catch { /* torn down */ }
+          clockWorklet.port.onmessage = null;
+          try { clockWorklet.disconnect(); } catch { /* already disconnected */ }
+          clockWorklet = null;
+        }
       },
     };
 }
