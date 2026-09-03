@@ -87,7 +87,7 @@
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
-import type { ParamDef } from '$lib/graph/types';
+import type { ModuleFace, ParamDef } from '$lib/graph/types';
 import { createMidiScheduler } from '$lib/audio/midi-timing';
 import { createPolySender, type PolySender } from '$lib/audio/poly';
 import { midiToVOct } from '$lib/audio/note-entry';
@@ -500,6 +500,74 @@ export interface TrailsCardApi {
   resetMonitor(): void;
 }
 
+// ─────────────────────────── THE FACE ───────────────────────────────────────
+//
+// ⚠ CONNECT RANKS FIRST, ABOVE EVERY KNOB, and that ordering is the whole
+// reason this module gets a `controlFamily` rather than three param cells and a
+// dock-only button. trails is INERT before the gesture: Web MIDI publishes no
+// port at all until the browser consents, so a fresh spawn is three knobs over
+// twenty-one jacks that emit a flat zero. `faceTierCap` caps a glyph-less
+// COMPACT tile at 3 cells (`LANE_ROW_MAX_CELLS`), so any rank below 3 loses the
+// gesture from the lane tile entirely — which is exactly what made midiclock
+// make it a cell (#2187) and ptzcam rank it first.
+//
+// CLOCK DIV falling off the compact tile is the ordinary ladder rather than a
+// loss: it is the one control that means anything only once a transport is
+// running, and the dock is one click away. Inverting the order to keep it would
+// push CONNECT off the tile, which is the defect the ranking exists to avoid.
+//
+// ⚠ `glyph: 'none'` IS FORCED, NOT CHOSEN. Run through `glyphBinding`
+// (`shell-glyph-live.ts`) rather than guessed: `primaryAudioOutPortId` is
+// `outputs.find(o => o.type === 'audio')?.id`, and these 21 outputs are `cv` x 8,
+// `gate` x 9 and `polyPitchGate` x 4 — so it resolves null, there is no
+// `algorithm`/`envelope`/waveform-law param set, and every other literal falls
+// through to `{ kind: 'static' }`, which `module-face-lint`'s dead-glyph clause
+// reddens unconditionally. ⚠ And `'algorithm'` would RESOLVE (the
+// `layoutSource: <ext>` branch fires for any def carrying a `face.extension`)
+// and so pass that clause while painting an EMPTY topology plate, because this
+// extension exports no `glyph` slot. `trails-face-model.test.ts` pins both.
+//
+// ⚠ AND THE GLYPH THIS MODULE WOULD WANT IS THE PAD MIRROR — which is why the
+// mirror is a BODY. The `glyph` slot takes `{ num, numbers, testid }` and is a
+// data-derived identity picture bound to a topology PARAM; the mirror is live
+// transient state with no param behind it. See the shell extension's header.
+//
+// TWO BANDS, NOT A TAB RAIL: `DOCK_TAB_MIN_BANDS` is 7 and nothing here is
+// padded to reach it (owner ruling: never pad pages to force the rail).
+// `device` is the binding, `signal` is what the jacks emit — different KINDS of
+// thing, which is what a band boundary is for.
+export const TRAILS_FACE: ModuleFace = {
+  glyph: 'none',
+  order: ['trails-connect-{n}', 'range', 'smooth', 'divisor'],
+  extension: 'trails',
+  pages: [
+    {
+      id: 'device',
+      label: 'device',
+      hint:
+        'CONNECT is the one-time-per-origin Web-MIDI grant plus the search for any port named '
+        + 'like a Trails; until it is granted this module has no device to read and every jack '
+        + 'below emits a flat zero. The pad mirror on the faceplate is READ-ONLY — it is a 1:1 '
+        + 'picture of the physical panel, not a control — and MON beside it opens a live readout '
+        + 'of every MIDI frame the device sends, including the ones this module does not '
+        + 'recognise.',
+      controls: ['trails-connect-{n}'],
+    },
+    {
+      id: 'signal',
+      label: 'signal',
+      hint:
+        'What the twenty-one jacks emit from the gesture the device is streaming. RANGE picks '
+        + "whether the eight X/Y jacks carry the pad's own 0..1 coordinates or a bipolar signal "
+        + 'centred on the pad; SMOOTH glides them toward each new sample instead of stepping, at '
+        + 'the cost of trailing the hand; CLOCK DIV divides the device\'s own MIDI clock into the '
+        + 'CLOCK pulse train. None of the three affects the pad view, which always mirrors the '
+        + 'physical surface.',
+      controls: ['range', 'smooth', 'divisor'],
+    },
+  ],
+};
+
 // ── The def ─────────────────────────────────────────────────────────────────
 
 export const trailsDef: AudioModuleDef = {
@@ -553,9 +621,20 @@ export const trailsDef: AudioModuleDef = {
   ],
   params: [TRAILS_RANGE_PARAM, TRAILS_SMOOTH_PARAM, TRAILS_DIVISOR_PARAM],
 
+  face: TRAILS_FACE,
+
+  // The CONNECT gesture is not a `ParamDef` — it writes nothing, it asks the
+  // browser for permission — so it reaches `face.order` through the family
+  // key-space, exactly as midiclock's and ptzcam's do. `testidPrefix` already
+  // appears on the legacy card (`trails-connect-${id}`, TrailsCard.svelte:358),
+  // so module-docs-lint's FAMILY↔CARD clause holds with no card edit.
+  controlFamilies: [
+    { id: 'trails-connect', label: 'Connect Trails', kind: 'other', testidPrefix: 'trails-connect' },
+  ],
+
   docs: {
     explanation:
-      "The Bela TRAILS eurorack module, read straight into the rack over its USB-C port. Trails is a quad touch-gesture recorder: an 85 by 85 mm multitouch pad whose four channels each record a finger gesture, loop it, and keep emitting an X position, a Y position and a contact gate long after you have taken your hand away. This module receives all of that as MIDI and hands it to the patch as twelve modulation jacks plus a clock. Mental model: your finger is a modulation source, and once you lift it the gesture keeps performing itself. The pad view on the card mirrors the physical surface one to one — up to four coloured touch points with fading trails, in the same coordinates the jacks emit — so you can see what the rack is receiving without looking down at the hardware. RANGE picks whether the X and Y jacks are the pad's own 0..1 coordinates (the default, so patching X into a video module's horizontal position puts the picture where your finger is) or bipolar around the pad's centre. SMOOTH glides the X and Y jacks toward each new sample instead of stepping, which turns a jittery fingertip into a sweep at the cost of trailing the hand. CLOCK DIV divides the device's own MIDI clock into a pulse train, so a recorded gesture and the rack can share a tempo. Nothing is streamed into the saved patch: the touch data is live engine state, so a gesture never bloats the document or reaches collaborators. Connecting asks the browser for MIDI permission when you press CONNECT and not before, so loading a patch that contains this module never raises a prompt. There is no MIDI back to the device — Trails takes its clock and reset as CV on its own jacks, so to slave it to the rack, patch a clock out of CV BUDDY into the module's clock input. Two things about the hardware are worth knowing before you patch it. The device transmits its X and Y positions and its transport, and nothing else: the gate you see on the module's own gate jacks is not a MIDI message at all, so everything the GATE and TRIG jacks here emit is reconstructed from the position and note streams rather than read from the device. That reconstruction gives you two different signals, and picking the right one is the difference between a drone and a rhythm. GATE is contact: high while a channel is sounding, which through a gesture usually means high the whole way through, because a playing gesture never stops and, with quantisation on, the horizontal and vertical notes overlap almost continuously. TRIG is the step: a short pulse each time the gesture moves on, which is what a drum wants. You can patch both from one gesture and get a sustained layer and a rhythmic layer together. And the touch bar down the panel is not transmitted at all, and has no output jack of its own on the hardware either; it is an assignable modifier of the device's internal behaviour, so what it changes reaches this module in the shape of the X, Y and gate it shapes rather than as a signal you can patch. The bar is drawn on the pad view so the picture matches the panel, greyed to say it carries no data. MON opens a live readout of every MIDI message the device is sending, including any this module does not recognise, which is how to check what your firmware actually transmits. The third thing worth knowing is what happens when you turn on pitch quantisation. With both pitch and temporal quantisation enabled the device stops sending its continuous high-resolution positions and sends MIDI notes instead, quantised to the scale you picked. Those notes are the same two axes, on the same per-axis channels, so the X and Y jacks keep working: each note number is spread across the jack's travel, so playing up a scale walks the jack upward in even steps. Because a note number is already linear in semitones, the jack is a pitch-shaped signal in the same way a volt-per-octave control voltage is, just normalised into this rack's range rather than measured in volts. The travel a scale covers depends on how wide it is: the whole MIDI note range is spread across the jack, so a scale spanning an octave or two moves it by a tenth to a fifth of full scale rather than end to end. Turn RANGE to BI to double that swing, or use an attenuverter downstream to make a narrow scale reach further. And once you are in note mode you do not have to go through a control voltage at all: each channel has a POLY jack carrying that channel's two axes as actual notes, one voice for X and one for Y, which you can patch straight into any polyphonic instrument to hear the scale you picked without calibrating anything. Those jacks are silent in the ordinary continuous mode, because there are no notes to send. One thing this hardware will not give you is dynamics: every note it sends carries the same fixed velocity, measured on the device rather than assumed, so nothing here can tell a firm press from a light one. To strike a drum from a gesture, patch TRIG rather than GATE. GATE tells you whether a channel is sounding, and through a gesture the answer stays yes the whole way, because the two axes cross their quantiser steps at different moments and one of them is nearly always sounding; a drum patched there fires once and then waits forever. TRIG fires once per step instead, plus once each time the loop comes back round, which is what the gate jack on the hardware itself does. How much TRIG can tell you depends on the mode, and the difference is worth knowing rather than guessing at: with quantisation on, the device sends a note per step and the triggers are exact. In the continuous mode it sends only positions and keeps its step gate to itself, so the most that can honestly be produced is a pulse when a channel starts moving again after being still, and one per loop restart.",
+      "The Bela TRAILS eurorack module, read straight into the rack over its USB-C port. Trails is a quad touch-gesture recorder: an 85 by 85 mm multitouch pad whose four channels each record a finger gesture, loop it, and keep emitting an X position, a Y position and a contact gate long after you have taken your hand away. This module receives all of that as MIDI and hands it to the patch as twelve modulation jacks plus a clock. Mental model: your finger is a modulation source, and once you lift it the gesture keeps performing itself. The pad view on the faceplate mirrors the physical surface one to one — up to four coloured touch points with fading trails, in the same coordinates the jacks emit — so you can see what the rack is receiving without looking down at the hardware. RANGE picks whether the X and Y jacks are the pad's own 0..1 coordinates (the default, so patching X into a video module's horizontal position puts the picture where your finger is) or bipolar around the pad's centre. SMOOTH glides the X and Y jacks toward each new sample instead of stepping, which turns a jittery fingertip into a sweep at the cost of trailing the hand. CLOCK DIV divides the device's own MIDI clock into a pulse train, so a recorded gesture and the rack can share a tempo. Nothing is streamed into the saved patch: the touch data is live engine state, so a gesture never bloats the document or reaches collaborators. Connecting asks the browser for MIDI permission when you press CONNECT and not before, so loading a patch that contains this module never raises a prompt. There is no MIDI back to the device — Trails takes its clock and reset as CV on its own jacks, so to slave it to the rack, patch a clock out of CV BUDDY into the module's clock input. Two things about the hardware are worth knowing before you patch it. The device transmits its X and Y positions and its transport, and nothing else: the gate you see on the module's own gate jacks is not a MIDI message at all, so everything the GATE and TRIG jacks here emit is reconstructed from the position and note streams rather than read from the device. That reconstruction gives you two different signals, and picking the right one is the difference between a drone and a rhythm. GATE is contact: high while a channel is sounding, which through a gesture usually means high the whole way through, because a playing gesture never stops and, with quantisation on, the horizontal and vertical notes overlap almost continuously. TRIG is the step: a short pulse each time the gesture moves on, which is what a drum wants. You can patch both from one gesture and get a sustained layer and a rhythmic layer together. And the touch bar down the panel is not transmitted at all, and has no output jack of its own on the hardware either; it is an assignable modifier of the device's internal behaviour, so what it changes reaches this module in the shape of the X, Y and gate it shapes rather than as a signal you can patch. The bar is drawn on the pad view so the picture matches the panel, greyed to say it carries no data. MON opens a live readout of every MIDI message the device is sending, including any this module does not recognise, which is how to check what your firmware actually transmits. The third thing worth knowing is what happens when you turn on pitch quantisation. With both pitch and temporal quantisation enabled the device stops sending its continuous high-resolution positions and sends MIDI notes instead, quantised to the scale you picked. Those notes are the same two axes, on the same per-axis channels, so the X and Y jacks keep working: each note number is spread across the jack's travel, so playing up a scale walks the jack upward in even steps. Because a note number is already linear in semitones, the jack is a pitch-shaped signal in the same way a volt-per-octave control voltage is, just normalised into this rack's range rather than measured in volts. The travel a scale covers depends on how wide it is: the whole MIDI note range is spread across the jack, so a scale spanning an octave or two moves it by a tenth to a fifth of full scale rather than end to end. Turn RANGE to BI to double that swing, or use an attenuverter downstream to make a narrow scale reach further. And once you are in note mode you do not have to go through a control voltage at all: each channel has a POLY jack carrying that channel's two axes as actual notes, one voice for X and one for Y, which you can patch straight into any polyphonic instrument to hear the scale you picked without calibrating anything. Those jacks are silent in the ordinary continuous mode, because there are no notes to send. One thing this hardware will not give you is dynamics: every note it sends carries the same fixed velocity, measured on the device rather than assumed, so nothing here can tell a firm press from a light one. To strike a drum from a gesture, patch TRIG rather than GATE. GATE tells you whether a channel is sounding, and through a gesture the answer stays yes the whole way, because the two axes cross their quantiser steps at different moments and one of them is nearly always sounding; a drum patched there fires once and then waits forever. TRIG fires once per step instead, plus once each time the loop comes back round, which is what the gate jack on the hardware itself does. How much TRIG can tell you depends on the mode, and the difference is worth knowing rather than guessing at: with quantisation on, the device sends a note per step and the triggers are exact. In the continuous mode it sends only positions and keeps its step gate to itself, so the most that can honestly be produced is a pulse when a channel starts moving again after being still, and one per loop restart.",
     inputs: {},
     outputs: {
       x1: "Channel 1's horizontal pad position. 0 is the left edge of the pad and 1 the right, or −1..+1 about the centre when RANGE is BI. It keeps streaming while a recorded gesture plays back, and holds its last value when the channel is idle. With pitch quantisation switched on the device sends notes instead of continuous positions, and this jack follows those notes: each note number lands at its own point along the travel, so a scale steps the jack rather than sliding it, and a released note holds the last pitch rather than dropping to zero.",
@@ -590,17 +669,11 @@ export const trailsDef: AudioModuleDef = {
         "How lazily the X and Y jacks follow the device. At 0 each arriving sample steps the jack immediately, which is what a 1:1 screen mapping wants; turning it up makes the jack glide exponentially toward each new sample instead, covering about two thirds of the distance in the time the knob sets, up to a quarter of a second at the far end. Use it to turn a jittery fingertip or a coarse stream into a smooth sweep, and accept that the jack then trails the hand that made the gesture. It does not affect the gates or the clock, which must stay sharp.",
       divisor:
         "How many of the device's MIDI clock ticks make one pulse on the CLOCK jack. MIDI runs at a fixed 24 pulses per quarter note, so 24 is one pulse per quarter (patch it into TIMELORDE's clock to slave the rack to the device's transport), 12 is eighths, 6 sixteenths, 3 thirty-seconds, and RAW passes every incoming tick. Only divisions that divide 24 evenly are offered, because any other lands on no note value and drifts against every other clock in the rack.",
+      'trails-connect-{n}':
+        "The gesture that makes the module do anything at all. A browser shows no MIDI port until it has consented, and it only asks when a click asks it to — so before this press there is no device to read, and all twenty-one jacks sit at zero however many gestures the hardware is looping. Pressing it grants access (one prompt, once per origin) and binds every attached port whose name looks like a Trails, which is how a class-compliant USB-C device joins the rack with no driver and no helper app. It is safe to press again: on an already-granted origin it simply re-resolves the port list, which is what re-binds a device that was unplugged and put back. Loading a patch that contains this module never raises the prompt by itself — nothing in the rack asks for MIDI on the module's behalf. The outcome is always nameable rather than silent: bound, no port named Trails, permission denied, the prompt suppressed, or Web MIDI missing entirely, and the LINK lamp on the faceplate carries the sentence with the failures also printed under it. If it says no port is present, connect the module's USB-C socket to this computer; if you want to see what the device is actually transmitting, press MON beside the lamp.",
     },
   },
 
-  // ⚠ NO `face` — a DELIBERATE non-promotion, recorded in
-  // FACE_MIGRATION_INVENTORY as `bespoke-surface`. The three knobs are the only
-  // generic-face material this module has; the two things that make it usable
-  // are the CONNECT gesture and the live pad mirror, and both are WebMIDI
-  // service state rather than params. The ptzcam / chromaconsole disposition,
-  // for the same reason, and the same one the joystick's own header states: a
-  // pad is not a lane control, and a face whose ranked cells are three knobs
-  // would move the knobs and leave the pad behind.
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     // ── One ConstantSource per output ─────────────────────────────────────
     const sources = new Map<string, ConstantSourceNode>();

@@ -6423,6 +6423,85 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // and no factory code moves, so contract-lock does not move either.
   'painter',
 
+  // ── TRAILS (bespoke surface, 2026-09-02) — the FOURTH MIDI binder promoted,
+  //    and the first whose second surface is a PICTURE ────────────────────────
+  //
+  // ⚠ THE DEFECT PROMOTION FIXES IS THE SAME ONE midiclock's, ptzcam's and
+  // chromaconsole's did, on a module that is inert for one reason rather than
+  // two. The Bela Trails is
+  // class-compliant USB-MIDI, so a granted origin with the device attached binds
+  // with no driver and no helper — but a browser publishes NO port until a click
+  // asks it to, and until then this module's twenty-one jacks emit a flat zero
+  // however many gestures the hardware is looping. Under the default shell an
+  // un-migrated module renders a lane PLACEHOLDER, so reaching that grant meant
+  // first discovering the dock full view. `trails-connect-{n}` is an `action`
+  // cell and ranks FIRST, so it is on the lane tile inside the glyph-less
+  // compact cap of 3.
+  //
+  // ⚠ BOTH BODY SLOTS ARE FILLED, and the tile one is not a courtesy. The dock
+  // body carries the pad mirror at the card's own 140 px, the bar caption, the
+  // LINK lamp, MON and its reset, the counters line and the monitor summary; the
+  // TILE carries the same mirror at 40 px with the lamp beside it. Without the
+  // tile body the promoted lane tile is three control cells over a jack rail,
+  // and the module's one live picture — the thing that answers "did my hardware
+  // just do something" — would exist only behind the dock, on a module whose
+  // whole claim is that you can see what the rack is receiving without looking
+  // down at the panel. Both slots mount ONE `TrailsPadMirror.svelte`, which is
+  // also what carries `face-rack-status-source`'s `picture` proof to the tile
+  // that roster is structurally blind to.
+  //
+  // ⚠ THE ONE READOUT DELETED IS THE BOUND SENTENCE — `Bound to Bela Trails —
+  // streaming X / Y / gate.` — and it is deleted onto `StatusLed.detail`, so it
+  // still reaches `aria-label` and `title` and is still assertable. The other
+  // four status kinds are ERRORS and survive as painted `role="alert"` text
+  // verbatim, including the only instruction in the product for the failure a
+  // player will actually hit ("…Connect the module's USB-C port to this
+  // computer…", which `trails.spec.ts` already asserts by substring).
+  //
+  // ⚠ AND `lit` IS NOT `bound`, WHICH IS WHERE A NAIVE PORT WOULD HAVE LOST A
+  // STATE SILENTLY. `StatusLed`'s `tone` styles only the LIT lamp, so
+  // `lit={bound} tone={problem ? 'warn' : 'accent'}` renders a fault
+  // pixel-identically to a module nobody has pressed CONNECT on. The card had
+  // THREE LED states (grey / amber / green) and all three survive:
+  // `lit = bound || problem`, `tone = problem ? 'warn' : 'accent'`. Pinned in
+  // `trails-status-model.test.ts`, because no gate in this tree reads a colour.
+  //
+  // ⚠ WHAT PROMOTION DOES NOT TOUCH, and the reason it is safe: the MIDI
+  // subscription, the 14-bit decoder, the monitor and all twenty-one
+  // `ConstantSource`s are in the FACTORY and have always run with no card
+  // mounted. `trails` is in no `NON_SHELL_LANE_TYPES`, `CARD_PRODUCER_LANE_TYPES`,
+  // `DOM_SOURCE_LANE_TYPES` or `HEADLESS_MOUNT_LANE_TYPES` set, so promotion
+  // parks no live card off-screen and there is no status registry to coordinate
+  // through. There is likewise no producer for a SCREEN switch to stop — the
+  // video-screen ruling runs over `STRICT_FACES ∩ video defs` and this is
+  // `domain: 'audio'` with no video port (skifree has one and therefore has a
+  // switch; dockscope, spectrograph and samsloop do not and therefore do not) —
+  // and the paint loop already self-suppresses on its own dirty check, which is
+  // the saving a switch would otherwise buy.
+  //
+  // ⚠ THE MODULE MAKES NO `node.data` WRITES AT ALL and the promotion keeps that
+  // true. A live gesture is 100-250 messages a second; the surfaces READ
+  // (`read(node,'state')` on the frame loop) and never write, which is the
+  // cv-modulation live-store-write-storm discipline. `monOpen` is component
+  // state for the same reason: persisting it would be this module's first
+  // `node.data` key, and a diagnostic panel that reopened itself on every
+  // collaborator's screen is not what "remember my layout" means.
+  //
+  // ⚠ ZERO GPU ATTEST, and zero risk of acquiring one: `domain: 'audio'`, both
+  // bodies are `getContext('2d')`, and nothing under `lib/video/**` is touched.
+  // Basis membership is derived from CONTENT over `lib/ui/modules/**/*.svelte`,
+  // so a GL context in the mirror would enrol an AUDIO def in the GPU attest for
+  // a rectangle, a cross, a hatch and four dots. Zero ART: no DSP, no port, no
+  // param and no voicing move. The contract DOES move — `controlFamilies` is
+  // projected as one `family` line — which is a `docs:accept`, not an attest.
+  //
+  // ⚠ WHAT NO GATE IN THIS TREE CAN SEE, stated rather than implied: no CI
+  // runner has a Bela Trails on USB or a granted MIDI origin, so every
+  // behavioural gate on the BINDING stops at `idle` (or `no-port`, through the
+  // mock). The bound sentence, a streaming mirror and a populated MON panel ship
+  // on the unit models plus the simulated-device legs in `trails.spec.ts`, and
+  // the owner's hardware is the only instrument that closes the rest.
+  'trails',
   // ── ARCHIVIST (2026-09-02) — THE INTERNET ARCHIVE SEARCH BROWSER ─────────
   //
   // One ranked param (`gain`, a fader — unity at the midpoint of a 0..2

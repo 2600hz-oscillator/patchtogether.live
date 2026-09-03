@@ -209,6 +209,7 @@ author a `face` and rank the controls — no new platform capability.
 | `tiler` | video | done | — |
 | `timelorde` | audio | done | — |
 | `tomtom` | audio | done | — |
+| `trails` | audio | done | — |
 | `treeohvox` | audio | done | — |
 | `tvLibrarian` | video | done | — |
 | `twotracks` | audio | done | — |
@@ -244,7 +245,6 @@ the primary interaction is not param-shaped — needs a purpose-built surface.
 | `clipplayer` | audio | — | — |
 | `doom` | video | — | — |
 | `toybox` | video | — | `needs-media-controller` |
-| `trails` | audio | — | — |
 
 ## `organizational-native`
 
