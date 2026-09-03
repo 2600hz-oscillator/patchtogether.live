@@ -5617,6 +5617,62 @@ export const FACES = [
   // advances between frames.
   { type: 'chromaconsole', pages: 2 },
 
+  // ── TRAILS — the FOURTH binder baselined, and the first with a PICTURE ─────
+  {
+    type: 'trails',
+    // TWO bands: `device` (the CONNECT cell) and `signal` (the three knobs).
+    // Nothing is padded to reach a tab rail — `DOCK_TAB_MIN_BANDS` is 7.
+    pages: 2,
+
+    // ⚠ THE DETERMINISM ARGUMENT IS midiclock's, ptzcam's AND chromaconsole's,
+    // TRIPLED — three
+    // independent conditions, each of which alone makes the capture stable, and
+    // the reason a canvas on a hardware-fed surface is safe to baseline at all.
+    //
+    //   1. `requestMIDIAccess` is NEVER CALLED until someone presses CONNECT,
+    //      and this scene presses nothing. `midi.spec.ts` pins "page load never
+    //      requests Web-MIDI access" globally, and `trails.spec.ts` pins it for
+    //      this module specifically (`accessCallCount()` is 0 after a spawn).
+    //   2. Even a granted origin binds NOTHING here: the matcher is `/trails/i`
+    //      over port NAMES, and no CI machine has a Bela Trails on USB.
+    //   3. Even a bound port streams nothing without a finger on the pad.
+    //
+    // ⚠ AND THE CANVAS IS DETERMINISTIC BY ITS OWN DIRTY CHECK, not merely by
+    // the absence of a device — which is the half worth stating because this is
+    // the roster's first hardware-mirror picture. `axisMessages` is a monotonic
+    // counter on the engine handle; `TrailsPadMirror`'s rAF compares it (plus the
+    // packed gate mask and the CSS size) against the last painted frame and
+    // returns without touching the 2-D context when nothing changed. With no
+    // device attached nothing ever changes, so the canvas paints EXACTLY the
+    // resting grid ONCE and then never again. There is no animation to settle
+    // and nothing that advances between frames.
+    //
+    // So the capture is: the resting pad face with its centre cross, the hatched
+    // Touch Bar along the bottom edge, the `bar — not sent over USB-MIDI`
+    // caption, a DARK LINK lamp, the MON toggle, the pre-connect hint, and the
+    // ranked control cells.
+    //
+    // ⚠ MON IS CLOSED, so the one non-deterministic region on the surface is not
+    // merely stable — it is NOT RENDERED. `monOpen` is component state defaulting
+    // false and nothing in this scene clicks it, so neither the
+    // `loops N · edges a/b/c/d` ratio nor the monitor summary exists in the DOM
+    // at capture time. That is stronger than pinning them.
+    //
+    // ⚠ NO `videoFaceWhy` AND NO `simPin`. `domain: 'audio'` with no video port,
+    // so the node boots the ordinary audio way; and there is no clock to pin,
+    // because the only thing that could advance the picture is an inbound MIDI
+    // frame, which requires a press this suite does not perform. Pinning a clock
+    // here would buy a WEAKER guarantee than the dirty check already gives.
+    //
+    // ⚠ WHAT THIS BASELINE DOES NOT COVER, stated rather than implied: the
+    // post-connect states — bound, streaming, MON open. Their strings are pinned
+    // in `trails-status-model.test.ts` and `trails-monitor.test.ts`, their
+    // wiring in `trails-face-model.test.ts`, and their behaviour in
+    // `trails.spec.ts` (which drives a SIMULATED device through the real
+    // decoder). Reaching them in VRT would mean installing that double in the
+    // VRT harness, which is a change to the harness rather than to this module.
+  },
+
 ] as const;
 
 /**
