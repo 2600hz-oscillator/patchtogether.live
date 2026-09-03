@@ -137,7 +137,7 @@ test.describe('4PLEXVID — gate-advanced 4x4 video router (DRS)', () => {
     // every step) BEFORE boot.
     await installRenderSmokeHooks(page);
 
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
 
     // SHAPES into in1 (bright, structured). in2/in3/in4 left UNPATCHED (the
@@ -156,8 +156,8 @@ test.describe('4PLEXVID — gate-advanced 4x4 video router (DRS)', () => {
     );
 
     // Structural (non-fragile): both modules mounted.
-    await expect(page.locator('.svelte-flow__node-shapes'), 'SHAPES visible').toBeVisible();
-    await expect(page.locator('.svelte-flow__node-4plexvid'), '4PLEXVID visible').toBeVisible();
+    await expect(page.locator('.svelte-flow__node:has([data-shell-type="shapes"])'), 'SHAPES visible').toBeVisible();
+    await expect(page.locator('.svelte-flow__node:has([data-shell-type="4plexvid"])'), '4PLEXVID visible').toBeVisible();
 
     // ---- 1. Default selectors = 0 (in1). out1 AND out2 both select in1 by
     //         default → both show the bright, structured SHAPES input. We read

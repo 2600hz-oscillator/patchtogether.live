@@ -34,7 +34,7 @@ test.describe('video automation — drive + no stuck control', () => {
 
     // Pause the rAF loop + pin the clock so the test owns the exact frame count.
     await installRenderSmokeHooks(page);
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(

@@ -370,7 +370,7 @@ test.describe('FREEZEFRAME — video sample & hold + posterize', () => {
     // `scene` is a bit-stable frozen frame) BEFORE boot.
     await installRenderSmokeHooks(page);
 
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
 
     // Clear any stale force-gate from a previous test in the worker.
@@ -393,9 +393,9 @@ test.describe('FREEZEFRAME — video sample & hold + posterize', () => {
       ],
     );
 
-    await expect(page.locator('.svelte-flow__node-acidwarp'),    'ACIDWARP visible').toBeVisible();
-    await expect(page.locator('.svelte-flow__node-freezeframe'), 'FREEZEFRAME visible').toBeVisible();
-    await expect(page.locator('.svelte-flow__node-videoOut'),    'OUTPUT visible').toBeVisible();
+    await expect(page.locator('.svelte-flow__node:has([data-shell-type="acidwarp"])'),    'ACIDWARP visible').toBeVisible();
+    await expect(page.locator('.svelte-flow__node:has([data-shell-type="freezeframe"])'), 'FREEZEFRAME visible').toBeVisible();
+    await expect(page.locator('.svelte-flow__node:has([data-shell-type="videoOut"])'),    'OUTPUT visible').toBeVisible();
 
     // ---- (a) UNGATED: live passthrough — output renders + TRACKS the source ----
     // Drive a fixed burst synchronously, read FREEZEFRAME's OWN output FBO once:
@@ -500,7 +500,7 @@ test.describe('FREEZEFRAME — video sample & hold + posterize', () => {
     page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
     await installRenderSmokeHooks(page);
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
     await page.evaluate(() => {
       (globalThis as unknown as { __freezeframeForceGate?: number | undefined }).__freezeframeForceGate = undefined;
@@ -518,7 +518,7 @@ test.describe('FREEZEFRAME — video sample & hold + posterize', () => {
         { id: 'e-ff-out', from: { nodeId: 'v-ff',  portId: 'video_out' }, to: { nodeId: 'v-out', portId: 'in' },       sourceType: 'video', targetType: 'video' },
       ],
     );
-    await expect(page.locator('.svelte-flow__node-freezeframe'), 'FREEZEFRAME visible').toBeVisible();
+    await expect(page.locator('.svelte-flow__node:has([data-shell-type="freezeframe"])'), 'FREEZEFRAME visible').toBeVisible();
 
     const STRIDE = 7; // co-prime to SCENE_COUNT(41) and to TRIGGER_EVERY(3)
 
@@ -694,7 +694,7 @@ test.describe('FREEZEFRAME — video sample & hold + posterize', () => {
 
     await installRenderSmokeHooks(page);
 
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
 
     await page.evaluate(() => {
@@ -716,8 +716,8 @@ test.describe('FREEZEFRAME — video sample & hold + posterize', () => {
       ],
     );
 
-    await expect(page.locator('.svelte-flow__node-freezeframe'), 'FREEZEFRAME visible').toBeVisible();
-    await expect(page.locator('.svelte-flow__node-videoOut'),    'OUTPUT visible').toBeVisible();
+    await expect(page.locator('.svelte-flow__node:has([data-shell-type="freezeframe"])'), 'FREEZEFRAME visible').toBeVisible();
+    await expect(page.locator('.svelte-flow__node:has([data-shell-type="videoOut"])'),    'OUTPUT visible').toBeVisible();
 
     // Drive a fixed burst synchronously so full-depth content is on FREEZEFRAME's
     // FBO, then read it once (non-black + structured + exact frame delta + zero GL
@@ -891,7 +891,7 @@ test.describe('FREEZEFRAME — video sample & hold + posterize', () => {
     const START = 2.0; // the pinned clock's base, matching installRenderSmokeHooks
 
     await installRenderSmokeHooks(page, START);
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(
@@ -917,7 +917,7 @@ test.describe('FREEZEFRAME — video sample & hold + posterize', () => {
         { id: 'e-ff-out', from: { nodeId: 'v-ff',  portId: 'video_out' }, to: { nodeId: 'v-out', portId: 'in' },       sourceType: 'video', targetType: 'video' },
       ],
     );
-    await expect(page.locator('.svelte-flow__node-freezeframe'), 'FREEZEFRAME visible').toBeVisible();
+    await expect(page.locator('.svelte-flow__node:has([data-shell-type="freezeframe"])'), 'FREEZEFRAME visible').toBeVisible();
 
     // Absorb the shared harness's first-readback artefact (see warmRenderPipeline).
     await warmRenderPipeline(page);

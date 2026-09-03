@@ -26,7 +26,7 @@ async function attach(
 ): Promise<{ page: Page; ctx: import('@playwright/test').BrowserContext }> {
   const ctx = await browser.newContext();
   const page = await ctx.newPage();
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await page.waitForLoadState('networkidle');
   await page.waitForFunction(() => {
     const w = window as unknown as {
@@ -128,7 +128,7 @@ test.describe('@collab cadillac', () => {
       // can hit. Count the VCO cards specifically (the TIMELORDE card is also
       // rendered), same singleton-robustness as the convergence poll above.
       await a.page.waitForFunction(
-        () => document.querySelectorAll('.svelte-flow__node-analogVco').length === 3,
+        () => document.querySelectorAll('.svelte-flow__node:has([data-shell-type="analogVco"])').length === 3,
         null,
         { timeout: 15_000 },
       );

@@ -190,7 +190,7 @@ test.describe('toybox fixture mechanism — heavy proofs', () => {
     // broken fixture (the silently-black-layer class). Negative control of
     // the registration instrument.
     test.setTimeout(60_000);
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
     await expect
       .poll(() => page.evaluate(() => typeof (globalThis as unknown as FixtureG).__toyboxRegisterFixtureContent))

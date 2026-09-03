@@ -143,7 +143,7 @@ const spawnTimeout = (modules: number): number => 30_000 + modules * 15_000;
 const SETUP_TIMEOUT_MS = spawnTimeout(SETUP_NODES.length);
 
 async function setup(page: Page): Promise<void> {
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, SETUP_NODES, []);
   // spawnPatch already waited for every node wrapper to mount

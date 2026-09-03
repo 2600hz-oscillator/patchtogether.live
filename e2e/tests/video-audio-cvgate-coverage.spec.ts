@@ -239,7 +239,7 @@ test.describe('video → audio CV/gate routing: every source/port survives the e
       // spurious gate, so every CV-ramp / gate-pulse / analyser assertion below
       // still holds and is in fact MORE deterministic.
       await installRenderSmokeHooks(page);
-      await page.goto('/rack?shell=legacy&seed=none');
+      await page.goto('/rack?seed=none');
       await page.waitForLoadState('networkidle');
 
       const scopeNodeId = `cons-scope-${pair.id}`;
@@ -279,7 +279,7 @@ test.describe('video → audio CV/gate routing: every source/port survives the e
         ],
       );
 
-      await page.locator('.svelte-flow__node-scope').first()
+      await page.locator('.svelte-flow__node:has([data-shell-type="scope"])').first()
         .waitFor({ state: 'visible', timeout: 10_000 });
 
       // Engine + AudioContext settle (worker startup, analyser registration).

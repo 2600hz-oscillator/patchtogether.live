@@ -187,7 +187,7 @@ test('page-error collector: a 404 moves the needle, a NAMED 404 does not, and bo
   test.setTimeout(120_000);
   const errors = collectPageErrors(page);
 
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await page.waitForLoadState('networkidle');
 
   // ── Leg 1 (control): nothing injected, nothing significant. ──────────────

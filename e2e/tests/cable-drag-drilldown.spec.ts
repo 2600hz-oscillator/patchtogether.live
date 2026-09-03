@@ -120,7 +120,7 @@ async function dragHandleTo(
  *  IN + OUT) — lightweight, non-WebGL cards that exercise the same drill-down
  *  redirect as the video pair without janking the page on CI. */
 async function spawnVcoFilter(page: Page) {
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [
     { id: 'vco', type: 'analogVco', position: { x: 80, y: 120 } },

@@ -313,7 +313,7 @@ test.describe('#1811 main-thread cost instrument', () => {
   test('the main-thread cost probe is live, accumulates, and MOVES when the main thread is blocked', async ({
     page,
   }) => {
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
 
     // A SEQUENCER starts the AudioContext *and* subscribes to the scheduler
     // clock — without it `tick` is null by design (`peekSchedulerClock` never

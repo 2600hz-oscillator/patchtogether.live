@@ -58,7 +58,7 @@ test.describe('Video chain — chainable outputs on RUTTETRA / MONOGLITCH / OUTP
     // engine clock (LINES renders an identical frame every step) BEFORE boot.
     await installRenderSmokeHooks(page);
 
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(
@@ -77,10 +77,10 @@ test.describe('Video chain — chainable outputs on RUTTETRA / MONOGLITCH / OUTP
     );
 
     // Structural (non-fragile): every module in the chain mounted in the DOM.
-    await expect(page.locator('.svelte-flow__node-lines'),      'LINES visible').toBeVisible();
-    await expect(page.locator('.svelte-flow__node-monoglitch'), 'MONOGLITCH visible').toBeVisible();
-    await expect(page.locator('.svelte-flow__node-ruttetra'),   'RUTTETRA visible').toBeVisible();
-    await expect(page.locator('.svelte-flow__node-videoOut'),   'OUTPUT visible').toBeVisible();
+    await expect(page.locator('.svelte-flow__node:has([data-shell-type="lines"])'),      'LINES visible').toBeVisible();
+    await expect(page.locator('.svelte-flow__node:has([data-shell-type="monoglitch"])'), 'MONOGLITCH visible').toBeVisible();
+    await expect(page.locator('.svelte-flow__node:has([data-shell-type="ruttetra"])'),   'RUTTETRA visible').toBeVisible();
+    await expect(page.locator('.svelte-flow__node:has([data-shell-type="videoOut"])'),   'OUTPUT visible').toBeVisible();
 
     // Drive a FIXED burst synchronously (no rAF, no waitForTimeout) so the whole
     // chain renders, then read RUTTETRA's OWN `out` texture — the terminal effect
@@ -117,7 +117,7 @@ test.describe('Video chain — chainable outputs on RUTTETRA / MONOGLITCH / OUTP
     // burst is VDELAY's own ring (exactly what we want to exercise).
     await installRenderSmokeHooks(page);
 
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(
@@ -134,8 +134,8 @@ test.describe('Video chain — chainable outputs on RUTTETRA / MONOGLITCH / OUTP
     );
 
     // Structural (non-fragile): VDELAY + OUTPUT mounted.
-    await expect(page.locator('.svelte-flow__node-vdelay'),   'VDELAY visible').toBeVisible();
-    await expect(page.locator('.svelte-flow__node-videoOut'), 'OUTPUT visible').toBeVisible();
+    await expect(page.locator('.svelte-flow__node:has([data-shell-type="vdelay"])'),   'VDELAY visible').toBeVisible();
+    await expect(page.locator('.svelte-flow__node:has([data-shell-type="videoOut"])'), 'OUTPUT visible').toBeVisible();
 
     // Plan §3 directive: freeze → step N (>=30) to fill the ring past the 4-frame
     // delay tap + accumulate feedback echoes → read VDELAY's OWN `out` texture

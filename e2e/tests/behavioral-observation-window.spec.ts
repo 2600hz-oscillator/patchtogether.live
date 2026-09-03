@@ -481,7 +481,7 @@ async function waitUntilRendering(
  * cost into its failure messages and into the report.
  */
 async function openProbePage(page: Page, msPerFrame: number): Promise<RenderingStart> {
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await page.locator('.svelte-flow__pane:visible').first().waitFor({ state: 'visible' });
   await installFrameProbeCanvas(page, { msPerFrame });
 

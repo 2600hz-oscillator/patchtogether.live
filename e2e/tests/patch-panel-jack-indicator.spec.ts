@@ -37,7 +37,7 @@ async function openFrom(page: Page, nodeId: string, side: 'left' | 'right') {
 
 /** Spawn SEQUENCER → ADSR with one PRE-WIRED edge: seq.gate → adsr.gate. */
 async function spawnSeqAdsrWired(page: Page) {
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await page.waitForLoadState('networkidle');
   await spawnPatch(
     page,

@@ -138,7 +138,7 @@ test.describe('scratch canvas persistence', () => {
   });
 
   test('a node added on /rack survives a browser refresh', async ({ page }) => {
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
 
     const idbOk = await page.evaluate(
@@ -180,7 +180,7 @@ test.describe('scratch canvas persistence', () => {
   const PINNED_MIXMSTRS = 'pinned-mixmstrs';
 
   test('a pinned-module param on /rack survives refresh', async ({ page }) => {
-    await page.goto('/rack?shell=legacy');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     const idbOk = await page.evaluate(
@@ -260,7 +260,7 @@ test.describe('scratch canvas persistence', () => {
   test('a user-added module on /rack survives refresh (owner bug)', async ({
     page,
   }) => {
-    await page.goto('/rack?shell=legacy');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     const idbOk = await page.evaluate(
@@ -297,7 +297,7 @@ test.describe('scratch canvas persistence', () => {
     // inverse is the contract: revisiting /rack keeps the SAME id and the SAME
     // node. Asserting that here rather than deleting the leg keeps a positive
     // control on the id being stable across a navigation (not just a reload).
-    await page.goto('/rack?shell=legacy');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
     expect(await waitForScratchId(page)).toBe(workflowId);
     await page.waitForFunction(

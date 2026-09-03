@@ -75,7 +75,7 @@ test.describe('cross-domain bridge: late-materialization regression (Codex audit
       if (m.type() === 'error') errors.push(m.text());
     });
 
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
 
     // Wait for the dev __ydoc / __patch / __ensureEngine globals.
@@ -197,7 +197,7 @@ test.describe('cross-domain bridge: late-materialization regression (Codex audit
     page.on('pageerror', (e) => errors.push(e.message));
     page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
 
     await page.waitForFunction(() => {

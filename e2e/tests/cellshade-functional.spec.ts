@@ -212,7 +212,7 @@ const sinkNode: SpawnNode = { id: 'f-out', type: 'videoOut', position: { x: 980,
 
 async function bootRack(page: Page): Promise<void> {
   await installRenderSmokeHooks(page);
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await page.waitForLoadState('networkidle');
 }
 
@@ -229,7 +229,7 @@ async function rampThroughCellshade(
     [feedEdge('e-in', 'f-cel', 'in'), videoEdge('e-o', 'f-cel', 'out', 'f-out', 'in')],
     { mountTimeout: HEAVY_MOUNT_TIMEOUT },
   );
-  await expect(page.locator('.svelte-flow__node-cellshade'), 'CELLSHADE visible').toBeVisible();
+  await expect(page.locator('.svelte-flow__node:has([data-shell-type="cellshade"])'), 'CELLSHADE visible').toBeVisible();
   return stepAndSample(page, us.map((u) => ({ nodeId: 'f-cel', u, v: 0.5 })));
 }
 
@@ -250,7 +250,7 @@ async function solidThroughCellshade(
     ],
     { mountTimeout: HEAVY_MOUNT_TIMEOUT },
   );
-  await expect(page.locator('.svelte-flow__node-cellshade'), 'CELLSHADE visible').toBeVisible();
+  await expect(page.locator('.svelte-flow__node:has([data-shell-type="cellshade"])'), 'CELLSHADE visible').toBeVisible();
   const [px] = await stepAndSample(page, [{ nodeId: 'f-cel', u: 0.5, v: 0.5 }]);
   return px!;
 }
@@ -265,7 +265,7 @@ test.describe('CELLSHADE functional validation (cel-shading-theory-derived pixel
       [rampNode, solidNode('f-blue', 0, 0, 1), sinkNode],
       [feedEdge('e-r1', 'f-blue', 'in'), videoEdge('e-o', 'f-blue', 'out', 'f-out', 'in')],
     );
-    await expect(page.locator('.svelte-flow__node-chroma'), 'CHROMA visible').toBeVisible();
+    await expect(page.locator('.svelte-flow__node:has([data-shell-type="chroma"])'), 'CHROMA visible').toBeVisible();
     const [ramp25, ramp75, blue] = await stepAndSample(page, [
       { nodeId: 'f-ramp', portId: 'h_lin', u: 0.25, v: 0.5 },
       { nodeId: 'f-ramp', portId: 'h_lin', u: 0.75, v: 0.5 },
@@ -342,7 +342,7 @@ test.describe('CELLSHADE functional validation (cel-shading-theory-derived pixel
       ],
       { mountTimeout: HEAVY_MOUNT_TIMEOUT },
     );
-    await expect(page.locator('.svelte-flow__node-cellshade'), 'CELLSHADE visible').toBeVisible();
+    await expect(page.locator('.svelte-flow__node:has([data-shell-type="cellshade"])'), 'CELLSHADE visible').toBeVisible();
     await setNodeParam(page, 'f-split', 'abTransition', 1); // WIPE
     await setNodeParam(page, 'f-split', 'fader', 0.5);
 
@@ -503,7 +503,7 @@ test.describe('CELLSHADE functional validation (cel-shading-theory-derived pixel
       ],
       { mountTimeout: HEAVY_MOUNT_TIMEOUT },
     );
-    await expect(page.locator('.svelte-flow__node-cellshade'), 'CELLSHADE visible').toBeVisible();
+    await expect(page.locator('.svelte-flow__node:has([data-shell-type="cellshade"])'), 'CELLSHADE visible').toBeVisible();
 
     const raw = await stepAndReadStats(page, { nodeId: 'f-cel', steps: STEPS });
     expect(raw.glErrors, 'no GL errors (bypass path)').toEqual([]);
