@@ -130,13 +130,24 @@ async function measureFrames(page: Page, nodeId: string, ms: number) {
   );
 }
 
-/** This node's combine graph, read off the live patch. */
+/**
+ * How many nodes this node's combine graph holds, read off the live patch.
+ *
+ * ⚠ ZERO IS A REAL ANSWER, NOT AN ERROR, AND IT IS THE ANSWER A FRESH NODE
+ * GIVES. `node.data.combine` is written LAZILY: the editor RENDERS from a
+ * derived default (four L-sources wired to an OUT sink) and nothing is
+ * persisted until the first EDIT. Measured on this tree: 0 at spawn, 0 with the
+ * COMBINE GRAPH tab open and the five default boxes on screen, and 6 one ADD
+ * later. So this returns 0 rather than a sentinel — an absent key and an empty
+ * graph are the same fact — and the SURFACE count below is what says the
+ * default rendered, while THIS is what says the edit reached the Y.Doc.
+ */
 async function combineNodeCount(page: Page, nodeId: string): Promise<number> {
   return await page.evaluate((id) => {
     const w = globalThis as unknown as {
       __patch?: { nodes: Record<string, { data?: { combine?: { nodes?: unknown[] } } }> };
     };
-    return w.__patch?.nodes?.[id]?.data?.combine?.nodes?.length ?? -1;
+    return w.__patch?.nodes?.[id]?.data?.combine?.nodes?.length ?? 0;
   }, nodeId);
 }
 
@@ -251,23 +262,36 @@ test.describe('TOYBOX face — the console survives the promotion that deletes i
     // deepest thing on this surface and the one a summary-shaped migration
     // would have flattened; adding an op through the FACE must reach the same
     // Y.Doc the card writes.
-    const nodesBefore = await combineNodeCount(page, NODE);
-    expect(nodesBefore, 'the default combine graph did not resolve').toBeGreaterThan(0);
-
     await body.getByTestId('toybox-face-tab-combine').click();
     await expect(body.getByTestId('toybox-graph-svg')).toBeVisible();
+
+    // The DEFAULT graph is on the surface before an ADD means anything — four
+    // L-sources and an OUT sink, rendered from the derived default that a fresh
+    // node has instead of a persisted one.
+    // ⚠ THE `:not()` IS NOT NOISE — a locked node's badge is
+    // `toybox-gnode-lock-<id>`, which a bare prefix match counts as a node.
+    const boxes = body.locator(
+      '[data-testid^="toybox-gnode-"]:not([data-testid^="toybox-gnode-lock-"])',
+    );
+    const boxesBefore = await boxes.count();
+    expect(boxesBefore, 'the default combine graph painted no nodes at all').toBeGreaterThan(0);
+    // …and it is genuinely UNPERSISTED at this point, which is what makes the
+    // next assertion a statement about the EDIT rather than about the mount.
+    expect(await combineNodeCount(page, NODE)).toBe(0);
+
     await body.getByTestId('toybox-add-lumakey').click();
 
+    // ⚠ THE EFFECT, IN THE GRAPH. A click that only added a box would leave a
+    // patch that reloads without it and a rack-mate who never sees it.
     await expect
       .poll(() => combineNodeCount(page, NODE), {
         timeout: SLOW_BOOT_TEST_TIMEOUT_MS,
         message: 'ADD LUMAKEY on the faceplate never reached node.data.combine',
       })
-      .toBe(nodesBefore + 1);
+      .toBe(boxesBefore + 1);
 
-    // …and the new node is on the surface, under the unique display name the
-    // graph derives — the editor is really an editor.
-    await expect(body.locator('[data-testid^="toybox-gnode-"]')).toHaveCount(nodesBefore + 1);
+    // …and on the surface, so the editor is really an editor.
+    await expect(boxes).toHaveCount(boxesBefore + 1);
   });
 
   test('SCREEN OFF reclaims the space and is NOT a pause @video', async ({ page }) => {
@@ -290,21 +314,40 @@ test.describe('TOYBOX face — the console survives the promotion that deletes i
     await expect(toggle).toHaveAttribute('aria-pressed', 'false');
     await expect(body.getByTestId('toybox-face-canvas')).toHaveCount(0);
 
-    // ⚠ AND THE ENGINE KEEPS GOING. This is the leg the whole switch design
-    // rests on: `blitOutputForPreview` renews the watch mark as a SIDE EFFECT
-    // of painting, so a face that merely stopped blitting would let the mark
-    // lapse and `computePullActiveSet` would drop the node — freezing the
-    // FEEDBACK / FRAMEDELAY / EXQUISITE / DATAMOSH history and idling every
-    // module downstream of `out`. `renewWatchMark` is what stops that, and this
-    // measures the engine rather than a canvas precisely because a canvas
-    // cannot tell "stopped rendering" from "nobody is painting a copy".
+    // ⚠ AND THE ENGINE KEEPS GOING — the END-TO-END form of the fleet ruling.
+    // It measures the ENGINE rather than a canvas precisely because a canvas
+    // cannot tell "the module stopped rendering" from "the module is rendering
+    // and nobody is painting a copy", which are the two possible meanings of
+    // SCREEN OFF and the whole question.
+    //
+    // ⚠ WHAT THIS LEG CANNOT ISOLATE, MEASURED RATHER THAN ASSUMED, because a
+    // reader will otherwise take it for more than it is. It does NOT prove that
+    // the BODY is what keeps the node alive. With the dock open the LANE TILE's
+    // `VideoTileThumb` is still on screen and still blitting, and
+    // `blitOutputForPreview` renews `watchedAt` as a side effect of painting —
+    // so the tile alone is enough to keep `isPullRoot` true. Two positive
+    // controls were run on this branch and BOTH stayed green: deleting the
+    // console's `renewWatchMark()` call, and making SCREEN OFF `return` out of
+    // the whole rAF loop. The claim this leg does support — the composite is
+    // still advancing while the picture is put away — is exactly the ruling's
+    // own wording, and it is worth holding.
+    //
+    // The body-owned half is pinned where it CAN be seen: `toybox-face-model
+    // .test.ts` asserts `renewWatchMark()` exists and runs BEFORE the screen
+    // gate on the face path. Isolating it in a browser would need the lane
+    // tile's contribution removed, and the only mechanism that survives that is
+    // a RENDER LEASE (`isPullRoot` honours a lease ahead of both the mark and
+    // card visibility) — a design change no sibling face has made for this
+    // purpose, and not one to smuggle into a promotion.
     const off = await measureFrames(page, NODE, OBSERVE_MS);
     expect(off.samples, 'the in-page accumulator actually ran').toBeGreaterThan(5);
     expect(
       off.advanced,
       `SCREEN OFF stopped the engine: ${off.advanced} frames over ${off.samples} samples / `
-        + `${Math.round(off.elapsedMs)} ms. The watch mark lapsed — see renewWatchMark in `
-        + 'ToyboxConsole.svelte.',
+        + `${Math.round(off.elapsedMs)} ms. The node left the pull set while its picture was `
+        + 'put away, so every history op (FEEDBACK / FRAMEDELAY / EXQUISITE / DATAMOSH) froze '
+        + 'and every module downstream of `out` is now sampling a stale frame. Start at '
+        + 'renewWatchMark in ToyboxConsole.svelte and at the lane tile\'s own blit.',
     ).toBeGreaterThanOrEqual(MIN_FRAMES);
 
     // The console below is fully operable with the screen off — building a
