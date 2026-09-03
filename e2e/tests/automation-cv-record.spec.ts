@@ -281,7 +281,8 @@ async function seedClip(
   );
 }
 
-/** Launch the seeded clip in lane 0 and gate on it SOUNDING. */
+/** Launch the seeded clip in lane 0 and gate on it SOUNDING. The pad lives in
+ *  the DOCK face grid on the default shell (opened by spawnOwnerPatch). */
 async function launchClip(page: Page): Promise<void> {
   await page.getByTestId(`clipplayer-pad-${IDX}`).click();
   await page.waitForFunction(
@@ -366,7 +367,12 @@ async function spawnOwnerPatch(page: Page): Promise<void> {
       },
     ],
   );
-  await expect(page.getByTestId('clipplayer-card')).toBeVisible();
+  // The pad grid + arm row live in the dock face on the default shell.
+  await page.evaluate(
+    (id) => (globalThis as unknown as { __openDockFullView: (id: string) => void }).__openDockFullView(id),
+    CP,
+  );
+  await expect(page.locator(`[data-testid="dock-fullview-pane"][data-pane-node="${CP}"]`)).toBeVisible();
 }
 
 /** IN-PAGE record driver: sweep the fake stick across [lo, hi] in graded
@@ -576,8 +582,8 @@ async function wiggleUntilEngineAbove(
   );
 }
 
-test('OWNER CASE: gamepad CV movement on a lane-assigned BACKDRAFT records into the clip; the parked stick loops it back; the store and note clip never move', async ({ page, rackLegacy }) => {
-  void rackLegacy;
+test('OWNER CASE: gamepad CV movement on a lane-assigned BACKDRAFT records into the clip; the parked stick loops it back; the store and note clip never move', async ({ page, rack }) => {
+  void rack;
   test.setTimeout(120_000);
   await spawnOwnerPatch(page);
   await seedClip(page);
@@ -684,8 +690,8 @@ test('OWNER CASE: gamepad CV movement on a lane-assigned BACKDRAFT records into 
   expect(await noteClipSnapshot(page)).toBe(clipBefore);
 });
 
-test('live stick movement OVERRIDES the recorded playback; parking hands the param back; overdub while armed re-records the new movement', async ({ page, rackLegacy }) => {
-  void rackLegacy;
+test('live stick movement OVERRIDES the recorded playback; parking hands the param back; overdub while armed re-records the new movement', async ({ page, rack }) => {
+  void rack;
   test.setTimeout(120_000);
   await spawnOwnerPatch(page);
   // A seeded LOW recorded envelope (0.15..0.35) — deterministic playback to

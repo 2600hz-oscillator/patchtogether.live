@@ -238,31 +238,43 @@ async function isLaneArmed(page: Page, lane: number): Promise<boolean> {
 
 /** Lane 0's ◉ arm button live countdown colour ('yellow' | 'red' | null) — the
  *  card mirror of the published per-lane render state (its cd-* classes). */
-async function laneArmCountdownColor(page: Page, lane: number): Promise<'yellow' | 'red' | null> {
-  return page.evaluate((lane) => {
-    const btn = document.querySelector(`[data-testid="clipplayer-auto-arm-${lane}"]`);
-    if (!btn) return null;
-    if (btn.classList.contains('cd-red')) return 'red';
-    if (btn.classList.contains('cd-yellow')) return 'yellow';
-    return null;
-  }, lane);
+async function countdownLampLit(page: Page): Promise<'1' | '0' | null> {
+  return page.evaluate((id) => {
+    const lamp = document.querySelector(`[data-testid="clipplayer-auto-countdown-${id}"]`);
+    return (lamp?.getAttribute('data-lit') as '1' | '0' | null) ?? null;
+  }, CP);
 }
 
-/** Poll lane 0's ◉ countdown colour for `ms`, returning the ORDERED sequence of
- *  distinct colours observed (e.g. ['yellow','red']) — proves the 🟡→🔴 order. */
-async function collectCountdown(page: Page, ms: number): Promise<Array<'yellow' | 'red'>> {
-  const seq: Array<'yellow' | 'red'> = [];
+/** Poll the REC lamp for `ms`, returning the ORDERED sequence of distinct lit
+ *  states observed (e.g. ['0','1','0','1']) — proves the lamp PULSES on the
+ *  approach to each wrap rather than sitting stuck in either state. */
+async function collectCountdown(page: Page, ms: number): Promise<Array<'1' | '0'>> {
+  const seq: Array<'1' | '0'> = [];
   const start = Date.now();
   while (Date.now() - start < ms) {
-    const c = await laneArmCountdownColor(page, 0);
-    if (c && seq[seq.length - 1] !== c) seq.push(c);
+    const c = await countdownLampLit(page);
+    if (c !== null && seq[seq.length - 1] !== c) seq.push(c);
     await page.waitForTimeout(60);
   }
   return seq;
 }
 
+/** Open the clip player's dock pane (idempotent) — the pad grid, arm row and
+ *  deck lamps live there on the default shell. */
+async function openCpDock(page: Page): Promise<void> {
+  const pane = page.locator(`[data-testid="dock-fullview-pane"][data-pane-node="${CP}"]`);
+  if ((await pane.count()) === 0) {
+    await page.evaluate(
+      (id) => (globalThis as unknown as { __openDockFullView: (id: string) => void }).__openDockFullView(id),
+      CP,
+    );
+  }
+  await expect(pane).toBeVisible();
+}
+
 /** Launch the clip at flat index `idx` in `lane` and gate on it SOUNDING. */
 async function launchClip(page: Page, idx: number, lane: number, slot = 0): Promise<void> {
+  await openCpDock(page);
   await page.getByTestId(`clipplayer-pad-${idx}`).click();
   await page.waitForFunction(
     ({ lane, slot }) => {
@@ -278,8 +290,9 @@ async function launchClip(page: Page, idx: number, lane: number, slot = 0): Prom
   await waitForSoundingStep(page, CP, 3, { key: `currentStep:${lane}`, timeoutMs: 8000 });
 }
 
-/** ARM lane `lane` from the card's per-lane ◉ (the grid footer, next to RATE). */
+/** ARM lane `lane` from the face's per-lane ◉ (the dock arm row). */
 async function armLaneViaCard(page: Page, lane: number): Promise<void> {
+  await openCpDock(page);
   await page.getByTestId(`clipplayer-auto-arm-${lane}`).click();
 }
 
@@ -295,8 +308,9 @@ function vcaBase(page: Page, vcaId: string) {
  *  isolation.) */
 async function assignModuleViaMenu(page: Page, vcaId: string, lane: number): Promise<void> {
   const node = page.locator(`.svelte-flow__node[data-id="${vcaId}"]`);
-  // Right-click the card's header area (top-left corner — clear of controls).
-  await node.click({ button: 'right', position: { x: 8, y: 8 } });
+  // Right-click the tile's KIND row — the shell's module-menu target (a
+  // control right-click opens the per-control MIDI menu instead).
+  await node.locator('.tile-kind').click({ button: 'right' });
   const trigger = page.getByTestId('ctx-assign-auto-only');
   await expect(trigger).toBeVisible();
   await trigger.click(); // expand the channel panel
@@ -307,7 +321,7 @@ async function assignModuleViaMenu(page: Page, vcaId: string, lane: number): Pro
 /** Remove MODULE `vcaId`'s assignment via the module menu. */
 async function removeModuleAssignmentViaMenu(page: Page, vcaId: string): Promise<void> {
   const node = page.locator(`.svelte-flow__node[data-id="${vcaId}"]`);
-  await node.click({ button: 'right', position: { x: 8, y: 8 } });
+  await node.locator('.tile-kind').click({ button: 'right' });
   const remove = page.getByTestId('ctx-automation-remove');
   await expect(remove).toBeVisible();
   await remove.click();
@@ -480,8 +494,8 @@ const ENV_LOW: SeedTrack['events'] = [
 // 96 h CI census to 2026-08-18 — never a hard failure, so every one of those jobs reported SUCCESS.
 // LOST WHILE PARKED: the owner-locked FINAL per-clip automation model end to end — module-level assign, per-lane arm, record-while-twisting, the negative leg that an UNASSIGNED module records nothing, and that the note clip is left untouched.
 // Re-enable only on a root cause (#1847); "it passes now" is not one.
-test.fixme('module-assign + per-lane arm: right-click module → lane 1 (card border) → arm lane → record while twisting → unassigned module records nothing → disarm → playback; note clip untouched', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 26 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page, rackLegacy }) => {
-  void rackLegacy;
+test.fixme('module-assign + per-lane arm: right-click module → lane 1 (card border) → arm lane → record while twisting → unassigned module records nothing → disarm → playback; note clip untouched', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 26 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page, rack }) => {
+  void rack;
   await spawnPatch(page, [
     { id: CP, type: 'clipplayer', position: { x: 80, y: 80 }, domain: 'audio' },
     { id: 'va', type: 'vca', position: { x: 460, y: 80 }, domain: 'audio', params: { base: 0.2 } },
@@ -489,7 +503,7 @@ test.fixme('module-assign + per-lane arm: right-click module → lane 1 (card bo
   ]);
   await ensureTransportRunning(page);
   await installSimMidi(page);
-  await expect(page.getByTestId('clipplayer-card')).toBeVisible();
+  await openCpDock(page);
 
   // A note clip in lane 0, slot 0 (its sibling automation starts empty).
   await seedClip(page, IDX_L0S0, { len: CLIP_LEN });
@@ -504,8 +518,15 @@ test.fixme('module-assign + per-lane arm: right-click module → lane 1 (card bo
   const border = await moduleBorder(page, 'va');
   // Lane 0's default channel colour is hsl(0,70%,50%) = #d92626 = rgb(217,38,38).
   expect(border, 'border colour === the assigned lane’s colour').toBe('rgb(217, 38, 38)');
-  await expect(page.getByTestId('clipplayer-auto-assigned-0')).toHaveText('1');
-  await expect(page.getByTestId('clipplayer-auto-assigned-0')).toHaveAttribute('data-count', '1');
+  // The face's ASSIGNED lamp lights (the card's per-lane count chip died with
+  // the readout ruling); the count itself is the synced autoAssign map.
+  await expect(page.getByTestId(`clipplayer-auto-assigned-${CP}`)).toHaveAttribute('data-lit', '1');
+  expect(
+    await page.evaluate(() => {
+      const w = globalThis as unknown as { __patch: { nodes: Record<string, { data?: { autoAssign?: Record<string, number> } }> } };
+      return w.__patch.nodes['cp']?.data?.autoAssign ?? {};
+    }),
+  ).toEqual({ va: 0 });
   // The UNASSIGNED module has no border.
   expect(await moduleBorder(page, 'vb')).toBeNull();
 
@@ -561,7 +582,7 @@ test.fixme('module-assign + per-lane arm: right-click module → lane 1 (card bo
   // 0); the recorded automation keeps playing (assignment gates RECORD only).
   await removeModuleAssignmentViaMenu(page, 'va');
   await expect.poll(async () => moduleBorder(page, 'va'), { timeout: 4000 }).toBeNull();
-  await expect(page.getByTestId('clipplayer-auto-assigned-0')).toHaveAttribute('data-count', '0');
+  await expect(page.getByTestId(`clipplayer-auto-assigned-${CP}`)).toHaveAttribute('data-lit', '0');
   // The recorded envelopes SURVIVE the un-assignment (remove ≠ clear).
   expect((await readAutoEvents(page, IDX_L0S0, 'va::base')).length).toBeGreaterThan(1);
 
@@ -580,8 +601,8 @@ test.fixme('module-assign + per-lane arm: right-click module → lane 1 (card bo
 
 // ── Case 2: clip-switch swaps automation WITH the clip ───────────────────────
 
-test('per-clip automation: switching clips in a lane swaps to the NEW clip’s own envelope (each clip carries its own)', async ({ page, rackLegacy }) => {
-  void rackLegacy;
+test('per-clip automation: switching clips in a lane swaps to the NEW clip’s own envelope (each clip carries its own)', async ({ page, rack }) => {
+  void rack;
   await spawnPatch(page, [
     { id: CP, type: 'clipplayer', position: { x: 80, y: 80 }, domain: 'audio' },
     { id: 'va', type: 'vca', position: { x: 460, y: 80 }, domain: 'audio', params: { base: 0.5 } },
@@ -619,8 +640,8 @@ test('per-clip automation: switching clips in a lane swaps to the NEW clip’s o
 
 // ── Case 3: MULTI-LANE — two clips in two lanes, each with its own automation ─
 
-test('per-clip automation: two lanes drive two params independently from their own clips', async ({ page, rackLegacy }) => {
-  void rackLegacy;
+test('per-clip automation: two lanes drive two params independently from their own clips', async ({ page, rack }) => {
+  void rack;
   await spawnPatch(page, [
     { id: CP, type: 'clipplayer', position: { x: 80, y: 80 }, domain: 'audio' },
     { id: 'va', type: 'vca', position: { x: 460, y: 60 }, domain: 'audio', params: { base: 0.2 } },
@@ -643,8 +664,8 @@ test('per-clip automation: two lanes drive two params independently from their o
 
 // ── Case 4: screen touch suspends only the grabbed param ─────────────────────
 
-test('per-clip automation: grabbing an on-screen fader suspends only its playback until RELEASE; the other keeps playing', async ({ page, rackLegacy }) => {
-  void rackLegacy;
+test('per-clip automation: grabbing an on-screen fader suspends only its playback until RELEASE; the other keeps playing', async ({ page, rack }) => {
+  void rack;
   await spawnPatch(page, [
     { id: CP, type: 'clipplayer', position: { x: 80, y: 80 }, domain: 'audio' },
     { id: 'va', type: 'vca', position: { x: 460, y: 60 }, domain: 'audio', params: { base: 0.2 } },
@@ -666,7 +687,7 @@ test('per-clip automation: grabbing an on-screen fader suspends only its playbac
   // GRAB va's fader (screen) and HOLD it down → suspend ONLY va. The override
   // holds until the physical RELEASE, NOT the loop wrap. The indicator lights.
   await grabFaderHold(page, 'va');
-  await expect(page.getByTestId(`clipplayer-auto-override-${CP}`)).toBeVisible();
+  await expect(page.getByTestId(`clipplayer-auto-override-${CP}`)).toBeEnabled();
   await page.waitForTimeout(220); // let va settle to the grabbed value
 
   // WHILE STILL HELD (across at least one loop wrap): va stays held, vb still plays.
@@ -677,7 +698,7 @@ test('per-clip automation: grabbing an on-screen fader suspends only its playbac
 
   // RELEASE (pointer-up) → the override ends, indicator clears, va resumes playback.
   await releaseFader(page);
-  await expect(page.getByTestId(`clipplayer-auto-override-${CP}`)).toBeHidden();
+  await expect(page.getByTestId(`clipplayer-auto-override-${CP}`)).toBeDisabled();
   expect((await sampleSpread(page, 'va', 'base')).spread, 'va resumes after release').toBeGreaterThan(0.15);
 });
 
@@ -692,8 +713,8 @@ const ENV_HELD_HIGH: SeedTrack['events'] = [
   { step: 7, value: 0.7 },
 ];
 
-test('per-clip automation: on stop the param HOLDS its last automated value — no snap to default/zero', async ({ page, rackLegacy }) => {
-  void rackLegacy;
+test('per-clip automation: on stop the param HOLDS its last automated value — no snap to default/zero', async ({ page, rack }) => {
+  void rack;
   await spawnPatch(page, [
     { id: CP, type: 'clipplayer', position: { x: 80, y: 80 }, domain: 'audio' },
     { id: 'va', type: 'vca', position: { x: 460, y: 80 }, domain: 'audio', params: { base: 0.2 } },
@@ -742,8 +763,8 @@ test('per-clip automation: on stop the param HOLDS its last automated value — 
 // 96 h CI census to 2026-08-18 — never a hard failure, so every one of those jobs reported SUCCESS.
 // LOST WHILE PARKED: the live-grab suspension rule — a MIDI CC on an automated param suspends THAT param only, and playback resumes when the twist idles; a broken scope here means one knob freezes the whole lane.
 // Re-enable only on a root cause (#1847); "it passes now" is not one.
-test.fixme('per-clip automation: a MIDI CC on an automated param suspends only that param until the twist idles; CC-idle resumes', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 4 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page, rackLegacy }) => {
-  void rackLegacy;
+test.fixme('per-clip automation: a MIDI CC on an automated param suspends only that param until the twist idles; CC-idle resumes', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 4 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page, rack }) => {
+  void rack;
   await spawnPatch(page, [
     { id: CP, type: 'clipplayer', position: { x: 80, y: 80 }, domain: 'audio' },
     { id: 'va', type: 'vca', position: { x: 460, y: 60 }, domain: 'audio', params: { base: 0.2 } },
@@ -777,7 +798,7 @@ test.fixme('per-clip automation: a MIDI CC on an automated param suspends only t
   // as long as the sampling below takes, however slow the machine is, so "the
   // override is still held" is structural rather than a wall-clock race.
   const twist = await holdCcUntilReleased(page, 1, 21, 105);
-  await expect(page.getByTestId(`clipplayer-auto-override-${CP}`)).toBeVisible();
+  await expect(page.getByTestId(`clipplayer-auto-override-${CP}`)).toBeEnabled();
   await page.waitForTimeout(220);
 
   const vaHeld = await sampleSpread(page, 'va', 'base', 6, 70);
@@ -793,7 +814,7 @@ test.fixme('per-clip automation: a MIDI CC on an automated param suspends only t
 
   // CC-IDLE RELEASE → after the settle timeout the override ends automatically and
   // va resumes being driven by automation (no manual re-enable needed).
-  await expect(page.getByTestId(`clipplayer-auto-override-${CP}`)).toBeHidden({ timeout: 4000 });
+  await expect(page.getByTestId(`clipplayer-auto-override-${CP}`)).toBeDisabled({ timeout: 4000 });
   expect((await sampleSpread(page, 'va', 'base')).spread, 'va resumes after the twist idles').toBeGreaterThan(0.15);
 });
 
@@ -861,13 +882,13 @@ async function installSingleLaunchpad(page: Page): Promise<SingleLaunchpad> {
   return { ccTap, padTap };
 }
 
-test('per-clip automation: scene-duplicate (Launchpad copy/paste) carries the automation with the clips', async ({ page, rackLegacy }) => {
-  void rackLegacy;
+test('per-clip automation: scene-duplicate (Launchpad copy/paste) carries the automation with the clips', async ({ page, rack }) => {
+  void rack;
   await spawnPatch(page, [
     { id: CP, type: 'clipplayer', position: { x: 80, y: 80 }, domain: 'audio' },
     { id: 'va', type: 'vca', position: { x: 460, y: 80 }, domain: 'audio', params: { base: 0.2 } },
   ]);
-  await expect(page.getByTestId('clipplayer-card')).toBeVisible();
+  await openCpDock(page);
   // Scene 0: a clip in lane 0 carrying an envelope.
   await seedClip(page, IDX_L0S0, { tracks: [{ nodeId: 'va', paramId: 'base', events: ENV_UP }] });
 
@@ -914,13 +935,13 @@ test('per-clip automation: scene-duplicate (Launchpad copy/paste) carries the au
 
 // ── Case 9: LAUNCHPAD per-lane ARM — HOLD SHIFT+top-row + the pad below SHFT ──
 
-test('launchpad per-lane arm: HOLD SHIFT+top-row toggles a lane (view untouched), HOLD SHIFT + the pad below SHFT toggles lane 8; the card ◉ mirrors', async ({ page, rackLegacy }) => {
-  void rackLegacy;
+test('launchpad per-lane arm: HOLD SHIFT+top-row toggles a lane (view untouched), HOLD SHIFT + the pad below SHFT toggles lane 8; the card ◉ mirrors', async ({ page, rack }) => {
+  void rack;
   await spawnPatch(page, [
     { id: CP, type: 'clipplayer', position: { x: 80, y: 80 }, domain: 'audio' },
     { id: 'va', type: 'vca', position: { x: 460, y: 80 }, domain: 'audio', params: { base: 0.2 } },
   ]);
-  await expect(page.getByTestId('clipplayer-card')).toBeVisible();
+  await openCpDock(page);
   await seedClip(page, IDX_L0S0, { assign: { va: 0 } });
   const { ccTap, padTap } = await installSingleLaunchpad(page);
   await ccTap(CC_VIEW_GRID);
@@ -972,8 +993,8 @@ test('launchpad per-lane arm: HOLD SHIFT+top-row toggles a lane (view untouched)
 
 // ── Case 10: CV EXCLUSION — a CV cable never records; MIDI does ─────────────
 
-test('CV exclusion: an LFO CV cable driving the assigned module records NOTHING while its lane records; a MIDI twist of the same knob records', async ({ page, rackLegacy }) => {
-  void rackLegacy;
+test('CV exclusion: an LFO CV cable driving the assigned module records NOTHING while its lane records; a MIDI twist of the same knob records', async ({ page, rack }) => {
+  void rack;
   await spawnPatch(
     page,
     [
@@ -995,7 +1016,7 @@ test('CV exclusion: an LFO CV cable driving the assigned module records NOTHING 
   );
   await ensureTransportRunning(page);
   await installSimMidi(page);
-  await expect(page.getByTestId('clipplayer-card')).toBeVisible();
+  await openCpDock(page);
 
   // Assign MODULE va → lane 0 (seeded — the menu path is covered in case 1),
   // launch, arm the lane.
@@ -1026,14 +1047,14 @@ test('CV exclusion: an LFO CV cable driving the assigned module records NOTHING 
 
 // ── Case 7: the 🟡🟡🔴🔴 countdown flashes the recording lane's ◉ ────────────
 
-test('per-clip automation: the countdown flashes yellow→red on the lane’s ◉ arm while it records; disarm clears it', async ({ page, rackLegacy }) => {
-  void rackLegacy;
+test('per-clip automation: the REC countdown lamp pulses while a lane records; disarm clears it', async ({ page, rack }) => {
+  void rack;
   await spawnPatch(page, [
     { id: CP, type: 'clipplayer', position: { x: 80, y: 80 }, domain: 'audio' },
     { id: 'va', type: 'vca', position: { x: 460, y: 80 }, domain: 'audio', params: { base: 0.2 } },
   ]);
   await ensureTransportRunning(page);
-  await expect(page.getByTestId('clipplayer-card')).toBeVisible();
+  await openCpDock(page);
 
   // A LONGER clip so the 4-beat countdown is a distinct window: 32 steps on the
   // 1/16 grid ≈ 4s = 8 beats (countdown = the last ~2s). Assign the MODULE to
@@ -1045,17 +1066,17 @@ test('per-clip automation: the countdown flashes yellow→red on the lane’s �
   await armLaneViaCard(page, 0);
   expect(await isLaneArmed(page, 0)).toBe(true);
 
-  // Observe ≥2 loops (~9s over a 4s loop): lane 0's ◉ flashes yellow (4,3
-  // beats) THEN red (2,1 beats) before each wrap, published from the tick.
+  // Observe ≥2 loops (~9s over a 4s loop): the deck REC lamp pulses on the
+  // last four beats before each wrap, published from the tick. Requiring BOTH
+  // states plus ≥3 transitions rules out a lamp stuck lit or stuck dark.
+  // (The card's per-◉ 🟡→🔴 colour order died with the card — S2 manifest.)
   const seq = await collectCountdown(page, 9500);
-  expect(seq, 'countdown flashes yellow in the last 4 beats').toContain('yellow');
-  expect(seq, 'countdown flashes red in the last 2 beats').toContain('red');
-  expect(seq.indexOf('yellow'), 'yellow precedes red on the approach to the wrap').toBeLessThan(
-    seq.lastIndexOf('red'),
-  );
+  expect(seq, 'the REC lamp lights on the approach to a wrap').toContain('1');
+  expect(seq, 'and goes dark between approaches').toContain('0');
+  expect(seq.length, `the lamp PULSES rather than latching (saw ${seq.join('')})`).toBeGreaterThanOrEqual(3);
 
   // DISARM → the countdown clears (no stuck light).
   await armLaneViaCard(page, 0);
   expect(await isLaneArmed(page, 0)).toBe(false);
-  await expect.poll(async () => laneArmCountdownColor(page, 0), { timeout: 4000 }).toBeNull();
+  await expect.poll(async () => countdownLampLit(page), { timeout: 4000 }).toBe('0');
 });
