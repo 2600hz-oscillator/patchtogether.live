@@ -103,6 +103,71 @@ was verified matched after slice 1; DOOM is untouched.
 
 ---
 
+## 0.3 SLICE 3 CORRECTIONS (the pre-board tap)
+
+Four things the design got wrong or left unstated, found by building it.
+
+**A. The insert-identity claim is BOUNDED, not absolute.**
+`art/scenarios/mixmstrs/board-insert-identity.test.ts` measures
+max |Δsample| = **0.0000e+0** for two series unity gains through the real
+factory. But the instrument's floor was MEASURED rather than assumed, and it is
+not ULP-scale: through the module a gain error below `2^-16` is invisible, and
+even on a bare source→gain→destination path a ONE-ULP gain change reads 0. So
+what is proven is *"the insert introduces no error at or above ~4e-6
+relative"* — **not** bit-exactness at the 1-2 ULP scale that actually moved this
+module's send baselines. Two earlier versions of the positive control were
+themselves inert (`1 + 1e-7` rounds to exactly 1.0 in float32; `1 + 2^-23` is a
+real perturbation but sits below the floor), and a negative-controlled test
+whose control is inert proves nothing in either direction.
+
+**B. The `record` band is OFF the face-wide console ruler.** §4.9 assumed
+column *N* = channel *N* there. Measured: every record control is SEGMENTED, and
+a segmented cell is far wider than a knob because its width is set by its option
+labels — so putting the band on the shared `max-content` ruler took the face
+from ONE column pitch to **FOUR** (`168.2 / 161.2 / 161.1 / 111.6` CSS px),
+which is the #1825 defect itself. The arm row is still eight cells in strip
+order; it simply does not share the pitch of the faders two bands up. **The one
+visual compromise in the slice, and the thing to look at in the owner preview.**
+
+**C. `1x` is an illegal option label.** `face-readout-source` refuses a label
+that reads as a number — the decimal knob-state readout the owner removed. The
+arm roster is `off` / `once` / `inf`.
+
+**D. A shadowed param must be PUBLISHED in `inputsMap`, not merely built.** The
+first cut created all eighteen shadows and marked them JS-consumed but never
+mapped the CV ports onto them, so every one was a DECLARED input that a cable
+could not land on — the #1734 dead-terminal shape, caught by
+`art/scenarios/cv-terminal`.
+
+**Also:** `cv-path.test.ts`'s audio sweeps now EXCLUDE the eighteen clip-record
+ports, because their consumer is JavaScript and they legitimately move no audio
+(and `ch{N}_mon`'s duck cannot engage until a lane plays). They are **not
+dropped** — a new leg drives every one through the same CV path and requires it
+to move `read('recState')`, so *"no declared CV input is dead"* still holds for
+all of them, measured against the right instrument.
+
+**E. Eight-wide record rows do not fit the dock pane — CI measured it.** The
+vrt-strict dock scene reported *"104 CSS px of faceplate right of the capture
+box (content 1324, shown 1220)"*: eight `live/both/auto` segmented cells at
+~157 px plus seven 10 px gaps out-measure the 1220 px pane, and
+`.faceplate-body` is `width: max-content`, so a flex row never wraps on its
+own. Users would have seen a clipped plate — the owner's preview at dock width
+already showed exactly that, so the FITTING layout is the approved look. The
+arm and monitor clusters are now FOUR-channel halves (`arm 1–4` / `monitor
+1–4` / `arm 5–8` / `monitor 5–8`; widest record row ~670 px), grouped by
+channel range so a half reads arm-over-monitor for the same four strips; each
+cell keeps its own channel caption (`5RC`), so identity never rested on
+counting columns. quadralogical's `edges` band is the precedent (same gate,
+content 1260, fixed by stacking). Fitting the record band also let the whole
+plate collapse to its true max-content (~691 px against the old 1324-forced
+stretch) — the compact-always ruling landing on its own terms. The face-model
+grid test now scopes its strip-order property to the bands `consoleGridCols`
+actually aligns, PINS that on-ruler set (`channels`/`dynamics`/`sends`) so a
+membership drift cannot fall out of the sweep silently, and asserts the record
+halves partition the arm/monitor rosters in strip order.
+
+---
+
 ## 0.2 OWNER DECISIONS — §7 is closed
 
 Every open question carries its answer. §7 is retained as the record of what was

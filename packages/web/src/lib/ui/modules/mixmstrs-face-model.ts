@@ -26,10 +26,10 @@
 //   ret{R}_{lo,md,hi}  one band of one return path                   scope  1 return
 //   ch{N}_*            one channel                                   scope  1 channel
 //
-// That axis is TOTAL over the eleven bus-scoped controls and exactly TIED over
+// That axis is TOTAL over the thirteen bus-scoped controls and exactly TIED over
 // the eighty channel-scoped ones. **The tie is not a defect of the axis — it is
 // the truth about a console**, and the face is arranged so the tie never has to
-// be consulted: the eleven bus-scoped controls take ranks 1–11, which is longer
+// be consulted: the thirteen bus-scoped controls take ranks 1–13, which is longer
 // than the largest lane tier (`FACE_TIER_CAPS.full`), so NO LANE TIER EVER
 // PAINTS A CHANNEL-SCOPED CONTROL and no channel is ever privileged over
 // another. `mixmstrs-face-model.test.ts` asserts exactly that, derived from the
@@ -102,7 +102,7 @@ export const returnStripIds = (r: number): string[] => [
  * THROUGH this predicate: a second list here would be a second opinion that
  * agrees at authoring time and drifts the first time a channel control is
  * added. `mixmstrs-face-model.test.ts` anchors it both ways against the live
- * def — every param matches this or is one of the eleven bus-scoped ids, and
+ * def — every param matches this or is one of the thirteen bus-scoped ids, and
  * the two sets partition `mixmstrsDef.params` with nothing left over.
  *
  * ⚠ THE REGEX ITSELF MOVED TO THE DEF (#1825, `mixmstrsChannelIndex`), because

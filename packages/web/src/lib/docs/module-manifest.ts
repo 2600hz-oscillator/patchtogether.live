@@ -1044,6 +1044,12 @@ function synthesizeFromBuildHelper(
       params.push({ id: `comp${ch}`, label: `${ch}Cm`, defaultValue: 0, min: 0, max: 1, curve: 'linear' });
       params.push({ id: `ch${ch}_send1`, label: `${ch}S1`, defaultValue: 0, min: 0, max: 1, curve: 'linear' });
       params.push({ id: `ch${ch}_send2`, label: `${ch}S2`, defaultValue: 0, min: 0, max: 1, curve: 'linear' });
+      // Clip recording: the per-channel ARM and its launcher-return MONITOR
+      // mode. ⚠ The MON default is 2 (clip-auto), NOT 0 — this manifest carries
+      // defaults, so getting it wrong would document a different module than
+      // the one that ships.
+      params.push({ id: `ch${ch}_rec`, label: `${ch}Rc`, defaultValue: 0, min: 0, max: 2, curve: 'discrete' });
+      params.push({ id: `ch${ch}_mon`, label: `${ch}Mn`, defaultValue: 2, min: 0, max: 2, curve: 'discrete' });
     }
     params.push({ id: 'master_volume', label: 'Master', defaultValue: 0.8, min: 0, max: 1, curve: 'linear' });
     // Pre/post-fader select per SEND BUS, then the two RETURN strips. Mirrors
@@ -1054,6 +1060,9 @@ function synthesizeFromBuildHelper(
     // what failed when only the def side was edited.
     params.push({ id: 'send1Pre', label: 'S1Pre', defaultValue: 0, min: 0, max: 1, curve: 'discrete' });
     params.push({ id: 'send2Pre', label: 'S2Pre', defaultValue: 0, min: 0, max: 1, curve: 'discrete' });
+    // The two BUS-SCOPED clip-record controls.
+    params.push({ id: 'recTap', label: 'Tap', defaultValue: 0, min: 0, max: 2, curve: 'discrete' });
+    params.push({ id: 'recQuality', label: 'Qual', defaultValue: 0, min: 0, max: 2, curve: 'discrete' });
     for (const r of [1, 2]) {
       params.push({ id: `ret${r}_volume`, label: `R${r}V`, defaultValue: 1, min: 0, max: 1, curve: 'linear' });
       params.push({ id: `ret${r}_low`, label: `R${r}Lo`, defaultValue: 0, min: -12, max: 12, curve: 'linear', units: 'dB' });

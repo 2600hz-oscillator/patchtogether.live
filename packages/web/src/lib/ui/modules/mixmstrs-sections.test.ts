@@ -2,7 +2,7 @@
 //
 // THE MIXMSTRS ROW COUNT.
 //
-// MIXMSTRS is the one card that names its 101 patch-panel rows by hand, and the
+// MIXMSTRS is the one card that names every patch-panel row by hand, and the
 // picker DROPS an id the def does not declare without a word. A typo, a renamed
 // port or a channel-count change silently removes a jack. This is the gate that
 // makes that red — and PR-4 raises the stakes, because collapse also removes
@@ -53,19 +53,24 @@ describe('MIXMSTRS patch-panel sections — nothing is silently dropped', () => 
   });
 
   it('RAW row counts per section (pre-collapse)', () => {
+    // 14 per channel: L/R + volume/low/mid/high + thresh/ratio/compEnable +
+    // the comp macro + send1/send2, then the two CLIP-RECORD jacks
+    // (`ch{N}_rec`, `ch{N}_mon`) — a gate can arm a channel and a CV can pick
+    // its monitor mode, which is only TRUE if the jack is picked here.
     for (const ch of MIXMSTRS_CHANNELS) {
-      expect(bySection.get(`Ch${ch}`)!.inputs, `Ch${ch}`).toHaveLength(12);
+      expect(bySection.get(`Ch${ch}`)!.inputs, `Ch${ch}`).toHaveLength(14);
     }
     for (const r of MIXMSTRS_RETURNS) {
       expect(bySection.get(`Ret${r}`)!.inputs, `Ret${r}`).toHaveLength(6);
     }
-    expect(bySection.get('Master')!.inputs).toHaveLength(3);
+    // 5: master_volume + the two send pre/post switches + recTap + recQuality.
+    expect(bySection.get('Master')!.inputs).toHaveLength(5);
     expect(bySection.get('Master')!.outputs).toHaveLength(6);
     const total = plan.sections.reduce(
       (n, s) => n + (s.inputs?.length ?? 0) + (s.outputs?.length ?? 0),
       0,
     );
-    expect(total).toBe(8 * 12 + 2 * 6 + 3 + 6);
+    expect(total).toBe(8 * 14 + 2 * 6 + 5 + 6);
   });
 });
 
@@ -75,10 +80,10 @@ describe('MIXMSTRS patch-panel sections — what PatchPanel RENDERS (collapsed)'
   const collapsedOut = (label: string) =>
     collapseStereoPorts(bySection.get(label)!.outputs ?? [], stereoDef, 'output');
 
-  it('each channel strip renders 11 rows — one fewer, and it is the L/R pair', () => {
+  it('each channel strip renders 13 rows — one fewer, and it is the L/R pair', () => {
     for (const ch of MIXMSTRS_CHANNELS) {
       const rows = collapsedIn(`Ch${ch}`);
-      expect(rows, `Ch${ch}`).toHaveLength(11);
+      expect(rows, `Ch${ch}`).toHaveLength(13);
       // Named, not just counted: the row that disappeared is `ch{n}R`, and the
       // survivor addresses it. A count alone would be satisfied by ANY dropped
       // row — including a genuinely lost CV jack.
@@ -100,8 +105,8 @@ describe('MIXMSTRS patch-panel sections — what PatchPanel RENDERS (collapsed)'
     }
   });
 
-  it('Master renders 3 input rows (no pair) and 3 output rows (three pairs)', () => {
-    expect(collapsedIn('Master')).toHaveLength(3);
+  it('Master renders 5 input rows (no pair) and 3 output rows (three pairs)', () => {
+    expect(collapsedIn('Master')).toHaveLength(5);
     const outs = collapsedOut('Master');
     expect(outs.map((o) => [o.id, o.siblingId, o.label])).toEqual([
       ['masterL', 'masterR', 'MASTER'],
@@ -110,7 +115,7 @@ describe('MIXMSTRS patch-panel sections — what PatchPanel RENDERS (collapsed)'
     ]);
   });
 
-  it('TOTAL rendered rows: 117 → 104, and every dropped id is a right leg', () => {
+  it('TOTAL rendered rows: 135 → 122, and every dropped id is a right leg', () => {
     const rawIds: string[] = [];
     const renderedIds: string[] = [];
     for (const s of plan.sections) {
@@ -120,8 +125,8 @@ describe('MIXMSTRS patch-panel sections — what PatchPanel RENDERS (collapsed)'
         ...collapsedOut(s.label).map((p) => p.id),
       );
     }
-    expect(rawIds).toHaveLength(117); // 8×12 + 2×6 + 3 + 6
-    expect(renderedIds).toHaveLength(104); // 13 pairs collapse: 8 ch + 2 ret + 3 master
+    expect(rawIds).toHaveLength(135); // 8×14 + 2×6 + 5 + 6
+    expect(renderedIds).toHaveLength(122); // 13 pairs collapse: 8 ch + 2 ret + 3 master
     const dropped = rawIds.filter((id) => !renderedIds.includes(id)).sort();
     expect(dropped).toEqual(
       [
