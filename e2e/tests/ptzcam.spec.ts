@@ -108,13 +108,10 @@ async function boot(
     withPorts ? [DECOY_OUT, NEXIGO_OUT, LOGI_OUT] : [DECOY_OUT],
     withPorts ? [DECOY_IN, NEXIGO_IN, LOGI_IN] : [DECOY_IN],
   );
-  // ⚠ THE SHELL IS A PARAMETER NOW, AND THAT IS THE POINT. Every assertion in
-  // this file booted `?shell=legacy` until the promotion, so every one of them
-  // exercised a surface no player meets under the default shell. The legacy legs
-  // stay (the card still renders under `?shell=legacy` while the migration is
-  // live); the face legs at the bottom of this file are what cover the shipping
-  // surface.
-  await page.goto(opts.shell === 'face' ? '/rack?seed=none' : '/rack?shell=legacy&seed=none');
+  // ⚠ EVERYTHING BOOTS THE DEFAULT SHELL NOW (S2 legacy-removal): the legacy
+  // arm died with the card fleet, and connectAndBind routes the binder
+  // through the face (tile CONNECT cell + dock device body) for every test.
+  await page.goto('/rack?seed=none');
   await page.waitForLoadState('networkidle');
   const nodes: SpawnNode[] = opts.nodes ?? [{ id: NODE, type: TYPE, position: { x: 400, y: 200 } }];
   const edges: SpawnEdge[] = [];
@@ -138,10 +135,9 @@ async function boot(
   // promotion rather than a wrong locator. `data-id` is the shell-independent
   // handle (the es9-face pattern) and is what the face legs below scope on, so
   // the bound is the shared BOOT_MS rather than a number typed here.
-  const ready =
-    opts.shell === 'face'
-      ? page.locator(`.svelte-flow__node[data-id="${nodes[0]!.id}"] [data-testid="module-shell"]`)
-      : page.locator(`.svelte-flow__node-${TYPE}`).first();
+  const ready = page.locator(
+    `.svelte-flow__node[data-id="${nodes[0]!.id}"] [data-testid="module-shell"]`,
+  );
   await expect(ready).toBeVisible({ timeout: BOOT_MS });
 }
 
@@ -192,16 +188,10 @@ async function connectAndBind(
       { timeout: 15_000 },
     )
     .toBe(true);
-  const card = page.locator(`[data-testid="ptzcam-card-${nodeId}"]`);
-  const connect = card.getByTestId(`ptzcam-connect-${nodeId}`);
-  if ((await connect.count()) > 0) await connect.click();
-  await expect(
-    card.getByTestId(`ptzcam-port-${nodeId}`).locator(`option[value="${cam.out.name}"]`),
-  ).toHaveCount(1);
-  await card.getByTestId(`ptzcam-port-${nodeId}`).selectOption(cam.out.name);
-  await waitCapsRequest(page, cam.out.id);
-  expect(await injectMidiIn(page, cam.in.id, cam.reply)).toBe(true);
-  await expect(card.getByTestId(`ptzcam-status-${nodeId}`)).toContainText('Bound');
+  // Bind through the SHIPPING surface: the tile's CONNECT cell + the dock
+  // device body (bindThroughFace hoists — it also asserts the LINK lamp).
+  const dock = await openDock(page, nodeId);
+  await bindThroughFace(page, dock, cam, nodeId);
   // The first bound tick asserts the whole position (all planned axes). Wait
   // for a zoom frame — both fixtures have absolute zoom — so callers that
   // clear-then-write exercise the steady state, not the initial assert.
@@ -269,9 +259,17 @@ test('ptzcam: connect + camera pick binds ONE pair, handshakes caps, and ignores
 }) => {
   await boot(page);
   await connectAndBind(page, NEXIGO);
-  const card = page.locator(`[data-testid="ptzcam-card-${NODE}"]`);
-  await expect(card.getByTestId(`ptzcam-connect-${NODE}`)).toHaveCount(0);
-  await expect(card.getByTestId(`ptzcam-modes-${NODE}`)).toHaveText('pan abs · tilt abs · zoom abs');
+  // The card's mode line is DELETED on the face; its replacement is the
+  // per-axis lamp trio (lit = velocity, dark = absolute — all three dark for
+  // the all-absolute NexiGo). The CONNECT cell stays present by design
+  // (static caption; the card's disappearing button was card chrome).
+  const dock = page
+    .getByTestId('dock-full-view')
+    .locator(`[data-testid="module-shell"][data-shell-tier="dock"][data-shell-node="${NODE}"]`);
+  await expect(dock.getByTestId(`ptzcam-axis-lamps-${NODE}`)).toHaveCount(1);
+  for (const axis of ['pan', 'tilt', 'zoom']) {
+    await expect(dock.getByTestId(`ptzcam-led-${axis}-${NODE}`)).toHaveAttribute('data-lit', '0');
+  }
   // On bind the whole position is asserted once: pan, tilt AND zoom frames.
   await page.waitForFunction(() => {
     const sent =
@@ -409,9 +407,13 @@ test('ptzcam: TWO modules on TWO cameras stay isolated port-for-port', async ({ 
     ],
   });
   await connectAndBind(page, NEXIGO, 'm');
-  // Deselect m first — a selected node's overflowing card sits above its
-  // neighbour in the stacking order and can swallow its clicks.
-  await page.locator('.svelte-flow__pane:visible').first().click({ position: { x: 30, y: 30 } });
+  // ⚠ CLOSE m's DOCK PANE before binding m2 — with a pane open the dock
+  // drawer's subtree intercepts pointer events over the lane, so m2's tile
+  // CONNECT cell is unclickable (measured: data-pane-count="2" interception).
+  await page
+    .locator(`[data-testid="dock-fullview-pane"][data-pane-node="m"] [data-testid="faceplate-close"]`)
+    .click();
+  await expect(page.locator('[data-testid="dock-fullview-pane"][data-pane-node="m"]')).toHaveCount(0);
   await connectAndBind(page, LOGI, 'm2');
   await clearMidiOutCaptured(page);
 
@@ -464,13 +466,14 @@ test('ptzcam: with NO PT-PTZ port, connect explains the NO and nothing is ever s
   page,
 }) => {
   await boot(page, { ports: false });
+  const dock = await openDock(page, NODE);
   await page
-    .locator(`[data-testid="ptzcam-card-${NODE}"]`)
-    .getByTestId(`ptzcam-connect-${NODE}`)
+    .locator(`.svelte-flow__node[data-id="${NODE}"]`)
+    .getByTestId('shell-cell-ptzcam-connect')
     .click();
-  await expect(
-    page.locator(`[data-testid="ptzcam-card-${NODE}"]`).getByTestId(`ptzcam-status-${NODE}`),
-  ).toContainText('No MIDI port named PT-PTZ');
+  // The explanation reaches the face's FAULT line (role=alert, the LINK
+  // lamp's own detail sentence — the card's status row died with the card).
+  await expect(dock.getByTestId(`ptzcam-fault-${NODE}`)).toContainText('No MIDI port named PT-PTZ');
 
   await writeParam(page, 'pan', 0.7);
   await waitTicks(page, 12);
@@ -484,9 +487,10 @@ test('ptzcam: a camera-absent error frame surfaces on the card and halts sends',
   await boot(page);
   await connectAndBind(page, NEXIGO);
   expect(await injectMidiIn(page, NEXIGO_IN.id, CAMERA_ABSENT_FRAME)).toBe(true);
+  // The face surfaces the error on its FAULT line (role=alert by markup).
   const status = page
-    .locator(`[data-testid="ptzcam-card-${NODE}"]`)
-    .getByTestId(`ptzcam-status-${NODE}`);
+    .getByTestId('dock-full-view')
+    .locator(`[data-testid="ptzcam-fault-${NODE}"]`);
   await expect(status).toContainText('camera is absent');
   await expect(status).toHaveRole('alert');
 
@@ -501,7 +505,7 @@ test('ptzcam: a camera-absent error frame surfaces on the card and halts sends',
 
 // ═══════════════════ THE PROMOTED SURFACE — DEFAULT SHELL ════════════════════
 //
-// ⚠ EVERY ASSERTION ABOVE THIS LINE BOOTS `?shell=legacy`, AND THAT WAS TRUE OF
+// ⚠ EVERY ASSERTION ABOVE THIS LINE ONCE BOOTED `?shell=legacy`, AND THAT WAS TRUE OF
 // THE WHOLE MODULE BEFORE THIS PR — the VRT scene too, and the `__annotated__`
 // legend directory holds only adsr and lfo. So nothing in the tree could fail on
 // a dropped ptzcam affordance under the shell a player actually meets. These

@@ -1,6 +1,6 @@
 // e2e/tests/workflow-media.spec.ts
 //
-// The media system on /rack?shell=legacy:
+// The media system on the default /rack:
 //
 //   +  media loader — hidden-input pick (files / folder) + drop target
 //      feeding the centralized mediaLibrary; rejected files surface in a
@@ -17,7 +17,7 @@
 //      at the destination (library file → samsloop node.data → worklet →
 //      wire → scope), not just an edge.
 //
-// Driving /rack?shell=legacy keeps this in the NORMAL e2e lane (no
+// Driving the default /rack keeps this in the NORMAL e2e lane (no
 // DB/relay) — same rationale as workflow-mode.spec.ts.
 
 import { test, expect, type Page } from '@playwright/test';
@@ -116,7 +116,7 @@ async function triggerSamsloop(page: Page, nodeId: string): Promise<void> {
 }
 
 async function gotoWorkflow(page: Page): Promise<void> {
-  await page.goto('/rack?shell=legacy');
+  await page.goto('/rack');
   await page.locator('.svelte-flow__pane:visible').first().waitFor({ state: 'visible' });
 }
 
@@ -423,27 +423,28 @@ test.describe('workflow media system (P3)', () => {
     expect(pb.position.x).toBeGreaterThan(fx.position.x + 100);
     expect((pb.data as { imageBytes?: string }).imageBytes).toBeTruthy();
 
-    // The card preview renders the image — decode it on a 2D canvas and
-    // count non-black pixels (renderer-tolerant: no WebGL read needed).
+    // The tile thumb renders the image on the default shell — count non-black
+    // pixels off its 2D canvas (renderer-tolerant: no WebGL read needed).
     const card = page.locator(`.svelte-flow__node[data-id="${pb.id}"]`);
-    const preview = card.getByTestId('picturebox-preview');
+    const preview = card.locator('canvas[data-testid="video-tile-thumb"]');
     await expect(preview).toBeVisible();
-    const nonBlackRatio = await preview.evaluate(async (el) => {
-      const img = el as HTMLImageElement;
-      if (!img.complete) await new Promise((r) => (img.onload = r));
-      const c = document.createElement('canvas');
-      c.width = img.naturalWidth;
-      c.height = img.naturalHeight;
-      const ctx = c.getContext('2d')!;
-      ctx.drawImage(img, 0, 0);
-      const d = ctx.getImageData(0, 0, c.width, c.height).data;
-      let nonBlack = 0;
-      for (let i = 0; i < d.length; i += 4) {
-        if (d[i] + d[i + 1] + d[i + 2] > 60) nonBlack++;
-      }
-      return nonBlack / (c.width * c.height);
-    });
-    expect(nonBlackRatio).toBeGreaterThan(0.9); // solid red, JPEG-encoded
+    await expect
+      .poll(
+        () =>
+          preview.evaluate((el) => {
+            const c = el as HTMLCanvasElement;
+            const ctx = c.getContext('2d');
+            if (!ctx) return 0;
+            const d = ctx.getImageData(0, 0, c.width, c.height).data;
+            let nonBlack = 0;
+            for (let i = 0; i < d.length; i += 4) {
+              if (d[i]! + d[i + 1]! + d[i + 2]! > 60) nonBlack++;
+            }
+            return nonBlack / (c.width * c.height);
+          }),
+        { message: 'the tile thumb paints the (solid red) image' },
+      )
+      .toBeGreaterThan(0.9);
   });
 
   test('hover thumbnails: image rows show the image; video rows show a poster frame to the right of the menu', async ({
