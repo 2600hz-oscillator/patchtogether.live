@@ -382,6 +382,49 @@ export const toyboxDef: VideoModuleDef = {
   ],
   params: [],
 
+  // ── THE v2 FACE ────────────────────────────────────────────────────────────
+  //
+  // `order: []` is the videoOut / recorderbox / painter shape, and here it is
+  // FORCED rather than chosen: `params` above is empty, so there is not one
+  // ParamDef for a cell to rank. Everything a player operates on this module is
+  // (layer × kind)-scoped or (graph-node)-scoped — a roster that changes as they
+  // add op nodes and switch layer kinds — which no static order can name. The
+  // whole console therefore lives in the extension's `fullViewBody`; see
+  // $lib/ui/modules/toybox/shell-extension.ts for the ladder walk.
+  //
+  // `glyph: 'none'` is likewise forced: the glyph binding is a data-derived
+  // identity picture over a topology PARAM, and this def has none. The lane
+  // still gets a live picture — `hasVideoSurface` is true for a video def with a
+  // `video` output, so the tile paints the generic VideoTileThumb of the
+  // composite, which is the honest identity of a compositor.
+  //
+  // ⚠ NO `rear` GROUPS, DELIBERATELY. With no `pages`, only the leading
+  // 'voice'/'signal' slot is claimable by an input group, so a second group for
+  // the two VIDEO feeds would append as a stray band rather than a named one.
+  // The derived rear panel already labels all eight inputs from this def, so a
+  // hand-written split would buy a worse layout and no extra information.
+  //
+  // ⚠ HASH-TRANSPARENT: `face` is stripped at module scope by
+  // `attest-code-basis`, so this block moves no WebGL attest hash — measured
+  // with webgl-attest-hash.sh before and after, not asserted. No param, port or
+  // factory code moves either, so contract-lock does not move.
+  face: {
+    order: [],
+    glyph: 'none',
+    extension: 'toybox',
+    // ⚠ NO `monitor`, and it is REFUSED rather than forgotten. Monitor mode
+    // hides the faceplate's control BANDS and keeps the picture — and this face
+    // has zero bands, because `params` is `[]`. Declaring it would name an
+    // affordance that could hide nothing, and `face-monitor-source.test.ts`'s
+    // forward leg says so mechanically: a face declaring `monitor` must own a
+    // `fullViewBody` that reads and writes `node.data.hideControls`. Neither
+    // this module's card nor its console has ever mounted that key, so the
+    // gate's INVERSE leg does not ask for one either. The affordance a player
+    // actually wants here — put the deep console away and watch the composite —
+    // is the SCREEN switch's opposite number and belongs to the dock, not to a
+    // band-suppression flag over a plate with no bands.
+  },
+
   factory(ctx: VideoEngineContext, node): VideoNodeHandle {
     const gl = ctx.gl;
     // The module's OUTPUT fbo (combine result + chainable `out` texture).

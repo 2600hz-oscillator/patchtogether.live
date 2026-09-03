@@ -5603,6 +5603,74 @@ export const FACES = [
   // advances between frames.
   { type: 'chromaconsole', pages: 2 },
 
+
+  // ── TOYBOX — the FOUR-LAYER COMPOSITOR, and the last face in the programme
+  //    besides doom
+  {
+    type: 'toybox',
+    // `face.order: []` and no `face.pages`, so the dock renders ZERO control
+    // bands: `toyboxDef.params` is empty and there is nothing to rank. The
+    // faceplate is the extension's `fullViewBody` and the dock chrome, and
+    // nothing is padded to manufacture a rail.
+    pages: 0,
+    videoFaceWhy:
+      'a VIDEO module, so it must boot into the video zone rather than a mixer channel column — '
+      + 'without this field `bootWithFace` waits out the full test timeout for a column '
+      + 'membership a video node never acquires. It is ALSO what turns on '
+      + '`awaitFaceVideoPainted` + `freezeFaceVideo`, and BOTH need reading carefully here. '
+      + '⚠ `freezeFaceVideo` ALONE CANNOT STOP THIS PICTURE, and not for acidwarp\'s reason. It '
+      + 'writes `params.freeze = 1`; `toyboxDef.params` is `[]`, so that write lands on a param '
+      + 'no factory reads and changes nothing at all. What actually stops the picture is the '
+      + '`simPin` below, and the freeze write is then a harmless no-op the shared helper makes '
+      + 'on every video face. '
+      + '⚠ THE COMPACT SCENE\'S WELL PAINTS LATE, AND THAT IS SAID HERE RATHER THAN DISCOVERED '
+      + 'LATER. A GEN layer\'s GLSL is FETCHED at runtime (`noise-fbm.frag.glsl`, a static asset '
+      + 'resolved lazily on selection and never JS-bundled) and then COMPILED, so the first '
+      + 'frames after spawn render the idle field rather than the pattern. '
+      + '`awaitFaceVideoPainted` closes the compact half — the lane tile is a `VideoTileThumb`, '
+      + 'so it publishes `data-thumb-painted` only once the engine has actually drawn the node — '
+      + 'but it CANNOT close the dock half, because the dock capture root holds this module\'s '
+      + 'own `toybox-face-canvas` and no tile thumb at all, and that helper reports-and-skips a '
+      + 'root with no well. The dock scene therefore rests on `simPin` making every frame '
+      + 'identical INCLUDING the pre-compile ones, plus `freezeFaceVideo`\'s own '
+      + 'sample-until-still loop, which will not return while the picture is still changing from '
+      + 'idle to pattern. The card VRT suite closes the same race with a bespoke '
+      + '"poll until >10% of the preview is lit, then freeze" helper on a 10 s budget '
+      + '(vrt-toybox.spec.ts); there is deliberately no equivalent added to the shared harness '
+      + 'in a face PR. If a baseline ever lands showing the idle field instead of the pattern, '
+      + 'THAT is the mechanism, and the fix is the settle, not the pin. '
+      + '⚠ THE SIX CV SCOPES ARE THE OTHER MOVING THING, and they settle rather than needing a '
+      + 'pin: CV-MOD is the default tab, each row paints an always-on inline scope, and with no '
+      + 'cable patched every sample is the constant OFFSET — so the trace changes only while the '
+      + 'ring buffer fills and is still thereafter, which is what `freezeFaceVideo`\'s retry loop '
+      + 'is for. Nothing else on the surface moves: the layer band, the tab rail and the pane are '
+      + 'static DOM.',
+    // ⚠ A CLOCK PIN, NOT A FREEZE PARAM — the cheaper of the two whenever it
+    // applies, and here it is the ONLY one that applies. Adding a `freeze`
+    // ParamDef to `toyboxDef` would move `params`, which moves contract-lock AND
+    // the WebGL attest hash, to buy a WEAKER guarantee (a freeze holds A frame
+    // without choosing WHICH). This global is already shipped and already read
+    // by the factory.
+    simPin: [
+      {
+        global: '__toyboxFreezeTime',
+        value: 1.0,
+        why:
+          'pins the ONLY time term the render reads. `toybox.ts`\'s draw resolves '
+          + '`const time = frozenTime() ?? frame.time`, and `frozenTime()` is exactly '
+          + '`globalThis.__toyboxFreezeTime` — so with it set, every layer\'s `iTime` uniform is '
+          + 'the same number on every frame and the composite becomes a pure function of '
+          + '`node.data`. `simPin` installs it via `addInitScript` BEFORE `goto`, which is '
+          + 'strictly earlier than the card VRT suite manages: the value is in place before any '
+          + 'module factory runs, so there is no pre-pin frame to race. Sufficient ALONE for the '
+          + 'DEFAULT patch, and that is a property of the default rather than of the module: a '
+          + 'fresh node is one GEN layer wired straight to OUT, with no FEEDBACK, FRAMEDELAY, '
+          + 'EXQUISITE or DATAMOSH op in the graph — those four DO accumulate between frames, and '
+          + 'a scene that added one would need more than a clock pin.',
+      },
+    ],
+  },
+
 ] as const;
 
 /**
