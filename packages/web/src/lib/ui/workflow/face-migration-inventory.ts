@@ -1200,10 +1200,41 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
   },
   {
     type: 'doom',
-    disposition: 'bespoke-surface',
-    why:
-      'a GAME: a WAD-driven viewport with keyboard capture. Its params are CV taps off the running ' +
-      'game, not the interaction — the interaction is play.',
+    disposition: 'generic-face',
+    note:
+      'PROMOTED 2026-09-02 under a SPECIFIC owner authorisation; the standing "never touch DOOM ' +
+      'without approval" ruling is SATISFIED for this change, not overturned. The old `why` read: ' +
+      '"a GAME: a WAD-driven viewport with keyboard capture. Its params are CV taps off the ' +
+      'running game, not the interaction — the interaction is play." ' +
+      '⚠ THE FIRST HALF WAS EXACTLY RIGHT, and it is why the promotion is shaped the way it is: ' +
+      'the interaction IS play, so the play surface moved WHOLE into ' +
+      '$lib/ui/modules/doom/DoomSurface.svelte, which the legacy card and the faceplate body BOTH ' +
+      'mount — one screen, one keyboard map, one node-owned session adoption, no second ' +
+      'implementation to drift. ' +
+      '⚠ THE SECOND HALF IS WHAT MADE THIS READ AS UN-FACEABLE, AND IT MEASURED THE WRONG THING. ' +
+      'The 38 `cv_*` params are not controls that resist ranking; they are targets written by ' +
+      'their own jacks, and `noUserControl` is the field that says so (each is anchored to the ' +
+      'port whose `paramTarget` names it, so the claim is checked rather than asserted). With ' +
+      'those declared the plate ranks exactly TWO controls — `audioGain` and `fillMode`, the same ' +
+      'two the card drew as its Volume knob and OUTPUT FIT toggle — which is a small face, not an ' +
+      'impossible one. ' +
+      '⚠ THE LOAD-BEARING FACT, recorded because it is what a reviewer must check rather than ' +
+      'infer: promotion stops the default shell rendering DoomCard.svelte, and this card was the ' +
+      "module's RUNTIME OWNER — `nodeDoomSession.adopt` (the pump that feeds the lockstep " +
+      'barrier), the awareness/nodes/edges observers, the capture-phase keyboard listeners, the ' +
+      'framebuffer blit and the `__doomCards` hook every DOOM spec reads. A face that carried only ' +
+      'CONTROLS would have shipped a promoted DOOM that is a black tile with no game and no ' +
+      'netgame, while this inventory, faces-parity and every def-reading gate stayed green. ' +
+      '⚠ ONE RESTING READOUT DELETED, DELIBERATELY: the card paints a derived identity sentence ' +
+      '("Player 2 — alice (you)") and a session footer ("2 rack-mates · host: remote · player 2") ' +
+      'beside the screen. The face keeps the short BADGE and moves both sentences to the ' +
+      "surface's accessible name (the GAMES.md §1.1 remedy), so no assertion was weakened and no " +
+      'affordance was lost. The legacy card still paints both. ' +
+      '⚠ NO VRT SCENES: `runtime.runTic()` runs inside `surface.draw`, so DOOM\'s game clock IS ' +
+      'its frame clock. It holds a named FACES_WITHOUT_SCENES exemption whose argument is ' +
+      "RE-DERIVED at the source for the face scenes rather than inherited from the card's " +
+      'EXEMPT_FROM_VRT entry, which stays standing because the promotion changed nothing about ' +
+      'the engine.',
   },
   {
     type: 'electraControl',

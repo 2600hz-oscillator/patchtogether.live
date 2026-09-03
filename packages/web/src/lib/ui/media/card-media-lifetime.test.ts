@@ -237,10 +237,34 @@ const EXTRAS_OWNERS: Readonly<Record<string, ExtrasOwnerVerdict>> = {
     owner: 'module-renders-itself',
     why: 'the extras channel carries a WASM boot gesture and raw Build scancodes; blood.ts runs the frame and uploads its own framebuffer, and paints a deliberate "alive, no signal" dark-red scanline idle field until a human plays it',
   },
-  DoomCard: {
-    owner: 'module-renders-itself',
-    why: 'the LIVE half (session, netcode, lockstep, pump) is already node-owned by node-doom-session-registry (#1590); what still crosses extras is a user boot gesture and keypresses, and doom.ts paints its own "alive but no signal" idle field',
-  },
+  // ⚠ DoomCard LEFT THIS ROSTER 2026-09-02 (the face promotion), through the
+  // SAME `*Card.svelte`-only scan boundary GibribbonCard and NibblesCard left by
+  // — the THIRD time a face PR has moved a card's `read(…, 'extras')` call out
+  // of a `*Card.svelte` and silently emptied this gate's subject set for that
+  // module, and by now the repetition is the finding rather than the footnote.
+  // Here the call moved into `$lib/ui/modules/doom/DoomSurface.svelte`, the ONE
+  // surface component the legacy card and the faceplate body both mount, so the
+  // scan can no longer see it. Its verdict read:
+  //
+  //     DoomCard: { owner: 'module-renders-itself', why: 'the LIVE half
+  //     (session, netcode, lockstep, pump) is already node-owned by
+  //     node-doom-session-registry (#1590); what still crosses extras is a user
+  //     boot gesture and keypresses, and doom.ts paints its own "alive but no
+  //     signal" idle field' }
+  //
+  // The SUBSTANCE of that verdict is unchanged and is now STRONGER, because the
+  // promotion is what made the node-ownership load-bearing rather than merely
+  // true. `nodeDoomSession` (#1590) already owned the netcode, the lockstep
+  // transport, the launch state and the frame pump, and it keeps them running
+  // with NO card and NO face mounted — that registry exists precisely because a
+  // card unmount used to starve every peer's lockstep barrier. What crosses the
+  // extras channel is still only human input and one boot gesture, and
+  // `doom.ts` still paints its own idle field from `surface.draw` whether or not
+  // anything is watching (it is a pull ROOT unconditionally —
+  // `VideoEngine.isPullExempt` names DOOM in its own comment, via a non-empty
+  // `audioSources` map). So there is nothing here a registry could reproduce and
+  // nothing an unmount can tear down — and the surface's `onDestroy` still,
+  // deliberately, tears down NO session state.
   // ⚠ GibribbonCard LEFT THIS ROSTER 2026-08-29 (the rewrite), and the reason
   // is a scan-boundary fact worth recording: the card became a thin bridge
   // mounting the SHARED $lib/ui/modules/gibribbon/GibribbonScreen.svelte (one

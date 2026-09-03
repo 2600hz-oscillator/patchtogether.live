@@ -1354,6 +1354,30 @@ describe('module-face lint — MOMENTARY pads (face.momentary)', () => {
     // freshly-enabled AUTO re-decides on the very next tick rather than
     // stalling — a detail that only makes sense for a mode that STAYS on.
     'nibbles:auto',
+    // DOOM `fillMode`, 2026-09-02. LETTERBOX (0) vs FILL (1) — whether the fixed
+    // 8:5 native viewport is fitted inside the engine's 4:3 FBO with bars, or
+    // cover-cropped to fill it.
+    //
+    // LATCHING, classified AT THE READ SITE rather than from the name. The
+    // factory reads it once per DRAW as a plain level and feeds it straight to
+    // the fit math — `aspectFitScale(doomAspect, ctx.res.width / ctx.res.height,
+    // params.fillMode >= 0.5 ? 'fill' : 'letterbox')` — so the value IS the state
+    // of the output for as long as it is set. There is no edge detector on this
+    // param anywhere in `video/modules/doom.ts` (the 38 `cv_*` gate targets have
+    // one; this does not), and a momentary reading would mean the picture
+    // cover-cropped only while a mouse button was held, which is the one way an
+    // output-format switch cannot be used.
+    //
+    // ⚠ ITS `curve` NEEDED NO CORRECTION — `discrete 0..1` since the module
+    // shipped — so `paramCellKind` derives a `<Toggle>` and the face declares
+    // nothing. Checked rather than assumed, because the `moog962` trap (a
+    // `2..3 discrete` param drawn as a KNOB with two reachable positions across a
+    // whole dial) is one param shape away.
+    //
+    // ⚠ AND IT IS NOT `face.momentary`, which at the ParamDef looks identical and
+    // is opposite in behaviour: the legacy card has always drawn this as a
+    // persistent `NativeFillToggle`, and the setting must survive a reload.
+    'doom:fillMode',
   ]);
 
   it('no ACKNOWLEDGED_LATCHING param is DOCUMENTED as momentary (the cross-check)', () => {

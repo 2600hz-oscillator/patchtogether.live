@@ -6459,6 +6459,72 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // user gesture. Baselines come from Linux CI through the vrt-update bot, as
   // always; none is captured locally.
   'archivist',
+
+  // ── DOOM (2026-09-02) — THE MODULE THIS FILE'S NEIGHBOURS EXCLUDED BY NAME ─
+  //
+  // Promoted under a SPECIFIC owner authorisation given on 2026-09-02 ("doom and
+  // toybox can be built and join the queue"). The standing 2026-08-17 ruling —
+  // never touch DOOM without specific approval — is NOT overturned by this
+  // entry; it is satisfied for this one change and stays in force for the next.
+  // Everything the ruling protects is untouched here: the WASM, the WAD, the
+  // netcode, the lockstep barrier, the consistency digest, the collab-attest
+  // workflow, and every DOOM spec's waits, budgets and ledger entries.
+  //
+  // ⚠ THE PROMOTION IS A MOVE OF ONE COMPONENT, AND THAT IS THE WHOLE RISK.
+  // `migrated('doom')` makes the default shell mount `<ModuleShell>` instead of
+  // `DoomCard.svelte`, and DOOM's card is not a control panel — it is the
+  // module's RUNTIME OWNER. Its `onMount` adopts the node-keyed multiplayer
+  // session (`nodeDoomSession.adopt`), attaches the awareness / nodes / edges
+  // observers, installs the window-level capture-phase keyboard listeners,
+  // starts the framebuffer blit, and publishes the `__doomCards` hook that every
+  // DOOM e2e reads. A faceplate that did not carry all of that would have
+  // shipped a promoted DOOM that is a black tile with no game, no keyboard and
+  // no netgame — while `face-migration-inventory`, `faces-parity` and every
+  // def-reading gate stayed green. That is the exact failure the module-surfaces
+  // skill names, and the reason the diff moves the surface into one SHARED
+  // `doom/DoomSurface.svelte` mounted by the card (`variant="card"`) and by the
+  // faceplate body (`variant="face"`) rather than authoring a second one.
+  // gibribbon (`gibribbon/GibribbonScreen.svelte`) and nibbles
+  // (`nibbles-game-actions.ts`) made the same move for the same reason.
+  //
+  // ⚠ THE GAME CLOCK IS THE FRAME CLOCK, AND NOTHING HERE TOUCHES IT.
+  // `runtime.runTic()` runs inside `surface.draw` in `video/modules/doom.ts` —
+  // one rendered frame is one game tic — so the face introduces NO second clock,
+  // declares NO `freeze` param and pins NO ticks. SCREEN OFF collapses the
+  // card-style 2-D `putImageData` copy and nothing else: the engine goes on
+  // drawing (DOOM is a pull ROOT unconditionally — `VideoEngine.isPullExempt`
+  // names it, via a non-empty `audioSources` map), so a lockstep peer cannot
+  // stop ticking and starve every other peer's barrier (#345 semantics).
+  //
+  // ⚠ NO VRT SCENES, AND THE ARGUMENT IS RE-DERIVED RATHER THAN INHERITED — see
+  // the `FACES_WITHOUT_SCENES` entry in `e2e/vrt/_shell-faces.ts`, which
+  // measures both mechanisms at the source (`freezeFaceVideo` writes a param
+  // this def does not declare, so the factory's `if (paramId in params)` guard
+  // makes it a no-op; `simPin` installs page globals and DOOM's tic delta is
+  // `performance.now()` read inside `surface.draw`, with the sim state inside
+  // the WASM, so there is no global on the path). The card roster's
+  // `EXEMPT_FROM_VRT` entry reached the same verdict about the same renderer and
+  // stays standing — the promotion changed nothing about the engine.
+  //
+  // ⚠ TWO DEBTS PAID IN THE SAME DIFF, both forced by the move rather than
+  // opportunistic. `raw-write-ledger.ts` carried `DoomCard.svelte` as DEBT for
+  // writing `fillMode` / `audioGain` straight into the store — not undoable, not
+  // LOCAL_ORIGIN-tagged — and that ledger is keyed by CARD PATH, so moving the
+  // writes would have left a stale entry rather than a paid one. Its own note is
+  // the rule ("a face does not pay a card's debt; editing the card does"), so
+  // both now go through `setNodeParam`. And the Volume knob's `min`/`max`/
+  // `defaultValue` were re-typed literals beside the def; they now bind through
+  // `paramSpec(doomDef, 'audioGain')`, which is the accessor that does NOT move
+  // the attest hash.
+  //
+  // ⚠ ZERO ATTEST, MEASURED not asserted: `face` and `noUserControl` are stripped
+  // at module scope by `attest-code-basis` (HASH_TRANSPARENT_PROPS), comments are
+  // stripped, and the new `lib/ui/modules/doom/**` files are outside the basis —
+  // that tree is swept BY CONTENT for `getContext('webgl')` and none of the three
+  // creates a GL context (the preview is a 2-D blit, exactly as the card's was).
+  // No `params`, no port and no factory code moves, so `contract-lock.txt` does
+  // not move either.
+  'doom',
 ]);
 
 /**

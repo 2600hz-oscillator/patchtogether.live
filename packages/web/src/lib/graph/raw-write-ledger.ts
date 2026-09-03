@@ -157,11 +157,25 @@ export const RAW_WRITE_LEDGER: Readonly<Record<string, RawWriteEntry>> = {
     kind: 'debt',
     why: 'card button write — user gesture, should be undoable + synced',
   },
-  'ui/modules/DoomCard.svelte': {
-    keys: ['fillMode', 'audioGain'],
-    kind: 'debt',
-    why: 'card control writes — user gesture, should be undoable + synced',
-  },
+  // ⚠ `ui/modules/DoomCard.svelte` WAS HERE AND IS PAID (2026-09-02, with the
+  // doom face). Its entry read *"card control writes — user gesture, should be
+  // undoable + synced"* over `fillMode` and `audioGain`, and the payment is the
+  // plainest form of it: `setFillMode` / `setAudioGain` now call `setNodeParam`
+  // instead of poking `patch.nodes[id].params` directly, so an OUTPUT FIT flip
+  // and a Volume twist ride the Y.Doc transaction with `LOCAL_ORIGIN`, reach the
+  // UndoManager and reach collaborators. Cmd-Z stepped straight over both before
+  // this.
+  //   ⚠ AND IT IS THE GATEMAIDEN / GAMEPAD LESSON APPLIED RATHER THAN RE-LEARNED
+  //   FOR THE THIRD TIME — with one wrinkle those two did not have. This ledger
+  //   is keyed by CARD PATH and anchored to the source in BOTH directions, and
+  //   the doom face MOVED the whole surface into
+  //   `ui/modules/doom/DoomSurface.svelte`. So doing nothing was not an option
+  //   that leaves the ledger honest: the entry would have gone stale (a debt
+  //   naming a write that is no longer at that path) while the raw write carried
+  //   on unpaid one directory down. The move forced the question; the fix
+  //   answers it. The card is still rendered by the per-card VRT sweep under
+  //   `?shell=legacy`, and it is still the surface these two controls live on.
+
   // ⚠ `ui/modules/GamepadCard.svelte` WAS HERE AND IS PAID (2026-08-24, with
   // the gamepad face). Its entry read *"pad-slot picker write — user gesture,
   // should be undoable + synced"*, and the payment is one line: `setPadIndex`
