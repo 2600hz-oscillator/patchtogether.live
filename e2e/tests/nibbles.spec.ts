@@ -36,15 +36,17 @@ test('nibbles: card mounts cleanly + canvas renders', async ({ page }) => {
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [
     { id: 'n', type: 'nibbles', position: { x: 200, y: 200 }, domain: 'video' },
   ]);
-  const card = page.locator('.svelte-flow__node-nibbles');
+  const card = page.locator('.svelte-flow__node:has([data-shell-type="nibbles"])');
   await expect(card).toBeVisible();
-  await expect(card).toContainText('NIBBLES');
-  const canvas = card.locator('[data-testid="nibbles-screen"]');
+  await expect(card).toContainText(/nibbles/i);
+  // The screen lives in the DOCK face body on the default shell.
+  await page.evaluate(() => (globalThis as unknown as { __openDockFullView: (id: string) => void }).__openDockFullView('n'));
+  const canvas = page.getByTestId('dock-full-view').locator('[data-testid="nibbles-screen"]');
   await expect(canvas).toBeVisible();
   const size = await canvas.evaluate((el: Element) => {
     const c = el as HTMLCanvasElement;
@@ -65,8 +67,9 @@ test.fixme('nibbles: AUTO on → game advances within 5s (length_cv leaves defau
   await spawnPatch(page, [
     { id: 'n', type: 'nibbles', position: { x: 200, y: 200 }, domain: 'video', params: { auto: 1 } },
   ]);
-  const card = page.locator('.svelte-flow__node-nibbles');
+  const card = page.locator('.svelte-flow__node:has([data-shell-type="nibbles"])');
   await expect(card).toBeVisible();
+  await page.evaluate(() => (globalThis as unknown as { __openDockFullView: (id: string) => void }).__openDockFullView('n'));
 
   // Initial score is 4 (fresh snake).
   const startScore = await readScore(page, 'n');
@@ -100,7 +103,7 @@ test.fixme('nibbles: AUTO on → game advances within 5s (length_cv leaves defau
   // pixels are non-background — the food cell + the snake cells.
   const nonBgFraction = await page.evaluate(() => {
     const canvas = document.querySelector(
-      '.svelte-flow__node-nibbles [data-testid="nibbles-screen"]',
+      '[data-testid="dock-full-view"] [data-testid="nibbles-screen"]',
     ) as HTMLCanvasElement | null;
     if (!canvas) return 0;
     const ctx = canvas.getContext('2d');

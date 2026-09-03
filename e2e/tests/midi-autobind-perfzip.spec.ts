@@ -33,7 +33,7 @@ async function setup(page: Page): Promise<string[]> {
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
   await installMidiMock(page); // BEFORE goto so the first requestMIDIAccess sees the mock
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await page.waitForLoadState('networkidle');
   return errors;
 }
@@ -113,22 +113,24 @@ test.describe('MIDI auto-bind on perf-zip load', () => {
     // access (mocked) → the card auto-picks the single mock input.
     const laneCard = page.locator(`.svelte-flow__node[data-id="${LANE_ID}"]`);
     const clkCard = page.locator(`.svelte-flow__node[data-id="${CLK_ID}"]`);
-    await laneCard.getByRole('button', { name: /Connect MIDI/ }).click();
-    await clkCard.getByRole('button', { name: /Connect MIDI/ }).click();
+    // The shell's connect affordances: each family's ACTION cell.
+    await laneCard.getByTestId('shell-cell-midi-lane-connect').click();
+    await clkCard.getByTestId('shell-cell-midiclock-connect').click();
 
-    // Persist the selection on node.data (the card writes lastDeviceId on the
-    // device <select> change; connect auto-picks but doesn't write data, so we
-    // drive the select to mirror a real user pick).
-    await laneCard.locator('select').first().selectOption(MOCK_ID);
-    // ⚠ BY TESTID, NOT BY POSITION. This line was
-    // `clkCard.locator('select').first()`, which was correct only because
-    // MIDICLOCK's card happened to have exactly two `<select>`s in a known
-    // order (DEVICE, then DIV). A positional selector over a control set that
-    // can grow is a latent wrong-element bug: add or reorder a select and this
-    // silently drives the DIVISION picker instead, then fails four assertions
-    // later with a message about device binding. Named at the source
-    // (`MidiclockCard.svelte`) so the coupling is visible from both ends.
-    await clkCard.getByTestId(`midiclock-card-device-${CLK_ID}`).selectOption(MOCK_ID);
+    // Persist the selection on node.data via each module's DOCK device body
+    // (the shell's device picker; by TESTID, never by <select> position).
+    await page.evaluate((ids) => {
+      const w = globalThis as unknown as { __openDockFullView: (id: string) => void };
+      for (const id of ids) w.__openDockFullView(id);
+    }, [LANE_ID, CLK_ID]);
+    await page
+      .locator(`[data-testid="dock-fullview-pane"][data-pane-node="${LANE_ID}"]`)
+      .getByTestId(`midi-lane-device-select-${LANE_ID}`)
+      .selectOption(MOCK_ID);
+    await page
+      .locator(`[data-testid="dock-fullview-pane"][data-pane-node="${CLK_ID}"]`)
+      .getByTestId(`midiclock-device-select-${CLK_ID}`)
+      .selectOption(MOCK_ID);
 
     await expect.poll(() => readMidiBinding(page, LANE_ID).then((b) => b?.lastDeviceId), { timeout: 5000 }).toBe(MOCK_ID);
     await expect.poll(() => readMidiBinding(page, CLK_ID).then((b) => b?.lastDeviceId), { timeout: 5000 }).toBe(MOCK_ID);
@@ -165,8 +167,15 @@ test.describe('MIDI auto-bind on perf-zip load', () => {
     await spawnPatch(page, [{ id: OUT_ID, type: 'midiOutBuddy', position: { x: 120, y: 160 } }]);
 
     const card = page.locator(`.svelte-flow__node[data-id="${OUT_ID}"]`);
-    await card.getByRole('button', { name: /Connect MIDI/ }).click();
-    await card.locator('select').first().selectOption(MOCK_OUT_ID);
+    await card.getByTestId('shell-cell-midi-out-buddy-connect').click();
+    await page.evaluate(
+      (id) => (globalThis as unknown as { __openDockFullView: (id: string) => void }).__openDockFullView(id),
+      OUT_ID,
+    );
+    await page
+      .locator(`[data-testid="dock-fullview-pane"][data-pane-node="${OUT_ID}"]`)
+      .getByTestId(`midi-out-buddy-output-select-${OUT_ID}`)
+      .selectOption(MOCK_OUT_ID);
     await expect
       .poll(() => readMidiBinding(page, OUT_ID).then((b) => b?.lastDeviceId), { timeout: 5000 })
       .toBe(MOCK_OUT_ID);

@@ -72,7 +72,7 @@ test('@midi REGRESSION: page load never requests Web-MIDI access', async ({ page
 
   // Count requestMIDIAccess calls from before the very first navigation.
   await installMidiMock(page);
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await page.waitForLoadState('networkidle');
 
   // (a) Bare page load — nothing mounted yet, must not have prompted.
@@ -117,7 +117,7 @@ test('@midi plain CC reception drives a learned param across the full range', as
   // Install BEFORE navigation so the app's first requestMIDIAccess() resolves
   // against the mock instead of the (Linux-CI-absent) Web MIDI implementation.
   await installMidiMock(page);
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await page.waitForLoadState('networkidle');
   await clearMidiBindings(page);
 
@@ -127,13 +127,14 @@ test('@midi plain CC reception drives a learned param across the full range', as
     [],
   );
 
-  const card = page.locator('.svelte-flow__node-wavecel');
+  const card = page.locator('.svelte-flow__node:has([data-shell-type="wavecel"])');
   await expect(card).toHaveCount(1);
 
   // Open the MIDI Learn affordance: right-click the Morph knob → "MIDI Learn".
   // Entering learn mode auto-calls connect(), which is what wires the mock
   // input's onmidimessage. Wait for at least one handler after that point.
-  const morphKnob = card.locator('[role="slider"][aria-label="Morph"]');
+  // (On the shell the knob is the tile ladder's `control-morph`.)
+  const morphKnob = card.locator('[data-testid="control-morph"][role="slider"]');
   await expect(morphKnob).toHaveCount(1);
 
   await morphKnob.click({ button: 'right' });
@@ -192,7 +193,7 @@ test('@midi plain CC reception drives a learned param across the full range', as
 test('@midi REGRESSION: save patch → reload → CC values still fire (PR #389 class)', async ({ page, errorWatch }) => {
 
   await installMidiMock(page);
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await page.waitForLoadState('networkidle');
   await clearMidiBindings(page);
 
@@ -202,10 +203,10 @@ test('@midi REGRESSION: save patch → reload → CC values still fire (PR #389 
     [{ id: 'm-wc', type: 'wavecel', position: { x: 120, y: 120 }, domain: 'audio', params: { morph: 0.5 } }],
     [],
   );
-  const card = page.locator('.svelte-flow__node-wavecel');
+  const card = page.locator('.svelte-flow__node:has([data-shell-type="wavecel"])');
   await expect(card).toHaveCount(1);
 
-  const morphKnob = card.locator('[role="slider"][aria-label="Morph"]');
+  const morphKnob = card.locator('[data-testid="control-morph"][role="slider"]');
   await morphKnob.click({ button: 'right' });
   const menu = page.locator('[data-testid="control-context-menu"]');
   await expect(menu).toBeVisible();
@@ -270,7 +271,7 @@ test('@midi REGRESSION: save patch → reload → CC values still fire (PR #389 
     if (!w.__persistence?.load) throw new Error('__persistence.load missing — DEV build expected');
     w.__persistence.load(env);
   }, envelope);
-  const cardAfter = page.locator('.svelte-flow__node-wavecel');
+  const cardAfter = page.locator('.svelte-flow__node:has([data-shell-type="wavecel"])');
   await expect(cardAfter).toHaveCount(1, { timeout: 10_000 });
 
   // STEP 2: importBindings (mirrors importMidiBindings in the bundle-load flow).
@@ -335,7 +336,7 @@ test('@midi NoteOn / NoteOff drives MIDI-CV-BUDDY gate', async ({ page }) => {
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
   await installMidiMock(page);
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await page.waitForLoadState('networkidle');
   await clearMidiBindings(page);
 
@@ -345,13 +346,12 @@ test('@midi NoteOn / NoteOff drives MIDI-CV-BUDDY gate', async ({ page }) => {
     [],
   );
 
-  const card = page.locator('.svelte-flow__node-midiCvBuddy');
+  const card = page.locator('.svelte-flow__node:has([data-shell-type="midiCvBuddy"])');
   await expect(card).toHaveCount(1, { timeout: 10_000 });
 
-  // MIDI-CV-BUDDY does NOT auto-request MIDI access on engine attach — it has
-  // a "Connect MIDI…" button that fires api.connect() on user click. Click
-  // it so requestMIDIAccess fires against our mock.
-  const connectBtn = card.locator('.connect-btn');
+  // MIDI-CV-BUDDY does NOT auto-request MIDI access on engine attach — its
+  // shell ACTION cell ('Connect MIDI…') fires api.connect() on user click.
+  const connectBtn = card.getByTestId('shell-cell-midi-cv-buddy-connect');
   await expect(connectBtn).toBeVisible({ timeout: 10_000 });
   await connectBtn.click();
   await waitForMidiSubscription(page, 1);
@@ -421,7 +421,7 @@ test('@midi NoteOn / NoteOff drives MIDI-CV-BUDDY gate', async ({ page }) => {
 test('@midi MIDI Clock pulses drive midi-clock-source BPM derivation', async ({ page, errorWatch }) => {
 
   await installMidiMock(page);
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await page.waitForLoadState('networkidle');
 
   // COFEFVE's engine factory constructs the MIDI clock-source singleton,
@@ -432,7 +432,7 @@ test('@midi MIDI Clock pulses drive midi-clock-source BPM derivation', async ({ 
     [{ id: 'cd', type: 'cofefve', position: { x: 120, y: 120 }, domain: 'audio' }],
     [],
   );
-  const card = page.locator('.svelte-flow__node-cofefve');
+  const card = page.locator('.svelte-flow__node:has([data-shell-type="cofefve"])');
   await expect(card).toHaveCount(1, { timeout: 10_000 });
 
   // REGRESSION: spawning a default-System COFEFVE alone must not prompt.

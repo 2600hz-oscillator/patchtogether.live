@@ -208,17 +208,20 @@ async function readScopePeak(page: Page, scopeNodeId: string): Promise<number | 
 test('gibribbon: card mounts cleanly + the playfield renders the white ribbon', async ({ page }) => {
   const errors = collectPageErrors(page);
 
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [
     { id: 'g', type: 'gibribbon', position: { x: 200, y: 200 }, domain: 'video' },
   ]);
 
-  const card = page.locator('.svelte-flow__node-gibribbon');
+  const card = page.locator('.svelte-flow__node:has([data-shell-type="gibribbon"])');
   await expect(card).toBeVisible();
-  await expect(card).toContainText('GIBRIBBON');
+  await expect(card).toContainText(/gibribbon/i);
 
-  const canvas = card.locator('[data-testid="gibribbon-screen"]');
+  // The playfield lives in the DOCK face body on the default shell (the same
+  // GibribbonScreen component, same canvas testid).
+  await page.evaluate(() => (globalThis as unknown as { __openDockFullView: (id: string) => void }).__openDockFullView('g'));
+  const canvas = page.getByTestId('dock-full-view').locator('[data-testid="gibribbon-screen"]');
   await expect(canvas).toBeVisible();
   const size = await canvas.evaluate((el: Element) => {
     const c = el as HTMLCanvasElement;
@@ -233,7 +236,7 @@ test('gibribbon: card mounts cleanly + the playfield renders the white ribbon', 
       async () =>
         await page.evaluate(() => {
           const c = document.querySelector(
-            '.svelte-flow__node-gibribbon [data-testid="gibribbon-screen"]',
+            '[data-testid="dock-full-view"] [data-testid="gibribbon-screen"]',
           ) as HTMLCanvasElement | null;
           if (!c) return 0;
           const ctx = c.getContext('2d');
@@ -259,7 +262,7 @@ test('gibribbon: ATTRACT is honest — a bare module self-plays AND says so', as
   await spawnPatch(page, [
     { id: 'g', type: 'gibribbon', position: { x: 200, y: 200 }, domain: 'video' },
   ]);
-  await expect(page.locator('.svelte-flow__node-gibribbon')).toBeVisible();
+  await expect(page.locator('.svelte-flow__node:has([data-shell-type="gibribbon"])')).toBeVisible();
 
   expect(await readStr(page, 'g', 'mode')).toBe('attract');
 
@@ -310,7 +313,7 @@ test('gibribbon: REAL AUDIO CABLE — noise into audio_in wakes attract and spaw
       } as SpawnEdge,
     ],
   );
-  await expect(page.locator('.svelte-flow__node-gibribbon')).toBeVisible();
+  await expect(page.locator('.svelte-flow__node:has([data-shell-type="gibribbon"])')).toBeVisible();
 
   // Wiggle the source level ~4 Hz from the test (the cable and the analysis
   // are fully real; only the modulation hand is ours) until the audio
@@ -373,7 +376,7 @@ test('gibribbon: the REAL CHAIN — fake pad → GAMEPAD module → cables → t
       { id: 'e-ly', from: { nodeId: 'gp', portId: 'ly' }, to: { nodeId: 'g', portId: 'y' }, sourceType: 'cv', targetType: 'cv' },
     ] as SpawnEdge[],
   );
-  await expect(page.locator('.svelte-flow__node-gibribbon')).toBeVisible();
+  await expect(page.locator('.svelte-flow__node:has([data-shell-type="gibribbon"])')).toBeVisible();
   await deterministicPlay(page, 'g');
 
   const pressesBefore = (await readNum(page, 'g', 'presses')) ?? 0;
@@ -435,7 +438,7 @@ test('gibribbon: a band spike spawns its imp → the correct press clears it (sc
   await spawnPatch(page, [
     { id: 'g', type: 'gibribbon', position: { x: 200, y: 200 }, domain: 'video' },
   ]);
-  await expect(page.locator('.svelte-flow__node-gibribbon')).toBeVisible();
+  await expect(page.locator('.svelte-flow__node:has([data-shell-type="gibribbon"])')).toBeVisible();
   await deterministicPlay(page, 'g');
 
   expect(await readNum(page, 'g', 'score')).toBe(0);
@@ -478,7 +481,7 @@ test('gibribbon: an uncleared event HITS the marine — health drops below healt
   await spawnPatch(page, [
     { id: 'g', type: 'gibribbon', position: { x: 200, y: 200 }, domain: 'video' },
   ]);
-  await expect(page.locator('.svelte-flow__node-gibribbon')).toBeVisible();
+  await expect(page.locator('.svelte-flow__node:has([data-shell-type="gibribbon"])')).toBeVisible();
   await deterministicPlay(page, 'g');
 
   expect(await readStr(page, 'g', 'health')).toBe('healthy');
@@ -499,7 +502,7 @@ test('gibribbon: THE DEATH PATH — repeated hits reach GAME OVER, restart PORT 
   await spawnPatch(page, [
     { id: 'g', type: 'gibribbon', position: { x: 200, y: 200 }, domain: 'video' },
   ]);
-  await expect(page.locator('.svelte-flow__node-gibribbon')).toBeVisible();
+  await expect(page.locator('.svelte-flow__node:has([data-shell-type="gibribbon"])')).toBeVisible();
   await deterministicPlay(page, 'g');
   await warmPastCountIn(page, 'g');
 
@@ -548,7 +551,7 @@ for (const port of GATE_PORTS) {
         } as SpawnEdge,
       ],
     );
-    await expect(page.locator('.svelte-flow__node-gibribbon')).toBeVisible();
+    await expect(page.locator('.svelte-flow__node:has([data-shell-type="gibribbon"])')).toBeVisible();
 
     expect((await readScopePeak(page, scopeId)) ?? 0).toBeLessThan(0.2);
 
