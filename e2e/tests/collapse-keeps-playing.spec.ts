@@ -172,8 +172,12 @@ function videoSourceTypes(): string[] {
     '../../packages/web/src/lib/ui/media/node-camera-source-registry.ts',
     'NODE_CAMERA_SOURCE_TYPES',
   );
+  const archivistOwned = parseTypeSet(
+    '../../packages/web/src/lib/ui/media/node-archivist-source-registry.ts',
+    'NODE_ARCHIVIST_SOURCE_TYPES',
+  );
   const all = [
-    ...new Set([...cardOwned, ...nodeOwned, ...varispeedOwned, ...hlsOwned, ...loopbackOwned, ...cameraOwned]),
+    ...new Set([...cardOwned, ...nodeOwned, ...varispeedOwned, ...hlsOwned, ...loopbackOwned, ...cameraOwned, ...archivistOwned]),
   ].sort();
   if (all.length === 0) throw new Error('EVERY source-owner set parsed EMPTY — refusing to pass vacuously');
   return all;

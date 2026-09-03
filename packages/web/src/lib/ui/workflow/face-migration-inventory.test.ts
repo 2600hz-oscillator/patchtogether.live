@@ -419,10 +419,18 @@ describe('face-migration inventory — blockers are LIVE, measured against the T
       'ModuleShell renders no glyph extension slot — WIRED_SHELL_EXTENSION_SLOTS is anchored to its ' +
         'source by shell-extensions.test.ts, so this reading empty means the wiring moved',
     ).toContain('glyph');
+    // ⚠ THE ANCHOR MOVED HALVES (legacy-removal S1, 2026-09-03). This named
+    // `archivist` as "the canonical card-owned <video> source", which it was
+    // until its source moved to `node-archivist-source-registry` and
+    // `DOM_SOURCE_LANE_TYPES` emptied. The field this control exists to prove
+    // NON-EMPTY is `HEADLESS_MOUNT_LANE_TYPES`, the UNION, and its CARD_PRODUCER
+    // half still has six members whose card IS the picture — so the probe still
+    // reads a real population and the control still has something to say.
     expect(
       tree.cardOwnedSourceTypes,
-      'the headless-mount set read without archivist — it is the canonical card-owned <video> source',
-    ).toContain('archivist');
+      'the headless-mount set read without wavesculpt — it is the canonical card-IS-the-producer ' +
+        'module, and the DOM-source half of this union is empty since legacy-removal S1',
+    ).toContain('wavesculpt');
   });
 
   it('NO STALE BLOCKER: every declared blocker names a capability the tree does NOT have', () => {
@@ -719,38 +727,24 @@ describe('face-migration inventory — DERIVED from the tree, not from this list
   }
 
   const CARD_SOURCE_FACED: Readonly<Record<string, CarriedAffordances>> = {
-    archivist: {
-      why:
-        'THE WHOLE MODULE, and this is the widest carry on the roster because this card is all '
-        + 'controls. The SEARCH (a free-text term, two year bounds and a media-type filter), the '
-        + '↻ NEXT re-roll, the four TRANSPORT actions (play/pause, ±10s, random position), the '
-        + 'SEEK bar, the load PROGRESS prose and the FAILURE prose — all rebuilt in the '
-        + 'faceplate through ONE shared component mounted by the card, the dock fullViewBody and '
-        + 'the lane tileBody alike. The card keeps sole ownership of the three node-owned '
-        + 'elements, the archive.org fetch/parse/best-file-pick chain, the engine attach and the '
-        + 'audio wire; the bodies read a published status and invoke a registered command, so no '
-        + 'second owner exists. ⚠ THE STAKES ARE HIGHER THAN FOR EITHER SIBLING BELOW: camera '
-        + 'and loopback lose a way to START a source that would otherwise be running, whereas a '
-        + 'fresh archivist has NO item at all — `node.data.item` is null until a search writes '
-        + 'one and the factory searches nothing on its own — so an unreachable search box is not '
-        + 'a degraded module, it is a media source that can never be given any media. ⚠ NONE OF '
-        + 'IT COULD BE A CELL: a free-text term and two year bounds are not `ParamDef`s, ↻ next '
-        + 'and the transport are ACTIONS rather than values, `ShellSelectorCell.options` is a PURE '
-        + 'SYNCHRONOUS `(node) => SelectorOption[]` (shell-cells.ts:269) that cannot express a '
-        + 'runtime archive.org fetch, and a `static` face key renders as the deliberately INERT '
-        + 'dashed label while no spec is registered for it. ⚠ THE TILE SLOT IS FILLED TOO, because '
-        + 'cameraInput shipped `fullViewBody`-only and lost its only route to a first capture; '
-        + 'here the lane tile would otherwise be an idle gradient with no way to fill it. ⚠ TWO '
-        + 'OF THE SIX COMMANDS CARRY A NUMBER (skip a signed delta, seek an absolute position), '
-        + 'which is why this seam takes a discriminated-union request rather than the bare '
-        + 'command id its two siblings use — a seam that could not carry the argument would have '
-        + 'forced a body to touch the element, i.e. to become the second owner. ⚠ SEPARATELY, a '
-        + 'WRITE-ONLY Y.Doc MIRROR was repaired in the same diff: the card wrote all four search '
-        + 'keys for multiplayer and never read them back, so a rack-mate\'s typing left it '
-        + 'searching a stale local copy. The query is now read from the GRAPH when a search runs, '
-        + 'which is also what lets one command seam serve three surfaces.',
-      seam: '$lib/ui/media/archivist-status-registry',
-    },
+    // ⚠ `archivist` HAD THE WIDEST ENTRY ON THIS MAP AND NO LONGER NEEDS ONE
+    // (legacy-removal S1, 2026-09-03). It is the THIRD and last departure, and
+    // with it `DOM_SOURCE_LANE_TYPES` is EMPTY — so this map now has no members
+    // at all. Read the empty map as a statement, not as a list nobody kept up:
+    // the clause it exempts is "a generic-face module whose CARD owns the
+    // source, so the shell parks that card off-screen and its buttons become
+    // unreachable", and no module is card-source-owned any more.
+    //
+    // Everything the entry described is still carried and still gated. The
+    // search (a free-text term, two year bounds, a media-type filter), the ↻
+    // NEXT re-roll, the four transport actions, the SEEK bar and both prose
+    // channels all live in `ArchivistBrowseControls`, mounted by the dock body
+    // AND the lane tile, over `$lib/ui/media/archivist-status-registry`. What
+    // changed is that the thing on the other end of that seam is
+    // `node-archivist-source-registry` on graph lifetime rather than a card in
+    // an off-screen host — which is what made archivist's stakes the highest of
+    // the three (a fresh archivist has NO item at all, so an unreachable owner
+    // is a media source that can never be given any media).
     // ⚠ `cameraInput` HAD AN ENTRY HERE TOO, AND LEFT FOR THE SAME REASON AS
     // `loopback` (legacy-removal S1, 2026-09-03) — read the note below for the
     // full argument. The device PICKER, the ACQUIRE gesture, the capture LAMP
@@ -950,21 +944,65 @@ describe('face-migration inventory — DERIVED from the tree, not from this list
     expect(blockerOffenders[0]).toContain('syntheticBlockedSource');
     expect(blockerOffenders[0]).toContain('CARD_SOURCE_FACED');
 
-    // And the mechanism is not dead code: real modules DO reach the exemption.
-    const covered = [...DOM_SOURCE_LANE_TYPES].filter((t) => CARD_SOURCE_FACED[t]);
-    expect(covered, 'no DOM-source module is exempt — the mechanism is dead code').not.toEqual([]);
+    // ⚠ THIS USED TO ASSERT "real modules DO reach the exemption", over
+    // `DOM_SOURCE_LANE_TYPES ∩ CARD_SOURCE_FACED`. Both sides are EMPTY since
+    // legacy-removal S1, so the check is unsatisfiable — and the honest reading
+    // is that the MECHANISM genuinely is dead code today, not that it broke.
+    //
+    // It stays, and the control moves from the POPULATION to the RULE, which is
+    // the shape that survives a population reaching zero. The two synthetic legs
+    // above already exercise both arms — a generic-face DOM source with no
+    // entry is refused, and so is a non-generic-face one — so what is left to
+    // pin is the direction those cannot show: that an entry, when one exists,
+    // actually EXCUSES the module rather than being ignored. Fed a synthetic
+    // covered module, the rule must accept it.
+    const acceptedWhenCovered = carriedAffordanceOffenders(
+      ['syntheticCoveredSource'],
+      {
+        syntheticCoveredSource: {
+          why: 'synthetic — the affordances were carried to a face',
+          seam: '$lib/ui/media/synthetic-status-registry',
+        },
+      },
+      () => ({ type: 'syntheticCoveredSource', disposition: 'generic-face', why: 'synthetic' }),
+    );
+    expect(
+      acceptedWhenCovered,
+      'a COVERED DOM source was still reported an offender — the exemption does nothing, so the ' +
+        'two refusal legs above are passing for the wrong reason',
+    ).toEqual([]);
+
+    // ...and the map really is empty, said out loud so this block reddens the
+    // day a member returns and whoever adds it restores the population control.
+    expect(
+      Object.keys(CARD_SOURCE_FACED),
+      'CARD_SOURCE_FACED has an entry again — restore the population control above, because the ' +
+        'rule-level control alone cannot see a stale entry',
+    ).toEqual([]);
   });
 
   it('SCOPE: this gate reads DISPOSITIONS and DEFS — it cannot see a rebuilt affordance WORK', () => {
     // Stated inside the gate, per the blind-gate discipline. Nothing here mounts
-    // a face, clicks anything, or proves the acquire command reaches a card. The
-    // seam's own behaviour is unit-tested in
+    // a face, clicks anything, or proves a command reaches its owner. The seam's
+    // own behaviour is unit-tested in
     // `$lib/ui/media/camera-status-registry.test.ts` (delivery, hand-over,
-    // delivered:false when nobody is listening), and that it works END TO END
-    // through a real headless-hosted card is
+    // delivered:false when nobody is listening), and that it works END TO END is
     // `e2e/tests/camerainput-shell-source.spec.ts`. A green run here means the
     // module DECLARED a home for its affordances, never that they function.
-    expect(Object.keys(CARD_SOURCE_FACED).length).toBeGreaterThan(0);
+    //
+    // ⚠ THE BLIND SPOT IS NOW TOTAL FOR THIS CLAUSE, and saying so is the point
+    // of the leg. It used to assert `CARD_SOURCE_FACED` was non-empty — "the
+    // exemption covers real modules, so the scope note is about something that
+    // runs". Since legacy-removal S1 the map is EMPTY: no module's card owns its
+    // source, so the clause this gate polices has no live subject at all. It is
+    // retained for the module that reintroduces one, and until then the honest
+    // statement is that this gate currently constrains NOTHING in the fleet —
+    // which is a much stronger thing to write down than a population count.
+    expect(
+      Object.keys(CARD_SOURCE_FACED).length,
+      'CARD_SOURCE_FACED is populated again — the scope note above should go back to describing ' +
+        'what the exemption covers rather than that it covers nothing',
+    ).toBe(0);
   });
 
 });

@@ -56,6 +56,7 @@ import { NODE_VARISPEED_TYPES } from '$lib/ui/media/node-varispeed-registry';
 import { NODE_HLS_SOURCE_TYPES } from '$lib/ui/media/node-hls-source-registry';
 import { NODE_LOOPBACK_SOURCE_TYPES } from '$lib/ui/media/node-loopback-source-registry';
 import { NODE_CAMERA_SOURCE_TYPES } from '$lib/ui/media/node-camera-source-registry';
+import { NODE_ARCHIVIST_SOURCE_TYPES } from '$lib/ui/media/node-archivist-source-registry';
 import { WORKER_FACTORY_TYPES } from './worker-factories';
 import { derivedBlockers, declaredLocus, disposition } from './worker-eligibility';
 
@@ -92,6 +93,7 @@ const DOM_SOURCE_TYPES_ANY_OWNER: ReadonlySet<string> = new Set<string>([
   ...NODE_HLS_SOURCE_TYPES,
   ...NODE_LOOPBACK_SOURCE_TYPES,
   ...NODE_CAMERA_SOURCE_TYPES,
+  ...NODE_ARCHIVIST_SOURCE_TYPES,
 ]);
 
 const INPUTS = {
@@ -356,8 +358,14 @@ describe('#1811 render-locus gate', () => {
       'a CV-family INPUT is NOT a blocker — the main thread resolves it and forwards setParam',
     ).toEqual([]);
     expect(
-      derivedBlockers({ ...base, type: [...DOM_SOURCE_LANE_TYPES][0] } as typeof base, INPUTS),
-      'membership of DOM_SOURCE_LANE_TYPES is a blocker',
+      derivedBlockers({ ...base, type: [...DOM_SOURCE_TYPES_ANY_OWNER][0] } as typeof base, INPUTS),
+      // ⚠ READS THE UNION, NOT `DOM_SOURCE_LANE_TYPES`, which is EMPTY since
+      // legacy-removal S1 — `[...emptySet][0]` is `undefined`, and a classifier
+      // fed an undefined type returns no blockers, so this control would have
+      // reported the classifier broken when only its INPUT had emptied. The
+      // union is what the gate actually classifies on, so it is what the
+      // control must exercise.
+      'membership of the DOM-source union is a blocker',
     ).toContain('dom-source');
     expect(
       derivedBlockers({ ...base, type: [...CARD_PRODUCER_LANE_TYPES][0] } as typeof base, INPUTS),

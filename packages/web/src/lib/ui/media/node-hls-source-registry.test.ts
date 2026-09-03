@@ -437,13 +437,53 @@ describe('THE FOUR LANE STATES — the reason this controller exists', () => {
   const KINDS: LaneRenderKind[] = ['legacy', 'shell', 'placeholder', 'stub'];
 
   it('a card-owned tuner has NO CARD AT ALL in two of the four states', () => {
-    // Run over a module that is STILL card-owned, so the leg keeps measuring the
-    // defect after the conversion rather than measuring its absence. archivist
-    // is a DOM_SOURCE member and not a producer — the same arm peertube and
-    // tvLibrarian sat on.
+    // ⚠ THIS LEG HAS RUN OUT OF SUBJECTS, PERMANENTLY (legacy-removal S1), and
+    // that is worth stating rather than quietly re-pointing a third time. It
+    // needs a module that is a DOM_SOURCE member and NOT a producer, because the
+    // two halves take DIFFERENT answers on the `laneOmitsNode` arm — a producer
+    // IS hosted there and a DOM source is NOT, and that asymmetry is exactly
+    // what states 3 and 4 measure. `DOM_SOURCE_LANE_TYPES` is now EMPTY, so no
+    // such module exists and none can without a conversion being undone.
+    //
+    // ⚠ AND THE ARM IS THEREFORE DEAD CODE TODAY — a finding, not a fix.
+    // `needsHeadlessSourceMount` gates on `HEADLESS_MOUNT_LANE_TYPES` first, and
+    // that union is now exactly the CARD_PRODUCER half, so
+    // `if (laneOmitsNode) return CARD_PRODUCER_LANE_TYPES.has(type)` can only
+    // ever return TRUE. The `false` branch is unreachable until either a
+    // DOM-source module returns or the producer extractions land. It is left in
+    // place deliberately: it is correct, it is one line, and deleting a correct
+    // branch because today's population cannot reach it is how the next module
+    // to arrive ships with the wrong answer.
+    //
+    // What survives here is the ASSERTION THAT THE POPULATION IS GONE, so this
+    // reddens the day a member returns and whoever adds it re-points the leg
+    // rather than finding it silently vacuous. The PAYOFF half — a converted
+    // tuner is never hosted on any lane state — is the sibling leg below, and it
+    // still runs on real subjects.
+    expect(
+      DOM_SOURCE_LANE_TYPES.size,
+      'a card-owned DOM source exists again — re-point this leg at it, because the four-state ' +
+        'table it measures is only observable on a DOM_SOURCE member that is not a producer',
+    ).toBe(0);
+  });
+
+  it('the DECISION still distinguishes the two halves — asserted where it IS observable', () => {
+    // The half of the table above that still has subjects. A CARD_PRODUCER
+    // member takes the OTHER answer on `laneOmitsNode`, which is the asymmetry
+    // the retired leg existed to pin, read from the side that survives.
+    const producer = [...CARD_PRODUCER_LANE_TYPES][0]!;
+    expect(
+      needsHeadlessSourceMount({ kind: 'shell', type: producer, laneOmitsNode: true }),
+      'a producer IS hosted when the lane emits no node — its card IS the picture',
+    ).toBe(true);
+    expect(
+      needsHeadlessSourceMount({ kind: 'shell', type: 'peertube', laneOmitsNode: true }),
+      'and a CONVERTED module is not hosted in any state — the payoff',
+    ).toBe(false);
+  });
+
+  it.skip('a card-owned tuner has NO CARD AT ALL in two of the four states', () => {
     const subject = 'archivist';
-    expect(DOM_SOURCE_LANE_TYPES.has(subject)).toBe(true);
-    expect(CARD_PRODUCER_LANE_TYPES.has(subject)).toBe(false);
     const laneKind = laneRenderKind({
       shellFaces: true,
       userDocked: false,

@@ -129,9 +129,18 @@ describe('⚠ THE MEDIA BLOCKER WAS FALSE FOR THIS MODULE — recorderbox’s ar
       expect(needsHeadlessSourceMount({ kind, type: 'toybox' })).toBe(false);
     }
     expect(needsHeadlessSourceMount({ kind: 'shell', type: 'toybox', laneOmitsNode: true })).toBe(false);
-    // POSITIVE CONTROL on the same predicate, so a passing row above cannot be
-    // the function having stopped answering: archivist really does need one.
-    expect(needsHeadlessSourceMount({ kind: 'shell', type: 'archivist' })).toBe(true);
+    // ⚠ POSITIVE CONTROL ON THE SAME PREDICATE, so a passing row above cannot be
+    // the function having stopped answering. Its subject was `archivist`, which
+    // stopped needing a host on 2026-09-03 (legacy-removal S1 moved its source
+    // to a node controller) — and a control whose subject converts is a control
+    // that silently stops controlling, which is exactly the failure this leg
+    // guards against in the other direction. Re-pointed to `wavesculpt`, a
+    // CARD_PRODUCER member whose card IS the picture.
+    expect(needsHeadlessSourceMount({ kind: 'shell', type: 'wavesculpt' })).toBe(true);
+    expect(
+      HEADLESS_MOUNT_LANE_TYPES.has('wavesculpt'),
+      'the control needs a module the headless host still applies to',
+    ).toBe(true);
   });
 
   it('the card never calls attachExternalSource — its layers reach the engine through the module’s OWN extras', () => {

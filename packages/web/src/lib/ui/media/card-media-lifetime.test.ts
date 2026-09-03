@@ -256,10 +256,17 @@ const EXTRAS_OWNERS: Readonly<Record<string, ExtrasOwnerVerdict>> = {
   // that ARE in the graph) and a local `<video>` element (a file no reload can
   // reconstruct, whose absence the console reports in words — "not loaded in
   // this session — re-pick the file").
-  ArchivistCard: {
-    owner: 'headless-card-mount',
-    why: 'the extras channel rides alongside a card-owned DOM media element the engine holds via attachExternalSource, so the card must stay mounted for the SOURCE regardless',
-  },
+  // ⚠ ArchivistCard LEFT THIS ROSTER 2026-09-03 (legacy-removal S1), and the
+  // route is NOT the `*Card.svelte`-only scan boundary that moved DoomCard,
+  // GibribbonCard and NibblesCard out — it is the opposite direction, so the
+  // repetition noted above does not apply here. Its entry said the extras
+  // channel "rides alongside a card-owned DOM media element the engine holds via
+  // attachExternalSource, so the card must stay mounted for the SOURCE
+  // regardless". That premise is gone: the element, the attach and the extras
+  // reads all moved to `$lib/ui/media/node-archivist-source-registry`, which
+  // holds them on GRAPH lifetime. The card reads no extras at all any more, so
+  // this scan correctly finds it off the channel — the owner it named does not
+  // exist, rather than having moved to a file the scan cannot see.
   BloodCard: {
     owner: 'module-renders-itself',
     why: 'the extras channel carries a WASM boot gesture and raw Build scancodes; blood.ts runs the frame and uploads its own framebuffer, and paints a deliberate "alive, no signal" dark-red scanline idle field until a human plays it',

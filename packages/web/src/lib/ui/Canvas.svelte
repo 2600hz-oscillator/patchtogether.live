@@ -239,6 +239,7 @@
   import { nodeHlsSource } from '$lib/ui/media/node-hls-source.svelte';
   import { nodeLoopbackSource } from '$lib/ui/media/node-loopback-source.svelte';
   import { nodeCameraSource } from '$lib/ui/media/node-camera-source.svelte';
+  import { nodeArchivistSource } from '$lib/ui/media/node-archivist-source.svelte';
   import { nodePresent } from '$lib/ui/modules/node-present-registry.svelte';
   import { createFullscreen } from '$lib/ui/modules/use-fullscreen.svelte';
   import { resolveVideoEngine } from '$lib/ui/modules/use-present.svelte';
@@ -2614,6 +2615,11 @@
     // would leave rack-mates looking at "this user has a camera live here" for a
     // node that no longer exists.
     nodeCameraSource.sweep(liveIds);
+    // ⚠ AND THE ARCHIVIST CONTROLLER (legacy-removal S1) — the row that ends two
+    // polling loops (a 33ms gate poll and a 100ms display refresh) for a deleted
+    // node. Both are node-keyed and deliberately outlive every surface, so
+    // nothing else could stop them.
+    nodeArchivistSource.sweep(liveIds);
     // ...and the same status/command seam for ARCHIVIST
     // ($lib/ui/media/archivist-status-registry), the THIRD and last member of
     // DOM_SOURCE_LANE_TYPES to be promoted. Same reason as the two above: its
@@ -2789,6 +2795,20 @@
       const g = globalThis as unknown as { __provider?: HocuspocusProvider | null };
       return g.__provider ?? null;
     });
+  });
+
+  /** THE NODE-OWNED ARCHIVIST SOURCE (legacy-removal S1) — sixth registry, and
+   *  the last of the three DOM-source conversions, which leaves
+   *  `DOM_SOURCE_LANE_TYPES` empty.
+   *
+   *  ⚠ RUNNING ON THE SNAPSHOT IS WHAT MAKES A SAVED RACK COME BACK PLAYABLE AND
+   *  A PEER'S TUNE LAND. The card re-attached a saved item in `onMount`, so it
+   *  happened when a CARD mounted rather than when the node appeared — and it
+   *  read `node.data.item` once. A rack-mate searching writes an item into a
+   *  document this controller holds elements for; attaching on a CHANGE of
+   *  identifier is what turns that write into a playing item. */
+  $effect(() => {
+    nodeArchivistSource.sync(snapshot.nodes, engine);
   });
 
   let headlessSourceNodes = $derived.by<ModuleNode[]>(() => {

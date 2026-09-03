@@ -152,12 +152,29 @@ const LANE_SETS_SRC = readFileSync(
  *  header and then runs on to the WRONG array — which is exactly what it did on
  *  the first run here, silently substituting the DOM-source set for the producer
  *  set and enrolling nine modules nobody asked for. */
-function parseLaneSet(name: string): string[] {
+function parseLaneSet(name: string, opts: { mayBeEmpty?: boolean } = {}): string[] {
   const re = new RegExp(`export const ${name}[^[]*\\[([\\s\\S]*?)\\]`);
   const block = re.exec(LANE_SETS_SRC);
   if (!block) throw new Error(`could not parse ${name} — has the shape changed?`);
   const types = [...block[1]!.matchAll(/'([^']+)'/g)].map((m) => m[1]!);
-  if (types.length === 0) throw new Error(`${name} parsed EMPTY — refusing to pass vacuously`);
+  // ⚠ EMPTINESS IS A DEFECT FOR SOME SETS AND A FACT FOR OTHERS, and conflating
+  // them cost the WHOLE E2E LANE (legacy-removal S1, 2026-09-03). This threw
+  // unconditionally, which was right while every set had members. When
+  // `DOM_SOURCE_LANE_TYPES` legitimately emptied — all five members converted to
+  // node-scoped controllers — the throw fired at COLLECTION time, and a
+  // collection-time throw in ONE spec makes Playwright list ZERO tests in ZERO
+  // files across the entire project. Not one red spec: an empty run that reports
+  // success in some readers.
+  //
+  // ⚠ AND NO FOCUSED RUN CAN SEE IT. `task e2e:one -- <spec>` still COLLECTS
+  // every file, so the failure is lane-wide the moment it exists; the thing that
+  // caught it was `scripts/ci-selection-audit.test.ts`, which shells out to
+  // `playwright test --list`. Worth knowing where that alarm comes from.
+  //
+  // So the guard is now per-set, and the caller says which it is.
+  if (types.length === 0 && !opts.mayBeEmpty) {
+    throw new Error(`${name} parsed EMPTY — refusing to pass vacuously`);
+  }
   return types;
 }
 
@@ -175,7 +192,15 @@ function cardProducerTypes(): string[] {
   // DISJOINT by dom-source-modules.test.ts, so any overlap here means this
   // parse grabbed the wrong array literal — the one failure mode a regex over
   // source has, and one that otherwise shows up as nine mysterious subjects.
-  const domSource = new Set(parseLaneSet('DOM_SOURCE_LANE_TYPES'));
+  // ⚠ MAY BE EMPTY, AND IS. This is a PARSE SELF-CHECK, not a subject list: it
+  // exists only to prove the regex above grabbed the right array literal. An
+  // empty DOM-source set makes the overlap check trivially pass, which is
+  // correct — there is nothing to overlap WITH — and the check's real value was
+  // always the day the regex matched the wrong literal, which an empty result
+  // cannot hide (a wrong-literal match would return the PRODUCER names here and
+  // the overlap would be total). See `dom-source-modules.ts` for why the set is
+  // empty and what its emptiness does and does not assert.
+  const domSource = new Set(parseLaneSet('DOM_SOURCE_LANE_TYPES', { mayBeEmpty: true }));
   const overlap = producers.filter((t) => domSource.has(t));
   if (overlap.length > 0) {
     throw new Error(

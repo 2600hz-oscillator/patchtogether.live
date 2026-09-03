@@ -166,10 +166,33 @@ import type { LaneRenderKind } from './legacy-fallback';
  * described "a card is on screen" while claiming to describe "a camera is live".
  * Both are now the node's. Its new owner is
  * `$lib/ui/media/node-camera-source-registry`.
+ *
+ * ⚠ AND ARCHIVIST WITH THEM, WHICH LEAVES THIS SET EMPTY (legacy-removal S1,
+ * 2026-09-03). That is a state worth reading carefully rather than as an
+ * absence, because an empty set changes what several gates can say.
+ *
+ * WHAT IT ASSERTS: no module's engine-visible SOURCE depends on a card being
+ * mounted any more. Every one of the five former members has a node-scoped
+ * controller under `$lib/ui/media/`, and `dom-source-modules.test.ts` holds that
+ * in both directions — each type is absent here AND present in exactly one
+ * node-owner set, so a module cannot leave without an owner taking it.
+ *
+ * ⚠ WHAT IT STOPS BEING ABLE TO ASSERT, stated because an empty derived set is
+ * the classic silent-vacuity shape: the grep gate that derives this set from the
+ * cards now compares [] to [] on the DOM-source half. Its POSITIVE CONTROL is
+ * what keeps it honest — the gate feeds itself a synthetic card that attaches a
+ * retained element and requires the derivation to REFUSE it. Read that leg
+ * before trusting a green run here, and do not "simplify" the derivation away
+ * on the grounds that it always produces nothing.
+ *
+ * ⚠ THE SET IS NOT DELETED, and it must not be while the PRODUCER half exists.
+ * `HEADLESS_MOUNT_LANE_TYPES` is the union of this and
+ * `CARD_PRODUCER_LANE_TYPES`, and the producer half still has six members whose
+ * cards ARE the producer. `needsHeadlessSourceMount` still returns true for
+ * those. When the producer extractions land, THAT is the moment to ask whether
+ * the headless host itself can go — not now.
  */
-export const DOM_SOURCE_LANE_TYPES: ReadonlySet<string> = new Set<string>([
-  'archivist',
-]);
+export const DOM_SOURCE_LANE_TYPES: ReadonlySet<string> = new Set<string>([]);
 
 /**
  * Module TYPES whose card is the SOLE WRITER of engine-visible state that is

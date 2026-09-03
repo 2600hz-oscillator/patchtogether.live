@@ -70,6 +70,7 @@ import { NODE_VARISPEED_TYPES } from '$lib/ui/media/node-varispeed-registry';
 import { NODE_HLS_SOURCE_TYPES } from '$lib/ui/media/node-hls-source-registry';
 import { NODE_LOOPBACK_SOURCE_TYPES } from '$lib/ui/media/node-loopback-source-registry';
 import { NODE_CAMERA_SOURCE_TYPES } from '$lib/ui/media/node-camera-source-registry';
+import { NODE_ARCHIVIST_SOURCE_TYPES } from '$lib/ui/media/node-archivist-source-registry';
 
 /** Every node-scoped source owner there is. Read as ONE set wherever the
  *  question is "has SOMETHING taken ownership of this module's source", so a
@@ -81,6 +82,7 @@ const NODE_OWNED_SOURCE_TYPES: ReadonlySet<string> = new Set<string>([
   ...NODE_HLS_SOURCE_TYPES,
   ...NODE_LOOPBACK_SOURCE_TYPES,
   ...NODE_CAMERA_SOURCE_TYPES,
+  ...NODE_ARCHIVIST_SOURCE_TYPES,
 ]);
 import { STRICT_FACES } from './strict-faces';
 import { NON_SHELL_LANE_TYPES, laneRenderKind, type LaneRenderKind } from './legacy-fallback';
@@ -753,9 +755,29 @@ describe('DOM_SOURCE_LANE_TYPES — the grep gate (a new source module cannot sh
     expect(unmapped, `card(s) calling attachExternalSource resolve to no module def: ${unmapped.join(', ')}`)
       .toEqual([]);
 
-    // Sanity: the grep found SOMETHING (a refactor that renames the engine hook
-    // must fail loudly here rather than silently emptying the set).
-    expect(attaching.size).toBeGreaterThan(0);
+    // ⚠ THIS USED TO BE `expect(attaching.size).toBeGreaterThan(0)` — "a refactor
+    // that renames the engine hook must fail loudly here rather than silently
+    // emptying the set". `DOM_SOURCE_LANE_TYPES` is now legitimately EMPTY
+    // (legacy-removal S1: all five members have node-scoped owners), so that
+    // check would fail forever for the right reason at the wrong time, and
+    // deleting it would leave the comparison below as `[] === []` — a gate that
+    // cannot fail.
+    //
+    // The replacement is a control over the INSTRUMENT rather than over the
+    // population, which is the shape that survives a population reaching zero:
+    // the reader must still be able to FIND an attaching card, proven by feeding
+    // it one. `seamHitFor` is the same function the derivation uses, so a
+    // rename that broke the real scan breaks this too.
+    expect(
+      CALL_RE.test('ve?.attachExternalSource(id, \'video\', el);'),
+      'the attach matcher no longer recognises a real call — the derivation above ' +
+        'is comparing an empty set to an empty set and cannot fail',
+    ).toBe(true);
+    expect(
+      cardSources().length,
+      'the card reader resolved NO cards at all, so "no card attaches" is a statement ' +
+        'about the reader rather than about the tree',
+    ).toBeGreaterThan(0);
 
     // SECOND HALF: drop only the modules NAMED as one-shot imports. Deny by
     // default — an unnamed module stays in even if it matches no seam, and the
@@ -805,7 +827,22 @@ describe('DOM_SOURCE_LANE_TYPES — the grep gate (a new source module cannot sh
     // VACUITY: the seam set must actually match something, or "retains" is a
     // claim nothing checked.
     expect(SOURCE_RETENTION_SEAMS.length, 'at least one retention seam is declared').toBeGreaterThan(0);
-    expect(evidence, 'no DOM-source module produced retention evidence').not.toEqual([]);
+    // ⚠ THIS USED TO REQUIRE `evidence` TO BE NON-EMPTY, which was the right
+    // control while the set had members and is unsatisfiable now that it is
+    // empty (legacy-removal S1). Deleting it would leave the loop above running
+    // zero times — a gate that cannot fail — so the control moves from the
+    // POPULATION to the MATCHER, which is what still has something to say.
+    // Fed a synthetic engine-side attach body that retains its element, the
+    // seams must recognise it.
+    const syntheticRetaining = `attachExternalSource(kind, el) {
+      this.mediaEl = el;
+      el.requestVideoFrameCallback(() => this.upload());
+    }`;
+    expect(
+      SOURCE_RETENTION_SEAMS.some((seam) => seam.re.test(syntheticRetaining)),
+      'no retention seam matches a body that plainly retains its element — the loop above ' +
+        'is iterating an empty set with a matcher that could not fire either way',
+    ).toBe(true);
   });
 
   it('every ONE_SHOT_INGEST entry still describes a live, non-retaining module', () => {
@@ -883,9 +920,20 @@ describe('DOM_SOURCE_LANE_TYPES — the grep gate (a new source module cannot sh
     // was broken. The other departures fixed measured defects; this one removes
     // the CARD's load-bearingness so the card can be deleted. Same destination,
     // different argument — see the set's own header.
-    for (const t of ['archivist']) {
+    // ⚠ THIS LIST IS NOW EMPTY, AND IT IS KEPT AS AN EMPTY LOOP ON PURPOSE. Every
+    // former member (archivist last, 2026-09-03) is asserted in Boundary 3
+    // below — absent HERE and present in exactly one node-owner set. Writing the
+    // departure as a positive claim about where each module went is what makes
+    // an empty set a STATEMENT rather than a list someone stopped maintaining.
+    for (const t of [] as string[]) {
       expect(DOM_SOURCE_LANE_TYPES.has(t), `${t} is a DOM-source module`).toBe(true);
     }
+    expect(
+      DOM_SOURCE_LANE_TYPES.size,
+      'DOM_SOURCE_LANE_TYPES has a member again — add it to the list above and say what ' +
+        'makes its CARD the owner of its source, because nothing has been card-owned since ' +
+        'legacy-removal S1',
+    ).toBe(0);
     // Boundary 1: a pure-GPU generator is NOT one (acidwarp renders from a shader
     // only — it needs no card, which is why acidwarp → OUTPUT survived the bug).
     for (const t of ['acidwarp', 'lines', 'backdraft', 'ruttetra', 'videoOut']) {
@@ -926,7 +974,9 @@ describe('DOM_SOURCE_LANE_TYPES — the grep gate (a new source module cannot sh
     // cannot be. The boundary demonstrates the same thing either way — the card
     // was never the right owner — but a reader looking for the bug this one
     // fixed will not find one, and should not go hunting.
-    for (const t of ['videobox', 'videovarispeed', 'peertube', 'tvLibrarian', 'loopback', 'cameraInput']) {
+    for (const t of [
+      'videobox', 'videovarispeed', 'peertube', 'tvLibrarian', 'loopback', 'cameraInput', 'archivist',
+    ]) {
       expect(
         DOM_SOURCE_LANE_TYPES.has(t),
         `${t}'s attach, audio wiring and loops belong to a node-scoped controller under ` +
@@ -973,6 +1023,7 @@ describe('DOM_SOURCE_LANE_TYPES — the grep gate (a new source module cannot sh
       ['NODE_HLS_SOURCE_TYPES', NODE_HLS_SOURCE_TYPES],
       ['NODE_LOOPBACK_SOURCE_TYPES', NODE_LOOPBACK_SOURCE_TYPES],
       ['NODE_CAMERA_SOURCE_TYPES', NODE_CAMERA_SOURCE_TYPES],
+      ['NODE_ARCHIVIST_SOURCE_TYPES', NODE_ARCHIVIST_SOURCE_TYPES],
     ] as const;
     const doubleOwned: string[] = [];
     for (let i = 0; i < owners.length; i++) {
@@ -1098,13 +1149,35 @@ describe('needsHeadlessSourceMount — the pure headless-mount decision', () => 
     // sources are archivist, cameraInput and loopback — all three CAPTURE-ish,
     // which is a real change in the character of what is left rather than three
     // arbitrary names.
+    //
+    // ⚠ SUBJECT MOVED A FOURTH TIME, AND ACROSS THE HALVES (legacy-removal S1).
+    // archivist, cameraInput and loopback all converted, so `DOM_SOURCE_LANE_TYPES`
+    // is EMPTY. The comment above anticipated that and said "when the set finally
+    // empties, this leg's subject is gone for good and the leg goes with it" —
+    // WHICH IS WRONG, and worth correcting rather than following. The arm belongs
+    // to `HEADLESS_MOUNT_LANE_TYPES`, the UNION of the two halves, and the
+    // CARD_PRODUCER half still has six members whose card IS the producer. So the
+    // decision is as live as it ever was; only its DOM-source subjects are gone.
+    // `wavesculpt` exercises the identical arm.
     for (const kind of KINDS) {
       const want = kind === 'shell' || kind === 'placeholder';
       expect(
-        needsHeadlessSourceMount({ kind, type: 'archivist' }),
-        `archivist @ ${kind}`,
+        needsHeadlessSourceMount({ kind, type: 'wavesculpt' }),
+        `wavesculpt @ ${kind}`,
       ).toBe(want);
     }
+  });
+
+  it('ANCHORED: the subject above is a REAL member, so the leg cannot go vacuous', () => {
+    // Every other arm of this decision returns FALSE for a type it does not
+    // know, so a subject that quietly left the union would make the `want ===
+    // false` cases pass and only the two TRUE cases fail — a half-blind leg. If
+    // the producer extractions retire wavesculpt too, this reddens and whoever
+    // does it re-points the subject rather than discovering it later.
+    expect(
+      HEADLESS_MOUNT_LANE_TYPES.has('wavesculpt'),
+      'the headless-mount arm needs a live member to exercise it',
+    ).toBe(true);
   });
 
   it('NEVER mounts a module whose source moved to a node controller, on ANY lane kind', () => {
@@ -1484,7 +1557,7 @@ describe('the DOCK FULL VIEW hosts the real card only for an UN-MIGRATED module'
   // opens the dock faceplate and asserts the picture survives it.
   it('an un-migrated full-view occupant is hosted ELSEWHERE and gets no second mount', () => {
     expect(
-      needsHeadlessSourceMount({ kind: 'shell', type: 'archivist', hostedElsewhere: true }),
+      needsHeadlessSourceMount({ kind: 'shell', type: 'wavesculpt', hostedElsewhere: true }),
     ).toBe(false);
   });
 
@@ -1496,10 +1569,11 @@ describe('the DOCK FULL VIEW hosts the real card only for an UN-MIGRATED module'
     // module to make that true. cameraInput has since left the set entirely
     // (its source is node-owned), so asking the question about it now returns
     // `false` for a completely different reason and would pass while proving
-    // nothing. `archivist` is the surviving member that still carries the
-    // original subject.
+    // nothing. archivist was re-pointed to next and converted within the same
+    // slice; `wavesculpt` is a CARD_PRODUCER member, which is the half of
+    // `HEADLESS_MOUNT_LANE_TYPES` that still carries the original subject.
     expect(
-      needsHeadlessSourceMount({ kind: 'shell', type: 'archivist', hostedElsewhere: false }),
+      needsHeadlessSourceMount({ kind: 'shell', type: 'wavesculpt', hostedElsewhere: false }),
     ).toBe(true);
   });
 
@@ -1508,7 +1582,7 @@ describe('the DOCK FULL VIEW hosts the real card only for an UN-MIGRATED module'
     // the subject rather than discovering later that both legs pass on a type
     // the decision no longer knows about.
     expect(
-      HEADLESS_MOUNT_LANE_TYPES.has('archivist'),
+      HEADLESS_MOUNT_LANE_TYPES.has('wavesculpt'),
       'the DOCK FULL VIEW legs need a module the headless host still applies to',
     ).toBe(true);
   });
