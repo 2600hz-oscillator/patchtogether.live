@@ -75,7 +75,7 @@ async function clipNotes(page: Page, id: string, slot = '0'): Promise<number[]> 
 // Re-enable only on a root cause (#1847); "it passes now" is not one.
 test.fixme('custom scale: pick rows → APPLY hides the rest → hidden notes SURVIVE → REMOVE restores', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 1 recovered-on-retry observation in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({
   page,
-  rack,
+  rackLegacy,
 }) => {
   await spawnPatch(page, [
     { id: 'cp', type: 'clipplayer', position: { x: 80, y: 80 }, domain: 'audio' },
@@ -180,7 +180,7 @@ test.fixme('custom scale: pick rows → APPLY hides the rest → hidden notes SU
 
 test('custom scale is PER LANE — applying it on lane 0 leaves lane 1 on the full range', async ({
   page,
-  rack,
+  rackLegacy,
 }) => {
   await spawnPatch(page, [
     { id: 'cp', type: 'clipplayer', position: { x: 80, y: 80 }, domain: 'audio' },

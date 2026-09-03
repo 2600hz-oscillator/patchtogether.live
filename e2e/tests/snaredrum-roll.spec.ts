@@ -116,7 +116,7 @@ test('SNARE DRUM real chain: SEQUENCER → trigger_in → audible stereo hits (L
     ],
   );
 
-  const card = page.locator('.svelte-flow__node-snaredrum');
+  const card = page.locator('.svelte-flow__node:has([data-shell-type="snaredrum"])');
   await expect(card).toHaveCount(1);
   await expect(card).toContainText(/SNARE ?DRUM/);
 
@@ -161,7 +161,7 @@ test('SNARE DRUM real chain: SEQUENCER held gate → gate_in → CONTINUOUS two-
     ],
   );
 
-  await expect(page.locator('.svelte-flow__node-snaredrum')).toHaveCount(1);
+  await expect(page.locator('.svelte-flow__node:has([data-shell-type="snaredrum"])')).toHaveCount(1);
 
   // All steps ON → the gate is high across the bar → the two-hand roll runs.
   await seedSteps(page, 'r-seq', [true, true, true, true], 0.92);

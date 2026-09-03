@@ -33,7 +33,7 @@ async function openFrom(page: Page, nodeId: string, side: 'left' | 'right' = 'le
 }
 
 test.describe('@aut PatchPanel acceptance flow', () => {
-  test('ADSR click-open, verbose labels, patch via carry, outside-click closes', async ({ page, rack }) => {
+  test('ADSR click-open, verbose labels, patch via carry, outside-click closes', async ({ page, rackLegacy }) => {
     await spawnPatch(page, [
       { id: 'seq', type: 'kria', position: { x: 80, y: 120 } },
       { id: 'adsr', type: 'adsr', position: { x: 900, y: 120 } },
@@ -85,7 +85,7 @@ test.describe('@aut PatchPanel acceptance flow', () => {
     await expect(chrome(page, 'seq')).toHaveCount(0);
   });
 
-  test('MIXMSTRS spawn → click-open → section nav rows + drill shows verbose labels', async ({ page, rack }) => {
+  test('MIXMSTRS spawn → click-open → section nav rows + drill shows verbose labels', async ({ page, rackLegacy }) => {
     await spawnPatch(page, [{ id: 'mm', type: 'mixmstrs', position: { x: 200, y: 100 } }]);
 
     await openFrom(page, 'mm', 'left');

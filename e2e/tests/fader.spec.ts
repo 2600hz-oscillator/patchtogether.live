@@ -24,7 +24,7 @@ function param(page: Page, id: string, name: string): Promise<number | undefined
 }
 
 test.describe('FADER — card ↔ engine param wiring', () => {
-  test('mounts; the A/B + dry/wet faders and transition dropdowns drive node.params', async ({ page, rack, errorWatch }) => {
+  test('mounts; the A/B + dry/wet faders and transition dropdowns drive node.params', async ({ page, rackLegacy, errorWatch }) => {
     await spawnPatch(page, [
       { id: 'fd', type: 'fader', position: { x: 200, y: 120 }, domain: 'video' },
     ]);

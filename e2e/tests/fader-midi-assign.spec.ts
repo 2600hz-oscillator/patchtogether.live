@@ -53,7 +53,7 @@ async function injectCc(page: Page, channel: number, cc: number, value: number):
   );
 }
 
-test('FADER A↔B + dry/wet sliders are MIDI/Electra assignable (right-click → learn → CC drives param)', async ({ page, rack, errorWatch }) => {
+test('FADER A↔B + dry/wet sliders are MIDI/Electra assignable (right-click → learn → CC drives param)', async ({ page, rackLegacy, errorWatch }) => {
   await page.evaluate(() => window.localStorage.removeItem('pt.midi-bindings.v1'));
 
   await spawnPatch(

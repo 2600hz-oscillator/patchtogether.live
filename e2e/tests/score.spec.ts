@@ -41,7 +41,7 @@ async function readScoreData(page: import('@playwright/test').Page) {
   });
 }
 
-test('score: place a note via the quarter tool + click', async ({ page, rack }) => {
+test('score: place a note via the quarter tool + click', async ({ page, rackLegacy }) => {
   await spawnPatch(page, [{ id: 'score', type: 'score' }]);
 
   await page.locator('[data-testid="score-tool-quarter-score"]').click();
@@ -58,7 +58,7 @@ test('score: place a note via the quarter tool + click', async ({ page, rack }) 
   expect(data.notes[0].midi).toBeLessThanOrEqual(84);
 });
 
-test('score: drag-snap to nearest 16th tick', async ({ page, rack }) => {
+test('score: drag-snap to nearest 16th tick', async ({ page, rackLegacy }) => {
   // Pre-seed a note at bar 0, tick 0 so we can grab + drag it.
   await spawnPatch(page, [
     {
@@ -110,7 +110,7 @@ test('score: drag-snap to nearest 16th tick', async ({ page, rack }) => {
   expect(data.notes[0].tick % 3).toBe(0);
 });
 
-test('score: sharp tool on note toggles per-note accidental + transposes MIDI +1', async ({ page, rack }) => {
+test('score: sharp tool on note toggles per-note accidental + transposes MIDI +1', async ({ page, rackLegacy }) => {
   await spawnPatch(page, [{ id: 'score', type: 'score' }]);
 
   // Seed an F5 note via quarter tool click on top line, then click again with sharp tool.
@@ -140,7 +140,7 @@ test('score: sharp tool on note toggles per-note accidental + transposes MIDI +1
   expect(data.notes[0].midi).toBe(78);
 });
 
-test('score: sharp tool on empty staff increments key signature', async ({ page, rack }) => {
+test('score: sharp tool on empty staff increments key signature', async ({ page, rackLegacy }) => {
   await spawnPatch(page, [{ id: 'score', type: 'score' }]);
 
   // Seed an F5 note (no per-note accidental) so we can verify it gets the key-sig sharp.
@@ -174,7 +174,7 @@ test('score: sharp tool on empty staff increments key signature', async ({ page,
   expect(data.notes[0].midi).toBe(78);
 });
 
-test('score: tie tool — picking two notes creates a Tie object + SVG path', async ({ page, rack }) => {
+test('score: tie tool — picking two notes creates a Tie object + SVG path', async ({ page, rackLegacy }) => {
   await spawnPatch(page, [{ id: 'score', type: 'score' }]);
 
   await page.evaluate(() => {
@@ -209,7 +209,7 @@ test('score: tie tool — picking two notes creates a Tie object + SVG path', as
   await expect(page.locator(`[data-tie-id="${tieId}"]`)).toBeVisible();
 });
 
-test('score: currently-playing note highlight tracks engine.read currentNoteId', async ({ page, rack }) => {
+test('score: currently-playing note highlight tracks engine.read currentNoteId', async ({ page, rackLegacy }) => {
   // Spawn STOPPED — seedScoreThenPlay starts the transport after the music
   // exists, so grid tick 0 is emitted with notes in place (see its header).
   await spawnPatch(page, [{ id: 'score', type: 'score', params: { bpm: 240, isPlaying: 0 } }]);
@@ -247,7 +247,7 @@ test('score: currently-playing note highlight tracks engine.read currentNoteId',
 // 96 h CI census to 2026-08-18 — never a hard failure, so every one of those jobs reported SUCCESS.
 // LOST WHILE PARKED: that ALL THREE notes of a triplet group actually sound — triplet tick math that drops a position is inaudible as a bug and reads as a performance mistake.
 // Re-enable only on a root cause (#1847); "it passes now" is not one.
-test.fixme('score: every triplet position SOUNDS — all three notes of a triplet group', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 5 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page, rack }) => {
+test.fixme('score: every triplet position SOUNDS — all three notes of a triplet group', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 5 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page, rackLegacy }) => {
   // -- THE BUG THIS EXISTS FOR --------------------------------------------
   //
   // `triplet8th` is 4 grid ticks wide, so the toolbar snaps it to
@@ -319,7 +319,7 @@ test.fixme('score: every triplet position SOUNDS — all three notes of a triple
   expect(seen.samples, 'the in-page sampler ran at all').toBeGreaterThan(0);
 });
 
-test('score: dynamic marker scales the env output amplitude', async ({ page, rack }) => {
+test('score: dynamic marker scales the env output amplitude', async ({ page, rackLegacy }) => {
   // ⚠ THE 30s POLL CEILING BELOW WAS UNREACHABLE. Playwright's DEFAULT TEST
   // TIMEOUT is 30s (this config sets no global `timeout`), so the test budget
   // expired before the poll could ever spend its own — the 10s → 30s bump
@@ -386,7 +386,7 @@ test('score: dynamic marker scales the env output amplitude', async ({ page, rac
   expect(await readDynScale()).toBeLessThan(1.05);
 });
 
-test('score: bar overflow rejected — second whole note in the same bar does NOT add', async ({ page, rack }) => {
+test('score: bar overflow rejected — second whole note in the same bar does NOT add', async ({ page, rackLegacy }) => {
   await spawnPatch(page, [{ id: 'score', type: 'score' }]);
 
   await page.locator('[data-testid="score-tool-whole-score"]').click();
@@ -425,7 +425,7 @@ async function readScoreV2(page: import('@playwright/test').Page) {
   });
 }
 
-test('score: page nav — add a page, navigate via arrows, counter shows correctly', async ({ page, rack }) => {
+test('score: page nav — add a page, navigate via arrows, counter shows correctly', async ({ page, rackLegacy }) => {
   await spawnPatch(page, [{ id: 'score', type: 'score' }]);
 
   // Default: 1 page. Counter shows "1 / 1".
@@ -477,7 +477,7 @@ test('score: page nav — add a page, navigate via arrows, counter shows correct
   await expect(counter).toHaveText('3 / 4');
 });
 
-test('score: page count is capped at 4 — add button disabled at max', async ({ page, rack }) => {
+test('score: page count is capped at 4 — add button disabled at max', async ({ page, rackLegacy }) => {
   // Seed with 4 pages directly.
   await spawnPatch(page, [{ id: 'score', type: 'score' }]);
   await page.evaluate(() => {
@@ -502,7 +502,7 @@ test('score: page count is capped at 4 — add button disabled at max', async ({
   await expect(page.locator('[data-testid="score-page-counter-score"]')).toHaveText('1 / 4');
 });
 
-test('score: loop toggle persists in score data', async ({ page, rack }) => {
+test('score: loop toggle persists in score data', async ({ page, rackLegacy }) => {
   await spawnPatch(page, [{ id: 'score', type: 'score' }]);
 
   // Default: loop=false.
@@ -515,7 +515,7 @@ test('score: loop toggle persists in score data', async ({ page, rack }) => {
   await expect.poll(async () => (await readScoreV2(page)).loop).toBe(false);
 });
 
-test('score: stop-bar — placing the marker writes to score data', async ({ page, rack }) => {
+test('score: stop-bar — placing the marker writes to score data', async ({ page, rackLegacy }) => {
   await spawnPatch(page, [{ id: 'score', type: 'score' }]);
 
   // Activate stop-bar tool.
@@ -543,7 +543,7 @@ test('score: stop-bar — placing the marker writes to score data', async ({ pag
   await expect(page.locator('[data-testid="score-stop-bar-score"]')).toBeVisible();
 });
 
-test('score: stop-bar + loop=on wraps tickIndex back to 0 at end of sequence', async ({ page, rack }) => {
+test('score: stop-bar + loop=on wraps tickIndex back to 0 at end of sequence', async ({ page, rackLegacy }) => {
   await spawnPatch(page, [
     { id: 'score', type: 'score', params: { bpm: 240, isPlaying: 0 } },
   ]);
@@ -580,7 +580,7 @@ test('score: stop-bar + loop=on wraps tickIndex back to 0 at end of sequence', a
   expect(tickIdx).toBeLessThan(32);
 });
 
-test('score: stop-bar + loop=off stops playback at end of sequence', async ({ page, rack }) => {
+test('score: stop-bar + loop=off stops playback at end of sequence', async ({ page, rackLegacy }) => {
   await spawnPatch(page, [
     { id: 'score', type: 'score', params: { bpm: 480, isPlaying: 0 } },
   ]);
@@ -708,7 +708,7 @@ async function waitForScoreReadout(
 // See `seedScoreThenPlay` for the measurement and the fix. The lesson for the
 // next one: "slower here" and "genuinely different here" print the same red,
 // and a budget was the answer to neither.
-test('score: tied notes produce a single sustained envelope (engine-level held gate)', async ({ page, rack }) => {
+test('score: tied notes produce a single sustained envelope (engine-level held gate)', async ({ page, rackLegacy }) => {
   // 25s in-page wait bound + spawn/goto must fit INSIDE the test budget, or the
   // test timeout fires first and the bound is decorative. Failure-path only —
   // the waiter returns on first match, so green runs are unchanged.

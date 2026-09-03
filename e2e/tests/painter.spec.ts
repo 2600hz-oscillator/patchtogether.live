@@ -59,7 +59,7 @@ async function drawStroke(page: Page, yFrac = 0.5): Promise<void> {
 }
 
 test.describe('PAINTER — interactive draw → synced ops', () => {
-  test('a pointer drag paints the canvas + commits a synced stroke op', async ({ page, rack, errorWatch }) => {
+  test('a pointer drag paints the canvas + commits a synced stroke op', async ({ page, rackLegacy, errorWatch }) => {
     await spawnPatch(page, [
       { id: 'pt', type: 'painter', position: { x: 200, y: 120 }, domain: 'video' },
     ]);
@@ -88,7 +88,7 @@ test.describe('PAINTER — interactive draw → synced ops', () => {
 
   });
 
-  test('CLEAR empties the op log + returns a blank page', async ({ page, rack }) => {
+  test('CLEAR empties the op log + returns a blank page', async ({ page, rackLegacy }) => {
     await spawnPatch(page, [
       { id: 'pt', type: 'painter', position: { x: 200, y: 120 }, domain: 'video' },
     ]);
@@ -104,7 +104,7 @@ test.describe('PAINTER — interactive draw → synced ops', () => {
     await expect.poll(() => paintedFrac(page), { message: 'canvas is blank/white again' }).toBeLessThan(0.02);
   });
 
-  test('the FILL tool floods the canvas with the foreground colour', async ({ page, rack }) => {
+  test('the FILL tool floods the canvas with the foreground colour', async ({ page, rackLegacy }) => {
     await spawnPatch(page, [
       { id: 'pt', type: 'painter', position: { x: 200, y: 120 }, domain: 'video' },
     ]);

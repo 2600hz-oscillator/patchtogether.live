@@ -9,7 +9,7 @@ import { spawnPatch } from './_helpers';
 
 test.describe.configure({ mode: 'parallel' });
 
-test('CLOUDS freeze button toggles its active class', async ({ page, rack }) => {
+test('CLOUDS freeze button toggles its active class', async ({ page, rackLegacy }) => {
   await spawnPatch(
     page,
     [

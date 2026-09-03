@@ -126,7 +126,7 @@ test.describe('MIXMSTRS stereo jacks expand to L/R on right-click', () => {
   // ---- ROUTE 1: UNPATCHED INPUT. The case that had NO menu at all, and the
   // one the owner hit — a mixer channel he wants to feed from two mono
   // hardware points.
-  test('an unpatched CHANNEL input expands into its two legs', async ({ page, rack }) => {
+  test('an unpatched CHANNEL input expands into its two legs', async ({ page, rackLegacy }) => {
     await spawnRig(page);
     await openPanelAt(page, MIX, { section: 'Ch1' });
     await expectCollapsed(page, 'ch1L', 'ch1R');
@@ -143,7 +143,7 @@ test.describe('MIXMSTRS stereo jacks expand to L/R on right-click', () => {
     await expectExpanded(page, 'ch1L', 'ch1R');
   });
 
-  test('a RETURN input expands, and collapses again from either leg', async ({ page, rack }) => {
+  test('a RETURN input expands, and collapses again from either leg', async ({ page, rackLegacy }) => {
     await spawnRig(page);
     await openPanelAt(page, MIX, { section: 'Ret1' });
     await expectCollapsed(page, 'ret1L', 'ret1R');
@@ -165,7 +165,7 @@ test.describe('MIXMSTRS stereo jacks expand to L/R on right-click', () => {
     await expectCollapsed(page, 'ret1L', 'ret1R');
   });
 
-  test('expanding ONE channel leaves the others collapsed', async ({ page, rack }) => {
+  test('expanding ONE channel leaves the others collapsed', async ({ page, rackLegacy }) => {
     await spawnRig(page);
     await openPanelAt(page, MIX, { section: 'Ch1' });
 
@@ -187,7 +187,7 @@ test.describe('MIXMSTRS stereo jacks expand to L/R on right-click', () => {
 
   // ---- ROUTE 2: UNPATCHED OUTPUT → the patch picker already claims this
   // right-click, so the expand row lives inside it.
-  test('an unpatched SEND output expands from the patch picker', async ({ page, rack }) => {
+  test('an unpatched SEND output expands from the patch picker', async ({ page, rackLegacy }) => {
     await spawnRig(page);
     await openPanelAt(page, MIX, { nav: 'outputs' });
     await expectCollapsed(page, 'send1L', 'send1R');
@@ -206,7 +206,7 @@ test.describe('MIXMSTRS stereo jacks expand to L/R on right-click', () => {
     await expectExpanded(page, 'send1L', 'send1R');
   });
 
-  test('MASTER expands the same way', async ({ page, rack }) => {
+  test('MASTER expands the same way', async ({ page, rackLegacy }) => {
     await spawnRig(page);
     await openPanelAt(page, MIX, { nav: 'outputs' });
     await expectCollapsed(page, 'masterL', 'masterR');
@@ -220,7 +220,7 @@ test.describe('MIXMSTRS stereo jacks expand to L/R on right-click', () => {
   // ---- ROUTE 3: PATCHED → the unpatch menu claims the right-click. This is
   // when the user MOST wants the two holes (which leg is that cable on?), so a
   // gesture that stopped working the moment a cable landed would be useless.
-  test('a PATCHED jack still expands, via the unpatch menu', async ({ page, rack }) => {
+  test('a PATCHED jack still expands, via the unpatch menu', async ({ page, rackLegacy }) => {
     await spawnRig(page, true);
 
     // Put a real cable on the pair first, through the ordinary patch flow: the
@@ -263,7 +263,7 @@ test.describe('MIXMSTRS stereo jacks expand to L/R on right-click', () => {
   // the assertion that would go red if someone widened the opt-in without
   // meaning to — and it is a REAL control: twotracks derives stereo pairs
   // exactly like mixmstrs does, so a gate keyed on "has pairs" would fail here.
-  test('a module that is NOT opted in offers no expand row', async ({ page, rack }) => {
+  test('a module that is NOT opted in offers no expand row', async ({ page, rackLegacy }) => {
     await spawnPatch(page, [
       { id: 'tt', type: 'twotracks', position: { x: 300, y: 120 }, domain: 'audio' },
     ]);

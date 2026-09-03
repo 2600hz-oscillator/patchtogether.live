@@ -64,7 +64,7 @@ async function readGroupLabel(page: Page, groupId: string): Promise<string | und
   }, groupId);
 }
 
-test('module palette: "Insert saved group…" is suppressed when no user is signed in', async ({ page, rack }) => {
+test('module palette: "Insert saved group…" is suppressed when no user is signed in', async ({ page, rackLegacy }) => {
   // Default __attachProvider derives an anon token; the page mounts Canvas
   // with currentUserId=undefined unless a clerk JWT is supplied. So the
   // saved-group entry should NOT appear on a fresh load.
@@ -74,7 +74,7 @@ test('module palette: "Insert saved group…" is suppressed when no user is sign
   await expect(page.locator('[data-testid="palette-insert-saved-group"]')).toHaveCount(0);
 });
 
-test('group rename: double-click label, type new name, persists in patch.nodes data.label', async ({ page, rack }) => {
+test('group rename: double-click label, type new name, persists in patch.nodes data.label', async ({ page, rackLegacy }) => {
   await spawnPatch(page, []);
 
   // Insert a group whose label is the legacy placeholder; the canvas's
@@ -101,7 +101,7 @@ test('group rename: double-click label, type new name, persists in patch.nodes d
   await expect(groupCard.locator('[data-testid="group-card-label"]')).toHaveText('Pad chain');
 });
 
-test('multi-group naming: a second nameless group gets GROUP2 (does not collide with GROUP1)', async ({ page, rack }) => {
+test('multi-group naming: a second nameless group gets GROUP2 (does not collide with GROUP1)', async ({ page, rackLegacy }) => {
   await spawnPatch(page, []);
 
   // Two legacy groups → migration assigns GROUP1 + GROUP2 in id order.

@@ -159,7 +159,7 @@ test.describe('SHAPEGEN — CLOCK gate sample-and-hold', () => {
   // 96 h CI census to 2026-08-18 — never a hard failure, so every one of those jobs reported SUCCESS.
   // LOST WHILE PARKED: SHAPEGEN's sample-and-hold clock semantics across all three states — regenerate on a rising edge, hold within the window, freeze on a stopped clock; trigger-vs-gate edge behaviour on the shared gate cable.
   // Re-enable only on a root cause (#1847); "it passes now" is not one.
-  test.fixme('rising edges regenerate; within-hold window holds; stopped clock freezes regen count', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 6 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page, rack, errorWatch }) => {
+  test.fixme('rising edges regenerate; within-hold window holds; stopped clock freezes regen count', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 6 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page, rackLegacy, errorWatch }) => {
     // ACIDWARP (time-varying) → SHAPEGEN.raster_a.
     // SEQUENCER → SHAPEGEN.clock_in.
     //

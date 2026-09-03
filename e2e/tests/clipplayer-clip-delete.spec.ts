@@ -49,7 +49,7 @@ async function readData(page: Page): Promise<ClipData> {
 
 test('deleting a PLAYING clip stops its lane — no lane left pointing at a clip that is gone', async ({
   page,
-  rack,
+  rackLegacy,
 }) => {
   await spawnPatch(page, [
     { id: 'tl', type: 'timelorde', position: { x: 40, y: 40 }, domain: 'audio' },

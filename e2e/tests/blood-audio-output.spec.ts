@@ -416,7 +416,7 @@ test('BLOOD audio_l → SCOPE: the game-audio mixer produces audible signal in-g
 // production ran at ~62% of demand and the ring intermittently underflowed to silence — which a
 // retry could win on scheduling luck. blood-pcm-schedule.ts makes the pump rate-exact off the
 // context clock, removing the nondeterminism at its source. Body and assertions UNCHANGED.
-test('BLOOD music: in-level OPL3 music produces SUSTAINED audio on audio_l (standing still)', async ({ page, rack }) => {
+test('BLOOD music: in-level OPL3 music produces SUSTAINED audio on audio_l (standing still)', async ({ page, rackLegacy }) => {
   test.setTimeout(90_000);
   await spawnPatch(
     page,

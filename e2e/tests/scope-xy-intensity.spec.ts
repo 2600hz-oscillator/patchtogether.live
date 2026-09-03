@@ -76,7 +76,7 @@ async function setParam(page: Page, nodeId: string, param: string, value: number
 }
 
 test.describe('SCOPE X/Y mode + INTENSITY persistence', () => {
-  test('X/Y mode draws a non-trivial Lissajous from two oscillators', async ({ page, rack, errorWatch }) => {
+  test('X/Y mode draws a non-trivial Lissajous from two oscillators', async ({ page, rackLegacy, errorWatch }) => {
     // vco1 → ch1 (X), vco2 (a perfect fifth up, ~3:2) → ch2 (Y).
     await spawnPatch(
       page,
@@ -112,7 +112,7 @@ test.describe('SCOPE X/Y mode + INTENSITY persistence', () => {
 
   });
 
-  test('INTENSITY sweep: 7:00 dot lights far fewer pixels than 5:00 long trail', async ({ page, rack, errorWatch }) => {
+  test('INTENSITY sweep: 7:00 dot lights far fewer pixels than 5:00 long trail', async ({ page, rackLegacy, errorWatch }) => {
     // Single tone on ch1, NORMAL (split) mode. Longer timebase so a 2-screen
     // trail (5:00) still fits inside the 2048-sample analyser buffer.
     await spawnPatch(

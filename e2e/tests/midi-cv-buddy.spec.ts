@@ -20,7 +20,7 @@ import { spawnPatch } from './_helpers';
 
 test.describe.configure({ mode: 'parallel' });
 
-test('midi-cv-buddy: drop module → card mounts with no console errors', async ({ page, rack, errorWatch }) => {
+test('midi-cv-buddy: drop module → card mounts with no console errors', async ({ page, rackLegacy, errorWatch }) => {
   await spawnPatch(page, [{ id: 'm', type: 'midiCvBuddy', position: { x: 200, y: 200 } }]);
   const card = page.locator('.svelte-flow__node-midiCvBuddy');
   await expect(card).toBeVisible();
@@ -31,7 +31,7 @@ test('midi-cv-buddy: drop module → card mounts with no console errors', async 
   await expect(card.locator('[data-testid="name-label-button"]')).toHaveText(/^MIDICVBUDDY(\d+)?$/);
 });
 
-test('midi-cv-buddy: Connect MIDI… button is visible + interactive', async ({ page, rack }) => {
+test('midi-cv-buddy: Connect MIDI… button is visible + interactive', async ({ page, rackLegacy }) => {
   await spawnPatch(page, [{ id: 'm', type: 'midiCvBuddy', position: { x: 200, y: 200 } }]);
   const card = page.locator('.svelte-flow__node-midiCvBuddy');
   await expect(card).toBeVisible();
@@ -42,7 +42,7 @@ test('midi-cv-buddy: Connect MIDI… button is visible + interactive', async ({ 
   await expect(btn).toBeEnabled();
 });
 
-test('midi-cv-buddy: clicking Connect does not crash the card', async ({ page, rack, errorWatch }) => {
+test('midi-cv-buddy: clicking Connect does not crash the card', async ({ page, rackLegacy, errorWatch }) => {
   await spawnPatch(page, [{ id: 'm', type: 'midiCvBuddy', position: { x: 200, y: 200 } }]);
   const card = page.locator('.svelte-flow__node-midiCvBuddy');
   await expect(card).toBeVisible();

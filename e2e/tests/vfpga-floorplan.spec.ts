@@ -47,7 +47,7 @@ async function spawnRunner(page: Page) {
 }
 
 test.describe('vfpga-runner — fabric floorplan view (P5)', () => {
-  test('the floorplan is off by default and toggles a non-blank tile-grid/nets diagram', async ({ page, rack, errorWatch }) => {
+  test('the floorplan is off by default and toggles a non-blank tile-grid/nets diagram', async ({ page, rackLegacy, errorWatch }) => {
     test.setTimeout(45_000);
 
     await spawnRunner(page);
@@ -79,7 +79,7 @@ test.describe('vfpga-runner — fabric floorplan view (P5)', () => {
 
   });
 
-  test('switching to a richer fabric (sync-bender) re-draws the floorplan with its legend', async ({ page, rack }) => {
+  test('switching to a richer fabric (sync-bender) re-draws the floorplan with its legend', async ({ page, rackLegacy }) => {
     test.setTimeout(45_000);
     await spawnRunner(page);
 

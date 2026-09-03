@@ -96,7 +96,7 @@ test('connects to the real bridge and reports the ES-9', async ({ page, rack, er
   void rack;
   void errorWatch;
   await spawnPatch(page, [ES9_NODE]);
-  await expect(page.locator('.svelte-flow__node-es9')).toBeVisible();
+  await expect(page.locator('.svelte-flow__node:has([data-shell-type="es9"])')).toBeVisible();
   await waitConnected(page);
 });
 

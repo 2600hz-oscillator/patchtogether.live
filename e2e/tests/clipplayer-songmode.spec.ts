@@ -68,7 +68,7 @@ async function readData(page: Page, nodeId: string): Promise<CPData> {
 // 96 h CI census to 2026-08-18 — never a hard failure, so every one of those jobs reported SUCCESS.
 // LOST WHILE PARKED: the capture half of song mode: arming RECORD writes clip launches into node.data.arrangement instead of dropping them.
 // Re-enable only on a root cause (#1847); "it passes now" is not one.
-test.fixme('song mode: arming RECORD captures clip launches into the arrangement', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 7 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page, rack }) => {
+test.fixme('song mode: arming RECORD captures clip launches into the arrangement', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 7 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page, rackLegacy }) => {
   // quantize off → launches apply immediately (deterministic capture). No
   // TIMELORDE → free-run.
   await spawnPatch(page, [
@@ -101,7 +101,7 @@ test.fixme('song mode: arming RECORD captures clip launches into the arrangement
 // 96 h CI census to 2026-08-18 — never a hard failure, so every one of those jobs reported SUCCESS.
 // LOST WHILE PARKED: that the SES/ARR button flips clipMode in synced state — the mode switch the other two song-mode assertions depend on.
 // Re-enable only on a root cause (#1847); "it passes now" is not one.
-test.fixme('song mode: the SES/ARR button flips clipMode', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 7 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page, rack }) => {
+test.fixme('song mode: the SES/ARR button flips clipMode', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 7 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page, rackLegacy }) => {
   await spawnPatch(page, [{ id: 'cp', type: 'clipplayer', position: { x: 80, y: 80 }, domain: 'audio' }]);
   const modeBtn = page.getByTestId('clipplayer-mode-cp');
   await expect(modeBtn).toHaveText('SES');
@@ -117,7 +117,7 @@ test.fixme('song mode: the SES/ARR button flips clipMode', { annotation: { type:
 // 96 h CI census to 2026-08-18 — never a hard failure, so every one of those jobs reported SUCCESS.
 // LOST WHILE PARKED: arrangement playback — that the recorded launch log actually re-launches lanes, which is the entire point of song mode.
 // Re-enable only on a root cause (#1847); "it passes now" is not one.
-test.fixme('song mode: ARRANGEMENT playback launches lanes from the recorded log', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 4 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page, rack }) => {
+test.fixme('song mode: ARRANGEMENT playback launches lanes from the recorded log', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 4 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page, rackLegacy }) => {
   await spawnPatch(page, [{ id: 'cp', type: 'clipplayer', position: { x: 80, y: 80 }, domain: 'audio' }]);
   await seedClips(page, 'cp', [0, 64]);
   // Inject a pre-built arrangement (lane 0 + lane 1 both launch slot 0 at beat 0)
@@ -148,7 +148,7 @@ test.fixme('song mode: ARRANGEMENT playback launches lanes from the recorded log
     .toBe(true);
 });
 
-test('song view: renders blocks + select/delete edits the arrangement', async ({ page, rack }) => {
+test('song view: renders blocks + select/delete edits the arrangement', async ({ page, rackLegacy }) => {
   await spawnPatch(page, [{ id: 'cp', type: 'clipplayer', position: { x: 80, y: 80 }, domain: 'audio' }]);
   await seedClips(page, 'cp', [0, 64]);
   // lane 0: slot 0 [0,8) then slot 1 [8,16); lane 1: slot 0 [0,16) → 3 blocks.
@@ -183,7 +183,7 @@ test('song view: renders blocks + select/delete edits the arrangement', async ({
   expect(evs.length).toBe(2);
 });
 
-test('song mode: OVERDUB keeps the take + merges new launches (vs REPLACE wiping it)', async ({ page, rack }) => {
+test('song mode: OVERDUB keeps the take + merges new launches (vs REPLACE wiping it)', async ({ page, rackLegacy }) => {
   // quantize off → launches apply immediately. No TIMELORDE → free-run.
   await spawnPatch(page, [
     { id: 'cp', type: 'clipplayer', position: { x: 80, y: 80 }, domain: 'audio', params: { quantize: 0 } },
@@ -224,7 +224,7 @@ test('song mode: OVERDUB keeps the take + merges new launches (vs REPLACE wiping
   for (let i = 1; i < evs.length; i++) expect(evs[i].beat).toBeGreaterThanOrEqual(evs[i - 1].beat);
 });
 
-test('song mode: REPLACE arming wipes the pre-seeded take (contrast control)', async ({ page, rack }) => {
+test('song mode: REPLACE arming wipes the pre-seeded take (contrast control)', async ({ page, rackLegacy }) => {
   await spawnPatch(page, [
     { id: 'cp', type: 'clipplayer', position: { x: 80, y: 80 }, domain: 'audio', params: { quantize: 0 } },
   ]);
@@ -252,7 +252,7 @@ test('song mode: REPLACE arming wipes the pre-seeded take (contrast control)', a
     .toBe(0);
 });
 
-test('drag-to-move: dragging a block retimes its launch + persists (bar-snapped)', async ({ page, rack }) => {
+test('drag-to-move: dragging a block retimes its launch + persists (bar-snapped)', async ({ page, rackLegacy }) => {
   await spawnPatch(page, [{ id: 'cp', type: 'clipplayer', position: { x: 80, y: 80 }, domain: 'audio' }]);
   await seedClips(page, 'cp', [0, 1]); // lane0/slot0 + lane0/slot1
   // lane 0: slot 0 [0,8) then slot 1 [8,16); lengthBeats 16 so beat-8 → bar-4 = beat 4.
@@ -301,7 +301,7 @@ test('drag-to-move: dragging a block retimes its launch + persists (bar-snapped)
   expect(evs.length).toBe(2);
 });
 
-test('pop-out editor: opens, edits the SAME synced arrangement, closes on Esc', async ({ page, rack }) => {
+test('pop-out editor: opens, edits the SAME synced arrangement, closes on Esc', async ({ page, rackLegacy }) => {
   await spawnPatch(page, [{ id: 'cp', type: 'clipplayer', position: { x: 80, y: 80 }, domain: 'audio' }]);
   await seedClips(page, 'cp', [0, 64]);
   await page.evaluate(() => {

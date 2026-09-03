@@ -17,7 +17,7 @@ import { spawnPatch } from './_helpers';
 
 test.describe.configure({ mode: 'parallel' });
 
-test('midi-lane: drop module → card mounts with no console errors + output handles present', async ({ page, rack, errorWatch }) => {
+test('midi-lane: drop module → card mounts with no console errors + output handles present', async ({ page, rackLegacy, errorWatch }) => {
   await spawnPatch(page, [{ id: 'm', type: 'midiLane', position: { x: 200, y: 200 } }]);
   const card = page.locator('.svelte-flow__node-midiLane');
   await expect(card).toBeVisible();
@@ -28,7 +28,7 @@ test('midi-lane: drop module → card mounts with no console errors + output han
   }
 });
 
-test('midi-lane: Connect MIDI… button is visible + interactive', async ({ page, rack }) => {
+test('midi-lane: Connect MIDI… button is visible + interactive', async ({ page, rackLegacy }) => {
   await spawnPatch(page, [{ id: 'm', type: 'midiLane', position: { x: 200, y: 200 } }]);
   const card = page.locator('.svelte-flow__node-midiLane');
   await expect(card).toBeVisible();
@@ -37,7 +37,7 @@ test('midi-lane: Connect MIDI… button is visible + interactive', async ({ page
   await expect(btn).toBeEnabled();
 });
 
-test('midi-lane: clicking Connect does not crash the card', async ({ page, rack, errorWatch }) => {
+test('midi-lane: clicking Connect does not crash the card', async ({ page, rackLegacy, errorWatch }) => {
   await spawnPatch(page, [{ id: 'm', type: 'midiLane', position: { x: 200, y: 200 } }]);
   const card = page.locator('.svelte-flow__node-midiLane');
   await expect(card).toBeVisible();

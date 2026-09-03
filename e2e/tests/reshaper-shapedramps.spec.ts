@@ -53,7 +53,7 @@ async function readCanvasStats(
 }
 
 test.describe('RESHAPER + SHAPEDRAMPS integration', () => {
-  test('shaped wiring renders a non-uniform deformed coordinate field', async ({ page, rack, errorWatch }) => {
+  test('shaped wiring renders a non-uniform deformed coordinate field', async ({ page, rackLegacy, errorWatch }) => {
     // ─── BUDGET ──────────────────────────────────────────────────────────
     // This spec spawns three-to-four REAL WebGL video modules and samples their
     // on-card canvases, in the parallel software-rendered shard matrix. Its
@@ -117,7 +117,7 @@ test.describe('RESHAPER + SHAPEDRAMPS integration', () => {
   // 96 h CI census to 2026-08-18 — never a hard failure, so every one of those jobs reported SUCCESS.
   // LOST WHILE PARKED: the linear control case for RESHAPER — with h_lin/v_lin driving x/y the module must behave as a clean raster passthrough, the reference against which every shaped scan is judged.
   // Re-enable only on a root cause (#1847); "it passes now" is not one.
-  test.fixme('linear (h_lin/v_lin) wiring acts like a clean raster passthrough', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 1 recovered-on-retry observation in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page, rack, errorWatch }) => {
+  test.fixme('linear (h_lin/v_lin) wiring acts like a clean raster passthrough', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 1 recovered-on-retry observation in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page, rackLegacy, errorWatch }) => {
     // Two separate cards, same LINES feeding each. Output RESHAPER wired
     // to h_lin/v_lin (identity coord field). The OUTPUT card displays
     // the same LINES feed directly. Their pixel stats should be very
@@ -171,7 +171,7 @@ test.describe('RESHAPER + SHAPEDRAMPS integration', () => {
 
   });
 
-  test('onboard mix1 crossfades two LINES into RESHAPER.x and reacts to mix1 knob', async ({ page, rack, errorWatch }) => {
+  test('onboard mix1 crossfades two LINES into RESHAPER.x and reacts to mix1 knob', async ({ page, rackLegacy, errorWatch }) => {
     // BUDGET: see the note on the shaped-wiring test above — same measured
     // basis (38.4 s committed for two live tests against a 30 s default), and
     // THIS is the test that tripped it on CI runs 33015637717 / 33018824511.

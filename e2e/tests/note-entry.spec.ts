@@ -17,7 +17,7 @@ import { spawnPatch, seedKriaGate } from './_helpers';
 
 test.describe.configure({ mode: 'parallel' });
 
-test('note-entry: typing valid notes into Cartesian pads normalizes display + stores MIDI', async ({ page, rack }) => {
+test('note-entry: typing valid notes into Cartesian pads normalizes display + stores MIDI', async ({ page, rackLegacy }) => {
   await spawnPatch(page, [
     { id: 'seq', type: 'cartesian' },
   ]);
@@ -59,7 +59,7 @@ test('note-entry: typing valid notes into Cartesian pads normalizes display + st
   await expect(step2).toHaveValue('c#3');
 });
 
-test('note-entry: invalid input keeps midi null + the input ring goes red on focus', async ({ page, rack }) => {
+test('note-entry: invalid input keeps midi null + the input ring goes red on focus', async ({ page, rackLegacy }) => {
   await spawnPatch(page, [
     { id: 'seq', type: 'cartesian' },
   ]);
@@ -81,7 +81,7 @@ test('note-entry: invalid input keeps midi null + the input ring goes red on foc
   await expect(step).toHaveValue('');
 });
 
-test('note-entry: out-of-range note (c#8 above c8) becomes null', async ({ page, rack }) => {
+test('note-entry: out-of-range note (c#8 above c8) becomes null', async ({ page, rackLegacy }) => {
   await spawnPatch(page, [{ id: 'seq', type: 'cartesian' }]);
 
   const step = page.locator('[data-testid="cart-pitch-seq-0"]');
@@ -97,7 +97,7 @@ test('note-entry: out-of-range note (c#8 above c8) becomes null', async ({ page,
   expect(stored?.midi).toBeNull();
 });
 
-test('note-entry: Cartesian cell accepts text-entry note names', async ({ page, rack }) => {
+test('note-entry: Cartesian cell accepts text-entry note names', async ({ page, rackLegacy }) => {
   await spawnPatch(page, [
     { id: 'cart', type: 'cartesian' },
   ]);
@@ -123,7 +123,7 @@ test('note-entry: Cartesian cell accepts text-entry note names', async ({ page, 
   expect(cellsData?.[5]?.midi).toBe(108);
 });
 
-test('note-entry: gate button toggles pad.on without touching the pitch input', async ({ page, rack }) => {
+test('note-entry: gate button toggles pad.on without touching the pitch input', async ({ page, rackLegacy }) => {
   await spawnPatch(page, [{ id: 'seq', type: 'cartesian' }]);
 
   const pitchEl = page.locator('[data-testid="cart-pitch-seq-0"]');
@@ -145,7 +145,7 @@ test('note-entry: gate button toggles pad.on without touching the pitch input', 
   expect(stepData).toMatchObject({ on: !(before?.on ?? false), midi: 64 });
 });
 
-test('note-entry: an a4 pad drives the pitch port to V/oct 0.75 (MIDI 69 - 60 = 9 semis up)', async ({ page, rack }) => {
+test('note-entry: an a4 pad drives the pitch port to V/oct 0.75 (MIDI 69 - 60 = 9 semis up)', async ({ page, rackLegacy }) => {
   await spawnPatch(
     page,
     [
@@ -195,7 +195,7 @@ test('note-entry: an a4 pad drives the pitch port to V/oct 0.75 (MIDI 69 - 60 = 
   expect(Math.abs(reconstructedHz - 440)).toBeLessThan(0.5);
 });
 
-test('hold-cv: pitch port retains last gated V/oct across a rest pad', async ({ page, rack }) => {
+test('hold-cv: pitch port retains last gated V/oct across a rest pad', async ({ page, rackLegacy }) => {
   // Pad 0 is a4 (on). The clocked diagonal walk (pads 0,5,10,15) then hits
   // three REST pads holding e4 (on=false). The pitch S&H must keep emitting
   // a4's 0.75 V through the rests — never 0 again, and never e4's 0.333 V.
@@ -265,7 +265,7 @@ test('hold-cv: pitch port retains last gated V/oct across a rest pad', async ({ 
   }
 });
 
-test('note-entry: invalid pad (midi=null) suppresses gate output even when on=true', async ({ page, rack }) => {
+test('note-entry: invalid pad (midi=null) suppresses gate output even when on=true', async ({ page, rackLegacy }) => {
   await spawnPatch(
     page,
     [

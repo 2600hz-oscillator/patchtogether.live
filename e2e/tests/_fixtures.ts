@@ -23,8 +23,8 @@
 //     hand-rolled collectors, and converting a previously-unwatched spec is a
 //     behavior change that needs its own triage (see the LoC report, row 3).
 //
-//   * `rack` — the standard `goto('/rack?shell=legacy&seed=none')` + `networkidle` nav that
-//     opened ~90% of specs. Destructure `rack` and the page is already on the
+//   * `rack` — the standard `goto('/rack?seed=none')` + `networkidle` nav that
+//     opens ~90% of specs. Destructure `rack` and the page is already on the
 //     rack when the body runs (fixtures resolve before the test body):
 //
 //       test('spawns', async ({ page, rack, errorWatch }) => { ... });
@@ -57,7 +57,12 @@ export interface ErrorWatch {
   assertClean(): void;
 }
 
-export const test = base.extend<{ errorWatch: ErrorWatch; rack: void; rackDefault: void }>({
+export const test = base.extend<{
+  errorWatch: ErrorWatch;
+  rack: void;
+  rackDefault: void;
+  rackLegacy: void;
+}>({
   errorWatch: async ({ page }, use) => {
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
@@ -73,46 +78,42 @@ export const test = base.extend<{ errorWatch: ErrorWatch; rack: void; rackDefaul
     watch.assertClean();
   },
 
-  // THE rack fixture — ~169 specs reach the canvas only through here.
+  // THE rack fixture — most specs reach the canvas only through here.
   //
-  // `?shell=legacy` is deliberate, not incidental. The bare default `/rack` renders
-  // each module as a FACEPLATE tile (ModuleShell / ModuleShellPlaceholder), so
-  // a module's own card testids do not exist in the lane; `?shell=legacy`
-  // renders the verbatim *Card.svelte inside the same shell, which is what
-  // every card-interaction spec here is written against. Specs that test the
-  // FACEPLATE render (or the shell chrome itself) navigate explicitly instead
-  // of using this fixture.
+  // This is the DEFAULT shell — the renderer every user gets: modules render
+  // as ModuleShell FACEPLATE tiles (`module-shell` / `face-*` testids). A spec
+  // that needs module-INTERNAL control DOM reaches it through the face/surface
+  // (or the dock full view), never through a `<type>-card` testid — those do
+  // not exist in this lane.
   //
-  // ⚠ This is NOT "the old default". The old bare `/rack` was the deleted
-  // second shell: no WorkflowTopbar, no dock rails, no channel-columns
-  // overlay, no pinned singletons, an empty graph and xyflow's 0.5 zoom floor.
-  // `?shell=legacy` keeps the CARDS and nothing else — every spec here now runs
-  // against the real shell chrome and the seeded pinned + video-zone nodes.
+  // Inverted from `?shell=legacy` by the S2 fixture flip (LEG-04 / #1515):
+  // this fixture used to boot the legacy card renderer, and the handful of
+  // card-DOM specs still awaiting their face rewrite sit on `rackLegacy`
+  // below until they are rewritten or folded.
   rack: async ({ page }, use, testInfo) => {
     const t0 = Date.now();
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
     // The nav is SETUP, not assertion — see creditSetupBudget (#1648).
     applySetupCredit(testInfo, Date.now() - t0,'rack fixture nav');
     await use();
   },
 
-  // The DEFAULT rack — the renderer every user actually gets (#1606).
-  //
-  // Same nav contract as `rack` minus the `?shell=legacy` opt-out: modules
-  // render as ModuleShell FACEPLATE tiles, so a module's own card testids do
-  // NOT exist in the lane. Only a spec that never reads card-internal DOM
-  // (engine seams, shell chrome, shared .svelte-flow__* selectors) may sit on
-  // this fixture — that is the SHELL-READY class from the #1606 sweep.
-  //
-  // ⚠ What a green run here structurally cannot see: the verbatim
-  // *Card.svelte surfaces (`?shell=legacy`). What a green run on `rack`
-  // structurally cannot see: everything the default renderer paints — #1605
-  // is the proof that "state is right" does not transfer. A rack-LEVEL
-  // feature wants BOTH renderers (see flip-rack-rear-view.spec.ts, #1607).
-  //
-  // LEG-04 (#1515) owns the full fixture inversion; when `rack` itself flips,
-  // fold this back in.
+  // ⚠ TRANSITIONAL — dies with the card fleet (S4). The legacy card renderer,
+  // opt-in. Only a spec whose subject still reads verbatim *Card.svelte DOM
+  // and has not yet been rewritten against its face/surface may sit here; the
+  // S2 inversion drains this list to zero. Do NOT add new consumers.
+  rackLegacy: async ({ page }, use, testInfo) => {
+    const t0 = Date.now();
+    await page.goto('/rack?shell=legacy&seed=none');
+    await page.waitForLoadState('networkidle');
+    applySetupCredit(testInfo, Date.now() - t0,'rackLegacy fixture nav');
+    await use();
+  },
+
+  // IDENTICAL to `rack` since the S2 fixture flip (#1606's SHELL-READY class
+  // predates it). Kept only until its consumers fold back onto `rack` — do
+  // not add new consumers.
   rackDefault: async ({ page }, use, testInfo) => {
     const t0 = Date.now();
     await page.goto('/rack?seed=none');

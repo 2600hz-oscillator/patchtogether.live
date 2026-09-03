@@ -46,7 +46,7 @@ async function pickPicturebox(page: Page): Promise<boolean> {
 }
 
 async function countPictureboxes(page: Page): Promise<number> {
-  return await page.locator('.svelte-flow__node-picturebox').count();
+  return await page.locator('.svelte-flow__node:has([data-shell-type="picturebox"])').count();
 }
 
 test.describe('PICTUREBOX spawn limits', () => {

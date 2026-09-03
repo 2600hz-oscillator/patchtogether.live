@@ -78,7 +78,7 @@ test('CLIP PLAYER: launched clip is silent until TIMELORDE runs, then audible (p
     ],
   );
 
-  const card = page.locator('.svelte-flow__node-clipplayer');
+  const card = page.locator('.svelte-flow__node:has([data-shell-type="clipplayer"])');
   await expect(card).toHaveCount(1);
   await expect(card).toContainText('CLIP');
 

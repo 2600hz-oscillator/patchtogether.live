@@ -219,7 +219,7 @@ async function pollStats(page: Page): Promise<{ mean: number; nonZeroFrac: numbe
 
 test.describe('vfpga P4 early-HD-era bent VFPGAs', () => {
   for (const program of BENT) {
-    test(`${program}: bends the smpte source into distinct non-black output`, async ({ page, rack, errorWatch }) => {
+    test(`${program}: bends the smpte source into distinct non-black output`, async ({ page, rackLegacy, errorWatch }) => {
       // Two pure-GL vfpga-runners + an OUTPUT compile fast even on SwiftShader,
       // but give headroom for boot + spawn + first-frame settle + the hot-swap.
       test.setTimeout(60_000);
@@ -300,7 +300,7 @@ test.describe('vfpga P4 early-HD-era bent VFPGAs', () => {
   // per-frame motion warps A and the output animates. We assert the temporal change is
   // decisively larger with mvectB on than off — a renderer-tolerant causal proof that
   // clip B's motion reaches the picture (a dead vin2 binding would leave it static).
-  test('macroblock-mosh: clip B (vin2) motion transfers onto image A (two-clip datamosh)', async ({ page, rack, errorWatch }) => {
+  test('macroblock-mosh: clip B (vin2) motion transfers onto image A (two-clip datamosh)', async ({ page, rackLegacy, errorWatch }) => {
     // A pure FAILURE BOUND, not the gate. What made 75_000 unreachable was the
     // Playwright-side capture loop (up to 60 CDP round trips, ~1.5 s each under
     // CI load per #1173 — see `observeOutputDelta`); that loop now runs in the
@@ -427,7 +427,7 @@ test.describe('vfpga P4 early-HD-era bent VFPGAs', () => {
   // place — no per-frame GL allocation. Same audit as framestore-howl: assert the
   // render loop survives many frames with NO console errors AND (where the JS-heap
   // API is available — Chromium) that the heap does not grow unboundedly.
-  test('macroblock-mosh: sustained feedback does not leak (FBOs swapped in place)', async ({ page, rack, errorWatch }) => {
+  test('macroblock-mosh: sustained feedback does not leak (FBOs swapped in place)', async ({ page, rackLegacy, errorWatch }) => {
     test.setTimeout(60_000);
 
     await spawnPatch(

@@ -222,7 +222,7 @@ test.fixme('@launchpad RESET pad snaps every active lane back to step 1 (control
       params: { quantize: 0, stepDiv: 2, gateLength: 0.9, octave: 0 } },
     { id: 'tl', type: 'timelorde', position: { x: 520, y: 80 }, domain: 'audio', params: { running: 0, bpm: 240 } },
   ]);
-  await expect(page.locator('.svelte-flow__node-clipplayer')).toHaveCount(1);
+  await expect(page.locator('.svelte-flow__node:has([data-shell-type="clipplayer"])')).toHaveCount(1);
   await installSingle(page, 'cp');
 
   await seedDenseClips(page, 'cp', [0, 1]);
@@ -345,7 +345,7 @@ test.fixme('@launchpad RESET negative control: without the pad press, neither ob
       params: { quantize: 0, stepDiv: 2, gateLength: 0.9, octave: 0 } },
     { id: 'tl', type: 'timelorde', position: { x: 520, y: 80 }, domain: 'audio', params: { running: 0, bpm: 240 } },
   ]);
-  await expect(page.locator('.svelte-flow__node-clipplayer')).toHaveCount(1);
+  await expect(page.locator('.svelte-flow__node:has([data-shell-type="clipplayer"])')).toHaveCount(1);
   await installSingle(page, 'cp');
   await seedDenseClips(page, 'cp', [0, 1]);
   await setTransport(page, 1);
@@ -451,7 +451,7 @@ test('@launchpad MUTE pad silences a running lane in place — RMS drops to ~0 w
       { id: 'h4', from: { nodeId: 'vca', portId: 'audio' }, to: { nodeId: 'scp', portId: 'ch1' }, sourceType: 'audio', targetType: 'audio' },
     ],
   );
-  await expect(page.locator('.svelte-flow__node-clipplayer')).toHaveCount(1);
+  await expect(page.locator('.svelte-flow__node:has([data-shell-type="clipplayer"])')).toHaveCount(1);
   await installSingle(page, 'cp');
 
   await seedDenseClips(page, 'cp', [0]); // dense lane 0 → continuous audio
@@ -490,7 +490,7 @@ test('@launchpad MONO / RATE / tempo deck pads write the synced node state', asy
     { id: 'cp', type: 'clipplayer', position: { x: 80, y: 80 }, domain: 'audio', params: {} },
     { id: 'tl', type: 'timelorde', position: { x: 520, y: 80 }, domain: 'audio', params: { running: 0, bpm: 120 } },
   ]);
-  await expect(page.locator('.svelte-flow__node-clipplayer')).toHaveCount(1);
+  await expect(page.locator('.svelte-flow__node:has([data-shell-type="clipplayer"])')).toHaveCount(1);
   await installSingle(page, 'cp');
   await selectControl(page); // → CONTROL (the deck)
 

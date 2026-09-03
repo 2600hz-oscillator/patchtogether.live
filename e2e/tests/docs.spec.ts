@@ -111,7 +111,7 @@ test('docs page is not behind the Clerk auth wall', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Analog VCO' })).toBeVisible();
 });
 
-test('right-click on a module opens the Docs entry, which opens the per-module docs page in a new tab', async ({ page, context, rack }) => {
+test('right-click on a module opens the Docs entry, which opens the per-module docs page in a new tab', async ({ page, context, rackLegacy }) => {
   await loadVoiceDemo(page);
   await expect(page.locator('.svelte-flow__node')).toHaveCount(5, { timeout: 10_000 });
 
@@ -136,7 +136,7 @@ test('right-click on a module opens the Docs entry, which opens the per-module d
   await newPage.close();
 });
 
-test('right-clicking the empty canvas does NOT show a Docs entry (it shows the Add Module palette path instead)', async ({ page, rack }) => {
+test('right-clicking the empty canvas does NOT show a Docs entry (it shows the Add Module palette path instead)', async ({ page, rackLegacy }) => {
   // Empty canvas — right-click on the SvelteFlow viewport, NOT on a node.
   const viewport = page.locator('.svelte-flow__pane, .svelte-flow__viewport').first();
   await viewport.click({ button: 'right' });

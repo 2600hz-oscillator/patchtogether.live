@@ -74,7 +74,7 @@ async function spawnHostToOutput(page: Page) {
 }
 
 test.describe('vfpga-runner — PatchPanel + presets', () => {
-  test('BUG 1: card uses PatchPanel — no raw side-column jacks; all handles at the corner', async ({ page, rack }) => {
+  test('BUG 1: card uses PatchPanel — no raw side-column jacks; all handles at the corner', async ({ page, rackLegacy }) => {
     test.setTimeout(45_000);
     await spawnHostToOutput(page);
 
@@ -108,7 +108,7 @@ test.describe('vfpga-runner — PatchPanel + presets', () => {
     expect(spread.leftSpread, `handles are NOT spread horizontally (leftSpread=${spread.leftSpread})`).toBeLessThan(20);
   });
 
-  test('BUG 2: loading a non-default preset visibly changes OUTPUT away from the smpte test pattern', async ({ page, rack, errorWatch }) => {
+  test('BUG 2: loading a non-default preset visibly changes OUTPUT away from the smpte test pattern', async ({ page, rackLegacy, errorWatch }) => {
     test.setTimeout(60_000);
 
 

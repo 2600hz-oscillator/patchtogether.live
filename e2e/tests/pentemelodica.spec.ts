@@ -18,7 +18,7 @@ test.describe.configure({ mode: 'parallel' });
 const INPUT_PORTS = ['poly', 'fm1', 'fm2', 'fm3', 'fm4', 'fm5'];
 const OUTPUT_PORTS = ['out_l', 'out_r', 'voice1', 'voice2', 'voice3', 'voice4', 'voice5'];
 
-test('pentemelodica: card mounts with all 6 input + 7 output handles', async ({ page, rack, errorWatch }) => {
+test('pentemelodica: card mounts with all 6 input + 7 output handles', async ({ page, rackLegacy, errorWatch }) => {
   await spawnPatch(page, [
     { id: 'pm', type: 'pentemelodica', position: { x: 200, y: 120 }, domain: 'audio' },
   ]);
@@ -42,7 +42,7 @@ test('pentemelodica: card mounts with all 6 input + 7 output handles', async ({ 
 
 });
 
-test('pentemelodica: a POLYSEQZ chord drives the stereo OUT', async ({ page, rack, errorWatch }) => {
+test('pentemelodica: a POLYSEQZ chord drives the stereo OUT', async ({ page, rackLegacy, errorWatch }) => {
   await spawnPatch(
     page,
     [

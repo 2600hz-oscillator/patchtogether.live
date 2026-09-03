@@ -70,7 +70,7 @@ async function seedClip(page: Page, id: string, idx: number) {
 
 // ---------------------------------------------------------------------------
 
-test('control strip switches the 4 card views (grid / clip / arranger / control)', async ({ page, rack }) => {
+test('control strip switches the 4 card views (grid / clip / arranger / control)', async ({ page, rackLegacy }) => {
   await spawnPatch(page, [{ id: 'cp', type: 'clipplayer', position: { x: 80, y: 80 }, domain: 'audio' }]);
   const card = page.getByTestId('clipplayer-card').first();
   await expect(card).toBeVisible();
@@ -97,7 +97,7 @@ test('control strip switches the 4 card views (grid / clip / arranger / control)
   await expect(page.getByTestId('clipplayer-grid')).toBeVisible();
 });
 
-test('parity: card CONTROL-deck MUTE and the single-pad Launchpad MUTE write the SAME node.data.muted[]', async ({ page, rack }) => {
+test('parity: card CONTROL-deck MUTE and the single-pad Launchpad MUTE write the SAME node.data.muted[]', async ({ page, rackLegacy }) => {
   await spawnPatch(page, [
     { id: 'cp', type: 'clipplayer', position: { x: 80, y: 80 }, domain: 'audio' },
     { id: 'tl', type: 'timelorde', position: { x: 520, y: 80 }, domain: 'audio', params: { running: 0, bpm: 120 } },
@@ -135,7 +135,7 @@ test('parity: card CONTROL-deck MUTE and the single-pad Launchpad MUTE write the
   await expect.poll(async () => (await nodeData(page, 'cp'))?.muted?.[2] ?? true).toBe(false);
 });
 
-test('keyboard 1–8 gate on FOCUS-WITHIN (clicked into), NOT mere selection', async ({ page, rack }) => {
+test('keyboard 1–8 gate on FOCUS-WITHIN (clicked into), NOT mere selection', async ({ page, rackLegacy }) => {
   await spawnPatch(page, [{ id: 'cp', type: 'clipplayer', position: { x: 80, y: 80 }, domain: 'audio' }]);
   await expect(page.getByTestId('clipplayer-card').first()).toBeVisible();
 
@@ -177,7 +177,7 @@ test('keyboard 1–8 gate on FOCUS-WITHIN (clicked into), NOT mere selection', a
   await expect(page.getByTestId('clipplayer-editor')).toHaveCount(0);
 });
 
-test('an unfocused clip-player does NOT starve a co-present NUMPAD+ of computer keys', async ({ page, rack }) => {
+test('an unfocused clip-player does NOT starve a co-present NUMPAD+ of computer keys', async ({ page, rackLegacy }) => {
   await spawnPatch(page, [
     { id: 'cp', type: 'clipplayer', position: { x: 80, y: 80 }, domain: 'audio' },
     { id: 'np', type: 'numpadPlus', position: { x: 560, y: 80 }, domain: 'audio' },
@@ -220,7 +220,7 @@ test('an unfocused clip-player does NOT starve a co-present NUMPAD+ of computer 
   await expect(page.getByTestId('clipplayer-grid')).toBeVisible();
 });
 
-test('keyboard HOLD-8 (shift) + click a cell cycles velocity; blur force-releases the stuck shift', async ({ page, rack }) => {
+test('keyboard HOLD-8 (shift) + click a cell cycles velocity; blur force-releases the stuck shift', async ({ page, rackLegacy }) => {
   await spawnPatch(page, [{ id: 'cp', type: 'clipplayer', position: { x: 80, y: 80 }, domain: 'audio' }]);
   await seedClip(page, 'cp', 0);
   await expect(page.getByTestId('clipplayer-card').first()).toBeVisible();
@@ -268,7 +268,7 @@ test('keyboard HOLD-8 (shift) + click a cell cycles velocity; blur force-release
   expect(gone, 'shift released → plain click toggles the note off').toBe(0);
 });
 
-test('control-strip undo / redo (keys 6/7) revert and re-apply a note edit', async ({ page, rack }) => {
+test('control-strip undo / redo (keys 6/7) revert and re-apply a note edit', async ({ page, rackLegacy }) => {
   await spawnPatch(page, [{ id: 'cp', type: 'clipplayer', position: { x: 80, y: 80 }, domain: 'audio' }]);
   await seedClip(page, 'cp', 0);
   await expect(page.getByTestId('clipplayer-card').first()).toBeVisible();
@@ -293,7 +293,7 @@ test('control-strip undo / redo (keys 6/7) revert and re-apply a note edit', asy
   await expect.poll(stepCount).toBe(1);
 });
 
-test('per-card undo scope: undoing on card A does NOT revert card B', async ({ page, rack }) => {
+test('per-card undo scope: undoing on card A does NOT revert card B', async ({ page, rackLegacy }) => {
   await spawnPatch(page, [
     { id: 'cpa', type: 'clipplayer', position: { x: 60, y: 80 }, domain: 'audio' },
     { id: 'cpb', type: 'clipplayer', position: { x: 700, y: 80 }, domain: 'audio' },
@@ -333,7 +333,7 @@ test('per-card undo scope: undoing on card A does NOT revert card B', async ({ p
   await expect.poll(() => stepCount('cpb', 9)).toBe(0);
 });
 
-test('scene-launch fires a slot across content lanes; scene-repeat SET cycles the count', async ({ page, rack }) => {
+test('scene-launch fires a slot across content lanes; scene-repeat SET cycles the count', async ({ page, rackLegacy }) => {
   await spawnPatch(page, [{ id: 'cp', type: 'clipplayer', position: { x: 80, y: 80 }, domain: 'audio', params: { quantize: 0 } }]);
   await seedClip(page, 'cp', 0); // lane 0, slot 0
   await expect(page.getByTestId('clipplayer-grid')).toBeVisible();
@@ -351,7 +351,7 @@ test('scene-launch fires a slot across content lanes; scene-repeat SET cycles th
   await expect.poll(async () => (await nodeData(page, 'cp'))?.sceneRepeats?.['0'] ?? 0).toBe(2);
 });
 
-test('control-deck Tempo ± nudges TIMELORDE bpm', async ({ page, rack }) => {
+test('control-deck Tempo ± nudges TIMELORDE bpm', async ({ page, rackLegacy }) => {
   await spawnPatch(page, [
     { id: 'cp', type: 'clipplayer', position: { x: 80, y: 80 }, domain: 'audio' },
     { id: 'tl', type: 'timelorde', position: { x: 520, y: 80 }, domain: 'audio', params: { running: 0, bpm: 120 } },

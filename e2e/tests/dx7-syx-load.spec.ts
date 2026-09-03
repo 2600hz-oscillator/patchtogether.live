@@ -50,7 +50,7 @@ async function readScopeFrame(page: Page, scopeId: string): Promise<number[]> {
   }, scopeId);
 }
 
-test('dx7: uploading a 32-voice SYX populates the dropdown + selecting different patches changes the audible waveform', async ({ page, rack }) => {
+test('dx7: uploading a 32-voice SYX populates the dropdown + selecting different patches changes the audible waveform', async ({ page, rackLegacy }) => {
   await spawnPatch(
     page,
     [

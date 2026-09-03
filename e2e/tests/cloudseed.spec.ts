@@ -9,7 +9,7 @@ import { spawnPatch } from './_helpers';
 
 test.describe.configure({ mode: 'parallel' });
 
-test('CLOUDSEED preset slots cycle + name and DECAY readout update', async ({ page, rack }) => {
+test('CLOUDSEED preset slots cycle + name and DECAY readout update', async ({ page, rackLegacy }) => {
   await spawnPatch(
     page,
     [{ id: 'a-cs', type: 'cloudseed', position: { x: 100, y: 100 } }],

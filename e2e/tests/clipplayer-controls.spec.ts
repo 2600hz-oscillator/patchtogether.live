@@ -25,7 +25,7 @@ type W = {
 test.fixme('clip player: per-lane MONO toggle flips data + replaces-on-add in the editor', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 1 recovered-on-retry observation in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page, rack }) => {
   await spawnPatch(page, [{ id: 'cp', type: 'clipplayer', position: { x: 80, y: 80 }, domain: 'audio' }]);
 
-  const card = page.locator('.svelte-flow__node-clipplayer');
+  const card = page.locator('.svelte-flow__node:has([data-shell-type="clipplayer"])');
   await expect(card).toHaveCount(1);
 
   // Lane 0 starts POLY (button reads "∑" — the glyph replaced a stale "5" that

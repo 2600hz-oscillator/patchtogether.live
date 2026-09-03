@@ -96,7 +96,7 @@ async function readCanvasStats(canvas: Locator): Promise<PixelStats | null> {
 }
 
 test.describe('video: multi-OUTPUT independent routing', () => {
-  test('LINES->OUT-A and INWARDS->OUT-B render independent content', async ({ page, rack, errorWatch }) => {
+  test('LINES->OUT-A and INWARDS->OUT-B render independent content', async ({ page, rackLegacy, errorWatch }) => {
     // Two visually-distinct procedural sources, each piped into its
     // own OUTPUT card. LINES = horizontal stripes, INWARDS = radial
     // expanding rings; their pixel stats are easy to distinguish.
@@ -189,7 +189,7 @@ test.describe('video: multi-OUTPUT independent routing', () => {
 
   });
 
-  test('unpatched second OUTPUT shows idle pattern, patched first OUTPUT shows source', async ({ page, rack, errorWatch }) => {
+  test('unpatched second OUTPUT shows idle pattern, patched first OUTPUT shows source', async ({ page, rackLegacy, errorWatch }) => {
     // Edge case: only ONE of two OUTPUTs has its input wired. The
     // patched OUTPUT shows its source; the unpatched one shows the
     // OUTPUT shader's idle pattern (not the source either, and not

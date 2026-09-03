@@ -13,7 +13,7 @@ import { waitFrames } from '../_helpers/frames';
 test.describe.configure({ mode: 'parallel' });
 
 test.describe('MiniMap', () => {
-  test('renders and reflects the canvas viewport', async ({ page, rack }) => {
+  test('renders and reflects the canvas viewport', async ({ page, rackLegacy }) => {
     await loadVoiceDemo(page);
     await expect(page.locator('.svelte-flow__node')).toHaveCount(5, { timeout: 10_000 });
 
@@ -31,7 +31,7 @@ test.describe('MiniMap', () => {
     expect(await minimapShapes.count()).toBeGreaterThanOrEqual(5);
   });
 
-  test('toggle button hides and shows the minimap', async ({ page, rack }) => {
+  test('toggle button hides and shows the minimap', async ({ page, rackLegacy }) => {
     const toggle = page.getByTestId('minimap-toggle');
     await expect(toggle).toBeVisible();
 
@@ -52,7 +52,7 @@ test.describe('MiniMap', () => {
 });
 
 test.describe('Cable hover affordances', () => {
-  test('cable-hover CSS class thickens the stroke (visual elevation)', async ({ page, rack }) => {
+  test('cable-hover CSS class thickens the stroke (visual elevation)', async ({ page, rackLegacy }) => {
     // Post-PatchPanel: cables anchor at the top-left of each card by
     // default (all handles stack at the affordance), so the physical
     // hover path runs through overlapping card chrome and the original
@@ -89,7 +89,7 @@ test.describe('Cable hover affordances', () => {
       .toBeGreaterThan(initial);
   });
 
-  test('hovering a card dims unrelated cables', async ({ page, rack }) => {
+  test('hovering a card dims unrelated cables', async ({ page, rackLegacy }) => {
     // The voice demo: 5 nodes, 6 edges. The Sequencer (vd-seq) only touches
     // 2 of the 6 edges (seq.pitch→vco and seq.gate→adsr), so the remaining
     // 4 should dim when we hover the Sequencer card.
@@ -139,7 +139,7 @@ test.describe('Cable hover affordances', () => {
 });
 
 test.describe('Undo / redo', () => {
-  test('Cmd-Z removes a freshly-spawned module; Cmd-Shift-Z restores it', async ({ page, rack }) => {
+  test('Cmd-Z removes a freshly-spawned module; Cmd-Shift-Z restores it', async ({ page, rackLegacy }) => {
     await expect(page.locator('.svelte-flow__node')).toHaveCount(0);
 
     // Spawn through Canvas.svelte's spawnFromPalette path so the edit
@@ -163,7 +163,7 @@ test.describe('Undo / redo', () => {
     await expect(page.locator('.svelte-flow__node-reverb')).toHaveCount(1, { timeout: 5000 });
   });
 
-  test('Cmd-Z reverts a node deletion (right-click → Delete)', async ({ page, rack }) => {
+  test('Cmd-Z reverts a node deletion (right-click → Delete)', async ({ page, rackLegacy }) => {
     await loadVoiceDemo(page);
     await expect(page.locator('.svelte-flow__node')).toHaveCount(5, { timeout: 10_000 });
     // A stereo LEG GROUP renders as ONE bezier (PR-4): the demo's
@@ -189,7 +189,7 @@ test.describe('Undo / redo', () => {
     await expect(page.locator('.svelte-flow__edge')).toHaveCount(5, { timeout: 5000 });
   });
 
-  test('Cmd-Z is ignored while focus is in a text input (no hijack of native undo)', async ({ page, rack }) => {
+  test('Cmd-Z is ignored while focus is in a text input (no hijack of native undo)', async ({ page, rackLegacy }) => {
     await loadVoiceDemo(page);
     await expect(page.locator('.svelte-flow__node')).toHaveCount(5, { timeout: 10_000 });
 
@@ -212,7 +212,7 @@ test.describe('Undo / redo', () => {
     expect(afterCount).toBe(beforeCount);
   });
 
-  test('Cmd-Z on an empty undo stack is a no-op (no crash)', async ({ page, rack }) => {
+  test('Cmd-Z on an empty undo stack is a no-op (no crash)', async ({ page, rackLegacy }) => {
     await expect(page.locator('.svelte-flow__node')).toHaveCount(0);
 
     // Press Cmd-Z without any prior tracked edits.

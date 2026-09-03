@@ -75,7 +75,7 @@ test('MIDI Learn: right-click a knob → learn → CC drives the param + badge s
     [],
   );
 
-  const card = page.locator('.svelte-flow__node-wavecel');
+  const card = page.locator('.svelte-flow__node:has([data-shell-type="wavecel"])');
   await expect(card).toHaveCount(1);
   await installSimMidi(page);
 
@@ -136,7 +136,7 @@ test('MIDI Learn: a Fader (MACROOSCILLATOR · Level) learns + tracks via simulat
     [],
   );
 
-  const card = page.locator('.svelte-flow__node-macrooscillator');
+  const card = page.locator('.svelte-flow__node:has([data-shell-type="macrooscillator"])');
   await expect(card).toHaveCount(1);
   await installSimMidi(page);
 
@@ -176,7 +176,7 @@ test('MIDI Learn: the control menu spawns under the cursor (portalled out of the
     [{ id: 'm-wc', type: 'wavecel', position: { x: 160, y: 160 }, domain: 'audio', params: { morph: 0 } }],
     [],
   );
-  const card = page.locator('.svelte-flow__node-wavecel');
+  const card = page.locator('.svelte-flow__node:has([data-shell-type="wavecel"])');
   await expect(card).toHaveCount(1);
 
   const morphKnob = card.locator('[role="slider"][aria-label="Morph"]');

@@ -121,7 +121,7 @@ test('palette drop within 12px of cable midpoint splices a compatible module', a
     w.__spawnAtFlowPos('unityscalemathematik', pos);
   }, { pos: mid });
 
-  await expect(page.locator('.svelte-flow__node-unityscalemathematik')).toHaveCount(1);
+  await expect(page.locator('.svelte-flow__node:has([data-shell-type="unityscalemathematik"])')).toHaveCount(1);
 
   const edges = await readEdges(page);
   // Original LFO → FILTER edge is gone.
@@ -178,7 +178,7 @@ test('palette drop near cable falls back to normal spawn when new module has no 
     w.__spawnAtFlowPos('noise', pos);
   }, { pos: mid });
 
-  await expect(page.locator('.svelte-flow__node-noise')).toHaveCount(1);
+  await expect(page.locator('.svelte-flow__node:has([data-shell-type="noise"])')).toHaveCount(1);
 
   // Original cable still present — splice was refused (no inputs on NOISE).
   const edges = await readEdges(page);
@@ -221,7 +221,7 @@ test('palette drop outside 12px tolerance does NOT splice', async ({ page, rack 
     w.__spawnAtFlowPos('unityscalemathematik', pos);
   }, { pos: far });
 
-  await expect(page.locator('.svelte-flow__node-unityscalemathematik')).toHaveCount(1);
+  await expect(page.locator('.svelte-flow__node:has([data-shell-type="unityscalemathematik"])')).toHaveCount(1);
 
   const edges = await readEdges(page);
   // Original edge preserved, no splice edges added.

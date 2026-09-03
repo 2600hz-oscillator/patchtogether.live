@@ -34,7 +34,7 @@ async function openModuleMenu(page: import('@playwright/test').Page, type: strin
   return menu;
 }
 
-test('documented module (adsr): Annotate entry toggles a hover popover over a control', async ({ page, rack }) => {
+test('documented module (adsr): Annotate entry toggles a hover popover over a control', async ({ page, rackLegacy }) => {
   await spawnModule(page, 'adsr', 'adsr');
 
   // 1) The Annotate entry exists for a documented module.
@@ -70,7 +70,7 @@ test('documented module (adsr): Annotate entry toggles a hover popover over a co
   await expect(page.getByTestId('annotate-popover')).toHaveCount(0);
 });
 
-test('documented module (adsr): hovering a PATCH PORT shows its doc incl. the CV→param dual context', async ({ page, rack }) => {
+test('documented module (adsr): hovering a PATCH PORT shows its doc incl. the CV→param dual context', async ({ page, rackLegacy }) => {
   await spawnModule(page, 'adsr', 'adsr');
 
   // Turn Annotate ON.
@@ -104,7 +104,7 @@ test('documented module (adsr): hovering a PATCH PORT shows its doc incl. the CV
   await page.screenshot({ path: 'test-results/module-annotate-port-popover.png' });
 });
 
-test('undocumented module (matrixMix): NO Annotate entry', async ({ page, rack }) => {
+test('undocumented module (matrixMix): NO Annotate entry', async ({ page, rackLegacy }) => {
   // FIXTURE CHOICE: a currently-undocumented, LIGHTWEIGHT module (the
   // `matrixMix` DOM matrix-mixer card — trivial card, no WebGL). toybox (the
   // permanent docs exemption) is the conceptually-correct "never documented"

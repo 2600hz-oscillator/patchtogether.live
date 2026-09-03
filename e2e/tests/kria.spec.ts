@@ -54,7 +54,7 @@ test('KRIA: running pattern clocked by TIMELORDE → VCO+VCA → audible gated R
     ],
   );
 
-  const card = page.locator('.svelte-flow__node-kria');
+  const card = page.locator('.svelte-flow__node:has([data-shell-type="kria"])');
   await expect(card).toHaveCount(1);
   await expect(card).toContainText('KRIA');
 

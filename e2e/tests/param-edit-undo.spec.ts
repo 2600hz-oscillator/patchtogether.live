@@ -43,7 +43,7 @@ async function readParam(page: Page, nodeId: string, paramId: string): Promise<n
   );
 }
 
-test('card param edit is undoable: a Fader edit reverts on undo (setNodeParam migration)', async ({ page, rack }) => {
+test('card param edit is undoable: a Fader edit reverts on undo (setNodeParam migration)', async ({ page, rackLegacy }) => {
   // 1. Spawn a reverb with size seeded to a non-default value. The ReverbCard
   //    Size fader's defaultValue is 0.5; we seed 0.9 so the dblclick (which
   //    sets the param to the default) produces an observable change.

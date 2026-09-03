@@ -105,7 +105,7 @@ function topLevel(menu: Menu) {
 
 test('the LAUNCHER PAD menu — the surface the owner right-clicks — is the ordered list with working sub lists', async ({
   page,
-  rack,
+  rackLegacy,
 }) => {
   await spawn(page);
   await drawClip(page, 0, [[6, 4]]);
@@ -141,7 +141,7 @@ test('the LAUNCHER PAD menu — the surface the owner right-clicks — is the or
 
 test('BOTH surfaces show the SAME top level — the property the wrong-surface restructure broke', async ({
   page,
-  rack,
+  rackLegacy,
 }) => {
   await spawn(page);
   await drawClip(page, 0, [[6, 4]]);
@@ -164,7 +164,7 @@ test('BOTH surfaces show the SAME top level — the property the wrong-surface r
   expect(fromPad, "…and it is the owner's list, in the owner's order").toEqual(TOP_LEVEL);
 });
 
-test('PAD menu: each sub list applies to the CLIP, read back off the synced data', async ({ page, rack }) => {
+test('PAD menu: each sub list applies to the CLIP, read back off the synced data', async ({ page, rackLegacy }) => {
   await spawn(page);
   // TWO notes, so a clip-level write is visibly a write to EVERY note and not
   // just to the one the menu happened to be over.
@@ -201,7 +201,7 @@ test('PAD menu: each sub list applies to the CLIP, read back off the synced data
     .toEqual([1, 1]);
 });
 
-test('NOTE menu: the same sub lists apply to the ONE note they were opened on', async ({ page, rack }) => {
+test('NOTE menu: the same sub lists apply to the ONE note they were opened on', async ({ page, rackLegacy }) => {
   await spawn(page);
   await drawClip(page, 0, [[6, 4], [5, 8]]);
 
@@ -221,7 +221,7 @@ test('NOTE menu: the same sub lists apply to the ONE note they were opened on', 
 
 test('copy on one pad → paste on ANOTHER pad moves the clip content (the shared Launchpad clipboard)', async ({
   page,
-  rack,
+  rackLegacy,
 }) => {
   await spawn(page);
   await drawClip(page, 0, [[6, 4]]);
@@ -258,7 +258,7 @@ test('copy on one pad → paste on ANOTHER pad moves the clip content (the share
   expect(source?.steps).toHaveLength(1);
 });
 
-test('clear DELETES the clip from the pad menu, and ↶ brings it back with its notes', async ({ page, rack }) => {
+test('clear DELETES the clip from the pad menu, and ↶ brings it back with its notes', async ({ page, rackLegacy }) => {
   await spawn(page);
   await drawClip(page, 0, [[6, 4]]);
   const before = await readClip(page, 0);
@@ -300,7 +300,7 @@ test('clear DELETES the clip from the pad menu, and ↶ brings it back with its 
 
 test('an EMPTY pad opens the SAME menu with only paste live — the rows are disabled, never missing', async ({
   page,
-  rack,
+  rackLegacy,
 }) => {
   await spawn(page);
   const menu = await openPadMenu(page, 3);

@@ -480,8 +480,8 @@ const ENV_LOW: SeedTrack['events'] = [
 // 96 h CI census to 2026-08-18 — never a hard failure, so every one of those jobs reported SUCCESS.
 // LOST WHILE PARKED: the owner-locked FINAL per-clip automation model end to end — module-level assign, per-lane arm, record-while-twisting, the negative leg that an UNASSIGNED module records nothing, and that the note clip is left untouched.
 // Re-enable only on a root cause (#1847); "it passes now" is not one.
-test.fixme('module-assign + per-lane arm: right-click module → lane 1 (card border) → arm lane → record while twisting → unassigned module records nothing → disarm → playback; note clip untouched', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 26 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page, rack }) => {
-  void rack;
+test.fixme('module-assign + per-lane arm: right-click module → lane 1 (card border) → arm lane → record while twisting → unassigned module records nothing → disarm → playback; note clip untouched', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 26 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page, rackLegacy }) => {
+  void rackLegacy;
   await spawnPatch(page, [
     { id: CP, type: 'clipplayer', position: { x: 80, y: 80 }, domain: 'audio' },
     { id: 'va', type: 'vca', position: { x: 460, y: 80 }, domain: 'audio', params: { base: 0.2 } },
@@ -580,8 +580,8 @@ test.fixme('module-assign + per-lane arm: right-click module → lane 1 (card bo
 
 // ── Case 2: clip-switch swaps automation WITH the clip ───────────────────────
 
-test('per-clip automation: switching clips in a lane swaps to the NEW clip’s own envelope (each clip carries its own)', async ({ page, rack }) => {
-  void rack;
+test('per-clip automation: switching clips in a lane swaps to the NEW clip’s own envelope (each clip carries its own)', async ({ page, rackLegacy }) => {
+  void rackLegacy;
   await spawnPatch(page, [
     { id: CP, type: 'clipplayer', position: { x: 80, y: 80 }, domain: 'audio' },
     { id: 'va', type: 'vca', position: { x: 460, y: 80 }, domain: 'audio', params: { base: 0.5 } },
@@ -619,8 +619,8 @@ test('per-clip automation: switching clips in a lane swaps to the NEW clip’s o
 
 // ── Case 3: MULTI-LANE — two clips in two lanes, each with its own automation ─
 
-test('per-clip automation: two lanes drive two params independently from their own clips', async ({ page, rack }) => {
-  void rack;
+test('per-clip automation: two lanes drive two params independently from their own clips', async ({ page, rackLegacy }) => {
+  void rackLegacy;
   await spawnPatch(page, [
     { id: CP, type: 'clipplayer', position: { x: 80, y: 80 }, domain: 'audio' },
     { id: 'va', type: 'vca', position: { x: 460, y: 60 }, domain: 'audio', params: { base: 0.2 } },
@@ -643,8 +643,8 @@ test('per-clip automation: two lanes drive two params independently from their o
 
 // ── Case 4: screen touch suspends only the grabbed param ─────────────────────
 
-test('per-clip automation: grabbing an on-screen fader suspends only its playback until RELEASE; the other keeps playing', async ({ page, rack }) => {
-  void rack;
+test('per-clip automation: grabbing an on-screen fader suspends only its playback until RELEASE; the other keeps playing', async ({ page, rackLegacy }) => {
+  void rackLegacy;
   await spawnPatch(page, [
     { id: CP, type: 'clipplayer', position: { x: 80, y: 80 }, domain: 'audio' },
     { id: 'va', type: 'vca', position: { x: 460, y: 60 }, domain: 'audio', params: { base: 0.2 } },
@@ -692,8 +692,8 @@ const ENV_HELD_HIGH: SeedTrack['events'] = [
   { step: 7, value: 0.7 },
 ];
 
-test('per-clip automation: on stop the param HOLDS its last automated value — no snap to default/zero', async ({ page, rack }) => {
-  void rack;
+test('per-clip automation: on stop the param HOLDS its last automated value — no snap to default/zero', async ({ page, rackLegacy }) => {
+  void rackLegacy;
   await spawnPatch(page, [
     { id: CP, type: 'clipplayer', position: { x: 80, y: 80 }, domain: 'audio' },
     { id: 'va', type: 'vca', position: { x: 460, y: 80 }, domain: 'audio', params: { base: 0.2 } },
@@ -742,8 +742,8 @@ test('per-clip automation: on stop the param HOLDS its last automated value — 
 // 96 h CI census to 2026-08-18 — never a hard failure, so every one of those jobs reported SUCCESS.
 // LOST WHILE PARKED: the live-grab suspension rule — a MIDI CC on an automated param suspends THAT param only, and playback resumes when the twist idles; a broken scope here means one knob freezes the whole lane.
 // Re-enable only on a root cause (#1847); "it passes now" is not one.
-test.fixme('per-clip automation: a MIDI CC on an automated param suspends only that param until the twist idles; CC-idle resumes', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 4 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page, rack }) => {
-  void rack;
+test.fixme('per-clip automation: a MIDI CC on an automated param suspends only that param until the twist idles; CC-idle resumes', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 4 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page, rackLegacy }) => {
+  void rackLegacy;
   await spawnPatch(page, [
     { id: CP, type: 'clipplayer', position: { x: 80, y: 80 }, domain: 'audio' },
     { id: 'va', type: 'vca', position: { x: 460, y: 60 }, domain: 'audio', params: { base: 0.2 } },
@@ -861,8 +861,8 @@ async function installSingleLaunchpad(page: Page): Promise<SingleLaunchpad> {
   return { ccTap, padTap };
 }
 
-test('per-clip automation: scene-duplicate (Launchpad copy/paste) carries the automation with the clips', async ({ page, rack }) => {
-  void rack;
+test('per-clip automation: scene-duplicate (Launchpad copy/paste) carries the automation with the clips', async ({ page, rackLegacy }) => {
+  void rackLegacy;
   await spawnPatch(page, [
     { id: CP, type: 'clipplayer', position: { x: 80, y: 80 }, domain: 'audio' },
     { id: 'va', type: 'vca', position: { x: 460, y: 80 }, domain: 'audio', params: { base: 0.2 } },
@@ -914,8 +914,8 @@ test('per-clip automation: scene-duplicate (Launchpad copy/paste) carries the au
 
 // ── Case 9: LAUNCHPAD per-lane ARM — HOLD SHIFT+top-row + the pad below SHFT ──
 
-test('launchpad per-lane arm: HOLD SHIFT+top-row toggles a lane (view untouched), HOLD SHIFT + the pad below SHFT toggles lane 8; the card ◉ mirrors', async ({ page, rack }) => {
-  void rack;
+test('launchpad per-lane arm: HOLD SHIFT+top-row toggles a lane (view untouched), HOLD SHIFT + the pad below SHFT toggles lane 8; the card ◉ mirrors', async ({ page, rackLegacy }) => {
+  void rackLegacy;
   await spawnPatch(page, [
     { id: CP, type: 'clipplayer', position: { x: 80, y: 80 }, domain: 'audio' },
     { id: 'va', type: 'vca', position: { x: 460, y: 80 }, domain: 'audio', params: { base: 0.2 } },
@@ -972,8 +972,8 @@ test('launchpad per-lane arm: HOLD SHIFT+top-row toggles a lane (view untouched)
 
 // ── Case 10: CV EXCLUSION — a CV cable never records; MIDI does ─────────────
 
-test('CV exclusion: an LFO CV cable driving the assigned module records NOTHING while its lane records; a MIDI twist of the same knob records', async ({ page, rack }) => {
-  void rack;
+test('CV exclusion: an LFO CV cable driving the assigned module records NOTHING while its lane records; a MIDI twist of the same knob records', async ({ page, rackLegacy }) => {
+  void rackLegacy;
   await spawnPatch(
     page,
     [
@@ -1026,8 +1026,8 @@ test('CV exclusion: an LFO CV cable driving the assigned module records NOTHING 
 
 // ── Case 7: the 🟡🟡🔴🔴 countdown flashes the recording lane's ◉ ────────────
 
-test('per-clip automation: the countdown flashes yellow→red on the lane’s ◉ arm while it records; disarm clears it', async ({ page, rack }) => {
-  void rack;
+test('per-clip automation: the countdown flashes yellow→red on the lane’s ◉ arm while it records; disarm clears it', async ({ page, rackLegacy }) => {
+  void rackLegacy;
   await spawnPatch(page, [
     { id: CP, type: 'clipplayer', position: { x: 80, y: 80 }, domain: 'audio' },
     { id: 'va', type: 'vca', position: { x: 460, y: 80 }, domain: 'audio', params: { base: 0.2 } },

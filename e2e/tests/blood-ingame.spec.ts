@@ -26,7 +26,7 @@ const SC_ENTER = 0x1c;
 const SC_DOWN = 0xd0;
 const SC_SPACE = 0x39;
 
-test('blood in-game: drive the menu into a level + read the in-game framebuffer', async ({ page, rack }) => {
+test('blood in-game: drive the menu into a level + read the in-game framebuffer', async ({ page, rackLegacy }) => {
   test.setTimeout(90_000);
   await spawnPatch(
     page,

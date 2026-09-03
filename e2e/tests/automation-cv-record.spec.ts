@@ -576,8 +576,8 @@ async function wiggleUntilEngineAbove(
   );
 }
 
-test('OWNER CASE: gamepad CV movement on a lane-assigned BACKDRAFT records into the clip; the parked stick loops it back; the store and note clip never move', async ({ page, rack }) => {
-  void rack;
+test('OWNER CASE: gamepad CV movement on a lane-assigned BACKDRAFT records into the clip; the parked stick loops it back; the store and note clip never move', async ({ page, rackLegacy }) => {
+  void rackLegacy;
   test.setTimeout(120_000);
   await spawnOwnerPatch(page);
   await seedClip(page);
@@ -684,8 +684,8 @@ test('OWNER CASE: gamepad CV movement on a lane-assigned BACKDRAFT records into 
   expect(await noteClipSnapshot(page)).toBe(clipBefore);
 });
 
-test('live stick movement OVERRIDES the recorded playback; parking hands the param back; overdub while armed re-records the new movement', async ({ page, rack }) => {
-  void rack;
+test('live stick movement OVERRIDES the recorded playback; parking hands the param back; overdub while armed re-records the new movement', async ({ page, rackLegacy }) => {
+  void rackLegacy;
   test.setTimeout(120_000);
   await spawnOwnerPatch(page);
   // A seeded LOW recorded envelope (0.15..0.35) — deterministic playback to

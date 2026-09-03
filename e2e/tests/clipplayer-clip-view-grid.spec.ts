@@ -80,7 +80,7 @@ async function cardBox(page: Page): Promise<{ w: number; h: number }> {
 // Re-enable only on a root cause (#1847); "it passes now" is not one.
 test.fixme('clip-view: whole editable grid is shown at once, card grows with clip length, no scroll', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 5 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({
   page,
-  rack,
+  rackLegacy,
 }) => {
   await spawnPatch(page, [{ id: 'cp', type: 'clipplayer', position: { x: 80, y: 80 }, domain: 'audio' }]);
   const card = page.locator(CARD);

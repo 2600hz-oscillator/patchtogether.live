@@ -24,7 +24,7 @@ import { readScopePeakOverWindow, setNodeParams } from './_module-coverage-helpe
 
 test.describe.configure({ mode: 'parallel' });
 
-test('SAMPLE & HOLD chain: BUGGLES → S&H (clocked) → VCO → SCOPE produces audio', async ({ page, rack, errorWatch }) => {
+test('SAMPLE & HOLD chain: BUGGLES → S&H (clocked) → VCO → SCOPE produces audio', async ({ page, rackLegacy, errorWatch }) => {
   await spawnPatch(
     page,
     [
@@ -62,7 +62,7 @@ test('SAMPLE & HOLD chain: BUGGLES → S&H (clocked) → VCO → SCOPE produces 
 
 });
 
-test('SAMPLE & HOLD scale-name label updates as the scale param changes', async ({ page, rack }) => {
+test('SAMPLE & HOLD scale-name label updates as the scale param changes', async ({ page, rackLegacy }) => {
   await spawnPatch(
     page,
     [{ id: 's-sh', type: 'sampleHold', position: { x: 120, y: 120 }, domain: 'audio' }],
@@ -95,7 +95,7 @@ test('SAMPLE & HOLD scale-name label updates as the scale param changes', async 
   }
 });
 
-test('SAMPLE & HOLD continuous-quantizer (no gate): cv passes through, VCO sings, hint=QUANTIZER', async ({ page, rack, errorWatch }) => {
+test('SAMPLE & HOLD continuous-quantizer (no gate): cv passes through, VCO sings, hint=QUANTIZER', async ({ page, rackLegacy, errorWatch }) => {
   // NO sequencer / gate cable — sampleHold becomes a pure quantizer.
   await spawnPatch(
     page,

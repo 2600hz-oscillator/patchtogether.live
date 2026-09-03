@@ -115,7 +115,7 @@ async function setBlueboxParam(page: Page, nodeId: string, paramId: string, valu
 
 // ─── tests ──────────────────────────────────────────────────────────────────
 
-test('bluebox: card mounts with no console errors', async ({ page, rack, errorWatch }) => {
+test('bluebox: card mounts with no console errors', async ({ page, rackLegacy, errorWatch }) => {
   await spawnPatch(page, [{ id: 'bb', type: 'bluebox', position: { x: 100, y: 100 } }]);
 
   const card = page.locator('[data-testid="bluebox-card"]');
@@ -129,7 +129,7 @@ test('bluebox: card mounts with no console errors', async ({ page, rack, errorWa
   await expect(page.locator('[data-testid="bluebox-key-redbox"]')).toBeVisible();
 });
 
-test('bluebox: clicking "5" produces 770 + 1336 Hz peaks at the scope', async ({ page, rack }) => {
+test('bluebox: clicking "5" produces 770 + 1336 Hz peaks at the scope', async ({ page, rackLegacy }) => {
   await spawnPatch(
     page,
     [
@@ -184,7 +184,7 @@ test('bluebox: clicking "5" produces 770 + 1336 Hz peaks at the scope', async ({
   expect(ampOff).toBeLessThan(ampCol * 0.5);
 });
 
-test('bluebox: clicking BLUEBOX produces a 2600 Hz dominant peak', async ({ page, rack }) => {
+test('bluebox: clicking BLUEBOX produces a 2600 Hz dominant peak', async ({ page, rackLegacy }) => {
   await spawnPatch(
     page,
     [
@@ -214,7 +214,7 @@ test('bluebox: clicking BLUEBOX produces a 2600 Hz dominant peak', async ({ page
   expect(amp2600).toBeGreaterThan(amp1700 * 5);
 });
 
-test('bluebox: clicking REDBOX produces 1700 + 2200 Hz peaks', async ({ page, rack }) => {
+test('bluebox: clicking REDBOX produces 1700 + 2200 Hz peaks', async ({ page, rackLegacy }) => {
   await spawnPatch(
     page,
     [
@@ -247,7 +247,7 @@ test('bluebox: clicking REDBOX produces 1700 + 2200 Hz peaks', async ({ page, ra
   expect(amp2200).toBeGreaterThan(amp2600 * 3);
 });
 
-test('bluebox: setting btn_5 param directly drives the tone (no UI click)', async ({ page, rack }) => {
+test('bluebox: setting btn_5 param directly drives the tone (no UI click)', async ({ page, rackLegacy }) => {
   // Sanity-check the param→worklet path independent of the keypad UI —
   // this is the same path the Instruments / Group-controls layer uses
   // to surface BLUEBOX's keys on a containing group's bar.

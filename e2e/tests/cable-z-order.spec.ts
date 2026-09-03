@@ -22,7 +22,7 @@ import { test, expect } from './_fixtures';
 import { spawnPatch } from './_helpers';
 
 test.describe('cable z-order: cables under cards in idle, free during drag', () => {
-  test('idle: edges layer paints below nodes layer', async ({ page, rack }) => {
+  test('idle: edges layer paints below nodes layer', async ({ page, rackLegacy }) => {
     // Three modules in a row with a cable from the leftmost to the
     // rightmost — the cable's bezier path crosses the middle card body.
     await spawnPatch(
@@ -68,7 +68,7 @@ test.describe('cable z-order: cables under cards in idle, free during drag', () 
     expect(nz, 'nodes layer must paint above edges layer').toBeGreaterThan(ez);
   });
 
-  test('dragging: layer split is dropped so cables can float over neighbors', async ({ page, rack }) => {
+  test('dragging: layer split is dropped so cables can float over neighbors', async ({ page, rackLegacy }) => {
     // Guard rail: cables-in-front-of-cards during drag is intentional UX.
     // If a future agent globally pins cables under cards, this assertion
     // will fail — flagging the drag-time regression before it ships.
@@ -131,7 +131,7 @@ test.describe('cable z-order: cables under cards in idle, free during drag', () 
     }
   });
 
-  test('OUTPUT card root is fully opaque (no cable bleed-through)', async ({ page, rack }) => {
+  test('OUTPUT card root is fully opaque (no cable bleed-through)', async ({ page, rackLegacy }) => {
     await spawnPatch(
       page,
       [

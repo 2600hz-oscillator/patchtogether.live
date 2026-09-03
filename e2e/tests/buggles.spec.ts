@@ -16,7 +16,7 @@ test.describe.configure({ mode: 'parallel' });
 
 test('buggles: drop module → card mounts with no console errors', async ({ page, rack, errorWatch }) => {
   await spawnPatch(page, [{ id: 'b', type: 'buggles', position: { x: 200, y: 200 } }]);
-  const card = page.locator('.svelte-flow__node-buggles');
+  const card = page.locator('.svelte-flow__node:has([data-shell-type="buggles"])');
   await expect(card).toBeVisible();
   await expect(card).toContainText('BUGGLES');
 });

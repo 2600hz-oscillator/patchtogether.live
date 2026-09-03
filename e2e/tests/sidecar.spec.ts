@@ -74,7 +74,7 @@ test('SIDECAR smoke: VCO → SIDECAR → AUDIOOUT — card mounts, no errors', a
     ],
   );
 
-  const card = page.locator('.svelte-flow__node-sidecar');
+  const card = page.locator('.svelte-flow__node:has([data-shell-type="sidecar"])');
   await expect(card).toHaveCount(1);
   await expect(card).toContainText('SIDECAR');
 

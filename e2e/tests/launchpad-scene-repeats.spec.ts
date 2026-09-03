@@ -176,7 +176,7 @@ async function installSingle(page: import('@playwright/test').Page, nodeId: stri
   expect(installed, 'single-unit Launchpad install hook present (VITE_E2E_HOOKS)').toBe(true);
 }
 
-test('@launchpad scene repeats: gesture sets ×2, card flair mirrors it, scene 2 AUTO-LAUNCHES after 2 passes — audible through the real chain', async ({ page, rack, errorWatch }) => {
+test('@launchpad scene repeats: gesture sets ×2, card flair mirrors it, scene 2 AUTO-LAUNCHES after 2 passes — audible through the real chain', async ({ page, rackLegacy, errorWatch }) => {
   await buildChain(page, 'rp');
   // Scene 0 (lane 0 slot 0, index 0) + scene 1 (lane 0 slot 1, index 1) — both
   // drive the audible voice via pitch1/gate1.
@@ -235,7 +235,7 @@ test('@launchpad scene repeats: gesture sets ×2, card flair mirrors it, scene 2
   await expect(page.getByTestId('clipplayer-scene-repeat-0')).toHaveText('×2');
 });
 
-test('@launchpad scene repeats SCROLL-AWARE: with the window scrolled, the held button edits the CORRECT scene slot', async ({ page, rack, errorWatch }) => {
+test('@launchpad scene repeats SCROLL-AWARE: with the window scrolled, the held button edits the CORRECT scene slot', async ({ page, rackLegacy, errorWatch }) => {
   await buildChain(page, 'rq');
   // Content in slots 0..7 of lane 0 → the window can scroll (reveals scene 8).
   await seedClipsAt(page, 'rq-cp', [0, 1, 2, 3, 4, 5, 6, 7]);

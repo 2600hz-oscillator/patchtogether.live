@@ -85,7 +85,7 @@ async function seedToyboxAndBindings(page: Page): Promise<void> {
   });
 }
 
-test('toybox material + combine params: proxy renders on the surface and drives the live node', async ({ page, rack }) => {
+test('toybox material + combine params: proxy renders on the surface and drives the live node', async ({ page, rackLegacy }) => {
   // The TOYBOX card is WIDE (~880px) + tall and has its OWN SCALE knob; place
   // the surface well to the right so its proxy knobs aren't occluded by the
   // toybox card. spawnPatch's fitView zooms both into view, preserving the gap.
@@ -146,7 +146,7 @@ test('toybox material + combine params: proxy renders on the surface and drives 
 // drove the wrong layer when the model sat on layer 2/3/4). This drives the WHOLE
 // chain through the real CARD knob (right-click → Send to surface), so it proves
 // the card emission, not just the resolver.
-test('toybox model SCALE on a NON-FIRST layer: card knob → surface drives the LEARNED layer', async ({ page, rack }) => {
+test('toybox model SCALE on a NON-FIRST layer: card knob → surface drives the LEARNED layer', async ({ page, rackLegacy }) => {
   // Heavy TOYBOX WebGL card under 10-way-sharded CI CPU contention renders
   // controls well past the default 30s/5s budgets (passes ~8s locally idle).
   // Mirror the sibling toybox specs' CI-robustness timeout.

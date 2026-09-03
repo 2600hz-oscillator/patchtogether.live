@@ -19,7 +19,7 @@ import { test, expect } from './_fixtures';
 import { spawnPatch } from './_helpers';
 
 test.describe('SHAPEGEN — 3D-shape-generator video module', () => {
-  test('spawns + card mounts + preview canvas paints without errors', async ({ page, rack, errorWatch }) => {
+  test('spawns + card mounts + preview canvas paints without errors', async ({ page, rackLegacy, errorWatch }) => {
     await spawnPatch(
       page,
       [
@@ -83,7 +83,7 @@ test.describe('SHAPEGEN — 3D-shape-generator video module', () => {
 
   });
 
-  test('SOLIDS toggle changes the rendered pixel content', async ({ page, rack, errorWatch }) => {
+  test('SOLIDS toggle changes the rendered pixel content', async ({ page, rackLegacy, errorWatch }) => {
     await spawnPatch(
       page,
       [
@@ -154,7 +154,7 @@ test.describe('SHAPEGEN — 3D-shape-generator video module', () => {
 
   });
 
-  test('SIZE + ROT knobs mutate params via the patch store', async ({ page, rack }) => {
+  test('SIZE + ROT knobs mutate params via the patch store', async ({ page, rackLegacy }) => {
     await spawnPatch(page, [
       { id: 'sg', type: 'shapegen', position: { x: 200, y: 100 }, domain: 'video' },
     ]);

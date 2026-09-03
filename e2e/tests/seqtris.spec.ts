@@ -229,7 +229,7 @@ function graph(opts: { clocked: boolean; gravity?: number }): {
 
 test('the real chain: a clock falls pieces through PIECE into a voice, audibly', async ({
   page,
-  rack,
+  rackLegacy,
   errorWatch,
 }) => {
   test.setTimeout(60_000);
@@ -251,7 +251,7 @@ test('the real chain: a clock falls pieces through PIECE into a voice, audibly',
 
 test('the real chain: LAUNCHPAD scene presses ALONE make sound, with no clock patched', async ({
   page,
-  rack,
+  rackLegacy,
   errorWatch,
 }) => {
   test.setTimeout(60_000);
@@ -291,7 +291,7 @@ test('the real chain: LAUNCHPAD scene presses ALONE make sound, with no clock pa
 
 test('the board reaches the hardware: binding lights the pads and the control column', async ({
   page,
-  rack,
+  rackLegacy,
   errorWatch,
 }) => {
   test.setTimeout(60_000);
@@ -322,7 +322,7 @@ test('the board reaches the hardware: binding lights the pads and the control co
 
 test('a DROP is ONE tied gate carrying every row it falls through', async ({
   page,
-  rack,
+  rackLegacy,
   errorWatch,
 }) => {
   test.setTimeout(60_000);
@@ -359,7 +359,7 @@ test('a DROP is ONE tied gate carrying every row it falls through', async ({
 
 test('silent until played — the negative control for this file\'s instrument', async ({
   page,
-  rack,
+  rackLegacy,
   errorWatch,
 }) => {
   test.setTimeout(60_000);

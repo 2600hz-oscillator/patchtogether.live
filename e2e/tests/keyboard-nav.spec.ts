@@ -15,7 +15,7 @@ import { spawnPatch } from './_helpers';
 
 test.describe.configure({ mode: 'parallel' });
 
-test('keyboard-nav Cartesian: arrow keys never move caret + jump gate<->pitch', async ({ page, rack }) => {
+test('keyboard-nav Cartesian: arrow keys never move caret + jump gate<->pitch', async ({ page, rackLegacy }) => {
   // Re-subjected from the deleted SEQUENCER card (2026-08-24) to CARTESIAN,
   // the surviving 2-role ['gate','pitch'] grid card. The behaviour under test
   // is grid-nav.ts's, which both cards shared verbatim.
@@ -72,7 +72,7 @@ test('keyboard-nav Cartesian: arrow keys never move caret + jump gate<->pitch', 
   await expect(gate2).toBeFocused();
 });
 
-test('keyboard-nav Cartesian: rapid-add scenario (type, right, type, right, ...)', async ({ page, rack }) => {
+test('keyboard-nav Cartesian: rapid-add scenario (type, right, type, right, ...)', async ({ page, rackLegacy }) => {
   await spawnPatch(page, [{ id: 'seq', type: 'cartesian' }]);
 
   const seq = ['c3', 'd3', 'e3', 'f3'];
@@ -99,7 +99,7 @@ test('keyboard-nav Cartesian: rapid-add scenario (type, right, type, right, ...)
   expect(stored).toEqual([48, 50, 52, 53]);
 });
 
-test('keyboard-nav Cartesian: ArrowUp from row-1 cell pitch hits gate of cell directly above', async ({ page, rack }) => {
+test('keyboard-nav Cartesian: ArrowUp from row-1 cell pitch hits gate of cell directly above', async ({ page, rackLegacy }) => {
   await spawnPatch(page, [{ id: 'cart', type: 'cartesian' }]);
 
   // Cell idx 5 (row 1, col 1). Pitch -> Up -> gate of idx 5 -> Up -> pitch
@@ -123,7 +123,7 @@ test('keyboard-nav Cartesian: ArrowUp from row-1 cell pitch hits gate of cell di
   await expect(g1).toBeFocused();
 });
 
-test('keyboard-nav: caret never moves inside the pitch input on arrow keys', async ({ page, rack }) => {
+test('keyboard-nav: caret never moves inside the pitch input on arrow keys', async ({ page, rackLegacy }) => {
   await spawnPatch(page, [{ id: 'seq', type: 'cartesian' }]);
 
   const step0 = page.locator('[data-testid="cart-pitch-seq-0"]');
@@ -149,7 +149,7 @@ test('keyboard-nav: caret never moves inside the pitch input on arrow keys', asy
 // rather than re-subjected: re-subjecting would have produced a second
 // identical copy of the test beneath it.
 
-test('keyboard-nav: default value of new cartesian cell is c3', async ({ page, rack }) => {
+test('keyboard-nav: default value of new cartesian cell is c3', async ({ page, rackLegacy }) => {
   await spawnPatch(page, [{ id: 'cart', type: 'cartesian' }]);
 
   for (const i of [0, 5, 15]) {

@@ -49,7 +49,7 @@ async function storedPos(page: import('@playwright/test').Page, nodeId: string) 
 }
 
 test.describe('JOYSTICK — XY CV utility (legacy card)', () => {
-  test('spawns + pad mounts + no console errors', async ({ page, rack, errorWatch }) => {
+  test('spawns + pad mounts + no console errors', async ({ page, rackLegacy, errorWatch }) => {
     await spawnPatch(page, [
       { id: 'j1', type: 'joystick', position: { x: 200, y: 100 }, domain: 'audio' },
     ]);
@@ -60,7 +60,7 @@ test.describe('JOYSTICK — XY CV utility (legacy card)', () => {
     await expect(page.locator('[data-testid="joystick-readout"]')).toHaveCount(1);
   });
 
-  test('drag updates pos_x + pos_y, and RELEASE LEAVES THEM THERE', async ({ page, rack }) => {
+  test('drag updates pos_x + pos_y, and RELEASE LEAVES THEM THERE', async ({ page, rackLegacy }) => {
     await spawnPatch(page, [
       { id: 'j1', type: 'joystick', position: { x: 200, y: 100 }, domain: 'audio' },
     ]);
@@ -103,7 +103,7 @@ test.describe('JOYSTICK — XY CV utility (legacy card)', () => {
     expect(Math.abs(released.pos_x), 'and it is not merely centred').toBeGreaterThan(0.3);
   });
 
-  test('double-click re-centres — the gesture that REPLACED the snap-back', async ({ page, rack }) => {
+  test('double-click re-centres — the gesture that REPLACED the snap-back', async ({ page, rackLegacy }) => {
     await spawnPatch(page, [
       { id: 'j1', type: 'joystick', position: { x: 200, y: 100 }, domain: 'audio' },
     ]);

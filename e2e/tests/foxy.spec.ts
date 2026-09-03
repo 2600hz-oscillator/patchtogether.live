@@ -40,7 +40,7 @@ test.describe('FOXY hybrid module', () => {
   // box-blur + bilinear-sample pass added in v4.1. On slow Linux CI runners the
   // 30s default budget runs out before the 'foxy-xyz' canvas appears. Bump.
   test.setTimeout(90_000);
-  test('renders the full internal chain + animates the live wavetable + makes audio', async ({ page, rack, errorWatch }) => {
+  test('renders the full internal chain + animates the live wavetable + makes audio', async ({ page, rackLegacy, errorWatch }) => {
     // FOXY alone (self-driving) → audio OUTPUT (so the WAVECEL VCO actually
     // plays) AND wave3d_out → video OUTPUT (so we can read the live wavetable
     // render that the same bridge feeds the worklet).

@@ -215,7 +215,7 @@ async function spawn(page: Page, params: Record<string, number>): Promise<void> 
     { id: 'bd', type: 'backdraft', position: { x: 460, y: 80 }, domain: 'video', params },
     OUT,
   ], WIRES);
-  await expect(page.locator('.svelte-flow__node-backdraft')).toBeVisible();
+  await expect(page.locator('.svelte-flow__node:has([data-shell-type="backdraft"])')).toBeVisible();
 }
 
 test.describe('BACKDRAFT PURE TV — the GPU renders a bounded screen', () => {

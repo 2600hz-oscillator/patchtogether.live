@@ -15,7 +15,7 @@ test.describe('SCOPE pitch tuner readout', () => {
   // 96 h CI census to 2026-08-18 — never a hard failure, so every one of those jobs reported SUCCESS.
   // LOST WHILE PARKED: SCOPE's tuner readout against a known A440 source — the displayed Hz, the note name, and the 0-cent centre hash; a broken tuner silently mistunes everything a user tunes by it.
   // Re-enable only on a root cause (#1847); "it passes now" is not one.
-  test.fixme('ANALOG-VCO at A4 → pitch=440Hz / note=A4 / center hash visible', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 1 recovered-on-retry observation in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page, rack, errorWatch }) => {
+  test.fixme('ANALOG-VCO at A4 → pitch=440Hz / note=A4 / center hash visible', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 1 recovered-on-retry observation in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page, rackLegacy, errorWatch }) => {
     await spawnPatch(
       page,
       [
@@ -77,7 +77,7 @@ test.describe('SCOPE pitch tuner readout', () => {
 
   });
 
-  test('SCOPE with no signal shows em-dashes', async ({ page, rack }) => {
+  test('SCOPE with no signal shows em-dashes', async ({ page, rackLegacy }) => {
     await spawnPatch(
       page,
       [

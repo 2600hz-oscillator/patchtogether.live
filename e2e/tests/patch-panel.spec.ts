@@ -130,7 +130,7 @@ async function openInPageAndSampleFirstFrame(
 }
 
 test.describe('PatchPanel: redesigned menu', () => {
-  test('ADSR default state hides jacks; click-open + drill shows verbose labels', async ({ page, rack }) => {
+  test('ADSR default state hides jacks; click-open + drill shows verbose labels', async ({ page, rackLegacy }) => {
     await spawnPatch(page, [{ id: 'adsr', type: 'adsr', position: { x: 200, y: 200 } }]);
 
     // 1. Default: chrome not mounted.
@@ -168,7 +168,7 @@ test.describe('PatchPanel: redesigned menu', () => {
     expect(outLabels).not.toContain('GATE');
   });
 
-  test('Filter drill uses verbose CUTOFF / RESONANCE labels', async ({ page, rack }) => {
+  test('Filter drill uses verbose CUTOFF / RESONANCE labels', async ({ page, rackLegacy }) => {
     await spawnPatch(page, [{ id: 'flt', type: 'filter', position: { x: 200, y: 200 } }]);
     await openFrom(page, 'flt', 'left');
     await drill(page, 'flt', 'inputs');
@@ -180,7 +180,7 @@ test.describe('PatchPanel: redesigned menu', () => {
     expect(labels).not.toContain('CUT');
   });
 
-  test('both triggers open the same menu (shared state)', async ({ page, rack }) => {
+  test('both triggers open the same menu (shared state)', async ({ page, rackLegacy }) => {
     await spawnPatch(page, [{ id: 'adsr', type: 'adsr', position: { x: 200, y: 200 } }]);
 
     const rightTrigger = page.locator(
@@ -208,7 +208,7 @@ test.describe('PatchPanel: redesigned menu', () => {
   // 96 h CI census to 2026-08-18 — never a hard failure, so every one of those jobs reported SUCCESS.
   // LOST WHILE PARKED: that the body-portaled patch menu anchors to the side of its trigger — a menu that opens off-screen at a card near the viewport edge is an unreachable patch.
   // Re-enable only on a root cause (#1847); "it passes now" is not one.
-  test.fixme('edge-alignment: left trigger anchors menu left; right trigger anchors menu right', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 6 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page, rack }) => {
+  test.fixme('edge-alignment: left trigger anchors menu left; right trigger anchors menu right', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 6 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page, rackLegacy }) => {
     await spawnPatch(page, [{ id: 'adsr', type: 'adsr', position: { x: 200, y: 160 } }]);
 
     // ── Settled contract, measured in ONE layout pass and auto-retried ──────
@@ -278,7 +278,7 @@ test.describe('PatchPanel: redesigned menu', () => {
     }
   });
 
-  test('cables visually anchor at the affordance corner when the menu is closed', async ({ page, rack }) => {
+  test('cables visually anchor at the affordance corner when the menu is closed', async ({ page, rackLegacy }) => {
     await spawnPatch(
       page,
       [
@@ -319,7 +319,7 @@ test.describe('PatchPanel: redesigned menu', () => {
     expect(dy, `closed output handle anchors near trigger y (dy=${dy})`).toBeLessThan(30);
   });
 
-  test('handles for every declared port stay in the card DOM with the menu closed (io-spec parity)', async ({ page, rack }) => {
+  test('handles for every declared port stay in the card DOM with the menu closed (io-spec parity)', async ({ page, rackLegacy }) => {
     await spawnPatch(page, [{ id: 'mm', type: 'mixmstrs', position: { x: 200, y: 200 } }]);
     await expect(chrome(page, 'mm')).toHaveCount(0);
     // MIXMSTRS: every declared port materialises a handle regardless of menu

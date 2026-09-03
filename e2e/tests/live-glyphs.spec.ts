@@ -49,8 +49,8 @@ async function meterLit(page: Page, testid: string): Promise<number> {
   return raw ? Number(raw) : 0;
 }
 
-test('VuMeter lights from a live 914 output; silent 914 reads zero', async ({ page, rack }) => {
-  void rack;
+test('VuMeter lights from a live 914 output; silent 914 reads zero', async ({ page, rackLegacy }) => {
+  void rackLegacy;
   // A VCO whose SAW output feeds the 914 filter bank input. The 914 bands
   // default to 0.5, so a broadband saw yields audible summed output.
   await spawnPatch(
@@ -109,8 +109,8 @@ test('ScopeScreen waveform trace is non-flat when a signal is driven (showcase)'
     .toBeGreaterThan(0.05);
 });
 
-test('ScopeScreen mounts in envelope mode on ADSR and wave mode on TIDY VCO', async ({ page, rack }) => {
-  void rack;
+test('ScopeScreen mounts in envelope mode on ADSR and wave mode on TIDY VCO', async ({ page, rackLegacy }) => {
+  void rackLegacy;
   await spawnPatch(page, [
     { id: 'env1', type: 'adsr', position: { x: 100, y: 100 } },
     { id: 'osc1', type: 'tidyVco', position: { x: 100, y: 420 } },

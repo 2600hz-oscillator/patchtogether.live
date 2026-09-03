@@ -12,7 +12,7 @@ import { setNodeParams } from './_module-coverage-helpers';
 
 test.describe.configure({ mode: 'parallel' });
 
-test('RESOFILTER mode-name label updates as mode param changes (LP → HP → BP → Notch → Allpass)', async ({ page, rack }) => {
+test('RESOFILTER mode-name label updates as mode param changes (LP → HP → BP → Notch → Allpass)', async ({ page, rackLegacy }) => {
   await spawnPatch(
     page,
     [
