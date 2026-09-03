@@ -22,7 +22,7 @@ import { test, expect } from './_fixtures';
 import { spawnPatch } from './_helpers';
 
 test.describe('cable z-order: cables under cards in idle, free during drag', () => {
-  test('idle: edges layer paints below nodes layer', async ({ page, rackLegacy }) => {
+  test('idle: edges layer paints below nodes layer', async ({ page, rack }) => {
     // Three modules in a row with a cable from the leftmost to the
     // rightmost — the cable's bezier path crosses the middle card body.
     await spawnPatch(
@@ -68,7 +68,7 @@ test.describe('cable z-order: cables under cards in idle, free during drag', () 
     expect(nz, 'nodes layer must paint above edges layer').toBeGreaterThan(ez);
   });
 
-  test('dragging: layer split is dropped so cables can float over neighbors', async ({ page, rackLegacy }) => {
+  test('dragging: layer split is dropped so cables can float over neighbors', async ({ page, rack }) => {
     // Guard rail: cables-in-front-of-cards during drag is intentional UX.
     // If a future agent globally pins cables under cards, this assertion
     // will fail — flagging the drag-time regression before it ships.
@@ -96,7 +96,11 @@ test.describe('cable z-order: cables under cards in idle, free during drag', () 
 
     const middle = page.locator('.svelte-flow__node[data-id="a-vca"]');
     await middle.waitFor();
-    const box = await middle.boundingBox();
+    // Grab the tile by its ROLE-BADGE row — the tile centre lands on a
+    // control cell (controls are `nodrag`), and the name row is the editable
+    // ModuleNameLabel button, which also refuses the drag.
+    const grip = middle.locator('.tile-kind');
+    const box = await grip.boundingBox();
     if (!box) throw new Error('middle node has no bounding box');
     const cx = box.x + box.width / 2;
     const cy = box.y + box.height / 2;
@@ -131,7 +135,7 @@ test.describe('cable z-order: cables under cards in idle, free during drag', () 
     }
   });
 
-  test('OUTPUT card root is fully opaque (no cable bleed-through)', async ({ page, rackLegacy }) => {
+  test('OUTPUT tile root is fully opaque (no cable bleed-through)', async ({ page, rack }) => {
     await spawnPatch(
       page,
       [
@@ -149,10 +153,10 @@ test.describe('cable z-order: cables under cards in idle, free during drag', () 
       ],
     );
 
-    const outCard = page.locator('[data-testid="video-out-card"]');
+    const outCard = page.locator('.svelte-flow__node[data-id="v-out"] [data-testid="module-shell"]');
     await expect(outCard).toBeVisible();
 
-    // The OUTPUT card root must be fully opaque so a cable routed beneath
+    // The OUTPUT tile root must be fully opaque so a cable routed beneath
     // it can never bleed through. We allow either a solid background-color
     // OR a layered background-image — both are opaque under the same
     // contract.
@@ -171,7 +175,7 @@ test.describe('cable z-order: cables under cards in idle, free during drag', () 
     const hasImage = opacity.bgImage && opacity.bgImage !== 'none';
     expect(
       opacity.alpha === 1 || hasImage,
-      `OUTPUT card bg must be opaque — got bg=${opacity.bg} bgImage=${opacity.bgImage}`,
+      `OUTPUT tile bg must be opaque — got bg=${opacity.bg} bgImage=${opacity.bgImage}`,
     ).toBe(true);
   });
 });
