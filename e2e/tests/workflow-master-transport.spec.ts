@@ -176,6 +176,9 @@ interface StepScan {
   distinct: number;
   /** How many times the counter was actually READ. */
   samples: number;
+  /** Reads that answered -1 — the engine's STOPPED-TRANSPORT contract ("nothing
+   *  is sounding"), distinct from a missing engine. See the stop leg. */
+  stopped: number;
   /** Reads that came back with no engine / no node. */
   nulls: number;
   elapsedMs: number;
@@ -208,8 +211,11 @@ interface StepScan {
  * (≥2) and the window are UNCHANGED; only the sampling is.
  *
  * The instrument is negative-controlled on every run: the STOP leg scans with
- * the transport halted and requires `distinct === 1`, so a scanner that always
- * reported "advancing" would fail there.
+ * the transport halted and requires ZERO step values with the engine
+ * demonstrably answering (`stopped > 0` — the read returns -1 while the
+ * transport is stopped, the honest "nothing is sounding"), so a scanner that
+ * always reported "advancing" would fail there, and so would one that lost its
+ * engine and mistook silence for a stop.
  */
 async function stepScan(page: Page, windowMs: number): Promise<StepScan> {
   return page.evaluate(
@@ -221,6 +227,7 @@ async function stepScan(page: Page, windowMs: number): Promise<StepScan> {
         };
         const seen = new Set<number>();
         let samples = 0;
+        let stopped = 0;
         let nulls = 0;
         const t0 = performance.now();
         const done = () => {
@@ -228,6 +235,7 @@ async function stepScan(page: Page, windowMs: number): Promise<StepScan> {
           resolve({
             distinct: seen.size,
             samples,
+            stopped,
             nulls,
             elapsedMs: performance.now() - t0,
             values: [...seen],
@@ -240,7 +248,8 @@ async function stepScan(page: Page, windowMs: number): Promise<StepScan> {
           if (typeof v === 'number' && v >= 0) {
             seen.add(v);
             samples++;
-          } else nulls++;
+          } else if (v === -1) stopped++;
+          else nulls++;
           // Early exit the moment the question is answered, so a healthy clock
           // costs ~150ms rather than the whole window.
           if (seen.size >= 2 || performance.now() - t0 >= ms) done();
@@ -256,7 +265,7 @@ async function stepScan(page: Page, windowMs: number): Promise<StepScan> {
 /** The failure line a step scan deserves: the reading AND how it was taken. */
 function scanMsg(label: string, s: StepScan): string {
   return (
-    `${label} — read ${s.samples} times (+${s.nulls} null) over ` +
+    `${label} — read ${s.samples} times (+${s.stopped} stopped, +${s.nulls} null) over ` +
     `${Math.round(s.elapsedMs)} ms IN-PAGE; distinct step values seen: [${s.values.join(', ')}]`
   );
 }
@@ -386,12 +395,27 @@ for (const [label, url] of [
     // scheduler-clock.ts). 400 ms is that 200 ms window plus its tick, so the
     // freeze scan below starts after the drain rather than during it.
     await page.waitForTimeout(400);
-    // The freeze is scanned CONTINUOUSLY (was: two spot reads 700ms apart, which
+    // The stop is scanned CONTINUOUSLY (was: two spot reads 700ms apart, which
     // could not see a counter that moved and moved back). It doubles as the
     // NEGATIVE CONTROL for `stepScan` on every run: a scanner that always
     // reported "advancing" fails right here.
+    //
+    // ⚠ THE STOPPED CONTRACT CHANGED (PR #2336): `currentStep:L` used to FREEZE
+    // at the last sounded step after a transport stop — which is exactly the
+    // frozen full-column "playhead" the owner reported as a permanent artifact
+    // on the clipplayer face's always-visible editor. The read is now gated on
+    // the engine's own `transportRunning()` and answers -1 ("nothing is
+    // sounding") while stopped. So the pin is no longer "one frozen value":
+    // it is NO step values at all, with the engine DEMONSTRABLY answering the
+    // stopped contract on every look (`stopped > 0`) — which keeps this leg a
+    // real negative control: a dead engine or a vanished node reads as `nulls`,
+    // not as a pass.
     const stopScan = await stepScan(page, 700);
-    expect(stopScan.distinct, scanMsg('stop: the step counter freezes', stopScan)).toBe(1);
+    expect(
+      stopScan.stopped,
+      scanMsg('stop: the engine answers the stopped contract (-1)', stopScan),
+    ).toBeGreaterThan(0);
+    expect(stopScan.distinct, scanMsg('stop: no sounding step while stopped', stopScan)).toBe(0);
 
     // (3) START again from the same control: running flips back, steps move,
     // the master is audible again.

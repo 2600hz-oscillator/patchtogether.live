@@ -53,6 +53,7 @@
     laneQueued,
     laneSwing,
     isSwingCentered,
+    noteCovering,
     restrictedRowWindow,
     rowToMidi,
     slotOf,
@@ -215,10 +216,19 @@
   });
 
   let menu = $state<ClipplayerMenuAt | null>(null);
+  /** RIGHT-CLICK a note cell → the shared clip menu, NOTE-scoped. REFUSES on a
+   *  cell that holds no note — the card's `openProbMenu` guard (`noteCovering`),
+   *  mirrored verbatim: a note-scoped menu on an empty cell would offer
+   *  probability rows for a note that does not exist. A PENDING slot has no
+   *  stored clip at all, so it refuses everywhere. preventDefault still runs
+   *  first, exactly as on the card, so the refusal does not fall through to the
+   *  node's "Module actions" menu. */
   function openNoteMenu(e: MouseEvent, step: number, displayRow: number) {
     e.preventDefault();
     e.stopPropagation();
-    const midi = midiForDisplayRow(clip, displayRow);
+    if (!storedClip) return;
+    const midi = midiForDisplayRow(storedClip, displayRow);
+    if (!noteCovering(storedClip, step, midi)) return;
     menu = { kind: 'note', x: e.clientX, y: e.clientY, idx: selectedClip, step, midi, row: displayRow };
   }
 

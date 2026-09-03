@@ -19,7 +19,7 @@
 
 import { SvelteMap } from 'svelte/reactivity';
 import { patch } from '$lib/graph/store';
-import { CLIP_COUNT } from '$lib/audio/modules/clip-types';
+import { CLIP_LANES, SCENE_STRIDE } from '$lib/audio/modules/clip-types';
 
 const selection = new SvelteMap<string, number>();
 
@@ -62,9 +62,19 @@ export function clipplayerSelectedClip(nodeId: string): number {
 
 /** Open a clip in the face's editor. Out-of-range indices are IGNORED rather
  *  than clamped: a clamp would silently open a DIFFERENT clip than the one the
- *  caller named, which on a launcher is an edit landing in the wrong lane. */
+ *  caller named, which on a launcher is an edit landing in the wrong lane.
+ *
+ * ⚠ THE BOUND IS THE STRIDE-64 KEY SPACE (`CLIP_LANES * SCENE_STRIDE`), NOT
+ * `CLIP_COUNT`. A flat clip index is `clipIndex(slot, lane) = lane * 64 + slot`
+ * (clip-types.ts, schema v2), so every visible pad OFF lane 1 already sits at
+ * 64 or above — lane 8 slot 8 is 455. This guard shipped checking `CLIP_COUNT`
+ * (the visible 8×8 = 64, a PAD count, not a key ceiling), which silently
+ * swallowed the selection for 56 of the 64 pads: the launch panel's
+ * double-click created the clip and then this early-return dropped the select,
+ * so the editor band stayed bound to whatever it last showed — the owner's
+ * "changing clips in the grid doesn't update what clip I am editing below". */
 export function clipplayerSelectClip(nodeId: string, index: number): void {
-  if (!Number.isInteger(index) || index < 0 || index >= CLIP_COUNT) return;
+  if (!Number.isInteger(index) || index < 0 || index >= CLIP_LANES * SCENE_STRIDE) return;
   selection.set(nodeId, index);
   pruneDeletedNodes();
 }
