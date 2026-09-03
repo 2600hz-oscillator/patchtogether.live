@@ -1,6 +1,20 @@
 <script lang="ts">
+  // ⚠ THIS CARD NO LONGER PRODUCES ANYTHING, AND THAT IS THE WHOLE EDIT
+  // (legacy-removal S1). It used to run the cvCombined push — the ONLY path a
+  // same-domain cv cable has to a display param — inside its own repaint loop,
+  // so `scope` sat in `CARD_PRODUCER_LANE_TYPES` and the default shell kept this
+  // card mounted OFF-SCREEN in `<HeadlessSourceHost>` purely to keep that push
+  // alive. It belongs to the NODE now (`$lib/ui/media/frame-producers`), and the
+  // TRACE moved to `scope/ScopeTraceSurface.svelte` so this card, the dock
+  // faceplate body and `GroupCard`'s viz-passthrough mount all paint one picture
+  // from one file. What is left here is the frame, the controls and the tuner.
+  //
+  // ⚠ DO NOT SPELL THE SEAM CALL-SHAPED IN A COMMENT IN THIS SUBTREE. The
+  // producer gate in `dom-source-modules.test.ts` matches its seam regexes
+  // against RAW source — it strips no comments — so writing the push out as a
+  // call here re-enrols `scope` in the set this diff removes it from, and the
+  // gate's own header admits the blind spot. Name it, never spell it.
   import { onDestroy, onMount } from 'svelte';
-  import { onMeterFrame } from '$lib/ui/meter-frame';
   import type { NodeProps } from '@xyflow/svelte';
   import NeonFader from '$lib/ui/controls/NeonFader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
@@ -9,11 +23,11 @@
   // proxy assignment, which now goes through `setNodeParam` like every other
   // write on this card.
   import { setNodeParam } from '$lib/graph/mutate';
-  import { scopeDef, type ScopeSnapshot, type PitchResult } from '$lib/audio/modules/scope';
-  import { drawScope } from '$lib/audio/modules/scope-draw';
+  import { scopeDef, type PitchResult } from '$lib/audio/modules/scope';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
+  import ScopeTraceSurface from './scope/ScopeTraceSurface.svelte';
   import { portsFromDef } from './card-kit';
 
   // Inputs: 2 audio channels + 1 CV per param. Port ids match SCOPE's
@@ -51,7 +65,7 @@
   // is `eng.read(node, 'drawParams')` — the module's combined knob + CV
   // values, the same record its video-out `drawFrame` renders from, so
   // the on-card picture and the video output cannot disagree (#1664).
-  // These stay as the fallback for when there is no engine yet.
+  // `ScopeTraceSurface` owns that read; these are the FADER positions only.
   let timeMs    = $derived(node?.params.timeMs    ?? scopeDef.params[0]!.defaultValue);
   let ch1Scale  = $derived(node?.params.ch1Scale  ?? scopeDef.params[1]!.defaultValue);
   let ch1Offset = $derived(node?.params.ch1Offset ?? scopeDef.params[2]!.defaultValue);
@@ -97,19 +111,11 @@
     setNodeParam(id, key, (node?.params[key] ?? 0) >= 0.5 ? 0 : 1);
   }
 
-  let canvasEl: HTMLCanvasElement | null = $state(null);
-  let raf: number | null = null;
-
-  // Pitch tuner readout — sampled at ~10 Hz (NOT rAF; frame-rate jitter would
-  // make the Hz value flicker). When ch1 has no pitched signal, all three
-  // fields read null and the UI shows em-dashes.
-  let pitch: PitchResult = $state({ hz: null, note: null, cents: null, confidence: null });
-  let pitchTimer: ReturnType<typeof setInterval> | null = null;
-
-  // Resolve cable colors once at mount. $state so the draw() reads the
-  // post-mount values (the existing warning called this out — making
-  // these reactive both fixes the warning and ensures the on-card
-  // canvas re-paints with the right colors on theme reload).
+  // Cable tints for the two per-channel MODE BUTTONS in the header (the trace
+  // resolves its own copies — see ScopeTraceSurface). $state so the buttons pick
+  // up the post-mount values, and `onMount` rather than `$effect` for the reason
+  // the surface records: an effect that reads each colour in its own `||`
+  // fallback and writes it depends on the state it assigns.
   let ch1Color = $state('#fbbf24');
   let ch2Color = $state('#60a5fa');
   onMount(() => {
@@ -118,66 +124,11 @@
     ch2Color = cs.getPropertyValue('--cable-pitch').trim() || ch2Color;
   });
 
-  // VRT determinism seed. Two live oscillators driving ch1/ch2 (the X/Y
-  // Lissajous case) are NOT phase-locked, so the figure's orientation drifts
-  // run-to-run → flaky pixel diffs even after freeze-on-suspend. When the
-  // harness sets globalThis.__scopeVrtSeed, the draw loop builds a FIXED
-  // synthetic snapshot (phase-locked sines at a chosen ratio) instead of the
-  // live analyser data — identical pixels every run. Mirrors FOXY's
-  // __foxyVrtSeed / PEAKSTATE's __peakstateVrtSeed / RASTERIZE's
-  // __rasterizeVrtSeed. No-op in production (the global is never set).
-  function vrtSeed():
-    | { ch1Freq: number; ch2Freq: number; ch2Phase?: number }
-    | null {
-    const s = (globalThis as unknown as {
-      __scopeVrtSeed?: { ch1Freq?: number; ch2Freq?: number; ch2Phase?: number } | boolean;
-    }).__scopeVrtSeed;
-    if (!s) return null;
-    const cfg = typeof s === 'object' ? s : {};
-    return { ch1Freq: cfg.ch1Freq ?? 220, ch2Freq: cfg.ch2Freq ?? 330, ch2Phase: cfg.ch2Phase ?? 0 };
-  }
-  function seededSnapshot(seed: { ch1Freq: number; ch2Freq: number; ch2Phase?: number }): ScopeSnapshot {
-    const n = 2048;
-    const sampleRate = 48000;
-    const ch1 = new Float32Array(n);
-    const ch2 = new Float32Array(n);
-    for (let i = 0; i < n; i++) {
-      ch1[i] = Math.sin((2 * Math.PI * seed.ch1Freq * i) / sampleRate);
-      ch2[i] = Math.sin((2 * Math.PI * seed.ch2Freq * i) / sampleRate + (seed.ch2Phase ?? 0));
-    }
-    return { ch1, ch2, sampleRate };
-  }
-
-  $effect(() => {
-    if (!canvasEl) return;
-    // Shared meter ticker + off-screen gate: the scope repaint is expensive
-    // (analyser read + full canvas redraw), so it stops entirely while the
-    // card is scrolled out of view (see $lib/ui/meter-frame).
-    const h = onMeterFrame(canvasEl, () => {
-      const eng = engineCtx.get();
-      if (eng && node && canvasEl) {
-        const seed = vrtSeed();
-        const snap = seed
-          ? seededSnapshot(seed)
-          : (eng.read(node, 'snapshot') as ScopeSnapshot | undefined);
-        // PUSH then READ. `eng.readParam` returns the knob PLUS the engine's
-        // own per-port CV tap — the combined value — and costs nothing extra:
-        // the tap already exists for any patched port. Pushing it into the
-        // module means the on-card trace and the module's video-out render
-        // draw the SAME numbers (#1664). With nothing patched there is no tap,
-        // so readParam returns the knob and no render moves.
-        const combined: Record<string, number> = {};
-        for (const p of scopeDef.params) {
-          const v = eng.readParam(node, p.id);
-          if (typeof v === 'number' && Number.isFinite(v)) combined[p.id] = v;
-        }
-        eng.write(node, 'cvCombined', combined);
-        const live = eng.read(node, 'drawParams') as Record<string, number> | undefined;
-        if (snap) draw(canvasEl, snap, live);
-      }
-    });
-    return () => h.stop();
-  });
+  // Pitch tuner readout — sampled at ~10 Hz (NOT rAF; frame-rate jitter would
+  // make the Hz value flicker). When ch1 has no pitched signal, all three
+  // fields read null and the UI shows em-dashes.
+  let pitch: PitchResult = $state({ hz: null, note: null, cents: null, confidence: null });
+  let pitchTimer: ReturnType<typeof setInterval> | null = null;
 
   $effect(() => {
     pitchTimer = setInterval(() => {
@@ -193,7 +144,6 @@
   });
 
   onDestroy(() => {
-    if (raf !== null) cancelAnimationFrame(raf);
     if (pitchTimer !== null) clearInterval(pitchTimer);
   });
 
@@ -206,32 +156,6 @@
     pitch.cents === null ? 50 : Math.max(0, Math.min(100, 50 + pitch.cents)),
   );
   let inTune = $derived(pitch.cents !== null && Math.abs(pitch.cents) <= 5);
-
-  /** `live` is the module's combined (knob + CV) draw record. Every field
-   *  falls back to the knob so the card still renders before the engine
-   *  exists — and with nothing patched the two are the same number. */
-  function draw(c: HTMLCanvasElement, snap: ScopeSnapshot, live?: Record<string, number>) {
-    const ctx2d = c.getContext('2d');
-    if (!ctx2d) return;
-    drawScope(
-      ctx2d,
-      snap,
-      {
-        timeMs:    live?.timeMs    ?? timeMs,
-        ch1Scale:  live?.ch1Scale  ?? ch1Scale,
-        ch1Offset: live?.ch1Offset ?? ch1Offset,
-        ch1Range:  live?.ch1Range  ?? ch1Range,
-        ch2Scale:  live?.ch2Scale  ?? ch2Scale,
-        ch2Offset: live?.ch2Offset ?? ch2Offset,
-        ch2Range:  live?.ch2Range  ?? ch2Range,
-        mode:      live?.mode      ?? node?.params.mode ?? 0,
-        intensity: live?.intensity ?? intensity,
-        ch1Color, ch2Color,
-      },
-      c.width,
-      c.height,
-    );
-  }
 </script>
 
 <div class="vcard card">
@@ -281,16 +205,16 @@
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <div class="screen-wrap">
-      <!-- data-viz-passthrough lets GroupCard locate this canvas + portal-
-           hoist it into the group body when SCOPE is collapsed inside a
-           group (see Module-grouping Phase 3B + scopeDef.vizPassthrough). -->
-      <canvas
-        bind:this={canvasEl}
-        width="320"
-        height="300"
-        data-viz-passthrough="scope"
-        data-testid="scope-canvas"
-      ></canvas>
+      <!-- THE trace, not a copy of it. The surface emits the `scope-canvas`
+           element itself and no wrapper, so it stays the only child of
+           `.screen-wrap` and this box is unchanged.
+
+           ⚠ `vizPassthrough` STAYS FALSE HERE. `data-viz-passthrough` is how
+           GroupCard FINDS a canvas to portal-hoist, and the group now mounts its
+           OWN ScopeTraceSurface rather than this whole card — so emitting the
+           marker here would give a collapsed group two candidate canvases for
+           one node and let it hoist the wrong one. -->
+      <ScopeTraceSurface nodeId={id} width={320} height={300} />
     </div>
 
     <div class="tuner" data-testid="scope-tuner">
@@ -397,7 +321,11 @@
     overflow: hidden;
     line-height: 0;
   }
-  canvas {
+  /* `:global(canvas)` because the element belongs to `ScopeTraceSurface` now —
+     Svelte's scoped selector would not reach a child component's DOM. Scoped by
+     `.screen-wrap`, so nothing leaks, and the computed box is unchanged (the
+     VRT card baselines pin it). */
+  .screen-wrap :global(canvas) {
     display: block;
     width: 100%;
     /* 3u SCOPE — a big screen that fills the taller tier (the rack forces the

@@ -29,12 +29,31 @@
   import { getVideoModuleDef } from '$lib/video/module-registry';
   // ⚠ A DIRECT `.svelte` IMPORT, DELIBERATELY — do not route this through a
   // registry module. `dom-source-modules.test.ts`'s subtree walk (#1724/#1749)
-  // follows `.svelte` edges and stops at `.ts`, so importing ScopeCard through a
-  // `.ts` map hides this mount from the gate entirely (its
-  // `GroupCard → ScopeCard.svelte` exemption goes stale, which is how that draft
-  // of #1721 was caught). The TYPE IDS are shared with Canvas via
-  // `group-viz-hosts`; the COMPONENT stays here, in the walk's sight.
-  import ScopeCard from '$lib/ui/modules/ScopeCard.svelte';
+  // follows `.svelte` edges and stops at `.ts`, so importing a viz host through
+  // a `.ts` map hides this mount from the gate entirely (the `GroupCard →
+  // ScopeCard.svelte` exemption went stale, which is how that draft of #1721 was
+  // caught). The TYPE IDS are shared with Canvas via `group-viz-hosts`; the
+  // COMPONENT stays here, in the walk's sight.
+  //
+  // ⚠ IT IS THE TRACE SURFACE NOW, NOT `ScopeCard` (legacy-removal S1), and this
+  // was the last edge tying an ORGANIZATIONAL container to a module CARD.
+  //
+  // What a group needs from a viz-passthrough child is ONE thing: a live
+  // `<canvas data-viz-passthrough>` it can portal-hoist into its own body while
+  // the group is collapsed. Mounting the child's whole CARD to get it dragged in
+  // nine faders, a PatchPanel, a tuner readout and — until this slice — the
+  // module's own cvCombined PRODUCER, hidden behind `display:none`, for a
+  // container that only ever wanted the picture. Two consequences, both
+  // real: `dom-source-modules.test.ts` had to carry a NAMED wrong-attribution
+  // exemption (the walk correctly saw a producer seam in this card's subtree and
+  // would otherwise have enrolled `group`, a container with no engine state at
+  // all, into `CARD_PRODUCER_LANE_TYPES`), and the fleet is being deleted, so an
+  // edge to a `*Card.svelte` is an edge to a file that will not exist.
+  //
+  // `ScopeTraceSurface` is the picture and nothing else — no controls, no push —
+  // so that exemption is DELETED rather than re-pointed, and the group survives
+  // the card's removal by construction.
+  import ScopeTraceSurface from '$lib/ui/modules/scope/ScopeTraceSurface.svelte';
   import { GROUP_VIZ_HOST_TYPES } from '$lib/ui/modules/group-viz-hosts';
   import GroupExposedControls from '$lib/ui/GroupExposedControls.svelte';
 
@@ -269,34 +288,27 @@
    *  agree in both directions, so adding a type without a component (or a
    *  component without a type) reddens rather than silently rendering an empty
    *  viz slot. Register a new opt-in in BOTH places. */
-  const HOST_CARDS: Record<string, typeof ScopeCard> = { scope: ScopeCard };
+  const HOST_SURFACES: Record<string, typeof ScopeTraceSurface> = { scope: ScopeTraceSurface };
 
   function componentForType(type: string) {
     if (!GROUP_VIZ_HOST_TYPES.has(type)) return null;
-    return HOST_CARDS[type] ?? null;
+    return HOST_SURFACES[type] ?? null;
   }
 
-  // The hidden ScopeCard needs the same NodeProps shape that SvelteFlow
-  // hands real card mounts. We construct it minimally — only `id` and
-  // `data.node` are consumed by ScopeCard. SvelteFlow's real-flow shape
-  // includes runtime-injected fields (dragging/zIndex/etc.) we don't
-  // need; we cast through `unknown` so the hidden mount doesn't have to
-  // synthesize them. ScopeCard only reads `id` and `data.node`.
-  function hiddenCardProps(childNode: ModuleNode): NodeProps {
-    return {
-      id: childNode.id,
-      data: { node: childNode } as unknown as Record<string, unknown>,
-      type: childNode.type,
-      dragging: false,
-      draggable: false,
-      zIndex: 0,
-      selectable: false,
-      deletable: false,
-      selected: false,
-      isConnectable: false,
-      positionAbsoluteX: 0,
-      positionAbsoluteY: 0,
-    } as unknown as NodeProps;
+  /** Props for the hidden viz-child surface.
+   *
+   *  ⚠ IT IS A `nodeId`, NOT A SYNTHESIZED `NodeProps` BAG. The card mount this
+   *  replaces needed `id` plus a `data.node` and eight runtime fields SvelteFlow
+   *  injects (`dragging`/`zIndex`/`positionAbsoluteX`/…), all cast through
+   *  `unknown` because a group is not a flow node renderer and could not supply
+   *  them honestly. `ScopeTraceSurface` reads the node out of the STORE, so the
+   *  group hands it the one fact it actually knows.
+   *
+   *  `vizPassthrough` is what makes the canvas findable by the portal effect
+   *  below; the LEGACY CARD deliberately does NOT set it, so a collapsed group
+   *  can never have two candidate canvases for one node. */
+  function hiddenSurfaceProps(childNode: ModuleNode): { nodeId: string; vizPassthrough: true } {
+    return { nodeId: childNode.id, vizPassthrough: true };
   }
 
   // tick() ensures Svelte's reactive scheduler flushes before we hunt for
@@ -416,12 +428,14 @@
 </div>
 
 {#if hasViz && !expanded}
-  <!-- Hidden mounts for each viz-passthrough child. These ScopeCard
-       instances render their full UI but the wrapper is display:none so
-       no layout space is reserved; the inner <canvas data-viz-passthrough>
-       is appendChild'd into the visible group portal slot via the
-       $effect above. The card's rAF draw loop continues to drive that
-       same <canvas>, so the moved canvas keeps animating live. -->
+  <!-- Hidden mounts for each viz-passthrough child. Each renders the child's
+       TRACE SURFACE (never its card — see the import note) inside a wrapper that
+       is display:none, so no layout space is reserved; the inner
+       <canvas data-viz-passthrough> is appendChild'd into the visible group
+       portal slot via the $effect above. The surface's own repaint loop
+       continues to drive that same <canvas>, so the moved canvas keeps
+       animating live — and the module's ENGINE state is not this mount's
+       business at all any more, because the node owns its producer. -->
   <div class="viz-hidden-host" aria-hidden="true">
     {#each vizChildren as vc (vc.id)}
       <div
@@ -431,8 +445,8 @@
         data-child-id={vc.id}
       >
         {#if componentForType(vc.type)}
-          {@const HostCard = componentForType(vc.type)!}
-          <HostCard {...hiddenCardProps(vc.childNode)} />
+          {@const HostSurface = componentForType(vc.type)!}
+          <HostSurface {...hiddenSurfaceProps(vc.childNode)} />
         {/if}
       </div>
     {/each}

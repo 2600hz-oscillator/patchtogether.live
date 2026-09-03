@@ -240,6 +240,7 @@
   import { nodeLoopbackSource } from '$lib/ui/media/node-loopback-source.svelte';
   import { nodeCameraSource } from '$lib/ui/media/node-camera-source.svelte';
   import { nodeArchivistSource } from '$lib/ui/media/node-archivist-source.svelte';
+  import { nodeFrameProducers } from '$lib/ui/media/node-frame-producers';
   import { nodePresent } from '$lib/ui/modules/node-present-registry.svelte';
   import { createFullscreen } from '$lib/ui/modules/use-fullscreen.svelte';
   import { resolveVideoEngine } from '$lib/ui/modules/use-present.svelte';
@@ -2620,6 +2621,14 @@
     // node. Both are node-keyed and deliberately outlive every surface, so
     // nothing else could stop them.
     nodeArchivistSource.sweep(liveIds);
+    // ⚠ AND THE PER-FRAME PRODUCERS (legacy-removal S1) — the row that stops the
+    // ONE shared rAF ticker when the last producer node leaves the graph. Every
+    // other row here retires a resource; this one retires a LOOP, and it is the
+    // only thing that can, because the loop is deliberately node-keyed and
+    // deliberately outlives every surface (that is the whole point of moving it
+    // off the cards). Without this sweep a deleted scope would leave a ticker
+    // reading `readParam` on a node that no longer exists, forever.
+    nodeFrameProducers.sweep(liveIds);
     // ...and the same status/command seam for ARCHIVIST
     // ($lib/ui/media/archivist-status-registry), the THIRD and last member of
     // DOM_SOURCE_LANE_TYPES to be promoted. Same reason as the two above: its
@@ -2811,6 +2820,29 @@
     nodeArchivistSource.sync(snapshot.nodes, engine);
   });
 
+  /** THE NODE-OWNED PER-FRAME PRODUCERS (legacy-removal S1) — the seventh
+   *  registry, and the first that owns a LOOP rather than a resource.
+   *
+   *  The six above take an ELEMENT, a STREAM or a TRANSPORT off a card. This one
+   *  takes the rAF body: the per-frame read-the-engine-and-write-back that a
+   *  module's own `drawFrame` renders from. `CARD_PRODUCER_LANE_TYPES` solved
+   *  that by keeping the whole card mounted off-screen in
+   *  `<HeadlessSourceHost>`, which works and cannot survive the card's deletion.
+   *
+   *  ⚠ ONE rAF FOR EVERY PRODUCER NODE, NOT ONE PER NODE — see the registry's
+   *  header for the meter-frame argument it inherits and the
+   *  IntersectionObserver gate it deliberately does NOT: a producer must keep
+   *  feeding its downstream chain while its tile is scrolled away, so gating it
+   *  on visibility would re-introduce #1587 through the back door.
+   *
+   *  ⚠ The engine is PASSED, not imported, for the reason `nodeExtras` and
+   *  `nodeVideoSource` record: the registry lives under `$lib/ui/**` and must
+   *  stay hash-transparent to the WebGL attest, which walks `$lib/video/**`
+   *  wholesale. It reaches the engine only through existing public calls. */
+  $effect(() => {
+    nodeFrameProducers.sync(snapshot.nodes, engine);
+  });
+
   let headlessSourceNodes = $derived.by<ModuleNode[]>(() => {
     const collapsed = collapsedGroupIds;
     const out: ModuleNode[] = [];
@@ -2925,8 +2957,17 @@
           // node's REAL card":
           //   * the DOCK FULL VIEW — unless it is showing a faceplate instead
           //     (see above), and
-          //   * GroupCard, which hidden-mounts a viz-passthrough child's real
-          //     card for exactly as long as the group is collapsed.
+          //   * GroupCard, which hidden-mounts a viz-passthrough child's
+          //     surface for exactly as long as the group is collapsed.
+          //
+          // ⚠ THE SECOND ONE HAS NO LIVE SUBJECT AS OF legacy-removal S1, and it
+          // stays anyway. `GROUP_VIZ_HOST_TYPES` is `{scope}` and scope left
+          // `CARD_PRODUCER_LANE_TYPES` when its push moved to the node, so the
+          // two sets no longer intersect and this arm cannot fire today. It is
+          // one correct term; deleting it because today's population cannot
+          // reach it is how the next viz-passthrough opt-in ships double-mounted.
+          // `dom-source-modules.test.ts` keeps the arm honest with a synthetic
+          // input rather than with a member.
           hostedElsewhere:
             (dockStore.isFullView(n.id) && !fullViewShowsFaceInstead) ||
             (laneOmitsNode && groupCardHostsChildCard(n.type)),

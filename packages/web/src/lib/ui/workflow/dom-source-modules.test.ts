@@ -71,11 +71,18 @@ import { NODE_HLS_SOURCE_TYPES } from '$lib/ui/media/node-hls-source-registry';
 import { NODE_LOOPBACK_SOURCE_TYPES } from '$lib/ui/media/node-loopback-source-registry';
 import { NODE_CAMERA_SOURCE_TYPES } from '$lib/ui/media/node-camera-source-registry';
 import { NODE_ARCHIVIST_SOURCE_TYPES } from '$lib/ui/media/node-archivist-source-registry';
+// ⚠ AND THE PRODUCER SIDE (legacy-removal S1). The six above own a module's
+// SOURCE — an element, a stream, a transport. This one owns its per-frame PUSH,
+// which is the OTHER half of `HEADLESS_MOUNT_LANE_TYPES` and needs exactly the
+// same two-directional check: a type that leaves `CARD_PRODUCER_LANE_TYPES` must
+// be owned here, and a type owned here must have left. Importing it is what
+// makes a producer extraction atomic — neither half can land alone.
+import { NODE_FRAME_PRODUCER_TYPES } from '$lib/ui/media/frame-producers';
 
-/** Every node-scoped source owner there is. Read as ONE set wherever the
- *  question is "has SOMETHING taken ownership of this module's source", so a
- *  fifth registry joins by being imported here rather than by an edit at each
- *  of the four sites below. */
+/** Every node-scoped owner there is — SOURCES and per-frame PRODUCERS alike.
+ *  Read as ONE set wherever the question is "has SOMETHING taken ownership of
+ *  the engine state this module's card used to own", so a new registry joins by
+ *  being imported here rather than by an edit at each of the sites below. */
 const NODE_OWNED_SOURCE_TYPES: ReadonlySet<string> = new Set<string>([
   ...NODE_VIDEO_SOURCE_TYPES,
   ...NODE_VARISPEED_TYPES,
@@ -83,6 +90,7 @@ const NODE_OWNED_SOURCE_TYPES: ReadonlySet<string> = new Set<string>([
   ...NODE_LOOPBACK_SOURCE_TYPES,
   ...NODE_CAMERA_SOURCE_TYPES,
   ...NODE_ARCHIVIST_SOURCE_TYPES,
+  ...NODE_FRAME_PRODUCER_TYPES,
 ]);
 import { STRICT_FACES } from './strict-faces';
 import { NON_SHELL_LANE_TYPES, laneRenderKind, type LaneRenderKind } from './legacy-fallback';
@@ -494,19 +502,24 @@ interface SubtreeSeamExemption {
   readonly why: string;
 }
 
-const SUBTREE_SEAM_EXEMPTIONS: readonly SubtreeSeamExemption[] = [
-  {
-    card: 'GroupCard',
-    component: 'ScopeCard.svelte',
-    why:
-      'GroupCard mounts a HIDDEN ScopeCard per viz-passthrough CHILD (`<ScopeCard ' +
-      '{...hiddenCardProps(vc.childNode)} />`), so the `write(node, …)` it reaches writes to the ' +
-      "CHILD's node — `scope`, already a member in its own right — and never to the group's. " +
-      'Enrolling `group` would headless-mount an organizational container that is a ' +
-      'NON_SHELL_LANE_TYPE and is never swapped away in the first place, buying an off-screen ' +
-      'mount for a node whose engine state does not exist.',
-  },
-];
+/**
+ * ⚠ EMPTY AS OF legacy-removal S1, AND THE WAY IT EMPTIED IS THE POINT.
+ *
+ * The one entry was `GroupCard → ScopeCard.svelte`: the group hidden-mounted a
+ * viz-passthrough child's whole REAL card to obtain one `<canvas
+ * data-viz-passthrough>` it could portal into its body, so the walk correctly
+ * found scope's producer seam in `GroupCard`'s subtree and would have enrolled
+ * `group` — an organizational container with no engine state at all.
+ *
+ * It is DELETED rather than re-pointed because the EDGE is gone: `GroupCard`
+ * mounts `scope/ScopeTraceSurface.svelte` now, which paints and writes nothing.
+ * A wrong attribution that needed an exemption became a right attribution that
+ * needs none, which is the outcome an exemption list should be aiming for.
+ *
+ * Deny by default still holds and the anchor below still runs: a NEW entry must
+ * name a live `(card, component)` pair whose component really does carry a seam.
+ */
+const SUBTREE_SEAM_EXEMPTIONS: readonly SubtreeSeamExemption[] = [];
 
 /** The FIRST seam any file in a card's subtree matches, with the file that
  *  carried it — `null` when the card produces nothing, and `null` when the only
@@ -1024,6 +1037,7 @@ describe('DOM_SOURCE_LANE_TYPES — the grep gate (a new source module cannot sh
       ['NODE_LOOPBACK_SOURCE_TYPES', NODE_LOOPBACK_SOURCE_TYPES],
       ['NODE_CAMERA_SOURCE_TYPES', NODE_CAMERA_SOURCE_TYPES],
       ['NODE_ARCHIVIST_SOURCE_TYPES', NODE_ARCHIVIST_SOURCE_TYPES],
+      ['NODE_FRAME_PRODUCER_TYPES', NODE_FRAME_PRODUCER_TYPES],
     ] as const;
     const doubleOwned: string[] = [];
     for (let i = 0; i < owners.length; i++) {

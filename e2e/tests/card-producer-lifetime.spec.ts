@@ -1160,3 +1160,311 @@ for (const subject of SUBJECTS) {
     });
   }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// THE OTHER HALF: producers the NODE owns (legacy-removal S1)
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// ⚠ WHY THIS LIVES IN THIS FILE AND NOT A NEW ONE. Everything above is derived
+// from `CARD_PRODUCER_LANE_TYPES`, so a module LEAVING that set does not turn a
+// test red — it removes four of them, silently, and the lane stays green with
+// less coverage than it had. That is the "a control over a population that
+// reaches zero stops controlling anything" shape this repo keeps meeting, and
+// the answer it keeps reaching is to re-point the control rather than to let the
+// subject evaporate. These subjects are the SAME modules, measured with the SAME
+// instruments, making the OPPOSITE claim: no card anywhere, no host anywhere,
+// and the producer still running.
+//
+// (It also keeps the CI lane: the filename decides which job a spec runs in, and
+// `**/card-producer-lifetime.spec.ts` is on the webgl-heavy list. A new file
+// would have needed a glob edit to run at all.)
+//
+// ⚠ AND THE LIVENESS PROBE IS NOT PIXELS FOR THESE, WHICH IS THE POINT. The
+// legs above measure a picture MOVING, and record that SCOPE is structurally
+// invisible to that instrument: its trace is drawn inside the module from its
+// own analysers, so it reads `distinct=1 over 300 frames` even with a card
+// mounted (an idle rack draws a static grid). Its producer writes DISPLAY
+// PARAMS, not pixels — so the honest progress assertion is the one that reads
+// the channel that actually moved: patch a modulator at a display param and
+// require the module's own `drawParams` to follow it, with no card in the
+// document. A dead producer leaves that number pinned at the knob forever.
+
+/** The node-lifetime producers, parsed from their own source.
+ *
+ *  ⚠ ANCHORED ON `= [`, NOT ON THE FIRST `[` — the sibling parser's
+ *  `[^[]*\[` idiom is wrong here for the reason `extras-producer-lifetime`
+ *  records: the type annotation is `readonly FrameProducer[]`, so `[^[]*` stops
+ *  at the annotation's own bracket pair and the capture comes back EMPTY. */
+const FRAME_PRODUCERS_SRC = readFileSync(
+  fileURLToPath(
+    new URL('../../packages/web/src/lib/ui/media/frame-producers.ts', import.meta.url),
+  ),
+  'utf8',
+);
+
+function nodeFrameProducerTypes(): string[] {
+  const declared = [
+    ...FRAME_PRODUCERS_SRC.matchAll(
+      /const\s+(\w+):\s*FrameProducer\s*=\s*\{\s*\n\s*type:\s*'([^']+)'/g,
+    ),
+  ].map((m) => ({ constName: m[1]!, type: m[2]! }));
+  const arr = /export const FRAME_PRODUCERS[^=]*=\s*\[([\s\S]*?)\]/.exec(FRAME_PRODUCERS_SRC);
+  if (!arr) throw new Error('could not parse FRAME_PRODUCERS — has the shape changed?');
+  const registered = new Set(
+    [...arr[1]!.matchAll(/(\w+)/g)].map((m) => m[1]!).filter((n) => n.endsWith('PRODUCER')),
+  );
+  // BOTH DIRECTIONS, because each hides a different real hole: a producer
+  // DECLARED but never registered never runs (and nothing else would notice); a
+  // name registered with no declaration means this parse missed one and the
+  // subject list is short.
+  const orphan = declared.filter((d) => !registered.has(d.constName)).map((d) => d.constName);
+  if (orphan.length > 0) {
+    throw new Error(`FrameProducer(s) declared but NOT in FRAME_PRODUCERS: ${orphan.join(', ')}`);
+  }
+  const missing = [...registered].filter((n) => !declared.some((d) => d.constName === n));
+  if (missing.length > 0) {
+    throw new Error(`FRAME_PRODUCERS names with no declaration parsed: ${missing.join(', ')}`);
+  }
+  if (declared.length === 0) {
+    throw new Error('FRAME_PRODUCERS parsed EMPTY — refusing to pass vacuously');
+  }
+  return declared.map((d) => d.type);
+}
+
+/**
+ * How a given producer is DRIVEN and what number must move because of it.
+ *
+ * DENY BY DEFAULT: a producer with no fixture throws at collection, so adding
+ * one to `frame-producers.ts` without saying how to observe it cannot land
+ * silently green. The same discipline `extras-producer-lifetime.spec.ts` uses.
+ */
+interface FrameProducerFixture {
+  /** Extra nodes to spawn beside the subject. */
+  readonly driver: { id: string; type: string; domain: 'audio' | 'video' | 'meta' };
+  /** The edge that makes the subject's producer have something to report. */
+  readonly edge: { fromPort: string; toPort: string; sourceType: string; targetType: string };
+  /** `engine.read(node, key)` → a record; `field` is the number that must move. */
+  readonly read: { key: string; field: string };
+  /** Why this is the channel the producer actually owns. */
+  readonly why: string;
+}
+
+const FRAME_PRODUCER_FIXTURES: Record<string, FrameProducerFixture> = {
+  scope: {
+    driver: { id: 'producer-driver', type: 'lfo', domain: 'audio' },
+    edge: {
+      fromPort: 'phase0',
+      toPort: 'ch1Offset',
+      sourceType: 'cv',
+      targetType: 'cv',
+    },
+    read: { key: 'drawParams', field: 'ch1Offset' },
+    why:
+      'the producer reads `readParam` (knob PLUS the engine per-port CV tap) and pushes the ' +
+      'combined record back through cvCombined — the ONLY path a same-domain cv cable has to a ' +
+      'display param, because addEdge connects to the AudioParam and never calls setParam. ' +
+      '`read("drawParams")` is the inverse of that push and is what the module\'s own drawFrame ' +
+      'renders `out` from, so a number that follows the LFO proves the whole chain end to end.',
+  },
+};
+
+/** Every mount of this node's REAL card, anywhere in the document. */
+async function anyCardMounts(page: Page, nodeId: string, type: string): Promise<number> {
+  return page.evaluate(({ id, t }) => {
+    const inHosts = document.querySelectorAll(
+      `[data-testid="headless-source-host"][data-node-id="${id}"], ` +
+        `[data-testid="viz-hidden-mount"][data-child-id="${id}"]`,
+    ).length;
+    const cards = document.querySelectorAll(`[data-testid="${t}-card"], .mod-card.${t}-card`).length;
+    return inHosts + cards;
+  }, { id: nodeId, t: type });
+}
+
+/** Sample `read(node, key)[field]` once per rAF frame, in the page, and report
+ *  how many DISTINCT values were seen. One evaluate, never a Playwright poll —
+ *  a poll would starve the very loop it is measuring. */
+async function sampleProducerChannel(
+  page: Page,
+  nodeId: string,
+  read: { key: string; field: string },
+  frames: number,
+): Promise<{ frames: number; distinct: number; first: number | null; values: number[] }> {
+  return page.evaluate(
+    async ({ id, key, field, n }) => {
+      const w = globalThis as unknown as {
+        __engine?: () => { getDomain: (d: string) => { read: (i: string, k: string) => unknown } };
+        __patch: { nodes: Record<string, unknown> };
+      };
+      const seen: number[] = [];
+      const next = () => new Promise<void>((r) => requestAnimationFrame(() => r()));
+      for (let i = 0; i < n; i++) {
+        let v: number | null = null;
+        try {
+          const rec = w.__engine!().getDomain('audio').read(id, key) as
+            | Record<string, number>
+            | undefined;
+          const raw = rec?.[field];
+          if (typeof raw === 'number' && Number.isFinite(raw)) v = raw;
+        } catch {
+          /* engine not ready — recorded as a gap, never as a value */
+        }
+        if (v !== null) seen.push(v);
+        await next();
+      }
+      return {
+        frames: n,
+        distinct: new Set(seen.map((x) => Math.round(x * 1e4))).size,
+        first: seen.length > 0 ? seen[0]! : null,
+        values: seen.slice(0, 12),
+      };
+    },
+    { id: nodeId, key: read.key, field: read.field, n: frames },
+  );
+}
+
+const CHANNEL_FRAMES = 90;
+
+for (const type of nodeFrameProducerTypes()) {
+  const fixture = FRAME_PRODUCER_FIXTURES[type];
+  if (!fixture) {
+    throw new Error(
+      `${type} is a node-lifetime FrameProducer with no fixture in this spec. Add one saying ` +
+        'how it is DRIVEN and which number must move — a producer nothing observes is a producer ' +
+        'that can stop running without any gate noticing.',
+    );
+  }
+  const mod = REGISTRY.find((m) => m.type === type);
+  if (!mod) throw new Error(`${type} has a node producer but is not in the registry manifest`);
+  const nodeId = `nodeproducer-${type}`;
+
+  test(`${type}: the producer runs with NO card mounted anywhere — no host, no lane card, no dock`, async ({ page }) => {
+    test.setTimeout(SLOW_RENDER ? 180_000 : 90_000);
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+
+    await boot(page);
+    await spawnPatch(
+      page,
+      [
+        { id: nodeId, type, domain: mod.domain },
+        fixture.driver,
+      ],
+      [
+        {
+          id: 'nodeproducer-edge',
+          from: { nodeId: fixture.driver.id, portId: fixture.edge.fromPort },
+          to: { nodeId, portId: fixture.edge.toPort },
+          sourceType: fixture.edge.sourceType,
+          targetType: fixture.edge.targetType,
+        },
+      ],
+      { mountTimeout: 30_000 },
+    );
+
+    // The lane shows the shell's tile for a faced module…
+    await expect(
+      page.locator(
+        `.svelte-flow__node[data-id="${nodeId}"] [data-testid="${
+          mod.strictFace === true ? 'module-shell' : 'module-shell-placeholder'
+        }"]`,
+      ),
+    ).toHaveCount(1, { timeout: 20_000 });
+
+    // …and its REAL card is nowhere: not in the lane, not in a headless host,
+    // not in a group's hidden mount, not in the dock. THIS is the claim the
+    // card-producer legs above make in reverse, and it is the one that lets the
+    // file be deleted in S4.
+    await expect
+      .poll(async () => anyCardMounts(page, nodeId, type), {
+        message:
+          `${type}'s card must not be mounted ANYWHERE — its producer is node-lifetime ` +
+          '($lib/ui/media/frame-producers), so a card mount would be a second owner',
+        timeout: 20_000,
+      })
+      .toBe(0);
+
+    // ⚠ THE PROGRESS LEG. Everything above is satisfiable by a producer that is
+    // registered, swept, counted and completely silent — which is exactly the
+    // failure shape the archivist extraction shipped, where every assertion
+    // about state was green while the media made no progress at all.
+    const driven = await sampleProducerChannel(page, nodeId, fixture.read, CHANNEL_FRAMES);
+    expect(
+      driven.distinct,
+      `${type}: ${fixture.read.key}.${fixture.read.field} must FOLLOW the patched modulator with ` +
+        `no card anywhere. ${fixture.why}\n  saw ${driven.distinct} distinct value(s) over ` +
+        `${driven.frames} frames; first ${driven.first}; sample ${driven.values.join(', ')}`,
+    ).toBeGreaterThan(1);
+
+    // NEGATIVE CONTROL on the instrument itself: with the modulator UNPATCHED
+    // the same probe must go still. Without this, a probe that reported noise —
+    // or read a field that jitters for unrelated reasons — would pass the leg
+    // above on a dead producer.
+    await page.evaluate(() => {
+      const w = globalThis as unknown as {
+        __patch: { edges: Record<string, unknown> };
+        __ydoc: { transact: (fn: () => void) => void };
+      };
+      w.__ydoc.transact(() => {
+        delete w.__patch.edges['nodeproducer-edge'];
+      });
+    });
+    await expect
+      .poll(
+        async () => (await sampleProducerChannel(page, nodeId, fixture.read, 30)).distinct,
+        {
+          message:
+            `${type}: with the modulator unpatched the same probe must settle — a channel that ` +
+            'keeps moving on its own cannot be evidence that the producer is running',
+          timeout: 30_000,
+        },
+      )
+      .toBe(1);
+
+    // ⚠ AND THE UN-LATCH, which is the half a "does it move" leg cannot see.
+    // `cv-shadow` clears the combined value only on a KNOB MOVE, so a producer
+    // that stopped pushing would leave this param frozen at whatever the LFO
+    // happened to be at — a bright, moving, completely stale picture. The
+    // settled value must be the KNOB, which is only true if the push is still
+    // running after the cable is gone.
+    const knob = await page.evaluate(({ id, f }) => {
+      const w = globalThis as unknown as { __patch: { nodes: Record<string, { params?: Record<string, number> }> } };
+      return w.__patch.nodes[id]?.params?.[f];
+    }, { id: nodeId, f: fixture.read.field });
+    const settled = await sampleProducerChannel(page, nodeId, fixture.read, 20);
+    expect(
+      settled.first,
+      `${type}: after the cable is pulled, ${fixture.read.field} must return to the KNOB ` +
+        `(${knob}) rather than LATCHING at its last modulated value — the producer is what ` +
+        `overwrites it. Saw ${settled.first}.`,
+    ).toBeCloseTo(typeof knob === 'number' ? knob : 0, 3);
+
+    // ── DELETE — the node leaves the graph and the producer goes with it ─────
+    await page.evaluate((id) => {
+      const w = globalThis as unknown as {
+        __patch: { nodes: Record<string, unknown>; edges: Record<string, unknown> };
+        __ydoc: { transact: (fn: () => void) => void };
+      };
+      w.__ydoc.transact(() => {
+        for (const [eid, e] of Object.entries(w.__patch.edges)) {
+          const edge = e as { source?: { nodeId?: string }; target?: { nodeId?: string } } | undefined;
+          if (edge?.source?.nodeId === id || edge?.target?.nodeId === id) delete w.__patch.edges[eid];
+        }
+        delete w.__patch.nodes[id];
+      });
+    }, nodeId);
+    // DERIVED from the manifest, never named here — the port that carries this
+    // module's picture is a property of the module.
+    const videoOut = mod.outputs.find((p) => p.type === 'video' || p.type === 'mono-video')?.id;
+    if (videoOut) {
+      await expect
+        .poll(async () => hasVideoSource(page, nodeId, videoOut), {
+          message: `${type}'s engine handle must be gone after the node is deleted`,
+          timeout: 20_000,
+        })
+        .toBe(false);
+    }
+
+    const providerErrors = errors.filter((e) => /useStore|SvelteFlowProvider/i.test(e));
+    expect(providerErrors, `provider throw(s): ${providerErrors.join(' | ')}`).toEqual([]);
+  });
+}

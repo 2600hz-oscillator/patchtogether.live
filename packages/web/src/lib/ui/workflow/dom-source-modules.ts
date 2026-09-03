@@ -250,20 +250,20 @@ export const DOM_SOURCE_LANE_TYPES: ReadonlySet<string> = new Set<string>([]);
  *                so its audio outs are dead in the common case. Same seam,
  *                same fix; it is a DERIVED member of this set, not a
  *                judgement call (see the gate).
- *   scope        the card reads `readParam` (the knob PLUS the engine's own
- *   rasterize    per-port CV tap) and pushes `write(node,'cvCombined')`, which
+ *   rasterize    the card reads `readParam` (the knob PLUS the engine's own
+ *                per-port CV tap) and pushes `write(node,'cvCombined')`, which
  *                is how a SAME-DOMAIN cv cable reaches a DISPLAY param at all:
  *                `AudioEngine.addEdge` connects to the AudioParam and never
  *                calls `setParam`, and the per-frame CV bridge exists only on
  *                the video side (#1664).
  *
- *                ⚠ THESE TWO DEGRADE, THEY DO NOT GO DARK, and the distinction
- *                is load-bearing rather than a hedge. Both render their picture
+ *                ⚠ THIS ONE DEGRADES, IT DOES NOT GO DARK, and the distinction
+ *                is load-bearing rather than a hedge. It renders its picture
  *                inside the MODULE from its own analysers, so an unmounted card
- *                still produces a full, moving, correct trace/raster. So they
- *                are members for the LIFETIME half of this rule (keep the card
+ *                still produces a full, moving, correct raster. So it is a
+ *                member for the LIFETIME half of this rule (keep the card
  *                alive in the headless host and the cable is honoured) and NOT
- *                for the "renders black" half. A future reader comparing them
+ *                for the "renders black" half. A future reader comparing it
  *                against wavesculpt's measured `nonBlack 0/3072` should expect
  *                a normal picture here, not a black one; that is not this set
  *                being wrong.
@@ -288,6 +288,26 @@ export const DOM_SOURCE_LANE_TYPES: ReadonlySet<string> = new Set<string>([]);
  *                `addCrossDomainCvBridge`, which would take both out of this
  *                set entirely — the node-lifetime EPIC #1583 is the right home.
  *
+ * ⚠ SCOPE HAS LEFT THIS SET (legacy-removal S1, 2026-09-03) — the first
+ * PRODUCER departure, and the shape every remaining one follows.
+ *
+ * Its push is now `$lib/ui/media/frame-producers`' `SCOPE_FRAME_PRODUCER`,
+ * owned by `$lib/ui/media/node-frame-producers` on GRAPH lifetime and synced
+ * from `Canvas.svelte` beside the other node-keyed owners. The rule that made
+ * `scope` a member has not changed and is not weakened — the module's engine
+ * state must not depend on which UI renders it. What changed is WHO satisfies
+ * it: an off-screen card mount was the workaround, and a node-lifetime owner is
+ * the fix, exactly as it was for the five DOM-source departures above.
+ *
+ * ⚠ AND THE TRACE MOVED WITH IT, WHICH IS THE HALF A READER WILL LOOK FOR. The
+ * picture is `modules/scope/ScopeTraceSurface.svelte` now — one renderer for the
+ * legacy card, the faceplate body and `GroupCard`'s viz-passthrough mount, where
+ * there were three copies of `drawScope` before. That surface WRITES NOTHING,
+ * which is the property the gate below reads: with no producer seam anywhere in
+ * `ScopeCard`'s subtree, `scope`'s absence here is DERIVED rather than deleted.
+ * It also retired the `GroupCard → ScopeCard.svelte` subtree exemption, because
+ * the group mounts the surface directly and no longer reaches a card at all.
+ *
  * DERIVED, never hand-maintained: dom-source-modules.test.ts greps every card
  * component for these producer seams and asserts this set is EXACTLY what it
  * finds, so a new producer-on-the-card module cannot ship dark either.
@@ -302,7 +322,6 @@ export const DOM_SOURCE_LANE_TYPES: ReadonlySet<string> = new Set<string>([]);
 export const CARD_PRODUCER_LANE_TYPES: ReadonlySet<string> = new Set<string>([
   'cube',
   'rasterize',
-  'scope',
   'synesthesia',
   'timelorde',
   'wavesculpt',
