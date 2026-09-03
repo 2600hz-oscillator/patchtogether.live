@@ -57,13 +57,35 @@ concurrency:
 
 jobs:
   # ---------------------------------------------------------------------------
-  # The capture. Runs the FULL_MATCH sweep with --update-snapshots=all (see the
-  # long note on `vrt:update` in Taskfile.yml — `=changed` could not refresh a
-  # baseline that PASSES, which is how an all-black `face-outlines-dock` stayed
-  # pinned from 740bac121 onward) and commits the regenerated
-  # e2e/vrt/__screenshots__/ PNGs. `=all` skips the baseline comparison entirely
-  # and rewrites on a BYTE difference, so an unchanged scene is still not
-  # rewritten and the bot's commit stays the set of scenes that actually moved.
+  # The capture. Runs the FULL_MATCH sweep with --update-snapshots=changed and
+  # commits the regenerated e2e/vrt/__screenshots__/ PNGs. (This header used to
+  # claim the sweep ran `=all`; it did not — the run step below has been
+  # `=changed` all along, and the prose was describing a flag nobody passed.)
+  # `=changed` rewrites only a baseline whose comparison FAILS — or one that is
+  # MISSING — so the bot's commit is exactly the set of scenes that moved.
+  #
+  # ⚠ THE TRADE, stated rather than papered over: `=changed` cannot refresh a
+  # baseline that PASSES its comparison — the all-black hazard (see the
+  # `vrt:update` note in Taskfile.yml). An all-black `face-outlines-dock`
+  # stayed pinned from 740bac121 onward precisely because the broken render
+  # MATCHED the broken baseline, so no `=changed` capture would ever touch it.
+  # `=all` closes that hole by skipping the comparison and rewriting on a BYTE
+  # difference — which is also how it once re-pinned 22 unrelated baselines in
+  # one capture, i.e. the cure silently widens every capture's blast radius.
+  # We keep `=changed` and pay the trade deliberately: a stuck-but-PASSING
+  # baseline is refreshed by deleting the PNG and dispatching a scoped capture
+  # (a missing baseline is always written), not by a flag that can rewrite the
+  # world.
+  #
+  # ⚠ AND `=changed` HAS A SECOND EDGE: regenerating a MOVED baseline leaves
+  # Playwright's exit nonzero (the comparison failed; the rewrite does not
+  # unfail it), so under the run step's `set -e` the shard goes red BY DESIGN.
+  # That red means "pixels moved — review the commit", not "capture broken".
+  # The Stage/Upload steps below are conditioned `success() || failure()` and
+  # the collect job `always()` so a moved-baseline regeneration COMMITS exactly
+  # like a missing-baseline one — unconditioned, the stage/upload pair skipped
+  # on that exit and the capture discarded the very pixels it was dispatched
+  # to produce.
   #
   # It used to say "mirrors the ci.yml `vrt` job (postgres service container)".
   # That job was deleted 2026-08-17, and the mirroring is what put a database in
@@ -358,6 +380,15 @@ jobs:
       # UPLOAD, don't commit. Six shards pushing to one branch would race and
       # the losers' baselines would vanish silently, so the shards PRODUCE and
       # exactly one job COMMITS.
+      # ⚠ `if: success() || failure()` IS LOAD-BEARING on this step and the
+      # upload below. Under `=changed`, regenerating a MOVED baseline leaves
+      # Playwright red (see the job header), and an UNCONDITIONED stage/upload
+      # pair is skipped on that failure — the shard renders the correct pixels
+      # and then throws them away, so a moved-baseline dispatch committed
+      # NOTHING while a missing-baseline one worked. The shard stays red (that
+      # is the review signal); its pixels land regardless. `success() ||
+      # failure()` and not `always()`: a CANCELLED shard (timeout kill) should
+      # not stage a half-rendered tree.
       # ⚠ STAGE ONLY WHAT THIS SHARD CHANGED. Uploading the whole checked-out
       # __screenshots__ tree meant six artifacts each carrying all ~580 files,
       # ~579 of them identical LFS checkouts — and the collector's
@@ -369,6 +400,7 @@ jobs:
       # only a scene rendered by TWO shards could still overlap, and the
       # planner's union assertion guarantees that set is empty.
       - name: Stage ONLY this shard's changed baselines
+        if: ${{ success() || failure() }}
         run: |
           set -euo pipefail
           rm -rf /tmp/vrt-shard-out
@@ -381,6 +413,7 @@ jobs:
           echo "staged $(find /tmp/vrt-shard-out -name '*.png' | wc -l) changed baseline(s)"
 
       - name: Upload this shard's baselines
+        if: ${{ success() || failure() }}
         uses: actions/upload-artifact@v4
         with:
           name: vrt-baselines-shard-${{ matrix.shard }}
@@ -396,6 +429,13 @@ jobs:
   # all-or-nothing alternative is what threw away an hour of correct rendering
   # every time one scene ran long, and a missing shard is not silent — its
   # baselines simply stay stale and `vrt-strict` keeps naming them.
+  #
+  # `always()` also covers the NORMAL case under `=changed`: a shard that
+  # regenerated a MOVED baseline exits red by design (see the capture header),
+  # and its staged pixels must still be committed. With a plain `needs:` this
+  # job would run only on an all-green capture — i.e. only when every rewrite
+  # was of a MISSING baseline — which is the moved-baseline discard again, one
+  # job later.
   # ---------------------------------------------------------------------------
   collect:
     name: commit VRT baselines
