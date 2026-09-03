@@ -142,7 +142,13 @@ into `face-clipplayer.spec.ts`, which already covers grid+pads).
 | … | helper flips: `_per-module-per-port-shared.ts`, `_toybox-fixture-helpers.ts`, `carl-rackspace.helpers.ts`, `rack-session.ts` `LEGACY_RACK_URL` | pending — each gated on its spec family |
 | 7 | readout family (resofilter, sample-hold, clouds, cloudseed), 1ba0470cf — def formatter feeds the controls (aria-valuetext/aria-checked/titles); both directions asserted | DONE — REPEAT=3 18 passed; resofilter control red-then-green; rackLegacy 56→52 |
 | 8 | midi-device trio (midi-cv-buddy, midi-lane on rackLegacy; midi-out-buddy from the 64) — connect = `shell-cell-<family>-connect` ACTION cell; device picker = dock `<family>-device-body-<node>`; name button = `tile-name-label-button`; handles shell-agnostic on the wrapper | DONE — 13 tests green, REPEAT=3 30 passed, midi-out-buddy control red-then-green; ⚠ waitForTimeout ledger keys on TEST TITLES — the two ledgered 300ms waits kept their titles verbatim |
-| … | card-DOM rewrites remaining: node-context-menu/`.tile-name` targets, module-annotate, lfo-modulation-visible, scope pair, pentemelodica, foxy, ui-refresh legs, clipplayer family, launchpad-scene-repeats, fader-midi-assign, clipplayer-custom-scale/songmode; then the 64-queue families (toybox, samsloop, timelorde, video-*, vst, coverage sweeps, per-module sweeps) | pending |
+| 9 | menus/annotate/undo/scope pair (node-context-menu, module-annotate, ui-refresh, scope-tuner, scope-xy-intensity), 04970192e | DONE — `.tile-name` is the right-click target; scope tuner speaks via the dock graticule aria-label |
+| 10 | foxy + pentemelodica, 52674e05d — dock `foxy-face-*` canvases, hero lanes; OUTPUT read = videoOut tile thumb canvas | DONE |
+| 11 | lfo-modulation-visible fold-and-delete, fea86503e — shell renders no CV motion (OWNER item in Defects); wait-ledger shrunk via accept | DONE |
+| 12 | fader + fader-midi-assign, a84297e52 — pointer-drag on dock sliders (scrollIntoView first!), radiogroup exact indices, MIDI-learn on dock controls | DONE |
+| 13 | param-edit-undo + poly-chord, de9bea8f4 — dock wheel-edit = one undo step; cart-face grid mapped | DONE |
+| 14 | note-entry + keyboard-nav, 8a22592fe — `cart-face-{gate,pitch,chord}-{i}` same NoteEntry; lazy cells + draft-restore deltas asserted honestly | DONE — rackLegacy 36 |
+| … | card-DOM rewrites remaining (rackLegacy 36): aut-patch-panel, automation-cv-record, blood pair, bluebox, cable-z-order, clip-automation, clipplayer family (8), docs, dx7-syx-load, es9-per-leg-patching, joystick, launchpad-scene-repeats, live-glyphs, mixmstrs-stereo-expand, multi-output, painter, patch-panel, reshaper-shapedramps, save-group-and-naming, score, seqtris, shapegen pair, toybox-control-surface, vfpga (4); then the 63-queue families (toybox 15, samsloop 6, timelorde 4, video-*, vst pair, coverage sweeps, per-module sweeps, ai-smoke, livecode, midi, camera-input, gibribbon, nibbles, organize-modules, patch-menu-redesign, patch-panel-nested, es9-card-shows-state, cube, chromaconsole, duplicate-module, foxy-freeze, clip-media-recover-reachable, in-card-title DONE, …) | pending |
 | … | family (c) machinery deletions + skip-budget same-commit | pending |
 | … | #1847 park reconciliation (28 files) | pending |
 | last | DOOM sub-slice: 14 re-points, boot URL + knob locator only | pending |
@@ -174,6 +180,7 @@ Format: deleted test → why it dies → where the coverage lives now.
 
 | fader.spec :: exact `.fill()` values on card inputs | card `<input>` semantics; shell sliders are drawn controls | rewritten: pointer-drag writes the param in the dragged direction + radiogroup transitions assert exact indices (a STRONGER gesture claim, weaker value-exactness — the def clamps stay unit-tested) |
 | fader-midi-assign :: `fader-ab-midi-badge` / `fader-drywet-midi-badge` | card-only per-fader badges | CC-drives-param asserted directly; the shared bound-badge behaviour is pinned by midi-learn.spec.ts on the shell |
+| dx7-syx-load :: `dx7-syx-status` "loaded 32 voices" text | card-only load receipt | the load's visible receipt on the shell = the preset selector auto-flipping to USER_00 (aria-label) + the popup's ≥41 options; the audible patch-difference L2 assertion unchanged. ⚠ dock-Esc hazard: closing a face listbox with Escape closes the WHOLE dock full view — close by re-selecting instead |
 
 Collection: 3077 → 3066 → 3063 → **3061** tests in 504 files.
 
