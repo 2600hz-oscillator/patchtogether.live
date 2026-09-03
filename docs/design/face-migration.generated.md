@@ -12,8 +12,8 @@ Every registered module carries exactly one **disposition**: what kind of work i
 |  | count |
 |---|---|
 | registered modules | 197 |
-| done (faced + promoted) | 192 |
-| remaining (excludes organizational-native) | 2 |
+| done (faced + promoted) | 193 |
+| remaining (excludes organizational-native) | 1 |
 | registered with NO disposition (must be zero) | 0 |
 | inventory entries naming a dead def (must be zero) | 0 |
 
@@ -21,9 +21,9 @@ Every registered module carries exactly one **disposition**: what kind of work i
 
 | disposition | what it means | modules | done |
 |---|---|---|---|
-| `generic-face` | author a `face` and rank the controls — no new platform capability | 192 | 192 |
+| `generic-face` | author a `face` and rank the controls — no new platform capability | 193 | 193 |
 | `blocked` | would be a face today but for the named capability, and nothing else | 0 | — |
-| `bespoke-surface` | the primary interaction is not param-shaped — needs a purpose-built surface | 2 | — |
+| `bespoke-surface` | the primary interaction is not param-shaped — needs a purpose-built surface | 1 | — |
 | `organizational-native` | rack furniture; not a migration at all | 3 | — |
 
 ## What each blocker buys
@@ -77,6 +77,7 @@ author a `face` and rank the controls — no new platform capability.
 | `destroy` | audio | done | — |
 | `destructor` | video | done | — |
 | `dockscope` | audio | done | — |
+| `doom` | video | done | — |
 | `drummergirl` | audio | done | — |
 | `dx7` | audio | done | — |
 | `edges` | video | done | — |
@@ -243,7 +244,6 @@ the primary interaction is not param-shaped — needs a purpose-built surface.
 
 | module | domain | state | blockers |
 |---|---|---|---|
-| `doom` | video | — | — |
 | `toybox` | video | — | `needs-media-controller` |
 
 ## `organizational-native`

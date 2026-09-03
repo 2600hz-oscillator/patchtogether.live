@@ -374,6 +374,127 @@ export const doomDef: VideoModuleDef = {
     { id: 'cv_idkfa_in', label: 'IDKFA', defaultValue: 0, min: 0, max: 1, curve: 'linear' as const },
   ],
 
+  // ── THE FACEPLATE (owner-authorised 2026-09-02) ───────────────────────────
+  //
+  // ⚠ ATTEST-NEUTRAL BY CONSTRUCTION, not by care: `attest-code-basis.ts` strips
+  // the `face`, `docs`, `controlFamilies` and `noUserControl` properties of a
+  // MODULE-SCOPE def literal before hashing (HASH_TRANSPARENT_PROPS), so both
+  // blocks below are invisible to the WebGL content hash. No param, no port and
+  // no factory line moves with them, so `contract-lock.txt` does not move either.
+  //
+  // ⚠ AND NOTHING HERE RE-TIMES THE GAME. `runtime.runTic()` still runs where it
+  // always ran — inside `surface.draw`, below — so DOOM's game clock is still its
+  // frame clock. The face declares no `freeze` param and no determinism seam,
+  // deliberately: a tick pin would re-specify how far the marine walks, which is
+  // exactly what this module's standing `EXEMPT_FROM_VRT` entry refuses. The
+  // consequence is carried honestly in `FACES_WITHOUT_SCENES` (`_shell-faces.ts`),
+  // which names the non-pixel gates that cover the face instead.
+  face: {
+    // The two user-facing params. Everything else on this def is a CV target
+    // written by its own jack — see `noUserControl` below.
+    order: ['audioGain', 'fillMode'],
+    // ⚠ `'none'` IS MANDATORY, not a default. `laneGlyphFor` takes the
+    // `hasVideoSurface` branch first for a `domain: 'video'` def, so the lane
+    // tile is already a live `VideoTileThumb` — this peer's own first-person
+    // view, per node, with nothing declared. Any other literal here would be a
+    // trace that can never render.
+    glyph: 'none',
+    // The game screen: $lib/ui/modules/doom/shell-extension.ts → fullViewBody.
+    // It mounts the SHARED DoomSurface, which is where DOOM's keyboard capture,
+    // node-owned session adoption, roster/netcode/lockstep wiring and blit loop
+    // live — see that file's header for why the face MUST carry them.
+    extension: 'doom',
+    monitor: {
+      why:
+        'the marine\'s POV IS the video output a rack projects — DOOM is a source whose whole '
+        + 'purpose is the picture on `out`, so watching it full-bleed without the two trim '
+        + 'controls beside it is the performance use.',
+    },
+    rear: {
+      groups: [
+        // ⚠ ONE input section, not four. The per-slot p1..p4 split is the
+        // grouping a player actually wants, but `rearFieldPlan` gives the
+        // LEADING slot only to a group id of 'voice'/'signal' and lets any
+        // OTHER id claim only a matching PAGE id — and this face declares no
+        // pages (two params is one band). Four `p<N>` groups would each append
+        // as a STRAY band after the derived sections, in a wrecked order that
+        // the totality gate structurally cannot see because every hole still
+        // renders exactly once. So the split is expressed as CLUSTERS inside
+        // the one leading section, which is what clusters are for.
+        {
+          id: 'signal',
+          label: 'play',
+          ports: [
+            ...CV_GATE_PORT_IDS_BY_SLOT.map((g) => g.portId),
+            'iddqd_in',
+            'idkfa_in',
+          ],
+        },
+        {
+          id: 'video_out', label: 'out', direction: 'output' as const,
+          ports: ['out', 'audio_l', 'audio_r'],
+        },
+        {
+          id: 'events', label: 'events', direction: 'output' as const,
+          ports: ['evt_kill', 'evt_door', 'evt_gun_p1', 'evt_gun_p2', 'evt_gun_p3', 'evt_gun_p4'],
+        },
+        {
+          id: 'kills', label: 'kills by type', direction: 'output' as const,
+          ports: MONSTER_KILL_PORTS.map((p) => p.portId),
+        },
+        {
+          id: 'deaths', label: 'deaths', direction: 'output' as const,
+          ports: PLAYER_DEATH_PORTS.map((p) => p.portId),
+        },
+      ],
+      // The per-slot sub-headers (#353), derived from the SAME constant the
+      // ports and params are derived from so a slot can never be typed twice or
+      // missed. Own-slot-only routing means these four groups are not
+      // interchangeable — a peer applies ONLY its own seated slot's gates — so
+      // labelling which is which is the whole point of curating this rail.
+      clusters: [
+        ...[0, 1, 2, 3].map((slot) => ({
+          group: 'signal',
+          label: `player ${slot + 1}`,
+          ports: CV_GATE_PORT_IDS_BY_SLOT
+            .filter((g) => g.slot === slot)
+            .map((g) => g.portId),
+        })),
+        { group: 'signal', label: 'cheats', ports: ['iddqd_in', 'idkfa_in'] },
+      ],
+    },
+  },
+
+  // #1726 — the params a player never sets. All 36 per-slot CV-gate targets and
+  // both cheat targets are written by their OWN input jack (`paramTarget`), never
+  // by a control: the card never drew a row for one and the faceplate must not
+  // either, or promotion would put a wall of dials on the plate for jacks.
+  // Derived from the same constants the ports are derived from so the two lists
+  // cannot disagree.
+  noUserControl: [
+    ...CV_GATE_PORT_IDS_BY_SLOT.map(({ portId, slot, base }) => ({
+      param: `cv_${portId}`,
+      writer: 'cv-port' as const,
+      why:
+        `player ${slot + 1}'s ${base.toUpperCase()} gate — the ${portId} jack writes it, and the `
+        + 'factory hysteresis-edge-detects it into a held keypress for that slot only',
+    })),
+    {
+      param: 'cv_iddqd_in',
+      writer: 'cv-port' as const,
+      why:
+        'god-mode cheat level — the iddqd_in jack writes it, and the factory injects the '
+        + '5-character keypress sequence on the rising edge',
+    },
+    {
+      param: 'cv_idkfa_in',
+      writer: 'cv-port' as const,
+      why:
+        'full-arsenal cheat level — the idkfa_in jack writes it, and the factory injects the '
+        + '5-character keypress sequence on the rising edge',
+    },
+  ],
+
   docs: {
     explanation: "DOOM runs the 1993 shareware game compiled to WebAssembly (doomgeneric) and renders each peer's OWN first-person view to the video 'out' jack, with the WASM SFX mixer bridged to stereo audio outputs. It is a host-only, single-node module (maxInstances 1, ownerOnly): the rack owner adds one DOOM card, clicks the surface to download/cache the ~4 MB shareware WAD and boot the WASM, then either plays solo or hosts a true-lockstep co-op netgame that up to 3 rack-mates one-click hot-join (4 marines total — the owner is player 1) — every peer runs its own runtime and the deterministic tic stream keeps all marines byte-identical. Play with the keyboard once the card is focused (arrows move/turn, Ctrl/F fire, Space uses doors), or drive it from CV: the per-slot gate inputs p1..p4 act as held keypresses (movement/fire/strafe/menu) so an LFO, sequencer, or GAMEPAD can play the marine — each peer applies only its own seated slot's group (own-slot rule), and in single-player only the p1 group is live. Two extra cheat gates inject IDDQD (god mode) and IDKFA (full arsenal) on a rising edge. Game events feed the audio domain as 10 ms gate pulses — per-player weapon fire, door opens, the any-monster kill plus per-monster-type kills, and per-player deaths — so DOOM's action can trigger synths, drums, or a SCOREBOARD. The card's load button, the Single Player / Host Multiplayer start choice, the guest Join button, the click-to-capture-keyboard hint, and the arbiter's New Game dialog (mode/skill/episode/map custom dropdowns + a Launch / Next Map button) are UI controls, not patchable params. There is no host framebuffer mirror — an unjoined spectator simply shows the dark attract screen until it JOINS.",
     inputs: {
