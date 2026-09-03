@@ -149,7 +149,28 @@ function videoSourceTypes(): string[] {
   const hlsOwned = parseHlsProfileTypes(
     '../../packages/web/src/lib/ui/media/node-hls-source-registry.ts',
   );
-  const all = [...new Set([...cardOwned, ...nodeOwned, ...varispeedOwned, ...hlsOwned])].sort();
+  // ⚠ ...AND THE LOOPBACK OWNER SET (legacy-removal S1), which the paragraph
+  // above predicted for the THIRD time and which was MISSED for a day rather
+  // than caught: loopback left `DOM_SOURCE_LANE_TYPES` when its capture moved to
+  // a node controller, this union was not updated, and it dropped out of this
+  // sweep with the whole lane still green.
+  //
+  // ⚠ AND THE VACUITY GUARD BELOW STRUCTURALLY CANNOT SEE THAT, which is worth
+  // recording because the guard was written to stop exactly this. It asserts the
+  // sweep still enrols a real FILE PLAYER, and loopback is a CAPTURE module: it
+  // skips on every run, contributes nothing to `realPlayerTypes()`, and its
+  // departure therefore moves no reading the guard takes. "Not empty" and "not
+  // vacuous" were correctly separated; "still has the subjects it had" is a
+  // THIRD property, and nothing here checks it. The union line is the only
+  // defence, so a conversion must add its owner set here in the same commit —
+  // there is no gate that will notice if it does not.
+  const loopbackOwned = parseTypeSet(
+    '../../packages/web/src/lib/ui/media/node-loopback-source-registry.ts',
+    'NODE_LOOPBACK_SOURCE_TYPES',
+  );
+  const all = [
+    ...new Set([...cardOwned, ...nodeOwned, ...varispeedOwned, ...hlsOwned, ...loopbackOwned]),
+  ].sort();
   if (all.length === 0) throw new Error('EVERY source-owner set parsed EMPTY — refusing to pass vacuously');
   return all;
 }

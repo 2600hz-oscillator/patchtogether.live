@@ -760,24 +760,30 @@ describe('face-migration inventory — DERIVED from the tree, not from this list
         + 'published status and invokes a registered command, so no second owner exists.',
       seam: '$lib/ui/media/camera-status-registry',
     },
-    loopback: {
-      why:
-        'the ACQUIRE gesture and the STOP gesture (both ACTIONS, not values), the capture LAMP '
-        + 'and the card\'s recovery TEXT — all rebuilt in the faceplate extension body. The card '
-        + 'keeps sole ownership of getDisplayMedia, the MediaStream and the capture state '
-        + 'machine; the body reads a published status and invokes a registered command, so no '
-        + 'second owner exists. ⚠ ACQUIRE IS LOAD-BEARING IN A WAY CAMERA\'S IS NOT: a display '
-        + 'capture has NO already-granted state, so there is no auto-acquire path to fall back '
-        + 'on and a promoted loopback with no reachable button could never be started at all. '
-        + '⚠ STOP could not be carried as a param instead — loopback.ts is in the WebGL attest '
-        + 'basis (a new param costs a GPU re-attest window) and a synced param would let one '
-        + 'collaborator stop a capture living in another browser. ⚠ The LAMP has nothing in the '
-        + 'graph to derive from: gain and crop are the only params and neither moves when a '
-        + 'capture starts, stops, is refused, or is ended from the browser\'s share bar. '
-        + 'Separately, the per-frame CROP PUMP moved to a node-keyed home so a card unmount can '
-        + 'no longer freeze the crop rectangle under a running capture.',
-      seam: '$lib/ui/media/loopback-status-registry',
-    },
+    // ⚠ `loopback` HAD AN ENTRY HERE AND NO LONGER NEEDS ONE (legacy-removal S1,
+    // 2026-09-03). The distinction matters, because "the exemption was deleted"
+    // reads at a glance like "the affordances were dropped", and the opposite
+    // happened.
+    //
+    // What this map exempts is one specific clause: a module dispositioned
+    // `generic-face` whose CARD owns the source, so the shell parks that card
+    // off-screen with `pointer-events: none` and every button it draws becomes
+    // unreachable. An entry says "the buttons were carried to the face, and here
+    // is the seam". Loopback's were, and they still are — the ACQUIRE and STOP
+    // gestures, the capture LAMP and the recovery TEXT all live in
+    // `LoopbackOutputBody.svelte` over `$lib/ui/media/loopback-status-registry`,
+    // gated in BOTH directions by `e2e/tests/loopback-shell-source.spec.ts`.
+    //
+    // What changed is that the CLAUSE has no loopback to bite on any more.
+    // `$lib/ui/media/node-loopback-source-registry` owns getDisplayMedia, the
+    // `<video>` and the engine attach, so loopback left `DOM_SOURCE_LANE_TYPES`
+    // and there is no parked card whose buttons could be unreachable — there is
+    // no card mounted at all. An exemption that outlives its subject is the
+    // stale-licence shape the ANCHORED leg below exists to catch, and it caught
+    // this one on the first full run after the extraction. That is why the entry
+    // is deleted rather than kept "for the prose": a covering entry nobody needs
+    // reads authoritative, and the next reader would take it as evidence that
+    // loopback still has a card doing something.
   };
 
   /**

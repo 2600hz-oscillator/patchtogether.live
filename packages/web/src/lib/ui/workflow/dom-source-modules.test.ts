@@ -68,15 +68,17 @@ import {
 import { NODE_VIDEO_SOURCE_TYPES } from '$lib/ui/media/node-video-source-registry';
 import { NODE_VARISPEED_TYPES } from '$lib/ui/media/node-varispeed-registry';
 import { NODE_HLS_SOURCE_TYPES } from '$lib/ui/media/node-hls-source-registry';
+import { NODE_LOOPBACK_SOURCE_TYPES } from '$lib/ui/media/node-loopback-source-registry';
 
 /** Every node-scoped source owner there is. Read as ONE set wherever the
  *  question is "has SOMETHING taken ownership of this module's source", so a
- *  fourth registry joins by being imported here rather than by an edit at each
+ *  fifth registry joins by being imported here rather than by an edit at each
  *  of the four sites below. */
 const NODE_OWNED_SOURCE_TYPES: ReadonlySet<string> = new Set<string>([
   ...NODE_VIDEO_SOURCE_TYPES,
   ...NODE_VARISPEED_TYPES,
   ...NODE_HLS_SOURCE_TYPES,
+  ...NODE_LOOPBACK_SOURCE_TYPES,
 ]);
 import { STRICT_FACES } from './strict-faces';
 import { NON_SHELL_LANE_TYPES, laneRenderKind, type LaneRenderKind } from './legacy-fallback';
@@ -874,7 +876,12 @@ describe('DOM_SOURCE_LANE_TYPES — the grep gate (a new source module cannot sh
     // card. They did not stop being media sources; they stopped being CARD-owned
     // ones, and asserting the same thing about them in the same place would have
     // been a name kept while the claim inverted.
-    for (const t of ['cameraInput', 'archivist', 'loopback']) {
+    // ⚠ `loopback` LEFT THIS LIST TOO (legacy-removal S1, 2026-09-03) and is now
+    // in Boundary 3 below, for a reason unlike the four already there: nothing
+    // was broken. The other departures fixed measured defects; this one removes
+    // the CARD's load-bearingness so the card can be deleted. Same destination,
+    // different argument — see the set's own header.
+    for (const t of ['cameraInput', 'archivist']) {
       expect(DOM_SOURCE_LANE_TYPES.has(t), `${t} is a DOM-source module`).toBe(true);
     }
     // Boundary 1: a pure-GPU generator is NOT one (acidwarp renders from a shader
@@ -908,7 +915,16 @@ describe('DOM_SOURCE_LANE_TYPES — the grep gate (a new source module cannot sh
     // they were card-owned anyway — which is the honest statement of the epic:
     // the card was never the right owner, it was just the file the code was
     // written in.
-    for (const t of ['videobox', 'videovarispeed', 'peertube', 'tvLibrarian']) {
+    //
+    // ⚠ THE LEGACY-REMOVAL ADDITION (S1, 2026-09-03) IS `loopback`, and it is
+    // the one member whose departure was NOT driven by a defect. The other four
+    // were measurably broken by card ownership. Loopback worked: the headless
+    // host kept its card mounted and the capture survived every collapse. It is
+    // here because the card must become deletable, and a load-bearing card
+    // cannot be. The boundary demonstrates the same thing either way — the card
+    // was never the right owner — but a reader looking for the bug this one
+    // fixed will not find one, and should not go hunting.
+    for (const t of ['videobox', 'videovarispeed', 'peertube', 'tvLibrarian', 'loopback']) {
       expect(
         DOM_SOURCE_LANE_TYPES.has(t),
         `${t}'s attach, audio wiring and loops belong to a node-scoped controller under ` +
@@ -946,13 +962,14 @@ describe('DOM_SOURCE_LANE_TYPES — the grep gate (a new source module cannot sh
       NODE_OWNED_SOURCE_TYPES.size,
       'no module has a node-owned video source',
     ).toBeGreaterThan(0);
-    // ...and the THREE registries are disjoint from EACH OTHER too, which is the
+    // ...and the FOUR registries are disjoint from EACH OTHER too, which is the
     // direction P3 introduced: one module cannot be claimed by two controllers
     // any more than by a controller and a card.
     const owners = [
       ['NODE_VIDEO_SOURCE_TYPES', NODE_VIDEO_SOURCE_TYPES],
       ['NODE_VARISPEED_TYPES', NODE_VARISPEED_TYPES],
       ['NODE_HLS_SOURCE_TYPES', NODE_HLS_SOURCE_TYPES],
+      ['NODE_LOOPBACK_SOURCE_TYPES', NODE_LOOPBACK_SOURCE_TYPES],
     ] as const;
     const doubleOwned: string[] = [];
     for (let i = 0; i < owners.length; i++) {

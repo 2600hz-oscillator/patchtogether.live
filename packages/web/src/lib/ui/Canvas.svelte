@@ -237,6 +237,7 @@
   import { nodeVideoSource } from '$lib/ui/media/node-video-source.svelte';
   import { nodeVarispeed } from '$lib/ui/media/node-varispeed.svelte';
   import { nodeHlsSource } from '$lib/ui/media/node-hls-source.svelte';
+  import { nodeLoopbackSource } from '$lib/ui/media/node-loopback-source.svelte';
   import { nodePresent } from '$lib/ui/modules/node-present-registry.svelte';
   import { createFullscreen } from '$lib/ui/modules/use-fullscreen.svelte';
   import { resolveVideoEngine } from '$lib/ui/modules/use-present.svelte';
@@ -2598,6 +2599,14 @@
     // leave a pump measuring the viewport forever.
     loopbackStatus.sweep(liveIds);
     loopbackCropPump.sweep(liveIds);
+    // ⚠ AND THE CONTROLLER THAT NOW OWNS BOTH OF THOSE (legacy-removal S1).
+    // `nodeLoopbackSource` took getDisplayMedia, the capture state machine, the
+    // engine attach and the pump's start/stop off `LoopbackCard.svelte`, so
+    // loopback left DOM_SOURCE_LANE_TYPES and no longer has a card in the
+    // headless host at all. This row is what stops the MediaStream when the node
+    // leaves the graph — the one place stopping it is right, because a node
+    // leaving IS the content ending.
+    nodeLoopbackSource.sweep(liveIds);
     // ...and the same status/command seam for ARCHIVIST
     // ($lib/ui/media/archivist-status-registry), the THIRD and last member of
     // DOM_SOURCE_LANE_TYPES to be promoted. Same reason as the two above: its
@@ -2734,6 +2743,21 @@
    *  module ignored both a rack load and every remote change. */
   $effect(() => {
     nodeHlsSource.sync(snapshot.nodes, engine);
+  });
+
+  /** THE NODE-OWNED LOOPBACK CAPTURE (legacy-removal S1). Same snapshot, same
+   *  reasoning, fourth registry — and the one whose ACQUISITION cannot move
+   *  here, which is why the seam is shaped the way it is.
+   *
+   *  ⚠ `getDisplayMedia` is refused outside a user activation, and unlike
+   *  `getUserMedia` there is no previously-granted state that lets a
+   *  programmatic call through. So this sync can RESTORE a capture and can never
+   *  START one: the surfaces ask, through `loopbackStatus.request(id,
+   *  'acquire')`, from inside a real click handler. What this effect owns is
+   *  everything after the grant — the element, the engine attach, the crop pump
+   *  and the state machine — on the NODE's lifetime instead of a card's. */
+  $effect(() => {
+    nodeLoopbackSource.sync(snapshot.nodes, engine);
   });
 
   let headlessSourceNodes = $derived.by<ModuleNode[]>(() => {

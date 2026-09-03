@@ -1,42 +1,46 @@
 <script lang="ts">
   // LoopbackCard — UI for the LOOPBACK browser-viewport video source.
   //
-  // Owns: getDisplayMedia (current-tab capture) + the hidden capture <video> +
-  // the capture-permission state machine + the per-frame crop-rect push. Hands
-  // the <video> element to the engine module via attachExternalSource (single
-  // source of truth — the WebGL2 sampler reads it directly), and pushes the
-  // measured viewport crop rectangle to the engine each frame via the private
-  // `_crop*` setParam channel (LOCAL, per-viewer — never synced, since each
-  // collaborator's viewport differs).
+  // ⚠ THIS CARD OWNS NO LIFECYCLE ANY MORE, and that is the whole point of the
+  // 2026-09-03 extraction. getDisplayMedia, the capture state machine, the
+  // engine `attachExternalSource` and the crop pump's start/stop all moved to
+  // `$lib/ui/media/node-loopback-source-registry` — a NODE-keyed controller
+  // Canvas syncs from the graph. What is left here is a VIEW: the rack tile, the
+  // patch panel, a preview of the node-owned <video>, and buttons that ASK the
+  // controller to act.
+  //
+  // WHY. `loopback` was in `DOM_SOURCE_LANE_TYPES`, which meant the default
+  // shell kept this card mounted OFF-SCREEN inside <HeadlessSourceHost> purely
+  // so the source would exist — the card was load-bearing for a question that
+  // is not a view question. A capture surviving a collapse, a dock move or a
+  // shell flip is CONTENT. Now it is owned like content, and this file can be
+  // deleted without taking the capture with it.
+  //
+  // ⚠ WHAT THIS CARD AND THE FACEPLATE NOW SHARE, exactly: they read the SAME
+  // status from `loopback-status-registry` and they send the SAME two commands
+  // to the same controller. Neither is privileged. That symmetry is the
+  // parity argument made structural rather than asserted — there is no
+  // affordance here that the face cannot reach, because both surfaces are
+  // clients of one owner.
   //
   // State scopes:
-  //   - `state` (idle / requesting / capturing / …): per-tab, local Svelte
-  //     $state. NOT in Yjs — a screen-capture grant is browser-instance-local.
+  //   - capture state (idle / requesting / capturing / …): per-tab, held by the
+  //     controller. NOT in Yjs — a screen-capture grant is browser-instance-local.
   //   - `node.params.gain / crop`: in Yjs, synced across collaborators.
 
-  import { onMount, onDestroy } from 'svelte';
+  import { onDestroy } from 'svelte';
   import { nodeMedia, type NodeMediaLease } from '$lib/ui/media/node-media-registry';
   import { type NodeProps } from '@xyflow/svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import NeonFader from '$lib/ui/controls/NeonFader.svelte';
-  import { useEngine } from '$lib/audio/engine-context';
   import { setNodeParam } from '$lib/graph/mutate';
-  import { patch } from '$lib/graph/store';
   import { loopbackDef } from '$lib/video/modules/loopback';
-  import {
-    acquireViewportStream,
-    isViewportCaptureSupported,
-    type LoopbackCaptureState,
-  } from '$lib/ui/viewport-acquire';
+  import { type LoopbackCaptureState } from '$lib/ui/viewport-acquire';
   import {
     loopbackStatus,
-    type LoopbackCommandLease,
+    type LoopbackStatus,
   } from '$lib/ui/media/loopback-status-registry';
-  import { loopbackCropPump } from '$lib/ui/media/loopback-crop-pump';
-  // ⚠ NO `computeCropUv` / `FULL_FRAME_CROP` IMPORT ANY MORE — the crop math is
-  // reached through the pump now, and re-importing it here would be the first
-  // step back towards a second measurement site.
-  import type { VideoEngine } from '$lib/video/engine';
+  import { LOOPBACK_SOURCE_SLOT } from '$lib/ui/media/node-loopback-source.svelte';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
   import { portsFromDef } from './card-kit';
@@ -53,27 +57,44 @@
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
 
-  const engineCtx = useEngine();
-
   // OUT-only patch panel (no inputs — a pure source). Port id is BYTE-IDENTICAL
   // to the def so persisted edges + the CV bridge route unchanged.
   const inputs = portsFromDef(loopbackDef.inputs);
   const outputs = portsFromDef(loopbackDef.outputs);
 
   // The <video> and the capture STREAM are owned by the NODE, not by this
-  // card (see $lib/ui/media/node-media-registry). Loopback was the worst case
-  // of the card-lifetime bug: `onDestroy` stopped the tracks, and
-  // getDisplayMedia cannot be restarted without a fresh user gesture — so a
-  // collapse did not merely pause the capture, it ended it permanently and the
-  // user had to re-pick the tab.
+  // card (see $lib/ui/media/node-media-registry). This card ADOPTS the element
+  // to show it and releases it on unmount; the element and the stream outlive
+  // both events.
   let videoHost: HTMLDivElement | null = $state(null);
-  let videoEl: HTMLVideoElement | null = $state(null);
   let mediaLease: NodeMediaLease<HTMLElement> | null = null;
-  const MEDIA_SLOT = 'main';
-  /** Mirror of the NODE-owned stream; rehydrated on adopt. */
-  let stream: MediaStream | null = null;
-  let capState: State = $state('idle');
-  let errorMsg = $state<string | null>(null);
+
+  // ── Read the controller's status through the cross-surface seam ───────────
+  //
+  // ⚠ THE SAME SEAM THE FACEPLATE READS, deliberately. Reading the controller's
+  // `$state` record directly would work and would be one line shorter, and it
+  // would also mean the card and the face could disagree the first time
+  // somebody changed one of them. One truth, two clients.
+  let live = $state<LoopbackStatus | null>(null);
+
+  $effect(() => {
+    const nodeId = id;
+    const sync = (): void => {
+      live = loopbackStatus.read(nodeId);
+    };
+    sync();
+    return loopbackStatus.subscribe(nodeId, sync);
+  });
+
+  // ⚠ THE `null` FALLBACK IS 'idle', NOT A THIRD STATE, and that is a deliberate
+  // difference from the faceplate. The face renders "nobody has published" as
+  // its own dim lamp because it can be open on a node whose surface never
+  // mounted. This card IS a surface for the node it renders, and the controller
+  // publishes on creation, so `null` here is only the instant before Canvas's
+  // first sync — showing 'idle' through it keeps the card's resting appearance
+  // byte-identical to what its VRT baselines pinned.
+  let capState = $derived<State>(live?.state ?? 'idle');
+  let errorMsg = $derived<string | null>(live?.errorMsg ?? null);
 
   function p(name: string): number {
     const def = loopbackDef.params.find((x) => x.id === name);
@@ -83,231 +104,55 @@
     return (v: number): void => setNodeParam(id, paramId, v);
   }
 
-  function videoEngine(): VideoEngine | null {
-    const e = engineCtx.get();
-    if (!e) return null;
-    try {
-      return e.getDomain<VideoEngine>('video');
-    } catch {
-      return null;
+  /**
+   * ⚠ A REAL CLICK HANDLER, AND IT MUST STAY ONE. `getDisplayMedia` is refused
+   * outside a user activation and — unlike `getUserMedia` — there is NO
+   * previously-granted state that would let a programmatic call through. The
+   * activation reaches the controller because `request` calls into it
+   * synchronously; an `await` anywhere on this path would silently stop the
+   * picker from ever opening, and the refusal is indistinguishable from the
+   * user dismissing the dialog.
+   */
+  function onRequestCapture(): void {
+    const res = loopbackStatus.request(id, 'acquire');
+    if (!res.delivered) {
+      console.warn('[loopback] START CAPTURE reached no controller for node', id);
     }
-  }
-
-  async function requestCapture(): Promise<void> {
-    if (!isViewportCaptureSupported()) {
-      capState = 'unsupported';
-      errorMsg = 'This browser does not support tab/screen capture (getDisplayMedia).';
-      return;
-    }
-    capState = 'requesting';
-    errorMsg = null;
-    stopStream();
-
-    const md = navigator.mediaDevices as unknown as {
-      getDisplayMedia: (c: MediaStreamConstraints) => Promise<MediaStream>;
-    };
-    const result = await acquireViewportStream((c) => md.getDisplayMedia(c));
-    if (!result.stream) {
-      const e = result.error;
-      if (e && (e.name === 'NotAllowedError' || e.name === 'PermissionDeniedError')) {
-        // User dismissed the picker or denied — a normal outcome, back to idle.
-        capState = 'idle';
-        errorMsg = null;
-      } else {
-        capState = 'error';
-        errorMsg = e ? `${e.name}: ${e.message}` : 'Capture failed.';
-      }
-      return;
-    }
-    stream = result.stream;
-    // The registry owns it from here: it stops the PREVIOUS stream (a re-share
-    // legitimately replaces it) and never stops this one on a card unmount.
-    nodeMedia.setStream(id, MEDIA_SLOT, stream);
-    startCropPump();
-
-    if (videoEl) {
-      videoEl.srcObject = stream;
-      try {
-        await videoEl.play();
-      } catch (playErr) {
-        console.warn('[loopback] video.play() rejected:', playErr);
-      }
-    }
-
-    // Announce the element to the engine module (the sampler reads it directly).
-    videoEngine()?.attachExternalSource(id, 'video', videoEl);
-
-    // The user can stop the share from the browser's share bar → the track
-    // ends. Return to idle with a re-capture button.
-    const track = stream.getVideoTracks()[0];
-    track?.addEventListener('ended', () => {
-      if (capState === 'capturing') {
-        capState = 'ended';
-        errorMsg = null;
-        stopStream();
-      }
-    });
-
-    capState = 'capturing';
-  }
-
-  /** An EXPLICIT stop (the user pressed stop, or the share bar ended the
-   *  track). This is a genuine content change, not a view teardown, so the
-   *  registry frees the stream here. It is never called from onDestroy. */
-  function stopStream(): void {
-    nodeMedia.setStream(id, MEDIA_SLOT, null);
-    stream = null;
-    if (videoEl) videoEl.srcObject = null;
-    videoEngine()?.attachExternalSource(id, 'video', null);
-    // The pump is NODE-keyed and deliberately outlives this card, so the thing
-    // that ends it is an end of CONTENT — never a view teardown. This is the
-    // same line `stopStream` already draws for the stream itself.
-    loopbackCropPump.stop(id);
   }
 
   function onStopCapture(): void {
-    stopStream();
-    capState = 'idle';
-  }
-
-  /**
-   * Start the NODE-keyed crop pump (see $lib/ui/media/loopback-crop-pump).
-   *
-   * ⚠ EVERY DEPENDENCY IS A FUNCTION READ FRESH EACH FRAME, and `cropEnabled`
-   * reads the GRAPH STORE rather than this component's `p('crop')`. The pump
-   * outlives this card by design; a captured component-scoped value would
-   * freeze at the last mounted frame, which is exactly the stuck-value bug the
-   * move was made to remove.
-   */
-  function startCropPump(): void {
-    loopbackCropPump.start(id, {
-      cropEnabled: () => {
-        const raw = patch.nodes[id]?.params?.crop;
-        const def = loopbackDef.params.find((x) => x.id === 'crop')?.defaultValue ?? 1;
-        return (typeof raw === 'number' ? raw : def) >= 0.5;
-      },
-      push: (crop) => {
-        const ve = videoEngine();
-        if (!ve) return;
-        ve.setParam(id, '_cropU0', crop.u0);
-        ve.setParam(id, '_cropU1', crop.u1);
-        ve.setParam(id, '_cropV0', crop.v0);
-        ve.setParam(id, '_cropV1', crop.v1);
-      },
-    });
+    const res = loopbackStatus.request(id, 'stop');
+    if (!res.delivered) {
+      console.warn('[loopback] STOP reached no controller for node', id);
+    }
   }
 
   function onToggleCrop(): void {
     setNodeParam(id, 'crop', p('crop') < 0.5 ? 1 : 0);
   }
 
-  // ⚠ THE CROP PUMP USED TO LIVE HERE, as an `$effect` that started a rAF loop
-  // while `capState === 'capturing'` and cancelled it on teardown. It moved to
-  // `$lib/ui/media/loopback-crop-pump` (NODE-keyed) for two measured reasons —
-  // a collapse froze `_crop*` at the last mounted frame while the capture kept
-  // running, and the promotion put this card inside a SECOND `.svelte-flow`
-  // (the headless host's), which made the old
-  // `document.querySelector('.svelte-flow')` reader ambiguous. The full
-  // argument is in that file's header; what belongs here is only the START and
-  // the STOP, and both are content events rather than view events.
+  // ---- Adopt the NODE-owned <video> into this card, to SHOW it ----
   //
-  // Rehydrate the pump whenever this card finds a capture already running —
-  // a remount after a collapse, or the first mount inside the headless host.
-  // `start` is idempotent while running, so this cannot stack a second loop.
-  $effect(() => {
-    if (capState === 'capturing') startCropPump();
-  });
-
-  // ── Publish status + register the commands the FACEPLATE drives ───────────
-  //
-  // ⚠ THIS IS WHAT MAKES A PROMOTED LOOPBACK USABLE AT ALL. Under the default
-  // shell this card runs inside `<HeadlessSourceHost>` — mounted (so the stream
-  // survives) but `pointer-events: none`, so every button below is unreachable.
-  // The faceplate reads this status and invokes these commands; ownership of
-  // getDisplayMedia, the MediaStream and this state machine never leaves here.
-  // See $lib/ui/media/loopback-status-registry.
-  let commandLease: LoopbackCommandLease | null = null;
-
-  $effect(() => {
-    // Re-published on every state/error change — the face's lamp, its error
-    // text and whether its buttons are offerable all derive from this.
-    loopbackStatus.publish(id, {
-      state: capState,
-      errorMsg,
-      supported: isViewportCaptureSupported(),
-    });
-  });
-
-  $effect(() => {
-    const lease = loopbackStatus.registerCommands(id, {
-      acquire: () => void requestCapture(),
-      stop: onStopCapture,
-    });
-    commandLease = lease;
-    return () => {
-      lease.release();
-      if (commandLease === lease) commandLease = null;
-    };
-  });
-
-  // ---- Adopt the NODE-owned <video> into this card ----
+  // ⚠ ADOPT, not create. The controller `ensure`s the element into existence
+  // with no host at all, so it exists (and is attached to the engine) whether
+  // or not any surface is mounted. Adoption is a transfer with an owner-checked
+  // release, so this card and the faceplate can hand it back and forth without
+  // either teardown stranding the live one.
   $effect(() => {
     const host = videoHost;
     if (!host) return;
-    const lease = nodeMedia.adopt(id, MEDIA_SLOT, host, {
-      kind: 'video',
-      init: (el) => {
-        const v = el as HTMLVideoElement;
-        v.playsInline = true;
-        v.muted = true;
-        v.autoplay = true;
-        v.setAttribute('data-testid', 'loopback-preview');
-      },
-    });
+    const lease = nodeMedia.adopt(id, LOOPBACK_SOURCE_SLOT, host, { kind: 'video' });
     mediaLease = lease;
-    const v = lease.el as HTMLVideoElement;
-    videoEl = v;
-    // Rehydrate from the node: a capture may already be running from a
-    // previous mount, in which case the element still holds its srcObject.
-    stream = nodeMedia.stream(id, MEDIA_SLOT);
-    if (stream && v.srcObject !== stream) v.srcObject = stream;
-    if (stream && capState !== 'capturing') capState = 'capturing';
     return () => {
       lease.release();
       if (mediaLease === lease) mediaLease = null;
     };
   });
 
-  onMount(() => {
-    if (!isViewportCaptureSupported()) {
-      capState = 'unsupported';
-      errorMsg = 'This browser does not support tab/screen capture (getDisplayMedia).';
-      return;
-    }
-    // Hand the (empty, not-yet-capturing) <video> to the engine right away so a
-    // later srcObject attach is picked up without a re-mount. Poll until the
-    // engine-side node exists (addNode is async) OR we time out.
-    let attempts = 0;
-    const iv = setInterval(() => {
-      attempts++;
-      const ve = videoEngine();
-      if (ve) {
-        try {
-          ve.attachExternalSource(id, 'video', videoEl);
-          if (ve.read(id, 'hasVideoElement') === true) clearInterval(iv);
-        } catch {
-          /* engine not ready */
-        }
-      }
-      if (attempts > 50) clearInterval(iv); // ~5s
-    }, 100);
-  });
-
   onDestroy(() => {
-    // NOTE what is deliberately ABSENT: no stopStream(), no detach. A collapse
-    // MOVES this card between mounts; stopping the tracks here ended a capture
-    // that cannot be restarted without a new user gesture. The stream belongs
-    // to the node and is stopped by nodeMedia when the node leaves the graph.
+    // NOTE what is deliberately ABSENT: no stop, no detach, no track teardown.
+    // Unmounting a view is not a content event. The controller owns all three
+    // and dies with the NODE.
     mediaLease?.release();
     mediaLease = null;
   });
@@ -369,7 +214,7 @@
         <button
           class="primary"
           data-testid="loopback-start-capture"
-          onclick={requestCapture}
+          onclick={onRequestCapture}
           disabled={capState === 'requesting'}
         >
           {capState === 'idle' ? 'Start capture' : capState === 'requesting' ? 'Requesting…' : 'Re-capture'}

@@ -132,11 +132,33 @@ import type { LaneRenderKind } from './legacy-fallback';
  * in the other direction by `NODE_VIDEO_SOURCE_TYPES`, which the registry's own
  * test asserts is DISJOINT from this set: a module in both would mean two owners
  * for one element.
+ *
+ * ⚠ LOOPBACK HAS LEFT TOO (legacy-removal S1, 2026-09-03) — the fifth departure,
+ * and the first one taken for the CARD's sake rather than the module's.
+ *
+ * The four before it left because card ownership was measurably BREAKING those
+ * modules (varispeed's dead CV triggers, the HLS pair's silent audio outs).
+ * Loopback was not broken: the headless host kept its card mounted and the
+ * capture survived. It left because a card that is load-bearing is a card that
+ * cannot be deleted, and every `*Card.svelte` is being removed.
+ *
+ * That difference is worth keeping in view rather than flattening into the same
+ * sentence as the others, because it changes what a reader should expect from
+ * the diff: there is no measured defect story here and there does not need to
+ * be one. The argument is structural. A capture surviving a collapse, a dock
+ * move, a group collapse or a shell flip is CONTENT, and every one of those is
+ * a VIEW event — tie the two together and some view event becomes a content
+ * event by accident. The headless host was the workaround for exactly that
+ * accident, and this removes the need for it rather than the symptom.
+ *
+ * Its new owner is `$lib/ui/media/node-loopback-source-registry` on GRAPH
+ * lifetime, synced from `Canvas.svelte` beside the other four registries. The
+ * status seam (`loopback-status-registry`) is UNCHANGED and the faceplate is
+ * untouched — what moved is who publishes into it and who owns the commands.
  */
 export const DOM_SOURCE_LANE_TYPES: ReadonlySet<string> = new Set<string>([
   'archivist',
   'cameraInput',
-  'loopback',
 ]);
 
 /**
