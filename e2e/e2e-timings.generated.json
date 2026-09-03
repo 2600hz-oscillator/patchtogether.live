@@ -1,6 +1,6 @@
 {
   "_comment": "Per-spec-file cost in SECONDS of test execution (CPU time, summed across a file's tests). Regenerate with `flox activate -- task e2e:timings:accept -- <ci-run-id>` (scripts/e2e-timings-accept.mjs) and REVIEW THE DIFF. Costs only — contention classes are derived at plan time by scripts/e2e-contention-scan.mjs and are deliberately NOT committed here (#1600).",
-  "_source": "UNION of ci.yml runs blob-report artifacts of ci.yml run 33690160752 (2599 tests, 419 files, 24758 CPU-s) ∪ 33696529345 (feat/clipplayer-face, grafting 2 key(s) no earlier run could measure: face-archivist.spec.ts, face-clipplayer.spec.ts): 421 keys, 24451.5 CPU-s. Shared keys take the LATEST run that measured them; a grafted key keeps the value from the run that introduced it.",
+  "_source": "UNION of ci.yml run 33690160752 (feat/trails-surface) ∪ 33684552094 (feat/seqtris-surface) ∪ 33696529345 (feat/clipplayer-face, the LATEST full re-pin: it measured 421 keys and wins on every one, including the 419 shared with the runs above) : 422 keys, 24521.0 CPU-s. Grafted from a run this one could not measure (1): seqtris-face.spec.ts. Shared keys take the LATEST run that measured them; a grafted key keeps the value from the run that introduced it.",
   "files": {
     "4plexer.spec.ts": 30.4,
     "acidwarp-face-screen.spec.ts": 40.5,
@@ -318,6 +318,7 @@
     "scratch-persist-video-live.spec.ts": 25.8,
     "scratch-persist.spec.ts": 31.4,
     "seed-none-fixture.spec.ts": 10.4,
+    "seqtris-face.spec.ts": 69.5,
     "seqtris.spec.ts": 22.7,
     "shapegen-clock.spec.ts": 0,
     "shapegen.spec.ts": 18,
