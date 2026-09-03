@@ -45,6 +45,7 @@ import {
   CLIP_LANES,
   SCENE_STRIDE,
   clipIndex,
+  clipLengthSteps,
   readClip,
   type ClipPlayerData,
 } from './clip-types';
@@ -220,14 +221,15 @@ export function sceneRepeatAnchor(
   for (let lane = 0; lane < CLIP_LANES; lane++) {
     const clip = readClip(data, clipIndex(slot, lane));
     if (!clip) continue;
-    // NON-NOTE clips (forward-declared 'audio'/'snapshot' shells) loop with
-    // len 1 in the engine (`len = kind === 'note' ? lengthSteps : 1`) — mirror
-    // that here so a scene whose only content is non-note still ANCHORS (the
-    // targeting set `sceneHasContent` counts it, so the repeat chain must not
-    // silently die on it). Raw junk that coerces away anchors nothing.
+    // KIND-AGNOSTIC LENGTH, via the SAME helper the engine's loop wrap uses, so
+    // the frozen repeat unit is by construction the unit the engine will play.
+    // A clip kind with no length of its own (snapshot) still reads 1, so a
+    // scene whose only content is such a shell still ANCHORS — the targeting
+    // set `sceneHasContent` counts it, and the repeat chain must not silently
+    // die on it. Raw junk that coerces away anchors nothing.
     const mult = RATE_MULTS[clipDivIndex(clip.kind === 'note' ? clip : null, data, lane)];
     const stepBeats = 1 / (spb * mult);
-    const len = clip.kind === 'note' ? Math.max(1, clip.lengthSteps) : 1;
+    const len = clipLengthSteps(clip);
     const unitBeats = len * stepBeats;
     if (!best || unitBeats > best.unitBeats) best = { lane, unitBeats, stepBeats };
   }
