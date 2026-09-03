@@ -50,30 +50,46 @@ async function boot(page: Page): Promise<void> {
   await canvasPane(page).waitFor({ state: 'visible' });
 }
 
-/** Open this node's dock faceplate (the auto-retrying tv-librarian pattern —
- *  the tile button is hit-testable while a previous pane is still tearing down,
- *  so one click can land on nothing). */
+/**
+ * Open this node's dock full view through the SHIPPED HOOK the EXPAND button
+ * calls — the idiom every other dock spec in this directory uses.
+ *
+ * ⚠ IT USED TO CLICK `shell-open-dock` ON THE LANE TILE, AND THAT LOST THE
+ * RUNNER LOTTERY. MEASURED: 15/15 locally, then ALL FIVE tests in this file
+ * failed on CI shard 1/12, every one at `waiting for … shell-open-dock … to be
+ * visible, enabled and stable`. Bounding the click (which the previous commit
+ * did) was right and not sufficient — it turned an invisible 180 s hang into a
+ * fast, legible failure, and then the failure simply repeated: the tile button
+ * is not reliably actionable under twelve parallel shards.
+ *
+ * `cartesian-face.spec.ts` records the same lesson from the other direction
+ * ("`gotoWorkflow` + `spawnPatch` + `__openDockFullView` is what every other
+ * dock spec in this directory uses, is CI-validated at these budgets"), and
+ * `layers-survive-card-collapse.spec.ts` — the one toybox-adjacent spec that
+ * has been green on CI throughout — uses the hook too. Clicking the lane was
+ * never the subject of any test here; reaching the console is.
+ */
 async function openDock(page: Page, nodeId: string): Promise<Locator> {
-  const shell = page.locator(`${laneNode(nodeId)} [data-testid="module-shell"]`);
-  await expect(shell).toBeVisible({ timeout: BOOT_MS });
-  const opener = shell.getByTestId('shell-open-dock');
-  const dockShell = page
-    .getByTestId('dock-full-view')
-    .locator(`[data-testid="module-shell"][data-shell-tier="dock"][data-shell-node="${nodeId}"]`);
-  await expect(async () => {
-    if ((await dockShell.count()) === 0) {
-      // ⚠ WAIT FOR THE BUTTON, THEN BOUND THE CLICK. A bare `.click()` inherits
-      // the TEST timeout, so a button that is present-but-not-actionable — which
-      // is exactly what the lane tile is while a previous dock pane tears down —
-      // consumed the whole 180 s budget instead of failing this attempt and
-      // letting the retry do its job. MEASURED on CI: two hard timeouts in one
-      // shard, both here and at the tab row below.
-      await expect(opener).toBeVisible({ timeout: 5_000 });
-      await opener.click({ timeout: 5_000 });
-    }
-    await expect(dockShell).toBeVisible({ timeout: 2_000 });
-  }).toPass({ timeout: SLOW_BOOT_TEST_TIMEOUT_MS });
-  return dockShell;
+  await expect(page.locator(`${laneNode(nodeId)} [data-testid="module-shell"]`)).toBeVisible({
+    timeout: BOOT_MS,
+  });
+  await page.waitForFunction(
+    () =>
+      typeof (globalThis as unknown as { __openDockFullView?: unknown }).__openDockFullView ===
+      'function',
+    undefined,
+    { timeout: BOOT_MS },
+  );
+  await page.evaluate(
+    (id) =>
+      (globalThis as unknown as { __openDockFullView: (i: string) => void }).__openDockFullView(id),
+    nodeId,
+  );
+  const pane = page.locator(`[data-testid="dock-full-view"][data-fullview-node="${nodeId}"]`);
+  await expect(pane).toBeVisible({ timeout: SLOW_BOOT_TEST_TIMEOUT_MS });
+  return pane.locator(
+    `[data-testid="module-shell"][data-shell-tier="dock"][data-shell-node="${nodeId}"]`,
+  );
 }
 
 /**

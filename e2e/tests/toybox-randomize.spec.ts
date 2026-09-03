@@ -100,13 +100,25 @@ async function openDockFace(page: Page): Promise<void> {
   await spawnPatch(page, [{ id: 'tb', type: 'toybox', position: { x: 300, y: 60 }, domain: 'video' }]);
   const shell = page.locator('.svelte-flow__node[data-id="tb"] [data-testid="module-shell"]');
   await shell.waitFor({ state: 'visible', timeout: 30_000 });
+  // ⚠ THE SHIPPED HOOK, NOT A CLICK ON THE LANE TILE. `shell-open-dock` is not
+  // reliably actionable under parallel shards — measured on face-toybox.spec.ts,
+  // where clicking it failed all five tests on CI shard 1/12 while passing 15/15
+  // locally. `__openDockFullView` is what every other dock spec here uses and is
+  // CI-validated; see cartesian-face.spec.ts's header for the same finding.
+  await page.waitForFunction(
+    () =>
+      typeof (globalThis as unknown as { __openDockFullView?: unknown }).__openDockFullView ===
+      'function',
+    undefined,
+    { timeout: 30_000 },
+  );
+  await page.evaluate(
+    (id) =>
+      (globalThis as unknown as { __openDockFullView: (i: string) => void }).__openDockFullView(id),
+    'tb',
+  );
   const body = page.getByTestId('dock-full-view').getByTestId('toybox-face-body');
-  // Auto-retrying: the tile button is hit-testable while a previous pane is
-  // still tearing down, so one click can land on nothing.
-  await expect(async () => {
-    if ((await body.count()) === 0) await shell.getByTestId('shell-open-dock').click();
-    await expect(body).toBeVisible({ timeout: 5_000 });
-  }).toPass({ timeout: 60_000 });
+  await expect(body).toBeVisible({ timeout: 60_000 });
   await expect
     .poll(() => page.evaluate(() => typeof (globalThis as unknown as G).__toyboxRoll), {
       message: '__toyboxRoll hook must be installed by the console the dock full view mounts',
