@@ -155,8 +155,13 @@ async function spawnIntoLane(page: Page, ch: number, shell: boolean): Promise<st
 }
 
 test.describe('workflow spawn-camera reveal: adds never scroll the viewport wildly', () => {
-  for (const shell of [false, true]) {
-    const label = shell ? 'mode=workflow&shell=1' : 'mode=workflow';
+  // ⚠ The LEGACY renderer arm of this parity table died with the card fleet
+  // (S2 legacy-removal manifest; the flip-rack-rear-view precedent). The
+  // helpers keep their `shell` parameter because the geometry constants are
+  // imported either way — S5 simplifies when the legacy pitch leaves the
+  // product.
+  for (const shell of [true]) {
+    const label = 'mode=workflow&shell=1';
 
     test(`ON-SCREEN lane add → the viewport transform is UNCHANGED, byte-equal (${label})`, async ({ page }) => {
       await gotoWorkflow(page, shell);

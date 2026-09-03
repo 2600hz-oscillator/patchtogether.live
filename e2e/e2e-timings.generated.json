@@ -281,7 +281,6 @@
     "rear-card-hit-target.spec.ts": 12.5,
     "rear-view-patching.spec.ts": 26.4,
     "reconciler-node-type-swap.spec.ts": 3.7,
-    "recorderbox-recover-reachable.spec.ts": 11.1,
     "recorderbox.spec.ts": 29.7,
     "recording-survives-card-collapse.spec.ts": 52.4,
     "rename-aware-peer-labels.spec.ts": 10.8,
