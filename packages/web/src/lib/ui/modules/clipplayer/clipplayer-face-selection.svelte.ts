@@ -19,7 +19,7 @@
 
 import { SvelteMap } from 'svelte/reactivity';
 import { patch } from '$lib/graph/store';
-import { CLIP_COUNT } from '$lib/audio/modules/clip-types';
+import { CLIP_LANES, SCENE_STRIDE } from '$lib/audio/modules/clip-types';
 
 const selection = new SvelteMap<string, number>();
 
@@ -62,9 +62,16 @@ export function clipplayerSelectedClip(nodeId: string): number {
 
 /** Open a clip in the face's editor. Out-of-range indices are IGNORED rather
  *  than clamped: a clamp would silently open a DIFFERENT clip than the one the
- *  caller named, which on a launcher is an edit landing in the wrong lane. */
+ *  caller named, which on a launcher is an edit landing in the wrong lane.
+ *
+ * ⚠ THE BOUND IS THE FLAT-KEY DOMAIN (`lane*SCENE_STRIDE + slot`, stride 64),
+ * NEVER the visible 8×8 `CLIP_COUNT`. Every pad outside lane 0 has a flat
+ * index ≥ 64, so a CLIP_COUNT guard silently rejected ALL of them — the pad
+ * dblclick created the clip and the editor stayed on lane 0. The legacy card
+ * had its own selection path, so only the promoted face could show it
+ * (found by the S2 legacy-removal e2e inversion, custom-scale per-lane leg). */
 export function clipplayerSelectClip(nodeId: string, index: number): void {
-  if (!Number.isInteger(index) || index < 0 || index >= CLIP_COUNT) return;
+  if (!Number.isInteger(index) || index < 0 || index >= CLIP_LANES * SCENE_STRIDE) return;
   selection.set(nodeId, index);
   pruneDeletedNodes();
 }

@@ -564,6 +564,14 @@ describe('clipplayer face — what a def-reading gate cannot see', () => {
     expect(sel).toContain('SvelteMap');
     expect(sel, 'not synced').not.toContain('ydoc');
     expect(sel, 'and it is bounded — an unwired cleanup export is a leak').toContain('pruneDeletedNodes');
+    // ⚠ THE RANGE GUARD BOUNDS ON THE FLAT-KEY DOMAIN (lane*SCENE_STRIDE+slot,
+    // stride 64), never the visible 8×8 CLIP_COUNT — a CLIP_COUNT bound
+    // silently rejected every pad outside lane 0 (dblclick created the clip,
+    // the editor stayed on lane 0; the card had its own selection path, so
+    // only the promoted face showed it). Caught by the S2 e2e inversion's
+    // custom-scale per-lane leg; pinned here at the source.
+    expect(sel, 'guard spans the whole flat-key domain').toContain('CLIP_LANES * SCENE_STRIDE');
+    expect(sel, 'and never imports the visible-grid count').not.toMatch(/import[^;]*CLIP_COUNT/);
   });
 });
 

@@ -150,7 +150,8 @@ into `face-clipplayer.spec.ts`, which already covers grid+pads).
 | 14 | note-entry + keyboard-nav, 8a22592fe — `cart-face-{gate,pitch,chord}-{i}` same NoteEntry; lazy cells + draft-restore deltas asserted honestly | DONE — rackLegacy 36 |
 | 15 | dx7-syx-load, b9c348d59 — upload cell IS the file input; dock-Esc hazard recorded | DONE |
 | 16 | cable-z-order, e6eb559e2 — DRAG GRIP recipe: tile centre is `nodrag`, name row is a button → drag from `.tile-kind` | DONE — rackLegacy 34 |
-| … | card-DOM rewrites remaining (rackLegacy 34): aut-patch-panel, automation-cv-record, blood pair, bluebox, clip-automation, clipplayer family (8), docs, es9-per-leg-patching, joystick (⚠ known parity blocker — check the generic-face endgame memory first), launchpad-scene-repeats, live-glyphs (⚠ glyph screens have NO obvious tile home — needs design study like lfo-modulation did), mixmstrs-stereo-expand, multi-output, painter, patch-panel, reshaper-shapedramps, score, seqtris, shapegen pair, toybox-control-surface, vfpga (4). ⚠ save-group-and-naming: DO NOT rewrite — owner ruling 1 DELETES groups entirely; its group half dies in the group sub-slice (S4), reconcile there. Then the 62-queue families (toybox 15, samsloop 6, timelorde 4, video-*, vst pair, coverage sweeps, per-module sweeps + rack-session/helper flips, ai-smoke, livecode, midi, camera-input, gibribbon, nibbles, organize-modules, patch-menu-redesign, patch-panel-nested, es9-card-shows-state, cube, chromaconsole, duplicate-module (park), foxy-freeze, clip-media-recover-reachable) | pending |
+| 17 | clipplayer family (8 files) — the dock face is near-parity (same LaunchPanel/NotePanel components: pads keep `data-clip`/`data-state`, cells/menus/deck testids identical; two dock PANES can be open at once, per-node testids disambiguate; `__openDockFullView(id)` global). 3 card-parity tests fold-deleted (manifest); 5 parked bodies re-pointed at the dock (fixme kept); PRODUCT FIX: `clipplayerSelectClip` guard (see Defects). arrange pop-out `cliparrange-editor` replaces the card's inline `.song-tl` (blocks/.sel/drag/del all carry) | DONE — rackLegacy 34→26 |
+| … | card-DOM rewrites remaining (rackLegacy 26): aut-patch-panel, automation-cv-record, blood pair, bluebox, clip-automation, docs, es9-per-leg-patching, joystick (⚠ known parity blocker — check the generic-face endgame memory first), launchpad-scene-repeats, live-glyphs (⚠ glyph screens have NO obvious tile home — needs design study like lfo-modulation did), mixmstrs-stereo-expand, multi-output, painter, patch-panel, reshaper-shapedramps, score, seqtris, shapegen pair, toybox-control-surface, vfpga (4). ⚠ save-group-and-naming: DO NOT rewrite — owner ruling 1 DELETES groups entirely; its group half dies in the group sub-slice (S4), reconcile there. Then the 62-queue families (toybox 15, samsloop 6, timelorde 4, video-*, vst pair, coverage sweeps, per-module sweeps + rack-session/helper flips, ai-smoke, livecode, midi, camera-input, gibribbon, nibbles, organize-modules, patch-menu-redesign, patch-panel-nested, es9-card-shows-state, cube, chromaconsole, duplicate-module (park), foxy-freeze, clip-media-recover-reachable) | pending |
 | … | family (c) machinery deletions + skip-budget same-commit | pending |
 | … | #1847 park reconciliation (28 files) | pending |
 | last | DOOM sub-slice: 14 re-points, boot URL + knob locator only | pending |
@@ -184,7 +185,19 @@ Format: deleted test → why it dies → where the coverage lives now.
 | fader-midi-assign :: `fader-ab-midi-badge` / `fader-drywet-midi-badge` | card-only per-fader badges | CC-drives-param asserted directly; the shared bound-badge behaviour is pinned by midi-learn.spec.ts on the shell |
 | dx7-syx-load :: `dx7-syx-status` "loaded 32 voices" text | card-only load receipt | the load's visible receipt on the shell = the preset selector auto-flipping to USER_00 (aria-label) + the popup's ≥41 options; the audible patch-difference L2 assertion unchanged. ⚠ dock-Esc hazard: closing a face listbox with Escape closes the WHOLE dock full view — close by re-selecting instead |
 
-Collection: 3077 → 3066 → 3063 → **3061** tests in 504 files.
+| clipplayer-card-parity :: "control strip switches the 4 card views (grid / clip / arranger / control)" | card-only view chrome — the dock face paints grid + editor + deck AT ONCE; there is no view to switch | face-clipplayer's legs assert every face surface paints (grid/editor band/deck lamps) |
+| clipplayer-card-parity :: "keyboard 1–8 gate on FOCUS-WITHIN (clicked into), NOT mere selection" | the card's digit-key view-switch machinery (kb-active chip, strip views) died with the card; the face has no digit handler | n/a — the guarded affordance left the product with the fleet (velocity modifier survives as the deck VEL toggle + Shift-click, asserted in the same file) |
+| clipplayer-card-parity :: "an unfocused clip-player does NOT starve a co-present NUMPAD+ of computer keys" | the hijack surface under guard WAS the card's global digit handler; no default-shell surface listens for digits | numpad-plus key capture is pinned by numpad-plus-face.spec.ts; the hijacking code is deleted with the card |
+
+Also rewritten (not deleted), same commit: HOLD-8/stuck-shift-blur halves of the
+velocity test died with the card keyboard; the VELOCITY CYCLING claim survives
+on the deck VEL toggle (`aria-pressed`) + Shift-click. clip-view-grid's
+card-GEOMETRY half (grow/restore tier) died with the card; its FULL-GRID
+rendering half (57 rows × 16→128 cells) survives on the dock roll (parked body,
+fixme kept). songmode's card-inline `.song-tl` legs moved onto the
+`cliparrange-editor` pop-out (same blocks/.sel/drag/del semantics, probed).
+
+Collection: 3077 → 3066 → 3063 → 3061 → **3058** tests in 504 files.
 
 ## Readout-family REWRITE recipe (proven on 4 files, commit 7)
 
@@ -260,6 +273,16 @@ for these files):
   not a test rewrite.
 - patch-panel and multi-output warrant a closer product look during their
   family rewrites (menu triggers / video zone reads).
+- **FIXED (commit 17): `clipplayerSelectClip` bounded on `CLIP_COUNT` (64, the
+  visible 8×8 grid) while flat clip keys are stride-64 (`lane*64+slot`, up to
+  455) — dblclicking ANY pad outside lane 0 on the face created the clip but
+  could never open it in the editor band.** The legacy card had its own
+  selection path, so only the promoted face could show it (the
+  shared-derivation-repaired-only-on-the-surface-you-looked-at class;
+  face-clipplayer's own dblclick leg asserted clip CREATION, not editor
+  binding — a near-miss). Found by the rewritten custom-scale per-lane leg
+  (red before the fix, green after = the positive control). Guard now spans
+  `CLIP_LANES * SCENE_STRIDE`; pinned at source in clipplayer-face-model.
 
 ## The family-(b) rewrite cookbook (proven across commits 6–16)
 

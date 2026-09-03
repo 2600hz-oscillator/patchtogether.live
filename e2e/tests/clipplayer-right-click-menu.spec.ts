@@ -7,19 +7,22 @@
 // deletes the clip."
 //
 // ⚠ WHY THIS FILE REPLACES THE PREVIOUS MENU SPEC. The first restructure shipped
-// with a spec that drove the real card through its real mount — and asserted the
-// menu on the PIANO-ROLL NOTE CELL only. The owner right-clicks the LAUNCHER PAD,
-// whose menu was a different code path and stayed a flat 40-row list. The spec was
-// green the whole time. So the load-bearing property here is not "the menu has the
-// owner's rows" — it is "BOTH surfaces have them", and the strongest form of that
-// is DERIVED: read the top level off one surface, read it off the other, and
-// assert the two are EQUAL. A future change that reaches one menu and not the
-// other reddens on the comparison without anyone having to remember the second
-// surface exists.
+// with a spec that drove the real surface through its real mount — and asserted
+// the menu on the PIANO-ROLL NOTE CELL only. The owner right-clicks the LAUNCHER
+// PAD, whose menu was a different code path and stayed a flat 40-row list. The
+// spec was green the whole time. So the load-bearing property here is not "the
+// menu has the owner's rows" — it is "BOTH surfaces have them", and the
+// strongest form of that is DERIVED: read the top level off one surface, read it
+// off the other, and assert the two are EQUAL. A future change that reaches one
+// menu and not the other reddens on the comparison without anyone having to
+// remember the second surface exists.
 //
-// Everything here is the real user path: a real card mounted on the canvas, real
-// clicks to create the clip and draw the note, real right-clicks, and every
-// assertion of effect read back off the SYNCED node data every peer sees.
+// On the default shell both right-clickable surfaces live in the DOCK FULL VIEW
+// (the launch grid and the piano roll are the same components the card
+// mounted); the menu itself is portaled to <body> and shared. Everything here
+// is the real user path: real clicks to create the clip and draw the note, real
+// right-clicks, and every assertion of effect read back off the SYNCED node
+// data every peer sees.
 
 import { test, expect } from './_fixtures';
 import { spawnPatch } from './_helpers';
@@ -54,23 +57,21 @@ async function spawn(page: Page) {
     { id: 'tl', type: 'timelorde', position: { x: 40, y: 40 }, domain: 'audio' },
     { id: 'cp', type: 'clipplayer', position: { x: 420, y: 40 }, domain: 'audio' },
   ]);
-  await expect(page.locator('[data-clip="0"]')).toBeVisible();
+  const tile = page.locator('.svelte-flow__node[data-id="cp"] [data-testid="module-shell"]');
+  await expect(tile).toBeVisible();
+  await tile.getByTestId('shell-open-dock').click();
+  await expect(page.getByTestId('dock-full-view').locator('[data-clip="0"]')).toBeVisible();
 }
 
-async function backToGrid(page: Page) {
-  await page.getByTestId('clipplayer-strip-2-cp').click();
-  await expect(page.locator('[data-clip="0"]')).toBeVisible();
-}
-
-/** Create clip `idx` and draw its notes THE WAY A USER DOES: double-click the pad
- *  (which creates the clip and opens the editor), click cells to place notes,
- *  then return to the launch grid so every test starts from the same view. */
+/** Create clip `idx` and draw its notes THE WAY A USER DOES: double-click the
+ *  pad (which creates the clip and binds the editor band to it), click cells to
+ *  place notes. On the face the grid and the roll are both always on screen, so
+ *  there is no view to return to. */
 async function drawClip(page: Page, idx: number, cells: Array<[row: number, step: number]>) {
   await page.locator(`[data-clip="${idx}"]`).dblclick();
   await expect(page.getByTestId('clipplayer-pianoroll')).toBeVisible();
   for (const [row, step] of cells) await page.getByTestId(`clipplayer-cell-${row}-${step}`).click();
   await expect.poll(async () => (await readClip(page, idx))?.steps?.length ?? 0).toBe(cells.length);
-  await backToGrid(page);
 }
 
 /** Right-click a launcher PAD — the surface in the owner's screenshot. */
@@ -105,7 +106,7 @@ function topLevel(menu: Menu) {
 
 test('the LAUNCHER PAD menu — the surface the owner right-clicks — is the ordered list with working sub lists', async ({
   page,
-  rackLegacy,
+  rack,
 }) => {
   await spawn(page);
   await drawClip(page, 0, [[6, 4]]);
@@ -141,7 +142,7 @@ test('the LAUNCHER PAD menu — the surface the owner right-clicks — is the or
 
 test('BOTH surfaces show the SAME top level — the property the wrong-surface restructure broke', async ({
   page,
-  rackLegacy,
+  rack,
 }) => {
   await spawn(page);
   await drawClip(page, 0, [[6, 4]]);
@@ -150,7 +151,6 @@ test('BOTH surfaces show the SAME top level — the property the wrong-surface r
   const noteMenu = await openNoteMenu(page, 0);
   const fromNote = await topLevel(noteMenu).allInnerTexts();
   await closeMenu(page);
-  await backToGrid(page);
 
   // The launcher PAD.
   const padMenu = await openPadMenu(page, 0);
@@ -164,7 +164,7 @@ test('BOTH surfaces show the SAME top level — the property the wrong-surface r
   expect(fromPad, "…and it is the owner's list, in the owner's order").toEqual(TOP_LEVEL);
 });
 
-test('PAD menu: each sub list applies to the CLIP, read back off the synced data', async ({ page, rackLegacy }) => {
+test('PAD menu: each sub list applies to the CLIP, read back off the synced data', async ({ page, rack }) => {
   await spawn(page);
   // TWO notes, so a clip-level write is visibly a write to EVERY note and not
   // just to the one the menu happened to be over.
@@ -201,7 +201,7 @@ test('PAD menu: each sub list applies to the CLIP, read back off the synced data
     .toEqual([1, 1]);
 });
 
-test('NOTE menu: the same sub lists apply to the ONE note they were opened on', async ({ page, rackLegacy }) => {
+test('NOTE menu: the same sub lists apply to the ONE note they were opened on', async ({ page, rack }) => {
   await spawn(page);
   await drawClip(page, 0, [[6, 4], [5, 8]]);
 
@@ -221,7 +221,7 @@ test('NOTE menu: the same sub lists apply to the ONE note they were opened on', 
 
 test('copy on one pad → paste on ANOTHER pad moves the clip content (the shared Launchpad clipboard)', async ({
   page,
-  rackLegacy,
+  rack,
 }) => {
   await spawn(page);
   await drawClip(page, 0, [[6, 4]]);
@@ -258,7 +258,7 @@ test('copy on one pad → paste on ANOTHER pad moves the clip content (the share
   expect(source?.steps).toHaveLength(1);
 });
 
-test('clear DELETES the clip from the pad menu, and ↶ brings it back with its notes', async ({ page, rackLegacy }) => {
+test('clear DELETES the clip from the pad menu, and ↶ brings it back with its notes', async ({ page, rack }) => {
   await spawn(page);
   await drawClip(page, 0, [[6, 4]]);
   const before = await readClip(page, 0);
@@ -292,7 +292,8 @@ test('clear DELETES the clip from the pad menu, and ↶ brings it back with its 
   await expect.poll(() => readClip(page, 0), { timeout: 5000 }).toBeNull();
   await expect(page.locator('[data-clip="0"]')).toHaveAttribute('data-state', 'empty');
 
-  // Undoable — the reason clear has no confirm dialog. ↶ is control-strip 6.
+  // Undoable — the reason clear has no confirm dialog. ↶ is the deck's own
+  // undo button, in the same dock view.
   await page.getByTestId('clipplayer-strip-6-cp').click();
   await expect.poll(async () => (await readClip(page, 0))?.steps?.length, { timeout: 5000 }).toBe(1);
   expect((await readClip(page, 0))?.steps?.[0]?.midi).toBe(before?.steps?.[0]?.midi);
@@ -300,7 +301,7 @@ test('clear DELETES the clip from the pad menu, and ↶ brings it back with its 
 
 test('an EMPTY pad opens the SAME menu with only paste live — the rows are disabled, never missing', async ({
   page,
-  rackLegacy,
+  rack,
 }) => {
   await spawn(page);
   const menu = await openPadMenu(page, 3);
