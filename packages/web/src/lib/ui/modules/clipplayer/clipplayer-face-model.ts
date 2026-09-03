@@ -32,6 +32,7 @@ import {
   autoAssignCounts,
   autoClipHasTracks,
   clipIndex,
+  clipPadState,
   coerceClipRecord,
   laneColorEff,
   laneMono,
@@ -40,6 +41,7 @@ import {
   lanePlaying,
   laneQueued,
   slotOf,
+  type ClipPadState,
   type ClipPlayerData,
 } from '$lib/audio/modules/clip-types';
 import { RATE_LABELS, laneRateIndex } from '$lib/audio/modules/clip-clock';
@@ -62,11 +64,13 @@ export type ClipplayerMenuAt =
   | { kind: 'note'; x: number; y: number; idx: number; step: number; midi: number; row: number }
   | { kind: 'clip'; x: number; y: number; idx: number };
 
-/** A launch-grid pad's four painted states. QUEUED WINS OVER PLAYING — a pad
- *  whose lane has a pending launch (or a pending stop) reads as queued even
- *  while it is still sounding, which is what makes the blink mean "a change is
- *  coming" rather than "something is happening". */
-export type ClipplayerPadState = 'empty' | 'loaded' | 'queued' | 'playing';
+/** A launch-grid pad's four painted states — the SHARED type, re-exported under
+ *  this file's own name so the face's callers need not learn a second one.
+ *
+ *  ⚠ AN ALIAS, NOT A COPY. `ClipPadState` is the one definition; declaring the
+ *  union again here is how the card and the face come to disagree about what is
+ *  playing, which is the whole reason `clip-pad-state` exists. */
+export type ClipplayerPadState = ClipPadState;
 
 /** One pad of the 8×8 launch grid. */
 export interface ClipplayerPadView {
@@ -118,23 +122,31 @@ export interface ClipplayerSceneView {
   label: string;
 }
 
-/** How a pad paints, from stored data alone.
+/**
+ * How a pad paints, from stored data alone — DELEGATED to the shared ladder.
  *
- *  ⚠ THE PRECEDENCE IS LOAD-BEARING AND IT IS NOT ALPHABETICAL. A queued slot
- *  reads `queued` even when it is the playing one, because a pending STOP on
- *  the playing pad is the single most important thing the grid can tell you —
- *  and `lanePlaying === slot` is true throughout it. */
+ * ⚠ THIS USED TO RE-TYPE THE LADDER, and that is a merge-order collision rather
+ * than an oversight: #2326 authored this function against a tree where the
+ * shared `clipPadState` did not exist yet, and #2329 landed that helper (plus
+ * the scan that forbids a second copy) an hour earlier. Neither PR ran the
+ * other's tests, so main went red on `clip-pad-state.test.ts` — "a clipplayer
+ * surface computes pad state itself instead of calling clipPadState".
+ *
+ * The two implementations were line-for-line identical in precedence (queued
+ * beats playing; a pending STOP on the playing pad reads queued), differing
+ * only in how the last rung asks whether a clip exists — `clipRecordAt` here
+ * versus `readClip` there, both of which coerce and both of which answer null
+ * for a malformed record. So this is behaviour-preserving by inspection, and
+ * `clipplayer-face-model.test.ts`'s own four pad-state cases pin it.
+ *
+ * Kept as a named wrapper rather than deleted: the face's callers already
+ * import this name, and a thin delegation is the seam the scan is asking for.
+ */
 export function clipplayerPadState(
   data: ClipPlayerData | undefined,
   index: number,
 ): ClipplayerPadState {
-  const lane = laneOf(index);
-  const slot = slotOf(index);
-  const playing = lanePlaying(data, lane);
-  const queued = laneQueued(data, lane);
-  if (queued === slot) return 'queued';
-  if (playing === slot) return queued === 'stop' ? 'queued' : 'playing';
-  return clipRecordAt(data, index) ? 'loaded' : 'empty';
+  return clipPadState(data, index);
 }
 
 /** The NOTE clip stored at a flat index, or null. Coerced through the shared
