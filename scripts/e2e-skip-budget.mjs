@@ -482,27 +482,32 @@ export const SKIP_BUDGET = [
       + 'row appears here, the case has lost its subject and should be DELETED with the placeholder '
       + 'tile, never re-pointed at a faced module.',
   },
-  // The same shape for the two derivations that live in a SPEC rather than in
-  // `_face-fixtures.ts`, so their `why` literals are in the spec source and one
-  // phrase serves both directions (#2295). Both used to THROW on exhaustion:
-  // `pickLegacyDockType` from module scope of a test body, and
-  // `placeholderSubjectType` from inside one — a hard RED for a designed
-  // migration state, landing on whichever unrelated PR promoted the last
-  // candidate. Runways when this entry was written: 1 (`moog956`) and 5.
+  // The same shape for an in-SPEC candidate derivation rather than one in
+  // `_face-fixtures.ts`, so its `why` literals are in the spec source and one
+  // phrase serves both directions (#2295). It used to THROW on exhaustion —
+  // `placeholderSubjectType` from inside a test body — a hard RED for a
+  // designed migration state, landing on whichever unrelated PR promoted the
+  // last candidate. Runway when this entry was written: 5.
+  //
+  // ⚠ IT COVERED `workflow-rear-card.spec.ts` TOO, AND THAT HALF IS GONE —
+  // retired exactly as this entry instructed. Its guard was over the legacy
+  // DOCK occupant (`DockFullView`'s `.fp-card-mount` branch, which only an
+  // UN-FACED module could render); the branch is deleted, so the case was
+  // deleted with its subject rather than re-pointed at a faced module. The
+  // `NO OCCUPANT LEFT, BY DESIGN` alternative went out of the pattern with it,
+  // and this file's direction-A check is what caught the stale row.
   {
-    specs: ['workflow-rear-card.spec.ts', 'workflow-shell.spec.ts'],
+    specs: ['workflow-shell.spec.ts'],
     reason:
-      /NO OCCUPANT LEFT, BY DESIGN|no un-promoted, shell-eligible audio module is left|the derived placeholder pool cannot supply/,
+      /no un-promoted, shell-eligible audio module is left|the derived placeholder pool cannot supply/,
     lanes: ['e2e'],
     homeLane: 'e2e',
     why:
-      'DYNAMIC guards over two in-spec candidate derivations: workflow-rear-card\'s legacy DOCK '
-      + 'occupant (the `.fp-card-mount` branch of DockFullView, which only an UN-FACED module can '
-      + 'render) and workflow-shell\'s placeholder GEOMETRY subject. Both degrade to a named skip '
-      + 'when every candidate is faced, which is the designed end state — the branch and the tile '
-      + 'they are about are deleted with the legacy card fleet. A row here means that case has lost '
-      + 'its subject and should be retired with its subject, never re-pointed at a faced module. '
-      + 'The BLIND-instrument arm of each derivation is a separate RED assertion in the same body, '
+      'A DYNAMIC guard over workflow-shell\'s placeholder GEOMETRY subject. It degrades to a named '
+      + 'skip when every candidate is faced, which is the designed end state — the tile it is about '
+      + 'is deleted with the legacy card fleet. A row here means that case has lost its subject and '
+      + 'should be retired with its subject, never re-pointed at a faced module. '
+      + 'The BLIND-instrument arm of the derivation is a separate RED assertion in the same body, '
       + 'so an empty candidate scan cannot hide behind this entry.',
   },
   // ⚠ THE AUDIO TWIN OF THE ENTRY ABOVE, AND IT DIFFERS IN THE ONE WAY THAT
