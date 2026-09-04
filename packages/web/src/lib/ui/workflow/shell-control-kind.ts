@@ -26,7 +26,7 @@
 // metadata — see ModuleFace; NOT the I/O contract) and module-face-lint fails a
 // promoted module that grows an unclassified switch-shaped param.
 
-import { looksLikeToggle } from '$lib/graph/group-controls';
+import { looksLikeToggle } from '$lib/graph/exposable-controls';
 import type { ParamDef } from '$lib/graph/types';
 
 /** The primitive a PARAM cell renders as. */
@@ -135,7 +135,7 @@ export type ParamCellTier = 'dock' | 'lane';
  * Does this param have the PRESS-PARAM SHAPE — a 0/1 switch resting at 0?
  * Shape alone does NOT mean momentary (a latching toggle looks identical); it
  * only marks the params that REQUIRE an explicit momentary/latching decision.
- * `looksLikeToggle` is the ONE canonical 0/1-switch detector (group-controls),
+ * `looksLikeToggle` is the ONE canonical 0/1-switch detector (exposable-controls),
  * shared with the auto-expose bar and the Toggle primitive. Pure.
  */
 export function looksLikeSwitch(p: ParamDef): boolean {

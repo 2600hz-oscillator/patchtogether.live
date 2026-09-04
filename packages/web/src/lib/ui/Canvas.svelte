@@ -306,7 +306,8 @@
   } from '$lib/graph/group-actions';
   import type { ExposedPort, ExposedControl, GroupData } from '$lib/graph/group-projection';
   import { resolveExposedPort } from '$lib/graph/group-projection';
-  import { listExposableControls, validateExposedControls } from '$lib/graph/group-controls';
+  import { listExposableControls } from '$lib/graph/exposable-controls';
+  import { validateExposedControls } from '$lib/graph/group-controls';
   import {
     nextGroupNameForNewGroup,
     planDefaultGroupNames,

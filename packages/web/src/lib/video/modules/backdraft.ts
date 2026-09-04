@@ -3224,7 +3224,7 @@ export const backdraftDef: VideoModuleDef = {
     // gate inputs flip them on a rising edge. Default off.
     //
     // ⚠ `curve: 'discrete'` IS LOAD-BEARING, not cosmetic. `looksLikeToggle`
-    // (group-controls) is `curve === 'discrete' && min === 0 && max === 1`, and
+    // (exposable-controls) is `curve === 'discrete' && min === 0 && max === 1`, and
     // it is the ONE canonical 0/1-switch detector — shared by the faceplate's
     // `paramCellKind`, the group-bar auto-expose and the Toggle primitive. They
     // declared `linear` until the face was authored, which made every consumer

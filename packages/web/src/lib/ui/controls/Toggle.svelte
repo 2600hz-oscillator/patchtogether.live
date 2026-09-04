@@ -1,7 +1,7 @@
 <script lang="ts">
   // Toggle — the RACKLINE `.switch` / `.toggle-ctl` 0/1 control (kickdrum HARD,
   // the checkbox cards). A card picks Toggle over Knob when the param
-  // `looksLikeToggle` (discrete, 0..1 — see toggle-model / group-controls).
+  // `looksLikeToggle` (discrete, 0..1 — see toggle-model / exposable-controls).
   // Same card-kit plumbing as the other primitives: `{ value, onchange,
   // moduleId, paramId, readLive }`. MIDI-assignable as a NOTE (a learned pad
   // flips the switch on the press edge) with a right-click ControlContextMenu.

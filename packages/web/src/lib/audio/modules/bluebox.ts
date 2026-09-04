@@ -139,7 +139,7 @@ export const blueboxDef: AudioModuleDef = {
     // continuous control on this module, and `linear` was a claim about
     // resolution that made the auto-expose path paint twelve 0..1 ROTARIES for
     // twelve buttons (`looksLikeToggle` requires `discrete` —
-    // $lib/graph/group-controls). It is also what lets the face's
+    // $lib/graph/exposable-controls). It is also what lets the face's
     // switch-classification ratchet see them at all: `looksLikeSwitch` is
     // `looksLikeToggle && defaultValue === 0`, so with `linear` these twelve
     // press-pads were invisible to module-face-lint's "every switch-shaped

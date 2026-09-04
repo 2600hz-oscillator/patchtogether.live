@@ -75,7 +75,7 @@ export function freezeframeFaceParams(
 }
 
 /** The repo's canonical switch reading — `curve: 'discrete'`, 0..1, high at
- *  the midpoint (`looksLikeToggle`, `$lib/graph/group-controls`). */
+ *  the midpoint (`looksLikeToggle`, `$lib/graph/exposable-controls`). */
 const switchIsOn = (v: number): boolean => v >= 0.5;
 
 /**
