@@ -54,8 +54,10 @@ public origins, no secrets, on first read).
 - Backup done FIRST: `~/Documents/workspace/backups/patchtogether.es9-20260903.bundle`
   (git bundle --all).
 - Remaining on go: commit staged, create PUBLIC `2600hz-oscillator/patchtogether-es9`,
-  re-run gate per build-brief §3 with record at
-  `.myrobots/<date>-helper-secrets-gate-patchtogether-es9.md`, push.
+  re-run gate per build-brief §3 with record at `p0-secrets-gate.md` beside this
+  file, push. (All DONE — see the RESOLVED addendum at the top of this file. The
+  record path here previously named a `<date>`-templated file that was never
+  created; the real record is the sibling `p0-secrets-gate.md`.)
 
 ### ../patchtogether.nativeapps — VERDICT: CLEAN, cleared to push (on owner go)
 - Zero commits; exact initial-commit candidate staged explicitly (no `git add -A`):

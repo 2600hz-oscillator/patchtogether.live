@@ -206,6 +206,47 @@ retires the entry.
 
 ## Addendum, 2026-09-04 — `moog904a.audio`, parked against a PRODUCT question
 
+> ### ✅ RETIRED THE SAME DAY — the park is LIFTED and the coverage is BACK.
+>
+> The owner ruled option **1** below (build it once, fan it to both merger
+> inputs). `moog904a` is now `cls: 'mono-fanout'` in
+> `packages/web/src/lib/audio/dual-mono.ts` — a new ledger class for a module
+> that *declares* dual-mono but whose DSP carries its own entropy, so building
+> it twice produces two different signals rather than one signal twice.
+> `EXEMPT_OUTPUT_EMIT['moog904a.audio']` and its `PINNED_PER_PORT_EXEMPT_KEYS`
+> entry are both gone; the emit case runs again.
+>
+> **Re-measured through the engine seam with the shipping worklet**, at the
+> driver's exact operating point (regen 1, range 2, cutoff 800), 25 spawns:
+>
+> | quantity | before (built twice) | after (built once, fanned) |
+> |---|---|---|
+> | single-channel peak | 1.0622, bit stable | 1.0622, bit stable |
+> | mono down-mix peak | **0.0449 … 1.0592** (spread 1.0143) | **1.0622 ± 7e-7** (spread 7.2e-7) |
+> | vs the 0.005 emit floor | red on ≈0.3 % of spawns | 212× the floor, every spawn |
+>
+> The residual 7e-7 is the DSP's own spawn-to-spawn jitter — the dither is still
+> `Math.random()` inside the ONE instance — and no graph change removes it. What
+> *is* exact is that L and R are now the same samples, asserted at zero
+> tolerance.
+>
+> **The lost coverage below is recovered, and then some.** The end-to-end
+> assertion is back (the e2e emit sweep), *and* the phase spread itself is now
+> measured permanently in
+> `art/scenarios/stereo-dual-mono/dual-mono-signal.test.ts` over 25 spawns —
+> with the **pre-fix graph kept alive as the negative control** (the same
+> shipping factory re-typed onto the `dual-mono` class), so a green run means
+> the fix is holding rather than that the entropy quietly went away.
+>
+> The gate this section proposed at the end ("feed a MONO source through every
+> dual-mono module and assert L is bit-identical to R") was **not** built: no
+> new gates without owner discussion, and the property it wanted is asserted
+> directly on the one module that failed it.
+>
+> The rest of this section is left exactly as written, as the record of what the
+> park was for.
+
+
 **`e2e/tests/per-module-per-port-outputs.spec.ts :: "moog904a: every declared
 output emits a measurable signal"`** is parked via
 `EXEMPT_OUTPUT_EMIT['moog904a.audio']`. `audio` is the module's only output, so
