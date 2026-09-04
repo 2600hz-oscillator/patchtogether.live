@@ -44,13 +44,26 @@ async function step0PitchProb(page: import('@playwright/test').Page) {
 }
 
 async function openEditorWithNote(page: import('@playwright/test').Page) {
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await spawnPatch(page, [{ id: 'pp-cp', type: 'clipplayer', domain: 'audio', position: { x: 200, y: 120 } }]);
-  const card = page.getByTestId('clipplayer-card').first();
-  await card.waitFor({ state: 'visible' });
-  await card.locator('.pad').first().dblclick(); // → editor, lane 0 / slot 0
-  await page.getByTestId('clipplayer-editor').waitFor({ state: 'visible' });
-  const cell = page.getByTestId('clipplayer-cell-0-0');
+  // The face editor band lives in the DOCK pane and is ALWAYS painted; the
+  // first cell click both selects lane 0 / slot 0 and commits its clip (the
+  // face-clipplayer recipe — no pad dblclick needed).
+  await page.waitForFunction(
+    () =>
+      typeof (globalThis as unknown as { __openDockFullView?: unknown }).__openDockFullView ===
+      'function',
+    undefined,
+    { timeout: 30_000 },
+  );
+  await page.evaluate(
+    (i) => (globalThis as unknown as { __openDockFullView: (x: string) => void }).__openDockFullView(i),
+    'pp-cp',
+  );
+  const pane = page.locator('[data-testid="dock-fullview-pane"][data-pane-node="pp-cp"]');
+  await expect(pane.getByTestId('clipplayer-face-editor')).toBeVisible({ timeout: 60_000 });
+  const cell = pane.getByTestId('clipplayer-cell-0-0');
+  await cell.scrollIntoViewIfNeeded();
   await cell.click(); // draw a note at display row 0 / step 0
   return cell;
 }

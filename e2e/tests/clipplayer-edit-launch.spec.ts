@@ -98,151 +98,71 @@ async function waitLane0Playing(
   );
 }
 
-/** Margin (screen px) to leave around the editor when framing it. */
-const FIT_MARGIN_PX = 24;
-
-/**
- * Zoom the canvas out until the WHOLE editor fits the flow pane.
+/** Spawn a clipplayer and open its dock pane with lane 0 / slot 0 selected.
  *
- * ── WHY THIS EXISTS (root-caused 2026-08-08) ─────────────────────────────────
- * Without it this spec depends on Playwright's scroll-into-view rescuing a
- * control far below the fold, and that is luck, not a test. Measured on the
- * default 1280×720 viewport with a SINGLE spawned node:
+ *  ── DEFAULT-SHELL RE-POINT (S2) ──────────────────────────────────────────
+ *  The card-era flow (dblclick a lane pad on the CARD → a 959 px editor view
+ *  in xyflow space) needed a whole viewport-fitting apparatus
+ *  (fitEditorInViewport / frameEditorUntilItFits / clickLaunch — root-caused
+ *  2026-08-08) because the launch buttons sat hundreds of px below the fold
+ *  at fitView zoom. The face editor band lives in the DOCK PANE — no xyflow
+ *  transform, normal scrolling — so that machinery died with the card and a
+ *  plain scrollIntoViewIfNeeded is the whole story.
  *
- *     xyflow zoom      0.981   (fitView barely zooms out for one node)
- *     editor rect      top 230 → bottom 1189   (959 px tall)
- *     edit-now button  top 1169 → bottom 1189
- *
- * The button sits **449 px below a 720 px viewport**. It passed on CI only
- * because the click's implicit scroll sometimes reached it, and failed 10/10
- * locally where it does not. `locator.click` then burns the FULL 30 s test
- * timeout retrying — alternating "element is outside of the viewport" with
- * piano-roll cells "intercept pointer events" — so the symptom is an opaque
- * timeout that reads like a hang or a crash rather than a layout problem.
- *
- * ⚠ A BIGGER VIEWPORT MAKES IT WORSE. `fitView` zooms IN to frame a single
- * node, so at 1280×1400 the zoom goes to **scale(2)** (xyflow maxZoom), the
- * editor becomes 1955 px tall and the button lands at y 2337. The lever is the
- * ZOOM, not the viewport.
- *
- * ⚠ AND `spawnPatch`'s own `revealWorkflowNodes` cannot help: its early-return
- * is `centre on screen && zoom >= 0.4`, a property of the node's CENTRE and so
- * blind to its HEIGHT. A 959 px card whose middle is comfortably visible passes
- * that check while its bottom row of controls is unreachable. Generalising that
- * check is the real repair for this class, but it is a SHARED helper on every
- * `spawnPatch` caller and is not being changed from inside a spec fix.
- *
- * ⚠ COORDINATE FRAMES — the trap this helper itself fell into first.
- * `getBoundingClientRect()` is WINDOW-relative; xyflow's `getViewport()` x/y is
- * relative to the FLOW PANE, which sits below the app chrome. Mixing them put
- * the editor 24 px lower than asked (bottom 720.3 in a 720 px viewport — a
- * sub-pixel overflow that still fails). Everything here is therefore computed
- * in PANE-relative screen px and converted explicitly.
- */
-async function fitEditorInViewport(page: import('@playwright/test').Page) {
-  const fit = await page.evaluate((margin) => {
-    const w = globalThis as unknown as {
-      __flow?: {
-        getViewport?: () => { x: number; y: number; zoom: number };
-        setViewport?: (vp: { x: number; y: number; zoom: number }) => void;
-      };
-    };
-    const flow = w.__flow;
-    const ed = document.querySelector('[data-testid="clipplayer-editor"]');
-    const pane = document.querySelector('.svelte-flow');
-    if (!flow?.getViewport || !flow.setViewport || !ed || !pane) return null;
-    const vp = flow.getViewport();
-    const r = ed.getBoundingClientRect();
-    const p = pane.getBoundingClientRect();
-    // WINDOW-relative rect → PANE-relative → flow space.
-    const flowLeft = (r.left - p.left - vp.x) / vp.zoom;
-    const flowTop = (r.top - p.top - vp.y) / vp.zoom;
-    const scale = Math.min(
-      1,
-      (p.height - 2 * margin) / r.height,
-      (p.width - 2 * margin) / r.width,
-    );
-    const zoom = vp.zoom * scale;
-    // Anchor the editor's top-left at (margin, margin) PANE-relative.
-    flow.setViewport({ x: margin - flowLeft * zoom, y: margin - flowTop * zoom, zoom });
-    return { zoom, editorH: Math.round(r.height), paneH: Math.round(p.height) };
-  }, FIT_MARGIN_PX);
-  expect(fit, '__flow bridge missing — cannot frame the editor deterministically').not.toBeNull();
-  return fit!;
-}
-
-/**
- * Frame the editor and KEEP framing it until it actually fits.
- *
- * One pass is not enough: the fit is computed from the editor's height at that
- * instant, and the piano roll can still be laying out, so a single-shot fit
- * under-zooms whenever the card grows after it was measured. Re-measuring until
- * the rect stops exceeding the pane converges in one or two passes and is
- * bounded — the alternative is a fit that is correct on average, which is how
- * this spec got here in the first place.
- */
-async function frameEditorUntilItFits(page: import('@playwright/test').Page) {
-  await expect(async () => {
-    await fitEditorInViewport(page);
-    const over = await page.evaluate(() => {
-      const ed = document.querySelector('[data-testid="clipplayer-editor"]')!.getBoundingClientRect();
-      const pane = document.querySelector('.svelte-flow')!.getBoundingClientRect();
-      return Math.ceil(ed.bottom - pane.bottom);
-    });
-    expect(over, `editor still overflows the flow pane by ${over} screen px after re-fitting`)
-      .toBeLessThanOrEqual(0);
-  }).toPass({ timeout: 10_000 });
-}
-
-/**
- * Click a launch button, having FIRST proved it is on screen.
- *
- * The assertion is the point: if the editor ever grows past what the canvas can
- * zoom out to (xyflow clamps at minZoom), this fails in milliseconds saying how
- * far off-screen the control is — instead of a 30 s `locator.click` timeout
- * that reads like a hang. `toPass` absorbs the frame the viewport transform
- * needs to apply, without ever accepting an off-screen control.
- */
-async function clickLaunch(page: import('@playwright/test').Page, testId: string) {
-  const viewportH = page.viewportSize()?.height ?? 0;
-  await expect(async () => {
-    const box = await page.getByTestId(testId).boundingBox();
-    expect(box, `${testId} has no bounding box`).not.toBeNull();
-    expect(
-      Math.ceil(box!.y + box!.height),
-      `${testId} bottom is ${Math.ceil(box!.y + box!.height)} but the viewport is `
-      + `${viewportH} (units: SCREEN px, post-xyflow-zoom, window-relative). The editor `
-      + 'no longer fits at a reachable zoom — see fitEditorInViewport.',
-    ).toBeLessThanOrEqual(viewportH);
-  }).toPass({ timeout: 5000 });
-  await page.getByTestId(testId).click();
-}
-
-/** Spawn a clipplayer and open the editor on lane 0 / slot 0. */
+ *  Selection: double-clicking face pad 0 creates lane 0 / slot 0's clip and
+ *  selects it for the editor band (the face-clipplayer recipe); the clip's
+ *  presence under key '0' is the selection proof (the card's `.sel` L1·S1
+ *  label died with it). */
 async function openEditorLane0(page: import('@playwright/test').Page) {
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await spawnPatch(page, [{ id: 'cp1', type: 'clipplayer', domain: 'audio', position: { x: 200, y: 120 } }]);
-  const card = page.getByTestId('clipplayer-card').first();
-  await card.waitFor({ state: 'visible' });
-  await card.locator('.pad').first().dblclick(); // → edit view, lane 0 / slot 0
-  await page.getByTestId('clipplayer-editor').waitFor({ state: 'visible' });
-  // Confirm we're editing L1·S1 so the assertion targets lane 0.
-  await expect(page.getByTestId('clipplayer-editor').locator('.sel')).toHaveText('L1·S1');
-  await frameEditorUntilItFits(page);
-  return card;
+  await page.waitForFunction(
+    () =>
+      typeof (globalThis as unknown as { __openDockFullView?: unknown }).__openDockFullView ===
+      'function',
+    undefined,
+    { timeout: 30_000 },
+  );
+  await page.evaluate(
+    (i) => (globalThis as unknown as { __openDockFullView: (x: string) => void }).__openDockFullView(i),
+    'cp1',
+  );
+  const pane = page.locator('[data-testid="dock-fullview-pane"][data-pane-node="cp1"]');
+  await expect(pane.getByTestId('clipplayer-face-editor')).toBeVisible({ timeout: 60_000 });
+  await pane.getByTestId('clipplayer-pad-0').dblclick();
+  await expect
+    .poll(
+      () =>
+        page.evaluate(() => {
+          const w = globalThis as unknown as {
+            __patch: { nodes: Record<string, { type?: string; data?: { clips?: Record<string, unknown> } }> };
+          };
+          const cp = Object.values(w.__patch.nodes).find((n) => n.type === 'clipplayer');
+          return Object.keys(cp?.data?.clips ?? {});
+        }),
+      { message: "double-clicking face pad 0 creates lane 0 / slot 0's clip" },
+    )
+    .toContain('0');
+  return pane;
+}
+
+async function clickLaunch(pane: import('@playwright/test').Locator, testId: string) {
+  const btn = pane.getByTestId(testId);
+  await btn.scrollIntoViewIfNeeded();
+  await btn.click();
 }
 
 test('@clipplayer edit-view NOW launches the edited clip', async ({ page }) => {
-  await openEditorLane0(page);
-  await clickLaunch(page, 'clipplayer-edit-now');
+  const pane = await openEditorLane0(page);
+  await clickLaunch(pane, 'clipplayer-edit-now');
   const r = await waitLane0Playing(page, 0, 8000);
   expect(r.ok, `lane 0 never reached the edited clip. seen=[${r.seen.join(', ')}] `
     + `samples=${r.samples} elapsedMs=${r.elapsedMs}`).toBe(true);
 });
 
 test('@clipplayer edit-view QUEUE launches the edited clip', async ({ page }) => {
-  await openEditorLane0(page);
-  await clickLaunch(page, 'clipplayer-edit-queue');
+  const pane = await openEditorLane0(page);
+  await clickLaunch(pane, 'clipplayer-edit-queue');
   const r = await waitLane0Playing(page, 0, 8000);
   expect(r.ok, `lane 0 never reached the edited clip. seen=[${r.seen.join(', ')}] `
     + `samples=${r.samples} elapsedMs=${r.elapsedMs}`).toBe(true);
