@@ -214,6 +214,34 @@ async function exportAndRead(page: Page): Promise<ExportedZip> {
   };
 }
 
+// ⚠ THE PER-TEST BUDGET IS DERIVED, NOT FLAT — the 2026-09-04 shard-7 lesson
+// (run 33831771627: both attempts of two tests died of "Test timeout of
+// 180000ms exceeded" mid-prefix with NO step assertion failing, on a shard
+// whose population was byte-identical to a green main run hours earlier).
+//
+// Every wait in this file is an observable-state condition carrying its own
+// cap, so a genuinely hung step dies AT THAT STEP with a named assertion. The
+// per-test budget exists only to bound the whole run — and a bound must cover
+// the SUM of the step caps it contains. The flat 180 s did not: boot alone is
+// entitled to goto(30 s) + spawnPatch's up-to-3 mount attempts at this file's
+// 40 s cap, expand() is a COLD toybox face boot inside the dock (40 s), the
+// fixture decode is 30 s + 40 s under SwiftShader — on one slow runner the
+// prefix legitimately consumed the whole budget and the test was killed while
+// every individual step was still inside its own cap. A budget smaller than
+// its own steps' bounds is not a tighter test; it is a coin flip on runner
+// speed, and it burned 4 × 180 s of shard wall time to report nothing.
+const GOTO_CAP_MS = 30_000; // boot(): workflow-topbar visible
+const SPAWN_WORST_MS = 3 * 40_000; // boot(): spawnPatch retries the mount up to 3× at our 40 s cap
+const EXPAND_CAP_MS = 40_000; // expand(): toybox-face-body — a cold dock face boot
+const FIXTURE_CAP_MS = 30_000 + 40_000; // loadFixture(): input attached + decoded-to-playing
+// The longest single test additionally chains tab/lamp/error/notice waits
+// (6 × 20 s), two 30 s attribute/registry waits and two 40 s export/download
+// waits — summed generously rather than per-test, because a budget that must
+// be re-balanced every time a wait is added is how it drifted under again.
+const CHAIN_CAPS_MS = 6 * 20_000 + 2 * 30_000 + 2 * 40_000;
+const TEST_BUDGET_MS =
+  GOTO_CAP_MS + SPAWN_WORST_MS + EXPAND_CAP_MS + FIXTURE_CAP_MS + CHAIN_CAPS_MS + 30_000;
+
 test.describe('#1589 — TOYBOX layer media belongs to the NODE', () => {
   // ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; the body and its assertions are UNCHANGED.
   // NONDETERMINISM: 6 recovered-on-retry observation(s) across 3 SHA(s) / 3 branch(es) in the
@@ -221,7 +249,7 @@ test.describe('#1589 — TOYBOX layer media belongs to the NODE', () => {
   // LOST WHILE PARKED: #1589 — collapsing TOYBOX must not drop its video layers, and Export must never write a preset it knows is incomplete; the card's onDestroy tearing down every layer is the live failure mode.
   // Re-enable only on a root cause (#1847); "it passes now" is not one.
   test.fixme('a video layer survives the tray being dismissed, and Export still carries its exact bytes', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 6 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page }) => {
-    test.setTimeout(180_000);
+    test.setTimeout(TEST_BUDGET_MS);
     const errors = await boot(page);
 
     await expand(page);
@@ -410,7 +438,7 @@ test.describe('#1589 — TOYBOX layer media belongs to the NODE', () => {
   });
 
   test('Export REFUSES, loudly, when a layer\'s bytes are not loaded in this session', async ({ page }) => {
-    test.setTimeout(180_000);
+    test.setTimeout(TEST_BUDGET_MS);
     // Independent of the lifetime fix: a reload, a localStorage preset (which
     // cannot hold video) and a rack-mate's synced layer all leave a FILENAME
     // with no bytes. Writing a zero-video zip and reporting success is the part
@@ -441,7 +469,7 @@ test.describe('#1589 — TOYBOX layer media belongs to the NODE', () => {
   });
 
   test('NEGATIVE CONTROL: deleting the node DOES revoke the url and destroy the element', async ({ page }) => {
-    test.setTimeout(180_000);
+    test.setTimeout(TEST_BUDGET_MS);
     // Without this leg the test above would pass just as happily if the registry
     // simply never released anything — a leak, not a fix. This proves the sweep
     // still tears down, so "survives collapse" is a real discrimination.
