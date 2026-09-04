@@ -83,12 +83,17 @@ Standing rulings that bind every phase:
 
 ## 1. Phase order (build order, not P-number order)
 
+Status as of 2026-09-04: **P0, P2 and P3 have SHIPPED** (#2343 and follow-ups) —
+do not restart them; read `p0-notes.md`, `p2-notes.md`, `p3-notes.md` for what
+actually landed. PH is partially shipped (its required subset exists as a local
+task). Everything below P3 is unbuilt.
+
 | order | phase | size | starts when |
 |---|---|---|---|
-| 1 | **P0** repo hygiene + helper integration | S (~2–4 d) | now (step 1, the es9 backup, immediately; pushes gated on owner Q1) |
-| 2 | **P2** minimal shell | M (~1 wk) | now, parallel with P0 |
-| 3 | **PH** shell e2e harness bring-up | M (~1 wk) | as soon as P2 boots |
-| 4 | **P3** helper supervision | M (~1 wk) | after PH skeleton exists |
+| 1 | **P0** repo hygiene + helper integration | S (~2–4 d) | ✅ **SHIPPED** — see `p0-notes.md` + `p0-secrets-gate.md` |
+| 2 | **P2** minimal shell | M (~1 wk) | ✅ **SHIPPED** — see `p2-notes.md` |
+| 3 | **PH** shell e2e harness bring-up | M (~1 wk) | 🟡 **PARTIAL** — the required boot subset ships as `task desktop:e2e` (`apps/desktop/e2e/boot.spec.ts`). REMAINING: the `ci.yml` required job (§4.1), the worklet RMS instrument + its positive controls, and the dispatch tier |
+| 4 | **P3** helper supervision | M (~1 wk) | ✅ **SHIPPED** — see `p3-notes.md`; `supervision.spec.ts` green |
 | 5 | **P6a** off-branch continuity hardening | M (~1 wk) | ⛔ **HELD — do NOT start.** Owner answer 7 ("P6 strictly after S4") + OWNER GO ("P6a HELD until cliprec slice 6 lands"). Both gates must clear; then P6a and the cliprec video tie-in run under ONE builder |
 | 6 | **P1** device-slot layer (web-only) | L (~2 wk) | product seams after legacy-removal S1; fixture churn in the §6 window |
 | 7 | **P4** outputs + display map | M (~1–1.5 wk) | after P1 + P2 opener-spike result |
