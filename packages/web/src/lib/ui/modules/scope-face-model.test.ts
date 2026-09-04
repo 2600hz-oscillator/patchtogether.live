@@ -60,7 +60,6 @@ function param(id: string) {
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const BODY_SRC = resolve(HERE, 'scope/ScopeScreenBody.svelte');
-const CARD_SRC = resolve(HERE, 'ScopeCard.svelte');
 const DRAW_SRC = resolve(HERE, '../../audio/modules/scope-draw.ts');
 /** THE trace — one renderer for the card, this body and `GroupCard`'s
  *  viz-passthrough mount (legacy-removal S1). */
@@ -266,7 +265,6 @@ describe('scope face — the glyph is LIVE, GREEN, AND FALSE', () => {
     expect(SURFACE).toMatch(/drawScope\(/);
     // ...and the two former call sites really did stop drawing.
     expect(readFileSync(BODY_SRC, 'utf8')).not.toMatch(/drawScope\(/);
-    expect(readFileSync(CARD_SRC, 'utf8')).not.toMatch(/drawScope\(/);
   });
 
   it('the trace honours the VRT seed — one surface, so the card and face CANNOT diverge', () => {
@@ -297,8 +295,7 @@ describe('scope face — the glyph is LIVE, GREEN, AND FALSE', () => {
     // GRAPH lifetime, so there is exactly one writer and no surface can stop it.
     // Two writers agreeing is not a property; one writer is.
     const body = stripSourceComments(readFileSync(BODY_SRC, 'utf8'));
-    const card = stripSourceComments(readFileSync(CARD_SRC, 'utf8'));
-    for (const [name, src] of [['body', body], ['card', card], ['surface', stripSourceComments(SURFACE)]] as const) {
+    for (const [name, src] of [['body', body], ['surface', stripSourceComments(SURFACE)]] as const) {
       expect(src, `${name} must not write cvCombined — the node producer owns it`)
         .not.toMatch(/cvCombined/);
     }
@@ -611,22 +608,23 @@ describe('scope face — the TUNER moved INTO the instrument', () => {
   });
 });
 
-describe('scope face — the CARD DEBT is paid by editing the CARD', () => {
-  it('the XY toggle now writes through setNodeParam, like the range toggle beside it', () => {
-    // A bare proxy assignment runs with origin `null`; the UndoManager tracks
-    // only LOCAL_ORIGIN, so the old write was not undoable and not tagged for
-    // collaborators — while `toggleRange`, three lines down, always was.
-    const card = stripSourceComments(readFileSync(CARD_SRC, 'utf8'));
-    expect(card).toMatch(/function toggleXY\(\)\s*\{\s*setNodeParam\(id, 'mode'/);
-    expect(card, 'no bare proxy assignment survives')
-      .not.toMatch(/\.params\.mode\s*=/);
-  });
-
-  it('⚠ and the ledger entry is DELETED in the same diff — the anchor runs both ways', () => {
-    // Deleting the entry without editing the card is RED; editing the card
-    // without deleting the entry is RED too. #2025 argued a face pays this by
-    // construction — `raw-write-ledger.ts` refutes that by name, because
-    // promotion does not delete the card and `?shell=legacy` still renders it.
+describe('scope face — the RAW-WRITE DEBT stays paid', () => {
+  // ⚠ 'the XY toggle now writes through setNodeParam' STOOD HERE, reading the
+  // card for `function toggleXY() { setNodeParam(id, 'mode'` and denying a bare
+  // `.params.mode =` beside it. A bare proxy assignment runs with origin
+  // `null`; the UndoManager tracks only LOCAL_ORIGIN, so that write was neither
+  // undoable nor tagged for collaborators, while `toggleRange` three lines down
+  // always was. The surface that carried it is gone, and the shell writes every
+  // param through `shellParamWrite` — so the untracked write has no
+  // module-local place to come back to, and `mutate.guard.test.ts` holds the
+  // rule tree-wide.
+  //
+  // The LEDGER half is kept, because a ledger entry naming a paid debt is the
+  // thing that rots. It is asserted below, and it is worth noting WHY #2025's
+  // argument was wrong at the time and is right now: it claimed a face paid
+  // this debt by construction, and `raw-write-ledger.ts` refuted that by name,
+  // because promotion did not delete the card. The fleet deletion does.
+  it('⚠ the ledger names no scope card entry', () => {
     expect(Object.keys(RAW_WRITE_LEDGER)).not.toContain('ui/modules/ScopeCard.svelte');
   });
 });

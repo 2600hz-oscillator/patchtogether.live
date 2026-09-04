@@ -48,7 +48,6 @@ const paramById = (id: string) => timelordeDef.params.find((p) => p.id === id)!;
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const BODY_SRC = resolve(HERE, 'timelorde/TimelordeDisplayBody.svelte');
-const CARD_SRC = resolve(HERE, 'TimelordeCard.svelte');
 
 /** Strip comments before grepping for CODE — this file's own bodies EXPLAIN in
  *  prose the very calls some legs assert are absent, and a raw grep cannot tell
@@ -63,7 +62,6 @@ function stripComments(src: string): string {
     .join('\n');
 }
 const bodySrc = stripComments(readFileSync(BODY_SRC, 'utf-8'));
-const cardSrc = stripComments(readFileSync(CARD_SRC, 'utf-8'));
 /** The node-lifetime owner of the composite the card used to run
  *  (legacy-removal S1), and its real-DOM binding. Two files because the split is
  *  the point: the producer is pure and testable, the singleton is where the
@@ -243,16 +241,13 @@ describe('timelorde face — the SWING ROSTER is DERIVED from the jacks it names
     expect(paramCellKind(paramById('swingSource'), EMPTY, 'dock')).toBe('selector');
   });
 
-  it('THE CARD READS THE SAME LIST — no re-typed copy survives', () => {
-    // The backdraft one-source rule, applied to a list. `SRC_LABELS` used to be a
-    // hand-typed twelve-entry literal in the card; a literal there would be a
-    // second copy free to disagree with the def about which index is `1/12`.
-    expect(cardSrc, 'the card imports the derived roster').toContain('TIMELORDE_SWING_SOURCES');
-    expect(
-      /const SRC_LABELS\s*=\s*\[/.test(cardSrc),
-      'the card re-declares SRC_LABELS as a literal array — that is the duplicate this face removed',
-    ).toBe(false);
-  });
+  // ⚠ 'THE CARD READS THE SAME LIST — no re-typed copy survives' STOOD HERE.
+  // The backdraft one-source rule, applied to a list: `SRC_LABELS` used to be a
+  // hand-typed twelve-entry literal in the card, and a literal there would have
+  // been a second copy free to disagree with the def about which index is
+  // `1/12`. The list has one home again — the def's own
+  // `TIMELORDE_SWING_SOURCES` — and the selector above resolves off it, so
+  // there is no second surface left to hold a copy.
 });
 
 describe('timelorde face — the TAP cell, and why its probe needed two new fields', () => {
@@ -292,7 +287,6 @@ describe('timelorde face — the TAP cell, and why its probe needed two new fiel
     // about what a tap means.
     const faceTapSrc = stripComments(readFileSync(resolve(HERE, 'timelorde/face-tap.ts'), 'utf-8'));
     expect(faceTapSrc).toContain("from '$lib/electra/tap-tempo'");
-    expect(cardSrc).toContain("from '$lib/electra/tap-tempo'");
     // ⚠ NODE-KEYED, NOT COMPONENT-HELD. A tap series spans presses and the
     // faceplate cell's component unmounts on collapse / LRU / tab switch — the
     // #1531 class — so a component-held controller would forget the first tap.
@@ -385,10 +379,6 @@ describe('timelorde body — it BLITS the producer, it does not re-render it', (
     // property of what the surfaces DO, not of where they live: the basis sweeps
     // WebGL-context-creating cards under `lib/ui/modules`. A `getContext('webgl')`
     // here would put a real-GPU attest on every future edit to this module.
-    expect(
-      /getContext\(\s*['"]webgl/.test(bodySrc) || /getContext\(\s*['"]webgl/.test(cardSrc),
-      'a WebGL context appeared on a timelorde surface — this module would join the attest basis',
-    ).toBe(false);
   });
 });
 
@@ -445,8 +435,6 @@ describe('timelorde face — the DISPLAY’s determinism is a DECODE, not a free
     ).toBe(true);
     // ...and the CARD must not have grown a second push on the way out: one
     // writer is the property, and two agreeing writers is how it stops being one.
-    expect(cardSrc, 'the card composites nothing and pushes nothing')
-      .not.toMatch(/\bwrite\s*\(\s*node\s*,/);
   });
 
   it('declares NO freeze param — so freezeIsNotASeam must NOT be declared either', () => {

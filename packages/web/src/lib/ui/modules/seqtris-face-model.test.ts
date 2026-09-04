@@ -88,7 +88,6 @@ const TILE = code(readFileSync(new URL('./seqtris/SeqtrisTileBody.svelte', impor
 const REVISION = code(
   readFileSync(new URL('./seqtris/seqtris-surface.svelte.ts', import.meta.url), 'utf8'),
 );
-const CARD = code(readFileSync(new URL('./SeqtrisCard.svelte', import.meta.url), 'utf8'));
 const BINDER = code(
   readFileSync(new URL('../../audio/seqtris-launchpad.ts', import.meta.url), 'utf8'),
 );
@@ -267,9 +266,6 @@ describe('seqtris — CLAIM 2: `glyph: none` is FORCED, and that is measured', (
     // is no 'knob' literal in the union to declare even if one wanted to, and
     // 'fader' would be refused by module-face-lint on a discrete param.
     expect(FACE.paramCells).toBeUndefined();
-    expect(CARD, 'the card draws rotaries; the derived default must match it')
-      .toMatch(/<KnobConic/);
-    expect(CARD, 'a fader on the card would make the absence wrong').not.toMatch(/<NeonFader/);
   });
 });
 
@@ -457,11 +453,12 @@ describe('seqtris — CLAIM 6: the `revision` seam survived, and it is SHARED', 
   // ⚠ OMIT IT AND THE STATUS, THE LAMP AND THE CONNECT/UNBIND SWAP FREEZE.
   // `launchpadStatus()` walks a per-binding closure that nothing invalidates,
   // and no gate in the tree reads any of the three.
-  it('the card had one, and it was component-scope', () => {
-    // The premise, read rather than remembered.
-    expect(CARD).toMatch(/let revision = \$state\(0\);/);
-    expect(CARD).toMatch(/void revision;/);
-  });
+  // ⚠ 'the card had one, and it was component-scope' STOOD HERE, reading the
+  // card's own `let revision = $state(0); void revision;` pair. It was the
+  // PREMISE for the seam below: the card's tick was component-scoped, so two
+  // surfaces each had their own and could disagree about when the well had
+  // changed. The premise is history; the seam it argued for is asserted below
+  // as a MODULE-scope tick that both surviving bodies subscribe to.
 
   it('the face has one too, and it is MODULE-scope so two surfaces cannot disagree', () => {
     expect(REVISION).toMatch(/let revision = \$state\(0\);/);
@@ -562,11 +559,14 @@ describe('seqtris — CLAIM 7: no resting numbers, and the status PARAGRAPH is g
     }
   });
 
-  it('the card DID paint a status paragraph, and the face does NOT', () => {
-    // The premise and the disposal, both read rather than remembered.
-    expect(CARD, 'the card painted the sentence as a resting text node')
-      .toMatch(/<p[^>]*class="status"/);
+  it('the face paints NO status paragraph', () => {
+    // ⚠ THE PREMISE HALF READ THE CARD. The card DID paint the sentence as a
+    // resting text node (`<p class="status">`), which is what made "the face
+    // does NOT" a disposal rather than an omission. The disposal is what still
+    // has a subject, and the leg below is where the sentence actually went —
+    // StatusLed's `detail`, speakable rather than painted.
     expect(DOCK, 'the face must not re-create it').not.toMatch(/class="status"/);
+    expect(TILE, 'nor may the lane tile').not.toMatch(/class="status"/);
   });
 
   it('⚠ BUT ALL SIX STRINGS SURVIVE VERBATIM — on the lamp, not in the DOM', () => {

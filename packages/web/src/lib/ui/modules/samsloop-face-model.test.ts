@@ -138,23 +138,16 @@ describe('samsloop face — ONE SOURCE for the map and the landmarks', () => {
     expect(borrowed, 'a family must not resolve the param-shaped cell').toBeNull();
   });
 
-  it('the CARD derives its ticks from the same landmarks — no hand-typed fracs', () => {
-    // ⚠ SOURCE-LEVEL, because no runtime gate reads a literal in a .svelte file.
-    // The card used to carry five `{ frac: … }` positions — knob-space
-    // coordinates silently encoding the current map's geometry.
-    const card = read(resolve(HERE, 'SamsloopCard.svelte'));
-    expect(card).toContain('SAMSLOOP_RATE_LANDMARKS');
-    expect(
-      /ticks=\{\[/.test(card),
-      'an inline ticks array is a re-typed geometry — derive from the landmarks',
-    ).toBe(false);
-  });
-
-  it('NEGATIVE CONTROL: the card check can FAIL — it really reads the file', () => {
-    const card = read(resolve(HERE, 'SamsloopCard.svelte'));
-    expect(card.length).toBeGreaterThan(1000);
-    expect(/ticks=\{/.test(card), 'the card really does declare ticks').toBe(true);
-  });
+  // ⚠ TWO LEGS STOOD HERE, AND THEY WERE A PAIR. The first read the card for
+  // `SAMSLOOP_RATE_LANDMARKS` and denied an inline `ticks={[…]}` array —
+  // five `{ frac: … }` knob-space coordinates silently encoding the current
+  // rate map's geometry, which no runtime gate can see in a .svelte file. The
+  // second was its instrument control: the card really did declare ticks, so a
+  // green first leg was a reading rather than an empty match.
+  //
+  // The shell derives a knob's landmarks from the ParamDef, so there is no
+  // surface left that can re-type the geometry — the hazard is unspellable
+  // rather than untested, and the landmark roster itself is asserted above.
 });
 
 describe('samsloop face — the WAVEFORM rides a body, and the reasons are checkable', () => {
@@ -172,19 +165,22 @@ describe('samsloop face — the WAVEFORM rides a body, and the reasons are check
     expect(/on(pointerdown|mousedown|click)=/.test(body)).toBe(false);
   });
 
-  it('the body and the card call the SAME draw — one picture, two surfaces', () => {
+  it('the body calls the SHARED draw — the picture has one implementation', () => {
+    // ⚠ THIS WAS 'the body and the card call the SAME draw'. Two surfaces
+    // painting one waveform is how they drift; with one surface the property
+    // that remains is that it delegates to the shared painter rather than
+    // owning a second copy of it.
     const body = read(resolve(HERE, 'samsloop', 'SamsloopOutputBody.svelte'));
-    const card = read(resolve(HERE, 'SamsloopCard.svelte'));
     expect(body).toContain('drawSamsloopWaveform');
-    expect(card).toContain('drawSamsloopWaveform');
   });
 
-  it('only the BODY paints a playhead — a reactive card would freeze it', () => {
-    // The card's draw runs on Svelte reactivity, not rAF, so a playhead drawn
-    // there would sit wherever the last param change left it. The card passes
-    // the "nothing is sounding" sentinel deliberately.
-    const card = read(resolve(HERE, 'SamsloopCard.svelte'));
-    expect(card).toMatch(/playheadFrac:\s*-1/);
+  it('the BODY paints its playhead from a rAF loop, not from reactivity', () => {
+    // ⚠ THIS WAS 'only the BODY paints a playhead — a reactive card would
+    // freeze it'. The card's draw ran on Svelte reactivity rather than rAF, so
+    // a playhead drawn there sat wherever the last param change left it, and it
+    // passed the "nothing is sounding" sentinel (`playheadFrac: -1`)
+    // deliberately. The surviving surface is the one that was always allowed a
+    // playhead, and the reason it may have one is asserted here.
     const body = read(resolve(HERE, 'samsloop', 'SamsloopOutputBody.svelte'));
     expect(body).toMatch(/requestAnimationFrame/);
   });

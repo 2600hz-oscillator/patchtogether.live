@@ -46,8 +46,9 @@ import { shellCellFor } from '$lib/ui/workflow/shell-cells';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const DEF_SRC = resolve(HERE, '../../video/modules/frametable.ts');
-const CARD_SRC = resolve(HERE, './FrametableCard.svelte');
 const ACTIONS_SRC = resolve(HERE, './frametable-file-actions.ts');
+const BODY_SRC = resolve(HERE, './frametable/FrametableOutputBody.svelte');
+const CELLS_SRC = resolve(HERE, '../workflow/shell-cells.ts');
 const read = (p: string): string => readFileSync(p, 'utf8');
 
 function param(id: string): ParamDef {
@@ -159,16 +160,21 @@ describe('frametable face — the FOUR switches that said `linear` (the repair)'
 describe('frametable face — the MODE roster is a PROMOTION, not an invention', () => {
   const modeOptions = () => param('mode').options ?? [];
 
-  it('names exactly the three modes the CARD already spelled, in card order', () => {
-    // ⚠ ANCHORED TO THE CARD SOURCE, which is the whole point. The rule for a
-    // roster is "promote names that exist in code, never invent them", and a
-    // test that re-typed the three strings here would be asserting the
-    // invention against itself. Reading them out of `FrametableCard.svelte`'s
-    // own `MODES` array is what makes an invented fourth name RED.
-    const card = read(CARD_SRC);
-    const labels = [...card.matchAll(/label:\s*'([A-Z]+)',\s*key:/g)].map((m) => m[1]);
-    expect(labels.length, 'the card still declares its MODES array').toBe(3);
-    expect(modeOptions().map((o) => o.label), 'the roster IS the card roster').toEqual(labels);
+  it('names exactly the three modes, and they are the SHADER\'s three', () => {
+    // ⚠ THIS WAS ANCHORED TO THE CARD SOURCE, and that anchor is worth naming
+    // because it is what is lost. The rule for a roster is "promote names that
+    // exist in code, never invent them", and a test that re-typed the three
+    // strings would assert the invention against itself — so the leg read the
+    // labels out of `FrametableCard.svelte`'s own `MODES` array and compared
+    // the def to THEM. The card was the second source; with it gone the def is
+    // the only home, and no cross-check can separate a promoted name from an
+    // invented one. NAMED COVERAGE LOSS.
+    //
+    // What survives is the half that was never circular, asserted in the leg
+    // below: the option VALUES are the shader's own mode constants, so a
+    // fourth invented mode has no constant to point at.
+    expect(modeOptions().map((o) => o.label)).toEqual(['SMOOTH', 'MORPH', 'CHAOS']);
+    expect(modeOptions().length, 'three modes, no more').toBe(3);
   });
 
   it('every option value is a real, reachable integer step, and the constants agree', () => {
@@ -225,12 +231,18 @@ describe('frametable face — the FILE workflow survives promotion', () => {
       .toBe('action');
   });
 
-  it('every declared testidPrefix is one the CARD actually emits', () => {
-    // The same anchoring the contract layer performs, asserted here so a
-    // rename breaks at the module rather than in a shared sweep.
-    const card = read(CARD_SRC);
+  it('every declared family resolves to a live shell cell', () => {
+    // ⚠ THIS ASKED WHETHER THE CARD EMITTED EACH `testidPrefix`, mirroring
+    // `module-docs-lint`'s card-drift leg so a rename broke at the module
+    // rather than in a shared sweep. The shell stamps `shell-cell-<familyId>`
+    // from an interpolation, so no surviving surface carries a per-family
+    // literal to grep; that gate resolves each family to a live cell instead,
+    // and so does this one, at the module.
     for (const f of frametableDef.controlFamilies ?? []) {
-      expect(card, `the card emits ${f.testidPrefix}`).toContain(`data-testid="${f.testidPrefix}"`);
+      expect(
+        shellCellFor('frametable', { kind: 'family', key: `${f.id}-{n}` } as never),
+        `${f.id} has no shell cell`,
+      ).toBeTruthy();
     }
   });
 
@@ -278,20 +290,26 @@ describe('frametable face — the FILE workflow survives promotion', () => {
     // GPU ring after a reload used to be a `$effect` on the card; promotion
     // stops the card rendering, so a view-lifetime hydrate would simply have
     // stopped happening and the table would be silently gone.
+    // ⚠ THE DENY HALF READ THE CARD (no `getFrametableBlob`, no `hydratedId`),
+    // because the hazard was a view-lifetime hydrate SURVIVING alongside the
+    // factory one. The view that held it is gone; what has to stay true is that
+    // the FACTORY owns the restore, which is the half asserted here.
     const def = read(DEF_SRC);
-    const card = read(CARD_SRC);
     expect(def, 'the factory reads the persisted blob').toContain('getFrametableBlob');
     expect(def, 'and it is keyed off the node descriptor').toContain('frametableFile');
-    expect(card, 'the card no longer hydrates').not.toContain('getFrametableBlob');
-    expect(card, 'and holds no hydrate bookkeeping').not.toContain('hydratedId');
+    expect(read(BODY_SRC), 'no surface may hydrate on view lifetime')
+      .not.toContain('getFrametableBlob');
   });
 
-  it('⚠ both surfaces call ONE implementation, so they cannot drift', () => {
-    const card = read(CARD_SRC);
-    expect(card, 'the card delegates the load').toContain('loadFrametableFile');
-    expect(card, 'and the save').toContain('saveFrametableFile');
-    // …and it no longer owns a second copy of the atlas encoder.
-    expect(card, 'the card no longer tiles its own atlas').not.toContain('flipRowsY');
+  it('⚠ the shell cells call ONE implementation, so a second copy cannot appear', () => {
+    // ⚠ THIS READ THE CARD, because the card and the shell cells were the two
+    // callers and "they cannot drift" needed both. The registry is the caller
+    // now, and it is the one that must delegate rather than re-derive.
+    const cells = read(CELLS_SRC);
+    expect(cells, 'the cells delegate the load').toContain('loadFrametableFile');
+    expect(cells, 'and the save').toContain('saveFrametableFile');
+    // …and no surface owns a second copy of the atlas encoder.
+    expect(read(BODY_SRC), 'no surface tiles its own atlas').not.toContain('flipRowsY');
   });
 });
 

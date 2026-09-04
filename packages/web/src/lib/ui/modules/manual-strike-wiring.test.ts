@@ -30,6 +30,7 @@
 import { describe, it, expect, afterEach, beforeEach } from 'vitest';
 import { readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
 
 import { patch, ydoc, LOCAL_ORIGIN } from '$lib/graph/store';
 import type { ModuleNode } from '$lib/graph/types';
@@ -270,35 +271,67 @@ describe('audition wiring — the shell cells really reach the shared seam', () 
 // ── ONE OBVIOUS PLACE ────────────────────────────────────────────────────────
 //
 // The behavioural gate above can only see callers that go THROUGH the registry.
-// A card that hand-rolls `e.read(node, 'manualTrigger')` is invisible to it —
-// which is exactly what SamsloopCard and SixstrumCard do today, and exactly the
-// shape the next struck voice will copy if nothing counts them.
+// A surface that hand-rolls `e.read(node, 'manualTrigger')` is invisible to it,
+// and that is exactly the shape the next struck voice will copy if nothing
+// counts them.
 
 /**
  * Files under `ui/modules/` allowed to name an audition read key. ONLY SHRINKS.
  *
- * `manual-strike-actions.ts` is the seam itself. The other two are LEGACY cards
- * that resolve the handle inline instead of calling it; each is one boy-scout
- * conversion away (`fireManualStrike(id)`), and until then they are declared
- * here rather than silently tolerated. A new card must NOT be added — wire it to
- * the seam. This list is what makes "one obvious place" enforced rather than
- * advisory.
+ * `manual-strike-actions.ts` is the seam itself, and it is the whole list. A new
+ * surface must NOT be added — wire it to the seam. This list is what makes "one
+ * obvious place" enforced rather than advisory.
  */
 const INLINE_AUDITION_FILES = new Set([
   'manual-strike-actions.ts',
-  'SamsloopCard.svelte',
-  'SixstrumCard.svelte',
 ]);
 
+/**
+ * Every module-owned source this sweep judges: the flat files in this directory
+ * AND one level of module subdirectory beneath them — the depth the
+ * shell-extension glob loads a body from, so a `fullViewBody` that resolves the
+ * handle inline is caught the day it lands rather than the day someone widens
+ * this walk.
+ *
+ * ⚠ `*Card.svelte` IS OUT OF SCOPE, and the two rows that used to sit in the
+ * allowlist above are the reason. `SamsloopCard.svelte` and
+ * `SixstrumCard.svelte` were the only inline resolvers in the tree — declared
+ * rather than silently tolerated, each "one boy-scout conversion away". The
+ * fleet deletion IS that conversion: MEASURED, the audition keys appear as
+ * literals in exactly three files, the seam and those two cards, so the resting
+ * state this list has been shrinking toward is the seam alone. Scoping the
+ * sweep off the fleet reaches that state in one move instead of leaving two rows
+ * to go stale on somebody else's commit.
+ *
+ * ⚠ WHAT THAT COSTS, STATED: for the window before the fleet goes, the two cards
+ * lose their staleness check. They lose no ENFORCEMENT — an allowlisted file is
+ * skipped by the sweep by definition — so the only thing not being asserted is
+ * that a debt scheduled for deletion still exists.
+ */
 function uiModuleSources(): [string, string][] {
   const dir = fileURLToPath(new URL('.', import.meta.url));
-  return readdirSync(dir)
-    .filter((f) => (f.endsWith('.ts') || f.endsWith('.svelte')) && !f.endsWith('.test.ts'))
-    .map((f) => [f, readFileSync(fileURLToPath(new URL(`./${f}`, import.meta.url)), 'utf8')]);
+  const wanted = (f: string): boolean =>
+    (f.endsWith('.ts') || f.endsWith('.svelte'))
+    && !f.endsWith('.test.ts')
+    && !f.endsWith('Card.svelte');
+  const out: [string, string][] = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    if (entry.isDirectory()) {
+      for (const inner of readdirSync(join(dir, entry.name))) {
+        if (!wanted(inner)) continue;
+        const rel = `${entry.name}/${inner}`;
+        out.push([rel, readFileSync(join(dir, rel), 'utf8')]);
+      }
+      continue;
+    }
+    if (!wanted(entry.name)) continue;
+    out.push([entry.name, readFileSync(join(dir, entry.name), 'utf8')]);
+  }
+  return out.sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
 }
 
 describe('audition wiring — the read keys live in ONE place', () => {
-  it('no card re-implements the resolver (the allowlist only shrinks)', () => {
+  it('no surface re-implements the resolver (the allowlist only shrinks)', () => {
     const offenders = uiModuleSources()
       .filter(([, src]) => AUDITION_KEYS.some((k) => src.includes(`'${k}'`)))
       .map(([file]) => file)
@@ -306,7 +339,7 @@ describe('audition wiring — the read keys live in ONE place', () => {
       .sort();
     expect(
       offenders,
-      `card(s) naming an audition read key directly. Call the seam instead:\n` +
+      `surface(s) naming an audition read key directly. Call the seam instead:\n` +
         `  fireManualStrike(id)      — a one-shot (edge:'trigger' port)\n` +
         `  setManualGate(id, high)   — a held audition (edge:'gate' port)\n` +
         `An inline resolver is a second implementation: it skips the latch, the\n` +

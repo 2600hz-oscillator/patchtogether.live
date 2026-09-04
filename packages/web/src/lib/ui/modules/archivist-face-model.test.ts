@@ -53,7 +53,6 @@ const controlsSource = read('archivist/ArchivistBrowseControls.svelte');
 const bodySource = read('archivist/ArchivistArchiveBody.svelte');
 const tileSource = read('archivist/ArchivistTileBody.svelte');
 const extSource = read('archivist/shell-extension.ts');
-const cardSource = read('ArchivistCard.svelte');
 // ⚠ THE OWNER MOVED OUT OF THE CARD (legacy-removal S1, 2026-09-03). Several
 // legs below used to read `cardSource` to prove who owns the source; they read
 // this instead. The card is still read, for the legs that are genuinely about
@@ -67,7 +66,6 @@ const controllerBindingSource = read('../media/node-archivist-source.svelte.ts')
 const controlsCode = stripSourceComments(controlsSource);
 const bodyCode = stripSourceComments(bodySource);
 const tileCode = stripSourceComments(tileSource);
-const cardCode = stripSourceComments(cardSource);
 const controllerCode = stripSourceComments(controllerSource);
 const controllerBindingCode = stripSourceComments(controllerBindingSource);
 
@@ -138,12 +136,9 @@ describe('⚠ THE BLOCKER IS DISCHARGED, AND ARCHIVIST HAS SINCE LEFT THE SET EN
     // ⚠ THE CARD MUST NOT ATTACH. Two attach sites for one element is the
     // double-ownership hazard `nodeMedia`'s owner-checked adoption exists to
     // make impossible, one level up.
-    expect(cardCode).not.toContain('attachExternalSource');
     // It still adopts — that is a VIEW concern and is what makes the preview work.
-    expect(cardCode).toContain('nodeMedia.adopt');
     // ...and it never `ensure`s: creating the element is the controller's job,
     // and a card that ensured one would mint a second for a node that has one.
-    expect(cardCode).not.toContain('nodeMedia.ensure');
   });
 });
 
@@ -231,26 +226,24 @@ describe('the noUserControl declaration, driven in BOTH directions', () => {
   });
 });
 
-describe('⚠ ONE COMPONENT, THREE MOUNTS — the no-drift property, pinned', () => {
-  it('the CARD and BOTH bodies import the SAME controls component', () => {
-    expect(cardCode).toContain('ArchivistBrowseControls');
+describe('⚠ ONE COMPONENT, TWO MOUNTS — the no-drift property, pinned', () => {
+  it('BOTH bodies import the SAME controls component', () => {
     expect(bodyCode).toContain('ArchivistBrowseControls');
     expect(tileCode).toContain('ArchivistBrowseControls');
+    // …and the shared component is where the affordances really are, so "both
+    // mount the same thing" is a statement about something that exists. The
+    // prefix is a PROP, which is how one component serves two mounts without
+    // either of them owning the testid.
+    expect(controlsSource).toMatch(/testidPrefix/);
+    expect(controlsSource).toContain('-search"');
   });
 
-  it('the CARD no longer carries its own search box, transport or attribution', () => {
-    // The half that would silently rot: a future edit that "just adds the
-    // search box back to the card" gives the module two answers about what the
-    // query is. Each of these is a control that MOVED, named individually so a
-    // partial regression is not green.
-    expect(cardCode).not.toContain('search archive.org…');
-    expect(cardCode).not.toContain('archivist-search-btn');
-    expect(cardCode).not.toContain('archivist-reroll-btn');
-    expect(cardCode).not.toContain('archivist-year-from');
-    expect(cardCode).not.toContain('archivist-play');
-    expect(cardCode).not.toContain('archivist-seek');
-    expect(cardCode).not.toContain('title-link');
-  });
+  // ⚠ 'the CARD no longer carries its own search box, transport or attribution'
+  // STOOD HERE, naming each moved control individually so a partial regression
+  // could not read as green. Its subject was the THIRD mount; with the card
+  // gone there are two, and both are asserted above to be mounts of the ONE
+  // component rather than copies of it — which is the property that deny-list
+  // was protecting.
 
   it('the controls take node.data LEAVES, never the enclosing `data` object', () => {
     // ⚠ THE SyncedStore PROXY HAS A STABLE IDENTITY, so a `$derived` handed the
@@ -277,7 +270,7 @@ describe('⚠ ONE COMPONENT, THREE MOUNTS — the no-drift property, pinned', ()
 describe('⚠ THE BODIES ARE NOT A SECOND OWNER', () => {
   // The property that separates this design from the one that kills a live
   // capture. Each leg is a thing the CARD does and the bodies must not.
-  for (const [name, code] of [['fullViewBody', bodyCode], ['tileBody', tileCode]] as const) {
+  for (const [name, code] of [['fullViewBody', bodyCode], ['tileBody', tileCode] as const]) {
     it(`${name} never FETCHES archive.org`, () => {
       expect(code).not.toContain('fetch(');
       expect(code).not.toContain('advancedsearch');
@@ -309,8 +302,6 @@ describe('⚠ THE BODIES ARE NOT A SECOND OWNER', () => {
     expect(bodyCode).not.toContain('registerCommands');
     expect(tileCode).not.toContain('registerCommands');
     // ...and the CARD is now a client of the seam like every other surface.
-    expect(cardCode).not.toContain('registerCommands');
-    expect(cardCode).not.toContain('archivistStatus.publish');
   });
 
   it('the bodies reach the card ONLY through the registry', () => {
@@ -386,9 +377,7 @@ describe('⚠ THE DELETED RESTING READOUTS — gone from EVERY surface, not hidd
   it('the `0:04 / 2:00` time line is gone, and formatTime is no longer a card import', () => {
     // videobox and videovarispeed deleted this exact line. Position survives
     // where a scrubber's position always did — on the scrubber.
-    expect(cardCode).not.toContain('archivist-time');
     expect(controlsCode).not.toContain('archivist-time');
-    expect(cardCode).not.toMatch(/formatTime\(/);
   });
 
   it('position survives on the seek control as aria-valuetext', () => {
@@ -401,14 +390,14 @@ describe('⚠ THE DELETED RESTING READOUTS — gone from EVERY surface, not hidd
     // deletion appears in three headers by design — that is what a reader needs
     // — so the gate reads the markup instead: `.src-line` was the div and it
     // exists nowhere now.
-    for (const src of [cardSource, controlsSource, bodySource, tileSource]) {
+    for (const src of [controlsSource, bodySource, tileSource]) {
       expect(src).not.toContain('src-line');
       expect(src).not.toMatch(/>\s*Internet Archive ·/);
     }
   });
 
   it('what it carried lives on the picture ACCESSIBLE NAME instead', () => {
-    for (const src of [cardSource, bodySource]) {
+    for (const src of [bodySource]) {
       expect(src).toContain('from the Internet Archive');
       expect(src).toContain('aria-label');
     }
@@ -425,7 +414,7 @@ describe('⚠ THE DELETED RESTING READOUTS — gone from EVERY surface, not hidd
     // painted string and the class, not on the phrase — the headers explain
     // the change and must stay free to say it.
     expect(controlsSource).not.toContain('⚠ play-only');
-    for (const src of [cardSource, controlsSource, bodySource]) {
+    for (const src of [controlsSource, bodySource]) {
       expect(src).not.toContain('class="cors-warn"');
     }
   });
@@ -448,9 +437,7 @@ describe('⚠ THE WRITE-ONLY MIRROR IS REPAIRED — the query comes from the GRA
   });
 
   it('NOBODY holds the inputs as local $state — not the card, not a body', () => {
-    for (const [name, code] of [
-      ['card', cardCode],
-      ['fullViewBody', bodyCode],
+    for (const [name, code] of [['fullViewBody', bodyCode],
       ['tileBody', tileCode],
     ] as const) {
       expect(code, `${name} re-declared searchTerm`).not.toMatch(/let searchTerm = \$state/);

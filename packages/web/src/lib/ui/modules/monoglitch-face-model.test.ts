@@ -170,22 +170,25 @@ describe('monoglitch face — the picture, and where it comes from', () => {
       .toBe('monoglitch');
   });
 
-  it('the monitor box is ONE constant, and BOTH surfaces read it', () => {
+  it('the monitor box is ONE constant, and the surface that writes those keys reads it', () => {
+    // ⚠ THIS LEG USED TO SAY 'BOTH surfaces', AND THE SECOND ONE IS GONE. The
+    // legacy card was the other writer of `node.data.resizedWidth`/`resizedHeight`,
+    // and the hazard it created was DIVERGENCE: two self-consistent surfaces
+    // disagreeing about the same persisted keys, which nothing at runtime can
+    // see (the backdraft class). With one writer left that hazard does not
+    // exist to be caught — it is unspellable rather than untested. What remains
+    // is the half that still can go wrong: the surviving body must READ the
+    // shared box instead of re-typing its floors, and the floors must be
+    // internally coherent.
     // The two surfaces share `node.data.resizedWidth`/`resizedHeight`, so a
     // drifted floor is a divergence nothing at runtime can see — each surface
     // would be self-consistent and they would disagree (the backdraft class).
     expect(MONOGLITCH_MONITOR_BOX.defW).toBeGreaterThanOrEqual(MONOGLITCH_MONITOR_BOX.minW);
     expect(MONOGLITCH_MONITOR_BOX.defH).toBeGreaterThanOrEqual(MONOGLITCH_MONITOR_BOX.minH);
-
-    const card = readFileSync(resolve(HERE, 'MonoglitchCard.svelte'), 'utf8');
     const body = readFileSync(resolve(HERE, 'monoglitch/MonoglitchOutputBody.svelte'), 'utf8');
     expect(
-      /import\s*\{\s*MONOGLITCH_MONITOR_BOX\s*\}\s*from\s*'\.\/monoglitch\/monitor-box'/.test(card),
-      'the legacy card READS the shared box rather than re-typing its floors',
-    ).toBe(true);
-    expect(
       /import\s*\{\s*MONOGLITCH_MONITOR_BOX\s*\}\s*from\s*'\.\/monitor-box'/.test(body),
-      'and so does the faced dock body — the OTHER surface that writes the same keys',
+      'the faced dock body must READ the shared box, never re-type its floors',
     ).toBe(true);
   });
 

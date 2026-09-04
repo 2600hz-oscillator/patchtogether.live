@@ -12,29 +12,36 @@
 // outright, and with the close removed the node's render lease was gone too.
 // When the only observable is in the SOURCE, guard the source.
 //
-// DENY BY DEFAULT + AUTO-ENROLLING. The subject set is DERIVED from the card
-// sources — every `*Card.svelte` that calls `createPresent(` — so a module that
+// DENY BY DEFAULT + AUTO-ENROLLING. The subject set is DERIVED from the module
+// SURFACE sources — every `.svelte` in the module directory, or one level of
+// module subdirectory below it, that calls `createPresent(` — so a module that
 // gains a projector tomorrow is enrolled the day it is written, with no list to
 // update. There is deliberately NO exemption list and NO count: at zero
 // exemptions a list measures nothing and can only go stale, and the population
 // is a property of the tree, not a number to maintain.
+//
+// ⚠ THE WALK'S SECOND LEVEL IS THE LOAD-BEARING HALF. It used to be a flat
+// `*Card.svelte` readdir, and every one of the four presenting modules now
+// mounts its projector from `<module>/<Module>OutputBody.svelte` — a file that
+// scan could not see. The subject-set leg is anchored on one of those
+// subdirectory names for exactly that reason.
 //
 // WHAT IT FORBIDS, and why each is a real bug rather than a style rule:
 //   * `present.dispose()` / `present.stop()` in an unmount path — closes the
 //     projector when the VIEW goes away. Under the faceplate shell an
 //     un-migrated video module has no lane card at all, so "collapse" IS an
 //     unmount and this is the owner-reported "the output stops".
-//   * a `getCanvas:` argument to createPresent — hands the blit loop the CARD's
-//     <canvas>, which the unmount detaches. The popup then draws that element's
+//   * a `getCanvas:` argument to createPresent — hands the blit loop the
+//     SURFACE's <canvas>, which the unmount detaches. The popup then draws that element's
 //     last bitmap forever: open, and frozen.
 // Both are legitimate on NODE deletion, which is why they live in
 // $lib/ui/modules/node-present-registry, swept from Canvas against the live
 // node set.
 //
-// ⚠⚠ WHAT THIS GATE IS STRUCTURALLY UNABLE TO SEE. It reads card SOURCE, so it
-// cannot see a teardown reached indirectly — a helper module called from
-// onDestroy that stops sessions on the card's behalf would be invisible to it,
-// and so would a projector killed by something that is not a card at all. The
+// ⚠⚠ WHAT THIS GATE IS STRUCTURALLY UNABLE TO SEE. It reads surface SOURCE, so
+// it cannot see a teardown reached indirectly — a helper module called from
+// onDestroy that stops sessions on a surface's behalf would be invisible to it,
+// and so would a projector killed by something that is not a surface at all. The
 // interface itself is the stronger half of the guard there: PresentController
 // has no `dispose` and no way to enumerate other nodes' sessions, so `tsc`
 // refuses the direct route before this test runs (use-present.test.ts pins the
@@ -45,30 +52,51 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
 
 const CARD_DIR = fileURLToPath(new URL('./', import.meta.url));
 
 /** Strip line + block comments so prose about a forbidden pattern (including
- *  this file's own explanations, quoted in card headers) cannot trip the gate. */
+ *  this file's own explanations, quoted in surface headers) cannot trip the
+ *  gate. */
 function stripComments(src: string): string {
   return src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
 }
 
-function cardSource(card: string): string {
-  return stripComments(readFileSync(new URL(`${card}.svelte`, `file://${CARD_DIR}`), 'utf8'));
+function surfaceSource(rel: string): string {
+  return stripComments(readFileSync(join(CARD_DIR, rel), 'utf8'));
 }
 
-/** Cards that offer "Present on a second display" — derived from the artifact,
- *  so a new presenting module enrols itself. */
-function presentingCards(): string[] {
+/**
+ * Every module-owned surface: the flat `.svelte` in this directory AND one level
+ * of module subdirectory beneath it.
+ *
+ * ⚠ THE WALK USED TO BE FLAT AND `*Card.svelte`-FILTERED, which made it blind to
+ * exactly the file a face PR moves the projector into. Every presenting module
+ * now owns a `<module>/<Module>OutputBody.svelte` that calls `createPresent`,
+ * and none of them is reachable from a flat card-shaped readdir — the same
+ * boundary `card-preview-gate` and `card-media-lifetime` both widened for, and
+ * for the same reason (a `fullViewBody` lives one directory down, by the
+ * shell-extension glob's own convention).
+ */
+function surfaceFiles(): string[] {
   const out: string[] = [];
-  for (const file of readdirSync(CARD_DIR)) {
-    if (!file.endsWith('Card.svelte')) continue;
-    if (/createPresent\s*\(/.test(cardSource(file.replace(/\.svelte$/, '')))) {
-      out.push(file.replace(/\.svelte$/, ''));
+  for (const entry of readdirSync(CARD_DIR, { withFileTypes: true })) {
+    if (entry.isDirectory()) {
+      for (const inner of readdirSync(join(CARD_DIR, entry.name))) {
+        if (inner.endsWith('.svelte')) out.push(`${entry.name}/${inner}`);
+      }
+      continue;
     }
+    if (entry.name.endsWith('.svelte')) out.push(entry.name);
   }
   return out.sort();
+}
+
+/** Surfaces that offer "Present on a second display" — derived from the
+ *  artifact, so a new presenting module enrols itself. */
+function presentingSurfaces(): string[] {
+  return surfaceFiles().filter((f) => /createPresent\s*\(/.test(surfaceSource(f)));
 }
 
 /** The body of every `onDestroy(...)` call in a card, as one string.
@@ -118,45 +146,52 @@ function unmountPaths(src: string): string {
 }
 
 describe('present lifetime — the projector belongs to the NODE, not the card', () => {
-  it('the subject set is derived and contains every card that can present', () => {
-    const cards = presentingCards();
+  it('the subject set is derived and contains every surface that can present', () => {
+    const surfaces = presentingSurfaces();
     // Anchored to NAMES, not a count: a name that no longer resolves is red,
-    // and a card that gains createPresent is picked up with no edit here.
-    expect(cards).toEqual(
-      expect.arrayContaining(['B3ntb0xCard', 'BackdraftCard', 'BentboxCard', 'VideoOutCard']),
+    // and a surface that gains createPresent is picked up with no edit here.
+    expect(surfaces).toEqual(
+      expect.arrayContaining([
+        'b3ntb0x/B3ntb0xOutputBody.svelte',
+        'backdraft/BackdraftOutputBody.svelte',
+        'bentbox/BentboxOutputBody.svelte',
+        'videoOut/VideoOutBody.svelte',
+      ]),
     );
     // Non-vacuity anchored to a name the population must contain, rather than a
-    // floor on its size.
-    expect(cards).toContain('BackdraftCard');
+    // floor on its size. ⚠ AND IT IS A SUBDIRECTORY NAME ON PURPOSE: the walk's
+    // second level is the half that a flat readdir loses, so anchoring on a flat
+    // file would leave the widening untested.
+    expect(surfaces).toContain('backdraft/BackdraftOutputBody.svelte');
   });
 
-  it('NO presenting card tears its projector down on unmount', () => {
+  it('NO presenting surface tears its projector down on unmount', () => {
     const offenders: string[] = [];
-    for (const card of presentingCards()) {
-      const teardown = unmountPaths(cardSource(card));
+    for (const file of presentingSurfaces()) {
+      const teardown = unmountPaths(surfaceSource(file));
       for (const pattern of [/present\s*\.\s*dispose\s*\(/, /present\s*\.\s*stop\s*\(/]) {
-        if (pattern.test(teardown)) offenders.push(`${card}: ${pattern.source} in an unmount path`);
+        if (pattern.test(teardown)) offenders.push(`${file}: ${pattern.source} in an unmount path`);
       }
     }
     expect(
       offenders,
-      'a card unmount is a VIEW change (shell collapse / dock move), not a node deletion — ' +
+      'a surface unmount is a VIEW change (shell collapse / dock move), not a node deletion — ' +
         'close projectors from $lib/ui/modules/node-present-registry\'s graph sweep instead',
     ).toEqual([]);
   });
 
-  it('NO presenting card hands the blit loop its own canvas', () => {
+  it('NO presenting surface hands the blit loop its own canvas', () => {
     const offenders: string[] = [];
-    for (const card of presentingCards()) {
-      const src = cardSource(card);
+    for (const file of presentingSurfaces()) {
+      const src = surfaceSource(file);
       const call = /createPresent\s*\(\s*\{[\s\S]{0,400}?\}\s*\)/.exec(src)?.[0] ?? '';
-      if (/getCanvas\s*:/.test(call)) offenders.push(`${card}: createPresent({ getCanvas: … })`);
-      if (!/nodeId\s*:/.test(call)) offenders.push(`${card}: createPresent without a nodeId`);
+      if (/getCanvas\s*:/.test(call)) offenders.push(`${file}: createPresent({ getCanvas: … })`);
+      if (!/nodeId\s*:/.test(call)) offenders.push(`${file}: createPresent without a nodeId`);
     }
     expect(
       offenders,
-      'the blit source must be the ENGINE (via the node id), never a card element — ' +
-        'an unmounted card leaves a detached canvas and the projector freezes on its last frame',
+      'the blit source must be the ENGINE (via the node id), never a surface element — ' +
+        'an unmounted surface leaves a detached canvas and the projector freezes on its last frame',
     ).toEqual([]);
   });
 

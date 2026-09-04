@@ -65,13 +65,11 @@ const defSource = read('../../video/modules/peertube.ts');
 const querySource = read('../../video/modules/peertube-query.ts');
 const bodySource = read('peertube/PeerTubeBrowseBody.svelte');
 const pickerSource = read('peertube/PeerTubePicker.svelte');
-const cardSource = read('PeerTubeCard.svelte');
 
 // The code-only views. A raw grep cannot tell code from a comment, and several
 // legs below forbid a construct whose natural explanation NAMES it.
 const bodyCode = stripSourceComments(bodySource);
 const pickerCode = stripSourceComments(pickerSource);
-const cardCode = stripSourceComments(cardSource);
 
 /** The LIVE `ParamDef`. */
 function param(id: string) {
@@ -193,27 +191,29 @@ describe('the noUserControl declaration, driven in BOTH directions', () => {
   });
 });
 
-describe('⚠ ONE PICKER, TWO MOUNTS — the no-drift property, pinned', () => {
-  it('BOTH surfaces import the SAME picker component', () => {
-    // The alternative is two copies, and this module pair has a documented
-    // instance of correctness travelling by hand-copy and arriving a day late.
-    expect(cardCode).toMatch(/from '\.\/peertube\/PeerTubePicker\.svelte'/);
+describe('⚠ ONE PICKER — the no-drift property, pinned', () => {
+  // ⚠ THIS DESCRIBE WAS "ONE PICKER, TWO MOUNTS", AND THE SECOND MOUNT IS GONE.
+  // The property it pinned was that the card and the body render the SAME
+  // component rather than two hand-copies, because this module pair has a
+  // documented instance of correctness travelling by hand-copy and arriving a
+  // day late. With one mount left the drift is unspellable; what survives is
+  // that the surviving mount really is the shared component and not a fork of
+  // it, which is the half a future second surface would be measured against.
+  it('the body mounts the SHARED picker component, not a copy of it', () => {
     expect(bodyCode).toMatch(/from '\.\/PeerTubePicker\.svelte'/);
+    // …and the picker is a real component with the search affordance in it, so
+    // "mounts the shared picker" is a statement about something that exists.
+    // The prefix is a PROP (`{testidPrefix}-search`), which is exactly how one
+    // component serves two mounts without either owning the testid.
+    expect(pickerCode).toContain('-search"');
+    expect(pickerCode).toContain('-results"');
   });
 
-  it('the CARD no longer carries its own search box, roster or disclaimer', () => {
-    // If any of these came back the two surfaces would be free to diverge
-    // again, and a strict locator would break the moment both mount.
-    for (const marker of [
-      'data-testid="peertube-search"',
-      'data-testid="peertube-result"',
-      'data-testid="peertube-results"',
-      'data-testid="peertube-disclaimer"',
-      'data-testid="peertube-play"',
-    ]) {
-      expect(cardCode, `the card re-grew ${marker}`).not.toContain(marker);
-    }
-  });
+  // ⚠ 'the CARD no longer carries its own search box, roster or disclaimer'
+  // STOOD HERE, listing five testids the card had to have stopped emitting so
+  // that the two surfaces could not diverge and a strict locator could not
+  // match twice. Every one of those testids now has exactly one emitter — the
+  // shared picker — which the leg above asserts directly.
 
   it('the picker takes node.data LEAVES, never the enclosing `data` object', () => {
     // ⚠ The Yjs proxy-identity trap: `patch.nodes[id].data` never changes
@@ -260,12 +260,15 @@ describe('⚠ THE BODY BLITS AND NEVER ADOPTS THE NODE-OWNED <video>', () => {
     expect(bodyCode).toMatch(/blitOutputForPreview\(nodeId\)/);
   });
 
-  it('the CARD still adopts — the legacy surface is unchanged in that respect', () => {
-    expect(cardCode).toMatch(/nodeMedia\.adopt\(id, HLS_SOURCE_SLOT/);
-  });
+  // ⚠ 'the CARD still adopts — the legacy surface is unchanged in that respect'
+  // STOOD HERE, pinning `nodeMedia.adopt(id, HLS_SOURCE_SLOT` on the card so
+  // that promotion could be shown NOT to have moved the <video> element. The
+  // element's owner is `node-hls-source-registry` on graph lifetime, which is
+  // what card-media-lifetime holds; there is no second adopter left to move it
+  // away from.
 
-  it('neither surface owns the stream: no attach, no hls teardown, no extras read', () => {
-    for (const [name, code] of [['body', bodyCode], ['card', cardCode], ['picker', pickerCode]] as const) {
+  it('no surface owns the stream: no attach, no hls teardown, no extras read', () => {
+    for (const [name, code] of [['body', bodyCode], ['picker', pickerCode] as const]) {
       expect(code, name).not.toMatch(/attachExternalSource/);
       expect(code, name).not.toMatch(/destroyNodeHls|teardownHls/);
       expect(code, name).not.toMatch(/read\(\s*\w+\s*,\s*'extras'\s*\)/);
@@ -295,7 +298,7 @@ describe('⚠ SCREEN ON/OFF — collapses the COPY, never the producer', () => {
 
 describe('⚠ THE DEAD instanceHost CONTROL IS GONE — and its TYPE deliberately is not', () => {
   it('no surface writes node.data.instanceHost any more', () => {
-    for (const [name, code] of [['body', bodyCode], ['card', cardCode], ['picker', pickerCode]] as const) {
+    for (const [name, code] of [['body', bodyCode], ['picker', pickerCode] as const]) {
       expect(code, name).not.toContain('instanceHost');
     }
   });
@@ -328,14 +331,14 @@ describe('⚠ THE DEAD instanceHost CONTROL IS GONE — and its TYPE deliberatel
 });
 
 describe('⚠ THE DELETED READOUT AND THE KEPT ATTRIBUTION', () => {
-  it('the now-playing NAME is gone from BOTH surfaces', () => {
-    for (const [name, code] of [['body', bodyCode], ['card', cardCode], ['picker', pickerCode]] as const) {
+  it('the now-playing NAME is gone from every surface', () => {
+    for (const [name, code] of [['body', bodyCode], ['picker', pickerCode] as const]) {
       expect(code, name).not.toContain('peertube-now-playing');
     }
   });
 
-  it('the identity survives on the picture accessible name, on BOTH surfaces', () => {
-    for (const [name, code] of [['body', bodyCode], ['card', cardCode]] as const) {
+  it('the identity survives on the picture accessible name', () => {
+    for (const [name, code] of [['body', bodyCode] as const]) {
       expect(code, name).toMatch(/aria-label=\{pictureLabel\}/);
       expect(code, name).toMatch(/role="img"/);
     }
@@ -347,7 +350,7 @@ describe('⚠ THE DELETED READOUT AND THE KEPT ATTRIBUTION', () => {
     // selection with an EMPTY catalogue and no row to highlight. Pinned
     // together so the two facts cannot drift apart.
     expect(PEERTUBE_PROFILE.autoLoadCatalogue).toBe(false);
-    for (const [name, code] of [['body', bodyCode], ['card', cardCode]] as const) {
+    for (const [name, code] of [['body', bodyCode] as const]) {
       expect(code, name).toMatch(/src\.selectionLabel/);
     }
   });

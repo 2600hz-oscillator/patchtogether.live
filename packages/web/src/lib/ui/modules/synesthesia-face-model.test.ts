@@ -49,12 +49,10 @@ const face = synesthesiaDef.face!;
 const HERE = dirname(fileURLToPath(import.meta.url));
 const BODY_SRC = resolve(HERE, 'synesthesia/SynesthesiaVuBody.svelte');
 const EXT_SRC = resolve(HERE, 'synesthesia/shell-extension.ts');
-const CARD_SRC = resolve(HERE, 'SynesthesiaCard.svelte');
 const WORKLET_SRC = resolve(HERE, '../../../../../dsp/src/synesthesia.ts');
 
 const body = (): string => stripSourceComments(readFileSync(BODY_SRC, 'utf8'));
 const ext = (): string => stripSourceComments(readFileSync(EXT_SRC, 'utf8'));
-const card = (): string => stripSourceComments(readFileSync(CARD_SRC, 'utf8'));
 const worklet = (): string => stripSourceComments(readFileSync(WORKLET_SRC, 'utf8'));
 
 const COPIES = ['a', 'b'] as const;
@@ -174,7 +172,7 @@ describe('synesthesia face — the VU wall is the picture, and it is a READER', 
     // node. The pump is the NODE's now
     // (`$lib/ui/media/frame-producers` — SYNESTHESIA_FRAME_PRODUCER), so the
     // same claim covers BOTH surfaces and is stronger for it.
-    for (const [name, src] of [['body', body()], ['card', card()]] as const) {
+    for (const [name, src] of [['body', body()] as const]) {
       expect(src, `${name} must not push video levels`).not.toContain('video_levels');
       expect(src, `${name} must not write to the engine at all`).not.toMatch(/\beng\??\.write\(/);
     }
@@ -252,50 +250,46 @@ describe('synesthesia face — NO card gesture needs a CLICK the host cannot del
   // this card has no non-param state at all. Asserted here, at the source,
   // because no runtime gate looks at a card that is no longer rendered.
 
-  it('the card owns NO node.data, NO file input and NO device roster', () => {
-    const src = card();
-    // The samsloop shape (a `node.data`-backed loader), the cameraInput shape
-    // (a service the card acquires), and the writeData shape — none present.
-    expect(src).not.toMatch(/writeData|mutateNode|\bnode\.data\b|data\?\.\w+\s*=/);
-    expect(src).not.toMatch(/<input\b|<select\b|accept=/);
-  });
+  // ⚠ THREE LEGS STOOD HERE AND ALL THREE READ THE CARD SOURCE. Their shared
+  // subject was the question "does anything on this card need a gesture the
+  // faceplate cannot deliver", i.e. the STOP-2 question, and the card was the
+  // only place the answer could be read because no runtime gate looks at a
+  // surface that is no longer rendered. Recorded rather than deleted, because
+  // the ANSWERS are what the promotion rests on:
+  //
+  //   * "the card owns NO node.data, NO file input and NO device roster" —
+  //     neither the samsloop shape (a `node.data`-backed loader), the
+  //     cameraInput shape (a service the surface acquires) nor a writeData path
+  //     existed here, which is why synesthesia needed no bespoke seam at all.
+  //   * "every CLICKABLE thing is a PARAM write, and every one is RANKED" —
+  //     every `onclick` routed through `toggleMode` / `togglePolarity`, both of
+  //     which write a param through the ordinary graph seam, which is exactly
+  //     what a face cell does. The four params they reached are ranked, so each
+  //     click has somewhere to go on the faceplate. That half is still
+  //     checkable and is asserted below, off the DEF rather than off markup.
+  //   * "the card work that had to SURVIVE has LEFT the card" — the video-levels
+  //     pump moved to `$lib/ui/media/frame-producers` on the NODE. Also still
+  //     checkable, and asserted below.
 
-  it('⚠ every CLICKABLE thing on the card is a PARAM write, and every one is RANKED', () => {
-    const src = card();
-    // Every `onclick` on this card routes through one of these two handlers…
-    const handlers = [...src.matchAll(/onclick=\{\(\)\s*=>\s*(\w+)\(/g)].map((m) => m[1]!);
-    expect(new Set(handlers)).toEqual(new Set(['toggleMode', 'togglePolarity']));
-    // …and both write a param through the ordinary graph seam, which is exactly
-    // what a face cell does. No third gesture exists.
-    expect(src).toMatch(/function toggleMode[\s\S]{0,220}set\(`\$\{c\}_mode`\)/);
-    expect(src).toMatch(/function togglePolarity[\s\S]{0,220}set\(`\$\{c\}_bipolar`\)/);
-    expect(src).toMatch(/const set = \(id_: string\) => \(v: number\) => setNodeParam\(/);
-    // The four params those two handlers reach are all ranked, so the face
-    // renders an interactive cell for each and the click has somewhere to go.
+  it('every switch this module offers is RANKED, so every gesture has a cell', () => {
+    // The surviving half of the click audit: the four params the card's two
+    // handlers wrote are all on the face, so the faceplate renders an
+    // interactive cell for each.
     for (const id of SWITCHES) expect(face.order).toContain(id);
   });
 
-  it('⚠ the card work that had to SURVIVE has LEFT the card (legacy-removal S1)', () => {
-    // ⚠ THIS LEG USED TO CONCLUDE THAT THE HOST WAS ENOUGH, and the reasoning
-    // was sound for what it was answering: the video-levels pump is a LOOP, not
-    // a gesture, so `pointer-events: none` is irrelevant to it — which is why an
-    // off-screen card mount sufficed here and did not for cameraInput.
-    //
+  it('⚠ the work that had to SURVIVE lives on the NODE, not on a view', () => {
+    // The video-levels pump is a LOOP, not a gesture — which is why an
+    // off-screen card mount used to suffice here and did not for cameraInput.
     // "A loop that needs no gesture" is also the precise description of
-    // something that never needed a card. The pump is
-    // `$lib/ui/media/frame-producers` now, on the NODE, so the question the leg
-    // was answering no longer arises — and the card is one step closer to being
-    // deletable, which the host answer could never deliver.
-    const src = card();
-    expect(src, 'the pump is gone from the card entirely').not.toContain('video_levels');
-    expect(NODE_FRAME_PRODUCER_TYPES.has('synesthesia'), 'and it went somewhere').toBe(true);
-    // What REMAINS on the card is a repaint of levels the worklet already posts
-    // — a view, and one the faceplate body duplicates by design.
-    expect(src).toContain('requestAnimationFrame');
-    expect(src).toContain("read(node, 'snapshot')");
-    // NEGATIVE CONTROL on the instrument: the grep really can find a click, so
-    // "no third gesture" above is a reading rather than an empty match.
-    expect(src.match(/onclick=/g)?.length).toBeGreaterThan(0);
+    // something that never needed a surface: it is a node-lifetime producer
+    // now, and runs with nothing mounted at all.
+    expect(NODE_FRAME_PRODUCER_TYPES.has('synesthesia'), 'the pump went somewhere').toBe(true);
+    // …and the surviving surface is a VIEW of what the worklet posts, never a
+    // second pump: it repaints from the snapshot and pushes nothing.
+    const src = stripSourceComments(body());
+    expect(src, 'the body reads the snapshot the worklet posts').toContain("read(n, 'snapshot')");
+    expect(src, 'the body must not have regrown the pump').not.toContain('video_levels');
   });
 });
 

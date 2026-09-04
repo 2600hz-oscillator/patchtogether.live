@@ -49,7 +49,6 @@ const LANE_TIERS = ['mini', 'compact', 'full'] as const;
 const HERE = dirname(fileURLToPath(import.meta.url));
 const DIR = resolve(HERE, 'clipplayer');
 const read = (f: string) => readFileSync(resolve(DIR, f), 'utf8');
-const CARD = () => readFileSync(resolve(HERE, 'ClipplayerCard.svelte'), 'utf8');
 const PANELS = [
   'ClipplayerLaunchPanel.svelte',
   'ClipplayerNotePanel.svelte',
@@ -333,12 +332,10 @@ describe('clipplayer face — what a def-reading gate cannot see', () => {
     for (const consumer of ['ClipplayerLaunchPanel.svelte', 'ClipplayerNotePanel.svelte']) {
       expect(read(consumer), `${consumer} mounts the shared menu`).toContain('<ClipplayerClipMenu');
     }
-    expect(CARD(), 'the legacy card mounts the shared menu too').toContain('<ClipplayerClipMenu');
     // …and NOBODY re-implements the option list.
     for (const f of PANELS) {
       expect(read(f), `${f} does not re-list the probability levels`).not.toContain('probMenuLevels(');
     }
-    expect(CARD()).not.toContain('probMenuLevels()');
   });
 
   // ⚠ RULE 1 OF THE PANEL CONTRACT: `faces-parity` asserts EXACT MULTISET
@@ -591,7 +588,6 @@ describe('clipplayer — the docs corrections this promotion carried', () => {
     expect(clipTypes, 'the shipped default').toMatch(/octaves\s*=\s*3/);
     const defSrc = readFileSync(resolve(HERE, '..', '..', 'audio', 'modules', 'clipplayer.ts'), 'utf8');
     expect(defSrc).not.toContain('4-octave');
-    expect(CARD()).not.toContain('4-octave');
     // ⚠ THE NOTE PANEL IS ASSERTED POSITIVELY, not by a negative grep: its own
     // header names the drift it is not repeating (the string "4-octave" appears
     // there on purpose), so the property worth pinning is that it declares the
@@ -610,12 +606,11 @@ describe('clipplayer — the docs corrections this promotion carried', () => {
   // `cycleSceneRepeat` on a click long enough to say so in its own comment. A
   // read-only family has no honest probe and would have joined the four
   // deleted ones.
-  it('the scene-repeat docs describe the click gesture the card actually has', () => {
+  it('the scene-repeat docs describe the click gesture the SURFACE actually has', () => {
     const blob = clipplayerDef.docs!.controls!['clipplayer-scene-repeat-{n}']!;
     expect(blob).not.toContain('read-only');
     expect(blob).not.toContain('card-side editing is a follow-up');
     expect(blob.toUpperCase()).toContain('CLICK');
-    expect(CARD(), 'the gesture the doc now describes').toContain('cycleSceneRepeat');
   });
 
   // ⚠ THE SAME STALE CLAIM WAS IN THE EXPLANATION TOO — a THIRD surface, found
@@ -632,7 +627,14 @@ describe('clipplayer — the docs corrections this promotion carried', () => {
     expect(explanation, 'and it states the gesture both surfaces perform').toContain(
       '∞ → 2 → 3 → 4 → 8 → ∞',
     );
-    // The card's own resting label is what makes "∞" the honest word.
-    expect(CARD()).toContain("return c === 0 ? '∞'");
+    // ⚠ THE CARD'S OWN RESTING LABEL used to be read here — `return c === 0 ?
+    // '∞'` — because it is what made "∞" the honest word in the prose rather
+    // than a symbol the docs chose. The surviving surface renders the cycle
+    // through the shared `clipplayer-scene` cell, so the label lives with the
+    // cell rather than on a per-surface line.
+    expect(
+      read('clipplayer-face-model.ts'),
+      'the face model still owns the repeat cycle the prose describes',
+    ).toContain('sceneRepeat');
   });
 });
