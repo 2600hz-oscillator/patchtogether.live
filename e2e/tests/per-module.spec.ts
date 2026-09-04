@@ -49,6 +49,17 @@ const SKIP_OUTPUT_ALIVE: Record<string, string> = {
   livecode: 'text-DSL; no audio path',
   // SAMSLOOP — needs a loaded sample to sound. Covered by samsloop.spec.ts.
   samsloop: 'needs uploaded sample; covered by samsloop.spec.ts',
+  // CLIPPLAYER — joined this population in slice 5 (the audio{N}L/R clip
+  // outputs are its FIRST audio-typed outs). They are recorded-take playback:
+  // silent until a real take exists (OPFS media + a committed
+  // AudioClipRecord), which a bare spawn structurally cannot produce — and
+  // the default driver would land on gate1, which needs a launched note clip
+  // this spec does not seed either. The REAL chain (record a take from a live
+  // oscillator, launch it, audible RMS on audio1L) is asserted end-to-end by
+  // cliprec-arm-single.spec.ts; the note outputs are swept per-port with a
+  // full driver in per-module-per-port-outputs.spec.ts.
+  clipplayer:
+    'audio outs are recorded-take playback (needs OPFS media + a committed clip); covered by cliprec-arm-single.spec.ts (real-chain record→launch→audible RMS) + the per-port sweep for the note outputs',
   // SIXSTRUM — strings ring only when a strum/pluck gate is struck, but the
   // bare output-alive driver resolves an output port with no gate source, so
   // the 6 Karplus voices never fire. The REAL default source chain

@@ -92,6 +92,10 @@ interface Harness {
   writes: { position: number; bytes: number }[];
   writerClose: ReturnType<typeof vi.fn>;
   setFailWrites(v: boolean): void;
+  /** Hold every media open until released — the contended-host simulation
+   *  (the CI shard where an IDB open outran the punch-in). */
+  gateOpens(): void;
+  releaseOpens(): void;
 }
 
 function makeHarness(): Harness {
@@ -121,6 +125,8 @@ function makeHarness(): Harness {
     },
     close: writerClose,
   });
+  let openGate: Promise<void> | null = null;
+  let openRelease: (() => void) | null = null;
   const deps: ClipRecRegistryDeps = {
     engine: () => ({
       read: (node, key) => {
@@ -136,6 +142,7 @@ function makeHarness(): Harness {
     wire: () => wiring,
     hasStore: () => true,
     beginTake: async (m) => {
+      if (openGate) await openGate;
       manifests.push({ ...m });
       return makeWriter(m.mediaId);
     },
@@ -167,6 +174,15 @@ function makeHarness(): Harness {
     setFailWrites: (v) => {
       failWrites = v;
     },
+    gateOpens: () => {
+      openGate = new Promise<void>((r) => {
+        openRelease = () => {
+          openGate = null;
+          r();
+        };
+      });
+    },
+    releaseOpens: () => openRelease?.(),
   };
 }
 
@@ -175,13 +191,17 @@ async function settle(times = 6) {
   for (let i = 0; i < times; i++) await new Promise((r) => setTimeout(r, 0));
 }
 
-/** Drive a full green single take on lane 0 and return its window. */
+/** Drive a full green single take on lane 0 and return its window. The arm is
+ *  a two-step observable sequence: the edge PREPARES (async media open), the
+ *  next pump CONFIRMS (resolves the window, arms machine + worklet). */
 async function recordOneTake(h: Harness) {
   h.reg.sync(liveNodes());
   h.reg.pump(); // builds wiring; adopts the (all-zero) arm state
   await settle();
   h.recState.arm[0] = 1;
-  h.reg.pump(); // the arm edge
+  h.reg.pump(); // the arm edge → prepare
+  await settle(); // the media open resolves
+  h.reg.pump(); // confirm → the machine + worklet arm
   await settle();
   const armMsg = h.posted.find((m) => m.type === 'arm') as
     | { startFrame: number; stopFrame: number }
@@ -211,14 +231,26 @@ beforeEach(() => {
 });
 
 describe('node-clip-recorder-registry — arm-single end to end', () => {
-  it('arms on the 0→1 edge with the boundary maths, projects rec-armed, then rec-active', async () => {
+  it('arms as an OBSERVABLE SEQUENCE: edge → armed(startFrame null) → confirmed window → rec-active', async () => {
     const h = makeHarness();
     h.reg.sync(liveNodes());
     h.reg.pump();
     await settle();
     h.recState.arm[0] = 1;
-    h.reg.pump();
-    await settle();
+    h.reg.pump(); // the edge — PREPARE
+    // The pads read armed IMMEDIATELY, in the AudioRecState "not yet
+    // resolved" shape (startFrame null) — no window exists yet, on purpose.
+    const prep = audioRecState(clipData(), 0);
+    expect(prep?.phase).toBe('armed');
+    expect(prep?.startFrame).toBeNull();
+    expect(clipPadState(clipData(), clipIndex(0, 0))).toBe('rec-armed');
+    expect(h.posted.filter((m) => m.type === 'arm').length).toBe(0); // no worklet arm yet
+    await settle(); // the media open resolves
+    // The manifest was written BEFORE the worklet arm (crash model).
+    expect(h.manifests.length).toBe(1);
+    expect(h.manifests[0]!.unitFrames).toBe(UNIT_FRAMES);
+    expect(h.manifests[0]!.status).toBe('recording');
+    h.reg.pump(); // CONFIRM — the window resolves from the clock as of now
     const arm = h.posted.find((m) => m.type === 'arm') as {
       lane: number;
       startFrame: number;
@@ -228,19 +260,98 @@ describe('node-clip-recorder-registry — arm-single end to end', () => {
     // Nothing playing → punch-in at now + lead, one default bar exactly.
     expect(arm.startFrame).toBe(Math.round(CLIP_REC_ARM_LEAD_S * SR));
     expect(arm.stopFrame - arm.startFrame).toBe(UNIT_FRAMES);
-    // The manifest was written BEFORE the worklet arm (crash model).
-    expect(h.manifests.length).toBe(1);
-    expect(h.manifests[0]!.unitFrames).toBe(UNIT_FRAMES);
-    expect(h.manifests[0]!.status).toBe('recording');
-    // The pads read the shared projection: armed slot = the lane's first
-    // empty slot (slot 0 on an empty lane).
-    expect(audioRecState(clipData(), 0)?.phase).toBe('armed');
-    expect(clipPadState(clipData(), clipIndex(0, 0))).toBe('rec-armed');
+    // The projection now carries the resolved frames.
+    expect(audioRecState(clipData(), 0)?.startFrame).toBe(arm.startFrame);
     // Punch-in flips the projection to rec-active.
     h.ctx.currentTime = arm.startFrame / SR + 0.01;
     h.reg.pump();
     expect(audioRecState(clipData(), 0)?.phase).toBe('recording');
     expect(clipPadState(clipData(), clipIndex(0, 0))).toBe('rec-active');
+  });
+
+  it('COLD-BOOT RACE (the CI shard): a media open slower than any lead still records a full take — the window is resolved AFTER the open', async () => {
+    const h = makeHarness();
+    h.reg.sync(liveNodes());
+    h.reg.pump();
+    await settle();
+    h.gateOpens(); // the contended host: IDB/worker open stalls
+    h.recState.arm[0] = 1;
+    h.reg.pump(); // the edge — prepare starts, open hangs
+    await settle();
+    // A FULL SECOND passes — far beyond CLIP_REC_ARM_LEAD_S. Under the old
+    // one-shot arm the window would already be in the past and the take dead
+    // ("arm never completed"). Pumps during the stall must not punch in.
+    h.ctx.currentTime = 1.0;
+    h.reg.pump();
+    h.reg.pump();
+    expect(h.posted.filter((m) => m.type === 'arm').length).toBe(0);
+    expect(h.reg.view(MIX)![0]!.preparing).toBe(true);
+    expect(audioRecState(clipData(), 0)?.phase).toBe('armed'); // pad honest throughout
+    h.releaseOpens();
+    await settle();
+    h.reg.pump(); // confirm — window from the POST-STALL clock
+    await settle();
+    const arm = h.posted.find((m) => m.type === 'arm') as {
+      startFrame: number;
+      stopFrame: number;
+    };
+    expect(arm, 'the take armed after the stall').toBeTruthy();
+    expect(arm.startFrame).toBe(Math.round((1.0 + CLIP_REC_ARM_LEAD_S) * SR));
+    expect(arm.stopFrame - arm.startFrame).toBe(UNIT_FRAMES);
+    // …and the take completes to a committed clip of EXACTLY unitFrames.
+    const frames = arm.stopFrame - arm.startFrame;
+    h.ctx.currentTime = arm.startFrame / SR + 0.05;
+    h.reg.pump();
+    const data = new Float32Array(frames * 2);
+    h.port.onmessage?.({ data: { type: 'chunk', lane: 0, firstFrame: 0, frames, data } } as MessageEvent);
+    h.port.onmessage?.({ data: { type: 'done', lane: 0, frames } } as MessageEvent);
+    h.ctx.currentTime = arm.stopFrame / SR + 0.05;
+    h.reg.pump();
+    await settle(12);
+    const rec = readClip(clipData(), clipIndex(0, 0));
+    expect(rec?.kind).toBe('audio');
+    if (rec?.kind === 'audio') expect(rec.frames).toBe(UNIT_FRAMES);
+    expect(h.reg.lastRefusal(MIX)).toBeNull();
+  });
+
+  it('CANCEL MID-PREPARE: the arm dropping while the media opens discards the open, arms nothing', async () => {
+    const h = makeHarness();
+    h.reg.sync(liveNodes());
+    h.reg.pump();
+    await settle();
+    h.gateOpens();
+    h.recState.arm[0] = 1;
+    h.reg.pump(); // prepare, open hangs
+    h.recState.arm[0] = 0;
+    h.reg.pump(); // cancel mid-prepare
+    expect(audioRecState(clipData(), 0)).toBeNull(); // pad cleared at once
+    h.releaseOpens();
+    await settle();
+    h.reg.pump();
+    await settle();
+    // The stale open discarded itself: writer closed, media removed, no arm.
+    expect(h.posted.filter((m) => m.type === 'arm').length).toBe(0);
+    expect(h.writerClose).toHaveBeenCalled();
+    expect(h.removed.length).toBe(1);
+    expect(h.reg.view(MIX)![0]!.phase).toBe('idle');
+  });
+
+  it('a reference-bar boundary too close at confirm SLIPS one bar to the next wrap', async () => {
+    const h = makeHarness();
+    // The wrap is 20 ms away — inside the arm message's flight time. The
+    // reference loop is 4 s, so the honest punch-in is the NEXT wrap.
+    h.recClock.boundary = 0.02;
+    h.recClock.refSeconds = 4;
+    h.reg.sync(liveNodes());
+    h.reg.pump();
+    await settle();
+    h.recState.arm[2] = 1;
+    h.reg.pump();
+    await settle();
+    h.reg.pump(); // confirm
+    const arm = h.posted.find((m) => m.type === 'arm') as { lane: number; startFrame: number };
+    expect(arm.lane).toBe(2);
+    expect(arm.startFrame).toBe(Math.round((0.02 + 4) * SR));
   });
 
   it('a loaded patch with the arm already ON is ADOPTED, never fired', async () => {
@@ -255,8 +366,9 @@ describe('node-clip-recorder-registry — arm-single end to end', () => {
     h.recState.arm[0] = 0;
     h.reg.pump();
     h.recState.arm[0] = 1;
-    h.reg.pump();
+    h.reg.pump(); // prepare
     await settle();
+    h.reg.pump(); // confirm
     expect(h.posted.filter((m) => m.type === 'arm').length).toBe(1);
   });
 
@@ -327,8 +439,9 @@ describe('node-clip-recorder-registry — arm-single end to end', () => {
     h.reg.pump();
     await settle();
     h.recState.arm[0] = 1;
-    h.reg.pump();
+    h.reg.pump(); // prepare
     await settle();
+    h.reg.pump(); // confirm
     const arm = h.posted.find((m) => m.type === 'arm') as { startFrame: number; stopFrame: number };
     const frames = arm.stopFrame - arm.startFrame;
     h.ctx.currentTime = arm.startFrame / SR + 0.05;
@@ -352,8 +465,9 @@ describe('node-clip-recorder-registry — arm-single end to end', () => {
     h.reg.pump();
     await settle();
     h.recState.arm[0] = 1;
-    h.reg.pump();
+    h.reg.pump(); // prepare
     await settle();
+    h.reg.pump(); // confirm
     expect(h.reg.view(MIX)![0]!.phase).toBe('armed');
     h.recState.arm[0] = 0;
     h.reg.pump();
@@ -370,8 +484,9 @@ describe('node-clip-recorder-registry — arm-single end to end', () => {
     h.reg.pump();
     await settle();
     h.recState.arm[0] = 1;
-    h.reg.pump();
+    h.reg.pump(); // prepare
     await settle();
+    h.reg.pump(); // confirm
     expect(h.reg.view(MIX)![0]!.phase).toBe('armed');
     // A "card unmount" is NOT an event this registry can see — the type has
     // no dispose/release/detach, so the closest thing to unmount/remount is
@@ -388,8 +503,9 @@ describe('node-clip-recorder-registry — arm-single end to end', () => {
     h.reg.pump();
     await settle();
     h.recState.arm[0] = 1;
-    h.reg.pump();
+    h.reg.pump(); // prepare
     await settle();
+    h.reg.pump(); // confirm
     h.ctx.currentTime = 1;
     h.reg.pump(); // recording now
     expect(h.reg.view(MIX)![0]!.phase).toBe('recording');
@@ -439,8 +555,9 @@ describe('node-clip-recorder-registry — arm-single end to end', () => {
     h.reg.pump();
     await settle();
     h.recState.arm[1] = 1;
-    h.reg.pump();
+    h.reg.pump(); // prepare
     await settle();
+    h.reg.pump(); // confirm
     const arm = h.posted.find((m) => m.type === 'arm') as {
       lane: number;
       startFrame: number;
@@ -460,9 +577,12 @@ describe('node-clip-recorder-registry — arm-single end to end', () => {
     h.reg.pump();
     await settle();
     h.recState.arm[0] = 1;
-    h.reg.pump();
-    await settle();
+    h.reg.pump(); // prepare — starts the transport
     expect((patch.nodes[TL]!.params as Record<string, number>).running).toBe(1);
+    // The live clock now reads running (the fake mirrors the param write).
+    h.recClock.running = true;
+    await settle();
+    h.reg.pump(); // confirm
     expect(h.reg.view(MIX)![0]!.phase).toBe('armed');
   });
 });

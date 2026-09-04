@@ -34,7 +34,10 @@
 // through `read('recState')` and drives the pure machine
 // (clip-audio-rec-machine.ts) from edges on them. Level semantics:
 //   - 0 → 1 edge while idle  = ARM SINGLE (this slice; 2/endless is slice 6,
-//     and reads as "not 1" here — arming stays un-actioned until it lands);
+//     and reads as "not 1" here — arming stays un-actioned until it lands).
+//     The edge PREPARES (refusals, tempo latch, manifest, writer worker —
+//     the I/O a cold host controls) and the machine arms only at CONFIRM,
+//     with the window resolved from the clock AFTER the open — see LaneRec;
 //   - → 0 while armed/recording = CANCEL (the escape — nothing committed);
 //   - after a COMMIT the registry snaps the KNOB back to 0 itself, so the
 //     control reads disarmed and a held CV gate must dip before it re-arms
@@ -108,10 +111,17 @@ import {
 import { laneRateIndex, laneStepDur } from '$lib/audio/modules/clip-clock';
 
 /** How far ahead of "now" a take punches in when NOTHING is playing (no
- *  reference bar to wait for). Covers the manifest write + the arm message's
- *  trip to the audio thread; the worklet wiring itself is pre-built at graph
- *  sync, not at arm. */
+ *  reference bar to wait for). By the time this is applied the media is
+ *  already OPEN and the worklet wired (the prepare/confirm split below), so
+ *  it only has to cover the arm message's trip to the audio thread. */
 export const CLIP_REC_ARM_LEAD_S = 0.12;
+
+/** The minimum runway to a REFERENCE-BAR boundary for the punch-in to be
+ *  reliable (the arm message must reach the audio thread first). A boundary
+ *  closer than this at confirm time SLIPS one reference bar to the next
+ *  wrap — a take that starts one bar later is a take; a take that misses its
+ *  own first samples is a failure that looks like success. */
+export const CLIP_REC_MIN_BOUNDARY_LEAD_S = 0.05;
 
 /** How long the commit waits for the worklet's `done` after the machine saw
  *  the stop frame pass. The worklet finishes inside the stop frame's own
@@ -187,13 +197,36 @@ const DEFAULT_DEPS: ClipRecRegistryDeps = {
 };
 
 /** One lane's record slot inside an entry. The machine is always present;
- *  the take fields exist only between arm and commit/discard. */
+ *  the take fields exist only between arm and commit/discard.
+ *
+ *  ⚠ THE ARM IS A TWO-STEP OBSERVABLE SEQUENCE, and `preparing`/`prepared`
+ *  are its states. The 0→1 edge only PREPARES: refusal checks, the manifest
+ *  write, the writer worker, the wiring — all the I/O whose latency a cold,
+ *  contended host controls (measured on CI: an IDB open can outrun a
+ *  precomputed punch-in, and the take then "records" into media that never
+ *  opened). The machine is dispatched `arm` only at CONFIRM, when the media
+ *  is open — and the window is resolved from the CLOCK AT THAT MOMENT, so
+ *  `armed` always means "worklet armed, media open, window in the future".
+ *  The pads still read armed from the edge onward: the prep projection writes
+ *  `audioRec` with `startFrame: null`, the exact "armed and not yet resolved"
+ *  state the AudioRecState type declares. */
 interface LaneRec {
   machine: ClipRecState;
+  /** Identity of the CURRENT take's async work. Bumped at every prepare and
+   *  every cancel/clear, so a media open that resolves for a dead take can
+   *  only discard itself — never install into a newer one. */
+  takeSeq: number;
+  /** The edge was accepted; the media open is in flight. */
+  preparing: boolean;
+  /** The media is open + the worklet wired; the next pump confirms the arm. */
+  prepared: boolean;
   /** The clipplayer node the take commits to — latched at arm. */
   clipNodeId: string | null;
   slot: number;
   lengthSteps: number;
+  /** The unit loop in frames — latched at the EDGE (tempo latch, spec edge 3);
+   *  only the window's start/stop wait for confirm. */
+  unitFrames: number;
   tap: number;
   sampleRate: number;
   mediaId: string | null;
@@ -207,9 +240,13 @@ interface LaneRec {
 function freshLane(): LaneRec {
   return {
     machine: CLIP_REC_IDLE,
+    takeSeq: 0,
+    preparing: false,
+    prepared: false,
     clipNodeId: null,
     slot: 0,
     lengthSteps: DEFAULT_CLIP_STEPS,
+    unitFrames: 0,
     tap: 0,
     sampleRate: 48000,
     mediaId: null,
@@ -237,6 +274,10 @@ interface Entry {
 
 export interface ClipRecLaneView {
   phase: ClipRecState['phase'];
+  /** The observable arm sequence's I/O states (machine phase is 'idle' while
+   *  either is true — the machine arms only at confirm). */
+  preparing: boolean;
+  prepared: boolean;
   slot: number;
   mediaId: string | null;
 }
@@ -259,7 +300,13 @@ export class NodeClipRecorderRegistry {
     void this.#version;
     const e = this.#entries.get(nodeId);
     if (!e) return null;
-    return e.lanes.map((l) => ({ phase: l.machine.phase, slot: l.slot, mediaId: l.mediaId }));
+    return e.lanes.map((l) => ({
+      phase: l.machine.phase,
+      preparing: l.preparing,
+      prepared: l.prepared,
+      slot: l.slot,
+      mediaId: l.mediaId,
+    }));
   }
 
   lastRefusal(nodeId: string): string | null {
@@ -352,28 +399,44 @@ export class NodeClipRecorderRegistry {
       const st = entry.lanes[lane]!;
 
       if (!adopt) {
-        // ARM edge: 0→1 while idle = arm single. (2 = endless, slice 6 — an
-        // edge onto 2 is deliberately un-actioned here.)
-        if (armNow === 1 && armPrev !== 1 && st.machine.phase === 'idle') {
-          if (this.#tryArm(entry, lane, engine, ctx, mixNode, clipNode, clock, rec.tap)) {
+        // ARM edge: 0→1 while idle = PREPARE a single take. (2 = endless,
+        // slice 6 — an edge onto 2 is deliberately un-actioned here.)
+        if (
+          armNow === 1 &&
+          armPrev !== 1 &&
+          st.machine.phase === 'idle' &&
+          !st.preparing &&
+          !st.prepared
+        ) {
+          if (this.#beginPrepare(entry, lane, engine, ctx, mixNode, clipNode, clock, rec.tap)) {
             running = true;
           }
-        } else if (
-          armNow === 0 &&
-          armPrev !== 0 &&
-          (st.machine.phase === 'armed' ||
-            st.machine.phase === 'recording' ||
-            st.machine.phase === 'stopping')
-        ) {
+        } else if (armNow === 0 && armPrev !== 0) {
           // The arm dropped to OFF — CANCEL, the escape. Nothing commits.
-          this.#dispatch(entry, lane, { type: 'cancel' });
+          if (st.preparing || st.prepared) {
+            this.#cancelPrep(entry, lane);
+          } else if (st.machine.phase !== 'idle' && st.machine.phase !== 'committing') {
+            this.#dispatch(entry, lane, { type: 'cancel' });
+          }
         }
       }
 
       // The transport stopping mid-take discards a single take (its contract
-      // is exactly one loop; a partial is not a shorter version of it).
-      if (clock && !running && st.machine.phase !== 'idle') {
-        this.#dispatch(entry, lane, { type: 'transportStop', frame });
+      // is exactly one loop; a partial is not a shorter version of it). A
+      // take still preparing is discarded the same way — armed + transport
+      // stop → idle, per the §4.4 table.
+      if (clock && !running) {
+        if (st.preparing || st.prepared) this.#cancelPrep(entry, lane);
+        if (st.machine.phase !== 'idle') {
+          this.#dispatch(entry, lane, { type: 'transportStop', frame });
+        }
+      }
+
+      // CONFIRM: the media opened — resolve the window from the clock AS OF
+      // NOW (never the clock that existed before the slow open) and arm the
+      // machine + worklet in one dispatch.
+      if (st.prepared && st.machine.phase === 'idle' && running) {
+        this.#confirmArm(entry, lane, ctx, clock);
       }
 
       this.#dispatch(entry, lane, { type: 'frame', frame });
@@ -390,9 +453,18 @@ export class NodeClipRecorderRegistry {
     console.warn(`[clip-rec] ${entry.nodeId}: refusing to arm — ${reason}`);
   }
 
-  /** Returns true when the lane ARMED (the transport is then running — either
-   *  it already was, or the arm just started it). */
-  #tryArm(
+  /** THE EDGE — step one of the arm sequence. Sync refusal checks, the tempo
+   *  latch (lengthSteps/unitFrames), the tap latch, the armed projection
+   *  (`startFrame: null` — the AudioRecState "not yet resolved" state), then
+   *  the ASYNC media open. Returns true when the lane accepted the edge (the
+   *  transport is then running — it already was, or the arm just started it).
+   *
+   *  ⚠ NO WINDOW IS RESOLVED HERE. The window's start/stop are frames on the
+   *  context clock, and every millisecond of I/O between here and the worklet
+   *  arm would eat into them — measured on a contended CI shard, the IDB open
+   *  alone outran a precomputed punch-in. `#confirmArm` resolves the window
+   *  AFTER the open, from the clock as of that moment. */
+  #beginPrepare(
     entry: Entry,
     lane: number,
     engine: ClipRecEngineLike,
@@ -430,22 +502,16 @@ export class NodeClipRecorderRegistry {
     const laneDur = laneStepDur(clock.baseStepDur, rateIdx);
     // "One loop": the reference bar re-expressed in THIS lane's steps when
     // something is playing; one default bar (16 steps at the lane's own rate)
-    // on an empty groove.
+    // on an empty groove. Latched at the EDGE — the tempo latch (edge 3).
     let lengthSteps = DEFAULT_CLIP_STEPS;
     if (clock.refSeconds !== null && clock.refSeconds > 0 && laneDur > 0) {
       lengthSteps = Math.max(1, Math.round(clock.refSeconds / laneDur));
     }
     const unitFrames = clipRecUnitFrames(lengthSteps, clock.baseStepDur, rateIdx, ctx.sampleRate);
-    const boundaryTime =
-      clock.running && clock.boundary !== null && clock.boundary > ctx.currentTime
-        ? clock.boundary
-        : ctx.currentTime + CLIP_REC_ARM_LEAD_S;
-    const startFrame = clipRecStartFrame(boundaryTime, ctx.sampleRate);
-    const window: RecordingWindow = { startFrame, stopFrame: null, unitFrames };
 
     // Latch the tap for this take. A different tap re-wires only while no
     // other lane records (mid-take re-wire is a splice on THEIR take).
-    const anyLive = entry.lanes.some((l) => l.machine.phase !== 'idle');
+    const anyLive = entry.lanes.some((l) => l.machine.phase !== 'idle' || l.preparing || l.prepared);
     const wantTap = Math.max(0, Math.min(2, Math.round(tap)));
     if (!anyLive && wantTap !== entry.wiringTap) {
       this.#teardownWiring(entry);
@@ -453,9 +519,13 @@ export class NodeClipRecorderRegistry {
     }
 
     const st = entry.lanes[lane]!;
+    st.takeSeq++;
+    st.preparing = true;
+    st.prepared = false;
     st.clipNodeId = clipNode.id;
     st.slot = slot;
     st.lengthSteps = lengthSteps;
+    st.unitFrames = unitFrames;
     st.tap = entry.wiringTap;
     st.sampleRate = ctx.sampleRate;
     st.doneFrames = null;
@@ -463,14 +533,16 @@ export class NodeClipRecorderRegistry {
       st.doneResolve = res;
     });
     this.#refusals.delete(entry.nodeId);
-    this.#dispatch(entry, lane, { type: 'arm', mode: 'single', window });
+    this.#writePrepArmed(entry, lane);
+    void this.#openTake(entry, lane, st.takeSeq);
+    this.#version++;
     return true;
   }
 
-  /** Spend the machine's `armWorklet` effect: manifest FIRST (the crash
-   *  model), then the drain, then the arm message. Async — the lead time /
-   *  boundary distance covers it; a failure cancels the take. */
-  async #beginTake(entry: Entry, lane: number, window: RecordingWindow): Promise<void> {
+  /** Step two, async — the media open: manifest FIRST (the crash model), then
+   *  the writer worker, guarded by the take's seq so a cancel mid-open can
+   *  only ever discard this open, never install into a newer take. */
+  async #openTake(entry: Entry, lane: number, seq: number): Promise<void> {
     const st = entry.lanes[lane]!;
     const mediaId = newClipMediaId();
     try {
@@ -478,6 +550,7 @@ export class NodeClipRecorderRegistry {
       // first build waits for it (an arm message sent to no worklet would be a
       // take that looks armed and captures nothing).
       if (!entry.wiring && entry.wiringBuild) await entry.wiringBuild;
+      if (!entry.wiring) throw new Error('the recorder worklet is unavailable on this context');
       const manifest: ClipMediaManifest = {
         mediaId,
         nodeId: st.clipNodeId ?? '',
@@ -489,26 +562,81 @@ export class NodeClipRecorderRegistry {
         sampleRate: st.sampleRate,
         channels: 2,
         frames: 0,
-        unitFrames: window.unitFrames,
+        unitFrames: st.unitFrames,
         lengthSteps: st.lengthSteps,
       };
       const writer = await this.#deps.beginTake(manifest);
-      // The machine may have moved on while the manifest wrote (cancel,
-      // transport stop). A take that no longer exists closes its writer and
-      // frees the scratch instead of arming.
-      if (entry.lanes[lane] !== st || st.machine.phase !== 'armed') {
+      if (entry.lanes[lane] !== st || st.takeSeq !== seq) {
+        // Cancelled while the media opened — the open discards itself.
         void writer.close().then(() => this.#deps.removeMedia(mediaId));
         return;
       }
       st.mediaId = mediaId;
       st.writer = writer;
       st.drain = new ClipMediaDrain(writer, { bytesPerFrame: CLIP_RECORDER_BYTES_PER_FRAME });
-      if (entry.wiring) armClipRecorderLane(entry.wiring.node, lane, window);
+      st.preparing = false;
+      st.prepared = true; // the next pump confirms the arm
       this.#version++;
     } catch (err) {
-      console.warn('[clip-rec] failed to open a take', err);
-      this.#dispatch(entry, lane, { type: 'cancel' });
+      if (entry.lanes[lane] === st && st.takeSeq === seq) {
+        st.preparing = false;
+        st.prepared = false;
+        clearTake(st);
+        this.#refuse(
+          entry,
+          `could not open a take: ${err instanceof Error ? err.message : String(err)}`,
+        );
+        this.#snapArmOff(entry, lane);
+        this.#writeAudioRec(entry, lane); // machine is idle → clears the projection
+      }
     }
+  }
+
+  /** Step three — the media is open: resolve the window from the clock AS OF
+   *  NOW and dispatch `arm`. The `armWorklet` effect then posts to a worklet
+   *  that provably exists, with a drain that provably exists, so a chunk can
+   *  never be dropped for want of either. A reference-bar boundary too close
+   *  to make reliably SLIPS one bar to the next wrap — a take that starts one
+   *  bar later is a take; one that misses its own first samples is not. */
+  #confirmArm(entry: Entry, lane: number, ctx: BaseAudioContext, clock: RecClock | undefined): void {
+    const st = entry.lanes[lane]!;
+    st.prepared = false;
+    const now = ctx.currentTime;
+    let boundaryTime: number;
+    if (clock && clock.running && clock.boundary !== null && clock.boundary > now) {
+      boundaryTime = clock.boundary;
+      if (
+        boundaryTime - now < CLIP_REC_MIN_BOUNDARY_LEAD_S &&
+        clock.refSeconds !== null &&
+        clock.refSeconds > 0
+      ) {
+        boundaryTime += clock.refSeconds; // slip to the NEXT wrap
+      }
+    } else {
+      boundaryTime = now + CLIP_REC_ARM_LEAD_S;
+    }
+    const startFrame = clipRecStartFrame(boundaryTime, ctx.sampleRate);
+    const window: RecordingWindow = { startFrame, stopFrame: null, unitFrames: st.unitFrames };
+    this.#dispatch(entry, lane, { type: 'arm', mode: 'single', window });
+  }
+
+  /** Cancel a take that is still PREPARING/PREPARED (the machine never armed):
+   *  invalidate the in-flight open, free whatever media exists, clear the
+   *  armed projection. Nothing was captured, so nothing is kept. */
+  #cancelPrep(entry: Entry, lane: number): void {
+    const st = entry.lanes[lane]!;
+    st.takeSeq++;
+    st.preparing = false;
+    st.prepared = false;
+    const { mediaId, writer } = st;
+    clearTake(st);
+    if (writer) {
+      void writer.close().then(() => (mediaId ? this.#deps.removeMedia(mediaId) : undefined));
+    } else if (mediaId) {
+      void this.#deps.removeMedia(mediaId);
+    }
+    this.#writeAudioRec(entry, lane); // machine is idle → clears the projection
+    this.#version++;
   }
 
   // -------------------------------------------------------------------------
@@ -531,7 +659,9 @@ export class NodeClipRecorderRegistry {
     const st = entry.lanes[lane]!;
     switch (eff.kind) {
       case 'armWorklet':
-        void this.#beginTake(entry, lane, eff.window);
+        // The prepare/confirm split guarantees the wiring and the drain exist
+        // by the time the machine arms — this is a plain postMessage.
+        if (entry.wiring) armClipRecorderLane(entry.wiring.node, lane, eff.window);
         break;
       case 'stopWorklet':
         if (entry.wiring) stopClipRecorderLane(entry.wiring.node, lane, eff.stopFrame);
@@ -662,6 +792,31 @@ export class NodeClipRecorderRegistry {
   // audioRec projection — what the pads paint
   // -------------------------------------------------------------------------
 
+  /** The PREPARING projection: armed with `startFrame: null` — the exact
+   *  "armed and not yet resolved" state AudioRecState declares. The pad shows
+   *  rec-armed from the edge onward; the frames arrive at confirm. */
+  #writePrepArmed(entry: Entry, lane: number): void {
+    const st = entry.lanes[lane]!;
+    const clipNodeId = st.clipNodeId;
+    if (!clipNodeId) return;
+    const node = patch.nodes[clipNodeId] as ModuleNode | undefined;
+    if (!node) return;
+    ydoc.transact(() => {
+      const d = (node.data ?? (node.data = {})) as ClipPlayerData;
+      if (!d.audioRec) d.audioRec = {};
+      d.audioRec[String(lane)] = {
+        lane,
+        slot: st.slot,
+        mode: 'single',
+        phase: 'armed',
+        startFrame: null,
+        stopFrame: null,
+        unitFrames: st.unitFrames,
+        recorderId: ydoc.clientID,
+      };
+    });
+  }
+
   #writeAudioRec(entry: Entry, lane: number): void {
     const st = entry.lanes[lane]!;
     const clipNodeId = st.clipNodeId;
@@ -750,11 +905,17 @@ export class NodeClipRecorderRegistry {
   }
 
   /** Abandon a swept node's takes: cancel the worklet lanes, close writers,
-   *  KEEP scratch + manifests (recover candidates — the §4.4 sweep row),
-   *  clear the pads' arm projection. */
+   *  KEEP scratch + manifests of LIVE takes (recover candidates — the §4.4
+   *  sweep row), clear the pads' arm projection. A take still PREPARING is
+   *  discarded outright — nothing was captured, so a kept scratch would be a
+   *  zero-byte recover candidate the GC could never free. */
   #abandon(entry: Entry): void {
     for (let lane = 0; lane < CLIP_LANES; lane++) {
       const st = entry.lanes[lane]!;
+      if (st.preparing || st.prepared) {
+        this.#cancelPrep(entry, lane);
+        continue;
+      }
       if (st.machine.phase === 'idle') continue;
       if (entry.wiring) cancelClipRecorderLane(entry.wiring.node, lane);
       const { writer } = st;
@@ -768,6 +929,8 @@ export class NodeClipRecorderRegistry {
 }
 
 function clearTake(st: LaneRec): void {
+  st.preparing = false;
+  st.prepared = false;
   st.mediaId = null;
   st.writer = null;
   st.drain = null;

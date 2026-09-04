@@ -224,21 +224,30 @@ test('ARM-SINGLE records one loop from the real chain and the take is AUDIBLE, e
     })
     .toBe(1);
 
-  // The projection walks armed → recording (the pads' shared vocabulary reads
-  // exactly this state — rec-armed / rec-active are pure functions of it).
+  // The arm projects into audioRec (the pads' shared vocabulary — rec-armed /
+  // rec-active are pure functions of it; the armed→recording walk itself is
+  // unit-tested). CAPTURE the projection inside the poll: on a slow host the
+  // whole 2 s take can pass between two polls, and a separate re-read after
+  // the poll would find the projection already cleared by the commit.
+  let armed: { unitFrames: number; slot: number } | null = null;
   await expect
     .poll(
       async () => {
         const d = await readData(page, CP);
-        const rec = (d.audioRec as Record<string, { phase?: string }> | undefined)?.['0'];
-        return rec?.phase ?? null;
+        const rec = (
+          d.audioRec as
+            | Record<string, { phase?: string; unitFrames?: number; slot?: number }>
+            | undefined
+        )?.['0'];
+        if (rec && typeof rec.unitFrames === 'number' && rec.unitFrames > 0) {
+          armed = { unitFrames: rec.unitFrames, slot: rec.slot ?? -1 };
+        }
+        return armed ? 'projected' : (rec?.phase ?? null);
       },
-      { message: 'the arm must reach audioRec and punch in', timeout: 15_000 },
+      { message: 'the arm must project into audioRec', timeout: 20_000 },
     )
-    .toBe('recording');
-  const during = await readData(page, CP);
-  const armed = (during.audioRec as Record<string, { unitFrames: number; slot: number }>)['0']!;
-  expect(armed.slot).toBe(0); // the lane's first empty slot
+    .toBe('projected');
+  expect(armed!.slot).toBe(0); // the lane's first empty slot
 
   // ── Leg 3 — the commit: one loop, EXACTLY unitFrames, bytes to match ────
   await expect
@@ -263,7 +272,7 @@ test('ARM-SINGLE records one loop from the real chain and the take is AUDIBLE, e
   // 120 bpm · stepDiv 1/16 · 16 steps · rate ×1 = exactly two seconds.
   const expectedFrames = Math.round(16 * (60 / 120 / 4) * sr);
   expect(clip.frames, 'the slice-4 frame maths, verified end-to-end').toBe(expectedFrames);
-  expect(clip.frames).toBe(armed.unitFrames); // == the window the arm resolved
+  expect(clip.frames).toBe(armed!.unitFrames); // == the window the arm resolved
   expect(clip.sampleRate).toBe(sr); // the achieved rate, never a requested one
   expect(clip.format).toBe('pcm-f32');
   const mediaId = clip.mediaId as string;
