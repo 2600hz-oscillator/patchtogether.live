@@ -262,10 +262,6 @@ function buildRatioFreeGateCurve(): Float32Array<ArrayBuffer> {
   return buildCvCurve((u) => (u > 0 ? 0 : 1));
 }
 
-// Module-grouping Phase 3A: `vizPassthrough` is available on AudioModuleDef
-// for SWOLEVCO's on-card scope-style viz canvas. Left UNSET until the
-// card adopts the `data-viz-passthrough` <canvas> contract used by
-// ScopeCard for GroupCard portal-hoisting.
 export const swolevcoDef: AudioModuleDef = {
   type: 'swolevco',
   palette: { top: 'Hybrid', sub: 'Hybrid' },

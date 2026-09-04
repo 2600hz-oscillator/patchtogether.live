@@ -37,14 +37,7 @@
 //   gravityBpm (log 30..240, default 60): drop-tick tempo.
 //   levelStep (linear 1..20, default 10): lines-per-level threshold (controls difficulty ramp).
 //
-// ⚠ `vizPassthrough: true` IS A LICENCE, NOT A WORKING PATH, and the
-// user-facing prose that promised otherwise has been removed from
-// `docs.explanation`. `GROUP_VIZ_HOST_TYPES` is `new Set(['scope'])`, so
-// GroupCard opens a portal slot for this module and mounts nothing into it —
-// measured `canvasInSlot 0` for modtris (and frogger / pong / nibbles) against
-// SCOPE's 1, recorded in `group-viz-hosts.test.ts` and tracked as #1755. The
-// flag stays declared because it is what the eventual host fix reads. The
-// well's real home is the DOCK FACEPLATE BODY (see `face.extension` below).
+// The well's home is the DOCK FACEPLATE BODY (see `face.extension` below).
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
@@ -94,7 +87,6 @@ export const modtrisDef: AudioModuleDef = {
   domain: 'audio',
   label: 'modtris',
   category: 'games',
-  vizPassthrough: true,
 
   inputs: [
     // Gate inputs — bipolar/unipolar CV, but the stepper only cares about

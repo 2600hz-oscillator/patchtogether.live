@@ -261,7 +261,6 @@ export const skifreeDef: AudioModuleDef = {
   domain: 'audio',
   label: 'skifree',
   category: 'games',
-  vizPassthrough: true,
   // Single-instance per rack: the bundle controller binds to ONE card
   // canvas + we publish a single window.__skifree bridge. A second card
   // would race the bridge. Mirrors SM64 / DOOM maxInstances:1.

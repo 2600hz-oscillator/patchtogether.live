@@ -2331,7 +2331,6 @@
         width="640"
         height="400"
         style="width: 320px; height: 200px;"
-        data-viz-passthrough
         data-testid="doom-canvas"
       ></canvas>
     {/if}

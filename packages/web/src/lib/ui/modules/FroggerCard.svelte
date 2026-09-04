@@ -105,7 +105,6 @@
         width={CSS_W * DPR}
         height={CSS_H * DPR}
         style={`width: ${CSS_W}px; height: ${CSS_H}px;`}
-        data-viz-passthrough
         data-testid="frogger-canvas"
       ></canvas>
     </div>

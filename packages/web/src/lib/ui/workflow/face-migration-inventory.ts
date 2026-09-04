@@ -1633,13 +1633,7 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
       'HAS NO WELL and that is not fixed here: both outputs are `gate`, so ' +
       '`primaryAudioOutPortId` is null and every glyph but `none` resolves static, while ' +
       '`ShellExtensionGlyphProps` carries no `nodeId` so a glyph component could not reach the ' +
-      'game snapshot even if a kind fitted. ⚠ AND `vizPassthrough: true` WAS ALREADY A LICENCE ' +
-      'RATHER THAN A PATH before it became a dead one: GROUP_VIZ_HOST_TYPES held only `scope`, ' +
-      'and the group viz-host measurement recorded `canvasInSlot 0` for modtris (#1755) — which ' +
-      'is why the user-facing prose promising a GROUP-card portal was deleted from ' +
-      '`docs.explanation` rather than left describing something the product did not do. The ' +
-      'GROUP! module itself is now deleted, so the flag is inert everywhere; retiring it is ' +
-      'owner-gated on DOOM (see the note on AudioModuleDef#vizPassthrough).',
+      'game snapshot even if a kind fitted.',
   },
   {
     type: 'moog956',

@@ -67,16 +67,6 @@ export interface VideoModuleDef {
    *  union-typed defLookup can read `def.undeletable` without a
    *  per-domain branch. */
   undeletable?: boolean;
-  /**
-   * Module-grouping Phase 3A: see {@link AudioModuleDef#vizPassthrough}.
-   * When set, this module renders an on-card visualization that can be
-   * portaled into the parent GroupCard. No video module ever opted in.
-   *
-   * ⚠ INERT — see the note on {@link AudioModuleDef#vizPassthrough}. The
-   * GroupCard projection this mirrored for is deleted, so the cross-domain
-   * uniformity it was reserved for has no consumer to be uniform with.
-   */
-  vizPassthrough?: boolean;
   /** Palette classification — see {@link PaletteCategory}. Omitted =
    *  Uncategorized. Lets a video module classify itself with no edit to the
    *  shared module-categories map. */

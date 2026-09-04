@@ -97,27 +97,6 @@ export interface AudioModuleDef {
    */
   stereoPairs?: readonly (readonly [string, string])[];
   /**
-   * Module-grouping Phase 3A: when set, this module renders an on-card
-   * visualization (typically a <canvas>) that can be portaled into the
-   * parent GroupCard so the group "becomes" the viz. SCOPE is the
-   * pioneering case — the on-card 2D oscilloscope canvas is hoisted to
-   * the GroupCard body when SCOPE is a member of a collapsed group.
-   * Other viz-capable modules (wavviz, swolevco, …) leave
-   * this UNSET for now; once their cards stabilize their canvas DOM
-   * contract the flag flips on without further plumbing.   *
-   * ⚠ INERT SINCE 2026-09-04. Its ONLY consumer was `GROUP_VIZ_HOST_TYPES` /
-   * `GroupCard`'s hidden mount, and the GROUP! module is deleted. The flag is
-   * left declared rather than retired in that same commit for ONE reason worth
-   * writing down: `DoomSurface.svelte` emits the matching
-   * `data-viz-passthrough` attribute, and DOOM may not be edited without
-   * explicit owner approval — so a full retirement would either skip DOOM
-   * (leaving one module emitting an attribute nobody reads, which is a worse
-   * state than not starting) or breach that boundary. Retiring the flag also
-   * re-pins `contract-lock.txt`, since `contract-signature.ts` prints it.
-   * Owner-gated follow-up, named rather than silently carried.
-   */
-  vizPassthrough?: boolean;
-  /**
    * WebGL-attestation marker (semaphore scheme). When true, this AUDIO-domain
    * module's card renders via a real WebGL/WebGL2 context (CUBE / WAVESCULPT) — i.e. it is a GPU render path even though it lives in the
    * audio registry. The §12 coverage guard reads this flag to mechanically

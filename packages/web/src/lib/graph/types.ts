@@ -1516,17 +1516,6 @@ export interface ModuleDef {
   size?: RackSize;
   /** Width in 1u square tiles (default 1). See `size`. */
   hp?: number;
-  /**
-   * Module-grouping Phase 3A: when set, this module renders an on-card
-   * visualization (typically a <canvas>) that can be portaled into the
-   * parent GroupCard.
-   *
-   * ⚠ INERT. Its only consumer was `GROUP_VIZ_HOST_TYPES` / GroupCard's hidden
-   * mount, both deleted with the GROUP! module. Retiring the flag from the five
-   * defs that declare it re-pins `contract-lock.txt`, so it is done in its own
-   * commit rather than folded into the deletion.
-   */
-  vizPassthrough?: boolean;
   /** Optional workflow channel-columns chain-wiring override — see ChainWiring.
    *  Mirrored on the loose ModuleDef shape so defLookup callers read it without
    *  downcasting to a domain def. */

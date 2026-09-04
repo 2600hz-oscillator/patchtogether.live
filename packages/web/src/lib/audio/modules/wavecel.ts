@@ -142,10 +142,6 @@ function resolveFrames(data: WavecelData | undefined): ResolvedFrames {
   };
 }
 
-// Module-grouping Phase 3A: `vizPassthrough` is available on AudioModuleDef
-// for WAVECEL's 3D wavetable visualization canvas. Left UNSET until the
-// card adopts the `data-viz-passthrough` <canvas> contract used by
-// ScopeCard for GroupCard portal-hoisting.
 export const wavecelDef: AudioModuleDef = {
   type: 'wavecel',
   palette: { top: 'Hybrid', sub: 'Hybrid' },

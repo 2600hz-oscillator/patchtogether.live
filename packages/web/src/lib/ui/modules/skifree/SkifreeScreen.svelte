@@ -294,7 +294,6 @@
             width={size * DPR}
             height={size * DPR}
             style={`width: ${size}px; height: ${size}px;`}
-            data-viz-passthrough
             data-testid="{testidPrefix}-canvas"
           ></canvas>
         </div>
@@ -305,7 +304,6 @@
             width={size * DPR}
             height={size * DPR}
             style={`width: ${size}px; height: ${size}px;`}
-            data-viz-passthrough
             data-testid="{testidPrefix}-canvas"
           ></canvas>
         </div>

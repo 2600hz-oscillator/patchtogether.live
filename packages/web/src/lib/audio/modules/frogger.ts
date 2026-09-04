@@ -27,16 +27,7 @@
 //                 re-resolved every scheduler tick, so a knob move reaches the
 //                 running game (see resolveDefaultTime in frogger-state.ts).
 //
-// vizPassthrough: true — the LICENCE to be portaled into a containing
-// GroupCard, and ⚠ NOT, TODAY, A WORKING PATH. `GROUP_VIZ_HOST_TYPES` is
-// `new Set(['scope'])`, so GroupCard opens a portal slot for this module and
-// then mounts no card into it: measured `canvasInSlot 0` for frogger (and for
-// modtris / pong / nibbles) against SCOPE's 1, recorded in
-// `group-viz-hosts.test.ts` and tracked as #1755. The flag is left declared
-// because it is the licence the eventual host fix reads, but the user-facing
-// prose that PROMISED cross-domain video has been removed — it described
-// something the product does not do. The board's real home is the DOCK
-// FACEPLATE BODY (see `face.extension` below).
+// The board's home is the DOCK FACEPLATE BODY (see `face.extension` below).
 //
 // A dedicated video_out port is intentionally NOT exposed — Frogger is
 // audio-domain like its game-module siblings.
@@ -87,7 +78,6 @@ export const froggerDef: AudioModuleDef = {
   domain: 'audio',
   label: 'frogger',
   category: 'games',
-  vizPassthrough: true,
   ossAttribution: { author: 'Adrian Eyre (frogger, MIT)' },
 
   inputs: [

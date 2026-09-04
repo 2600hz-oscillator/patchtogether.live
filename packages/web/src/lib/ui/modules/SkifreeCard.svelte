@@ -252,7 +252,6 @@
         onblur={onBlur}
         onpointerdown={steerFromPointer}
         onpointermove={steerFromPointer}
-        data-viz-passthrough
         data-testid="skifree-canvas"
       ></canvas>
 

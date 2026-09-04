@@ -85,7 +85,6 @@ export const pongDef: AudioModuleDef = {
   domain: 'audio',
   label: 'pong',
   category: 'games',
-  vizPassthrough: true,
 
   inputs: [
     // paddle_* are bipolar CV in [-1, +1]; the stepper maps to [0, 1] Y.
@@ -233,7 +232,7 @@ export const pongDef: AudioModuleDef = {
   },
   docs: {
     explanation:
-      "A playable two-paddle Pong game wrapped as a CV/gate module — the rally drives the patch. A ball bounces between a left and right paddle; you position each paddle with a CV input (so an LFO, sequencer, envelope follower, or a JOYSTICK CV plays it — wire one side to a slow LFO for an auto-rally, or two players each on their own CV), and the game emits a gate pulse whenever a side scores (the ball gets past the opposite paddle). So Pong becomes a generative trigger source whose pulse timing depends on the back-and-forth. The court renders on the card's 2D canvas; since the module is vizPassthrough, that canvas can be portaled into a containing GROUP card for cross-domain video. SPEED scales the ball velocity, PADDLE sets paddle height, and SERVE sets how wide the serve angle varies.",
+      "A playable two-paddle Pong game wrapped as a CV/gate module — the rally drives the patch. A ball bounces between a left and right paddle; you position each paddle with a CV input (so an LFO, sequencer, envelope follower, or a JOYSTICK CV plays it — wire one side to a slow LFO for an auto-rally, or two players each on their own CV), and the game emits a gate pulse whenever a side scores (the ball gets past the opposite paddle). So Pong becomes a generative trigger source whose pulse timing depends on the back-and-forth. The court renders on the module's dock faceplate, and on the lane tile as a read-only thumbnail. SPEED scales the ball velocity, PADDLE sets paddle height, and SERVE sets how wide the serve angle varies.",
     inputs: {
       paddle_left:
         "Bipolar CV (−1..+1) setting the LEFT paddle's vertical position — −1 = top, 0 = center, +1 = bottom. Read at scheduler-tick rate (it's a continuous position, not a gate). Drive it with an LFO for an auto-rally, a sequencer for stepped jumps, or a JOYSTICK/MIDI CV to play by hand.",
