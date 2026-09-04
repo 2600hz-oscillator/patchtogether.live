@@ -1,5 +1,14 @@
 import adapter from '@sveltejs/adapter-cloudflare';
+import adapterStatic from '@sveltejs/adapter-static';
 import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
+
+// PT_DESKTOP_BUILD=1 → build for the Electron shell's loopback static server
+// (apps/desktop): plain static output + `fallback.html` SPA shell, because in
+// that mode there is no Cloudflare worker to render non-prerendered routes
+// (/rack is ssr:false + prerender:false — on Pages the worker serves it; the
+// desktop server serves the fallback instead). Web deploys are untouched: the
+// Cloudflare adapter below stays the default.
+const desktopBuild = process.env.PT_DESKTOP_BUILD === '1';
 
 /** @type {import('@sveltejs/kit').Config} */
 const config = {
@@ -8,7 +17,13 @@ const config = {
     // Cloudflare Pages adapter. The app is fully client-rendered (the patch
     // canvas + audio engine are all browser-side), so every route is excluded
     // from Cloudflare Functions — what ships is a static HTML/JS/CSS bundle.
-    adapter: adapter({
+    adapter: desktopBuild ? adapterStatic({
+      pages: 'build',
+      assets: 'build',
+      fallback: 'fallback.html',
+      // /rack and friends are ssr:false — SPA-fallback mode, not full prerender.
+      strict: false,
+    }) : adapter({
       routes: {
         include: ['/*'],
         exclude: ['<all>'],
