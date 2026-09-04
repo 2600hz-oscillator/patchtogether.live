@@ -44,7 +44,6 @@ const FACE = froggerDef.face!;
 const DECLARED: readonly string[] = froggerDef.params.map((p) => p.id);
 
 const BODY = readFileSync(new URL('./frogger/FroggerBoardBody.svelte', import.meta.url), 'utf8');
-const CARD = readFileSync(new URL('./FroggerCard.svelte', import.meta.url), 'utf8');
 const STEPPER = readFileSync(
   new URL('../../audio/modules/frogger-state.ts', import.meta.url),
   'utf8',
@@ -345,36 +344,37 @@ describe('frogger — CLAIM 5: the VRT tick pin can actually pin', () => {
   });
 });
 
-describe('frogger — the card and the face paint ONE board at ONE scale', () => {
-  // ⚠ THE BUG THIS PINS WAS LIVE AND UNCATCHABLE. `FroggerCard` passed
+describe('frogger — the face paints ONE board at ONE scale', () => {
+  // ⚠ THE BUG THIS PINS WAS LIVE AND UNCATCHABLE. The legacy card passed
   // `canvasEl.width/height` — the BACKING STORE at DPR 2 — into a painter that
   // lays out in those units and then draws its HUD at an ABSOLUTE `9px`. Every
   // GRID dimension is derived from w/h so the board scaled correctly and the
   // bug hid in plain sight; only the HUD was wrong, rendering ~4.5 CSS px tall.
   // There was no pixel test at all, because frogger was EXEMPT_FROM_VRT.
-  it('BOTH surfaces pass CSS px and scale the context by DPR', () => {
-    for (const [name, src] of [['card', CARD], ['face body', BODY]] as const) {
-      expect(src, `${name}: must scale the context`).toMatch(/setTransform\(DPR, 0, 0, DPR, 0, 0\)/);
-      expect(src, `${name}: must pass CSS px, not the backing store`)
-        .toMatch(/drawFrogger\(ctx2d, snap, CSS_W, CSS_H\)/);
-    }
+  //
+  // ⚠ THE TWO-SURFACE FORM IS GONE WITH THE SECOND SURFACE, and it costs
+  // nothing: the defect was never "the two surfaces disagree", it was "a
+  // surface passes device px to a painter that lays out in CSS px" — a property
+  // of ONE surface, asserted here on the one that is left.
+  it('the face body passes CSS px and scales the context by DPR', () => {
+    expect(BODY, 'must scale the context').toMatch(/setTransform\(DPR, 0, 0, DPR, 0, 0\)/);
+    expect(BODY, 'must pass CSS px, not the backing store')
+      .toMatch(/drawFrogger\(ctx2d, snap, CSS_W, CSS_H\)/);
   });
 
-  it('NEGATIVE CONTROL: neither surface passes the BACKING STORE any more', () => {
+  it('NEGATIVE CONTROL: it does not pass the BACKING STORE any more', () => {
     // The exact shape of the old call. Without this leg the assertion above
     // would still pass if someone added a second, wrong `drawFrogger` call.
-    for (const [name, src] of [['card', CARD], ['face body', BODY]] as const) {
-      expect(src, `${name}: canvasEl.width is device px, not layout px`)
-        .not.toMatch(/drawFrogger\([^)]*canvasEl\.width/);
-    }
+    expect(BODY, 'canvasEl.width is device px, not layout px')
+      .not.toMatch(/drawFrogger\([^)]*canvasEl\.width/);
   });
 
-  it('and they agree on the board GEOMETRY, so the two pictures are the same picture', () => {
-    const dims = (src: string) => ({
+  it('and the board GEOMETRY is the pinned one', () => {
+    const dims = (src) => ({
       w: /const CSS_W = (\d+);/.exec(src)?.[1],
       h: /const CSS_H = (\d+);/.exec(src)?.[1],
     });
-    expect(dims(BODY)).toEqual(dims(CARD));
     expect(dims(BODY).w).toBe('200');
+    expect(dims(BODY).h, 'the board height must still be declared in CSS px').toBeTruthy();
   });
 });

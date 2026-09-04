@@ -200,10 +200,6 @@ describe('rasterize — the cvCombined PUSH moved to the NODE, and there is ONE 
     new URL('./rasterize/RasterizeOutputBody.svelte', import.meta.url),
     'utf8',
   );
-  const CARD = readFileSync(
-    new URL('./RasterizeCard.svelte', import.meta.url),
-    'utf8',
-  );
   const PRODUCER = readFileSync(
     new URL('../media/frame-producers.ts', import.meta.url),
     'utf8',
@@ -222,20 +218,18 @@ describe('rasterize — the cvCombined PUSH moved to the NODE, and there is ONE 
     expect(pushAt, 'cvCombined must be written BEFORE imageData is read').toBeLessThan(readAt);
   });
 
-  it('NEITHER surface pushes — a viewer that wrote engine state would be a second producer', () => {
+  it('the SURFACE does not push — a viewer that wrote engine state would be a second producer', () => {
     // The producer seam the derivation gate greps for is `write(node|id, …)`;
     // a surface reacquiring it would ALSO re-enrol rasterize in
     // CARD_PRODUCER_LANE_TYPES via dom-source-modules.test.ts, so this leg and
     // that gate hold the same line from two directions.
-    // The CALL shape, not the word — both files may (and do) NAME the push in
+    // The CALL shape, not the word — the file may (and does) NAME the push in
     // the comment that says where it went.
     const PUSH_CALL = /write\(\s*(?:node|id|nodeId)\s*,\s*'cvCombined'/;
     expect(PUSH_CALL.test(BODY), 'the dock body must not push cvCombined').toBe(false);
-    expect(PUSH_CALL.test(CARD), 'the legacy card must not push cvCombined').toBe(false);
-    // …and both still READ the frame, which is how they show it. The read's
+    // …and it still READS the frame, which is how it shows it. The read's
     // advance is deduped by the module's own 8 ms guard.
     expect(BODY).toMatch(/read\(node, 'imageData'\)/);
-    expect(CARD).toMatch(/read\(node, 'imageData'\)/);
   });
 
   it('state lives on node.data, not component $state (the #1531/#1574/#1583 class)', () => {

@@ -9,10 +9,11 @@
 //      than an anonymous two-position dial. The cell kind is DERIVED from
 //      `options`, so deleting the roster silently downgrades the control and
 //      nothing goes red — the gatemaiden failure mode exactly.
-//   2. THE CARD MUST NOT RE-TYPE THAT ROSTER. This is the backdraft class: a
-//      card can silently disagree with its def, and every def-reading gate is
-//      blind to it. So the check here is at the SOURCE level, on the card file,
-//      because no runtime gate sees a literal in a `.svelte` file.
+//   2. NO SURFACE MAY RE-TYPE THAT ROSTER. This is the backdraft class: a
+//      surface can silently disagree with its def, and every def-reading gate
+//      is blind to it. So the check here is at the SOURCE level, over the whole
+//      module-surface tree, because no runtime gate sees a literal in a
+//      `.svelte` file.
 //   3. `moog904c`'s `mode` deliberately has NO landmarks. An omission and a
 //      decision look identical in a def; this makes the decision falsifiable.
 //
@@ -21,7 +22,7 @@
 // still say what these faces were built on.
 
 import { describe, expect, it } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -91,7 +92,7 @@ describe('moog tail faces — promotion, ranking and honest bands', () => {
   });
 });
 
-describe('moog904b — the RANGE roster, and the card that must not re-type it', () => {
+describe('moog904b — the RANGE roster, and the surfaces that must not re-type it', () => {
   it('the roster is the def’s own export, and RESOLVES to a segmented pair at the dock', () => {
     const range = param(moog904bDef, 'range');
     expect(range.options, 'moog904b RANGE must declare its positions').toBeDefined();
@@ -103,7 +104,7 @@ describe('moog904b — the RANGE roster, and the card that must not re-type it',
     );
 
     // The clause that proves the roster changed what RENDERS. Short enough for
-    // buttons rather than a dropdown, which is what the card has always drawn.
+    // buttons rather than a dropdown, which is what this control has always been.
     expect(range.options!.length).toBeLessThanOrEqual(SEGMENTED_MAX_OPTIONS);
     expect(paramCellKind(range, NO_MOMENTARY, 'dock')).toBe('segmented');
   });
@@ -117,24 +118,48 @@ describe('moog904b — the RANGE roster, and the card that must not re-type it',
     expect(paramCellKind(stripped, NO_MOMENTARY, 'dock')).toBe('knob');
   });
 
-  it('SOURCE GATE: the CARD imports the roster and does not re-type the position names', () => {
-    // ⚠ THE BACKDRAFT CLASS. A card can silently disagree with its def and every
-    // def-reading gate is blind to it, so this reads the card's SOURCE. The
-    // names used to live here as a literal array, which meant two places could
+  it('SOURCE GATE: NO surface re-types the position names — the def is their one home', () => {
+    // ⚠ THE BACKDRAFT CLASS. A surface can silently disagree with its def and
+    // every def-reading gate is blind to it, so this reads SOURCE. The names
+    // used to live in the card as a literal array, which meant two places could
     // disagree about what the two states are called.
-    const src = readFileSync(join(HERE, 'Moog904bVcfCard.svelte'), 'utf8');
-
-    expect(src, 'the card must import the def’s roster').toContain('MOOG904B_RANGE_OPTIONS');
-
-    // The literal form the card used to carry. Matching the SOURCE means a
-    // comment that merely spells it out also fails — deliberately, exactly as
-    // `card-range-source` does for backdraft: the gate greps text and cannot
-    // tell code from prose, and that is the safe direction to err.
-    const reTyped = /label:\s*'(LOW|HIGH)'/.test(src);
+    //
+    // ⚠ THE SUBJECT WIDENED WHEN THE CARD LEFT. This read one file and asserted
+    // it imported `MOOG904B_RANGE_OPTIONS`; the honest successor is that NO
+    // module surface re-types the literal, which is the invariant the import was
+    // standing in for. The walk is flat plus one level of module subdirectory —
+    // the depth a `fullViewBody` lives at — so a re-typed roster in a face body
+    // reddens exactly as a re-typed roster in a card did.
+    //
+    // Matching raw SOURCE means a comment that merely spells the literal out
+    // also fails, deliberately and exactly as `card-range-source` does for
+    // backdraft: the gate greps text and cannot tell code from prose, and that
+    // is the safe direction to err.
+    const RE_TYPED = /label:\s*'(LOW|HIGH)'/;
+    const offenders: string[] = [];
+    let scanned = 0;
+    for (const entry of readdirSync(HERE, { withFileTypes: true })) {
+      const visit = (rel: string, abs: string): void => {
+        scanned++;
+        if (RE_TYPED.test(readFileSync(abs, 'utf8'))) offenders.push(rel);
+      };
+      if (entry.isDirectory()) {
+        for (const inner of readdirSync(join(HERE, entry.name))) {
+          if (inner.endsWith('.svelte')) visit(`${entry.name}/${inner}`, join(HERE, entry.name, inner));
+        }
+        continue;
+      }
+      if (entry.name.endsWith('.svelte')) visit(entry.name, join(HERE, entry.name));
+    }
+    expect(scanned, 'the surface walk resolved no .svelte files').toBeGreaterThan(0);
     expect(
-      reTyped,
-      'the card re-types a RANGE position name — import MOOG904B_RANGE_OPTIONS from the def instead',
-    ).toBe(false);
+      offenders,
+      'a surface re-types a RANGE position name — read MOOG904B_RANGE_OPTIONS off the def instead',
+    ).toEqual([]);
+
+    // …and the def really is where they live, so this is one home rather than
+    // none: a deleted roster would empty the offender list too.
+    expect(param(moog904bDef, 'range').options?.map((o) => o.label)).toEqual(['LOW', 'HIGH']);
   });
 });
 
