@@ -1613,6 +1613,12 @@ tasks:
       running gesture-free, zero pageerrors/extra windows. The CI job comes
       later with its own owner sign-off checkpoint. Needs desktop:install +
       desktop:build:web once first.
+    # LANE ANCHOR for scripts/package-workspace-membership.test.ts:
+    # apps/desktop is deliberately NOT an npm workspace (see the gate's
+    # INDEPENDENT_PACKAGES entry), and THIS task is the lane that runs its
+    # tests. Canonical entry: apps/desktop/e2e/boot.spec.ts — playwright.config
+    # testDir ./e2e globs it plus every sibling spec, so new specs join the
+    # lane without editing this file; renaming the boot spec reddens the gate.
     dir: apps/desktop
     cmds:
       - npm run e2e
