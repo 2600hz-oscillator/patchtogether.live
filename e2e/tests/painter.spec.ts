@@ -53,14 +53,46 @@ async function openDock(page: Page): Promise<void> {
 
 /** Drag the mouse across the painter canvas to paint a thick stroke (brush at a
  *  large size so the painted band is unambiguous under sparse pixel sampling).
- *  `yFrac` places the stroke band so multiple strokes don't overlap. */
+ *  `yFrac` places the stroke band so multiple strokes don't overlap.
+ *
+ *  ⚠ THE BAND MUST LAND ON THE CANVAS, AND THE ELEMENT'S BOX IS NOT THE SAME
+ *  QUESTION. On the dock the paint surface is 478x359 at y=464 in a 720-high
+ *  viewport, so the bottom of its own bounding box is BELOW THE FOLD: measured,
+ *  `elementFromPoint` at 0.7 of the box returns the dock's `.trace-panel` and at
+ *  0.9 returns null. A stroke aimed there is a real mouse drag that never
+ *  reaches the canvas, and every symptom of it — no op committed, no pixels —
+ *  reads exactly like the Yjs re-integration drop this file exists to catch.
+ *  Measured 2026-09-04: strokes at 0.3 and 0.5 commit (ops 1 then 2); the same
+ *  pair with the second at 0.7 leaves the count at 1.
+ *
+ *  So the point is hit-tested before the drag. That is not belt-and-braces —
+ *  it is the difference between "the second stroke did not commit" (the bug)
+ *  and "the second stroke was never drawn" (the fixture), which the assertion
+ *  downstream cannot tell apart. */
 async function drawStroke(page: Page, yFrac = 0.5): Promise<void> {
   await page.locator('[data-testid="painter-face-tool-brush"]').click();
   await page.locator('[data-testid="painter-face-size"]').fill('48');
   const canvas = page.locator('[data-testid="painter-face-canvas"]');
+  // The dock ladder is taller than the viewport, so the surface's own box can
+  // sit partly below the fold — see the note above. This is the branch's
+  // standing recipe for a drag on a dock body, not a flake patch.
+  await canvas.scrollIntoViewIfNeeded();
   const box = await canvas.boundingBox();
   if (!box) throw new Error('painter canvas has no bounding box');
   const y = box.y + box.height * yFrac;
+  const onCanvas = await page.evaluate(
+    ({ x, yy }) => {
+      const el = document.elementFromPoint(x, yy) as HTMLElement | null;
+      return el?.getAttribute('data-testid') ?? (el ? `${el.tagName}.${el.className}` : 'null');
+    },
+    { x: box.x + box.width * 0.5, yy: y },
+  );
+  expect(
+    onCanvas,
+    `the stroke band at yFrac=${yFrac} must land ON the paint surface — the point resolved to `
+    + `\`${onCanvas}\`, so this drag would paint nothing and the op-count assertion below would `
+    + 'blame the sync layer for a missed click',
+  ).toBe('painter-face-canvas');
   await page.mouse.move(box.x + box.width * 0.15, y);
   await page.mouse.down();
   await page.mouse.move(box.x + box.width * 0.5, y);
