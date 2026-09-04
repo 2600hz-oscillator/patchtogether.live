@@ -64,6 +64,8 @@
   import { createDragCommit } from '$lib/ui/controls/drag-commit';
   import ControlContextMenu from '$lib/ui/controls/ControlContextMenu.svelte';
   import { makeMidiAssignable } from '$lib/ui/controls/midi-assignable.svelte';
+  import { setBindingName } from '$lib/graph/control-surface';
+  import { setSlotName } from '$lib/graph/electra-control';
   import {
     quadralogicalDef,
     quadWeights,
@@ -186,6 +188,14 @@
   }
   function onPointerDown(ev: PointerEvent): void {
     if (ev.button !== 0 || !fieldEl) return;
+    // ⚠ The per-axis ASSIGN buttons render INSIDE the field for layout, but a
+    // press on them is a MENU gesture, not a joystick write. Without this
+    // guard a left click on x/y YANKED the puck to the button's corner (a
+    // destructive commit) and captured+prevented the pointer, so the click
+    // never synthesised and the menu never opened — while the buttons' own
+    // titles promise "right-click or click" (measured on the promoted face;
+    // the card laid its buttons outside the pad).
+    if (ev.target instanceof Element && ev.target.closest('button')) return;
     dragging = true;
     dragX = pos_x;
     dragY = pos_y;
@@ -244,6 +254,22 @@
   let ctxY = $state(0);
   let ctxAxis = $state<'x' | 'y'>('x');
   let ctxMidi = $derived(ctxAxis === 'x' ? midiX : midiY);
+  // ⚠ THE FRIENDLY PRESET NAME IS PARITY, NOT DECOR. The card's send/assign
+  // was a TWO-CALL sequence (addBindingToSurface + setBindingName /
+  // assignSlotToElectra + setSlotName) so the surface and the Electra preset
+  // read "QUAD X" / "QUAD Y" — the generic seam sends unnamed (measured: the
+  // face's first cut dropped both names). Same sequence, wrapped around the
+  // shared handlers; quadralogical-axis-assign.test.ts pins the pure halves.
+  const AXIS_NAME: Record<'x' | 'y', string> = { x: 'QUAD X', y: 'QUAD Y' };
+  function sendAxisToSurface(surfaceId: string): void {
+    ctxMidi.sendToSurface(surfaceId);
+    setBindingName(surfaceId, nodeId, ctxAxis === 'x' ? 'pos_x' : 'pos_y', AXIS_NAME[ctxAxis]);
+  }
+  function assignAxisToElectra(electraId: string, slot: number): void {
+    ctxMidi.assignElectra(electraId, slot);
+    setSlotName(electraId, slot, AXIS_NAME[ctxAxis]);
+  }
+
   function openAxisMenu(axis: 'x' | 'y', ev: MouseEvent): void {
     ev.preventDefault();
     ev.stopPropagation();
@@ -503,10 +529,10 @@
   onforget={ctxMidi.forget}
   onclose={() => (ctxOpen = false)}
   surfaces={ctxMidi.surfaces}
-  onsendtosurface={ctxMidi.sendToSurface}
+  onsendtosurface={sendAxisToSurface}
   onremovefromsurface={ctxMidi.removeFromSurface}
   electras={ctxMidi.electras}
-  onassignelectra={ctxMidi.assignElectra}
+  onassignelectra={assignAxisToElectra}
   onclearelectra={ctxMidi.clearElectra}
   automationRecorded={ctxMidi.automationRecorded}
   onclearautomation={ctxMidi.clearAutomation}
