@@ -642,3 +642,22 @@ was proven in a REAL BROWSER at the final commit: 5 nodes loaded, 2 edges, the
 group and sticky dropped with `module type not registered in this build`, both
 their cables dropped as `edge references a dropped node`, a user-visible "could
 not be loaded" notice in the DOM, and ZERO pageerror/console errors.
+
+## S2 FINAL: ONE live legacy reference left in `e2e/tests/`, and it is fleet-coupled
+
+`card-producer-lifetime.spec.ts:1764` — `boot(page, 'legacy')` in the NODE-VIZ
+ADOPTION leg. It is the last one, and it cannot be drained by re-pointing a URL:
+its subject is that the DRS step seam's owner and the photographed element are
+THE SAME mount, which it proves by booting the renderer that puts a real card in
+the lane. `wavesculpt.spec.ts` (17 tests) and `cube.spec.ts` both consume that
+construction. It retires or re-points WITH the fleet, in S4, not before.
+
+(The file's other legacy arm — the collapsed-GROUP block — is already gone with
+the group type, and its tombstone at :910 states the named coverage loss.)
+
+**So `e2e/tests/` is drained except for one fleet-coupled leg. Collection:
+2968 tests in 492 files** (from 3077/506 at S2 start).
+
+Remaining live legacy references repo-wide are the 33 files under `e2e/vrt/`
+(S3, mapped in `s3-vrt-map.md`) and the non-e2e sites sized in that file's S5
+section.
