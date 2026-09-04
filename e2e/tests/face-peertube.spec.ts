@@ -13,10 +13,10 @@
 // WebGL-heavy: it reads DOM facts, graph state and a media clock, and samples
 // no pixels.
 //
-// ⚠ EVERY OTHER PEERTUBE E2E BOOTS `?shell=legacy` (`peertube.spec.ts` ×3,
-// `node-source-hls.spec.ts`), so all of it stays green after promotion while
-// covering a surface no player meets. This file is the default-shell leg those
-// owe.
+// ⚠ NO OTHER PEERTUBE E2E DRIVES THIS SURFACE (`peertube.spec.ts` ×3,
+// `node-source-hls.spec.ts` reach the module through graph state instead), so
+// all of it can stay green while covering no surface at all. This file is the
+// leg those owe.
 //
 // `peertube-face-model.test.ts` pins the ranking, the cell kind, the
 // noUserControl declaration, the shader's `uGain` read, the shared-picker
@@ -140,7 +140,7 @@ async function installMocks(page: Page, media: Buffer = SHORT_WEBM): Promise<voi
 }
 
 async function boot(page: Page): Promise<void> {
-  // Plain /rack — the DEFAULT shell. The legacy specs' `?shell=legacy` is
+  // Plain /rack — the shell every player gets. The other specs' boot is
   // precisely the surface promotion does not change.
   await page.goto('/rack?seed=none');
   await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: BOOT_MS });
@@ -313,7 +313,7 @@ test.describe('PEERTUBE face — the promotion is what makes it searchable', () 
     expect(
       media!.where,
       'the face body must BLIT the engine output — the node-owned <video> has ONE parent ' +
-        '(the legacy card adopts it under ?shell=legacy) and must stay PARKED under the shell',
+        'and must stay PARKED under the shell rather than adopted by a body',
     ).toBe('parking');
     expect(
       media!.muted,

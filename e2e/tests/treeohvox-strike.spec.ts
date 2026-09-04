@@ -203,55 +203,6 @@ async function settleToSilence(page: Page, capMs = 6000): Promise<{ peak: number
 }
 
 test.describe('treeohvox — THE AUDITION (the voice could not be sounded before it)', () => {
-  test('the CARD gate pad SOUNDS the voice — held high, and silent before the press', async ({ page }) => {
-    // `?shell=legacy` is the surface this defect was theirs first, and it is
-    // now the ONLY surface this pad appears on. It used to be both: while
-    // treeohvox had no curated face the dock full-view rendered this same card
-    // (measured then — `dock-full-view` contained one `.mod-card`). Since the
-    // promotion (#1944) the dock renders the FACEPLATE, so the two surfaces are
-    // two components and the leg below tests the other one.
-    //
-    // This leg is kept rather than folded into that one: `?shell=legacy` is a
-    // shipped escape hatch, so the card remains a surface a player can reach,
-    // and it is the surface every assertion in #1658 was originally measured on.
-    await goto(page, '?shell=legacy&seed=none');
-    await spawnAlone(page);
-
-    // AT REST it must be silent, or "the pad works" could be the module simply
-    // free-running. Measured 0.000e+0 on the shipping module.
-    const rest = await measure(page, 500);
-    expect(rest.samples, 'the accumulator must have run').toBeGreaterThan(5);
-    expect(rest.peak, report('unpatched and unpressed', rest)).toBeLessThan(ALIVE_PEAK);
-
-    const pad = page.getByTestId(`treeohvox-gate-${NID}-1`);
-    await expect(pad, 'the card carries a GATE pad').toBeVisible();
-    await expect(pad).toBeEnabled();
-    await expect(pad, 'it rests released').toHaveAttribute('aria-pressed', 'false');
-
-    const before = lastSeq(await readAuditionLog(page));
-    await padDown(pad);
-    await expect(pad, 'a held pad reports itself held').toHaveAttribute('aria-pressed', 'true');
-
-    const held = await measure(page, 900);
-    await padUp(pad);
-
-    expect(held.samples, 'the accumulator must have run').toBeGreaterThan(5);
-    expect(
-      held.peak,
-      report('GATE pad HELD, nothing patched', held) +
-        ' — this is the whole feature: a 303 voice with no exciter and no surface ' +
-        'that can excite it is a module nobody can play (#1658).',
-    ).toBeGreaterThan(ALIVE_PEAK);
-
-    // BOTH EDGES must have reached the engine. A gate that opens and never
-    // closes is the worst failure this seam has, and a one-edge probe is blind
-    // to exactly it.
-    const edges = gateAttempts(await readAuditionLog(page), before);
-    expect(edges.map((r) => `${r.high ? 'hi' : 'lo'}:${r.delivered}`), 'press then release, both delivered')
-      .toEqual(['hi:true', 'lo:true']);
-    await expect(pad, 'the release un-holds the pad').toHaveAttribute('aria-pressed', 'false');
-  });
-
   test('the DOCK FACEPLATE carries its OWN gate cell, and it delivers there too', async ({ page }) => {
     // ⚠ THIS TEST'S SUBJECT CHANGED WITH THE PROMOTION (#1944), and the change
     // is the point rather than maintenance. It used to read:
@@ -315,15 +266,24 @@ test.describe('treeohvox — THE AUDITION (the voice could not be sounded before
   });
 
   test('NEGATIVE CONTROL — with the seam broken the pad is SILENT and records delivered:false', async ({ page }) => {
-    // ⚠ WITHOUT THIS LEG THE TWO ABOVE PROVE LESS THAN THEY LOOK. `toBeVisible`,
-    // `toBeEnabled` and a click all pass against a pad wired to nothing — that
-    // is the sixstrum defect exactly. This drives the SAME pad with the engine
-    // made unable to answer `manualGate`, and requires BOTH observables to
-    // invert: the ledger records the attempt as undelivered, and the audio tap
-    // goes back to the pre-fix zero.
-    await goto(page, '?shell=legacy&seed=none');
+    // ⚠ WITHOUT THIS LEG THE ONE ABOVE PROVES LESS THAN IT LOOKS.
+    // `toBeVisible`, `toBeEnabled` and a click all pass against a pad wired to
+    // nothing — that is the sixstrum defect exactly. This drives the SAME pad
+    // with the engine made unable to answer `manualGate`, and requires BOTH
+    // observables to invert: the ledger records the attempt as undelivered, and
+    // the audio tap goes back to the pre-fix zero.
+    //
+    // "The SAME pad" is the FACEPLATE cell the test above sounds, so the
+    // control and its subject are one component — the property that makes a
+    // negative control mean anything.
+    await goto(page, '?seed=none');
     await spawnAlone(page);
-    const pad = page.getByTestId(`treeohvox-gate-${NID}-1`);
+    const expand = page.locator(`.svelte-flow__node[data-id="${NID}"] [data-testid="shell-open-dock"]`);
+    await expect(expand, 'the canvas node offers a way into the dock').toBeVisible();
+    await expand.click();
+    const dock = page.getByTestId('dock-full-view');
+    await expect(dock).toBeVisible();
+    const pad = dock.getByTestId('shell-cell-treeohvox-gate');
     await expect(pad).toBeVisible();
 
     // Baseline FIRST, so a failure below is the perturbation and not a bad spawn.

@@ -22,8 +22,6 @@
 //      a hard render lease while open. ⚠ videoOut reaches it through its own
 //      EXPAND pill now (it has a tile); the dev seam it used to need is kept
 //      here only for the modules that still have no tile.
-//   4. `?shell=legacy` stays a strict no-op: no tiles, no thumbs, and videoOut's
-//      verbatim card exactly as before — the escape hatch has to stay honest.
 //
 // DETERMINISM: chain liveness is asserted via ENGINE PROBES (framesDrawnFor —
 // SwiftShader-tolerant); pixel-change asserts poll toDataURL inequality on a
@@ -181,21 +179,9 @@ function videoOutLane(page: Page) {
   return page.locator(`.svelte-flow__node[data-id="${VIDEO_OUT}"] [data-testid="module-shell"]`);
 }
 
-/** The same node under `?shell=legacy`, where the verbatim card still renders —
- *  the escape hatch, which promotion must NOT change. */
-function videoOutLegacyCard(page: Page) {
-  return page.locator(`.svelte-flow__node[data-id="${VIDEO_OUT}"] [data-testid="video-out-card"]`);
-}
-
-/** The videoOut surface that paints in a given mode: the face tile's live thumb
- *  under the default shell, the legacy card's canvas under `?shell=legacy`.
- *  ⚠ Mode-dependent BY NECESSITY — the two renderers are the subject of the
- *  parity claim, so one selector for both would be asserting about whichever
- *  happened to exist. */
-function videoOutSurfaceSel(url: string): string {
-  return url.includes('shell=legacy')
-    ? `.svelte-flow__node[data-id="${VIDEO_OUT}"] [data-testid="video-out-canvas"]`
-    : `.svelte-flow__node[data-id="${VIDEO_OUT}"] [data-testid="module-shell"] canvas`;
+/** The videoOut surface that paints: the face tile's live thumb. */
+function videoOutSurfaceSel(): string {
+  return `.svelte-flow__node[data-id="${VIDEO_OUT}"] [data-testid="module-shell"] canvas`;
 }
 
 /** Boot the engine via the dev global (same seam spawnPatch uses). */
@@ -1328,56 +1314,6 @@ test.describe('?shell=1 video visibility', () => {
 
     expect(providerErrors, `no useStore/provider throws: ${providerErrors.join(' | ')}`).toEqual([]);
   });
-
-  test('?shell=legacy stays a strict no-op: no tiles, no thumbs, videoOut verbatim card as before', async ({ page }) => {
-    // ⚠ THE ESCAPE HATCH MUST STAY HONEST. Promoting videoOut changes the
-    // DEFAULT renderer; `?shell=legacy` means "the verbatim legacy cards inside
-    // the same shell", and a promotion that leaked into it would make the hatch
-    // a lie — so this reads the legacy CARD deliberately, not the shared gate.
-    await page.goto('/rack?shell=legacy');
-    await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: 15_000 });
-    await expect(videoOutLegacyCard(page)).toBeVisible({ timeout: 15_000 });
-    await expect(page.locator('[data-testid="module-shell-placeholder"]')).toHaveCount(0);
-    await expect(page.locator('[data-testid="module-shell"]')).toHaveCount(0);
-    await expect(page.locator('[data-testid="video-tile-thumb"]')).toHaveCount(0);
-
-    // ⚠ RE-POINTED (2026-08-23, #1754), AND THE OLD LINE IS WORTH READING BEFORE
-    // THE NEW ONE. It was `expect(headless-source-host).toHaveCount(0)` — "the
-    // legacy shell hosts nothing" — and it was TRUE ONLY BECAUSE A PRODUCER WAS
-    // DEAD. The pinned TIMELORDE every rack auto-spawns is canvas-hidden, so its
-    // card mounted NOWHERE in either shell; `video_out` served its idle field
-    // forever (measured `nonBlack 0/3072, maxLuma 8`). Fixing that gives legacy a
-    // host, so the old assertion could only stay green by leaving the bug in.
-    //
-    // ⚠ AND THE CLAIM THIS TEST IS ACTUALLY MAKING IS UNDAMAGED. Its subject is
-    // "the SHELL is a strict no-op under ?shell=legacy" — no shell tiles, no
-    // thumbs, the videoOut verbatim card. A headless host is not a shell feature:
-    // it is a LIFETIME mechanism keyed on `laneOmitsNode`, the one arm of
-    // `needsHeadlessSourceMount` that its own doc-comment calls "the ONE ARM THAT
-    // IS NOT SHELL-SPECIFIC". So the assertion is narrowed to what the shell
-    // itself may not do — host a module the SHELL swapped away — which is the
-    // regression the original line was written to catch, and it still fails on it.
-    // ⚠ AN ATTRIBUTE SELECTOR, NOT `filter({hasNot})`: the type lives on the host
-    // element ITSELF, and `filter` matches DESCENDANTS — it would have excluded
-    // nothing and passed for the wrong reason.
-    //
-    // ⚠ THE NARROWING IS GONE, AND ITS REMOVAL IS THE STRONGER CLAIM
-    // (legacy-removal S1). The exclusion existed for exactly one subject — the
-    // canvas-hidden clock, whose card WAS its producer and therefore had to be
-    // hosted on both shells. timelorde's composite is node-owned now
-    // ($lib/ui/media/frame-producers), so nothing legitimately hosts a card
-    // here and the assertion can be the unqualified one the original line made:
-    // ZERO headless hosts under ?shell=legacy, for anything.
-    //
-    // Keeping the `:not(...)` with its positive control deleted would have been
-    // the failure the note beside it warned about — "count anything, exclude
-    // everything" — so both go together.
-    await expect(
-      page.locator('[data-testid="headless-source-host"]'),
-      'a headless host exists under ?shell=legacy — the shell is supposed to be a strict no-op ' +
-        'here, and no module left needs a card kept alive on this path',
-    ).toHaveCount(0);
-  });
 });
 
 // ---------------------------------------------------------------------------
@@ -1429,25 +1365,30 @@ async function engineNodeIds(page: Page): Promise<string[]> {
 }
 
 test.describe('?shell=1 video CHAIN parity', () => {
-  test('ACIDWARP → OUTPUT is LIVE under the shell, and the engine node set matches preview-off exactly', async ({ page }) => {
-    // Software-renderer scale: two full rack boots, each with a live
-    // acidwarp→videoOut chain and a pixel-change poll.
+  test('ACIDWARP → OUTPUT is LIVE, and the engine materializes the whole chain', async ({ page }) => {
+    // Software-renderer scale: a full rack boot with a live acidwarp→videoOut
+    // chain and a pixel-change poll.
     //
-    // ⚠ THE WORST OF THE THREE, and only visible once the envelope is written
-    // as arithmetic: `buildAndProbe` is called TWICE (`/rack` and
-    // `/rack?shell=legacy`) and EACH call spends a `sampleDrawAdvance` AND an
-    // `expectCanvasChanges` — 2 x (60 000 + 60 000) = 240 000 ms of ceiling
-    // under SLOW_RENDER, inside a 120 000 ms literal. Half the budget the case
-    // is allowed to spend was unreachable.
-    test.setTimeout(videoCaseTimeout(2, 2));
+    // ⚠ THE ENVELOPE IS ARITHMETIC, NOT A LITERAL: `buildAndProbe` spends a
+    // `sampleDrawAdvance` AND an `expectCanvasChanges`, so its ceiling under
+    // SLOW_RENDER is 60 000 + 60 000. A flat literal here was once HALF the
+    // budget the case was allowed to spend, which made part of it unreachable.
+    //
+    // ⚠ COVERAGE THAT RETIRED WITH THE SECOND RENDERER, stated rather than
+    // dropped: this used to build the SAME rack twice and assert the engine
+    // node sets were equal — "which UI renders a module must not change what
+    // the engine materialized". With one renderer that comparison has no
+    // second side and cannot fail. What it was really protecting is that the
+    // chain is GRAPH-driven rather than render-driven, and that is what the
+    // per-node assertions below still say directly.
+    test.setTimeout(videoCaseTimeout(1, 1));
 
-    /** Build the SAME rack in a given mode and report what the engine has +
-     *  whether the OUTPUT surface is actually painting moving pixels. */
+    /** Build the rack and report what the engine has + whether the OUTPUT
+     *  surface is actually painting moving pixels. */
     async function buildAndProbe(url: string): Promise<{ nodes: string[] }> {
       await page.goto(url);
       await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: 15_000 });
-      const lane = url.includes('shell=legacy') ? videoOutLegacyCard(page) : videoOutLane(page);
-      await expect(lane, `${url}: videoOut lane surface mounts`).toBeVisible({ timeout: 15_000 });
+      await expect(videoOutLane(page), `${url}: videoOut lane surface mounts`).toBeVisible({ timeout: 15_000 });
 
       await injectPatch(
         page,
@@ -1480,18 +1421,16 @@ test.describe('?shell=1 video CHAIN parity', () => {
 
       // …and the user-viewable OUTPUT surface actually paints MOVING pixels
       // (not a black canvas — the owner's "nothing renders").
-      const outSel = videoOutSurfaceSel(url);
-      await expectCanvasChanges(page, outSel, `${url}: OUTPUT surface`);
+      await expectCanvasChanges(page, videoOutSurfaceSel(), `${url}: OUTPUT surface`);
 
       return { nodes: await engineNodeIds(page) };
     }
 
-    const shell = await buildAndProbe('/rack');
-    const off = await buildAndProbe('/rack?shell=legacy');
-
-    // THE PARITY INVARIANT: which UI renders a module must not change what the
-    // engine has materialized for the same rack.
-    expect(shell.nodes, 'shell engine node set === preview-off engine node set').toEqual(off.nodes);
+    const built = await buildAndProbe('/rack');
+    expect(
+      built.nodes,
+      'the engine materialized both ends of the chain the graph describes',
+    ).toEqual(expect.arrayContaining(['aw1', VIDEO_OUT]));
   });
 
   test('a DOM-SOURCE video module keeps its REAL card alive off-screen when the shell swaps its lane card', async ({ page }) => {
@@ -1649,9 +1588,7 @@ test.describe('?shell=1 video CHAIN parity', () => {
     //
     // The double-mount hazard the old line guarded has NOT been waived; it has
     // moved to where it can still occur, and it is asserted BELOW rather than
-    // deleted: exactly one host for this node, and none at all under
-    // `?shell=legacy` (see `camerainput-shell-source.spec.ts`, which drives the
-    // legacy shell and asserts the count is zero there).
+    // deleted: exactly one host for this node.
     // ⚠ AND IT HAS INVERTED ONCE MORE (legacy-removal S1), WHICH IS THE THIRD
     // POSITION THIS ONE ASSERTION HAS HELD. It began as "cameraInput must NEVER
     // be hosted" (the NON_SHELL carve-out kept its real card in the lane), became

@@ -59,7 +59,7 @@ const OBSERVE_MS = 3_000;
 const MIN_PROGRESS_S = 0.4;
 
 async function boot(page: Page): Promise<void> {
-  // Plain /rack — the DEFAULT shell. The legacy specs' `?shell=legacy` is
+  // Plain /rack — the shell every player gets. The other specs' boot is
   // precisely the surface promotion does not change.
   await page.goto('/rack?seed=none');
   await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: BOOT_MS });
@@ -214,7 +214,7 @@ test.describe('VIDEOBOX face — the promotion is what makes it loadable', () =>
     expect(
       media!.where,
       'the face body must BLIT the engine output — the node-owned <video> has ONE parent ' +
-        '(the legacy card adopts it under ?shell=legacy) and must stay PARKED under the shell',
+        'and must stay PARKED under the shell rather than adopted by a body',
     ).toBe('parking');
     await expect(body.locator('[data-testid="videobox-face-canvas"]')).toBeVisible();
 

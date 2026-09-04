@@ -10,11 +10,10 @@
 // forever, and the `clipplayer-*` prefix is exactly the shape a future broad
 // glob named after a module would catch.
 //
-// ⚠ ALL EIGHTEEN EXISTING CLIPPLAYER SPECS DRIVE THE LEGACY CARD. Most boot the
-// `rack` fixture (`?shell=legacy`) and the rest write `node.data` straight
-// through the Y.Doc, so every one of them stays green after promotion while
-// covering a surface no player meets — or covering no surface at all. This file
-// is the default-shell leg they owe.
+// ⚠ THE OTHER EIGHTEEN CLIPPLAYER SPECS NEVER DROVE THIS SURFACE. They reached
+// the module through a renderer a player does not get, or wrote `node.data`
+// straight through the Y.Doc, so every one of them could stay green while
+// covering no surface at all. This file is the leg they owe.
 //
 // `clipplayer-face-model.test.ts` pins the ranking, the six panel registrations,
 // the panel/lane-tier arithmetic, the deleted families' surfaces, the shared
@@ -43,17 +42,15 @@
 //  5. THAT THE EDITOR BAND WRITES NOTHING ON MOUNT. It draws a default clip's
 //     grid for an empty slot; a band that committed that clip for being
 //     rendered would put a Y.Doc write in every rack boot.
-//  6. ⚠ THAT `?shell=legacy` + AN OPEN DOCK PUTS **TWO** LIVE SURFACES ON ONE
-//     NODE, so six of this module's testids match TWO elements. This face
-//     deliberately reuses the CARD's testid vocabulary — it is what lets the
-//     eighteen existing specs' locators mean the same thing on both surfaces,
-//     and what `module-docs-lint`'s card grep ties together — and the price is
-//     that an UNSCOPED `clipplayer-*` locator is ambiguous in that one
-//     configuration. Nothing in the repo can see it: the flag steers the CANVAS
-//     lane while the dock reads `migrated(type)`, so the card and the faceplate
-//     are both correct and both live. Measured, not assumed, in the last leg
-//     below — a hazard nobody has written down is one the next author meets as
-//     a strict-mode surprise.
+//
+// ⚠ EVERY `clipplayer-*` LOCATOR IN THIS FILE IS NODE-SCOPED, and that is a
+// habit worth keeping rather than an artefact. One node can put more than one
+// live surface on the page — a lane tile and an open dock pane are two views of
+// it — so an UNSCOPED `clipplayer-pad-0` is ambiguous whenever both are up.
+// Every locator here goes through a node-scoped `module-shell`
+// (`[data-shell-node]` / `.svelte-flow__node[data-id]`), which resolves to
+// exactly one element by construction. `clipplayer-grid-stability` and
+// `menu-viewport-clamp` do the same.
 
 import { test, expect, type Locator, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
@@ -77,7 +74,7 @@ test.describe.configure({ mode: 'parallel' });
 
 const CP = 'f-cp';
 
-/** The DEFAULT shell (no `?shell=legacy`) — this file's whole subject. */
+/** The rack, which is this file's whole subject. */
 async function gotoShell(page: Page): Promise<void> {
   await page.goto('/rack?seed=none');
   await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: BOOT_MS });
@@ -525,10 +522,8 @@ test.describe('CLIP PLAYER faceplate', () => {
   // manifest kept `status: 'recording'` so the media GC SPARED its bytes
   // forever: a file nobody can reach and nothing will ever collect.
   //
-  // ⚠ `clip-media-recover-reachable.spec.ts` PINS IT ONLY ON THE SURFACE THE
-  // PROMOTION STOPS MOUNTING. That spec boots `?shell=legacy` and asserts on
-  // `clipplayer-recover-*`, i.e. the CARD, so on the surface a player actually
-  // reaches this had ZERO coverage — the
+  // ⚠ IT USED TO BE PINNED ONLY ON A SURFACE A PLAYER NEVER REACHES, so on the
+  // one they do reach it had ZERO coverage — the
   // [[shared-derivation-repaired-only-on-the-surface-you-looked-at]] shape, and
   // the same one `face-recorderbox.spec.ts` records for its own prompt.
   //
@@ -844,60 +839,6 @@ test.describe('CLIP PLAYER faceplate', () => {
         message: 'the playhead returns when the transport runs again',
       })
       .toBeGreaterThan(0);
-
-    expect(errors).toEqual([]);
-  });
-
-  // ── 9. THE TWO-SURFACE HAZARD, MEASURED AND SCOPED ──────────────────────
-  test('under ?shell=legacy an open dock makes the card AND the face live — scope, do not assume', async ({ page }) => {
-    const errors: string[] = [];
-    page.on('pageerror', (e) => errors.push(String(e)));
-
-    // ⚠ THE ESCAPE HATCH ONLY. `?shell=legacy` steers `laneRenderKind`, so the
-    // CANVAS keeps the verbatim card; `DockFullView` reads `migrated(type)`,
-    // which the flag does not answer, so the DOCK paints the faceplate. Both
-    // are correct and both are live views of one node.
-    await page.goto('/rack?shell=legacy&seed=none');
-    await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: BOOT_MS });
-    await page.locator('.svelte-flow__pane:visible').first().waitFor({ state: 'visible' });
-    await spawnPatch(page, [
-      { id: CP, type: 'clipplayer', position: { x: 120, y: 120 }, domain: 'audio' },
-    ]);
-    await expect(page.getByTestId('clipplayer-card')).toHaveCount(1);
-    await page.evaluate((id) => {
-      (globalThis as unknown as { __openDockFullView: (n: string) => void }).__openDockFullView(id);
-    }, CP);
-    const pane = page.locator(`[data-testid="dock-fullview-pane"][data-pane-node="${CP}"]`);
-    await expect(pane).toBeVisible();
-
-    // THE MEASUREMENT: six testids, two elements each. Asserted as an EXACT
-    // count rather than "at least one", so the day a surface stops emitting one
-    // this goes red instead of quietly halving.
-    for (const testid of [
-      'clipplayer-pad-0',
-      'clipplayer-color-0',
-      'clipplayer-mono-0',
-      'clipplayer-rate-0',
-      'clipplayer-auto-arm-0',
-      'clipplayer-scene-repeat-0',
-    ]) {
-      await expect(
-        page.locator(`[data-testid="${testid}"]`),
-        `${testid}: the card and the faceplate BOTH emit it in this configuration`,
-      ).toHaveCount(2);
-    }
-
-    // …AND THE REMEDY IS ALREADY THERE, which is why this is a hazard and not a
-    // defect: every face surface lives under a node-scoped module shell, so a
-    // scoped locator resolves to exactly one. That is what every spec in this
-    // file and in `clipplayer-grid-stability` / `menu-viewport-clamp` does.
-    const dockShell = pane.locator(
-      `[data-testid="module-shell"][data-shell-tier="dock"][data-shell-node="${CP}"]`,
-    );
-    await expect(dockShell.getByTestId('clipplayer-pad-0')).toHaveCount(1);
-    await expect(
-      page.locator('.svelte-flow__node[data-id="' + CP + '"]').getByTestId('clipplayer-pad-0'),
-    ).toHaveCount(1);
 
     expect(errors).toEqual([]);
   });
