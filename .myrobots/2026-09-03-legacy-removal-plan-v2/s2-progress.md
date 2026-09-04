@@ -400,3 +400,91 @@ for these files):
   `cd e2e && npx playwright test --list | tail -1` — expect `Total: N tests in M files`.
 - e2e-timings row pruning rides every spec-deleting commit
   (`e2e-shard-plan.test.ts` reds on orphan rows).
+
+---
+
+# S2 CLOSE-OUT — session of 2026-09-04 (drains 36-41 + the DOOM sub-slice)
+
+**Re-measured at `9907f8542`.** Method: `stripComments()` then count `shell=legacy`
+in code vs comments separately — a comment-blind grep over-reports by ~2x, which is
+why the earlier "126 files" and this "7 files" are not comparable numbers.
+
+## THE NON-GROUP `tests/` DRAIN IS COMPLETE
+
+`e2e/tests/` live (non-comment) `shell=legacy` references: **7 files, and every one
+of them is the Group/Sticky slice**:
+
+| file | why it is still here |
+|---|---|
+| `sticky-note.spec.ts` (4) | owner ruling 1 — deleted entirely with the type |
+| `grouping-phase1/2/3.spec.ts` (1 each) | same |
+| `saved-groups-wiring.spec.ts` (1) | same |
+| `_fixtures.ts` (1) | the `rackLegacy` fixture; its LAST consumer is `save-group-and-naming.spec.ts`, so it dies with that spec |
+| `card-producer-lifetime.spec.ts` (1) | its legacy leg's subject is a producer inside a COLLAPSED GROUP — group-coupled, dies with the type |
+
+Everything else under `e2e/tests/` boots the shell a player gets.
+Remaining live references repo-wide are **33 files under `e2e/vrt/`** — that is S3,
+mapped in `s3-vrt-map.md`.
+
+Collection: **3015 tests in 503 files** (was 3077/506 at S2 start).
+
+## What each drain did, and the two that were not what the brief said
+
+* **36** — the four registry sweeps (per-module, both per-port sweeps, lushgarden,
+  recorderbox, the carl helper) + NUMPAD+'s family-(b) rewrite. Two claims had no
+  face twin and were BUILT before the card legs were deleted: POLY, and an OCTAVE
+  cap being remappable like a note cap.
+* **37** — the four parity tables lose their escape-hatch arm.
+* **38** — the registry TILE sweep (io-spec-consistency) + the overflow instrument.
+* **39** — the docking core.
+* **40/41** — timelorde, node-source-hls, treeohvox, videoout-detach-display,
+  workflow-shell-video, face-clipplayer.
+* **DOOM sub-slice** — merged from `feat/legacy-removal-doom`. 14 specs re-pointed,
+  coverage diff shows zero lost assertions (every delta positive).
+
+⚠ **`card-drop-patch.spec.ts` is NOT a family-(c) delete, and the brief says it is.**
+The tree wins: `resolveCardDrop` resolves through flow-node rects and the signal
+lattice with no reference to which surface painted them, so the drop-onto-another-node
+gesture ships on the shell. Deleting the spec would drop a live gate. RE-POINTED.
+
+⚠ **Group E of the tile sweep was nearly deleted on an unmeasured argument.**
+`_card-overflow.ts` already had a `data-id="sut"` fallback, so the instrument works
+on the shell — dropping it would have traded a registry-wide gate for a claim about
+`face.controls` being a static roster that had not been checked against the
+strictFace population. Kept.
+
+## THREE THINGS THE NEXT SESSION SHOULD NOT RE-LEARN
+
+1. **`NON_SHELL_LANE_TYPES` is `{group, sticky, cadillac}`** — clipplayer was retired
+   from it (the constant's own header says so). After the group slice it is
+   `{cadillac}` alone. Any handoff claiming clipplayer is in that set is stale.
+
+2. **⚠ `dockRailRendersFace` is `shellFaces && pinned && migrated`, so an UNPINNED
+   dock-rail occupant mounts its verbatim CARD on the DEFAULT shell today.**
+   `Canvas.svelte:2307` passes `pinned: false`. This is a live card-mounting path
+   that the whole e2e inversion does not touch and that S4 must close by dropping
+   the `pinned` clause. `workflow-dock.spec.ts` still asserts
+   `.mod-card, .card, .moog-panel` inside `[data-dock-card]` — left true rather than
+   re-pointed to something that is not yet so.
+
+3. **The overflow instrument's clipping fix has a vacuous form, and the obvious
+   version is it.** `measureOverflow` compares descendants against the surface box;
+   intersecting each element with its clipping ancestors is correct, but if the walk
+   INCLUDES the measured box (`module-shell` is itself `overflow: hidden`) every
+   descendant is clamped to it and the gate can never report anything. The walk stops
+   BEFORE `card`. Positive control: a forced unclipped 380px overrun still reports
+   272.9 CSS px and names the element; a clean tile reports 0.
+
+## Owner-visible items raised this session
+
+* **Escape closes the DOOM pane on the default shell.** DOOM passes Escape through
+  by design and Canvas's dock handler closes the full view. The session survives
+  (#1590) and re-opening resumes, so it is coherent — but it is a behaviour the card
+  never had. Reported, not changed.
+* `doom-keyboard-routing`'s post-Escape leg loses discriminating power: the pane
+  unmounts, so the leg re-opens it, and a regression where Escape stopped unlatching
+  would be masked by the remount. The defect it originally guarded is structurally
+  unreachable off-canvas (measured).
+* The DOOM collab legs ran cross-context sync for real, but with `DATABASE_URL`
+  unset — in-memory snapshot store, no Postgres. Anything DB-backed in them is
+  unexercised locally.
