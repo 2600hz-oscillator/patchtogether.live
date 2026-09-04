@@ -29,8 +29,80 @@
 
 import type { Page } from '@playwright/test';
 import { test, expect } from './_fixtures';
-import { spawnPatch } from './_helpers';
+import { spawnPatch, MOUNT_CAP_MS } from './_helpers';
 import { readScopePeakOverWindow, describeScopeWindow } from './_module-coverage-helpers';
+
+// ---------------------------------------------------------------------------
+// THE BUDGET IS DERIVED FROM THE STEPS, NOT TYPED OVER THEM
+//
+// ⚠ A flat wall SMALLER than the sum of the caps it contains cannot fail at
+// the step that was slow. Every step stays inside its own cap, the aggregate
+// runs out, and Playwright reports a bare "Test timeout of N exceeded" against
+// whatever call happened to be in flight — no assertion text, nothing to grep
+// but its absence. This spec shipped with `test.setTimeout(180_000)` over caps
+// summing to well over 300 s; it never fired (leg 3 failed cleanly at its own
+// 30 s cap), which is the only reason the ARM-SINGLE product bug it caught was
+// legible at all. That was luck, and luck is not a property.
+//
+// Note what this is NOT: no wait here got longer, no window widened, no settle
+// added. The wall is a LAST RESORT that should never be the thing that fires —
+// so it is sized to be the last resort, and it costs wall-clock only on a run
+// that is already failing. If the total looks large, the honest lever is
+// trimming a leg's cap or splitting the seven legs, not re-flattening the wall
+// back under them.
+//
+// So the caps are named ONCE, here, and the wall is their SUM: the same
+// numbers, added up instead of guessed at. Raising a leg's cap raises the wall
+// with it, and the wall can never sit under its own steps again.
+// ---------------------------------------------------------------------------
+
+/** Cold boot: the navigation, then the topbar painting. Charged TWICE below
+ *  because the goto now carries the cap too — see the goto's own note. */
+const BOOT_MS = 30_000;
+/** The flow pane painting after the topbar — the last boot step. Its own cap
+ *  because it follows a 30 s boot wait and a UI-gesture cap would be tight. */
+const PANE_MS = 15_000;
+/** Leg 1's positive control: the live channel meter hearing the oscillator. */
+const LIVE_METER_MS = 20_000;
+/** Leg 2: the arm edge reaching `audioRec` (prepare → open media → confirm). */
+const PROJECT_MS = 20_000;
+/** Leg 3: 2 s of music, then the OPFS drain, the commit and the undo unit. */
+const COMMIT_MS = 30_000;
+/** Leg 4: the commit queueing its own immediate launch. */
+const LAUNCH_MS = 15_000;
+/** Leg 7: the graph-pass GC freeing the orphaned OPFS bytes. */
+const GC_MS = 20_000;
+/** A store value flips: a param write, a duck gain, a lane's playing slot. */
+const STATE_MS = 10_000;
+/** One scope observation window (`readScopePeakOverWindow`), legs 4 and 6. */
+const AUDIBLE_MS = 8_000;
+/** `expectSilence`: the settle poll, then the confirming window. */
+const SILENCE_POLL_MS = 15_000;
+const SILENCE_CONFIRM_MS = 1_200;
+const SILENCE_MS = SILENCE_POLL_MS + SILENCE_CONFIRM_MS;
+/** A single UI gesture — a click, a scroll-into-view, a visibility wait. The
+ *  clicks below carry it EXPLICITLY: Playwright's `actionTimeout` is unset in
+ *  this suite's config, so an unbounded click eats the whole wall and blames
+ *  the next line. Visibility waits are already capped here by expect's own
+ *  default, which this equals. */
+const UI_MS = 5_000;
+
+/** The wall: every cap this test contains, added up. The multipliers are the
+ *  number of times each cap appears in the body below — grep them and count. */
+const TEST_BUDGET_MS =
+  2 * BOOT_MS + // the goto, then the topbar
+  PANE_MS +
+  MOUNT_CAP_MS + // spawnPatch's own mount cap, imported not retyped
+  LIVE_METER_MS +
+  PROJECT_MS +
+  COMMIT_MS +
+  LAUNCH_MS +
+  GC_MS +
+  6 * STATE_MS +
+  2 * AUDIBLE_MS +
+  2 * SILENCE_MS +
+  SILENCE_CONFIRM_MS + // leg 1's negative-control window, the same 1200 ms shape
+  13 * UI_MS;
 
 const TL = 'tl1';
 const OSC = 'osc1';
@@ -84,10 +156,10 @@ async function expectSilence(page: Page, label: string): Promise<void> {
   await expect
     .poll(async () => (await readScopePeakOverWindow(page, SC, 300)).rms, {
       message: `${label}: the clip output must settle to silence`,
-      timeout: 15_000,
+      timeout: SILENCE_POLL_MS,
     })
     .toBeLessThan(0.02);
-  const confirm = await readScopePeakOverWindow(page, SC, 1200, { minMs: 800 });
+  const confirm = await readScopePeakOverWindow(page, SC, SILENCE_CONFIRM_MS, { minMs: 800 });
   expect(confirm.rms, `${label}: ${describeScopeWindow(confirm)}`).toBeLessThan(0.02);
 }
 
@@ -153,8 +225,9 @@ async function mediaFileState(
 test('ARM-SINGLE records one loop from the real chain and the take is AUDIBLE, exact, ducked, launched and undoable', async ({
   page,
 }) => {
-  // Recording alone is a 2 s musical loop; the journey has seven legs.
-  test.setTimeout(180_000);
+  // Recording alone is a 2 s musical loop; the journey has seven legs. The
+  // wall is the SUM of those legs' own caps — see TEST_BUDGET_MS.
+  test.setTimeout(TEST_BUDGET_MS);
 
   // The registry's refusals go to the console with a [clip-rec] prefix; a
   // refusal is a legible failure, so surface it in the test log.
@@ -166,9 +239,13 @@ test('ARM-SINGLE records one loop from the real chain and the take is AUDIBLE, e
   // `seed=none` (the test-only empty rack): the workflow pins would add a
   // SECOND mixmstrs/clipplayer pair, and the lane↔channel binding targets the
   // first launcher in the graph — this spec must own which one that is.
-  await page.goto('/rack?seed=none');
-  await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: 30_000 });
-  await page.locator('.svelte-flow__pane:visible').first().waitFor({ state: 'visible' });
+  // The goto carries its own cap: this suite's config sets no
+  // `navigationTimeout`, so an unbounded navigation is bounded only by the
+  // wall — and a step with no cap of its own is a step that can never be the
+  // one blamed.
+  await page.goto('/rack?seed=none', { timeout: BOOT_MS });
+  await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: BOOT_MS });
+  await page.locator('.svelte-flow__pane:visible').first().waitFor({ state: 'visible', timeout: PANE_MS });
   await spawnPatch(
     page,
     [
@@ -193,7 +270,7 @@ test('ARM-SINGLE records one loop from the real chain and the take is AUDIBLE, e
   await expect
     .poll(() => readChannelLevel(page, 0), {
       message: 'channel 1 must hear the patched oscillator before any take',
-      timeout: 20_000,
+      timeout: LIVE_METER_MS,
     })
     .toBeGreaterThan(0.02);
   // NEGATIVE: the clip output is silent — nothing has ever been recorded.
@@ -207,20 +284,20 @@ test('ARM-SINGLE records one loop from the real chain and the take is AUDIBLE, e
     `.svelte-flow__node[data-id="${MIX}"] [data-testid="module-shell"]`,
   );
   await expect(mixShell).toBeVisible();
-  await mixShell.getByTestId('shell-open-dock').click();
+  await mixShell.getByTestId('shell-open-dock').click({ timeout: UI_MS });
   const dock = page
     .getByTestId('dock-full-view')
     .locator(`[data-testid="module-shell"][data-shell-tier="dock"][data-shell-node="${MIX}"]`);
   await expect(dock).toBeVisible();
   const armCell = dock.getByTestId('control-ch1_rec');
   await armCell.scrollIntoViewIfNeeded();
-  await armCell.getByRole('radio', { name: 'once', exact: true }).click();
+  await armCell.getByRole('radio', { name: 'once', exact: true }).click({ timeout: UI_MS });
   // The gesture landed as a real param write (the same origin-tagged seam MIDI
   // and automation use) — this is the surface the registry polls.
   await expect
     .poll(() => readParamValue(page, MIX, 'ch1_rec'), {
       message: "clicking 'once' must land 1 in node.params.ch1_rec",
-      timeout: 10_000,
+      timeout: STATE_MS,
     })
     .toBe(1);
 
@@ -244,7 +321,7 @@ test('ARM-SINGLE records one loop from the real chain and the take is AUDIBLE, e
         }
         return armed ? 'projected' : (rec?.phase ?? null);
       },
-      { message: 'the arm must project into audioRec', timeout: 20_000 },
+      { message: 'the arm must project into audioRec', timeout: PROJECT_MS },
     )
     .toBe('projected');
   expect(armed!.slot).toBe(0); // the lane's first empty slot
@@ -257,7 +334,7 @@ test('ARM-SINGLE records one loop from the real chain and the take is AUDIBLE, e
         const clip = (d.clips as Record<string, { kind?: string }> | undefined)?.['0'];
         return clip?.kind ?? null;
       },
-      { message: 'the take must commit an audio clip into slot 0', timeout: 30_000 },
+      { message: 'the take must commit an audio clip into slot 0', timeout: COMMIT_MS },
     )
     .toBe('audio');
   const after = await readData(page, CP);
@@ -284,7 +361,7 @@ test('ARM-SINGLE records one loop from the real chain and the take is AUDIBLE, e
   expect(media.size, 'interleaved f32 stereo, byte-exact').toBe(expectedFrames * 8);
   // The arm knob snapped back to OFF (a fresh edge is required to re-arm).
   await expect
-    .poll(() => readParamValue(page, MIX, 'ch1_rec'), { timeout: 10_000 })
+    .poll(() => readParamValue(page, MIX, 'ch1_rec'), { timeout: STATE_MS })
     .toBe(0);
 
   // ── Leg 4 — the take TAKES OVER: audible, and the MON duck engages ──────
@@ -293,10 +370,10 @@ test('ARM-SINGLE records one loop from the real chain and the take is AUDIBLE, e
   await expect
     .poll(
       async () => (await readData(page, CP)).playing as (number | null)[] | undefined,
-      { message: 'the committed take auto-launches in its lane', timeout: 15_000 },
+      { message: 'the committed take auto-launches in its lane', timeout: LAUNCH_MS },
     )
     .toEqual(expect.arrayContaining([0]));
-  const playing = await readScopePeakOverWindow(page, SC, 8000, {
+  const playing = await readScopePeakOverWindow(page, SC, AUDIBLE_MS, {
     untilRms: 0.05,
     minMs: 500,
   });
@@ -309,7 +386,7 @@ test('ARM-SINGLE records one loop from the real chain and the take is AUDIBLE, e
   await expect
     .poll(async () => (await readRecDuck(page))?.applied?.[0], {
       message: 'MON clip-auto must duck the live branch while the lane plays',
-      timeout: 10_000,
+      timeout: STATE_MS,
     })
     .toBe(0);
   expect((await readRecDuck(page))?.lanePlaying?.[0]).toBe(true);
@@ -318,13 +395,13 @@ test('ARM-SINGLE records one loop from the real chain and the take is AUDIBLE, e
   await writeLaneQueue(page, 0, 'stop');
   await expect
     .poll(async () => ((await readData(page, CP)).playing as (number | null)[])?.[0] ?? null, {
-      timeout: 10_000,
+      timeout: STATE_MS,
     })
     .toBe(null);
   await expect
     .poll(async () => (await readRecDuck(page))?.applied?.[0], {
       message: 'stopping the lane must restore the live branch',
-      timeout: 10_000,
+      timeout: STATE_MS,
     })
     .toBe(1);
   // The stop lands on the audio clock a tick after the data flips.
@@ -332,7 +409,7 @@ test('ARM-SINGLE records one loop from the real chain and the take is AUDIBLE, e
 
   // ── Leg 6 — the explicit LAUNCH leg: the recorded clip fires on demand ──
   await writeLaneQueue(page, 0, 0);
-  const relaunched = await readScopePeakOverWindow(page, SC, 8000, {
+  const relaunched = await readScopePeakOverWindow(page, SC, AUDIBLE_MS, {
     untilRms: 0.05,
     minMs: 500,
   });
@@ -345,11 +422,11 @@ test('ARM-SINGLE records one loop from the real chain and the take is AUDIBLE, e
   // The commit landed on the LAUNCHER's own scoped undo stack (one unit);
   // its face deck carries that stack's ↶. Close the mixer's dock first — the
   // full view overlays the lane tiles and would swallow the click.
-  await page.getByTestId('faceplate-close').click();
+  await page.getByTestId('faceplate-close').click({ timeout: UI_MS });
   await expect(page.getByTestId('dock-full-view')).toBeHidden();
   const cpShell = page.locator(`.svelte-flow__node[data-id="${CP}"] [data-testid="module-shell"]`);
   await expect(cpShell).toBeVisible();
-  await cpShell.getByTestId('shell-open-dock').click();
+  await cpShell.getByTestId('shell-open-dock').click({ timeout: UI_MS });
   const cpDock = page
     .getByTestId('dock-full-view')
     .locator(`[data-testid="module-shell"][data-shell-tier="dock"][data-shell-node="${CP}"]`);
@@ -357,19 +434,19 @@ test('ARM-SINGLE records one loop from the real chain and the take is AUDIBLE, e
   const undoBtn = cpDock.getByTestId(`clipplayer-strip-6-${CP}`);
   await undoBtn.scrollIntoViewIfNeeded();
   await expect(undoBtn).toBeEnabled();
-  await undoBtn.click();
+  await undoBtn.click({ timeout: UI_MS });
   // (a) the clip record is gone…
   await expect
     .poll(
       async () => ((await readData(page, CP)).clips as Record<string, unknown> | undefined)?.['0'] ?? null,
-      { message: 'undo must remove the committed clip record', timeout: 10_000 },
+      { message: 'undo must remove the committed clip record', timeout: STATE_MS },
     )
     .toBe(null);
   // …(b) and the media is ORPHANED: the graph-pass GC frees the bytes.
   await expect
     .poll(async () => (await mediaFileState(page, mediaId)).present, {
       message: 'the orphaned take must be garbage-collected from OPFS',
-      timeout: 20_000,
+      timeout: GC_MS,
     })
     .toBe(false);
   // A source must not keep looping a clip that no longer exists.

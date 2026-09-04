@@ -193,8 +193,13 @@ async function settle(times = 6) {
 
 /** Drive a full green single take on lane 0 and return its window. The arm is
  *  a two-step observable sequence: the edge PREPARES (async media open), the
- *  next pump CONFIRMS (resolves the window, arms machine + worklet). */
-async function recordOneTake(h: Harness) {
+ *  next pump CONFIRMS (resolves the window, arms machine + worklet).
+ *
+ *  `slipFrames` models a LATE arm: the worklet slid the window by that many
+ *  frames and says so on `done`. The take is still exactly `frames` long — the
+ *  length is the contract (clip-recorder.ts header) — so a slip must NOT
+ *  change what commits, only what is reported. */
+async function recordOneTake(h: Harness, slipFrames = 0) {
   h.reg.sync(liveNodes());
   h.reg.pump(); // builds wiring; adopts the (all-zero) arm state
   await settle();
@@ -217,7 +222,9 @@ async function recordOneTake(h: Harness) {
   const data = new Float32Array(frames * 2);
   data.fill(0.25);
   h.port.onmessage?.({ data: { type: 'chunk', lane: 0, firstFrame: 0, frames, data } } as MessageEvent);
-  h.port.onmessage?.({ data: { type: 'done', lane: 0, frames } } as MessageEvent);
+  h.port.onmessage?.({
+    data: { type: 'done', lane: 0, frames, startFrame: startFrame + slipFrames },
+  } as MessageEvent);
   // …and the stop frame passes.
   h.ctx.currentTime = stopFrame / SR + 0.05;
   h.reg.pump();
@@ -304,7 +311,9 @@ describe('node-clip-recorder-registry — arm-single end to end', () => {
     h.reg.pump();
     const data = new Float32Array(frames * 2);
     h.port.onmessage?.({ data: { type: 'chunk', lane: 0, firstFrame: 0, frames, data } } as MessageEvent);
-    h.port.onmessage?.({ data: { type: 'done', lane: 0, frames } } as MessageEvent);
+    h.port.onmessage?.({
+      data: { type: 'done', lane: 0, frames, startFrame: arm.startFrame },
+    } as MessageEvent);
     h.ctx.currentTime = arm.stopFrame / SR + 0.05;
     h.reg.pump();
     await settle(12);
@@ -446,17 +455,70 @@ describe('node-clip-recorder-registry — arm-single end to end', () => {
     const frames = arm.stopFrame - arm.startFrame;
     h.ctx.currentTime = arm.startFrame / SR + 0.05;
     h.reg.pump();
-    // The worklet reports a SHORT take (armed late, missed frames).
+    // A SHORT take. The worklet no longer produces one for a late arm (it
+    // slides the window instead — clip-recorder.ts header), so this is now
+    // DEFENCE IN DEPTH: whatever else went wrong up there, a clip whose bytes
+    // do not match its own metadata must never reach the store.
     const short = frames - 4096;
     const data = new Float32Array(short * 2);
     h.port.onmessage?.({ data: { type: 'chunk', lane: 0, firstFrame: 0, frames: short, data } } as MessageEvent);
-    h.port.onmessage?.({ data: { type: 'done', lane: 0, frames: short } } as MessageEvent);
+    h.port.onmessage?.({
+      data: { type: 'done', lane: 0, frames: short, startFrame: arm.startFrame },
+    } as MessageEvent);
     h.ctx.currentTime = arm.stopFrame / SR + 0.05;
     h.reg.pump();
     await settle(12);
     expect(readClip(clipData(), clipIndex(0, 0))).toBeNull();
     expect(h.reg.lastRefusal(MIX)).toMatch(/captured/);
     expect(h.removed).toEqual([]); // scratch kept
+  });
+
+  it('a take that SLID commits unchanged — and says how late it punched in', async () => {
+    // The take's LENGTH is what the commit checks, and a slid take is still
+    // exactly `unitFrames` long, so nothing about the clip changes. What must
+    // not happen is the slide being invisible: without the warning, a loaded
+    // machine moves the downbeat and no one ever finds out.
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const h = makeHarness();
+      const { frames } = await recordOneTake(h, 3 * 128); // three quanta late
+      const rec = readClip(clipData(), clipIndex(0, 0));
+      expect(rec?.kind).toBe('audio'); // committed, same as an on-time take
+      expect(rec?.kind === 'audio' ? rec.frames : -1).toBe(frames);
+      expect(h.reg.lastRefusal(MIX)).toBeNull();
+      expect(warn.mock.calls.map((c) => String(c[0])).join('\n')).toMatch(
+        /punched in 384 frames late/,
+      );
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('a worklet REFUSAL (zero frames past the slide bound) fails the commit and NAMES the slip', async () => {
+    const h = makeHarness();
+    h.reg.sync(liveNodes());
+    h.reg.pump();
+    await settle();
+    h.recState.arm[0] = 1;
+    h.reg.pump(); // prepare
+    await settle();
+    h.reg.pump(); // confirm
+    const arm = h.posted.find((m) => m.type === 'arm') as { startFrame: number; stopFrame: number };
+    h.ctx.currentTime = arm.startFrame / SR + 0.05;
+    h.reg.pump();
+    // The arm drained further past its punch-in than the slide may absorb: the
+    // worklet captured NOTHING and reports the frame it had reached.
+    h.port.onmessage?.({
+      data: { type: 'done', lane: 0, frames: 0, startFrame: arm.startFrame + 9600 },
+    } as MessageEvent);
+    h.ctx.currentTime = arm.stopFrame / SR + 0.05;
+    h.reg.pump();
+    await settle(12);
+    expect(readClip(clipData(), clipIndex(0, 0))).toBeNull();
+    // Loud, and diagnosable: "captured 0 frames" alone reads like a dead input.
+    expect(h.reg.lastRefusal(MIX)).toMatch(/captured 0 frames/);
+    expect(h.reg.lastRefusal(MIX)).toMatch(/9600 frames past its punch-in/);
+    expect(h.removed).toEqual([]); // scratch kept for recovery
   });
 
   it('the arm dropping to OFF cancels: worklet cancelled, scratch discarded', async () => {

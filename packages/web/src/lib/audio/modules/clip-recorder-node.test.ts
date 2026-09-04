@@ -280,11 +280,15 @@ describe('coerceClipRecorderMsg', () => {
   });
   it('accepts well-formed chunk and done messages', () => {
     expect(coerceClipRecorderMsg(chunk())).toEqual(chunk());
-    expect(coerceClipRecorderMsg({ type: 'done', lane: 7, frames: 96_000 })).toEqual({
-      type: 'done',
-      lane: 7,
-      frames: 96_000,
-    });
+    expect(
+      coerceClipRecorderMsg({ type: 'done', lane: 7, frames: 96_000, startFrame: 5_760 }),
+    ).toEqual({ type: 'done', lane: 7, frames: 96_000, startFrame: 5_760 });
+    // A REFUSAL — the worklet declining an arm that drained further past its
+    // punch-in than the slide may absorb — is a WELL-FORMED `done` carrying
+    // zero frames, not a malformed message to drop on the floor.
+    expect(
+      coerceClipRecorderMsg({ type: 'done', lane: 3, frames: 0, startFrame: 12_800 }),
+    ).toEqual({ type: 'done', lane: 3, frames: 0, startFrame: 12_800 });
   });
   it('rejects everything malformed instead of throwing mid-take', () => {
     expect(coerceClipRecorderMsg(null)).toBeNull();
@@ -295,7 +299,14 @@ describe('coerceClipRecorderMsg', () => {
     expect(coerceClipRecorderMsg(chunk({ frames: 0 }))).toBeNull();
     expect(coerceClipRecorderMsg(chunk({ data: new Float32Array(7) }))).toBeNull(); // short
     expect(coerceClipRecorderMsg(chunk({ data: [0, 0, 0, 0, 0, 0, 0, 0] }))).toBeNull();
-    expect(coerceClipRecorderMsg({ type: 'done', lane: 0, frames: -1 })).toBeNull();
+    expect(coerceClipRecorderMsg({ type: 'done', lane: 0, frames: -1, startFrame: 0 })).toBeNull();
+    // ⚠ `startFrame` is REQUIRED. A `done` without it is a worklet this build
+    // did not ship, and defaulting it would report "punched in exactly on
+    // time" for a take nobody measured — the silent slide, back again.
+    expect(coerceClipRecorderMsg({ type: 'done', lane: 0, frames: 128 })).toBeNull();
+    expect(
+      coerceClipRecorderMsg({ type: 'done', lane: 0, frames: 128, startFrame: NaN }),
+    ).toBeNull();
     expect(coerceClipRecorderMsg({ type: 'noise', lane: 0 })).toBeNull();
   });
 });
@@ -365,17 +376,17 @@ describe('attachClipRecorderSink', () => {
   it('routes chunks through the REAL drain: positions = firstFrame × 8, in order, dropped === 0, done after the last chunk', async () => {
     const { writer, writes } = makeWriter();
     const drain = new ClipMediaDrain(writer, { bytesPerFrame: CLIP_RECORDER_BYTES_PER_FRAME });
-    const done: [number, number][] = [];
+    const done: [number, number, number][] = [];
     const port = { onmessage: null as ((e: MessageEvent) => void) | null, postMessage: vi.fn() };
     const handler = attachClipRecorderSink({ port } as unknown as Pick<AudioWorkletNode, 'port'>, {
       drainFor: (lane) => (lane === 1 ? drain : null),
-      onDone: (lane, frames) => done.push([lane, frames]),
+      onDone: (lane, frames, startFrame) => done.push([lane, frames, startFrame]),
     });
     expect(port.onmessage).toBe(handler);
 
     handler({ data: planarChunk(1, 0, 2, 10) } as MessageEvent);
     handler({ data: planarChunk(1, 2, 2, 20) } as MessageEvent);
-    handler({ data: { type: 'done', lane: 1, frames: 4 } } as MessageEvent);
+    handler({ data: { type: 'done', lane: 1, frames: 4, startFrame: 640 } } as MessageEvent);
     await drain.flush();
 
     expect(writes.map((w) => w.position)).toEqual([0, 2 * CLIP_RECORDER_BYTES_PER_FRAME]);
@@ -384,7 +395,9 @@ describe('attachClipRecorderSink', () => {
     expect(writes[1]!.values).toEqual([20, -20, 21, -21]);
     expect(drain.dropped).toBe(0); // the never-drop property, read off the drain
     expect(drain.framesWritten).toBe(4);
-    expect(done).toEqual([[1, 4]]);
+    // The ACTUAL punch-in rides through to the sink — it is what the registry
+    // compares against the start it asked for to see a slid take.
+    expect(done).toEqual([[1, 4, 640]]);
   });
 
   it('a lane with no armed take drops the stray chunk on the floor (a late post after cancel), not an error', async () => {

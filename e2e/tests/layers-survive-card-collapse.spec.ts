@@ -41,11 +41,12 @@
 // never moves between mounts and this entire bug class is invisible to them.
 // This spec goes to plain `/rack` deliberately; do not add a shell param.
 
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Locator, type Page } from '@playwright/test';
 import { unzipSync, strFromU8 } from 'fflate';
 import { readFileSync, statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { spawnPatch } from './_helpers';
+import { installRenderSmokeHooks } from './_render-smoke';
 
 const FIXTURE = fileURLToPath(new URL('../fixtures/lobby-clip.webm', import.meta.url));
 const FIXTURE_BYTES = statSync(FIXTURE).size;
@@ -130,10 +131,38 @@ async function expand(page: Page): Promise<void> {
   await expect(page.getByTestId('toybox-face-body')).toBeVisible({ timeout: 40_000 });
 }
 
+/**
+ * Click a control on the TOYBOX console.
+ *
+ * ⚠ ASSERT VISIBLE, THEN DISPATCH — and BOUND the wait. Two separate defects
+ * were riding on the bare `.click()` this replaces:
+ *
+ *  1. NO CAP. `e2e/playwright.config.ts` sets no `actionTimeout`, so a bare
+ *     `.click()` / `.dispatchEvent()` is bounded only by the WHOLE test budget.
+ *     Measured on shard 7 of run 33870999932: the presets-tab click alone
+ *     consumed 98.8 s of a 180 s test, and the failure was then reported
+ *     against the NEXT call — `dispatchEvent` on the export button, a step that
+ *     had not started. A step with no cap of its own can never be the step
+ *     that is blamed.
+ *  2. STABILITY. Playwright's actionability wait also requires an unchanged box
+ *     across two consecutive animation frames, and this console is never
+ *     perfectly still. `dispatchEvent` drops that requirement while keeping
+ *     visibility, which is the real precondition.
+ *
+ * The idiom is `clickInBody` in face-toybox.spec.ts:224 — whose doc comment
+ * already claims THIS file uses it. Now it does.
+ */
+async function clickBounded(target: Locator, what: string): Promise<void> {
+  await expect(target, `${what} must be on screen before it is clicked`).toBeVisible({
+    timeout: 15_000,
+  });
+  await target.dispatchEvent('click');
+}
+
 /** The PRESET store lives on the face's third tab. The layer band (and so the
  *  video picker) is persistent, so only preset work needs this. */
 async function presetsTab(page: Page): Promise<void> {
-  await page.getByTestId('toybox-face-tab-presets').click();
+  await clickBounded(page.getByTestId('toybox-face-tab-presets'), 'the presets tab');
   await expect(page.getByTestId('toybox-preset-section')).toBeVisible({ timeout: 20_000 });
 }
 
@@ -198,9 +227,17 @@ interface ExportedZip {
  *  only reading of "the export worked" that a zero-video zip cannot pass. */
 async function exportAndRead(page: Page): Promise<ExportedZip> {
   await presetsTab(page);
+  // ⚠ The export button lives inside `{#if savingPreset}…{:else}`, so
+  // `toybox-preset-section` being visible does NOT imply the button is
+  // attached. The bounded visibility assert covers that case with a legible
+  // failure instead of a silent budget burn.
+  const exportBtn = page.locator('[data-testid="toybox-preset-export"]').first();
+  await expect(exportBtn, 'the export button must be attached and on screen').toBeVisible({
+    timeout: 15_000,
+  });
   const [download] = await Promise.all([
     page.waitForEvent('download', { timeout: 40_000 }),
-    page.locator('[data-testid="toybox-preset-export"]').first().dispatchEvent('click'),
+    exportBtn.dispatchEvent('click'),
   ]);
   const path = await download.path();
   expect(path, 'the browser produced no downloaded file').toBeTruthy();
@@ -215,6 +252,39 @@ async function exportAndRead(page: Page): Promise<ExportedZip> {
 }
 
 test.describe('#1589 — TOYBOX layer media belongs to the NODE', () => {
+  // ⚠ IDLE THE COMPOSITOR. Spawning TOYBOX spins up the video engine's rAF
+  // loop, which composites 1024×768 every frame; under CI's software renderer
+  // that starves the main thread Playwright's own injected script runs on, and
+  // every round trip on this page inflates. MEASURED, run 33870999932 shard 7:
+  // `toBeVisible` on an already-painted element 4.0 s, `toContainText` on
+  // already-rendered text 3.5 s, the presets-tab click 19.1 s healthy → 103.4 s,
+  // `setInputFiles` 13.9 s → 94.2 s. No wait FAILED; the page answered all of
+  // them, 20–30× slow, and the aggregate ran out.
+  //
+  // This is the #1847 family mechanism that #2345 root-caused on backdraft and
+  // that `toybox-presets.spec.ts` (pinned at 9.9 s) already cures the same way:
+  // `__videoEnginePause` makes the rAF loop IDLE — it keeps re-scheduling but
+  // never calls `step()`. So remove the starvation rather than reschedule
+  // around it.
+  //
+  // ⚠ WHY EVERY TEST IN THIS FILE MAY HAVE IT — checked, not assumed. This file
+  // asserts DOM state, Y.Doc/registry records, the MEDIA CLOCK and zip BYTES,
+  // and never a pixel (the header says so, and it is still true). The media
+  // clock is the one that had to be verified: layer <video> elements are minted
+  // by `node-media-registry`, stamped muted/loop/playsinline and PARKED in the
+  // document — "in the document (and therefore decoding)" — and started by
+  // `ToyboxConsole`'s own `el.play()` on the picker path. None of that goes
+  // through `engine.step()`, so `!v.paused && currentTime > 0.05`, the
+  // wrap-aware accumulation in the parked leg, and the revocation probe all
+  // keep their exact meaning with the loop idle. That is the split #2345 had to
+  // make and this file does not: nothing here needs the live loop.
+  //
+  // It must run before `boot()`'s goto — `installRenderSmokeHooks` is an
+  // addInitScript.
+  test.beforeEach(async ({ page }) => {
+    await installRenderSmokeHooks(page);
+  });
+
   // ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; the body and its assertions are UNCHANGED.
   // NONDETERMINISM: 6 recovered-on-retry observation(s) across 3 SHA(s) / 3 branch(es) in the
   // 96 h CI census to 2026-08-18 — never a hard failure, so every one of those jobs reported SUCCESS.
@@ -428,7 +498,10 @@ test.describe('#1589 — TOYBOX layer media belongs to the NODE', () => {
     // The preset store is the face's third tab; the layer band above is
     // persistent, which is why the two assertions before this one need no tab.
     await presetsTab(page);
-    await page.locator('[data-testid="toybox-preset-export"]').first().dispatchEvent('click');
+    await clickBounded(
+      page.locator('[data-testid="toybox-preset-export"]').first(),
+      'the export button',
+    );
 
     const err = page.getByTestId('toybox-preset-error');
     await expect(err).toContainText('Export cancelled', { timeout: 20_000 });

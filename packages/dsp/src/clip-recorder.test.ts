@@ -21,6 +21,7 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import {
   CLIP_RECORDER_CHUNK_FRAMES as CHUNK_FRAMES,
   CLIP_RECORDER_LANES as NUM_LANES,
+  CLIP_RECORDER_MAX_ARM_SLIP_FRAMES as MAX_ARM_SLIP,
   CLIP_RECORDER_PROCESSOR,
   type ClipRecorderChunkMsg as ChunkMsg,
   type ClipRecorderDoneMsg as DoneMsg,
@@ -228,6 +229,169 @@ describe('frame-exact windows', () => {
     const m = h2.chunksFor(3)[0]!;
     expect(m.data[100]).toBe(m.data[0]); // R === L
     expect(m.data[0]).toBe(sampleAt(3, 0));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ⚠ THE CASE THIS FILE DID NOT HAVE — and the reason a real take was lost.
+//
+// The window is resolved on the MAIN thread from `ctx.currentTime` plus a fixed
+// lead, so an `arm` can drain AFTER this thread has already rendered past its
+// own `startFrame`. The old slice clamped its offset (`Math.max(0, start − q0)`)
+// and silently dropped the head: 95872 of 96000 frames, exactly one quantum,
+// scaling with lateness — and the commit demands the length byte-exactly, so
+// the take was refused and no clip was ever written.
+//
+// EVERY ASSERTION BELOW FAILS AGAINST THE OLD SLICE. That is the positive
+// control: `frames` came back short by 128×N, and the head samples were the
+// ones missing, so the take was out of phase with its own loop as well.
+// ---------------------------------------------------------------------------
+
+/** Arm `lane` for a `len`-frame take whose `arm` message drains `lateQuanta`
+ *  quanta after its own punch-in — the message losing its race with the audio
+ *  thread, spelled as the harness's own clock rather than as a wall-clock
+ *  delay. Returns the punch-in the main thread ASKED for and the slip it cost.
+ *  `len: null` arms an ENDLESS take (no resolved stop). */
+function armLate(
+  h: Harness,
+  lane: number,
+  opts: { start: number; len: number | null; lateQuanta: number },
+): { start: number; slip: number } {
+  const { start, len, lateQuanta } = opts;
+  // Render up to and PAST the punch-in while the arm is still in the queue.
+  const before = Math.ceil(start / BLOCK) + lateQuanta;
+  for (let q = 0; q < before; q++) h.quantum([lane]);
+  h.send({
+    type: 'arm',
+    lane,
+    startFrame: start,
+    stopFrame: len === null ? null : start + len,
+  });
+  return { start, slip: before * BLOCK - start };
+}
+
+describe('⚠ a LATE arm SLIDES, never truncates', () => {
+  it('an ON-TIME arm is untouched: exact length, exact first sample, done reports the requested start', () => {
+    // The control. `startFrame` lands inside the quantum that is about to
+    // render, so the slide's guard (`q0 > startFrame`) cannot fire.
+    const h = makeHarness();
+    h.quantum([0]);
+    const start = 2 * BLOCK + 41;
+    h.send({ type: 'arm', lane: 0, startFrame: start, stopFrame: start + 700 });
+    for (let q = 0; q < 8; q++) h.quantum([0]);
+    const done = h.doneFor(0);
+    expect(done).toHaveLength(1);
+    expect(done[0]!.frames).toBe(700);
+    expect(done[0]!.startFrame).toBe(start); // no slip — the take got what it asked for
+    const L = takeL(h.chunksFor(0));
+    expect(L[0]).toBe(sampleAt(0, start));
+    expect(L[699]).toBe(sampleAt(0, start + 699));
+  });
+
+  it.each([1, 2, 5, 20, 32])(
+    'an arm drained %i quanta late still captures EXACTLY stopFrame − startFrame',
+    (lateQuanta) => {
+      const h = makeHarness();
+      const { start, slip } = armLate(h, 1, { start: 3 * BLOCK, len: 9600, lateQuanta });
+      expect(slip).toBe(lateQuanta * BLOCK); // the miss, spelled out
+      for (let q = 0; q < 9600 / BLOCK + lateQuanta + 2; q++) h.quantum([1]);
+      const done = h.doneFor(1);
+      expect(done).toHaveLength(1);
+      // THE LENGTH IS THE CONTRACT. Under the old slice this was 9600 − slip.
+      expect(done[0]!.frames).toBe(9600);
+      // …and the take is not a truncation: it is the same window, moved.
+      expect(done[0]!.startFrame).toBe(start + slip);
+      const L = takeL(h.chunksFor(1));
+      expect(L).toHaveLength(9600);
+      expect(L[0]).toBe(sampleAt(1, start + slip)); // the HEAD survived
+      expect(L[9599]).toBe(sampleAt(1, start + slip + 9599));
+    },
+  );
+
+  it('reports the ACTUAL start on done, so a slip is observable rather than inferred', () => {
+    // Without this field the main thread cannot tell a punched-on-time take
+    // from a slid one — every take now reports the exact requested LENGTH.
+    const h = makeHarness();
+    const { start, slip } = armLate(h, 2, { start: 4 * BLOCK, len: 1024, lateQuanta: 3 });
+    for (let q = 0; q < 16; q++) h.quantum([2]);
+    expect(h.doneFor(2)[0]!.startFrame - start).toBe(slip);
+    expect(slip).toBe(3 * BLOCK);
+  });
+
+  it('lanes armed late in ONE task still share a first frame (multitrack stays sample-aligned)', () => {
+    const h = makeHarness();
+    const lanes = [3, 4, 5];
+    const start = 2 * BLOCK;
+    for (let q = 0; q < 2 + 4; q++) h.quantum(lanes); // 4 quanta past the punch-in
+    for (const lane of lanes) {
+      h.send({ type: 'arm', lane, startFrame: start, stopFrame: start + 2048 });
+    }
+    for (let q = 0; q < 24; q++) h.quantum(lanes);
+    const starts = lanes.map((lane) => h.doneFor(lane)[0]!.startFrame);
+    expect(new Set(starts).size).toBe(1); // ONE slid punch-in, shared
+    for (const lane of lanes) {
+      expect(h.doneFor(lane)[0]!.frames).toBe(2048);
+      // Alignment by VALUE, not by agreement: every lane's first captured
+      // sample is that lane's sample at the SAME global frame.
+      expect(takeL(h.chunksFor(lane))[0]).toBe(sampleAt(lane, starts[0]!));
+    }
+  });
+
+  it('⚠ REFUSES past the slide bound: zero frames, no chunks, and the frame it had reached', () => {
+    // The bound is what keeps a loud, recoverable failure from becoming a
+    // silent musical one. 33 quanta = 4224 frames > MAX_ARM_SLIP (4096).
+    const h = makeHarness();
+    const { start } = armLate(h, 6, { start: 2 * BLOCK, len: 4800, lateQuanta: 33 });
+    for (let q = 0; q < 60; q++) h.quantum([6]);
+    const done = h.doneFor(6);
+    expect(done).toHaveLength(1);
+    expect(done[0]!.frames).toBe(0); // REFUSED — not a short take, and not a slid one
+    expect(done[0]!.startFrame).toBe(start + 33 * BLOCK); // where the thread actually was
+    expect(h.chunksFor(6)).toHaveLength(0); // nothing was captured at all
+    expect(MAX_ARM_SLIP).toBe(4096); // the bound these numbers straddle
+  });
+
+  it('slides EXACTLY at the bound (the boundary is honoured, not approximated)', () => {
+    const h = makeHarness();
+    const { start } = armLate(h, 7, { start: 2 * BLOCK, len: 2048, lateQuanta: 32 });
+    for (let q = 0; q < 60; q++) h.quantum([7]);
+    const done = h.doneFor(7)[0]!;
+    expect(32 * BLOCK).toBe(MAX_ARM_SLIP); // 4096 — the last honoured miss
+    expect(done.frames).toBe(2048);
+    expect(done.startFrame).toBe(start + MAX_ARM_SLIP);
+  });
+
+  it('⚠ an ENDLESS take that slid still stops on a WHOLE unit (the stopAt rebase)', () => {
+    // The main thread resolves an endless stop from the start it REQUESTED
+    // (`clipRecEndlessStopFrame` = requestedStart + n × unitFrames) and posts
+    // it as an ABSOLUTE frame. Against a slid take, a naive compare would take
+    // that earlier frame — "never EXTEND a resolved stop" — and truncate by
+    // exactly the slip: this very defect, re-created in the other mode.
+    const h = makeHarness();
+    const unit = 512;
+    const { start, slip } = armLate(h, 0, { start: 3 * BLOCK, len: null, lateQuanta: 6 });
+    h.quantum([0]); // the slide happens here
+    h.send({ type: 'stopAt', lane: 0, stopFrame: start + 2 * unit }); // n = 2 units
+    for (let q = 0; q < 20; q++) h.quantum([0]);
+    const done = h.doneFor(0);
+    expect(done).toHaveLength(1);
+    expect(done[0]!.frames).toBe(2 * unit); // TWO WHOLE UNITS, not 1024 − slip
+    expect(done[0]!.startFrame).toBe(start + slip);
+  });
+
+  it('an endless stopAt that arrives BEFORE the slide is carried by the slide itself', () => {
+    // The other message order: both arm and stopAt drain in one task, so the
+    // stop is already resolved when the window moves — and the window moves
+    // whole, stop included. Both orders must give the same take.
+    const h = makeHarness();
+    const start = 3 * BLOCK;
+    for (let q = 0; q < 3 + 6; q++) h.quantum([1]);
+    h.send({ type: 'arm', lane: 1, startFrame: start, stopFrame: null });
+    h.send({ type: 'stopAt', lane: 1, stopFrame: start + 1024 });
+    for (let q = 0; q < 20; q++) h.quantum([1]);
+    const done = h.doneFor(1)[0]!;
+    expect(done.frames).toBe(1024);
+    expect(done.startFrame).toBe(start + 6 * BLOCK);
   });
 });
 
