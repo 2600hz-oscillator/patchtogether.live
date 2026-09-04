@@ -303,7 +303,6 @@ e2e/tests/videobox-upload-perf.spec.ts :: decode-rate uploads + engine sustains 
 e2e/tests/videocube.spec.ts :: audio_out: the derived cube-slice drone produces audible RMS at a SCOPE :: waitForTimeout(1500) #1
 e2e/tests/videocube.spec.ts :: audio_out: the derived cube-slice drone produces audible RMS at a SCOPE :: waitForTimeout(200) #1
 e2e/tests/videocube.spec.ts :: scope_out: a video trace whose shape matches the audio wave :: waitForTimeout(200) #1
-e2e/tests/videocube.spec.ts :: the VIEW / slice-ROT / SCAN-SPREAD joystick pads each drag BOTH axis params :: waitForTimeout(200) #1
 e2e/tests/videovarispeed-crop.spec.ts :: crop output routes downstream, windows the frame, and the overlay is truthful :: waitForTimeout(300) #1
 e2e/tests/videovarispeed-crop.spec.ts :: crop output routes downstream, windows the frame, and the overlay is truthful :: waitForTimeout(400) #1
 e2e/tests/videovarispeed-output.spec.ts :: 1× / 2× / 0.5× / reverse all keep VIDEO-OUT showing moving video :: waitForTimeout(500) #1

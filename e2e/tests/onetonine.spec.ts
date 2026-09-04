@@ -71,7 +71,7 @@ async function setup(page: Page): Promise<string[]> {
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await page.waitForLoadState('networkidle');
   return errors;
 }
@@ -108,23 +108,23 @@ test.describe('ONE TO NINE — 3×3 screen splitter', () => {
     ];
     await spawnPatch(page, nodes, edges);
 
-    await expect(page.locator('[data-testid="onetonine-card"]')).toHaveCount(1);
-    await expect(page.locator('[data-testid="onetonine-canvas"]')).toHaveCount(1);
-    await expect(page.locator('canvas[data-testid="video-out-canvas"]')).toHaveCount(2);
+    await expect(page.locator('.svelte-flow__node:has([data-shell-type="onetonine"])')).toHaveCount(1);
+    await expect(page.locator('.svelte-flow__node[data-id="o1"] [data-testid="module-shell"]')).toHaveCount(1);
+    await expect(page.locator('.svelte-flow__node[data-id="o9"] [data-testid="module-shell"]')).toHaveCount(1);
     await waitFrames(page, CHAIN_FRAMES);
 
     // 1) The MONITOR (the on-card preview = input + grid + numbers) is non-blank
     //    + structured. The amber grid + white digits alone guarantee structure
     //    even if a renderer dims the source.
-    const monitor = await readCanvasStats(page, 'canvas[data-testid="onetonine-canvas"]');
+    const monitor = await readCanvasStats(page, '.svelte-flow__node:has([data-shell-type="onetonine"]) canvas[data-testid="video-tile-thumb"]');
     expect(monitor, 'monitor readable').not.toBeNull();
     expect(monitor!.nonZeroFrac, 'monitor NOT all-black (input + grid + numbers)').toBeGreaterThan(0.1);
     expect(monitor!.variance, 'monitor has spatial structure (grid/numbers + live LINES)').toBeGreaterThan(15);
 
     // 2) out1 (top-left ninth) and out9 (bottom-right ninth), each on its own
     //    videoOut sink — both non-blank AND spatially DIFFERENT from each other.
-    const out1 = await canvasStats(page.locator('canvas[data-testid="video-out-canvas"][data-node-id="o1"]'));
-    const out9 = await canvasStats(page.locator('canvas[data-testid="video-out-canvas"][data-node-id="o9"]'));
+    const out1 = await canvasStats(page.locator('.svelte-flow__node[data-id="o1"] canvas[data-testid="video-tile-thumb"]'));
+    const out9 = await canvasStats(page.locator('.svelte-flow__node[data-id="o9"] canvas[data-testid="video-tile-thumb"]'));
     expect(out1, 'out1 readable').not.toBeNull();
     expect(out9, 'out9 readable').not.toBeNull();
     expect(out1!.nonZeroFrac, 'out1 (top-left crop) is non-blank').toBeGreaterThan(0.05);

@@ -241,10 +241,10 @@ function assertFrame(s: Stats, steps: number): void {
 
 async function boot(page: Page, params: Record<string, number> = {}): Promise<void> {
   await installRenderSmokeHooks(page);
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, nodes(params), edges());
-  await expect(page.locator('[data-testid="warrensvisions-card"]')).toHaveCount(1);
+  await expect(page.locator('.svelte-flow__node:has([data-shell-type="warrensvisions"])')).toHaveCount(1);
 }
 
 test.describe("WARREN'S VISIONS — 2D spectral video resynthesis", () => {
@@ -253,9 +253,9 @@ test.describe("WARREN'S VISIONS — 2D spectral video resynthesis", () => {
   test('real source chain: a grating in → a structured, non-black resynthesis out', async ({ page, errorWatch }) => {
     await boot(page);
 
-    await expect(page.locator('.svelte-flow__node-warrensvisions'), 'card visible').toBeVisible();
-    await expect(page.locator('[data-testid="warrensvisions-canvas"]')).toHaveCount(1);
-    await expect(page.locator('canvas[data-testid="video-out-canvas"]')).toHaveCount(1);
+    await expect(page.locator('.svelte-flow__node:has([data-shell-type="warrensvisions"])'), 'card visible').toBeVisible();
+    // (the card preview canvas died with the card; pixel claims are engine reads)
+    await expect(page.locator('.svelte-flow__node[data-id="v-out"] [data-testid="module-shell"]')).toHaveCount(1);
 
     const s = await setStepRead(page, { nodeId: 'wv', steps: SETTLE_FRAMES });
     assertFrame(s, SETTLE_FRAMES);
@@ -377,7 +377,7 @@ test.describe("WARREN'S VISIONS — 2D spectral video resynthesis", () => {
 
   test('unpatched input renders black without erroring', async ({ page, errorWatch }) => {
     await installRenderSmokeHooks(page);
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
     await spawnPatch(
       page,

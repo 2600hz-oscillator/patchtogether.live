@@ -140,15 +140,15 @@ test.describe('GRAINS OF VISION — granular video synthesizer', () => {
   test('real source chain: A patched → structured non-black OUT + GRAINS tap emits', async ({ page, errorWatch }) => {
     void errorWatch;
     await installRenderSmokeHooks(page);
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
     await spawnPatch(page, baseNodes(), baseEdges());
 
     // DOM structure — the card + its preview canvas + the OUTPUT sink render.
-    await expect(page.locator('.svelte-flow__node-grainsOfVision'), 'card visible').toBeVisible();
-    await expect(page.locator('[data-testid="grainsOfVision-card"]')).toHaveCount(1);
-    await expect(page.locator('[data-testid="grainsOfVision-preview"]')).toHaveCount(1);
-    await expect(page.locator('canvas[data-testid="video-out-canvas"]')).toHaveCount(1);
+    await expect(page.locator('.svelte-flow__node:has([data-shell-type="grainsOfVision"])'), 'card visible').toBeVisible();
+    await expect(page.locator('.svelte-flow__node:has([data-shell-type="grainsOfVision"])')).toHaveCount(1);
+    // (the card preview canvas died with the card; the pixel claims below are engine reads)
+    await expect(page.locator('.svelte-flow__node[data-id="v-out"] [data-testid="module-shell"]')).toHaveCount(1);
 
     // OUT (full chain) is non-black AND spatially STRUCTURED (a grain field over
     // the grating, not a flat fill).
@@ -165,7 +165,7 @@ test.describe('GRAINS OF VISION — granular video synthesizer', () => {
   test('dry-passthrough contract: feedback + reverb dry ⇒ OUT equals the GRAINS tap', async ({ page, errorWatch }) => {
     void errorWatch;
     await installRenderSmokeHooks(page);
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
     // Both blocks bypassed → the chain is transparent → out == grains.
     await spawnPatch(page, baseNodes({ fb_dry: 1, rev_dry: 1 }), baseEdges());
@@ -182,7 +182,7 @@ test.describe('GRAINS OF VISION — granular video synthesizer', () => {
   test('param response: Size grows grain coverage (bigger grains ⇒ brighter frame)', async ({ page, errorWatch }) => {
     void errorWatch;
     await installRenderSmokeHooks(page);
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
     // Bypass feedback + reverb so we read the PURE grain field (isolates Size).
     await spawnPatch(page, baseNodes({ fb_dry: 1, rev_dry: 1 }), baseEdges());
@@ -200,7 +200,7 @@ test.describe('GRAINS OF VISION — granular video synthesizer', () => {
     void errorWatch;
     // Mono (no B): composite is inert → a full grain field.
     await installRenderSmokeHooks(page);
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
     await spawnPatch(page, baseNodes({ fb_dry: 1, rev_dry: 1, composite: 1, comp_amount: 1 }), baseEdges(false));
     const mono = await setStepRead(page, { nodeId: 'gov', steps: STEPS, scale: RENDER_SCALE });
@@ -209,7 +209,7 @@ test.describe('GRAINS OF VISION — granular video synthesizer', () => {
     // With B patched + density-map at full depth, B's dark grating troughs thin
     // the grains out → the coverage/structure changes materially vs mono.
     await installRenderSmokeHooks(page);
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
     await spawnPatch(page, baseNodes({ fb_dry: 1, rev_dry: 1, composite: 1, comp_amount: 1 }, true), baseEdges(true));
     const comp = await setStepRead(page, { nodeId: 'gov', steps: STEPS, scale: RENDER_SCALE });
