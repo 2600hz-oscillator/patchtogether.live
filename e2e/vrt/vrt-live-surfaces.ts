@@ -341,134 +341,20 @@ export interface LiveSurfaceScene {
  *  vrt.spec.ts that is the module type; for the composite specs it is the
  *  scene's own id. One key space, no aliases. */
 export const VRT_LIVE_SURFACES: Record<string, LiveSurfaceScene> = {
-  // ───────────────────────── vrt.spec.ts — per-module cards ──────────────
+  // ⚠ THE TWO PER-MODULE CARD SCENES ARE GONE WITH THE SWEEP THAT CAPTURED THEM.
+  //
+  // `mandelbulb` and `timelorde` were keyed by MODULE TYPE because that is what
+  // a `vrt.spec.ts` scene id was — one screenshot per legacy card. That spec is
+  // deleted, so both scene ids name a baseline that no longer exists and a
+  // surface no capture visits. Their masks' arguments are not lost: each named
+  // a live animated canvas on the CARD, and the faceplate equivalents are
+  // covered by `workflow-shell-faces.spec.ts` scenes with their own entries.
+  //
+  // Every remaining key in this registry belongs to a COMPOSITE or FACE spec,
+  // which is why the structure guards above (an owning spec file that exists, a
+  // committed baseline per scene id) stay meaningful rather than becoming a
+  // formality.
 
-  mandelbulb: {
-    spec: 'vrt.spec.ts',
-    surfaces: [
-      {
-        selector: '[data-testid="mandelbulb-canvas"]',
-        expectCount: 1,
-        why:
-          'The preview ray-marches a 3D fractal in a WebGL fragment shader every frame of ' +
-          'the card rAF loop, with auto-spin advancing the camera azimuth off the engine ' +
-          'clock. GATE RESULT (2026-08-01, darwin, real config, real tolerance, UNMASKED): ' +
-          '`--update-snapshots` COULD NOT WRITE A BASELINE AT ALL — 8 consecutive settle ' +
-          'attempts differing 3 970 / 4 060 / 3 919 / 5 952 / 11 304 / 20 117 / 24 952 / ' +
-          '27 636 px (ratio 0.02 rising to 0.10), then "Failed to take two consecutive ' +
-          'stable screenshots. Timeout 15000ms exceeded". That is stronger than an n/10 ' +
-          'failure rate: the gate cannot produce an expected image, so there is nothing to ' +
-          'compare against. Note the deltas GROW monotonically — the spin accelerates away ' +
-          'from every candidate settle. Note also the SECOND canvas on this card ' +
-          '(mandelbulb-slice-readout) is deliberately NOT masked; it is stable and stays ' +
-          'in the diff.',
-        companion: {
-          minInkFraction: 0.056,
-          minLumaStdDev: 12,
-          minDistinctLumaBuckets: 6,
-          minMeanChroma: 6,
-          rationale:
-            'MASKS 22.6 % of the card (62 640 magenta px of 526x527); the card keeps its second, ' +
-            'STABLE canvas in the diff. ' +
-            'MEASURED on the 290x217 CSS-px preview through the REAL capture path, 3 runs: ink ' +
-            '0.1707 / 0.1738 / 0.1747, stdDev 28.98 / 29.43 / 29.49, buckets 11 x3, chroma ' +
-            '17.98 / 18.00 / 18.01 — the ~2 % spread is the auto-spin advancing between runs. ' +
-            'Force-killed (opacity:0, so this row is the CARD FACE behind the canvas): ink ' +
-            '0.0160, stdDev 6.59, buckets 4, chroma 3.76. Floors: ink 0.056 is a third of the ' +
-            'SMALLEST live value and 3.5x dead; stdDev 12 is 1.8x dead and 2.4x below live ' +
-            '(deliberately NOT a third — a third would be 9.7, only 1.5x above the dead ' +
-            'backdrop, too close to prove anything); buckets 6 sits between dead 4 and live 11; ' +
-            'chroma 6 is 1.6x dead and 3x below live, and catches a DE march that collapsed to ' +
-            'a flat silhouette.',
-        },
-      },
-    ],
-  },
-
-  timelorde: {
-    spec: 'vrt.spec.ts',
-    surfaces: [
-      {
-        selector: '[data-testid^="timelorde-wizard-wrap-"]',
-        expectCount: 1,
-        why:
-          'TWO INDEPENDENT DEFECTS, and the mask only ever addressed one of them. ' +
-          '(1) THE RENDER. The 220x220 display canvas blits the owl painting SCALED ' +
-          '(drawImage with imageSmoothingEnabled), and under reducedMotion the card paints ' +
-          'exactly ONE frame and stops — so whichever raster state Chromium had at that ' +
-          'instant is latched. THIS ENTRY WAS CHALLENGED AND RE-DERIVED (see instrument bugs ' +
-          'C and D in the header): an adversarial verify measured 40/40 PASS unmasked and ' +
-          'called the mask unjustified. That number is reproducible and it was taken with ' +
-          '`--repeat-each` (one browser launch = ONE trial, counted ten times) and with the ' +
-          'companion path still perturbing the card. GATE RESULT under the corrected ' +
-          'instrument (2026-08-01, darwin, real config, real tolerance, UNMASKED, fresh ' +
-          'unmasked baseline, N SEPARATE PROCESSES via scripts/vrt-derive-trials.sh): ' +
-          '13/20 PASS — a 35 % FAILURE RATE — with failures at 9 086 / 9 560 / 10 236 / ' +
-          '10 263 / 11 739-12 284 px (ratio 0.05-0.07, budget 0.01). THE CONTROL, same ' +
-          'machine, same session, WITH this mask: 16/16 separate processes PASS, so the ' +
-          'instability is the card and not the environment. Independently confirmed by the ' +
-          'frame-stability probe: the display never settles at all — consecutive captures ' +
-          '1.2 s apart differ by a CONSTANT 25 246 px over four comparisons, bbox ' +
-          '(60,36)-(291,268) = 232x233, which is the display canvas plus its glow. A ' +
-          'constant delta at irregular spacing is period-2 alternation between two discrete ' +
-          'renders, matching the earlier finding that the OWL BODY is unchanged while the ' +
-          'BLUE BORDER/ear highlights alternate crisp+saturated vs washed+ragged — two ' +
-          'downscale resamples of one source image. The beat pulse is NOT the cause: it is ' +
-          'pinned to 0 under reducedMotion and applyBeatBoost early-returns at pulse<=0. ' +
-          '(2) THE MASK MISSED THE GLOW — this is why the previous round measured timelorde ' +
-          'FAILING WITH ITS MASK IN PLACE. `.display` carries ' +
-          '`box-shadow: 0 0 calc(2px + 10px * --wiz-pulse)`, and a box-shadow paints OUTSIDE ' +
-          'the border box, i.e. outside the rect Playwright fills for a mask on that element. ' +
-          'MEASURED by locating the magenta rect in the baseline and splitting the diff ' +
-          'across it: with the CANVAS masked there were 0 above-threshold differing pixels ' +
-          'INSIDE the 214x214 magenta rect and 6 270 OUTSIDE it, in a ring (62,38)-(289,266). ' +
-          'The mask was doing its job perfectly on everything it covered, and the test failed ' +
-          'anyway. Moving the mask to the WRAP (which contains the canvas and the area its ' +
-          'glow paints into) is what takes the scene to 16/16 separate processes. Note the ' +
-          'alternating bbox measured above (232x233) is WIDER than the 214x214 canvas and ' +
-          'lands inside the wrap — an independent confirmation that the canvas-only mask ' +
-          'could not have covered it. ' +
-          'TWO ROOT FIXES FOR (1) WERE TRIED AND BOTH MEASURED AS NOT WORKING: (a) awaiting ' +
-          'img.decode() before owlReady instead of img.onload — the states stopped being ' +
-          'byte-identical and became continuous (15 088 / 15 354 / 15 237 / 9 599 px), i.e. ' +
-          'different, not better; (b) additionally pre-scaling the painting once into an ' +
-          'OffscreenCanvas at imageSmoothingQuality high and blitting 1:1 — also continuous ' +
-          '(14 398 / 10 742 / 10 504 / 3 023 px). Both were REVERTED rather than shipped, ' +
-          'because a change that alters the failure mode without removing it is not a fix and ' +
-          'shipping it would only make the next reader believe the problem was handled. The ' +
-          'remaining candidate is nearest-neighbour (imageSmoothingEnabled=false), which is ' +
-          'deterministic by construction but visibly degrades the artwork — a look-affecting ' +
-          'product change that needs owner review, not a VRT PR.',
-        companion: {
-          minInkFraction: 0.13,
-          minLumaStdDev: 17,
-          minDistinctLumaBuckets: 5,
-          minMeanChroma: 13,
-          rationale:
-            'MASKS 41.3 % of the card (76 650 magenta px of 352x527) — UP FROM 25.6 % when it ' +
-            'masked the canvas alone, and that increase is the price of a mask that actually ' +
-            'works. It is stated rather than buried: the extra 15.7 % is the wrap band around ' +
-            'the display, which carries the box-shadow glow the canvas mask could not reach ' +
-            '(0 in-mask vs 6 270 out-of-mask differing pixels, measured) plus the small owl ' +
-            'thumbnail toggle. The card title, transport, BPM/SWING/SRC knobs, tempo readout ' +
-            'and every jack stay strict. ' +
-            'MEASURED on the 350x219 CSS-px wrap through the REAL vrt.spec.ts capture path, ' +
-            '10 consecutive gate runs: ink 0.3904-0.3939, stdDev 50.60-51.00, buckets 14 x10, ' +
-            'chroma 39.58-39.78 — a spread under 1 % on every statistic, which is what makes ' +
-            'floors at a third of live safe. Force-killed (opacity:0 — the card face behind ' +
-            'the wrap): ink 0.0000, stdDev 0.67, buckets 2, chroma 8.01. Floors: ink 0.13 is a ' +
-            'third of live against a dead value of exactly zero; stdDev 17 is a third of live ' +
-            'and 25x dead; buckets 5 sits between dead 2 and live 14. The chroma floor of 13 ' +
-            'is the weakest of the four at only 1.6x the dead 8.01 (the card face is not ' +
-            'colourless), and it is kept anyway because it is the one statistic that pins the ' +
-            'OWL PAINTING rather than merely "something is drawn": the fallback this canvas ' +
-            'paints before the artwork decodes is a near-black flat ground, and — given the ' +
-            'decode race documented in `why` — that fallback is a state this card can really ' +
-            'reach.',
-        },
-      },
-    ],
-  },
 
   // ──────────── vrt-wavesculpt-blink.spec.ts — the two RIBBON modes ───────
   //

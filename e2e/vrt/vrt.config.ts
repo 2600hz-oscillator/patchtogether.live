@@ -103,9 +103,12 @@ const GPU_ARGS =
 // in FULL_MATCH as well, because `task vrt:update` (the baseline CAPTURE) does
 // NOT set VRT_STRICT, and dropping the faces from FULL_MATCH would silently
 // stop capturing 64 baselines — a far worse failure than a duplicated run.
-const STRICT_MATCH = ['vrt.spec.ts', 'workflow-shell-faces.spec.ts'];
+// ⚠ ONE FILE. `vrt.spec.ts` — the per-module LEGACY CARD sweep — was the other
+// half of this lane and is deleted with the fleet it photographed. The face
+// scenes are now the whole required lane, which is the shape the note above
+// argued for on cost grounds long before the cards went.
+const STRICT_MATCH = ['workflow-shell-faces.spec.ts'];
 const FULL_MATCH = [
-  'vrt.spec.ts',
   'vrt-wavesculpt-blink.spec.ts',
   'vrt-wavesculpt-walls.spec.ts',
   'vrt-scope-modes.spec.ts',

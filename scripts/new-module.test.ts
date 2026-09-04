@@ -48,7 +48,6 @@ const REGISTRY_FILES = [
   'packages/web/src/lib/ui/Canvas.svelte',
   'packages/web/src/lib/ui/module-categories.ts',
   'packages/web/src/lib/docs/module-manifest.ts',
-  'e2e/vrt/vrt-exemptions.ts',
   'packages/web/src/lib/ui/modules-card-map.test.ts',
 ] as const;
 
@@ -120,7 +119,6 @@ const {
   CANVAS_PATH,
   MODULE_CATEGORIES_PATH,
   MANIFEST_PATH,
-  VRT_EXEMPTIONS_PATH,
   CARD_MAP_TEST_PATH,
   audioModulePath,
   videoModulePath,
@@ -215,7 +213,6 @@ describe('scaffold — happy path (audio)', () => {
     // Edits limited to the 3 still-hand-maintained lists: manifest prose,
     // VRT exemptions, the card-map test enumeration.
     expect(res.filesEdited).toContain(MANIFEST_PATH);
-    expect(res.filesEdited).toContain(VRT_EXEMPTIONS_PATH);
     expect(res.filesEdited).toContain(CARD_MAP_TEST_PATH);
 
     // The four conflict-prone shared files are NOT edited anymore.
@@ -254,9 +251,12 @@ describe('scaffold — happy path (audio)', () => {
     expect(manifest).toContain(`${toCamel(TEST_TYPE_A)}:`);
     expect(manifest).toContain(`Scaffolded by scripts/new-module.ts`);
 
-    // Sanity: VRT exemption with a reason longer than the 10-char gate.
-    const vrt = readFileSync(VRT_EXEMPTIONS_PATH, 'utf8');
-    expect(vrt).toMatch(new RegExp(`${toCamel(TEST_TYPE_A)}:\\s*'pending baseline`));
+    // ⚠ THE VRT-EXEMPTION SANITY CHECK IS GONE WITH THE STEP IT CHECKED. The
+    // scaffolder used to inject a "pending baseline" `EXEMPT_FROM_VRT` entry so
+    // the per-module legacy-CARD sweep would not fail on an unphotographed
+    // card. That sweep and its exemption tables are deleted; a new module's
+    // visual coverage is a FACE scene it earns by promotion, not an excuse it
+    // is issued on the way in.
   });
 });
 
@@ -344,7 +344,6 @@ describe('undo', () => {
       CANVAS_PATH,
       MODULE_CATEGORIES_PATH,
       MANIFEST_PATH,
-      VRT_EXEMPTIONS_PATH,
       CARD_MAP_TEST_PATH,
     ]) {
       const src = readFileSync(f, 'utf8');
@@ -368,7 +367,7 @@ describe('undo', () => {
   // still wrong.
   it('is BYTE-EXACT — a scaffold/undo cycle leaves every edited file unchanged', () => {
     const before = new Map<string, string>(
-      [MANIFEST_PATH, VRT_EXEMPTIONS_PATH, CARD_MAP_TEST_PATH].map(
+      [MANIFEST_PATH, CARD_MAP_TEST_PATH].map(
         (f) => [f, readFileSync(f, 'utf8')],
       ),
     );
@@ -475,7 +474,7 @@ describe('GUARD — the scaffolder suite never touches the real working copy', (
     expect(REPO_ROOT, 'new-module.ts did not honour NEW_MODULE_REPO_ROOT').toBe(SANDBOX);
 
     for (const p of [
-      CARD_MAP_TEST_PATH, MANIFEST_PATH, VRT_EXEMPTIONS_PATH, GRAPH_TYPES_PATH,
+      CARD_MAP_TEST_PATH, MANIFEST_PATH, GRAPH_TYPES_PATH,
       CANVAS_PATH, MODULE_CATEGORIES_PATH,
       REGISTRY_PATHS.audio, REGISTRY_PATHS.video, REGISTRY_PATHS.meta,
       audioModulePath(TEST_TYPE_A), cardPath(toPascal(TEST_TYPE_A)),

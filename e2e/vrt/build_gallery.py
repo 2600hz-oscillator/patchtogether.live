@@ -212,11 +212,6 @@ CATEGORIES: List[Tuple[str, str, str]] = [
         "compact lane tile + dock full-view (+ rear card where one exists).",
     ),
     (
-        "modules",
-        "Modules",
-        "Per-card solo baselines from vrt.spec.ts — one scene per registered module.",
-    ),
-    (
         "composite",
         "Composite States",
         "Multi-module scenes wired with a patch cord: one module's signal driving "
@@ -250,8 +245,6 @@ def categorize(spec_dir: str, stem: str, strict_faces: frozenset) -> str:
     """Which tab does this baseline belong to? TOTAL — always returns a tab."""
     if face_key(spec_dir, stem, strict_faces) is not None:
         return "ui-v2"
-    if spec_dir == "vrt.spec.ts":
-        return "modules"
     if spec_dir in _CHROME_SPECS:
         return "chrome"
     if spec_dir.startswith("workflow-"):
@@ -501,8 +494,9 @@ def _baseline_thumb(entry: Entry, what: str) -> str:
 
 
 def _blurb_for(entry: Entry) -> str:
-    if entry.category == "modules":
-        return MODULE_BLURB.get(entry.stem, "")
+    # `categorize()` can no longer return "modules" — that tab was the per-card
+    # `vrt.spec.ts` sweep, deleted with the fleet. MODULE_BLURB itself survives:
+    # the UI v2 tab still keys it by MODULE TYPE for the faceplate sections.
     return COMPOSITE_BLURB.get(entry.stem, "")
 
 

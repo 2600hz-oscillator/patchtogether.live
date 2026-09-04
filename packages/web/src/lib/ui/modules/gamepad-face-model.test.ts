@@ -31,10 +31,6 @@ import { paramCellKind, SEGMENTED_MAX_OPTIONS } from '$lib/ui/workflow/shell-con
 import { dockFacePlan, dockPlanControls, laneOrder, curatedFace } from '$lib/ui/workflow/curated-face';
 import { glyphBinding } from '$lib/ui/workflow/shell-glyph-live';
 import {
-  EXEMPT_FROM_VRT,
-  ALLOWED_PERMANENT_EXEMPT,
-} from '../../../../../../e2e/vrt/vrt-exemptions';
-import {
   PAD_PX,
   dotX,
   dotY,
@@ -373,14 +369,15 @@ describe('gamepad — the sweep EXTENT is a picture of the deleted readout', () 
 });
 
 describe('gamepad — the VRT drain', () => {
-  it('is drained from BOTH lists, and the anchor holds in both directions', () => {
-    // ⚠ A ONE-SIDED DELETE IS RED IN `vrt-meta.test.ts`, which is what makes a
-    // drain a two-line edit rather than a policy discussion. Restated here with
-    // the reason, because this module's exemption is the one whose PREMISE was
-    // true and whose CONCLUSION did not follow.
-    expect('gamepad' in EXEMPT_FROM_VRT, 'the card scene is captured now').toBe(false);
-    expect(ALLOWED_PERMANENT_EXEMPT.has('gamepad'), 'no stale licence left behind').toBe(false);
-  });
+  // ⚠ THE TWO-LIST ANCHOR IS GONE BECAUSE THE LISTS ARE. This block opened with
+  // a leg asserting `gamepad` was absent from BOTH `EXEMPT_FROM_VRT` and
+  // `ALLOWED_PERMANENT_EXEMPT` — the drain's own bookkeeping, restated here so a
+  // one-sided delete reddened twice. Both tables lived in
+  // `e2e/vrt/vrt-exemptions.ts` and existed only to steer the per-module LEGACY
+  // CARD sweep; that sweep is deleted and the tables with it, so there is no
+  // list left to be absent from. The leg BELOW is the one that mattered anyway:
+  // it holds the drain's PREMISE (the disconnected surface is a pure function of
+  // the code) against the code itself, which no roster edit can fake.
 
   it('the DISCONNECTED surface is a pure function of the code — the drain\'s premise', () => {
     // The exemption said the live `navigator.getGamepads()` poll defeats

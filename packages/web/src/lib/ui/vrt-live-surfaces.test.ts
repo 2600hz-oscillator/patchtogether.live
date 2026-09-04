@@ -48,7 +48,6 @@ import {
   rejectsDeadRender,
   type SurfaceCompanion,
 } from '../../../../../e2e/vrt/vrt-surface-stats';
-import { VRT_MODULE_MASKS, EXEMPT_FROM_VRT } from '../../../../../e2e/vrt/vrt-exemptions';
 import { VRT_SCENES } from '../../../../../e2e/vrt/vrt-scenes';
 import {
   findHandRolledMasks,
@@ -171,12 +170,6 @@ const LEGACY_INLINE_MASK_SPECS = new Set<string>([
 // the posterbox note in RATCHET 1 above is the worked example). The point of
 // this table is that the size of the debt is visible instead of implied.
 
-/** The subset of VRT_MODULE_MASKS that vrt.spec.ts actually applies. */
-function liveLegacyMaskTypes(): string[] {
-  return Object.keys(VRT_MODULE_MASKS).filter(
-    (type) => !(type in EXEMPT_FROM_VRT) && !(type in VRT_SCENES),
-  );
-}
 
 /** Words that name a DRIVER of non-determinism. A `why` that cannot name one
  *  is not an explanation — it is a shrug, and the next reader cannot tell
@@ -713,74 +706,19 @@ describe('VRT masks: nobody routes around the registry', () => {
     });
   });
 
-  it('every legacy mask names WHY the region cannot be diffed', () => {
-    // THE REPLACEMENT FOR THE DELETED COUNT. Every MaskRect deletes pixels from
-    // the diff with nothing put back, so the card may render that region blank
-    // forever and still pass. `why` is required by the type; this asserts it is
-    // an explanation rather than a length. Deny-by-default and per-ENTRY, not
-    // per-file: a second mask added to an already-explained module still has to
-    // explain itself.
-    const bad: string[] = [];
-    for (const [type, rects] of Object.entries(VRT_MODULE_MASKS)) {
-      for (const rect of rects) {
-        const why = rect.why ?? '';
-        if (why.length <= 40) {
-          bad.push(`${type} '${rect.selector}': why is ${why.length} chars — say what it is`);
-          continue;
-        }
-        if (!MASK_CAUSE_VOCABULARY.some((w) => why.toLowerCase().includes(w.toLowerCase()))) {
-          bad.push(
-            `${type} '${rect.selector}': why names no recognised cause. Say what MAKES the ` +
-              `region unstable (${MASK_CAUSE_VOCABULARY.slice(0, 6).join(' / ')} / …), or that ` +
-              `it is a placeholder/empty state or a scene-overridden FALLBACK.`,
-          );
-        }
-      }
-    }
-    expect(
-      bad.join('\n'),
-      'a mask with no stated cause is coverage deleted for a reason nobody can check. ' +
-        'Better than any `why`: migrate the entry into e2e/vrt/vrt-live-surfaces.ts, where the ' +
-        'same region gets a measured companion + a per-run negative control.',
-    ).toBe('');
-  });
-
-  it('...and that check can SEE a bare mask (negative control on the same predicate)', () => {
-    // The scan above reads identically green whether every entry explains
-    // itself or the loop found nothing. Feed the SAME predicate known answers.
-    const probe = (why: string): boolean =>
-      why.length > 40 &&
-      MASK_CAUSE_VOCABULARY.some((w) => why.toLowerCase().includes(w.toLowerCase()));
-    expect(probe(''), 'an empty why must fail').toBe(false);
-    expect(probe('canvas'), 'a one-word why must fail').toBe(false);
-    expect(
-      probe('this region is masked because it is masked and has been for a long time now'),
-      'a long why naming no cause must still fail — length is not an explanation',
-    ).toBe(false);
-    expect(
-      probe('live preview canvas repainting off the engine clock every frame, so no two runs match'),
-      'a why naming a real driver must pass',
-    ).toBe(true);
-    // …and the live table is non-empty, so the real assertion is not vacuous.
-    expect(
-      Object.keys(VRT_MODULE_MASKS).length,
-      'VRT_MODULE_MASKS is empty — retire this guard deliberately rather than leaving it green',
-    ).toBeGreaterThan(0);
-    expect(
-      liveLegacyMaskTypes().length,
-      'no legacy mask is LIVE any more (every one is inert via EXEMPT_FROM_VRT / VRT_SCENES). ' +
-        'That is the goal state — delete the table and this guard together when it happens.',
-    ).toBeGreaterThan(0);
-  });
-
-  it('a scene is masked from exactly ONE place', () => {
-    // Both tables applying to the same module would mean two sources of truth
-    // for one region, and the registry's companion could be silently bypassed.
-    const overlap = MASKED_SCENE_IDS.filter((id) => id in VRT_MODULE_MASKS);
-    expect(
-      overlap,
-      'These module types are in BOTH VRT_MODULE_MASKS and VRT_LIVE_SURFACES. Delete the ' +
-        'VRT_MODULE_MASKS entry — the registry is the source of truth.',
-    ).toEqual([]);
-  });
+  // ⚠ THE THREE LEGACY-MASK LEGS ARE GONE, AND THE LAST ONE SAID SO ITSELF.
+  //
+  // They asserted that every `VRT_MODULE_MASKS` entry named a real cause, that
+  // the predicate could see a bare mask, and that no scene was masked from both
+  // that table and this registry. All three read `VRT_MODULE_MASKS` /
+  // `EXEMPT_FROM_VRT` out of `e2e/vrt/vrt-exemptions.ts`, which existed ONLY to
+  // steer the per-module legacy CARD sweep. The sweep is deleted, so the table
+  // applies to nothing — and the negative control here carried the exit
+  // condition in its own message: "no legacy mask is LIVE any more … that is
+  // the goal state — delete the table and this guard together when it happens."
+  // It happened.
+  //
+  // Nothing about the REGISTRY's own guarantees moves: every leg above still
+  // runs, and the "nobody routes around the registry" scan is what stops a mask
+  // reappearing outside it.
 });
