@@ -17,7 +17,7 @@
 //      the source channel's send amount auto-raises, and with the dry channel
 //      muted the WET-only path is still audible.
 //
-// Driving /rack?shell=legacy keeps this in the normal e2e lane (no DB/relay).
+// Driving /rack keeps this in the normal e2e lane (no DB/relay).
 // Audio RMS uses the same real AudioContext the other audio specs assert on (the
 // --autoplay-policy launch flag lets it start headless); thresholds are tolerant
 // and timeouts generous for the CI software renderer / slow round-trips.
@@ -26,16 +26,26 @@ import { test, expect, type Page } from '@playwright/test';
 import { installRenderSmokeHooks } from './_render-smoke';
 import { installMidiOutCapture } from '../_helpers/midi';
 import { BOOT_MS } from '../_helpers/boot-budget';
+import {
+  SHELL_COLUMN_W,
+  COLUMN_BASELINE_Y,
+} from '../../packages/web/src/lib/graph/channel-columns';
 
-/** channel-columns.ts geometry (kept in sync with the pure module). */
-const COLUMN_W = 765; // 34 * HP_UNIT(22.5) — wide enough for a 720px tidyvco/sixstrum
-const SEND_RAIL_X0 = 8 * COLUMN_W; // 6120
-/** COLUMN_BASELINE_Y — COLUMN_SLOT_H(720) × COLUMN_MAX_SLOTS(6). The lane band's
- *  BOTTOM edge, and the anchor every in-band drop position below is taken from:
- *  the drop hit-test is 2-D (laneTargetForFlowPoint), so a spawn/drop must land
- *  inside `[laneTopY, COLUMN_BASELINE_Y)` in Y as well as inside a column in X.
- *  A Y just above the baseline is in-band at every lane height. */
-const COLUMN_BASELINE_Y = 4320;
+/** channel-columns.ts geometry — IMPORTED from the one module that owns it
+ *  rather than re-typed. ⚠ THE PITCH IS THE SHELL'S: on the default shell the
+ *  Canvas lays the columns out at `SHELL_COLUMN_W` (225px — the compact-tile
+ *  lane), not the legacy 34hp/765px pitch this file used to hard-code.
+ *  MEASURED when the boots flipped: a drop at legacy column-2's x landed in
+ *  shell column 4, column-3's in column 8 — every membership assert wrong by
+ *  construction. One `pitch` scalar drives the whole horizontal layout
+ *  (send rail included: railX0 = COLUMN_COUNT × pitch). */
+const COLUMN_W = SHELL_COLUMN_W;
+const SEND_RAIL_X0 = 8 * COLUMN_W;
+/** The lane band's BOTTOM edge, and the anchor every in-band drop position
+ *  below is taken from: the drop hit-test is 2-D (laneTargetForFlowPoint), so
+ *  a spawn/drop must land inside `[laneTopY, COLUMN_BASELINE_Y)` in Y as well
+ *  as inside a column in X. A Y just above the baseline is in-band at every
+ *  lane height. */
 
 const PINNED_MIXER = 'pinned-mixmstrs';
 const PINNED_CLIP = 'pinned-clipplayer';
@@ -321,7 +331,7 @@ test.describe('workflow channel columns', () => {
   });
 
   test('palette-drop into columns 1/2/3 wires clip-control + tail send + automation lane', async ({ page }) => {
-    await page.goto('/rack?shell=legacy');
+    await page.goto('/rack');
     await waitForPinnedTrio(page);
 
     await dropInBand(page, 'tidyVco', colPos(1));
@@ -353,7 +363,7 @@ test.describe('workflow channel columns', () => {
   });
 
   test('REAL source chain: the clip player drives each channel to audible RMS at the mixer + audio out', async ({ page }) => {
-    await page.goto('/rack?shell=legacy');
+    await page.goto('/rack');
     await waitForPinnedTrio(page);
 
     await dropInBand(page, 'tidyVco', colPos(1));
@@ -379,7 +389,7 @@ test.describe('workflow channel columns', () => {
     // that actually reddened main. Two palette drops through the reconciler
     // plus an audio-RMS read; the work is genuine, the budget was not sized.
     test.slow();
-    await page.goto('/rack?shell=legacy');
+    await page.goto('/rack');
     await waitForPinnedTrio(page);
 
     // Two tidyVcos dropped into the SAME column (channel 1). The second drop
@@ -411,7 +421,7 @@ test.describe('workflow channel columns', () => {
   test('SOURCE→DSP: drop tidyvco then cloudseed into the SAME column → tidyvco patched THROUGH cloudseed (one island, not two)', async ({ page }) => {
     // The owner's exact case. cloudseed is a DSP (has an audio input → NOT a
     // clip source), so it must INSERT into the chain, not form a parallel island.
-    await page.goto('/rack?shell=legacy');
+    await page.goto('/rack');
     await waitForPinnedTrio(page);
 
     await dropInBand(page, 'tidyVco', colPos(4));
@@ -448,7 +458,7 @@ test.describe('workflow channel columns', () => {
     // IDENTICALLY to [source, FX] — chain order is decided by ROLE, not insertion
     // order. The old island partitioning started a new island at the trailing
     // source → TWO islands → BOTH reached the mixer (4 edges into ch), no splice.
-    await page.goto('/rack?shell=legacy');
+    await page.goto('/rack');
     await waitForPinnedTrio(page);
     await waitForHooks(page);
     await page.waitForFunction(
@@ -519,7 +529,7 @@ test.describe('workflow channel columns', () => {
   });
 
   test('DRAG a free card into a column assigns + chains it (the drag-drop path)', async ({ page }) => {
-    await page.goto('/rack?shell=legacy');
+    await page.goto('/rack');
     await waitForPinnedTrio(page);
     // A tidyvco already in column 5.
     await dropInBand(page, 'tidyVco', colPos(5));
@@ -551,15 +561,18 @@ test.describe('workflow channel columns', () => {
 
     // Drive the drag-stop the way SvelteFlow does: move the node into column 5's
     // flow band, then fire handleNodeDragStop with the moved node. The Y must
-    // put the card's CENTER inside the band (the drag hit-test probes the
-    // center, not the top edge) — 800px above the baseline clears that for any
-    // legacy card height up to 4u.
+    // put the tile's CENTER inside the band (the drag hit-test probes the
+    // center, not the top edge). ⚠ SHELL band, shell heights: the legacy
+    // number here was baseline−800 ("clears any legacy card height up to
+    // 4u") — MEASURED on the shell that Y is ABOVE the compact lane band's
+    // top and the drop is a no-op (channel stays null); baseline−300 puts a
+    // 192px tile's center comfortably in-band.
     await page.evaluate(({ id, x, y }) => {
       const w = globalThis as unknown as {
         __handleNodeDragStop?: (p: { targetNode: unknown; nodes: { id: string; position: { x: number; y: number } }[] }) => void;
       };
       w.__handleNodeDragStop?.({ targetNode: null, nodes: [{ id, position: { x, y } }] });
-    }, { id: cloudId!, x: 4 * COLUMN_W + 60, y: COLUMN_BASELINE_Y - 800 });
+    }, { id: cloudId!, x: 4 * COLUMN_W + 60, y: COLUMN_BASELINE_Y - 300 });
 
     // The dragged cloudseed joined column 5 and chained under the tidyvco.
     await expect.poll(async () => (await orderOf(page, 'columns', 5)).length, { timeout: 8_000 }).toBe(2);
@@ -582,7 +595,7 @@ test.describe('workflow channel columns', () => {
     // membership, so the reconciler owns the wiring deterministically. This test
     // drives the REAL commit handler (__assignNodeToChannel = the menu callback)
     // and is run 10× (REPEAT) to catch the reported intermittency.
-    await page.goto('/rack?shell=legacy');
+    await page.goto('/rack');
     await waitForPinnedTrio(page);
     await waitForHooks(page);
     await page.waitForFunction(
@@ -652,7 +665,7 @@ test.describe('workflow channel columns', () => {
   });
 
   test('SEND 1: a DSP dropped in the send box forms the aux loop + auto-raises the send + is audible end-to-end', async ({ page }) => {
-    await page.goto('/rack?shell=legacy');
+    await page.goto('/rack');
     await waitForPinnedTrio(page);
 
     // One source in channel 1, then a reverb in SEND 1.
@@ -701,7 +714,7 @@ test.describe('workflow channel columns', () => {
   // -------- PART B: CV Buddy lane note tap + ES-9 return audio --------
 
   test('CV BUDDY lane: REAL clip lane taps the CV Buddy inputs + (with ES-9) its return reaches the channel', async ({ page }) => {
-    await page.goto('/rack?shell=legacy');
+    await page.goto('/rack');
     await waitForPinnedTrio(page);
 
     // An ES-9 in the rack (free canvas, NOT a column member) — the CV Buddy's
@@ -764,7 +777,7 @@ test.describe('workflow channel columns', () => {
     // a stock Playwright default doing gating work nobody sized it for.
     // ×3 → 90 s; costs nothing when green.
     test.slow();
-    await page.goto('/rack?shell=legacy');
+    await page.goto('/rack');
     await waitForPinnedTrio(page);
 
     // An in-app source (tidyVco) on channel 2 — the audible lane head.
@@ -822,7 +835,7 @@ test.describe('workflow channel columns', () => {
     // REAL palette-drop + the REAL card <select>, and asserts the lane +
     // clip-tap edge set is BYTE-IDENTICAL across the change.
     await installMidiOutCapture(page);
-    await page.goto('/rack?shell=legacy');
+    await page.goto('/rack');
     await waitForPinnedTrio(page);
 
     await dropInBand(page, 'midiOutBuddy', colPos(3));
@@ -846,22 +859,35 @@ test.describe('workflow channel columns', () => {
     for (const t of taps) expect(edgesBefore).toContain(t);
     expect(await moData(page, mo)).toEqual({ channel: 3, midiOutChannel: undefined });
 
-    const card = page.locator(`.svelte-flow__node-midiOutBuddy .midi-out-buddy-card`);
-    await expect(card).toBeVisible();
-    await expect(card).toHaveAttribute('data-ch-override', 'false');
+    // The card's CH <select> + violet badge died with the card. On the shell:
+    // CONNECT is a ranked ACTION cell, CHANNEL a ranked SELECTOR cell (the
+    // def's controlFamilies), and the CH ≠ LANE state is the DeviceBody's
+    // warn-toned LANE lamp (`data-lit`). Drive them in the dock pane.
+    await page.evaluate(
+      (i) => (globalThis as unknown as { __openDockFullView: (x: string) => void }).__openDockFullView(i),
+      mo,
+    );
+    const pane = page.locator(`[data-testid="dock-fullview-pane"][data-pane-node="${mo}"]`);
+    await expect(pane.getByTestId(`midi-out-buddy-device-body-${mo}`)).toBeVisible({ timeout: 60_000 });
+    const laneLamp = pane.getByTestId(`midi-out-buddy-led-lane-${mo}`);
+    await expect(laneLamp).toHaveAttribute('data-lit', '0');
 
-    // THE ACTION — connect (fake Web MIDI) then pick MIDI channel 11 on the card.
-    await card.getByRole('button', { name: /connect midi/i }).click();
-    const chSelect = card.getByRole('combobox', { name: 'CH', exact: true });
-    await expect(chSelect).toBeVisible();
-    // The lane's channel is what the card OFFERS by default — no write needed.
-    await expect(chSelect).toHaveValue('3');
-    await chSelect.selectOption('11');
+    // THE ACTION — connect (fake Web MIDI) then pick MIDI channel 11.
+    await pane.getByTestId('shell-cell-midi-out-buddy-connect').click();
+    const chCell = pane.getByTestId('shell-cell-midi-out-buddy-channel');
+    await expect(chCell).toBeVisible();
+    // The lane's channel is what the cell OFFERS by default — no write needed.
+    await expect(chCell).toHaveAttribute('aria-label', /3/);
+    await chCell.click();
+    const listbox = page.locator('[role="listbox"]');
+    await expect(listbox).toBeVisible();
+    await listbox.locator('[role="option"]', { hasText: /^11$/ }).click();
+    await expect(listbox).toBeHidden();
 
-    // AFTER — the override is persisted + highlighted, and NOTHING about the
-    // lane moved: same membership, same automation lane, same wcol edge set.
-    await expect(card).toHaveAttribute('data-ch-override', 'true');
-    await expect(card.getByTestId('midiout-ch-override-badge')).toBeVisible();
+    // AFTER — the override is persisted + the LANE lamp lights, and NOTHING
+    // about the lane moved: same membership, same automation lane, same wcol
+    // edge set.
+    await expect(laneLamp).toHaveAttribute('data-lit', '1');
     expect(await moData(page, mo)).toEqual({ channel: 3, midiOutChannel: 11 });
     expect(await orderOf(page, 'columns', 3)).toEqual([mo]);
     expect(await laneOf(page, mo)).toBe(2);
@@ -869,9 +895,11 @@ test.describe('workflow channel columns', () => {
     for (const t of taps) expect(edgesAfter).toContain(t);
     expect(edgesAfter).toEqual(edgesBefore);
 
-    // And setting it BACK to the lane's channel clears the highlight.
-    await chSelect.selectOption('3');
-    await expect(card).toHaveAttribute('data-ch-override', 'false');
+    // And setting it BACK to the lane's channel clears the lamp.
+    await chCell.click();
+    await expect(listbox).toBeVisible();
+    await listbox.locator('[role="option"]', { hasText: /^3$/ }).click();
+    await expect(laneLamp).toHaveAttribute('data-lit', '0');
     expect(await orderOf(page, 'columns', 3)).toEqual([mo]);
   });
 });
@@ -912,10 +940,12 @@ test.describe('workflow: adding a module reveals it in-view (no click)', () => {
     );
   }
 
-  for (const shell of [false, true]) {
-    const label = shell ? 'mode=workflow&shell=1' : 'mode=workflow';
+  // (Was parameterised over {legacy, shell}; the legacy arm's lane died with
+  // S2 and the default shell is the one surface — the loop collapsed to it.)
+  {
+    const label = 'mode=workflow';
     test(`a real palette spawn into a column lands the tile WITHIN the viewport (${label})`, async ({ page }) => {
-      await page.goto(shell ? '/rack' : '/rack?shell=legacy');
+      await page.goto('/rack');
       await waitForPinnedTrio(page);
       await waitForHooks(page);
 

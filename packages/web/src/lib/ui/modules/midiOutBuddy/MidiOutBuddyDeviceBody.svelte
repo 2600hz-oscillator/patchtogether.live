@@ -132,8 +132,15 @@
   }
 
   // The two channel scalars, from the def's own helpers.
-  let sendChannel = $derived<number>(effectiveMidiOutChannel(savedData));
-  let laneChannel = $derived<number | null>(laneChannelOf(savedData));
+  // ⚠ `void cardV` IS LOAD-BEARING (the proxy-identity class, fifth sighting).
+  // The pump above reaches `savedData`, but `node.data` is the SAME syncedstore
+  // proxy on every bump — an identity-equal derived value cuts re-derivation
+  // downstream, so without their own version read these two never re-run and
+  // the LANE lamp (the CH ≠ LANE badge's face home) could never light.
+  // MEASURED: pick CH 11 on a lane-3 module — data.midiOutChannel=11 landed,
+  // the selector cell re-labelled (its own pump), and the lamp stayed dark.
+  let sendChannel = $derived<number>((void cardV, effectiveMidiOutChannel(savedData)));
+  let laneChannel = $derived<number | null>((void cardV, laneChannelOf(savedData)));
   let laneView = $derived({ laneChannel, channel: sendChannel });
 
   // Every STRING this surface can produce — including the ones that are never
