@@ -227,12 +227,21 @@ describe('scoreboard — the body, and the non-finding worth recording', () => {
     // hunting for a readout that was never there — and so that ADDING one is
     // visible here.
     //
-    // ⚠ THE SUBJECT WAS THE CARD, which was the surface that would have carried
-    // such a readout at the time. The body is the surface now, and the same
-    // three denials are made of it: no buttons, no selects, no readout element.
+    // ⚠ THE SUBJECT MOVED, AND ONE OF THE DENIALS HAD TO MOVE WITH IT. The
+    // claim was written about a surface that carried no buttons at all. This
+    // body carries exactly ONE, and it is the SCREEN toggle every video module
+    // ships (owner ruling 2026-08-18) — so re-pointing "no buttons" here would
+    // have asserted something false. The button is NAMED instead of forbidden,
+    // which is the stronger statement anyway: it pins that the screen toggle is
+    // the only interactive element on this surface, so a control or a readout
+    // arriving later still fails this test.
     const body = bodySrc();
     expect(body.length).toBeGreaterThan(500);
-    expect(/<button/.test(body), 'the body has no buttons').toBe(false);
+    expect((body.match(/<button/g) ?? []).length, 'the body has exactly one button').toBe(1);
+    expect(
+      /data-testid="scoreboard-face-screen-toggle"/.test(body),
+      'and that one button is the SCREEN toggle, not a control',
+    ).toBe(true);
     expect(/<select/.test(body), 'the body has no selects').toBe(false);
     expect(/class="[^"]*readout/.test(body), 'the body paints no readout element').toBe(false);
   });
