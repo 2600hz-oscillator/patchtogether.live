@@ -146,7 +146,7 @@ test.describe('TV LIBRARIAN — tuned-stream audio reaches the destination @vide
     test.setTimeout(60_000);
 
     await installMocks(page);
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
 
     // TV LIBRARIAN → AUDIO OUT (the audibility probe) + a SCOPE (the weak probe,
@@ -162,17 +162,33 @@ test.describe('TV LIBRARIAN — tuned-stream audio reaches the destination @vide
       [],
     );
 
-    const card = page.getByTestId('tv-librarian-card');
-    await expect(card).toBeVisible();
+    // The tuner (preview + picker + `data-stream-state`) is `fullViewBody` —
+    // dock-only; open the pane and scope every UI read under it. The <video>
+    // element itself (`tv-video`) is REGISTRY-owned (node-hls-source-registry,
+    // node lifetime) so the raw element probes below stay document-level.
+    await page.waitForFunction(
+      () =>
+        typeof (globalThis as unknown as { __openDockFullView?: unknown }).__openDockFullView ===
+        'function',
+      undefined,
+      { timeout: 30_000 },
+    );
+    await page.evaluate(
+      (i) => (globalThis as unknown as { __openDockFullView: (x: string) => void }).__openDockFullView(i),
+      'tv',
+    );
+    const pane = page.locator('[data-testid="dock-fullview-pane"][data-pane-node="tv"]');
+    const card = pane.getByTestId('tv-librarian-face-body');
+    await expect(card).toBeVisible({ timeout: 60_000 });
 
     // Tune the deterministic LIST path: US → the one tone channel.
-    await page.getByTestId('tv-view-list').click();
-    await page.getByTestId('tv-country-select').selectOption('US');
-    await expect(page.getByTestId('tv-channel')).toHaveCount(1);
-    await page.getByTestId('tv-channel').first().click();
+    await pane.getByTestId('tv-view-list').click();
+    await pane.getByTestId('tv-country-select').selectOption('US');
+    await expect(pane.getByTestId('tv-channel')).toHaveCount(1);
+    await pane.getByTestId('tv-channel').first().click();
     // The station name lives on the picture's accessible name — see the note in
     // tv-librarian.spec.ts; the painted readout is deleted on both surfaces.
-    await expect(page.getByTestId('tv-preview')).toHaveAttribute('aria-label', /Tone Channel/);
+    await expect(pane.getByTestId('tv-preview')).toHaveAttribute('aria-label', /Tone Channel/);
 
     // The committed clip is a short (~1.6s) VOD, whereas a real TV stream never
     // ends. Loop it so there's CONTINUOUS audio across the measurement window

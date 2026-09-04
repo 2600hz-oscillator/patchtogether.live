@@ -23,6 +23,25 @@ import { test, expect, type Page } from '@playwright/test';
 import { fileURLToPath } from 'node:url';
 import { spawnPatch } from './_helpers';
 
+/** Open PICTUREBOX's dock full-view pane (the picker + preview canvas are
+ *  `fullViewBody` — dock-only) and return the PANE locator. */
+async function openPbPane(page: Page, id: string) {
+  await page.waitForFunction(
+    () =>
+      typeof (globalThis as unknown as { __openDockFullView?: unknown }).__openDockFullView ===
+      'function',
+    undefined,
+    { timeout: 30_000 },
+  );
+  await page.evaluate(
+    (i) => (globalThis as unknown as { __openDockFullView: (x: string) => void }).__openDockFullView(i),
+    id,
+  );
+  const pane = page.locator(`[data-testid="dock-fullview-pane"][data-pane-node="${id}"]`);
+  await expect(pane.getByTestId('picturebox-assets-body')).toBeVisible({ timeout: 60_000 });
+  return pane;
+}
+
 const GIF_FIXTURE = fileURLToPath(new URL('../fixtures/animated-test.gif', import.meta.url));
 
 // A solid-white 32×32 PNG (generated via sharp) — the static-image regression
@@ -37,24 +56,50 @@ async function setup(page: Page): Promise<string[]> {
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await page.waitForLoadState('networkidle');
   return errors;
 }
 
-/** Mean luminance over a VIDEO-OUT canvas (by node id). */
+/** Mean luminance of PICTUREBOX's output frame, read at the ENGINE seam
+ *  (`vid.outputTexture(nodeId, 'out')` + readPixels — the shell-agnostic
+ *  instrument; the card-era probe read the VIDEO-OUT card canvas, which does
+ *  not mount on the default shell). The downstream VIDEO-OUT displays exactly
+ *  this texture. */
 async function meanLuma(page: Page, nodeId: string): Promise<number> {
-  const handle = page.locator(`canvas[data-testid="video-out-canvas"][data-node-id="${nodeId}"]`);
-  await expect(handle, `VIDEO-OUT ${nodeId} canvas present`).toHaveCount(1);
-  return await handle.evaluate((el) => {
-    const c = el as HTMLCanvasElement;
-    const ctx = c.getContext('2d');
-    if (!ctx) return 0;
-    const { data } = ctx.getImageData(0, 0, c.width, c.height);
+  return await page.evaluate((id) => {
+    const w = globalThis as unknown as {
+      __engine?: () => {
+        getDomain: (d: string) => {
+          gl: WebGL2RenderingContext;
+          outputTexture: (n: string, port?: string) => WebGLTexture | null;
+          res: { width: number; height: number };
+        };
+      } | null;
+    };
+    const eng = w.__engine?.();
+    if (!eng) return 0;
+    const vid = eng.getDomain('video');
+    const gl = vid.gl;
+    const tex = vid.outputTexture(id, 'out');
+    if (!tex) return 0;
+    const { width: W, height: H } = vid.res;
+    const fb = gl.createFramebuffer()!;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+    const complete = gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE;
+    const px = new Uint8Array(W * H * 4);
+    if (complete) gl.readPixels(0, 0, W, H, gl.RGBA, gl.UNSIGNED_BYTE, px);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.deleteFramebuffer(fb);
     let sum = 0;
-    for (let i = 0; i < data.length; i += 4) sum += (data[i]! + data[i + 1]! + data[i + 2]!) / 3;
-    return sum / (data.length / 4);
-  });
+    let n = 0;
+    for (let i = 0; i < px.length; i += 4 * 16) {
+      sum += (px[i]! + px[i + 1]! + px[i + 2]!) / 3;
+      n++;
+    }
+    return n ? sum / n : 0;
+  }, nodeId);
 }
 
 /** Does this runtime decode animated gifs (WebCodecs ImageDecoder)? */
@@ -99,22 +144,29 @@ test.describe('PICTUREBOX — animated gif', () => {
       ],
     );
 
-    // REAL chain: pick the fixture gif through the card's file input.
-    await page.locator('[data-testid="picturebox-file-input"]').setInputFiles(GIF_FIXTURE);
+    // REAL chain: pick the fixture gif through the face's file input (dock pane).
+    const pane = await openPbPane(page, 'pb');
+    await pane.locator('[data-testid="picturebox-face-file-input"]').setInputFiles(GIF_FIXTURE);
 
-    // Card registers the image (bytes on node.data → data-has-image).
-    await expect(page.locator('[data-testid="picturebox-card"]')).toHaveAttribute(
+    // The face registers the image (bytes on node.data → data-has-image, which
+    // lives on the face CANVAS, not the body root).
+    await expect(pane.locator('[data-testid="picturebox-face-canvas"]')).toHaveAttribute(
       'data-has-image',
       'true',
       { timeout: 10_000 },
     );
-    // The card surfaces it as a gif (mime propagated), not a flattened jpeg.
-    await expect(page.locator('[data-testid="picturebox-synced"]')).toHaveText('gif', { timeout: 10_000 });
+    // It surfaces as a gif (mime propagated), not a flattened jpeg. The card's
+    // painted 'gif' state word is deleted under the resting-text ruling; the
+    // fact moved to the picture's accessible name ("an animated gif preserved
+    // frame-for-frame"), where face specs already read state.
+    await expect(pane.locator('[data-testid="picturebox-face-canvas"]')).toHaveAttribute(
+      'aria-label', /animated gif/, { timeout: 10_000 },
+    );
 
     // The output must SWING between the fixture's bright + dark frames. The gif
     // is 4 frames × 80ms = 320ms/loop; sample across ~1.4s so we straddle
     // multiple frames regardless of rAF cadence.
-    const { min, max, samples } = await sampleLumaOverTime(page, 'out', 1400);
+    const { min, max, samples } = await sampleLumaOverTime(page, 'pb', 1400);
     expect(
       max - min,
       `output luma must swing over time (animation): min=${min.toFixed(1)} max=${max.toFixed(1)} n=${samples.length}`,
@@ -140,28 +192,32 @@ test.describe('PICTUREBOX — animated gif', () => {
       ],
     );
 
-    await page.locator('[data-testid="picturebox-file-input"]').setInputFiles({
+    const pane = await openPbPane(page, 'pb');
+    await pane.locator('[data-testid="picturebox-face-file-input"]').setInputFiles({
       name: 'white.png',
       mimeType: 'image/png',
       buffer: WHITE_PNG,
     });
 
-    await expect(page.locator('[data-testid="picturebox-card"]')).toHaveAttribute(
+    await expect(pane.locator('[data-testid="picturebox-face-canvas"]')).toHaveAttribute(
       'data-has-image',
       'true',
       { timeout: 10_000 },
     );
-    // A non-gif → the still JPEG path (not 'gif').
-    await expect(page.locator('[data-testid="picturebox-synced"]')).not.toHaveText('gif', { timeout: 10_000 });
+    // A non-gif → the still JPEG path: the accessible name says "synced at
+    // W×H", never "animated gif" (the resting-text ruling's aria home).
+    await expect(pane.locator('[data-testid="picturebox-face-canvas"]')).toHaveAttribute(
+      'aria-label', /synced at/, { timeout: 10_000 },
+    );
 
     // Wait for the bright still to reach the output, then confirm it's STABLE
     // (a still must not animate): two reads ~700ms apart barely differ.
     await expect
-      .poll(async () => await meanLuma(page, 'out'), { timeout: 8000 })
+      .poll(async () => await meanLuma(page, 'pb'), { timeout: 8000 })
       .toBeGreaterThan(120);
-    const a = await meanLuma(page, 'out');
+    const a = await meanLuma(page, 'pb');
     await page.waitForTimeout(700);
-    const b = await meanLuma(page, 'out');
+    const b = await meanLuma(page, 'pb');
     expect(Math.abs(a - b), `static output stable over time (a=${a.toFixed(1)} b=${b.toFixed(1)})`).toBeLessThan(20);
 
     expect(errors, `no page errors: ${errors.join('; ')}`).toEqual([]);
