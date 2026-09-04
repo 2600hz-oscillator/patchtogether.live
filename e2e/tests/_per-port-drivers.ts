@@ -1034,13 +1034,25 @@ const DRIVERS: Record<string, PerPortDriver> = {
   // The 904A is an effect (audio in → low-pass out), but at REGENERATION=1
   // the transistor ladder self-oscillates into a sustained VC sine at the
   // cutoff frequency — no upstream source needed. Seed regeneration=1 +
-  // range=2 (mid band, audible) so the `audio` output rings on its own and
-  // the per-port outputs-emit check sees a real signal (slice-1-style
-  // driven-signal check). Without this it would be silent at the default
-  // regeneration=0 and need an upstream source like any other filter.
+  // range=2 (mid band, audible) so the ladder rings on its own. Without this
+  // it would be silent at the default regeneration=0 and would need an
+  // upstream source like any other filter.
+  //
+  // ⚠ THIS NO LONGER FEEDS AN EMIT ASSERTION. `moog904a.audio` is PARKED in
+  // EXEMPT_OUTPUT_EMIT: the engine's dual-mono wrapper builds this ladder
+  // TWICE and each instance seeds its oscillation from its own Math.random()
+  // dither, so the SCOPE analyser's mono down-mix reads the sum of two
+  // independently-phased sines and the level is a fresh draw each spawn
+  // (0.0246 … 1.0521 over 25 measured spawns). That is an open PRODUCT
+  // question, not a driver bug — read the park entry before changing anything
+  // here. In particular, DO NOT add an upstream noise source to "fix" it: a
+  // common mono input makes the response common-mode, and the assertion then
+  // passes with the resonance dead (regeneration=0 measures 0.29, 58× the
+  // floor), i.e. it would stop asserting self-oscillation at all. The params
+  // stay because the input-drive dimension still uses them.
   moog904a: {
     params: { regeneration: 1, range: 2, cutoff: 800 },
-    note: 'MOOG 904A: regeneration=1 → ladder self-oscillates; audio out is a driven sine',
+    note: 'MOOG 904A: regeneration=1 → ladder self-oscillates. The emit assertion on `audio` is PARKED (dual-mono phase lottery) — see EXEMPT_OUTPUT_EMIT',
   },
   // ───── LUSH GARDEN — a GENERATOR despite its optional video input ─────
   //
