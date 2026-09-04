@@ -137,6 +137,11 @@ wss.on('connection', (ws: WebSocket) => {
         send(ws, {
           type: 'helperInfo',
           protocolVersion: 1,
+          // Ahead of the real bridge on purpose — see es9-stub's header: this
+          // is the supervisor's per-launch nonce, echoed back so a helper can
+          // prove it belongs to THIS launch. Validated when present, absent on
+          // the Swift tier until P1 touches the wire.
+          ...(process.env.PT_SHELL_LAUNCH_ID ? { shellLaunchId: process.env.PT_SHELL_LAUNCH_ID } : {}),
           name: 'vst-stub',
           version: '0.1-shell-harness',
           rate,

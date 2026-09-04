@@ -51,6 +51,35 @@ function contentType(filePath: string): string {
   return MIME[path.extname(filePath).toLowerCase()] ?? 'application/octet-stream';
 }
 
+/**
+ * Host-header validation — the DNS-rebinding arm.
+ *
+ * The socket binds 127.0.0.1 only, so a remote host cannot reach it directly.
+ * What it CAN do is point a domain it controls at 127.0.0.1 and have a browser
+ * on this machine fetch `http://evil.example:9409/…` with `Host: evil.example`
+ * — same-origin, from the attacker's origin, against our server. Requiring the
+ * Host to name a loopback address closes that with one comparison.
+ *
+ * `localhost` is allowed alongside `127.0.0.1`: it is genuinely loopback, and
+ * it is a DIFFERENT ORIGIN from the shell's — which the harness relies on to
+ * negative-control the permission handlers with identical content served from
+ * a non-shell origin, no network required.
+ */
+export function hostAllowed(hostHeader: string | undefined, port: number): boolean {
+  if (!hostHeader) return false;
+  let parsed: URL;
+  try {
+    parsed = new URL(`http://${hostHeader}`);
+  } catch {
+    return false;
+  }
+  // A port in the header must be OUR port; an absent port means :80, which
+  // this server never listens on.
+  if (parsed.port !== String(port)) return false;
+  const host = parsed.hostname.toLowerCase();
+  return host === '127.0.0.1' || host === 'localhost' || host === '[::1]' || host === '::1';
+}
+
 /** Resolve a request path to a file inside webRoot, or null. Tries the exact
  * file, then `<p>.html`, then `<p>/index.html` (matching prerendered output). */
 function resolveFile(webRoot: string, pathname: string): string | null {
@@ -87,6 +116,9 @@ export interface StaticServer {
 
 export function startStaticServer(webRoot: string, port: number): Promise<StaticServer> {
   const fallback = path.join(webRoot, 'fallback.html');
+  // The port actually bound — `port: 0` (the harness's ephemeral mode) means
+  // the requested number is not the one the Host header will carry.
+  let boundPort = port;
 
   const server = http.createServer((req, res) => {
     const url = new URL(req.url ?? '/', 'http://127.0.0.1');
@@ -96,6 +128,11 @@ export function startStaticServer(webRoot: string, port: number): Promise<Static
     res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
     res.setHeader('Cross-Origin-Embedder-Policy', 'credentialless');
     res.setHeader('Cache-Control', 'no-cache');
+
+    if (!hostAllowed(req.headers.host, boundPort)) {
+      res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' }).end('Forbidden');
+      return;
+    }
 
     if (req.method !== 'GET' && req.method !== 'HEAD') {
       res.writeHead(405).end();
@@ -147,7 +184,7 @@ export function startStaticServer(webRoot: string, port: number): Promise<Static
     // Loopback ONLY — never expose the shell's server on the network.
     server.listen(port, '127.0.0.1', () => {
       const addr = server.address();
-      const boundPort = typeof addr === 'object' && addr ? addr.port : port;
+      boundPort = typeof addr === 'object' && addr ? addr.port : port;
       resolve({
         port: boundPort,
         close: () => new Promise<void>((r) => server.close(() => r())),
