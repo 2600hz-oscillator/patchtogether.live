@@ -131,3 +131,72 @@ server-reachable heavy import.
   archaeology sweep and it is the bulk of S5.
 * `_module-card.css` prune to `.rl-tile` survivors + merge into
   `_rackline-tile.css`.
+
+
+## ⚠ THE RECORDED ATTEST BLOCKER IS STALE — THE CAMERA PASS PASSES
+
+`e2e/vrt/vrt-live-surfaces.ts:405-423` carries a three-point argument ending
+"the re-attest CANNOT be produced here", because the attest's **Pass C** is
+`camera-input.spec.ts` and that spec "FAILS on this machine independently of any
+change on this branch" — specifically `camera-input.spec.ts:42`, "injected frame
+renders through the camera pass to a non-black, frame-stable FBO", tied to the
+memory note `webgl-attest-video-orientation-camera-fail`.
+
+MEASURED 2026-09-04, on this machine, at `f001dd32a7`:
+
+```
+tests/camera-input.spec.ts  --grep "injected frame renders through the camera pass"   1 passed
+tests/camera-input.spec.ts  (whole file)                                              6 passed
+```
+
+And `task webgl:attest -- --dry-run` confirms Pass C is exactly
+`--project=chromium-camera --grep-invert @camera-integration camera-input.spec.ts`
+— the file that just passed. So the blocker was real when written and has since
+been fixed by somebody who did not know they were unblocking this.
+
+⚠ IT UNBLOCKS MORE THAN THE ATTEST. That comment block is the standing
+justification for TWO masks in `VRT_LIVE_SURFACES`
+(`wavesculpt-blink-ribbons` and its sibling), and it prescribes the exact
+sequence: "unblock the camera pass → re-attest → apply the one-line pin →
+DELETE BOTH ENTRIES BELOW and re-pin two unmasked baselines". Step one is done.
+The masks are now justified by nothing except that nobody has re-run the
+sequence — they should go with the next capture, not be re-argued.
+
+Do NOT read the old prose as current. It was true when written; that is the
+`face-inventory-prose-is-systematically-false` class, and this file is the
+correction rather than a second opinion.
+
+
+## …AND THEN THE ATTEST REFUSED FOR A DIFFERENT, TRUE REASON
+
+With the camera blocker disproved the run was started, and the pre-flight
+refused before executing anything:
+
+```
+webgl:attest PRE-FLIGHT — machine is NOT quiet; REFUSING to run.
+  measured: 7 samples over 10.2s, peak foreign CPU 51.1%
+  SUSTAINED: Microsoft Edge Helper (Renderer) (pid 54863) at or over 25% in 7/7 samples
+  LOAD: load(1m)=5.42 on 10 cores (over 5.0)
+```
+
+⚠ **THIS IS A TRUE REFUSAL AND MUST NOT BE OVERRIDDEN.** It is none of the
+playbook's four FALSE-refusal sources: no stale dev server (stopped and verified
+0 listeners), no sibling worktree on the port, no deferred/queued CWD drift, and
+the camera pass is green. It is a real co-tenant — the OWNER'S BROWSER — plus a
+second agent's `eslint-gate.mjs` at 140% CPU. `WEBGL_ATTEST_ALLOW_BUSY=1` is
+documented "dedicated/trusted runner only", and quitting someone else's browser
+is not a decision an agent gets to make.
+
+Nothing was written: `ci-webgl-attest/` is unchanged and the working tree is
+clean apart from this note. The attest remains OWED and is now known to be
+VIABLE — the only precondition left is a quiet machine.
+
+WHAT A SUCCESSOR NEEDS, in order:
+1. Quiet the machine (heavy browsers, other agents' test runs).
+2. `flox activate -- task webgl:attest:check` — expect the miss on
+   `aacfac95244a4e3ccb337465cd74f11983693e0ad287b2902f774bb1d4aa74a4`.
+3. `flox activate -- task webgl:attest`, then commit
+   `ci-webgl-attest/aacfac95….json`.
+4. While there: delete the two `VRT_LIVE_SURFACES` wavesculpt masks whose
+   standing justification was the camera blocker, and re-pin their two baselines
+   unmasked.
