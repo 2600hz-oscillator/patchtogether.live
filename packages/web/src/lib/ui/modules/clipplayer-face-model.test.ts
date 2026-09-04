@@ -208,12 +208,14 @@ describe('clipplayer face — the ranking', () => {
     expect(session.hint, 'the band has a hint to paint').toBeTruthy();
   });
 
-  it("glyph is 'none', and the def has no audio output to bind one to", () => {
+  it("glyph is 'none' — a per-lane module refuses the lane-1 meter", () => {
     expect(clipplayerDef.face!.glyph).toBe('none');
-    // The premise, checked rather than asserted: `primaryAudioOutPortId` matches
-    // `type === 'audio'`, and every one of the 24 outputs is polyPitchGate, gate
-    // or cv — so a live glyph would resolve to a dead static picture.
-    expect(clipplayerDef.outputs.some((o) => o.type === 'audio')).toBe(false);
+    // Since slice 5 the def DOES declare audio outputs (audio{N}L/R, the
+    // per-lane clip returns), so a live meter glyph WOULD resolve — onto lane
+    // 1's output, which is silent whenever lane 1 holds no audio clip and says
+    // nothing about the other seven. 'none' is now a decision, not the only
+    // literal that compiles; the tileBody strip is the per-lane glance.
+    expect(clipplayerDef.outputs.filter((o) => o.type === 'audio').length).toBe(16);
   });
 
   // ⚠ ALL SIX ARE PANELS, and each one's PROBE is what `shell-cells.test.ts`

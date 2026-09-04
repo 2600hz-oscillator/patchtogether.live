@@ -130,6 +130,55 @@ const CASES: { why: string; data: ClipPlayerData; index: number }[] = (() => {
     index: at(0),
   });
   out.push({ why: 'undefined data', data: undefined as unknown as ClipPlayerData, index: at(0) });
+  // AUDIO CLIP-RECORD states (slice 5) — the rec rungs sit ABOVE queued.
+  const recAt = (slot: number, phase: 'armed' | 'recording' | 'stopping') => ({
+    lane: 0,
+    slot,
+    mode: 'single' as const,
+    phase,
+    startFrame: 0,
+    stopFrame: 96_000,
+    unitFrames: 96_000,
+    recorderId: 1,
+  });
+  out.push({
+    why: 'ARMED take on this slot — reserved, not yet content',
+    data: { ...withLane0({}, null, null), audioRec: { '0': recAt(3, 'armed') } },
+    index: at(3),
+  });
+  out.push({
+    why: 'RECORDING take on this slot',
+    data: { ...withLane0({}, null, null), audioRec: { '0': recAt(3, 'recording') } },
+    index: at(3),
+  });
+  out.push({
+    why: 'STOPPING paints rec-active too (slice 6 adds the countdown rung)',
+    data: { ...withLane0({}, null, null), audioRec: { '0': recAt(3, 'stopping') } },
+    index: at(3),
+  });
+  out.push({
+    why: 'a take on ANOTHER slot leaves this pad alone',
+    data: { ...withLane0(loaded, null, null), audioRec: { '0': recAt(3, 'recording') } },
+    index: at(0),
+  });
+  out.push({
+    why: 'REC beats QUEUED on the same slot',
+    data: { ...withLane0({}, null, 3), audioRec: { '0': recAt(3, 'armed') } },
+    index: at(3),
+  });
+  out.push({
+    why: 'REC beats PLAYING on the same slot',
+    data: { ...withLane0(loaded, 0, null), audioRec: { '0': recAt(0, 'recording') } },
+    index: at(0),
+  });
+  out.push({
+    why: 'a MALFORMED audioRec entry (junk phase) is ignored',
+    data: {
+      ...withLane0(loaded, null, null),
+      audioRec: { '0': { phase: 'exploded', slot: 0 } as never },
+    },
+    index: at(0),
+  });
   // Other lanes — a helper that dropped `laneOf` would read lane 0's state here.
   out.push({
     why: "lane 5's pad while LANE 0 is the one playing",
@@ -168,9 +217,43 @@ describe('clipPadState — the painted ladder', () => {
       'a MALFORMED audio record (no mediaId) — unschedulable, so not loaded → empty',
       'absent playing/queued arrays entirely → loaded',
       'undefined data → empty',
+      'ARMED take on this slot — reserved, not yet content → rec-armed',
+      'RECORDING take on this slot → rec-active',
+      'STOPPING paints rec-active too (slice 6 adds the countdown rung) → rec-active',
+      'a take on ANOTHER slot leaves this pad alone → loaded',
+      'REC beats QUEUED on the same slot → rec-armed',
+      'REC beats PLAYING on the same slot → rec-active',
+      'a MALFORMED audioRec entry (junk phase) is ignored → loaded',
       "lane 5's pad while LANE 0 is the one playing → loaded",
       "lane 5's pad, playing on lane 5 → playing",
     ]);
+  });
+
+  it('REC-ARMED beats QUEUED for every slot of every lane (the new top rung, swept)', () => {
+    for (let lane = 0; lane < CLIP_LANES; lane++) {
+      for (let slot = 0; slot < CLIP_SLOTS; slot++) {
+        const queued = new Array(CLIP_LANES).fill(null);
+        queued[lane] = slot;
+        const d = {
+          clips: {},
+          playing: new Array(CLIP_LANES).fill(null),
+          queued,
+          audioRec: {
+            [String(lane)]: {
+              lane,
+              slot,
+              mode: 'single',
+              phase: 'armed',
+              startFrame: 0,
+              stopFrame: 1,
+              unitFrames: 1,
+              recorderId: 1,
+            },
+          },
+        } as unknown as ClipPlayerData;
+        expect(clipPadState(d, clipIndex(slot, lane))).toBe('rec-armed');
+      }
+    }
   });
 
   it('QUEUED beats PLAYING for every slot of every lane (the precedence, swept)', () => {
@@ -206,6 +289,17 @@ function faceReferenceLadder(
 ): ClipPadState {
   const lane = laneOf(index);
   const slot = slotOf(index);
+  // The slice-5 top rungs: an armed/live take owns its pad's picture.
+  const ar = data?.audioRec?.[String(lane)];
+  if (
+    ar &&
+    typeof ar === 'object' &&
+    (ar.phase === 'armed' || ar.phase === 'recording' || ar.phase === 'stopping') &&
+    Number.isInteger(ar.slot) &&
+    ar.slot === slot
+  ) {
+    return ar.phase === 'armed' ? 'rec-armed' : 'rec-active';
+  }
   const playing = lanePlaying(data, lane);
   const queued = laneQueued(data, lane);
   if (queued === slot) return 'queued';
@@ -224,6 +318,18 @@ function rawTruthinessLadder(
 ): ClipPadState {
   const lane = laneOf(index);
   const slot = slotOf(index);
+  // Same slice-5 top rungs as the shared helper — the CONTROL models the
+  // truthiness drift on the LAST clause, not a missing rec rung.
+  const ar = data?.audioRec?.[String(lane)];
+  if (
+    ar &&
+    typeof ar === 'object' &&
+    (ar.phase === 'armed' || ar.phase === 'recording' || ar.phase === 'stopping') &&
+    Number.isInteger(ar.slot) &&
+    ar.slot === slot
+  ) {
+    return ar.phase === 'armed' ? 'rec-armed' : 'rec-active';
+  }
   const playing = lanePlaying(data, lane);
   const queued = laneQueued(data, lane);
   if (queued === slot) return 'queued';

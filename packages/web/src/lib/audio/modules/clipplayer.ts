@@ -40,6 +40,8 @@ import { getSchedulerClock } from '$lib/audio/scheduler-clock';
 import { createEdgeCounter } from '$lib/audio/edge-detect';
 import { midiToVOct } from '$lib/audio/note-entry';
 import { isInputPortConnected } from './transport-helpers';
+import { getClipAudioBuffer, clipAudioCacheKey } from '$lib/audio/clip-audio-cache';
+import { clipLaneNormalConnected } from '$lib/audio/clip-lane-return';
 import { setLanePlayhead, clearPlayheads } from './clip-playhead';
 import { setLanePhase, clearLanePhases } from './clip-lane-phase';
 import { drainReconcile, clearReconcile } from './clip-reconcile';
@@ -81,6 +83,7 @@ import {
   coerceAutoAssign,
   autoPlaybackOwners,
   MAX_AUTOMATION_TRACKS,
+  type AudioClipRecord,
   type ClipPlayerData,
   type ClipRecord,
   type AutoTrack,
@@ -170,14 +173,26 @@ export const clipplayerDef: AudioModuleDef = {
     { id: 'stop_all', type: 'gate', edge: 'trigger' },
     { id: 'reset', type: 'gate', edge: 'trigger' },
   ],
-  outputs: Array.from({ length: CLIP_LANES }, (_, i) => [
-    { id: `pitch${i + 1}`, type: 'polyPitchGate' as const },
-    // GATE, not trigger: the emitter's low edge is the NOTE/TIE span
-    // (clipplayer.ts:1416-1417 `gateOff`), not a fixed pulse — a tied note
-    // stays high across it.
-    { id: `gate${i + 1}`, type: 'gate' as const, edge: 'gate' as const },
-    { id: `vel${i + 1}`, type: 'cv' as const },
-  ]).flat(),
+  outputs: [
+    ...Array.from({ length: CLIP_LANES }, (_, i) => [
+      { id: `pitch${i + 1}`, type: 'polyPitchGate' as const },
+      // GATE, not trigger: the emitter's low edge is the NOTE/TIE span
+      // (clipplayer.ts:1416-1417 `gateOff`), not a fixed pulse — a tied note
+      // stays high across it.
+      { id: `gate${i + 1}`, type: 'gate' as const, edge: 'gate' as const },
+      { id: `vel${i + 1}`, type: 'cv' as const },
+    ]).flat(),
+    // AUDIO CLIP playback, one stereo pair PER LANE (owner Q8: per-lane, not a
+    // sum — the lane↔channel identity is the product concept, and a take must
+    // be able to return to its own mixmstrs channel). These same legs feed the
+    // internal NORMAL into mixmstrs channel N (clip-lane-return.ts), which a
+    // cable into that channel's input jack breaks — the jacks here keep
+    // working either way, so tape-return patches are untouched.
+    ...Array.from({ length: CLIP_LANES }, (_, i) => [
+      { id: `audio${i + 1}L`, type: 'audio' as const },
+      { id: `audio${i + 1}R`, type: 'audio' as const },
+    ]).flat(),
+  ],
   params: [
     // stepDiv: 0=1/4, 1=1/8, 2=1/16 (default), 3=1/32 — steps per TIMELORDE beat.
     { id: 'stepDiv', label: 'Step', defaultValue: 2, min: 0, max: 3, curve: 'discrete' },
@@ -244,6 +259,22 @@ export const clipplayerDef: AudioModuleDef = {
       vel6: "Lane 6's velocity CV.",
       vel7: "Lane 7's velocity CV.",
       vel8: "Lane 8's velocity CV.",
+      audio1L: "Lane 1's recorded-audio-clip output, LEFT leg. When lane 1 plays an AUDIO clip (a take recorded from MIXMSTRS channel 1 — the channel number and the lane number are the same number everywhere in this product), the take loops out this stereo pair, launched and stopped on the same quantized boundaries a note clip uses. This SAME signal is internally NORMALLED into MIXMSTRS channel 1's input — an internal connection that breaks the moment a cable is patched into that channel's input jack — and this jack keeps working either way, so you can also patch the loop anywhere else. Silent while the lane is stopped, muted, or playing a note clip.",
+      audio1R: "Lane 1's recorded-audio-clip output, RIGHT leg (see audio1L).",
+      audio2L: "Lane 2's recorded-audio-clip output, LEFT leg — lane 2's launched audio take, looped; normalled into MIXMSTRS channel 2 (see audio1L).",
+      audio2R: "Lane 2's recorded-audio-clip output, RIGHT leg (see audio1L).",
+      audio3L: "Lane 3's recorded-audio-clip output, LEFT leg — lane 3's launched audio take, looped; normalled into MIXMSTRS channel 3 (see audio1L).",
+      audio3R: "Lane 3's recorded-audio-clip output, RIGHT leg (see audio1L).",
+      audio4L: "Lane 4's recorded-audio-clip output, LEFT leg — lane 4's launched audio take, looped; normalled into MIXMSTRS channel 4 (see audio1L).",
+      audio4R: "Lane 4's recorded-audio-clip output, RIGHT leg (see audio1L).",
+      audio5L: "Lane 5's recorded-audio-clip output, LEFT leg — lane 5's launched audio take, looped; normalled into MIXMSTRS channel 5 (see audio1L).",
+      audio5R: "Lane 5's recorded-audio-clip output, RIGHT leg (see audio1L).",
+      audio6L: "Lane 6's recorded-audio-clip output, LEFT leg — lane 6's launched audio take, looped; normalled into MIXMSTRS channel 6 (see audio1L).",
+      audio6R: "Lane 6's recorded-audio-clip output, RIGHT leg (see audio1L).",
+      audio7L: "Lane 7's recorded-audio-clip output, LEFT leg — lane 7's launched audio take, looped; normalled into MIXMSTRS channel 7 (see audio1L).",
+      audio7R: "Lane 7's recorded-audio-clip output, RIGHT leg (see audio1L).",
+      audio8L: "Lane 8's recorded-audio-clip output, LEFT leg — lane 8's launched audio take, looped; normalled into MIXMSTRS channel 8 (see audio1L).",
+      audio8R: "Lane 8's recorded-audio-clip output, RIGHT leg (see audio1L).",
     },
     controls: {
       stepDiv: "STEP — how many steps fall per TIMELORDE beat (1/4, 1/8, 1/16, 1/32), i.e. the playback resolution of the clips.",
@@ -336,12 +367,15 @@ export const clipplayerDef: AudioModuleDef = {
   // tier before merge; the pinned `c`-pane instance is unaffected, since it
   // already paints at faceplate width.
   //
-  // ⚠ `glyph: 'none'` IS THE ONLY LITERAL THAT COMPILES INTO A GREEN RUN, and
-  // the premise is true by inspection: `primaryAudioOutPortId` matches
-  // `type === 'audio'` and this module declares NONE (its 24 outputs are
-  // `polyPitchGate`, `gate` and `cv`), so every live-audio binding
-  // short-circuits and 'envelope' needs a/d/s/r params there are none of. Each
-  // falls to `{kind:'static'}`, which module-face-lint reddens by name (#1692).
+  // ⚠ `glyph: 'none'` IS A DECISION NOW, NOT THE ONLY LITERAL THAT COMPILES.
+  // Since slice 5 the def DOES declare audio outputs (`audio{N}L/R`, the
+  // per-lane clip returns), so a live meter glyph would resolve — onto LANE
+  // 1's clip output, which is silent whenever lane 1 holds no audio clip and
+  // says nothing about the other seven. The only useful glance here ("is
+  // anything playing HERE") is per-lane, and the `tileBody` strip is that
+  // glance; a lane-1 meter would be a confident picture of the wrong thing.
+  // 'envelope' still needs a/d/s/r params there are none of and falls to
+  // `{kind:'static'}`, which module-face-lint reddens by name (#1692).
   // 'algorithm' would resolve — it accepts a `face.extension` — but
   // `ShellExtensionGlyphProps` carries no nodeId, so every clip player in the
   // rack would draw the same picture, while the only useful glance here ("is
@@ -625,6 +659,271 @@ export const clipplayerDef: AudioModuleDef = {
     // resetNonce). null = "not yet seen": the first tick ADOPTS the current
     // value without firing, so loading a saved patch never replays a reset.
     let lastResetNonce: number | null = null;
+
+    // ── AUDIO CLIP PLAYBACK (slice 5) — per-lane stereo outs + the normal ───
+    //
+    // An audio clip is NOT a step sequence: it is ONE AudioBufferSourceNode,
+    // scheduled ONCE at its launch boundary with loop=true, so its timing is
+    // the context clock's and cannot drift against the grid that launched it
+    // (a per-step emit would be a second, drifting opinion about when it
+    // sounds — emitLaneStep's own comment). The lane machinery still advances
+    // over `clipLengthSteps`, which is what makes queued stops land on the
+    // SAME wrap a note clip would use.
+    //
+    // Capability-gated: unit tests drive this factory against a fake context
+    // with no splitter/buffer-source/destination; there the ports still exist
+    // (gains) and the scheduling bookkeeping runs, but no source is spawned.
+    // The audible path is the e2e's to prove — a green fake proves nothing.
+    const audioCtx = ctx as BaseAudioContext & Partial<AudioContext>;
+    const canPlayAudioClips =
+      typeof audioCtx.createChannelSplitter === 'function' &&
+      typeof audioCtx.createBufferSource === 'function';
+    interface LaneAudioOut {
+      l: GainNode;
+      r: GainNode;
+      split: ChannelSplitterNode | null;
+    }
+    const audioOut: LaneAudioOut[] = [];
+    // gain(0) → destination keeps the sources pulled (and phase-true) even
+    // when nothing is patched or normalled — recorderbox's keep-alive rule.
+    const audioKeep: GainNode | null = audioCtx.destination ? ctx.createGain() : null;
+    if (audioKeep) {
+      audioKeep.gain.value = 0;
+      audioKeep.connect(audioCtx.destination!);
+    }
+    for (let L = 0; L < LANES; L++) {
+      const l = ctx.createGain();
+      const r = ctx.createGain();
+      let split: ChannelSplitterNode | null = null;
+      if (canPlayAudioClips) {
+        split = audioCtx.createChannelSplitter!(2);
+        split.connect(l, 0);
+        split.connect(r, 1);
+      }
+      if (audioKeep) {
+        l.connect(audioKeep);
+        r.connect(audioKeep);
+      }
+      audioOut.push({ l, r, split });
+    }
+
+    /** Lane L's in-flight audio playback. `originAt` is the ctx time of loop
+     *  frame 0 — kept across a mute suspend so resume stays phase-locked. */
+    interface LaneAudioPlay {
+      key: string; // clipAudioCacheKey — the take's identity incl. takeAt
+      clip: AudioClipRecord;
+      originAt: number;
+      source: AudioBufferSourceNode | null;
+      audible: boolean; // the duck edge published as playing
+    }
+    const laneAudio: (LaneAudioPlay | null)[] = new Array(LANES).fill(null);
+
+    function firstMixmstrs(): ModuleNode | undefined {
+      for (const n of Object.values(livePatch.nodes)) {
+        if (n && (n as { type?: string }).type === 'mixmstrs') return n as ModuleNode;
+      }
+      return undefined;
+    }
+
+    /** Publish a lane-playing edge to the mixer's MON duck — a value scheduled
+     *  AT A CONTEXT TIME, the same instant the clip's own source starts or
+     *  stops, per the clip-lane-return contract. Never polled. */
+    function publishLaneEdge(L: number, playing: boolean, atTime: number): void {
+      const engine = getActiveEngine();
+      const mix = firstMixmstrs();
+      if (!engine || !mix) return;
+      try {
+        engine.write(mix, 'clipLaneEdge', { lane: L, playing, atTime });
+      } catch {
+        /* the mixer is not materialized yet — nothing to duck */
+      }
+    }
+
+    function spawnLaneSource(L: number, st: LaneAudioPlay, buf: AudioBuffer): void {
+      if (!canPlayAudioClips) return;
+      const src = audioCtx.createBufferSource!();
+      src.buffer = buf;
+      src.loop = true;
+      src.loopStart = 0;
+      src.loopEnd = buf.duration;
+      const out = audioOut[L]!;
+      if (out.split) src.connect(out.split);
+      const now = ctx.currentTime;
+      // A future origin starts ON it; a past origin (decode latency, an
+      // unmute) starts NOW at the phase-locked offset into the loop, so the
+      // loop's frame 0 stays anchored to `originAt` either way.
+      if (st.originAt >= now) src.start(st.originAt);
+      else src.start(now, (now - st.originAt) % buf.duration);
+      st.source = src;
+    }
+
+    /** Stop lane L's audio at `at`. `forget` drops the take (launch/stop/
+     *  switch/undo); false keeps it + its phase origin (mute suspend). */
+    function haltLaneAudio(L: number, at: number, forget: boolean): void {
+      const st = laneAudio[L];
+      if (!st) return;
+      const t = Math.max(at, ctx.currentTime);
+      if (st.source) {
+        try {
+          st.source.stop(t);
+        } catch {
+          /* already stopped */
+        }
+        st.source = null;
+      }
+      if (st.audible) {
+        publishLaneEdge(L, false, t);
+        st.audible = false;
+      }
+      if (forget) laneAudio[L] = null;
+    }
+
+    /** Begin lane L's playback of an audio `clip`, loop frame 0 at `at`.
+     *  Decode is lazy (byte-capped cache); the duck edge is published at the
+     *  SCHEDULED time immediately, not when the decode resolves — the boundary
+     *  is the boundary whether or not the bytes are warm. */
+    function startLaneAudio(L: number, clip: AudioClipRecord, at: number): void {
+      haltLaneAudio(L, at, true);
+      const st: LaneAudioPlay = {
+        key: clipAudioCacheKey(clip),
+        clip,
+        originAt: at,
+        source: null,
+        audible: true,
+      };
+      laneAudio[L] = st;
+      publishLaneEdge(L, true, at);
+      if (!canPlayAudioClips) return;
+      void getClipAudioBuffer(ctx, clip)
+        .then((buf) => {
+          if (!alive || laneAudio[L] !== st || !st.audible || st.source || !buf) return;
+          spawnLaneSource(L, st, buf);
+        })
+        .catch(() => {
+          /* media absent — the pad's named state; nothing sounds */
+        });
+    }
+
+    /** Resume a mute-suspended lane at its original phase. */
+    function resumeLaneAudio(L: number): void {
+      const st = laneAudio[L];
+      if (!st || st.audible) return;
+      st.audible = true;
+      publishLaneEdge(L, true, ctx.currentTime);
+      if (!canPlayAudioClips) return;
+      void getClipAudioBuffer(ctx, st.clip)
+        .then((buf) => {
+          if (!alive || laneAudio[L] !== st || !st.audible || st.source || !buf) return;
+          spawnLaneSource(L, st, buf);
+        })
+        .catch(() => {
+          /* media absent */
+        });
+    }
+
+    /** The launch/stop/switch hook: lane L's active slot became `slot`,
+     *  effective at `at` — the same instant setLaneActive anchors the grid on.
+     *  Called from every path that moves `ln.active`. */
+    function updateLaneAudio(L: number, slot: number | null, at: number): void {
+      const d = liveData();
+      const clip = slot !== null ? readClip(d, clipIndex(slot, L)) : null;
+      if (clip?.kind === 'audio' && transportRunning() && !laneMuted(d, L)) {
+        startLaneAudio(L, clip, at);
+      } else {
+        haltLaneAudio(L, at, true);
+      }
+    }
+
+    /** (Re)start every active audio-clip lane from loop frame 0 at `at` — the
+     *  transport-start and RST re-anchor (all lanes share the phase origin). */
+    function restartActiveLaneAudio(at: number): void {
+      const d = liveData();
+      for (let L = 0; L < LANES; L++) {
+        const slot = lanes[L].active;
+        if (slot === null) continue;
+        const clip = readClip(d, clipIndex(slot, L));
+        if (clip?.kind === 'audio' && !laneMuted(d, L)) startLaneAudio(L, clip, at);
+        else haltLaneAudio(L, at, true);
+      }
+    }
+
+    // ── THE NORMALLED RETURN — lane N into mixmstrs channel N ──────────────
+    //
+    // A hardware normal and nothing more (clip-lane-return.ts): the internal
+    // connection BREAKS the moment a cable is patched into that channel's
+    // input jack — a GRAPH fact, never an audio probe — and the lane's own
+    // audio{N}L/R jacks keep working either way. A cable into EITHER leg of
+    // the channel breaks the whole channel's normal: the MON duck is
+    // per-channel, and a half-normalled channel (live L, clip R) is not a
+    // state a player can reason about. Re-checked every tick against the live
+    // edge set and the mixer's published entry points; a rebuilt mixer
+    // factory hands back a NEW roster identity, which forgets dead nodes.
+    let laneReturnsRef: unknown = null;
+    let laneReturns: { node: AudioNode; input: number }[] | null = null;
+    const normalOn: boolean[] = new Array(LANES).fill(false);
+    function syncLaneReturns(): void {
+      const engine = getActiveEngine();
+      const mix = firstMixmstrs();
+      const raw = engine && mix ? engine.read(mix, 'laneReturns') : null;
+      if (raw !== laneReturnsRef) {
+        // The mixer (re)built or vanished — prior connections died with its
+        // nodes. Best-effort disconnect (a dead node throws; that is fine).
+        for (let L = 0; L < LANES; L++) {
+          if (normalOn[L] && laneReturns) {
+            const rl = laneReturns[2 * L];
+            const rr = laneReturns[2 * L + 1];
+            try {
+              if (rl) audioOut[L]!.l.disconnect(rl.node);
+            } catch {
+              /* node gone */
+            }
+            try {
+              if (rr) audioOut[L]!.r.disconnect(rr.node);
+            } catch {
+              /* node gone */
+            }
+          }
+          normalOn[L] = false;
+        }
+        laneReturnsRef = raw;
+        laneReturns =
+          Array.isArray(raw) && raw.length >= LANES * 2
+            ? (raw as { node: AudioNode; input: number }[])
+            : null;
+      }
+      if (!laneReturns || !mix) return;
+      const edges = Object.values(livePatch.edges);
+      for (let L = 0; L < LANES; L++) {
+        const patched =
+          isInputPortConnected(edges, mix.id, `ch${L + 1}L`) ||
+          isInputPortConnected(edges, mix.id, `ch${L + 1}R`);
+        const want = clipLaneNormalConnected(patched);
+        if (want === normalOn[L]) continue;
+        const rl = laneReturns[2 * L]!;
+        const rr = laneReturns[2 * L + 1]!;
+        const out = audioOut[L]!;
+        if (want) {
+          try {
+            out.l.connect(rl.node, 0, rl.input);
+            out.r.connect(rr.node, 0, rr.input);
+          } catch {
+            continue; // roster stale mid-teardown; the next tick re-reads it
+          }
+        } else {
+          try {
+            out.l.disconnect(rl.node);
+          } catch {
+            /* already gone */
+          }
+          try {
+            out.r.disconnect(rr.node);
+          } catch {
+            /* already gone */
+          }
+        }
+        normalOn[L] = want;
+      }
+    }
 
     let alive = true;
     let unsubscribeTick: (() => void) | null = null;
@@ -1146,6 +1445,10 @@ export const clipplayerDef: AudioModuleDef = {
         // `active` flips, matching the transport-stop / dispose guards.
         holdLaneAutomation(L, lanes[L].active, null, null);
         lanes[L].active = null; // song time drives the printed channels, not clips
+        // An AUDIO-clip lane entering SONG mode stops its source like every
+        // other path that drops `active` (leaving is the peer-adopt path,
+        // which restarts through updateLaneAudio).
+        haltLaneAudio(L, ctx.currentTime, true);
       }
     }
 
@@ -1388,6 +1691,10 @@ export const clipplayerDef: AudioModuleDef = {
         playing[L] = slot;
         d.playing = playing;
       });
+      // AUDIO CLIP hook — the launch/stop/switch lands at the SAME instant the
+      // grid re-anchors on (`ln.nextStepTime` above), so the buffer source and
+      // the step machinery agree about where loop frame 0 is.
+      updateLaneAudio(L, slot, ln.nextStepTime);
       if (slot === null) silenceLane(L, ctx.currentTime);
     }
 
@@ -1420,6 +1727,9 @@ export const clipplayerDef: AudioModuleDef = {
         // Drop the now-cancelled future entries so the playhead can't show them.
         ln.sched = ln.sched.filter((e) => e.t <= at);
       }
+      // AUDIO CLIPS re-anchor with everything else: restart from loop frame 0
+      // on the same shared origin instant.
+      restartActiveLaneAudio(at + 0.01);
     }
 
     /**
@@ -1879,6 +2189,8 @@ export const clipplayerDef: AudioModuleDef = {
           // counts in data.sceneRepeats are untouched). started=false re-pins
           // startBeat at the restart boundary via the tracker maintenance below.
           if (repTrack) repTrack.started = false;
+          // AUDIO CLIPS restart from loop frame 0 on the shared origin.
+          restartActiveLaneAudio(ctx.currentTime + 0.01);
         } else if (!running && prevRunning) {
           // SONG-REC: a transport stop punches out the in-flight print. DROP the
           // un-sounded lookahead tail (`beat > songBeat`) — silenceLane below
@@ -1890,6 +2202,10 @@ export const clipplayerDef: AudioModuleDef = {
           advanceFloorUntil = null;
           for (let L = 0; L < LANES; L++) {
             silenceLane(L, ctx.currentTime);
+            // AUDIO CLIPS stop with the transport. Forgotten (not suspended):
+            // the transport-start edge above re-launches active audio lanes
+            // from loop frame 0 on the shared origin, like every other lane.
+            haltLaneAudio(L, ctx.currentTime, true);
             // Transport stopped → hold-last-value on EVERY lane playing an
             // automation clip (an immediate seam — cancel + pin at now). Lanes
             // keep their `active` slot (they resume on transport start).
@@ -1949,12 +2265,38 @@ export const clipplayerDef: AudioModuleDef = {
         // MUTE edge-scan — the instant a lane becomes muted, silence its buses at
         // currentTime (don't wait for its next scheduled step). emitLaneStep then
         // keeps the muted lane's playhead advancing but writes no further audio;
-        // unmuting simply resumes emitting on the next step.
+        // unmuting simply resumes emitting on the next step. An AUDIO lane's
+        // source is SUSPENDED (its phase origin kept) so unmuting resumes
+        // phase-locked, mirroring how a muted note lane's playhead keeps
+        // advancing.
         for (let L = 0; L < LANES; L++) {
           const m = laneMuted(d0, L);
-          if (m && !prevMuted[L] && lanes[L].active !== null) silenceLane(L, ctx.currentTime);
+          if (m && !prevMuted[L] && lanes[L].active !== null) {
+            silenceLane(L, ctx.currentTime);
+            haltLaneAudio(L, ctx.currentTime, false);
+          } else if (!m && prevMuted[L] && lanes[L].active !== null && running) {
+            if (laneAudio[L]) {
+              resumeLaneAudio(L);
+            } else {
+              // Launched while muted — nothing was suspended. Start now,
+              // phase-locked to the lane's own grid position.
+              const clip = readClip(d0, clipIndex(lanes[L].active!, L));
+              if (clip?.kind === 'audio') {
+                const base = 60 / transportBpm() / (STEP_DIV_SPB[readParam('stepDiv', 2)] ?? 4);
+                const laneDur = laneStepDur(base, lanes[L].divIndex);
+                const frac = laneFracStep(L, laneDur);
+                const origin =
+                  frac >= 0 ? ctx.currentTime - frac * laneDur : ctx.currentTime + 0.01;
+                startLaneAudio(L, clip, origin);
+              }
+            }
+          }
           prevMuted[L] = m;
         }
+
+        // AUDIO CLIP normal upkeep — the lane→mixer return, re-derived from the
+        // live edge set (a patched cable breaks it; unpatching restores it).
+        syncLaneReturns();
 
         // ── SCENE REPEATS: tracker maintenance (runs BEFORE any launch applies
         // this tick, so a launch applied below pins against the fresh tracker).
@@ -2046,6 +2388,9 @@ export const clipplayerDef: AudioModuleDef = {
               lanes[L].loopCount = 0; // peer-adopted switch → play-every counts from 0 (peers converge)
               lanes[L].autoStarted = false; // re-entry → next step-0 glides
               lanes[L].nextStepTime = ctx.currentTime + 0.01;
+              // AUDIO CLIP hook — peer-driven switches take the same path a
+              // local immediate switch does.
+              updateLaneAudio(L, sv, lanes[L].nextStepTime);
               if (sv === null) silenceLane(L, ctx.currentTime);
             }
           }
@@ -2427,6 +2772,22 @@ export const clipplayerDef: AudioModuleDef = {
           laneClips[L] = ln.active !== null ? activeClip : null;
         }
 
+        // AUDIO CLIP stale-take reconcile: the take a lane is sounding must be
+        // the take its slot still HOLDS. An undo, a CLEAR, or a re-record
+        // replaces/removes the record (keyed by mediaId+takeAt), and a source
+        // still looping the old bytes would be audio without a clip — cut it.
+        // A REPLACED take (same slot, new key) restarts from its own top.
+        for (let L = 0; L < LANES; L++) {
+          const st = laneAudio[L];
+          if (!st) continue;
+          const clip = laneClips[L];
+          if (clip?.kind === 'audio' && clipAudioCacheKey(clip) === st.key) continue;
+          haltLaneAudio(L, ctx.currentTime, true);
+          if (clip?.kind === 'audio' && running && !laneMuted(d0, L)) {
+            startLaneAudio(L, clip, ctx.currentTime + 0.01);
+          }
+        }
+
         // CAPTURE PHASE (redesign §4.1) — publish each lane's audio-clock phase
         // so the KEYS recorder can project a pad event's own timestamp onto the
         // NEAREST step (clip-lane-phase.ts / clip-record-capture.ts), instead of
@@ -2563,6 +2924,8 @@ export const clipplayerDef: AudioModuleDef = {
       outputs.set(`pitch${L + 1}`, { node: lanes[L].poly.output, output: 0 });
       outputs.set(`gate${L + 1}`, { node: lanes[L].gateSrc, output: 0 });
       outputs.set(`vel${L + 1}`, { node: lanes[L].velSrc, output: 0 });
+      outputs.set(`audio${L + 1}L`, { node: audioOut[L]!.l, output: 0 });
+      outputs.set(`audio${L + 1}R`, { node: audioOut[L]!.r, output: 0 });
     }
 
     return {
@@ -2582,6 +2945,32 @@ export const clipplayerDef: AudioModuleDef = {
       read(key) {
         if (key === 'totalLoops') return totalLoops;
         if (key === 'transportRunning') return transportRunning() ? 1 : 0;
+        // THE RECORDER'S CLOCK — everything the clip-record registry needs to
+        // resolve a take window, computed by the SAME code a launch uses so
+        // the recorder and the launcher cannot disagree about the shared bar:
+        //   running     — the transport gate (arm auto-starts it when false);
+        //   baseStepDur — the global STEP grid in seconds (bpm + stepDiv);
+        //   boundary    — `nextLaunchBoundary` over the live playing clocks
+        //                 (ctx seconds), null when nothing plays / stopped;
+        //   refSeconds  — the reference bar's loop length in seconds (the
+        //                 longest playing clip), null when nothing plays.
+        if (key === 'recClock') {
+          const d = liveData();
+          const running = transportRunning();
+          const baseStepDur = 60 / transportBpm() / (STEP_DIV_SPB[readParam('stepDiv', 2)] ?? 4);
+          const clocks = collectPlayingClocks(d, baseStepDur);
+          let refSeconds: number | null = null;
+          for (const c of clocks) {
+            const s = c.lenSteps * c.laneStepDur;
+            if (refSeconds === null || s > refSeconds) refSeconds = s;
+          }
+          return {
+            running,
+            baseStepDur,
+            boundary: running ? nextLaunchBoundary(clocks, ctx.currentTime) : null,
+            refSeconds,
+          };
+        }
         if (key === 'externallyClocked') return transportExternallyClocked() ? 1 : 0;
         // SONG MODE: the card reads these to drive the RECORD/mode UI + readout.
         if (key === 'songBeat') return songBeat;
@@ -2676,6 +3065,16 @@ export const clipplayerDef: AudioModuleDef = {
           unsubscribeTick();
           unsubscribeTick = null;
         }
+        // AUDIO CLIPS: stop every source + release the duck (the mixer must
+        // not stay ducked for a launcher that no longer exists), then tear
+        // down the per-lane output plumbing and any live normals.
+        for (let L = 0; L < LANES; L++) haltLaneAudio(L, ctx.currentTime, true);
+        for (const o of audioOut) {
+          try { o.split?.disconnect(); } catch { /* */ }
+          try { o.l.disconnect(); } catch { /* */ }
+          try { o.r.disconnect(); } catch { /* */ }
+        }
+        try { audioKeep?.disconnect(); } catch { /* */ }
         for (const ln of lanes) {
           try { ln.gateSrc.stop(); } catch { /* */ }
           try { ln.velSrc.stop(); } catch { /* */ }
