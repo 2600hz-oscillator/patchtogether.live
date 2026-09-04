@@ -83,6 +83,69 @@ async function auditionCount(page: Page, nodeId: string, seam: string): Promise<
   );
 }
 
+/**
+ * ⚠ WAIT FOR THE ENGINE HANDLE BEFORE PRESSING CONNECT — the precondition
+ * `spawnPatch` does NOT establish, and the root cause of this file's flake.
+ *
+ * `spawnPatch` waits for the DOM node (`.svelte-flow__node[data-id]`) to mount.
+ * The CONNECT cell needs something else entirely: `midiclockConnect` resolves
+ * `engine.read(node, 'card-api')` ONCE, and when the RECONCILER has not yet
+ * added the engine node it records `delivered: false` and returns. There is no
+ * retry and no queue, so a press landing in that window is SILENTLY LOST — the
+ * lane tile looks identical, `cardState.connected` never flips, and
+ * `midiclock-device-select` (which only renders when connected) never appears.
+ *
+ * ⚠ AND NO TIMEOUT RECOVERS IT — which is why the fix is not a bigger budget.
+ * Measured with the handle forced unavailable at press time: `device-select`
+ * was STILL absent after 15 000 ms — three times the 5 s budget that failed on
+ * CI — with the audition ledger reading `delivered=0 dropped=1`. Waiting for
+ * the handle first: visible in 5 ms, `delivered=1 dropped=0`.
+ *
+ * Same disease as the mono-normal probe that read the port before the worklet
+ * existed (#2356): a test driving a seam before the engine has the node.
+ */
+async function waitForCardApi(page: Page, nodeId: string): Promise<void> {
+  await expect
+    .poll(
+      () =>
+        page.evaluate((id) => {
+          const w = globalThis as unknown as {
+            __engine?: () => { read: (n: unknown, k: string) => unknown } | null;
+            __patch: { nodes: Record<string, unknown> };
+          };
+          const eng = w.__engine?.();
+          const node = w.__patch.nodes[id];
+          return !!(eng && node && eng.read(node, 'card-api'));
+        }, nodeId),
+      {
+        message:
+          `the reconciler has added ${nodeId}'s ENGINE node, so a CONNECT press can reach ` +
+          '`read(node, "card-api").connect()` instead of being dropped',
+        timeout: SLOW_RENDER ? 30_000 : 15_000,
+      },
+    )
+    .toBe(true);
+}
+
+/**
+ * Press CONNECT from the LANE tile, and prove the press REACHED THE SEAM.
+ *
+ * Waits for the engine handle first, then asserts the audition ledger recorded
+ * a DELIVERED press — so a dropped press fails LOUDLY here, naming its cause,
+ * instead of surfacing seconds later as "device-select not found" on whatever
+ * assertion happens to come next.
+ */
+async function connectFromLane(page: Page, nodeId: string): Promise<void> {
+  await waitForCardApi(page, nodeId);
+  const before = await auditionCount(page, nodeId, 'engine-message');
+  await laneShell(page, nodeId).getByTestId('shell-cell-midiclock-connect').click();
+  await expect
+    .poll(() => auditionCount(page, nodeId, 'engine-message'), {
+      message: 'the CONNECT press reached the live engine handle and reported DELIVERED',
+    })
+    .toBeGreaterThan(before);
+}
+
 test.describe('MIDICLOCK faceplate', () => {
   test('the LANE TILE carries the CONNECT gesture — the defect this face fixes', async ({ page }) => {
     // ⚠ THE REGRESSION PIN FOR D4, and it is the test that would have caught the
@@ -113,6 +176,11 @@ test.describe('MIDICLOCK faceplate', () => {
     // handle and called it, which is knowable on a runner with no MIDI at all.
     await gotoShell(page);
     await spawnPatch(page, [{ id: NODE, type: 'midiclock', position: { x: 200, y: 200 } }]);
+
+    // The press can only reach the seam once the RECONCILER has added the
+    // engine node — `spawnPatch` only guarantees the DOM node. Without this the
+    // subject of this very test (a DELIVERED press) is a coin flip.
+    await waitForCardApi(page, NODE);
 
     const before = await auditionCount(page, NODE, 'engine-message');
     expect(before, 'the audition ledger is exposed (VITE_E2E_HOOKS)').toBeGreaterThanOrEqual(0);
@@ -269,7 +337,9 @@ test.describe('MIDICLOCK faceplate', () => {
     await spawnPatch(page, [{ id: NODE, type: 'midiclock', position: { x: 200, y: 200 } }]);
 
     // CONNECT from the LANE — the exact affordance a player meets first.
-    await laneShell(page, NODE).getByTestId('shell-cell-midiclock-connect').click();
+    // Guarded: an unguarded press here had the same latent flake as the DEBUG
+    // TAIL test below, it simply had not surfaced yet.
+    await connectFromLane(page, NODE);
     const dock = await openDock(page, NODE);
     const select = dock.getByTestId(`midiclock-device-select-${NODE}`);
     await expect(select).toBeVisible();
@@ -342,11 +412,22 @@ test.describe('MIDICLOCK faceplate', () => {
     await gotoShell(page);
     await spawnPatch(page, [{ id: NODE, type: 'midiclock', position: { x: 200, y: 200 } }]);
 
-    await laneShell(page, NODE).getByTestId('shell-cell-midiclock-connect').click();
+    // ⚠ THE FLAKE THIS FILE HAD. An unguarded press here was dropped whenever
+    // the reconciler had not yet added the engine node, and the failure landed
+    // on the assertion below as "device-select not found" — 5 s of waiting for
+    // a state that was never coming. See `connectFromLane`.
+    await connectFromLane(page, NODE);
     const dock = await openDock(page, NODE);
     await expect(dock.getByTestId(`midiclock-device-select-${NODE}`)).toBeVisible();
 
     // Closed at rest: the panel does not exist, only its toggle does.
+    //
+    // ⚠ `toHaveCount(0)` CANNOT CARRY THIS ALONE — it is equally true of a body
+    // that never rendered, which is exactly the failure mode above. The toggle's
+    // PRESENCE is the positive half: it proves the debug affordance rendered, so
+    // the panel's absence is a real fact about the closed state rather than
+    // about an empty dock.
+    await expect(dock.getByTestId(`midiclock-debug-${NODE}`)).toBeVisible();
     const tail = dock.getByTestId(`midiclock-tail-${NODE}`);
     await expect(tail).toHaveCount(0);
 
