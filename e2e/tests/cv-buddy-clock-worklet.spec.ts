@@ -158,3 +158,59 @@ test('cv-buddy clock: worklet-driven, emitting, and immune to an 800ms main-thre
     'the main-thread shadow scheduler must have registered the stall',
   ).toBeGreaterThan(before.skips);
 });
+
+test('the LATE lamp paints DARK through a main-thread stall — the #2343 VRT flake, welded shut', async ({
+  page,
+}) => {
+  // vrt-strict shard 10 captured `face-cvBuddy-dock` with LATE lit because
+  // THAT boot stalled >200 ms while the shadow scheduler ran: the lamp was
+  // painting the runner's load average. The fix routes the painted state
+  // through `cvBuddyLateLampLit` — real jack losses only — so a resting face
+  // is identical whatever the boot timing. This leg re-runs the failure's
+  // mechanism on purpose: wedge the main thread, PROVE the stall registered
+  // (shadow skips rose — without that this test is vacuous on a fast machine),
+  // then read the pixel-driving attribute the VRT scene captures.
+  await page.goto('/rack');
+  await spawnPatch(page, [
+    { id: CVB, type: 'cvBuddy', domain: 'audio', position: { x: 480, y: 80 }, params: { ppqn: PPQN, clockOffsetMs: 0 } },
+  ]);
+  // No timelorde: the transport free-runs — the exact VRT-scene condition.
+  await expect
+    .poll(async () => (await readHealth(page)).driver, { timeout: 15_000 })
+    .toBe('worklet');
+
+  // Open the dock so the status body (and its lamp) is mounted and polling —
+  // the same locator discipline cv-buddy-face.spec.ts uses.
+  const shell = page.locator(`.svelte-flow__node[data-id="${CVB}"] [data-testid="module-shell"]`);
+  await expect(shell).toBeVisible();
+  await shell.getByTestId('shell-open-dock').click();
+  const dock = page
+    .getByTestId('dock-full-view')
+    .locator(`[data-testid="module-shell"][data-shell-tier="dock"][data-shell-node="${CVB}"]`);
+  await expect(dock).toBeVisible();
+  const late = dock.getByTestId(`cv-buddy-led-late-${CVB}`);
+  await expect(late).toBeVisible();
+  await expect(late).toHaveAttribute('data-lit', '0');
+
+  const before = await readHealth(page);
+  await page.evaluate(() => {
+    const until = performance.now() + 600;
+    while (performance.now() < until) {
+      /* wedge — the shard-10 boot, reproduced deliberately */
+    }
+  });
+  // The stall REGISTERED on the shadow scheduler (positive control)…
+  await expect
+    .poll(async () => (await readHealth(page)).skips, { timeout: 15_000 })
+    .toBeGreaterThan(before.skips);
+  // …and the lamp's next poll cycles have run (the body polls at 1 Hz; wait on
+  // observable pulses, not wall time, for two poll periods' worth of clock).
+  await expect
+    .poll(async () => (await readHealth(page)).workletPulses, { timeout: 15_000 })
+    .toBeGreaterThan(before.workletPulses + 2 * RATE);
+
+  // The painted state never moved: absorbed stalls do not light a warn lamp.
+  await expect(late).toHaveAttribute('data-lit', '0');
+  const health = await readHealth(page);
+  expect(health.workletSkips, 'no real loss occurred either').toBe(0);
+});

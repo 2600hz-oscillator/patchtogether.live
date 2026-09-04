@@ -84,6 +84,37 @@ export function cvBuddyRoutedDetail(
 export type CvBuddyClockDriver = 'worklet' | 'main';
 
 /**
+ * Does the LATE lamp PAINT lit?
+ *
+ * ⚠ THE LAMP LIGHTS ONLY FOR PULSES THE JACK ACTUALLY LOST, and this predicate
+ * is the reason a resting faceplate is DETERMINISTIC. Under the 'worklet'
+ * driver (every real browser) a main-thread stall costs nothing at the jack —
+ * the audio-thread clock keeps emitting — so lighting a warn lamp on the
+ * shadow `skips` counter is a false alarm about ambient scheduling noise. It
+ * is also boot-to-boot NONDETERMINISM wherever a screenshot is taken: PR
+ * #2343's vrt-strict shard caught `face-cvBuddy-dock` with LATE lit because
+ * that boot stalled >200 ms while the shadow scheduler ran (a bare rack
+ * free-runs the transport), and the identical scene had captured dark on
+ * every earlier boot. A resting surface must not paint the runner's load
+ * average.
+ *
+ * So: 'worklet' driver → lit on `workletSkips` (pulses the audio-thread clock
+ * itself dropped-and-counted — real holes in the train, 0 at rest, always);
+ * 'main' driver (test/SSR, or a context whose worklet failed to load) → lit
+ * on `skips` exactly as before, because there every skip IS a lost pulse.
+ * The shadow-stall count stays fully surfaced in the lamp's title/aria
+ * (`cvBuddySkipDetail`) either way — the diagnostic is not weakened, its
+ * painted alarm is just reserved for actual losses.
+ */
+export function cvBuddyLateLampLit(
+  driver: CvBuddyClockDriver,
+  skips: number,
+  workletSkips: number,
+): boolean {
+  return driver === 'worklet' ? workletSkips > 0 : skips > 0;
+}
+
+/**
  * The late-tick counter, as words for the lamp's `title` / `aria-label`.
  *
  * ⚠ A ZERO IS INFORMATION, and the card's own comment argued it must always
@@ -105,11 +136,25 @@ export type CvBuddyClockDriver = 'worklet' | 'main';
  * 'main' driver (test/SSR, or a context whose worklet failed to load) a rising
  * count means what it always meant: pulses the jack never carried.
  */
-export function cvBuddySkipDetail(skips: number, driver: CvBuddyClockDriver = 'main'): string {
+export function cvBuddySkipDetail(
+  skips: number,
+  driver: CvBuddyClockDriver = 'main',
+  workletSkips = 0,
+): string {
   const tail =
     'Rising here means a main-thread stall; rising xruns on the ES-9 card instead means the jack '
     + 'is starving. Neither means look elsewhere.';
   if (driver === 'worklet') {
+    // A LIT lamp under this driver means the audio-thread clock ITSELF
+    // dropped-and-counted pulses (`workletSkips` — real holes in the train,
+    // reachable only via a config jump). The sentence must name THAT loss
+    // first, or the lamp would light while its own hover said "nothing was
+    // lost".
+    if (workletSkips > 0) {
+      return `${workletSkips} clock pulse${workletSkips === 1 ? '' : 's'} dropped by the `
+        + `audio-thread clock itself (a config jump moved the grid) — ${workletSkips === 1 ? 'a real hole' : 'real holes'} `
+        + `in the pulse train, counted rather than flushed late. ${tail}`;
+    }
     if (skips <= 0) {
       return `No main-thread stalls since this node was created. The clock itself is generated on `
         + `the audio thread, so a stall would delay nothing at the jack. ${tail}`;
