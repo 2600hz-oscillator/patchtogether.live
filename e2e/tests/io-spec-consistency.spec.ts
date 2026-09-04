@@ -41,7 +41,7 @@
 //      catches the silent DOM-only mount).
 //   E. CONTROLS FIT THE TILE — no in-flow control past the right/bottom edge
 //      and no horizontal content overflow (the instrument lives in
-//      _card-overflow.ts and is shared with freezeframe-screen-toggle).
+//      _card-overflow.ts).
 //   F. NO CONSOLE / PAGE ERRORS across the whole spawn (from modules.spec.ts),
 //      asserted LAST — see the live-render window below.
 //
