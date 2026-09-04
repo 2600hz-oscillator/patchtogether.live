@@ -59,19 +59,38 @@ type G = {
 const LIT40_FLOOR = 0.01;
 const MEAN_FLOOR = 12;
 
-/** Spawn a lone TOYBOX (id 'tb') on the LEGACY shell and wait for the hook. */
+/** Spawn a lone TOYBOX (id 'tb') on the DEFAULT shell, open its dock (the
+ *  console — and therefore the `__toyboxRoll` hook — mounts there), and wait
+ *  for the hook. */
 async function spawnToybox(page: Page, extraNodes: SpawnNode[] = [], edges: SpawnEdge[] = []): Promise<void> {
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await page.waitForLoadState('networkidle');
   const nodes: SpawnNode[] = [
     { id: 'tb', type: 'toybox', position: { x: 420, y: 40 }, domain: 'video' },
     ...extraNodes,
   ];
   await spawnPatch(page, nodes, edges);
-  await page.locator('.svelte-flow__node-toybox').first().waitFor({ state: 'visible', timeout: 10_000 });
+  await page
+    .locator('.svelte-flow__node[data-id="tb"] [data-testid="module-shell"]')
+    .waitFor({ state: 'visible', timeout: 30_000 });
+  await page.waitForFunction(
+    () =>
+      typeof (globalThis as unknown as { __openDockFullView?: unknown }).__openDockFullView ===
+      'function',
+    undefined,
+    { timeout: 30_000 },
+  );
+  await page.evaluate(
+    (id) =>
+      (globalThis as unknown as { __openDockFullView: (i: string) => void }).__openDockFullView(id),
+    'tb',
+  );
+  await expect(page.getByTestId('dock-full-view').getByTestId('toybox-face-body')).toBeVisible({
+    timeout: 60_000,
+  });
   await expect
     .poll(() => page.evaluate(() => typeof (globalThis as unknown as G).__toyboxRoll), {
-      message: '__toyboxRoll hook must be installed by ToyboxCard',
+      message: '__toyboxRoll hook must be installed by the console the dock mounts',
     })
     .toBe('function');
 }
@@ -130,6 +149,15 @@ async function roll(page: Page, seed: number): Promise<RollResultShape> {
   const res = await page.evaluate((seed) => (globalThis as unknown as G).__toyboxRoll!(seed), seed);
   expect(res, `roll(seed=${seed}) applied`).not.toBeNull();
   return res!;
+}
+
+/** Select a console face tab and wait for its pane. The dice + REVERT live in
+ *  presetZone, mounted only while `faceTab === 'presets'` — the card painted
+ *  every section at once; the faceplate's tab rail is the one collapse
+ *  control (see ToyboxConsole's combineZone header). Idempotent. */
+async function openFaceTab(page: Page, tab: 'cv' | 'combine' | 'presets'): Promise<void> {
+  await page.getByTestId(`toybox-face-tab-${tab}`).click();
+  await expect(page.getByTestId('toybox-face-pane')).toHaveAttribute('data-tab', tab);
 }
 
 async function dataSnapshot(page: Page): Promise<string> {
@@ -347,7 +375,7 @@ test.describe('toybox randomize — heavy proofs', () => {
       const settled = await page
         .waitForFunction(
           ({ LIT40_FLOOR, MEAN_FLOOR }) => {
-            const c = document.querySelector('[data-testid="toybox-canvas"]') as HTMLCanvasElement | null;
+            const c = document.querySelector('[data-testid="toybox-canvas"], [data-testid="toybox-face-canvas"]') as HTMLCanvasElement | null;
             if (!c) return false;
             const c2d = c.getContext('2d');
             if (!c2d) return false;
@@ -588,6 +616,8 @@ test.describe('toybox randomize — heavy proofs', () => {
     }
 
     // REVERT honors the lock: layer 1 keeps its CURRENT (locked) content.
+    // (REVERT lives on the presets tab; the layer-lock band is persistent.)
+    await openFaceTab(page, 'presets');
     await page.getByTestId('toybox-randomize-revert').click();
     await expect
       .poll(
@@ -705,6 +735,7 @@ test.describe('toybox randomize — heavy proofs', () => {
 
     // REVERT restores the pre-session patch (R22). The seeded pre-roll data
     // had NO combine/cvRoutes keys, so the restore must DELETE them.
+    await openFaceTab(page, 'presets');
     const revert = page.getByTestId('toybox-randomize-revert');
     await expect(revert).toBeVisible();
     await revert.click();
@@ -757,13 +788,19 @@ test.describe('toybox randomize — heavy proofs', () => {
     expect(before.domIds.length, 'default graph must be painted').toBeGreaterThan(0);
 
     // The REAL gesture: press RANDOM, then the editor must repaint the rolled
-    // graph COMPLETELY — DOM node ids exactly equal node.data's.
+    // graph COMPLETELY — DOM node ids exactly equal node.data's. On the
+    // faceplate the owner's exact path includes the tab hop: RANDOM lives on
+    // the presets tab, so press there and come BACK to the combine editor —
+    // the repaint claim is asserted on the re-shown pane, which is where a
+    // stale-proxy render would strand the player.
+    await openFaceTab(page, 'presets');
     await page.getByTestId('toybox-randomize').click();
     await expect
       .poll(async () => (await domGraph()).dataIds.length, {
         message: 'a press must write a rolled graph into node.data',
       })
       .toBeGreaterThan(0);
+    await openFaceTab(page, 'combine');
     await expect
       .poll(async () => {
         const g = await domGraph();
@@ -808,6 +845,7 @@ test.describe('toybox randomize — heavy proofs', () => {
     // ~4e-5 — a red here means the tail regressed, not bad luck.
     test.setTimeout(240_000);
     await spawnToybox(page);
+    await openFaceTab(page, 'presets');
     const dice = page.getByTestId('toybox-randomize');
     await expect(dice).toBeVisible();
     let prev = await dataSnapshot(page);
