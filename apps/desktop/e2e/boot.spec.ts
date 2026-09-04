@@ -20,6 +20,7 @@
 import { test, expect, _electron } from '@playwright/test';
 import * as path from 'node:path';
 import * as fs from 'node:fs';
+import * as os from 'node:os';
 
 const APP_DIR = path.resolve(__dirname, '..');
 const WEB_ROOT = process.env.PT_DESKTOP_WEB_ROOT
@@ -41,7 +42,11 @@ test('shell boots, /rack paints, audio runs gesture-free, zero errors', async ()
   }
 
   const electronApp = await _electron.launch({
-    args: [APP_DIR],
+    // Own userData dir: the shell holds a SINGLE-INSTANCE LOCK keyed on this
+    // path, so a lingering sibling launch would otherwise make this one exit
+    // silently instead of booting. ownership.spec.ts is where a SHARED dir is
+    // the subject.
+    args: [`--user-data-dir=${fs.mkdtempSync(path.join(os.tmpdir(), 'pt-shell-boot-'))}`, APP_DIR],
     env: {
       ...process.env,
       PT_DESKTOP_WEB_ROOT: WEB_ROOT,

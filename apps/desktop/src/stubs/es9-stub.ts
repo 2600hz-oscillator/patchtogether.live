@@ -16,6 +16,14 @@
 // NOT faithful (out of scope for supervision): actual audio streaming,
 // resampling, meters cadence. The e2e mock layer owns audible paths.
 //
+// AHEAD of the real bridge, deliberately: `shellLaunchId` on deviceInfo. It
+// echoes PT_SHELL_LAUNCH_ID, the supervisor's per-launch nonce, which is how a
+// helper proves it belongs to THIS launch rather than being an orphan of the
+// last one holding the same port. The Swift bridges do not echo it yet (a wire
+// change in another repo, sequenced with P1), so the supervisor treats an
+// ABSENT echo as normal and a WRONG echo as fatal — the always-on ownership
+// leg is the pid check, which every tier gets for free.
+//
 // Args: --port N (required), --stale-after-ms N (default 30000).
 // Orphan guard: exits when stdin closes (the supervisor pipes stdio, so a
 // dead shell tears the stub down on every platform).
@@ -68,6 +76,7 @@ function deviceInfo(): unknown {
   return {
     type: 'deviceInfo',
     protocolVersion: 1,
+    ...(process.env.PT_SHELL_LAUNCH_ID ? { shellLaunchId: process.env.PT_SHELL_LAUNCH_ID } : {}),
     name: 'es9-stub (synthetic)',
     uid: 'stub-es9',
     rate: 48000,
