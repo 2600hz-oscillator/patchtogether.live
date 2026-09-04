@@ -14,7 +14,8 @@
 //   - scope:    ch1/ch2 audio inputs are independently captured;
 //               `ch1_out` passes audio through; `engine.read(node,
 //               'snapshot')` returns the analyser buffer.
-//   - sticky:   meta-domain card with zero ports + zero engine binding.
+//   (- sticky:  meta-domain card with zero ports + zero engine binding —
+//               DELETED with the module; see the note where its leg stood.)
 //
 // We use `noise` as the test source — it's the only audio-domain module
 // with zero inputs that emits audio out of the box (no pitch CV needed).
@@ -195,57 +196,16 @@ test('scope: ch1_out passthrough emits audio downstream', async ({ page, rack, e
 
 });
 
-test('sticky: meta-domain card renders without engine binding', async ({ page }) => {
-  const errors: string[] = [];
-  page.on('pageerror', (e) => errors.push(e.message));
-  page.on('console', (m) => {
-    if (m.type() === 'error') errors.push(m.text());
-  });
-
-  await page.goto('/rack?seed=none');
-  await page.waitForLoadState('networkidle');
-
-  // Sticky is meta-domain — spawnPatch passes domain:'meta', the
-  // audio/video reconcilers skip it, and there's no engine binding
-  // for it to query. Card renders, zero handles, no errors.
-  await spawnPatch(page, [{ id: 's', type: 'sticky', domain: 'meta' }]);
-
-  const card = page.locator('.svelte-flow__node-sticky');
-  await expect(card).toBeVisible();
-
-  // Meta-domain nodes have no engine registered — the patch graph
-  // tracks them but no audio/video engine knows about them. We assert
-  // (1) the node IS in the patch and (2) `hasDomain('meta')` returns
-  // false (the engine correctly reports no binding for meta nodes).
-  // We don't call engine.read on a meta node — that throws, which is
-  // the intended PatchEngine contract.
-  const status = await page.evaluate(() => {
-    const w = globalThis as unknown as {
-      __engine?: () => {
-        hasDomain: (d: string) => boolean;
-      } | null;
-      __patch: { nodes: Record<string, { id: string; type: string; domain: string }> };
-    };
-    const eng = w.__engine?.();
-    const node = w.__patch.nodes['s'];
-    return {
-      nodeInPatch: !!node,
-      domain: node?.domain,
-      hasMetaEngine: eng?.hasDomain('meta') ?? null,
-    };
-  });
-
-  expect(status.nodeInPatch).toBe(true);
-  expect(status.domain).toBe('meta');
-  // No engine registered for the meta domain — sticky is pure UI.
-  expect(status.hasMetaEngine).toBe(false);
-
-  expect(errors, errors.join('; ')).toEqual([]);
-});
+// ⚠ THE `sticky` LEG IS DELETED WITH ITS MODULE. It spawned a STICKY note and
+// asserted the meta-domain contract: the node is in the patch, `domain` is
+// 'meta', the engine reports NO binding for that domain, and nothing throws.
+// The GROUP! and STICKY modules are deleted (owner ruling), so this file has no
+// meta-domain subject left. The contract itself is still covered without them:
+// `reconciler.test.ts` asserts a meta node is skipped before `engine.addNode`,
+// and `io-spec-consistency.spec.ts` covers zero-port defs generically.
 
 test('integration (Group 1): noise -> destroy -> scope -> audioOut chain produces audio end-to-end', async ({ page, rack, errorWatch }) => {
-  // The full sinks+utility chain: every module from Group 1 (minus
-  // sticky which is a no-engine meta card) wired in sequence.
+  // The full sinks+utility chain: every module from Group 1 wired in sequence.
   await spawnPatch(
     page,
     [

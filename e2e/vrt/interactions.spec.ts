@@ -198,61 +198,10 @@ test('port-context-menu: right-click on LFO output', async ({ page }) => {
 });
 
 // ----------------------------------------------------------------------
-// 6. Saved-groups picker. Stub /api/saved-groups so the modal renders a
-//    deterministic 2-row library. Production trigger is auth-gated; the
-//    modal component itself is always mounted, so we flip its `open` prop
-//    directly via the dev-only __openSavedGroupsPicker hook wired up in
-//    Canvas.svelte.
+// ⚠ SCENE 6 IS GONE: `saved-groups-picker` captured the SavedGroupsPicker
+// modal over a stubbed `/api/saved-groups` library, driven through the
+// dev-only `__openSavedGroupsPicker` hook. The modal, the hook, the route and
+// the whole saved-group library went with the GROUP! module (owner ruling:
+// group and sticky are deleted entirely), so the scene has no subject left to
+// capture. Its baseline is deleted in the same commit.
 // ----------------------------------------------------------------------
-test('saved-groups-picker: modal with stubbed library', async ({ page }) => {
-  // Route-stub must register before navigation so the first GET is caught.
-  await page.route('**/api/saved-groups', async (route) => {
-    if (route.request().method() !== 'GET') return route.fallback();
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({
-        savedGroups: [
-          {
-            id: 'sg-vrt-1',
-            label: 'Acid bass',
-            payload: {
-              children: [{}, {}, {}],
-              internalEdges: [{}, {}],
-            },
-          },
-          {
-            id: 'sg-vrt-2',
-            label: 'Pad voice',
-            payload: {
-              children: [{}, {}, {}, {}],
-              internalEdges: [{}, {}, {}],
-            },
-          },
-        ],
-      }),
-    });
-  });
-  await bootCanvas(page);
-
-  await page.waitForFunction(() => {
-    const w = globalThis as unknown as { __openSavedGroupsPicker?: () => void };
-    return typeof w.__openSavedGroupsPicker === 'function';
-  });
-  await page.evaluate(() => {
-    const w = globalThis as unknown as { __openSavedGroupsPicker: () => void };
-    w.__openSavedGroupsPicker();
-  });
-
-  const modal = page.locator('[data-testid="saved-groups-picker"]');
-  await modal.waitFor({ state: 'visible', timeout: 5_000 });
-  // Wait for the stubbed rows to render (loading→loaded transition).
-  await modal.locator('[data-testid="saved-group-row"]').first().waitFor({
-    state: 'visible',
-    timeout: 5_000,
-  });
-  await page.evaluate(
-    () => new Promise<void>((r) => requestAnimationFrame(() => r())),
-  );
-  await expect(modal).toHaveScreenshot('saved-groups-picker.png');
-});

@@ -595,33 +595,6 @@ async function cardMounts(page: Page, nodeId: string): Promise<{ headless: numbe
 }
 
 /**
- * EVERY host that can hold this node's real card while the lane shows nothing
- * for it, counted from the DOM rather than from a list of module types.
- *
- * ⚠ THIS IS THE POINT OF READING IT THIS WAY. There are two such hosts and
- * which one takes a given node is a property of the module, not of this test:
- * `<HeadlessSourceHost>` holds a CARD_PRODUCER, while `GroupCard` hidden-mounts
- * a viz-passthrough child's card itself (SCOPE — $lib/ui/modules/group-viz-hosts).
- * Asserting the SUM is 1 is the claim that matters in both directions at once —
- * somebody is running the pump, and nobody is running it twice — and it needs no
- * hand-maintained list to say so, so a future opt-in changes nothing here.
- */
-async function collapsedCardHosts(
-  page: Page,
-  nodeId: string,
-): Promise<{ headless: number; groupViz: number; total: number }> {
-  return page.evaluate((id) => {
-    const headless = document.querySelectorAll(
-      `[data-testid="headless-source-host"][data-node-id="${id}"]`,
-    ).length;
-    const groupViz = document.querySelectorAll(
-      `[data-testid="viz-hidden-mount"][data-child-id="${id}"]`,
-    ).length;
-    return { headless, groupViz, total: headless + groupViz };
-  }, nodeId);
-}
-
-/**
  * How many xyflow nodes the MAIN LANE renders for this node id.
  *
  * ⚠ THE EXCLUSION IS THE WHOLE POINT. Both off-lane hosts mount the card inside
@@ -637,49 +610,6 @@ async function laneNodeCount(page: Page, nodeId: string): Promise<number> {
       (el) => !el.closest('[data-testid="headless-source-host"], [data-testid="viz-hidden-mount"]'),
     ).length;
   }, nodeId);
-}
-
-/** Wrap `childId` in a freshly-created GROUP. A group is created COLLAPSED
- *  (`data.expanded` absent ⇒ falsy ⇒ `collapsedGroupIds` contains it), so this
- *  single mutation IS the collapse — the same state a SAVED rack loads in, and
- *  the same one `graph/group-actions.ts` commits from the marquee gesture. */
-async function groupChild(page: Page, groupId: string, childId: string): Promise<void> {
-  await page.evaluate(({ gid, cid }) => {
-    const w = globalThis as unknown as {
-      __patch: { nodes: Record<string, unknown> };
-      __ydoc: { transact: (fn: () => void) => void };
-    };
-    w.__ydoc.transact(() => {
-      w.__patch.nodes[gid] = {
-        id: gid,
-        type: 'group',
-        domain: 'meta',
-        position: { x: 40, y: 40 },
-        params: {},
-        data: { childIds: [cid], exposedPorts: [], label: 'producer group' },
-      };
-      const child = w.__patch.nodes[cid] as { data?: Record<string, unknown> } | undefined;
-      if (!child) throw new Error(`groupChild: no node ${cid}`);
-      if (!child.data) child.data = {};
-      (child.data as { parentGroupId?: string }).parentGroupId = gid;
-    });
-  }, { gid: groupId, cid: childId });
-}
-
-/** Un-collapse the group (the user's expand click, driven through the graph so
- *  the test does not depend on the group card's chrome). */
-async function expandGroup(page: Page, groupId: string): Promise<void> {
-  await page.evaluate((gid) => {
-    const w = globalThis as unknown as {
-      __patch: { nodes: Record<string, unknown> };
-      __ydoc: { transact: (fn: () => void) => void };
-    };
-    w.__ydoc.transact(() => {
-      const g = w.__patch.nodes[gid] as { data?: Record<string, unknown> } | undefined;
-      if (!g?.data) throw new Error(`expandGroup: no group ${gid}`);
-      (g.data as { expanded?: boolean }).expanded = true;
-    });
-  }, groupId);
 }
 
 /** Is the module's engine handle still publishing this video source? */
@@ -976,200 +906,29 @@ for (const subject of SUBJECTS) {
     expect(providerErrors, `provider throw(s) during the lifecycle: ${providerErrors.join(' | ')}`).toEqual([]);
   });
 
-  // ── #1721 — THE GROUP-COLLAPSE LEG, IN BOTH SHELLS ─────────────────────────
+  // ── #1721 — THE GROUP-COLLAPSE LEG IS DELETED WITH ITS SUBJECT ────────────
   //
-  // The legs above are all about the SHELL swapping a lane card for a tile. This
-  // one is not, and that is the whole reason it exists: Canvas's `flowNodes`
-  // derivation drops a COLLAPSED GROUP'S CHILDREN outside its `shellFaces`
-  // branch, so a producer inside a collapsed group has no card in EITHER shell
-  // — the first member of the #1583 family that is not a default-shell-only
-  // exposure. `?shell=legacy` is therefore a REAL second subject here, not the
-  // ceremonial no-op it is for the tests above.
+  // This block ran every CARD_PRODUCER through "wrapped in a COLLAPSED GROUP,
+  // in BOTH shells" and asserted the module kept its picture, that its card was
+  // mounted EXACTLY ONCE across every host that could hold it, and that an
+  // expand put the child back in the lane. Its trigger was Canvas's `flowNodes`
+  // derivation dropping a collapsed group's children OUTSIDE the `shellFaces`
+  // branch — the one member of the #1583 family that was not default-shell-only,
+  // which is why `?shell=legacy` was a real second subject here.
   //
-  // NO CLICK, AND THAT IS THE TRIGGER UNDER TEST. A group is created COLLAPSED,
-  // so wrapping the node in one IS the collapse — the same state a SAVED rack
-  // loads in, with no user action against the producer at all. The expand leg at
-  // the end then exercises the other direction.
+  // The GROUP! module is deleted (owner ruling: group and sticky are deleted
+  // entirely), so `collapsedGroupIds` and the `parentGroupId` lane filter are
+  // gone with it and there is no longer any way for a producer to be dropped
+  // from the lane by grouping. The leg is not re-pointed anywhere: its subject
+  // is the mechanism, not the modules.
   //
-  // THE VACUITY GUARDS, since an equality between two probes of the same dead
-  // thing passes:
-  //   * phase 1 (UNGROUPED) must itself carry a MOVING picture, asserted, before
-  //     anything is compared against it — the permanent positive control;
-  //   * the port SET must match, not merely "something is non-black";
-  //   * the movement check is re-run after the collapse and exits ON THE EVENT
-  //     (TIMELORDE's stale-bitmap shape reads non-black forever while frozen —
-  //     measured on the pre-fix tree: `nonBlack 2944/3072` unchanged, `1 distinct
-  //     signature in 20 frames`, i.e. dead but bright);
-  //   * and the card must be mounted EXACTLY ONCE across every host that can
-  //     hold it, which fails both if nobody took it and if two hosts did.
-  //
-  // ⚠ WHAT THIS LEG STRUCTURALLY CANNOT SEE. It reads the module's own
-  // `drawFrame`, so a producer whose engine-visible state is NOT a picture is
-  // invisible to it — SYNESTHESIA's `video_levels_a/b` writes and SCOPE's /
-  // RASTERIZE's `cvCombined` writes are covered by the mount-count assertion and
-  // by dom-source-modules.test.ts, never by these pixels. And it covers only the
-  // COLLAPSED-GROUP arm of the exclusion it fixes: the CANVAS-HIDDEN arm
-  // (`isCanvasHiddenNode` — pinned singletons + `hiddenCard` cameras) is a
-  // different subject.
-  //
-  // ⚠ THAT ARM IS NOW FIXED AND COVERED ELSEWHERE — #1754, 2026-08-23. The
-  // pinned TIMELORDE every rack auto-spawns is a CARD_PRODUCER that was sitting
-  // in it: measured on a default rack, `nonBlack 0/3072, maxLuma 8` (its idle
-  // #07090d field), `1 distinct signature over 30 frames`, with zero card mounts
-  // ANYWHERE, in both shells. `headlessSourceNodes` now routes canvas-hidden
-  // nodes through `needsHeadlessSourceMount`'s `laneOmitsNode` arm — which
-  // returns `CARD_PRODUCER_LANE_TYPES.has(type)`, so hidden cameras are
-  // unchanged — and `e2e/tests/timelorde-pinned-source.spec.ts` is the leg that
-  // proves it, with the same in-page drawFrame probe this file uses.
-  for (const shell of ['default', 'legacy'] as const) {
-    test(`${type} [${shell} shell]: its card survives its GROUP being COLLAPSED (#1721)`, async ({ page }) => {
-      test.setTimeout(SLOW_RENDER ? 240_000 : 120_000);
-      const errors: string[] = [];
-      page.on('pageerror', (e) => errors.push(e.message));
-
-      await boot(page, shell);
-      const groupId = `producer-group-${type}`;
-      await spawnPatch(
-        page,
-        [
-          { id: nodeId, type, domain },
-          { id: 'producer-out', type: 'videoOut', domain: 'video' },
-        ],
-        [
-          {
-            id: 'producer-edge',
-            from: { nodeId, portId: videoOuts[0]! },
-            to: { nodeId: 'producer-out', portId: 'in' },
-            sourceType: 'mono-video',
-            targetType: 'video',
-          },
-        ],
-        { mountTimeout: 30_000 },
-      );
-
-      // ── 1. UNGROUPED — the permanent positive control ────────────────────
-      const beforeReady = await waitForProducerRegistration(page, nodeId, videoOuts);
-      const beforeSettle = await waitForCoverageToSettle(page, nodeId, videoOuts);
-      const beforeSamples = await samplePorts(page, nodeId, videoOuts);
-      const liveBefore = livePorts(beforeSamples);
-
-      // A subject with no pixel coverage even ungrouped has no picture to lose
-      // here (SYNESTHESIA's per-band rasters need a video source patched in).
-      // Skip LOUDLY — and only after the phase-1 probe has actually run, so a
-      // broken probe fails instead of quietly becoming a skip.
-      test.skip(
-        liveBefore.length === 0,
-        `${type} shows no picture on any video output even UNGROUPED, so there is nothing here ` +
-          `to lose: ${digest(beforeSamples)} (producer ready=${beforeReady.ready} after ` +
-          `${beforeReady.waitedFrames} frames; coverage settled=${beforeSettle.settled}). Its ` +
-          'producer lifetime is covered by the headless-mount test above.',
-      );
-
-      const witness = liveBefore[0]!;
-      const movedBefore = await framesToChange(page, nodeId, witness);
-
-      // ── 2. COLLAPSE — wrap it in a group, which is created collapsed ──────
-      await groupChild(page, groupId, nodeId);
-      // The group's own card is what the lane now shows for the whole set…
-      await expect(page.locator(`.svelte-flow__node[data-id="${groupId}"]`)).toHaveCount(1, {
-        timeout: 20_000,
-      });
-      // …and the child's own lane node is gone, in BOTH shells. This is the
-      // premise of the whole leg, so it is asserted rather than assumed: if the
-      // lane still rendered the card there would be no defect to guard.
-      await expect
-        .poll(async () => laneNodeCount(page, nodeId), {
-          message:
-            `[${shell}] the collapsed group's child must have NO lane node of its own — ` +
-            'otherwise this leg is measuring nothing',
-          timeout: 20_000,
-        })
-        .toBe(0);
-
-      // EXACTLY ONE host holds the real card. Fails on 0 (the #1721 defect) and
-      // on 2 (a double mount), and does not care WHICH host it is.
-      await expect
-        .poll(async () => (await collapsedCardHosts(page, nodeId)).total, {
-          message:
-            `[${shell}] ${type}'s real card must be mounted EXACTLY ONCE while its group is ` +
-            'collapsed — in <HeadlessSourceHost>, or in GroupCard\'s hidden viz mount for a ' +
-            'viz-passthrough child',
-          timeout: 20_000,
-        })
-        .toBe(1);
-
-      const afterReady = await waitForProducerRegistration(page, nodeId, videoOuts);
-      const afterSettle = await waitForCoverageToSettle(page, nodeId, videoOuts);
-      const afterSamples = await samplePorts(page, nodeId, videoOuts);
-      const hosts = await collapsedCardHosts(page, nodeId);
-
-      expect(
-        livePorts(afterSamples),
-        `#1721 [${shell} shell]: the ports carrying a picture must be the same whether or not ` +
-          `${type} sits in a COLLAPSED GROUP. Its card is the pump, and a collapsed group is UI ` +
-          'state.\n' +
-          `  ungrouped: ${digest(beforeSamples)} (producer ready=${beforeReady.ready} after ` +
-          `${beforeReady.waitedFrames} frames; coverage settled=${beforeSettle.settled} in ` +
-          `${beforeSettle.rounds} rounds at peak ${beforeSettle.peak})\n` +
-          `  collapsed: ${digest(afterSamples)} (producer ready=${afterReady.ready} after ` +
-          `${afterReady.waitedFrames} frames; coverage settled=${afterSettle.settled} in ` +
-          `${afterSettle.rounds} rounds at peak ${afterSettle.peak}; hosts=${JSON.stringify(hosts)})`,
-      ).toEqual(liveBefore);
-
-      // MOVEMENT, on the same witness port and with the same event-exit probe
-      // used ungrouped — so the two phases are one instrument. Skipped only when
-      // the subject was ALREADY static ungrouped (SCOPE / RASTERIZE draw their
-      // picture inside the module; the card only refines WHICH display params).
-      if (movedBefore.changed) {
-        const movedAfter = await framesToChange(page, nodeId, witness);
-        expect(
-          movedAfter.changed,
-          `#1721 [${shell} shell]: ${type}.${witness} must still emit a MOVING picture inside a ` +
-            'collapsed group. A frozen-but-bright surface is exactly what a dead producer looks ' +
-            `like here.\n  ungrouped: ${fmtChange(movedBefore)}\n  collapsed: ${fmtChange(movedAfter)}`,
-        ).toBe(true);
-      }
-
-      // ── 3. EXPAND — the other direction, so the guard is not one-sided ────
-      // The child returns to the lane, and the picture must survive that
-      // handoff too: whichever host held it during the collapsed window has to
-      // let go without taking the producer down with it.
-      //
-      // ⚠ WHAT IS NOT ASSERTED HERE, AND WHY. GroupCard's own `expanded` chrome
-      // does NOT react to `data.expanded` flipping — measured on origin/main
-      // with the unmodified tree, twice, once after a dev-server restart
-      // (#1753: grouping-phase2 "Phase 2A", grouping-phase3 "expand mode" and
-      // save-group-and-naming "group rename" are all RED there, all reading a
-      // stale `data-expanded="false"` / stale label while the children DO
-      // re-appear inline). So its hidden viz mount is still present after an
-      // expand. That is a live GroupCard reactivity defect that predates this
-      // leg; it is not what #1721 is about, and asserting it here would make
-      // this leg fail for someone else's bug. Canvas's `collapsedGroupIds` DOES
-      // react — which is why the lane-node assertion below is meaningful and is
-      // the one kept.
-      await expandGroup(page, groupId);
-      await expect
-        .poll(async () => laneNodeCount(page, nodeId), {
-          message: `[${shell}] the expanded group's child returns to the lane`,
-          timeout: 20_000,
-        })
-        .toBe(1);
-      await waitForProducerRegistration(page, nodeId, videoOuts);
-      await waitForCoverageToSettle(page, nodeId, videoOuts);
-      const expandedSamples = await samplePorts(page, nodeId, videoOuts);
-      expect(
-        livePorts(expandedSamples),
-        `[${shell}] ${type} must still carry the same picture once the group is EXPANDED again: ` +
-          `${digest(expandedSamples)}`,
-      ).toEqual(liveBefore);
-
-      const providerErrors = errors.filter((e) => /useStore|SvelteFlowProvider/i.test(e));
-      expect(
-        providerErrors,
-        `provider throw(s) across the group collapse/expand: ${providerErrors.join(' | ')}`,
-      ).toEqual([]);
-    });
-  }
+  // ⚠ NAMED COVERAGE LOSS, stated rather than absorbed. What went with it is the
+  // DOUBLE-MOUNT half — `GroupCard` hidden-mounting a viz-passthrough child's
+  // real card (SCOPE, via $lib/ui/modules/group-viz-hosts) while
+  // `<HeadlessSourceHost>` also held it. That host is deleted too, so the
+  // hazard is gone by construction rather than merely untested; the surviving
+  // single-host claim is still made by the `laneOmitsNode` legs above and by
+  // `timelorde-pinned-source.spec.ts` for the canvas-hidden arm.
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
