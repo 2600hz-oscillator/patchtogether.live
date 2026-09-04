@@ -387,18 +387,29 @@
     rafId = requestAnimationFrame(poll);
   }
 
+  // ⚠ CAPTURE-PHASE + stopPropagation, the ToyboxNodeMenu / NodeContextMenu /
+  // ControlContextMenu pattern: an armed remap is a modal state, and Escape
+  // must cancel IT — not fall through to Canvas's plain window listener, which
+  // closes the whole dock full view out from under the player mid-rebind
+  // (measured: one Esc cancelled the remap AND unmounted this body). The
+  // handler claims the key ONLY while a remap is armed; an idle Esc still
+  // closes the dock as ever.
   function onKeydown(e: KeyboardEvent) {
-    if (e.key === 'Escape' && remap) { e.preventDefault(); cancelRemap(); }
+    if (e.key === 'Escape' && remap) {
+      e.preventDefault();
+      e.stopPropagation();
+      cancelRemap();
+    }
   }
 
   onMount(() => {
     rafId = requestAnimationFrame(poll);
-    window.addEventListener('keydown', onKeydown);
+    window.addEventListener('keydown', onKeydown, { capture: true });
   });
   onDestroy(() => {
     if (rafId !== null) cancelAnimationFrame(rafId);
     rafId = null;
-    window.removeEventListener('keydown', onKeydown);
+    window.removeEventListener('keydown', onKeydown, { capture: true });
     if (remapTimer !== null) clearTimeout(remapTimer);
   });
 
