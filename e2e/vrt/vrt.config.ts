@@ -133,6 +133,7 @@ const FULL_MATCH = [
   'topbar.spec.ts',
   'playhead.spec.ts',
   'interactions.spec.ts',
+  'groups.spec.ts',
   'dashboard.spec.ts',
   'landing.spec.ts',
 ];

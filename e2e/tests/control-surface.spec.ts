@@ -120,43 +120,43 @@ test('send a control to a surface → proxy appears, drives the source, survives
   });
   expect(attackAfter).not.toBe(0.9); // proxy reset the SOURCE to its default
 
-  // Take the ADSR's card OFF THE CANVAS entirely: the proxy must keep working,
-  // because the source node stays live in `patch.nodes` whether or not anything
-  // renders it.
-  //
-  // ⚠ RE-POINTED, NOT WEAKENED. This leg used to collapse the ADSR into a GROUP
-  // (mirroring the grouping-phase1 transact). The GROUP! module is deleted, but
-  // the group was only ever the MECHANISM here — the subject is "a proxy drives
-  // a source with no lane node". `data.hiddenCard` is the surviving mechanism
-  // for exactly that state ($lib/graph/hidden-card.ts; Canvas's flowNodes loop
-  // skips every `isCanvasHiddenNode`), and it is the one saved patches actually
-  // carry, so this drives the real product path rather than a retired one.
+  // Collapse the ADSR into a Group (mirror the grouping-phase1 transact):
+  // the source card hides, but the proxy must keep working because the
+  // source node stays live in patch.nodes.
   await page.evaluate(() => {
     const w = window as unknown as {
       __patch: { nodes: Record<string, PatchNode>; edges: Record<string, unknown> };
       __ydoc: { transact: (fn: () => void) => void };
     };
     w.__ydoc.transact(() => {
+      w.__patch.nodes['g-1'] = {
+        id: 'g-1', type: 'group', domain: 'meta',
+        position: { x: 80, y: 420 }, params: {},
+        data: { childIds: ['adsr-1'], exposedPorts: [] },
+      } as PatchNode;
       const child = w.__patch.nodes['adsr-1'];
       if (!child.data) child.data = {};
-      (child.data as { hiddenCard?: boolean }).hiddenCard = true;
+      (child.data as { parentGroupId?: string }).parentGroupId = 'g-1';
     });
   });
-  // The source ADSR's lane node is gone from the canvas...
+  // The group card appears (collapse happened — groups are NON_SHELL_LANE, so
+  // the card renders even on the default shell) and the source ADSR's lane
+  // node is gone from the canvas...
+  await expect(page.locator('[data-testid="group-card"][data-node-id="g-1"]')).toBeVisible();
   await expect(page.locator('.svelte-flow__node[data-id="adsr-1"]')).toHaveCount(0);
   // ...yet the proxy is still on the surface AND still drives the (now
-  // canvas-hidden) source — the whole point of the feature.
+  // collapsed) source — the whole point of the feature.
   await expect(proxy).toBeVisible();
   await page.evaluate(() => {
     const w = window as unknown as { __patch: { nodes: Record<string, PatchNode> } };
     w.__patch.nodes['adsr-1'].params.attack = 0.77;
   });
   await surface.locator('[data-testid="cs-board-dial-adsr-1-attack"]').dblclick();
-  const attackHidden = await page.evaluate(() => {
+  const attackCollapsed = await page.evaluate(() => {
     const w = window as unknown as { __patch: { nodes: Record<string, PatchNode> } };
     return w.__patch.nodes['adsr-1'].params.attack;
   });
-  expect(attackHidden).not.toBe(0.77); // proxy still wrote the hidden source
+  expect(attackCollapsed).not.toBe(0.77); // proxy still wrote the collapsed source
 
   // Unbind via the proxy's OWN control menu — it's a real control, so its
   // right-click menu offers "Remove from <surface>" (the proxy shares the

@@ -60,6 +60,7 @@ export interface ErrorWatch {
 export const test = base.extend<{
   errorWatch: ErrorWatch;
   rack: void;
+  rackLegacy: void;
 }>({
   errorWatch: async ({ page }, use) => {
     const errors: string[] = [];
@@ -85,22 +86,27 @@ export const test = base.extend<{
   // not exist in this lane.
   //
   // Inverted from `?shell=legacy` by the S2 fixture flip (LEG-04 / #1515):
-  // this fixture used to boot the legacy card renderer.
-  //
-  // ⚠ ITS OPT-IN SIBLING `rackLegacy` IS GONE, and it drained to zero rather
-  // than being cut short. The escape hatch existed for specs whose subject
-  // still read verbatim `*Card.svelte` DOM; the S2 inversion rewrote or folded
-  // every one of them except `save-group-and-naming.spec.ts`, which was its
-  // LAST consumer — and that spec died with the GROUP! module rather than
-  // being rewritten (owner ruling: group and sticky are deleted entirely).
-  // So the fixture went with it in the same commit: a fixture nobody boots is
-  // an invitation to re-open the lane, not a safety net.
+  // this fixture used to boot the legacy card renderer, and the handful of
+  // card-DOM specs still awaiting their face rewrite sit on `rackLegacy`
+  // below until they are rewritten or folded.
   rack: async ({ page }, use, testInfo) => {
     const t0 = Date.now();
     await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
     // The nav is SETUP, not assertion — see creditSetupBudget (#1648).
     applySetupCredit(testInfo, Date.now() - t0,'rack fixture nav');
+    await use();
+  },
+
+  // ⚠ TRANSITIONAL — dies with the card fleet (S4). The legacy card renderer,
+  // opt-in. Only a spec whose subject still reads verbatim *Card.svelte DOM
+  // and has not yet been rewritten against its face/surface may sit here; the
+  // S2 inversion drains this list to zero. Do NOT add new consumers.
+  rackLegacy: async ({ page }, use, testInfo) => {
+    const t0 = Date.now();
+    await page.goto('/rack?shell=legacy&seed=none');
+    await page.waitForLoadState('networkidle');
+    applySetupCredit(testInfo, Date.now() - t0,'rackLegacy fixture nav');
     await use();
   },
 
