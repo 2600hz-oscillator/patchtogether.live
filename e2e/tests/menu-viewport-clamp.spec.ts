@@ -360,16 +360,29 @@ test('clip editor menus inside the dock full-view pane stay fully in view (owner
   const pane = page.locator('[data-testid="dock-fullview-pane"][data-pane-node="cp1"]');
   await expect(pane).toBeVisible();
 
-  // ⚠ THE CHOREOGRAPHY CHANGED WITH THE PROMOTION, AND THE SUBJECT DID NOT.
-  // `clipplayer` was promoted, so this pane paints the FACEPLATE: the
-  // launch grid and the note editor are two BANDS that render at the same time
-  // rather than two mutually exclusive card VIEWS. That deletes three steps
-  // this test used to need — the click-then-wait-then-dblclick dance around the
-  // card's focus chrome (a bare `focus()` scrolled the 540 px card inside its
-  // ~352 px scrollport, landing click 2 on a different pad), and the control
-  // strip press further down that switched back to the grid. What is measured
-  // is unchanged: a menu opened deep in the drawer's bottom-right must stay
-  // fully in view, and must anchor to the thing it was opened on.
+  // ⚠ THE CHOREOGRAPHY IS BACK, AND THE SUBJECT NEVER MOVED. This block used to
+  // say the promotion had DELETED the view switching — "the launch grid and the
+  // note editor are two BANDS that render at the same time rather than two
+  // mutually exclusive card VIEWS". The owner reported that arrangement as a P0
+  // (2026-09-04: "we do NOT want the clip viewer always visible … at which
+  // point, we do not see the grid"), the face is TAB RAILED, and the grid and
+  // the roll are once more mutually exclusive.
+  //
+  // Only the NAVIGATION came back, not the hazard that made the old dance
+  // fragile: the card's `focus()` scrolled a 540 px card inside its ~352 px
+  // scrollport and landed click 2 on a different pad. A rail chip is a plain
+  // click on a chip OUTSIDE the scrolling plate, and `aria-selected` is the
+  // state the switch commits, so there is nothing here to race.
+  //
+  // What is MEASURED is unchanged, and is why this file exists: a menu opened
+  // deep in the drawer's bottom-right must stay fully in view, and must anchor
+  // to the thing it was opened on.
+  const showPage = async (id: string) => {
+    const tab = pane.getByTestId(`faceplate-tab-${id}`);
+    await tab.click();
+    await expect(tab, `the ${id} page opens`).toHaveAttribute('aria-selected', 'true');
+  };
+  await showPage('editor');
   const roll = pane.locator('[data-testid="clipplayer-pianoroll"]');
   await expect(roll).toBeVisible();
   // The probability menu only opens on a cell that HOLDS a note — toggle one
@@ -389,8 +402,9 @@ test('clip editor menus inside the dock full-view pane stay fully in view (owner
   await page.getByRole('button', { name: 'close clip menu' }).click();
   await expect(probMenu).toBeHidden();
 
-  // Clip-probability menu from a pad on the session grid — no view switch
-  // needed, since the faceplate paints the grid and the editor at once.
+  // Clip-probability menu from a pad on the SESSION grid — back through the
+  // rail, which is the face's version of the card's GRID button.
+  await showPage('session');
   const pad = pane.locator('[data-testid="clipplayer-pad-0"]');
   await expect(pad).toBeVisible();
   await pad.scrollIntoViewIfNeeded();

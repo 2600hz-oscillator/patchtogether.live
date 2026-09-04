@@ -43,6 +43,13 @@
 //  5. THAT THE EDITOR BAND WRITES NOTHING ON MOUNT. It draws a default clip's
 //     grid for an empty slot; a band that committed that clip for being
 //     rendered would put a Y.Doc write in every rack boot.
+//  5b. ⚠ THAT THE GRID AND THE EDITOR ARE **NEVER ON SCREEN TOGETHER**, which
+//     is the owner's 2026-09-04 P0 and the thing no gate in the repo can
+//     express. `faces-parity` asks that each cell EXISTS and OPERATES;
+//     `module-face-lint` reads the def; and the VRT dock baseline was captured
+//     with both surfaces in frame, so the defect WAS the baseline. Only a
+//     NEGATIVE assertion on the live faceplate can see it, and it has to run in
+//     both directions — either half alone passes on a face that lost a surface.
 //  6. ⚠ THAT `?shell=legacy` + AN OPEN DOCK PUTS **TWO** LIVE SURFACES ON ONE
 //     NODE, so six of this module's testids match TWO elements. This face
 //     deliberately reuses the CARD's testid vocabulary — it is what lets the
@@ -99,6 +106,29 @@ async function openDock(page: Page, nodeId: string): Promise<Locator> {
     .locator(`[data-testid="module-shell"][data-shell-tier="dock"][data-shell-node="${nodeId}"]`);
   await expect(dockShell).toBeVisible();
   return dockShell;
+}
+
+/** This node's dock PANE. The tab rail is painted by `DockFullView` and lives
+ *  OUTSIDE the module shell, so it cannot be reached from `openDock`'s return.
+ *  Scoped by node for the same reason everything else here is: the split view
+ *  can hold two panes. */
+function dockPane(page: Page, nodeId: string): Locator {
+  return page.locator(`[data-testid="dock-fullview-pane"][data-pane-node="${nodeId}"]`);
+}
+
+/**
+ * Open one `face.pages` page on this node's faceplate — the face's own view
+ * switcher, and the successor to the legacy card's GRID / CLIP / ARR / CTRL
+ * strip (`face.tabbed`, owner P0 2026-09-04).
+ *
+ * ⚠ THE `aria-selected` WAIT IS NOT DECORATION. A railed face renders exactly
+ * one band; clicking a chip and reading a cell in the same breath is a race
+ * against the swap, and the attribute is the state the swap actually commits.
+ */
+async function showPage(page: Page, nodeId: string, pageId: string): Promise<void> {
+  const tab = dockPane(page, nodeId).getByTestId(`faceplate-tab-${pageId}`);
+  await tab.click();
+  await expect(tab, `the ${pageId} page opens`).toHaveAttribute('aria-selected', 'true');
 }
 
 /** This node's `data`, read off the live graph. */
@@ -337,6 +367,10 @@ test.describe('CLIP PLAYER faceplate', () => {
         message: 'double-clicking a face pad creates its clip',
       })
       .toContain(key);
+    // …and the double-click NAVIGATED, so the grid is no longer on screen — the
+    // owner's contract (the dedicated leg below is what proves it). Come back
+    // before right-clicking a pad, exactly as the card's GRID button does.
+    await showPage(page, CP, 'session');
 
     // The menu is PORTALED to <body>, so it is located on the page and not
     // inside the dock subtree.
@@ -378,6 +412,11 @@ test.describe('CLIP PLAYER faceplate', () => {
     ]);
     const dock = await openDock(page, CP);
 
+    // ⚠ COUNTED BEFORE ANY NAVIGATION, AND THAT IS DELIBERATE. A railed face
+    // HIDES its inactive bands, it never unmounts them (`dockBandVisible`'s own
+    // rule, so `faces-parity` cannot read a tab flip as forty lost controls) —
+    // so all four rows are in the DOM on the session page and `toHaveCount`
+    // sees them. If a band ever starts unmounting, this is where it goes red.
     for (const prefix of [
       'clipplayer-mono-',
       'clipplayer-rate-',
@@ -389,6 +428,10 @@ test.describe('CLIP PLAYER faceplate', () => {
         `${prefix} paints eight members`,
       ).toHaveCount(8);
     }
+
+    // …but DRIVING one needs its page open: three of the four rows are on the
+    // `channels` band, which the rail hides while the launcher is showing.
+    await showPage(page, CP, 'channels');
 
     // MONO on lane 3 — POLY is the default, so the flip is observable.
     await dock.getByTestId('clipplayer-mono-3').click();
@@ -418,6 +461,8 @@ test.describe('CLIP PLAYER faceplate', () => {
       .toContain('6');
 
     // SCENE REPEAT on scene 2 — ∞ → 2, the first step of the card's own cycle.
+    // Back on `session`, where the scenes live beside the grid rows they are.
+    await showPage(page, CP, 'session');
     await dock.getByTestId('clipplayer-scene-repeat-2').click();
     await expect
       .poll(async () => {
@@ -441,7 +486,13 @@ test.describe('CLIP PLAYER faceplate', () => {
     const dock = await openDock(page, CP);
 
     const editor = dock.getByTestId('clipplayer-face-editor');
-    await expect(editor, 'the editor band paints on a fresh player').toBeVisible();
+    // ⚠ THE EDITOR IS NOT ON SCREEN UNTIL ASKED FOR (owner P0, 2026-09-04 — the
+    // dedicated leg below is what proves the whole contract). Reaching it here
+    // through the RAIL rather than through a pad double-click is the point of
+    // this leg's subject: the tab is a second way in, it performs no
+    // `ensureClip`, and the roll must still draw an empty slot without writing.
+    await showPage(page, CP, 'editor');
+    await expect(editor, 'the editor band paints once its page is open').toBeVisible();
     // ⚠ AND IT HAS WRITTEN NOTHING. A band that committed a clip for being
     // rendered would put a Y.Doc write in every rack boot and in every VRT
     // capture; the pending marker is how the surface says "not yet".
@@ -535,10 +586,25 @@ test.describe('CLIP PLAYER faceplate', () => {
     const editor = dock.getByTestId('clipplayer-face-editor');
     // The clip head is the editor's one role=group; its accessible name carries
     // the channel/slot identity the 2026-08-17/19 rulings moved off resting text.
+    //
+    // ⚠ THE PAGE HAS TO BE OPEN FOR A ROLE QUERY TO SEE IT, and that is a
+    // property of the fix rather than a workaround: the rail HIDES the inactive
+    // band, and a hidden band is out of the accessibility tree, which is
+    // precisely what "we do not see the grid" (and, at rest, the editor) means
+    // for a screen reader as well as for the eye. Reached through the rail here
+    // because the SUBJECT of this leg is the pad double-click that follows.
+    await showPage(page, CP, 'editor');
     const head = editor.getByRole('group');
-    await expect(head).toHaveAttribute('aria-label', /^channel 1 slot 1,/);
+    await expect(head, 'a fresh player binds the editor to clip 0').toHaveAttribute(
+      'aria-label',
+      /^channel 1 slot 1,/,
+    );
+    await showPage(page, CP, 'session');
 
     // PAD A — lane 1 slot 3 (flat key 2, the stride-invariant lane): bind, edit.
+    // ⚠ THE DOUBLE-CLICK IS ALSO THE NAVIGATION now, so no `showPage` here: if
+    // it ever stopped opening the editor page, `cell-0-0` would be hidden and
+    // this click would fail rather than the binding silently going untested.
     await grid.getByTestId('clipplayer-pad-2').dblclick();
     await expect(head, 'the editor binds to pad A').toHaveAttribute('aria-label', /^channel 1 slot 3,/);
     await editor.getByTestId('clipplayer-cell-0-0').click();
@@ -553,6 +619,9 @@ test.describe('CLIP PLAYER faceplate', () => {
     // rejected. The head must follow, and the next edit must land in 129 —
     // and NOT in 2, which is precisely where the broken binding sent it.
     const keyB = String(padKey(2, 1)); // lane index 2, slot index 1 → 129
+    // Back to the launcher first — the editor page is showing, so the grid is
+    // not (the card's GRID button, in the face's vocabulary).
+    await showPage(page, CP, 'session');
     await grid.getByTestId(`clipplayer-pad-${keyB}`).dblclick();
     await expect(head, 'the editor binds to pad B, off lane 1').toHaveAttribute(
       'aria-label',
@@ -651,6 +720,11 @@ test.describe('CLIP PLAYER faceplate', () => {
 
     await setTransport(page, 1);
     await grid.getByTestId('clipplayer-pad-0').click();
+    // …and NOW open the editor. The launch is a `session` gesture and the
+    // playhead is an `editor` observation; on a railed face those are two
+    // pages, so the leg performs the navigation a player would rather than
+    // reading a band that is off screen.
+    await showPage(page, CP, 'editor');
     await expect
       .poll(async () => await playheadCells.count(), {
         message: 'POSITIVE CONTROL: the running clip paints a playhead column',
@@ -681,7 +755,137 @@ test.describe('CLIP PLAYER faceplate', () => {
     expect(errors).toEqual([]);
   });
 
-  // ── 9. THE TWO-SURFACE HAZARD, MEASURED AND SCOPED ──────────────────────
+  // ── 9. GRID **XOR** EDITOR — THE OWNER'S P0, ASSERTED BOTH WAYS ──────────
+  //
+  // ⚠ WHAT WENT WRONG, AND WHY EVERY GATE IN THE REPO WAS GREEN FOR IT. The
+  // face shipped (#2326) with the launch grid promoted to `face.hero.cell` and
+  // all four bands stacked in one scrolling column, and its own source argued
+  // the point out loud: "The faceplate holds the launch grid (the hero), the
+  // note editor (a band) and this deck AT ONCE, so there is no selection left
+  // to make" (ClipplayerDeckBody) and "A faceplate has no views: this band is
+  // on screen from the moment the dock opens" (ClipplayerNotePanel). The owner
+  // (2026-09-04): "we do NOT want the clip viewer always visible. we want to
+  // see it when we double click on a grid cell, at which point, we do not see
+  // the grid. this needs to work exactly the way the legacy card did."
+  //
+  // Every existing gate was structurally blind to it. `faces-parity` asks that
+  // each cell EXISTS and OPERATES; `module-face-lint` reads the def; the VRT
+  // dock baseline was captured WITH the editor in frame, so the defect WAS the
+  // baseline. Not one of them can express "these two surfaces must never be on
+  // screen together", which is why this leg asserts the NEGATIVE — and asserts
+  // it in BOTH directions, because either half alone passes on a face that
+  // simply lost a surface.
+  //
+  // The legacy contract, from `ClipplayerCard.svelte`:
+  //   * `cardView` starts at 'grid';
+  //   * `onPadDblClick` = ensureClip + select + `cardView = 'clip'`;
+  //   * grid and editor are branches of ONE if/else;
+  //   * `onPadClick` debounces 220 ms so a double-click never also launches;
+  //   * the strip's GRID button is the way back.
+  test('double-clicking a pad REPLACES the grid with that clip in the editor', async ({ page }) => {
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(String(e)));
+
+    await gotoShell(page);
+    await spawnPatch(page, [
+      { id: CP, type: 'clipplayer', position: { x: 120, y: 120 }, domain: 'audio' },
+    ]);
+    const dock = await openDock(page, CP);
+    const grid = dock.getByTestId('clipplayer-face-grid');
+    const editor = dock.getByTestId('clipplayer-face-editor');
+
+    // ── (1) AT REST: THE LAUNCHER, AND ONLY THE LAUNCHER ──────────────────
+    // `cardView = 'grid'` — the face's equivalent is `pages[0]`.
+    await expect(grid, 'a freshly opened faceplate shows the launch grid').toBeVisible();
+    await expect(
+      editor,
+      'THE OWNER\'S REPORT: the clip viewer must NOT be on screen until asked for',
+    ).toBeHidden();
+
+    // ⚠ HIDDEN, NOT ABSENT — the distinction the platform depends on. A railed
+    // face hides its inactive bands with CSS and never unmounts them, because
+    // `faces-parity` matches hidden elements and would read an unmount as a
+    // face that lost its cells. So the roll is in the DOM and out of view.
+    await expect(
+      editor.locator('[data-testid^="clipplayer-cell-"]').first(),
+      'the editor band is HIDDEN, not unmounted',
+    ).toHaveCount(1);
+
+    // ── (2) THE GESTURE: DOUBLE-CLICK LANE 3 SLOT 2 (flat key 129) ────────
+    // Off lane 1 deliberately: lane 0's flat keys equal their slot, so a
+    // navigation that opened "whatever was already selected" would look correct
+    // there and nowhere else — the #2336 stride-64 lesson, applied to the view.
+    const key = String(padKey(2, 1));
+    await grid.getByTestId(`clipplayer-pad-${key}`).dblclick();
+
+    // ── (3) THE EDITOR IS SHOWING **THAT** CLIP ───────────────────────────
+    await expect(editor, 'the editor opens on a double-click').toBeVisible();
+    await expect(
+      editor.getByRole('group'),
+      'and it is bound to the pad that was double-clicked, not to clip 0',
+    ).toHaveAttribute('aria-label', /^channel 3 slot 2,/);
+
+    // ── (4) …AND THE GRID IS GONE. The half the owner actually reported. ──
+    await expect(grid, '"at which point, we do not see the grid"').toBeHidden();
+
+    // ── (5) THE WAY BACK. The card's GRID button; the face's SESSION tab. ──
+    await showPage(page, CP, 'session');
+    await expect(grid, 'the launcher comes back').toBeVisible();
+    await expect(editor, 'and the clip viewer goes away again').toBeHidden();
+
+    // ── (6) A SINGLE CLICK STILL LAUNCHES, AND DOES NOT NAVIGATE ──────────
+    // Two jobs. It is this leg's NEGATIVE CONTROL — without it everything above
+    // would pass just as well on a face whose pads had stopped launching, which
+    // is the larger regression this change could have caused. And it is the
+    // CLOCK for (7): a launch commits only when the pad's own 220 ms debounce
+    // fires, so observing THIS one land is proof that at least that much wall
+    // clock has passed since the click below it in the ordering argument.
+    //
+    // A DIFFERENT pad (lane 1 slot 1, flat key 0) so the two claims cannot be
+    // confused with each other.
+    await grid.getByTestId('clipplayer-pad-0').click();
+    await expect
+      .poll(
+        async () => {
+          const d = await readData(page, CP);
+          return [
+            (d.queued as unknown[] | undefined)?.[0] ?? null,
+            (d.playing as unknown[] | undefined)?.[0] ?? null,
+          ];
+        },
+        { message: 'a SINGLE click still launches (queued, or already adopted as playing)' },
+      )
+      .toContain(0);
+    await expect(grid, 'and a launch is not a navigation — the grid stays').toBeVisible();
+    await expect(editor, 'the clip viewer stays away').toBeHidden();
+
+    // ── (7) THE DOUBLE-CLICK NEVER LAUNCHED ───────────────────────────────
+    // The card's 220 ms debounce, and the reason it exists: without it every
+    // trip to the editor fires the clip on the way in.
+    //
+    // ⚠ ORDERED, NOT SLEPT. "It did not happen" needs a moment after which it
+    // could no longer happen, and a bare wait is the thing this repo forbids.
+    // The debounce timer for lane 3 was scheduled BEFORE the one for lane 1,
+    // and (6) has just observed lane 1's fire — so lane 3's would have fired
+    // first if it had been left armed. Reading lane 3 as untouched HERE is
+    // therefore a real ordering argument rather than a race that happened to
+    // win.
+    const d = await readData(page, CP);
+    expect(
+      [
+        (d.queued as unknown[] | undefined)?.[2] ?? null,
+        (d.playing as unknown[] | undefined)?.[2] ?? null,
+      ],
+      'a double-click NEVER launches — the debounce cleared the pending click',
+    ).toEqual([null, null]);
+    // …and the pad it opened is LOADED, which is the other half of the card's
+    // gesture: the trip to the editor creates the clip on the way in.
+    await expect(grid.getByTestId(`clipplayer-pad-${key}`)).toHaveAttribute('data-state', 'loaded');
+
+    expect(errors, 'no page errors across the view swap').toEqual([]);
+  });
+
+  // ── 10. THE TWO-SURFACE HAZARD, MEASURED AND SCOPED ─────────────────────
   test('under ?shell=legacy an open dock makes the card AND the face live — scope, do not assume', async ({ page }) => {
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(String(e)));
