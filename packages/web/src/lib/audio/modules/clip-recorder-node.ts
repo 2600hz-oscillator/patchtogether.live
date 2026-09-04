@@ -226,7 +226,16 @@ export function coerceClipRecorderMsg(raw: unknown): ClipRecorderOutMsg | null {
   }
   if (m.type === 'done') {
     if (typeof m.frames !== 'number' || !Number.isFinite(m.frames) || m.frames < 0) return null;
-    return { type: 'done', lane, frames: Math.trunc(m.frames) };
+    // `startFrame` is REQUIRED, not optional-with-a-default: a `done` without
+    // it is a worklet this build did not ship, and defaulting it would report
+    // "punched in exactly on time" for a take nobody measured.
+    if (typeof m.startFrame !== 'number' || !Number.isFinite(m.startFrame)) return null;
+    return {
+      type: 'done',
+      lane,
+      frames: Math.trunc(m.frames),
+      startFrame: Math.trunc(m.startFrame),
+    };
   }
   if (m.type === 'chunk') {
     const { firstFrame, frames, data } = m as Partial<ClipRecorderChunkMsg>;
@@ -268,9 +277,13 @@ export interface ClipRecorderSink {
    *  the take it belonged to no longer exists; this is not the mid-take drop
    *  the drain forbids). */
   drainFor(lane: number): ClipMediaDrain | null;
-  /** The worklet finished a lane: exactly `frames` frames were captured.
-   *  Fired AFTER the final chunk was handed to the drain. */
-  onDone(lane: number, frames: number): void;
+  /** The worklet finished a lane: exactly `frames` frames were captured,
+   *  starting at absolute `startFrame`. Fired AFTER the final chunk was handed
+   *  to the drain. `frames === 0` is the worklet REFUSING a take whose arm
+   *  drained too far past its punch-in, and `startFrame` is then where the
+   *  audio thread had already got to — either way, comparing it against the
+   *  start that was requested is how a slip becomes visible. */
+  onDone(lane: number, frames: number, startFrame: number): void;
 }
 
 /**
@@ -299,7 +312,7 @@ export function attachClipRecorderSink(
       });
       return;
     }
-    sink.onDone(msg.lane, msg.frames);
+    sink.onDone(msg.lane, msg.frames, msg.startFrame);
   };
   node.port.onmessage = handler;
   return handler;
