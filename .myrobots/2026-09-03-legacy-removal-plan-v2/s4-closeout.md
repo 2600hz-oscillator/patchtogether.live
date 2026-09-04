@@ -117,8 +117,15 @@ server-reachable heavy import.
   recapture. They run in NO CI job, so nothing required is red; the next capture
   photographs faceplates against card-framed pins.
 * The webgl attest: hash `aacfac95…`, deliberately deferred (see
-  `ci-first-signal.md`) — and now is the moment, because the fleet is deleted
-  and the basis has stopped moving.
+  `ci-first-signal.md`) — and now is the moment, for a reason worth stating
+  because the deferral note got it wrong. ⚠ **THE FLEET DELETION WAS
+  HASH-NEUTRAL.** `webgl-attest-hash.sh --list` resolves 220 files and ZERO of
+  them is a `*Card.svelte`: `cube` and `wavesculpt` enter through
+  `CubeVizSurface.svelte` / `WavesculptVizSurface.svelte`, the extracted
+  surfaces whose paths the brief keeps stable for exactly this reason. The hash
+  moved ONCE — ruling 29's `lib/video/module-registry.ts` edit — and has not
+  moved since. S5 will not move it either (comments and `docs` props are
+  hash-transparent), so this is one final spend rather than the first of two.
 * **116 files under `packages/web/src` still carry `?shell=legacy` prose**, much
   of it user-facing module documentation that a player reads. That is ruling 2's
   archaeology sweep and it is the bulk of S5.

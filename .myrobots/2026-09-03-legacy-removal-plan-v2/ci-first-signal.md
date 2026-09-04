@@ -196,11 +196,24 @@ workers) and then **cancelled on purpose**, at 45 of 211 tests in pass A-heavy
 after ~25 min — a measured rate of ~1.8 tests/min, so pass A alone is ~2 h and
 the three passes plus the REPEAT=3 flake-check are half a day.
 
-⚠ **Paying it now would be a wasted GPU window.** S4 deletes the 194 cards, and
-the attest basis mechanically includes the CARD SOURCE of every `rendersWebGL`
-module (that is what the §12 coverage guard cross-checks). Deleting those files
-moves the hash again. The playbook's own rule is "regenerate the pin LAST", and
-LAST on this branch is after the fleet deletion, not now.
+⚠ **Paying it now would be a wasted GPU window** — that was the call, and the
+REASON GIVEN FOR IT WAS WRONG. It read: "S4 deletes the 194 cards, and the attest
+basis mechanically includes the CARD SOURCE of every `rendersWebGL` module, so
+deleting those files moves the hash again."
+
+MEASURED after S4b (2026-09-04): the hash is **unchanged**, still
+`aacfac95…`, and `webgl-attest-hash.sh --list` resolves **220 files, ZERO of them
+a `*Card.svelte`**. `cube` and `wavesculpt` enter the basis through
+`cube/CubeVizSurface.svelte` and `wavesculpt/WavesculptVizSurface.svelte` — the
+extracted surfaces on the DO-NOT-TOUCH list, whose paths were kept stable for
+exactly this reason — not through their cards. The card sources left the basis
+when those surfaces were extracted, long before S4.
+
+So the deferral was right by luck of a different fact: the hash moved ONCE, from
+ruling 29's edit to `lib/video/module-registry.ts` (that tree is hashed
+wholesale), and has been stable through S3, S4a and S4b. The attest is a SINGLE
+FINAL SPEND and it is due now. S5 will not move it either: comments and `docs`
+props are hash-transparent, which is the whole of the archaeology sweep.
 
 If the draft needs a green `webgl-attest` before then, the whole fix is one
 command on a quiet real-GPU machine — `flox activate -- task webgl:attest` — and
