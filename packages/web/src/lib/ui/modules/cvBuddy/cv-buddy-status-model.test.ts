@@ -13,6 +13,7 @@ import { describe, expect, it } from 'vitest';
 import {
   cvBuddyRouted,
   cvBuddyRoutedDetail,
+  cvBuddyLateLampLit,
   cvBuddySkipDetail,
   cvBuddySlotDetail,
   cvBuddySlotName,
@@ -170,5 +171,55 @@ describe('the LATE lamp\'s detail — a count that never paints', () => {
 
   it("the default driver is 'main' — the existing card contract is unchanged", () => {
     expect(cvBuddySkipDetail(7)).toBe(cvBuddySkipDetail(7, 'main'));
+  });
+
+  it('a REAL worklet drop overrides the absorbed-stall sentence — a lit lamp never hovers "nothing was lost"', () => {
+    const d = cvBuddySkipDetail(3, 'worklet', 2);
+    expect(d).toContain('2 clock pulses dropped by the audio-thread clock');
+    expect(d).not.toMatch(/nothing was lost/);
+    expect(d).toMatch(/xruns on the ES-9 card/);
+    expect(cvBuddySkipDetail(0, 'worklet', 1)).toContain('1 clock pulse dropped');
+  });
+});
+
+describe("the LATE lamp's PAINTED state — deterministic at rest (the #2343 vrt catch)", () => {
+  // The shadow `skips` counter tracks main-thread stalls, i.e. the RUNNER'S
+  // load average. Painting it on a resting face made `face-cvBuddy-dock`
+  // capture lit-or-dark boot-to-boot on contended VRT shards. Under the
+  // 'worklet' driver the lamp therefore follows workletSkips — pulses the
+  // audio-thread clock ITSELF dropped — which is 0 at rest, always.
+
+  it("'worklet' driver: ambient stalls do NOT light the lamp, real drops DO", () => {
+    expect(cvBuddyLateLampLit('worklet', 0, 0)).toBe(false);
+    expect(cvBuddyLateLampLit('worklet', 42, 0)).toBe(false); // a stalled boot paints DARK
+    expect(cvBuddyLateLampLit('worklet', 0, 1)).toBe(true); // a real hole paints LIT
+    expect(cvBuddyLateLampLit('worklet', 42, 1)).toBe(true);
+  });
+
+  it("'main' driver: every skip IS a lost pulse, so the old predicate stands", () => {
+    expect(cvBuddyLateLampLit('main', 0, 0)).toBe(false);
+    expect(cvBuddyLateLampLit('main', 1, 0)).toBe(true);
+  });
+
+  it('DETERMINISM: at rest (no real drops) the paint is dark under both drivers and any stall count', () => {
+    for (const skips of [0, 1, 9, 240]) {
+      expect(cvBuddyLateLampLit('worklet', skips, 0)).toBe(false);
+    }
+    expect(cvBuddyLateLampLit('main', 0, 0)).toBe(false);
+  });
+
+  it('the lamp and its sentence AGREE: lit ⇒ the hover names a loss', () => {
+    // The pair the component renders together, checked as a pair: whenever the
+    // predicate lights, the detail must not read as the healthy/absorbed text.
+    for (const [driver, skips, ws] of [
+      ['worklet', 0, 1],
+      ['worklet', 9, 3],
+      ['main', 1, 0],
+    ] as const) {
+      expect(cvBuddyLateLampLit(driver, skips, ws)).toBe(true);
+      const d = cvBuddySkipDetail(skips, driver, ws);
+      expect(d).toMatch(/dropped|could not place/);
+      expect(d).not.toMatch(/nothing was lost|No late|No main-thread stalls/);
+    }
   });
 });

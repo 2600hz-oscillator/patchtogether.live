@@ -58,6 +58,7 @@
   import {
     cvBuddyRouted,
     cvBuddyRoutedDetail,
+    cvBuddyLateLampLit,
     cvBuddySkipDetail,
     cvBuddySlotDetail,
     cvBuddySlotName,
@@ -123,11 +124,18 @@
   // WHICH mechanism drives the jacks (read('clockHealth').driver): the same
   // stall shows as a lost pulse under 'main' and as an ABSORBED stall under
   // 'worklet' (the audio-thread clock kept emitting) — the lamp's detail
-  // sentence must not claim a loss that did not happen.
+  // sentence must not claim a loss that did not happen, and the lamp must not
+  // LIGHT for one either. Under 'worklet' the painted state follows
+  // workletSkips (real holes only), which is what keeps a resting faceplate
+  // deterministic under VRT: the shadow skips counter tracks the RUNNER'S
+  // load average, and a boot that stalls >200 ms would otherwise capture a
+  // lit lamp (PR #2343, vrt-strict shard 10, face-cvBuddy-dock).
   let clockDriver = $state<CvBuddyClockDriver>('main');
+  let workletSkips = $state(0);
   $effect(() => {
     if (!ownsClock) {
       clockSkips = 0;
+      workletSkips = 0;
       return;
     }
     const poll = () => {
@@ -138,6 +146,7 @@
       if (st && typeof st.skips === 'number') clockSkips = st.skips;
       const h = e.read(n, 'clockHealth') as CvBuddyClockHealth | undefined;
       if (h && (h.driver === 'worklet' || h.driver === 'main')) clockDriver = h.driver;
+      if (h && typeof h.workletSkips === 'number') workletSkips = h.workletSkips;
     };
     poll();
     // 1 Hz: a cumulative counter, not a meter. Fast polling would buy nothing,
@@ -146,7 +155,8 @@
     return () => clearInterval(timer);
   });
 
-  let skipDetail = $derived<string>(cvBuddySkipDetail(clockSkips, clockDriver));
+  let skipDetail = $derived<string>(cvBuddySkipDetail(clockSkips, clockDriver, workletSkips));
+  let lateLit = $derived<boolean>(cvBuddyLateLampLit(clockDriver, clockSkips, workletSkips));
 </script>
 
 <div class="cv-buddy-status" data-testid="cv-buddy-status-{nodeId}">
@@ -168,7 +178,7 @@
     {#if ownsClock}
       <StatusLed
         caption="LATE"
-        lit={clockSkips > 0}
+        lit={lateLit}
         tone="warn"
         detail={skipDetail}
         testid="cv-buddy-led-late-{nodeId}"

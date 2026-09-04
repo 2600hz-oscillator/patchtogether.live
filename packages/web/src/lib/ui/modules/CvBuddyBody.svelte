@@ -38,7 +38,13 @@
     CV_BUDDY_DEFAULT_PPQN,
     cvBuddyDef,
     type CvBuddyClockState,
+    type CvBuddyClockHealth,
   } from '$lib/audio/modules/cv-buddy';
+  import {
+    cvBuddyLateLampLit,
+    cvBuddySkipDetail,
+    type CvBuddyClockDriver,
+  } from './cvBuddy/cv-buddy-status-model';
   import { cardParams } from './card-kit';
   import ModuleTitle from './ModuleTitle.svelte';
 
@@ -114,7 +120,18 @@
   // A ZERO IS INFORMATION and is always rendered. Hiding it until non-zero
   // would make "healthy" and "not instrumented" look identical — the exact
   // ambiguity that cost this bug its first round of guessing.
+  // ⚠ THE PAINTED NUMBER MUST BE DETERMINISTIC AT REST. The shadow `skips`
+  // counter tracks main-thread stalls — i.e. the RUNNER'S load average — and
+  // under the cv-clock worklet driver (every real browser, #2338) those
+  // stalls cost NOTHING at the jack. Painting them made this readout (and the
+  // face's LATE lamp — PR #2343, vrt-strict shard 10) flip boot-to-boot on a
+  // contended VRT shard. So what PAINTS is the count of pulses actually LOST
+  // at the jack (`workletSkips` under the worklet driver; `skips` under the
+  // main driver, where every skip IS a loss), and the stall count keeps its
+  // full sentence in the title via the same shared model the face uses.
   let clockSkips = $state(0);
+  let clockDriver = $state<CvBuddyClockDriver>('main');
+  let workletSkips = $state(0);
   $effect(() => {
     if (!ownsClock) return; // only the owner instance has a clock at all
     const poll = () => {
@@ -122,6 +139,9 @@
       if (!e || !node) return;
       const st = e.read(node, 'state') as CvBuddyClockState | undefined;
       if (st && typeof st.skips === 'number') clockSkips = st.skips;
+      const h = e.read(node, 'clockHealth') as CvBuddyClockHealth | undefined;
+      if (h && (h.driver === 'worklet' || h.driver === 'main')) clockDriver = h.driver;
+      if (h && typeof h.workletSkips === 'number') workletSkips = h.workletSkips;
     };
     poll();
     // 1 Hz: a cumulative counter, not a meter. Fast polling would buy nothing
@@ -129,6 +149,13 @@
     const timer = setInterval(poll, 1000);
     return () => clearInterval(timer);
   });
+
+  // What PAINTS: losses at the jack (deterministically 0 at rest); what the
+  // TITLE says: the full stall/loss story, driver-aware, from the one shared
+  // model so this card and the faceplate can never tell two different truths.
+  let lostCount = $derived<number>(clockDriver === 'worklet' ? workletSkips : clockSkips);
+  let lateWarn = $derived<boolean>(cvBuddyLateLampLit(clockDriver, clockSkips, workletSkips));
+  let skipTitle = $derived<string>(cvBuddySkipDetail(clockSkips, clockDriver, workletSkips));
 
   // Port lists follow the KIND — a mini has no velocity jack at all, which is
   // the whole reason it costs two ES-9 outputs instead of three.
@@ -182,12 +209,12 @@
           <div class="hint">run → jack 7 · clock → jack 8</div>
           <div
             class="readout skips"
-            class:warn={clockSkips > 0}
+            class:warn={lateWarn}
             data-testid="cv-buddy-skips-{id}"
-            title="Clock pulses a late scheduler tick could not place. Rising here = main-thread stall. Rising xruns on the ES-9 card instead = the jack is starving. Neither = look elsewhere."
+            title={skipTitle}
           >
             <span class="lbl">LATE</span>
-            <span class="val mono">{clockSkips} skipped</span>
+            <span class="val mono">{lostCount} skipped</span>
           </div>
         </div>
       {:else}
