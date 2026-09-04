@@ -1,13 +1,15 @@
 // e2e/tests/samsloop.spec.ts
 //
 // SAMSLOOP end-to-end:
-//   1. Drop the module, card mounts with no console errors, the waveform
-//      canvas shows the "NO SAMPLE LOADED" placeholder.
-//   2. Upload the committed test WAV (e2e/fixtures/samsloop-test.wav),
-//      the filename appears, the waveform canvas re-renders with non-zero
-//      pixels (orange peak-per-pixel trace).
-//   3. Click the loop / one-shot toggle — text alternates between LOOP
-//      and 1-SHOT, the underlying `mode` param mirrors.
+//   1. Drop the module, the shell tile mounts with no console errors; the
+//      dock face carries the waveform canvas.
+//   2. Upload the committed test WAV (e2e/fixtures/samsloop-test.wav) through
+//      the dock FILE cell — the "loaded N samples" receipt appears on the
+//      cell cap and the face waveform canvas renders trace pixels. (The
+//      card-only filename readout died with the card; the receipt is the
+//      surviving observable.)
+//   3. Drive the dock mode SEGMENTED (one-shot / loop radios) — aria-checked
+//      flips and the underlying `mode` param mirrors.
 //   4. Set the rate param (slider proxy) to a reverse value via the dev
 //      __ydoc transact, confirm the engine accepted it and no errors fire.
 //   5. Reject an oversized fake WAV → the error message renders, the
@@ -30,13 +32,31 @@ async function setupPage(page: Page) {
   page.on('console', (m) => {
     if (m.type() === 'error') errors.push(m.text());
   });
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await page.waitForLoadState('networkidle');
   return errors;
 }
 
+/** Open the SAMSLOOP dock full view (every non-ranked affordance — the file
+ *  cell, REC/EXPORT, the waveform — lives there) and return the PANE, scoped
+ *  by node: the tile ranks some of the same cell testids. */
+async function openSamsPane(page: Page, id = 's') {
+  await page.waitForFunction(
+    () => typeof (globalThis as unknown as { __openDockFullView?: unknown }).__openDockFullView === 'function',
+    undefined,
+    { timeout: 30_000 },
+  );
+  await page.evaluate(
+    (i) => (globalThis as unknown as { __openDockFullView: (x: string) => void }).__openDockFullView(i),
+    id,
+  );
+  const pane = page.locator(`[data-testid="dock-fullview-pane"][data-pane-node="${id}"]`);
+  await expect(pane.getByTestId('samsloop-face-canvas')).toBeVisible({ timeout: 30_000 });
+  return pane;
+}
+
 async function countWaveformPixels(page: Page): Promise<number> {
-  const canvas = page.locator('[data-testid="samsloop-waveform"]');
+  const canvas = page.locator('[data-testid="samsloop-face-canvas"]');
   await expect(canvas).toHaveCount(1);
   return await canvas.evaluate((el) => {
     const c = el as HTMLCanvasElement;
@@ -59,13 +79,13 @@ test.describe('SAMSLOOP module', () => {
   test('spawns with empty waveform placeholder, no console errors', async ({ page }) => {
     const errors = await setupPage(page);
     await spawnPatch(page, [{ id: 's', type: 'samsloop', position: { x: 200, y: 200 } }]);
-    const card = page.locator('.svelte-flow__node-samsloop');
-    await expect(card).toBeVisible();
-    await expect(card).toContainText('SAMSLOOP');
-    // No filename shown until upload.
-    await expect(page.locator('[data-testid="samsloop-filename"]')).toHaveCount(0);
-    // Waveform canvas exists.
-    await expect(page.locator('[data-testid="samsloop-waveform"]')).toHaveCount(1);
+    const tile = page.locator('.svelte-flow__node[data-id="s"] [data-testid="module-shell"]');
+    await expect(tile).toBeVisible();
+    await expect(tile.getByTestId('tile-name-label')).toContainText(/samsloop/i);
+    const pane = await openSamsPane(page);
+    // No upload receipt until upload; the face waveform canvas exists.
+    await expect(pane.getByTestId('shell-cell-samsloop-wav-input-status')).toHaveCount(0);
+    await expect(pane.getByTestId('samsloop-face-canvas')).toHaveCount(1);
     expect(errors, errors.join('; ')).toEqual([]);
   });
 
@@ -73,28 +93,30 @@ test.describe('SAMSLOOP module', () => {
     const errors = await setupPage(page);
     await spawnPatch(page, [{ id: 's', type: 'samsloop', position: { x: 200, y: 200 } }]);
 
+    const pane = await openSamsPane(page);
     const wavBytes = readFileSync(WAV_PATH);
-    const fileInput = page.locator('[data-testid="samsloop-wav-input"]');
-    await fileInput.setInputFiles({
+    await pane.getByTestId('shell-cell-samsloop-wav-input').setInputFiles({
       name: 'samsloop-test.wav',
       mimeType: 'audio/wav',
       buffer: wavBytes,
     });
 
-    // Filename + status appear on success.
-    await expect(page.locator('[data-testid="samsloop-filename"]')).toContainText(
-      'samsloop-test.wav',
+    // The load receipt appears on the FILE cell's cap (the card-only filename
+    // readout died with the card — the receipt is the surviving observable).
+    await expect(pane.getByTestId('shell-cell-samsloop-wav-input-status')).toContainText(
+      /loaded \d+ samples/i,
       { timeout: 5000 },
     );
-    await expect(page.locator('[data-testid="samsloop-upload-status"]')).toContainText(
-      /loaded \d+ samples/i,
-    );
 
-    // Waveform canvas should now have non-zero orange-trace pixels.
-    // Wait briefly for the $effect-driven redraw to settle.
-    await page.waitForTimeout(300);
-    const orange = await countWaveformPixels(page);
-    expect(orange, `waveform trace pixel count: ${orange}`).toBeGreaterThan(20);
+    // Waveform canvas should now have non-zero orange-trace pixels. The face
+    // body redraws on its own rAF tick once the decoded sample lands in
+    // node.data — poll the observable rather than budgeting a flat delay.
+    await expect
+      .poll(() => countWaveformPixels(page), {
+        timeout: 10_000,
+        message: 'face waveform paints the orange trace after the upload decodes',
+      })
+      .toBeGreaterThan(20);
 
     expect(errors, errors.join('; ')).toEqual([]);
   });
@@ -105,11 +127,18 @@ test.describe('SAMSLOOP module', () => {
       { id: 's', type: 'samsloop', position: { x: 200, y: 200 }, params: { mode: 1 } },
     ]);
 
-    const btn = page.locator('[data-testid="samsloop-mode-toggle"]');
-    await expect(btn).toContainText('LOOP');
+    // The dock face paints mode as a SEGMENTED radiogroup (one-shot / loop) —
+    // the card's LOOP/1-SHOT text-flip button died with the card; aria-checked
+    // is the surviving readout and the segments are the gesture.
+    const pane = await openSamsPane(page);
+    const seg = pane.getByTestId('control-mode');
+    const loop = seg.getByRole('radio', { name: 'loop' });
+    const oneShot = seg.getByRole('radio', { name: 'one-shot' });
+    await expect(loop).toHaveAttribute('aria-checked', 'true');
 
-    await btn.click();
-    await expect(btn).toContainText('1-SHOT');
+    await oneShot.click();
+    await expect(oneShot).toHaveAttribute('aria-checked', 'true');
+    await expect(loop).toHaveAttribute('aria-checked', 'false');
     const modeAfterFirst = await page.evaluate(() => {
       const w = globalThis as unknown as {
         __patch: { nodes: Record<string, { params: Record<string, number> }> };
@@ -118,8 +147,8 @@ test.describe('SAMSLOOP module', () => {
     });
     expect(modeAfterFirst).toBe(0);
 
-    await btn.click();
-    await expect(btn).toContainText('LOOP');
+    await loop.click();
+    await expect(loop).toHaveAttribute('aria-checked', 'true');
     const modeAfterSecond = await page.evaluate(() => {
       const w = globalThis as unknown as {
         __patch: { nodes: Record<string, { params: Record<string, number> }> };
@@ -178,22 +207,29 @@ test.describe('SAMSLOOP module', () => {
   test('REC button is present and clicking it does not crash the card', async ({ page }) => {
     // The audio-input record path is exercised end-to-end in
     // samsloop-record.spec.ts (where a VCO is patched into audio_l_in).
-    // Here we just assert the button mounts + clicking it without an
-    // attached audio source flips the label to STOP and back to REC
-    // without throwing. No mic permission needed any more — recording
-    // is from patched audio cables, not the microphone.
+    // Here we just assert the cell mounts + clicking it without an attached
+    // audio source arms a recording and a second click stops it, without
+    // throwing. The cell's label is static by design — the card's REC/STOP
+    // text flip died with the card; the NODE-keyed registry's probe
+    // (__samsloopRecording) is the recording-state observable.
     const errors = await setupPage(page);
     await spawnPatch(page, [{ id: 's', type: 'samsloop', position: { x: 200, y: 200 } }]);
-    const rec = page.locator('[data-testid="samsloop-rec-button"]');
+    const pane = await openSamsPane(page);
+    const rec = pane.getByTestId('shell-cell-samsloop-rec');
     await expect(rec).toBeVisible();
-    await expect(rec).toContainText('REC');
-    // Click → label flips to STOP (recording started, no audio in,
-    // tap worklet just stays silent). Click again → STOP back to REC.
+    const recording = () =>
+      page.evaluate(
+        (id) =>
+          (globalThis as unknown as { __samsloopRecording: (n: string) => { recording: boolean } })
+            .__samsloopRecording(id).recording,
+        's',
+      );
+    expect(await recording()).toBe(false);
     await rec.click();
-    await expect(rec).toContainText('STOP', { timeout: 3000 });
+    await expect.poll(recording, { message: 'first press arms the take' }).toBe(true);
     await page.waitForTimeout(150);
     await rec.click();
-    await expect(rec).toContainText('REC');
+    await expect.poll(recording, { message: 'second press stops it' }).toBe(false);
     expect(errors, errors.join('; ')).toEqual([]);
   });
 
@@ -253,9 +289,9 @@ test.describe('SAMSLOOP module', () => {
     const errors = await setupPage(page);
     await spawnPatch(page, [{ id: 's', type: 'samsloop', position: { x: 200, y: 200 } }]);
 
+    const pane = await openSamsPane(page);
     const wavBytes = readFileSync(WAV_PATH);
-    const fileInput = page.locator('[data-testid="samsloop-wav-input"]');
-    await fileInput.setInputFiles({
+    await pane.getByTestId('shell-cell-samsloop-wav-input').setInputFiles({
       name: 'samsloop-test.wav',
       mimeType: 'audio/wav',
       buffer: wavBytes,
@@ -264,7 +300,7 @@ test.describe('SAMSLOOP module', () => {
     // Upload status MUST resolve to a "loaded ..." message within 2 s
     // — never get stuck on "parsing...". The 2 s budget covers a slow
     // CI runner; the fix makes a 43 KB upload land in tens of ms.
-    const status = page.locator('[data-testid="samsloop-upload-status"]');
+    const status = pane.getByTestId('shell-cell-samsloop-wav-input-status');
     await expect(status).toContainText(/loaded \d+ samples/i, { timeout: 2000 });
     await expect(status).not.toContainText(/parsing/i);
 
@@ -279,20 +315,35 @@ test.describe('SAMSLOOP module', () => {
     // raised 250 KB → 2 MB, so the blob must exceed 2 MB to trip the gate.
     // The file gate runs BEFORE decodeAudioData so the content can be
     // arbitrary bytes — the size check fires first.
+    const pane = await openSamsPane(page);
     const oversizeBytes = Buffer.alloc(2 * 1024 * 1024 + 1, 0);
-    const fileInput = page.locator('[data-testid="samsloop-wav-input"]');
-    await fileInput.setInputFiles({
+    await pane.getByTestId('shell-cell-samsloop-wav-input').setInputFiles({
       name: 'oversize.wav',
       mimeType: 'audio/wav',
       buffer: oversizeBytes,
     });
 
-    await expect(page.locator('[data-testid="samsloop-upload-error"]')).toContainText(
+    // The FILE cell's cap carries the refusal (`.err` styling) — the same
+    // status element, error-flavoured.
+    await expect(pane.getByTestId('shell-cell-samsloop-wav-input-status')).toContainText(
       /too large/i,
       { timeout: 5000 },
     );
-    // No filename should be set — the upload was rejected.
-    await expect(page.locator('[data-testid="samsloop-filename"]')).toHaveCount(0);
+    // And nothing was persisted — the upload was rejected (the card-only
+    // filename readout died with the card; the Y.Doc is the observable —
+    // ⚠ an UPLOAD persists `fileBytesB64`, never `sample`, so that is the
+    // key whose absence proves the rejection).
+    const stored = await page.evaluate(() => {
+      const w = globalThis as unknown as {
+        __patch: { nodes: Record<string, { data?: { fileBytesB64?: unknown; fileName?: unknown } }> };
+      };
+      const d = w.__patch.nodes['s']?.data ?? {};
+      return { bytes: d.fileBytesB64 ?? null, name: d.fileName ?? null };
+    });
+    expect(stored, 'rejected upload must persist NO file bytes and NO name').toEqual({
+      bytes: null,
+      name: null,
+    });
 
     // Page-error captures: oversize rejection is a clean user-facing error,
     // not a thrown exception. We allow stderr-level console messages but
@@ -322,14 +373,15 @@ test.describe('SAMSLOOP module', () => {
       ],
     );
 
-    // Load the committed test WAV via the card upload handler.
+    // Load the committed test WAV via the dock FILE cell.
+    const pane = await openSamsPane(page);
     const wavBytes = readFileSync(WAV_PATH);
-    await page.locator('[data-testid="samsloop-wav-input"]').setInputFiles({
+    await pane.getByTestId('shell-cell-samsloop-wav-input').setInputFiles({
       name: 'samsloop-test.wav',
       mimeType: 'audio/wav',
       buffer: wavBytes,
     });
-    await expect(page.locator('[data-testid="samsloop-upload-status"]')).toContainText(
+    await expect(pane.getByTestId('shell-cell-samsloop-wav-input-status')).toContainText(
       /loaded \d+ samples/i,
       { timeout: 5000 },
     );
@@ -342,7 +394,8 @@ test.describe('SAMSLOOP module', () => {
     expect(idle.peak, `idle peak ${idle.peak} (must be ~silent before trigger)`).toBeLessThan(0.02);
 
     // (b) Click TRIGGER → playback starts (loop mode) → audio appears.
-    const trigBtn = page.locator('[data-testid="samsloop-trigger-button"]');
+    // (Pane-scoped: the tile ranks the same trigger cell testid.)
+    const trigBtn = pane.getByTestId('shell-cell-samsloop-trigger');
     await expect(trigBtn).toBeVisible();
     await trigBtn.click();
     const playing = await readScopePeakOverWindow(page, 'scp', 1200);

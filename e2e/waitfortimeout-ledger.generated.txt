@@ -206,7 +206,6 @@ e2e/tests/samsloop-window.spec.ts :: dragFader :: waitForTimeout(250) #1
 e2e/tests/samsloop.spec.ts :: REC button is present and clicking it does not crash the card :: waitForTimeout(150) #1
 e2e/tests/samsloop.spec.ts :: idle-by-default: a loaded sample stays SILENT until the TRIGGER button produces audio :: waitForTimeout(600) #1
 e2e/tests/samsloop.spec.ts :: per-rackspace cap: adding samsloop #21 surfaces "sorry, SAMSLOOP limit exceeded" :: waitForTimeout(300) #1
-e2e/tests/samsloop.spec.ts :: uploads a WAV → filename appears + waveform renders trace pixels :: waitForTimeout(300) #1
 e2e/tests/scaler-cv-passthrough.spec.ts :: AMOUNT scales the CV reaching LINES.orient — high AMOUNT moves orient more than low (dead-knob regression) :: waitForTimeout(300) #1
 e2e/tests/scaler-cv-passthrough.spec.ts :: AMOUNT scales the CV reaching LINES.orient — high AMOUNT moves orient more than low (dead-knob regression) :: waitForTimeout(300) #2
 e2e/tests/scaler-cv-passthrough.spec.ts :: AMOUNT scales the CV reaching LINES.orient — high AMOUNT moves orient more than low (dead-knob regression) :: waitForTimeout(600) #1

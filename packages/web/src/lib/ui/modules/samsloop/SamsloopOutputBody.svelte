@@ -66,14 +66,27 @@
   // Decoded PCM for the picture, cached against the sample's own signature so a
   // repaint does not re-decode. ⚠ The decoded buffer is deliberately NOT on
   // node.data — at the sample cap it would be ~12 MB of YArray entries.
+  //
+  // ⚠ PULLED FROM THE rAF TICK, NOT AN $effect — the proxy-identity lesson.
+  // `node` is `$derived(patch.nodes[nodeId])`, and the store proxy keeps ONE
+  // identity for the node's life, so a `$effect` reading `data.fileSize` here
+  // never re-ran when an upload landed WHILE THE BODY WAS MOUNTED: the graph
+  // was correct, the picture froze on the placeholder until a remount
+  // (measured — samsloop.spec.ts's upload leg, 0 trace pixels live vs 25k
+  // after close/reopen). The body already runs one pulling rAF loop for the
+  // playhead; the signature check joins it — three property reads and a
+  // string compare per frame, and the decode itself stays sig-guarded.
   let displaySamples = $state<Float32Array | null>(null);
   let displaySig = $state<string | null>(null);
+  /** Sig of the decode currently in flight, so one upload decodes once and a
+   *  newer upload supersedes a stale result. */
+  let decodingSig: string | null = null;
 
-  $effect(() => {
+  function refreshDisplaySamples(): void {
     const d = data;
     if (!d) return;
     const sig = `${d.fileSize ?? 0}:${d.fileName ?? ''}:${d.sampleLength ?? 0}`;
-    if (sig === displaySig) return;
+    if (sig === displaySig || sig === decodingSig) return;
 
     // The RECORDED path decodes synchronously off the persisted bytes, through
     // the SAME decoder the playback path uses. `'left'` keeps the trace's shape
@@ -84,7 +97,7 @@
       return;
     }
     // The UPLOAD path needs an AudioContext to decode, so it waits for the
-    // engine and re-runs when this effect does.
+    // engine — the next tick pulls again once it boots.
     const b64 = d.fileBytesB64;
     if (!b64) {
       displaySamples = null;
@@ -98,18 +111,18 @@
     } catch {
       ctx = undefined;
     }
-    if (!ctx) return; // Try again once the engine boots — the effect re-runs.
-    let cancelled = false;
+    if (!ctx) return;
+    decodingSig = sig;
     void (async () => {
       const r = await samsloopDecodeBytesB64(b64, ctx);
-      if (cancelled) return;
+      if (decodingSig !== sig) return; // superseded by a newer upload
+      decodingSig = null;
       if (r?.ok && r.samples) {
         displaySamples = r.samples;
         displaySig = sig;
       }
     })();
-    return () => { cancelled = true; };
-  });
+  }
 
   // ⚠ ONE rAF LOOP, PULLING. The playhead is pushed to the main thread at ~20 Hz
   // and rests on the engine handle; this reads it at paint rate rather than
@@ -118,6 +131,9 @@
   $effect(() => {
     if (!canvasEl) return;
     function tick(): void {
+      // Pull the decoded-picture cache up to date (see the note above — the
+      // node proxy's stable identity means no effect ever re-fires for us).
+      refreshDisplaySamples();
       const c = canvasEl;
       const ctx2d = c?.getContext('2d');
       if (c && ctx2d) {

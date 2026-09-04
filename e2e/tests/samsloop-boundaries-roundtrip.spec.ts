@@ -15,6 +15,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import { fileURLToPath } from 'node:url';
 import { spawnPatch } from './_helpers';
+import { openSamsloopPane } from './_samsloop-helpers';
 
 const WAV_FIXTURE = fileURLToPath(new URL('../fixtures/samsloop-test.wav', import.meta.url));
 const SAMS_ID = 'sams';
@@ -23,7 +24,7 @@ async function setup(page: Page): Promise<string[]> {
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await page.waitForLoadState('networkidle');
   return errors;
 }
@@ -61,8 +62,8 @@ test.describe('SAMSLOOP loop boundaries round-trip', () => {
       await w.__ensureEngine?.();
     });
 
-    const card = page.locator(`.svelte-flow__node[data-id="${SAMS_ID}"]`);
-    await card.locator('[data-testid="samsloop-wav-input"]').setInputFiles(WAV_FIXTURE);
+    const pane = await openSamsloopPane(page, SAMS_ID);
+    await pane.getByTestId('shell-cell-samsloop-wav-input').setInputFiles(WAV_FIXTURE);
     // Wait for the decode to land sampleLength on node.data.
     await expect.poll(() => readSams(page, SAMS_ID).then((s) => s.sampleLength), { timeout: 10000 })
       .toBeGreaterThan(0);

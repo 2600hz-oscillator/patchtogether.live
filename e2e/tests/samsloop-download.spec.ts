@@ -14,7 +14,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import { spawnPatch } from './_helpers';
-import { expectedAchievedRate, readContextSampleRate, readSample } from './_samsloop-helpers';
+import { expectedAchievedRate, openSamsloopPane, readContextSampleRate, readSample, samsloopIsRecording } from './_samsloop-helpers';
 
 async function setupPage(page: Page) {
   const errors: string[] = [];
@@ -22,7 +22,7 @@ async function setupPage(page: Page) {
   page.on('console', (m) => {
     if (m.type() === 'error') errors.push(m.text());
   });
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await page.waitForLoadState('domcontentloaded');
   return errors;
 }
@@ -50,16 +50,23 @@ test.describe('SAMSLOOP DOWNLOAD button', () => {
     const ctxRate = await readContextSampleRate(page);
     expect(ctxRate, 'audio engine must be up before REC').toBeGreaterThan(0);
 
-    // Record briefly with defaults (48k target / 16-bit / MONO).
-    const rec = page.locator('[data-testid="samsloop-rec-button"]');
+    // Record briefly with defaults (48k target / 16-bit / MONO) — the REC
+    // cell in the dock pane; the registry probe is the recording observable.
+    const pane = await openSamsloopPane(page, 's');
+    const rec = pane.getByTestId('shell-cell-samsloop-rec');
     await rec.click();
-    await expect(rec).toContainText('STOP', { timeout: 3000 });
+    await expect.poll(() => samsloopIsRecording(page, 's'), { message: 'REC arms' }).toBe(true);
     await page.waitForTimeout(500);
     await rec.click();
-    await expect(rec).toContainText('REC');
+    await expect.poll(() => samsloopIsRecording(page, 's'), { message: 'REC stops' }).toBe(false);
 
-    const dl = page.locator('[data-testid="samsloop-download-button"]');
-    await expect(dl).toBeEnabled({ timeout: 2000 });
+    // The take must be committed before EXPORT is pressed (the cell button is
+    // always enabled — enablement was card chrome; the persisted take is the
+    // real precondition).
+    await expect
+      .poll(async () => (await readSample(page, 's')) !== null, { message: 'take committed' })
+      .toBe(true);
+    const dl = pane.getByTestId('shell-cell-samsloop-download');
 
     // Click DOWNLOAD — Playwright intercepts the resulting browser
     // download. Wait for the download event before clicking to avoid

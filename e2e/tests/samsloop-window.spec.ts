@@ -41,6 +41,7 @@
 
 import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch, type SpawnEdge, type SpawnNode } from './_helpers';
+import { openSamsloopPane, samsloopIsRecording } from './_samsloop-helpers';
 import { readScopePeakOverWindow } from './_module-coverage-helpers';
 
 /** 16-bit mono WAV: a 220 Hz sine whose amplitude STEPS from 0.20 to 0.90 at the
@@ -70,7 +71,7 @@ async function setupPage(page: Page): Promise<string[]> {
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await page.waitForLoadState('networkidle');
   return errors;
 }
@@ -111,7 +112,7 @@ async function readSams(page: Page, id = 's'): Promise<SamsState> {
  *   `lit`   — anything above the panel's near-black background.
  *  `band` is the one that went to ZERO — the "clip turns black" symptom. */
 async function readWaveform(page: Page): Promise<{ trace: number; band: number; lit: number }> {
-  const canvas = page.locator('[data-testid="samsloop-waveform"]');
+  const canvas = page.locator('[data-testid="dock-fullview-pane"][data-pane-node="s"] [data-testid="samsloop-face-canvas"]');
   await expect(canvas).toHaveCount(1);
   return await canvas.evaluate((el) => {
     const c = el as HTMLCanvasElement;
@@ -133,45 +134,53 @@ async function readWaveform(page: Page): Promise<{ trace: number; band: number; 
 }
 
 /**
- * Drive a REAL fader through a REAL pointer gesture to (approximately) `frac`.
+ * Drive the REAL control through a REAL pointer gesture to (approximately)
+ * `frac`.
  *
  * The gesture, not `setNodeParam`: the reported defect is that the CONTROL is
  * dead, and a test that writes the param directly is blind to a control whose
- * declared range collapsed. Fader.svelte maps 100 px of travel to the full
- * range, so pressing at the track centre (which click-to-jumps to 0.5, or keeps
- * a thumb already within the 0.08 grab radius) and moving `(frac-0.5)*100` px
- * lands within ±0.08 of `frac`. Callers assert on the READ-BACK value, never on
+ * declared range collapsed. On the shell the window params are KNOBS
+ * (Knob.svelte, 200 px of upward travel = the full range, RELATIVE from the
+ * current value — no click-to-jump), so read `aria-valuenow` first and move
+ * `(frac - current) * 200` px. Pane-scoped: the lane tile ranks the same
+ * `control-<param>` testids. Callers assert on the READ-BACK value, never on
  * the requested one.
  */
 async function dragFader(page: Page, paramId: string, frac: number): Promise<void> {
-  const el = page.locator(`[data-testid="control-${paramId}"]`);
+  const el = page
+    .locator('[data-testid="dock-fullview-pane"][data-pane-node="s"]')
+    .locator(`[data-testid="control-${paramId}"]`);
   await expect(el).toBeVisible();
+  await el.scrollIntoViewIfNeeded();
+  const current = Number(await el.getAttribute('aria-valuenow')) || 0;
   const box = (await el.boundingBox())!;
   const cx = box.x + box.width / 2;
   const cy = box.y + box.height / 2;
   await page.mouse.move(cx, cy);
   await page.mouse.down();
-  await page.mouse.move(cx, cy - (frac - 0.5) * 100, { steps: 12 });
+  await page.mouse.move(cx, cy - (frac - current) * 200, { steps: 12 });
   await page.mouse.up();
   // The commit pump is rAF-coalesced and flushed on pointerup; the reconciler
   // then lands it on the AudioParam. One frame plus a reconcile microtask.
   await page.waitForTimeout(250);
 }
 
-/** The declared max of a fader. Since the window became a FRACTION this is 1
- *  for every sample length — see the assertion that consumes it for why that
- *  makes it a card-vs-def agreement check rather than a length check. */
+/** The declared max of the window control. Since the window became a FRACTION
+ *  this is 1 for every sample length — see the assertion that consumes it for
+ *  why that makes it a face-vs-def agreement check rather than a length check. */
 async function faderMax(page: Page, paramId: string): Promise<number> {
   return await page
+    .locator('[data-testid="dock-fullview-pane"][data-pane-node="s"]')
     .locator(`[data-testid="control-${paramId}"]`)
     .evaluate((el) => Number(el.getAttribute('aria-valuemax')));
 }
 
 async function loadStaircase(page: Page, sec = 4): Promise<number> {
-  await page.locator('[data-testid="samsloop-wav-input"]').setInputFiles({
+  const pane = await openSamsloopPane(page, 's');
+  await pane.getByTestId('shell-cell-samsloop-wav-input').setInputFiles({
     name: 'staircase.wav', mimeType: 'audio/wav', buffer: staircaseWav(sec),
   });
-  await expect(page.locator('[data-testid="samsloop-upload-status"]'))
+  await expect(pane.getByTestId('shell-cell-samsloop-wav-input-status'))
     .toContainText(/loaded \d+ samples/i, { timeout: 15000 });
   // The factory polls node.data every 200 ms, decodes and posts the buffer.
   await expect.poll(() => readSams(page).then((s) => s.sampleLength ?? 0), { timeout: 10000 })
@@ -181,7 +190,10 @@ async function loadStaircase(page: Page, sec = 4): Promise<number> {
 }
 
 async function trigger(page: Page): Promise<void> {
-  await page.locator('[data-testid="samsloop-trigger-button"]').click();
+  await page
+    .locator('[data-testid="dock-fullview-pane"][data-pane-node="s"]')
+    .getByTestId('shell-cell-samsloop-trigger')
+    .click();
 }
 
 const SAMS_AND_SCOPE: { nodes: SpawnNode[]; edges: SpawnEdge[] } = {
@@ -331,9 +343,9 @@ test.describe('SAMSLOOP START/END loop window', () => {
       ],
     );
 
-    const rec = page.locator('[data-testid="samsloop-rec-button"]');
+    const rec = (await openSamsloopPane(page, 's')).getByTestId('shell-cell-samsloop-rec');
     await rec.click();
-    await expect(rec).toContainText('STOP', { timeout: 5000 });
+    await expect.poll(() => samsloopIsRecording(page, 's'), { message: 'REC arms' }).toBe(true);
     // pacing: the LENGTH OF THE TAKE being recorded — a real-time capture, so
     // the wall clock IS the subject rather than a proxy for one. The assertions
     // below need a take longer than 1000 frames; 800 ms of live audio is that
@@ -345,7 +357,7 @@ test.describe('SAMSLOOP START/END loop window', () => {
     // of what it checks — correctly dropped the exemption.)
     await page.waitForTimeout(800);
     await rec.click();
-    await expect(rec).toContainText('REC');
+    await expect.poll(() => samsloopIsRecording(page, 's'), { message: 'REC stops' }).toBe(false);
 
     // pacing: the factory's own POLL_MS = 200 ms decode-and-post loop
     // (`samsloop.ts` — `pollTimer = setTimeout(poll, POLL_MS)`), which is what
