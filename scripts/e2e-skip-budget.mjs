@@ -850,7 +850,11 @@ export const SKIP_BUDGET = [
       + 'family\'s cause rather than one of its own. Recovered-on-retry, FIRST observation of THIS leg (run '
       + '32725328269 shard 2/10, 2026-08-24 12:31Z, absent from main\'s previous 8 runs), NOT triaged as '
       + 'flake vs under-budget; un-park is the FAMILY\'s budget diagnosis — repairing one of three siblings '
-      + 'that share a mechanism would leave the other two parked and prove nothing.',
+      + 'that share a mechanism would leave the other two parked and prove nothing. '
+      + 'DIAGNOSED 2026-09-04 (red-main run 33831528406 trace): UNDER-BUDGET by page starvation — every '
+      + 'action slow (35 s click) with no live chain and no hang; the seeded rack\'s SwiftShader compositing '
+      + 'starves DOM-only cases. backdraft-preview-toggle now idles the engine in beforeEach and its two '
+      + 'DOM legs are UN-PARKED; only its PRODUCER leg (which needs the live loop) remains parked here.',
   },
   {
     specs: [
