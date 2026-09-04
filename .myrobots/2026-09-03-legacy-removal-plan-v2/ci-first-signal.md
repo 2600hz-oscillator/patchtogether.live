@@ -173,3 +173,36 @@ confirms `headRefOid` — and NEITHER produced a workflow run:
 should have fired one. Whatever the cause (queue, draft handling, an org
 setting), **do not read the absence of a red as a green** — the fixes above are
 verified locally and have never been exercised by CI.
+
+## ⚠ THE WEBGL ATTEST IS OWED, AND IT IS DELIBERATELY NOT PAID YET
+
+Ruling 29 deleted the `vizPassthrough` field from
+`packages/web/src/lib/video/module-registry.ts`, and `lib/video/**` is hashed
+WHOLESALE for the real-GPU attest. So the content hash moved and the
+`webgl-attest` job refuses:
+
+```
+WebGL content hash: aacfac95244a4e3ccb337465cd74f11983693e0ad287b2902f774bb1d4aa74a4
+No real-GPU WebGL attestation for the current WebGL content
+```
+
+Verified locally: `task webgl:attest:check` computes the SAME hash on the merged
+tree, and `git merge-base --is-ancestor origin/main HEAD` is true — so the
+refusal is real and not one of the playbook's four false-refusal sources.
+
+The run was STARTED on this machine's real GPU with the playbook's preconditions
+met (nothing on 5173/4173, no stray Playwright, machine quiet, default parallel
+workers) and then **cancelled on purpose**, at 45 of 211 tests in pass A-heavy
+after ~25 min — a measured rate of ~1.8 tests/min, so pass A alone is ~2 h and
+the three passes plus the REPEAT=3 flake-check are half a day.
+
+⚠ **Paying it now would be a wasted GPU window.** S4 deletes the 194 cards, and
+the attest basis mechanically includes the CARD SOURCE of every `rendersWebGL`
+module (that is what the §12 coverage guard cross-checks). Deleting those files
+moves the hash again. The playbook's own rule is "regenerate the pin LAST", and
+LAST on this branch is after the fleet deletion, not now.
+
+If the draft needs a green `webgl-attest` before then, the whole fix is one
+command on a quiet real-GPU machine — `flox activate -- task webgl:attest` — and
+committing the `ci-webgl-attest/<hash>.json` it writes. Nothing else about the
+branch has to change.
