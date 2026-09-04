@@ -165,7 +165,8 @@ Loopback HTTP server in main serving the static build with `COOP: same-origin` +
 `COEP: credentialless` (matching `packages/web/_headers`; credentialless so archivist's
 archive.org media loads), SPA fallback for `/rack`. file:// is out (OPFS, getUserMedia,
 WebMIDI need secure context; SAB/Faust needs cross-origin isolation). Beta gate auto-off
-(`BETA_GATE_PASS` unset). `/api/*` (Clerk/Neon) is dashboard/collab only — the local rig
+(its env var is named in `runbooks/secrets-and-accounts.md`, the one home for that —
+do not restate it here). `/api/*` (Clerk/Neon) is dashboard/collab only — the local rig
 runs anonymous. Build item: adapter-static or serve the CF adapter's static output
 directly [verify output shape, per spec]. Dev switch points at the flox dev server
 (5173). Recommend bundled build (spec Q4) — offline-stable, versioned with the app.

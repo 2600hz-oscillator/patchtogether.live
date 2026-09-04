@@ -147,7 +147,8 @@ Tasks:
    simulated double for browser/e2e. Web code never imports Electron.
 2. Loopback HTTP server: static web build, `COOP: same-origin` +
    `COEP: credentialless`, SPA fallback for `/rack`, fixed documented port,
-   `BETA_GATE_PASS` unset.
+   beta gate auto-off (its env var is named in
+   `runbooks/secrets-and-accounts.md` — do not restate it here).
 3. Flag/handler set: `backgroundThrottling:false`, autoplay no-gesture, permission
    auto-grant, kiosk windows, powerSaveBlocker, USB/serial device handlers,
    **`--disable-features=MidiMacUmp`** (SysEx dies on Chromium ≥152 without it —
