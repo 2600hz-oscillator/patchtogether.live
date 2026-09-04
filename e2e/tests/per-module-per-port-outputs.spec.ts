@@ -137,7 +137,7 @@ test.describe('per-module per-port: outputs emit signal', () => {
         // quiet-window wait was a fixed cost in front of the real gate.
         // (_helpers.ts already says as much at its HMR retry: "networkidle is
         // too strict here".)
-        await page.goto('/rack?shell=legacy&seed=none');
+        await page.goto('/rack?seed=none');
 
         const sink = pickOutputSink(port.type);
         if (!sink) {

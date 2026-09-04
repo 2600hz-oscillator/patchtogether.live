@@ -515,15 +515,13 @@ export const EXEMPT_OUTPUT_EMIT: Record<string, string> = {
   // crash (and an eat) via the controller's _forceCrash / _forceEaten hooks
   // and asserts the gate pulse reaches a downstream SCOPE.
   //
-  // ⚠ THAT SENTENCE WAS TRUE AND SAID NOTHING ABOUT THE SHIPPING SURFACE, and
-  // the `why` strings below now say so. `skifree.spec.ts` boots
-  // `/rack?shell=legacy`, so until #2192 moved the game onto the NODE the cited
-  // coverage existed only on a shell no player meets — and the hooks it drives
-  // were the CARD's controller. Both halves are now node-owned, and
-  // `skifree-face.spec.ts` asserts the same gate → SCOPE path on the DEFAULT
-  // shell with the screen switched OFF, which is the state the sweep's own
-  // exemption is really about.
-  'skifree.gate': 'fires only on in-game crash/eaten event; covered by e2e/tests/skifree.spec.ts (_forceCrash/_forceEaten → gate → SCOPE, ?shell=legacy) AND e2e/tests/skifree-face.spec.ts (the same path on the DEFAULT shell, with SCREEN OFF)',
+  // ⚠ THAT SENTENCE SAID NOTHING ABOUT THE SURFACE THE HOOKS BELONG TO, and
+  // the `why` strings below now say so. #2192 moved the game — and the
+  // `_forceCrash` / `_forceEaten` hooks the spec drives — onto the NODE, so
+  // both halves are node-owned rather than owned by a mounted surface.
+  // `skifree-face.spec.ts` asserts the same gate → SCOPE path with the screen
+  // switched OFF, which is the state the sweep's own exemption is really about.
+  'skifree.gate': 'fires only on in-game crash/eaten event; covered by e2e/tests/skifree.spec.ts (_forceCrash/_forceEaten → gate → SCOPE) AND e2e/tests/skifree-face.spec.ts (the same path with SCREEN OFF)',
   'skifree.out':  'animated game canvas (rAF self-driven, no still frame); covered by e2e/tests/skifree.spec.ts + skifree.test.ts (CV→cursor + gate hook) + skifree-face.spec.ts (the surfaces that blit it)',
   // ── GIBRIBBON gameplay-conditional gates: evt_hit/miss/fire/kill/gameover
   // fire only on an in-game judgement (a correct ABXY press clears an event /
@@ -1419,9 +1417,11 @@ export function emitBudgetMs(mod: RegistryModule): number {
   //   PR #1983 (freezeframe.ts PRE-#1971):  20.6 21.9 23.9 24.2 ~24.8 s  (mean 23.1)
   //   PR #1969 (freezeframe.ts POST-#1971): 22.7 24.2 22.2 22.7 ~24.0 s  (mean 23.2)
   //
-  // Same cost either side, so #1971 is not implicated: its 19 deleted lines are
-  // all inside the def's `face:` object (a `hero.readouts` pair), and this sweep
-  // navigates to `?shell=legacy`, which does not render a faceplate at all.
+  // Same cost either side, so #1971 is not implicated — the two-sided
+  // measurement is the whole argument, and it does not depend on which surface
+  // mounts. (Its 19 deleted lines are all inside the def's `face:` object, a
+  // `hero.readouts` pair; the sweep does render faceplates, and still measured
+  // the same mean.)
   //
   // In both, the test needed ~116 s against a 115 s budget and expired on the
   // FIFTH of five iterations. NOT a hang — no step stalled in either trace, and

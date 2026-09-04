@@ -308,7 +308,7 @@ const BEHAVIORAL_MODULE_EXEMPT: Record<string, string> = {
   // delta to detect — a structural no-delta, not dead CV.
   blood:    'boot-gated, not data-gated: the bundled shareware is committed + materialized on CI (docs/adr/007-game-asset-distribution.md) but `blood-ready` takes 20–25 s and, until the menu is driven into a level, driven + control arms observe the same idle menu → structural no-delta; real coverage = blood-audio-output.spec.ts (menu→level→fire→SCOPE) + blood-ingame specs + blood-keys.test.ts',
   frogger:  'gameplay-conditional outputs; covered by frogger specs',
-  skifree:  'gate fires only on in-game crash/eaten; out is animated canvas; covered by e2e/tests/skifree.spec.ts (?shell=legacy) + e2e/tests/skifree-face.spec.ts (the DEFAULT shell — the cited coverage used to exist only on a shell no player meets)',
+  skifree:  'gate fires only on in-game crash/eaten; out is animated canvas; covered by e2e/tests/skifree.spec.ts + e2e/tests/skifree-face.spec.ts (the same gate → SCOPE path with the screen switched OFF)',
   gibribbon: 'gameplay-conditional outputs (evt_hit/miss/fire/kill/gameover fire on in-game judgement; health_cv is idle DC); covered by gibribbon.spec.ts (forcePulse) + gibribbon-engine.test.ts',
 
   // ── Pure-passthrough sink with no semantic transformation: VIDEOOUT
@@ -4124,7 +4124,7 @@ test.describe('per-module per-port: BEHAVIORAL input coverage (output changes on
         // shouldn't have gotten here (modules without outputs are
         // filtered via mod.outputs.length earlier in many specs); if
         // we do, fail loudly so the design gets revisited.
-        await page.goto('/rack?shell=legacy&seed=none'); // give the test SOMETHING to navigate to before asserting
+        await page.goto('/rack?seed=none'); // give the test SOMETHING to navigate to before asserting
         expect(
           observed,
           `${mod.type}: no observable output type — module needs a BEHAVIORAL_MODULE_EXEMPT entry or pickObservedOutput extension`,
@@ -4137,8 +4137,8 @@ test.describe('per-module per-port: BEHAVIORAL input coverage (output changes on
       // next-iter's control...) so each spawn starts from a fresh
       // AudioContext + engine — same determinism story as
       // per-module-per-port-outputs.spec.ts outputs-emit dim. Pattern:
-      //  goto('/rack?shell=legacy&seed=none') → spawnPatch(control) → settle → read
-      //  goto('/rack?shell=legacy&seed=none') → spawnPatch(patched) → settle → read → compare
+      //  goto('/rack?seed=none') → spawnPatch(control) → settle → read
+      //  goto('/rack?seed=none') → spawnPatch(patched) → settle → read → compare
       const failures: string[] = [];
       const passes: string[] = [];
       // Rows where the INSTRUMENT missed, kept apart from module verdicts so the
@@ -4173,7 +4173,7 @@ test.describe('per-module per-port: BEHAVIORAL input coverage (output changes on
         // ─── CONTROL ─────────────────────────────────────────────────
         // SUT + driver (if needed) + context (effect-shape upstream
         // noise/video) + sink. NO upstream on test input.
-        await page.goto('/rack?shell=legacy&seed=none');
+        await page.goto('/rack?seed=none');
         await page.waitForLoadState('networkidle');
 
         const sutNode: SpawnNode = {
@@ -4218,7 +4218,7 @@ test.describe('per-module per-port: BEHAVIORAL input coverage (output changes on
 
         // ─── PATCHED ─────────────────────────────────────────────────
         // Same nodes + edges, PLUS the test-input upstream.
-        await page.goto('/rack?shell=legacy&seed=none');
+        await page.goto('/rack?seed=none');
         await page.waitForLoadState('networkidle');
 
         const patchedNodes: SpawnNode[] = [

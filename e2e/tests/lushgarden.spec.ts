@@ -259,7 +259,7 @@ test.describe('LUSH GARDEN — generative garden source', () => {
   // Re-enable only on a root cause (#1847); "it passes now" is not one.
   test.fixme('background input passes through the clean output outside plant silhouettes', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 3 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page }) => {
     const errors = collectErrors(page);
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
 
     // Keep the garden EMPTY (gated mode via a stopped sequencer → zero

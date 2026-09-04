@@ -536,7 +536,7 @@ test.fixme(
   page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(`console: ${m.text()}`); });
 
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await page.waitForLoadState('networkidle');
 
   // Real source chain: VCO (audio) → audio_l ; ACIDWARP (video) → in.
