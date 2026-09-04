@@ -95,7 +95,7 @@ test.describe('VRT: workflow bottom dock composites', () => {
     page.on('pageerror', (e) => errors.push(e.message));
 
     await pinVrtFonts(page);
-    await page.goto('/rack?shell=legacy');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
     await awaitVrtFonts(page);
     await waitForClipplayerPin(page);

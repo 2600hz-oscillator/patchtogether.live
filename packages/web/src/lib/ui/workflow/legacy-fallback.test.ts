@@ -1,24 +1,28 @@
 // packages/web/src/lib/ui/workflow/legacy-fallback.test.ts
 //
-// The legacy-fallback bridge — pure derivation gate. Proves:
-//   - `?shell=legacy` (shellFaces false) → every non-docked node renders its
-//     verbatim module card;
-//   - the user-dock swap still wins (unchanged P2.5a contract);
-//   - the DEFAULT (shellFaces true): un-migrated → placeholder, migrated → shell;
-//   - the emitted node-type mapping + the swap-eligibility rule.
+// The lane-render decision — pure derivation gate. Proves:
+//   - the user-dock swap wins (unchanged P2.5a contract);
+//   - an organizational-native type resolves 'native' and emits its own type;
+//   - everything else resolves 'shell';
+//   - the emitted node-type mapping, and that the carve-out set is ANCHORED to
+//     the live registry so a stale id is red rather than a silent no-op.
+//
+// ⚠ THREE OF THIS FILE'S FIVE SUBJECTS ARE GONE, AND THEY WENT TOGETHER.
+// `?shell=legacy` (the escape hatch), `'placeholder'` (the un-migrated lane
+// body) and `dockRailRendersFace` (the tray's three-term rule) each described a
+// TRANSITION between two renderers. There is one renderer. What survives is the
+// half that describes the product: docked vs lane, and the one carve-out for a
+// type with no lane body at all.
 
 import { describe, it, expect } from 'vitest';
 import {
   laneRenderKind,
   emittedTypeFor,
-  isShellSwappable,
-  dockRailRendersFace,
+  isLaneNative,
   NON_SHELL_LANE_TYPES,
   type LaneRenderInput,
-  type DockRailRenderInput,
 } from './legacy-fallback';
 import { migrated } from './strict-faces';
-import { WORKFLOW_PINNED_MODULES } from '$lib/graph/workflow-pins';
 
 // Registry side-effect imports + resolvers, for the ANCHORING GATE below.
 // legacy-fallback.ts itself is deliberately registry-free; the anchoring
@@ -34,67 +38,65 @@ import { getMetaModuleDef } from '$lib/meta/module-registry';
 import { LAUNCHPAD_CONTROL_TYPE } from '$lib/meta/modules/launchpad-control';
 import type { ModuleType } from '$lib/graph/types';
 
-/** A fully-swappable, faces-on (default), un-migrated baseline. */
+/** An ordinary lane module: not docked, not a carve-out. */
 const base: LaneRenderInput = {
-  shellFaces: true,
   userDocked: false,
   type: 'tidyvco',
-  hasCard: true,
-  migrated: false,
+  laneNative: false,
 };
 
-describe('laneRenderKind — the pure bridge decision', () => {
-  it('user-docked ALWAYS wins → stub (faces on or off, migrated or not)', () => {
-    for (const shellFaces of [true, false]) {
-      for (const migrated of [true, false]) {
-        expect(laneRenderKind({ ...base, userDocked: true, shellFaces, migrated })).toBe('stub');
-      }
+describe('laneRenderKind — the pure lane decision', () => {
+  it('user-docked ALWAYS wins → stub, carve-out or not', () => {
+    for (const laneNative of [true, false]) {
+      expect(laneRenderKind({ ...base, userDocked: true, laneNative })).toBe('stub');
     }
   });
 
-  it('?shell=legacy → legacy for every non-docked node', () => {
-    expect(laneRenderKind({ ...base, shellFaces: false })).toBe('legacy');
-    // even a migrated type renders its legacy card under the escape hatch
-    expect(laneRenderKind({ ...base, shellFaces: false, migrated: true })).toBe('legacy');
+  it('an ordinary module renders the faceplate', () => {
+    expect(laneRenderKind(base)).toBe('shell');
   });
 
-  it('DEFAULT + un-migrated + swappable → placeholder', () => {
-    expect(laneRenderKind(base)).toBe('placeholder');
+  it('an organizational-native type resolves native, docked or not', () => {
+    expect(laneRenderKind({ ...base, laneNative: true })).toBe('native');
+    // …and the dock still outranks it, which is the ORDER the function encodes.
+    expect(laneRenderKind({ ...base, laneNative: true, userDocked: true })).toBe('stub');
   });
 
-  it('DEFAULT + migrated + swappable → shell', () => {
-    expect(laneRenderKind({ ...base, migrated: true })).toBe('shell');
-  });
-
-  it('a non-card / snowflake type stays legacy even by default', () => {
-    expect(laneRenderKind({ ...base, hasCard: false })).toBe('legacy');
-    expect(laneRenderKind({ ...base, hasCard: false, migrated: true })).toBe('legacy');
-  });
+  // ⚠ THE THREE DELETED LEGS, NAMED so their absence is a decision rather than
+  // an omission: "?shell=legacy → legacy for every non-docked node", "DEFAULT +
+  // un-migrated + swappable → placeholder", and "a non-card / snowflake type
+  // stays legacy even by default". The first two describe renderers that no
+  // longer exist. The third is the SAME claim as the native leg above — it said
+  // "no card ⇒ fall back to the card path", which stopped meaning anything when
+  // there was no card path to fall back to; the carve-out it was really about is
+  // asserted directly now.
 });
 
 describe('emittedTypeFor — kind → xyflow node type', () => {
-  it('maps each kind to its node type; legacy emits the module type', () => {
+  it('maps each kind to its node type; native emits the module type', () => {
     expect(emittedTypeFor('stub', 'tidyvco')).toBe('dockStub');
     expect(emittedTypeFor('shell', 'tidyvco')).toBe('moduleShell');
-    expect(emittedTypeFor('placeholder', 'tidyvco')).toBe('moduleShellPlaceholder');
-    expect(emittedTypeFor('legacy', 'tidyvco')).toBe('tidyvco');
+    expect(emittedTypeFor('native', 'cadillac')).toBe('cadillac');
   });
 
-  it('the full pipeline: ?shell=legacy round-trips to the legacy type', () => {
-    const kind = laneRenderKind({ ...base, shellFaces: false });
-    expect(emittedTypeFor(kind, base.type)).toBe(base.type);
+  it('the full pipeline: a carve-out round-trips to its own type', () => {
+    const kind = laneRenderKind({ ...base, type: 'cadillac', laneNative: true });
+    expect(emittedTypeFor(kind, 'cadillac')).toBe('cadillac');
   });
 });
 
-describe('isShellSwappable — eligibility', () => {
-  it('requires a resolvable card', () => {
-    expect(isShellSwappable('tidyvco', true)).toBe(true);
-    expect(isShellSwappable('tidyvco', false)).toBe(false);
+describe('isLaneNative — the carve-out predicate', () => {
+  // ⚠ IT WAS `isLaneNative(type, hasResolvableCard)` AND IT ASKED TWO
+  // QUESTIONS. The card half ("does this type resolve to a real *Card.svelte")
+  // has no referent; what is left is the snowflake half, stated positively. The
+  // "requires a resolvable card" leg went with it.
+  it('is FALSE for an ordinary module', () => {
+    expect(isLaneNative('tidyvco')).toBe(false);
   });
 
-  it('excludes the organizational / snowflake types', () => {
+  it('is TRUE for exactly the organizational / snowflake types', () => {
     for (const t of NON_SHELL_LANE_TYPES) {
-      expect(isShellSwappable(t, true)).toBe(false);
+      expect(isLaneNative(t)).toBe(true);
     }
     // sanity: the set holds back exactly the one non-module it is now for.
     // ⚠ THIS LEG HAS BEEN RE-POINTED TWICE AND THE LINEAGE MATTERS. It first
@@ -121,7 +123,7 @@ describe('isShellSwappable — eligibility', () => {
     // `faces-parity` drives the dock. This assertion is the one that fails if
     // the entry ever comes back without the face going with it.
     expect(NON_SHELL_LANE_TYPES.has('clipplayer')).toBe(false);
-    expect(isShellSwappable('clipplayer', true)).toBe(true);
+    expect(isLaneNative('clipplayer')).toBe(false);
   });
 
   it('videoOut SWAPS now that it has a face — the carve-out was about a PLACEHOLDER, not about the module', () => {
@@ -140,9 +142,9 @@ describe('isShellSwappable — eligibility', () => {
     // lives in `videoout-face-model.test.ts`, which asserts the tile resolves a
     // live video surface at every lane tier (the #1785 eviction).
     expect(NON_SHELL_LANE_TYPES.has('videoOut')).toBe(false);
-    expect(isShellSwappable('videoOut', true)).toBe(true);
+    expect(isLaneNative('videoOut')).toBe(false);
     expect(
-      laneRenderKind({ ...base, type: 'videoOut', hasCard: isShellSwappable('videoOut', true), migrated: true }),
+      laneRenderKind({ ...base, type: 'videoOut', laneNative: isLaneNative('videoOut') }),
     ).toBe('shell');
     // …like the other video-domain modules, which have always swapped.
     expect(NON_SHELL_LANE_TYPES.has('recorderbox')).toBe(false);
@@ -178,14 +180,9 @@ describe('isShellSwappable — eligibility', () => {
     // e2e/tests/camerainput-shell-source.spec.ts (that a frame actually
     // arrives through the whole chain).
     expect(NON_SHELL_LANE_TYPES.has('cameraInput')).toBe(false);
-    expect(isShellSwappable('cameraInput', true)).toBe(true);
+    expect(isLaneNative('cameraInput')).toBe(false);
     expect(
-      laneRenderKind({
-        ...base,
-        type: 'cameraInput',
-        hasCard: isShellSwappable('cameraInput', true),
-        migrated: true,
-      }),
+      laneRenderKind({ ...base, type: 'cameraInput', laneNative: isLaneNative('cameraInput') }),
     ).toBe('shell');
   });
 
@@ -207,7 +204,7 @@ describe('isShellSwappable — eligibility', () => {
     // 'busy' hazard that also ruled out the headless-host seam is likewise gone:
     // there is exactly ONE client per node and views merely subscribe.
     expect(NON_SHELL_LANE_TYPES.has('es9')).toBe(false);
-    expect(isShellSwappable('es9', true)).toBe(true);
+    expect(isLaneNative('es9')).toBe(false);
     // ⚠ THIS CLAUSE IS ABOUT THE PURE FUNCTION, NOT ABOUT es9 ANY MORE, and the
     // distinction had to be written down the day es9 was PROMOTED. The comment
     // here used to read "Un-migrated (no curated face yet) ⇒ the uniform
@@ -226,14 +223,12 @@ describe('isShellSwappable — eligibility', () => {
     // promotion is asserted where it can actually be observed —
     // `es9-face-model.test.ts` runs the real tier selector, and
     // `es9-shell-lifetime.spec.ts` reads `moduleShell` off a rendered tile.
-    expect(laneRenderKind({ ...base, type: 'es9', hasCard: isShellSwappable('es9', true) })).toBe(
-      'placeholder',
-    );
-    // ?shell=legacy must still render the verbatim card — the carve-out
-    // removal must not change the legacy render at all.
-    expect(
-      laneRenderKind({ ...base, shellFaces: false, type: 'es9', hasCard: true }),
-    ).toBe('legacy');
+    // ⚠ THIS LEG ASSERTED `'placeholder'`, AND THEN `'legacy'` UNDER THE HATCH.
+    // Both arms described the carve-out's REMOVAL not changing anything else;
+    // both renderers are gone. What is still exactly about es9, and still
+    // checkable here, is that it is not carved out and therefore takes the
+    // ordinary lane path.
+    expect(laneRenderKind({ ...base, type: 'es9', laneNative: isLaneNative('es9') })).toBe('shell');
   });
 });
 
@@ -301,73 +296,11 @@ describe('NON_SHELL_LANE_TYPES is ANCHORED to the registry (#1579)', () => {
   });
 });
 
-describe('dockRailRendersFace — the pinned tray shows the PROMOTED face (#1739)', () => {
-  // The OWNER RULING behind it: *"the `m` key tray view needs to show the new
-  // card and not the old one"*. Before this the rule did not exist at all —
-  // `DockCardHost` resolved `nodeTypes[type]` with no migration input, so the
-  // one always-on surface in the app kept painting a legacy card after its
-  // module was promoted.
-  //
-  // Three inputs, all REQUIRED, so the truth table is DERIVED rather than
-  // hand-listed: exactly the all-true row may render the face.
-  const FLAGS = ['shellFaces', 'pinned', 'migrated'] as const;
-
-  it('the face renders IFF shellFaces AND pinned AND migrated — the whole truth table', () => {
-    const rows: string[] = [];
-    for (let mask = 0; mask < 1 << FLAGS.length; mask++) {
-      const input = Object.fromEntries(
-        FLAGS.map((f, i) => [f, (mask & (1 << i)) !== 0]),
-      ) as unknown as DockRailRenderInput;
-      const expected = FLAGS.every((f) => input[f]);
-      rows.push(`${FLAGS.map((f) => `${f}=${input[f] ? 1 : 0}`).join(' ')} → ${dockRailRendersFace(input)}`);
-      expect(dockRailRendersFace(input), rows[rows.length - 1]).toBe(expected);
-    }
-    // The gate is not vacuous in either direction: the table really contains
-    // both answers.
-    expect(rows.filter((r) => r.endsWith('true'))).toHaveLength(1);
-    expect(rows.filter((r) => r.endsWith('false'))).toHaveLength((1 << FLAGS.length) - 1);
-  });
-
-  it('`?shell=legacy` keeps the tray on the LEGACY card — and that is why the three shipped drawer specs cannot see this change', () => {
-    // `workflow-dock.spec.ts` (masterL out, ch1L in) and `workflow-mode.spec.ts`
-    // ("the pinned card renders IN FULL") all drive `/rack?shell=legacy`. They
-    // pass unchanged across the promotion — and would pass just as well if the
-    // tray were completely broken on the default shell. The default-shell
-    // coverage is `e2e/tests/workflow-drawer-face.spec.ts`.
-    expect(dockRailRendersFace({ shellFaces: false, pinned: true, migrated: true })).toBe(false);
-  });
-
-  it('a USER-DOCKED promoted module keeps its legacy card — the scope is pinned-only, on purpose', () => {
-    // A docked entry still has a lane DockStubCard AND a route to DockFullView,
-    // so its face is already reachable; the pinned occupant is canvas-hidden and
-    // has neither. Widening this would flip every user-docked promoted module
-    // at once — `workflow-dock.spec.ts` docks `mixer` and asserts `.mod-card`,
-    // and `workflow-dock-composite` VRT docks `vca`. Both are promoted.
-    expect(dockRailRendersFace({ shellFaces: true, pinned: false, migrated: true })).toBe(false);
-  });
-
-  it('ANCHORED to the live roster: the drawer occupants this rule can currently reach', () => {
-    // The pinned M/E occupants are the only nodes the `pinned` arm can ever see
-    // (`c` opens a full-view PANE, not the rail). Derived from the shipped spec
-    // list rather than named here, so adding a fourth pinned module cannot make
-    // this clause quietly stale.
-    const resolveDef = (t: string) =>
-      getModuleDef(t as ModuleType) ??
-      getVideoModuleDef(t as ModuleType) ??
-      getMetaModuleDef(t as ModuleType);
-    const drawerTypes = WORKFLOW_PINNED_MODULES.filter((s) => s.surface === 'drawer').map((s) => s.type);
-    expect(drawerTypes.length, 'the drawer must have occupants for this rule to mean anything').toBeGreaterThan(0);
-    for (const type of drawerTypes) {
-      expect(resolveDef(type), `${type} must resolve to a registered def`).toBeTruthy();
-      // Whatever the roster is, the rule agrees with STRICT_FACES for it — in
-      // BOTH directions, so a promotion or a demotion moves this by itself.
-      expect(
-        dockRailRendersFace({ shellFaces: true, pinned: true, migrated: migrated(type) }),
-        `${type}: tray face must track STRICT_FACES membership`,
-      ).toBe(migrated(type));
-    }
-    // …and the population is not degenerate: mixmstrs is promoted, so at least
-    // one occupant genuinely takes the face branch today.
-    expect(migrated('mixmstrs'), 'mixmstrs is the promotion this rule was written for').toBe(true);
-  });
-});
+// ⚠ THE `dockRailRendersFace` DESCRIBE IS GONE — five legs, one rule, no
+// subject. It asserted the tray's truth table (`shellFaces && pinned &&
+// migrated`), that `?shell=legacy` kept the tray on the legacy card, that a
+// USER-DOCKED promoted module kept its card because the scope was pinned-only,
+// and an anchor onto the live drawer roster. The `pinned` clause was the live
+// card-mounting path S4 had to close, and closing it removed the rule: the rail
+// has one surface to render. `WORKFLOW_PINNED_MODULES` is no longer imported
+// here because nothing in this file has a decision to anchor onto it.

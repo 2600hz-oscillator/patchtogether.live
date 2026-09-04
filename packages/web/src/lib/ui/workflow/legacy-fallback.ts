@@ -29,8 +29,17 @@
 // storm the CRDT / desync peers; see the cv-modulation-live-store-write +
 // transient-dock disciplines). Zero-flake.
 
-/** What a module renders as in its workflow lane (see the file header). */
-export type LaneRenderKind = 'legacy' | 'shell' | 'placeholder' | 'stub';
+/** What a module renders as in its workflow lane (see the file header).
+ *
+ *  ⚠ TWO MEMBERS LEFT, AND THE TWO THAT WENT WERE THE WHOLE TRANSITION.
+ *  `'legacy'` meant "render this module's verbatim `*Card.svelte`" and
+ *  `'placeholder'` meant "this type has no curated face yet, show the uniform
+ *  skeleton". There are no cards, and `STRICT_FACES` holds every one of the 194
+ *  faced modules against 194 card files — so the placeholder's population was
+ *  ZERO before it was removed, and the legacy arm's only reachable input was the
+ *  `?shell=legacy` escape hatch. Both are gone; `'native'` is the carve-out for
+ *  a type that renders no lane body at all. */
+export type LaneRenderKind = 'shell' | 'native' | 'stub';
 
 /**
  * Node TYPES that are NOT swapped to the shell/placeholder even under the
@@ -237,61 +246,64 @@ export const NON_SHELL_LANE_TYPES: ReadonlySet<string> = new Set<string>([
 
 /** Inputs to the pure lane-render decision. */
 export interface LaneRenderInput {
-  /** Render FACEPLATES in the lane — the default. False only under the
-   *  `?shell=legacy` escape hatch, which renders the verbatim legacy cards
-   *  inside the same shell. (This was `shellPreview`, an opt-in `?shell=1`
-   *  flag, until faceplates became the product.) */
-  shellFaces: boolean;
   /** The user has an explicit persisted dock ENTRY for this node. */
   userDocked: boolean;
   /** The module type id (n.type). */
   type: string;
-  /** The type resolves to a real card AND is not a NON_SHELL_LANE_TYPE. */
-  hasCard: boolean;
-  /** STRICT_FACES membership for this type — `migrated(type)`, injected by the
-   *  caller so this stays pure/registry-free. Un-migrated ⇒ placeholder. */
-  migrated: boolean;
+  /** This type renders no lane body of its own — `NON_SHELL_LANE_TYPES`.
+   *  Injected by the caller rather than looked up here so the decision stays
+   *  pure and registry-free. */
+  laneNative: boolean;
 }
 
 /**
- * The core bridge decision. Order matters:
+ * The core lane decision. Order matters:
  *   1. an explicit user dock ALWAYS wins → 'stub' (the P2.5a contract is
- *      unchanged; a user who docked a module still sees the stub + rail card,
- *      faces on or off);
- *   2. `?shell=legacy`, or a non-card/snowflake type → 'legacy' (the verbatim
- *      module card);
- *   3. otherwise the faceplate: 'shell' for a migrated type, else
- *      'placeholder'.
+ *      unchanged: a user who docked a module sees the stub in the lane and the
+ *      real surface in the rail);
+ *   2. an organizational-native type → 'native' (it has no lane body of its own
+ *      — CADILLAC is filtered out of `flowNodes` upstream, and this arm is what
+ *      keeps the function TOTAL rather than answering 'shell' for a node that
+ *      will never be handed to `ModuleShell`);
+ *   3. otherwise the faceplate.
+ *
+ * ⚠ IT NO LONGER ASKS WHETHER THE TYPE IS MIGRATED, and that is a fact about
+ * the fleet rather than a relaxation. The question existed to route un-migrated
+ * types to a placeholder skeleton; the inventory reports 195 registered / 194
+ * faced-and-promoted / 1 organizational-native / 0 remaining, so the branch had
+ * no population to route. A module shipping without a face is now caught where
+ * it should be — `module-face-lint`, at the def — instead of by silently
+ * rendering a different lane body.
+ *
  * PURE — same inputs, same output, no side effects.
  */
 export function laneRenderKind(i: LaneRenderInput): LaneRenderKind {
   if (i.userDocked) return 'stub';
-  if (!i.shellFaces || !i.hasCard) return 'legacy';
-  return i.migrated ? 'shell' : 'placeholder';
+  return i.laneNative ? 'native' : 'shell';
 }
 
-/** The xyflow node TYPE to emit for a decided lane-render kind. `'legacy'`
- *  emits the module's own type (its glob-resolved *Card.svelte). */
-export function emittedTypeFor(kind: LaneRenderKind, legacyType: string): string {
+/** The xyflow node TYPE to emit for a decided lane kind. `'native'` emits the
+ *  module's own type, which resolves to nothing in `nodeTypes` — the only
+ *  member is filtered out of `flowNodes` before it reaches xyflow. */
+export function emittedTypeFor(kind: LaneRenderKind, moduleType: string): string {
   switch (kind) {
     case 'stub':
       return 'dockStub';
     case 'shell':
       return 'moduleShell';
-    case 'placeholder':
-      return 'moduleShellPlaceholder';
-    case 'legacy':
+    case 'native':
     default:
-      return legacyType;
+      return moduleType;
   }
 }
 
-/** True when a type is eligible for the shell/placeholder swap: it resolves to a
- *  real card AND is not an excluded snowflake. `hasResolvableCard` is the
- *  caller's `type in nodeTypes` check (kept out of here so this module stays
- *  registry-free + pure). */
-export function isShellSwappable(type: string, hasResolvableCard: boolean): boolean {
-  return hasResolvableCard && !NON_SHELL_LANE_TYPES.has(type);
+/** True when a type renders NO lane body of its own — the `'native'` arm's
+ *  input. `isShellSwappable(type, hasResolvableCard)` stood here and asked the
+ *  opposite question with a second term: "does this type resolve to a real CARD
+ *  and is it not an excluded snowflake". The card half has no referent any more,
+ *  so what is left is the snowflake half, stated positively. */
+export function isLaneNative(type: string): boolean {
+  return NON_SHELL_LANE_TYPES.has(type);
 }
 
 // ── THE DOCK RAIL's OWN FALLBACK (#1739) ────────────────────────────────────
@@ -348,29 +360,20 @@ export function isShellSwappable(type: string, hasResolvableCard: boolean): bool
 // caller is missing. When you mount `DockCardHost`, decide `face` — the default
 // is a decision too, and it is the wrong one for a pinned occupant.
 
-/** Inputs to the pure dock-rail render decision. */
-export interface DockRailRenderInput {
-  /** Render FACEPLATES at all — false under `?shell=legacy`. */
-  shellFaces: boolean;
-  /** This occupant is the drawer's PINNED singleton (the M/E trio), i.e. the
-   *  tray is its only surface — not a user-docked entry. */
-  pinned: boolean;
-  /** STRICT_FACES membership for this type — `migrated(type)`, injected by the
-   *  caller so this stays pure/registry-free. */
-  migrated: boolean;
-}
-
-/**
- * Does a DOCK RAIL occupant render the promoted FACEPLATE (`<ModuleShell
- * view='drawer'>`) instead of its verbatim legacy card? PURE.
- *
- * The `'drawer'` view is the dock faceplate PLUS the lane `PatchPanel`: the
- * tray has no `DockFullView` title bar and therefore no flip-to-RearCard
- * affordance, so the shell's own jack rail (and the `.card-back-panel` the
- * canvas-wide rear view reveals) is the ONLY thing keeping the drawer's jacks —
- * which is not hypothetical, since the owner's ES-9 send/return rack patches
- * `masterL` out of and `ch1L` into exactly this surface.
- */
-export function dockRailRendersFace(i: DockRailRenderInput): boolean {
-  return i.shellFaces && i.pinned && i.migrated;
-}
+// ⚠ `dockRailRendersFace()` AND `DockRailRenderInput` ARE GONE, AND THE REASON
+// IS THE BUG THIS FILE'S OWN HEADER DESCRIBES ABOVE.
+//
+// The rule was `shellFaces && pinned && migrated`, and the `pinned` clause meant
+// an UNPINNED dock-rail occupant mounted its verbatim CARD on the DEFAULT shell
+// — a live card-mounting path that the whole e2e inversion never touched,
+// because `Canvas.svelte` passed `pinned: false` for every user-docked node. The
+// three terms have all lost their subject at once: there is no `?shell=legacy`,
+// there are no cards to fall back to, and `migrated` was `STRICT_FACES`
+// membership in a fleet where that set holds every faced module. So the rail
+// renders the faceplate, unconditionally, and there is no decision left to
+// inject — which is strictly better than a rule with three inputs that could
+// only ever answer one way.
+//
+// The general form the header prescribes for "whoever adds a FOURTH host" is
+// unchanged and now trivial to honour: a `DockCardHost` mount has one surface to
+// choose from.

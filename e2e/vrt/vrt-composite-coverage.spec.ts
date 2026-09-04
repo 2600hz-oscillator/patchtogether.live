@@ -233,7 +233,7 @@ test.describe('VRT: video→audio CV/gate composite pairs (#414 regression cover
         });
       }
 
-      await page.goto('/rack?shell=legacy&seed=none');
+      await page.goto('/rack?seed=none');
       await page.waitForLoadState('networkidle');
       await awaitVrtFonts(page);
 

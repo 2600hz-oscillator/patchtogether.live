@@ -49,7 +49,7 @@ test.describe('VRT surface probe (measurement only)', () => {
   for (const mod of TARGETS) {
     test(`probe ${mod.type}`, async ({ page }) => {
       await pinVrtFonts(page);
-      await page.goto('/rack?shell=legacy&seed=none');
+      await page.goto('/rack?seed=none');
       await page.waitForLoadState('networkidle');
       await awaitVrtFonts(page);
       await page.addStyleTag({

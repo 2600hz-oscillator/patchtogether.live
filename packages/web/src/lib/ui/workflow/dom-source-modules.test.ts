@@ -1315,15 +1315,7 @@ describe('cameraInput — PROMOTED, and now NODE-OWNED rather than headless-host
 
   it('renders a FACEPLATE in the lane once promoted', () => {
     expect(
-      laneRenderKind({
-        shellFaces: true,
-        userDocked: false,
-        type: 'cameraInput',
-        // isShellSwappable() is now TRUE for it — Canvas passes that through as
-        // hasCard. This is the leg that flipped.
-        hasCard: true,
-        migrated: true,
-      }),
+      laneRenderKind({ userDocked: false, type: 'cameraInput', laneNative: false }),
     ).toBe('shell');
   });
 
@@ -1337,18 +1329,13 @@ describe('cameraInput — PROMOTED, and now NODE-OWNED rather than headless-host
     expect(NODE_CAMERA_SOURCE_TYPES.has('cameraInput')).toBe(true);
   });
 
-  it('still keeps its real card under ?shell=legacy, where nothing changed', () => {
-    const kind = laneRenderKind({
-      shellFaces: false,
-      userDocked: false,
-      type: 'cameraInput',
-      hasCard: true,
-      migrated: true,
-    });
-    expect(kind).toBe('legacy');
-    // (The decision half of this leg — "and no host mounts beside it" —
-    // retired with the decision; no host mounts beside ANYTHING now.)
-  });
+  // ⚠ THE `?shell=legacy` LEG IS GONE. It asserted this module "still keeps its
+  // real card under the escape hatch, where nothing changed" — the reassurance
+  // that made the promotion above safe to land. The hatch is removed, the card
+  // with it, and `laneRenderKind` has no `'legacy'` arm to return. What the leg
+  // guarded is now guarded by there being one surface: the faceplate assertion
+  // above, plus `camerainput-shell-source.spec.ts`, which asserts the picture
+  // survives with no card mounted anywhere.
 
   // ⚠ Two legs retired with the decision (S1.5): "a DOCKED camera is not
   // hosted either" and "EVERY headless-hosted module is now uniform" both read

@@ -22,7 +22,7 @@ import { controlSurfaceDef } from '$lib/meta/modules/control-surface';
 import { CONTROL_SURFACE_TYPE } from '$lib/graph/control-surface';
 import { curatedFace, laneOrder, type FaceDefLike } from '$lib/ui/workflow/curated-face';
 import { STRICT_FACES, migrated } from '$lib/ui/workflow/strict-faces';
-import { NON_SHELL_LANE_TYPES, laneRenderKind, dockRailRendersFace } from '$lib/ui/workflow/legacy-fallback';
+import { NON_SHELL_LANE_TYPES, laneRenderKind } from '$lib/ui/workflow/legacy-fallback';
 import { shellCellFor } from '$lib/ui/workflow/shell-cells';
 
 const DEF = controlSurfaceDef as unknown as FaceDefLike;
@@ -51,13 +51,7 @@ describe('controlSurface face — the promotion', () => {
   it('is NOT in NON_SHELL_LANE_TYPES — the carve-out and the promotion cannot coexist', () => {
     expect(NON_SHELL_LANE_TYPES.has(CONTROL_SURFACE_TYPE)).toBe(false);
     expect(
-      laneRenderKind({
-        shellFaces: true,
-        userDocked: false,
-        type: CONTROL_SURFACE_TYPE,
-        hasCard: true,
-        migrated: true,
-      }),
+      laneRenderKind({ userDocked: false, type: CONTROL_SURFACE_TYPE, laneNative: false }),
       'the lane renders the shell, not the verbatim card',
     ).toBe('shell');
   });
@@ -79,14 +73,8 @@ describe('controlSurface face — the promotion', () => {
   // small keep being falsified by a route nobody was watching.)
   it('the rule still honours a carve-out for the types that keep one', () => {
     expect(
-      laneRenderKind({
-        shellFaces: true,
-        userDocked: false,
-        type: 'cadillac',
-        hasCard: false,
-        migrated: false,
-      }),
-    ).toBe('legacy');
+      laneRenderKind({ userDocked: false, type: 'cadillac', laneNative: true }),
+    ).toBe('native');
     expect(NON_SHELL_LANE_TYPES.has('cadillac'), 'a real member remains').toBe(true);
   });
 
@@ -95,21 +83,15 @@ describe('controlSurface face — the promotion', () => {
   // for it and a user-docked node's rail occupant stays the VERBATIM legacy
   // card — which carries its own prune `$effect` and its own lock button, so no
   // reachable surface is prune-less or lock-less.
-  it('a user-docked node keeps the legacy card in the dock rail (not pinned)', () => {
-    expect(dockRailRendersFace({ shellFaces: true, pinned: false, migrated: migrated(CONTROL_SURFACE_TYPE) })).toBe(false);
-    // …and the `?shell=legacy` escape hatch still gets the verbatim card, which
-    // is what keeps `control-surface.spec.ts` meaningful rather than merely
-    // passing.
-    expect(
-      laneRenderKind({
-        shellFaces: false,
-        userDocked: false,
-        type: CONTROL_SURFACE_TYPE,
-        hasCard: true,
-        migrated: true,
-      }),
-    ).toBe('legacy');
-  });
+    // ⚠ THE `?shell=legacy` HALF OF THIS LEG IS GONE WITH THE HATCH, and so is
+    // the `dockRailRendersFace` half. The rail's rule was
+    // `shellFaces && pinned && migrated`, and its `pinned` clause is exactly the
+    // path this leg pinned: a user-docked, non-pinned occupant kept the VERBATIM
+    // CARD in the rail on the DEFAULT shell. All three terms lost their subject
+    // at once — no hatch, no card, and every faced module in STRICT_FACES — so
+    // the rule is deleted and the rail renders the faceplate unconditionally.
+    // What the leg was protecting (a reachable surface that is prune-less or
+    // lock-less) is now protected by there being ONE surface.
 });
 
 describe('controlSurface face — the ONE ranked cell', () => {

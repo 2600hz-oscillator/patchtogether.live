@@ -76,11 +76,7 @@ import {
   type LoadDiagnostic,
 } from './persistence';
 import { LOAD_DIAGNOSTIC_REASONS, summarizeLoadDiagnostics } from './load-diagnostics';
-import {
-  laneRenderKind,
-  emittedTypeFor,
-  isShellSwappable,
-} from '$lib/ui/workflow/legacy-fallback';
+import { laneRenderKind, emittedTypeFor, isLaneNative } from '$lib/ui/workflow/legacy-fallback';
 import type { ModuleNode, Edge } from './types';
 
 const FIXTURE = fileURLToPath(
@@ -318,21 +314,20 @@ describe('loading the frozen rack after the types are UNREGISTERED', () => {
     expect(LOAD_DIAGNOSTIC_REASONS.orphanEdge).toBe('edge references a dropped node');
   });
 
-  it('RENDERER: a type with no card renders through SvelteFlow, never a throw', () => {
-    // The pure half of the renderer determination. With the defs gone the type
-    // is not in the card map, so `isShellSwappable` is false, `laneRenderKind`
-    // short-circuits to 'legacy' and the raw type is emitted; xyflow's
-    // NodeWrapper resolves `nodeTypes[type] ?? DefaultNode`.
+  it('RENDERER: an unregistered type renders through SvelteFlow, never a throw', () => {
+    // The pure half of the renderer determination, restated for a fleet with no
+    // cards. It used to run `isShellSwappable(type, false)` and assert the kind
+    // short-circuited to `'legacy'` — the verbatim-card arm. There is no such
+    // arm: an unregistered type is not carved out either, so it resolves
+    // `'shell'` and emits `moduleShell`. The property that matters is unchanged
+    // and is the one this leg's title names — the decision is TOTAL and returns
+    // a string for a type the registry has never heard of, so nothing throws on
+    // the way to xyflow, which resolves `nodeTypes[type] ?? DefaultNode`.
     for (const type of ['group', 'sticky']) {
-      const kind = laneRenderKind({
-        shellFaces: true,
-        userDocked: false,
-        type,
-        hasCard: isShellSwappable(type, /* hasResolvableCard */ false),
-        migrated: false,
-      });
-      expect(kind).toBe('legacy');
-      expect(emittedTypeFor(kind, type)).toBe(type);
+      expect(isLaneNative(type), 'a dropped type is not a lane-native carve-out').toBe(false);
+      const kind = laneRenderKind({ userDocked: false, type, laneNative: isLaneNative(type) });
+      expect(kind).toBe('shell');
+      expect(emittedTypeFor(kind, type)).toBe('moduleShell');
     }
   });
 

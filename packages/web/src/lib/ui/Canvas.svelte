@@ -224,7 +224,7 @@
   // which node component a module renders as in its workflow lane (legacy card /
   // curated ModuleShell / uniform placeholder / dock stub). Gated behind the
   // `?shell=1` opt-in preview flag so it's a strict no-op until owner sign-off.
-  import { laneRenderKind, emittedTypeFor, isShellSwappable, dockRailRendersFace, NON_SHELL_LANE_TYPES } from '$lib/ui/workflow/legacy-fallback';
+  import { laneRenderKind, emittedTypeFor, isLaneNative, NON_SHELL_LANE_TYPES } from '$lib/ui/workflow/legacy-fallback';
   import { migrated } from '$lib/ui/workflow/strict-faces';
   // TEST SEAM (#2068): force a PROMOTED type back onto the un-migrated render
   // path. Dev/VITE_E2E_HOOKS builds only — see `laneMigrated` below.
@@ -508,7 +508,6 @@
    *  the product, so the flag INVERTED: the default arm is now the new look and
    *  the flag selects the old one. Anything other than exactly `legacy` (including a
    *  stale `?shell=1` bookmark) resolves to faceplates. */
-  let shellFaces = $derived(page.url?.searchParams?.get('shell') !== 'legacy');
 
   /**
    * STRICT_FACES membership AS THE RENDER PATH MUST READ IT — the single
@@ -561,7 +560,7 @@
    *  links to it and no user-facing behaviour branches on it.
    *
    *  It suppresses SEEDING ONLY. The shell chrome, the lane geometry, the dock
-   *  and `shellFaces` are all untouched — a `?seed=none` rack is the same UI,
+   *  are all untouched — a `?seed=none` rack is the same UI,
    *  just without the starter content. */
   let seedShellDefaults = $derived(
     !(testHooksEnabled() && page.url?.searchParams?.get('seed') === 'none'),
@@ -575,7 +574,7 @@
    *  call is byte-identical. NEVER threaded into a PERSISTED write (drop-spawn x/y,
    *  the videoOut/A-V-defaults spawn, the grow-up push-ups all keep COLUMN_W), so
    *  the persisted graph + collab convergence are untouched — pure render deriv. */
-  let wcolPitch = $derived(columnPitch(shellFaces));
+  let wcolPitch = $derived(columnPitch());
 
   /** The flow-space Y the flush lane/send stacks bottom-anchor to. Under the
    *  `?shell=1` preview the stacks lift SHELL_LANE_BADGE_CLEARANCE_Y above the
@@ -585,7 +584,7 @@
    *  drag-reorder sibling centers, and the in-lane drop-spawn position (which,
    *  like the pitch, persists the RENDERED frame under the preview so the tile
    *  never flashes at the un-lifted slot). */
-  let wcolStackAnchorY = $derived(shellFaces ? shellStackAnchorY() : COLUMN_BASELINE_Y);
+  let wcolStackAnchorY = $derived(shellStackAnchorY());
 
   // The header shows "Sign in" only when we're confident the user is signed
   // out. On the public `/` canvas (no client ClerkProvider) that signal is
@@ -665,7 +664,7 @@
     // down to `cadillac` alone (a roaming overlay sprite that is filtered out of
     // flowNodes upstream anyway) now that group and sticky are deleted.
     // Preview-OFF keeps the per-TYPE rack tier for every type → byte-identical.
-    if (shellFaces && !NON_SHELL_LANE_TYPES.has(type)) return SHELL_TILE_H_SLOT;
+    if (!NON_SHELL_LANE_TYPES.has(type)) return SHELL_TILE_H_SLOT;
     const size = rackSizeByType[type]?.size;
     const u = size ? parseInt(size, 10) || 1 : 1;
     return u * RACK_UNIT;
@@ -680,7 +679,7 @@
    *  (`--rack-hp` × RACK_UNIT, the same math _module-card.css applies) → byte-
    *  identical. Falls back to one tile. */
   function wcolCardWidthPx(type: string): number {
-    if (shellFaces && !NON_SHELL_LANE_TYPES.has(type)) return SHELL_TILE_W;
+    if (!NON_SHELL_LANE_TYPES.has(type)) return SHELL_TILE_W;
     return (rackSizeByType[type]?.hp ?? 1) * RACK_UNIT;
   }
 
@@ -1412,7 +1411,7 @@
     // tile top is below the video-zone baseline".
     const waiting = scratchSeeded === false || (provider != null && !providerHasSynced);
     void snapshot.nodes.length; // re-run as the trio materialises
-    if (waiting || !shellFaces) return;
+    if (waiting) return;
     untrack(() => placeVideoZoneDefaults());
   });
 
@@ -1999,7 +1998,7 @@
   // it never changes the at-rest view a VRT captures). One-shot (a latch).
   let didFrameLanesOnLoad = false;
   $effect(() => {
-    if (!shellFaces || didFrameLanesOnLoad) return;
+    if (didFrameLanesOnLoad) return;
     if (!flowApi || !flowEl) return; // not mounted yet — re-runs when they bind
     // rAF-poll (bounded) until SvelteFlow's on-init fitView has produced a real
     // viewport, then re-frame ONCE onto the lane band (inheriting the fitted
@@ -2192,7 +2191,7 @@
   });
 
   /** One DockRail occupant. `face` is the #1739 promotion decision, evaluated
-   *  HERE (the only place that has `shellFaces`) and injected, never re-derived
+   *  HERE and injected, never re-derived
    *  inside the rail. */
   interface DockRailCardSpec {
     node: ModuleNode;
@@ -2217,7 +2216,8 @@
         node,
         title: dockDisplayName(node),
         pinned: false,
-        face: dockRailRendersFace({ shellFaces, pinned: false, migrated: laneMigrated(node.type) }),
+        // The rail renders the faceplate. There is nothing else to render.
+        face: true,
       });
     }
     return out;
@@ -2355,9 +2355,7 @@
     // headroom above the fullest lane's top tile, clamped to the default top
     // (short stacks keep today's look). Legacy (preview OFF) keeps the exact
     // max(default, tallest-stack) math → byte-identical.
-    const height = shellFaces
-      ? computeShellLaneHeightPx(stacks, defaultLaneHeightPx(wcolCardHeightPx('tidyVco')))
-      : computeLaneHeightPx(stacks, defaultLaneHeightPx(wcolCardHeightPx('tidyVco')));
+    const height = computeShellLaneHeightPx(stacks, defaultLaneHeightPx(wcolCardHeightPx('tidyVco')));
     return laneTopYForHeight(height);
   });
 
@@ -2817,11 +2815,7 @@
         node: dockedBottomNode,
         title: dockedBottomSpec.label,
         pinned: true,
-        face: dockRailRendersFace({
-          shellFaces,
-          pinned: true,
-          migrated: laneMigrated(dockedBottomNode.type),
-        }),
+        face: true,
       });
     }
     out.push(...docked);
@@ -2858,34 +2852,14 @@
   // `face = false` default won and it mounted `nodeTypes[type]` unconditionally.
   // The rule existed, was correct, and had a caller that did not call it.
   //
-  // ⚠ EVALUATED HERE, INJECTED, NEVER RE-DERIVED IN THE PANEL. `shellFaces` and
-  // `migrated()` are read in ONE place on purpose (see `DockCardHost`'s `face`
-  // prop doc); a second reader inside `AudioIoSurface` is the
-  // two-derivations-of-one-fact class this file's own patch rows were rewritten
-  // to remove. `pinned: true` is a literal because that is what these two nodes
-  // ARE — `workflow-pins.ts` spawns them as the always-on pair.
-  //
-  // ⚠ BOTH ARMS ARE FALSE TODAY (neither type is migrated), and that is the
-  // point rather than a caveat: this is the leg that MOVES the day either module
-  // is promoted. The panel's existing VRT scene drives `?shell=legacy`, so
-  // `shellFaces` is false there and it can never see this arm — the same blind
-  // spot `legacy-fallback.ts` already records for the three drawer specs.
-  let workflowAudioInFace = $derived(
-    !!workflowAudioInNode &&
-      dockRailRendersFace({
-        shellFaces,
-        pinned: true,
-        migrated: laneMigrated(workflowAudioInNode.type),
-      }),
-  );
-  let workflowAudioOutFace = $derived(
-    !!workflowAudioOutNode &&
-      dockRailRendersFace({
-        shellFaces,
-        pinned: true,
-        migrated: laneMigrated(workflowAudioOutNode.type),
-      }),
-  );
+  // ⚠ BOTH WERE FALSE FOR YEARS, AND NOW BOTH ARE JUST "IS THERE A NODE".
+  // These read `dockRailRendersFace({ shellFaces, pinned: true, migrated })`,
+  // whose three terms have all lost their subject: there is no `?shell=legacy`,
+  // there is no card to fall back to, and every faced module is in
+  // `STRICT_FACES`. The panel mounts the faceplate because that is the only
+  // surface the module has.
+  let workflowAudioInFace = $derived(!!workflowAudioInNode);
+  let workflowAudioOutFace = $derived(!!workflowAudioOutNode);
   /** A cable feeds TIMELORDE's clock input (DIN assignment or hand-patch)
    *  → tap tempo + tempo knob flip to the externally-clocked state. */
   let workflowExternallyClocked = $derived(
@@ -3111,11 +3085,9 @@
       // non-docked node ⇒ byte-identical to the old `dockEntry ? 'dockStub' :
       // n.type`. Preview ON ⇒ un-migrated → placeholder, migrated → shell.
       const renderKind = laneRenderKind({
-        shellFaces,
         userDocked: !!dockEntry,
         type: n.type,
-        hasCard: isShellSwappable(n.type, cardTypeSet.has(n.type)),
-        migrated: laneMigrated(n.type),
+        laneNative: isLaneNative(n.type),
       });
       const emittedType = emittedTypeFor(renderKind, n.type);
       const dockZone = dockEntry?.zone ?? null;
@@ -5414,7 +5386,6 @@
    * reload does not re-place.
    */
   function placeVideoZoneDefaults(): void {
-    if (!shellFaces) return;
     const present = VIDEO_ZONE_DEFAULTS.filter((spec) => !!patch.nodes[spec.id]);
     if (present.length === 0) return;
     const pending = present.filter((spec) => {
@@ -8732,7 +8703,7 @@
       <FlowBridge bind:api={flowApi} />
       <!-- CHANNEL COLUMNS guide: 8 numbered columns + SEND 1/2 rail, pinned
            to flow space. -->
-      <ChannelColumnsOverlay columnColors={wcolColumnColors} laneTopY={wcolLaneTopY} tick={wcolViewportTick} pitch={wcolPitch} paneLocalProjection={shellFaces} />
+      <ChannelColumnsOverlay columnColors={wcolColumnColors} laneTopY={wcolLaneTopY} tick={wcolViewportTick} pitch={wcolPitch} paneLocalProjection={true} />
       <CadillacOverlay {provider} />
       <!-- 2026-05-27: the per-node editable name label moved INSIDE every
            module card's title chrome (see ModuleTitle.svelte). The floating

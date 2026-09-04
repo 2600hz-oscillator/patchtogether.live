@@ -1767,100 +1767,20 @@ for (const type of nodeVizSurfaceTypes()) {
     expect(providerErrors, `provider throw(s): ${providerErrors.join(' | ')}`).toEqual([]);
   });
 
-  test(`${type} [legacy shell]: the CARD adopts the node's canvas — one element, one renderer`, async ({ page }) => {
-    test.setTimeout(SLOW_RENDER ? 180_000 : 90_000);
-    const errors: string[] = [];
-    page.on('pageerror', (e) => errors.push(e.message));
-
-    // ⚠ THIS ARM IS THE ONE THE MODULE'S OWN SUITE DEPENDS ON, and it is why
-    // the two-mount design was refused. `wavesculpt.spec.ts` (17 tests) and
-    // `cube.spec.ts` both drive their DRS step seam and then photograph the
-    // surface's own testid. The seam halts the rAF of the surface that
-    // INSTALLED it — so if the seam owner and the photographed element were
-    // two different mounts, stepping would freeze a surface nobody is looking
-    // at while the photographed one free-ran. With one mount, adopted, they
-    // are the same element by construction. This leg pins that construction;
-    // those suites consume it.
-    await boot(page, 'legacy');
-    await spawnPatch(
-      page,
-      [
-        { id: nodeId, type, domain: mod.domain },
-        ...(fixture.drive ? [fixture.drive.node] : []),
-      ],
-      fixture.drive
-        ? [
-            {
-              id: 'nodeviz-drive-edge',
-              from: { nodeId: fixture.drive.node.id, portId: fixture.drive.edge.fromPort },
-              to: { nodeId, portId: fixture.drive.edge.toPort },
-              sourceType: fixture.drive.edge.sourceType,
-              targetType: fixture.drive.edge.targetType,
-            },
-          ]
-        : [],
-      { mountTimeout: 30_000 },
-    );
-
-    await expect
-      .poll(async () => (await vizCanvasHome(page, nodeId, fixture)).inCard, {
-        message: `${type}'s legacy card must ADOPT the node canvas into its screen box`,
-        timeout: 30_000,
-      })
-      .toBe(true);
-    const adopted = await vizCanvasHome(page, nodeId, fixture);
-    expect(
-      adopted.count,
-      `exactly one ${type} canvas with the card mounted: ${JSON.stringify(adopted)}`,
-    ).toBe(1);
-    expect(adopted.parked, 'the card holds it, so it is not in the node host').toBe(false);
-    expect(adopted.hosts, 'the node host is still mounted — it OWNS the surface').toBe(1);
-
-    // THE SEAM IS ON THE PHOTOGRAPHED SURFACE. It is installed by the node's
-    // mount, and the element the card shows is that mount's canvas.
-    await expect
-      .poll(() =>
-        page.evaluate(
-          (name) => typeof (globalThis as Record<string, unknown>)[name] === 'function',
-          fixture.stepGlobal,
-        ),
-      { message: 'the node-mounted surface installs the DRS step seam', timeout: 30_000 })
-      .toBe(true);
-    const stepped = await page.evaluate(({ stepName, countName }) => {
-      const g = globalThis as unknown as Record<
-        string,
-        ((t?: number) => number) | (() => number) | undefined
-      >;
-      const step = g[stepName] as ((t?: number) => number) | undefined;
-      const count = g[countName] as (() => number) | undefined;
-      step?.(2000);
-      const before = count?.() ?? 0;
-      for (let i = 0; i < 5; i++) step?.(2000);
-      const during = count?.() ?? 0;
-      // NEGATIVE CONTROL, in the same evaluate so no rAF can interleave: while
-      // step mode holds and NOTHING steps, the counter must not move. That is
-      // the seam actually halting the rAF of the mount whose canvas the card is
-      // showing — a seam pointed at some OTHER mount would leave this free-running.
-      const idle = count?.() ?? 0;
-      step?.(); // one more driven frame; wavesculpt also treats this as resume
-      return { delta: during - before, idleDelta: idle - during };
-    }, { stepName: fixture.stepGlobal, countName: fixture.stepCountGlobal });
-    expect(stepped.delta, 'five steps advance the counter by exactly five').toBe(5);
-    expect(
-      stepped.idleDelta,
-      'in step mode with nothing stepping the counter must not move — otherwise the seam is ' +
-        'halting a mount other than the one being photographed',
-    ).toBe(0);
-
-    // The picture, with the card mounted: same instrument as the default-shell
-    // arm, so the two states are comparable.
-    const moved = await framesToChange(page, nodeId, pixelPort);
-    expect(
-      moved.changed && moved.nonBlackMax > 0,
-      `${type}.${pixelPort} must be lit and moving with the legacy card mounted. ${fmtChange(moved)}`,
-    ).toBe(true);
-
-    const providerErrors = errors.filter((e) => /useStore|SvelteFlowProvider/i.test(e));
-    expect(providerErrors, `provider throw(s): ${providerErrors.join(' | ')}`).toEqual([]);
-  });
+  // ⚠ THE `[legacy shell]` ARM IS DELETED WITH THE SURFACE IT PHOTOGRAPHED, and
+  // it was the LAST thing in `e2e/tests/` that booted `?shell=legacy`.
+  //
+  // It asserted that the module's CARD ADOPTS the node-owned canvas — one
+  // element, one renderer — because the two-mount alternative would have put the
+  // DRS step seam on a surface nobody was looking at: stepping would freeze the
+  // seam owner while the photographed element free-ran. `wavesculpt.spec.ts`
+  // (17 tests) and `cube.spec.ts` consume that construction.
+  //
+  // ⚠ WHAT IS LOST, STATED RATHER THAN IMPLIED: the ADOPTION half. There is no
+  // second host to adopt INTO, so "the card holds it, not the node host" is not
+  // a claim that can be made or broken. What the consuming suites actually need
+  // — that the seam owner and the photographed element are ONE mount — is now
+  // true by construction and is asserted positively by the surviving arm above
+  // ("the renderer runs with NO card mounted anywhere, and there is exactly ONE
+  // of it"), which counts the canvases and reads `hosts === 1`.
 }

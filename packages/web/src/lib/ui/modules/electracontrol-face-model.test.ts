@@ -25,7 +25,7 @@ import '$lib/meta/modules'; // side-effect: register meta module defs
 import { electraControlDef, ELECTRA_CONTROL_TYPE } from '$lib/meta/modules/electra-control';
 import { curatedFace, laneOrder, type FaceDefLike } from '$lib/ui/workflow/curated-face';
 import { STRICT_FACES, migrated } from '$lib/ui/workflow/strict-faces';
-import { NON_SHELL_LANE_TYPES, laneRenderKind, dockRailRendersFace } from '$lib/ui/workflow/legacy-fallback';
+import { NON_SHELL_LANE_TYPES, laneRenderKind } from '$lib/ui/workflow/legacy-fallback';
 import { shellCellFor } from '$lib/ui/workflow/shell-cells';
 import { electraPosOf, ELECTRA_BANKS, ELECTRA_SLOT_COUNT } from '$lib/graph/electra-control';
 import { slotPositionName, emptySlotName, boardName } from './electraControl/electra-board-model';
@@ -54,21 +54,17 @@ describe('electraControl face — the promotion', () => {
   it('is NOT in NON_SHELL_LANE_TYPES — the carve-out and the promotion cannot coexist', () => {
     expect(NON_SHELL_LANE_TYPES.has(ELECTRA_CONTROL_TYPE)).toBe(false);
     expect(
-      laneRenderKind({
-        shellFaces: true,
-        userDocked: false,
-        type: ELECTRA_CONTROL_TYPE,
-        hasCard: true,
-        migrated: true,
-      }),
+      laneRenderKind({ userDocked: false, type: ELECTRA_CONTROL_TYPE, laneNative: false }),
       'the lane renders the shell, not the verbatim card',
     ).toBe('shell');
   });
 
-  // ⚠ THE NEGATIVE CONTROL FOR THE LEG ABOVE: the same call with `hasCard:
-  // false` — which is what `moduleSwapsToShell` returns for a carved-out type —
-  // must still resolve 'legacy'. Without this, the assertion could not tell "the
-  // carve-out is gone" from "the rule stopped consulting it".
+  // ⚠ THE NEGATIVE CONTROL FOR THE LEG ABOVE: the same call for a type that IS
+  // carved out must resolve `'native'`. Without this, the assertion could not
+  // tell "the carve-out is gone" from "the rule stopped consulting it". (It read
+  // `hasCard: false → 'legacy'` until the cards went; the carve-out is the same
+  // fact, and `'native'` is what it is called now that there is no card to fall
+  // back to.)
   // (⚠ The subject has now moved THREE times, and the last move is the one that
   // ends the sequence. It was `controlSurface`, whose own promotion drained that
   // membership on 2026-09-01; then `clipplayer`, whose promotion drained the set
@@ -81,28 +77,25 @@ describe('electraControl face — the promotion', () => {
   // replace. Read the earlier claim as the warning it turned out to be.)
   it('the rule still honours a carve-out for the types that keep one', () => {
     expect(
-      laneRenderKind({
-        shellFaces: true,
-        userDocked: false,
-        type: 'cadillac',
-        hasCard: false,
-        migrated: false,
-      }),
-    ).toBe('legacy');
+      laneRenderKind({ userDocked: false, type: 'cadillac', laneNative: true }),
+    ).toBe('native');
     expect(NON_SHELL_LANE_TYPES.has('cadillac'), 'a real member remains').toBe(true);
   });
 
   // ⚠ THE SURFACE THAT ACTUALLY MATTERS. This module is the `E` of the M/E/C pin
   // trio with `surface: 'drawer'` and is canvas-hidden, so the bottom tray is the
-  // ONLY surface its always-on instance has. Promotion is what flips that tray
-  // from the legacy card to the faceplate; before it, `migrated` was false and
-  // the drawer painted the card forever.
-  it('the pinned DRAWER now renders the face — the whole point of the promotion', () => {
-    expect(dockRailRendersFace({ shellFaces: true, pinned: true, migrated: migrated(ELECTRA_CONTROL_TYPE) })).toBe(true);
-    // …and the `?shell=legacy` escape hatch still gets the verbatim card, which
-    // is what keeps `electra-control.spec.ts` meaningful rather than merely
-    // passing.
-    expect(dockRailRendersFace({ shellFaces: false, pinned: true, migrated: true })).toBe(false);
+  // ONLY surface its always-on instance has. Promotion is what flipped that tray
+  // from the legacy card to the faceplate.
+  //
+  // ⚠ THE TWO `dockRailRendersFace` ASSERTIONS ARE GONE WITH THE RULE. It was
+  // `shellFaces && pinned && migrated`, and all three terms lost their subject
+  // at once — no escape hatch, no card to fall back to, and every faced module
+  // in STRICT_FACES. The rail renders the faceplate unconditionally, so the
+  // question this leg asked ("does the drawer paint the face?") has one answer
+  // by construction. What still needs asserting is that the module IS promoted,
+  // which is the `STRICT_FACES` membership leg this file opens with.
+  it('is promoted — which is what gives its pinned DRAWER a faceplate at all', () => {
+    expect(migrated(ELECTRA_CONTROL_TYPE)).toBe(true);
   });
 });
 
