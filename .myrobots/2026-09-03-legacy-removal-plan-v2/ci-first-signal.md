@@ -130,12 +130,46 @@ They are the tail of the file: `evt_hit` flaked, `evt_miss` failed, and the rema
 three "did not run". Fix the gibribbon gate-bridge failure and the budget violation
 goes with it — there is no `test.skip` anywhere in that file.
 
-## Still open at session end
+## What was FIXED, and what it cost
+
+| finding | resolution |
+|---|---|
+| `lint` stale ledger row | `task lint:waits:accept` — one line |
+| shard 8, 24 legs | sink read re-pointed to `VideoTileThumb` by node id |
+| the sweep's video half was vacuous | differential against the sink's own idle picture, measured once per worker |
+| FOXY silent on the shell | `FOXY_FRAME_PRODUCER` + the fixture `card-producer-lifetime` demands |
+| seqtris/skifree clipped dock button | tile bodies 104 -> 88 / 80 px. ⚠ LOOK CHANGE — owner preview + bot recapture |
+| `cameraInput.out`, `mandleblot.color_out` | `EXEMPT_OUTPUT_EMIT` with the both-shells measurement; pinned in the same commit |
+| bluebox BLUEBOX/REDBOX silent | `Button.svelte` `setPointerCapture` guarded — a PRODUCT fix, see below |
+| painter "second stroke drops" | the drag never reached the canvas; `scrollIntoViewIfNeeded` + a hit-test guard |
+
+### ⚠ THE BUTTON BUG IS THE ONE TO REMEMBER
+
+`Button.svelte`'s `pointerdown` set `pressed = true`, called
+`setPointerCapture(e.pointerId)` UNGUARDED, then dispatched the gate. A capture
+that throws skips the dispatch — so the pad paints itself held and the engine
+hears nothing. `bluebox.spec.ts` dispatches `pointerId: 1` on its digit leg
+(Chrome's live mouse pointer, capturable) and `pointerId: 2` on the BLUEBOX and
+REDBOX legs (not capturable): the digit sounded, the other two read 0.0000 at
+every band with `aria-pressed="true"`. Fixed in the PRODUCT, not the test —
+re-numbering the pointer would have hidden every real capture failure.
+
+## Still open
 
 | subject | state |
 |---|---|
-| `cameraInput.out`, `loopback.out` | deliver nothing on a bare spawn; both are DEVICE modules (getUserMedia / getDisplayMedia). Needs the legacy-vs-default measurement to say whether they ever emitted, then a driver or a named exemption. |
-| `mandleblot.color_out` | the SUT's OWN thumb reads all-zero — the module renders nothing on a bare spawn. Real. |
-| gibribbon `evt_hit`/`evt_miss` gate bridge | shard 2, 2 failed + 3 unrun |
-| `fader-midi-assign`, `fader`, `picturebox-limits`, `bentbox`, `vfpga-p4-early-hd`, `card-drop-patch` ×2 | all TEST-TIMEOUT shaped. Suspect the fixture/contention class: this branch re-pointed ~400 specs onto a SLOWER boot while `e2e-timings.generated.json` still carries MAIN's costs, so the shard planner is packing on stale prices. The S5 cost-artifact loop is the designed answer; verify per spec before assuming it. |
-| `bluebox` ×2, `painter`, `backdraft` ×2, `videovarispeed-perfzip`, `toybox-presets-io` ×2, `chromaconsole` | not yet reproduced locally |
+| `@collab` DOOM ×2 | `sampleSharedTics` under-samples (16 samples across 125 tics, so any constant tic offset gives zero overlap). It is a DOOM wait: OUTSIDE every grant on this branch. Owner decision needed. |
+| `loopback.out` | passes in isolation, times out under 3-worker load. Watch it on the next run rather than exempting. |
+| the timeout class | `backdraft`, `videovarispeed-perfzip`, `toybox-presets-io`, `chromaconsole`, `picturebox-limits`, `bentbox`, `card-drop-patch`, `gibribbon`, `fader`, `fader-midi-assign` are ALL GREEN LOCALLY (29/29 and 20/20). Their CI failures are test-timeout shaped — the fixture/contention class this branch was warned to expect, because ~400 specs were re-pointed onto a slower boot while `e2e-timings.generated.json` still carries main's costs. The S5 cost-artifact loop is the designed answer. |
+| S3, S4, S5 | NOT STARTED. S3 is mapped in `s3-vrt-map.md`; note its interlock is wider than that file's "47 files" — a grep for the four exemption tables alone reaches 48 files, led by `vrt-meta.test.ts` (50 refs) and `_shell-faces.ts` (44). |
+
+## ⚠ THE BRANCH GOT NO SECOND CI RUN
+
+Two pushes (`95e4a80aa7`, `d2e0914954`) moved the PR head — `gh pr view 2349`
+confirms `headRefOid` — and NEITHER produced a workflow run:
+`actions/runs?head_sha=...` returns `total_count: 0` for both, and
+`gh pr checks 2349` lists only CodeRabbit. `ci.yml` fires on
+`pull_request: [opened, synchronize, reopened]`, so a push to the head branch
+should have fired one. Whatever the cause (queue, draft handling, an org
+setting), **do not read the absence of a red as a green** — the fixes above are
+verified locally and have never been exercised by CI.

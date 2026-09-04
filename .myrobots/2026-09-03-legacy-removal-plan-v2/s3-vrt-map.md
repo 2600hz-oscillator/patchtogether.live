@@ -61,6 +61,39 @@ covered). Those are S5 archaeology. The ones that are CODE and will red:
 | `e2e/vrt/build_gallery.py` | 4 refs |
 | `scripts/test-ledger.mjs`, `scripts/test-reconciliation.mjs` | 1 each |
 
+## ⚠ RE-MEASURED 2026-09-04: THE INTERLOCK IS THREE IMPORTS, NOT 47 FILES
+
+The "47 files reference `vrt.spec.ts`" figure above is right and misleading in the
+same breath — it is dominated by PROSE. Re-measured by grepping for an actual
+`import` of `vrt-exemptions` rather than a mention of it:
+
+```
+e2e/vrt/vrt-legacy-mask-audit.spec.ts:27  VRT_MODULE_MASKS, EXEMPT_FROM_VRT   (dies with the sweep)
+scripts/vrt-gallery.test.ts:80            STRICT_VRT_MODULES                  (the vacuity tripwire)
+packages/web/src/lib/ui/vrt-live-surfaces.test.ts:51  VRT_MODULE_MASKS, EXEMPT_FROM_VRT
+```
+
+Three, plus `vrt.spec.ts` itself. Everything else that "references" a table reads
+it as TEXT or names it in a comment:
+
+* `e2e/vrt/_shell-faces.ts` — 44 hits, EVERY ONE a comment citing an exemption's
+  argument in a face scene's `why`. No import. They are S5 archaeology, not S3.
+* `packages/web/src/lib/audio/modules/vrt-meta.test.ts` — 50 hits and the file
+  with the most; it reads the exemption source as a STRING, so it needs
+  rewriting rather than re-importing.
+* `card-range-source.test.ts` (7), `strict-faces.ts` (8),
+  `face-migration-inventory.ts` (6), and ~30 module/card files with one mention
+  each — prose.
+
+Practical consequence for whoever picks this up: the compile-time blast radius of
+deleting `vrt-exemptions.ts` is THREE files. The work is not the imports — it is
+the source-reading gates (`vrt-meta`, `test-ledger.mjs`, `test-reconciliation.mjs`)
+and the eight `scripts/vrt-*.test.ts` anchors, each of which has to be re-pointed
+with an argument rather than mechanically.
+
+Baselines to delete, re-counted at this commit: **130** under
+`e2e/vrt/__screenshots__/vrt.spec.ts/` (the map says 131 — verify before quoting).
+
 ## Sequencing that avoids a red intermediate
 
 1. `vrt-cable-stripe.{ts,test.ts}` + `vrt-legacy-mask-audit.spec.ts` + `vrt.spec.ts`
