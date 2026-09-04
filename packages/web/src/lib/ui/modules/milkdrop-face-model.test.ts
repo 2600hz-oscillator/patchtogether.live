@@ -23,7 +23,8 @@ import {
 } from '$lib/ui/workflow/shell-control-kind';
 import { curatedFace, dockFacePlan } from '$lib/ui/workflow/curated-face';
 import { dockTabPlan } from '$lib/ui/workflow/dock-tabs-model';
-import { hasVideoSurface } from '$lib/ui/workflow/module-shell-model';
+import { hasVideoSurface } from '/ui/workflow/module-shell-model';
+import { shellCellFor } from '/ui/workflow/shell-cells';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const DEF_SRC = resolve(HERE, '../../video/modules/milkdrop.ts');
@@ -117,14 +118,18 @@ describe('milkdrop face — the preset picker, and why it is not an options rost
     ).toBe(MILKDROP_CURATED_NAMES.length - 1);
   });
 
-  it('the family testidPrefixes are the ones the CARD actually emits', () => {
-    // `ControlFamily.testidPrefix` is documented as grep-verified against the
-    // card; this is that verification, so a renamed testid cannot leave the
-    // declaration pointing at nothing.
-    const card = readFileSync(resolve(HERE, 'MilkdropCard.svelte'), 'utf8');
+  it('every declared family resolves to a live shell cell', () => {
+    // ⚠ THIS ASKED WHETHER THE CARD EMITTED EACH `testidPrefix`, which is how
+    // `ControlFamily.testidPrefix` was documented as grep-verified. The shell
+    // stamps `shell-cell-<familyId>` from an interpolation, so no surviving
+    // surface carries a per-family literal; `module-docs-lint` resolves each
+    // family to a live cell instead, and so does this leg, at the module — a
+    // declaration pointing at nothing is still red, by a different route.
     for (const f of milkdropDef.controlFamilies ?? []) {
-      expect(card.includes(`data-testid="${f.testidPrefix}"`), `${f.id} prefix appears on the card`)
-        .toBe(true);
+      expect(
+        shellCellFor('milkdrop', { kind: 'family', key: `${f.id}-{n}` } as never),
+        `${f.id} has no shell cell`,
+      ).toBeTruthy();
     }
   });
 });
