@@ -308,6 +308,34 @@ export const EXEMPT_OUTPUT_EMIT_MODULES: Record<string, string> = {
 //
 // Keep this list tight too (~10-15 entries).
 export const EXEMPT_OUTPUT_EMIT: Record<string, string> = {
+  // ── CLIPPLAYER audio{N}L/R (slice 5): recorded-audio-clip playback. A
+  // lane's audio pair emits only while that lane PLAYS AN AUDIO CLIP, and an
+  // audio clip exists only after a real take (OPFS media + an
+  // AudioClipRecord committed by the recording registry). This sweep's
+  // clipplayer driver launches a NOTE clip in all 8 lanes — that is what the
+  // 24 pitch/gate/vel outs need — and a lane plays exactly ONE clip, so the
+  // two port populations are mutually exclusive inside one fixture: this is a
+  // structural exemption, not a payable one. Covered END-TO-END by
+  // cliprec-arm-single.spec.ts, which records a take from a live oscillator
+  // through the REAL surface and asserts audible RMS on audio1L through a
+  // scope — strictly stronger than this sweep's generic emit check.
+  // Handle-presence still pins all 16 ports here.
+  'clipplayer.audio1L': 'recorded-take playback (audio clip in lane 1); covered by cliprec-arm-single.spec.ts (real-chain record→launch→audible RMS on THIS port)',
+  'clipplayer.audio1R': 'recorded-take playback (audio clip in lane 1); covered by cliprec-arm-single.spec.ts',
+  'clipplayer.audio2L': 'recorded-take playback (audio clip in lane 2); covered by cliprec-arm-single.spec.ts (same path, lane-indexed)',
+  'clipplayer.audio2R': 'recorded-take playback (audio clip in lane 2); covered by cliprec-arm-single.spec.ts (same path, lane-indexed)',
+  'clipplayer.audio3L': 'recorded-take playback (audio clip in lane 3); covered by cliprec-arm-single.spec.ts (same path, lane-indexed)',
+  'clipplayer.audio3R': 'recorded-take playback (audio clip in lane 3); covered by cliprec-arm-single.spec.ts (same path, lane-indexed)',
+  'clipplayer.audio4L': 'recorded-take playback (audio clip in lane 4); covered by cliprec-arm-single.spec.ts (same path, lane-indexed)',
+  'clipplayer.audio4R': 'recorded-take playback (audio clip in lane 4); covered by cliprec-arm-single.spec.ts (same path, lane-indexed)',
+  'clipplayer.audio5L': 'recorded-take playback (audio clip in lane 5); covered by cliprec-arm-single.spec.ts (same path, lane-indexed)',
+  'clipplayer.audio5R': 'recorded-take playback (audio clip in lane 5); covered by cliprec-arm-single.spec.ts (same path, lane-indexed)',
+  'clipplayer.audio6L': 'recorded-take playback (audio clip in lane 6); covered by cliprec-arm-single.spec.ts (same path, lane-indexed)',
+  'clipplayer.audio6R': 'recorded-take playback (audio clip in lane 6); covered by cliprec-arm-single.spec.ts (same path, lane-indexed)',
+  'clipplayer.audio7L': 'recorded-take playback (audio clip in lane 7); covered by cliprec-arm-single.spec.ts (same path, lane-indexed)',
+  'clipplayer.audio7R': 'recorded-take playback (audio clip in lane 7); covered by cliprec-arm-single.spec.ts (same path, lane-indexed)',
+  'clipplayer.audio8L': 'recorded-take playback (audio clip in lane 8); covered by cliprec-arm-single.spec.ts (same path, lane-indexed)',
+  'clipplayer.audio8R': 'recorded-take playback (audio clip in lane 8); covered by cliprec-arm-single.spec.ts (same path, lane-indexed)',
   // SIX STRUM — a plucked-string voice, silent until struck. The output-emit is
   // covered by the IDENTICAL drive in the dedicated e2e/tests/sixstrum-poly.spec.ts
   // (SEQUENCER.gate → strum1 → SCOPE audible RMS + SEQUENCER.pitch → poly → RMS),
@@ -604,6 +632,14 @@ export const PINNED_MODULE_EXEMPT_KEYS: readonly string[] = Object.freeze([
 // 'timelorde.1/8').
 export const PINNED_PER_PORT_EXEMPT_KEYS: readonly string[] = Object.freeze([
   'buggles.burst', 'buggles.clock',
+  // clipplayer audio{N}L/R (slice 5) — ONE structural exemption in 16
+  // spellings: recorded-take playback, undrivable in a fixture whose lanes
+  // already play the note clips the other 24 ports need; covered end-to-end
+  // by cliprec-arm-single.spec.ts (see EXEMPT_OUTPUT_EMIT for the reasons).
+  'clipplayer.audio1L', 'clipplayer.audio1R', 'clipplayer.audio2L', 'clipplayer.audio2R',
+  'clipplayer.audio3L', 'clipplayer.audio3R', 'clipplayer.audio4L', 'clipplayer.audio4R',
+  'clipplayer.audio5L', 'clipplayer.audio5R', 'clipplayer.audio6L', 'clipplayer.audio6R',
+  'clipplayer.audio7L', 'clipplayer.audio7R', 'clipplayer.audio8L', 'clipplayer.audio8R',
   'doom.audio_l', 'doom.audio_r', 'doom.evt_door', 'doom.evt_gun_p1',
   'doom.evt_gun_p2', 'doom.evt_gun_p3', 'doom.evt_gun_p4', 'doom.evt_kill',
   'doom.evt_kill_arachnotron', 'doom.evt_kill_baron', 'doom.evt_kill_caco',
@@ -693,14 +729,14 @@ test('output-emit exemption lists are pinned key-by-key and anchored to REGISTRY
     'EXEMPT_OUTPUT_EMIT_MODULES no longer matches PINNED_MODULE_EXEMPT_KEYS. '
     + 'ADDING an exemption is missing coverage — justify it in the PR and add the key below. '
     + 'REMOVING one is coverage reclaimed — delete the key below too. '
-    + 'Either way also re-pin the ledger: `flox activate -- task test:ledger:accept`.',
+    + 'Either way also re-pin the matching PINNED_* array in THIS file (sorted) — there is no accept task for it; the array IS the review surface.',
   ).toEqual([...PINNED_MODULE_EXEMPT_KEYS]);
   expect(
     Object.keys(EXEMPT_OUTPUT_EMIT).sort(),
     'EXEMPT_OUTPUT_EMIT no longer matches PINNED_PER_PORT_EXEMPT_KEYS. '
     + 'ADDING an exemption is missing coverage — justify it in the PR and add the key below. '
     + 'REMOVING one is coverage reclaimed — delete the key below too. '
-    + 'Either way also re-pin the ledger: `flox activate -- task test:ledger:accept`.',
+    + 'Either way also re-pin the matching PINNED_* array in THIS file (sorted) — there is no accept task for it; the array IS the review surface.',
   ).toEqual([...PINNED_PER_PORT_EXEMPT_KEYS]);
 
   // ── 2. ARTIFACT ANCHOR — every key must still name something that exists ──

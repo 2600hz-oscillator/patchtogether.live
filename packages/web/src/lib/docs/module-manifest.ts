@@ -1316,14 +1316,20 @@ function readModule(file: string, rawSrc: string): RawModule | null {
     }
   }
 
-  // clipplayer's outputs are computed (8 lanes × pitch/gate/vel) — the literal
-  // extractor sees none, so synthesize the 24 per-lane ports here.
+  // clipplayer's outputs are computed (8 lanes × pitch/gate/vel + the slice-5
+  // audio clip pairs) — the literal extractor sees none, so synthesize the 40
+  // per-lane ports here. Kept in lock-step with the def by
+  // module-manifest.test.ts's "manifest input/output ids match def" sweep.
   if (out.outputs.length === 0 && out.type === 'clipplayer') {
     const outs: ManifestPort[] = [];
     for (let i = 1; i <= 8; i++) {
       outs.push({ id: `pitch${i}`, type: 'polyPitchGate' });
       outs.push({ id: `gate${i}`, type: 'gate' });
       outs.push({ id: `vel${i}`, type: 'cv' });
+    }
+    for (let i = 1; i <= 8; i++) {
+      outs.push({ id: `audio${i}L`, type: 'audio' });
+      outs.push({ id: `audio${i}R`, type: 'audio' });
     }
     out.outputs = outs;
   }

@@ -105,6 +105,7 @@ audioIn output:audio_l_out+audio_r_out:token
 audioOut input:L+R:token
 blood output:audio_l+audio_r:token
 charlottesEchos input:L+R output:L+R
+clipplayer output:audio1L+audio1R:token output:audio2L+audio2R:token output:audio3L+audio3R:token output:audio4L+audio4R:token output:audio5L+audio5R:token output:audio6L+audio6R:token output:audio7L+audio7R:token output:audio8L+audio8R:token
 clouds input:in_l+in_r output:out_l+out_r
 cloudseed input:in_l+in_r output:out_l+out_r
 cofefve input:inL+inR output:outL+outR

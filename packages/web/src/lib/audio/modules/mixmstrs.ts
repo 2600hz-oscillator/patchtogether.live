@@ -60,7 +60,11 @@ import { instantiateFaustModule } from '$lib/audio/faust-runtime';
 import { markJsConsumedParam } from '$lib/audio/cv-shadow';
 // The ONE definition of what MON means. Neither end of the normal owns it: a
 // contract owned by one end is a contract the other end can drift from.
-import { clipLaneLiveGain, coerceClipLaneMon } from '$lib/audio/clip-lane-return';
+import {
+  clipLaneLiveGain,
+  coerceClipLaneMon,
+  coerceClipLanePlayingEdge,
+} from '$lib/audio/clip-lane-return';
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
 import type { ParamDef, PortDef } from '$lib/graph/types';
@@ -1053,6 +1057,31 @@ export const mixmstrsDef: AudioModuleDef = {
       duckGain.push(dk);
     }
 
+    // ── THE NORMALLED LAUNCHER RETURN — read('laneReturns') ────────────────
+    //
+    // One unity GainNode per CHANNEL leg (16 — the aux returns have no lane),
+    // summing into the SAME merger input as that leg's duck chain. The order is
+    // the clip-lane-return contract, verbatim:
+    //
+    //     jack → boardIn[i] (TAP) → duck[i] ─┐
+    //                                        ├─► merger input i → Faust
+    //     laneReturnIn[i] (the normal) ──────┘
+    //
+    // ⚠ THE RETURN JOINS AFTER THE DUCK, AND THAT IS THE FEATURE. `clip-auto`
+    // means "the clip replaces the live input", so MON's attenuator touches the
+    // LIVE branch only — a returning clip is never ducked, and BOARD IN (the
+    // insert head, upstream of both) never records it. clipplayer connects its
+    // lane output legs into these gains when the normal is CONNECTED and
+    // disconnects them when a cable is patched into the channel's input jack
+    // (`clipLaneNormalConnected` — a graph fact, never an audio probe).
+    const laneReturnIn: GainNode[] = [];
+    for (let i = 0; i < NUM_CHANNELS * 2; i++) {
+      const g = ctx.createGain();
+      g.gain.value = 1;
+      g.connect(merger, 0, i);
+      laneReturnIn.push(g);
+    }
+
     // Output splitter: 22 channels. 0..5 are the patchable module outputs
     // (masterL/R, send1L/R, send2L/R); 6..21 are the per-channel POST-FADER
     // taps the DSP emits (post EQ → comp → fader), L then R per channel. The
@@ -1322,21 +1351,20 @@ export const mixmstrsDef: AudioModuleDef = {
 
     // ── THE MON DUCK ────────────────────────────────────────────────────────
     //
-    // ⚠ IN THIS SLICE THE DUCK NEVER ENGAGES, AND THAT IS THE POINT. Its only
-    // other input is "is lane N of the launcher playing", which arrives as a
-    // `ClipLanePlayingEdge` scheduled at a context time — and nothing publishes
-    // one until the return is wired in a later slice. `clipLaneLiveGain(mon,
-    // false)` is 1 in EVERY mode, so every duck gain stays at unity and this
-    // module's audio is bit-identical to before. The identity ART leg asserts
-    // exactly that.
+    // Two inputs, two cadences, ONE writer of the gain value
+    // (`clipLaneLiveGain`):
     //
-    // ⚠ AND WHEN IT DOES ENGAGE IT WILL BE SCHEDULED, NOT POLLED. The gain is
-    // ramped at the `ctx.currentTime` the clip's own source node starts or
-    // stops on — one AudioParam event per transition, landing on the clip's
-    // first sample. A per-quantum read of lane state is unavailable on the
-    // audio thread and would derive a boundary from a tick count, which is the
-    // blood failure (62 % of demand delivered, 38 % of every output sample a
-    // hard zero). This pump only tracks the MON KNOB; it is not the boundary.
+    //  - THE LANE EDGE (`write('clipLaneEdge')`) — clipplayer publishes "lane N
+    //    starts/stops sounding at ctx time T" the instant it schedules the
+    //    clip's own source node, and the duck ramps AT that T: one AudioParam
+    //    event per transition, landing on the clip's first sample. SCHEDULED,
+    //    NOT POLLED — a per-quantum read of lane state is unavailable on the
+    //    audio thread, and bridging it per tick would derive a boundary from a
+    //    tick count, which is the blood failure (62 % of demand delivered, 38 %
+    //    of every output sample a hard zero).
+    //  - THE MON KNOB — this pump re-evaluates when the knob (or its CV) moves,
+    //    against the CURRENT lanePlaying flags, at control rate. It is not the
+    //    boundary; it is the knob.
     const lanePlaying: boolean[] = new Array(NUM_CHANNELS).fill(false);
     const duckApplied: number[] = new Array(NUM_CHANNELS).fill(1);
     function pumpMonDuck() {
@@ -1353,6 +1381,25 @@ export const mixmstrsDef: AudioModuleDef = {
       }
     }
     const monPumpTimer = setInterval(pumpMonDuck, COMP_PUMP_MS);
+
+    /** Apply one lane-playing edge: flip the flag and schedule BOTH duck legs
+     *  at the edge's own context time — the same instant the clip's source
+     *  node starts or stops, so the duck lands on the clip's first sample.
+     *  `duckApplied` is synced so the knob pump never re-ramps the same value
+     *  at "now" and undoes the scheduled landing. */
+    function applyClipLaneEdge(raw: unknown): void {
+      const edge = coerceClipLanePlayingEdge(raw);
+      if (!edge || edge.lane >= NUM_CHANNELS) return;
+      const c = edge.lane;
+      lanePlaying[c] = edge.playing;
+      const mon = coerceClipLaneMon(snap3(jsEffective(MIXMSTRS_MON_IDS[c]!, 0, 2)));
+      const want = clipLaneLiveGain(mon, edge.playing);
+      duckApplied[c] = want;
+      const at = Math.max(edge.atTime, ctx.currentTime);
+      for (const leg of [2 * c, 2 * c + 1]) {
+        duckGain[leg]?.gain.setTargetAtTime(want, at, DUCK_GLIDE_S);
+      }
+    }
 
     const inputsMap = new Map<string, { node: AudioNode; input: number; param?: AudioParam }>();
     AUDIO_IN_PORTS.forEach((id, i) => {
@@ -1488,7 +1535,27 @@ export const mixmstrsDef: AudioModuleDef = {
           pumpMonDuck();
           return true;
         }
+        // THE NORMALLED-RETURN ENTRY POINTS — one post-duck gain per channel
+        // leg, port order (ch1L … ch8R). clipplayer connects its lane output
+        // legs INTO these when the normal is connected. See the wiring comment
+        // at the construction site.
+        if (key === 'laneReturns') {
+          return laneReturnIn.map((g) => ({ node: g as AudioNode, input: 0 }));
+        }
+        // Duck observability for tests + the duck e2e leg: the current flags
+        // and the last APPLIED live-branch gain per channel. Never audio data.
+        if (key === 'recDuck') {
+          return { lanePlaying: lanePlaying.slice(), applied: duckApplied.slice() };
+        }
         return undefined;
+      },
+      write(key, value) {
+        // The lane-playing boundary, as clip-lane-return.ts specifies it: a
+        // value scheduled at a context time, published by clipplayer through
+        // the engine's write seam the instant it schedules the clip's own
+        // source node. Validated here (the consumer's boundary), applied to
+        // both duck legs at the edge's own atTime.
+        if (key === 'clipLaneEdge') applyClipLaneEdge(value);
       },
       dispose() {
         clearInterval(compPumpTimer);
@@ -1503,6 +1570,7 @@ export const mixmstrsDef: AudioModuleDef = {
         for (const { ana } of Object.values(jsShadowAna)) ana.disconnect();
         for (const g of boardIn) g.disconnect();
         for (const g of duckGain) g.disconnect();
+        for (const g of laneReturnIn) g.disconnect();
         for (const ana of meterAnalysers) ana.disconnect();
         merger.disconnect();
         splitter.disconnect();
