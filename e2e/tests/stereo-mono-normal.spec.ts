@@ -135,6 +135,39 @@ interface Probe { outL: AnalyserNode; outR: AnalyserNode; sameEdge: boolean }
 
 /** Hang an analyser on each output PORT, via the cable-materialising seam. */
 async function installProbe(page: import('@playwright/test').Page, sut: Sut): Promise<void> {
+  // ⚠ WAIT FOR THE PORTS TO EXIST FIRST — this is a RACE, not a slow machine.
+  // `spawnPatch` resolves when the graph is written; a WORKLET-backed module's
+  // `AudioWorkletNode` only exists after its `addModule` promise settles, so
+  // `getOutputNode` can legitimately return null for a few frames afterwards.
+  // The probe below THROWS on null (`port has no audio node`), which reads as
+  // a broken module rather than a probe that looked too early — and it is why
+  // `vstFx` reddened a PR whose diff was entirely outside packages/web, and
+  // why `charlottesEchos` recovered on retry twice in the #1847 census. Both
+  // SUTs are worklet-backed; nothing else in SUTS is.
+  //
+  // This waits on OBSERVABLE STATE (the ports resolve), never a fixed delay,
+  // and it cannot mask the defect it replaces: if a port never materialises
+  // the wait times out and names which one, instead of throwing on frame one.
+  await page.waitForFunction(
+    ({ SUT, outL, outR }) => {
+      const w = globalThis as unknown as {
+        __engine?: () => {
+          getDomain(d: string): {
+            getOutputNode(nodeId: string, portId: string): { node: AudioNode; output: number } | null;
+          };
+        };
+      };
+      try {
+        const audio = w.__engine?.().getDomain('audio');
+        return !!audio?.getOutputNode(SUT, outL) && !!audio?.getOutputNode(SUT, outR);
+      } catch {
+        return false;
+      }
+    },
+    { SUT, outL: sut.outL, outR: sut.outR },
+    { timeout: 15_000 },
+  );
+
   await page.evaluate(({ SUT, outL, outR }) => {
     const w = globalThis as unknown as {
       __engine: () => {
@@ -202,33 +235,29 @@ async function measure(
 }
 
 test.describe('stereo modules: an unpatched R output follows L (mono normal)', () => {
-  // ── ⏸ FLAKE-PARK #1847 ────────────────────────────────────────────────────
-  // charlottesEchos failed then PASSED ON RETRY at the same SHA in the 96 h CI
-  // census to 2026-08-18, so the job reported SUCCESS. Parked with `test.fixme`,
-  // not deleted; the assertion body below is untouched and still runs for every
-  // other SUT, including the permanent nothing-patched negative control.
-  // LOST WHILE PARKED: charlottesEchos' mono-normal contract — a mono source
-  // into L must not leave R at digital silence. That is the exact class where
-  // five modules declared the normal in their DSP and then defeated it in their
-  // FACTORY, so this module is unmeasured in every lane while parked.
-  // Re-enable only on a root cause (#1847); "it passes now" is not one.
-  const FLAKE_PARK_1847: Record<string, string> = {
-    charlottesEchos:
-      'FLAKE-PARK #1847 — nondeterministic on CI: 2 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused',
-  };
+  // ── ↩ UN-PARKED from FLAKE-PARK #1847 (2026-09-04) ────────────────────────
+  // The park's stated condition was a ROOT CAUSE, and "it passes now" was
+  // explicitly not one. The root cause is now found, and it was never in
+  // charlottesEchos: `installProbe` read `getOutputNode` on the frame after
+  // `spawnPatch`, and a WORKLET-backed module's node does not exist until its
+  // `addModule` promise settles. The probe threw on null, which printed as
+  // "`L` port has no audio node" — a broken module, not a probe that looked
+  // too early.
+  //
+  // The corroboration is that it reached a SECOND subject: `vstFx` — the only
+  // other worklet-backed SUT in this file — failed the same way on 2026-09-04
+  // (run 33903601247) on a PR whose diff was entirely inside `apps/desktop/`,
+  // a tree that lane never even loads. Two worklet SUTs, one seam, zero
+  // non-worklet SUTs affected.
+  //
+  // `installProbe` now waits for both ports to resolve before reading them.
+  // The assertion body below is UNCHANGED from the park.
+  //
+  // The park map and its `test.fixme` branch are DELETED rather than left empty:
+  // an unreachable skip site is still a skip site to `e2e-skip-budget`, which is
+  // deny-by-default and reds on any site no entry claims. Every SUT now runs.
 
   for (const sut of SUTS) {
-    const parkReason = FLAKE_PARK_1847[sut.type];
-    if (parkReason) {
-      test.fixme(
-        `${sut.type}: a MONO source into ${sut.inL} makes ${sut.outR} audible`,
-        { annotation: { type: 'fixme', description: parkReason } },
-        () => {
-          /* FLAKE-PARKED — see FLAKE_PARK_1847 and #1847 */
-        },
-      );
-      continue;
-    }
     test(`${sut.type}: a MONO source into ${sut.inL} makes ${sut.outR} audible`, async ({ page }) => {
       // ── LEG 1: NOTHING PATCHED. The permanent negative control. If the probe
       //    manufactured signal of its own, or the module self-oscillated, leg 2

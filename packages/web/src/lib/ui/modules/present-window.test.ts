@@ -15,8 +15,12 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   automaticFullscreenBlockedAdvisory,
   computePopupFeatures,
+  sinkUrl,
   startPresent,
+  type StartPresentArgs,
 } from './present-window';
+import { presentBlitSevered, setPresentBlitSevered } from './present-blit-sever';
+import { testHooksEnabled } from '$lib/dev/test-hooks';
 import type { ScreenRect } from './use-fullscreen.svelte';
 
 describe('computePopupFeatures', () => {
@@ -649,5 +653,210 @@ describe('startPresent', () => {
     env.fireMessage({ source: {}, data: { type: 'present:fs-state', entered: false } });
     env.fire('pointerdown');
     expect(goFullscreenPosts(posted).length, 'a foreign report must not arm').toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// THE FRAME TRANSPORT REPORTS BACK
+// ---------------------------------------------------------------------------
+//
+// ⚠ WHAT WAS WRONG WITH THE OLD PROTOCOL. `__presentFrame` returned `void`, so
+// the sink learned nothing from pulling it, and the opener's own liveness flags
+// (`popupDriving`, `lastPullAt`) are set BEFORE the draw and OUTSIDE its
+// try/catch. A projector painting pure black — null source, 1×1 source, a lost
+// GL context swallowed by the frame's bare catch — therefore reported perfect
+// health forever while showing a frozen last frame on a wall. These tests pin
+// the return value that makes the black case visible, in BOTH directions: a
+// painting link must keep saying `painted`, or the sink would banner over a
+// working show.
+
+/** Drive the sink's pull and hand back what the opener reported. */
+function pull(popup: unknown) {
+  const fn = (popup as { __presentFrame?: () => unknown }).__presentFrame;
+  return fn?.() as
+    | { protocol: number; outcome: string; painted: number; errors: number; slot: string }
+    | undefined;
+}
+
+/** Open a session and drive it to the point where the sink is pulling frames. */
+function readySession(args: Partial<StartPresentArgs> = {}) {
+  const env = installWindow();
+  const { popup, ctx, dst } = fakePopup();
+  const sched = fakeRaf();
+  const session = startPresent({
+    source: () => fakeSourceCanvas(),
+    rect: null,
+    openWindow: () => popup as unknown as Window,
+    raf: sched.raf,
+    caf: sched.caf,
+    ...args,
+  });
+  env.fireMessage({ source: popup, data: { type: 'present:ready' } });
+  vi.advanceTimersByTime(100);
+  return { env, popup, ctx, dst, sched, session };
+}
+
+describe('startPresent — the sink is TOLD what each frame did', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.unstubAllGlobals();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it('a frame that drew source pixels reports PAINTED and advances the count', () => {
+    const { popup, ctx } = readySession();
+    const first = pull(popup);
+    expect(first?.protocol).toBe(1);
+    expect(first?.outcome).toBe('painted');
+    expect(first?.painted).toBe(1);
+    expect(ctx.drawImage).toHaveBeenCalledTimes(1);
+    expect(pull(popup)?.painted, 'monotonic, so the sink can measure staleness').toBe(2);
+  });
+
+  it('THE BLACK PROJECTOR: a null source reports BLANK and never advances painted', () => {
+    // This is the exact state the old signal called healthy: the black-fill
+    // runs every frame, nothing throws, the sink pulls on schedule.
+    const { popup, ctx } = readySession({ source: () => null });
+    const status = pull(popup);
+    expect(status?.outcome).toBe('blank');
+    expect(status?.painted).toBe(0);
+    expect(ctx.fillRect, 'it still black-fills — that is what made it invisible').toHaveBeenCalled();
+    expect(ctx.drawImage).not.toHaveBeenCalled();
+    expect(pull(popup)?.painted).toBe(0);
+  });
+
+  it('a 1×1 source is BLANK too — real pixels, not merely a non-null object', () => {
+    const { popup } = readySession({ source: () => fakeSourceCanvas(1, 1) });
+    expect(pull(popup)?.outcome).toBe('blank');
+  });
+
+  it('a THROWING draw is counted and warned ONCE, not silently swallowed', () => {
+    // node-present-registry.test.ts pins that a lost GL context must not kill
+    // the loop, and that absorption is deliberate. What was missing is any
+    // trace at all: an absorbed throw looked exactly like a good frame.
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { popup } = readySession({
+      source: () => {
+        throw new Error('GL context lost');
+      },
+    });
+    const a = pull(popup);
+    expect(a?.outcome).toBe('error');
+    expect(a?.errors).toBe(1);
+    expect(a?.painted).toBe(0);
+    expect(pull(popup)?.errors, 'still counting').toBe(2);
+    expect(
+      warn.mock.calls.filter((c) => String(c[0]).includes('[present]')).length,
+      'ONE line per session — enough to diagnose, never enough to bury the console',
+    ).toBe(1);
+    warn.mockRestore();
+  });
+
+  it('carries the SLOT so a four-projector rig knows which link died', () => {
+    const { popup } = readySession({ slot: 'bd::DELL' });
+    expect(pull(popup)?.slot).toBe('bd::DELL');
+  });
+
+  it('the OPENER FALLBACK counts the same frames (a sink that never pulls)', () => {
+    // A cached older /present drives nothing, so the opener's own rAF keeps
+    // drawing. Those frames must count too, or a sink that arrives late would
+    // report a picture that has been running for minutes as never painted.
+    const { popup, sched } = readySession();
+    sched.tick();
+    sched.tick();
+    expect(pull(popup)?.painted).toBe(3);
+  });
+});
+
+describe('startPresent — the sink URL carries an identity', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.unstubAllGlobals();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it('appends ?slot= so a native window-open handler can route the sink', () => {
+    // Without it every projector is `window.open('/present', '_blank',
+    // '<geometry>')` — identical URL, window name and feature shape — and a
+    // shell cannot tell an output slot's sink from an old patch's projector.
+    installWindow();
+    const { popup } = fakePopup();
+    const opened: string[] = [];
+    const openWindow = (u: string) => {
+      opened.push(u);
+      return popup as unknown as Window;
+    };
+    startPresent({
+      source: () => fakeSourceCanvas(),
+      rect: null,
+      slot: 'bd::DELL U2720Q|2560x1440|@2|ext',
+      openWindow,
+      raf: () => 1,
+      caf: () => {},
+    });
+    const url = opened[0]!;
+    expect(url.startsWith('/present?slot=')).toBe(true);
+    expect(new URL(url, 'http://x').searchParams.get('slot')).toBe(
+      'bd::DELL U2720Q|2560x1440|@2|ext',
+    );
+  });
+
+  it('an EMPTY slot leaves the URL untouched (every existing caller is unchanged)', () => {
+    expect(sinkUrl('/present', '')).toBe('/present');
+    expect(sinkUrl('/present?x=1', 'a::b')).toBe('/present?x=1&slot=a%3A%3Ab');
+  });
+});
+
+describe('startPresent — THE SEVERED-BLIT NEGATIVE CONTROL', () => {
+  // ⚠ THE POINT OF THIS HOOK IS THAT THE GATE CAN GO RED. A continuity probe
+  // nobody has ever seen fail is not an instrument. `present-blit-sever` cuts
+  // exactly one link — the source read — leaving `prepare` (the engine render)
+  // running, so what a test proves by severing is that its probe follows the
+  // BLIT and not something upstream of it. The e2e drives the same seam through
+  // `window.__severPresentBlit`.
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.unstubAllGlobals();
+    setPresentBlitSevered(false);
+  });
+  afterEach(() => {
+    setPresentBlitSevered(false);
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it('severing turns a PAINTED link black, and un-severing brings it back', () => {
+    const prepare = vi.fn();
+    const { popup, ctx } = readySession({ prepare });
+    expect(pull(popup)?.outcome, 'healthy first — the positive half').toBe('painted');
+
+    setPresentBlitSevered(true);
+    const cut = pull(popup);
+    expect(cut?.outcome).toBe('blank');
+    expect(cut?.painted, 'the painted count freezes — this is what a stalled sink sees').toBe(1);
+    expect(ctx.drawImage).toHaveBeenCalledTimes(1);
+    expect(
+      prepare,
+      'the ENGINE keeps rendering — only the blit is cut, so a probe that still ' +
+        'sees change is reading something other than the projector',
+    ).toHaveBeenCalledTimes(2);
+
+    setPresentBlitSevered(false);
+    expect(pull(popup)?.outcome).toBe('painted');
+    expect(pull(popup)?.painted).toBe(3);
+  });
+
+  it('the hook is INERT unless test hooks are on', () => {
+    // In a real production build `testHooksEnabled()` is false, the setter is a
+    // no-op and the read is a constant-false branch. This asserts the gate
+    // exists rather than trying to fake a prod bundle inside vitest.
+    expect(testHooksEnabled(), 'vitest runs with DEV hooks on').toBe(true);
+    expect(presentBlitSevered()).toBe(false);
   });
 });

@@ -19,14 +19,39 @@
 //      menu shows NO "Present on …" entry — the feature capability-gates off
 //      and nothing throws.
 //   2. MULTI-SCREEN (injected): a "Present on <secondary>" entry shows, clicking
-//      it opens a REAL /present popup, and that popup's canvas gets non-black
-//      pixels (the blit pipeline works end-to-end). "Stop presenting" then
-//      closes the popup.
+//      it opens a REAL /present popup, that popup's canvas gets non-black
+//      pixels, AND — the part a frame counter cannot see — a change to the
+//      GRAPH reaches those pixels, stops reaching them when the blit is
+//      deliberately severed, and comes back when it is restored. "Stop
+//      presenting" then closes the popup.
 //   3. The /present route loads chrome-less + safe with no opener.
+//
+// ── WHY THE CAUSAL + SEVERED LEGS EXIST ────────────────────────────────────
+//
+// "Non-black once, shortly after opening" is a real assertion but a weak one:
+// it cannot see a projector that goes black or freezes LATER, which is the
+// failure mode this feature has actually shipped (the owner P0 that produced
+// node-present-registry, and the frozen-last-frame class the sink's link
+// monitor now reports). And the blit it is watching black-fills every frame and
+// swallows draw errors ON PURPOSE, so "the loop is running" is decoupled from
+// "there is a picture" by construction.
+//
+// So the gate below is causal — mutate a source param through the live Y.Doc
+// and require the RECEIVER's pixel hash to follow — and it is negative-
+// controlled: with `__severPresentBlit(true)` cutting the source read, the same
+// probe must go RED. A continuity probe that has never been seen to fail is a
+// decoration; this one is failed on every run, on purpose, and then recovered.
 
 import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 import { waitFrames } from '../_helpers/frames';
+import {
+  awaitReceiver,
+  describeReceiver,
+  followReceiver,
+  presentSinkStats,
+  requirePresentFrame,
+} from '../_helpers/present';
 
 const TRIANGLE_PARAMS = { shape: 2, tile: 0, rotate: 0, zoom: 2.2 };
 
@@ -93,6 +118,41 @@ async function setup(page: Page): Promise<void> {
   await page.waitForTimeout(500);
 }
 
+/** Write a param on a node through the live Y.Doc, exactly as a control would —
+ *  the CAUSE half of the causal probe. */
+async function setParam(page: Page, nodeId: string, key: string, value: number): Promise<void> {
+  await page.evaluate(
+    ({ nodeId: id, key: k, value: v }) => {
+      const w = globalThis as unknown as {
+        __patch: { nodes: Record<string, { params: Record<string, number> }> };
+        __ydoc: { transact: (fn: () => void) => void };
+      };
+      w.__ydoc.transact(() => {
+        const n = w.__patch.nodes[id];
+        if (n) n.params[k] = v;
+      });
+    },
+    { nodeId, key, value },
+  );
+}
+
+/** Cut (or restore) the opener→sink blit. The hook is committed behind the same
+ *  DEV / VITE_E2E_HOOKS gate as every other Playwright seam in this repo. */
+async function severBlit(page: Page, on: boolean): Promise<void> {
+  const installed = await page.evaluate((flag) => {
+    const w = globalThis as unknown as { __severPresentBlit?: (on?: boolean) => void };
+    if (typeof w.__severPresentBlit !== 'function') return false;
+    w.__severPresentBlit(flag);
+    return true;
+  }, on);
+  expect(
+    installed,
+    '__severPresentBlit hook not present — a DEV/VITE_E2E_HOOKS build is expected. ' +
+      'Without it the negative control below cannot run, and a gate whose red path ' +
+      'is unreachable proves nothing.',
+  ).toBe(true);
+}
+
 /** Read whether a canvas locator has ANY non-black pixel. We sample the canvas
  *  pixels in-page (it's same-origin, so getImageData is allowed). */
 async function canvasHasNonBlackPixel(page: Page): Promise<boolean> {
@@ -140,7 +200,15 @@ test.describe('present on a second display — VIDEO OUT', () => {
     // test died mid-`click` on shard 8 with the blit assertion already PASSED
     // (#1903 follow-up). Raise the bound so the frame budget is spendable —
     // never shrink the gate to fit the clock.
-    test.setTimeout(90_000);
+    //
+    // 90 s -> 150 s for the causal + severed-blit legs added below. Their frame
+    // budgets are 180 + 60 + 60 + 180, and only ONE of those (the negative leg,
+    // 60) is unconditional — the rest exit on the frame the change lands, which
+    // locally is the first batch. Measured worst case is therefore ~480 opener
+    // frames on top of the existing 180, ≈ 60 s at the 7.9 fps this repo
+    // measured under E2E_SWIFTSHADER=1, and the typical spend is a small
+    // fraction of it. Still a FAILURE BOUND, never the gate.
+    test.setTimeout(150_000);
     await injectScreens(page, [
       { label: 'Built-in Retina', isPrimary: true },
       { label: 'DELL U2720Q', isPrimary: false },
@@ -208,6 +276,110 @@ test.describe('present on a second display — VIDEO OUT', () => {
         + `${FRAME_BUDGET} rendered frames (observed ${framesWaited} frames, units: FRAMES; `
         + `${Date.now() - startedAt} ms elapsed, units: MS — the ms is DIAGNOSTIC ONLY, `
         + `it says how fast this renderer drew those frames and gates nothing)`,
+    ).toBe(true);
+
+    // ── THE SINK CARRIES ITS OWN IDENTITY ────────────────────────────────
+    // Without `?slot=` every projector is `window.open('/present', '_blank',
+    // '<geometry>')` — identical URL, window name and feature shape — and a
+    // native shell's window-open handler cannot tell an output slot's sink from
+    // an old patch's restored projector, so it can route neither.
+    expect(popup.url(), 'the sink URL carries the (node, display) slot').toContain('slot=');
+    await expect(popup.locator('[data-testid="present-root"]')).toHaveAttribute(
+      'data-slot',
+      /out/,
+    );
+
+    // ── POSITIVE CONTROL: THE PROJECTOR FOLLOWS THE GRAPH ────────────────
+    // The counter-shaped assertion above says the loop ran. This says the
+    // PICTURE is downstream of the patch: change SHAPES' zoom and require the
+    // RECEIVER's pixel hash to move. (zoom is a log-curve 0.05..10 control;
+    // 2.2 -> 0.15 shrinks the primitive from frame-filling to a speck, so
+    // essentially every sampled pixel moves. A value outside a param's declared
+    // range is silently clamped and makes a control leg vacuous.)
+    const CAUSAL_BUDGET = 180;
+    const before = await requirePresentFrame(popup, 'before the causal change');
+    await setParam(page, 'src', 'zoom', 0.15);
+    const followed = await followReceiver(page, popup, before.hash, CAUSAL_BUDGET);
+    expect(
+      followed.reads,
+      `the probe never got a usable read of the projector — ZERO SAMPLES is an `
+        + `instrument failure, never a pass. ${describeReceiver(followed)}`,
+    ).toBeGreaterThan(0);
+    expect(
+      followed.ok,
+      `a graph change must reach the projector's PIXELS within ${CAUSAL_BUDGET} `
+        + `opener frames. ${describeReceiver(followed)}`,
+    ).toBe(true);
+
+    // ── NEGATIVE CONTROL: SEVER THE BLIT AND THE SAME PROBE MUST GO RED ──
+    // ⚠ THIS IS THE POINT. Everything above passes just as happily against a
+    // projector that is black or frozen, because the blit black-fills every
+    // frame and swallows draw errors by design. Cutting the source read must
+    // therefore (a) turn the picture black and (b) make a graph change stop
+    // arriving. If the probe still sees a change here, it is reading something
+    // that is not the projector and every green above is worthless.
+    const SEVER_BUDGET = 60;
+    // ⚠ SAMPLE THE LIT PICTURE **BEFORE** CUTTING. The black-fill lands on the
+    // very next frame, so a read taken after the sever can already be the black
+    // one — and then "did it change?" compares black to black and the control
+    // silently inverts. Predicate on NON-BLACK rather than on a hash difference
+    // for the same reason: any hash move would also be satisfied by a source
+    // that merely animated.
+    await requirePresentFrame(popup, 'just before the blit was cut');
+    await severBlit(page, true);
+    const wentBlack = await awaitReceiver(page, popup, (s) => !s.nonBlack, SEVER_BUDGET);
+    expect(
+      wentBlack.ok,
+      `severing the blit must black the projector out within ${SEVER_BUDGET} frames — `
+        + `if it does not, the hook is not wired to the loop under test and the `
+        + `"red" below would be meaningless. ${describeReceiver(wentBlack)}`,
+    ).toBe(true);
+
+    const dark = await requirePresentFrame(popup, 'after the blit was cut');
+    // Read the painted count only once the picture is already black, so it is
+    // sampled after the freeze rather than racing it.
+    const paintedWhenCut = (await presentSinkStats(popup))?.painted ?? -1;
+    await setParam(page, 'src', 'zoom', 8);
+    const blind = await followReceiver(page, popup, dark.hash, SEVER_BUDGET);
+    expect(
+      blind.reads,
+      `the negative leg read nothing, so it proves nothing. ${describeReceiver(blind)}`,
+    ).toBeGreaterThan(0);
+    expect(
+      blind.ok,
+      `WITH THE BLIT SEVERED a graph change must NOT reach the projector. It did, `
+        + `so this probe is not measuring the projector. ${describeReceiver(blind)}`,
+    ).toBe(false);
+    // And the transport says so from the receiver's side: the opener's painted
+    // count froze, which is the signal the old void-returning protocol could
+    // not carry at all.
+    const cutStats = await presentSinkStats(popup);
+    expect(
+      cutStats,
+      'the sink must publish its link stats in a hooks build (they are how a '
+        + 'failure names WHICH half broke)',
+    ).not.toBeNull();
+    expect(
+      cutStats!.painted,
+      `the sink's painted-frame count must FREEZE while the blit is cut `
+        + `(was ${paintedWhenCut}). ${describeReceiver(blind)}`,
+    ).toBe(paintedWhenCut);
+
+    // ── RECOVERY: and the same probe goes GREEN again ────────────────────
+    // Proves the black above was caused by the sever and not by the projector
+    // dying for an unrelated reason mid-test — the difference between a
+    // negative control and an outage.
+    await severBlit(page, false);
+    const recovered = await awaitReceiver(
+      page,
+      popup,
+      (s) => s.nonBlack && s.hash !== dark.hash,
+      CAUSAL_BUDGET,
+    );
+    expect(
+      recovered.ok,
+      `restoring the blit must bring the picture back — otherwise the "red" above `
+        + `was an outage, not a control. ${describeReceiver(recovered)}`,
     ).toBe(true);
 
     // Re-open the menu on the opener -> "Stop presenting" now shows + closes it.
