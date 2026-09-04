@@ -87,3 +87,23 @@ file itself argues against.
   `vrt-karplus-tomtom-states`, the probes) DO need it — and they are all
   non-`STRICT_MATCH`, so they run in no CI job and can be sequenced after the
   required lane is settled.
+
+---
+
+# S5 archaeology — sizing, measured at `4a0c745173`
+
+Owner ruling 2 is "remove ALL references to the idea legacy ever existed", which is
+stronger than "stop reading the param". Two measurements a successor should have
+before planning that sweep:
+
+| surface | count | note |
+|---|---:|---|
+| module def files whose prose says "the card" / "this card" / "its card" / "on the card" | **236** | ⚠ **USER-FACING.** These are `description` / per-param doc strings rendered on the docs pages, not code comments. e.g. numpadPlus's description ends "While the card is focused it captures the Numpad keys exclusively". A player reads these. |
+| non-e2e files containing `shell=legacy` | 20+ | incl. `Canvas.svelte`, `strict-faces.ts`, `legacy-fallback.ts`, `shell-cells.ts`, `dom-source-modules.ts`, `WorkflowTopbar.svelte`, `AudioIoSurface.svelte` |
+
+The 236 are the item to size honestly: they are prose a user reads, so they cannot be
+regex-swept ("card" → "tile") without reading each one — several describe a physical
+eurorack panel, where "card" is not the UI noun at all.
+
+`docs:accept` regenerates the docs artefacts from these strings, so the sweep and the
+accept run go together.
