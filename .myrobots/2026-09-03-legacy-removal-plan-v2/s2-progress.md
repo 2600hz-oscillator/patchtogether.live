@@ -521,3 +521,48 @@ full CI run"), and it is worth the owner deciding deliberately rather than
 discovering: the choice is a DRAFT PR opened early to get signal while the remaining
 slices land, or one PR at the end that has never been exercised by CI before the day
 it is reviewed. No PR has been opened — that call is the owner's.
+
+---
+
+# ⚠ THE GROUP/STICKY SLICE IS HALF DONE, AND THE HALF THAT IS MISSING IS THE PRODUCT
+
+Merged from `feat/legacy-removal-groups`. What LANDED:
+
+1. **The safety precondition, which was the gating item** —
+   `legacy-group-sticky-load.test.ts` + a frozen
+   `__fixtures__/legacy-group-sticky.imp.json` (a DUB VOICE group over an
+   `analogVco` + `delay` with childIds/parentGroupId, two exposedPorts,
+   exposedControls, a locked instrumentLayout, a STICKY with text, and four
+   cables covering into/out-of/inside/untouched). Verdict across all four
+   surfaces: **a saved group/sticky rack LOADS GRACEFULLY** — persistence drops
+   the nodes with a diagnostic and drops every edge touching them, the
+   reconciler skips `domain: 'meta'` before `addNode` (and wraps it in a
+   per-node try/catch anyway), the renderer is unreachable on that path and
+   non-fatal off it, and a re-save cannot resurrect the node.
+   The file carries an anti-vacuity block that decodes the frozen envelope
+   directly, because every assertion in a drop leg is an ABSENCE and an absence
+   passes trivially against a fixture that never held the thing.
+   ⚠ It also found that `validateGraphFragment` carries an explicit
+   `node.type === 'group'` KEEP exemption that would have preserved an
+   unrenderable group node — it has NO CALLERS, so it never runs on a load. It
+   dies with the rest of the machinery.
+2. The e2e + VRT surface retired (11 specs, `groups.spec.ts`, 3 baselines).
+3. `exposable-controls.ts` extracted from `group-controls.ts` — the
+   control-discovery half that OUTLIVES the group.
+
+## What is STILL THERE, and it is the whole product side
+
+`group.ts`, `sticky.ts` (+ `group.test.ts`), `GroupCard.svelte`,
+`StickyCard.svelte`, `group-viz-hosts.{ts,test.ts}`, the remainder of
+`group-actions` / `group-naming` / `group-projection` / `saved-group-resurrect`,
+`group-building-presence`, `GroupBuilderModal.svelte`,
+`GroupExposedControls.svelte`, `SavedGroupsPicker.svelte`, `cable-leg-groups`,
+`lib/server/saved-groups.ts`, `routes/api/saved-groups/**`,
+`db/schema/003_saved_groups.sql`, and the `group`/`sticky` entries in
+`NON_SHELL_LANE_TYPES` (which should end as `{cadillac}` alone).
+
+⚠ **SO THE BRANCH CURRENTLY HAS A COVERAGE WINDOW: group and sticky ship, and
+their e2e specs do not.** That is a defect in the branch until the product half
+lands, and it is stated here rather than left for a reviewer to find. It is
+tolerable only because the owner has already ruled the feature is going; it is
+NOT a state to open the PR in.
