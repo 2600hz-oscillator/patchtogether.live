@@ -259,9 +259,19 @@ before the owner answered, and is retired. Two independent holds are live:
    cliprec video tie-in run under ONE builder (the recorderbox/output seams get
    rewritten once)."
 
-Releasing the hold needs BOTH: S4 on main AND cliprec slice 6 landed. Coordinate
-with the cliprec program (`.myrobots/2026-09-02-mixmstrs-multitrack-clip-recording/`)
-— it is actively rewriting the same recorderbox capture/OPFS seams P6a targets.
+Releasing the hold needs BOTH: legacy-removal S4 on main AND cliprec slice 6
+landed. Coordinate with the cliprec program
+(`.myrobots/2026-09-02-mixmstrs-multitrack-clip-recording/`) — it is actively
+rewriting the same recorderbox capture/OPFS seams P6a targets.
+
+**How to check the hold (do this, do not assume):**
+
+```sh
+flox activate -- git log --oneline origin/main --grep="cliprec"   # slice 6 landed?
+```
+
+Status 2026-09-04: cliprec slices 1-5 are on main (slice 5 = #2342); **slice 6 has
+NOT landed**, so the hold is live. Legacy-removal S4 is likewise not on main.
 
 Tasks (for the eventual single builder):
 1. Measure the REAL save paths: `makePortableEnvelope`/`makeStateOnlyEnvelope`
