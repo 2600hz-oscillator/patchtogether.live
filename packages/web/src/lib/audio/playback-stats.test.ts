@@ -33,7 +33,9 @@ import {
   snapshotFromStats,
   snapshotAudioHealth,
   formatAudioHealth,
+  diffAudioHealth,
   UNSUPPORTED_AUDIO_HEALTH,
+  UNSUPPORTED_AUDIO_HEALTH_DELTA,
   type AudioPlaybackStatsLike,
 } from './playback-stats';
 
@@ -229,5 +231,90 @@ describe('playback-stats — the instrument itself is negative-controlled', () =
     // real device ✓".
     expect(UNSUPPORTED_AUDIO_HEALTH.supported).toBe(false);
     expect(Object.isFrozen(UNSUPPORTED_AUDIO_HEALTH)).toBe(true);
+  });
+});
+
+// ── THE DELTA — "did the device starve DURING this workflow?" ─────────────
+//
+// ⚠ EVERY COUNTER HERE IS CUMULATIVE SINCE CONTEXT CREATION. That makes the
+// obvious assertion — `underrunEvents === 0` around a save, a patch load, a
+// crossfade — answer the wrong question in both directions: it fails on a
+// dropout from four hours ago, and it passes a workflow that added ten to a
+// counter that was already non-zero. The delta is the only shape that means
+// what a continuity claim needs it to mean.
+//
+// ⚠ AND IT IS VACUOUS ON HEADLESS CI, for the reason this whole file's header
+// gives: a null sink cannot underrun. A green delta from the headless lane is
+// evidence that the lane cannot fail. It is a real-device / owner-machine leg,
+// paired with the graph-continuity probe (continuity-probe.ts), which is the
+// leg that CAN go red headless.
+
+describe('diffAudioHealth — the workflow-scoped device leg', () => {
+  const snap = (s: typeof OWNER_HEALTHY_BASELINE) => snapshotFromStats(s as AudioPlaybackStatsLike);
+
+  it('a clean workflow reads zero events while the context total keeps rising', () => {
+    const before = snap(OWNER_HEALTHY_BASELINE);
+    const after = snap({ ...OWNER_HEALTHY_BASELINE, totalDuration: 40.5 });
+    const d = diffAudioHealth(before, after);
+    expect(d.supported).toBe(true);
+    expect(d.underrunEvents).toBe(0);
+    expect(d.underrunSec).toBe(0);
+    expect(d.totalSec).toBeCloseTo(40.5 - 18.056818, 6);
+  });
+
+  it('THE POSITIVE CONTROL: a workflow that starved reports only ITS starvation', () => {
+    // The context already had 37 events before the workflow started. A bare
+    // "underrunEvents === 0" would call this red for the WRONG reason and would
+    // be unable to tell 37→37 from 37→40.
+    const before = snap(UNDERRUNNING);
+    const after = snap({ ...UNDERRUNNING, underrunEvents: 40, underrunDuration: 0.5, totalDuration: 620 });
+    const d = diffAudioHealth(before, after);
+    expect(d.underrunEvents).toBe(3); // not 40
+    expect(d.underrunSec).toBeCloseTo(0.088, 6);
+    expect(d.totalSec).toBeCloseTo(7.5, 6);
+  });
+
+  it('a dirty-but-unchanged context is CLEAN for this workflow', () => {
+    const before = snap(UNDERRUNNING);
+    const d = diffAudioHealth(before, snap({ ...UNDERRUNNING, totalDuration: 700 }));
+    expect(d.underrunEvents).toBe(0);
+    expect(d.underrunSec).toBe(0);
+  });
+
+  it('UNSUPPORTED IS NOT CLEAN: "could not see" never reads as "nothing happened"', () => {
+    // The failure this prevents: a Firefox run reporting a zero delta and being
+    // recorded as device-level evidence.
+    const good = snap(OWNER_HEALTHY_BASELINE);
+    expect(diffAudioHealth(UNSUPPORTED_AUDIO_HEALTH, good).supported).toBe(false);
+    expect(diffAudioHealth(good, UNSUPPORTED_AUDIO_HEALTH).supported).toBe(false);
+    expect(diffAudioHealth(UNSUPPORTED_AUDIO_HEALTH, UNSUPPORTED_AUDIO_HEALTH)).toEqual(
+      UNSUPPORTED_AUDIO_HEALTH_DELTA,
+    );
+  });
+
+  it('a CONTEXT REBUILD mid-workflow clamps at zero, never a negative count', () => {
+    // The counters are monotonic only within ONE AudioContext. A negative
+    // underrun count would read as "better than clean", which is nonsense.
+    const before = snap(UNDERRUNNING);
+    const after = snap({ ...OWNER_HEALTHY_BASELINE, totalDuration: 2 }); // fresh context
+    const d = diffAudioHealth(before, after);
+    expect(d.underrunEvents).toBe(0);
+    expect(d.underrunSec).toBe(0);
+    expect(d.totalSec).toBe(0);
+  });
+
+  it('SENSITIVITY: each field of the delta moves with its own input', () => {
+    // The instrument's own negative control, matching leg (c) above: a delta
+    // blind to the field under test would return a confident clean number.
+    const before = snap(OWNER_HEALTHY_BASELINE);
+    expect(
+      diffAudioHealth(before, snap({ ...OWNER_HEALTHY_BASELINE, underrunEvents: 1 })).underrunEvents,
+    ).toBe(1);
+    expect(
+      diffAudioHealth(before, snap({ ...OWNER_HEALTHY_BASELINE, underrunDuration: 0.25 })).underrunSec,
+    ).toBeCloseTo(0.25, 6);
+    expect(
+      diffAudioHealth(before, snap({ ...OWNER_HEALTHY_BASELINE, totalDuration: 19 })).totalSec,
+    ).toBeCloseTo(0.943182, 5);
   });
 });

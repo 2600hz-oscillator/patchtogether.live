@@ -14,6 +14,8 @@ import {
   WORKFLOW_DEFAULT_WIRE_LATCH,
   DRAWER_KEY_TO_PINNED,
   planPinnedSpawns,
+  planPinnedIdentityRepairs,
+  RESERVED_PINNED_IDS,
   planDefaultWires,
   isPinnedNode,
   isTypingTarget,
@@ -156,6 +158,152 @@ describe('planPinnedSpawns', () => {
 
   it('a PINNED timelorde satisfies the presence:"type" spec too', () => {
     expect(planPinnedSpawns(fullPinnedSet())).toEqual([]);
+  });
+});
+
+// ── HOSTILE PEER — identity repair at the reserved ids ────────────────────
+//
+// THREAT MODEL, and why it is not hypothetical: a rackspace holds up to 4
+// collaborators and anonymous invitees are allowed, so an untrusted peer has
+// WRITE access to the live Y.Doc. The envelope type guard in
+// graph/persistence.ts runs on IMPORT only; graph/snapshot.ts copies `type` and
+// `domain` verbatim out of the live doc with no validation at all. Every state
+// asserted below is one a peer can actually produce today.
+//
+// WHAT IS BEING DEFENDED: audio/reconciler.ts reads
+// `prev.type !== cur.type || prev.domain !== cur.domain` as remove+add and
+// calls `engine.removeNode`. At `pinned-audioIn` / `pinned-audioOut` that
+// destroys the DEVICE SESSION; at `pinned-mixmstrs` it also breaks a
+// hard-coded id (channel-columns.ts MASTER_MIX_ID, push2/push-lane.ts).
+
+/** Fixture: the canonical set as it exists in a healthy doc, WITH ids. */
+function canonicalNodes(): Array<{
+  id: string;
+  type: string;
+  domain: string;
+  data: Record<string, unknown> | null;
+  params?: Record<string, unknown>;
+  position?: { x: number; y: number };
+}> {
+  return ALL_WORKFLOW_PINNED.map((s) => ({
+    id: s.id,
+    type: s.type,
+    domain: s.domain as string,
+    data: { pinned: true, name: s.type } as Record<string, unknown> | null,
+  }));
+}
+
+describe('planPinnedIdentityRepairs — hostile-peer defence of the reserved ids', () => {
+  it('plans NOTHING in steady state (the repair can never cause a teardown)', () => {
+    // Load-bearing: the repair WRITES into the doc, so a repair that fired on a
+    // healthy rack would itself trip identityChanged on every snapshot — the
+    // exact disease it exists to cure.
+    expect(planPinnedIdentityRepairs(canonicalNodes())).toEqual([]);
+  });
+
+  it('plans nothing for an ABSENT reserved id (that is planPinnedSpawns’ job)', () => {
+    const nodes = canonicalNodes().filter((n) => n.id !== 'pinned-mixmstrs');
+    expect(planPinnedIdentityRepairs(nodes)).toEqual([]);
+    // ...and the spawn planner still owns it, so the two never overlap.
+    expect(planPinnedSpawns(nodes).map((s) => s.id)).toContain('pinned-mixmstrs');
+  });
+
+  it('ATTACK: a peer swaps the TYPE at a reserved id → repair to canonical', () => {
+    const nodes = canonicalNodes();
+    nodes.find((n) => n.id === 'pinned-mixmstrs')!.type = 'scope';
+    expect(planPinnedIdentityRepairs(nodes)).toEqual([
+      { id: 'pinned-mixmstrs', type: 'mixmstrs', domain: 'audio', fields: ['type'] },
+    ]);
+  });
+
+  it('ATTACK: a peer swaps the DOMAIN at a reserved id → repair to canonical', () => {
+    const nodes = canonicalNodes();
+    nodes.find((n) => n.id === 'pinned-audioOut')!.domain = 'meta';
+    expect(planPinnedIdentityRepairs(nodes)).toEqual([
+      { id: 'pinned-audioOut', type: 'audioOut', domain: 'audio', fields: ['domain'] },
+    ]);
+  });
+
+  it('ATTACK: a peer clears data.pinned → repair (an unpinned pin is DELETABLE)', () => {
+    // mutate.ts's removePatchNode, Clear and Backspace all gate on isPinnedNode
+    // alone, so flipping the flag makes the next Clear delete the node outright.
+    // Presence then self-heals; the hardware session does NOT.
+    const nodes = canonicalNodes();
+    nodes.find((n) => n.id === 'pinned-audioIn')!.data!.pinned = false;
+    expect(planPinnedIdentityRepairs(nodes)).toEqual([
+      { id: 'pinned-audioIn', type: 'audioIn', domain: 'audio', fields: ['pinned'] },
+    ]);
+  });
+
+  it('ATTACK: data wiped entirely → repair (no throw on a null data bag)', () => {
+    const nodes = canonicalNodes();
+    nodes.find((n) => n.id === 'pinned-clipplayer')!.data = null;
+    expect(planPinnedIdentityRepairs(nodes)).toEqual([
+      { id: 'pinned-clipplayer', type: 'clipplayer', domain: 'audio', fields: ['pinned'] },
+    ]);
+  });
+
+  it('ATTACK: all three fields at once → one repair naming all three', () => {
+    const nodes = canonicalNodes();
+    const victim = nodes.find((n) => n.id === 'pinned-electraControl')!;
+    victim.type = 'vco';
+    victim.domain = 'audio'; // canonical is 'meta'
+    victim.data = {};
+    expect(planPinnedIdentityRepairs(nodes)).toEqual([
+      {
+        id: 'pinned-electraControl',
+        type: 'electraControl',
+        domain: 'meta',
+        fields: ['type', 'domain', 'pinned'],
+      },
+    ]);
+  });
+
+  it('ATTACK: EVERY reserved id poisoned at once → every one is repaired', () => {
+    // A sweep must not be able to reach the device-session holders either.
+    const nodes = canonicalNodes().map((n) => ({ ...n, type: 'scope', data: {} }));
+    const plan = planPinnedIdentityRepairs(nodes);
+    expect(plan.map((r) => r.id).sort()).toEqual(ALL_WORKFLOW_PINNED.map((s) => s.id).sort());
+    for (const r of plan) {
+      const spec = ALL_WORKFLOW_PINNED.find((s) => s.id === r.id)!;
+      expect([r.type, r.domain]).toEqual([spec.type, spec.domain]);
+    }
+  });
+
+  it('LEGITIMATE USE SURVIVES: params, position, name and the wire latch are untouched', () => {
+    // A hardening that flattens real user state is a regression. The plan
+    // carries ONLY the three canonical fields — it cannot even EXPRESS a params
+    // or position write, so nothing downstream can flatten them.
+    const nodes = canonicalNodes();
+    const out = nodes.find((n) => n.id === 'pinned-audioOut')!;
+    out.type = 'scope'; // attacked
+    out.params = { gain: 0.37 };
+    out.position = { x: 900, y: 12 };
+    out.data!.name = 'main out';
+    out.data![WORKFLOW_DEFAULT_WIRE_LATCH] = true;
+    const plan = planPinnedIdentityRepairs(nodes);
+    expect(plan).toHaveLength(1);
+    expect(Object.keys(plan[0]!).sort()).toEqual(['domain', 'fields', 'id', 'type']);
+  });
+
+  it('a NON-reserved id is never touched, whatever it holds', () => {
+    const nodes = [
+      ...canonicalNodes(),
+      { id: 'user-scope-1', type: 'scope', domain: 'audio', data: {} },
+      // Even a node claiming to be pinned, at an id we do not reserve.
+      { id: 'evil-1', type: 'mixmstrs', domain: 'audio', data: { pinned: true } },
+    ];
+    expect(planPinnedIdentityRepairs(nodes)).toEqual([]);
+  });
+
+  it('survives null / id-less entries in the node list', () => {
+    expect(
+      planPinnedIdentityRepairs([null, undefined, { type: 'scope' }, ...canonicalNodes()]),
+    ).toEqual([]);
+  });
+
+  it('RESERVED_PINNED_IDS is exactly the planner’s id set', () => {
+    expect([...RESERVED_PINNED_IDS].sort()).toEqual(ALL_WORKFLOW_PINNED.map((s) => s.id).sort());
   });
 });
 

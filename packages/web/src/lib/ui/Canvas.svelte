@@ -131,8 +131,9 @@
     buildPerformanceZip,
     parsePerformanceZip,
     type PerformanceMedia,
+    type PerformanceZipBundle,
   } from '$lib/graph/performance-zip';
-  import { savePerformanceZip } from '$lib/graph/performance-save';
+  import { savePerformanceZipStreaming } from '$lib/graph/performance-save';
   // Quick-switch PRESET SLOT bar (top-left of the menu bar) + the portable
   // `.set` container that bundles all five slots + the MIDI map. The pure
   // (de)serialize core lives in preset-set.ts; the per-browser IndexedDB
@@ -428,6 +429,7 @@
     WORKFLOW_DEFAULT_WIRE_LATCH,
     DRAWER_KEY_TO_PINNED,
     planPinnedSpawns,
+    planPinnedIdentityRepairs,
     planDefaultWires,
     isPinnedNode,
     isTypingTarget,
@@ -1693,8 +1695,30 @@
     if ((provider && !providerHasSynced) || scratchSeeded === false) return;
     if (!seedShellDefaults) return; // ?seed=none — the empty-rack test fixture
     const missing = planPinnedSpawns(snapshot.nodes);
-    if (missing.length === 0) return;
+    // IDENTITY repair, not just presence: a collaborator (the rackspace cap is
+    // 4 and anonymous invitees are allowed) can write any field of any node in
+    // the live doc. A type/domain swap at a reserved id makes the reconciler's
+    // `identityChanged` tear the engine node down — which for pinned-audioIn /
+    // pinned-audioOut is the DEVICE SESSION — while the `patch.nodes[spec.id]`
+    // re-check below sees the id occupied and refuses to write, wedging the
+    // rack permanently. Canonicalising in place ahead of the spawn pass turns
+    // that permanent state into a transient, self-healing one. Idempotent field
+    // writes derived from a constant table, so racing peers converge without an
+    // elected deleter (see planPinnedIdentityRepairs).
+    const repairs = planPinnedIdentityRepairs(snapshot.nodes);
+    if (missing.length === 0 && repairs.length === 0) return;
     ydoc.transact(() => {
+      for (const r of repairs) {
+        const node = patch.nodes[r.id];
+        if (!node) continue; // raced a delete — the spawn pass re-creates it
+        // IN PLACE: never delete + re-add (that would be a second teardown),
+        // and never touch params/position/data.name — those are user state.
+        if (node.type !== r.type) node.type = r.type;
+        if (node.domain !== r.domain) node.domain = r.domain;
+        if (!node.data) node.data = {} as Record<string, unknown>;
+        const d = node.data as Record<string, unknown>;
+        if (d.pinned !== true) d.pinned = true;
+      }
       for (const spec of missing) {
         if (patch.nodes[spec.id]) continue; // in-transact re-check
         patch.nodes[spec.id] = {
@@ -1709,7 +1733,16 @@
         };
       }
     }, WORKFLOW_PIN_SPAWN_ORIGIN);
-    trace(`workflow: ensured pinned modules (${missing.map((s) => s.type).join(', ')})`);
+    if (missing.length > 0) {
+      trace(`workflow: ensured pinned modules (${missing.map((s) => s.type).join(', ')})`);
+    }
+    if (repairs.length > 0) {
+      trace(
+        `workflow: repaired pinned identity (${repairs
+          .map((r) => `${r.id}:${r.fields.join('+')}`)
+          .join(', ')})`,
+      );
+    }
   });
 
   // DEFAULT WIRING (owner directive): pinned MIXMSTRS master L/R → pinned
@@ -3796,12 +3829,15 @@
     return out;
   }
 
-  /** Build the portable performance .zip bytes for the current rack. Pure-ish:
-   *  reads the live store + resolves loaded video bytes. Exposed for the e2e
-   *  hook so the round-trip test can capture the bytes without a download.
-   *  `stateOnly` swaps the envelope for the history-free rebuild
-   *  (makeStateOnlyEnvelope) — same materialized state, no Yjs edit history. */
-  async function buildPerformanceZipBytes(stateOnly = false): Promise<Uint8Array> {
+  /** Collect everything a portable performance .zip needs — the manifest plus
+   *  the resolved out-of-band media — WITHOUT building the archive. Split out
+   *  of buildPerformanceZipBytes so the FILE save path can stream this straight
+   *  into the picked file rather than materialising a whole second copy of it
+   *  (see performance-zip.ts's header for the measured cost). Pure-ish: reads
+   *  the live store + resolves loaded video bytes. `stateOnly` swaps the
+   *  envelope for the history-free rebuild (makeStateOnlyEnvelope) — same
+   *  materialized state, no Yjs edit history. */
+  async function buildPerformanceZipInput(stateOnly = false): Promise<PerformanceZipBundle> {
     // A zip export mid-twist must capture the settled knob values (the CC
     // coalescer defers store commits) — flush before snapshotting.
     flushAllCcCommits();
@@ -3901,7 +3937,15 @@
     // TWOTRACKS reel tapes: worklet-owned PCM that can't ride the envelope.
     // Dump each reel out-of-band as 'audio' media keyed `<nodeId>:<reel>`.
     media.push(...(await collectTwotracksTapes()));
-    return buildPerformanceZip({ bundle, media, savedAt: Date.now() });
+    return { bundle, media, savedAt: Date.now() };
+  }
+
+  /** Build the portable performance .zip BYTES. Used by the destinations that
+   *  genuinely need one buffer: the quicksave/IndexedDB preset slots and the
+   *  e2e capture hook (which round-trips the bytes without a download). The
+   *  file save path streams instead — see exportPerformanceZipAs. */
+  async function buildPerformanceZipBytes(stateOnly = false): Promise<Uint8Array> {
+    return buildPerformanceZip(await buildPerformanceZipInput(stateOnly));
   }
 
   async function exportPerformanceZip(): Promise<void> {
@@ -3919,18 +3963,26 @@
     if (perfZipBusy) return;
     perfZipBusy = true;
     try {
-      const bytes = await buildPerformanceZipBytes(stateOnly);
-      // Let the user NAME the file (Chromium: native Save dialog; elsewhere: a
-      // name prompt + download) instead of force-saving a fixed name.
-      const outcome = await savePerformanceZip(
-        bytes,
-        stateOnly ? { suggestedName: 'performance-state.ptperf.zip' } : {},
-      );
+      const input = await buildPerformanceZipInput(stateOnly);
+      // STREAM into the file the user names (Chromium: native Save dialog;
+      // elsewhere: a name prompt + download, which has no stream target and
+      // still materialises). Streaming is what keeps a big save from
+      // duplicating hundreds of MB in the renderer — and, because the archive
+      // is written in bounded chunks with awaits between them, from blocking
+      // the main thread in one 4-second stretch that would freeze the video
+      // outputs. A save must never even temporarily disrupt output.
+      let written = 0;
+      const outcome = await savePerformanceZipStreaming(input, {
+        ...(stateOnly ? { suggestedName: 'performance-state.ptperf.zip' } : {}),
+        onProgress: (n) => {
+          written = n;
+        },
+      });
       if (outcome === 'cancelled') {
         trace('export performance cancelled by user');
         return;
       }
-      trace(`exported performance .zip (${(bytes.length / 1024).toFixed(0)} KB${stateOnly ? ', state-only' : ''})`);
+      trace(`exported performance .zip (${(written / 1024).toFixed(0)} KB${stateOnly ? ', state-only' : ''})`);
     } catch (e) {
       error = `Export performance failed: ${e instanceof Error ? e.message : String(e)}`;
       trace(`export performance failed: ${String(e)}`);

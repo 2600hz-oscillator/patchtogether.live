@@ -177,6 +177,116 @@ export function planPinnedSpawns(
   );
 }
 
+// ── IDENTITY REPAIR — the reserved ids against a HOSTILE PEER ──────────────
+//
+// `planPinnedSpawns` above answers PRESENCE ("is there a mixmstrs?"). Nothing
+// answered IDENTITY ("is the thing sitting at `pinned-mixmstrs` still a
+// mixmstrs?"), and the live document is writable by every collaborator in the
+// rackspace — capped at 4, and anonymous invitees are allowed, so "a peer
+// writes garbage into a reserved id" is a real reachable state, not a thought
+// experiment.
+//
+// ⚠ WHY PRESENCE REPAIR WAS NOT ENOUGH — the wedge. Canvas's ensure re-checks
+// with `if (patch.nodes[spec.id]) continue`, which tests the ID ONLY. So a peer
+// writing `patch.nodes['pinned-mixmstrs'].type = 'scope'` produced a PERMANENT
+// stuck state, not a transient one:
+//
+//   1. `planPinnedSpawns` reports mixmstrs missing (no pinned node of that
+//      TYPE exists any more) — forever, on every snapshot.
+//   2. The in-transact re-check sees the id OCCUPIED and `continue`s — so the
+//      ensure can never write, and never repairs.
+//   3. Meanwhile audio/reconciler.ts's `identityChanged`
+//      (`prev.type !== cur.type || prev.domain !== cur.domain`) has already
+//      read the swap as remove+add and called `engine.removeNode`.
+//
+// For `pinned-audioIn` / `pinned-audioOut` step 3 tears down the DEVICE
+// SESSION. Presence self-heals; a hardware session does not — and here even
+// presence did not, because of the wedge. `pinned-mixmstrs` is additionally a
+// hard-coded id in graph/channel-columns.ts (MASTER_MIX_ID) and
+// control/push2/push-lane.ts, so an off-canon node there silently breaks the
+// mixer column model too.
+//
+// ⚠ NO ELECTED DELETER IS NEEDED, unlike singleton-cleanup.ts. That pass has to
+// elect one peer because a DELETE racing a delete is destructive. This is an
+// idempotent FIELD WRITE derived from a constant table: every peer computes the
+// identical canonical value from the identical converged snapshot and writes it
+// to the identical id, so concurrent repairs converge on the same value by
+// construction. Steady state plans NOTHING, so `identityChanged` stays false
+// and no extra teardown is ever introduced by the repair itself.
+//
+// ONE teardown + re-add on a hostile write is unavoidable and is not a defect:
+// Yjs has no conditional insert (singleton-cleanup.ts:16-18 states this), so
+// the garbage exists in the doc for the interval between the peer's write and
+// the repair. The guarantee this buys is that the state is TRANSIENT and
+// SELF-HEALING rather than permanent — the session comes back, and the id
+// stays the one every hard-coded consumer expects.
+//
+// P1's device slots register in the same table and inherit this for free; that
+// is what makes "identityChanged is structurally impossible for a slot id"
+// true rather than aspirational.
+
+/** Minimal node shape the identity repair inspects. Wider than
+ *  `PinnedNodeLike` because the repair reads `type`/`domain` too. */
+export interface PinnedIdentityNodeLike {
+  id?: string;
+  type?: string;
+  domain?: string;
+  data?: Record<string, unknown> | null;
+}
+
+/** One reserved id whose occupant drifted off-canon, plus the canonical values
+ *  to write back. `fields` names WHAT was wrong — it drives the trace line and
+ *  lets a test assert the planner detected the specific attack rather than
+ *  rewriting everything unconditionally. */
+export interface PinnedIdentityRepair {
+  /** The reserved node id to repair IN PLACE (never delete + re-add). */
+  id: string;
+  /** Canonical module type for this reserved id. */
+  type: string;
+  /** Canonical registry domain for this reserved id. */
+  domain: 'audio' | 'meta';
+  /** Which canonical fields are currently wrong, in a stable order. */
+  fields: ReadonlyArray<'type' | 'domain' | 'pinned'>;
+}
+
+/** Every reserved node id the repair defends, for callers that need the set
+ *  (e.g. a guard that must not treat a reserved id as ordinary content). */
+export const RESERVED_PINNED_IDS: ReadonlySet<string> = new Set(
+  ALL_WORKFLOW_PINNED.map((s) => s.id),
+);
+
+/**
+ * Which reserved ids are occupied by a node whose IDENTITY has drifted?
+ *
+ * Pure predicate over the snapshot — the caller transacts the writes, mirroring
+ * `planPinnedSpawns`' convention. Returns [] in steady state (and for reserved
+ * ids that are simply ABSENT: that is `planPinnedSpawns`' job, not this one).
+ *
+ * Only the three canonical fields are judged. `params`, `position`,
+ * `data.name`, `data.workflowDefaultWired` and every other per-node key are
+ * DELIBERATELY not canonicalised — they are legitimate user state, and a repair
+ * that flattened them would be a hardening that breaks legitimate use.
+ */
+export function planPinnedIdentityRepairs(
+  nodes: ReadonlyArray<PinnedIdentityNodeLike | null | undefined>,
+): PinnedIdentityRepair[] {
+  const byId = new Map<string, PinnedIdentityNodeLike>();
+  for (const n of nodes) {
+    if (n && typeof n.id === 'string') byId.set(n.id, n);
+  }
+  const out: PinnedIdentityRepair[] = [];
+  for (const spec of ALL_WORKFLOW_PINNED) {
+    const node = byId.get(spec.id);
+    if (!node) continue; // absent → planPinnedSpawns owns it
+    const fields: Array<'type' | 'domain' | 'pinned'> = [];
+    if (node.type !== spec.type) fields.push('type');
+    if (node.domain !== spec.domain) fields.push('domain');
+    if (node.data?.pinned !== true) fields.push('pinned');
+    if (fields.length > 0) out.push({ id: spec.id, type: spec.type, domain: spec.domain, fields });
+  }
+  return out;
+}
+
 // ---------------- Default wiring: MIXMSTRS master → AUDIO OUT ----------------
 //
 // Owner directive: "the audio out in the rack should be default wired to the
