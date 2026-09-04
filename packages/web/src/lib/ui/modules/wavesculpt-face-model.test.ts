@@ -311,13 +311,15 @@ describe('wavesculpt — the wavetable strip reaches the faceplate', () => {
     expect(seen[0], 'and the one answer is the preset they all hold').toBe('zap');
   });
 
-  it('⚠ STOP 2 — the strip does not live only on the card', () => {
-    // Promotion deletes the card from both surfaces. The writes therefore have
-    // to live somewhere both can reach, and the CARD has to be the thing that
-    // moved rather than a second copy left behind.
-    expect(CARD).toContain('wavesculpt/wavetable-actions');
-    const loadCell = cell('wavesculpt-osc1-load-{n}');
-    expect(loadCell?.kind).toBe('file');
+  it('⚠ STOP 2 — the strip lives in a shared seam, reachable with no card', () => {
+    // ⚠ THE PREMISE HALF READ THE CARD for its `wavesculpt/wavetable-actions`
+    // import — the proof that the writes had MOVED rather than been copied.
+    // With the card gone the move is complete, and what has to stay true is
+    // that the seam is reachable from the faceplate: every load is a ranked
+    // file cell rather than a gesture that lived on a surface nobody mounts.
+    for (const osc of [1, 2, 3, 4] as const) {
+      expect(cell(`wavesculpt-osc${osc}-load-{n}`)?.kind, `osc${osc} load`).toBe('file');
+    }
   });
 });
 

@@ -45,7 +45,6 @@ import {
 } from './gamepad/gamepad-board-model';
 
 const BODY = fileURLToPath(new URL('./gamepad/GamepadMappingBody.svelte', import.meta.url));
-const CARD = fileURLToPath(new URL('./GamepadCard.svelte', import.meta.url));
 const read = (p: string) => readFileSync(p, 'utf8');
 
 const FACE = () => gamepadDef.face!;
@@ -185,34 +184,24 @@ describe('gamepad face — the SLOT cell is SELECTABLE, and PRESENT at every tie
     expect(SLOT().max).toBe(GAMEPAD_SLOT_MAX);
   });
 
-  it('the CARD renders the DEF\'s roster — one place, not two', () => {
-    // The backdraft class, applied to a roster rather than a range: no runtime
-    // gate reads a literal in a `.svelte` file, so it is guarded at SOURCE. The
-    // card used to carry `{#each [0, 1, 2, 3] …}`, which would have silently
-    // disagreed with the def the day a fifth slot became legal.
-    const card = read(CARD);
-    expect(card, 'the card imports the def roster').toContain('GAMEPAD_SLOT_OPTIONS');
-    expect(
-      /\{#each\s*\[\s*0\s*,\s*1\s*,\s*2\s*,\s*3\s*\]/.test(card),
-      'the card re-types the slot roster as a literal array',
-    ).toBe(false);
-  });
-
-  it('the SLOT write goes through `setNodeParam`, not a bare proxy assignment', () => {
-    // ⚠ A LIVE DEFECT THIS PR FIXED, PINNED SO IT CANNOT COME BACK. The card
-    // wrote `patch.nodes[id].params.padIndex = …` with no `ydoc.transact` and no
-    // `LOCAL_ORIGIN`, while every `node.data` write on the same file correctly
-    // used `mutateNode` — so the change synced to collaborators but never
-    // reached the UndoManager and Cmd-Z could not undo a slot change. The face's
-    // segmented cell commits through `shell-param-writes`, which IS
-    // `setNodeParam`, so both surfaces now write identically.
-    const card = read(CARD);
-    expect(card).toContain('setNodeParam(');
-    expect(
-      /\.params\.padIndex\s*=/.test(card),
-      'a bare proxy write to params.padIndex is outside undo and outside the reconciler',
-    ).toBe(false);
-  });
+  // ⚠ TWO CARD-SOURCE LEGS STOOD HERE, and both are unspellable now.
+  //
+  //   * "the CARD renders the DEF's roster — one place, not two". The backdraft
+  //     class applied to a roster: the card used to carry `{#each [0,1,2,3] …}`,
+  //     which would have silently disagreed with the def the day a fifth slot
+  //     became legal. The segmented cell resolves its options straight off the
+  //     ParamDef, so there is no second roster to disagree — and the def's own
+  //     `GAMEPAD_SLOT_OPTIONS` is asserted above.
+  //   * "the SLOT write goes through `setNodeParam`". A LIVE DEFECT: the card
+  //     wrote `patch.nodes[id].params.padIndex = …` with no `ydoc.transact` and
+  //     no `LOCAL_ORIGIN`, so the change synced to collaborators but never
+  //     reached the UndoManager and Cmd-Z could not undo a slot change. The
+  //     face's segmented cell commits through `shell-param-writes`, which IS
+  //     `setNodeParam`; the bare-proxy form has no module-local place left, and
+  //     `mutate.guard.test.ts` holds the rule tree-wide.
+  //
+  // NAMED: the module-local witness for that raw write is gone with the file
+  // that carried it.
 });
 
 describe('gamepad face — the MAPPING BODY', () => {

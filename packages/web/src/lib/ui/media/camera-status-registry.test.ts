@@ -14,9 +14,6 @@ import {
   type CameraStatus,
 } from './camera-status-registry';
 
-const CARD_PATH = fileURLToPath(
-  new URL('../modules/CameraInputCard.svelte', import.meta.url),
-);
 const DEVICE_PATH = fileURLToPath(
   new URL('../../video/camera-device.ts', import.meta.url),
 );
@@ -277,14 +274,23 @@ describe('SOURCE gate: `CameraState` IS the card\'s `State` — the claim nobody
     // A comparison between two copies passes the day someone adds a state to
     // both. An absence check fails the day someone adds a second copy at all —
     // and a second copy is the thing that made the original defect possible.
-    const cardSrc = readFileSync(CARD_PATH, 'utf8');
-    expect(cardSrc, 'the card must ALIAS the shared union, never re-declare its members')
-      .toContain('type State = CameraState;');
-    expect(
-      reDeclaresUnion(cardSrc, 'type State ='),
-      'the card re-declares the capture states — a copy nothing can compare, which is exactly ' +
-        'how a state the dock face cannot render gets added with every runtime assertion green',
-    ).toBe(false);
+    // ⚠ THE CARD WAS THE THIRD ALIAS AND IS GONE. It carried a LOCAL nine-member
+    // `type State = …` union that nothing could import, which is what made the
+    // original defect possible, and the extraction reduced it to
+    // `type State = CameraState`. The surviving surfaces are checked in its
+    // place: none of them may re-declare the members either.
+    for (const rel of [
+      '../modules/cameraInput/CameraSourceControls.svelte',
+      '../modules/cameraInput/CameraInputOutputBody.svelte',
+      '../modules/cameraInput/CameraInputTileBody.svelte',
+    ]) {
+      const src = readFileSync(fileURLToPath(new URL(rel, import.meta.url)), 'utf8');
+      expect(
+        reDeclaresUnion(src, 'type State ='),
+        `${rel} re-declares the capture states — a copy nothing can compare, which is exactly ` +
+          'how a state the dock face cannot render gets added with every runtime assertion green',
+      ).toBe(false);
+    }
 
     const controllerSrc = readFileSync(
       fileURLToPath(new URL('./node-camera-source-registry.ts', import.meta.url)),

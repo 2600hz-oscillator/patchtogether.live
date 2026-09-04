@@ -45,7 +45,11 @@ import type { SkifreeBridge, SkifreeController } from './modules/skifree';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const BRIDGE_SRC = resolve(HERE, 'skifree-bridge.ts');
-const CARD_SRC = resolve(HERE, '../ui/modules/SkifreeCard.svelte');
+// ⚠ THE SURFACE UNDER TEST WAS `SkifreeCard.svelte` and is now the shared
+// screen every skifree surface mounts. The claims are unchanged: the surface
+// must not create, dispose or load the game, and must not re-parent the
+// game canvas — it BLITS.
+const SURFACE_SRC = resolve(HERE, '../ui/modules/skifree/SkifreeScreen.svelte');
 const DEF_SRC = resolve(HERE, 'modules/skifree.ts');
 
 function read(p: string): string {
@@ -159,24 +163,24 @@ describe('#1590 is UNSPELLABLE — the source-level guards', () => {
     }
   });
 
-  it('THE CARD CREATES NO GAME: it never calls SkiFree.create and never disposes a controller', () => {
-    // ⚠ SOURCE-LEVEL, because no runtime gate can see this. The card rendering
-    // fine and the game being owned by the wrong thing look identical from the
-    // DOM — that is precisely how this shipped.
-    const { code: card, stripped } = codeOf(CARD_SRC);
+  it('THE SURFACE CREATES NO GAME: it never calls SkiFree.create and never disposes a controller', () => {
+    // ⚠ SOURCE-LEVEL, because no runtime gate can see this. The surface
+    // rendering fine and the game being owned by the wrong thing look identical
+    // from the DOM — that is precisely how this shipped.
+    const { code: card, stripped } = codeOf(SURFACE_SRC);
     // ⚠ THE STRIPPER MUST HAVE DONE SOMETHING. Three `false` assertions over an
     // empty string pass beautifully; this is what stops that.
-    expect(stripped, 'comments were actually stripped from the card').toBeGreaterThan(0);
+    expect(stripped, 'comments were actually stripped from the surface').toBeGreaterThan(0);
     expect(card.length, 'and there is still code left to test').toBeGreaterThan(500);
 
-    expect(/SkiFree\s*\.\s*create/.test(card), 'the CARD must not create the game').toBe(false);
+    expect(/SkiFree\s*\.\s*create/.test(card), 'the SURFACE must not create the game').toBe(false);
     expect(
       /controller\s*\.\s*dispose\s*\(/.test(card),
-      'the CARD must not dispose the game — a collapse is not a quit',
+      'the SURFACE must not dispose the game — a collapse is not a quit',
     ).toBe(false);
     expect(
       card.includes('skifree.bundle.js'),
-      'the CARD must not load the bundle; the node does',
+      'the SURFACE must not load the bundle; the node does',
     ).toBe(false);
 
     // ⚠ NEGATIVE CONTROL FOR THE PREDICATES THEMSELVES. All three tests above
@@ -203,29 +207,32 @@ describe('#1590 is UNSPELLABLE — the source-level guards', () => {
 
   it('the canvas the game runs on is never given a parent', () => {
     // The cameraInput trap: a DOM node has exactly one parent, so appending the
-    // owned canvas anywhere — or letting the card adopt it — would hand the
-    // game's surface to something that unmounts. The card BLITS instead.
+    // owned canvas anywhere — or letting a surface adopt it — would hand the
+    // game's canvas to something that unmounts. The surface BLITS instead.
     const { code: def } = codeOf(DEF_SRC);
     expect(
       /appendChild\s*\(\s*gameCanvas/.test(def),
       'the game canvas must stay detached',
     ).toBe(false);
-    const { code: card } = codeOf(CARD_SRC);
+    const { code: card } = codeOf(SURFACE_SRC);
     expect(
       /appendChild|replaceChildren|insertBefore/.test(card),
-      'the card must not re-parent anything',
+      'the surface must not re-parent anything',
     ).toBe(false);
-    expect(card.includes('drawImage'), 'the card blits the picture instead').toBe(true);
+    expect(card.includes('drawImage'), 'the surface blits the picture instead').toBe(true);
   });
 
   it('SELF-CHECK: the source files this gate reads are real and non-trivial', () => {
     // Three ways this describe block could be green while measuring nothing: a
     // wrong path, an empty read, or a rename. All three fail HERE rather than
     // letting four `false` assertions pass over missing text.
-    for (const [name, p] of [['bridge', BRIDGE_SRC], ['card', CARD_SRC], ['def', DEF_SRC]] as const) {
+    for (const [name, p] of [['bridge', BRIDGE_SRC], ['surface', SURFACE_SRC], ['def', DEF_SRC]] as const) {
       expect(read(p).length, `${name} source is readable and non-empty`).toBeGreaterThan(500);
     }
-    expect(read(CARD_SRC).includes('SkifreeCard'), 'the card path resolves to the card').toBe(true);
+    expect(
+      read(SURFACE_SRC).includes('SkifreeScreen'),
+      'the surface path resolves to the shared screen',
+    ).toBe(true);
     expect(read(DEF_SRC).includes('skifreeDef'), 'the def path resolves to the def').toBe(true);
   });
 });

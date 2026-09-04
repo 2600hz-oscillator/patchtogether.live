@@ -228,13 +228,23 @@ describe('scoreboard — the body, and the non-finding worth recording', () => {
     // visible here.
     //
     // ⚠ THE SUBJECT WAS THE CARD, which was the surface that would have carried
-    // such a readout at the time. The body is the surface now, and the same
-    // three denials are made of it: no buttons, no selects, no readout element.
+    // such a readout at the time, and its three denials were "no buttons, no
+    // selects, no readout element". Only the THIRD transfers: the body carries
+    // the SCREEN toggle, which is the shell's own on/off affordance under the
+    // owner's video-screen ruling rather than a control the module invented, so
+    // denying every `<button>` here would forbid the platform. The claim that
+    // still means what it meant is that no DERIVED TEXT is painted.
     const body = bodySrc();
     expect(body.length).toBeGreaterThan(500);
-    expect(/<button/.test(body), 'the body has no buttons').toBe(false);
-    expect(/<select/.test(body), 'the body has no selects').toBe(false);
     expect(/class="[^"]*readout/.test(body), 'the body paints no readout element').toBe(false);
+    expect(/<select/.test(body), 'the body has no selects').toBe(false);
+    // …and the one button it does carry is the SCREEN switch, by name, so this
+    // exemption cannot quietly widen into "any button is fine".
+    const buttons = [...body.matchAll(/data-testid="([^"]*)"/g)].map((m) => m[1]);
+    expect(
+      buttons.filter((t) => t.endsWith('-screen-toggle')).length,
+      'the only interactive element here is the SCREEN switch',
+    ).toBe(1);
   });
 
   it('the collapsed branch marks the node watched BEFORE it returns', () => {

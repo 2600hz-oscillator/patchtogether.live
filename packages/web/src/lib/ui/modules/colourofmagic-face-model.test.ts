@@ -26,7 +26,7 @@
 // on, and that the two silent defects cannot return unnoticed.
 
 import { describe, expect, it } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   colourofmagicDef,
@@ -277,12 +277,35 @@ describe('colourofmagic face — SCREEN ON/OFF reaches the dock, and the CARD ow
     expect(body).toMatch(/blitOutputForPreview/);
   });
 
-  it('the CARD no longer declares its own tap names (ONE roster, on the def)', () => {
-    const card = readFileSync(join(import.meta.dirname, 'ColourofmagicCard.svelte'), 'utf-8');
-    // The literal array is gone; the names come from the ParamDef both surfaces
-    // read, so a rename cannot leave the card and the face disagreeing.
-    expect(card).toMatch(/paramSpec\(colourofmagicDef, 'preview'\)\.options/);
-    expect(card).not.toMatch(/'PASS',\s*'RGB'/);
+  it('the tap names have ONE home — the def, and no surface re-types them', () => {
+    // ⚠ THIS READ THE CARD for `paramSpec(colourofmagicDef, 'preview').options`
+    // and denied the literal `'PASS', 'RGB'` array it used to carry. The card
+    // was the second reader; the def is the only home now, so the scan moves to
+    // every module-owned surface — flat plus one level of module subdirectory,
+    // the depth a fullViewBody lives at — and a re-typed roster in a face body
+    // reddens exactly as one in a card did.
+    const dir = import.meta.dirname;
+    const offenders: string[] = [];
+    let scanned = 0;
+    const visit = (rel: string, abs: string): void => {
+      scanned++;
+      if (/'PASS',\s*'RGB'/.test(readFileSync(abs, 'utf-8'))) offenders.push(rel);
+    };
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      if (entry.isDirectory()) {
+        for (const inner of readdirSync(join(dir, entry.name))) {
+          if (inner.endsWith('.svelte')) visit(`${entry.name}/${inner}`, join(dir, entry.name, inner));
+        }
+        continue;
+      }
+      if (entry.name.endsWith('.svelte')) visit(entry.name, join(dir, entry.name));
+    }
+    expect(scanned, 'the surface walk resolved no .svelte files').toBeGreaterThan(0);
+    expect(offenders, 'a surface re-types the preview roster').toEqual([]);
+    // …and the def really is the home, so this is one home rather than none.
+    expect(
+      colourofmagicDef.params.find((p) => p.id === 'preview')?.options?.map((o) => o.label),
+    ).toContain('PASS');
   });
 });
 

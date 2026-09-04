@@ -47,13 +47,11 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const read = (rel: string) => readFileSync(resolve(HERE, rel), 'utf8');
 
 const bodySource = read('painter/PainterEditorBody.svelte');
-const cardSource = read('PainterCard.svelte');
 const extSource = read('painter/shell-extension.ts');
 
 // The code-only views. A raw grep cannot tell code from a comment, and several
 // legs below forbid a construct whose natural explanation NAMES it.
 const bodyCode = stripSourceComments(bodySource);
-const cardCode = stripSourceComments(cardSource);
 
 const LANE_TIERS = ['mini', 'compact', 'full'] as const;
 
@@ -110,12 +108,11 @@ describe('painter face — promoted, and the module is still reachable', () => {
     // so a `monitor` declaration would ship a switch that hides nothing while
     // costing `face-monitor-source` a `hideControls` read/write in the body.
     // The affordance it would seem to offer (a bigger canvas, less chrome) is
-    // what SCREEN's sibling would be, and neither surface has ever had it: no
-    // `hideControls` appears on the card, so the INVERSE leg of that gate does
-    // not arm either.
+    // what SCREEN's sibling would be, and no painter surface has ever had it —
+    // so the INVERSE leg of that gate does not arm either. (The card was the
+    // other surface checked here; it never mounted `hideControls` and is gone.)
     expect(def.face?.monitor, 'a monitor over zero bands hides nothing').toBeUndefined();
-    expect(cardCode, 'the card never mounted hideControls').not.toContain('hideControls');
-    expect(bodyCode, 'and the body must not grow it silently').not.toContain('hideControls');
+    expect(bodyCode, 'the body must not grow hideControls silently').not.toContain('hideControls');
   });
 });
 
@@ -147,7 +144,6 @@ describe('painter face body — the claims no registry gate can check', () => {
     // imported child would read as "the face carries none" and redden the
     // promotion — with the affordance present and working.
     expect(bodySource).toMatch(/type="text"/);
-    expect(cardSource, 'the card is the reason the leg arms').toMatch(/type="text"/);
   });
 
   it('the SCREEN switch reads AND writes the shared key, and survives its own OFF', () => {
