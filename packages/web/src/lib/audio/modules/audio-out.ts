@@ -478,6 +478,43 @@ export const audioOutDef: AudioModuleDef = {
           gainR.gain.setValueAtTime(value, ctx.currentTime);
         }
       },
+      /**
+       * ⚠ WITHOUT THIS, NO FADE ON THE MASTER WAS EVER ACTUALLY SCHEDULED.
+       *
+       * `PatchEngine.scheduleParam` (engine.ts) reaches an AudioParam three
+       * ways, in order: the handle's own `scheduleParam`; the param's CV-target
+       * AudioParam at `inputs.get(paramId)?.param`; then a best-effort
+       * IMMEDIATE `setParam`. This handle had no `scheduleParam`, and `master`
+       * is not a CV port — `inputs` carries only the audio pins L and R — so
+       * every call landed on branch three and became a hard step at
+       * `ctx.currentTime`. `holdParam` degraded the same way, through its own
+       * `else` branch.
+       *
+       * The failure was SILENT and shaped exactly like success: the value
+       * arrived, the knob followed, `readParam` agreed. Only the RAMP was
+       * missing. Anything envelope-shaped on the master — an automation lane, a
+       * fade-out, the click-free crossfade the continuity work exists to serve —
+       * was a jump wearing a ramp's name, and a jump on the master bus is a
+       * click on the actual output.
+       *
+       * Both channels get the identical schedule. `linearRampToValueAtTime`
+       * needs a starting event to ramp FROM, so an explicit `setValueAtTime` at
+       * `now` anchors it — otherwise the ramp interpolates from whatever the
+       * last scheduled event was, which after a long-idle gain is a jump at the
+       * ramp's start rather than at its end.
+       */
+      scheduleParam(paramId, value, atTime, ramp) {
+        if (paramId !== 'master') return;
+        const now = ctx.currentTime;
+        for (const g of [gainL.gain, gainR.gain]) {
+          if (ramp && atTime > now) {
+            g.setValueAtTime(g.value, now);
+            g.linearRampToValueAtTime(value, atTime);
+          } else {
+            g.setValueAtTime(value, Math.max(now, atTime));
+          }
+        }
+      },
       readParam(paramId) {
         if (paramId === 'master') return gainL.gain.value;
         return undefined;

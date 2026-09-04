@@ -21,10 +21,56 @@
 // time and we store them as separate (large) zip entries — exactly as
 // video/toybox-preset-io.ts does for a single TOYBOX, generalised to the rack.
 //
-// PURE: `fflate` function-form API only (zipSync/unzipSync) — no DOM, no Worker
-// — so it is fully unit-testable + safe to call anywhere. Round-trips exactly.
+// PURE: no DOM and no Worker — so it is fully unit-testable + safe to call
+// anywhere. Round-trips exactly.
+//
+// ── TWO BUILDERS, AND WHICH ONE TO USE ─────────────────────────────────────
+//   * `buildPerformanceZip`  — whole-output `zipSync`. Keep using it where the
+//     destination WANTS one buffer: the quicksave/IndexedDB preset slots
+//     (preset-slot-store.ts) and the e2e capture hook have no stream to write
+//     into, so materialising is not avoidable there.
+//   * `streamPerformanceZip` — writes the archive straight into a sink
+//     (`FileSystemWritableFileStream`) in bounded chunks, releasing each media
+//     buffer as it is consumed. Use it for the FILE save path.
+//
+// ── ⚠ WHY THE FILE PATH IS NOT ALLOWED TO USE zipSync ──────────────────────
+// The measurement, 4x50 MB of incompressible (video-like) entries, RSS sampled
+// synchronously at the point of maximum liveness:
+//
+//   zipSync, default level    peak 706 MB  = 3.53x input   4344 ms BLOCKING
+//   zipSync, media STOREd     peak 443 MB  = 2.22x input    371 ms blocking
+//   streamPerformanceZip      peak 244 MB  = 1.22x input    355 ms, chunked
+//
+// The 3.53x is not compression scratch — it is a WHOLE SECOND COPY of the
+// archive coexisting with the input, and downstream `savePerformanceZip` then
+// made a THIRD (`new Blob([bytes])` on the no-picker path). At the 100 MB
+// per-slot ceiling × 7 VIDEOVARISPEED slots that is how a save becomes an OOM.
+//
+// And the owner constraint is stricter than "don't crash": a save must never
+// even TEMPORARILY disrupt output. 4.3 s of unbroken main-thread work is a
+// projector freeze whatever the audio graph is doing — which is exactly why
+// moving this to a Worker would have been the wrong fix: it hides the stall
+// from an audio-only continuity gate while the duplication (and the OOM) is
+// still there, and while the video outputs still freeze.
+//
+// ── ⚠ LEVEL 0 ON MEDIA IS NOT A TRADE-OFF ──────────────────────────────────
+// `zipSync` defaulted to level-6 DEFLATE over MP4/WebM/PCM — all already
+// compressed. Measured on 8 MB incompressible: level 6 = 86 ms and the output
+// GREW (8390512 vs 8388608 bytes); level 0 = 14 ms. The 200 MB case above
+// bought ZERO bytes for ~4 s of main-thread CPU. STORE for media, DEFLATE for
+// `performance.json` (which is real, compressible JSON).
+//
+// ⚠ TWOTRACKS PCM IS THE ONE MEDIA ROLE THAT WOULD COMPRESS, AND IT IS STILL
+// STORED. Measured on a realistic 20 s stereo 16-bit reel (3.66 MB): deflate
+// saved 20.7% (0.76 MB) for 74 ms of unbroken main-thread work; store took
+// 7 ms. A rack with two TWOTRACKS is four reels — ~300 ms of blocking for
+// ~3 MB. Against the standing constraint that a save must never even
+// TEMPORARILY disrupt output, 300 ms is a visible projector stutter and 3 MB is
+// nothing, so the whole media set is STOREd. Revisit only with a measurement,
+// not a hunch — and note a reel is bounded by the worklet's fixed buffer, so
+// this cost does not grow with session length.
 
-import { zipSync, unzipSync, strToU8, strFromU8 } from 'fflate';
+import { zipSync, unzipSync, strToU8, strFromU8, Zip, ZipDeflate, ZipPassThrough } from 'fflate';
 import type { PerformanceBundle } from './performance-bundle';
 
 /** Reject any single bundled video larger than this on import. This is a
@@ -134,11 +180,19 @@ function zipEntryMtime(savedAt: number): number {
     : DOS_SAFE_MIN_MS;
 }
 
-/** Build the `.zip` bytes for a whole-rack performance bundle. Deterministic
- *  for a fixed input — no clock or random read anywhere, INCLUDING the zip
- *  container's own entry mod-times (see `zipEntryMtime`). */
-export function buildPerformanceZip(input: PerformanceZipBundle): Uint8Array {
-  const files: Record<string, Uint8Array> = {};
+/** Deflate level for `performance.json` — real, compressible JSON. */
+const MANIFEST_LEVEL = 6;
+/** STORE for media: MP4/WebM/PCM are already compressed. See the header. */
+const MEDIA_LEVEL = 0;
+
+/** Plan the manifest + the in-zip path for every media entry. Shared by BOTH
+ *  builders so the streaming archive and the buffered archive can never
+ *  disagree about a path, an index, or a slot. */
+function planEntries(input: PerformanceZipBundle): {
+  manifestBytes: Uint8Array;
+  mtime: number;
+  paths: string[];
+} {
   const media: MediaEntry[] = input.media.map((m, i) => ({
     nodeId: m.nodeId,
     handleId: m.handleId,
@@ -159,12 +213,172 @@ export function buildPerformanceZip(input: PerformanceZipBundle): Uint8Array {
     bundle: input.bundle,
     media,
   };
-  files[MANIFEST_JSON] = strToU8(JSON.stringify(manifest));
-  input.media.forEach((m, i) => {
-    files[media[i]!.path] = m.bytes;
-  });
-  return zipSync(files, { mtime: zipEntryMtime(manifest.savedAt) });
+  return {
+    manifestBytes: strToU8(JSON.stringify(manifest)),
+    mtime: zipEntryMtime(manifest.savedAt),
+    paths: media.map((m) => m.path),
+  };
 }
+
+/** Build the `.zip` bytes for a whole-rack performance bundle. Deterministic
+ *  for a fixed input — no clock or random read anywhere, INCLUDING the zip
+ *  container's own entry mod-times (see `zipEntryMtime`).
+ *
+ *  MATERIALISES THE WHOLE ARCHIVE. Correct for the quicksave/IndexedDB slots
+ *  and the e2e capture hook, which need one buffer. The FILE save path uses
+ *  `streamPerformanceZip` instead — see the header for the measured reason. */
+export function buildPerformanceZip(input: PerformanceZipBundle): Uint8Array {
+  const { manifestBytes, mtime, paths } = planEntries(input);
+  const files: Record<string, Uint8Array | [Uint8Array, { level: 0 | 6 }]> = {};
+  files[MANIFEST_JSON] = [manifestBytes, { level: MANIFEST_LEVEL }];
+  input.media.forEach((m, i) => {
+    // STORE: media is already-compressed MP4/WebM/PCM. Deflating it cost ~4 s
+    // of blocked main thread per 200 MB and returned a slightly LARGER archive.
+    files[paths[i]!] = [m.bytes, { level: MEDIA_LEVEL }];
+  });
+  return zipSync(files, { mtime });
+}
+
+// ── STREAMING BUILDER — the file save path ────────────────────────────────
+
+/** Minimal sink the streaming builder writes into: the structural subset of a
+ *  `FileSystemWritableFileStream` (what `handle.createWritable()` returns).
+ *  Narrow so a unit test can supply an in-memory capture — the same shape
+ *  recorderbox's `ChunkSink` already uses for its OPFS→disk copy. */
+export interface ZipChunkSink {
+  write(chunk: Uint8Array): Promise<void> | void;
+  close(): Promise<void> | void;
+}
+
+/** Cooperative cancellation — the structural subset of `AbortSignal`. */
+export interface ZipAbortLike {
+  readonly aborted: boolean;
+}
+
+/** Thrown when `signal.aborted` is observed mid-write. The save path catches
+ *  THIS specifically to distinguish "user cancelled" (delete the partial file,
+ *  report 'cancelled') from a real failure. */
+export class PerformanceZipAborted extends Error {
+  constructor() {
+    super('Performance zip export was cancelled');
+    this.name = 'PerformanceZipAborted';
+  }
+}
+
+export interface StreamPerformanceZipOptions {
+  /** Bytes pushed into the compressor per turn. 4 MiB matches recorderbox's
+   *  COPY_CHUNK_BYTES: big enough that syscall overhead is noise, small enough
+   *  that peak memory is the input plus one chunk. */
+  chunkBytes?: number;
+  /** Checked before every chunk. Aborting throws `PerformanceZipAborted`. */
+  signal?: ZipAbortLike;
+  /** Called after each sink write with the running output byte count. */
+  onProgress?: (bytesWritten: number) => void;
+  /**
+   * Drop each media buffer as it is consumed (default TRUE).
+   *
+   * ⚠ THIS CONSUMES `input.media`: every entry's `bytes` is replaced with an
+   * empty array once written. That is the point — it is the only way the
+   * resolved video bytes can be reclaimed DURING the save rather than after
+   * it, and it takes the measured peak from 2.2x the input to 1.2x. Pass
+   * `false` when the caller still needs the bytes (a test, or a second write).
+   */
+  release?: boolean;
+}
+
+/** Default chunk size for the streaming build (matches recorderbox). */
+export const ZIP_CHUNK_BYTES = 4 * 1024 * 1024;
+
+/**
+ * Write a whole-rack performance `.zip` STRAIGHT INTO `sink`, never
+ * materialising the archive.
+ *
+ * Returns the total bytes written. Closes the sink on success; on abort or
+ * failure it does NOT close — the caller owns the partial-file cleanup, since
+ * only the caller knows whether the destination can be removed.
+ *
+ * ⚠ THE OUTPUT IS NOT BYTE-IDENTICAL TO `buildPerformanceZip`, and cannot be:
+ * a streaming writer does not know an entry's CRC or compressed size before it
+ * writes the local header, so it emits DATA DESCRIPTORS after each entry
+ * (+16 bytes per entry). Both archives are valid zips, both round-trip through
+ * `parsePerformanceZip`, and each is deterministic for a fixed input — the
+ * round-trip equivalence is what the test asserts, not the container bytes.
+ *
+ * BACKPRESSURE IS REAL: fflate's `Zip` hands chunks back synchronously, so
+ * they are queued and drained with `await sink.write(...)` between pushes. The
+ * queue therefore holds at most one chunk's worth of output, and a slow disk
+ * slows the producer instead of growing a buffer behind it.
+ */
+export async function streamPerformanceZip(
+  input: PerformanceZipBundle,
+  sink: ZipChunkSink,
+  opts: StreamPerformanceZipOptions = {},
+): Promise<number> {
+  const chunkBytes = Math.max(1, opts.chunkBytes ?? ZIP_CHUNK_BYTES);
+  const release = opts.release !== false;
+  const { manifestBytes, mtime, paths } = planEntries(input);
+
+  const pending: Uint8Array[] = [];
+  let failure: Error | null = null;
+  const zip = new Zip((err, chunk) => {
+    if (err) {
+      failure ??= err instanceof Error ? err : new Error(String(err));
+      return;
+    }
+    if (chunk && chunk.length > 0) pending.push(chunk);
+  });
+
+  let written = 0;
+  /** Drain everything fflate has produced, awaiting the sink for backpressure. */
+  const drain = async (): Promise<void> => {
+    while (pending.length > 0) {
+      const chunk = pending.shift()!;
+      await sink.write(chunk);
+      written += chunk.length;
+      opts.onProgress?.(written);
+    }
+    if (failure) throw failure;
+  };
+
+  const checkAbort = (): void => {
+    if (opts.signal?.aborted) throw new PerformanceZipAborted();
+  };
+
+  /** Push one entry through the compressor in bounded chunks. */
+  const writeEntry = async (path: string, bytes: Uint8Array, level: 0 | 6): Promise<void> => {
+    const f = level === 0 ? new ZipPassThrough(path) : new ZipDeflate(path, { level });
+    f.mtime = mtime;
+    zip.add(f);
+    if (bytes.length === 0) {
+      f.push(new Uint8Array(0), true);
+      await drain();
+      return;
+    }
+    for (let off = 0; off < bytes.length; off += chunkBytes) {
+      checkAbort();
+      const end = Math.min(off + chunkBytes, bytes.length);
+      f.push(bytes.subarray(off, end), end >= bytes.length);
+      await drain();
+    }
+  };
+
+  checkAbort();
+  await writeEntry(MANIFEST_JSON, manifestBytes, MANIFEST_LEVEL);
+  for (let i = 0; i < input.media.length; i++) {
+    const m = input.media[i]!;
+    await writeEntry(paths[i]!, m.bytes, MEDIA_LEVEL);
+    // Release AFTER the entry is fully pushed: the whole point of streaming is
+    // that a 100 MB slot stops being resident the moment it has been written.
+    if (release) m.bytes = EMPTY_BYTES;
+  }
+  zip.end();
+  await drain();
+  await sink.close();
+  return written;
+}
+
+/** Shared zero-length placeholder for released media buffers. */
+const EMPTY_BYTES = new Uint8Array(0);
 
 /** Parse a performance `.zip` back into a bundle. Throws a user-surfaceable
  *  message on an empty/corrupt/foreign zip. Oversized videos are rejected;

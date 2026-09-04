@@ -12,6 +12,8 @@ import { zipSync, unzipSync, strToU8, strFromU8 } from 'fflate';
 import { syncedStore, getYjsDoc } from '@syncedstore/core';
 import {
   buildPerformanceZip,
+  streamPerformanceZip,
+  PerformanceZipAborted,
   parsePerformanceZip,
   isPerformanceZip,
   MAX_VIDEO_BYTES,
@@ -413,5 +415,274 @@ describe('parsePerformanceZip errors', () => {
     const parsed = parsePerformanceZip(zip);
     expect(parsed.media).toEqual([]); // skipped, not thrown
     expect(parsed.bundle.patch).toBeDefined();
+  });
+});
+
+// ── STREAMING BUILDER — the file save path ────────────────────────────────
+//
+// The bug this suite exists for: the shipped save path built the WHOLE archive
+// with `zipSync` and only then wrote it. Measured on 4x50 MB of incompressible
+// (video-like) entries, RSS sampled synchronously at the point of maximum
+// liveness — zipSync at the default level peaked at 706 MB (3.53x the input)
+// and blocked the main thread for 4344 ms; STOREing the media dropped that to
+// 443 MB / 371 ms; streaming into the sink dropped it to 244 MB (1.22x) / 355 ms.
+//
+// ⚠ The suite this was added to could not have caught any of it: its largest
+// payload is a 12-byte `VIDEO_BYTES`, three orders of magnitude below the
+// 100 MB per-slot cap the format actually accepts. So the cases below use a
+// payload big enough to have a MEASURABLE high-water mark, and assert the
+// allocation bound directly rather than trusting the mechanism.
+
+/** An in-memory sink that records chunks — the structural subset of a
+ *  `FileSystemWritableFileStream`, exactly what `createWritable()` returns. */
+function makeSink() {
+  const chunks: Uint8Array[] = [];
+  let closed = false;
+  let peakLive = 0;
+  return {
+    chunks,
+    get closed() {
+      return closed;
+    },
+    /** Largest single chunk handed to the sink — the streaming high-water mark
+     *  for anything the writer holds on our behalf. */
+    get peakChunkBytes() {
+      return peakLive;
+    },
+    bytes(): Uint8Array {
+      const total = chunks.reduce((a, c) => a + c.length, 0);
+      const out = new Uint8Array(total);
+      let o = 0;
+      for (const c of chunks) {
+        out.set(c, o);
+        o += c.length;
+      }
+      return out;
+    },
+    async write(chunk: Uint8Array): Promise<void> {
+      if (chunk.length > peakLive) peakLive = chunk.length;
+      chunks.push(chunk.slice()); // copy: fflate reuses its output buffers
+    },
+    async close(): Promise<void> {
+      closed = true;
+    },
+  };
+}
+
+/** Incompressible bytes — video/PCM-shaped, so DEFLATE cannot shrink them and
+ *  the level-0/level-6 difference is real rather than an artefact of zeros. */
+function incompressible(n: number, seed = 1): Uint8Array {
+  const out = new Uint8Array(n);
+  let x = seed >>> 0 || 1;
+  for (let i = 0; i < n; i++) {
+    x ^= x << 13;
+    x >>>= 0;
+    x ^= x >> 17;
+    x ^= x << 5;
+    x >>>= 0;
+    out[i] = x & 0xff;
+  }
+  return out;
+}
+
+function mediaOf(sizes: number[]): PerformanceMedia[] {
+  return sizes.map((n, i) => ({
+    nodeId: `v${i}`,
+    handleId: `h-${i}`,
+    role: 'video' as const,
+    name: `clip-${i}.webm`,
+    bytes: incompressible(n, i + 1),
+    slot: i,
+  }));
+}
+
+describe('streamPerformanceZip — the file save path', () => {
+  it('round-trips through parsePerformanceZip identically to the buffered builder', async () => {
+    const { bundle } = realBundle();
+    const media = mediaOf([2048, 5000, 1]);
+    const expected = media.map((m) => Array.from(m.bytes));
+    const sink = makeSink();
+    // release:false — this case needs the same input twice.
+    await streamPerformanceZip({ bundle, media, savedAt: 7 }, sink, { release: false });
+    expect(sink.closed).toBe(true);
+
+    const streamed = parsePerformanceZip(sink.bytes());
+    const buffered = parsePerformanceZip(buildPerformanceZip({ bundle, media, savedAt: 7 }));
+    // The CONTAINERS differ by design (a streaming writer emits data
+    // descriptors because it cannot know a CRC before writing the header), so
+    // the contract asserted is round-trip equivalence, not byte equality.
+    expect(streamed.savedAt).toBe(buffered.savedAt);
+    expect(streamed.bundle).toEqual(buffered.bundle);
+    expect(streamed.media.map((m) => [m.nodeId, m.handleId, m.role, m.name, m.slot])).toEqual(
+      buffered.media.map((m) => [m.nodeId, m.handleId, m.role, m.name, m.slot]),
+    );
+    expect(streamed.media.map((m) => Array.from(m.bytes))).toEqual(expected);
+  });
+
+  it('is DETERMINISTIC for a fixed input (two streams, identical bytes)', async () => {
+    const { bundle } = realBundle();
+    const a = makeSink();
+    const b = makeSink();
+    await streamPerformanceZip({ bundle, media: mediaOf([3000]), savedAt: 7 }, a);
+    await streamPerformanceZip({ bundle, media: mediaOf([3000]), savedAt: 7 }, b);
+    expect(Array.from(a.bytes())).toEqual(Array.from(b.bytes()));
+  });
+
+  it('an empty-media bundle still produces a parseable archive', async () => {
+    const { bundle } = realBundle();
+    const sink = makeSink();
+    await streamPerformanceZip({ bundle, media: [], savedAt: 3 }, sink);
+    const parsed = parsePerformanceZip(sink.bytes());
+    expect(parsed.media).toEqual([]);
+    expect(parsed.bundle.patch).toBeDefined();
+    expect(isPerformanceZip(sink.bytes())).toBe(true);
+  });
+
+  it('a ZERO-BYTE media entry does not stall the writer', async () => {
+    // fflate needs a final push even for an empty entry; forgetting it hangs
+    // the archive with no error, which is the worst possible save failure.
+    const { bundle } = realBundle();
+    const media: PerformanceMedia[] = [
+      { nodeId: 'v0', handleId: 'h0', role: 'video', name: 'empty.webm', bytes: new Uint8Array(0) },
+      ...mediaOf([100]),
+    ];
+    const sink = makeSink();
+    await streamPerformanceZip({ bundle, media, savedAt: 1 }, sink);
+    const parsed = parsePerformanceZip(sink.bytes());
+    // A zero-length entry is dropped by unzipSync's entry map only if absent;
+    // here it round-trips as an empty payload alongside the real one.
+    expect(parsed.media.map((m) => m.bytes.length).sort((x, y) => x - y)).toEqual([0, 100]);
+  });
+
+  it('MEMORY: peak live output never approaches the payload size', async () => {
+    // THE ACTUAL FIX. `buildPerformanceZip` returns one buffer the size of the
+    // whole archive; the streaming builder hands the sink bounded chunks and
+    // holds at most one at a time. 6 MB of media through a 64 KiB chunk must
+    // never present the sink with anything near 6 MB.
+    const { bundle } = realBundle();
+    const payload = 6 * 1024 * 1024;
+    const media = mediaOf([payload / 2, payload / 2]);
+    const sink = makeSink();
+    const written = await streamPerformanceZip({ bundle, media, savedAt: 9 }, sink, {
+      chunkBytes: 64 * 1024,
+    });
+    expect(written).toBeGreaterThan(payload); // the whole payload really went out
+    // Bound stated against the PAYLOAD, not against a magic constant, so the
+    // assertion keeps its meaning if the chunk size changes.
+    expect(sink.peakChunkBytes).toBeLessThan(payload / 8);
+
+    // NEGATIVE CONTROL — the buffered builder fails this exact bound, so the
+    // assertion above is measuring the change and not a property both share.
+    const oneBuffer = buildPerformanceZip({ bundle, media: mediaOf([payload]), savedAt: 9 });
+    expect(oneBuffer.length).toBeGreaterThan(payload / 8);
+  });
+
+  it('RELEASES each media buffer as it is consumed (the input is CONSUMED)', async () => {
+    // Releasing is what takes the measured peak from 2.2x the input to 1.2x:
+    // a 100 MB slot stops being resident the moment it has been written,
+    // instead of at the end of the save.
+    const { bundle } = realBundle();
+    const media = mediaOf([4096, 4096]);
+    const sink = makeSink();
+    await streamPerformanceZip({ bundle, media, savedAt: 1 }, sink);
+    expect(media.map((m) => m.bytes.length)).toEqual([0, 0]);
+    // ...and the archive is complete regardless.
+    expect(parsePerformanceZip(sink.bytes()).media.map((m) => m.bytes.length)).toEqual([4096, 4096]);
+  });
+
+  it('release can be opted OUT of, for a caller that still needs the bytes', async () => {
+    const { bundle } = realBundle();
+    const media = mediaOf([512]);
+    await streamPerformanceZip({ bundle, media, savedAt: 1 }, makeSink(), { release: false });
+    expect(media[0]!.bytes.length).toBe(512);
+  });
+
+  it('MEDIA IS STORED, NOT DEFLATED (level 6 over an MP4 bought nothing)', async () => {
+    // Measured: level 6 over 8 MB of incompressible bytes took 86 ms and made
+    // the archive LARGER (8390512 vs 8388608). A stored entry is the payload
+    // plus headers, so the archive must not exceed the payload by much.
+    const { bundle } = realBundle();
+    const payload = 512 * 1024;
+    const sink = makeSink();
+    const written = await streamPerformanceZip({ bundle, media: mediaOf([payload]), savedAt: 1 }, sink);
+    expect(written).toBeLessThan(payload * 1.02);
+    // The buffered builder now STOREs media too, so both stay near the payload.
+    expect(buildPerformanceZip({ bundle, media: mediaOf([payload]), savedAt: 1 }).length)
+      .toBeLessThan(payload * 1.02);
+  });
+
+  it('reports progress monotonically, ending at the byte count returned', async () => {
+    const { bundle } = realBundle();
+    const seen: number[] = [];
+    const written = await streamPerformanceZip(
+      { bundle, media: mediaOf([200_000]), savedAt: 1 },
+      makeSink(),
+      { chunkBytes: 16 * 1024, onProgress: (n) => seen.push(n) },
+    );
+    expect(seen.length).toBeGreaterThan(1);
+    expect(seen).toEqual([...seen].sort((a, b) => a - b));
+    expect(seen[seen.length - 1]).toBe(written);
+  });
+
+  it('CANCELLATION: an abort mid-write throws PerformanceZipAborted and stops', async () => {
+    const { bundle } = realBundle();
+    const sink = makeSink();
+    const signal = { aborted: false };
+    // Abort once a couple of chunks have landed — a real mid-save cancel.
+    let n = 0;
+    const watching = {
+      ...sink,
+      async write(chunk: Uint8Array) {
+        await sink.write(chunk);
+        if (++n === 2) signal.aborted = true;
+      },
+    };
+    await expect(
+      streamPerformanceZip({ bundle, media: mediaOf([1024 * 1024]), savedAt: 1 }, watching, {
+        chunkBytes: 32 * 1024,
+        signal,
+      }),
+    ).rejects.toBeInstanceOf(PerformanceZipAborted);
+    // Stopped early rather than finishing the payload behind the abort.
+    expect(sink.chunks.length).toBeLessThan(20);
+    // The sink is NOT closed: closing would COMMIT a truncated file. The
+    // caller owns the rollback.
+    expect(sink.closed).toBe(false);
+  });
+
+  it('an abort BEFORE the first chunk writes nothing at all', async () => {
+    const { bundle } = realBundle();
+    const sink = makeSink();
+    await expect(
+      streamPerformanceZip({ bundle, media: mediaOf([1024]), savedAt: 1 }, sink, {
+        signal: { aborted: true },
+      }),
+    ).rejects.toBeInstanceOf(PerformanceZipAborted);
+    expect(sink.chunks).toEqual([]);
+    expect(sink.closed).toBe(false);
+  });
+
+  it('BACKPRESSURE: a slow sink is awaited, so nothing queues up behind it', async () => {
+    // If the writer ignored the returned promise, every chunk would be handed
+    // over before the first await resolved and `inFlight` would exceed 1.
+    const { bundle } = realBundle();
+    let inFlight = 0;
+    let maxInFlight = 0;
+    const slow = {
+      chunks: 0,
+      async write(_chunk: Uint8Array) {
+        inFlight++;
+        if (inFlight > maxInFlight) maxInFlight = inFlight;
+        await new Promise<void>((r) => setTimeout(r, 0));
+        this.chunks++;
+        inFlight--;
+      },
+      async close() {},
+    };
+    await streamPerformanceZip({ bundle, media: mediaOf([400_000]), savedAt: 1 }, slow, {
+      chunkBytes: 32 * 1024,
+    });
+    expect(slow.chunks).toBeGreaterThan(5);
+    expect(maxInFlight).toBe(1);
   });
 });

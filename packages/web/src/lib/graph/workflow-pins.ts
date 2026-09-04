@@ -177,6 +177,143 @@ export function planPinnedSpawns(
   );
 }
 
+// ── IDENTITY REPAIR — the reserved ids against a HOSTILE PEER ──────────────
+//
+// `planPinnedSpawns` above answers PRESENCE ("is there a mixmstrs?"). Nothing
+// answered IDENTITY ("is the thing sitting at `pinned-mixmstrs` still a
+// mixmstrs?"), and the live document is writable by every collaborator in the
+// rackspace — capped at 4, and anonymous invitees are allowed, so "a peer
+// writes garbage into a reserved id" is a real reachable state, not a thought
+// experiment.
+//
+// ⚠ WHY PRESENCE REPAIR WAS NOT ENOUGH — the wedge. Canvas's ensure re-checks
+// with `if (patch.nodes[spec.id]) continue`, which tests the ID ONLY. So a peer
+// writing `patch.nodes['pinned-mixmstrs'].type = 'scope'` produced a PERMANENT
+// stuck state, not a transient one:
+//
+//   1. `planPinnedSpawns` reports mixmstrs missing (no pinned node of that
+//      TYPE exists any more) — forever, on every snapshot.
+//   2. The in-transact re-check sees the id OCCUPIED and `continue`s — so the
+//      ensure can never write, and never repairs.
+//   3. Meanwhile audio/reconciler.ts's `identityChanged`
+//      (`prev.type !== cur.type || prev.domain !== cur.domain`) has already
+//      read the swap as remove+add and called `engine.removeNode`.
+//
+// For `pinned-audioIn` / `pinned-audioOut` step 3 tears down the DEVICE
+// SESSION. Presence self-heals; a hardware session does not — and here even
+// presence did not, because of the wedge. `pinned-mixmstrs` is additionally a
+// hard-coded id in graph/channel-columns.ts (MASTER_MIX_ID) and
+// control/push2/push-lane.ts, so an off-canon node there silently breaks the
+// mixer column model too.
+//
+// ⚠ NO ELECTED DELETER IS NEEDED, unlike singleton-cleanup.ts. That pass has to
+// elect one peer because a DELETE racing a delete is destructive. This is an
+// idempotent FIELD WRITE derived from a constant table: every peer computes the
+// identical canonical value from the identical converged snapshot and writes it
+// to the identical id, so concurrent repairs converge on the same value by
+// construction. Steady state plans NOTHING, so `identityChanged` stays false
+// and no extra teardown is ever introduced by the repair itself.
+//
+// ONE teardown + re-add on a hostile write is unavoidable and is not a defect:
+// Yjs has no conditional insert (singleton-cleanup.ts:16-18 states this), so
+// the garbage exists in the doc for the interval between the peer's write and
+// the repair. The guarantee this buys is that the state is TRANSIENT and
+// SELF-HEALING rather than permanent — the session comes back, and the id
+// stays the one every hard-coded consumer expects.
+//
+// P1's device slots register in the same table and inherit this for free; that
+// is what makes "identityChanged is structurally impossible for a slot id"
+// true rather than aspirational.
+
+/** Minimal node shape the identity repair inspects. Wider than
+ *  `PinnedNodeLike` because the repair reads `type`/`domain` too. */
+export interface PinnedIdentityNodeLike {
+  id?: string;
+  type?: string;
+  domain?: string;
+  data?: Record<string, unknown> | null;
+}
+
+/** One reserved id whose occupant drifted off-canon, plus the canonical values
+ *  to write back. `fields` names WHAT was wrong — it drives the trace line and
+ *  lets a test assert the planner detected the specific attack rather than
+ *  rewriting everything unconditionally. */
+export interface PinnedIdentityRepair {
+  /** The reserved node id to repair IN PLACE (never delete + re-add). */
+  id: string;
+  /** Canonical module type for this reserved id. */
+  type: string;
+  /** Canonical registry domain for this reserved id. */
+  domain: 'audio' | 'meta';
+  /** Which canonical fields are currently wrong, in a stable order. */
+  fields: ReadonlyArray<'type' | 'domain' | 'pinned'>;
+}
+
+/** Every reserved node id the repair defends, for callers that need the set
+ *  (e.g. a guard that must not treat a reserved id as ordinary content). */
+export const RESERVED_PINNED_IDS: ReadonlySet<string> = new Set(
+  ALL_WORKFLOW_PINNED.map((s) => s.id),
+);
+
+/**
+ * Which reserved ids are occupied by a node whose IDENTITY has drifted?
+ *
+ * Pure predicate over the snapshot — the caller transacts the writes, mirroring
+ * `planPinnedSpawns`' convention. Returns [] in steady state (and for reserved
+ * ids that are simply ABSENT: that is `planPinnedSpawns`' job, not this one).
+ *
+ * Only the three canonical fields are judged. `params`, `position`,
+ * `data.name`, `data.workflowDefaultWired` and every other per-node key are
+ * DELIBERATELY not canonicalised — they are legitimate user state, and a repair
+ * that flattened them would be a hardening that breaks legitimate use.
+ *
+ * ── ⚠ THE `pinned` LEG IS SCOPED TO presence:'pinned' SPECS ────────────────
+ * `type`/`domain` are canonicalised for EVERY reserved id: they are the two
+ * fields `identityChanged` reads (audio/reconciler.ts), so they ARE the
+ * device-session defence, and both session holders (`pinned-audioIn`,
+ * `pinned-audioOut`) are presence:'pinned' and keep the full guard.
+ *
+ * `data.pinned` is NOT canonicalised for a presence:'type' spec, because there
+ * an UN-PINNED occupant is legitimate BY THE SPEC'S OWN DEFINITION —
+ * presence:'type' means "any node of this type satisfies the invariant, pinned
+ * or not". `pinned-timelorde` is the only one today, and an un-pinned canvas
+ * TIMELORDE is exactly what a rack IMPORTED FROM A SAVED PATCH has: the
+ * presence:'type' rule spawns no pinned instance when a canvas one already
+ * exists. Re-pinning it flips `isCanvasHiddenNode`, so a node the player can
+ * see and drag silently vanishes from the canvas — a hardening that breaks
+ * legitimate use, which is the one thing this repair must never do. (Caught by
+ * vrt `face-timelorde-compact`, whose subject IS that adopted un-pinned node.)
+ *
+ * ⚠ AND THE NARROWING COSTS NOTHING IN TEARDOWN TERMS. `identityChanged`
+ * compares `type` and `domain` ONLY, so a `pinned` drift never reaches
+ * `engine.removeNode` and never touches a device session. What the `pinned` leg
+ * closes is the SECOND-ORDER exposure — `isPinnedNode` gates Clear/Backspace,
+ * so an un-pinned node becomes deletable by a later user action — and that is
+ * still closed everywhere it is coherent to close it. Both claims are proved
+ * against the real reconciler in workflow-pins-ydoc.test.ts, not asserted here.
+ */
+export function planPinnedIdentityRepairs(
+  nodes: ReadonlyArray<PinnedIdentityNodeLike | null | undefined>,
+): PinnedIdentityRepair[] {
+  const byId = new Map<string, PinnedIdentityNodeLike>();
+  for (const n of nodes) {
+    if (n && typeof n.id === 'string') byId.set(n.id, n);
+  }
+  const out: PinnedIdentityRepair[] = [];
+  for (const spec of ALL_WORKFLOW_PINNED) {
+    const node = byId.get(spec.id);
+    if (!node) continue; // absent → planPinnedSpawns owns it
+    const fields: Array<'type' | 'domain' | 'pinned'> = [];
+    if (node.type !== spec.type) fields.push('type');
+    if (node.domain !== spec.domain) fields.push('domain');
+    // See the header: a presence:'type' spec is SATISFIED by an unpinned node,
+    // so un-pinning one is a legitimate player-reachable state, not an attack.
+    if (spec.presence !== 'type' && node.data?.pinned !== true) fields.push('pinned');
+    if (fields.length > 0) out.push({ id: spec.id, type: spec.type, domain: spec.domain, fields });
+  }
+  return out;
+}
+
 // ---------------- Default wiring: MIXMSTRS master → AUDIO OUT ----------------
 //
 // Owner directive: "the audio out in the rack should be default wired to the
