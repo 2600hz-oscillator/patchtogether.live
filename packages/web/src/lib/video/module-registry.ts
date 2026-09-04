@@ -71,9 +71,6 @@ export interface VideoModuleDef {
    *  Uncategorized. Lets a video module classify itself with no edit to the
    *  shared module-categories map. */
   palette?: PaletteCategory;
-  /** Card-component basename override (no '.svelte'). Only needed when the
-   *  `PascalCase(type)+'Card'` convention doesn't match the filename. */
-  card?: string;
   /**
    * Fix E (offscreen-canvas render worker) — where this module's GL compute
    * runs. Defaults to `'main'` (the existing in-thread VideoEngine path, used

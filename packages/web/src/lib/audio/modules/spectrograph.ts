@@ -183,7 +183,7 @@ export const spectrographDef: AudioModuleDef = {
 
   docs: {
     explanation:
-      "A real-time scrolling spectrograph (sonogram) — it turns any audio signal into a video image of its frequency content over time. The mono input is FFT-analysed and rendered as a log-binned plot: frequency runs up the vertical axis (20 Hz at the bottom to 20 kHz at the top, log scale), time scrolls horizontally with the newest column on the RIGHT, and the loudness at each frequency sets each pixel's brightness/color. It produces the SAME spectrograph as two simultaneous video outputs over two colormaps — a COLOR heat ramp (blue→cyan→yellow→red, loud = hot) and an INVERTED B/W (quiet = white, loud = black, the classic printed-sonogram look). The card shows a live preview with a button to flip the preview between the two looks (preview only — both outputs are always live). Patch COLOR or B/W into VIDEO OUT or any video module. GAIN trims the input level into the analyser's display window.",
+      "A real-time scrolling spectrograph (sonogram) — it turns any audio signal into a video image of its frequency content over time. The mono input is FFT-analysed and rendered as a log-binned plot: frequency runs up the vertical axis (20 Hz at the bottom to 20 kHz at the top, log scale), time scrolls horizontally with the newest column on the RIGHT, and the loudness at each frequency sets each pixel's brightness/color. It produces the SAME spectrograph as two simultaneous video outputs over two colormaps — a COLOR heat ramp (blue→cyan→yellow→red, loud = hot) and an INVERTED B/W (quiet = white, loud = black, the classic printed-sonogram look). the faceplate shows a live preview with a button to flip the preview between the two looks (preview only — both outputs are always live). Patch COLOR or B/W into VIDEO OUT or any video module. GAIN trims the input level into the analyser's display window.",
     inputs: {
       in: "The mono audio signal to analyse — its frequency content is FFT-analysed and drawn as the scrolling spectrograph. Patch any audio source here (a synth voice, a mix, a drum bus).",
     },
@@ -197,7 +197,7 @@ export const spectrographDef: AudioModuleDef = {
       gain:
         "Pre-analysis input trim (0.25..4, log, default 1) — boosts a quiet source up into the −90..−10 dB display window so its traces are visible (or tames a hot one). Applied before the FFT tap; it shapes the IMAGE contrast, not the audio (there's no audio output).",
       view:
-        "Which colormap the on-surface PREVIEW shows: COLOR (the blue→cyan→yellow→red heat ramp) or B/W (inverted grayscale, quiet = white, loud = black). Display-only and it changes nothing downstream — the COLOR and BW outputs are separate ports drawn from the same FFT plane and BOTH render continuously whatever this is set to, so patching is unaffected. It exists as a param rather than card state so the preview switch survives on the faceplate.",
+        "Which colormap the on-surface PREVIEW shows: COLOR (the blue→cyan→yellow→red heat ramp) or B/W (inverted grayscale, quiet = white, loud = black). Display-only and it changes nothing downstream — the COLOR and BW outputs are separate ports drawn from the same FFT plane and BOTH render continuously whatever this is set to, so patching is unaffected. It exists as a param rather than transient surface state, so the preview switch survives a reload.",
     },
   },
 

@@ -281,7 +281,7 @@ export const shapesDef: VideoModuleDef = {
       out: "Mono-video output carrying the rendered shape pattern — white shape on a black field (grayscale, alpha 1), antialiased; feed it to compositors, masks, displacement, or feedback stages.",
     },
     controls: {
-      shape: "Shape picker, 0..2 linear, rounded to the nearest integer: 0 = circle, 1 = square, 2 = triangle (no blend between them). On the card a CIRCLE/SQUARE/TRI button cycles through the three; default 0 (circle).",
+      shape: "Shape picker, 0..2 linear, rounded to the nearest integer: 0 = circle, 1 = square, 2 = triangle (no blend between them). on the faceplate a CIRCLE/SQUARE/TRI button cycles through the three; default 0 (circle).",
       tile: "Tile toggle, 0..1 linear: <0.5 = a single shape centered in the whole frame; >=0.5 = repeat the shape into a Grid×Grid array of cells. Card exposes it as a TILE ON/OFF button; default 0 (off).",
       tileN: "Grid count, 1..16 linear (fader labeled 'Grid', rounded to an integer): how many cells per axis when Tile is on, e.g. 4 = a 4×4 array. Has no effect while Tile is off; default 4.",
       rotate: "Global rotation, -π..π (≈-3.14159..3.14159) linear: rotates the shape about its cell center; default 0 (upright).",

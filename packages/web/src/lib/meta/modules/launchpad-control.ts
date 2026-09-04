@@ -36,7 +36,6 @@ export const launchpadControlDef: MetaModuleDef = {
   domain: 'meta',
   label: 'launchpad control',
   category: 'tools',
-  card: 'LaunchpadControlCard',
   size: '1u', // compact "wide 1u" — measured natural height ≤ 180px
   hp: 2,
   inputs: [],

@@ -5,7 +5,7 @@
 // `score-data.ts` owns the arithmetic and is pure (no store, no Y.Doc);
 // `score-layout.ts` owns the pixels. This file owns the WRITES, and it is the
 // only place `node.data` is edited for this module. Three surfaces call it —
-// the legacy card, the faceplate's staff panel, and the faceplate's band cells
+// the legacy card, the faceplate's staff panel, and the faceplate\'s band cells
 // — so "the card and the face write the same keys through the same helper" is a
 // property of the code rather than something to re-verify per PR.
 //

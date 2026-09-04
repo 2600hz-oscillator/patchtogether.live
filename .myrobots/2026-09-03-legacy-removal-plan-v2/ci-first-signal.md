@@ -212,8 +212,12 @@ when those surfaces were extracted, long before S4.
 So the deferral was right by luck of a different fact: the hash moved ONCE, from
 ruling 29's edit to `lib/video/module-registry.ts` (that tree is hashed
 wholesale), and has been stable through S3, S4a and S4b. The attest is a SINGLE
-FINAL SPEND and it is due now. S5 will not move it either: comments and `docs`
-props are hash-transparent, which is the whole of the archaeology sweep.
+FINAL SPEND. ⚠ BUT NOT ON THIS HASH — S5 moved it to `9af32fc1…` by retiring the
+`card:` DEF FIELD (six declarations in `lib/video/modules/`, 96 of the 220 basis
+files). The prose half was transparent as predicted; the field half was not.
+The normalizer strips `docs`/`controlFamilies`/`face`/`noUserControl` and NOTHING
+ELSE, so re-check with `task webgl:attest:check` rather than trusting a recorded
+number.
 
 If the draft needs a green `webgl-attest` before then, the whole fix is one
 command on a quiet real-GPU machine — `flox activate -- task webgl:attest` — and

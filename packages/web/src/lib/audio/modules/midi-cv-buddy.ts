@@ -157,7 +157,7 @@ export function channelMatches(statusByte: number, channelFilter: number | null)
 
 // ---------------- The CHANNEL and PRIORITY rosters ----------------
 //
-// Both the legacy card's `<select>` and the faceplate's selector cell offer the
+// Both the legacy card's `<select>` and the faceplate\'s selector cell offer the
 // SAME choices, built here once so neither surface re-derives them. The card
 // used to spell `{#each Array(16)}` and the `i + 1` inline, and a face that
 // spelled them again would be two encodings of one convention — the same
@@ -230,7 +230,7 @@ export function priorityForChoice(choice: string): VoicePriority {
  * The MIDI channel FILTER stored on a node, or `null` for ALL.
  *
  * ⚠ THE KEY IS `midiInChannel`, NOT `channel`, AND THE RENAME IS A BUG FIX
- * (#1168's other half, found on this module's promotion 2026-08-25).
+ * (#1168's other half, found on this module\'s promotion 2026-08-25).
  *
  * `channel-columns.ts` declares `data.channel: 1..8` to be COLUMN MEMBERSHIP
  * TRUTH — the workflow reconciler DROPS a node from a lane whose order array
@@ -563,11 +563,11 @@ export const midiCvBuddyDef: AudioModuleDef = {
 
   docs: {
     explanation:
-      "Turns a hardware MIDI keyboard or controller into the pitch + gate + velocity CV the rest of the rack speaks — the classic MIDI-to-CV interface. It is MONOPHONIC: when you hold a chord it picks one winning note (by the card's voice-priority setting — last-played, lowest, or highest) and tracks that. Mental model: play a key and PITCH follows it as 1V/octave, GATE goes high while you hold and dips briefly on a retrigger so envelopes re-fire, and VELOCITY latches how hard you struck. Pitch-bend is summed into the pitch output. The card owns the device dropdown, channel filter, voice-priority and retrigger choices (all discrete, saved in the patch — no audio-side knobs); Web MIDI permission is requested only when you click Connect, not on patch load. For polyphony, use MIDI LANE's poly output instead; this module is the simple mono workhorse.",
+      "Turns a hardware MIDI keyboard or controller into the pitch + gate + velocity CV the rest of the rack speaks — the classic MIDI-to-CV interface. It is MONOPHONIC: when you hold a chord it picks one winning note (by the faceplate's voice-priority setting — last-played, lowest, or highest) and tracks that. Mental model: play a key and PITCH follows it as 1V/octave, GATE goes high while you hold and dips briefly on a retrigger so envelopes re-fire, and VELOCITY latches how hard you struck. Pitch-bend is summed into the pitch output. the faceplate owns the device dropdown, channel filter, voice-priority and retrigger choices (all discrete, saved in the patch — no audio-side knobs); Web MIDI permission is requested only when you click Connect, not on patch load. For polyphony, use MIDI LANE's poly output instead; this module is the simple mono workhorse.",
     inputs: {},
     outputs: {
       pitch_cv:
-        "The current note as pitch CV in volts-per-octave (the codebase convention 0V = C4 = MIDI note 60), with pitch-bend summed in (default ±2 semitones). It tracks the winning held key per the card's voice-priority mode and latches the last note after you let go, so a downstream VCO holds its pitch through the gate's fall rather than snapping to a default.",
+        "The current note as pitch CV in volts-per-octave (the codebase convention 0V = C4 = MIDI note 60), with pitch-bend summed in (default ±2 semitones). It tracks the winning held key per the faceplate's voice-priority mode and latches the last note after you let go, so a downstream VCO holds its pitch through the gate's fall rather than snapping to a default.",
       gate:
         "Stays high while at least one key is held and low when all keys are released. On a retrigger (a fresh strike while the retrigger mode wants a re-fire) it briefly dips to 0 for one audio block before re-rising, so an ADSR or VCA downstream re-fires its envelope cleanly. Patch it into an envelope's gate or a VCA.",
       velocity_cv:

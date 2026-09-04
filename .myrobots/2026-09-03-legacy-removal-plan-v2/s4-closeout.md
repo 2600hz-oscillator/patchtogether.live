@@ -200,3 +200,26 @@ WHAT A SUCCESSOR NEEDS, in order:
 4. While there: delete the two `VRT_LIVE_SURFACES` wavesculpt masks whose
    standing justification was the camera blocker, and re-pin their two baselines
    unmasked.
+
+
+## ⚠ S5 MOVED THE ATTEST HASH AFTER ALL — `aacfac95…` → `9af32fc1…`
+
+I recorded twice that S5 would be hash-transparent because "comments and `docs`
+props are hash-transparent, and that is the whole of the archaeology sweep". The
+first half is true; the second was wrong, and the hash moved.
+
+MEASURED: the prose sweep itself (hundreds of `docs.explanation` /
+`docs.controls` / manifest DESCRIPTIONS edits) moved NOTHING — `contract-lock.txt`
+re-pinned to a byte-identical file, exactly as the normalizer promises. What moved
+the hash is the OTHER half of the same commit: retiring the orphaned **`card:` def
+field**, six of whose declarations live in `lib/video/modules/*.ts`, and 96 of the
+basis's 220 files are that directory.
+
+THE GENERAL RULE, stated so this stops being re-learned: the normalizer strips
+`docs`, `controlFamilies`, `face` and `noUserControl`. **Every other def field is
+hash-relevant.** "It is only a doc change" is a claim about the FIELD, not about
+the file — and a commit that edits prose AND a field is not a prose commit.
+
+Consequence: the attest is still ONE spend, but it is owed on `9af32fc1…` and the
+recipe recorded earlier names the stale hash. Re-check with
+`task webgl:attest:check` rather than trusting either number written down.

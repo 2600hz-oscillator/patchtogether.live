@@ -407,7 +407,7 @@ export const numpadPlusDef: AudioModuleDef = {
 
   docs: {
     explanation:
-      "A live-recording step sequencer you play from your computer's numeric keypad: the keys map to a chromatic octave (12 notes), and pressing them performs notes in real time AND, when armed, records them into a 16-step pattern. It has four independent LAYERS sharing one playhead and tempo, so you can build up four parallel lines; the active layer is the one you're playing and recording into. Each layer has its own pitch + gate output pair, and there's also a single POLY output that carries the active layer's notes — in poly mode you can hold several keys to record a chord, and the POLY cable feeds a poly-aware voice so every note sounds. The playhead runs on internal BPM or an external CLOCK IN; recording quantizes your keystrokes to the nearest step while playing, or writes immediately when stopped. While the card is focused it captures the Numpad keys exclusively so they don't leak to other modules.",
+      "A live-recording step sequencer you play from your computer's numeric keypad: the keys map to a chromatic octave (12 notes), and pressing them performs notes in real time AND, when armed, records them into a 16-step pattern. It has four independent LAYERS sharing one playhead and tempo, so you can build up four parallel lines; the active layer is the one you're playing and recording into. Each layer has its own pitch + gate output pair, and there's also a single POLY output that carries the active layer's notes — in poly mode you can hold several keys to record a chord, and the POLY cable feeds a poly-aware voice so every note sounds. The playhead runs on internal BPM or an external CLOCK IN; recording quantizes your keystrokes to the nearest step while playing, or writes immediately when stopped. While the faceplate is focused it captures the Numpad keys exclusively so they don't leak to other modules.",
     inputs: {
       clock: "External clock: each rising edge advances the shared playhead one step. While patched it sets the pace and runs the sequencer; unpatch to fall back to the internal BPM.",
       layer:
@@ -427,12 +427,12 @@ export const numpadPlusDef: AudioModuleDef = {
     },
     controls: {
       bpm: "Internal tempo in beats per minute (each step is a 16th note), used only when nothing is patched into CLOCK IN.",
-      isPlaying: "Run/stop transport (1 = playing, 0 = stopped). When stopped the playhead holds at step 1 but live keys still sound; the card's PLAY button toggles it.",
+      isPlaying: "Run/stop transport (1 = playing, 0 = stopped). When stopped the playhead holds at step 1 but live keys still sound; the faceplate's PLAY button toggles it.",
       activeLayer:
-        "Which of the four layers is active for playing and recording (0..3 = layers 1–4), exposed as the card's L1–L4 buttons. The layer CV input overrides this when patched.",
+        "Which of the four layers is active for playing and recording (0..3 = layers 1–4), exposed as the faceplate's L1–L4 buttons. The layer CV input overrides this when patched.",
       recArm:
-        "Record arm (the card's ARM button): when armed and play starts from step 1, recording latches and the active layer is cleared, then your keystrokes are written in; it auto-disarms after one 16-step pass.",
-      overdub: "Overdub mode (the card's OVD button): when on, every keypress writes its note into the step (quantized to the nearest step while playing, immediately when stopped) without clearing the layer first — layer new notes over what's there.",
+        "Record arm (the faceplate's ARM button): when armed and play starts from step 1, recording latches and the active layer is cleared, then your keystrokes are written in; it auto-disarms after one 16-step pass.",
+      overdub: "Overdub mode (the faceplate's OVD button): when on, every keypress writes its note into the step (quantized to the nearest step while playing, immediately when stopped) without clearing the layer first — layer new notes over what's there.",
       octave: "The keypad's base octave (0..8, default 4); shifts which actual pitches the 12 note-keys produce. The remappable octave-up/down keys nudge it by one.",
       poly:
         "POLY RECORDING — a mode you switch on and leave on. While it is on, a capture stores every key you are HOLDING at that moment as a chord in the step (up to 5 voices); while it is off, a capture stores only the one key that triggered it. The mono per-layer outputs always send the lowest note either way, and this control gates RECORDING only — the POLY output jack is always live, at 0 or at 1.",
@@ -867,7 +867,7 @@ export const numpadPlusDef: AudioModuleDef = {
         // directions on the same page and the same 2 s rAF window: with the
         // transport STOPPED the page ran at 120.5 fps; with ONE numpadPlus
         // RUNNING on its internal clock it ran at 7.9 fps. A 15x collapse of
-        // the whole rack's frame rate, on this module's headline workflow.
+        // the whole rack's frame rate, on this module\'s headline workflow.
         //
         // ⚠ AND THE LOOKAHEAD BOUGHT NOTHING EVEN IN PRINCIPLE, which is why
         // this is a deletion rather than a repair. Every output write here is

@@ -82,7 +82,6 @@ export const push2ControlDef: MetaModuleDef = {
   domain: 'meta',
   label: 'push 2 control',
   category: 'tools',
-  card: 'Push2ControlCard',
   // 2u: the card now carries a 960×160 PUSH-CARD PREVIEW (CSS-scaled to the card
   // width) plus the card-flip row above the lane buttons, which takes its natural
   // height past the 180 px a 1u allows. `card-control-overflow` measured 201 px

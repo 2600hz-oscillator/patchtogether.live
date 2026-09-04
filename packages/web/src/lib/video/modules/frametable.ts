@@ -589,7 +589,7 @@ export const frametableDef: VideoModuleDef = {
     {
       param: 'liveGate',
       writer: 'cv-port',
-      why: "The `live_gate` input (edge: 'gate') targets it, and the cross-domain bridge writes that jack's LEVEL into it every frame. `draw()` reads it as `params.liveGate >= 0.5` and ORs it with the latched LIVE switch, which is the entire reason the two are separate params: a per-frame level write into `live` would erase whatever the player had switched on the instant a cable was patched. There is no control for it on the card and none on the faceplate — the LIVE switch is the control, and this is the jack's private landing pad.",
+      why: "The `live_gate` input (edge: 'gate') targets it, and the cross-domain bridge writes that jack's LEVEL into it every frame. `draw()` reads it as `params.liveGate >= 0.5` and ORs it with the latched LIVE switch, which is the entire reason the two are separate params: a per-frame level write into `live` would erase whatever the player had switched on the instant a cable was patched. There is no control for it on the faceplate and none on the faceplate — the LIVE switch is the control, and this is the jack's private landing pad.",
     },
     {
       param: 'chaosGate',
@@ -1023,7 +1023,7 @@ export const frametableDef: VideoModuleDef = {
           if (!atlasGeometry(bmp.width, bmp.height).valid) { bmp.close?.(); return; }
           // Bitmap → canvas, mirroring the card's own upload path EXACTLY. The
           // atlas round-trip is documented as bit-exact in frametable-atlas.ts
-          // (the SAVE tiler's per-tile flip composes with the detile's
+          // (the SAVE tiler's per-tile flip composes with the detile\'s
           // UNPACK_FLIP_Y to identity), and taking a different route to the
           // texture is how a "cosmetic" refactor turns a lossless table upside
           // down.

@@ -66,7 +66,6 @@ export const moog956Def: AudioModuleDef = {
   domain: 'audio',
   label: '956 ribbon',
   category: 'utility',
-  card: 'Moog956Card',
 
   // No inputs — a manual touch source (like joystick).
   inputs: [],

@@ -147,7 +147,6 @@ export const fourPlexVidDef: VideoModuleDef = {
   // Type id is '4plexvid'. ModuleType accepts arbitrary strings.
   type: '4plexvid',
   palette: { top: 'Video modules', sub: 'Utilities' },
-  card: 'FourPlexVidCard',
   domain: 'video',
   label: '4plexvid',
   category: 'utilities',
@@ -282,7 +281,7 @@ export const fourPlexVidDef: VideoModuleDef = {
       gate4: "Gate CV for output 4, edge-triggered (paramTarget gate4). Each rising edge rotates the sel4 selector to the next input, wrapping; held-high fires once via the same hysteresis edge detector.",
     },
     outputs: {
-      out1: "Video output 1 — a discrete tap carrying exactly the input chosen by the sel1 selector (black if that input is unpatched). Also the canonical single-texture surface and the card's live OUT 1 preview.",
+      out1: "Video output 1 — a discrete tap carrying exactly the input chosen by the sel1 selector (black if that input is unpatched). Also the canonical single-texture surface and the faceplate's live OUT 1 preview.",
       out2: "Video output 2 — a discrete tap carrying exactly the input chosen by the sel2 selector (black if that input is unpatched).",
       out3: "Video output 3 — a discrete tap carrying exactly the input chosen by the sel3 selector (black if that input is unpatched).",
       out4: "Video output 4 — a discrete tap carrying exactly the input chosen by the sel4 selector (black if that input is unpatched).",

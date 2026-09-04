@@ -834,7 +834,7 @@ export const b3ntb0xDef: VideoModuleDef = {
     {
       param: 'freeze',
       writer: 'internal',
-      why: "A determinism toggle for VRT capture, with NO control anywhere - not on the card, not on the faceplate, not on the patch surface. This module animates by construction (subcarrier phase and sync wobble both advance with uTime, and CRT persistence feeds the previous frame back), so a screenshot can never settle without it. The visual-regression harness writes it before comparing; nothing else ever does.",
+      why: "A determinism toggle for VRT capture, with NO control anywhere - not on the faceplate, not on the faceplate, not on the patch surface. This module animates by construction (subcarrier phase and sync wobble both advance with uTime, and CRT persistence feeds the previous frame back), so a screenshot can never settle without it. The visual-regression harness writes it before comparing; nothing else ever does.",
     },
   ],
 
@@ -1027,11 +1027,11 @@ export const b3ntb0xDef: VideoModuleDef = {
       barrel: "Barrel (0–1, default 0.25): CRT glass barrel distortion (outward bulge about center) plus the matching corner vignette.",
       hue: "Hue (-1–1): receiver TINT — rotates the synchronous-demodulator reference axis (the recovered I/Q chroma vector) up to ±0.9π. Shifts colour angle while preserving saturation. 0 is no shift.",
       sub_drift: "Drift (0–1): subcarrier instability. Injects an uncorrected carrier phase error that grows across each line and wanders in time, so chroma swims as a rainbow over the picture. 0 is stable.",
-      mirrorX: "Mirror X (0/1): kaleidoscope toggle that folds the left half over the right. Driven by the card's MIRROR X button and by a rising edge on the Mir X Gate input.",
-      mirrorY: "Mirror Y (0/1): kaleidoscope toggle that folds the top half over the bottom. Driven by the card's MIRROR Y button and by a rising edge on the Mir Y Gate input.",
+      mirrorX: "Mirror X (0/1): kaleidoscope toggle that folds the left half over the right. Driven by the faceplate's MIRROR X button and by a rising edge on the Mir X Gate input.",
+      mirrorY: "Mirror Y (0/1): kaleidoscope toggle that folds the top half over the bottom. Driven by the faceplate's MIRROR Y button and by a rising edge on the Mir Y Gate input.",
       mirrorXGate: "Mir X Gate (0–1): the synthetic gate level fed by the mirror_x_gate input; a rising edge on it toggles Mirror X. Read for edge detection, not as a continuous control.",
       mirrorYGate: "Mir Y Gate (0–1): the synthetic gate level fed by the mirror_y_gate input; a rising edge on it toggles Mirror Y. Read for edge detection, not as a continuous control.",
-      freeze: "Freeze (0/1, default 0): a hidden determinism toggle with NO control anywhere — not on the card, not on the faceplate, not on the patch surface. At 0.5 or above the draw step is a no-op, so every surface holds its last frame instead of going black. It exists because this module animates by construction: the subcarrier phase and the sync wobble both advance with elapsed time, and the CRT persistence path feeds the previous frame back on top of that, so two captures of the same settings are never the same pixels. The visual-regression harness writes it before comparing a screenshot; nothing else ever does.",
+      freeze: "Freeze (0/1, default 0): a hidden determinism toggle with NO control anywhere — not on the faceplate, not on the faceplate, not on the patch surface. At 0.5 or above the draw step is a no-op, so every surface holds its last frame instead of going black. It exists because this module animates by construction: the subcarrier phase and the sync wobble both advance with elapsed time, and the CRT persistence path feeds the previous frame back on top of that, so two captures of the same settings are never the same pixels. The visual-regression harness writes it before comparing a screenshot; nothing else ever does.",
     },
   },
   factory(ctx, node): VideoNodeHandle {

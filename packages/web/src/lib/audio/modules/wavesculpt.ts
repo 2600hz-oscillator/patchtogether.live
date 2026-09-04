@@ -1028,7 +1028,7 @@ export const wavesculptDef: AudioModuleDef = {
       controls[`wall${w}_distort`] = `WALL ${w} (${WALL[w - 1]}) DISTORT (0..1) — morphs the wall from a flat quad (0) to a convex dome bulging toward the room centre (1), a fisheye we look up into.`;
     }
     // Camera + master + look controls.
-    controls.pos_x = 'Camera X position (−1..+1) — the horizontal axis of the on-card XY pad. Moves the viewpoint left/right through the box.';
+    controls.pos_x = 'Camera X position (−1..+1) — the horizontal axis of the faceplate\'s XY pad. Moves the viewpoint left/right through the box.';
     controls.pos_y = 'Camera Y position (−1..+1) — the vertical axis of the XY pad.';
     controls.pos_z = 'Camera Z position / HEIGHT (−1..+1) — depth into the box (the HEIGHT slider).';
     controls.zoom  = 'Camera ZOOM / distance scalar (0.3..3, log) — closer (smaller) = bigger ribbons visually AND louder audibly (closer = louder, one shared distance number). CV via the zoom input.';

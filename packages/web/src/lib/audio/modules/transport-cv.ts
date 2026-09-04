@@ -14,7 +14,7 @@
 //   - RESET edge  → reset its own stepIndex / tickIndex
 //   - QUEUE-N edge → write livePatch.nodes[id].data.queuedSlot = N
 //
-// We don't centralize the dispatch because each module's "stepIndex reset"
+// We don't centralize the dispatch because each module\'s "stepIndex reset"
 // looks slightly different (sequencer + drumseqz use stepIndex, score uses
 // tickIndex / nextStepTime).
 

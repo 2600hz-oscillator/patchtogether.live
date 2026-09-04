@@ -247,7 +247,6 @@ const DEFAULTS: OneToNineParams = {
 export const oneToNineDef: VideoModuleDef = {
   type: 'onetonine',
   palette: { top: 'Video modules', sub: 'Utilities' },
-  card: 'OneToNineCard',
   domain: 'video',
   label: 'one to nine',
   category: 'utilities',
@@ -320,7 +319,7 @@ export const oneToNineDef: VideoModuleDef = {
   },
 
   docs: {
-    explanation: "ONE TO NINE is a fixed 3×3 video splitter: it takes one source on `in` and divides the frame into nine equal sub-rectangles, exposing each cell on its own output (out1..out9) magnified to fill the whole output frame — a clean, grid-line-free crop of one ninth. Cells are numbered in reading order (1 = top-left, 5 = centre, 9 = bottom-right). The module's canonical surface is a MONITOR that shows the input with an amber 3×3 grid and a big upright 7-segment digit drawn in each cell, so the operator can see which cell feeds which output before patching — the grid and numbers appear ONLY on the monitor, never in the nine outputs (those stay clean). Use it alongside (not wired to) MAPPY to feed up to nine projectors a different ninth of one source, or fan one feed across a video wall. The on-card GRID button toggles the monitor overlay only.",
+    explanation: "ONE TO NINE is a fixed 3×3 video splitter: it takes one source on `in` and divides the frame into nine equal sub-rectangles, exposing each cell on its own output (out1..out9) magnified to fill the whole output frame — a clean, grid-line-free crop of one ninth. Cells are numbered in reading order (1 = top-left, 5 = centre, 9 = bottom-right). The module's canonical surface is a MONITOR that shows the input with an amber 3×3 grid and a big upright 7-segment digit drawn in each cell, so the operator can see which cell feeds which output before patching — the grid and numbers appear ONLY on the monitor, never in the nine outputs (those stay clean). Use it alongside (not wired to) MAPPY to feed up to nine projectors a different ninth of one source, or fan one feed across a video wall. the faceplate\'s GRID button toggles the monitor overlay only.",
     inputs: {
       "in": "The single video source to split. The frame is divided into a fixed 3×3 grid of nine equal cells; each cell feeds its matching output, and the whole frame (with the optional grid overlay) feeds the monitor. With nothing patched the nine crop outputs are pure black, while the monitor shows a near-black dark field (still drawing the amber grid + cell numbers when Grid is on).",
     },
@@ -336,7 +335,7 @@ export const oneToNineDef: VideoModuleDef = {
       "out9": "Cell 9 — the bottom-right ninth of the input, magnified to fill the frame. Clean crop, no grid or numbers.",
     },
     controls: {
-      "showGrid": "Grid (0/1 toggle, min 0 / max 1, discrete, default ON; the card's GRID ON/OFF button). When on, the monitor draws the amber 3×3 grid plus a big upright 7-segment digit 1..9 in each cell so you can see which cell feeds which output; when off, the monitor is a raw input passthrough. Affects the monitor only — the nine crop outputs are always clean. Mirrored to node.data so the button and the persisted param stay in agreement.",
+      "showGrid": "Grid (0/1 toggle, min 0 / max 1, discrete, default ON; the faceplate's GRID ON/OFF button). When on, the monitor draws the amber 3×3 grid plus a big upright 7-segment digit 1..9 in each cell so you can see which cell feeds which output; when off, the monitor is a raw input passthrough. Affects the monitor only — the nine crop outputs are always clean. Mirrored to node.data so the button and the persisted param stay in agreement.",
     },
   },
   factory(ctx, node): VideoNodeHandle {

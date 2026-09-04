@@ -146,7 +146,7 @@ export const unityscalemathematikDef: AudioModuleDef = {
     // documented cluster case on the face of it — "the same idea, twice" — and
     // that was the first draft. The REAR CARD settles it the other way:
     // `rearFieldPlan` derives one rear band per `pages` page and files each
-    // page's CV holes under it, and this module's five CV jacks partition
+    // page's CV holes under it, and this module\'s five CV jacks partition
     // EXACTLY by section (u_atten_cv | a_atten_cv + a_curve_cv | b_atten_cv +
     // b_curve_cv). Clustering A and B onto one `shape` page would pile four of
     // those five jacks into one band and lose the only structure the rear has.

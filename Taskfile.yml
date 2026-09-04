@@ -1173,6 +1173,12 @@ tasks:
       [read-only] Recompute the WebGL content-hash and report whether a matching
       attestation already exists (so you know if a re-attest is needed after a
       pull/rebase). Runs nothing. `-- --list` prints the full hash basis.
+
+      ⚠ RUN THIS RATHER THAN PREDICTING. The normalizer strips `docs`,
+      `controlFamilies`, `face` and `noUserControl` and NOTHING ELSE, so "it is
+      only a doc change" is a claim about the FIELD, not the FILE — removing any
+      other def field from a basis file moves the hash. See the header of
+      scripts/webgl-attest-hash.sh for the two times this was predicted wrong.
     cmds:
       - |
         if [ "{{.CLI_ARGS}}" = "--list" ]; then

@@ -58,7 +58,6 @@ export const MOOG904B_RANGE_OPTIONS = [
 export const moog904bDef: AudioModuleDef = {
   type: 'moog904b',
   palette: { top: 'Moog System 35/55 Clones', sub: 'Moog System 35/55 Clones' },
-  card: 'Moog904bVcfCard',
   domain: 'audio',
   label: '904b vcf',
   category: 'filters',
@@ -112,7 +111,7 @@ export const moog904bDef: AudioModuleDef = {
   // number the control already is. The rule the pair states: PROMOTE names that
   // exist; never INVENT names to justify a nicer cell.
   //
-  // `glyph: 'meter'` is RUN, not argued: `audio` is this module's only audio
+  // `glyph: 'meter'` is RUN, not argued: `audio` is this module\'s only audio
   // output, so `primaryAudioOutPortId` resolves it and the binding is LIVE and
   // TOTAL — no second signal path for the meter to misrepresent, which is what
   // took the meter off `moog994`.

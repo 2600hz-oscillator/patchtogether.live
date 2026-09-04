@@ -164,7 +164,7 @@ export const froggerDef: AudioModuleDef = {
     // ('voice'/'signal') or name a declared page, or it appends as a stray band
     // after every page and the rear totality gate cannot see it
     // (module-face-lint). So the four steering triggers take the leading
-    // 'signal' slot — they ARE the module's signal inputs, the thing you play
+    // 'signal' slot — they ARE the module\'s signal inputs, the thing you play
     // it with — and START takes the 'run' page's own slot, where it sits beside
     // the TIME knob that shares that band. That is the module described in two
     // sections rather than five anonymous gates.
@@ -178,7 +178,7 @@ export const froggerDef: AudioModuleDef = {
 
   docs: {
     explanation:
-      "A playable Frogger arcade game wrapped as a CV/gate module — the gameplay IS the patch's modulation source. A frog at the bottom hops up a 13-row board (grass banks → a 5-lane road of cars/lorries → a river of logs/turtles → the five home pads at the top), avoiding traffic and drowning, before a per-life timer runs out. You DON'T touch the card to play — you patch gates into its four direction inputs (a sequencer, clock, LFO-through-comparator, or manual gate buttons drive the frog), and the game emits gate pulses on the events it produces: every home pad reached, every death, and every level cleared. So a clock pattern steering the frog becomes a generative trigger source whose rhythm depends on how the game unfolds. The game auto-starts once when the module is first placed (a synthetic START pulse) so you see it running immediately; the START input restarts it any time. The board renders on a 2D canvas at the head of the module's dock faceplate (and on the legacy card), and there is no video output port — FROGGER speaks in gates, and the board is how you read what it is saying. The TIME knob sets the per-life countdown ceiling: lowering it shortens the life already in progress, so it is the direct control over how often DEAD fires when nothing is steering the frog.",
+      "A playable Frogger arcade game wrapped as a CV/gate module — the gameplay IS the patch's modulation source. A frog at the bottom hops up a 13-row board (grass banks → a 5-lane road of cars/lorries → a river of logs/turtles → the five home pads at the top), avoiding traffic and drowning, before a per-life timer runs out. you DON'T touch the faceplate to play — you patch gates into its four direction inputs (a sequencer, clock, LFO-through-comparator, or manual gate buttons drive the frog), and the game emits gate pulses on the events it produces: every home pad reached, every death, and every level cleared. So a clock pattern steering the frog becomes a generative trigger source whose rhythm depends on how the game unfolds. The game auto-starts once when the module is first placed (a synthetic START pulse) so you see it running immediately; the START input restarts it any time. The board renders on a 2D canvas at the head of the module\'s dock faceplate, and there is no video output port — FROGGER speaks in gates, and the board is how you read what it is saying. The TIME knob sets the per-life countdown ceiling: lowering it shortens the life already in progress, so it is the direct control over how often DEAD fires when nothing is steering the frog.",
     inputs: {
       up_gate:
         "Move the frog UP one row on each rising edge — one hop toward the home pads per pulse (the move only fires on the gate's leading edge, so a held-high gate hops once, not continuously).",

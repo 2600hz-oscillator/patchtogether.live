@@ -826,7 +826,7 @@ export const quadralogicalDef: VideoModuleDef = {
       why:
         'determinism toggle for deterministic capture: at >=0.5 draw() is a no-op so BOTH FBOs '
         + '(the MIX and the 2x2 preview tile) hold their last frame. No port targets it — asserted '
-        + "by this entry's own `writer: 'internal'` clause — and no card control sets it. Ranking "
+        + "by this entry's own `writer: 'internal'` clause — and no faceplate control sets it. Ranking "
         + 'it would put a continuous rotary over a harness hook on the faceplate of a mixer.',
     },
   ],
@@ -1056,7 +1056,7 @@ export const quadralogicalDef: VideoModuleDef = {
       keyB: "CV that modulates Key B, the blue channel of the shared chroma-key colour used by CHROMA edges.",
     },
     outputs: {
-      out: "The MIX composite: the joystick-weighted, per-edge-effect blend of the four inputs. This is the canonical surface and what the on-card preview shows.",
+      out: "The MIX composite: the joystick-weighted, per-edge-effect blend of the four inputs. This is the canonical surface and what the faceplate's preview shows.",
       preview: "A 2x2 monitor tile of the four RAW inputs (in1 top-left, in2 top-right, in3 bottom-left, in4 bottom-right) with thin separator lines, for cueing sources independent of the mix.",
     },
     controls: {
@@ -1080,7 +1080,7 @@ export const quadralogicalDef: VideoModuleDef = {
       keyG: "Key G (0 to 1, default 1): green channel of the shared chroma-key colour; the default green-screen key.",
       keyB: "Key B (0 to 1): blue channel of the shared chroma-key colour matched by CHROMA edges.",
       invert: "Inv (0 to 1): global key inversion — flips which side of the CHROMA/LUMA key threshold is kept versus revealed.",
-      freeze: "Freeze (0 to 1, hidden): a determinism toggle for deterministic capture — at >=0.5 the renderer holds the last frame and stops drawing; no card control.",
+      freeze: "Freeze (0 to 1, hidden): a determinism toggle for deterministic capture — at >=0.5 the renderer holds the last frame and stops drawing; no faceplate control.",
     },
   },
   factory(ctx, node): VideoNodeHandle {

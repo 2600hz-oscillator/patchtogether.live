@@ -198,7 +198,7 @@ export const seqtrisDef: AudioModuleDef = {
     // is `{num, numbers?, testid?}` with NO `nodeId`, so a glyph component
     // cannot resolve a graph node, cannot reach `card-api`, and would draw one
     // identical picture on every seqtris in the rack forever. `hasVideoSurface`
-    // is `domain === 'video'`; this is audio. So: none — and the tile's picture
+    // is `domain === 'video'`; this is audio. So: none — and the tile\'s picture
     // comes from the module's own `tileBody` instead.
     glyph: 'none',
 
@@ -238,8 +238,8 @@ export const seqtrisDef: AudioModuleDef = {
       'An 8x8 Tetris you play on a Novation Launchpad, wired into the rack as a clocked note '
       + 'source. The eight-by-eight pad grid IS the well, and the right-hand scene column is the '
       + 'controller: top to bottom, RESET BOARD, two dead buttons, DROP PIECE, ROTATE LEFT, '
-      + 'ROTATE RIGHT, MOVE LEFT, MOVE RIGHT. Press CONNECT on the card, pick your Launchpad, and '
-      + 'the board appears on the pads in the classic piece colours; the card shows the same '
+      + 'ROTATE RIGHT, MOVE LEFT, MOVE RIGHT. Press CONNECT on the faceplate, pick your Launchpad, and '
+      + 'the board appears on the pads in the classic piece colours; the faceplate shows the same '
       + 'picture and the same eight buttons, so you can play it without hardware too. The piece '
       + 'set is the normal seven with two shapes cut down for the short well: the straight line '
       + 'is two cells instead of four, and the two L pieces are three-cell corners, so nothing is '

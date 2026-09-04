@@ -95,7 +95,6 @@ export const MOOG904A_RANGE_OPTIONS: readonly ParamOption[] = [
 export const moog904aDef: AudioModuleDef = {
   type: 'moog904a',
   palette: { top: 'Moog System 35/55 Clones', sub: 'Moog System 35/55 Clones' },
-  card: 'Moog904aVcfCard',
   domain: 'audio',
   label: '904a vcf',
   category: 'filters',

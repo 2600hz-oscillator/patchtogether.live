@@ -62,7 +62,6 @@ export const featurecvDef: AudioModuleDef = {
   domain: 'audio',
   label: 'feature cv',
   category: 'modulation',
-  card: 'FeaturecvCard',
 
   inputs: [
     // The signal under analysis — plain audio PASSTHROUGH into the input trim

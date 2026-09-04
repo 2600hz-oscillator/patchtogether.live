@@ -407,7 +407,7 @@ export const spirographsDef: VideoModuleDef = {
         'the VRT capture harness writes it to hold the last frame; this module animates by '
         + 'construction (every spiro centre drifts and bounces as a pure function of frame.time), '
         + 'so without it the faceplate scenes are moving targets and no baseline can settle. '
-        + 'Nothing on the card, the faceplate or the patch surface exposes it.',
+        + 'Nothing on the faceplate, the faceplate or the patch surface exposes it.',
     },
   ],
 
@@ -623,7 +623,7 @@ export const spirographsDef: VideoModuleDef = {
       s3_yOffset: "Spiro 3 Y (-1..1): nudges the drift home position vertically (center still drifts and bounces).",
       s3_thickness: "Spiro 3 Width (0.5-12 px): stroke line width, drawn with round joins and caps.",
       s3_chroma: "Spiro 3 Hue (0-1 colorwheel): the curve's color in the COLOR output (MONO and CANDY ignore it).",
-      freeze: "Freeze (0/1, default 0): a hidden determinism toggle with NO control anywhere — not on the card, not on the faceplate, not on the patch surface. At 0.5 or above the draw step is a no-op, so every output holds its last frame instead of going black. It exists because this module animates by construction: each spiro's centre drifts and bounces off the frame edges as a function of elapsed time, so two captures of the same settings are never the same pixels. The visual-regression harness writes it before comparing a screenshot; nothing else ever does.",
+      freeze: "Freeze (0/1, default 0): a hidden determinism toggle with NO control anywhere — not on the faceplate, not on the faceplate, not on the patch surface. At 0.5 or above the draw step is a no-op, so every output holds its last frame instead of going black. It exists because this module animates by construction: each spiro's centre drifts and bounces off the frame edges as a function of elapsed time, so two captures of the same settings are never the same pixels. The visual-regression harness writes it before comparing a screenshot; nothing else ever does.",
     },
   },
   factory(ctx, node): VideoNodeHandle {

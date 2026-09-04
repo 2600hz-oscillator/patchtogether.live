@@ -632,7 +632,7 @@ export const grainsOfVisionDef: VideoModuleDef = {
     {
       param: 'freeze',
       writer: 'internal',
-      why: "A determinism toggle for VRT capture, with NO control anywhere - not on the card, not on the faceplate, not on the patch surface. At 0.5 or above draw() is a no-op so the history ring, the feedback buffer and the reverb accumulator all hold their last state. This module cannot be pinned by a clock: its picture is a function of how many frames have been integrated, not of elapsed time. The visual-regression harness writes it before comparing a screenshot; nothing else ever does.",
+      why: "A determinism toggle for VRT capture, with NO control anywhere - not on the faceplate, not on the faceplate, not on the patch surface. At 0.5 or above draw() is a no-op so the history ring, the feedback buffer and the reverb accumulator all hold their last state. This module cannot be pinned by a clock: its picture is a function of how many frames have been integrated, not of elapsed time. The visual-regression harness writes it before comparing a screenshot; nothing else ever does.",
     },
   ],
 
@@ -793,7 +793,7 @@ export const grainsOfVisionDef: VideoModuleDef = {
       rev_size: "CV that modulates Rev Sz (reverb spatial spread / room size), swept linearly over 0..1.",
       rev_decay: "CV that modulates Rev Dec (reverb tail length / temporal persistence), swept linearly over 0..0.99.",
       rev_diffuse: "CV that modulates Rev Dif (reverb tap scatter — how isotropic the smear is), swept linearly over 0..1.",
-      composite: "CV that SELECTS Comp (the composite mode) using a discrete cvScale, snapping to the 5 modes (off / density / displace / size / rate). Inert while B is unpatched. NOTE the discrete cvScale REPLACES the control rather than offsetting it: while a cable is patched here the Comp buttons on the card and the faceplate are inert, and a cable resting at 0 V selects mode 2 (displace), not the dial's setting.",
+      composite: "CV that SELECTS Comp (the composite mode) using a discrete cvScale, snapping to the 5 modes (off / density / displace / size / rate). Inert while B is unpatched. NOTE the discrete cvScale REPLACES the control rather than offsetting it: while a cable is patched here the Comp buttons on the faceplate and the faceplate are inert, and a cable resting at 0 V selects mode 2 (displace), not the dial's setting.",
       comp_amount: "CV that modulates Cmp Amt (composite modulation depth), swept linearly over 0..1.",
     },
     outputs: {
@@ -820,7 +820,7 @@ export const grainsOfVisionDef: VideoModuleDef = {
       rev_dry: "Rev Dry (0/1, default 0): hard bypass of the reverb block. At 1 the block is a transparent passthrough regardless of Rev Mix.",
       composite: "Comp (discrete 0..4, default 1 = density): how a patched B modulates A's grains — off, density (B brightness thins/thickens grains), displace (B warps where grains read from), size (B scales grain size), rate (B scrubs the per-region history time). Inert while B is unpatched.",
       comp_amount: "Cmp Amt (0..1, default 0.7): the depth of the COMPOSITE modulation. 0 leaves B inert even when a mode is selected; higher pushes B's influence toward extreme.",
-      freeze: "Freeze (0/1, default 0): hidden determinism toggle. At >=0.5 draw() is a no-op so the ring + output hold their last frame for deterministic VRT capture. No card control.",
+      freeze: "Freeze (0/1, default 0): hidden determinism toggle. At >=0.5 draw() is a no-op so the ring + output hold their last frame for deterministic VRT capture. no faceplate control.",
     },
   },
 

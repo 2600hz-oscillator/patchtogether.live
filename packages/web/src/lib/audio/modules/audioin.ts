@@ -123,7 +123,6 @@ export interface AudioInAttachPayload {
 export const audioInDef: AudioModuleDef = {
   type: 'audioIn',
   palette: { top: 'Audio modules', sub: 'I/O' },
-  card: 'AudioinCard',
   domain: 'audio',
   label: 'audio in',
   category: 'sources',
@@ -397,7 +396,7 @@ export const audioInDef: AudioModuleDef = {
         return undefined;
       },
       /**
-       * The card's only handle into the engine module's runtime. Three keys:
+       * The card's only handle into the engine module\'s runtime. Three keys:
        *
        *   'attach'  → payload: AudioInAttachPayload | null
        *               attach a new MediaStream (with channelCount) or

@@ -125,7 +125,6 @@ export function buildGateCurve(threshold = GATE_THRESHOLD, len = 1024): Float32A
 export const moog912Def: AudioModuleDef = {
   type: 'moog912',
   palette: { top: 'Moog System 35/55 Clones', sub: 'Moog System 35/55 Clones' },
-  card: 'Moog912Card',
   domain: 'audio',
   label: '912 envelope follower',
   category: 'modulation',
@@ -193,7 +192,7 @@ export const moog912Def: AudioModuleDef = {
   face: {
     order: ['sensitivity', 'smoothing'],
 
-    // ⚠ 'none' IS FORCED, NOT CHOSEN. This module's outputs are `env` (cv) and
+    // ⚠ 'none' IS FORCED, NOT CHOSEN. This module\'s outputs are `env` (cv) and
     // `gate` (gate) — there is no `type: 'audio'` output at all — so
     // `primaryAudioOutPortId` returns NULL and 'meter', 'waveform', 'envelope'
     // and 'algorithm' ALL resolve to `{kind:'static'}`, the dead-glyph state

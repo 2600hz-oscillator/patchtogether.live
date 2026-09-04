@@ -120,7 +120,7 @@ export const qbrtDef: AudioModuleDef = {
   //                always-on resonant filter, then the ping excitation path.
   //
   // glyph 'scope' (a live analyser trace on the L output), NOT the FX-family
-  // default 'meter': this module's identity is the RING — a decaying sinusoid
+  // default 'meter': this module\'s identity is the RING — a decaying sinusoid
   // whose pitch is CUTOFF and whose length is RESONANCE × PING DEC. A trace
   // shows both of those; an RMS meter shows neither, and QBRT has no wet/dry
   // balance for a meter to arbitrate. (A param-derived FREQUENCY-RESPONSE

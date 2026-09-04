@@ -286,7 +286,7 @@ export const reshaperDef: VideoModuleDef = {
       yDisp: "yDisp — CV input that modulates the Y Disp control (linear), driving the vertical luma-displacement amount from automation or another module.",
     },
     outputs: {
-      out: "out — the remapped RGB video (the rendered FBO texture, same image shown in the on-card preview). Chain it into any downstream video module.",
+      out: "out — the remapped RGB video (the rendered FBO texture, same image shown in the faceplate's preview). Chain it into any downstream video module.",
     },
     controls: {
       intensity: "Intensity (0..2, default 1) — overall output gain on the remapped video; 0 blacks the output, 1 is unity, above 1 boosts toward clipping (the result is clamped).",

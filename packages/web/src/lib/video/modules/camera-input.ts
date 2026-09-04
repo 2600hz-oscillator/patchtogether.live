@@ -312,7 +312,7 @@ export const cameraInputDef: VideoModuleDef = {
     },
     controls: {
       gain: "Gain (linear, 0 to 2, default 1). RGB multiplier applied to the camera frame in the shader (src.rgb * gain, unclamped): 0 = black, 1 = unity, 2 = doubled (bright/clipped) RGB. CV-modulatable via the gain input.",
-      enabled: "On (discrete 0/1, default 1 = on). Off (Pause) stops the camera track to release the hardware and renders the idle navy pattern; on (Resume) re-requests the stream. The PARAM owns that, not any one button — the card's Pause/Resume, the faceplate's ON cell and a collaborator's toggle all reach the hardware identically, because the card acts on the value rather than on the click.",
+      enabled: "On (discrete 0/1, default 1 = on). Off (Pause) stops the camera track to release the hardware and renders the idle navy pattern; on (Resume) re-requests the stream. The PARAM owns that, not any one button — the card's Pause/Resume, the faceplate\'s ON cell and a collaborator's toggle all reach the hardware identically, because the card acts on the value rather than on the click.",
       mirror: "Mirror (discrete 0/1, default 1 = on). Horizontally flips the frame for a selfie mirror (shader thresholds uMirror at 0.5). Settable from the on-card Mirror button or held high by the mirror gate input. The param is shared across collaborators.",
       fillMode: "Fill (discrete 0/1, default 1 = fill). Aspect-fit mode set by the card's Fit toggle: 1 = Fill/cover-crop (fills the canvas, crops the off-axis, no bars), 0 = Letterbox/contain (fits the whole frame with black bars). Neither ever distorts the source aspect; when the source already matches the output aspect the card shows a non-interactive Native badge instead.",
     },

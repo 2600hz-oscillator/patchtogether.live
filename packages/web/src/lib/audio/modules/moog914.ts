@@ -64,7 +64,6 @@ const SECTIONS_LOW_TO_HIGH: readonly string[] = [
 export const moog914Def: AudioModuleDef = {
   type: 'moog914',
   palette: { top: 'Moog System 35/55 Clones', sub: 'Moog System 35/55 Clones' },
-  card: 'Moog914Card',
   domain: 'audio',
   label: '914 extended fixed filter bank',
   category: 'filters',

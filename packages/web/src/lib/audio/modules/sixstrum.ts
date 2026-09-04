@@ -376,7 +376,7 @@ export const sixstrumDef: AudioModuleDef = {
       muteDepth:
         "MUTE — how much EXTRA amplitude choke the MUTE gates apply on top of the string damping they already cause (0 = the damped string alone, which still drops to a ~50 ms decay; 1 = choked all the way to silence while the gate is held). It sets how dead the 'finger on the string' reads; the choke follows the gate through a ~8 ms smoother.",
       strumSpread:
-        "STRUM — how ROLLED a strummed chord is: 0 strikes all six strings together (a block chord); at 1 the strike walks across the strings over ~45 ms (a rolled strum, or a harp gliss). It applies to the STRUM trigger inputs (and to the card's STRUM button); DIR chooses which end it starts from.",
+        "STRUM — how ROLLED a strummed chord is: 0 strikes all six strings together (a block chord); at 1 the strike walks across the strings over ~45 ms (a rolled strum, or a harp gliss). It applies to the STRUM trigger inputs (and to the faceplate's STRUM button); DIR chooses which end it starts from.",
       strumDir:
         "DIR — strum direction: 0 DOWN (low string first), 1 UP (high string first), 2 ALTERNATE (flips on every successive strum, like real up/down picking). It only reorders the STRUM stagger — with STRUM at 0 all three sound identical.",
       spread:

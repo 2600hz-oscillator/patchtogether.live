@@ -65,7 +65,6 @@ export const electraControlDef: MetaModuleDef = {
   domain: 'meta',
   label: 'electra control',
   category: 'tools',
-  card: 'ElectraControlCard',
   inputs: [],
   outputs: [],
   params: [],

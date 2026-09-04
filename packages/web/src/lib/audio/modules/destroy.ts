@@ -166,7 +166,7 @@ export const destroyDef: AudioModuleDef = {
     },
     outputs: {
       audio:
-        "The processed (destroyed) signal blended with the dry input per WET. It is UNITY-GAIN in level terms and that is worth knowing before you reach for a meter to set it up: across DECIMATE's entire 1..64 travel the output RMS moves 0.12 dB on broadband noise and 0.00 dB on a sine, so a level meter is blind to the module's primary control (which is why the faceplate's glyph is a TRACE, not a meter). BITS moves it a little more (1.8 dB) and non-monotonically. The signal is also never bit-identical sample to sample even inside a held plateau, because the WET smoothing leaves a residual dry path 89.8 dB down: compare output samples with a tolerance, never for equality.",
+        "The processed (destroyed) signal blended with the dry input per WET. It is UNITY-GAIN in level terms and that is worth knowing before you reach for a meter to set it up: across DECIMATE's entire 1..64 travel the output RMS moves 0.12 dB on broadband noise and 0.00 dB on a sine, so a level meter is blind to the module\'s primary control (which is why the faceplate\'s glyph is a TRACE, not a meter). BITS moves it a little more (1.8 dB) and non-monotonically. The signal is also never bit-identical sample to sample even inside a held plateau, because the WET smoothing leaves a residual dry path 89.8 dB down: compare output samples with a tolerance, never for equality.",
     },
     controls: {
       decimate:

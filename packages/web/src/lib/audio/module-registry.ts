@@ -143,12 +143,6 @@ export interface AudioModuleDef {
    */
   palette?: PaletteCategory;
   /**
-   * Card-component basename override (no '.svelte'), e.g. 'AudioinCard'.
-   * ONLY needed when the default convention `PascalCase(type)+'Card'` doesn't
-   * match the actual component filename. Resolved by $lib/ui/modules-card-map.
-   */
-  card?: string;
-  /**
    * Living-docs: co-located AUTHORED prose (overview + per-port + per-control).
    * See ModuleDocs. Drift-checked by the docs gate; the GENERATED I/O reference
    * is derived from inputs/outputs/params by io-explain, NOT authored here.

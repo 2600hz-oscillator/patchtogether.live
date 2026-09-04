@@ -125,7 +125,7 @@ import {
 /** How many channels the MIDI protocol has. A PROTOCOL CONSTANT, not a
  *  population count — MIDI 1.0 puts the channel in the low nibble of the
  *  status byte, so it is 16 by the wire format and cannot drift. Exported so
- *  the channel filter, the card's dropdown and the faceplate's channel roster
+ *  the channel filter, the card's dropdown and the faceplate\'s channel roster
  *  all read the same number from one place instead of re-typing `16`.
  *
  *  ⚠ RE-EXPORTED, NOT DECLARED. It now lives on `midi-cv-buddy.ts`, whose own
@@ -151,7 +151,7 @@ export function expandLaneChannels(channels: number[] | null): Set<number> | nul
 
 // ---------------- The CHANNEL choice, as one roster ----------------
 //
-// The card's dropdown and the faceplate's selector cell offer the SAME
+// The card's dropdown and the faceplate\'s selector cell offer the SAME
 // seventeen choices — ALL, then the sixteen channels displayed 1-based the way
 // every piece of hardware labels them while the wire format is 0-based. The
 // roster is BUILT from `MIDI_CHANNEL_COUNT` rather than written out, so there is
@@ -595,11 +595,11 @@ export const midiLaneDef: AudioModuleDef = {
 
   docs: {
     explanation:
-      "A per-channel instrument bus that demuxes ONE MIDI channel (or a small set of channels) out of a hardware sequencer into everything the rack needs to play that track — pitch, gate, velocity, two assignable CC taps, a by-note-number gate, AND a polyphonic chord output. The intended workflow is DAW-style 'one MIDI channel = one instrument': assign each track of an external sequencer (Reliq, Cre8audio Programm, Empress ZOIA, …) to its own MIDI channel, drop one MIDI LANE per instrument, and point each lane at its track's channel. It is the channel-aware successor of MIDI-CV-BUDDY: the mono pitch/gate/velocity behave the same (a voice-priority winner of the held stack), but a multi-select channel filter, a learn-assignable CC bank, a by-note gate, and an always-live poly output are added. The card's `mode` setting governs only the MONO outputs — 'mono' collapses a held chord to one winning note on PITCH/GATE, 'poly' leaves those quiet — while the POLY output carries the whole held chord in BOTH modes. Device, channel set, voice priority, retrigger, mode, CC# assignments and the note# are all discrete card settings saved in the patch (no audio-side knobs). The SAME outputs drive video modules for free via the cross-domain CV/gate bridge.",
+      "A per-channel instrument bus that demuxes ONE MIDI channel (or a small set of channels) out of a hardware sequencer into everything the rack needs to play that track — pitch, gate, velocity, two assignable CC taps, a by-note-number gate, AND a polyphonic chord output. The intended workflow is DAW-style 'one MIDI channel = one instrument': assign each track of an external sequencer (Reliq, Cre8audio Programm, Empress ZOIA, …) to its own MIDI channel, drop one MIDI LANE per instrument, and point each lane at its track's channel. It is the channel-aware successor of MIDI-CV-BUDDY: the mono pitch/gate/velocity behave the same (a voice-priority winner of the held stack), but a multi-select channel filter, a learn-assignable CC bank, a by-note gate, and an always-live poly output are added. the faceplate\'s `mode` setting governs only the MONO outputs — 'mono' collapses a held chord to one winning note on PITCH/GATE, 'poly' leaves those quiet — while the POLY output carries the whole held chord in BOTH modes. Device, channel set, voice priority, retrigger, mode, CC# assignments and the note# are all discrete card settings saved in the patch (no audio-side knobs). The SAME outputs drive video modules for free via the cross-domain CV/gate bridge.",
     inputs: {},
     outputs: {
       pitch_cv:
-        "The winning held note as pitch CV in volts-per-octave (0V = C4 = MIDI 60), with pitch-bend summed in. Driven only when the card's mode is 'mono' (it follows the voice-priority winner of the held stack and latches the last note); in 'poly' mode it stays quiet and you use the POLY output instead.",
+        "The winning held note as pitch CV in volts-per-octave (0V = C4 = MIDI 60), with pitch-bend summed in. Driven only when the faceplate's mode is 'mono' (it follows the voice-priority winner of the held stack and latches the last note); in 'poly' mode it stays quiet and you use the POLY output instead.",
       gate:
         "High while any key on this lane's channel(s) is held, with a brief retrigger dip so downstream envelopes re-fire. Driven only in 'mono' mode (it sits low in 'poly' mode). Patch it into an envelope or VCA gate.",
       velocity_cv:
@@ -609,7 +609,7 @@ export const midiLaneDef: AudioModuleDef = {
       cc_b:
         "Learn-assignable Continuous-Controller tap B, a second independent 0..1 CV tap following its own card-assigned CC number — a second modulation lane alongside cc_a.",
       note_gate:
-        "A gate that fires when the SPECIFIC MIDI note number selected on the card arrives on this lane's channel(s) (defaults to GM kick, MIDI 36). It generalizes the per-device drum-router pattern (e.g. the Programm's ch10 by-note triggers) through one configurable port — patch it into a drum voice's strike or any trigger input.",
+        "A gate that fires when the SPECIFIC MIDI note number selected on the faceplate arrives on this lane's channel(s) (defaults to GM kick, MIDI 36). It generalizes the per-device drum-router pattern (e.g. the Programm's ch10 by-note triggers) through one configurable port — patch it into a drum voice's strike or any trigger input.",
       poly:
         "A polyphonic pitch+gate bus (up to 10 voices) that ALWAYS carries the full held chord, in both 'mono' and 'poly' modes. Wire it to a poly-aware voice — DX7, CUBE, or a module with a poly input — and the chord plays straight away with no mode toggle. This is the real polyphonic source chain: MIDI LANE.poly → poly synth produces audible chords (it does not need the mono outputs).",
     },

@@ -307,7 +307,7 @@ export const slewSwitchDef: AudioModuleDef = {
       slew2: "Channel 2 slew time constant, log 0.001..5 s (default 0.5 s) — the same one-pole tau as S1 (63% in tau, ~99% in 5x tau). Sums with the S2 CV input.",
       slew3: "Channel 3 slew time constant, log 0.001..5 s (default 0.5 s) — the same one-pole tau as S1. Sums with the S3 CV input.",
       slew4: "Channel 4 slew time constant, log 0.001..5 s (default 0.5 s) — the same one-pole tau as S1. Sums with the S4 CV input.",
-      mode: "The switch scan pattern (a cycling button on the card): FWD = forward 0→1→2→3→0…, PND = pendulum / ping-pong 0→1→2→3→2→1→0…, RND = random (a new channel each clock, never repeating the previous). Default FWD.",
+      mode: "The switch scan pattern (a cycling button on the faceplate): FWD = forward 0→1→2→3→0…, PND = pendulum / ping-pong 0→1→2→3→2→1→0…, RND = random (a new channel each clock, never repeating the previous). Default FWD.",
       length: "How many channels the switch scans, 1-4 (a cycling LEN button). A length of 2, for example, ping-pongs/cycles only channels 0-1 and ignores 2-3. Default 4.",
       xfadeTime: "The equal-gain crossfade time applied to the SWITCHED output when the selection changes, log 0.001..2 s (default 0.05 s). Short = a tight switch, long = a slow morph between the two channels' values. It is the only control that shapes what happens BETWEEN two channels rather than within one.",
     },

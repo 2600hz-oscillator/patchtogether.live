@@ -563,7 +563,7 @@ export const CV_BUDDY_PPQN_PARAM: ParamDef = {
     why:
       'a clock divides by a whole number of pulses per quarter note, and these seven are the divisions the '
       + 'generator and the downstream gear share (24 is DIN-sync). The forty-one integers in between are not '
-      + 'unnamed states — they are values this module has no meaning for: the card could never produce them, '
+      + 'unnamed states — they are values this module has no meaning for: the module could never produce them, '
       + 'the scheduler would accept them, and a rack holding one would clock Pam\'s at a rate nothing else in '
       + 'the room agrees on.',
   },
@@ -610,11 +610,8 @@ export const CV_BUDDY_FACE: ModuleFace = {
       'RUN and CLOCK are SINGLE-SOURCE: ES-9 jacks 7 and 8 are driven by the id-smallest CV Buddy '
       + 'of either kind, and every other instance is a note voice only. So on a non-primary '
       + 'instance PPQN and CLOCK OFFSET are dials wired to nothing — the scheduler they configure '
-      + 'belongs to a different node — and the legacy card has hidden them since the module '
-      + 'shipped, telling the player instead that "PPQN / clock is driven by the first CV Buddy". '
-      + 'That sentence cannot be painted on a faceplate, and the ruling it falls under is also '
-      + 'the reason it does not need to be: removing the band IS the statement, and it is '
-      + 'structure rather than text. Nothing else on this face can express the fact, because it '
+      + 'belongs to a different node — so the faceplate does not rank them at all. Removing '
+      + 'the band IS the statement, and it is structure rather than text. Nothing else on this face can express the fact, because it '
       + 'is not a property of this node at all — it changes when a DIFFERENT CV Buddy is added '
       + 'or deleted, which no ParamDef can represent.',
     peers: ['cvBuddy', 'cvBuddyMini'],
