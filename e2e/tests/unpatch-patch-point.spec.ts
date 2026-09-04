@@ -28,12 +28,13 @@
 //      sits at the far edge of the screen.
 //   4) An UNPATCHED point opens NO unpatch menu (its pre-existing right-click
 //      behaviour is untouched).
-//   5) THE LEGACY PATCH PANEL gets the same affordance on BOTH of its patch
-//      point surfaces — the rear-view back-panel jacks and the front
-//      drill-down port rows — including the precedence rule on a gate INPUT
-//      row (patched → unpatch menu; unpatched → the shipped MIDI-assign menu).
+//   5) THE PATCH PANEL gets the same affordance on BOTH of its patch point
+//      surfaces — the rear-view back-panel jacks and the front drill-down
+//      port rows (shared components; the shell tile mounts both) — including
+//      the precedence rule on a gate INPUT row (patched → unpatch menu;
+//      unpatched → the shipped MIDI-assign menu).
 //
-// Runs on /rack?shell=legacy&seed=none (faceplates) + /rack (cards) — the normal e2e lane,
+// Runs on /rack (both halves — the same default shell) — the normal e2e lane,
 // no DB/relay. Multiplayer convergence + undo of the removal op itself are
 // pinned as pure unit tests against a real syncedStore peer pair
 // (packages/web/src/lib/ui/unpatch-menu.test.ts) — the removal reuses the
@@ -64,7 +65,7 @@ function colPos(ch: number): { x: number; y: number } {
 
 async function gotoWorkflow(page: Page): Promise<void> {
   await page.goto('/rack');
-  // 15s FIRST-LOAD budget — SvelteKit dev compiles /rack?shell=legacy&seed=none on demand, so the
+  // 15s FIRST-LOAD budget — SvelteKit dev compiles /rack on demand, so the
   // very first navigation of a run pays that compile (the CI-validated number
   // workflow-rear-card.spec.ts and workflow-shell.spec.ts already use).
   await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: 20_000 });
@@ -459,13 +460,18 @@ test('rear card: a fanned-out OUTPUT lists every cable + "Unpatch all (N)", stay
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
-// (4) the LEGACY PATCH PANEL — back-panel jacks + front drill-down rows
+// (4) the PATCH PANEL — back-panel jacks + front drill-down rows (the shared
+//     component; the shell tile mounts the rear back panel AND the lane-rail
+//     drill-down, so both legs run on the default shell).
+//     ⚠ The two test TITLES below still say "legacy patch panel": the
+//     waitfortimeout ledger keys on test titles, so the historical name is
+//     pinned until those waits convert. The BOOT is the default shell.
 // ═══════════════════════════════════════════════════════════════════════════
 
 /** Spawn KRIA → ADSR with one pre-wired gate edge (the patch-panel
  *  jack-indicator fixture: two light, non-WebGL PatchPanel cards). */
 async function spawnSeqAdsrWired(page: Page): Promise<void> {
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await page.waitForLoadState('networkidle');
   await spawnPatch(
     page,

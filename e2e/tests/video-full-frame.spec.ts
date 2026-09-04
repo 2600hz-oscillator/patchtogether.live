@@ -20,8 +20,28 @@
 import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 import { BOOT_MS, SLOW_BOOT_TEST_TIMEOUT_MS } from '../_helpers/boot-budget';
+import { waitFrames } from '../_helpers/frames';
 
 const TRIANGLE_PARAMS = { shape: 2, tile: 0, rotate: 0, zoom: 2.2 };
+
+/** Open a video module's dock full-view pane (the output body is
+ *  `fullViewBody`, dock-only) and return the PANE locator. */
+async function openPane(page: Page, id: string, bodyTestId: string) {
+  await page.waitForFunction(
+    () =>
+      typeof (globalThis as unknown as { __openDockFullView?: unknown }).__openDockFullView ===
+      'function',
+    undefined,
+    { timeout: 30_000 },
+  );
+  await page.evaluate(
+    (i) => (globalThis as unknown as { __openDockFullView: (x: string) => void }).__openDockFullView(i),
+    id,
+  );
+  const pane = page.locator(`[data-testid="dock-fullview-pane"][data-pane-node="${id}"]`);
+  await expect(pane.getByTestId(bodyTestId)).toBeVisible({ timeout: 60_000 });
+  return pane;
+}
 
 async function setup(page: Page): Promise<string[]> {
   const errors: string[] = [];
@@ -29,7 +49,7 @@ async function setup(page: Page): Promise<string[]> {
   page.on('console', (m) => {
     if (m.type() === 'error') errors.push(m.text());
   });
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await page.waitForLoadState('networkidle');
   return errors;
 }
@@ -44,61 +64,6 @@ async function readFullFrame(page: Page, nodeId: string): Promise<unknown> {
   }, nodeId);
 }
 
-/** Right-click the surface -> Full Frame, assert chrome hidden + state, then
- *  double-click to exit. `surfaceTestId` is the right-clickable video element;
- *  `cardTestId` is the card root; `wrapTestId` is the expanding wrapper;
- *  `nodeId` is the spawned node's id (for the persistence check). */
-async function exercise(
-  page: Page,
-  cardTestId: string,
-  surfaceTestId: string,
-  wrapTestId: string,
-  nodeId: string,
-): Promise<void> {
-  const card = page.locator(`[data-testid="${cardTestId}"]`);
-  await expect(card, `${cardTestId} present`).toHaveCount(1);
-  const surface = page.locator(`[data-testid="${surfaceTestId}"]`);
-  await expect(surface, `${surfaceTestId} present`).toHaveCount(1);
-
-  // Let any rAF blit tick.
-  await page.waitForTimeout(300);
-
-  // Right-click the video surface -> canvas menu with a Full Frame item.
-  await surface.click({ button: 'right' });
-  const menu = page.locator('[data-testid="video-canvas-context-menu"]');
-  await expect(menu, 'canvas context menu opened').toBeVisible();
-  const ffItem = page.locator('[data-testid="ctx-full-frame"]');
-  await expect(ffItem, 'Full Frame item present').toBeVisible();
-  await ffItem.click();
-
-  // Card gains .full-frame + the data attribute flips true.
-  await expect(card, 'card entered full-frame').toHaveClass(/full-frame/);
-  await expect(card).toHaveAttribute('data-full-frame', 'true');
-
-  // The wrap expands to fill the card.
-  const wrap = page.locator(`[data-testid="${wrapTestId}"]`);
-  await expect(wrap, 'wrap gained full-frame').toHaveClass(/full-frame/);
-
-  // The card's own Svelte Flow handles are visually hidden (opacity:0 /
-  // pointer-events:none) but still present in the DOM (cables stay
-  // connected — we hide, not remove).
-  const handles = card.locator('.svelte-flow__handle');
-  const handleCount = await handles.count();
-  expect(handleCount, 'handles still in DOM while full-frame').toBeGreaterThan(0);
-  const firstHandle = handles.first();
-  await expect(firstHandle).toHaveCSS('opacity', '0');
-  await expect(firstHandle).toHaveCSS('pointer-events', 'none');
-
-  // Persisted to node.data.fullFrame.
-  expect(await readFullFrame(page, nodeId), 'fullFrame persisted true').toBe(true);
-
-  // Double-click the card exits full-frame.
-  await card.dblclick();
-  await expect(card, 'card exited full-frame').not.toHaveClass(/full-frame/);
-  await expect(card).toHaveAttribute('data-full-frame', 'false');
-  expect(await readFullFrame(page, nodeId), 'fullFrame persisted false').toBe(false);
-}
-
 test.describe('full-frame — VIDEO OUT + VIDEOBOX + BENTBOX', () => {
   test('VIDEO OUT: right-click -> Full Frame, dblclick exits', async ({ page }) => {
     const errors = await setup(page);
@@ -110,20 +75,31 @@ test.describe('full-frame — VIDEO OUT + VIDEOBOX + BENTBOX', () => {
       ],
       [{ id: 'e1', from: { nodeId: 'src', portId: 'out' }, to: { nodeId: 'out', portId: 'in' }, sourceType: 'mono-video', targetType: 'video' }],
     );
-    await expect(page.locator('[data-testid="video-out-card"]')).toHaveCount(1);
-    await exercise(page, 'video-out-card', 'video-out-canvas', 'video-out-fs-wrap', 'out');
+    // The output body (`videoout-face-output`, `fullViewBody`) carries the
+    // whole mode: right-click the face picture → Full Frame; the body root
+    // gains `.full-frame` and the SAME `node.data.fullFrame` key persists.
+    // (The card's handles-hidden chrome died with the card — the lane tile's
+    // handles are untouched by a dock mode.)
+    const pane = await openPane(page, 'out', 'videoout-face-output');
+    const body = pane.getByTestId('videoout-face-output');
+    const canvas = pane.locator('canvas[data-testid="videoout-face-canvas"]');
+    await waitFrames(page, 4); // let the rAF blit tick (frames, not ms)
+    await canvas.click({ button: 'right' });
+    await expect(page.locator('[data-testid="video-canvas-context-menu"]')).toBeVisible();
+    await page.locator('[data-testid="ctx-full-frame"]').click();
+    await expect(body, 'body entered full-frame').toHaveClass(/full-frame/);
+    expect(await readFullFrame(page, 'out'), 'fullFrame persisted true').toBe(true);
+    await body.dblclick();
+    await expect(body, 'body exited full-frame').not.toHaveClass(/full-frame/);
+    expect(await readFullFrame(page, 'out'), 'fullFrame persisted false').toBe(false);
     expect(errors).toEqual([]);
   });
 
-  test('VIDEOBOX: right-click -> Full Frame, dblclick exits', async ({ page }) => {
-    const errors = await setup(page);
-    await spawnPatch(page, [
-      { id: 'vb', type: 'videobox', position: { x: 200, y: 60 }, domain: 'video' },
-    ]);
-    await expect(page.locator('[data-testid="videobox-card"]')).toHaveCount(1);
-    await exercise(page, 'videobox-card', 'videobox-fs-wrap', 'videobox-fs-wrap', 'vb');
-    expect(errors).toEqual([]);
-  });
+  // (The VIDEOBOX legacy-card leg is gone: post-promotion the face body is
+  // videobox's ONLY surface, and the default-shell leg below — added by the
+  // wave-3 promotion as the face's own evidence — already drives the same
+  // gesture on the same shared `node.data.fullFrame` key. Two tests of one
+  // surface would be a duplicate, not coverage.)
 
   test('VIDEOBOX on the DEFAULT shell: the FACE body enters Full Frame on the SAME node.data.fullFrame key', async ({ page }) => {
     // ⚠ THE LEG THE WAVE-3 PROMOTION OWES. The legacy leg above boots
@@ -204,8 +180,37 @@ test.describe('full-frame — VIDEO OUT + VIDEOBOX + BENTBOX', () => {
       ],
       [{ id: 'e1', from: { nodeId: 'src', portId: 'out' }, to: { nodeId: 'bb', portId: 'in' }, sourceType: 'mono-video', targetType: 'video' }],
     );
-    await expect(page.locator('[data-testid="bentbox-card"]')).toHaveCount(1);
-    await exercise(page, 'bentbox-card', 'bentbox-canvas', 'bentbox-fs-wrap', 'bb');
+    // Bentbox's body paints NO full-frame class and its face canvas is a
+    // fixed 480×360 buffer — the mode's face observables are the SAME
+    // persisted `node.data.fullFrame` key and the shared menu's own state
+    // word ('Exit Full Frame' while active — `isFullFrame` reaches the item
+    // label). Assert those, and the dblclick exit.
+    const pane = await openPane(page, 'bb', 'bentbox-output-body');
+    const body = pane.getByTestId('bentbox-output-body');
+    const canvas = pane.locator('canvas[data-testid="bentbox-face-canvas"]');
+    await waitFrames(page, 4);
+    await canvas.click({ button: 'right' });
+    await expect(page.locator('[data-testid="video-canvas-context-menu"]')).toBeVisible();
+    const ffItem = page.locator('[data-testid="ctx-full-frame"]');
+    await expect(ffItem).toHaveText('Full Frame');
+    await ffItem.click();
+    expect(await readFullFrame(page, 'bb'), 'fullFrame persisted true').toBe(true);
+    // Re-open the menu: the item now reads the ACTIVE state.
+    await canvas.click({ button: 'right' });
+    await expect(ffItem, 'menu reflects the active mode').toHaveText('Exit Full Frame');
+    // Close the menu by toggling THROUGH it (never Escape — dock hazard):
+    // clicking the item exits full-frame too, which doubles as the exit path
+    // check alongside the documented dblclick gesture below.
+    await ffItem.click();
+    expect(await readFullFrame(page, 'bb'), 'fullFrame persisted false via the menu exit').toBe(false);
+    // And the dblclick gesture: enter once more, exit by double-click.
+    await canvas.click({ button: 'right' });
+    await ffItem.click();
+    expect(await readFullFrame(page, 'bb'), 'fullFrame re-entered').toBe(true);
+    await body.dblclick();
+    await expect
+      .poll(() => readFullFrame(page, 'bb'), { message: 'dblclick exits full-frame' })
+      .toBe(false);
     expect(errors).toEqual([]);
   });
 
@@ -227,25 +232,24 @@ test.describe('full-frame — VIDEO OUT + VIDEOBOX + BENTBOX', () => {
       ],
       [{ id: 'e1', from: { nodeId: 'src', portId: 'out' }, to: { nodeId: 'out', portId: 'in' }, sourceType: 'mono-video', targetType: 'video' }],
     );
-    const card = page.locator('[data-testid="video-out-card"]');
-    const wrap = page.locator('[data-testid="video-out-fs-wrap"]');
-    const canvas = page.locator('canvas[data-testid="video-out-canvas"]');
-    await expect(card).toHaveCount(1);
-    await page.waitForTimeout(300);
+    const pane = await openPane(page, 'out', 'videoout-face-output');
+    const body = pane.getByTestId('videoout-face-output');
+    const wrap = pane.locator('[data-testid="videoout-fs-wrap"]');
+    const canvas = pane.locator('canvas[data-testid="videoout-face-canvas"]');
+    await waitFrames(page, 4); // frames, not ms
 
-    // Enter Full Frame first (in-rack, menu reachable).
+    // Enter Full Frame first (menu reachable at rest).
     await canvas.click({ button: 'right' });
     await page.locator('[data-testid="ctx-full-frame"]').click();
-    await expect(card, 'entered full-frame').toHaveClass(/full-frame/);
+    await expect(body, 'entered full-frame').toHaveClass(/full-frame/);
 
-    // Now enter true Fullscreen. A card is never meant to be both at once —
-    // entering Fullscreen on a full-frame card clears full-frame first, so
-    // the card is left in a single clean state (.fullscreen, not also
-    // .full-frame).
+    // Now enter true Fullscreen. A surface is never meant to be both at once —
+    // entering Fullscreen on a full-frame body clears full-frame first, so it
+    // is left in a single clean state (.fullscreen, not also .full-frame).
     await canvas.click({ button: 'right' });
     await page.locator('[data-testid="ctx-fullscreen"]').click();
     await expect(wrap, 'entered fullscreen').toHaveClass(/fullscreen/);
-    await expect(card, 'full-frame cleared on fullscreen enter').not.toHaveClass(/full-frame/);
+    await expect(body, 'full-frame cleared on fullscreen enter').not.toHaveClass(/full-frame/);
     expect(await readFullFrame(page, 'out'), 'fullFrame persisted false on fullscreen enter').toBe(false);
 
     // Exit fullscreen (dblclick on the wrap, like a video player).

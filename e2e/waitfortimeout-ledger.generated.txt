@@ -287,15 +287,11 @@ e2e/tests/video-audio-output.spec.ts :: VIDEOVARISPEED audio_l -> AUDIO OUT: rea
 e2e/tests/video-audio-output.spec.ts :: audio edge patched BEFORE the file loads still reaches the destination (saved-patch order) :: waitForTimeout(120) #1
 e2e/tests/video-controls.spec.ts :: FEEDBACK wet knob changes pixel pattern :: waitForTimeout(500) #1
 e2e/tests/video-controls.spec.ts :: FEEDBACK wet knob changes pixel pattern :: waitForTimeout(800) #1
-e2e/tests/video-full-frame.spec.ts :: Full Frame and Fullscreen are mutually exclusive (entering Fullscreen exits Full Frame) :: waitForTimeout(300) #1
-e2e/tests/video-full-frame.spec.ts :: exercise :: waitForTimeout(300) #1
 e2e/tests/video-fullscreen-multimonitor.spec.ts :: setup :: waitForTimeout(300) #1
 e2e/tests/video-fullscreen.spec.ts :: VIDEO OUT fullscreen at 16:9: buffer takes the 16:9 engine aspect :: waitForTimeout(400) #1
 e2e/tests/video-fullscreen.spec.ts :: VIDEO OUT fullscreen: canvas buffer takes the ENGINE aspect (no top/bottom letterbox) :: waitForTimeout(400) #1
 e2e/tests/video-fullscreen.spec.ts :: exercise :: waitForTimeout(400) #1
 e2e/tests/video-hide-controls.spec.ts :: dragCorner :: waitForTimeout(150) #1
-e2e/tests/video-hide-controls.spec.ts :: hide -> resize -> dblclick restore :: waitForTimeout(120) #1
-e2e/tests/video-hide-controls.spec.ts :: inner canvas keeps aspect-fit after resize (engine 4:3) :: waitForTimeout(150) #1
 e2e/tests/video-orientation.spec.ts :: 2. SHAPES(triangle) -> BENTBOX is upright :: waitForTimeout(600) #1
 e2e/tests/video-orientation.spec.ts :: 3. SHAPES(triangle) -> BENTBOX -> OUTPUT is upright :: waitForTimeout(600) #1
 e2e/tests/video-orientation.spec.ts :: 4. SHAPES(triangle) -> BENTBOX -> BENTBOX -> OUTPUT is upright :: waitForTimeout(600) #1
