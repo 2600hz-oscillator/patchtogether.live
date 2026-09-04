@@ -175,7 +175,21 @@ export const FACES = [
   // auto-orbit, a spinning plane) makes this the first face tile that genuinely
   // animates, and it would flake rather than fail. Re-derive with
   // vrt-face-audio-probe before assuming a passing scene proves stillness.
-  { type: 'cube', pages: 6 },
+  {
+    type: 'cube',
+    pages: 6,
+    // ⚠ DOCK DELETED 2026-09-04, OWNER INSTRUCTION ("delete face-cube-dock vrt
+    // entirely now"). Same shape as mirrorpool's compact above: the scene did
+    // not reproduce against its own baseline boot-to-boot — a 152 px AA wobble
+    // on the scope trace, with the SAME code and the SAME baseline green the
+    // boot before and 5/5 on main. Placement was disproven (the bot commit
+    // touched one unrelated PNG). It is the fleet nondeterminism class, not a
+    // pixel regression, and the reasoning above about cube's stillness is about
+    // the ENGINE — it never covered the dock body's scope trace.
+    //
+    // The COMPACT scene is unaffected and still gates the face.
+    scenes: ['compact'],
+  },
   // FACE BATCH 4 (2026-08-10) — the granular texture processor. Three bands:
   // the ring (which the hero promotes BOTH the buffer panel and POSITION out
   // of, leaving FREEZE — so the band survives and the count stays 3), the
