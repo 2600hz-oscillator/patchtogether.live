@@ -632,6 +632,14 @@ export const PINNED_MODULE_EXEMPT_KEYS: readonly string[] = Object.freeze([
 // 'timelorde.1/8').
 export const PINNED_PER_PORT_EXEMPT_KEYS: readonly string[] = Object.freeze([
   'buggles.burst', 'buggles.clock',
+  // clipplayer audio{N}L/R (slice 5) — ONE structural exemption in 16
+  // spellings: recorded-take playback, undrivable in a fixture whose lanes
+  // already play the note clips the other 24 ports need; covered end-to-end
+  // by cliprec-arm-single.spec.ts (see EXEMPT_OUTPUT_EMIT for the reasons).
+  'clipplayer.audio1L', 'clipplayer.audio1R', 'clipplayer.audio2L', 'clipplayer.audio2R',
+  'clipplayer.audio3L', 'clipplayer.audio3R', 'clipplayer.audio4L', 'clipplayer.audio4R',
+  'clipplayer.audio5L', 'clipplayer.audio5R', 'clipplayer.audio6L', 'clipplayer.audio6R',
+  'clipplayer.audio7L', 'clipplayer.audio7R', 'clipplayer.audio8L', 'clipplayer.audio8R',
   'doom.audio_l', 'doom.audio_r', 'doom.evt_door', 'doom.evt_gun_p1',
   'doom.evt_gun_p2', 'doom.evt_gun_p3', 'doom.evt_gun_p4', 'doom.evt_kill',
   'doom.evt_kill_arachnotron', 'doom.evt_kill_baron', 'doom.evt_kill_caco',
@@ -721,14 +729,14 @@ test('output-emit exemption lists are pinned key-by-key and anchored to REGISTRY
     'EXEMPT_OUTPUT_EMIT_MODULES no longer matches PINNED_MODULE_EXEMPT_KEYS. '
     + 'ADDING an exemption is missing coverage — justify it in the PR and add the key below. '
     + 'REMOVING one is coverage reclaimed — delete the key below too. '
-    + 'Either way also re-pin the ledger: `flox activate -- task test:ledger:accept`.',
+    + 'Either way also re-pin the matching PINNED_* array in THIS file (sorted) — there is no accept task for it; the array IS the review surface.',
   ).toEqual([...PINNED_MODULE_EXEMPT_KEYS]);
   expect(
     Object.keys(EXEMPT_OUTPUT_EMIT).sort(),
     'EXEMPT_OUTPUT_EMIT no longer matches PINNED_PER_PORT_EXEMPT_KEYS. '
     + 'ADDING an exemption is missing coverage — justify it in the PR and add the key below. '
     + 'REMOVING one is coverage reclaimed — delete the key below too. '
-    + 'Either way also re-pin the ledger: `flox activate -- task test:ledger:accept`.',
+    + 'Either way also re-pin the matching PINNED_* array in THIS file (sorted) — there is no accept task for it; the array IS the review surface.',
   ).toEqual([...PINNED_PER_PORT_EXEMPT_KEYS]);
 
   // ── 2. ARTIFACT ANCHOR — every key must still name something that exists ──
