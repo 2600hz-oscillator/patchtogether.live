@@ -1,0 +1,38 @@
+-- db/schema/007_drop_saved_groups.sql
+--
+-- DROP THE SAVED-GROUP LIBRARY. 003 created `saved_groups` to back the GROUP!
+-- module's per-user snippet library: save a group node + its children + its
+-- internal edges as a JSONB blob, browse it on the dashboard, re-insert a copy
+-- into any rack. The GROUP! module is gone, and with it the `/api/saved-groups`
+-- routes, `lib/server/saved-groups.ts`, the dashboard list and the picker. No
+-- code path reads or writes this table.
+--
+-- ⚠ THIS IS DESTRUCTIVE TO ROWS, DELIBERATELY, AND IT SETS A NEW PRECEDENT.
+-- Until now this repo's rule for retiring a database object was the one
+-- `006_drop_rackspace_mode.sql` states in its own header: drop the SHAPE, never
+-- the DATA — a wipe belongs in a one-off operational step named in a PR body,
+-- because a migration is re-applied on every schema apply and a re-applied
+-- delete wipes the tier again on the next unrelated migration.
+--
+-- The owner over-ruled that here, with the cost stated at decision time: every
+-- user's saved group library is destroyed the moment this deploys, and it is
+-- not recoverable from the application. The reasoning was that a clean schema
+-- beats an orphaned table nothing can ever read again — the rows describe a
+-- module type that no longer exists in any build, so they could not be restored
+-- into a rack even if kept. Future migrations may cite this file as the
+-- precedent for a destructive drop; they should also cite an owner decision,
+-- because that — not this file — is what authorises one.
+--
+-- Idempotent (IF EXISTS) — scripts/apply-db-schema.sh re-applies every
+-- db/schema/*.sql in filename order, so this must be a no-op against an
+-- already-migrated database. Note the ordering consequence on a FRESH database:
+-- 003 creates the table and this file immediately drops it again. That is
+-- correct and cheap; 003 is retained because the series is append-only and it
+-- is the only record of what the payload shape was.
+--
+-- Safe in EITHER deploy order: no shipped code selects from `saved_groups`, so
+-- a build running against a database that still has the table is inert to it,
+-- and a build running against one that has already dropped it never asks.
+
+DROP INDEX IF EXISTS saved_groups_user_id_idx;
+DROP TABLE IF EXISTS saved_groups;

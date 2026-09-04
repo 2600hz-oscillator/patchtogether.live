@@ -53,9 +53,9 @@ database, and an auth provider.
                 │          ┌───────────────┐                      │
                 │          │     NEON      │◄─────────────────────┘
                 │          │   Postgres    │   rack_snapshots (Yjs bytea),
-                │          │ (per-tier     │   racks, rack_members, feedback
-                │          │   branches)   │   (saved_groups: orphaned, see the
-                │          │               │    Neon runbook)
+                │          │ (per-tier     │   racks, rack_members, feedback,
+                │          │   branches)   │   rack_update_journal
+                │          │               │
                 │          └───────────────┘
                 ▼
         ┌───────────────┐

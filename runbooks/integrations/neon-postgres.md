@@ -21,10 +21,21 @@ deployment target. Web resolves it via SvelteKit `$env/dynamic/private`
 | --- | --- |
 | `db/schema/001_init.sql` | `racks` (owner + name), `rack_members` (user_id + role), `rack_snapshots` (Yjs `bytea`) |
 | `db/schema/002_feedback.sql` | `feedback` (suggestion/bug, patch snapshot) |
-| `db/schema/003_saved_groups.sql` | `saved_groups` (per-user JSONB library) — **ORPHANED**: the GROUP! module, its `/api/saved-groups` routes and the dashboard library were deleted 2026-09-04, so nothing reads or writes this table. The migration is retained because the series is append-only; **dropping the table destroys any user's saved library and is an owner decision, not a code change** (the `006_drop_rackspace_mode.sql` precedent was explicitly non-destructive to rows). |
+| `db/schema/003_saved_groups.sql` | `saved_groups` (per-user JSONB library) — superseded by 007, which drops it |
 | `db/schema/004_rack_update_journal.sql` | `rack_update_journal` (incremental Yjs updates) |
 | `db/schema/005_rackspace_mode.sql` | `rackspaces.mode` (superseded by 006) |
 | `db/schema/006_drop_rackspace_mode.sql` | drops `rackspaces.mode` |
+| `db/schema/007_drop_saved_groups.sql` | drops `saved_groups` — ⚠ **DESTRUCTIVE TO ROWS**, by owner decision |
+
+⚠ **007 is this repo's first destructive migration, and it is a deliberate
+precedent.** Every user's saved group library is destroyed the moment it
+deploys. The rule it breaks is the one `006_drop_rackspace_mode.sql` states in
+its own header — drop the SHAPE, never the ROWS, because a migration is
+re-applied on every schema apply. The owner over-ruled that on 2026-09-04 with
+the cost named: the rows describe a module type that exists in no build any
+more, so they could not be restored into a rack even if they were kept. A future
+destructive migration should cite an owner decision, not this file — the
+decision is what authorises one.
 
 Migrations are **append-only** during beta (no down-migrations). New changes bump
 the file number (`004_*.sql`) and are applied to each branch in order. Ops guide:
@@ -63,12 +74,10 @@ docs**.) Use the Neon console to create a branch off the production parent and
 read the endpoint connection string from the dashboard, then apply schema:
 
 ```sh
-flox activate -- psql "<NEON_BRANCH_URL>" -f db/schema/001_init.sql
-flox activate -- psql "<NEON_BRANCH_URL>" -f db/schema/002_feedback.sql
-flox activate -- psql "<NEON_BRANCH_URL>" -f db/schema/003_saved_groups.sql
-flox activate -- psql "<NEON_BRANCH_URL>" -f db/schema/004_rack_update_journal.sql
-flox activate -- psql "<NEON_BRANCH_URL>" -f db/schema/005_rackspace_mode.sql
-flox activate -- psql "<NEON_BRANCH_URL>" -f db/schema/006_drop_rackspace_mode.sql
+# Reads db/schema/ as a DIRECTORY, in filename order, with ON_ERROR_STOP=1 —
+# so a new migration is picked up with no edit here. Never hand-list the files:
+# the copies that used to live at 14 sites all silently omitted three of them.
+flox activate -- scripts/apply-db-schema.sh "<NEON_BRANCH_URL>"
 ```
 
 Then set `DATABASE_URL` on the matching CF Pages project (web) and Fly app
