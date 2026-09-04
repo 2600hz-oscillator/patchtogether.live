@@ -571,10 +571,15 @@ export function parseCssCableTokens(css: string): Record<string, string> {
  * only the CURRENT palette would have called that directory clean.
  *
  * A SATURATION THRESHOLD CANNOT DO THIS JOB — measured, not assumed. Excluded
- * dirs legitimately reach saturation 255: `groups` paints `#00f0ff`
- * (`--accent`) and `vrt-wavesculpt-blink` `#ff00ff` (Playwright's `maskColor`).
- * Any threshold separating those from a cable band does not exist. Hue
- * identity does, with zero false positives on all 21 excluded directories.
+ * dirs legitimately reach saturation 255: `vrt-wavesculpt-blink` paints
+ * `#ff00ff` (Playwright's `maskColor`). Any threshold separating that from a
+ * cable band does not exist. Hue identity does, with zero false positives on
+ * every excluded directory.
+ *   ⚠ The measurement above used to name a second such dir — `groups`, painting
+ *   `#00f0ff` (`--accent`) on the GROUP! frame. That directory went with the
+ *   group module, and the clause is struck rather than silently reworded so the
+ *   next reader knows the saturation argument once rested on TWO independent
+ *   witnesses and now rests on one.
  *
  * ⚠ A future palette generation appends its predecessor's hues here, the same
  * way `PENDING_PALETTE_REGEN` is drained. Forgetting weakens this validator
@@ -615,7 +620,6 @@ export const NON_CARD_CAPTURE_DIRS: Record<string, string> = {
   'cellshade-composite.spec.ts': 'full-page composite (multiple cards)',
   'cube-adsr-composite.spec.ts': 'full-page composite (multiple cards)',
   'dashboard.spec.ts': 'page chrome, no module card',
-  'groups.spec.ts': 'group frame, stripe is var(--accent) not a cable token',
   'interactions.spec.ts': 'menus/palettes, no module card',
   'landing.spec.ts': 'marketing page',
   // NEW DIRECTORY, and it appeared because the platform collapse gave these
