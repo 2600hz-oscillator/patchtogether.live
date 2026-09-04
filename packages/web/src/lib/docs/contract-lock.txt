@@ -459,6 +459,22 @@ clap family clap-hero kind=cell prefix=clap-hero
 clipplayer meta domain=audio exposesSequence
 clipplayer in reset gate edge=trigger
 clipplayer in stop_all gate edge=trigger
+clipplayer out audio1L audio
+clipplayer out audio1R audio
+clipplayer out audio2L audio
+clipplayer out audio2R audio
+clipplayer out audio3L audio
+clipplayer out audio3R audio
+clipplayer out audio4L audio
+clipplayer out audio4R audio
+clipplayer out audio5L audio
+clipplayer out audio5R audio
+clipplayer out audio6L audio
+clipplayer out audio6R audio
+clipplayer out audio7L audio
+clipplayer out audio7R audio
+clipplayer out audio8L audio
+clipplayer out audio8R audio
 clipplayer out gate1 gate edge=gate
 clipplayer out gate2 gate edge=gate
 clipplayer out gate3 gate edge=gate
