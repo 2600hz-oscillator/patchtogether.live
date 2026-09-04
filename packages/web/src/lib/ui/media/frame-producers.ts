@@ -474,6 +474,51 @@ export const RASTERIZE_FRAME_PRODUCER: FrameProducer = {
 };
 
 /**
+ * FOXY — the realtime bridge tick, which is what makes the module AUDIBLE.
+ *
+ * ⚠ THIS ONE IS NOT ABOUT A PICTURE. FOXY's audio path is a `wavecel` worklet
+ * fed by a wavetable the factory REBUILDS on `bridgeTick()`: paint the three
+ * rasters, compute the 3-axis field, build and post the table. Nothing else
+ * calls it. `FoxyCard.svelte` called it as a side effect of asking for its
+ * previews — the card's rAF read `rasterImageDataA/B/C` and the factory's
+ * getter for those keys runs `bridgeTick()` before returning the image, under a
+ * comment in the card that says exactly that ("Drive the bridge once, then read
+ * the cached previews"). So the module's SOUND had a card's lifetime.
+ *
+ * MEASURED 2026-09-04, FOXY -> SCOPE.ch1, the same patch on both shells:
+ * `?shell=legacy` maxPeak 1.0000; the default shell maxPeak 0.0000 over a 6 s
+ * window with 201 readings. Not quiet — SILENT. And the module is not obscure
+ * about it: a rack with a FOXY in it makes no sound at all on the shell every
+ * player already gets, which means this is a live production defect and not a
+ * consequence of the removal. It was found by the per-port emit sweep only
+ * because that sweep stopped booting the legacy card.
+ *
+ * Driving it from here is #1587's rule applied to the case that names it best:
+ * PRODUCE (rebuild the table the worklet plays) has to run while the NODE
+ * exists; PAINT (blit the three raster previews) belongs to whoever is looking.
+ * The read below returns an ImageData that is deliberately DROPPED — the tick
+ * is the point, the picture is the caller's business, and the factory's own
+ * `BRIDGE_MS` throttle dedupes this read against a surface's.
+ */
+export const FOXY_FRAME_PRODUCER: FrameProducer = {
+  type: 'foxy',
+  why:
+    "the wavetable the module's `wavecel` worklet plays is rebuilt only by the factory's " +
+    "`bridgeTick()`, and the only way to reach that from outside is to READ one of the raster " +
+    'keys — which `FoxyCard.svelte` did as a side effect of drawing its previews. With no card ' +
+    'the tick never runs, the table is never posted and the module is SILENT: measured maxPeak ' +
+    '1.0000 on `?shell=legacy` against 0.0000 on the default shell, same patch.',
+  frame({ node, engine }) {
+    // `tick`, not `rasterImageDataA`. The factory answers BOTH keys by running
+    // `bridgeTick()` first, but `tick` returns `undefined` where the raster keys
+    // return an `ImageData` — and this seam has nothing to draw it on. The card
+    // had to ask for a picture because it was going to blit one; the node does
+    // not, so it asks for the tick by name and copies nothing.
+    engine.read(node, 'tick');
+  },
+};
+
+/**
  * The producers this seam owns.
  *
  * ⚠ ORDER IS NOT SIGNIFICANT and membership is DERIVED, never re-typed: both
@@ -486,6 +531,7 @@ export const FRAME_PRODUCERS: readonly FrameProducer[] = [
   SYNESTHESIA_FRAME_PRODUCER,
   TIMELORDE_FRAME_PRODUCER,
   RASTERIZE_FRAME_PRODUCER,
+  FOXY_FRAME_PRODUCER,
 ];
 
 /**

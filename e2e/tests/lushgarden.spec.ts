@@ -60,16 +60,25 @@ async function waitForProbe(
   return { ok: false, last };
 }
 
-/** Luma stats of a card canvas (2D readback — SwiftShader-tolerant floors
- *  only; mirrors shapegen.spec.ts / edges.spec.ts readEdgeStats). */
+const VIDEO_SINK_THUMB = 'canvas[data-testid="video-tile-thumb"][data-thumb-node="sink"]';
+
+/** Luma stats of one canvas, addressed by a full CSS SELECTOR (2D readback —
+ *  SwiftShader-tolerant floors only; mirrors shapegen.spec.ts / edges.spec.ts
+ *  readEdgeStats).
+ *
+ *  ⚠ IT TAKES A SELECTOR, NOT A TESTID, and that is the whole point. The
+ *  VIDEOOUT read below used to name `video-out-canvas` — a testid only
+ *  `VideoOutCard.svelte` emitted — and an absent canvas returns ZEROS here, so
+ *  on the shell a player gets the poll would have been waiting on a surface
+ *  that never existed. The videoOut sink is now addressed by NODE ID through
+ *  the lane tile's `VideoTileThumb`, which paints from the same central engine
+ *  frame the card canvas took. */
 async function readCanvasStats(
   page: Page,
-  testid: string,
+  selector: string,
 ): Promise<{ nonZeroFrac: number; variance: number }> {
-  return await page.evaluate((testid) => {
-    const canvas = document.querySelector(
-      `canvas[data-testid="${testid}"]`,
-    ) as HTMLCanvasElement | null;
+  return await page.evaluate((selector) => {
+    const canvas = document.querySelector(selector) as HTMLCanvasElement | null;
     if (!canvas) return { nonZeroFrac: 0, variance: 0 };
     const probe = document.createElement('canvas');
     probe.width = canvas.width;
@@ -89,7 +98,7 @@ async function readCanvasStats(
     }
     const mean = sum / n;
     return { nonZeroFrac: nonZero / n, variance: sumSq / n - mean * mean };
-  }, testid);
+  }, selector);
 }
 
 function collectErrors(page: Page): string[] {
@@ -150,7 +159,7 @@ test.describe('LUSH GARDEN — generative garden source', () => {
         .getByTestId('lushgarden-face-canvas'),
     ).toBeVisible({ timeout: 60_000 });
     await page.waitForTimeout(700); // one grow-in + a few blits
-    const stats = await readCanvasStats(page, 'lushgarden-face-canvas');
+    const stats = await readCanvasStats(page, 'canvas[data-testid="lushgarden-face-canvas"]');
     expect(stats.nonZeroFrac, `preview lit fraction ${stats.nonZeroFrac}`).toBeGreaterThan(0.005);
     expect(stats.variance, `preview variance ${stats.variance}`).toBeGreaterThan(5);
 
@@ -296,12 +305,12 @@ test.describe('LUSH GARDEN — generative garden source', () => {
     // (plantless) clean composite — a large lit fraction, since with zero
     // plants EVERY pixel is outside a silhouette. Coarse floors only.
     await expect
-      .poll(async () => (await readCanvasStats(page, 'video-out-canvas')).nonZeroFrac, {
+      .poll(async () => (await readCanvasStats(page, VIDEO_SINK_THUMB)).nonZeroFrac, {
         message: 'background passthrough lights the clean output',
         timeout: 15000,
       })
       .toBeGreaterThan(0.2);
-    const stats = await readCanvasStats(page, 'video-out-canvas');
+    const stats = await readCanvasStats(page, VIDEO_SINK_THUMB);
     expect(stats.variance, `backdrop variance ${stats.variance}`).toBeGreaterThan(5);
     expect(await readProbe(page, 'lg', 'plantCount'), 'garden stayed empty').toBe(0);
 

@@ -32,11 +32,22 @@
   }
   let { nodeId }: Props = $props();
 
-  /** Sized for the 192x180 lane slot with the title bar and the jack rail
-   *  already spent. A genuine downscale of the 320 (or 640, on a retina
-   *  display) source — which is why the shared blit names its destination rect
-   *  and turns smoothing off rather than trusting a coincidence. */
-  const TILE_SLOPE_PX = 104;
+  /** Sized for the 192x180 lane slot with the title bar, the param cells and
+   *  the jack rail already spent. A genuine downscale of the 320 (or 640, on a
+   *  retina display) source — which is why the shared blit names its
+   *  destination rect and turns smoothing off rather than trusting a
+   *  coincidence.
+   *
+   *  ⚠ 80, NOT 104, AND THE 24 px CAME OFF A CLIPPED "MORE" BUTTON. At 104 the
+   *  stack ran 19.9 CSS px past the tile's bottom edge and `module-shell` is
+   *  `overflow: hidden`, so what fell off was the jack rail AND
+   *  `shell-open-dock` — i.e. on this module's lane tile the affordance that
+   *  opens the dock was unreachable, not merely ugly. Measured by the tile
+   *  sweep (`io-spec-consistency`) the moment it stopped booting the legacy
+   *  card, which is the only reason it was ever visible: the card had 260 px of
+   *  height and no such bound, so the number was right for the surface it was
+   *  measured against and wrong for this one. */
+  const TILE_SLOPE_PX = 80;
 </script>
 
 <div class="skifree-tile" data-testid="skifree-tile-host">

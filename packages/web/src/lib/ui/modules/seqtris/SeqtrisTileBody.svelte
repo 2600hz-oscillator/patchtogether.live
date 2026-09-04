@@ -53,8 +53,16 @@
 
   /** Sized for the ~192 px lane slot with the title bar, two param cells and
    *  the jack rail already spent. MEASURED against `_card-overflow`, not
-   *  guessed — see the header. */
-  const TILE_WELL_PX = 104;
+   *  guessed — see the header.
+   *
+   *  ⚠ 88, NOT 104. The original measurement was taken against the LEGACY CARD
+   *  box; on the 192x180 shell tile the stack ran 11.9 CSS px past the bottom
+   *  edge, and `module-shell` is `overflow: hidden`, so the jack rail and
+   *  `shell-open-dock` were clipped — the dock-opening affordance was
+   *  unreachable on this tile. Re-measured against the tile by the same sweep
+   *  (`io-spec-consistency`), which only started reading this surface when it
+   *  stopped booting the card. */
+  const TILE_WELL_PX = 88;
 
   const engineCtx = useEngine();
 

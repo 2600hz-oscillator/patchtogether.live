@@ -2979,8 +2979,17 @@ function aggregateAudio(samples: AudioFingerprint[]): AggregatedSample {
   };
 }
 
-/** The VIDEOOUT canvas the video sink is read back from. */
-const VIDEO_SINK_CANVAS = 'canvas[data-testid="video-out-canvas"]';
+/** The VIDEOOUT canvas the video sink is read back from, NAMED BY NODE ID.
+ *
+ *  This was a bare `canvas[data-testid="video-out-canvas"]` — a testid only
+ *  `VideoOutCard.svelte` ever emitted. On the shell a player gets there is no
+ *  card, so that selector resolves nothing and `readSinkAggregated` returns
+ *  `null` — a "could not measure" that arrives looking like a measurement. The
+ *  lane tile paints `VideoTileThumb` from the same central engine frame and
+ *  stamps its node id on `data-thumb-node`, so the sink is now addressed
+ *  instead of being the only video canvas on the page. */
+const videoSinkCanvas = (nodeId: string): string =>
+  `canvas[data-testid="video-tile-thumb"][data-thumb-node="${nodeId}"]`;
 
 async function readSinkAggregated(page: Page, sink: SinkSpec): Promise<AggregatedSample | null> {
   if (sink.node.type === 'scope') {
@@ -3001,7 +3010,7 @@ async function readSinkAggregated(page: Page, sink: SinkSpec): Promise<Aggregate
   // window that measured 26–29 frames per gap on a free-running page and 10–11
   // under an ~8 fps load, i.e. a different observation window per machine. See
   // _module-coverage-helpers.ts for the measurement and the reasoning.
-  const cap = await captureCanvasStatsFrameSpaced(page, VIDEO_SINK_CANVAS, {
+  const cap = await captureCanvasStatsFrameSpaced(page, videoSinkCanvas(sink.node.id), {
     captures: VIDEO_CAPTURES,
     spacingFrames: VIDEO_CAPTURE_SPACING_FRAMES,
     capMs: VIDEO_CAPTURE_CAP_MS,

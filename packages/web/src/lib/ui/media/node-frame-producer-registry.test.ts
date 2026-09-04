@@ -152,7 +152,16 @@ describe('NODE_FRAME_PRODUCER_TYPES — who owns a module per-frame push', () =>
     // rasterize joined in legacy-removal S1.5 — the fourth departure from
     // CARD_PRODUCER_LANE_TYPES, and the first carrying TWO duties in one body
     // (the cvCombined push and the painter's advancing read).
+    //
+    // ⚠ foxy joined 2026-09-04 and it is the first member whose missing owner
+    // was AUDIBLE — or rather, was not. Its `wavecel` worklet plays a wavetable
+    // that only the factory's `bridgeTick()` rebuilds, and the sole caller of
+    // that tick was `FoxyCard.svelte` reading its raster previews. Measured on
+    // one patch, both shells: `?shell=legacy` maxPeak 1.0000, default shell
+    // 0.0000 over a 6 s window. Every earlier member went dark or stale without
+    // its owner; this one went SILENT, on the shell players already have.
     expect([...NODE_FRAME_PRODUCER_TYPES].sort()).toEqual([
+      'foxy',
       'rasterize',
       'scope',
       'synesthesia',

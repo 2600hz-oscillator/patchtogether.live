@@ -316,6 +316,35 @@ export const EXEMPT_OUTPUT_EMIT_MODULES: Record<string, string> = {
 //
 // Keep this list tight too (~10-15 entries).
 export const EXEMPT_OUTPUT_EMIT: Record<string, string> = {
+  // ── CAMERAINPUT.out — a DEVICE port with no device, and the sweep only
+  // started saying so when it stopped reading card chrome.
+  //
+  // MEASURED 2026-09-04, CAMERAINPUT -> VIDEOOUT.in, the same patch on both
+  // shells. The sink's picture is the videoOut IDLE gradient in both cases:
+  // default-shell tile mean 18.95 / variance 1.50 (idle is 18.95 / 1.50);
+  // legacy card canvas mean 16.93 / variance 22.82 (an UNPATCHED videoOut card
+  // reads 22.82). Nothing arrives on EITHER surface — the port has never
+  // emitted in this fixture. It was green because the old floors
+  // (`nonBlackFrac > 0.001`, `variance > 0.5`) are cleared by an unpatched
+  // videoOut on both surfaces; see the sweep's video branch for that
+  // measurement.
+  //
+  // Chromium runs with `--use-fake-device-for-media-stream`, so a stream is
+  // AVAILABLE — but nothing in a bare spawn asks for one. Camera capture starts
+  // from a user gesture, which is what `camera-input.spec.ts` drives.
+  // Handle-presence + input-accept still pin the port here.
+  'cameraInput.out': 'a camera device port on a bare spawn: nothing requests getUserMedia, so the sink shows its own idle picture — MEASURED identical on ?shell=legacy (mean 16.93 vs an unpatched card 22.82) and on the shell (18.95/1.50 vs idle 18.95/1.50), i.e. this port never emitted here and the old floors passed on videoOut idle. Real coverage: camera-input.spec.ts drives the gesture that starts capture',
+  // ── MANDLEBLOT.color_out — the RGB palette output is BLACK at default params.
+  // MEASURED 2026-09-04 with the same patch on both shells: the legacy card
+  // canvas read nonBlackFrac 0.1612 / mean 1.02 (it cleared `> 0.001` by being
+  // a hair above pure black, in a canvas whose variance came from card chrome),
+  // and the shell tile reads 0.0000 / mean 0.00 — and so does MANDLEBLOT's OWN
+  // tile, so this is the module rendering nothing, not the bridge dropping it.
+  // `mono_out` (the greyscale escape-time field) emits normally from the same
+  // iteration loop and is NOT exempt, which is what keeps the module's emit
+  // test meaningful. Fixing the palette at default params is a module change,
+  // not a sweep change.
+  'mandleblot.color_out': 'the RGB-palette output renders black at default params — MEASURED: own tile 0.0000 nonBlack, sink 0.0000, and 0.1612/mean 1.02 on the legacy card (which is why the 0.001 floor passed). mono_out from the SAME iteration loop still emits and is not exempt',
   // ── CLIPPLAYER audio{N}L/R (slice 5): recorded-audio-clip playback. A
   // lane's audio pair emits only while that lane PLAYS AN AUDIO CLIP, and an
   // audio clip exists only after a real take (OPFS media + an
@@ -677,6 +706,9 @@ export const PINNED_MODULE_EXEMPT_KEYS: readonly string[] = Object.freeze([
 // 'timelorde.1/8').
 export const PINNED_PER_PORT_EXEMPT_KEYS: readonly string[] = Object.freeze([
   'buggles.burst', 'buggles.clock',
+  // A device port with no device — see EXEMPT_OUTPUT_EMIT for the both-shells
+  // measurement showing it never emitted here on EITHER surface.
+  'cameraInput.out',
   // clipplayer audio{N}L/R (slice 5) — ONE structural exemption in 16
   // spellings: recorded-take playback, undrivable in a fixture whose lanes
   // already play the note clips the other 24 ports need; covered end-to-end
@@ -699,6 +731,8 @@ export const PINNED_PER_PORT_EXEMPT_KEYS: readonly string[] = Object.freeze([
   'gibribbon.evt_kill', 'gibribbon.evt_miss', 'gibribbon.health_cv',
   'illogic.and', 'illogic.nand', 'illogic.not', 'illogic.or',
   'mandelbulb.audio_out',
+  // Black at default params on both shells — see EXEMPT_OUTPUT_EMIT.
+  'mandleblot.color_out',
   'midiLane.note_gate', 'midiLane.poly',
   // moog904a's ONLY output — so this entry parks the whole emit test for the
   // module ("all outputs exempt"). Park, not a fix: see EXEMPT_OUTPUT_EMIT.

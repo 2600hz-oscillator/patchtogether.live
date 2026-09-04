@@ -1056,6 +1056,26 @@ interface FrameProducerFixture {
 }
 
 const FRAME_PRODUCER_FIXTURES: Record<string, FrameProducerFixture> = {
+  foxy: {
+    // ⚠ NO DRIVER, AND THE PRODUCT IS NOT A PICTURE. FOXY's three rasters are
+    // painted by the module's own SWOLEVCO oscillators, so the subject drives
+    // itself; what the producer owns is the WAVETABLE those rasters are folded
+    // into, which the internal `wavecel` worklet then PLAYS. So the probe reads
+    // a sample out of the live table rather than any of the module's three video
+    // outs — and that is the honest choice, not a convenience: `scope_out`,
+    // `wave3d_out` and `combined_out` all render from the last table anyone
+    // built, so a dead producer would keep serving a picture (the timelorde
+    // failure mode: bright and frozen) while the module went SILENT.
+    read: { key: 'wavetableFrames', field: '0', index: 8 },
+    why:
+      "the module's audio IS this table: `bridgeTick()` paints the rasters, folds them into the "
+      + '3-axis field and posts a rebuilt wavetable to the worklet, and nothing else calls it. '
+      + 'The only reachable caller used to be `FoxyCard.svelte` reading its raster previews, so '
+      + 'the sound had a card lifetime — MEASURED at the moment it was found, FOXY -> SCOPE.ch1 '
+      + 'on one patch: maxPeak 1.0000 under `?shell=legacy` and 0.0000 on the default shell over '
+      + 'a 6 s window. A sample of the table moving frame to frame is the closest observable to '
+      + '"the oscillator has something new to play"; the pixel probe cannot see it.',
+  },
   scope: {
     driver: { id: 'producer-driver', type: 'lfo', domain: 'audio' },
     edge: {
