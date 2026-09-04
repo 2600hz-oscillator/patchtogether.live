@@ -223,19 +223,26 @@ class ContinuityProbeProcessor extends AudioWorkletProcessor {
     // ── per-channel RMS / peak / max step (seam-aware) ────────────────────
     let blockMinRms = Infinity;
     let blockMaxRms = 0;
+    // Hoisted out of the inner loop: this runs on the AUDIO THREAD, and a
+    // property read/write per sample per channel is cost an instrument has no
+    // business spending on the thread it is there to protect.
+    let peak = this._peak;
+    let maxStep = this._maxStep;
     for (let c = 0; c < nch; c++) {
       const ch = input[c];
       if (!ch) continue;
       let sum = 0;
+      // Seam carry: on the very first block there is no predecessor, so start
+      // from ch[0] — a step of |x[0]| would otherwise be invented every time.
       let prev = this._prevSample.length > c ? this._prevSample[c] : ch[0];
       for (let i = 0; i < len; i++) {
         const v = ch[i];
         sum += v * v;
         const a = v < 0 ? -v : v;
-        if (a > this._peak) this._peak = a;
+        if (a > peak) peak = a;
         let d = v - prev;
         if (d < 0) d = -d;
-        if (d > this._maxStep) this._maxStep = d;
+        if (d > maxStep) maxStep = d;
         prev = v;
       }
       this._prevSample[c] = prev;
@@ -243,6 +250,8 @@ class ContinuityProbeProcessor extends AudioWorkletProcessor {
       if (rms < blockMinRms) blockMinRms = rms;
       if (rms > blockMaxRms) blockMaxRms = rms;
     }
+    this._peak = peak;
+    this._maxStep = maxStep;
     if (blockMinRms < this._minRms) this._minRms = blockMinRms;
     if (blockMaxRms > this._maxRms) this._maxRms = blockMaxRms;
 
