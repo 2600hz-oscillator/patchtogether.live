@@ -123,20 +123,28 @@ export interface RackSession {
 /**
  * The rack URL a sweep boots, as a WORKER-SCOPED OPTION.
  *
- * ⚠ S2 LEGACY REMOVAL: the option's DEFAULT is now the FACEPLATE rack. The
- * legacy default existed so the per-port sweeps exercised each module's own
- * *Card.svelte; those cards are leaving with the legacy lane, and every sweep
- * now measures the surface a player gets — `ModuleShell` faceplates (the
- * per-port claims are graph/engine-side, so the rows' assertions carry over;
- * what changes is which UI mounts and therefore whose mount errors group-F
- * style listeners can see).
+ * ⚠ IT HAS TO BE AN OPTION, NOT A CONSTANT, AND THAT IS NOT A GENERALISATION
+ * FOR ITS OWN SAKE — the two sweeps genuinely need different racks, and it is
+ * the SEED they disagree about, not the renderer:
  *
- * The OPTION shape is kept (worker-scoped, `test.use`-able): a suite that
- * genuinely needs a different boot — a seed, a flag — still declares it, and
- * Playwright allocates a separate worker per distinct value so two suites
- * wanting different racks can never share one booted page.
+ *   per-module-per-port-inputs   `/rack?seed=none`   an EMPTY rack
+ *   faces-parity*                `/rack`             the SEEDED rack
+ *
+ * The per-port sweep spawns exactly the module under test and one driver, so a
+ * seeded rack is noise it would have to filter. The faces sweep needs the seed:
+ * a face whose control is a SELECTOR over other nodes — matrixMix's
+ * `matrixmix-x-{n}` routing roster is the measured case — offers exactly ONE
+ * option on an empty rack, and `driveCell` requires more than one to have
+ * something to switch TO. Collapsing both onto `?seed=none` fails that row with
+ * "the roster offers options", which reads like a broken face rather than an
+ * empty rack.
+ *
+ * Because it is WORKER-scoped, Playwright allocates a separate worker per
+ * distinct value, so two suites wanting different racks can never end up
+ * sharing one booted page.
  */
-export const FACEPLATE_RACK_URL = '/rack?seed=none';
+export const EMPTY_RACK_URL = '/rack?seed=none';
+export const FACEPLATE_RACK_URL = '/rack';
 
 const BOOT_TIMEOUT_MS = 60_000;
 
@@ -382,7 +390,7 @@ export const test = base.extend<
   }
 >({
   // Declared `option: true` so a suite sets it with `test.use({ rackUrl })`.
-  rackUrl: [FACEPLATE_RACK_URL, { scope: 'worker', option: true }],
+  rackUrl: [EMPTY_RACK_URL, { scope: 'worker', option: true }],
 
   rackHost: [
     async ({ browser, rackUrl }, use) => {
