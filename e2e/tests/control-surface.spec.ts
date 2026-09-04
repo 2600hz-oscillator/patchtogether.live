@@ -1,18 +1,22 @@
 // e2e/tests/control-surface.spec.ts
 //
-// CONTROL SURFACE Phase 1 — the full behavioral loop:
-//   1. spawn a surface (blank square) + an ADSR.
-//   2. right-click the ADSR's Attack control → "Send to <surface>".
-//   3. a proxied control appears on the surface, grouped under the ADSR,
+// CONTROL SURFACE Phase 1 — the full behavioral loop, on the DEFAULT shell
+// (S2 re-point; the module was promoted off NON_SHELL_LANE_TYPES, so the
+// board lives in the DOCK full view and the send gesture starts on the
+// source's faced tile knob — the same recipes controlsurface-face.spec.ts
+// proves):
+//   1. spawn a surface + an ADSR; the tile paints the empty-state prompt.
+//   2. right-click the ADSR tile's attack knob → "Send to <surface>".
+//   3. a proxied control appears on the dock BOARD, grouped under the ADSR,
 //      and the binding is recorded on the surface node's data.
 //   4. the proxy is a POINTER: double-clicking it (reset-to-default) writes
 //      the SOURCE module's param — proving no separate state.
-//   5. collapse the ADSR into a Group → the source card hides but the proxy
-//      stays live (the whole point: control collapsed modules).
+//   5. collapse the ADSR into a Group → the source's lane node unmounts but
+//      the proxy stays live (the whole point: control collapsed modules).
 //   6. "Remove from <surface>" takes the proxy away again.
 
 import { test, expect } from './_fixtures';
-import { type Page } from '@playwright/test';
+import { type Locator, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 
 interface PatchNode {
@@ -33,7 +37,7 @@ async function readSurfaceBindings(page: Page, surfaceId: string) {
 }
 
 async function setup(page: Page) {
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [
     { id: 'cs-1', type: 'controlSurface', position: { x: 700, y: 80 }, domain: 'meta' },
@@ -41,30 +45,63 @@ async function setup(page: Page) {
   ]);
 }
 
+/** The LANE tile's shell for a node. */
+function laneShell(page: Page, nodeId: string): Locator {
+  return page.locator(`.svelte-flow__node[data-id="${nodeId}"] [data-testid="module-shell"]`);
+}
+
+/** Open the surface's dock faceplate and return the BOARD, scoped by node
+ *  (the controlsurface-face.spec.ts recipe — the board is dock-only). */
+async function openBoard(page: Page, nodeId = 'cs-1'): Promise<Locator> {
+  const shell = laneShell(page, nodeId);
+  await expect(shell).toBeVisible();
+  await shell.getByTestId('shell-open-dock').click();
+  const dockShell = page
+    .getByTestId('dock-full-view')
+    .locator(`[data-testid="module-shell"][data-shell-tier="dock"][data-shell-node="${nodeId}"]`);
+  await expect(dockShell).toBeVisible();
+  return dockShell.getByTestId('cs-board');
+}
+
+/** Right-click a SOURCE tile knob → control menu → "Send to <surface>". The
+ *  send happens from the LANE (before any dock pane is open — an open drawer
+ *  can intercept lane clicks). */
+async function sendToSurface(page: Page, sourceId: string, paramId: string, surfaceId = 'cs-1'): Promise<void> {
+  const knob = laneShell(page, sourceId).locator(`[data-testid="control-${paramId}"]`);
+  await expect(knob).toBeVisible();
+  await knob.click({ button: 'right' });
+  const menu = page.locator('[data-testid="control-context-menu"]');
+  await expect(menu).toBeVisible();
+  await menu.locator(`[data-testid="ctx-surface-${surfaceId}"]`).click();
+  // The control menu portals an overlay; wait for it to close before the next
+  // gesture (a lingering overlay intercepts clicks).
+  await expect(menu).toHaveCount(0);
+}
+
 test('send a control to a surface → proxy appears, drives the source, survives collapse', async ({ page }) => {
   await setup(page);
 
-  const surface = page.locator('[data-testid="control-surface-card"][data-node-id="cs-1"]');
-  await expect(surface).toBeVisible();
-  // Fresh surface = blank square (empty-state prompt).
-  await expect(surface.locator('[data-testid="control-surface-empty"]')).toBeVisible();
+  // Fresh surface = the tile's empty-state prompt (the module's discovery path).
+  await expect(laneShell(page, 'cs-1').getByTestId('cs-tile-empty-cs-1')).toContainText(/Send to/);
 
-  // Right-click the ADSR's Attack control → control menu → Send to surface.
-  const adsr = page.locator('.svelte-flow__node-adsr');
-  const attack = adsr.locator('[role="slider"][aria-label="Attack"]');
-  await expect(attack).toBeVisible();
-  await attack.click({ button: 'right' });
+  // Right-click the ADSR tile's attack knob → control menu → Send to surface —
+  // from the LANE, before the dock pane opens.
+  const knob = laneShell(page, 'adsr-1').locator('[data-testid="control-attack"]');
+  await expect(knob).toBeVisible();
+  await knob.click({ button: 'right' });
   const menu = page.locator('[data-testid="control-context-menu"]');
   await expect(menu).toBeVisible();
   const sendItem = menu.locator('[data-testid="ctx-surface-cs-1"]');
   await expect(sendItem).toContainText('Send to');
   await sendItem.click();
+  await expect(menu).toHaveCount(0);
 
-  // The proxy control now lives on the surface, grouped under the ADSR.
-  const proxy = surface.locator('[data-testid="control-surface-knob-adsr-1-attack"]');
+  // The proxy control now lives on the dock BOARD, grouped under the ADSR.
+  const surface = await openBoard(page);
+  const proxy = surface.locator('[data-testid="cs-board-knob-adsr-1-attack"]');
   await expect(proxy).toBeVisible();
-  await expect(surface.locator('[data-testid="control-surface-group-label"]')).toContainText('ADSR');
-  await expect(surface.locator('[data-testid="control-surface-empty"]')).toHaveCount(0);
+  await expect(surface.locator('[data-testid="cs-board-group-label"]')).toContainText(/adsr/i);
+  await expect(surface.locator('[data-testid="cs-board-empty"]')).toHaveCount(0);
 
   // The binding is recorded on the surface node (a pointer, value-free).
   expect(await readSurfaceBindings(page, 'cs-1')).toEqual([{ moduleId: 'adsr-1', paramId: 'attack' }]);
@@ -76,7 +113,7 @@ test('send a control to a surface → proxy appears, drives the source, survives
     const w = window as unknown as { __patch: { nodes: Record<string, PatchNode> } };
     w.__patch.nodes['adsr-1'].params.attack = 0.9;
   });
-  await proxy.locator('[role="slider"]').dblclick();
+  await surface.locator('[data-testid="cs-board-dial-adsr-1-attack"]').dblclick();
   const attackAfter = await page.evaluate(() => {
     const w = window as unknown as { __patch: { nodes: Record<string, PatchNode> } };
     return w.__patch.nodes['adsr-1'].params.attack;
@@ -102,10 +139,11 @@ test('send a control to a surface → proxy appears, drives the source, survives
       (child.data as { parentGroupId?: string }).parentGroupId = 'g-1';
     });
   });
-  // The group card appears (collapse happened) and the source ADSR card is
-  // gone from the canvas...
+  // The group card appears (collapse happened — groups are NON_SHELL_LANE, so
+  // the card renders even on the default shell) and the source ADSR's lane
+  // node is gone from the canvas...
   await expect(page.locator('[data-testid="group-card"][data-node-id="g-1"]')).toBeVisible();
-  await expect(page.locator('.svelte-flow__node-adsr')).toHaveCount(0);
+  await expect(page.locator('.svelte-flow__node[data-id="adsr-1"]')).toHaveCount(0);
   // ...yet the proxy is still on the surface AND still drives the (now
   // collapsed) source — the whole point of the feature.
   await expect(proxy).toBeVisible();
@@ -113,7 +151,7 @@ test('send a control to a surface → proxy appears, drives the source, survives
     const w = window as unknown as { __patch: { nodes: Record<string, PatchNode> } };
     w.__patch.nodes['adsr-1'].params.attack = 0.77;
   });
-  await proxy.locator('[role="slider"]').dblclick();
+  await surface.locator('[data-testid="cs-board-dial-adsr-1-attack"]').dblclick();
   const attackCollapsed = await page.evaluate(() => {
     const w = window as unknown as { __patch: { nodes: Record<string, PatchNode> } };
     return w.__patch.nodes['adsr-1'].params.attack;
@@ -123,38 +161,33 @@ test('send a control to a surface → proxy appears, drives the source, survives
   // Unbind via the proxy's OWN control menu — it's a real control, so its
   // right-click menu offers "Remove from <surface>" (the proxy shares the
   // source's moduleId:paramId, so the menu knows it's bound here).
-  await proxy.locator('[role="slider"]').click({ button: 'right' });
+  await surface.locator('[data-testid="cs-board-dial-adsr-1-attack"]').click({ button: 'right' });
   const menu2 = page.locator('[data-testid="control-context-menu"]');
   await expect(menu2).toBeVisible();
   const removeItem = menu2.locator('[data-testid="ctx-surface-cs-1"]');
   await expect(removeItem).toContainText('Remove from');
   await removeItem.click();
-  expect(await readSurfaceBindings(page, 'cs-1')).toEqual([]);
-  await expect(surface.locator('[data-testid="control-surface-empty"]')).toBeVisible();
+  await expect.poll(async () => await readSurfaceBindings(page, 'cs-1')).toEqual([]);
+  await expect(surface.locator('[data-testid="cs-board-empty"]')).toBeVisible();
 });
 
 test('rename a bound control on the surface → custom name persists in node.data (Electra naming)', async ({ page }) => {
   await setup(page);
 
-  const surface = page.locator('[data-testid="control-surface-card"][data-node-id="cs-1"]');
-  await expect(surface).toBeVisible();
-
-  // Bind ADSR Attack onto the surface.
-  const adsr = page.locator('.svelte-flow__node-adsr');
-  const attack = adsr.locator('[role="slider"][aria-label="Attack"]');
-  await attack.click({ button: 'right' });
-  await page.locator('[data-testid="control-context-menu"] [data-testid="ctx-surface-cs-1"]').click();
-  const proxy = surface.locator('[data-testid="control-surface-knob-adsr-1-attack"]');
+  // Bind ADSR attack onto the surface (from the lane, then open the board).
+  await sendToSurface(page, 'adsr-1', 'attack');
+  const surface = await openBoard(page);
+  const proxy = surface.locator('[data-testid="cs-board-knob-adsr-1-attack"]');
   await expect(proxy).toBeVisible();
 
   // The surface defaults to UNLOCKED → the per-knob rename affordance shows.
   await expect(surface).toHaveAttribute('data-locked', 'false');
-  const renameBtn = surface.locator('[data-testid="control-surface-rename-adsr-1-attack"]');
+  const renameBtn = surface.locator('[data-testid="cs-board-rename-adsr-1-attack"]');
   await expect(renameBtn).toBeVisible();
   await renameBtn.click();
 
   // Type a custom name + commit with Enter.
-  const renameInput = surface.locator('[data-testid="control-surface-rename-input-adsr-1-attack"]');
+  const renameInput = surface.locator('[data-testid="cs-board-rename-input-adsr-1-attack"]');
   await expect(renameInput).toBeVisible();
   await renameInput.fill('Punch');
   await renameInput.press('Enter');
@@ -201,45 +234,43 @@ test('multiple controls from multiple modules: grouped, lock/unlock + move, MIDI
     { id: 'adsr-1', type: 'adsr', position: { x: 60, y: 60 }, domain: 'audio' },
     { id: 'adsr-2', type: 'adsr', position: { x: 60, y: 420 }, domain: 'audio' },
   ]);
-  const surface = page.locator('[data-testid="control-surface-card"][data-node-id="cs-1"]');
 
   // Send THREE controls from TWO modules (this is the path that used to break
-  // after the first send).
-  const sends: Array<[string, string]> = [['adsr-1', 'Attack'], ['adsr-1', 'Decay'], ['adsr-2', 'Attack']];
-  for (const [nodeId, label] of sends) {
-    const ctrl = page.locator(`.svelte-flow__node[data-id="${nodeId}"]`).locator(`[role="slider"][aria-label="${label}"]`);
-    await ctrl.click({ button: 'right' });
-    await page.locator('[data-testid="ctx-surface-cs-1"]').click();
-    // The control menu portals an overlay; wait for it to close before the next
-    // right-click (otherwise the lingering overlay intercepts the click).
-    await expect(page.locator('[data-testid="control-context-menu"]')).toHaveCount(0);
+  // after the first send) — all from the LANE tiles, before the dock opens.
+  const sends: Array<[string, string]> = [['adsr-1', 'attack'], ['adsr-1', 'decay'], ['adsr-2', 'attack']];
+  for (const [nodeId, paramId] of sends) {
+    await sendToSurface(page, nodeId, paramId);
   }
 
-  // All three proxies present, grouped into TWO module boxes.
-  await expect(surface.locator('[data-testid="control-surface-knob-adsr-1-attack"]')).toBeVisible();
-  await expect(surface.locator('[data-testid="control-surface-knob-adsr-1-decay"]')).toBeVisible();
-  await expect(surface.locator('[data-testid="control-surface-knob-adsr-2-attack"]')).toBeVisible();
-  await expect(surface.locator('[data-testid="control-surface-group"]')).toHaveCount(2);
+  // All three proxies present on the dock BOARD, grouped into TWO module boxes.
+  const surface = await openBoard(page);
+  await expect(surface.locator('[data-testid="cs-board-knob-adsr-1-attack"]')).toBeVisible();
+  await expect(surface.locator('[data-testid="cs-board-knob-adsr-1-decay"]')).toBeVisible();
+  await expect(surface.locator('[data-testid="cs-board-knob-adsr-2-attack"]')).toBeVisible();
+  await expect(surface.locator('[data-testid="cs-board-group"]')).toHaveCount(2);
   expect(await readSurfaceBindings(page, 'cs-1')).toHaveLength(3);
 
   // MIDI-mapped param works THROUGH the surface: learn on the proxy, inject a
   // CC, the proxy shows the binding badge (shared moduleId:paramId key).
-  const proxyAttack = surface.locator('[data-testid="control-surface-knob-adsr-1-attack"]');
-  await proxyAttack.locator('[role="slider"]').click({ button: 'right' });
+  const proxyAttack = surface.locator('[data-testid="cs-board-knob-adsr-1-attack"]');
+  await surface.locator('[data-testid="cs-board-dial-adsr-1-attack"]').click({ button: 'right' });
   await page.locator('[data-testid="control-context-menu"] [data-testid="ctx-midi-learn"]').click();
   await injectCc(page, 0, 41, 100);
   await expect(proxyAttack.locator('.midi-badge')).toContainText('CC 41');
-  // ...and the SAME binding shows on the source card (one control, two views).
-  await expect(
-    page.locator('.svelte-flow__node[data-id="adsr-1"]').locator('[role="slider"][aria-label="Attack"]')
-      .locator('xpath=ancestor-or-self::*[contains(@class,"fader-wrap") or contains(@class,"knob-wrap")][1]')
-      .locator('.midi-badge'),
-  ).toContainText('CC 41');
+  // ...and the SAME binding shows on the source tile (one control, two views;
+  // the ADSR has exactly one binding, so exactly one badge on its tile).
+  await expect(laneShell(page, 'adsr-1').locator('.midi-badge')).toContainText('CC 41');
 
-  await page.keyboard.press('Escape'); // dismiss any lingering control menu
+  // No lingering control menu (⚠ NOT an Escape press — with the dock open,
+  // a spare Escape closes the whole full view out from under the board).
+  await expect(page.locator('[data-testid="control-context-menu"]')).toHaveCount(0);
 
-  const box = surface.locator('[data-testid="control-surface-group"][data-source-id="adsr-1"]');
-  const lockBtn = surface.locator('[data-testid="control-surface-lock"]');
+  const box = surface.locator('[data-testid="cs-board-group"][data-source-id="adsr-1"]');
+  // The LOCK cell sits on the dock shell's ladder, outside the board itself
+  // (scoped to the dock tier — the lane tile ranks the same testid).
+  const lockBtn = page
+    .locator('[data-testid="module-shell"][data-shell-tier="dock"][data-shell-node="cs-1"]')
+    .getByTestId('shell-cell-control-surface-lock');
 
   // Surface defaults to UNLOCKED → dragging a group box records a position.
   await expect(surface).toHaveAttribute('data-locked', 'false');
