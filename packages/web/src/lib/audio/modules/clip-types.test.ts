@@ -98,6 +98,7 @@ import {
   scrubClipPlayerTransientData,
   clipLengthSteps,
   CLIP_PLAYER_TRANSIENT_DATA_FIELDS,
+  CLIP_PLAYER_ARM_DATA_FIELDS,
   type AudioClipRecord,
   type ClipRecord,
   coerceAutomationEvent,
@@ -2440,6 +2441,46 @@ describe('audioRec is TRANSIENT — a duplicate is never born recording', () => 
     // clears another's state.
     for (const f of ['noteRec', 'recording', 'automation', 'audioRec']) {
       expect(CLIP_PLAYER_TRANSIENT_DATA_FIELDS, f).toContain(f);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// THE ARM PROJECTION — the half `persistence.test.ts` structurally cannot see.
+//
+// The loader's test iterates CLIP_PLAYER_ARM_DATA_FIELDS, so it proves every
+// field the constant NAMES is stripped and can never prove the constant names
+// the right fields. That is this block's job, and it is a fixed enumeration on
+// purpose: adding a `data` key without classifying it is a type error (the
+// kinds record is `satisfies Record<string, 'arm' | 'live'>` and the field type
+// is `keyof` it), and MIS-classifying one goes red right here.
+// ---------------------------------------------------------------------------
+describe('the ARM subset is DERIVED from the transient list, not restated beside it', () => {
+  it('is a STRICT subset — every arm field is also a transient field', () => {
+    expect(CLIP_PLAYER_ARM_DATA_FIELDS.length).toBeGreaterThan(0);
+    expect(CLIP_PLAYER_ARM_DATA_FIELDS.length).toBeLessThan(
+      CLIP_PLAYER_TRANSIENT_DATA_FIELDS.length,
+    );
+    for (const f of CLIP_PLAYER_ARM_DATA_FIELDS) {
+      expect(CLIP_PLAYER_TRANSIENT_DATA_FIELDS, f).toContain(f);
+    }
+  });
+
+  it('names EXACTLY the five record-arm latches — nothing else may ride along', () => {
+    // ⚠ EXACT, not `toContain`. A save/load scrub is a DELETE: a `live` field
+    // that drifted into this set would start being erased from every saved
+    // patch, which is the same class of silent damage in the other direction.
+    // `autoAssign` is the near miss — it carries recorderId-shaped claims and is
+    // NOT an arm: a player expects their module→lane assignments back after a
+    // reload.
+    expect([...CLIP_PLAYER_ARM_DATA_FIELDS].sort()).toEqual(
+      ['audioRec', 'automation', 'noteRec', 'recording', 'songRec'].sort(),
+    );
+  });
+
+  it('the LIVE fields are absent from it — the save path still carries them', () => {
+    for (const f of ['playing', 'queued', 'queuedImmediate', 'autoAssign', 'resetNonce', 'sceneLaunch']) {
+      expect(CLIP_PLAYER_ARM_DATA_FIELDS as readonly string[], f).not.toContain(f);
     }
   });
 });
