@@ -410,7 +410,6 @@ describe('the pad ladder is not re-typed on a surface', () => {
     // MINIMUM-POPULATION GUARD. A regex that silently stopped matching would
     // otherwise turn this whole describe green by scanning nothing.
     expect(surfaces.length).toBeGreaterThanOrEqual(1);
-    expect(surfaces.some(([p]) => p.endsWith('ClipplayerCard.svelte'))).toBe(true);
     // ⚠ AND THE V2 FACE, BY NAME, NOW THAT IT EXISTS. When this helper was
     // written the face was still an unmerged branch, so the scan could only
     // PROMISE to cover it once it landed. It has (#2326), and two surfaces
@@ -440,9 +439,12 @@ describe('the pad ladder is not re-typed on a surface', () => {
     ).toEqual([]);
   });
 
-  it('the card actually calls the shared helper (not merely imports it)', () => {
-    const card = surfaces.find(([p]) => p.endsWith('ClipplayerCard.svelte'))?.[1] ?? '';
-    expect(card).toContain('clipPadState(dataObj()');
+  it('the face model actually calls the shared helper (not merely imports it)', () => {
+    // The subject moved with the surface: this used to read the legacy card's
+    // 'clipPadState(dataObj()' call site. The face model is the surviving one,
+    // and it is the one the launch grid now paints from.
+    const model = surfaces.find(([p]) => p.endsWith('clipplayer/clipplayer-face-model.ts'))?.[1] ?? '';
+    expect(model).toContain('clipPadState(');
   });
 
   it('POSITIVE CONTROL: the scan still reddens on a re-typed ladder in CODE', () => {
