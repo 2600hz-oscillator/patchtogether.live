@@ -21,17 +21,16 @@
 
 import { test, expect, type Page } from '@playwright/test';
 import { waitFrames } from '../_helpers/frames';
+import { installRenderSmokeHooks } from './_render-smoke';
 
 const NODE = 'bd';
 
 /**
- * ⚠ THIS SPEC IS RENDERER-DEPENDENT AND IT FAILED ON CI WHILE PASSING 3× ON A
- * REAL GPU — the capability-dependent class, verbatim. Every test here boots
- * the engine, injects a live GL chain and drives the dock, and CI is
- * SwiftShader (measured repo-wide at ~7.9 fps against ~60) with ten shards in
- * parallel on top. The flat 30 s default expired in clicks and attribute waits.
- *
- * Same knob and same shape as every other video spec in this suite.
+ * Since 2026-09-04 the engine is IDLED for this file (see the beforeEach note),
+ * so the non-parked cases are DOM-only and cheap everywhere. The CI margin is
+ * kept because the page still boots the full workflow rack, and the parked
+ * PRODUCER leg — the one renderer-dependent case left — documents its own
+ * budget needs at its park site.
  */
 const SLOW_RENDER = process.env.E2E_SWIFTSHADER === '1' || !!process.env.CI;
 const CASE_MS = SLOW_RENDER ? 120_000 : 30_000;
@@ -264,6 +263,18 @@ async function previewMoves(
 test.describe('backdraft faceplate — the preview ON/OFF toggle', () => {
   test.beforeEach(async ({ page }) => {
     test.setTimeout(CASE_MS);
+    // ⚠ THE ENGINE IS IDLED FOR THIS WHOLE FILE. Every non-parked case here is
+    // DOM/Y.Doc-only (attributes, boundingBoxes, menus) — none reads a pixel —
+    // yet the 2026-09-04 red-main trace (run 33831528406, shard 4) showed a
+    // 35 s click and a 13 s visibility wait with NO live chain wired: the
+    // workflow rack's own seeded video zone keeps SwiftShader compositing
+    // every frame underneath, and the page starves. That is the #1847 family
+    // mechanism ("flake vs under-budget", now triaged: under-budget, by
+    // starvation). Pausing the engine's rAF loop makes these cases cost what
+    // they measure. The parked PRODUCER case below (⚠ COLLAPSING DOES NOT
+    // KILL THE PRODUCER) genuinely needs the live loop — if un-parked it must
+    // NOT run under this hook (its positive control fails loudly if it does).
+    await installRenderSmokeHooks(page);
     await gotoShell(page);
     // ⚠ BACKDRAFT ALONE — NO SOURCE AND NO SINK, deliberately. Four of the five
     // cases here are about LAYOUT and STATE and are pure DOM; only the producer
@@ -300,22 +311,15 @@ test.describe('backdraft faceplate — the preview ON/OFF toggle', () => {
     expect(sinkOk, 'the workflow rack seeds a videoOut to pull the chain').toBe(true);
   }
 
-  // ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; the body and every assertion
-  // in it are UNCHANGED, so un-parking is deleting one `.fixme`.
-  //
-  // ⚠ THE SIBLINGS IN THIS FILE ARE ALREADY PARKED, AND THAT IS THE ARGUMENT.
-  // ':362' (21 recovered-on-retry observations) and ':425' (11) sit below this
-  // one and document the file's shared mechanism; this leg is the same face,
-  // the same toggle and the same collapse geometry, so it flakes for the
-  // reason they do rather than for one of its own. What is NEW here is only
-  // the observation: FIRST time THIS leg was seen recovering (run 32725328269
-  // shard 2/10, 2026-08-24 12:31Z; absent from main's previous 8 runs).
-  //
-  // NOT triaged as flake vs under-budget — nobody has evidence for either yet,
-  // and the entry says so rather than picking. UN-PARK IS THE FAMILY'S BUDGET
-  // DIAGNOSIS, not this leg's: fixing one of three siblings that share a
-  // mechanism would leave the other two parked and prove nothing.
-  test.fixme('OFF collapses and RECLAIMS the vertical space; ON restores it', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — recovered-on-retry, FIRST observation of THIS leg (run 32725328269 shard 2/10, 2026-08-24 12:31Z; not on main\'s previous 8 runs), NOT yet triaged as flake vs under-budget; SIBLING OF A PARKED FAMILY — :362 (21 observations) and :425 (11) in this same file are already parked and document the shared preview-collapse mechanism this leg runs on; un-park = the family\'s budget diagnosis, not this leg\'s alone' } }, async ({ page }) => {
+  // ↩ UN-PARKED from FLAKE-PARK #1847 (2026-09-04). The park entry demanded
+  // "the family's budget diagnosis, not this leg's" before any un-park — that
+  // diagnosis is now made, with a trace rather than a coin-flip census: the
+  // 2026-09-04 red-main run's trace shows every action slow (35 s click, 13 s
+  // visibility wait) with no live chain and no hang — page starvation from the
+  // seeded rack's SwiftShader compositing, i.e. UNDER-BUDGET, not a race. The
+  // engine is now idled in beforeEach, which removes the mechanism itself
+  // rather than out-waiting it. Body and assertions UNCHANGED from the park.
+  test('OFF collapses and RECLAIMS the vertical space; ON restores it', async ({ page }) => {
     const fv = await openFace(page);
     const wrap = fv.locator('[data-testid="backdraft-fs-wrap"]');
     const toggle = fv.getByTestId('backdraft-preview-toggle');
@@ -359,22 +363,15 @@ test.describe('backdraft faceplate — the preview ON/OFF toggle', () => {
     ).toBeLessThan(4);
   });
 
-  // ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; the body and its assertions are UNCHANGED.
-  // ⚠ THIS TEST HAD MAIN RED AT THE MOMENT OF PARKING, and the history is the
-  // whole point of #1847 rather than a regression to bisect. On ec8a0b856 it was
-  // FLAKY (2 attempts) and the job reported SUCCESS; on 3614b89c0 it FAILED BOTH
-  // ATTEMPTS and the job reported FAILURE. Nothing changed between them except
-  // which way the coin landed twice. A red main here is the census's central
-  // finding — recovered flakes riding inside green jobs — finally surfacing.
-  // NONDETERMINISM: 21 recovered-on-retry observation(s) across 23 SHA(s) / 12 branch(es) in the
-  // 96 h CI census to 2026-08-18 — it also hard-failed 2 time(s) on a branch, but the recovered-on-retry runs stayed green.
-  // LOST WHILE PARKED: the owner-stated floor for the faceplate preview ON/OFF
-  // button — *"that on/off persists through tab switches"*. With this parked,
-  // the toggle can silently revert on a tab switch, re-claiming the vertical
-  // space the owner asked it to give back, and no CI lane will say so.
-  // Re-enable only on a root cause (#1847); "it passes now" is not one — and a
-  // speculative fix here IS "it passes now" against a 33-observation history.
-  test.fixme('the choice PERSISTS across a tab switch (the owner\'s stated floor)', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 21 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page }) => {
+  // ↩ UN-PARKED from FLAKE-PARK #1847 (2026-09-04) — this restores the
+  // owner-stated floor the park was costing: *"that on/off persists through
+  // tab switches"*. Root cause per the family diagnosis above (see the
+  // beforeEach note): page starvation from the seeded rack's SwiftShader
+  // compositing, evidenced by the 2026-09-04 red-main trace, removed by
+  // idling the engine. The 21 recovered-on-retry observations and the
+  // "recovered flakes riding inside green jobs" history live in the #1847
+  // ledger. Body and assertions UNCHANGED from the park.
+  test('the choice PERSISTS across a tab switch (the owner\'s stated floor)', async ({ page }) => {
     const fv = await openFace(page);
     const wrap = fv.locator('[data-testid="backdraft-fs-wrap"]');
     await fv.getByTestId('backdraft-preview-toggle').click();
@@ -418,6 +415,13 @@ test.describe('backdraft faceplate — the preview ON/OFF toggle', () => {
   });
 
   // ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; the body and its assertions are UNCHANGED.
+  // ⚠ FAMILY DIAGNOSIS MADE 2026-09-04 (see the beforeEach note): the file's
+  // slowness is page starvation from the seeded rack's SwiftShader compositing
+  // — UNDER-BUDGET, not a race — and the DOM legs were un-parked on that fix.
+  // THIS leg is the exception: it needs the LIVE loop (its positive control
+  // asserts the preview animates), so the engine-idle fix cannot carry it. It
+  // stays parked until it gets its own boot without the idle hook plus a
+  // budget derived from what a SwiftShader feedback pass actually costs.
   // ⚠ THIS SPEC HAD MAIN RED AT THE MOMENT OF PARKING. On 3614b89c0 this test
   // recovered on retry while its sibling above lost both attempts; on ec8a0b856
   // BOTH were flaky and the job still reported SUCCESS. The spec was already
