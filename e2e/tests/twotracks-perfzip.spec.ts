@@ -28,7 +28,7 @@ async function setup(page: Page): Promise<string[]> {
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await page.waitForLoadState('networkidle');
   return errors;
 }
@@ -96,7 +96,9 @@ test.describe('TWOTRACKS tape + boundaries perf-zip round-trip', () => {
       { id: 'e1', from: { nodeId: VCO_ID, portId: 'saw' }, to: { nodeId: TT_ID, portId: 'audio_l_in_a' } },
       { id: 'e2', from: { nodeId: TT_ID, portId: 'out_l' }, to: { nodeId: SCOPE_ID, portId: 'ch1' } },
     ]);
-    await page.locator('[data-testid="twotracks-card"]').waitFor({ state: 'visible', timeout: 15000 });
+    await page
+      .locator('.svelte-flow__node[data-id="tt"] [data-testid="module-shell"]')
+      .waitFor({ state: 'visible', timeout: 15000 });
 
     // Record ~0.5 s of the VCO into reel A. Transport state machine:
     // idle --REC--> armed --PLAY--> rec (rolls + records from the top) --STOP--> idle.
@@ -162,7 +164,9 @@ test.describe('TWOTRACKS tape + boundaries perf-zip round-trip', () => {
       await w.__perfZip.load(bytes);
     }, zipB64);
 
-    await expect(page.locator('[data-testid="twotracks-card"]')).toBeVisible({ timeout: 12000 });
+    await expect(
+      page.locator('.svelte-flow__node[data-id="tt"] [data-testid="module-shell"]'),
+    ).toBeVisible({ timeout: 12000 });
     await expect.poll(() => nodeCount(page), { timeout: 8000 }).toBe(3);
 
     // MEDIA: the tape's bufLenA restored (the worklet refilled the ring buffer

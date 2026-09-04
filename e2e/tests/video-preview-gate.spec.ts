@@ -113,22 +113,24 @@ async function sampleChain(page: Page, frames: number): Promise<ChainSample> {
 }
 
 /**
- * IS THE PICTURE MOVING? Accumulates a cheap signature of the card's own
- * visible canvas once per rAF, in the page, and returns how many DISTINCT ones
- * were seen plus the non-black fraction of the last one.
+ * IS THE PICTURE MOVING? Accumulates a cheap signature of the module's visible
+ * canvas once per rAF, in the page, and returns how many DISTINCT ones were
+ * seen plus the non-black fraction of the last one. Takes a full CSS selector
+ * (on the default shell every video tile paints a `video-tile-thumb`, so the
+ * selector must be node-scoped).
  *
- * Distinct signatures — not "non-black" — because a card that froze on its last
- * good frame is non-black forever, and that is exactly the failure this spec
- * has to be able to see.
+ * Distinct signatures — not "non-black" — because a surface that froze on its
+ * last good frame is non-black forever, and that is exactly the failure this
+ * spec has to be able to see.
  */
-async function animation(page: Page, testId: string, frames: number): Promise<{
+async function animation(page: Page, selector: string, frames: number): Promise<{
   distinct: number;
   samples: number;
   nonZeroFrac: number;
 }> {
   return page.evaluate(
-    async ({ testId, frames }) => {
-      const el = document.querySelector(`[data-testid="${testId}"]`) as HTMLCanvasElement | null;
+    async ({ selector, frames }) => {
+      const el = document.querySelector(selector) as HTMLCanvasElement | null;
       if (!el) return { distinct: 0, samples: 0, nonZeroFrac: 0 };
       const ctx = el.getContext('2d');
       if (!ctx) return { distinct: 0, samples: 0, nonZeroFrac: 0 };
@@ -167,7 +169,7 @@ async function animation(page: Page, testId: string, frames: number): Promise<{
       });
       return { distinct: seen.size, samples, nonZeroFrac };
     },
-    { testId, frames },
+    { selector, frames },
   );
 }
 
@@ -238,7 +240,7 @@ test.describe('#1802 card preview gate', () => {
     errorWatch,
   }) => {
     test.setTimeout(180_000);
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
 
     // toybox → backdraft → VIDEO OUT. Three nodes so the test can separate
@@ -255,11 +257,15 @@ test.describe('#1802 card preview gate', () => {
         { id: 'e2', from: { nodeId: 'fx', portId: 'out' }, to: { nodeId: 'out', portId: 'in' }, sourceType: 'video', targetType: 'video' },
       ],
     );
-    await expect(page.locator('[data-testid="video-out-card"]')).toHaveCount(1);
+    await expect(
+      page.locator('.svelte-flow__node[data-id="out"] [data-testid="module-shell"]'),
+    ).toHaveCount(1);
     await waitFrames(page, 8);
 
     // ── (1) POSITIVE CONTROL: there is a LIVE, MOVING picture to lose ───────
-    const live = await animation(page, 'video-out-canvas', ANIMATION_FRAMES);
+    // The shell's visible per-node surface is the lane tile thumb (node-scoped
+    // — every video tile paints one).
+    const live = await animation(page, '.svelte-flow__node[data-id="out"] canvas[data-testid="video-tile-thumb"]', ANIMATION_FRAMES);
     console.log(`[preview-gate] baseline animation ${JSON.stringify(live)}`);
     expect(
       live.samples,
@@ -293,12 +299,25 @@ test.describe('#1802 card preview gate', () => {
     await moveOffScreen(page, ['src', 'fx']);
     const watched = await sampleChain(page, 30);
     console.log(`[preview-gate] upstream off-screen, OUTPUT watching ${JSON.stringify(watched)}`);
+    // On the default shell the refusal is enacted UPSTREAM of the engine's
+    // decision ledger: the lane thumb's own IntersectionObserver releases its
+    // blit loop entirely (VideoTileThumb), so no blit is attempted and no
+    // per-node decision is recorded — `undefined` here IS the refusal. The
+    // legacy card's unconditional rAF loop was what produced `skip:offscreen`
+    // entries. Either spelling must never be `skip:throttled` (only the
+    // viewport gate says "stop being an observer"); the engine's own view of
+    // visibility is asserted alongside so a missing entry can't mask a broken
+    // observer feed.
     expect(
-      watched.decisions['src'],
-      'the off-screen card\'s preview is refused, and refused for the RIGHT reason — ' +
-        '`skip:offscreen`, not `skip:throttled` (they mean different things and only one of ' +
-        'them says "stop being an observer")',
-    ).toBe('skip:offscreen');
+      [undefined, 'skip:offscreen'],
+      'the off-screen tile\'s preview is refused — the thumb released its loop ' +
+        `(no decision recorded) or the engine refused with skip:offscreen; got ` +
+        `\`${watched.decisions['src']}\``,
+    ).toContain(watched.decisions['src']);
+    expect(
+      watched.cardVisible['src'],
+      'the engine visibility feed really reports src off-screen',
+    ).toBe(false);
     for (const id of ['src', 'fx', 'out']) {
       expect(
         watched.drawn[id],
@@ -327,7 +346,7 @@ test.describe('#1802 card preview gate', () => {
     // ── (4) RETURN LEG: the picture comes back LIVE, not stale ──────────────
     await moveOnScreen(page, ['src', 'fx', 'out']);
     await waitFrames(page, 8);
-    const back = await animation(page, 'video-out-canvas', ANIMATION_FRAMES);
+    const back = await animation(page, '.svelte-flow__node[data-id="out"] canvas[data-testid="video-tile-thumb"]', ANIMATION_FRAMES);
     console.log(`[preview-gate] after return ${JSON.stringify(back)}`);
     expect(
       back.nonZeroFrac,
@@ -361,7 +380,7 @@ test.describe('#1802 card preview gate', () => {
     errorWatch,
   }) => {
     test.setTimeout(180_000);
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
     await spawnPatch(
       page,
@@ -377,7 +396,7 @@ test.describe('#1802 card preview gate', () => {
 
     // POSITIVE CONTROL first, as everywhere in this file: there is a moving
     // picture before the dock is involved at all.
-    const before = await animation(page, 'video-out-canvas', ANIMATION_FRAMES);
+    const before = await animation(page, '.svelte-flow__node[data-id="out"] canvas[data-testid="video-tile-thumb"]', ANIMATION_FRAMES);
     expect(before.distinct, 'POSITIVE CONTROL: the OUTPUT is animating to begin with').toBeGreaterThan(2);
 
     await page.evaluate(() => {
@@ -392,12 +411,17 @@ test.describe('#1802 card preview gate', () => {
       sample.cardVisible['out'],
       'the flow node really is off-screen — otherwise this test proves nothing about the dock',
     ).toBe(false);
+    // The face body presents through its OWN rAF blit loop
+    // (blitOutputToDrawingBuffer — the every-present-path funnel), so the
+    // decision ledger the legacy card's gated loop wrote has no entry here.
+    // The lease-beats-viewport fact is observable as ENGINE BLITS still being
+    // issued while the engine believes the flow node is off-screen.
     expect(
-      sample.decisions['out'],
-      'the LEASE the dock full-view holds must beat the viewport gate: the engine thinks the ' +
-        'card is off-screen, and the picture is still the only thing on the user\'s screen. ' +
-        `Got \`${sample.decisions['out']}\`.`,
-    ).toBe('blit');
+      sample.blitCalls,
+      'the dock full-view keeps issuing engine blits with the flow node off-screen — the ' +
+        'presentation surface beats the viewport gate (a gate that consulted only ' +
+        `cardVisible would have blanked the dock). blitCalls=${sample.blitCalls}`,
+    ).toBeGreaterThan(0);
     for (const id of ['src', 'out']) {
       expect(
         sample.drawn[id],
@@ -406,7 +430,13 @@ test.describe('#1802 card preview gate', () => {
       ).toBeGreaterThan(5);
     }
 
-    const dockLive = await animation(page, 'video-out-canvas', ANIMATION_FRAMES);
+    // With the flow node off-screen the thumb has released; the LIVE surface
+    // is the dock pane's face canvas (the lease holder).
+    const dockLive = await animation(
+      page,
+      '[data-testid="dock-fullview-pane"][data-pane-node="out"] canvas[data-testid="videoout-face-canvas"]',
+      ANIMATION_FRAMES,
+    );
     console.log(`[preview-gate] dock full-view animation ${JSON.stringify(dockLive)}`);
     expect(
       dockLive.nonZeroFrac,

@@ -226,7 +226,7 @@ test('RECORDERBOX captures patched audio at an ENCODABLE (AAC-LC) sample rate', 
   page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(`console: ${m.text()}`); });
 
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await page.waitForLoadState('networkidle');
 
   // Real source chain: an always-on ANALOG VCO (saw) → recorderbox.audio_l.
@@ -241,7 +241,9 @@ test('RECORDERBOX captures patched audio at an ENCODABLE (AAC-LC) sample rate', 
     ],
   );
 
-  await expect(page.locator('[data-testid="recorderbox-card"]')).toBeVisible();
+  await expect(
+    page.locator('.svelte-flow__node[data-id="rec"] [data-testid="module-shell"]'),
+  ).toBeVisible();
   // The cross-domain audio→video audio-input edge must survive engine.addEdge.
   expect(await readEdgeIds(page)).toContain('e-vco-al');
 
@@ -350,20 +352,34 @@ test('RECORDERBOX SIZE selector defaults to BALANCED + maps to a smaller profile
   page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(`console: ${m.text()}`); });
 
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(page, [
     { id: 'rec', type: 'recorderbox', position: { x: 200, y: 80 }, domain: 'video' },
   ]);
-  await expect(page.locator('[data-testid="recorderbox-card"]')).toBeVisible();
+  // The capture body (picker, SIZE selector, lamps, folder row) is
+  // `fullViewBody` — dock-only; open the pane and scope every UI read there.
+  await page.waitForFunction(
+    () =>
+      typeof (globalThis as unknown as { __openDockFullView?: unknown }).__openDockFullView ===
+      'function',
+    undefined,
+    { timeout: 30_000 },
+  );
+  await page.evaluate(
+    (i) => (globalThis as unknown as { __openDockFullView: (x: string) => void }).__openDockFullView(i),
+    'rec',
+  );
+  const pane = page.locator('[data-testid="dock-fullview-pane"][data-pane-node="rec"]');
+  await expect(pane.getByTestId('recorderbox-face-body')).toBeVisible({ timeout: 60_000 });
 
   // (1) STRUCTURAL: the SIZE selector renders with HIGH/BALANCED/SMALL + BALANCED
   // selected by default (owner default 2026-06-15 — smaller files at a small
   // quality hit; HIGH stays one click away). The tier syncs to node.data.quality
   // — flip to SMALL and confirm it's persisted on the live store (the same
   // Y.Doc-synced field the recorder reads at start).
-  const sel = page.locator('[data-testid="recorderbox-quality"]');
+  const sel = pane.locator('[data-testid="recorderbox-face-quality"]');
   await expect(sel).toBeVisible({ timeout: 10_000 });
   await expect(sel.locator('option')).toHaveText(['HIGH', 'BALANCED', 'SMALL']);
   await expect(sel).toHaveValue('balanced');
@@ -404,7 +420,7 @@ test('RECORDERBOX SIZE selector defaults to BALANCED + maps to a smaller profile
   console.log('RECORDERBOX_CODEC_SUPPORT', JSON.stringify(codecSupport));
   // At minimum SOME codec path exists OR the card would show the no-encoder
   // badge — assert the two are mutually exclusive (a real terminal state).
-  const badge = await page.locator('[data-testid="recorderbox-no-encoder"]').count();
+  const badge = await pane.locator('[data-testid="recorderbox-face-no-encoder"]').count();
   const anyCodec = codecSupport.hevc || codecSupport.avc;
   expect(anyCodec || badge >= 0, 'either a codec is advertised or the no-encoder badge is shown').toBeTruthy();
 
@@ -423,15 +439,29 @@ test('RECORDERBOX RECORD picks a FOLDER (no per-save file prompt)', async ({ pag
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
 
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(page, [
     { id: 'rec', type: 'recorderbox', position: { x: 200, y: 80 }, domain: 'video' },
   ]);
-  await expect(page.locator('[data-testid="recorderbox-card"]')).toBeVisible();
+  // The capture body (picker, SIZE selector, lamps, folder row) is
+  // `fullViewBody` — dock-only; open the pane and scope every UI read there.
+  await page.waitForFunction(
+    () =>
+      typeof (globalThis as unknown as { __openDockFullView?: unknown }).__openDockFullView ===
+      'function',
+    undefined,
+    { timeout: 30_000 },
+  );
+  await page.evaluate(
+    (i) => (globalThis as unknown as { __openDockFullView: (x: string) => void }).__openDockFullView(i),
+    'rec',
+  );
+  const pane = page.locator('[data-testid="dock-fullview-pane"][data-pane-node="rec"]');
+  await expect(pane.getByTestId('recorderbox-face-body')).toBeVisible({ timeout: 60_000 });
 
-  // Stub both pickers + count which one the card calls. The directory picker
+  // Stub both pickers + count which one the recorder calls. The directory picker
   // returns a fake folder handle (getFileHandle returns a no-op writable); the
   // file picker counter must stay 0 (the regression: a per-save "Save As").
   await page.evaluate(() => {
@@ -475,8 +505,8 @@ test('RECORDERBOX RECORD picks a FOLDER (no per-save file prompt)', async ({ pag
     expect(fileCalls, 'no per-save "Save As" file-picker prompt — folder model').toBe(0);
     await setRecording(page, 'rec', false);
   } else {
-    // CI graceful-degrade: no encoder → Record disabled + badge, no picker call.
-    await expect(page.locator('[data-testid="recorderbox-no-encoder"]')).toBeVisible();
+    // CI graceful-degrade: no encoder → Record disabled + lamp, no picker call.
+    await expect(pane.locator('[data-testid="recorderbox-face-no-encoder"]')).toBeVisible();
   }
 
   expect(errors.filter((e) => !e.includes('favicon')), 'no page errors').toEqual([]);
@@ -630,15 +660,29 @@ test.fixme(
 test('RECORDERBOX destination folder is RE-PICKABLE (CHANGE re-prompts; cancel → subfolder hint)', async ({ page }) => {
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [
     { id: 'rec', type: 'recorderbox', position: { x: 200, y: 80 }, domain: 'video' },
   ]);
-  await expect(page.locator('[data-testid="recorderbox-card"]')).toBeVisible();
+  // The capture body (picker, SIZE selector, lamps, folder row) is
+  // `fullViewBody` — dock-only; open the pane and scope every UI read there.
+  await page.waitForFunction(
+    () =>
+      typeof (globalThis as unknown as { __openDockFullView?: unknown }).__openDockFullView ===
+      'function',
+    undefined,
+    { timeout: 30_000 },
+  );
+  await page.evaluate(
+    (i) => (globalThis as unknown as { __openDockFullView: (x: string) => void }).__openDockFullView(i),
+    'rec',
+  );
+  const pane = page.locator('[data-testid="dock-fullview-pane"][data-pane-node="rec"]');
+  await expect(pane.getByTestId('recorderbox-face-body')).toBeVisible({ timeout: 60_000 });
 
-  const readout = page.locator('[data-testid="recorderbox-folder"]');
-  const changeBtn = page.locator('[data-testid="recorderbox-change-folder"]');
+  const readout = pane.locator('[data-testid="recorderbox-face-folder"]');
+  const changeBtn = pane.locator('[data-testid="recorderbox-face-change-folder"]');
   await expect(readout).toHaveText('(chosen on record)');
 
   // Arm the directory picker to return a NAMED folder with granted permission.
@@ -668,7 +712,7 @@ test('RECORDERBOX destination folder is RE-PICKABLE (CHANGE re-prompts; cancel �
     };
   });
   await changeBtn.click();
-  await expect(page.locator('[data-testid="recorderbox-folder-hint"]')).toBeVisible();
+  await expect(pane.locator('[data-testid="recorderbox-face-folder-hint"]')).toBeVisible();
   await expect(readout).toHaveText('SecondFolder');
 
   expect(errors.filter((e) => !e.includes('favicon')), 'no page errors').toEqual([]);

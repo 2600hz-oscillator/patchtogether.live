@@ -109,12 +109,15 @@ test.describe('video pull evaluation — unwatched chains cost zero', () => {
   test('offscreen generator chain stops drawing; watched OUTPUT keeps 1:1 cadence', async ({ page, errorWatch }) => {
     test.setTimeout(60_000);
 
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(page, pullPatchNodes(), pullPatchEdges());
 
-    await expect(page.locator('[data-testid="video-out-card"]'), 'output card mounted').toHaveCount(1);
+    await expect(
+      page.locator('.svelte-flow__node[data-id="out"] [data-testid="module-shell"]'),
+      'output faceplate mounted',
+    ).toHaveCount(1);
 
     // Pan the heavy corner out of sight (the user flow pull-eval targets).
     await moveNodesFar(page, HEAVIES);
@@ -156,7 +159,7 @@ test.describe('video pull evaluation — unwatched chains cost zero', () => {
     // varies, renderer varies; this is a sanity check that skipping the
     // heavies didn't take the watched chain dark).
     const nonBlack = await page
-      .locator('[data-testid="video-out-canvas"]')
+      .locator('.svelte-flow__node[data-id="out"] canvas[data-testid="video-tile-thumb"]')
       .evaluate((el) => {
         const c = el as HTMLCanvasElement;
         const ctx = c.getContext('2d');
@@ -174,7 +177,7 @@ test.describe('video pull evaluation — unwatched chains cost zero', () => {
     expect(nonBlack, 'watched OUTPUT stays live (non-black)').toBeGreaterThan(0.02);
   });
 
-  test('a PRESENTING card scrolled off-screen keeps its whole chain drawing (hard lease — owner projector freeze, 2026-08-05)', async ({ page, errorWatch }) => {
+  test('a PRESENTING surface keeps its off-screen node drawing (hard lease — owner projector freeze, 2026-08-05)', async ({ page, errorWatch }) => {
     test.setTimeout(60_000);
     // The owner scenario: backdraft presenting on a projector (full-frame is
     // the same `presenting` seam as the present popup, and deterministic to
@@ -182,36 +185,53 @@ test.describe('video pull evaluation — unwatched chains cost zero', () => {
     // use-render-lease fix only VideoOutCard held the lease: measured on
     // main, a presenting backdraft drew 1:1 on-screen (+80/+80) and exactly
     // ZERO frames once scrolled off — the projector froze on the last frame.
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(page, [
       { id: 'bd1', type: 'backdraft', position: { x: 120, y: 120 }, domain: 'video' as const },
     ]);
-    // Enter the presenting mode (full-frame) the way the card itself does.
-    await page.evaluate(() => {
-      const w = globalThis as unknown as {
-        __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
-        __ydoc: { transact: (fn: () => void) => void };
-      };
-      w.__ydoc.transact(() => {
-        const n = w.__patch.nodes['bd1'];
-        if (n) { if (!n.data) n.data = {}; n.data.fullFrame = true; }
-      });
-    });
+    // THE SHELL'S PRESENTING SURFACE FOR THIS SCENARIO IS THE DOCK PANE. A
+    // VIDEO-domain module expanded in the dock full-view holds a HARD render
+    // lease for as long as the faceplate is open (Canvas.svelte's per-pane
+    // acquire — the dock mount is a live presentation surface OUTSIDE the flow
+    // pane, invisible to the lane-element IntersectionObserver). The card-era
+    // leg drove `data.fullFrame` because the CARD's viewport rect was the only
+    // presenting surface; on the shell the pane plays that role, and the body's
+    // own fullFrame/fullscreen/present leases (use-render-lease's five-card
+    // seam) are covered by the fullscreen/full-frame specs. MEASURED while
+    // porting: an open pane holds the lease REGARDLESS of data.fullFrame, so a
+    // mode-exit control here would poll a lease the pane keeps by design —
+    // the honest release control is closing the pane, below.
+    await page.waitForFunction(
+      () =>
+        typeof (globalThis as unknown as { __openDockFullView?: unknown }).__openDockFullView ===
+        'function',
+      undefined,
+      { timeout: 30_000 },
+    );
+    await page.evaluate(
+      (i) => (globalThis as unknown as { __openDockFullView: (x: string) => void }).__openDockFullView(i),
+      'bd1',
+    );
+    await expect(
+      page
+        .locator('[data-testid="dock-fullview-pane"][data-pane-node="bd1"]')
+        .getByTestId('backdraft-face-output'),
+    ).toBeVisible({ timeout: 60_000 });
 
-    // The lease appears (the card's attachRenderLease effect).
+    // The lease appears (Canvas's per-open-pane acquire).
     await expect
-      .poll(async () => {
-        const p2 = await probe(page, ['bd1']);
-        void p2;
-        return page.evaluate(() => {
-          const w = globalThis as unknown as {
-            __engine: () => { getDomain: (d: string) => { pullStats: () => { leased: string[] } } };
-          };
-          return w.__engine().getDomain('video').pullStats().leased;
-        });
-      }, { message: 'presenting backdraft holds a render lease', timeout: 10_000 })
+      .poll(
+        () =>
+          page.evaluate(() => {
+            const w = globalThis as unknown as {
+              __engine: () => { getDomain: (d: string) => { pullStats: () => { leased: string[] } } };
+            };
+            return w.__engine().getDomain('video').pullStats().leased;
+          }),
+        { message: 'the open video pane holds a render lease', timeout: 10_000 },
+      )
       .toContain('bd1');
 
     // Scroll it far off-screen (the freeze trigger) and give the observer +
@@ -230,21 +250,26 @@ test.describe('video pull evaluation — unwatched chains cost zero', () => {
     // Full cadence, not merely non-zero: the presented surface must stay LIVE.
     expect(bdDelta, `presenting backdraft drew ${bdDelta}/${engineDelta} frames while off-screen`).toBe(engineDelta);
 
-    // Negative control (the instrument still measures what it claims): drop
-    // the presenting mode and the SAME node must decay back to skipped.
-    await page.evaluate(() => {
-      const w = globalThis as unknown as {
-        __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
-        __ydoc: { transact: (fn: () => void) => void };
-      };
-      w.__ydoc.transact(() => {
-        const n = w.__patch.nodes['bd1'];
-        if (n?.data) n.data.fullFrame = false;
-      });
-    });
+    // Negative control (the instrument still measures what it claims): close
+    // the pane — the presenting surface is gone, the lease releases ($effect
+    // cleanup), and the SAME off-screen node decays back to skipped.
+    await page.keyboard.press('Escape');
+    await expect(page.locator('[data-testid="dock-fullview-pane"]')).toHaveCount(0);
+    await expect
+      .poll(
+        () =>
+          page.evaluate(() => {
+            const w = globalThis as unknown as {
+              __engine: () => { getDomain: (d: string) => { pullStats: () => { leased: string[] } } };
+            };
+            return w.__engine().getDomain('video').pullStats().leased;
+          }),
+        { message: 'lease released when the pane closed', timeout: 10_000 },
+      )
+      .not.toContain('bd1');
     await expect
       .poll(async () => (await probe(page, ['bd1'])).skipped.includes('bd1'), {
-        message: 'lease released on mode exit → off-screen node decays to skipped',
+        message: 'presenting surface gone → off-screen node decays to skipped',
         timeout: 20_000,
       })
       .toBe(true);
@@ -257,11 +282,11 @@ test.describe('video pull evaluation — unwatched chains cost zero', () => {
       (globalThis as unknown as { __videoPullEval?: boolean }).__videoPullEval = false;
     });
 
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(page, pullPatchNodes(), pullPatchEdges());
-    await expect(page.locator('[data-testid="video-out-card"]')).toHaveCount(1);
+    await expect(page.locator('.svelte-flow__node[data-id="out"] [data-testid="module-shell"]')).toHaveCount(1);
     await moveNodesFar(page, HEAVIES);
 
     // Give the same decay window a chance (grace + observer), then verify the

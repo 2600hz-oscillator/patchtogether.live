@@ -37,7 +37,7 @@ async function setup(page: Page): Promise<string[]> {
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await page.waitForLoadState('networkidle');
   return errors;
 }
@@ -127,15 +127,29 @@ async function readOutputStats(page: Page, outNodeId: string): Promise<{ peak: n
   return summarize(samples);
 }
 
-/** Load + play the AV fixture into a VIDEOVARISPEED card (scoped by id). */
+/** Load + play the AV fixture into a VIDEOVARISPEED via its dock full-view
+ *  pane (the picker + state attrs — on `videovarispeed-face-body` — are
+ *  `fullViewBody`, dock only; pane-scoped throughout). */
 async function loadAndPlay(page: Page, nodeId: string): Promise<void> {
-  const card = page.locator(`.svelte-flow__node[data-id="${nodeId}"]`);
-  await card.locator('[data-testid="videovarispeed-file-input"]').setInputFiles(AV_FIXTURE);
-  await expect(card.locator('[data-testid="videovarispeed-card"]')).toHaveAttribute(
+  await page.waitForFunction(
+    () =>
+      typeof (globalThis as unknown as { __openDockFullView?: unknown }).__openDockFullView ===
+      'function',
+    undefined,
+    { timeout: 30_000 },
+  );
+  await page.evaluate(
+    (i) => (globalThis as unknown as { __openDockFullView: (x: string) => void }).__openDockFullView(i),
+    nodeId,
+  );
+  const pane = page.locator(`[data-testid="dock-fullview-pane"][data-pane-node="${nodeId}"]`);
+  await expect(pane.locator('[data-testid="videovarispeed-face-body"]')).toBeVisible({ timeout: 60_000 });
+  await pane.locator('[data-testid="videovarispeed-file-input"]').setInputFiles(AV_FIXTURE);
+  await expect(pane.locator('[data-testid="videovarispeed-face-body"]')).toHaveAttribute(
     'data-has-local-file', 'true', { timeout: 8000 },
   );
   await writePlaying(page, nodeId, true);
-  await expect(card.locator('[data-testid="videovarispeed-card"]')).toHaveAttribute(
+  await expect(pane.locator('[data-testid="videovarispeed-face-body"]')).toHaveAttribute(
     'data-is-playing', 'true', { timeout: 4000 },
   );
 }
