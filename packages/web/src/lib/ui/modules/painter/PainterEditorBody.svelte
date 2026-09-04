@@ -317,7 +317,12 @@
 
   function onPointerDown(e: PointerEvent): void {
     if (!ctx2d || !canvasEl) return;
-    canvasEl.setPointerCapture?.(e.pointerId);
+    // Guarded for the same reason `controls/Button.svelte` is: the capture sits
+    // in front of the whole gesture switch below, so an unguarded throw would
+    // swallow the stroke, the fill and the colour pick alike — the surface
+    // would take the press and paint nothing. `?.` guards a MISSING method, not
+    // a rejected pointer, which is the case that actually happens.
+    try { canvasEl.setPointerCapture?.(e.pointerId); } catch { /* not capturable */ }
     const [x, y] = pointerToCanvas(canvasEl, e.clientX, e.clientY);
     startX = x;
     startY = y;
