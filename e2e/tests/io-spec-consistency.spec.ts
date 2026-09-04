@@ -94,15 +94,13 @@ const SUT = 'sut';
 // lose coverage by hiding the failure. This is the canonical list of
 // "needs-follow-up" modules; the per-port sweeps' SKIP_SPAWN mirrors it.
 const SKIP_DEF_VS_UI: Record<string, string> = {
-  // GROUP is a meta-domain container whose card body renders the
-  // exposed-ports surface of the modules a user added INSIDE it. A
-  // bare spawnPatch({type:'group'}) without `data.children` doesn't
-  // render the Svelte Flow node, so spawnPatch's "wait for N nodes"
-  // check times out. Functional coverage lives in
-  // e2e/tests/grouping-phase1.spec.ts (creates a group from an
-  // actual selection of modules). Promote here once a spawnPatch
-  // overload accepts initial node.data.
-  group: 'requires data.children; covered by e2e/tests/grouping-phase1.spec.ts',
+  // ⚠ THE `group` ENTRY IS GONE WITH ITS MODULE. It read "requires
+  // data.children; covered by e2e/tests/grouping-phase1.spec.ts" — a bare
+  // spawnPatch of a GROUP! rendered no flow node, so the "wait for N nodes"
+  // check timed out. Both the module and that spec are deleted (owner ruling:
+  // group and sticky are deleted entirely). It had to go in the SAME commit as
+  // the def: the anchor below (`staleIn('SKIP_DEF_VS_UI', ...)`) reds on a key
+  // naming a module that is not in REGISTRY.
   // CADILLAC renders as a roaming overlay sprite (CadillacOverlay), not
   // as a SvelteFlow card — Canvas.svelte filters it out of flowNodes so
   // xyflow doesn't paint a fallback box. spawnPatch's "wait for N cards"
@@ -396,8 +394,10 @@ test.describe.configure({ mode: 'parallel' });
 test.describe('I/O spec consistency: def <-> rendered tile handles', () => {
   test('seed: registry manifest is non-empty + every non-meta module has ≥1 port', () => {
     expect(REGISTRY.length, 'manifest contains modules').toBeGreaterThan(0);
-    // Meta-domain modules (sticky, group) intentionally have zero
-    // ports — they're pure-UI cards with no signal-routing surface.
+    // Meta-domain modules intentionally have zero ports — they're pure-UI
+    // cards with no signal-routing surface. (`sticky` and `group` were the two
+    // this clause was written for; both are deleted, and CADILLAC — an overlay
+    // sprite with no card at all — is the surviving example.)
     // LIVECODE + clockedRunner are side-tools that mutate the rack
     // via the JS runtime; they intentionally have no patch I/O.
     // CHROMACONSOLE is a control surface for an EXTERNAL device: its output

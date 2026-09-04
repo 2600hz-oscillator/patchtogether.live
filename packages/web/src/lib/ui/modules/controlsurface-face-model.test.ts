@@ -65,23 +65,29 @@ describe('controlSurface face — the promotion', () => {
   // ⚠ THE NEGATIVE CONTROL: the rule still honours a carve-out for a type that
   // keeps one, so "the entry is gone" and "the rule stopped consulting the set"
   // cannot look alike.
-  // (⚠ The subject has now moved twice: it was `controlSurface`, whose own
-  // promotion drained that membership on 2026-09-01, then `clipplayer`, whose
-  // promotion drained the set of its LAST MODULE CARD. It re-points at `sticky`
-  // — organizational chrome, which is what `NON_SHELL_LANE_TYPES` now holds
-  // exclusively, and which no face programme can promote away. That makes this
-  // the last re-point the control can ever need.)
+  // (⚠ The subject has now moved THREE times, and the last move is the one that
+  // ends the sequence. It was `controlSurface`, whose own promotion drained that
+  // membership on 2026-09-01; then `clipplayer`, whose promotion drained the set
+  // of its LAST MODULE CARD; then `sticky`, chosen because organizational chrome
+  // "no face programme can promote away" — a claim this file made and which was
+  // WRONG WITHIN DAYS, because the owner DELETED the chrome outright rather than
+  // promoting it. The subject is now `cadillac`, and the argument is finally
+  // structural rather than a prediction: it renders as a full-canvas overlay
+  // sprite and has no SvelteFlow node body at all, so there is nothing a face
+  // could replace. Read the earlier claim as the warning it turned out to be —
+  // "this is the last re-point" is a forecast, and forecasts about a list this
+  // small keep being falsified by a route nobody was watching.)
   it('the rule still honours a carve-out for the types that keep one', () => {
     expect(
       laneRenderKind({
         shellFaces: true,
         userDocked: false,
-        type: 'sticky',
+        type: 'cadillac',
         hasCard: false,
         migrated: false,
       }),
     ).toBe('legacy');
-    expect(NON_SHELL_LANE_TYPES.has('sticky'), 'a real member remains').toBe(true);
+    expect(NON_SHELL_LANE_TYPES.has('cadillac'), 'a real member remains').toBe(true);
   });
 
   // ⚠ THE USER-DOCKED RESIDUAL, PINNED rather than discovered in review:

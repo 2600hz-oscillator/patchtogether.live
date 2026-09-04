@@ -42,7 +42,7 @@ const EXPECTED_NODE_TYPES = [
   'dockscope',
   'doom', 'drummergirl', 'dx7', 'es9', 'fader', 'feedback', 'filter',
   'featurecv',
-  'fourplexer', 'foxy', 'frametable', 'freezeframe', 'frogger', 'gamepad', 'gatemaiden', 'gibribbon', 'grainsOfVision', 'graphicEq', 'group',
+  'fourplexer', 'foxy', 'frametable', 'freezeframe', 'frogger', 'gamepad', 'gatemaiden', 'gibribbon', 'grainsOfVision', 'graphicEq',
   'illogic', 'inwards', 'joystick', 'karplus', 'kickdrum', 'kria', 'lfo', 'lines', 'livecode', 'loopback',
   'ninelives',
   'luma', 'lumakey', 'lushgarden', 'macrooscillator', 'mandleblot', 'mappy', 'marbles', 'matrixMix', 'meowbox',
@@ -52,7 +52,7 @@ const EXPECTED_NODE_TYPES = [
   'polarizer', 'posterbox', 'ptzcam', 'qbrt', 'rasterize', 'reshaper', 'resofilter', 'reverb', 'ringback', 'rings',
   'ruttetra', 'sampleHold', 'samsloop', 'scope', 'score', 'scoreboard', 'seqtris',
   'scaler', 'shapedramps', 'shapegen', 'shapes', 'shimmershine', 'sidecar', 'sixstrum', 'sourcery', 'spectrograph',
-  'skifree', 'slewSwitch', 'snaredrum', 'stereovca', 'sticky',
+  'skifree', 'slewSwitch', 'snaredrum', 'stereovca',
   'tidyVco', 'tomtom',
   'swolevco', 'synesthesia', 'tempest', 'tempolock', 'timelorde', 'trails', 'treeohvox', 'tvLibrarian',
   'launchpadControlLeft', 'push2Control',
@@ -148,9 +148,12 @@ describe('buildNodeTypes() (glob-driven card map)', () => {
 //       shared <PatchPanel> — i.e. its jacks live in the panel.
 describe('card patch-surface invariants', () => {
   // Genuinely port-less special cases that correctly have NO PatchPanel and NO
-  // jacks: a live-code editor, a clocked sub-runner, a paper sticky note. They
-  // carry zero ports, so they draw neither a rear patch panel nor any handles.
-  const NO_PATCH_PANEL_BY_DESIGN = new Set(['clockedRunner', 'livecode', 'sticky']);
+  // jacks: a live-code editor and a clocked sub-runner. They carry zero ports,
+  // so they draw neither a rear patch panel nor any handles.
+  // ⚠ `sticky` was the third — a paper note with no ports — and is deleted with
+  // its module (owner ruling). This set is derived against the card map, so an
+  // entry naming a card that no longer exists is red.
+  const NO_PATCH_PANEL_BY_DESIGN = new Set(['clockedRunner', 'livecode']);
 
   it('cards route I/O through PatchPanel and never render a raw <Handle> jack', () => {
     const rawJackOffenders: string[] = [];

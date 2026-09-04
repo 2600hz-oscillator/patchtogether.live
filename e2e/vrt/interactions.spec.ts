@@ -9,7 +9,8 @@
 //   - port-context-menu     → right-click PortContextMenu (a port handle)
 //   - module-palette        → Add-module palette (pane right-click), default view
 //   - palette-vcos          → palette drilled into "Audio modules → VCOs"
-//   - saved-groups-picker   → modal overlay (api stubbed for determinism)
+//   (- saved-groups-picker  → DELETED with the GROUP! module; see the note
+//                            where scene 6 stood.)
 //
 // Baselines are authored by LINUX CI — one set, no {platform} segment (see
 // vrt.config.ts). `task vrt:commit` dispatches the capture; a local macOS run

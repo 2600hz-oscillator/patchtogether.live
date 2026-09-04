@@ -491,7 +491,7 @@
   //
   // Teardown is keyed to GRAPH lifetime instead: `nodeSamsloop.sweep(liveIds)`
   // runs from Canvas beside nodeMedia / nodePresent / nodeRecorder, so a node
-  // deleted by ANY route (menu, lasso, undo, a peer's CRDT delete, Clear, a
+  // deleted by ANY route (menu, Backspace, undo, a peer's CRDT delete, Clear, a
   // patch load) ends its take and no delete site has to remember. The registry
   // exposes NO per-card teardown method — the absence is the guard, and `tsc`
   // refuses the regression before any test runs.

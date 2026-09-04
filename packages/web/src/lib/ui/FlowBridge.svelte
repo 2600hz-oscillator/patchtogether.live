@@ -46,8 +46,9 @@
   export interface FlowBridgeApi {
     screenToFlowPosition: (p: XYPosition) => XYPosition;
     /** Inverse of screenToFlowPosition — convert a flow-space point to
-     *  client-space pixels. Used by the lasso overlay so the anchor stays
-     *  glued to its flow-space click point while the user pans/zooms. */
+     *  client-space pixels. (Its original caller was the group LASSO overlay,
+     *  which kept its anchor glued to a flow-space click point while the user
+     *  panned/zoomed; that overlay went with the GROUP! module.) */
     flowToScreenPosition: (p: XYPosition) => XYPosition;
     getNode: (id: string) => FlowNode | undefined;
     getInternalNode: (id: string) => InternalFlowNode | undefined;

@@ -101,7 +101,15 @@ import { collectPageErrors } from './_page-errors';
 // Modules whose card can't render under bare spawnPatch (mirrors
 // _per-module-per-port-shared.ts SKIP_SPAWN).
 const SKIP_SPAWN: Record<string, string> = {
-  group: 'requires data.children; covered by e2e/tests/grouping-phase1.spec.ts',
+  // ⚠ THE `group` ROW IS GONE WITH ITS MODULE (owner ruling: group and sticky
+  // are deleted entirely). It skipped the sweep because a bare spawnPatch of a
+  // GROUP! rendered no flow card without `data.children`, and cited the
+  // grouping phase-1 spec as its coverage. Both halves are now false: the
+  // module is unregistered so the sweep never reaches it, and the spec it
+  // cited is deleted too. The cited filename is deliberately NOT repeated
+  // here — `exemption-coverage-anchors.test.ts` scans this file for spec
+  // names and reds on any that is not in the tree, which is exactly the
+  // check that caught this row.
   cadillac: 'overlay sprite, not a flow card (zero ports); covered by e2e/tests/cadillac.spec.ts',
 };
 

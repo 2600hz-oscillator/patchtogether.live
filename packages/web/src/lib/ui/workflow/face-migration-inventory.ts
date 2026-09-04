@@ -1633,11 +1633,13 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
       'HAS NO WELL and that is not fixed here: both outputs are `gate`, so ' +
       '`primaryAudioOutPortId` is null and every glyph but `none` resolves static, while ' +
       '`ShellExtensionGlyphProps` carries no `nodeId` so a glyph component could not reach the ' +
-      'game snapshot even if a kind fitted. ⚠ AND `vizPassthrough: true` REMAINS A LICENCE ' +
-      'RATHER THAN A PATH — `GROUP_VIZ_HOST_TYPES` is `new Set(["scope"])` and ' +
-      '`group-viz-hosts.test.ts` measures `canvasInSlot 0` for modtris (#1755) — so the ' +
-      'user-facing prose promising a GROUP-card portal was deleted from `docs.explanation` ' +
-      'instead of being left to describe something the product does not do.',
+      'game snapshot even if a kind fitted. ⚠ AND `vizPassthrough: true` WAS ALREADY A LICENCE ' +
+      'RATHER THAN A PATH before it became a dead one: GROUP_VIZ_HOST_TYPES held only `scope`, ' +
+      'and the group viz-host measurement recorded `canvasInSlot 0` for modtris (#1755) — which ' +
+      'is why the user-facing prose promising a GROUP-card portal was deleted from ' +
+      '`docs.explanation` rather than left describing something the product did not do. The ' +
+      'GROUP! module itself is now deleted, so the flag is inert everywhere; retiring it is ' +
+      'owner-gated on DOOM (see the note on AudioModuleDef#vizPassthrough).',
   },
   {
     type: 'moog956',
@@ -2210,20 +2212,14 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
       'the roaming sprite — drawn as a full-canvas overlay, never as a flow node. It has no card ' +
       'at all, so there is no legacy card to replace.',
   },
-  {
-    type: 'group',
-    disposition: 'organizational-native',
-    why:
-      'a rack GROUP frame: a labelled boundary around other nodes. It has no ports, no params and ' +
-      'no engine binding — the frame is the whole object.',
-  },
-  {
-    type: 'sticky',
-    disposition: 'organizational-native',
-    why:
-      'a paper STICKY NOTE: a resizable text area pinned to the rack. It binds to no engine and ' +
-      'its text is the object, not a control over one.',
-  },
+  // ⚠ `group` AND `sticky` STOOD HERE and are gone with their modules. Both
+  // carried `disposition: 'organizational-native'` — the "not a migration at
+  // all" bucket CADILLAC still occupies — because a GROUP frame and a paper
+  // STICKY NOTE have no ports, no params and no engine binding, so there was
+  // never a face to build for either. The owner's 2026-09-03 ruling deleted the
+  // modules outright rather than leaving them native, so their rows go too: this
+  // inventory is anchored to the REGISTRY in both directions, and a row naming a
+  // module that no longer exists is red.
 ];
 
 /** Index by module type. */

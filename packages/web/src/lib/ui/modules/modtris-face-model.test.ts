@@ -482,10 +482,17 @@ describe('modtris — CLAIM 6: the RANK is honest because the control was WIRED'
   });
 
   it('the def no longer promises a GROUP-card portal the product does not do', () => {
-    // `GROUP_VIZ_HOST_TYPES` is `new Set(['scope'])`; `group-viz-hosts.test.ts`
-    // measures `canvasInSlot 0` for modtris (#1755). The flag stays declared —
-    // it is the licence the eventual host fix reads — but the user-facing
-    // sentence that said it worked is gone.
+    // It never did: GROUP_VIZ_HOST_TYPES held only `scope`, and the group
+    // viz-host measurement recorded `canvasInSlot 0` for modtris (#1755), so
+    // the user-facing sentence claiming a working portal was removed while the
+    // flag stayed as a licence for an eventual host fix.
+    // ⚠ THERE IS NO EVENTUAL HOST NOW — the GROUP! module is deleted, so the
+    // flag is INERT rather than pending. It is still asserted here because it
+    // is still DECLARED: retiring it across the five defs that carry it is
+    // owner-gated on DOOM (DoomSurface.svelte emits the matching
+    // `data-viz-passthrough` attribute) and re-pins contract-lock.txt. When
+    // that lands, this line flips to `toBeUndefined()` and the prose assertion
+    // below is what still matters.
     expect(modtrisDef.vizPassthrough).toBe(true);
     const explanation = modtrisDef.docs?.explanation ?? '';
     expect(explanation).not.toMatch(/portaled into a containing GROUP card/);

@@ -213,10 +213,12 @@ type CoreModuleType =
   | 'timelorde'
   // Video anchors.
   | 'videoOut'
-  | 'lines'
-  // Meta-domain organizational cards.
-  | 'sticky'
-  | 'group';
+  | 'lines';
+  // ⚠ THE META-DOMAIN ORGANISATIONAL ANCHORS ARE GONE. `'sticky'` and `'group'`
+  // stood at the end of this union as the two named meta types; both modules are
+  // deleted (owner ruling: group and sticky are deleted entirely). `ModuleType`
+  // stays an OPEN union, so nothing needs a replacement anchor — the remaining
+  // meta defs (cadillac, the MIDI/control surfaces) were never listed here.
 export type ModuleType = CoreModuleType | (string & {});
 
 // ---------------- Port + parameter schemas ----------------
@@ -1517,10 +1519,12 @@ export interface ModuleDef {
   /**
    * Module-grouping Phase 3A: when set, this module renders an on-card
    * visualization (typically a <canvas>) that can be portaled into the
-   * parent GroupCard. See AudioModuleDef.vizPassthrough for the canonical
-   * doc. Mirrored here so callers that read the loose ModuleDef shape
-   * (e.g. defLookup helpers in Canvas.svelte) can read the flag without
-   * downcasting to a domain-specific def.
+   * parent GroupCard.
+   *
+   * ⚠ INERT. Its only consumer was `GROUP_VIZ_HOST_TYPES` / GroupCard's hidden
+   * mount, both deleted with the GROUP! module. Retiring the flag from the five
+   * defs that declare it re-pins `contract-lock.txt`, so it is done in its own
+   * commit rather than folded into the deletion.
    */
   vizPassthrough?: boolean;
   /** Optional workflow channel-columns chain-wiring override — see ChainWiring.

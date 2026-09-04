@@ -40,7 +40,7 @@
 // happens to be rendering it. Cards ADOPT and READ; they do not CREATE and
 // DESTROY. Teardown is keyed to GRAPH lifetime — `sweep(liveNodeIds)` from
 // Canvas, reconciled against the live node set — so a node deleted by ANY route
-// (menu, lasso, undo, a peer's CRDT delete, Clear, a patch load) finalizes its
+// (menu, Backspace, undo, a peer's CRDT delete, Clear, a patch load) finalizes its
 // recording with no delete site having to remember.
 //
 // ── THE STRUCTURAL GUARD ──────────────────────────────────────────────────

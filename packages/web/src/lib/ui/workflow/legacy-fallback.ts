@@ -34,9 +34,17 @@ export type LaneRenderKind = 'legacy' | 'shell' | 'placeholder' | 'stub';
 
 /**
  * Node TYPES that are NOT swapped to the shell/placeholder even under the
- * preview — they keep rendering their real in-lane card:
- *   - organizational chrome with no "module card" to dock (group / sticky),
- *   - the CADILLAC roaming sprite (already filtered from flowNodes upstream),
+ * preview — they keep rendering their real in-lane card. The set is down to ONE
+ * member: the CADILLAC roaming sprite, which is already filtered out of
+ * flowNodes upstream and has no SvelteFlow node body at all.
+ *
+ *   ⚠ `group` AND `sticky` USED TO BE THE OTHER TWO, described here as
+ *   "organizational chrome with no module card to dock". Both modules are
+ *   DELETED (owner ruling 2026-09-03: group and sticky are deleted entirely, not
+ *   moved), so the entries went with the defs rather than being re-argued. That
+ *   makes this set purely a CADILLAC carve-out, and worth saying plainly: it is
+ *   no longer a list of modules awaiting a face — it is one non-module.
+ *
  *   ⚠ THE SNOWFLAKE CLAUSE THIS LIST WAS BUILT AROUND IS NOW EMPTY. It read:
  *     "clipplayer + the remaining MIDI control surfaces — SNOWFLAKES whose lane
  *     face is a grid / launcher / mapper, not a ranked-knob skeleton (plan §6):
@@ -224,8 +232,6 @@ export type LaneRenderKind = 'legacy' | 'shell' | 'placeholder' | 'stub';
  * Everything else with a resolvable card swaps.
  */
 export const NON_SHELL_LANE_TYPES: ReadonlySet<string> = new Set<string>([
-  'group',
-  'sticky',
   'cadillac',
 ]);
 

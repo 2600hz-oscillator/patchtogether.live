@@ -74,7 +74,7 @@
 //   * `unbind(id)` — the USER's intent (the card's explicit "Unbind Launchpad"
 //     button). Named for the user's action, never the component's lifecycle.
 //   * `sweep(liveNodeIds)` — GRAPH lifetime, called from Canvas beside its five
-//     sibling registries. A node deleted by ANY route (menu, lasso, undo, a
+//     sibling registries. A node deleted by ANY route (menu, Backspace, undo, a
 //     peer's CRDT delete, Clear, a patch load) releases the device here.
 // The unit test asserts that distinction from both directions. A SOURCE-level
 // guard backs it up (`node-launchpad-monitor-registry.test.ts`), because no
