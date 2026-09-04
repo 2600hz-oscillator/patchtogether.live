@@ -561,8 +561,12 @@ Merged from `feat/legacy-removal-groups`. What LANDED:
 `db/schema/003_saved_groups.sql`, and the `group`/`sticky` entries in
 `NON_SHELL_LANE_TYPES` (which should end as `{cadillac}` alone).
 
-⚠ **SO THE BRANCH CURRENTLY HAS A COVERAGE WINDOW: group and sticky ship, and
-their e2e specs do not.** That is a defect in the branch until the product half
-lands, and it is stated here rather than left for a reviewer to find. It is
-tolerable only because the owner has already ruled the feature is going; it is
-NOT a state to open the PR in.
+⚠ **THE SPEC RETIREMENT WAS REVERTED, AND THE GATE IS WHY.** Retiring the specs
+before the type left GROUP and STICKY shipping and untested, and
+`exemption-coverage-anchors` failed within one run: three exemptions (both port
+sweeps + vrt-exemptions) cite `grouping-phase1.spec.ts`. Its message is the
+rule — "an exemption that names nothing is weaker than one that names something
+wrong" — so the citations are only repairable by the type leaving the REGISTRY.
+The specs are back; they die WITH the type, in one commit.
+
+The safety test and `exposable-controls.ts` were KEPT — both stand alone.
