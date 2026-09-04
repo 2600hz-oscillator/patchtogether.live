@@ -43,6 +43,7 @@
   // output shows the active slot, with gain applied, animating on the engine
   // clock. It is the same seam every other faced video module's body uses.
   import { patch } from '$lib/graph/store';
+  import { nodeVersion } from '$lib/graph/node-versions.svelte';
   import { mutateNode } from '$lib/graph/mutate';
   import { useEngine } from '$lib/audio/engine-context';
   import type { VideoEngine } from '$lib/video/engine';
@@ -89,14 +90,38 @@
   let slotNotice = $state<(string | null)[]>(new Array(ASSET_SLOTS).fill(null));
 
   // ── node.data reads ───────────────────────────────────────────────────────
-  let nodeData = $derived(patch.nodes[nodeId]?.data as Record<string, unknown> | undefined);
-  let imageMime = $derived<string>((nodeData?.imageMime as string | undefined) ?? 'image/jpeg');
-  let imageName = $derived<string | null>((nodeData?.imageName as string | null | undefined) ?? null);
-  let hasImage = $derived(
-    typeof nodeData?.imageBytes === 'string' && (nodeData.imageBytes as string).length > 0,
-  );
-  let assets = $derived(padSlotArray(nodeData?.assets));
-  let assetNames = $derived(padSlotArray(nodeData?.assetNames));
+  // ⚠ PUMPED by nodeVersion — the proxy-identity lesson (4th sighting on the
+  // legacy-removal branch). `patch.nodes[nodeId]` keeps ONE proxy identity for
+  // the node's life, so bare deriveds over `data` never re-ran when an upload
+  // landed imageBytes while this body was mounted — the face canvas kept
+  // `data-has-image="false"` over live bytes in the doc (measured, with the
+  // un-pumped build as the control). Each leaf re-derives on the per-node
+  // version counter and returns a fresh primitive/array, so changes propagate.
+  let cardVersion = $derived(nodeVersion(nodeId));
+  let nodeData = $derived.by(() => {
+    void cardVersion;
+    return patch.nodes[nodeId]?.data as Record<string, unknown> | undefined;
+  });
+  let imageMime = $derived.by<string>(() => {
+    void cardVersion;
+    return (nodeData?.imageMime as string | undefined) ?? 'image/jpeg';
+  });
+  let imageName = $derived.by<string | null>(() => {
+    void cardVersion;
+    return (nodeData?.imageName as string | null | undefined) ?? null;
+  });
+  let hasImage = $derived.by(() => {
+    void cardVersion;
+    return typeof nodeData?.imageBytes === 'string' && (nodeData.imageBytes as string).length > 0;
+  });
+  let assets = $derived.by(() => {
+    void cardVersion;
+    return padSlotArray(nodeData?.assets);
+  });
+  let assetNames = $derived.by(() => {
+    void cardVersion;
+    return padSlotArray(nodeData?.assetNames);
+  });
 
   // ⚠ THE SYNC STATE IS SPEAKABLE, NOT PAINTED. The card prints
   // `gif` / `synced (1024×768)` under its preview. That is a state word and a

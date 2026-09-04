@@ -28,7 +28,7 @@ async function setup(page: Page): Promise<string[]> {
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await page.waitForLoadState('networkidle');
   return errors;
 }
@@ -81,12 +81,13 @@ async function cropTextureIsDistinct(page: Page, nodeId: string): Promise<boolea
 /** Load the fixture into a VIDEOVARISPEED card + start playback, then wait for a
  *  real decoded frame to have been uploaded (the crop pass samples that frame). */
 async function loadAndPlay(page: Page, vvId: string): Promise<void> {
+  await openVvsPane(page, vvId);
   await page.setInputFiles('[data-testid="videovarispeed-file-input"]', FIXTURE);
-  await expect(page.locator('[data-testid="videovarispeed-card"]')).toHaveAttribute(
+  await expect(page.locator('[data-testid="videovarispeed-face-body"]')).toHaveAttribute(
     'data-has-local-file', 'true', { timeout: 8000 },
   );
   await page.click('[data-testid="videovarispeed-play-btn"]');
-  await expect(page.locator('[data-testid="videovarispeed-card"]')).toHaveAttribute(
+  await expect(page.locator('[data-testid="videovarispeed-face-body"]')).toHaveAttribute(
     'data-is-playing', 'true', { timeout: 4000 },
   );
   // Wait until at least one real frame has been uploaded (decode→texture path).
@@ -99,6 +100,29 @@ async function loadAndPlay(page: Page, vvId: string): Promise<void> {
  *  assert since the engine loop runs live here). */
 async function outStats(page: Page, outId: string): Promise<RenderStats> {
   return stepAndReadStats(page, { nodeId: outId, steps: 6 });
+}
+
+
+/** Open a videovarispeed node's dock full view — every transport affordance
+ *  (file input, PLAY/LOOP, slots, crop) is its `fullViewBody`; the SAME
+ *  `videovarispeed-*` testids the card carried render there, including the
+ *  state attributes, which live on `videovarispeed-face-body`. Idempotent
+ *  (openFullView de-dupes). */
+async function openVvsPane(page: import('@playwright/test').Page, id: string): Promise<void> {
+  await page.waitForFunction(
+    () =>
+      typeof (globalThis as unknown as { __openDockFullView?: unknown }).__openDockFullView ===
+      'function',
+    undefined,
+    { timeout: 30_000 },
+  );
+  await page.evaluate(
+    (i) => (globalThis as unknown as { __openDockFullView: (x: string) => void }).__openDockFullView(i),
+    id,
+  );
+  await page
+    .locator(`[data-testid="dock-fullview-pane"][data-pane-node="${id}"] [data-testid="videovarispeed-face-body"]`)
+    .waitFor({ state: 'visible', timeout: 60_000 });
 }
 
 test.describe('VIDEOVARISPEED crop output', () => {
