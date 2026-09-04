@@ -381,23 +381,47 @@ export const clipplayerDef: AudioModuleDef = {
   // rack would draw the same picture, while the only useful glance here ("is
   // anything playing HERE") is per-node. The `tileBody` strip is that glance.
   //
-  // ⚠ THE GRID RANKS FIRST, THROUGH `hero.cell`, AND THAT IS THE ONLY WAY IT
-  // COULD. `clipplayer-pad-{n}` resolves to a PF-14 PANEL and module-face-lint
-  // refuses a panel SELECTED at a lane tier, so a panel's first legal rank is
-  // SEVEN; PF-22's `laneOrder` drops `face.hero.cell` from the LANE roster only,
-  // so the picture costs no lane rank and may rank first. kria's route exactly.
-  // The seven PARAMS therefore hold ranks 1-7 of the lane order and the five
-  // remaining panels sit at 8-12, safely past the six-cell plate.
+  // ⚠ FOUR PAGES AND A TAB RAIL, ON THE OWNER'S EXPLICIT INSTRUCTION — AND
+  // THERE IS NO `face.hero`, WHICH IS THE SAME DECISION SAID TWICE.
   //
-  // ⚠ FOUR PAGES, NO TAB RAIL, AND THE COUNT IS HONEST RATHER THAN TRIMMED.
-  // `DOCK_TAB_MIN_BANDS` is 7 and this face has 13 ranked keys, so a rail was
-  // three invented section headers away; the module's own structure is four
-  // ideas — the session, the channel strip, the editor, the global playback
-  // settings — and padding those to seven to earn a rail is the failure mode
-  // the owner ruled on for `ruttetra`. It also matters MORE here than
-  // elsewhere: a tab rail renders exactly ONE band at a time, and the thing a
-  // player does on a launcher is compare eight lanes and pick the next one —
-  // which is the comparison a rail would make impossible.
+  // This face shipped (#2326) with the launch grid promoted to `hero.cell` and
+  // all four bands stacked in one scrolling column, on the reasoning that a
+  // faceplate holds the grid, the editor and the deck AT ONCE "so there is no
+  // selection left to make". The owner rejected exactly that (2026-09-04,
+  // verbatim): "we do NOT want the clip viewer always visible. we want to see
+  // it when we double click on a grid cell, at which point, we do not see the
+  // grid. this needs to work exactly the way the legacy card did". The legacy
+  // card is a VIEW SWITCHER — one `cardView` rune, a GRID / CLIP / ARR / CTRL
+  // strip, and grid and editor as MUTUALLY EXCLUSIVE branches of one if/else —
+  // and `face.tabbed` is the platform's own name for that structure, with the
+  // band hiding, the rail and the parity sweep's rail navigation already built
+  // (`dock-tabs-model.ts`; `FACE_TAB_OPT_IN` in its test carries this
+  // instruction verbatim, which is the fence the opt-in is licensed by).
+  //
+  // ⚠ THE HERO HAD TO GO WITH IT, and that half is mechanical rather than a
+  // taste. `heroFacePlan` PROMOTES the hero cell OUT of its band and ModuleShell
+  // paints it ABOVE `.dock-pages` — outside every tab panel — so a hero grid
+  // stays on screen on the editor tab no matter what the rail says. The hero
+  // slot is for the module's picture AT REST; a launcher whose picture is one of
+  // two views does not have one. Nothing is lost: `session` is the FIRST page
+  // and therefore the default tab, so a freshly opened faceplate still paints
+  // the 8×8 grid at its real size, and "a launcher whose faceplate paints seven
+  // knobs and no pads is not a launcher" is still refused.
+  //
+  // ⚠ AND THE LANE TIER IS UNCHANGED EITHER WAY, which is the clause worth
+  // checking rather than assuming. `clipplayer-pad-{n}` is a PF-14 PANEL and
+  // module-face-lint refuses a panel SELECTED at a lane tier, so a panel's first
+  // legal rank is SEVEN. PF-22's `laneOrder` used to drop the hero cell from the
+  // LANE roster; with no hero it drops nothing — and the pad is ranked EIGHTH,
+  // past the six-cell plate (`PLATE_COLS * PLATE_MAX_ROWS`), so the lane's six
+  // selected cells are stepDiv / quantize / snh / octave / gateLength /
+  // restrictRange before and after. `clipplayer-face-model.test.ts` pins both.
+  //
+  // The four pages are the module's own four ideas — the session, the channel
+  // strip, the editor, the global playback settings — and they are NOT padded to
+  // reach `DOCK_TAB_MIN_BANDS` (7). Padding is the failure mode the owner ruled
+  // on for `ruttetra`; the opt-in exists precisely so a face with honest pages
+  // can still be a view switcher when its MODULE is one.
   //
   // The transport, both recorders, the clip-undo stack, the per-lane MUTE/STOP
   // deck, the monome GRID bind, the arranger pop-out and the automation status
@@ -408,10 +432,14 @@ export const clipplayerDef: AudioModuleDef = {
     hint: 'eight lanes of clips, launched onto a shared musical boundary and locked to TIMELORDE',
     glyph: 'none',
     extension: 'clipplayer',
-    hero: { cell: 'clipplayer-pad-{n}' },
+    // OWNER-INSTRUCTED (2026-09-04) — see the block above. The rail IS the
+    // legacy card's GRID / CLIP / ARR / CTRL strip, and it is what makes the
+    // grid and the editor mutually exclusive.
+    tabbed: true,
     order: [
-      // Ranks 1-7 are the PARAMS, and they are the lane budget: the hero costs
-      // no lane rank, so these are what a 192 px tile paints.
+      // Ranks 1-7 are the PARAMS, and they are the lane budget: with no hero,
+      // `laneOrder` is this list unfiltered, and these seven are what a 192 px
+      // tile can reach (it selects six).
       'stepDiv',
       'quantize',
       'snh',
@@ -419,8 +447,9 @@ export const clipplayerDef: AudioModuleDef = {
       'gateLength',
       'restrictRange',
       'rangeFloor',
-      // The hero picture. Ranked here rather than first so the ORDER reads as
-      // the lane budget it also is; `hero.cell` is what promotes it.
+      // THE LAUNCH GRID, ranked EIGHTH — the first rank at which a PF-14 panel
+      // is legal without `hero.cell` promoting it (module-face-lint refuses a
+      // panel selected at a lane tier, and the plate selects six).
       'clipplayer-pad-{n}',
       // Ranks 9-13: the remaining panels, all past the six-cell plate.
       'clipplayer-mono-{n}',
@@ -431,22 +460,24 @@ export const clipplayerDef: AudioModuleDef = {
     ],
     pages: [
       {
-        // ⚠ THE SCENE REPEATS SHARE THIS BAND WITH THE GRID, AND A GATE IS WHY.
-        // A row of the grid IS a scene, so they belong together on the design
-        // argument alone — but the mechanical reason is that the launch grid is
-        // promoted OUT of its band into the hero, and `heroFacePlan` DROPS a
-        // band the hero emptied, taking its hint with it. A page whose only
-        // control is the hero cell is a page whose prose is authored, reviewed
-        // and painted nowhere (`module-face-lint`'s annotation-reachability
-        // clause says exactly that, by name).
+        // ⚠ FIRST PAGE = THE DEFAULT TAB, and on a railed face that is a
+        // behavioural statement, not an ordering preference: this is the view a
+        // freshly opened faceplate shows, and it is GRID, exactly as the legacy
+        // card's `cardView` starts at 'grid'.
+        //
+        // THE SCENE REPEATS SHARE THIS BAND WITH THE GRID because a row of the
+        // grid IS a scene. (The mechanical half of that argument — that the
+        // grid was promoted into the hero and `heroFacePlan` drops a band the
+        // hero emptied — retired with the hero; the design half is what is
+        // left, and it was always the stronger one.)
         id: 'session',
         label: 'session',
         hint:
           'the launch grid — columns are the eight instrument lanes, rows are the eight clip ' +
           'slots, and a row is a SCENE. Click a pad to launch it, click the playing pad to stop ' +
-          'the lane, double-click to open it in the editor; give a scene a finite repeat count ' +
-          'and it hands over to the next scene with content after that many passes of its ' +
-          'longest clip.',
+          'the lane, double-click to open it in the EDITOR page (which replaces this one, the way ' +
+          'the card always did); give a scene a finite repeat count and it hands over to the next ' +
+          'scene with content after that many passes of its longest clip.',
         controls: ['clipplayer-pad-{n}', 'clipplayer-scene-repeat-{n}'],
       },
       {
@@ -467,9 +498,10 @@ export const clipplayerDef: AudioModuleDef = {
         id: 'editor',
         label: 'editor',
         hint:
-          'the piano roll for whichever clip the grid has open, and the two display-only ' +
-          'controls that decide how much of the pitch range it draws — neither touches ' +
-          'playback, the pitch CV, or anything a clip emits.',
+          'the piano roll for whichever clip you last double-clicked in the grid, and the two ' +
+          'display-only controls that decide how much of the pitch range it draws — neither ' +
+          'touches playback, the pitch CV, or anything a clip emits. Go back with the SESSION ' +
+          'tab, the way the card\'s GRID button did.',
         controls: ['clipplayer-cell-{n}', 'restrictRange', 'rangeFloor'],
         clusters: [{ label: 'pitch window', controls: ['restrictRange', 'rangeFloor'] }],
       },

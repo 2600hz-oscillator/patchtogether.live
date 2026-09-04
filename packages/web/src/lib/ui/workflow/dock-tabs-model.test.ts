@@ -108,8 +108,10 @@ describe('the LIVE registry — which faces are tabbed today', () => {
     const tabbed: string[] = [];
     const counts: string[] = [];
     // ⚠ VIDEO DEFS ARE IN THE SWEEP NOW, and they had to be: `face.tabbed`'s
-    // first and only adopter is a VIDEO module, so an audio-only sweep would
-    // have been structurally blind to the very mechanism this file gained.
+    // FIRST adopter is a VIDEO module (spirographs), so an audio-only sweep
+    // would have been structurally blind to the very mechanism this file
+    // gained. The second (clipplayer) is audio, so the sweep now needs both
+    // registries for the opt-in alone.
     const allDefs = [
       ...(listModuleDefs() as unknown as (FaceDefLike & { type: string })[]),
       ...(listVideoModuleDefs() as unknown as (FaceDefLike & { type: string })[]),
@@ -215,8 +217,19 @@ describe('the LIVE registry — which faces are tabbed today', () => {
       // are: a count in a comment is the construct CLAUDE.md bans, because a
       // sibling PR adding a param auto-merges cleanly and leaves it wrong. The
       // assertion message above prints the live number.)
+      // ⚠ clipplayer (2026-09-04) is the NINTH rail and the SECOND by the
+      // OPT-IN route — the first AUDIO opt-in, and the first rail taken for a
+      // reason that is not density at all. It has FOUR bands, three under the
+      // threshold, and it is railed because the owner reported the untabbed
+      // face as a P0 defect: the launch grid and the piano roll are two VIEWS
+      // of one instrument (the legacy card's `cardView`), and only band hiding
+      // can make double-clicking a pad REPLACE the grid with the editor. Its
+      // `face.hero` was removed in the same change, because a hero paints above
+      // every tab panel and therefore cannot be hidden. Both dock baselines
+      // move with it, deliberately. See FACE_TAB_OPT_IN below for the verbatim
+      // instruction.
     ).toEqual([
-      'backdraft', 'cloudseed', 'foxy', 'pentemelodica', 'spirographs',
+      'backdraft', 'clipplayer', 'cloudseed', 'foxy', 'pentemelodica', 'spirographs',
       'twotracks', 'videocube', 'wavesculpt',
     ]);
   });
@@ -272,6 +285,23 @@ const FACE_TAB_OPT_IN: readonly TabOptIn[] = [
     why:
       "The three spiros are INDEPENDENT FIGURES, not three sections of one idea: each has its own complete ten-param bank and its own centre drifting across the frame. The module's own legacy card already shipped a role=\"tablist\" with a 1/2/3 selector and edited one spiro at a time, so the rail restores a structure the module had rather than compressing a column that was merely tall.",
   },
+  {
+    type: 'clipplayer',
+    instruction:
+      '"this still sucks, by the way. we do NOT want the clip viewer always visible. we want to ' +
+      'see it when we double click on a grid cell, at which point, we do not see the grid. this ' +
+      'needs to work exactly the way the legacy card did, fixing this is a p0"',
+    why:
+      'The launcher and the piano roll are MUTUALLY EXCLUSIVE VIEWS of one instrument, not two ' +
+      'sections of one page: ClipplayerCard.svelte holds a `cardView` rune, paints a ' +
+      'GRID / CLIP / ARR / CTRL strip, and renders the grid and the editor as the two branches of ' +
+      'one if/else — so the rail restores a structure the module has always had rather than ' +
+      'compressing a column. It is also the only mechanism that CAN deliver the instruction: band ' +
+      'hiding is what makes the grid disappear, and it is why this face now carries no ' +
+      '`face.hero` (a hero is promoted out of its band and painted above every tab panel, so a ' +
+      'hero grid cannot be hidden). Not a density fix — the four pages are unpadded and the face ' +
+      'sits three bands UNDER the threshold.',
+  },
 ];
 
 describe('face.tabbed — the opt-in is NAMED, and cannot be taken quietly', () => {
@@ -317,7 +347,8 @@ describe('face.tabbed — the opt-in is NAMED, and cannot be taken quietly', () 
     // explicitly because the owner ruled it for a specific module and ruled
     // ruttetra the other way in the same breath.
     const named = new Set(FACE_TAB_OPT_IN.map((e) => e.type));
-    expect([...named], 'the opt-in roster is exactly its owner-instructed members').toEqual([
+    expect([...named].sort(), 'the opt-in roster is exactly its owner-instructed members').toEqual([
+      'clipplayer',
       'spirographs',
     ]);
     const all = [

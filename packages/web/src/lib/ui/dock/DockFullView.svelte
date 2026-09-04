@@ -47,6 +47,7 @@
   import { domainClassForDef, type ShellDefLike } from '$lib/ui/workflow/module-shell-model';
   import { dockFacePlan, type FaceDefLike } from '$lib/ui/workflow/curated-face';
   import { activeDockTab, dockTabPlan } from '$lib/ui/workflow/dock-tabs-model';
+  import { faceTabRequest, requestFaceTab } from '$lib/ui/workflow/face-tab-request.svelte';
   import {
     faceHasAnnotations,
     heroFacePlan,
@@ -169,8 +170,15 @@
         )
       : null,
   );
-  let requestedTab = $state<string | undefined>(undefined);
-  let activeTab = $derived(tabs ? activeDockTab(tabs, requestedTab) : undefined);
+  // ⚠ THE REQUESTED TAB IS NODE-KEYED, NOT COMPONENT STATE, and both halves of
+  // that matter. It SURVIVES the pane closing and re-opening (this component
+  // unmounts on every close, so a local `$state` snapped the face back to its
+  // first band each time, where the legacy cards these faceplates replace keep
+  // their view for as long as the node is on the canvas); and it is REACHABLE
+  // from inside the faceplate, which is what lets a face NAVIGATE ITS OWN RAIL
+  // — the clip player's double-click-a-pad-to-edit-it, the gesture its legacy
+  // card has always had. See `face-tab-request.svelte.ts` for the argument.
+  let activeTab = $derived(tabs ? activeDockTab(tabs, faceTabRequest(node.id)) : undefined);
 
   // ── PF-20: THE CONTEXT SIDEBAR — DELETED, 2026-08-19 ────────────────────
   //
@@ -344,12 +352,12 @@
                     if (j < 0) return;
                     e.preventDefault();
                     const next = tabs![j]!.id;
-                    requestedTab = next;
+                    requestFaceTab(node.id, next);
                     (e.currentTarget as HTMLElement)
                       .parentElement?.querySelector<HTMLElement>(`[data-face-tab="${next}"]`)
                       ?.focus();
                   }}
-                  onclick={() => (requestedTab = t.id)}
+                  onclick={() => requestFaceTab(node.id, t.id)}
                 ><span class="t1">{t.label}</span></button>
               {/each}
             {:else}

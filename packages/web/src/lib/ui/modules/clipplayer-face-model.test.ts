@@ -146,18 +146,31 @@ describe('clipplayer face — the ranking', () => {
     }
   });
 
-  it('the hero is the launch grid, and it resolves to a registered PANEL', () => {
-    expect(clipplayerDef.face!.hero?.cell).toBe('clipplayer-pad-{n}');
-    expect(panelCellKeys('clipplayer'), 'the hero cell is a PF-14 panel').toContain(
+  // ⚠ THERE IS NO HERO, AND THAT IS THE OWNER'S P0 EXPRESSED AS A DECLARATION
+  // (2026-09-04: "we do NOT want the clip viewer always visible … at which
+  // point, we do not see the grid"). `heroFacePlan` promotes the hero cell OUT
+  // of its band and ModuleShell paints it ABOVE `.dock-pages`, outside every
+  // tab panel — so a hero launch grid stays on screen on the EDITOR tab no
+  // matter what the rail says, and the instruction becomes undeliverable. The
+  // grid is an ordinary panel on the `session` page instead, and `session` is
+  // `pages[0]` and therefore the DEFAULT tab: what a freshly opened faceplate
+  // paints is unchanged.
+  it('declares NO hero — the launch grid is a hideable band, not a promoted picture', () => {
+    expect(clipplayerDef.face!.hero, 'a hero cannot be hidden by the rail').toBeUndefined();
+    expect(panelCellKeys('clipplayer'), 'the grid is still a PF-14 panel').toContain(
       'clipplayer-pad-{n}',
     );
+    const pages = clipplayerDef.face!.pages ?? [];
+    expect(pages[0]!.id, 'GRID is the default view, as `cardView` starts at grid').toBe('session');
+    expect(pages[0]!.controls).toContain('clipplayer-pad-{n}');
   });
 
   // ⚠ THE PANEL/LANE-TIER RULE, ASSERTED AS ARITHMETIC RATHER THAN TRUSTED.
   // `module-face-lint` refuses a panel SELECTED at a lane tier, and the 'full'
   // plate holds six cells — so every panel must sit at index >= 6 of
-  // `laneOrder` (which drops the hero). Seven params hold ranks 0..6, which is
-  // exactly why the ranking looks param-first.
+  // `laneOrder`. It used to DROP the hero cell and now drops nothing, which is
+  // exactly why the launch grid had to be ranked eighth rather than first:
+  // seven params hold ranks 0..6 and the grid takes 7.
   it('no panel is reachable at a lane tier — every one ranks past the plate', () => {
     const lane = laneOrder(clipplayerDef.face!);
     const panels = new Set(panelCellKeys('clipplayer'));
@@ -185,23 +198,44 @@ describe('clipplayer face — the ranking', () => {
     );
   });
 
-  it('four honest pages, no tab rail, and every ranked key is on one', () => {
+  // ⚠ FOUR HONEST PAGES **AND** AN OWNER-INSTRUCTED RAIL — the two used to be
+  // asserted as mutually exclusive here ("four honest pages, NO tab rail"), and
+  // that was the defect. The face has four bands, three UNDER
+  // `DOCK_TAB_MIN_BANDS`, and it is still railed, because the rail is not being
+  // taken for density: it is the only mechanism that hides a band, and hiding
+  // the grid while the editor shows is the owner's 2026-09-04 P0 verbatim. The
+  // pages are NOT padded to reach seven — the ruttetra ruling stands.
+  it('four honest pages, an owner-instructed rail, and every ranked key is on one', () => {
     const pages = clipplayerDef.face!.pages ?? [];
     expect(pages.map((p) => p.id)).toEqual(['session', 'channels', 'editor', 'playback']);
     const claimed = new Set(pages.flatMap((p) => p.controls));
     expect([...clipplayerDef.face!.order].sort()).toEqual([...claimed].sort());
-    // `DOCK_TAB_MIN_BANDS` is 7. A launcher's whole job is comparing eight
-    // lanes, and a rail renders exactly one band at a time.
-    expect(pages.length).toBeLessThan(7);
-    expect(clipplayerDef.face!.tabbed, 'no owner-instructed rail opt-in').toBeUndefined();
+    expect(pages.length, 'unpadded — the rail is NOT earned by band count').toBeLessThan(7);
+    expect(clipplayerDef.face!.tabbed, 'the owner-instructed rail opt-in').toBe(true);
   });
 
-  // ⚠ THE SESSION PAGE CARRIES A SECOND CONTROL FOR A MECHANICAL REASON.
-  // `heroFacePlan` DROPS a band the hero emptied, taking its hint with it — so
-  // a page whose only control is the hero cell is a page whose prose is
-  // authored, reviewed and painted nowhere. The scene repeats keep it alive,
-  // and a row of the grid IS a scene, so the pairing is honest as well.
-  it('the session page is not emptied by the hero promotion', () => {
+  // ⚠ THE GRID AND THE EDITOR ARE ON DIFFERENT PAGES, WHICH IS THE WHOLE FIX.
+  // On a railed face exactly one band renders (`dockBandVisible`), so two
+  // controls on two pages can never be on screen together — that is the legacy
+  // card's mutually exclusive `cardView` branches, expressed as declaration.
+  // Asserted here rather than left to the e2e because the e2e can only observe
+  // one arrangement of a declaration that could quietly merge the two pages.
+  it('the launch grid and the piano roll live on DIFFERENT pages', () => {
+    const pages = clipplayerDef.face!.pages ?? [];
+    const gridPage = pages.find((p) => p.controls.includes('clipplayer-pad-{n}'))!;
+    const rollPage = pages.find((p) => p.controls.includes('clipplayer-cell-{n}'))!;
+    expect(gridPage.id).toBe('session');
+    expect(rollPage.id).toBe('editor');
+    expect(gridPage.id, 'one band renders at a time — same page = both visible').not.toBe(
+      rollPage.id,
+    );
+  });
+
+  // ⚠ THE SESSION PAGE CARRIES A SECOND CONTROL. The mechanical reason retired
+  // with the hero (`heroFacePlan` used to DROP a band the hero emptied, taking
+  // its hint with it); the design reason is what is left and was always the
+  // stronger one — a row of the grid IS a scene.
+  it('the session page pairs the grid with the scenes its rows are', () => {
     const session = (clipplayerDef.face!.pages ?? []).find((p) => p.id === 'session')!;
     expect(session.controls).toContain('clipplayer-pad-{n}');
     expect(session.controls.filter((c) => c !== 'clipplayer-pad-{n}').length).toBeGreaterThan(0);
