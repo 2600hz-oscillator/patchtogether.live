@@ -199,9 +199,22 @@ export async function measureOverflow(page: Page, nodeType: string): Promise<Ove
       // Skip decorations + portaled/anchored chrome + hidden nodes:
       //  - absolute/fixed: stripes, patch triggers, the (opacity-0) handle
       //    stack, hover-only value tags, MIDI badges, corner lock glyph — these
-      //    are intentionally edge-anchored and not "controls running off"; the
-      //    horizontalOverflow (scrollWidth) check below is the backstop that
-      //    still catches an absolutely-positioned element spilling right.
+      //    are intentionally edge-anchored and not "controls running off".
+      //
+      //    ⚠ THE `horizontalOverflow` BACKSTOP NO LONGER COVERS THAT SKIP, and
+      //    saying so is the point of this note. It is `scrollWidth -
+      //    clientWidth` on the measured box, and the measured box is the shell
+      //    tile, which is `overflow: hidden` — on a clipping element those two
+      //    are equal by definition, so the figure is now structurally 0 and
+      //    cannot report anything. It is kept because it costs nothing and
+      //    stays meaningful for any non-clipping subject a caller passes.
+      //
+      //    What that skip loses is bounded rather than open-ended: on a
+      //    fixed-size clipping tile an absolutely-positioned spill cannot PAINT
+      //    outside either, so it is no longer a user-visible defect. The claim
+      //    this instrument still makes is the one that survives clipping —
+      //    in-flow content laid out beyond the visible box, i.e. a control that
+      //    is present but unreachable.
       //  - display:none / visibility:hidden / opacity:0: not visible.
       if (cs.position === 'absolute' || cs.position === 'fixed') continue;
       if (cs.display === 'none' || cs.visibility === 'hidden' || cs.opacity === '0') continue;
