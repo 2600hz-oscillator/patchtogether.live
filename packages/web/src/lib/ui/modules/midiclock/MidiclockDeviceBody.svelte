@@ -55,6 +55,32 @@
   // ⚠ THIS BODY OWNS ITS SUBSCRIPTION AND RELEASES IT. The `$effect` teardown
   // plus `onDestroy` is the card's pattern, and a body that subscribed without
   // unsubscribing is the node-resource-leak class from the other side.
+  //
+  // ── THE DEBUG TAIL (owner-requested, 2026-09-03) ───────────────────────────
+  //
+  // A `debug` toggle beside the lamps opens a running tail of RAW MIDI traffic
+  // on the bound input — timestamped hex plus a decoded name per row, ring-
+  // bounded (see `$lib/midi/midi-tail`). It exists because "doesn't seem to
+  // read start" has two utterly different causes that paint identically:
+  // nothing arriving on the port (wrong interface, wrong cable, wrong virtual
+  // port) versus arriving-and-dropped (a code defect). The tail is the only
+  // surface that can tell them apart in the field.
+  //
+  //   * ZERO COST CLOSED — the trails MON discipline, engine half included:
+  //     the tap (`api.tapMidi`) is installed on OPEN and released on close /
+  //     pause / destroy, so a resting body leaves the factory's per-message
+  //     path at one short-circuited null check with no always-on listener.
+  //   * FRAMES, NOT MILLISECONDS — rows flush to `$state` on a rAF loop every
+  //     `TAIL_REFRESH_FRAMES`, the trails cadence; a 48 Hz CLOCK stream must
+  //     not become 48 Hz of re-render.
+  //   * NO Y.DOC WRITES — the tail, `tailOpen` and `tailPaused` are transient
+  //     render state (the cv-modulation write-storm discipline); a diagnostic
+  //     panel that reopened itself on every collaborator's screen is not what
+  //     "remember my layout" means.
+  //   * PAINTED TEXT: the `debug` / `pause` / `clear` control CAPTIONS, the
+  //     empty state's honest negative, and the rows — MEASUREMENTS, absent at
+  //     rest exactly like trails' MON readout, painted only while a player is
+  //     holding the panel open to read them.
 
   import { onDestroy } from 'svelte';
   import { patch } from '$lib/graph/store';
@@ -64,6 +90,7 @@
   import type { ModuleNode } from '$lib/graph/types';
   import type { MidiclockCardState } from '$lib/audio/modules/midiclock';
   import { nameOfDevice } from '$lib/graph/device-rebind';
+  import { createMidiTailRing, MIDI_TAIL_IDLE_TEXT } from '$lib/midi/midi-tail';
   import { midiclockApi } from '../midiclock-cell-actions';
   import {
     midiclockDeviceDetail,
@@ -131,6 +158,81 @@
   // they are decided where a unit test can read them.
   let deviceDetail = $derived<string>(midiclockDeviceDetail(cardState));
   let transportDetail = $derived<string>(midiclockTransportDetail(cardState));
+
+  // ── The debug tail (see the header) ─────────────────────────────────────────
+  /** Frames between tail flushes — the trails MON cadence, ~5 Hz at 60 fps. */
+  const TAIL_REFRESH_FRAMES = 12;
+
+  let tailOpen = $state(false);
+  let tailPaused = $state(false);
+  let tailText = $state('');
+  // Non-reactive plumbing: the ring, the tap release, and the flush loop.
+  const tail = createMidiTailRing();
+  let untap: (() => void) | null = null;
+  let tailDirty = false;
+  let tailRaf = 0;
+  let tailFrame = 0;
+
+  function flushTail(): void {
+    tailText = tail.lines().join('\n');
+    tailDirty = false;
+  }
+
+  function tailTick(): void {
+    if (++tailFrame >= TAIL_REFRESH_FRAMES) {
+      tailFrame = 0;
+      if (tailDirty) flushTail();
+    }
+    tailRaf = requestAnimationFrame(tailTick);
+  }
+
+  function startTap(): void {
+    if (untap) return;
+    untap = midiclockApi(nodeId)?.tapMidi((ev) => {
+      tail.push(ev);
+      tailDirty = true;
+    }) ?? null;
+  }
+
+  function stopTap(): void {
+    untap?.();
+    untap = null;
+  }
+
+  function toggleTail(): void {
+    tailOpen = !tailOpen;
+    if (tailOpen) {
+      tailPaused = false;
+      flushTail();
+      startTap();
+      tailFrame = 0;
+      if (!tailRaf) tailRaf = requestAnimationFrame(tailTick);
+    } else {
+      stopTap();
+      if (tailRaf) cancelAnimationFrame(tailRaf);
+      tailRaf = 0;
+    }
+  }
+
+  /** pause = stop LISTENING (release the tap), keep what is on screen; resume
+   *  re-taps. Traffic during a pause is deliberately not recorded — a frozen
+   *  tail that silently kept filling would misreport WHEN bytes arrived. */
+  function togglePause(): void {
+    tailPaused = !tailPaused;
+    if (tailPaused) stopTap();
+    else startTap();
+  }
+
+  function clearTail(): void {
+    tail.clear();
+    flushTail();
+  }
+
+  onDestroy(() => {
+    stopTap();
+    if (tailRaf) cancelAnimationFrame(tailRaf);
+    tailRaf = 0;
+  });
 </script>
 
 <div class="midiclock-device" data-testid="midiclock-device-body-{nodeId}">
@@ -176,15 +278,68 @@
       detail={transportDetail}
       testid="midiclock-led-run-{nodeId}"
     />
+    <button
+      type="button"
+      class="tail-toggle"
+      aria-pressed={tailOpen}
+      title="running tail of raw MIDI traffic on the selected device"
+      onclick={toggleTail}
+      data-testid="midiclock-debug-{nodeId}"
+    >
+      debug
+    </button>
   </span>
+
+  {#if tailOpen}
+    <!-- The MEASUREMENT the plate is otherwise forbidden to paint — absent at
+         rest, present only while a player holds the panel open (the trails MON
+         licence). Rows are NEWEST FIRST so the message being waited for lands
+         at the top, not below a scroll. -->
+    <div class="tail">
+      <span class="tail-buttons">
+        <button
+          type="button"
+          class="tail-toggle"
+          aria-pressed={tailPaused}
+          onclick={togglePause}
+          data-testid="midiclock-tail-pause-{nodeId}"
+        >
+          pause
+        </button>
+        <button
+          type="button"
+          class="tail-toggle"
+          onclick={clearTail}
+          data-testid="midiclock-tail-clear-{nodeId}"
+        >
+          clear
+        </button>
+      </span>
+      <pre
+        class="tail-log"
+        data-testid="midiclock-tail-{nodeId}">{tailText || MIDI_TAIL_IDLE_TEXT}</pre>
+    </div>
+  {/if}
 </div>
 
 <style>
+  /* ⚠ A COLUMN, AND THE DIRECTION IS THE WIDTH GATE'S DOING. This was a
+     wrapping ROW (hint/picker + lamps on one line, `margin-left: auto` on the
+     lamps), and a row's MAX-CONTENT ask is the SUM of the whole line even
+     though the plate would happily wrap it. Adding the `debug` toggle pushed
+     that one-line ask past the face band's own, so the plate's width driver
+     flipped from the band's BOXY cells (which the width gate credits as
+     content) to this body's boxes (which it measures by TEXT RANGES) —
+     `face-midiclock-dock` went red with 52 px of "empty plate" that was really
+     this row's un-drawn box width. A column's ask is the MAX of its rows, so
+     the band stays the plate's driver and the lamps row rides in the stretch
+     space — the tidyVco min-width class, fixed at the ask rather than
+     exempted. */
   .midiclock-device {
     display: flex;
-    align-items: center;
-    gap: 12px;
-    flex-wrap: wrap;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
     padding: 6px 10px;
     border: 1px solid var(--border, #333);
     border-radius: 3px;
@@ -226,6 +381,44 @@
     display: inline-flex;
     align-items: center;
     gap: 12px;
-    margin-left: auto;
+    align-self: flex-end;
+  }
+  .tail-toggle {
+    font-size: 9px;
+  }
+  .tail {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .tail-buttons {
+    display: inline-flex;
+    gap: 6px;
+    align-self: flex-end;
+  }
+  .tail-log {
+    margin: 0;
+    padding: 6px;
+    box-sizing: border-box;
+    /* ⚠ ZERO intrinsic ask, full laid-out width. A `pre` full of unwrapped
+       rows would otherwise bid its longest row into the COLUMN's max-content
+       and widen the whole plate the moment the panel opens; `width: 0` takes
+       it out of the bidding entirely (a percentage cap would not — intrinsic
+       sizing ignores percentages) and `min-width: 100%` hands it the body's
+       real width at layout. Long rows scroll inside, per the repo rule. */
+    width: 0;
+    min-width: 100%;
+    max-height: 132px;
+    overflow: auto;
+    background: #0c0e12;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 3px;
+    font-size: 8px;
+    line-height: 1.35;
+    /* Selectable, wrap-free rows: a tail row is a fixed-width triplet
+       (time / hex / name) and wrapping would shear the columns — the block
+       scrolls instead, inside its own container. */
+    white-space: pre;
+    user-select: text;
   }
 </style>

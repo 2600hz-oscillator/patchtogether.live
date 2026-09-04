@@ -402,6 +402,82 @@ describe('midiclockDef.factory — MIDI System Real-Time → ConstantSourceNode 
     expect(handle.readParam?.('divisor'), 'a legal value passes through exact').toBe(3);
   });
 
+  // ── THE DEBUG TAP (owner-requested tail, 2026-09-03) ──────────────────────
+  //
+  // `tapMidi` feeds the device body's debug tail. Its two load-bearing
+  // properties are pinned here at the seam: it sees the RAW stream (including
+  // channel-voice bytes the module itself filters out — the "traffic arrives
+  // but none of it is transport" diagnosis), and releasing it really releases
+  // (the zero-cost-when-closed half of the contract).
+
+  it('tapMidi sees EVERY message on the bound port — including non-realtime bytes the module drops', async () => {
+    const input = makeMidiInput('test-port');
+    installFakeMidi(makeMidiAccess(input));
+    try {
+      const handle = await midiclockDef.factory(
+        makeMockCtx() as unknown as AudioContext,
+        makeNode(),
+      );
+      const api = handle.read?.('card-api') as {
+        connect: () => Promise<boolean>;
+        tapMidi: (cb: (ev: { atMs: number; bytes: number[] }) => void) => () => void;
+      };
+      await api.connect();
+
+      const seen: number[][] = [];
+      const untap = api.tapMidi((ev) => seen.push(ev.bytes));
+
+      input.fire({ data: new Uint8Array([0xfa]), timeStamp: 5 });
+      input.fire({ data: new Uint8Array([0x90, 60, 100]), timeStamp: 6 }); // note-on: filtered by the module, SEEN by the tap
+      input.fire({ data: new Uint8Array([0xf8]), timeStamp: 7 });
+
+      expect(seen).toEqual([[0xfa], [0x90, 60, 100], [0xf8]]);
+
+      // …and the module still behaved normally underneath the tap.
+      const startSrc = handle.outputs.get('midistart')!.node as unknown as FakeConstantSourceNode;
+      expect(
+        startSrc.offset.events.filter((e) => e.kind === 'set' && e.value === 1),
+        'the tap is a TAP — Start still pulsed midistart',
+      ).toHaveLength(1);
+
+      // RELEASE: after untap, nothing more is recorded.
+      untap();
+      input.fire({ data: new Uint8Array([0xfc]), timeStamp: 8 });
+      expect(seen, 'released tap sees nothing').toHaveLength(3);
+    } finally {
+      restoreMidi();
+    }
+  });
+
+  it("tapMidi's release is IDENTITY-SCOPED — a stale release cannot evict a newer tap", async () => {
+    // The input-attach rule one layer up: never clear a slot you did not set.
+    const input = makeMidiInput('test-port');
+    installFakeMidi(makeMidiAccess(input));
+    try {
+      const handle = await midiclockDef.factory(
+        makeMockCtx() as unknown as AudioContext,
+        makeNode(),
+      );
+      const api = handle.read?.('card-api') as {
+        connect: () => Promise<boolean>;
+        tapMidi: (cb: (ev: { atMs: number; bytes: number[] }) => void) => () => void;
+      };
+      await api.connect();
+
+      const first: number[][] = [];
+      const second: number[][] = [];
+      const untapFirst = api.tapMidi((ev) => first.push(ev.bytes));
+      api.tapMidi((ev) => second.push(ev.bytes)); // replaces the first (single slot)
+
+      untapFirst(); // stale — must NOT evict the second tap
+      input.fire({ data: new Uint8Array([0xfa]), timeStamp: 1 });
+      expect(second, 'the live tap survived the stale release').toEqual([[0xfa]]);
+      expect(first, 'the replaced tap saw nothing').toEqual([]);
+    } finally {
+      restoreMidi();
+    }
+  });
+
   it('NEGATIVE CONTROL: readParam answers ONLY for divisor', async () => {
     // Without this, a `readParam` that returned the divisor for every key would
     // satisfy every assertion above — and would hand the wrong number to any

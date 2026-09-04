@@ -32,6 +32,7 @@
 
 import { test, expect, type Locator, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
+import { installMidiDeviceMock, injectMidiDeviceIn } from '../_helpers/midi';
 
 const SLOW_RENDER = process.env.E2E_SWIFTSHADER === '1' || !!process.env.CI;
 const NODE = 'mc';
@@ -247,6 +248,160 @@ test.describe('MIDICLOCK faceplate', () => {
         { message: 'picking 1/16 must land 6 in node.params.divisor' },
       )
       .toBe(6);
+  });
+
+  test('MIDI Start is READ: the transport goes RUNNING and the clock advances (owner repro)', async ({ page }) => {
+    // ⚠ THE OWNER'S GESTURE, END TO END, ON THE DEFAULT SHELL (report 2026-09-03:
+    // "midiclock doesn't seem to read start"). Fresh module, CONNECT from the
+    // lane tile, device auto-bound, then the wire speaks: 0xFA (Start), a burst
+    // of 0xF8 (clock), 0xFC (Stop). The observable is the RUN lamp — the one
+    // surface in the product that says whether the external transport is
+    // rolling — plus the tick count moving, read on demand off the live handle
+    // exactly the way the state contract documents.
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+
+    await installMidiDeviceMock(page, {
+      outputs: [],
+      inputs: [{ id: 'hw-in-a', name: 'HW Drum Machine' }],
+    });
+    await gotoShell(page);
+    await spawnPatch(page, [{ id: NODE, type: 'midiclock', position: { x: 200, y: 200 } }]);
+
+    // CONNECT from the LANE — the exact affordance a player meets first.
+    await laneShell(page, NODE).getByTestId('shell-cell-midiclock-connect').click();
+    const dock = await openDock(page, NODE);
+    const select = dock.getByTestId(`midiclock-device-select-${NODE}`);
+    await expect(select).toBeVisible();
+    await expect(select, 'the one connected input is auto-bound').toHaveValue('hw-in-a');
+
+    // POSITIVE CONTROL for the instrument: inject() is false until the app has
+    // really attached `onmidimessage` to THIS port — poll on that truth, then
+    // every later injection is known to land on a live handler.
+    const run = dock.getByTestId(`midiclock-led-run-${NODE}`);
+    await expect(run, 'pre-start: the lamp is dark').toHaveAttribute('data-lit', '0');
+    await expect
+      .poll(async () => injectMidiDeviceIn(page, 'hw-in-a', [0xfa]), {
+        message: 'the bound input has the live handler attached (0xFA delivered)',
+      })
+      .toBe(true);
+
+    // ── START WAS READ ──────────────────────────────────────────────────────
+    await expect(run, 'MIDI Start raises RUN — the owner-reported defect line').toHaveAttribute(
+      'data-lit',
+      '1',
+    );
+
+    // ── THE CLOCK ADVANCES ──────────────────────────────────────────────────
+    await page.evaluate(() => {
+      const w = window as unknown as {
+        __midiDeviceMock: { inject(p: string, b: number[]): boolean };
+      };
+      for (let i = 0; i < 48; i++) w.__midiDeviceMock.inject('hw-in-a', [0xf8]);
+    });
+    await expect
+      .poll(
+        () =>
+          page.evaluate((id) => {
+            const w = globalThis as unknown as {
+              __engine?: () => {
+                read: (n: unknown, k: string) => { ticksReceived?: number } | undefined;
+              } | null;
+              __patch: { nodes: Record<string, unknown> };
+            };
+            const eng = w.__engine?.();
+            const node = w.__patch.nodes[id];
+            if (!eng || !node) return -1;
+            return eng.read(node, 'state')?.ticksReceived ?? -1;
+          }, NODE),
+        { message: '48 injected 0xF8 ticks are counted by the live handle' },
+      )
+      .toBeGreaterThanOrEqual(48);
+
+    // ── AND STOP DROPS IT ───────────────────────────────────────────────────
+    expect(await injectMidiDeviceIn(page, 'hw-in-a', [0xfc])).toBe(true);
+    await expect(run, 'MIDI Stop lowers RUN').toHaveAttribute('data-lit', '0');
+    expect(errors).toEqual([]);
+  });
+
+  test('the DEBUG TAIL: open shows decoded traffic, pause drops it, clear empties it, closed records NOTHING', async ({ page }) => {
+    // ⚠ THE OWNER-REQUESTED AFFORDANCE, driven end to end. The tail's whole
+    // reason to exist is separating "no bytes arrive on the bound port" from
+    // "bytes arrive and are dropped", so the test drives BOTH transport and
+    // channel-voice bytes (the module itself filters the latter — the tap must
+    // not) and then proves the zero-cost-when-closed contract behaviourally:
+    // traffic injected while the panel is closed is NOT in the tail when it
+    // reopens, because nothing was subscribed to record it.
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+
+    await installMidiDeviceMock(page, {
+      outputs: [],
+      inputs: [{ id: 'hw-in-a', name: 'HW Drum Machine' }],
+    });
+    await gotoShell(page);
+    await spawnPatch(page, [{ id: NODE, type: 'midiclock', position: { x: 200, y: 200 } }]);
+
+    await laneShell(page, NODE).getByTestId('shell-cell-midiclock-connect').click();
+    const dock = await openDock(page, NODE);
+    await expect(dock.getByTestId(`midiclock-device-select-${NODE}`)).toBeVisible();
+
+    // Closed at rest: the panel does not exist, only its toggle does.
+    const tail = dock.getByTestId(`midiclock-tail-${NODE}`);
+    await expect(tail).toHaveCount(0);
+
+    // Wait for the module's input subscription BEFORE opening the tail, so the
+    // first injected byte below is known to land on a live handler.
+    await expect
+      .poll(async () => injectMidiDeviceIn(page, 'hw-in-a', [0xfa]), {
+        message: 'the bound input has the live handler attached',
+      })
+      .toBe(true);
+
+    // ── OPEN: rows render, decoded ──────────────────────────────────────────
+    await dock.getByTestId(`midiclock-debug-${NODE}`).click();
+    await expect(tail).toBeVisible();
+    await expect(tail, 'an open, empty tail states the honest negative').toContainText(
+      'no traffic',
+    );
+
+    await injectMidiDeviceIn(page, 'hw-in-a', [0xfa]);
+    await injectMidiDeviceIn(page, 'hw-in-a', [0xf8]);
+    await injectMidiDeviceIn(page, 'hw-in-a', [0x90, 60, 100]); // note-on: NOT transport — the tap must show it anyway
+    await expect(tail).toContainText('START');
+    await expect(tail).toContainText('CLOCK');
+    await expect(tail, 'channel-voice traffic is visible too — hex + decode').toContainText(
+      'NOTE ON C4',
+    );
+    await expect(tail, 'the raw bytes are on the row').toContainText('90 3C 64');
+
+    // ── PAUSE: traffic during a pause is dropped, resume records again ──────
+    await dock.getByTestId(`midiclock-tail-pause-${NODE}`).click();
+    await injectMidiDeviceIn(page, 'hw-in-a', [0xfc]); // Stop, sent while paused
+    await dock.getByTestId(`midiclock-tail-pause-${NODE}`).click(); // resume
+    await injectMidiDeviceIn(page, 'hw-in-a', [0xfb]); // Continue, sent after resume
+    await expect(tail, 'the post-resume byte arrives').toContainText('CONTINUE');
+    await expect(tail, 'the paused-away byte does not').not.toContainText('STOP');
+
+    // ── CLEAR ───────────────────────────────────────────────────────────────
+    await dock.getByTestId(`midiclock-tail-clear-${NODE}`).click();
+    await expect(tail).toContainText('no traffic');
+    await expect(tail).not.toContainText('START');
+
+    // ── CLOSED = UNSUBSCRIBED, proven behaviourally ─────────────────────────
+    await dock.getByTestId(`midiclock-debug-${NODE}`).click();
+    await expect(tail).toHaveCount(0);
+    await injectMidiDeviceIn(page, 'hw-in-a', [0x90, 61, 100]); // C#4, while closed
+    await dock.getByTestId(`midiclock-debug-${NODE}`).click();
+    await expect(tail).toBeVisible();
+    // POSITIVE CONTROL for the negative below: a byte sent now DOES land…
+    await injectMidiDeviceIn(page, 'hw-in-a', [0x90, 62, 100]); // D4
+    await expect(tail).toContainText('NOTE ON D4');
+    // …so the closed-time byte's absence is a real fact about the closed tap,
+    // not about a dead panel.
+    await expect(tail, 'nothing was recorded while closed').not.toContainText('C#4');
+
+    expect(errors).toEqual([]);
   });
 
   test('the four documented outputs are on the shell patch surface', async ({ page }) => {
