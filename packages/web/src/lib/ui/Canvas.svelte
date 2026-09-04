@@ -396,6 +396,7 @@
     hasExternalClock as hasWorkflowExternalClock,
     isDinAssigned,
   } from '$lib/ui/workflow/workflow-surfaces';
+  import { timelordeFaceTap } from '$lib/ui/modules/timelorde/face-tap';
   import {
     listWorkflowCameras,
     workflowCameraAtCap,
@@ -1881,6 +1882,38 @@
   // (input/textarea/select/contenteditable — isTypingTarget) and under any
   // modifier. Plain listener (not capture) so capture-phase ESC consumers
   // (pickup-cancel, lasso, the File.. menu) win first.
+  // SPACE = TAP TEMPO for the SELECTED TIMELORDE — the shell's port of the
+  // card-only Space shortcut. The tap cell's own title promises it ("Space
+  // taps it too while TIMELORDE is selected"), but the handler lived in
+  // TimelordeCard's window listener, whose headless-host copy reads xyflow
+  // selection as never-selected — so on the default shell the promise held on
+  // NO shipping surface (S2 parity port). Same guards as the card: no
+  // modifiers, no auto-repeat, not while typing. The external-clock stance is
+  // the face's (face-tap.ts): a tap under an external clock is overwritten by
+  // the follower's next measurement rather than refused here.
+  $effect(() => {
+    function onTapKey(e: KeyboardEvent) {
+      if (e.code !== 'Space' && e.key !== ' ') return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (e.repeat) return;
+      if (isTypingTarget(e.target)) return;
+      // ⚠ Selection lives in XYFLOW's internal store (Canvas dropped
+      // bind:nodes) — `flowNodes` objects never learn `.selected`, so the
+      // authoritative read is `flowApi.getNodes()`, same as the lasso.
+      const sel = flowApi
+        ?.getNodes()
+        .find(
+          (n) =>
+            n.selected && (n.data as { node?: { type?: string } })?.node?.type === 'timelorde',
+        );
+      if (!sel) return;
+      e.preventDefault();
+      timelordeFaceTap(sel.id);
+    }
+    window.addEventListener('keydown', onTapKey);
+    return () => window.removeEventListener('keydown', onTapKey);
+  });
+
   $effect(() => {
     function onDockKey(e: KeyboardEvent) {
       if (e.metaKey || e.ctrlKey || e.altKey) return;

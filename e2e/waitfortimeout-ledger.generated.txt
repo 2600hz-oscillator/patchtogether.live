@@ -247,7 +247,6 @@ e2e/tests/textmarquee.spec.ts :: BOLD toolbar applies a bold run to the selectio
 e2e/tests/tidy-vco.spec.ts :: TIDY VCO mono chain: SEQUENCER gate+pitch → voice → audible RMS + in-tune fundamental :: waitForTimeout(60) #1
 e2e/tests/timelorde-auto-spawn.spec.ts :: rack that already has TIMELORDE: no duplicate spawned on second mount :: waitForTimeout(750) #1
 e2e/tests/timelorde-tap-tempo.spec.ts :: Spacebar taps the tempo ONLY when TIMELORDE is selected :: waitForTimeout(300) #1
-e2e/tests/timelorde-tap-tempo.spec.ts :: external clock DISABLES tap (button greyed + click & space are no-ops) :: waitForTimeout(400) #1
 e2e/tests/timelorde-tap-tempo.spec.ts :: pressSpace :: waitForTimeout(gapMs) #1
 e2e/tests/timelorde-video.spec.ts :: VIDEO OUT passes the live feed through to a downstream OUTPUT (in → display → out) :: waitForTimeout(1200) #1
 e2e/tests/timelorde-video.spec.ts :: patching video_in flips the display from the OWL to the LIVE FEED, and back :: waitForTimeout(700) #1

@@ -44,11 +44,38 @@ async function canvasStats(
   });
 }
 
-/** The TIMELORDE big-display canvas's reported mode (video | wizard | off). */
+/** Open TIMELORDE's dock full view — the big display is the face's
+ *  `fullViewBody` (dock-only; the lane tile carries no picture, see
+ *  shell-extension.ts). */
+async function openDisplay(page: Page, nodeId: string) {
+  await page.waitForFunction(
+    () =>
+      typeof (globalThis as unknown as { __openDockFullView?: unknown }).__openDockFullView ===
+      'function',
+    undefined,
+    { timeout: 30_000 },
+  );
+  await page.evaluate(
+    (i) => (globalThis as unknown as { __openDockFullView: (x: string) => void }).__openDockFullView(i),
+    nodeId,
+  );
+  const pane = page.locator(`[data-testid="dock-fullview-pane"][data-pane-node="${nodeId}"]`);
+  await expect(pane.getByTestId('timelorde-display-body')).toBeVisible({ timeout: 30_000 });
+  return pane;
+}
+
+/** The display's reported mode (video | wizard | off). The card's
+ *  `data-display-mode` died with the card; the face narrates the SAME
+ *  three-way state through the display frame's accessible name
+ *  (TimelordeDisplayBody.displayLabel), so derive the machine id from it. */
 async function displayMode(page: Page, nodeId: string): Promise<string | null> {
-  return page
-    .locator(`canvas[data-testid="timelorde-display-${nodeId}"]`)
-    .getAttribute('data-display-mode');
+  const label = await page
+    .locator(`[data-testid="dock-fullview-pane"][data-pane-node="${nodeId}"] .display-frame`)
+    .getAttribute('aria-label');
+  if (!label) return null;
+  if (label.includes('live video monitor')) return 'video';
+  if (label.includes('owl is hidden')) return 'off';
+  return 'wizard';
 }
 
 test.describe('TIMELORDE big display: owl ↔ live video + passthrough', () => {
@@ -57,7 +84,7 @@ test.describe('TIMELORDE big display: owl ↔ live video + passthrough', () => {
     page.on('pageerror', (e) => errors.push(e.message));
     page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
     await spawnPatch(
       page,
@@ -65,7 +92,8 @@ test.describe('TIMELORDE big display: owl ↔ live video + passthrough', () => {
       [],
     );
 
-    const display = page.locator(`canvas[data-testid="timelorde-display-${TL}"]`);
+    const pane = await openDisplay(page, TL);
+    const display = pane.locator('canvas[data-testid="timelorde-face-canvas"]');
     await expect(display, 'big display canvas present').toHaveCount(1);
     // ~4× the old sprite: a large square surface.
     const box = await display.boundingBox();
@@ -93,7 +121,7 @@ test.describe('TIMELORDE big display: owl ↔ live video + passthrough', () => {
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
 
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
 
     // ACIDWARP (self-running video source) + TIMELORDE; patch the feed in.
@@ -106,6 +134,7 @@ test.describe('TIMELORDE big display: owl ↔ live video + passthrough', () => {
     ];
     await spawnPatch(page, nodes, edges);
 
+    await openDisplay(page, TL);
     // Display shows the live feed (the feed wins over the owl).
     await expect
       .poll(() => displayMode(page, TL), { timeout: 4000, message: 'display flips to video' })
@@ -113,7 +142,9 @@ test.describe('TIMELORDE big display: owl ↔ live video + passthrough', () => {
 
     // The feed renders (ACIDWARP plasma → non-blank display pixels).
     await page.waitForTimeout(700);
-    const feedStats = await canvasStats(page.locator(`canvas[data-testid="timelorde-display-${TL}"]`));
+    const feedStats = await canvasStats(
+      page.locator(`[data-testid="dock-fullview-pane"][data-pane-node="${TL}"] canvas[data-testid="timelorde-face-canvas"]`),
+    );
     expect(feedStats, 'feed pixels readable').not.toBeNull();
     if (feedStats) {
       expect(feedStats.brightFrac, 'live feed lights the display').toBeGreaterThan(0.02);
@@ -141,7 +172,7 @@ test.describe('TIMELORDE big display: owl ↔ live video + passthrough', () => {
     page.on('pageerror', (e) => errors.push(e.message));
     page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
 
     // ACIDWARP → TIMELORDE.video_in → (display) → TIMELORDE.video_out → OUTPUT.
@@ -156,17 +187,20 @@ test.describe('TIMELORDE big display: owl ↔ live video + passthrough', () => {
     ];
     await spawnPatch(page, nodes, edges);
 
-    // The TIMELORDE card's video_out handle must render (so the passthrough port exists).
+    // The TIMELORDE node's video_out handle must render (so the passthrough
+    // port exists — handles live on the shell wrapper, shell-agnostic).
     const tlCard = page.locator(`.svelte-flow__node[data-id="${TL}"]`);
     await expect(tlCard.locator('[data-handleid="video_out"]'), 'video_out handle present').toHaveCount(1);
 
+    await openDisplay(page, TL);
     // The display itself is on the live feed.
     await expect
       .poll(() => displayMode(page, TL), { timeout: 4000, message: 'display is on the feed' })
       .toBe('video');
 
-    // OUTPUT renders the passed-through feed.
-    const outCanvas = page.locator('canvas[data-testid="video-out-canvas"]');
+    // OUTPUT renders the passed-through feed — read at the videoOut LANE
+    // TILE's thumb (2D-readable, the fleet recipe; the card canvas died).
+    const outCanvas = page.locator('.svelte-flow__node[data-id="vout"] canvas[data-testid="video-tile-thumb"]');
     await expect(outCanvas).toHaveCount(1);
     await page.waitForTimeout(1200);
     const stats = await canvasStats(outCanvas);
